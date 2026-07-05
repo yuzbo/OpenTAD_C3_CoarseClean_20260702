@@ -9,6 +9,10 @@ CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_official_asformer_delta_le
 EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_official_asformer_delta_ledger_original_adatad_full_train_exec.py"
 VALIDATOR = ROOT / "tools" / "bata" / "validate_c3_asformer_delta_ledger_full_train.py"
 LAUNCHER = ROOT / "scripts" / "run_c3_asformer_delta_ledger_adatad_full_train_gpu1.sh"
+PACTION_LAUNCHER = ROOT / "scripts" / "run_c3_paction_learned_policy_adatad_full_train_gpu1.sh"
+PACTION_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_paction_learned_ledger_adatad_full_train.py"
+PACTION_EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_paction_learned_ledger_adatad_full_train_exec.py"
+PACTION_VALIDATOR = ROOT / "tools" / "bata" / "validate_c3_paction_learned_adatad_full_train.py"
 TRAIN = ROOT / "tools" / "train.py"
 SCHEDULE = ROOT / "opentad" / "utils" / "train_schedule.py"
 GUARD = ROOT / "opentad" / "utils" / "training_guard.py"
@@ -16,6 +20,13 @@ GUARD = ROOT / "opentad" / "utils" / "training_guard.py"
 
 def _load_validator():
     spec = importlib.util.spec_from_file_location("validate_c3_asformer_delta_ledger_full_train_test", VALIDATOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_paction_validator():
+    spec = importlib.util.spec_from_file_location("validate_c3_paction_learned_adatad_full_train_test", PACTION_VALIDATOR)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -139,3 +150,113 @@ def test_asformer_delta_ledger_launcher_is_gpu1_precheck_first_and_fail_closed()
     assert "tests/test_c3_asformer_delta_ledger_full_train.py" in text
     assert "tools/train.py" in text
     assert "tools/test.py" not in text
+
+
+def test_paction_learned_policy_adatad_launcher_validates_ledgers_before_full_train():
+    text = PACTION_LAUNCHER.read_text(encoding="utf-8")
+
+    assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
+    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
+    assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+    assert "validate_paction_learned_policy_ledger.py" in text
+    assert "validate_c3_paction_learned_adatad_full_train.py" in text
+    assert "--metric-sample-jsonl" in text
+    assert "--strategy" in text
+    assert "learned_paction_gap_loss_value" in text
+    assert "learned_paction_gap_loss_dynamic_budget" in text
+    assert "--expected-target-len \"${target_len}\"" in text
+    assert "--require-selected-count 384" in text
+    assert "--require-deployable" in text
+    assert "--require-policy-source learned_paction_gap_loss_policy_checkpoint" in text
+    assert "--require-checkpoint-path" in text
+    assert "--require-checkpoint-sha256" in text
+    assert "PACTION_POLICY_CHECKPOINT" in text
+    assert "PACTION_POLICY_CHECKPOINT_SHA256" in text
+    assert "C3_PACTION_LEDGER_SOURCE" in text
+    assert 'C3_PACTION_LEDGER_SOURCE="learned_paction_gap_loss_policy_checkpoint"' in text
+    assert 'C3_PACTION_LEDGER_CONFIG_HASH="${PACTION_POLICY_CHECKPOINT_SHA256}"' in text
+    assert "C3_PACTION_TRAIN_LEDGER_PATH" in text
+    assert "C3_PACTION_VAL_LEDGER_PATH" in text
+    assert "C3_PACTION_TEST_LEDGER_PATH" in text
+    assert "C3_PACTION_SOURCE_ROOT" in text
+    assert "train/samples.jsonl" in text
+    assert "val/samples.jsonl" in text
+    assert "test/samples.jsonl" in text
+    assert 'learned_dynamic) echo "${LEDGER_ROOT}/${split}/samples.learned_dynamic.jsonl"' in text
+    assert '--val-jsonl "${C3_PACTION_VAL_SOURCE_JSONL}"' not in text
+    assert "formal full train must run inside a Slurm allocation/step" in text
+    assert "tools/train.py" in text
+
+
+def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_all_variants():
+    text = PACTION_LAUNCHER.read_text(encoding="utf-8")
+
+    assert "train_paction_acquisition_policy.py" in text
+    assert "run_paction_learned_policy_ledger_pipeline.py" in text
+    assert "validate_c3_paction_learned_adatad_full_train.py" in text
+    assert "PACTION_ADATAD_VARIANTS" in text
+    assert "learned_fixed_384 learned_fixed_768 learned_dynamic" in text
+    assert "C3_PACTION_LEDGER_VARIANT" in text
+    assert "C3_PACTION_TRAIN_LEDGER_PATH" in text
+    assert "C3_PACTION_VAL_LEDGER_PATH" in text
+    assert "C3_PACTION_TEST_LEDGER_PATH" in text
+    assert "c3_paction_learned_ledger_adatad_full_train_exec.py" in text
+    assert "--strategy" in text
+    assert "learned_paction_gap_loss_dynamic_budget" in text
+    assert "--require-selected-count" in text
+    assert "--require-nonconstant-selected-count" in text
+    assert "ALLOW_C3_PACTION_LEARNED_ADATAD_FULLTRAIN" in text
+
+
+def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dynamic(monkeypatch):
+    expected = {
+        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value"),
+        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value"),
+        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget"),
+    }
+    for variant, (target_len, required_count, strategy) in expected.items():
+        monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", variant)
+        monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", f"/tmp/{variant}.train.jsonl")
+        monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", f"/tmp/{variant}.val.jsonl")
+        monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", f"/tmp/{variant}.test.jsonl")
+
+        cfg = Config.fromfile(str(PACTION_CONFIG))
+
+        assert cfg.experiment_scope.stage == "paction_learned_ledger_original_adatad_full_train"
+        assert cfg.experiment_scope.selection_strategy == strategy
+        assert cfg.paction_ledger_variant == variant
+        assert int(cfg.window_size) == target_len
+        assert int(cfg.dense_window_size) == 768
+        assert int(cfg.model.backbone.backbone.total_frames) == target_len
+        assert int(cfg.model.projection.max_seq_len) == target_len
+        assert cfg.evaluation.ground_truth_filename == cfg.annotation_path
+        assert "frame_selector" not in repr(cfg.model)
+        for split in ("train", "val", "test"):
+            loader = _loadframes(cfg.dataset[split])
+            assert loader.method == "bata_value_transport_ledger_subsample"
+            assert int(loader.target_len) == target_len
+            assert loader.bata_value_transport_require_selected_count == required_count
+            assert loader.bata_value_transport_require_deployable is True
+            assert loader.bata_value_transport_allow_missing_fallback is False
+            assert loader.bata_value_transport_allow_short_valid_ratio_count is True
+            assert loader.remap_gt_to_selected_axis is True
+
+
+def test_paction_learned_policy_adatad_validator_passes_locked_and_exec_configs(monkeypatch):
+    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "learned_dynamic")
+    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", "/tmp/c3_paction_dynamic_train.jsonl")
+    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", "/tmp/c3_paction_dynamic_val.jsonl")
+    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", "/tmp/c3_paction_dynamic_test.jsonl")
+    validator = _load_paction_validator()
+
+    cfg = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
+    assert cfg.c3_paction_learned_ledger_full_train_gate.launch_gate_passed is False
+    assert cfg.paction_ledger_strategy == "learned_paction_gap_loss_dynamic_budget"
+
+    exec_cfg = validator.validate_config(
+        str(PACTION_EXEC_CONFIG),
+        require_ledger_files=False,
+        allow_launch_unlocked=True,
+    )
+    assert exec_cfg.c3_paction_learned_ledger_full_train_gate.launch_gate_passed is True
+    assert exec_cfg.c3_paction_learned_ledger_full_train_gate.reviewed_execution_config is True

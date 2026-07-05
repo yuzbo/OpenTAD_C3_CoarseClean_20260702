@@ -220,6 +220,11 @@ def sample_row_to_value_transport_row(
     _validate_sample_id(sample_id, line_no=line_no, require_window_sample_id=bool(require_window_sample_id))
     if deploy_selection_ledger and not require_window_sample_id:
         raise ValueError("deploy_selection_ledger requires strict video_name|window_start sample_id keys")
+    if deploy_selection_ledger and fill_to_target_count:
+        raise ValueError(
+            "deploy_selection_ledger cannot use fill_to_target_count; "
+            "gap control must come from the learned policy/loss, not uniform fill"
+        )
     for key in FORBIDDEN_TRUE_FLAGS:
         if _is_true(row.get(key, False)):
             raise ValueError(f"line {line_no}: forbidden source flag {key}=true")
@@ -279,6 +284,15 @@ def sample_row_to_value_transport_row(
             and not (isinstance(row.get("strategy_selected_positions"), Mapping) and strategy in row["strategy_selected_positions"])
         ),
     }
+    paction_policy = row.get("paction_policy")
+    if isinstance(paction_policy, Mapping):
+        diagnostics["policy_source"] = paction_policy.get("source")
+        diagnostics["policy_checkpoint_path"] = paction_policy.get("checkpoint_path")
+        diagnostics["policy_checkpoint_sha256"] = paction_policy.get("checkpoint_sha256")
+        diagnostics["policy_fixed_budget"] = paction_policy.get("fixed_budget")
+        diagnostics["policy_dynamic_budget"] = paction_policy.get("dynamic_budget")
+        diagnostics["policy_uses_uniform_scaffold"] = paction_policy.get("uses_uniform_scaffold")
+        diagnostics["policy_uses_uniform_fill"] = paction_policy.get("uses_uniform_fill")
     boundary_support = None if deploy_selection_ledger else _finite_float_or_none(row.get("boundary_support_r1"))
     if boundary_support is not None:
         diagnostics["diagnostic_boundary_support_r1_ignored_by_selection"] = boundary_support
@@ -295,6 +309,9 @@ def sample_row_to_value_transport_row(
         "route": "C3_LOWRES_PROBE",
         "route_variant": str(route_variant),
         "policy": f"c3_lowres_probe_{strategy}",
+        "policy_source": diagnostics.get("policy_source"),
+        "policy_checkpoint_path": diagnostics.get("policy_checkpoint_path"),
+        "policy_checkpoint_sha256": diagnostics.get("policy_checkpoint_sha256"),
         "source_schema_version": "c3_lowres_probe_samples_jsonl",
         "diagnostics": diagnostics,
         "deploy_selection_ledger": bool(deploy_selection_ledger),
@@ -390,6 +407,7 @@ def run_conversion(
         "deduplicate_sample_id": bool(deduplicate_sample_id),
         "duplicate_sample_id_count": int(duplicate_sample_id_count),
         "route_variant": str(route_variant),
+        "gap_control": "source_strategy_only_no_uniform_fill_for_deploy",
         "min_selected_count": min(counts),
         "max_selected_count": max(counts),
         "total_uniform_visible_fill_count": sum(fill_counts),

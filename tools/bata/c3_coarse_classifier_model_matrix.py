@@ -10,6 +10,42 @@ from typing import Any, Iterable, Mapping
 
 ROUTE_LABEL = "C3_MAINLINE_OPTIMIZATION"
 ROUTE_FAMILY = "C3_ORIGINAL_OPTIMIZATION_ROUTE"
+MODEL_ZOO_SCHEMA_VERSION = "c3_coarse_classifier_model_zoo_v1"
+ACQUISITION_POLICY_ZOO_SCHEMA_VERSION = "c3_paction_acquisition_policy_zoo_v1"
+
+SUPPORTED_C3_READER_TYPES = (
+    "PCOTMRASCoarseActionnessFrameScout",
+    "PCOTMRASBoundaryDifficultyTemporalFrameScout",
+)
+SUPPORTED_TCN_VARIANTS = (
+    "lite",
+    "dilated",
+    "multiscale",
+    "motion",
+    "residual",
+    "gated",
+    "separable_dilated",
+    "causal_dilated",
+    "ms_tcnpp",
+    "c2f_tcn",
+    "asformer_lite",
+    "fact_lite",
+    "temporal_mamba_lite",
+)
+LOCAL_EXPERIMENTAL_TCN_VARIANTS = (
+    "asformer_lite",
+    "fact_lite",
+    "temporal_mamba_lite",
+)
+DEFAULT_TCN_VARIANTS = tuple(
+    variant for variant in SUPPORTED_TCN_VARIANTS if variant not in LOCAL_EXPERIMENTAL_TCN_VARIANTS
+)
+SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS = (
+    "official_ms_tcn2",
+    "official_asformer",
+    "official_fact",
+    "official_video_mamba_asformer",
+)
 
 
 MODEL_MATRIX: list[dict[str, Any]] = [
@@ -263,6 +299,288 @@ def iter_matrix(*, tier: str = "first_wave", include_optional: bool = False, fam
         yield entry
 
 
+def _model_zoo_entry(**entry: Any) -> dict[str, Any]:
+    common = {
+        "route_label": ROUTE_LABEL,
+        "route_family": ROUTE_FAMILY,
+        "selection_signal": "binary_frame_actionness",
+        "deploy_time_candidate": True,
+        "uses_gt_at_test": False,
+        "uses_teacher_at_test": False,
+        "uses_raw_prediction_cache": False,
+        "diagnostic_only": True,
+        "no_detector_training": True,
+        "no_detector_eval": True,
+    }
+    common.update(entry)
+    return common
+
+
+def _reader_entry(reader_type: str) -> dict[str, Any]:
+    reader_slug = reader_type.replace("PCOTMRAS", "").replace("FrameScout", "")
+    reader_slug = reader_slug.replace("Temporal", "_").replace("Coarse", "coarse_")
+    reader_slug = reader_slug.replace("Actionness", "actionness").replace("Boundary", "boundary")
+    reader_slug = reader_slug.replace("Difficulty", "_difficulty").strip("_").lower()
+    return _model_zoo_entry(
+        id=f"c3_reader_{reader_slug}",
+        family="native_c3_reader",
+        backend="opentad_selector",
+        tier="first_wave",
+        default_download=False,
+        default_model_zoo=True,
+        probe_model="c3-reader",
+        reader_type=reader_type,
+        compute_class="low",
+        expected_input="OpenTAD feature tensor with valid mask and optional time coords",
+        intended_head="reader_action_logits",
+        train_lowres_action_probe_args=["--probe-model", "c3-reader"],
+        why=(
+            "Native C3 reader probe keeps the actionness signal closest to the deploy ledger path "
+            "and validates whether selector-reader logits are already sufficient for frame choice."
+        ),
+    )
+
+
+def _temporal_tcn_compute_class(variant: str) -> str:
+    if variant in {"lite", "motion", "separable_dilated", "causal_dilated"}:
+        return "low"
+    if variant in {"asformer_lite", "fact_lite", "temporal_mamba_lite"}:
+        return "mid"
+    return "low_mid"
+
+
+def _temporal_tcn_entry(variant: str) -> dict[str, Any]:
+    local_experimental = variant in LOCAL_EXPERIMENTAL_TCN_VARIANTS
+    official_counterparts = {
+        "asformer_lite": "official_action_seg_official_asformer",
+        "fact_lite": "official_action_seg_official_fact",
+        "temporal_mamba_lite": "official_action_seg_official_video_mamba_asformer",
+    }
+    return _model_zoo_entry(
+        id=f"temporal_tcn_{variant}",
+        family="probe_temporal_head",
+        backend="local_temporal_tcn",
+        tier="second_wave" if local_experimental else "first_wave",
+        default_download=False,
+        default_model_zoo=not local_experimental,
+        probe_model="temporal-tcn",
+        tcn_variant=variant,
+        local_experimental=local_experimental,
+        official_required_counterpart=official_counterparts.get(variant),
+        compute_class=_temporal_tcn_compute_class(variant),
+        expected_input="lowres RGB frame embeddings and temporal masks",
+        intended_head=f"{variant}_binary_frame_actionness",
+        train_lowres_action_probe_args=["--probe-model", "temporal-tcn", "--tcn-variants", variant],
+        why=(
+            "Local diagnostic temporal head family isolates actionness signal behavior. "
+            "ASFormer/FACT/Mamba-style local variants are not default-runnable; use the official-action-seg "
+            "counterparts for claim-bearing experiments."
+            if local_experimental
+            else (
+                "Local temporal head family isolates how much temporal smoothing, dilation, motion, "
+                "or lightweight sequence modeling improves deployable binary actionness."
+            )
+        ),
+    )
+
+
+def _official_backend_entry(backend: str) -> dict[str, Any]:
+    compute_class = "mid_high" if backend == "official_video_mamba_asformer" else "mid"
+    tier = "first_wave"
+    return _model_zoo_entry(
+        id=f"official_action_seg_{backend}",
+        family="official_action_segmentation_adapter",
+        backend=backend,
+        tier=tier,
+        default_download=False,
+        default_model_zoo=True,
+        probe_model="official-action-seg",
+        official_action_seg_backend=backend,
+        requires_mamba_ssm=backend == "official_video_mamba_asformer",
+        skip_if_unavailable=backend == "official_video_mamba_asformer",
+        compute_class=compute_class,
+        expected_input="lowres RGB frame embeddings and temporal masks",
+        intended_head=f"{backend}_binary_frame_actionness_adapter",
+        train_lowres_action_probe_args=[
+            "--probe-model",
+            "official-action-seg",
+            "--official-action-seg-backends",
+            backend,
+        ],
+        why=(
+            "Official action-segmentation backbone adapted to binary frame classification, "
+            "useful for testing whether mature boundary-aware temporal models improve selected ledgers."
+        ),
+    )
+
+
+def _matrix_zoo_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
+    copied = dict(entry)
+    copied.update(
+        {
+            "default_model_zoo": bool(entry.get("default_download", False)),
+            "probe_model": "matrix-zoo",
+            "matrix_model_id": entry["id"],
+            "train_lowres_action_probe_args": ["--probe-model", "matrix-zoo", "--matrix-model-ids", str(entry["id"])],
+        }
+    )
+    return _model_zoo_entry(**copied)
+
+
+MODEL_ZOO: list[dict[str, Any]] = [
+    *[_reader_entry(reader_type) for reader_type in SUPPORTED_C3_READER_TYPES],
+    _model_zoo_entry(
+        id="mobilenetv3_lowres_frame_actionness",
+        family="probe_image_backbone_temporal_head",
+        backend="local_mobilenetv3",
+        tier="first_wave",
+        default_download=False,
+        default_model_zoo=True,
+        probe_model="mobilenetv3",
+        compute_class="low",
+        expected_input="lowres RGB frames at 32px or 64px",
+        intended_head="mobilenetv3_binary_frame_actionness",
+        train_lowres_action_probe_args=["--probe-model", "mobilenetv3"],
+        spatial_sizes=[32, 64],
+        why=(
+            "The strongest cheap local visual baseline in this route; it estimates per-frame actionness "
+            "from low-resolution RGB before ledger selection."
+        ),
+    ),
+    *[_temporal_tcn_entry(variant) for variant in SUPPORTED_TCN_VARIANTS],
+    *[_official_backend_entry(backend) for backend in SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS],
+    *[_matrix_zoo_entry(entry) for entry in MODEL_MATRIX],
+]
+
+
+def iter_model_zoo(
+    *,
+    tier: str = "first_wave",
+    include_optional: bool = False,
+    families: set[str] | None = None,
+    probe_models: set[str] | None = None,
+):
+    for entry in MODEL_ZOO:
+        if families and str(entry["family"]) not in families:
+            continue
+        if probe_models and str(entry["probe_model"]) not in probe_models:
+            continue
+        if tier != "all" and str(entry["tier"]) != tier:
+            if not (include_optional and str(entry["tier"]) == "second_wave"):
+                continue
+        if not include_optional and not bool(entry.get("default_model_zoo", False)):
+            continue
+        yield entry
+
+
+def _acquisition_policy_entry(**entry: Any) -> dict[str, Any]:
+    common = {
+        "route_label": ROUTE_LABEL,
+        "route_family": ROUTE_FAMILY,
+        "selection_signal": "p_action",
+        "deploy_time_candidate": True,
+        "uses_gt_at_test": False,
+        "uses_teacher_at_test": False,
+        "uses_raw_prediction_cache": False,
+        "diagnostic_only": True,
+        "no_detector_training": True,
+        "no_detector_eval": True,
+        "policy_model": "PActionDynamicAcquisitionPolicy",
+        "policy_module": "tools.bata.paction_acquisition_policy",
+        "default_model_zoo": True,
+        "gap_control": "learned_gap_hole_loss_no_uniform_fill",
+        "uses_uniform_scaffold": False,
+        "uses_uniform_fill": False,
+        "loss_terms": {
+            "value_transport": 1.0,
+            "boundary_miss": 2.0,
+            "large_gap": 1.5,
+            "temporal_hole": 1.0,
+            "budget": 1.0,
+            "redundancy": 0.1,
+        },
+    }
+    common.update(entry)
+    return common
+
+
+ACQUISITION_POLICY_ZOO: list[dict[str, Any]] = [
+    _acquisition_policy_entry(
+        id="paction_gap_loss_value_selector",
+        family="learned_paction_gap_loss_frame_value_selector",
+        backend="local_tcn_policy",
+        tier="first_wave",
+        dynamic_budget=False,
+        budget_buckets=[384],
+        selection_strategy="learned_paction_gap_loss_value",
+        expected_input="per-frame p_action signal plus p_action dynamics and uncertainty features",
+        intended_head="frame_value_head_with_gap_hole_boundary_losses",
+        train_paction_acquisition_policy_args=[
+            "--policy-mode",
+            "fixed-budget-value",
+            "--fixed-budget",
+            "384",
+            "--selection-strategy",
+            "learned_paction_gap_loss_value",
+            "--gap-loss-max-gap",
+            "3",
+        ],
+        why=(
+            "Learns frame-selection value from deployable p_action dynamics with boundary-miss, large-gap, "
+            "temporal-hole, budget, and redundancy losses, replacing uniform scaffold or decoder fill."
+        ),
+    ),
+    _acquisition_policy_entry(
+        id="paction_gap_loss_dynamic_budget_policy",
+        family="learned_paction_gap_loss_dynamic_budget_selector",
+        backend="local_tcn_policy",
+        tier="first_wave",
+        dynamic_budget=True,
+        budget_buckets=[128, 192, 256, 320, 384, 512, 768],
+        selection_strategy="learned_paction_gap_loss_dynamic_budget",
+        expected_input="window-level p_action dynamics, uncertainty, and learned frame values",
+        intended_head="budget_head_plus_gap_loss_frame_value_head",
+        train_paction_acquisition_policy_args=[
+            "--policy-mode",
+            "dynamic-budget-value",
+            "--budget-buckets",
+            "128",
+            "192",
+            "256",
+            "320",
+            "384",
+            "512",
+            "768",
+            "--selection-strategy",
+            "learned_paction_gap_loss_dynamic_budget",
+            "--gap-loss-max-gap",
+            "3",
+        ],
+        why=(
+            "Predicts how much temporal evidence each dense window deserves while the same loss family "
+            "penalizes boundary misses and large unselected holes instead of reserving uniform slots."
+        ),
+    ),
+]
+
+
+def iter_acquisition_policy_zoo(
+    *,
+    tier: str = "first_wave",
+    include_optional: bool = False,
+    families: set[str] | None = None,
+):
+    for entry in ACQUISITION_POLICY_ZOO:
+        if families and str(entry["family"]) not in families:
+            continue
+        if tier != "all" and str(entry["tier"]) != tier:
+            if not (include_optional and str(entry["tier"]) == "second_wave"):
+                continue
+        if not include_optional and not bool(entry.get("default_model_zoo", False)):
+            continue
+        yield entry
+
+
 def _status(entry: Mapping[str, Any], status: str, **extra: Any) -> dict[str, Any]:
     result = {
         "id": entry["id"],
@@ -352,11 +670,14 @@ def download_entry(entry: Mapping[str, Any], *, dry_run: bool = False) -> dict[s
 def build_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="C3 coarse classifier model matrix and weight downloader.")
     parser.add_argument("--print-matrix", action="store_true")
+    parser.add_argument("--print-zoo", action="store_true")
+    parser.add_argument("--print-policy-zoo", action="store_true")
     parser.add_argument("--download", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--tier", choices=["first_wave", "second_wave", "all"], default="first_wave")
     parser.add_argument("--include-optional", action="store_true")
     parser.add_argument("--family", action="append", default=[])
+    parser.add_argument("--probe-model", action="append", default=[])
     parser.add_argument("--output-json", type=Path, default=None)
     parser.add_argument("--cache-root", type=Path, default=None)
     return parser
@@ -372,6 +693,7 @@ def main(argv: list[str] | None = None) -> int:
         cache_root.mkdir(parents=True, exist_ok=True)
 
     families = set(args.family) if args.family else None
+    probe_models = set(args.probe_model) if args.probe_model else None
     entries = list(iter_matrix(tier=args.tier, include_optional=args.include_optional, families=families))
     payload: dict[str, Any] = {
         "schema_version": "c3_coarse_classifier_model_matrix_v1",
@@ -384,6 +706,29 @@ def main(argv: list[str] | None = None) -> int:
         "include_optional": bool(args.include_optional),
         "entries": entries,
     }
+    if args.print_zoo:
+        model_zoo_entries = list(
+            iter_model_zoo(
+                tier=args.tier,
+                include_optional=args.include_optional,
+                families=families,
+                probe_models=probe_models,
+            )
+        )
+        payload["model_zoo_schema_version"] = MODEL_ZOO_SCHEMA_VERSION
+        payload["model_zoo_count"] = len(model_zoo_entries)
+        payload["model_zoo_entries"] = model_zoo_entries
+    if args.print_policy_zoo:
+        acquisition_policy_entries = list(
+            iter_acquisition_policy_zoo(
+                tier=args.tier,
+                include_optional=args.include_optional,
+                families=families,
+            )
+        )
+        payload["acquisition_policy_zoo_schema_version"] = ACQUISITION_POLICY_ZOO_SCHEMA_VERSION
+        payload["acquisition_policy_zoo_count"] = len(acquisition_policy_entries)
+        payload["acquisition_policy_zoo_entries"] = acquisition_policy_entries
 
     if args.download:
         results = [download_entry(entry, dry_run=bool(args.dry_run)) for entry in entries]

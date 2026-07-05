@@ -18,6 +18,7 @@ BATCH_SIZE="${BATCH_SIZE:-2}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 MAX_VAL_BATCHES="${MAX_VAL_BATCHES:-0}"
 BOUNDARY_RADIUS="${BOUNDARY_RADIUS:-1}"
+SOURCE_JSONL_ONLY="${SOURCE_JSONL_ONLY:-0}"
 CONFIG="${CONFIG:-configs/adatad/thumos/pc_ot_mras_a_uniform_scaffold_small_actionness_strict_maxgap_c3_physical_grid_actionformer_n16r4.py}"
 
 ANN_FILE="${ANN_FILE:-/data/run01/sczc063/yuzibo/thumos14/annotations/thumos_14_anno.json}"
@@ -142,6 +143,13 @@ esac
 
 python -u tools/bata/train_lowres_action_probe.py "${PROBE_ARGS[@]}"
 
+if [[ "${SOURCE_JSONL_ONLY}" == "1" ]]; then
+  echo "SOURCE_JSONL_ONLY=1; skip legacy delta ledger conversion."
+  echo "SAMPLES_JSONL=${SAMPLES_JSONL}"
+  echo "DONE $(date -Iseconds)"
+  exit 0
+fi
+
 python tools/bata/convert_lowres_probe_samples_to_value_transport_ledger.py \
   --input-jsonl "${SAMPLES_JSONL}" \
   --output-jsonl "${LEDGER_JSONL}" \
@@ -150,7 +158,6 @@ python tools/bata/convert_lowres_probe_samples_to_value_transport_ledger.py \
   --target-len "${TARGET_LEN}" \
   --require-selected-count "${TARGET_LEN}" \
   --allow-short-valid-ratio-count \
-  --fill-to-target-count \
   --deduplicate-sample-id \
   --deploy-selection-ledger \
   --route-variant "c3_lowres_${PROBE_MODEL}_${TCN_VARIANT}${MATRIX_MODEL_ID}${OFFICIAL_ACTION_SEG_BACKEND}_${SELECTION_STRATEGY}_dense${DENSE_WINDOW_SIZE}_to_${TARGET_LEN}_${EXPORT_SPLIT}"

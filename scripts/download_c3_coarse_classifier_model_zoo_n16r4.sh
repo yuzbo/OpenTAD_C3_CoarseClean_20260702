@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-PROJECT_DIR="${PROJECT_DIR:-/data/run01/sczc063/yuzibo/OpenTAD_C3TCNCoarseProbe_20260701}"
+PROJECT_DIR="${PROJECT_DIR:-/data/run01/sczc063/yuzibo/OpenTAD_C3_CoarseClean_20260702}"
 BASE_DIR="${BASE_DIR:-/data/run01/sczc063/yuzibo}"
 CACHE_ROOT="${CACHE_ROOT:-${BASE_DIR}/model_zoo_cache/c3_coarse_classifier}"
 OUT_DIR="${OUT_DIR:-${PROJECT_DIR}/logs/c3_coarse_classifier_model_zoo_download_$(date +%Y%m%d_%H%M%S_%z)}"

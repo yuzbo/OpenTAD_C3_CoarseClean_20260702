@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/data/run01/sczc063/yuzibo/OpenTAD_C3TCNCoarseProbe_20260701}"
 OUT_DIR="${OUT_DIR:-/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/outputs/c3_tcn_coarse_probe_gpu1_20260701}"
-TCN_VARIANTS="${TCN_VARIANTS:-lite dilated multiscale motion residual gated separable_dilated causal_dilated ms_tcnpp c2f_tcn asformer_lite fact_lite temporal_mamba_lite}"
+TCN_VARIANTS="${TCN_VARIANTS:-lite dilated multiscale motion residual gated separable_dilated causal_dilated ms_tcnpp c2f_tcn}"
 BATCH_SIZE="${BATCH_SIZE:-3}"
 EPOCHS="${EPOCHS:-100}"
 MAX_TRAIN_BATCHES="${MAX_TRAIN_BATCHES:-0}"

@@ -17,6 +17,7 @@ MATRIX_VIDEO_GPU1_SCRIPT = ROOT / "scripts" / "run_c3_matrix_zoo_video_probe_gpu
 OFFICIAL_ACTION_SEG_GPU1_SCRIPT = ROOT / "scripts" / "run_c3_official_action_seg_probe_gpu1_20260702.sh"
 MODEL_ZOO_DOWNLOAD_SCRIPT = ROOT / "scripts" / "download_c3_coarse_classifier_model_zoo_n16r4.sh"
 OFFICIAL_ACTION_SEG_WATCHER = ROOT / "scripts" / "watch_and_launch_c3_official_action_seg_probe_gpu1_20260702.sh"
+CURRENT_MODEL_ZOO_GPU0_SCRIPT = ROOT / "scripts" / "run_c3_current_runnable_model_zoo_gpu0_20260702.sh"
 
 
 def load_probe_module():
@@ -882,6 +883,46 @@ def test_parse_args_accepts_zero_batch_caps_as_explicit_unlimited_probe_mode():
     assert args.max_val_batches == 0
 
 
+def test_parse_args_supports_sparse_validation_and_train_loss_early_stop():
+    probe = load_probe_module()
+
+    args = probe.parse_args(
+        [
+            "--val-every-epochs",
+            "10",
+            "--early-stop-metric",
+            "train_loss",
+        ]
+    )
+
+    assert args.val_every_epochs == 10
+    assert args.early_stop_metric == "train_loss"
+
+    with pytest.raises(SystemExit):
+        probe.parse_args(["--val-every-epochs", "0"])
+
+
+def test_validation_interval_runs_on_requested_epochs_and_final_epoch():
+    probe = load_probe_module()
+
+    assert probe._should_run_validation(epoch=1, loop_epochs=100, val_every_epochs=10, coverage_only=False) is False
+    assert probe._should_run_validation(epoch=10, loop_epochs=100, val_every_epochs=10, coverage_only=False) is True
+    assert probe._should_run_validation(epoch=95, loop_epochs=95, val_every_epochs=10, coverage_only=False) is True
+    assert probe._should_run_validation(epoch=1, loop_epochs=100, val_every_epochs=10, coverage_only=True) is True
+
+
+def test_early_stop_metric_resolves_train_loss_and_nested_val_metrics():
+    probe = load_probe_module()
+    metrics = {
+        "train": {"loss": 0.42},
+        "val": {"loss": 0.73, "best_f1": 0.55},
+    }
+
+    assert probe._resolve_early_stop_metric(metrics, "train_loss") == 0.42
+    assert probe._resolve_early_stop_metric(metrics, "val_loss") == 0.73
+    assert probe._resolve_early_stop_metric(metrics, "val_best_f1") == 0.55
+
+
 def test_lowres_probe_v2_launcher_uses_c3_a_config_and_positive_batch_caps():
     text = LOWRES_PROBE_SCRIPT.read_text(encoding="utf-8")
 
@@ -904,7 +945,8 @@ def test_tcn_probe_gpu1_launcher_fail_closes_and_runs_all_variants():
     assert "--scout-spatial-size 64" in text
     assert "TCN_VARIANTS=" in text
     assert "lite dilated multiscale motion residual gated separable_dilated causal_dilated" in text
-    assert "ms_tcnpp c2f_tcn asformer_lite fact_lite temporal_mamba_lite" in text
+    assert "ms_tcnpp c2f_tcn" in text
+    assert "asformer_lite fact_lite temporal_mamba_lite" not in text
     assert "--mobilenet-sizes" not in text
     assert "SLURM_STEP_GPUS" in text
 
@@ -939,6 +981,7 @@ def test_official_probe_and_download_launchers_tolerate_non_login_shell_module_a
     assert 'SLURM_STEP_GPUS must be GPU1' not in official_text
 
     assert "module command unavailable" in download_text
+    assert "OpenTAD_C3_CoarseClean_20260702" in download_text
     assert "CUDA_VISIBLE_DEVICES=\"\"" in download_text
     assert "c3_coarse_classifier_model_matrix.py" in download_text
 
@@ -952,6 +995,41 @@ def test_official_action_seg_watcher_waits_for_active_c3_full_train_gpu1_childre
     assert "c3_asformer_delta_ledger" in text
     assert "run_c3_asformer_delta_ledger_adatad_full_train_gpu1" in text
     assert "CUDA_VISIBLE_DEVICES=1" in text
+
+
+def test_current_gpu0_model_zoo_defaults_to_sparse_val_and_train_loss_early_stop():
+    text = CURRENT_MODEL_ZOO_GPU0_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'VAL_EVERY_EPOCHS="${VAL_EVERY_EPOCHS:-10}"' in text
+    assert 'EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-train_loss}"' in text
+    assert '--val-every-epochs "${VAL_EVERY_EPOCHS}"' in text
+
+
+def test_current_gpu0_model_zoo_skips_c3_readers_by_default():
+    text = CURRENT_MODEL_ZOO_GPU0_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'RUN_C3_READERS="${RUN_C3_READERS:-0}"' in text
+    assert 'TCN_VARIANTS="${TCN_VARIANTS:-lite dilated multiscale motion residual gated separable_dilated causal_dilated ms_tcnpp c2f_tcn}"' in text
+    assert 'OFFICIAL_BACKENDS="${OFFICIAL_BACKENDS:-official_video_mamba_asformer official_asformer official_fact official_ms_tcn2}"' in text
+    assert 'PRIORITY_OFFICIAL_BACKENDS="${PRIORITY_OFFICIAL_BACKENDS:-official_video_mamba_asformer official_asformer official_fact official_ms_tcn2}"' in text
+    assert "official_backend_available" in text
+    assert "will not fall back to local lite prototype" in text
+    assert "asformer_lite fact_lite temporal_mamba_lite" not in text
+    assert 'if [[ "${RUN_C3_READERS}" == "1" ]]; then' in text
+    assert 'record_skip "c3_reader_coarse_actionness"' in text
+    assert 'record_skip "c3_reader_boundary_difficulty"' in text
+    assert "run_mobilenet 32" in text
+    assert "for variant in ${TCN_VARIANTS}; do" in text
+    assert "for backend in ${OFFICIAL_BACKENDS}; do" in text
+
+
+def test_current_gpu0_model_zoo_uses_academic_proxy_for_weight_downloads():
+    text = CURRENT_MODEL_ZOO_GPU0_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'export TORCH_HOME="${TORCH_HOME:-${BASE}/model_zoo_cache/c3_coarse_classifier/torch}"' in text
+    assert 'export http_proxy="${http_proxy:-http://u-MtfrT7:vH5orjDV@10.244.6.36:3128}"' in text
+    assert 'export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy}}"' in text
+    assert 'export no_proxy="${no_proxy:-${NO_PROXY}}"' in text
 
 
 def test_matrix_model_directory_layout_is_model_specific():
@@ -987,6 +1065,14 @@ def test_parse_args_supports_probe_checkpoint_for_coverage_export():
 
     assert args.coverage_only is True
     assert args.probe_checkpoint == "probe_reader.pth"
+
+
+def test_early_stop_checkpoint_is_best_metric_checkpoint_not_last_epoch():
+    source = PROBE_PATH.read_text(encoding="utf-8")
+
+    assert "probe_reader.best.pth" in source
+    assert "checkpoint_source" in source
+    assert "shutil.copyfile(best_checkpoint_path, checkpoint_path)" in source
 
 
 def test_load_probe_checkpoint_calls_full_probe_load_state_dict(monkeypatch):
@@ -1413,6 +1499,32 @@ def test_tcn_variant_summary_exposes_per_variant_results():
     assert combined["comparison"]["average_precision_by_variant"]["lite"] == 0.55
     assert combined["comparison"]["best_indirect_strategy_by_variant"]["lite"] == "delta_p_action"
     assert combined["comparison"]["best_indirect_strategy_by_variant"]["motion"] == "weighted_transition_mix"
+
+
+def test_comparison_summaries_prefer_best_val_when_checkpoint_uses_best_epoch():
+    probe = load_probe_module()
+
+    combined = probe._combine_tcn_variant_summaries(
+        base_summary={"probe_model": "temporal-tcn"},
+        summaries=[
+            {
+                "tcn_variant": "lite",
+                "final_val": {"average_precision": 0.10, "roc_auc": 0.20},
+                "best_val": {"average_precision": 0.90, "roc_auc": 0.91},
+                "out_dir": "root/temporal_tcn_lite_64",
+            },
+            {
+                "tcn_variant": "motion",
+                "final_val": {"average_precision": 0.80, "roc_auc": 0.81},
+                "out_dir": "root/temporal_tcn_motion_64",
+            },
+        ],
+        args_out_dir=Path("root"),
+    )
+
+    assert combined["comparison"]["average_precision_by_variant"]["lite"] == 0.90
+    assert combined["comparison"]["roc_auc_by_variant"]["lite"] == 0.91
+    assert combined["comparison"]["best_average_precision_variant"] == "lite"
 
 
 def test_matrix_model_summary_exposes_per_model_results_and_failures():

@@ -23,6 +23,8 @@ dist/
 /figures/
 /local_artifacts/
 /tmp/
+/analysis_outputs/
+/.codex/
 *.pth
 *.pt
 *.ckpt

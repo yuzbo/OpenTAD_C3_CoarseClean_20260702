@@ -7,6 +7,7 @@ import json
 import math
 import os
 import random
+import shutil
 import sys
 import time
 import types
@@ -238,26 +239,30 @@ def _safe_div(numerator: Any, denominator: Any) -> float | None:
 
 def _resolve_early_stop_metric(metrics: Mapping[str, Any], metric_name: str) -> float | None:
     name = str(metric_name)
+    train_metrics = metrics.get("train") if isinstance(metrics.get("train"), Mapping) else metrics
+    val_metrics = metrics.get("val") if isinstance(metrics.get("val"), Mapping) else metrics
     value: Any
-    if name == "val_loss":
-        value = metrics.get("loss")
+    if name == "train_loss":
+        value = train_metrics.get("loss")
+    elif name == "val_loss":
+        value = val_metrics.get("loss")
     elif name == "val_average_precision":
-        value = metrics.get("average_precision")
+        value = val_metrics.get("average_precision")
     elif name == "val_roc_auc":
-        value = metrics.get("roc_auc")
+        value = val_metrics.get("roc_auc")
     elif name == "val_best_f1":
-        value = metrics.get("best_f1")
+        value = val_metrics.get("best_f1")
     elif name == "val_boundary_support_r1":
-        value = metrics.get("sampling_quality", {}).get("boundary_support_r1")
+        value = val_metrics.get("sampling_quality", {}).get("boundary_support_r1")
     elif name == "val_best_indirect_boundary_support_r1":
         strategy_values = (
-            metrics.get("indirect_selection_quality", {})
+            val_metrics.get("indirect_selection_quality", {})
             .get("strategy_comparison", {})
             .get("boundary_support_r1_by_strategy")
         )
         if not isinstance(strategy_values, Mapping):
             strategy_values = (
-                metrics.get("indirect_selection_quality", {})
+                val_metrics.get("indirect_selection_quality", {})
                 .get("strategy_comparison", {})
                 .get("boundary_support_by_strategy")
             )
@@ -289,6 +294,14 @@ def _resolve_early_stop_mode(metric_name: str, mode: str) -> str:
             raise ValueError("early stop mode must be auto, min, or max")
         return mode
     return "min" if str(metric_name).endswith("loss") else "max"
+
+
+def _should_run_validation(*, epoch: int, loop_epochs: int, val_every_epochs: int, coverage_only: bool) -> bool:
+    if coverage_only:
+        return True
+    interval = max(1, int(val_every_epochs))
+    current_epoch = int(epoch)
+    return current_epoch == int(loop_epochs) or current_epoch % interval == 0
 
 
 def _early_stop_improved(value: float, best: float | None, *, mode: str, min_delta: float) -> bool:
@@ -1835,10 +1848,19 @@ def _patch_official_video_mamba_blocks(blocks: Any) -> None:
     AffineDropPath = blocks.AffineDropPath
 
     def patched_init(self, n_embd, kernel_size=4, n_ds_stride=1, drop_path_rate=0.3):
+        import inspect
         import torch.nn as nn  # type: ignore
 
         nn.Module.__init__(self)
-        self.mamba = ViM(n_embd, d_conv=kernel_size, use_fast_path=False, bimamba_type="v2")
+        vim_kwargs = {"d_conv": kernel_size, "use_fast_path": False, "bimamba_type": "v2"}
+        try:
+            signature = inspect.signature(ViM)
+            accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values())
+            if not accepts_kwargs:
+                vim_kwargs = {key: value for key, value in vim_kwargs.items() if key in signature.parameters}
+        except (TypeError, ValueError):
+            pass
+        self.mamba = ViM(n_embd, **vim_kwargs)
         self.downsample = MaxPooler(kernel_size=3, stride=2, padding=1) if n_ds_stride > 1 else None
         self.norm = nn.LayerNorm(n_embd)
         self.drop_path = AffineDropPath(n_embd, drop_prob=drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
@@ -3052,10 +3074,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-train-batches", type=int, default=50, help="0 means no artificial train-batch cap.")
     parser.add_argument("--max-val-batches", type=int, default=50, help="0 means no artificial val-batch cap.")
     parser.add_argument(
+        "--val-every-epochs",
+        type=int,
+        default=1,
+        help="Run validation every N epochs; final epoch and coverage-only runs always evaluate.",
+    )
+    parser.add_argument(
         "--early-stop-patience",
         type=int,
         default=0,
-        help="Stop after this many non-improving validation epochs; 0 disables early stop.",
+        help="Stop after this many non-improving metric checks; 0 disables early stop.",
     )
     parser.add_argument(
         "--early-stop-min-epochs",
@@ -3073,6 +3101,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--early-stop-metric",
         default="val_loss",
         choices=(
+            "train_loss",
             "val_loss",
             "val_average_precision",
             "val_roc_auc",
@@ -3080,7 +3109,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "val_boundary_support_r1",
             "val_best_indirect_boundary_support_r1",
         ),
-        help="Validation metric used by early stop.",
+        help="Training or validation metric used by early stop.",
     )
     parser.add_argument(
         "--early-stop-mode",
@@ -3116,6 +3145,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--max-train-batches must be >= 0")
     if int(args.max_val_batches) < 0:
         parser.error("--max-val-batches must be >= 0")
+    if int(args.val_every_epochs) < 1:
+        parser.error("--val-every-epochs must be >= 1")
     if int(args.early_stop_patience) < 0:
         parser.error("--early-stop-patience must be >= 0")
     if int(args.early_stop_min_epochs) < 0:
@@ -3254,6 +3285,16 @@ def _probe_out_dir(
     return base_out_dir
 
 
+def _summary_eval_metrics(summary: Mapping[str, Any]) -> Mapping[str, Any]:
+    best_val = summary.get("best_val")
+    if isinstance(best_val, Mapping):
+        return best_val
+    final_val = summary.get("final_val")
+    if isinstance(final_val, Mapping):
+        return final_val
+    return {}
+
+
 def _combine_multisize_summaries(*, base_summary: Mapping[str, Any], summaries: Sequence[Mapping[str, Any]], args_out_dir: Path) -> dict[str, Any]:
     combined: dict[str, Any] = {
         "schema_version": "lowres_action_probe_multisize_v1",
@@ -3276,8 +3317,8 @@ def _combine_multisize_summaries(*, base_summary: Mapping[str, Any], summaries: 
         summary_by_size[int(size)] = summary
         combined[f"mobilenetv3_{int(size)}"] = summary
     if 32 in summary_by_size and 64 in summary_by_size:
-        final32 = summary_by_size[32].get("final_val", {})
-        final64 = summary_by_size[64].get("final_val", {})
+        final32 = _summary_eval_metrics(summary_by_size[32])
+        final64 = _summary_eval_metrics(summary_by_size[64])
         ap32 = final32.get("average_precision")
         ap64 = final64.get("average_precision")
         roc32 = final32.get("roc_auc")
@@ -3336,7 +3377,7 @@ def _combine_tcn_variant_summaries(*, base_summary: Mapping[str, Any], summaries
         variant = str(variant)
         combined["tcn_variants"].append(variant)
         combined[f"temporal_tcn_{variant}"] = summary
-        final_val = summary.get("final_val", {})
+        final_val = _summary_eval_metrics(summary)
         average_precision_by_variant[variant] = final_val.get("average_precision")
         roc_auc_by_variant[variant] = final_val.get("roc_auc")
         balanced_accuracy_by_variant[variant] = final_val.get("balanced_accuracy")
@@ -3401,7 +3442,7 @@ def _combine_matrix_model_summaries(*, base_summary: Mapping[str, Any], summarie
         if summary.get("status") == "failed":
             failed_models[model_id] = summary.get("error")
             continue
-        final_val = summary.get("final_val", {})
+        final_val = _summary_eval_metrics(summary)
         ap_by_model[model_id] = final_val.get("average_precision")
         roc_by_model[model_id] = final_val.get("roc_auc")
         f1_by_model[model_id] = final_val.get("best_f1")
@@ -3453,7 +3494,7 @@ def _combine_official_action_seg_summaries(*, base_summary: Mapping[str, Any], s
         backend = str(backend)
         combined["official_action_seg_backends"].append(backend)
         combined[f"official_action_seg_{backend}"] = summary
-        final_val = summary.get("final_val", {})
+        final_val = _summary_eval_metrics(summary)
         ap_by_backend[backend] = final_val.get("average_precision")
         roc_by_backend[backend] = final_val.get("roc_auc")
         f1_by_backend[backend] = final_val.get("best_f1")
@@ -3573,8 +3614,12 @@ def _run_probe_experiment(
     )
     sample_jsonl_path = Path(run_args.sample_jsonl) if run_args.sample_jsonl and not multi_variant else out_dir / "samples.jsonl"
     progress_path = out_dir / "progress.jsonl"
+    checkpoint_path = out_dir / "probe_reader.pth"
+    best_checkpoint_path = out_dir / "probe_reader.best.pth"
     if progress_path.exists():
         progress_path.unlink()
+    if args.save_checkpoint and best_checkpoint_path.exists():
+        best_checkpoint_path.unlink()
     total_epochs = int(args.epochs)
     _emit_progress(
         progress_path,
@@ -3586,6 +3631,7 @@ def _run_probe_experiment(
         val_batches=len(val_loader) if hasattr(val_loader, "__len__") else None,
         max_train_batches=int(args.max_train_batches),
         max_val_batches=int(args.max_val_batches),
+        val_every_epochs=int(args.val_every_epochs),
         batch_size=int(args.batch_size),
         num_workers=int(args.num_workers),
         seed=int(seed),
@@ -3611,10 +3657,15 @@ def _run_probe_experiment(
     loop_epochs = 1 if args.coverage_only else total_epochs
     early_stop_mode = _resolve_early_stop_mode(args.early_stop_metric, args.early_stop_mode)
     early_stop_best: float | None = None
+    early_stop_best_epoch: int | None = None
+    early_stop_best_val: Any = None
+    early_stop_best_train: Any = None
     early_stop_bad_epochs = 0
     early_stop_triggered = False
     early_stop_epoch: int | None = None
     early_stop_reason: str | None = None
+    best_checkpoint_saved = False
+    last_val_epoch: int | None = None
     for _epoch in range(loop_epochs):
         epoch = _epoch + 1
         if args.coverage_only:
@@ -3638,42 +3689,87 @@ def _run_probe_experiment(
                 matrix_model_id=active_matrix_model_id,
                 official_action_seg_backend=active_official_backend,
             )
-        val_metrics = evaluate(
-            model=model,
-            dataloader=val_loader,
-            device=device,
-            scout_spatial_size=int(spatial_size),
-            probe_model=run_args.probe_model,
-            max_batches=int(args.max_val_batches),
+        val_ran = _should_run_validation(
             epoch=epoch,
-            total_epochs=loop_epochs,
-            progress_path=progress_path,
-            log_every_batches=int(args.log_every_batches),
-            coverage_budget_fraction=float(args.coverage_budget_fraction),
-            coverage_budget=args.coverage_budget,
-            boundary_radius=int(args.boundary_radius),
-            sample_jsonl_path=sample_jsonl_path,
-            tcn_variant=active_tcn_variant,
-            matrix_model_id=active_matrix_model_id,
-            official_action_seg_backend=active_official_backend,
+            loop_epochs=loop_epochs,
+            val_every_epochs=int(args.val_every_epochs),
+            coverage_only=bool(args.coverage_only),
         )
-        compact_val_metrics = _compact_metric_payload(val_metrics)
-        history.append({"epoch": epoch, "train": train_stats, "val": compact_val_metrics})
-        early_stop_value = _resolve_early_stop_metric(val_metrics, args.early_stop_metric)
+        if val_ran:
+            val_metrics = evaluate(
+                model=model,
+                dataloader=val_loader,
+                device=device,
+                scout_spatial_size=int(spatial_size),
+                probe_model=run_args.probe_model,
+                max_batches=int(args.max_val_batches),
+                epoch=epoch,
+                total_epochs=loop_epochs,
+                progress_path=progress_path,
+                log_every_batches=int(args.log_every_batches),
+                coverage_budget_fraction=float(args.coverage_budget_fraction),
+                coverage_budget=args.coverage_budget,
+                boundary_radius=int(args.boundary_radius),
+                sample_jsonl_path=sample_jsonl_path,
+                tcn_variant=active_tcn_variant,
+                matrix_model_id=active_matrix_model_id,
+                official_action_seg_backend=active_official_backend,
+            )
+            last_val_epoch = int(epoch)
+            compact_val_metrics = _compact_metric_payload(val_metrics)
+            current_val_metrics: Mapping[str, Any] = val_metrics
+        else:
+            compact_val_metrics = None
+            current_val_metrics = {}
+            _emit_progress(
+                progress_path,
+                "val_epoch_skipped",
+                epoch=epoch,
+                total_epochs=loop_epochs,
+                val_every_epochs=int(args.val_every_epochs),
+                next_val_epoch=min(
+                    loop_epochs,
+                    int(args.val_every_epochs) * ((epoch // int(args.val_every_epochs)) + 1),
+                ),
+                last_val_epoch=last_val_epoch,
+                tcn_variant=active_tcn_variant,
+                matrix_model_id=active_matrix_model_id,
+                official_action_seg_backend=active_official_backend,
+            )
+        history.append(
+            {
+                "epoch": epoch,
+                "train": train_stats,
+                "val": compact_val_metrics,
+                "val_ran": bool(val_ran),
+                "last_val_epoch": last_val_epoch,
+            }
+        )
+        early_stop_value = _resolve_early_stop_metric(
+            {"train": train_stats, "val": current_val_metrics},
+            args.early_stop_metric,
+        )
         if not args.coverage_only and int(args.early_stop_patience) > 0:
-            improved = (
-                early_stop_value is not None
-                and _early_stop_improved(
+            metric_available = early_stop_value is not None
+            improved = False
+            if metric_available:
+                improved = _early_stop_improved(
                     early_stop_value,
                     early_stop_best,
                     mode=early_stop_mode,
                     min_delta=float(args.early_stop_min_delta),
                 )
-            )
             if improved:
                 early_stop_best = float(early_stop_value)
+                early_stop_best_epoch = int(epoch)
+                early_stop_best_val = compact_val_metrics
+                early_stop_best_train = _compact_metric_payload(train_stats)
                 early_stop_bad_epochs = 0
-            else:
+                if args.save_checkpoint:
+                    best_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(model.state_dict(), best_checkpoint_path)
+                    best_checkpoint_saved = True
+            elif metric_available:
                 early_stop_bad_epochs += 1
             _emit_progress(
                 progress_path,
@@ -3689,16 +3785,23 @@ def _run_probe_experiment(
                 min_epochs=int(args.early_stop_min_epochs),
                 min_delta=float(args.early_stop_min_delta),
                 improved=bool(improved),
+                skipped=None if metric_available else "metric_unavailable",
+                val_ran=bool(val_ran),
+                last_val_epoch=last_val_epoch,
                 tcn_variant=active_tcn_variant,
                 matrix_model_id=active_matrix_model_id,
                 official_action_seg_backend=active_official_backend,
             )
-            if epoch >= int(args.early_stop_min_epochs) and early_stop_bad_epochs >= int(args.early_stop_patience):
+            if (
+                metric_available
+                and epoch >= int(args.early_stop_min_epochs)
+                and early_stop_bad_epochs >= int(args.early_stop_patience)
+            ):
                 early_stop_triggered = True
                 early_stop_epoch = int(epoch)
                 early_stop_reason = (
                     f"{args.early_stop_metric} did not improve for "
-                    f"{early_stop_bad_epochs} validation epochs"
+                    f"{early_stop_bad_epochs} metric checks"
                 )
                 _emit_progress(
                     progress_path,
@@ -3707,12 +3810,14 @@ def _run_probe_experiment(
                     total_epochs=loop_epochs,
                     train_loss=train_stats.get("loss"),
                     train_batches=train_stats.get("batches"),
-                    val_loss=val_metrics.get("loss"),
-                    val_roc_auc=val_metrics.get("roc_auc"),
-                    val_average_precision=val_metrics.get("average_precision"),
-                    val_best_f1=val_metrics.get("best_f1"),
-                    val_positive_rate=val_metrics.get("positive_rate"),
-                    val_batches=val_metrics.get("batches"),
+                    val_ran=bool(val_ran),
+                    last_val_epoch=last_val_epoch,
+                    val_loss=current_val_metrics.get("loss"),
+                    val_roc_auc=current_val_metrics.get("roc_auc"),
+                    val_average_precision=current_val_metrics.get("average_precision"),
+                    val_best_f1=current_val_metrics.get("best_f1"),
+                    val_positive_rate=current_val_metrics.get("positive_rate"),
+                    val_batches=current_val_metrics.get("batches"),
                     tcn_variant=active_tcn_variant,
                     matrix_model_id=active_matrix_model_id,
                     official_action_seg_backend=active_official_backend,
@@ -3729,6 +3834,8 @@ def _run_probe_experiment(
                     bad_epochs=early_stop_bad_epochs,
                     patience=int(args.early_stop_patience),
                     reason=early_stop_reason,
+                    val_ran=bool(val_ran),
+                    last_val_epoch=last_val_epoch,
                     tcn_variant=active_tcn_variant,
                     matrix_model_id=active_matrix_model_id,
                     official_action_seg_backend=active_official_backend,
@@ -3741,12 +3848,15 @@ def _run_probe_experiment(
             total_epochs=loop_epochs,
             train_loss=train_stats.get("loss"),
             train_batches=train_stats.get("batches"),
-            val_loss=val_metrics.get("loss"),
-            val_roc_auc=val_metrics.get("roc_auc"),
-            val_average_precision=val_metrics.get("average_precision"),
-            val_best_f1=val_metrics.get("best_f1"),
-            val_positive_rate=val_metrics.get("positive_rate"),
-            val_batches=val_metrics.get("batches"),
+            val_ran=bool(val_ran),
+            last_val_epoch=last_val_epoch,
+            val_every_epochs=int(args.val_every_epochs),
+            val_loss=current_val_metrics.get("loss"),
+            val_roc_auc=current_val_metrics.get("roc_auc"),
+            val_average_precision=current_val_metrics.get("average_precision"),
+            val_best_f1=current_val_metrics.get("best_f1"),
+            val_positive_rate=current_val_metrics.get("positive_rate"),
+            val_batches=current_val_metrics.get("batches"),
             tcn_variant=active_tcn_variant,
             matrix_model_id=active_matrix_model_id,
             official_action_seg_backend=active_official_backend,
@@ -3757,17 +3867,34 @@ def _run_probe_experiment(
         "enabled": bool(int(args.early_stop_patience) > 0 and not args.coverage_only),
         "triggered": bool(early_stop_triggered),
         "epoch": early_stop_epoch,
+        "best_epoch": early_stop_best_epoch,
         "reason": early_stop_reason,
         "metric": str(args.early_stop_metric),
         "mode": early_stop_mode,
         "best": early_stop_best,
+        "best_train": early_stop_best_train,
         "bad_epochs": int(early_stop_bad_epochs),
         "patience": int(args.early_stop_patience),
         "min_epochs": int(args.early_stop_min_epochs),
         "min_delta": float(args.early_stop_min_delta),
         "max_epochs": int(total_epochs),
         "completed_epochs": len(history),
+        "last_val_epoch": last_val_epoch,
+        "val_every_epochs": int(args.val_every_epochs),
     }
+    checkpoint_source = None
+    checkpoint_epoch = None
+    checkpoint_metric = None
+    checkpoint_metric_value = None
+    if args.save_checkpoint:
+        if best_checkpoint_saved and best_checkpoint_path.exists():
+            checkpoint_source = "best_early_stop_metric"
+            checkpoint_epoch = early_stop_best_epoch
+            checkpoint_metric = str(args.early_stop_metric)
+            checkpoint_metric_value = early_stop_best
+        else:
+            checkpoint_source = "final_epoch"
+            checkpoint_epoch = len(history)
     summary = {
         "schema_version": "c3_lowres_action_probe_v0",
         "purpose": "diagnostic_only_action_vs_background_frame_probe",
@@ -3795,6 +3922,7 @@ def _run_probe_experiment(
         "coverage_budget": args.coverage_budget,
         "coverage_budget_fraction": float(args.coverage_budget_fraction),
         "boundary_radius": int(args.boundary_radius),
+        "val_every_epochs": int(args.val_every_epochs),
         "seed": int(seed),
         "mobilenet_weights_path": str(run_args.mobilenet_weights_path) if run_args.probe_model == "mobilenetv3" else None,
         "probe_checkpoint": str(run_args.probe_checkpoint) if run_args.probe_checkpoint else None,
@@ -3806,12 +3934,21 @@ def _run_probe_experiment(
         "matrix_video_clip_len": int(run_args.matrix_video_clip_len) if run_args.probe_model == MATRIX_ZOO_PROBE_MODEL else None,
         "matrix_video_anchor_stride": int(run_args.matrix_video_anchor_stride) if run_args.probe_model == MATRIX_ZOO_PROBE_MODEL else None,
         "early_stop": early_stop_summary,
+        "best_val": early_stop_best_val,
         "history": history,
         "final_val": final_val,
+        "checkpoint_source": checkpoint_source,
+        "checkpoint_epoch": checkpoint_epoch,
+        "checkpoint_metric": checkpoint_metric,
+        "checkpoint_metric_value": checkpoint_metric_value,
+        "checkpoint_path": str(checkpoint_path) if args.save_checkpoint else None,
     }
     _write_json(out_dir / "summary.json", summary)
     if args.save_checkpoint:
-        torch.save({"probe_state_dict": model.state_dict(), "summary": summary}, out_dir / "probe_reader.pth")
+        if best_checkpoint_saved and best_checkpoint_path.exists():
+            shutil.copyfile(best_checkpoint_path, checkpoint_path)
+        else:
+            torch.save({"probe_state_dict": model.state_dict(), "summary": summary}, checkpoint_path)
     _emit_progress(progress_path, "run_end", final_val=final_val, summary_path=str(out_dir / "summary.json"))
     print(json.dumps(summary["final_val"], indent=2, sort_keys=True))
     return summary
