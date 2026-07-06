@@ -19,7 +19,7 @@ SEED="${SEED:-0}"
 MASTER_PORT="${MASTER_PORT:-30510}"
 CONFIG="${CONFIG:-configs/adatad/thumos/c3_dense_adatad_teacher_full_train.py}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
-ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}"
+ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_DENSE_TEACHER_ADATAD_PRETRAIN_PATH:-${BASE}/retrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 case "${CUDA_VISIBLE_DEVICES}" in
@@ -61,6 +61,13 @@ require_file() {
 }
 
 ADATAD_PRETRAIN_PATH="$(resolve_path "${ADATAD_PRETRAIN_PATH}")"
+if [[ ! -f "${ADATAD_PRETRAIN_PATH}" && -f "${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}" ]]; then
+  ADATAD_PRETRAIN_PATH="$(readlink -f "${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}")"
+fi
+if [[ ! -f "${ADATAD_PRETRAIN_PATH}" && -f "${REPO_ROOT}/pretrained/${ADATAD_PRETRAIN_FILENAME}" ]]; then
+  ADATAD_PRETRAIN_PATH="$(readlink -f "${REPO_ROOT}/pretrained/${ADATAD_PRETRAIN_FILENAME}")"
+fi
+export C3_DENSE_TEACHER_ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH}"
 require_file "${CONFIG}"
 require_file "${ADATAD_PRETRAIN_PATH}"
 require_file "${THUMOS14_ANNOTATION_PATH}"

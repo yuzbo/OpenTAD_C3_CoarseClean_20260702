@@ -55,5 +55,8 @@ def test_dense_teacher_launcher_is_precheck_default_and_slurm_gated() -> None:
     assert "ALLOW_C3_DENSE_TEACHER_FULLTRAIN" in text
     assert "full dense teacher training must run inside a Slurm allocation/step" in text
     assert "C3_DENSE_ADATAD_TEACHER_PRECHECK_PASS" in text
+    assert "${BASE}/retrained/${ADATAD_PRETRAIN_FILENAME}" in text
+    assert "${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}" in text
+    assert "C3_DENSE_TEACHER_ADATAD_PRETRAIN_PATH" in text
     assert "CUDA_VISIBLE_DEVICES" in text
     assert "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" in text
