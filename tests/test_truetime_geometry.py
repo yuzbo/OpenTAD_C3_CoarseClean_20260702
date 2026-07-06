@@ -1,8 +1,81 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import torch
+import torch.nn as nn
 
 import pytest
+
+
+def _install_mmaction_registry_shim() -> None:
+    if "mmaction.registry" in sys.modules:
+        return
+
+    class _RegistryShim:
+        def register_module(self, *args, **kwargs):
+            def _decorator(cls):
+                return cls
+
+            if args and isinstance(args[0], type):
+                return args[0]
+            return _decorator
+
+    mmaction = types.ModuleType("mmaction")
+    mmaction.__version__ = "test-shim"
+    mmaction.__path__ = []
+    registry = types.ModuleType("mmaction.registry")
+    registry.MODELS = _RegistryShim()
+    utils = types.ModuleType("mmaction.utils")
+    utils.ConfigType = dict
+    utils.OptConfigType = object
+    models = types.ModuleType("mmaction.models")
+    models.__path__ = []
+    backbones = types.ModuleType("mmaction.models.backbones")
+    backbones.__path__ = []
+    swin = types.ModuleType("mmaction.models.backbones.swin")
+    vit_mae = types.ModuleType("mmaction.models.backbones.vit_mae")
+
+    class _UnusedBackboneShim(nn.Module):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+    def _unused(*args, **kwargs):
+        raise RuntimeError("mmaction swin shim should not be executed in TrueTime focused tests")
+
+    swin.PatchEmbed3D = _UnusedBackboneShim
+    swin.PatchMerging = _UnusedBackboneShim
+    swin.WindowAttention3D = _UnusedBackboneShim
+    swin.Mlp = _UnusedBackboneShim
+    swin.get_window_size = _unused
+    swin.compute_mask = _unused
+    swin.window_partition = _unused
+    swin.window_reverse = _unused
+    vit_mae.get_sinusoid_encoding = _unused
+    nms_1d_cpu = types.ModuleType("nms_1d_cpu")
+    nms_1d_cpu.nms = _unused
+    nms_1d_cpu.softnms = _unused
+    align_1d = types.ModuleType("Align1D")
+    align_1d.forward = _unused
+    align_1d.backward = _unused
+    boundary_max_pooling_cuda = types.ModuleType("boundary_max_pooling_cuda")
+    boundary_max_pooling_cuda.forward = _unused
+    boundary_max_pooling_cuda.backward = _unused
+
+    sys.modules["mmaction"] = mmaction
+    sys.modules["mmaction.registry"] = registry
+    sys.modules["mmaction.utils"] = utils
+    sys.modules["mmaction.models"] = models
+    sys.modules["mmaction.models.backbones"] = backbones
+    sys.modules["mmaction.models.backbones.swin"] = swin
+    sys.modules["mmaction.models.backbones.vit_mae"] = vit_mae
+    sys.modules.setdefault("nms_1d_cpu", nms_1d_cpu)
+    sys.modules.setdefault("Align1D", align_1d)
+    sys.modules.setdefault("boundary_max_pooling_cuda", boundary_max_pooling_cuda)
+
+
+_install_mmaction_registry_shim()
 
 from opentad.models.utils.truetime_geometry import (
     TrueTimeMap,
