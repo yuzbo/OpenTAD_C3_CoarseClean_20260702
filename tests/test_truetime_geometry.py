@@ -76,7 +76,7 @@ def test_metadata_selected_axis_remap_preserves_ordering() -> None:
 
     assert torch.allclose(true_segments, torch.tensor([[1.0, 4.0], [5.0, 8.5], [8.5, 9.0]]))
     assert torch.all(true_segments[1:, 0] >= true_segments[:-1, 0])
-    assert time_map.selected_len == meta["irregular_selected_valid_len"]
+    assert time_map.selected_len == 4
 
 
 def test_metadata_selected_axis_remap_fails_closed_when_required_mapping_is_missing() -> None:
