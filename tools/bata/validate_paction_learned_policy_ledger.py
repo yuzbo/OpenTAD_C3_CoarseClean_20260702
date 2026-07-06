@@ -13,6 +13,7 @@ from tools.bata import paction_source_samples
 
 SUMMARY_SCHEMA_VERSION = "c3_paction_learned_policy_ledger_validation_v1"
 READY = "C3_PACTION_LEARNED_POLICY_LEDGER_VALIDATION_PASS"
+GAS_VT_CHECKPOINT_POLICY_SOURCE = "learned_paction_gas_vt_policy_checkpoint"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -168,6 +169,39 @@ def _mean(values: Sequence[float]) -> float | None:
     return sum(float(item) for item in values) / float(len(values))
 
 
+def _median(sorted_values: Sequence[float]) -> float:
+    if not sorted_values:
+        return 0.0
+    mid = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return float(sorted_values[mid])
+    return (float(sorted_values[mid - 1]) + float(sorted_values[mid])) / 2.0
+
+
+def _iqr(values: Sequence[int]) -> float:
+    if not values:
+        return 0.0
+    sorted_values = [float(item) for item in sorted(values)]
+    mid = len(sorted_values) // 2
+    lower = sorted_values[:mid] or sorted_values
+    upper = sorted_values[mid + (len(sorted_values) % 2) :] or sorted_values
+    return _median(upper) - _median(lower)
+
+
+def _entropy(values: Sequence[int]) -> float:
+    if not values:
+        return 0.0
+    counts: dict[int, int] = {}
+    for value in values:
+        counts[int(value)] = counts.get(int(value), 0) + 1
+    total = float(len(values))
+    entropy = 0.0
+    for count in counts.values():
+        probability = float(count) / total
+        entropy -= probability * math.log(probability, 2)
+    return entropy
+
+
 def _boundaries(sample_row: Mapping[str, Any]) -> list[float]:
     raw = sample_row.get("gt_boundaries")
     if raw is None:
@@ -189,6 +223,71 @@ def _action_target(sample_row: Mapping[str, Any]) -> list[float]:
     if isinstance(raw, list):
         return [float(item) for item in raw]
     return []
+
+
+def _p_action_values(sample_row: Mapping[str, Any]) -> list[float]:
+    frame_signals = sample_row.get("frame_signals")
+    if isinstance(frame_signals, Mapping) and isinstance(frame_signals.get("p_action"), list):
+        return [float(item) for item in frame_signals["p_action"]]
+    if isinstance(sample_row.get("p_action"), list):
+        return [float(item) for item in sample_row["p_action"]]
+    return []
+
+
+def _rankdata(values: Sequence[float]) -> list[float]:
+    order = sorted(range(len(values)), key=lambda idx: (float(values[idx]), idx))
+    ranks = [0.0 for _ in values]
+    cursor = 0
+    while cursor < len(order):
+        end = cursor + 1
+        while end < len(order) and float(values[order[end]]) == float(values[order[cursor]]):
+            end += 1
+        rank = (cursor + end - 1) / 2.0
+        for idx in order[cursor:end]:
+            ranks[idx] = rank
+        cursor = end
+    return ranks
+
+
+def _spearman(x_values: Sequence[float], y_values: Sequence[float]) -> float | None:
+    if len(x_values) != len(y_values) or len(x_values) < 2:
+        return None
+    x_ranks = _rankdata(x_values)
+    y_ranks = _rankdata(y_values)
+    x_mean = sum(x_ranks) / float(len(x_ranks))
+    y_mean = sum(y_ranks) / float(len(y_ranks))
+    numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_ranks, y_ranks))
+    x_var = sum((x - x_mean) ** 2 for x in x_ranks)
+    y_var = sum((y - y_mean) ** 2 for y in y_ranks)
+    denom = math.sqrt(x_var * y_var)
+    if denom <= 0:
+        return None
+    return numerator / denom
+
+
+def _action_interior_bin_coverage(action_target: Sequence[float], selected: Sequence[int], *, valid_len: int, bins: int = 4) -> tuple[int, int]:
+    selected_set = {int(item) for item in selected}
+    covered = 0
+    total = 0
+    idx = 0
+    valid_target = [float(item) for item in action_target[: int(valid_len)]]
+    while idx < len(valid_target):
+        if valid_target[idx] < 0.5:
+            idx += 1
+            continue
+        start = idx
+        while idx < len(valid_target) and valid_target[idx] >= 0.5:
+            idx += 1
+        end = idx - 1
+        width = end - start + 1
+        bin_count = min(int(bins), width)
+        for bin_idx in range(bin_count):
+            left = start + int(math.floor(bin_idx * width / float(bin_count)))
+            right = start + int(math.ceil((bin_idx + 1) * width / float(bin_count))) - 1
+            total += 1
+            if any(left <= pos <= right for pos in selected_set):
+                covered += 1
+    return covered, total
 
 
 def _validate_paction_positive_provenance(
@@ -225,6 +324,7 @@ def validate_ledger(
     require_checkpoint_sha256: str | None = None,
     require_paction_provenance: bool = False,
     summary_json: str | Path | None = None,
+    max_hole_top10_csv: str | Path | None = None,
 ) -> dict[str, Any]:
     sample_by_id = _sample_map(_read_jsonl(sample_jsonl))
     metric_by_id = _sample_map(_read_jsonl(metric_sample_jsonl)) if metric_sample_jsonl is not None else sample_by_id
@@ -243,8 +343,13 @@ def validate_ledger(
         radii = [int(boundary_radius)]
     radii = sorted(set(radii))
     boundary_hits_by_radius = {int(radius): 0 for radius in radii}
+    boundary_bracket_hits_by_radius = {int(radius): 0 for radius in radii}
     action_selected = 0
     action_total = 0
+    action_bin_selected = 0
+    action_bin_total = 0
+    spearman_values: list[float] = []
+    hole_rows: list[dict[str, Any]] = []
     total_uniform_fill = 0
     for line_no, row in enumerate(ledger_rows, start=1):
         sample_id = row.get("sample_id")
@@ -287,26 +392,29 @@ def validate_ledger(
             if _is_true(sample_row.get(key, False)):
                 raise ValueError(f"{sample_jsonl}:{sample_id}: forbidden sample flag {key}=true")
         paction_policy = sample_row.get("paction_policy")
-        if isinstance(paction_policy, Mapping):
-            if paction_policy.get("uses_uniform_fill") is not False:
-                raise ValueError(f"{sample_jsonl}:{sample_id}: paction_policy uses_uniform_fill must be false")
-            if paction_policy.get("uses_uniform_scaffold") is not False:
-                raise ValueError(f"{sample_jsonl}:{sample_id}: paction_policy uses_uniform_scaffold must be false")
-            if require_policy_source is not None and paction_policy.get("source") != str(require_policy_source):
+        gas_vt_policy = sample_row.get("gas_vt_policy")
+        policy_metadata = paction_policy if isinstance(paction_policy, Mapping) else gas_vt_policy
+        if isinstance(policy_metadata, Mapping):
+            if policy_metadata.get("uses_uniform_fill") is not False:
+                raise ValueError(f"{sample_jsonl}:{sample_id}: policy uses_uniform_fill must be false")
+            if policy_metadata.get("uses_uniform_scaffold") is not False:
+                raise ValueError(f"{sample_jsonl}:{sample_id}: policy uses_uniform_scaffold must be false")
+            if require_policy_source is not None and policy_metadata.get("source") != str(require_policy_source):
                 raise ValueError(
                     f"{sample_jsonl}:{sample_id}: paction_policy.source must be {require_policy_source}"
                 )
-            if require_checkpoint_path is not None and str(paction_policy.get("checkpoint_path")) != str(require_checkpoint_path):
+            if require_checkpoint_path is not None and str(policy_metadata.get("checkpoint_path")) != str(require_checkpoint_path):
                 raise ValueError(
                     f"{sample_jsonl}:{sample_id}: paction_policy.checkpoint_path must be {require_checkpoint_path}"
                 )
-            if require_checkpoint_sha256 is not None and paction_policy.get("checkpoint_sha256") != str(require_checkpoint_sha256):
+            metadata_sha = policy_metadata.get("checkpoint_sha256") or policy_metadata.get("policy_checkpoint_sha256")
+            if require_checkpoint_sha256 is not None and metadata_sha != str(require_checkpoint_sha256):
                 raise ValueError(
                     f"{sample_jsonl}:{sample_id}: paction_policy.checkpoint_sha256 mismatch"
                 )
             if require_paction_provenance:
                 _validate_paction_positive_provenance(
-                    paction_policy,
+                    policy_metadata,
                     source_name=f"{sample_jsonl}:{sample_id}",
                 )
         elif require_policy_source is not None or require_checkpoint_path is not None or require_paction_provenance:
@@ -339,6 +447,17 @@ def validate_ledger(
         holes = _unselected_holes(selected, valid_len=valid_len)
         all_unselected_holes.extend(holes)
         max_hole = max(max_hole, max(holes) if holes else 0)
+        row_max_hole = max(holes) if holes else 0
+        video_name = str(sample_id).split("|", 1)[0]
+        hole_rows.append(
+            {
+                "video_name": video_name,
+                "sample_id": str(sample_id),
+                "max_unselected_hole": int(row_max_hole),
+                "selected_count": len(selected),
+                "valid_len": int(valid_len),
+            }
+        )
         uniform_similarities.append(_uniform_similarity(selected, valid_len=valid_len))
         selected_counts.append(len(selected))
         boundaries = _boundaries(metric_row)
@@ -350,18 +469,36 @@ def validate_ledger(
             for radius in radii:
                 if any(abs(item - boundary) <= float(radius) for item in selected_float):
                     boundary_hits_by_radius[int(radius)] += 1
+                left_hit = any((boundary - float(radius)) <= item < boundary for item in selected_float)
+                right_hit = any(boundary < item <= (boundary + float(radius)) for item in selected_float)
+                if left_hit and right_hit:
+                    boundary_bracket_hits_by_radius[int(radius)] += 1
         target = _action_target(metric_row)
         if target:
             valid_target = target[:valid_len]
             positive = {idx for idx, value in enumerate(valid_target) if float(value) >= 0.5}
             action_total += len(positive)
             action_selected += len(positive.intersection(set(selected)))
+            bin_hit, bin_total = _action_interior_bin_coverage(valid_target, selected, valid_len=valid_len)
+            action_bin_selected += bin_hit
+            action_bin_total += bin_total
+        p_values = _p_action_values(metric_row)
+        if p_values:
+            selected_mask = [1.0 if idx in set(selected) else 0.0 for idx in range(min(valid_len, len(p_values)))]
+            corr = _spearman(p_values[: len(selected_mask)], selected_mask)
+            if corr is not None:
+                spearman_values.append(float(corr))
     boundary_support = None if boundary_total <= 0 else boundary_hits / float(boundary_total)
     boundary_support_by_radius = {
         int(radius): None if boundary_total <= 0 else hits / float(boundary_total)
         for radius, hits in boundary_hits_by_radius.items()
     }
+    boundary_bracket_support_by_radius = {
+        int(radius): None if boundary_total <= 0 else hits / float(boundary_total)
+        for radius, hits in boundary_bracket_hits_by_radius.items()
+    }
     action_coverage = None if action_total <= 0 else action_selected / float(action_total)
+    action_interior_bin_coverage = None if action_bin_total <= 0 else action_bin_selected / float(action_bin_total)
     if require_nonconstant_selected_count and len(set(selected_counts)) <= 1:
         raise ValueError("selected_count is constant; dynamic budget ledger is degenerate")
     if min_boundary_support is not None and boundary_support is not None and boundary_support < float(min_boundary_support):
@@ -419,9 +556,20 @@ def validate_ledger(
         "max_unselected_hole": int(max_hole),
         "p95_unselected_hole": p95_unselected_hole,
         "mean_uniform_similarity": mean_uniform_similarity,
+        "meanK_matched_uniform_similarity": mean_uniform_similarity,
         "max_uniform_similarity": max_observed_uniform_similarity,
         f"boundary_support_r{int(boundary_radius)}": boundary_support,
+        f"boundary_support@r{int(boundary_radius)}": boundary_support,
         "action_positive_coverage": action_coverage,
+        "action_interior_bin_coverage": action_interior_bin_coverage,
+        "p_action_rank_spearman": _mean(spearman_values),
+        "dynamic_budget_entropy": _entropy(selected_counts),
+        "dynamic_budget_iqr": _iqr(selected_counts),
+        "max_hole_by_video_top10": sorted(
+            hole_rows,
+            key=lambda item: (int(item["max_unselected_hole"]), str(item["sample_id"])),
+            reverse=True,
+        )[:10],
         "total_uniform_visible_fill_count": int(total_uniform_fill),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
@@ -437,6 +585,20 @@ def validate_ledger(
     }
     for radius, value in boundary_support_by_radius.items():
         summary[f"boundary_support_r{int(radius)}"] = value
+        summary[f"boundary_support@r{int(radius)}"] = value
+    for radius, value in boundary_bracket_support_by_radius.items():
+        summary[f"boundary_bracket_support_r{int(radius)}"] = value
+        summary[f"boundary_bracket_support@r{int(radius)}"] = value
+    if max_hole_top10_csv is not None:
+        csv_path = Path(max_hole_top10_csv).expanduser()
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        top_rows = summary["max_hole_by_video_top10"]
+        lines = ["video_name,sample_id,max_unselected_hole,selected_count,valid_len"]
+        for item in top_rows:
+            lines.append(
+                f"{item['video_name']},{item['sample_id']},{item['max_unselected_hole']},{item['selected_count']},{item['valid_len']}"
+            )
+        csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     if summary_json is not None:
         _write_json(summary_json, summary)
     return summary
@@ -467,6 +629,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--require-checkpoint-sha256")
     parser.add_argument("--require-paction-provenance", action="store_true")
     parser.add_argument("--summary-json")
+    parser.add_argument("--max-hole-top10-csv")
     args = parser.parse_args(argv)
     summary = validate_ledger(
         sample_jsonl=args.sample_jsonl,
@@ -492,6 +655,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_checkpoint_sha256=args.require_checkpoint_sha256,
         require_paction_provenance=bool(args.require_paction_provenance),
         summary_json=args.summary_json,
+        max_hole_top10_csv=args.max_hole_top10_csv,
     )
     print(json.dumps(summary, sort_keys=True), flush=True)
     return 0

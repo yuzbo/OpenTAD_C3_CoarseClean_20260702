@@ -670,6 +670,7 @@ def test_value_transport_loader_rejects_short_ledger_when_exact_count_required(t
                 "dense_len": 4,
                 "deploy_selection_ledger": False,
                 "diagnostic_only": True,
+                "policy_source": "pc_ot_mras_frontend_hard_positions",
             },
             sort_keys=True,
         )
@@ -718,6 +719,7 @@ def test_value_transport_loader_accepts_short_tail_ratio_count_when_enabled(tmp_
                 "dense_len": 6,
                 "deploy_selection_ledger": True,
                 "diagnostic_only": False,
+                "policy_source": "pc_ot_mras_frontend_hard_positions",
             },
             sort_keys=True,
         )
@@ -793,6 +795,57 @@ def test_value_transport_loader_rejects_paction_policy_contract_mismatch(tmp_pat
         bata_value_transport_ledger_path=str(ledger_path),
         bata_value_transport_require_deployable=True,
         bata_value_transport_source="learned_paction_gap_loss_policy_checkpoint",
+        bata_value_transport_config_hash="a" * 64,
+    )
+
+    with pytest.raises(ValueError, match="policy_source"):
+        loader(
+            {
+                "video_name": "video_test_0001",
+                "window_start_frame": 0,
+                "window_size": 4,
+                "feature_start_idx": 0,
+                "feature_end_idx": 3,
+                "total_frames": 16,
+                "avg_fps": 30,
+                "snippet_stride": 1,
+            }
+        )
+
+
+def test_value_transport_loader_rejects_missing_policy_source_for_gas_vt(tmp_path):
+    LoadFrames = _load_loadframes_class()
+    ledger_path = tmp_path / "value_transport_ledger.jsonl"
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 2],
+                "selected_count": 2,
+                "target_len": 3,
+                "valid_len": 4,
+                "dense_len": 4,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "policy_checkpoint_sha256": "a" * 64,
+                "diagnostics": {"policy_checkpoint_sha256": "a" * 64},
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loader = LoadFrames(
+        num_clips=1,
+        scale_factor=1,
+        method="bata_value_transport_ledger_subsample",
+        method_base="sliding_window",
+        target_len=3,
+        bata_value_transport_ledger_path=str(ledger_path),
+        bata_value_transport_require_deployable=True,
+        bata_value_transport_source="learned_paction_gas_vt_policy_checkpoint",
         bata_value_transport_config_hash="a" * 64,
     )
 

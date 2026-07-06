@@ -353,7 +353,9 @@ def test_paction_learned_policy_adatad_full_train_gate_requires_paction_provenan
         "uses_teacher": False,
         "uses_oracle": False,
         "uses_cache": False,
+        "uses_prediction_cache": False,
         "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
     }
     ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
     validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)

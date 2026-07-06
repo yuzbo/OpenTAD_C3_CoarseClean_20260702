@@ -13,10 +13,14 @@ CONFIG_DEFAULT = "configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_tr
 READY = "C3_PACTION_LEARNED_LEDGER_FULL_TRAIN_GATE_PASS"
 FIXED_STRATEGY = "learned_paction_gap_loss_value"
 DYNAMIC_STRATEGY = "learned_paction_gap_loss_dynamic_budget"
+GAS_VT_SOURCE = "learned_paction_gas_vt_policy_checkpoint"
 VARIANT_SPECS = {
-    "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY),
-    "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY),
-    "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY),
+    "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY, source="learned_paction_gap_loss_policy_checkpoint", route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
+    "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY, source="learned_paction_gap_loss_policy_checkpoint", route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
+    "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY, source="learned_paction_gap_loss_policy_checkpoint", route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
+    "gas_vt_fixed_384": dict(target_len=384, require_selected_count=384, strategy="gas_vt_fixed_384", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER"),
+    "gas_vt_fixed_768": dict(target_len=768, require_selected_count=768, strategy="gas_vt_fixed_768", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER"),
+    "gas_vt_dynamic": dict(target_len=768, require_selected_count=None, strategy="gas_vt_dynamic", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER"),
 }
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
@@ -57,9 +61,15 @@ def _find_collect(pipeline: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _variant_spec(cfg: Config) -> dict[str, Any]:
-    variant = str(cfg.paction_ledger_variant)
+    variant = str(cfg.gas_vt_ledger_variant if "gas_vt_ledger_variant" in cfg else cfg.paction_ledger_variant)
     _require(variant in VARIANT_SPECS, f"unknown paction_ledger_variant={variant}")
     return dict(VARIANT_SPECS[variant])
+
+
+def _gate_cfg(cfg: Config) -> Any:
+    if "c3_gas_vt_ledger_full_train_gate" in cfg:
+        return cfg.c3_gas_vt_ledger_full_train_gate
+    return cfg.c3_paction_learned_ledger_full_train_gate
 
 
 def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg: Config) -> None:
@@ -80,8 +90,8 @@ def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg
     _require(loader.get("bata_value_transport_ledger_path") == expected_ledger_path, f"{name}: wrong ledger path")
     _require(loader.get("bata_value_transport_source") == cfg.c3_value_transport_source, f"{name}: wrong ledger source")
     _require(
-        loader.get("bata_value_transport_source") == "learned_paction_gap_loss_policy_checkpoint",
-        f"{name}: loader source must identify the learned policy checkpoint",
+        loader.get("bata_value_transport_source") == spec["source"],
+        f"{name}: loader source must identify the expected policy checkpoint",
     )
 
 
@@ -142,9 +152,10 @@ def _validate_model_and_train(cfg: Config) -> None:
 
 
 def _validate_gate(cfg: Config, *, allow_launch_unlocked: bool = False) -> None:
-    gate = cfg.c3_paction_learned_ledger_full_train_gate
+    spec = _variant_spec(cfg)
+    gate = _gate_cfg(cfg)
     _require(gate.route == "C3_MAINLINE_OPTIMIZATION", "wrong route")
-    _require(gate.route_variant == "C3_PACTION_LEARNED_STRICT_LEDGER", "wrong route variant")
+    _require(gate.route_variant == spec["route_variant"], "wrong route variant")
     _require(_as_bool(gate.full_train_candidate), "not marked as full train candidate")
     _require(_as_bool(gate.requires_launch_gate), "launch gate must be required")
     if allow_launch_unlocked:
@@ -183,7 +194,14 @@ def _validate_paction_provenance(path: Path, line_no: int, diagnostics: dict[str
         f"{path}:{line_no}: missing p_action provenance model marker",
     )
     _require(provenance.get("no_gt_generation") is True, f"{path}:{line_no}: p_action provenance must not use GT generation")
-    for key in ("uses_teacher", "uses_oracle", "uses_cache", "uses_raw_prediction"):
+    for key in (
+        "uses_teacher",
+        "uses_oracle",
+        "uses_cache",
+        "uses_prediction_cache",
+        "uses_raw_prediction",
+        "prediction_uses_gt",
+    ):
         _require(provenance.get(key) is False, f"{path}:{line_no}: p_action provenance must set {key}=false")
 
 
@@ -214,7 +232,7 @@ def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool
             _require(int(diagnostics.get("uniform_visible_fill_count", 0) or 0) == 0, f"{path}:{line_no}: uniform fill used")
             _require(str(diagnostics.get("source_strategy")) == str(spec["strategy"]), f"{path}:{line_no}: wrong source strategy")
             _require(
-                row.get("policy_source", diagnostics.get("policy_source")) == "learned_paction_gap_loss_policy_checkpoint",
+                row.get("policy_source", diagnostics.get("policy_source")) == spec["source"],
                 f"{path}:{line_no}: missing learned checkpoint policy_source",
             )
             checkpoint_sha256 = row.get("policy_checkpoint_sha256", diagnostics.get("policy_checkpoint_sha256"))
@@ -246,6 +264,7 @@ def validate_config(config_path: str = CONFIG_DEFAULT, *, require_ledger_files: 
     cfg = Config.fromfile(str(config_path))
     spec = _variant_spec(cfg)
     _require(cfg.experiment_scope.selection_strategy == spec["strategy"], "experiment scope selection strategy mismatch")
+    _require(cfg.c3_value_transport_source == spec["source"], "value transport source mismatch")
     _validate_gate(cfg, allow_launch_unlocked=allow_launch_unlocked)
     _validate_dataset(cfg)
     _validate_model_and_train(cfg)

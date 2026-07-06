@@ -407,7 +407,7 @@ class LoadFrames:
             )
         expected_source = str(self.bata_value_transport_source or "")
         row_policy_source = self._value_transport_metadata(row, "policy_source")
-        if expected_source == "learned_paction_gap_loss_policy_checkpoint" or row_policy_source is not None:
+        if expected_source:
             if row_policy_source != expected_source:
                 raise ValueError(
                     f"value-transport ledger sample_id={sample_id} policy_source={row_policy_source} "

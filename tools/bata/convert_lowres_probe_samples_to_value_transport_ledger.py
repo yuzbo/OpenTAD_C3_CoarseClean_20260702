@@ -36,6 +36,11 @@ SUMMARY_SCHEMA_VERSION = "c3_lowres_probe_value_transport_ledger_summary_v0"
 READY = "C3_LOWRES_PROBE_LEDGER_READY"
 NO_GO = "C3_LOWRES_PROBE_LEDGER_NO_GO"
 CHECKPOINT_POLICY_SOURCE = "learned_paction_gap_loss_policy_checkpoint"
+GAS_VT_CHECKPOINT_POLICY_SOURCE = "learned_paction_gas_vt_policy_checkpoint"
+DEPLOY_CHECKPOINT_POLICY_SOURCES = {
+    CHECKPOINT_POLICY_SOURCE,
+    GAS_VT_CHECKPOINT_POLICY_SOURCE,
+}
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -283,30 +288,36 @@ def sample_row_to_value_transport_row(
         ),
     }
     paction_policy = row.get("paction_policy")
-    if deploy_selection_ledger and not isinstance(paction_policy, Mapping):
-        raise ValueError(f"line {line_no}: paction_policy metadata is required for deploy selection ledger")
-    if isinstance(paction_policy, Mapping):
-        diagnostics["policy_source"] = paction_policy.get("source")
-        diagnostics["policy_checkpoint_path"] = paction_policy.get("checkpoint_path")
-        diagnostics["policy_checkpoint_sha256"] = paction_policy.get("checkpoint_sha256")
-        diagnostics["policy_fixed_budget"] = paction_policy.get("fixed_budget")
-        diagnostics["policy_dynamic_budget"] = paction_policy.get("dynamic_budget")
-        diagnostics["policy_uses_uniform_scaffold"] = paction_policy.get("uses_uniform_scaffold")
-        diagnostics["policy_uses_uniform_fill"] = paction_policy.get("uses_uniform_fill")
-        diagnostics["p_action_provenance"] = paction_policy.get("p_action_provenance")
-    if deploy_selection_ledger and isinstance(paction_policy, Mapping):
-        if paction_policy.get("source") != CHECKPOINT_POLICY_SOURCE:
+    gas_vt_policy = row.get("gas_vt_policy")
+    policy_metadata = paction_policy if isinstance(paction_policy, Mapping) else gas_vt_policy
+    if deploy_selection_ledger and not isinstance(policy_metadata, Mapping):
+        raise ValueError(
+            f"line {line_no}: paction_policy metadata is required for deploy selection ledger "
+            "(gas_vt_policy is also accepted for GAS-VT rows)"
+        )
+    if isinstance(policy_metadata, Mapping):
+        diagnostics["policy_family"] = policy_metadata.get("policy_family")
+        diagnostics["policy_source"] = policy_metadata.get("source")
+        diagnostics["policy_checkpoint_path"] = policy_metadata.get("checkpoint_path")
+        diagnostics["policy_checkpoint_sha256"] = policy_metadata.get("checkpoint_sha256") or policy_metadata.get("policy_checkpoint_sha256")
+        diagnostics["policy_fixed_budget"] = policy_metadata.get("fixed_budget") or policy_metadata.get("fixed_budgets")
+        diagnostics["policy_dynamic_budget"] = policy_metadata.get("dynamic_budget")
+        diagnostics["policy_uses_uniform_scaffold"] = policy_metadata.get("uses_uniform_scaffold")
+        diagnostics["policy_uses_uniform_fill"] = policy_metadata.get("uses_uniform_fill")
+        diagnostics["p_action_provenance"] = policy_metadata.get("p_action_provenance")
+    if deploy_selection_ledger and isinstance(policy_metadata, Mapping):
+        if policy_metadata.get("source") not in DEPLOY_CHECKPOINT_POLICY_SOURCES:
             raise ValueError(
                 f"line {line_no}: deploy ledger requires checkpoint policy source "
-                f"{CHECKPOINT_POLICY_SOURCE}, got {paction_policy.get('source')}"
+                f"{sorted(DEPLOY_CHECKPOINT_POLICY_SOURCES)}, got {policy_metadata.get('source')}"
             )
-        if not paction_policy.get("checkpoint_path"):
+        if not policy_metadata.get("checkpoint_path"):
             raise ValueError(f"line {line_no}: deploy ledger requires policy checkpoint_path")
-        if not paction_policy.get("checkpoint_sha256"):
+        if not (policy_metadata.get("checkpoint_sha256") or policy_metadata.get("policy_checkpoint_sha256")):
             raise ValueError(f"line {line_no}: deploy ledger requires policy checkpoint_sha256")
         paction_source_samples.validate_paction_positive_provenance(
-            paction_policy.get("p_action_provenance"),
-            source_name=f"line {line_no}: paction_policy",
+            policy_metadata.get("p_action_provenance"),
+            source_name=f"line {line_no}: paction_policy/gas_vt_policy",
         )
     boundary_support = None if deploy_selection_ledger else _finite_float_or_none(row.get("boundary_support_r1"))
     if boundary_support is not None:
