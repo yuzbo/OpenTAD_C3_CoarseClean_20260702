@@ -12,8 +12,11 @@ from typing import Any
 
 ROW_SCHEMA_VERSION = "c3_detector_teacher_utility_row_v1"
 SUMMARY_SCHEMA_VERSION = "c3_detector_teacher_utility_export_v1"
+GENERATOR_MANIFEST_SCHEMA_VERSION = "c3_detector_teacher_utility_generator_manifest_v1"
+GENERATOR_MANIFEST_READY = "C3_DETECTOR_TEACHER_UTILITY_GENERATOR_MANIFEST_READY"
 READY = "C3_DETECTOR_TEACHER_UTILITY_EXPORT_READY"
 STAGE_LABEL = "Stage-2 detector-aware offline selector"
+UTILITY_SEMANTICS = "signed_detector_utility_v1"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_gt_for_selection",
@@ -24,6 +27,8 @@ FORBIDDEN_TRUE_FLAGS = (
     "uses_prediction_cache",
     "uses_raw_prediction",
     "prediction_uses_gt",
+    "uses_evaluator_outputs",
+    "load_from_raw_predictions",
 )
 SPLIT_ALIASES = {
     "training": {"train", "training"},
@@ -36,8 +41,17 @@ SPLIT_ALIASES = {
 
 JSONL_SCHEMA = {
     "schema_version": ROW_SCHEMA_VERSION,
-    "required_keys": ["sample_id", "split", "dense_len", "valid_len", "frame_utility", "teacher_utility_provenance"],
+    "required_keys": [
+        "sample_id",
+        "split",
+        "dense_len",
+        "valid_len",
+        "frame_utility",
+        "signed_frame_utility",
+        "teacher_utility_provenance",
+    ],
     "frame_utility": "float list on local dense frame axis; padded positions >= valid_len are zero",
+    "signed_frame_utility": "float list in [-1, 1]; negative values encode detector background-suppression/ranking utility",
     "npz": "arrays sample_ids(str), splits(str), dense_lens(int64), valid_lens(int64), frame_utility(float32 padded)",
 }
 
@@ -124,6 +138,18 @@ def _finite01(value: Any) -> float:
     return max(0.0, min(1.0, out))
 
 
+def _finite_signed(value: Any) -> float:
+    if value is None or isinstance(value, bool):
+        return 0.0
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(out):
+        return 0.0
+    return max(-1.0, min(1.0, out))
+
+
 def _point_index(point: Mapping[str, Any]) -> int | None:
     for key in ("point_index", "frame_index", "dense_index", "t"):
         if key in point:
@@ -143,6 +169,16 @@ def _point_utility(point: Mapping[str, Any]) -> float:
     loc = _finite01(point.get("localization_quality", point.get("regression_quality", 1.0)))
     ctr = _finite01(point.get("centerness", 1.0))
     return cls * loc * ctr
+
+
+def _point_signed_utility(point: Mapping[str, Any]) -> float:
+    for key in ("signed_utility", "utility_signed", "detector_utility_signed", "signed_detector_utility"):
+        if key in point:
+            return _finite_signed(point[key])
+    for key in ("negative_utility", "background_suppression_utility", "false_positive_suppression_utility"):
+        if key in point:
+            return -_finite01(point[key])
+    return _point_utility(point)
 
 
 def _score_value(score: Any) -> float:
@@ -224,6 +260,17 @@ def _normalize(values: Sequence[float], *, valid_len: int) -> list[float]:
     return [max(0.0, min(1.0, float(item))) for item in out]
 
 
+def _normalize_signed(values: Sequence[float], *, valid_len: int) -> list[float]:
+    out = [float(item) for item in values]
+    valid = out[: max(0, int(valid_len))]
+    max_abs = max((abs(value) for value in valid), default=0.0)
+    if max_abs > 0.0:
+        out = [value / max_abs for value in out]
+    for idx in range(max(0, int(valid_len)), len(out)):
+        out[idx] = 0.0
+    return [max(-1.0, min(1.0, float(item))) for item in out]
+
+
 def map_dense_points_to_frame_utility(
     dense_points: Sequence[Mapping[str, Any]],
     *,
@@ -253,6 +300,38 @@ def map_dense_points_to_frame_utility(
             weight = 1.0 if radius <= 0 else max(0.0, 1.0 - (0.5 * distance / float(radius + 1)))
             values[pos] = max(values[pos], utility * weight)
     return _normalize(values, valid_len=valid_len)
+
+
+def map_dense_points_to_signed_frame_utility(
+    dense_points: Sequence[Mapping[str, Any]],
+    *,
+    dense_len: int,
+    valid_len: int | None = None,
+    spread_radius: int = 0,
+) -> list[float]:
+    """Map dense teacher signals to signed detector utility.
+
+    Positive values encode foreground/localization support; negative values encode
+    detector utility for suppressing false positives or stabilizing ranking/NMS.
+    """
+    dense_len = max(0, int(dense_len))
+    valid_len = dense_len if valid_len is None else max(0, min(int(valid_len), dense_len))
+    values = [0.0 for _ in range(dense_len)]
+    radius = max(0, int(spread_radius))
+    for point in dense_points:
+        if not isinstance(point, Mapping):
+            continue
+        center = _point_index(point)
+        if center is None or center < 0 or center >= valid_len:
+            continue
+        utility = _point_signed_utility(point)
+        for pos in range(max(0, center - radius), min(valid_len, center + radius + 1)):
+            distance = abs(pos - center)
+            weight = 1.0 if radius <= 0 else max(0.0, 1.0 - (0.5 * distance / float(radius + 1)))
+            signed_value = utility * weight
+            if abs(signed_value) > abs(values[pos]):
+                values[pos] = signed_value
+    return _normalize_signed(values, valid_len=valid_len)
 
 
 def _dense_points(row: Mapping[str, Any], *, line_no: int) -> list[Mapping[str, Any]]:
@@ -300,8 +379,15 @@ def teacher_utility_row_from_dense_teacher(
     valid_len = int(row.get("valid_len") or dense_len)
     if dense_len <= 0 or valid_len <= 0 or valid_len > dense_len:
         raise ValueError(f"line {line_no}: dense_len/valid_len must be positive and consistent")
+    dense_points = _dense_points(row, line_no=line_no)
     frame_utility = map_dense_points_to_frame_utility(
-        _dense_points(row, line_no=line_no),
+        dense_points,
+        dense_len=dense_len,
+        valid_len=valid_len,
+        spread_radius=spread_radius,
+    )
+    signed_frame_utility = map_dense_points_to_signed_frame_utility(
+        dense_points,
         dense_len=dense_len,
         valid_len=valid_len,
         spread_radius=spread_radius,
@@ -314,7 +400,13 @@ def teacher_utility_row_from_dense_teacher(
         "dense_len": int(dense_len),
         "valid_len": int(valid_len),
         "frame_utility": frame_utility,
-        "teacher_utility": {"frame_utility": frame_utility},
+        "signed_frame_utility": signed_frame_utility,
+        "teacher_utility": {
+            "utility_semantics": UTILITY_SEMANTICS,
+            "frame_utility": frame_utility,
+            "signed_frame_utility": signed_frame_utility,
+            "marginal_gain_frame_utility": [abs(float(item)) for item in signed_frame_utility],
+        },
         "teacher_utility_provenance": {
             "teacher_signal_source": str(row.get("teacher_signal_source") or "adatad_dense_teacher"),
             "teacher_checkpoint_path": row.get("teacher_checkpoint_path"),
@@ -381,6 +473,7 @@ def _merge_teacher_utility_into_base(
         merged["schema_version"] = ROW_SCHEMA_VERSION
         merged["stage_label"] = STAGE_LABEL
         merged["frame_utility"] = list(utility["frame_utility"])
+        merged["signed_frame_utility"] = list(utility["signed_frame_utility"])
         merged["teacher_utility"] = dict(utility["teacher_utility"])
         merged["teacher_utility_provenance"] = dict(utility["teacher_utility_provenance"])
         merged["uses_teacher"] = True
@@ -401,9 +494,12 @@ def _write_npz(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     max_len = max(int(row["dense_len"]) for row in rows)
     utility = np.zeros((len(rows), max_len), dtype=np.float32)
+    signed_utility = np.zeros((len(rows), max_len), dtype=np.float32)
     for row_idx, row in enumerate(rows):
         values = [float(item) for item in row["frame_utility"]]
         utility[row_idx, : len(values)] = np.asarray(values, dtype=np.float32)
+        signed_values = [float(item) for item in row.get("signed_frame_utility", values)]
+        signed_utility[row_idx, : len(signed_values)] = np.asarray(signed_values, dtype=np.float32)
     np.savez_compressed(
         out_path,
         sample_ids=np.asarray([str(row["sample_id"]) for row in rows]),
@@ -411,6 +507,7 @@ def _write_npz(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
         dense_lens=np.asarray([int(row["dense_len"]) for row in rows], dtype=np.int64),
         valid_lens=np.asarray([int(row["valid_len"]) for row in rows], dtype=np.int64),
         frame_utility=utility,
+        signed_frame_utility=signed_utility,
         schema_version=np.asarray([ROW_SCHEMA_VERSION]),
     )
 
@@ -424,9 +521,11 @@ def run_export(
     base_samples_jsonl: str | Path | None = None,
     teacher_checkpoint_path: str | Path | None = None,
     teacher_config_path: str | Path | None = None,
+    generator_manifest_json: str | Path | None = None,
     expected_split: str | None = "training",
     spread_radius: int = 1,
 ) -> dict[str, Any]:
+    generator_manifest = None if generator_manifest_json is None else validate_generator_manifest(generator_manifest_json)
     source_rows = _read_jsonl(input_jsonl)
     out_rows = [
         teacher_utility_row_from_dense_teacher(
@@ -459,12 +558,18 @@ def run_export(
         "teacher_checkpoint_sha256": checkpoint_sha256,
         "teacher_config_path": None if teacher_config_path is None else str(teacher_config_path),
         "teacher_config_sha256": config_sha256,
+        "generator_manifest_json": None if generator_manifest is None else generator_manifest["generator_manifest_json"],
+        "generator_manifest_sha256": None if generator_manifest is None else generator_manifest["generator_manifest_sha256"],
+        "generator_manifest_schema_version": None if generator_manifest is None else generator_manifest["schema_version"],
+        "generator_source": None if generator_manifest is None else generator_manifest["generator_source"],
         "input_jsonl": str(input_jsonl),
         "base_samples_jsonl": None if base_samples_jsonl is None else str(base_samples_jsonl),
         "output_jsonl": str(output_jsonl),
         "output_npz": None if output_npz is None else str(output_npz),
         "row_count": len(out_rows),
         "jsonl_row_schema": JSONL_SCHEMA,
+        "utility_semantics": UTILITY_SEMANTICS,
+        "signed_utility_supported": True,
         "expected_split": expected_split,
         "split_scope": "train_only",
         "uses_val_or_test_gt_for_selection": False,
@@ -490,11 +595,45 @@ def _read_json(path: str | Path) -> dict[str, Any]:
     return payload
 
 
+def validate_generator_manifest(manifest_json: str | Path) -> dict[str, Any]:
+    path = Path(manifest_json).expanduser()
+    if not path.is_file():
+        raise ValueError(f"generator_manifest_json missing: {path}")
+    payload = _read_json(path)
+    if payload.get("schema_version") != GENERATOR_MANIFEST_SCHEMA_VERSION:
+        raise ValueError("generator_manifest schema_version mismatch")
+    if payload.get("decision") != GENERATOR_MANIFEST_READY:
+        raise ValueError("generator_manifest decision is not ready")
+    if payload.get("teacher_signal_source") != "adatad_dense_teacher":
+        raise ValueError("generator_manifest teacher_signal_source must be adatad_dense_teacher")
+    if payload.get("generator_source") != "dense_detector_forward_train":
+        raise ValueError("generator_manifest generator_source must be dense_detector_forward_train")
+    if payload.get("split_scope") != "train_only":
+        raise ValueError("generator_manifest split_scope must be train_only")
+    if str(payload.get("input_split", "")).strip().lower() not in {"train", "training"}:
+        raise ValueError("generator_manifest input_split must be training")
+    for key in (
+        "uses_evaluator_outputs",
+        "uses_raw_prediction",
+        "uses_prediction_cache",
+        "load_from_raw_predictions",
+        "uses_val_or_test_gt_for_selection",
+        "uses_gt_for_selection",
+    ):
+        if _is_true(payload.get(key, False)):
+            raise ValueError(f"generator_manifest forbidden flag {key}=true")
+    out = dict(payload)
+    out["generator_manifest_json"] = str(path)
+    out["generator_manifest_sha256"] = _sha256_file(path)
+    return out
+
+
 def validate_teacher_utility_export_evidence(
     summary_json: str | Path,
     *,
     output_jsonl: str | Path | None = None,
     require_paction: bool = False,
+    require_generator_manifest: bool = False,
 ) -> dict[str, Any]:
     summary = _read_json(summary_json)
     if summary.get("schema_version") != SUMMARY_SCHEMA_VERSION:
@@ -505,12 +644,24 @@ def validate_teacher_utility_export_evidence(
         raise ValueError("teacher_signal_source must be adatad_dense_teacher")
     if summary.get("split_scope") != "train_only":
         raise ValueError("split_scope must be train_only")
+    if summary.get("utility_semantics") != UTILITY_SEMANTICS:
+        raise ValueError(f"teacher utility evidence must use {UTILITY_SEMANTICS}")
+    if summary.get("signed_utility_supported") is not True:
+        raise ValueError("teacher utility evidence must support signed utility")
     for key in ("uses_val_or_test_gt_for_selection", "uses_gt_for_selection", "uses_prediction_cache", "uses_raw_prediction", "load_from_raw_predictions", "end_to_end"):
         if summary.get(key) is not False:
             raise ValueError(f"teacher utility evidence must set {key}=false")
     for key in ("teacher_checkpoint_path", "teacher_checkpoint_sha256", "teacher_config_path", "teacher_config_sha256"):
         if not isinstance(summary.get(key), str) or not summary[key]:
             raise ValueError(f"teacher utility evidence requires {key}")
+    if require_generator_manifest or summary.get("generator_manifest_json") is not None:
+        if not isinstance(summary.get("generator_manifest_json"), str) or not summary["generator_manifest_json"]:
+            raise ValueError("teacher utility evidence requires generator_manifest_json")
+        if not isinstance(summary.get("generator_manifest_sha256"), str) or not summary["generator_manifest_sha256"]:
+            raise ValueError("teacher utility evidence requires generator_manifest_sha256")
+        manifest = validate_generator_manifest(summary["generator_manifest_json"])
+        if manifest["generator_manifest_sha256"] != summary.get("generator_manifest_sha256"):
+            raise ValueError("generator_manifest_sha256 mismatch")
     output_path = Path(output_jsonl or summary.get("output_jsonl", "")).expanduser()
     if not output_path.is_file():
         raise ValueError(f"teacher utility output_jsonl missing: {output_path}")
@@ -534,6 +685,14 @@ def validate_teacher_utility_export_evidence(
             raise ValueError(f"{output_path}:{line_no}: split_scope must be train_only")
         if row.get("uses_teacher") is not True or row.get("training_only") is not True:
             raise ValueError(f"{output_path}:{line_no}: teacher utility rows must be training_only teacher artifacts")
+        teacher_payload = row.get("teacher_utility")
+        if not isinstance(teacher_payload, Mapping):
+            raise ValueError(f"{output_path}:{line_no}: missing teacher_utility payload")
+        if teacher_payload.get("utility_semantics") != UTILITY_SEMANTICS:
+            raise ValueError(f"{output_path}:{line_no}: teacher utility semantics mismatch")
+        signed = teacher_payload.get("signed_frame_utility", row.get("signed_frame_utility"))
+        if not isinstance(signed, list) or len(signed) != int(row.get("dense_len", 0)):
+            raise ValueError(f"{output_path}:{line_no}: signed_frame_utility is required")
         for key in FORBIDDEN_TRUE_FLAGS:
             if _is_true(row.get(key, False)):
                 raise ValueError(f"{output_path}:{line_no}: forbidden teacher utility row flag {key}=true")
@@ -556,6 +715,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--base-samples-jsonl")
     parser.add_argument("--teacher-checkpoint-path")
     parser.add_argument("--teacher-config-path")
+    parser.add_argument("--generator-manifest-json")
     parser.add_argument("--expected-split", default="training")
     parser.add_argument("--spread-radius", type=int, default=1)
     args = parser.parse_args(argv)
@@ -567,6 +727,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         base_samples_jsonl=args.base_samples_jsonl,
         teacher_checkpoint_path=args.teacher_checkpoint_path,
         teacher_config_path=args.teacher_config_path,
+        generator_manifest_json=args.generator_manifest_json,
         expected_split=args.expected_split,
         spread_radius=int(args.spread_radius),
     )

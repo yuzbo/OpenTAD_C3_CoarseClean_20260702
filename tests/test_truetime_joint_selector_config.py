@@ -45,6 +45,13 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.truetime_joint_selector_gate.requires_geometry_roundtrip is True
     assert cfg.truetime_joint_selector_gate.requires_physical_grid_actionformer is True
     assert cfg.truetime_joint_selector_gate.end_to_end_claim_allowed is False
+    assert cfg.sparse_detector_distillation_gate.enabled is False
+    assert cfg.sparse_detector_distillation_gate.fail_closed is True
+    assert cfg.sparse_detector_distillation_gate.map_claim_allowed is False
+    assert cfg.sparse_detector_distillation_gate.required_before_full_detector_loss is True
+    assert cfg.sparse_detector_distillation.loss_adapter.type == "SparseDetectorDistillationLossAdapter"
+    assert cfg.sparse_detector_distillation.loss_adapter.fail_closed_without_teacher_targets is True
+    assert cfg.sparse_detector_distillation.loss_adapter.map_claim_allowed is False
     assert cfg.truetime_joint_selector_gate.eight_week_questions_answered_by == [
         "true_time_roundtrip_tests",
         "segment_inverse_map_tests",
@@ -87,6 +94,7 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.required is True
     assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.strict is True
     assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.coordinate_space == "true_time_dense_index"
+    assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.requires_irregular_native_axis is True
     assert cfg.workflow.max_train_iters == 2
     assert cfg.truetime_metrics_to_log == [
         "selector_grad_norm",
@@ -100,6 +108,7 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
         "actionformer_cls_loss",
         "actionformer_reg_loss",
         "actionformer_detector_loss_selector_grad_norm",
+        "sparse_distill_loss",
         "geometry_roundtrip",
         "prediction_inverse_map",
         "claim_locks",
@@ -118,6 +127,15 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
         assert "truetime_dense_valid_len" in meta_keys
         assert "irregular_selected_count" in meta_keys
         assert "irregular_dense_valid_len" in meta_keys
+
+
+def test_truetime_selector_marks_physical_grid_metas_as_native_axis() -> None:
+    selector_source = (ROOT / "opentad" / "models" / "selectors" / "truetime_joint_selector.py").read_text(encoding="utf-8")
+
+    assert 'meta["detector_output_coordinate_space"] = self.coordinate_space' in selector_source
+    assert 'meta["selected_axis_to_true_time_dense_index"] = positions' in selector_source
+    assert 'meta["irregular_selected_positions"] = positions' in selector_source
+    assert 'meta["irregular_native_axis"] = True' in selector_source
 
 
 def test_truetime_joint_selector_validator_blocks_end_to_end_without_grad_proof(monkeypatch) -> None:
@@ -156,6 +174,10 @@ def test_truetime_joint_selector_validator_accepts_detector_loss_proof_schema(tm
                 "actionformer_detector_loss_selector_grad_norm": 0.31,
                 "actionformer_loss_keys": ["cls_loss", "reg_loss"],
                 "actionformer_selected_axis_smoke": True,
+                "sparse_distill_adapter_ready": True,
+                "sparse_distill_claim_allowed": False,
+                "sparse_distill_map_claim_allowed": False,
+                "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
             }
         ),
         encoding="utf-8",
@@ -170,6 +192,50 @@ def test_truetime_joint_selector_validator_accepts_detector_loss_proof_schema(tm
     )
 
     assert cfg.truetime_joint_selector_gate.launch_gate_passed is True
+
+
+def test_truetime_joint_selector_validator_rejects_unlocked_distill_claim(tmp_path: Path) -> None:
+    proof = tmp_path / "proof.json"
+    proof.write_text(
+        json.dumps(
+            {
+                "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
+                "geometry_roundtrip_passed": True,
+                "prediction_inverse_map_passed": True,
+                "selected_input_st_gradient_passed": True,
+                "selected_input_selector_grad_norm": 0.25,
+                "detector_loss_selector_grad_passed": True,
+                "detector_loss_selector_grad_norm": 0.25,
+                "selector_grad_norm": 0.25,
+                "selector_grad_nonzero": True,
+                "loss_keys": ["loss_cls", "loss_reg"],
+                "proof_source": "registered_detector_forward_train_cost_backward",
+                "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
+                "actionformer_detector_loss_selector_grad_passed": True,
+                "actionformer_detector_loss_selector_grad_norm": 0.31,
+                "actionformer_loss_keys": ["cls_loss", "reg_loss"],
+                "actionformer_selected_axis_smoke": True,
+                "sparse_distill_adapter_ready": True,
+                "sparse_distill_claim_allowed": True,
+                "sparse_distill_map_claim_allowed": False,
+                "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
+            }
+        ),
+        encoding="utf-8",
+    )
+    validator = _load_validator()
+
+    try:
+        validator.validate_config(
+            str(EXEC_CONFIG),
+            require_grad_proof=True,
+            allow_launch_unlocked=True,
+            proof_json=str(proof),
+        )
+    except AssertionError as exc:
+        assert "sparse distill claim" in str(exc)
+    else:
+        raise AssertionError("distill gate must fail closed when a sparse distill claim is unlocked")
 
 
 def test_truetime_joint_selector_launcher_is_gpu1_precheck_default_and_slurm_gated() -> None:

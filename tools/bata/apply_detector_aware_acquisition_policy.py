@@ -170,6 +170,9 @@ def run_policy_application(
         if not allow_bootstrap_for_tests:
             checkpoint_model, checkpoint_payload = load_policy_checkpoint(checkpoint_path, device=device)
             dynamic_budget_buckets = checkpoint_payload.get("dynamic_budget_buckets", dynamic_budget_buckets)
+    dynamic_gain_calibration = dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION)
+    if checkpoint_payload is not None and isinstance(checkpoint_payload.get("dynamic_gain_calibration"), Mapping):
+        dynamic_gain_calibration.update(dict(checkpoint_payload["dynamic_gain_calibration"]))
     enriched_rows: list[dict[str, Any]] = []
     dynamic_budgets: list[int] = []
     for line_no, row in enumerate(rows, start=1):
@@ -201,6 +204,7 @@ def run_policy_application(
             fixed_budgets=fixed_budgets,
             dynamic_budget_scores=budget_scores,
             dynamic_budget_buckets=dynamic_budget_buckets,
+            dynamic_gain_calibration=dynamic_gain_calibration,
             max_unselected_hole=max_unselected_hole,
             source=source,
             checkpoint_path=None if checkpoint_path is None else str(checkpoint_path),
@@ -228,6 +232,7 @@ def run_policy_application(
         "row_count": len(enriched_rows),
         "fixed_budgets": [int(item) for item in fixed_budgets],
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
+        "dynamic_gain_calibration": dynamic_gain_calibration,
         "min_dynamic_budget": min(dynamic_budgets) if dynamic_budgets else None,
         "max_dynamic_budget": max(dynamic_budgets) if dynamic_budgets else None,
         "mean_dynamic_budget": None if not dynamic_budgets else sum(dynamic_budgets) / float(len(dynamic_budgets)),

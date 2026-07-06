@@ -100,6 +100,10 @@ def _validate_model(cfg):
     _require(physical_grid.coordinate_space == "true_time_dense_index", "main physical grid coordinate space mismatch")
     _require(physical_grid.selected_position_key == "irregular_selected_positions", "main physical grid selected key mismatch")
     _require(physical_grid.dense_valid_len_key == "irregular_dense_valid_len", "main physical grid dense-valid key mismatch")
+    _require(
+        _as_bool(physical_grid.get("requires_irregular_native_axis", False)),
+        "main physical grid must require irregular_native_axis",
+    )
 
     smoke_model = cfg.truetime_detector_path_smoke_model
     smoke_selector = smoke_model.frame_selector
@@ -142,6 +146,20 @@ def _validate_model(cfg):
         actionformer_physical_grid.coordinate_space == "true_time_dense_index",
         "ActionFormer smoke physical grid coordinate space mismatch",
     )
+    _require(
+        _as_bool(actionformer_physical_grid.get("requires_irregular_native_axis", False)),
+        "ActionFormer smoke physical grid must require irregular_native_axis",
+    )
+
+    distill_gate = cfg.sparse_detector_distillation_gate
+    _require(_as_bool(distill_gate.enabled) is False, "sparse distill gate must default disabled")
+    _require(_as_bool(distill_gate.fail_closed), "sparse distill gate must fail closed")
+    _require(_as_bool(distill_gate.required_before_full_detector_loss), "sparse distill must gate full detector loss")
+    _require(_as_bool(distill_gate.map_claim_allowed) is False, "sparse distill mAP claim must be locked")
+    adapter = cfg.sparse_detector_distillation.loss_adapter
+    _require(adapter.type == "SparseDetectorDistillationLossAdapter", "wrong sparse distill loss adapter type")
+    _require(_as_bool(adapter.fail_closed_without_teacher_targets), "sparse distill adapter must fail closed without targets")
+    _require(_as_bool(adapter.map_claim_allowed) is False, "sparse distill adapter mAP claim must be locked")
 
 
 def _validate_dataset_and_leakage(cfg):
@@ -199,6 +217,7 @@ def _validate_curriculum_and_scope(cfg):
         "actionformer_cls_loss",
         "actionformer_reg_loss",
         "actionformer_detector_loss_selector_grad_norm",
+        "sparse_distill_loss",
         "geometry_roundtrip",
         "prediction_inverse_map",
         "claim_locks",
@@ -257,6 +276,13 @@ def _validate_grad_proof(path):
     _require("cls_loss" in actionformer_loss_keys, "ActionFormer proof missing cls_loss")
     _require("reg_loss" in actionformer_loss_keys, "ActionFormer proof missing reg_loss")
     _require(payload.get("actionformer_selected_axis_smoke") is True, "ActionFormer selected-axis smoke flag missing")
+    _require(payload.get("sparse_distill_adapter_ready") is True, "sparse distill adapter proof missing")
+    _require(payload.get("sparse_distill_claim_allowed") is False, "sparse distill claim must remain locked")
+    _require(payload.get("sparse_distill_map_claim_allowed") is False, "sparse distill mAP claim must remain locked")
+    _require(
+        payload.get("sparse_distill_proof_source") == "fail_closed_sparse_detector_distillation_adapter",
+        "sparse distill proof source mismatch",
+    )
 
 
 def validate_config(config_path=CONFIG_DEFAULT, *, require_grad_proof=False, allow_launch_unlocked=False, proof_json=None):

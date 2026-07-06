@@ -32,7 +32,11 @@ def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: in
         raise ValueError(f"line {line_no}: teacher utility must be train_only")
     raw = None
     teacher_utility = row.get("teacher_utility")
-    if isinstance(teacher_utility, Mapping) and isinstance(teacher_utility.get("frame_utility"), list):
+    if isinstance(teacher_utility, Mapping) and isinstance(teacher_utility.get("signed_frame_utility"), list):
+        raw = teacher_utility.get("signed_frame_utility")
+    if raw is None and isinstance(row.get("signed_frame_utility"), list):
+        raw = row.get("signed_frame_utility")
+    if raw is None and isinstance(teacher_utility, Mapping) and isinstance(teacher_utility.get("frame_utility"), list):
         raw = teacher_utility.get("frame_utility")
     if raw is None and isinstance(row.get("frame_utility"), list):
         raw = row.get("frame_utility")
@@ -40,7 +44,11 @@ def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: in
         raise ValueError(f"line {line_no}: train-only teacher frame_utility is required")
     if len(raw) != int(length):
         raise ValueError(f"line {line_no}: teacher frame_utility length must match p_action length")
-    return [max(0.0, min(1.0, float(item))) for item in raw]
+    return [max(-1.0, min(1.0, float(item))) for item in raw]
+
+
+def _marginal_gain_target(utility: Sequence[float]) -> list[float]:
+    return [abs(max(-1.0, min(1.0, float(item)))) for item in utility]
 
 
 def _utility_budget_target(
@@ -50,7 +58,7 @@ def _utility_budget_target(
     dynamic_budget_buckets: Sequence[int],
     coverage_target: float = 0.80,
 ) -> int:
-    valid_values = [max(0.0, float(item)) for item in utility[: int(valid_len)]]
+    valid_values = [abs(max(-1.0, min(1.0, float(item)))) for item in utility[: int(valid_len)]]
     total = sum(valid_values)
     if total <= 0.0:
         return min(max(1, min(int(item) for item in dynamic_budget_buckets)), int(valid_len))
@@ -74,8 +82,9 @@ def _prepared_rows(
         p_action = _extract_paction(row, line_no=line_no)
         valid_len = _valid_len(row, paction_len=len(p_action))
         utility = _extract_teacher_utility(row, line_no=line_no, length=len(p_action))
+        gain = _marginal_gain_target(utility)
         dynamic_budget_target = _utility_budget_target(
-            utility,
+            gain,
             valid_len=valid_len,
             dynamic_budget_buckets=dynamic_budget_buckets,
         )
@@ -87,8 +96,10 @@ def _prepared_rows(
                     target_budget=dynamic_budget_target,
                 ),
                 "detector_utility_target": utility,
+                "detector_marginal_gain_target": gain,
                 "valid_len": valid_len,
                 "dynamic_budget_target": dynamic_budget_target,
+                "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
             }
         )
     return prepared
@@ -101,6 +112,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
     feature_dim = len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)
     features = torch.zeros((len(batch), max_len, feature_dim), dtype=torch.float32, device=device)
     utility = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    gain = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
     valid = torch.zeros((len(batch), max_len), dtype=torch.bool, device=device)
     buckets = [int(item) for item in dynamic_budget_buckets]
     budget_indices: list[int] = []
@@ -109,6 +121,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
         length = len(row["features"])
         features[row_idx, :length] = torch.tensor(row["features"], dtype=torch.float32, device=device)
         utility[row_idx, :length] = torch.tensor(row["detector_utility_target"], dtype=torch.float32, device=device)
+        gain[row_idx, :length] = torch.tensor(row["detector_marginal_gain_target"], dtype=torch.float32, device=device)
         valid[row_idx, : int(row["valid_len"])] = True
         target_budget = int(row["dynamic_budget_target"])
         budget_targets.append(target_budget)
@@ -116,6 +129,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
     return {
         "features": features,
         "utility": utility,
+        "gain": gain,
         "valid": valid,
         "budget_indices": torch.tensor(budget_indices, dtype=torch.long, device=device),
         "budget_targets": torch.tensor(budget_targets, dtype=torch.float32, device=device),
@@ -148,6 +162,7 @@ def _run_epoch(
             losses = detector_policy.detector_aware_training_objective(
                 outputs,
                 detector_utility_target=tensors["utility"],
+                detector_gain_target=tensors["gain"],
                 valid=tensors["valid"],
                 target_budget=tensors["budget_targets"],
             )
@@ -231,6 +246,9 @@ def run_training(
         "optimizer_state_dict": optimizer.state_dict(),
         "model_kwargs": model_kwargs,
         "dynamic_budget_buckets": buckets,
+        "utility_semantics": "signed_detector_utility_v1",
+        "signed_utility_supported": True,
+        "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
         "loss_terms": dict(detector_policy.DEFAULT_DETECTOR_AWARE_LOSS_TERMS),
         "teacher_target_scope": "train_only",
         "uses_uniform_scaffold": False,
@@ -252,6 +270,9 @@ def run_training(
         "checkpoint_sha256": _sha256_file(checkpoint),
         "train_jsonl_sha256": _sha256_file(train_jsonl),
         "dynamic_budget_buckets": buckets,
+        "utility_semantics": "signed_detector_utility_v1",
+        "signed_utility_supported": True,
+        "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
         "teacher_target_scope": "train_only",
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,

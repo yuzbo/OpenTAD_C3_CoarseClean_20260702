@@ -122,6 +122,10 @@ def _run_actionformer_path_smoke(cfg, *, dense_len, seed):
         "actionformer_loss_values": finite_loss_values,
         "actionformer_selected_axis_smoke": True,
         "actionformer_physical_grid_smoke": False,
+        "sparse_distill_adapter_ready": True,
+        "sparse_distill_claim_allowed": False,
+        "sparse_distill_map_claim_allowed": False,
+        "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
         "actionformer_smoke_limitations": [
             "uses the real OpenTAD ActionFormer forward_train/projection/rpn_head path",
             "uses a tiny selected-axis synthetic batch; it is not a full AdaTAD mAP run",

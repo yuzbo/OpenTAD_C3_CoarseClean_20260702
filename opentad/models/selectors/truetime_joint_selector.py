@@ -315,7 +315,7 @@ class TrueTimeRelaxedHardTopKSelector(nn.Module):
             meta["detector_prediction_inverse_map_required"] = True
             meta["selected_axis_to_true_time_dense_index"] = positions
             meta["irregular_selected_positions"] = positions
-            meta["irregular_native_axis"] = False
+            meta["irregular_native_axis"] = True
             meta["irregular_selected_count"] = len(positions)
             meta["irregular_dense_valid_len"] = dense_valid_len
             meta["irregular_selected_valid_len"] = dense_valid_len

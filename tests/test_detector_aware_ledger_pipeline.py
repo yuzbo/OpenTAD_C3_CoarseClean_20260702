@@ -101,6 +101,7 @@ def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp
         assert "detector_utility_ndcg" in validation
         assert validation["detector_utility_rows"] == 0
         assert validation["detector_utility_metric_availability"] == "not_available_no_train_only_teacher_utility"
+        assert validation["dynamic_gain_calibration"]["score_semantics"] == "calibrated_marginal_gain"
         assert validation["max_unselected_hole"] <= 6
         assert validation["adatad_map"] is None
         assert validation["map_claim_allowed"] is False
