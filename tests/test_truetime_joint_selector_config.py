@@ -10,7 +10,9 @@ from mmengine.config import Config
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_c3_adatad_smoke.py"
 EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_c3_adatad_smoke_exec.py"
+PRECHECK_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_adatad_precheck.py"
 VALIDATOR = ROOT / "tools" / "bata" / "validate_truetime_joint_selector_precheck.py"
+PRECHECK_RUNNER = ROOT / "tools" / "bata" / "run_truetime_joint_selector_precheck.py"
 LAUNCHER = ROOT / "scripts" / "run_c3_truetime_joint_selector_adatad_gpu1.sh"
 
 
@@ -127,6 +129,89 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
         assert "truetime_dense_valid_len" in meta_keys
         assert "irregular_selected_count" in meta_keys
         assert "irregular_dense_valid_len" in meta_keys
+
+
+def test_truetime_joint_selector_precheck_config_is_not_smoke_only_and_claim_locked() -> None:
+    cfg = Config.fromfile(str(PRECHECK_CONFIG))
+
+    assert cfg.experiment_scope.route_variant == "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3"
+    assert cfg.experiment_scope.stage == "stage3_true_time_e2e_adatad_selector_precheck"
+    assert cfg.experiment_scope.minimum_useful_deliverable == "precheck_ready_true_adatad_selector_training_candidate"
+    assert cfg.experiment_scope.paper_claim_allowed is False
+    assert cfg.experiment_scope.deploy_claim_allowed is False
+    assert cfg.experiment_scope.end_to_end_claim_allowed is False
+    assert cfg.truetime_joint_selector_gate.smoke_only is False
+    assert cfg.truetime_joint_selector_gate.precheck_only_default is True
+    assert cfg.truetime_joint_selector_gate.real_detector_gradient_proof_required is True
+    assert cfg.truetime_joint_selector_gate.launch_gate_passed is False
+    assert cfg.truetime_joint_selector_gate.end_to_end_claim_allowed is False
+    assert cfg.truetime_joint_selector_gate.paper_claim_allowed is False
+    assert cfg.truetime_joint_selector_gate.deploy_claim_allowed is False
+    assert cfg.truetime_joint_selector_gate.metric_claim_allowed is False
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.frame_selector.type == "TrueTimeRelaxedHardTopKSelector"
+    assert cfg.model.frame_selector.selected_count == 384
+    assert cfg.model.frame_selector.dense_len == 768
+    assert cfg.workflow.max_train_iters <= 4
+    assert cfg.workflow.val_eval_interval <= 0
+    assert "mAP" not in cfg.truetime_metrics_to_log
+    assert "tIoU" not in cfg.truetime_metrics_to_log
+
+
+def test_truetime_joint_selector_precheck_validator_accepts_real_actionformer_proof_schema(tmp_path: Path) -> None:
+    proof = tmp_path / "precheck_proof.json"
+    proof.write_text(
+        json.dumps(
+            {
+                "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
+                "stage": "stage3_true_time_e2e_adatad_selector_precheck",
+                "geometry_roundtrip_passed": True,
+                "prediction_inverse_map_passed": True,
+                "selected_input_st_gradient_passed": True,
+                "selected_input_selector_grad_norm": 0.25,
+                "detector_loss_selector_grad_passed": True,
+                "detector_loss_selector_grad_norm": 0.31,
+                "selector_grad_norm": 0.31,
+                "selector_grad_nonzero": True,
+                "real_detector_loss_selector_grad_passed": True,
+                "real_detector_loss_selector_grad_norm": 0.31,
+                "real_detector_proof_source": "opentad_actionformer_forward_train_cost_backward",
+                "real_detector_loss_keys": ["cls_loss", "reg_loss"],
+                "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
+                "actionformer_detector_loss_selector_grad_passed": True,
+                "actionformer_detector_loss_selector_grad_norm": 0.31,
+                "actionformer_loss_keys": ["cls_loss", "reg_loss"],
+                "actionformer_selected_axis_smoke": False,
+                "actionformer_physical_grid_precheck": True,
+                "sparse_distill_adapter_ready": True,
+                "sparse_distill_claim_allowed": False,
+                "sparse_distill_map_claim_allowed": False,
+                "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
+            }
+        ),
+        encoding="utf-8",
+    )
+    validator = _load_validator()
+
+    cfg = validator.validate_config(
+        str(PRECHECK_CONFIG),
+        require_grad_proof=True,
+        allow_launch_unlocked=False,
+        proof_json=str(proof),
+    )
+
+    assert cfg.truetime_joint_selector_gate.smoke_only is False
+    assert cfg.truetime_joint_selector_gate.launch_gate_passed is False
+
+
+def test_truetime_joint_selector_precheck_runner_defaults_to_precheck_config_and_real_detector() -> None:
+    text = PRECHECK_RUNNER.read_text(encoding="utf-8")
+
+    assert "c3_truetime_joint_selector_adatad_precheck.py" in text
+    assert "truetime_actionformer_path_precheck_model" in text
+    assert "opentad_actionformer_forward_train_cost_backward" in text
+    assert "real_detector_loss_selector_grad_norm" in text
+    assert "TrueTimeJointSelectorSmokeDetector" not in text
 
 
 def test_truetime_selector_marks_physical_grid_metas_as_native_axis() -> None:
