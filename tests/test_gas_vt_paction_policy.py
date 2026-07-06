@@ -123,6 +123,60 @@ def test_training_preparation_can_infer_missing_split_from_explicit_source_path(
     assert prepared[0]["inferred_split_from_source_path"] is True
 
 
+def test_training_preparation_can_allow_training_source_gt_diagnostics_only() -> None:
+    row = _source_row()
+    row["uses_gt_for_diagnostics"] = True
+
+    prepared = train_gas_vt._prepared_rows(
+        [row],
+        dynamic_budget_buckets=[2, 4],
+        expected_split="training",
+        allow_gt_diagnostics_in_training_source=True,
+    )
+
+    assert len(prepared) == 1
+    assert prepared[0]["allowed_gt_diagnostics_in_training_source"] is True
+
+
+def test_training_preparation_rejects_gt_diagnostics_without_explicit_training_allowance() -> None:
+    row = _source_row()
+    row["uses_gt_for_diagnostics"] = True
+
+    with pytest.raises(ValueError, match="forbidden p_action source flag uses_gt_for_diagnostics=true"):
+        train_gas_vt._prepared_rows(
+            [row],
+            dynamic_budget_buckets=[2, 4],
+            expected_split="training",
+        )
+
+
+def test_training_preparation_rejects_gt_diagnostics_outside_training_even_when_enabled() -> None:
+    row = _source_row(split="validation")
+    row["uses_gt_for_diagnostics"] = True
+
+    with pytest.raises(ValueError, match="forbidden p_action source flag uses_gt_for_diagnostics=true"):
+        train_gas_vt._prepared_rows(
+            [row],
+            dynamic_budget_buckets=[2, 4],
+            expected_split="validation",
+            allow_gt_diagnostics_in_training_source=True,
+        )
+
+
+def test_training_preparation_rejects_real_gt_source_even_when_diagnostics_are_enabled() -> None:
+    row = _source_row()
+    row["uses_gt"] = True
+    row["uses_gt_for_diagnostics"] = True
+
+    with pytest.raises(ValueError, match="forbidden p_action source flag uses_gt=true"):
+        train_gas_vt._prepared_rows(
+            [row],
+            dynamic_budget_buckets=[2, 4],
+            expected_split="training",
+            allow_gt_diagnostics_in_training_source=True,
+        )
+
+
 def test_training_preparation_rejects_wrong_explicit_split_even_when_inference_enabled() -> None:
     with pytest.raises(ValueError, match="expected split training, got validation"):
         train_gas_vt._prepared_rows(

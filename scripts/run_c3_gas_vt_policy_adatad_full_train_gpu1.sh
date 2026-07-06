@@ -141,6 +141,7 @@ bash -n "${BASH_SOURCE[0]}"
   --dynamic-budget-buckets ${GAS_VT_DYNAMIC_BUDGET_BUCKETS} \
   --expected-split training \
   --allow-missing-split-from-source-path \
+  --allow-gt-diagnostics-in-training-source \
   --device cuda \
   --seed "${SEED}"
 

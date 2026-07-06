@@ -63,15 +63,43 @@ def _row_with_inferred_split(
     *,
     expected_split: str | None,
     allow_missing_split_from_source_path: bool,
-) -> tuple[Mapping[str, Any], bool]:
+) -> tuple[Mapping[str, Any], bool, bool]:
+    patched: dict[str, Any] | None = None
+    inferred_split = False
     if not expected_split or base_train._row_split(row) is not None:
-        return row, False
-    if not allow_missing_split_from_source_path:
-        return row, False
-    patched = dict(row)
-    patched["split"] = str(expected_split)
-    patched["inferred_split_from_source_path"] = True
-    return patched, True
+        return row, inferred_split, False
+    if allow_missing_split_from_source_path:
+        patched = dict(row)
+        patched["split"] = str(expected_split)
+        patched["inferred_split_from_source_path"] = True
+        inferred_split = True
+    return patched or row, inferred_split, False
+
+
+def _row_for_source_validation(
+    row: Mapping[str, Any],
+    *,
+    expected_split: str | None,
+    allow_missing_split_from_source_path: bool,
+    allow_gt_diagnostics_in_training_source: bool,
+) -> tuple[Mapping[str, Any], bool, bool]:
+    row_for_training, inferred_split, _ = _row_with_inferred_split(
+        row,
+        expected_split=expected_split,
+        allow_missing_split_from_source_path=allow_missing_split_from_source_path,
+    )
+    expected_is_training = bool(expected_split and base_train._split_matches("training", str(expected_split)))
+    gt_diagnostics_allowed = (
+        bool(allow_gt_diagnostics_in_training_source)
+        and expected_is_training
+        and base_train._is_true(row_for_training.get("uses_gt_for_diagnostics", False))
+    )
+    if gt_diagnostics_allowed:
+        patched = dict(row_for_training)
+        patched["uses_gt_for_diagnostics"] = False
+        patched["allowed_gt_diagnostics_in_training_source"] = True
+        row_for_training = patched
+    return row_for_training, inferred_split, gt_diagnostics_allowed
 
 
 def _prepared_rows(
@@ -80,13 +108,15 @@ def _prepared_rows(
     dynamic_budget_buckets: Sequence[int],
     expected_split: str | None,
     allow_missing_split_from_source_path: bool = False,
+    allow_gt_diagnostics_in_training_source: bool = False,
 ) -> list[dict[str, Any]]:
     prepared: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
-        row_for_training, inferred_split = _row_with_inferred_split(
+        row_for_training, inferred_split, allowed_gt_diagnostics = _row_for_source_validation(
             row,
             expected_split=expected_split,
             allow_missing_split_from_source_path=allow_missing_split_from_source_path,
+            allow_gt_diagnostics_in_training_source=allow_gt_diagnostics_in_training_source,
         )
         _validate_source_row(row_for_training, line_no=line_no, expected_split=expected_split)
         p_action = _extract_paction(row_for_training, line_no=line_no)
@@ -116,6 +146,7 @@ def _prepared_rows(
                 "valid_len": valid_len,
                 "dynamic_budget_target": dynamic_budget_target,
                 "inferred_split_from_source_path": bool(inferred_split),
+                "allowed_gt_diagnostics_in_training_source": bool(allowed_gt_diagnostics),
             }
         )
     return prepared
@@ -221,6 +252,7 @@ def run_training(
     seed: int = 0,
     expected_split: str | None = "training",
     allow_missing_split_from_source_path: bool = False,
+    allow_gt_diagnostics_in_training_source: bool = False,
 ) -> dict[str, Any]:
     import torch
 
@@ -235,6 +267,7 @@ def run_training(
         dynamic_budget_buckets=buckets,
         expected_split=expected_split,
         allow_missing_split_from_source_path=allow_missing_split_from_source_path,
+        allow_gt_diagnostics_in_training_source=allow_gt_diagnostics_in_training_source,
     )
     model_kwargs = {
         "input_dim": len(gas_vt.GAS_VT_FEATURE_NAMES),
@@ -291,7 +324,9 @@ def run_training(
         "dynamic_budget_buckets": buckets,
         "expected_split": expected_split,
         "allow_missing_split_from_source_path": bool(allow_missing_split_from_source_path),
+        "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
         "inferred_split_rows": int(sum(1 for row in train_rows if row.get("inferred_split_from_source_path"))),
+        "allowed_gt_diagnostics_rows": int(sum(1 for row in train_rows if row.get("allowed_gt_diagnostics_in_training_source"))),
         "train_row_count": int(len(train_rows)),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
@@ -330,6 +365,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             "wrong splits still fail closed."
         ),
     )
+    parser.add_argument(
+        "--allow-gt-diagnostics-in-training-source",
+        action="store_true",
+        help=(
+            "Allow a training split source JSONL to carry uses_gt_for_diagnostics=true "
+            "for exported diagnostic metrics. This does not allow uses_gt/teacher/"
+            "oracle/cache/raw-prediction flags and must not be used for val/test "
+            "policy inputs."
+        ),
+    )
     args = parser.parse_args(argv)
     summary = run_training(
         args.train_jsonl,
@@ -349,6 +394,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
         expected_split=args.expected_split,
         allow_missing_split_from_source_path=args.allow_missing_split_from_source_path,
+        allow_gt_diagnostics_in_training_source=args.allow_gt_diagnostics_in_training_source,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

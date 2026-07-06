@@ -168,6 +168,7 @@ def test_gas_vt_launcher_is_gpu1_precheck_fail_closed_and_uses_gas_vt_tools() ->
     assert "Set ALLOW_C3_GAS_VT_GPU0=1 only after explicitly stopping the GPU0 model zoo." in text
     assert "train_gap_aware_acquisition_policy.py" in text
     assert "--allow-missing-split-from-source-path" in text
+    assert "--allow-gt-diagnostics-in-training-source" in text
     assert "run_gap_aware_ledger_pipeline.py" in text
     assert "apply_gap_aware_acquisition_policy.py" in text
     assert "validate_paction_learned_policy_ledger.py" in text
