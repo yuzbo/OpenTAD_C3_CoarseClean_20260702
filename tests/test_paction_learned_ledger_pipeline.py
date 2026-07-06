@@ -521,8 +521,8 @@ def test_paction_policy_trainer_defaults_to_training_split_guard() -> None:
     assert args.expected_split == "training"
 
 
-@pytest.mark.parametrize("flag", ["uses_gt_for_diagnostics", "diagnostic_only"])
-def test_selection_deploy_source_rejects_true_leak_flags_before_strip(tmp_path: Path, flag: str) -> None:
+@pytest.mark.parametrize("flag", ["uses_gt", "training_only", "uses_teacher", "uses_cache"])
+def test_selection_deploy_source_rejects_true_generation_or_cache_flags_before_strip(tmp_path: Path, flag: str) -> None:
     input_jsonl = tmp_path / "source.jsonl"
     selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
     row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
@@ -531,6 +531,38 @@ def test_selection_deploy_source_rejects_true_leak_flags_before_strip(tmp_path: 
 
     with pytest.raises(ValueError, match=flag):
         paction_source_samples.write_deploy_selection_source_jsonl(input_jsonl, selection_jsonl)
+
+
+def test_selection_deploy_source_strips_diagnostic_flags_and_can_infer_legacy_provenance(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "source.jsonl"
+    selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    row.pop("paction_positive_provenance")
+    row["probe_model"] = "mobilenetv3_64px"
+    row["uses_gt_for_diagnostics"] = True
+    row["diagnostic_only"] = True
+    _write_jsonl(input_jsonl, [row])
+
+    with pytest.raises(ValueError, match="p_action positive provenance is required"):
+        paction_source_samples.write_deploy_selection_source_jsonl(input_jsonl, selection_jsonl)
+
+    report = paction_source_samples.write_deploy_selection_source_jsonl(
+        input_jsonl,
+        selection_jsonl,
+        allow_inferred_paction_positive_provenance=True,
+    )
+    rows = _read_jsonl(selection_jsonl)
+
+    assert report["inferred_paction_positive_provenance_count"] == 1
+    assert report["stripped_true_diagnostic_flag_counts"] == {
+        "diagnostic_only": 1,
+        "uses_gt_for_diagnostics": 1,
+    }
+    assert "uses_gt_for_diagnostics" not in rows[0]
+    assert "diagnostic_only" not in rows[0]
+    assert rows[0]["paction_positive_provenance"]["inferred_from_source_row"] is True
+    assert rows[0]["paction_positive_provenance"]["probe_model"] == "mobilenetv3_64px"
+    assert rows[0]["paction_positive_provenance"]["no_gt_generation"] is True
 
 
 def test_selection_deploy_source_strips_metric_payload_without_laundering_flags(tmp_path: Path) -> None:

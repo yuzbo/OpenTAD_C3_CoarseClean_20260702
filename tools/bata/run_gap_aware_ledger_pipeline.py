@@ -98,6 +98,7 @@ def run_pipeline(
     dynamic_budget_buckets: Sequence[int] = gas_vt.DEFAULT_GAS_VT_DYNAMIC_BUDGET_BUCKETS,
     device: str = "cuda",
     deploy_selection_ledger: bool = True,
+    allow_inferred_paction_positive_provenance: bool = True,
     allow_short_valid_ratio_count: bool = True,
     max_unselected_hole: int | None = None,
     max_p95_unselected_hole: float | None = None,
@@ -122,6 +123,7 @@ def run_pipeline(
             selection_input_jsonl,
             report_json=out_path / "source.selection_deploy.report.json",
             split="",
+            allow_inferred_paction_positive_provenance=bool(allow_inferred_paction_positive_provenance),
         )
     input_sample_path = selection_input_jsonl if selection_input_jsonl is not None else canonical_input_jsonl
     metric_sample_path = canonical_input_jsonl
@@ -198,6 +200,7 @@ def run_pipeline(
         "dynamic_target_len": int(dynamic_target_len),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "deploy_selection_ledger": bool(deploy_selection_ledger),
+        "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
         "max_unselected_hole": max_unselected_hole,
         "max_p95_unselected_hole": max_p95_unselected_hole,
         "max_uniform_similarity": max_uniform_similarity,
