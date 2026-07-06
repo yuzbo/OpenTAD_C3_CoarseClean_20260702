@@ -165,6 +165,48 @@ with open(input_jsonl, "r", encoding="utf-8-sig") as src, out_path.open("w", enc
         if existing is not None and existing not in allowed:
             raise ValueError(f"{input_jsonl}:{line_no}: split {existing!r} conflicts with expected {split_value!r}")
         row['split'] = split_value
+        raw_provenance = row.get('paction_positive_provenance') or row.get('p_action_provenance') or {}
+        if not isinstance(raw_provenance, dict):
+            raise ValueError(f"{input_jsonl}:{line_no}: p_action provenance must be a JSON object when present")
+        provenance = dict(raw_provenance)
+        provenance.setdefault('p_action_source', row.get('p_action_source') or 'lowres_action_probe')
+        for marker_key in (
+            'probe_model',
+            'matrix_model_id',
+            'official_action_seg_backend',
+            'source_model',
+            'model',
+            'probe_checkpoint_sha256',
+            'probe_manifest_sha256',
+        ):
+            value = row.get(marker_key)
+            if isinstance(value, str) and value.strip() and not provenance.get(marker_key):
+                provenance[marker_key] = value
+        if not any(isinstance(provenance.get(key), str) and provenance[key].strip() for key in (
+            'probe_model',
+            'matrix_model_id',
+            'official_action_seg_backend',
+            'source_model',
+            'model',
+            'probe_checkpoint_sha256',
+            'probe_manifest_sha256',
+        )):
+            raise ValueError(f"{input_jsonl}:{line_no}: cannot materialize p_action provenance without a model/backend marker")
+        provenance['no_gt_generation'] = True
+        for false_key in (
+            'uses_gt',
+            'uses_gt_for_diagnostics',
+            'diagnostic_only',
+            'uses_teacher',
+            'uses_oracle',
+            'uses_cache',
+            'uses_prediction_cache',
+            'uses_raw_prediction',
+            'prediction_uses_gt',
+            'training_only',
+        ):
+            provenance[false_key] = False
+        row['paction_positive_provenance'] = provenance
         row.pop('uses_gt_for_diagnostics', None)
         row.pop('diagnostic_only', None)
         row.pop('deploy_selection_ledger', None)
