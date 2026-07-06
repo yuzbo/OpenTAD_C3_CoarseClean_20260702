@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools.bata.detector_teacher_utility import validate_teacher_utility_export_evidence
+from tools.bata import detector_deploy_leakage
 from tools.bata.validate_c3_detector_aware_adatad_full_train import validate_config as validate_stage2_config
 from tools.bata.validate_truetime_joint_selector_precheck import validate_config as validate_stage3_config
 
@@ -192,10 +193,10 @@ def _validate_no_teacher_leakage_jsonl(path: str | Path, *, split_name: str) -> 
     rows = _read_jsonl(path)
     for line_no, row in enumerate(rows, start=1):
         _require(_split(row) not in {"train", "training"}, f"{path}:{line_no}: {split_name} row is training split")
-        for key in ("teacher_utility", "frame_utility", "signed_frame_utility", "teacher_utility_provenance"):
-            _require(key not in row, f"{path}:{line_no}: val/test row contains {key}")
-        for flag in FORBIDDEN_LEAKAGE_FLAGS:
-            _require(not _is_true(row.get(flag, False)), f"{path}:{line_no}: forbidden leakage flag {flag}=true")
+        detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(
+            row,
+            source_name=f"{path}:{line_no}:{split_name}",
+        )
     return {"path": str(path), "row_count": len(rows)}
 
 

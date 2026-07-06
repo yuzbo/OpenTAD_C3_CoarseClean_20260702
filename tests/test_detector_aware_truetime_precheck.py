@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from mmengine.config import Config
 
 
@@ -13,6 +14,15 @@ VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_stage23_precheck.py"
 STAGE3_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_adatad_precheck.py"
 STAGE3_EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_adatad_precheck_exec.py"
 STAGE3_RUNNER = ROOT / "scripts" / "run_duca_stage3_truetime_precheck_gpu1.sh"
+GUARD = ROOT / "opentad" / "utils" / "training_guard.py"
+
+
+def _load_guard():
+    spec = importlib.util.spec_from_file_location("training_guard_stage3_precheck_test", GUARD)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_validator():
@@ -29,6 +39,62 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _stage3_gate_payload(**updates) -> dict:
+    payload = {
+        "decision": "ALLOW_DUCA_STAGE3_TRUETIME_FULL_TRAIN",
+        "route": "STAGE3_TRUE_TIME_E2E_ADATAD_SELECTOR",
+        "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
+        "stage": "stage3_true_time_e2e_adatad_selector_precheck",
+        "execution_mode": "train",
+        "selected_window_size": 384,
+        "dense_window_size": 768,
+        "allow_tools_train": True,
+        "allow_slurm": True,
+        "allow_gpu": True,
+        "single_gpu": True,
+        "allow_detector_training": True,
+        "allow_long_training": True,
+        "stage3_precheck_passed": True,
+        "selector_grad_proof_bound": True,
+        "tools_test": False,
+        "allow_tools_test": False,
+        "direct_tools_test": False,
+        "detector_map": False,
+        "allow_detector_map": False,
+        "teacher": False,
+        "uses_teacher": False,
+        "test_gt": False,
+        "uses_test_gt": False,
+        "gt_selection": False,
+        "uses_gt_for_selection": False,
+        "raw_prediction_cache": False,
+        "allow_raw_prediction_cache": False,
+        "load_from_raw_predictions": False,
+        "save_raw_prediction": False,
+        "metric_claim": False,
+        "metric_claim_allowed": False,
+        "paper_claim": False,
+        "paper_claim_allowed": False,
+        "runtime_flops_claim": False,
+        "runtime_flops_claim_allowed": False,
+        "deploy_claim": False,
+        "deploy_claim_allowed": False,
+        "active_sha256_manifest_sha256": "manifest-sha",
+        "resolved_config_sha256": "resolved-sha",
+        "precheck_summary_json": "/remote/stage3.summary.json",
+        "precheck_summary_sha256": "summary-sha",
+        "proof_json": "/remote/proof.json",
+        "proof_json_sha256": "proof-sha",
+        "stage3_config_sha256": "config-sha",
+        "stage3_exec_config_sha256": "exec-config-sha",
+        "git_commit": "commit-sha",
+        "git_dirty": False,
+        "generated_at_utc": "2026-07-07T00:00:00+00:00",
+    }
+    payload.update(updates)
+    return payload
 
 
 def test_duca_stage23_validator_exists_and_accepts_real_stage3_precheck_proof(tmp_path: Path) -> None:
@@ -103,6 +169,39 @@ def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> No
     assert "proof_json_sha256" in text
     assert "stale precheck summary" in text
     assert "bound config/proof hashes" in text
+    assert "OPENTAD_DUCA_STAGE3_GATE_JSON" in text
+    assert "stage3_active_sha256_manifest.txt" in text
+    assert "formal DUCA Stage3 full train requires a clean tracked git tree" in text
+
+
+def test_duca_stage3_exec_config_requires_bound_entrypoint_gate(tmp_path: Path, monkeypatch) -> None:
+    cfg = Config.fromfile(str(STAGE3_EXEC_CONFIG))
+    guard = _load_guard()
+
+    for name in (
+        "OPENTAD_DUCA_STAGE3_GATE_JSON",
+        "OPENTAD_DUCA_STAGE3_GATE_SHA256",
+        "OPENTAD_DUCA_STAGE3_ACTIVE_MANIFEST_SHA256",
+        "OPENTAD_DUCA_STAGE3_RESOLVED_CONFIG_SHA256",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(RuntimeError, match="missing required entrypoint gate env"):
+        guard.assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
+
+    gate_json = tmp_path / "stage3_gate.json"
+    gate_json.write_text(json.dumps(_stage3_gate_payload()), encoding="utf-8")
+    monkeypatch.setenv("OPENTAD_DUCA_STAGE3_GATE_JSON", str(gate_json))
+    monkeypatch.setenv("OPENTAD_DUCA_STAGE3_GATE_SHA256", _sha256_file(gate_json))
+    monkeypatch.setenv("OPENTAD_DUCA_STAGE3_ACTIVE_MANIFEST_SHA256", "manifest-sha")
+    monkeypatch.setenv("OPENTAD_DUCA_STAGE3_RESOLVED_CONFIG_SHA256", "resolved-sha")
+
+    assert guard.assert_detector_training_allowed(cfg, entrypoint="tools/train.py") is None
+
+    gate_json.write_text(json.dumps(_stage3_gate_payload(uses_teacher=True)), encoding="utf-8")
+    monkeypatch.setenv("OPENTAD_DUCA_STAGE3_GATE_SHA256", _sha256_file(gate_json))
+    with pytest.raises(RuntimeError, match="uses_teacher"):
+        guard.assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
 
 
 def test_duca_stage3_precheck_config_keeps_default_precheck_contract_when_full_run_env(monkeypatch) -> None:

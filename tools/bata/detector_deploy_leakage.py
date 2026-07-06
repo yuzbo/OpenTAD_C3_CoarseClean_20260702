@@ -38,6 +38,40 @@ DETECTOR_DEPLOY_FORBIDDEN_TRUE_FLAGS = tuple(
 
 _FORBIDDEN_PAYLOAD_KEY_SET = {key.lower() for key in DETECTOR_DEPLOY_FORBIDDEN_PAYLOAD_KEYS}
 _FORBIDDEN_TRUE_FLAG_SET = {key.lower() for key in DETECTOR_DEPLOY_FORBIDDEN_TRUE_FLAGS}
+_STRIPPED_VALUE = object()
+DETECTOR_DEPLOY_FORBIDDEN_KEY_FRAGMENTS = (
+    "teacher_utility",
+    "dense_teacher",
+    "teacher_dense",
+    "teacher_proposal",
+    "teacher_prediction",
+    "teacher_logits",
+    "teacher_scores",
+    "teacher_saliency",
+    "frame_utility",
+    "signed_frame_utility",
+    "marginal_gain_frame_utility",
+    "oracle",
+    "ground_truth",
+    "prediction_cache",
+    "raw_prediction",
+    "raw_predictions",
+    "proposal_cache",
+)
+DETECTOR_DEPLOY_FORBIDDEN_VALUE_FRAGMENTS = DETECTOR_DEPLOY_FORBIDDEN_KEY_FRAGMENTS
+
+
+def _has_forbidden_fragment(text: str, fragments: tuple[str, ...]) -> bool:
+    normalized = text.lower()
+    return any(fragment in normalized for fragment in fragments)
+
+
+def _key_is_forbidden_payload(normalized_key: str) -> bool:
+    if normalized_key in _FORBIDDEN_PAYLOAD_KEY_SET:
+        return True
+    if normalized_key in _FORBIDDEN_TRUE_FLAG_SET:
+        return False
+    return _has_forbidden_fragment(normalized_key, DETECTOR_DEPLOY_FORBIDDEN_KEY_FRAGMENTS)
 
 
 def _is_true(value: Any) -> bool:
@@ -65,7 +99,7 @@ def find_detector_deploy_forbidden_paths(value: Any, *, path: str = "") -> list[
             key_text = str(key)
             item_path = _path_child(path, key_text)
             normalized = key_text.lower()
-            if normalized in _FORBIDDEN_PAYLOAD_KEY_SET:
+            if _key_is_forbidden_payload(normalized):
                 paths.append(item_path)
                 continue
             if normalized in _FORBIDDEN_TRUE_FLAG_SET and _is_true(item):
@@ -75,6 +109,12 @@ def find_detector_deploy_forbidden_paths(value: Any, *, path: str = "") -> list[
     elif isinstance(value, list):
         for idx, item in enumerate(value):
             paths.extend(find_detector_deploy_forbidden_paths(item, path=_path_index(path, idx)))
+    elif isinstance(value, tuple):
+        for idx, item in enumerate(value):
+            paths.extend(find_detector_deploy_forbidden_paths(item, path=_path_index(path, idx)))
+    elif isinstance(value, str):
+        if _has_forbidden_fragment(value, DETECTOR_DEPLOY_FORBIDDEN_VALUE_FRAGMENTS):
+            paths.append(path or "<value>")
     return paths
 
 
@@ -94,14 +134,29 @@ def strip_detector_deploy_forbidden_payloads(row: Mapping[str, Any]) -> dict[str
             for key, item in value.items():
                 key_text = str(key)
                 normalized = key_text.lower()
-                if normalized in _FORBIDDEN_PAYLOAD_KEY_SET:
+                if _key_is_forbidden_payload(normalized):
                     continue
                 if normalized in _FORBIDDEN_TRUE_FLAG_SET and _is_true(item):
                     continue
-                out[key] = strip_value(item)
+                stripped_item = strip_value(item)
+                if stripped_item is _STRIPPED_VALUE:
+                    continue
+                out[key] = stripped_item
             return out
         if isinstance(value, list):
-            return [strip_value(item) for item in value]
+            return [
+                item
+                for item in (strip_value(item) for item in value)
+                if item is not _STRIPPED_VALUE
+            ]
+        if isinstance(value, tuple):
+            return tuple(
+                item
+                for item in (strip_value(item) for item in value)
+                if item is not _STRIPPED_VALUE
+            )
+        if isinstance(value, str) and _has_forbidden_fragment(value, DETECTOR_DEPLOY_FORBIDDEN_VALUE_FRAGMENTS):
+            return _STRIPPED_VALUE
         return copy.deepcopy(value)
 
     return strip_value(row)

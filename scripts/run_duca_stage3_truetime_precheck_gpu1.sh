@@ -91,6 +91,109 @@ PY
   if [[ -z "${SLURM_JOB_ID:-}" && -z "${SLURM_STEP_ID:-}" ]]; then
     fail "formal DUCA Stage3 full train must run inside a Slurm allocation/step"
   fi
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+    fail "formal DUCA Stage3 full train requires a clean tracked git tree"
+  fi
+  SHA_MANIFEST="${PROOF_DIR}/stage3_active_sha256_manifest.txt"
+  sha256sum \
+    "${CONFIG}" \
+    "${EXEC_CONFIG}" \
+    "${PROOF_JSON}" \
+    "${SUMMARY_JSON}" \
+    tools/bata/run_truetime_joint_selector_precheck.py \
+    tools/bata/validate_truetime_joint_selector_precheck.py \
+    tools/bata/validate_duca_stage23_precheck.py \
+    opentad/utils/training_guard.py \
+    scripts/run_duca_stage3_truetime_precheck_gpu1.sh \
+    > "${SHA_MANIFEST}"
+  ACTIVE_MANIFEST_SHA256="$(sha256sum "${SHA_MANIFEST}" | awk '{print $1}')"
+  RESOLVED_CONFIG_SHA256="$(sha256sum "${EXEC_CONFIG}" | awk '{print $1}')"
+  GATE_JSON="${PROOF_DIR}/stage3_entrypoint_gate.json"
+  "${PYTHON}" - "${GATE_JSON}" "${ACTIVE_MANIFEST_SHA256}" "${RESOLVED_CONFIG_SHA256}" "${SUMMARY_JSON}" "${PROOF_JSON}" "${CONFIG}" "${EXEC_CONFIG}" <<'PY'
+import datetime as _dt
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+gate_path = Path(sys.argv[1])
+active_manifest_sha256 = sys.argv[2]
+resolved_config_sha256 = sys.argv[3]
+summary_path = Path(sys.argv[4])
+proof_path = Path(sys.argv[5])
+config_path = Path(sys.argv[6])
+exec_config_path = Path(sys.argv[7])
+
+
+def sha256_file(target: Path) -> str:
+    digest = hashlib.sha256()
+    with target.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+payload = {
+    "decision": "ALLOW_DUCA_STAGE3_TRUETIME_FULL_TRAIN",
+    "route": "STAGE3_TRUE_TIME_E2E_ADATAD_SELECTOR",
+    "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
+    "stage": "stage3_true_time_e2e_adatad_selector_precheck",
+    "execution_mode": "train",
+    "selected_window_size": 384,
+    "dense_window_size": 768,
+    "allow_tools_train": True,
+    "allow_slurm": True,
+    "allow_gpu": True,
+    "single_gpu": True,
+    "allow_detector_training": True,
+    "allow_long_training": True,
+    "stage3_precheck_passed": True,
+    "selector_grad_proof_bound": True,
+    "tools_test": False,
+    "allow_tools_test": False,
+    "direct_tools_test": False,
+    "detector_map": False,
+    "allow_detector_map": False,
+    "teacher": False,
+    "uses_teacher": False,
+    "test_gt": False,
+    "uses_test_gt": False,
+    "gt_selection": False,
+    "uses_gt_for_selection": False,
+    "raw_prediction_cache": False,
+    "allow_raw_prediction_cache": False,
+    "load_from_raw_predictions": False,
+    "save_raw_prediction": False,
+    "metric_claim": False,
+    "metric_claim_allowed": False,
+    "paper_claim": False,
+    "paper_claim_allowed": False,
+    "runtime_flops_claim": False,
+    "runtime_flops_claim_allowed": False,
+    "deploy_claim": False,
+    "deploy_claim_allowed": False,
+    "active_sha256_manifest_sha256": active_manifest_sha256,
+    "resolved_config_sha256": resolved_config_sha256,
+    "precheck_summary_json": str(summary_path),
+    "precheck_summary_sha256": sha256_file(summary_path),
+    "proof_json": str(proof_path),
+    "proof_json_sha256": sha256_file(proof_path),
+    "stage3_config_sha256": sha256_file(config_path),
+    "stage3_exec_config_sha256": sha256_file(exec_config_path),
+    "git_commit": git_commit,
+    "git_dirty": False,
+    "generated_at_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+}
+gate_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  GATE_SHA256="$(sha256sum "${GATE_JSON}" | awk '{print $1}')"
+  export OPENTAD_DUCA_STAGE3_GATE_JSON="${GATE_JSON}"
+  export OPENTAD_DUCA_STAGE3_GATE_SHA256="${GATE_SHA256}"
+  export OPENTAD_DUCA_STAGE3_ACTIVE_MANIFEST_SHA256="${ACTIVE_MANIFEST_SHA256}"
+  export OPENTAD_DUCA_STAGE3_RESOLVED_CONFIG_SHA256="${RESOLVED_CONFIG_SHA256}"
+  echo "[DUCA_STAGE3_PRECHECK] entrypoint gate=${GATE_JSON} sha=${GATE_SHA256}"
   RUN_ID="${RUN_ID:-0}"
   SEED="${SEED:-0}"
   MASTER_PORT="${MASTER_PORT:-30231}"

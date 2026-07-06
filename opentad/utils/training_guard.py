@@ -112,7 +112,7 @@ def _lower_text(value):
 
 def _is_smoke_gate(gate_name, gate):
     if _get_value(gate, "smoke_only", _MISSING) is not _MISSING:
-        return True
+        return _is_true(_get_value(gate, "smoke_only", _MISSING))
     stage = _lower_text(_get_value(gate, "stage", _MISSING))
     return "smoke" in _lower_text(gate_name) or "smoke" in stage
 
