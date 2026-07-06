@@ -15,6 +15,7 @@ from .tadtr import TadTR
 from .vsgn import VSGN
 from .mamba import VideoMambaSuite
 from .dyfadet import DyFADet
+from .truetime_joint_selector_smoke import TrueTimeJointSelectorSmokeDetector
 
 __all__ = [
     "BaseDetector",
@@ -31,6 +32,7 @@ __all__ = [
     "TemporalMaxer",
     "VideoMambaSuite",
     "DyFADet",
+    "TrueTimeJointSelectorSmokeDetector",
     "DETR",
     "DeformableDETR",
     "TadTR",
