@@ -206,6 +206,8 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
     assert "materialize_split_source_jsonl" in text
     assert "C3_PACTION_TRAIN_SOURCE_JSONL_ORIGINAL" in text
     assert "row['split'] = split_value" in text
+    assert "row.pop('uses_gt_for_diagnostics', None)" in text
+    assert "row.pop('diagnostic_only', None)" in text
     assert "run_paction_learned_policy_ledger_pipeline.py" in text
     assert "validate_c3_paction_learned_adatad_full_train.py" in text
     assert "PACTION_ADATAD_VARIANTS" in text

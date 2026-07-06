@@ -165,6 +165,9 @@ with open(input_jsonl, "r", encoding="utf-8-sig") as src, out_path.open("w", enc
         if existing is not None and existing not in allowed:
             raise ValueError(f"{input_jsonl}:{line_no}: split {existing!r} conflicts with expected {split_value!r}")
         row['split'] = split_value
+        row.pop('uses_gt_for_diagnostics', None)
+        row.pop('diagnostic_only', None)
+        row.pop('deploy_selection_ledger', None)
         dst.write(json.dumps(row, sort_keys=True) + "\n")
         count += 1
 if count <= 0:
