@@ -46,6 +46,10 @@ def _validate_gate(cfg, *, allow_launch_unlocked):
         "ActionFormer detector grad gate must be required",
     )
     _require(_as_bool(gate.requires_geometry_roundtrip), "geometry gate must be required")
+    _require(
+        _as_bool(gate.get("requires_physical_grid_actionformer", False)),
+        "physical-grid ActionFormer gate must be required",
+    )
     _require(_as_bool(gate.end_to_end_claim_allowed) is False, "end-to-end claim must be locked")
     _require(_as_bool(gate.paper_claim_allowed) is False, "paper claim must be locked")
     _require(_as_bool(gate.runtime_flops_claim_allowed) is False, "runtime claim must be locked")
@@ -63,6 +67,18 @@ def _validate_gate(cfg, *, allow_launch_unlocked):
 def _validate_model(cfg):
     selector = cfg.model.frame_selector
     _require(cfg.model.type == "ActionFormer", "route must use ActionFormer frame_selector slot")
+    _require(
+        cfg.experiment_scope.detector_stack == "truetime_physical_grid_actionformer_frame_selector_slot",
+        "TrueTime route must use the physical-grid ActionFormer detector stack",
+    )
+    _require(
+        _as_bool(cfg.experiment_scope.get("uses_physical_grid_actionformer", False)),
+        "experiment scope must declare physical-grid ActionFormer usage",
+    )
+    _require(
+        _as_bool(cfg.experiment_scope.get("changes_loss_assignment", False)),
+        "TrueTime physical-grid route must declare changed loss-assignment geometry",
+    )
     _require(selector.type == "TrueTimeRelaxedHardTopKSelector", "wrong selector type")
     _require(int(selector.selected_count) == 384, "selected_count must be 384")
     _require(int(selector.dense_len) == 768, "dense_len must be 768")
@@ -77,6 +93,13 @@ def _validate_model(cfg):
     _require(int(cfg.model.projection.max_seq_len) == 384, "projection selected length must be 384")
     _require(_as_bool(cfg.inference.load_from_raw_predictions) is False, "raw prediction loading forbidden")
     _require(_as_bool(cfg.inference.save_raw_prediction) is False, "raw prediction saving forbidden")
+    physical_grid = cfg.model.rpn_head.physical_grid_actionformer
+    _require(_as_bool(physical_grid.enabled), "main ActionFormer rpn_head must enable physical_grid_actionformer")
+    _require(_as_bool(physical_grid.required), "main ActionFormer physical grid must be required")
+    _require(_as_bool(physical_grid.strict), "main ActionFormer physical grid must be strict")
+    _require(physical_grid.coordinate_space == "true_time_dense_index", "main physical grid coordinate space mismatch")
+    _require(physical_grid.selected_position_key == "irregular_selected_positions", "main physical grid selected key mismatch")
+    _require(physical_grid.dense_valid_len_key == "irregular_dense_valid_len", "main physical grid dense-valid key mismatch")
 
     smoke_model = cfg.truetime_detector_path_smoke_model
     smoke_selector = smoke_model.frame_selector
@@ -107,6 +130,17 @@ def _validate_model(cfg):
     _require(
         _as_bool(actionformer_selector.allow_teacher_utility) is False,
         "ActionFormer smoke teacher selection must be disabled",
+    )
+    actionformer_physical_grid = actionformer_smoke.rpn_head.physical_grid_actionformer
+    _require(
+        _as_bool(actionformer_physical_grid.enabled),
+        "ActionFormer smoke rpn_head must enable physical_grid_actionformer",
+    )
+    _require(_as_bool(actionformer_physical_grid.required), "ActionFormer smoke physical grid must be required")
+    _require(_as_bool(actionformer_physical_grid.strict), "ActionFormer smoke physical grid must be strict")
+    _require(
+        actionformer_physical_grid.coordinate_space == "true_time_dense_index",
+        "ActionFormer smoke physical grid coordinate space mismatch",
     )
 
 

@@ -33,6 +33,9 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
 
     assert cfg.experiment_scope.route_variant == "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3"
     assert cfg.experiment_scope.stage == "stage3_4_experimental_smoke"
+    assert cfg.experiment_scope.detector_stack == "truetime_physical_grid_actionformer_frame_selector_slot"
+    assert cfg.experiment_scope.uses_physical_grid_actionformer is True
+    assert cfg.experiment_scope.changes_loss_assignment is True
     assert cfg.experiment_scope.paper_claim_allowed is False
     assert cfg.experiment_scope.runtime_flops_claim_allowed is False
     assert cfg.experiment_scope.deploy_claim_allowed is False
@@ -40,6 +43,7 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.truetime_joint_selector_gate.requires_selector_grad_nonzero is True
     assert cfg.truetime_joint_selector_gate.requires_actionformer_detector_grad_nonzero is True
     assert cfg.truetime_joint_selector_gate.requires_geometry_roundtrip is True
+    assert cfg.truetime_joint_selector_gate.requires_physical_grid_actionformer is True
     assert cfg.truetime_joint_selector_gate.end_to_end_claim_allowed is False
     assert cfg.truetime_joint_selector_gate.eight_week_questions_answered_by == [
         "true_time_roundtrip_tests",
@@ -64,6 +68,12 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.model.frame_selector.detector_gradient_mode == "st_sparse_gather"
     assert cfg.model.frame_selector.slot_softmax_temperature == 0.7
     assert cfg.model.frame_selector.slot_distance_penalty == 2.0
+    assert cfg.model.rpn_head.physical_grid_actionformer.enabled is True
+    assert cfg.model.rpn_head.physical_grid_actionformer.required is True
+    assert cfg.model.rpn_head.physical_grid_actionformer.strict is True
+    assert cfg.model.rpn_head.physical_grid_actionformer.coordinate_space == "true_time_dense_index"
+    assert cfg.model.rpn_head.physical_grid_actionformer.selected_position_key == "irregular_selected_positions"
+    assert cfg.model.rpn_head.physical_grid_actionformer.dense_valid_len_key == "irregular_dense_valid_len"
     assert cfg.truetime_detector_path_smoke_model.type == "TrueTimeJointSelectorSmokeDetector"
     assert cfg.truetime_detector_path_smoke_model.frame_selector.detector_gradient_mode == "st_sparse_gather"
     assert cfg.truetime_detector_path_smoke_model.frame_selector.selected_count == 4
@@ -73,6 +83,10 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.truetime_actionformer_path_smoke_model.frame_selector.selected_count == 4
     assert cfg.truetime_actionformer_path_smoke_model.frame_selector.dense_len == 8
     assert cfg.truetime_actionformer_path_smoke_model.projection.max_seq_len == 4
+    assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.enabled is True
+    assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.required is True
+    assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.strict is True
+    assert cfg.truetime_actionformer_path_smoke_model.rpn_head.physical_grid_actionformer.coordinate_space == "true_time_dense_index"
     assert cfg.workflow.max_train_iters == 2
     assert cfg.truetime_metrics_to_log == [
         "selector_grad_norm",
