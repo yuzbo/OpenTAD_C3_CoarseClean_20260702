@@ -53,6 +53,9 @@ def test_policy_application_enriches_probe_samples_with_learned_strategies(tmp_p
     assert len(strategies["learned_paction_gap_loss_value"]) == 2
     assert rows[0]["paction_policy"]["source"] == "bootstrap_paction_gap_loss_surrogate_policy"
     assert rows[0]["paction_policy"]["uses_uniform_fill"] is False
+    provenance = rows[0]["paction_policy"]["p_action_provenance"]
+    assert provenance["uses_prediction_cache"] is False
+    assert provenance["prediction_uses_gt"] is False
 
 
 def test_policy_application_rejects_rows_without_paction_signal(tmp_path: Path) -> None:
@@ -68,7 +71,21 @@ def test_policy_application_rejects_rows_without_paction_signal(tmp_path: Path) 
         raise AssertionError("run_policy_application should reject rows without p_action")
 
 
-def test_policy_application_can_strip_deploy_invisible_payload(tmp_path: Path) -> None:
+def _paction_positive_provenance() -> dict:
+    return {
+        "p_action_source": "lowres_action_probe",
+        "probe_model": "mobilenetv3_64px",
+        "no_gt_generation": True,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
+    }
+
+
+def test_policy_application_strict_source_rejects_gt_payload_before_strip(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "samples.jsonl"
     output_jsonl = tmp_path / "samples.policy.jsonl"
     input_jsonl.write_text(
@@ -82,6 +99,59 @@ def test_policy_application_can_strip_deploy_invisible_payload(tmp_path: Path) -
                 "action_target": [0, 1, 0, 1],
                 "uses_gt_for_diagnostics": True,
                 "gt_boundaries": [1, 3],
+                "paction_positive_provenance": _paction_positive_provenance(),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="forbidden strict deploy p_action source"):
+        apply_policy.run_policy_application(
+            input_jsonl,
+            output_jsonl,
+            fixed_budget=2,
+            strip_deploy_invisible_payload=True,
+            strict_deploy_source=True,
+        )
+
+
+def test_policy_application_strict_source_requires_verifiable_provenance(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.policy.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 4,
+                "valid_len": 4,
+                "frame_signals": {"p_action": [0.10, 0.90, 0.20, 0.80]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="p_action positive provenance"):
+        apply_policy.run_policy_application(
+            input_jsonl,
+            output_jsonl,
+            fixed_budget=2,
+            strict_deploy_source=True,
+        )
+
+
+def test_policy_application_strict_source_accepts_provenance_and_strips_signals(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.policy.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 4,
+                "valid_len": 4,
+                "frame_signals": {"p_action": [0.10, 0.90, 0.20, 0.80]},
+                "paction_positive_provenance": _paction_positive_provenance(),
             }
         )
         + "\n",
@@ -93,12 +163,15 @@ def test_policy_application_can_strip_deploy_invisible_payload(tmp_path: Path) -
         output_jsonl,
         fixed_budget=2,
         strip_deploy_invisible_payload=True,
+        strict_deploy_source=True,
     )
     rows = _read_jsonl(output_jsonl)
 
     assert summary["strip_deploy_invisible_payload"] is True
+    assert summary["strict_deploy_source"] is True
     assert "strategy_selected_positions" in rows[0]
     assert "paction_policy" in rows[0]
+    assert rows[0]["paction_policy"]["p_action_provenance"]["probe_model"] == "mobilenetv3_64px"
     assert rows[0]["deploy_invisible_payload_stripped"] is True
     assert "frame_signals" not in rows[0]
     assert "p_action" not in rows[0]

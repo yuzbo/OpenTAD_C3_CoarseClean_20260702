@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from tools.bata import paction_budget_contract
+from tools.bata import paction_source_samples
 
 
 SUMMARY_SCHEMA_VERSION = "c3_paction_learned_policy_ledger_validation_v1"
@@ -103,12 +104,68 @@ def _gap_values(selected: Sequence[int], *, valid_len: int) -> list[int]:
     return gaps
 
 
+def _unselected_holes(selected: Sequence[int], *, valid_len: int) -> list[int]:
+    selected_set = {int(item) for item in selected}
+    holes: list[int] = []
+    current = 0
+    for idx in range(max(0, int(valid_len))):
+        if idx in selected_set:
+            if current > 0:
+                holes.append(current)
+            current = 0
+        else:
+            current += 1
+    if current > 0:
+        holes.append(current)
+    return holes or [0]
+
+
+def _uniform_reference_positions(*, valid_len: int, selected_count: int) -> list[int]:
+    valid_len = int(valid_len)
+    selected_count = int(selected_count)
+    if valid_len <= 0 or selected_count <= 0:
+        return []
+    if selected_count >= valid_len:
+        return list(range(valid_len))
+    step = float(valid_len) / float(selected_count)
+    positions = [int(round(float(idx) * step)) for idx in range(selected_count)]
+    positions = [max(0, min(valid_len - 1, item)) for item in positions]
+    if len(set(positions)) == len(positions):
+        return sorted(positions)
+    out: list[int] = []
+    used: set[int] = set()
+    for item in positions:
+        candidate = item
+        while candidate in used and candidate + 1 < valid_len:
+            candidate += 1
+        while candidate in used and candidate - 1 >= 0:
+            candidate -= 1
+        if candidate not in used:
+            used.add(candidate)
+            out.append(candidate)
+    return sorted(out)
+
+
+def _uniform_similarity(selected: Sequence[int], *, valid_len: int) -> float:
+    selected_set = {int(item) for item in selected}
+    if not selected_set:
+        return 0.0
+    reference = set(_uniform_reference_positions(valid_len=int(valid_len), selected_count=len(selected_set)))
+    return len(selected_set.intersection(reference)) / float(len(selected_set))
+
+
 def _p95(values: Sequence[int]) -> float | None:
     if not values:
         return None
     sorted_values = sorted(int(item) for item in values)
     index = max(0, min(len(sorted_values) - 1, int(math.ceil(0.95 * len(sorted_values))) - 1))
     return float(sorted_values[index])
+
+
+def _mean(values: Sequence[float]) -> float | None:
+    if not values:
+        return None
+    return sum(float(item) for item in values) / float(len(values))
 
 
 def _boundaries(sample_row: Mapping[str, Any]) -> list[float]:
@@ -134,32 +191,13 @@ def _action_target(sample_row: Mapping[str, Any]) -> list[float]:
     return []
 
 
-def _nonempty_text(value: Any) -> bool:
-    return isinstance(value, str) and bool(value.strip())
-
-
 def _validate_paction_positive_provenance(
     paction_policy: Mapping[str, Any],
     *,
     source_name: str,
 ) -> None:
     provenance = paction_policy.get("p_action_provenance")
-    if not isinstance(provenance, Mapping):
-        raise ValueError(f"{source_name}: p_action positive provenance is required")
-    if not _nonempty_text(provenance.get("p_action_source")):
-        raise ValueError(f"{source_name}: p_action positive provenance must include p_action_source")
-    model_markers = (
-        provenance.get("probe_model"),
-        provenance.get("matrix_model_id"),
-        provenance.get("official_action_seg_backend"),
-    )
-    if not any(_nonempty_text(item) for item in model_markers):
-        raise ValueError(f"{source_name}: p_action positive provenance must include a probe/model backend marker")
-    if provenance.get("no_gt_generation") is not True:
-        raise ValueError(f"{source_name}: p_action positive provenance must set no_gt_generation=true")
-    for key in ("uses_teacher", "uses_oracle", "uses_cache", "uses_raw_prediction"):
-        if provenance.get(key) is not False:
-            raise ValueError(f"{source_name}: p_action positive provenance must set {key}=false")
+    paction_source_samples.validate_paction_positive_provenance(provenance, source_name=source_name)
 
 
 def validate_ledger(
@@ -179,6 +217,9 @@ def validate_ledger(
     min_action_coverage: float | None = None,
     max_max_gap: int | None = None,
     max_p95_gap: float | None = None,
+    max_unselected_hole: int | None = None,
+    max_p95_unselected_hole: float | None = None,
+    max_uniform_similarity: float | None = None,
     require_policy_source: str | None = None,
     require_checkpoint_path: str | Path | None = None,
     require_checkpoint_sha256: str | None = None,
@@ -191,7 +232,10 @@ def validate_ledger(
     seen: set[str] = set()
     selected_counts: list[int] = []
     all_gaps: list[int] = []
+    all_unselected_holes: list[int] = []
+    uniform_similarities: list[float] = []
     max_gap = 0
+    max_hole = 0
     boundary_hits = 0
     boundary_total = 0
     radii = [int(item) for item in (boundary_radii if boundary_radii is not None else [boundary_radius])]
@@ -292,6 +336,10 @@ def validate_ledger(
         gaps = _gap_values(selected, valid_len=valid_len)
         all_gaps.extend(gaps)
         max_gap = max(max_gap, max(gaps) if gaps else 0)
+        holes = _unselected_holes(selected, valid_len=valid_len)
+        all_unselected_holes.extend(holes)
+        max_hole = max(max_hole, max(holes) if holes else 0)
+        uniform_similarities.append(_uniform_similarity(selected, valid_len=valid_len))
         selected_counts.append(len(selected))
         boundaries = _boundaries(metric_row)
         boundary_total += len(boundaries)
@@ -325,6 +373,23 @@ def validate_ledger(
         raise ValueError(f"max_gap above threshold: {max_gap}")
     if max_p95_gap is not None and p95_gap is not None and float(p95_gap) > float(max_p95_gap):
         raise ValueError(f"p95_gap above threshold: {p95_gap}")
+    p95_unselected_hole = _p95(all_unselected_holes)
+    if max_unselected_hole is not None and int(max_hole) > int(max_unselected_hole):
+        raise ValueError(f"max_unselected_hole above threshold: {max_hole}")
+    if (
+        max_p95_unselected_hole is not None
+        and p95_unselected_hole is not None
+        and float(p95_unselected_hole) > float(max_p95_unselected_hole)
+    ):
+        raise ValueError(f"p95_unselected_hole above threshold: {p95_unselected_hole}")
+    mean_uniform_similarity = _mean(uniform_similarities)
+    max_observed_uniform_similarity = max(uniform_similarities) if uniform_similarities else None
+    if (
+        max_uniform_similarity is not None
+        and max_observed_uniform_similarity is not None
+        and float(max_observed_uniform_similarity) > float(max_uniform_similarity)
+    ):
+        raise ValueError(f"uniform similarity above threshold: {max_observed_uniform_similarity}")
     checkpoint_sha256 = None
     if require_checkpoint_path is not None:
         checkpoint_path = Path(require_checkpoint_path).expanduser()
@@ -351,6 +416,10 @@ def validate_ledger(
         "mean_selected_count": sum(selected_counts) / float(len(selected_counts)),
         "max_gap": int(max_gap),
         "p95_gap": p95_gap,
+        "max_unselected_hole": int(max_hole),
+        "p95_unselected_hole": p95_unselected_hole,
+        "mean_uniform_similarity": mean_uniform_similarity,
+        "max_uniform_similarity": max_observed_uniform_similarity,
         f"boundary_support_r{int(boundary_radius)}": boundary_support,
         "action_positive_coverage": action_coverage,
         "total_uniform_visible_fill_count": int(total_uniform_fill),
@@ -363,6 +432,8 @@ def validate_ledger(
         "require_paction_provenance": bool(require_paction_provenance),
         "paction_provenance_verified": bool(require_paction_provenance),
         "gap_metric_definition": "endpoint_inclusive_selected_stride_gap",
+        "hole_metric_definition": "max_contiguous_unselected_dense_positions_between_selected_frames",
+        "uniform_similarity_definition": "intersection_over_selected_count_against_round_i_times_valid_len_over_k",
     }
     for radius, value in boundary_support_by_radius.items():
         summary[f"boundary_support_r{int(radius)}"] = value
@@ -388,6 +459,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--min-action-coverage", type=float)
     parser.add_argument("--max-max-gap", type=int)
     parser.add_argument("--max-p95-gap", type=float)
+    parser.add_argument("--max-unselected-hole", type=int)
+    parser.add_argument("--max-p95-unselected-hole", type=float)
+    parser.add_argument("--max-uniform-similarity", type=float)
     parser.add_argument("--require-policy-source")
     parser.add_argument("--require-checkpoint-path")
     parser.add_argument("--require-checkpoint-sha256")
@@ -410,6 +484,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         min_action_coverage=args.min_action_coverage,
         max_max_gap=args.max_max_gap,
         max_p95_gap=args.max_p95_gap,
+        max_unselected_hole=args.max_unselected_hole,
+        max_p95_unselected_hole=args.max_p95_unselected_hole,
+        max_uniform_similarity=args.max_uniform_similarity,
         require_policy_source=args.require_policy_source,
         require_checkpoint_path=args.require_checkpoint_path,
         require_checkpoint_sha256=args.require_checkpoint_sha256,

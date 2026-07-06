@@ -787,6 +787,46 @@ def compute_sampling_quality_from_logits(
     return metrics
 
 
+def _paction_positive_provenance(
+    *,
+    p_action_source: str = "lowres_action_probe",
+    probe_model: str | None = None,
+    tcn_variant: str | None = None,
+    matrix_model_id: str | None = None,
+    official_action_seg_backend: str | None = None,
+    spatial_size: int | None = None,
+    source_model: str | None = None,
+) -> dict[str, Any]:
+    provenance: dict[str, Any] = {
+        "p_action_source": str(p_action_source),
+        "no_gt_generation": True,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
+    }
+    if probe_model:
+        provenance["probe_model"] = str(probe_model)
+    if tcn_variant:
+        provenance["tcn_variant"] = str(tcn_variant)
+    if matrix_model_id:
+        provenance["matrix_model_id"] = str(matrix_model_id)
+    if official_action_seg_backend:
+        provenance["official_action_seg_backend"] = str(official_action_seg_backend)
+    if spatial_size is not None:
+        provenance["spatial_size"] = int(spatial_size)
+    if source_model:
+        provenance["source_model"] = str(source_model)
+    if not any(
+        key in provenance
+        for key in ("probe_model", "matrix_model_id", "official_action_seg_backend", "source_model")
+    ):
+        provenance["source_model"] = "lowres_action_probe_logits"
+    return provenance
+
+
 def compute_indirect_selection_quality_from_logits(
     *,
     logits: Any,
@@ -974,6 +1014,9 @@ def compute_indirect_selection_quality_from_logits(
                 "diagnostic_only": True,
                 "deploy_selection_ledger": False,
                 "uses_gt_for_diagnostics": True,
+                "paction_positive_provenance": _paction_positive_provenance(
+                    source_model="lowres_action_probe_logits"
+                ),
                 "dense_len": len(logit_row),
                 "valid_len": len(valid_indices),
                 "budget": int(resolved_budget),
@@ -2780,6 +2823,13 @@ def evaluate(
             sample_row["matrix_model_id"] = matrix_model_id
             sample_row["official_action_seg_backend"] = official_action_seg_backend
             sample_row["spatial_size"] = int(scout_spatial_size)
+            sample_row["paction_positive_provenance"] = _paction_positive_provenance(
+                probe_model=probe_model,
+                tcn_variant=tcn_variant,
+                matrix_model_id=matrix_model_id,
+                official_action_seg_backend=official_action_seg_backend,
+                spatial_size=int(scout_spatial_size),
+            )
             sample_rows.append(sample_row)
         _write_jsonl(sample_jsonl_path, sample_rows)
         compact_indirect_quality = {

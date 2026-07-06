@@ -15,6 +15,26 @@ from tools.bata import paction_acquisition_policy as policy
 SUMMARY_SCHEMA_VERSION = "c3_paction_acquisition_policy_train_v1"
 CHECKPOINT_SCHEMA_VERSION = "c3_paction_acquisition_policy_checkpoint_v1"
 READY = "C3_PACTION_POLICY_TRAIN_READY"
+FORBIDDEN_SOURCE_TRUE_FLAGS = (
+    "uses_gt",
+    "uses_gt_for_diagnostics",
+    "uses_teacher",
+    "uses_oracle",
+    "uses_cache",
+    "uses_prediction_cache",
+    "uses_raw_prediction",
+    "prediction_uses_gt",
+    "training_only",
+)
+SPLIT_ALIASES = {
+    "train": {"train", "training"},
+    "training": {"train", "training"},
+    "val": {"val", "valid", "validation"},
+    "valid": {"val", "valid", "validation"},
+    "validation": {"val", "valid", "validation"},
+    "test": {"test", "testing"},
+    "testing": {"test", "testing"},
+}
 
 
 def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -52,6 +72,42 @@ def _git_sha() -> str | None:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:
         return None
+
+
+def _is_true(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    return False
+
+
+def _row_split(row: Mapping[str, Any]) -> str | None:
+    for key in ("split", "subset", "subset_name"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    return None
+
+
+def _split_matches(actual: str | None, expected: str) -> bool:
+    expected_key = str(expected).strip().lower()
+    expected_aliases = SPLIT_ALIASES.get(expected_key, {expected_key})
+    return actual in expected_aliases
+
+
+def _validate_source_row(row: Mapping[str, Any], *, line_no: int, expected_split: str | None) -> None:
+    if expected_split:
+        actual = _row_split(row)
+        if actual is None or not _split_matches(actual, expected_split):
+            raise ValueError(
+                f"line {line_no}: expected split {expected_split}, got {actual or '<missing>'}"
+            )
+    for key in FORBIDDEN_SOURCE_TRUE_FLAGS:
+        if _is_true(row.get(key, False)):
+            raise ValueError(f"line {line_no}: forbidden p_action source flag {key}=true")
 
 
 def _extract_paction(row: Mapping[str, Any], *, line_no: int) -> list[float]:
@@ -124,9 +180,15 @@ def _budget_target_from_row(
     return min(max(int(item) for item in dynamic_budget_buckets), int(valid_len))
 
 
-def _prepared_rows(rows: Sequence[Mapping[str, Any]], *, dynamic_budget_buckets: Sequence[int]) -> list[dict[str, Any]]:
+def _prepared_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    dynamic_budget_buckets: Sequence[int],
+    expected_split: str | None = None,
+) -> list[dict[str, Any]]:
     prepared: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
+        _validate_source_row(row, line_no=line_no, expected_split=expected_split)
         p_action = _extract_paction(row, line_no=line_no)
         valid_len = _valid_len(row, paction_len=len(p_action))
         action_target = _extract_action_target(row, line_no=line_no, length=len(p_action))
@@ -260,6 +322,8 @@ def run_training(
     budget_ce_loss_weight: float = 0.25,
     device: str = "cuda",
     seed: int = 0,
+    expected_split: str | None = None,
+    val_expected_split: str | None = None,
 ) -> dict[str, Any]:
     import torch
 
@@ -269,8 +333,20 @@ def run_training(
     out_path.mkdir(parents=True, exist_ok=True)
     checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else out_path / "paction_policy.pth"
     buckets = [int(item) for item in dynamic_budget_buckets]
-    train_rows = _prepared_rows(_read_jsonl(train_jsonl), dynamic_budget_buckets=buckets)
-    val_rows = _prepared_rows(_read_jsonl(val_jsonl), dynamic_budget_buckets=buckets) if val_jsonl is not None else []
+    train_rows = _prepared_rows(
+        _read_jsonl(train_jsonl),
+        dynamic_budget_buckets=buckets,
+        expected_split=expected_split,
+    )
+    val_rows = (
+        _prepared_rows(
+            _read_jsonl(val_jsonl),
+            dynamic_budget_buckets=buckets,
+            expected_split=val_expected_split,
+        )
+        if val_jsonl is not None
+        else []
+    )
     model_kwargs = {
         "input_dim": len(policy.PACTION_FEATURE_NAMES),
         "hidden_dim": int(hidden_dim),
@@ -328,6 +404,8 @@ def run_training(
             "budget_ce_loss_weight": float(budget_ce_loss_weight),
             "device": str(device),
             "seed": int(seed),
+            "expected_split": expected_split,
+            "val_expected_split": val_expected_split,
         },
         "data": {
             "train_jsonl": str(train_jsonl),
@@ -336,6 +414,8 @@ def run_training(
             "val_jsonl_sha256": None if val_jsonl is None else _sha256_file(val_jsonl),
             "train_row_count": len(train_rows),
             "val_row_count": len(val_rows),
+            "expected_split": expected_split,
+            "val_expected_split": val_expected_split,
         },
         "git_sha": _git_sha(),
         "torch_initial_seed": int(torch.initial_seed()),
@@ -372,6 +452,8 @@ def run_training(
         "train_jsonl_sha256": _sha256_file(train_jsonl),
         "val_jsonl_sha256": None if val_jsonl is None else _sha256_file(val_jsonl),
         "git_sha": checkpoint_payload["git_sha"],
+        "expected_split": expected_split,
+        "val_expected_split": val_expected_split,
     }
     if summary_json is not None:
         _write_json(summary_json, summary)
@@ -401,6 +483,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--budget-ce-loss-weight", type=float, default=0.25)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--expected-split")
+    parser.add_argument("--val-expected-split")
     return parser
 
 
@@ -426,6 +510,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         budget_ce_loss_weight=float(args.budget_ce_loss_weight),
         device=str(args.device),
         seed=int(args.seed),
+        expected_split=args.expected_split,
+        val_expected_split=args.val_expected_split,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

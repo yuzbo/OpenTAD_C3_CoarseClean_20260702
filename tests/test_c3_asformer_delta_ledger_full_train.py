@@ -172,6 +172,9 @@ def test_paction_learned_policy_adatad_launcher_validates_ledgers_before_full_tr
     assert "--require-checkpoint-path" in text
     assert "--require-checkpoint-sha256" in text
     assert "--require-paction-provenance" in text
+    assert "--max-unselected-hole" in text
+    assert "--max-p95-unselected-hole" in text
+    assert "--max-uniform-similarity" in text
     assert "PACTION_POLICY_CHECKPOINT" in text
     assert "PACTION_POLICY_CHECKPOINT_SHA256" in text
     assert "C3_PACTION_LEDGER_SOURCE" in text
@@ -195,6 +198,7 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
     text = PACTION_LAUNCHER.read_text(encoding="utf-8")
 
     assert "train_paction_acquisition_policy.py" in text
+    assert "--expected-split training" in text
     assert "run_paction_learned_policy_ledger_pipeline.py" in text
     assert "validate_c3_paction_learned_adatad_full_train.py" in text
     assert "PACTION_ADATAD_VARIANTS" in text

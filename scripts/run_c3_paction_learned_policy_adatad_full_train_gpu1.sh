@@ -76,6 +76,9 @@ MIN_BOUNDARY_SUPPORT="${MIN_BOUNDARY_SUPPORT:-}"
 MIN_ACTION_COVERAGE="${MIN_ACTION_COVERAGE:-}"
 MAX_MAX_GAP="${MAX_MAX_GAP:-}"
 MAX_P95_GAP="${MAX_P95_GAP:-}"
+MAX_UNSELECTED_HOLE="${MAX_UNSELECTED_HOLE:-}"
+MAX_P95_UNSELECTED_HOLE="${MAX_P95_UNSELECTED_HOLE:-}"
+MAX_UNIFORM_SIMILARITY="${MAX_UNIFORM_SIMILARITY:-}"
 
 require_file() {
   local path="$1"
@@ -137,6 +140,7 @@ bash -n "${BASH_SOURCE[0]}"
   --gap-loss-max-gap "${PACTION_POLICY_GAP_MAX}" \
   --budget-ce-loss-weight "${PACTION_POLICY_BUDGET_CE_WEIGHT}" \
   --dynamic-budget-buckets ${PACTION_DYNAMIC_BUDGET_BUCKETS} \
+  --expected-split training \
   --device cuda \
   --seed "${SEED}"
 
@@ -176,6 +180,9 @@ run_ledger_pipeline_for_split() {
   fi
   [[ -n "${MAX_MAX_GAP}" ]] && args+=(--max-max-gap "${MAX_MAX_GAP}")
   [[ -n "${MAX_P95_GAP}" ]] && args+=(--max-p95-gap "${MAX_P95_GAP}")
+  [[ -n "${MAX_UNSELECTED_HOLE}" ]] && args+=(--max-unselected-hole "${MAX_UNSELECTED_HOLE}")
+  [[ -n "${MAX_P95_UNSELECTED_HOLE}" ]] && args+=(--max-p95-unselected-hole "${MAX_P95_UNSELECTED_HOLE}")
+  [[ -n "${MAX_UNIFORM_SIMILARITY}" ]] && args+=(--max-uniform-similarity "${MAX_UNIFORM_SIMILARITY}")
   "${PYTHON}" "${LEDGER_PIPELINE}" "${args[@]}"
 }
 
@@ -272,6 +279,9 @@ validate_variant_split() {
   fi
   [[ -n "${MAX_MAX_GAP}" ]] && args+=(--max-max-gap "${MAX_MAX_GAP}")
   [[ -n "${MAX_P95_GAP}" ]] && args+=(--max-p95-gap "${MAX_P95_GAP}")
+  [[ -n "${MAX_UNSELECTED_HOLE}" ]] && args+=(--max-unselected-hole "${MAX_UNSELECTED_HOLE}")
+  [[ -n "${MAX_P95_UNSELECTED_HOLE}" ]] && args+=(--max-p95-unselected-hole "${MAX_P95_UNSELECTED_HOLE}")
+  [[ -n "${MAX_UNIFORM_SIMILARITY}" ]] && args+=(--max-uniform-similarity "${MAX_UNIFORM_SIMILARITY}")
   "${PYTHON}" "${LEDGER_VALIDATOR}" "${args[@]}"
 }
 

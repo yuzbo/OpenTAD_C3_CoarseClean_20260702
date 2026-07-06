@@ -360,7 +360,67 @@ class LoadFrames:
             raise ValueError("value_transport_ledger_subsample requires window_start_frame in results")
         return f"{results.get('video_name', 'unknown')}|{int(results['window_start_frame'])}"
 
-    def _lookup_value_transport_positions(self, results, valid_len, dense_frame_num, frame_num):
+    def _value_transport_metadata(self, row, key):
+        diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
+        return row.get(key, diagnostics.get(key))
+
+    def _assert_value_transport_ledger_contract(self, row, sample_id, valid_len, dense_frame_num, target_len):
+        if bool(row.get("fallback_missing_ledger", False)):
+            return
+        if self.bata_value_transport_require_deployable:
+            if row.get("deploy_selection_ledger") is not True:
+                raise ValueError(f"value-transport ledger sample_id={sample_id} must set deploy_selection_ledger=true")
+            if row.get("diagnostic_only") is True:
+                raise ValueError(f"value-transport ledger sample_id={sample_id} is diagnostic_only")
+        for key in (
+            "uses_gt",
+            "uses_teacher",
+            "uses_oracle",
+            "uses_cache",
+            "uses_prediction_cache",
+            "uses_raw_prediction",
+            "uses_checkpoint",
+            "prediction_uses_gt",
+            "training_only",
+        ):
+            value = row.get(key, False)
+            if value is True or (isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}):
+                raise ValueError(f"value-transport ledger sample_id={sample_id} forbidden flag {key}=true")
+        row_target_len = row.get("target_len")
+        if row_target_len is not None and int(row_target_len) != int(target_len):
+            raise ValueError(
+                f"value-transport ledger sample_id={sample_id} target_len={row_target_len} "
+                f"does not match configured target_len={target_len}"
+            )
+        row_dense_len = row.get("dense_len")
+        if row_dense_len is not None and int(row_dense_len) != int(dense_frame_num):
+            raise ValueError(
+                f"value-transport ledger sample_id={sample_id} dense_len={row_dense_len} "
+                f"does not match dense_frame_num={dense_frame_num}"
+            )
+        row_valid_len = row.get("valid_len")
+        if row_valid_len is not None and int(row_valid_len) != int(valid_len):
+            raise ValueError(
+                f"value-transport ledger sample_id={sample_id} valid_len={row_valid_len} "
+                f"does not match runtime valid_len={valid_len}"
+            )
+        expected_source = str(self.bata_value_transport_source or "")
+        row_policy_source = self._value_transport_metadata(row, "policy_source")
+        if expected_source == "learned_paction_gap_loss_policy_checkpoint" or row_policy_source is not None:
+            if row_policy_source != expected_source:
+                raise ValueError(
+                    f"value-transport ledger sample_id={sample_id} policy_source={row_policy_source} "
+                    f"does not match configured source={expected_source}"
+                )
+        expected_hash = str(self.bata_value_transport_config_hash or "")
+        if expected_hash:
+            row_checkpoint_sha = self._value_transport_metadata(row, "policy_checkpoint_sha256")
+            if row_checkpoint_sha != expected_hash:
+                raise ValueError(
+                    f"value-transport ledger sample_id={sample_id} policy_checkpoint_sha256 mismatch"
+                )
+
+    def _lookup_value_transport_positions(self, results, valid_len, dense_frame_num, frame_num, target_len):
         sample_id = self._value_transport_sample_id(results)
         row = self._value_transport_ledger().get(sample_id)
         if row is None:
@@ -368,6 +428,13 @@ class LoadFrames:
                 raise KeyError(f"value-transport ledger missing sample_id={sample_id}")
             positions = self._exact_uniform_dense_positions(valid_len, dense_frame_num, frame_num)
             return positions, dict(sample_id=sample_id, fallback_missing_ledger=True)
+        self._assert_value_transport_ledger_contract(
+            row,
+            sample_id,
+            valid_len=valid_len,
+            dense_frame_num=dense_frame_num,
+            target_len=target_len,
+        )
         positions = row["selected_positions"].astype(np.int64, copy=False).reshape(-1)
         if positions.size == 0:
             raise ValueError(f"value-transport ledger sample_id={sample_id} selected no positions")
@@ -555,6 +622,7 @@ class LoadFrames:
                 valid_len=valid_len,
                 dense_frame_num=dense_frame_num,
                 frame_num=frame_num,
+                target_len=target_len,
             )
             if keep_positions.size > int(frame_num):
                 sample_id = ledger_row.get("sample_id", self._value_transport_sample_id(results))

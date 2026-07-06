@@ -23,11 +23,23 @@ def _read_jsonl(path: Path) -> list[dict]:
 def _sample_row(sample_id: str, p_action: list[float], action_target: list[float], boundaries: list[int]) -> dict:
     return {
         "sample_id": sample_id,
+        "split": "training",
         "dense_len": len(p_action),
         "valid_len": len(p_action),
         "frame_signals": {"p_action": p_action},
         "p_action": p_action,
         "probe_model": "mobilenetv3_64px",
+        "paction_positive_provenance": {
+            "p_action_source": "lowres_action_probe",
+            "probe_model": "mobilenetv3_64px",
+            "no_gt_generation": True,
+            "uses_teacher": False,
+            "uses_oracle": False,
+            "uses_cache": False,
+            "uses_prediction_cache": False,
+            "uses_raw_prediction": False,
+            "prediction_uses_gt": False,
+        },
         "action_target": action_target,
         "gt_boundaries": boundaries,
         "strategy_selected_positions": {"delta_p_action": [1, 4]},
@@ -74,9 +86,16 @@ def test_learned_policy_pipeline_generates_fixed_and_dynamic_strict_ledgers(tmp_
     assert summary["decision"] == "C3_PACTION_LEARNED_POLICY_LEDGER_PIPELINE_READY"
     assert sorted(summary["ledgers"]) == ["learned_dynamic", "learned_fixed_2", "learned_fixed_4"]
     canonical_jsonl = tmp_path / "ledgers" / "source.canonical_unique.jsonl"
+    selection_jsonl = tmp_path / "ledgers" / "source.selection_deploy.jsonl"
     assert summary["source_canonicalization"]["input_jsonl"] == str(sample_jsonl)
     assert summary["source_canonicalization"]["output_jsonl"] == str(canonical_jsonl)
+    assert summary["selection_sample_jsonl"] == str(selection_jsonl)
+    assert summary["selection_source_report"]["output_jsonl"] == str(selection_jsonl)
     assert summary["metric_sample_jsonl"] == str(canonical_jsonl)
+    selection_rows = _read_jsonl(selection_jsonl)
+    assert all("action_target" not in row for row in selection_rows)
+    assert all("gt_boundaries" not in row for row in selection_rows)
+    assert all("frame_signals" in row for row in selection_rows)
     for name, item in summary["ledgers"].items():
         ledger_path = Path(item["ledger_jsonl"])
         sample_path = Path(item["sample_jsonl"])
@@ -93,6 +112,9 @@ def test_learned_policy_pipeline_generates_fixed_and_dynamic_strict_ledgers(tmp_
         assert item["validation_summary"]["uses_uniform_fill"] is False
         assert "max_gap" in item["validation_summary"]
         assert "p95_gap" in item["validation_summary"]
+        assert "max_unselected_hole" in item["validation_summary"]
+        assert "p95_unselected_hole" in item["validation_summary"]
+        assert "max_uniform_similarity" in item["validation_summary"]
         assert "boundary_support_r1" in item["validation_summary"]
         assert "action_positive_coverage" in item["validation_summary"]
 
@@ -252,6 +274,52 @@ def test_learned_policy_ledger_validator_reports_multiple_boundary_radii(tmp_pat
     assert summary["boundary_support_r2"] == 1.0
     assert summary["boundary_support_r4"] == 1.0
     assert summary["boundary_support_r8"] == 1.0
+    assert summary["max_unselected_hole"] == 2
+    assert summary["p95_unselected_hole"] == 2.0
+
+
+def test_learned_policy_ledger_validator_rejects_uniform_like_scaffold_pattern(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    _write_jsonl(
+        samples,
+        [_sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8, 0.1, 0.1], [0, 1, 0, 1, 0, 0], [1, 5])],
+    )
+    _write_jsonl(
+        ledger,
+        [
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 3],
+                "target_len": 2,
+                "selected_count": 2,
+                "valid_len": 6,
+                "dense_len": 6,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "uses_gt": False,
+                "uses_teacher": False,
+                "uses_oracle": False,
+                "uses_cache": False,
+                "uses_raw_prediction": False,
+                "uses_checkpoint": False,
+                "diagnostics": {"uniform_visible_fill_count": 0, "source_strategy": "learned_paction_gap_loss_value"},
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="uniform similarity"):
+        validate_ledger.validate_ledger(
+            sample_jsonl=samples,
+            ledger_jsonl=ledger,
+            strategy="learned_paction_gap_loss_value",
+            expected_target_len=2,
+            require_selected_count=2,
+            require_deployable=True,
+            max_uniform_similarity=0.99,
+        )
 
 
 def test_learned_policy_ledger_validator_requires_paction_positive_provenance(tmp_path: Path) -> None:
@@ -311,7 +379,9 @@ def test_learned_policy_ledger_validator_requires_paction_positive_provenance(tm
         "uses_teacher": False,
         "uses_oracle": False,
         "uses_cache": False,
+        "uses_prediction_cache": False,
         "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
     }
     _write_jsonl(samples, [row])
     summary = validate_ledger.validate_ledger(
@@ -360,6 +430,94 @@ def test_source_sample_canonicalization_drops_identical_duplicates_and_rejects_c
         )
 
 
+def test_source_sample_canonicalization_treats_provenance_as_canonical(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "source.jsonl"
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    conflict = dict(row)
+    conflict["paction_positive_provenance"] = dict(row["paction_positive_provenance"], probe_model="other_model")
+    _write_jsonl(input_jsonl, [row, conflict])
+
+    with pytest.raises(ValueError, match="conflicting duplicate sample_id"):
+        paction_source_samples.canonicalize_unique_sample_jsonl(
+            input_jsonl,
+            tmp_path / "should_not_exist.jsonl",
+            split="test",
+        )
+
+
+def test_selection_deploy_source_strips_metric_payload_and_rejects_generation_leak_flags(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "source.jsonl"
+    selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
+    report_json = tmp_path / "selection.report.json"
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    row["uses_gt_for_diagnostics"] = True
+    row["diagnostic_only"] = True
+    row["deploy_selection_ledger"] = False
+    _write_jsonl(input_jsonl, [row])
+
+    report = paction_source_samples.write_deploy_selection_source_jsonl(
+        input_jsonl,
+        selection_jsonl,
+        report_json=report_json,
+        split="test",
+    )
+    rows = _read_jsonl(selection_jsonl)
+
+    assert report["input_rows"] == 1
+    assert report["output_rows"] == 1
+    assert rows[0]["frame_signals"] == {"p_action": [0.1, 0.9, 0.2, 0.8]}
+    assert "action_target" not in rows[0]
+    assert "gt_boundaries" not in rows[0]
+    assert "uses_gt_for_diagnostics" not in rows[0]
+    assert "diagnostic_only" not in rows[0]
+    assert "deploy_selection_ledger" not in rows[0]
+    assert rows[0]["paction_positive_provenance"]["probe_model"] == "mobilenetv3_64px"
+
+    policy_jsonl = tmp_path / "source.policy.jsonl"
+    summary = ledger_pipeline.apply_policy.run_policy_application(
+        selection_jsonl,
+        policy_jsonl,
+        fixed_budget=2,
+        device="cpu",
+        strict_deploy_source=True,
+        strip_deploy_invisible_payload=True,
+    )
+    assert summary["strict_deploy_source"] is True
+
+    bad = dict(row, uses_gt=True)
+    _write_jsonl(input_jsonl, [bad])
+    with pytest.raises(ValueError, match="forbidden strict deploy p_action source"):
+        paction_source_samples.write_deploy_selection_source_jsonl(input_jsonl, selection_jsonl)
+
+
+def test_deploy_conversion_requires_checkpoint_policy_metadata(tmp_path: Path) -> None:
+    sample_jsonl = tmp_path / "samples.policy.jsonl"
+    ledger_jsonl = tmp_path / "ledger.jsonl"
+    row = {
+        **_sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3]),
+        "strategy_selected_positions": {"learned_paction_gap_loss_value": [1, 3]},
+    }
+    _write_jsonl(sample_jsonl, [row])
+
+    with pytest.raises(ValueError, match="paction_policy metadata is required"):
+        ledger_pipeline.convert_ledger.run_conversion(
+            sample_jsonl,
+            ledger_jsonl,
+            strategy="learned_paction_gap_loss_value",
+            target_len=2,
+            require_selected_count=2,
+            deploy_selection_ledger=True,
+        )
+
+
+def test_policy_training_expected_split_rejects_validation_rows() -> None:
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    row["split"] = "validation"
+
+    with pytest.raises(ValueError, match="expected split"):
+        train_policy._prepared_rows([row], dynamic_budget_buckets=[2], expected_split="training")
+
+
 def test_pipeline_canonicalizes_source_before_policy_application(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source_jsonl = tmp_path / "source.jsonl"
     checkpoint = tmp_path / "policy.pth"
@@ -373,6 +531,9 @@ def test_pipeline_canonicalizes_source_before_policy_application(tmp_path: Path,
         applied_inputs.append(Path(input_jsonl))
         source_rows = _read_jsonl(Path(input_jsonl))
         assert len(source_rows) == 1
+        assert "action_target" not in source_rows[0]
+        assert "gt_boundaries" not in source_rows[0]
+        assert kwargs["strict_deploy_source"] is True
         out_rows = []
         for item in source_rows:
             enriched = dict(item)
@@ -386,6 +547,7 @@ def test_pipeline_canonicalizes_source_before_policy_application(tmp_path: Path,
                 "checkpoint_sha256": "a" * 64,
                 "uses_uniform_fill": False,
                 "uses_uniform_scaffold": False,
+                "p_action_provenance": item["paction_positive_provenance"],
             }
             out_rows.append(enriched)
         _write_jsonl(Path(output_jsonl), out_rows)
@@ -439,6 +601,7 @@ def test_pipeline_canonicalizes_source_before_policy_application(tmp_path: Path,
     )
 
     assert applied_inputs
-    assert applied_inputs[0].name == "source.canonical_unique.jsonl"
+    assert applied_inputs[0].name == "source.selection_deploy.jsonl"
     assert set(metric_inputs) == {tmp_path / "out" / "source.canonical_unique.jsonl"}
+    assert summary["selection_sample_jsonl"] == str(tmp_path / "out" / "source.selection_deploy.jsonl")
     assert summary["source_canonicalization"]["duplicate_count"] == 1

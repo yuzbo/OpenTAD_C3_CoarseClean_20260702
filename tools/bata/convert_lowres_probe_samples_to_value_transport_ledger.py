@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from tools.bata.export_pc_ot_mras_hard_positions import strict_json_value, write_json  # noqa: E402
 from tools.bata import paction_budget_contract  # noqa: E402
+from tools.bata import paction_source_samples  # noqa: E402
 
 
 _BOUNDARY_ACQUISITION_PATH = ROOT / "opentad" / "datasets" / "transforms" / "boundary_acquisition.py"
@@ -282,6 +283,8 @@ def sample_row_to_value_transport_row(
         ),
     }
     paction_policy = row.get("paction_policy")
+    if deploy_selection_ledger and not isinstance(paction_policy, Mapping):
+        raise ValueError(f"line {line_no}: paction_policy metadata is required for deploy selection ledger")
     if isinstance(paction_policy, Mapping):
         diagnostics["policy_source"] = paction_policy.get("source")
         diagnostics["policy_checkpoint_path"] = paction_policy.get("checkpoint_path")
@@ -297,8 +300,14 @@ def sample_row_to_value_transport_row(
                 f"line {line_no}: deploy ledger requires checkpoint policy source "
                 f"{CHECKPOINT_POLICY_SOURCE}, got {paction_policy.get('source')}"
             )
+        if not paction_policy.get("checkpoint_path"):
+            raise ValueError(f"line {line_no}: deploy ledger requires policy checkpoint_path")
         if not paction_policy.get("checkpoint_sha256"):
             raise ValueError(f"line {line_no}: deploy ledger requires policy checkpoint_sha256")
+        paction_source_samples.validate_paction_positive_provenance(
+            paction_policy.get("p_action_provenance"),
+            source_name=f"line {line_no}: paction_policy",
+        )
     boundary_support = None if deploy_selection_ledger else _finite_float_or_none(row.get("boundary_support_r1"))
     if boundary_support is not None:
         diagnostics["diagnostic_boundary_support_r1_ignored_by_selection"] = boundary_support
@@ -388,9 +397,22 @@ def run_conversion(
                 deduped_rows.append(row)
                 continue
             duplicate_sample_id_count += 1
-            for key in ("selected_positions", "selected_count", "target_len", "valid_len", "dense_len"):
+            for key in (
+                "selected_positions",
+                "selected_count",
+                "target_len",
+                "valid_len",
+                "dense_len",
+                "policy_source",
+                "policy_checkpoint_path",
+                "policy_checkpoint_sha256",
+            ):
                 if previous.get(key) != row.get(key):
                     raise ValueError(f"duplicate sample_id {sample_id} has conflicting {key}")
+            previous_provenance = (previous.get("diagnostics") or {}).get("p_action_provenance")
+            current_provenance = (row.get("diagnostics") or {}).get("p_action_provenance")
+            if previous_provenance != current_provenance:
+                raise ValueError(f"duplicate sample_id {sample_id} has conflicting p_action_provenance")
         out_rows = deduped_rows
     sample_ids = [str(row["sample_id"]) for row in out_rows]
     if len(set(sample_ids)) != len(sample_ids):

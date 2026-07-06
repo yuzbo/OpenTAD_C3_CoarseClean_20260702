@@ -324,7 +324,7 @@ def test_lowres_probe_samples_convert_strategy_to_value_transport_ledger(tmp_pat
     validate_value_transport_selection_row(row, line_no=1, require_deployable=False)
 
 
-def test_lowres_probe_deploy_ledger_strips_gt_derived_diagnostics(tmp_path):
+def test_lowres_probe_deploy_ledger_requires_paction_policy_metadata(tmp_path):
     input_jsonl = tmp_path / "samples.jsonl"
     output_jsonl = tmp_path / "value_transport_ledger.jsonl"
     sample_row = {
@@ -339,21 +339,15 @@ def test_lowres_probe_deploy_ledger_strips_gt_derived_diagnostics(tmp_path):
     }
     input_jsonl.write_text(json.dumps(sample_row, sort_keys=True) + "\n", encoding="utf-8")
 
-    run_lowres_probe_conversion(
-        input_jsonl,
-        output_jsonl,
-        strategy="delta_p_action",
-        target_len=3,
-        require_selected_count=3,
-        deploy_selection_ledger=True,
-    )
-
-    row = json.loads(output_jsonl.read_text(encoding="utf-8").splitlines()[0])
-    assert row["deploy_selection_ledger"] is True
-    assert row["diagnostic_only"] is False
-    assert "diagnostic_boundary_support_r1_ignored_by_selection" not in row["diagnostics"]
-    assert row["uses_gt"] is False
-    validate_value_transport_selection_row(row, line_no=1, require_deployable=True)
+    with pytest.raises(ValueError, match="paction_policy metadata is required"):
+        run_lowres_probe_conversion(
+            input_jsonl,
+            output_jsonl,
+            strategy="delta_p_action",
+            target_len=3,
+            require_selected_count=3,
+            deploy_selection_ledger=True,
+        )
 
 
 def test_lowres_probe_conversion_rejects_video_only_or_duplicate_sample_ids(tmp_path):
@@ -760,6 +754,61 @@ def test_value_transport_loader_accepts_short_tail_ratio_count_when_enabled(tmp_
     assert out["bata_selected_dense_indices"].tolist() == [0, 2]
     assert out["selected_valid_len"] == 2
     assert out["irregular_selected_valid_len"] == 4.0
+
+
+def test_value_transport_loader_rejects_paction_policy_contract_mismatch(tmp_path):
+    LoadFrames = _load_loadframes_class()
+    ledger_path = tmp_path / "value_transport_ledger.jsonl"
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 2],
+                "selected_count": 2,
+                "target_len": 3,
+                "valid_len": 4,
+                "dense_len": 4,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "policy_source": "bootstrap_paction_gap_loss_surrogate_policy",
+                "policy_checkpoint_sha256": "b" * 64,
+                "diagnostics": {
+                    "policy_source": "bootstrap_paction_gap_loss_surrogate_policy",
+                    "policy_checkpoint_sha256": "b" * 64,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loader = LoadFrames(
+        num_clips=1,
+        scale_factor=1,
+        method="bata_value_transport_ledger_subsample",
+        method_base="sliding_window",
+        target_len=3,
+        bata_value_transport_ledger_path=str(ledger_path),
+        bata_value_transport_require_deployable=True,
+        bata_value_transport_source="learned_paction_gap_loss_policy_checkpoint",
+        bata_value_transport_config_hash="a" * 64,
+    )
+
+    with pytest.raises(ValueError, match="policy_source"):
+        loader(
+            {
+                "video_name": "video_test_0001",
+                "window_start_frame": 0,
+                "window_size": 4,
+                "feature_start_idx": 0,
+                "feature_end_idx": 3,
+                "total_frames": 16,
+                "avg_fps": 30,
+                "snippet_stride": 1,
+            }
+        )
 
 
 def test_frontend_launcher_defaults_to_review_safe_precheck_and_uses_supported_dump_cli():

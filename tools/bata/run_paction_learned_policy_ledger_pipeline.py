@@ -40,6 +40,9 @@ def _convert_and_validate(
     min_action_coverage: float | None,
     max_max_gap: int | None,
     max_p95_gap: float | None,
+    max_unselected_hole: int | None,
+    max_p95_unselected_hole: float | None,
+    max_uniform_similarity: float | None,
 ) -> dict[str, Any]:
     ledger_jsonl = out_dir / f"value_transport_ledger_{name}.jsonl"
     ledger_summary_json = out_dir / f"value_transport_ledger_{name}.summary.json"
@@ -70,6 +73,9 @@ def _convert_and_validate(
         min_action_coverage=min_action_coverage,
         max_max_gap=max_max_gap,
         max_p95_gap=max_p95_gap,
+        max_unselected_hole=max_unselected_hole,
+        max_p95_unselected_hole=max_p95_unselected_hole,
+        max_uniform_similarity=max_uniform_similarity,
         boundary_radii=[1, 2, 4, 8],
         require_policy_source=apply_policy.CHECKPOINT_POLICY_SOURCE,
         require_checkpoint_path=checkpoint_path,
@@ -103,6 +109,9 @@ def run_pipeline(
     min_action_coverage: float | None = None,
     max_max_gap: int | None = None,
     max_p95_gap: float | None = None,
+    max_unselected_hole: int | None = None,
+    max_p95_unselected_hole: float | None = None,
+    max_uniform_similarity: float | None = None,
     require_dynamic_nonconstant_count: bool = False,
     summary_json: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -115,7 +124,17 @@ def run_pipeline(
         report_json=out_path / "source.canonical_unique.report.json",
         split="",
     )
-    input_sample_path = canonical_input_jsonl
+    selection_input_jsonl: Path | None = None
+    selection_source_report: dict[str, Any] | None = None
+    if deploy_selection_ledger:
+        selection_input_jsonl = out_path / "source.selection_deploy.jsonl"
+        selection_source_report = paction_source_samples.write_deploy_selection_source_jsonl(
+            canonical_input_jsonl,
+            selection_input_jsonl,
+            report_json=out_path / "source.selection_deploy.report.json",
+            split="",
+        )
+    input_sample_path = selection_input_jsonl if selection_input_jsonl is not None else canonical_input_jsonl
     metric_sample_path = canonical_input_jsonl
     checkpoint_sha256 = apply_policy._sha256_file(checkpoint_path)
     ledgers: dict[str, Any] = {}
@@ -131,6 +150,7 @@ def run_pipeline(
             checkpoint_path=checkpoint_path,
             device=device,
             strip_deploy_invisible_payload=True,
+            strict_deploy_source=bool(deploy_selection_ledger),
         )
         ledgers[name] = _convert_and_validate(
             sample_jsonl=sample_jsonl,
@@ -149,6 +169,9 @@ def run_pipeline(
             min_action_coverage=min_action_coverage,
             max_max_gap=max_max_gap,
             max_p95_gap=max_p95_gap,
+            max_unselected_hole=max_unselected_hole,
+            max_p95_unselected_hole=max_p95_unselected_hole,
+            max_uniform_similarity=max_uniform_similarity,
         )
     dynamic_sample_jsonl = out_path / "samples.learned_dynamic.jsonl"
     apply_policy.run_policy_application(
@@ -160,6 +183,7 @@ def run_pipeline(
         checkpoint_path=checkpoint_path,
         device=device,
         strip_deploy_invisible_payload=True,
+        strict_deploy_source=bool(deploy_selection_ledger),
     )
     ledgers["learned_dynamic"] = _convert_and_validate(
         sample_jsonl=dynamic_sample_jsonl,
@@ -178,6 +202,9 @@ def run_pipeline(
         min_action_coverage=min_action_coverage,
         max_max_gap=max_max_gap,
         max_p95_gap=max_p95_gap,
+        max_unselected_hole=max_unselected_hole,
+        max_p95_unselected_hole=max_p95_unselected_hole,
+        max_uniform_similarity=max_uniform_similarity,
     )
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
@@ -185,6 +212,8 @@ def run_pipeline(
         "input_jsonl": str(input_jsonl),
         "canonical_input_jsonl": str(canonical_input_jsonl),
         "source_canonicalization": source_canonicalization,
+        "selection_sample_jsonl": None if selection_input_jsonl is None else str(selection_input_jsonl),
+        "selection_source_report": selection_source_report,
         "metric_sample_jsonl": str(metric_sample_path),
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
@@ -204,6 +233,9 @@ def run_pipeline(
             "min_action_coverage": min_action_coverage,
             "max_max_gap": max_max_gap,
             "max_p95_gap": max_p95_gap,
+            "max_unselected_hole": max_unselected_hole,
+            "max_p95_unselected_hole": max_p95_unselected_hole,
+            "max_uniform_similarity": max_uniform_similarity,
             "mode": "hard_fail_when_thresholds_are_set",
         },
         "ledgers": ledgers,
@@ -229,6 +261,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--min-action-coverage", type=float)
     parser.add_argument("--max-max-gap", type=int)
     parser.add_argument("--max-p95-gap", type=float)
+    parser.add_argument("--max-unselected-hole", type=int)
+    parser.add_argument("--max-p95-unselected-hole", type=float)
+    parser.add_argument("--max-uniform-similarity", type=float)
     parser.add_argument("--require-dynamic-nonconstant-count", action="store_true")
     args = parser.parse_args(argv)
     summary = run_pipeline(
@@ -245,6 +280,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         min_action_coverage=args.min_action_coverage,
         max_max_gap=args.max_max_gap,
         max_p95_gap=args.max_p95_gap,
+        max_unselected_hole=args.max_unselected_hole,
+        max_p95_unselected_hole=args.max_p95_unselected_hole,
+        max_uniform_similarity=args.max_uniform_similarity,
         require_dynamic_nonconstant_count=bool(args.require_dynamic_nonconstant_count),
         summary_json=args.summary_json,
     )

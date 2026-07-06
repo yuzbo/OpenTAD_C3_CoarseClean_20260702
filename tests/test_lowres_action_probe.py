@@ -521,6 +521,9 @@ def test_indirect_selection_quality_serializes_sample_rows_with_stable_schema():
     assert row["diagnostic_only"] is True
     assert row["deploy_selection_ledger"] is False
     assert row["uses_gt_for_diagnostics"] is True
+    assert row["paction_positive_provenance"]["p_action_source"] == "lowres_action_probe"
+    assert row["paction_positive_provenance"]["no_gt_generation"] is True
+    assert row["paction_positive_provenance"]["uses_teacher"] is False
     assert row["selected_positions"]
     assert row["frame_signals"]["p_action"]
     assert isinstance(row["frame_signals"]["mixed_fill"][0], bool)
@@ -654,6 +657,9 @@ def test_evaluate_writes_indirect_selection_jsonl_with_sample_ids(tmp_path):
     assert row["sample_id"] == "video_alpha"
     assert row["probe_model"] == "mobilenetv3"
     assert row["spatial_size"] == 4
+    assert row["paction_positive_provenance"]["probe_model"] == "mobilenetv3"
+    assert row["paction_positive_provenance"]["spatial_size"] == 4
+    assert row["paction_positive_provenance"]["no_gt_generation"] is True
     assert row["selected_positions"]
     assert "p_action" in row and "entropy" in row and "mixed_fill" in row
     assert "frame_signals" in row

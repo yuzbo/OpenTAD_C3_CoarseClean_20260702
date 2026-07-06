@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from tools.bata import paction_acquisition_policy as policy
+from tools.bata import paction_source_samples
 from tools.bata import train_paction_acquisition_policy as train_policy
 
 
@@ -142,7 +143,9 @@ def _paction_positive_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
         "uses_teacher": False,
         "uses_oracle": False,
         "uses_cache": False,
+        "uses_prediction_cache": False,
         "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
     }
 
 
@@ -234,6 +237,7 @@ def run_policy_application(
     checkpoint_path: str | Path | None = None,
     device: str = "cuda",
     strip_deploy_invisible_payload: bool = False,
+    strict_deploy_source: bool = False,
 ) -> dict[str, Any]:
     rows = _read_jsonl(input_jsonl)
     enriched_rows: list[dict[str, Any]] = []
@@ -248,7 +252,15 @@ def run_policy_application(
         source = CHECKPOINT_POLICY_SOURCE
         dynamic_budget_buckets = checkpoint_payload.get("dynamic_budget_buckets", dynamic_budget_buckets)
     for line_no, row in enumerate(rows, start=1):
-        _reject_forbidden_source_flags(row, line_no=line_no)
+        if strict_deploy_source:
+            p_action_provenance = paction_source_samples.reject_strict_deploy_source_row(
+                row,
+                source_name=f"{input_jsonl}:{line_no}",
+                reject_payload=True,
+            )
+        else:
+            _reject_forbidden_source_flags(row, line_no=line_no)
+            p_action_provenance = _paction_positive_provenance(row)
         p_action = _extract_paction(row, line_no=line_no)
         valid_len = int(row.get("valid_len") or row.get("dense_len") or len(p_action))
         valid = [idx < valid_len for idx in range(len(p_action))]
@@ -273,7 +285,7 @@ def run_policy_application(
             dynamic_budget_buckets=dynamic_budget_buckets,
         )
         enriched["paction_policy"]["source"] = source
-        enriched["paction_policy"]["p_action_provenance"] = _paction_positive_provenance(row)
+        enriched["paction_policy"]["p_action_provenance"] = p_action_provenance
         if checkpoint_path is not None:
             enriched["paction_policy"]["checkpoint_path"] = str(checkpoint_path)
             enriched["paction_policy"]["checkpoint_sha256"] = str(checkpoint_sha256)
@@ -305,6 +317,7 @@ def run_policy_application(
         "checkpoint_path": None if checkpoint_path is None else str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
+        "strict_deploy_source": bool(strict_deploy_source),
         "gap_control": "learned_gap_hole_loss_no_uniform_fill",
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
@@ -325,6 +338,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--checkpoint-path")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--strip-deploy-invisible-payload", action="store_true")
+    parser.add_argument("--strict-deploy-source", action="store_true")
     args = parser.parse_args(argv)
 
     summary = run_policy_application(
@@ -336,6 +350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         checkpoint_path=args.checkpoint_path,
         device=str(args.device),
         strip_deploy_invisible_payload=bool(args.strip_deploy_invisible_payload),
+        strict_deploy_source=bool(args.strict_deploy_source),
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0
