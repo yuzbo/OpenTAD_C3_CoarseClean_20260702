@@ -324,6 +324,7 @@ def run_pipeline(
         "fixed_budgets": fixed_budget_list,
         "dynamic_target_len": int(dynamic_target_len),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
+        "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
         "deploy_selection_ledger": bool(deploy_selection_ledger),
         "required_policy_source": detector_policy.DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE,
         "baseline_comparison": {

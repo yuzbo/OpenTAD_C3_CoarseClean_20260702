@@ -86,6 +86,29 @@ truetime_joint_selector_gate = dict(
     ],
 )
 
+sparse_detector_distillation_gate = dict(
+    enabled=False,
+    fail_closed=True,
+    required_before_full_detector_loss=True,
+    proof_source="fail_closed_sparse_detector_distillation_adapter",
+    teacher_targets_train_only=True,
+    map_claim_allowed=False,
+    paper_claim_allowed=False,
+)
+
+sparse_detector_distillation = dict(
+    stage="stage3_sparse_detector_distillation_framework",
+    enabled=False,
+    loss_adapter=dict(
+        type="SparseDetectorDistillationLossAdapter",
+        fail_closed_without_teacher_targets=True,
+        teacher_targets_train_only=True,
+        allowed_targets=["proposal_logits", "boundary_distributions", "ranking_quality"],
+        map_claim_allowed=False,
+        paper_claim_allowed=False,
+    ),
+)
+
 truetime_curriculum = dict(
     active_phase=os.environ.get("TRUETIME_CURRICULUM_PHASE", "joint_finetune"),
     dense_teacher=dict(enabled=False, allow_teacher_targets_train_only=False),
@@ -111,9 +134,10 @@ truetime_metrics_to_log = [
     "loss_cls",
     "loss_reg",
     "actionformer_cls_loss",
-    "actionformer_reg_loss",
-    "actionformer_detector_loss_selector_grad_norm",
-    "geometry_roundtrip",
+        "actionformer_reg_loss",
+        "actionformer_detector_loss_selector_grad_norm",
+        "sparse_distill_loss",
+        "geometry_roundtrip",
     "prediction_inverse_map",
     "claim_locks",
 ]
@@ -226,6 +250,7 @@ model = dict(
             enabled=True,
             required=True,
             strict=True,
+            requires_irregular_native_axis=True,
             eps=1.0e-6,
             coordinate_space="true_time_dense_index",
             selected_position_key="irregular_selected_positions",
@@ -295,6 +320,7 @@ truetime_actionformer_path_smoke_model = dict(
             enabled=True,
             required=True,
             strict=True,
+            requires_irregular_native_axis=True,
             eps=1.0e-6,
             coordinate_space="true_time_dense_index",
             selected_position_key="irregular_selected_positions",

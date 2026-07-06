@@ -55,6 +55,22 @@ def test_detector_aware_training_preparation_targets_teacher_utility_not_action_
     assert len(prepared[0]["features"][0]) == len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)
 
 
+def test_detector_aware_training_preserves_signed_utility_and_calibrated_gain_target() -> None:
+    row = _sample_row()
+    row["teacher_utility"] = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "frame_utility": [0.0, 0.9, 0.1, 1.0, 0.2, 0.7],
+        "signed_frame_utility": [0.0, 0.9, -0.4, 1.0, -0.8, 0.7],
+    }
+
+    prepared = train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
+
+    assert prepared[0]["detector_utility_target"] == [0.0, 0.9, -0.4, 1.0, -0.8, 0.7]
+    assert prepared[0]["detector_marginal_gain_target"] == [0.0, 0.9, 0.4, 1.0, 0.8, 0.7]
+    assert prepared[0]["dynamic_gain_calibration"]["score_semantics"] == "calibrated_marginal_gain"
+    assert prepared[0]["dynamic_budget_target"] == 4
+
+
 def test_detector_aware_training_rejects_non_train_teacher_utility() -> None:
     row = _sample_row()
     row["split"] = "validation"
@@ -112,6 +128,8 @@ def test_detector_aware_apply_emits_strategies_and_strips_teacher_payload(tmp_pa
     assert meta["stage_label"] == "Stage-2 detector-aware offline selector"
     assert meta["end_to_end"] is False
     assert meta["uses_uniform_fill"] is False
+    assert meta["dynamic_budget_calibration"]["score_semantics"] == "calibrated_marginal_gain"
+    assert meta["dynamic_budget_calibration"]["calibration_scope"] == "cross_video_comparable"
 
 
 def test_detector_aware_apply_rejects_teacher_payload_in_deploy_source(tmp_path: Path) -> None:
@@ -129,6 +147,18 @@ def test_detector_aware_apply_rejects_teacher_payload_in_deploy_source(tmp_path:
     _write_jsonl(source, [row])
 
     with pytest.raises(ValueError, match="teacher_utility"):
+        apply_detector.run_policy_application(
+            source,
+            output,
+            strict_deploy_source=True,
+            strip_deploy_invisible_payload=True,
+            allow_bootstrap_for_tests=True,
+        )
+
+    row.pop("teacher_utility")
+    row["teacher_utility_provenance"] = {"split_scope": "train_only"}
+    _write_jsonl(source, [row])
+    with pytest.raises(ValueError, match="teacher_utility_provenance"):
         apply_detector.run_policy_application(
             source,
             output,

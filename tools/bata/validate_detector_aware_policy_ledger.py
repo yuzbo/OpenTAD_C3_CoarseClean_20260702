@@ -181,6 +181,7 @@ def validate_ledger(
             "schema_version": SUMMARY_SCHEMA_VERSION,
             "decision": READY,
             "stage_label": detector_policy.STAGE_LABEL,
+            "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
             "required_policy_source": require_policy_source,
             "required_checkpoint_path": None if require_checkpoint_path is None else str(require_checkpoint_path),
             "required_checkpoint_sha256": require_checkpoint_sha256,

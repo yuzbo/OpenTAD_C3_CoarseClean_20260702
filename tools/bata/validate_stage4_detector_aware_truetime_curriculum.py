@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -103,20 +105,82 @@ def _require_nonempty_string(payload: Mapping[str, Any], key: str, *, context: s
     _require(isinstance(payload.get(key), str) and bool(str(payload[key]).strip()), f"{context}: missing {key}")
 
 
+def _require_no_placeholder(value: Any, *, context: str) -> None:
+    if isinstance(value, str) and value.strip().startswith("REPLACE_WITH"):
+        raise ValueError(f"{context}: placeholder value is not evidence")
+
+
+def _require_sha256(payload: Mapping[str, Any], key: str, *, context: str) -> None:
+    _require_nonempty_string(payload, key, context=context)
+    value = str(payload[key]).strip()
+    _require_no_placeholder(value, context=f"{context}: {key}")
+    _require(re.fullmatch(r"[0-9a-fA-F]{64}", value) is not None, f"{context}: {key} must be a sha256 hex digest")
+
+
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).expanduser().open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _require_existing_file_with_sha(payload: Mapping[str, Any], path_key: str, sha_key: str, *, context: str) -> None:
+    _require_nonempty_string(payload, path_key, context=context)
+    _require_sha256(payload, sha_key, context=context)
+    path_text = str(payload[path_key]).strip()
+    _require_no_placeholder(path_text, context=f"{context}: {path_key}")
+    path = Path(path_text).expanduser()
+    _require(path.is_file(), f"{context}: artifact file missing: {path}")
+    actual = _sha256_file(path)
+    _require(actual == str(payload[sha_key]).strip().lower(), f"{context}: {sha_key} mismatch")
+
+
+def _require_stage2_teacher_summary_chain(payload: Mapping[str, Any]) -> None:
+    _require_nonempty_string(payload, "summary_json", context="Stage2 teacher evidence")
+    summary_path_text = str(payload["summary_json"]).strip()
+    _require_no_placeholder(summary_path_text, context="Stage2 teacher evidence: summary_json")
+    summary_path = Path(summary_path_text).expanduser()
+    _require(summary_path.is_file(), f"Stage2 teacher evidence: summary_json missing: {summary_path}")
+    summary = _read_json(summary_path)
+    for key in (
+        "schema_version",
+        "teacher_signal_source",
+        "split_scope",
+        "utility_semantics",
+        "signed_utility_supported",
+        "generator_manifest_sha256",
+    ):
+        _require(summary.get(key) == payload.get(key), f"Stage2 teacher evidence summary chain mismatch: {key}")
+    _require(summary.get("decision") == detector_teacher_utility.READY, "Stage2 teacher summary decision mismatch")
+    _require(
+        summary.get("output_jsonl_sha256") == payload.get("validated_output_jsonl_sha256"),
+        "Stage2 teacher evidence summary chain mismatch: output_jsonl_sha256",
+    )
+
+
+def _require_dynamic_gain_calibration(payload: Mapping[str, Any], *, context: str) -> None:
+    calibration = payload.get("dynamic_gain_calibration")
+    _require(isinstance(calibration, Mapping), f"{context}: dynamic_gain_calibration is required")
+    _require(calibration.get("score_semantics") == "calibrated_marginal_gain", f"{context}: dynamic_gain_calibration score_semantics mismatch")
+    _require(calibration.get("calibration_scope") == "cross_video_comparable", f"{context}: dynamic_gain_calibration calibration_scope mismatch")
+    _require(calibration.get("target_source") == "abs_signed_detector_utility", f"{context}: dynamic_gain_calibration target_source mismatch")
+
+
 def _validate_stage2_teacher_evidence(payload: Mapping[str, Any]) -> None:
     _require(payload.get("decision") == "C3_DETECTOR_TEACHER_UTILITY_EVIDENCE_PASS", "Stage2 teacher evidence must pass")
     _require(payload.get("stage_label") == detector_teacher_utility.STAGE_LABEL, "Stage2 teacher stage_label mismatch")
     _require(payload.get("route_label") == STAGE2_ROUTE, "Stage2 teacher route_label mismatch")
     _require(payload.get("teacher_signal_source") == "adatad_dense_teacher", "Stage2 teacher source must be AdaTAD dense teacher")
     _require(payload.get("split_scope") == "train_only", "Stage2 teacher split_scope must be train_only")
-    for key in (
-        "teacher_checkpoint_path",
-        "teacher_checkpoint_sha256",
-        "teacher_config_path",
-        "teacher_config_sha256",
-        "validated_output_jsonl_sha256",
-    ):
-        _require_nonempty_string(payload, key, context="Stage2 teacher evidence")
+    _require(payload.get("utility_semantics") == "signed_detector_utility_v1", "Stage2 teacher evidence must use signed utility")
+    _require(payload.get("signed_utility_supported") is True, "Stage2 teacher evidence must support signed utility")
+    _require_existing_file_with_sha(payload, "teacher_checkpoint_path", "teacher_checkpoint_sha256", context="Stage2 teacher evidence")
+    _require_existing_file_with_sha(payload, "teacher_config_path", "teacher_config_sha256", context="Stage2 teacher evidence")
+    _require_existing_file_with_sha(payload, "validated_output_jsonl", "validated_output_jsonl_sha256", context="Stage2 teacher evidence")
+    _require_existing_file_with_sha(payload, "generator_manifest_json", "generator_manifest_sha256", context="Stage2 teacher evidence")
+    _require_stage2_teacher_summary_chain(payload)
+    _require(payload.get("generator_source") == "dense_detector_forward_train", "Stage2 teacher generator_source must be dense_detector_forward_train")
     _require_false_flags(payload, context="Stage2 teacher evidence")
     _require(payload.get("end_to_end") is False, "Stage2 teacher evidence must not claim end-to-end")
 
@@ -127,7 +191,11 @@ def _validate_stage2_policy_evidence(payload: Mapping[str, Any]) -> None:
     _require(payload.get("stage_label") == detector_policy.STAGE_LABEL, "Stage2 policy stage_label mismatch")
     _require(payload.get("teacher_target_scope") == "train_only", "Stage2 policy teacher_target_scope must be train_only")
     _require_nonempty_string(payload, "checkpoint_sha256", context="Stage2 policy evidence")
-    _require_nonempty_string(payload, "train_jsonl_sha256", context="Stage2 policy evidence")
+    _require_sha256(payload, "checkpoint_sha256", context="Stage2 policy evidence")
+    _require_sha256(payload, "train_jsonl_sha256", context="Stage2 policy evidence")
+    _require(payload.get("utility_semantics") == "signed_detector_utility_v1", "Stage2 policy must use signed utility")
+    _require(payload.get("signed_utility_supported") is True, "Stage2 policy must support signed utility")
+    _require_dynamic_gain_calibration(payload, context="Stage2 policy evidence")
     source = payload.get("policy_source")
     if source is not None:
         _require(
@@ -192,6 +260,7 @@ def _validate_stage2_ledger_summary(payload: Mapping[str, Any]) -> str:
         f"Stage2 ledger {strategy}: boundary_support r1 key is required",
     )
     if strategy == detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY:
+        _require_dynamic_gain_calibration(payload, context=f"Stage2 ledger {strategy}")
         min_count = int(payload.get("min_selected_count", 0) or 0)
         max_count = int(payload.get("max_selected_count", 0) or 0)
         iqr = float(payload.get("dynamic_budget_iqr", 0.0) or 0.0)
@@ -204,24 +273,21 @@ def _validate_stage2_ledger_summaries(payloads: Sequence[Mapping[str, Any]]) -> 
     _require(payloads, "Stage4 requires Stage2 detector-aware ledger validation summaries")
     seen_variants: set[str] = set()
     seen_with_split: set[tuple[str, str]] = set()
-    split_annotated = 0
     for idx, payload in enumerate(payloads, start=1):
         strategy = _validate_stage2_ledger_summary(payload)
         seen_variants.add(strategy)
         split = _split_name(payload)
-        if split is not None:
-            split_annotated += 1
-            seen_with_split.add((strategy, split))
+        _require(split in set(REQUIRED_LEDGER_SPLITS), f"Stage2 ledger summary {idx}: split coverage identity is required")
+        seen_with_split.add((strategy, split))
     missing_variants = sorted(set(REQUIRED_LEDGER_VARIANTS) - seen_variants)
     _require(not missing_variants, f"Stage2 ledger summaries missing variants: {missing_variants}")
-    if split_annotated:
-        missing = [
-            (variant, split)
-            for variant in REQUIRED_LEDGER_VARIANTS
-            for split in REQUIRED_LEDGER_SPLITS
-            if (variant, split) not in seen_with_split
-        ]
-        _require(not missing, f"Stage2 ledger summaries missing split coverage: {missing}")
+    missing = [
+        (variant, split)
+        for variant in REQUIRED_LEDGER_VARIANTS
+        for split in REQUIRED_LEDGER_SPLITS
+        if (variant, split) not in seen_with_split
+    ]
+    _require(not missing, f"Stage2 ledger summaries missing split coverage: {missing}")
 
 
 def _validate_stage3_proof(payload: Mapping[str, Any]) -> None:
@@ -248,6 +314,13 @@ def _validate_stage3_proof(payload: Mapping[str, Any]) -> None:
     _require("cls_loss" in list(payload.get("actionformer_loss_keys", [])), "Stage3 ActionFormer proof missing cls_loss")
     _require("reg_loss" in list(payload.get("actionformer_loss_keys", [])), "Stage3 ActionFormer proof missing reg_loss")
     _require(payload.get("actionformer_selected_axis_smoke") is True, "Stage3 selected-axis smoke flag missing")
+    _require(payload.get("sparse_distill_adapter_ready") is True, "Stage3 sparse distill adapter evidence missing")
+    _require(payload.get("sparse_distill_claim_allowed") is False, "Stage3 sparse distill claim must remain locked")
+    _require(payload.get("sparse_distill_map_claim_allowed") is False, "Stage3 sparse distill mAP claim must remain locked")
+    _require(
+        payload.get("sparse_distill_proof_source") == "fail_closed_sparse_detector_distillation_adapter",
+        "Stage3 sparse distill proof source mismatch",
+    )
     _require_false_flags(payload, context="Stage3 proof")
 
 
@@ -389,7 +462,13 @@ def _template() -> dict[str, Any]:
             "teacher_checkpoint_sha256": "REPLACE_WITH_SHA256",
             "teacher_config_path": "REPLACE_WITH_DENSE_TEACHER_CONFIG",
             "teacher_config_sha256": "REPLACE_WITH_SHA256",
+            "generator_manifest_json": "REPLACE_WITH_TEACHER_GENERATOR_MANIFEST",
+            "generator_manifest_sha256": "REPLACE_WITH_SHA256",
+            "generator_source": "dense_detector_forward_train",
             "validated_output_jsonl_sha256": "REPLACE_WITH_SHA256",
+            "validated_output_jsonl": "REPLACE_WITH_TEACHER_UTILITY_JSONL",
+            "utility_semantics": "signed_detector_utility_v1",
+            "signed_utility_supported": True,
             "uses_gt_for_selection": False,
             "uses_val_or_test_gt_for_selection": False,
             "uses_prediction_cache": False,
@@ -407,6 +486,9 @@ def _template() -> dict[str, Any]:
             "teacher_target_scope": "train_only",
             "checkpoint_sha256": "REPLACE_WITH_SHA256",
             "train_jsonl_sha256": "REPLACE_WITH_SHA256",
+            "utility_semantics": "signed_detector_utility_v1",
+            "signed_utility_supported": True,
+            "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
             "uses_gt_for_selection": False,
             "uses_val_or_test_gt_for_selection": False,
             "uses_prediction_cache": False,
@@ -433,6 +515,10 @@ def _template() -> dict[str, Any]:
             "actionformer_detector_loss_selector_grad_norm": 0.1,
             "actionformer_loss_keys": ["cls_loss", "reg_loss"],
             "actionformer_selected_axis_smoke": True,
+            "sparse_distill_adapter_ready": True,
+            "sparse_distill_claim_allowed": False,
+            "sparse_distill_map_claim_allowed": False,
+            "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
             "uses_gt_for_selection": False,
             "uses_val_or_test_gt_for_selection": False,
             "uses_prediction_cache": False,
@@ -473,6 +559,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.stage2_teacher_summary_json,
             output_jsonl=args.stage2_teacher_output_jsonl,
             require_paction=True,
+            require_generator_manifest=True,
         )
         payload = build_evidence(
             stage2_teacher_evidence=stage2_teacher,

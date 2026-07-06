@@ -28,6 +28,12 @@ DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE = "learned_detector_aware_policy_checkpo
 DETECTOR_AWARE_BOOTSTRAP_POLICY_SOURCE = "bootstrap_detector_aware_surrogate_policy"
 DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS = gas_vt.DEFAULT_GAS_VT_DYNAMIC_BUDGET_BUCKETS
 DETECTOR_AWARE_FEATURE_NAMES = gas_vt.GAS_VT_FEATURE_NAMES
+DEFAULT_DYNAMIC_GAIN_CALIBRATION = {
+    "score_semantics": "calibrated_marginal_gain",
+    "calibration_scope": "cross_video_comparable",
+    "target_source": "abs_signed_detector_utility",
+    "budget_decoding": "bucket_logits_are_cross_video_marginal_gain_threshold_surrogates",
+}
 DEFAULT_DETECTOR_AWARE_LOSS_TERMS = {
     "utility_mse": 1.0,
     "utility_bce": 0.5,
@@ -72,6 +78,7 @@ def add_detector_aware_decision_to_sample_row(
     fixed_budgets: Sequence[int] = (384, 768),
     dynamic_budget_scores: Sequence[Any],
     dynamic_budget_buckets: Sequence[Any] = DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS,
+    dynamic_gain_calibration: Mapping[str, Any] | None = None,
     max_unselected_hole: int | None = None,
     source: str | None = None,
     checkpoint_path: str | None = None,
@@ -97,6 +104,9 @@ def add_detector_aware_decision_to_sample_row(
         dynamic_budget_buckets,
         valid_len=valid_len,
     )
+    calibration = dict(DEFAULT_DYNAMIC_GAIN_CALIBRATION)
+    if dynamic_gain_calibration is not None:
+        calibration.update(dict(dynamic_gain_calibration))
     strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = gas_vt.hard_gap_aware_topk(
         frame_values,
         valid=valid,
@@ -117,6 +127,7 @@ def add_detector_aware_decision_to_sample_row(
         "fixed_budgets": [int(item) for item in fixed_budgets],
         "dynamic_budget": int(dynamic_budget),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
+        "dynamic_budget_calibration": calibration,
         "max_unselected_hole": None if max_unselected_hole is None else int(max_unselected_hole),
         "uses_uniform_fill": False,
         "uses_uniform_scaffold": False,
@@ -163,6 +174,7 @@ def detector_aware_training_objective(
     policy_outputs: Mapping[str, Any],
     *,
     detector_utility_target: Any,
+    detector_gain_target: Any | None = None,
     valid: Any | None = None,
     target_budget: Any | None = None,
     loss_terms: Mapping[str, float] | None = None,
@@ -178,19 +190,25 @@ def detector_aware_training_objective(
         valid_mask = torch.ones_like(frame_logits, dtype=torch.bool)
     else:
         valid_mask = valid.to(device=frame_logits.device).bool()
-    target = detector_utility_target.to(device=frame_logits.device).float().clamp(0.0, 1.0)
+    signed_target = detector_utility_target.to(device=frame_logits.device).float().clamp(-1.0, 1.0)
+    gain_target = (
+        detector_gain_target.to(device=frame_logits.device).float().abs().clamp(0.0, 1.0)
+        if detector_gain_target is not None
+        else signed_target.abs()
+    )
+    signed_prediction = torch.tanh(frame_logits).masked_fill(~valid_mask, 0.0)
     probabilities = torch.sigmoid(frame_logits).masked_fill(~valid_mask, 0.0)
     selected_mask = policy_outputs.get("st_selected_mask", probabilities).to(device=frame_logits.device).float()
     selected_mask = selected_mask.masked_fill(~valid_mask, 0.0)
     zero = frame_logits.sum() * 0.0
     if bool(valid_mask.any().item()):
-        utility_mse = F.mse_loss(probabilities[valid_mask], target[valid_mask])
-        utility_bce = F.binary_cross_entropy_with_logits(frame_logits[valid_mask], target[valid_mask])
+        utility_mse = F.mse_loss(signed_prediction[valid_mask], signed_target[valid_mask])
+        utility_bce = F.binary_cross_entropy_with_logits(frame_logits[valid_mask], gain_target[valid_mask])
     else:
         utility_mse = zero
         utility_bce = zero
-    denom = (target * valid_mask.float()).sum(dim=-1).clamp_min(1e-6)
-    selected_coverage = ((selected_mask * target).sum(dim=-1) / denom).clamp(max=1.0)
+    denom = (gain_target * valid_mask.float()).sum(dim=-1).clamp_min(1e-6)
+    selected_coverage = ((selected_mask * gain_target).sum(dim=-1) / denom).clamp(max=1.0)
     selected_utility_loss = (1.0 - selected_coverage).mean()
     if selected_mask.shape[-1] > 1:
         window = min(8, selected_mask.shape[-1])

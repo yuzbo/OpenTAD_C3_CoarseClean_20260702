@@ -16,6 +16,29 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _write_generator_manifest(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "c3_detector_teacher_utility_generator_manifest_v1",
+                "decision": "C3_DETECTOR_TEACHER_UTILITY_GENERATOR_MANIFEST_READY",
+                "teacher_signal_source": "adatad_dense_teacher",
+                "generator_source": "dense_detector_forward_train",
+                "split_scope": "train_only",
+                "input_split": "training",
+                "uses_evaluator_outputs": False,
+                "uses_raw_prediction": False,
+                "uses_prediction_cache": False,
+                "load_from_raw_predictions": False,
+                "uses_val_or_test_gt_for_selection": False,
+                "uses_gt_for_selection": False,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_dense_point_utility_maps_to_normalized_frame_utility_with_contract() -> None:
     points = [
         {"point_index": 1, "classification_score": 0.8, "localization_quality": 0.5, "centerness": 1.0},
@@ -29,6 +52,21 @@ def test_dense_point_utility_maps_to_normalized_frame_utility_with_contract() ->
     assert frame_utility[4] == pytest.approx(1.0)
     assert frame_utility[1] > frame_utility[3] > frame_utility[0]
     assert frame_utility[5] == 0.0
+
+
+def test_signed_detector_utility_preserves_background_suppression_value() -> None:
+    points = [
+        {"point_index": 1, "classification_score": 0.8, "localization_quality": 0.5},
+        {"point_index": 3, "signed_utility": -0.6, "utility_role": "background_suppression"},
+    ]
+
+    signed = teacher_utility.map_dense_points_to_signed_frame_utility(points, dense_len=5, valid_len=4)
+
+    assert len(signed) == 5
+    assert signed[1] > 0.0
+    assert signed[3] < 0.0
+    assert max(abs(value) for value in signed[:4]) == pytest.approx(1.0)
+    assert signed[4] == 0.0
 
 
 def test_actionformer_predictions_map_to_dense_teacher_points_without_gt() -> None:
@@ -110,6 +148,10 @@ def test_teacher_utility_export_rejects_val_or_gt_leakage_and_writes_jsonl_npz(t
     assert exported[0]["uses_teacher"] is True
     assert exported[0]["training_only"] is True
     assert exported[0]["frame_utility"][2] == pytest.approx(1.0)
+    assert exported[0]["teacher_utility"]["utility_semantics"] == "signed_detector_utility_v1"
+    assert exported[0]["teacher_utility"]["signed_frame_utility"][2] == pytest.approx(1.0)
+    assert summary["utility_semantics"] == "signed_detector_utility_v1"
+    assert summary["signed_utility_supported"] is True
 
     rows[0]["split"] = "validation"
     _write_jsonl(input_jsonl, rows)
@@ -130,8 +172,10 @@ def test_teacher_utility_export_merges_base_samples_and_validates_evidence(tmp_p
     summary_json = tmp_path / "teacher_utility_export.summary.json"
     checkpoint = tmp_path / "teacher.pth"
     config = tmp_path / "teacher.py"
+    manifest = tmp_path / "teacher_generator.manifest.json"
     checkpoint.write_bytes(b"teacher checkpoint")
     config.write_text("model = dict(type='AdaTAD')\n", encoding="utf-8")
+    _write_generator_manifest(manifest)
     _write_jsonl(
         dense_points,
         [
@@ -175,6 +219,7 @@ def test_teacher_utility_export_merges_base_samples_and_validates_evidence(tmp_p
         base_samples_jsonl=base_samples,
         teacher_checkpoint_path=checkpoint,
         teacher_config_path=config,
+        generator_manifest_json=manifest,
         expected_split="training",
     )
     rows = _read_jsonl(output_jsonl)
@@ -188,6 +233,7 @@ def test_teacher_utility_export_merges_base_samples_and_validates_evidence(tmp_p
     assert rows[0]["teacher_utility"]["frame_utility"][1] == pytest.approx(1.0)
     assert summary["teacher_checkpoint_sha256"] == teacher_utility._sha256_file(checkpoint)
     assert summary["teacher_config_sha256"] == teacher_utility._sha256_file(config)
+    assert summary["generator_manifest_sha256"] == teacher_utility._sha256_file(manifest)
     assert evidence["decision"] == "C3_DETECTOR_TEACHER_UTILITY_EVIDENCE_PASS"
 
     output_jsonl.write_text(output_jsonl.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -231,3 +277,74 @@ def test_teacher_utility_evidence_gate_fails_closed_without_provenance(tmp_path:
 
     with pytest.raises(ValueError, match="teacher_signal_source"):
         teacher_utility.validate_teacher_utility_export_evidence(summary_json, output_jsonl=output_jsonl)
+
+
+def test_teacher_utility_evidence_requires_generator_manifest_when_claimed(tmp_path: Path) -> None:
+    output_jsonl = tmp_path / "samples_with_teacher_utility.jsonl"
+    summary_json = tmp_path / "teacher_utility_export.summary.json"
+    checkpoint = tmp_path / "teacher.pth"
+    config = tmp_path / "teacher.py"
+    checkpoint.write_bytes(b"teacher")
+    config.write_text("model = dict(type='AdaTAD')\n", encoding="utf-8")
+    _write_jsonl(
+        output_jsonl,
+        [
+            {
+                "schema_version": "c3_detector_teacher_utility_row_v1",
+                "sample_id": "video_test_0001|0",
+                "split": "training",
+                "dense_len": 2,
+                "valid_len": 2,
+                "frame_utility": [0.0, 1.0],
+                "signed_frame_utility": [0.0, 1.0],
+                "teacher_utility": {
+                    "utility_semantics": "signed_detector_utility_v1",
+                    "frame_utility": [0.0, 1.0],
+                    "signed_frame_utility": [0.0, 1.0],
+                },
+                "teacher_utility_provenance": {
+                    "teacher_signal_source": "adatad_dense_teacher",
+                    "split_scope": "train_only",
+                },
+                "uses_teacher": True,
+                "training_only": True,
+                "end_to_end": False,
+            }
+        ],
+    )
+    summary_json.write_text(
+        json.dumps(
+            {
+                "schema_version": "c3_detector_teacher_utility_export_v1",
+                "decision": "C3_DETECTOR_TEACHER_UTILITY_EXPORT_READY",
+                "stage_label": "Stage-2 detector-aware offline selector",
+                "route_label": "DIVERGENT_INNOVATION_DETECTOR_AWARE_UTILITY_DO_NOT_MERGE_WITH_C3",
+                "teacher_signal_source": "adatad_dense_teacher",
+                "split_scope": "train_only",
+                "utility_semantics": "signed_detector_utility_v1",
+                "signed_utility_supported": True,
+                "teacher_checkpoint_path": str(checkpoint),
+                "teacher_checkpoint_sha256": teacher_utility._sha256_file(checkpoint),
+                "teacher_config_path": str(config),
+                "teacher_config_sha256": teacher_utility._sha256_file(config),
+                "output_jsonl": str(output_jsonl),
+                "output_jsonl_sha256": teacher_utility._sha256_file(output_jsonl),
+                "row_count": 1,
+                "uses_val_or_test_gt_for_selection": False,
+                "uses_gt_for_selection": False,
+                "uses_prediction_cache": False,
+                "uses_raw_prediction": False,
+                "load_from_raw_predictions": False,
+                "end_to_end": False,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="generator_manifest"):
+        teacher_utility.validate_teacher_utility_export_evidence(
+            summary_json,
+            output_jsonl=output_jsonl,
+            require_generator_manifest=True,
+        )
