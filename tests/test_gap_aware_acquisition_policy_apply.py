@@ -38,6 +38,25 @@ def test_gas_vt_apply_requires_checkpoint_by_default(tmp_path: Path) -> None:
         apply_gas_vt.run_policy_application(input_jsonl, output_jsonl)
 
 
+def test_gas_vt_apply_rejects_bootstrap_when_checkpoint_is_present(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.gas_vt.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"fake checkpoint")
+    input_jsonl.write_text(
+        json.dumps({"sample_id": "video_test_0001|0", "dense_len": 4, "valid_len": 4, "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8]}}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        apply_gas_vt.run_policy_application(
+            input_jsonl,
+            output_jsonl,
+            checkpoint_path=checkpoint,
+            allow_bootstrap_for_tests=True,
+        )
+
+
 def test_gas_vt_apply_emits_deploy_safe_metadata_and_strips_invisible_payload(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "samples.jsonl"
     output_jsonl = tmp_path / "samples.gas_vt.jsonl"
@@ -111,4 +130,3 @@ def test_gas_vt_apply_rejects_gt_payload_in_strict_source(tmp_path: Path) -> Non
             strict_deploy_source=True,
             allow_bootstrap_for_tests=True,
         )
-

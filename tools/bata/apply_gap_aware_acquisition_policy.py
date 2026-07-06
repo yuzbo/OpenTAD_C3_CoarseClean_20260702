@@ -123,6 +123,8 @@ def run_policy_application(
     rows = _read_jsonl(input_jsonl)
     if checkpoint_path is None and not allow_bootstrap_for_tests:
         raise ValueError("checkpoint_path is required for GAS-VT policy application")
+    if checkpoint_path is not None and allow_bootstrap_for_tests:
+        raise ValueError("allow_bootstrap_for_tests cannot be combined with checkpoint_path")
     source_jsonl_sha256 = _sha256_file(source_jsonl_for_hash or input_jsonl)
     checkpoint_sha256: str | None = None
     checkpoint_model: gas_vt.GapAwareSequentialAcquisitionPolicy | None = None

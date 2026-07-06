@@ -50,7 +50,16 @@ def test_gap_aware_pipeline_generates_three_named_gas_vt_ledgers_with_separated_
         ],
     )
 
-    monkeypatch.setattr(gas_pipeline.apply_policy, "load_policy_checkpoint", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("bootstrap should be used")))
+    monkeypatch.setattr(gas_pipeline.apply_policy, "load_policy_checkpoint", lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4]}))
+    monkeypatch.setattr(
+        gas_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, device: gas_pipeline.apply_policy.bootstrap_policy_scores(
+            p_action,
+            valid=valid,
+            dynamic_budget_buckets=[2, 4],
+        ),
+    )
 
     summary = gas_pipeline.run_pipeline(
         input_jsonl=source,
@@ -60,10 +69,15 @@ def test_gap_aware_pipeline_generates_three_named_gas_vt_ledgers_with_separated_
         dynamic_target_len=4,
         dynamic_budget_buckets=[2, 4],
         device="cpu",
-        allow_bootstrap_for_tests=True,
+        max_unselected_hole=8,
+        max_p95_unselected_hole=8,
+        max_uniform_similarity=1.0,
     )
 
     assert summary["decision"] == "C3_GAS_VT_LEDGER_PIPELINE_READY"
+    assert summary["max_unselected_hole"] == 8
+    assert summary["max_p95_unselected_hole"] == 8
+    assert summary["max_uniform_similarity"] == 1.0
     assert sorted(summary["ledgers"]) == ["gas_vt_dynamic", "gas_vt_fixed_384", "gas_vt_fixed_768"]
     assert Path(summary["canonical_input_jsonl"]).name == "source.canonical_unique.jsonl"
     assert Path(summary["selection_sample_jsonl"]).name == "source.selection_deploy.jsonl"
@@ -78,6 +92,18 @@ def test_gap_aware_pipeline_generates_three_named_gas_vt_ledgers_with_separated_
     dynamic_summary = summary["ledgers"]["gas_vt_dynamic"]["validation_summary"]
     assert dynamic_summary["require_nonconstant_selected_count"] is True
     assert dynamic_summary["min_selected_count"] != dynamic_summary["max_selected_count"]
+
+    with pytest.raises(ValueError, match="uniform similarity above threshold"):
+        gas_pipeline.run_pipeline(
+            input_jsonl=source,
+            checkpoint_path=checkpoint,
+            out_dir=tmp_path / "out_strict_uniform",
+            fixed_budgets=(2, 4),
+            dynamic_target_len=4,
+            dynamic_budget_buckets=[2, 4],
+            device="cpu",
+            max_uniform_similarity=0.0,
+        )
 
 
 def test_validator_reports_gas_vt_extra_metrics_and_writes_csv(tmp_path: Path) -> None:

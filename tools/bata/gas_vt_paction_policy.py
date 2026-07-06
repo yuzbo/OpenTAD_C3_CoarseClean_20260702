@@ -290,10 +290,14 @@ def gas_vt_training_objective(
     if action_interior_bins is not None:
         bins = action_interior_bins.to(device=frame_logits.device).float()
         if bins.ndim == 3 and bins.numel() > 0:
+            valid_bins = bins.sum(dim=-1) > 0
             mass = torch.einsum("bt,bnt->bn", selected_mask, bins)
             denom = bins.sum(dim=-1).clamp_min(1.0)
             coverage = (mass / denom).clamp(max=1.0)
-            losses["action_interior_bin_loss"] = (1.0 - coverage).mean()
+            if bool(valid_bins.any().item()):
+                losses["action_interior_bin_loss"] = (1.0 - coverage)[valid_bins].mean()
+            else:
+                losses["action_interior_bin_loss"] = zero
         else:
             losses["action_interior_bin_loss"] = zero
         total = total + losses["action_interior_bin_loss"] * weights["action_interior_bin"]

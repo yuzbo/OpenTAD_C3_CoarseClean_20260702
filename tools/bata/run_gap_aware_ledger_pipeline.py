@@ -37,6 +37,9 @@ def _convert_and_validate(
     checkpoint_path: str | Path,
     checkpoint_sha256: str,
     max_hole_top10_csv: Path,
+    max_unselected_hole: int | None,
+    max_p95_unselected_hole: float | None,
+    max_uniform_similarity: float | None,
 ) -> dict[str, Any]:
     ledger_jsonl = out_dir / f"value_transport_ledger_{name}.jsonl"
     ledger_summary_json = out_dir / f"value_transport_ledger_{name}.summary.json"
@@ -70,6 +73,9 @@ def _convert_and_validate(
         require_paction_provenance=bool(deploy_selection_ledger),
         summary_json=validation_summary_json,
         max_hole_top10_csv=max_hole_top10_csv,
+        max_unselected_hole=max_unselected_hole,
+        max_p95_unselected_hole=max_p95_unselected_hole,
+        max_uniform_similarity=max_uniform_similarity,
     )
     return {
         "sample_jsonl": str(sample_jsonl),
@@ -94,7 +100,8 @@ def run_pipeline(
     deploy_selection_ledger: bool = True,
     allow_short_valid_ratio_count: bool = True,
     max_unselected_hole: int | None = None,
-    allow_bootstrap_for_tests: bool = False,
+    max_p95_unselected_hole: float | None = None,
+    max_uniform_similarity: float | None = None,
     summary_json: str | Path | None = None,
 ) -> dict[str, Any]:
     out_path = Path(out_dir).expanduser()
@@ -131,7 +138,6 @@ def run_pipeline(
         strip_deploy_invisible_payload=True,
         strict_deploy_source=bool(deploy_selection_ledger),
         max_unselected_hole=max_unselected_hole,
-        allow_bootstrap_for_tests=allow_bootstrap_for_tests,
         source_jsonl_for_hash=input_sample_path,
     )
     fixed_budget_list = [int(item) for item in fixed_budgets]
@@ -171,6 +177,9 @@ def run_pipeline(
             checkpoint_path=checkpoint_path,
             checkpoint_sha256=checkpoint_sha256,
             max_hole_top10_csv=out_path / f"value_transport_ledger_{name}.max_holes.csv",
+            max_unselected_hole=max_unselected_hole,
+            max_p95_unselected_hole=max_p95_unselected_hole,
+            max_uniform_similarity=max_uniform_similarity,
         )
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
@@ -189,6 +198,9 @@ def run_pipeline(
         "dynamic_target_len": int(dynamic_target_len),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "deploy_selection_ledger": bool(deploy_selection_ledger),
+        "max_unselected_hole": max_unselected_hole,
+        "max_p95_unselected_hole": max_p95_unselected_hole,
+        "max_uniform_similarity": max_uniform_similarity,
         "required_policy_source": gas_vt.GAS_VT_CHECKPOINT_POLICY_SOURCE,
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
@@ -212,6 +224,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--diagnostic-ledger", action="store_true")
     parser.add_argument("--disable-short-valid-ratio-count", action="store_true")
     parser.add_argument("--max-unselected-hole", type=int)
+    parser.add_argument("--max-p95-unselected-hole", type=float)
+    parser.add_argument("--max-uniform-similarity", type=float)
     args = parser.parse_args(argv)
     summary = run_pipeline(
         input_jsonl=args.input_jsonl,
@@ -224,6 +238,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         deploy_selection_ledger=not bool(args.diagnostic_ledger),
         allow_short_valid_ratio_count=not bool(args.disable_short_valid_ratio_count),
         max_unselected_hole=args.max_unselected_hole,
+        max_p95_unselected_hole=args.max_p95_unselected_hole,
+        max_uniform_similarity=args.max_uniform_similarity,
         summary_json=args.summary_json,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)

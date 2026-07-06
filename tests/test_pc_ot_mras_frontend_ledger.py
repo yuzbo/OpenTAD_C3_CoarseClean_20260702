@@ -275,6 +275,7 @@ def test_pc_ot_mras_hard_positions_convert_to_diagnostic_value_transport_ledger(
     assert row["selected_positions"] == [0, 2, 5]
     assert row["target_len"] == 3
     assert row["selected_count"] == 3
+    assert row["policy_source"] == "pc_ot_mras_frontend_hard_positions"
     assert row["diagnostic_only"] is True
     assert row["deploy_selection_ledger"] is False
 
