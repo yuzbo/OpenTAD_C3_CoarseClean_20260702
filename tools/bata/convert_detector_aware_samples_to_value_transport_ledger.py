@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 from tools.bata import convert_lowres_probe_samples_to_value_transport_ledger as base_convert
 from tools.bata import detector_aware_acquisition_policy as detector_policy
+from tools.bata import detector_deploy_leakage
 from tools.bata import paction_budget_contract
 from tools.bata import paction_source_samples
 
@@ -54,9 +55,10 @@ def sample_row_to_value_transport_row(
         if _is_true(row.get(key, False)):
             raise ValueError(f"line {line_no}: forbidden source flag {key}=true")
     if deploy_selection_ledger:
-        for key in ("teacher_utility", "teacher_utility_provenance", "frame_utility"):
-            if key in row:
-                raise ValueError(f"line {line_no}: deploy detector-aware sample must not include {key}")
+        detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(
+            row,
+            source_name=f"line {line_no}",
+        )
     dense_len = _optional_int(row, "dense_len")
     valid_len = _optional_int(row, "valid_len")
     if valid_len is None:
@@ -153,6 +155,11 @@ def sample_row_to_value_transport_row(
         line_no=line_no,
         require_deployable=bool(deploy_selection_ledger),
     )
+    if deploy_selection_ledger:
+        detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(
+            ledger_row,
+            source_name=f"line {line_no}: converted detector-aware ledger",
+        )
     return ledger_row
 
 

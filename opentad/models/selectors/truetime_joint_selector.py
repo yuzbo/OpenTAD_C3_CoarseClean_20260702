@@ -318,5 +318,5 @@ class TrueTimeRelaxedHardTopKSelector(nn.Module):
             meta["irregular_native_axis"] = True
             meta["irregular_selected_count"] = len(positions)
             meta["irregular_dense_valid_len"] = dense_valid_len
-            meta["irregular_selected_valid_len"] = dense_valid_len
+            meta["irregular_selected_valid_len"] = len(positions)
         return out

@@ -31,12 +31,25 @@ DETECTOR_AWARE_FEATURE_NAMES = gas_vt.GAS_VT_FEATURE_NAMES
 DEFAULT_DYNAMIC_GAIN_CALIBRATION = {
     "score_semantics": "calibrated_marginal_gain",
     "calibration_scope": "cross_video_comparable",
-    "target_source": "abs_signed_detector_utility",
-    "budget_decoding": "bucket_logits_are_cross_video_marginal_gain_threshold_surrogates",
+    "target_source": "positive_observation_gain_from_signed_detector_utility",
+    "budget_decoding": "bucket_logits_are_train_calibrated_marginal_gain_threshold_surrogates",
+    "requires_fit_evidence": True,
+    "calibration_fitted": False,
+    "calibrated_dynamic_claim_allowed": False,
+}
+UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION = {
+    "score_semantics": "uncalibrated_dynamic_budget_score",
+    "calibration_scope": "per_run_or_bootstrap_only",
+    "target_source": "unknown",
+    "budget_decoding": "bucket_logits_without_train_fit_calibration",
+    "requires_fit_evidence": True,
+    "calibration_fitted": False,
+    "calibrated_dynamic_claim_allowed": False,
 }
 DEFAULT_DETECTOR_AWARE_LOSS_TERMS = {
     "utility_mse": 1.0,
     "utility_bce": 0.5,
+    "utility_risk_bce": 0.5,
     "selected_utility": 1.0,
     "cvar_max_hole": 1.0,
     "budget": 1.0,
@@ -69,6 +82,42 @@ def _strategy_budget_for_name(name: str, fixed_budgets: Sequence[int]) -> int:
     if str(name) == DETECTOR_AWARE_FIXED_768_STRATEGY:
         return budgets[1] if len(budgets) > 1 else budgets[0]
     raise ValueError(f"unknown detector-aware fixed strategy: {name}")
+
+
+def _has_dynamic_gain_calibration_evidence(calibration: Mapping[str, Any] | None) -> bool:
+    if not isinstance(calibration, Mapping):
+        return False
+    if calibration.get("calibration_fitted") is not True:
+        return False
+    if calibration.get("fit_split") not in {"training", "train"}:
+        return False
+    if calibration.get("score_semantics") != "calibrated_marginal_gain":
+        return False
+    if calibration.get("calibration_scope") != "cross_video_comparable":
+        return False
+    if calibration.get("target_source") != "positive_observation_gain_from_signed_detector_utility":
+        return False
+    if not isinstance(calibration.get("budget_buckets"), Sequence) or isinstance(calibration.get("budget_buckets"), (str, bytes)):
+        return False
+    threshold = calibration.get("gain_threshold")
+    return threshold is None or isinstance(threshold, (int, float))
+
+
+def _dynamic_budget_calibration_metadata(calibration: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not _has_dynamic_gain_calibration_evidence(calibration):
+        out = dict(UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION)
+        if isinstance(calibration, Mapping):
+            out["provided_score_semantics"] = calibration.get("score_semantics")
+            out["provided_calibration_fitted"] = calibration.get("calibration_fitted")
+        return out
+    out = dict(DEFAULT_DYNAMIC_GAIN_CALIBRATION)
+    out.update(dict(calibration or {}))
+    out["calibration_fitted"] = True
+    out["calibrated_dynamic_claim_allowed"] = (
+        out.get("calibrated_dynamic_claim_allowed") is True
+        and out.get("gain_threshold") is not None
+    )
+    return out
 
 
 def add_detector_aware_decision_to_sample_row(
@@ -104,9 +153,7 @@ def add_detector_aware_decision_to_sample_row(
         dynamic_budget_buckets,
         valid_len=valid_len,
     )
-    calibration = dict(DEFAULT_DYNAMIC_GAIN_CALIBRATION)
-    if dynamic_gain_calibration is not None:
-        calibration.update(dict(dynamic_gain_calibration))
+    calibration = _dynamic_budget_calibration_metadata(dynamic_gain_calibration)
     strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = gas_vt.hard_gap_aware_topk(
         frame_values,
         valid=valid,
@@ -175,6 +222,7 @@ def detector_aware_training_objective(
     *,
     detector_utility_target: Any,
     detector_gain_target: Any | None = None,
+    detector_risk_target: Any | None = None,
     valid: Any | None = None,
     target_budget: Any | None = None,
     loss_terms: Mapping[str, float] | None = None,
@@ -192,9 +240,14 @@ def detector_aware_training_objective(
         valid_mask = valid.to(device=frame_logits.device).bool()
     signed_target = detector_utility_target.to(device=frame_logits.device).float().clamp(-1.0, 1.0)
     gain_target = (
-        detector_gain_target.to(device=frame_logits.device).float().abs().clamp(0.0, 1.0)
+        detector_gain_target.to(device=frame_logits.device).float().clamp(0.0, 1.0)
         if detector_gain_target is not None
-        else signed_target.abs()
+        else signed_target.clamp_min(0.0)
+    )
+    risk_target = (
+        detector_risk_target.to(device=frame_logits.device).float().clamp(0.0, 1.0)
+        if detector_risk_target is not None
+        else (-signed_target).clamp_min(0.0)
     )
     signed_prediction = torch.tanh(frame_logits).masked_fill(~valid_mask, 0.0)
     probabilities = torch.sigmoid(frame_logits).masked_fill(~valid_mask, 0.0)
@@ -204,9 +257,11 @@ def detector_aware_training_objective(
     if bool(valid_mask.any().item()):
         utility_mse = F.mse_loss(signed_prediction[valid_mask], signed_target[valid_mask])
         utility_bce = F.binary_cross_entropy_with_logits(frame_logits[valid_mask], gain_target[valid_mask])
+        utility_risk_bce = F.binary_cross_entropy_with_logits(-frame_logits[valid_mask], risk_target[valid_mask])
     else:
         utility_mse = zero
         utility_bce = zero
+        utility_risk_bce = zero
     denom = (gain_target * valid_mask.float()).sum(dim=-1).clamp_min(1e-6)
     selected_coverage = ((selected_mask * gain_target).sum(dim=-1) / denom).clamp(max=1.0)
     selected_utility_loss = (1.0 - selected_coverage).mean()
@@ -226,6 +281,7 @@ def detector_aware_training_objective(
     total = (
         utility_mse * weights["utility_mse"]
         + utility_bce * weights["utility_bce"]
+        + utility_risk_bce * weights["utility_risk_bce"]
         + selected_utility_loss * weights["selected_utility"]
         + cvar_max_hole_loss * weights["cvar_max_hole"]
         + budget_loss * weights["budget"]
@@ -233,6 +289,7 @@ def detector_aware_training_objective(
     return {
         "utility_mse_loss": utility_mse,
         "utility_bce_loss": utility_bce,
+        "utility_risk_bce_loss": utility_risk_bce,
         "selected_utility_loss": selected_utility_loss,
         "cvar_max_hole_loss": cvar_max_hole_loss,
         "budget_loss": budget_loss,

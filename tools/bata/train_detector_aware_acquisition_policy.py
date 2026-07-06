@@ -48,7 +48,76 @@ def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: in
 
 
 def _marginal_gain_target(utility: Sequence[float]) -> list[float]:
-    return [abs(max(-1.0, min(1.0, float(item)))) for item in utility]
+    return _positive_observation_gain_target(utility)
+
+
+def _positive_observation_gain_target(utility: Sequence[float]) -> list[float]:
+    return [max(0.0, max(-1.0, min(1.0, float(item)))) for item in utility]
+
+
+def _negative_observation_risk_target(utility: Sequence[float]) -> list[float]:
+    return [max(0.0, -max(-1.0, min(1.0, float(item)))) for item in utility]
+
+
+def _normalised_budget_buckets(dynamic_budget_buckets: Sequence[int], *, valid_len: int) -> list[int]:
+    return sorted({min(max(1, int(item)), int(valid_len)) for item in dynamic_budget_buckets})
+
+
+def _nearest_budget_bucket(target_count: int, *, dynamic_budget_buckets: Sequence[int], valid_len: int) -> int:
+    buckets = _normalised_budget_buckets(dynamic_budget_buckets, valid_len=valid_len)
+    if not buckets:
+        raise ValueError("dynamic_budget_buckets must not be empty")
+    count = min(max(0, int(target_count)), int(valid_len))
+    return int(min(buckets, key=lambda bucket: (abs(int(bucket) - count), int(bucket))))
+
+
+def _median_positive_gain_threshold(gains: Sequence[float]) -> float | None:
+    positive = sorted(float(item) for item in gains if float(item) > 0.0)
+    if not positive:
+        return None
+    return float(positive[len(positive) // 2])
+
+
+def _fit_dynamic_gain_calibration(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    dynamic_budget_buckets: Sequence[int],
+    gain_threshold_quantile: float = 0.50,
+) -> dict[str, Any]:
+    valid_gains: list[float] = []
+    for row in rows:
+        valid_len = int(row["valid_len"])
+        valid_gains.extend(float(item) for item in row["gain"][:valid_len])
+    threshold = _median_positive_gain_threshold(valid_gains)
+    positive_frame_count = sum(1 for item in valid_gains if float(item) > 0.0)
+    return {
+        **detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION,
+        "schema_version": "c3_detector_aware_dynamic_gain_calibration_v1",
+        "calibration_fitted": True,
+        "calibrated_dynamic_claim_allowed": positive_frame_count > 0 and threshold is not None,
+        "fit_split": "training",
+        "fit_row_count": len(rows),
+        "fit_frame_count": len(valid_gains),
+        "positive_frame_count": int(positive_frame_count),
+        "gain_threshold": None if threshold is None else float(threshold),
+        "gain_threshold_quantile": float(gain_threshold_quantile),
+        "budget_target_rule": "count_positive_gain_at_global_threshold_then_nearest_bucket",
+        "budget_buckets": [int(item) for item in dynamic_budget_buckets],
+    }
+
+
+def _calibrated_dynamic_budget_target(
+    gain: Sequence[float],
+    *,
+    valid_len: int,
+    dynamic_budget_buckets: Sequence[int],
+    calibration: Mapping[str, Any],
+) -> int:
+    threshold = calibration.get("gain_threshold")
+    if threshold is None:
+        return _nearest_budget_bucket(0, dynamic_budget_buckets=dynamic_budget_buckets, valid_len=valid_len)
+    selected_count = sum(1 for item in gain[: int(valid_len)] if float(item) >= float(threshold))
+    return _nearest_budget_bucket(selected_count, dynamic_budget_buckets=dynamic_budget_buckets, valid_len=valid_len)
 
 
 def _utility_budget_target(
@@ -58,7 +127,7 @@ def _utility_budget_target(
     dynamic_budget_buckets: Sequence[int],
     coverage_target: float = 0.80,
 ) -> int:
-    valid_values = [abs(max(-1.0, min(1.0, float(item)))) for item in utility[: int(valid_len)]]
+    valid_values = [max(0.0, max(-1.0, min(1.0, float(item)))) for item in utility[: int(valid_len)]]
     total = sum(valid_values)
     if total <= 0.0:
         return min(max(1, min(int(item) for item in dynamic_budget_buckets)), int(valid_len))
@@ -76,18 +145,34 @@ def _prepared_rows(
     dynamic_budget_buckets: Sequence[int],
     expected_split: str | None,
 ) -> list[dict[str, Any]]:
-    prepared: list[dict[str, Any]] = []
+    extracted: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
         _validate_source_row(row, line_no=line_no, expected_split=expected_split)
         p_action = _extract_paction(row, line_no=line_no)
         valid_len = _valid_len(row, paction_len=len(p_action))
         utility = _extract_teacher_utility(row, line_no=line_no, length=len(p_action))
         gain = _marginal_gain_target(utility)
-        dynamic_budget_target = _utility_budget_target(
-            gain,
-            valid_len=valid_len,
-            dynamic_budget_buckets=dynamic_budget_buckets,
+        risk = _negative_observation_risk_target(utility)
+        extracted.append(
+            {
+                "p_action": p_action,
+                "valid_len": valid_len,
+                "utility": utility,
+                "gain": gain,
+                "risk": risk,
+            }
         )
+    calibration = _fit_dynamic_gain_calibration(extracted, dynamic_budget_buckets=dynamic_budget_buckets)
+    prepared: list[dict[str, Any]] = []
+    for row in extracted:
+        dynamic_budget_target = _calibrated_dynamic_budget_target(
+            row["gain"],
+            valid_len=row["valid_len"],
+            dynamic_budget_buckets=dynamic_budget_buckets,
+            calibration=calibration,
+        )
+        p_action = row["p_action"]
+        valid_len = int(row["valid_len"])
         prepared.append(
             {
                 "features": detector_policy.build_detector_aware_feature_matrix(
@@ -95,11 +180,13 @@ def _prepared_rows(
                     valid=[idx < valid_len for idx in range(len(p_action))],
                     target_budget=dynamic_budget_target,
                 ),
-                "detector_utility_target": utility,
-                "detector_marginal_gain_target": gain,
+                "detector_utility_target": row["utility"],
+                "positive_observation_gain_target": row["gain"],
+                "negative_observation_risk_target": row["risk"],
+                "detector_marginal_gain_target": row["gain"],
                 "valid_len": valid_len,
                 "dynamic_budget_target": dynamic_budget_target,
-                "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
+                "dynamic_gain_calibration": dict(calibration),
             }
         )
     return prepared
@@ -113,6 +200,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
     features = torch.zeros((len(batch), max_len, feature_dim), dtype=torch.float32, device=device)
     utility = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
     gain = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    risk = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
     valid = torch.zeros((len(batch), max_len), dtype=torch.bool, device=device)
     buckets = [int(item) for item in dynamic_budget_buckets]
     budget_indices: list[int] = []
@@ -122,6 +210,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
         features[row_idx, :length] = torch.tensor(row["features"], dtype=torch.float32, device=device)
         utility[row_idx, :length] = torch.tensor(row["detector_utility_target"], dtype=torch.float32, device=device)
         gain[row_idx, :length] = torch.tensor(row["detector_marginal_gain_target"], dtype=torch.float32, device=device)
+        risk[row_idx, :length] = torch.tensor(row["negative_observation_risk_target"], dtype=torch.float32, device=device)
         valid[row_idx, : int(row["valid_len"])] = True
         target_budget = int(row["dynamic_budget_target"])
         budget_targets.append(target_budget)
@@ -130,6 +219,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
         "features": features,
         "utility": utility,
         "gain": gain,
+        "risk": risk,
         "valid": valid,
         "budget_indices": torch.tensor(budget_indices, dtype=torch.long, device=device),
         "budget_targets": torch.tensor(budget_targets, dtype=torch.float32, device=device),
@@ -163,6 +253,7 @@ def _run_epoch(
                 outputs,
                 detector_utility_target=tensors["utility"],
                 detector_gain_target=tensors["gain"],
+                detector_risk_target=tensors["risk"],
                 valid=tensors["valid"],
                 target_budget=tensors["budget_targets"],
             )
@@ -208,6 +299,9 @@ def run_training(
     checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else out_path / "detector_aware_policy.pth"
     buckets = [int(item) for item in dynamic_budget_buckets]
     train_rows = _prepared_rows(_read_jsonl(train_jsonl), dynamic_budget_buckets=buckets, expected_split=expected_split)
+    train_jsonl_sha256 = _sha256_file(train_jsonl)
+    dynamic_gain_calibration = dict(train_rows[0]["dynamic_gain_calibration"]) if train_rows else dict(detector_policy.UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION)
+    dynamic_gain_calibration["train_jsonl_sha256"] = train_jsonl_sha256
     model_kwargs = {
         "input_dim": len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES),
         "hidden_dim": int(hidden_dim),
@@ -241,14 +335,14 @@ def run_training(
         "stage_label": detector_policy.STAGE_LABEL,
         "policy_source": detector_policy.DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE,
         "train_jsonl": str(train_jsonl),
-        "train_jsonl_sha256": _sha256_file(train_jsonl),
+        "train_jsonl_sha256": train_jsonl_sha256,
         "policy_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "model_kwargs": model_kwargs,
         "dynamic_budget_buckets": buckets,
         "utility_semantics": "signed_detector_utility_v1",
         "signed_utility_supported": True,
-        "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
+        "dynamic_gain_calibration": dynamic_gain_calibration,
         "loss_terms": dict(detector_policy.DEFAULT_DETECTOR_AWARE_LOSS_TERMS),
         "teacher_target_scope": "train_only",
         "uses_uniform_scaffold": False,
@@ -268,11 +362,11 @@ def run_training(
         "out_dir": str(out_path),
         "checkpoint_path": str(checkpoint),
         "checkpoint_sha256": _sha256_file(checkpoint),
-        "train_jsonl_sha256": _sha256_file(train_jsonl),
+        "train_jsonl_sha256": train_jsonl_sha256,
         "dynamic_budget_buckets": buckets,
         "utility_semantics": "signed_detector_utility_v1",
         "signed_utility_supported": True,
-        "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
+        "dynamic_gain_calibration": dynamic_gain_calibration,
         "teacher_target_scope": "train_only",
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,

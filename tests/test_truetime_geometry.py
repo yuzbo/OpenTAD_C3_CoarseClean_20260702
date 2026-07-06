@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import torch
 
-from opentad.models.utils.truetime_geometry import TrueTimeMap, inverse_map_prediction_segments
+import pytest
+
+from opentad.models.utils.truetime_geometry import (
+    TrueTimeMap,
+    inverse_map_prediction_segments,
+    remap_selected_axis_segments_to_true_time,
+    truetime_map_from_metadata,
+)
 
 
 def test_truetime_selected_dense_roundtrip_preserves_fractional_positions() -> None:
@@ -51,3 +58,34 @@ def test_prediction_inverse_map_records_selected_axis_source() -> None:
     assert mapped["source_coordinate_space"] == "selected_axis_index"
     assert torch.allclose(mapped["segments"], torch.tensor([[1.0, 6.0], [3.0, 7.0]]))
     assert torch.equal(mapped["scores"], predictions["scores"])
+
+
+def test_metadata_selected_axis_remap_preserves_ordering() -> None:
+    meta = {
+        "detector_prediction_inverse_map_required": True,
+        "selected_axis_to_true_time_dense_index": [1, 4, 8, 9],
+        "truetime_dense_len": 10,
+        "irregular_dense_valid_len": torch.tensor([10.0]),
+        "irregular_selected_valid_len": [4.0],
+        "irregular_selected_count": 4,
+    }
+    selected_segments = torch.tensor([[0.0, 1.0], [1.25, 2.5], [2.5, 3.0]])
+
+    time_map = truetime_map_from_metadata(meta)
+    true_segments = remap_selected_axis_segments_to_true_time(selected_segments, meta)
+
+    assert torch.allclose(true_segments, torch.tensor([[1.0, 4.0], [5.0, 8.5], [8.5, 9.0]]))
+    assert torch.all(true_segments[1:, 0] >= true_segments[:-1, 0])
+    assert time_map.selected_len == meta["irregular_selected_valid_len"]
+
+
+def test_metadata_selected_axis_remap_fails_closed_when_required_mapping_is_missing() -> None:
+    meta = {
+        "detector_prediction_inverse_map_required": True,
+        "truetime_dense_len": 10,
+        "irregular_dense_valid_len": 10,
+        "irregular_selected_valid_len": 4,
+    }
+
+    with pytest.raises(ValueError, match="selected_axis_to_true_time_dense_index"):
+        remap_selected_axis_segments_to_true_time(torch.tensor([[0.0, 1.0]]), meta)

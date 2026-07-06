@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from tools.bata import train_detector_aware_acquisition_policy as train_detector
+from tools.bata import apply_detector_aware_acquisition_policy as detector_apply
+from tools.bata import convert_detector_aware_samples_to_value_transport_ledger as detector_convert
 from tools.bata import run_detector_aware_ledger_pipeline as detector_pipeline
 from tools.bata import validate_detector_aware_policy_ledger as detector_validator
 
@@ -29,6 +31,14 @@ def _paction_provenance() -> dict:
     }
 
 
+def _has_key_recursive(value: object, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_has_key_recursive(item, key) for item in value.values())
+    if isinstance(value, list):
+        return any(_has_key_recursive(item, key) for item in value)
+    return False
+
+
 def _sample(sample_id: str, p_action: list[float], utility: list[float]) -> dict:
     return {
         "sample_id": sample_id,
@@ -41,6 +51,68 @@ def _sample(sample_id: str, p_action: list[float], utility: list[float]) -> dict
         "gt_boundaries": [1, 4],
         "teacher_utility": {"frame_utility": utility},
         "teacher_utility_provenance": {"split_scope": "train_only"},
+    }
+
+
+def _deploy_policy_metadata(checkpoint: Path, sha: str) -> dict:
+    return {
+        "source": "learned_detector_aware_policy_checkpoint",
+        "checkpoint_path": str(checkpoint),
+        "checkpoint_sha256": sha,
+        "policy_checkpoint_sha256": sha,
+        "policy_family": "detector_aware_offline_selector",
+        "stage_label": "Stage-2 detector-aware offline selector",
+        "end_to_end": False,
+        "uses_uniform_fill": False,
+        "uses_uniform_scaffold": False,
+        "p_action_provenance": _paction_provenance(),
+    }
+
+
+def _deploy_sample(checkpoint: Path, sha: str) -> dict:
+    return {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8]},
+        "paction_positive_provenance": _paction_provenance(),
+        "strategy_selected_positions": {"detector_aware_fixed_384": [0, 2]},
+        "detector_aware_policy": _deploy_policy_metadata(checkpoint, sha),
+    }
+
+
+def _deploy_ledger_row(checkpoint: Path, sha: str) -> dict:
+    return {
+        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+        "sample_id": "video_test_0001|0",
+        "selected_positions_unit": "local_dense_index",
+        "selected_positions": [0, 2],
+        "target_len": 2,
+        "selected_count": 2,
+        "valid_len": 4,
+        "dense_len": 4,
+        "deploy_selection_ledger": True,
+        "diagnostic_only": False,
+        "policy_source": "learned_detector_aware_policy_checkpoint",
+        "policy_checkpoint_path": str(checkpoint),
+        "policy_checkpoint_sha256": sha,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "uses_checkpoint": False,
+        "prediction_uses_gt": False,
+        "training_only": False,
+        "diagnostics": {
+            "uniform_visible_fill_count": 0,
+            "source_strategy": "detector_aware_fixed_384",
+            "policy_source": "learned_detector_aware_policy_checkpoint",
+            "policy_checkpoint_path": str(checkpoint),
+            "policy_checkpoint_sha256": sha,
+            "p_action_provenance": _paction_provenance(),
+        },
     }
 
 
@@ -141,6 +213,122 @@ def test_detector_aware_pipeline_rejects_collapsed_dynamic_without_diagnostic_op
         )
 
 
+def test_detector_aware_apply_strips_nested_forbidden_payload_from_deploy_output(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    output = tmp_path / "applied.jsonl"
+    row = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8]},
+        "paction_positive_provenance": _paction_provenance(),
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "debug_payload": [
+            {"teacher_scores": [0.9, 0.1]},
+            {"nested": {"raw_predictions": [{"score": 0.8}]}},
+        ],
+    }
+    _write_jsonl(source, [row])
+
+    detector_apply.run_policy_application(
+        input_jsonl=source,
+        output_jsonl=output,
+        fixed_budgets=(2, 3),
+        dynamic_budget_buckets=[2, 3],
+        strip_deploy_invisible_payload=True,
+        strict_deploy_source=False,
+        allow_bootstrap_for_tests=True,
+    )
+
+    applied = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert not _has_key_recursive(applied[0], "teacher_utility")
+    assert not _has_key_recursive(applied[0], "teacher_scores")
+    assert not _has_key_recursive(applied[0], "raw_predictions")
+
+
+def test_detector_aware_convert_rejects_nested_forbidden_payload_in_deploy_sample(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = _deploy_sample(checkpoint, sha)
+    sample["audit"] = {"frames": [{"signed_frame_utility": [0.0, 1.0]}]}
+    sample["detector_aware_policy"]["debug"] = {"dense_teacher_logits": [[0.1, 0.9]]}
+    _write_jsonl(samples, [sample])
+
+    with pytest.raises(ValueError, match="forbidden detector-aware deploy payload key"):
+        detector_convert.run_conversion(
+            samples,
+            ledger,
+            strategy="detector_aware_fixed_384",
+            target_len=2,
+            require_selected_count=2,
+            deploy_selection_ledger=True,
+        )
+
+
+def test_detector_aware_validator_rejects_nested_forbidden_payloads_and_accepts_clean_deploy_rows(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    metrics = tmp_path / "metrics.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = _deploy_sample(checkpoint, sha)
+    sample["detector_aware_policy"]["audit"] = [{"teacher_proposals": [[0.0, 1.0]]}]
+    metric = {
+        "sample_id": "video_test_0001|0",
+        "split": "training",
+        "dense_len": 4,
+        "valid_len": 4,
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "teacher_utility_provenance": {"split_scope": "train_only"},
+        "action_target": [1, 0, 1, 0],
+        "gt_boundaries": [0, 2],
+    }
+    ledger_row = _deploy_ledger_row(checkpoint, sha)
+    ledger_row["diagnostics"]["prediction_cache"] = {"path": "hidden-cache.json"}
+    _write_jsonl(samples, [sample])
+    _write_jsonl(metrics, [metric])
+    _write_jsonl(ledger, [ledger_row])
+
+    with pytest.raises(ValueError, match="forbidden detector-aware deploy payload key"):
+        detector_validator.validate_ledger(
+            sample_jsonl=samples,
+            metric_sample_jsonl=metrics,
+            ledger_jsonl=ledger,
+            strategy="detector_aware_fixed_384",
+            expected_target_len=2,
+            require_selected_count=2,
+            require_deployable=True,
+            require_policy_source="learned_detector_aware_policy_checkpoint",
+            require_checkpoint_path=checkpoint,
+            require_checkpoint_sha256=sha,
+            require_paction_provenance=True,
+        )
+
+    sample["detector_aware_policy"].pop("audit")
+    ledger_row["diagnostics"].pop("prediction_cache")
+    _write_jsonl(samples, [sample])
+    _write_jsonl(ledger, [ledger_row])
+    summary = detector_validator.validate_ledger(
+        sample_jsonl=samples,
+        metric_sample_jsonl=metrics,
+        ledger_jsonl=ledger,
+        strategy="detector_aware_fixed_384",
+        expected_target_len=2,
+        require_selected_count=2,
+        require_deployable=True,
+        require_policy_source="learned_detector_aware_policy_checkpoint",
+        require_checkpoint_path=checkpoint,
+        require_checkpoint_sha256=sha,
+        require_paction_provenance=True,
+    )
+
+    assert summary["decision"] == "C3_DETECTOR_AWARE_POLICY_LEDGER_VALIDATION_PASS"
+
+
 def test_detector_aware_validator_rejects_teacher_payload_in_deploy_sample(tmp_path: Path) -> None:
     samples = tmp_path / "samples.jsonl"
     metrics = tmp_path / "metrics.jsonl"
@@ -211,7 +399,7 @@ def test_detector_aware_validator_rejects_teacher_payload_in_deploy_sample(tmp_p
     _write_jsonl(metrics, [metric])
     _write_jsonl(ledger, [ledger_row])
 
-    with pytest.raises(ValueError, match="teacher_utility must not be present"):
+    with pytest.raises(ValueError, match="forbidden detector-aware deploy payload key at teacher_utility"):
         detector_validator.validate_ledger(
             sample_jsonl=samples,
             metric_sample_jsonl=metrics,

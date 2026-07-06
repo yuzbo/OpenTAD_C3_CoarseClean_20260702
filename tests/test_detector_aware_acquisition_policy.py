@@ -51,7 +51,9 @@ def test_detector_aware_training_preparation_targets_teacher_utility_not_action_
     assert len(prepared) == 1
     assert "detector_utility_target" in prepared[0]
     assert prepared[0]["detector_utility_target"] == [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]
-    assert prepared[0]["dynamic_budget_target"] == 4
+    assert prepared[0]["positive_observation_gain_target"] == [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]
+    assert prepared[0]["negative_observation_risk_target"] == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    assert prepared[0]["dynamic_budget_target"] == 2
     assert len(prepared[0]["features"][0]) == len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)
 
 
@@ -66,9 +68,67 @@ def test_detector_aware_training_preserves_signed_utility_and_calibrated_gain_ta
     prepared = train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
 
     assert prepared[0]["detector_utility_target"] == [0.0, 0.9, -0.4, 1.0, -0.8, 0.7]
-    assert prepared[0]["detector_marginal_gain_target"] == [0.0, 0.9, 0.4, 1.0, 0.8, 0.7]
+    assert prepared[0]["positive_observation_gain_target"] == [0.0, 0.9, 0.0, 1.0, 0.0, 0.7]
+    assert prepared[0]["negative_observation_risk_target"] == [0.0, 0.0, 0.4, 0.0, 0.8, 0.0]
+    assert prepared[0]["detector_marginal_gain_target"] == [0.0, 0.9, 0.0, 1.0, 0.0, 0.7]
     assert prepared[0]["dynamic_gain_calibration"]["score_semantics"] == "calibrated_marginal_gain"
-    assert prepared[0]["dynamic_budget_target"] == 4
+    assert prepared[0]["dynamic_gain_calibration"]["calibration_fitted"] is True
+    assert prepared[0]["dynamic_budget_target"] == 2
+
+
+def test_detector_aware_dynamic_budget_uses_train_global_gain_threshold_not_per_video_ranking() -> None:
+    high_gain = _sample_row()
+    high_gain["sample_id"] = "video_high|0"
+    high_gain["frame_signals"]["p_action"] = [0.9, 0.8, 0.7, 0.6]
+    high_gain["dense_len"] = 4
+    high_gain["valid_len"] = 4
+    high_gain["teacher_utility"] = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "signed_frame_utility": [0.9, 0.8, 0.7, 0.6],
+    }
+    low_gain = _sample_row()
+    low_gain["sample_id"] = "video_low|0"
+    low_gain["frame_signals"]["p_action"] = [0.9, 0.8, 0.7, 0.6]
+    low_gain["dense_len"] = 4
+    low_gain["valid_len"] = 4
+    low_gain["teacher_utility"] = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "signed_frame_utility": [0.2, 0.1, 0.0, 0.0],
+    }
+
+    prepared = train_detector._prepared_rows(
+        [high_gain, low_gain],
+        dynamic_budget_buckets=[1, 3],
+        expected_split="training",
+    )
+
+    assert [row["dynamic_budget_target"] for row in prepared] == [3, 1]
+    calibration = prepared[0]["dynamic_gain_calibration"]
+    assert calibration == prepared[1]["dynamic_gain_calibration"]
+    assert calibration["fit_split"] == "training"
+    assert calibration["calibration_scope"] == "cross_video_comparable"
+    assert calibration["budget_target_rule"] == "count_positive_gain_at_global_threshold_then_nearest_bucket"
+
+
+def test_detector_aware_policy_marks_dynamic_budget_uncalibrated_without_fit_evidence() -> None:
+    row = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+    }
+
+    enriched = detector_policy.add_detector_aware_decision_to_sample_row(
+        row,
+        frame_values=[0.9, 0.8, 0.1, 0.0],
+        fixed_budgets=(1, 2),
+        dynamic_budget_scores=[0.0, 1.0],
+        dynamic_budget_buckets=[1, 3],
+    )
+
+    calibration = enriched["detector_aware_policy"]["dynamic_budget_calibration"]
+    assert calibration["calibration_fitted"] is False
+    assert calibration["calibrated_dynamic_claim_allowed"] is False
+    assert calibration["score_semantics"] == "uncalibrated_dynamic_budget_score"
 
 
 def test_detector_aware_training_rejects_non_train_teacher_utility() -> None:
@@ -128,8 +188,8 @@ def test_detector_aware_apply_emits_strategies_and_strips_teacher_payload(tmp_pa
     assert meta["stage_label"] == "Stage-2 detector-aware offline selector"
     assert meta["end_to_end"] is False
     assert meta["uses_uniform_fill"] is False
-    assert meta["dynamic_budget_calibration"]["score_semantics"] == "calibrated_marginal_gain"
-    assert meta["dynamic_budget_calibration"]["calibration_scope"] == "cross_video_comparable"
+    assert meta["dynamic_budget_calibration"]["score_semantics"] == "uncalibrated_dynamic_budget_score"
+    assert meta["dynamic_budget_calibration"]["calibrated_dynamic_claim_allowed"] is False
 
 
 def test_detector_aware_apply_rejects_teacher_payload_in_deploy_source(tmp_path: Path) -> None:

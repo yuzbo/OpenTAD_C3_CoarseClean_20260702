@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 from tools.bata import apply_gap_aware_acquisition_policy as gas_apply
 from tools.bata import detector_aware_acquisition_policy as detector_policy
+from tools.bata import detector_deploy_leakage
 from tools.bata import paction_source_samples
 
 
@@ -14,13 +15,7 @@ SUMMARY_SCHEMA_VERSION = "c3_detector_aware_policy_application_v1"
 READY = "C3_DETECTOR_AWARE_POLICY_APPLICATION_READY"
 BOOTSTRAP_POLICY_SOURCE = detector_policy.DETECTOR_AWARE_BOOTSTRAP_POLICY_SOURCE
 CHECKPOINT_POLICY_SOURCE = detector_policy.DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE
-DETECTOR_DEPLOY_FORBIDDEN_PAYLOAD_KEYS = (
-    "teacher_utility",
-    "teacher_utility_provenance",
-    "frame_utility",
-    "teacher_dense_points",
-    "dense_teacher_points",
-)
+DETECTOR_DEPLOY_FORBIDDEN_PAYLOAD_KEYS = detector_deploy_leakage.DETECTOR_DEPLOY_FORBIDDEN_PAYLOAD_KEYS
 
 
 _read_jsonl = gas_apply._read_jsonl
@@ -35,15 +30,13 @@ _paction_positive_provenance = gas_apply._paction_positive_provenance
 
 def _strip_detector_invisible_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     out = _strip_deploy_invisible_payload(row)
-    for key in DETECTOR_DEPLOY_FORBIDDEN_PAYLOAD_KEYS:
-        out.pop(key, None)
+    out = detector_deploy_leakage.strip_detector_deploy_forbidden_payloads(out)
+    out["detector_deploy_forbidden_payload_stripped"] = True
     return out
 
 
 def _reject_detector_payload(row: Mapping[str, Any], *, source_name: str) -> None:
-    for key in DETECTOR_DEPLOY_FORBIDDEN_PAYLOAD_KEYS:
-        if key in row:
-            raise ValueError(f"{source_name}: forbidden detector-aware deploy source payload key {key}")
+    detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(row, source_name=source_name)
 
 
 def bootstrap_policy_scores(

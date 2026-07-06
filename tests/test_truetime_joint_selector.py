@@ -57,9 +57,26 @@ def test_forward_train_selected_inputs_are_hard_values_with_selector_gradient() 
     assert torch.allclose(out["inputs"].detach(), hard_inputs.detach(), atol=1e-6)
     assert out["metas"][0]["irregular_selected_count"] == 3
     assert out["metas"][0]["irregular_dense_valid_len"] == 6
-    assert out["metas"][0]["irregular_selected_valid_len"] == 6
+    assert out["metas"][0]["irregular_selected_valid_len"] == 3
     assert selector_grad_norm(selector) > 0.0
     assert out["selector_outputs"]["selected_input_st_gradient_path"] == "st_sparse_gather"
+
+
+def test_sparse_metadata_separates_dense_and_selected_valid_lengths() -> None:
+    torch.manual_seed(17)
+    selector = TrueTimeRelaxedHardTopKSelector(in_channels=2, selected_count=2, dense_len=6)
+    features = torch.randn(1, 2, 6)
+    masks = torch.tensor([[True, True, True, True, True, False]])
+
+    out = selector.forward_test(features, masks=masks, metas=[{"video_name": "sample"}])
+    meta = out["metas"][0]
+
+    assert len(meta["selected_axis_to_true_time_dense_index"]) == 2
+    assert meta["irregular_selected_count"] == 2
+    assert meta["irregular_dense_valid_len"] == 5
+    assert meta["irregular_selected_valid_len"] == 2
+    assert meta["truetime_dense_valid_len"] == 5
+    assert meta["detector_prediction_inverse_map_required"] is True
 
 
 @pytest.mark.parametrize(

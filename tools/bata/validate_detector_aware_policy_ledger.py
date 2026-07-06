@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from tools.bata import detector_aware_acquisition_policy as detector_policy
+from tools.bata import detector_deploy_leakage
 from tools.bata import validate_paction_learned_policy_ledger as base_validator
 
 
@@ -43,13 +44,21 @@ def _check_detector_metadata(
     require_checkpoint_path: str | Path | None,
     require_checkpoint_sha256: str | None,
     require_paction_provenance: bool,
+    require_deployable: bool,
 ) -> None:
     sample_by_id = _sample_map(sample_rows)
     for line_no, row in enumerate(ledger_rows, start=1):
         sample_id = str(row.get("sample_id"))
         sample = sample_by_id[sample_id]
-        if "teacher_utility" in sample or "frame_utility" in sample or "teacher_utility_provenance" in sample:
-            raise ValueError(f"{sample_id}: teacher_utility must not be present in deploy sample_jsonl")
+        if require_deployable:
+            detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(
+                sample,
+                source_name=f"{sample_id}: deploy sample_jsonl",
+            )
+            detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(
+                row,
+                source_name=f"{sample_id}: deploy ledger_jsonl",
+            )
         policy = sample.get("detector_aware_policy")
         if not isinstance(policy, Mapping):
             raise ValueError(f"{sample_id}: detector_aware_policy metadata is required")
@@ -155,6 +164,7 @@ def validate_ledger(
         require_checkpoint_path=require_checkpoint_path,
         require_checkpoint_sha256=require_checkpoint_sha256,
         require_paction_provenance=bool(require_paction_provenance),
+        require_deployable=bool(require_deployable),
     )
     summary = base_validator.validate_ledger(
         sample_jsonl=sample_jsonl,
