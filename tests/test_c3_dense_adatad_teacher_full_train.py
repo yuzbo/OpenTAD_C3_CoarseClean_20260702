@@ -21,7 +21,13 @@ def _load_schedule_module():
     return module
 
 
-def test_dense_teacher_config_inherits_official_adatad_and_uses_requested_schedule() -> None:
+def test_dense_teacher_config_inherits_official_adatad_and_uses_requested_schedule(monkeypatch) -> None:
+    monkeypatch.setenv("YUZIBO_ROOT", "/abs/c3")
+    monkeypatch.setenv("THUMOS14_ANNOTATION_PATH", "/abs/c3/thumos14/annotations/thumos_14_anno.json")
+    monkeypatch.setenv("THUMOS14_CLASS_MAP", "/abs/c3/thumos14/annotations/category_idx.txt")
+    monkeypatch.setenv("THUMOS14_TRAIN_DATA_PATH", "/abs/c3/raw/Validation Data/validation")
+    monkeypatch.setenv("THUMOS14_TEST_DATA_PATH", "/abs/c3/raw/Test Data/TH14_test_set_mp4")
+
     cfg = Config.fromfile(str(CONFIG))
     base = Config.fromfile(str(BASE_CONFIG))
     schedule = _load_schedule_module()
@@ -34,6 +40,15 @@ def test_dense_teacher_config_inherits_official_adatad_and_uses_requested_schedu
     assert cfg.model.projection.max_seq_len == base.model.projection.max_seq_len == 768
     assert cfg.dataset.train.pipeline[2].trunc_len == base.dataset.train.pipeline[2].trunc_len == 768
     assert cfg.dataset.val.window_size == base.dataset.val.window_size == 768
+    assert cfg.dataset.train.ann_file == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.dataset.val.ann_file == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.dataset.test.ann_file == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.dataset.train.class_map == "/abs/c3/thumos14/annotations/category_idx.txt"
+    assert cfg.dataset.val.class_map == "/abs/c3/thumos14/annotations/category_idx.txt"
+    assert cfg.dataset.test.class_map == "/abs/c3/thumos14/annotations/category_idx.txt"
+    assert cfg.dataset.train.data_path == "/abs/c3/raw/Validation Data/validation"
+    assert cfg.dataset.val.data_path == "/abs/c3/raw/Test Data/TH14_test_set_mp4"
+    assert cfg.dataset.test.data_path == "/abs/c3/raw/Test Data/TH14_test_set_mp4"
     assert cfg.workflow.checkpoint_interval == 10
     assert cfg.workflow.val_start_epoch == 9
     assert cfg.workflow.val_eval_interval == 10

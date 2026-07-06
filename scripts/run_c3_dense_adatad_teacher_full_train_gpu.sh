@@ -91,6 +91,7 @@ bash -n "${BASH_SOURCE[0]}"
 
 "${PYTHON}" - "${CONFIG}" "${ADATAD_PRETRAIN_PATH}" "${PRECHECK_JSON}" <<'PY'
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -113,6 +114,15 @@ assert int(cfg.workflow.val_eval_interval) == 10
 assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
 assert int(cfg.workflow.checkpoint_interval) == 10
 assert int(cfg.workflow.end_epoch) == 60
+assert cfg.dataset.train.ann_file == os.environ["THUMOS14_ANNOTATION_PATH"]
+assert cfg.dataset.val.ann_file == os.environ["THUMOS14_ANNOTATION_PATH"]
+assert cfg.dataset.test.ann_file == os.environ["THUMOS14_ANNOTATION_PATH"]
+assert cfg.dataset.train.class_map == os.environ["THUMOS14_CLASS_MAP"]
+assert cfg.dataset.val.class_map == os.environ["THUMOS14_CLASS_MAP"]
+assert cfg.dataset.test.class_map == os.environ["THUMOS14_CLASS_MAP"]
+assert cfg.dataset.train.data_path == os.environ["THUMOS14_TRAIN_DATA_PATH"]
+assert cfg.dataset.val.data_path == os.environ["THUMOS14_TEST_DATA_PATH"]
+assert cfg.dataset.test.data_path == os.environ["THUMOS14_TEST_DATA_PATH"]
 eval_epochs = [
     epoch
     for epoch in range(int(cfg.workflow.end_epoch))
@@ -126,6 +136,10 @@ payload = {
     "pretrain": str(pretrain),
     "eval_epochs_zero_based": eval_epochs,
     "checkpoint_epochs_zero_based": [9, 19, 29, 39, 49, 59],
+    "annotation_path": cfg.dataset.train.ann_file,
+    "class_map": cfg.dataset.train.class_map,
+    "train_data_path": cfg.dataset.train.data_path,
+    "test_data_path": cfg.dataset.test.data_path,
     "dense_teacher_axis": "dense_768_frame_axis",
     "selector_free_dense_teacher": True,
     "full_train_requires_slurm": True,
