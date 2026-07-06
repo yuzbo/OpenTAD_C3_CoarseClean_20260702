@@ -8,6 +8,31 @@ from tools.bata import gas_vt_paction_policy as gas_vt
 from tools.bata import train_gap_aware_acquisition_policy as train_gas_vt
 
 
+def _source_row(*, split: str | None = "training") -> dict:
+    row = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 8,
+        "valid_len": 8,
+        "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6]},
+        "paction_positive_provenance": {
+            "p_action_source": "lowres_action_probe",
+            "probe_model": "mobilenetv3_64px",
+            "no_gt_generation": True,
+            "uses_teacher": False,
+            "uses_oracle": False,
+            "uses_cache": False,
+            "uses_prediction_cache": False,
+            "uses_raw_prediction": False,
+            "prediction_uses_gt": False,
+        },
+        "action_target": [0, 1, 1, 1, 0, 1, 1, 0],
+        "gt_boundaries": [1, 4, 5, 7],
+    }
+    if split is not None:
+        row["split"] = split
+    return row
+
+
 def test_gap_aware_features_extend_paction_with_sequential_budget_state() -> None:
     features = gas_vt.build_gap_aware_feature_matrix(
         [0.10, 0.90, 0.40, 0.80, 0.20],
@@ -65,28 +90,7 @@ def test_gas_vt_hard_decoder_returns_named_fixed_and_dynamic_strategies_without_
 
 
 def test_training_preparation_builds_action_interior_bins_for_objective() -> None:
-    rows = [
-        {
-            "sample_id": "video_test_0001|0",
-            "split": "training",
-            "dense_len": 8,
-            "valid_len": 8,
-            "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6]},
-            "paction_positive_provenance": {
-                "p_action_source": "lowres_action_probe",
-                "probe_model": "mobilenetv3_64px",
-                "no_gt_generation": True,
-                "uses_teacher": False,
-                "uses_oracle": False,
-                "uses_cache": False,
-                "uses_prediction_cache": False,
-                "uses_raw_prediction": False,
-                "prediction_uses_gt": False,
-            },
-            "action_target": [0, 1, 1, 1, 0, 1, 1, 0],
-            "gt_boundaries": [1, 4, 5, 7],
-        }
-    ]
+    rows = [_source_row()]
 
     prepared = train_gas_vt._prepared_rows(rows, dynamic_budget_buckets=[2, 4], expected_split="training")
 
@@ -95,6 +99,38 @@ def test_training_preparation_builds_action_interior_bins_for_objective() -> Non
     assert all(len(mask) == 8 for mask in bins)
     assert all(any(mask[pos] > 0 for mask in bins) for pos in (1, 2, 3, 5, 6))
     assert all(mask[0] == 0.0 and mask[4] == 0.0 and mask[7] == 0.0 for mask in bins)
+    assert prepared[0]["inferred_split_from_source_path"] is False
+
+
+def test_training_preparation_fails_closed_when_split_is_missing_by_default() -> None:
+    with pytest.raises(ValueError, match="expected split training, got <missing>"):
+        train_gas_vt._prepared_rows(
+            [_source_row(split=None)],
+            dynamic_budget_buckets=[2, 4],
+            expected_split="training",
+        )
+
+
+def test_training_preparation_can_infer_missing_split_from_explicit_source_path() -> None:
+    prepared = train_gas_vt._prepared_rows(
+        [_source_row(split=None)],
+        dynamic_budget_buckets=[2, 4],
+        expected_split="training",
+        allow_missing_split_from_source_path=True,
+    )
+
+    assert len(prepared) == 1
+    assert prepared[0]["inferred_split_from_source_path"] is True
+
+
+def test_training_preparation_rejects_wrong_explicit_split_even_when_inference_enabled() -> None:
+    with pytest.raises(ValueError, match="expected split training, got validation"):
+        train_gas_vt._prepared_rows(
+            [_source_row(split="validation")],
+            dynamic_budget_buckets=[2, 4],
+            expected_split="training",
+            allow_missing_split_from_source_path=True,
+        )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="torch objective tests run in Linux/remote OpenTAD")

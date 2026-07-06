@@ -58,19 +58,46 @@ def _action_interior_bins_from_target(
     return bins
 
 
-def _prepared_rows(rows: Sequence[Mapping[str, Any]], *, dynamic_budget_buckets: Sequence[int], expected_split: str | None) -> list[dict[str, Any]]:
+def _row_with_inferred_split(
+    row: Mapping[str, Any],
+    *,
+    expected_split: str | None,
+    allow_missing_split_from_source_path: bool,
+) -> tuple[Mapping[str, Any], bool]:
+    if not expected_split or base_train._row_split(row) is not None:
+        return row, False
+    if not allow_missing_split_from_source_path:
+        return row, False
+    patched = dict(row)
+    patched["split"] = str(expected_split)
+    patched["inferred_split_from_source_path"] = True
+    return patched, True
+
+
+def _prepared_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    dynamic_budget_buckets: Sequence[int],
+    expected_split: str | None,
+    allow_missing_split_from_source_path: bool = False,
+) -> list[dict[str, Any]]:
     prepared: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
-        _validate_source_row(row, line_no=line_no, expected_split=expected_split)
-        p_action = _extract_paction(row, line_no=line_no)
-        valid_len = _valid_len(row, paction_len=len(p_action))
-        action_target = _extract_action_target(row, line_no=line_no, length=len(p_action))
-        boundaries = _extract_boundaries(row, length=len(p_action))
+        row_for_training, inferred_split = _row_with_inferred_split(
+            row,
+            expected_split=expected_split,
+            allow_missing_split_from_source_path=allow_missing_split_from_source_path,
+        )
+        _validate_source_row(row_for_training, line_no=line_no, expected_split=expected_split)
+        p_action = _extract_paction(row_for_training, line_no=line_no)
+        valid_len = _valid_len(row_for_training, paction_len=len(p_action))
+        action_target = _extract_action_target(row_for_training, line_no=line_no, length=len(p_action))
+        boundaries = _extract_boundaries(row_for_training, length=len(p_action))
         boundary_target = [0.0 for _ in p_action]
         for idx in boundaries:
             boundary_target[idx] = 1.0
         dynamic_budget_target = base_train._budget_target_from_row(
-            row,
+            row_for_training,
             action_target=action_target,
             boundaries=boundaries,
             valid_len=valid_len,
@@ -88,6 +115,7 @@ def _prepared_rows(rows: Sequence[Mapping[str, Any]], *, dynamic_budget_buckets:
                 "action_interior_bins": _action_interior_bins_from_target(action_target, valid_len=valid_len),
                 "valid_len": valid_len,
                 "dynamic_budget_target": dynamic_budget_target,
+                "inferred_split_from_source_path": bool(inferred_split),
             }
         )
     return prepared
@@ -192,6 +220,7 @@ def run_training(
     device: str = "cuda",
     seed: int = 0,
     expected_split: str | None = "training",
+    allow_missing_split_from_source_path: bool = False,
 ) -> dict[str, Any]:
     import torch
 
@@ -201,7 +230,12 @@ def run_training(
     out_path.mkdir(parents=True, exist_ok=True)
     checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else out_path / "gas_vt_policy.pth"
     buckets = [int(item) for item in dynamic_budget_buckets]
-    train_rows = _prepared_rows(_read_jsonl(train_jsonl), dynamic_budget_buckets=buckets, expected_split=expected_split)
+    train_rows = _prepared_rows(
+        _read_jsonl(train_jsonl),
+        dynamic_budget_buckets=buckets,
+        expected_split=expected_split,
+        allow_missing_split_from_source_path=allow_missing_split_from_source_path,
+    )
     model_kwargs = {
         "input_dim": len(gas_vt.GAS_VT_FEATURE_NAMES),
         "hidden_dim": int(hidden_dim),
@@ -255,6 +289,10 @@ def run_training(
         "checkpoint_sha256": _sha256_file(checkpoint),
         "train_jsonl_sha256": _sha256_file(train_jsonl),
         "dynamic_budget_buckets": buckets,
+        "expected_split": expected_split,
+        "allow_missing_split_from_source_path": bool(allow_missing_split_from_source_path),
+        "inferred_split_rows": int(sum(1 for row in train_rows if row.get("inferred_split_from_source_path"))),
+        "train_row_count": int(len(train_rows)),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "final_train": history[-1]["train"] if history else {},
@@ -283,6 +321,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--expected-split", default="training")
+    parser.add_argument(
+        "--allow-missing-split-from-source-path",
+        action="store_true",
+        help=(
+            "Allow source JSONL rows without an explicit split only when the caller "
+            "is already passing the split-specific train/val/test path. Explicit "
+            "wrong splits still fail closed."
+        ),
+    )
     args = parser.parse_args(argv)
     summary = run_training(
         args.train_jsonl,
@@ -301,6 +348,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         device=args.device,
         seed=args.seed,
         expected_split=args.expected_split,
+        allow_missing_split_from_source_path=args.allow_missing_split_from_source_path,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

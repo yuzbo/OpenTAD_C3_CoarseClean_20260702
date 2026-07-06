@@ -140,6 +140,7 @@ bash -n "${BASH_SOURCE[0]}"
   --batch-size "${GAS_VT_POLICY_BATCH_SIZE}" \
   --dynamic-budget-buckets ${GAS_VT_DYNAMIC_BUDGET_BUCKETS} \
   --expected-split training \
+  --allow-missing-split-from-source-path \
   --device cuda \
   --seed "${SEED}"
 
