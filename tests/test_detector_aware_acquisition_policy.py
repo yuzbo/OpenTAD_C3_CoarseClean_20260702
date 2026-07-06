@@ -40,7 +40,11 @@ def _sample_row() -> dict:
         "valid_len": 6,
         "frame_signals": {"p_action": [0.1, 0.8, 0.2, 0.7, 0.3, 0.6]},
         "paction_positive_provenance": _paction_provenance(),
-        "teacher_utility": {"frame_utility": [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]},
+        "teacher_utility": {
+            "utility_semantics": "signed_detector_utility_v1",
+            "frame_utility": [0.0, 0.9, 0.1, 1.0, 0.2, 0.7],
+            "signed_frame_utility": [0.0, 0.9, 0.1, 1.0, 0.2, 0.7],
+        },
         "teacher_utility_provenance": {"split_scope": "train_only"},
     }
 
@@ -85,6 +89,17 @@ def test_detector_aware_training_rejects_legacy_abs_marginal_gain_target() -> No
     }
 
     with pytest.raises(ValueError, match="marginal_gain_frame_utility"):
+        train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
+
+
+def test_detector_aware_training_rejects_unsigned_frame_utility_for_signed_claim() -> None:
+    row = _sample_row()
+    row["teacher_utility"] = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "frame_utility": [0.0, 0.9, 0.1, 1.0, 0.2, 0.7],
+    }
+
+    with pytest.raises(ValueError, match="signed_frame_utility"):
         train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
 
 

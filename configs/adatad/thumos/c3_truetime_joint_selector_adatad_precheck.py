@@ -7,6 +7,7 @@ route_label = "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3
 selected_window_size = 384
 dense_window_size = 768
 precheck_only = os.environ.get("PRECHECK_ONLY", "1") != "0"
+precheck_only_default = True
 precheck_max_train_iters = int(os.environ.get("TRUETIME_PRECHECK_MAX_TRAIN_ITERS", "4" if precheck_only else "2000"))
 precheck_end_epoch = int(os.environ.get("TRUETIME_PRECHECK_END_EPOCH", "1" if precheck_only else "12"))
 truetime_selector_grad_proof_path = os.environ.get(
@@ -21,7 +22,7 @@ experiment_scope = dict(
     stage="stage3_true_time_e2e_adatad_selector_precheck",
     detector_stack="truetime_physical_grid_actionformer_frame_selector_slot",
     separate_from_stage2_detector_utility_offline_selector=True,
-    minimum_useful_deliverable="precheck_ready_true_adatad_selector_training_candidate",
+    minimum_useful_deliverable="tiny_synthetic_actionformer_gradient_precheck_ready_fulltrain_candidate",
     full_map_claim_required=True,
     changes_input_sampling=True,
     changes_detector_head=False,
@@ -42,7 +43,8 @@ truetime_joint_selector_gate = dict(
     stage="stage3_true_time_e2e_adatad_selector_precheck",
     smoke_only=False,
     fulltrain_candidate=True,
-    precheck_only_default=precheck_only,
+    precheck_only_default=precheck_only_default,
+    current_run_precheck_only=precheck_only,
     max_epochs=precheck_end_epoch,
     max_train_iters=precheck_max_train_iters,
     default_off=True,
@@ -85,6 +87,7 @@ truetime_joint_selector_gate = dict(
         "fail_closed_curriculum_and_claim_gates",
     ],
     limitations=[
+        "tiny synthetic real ActionFormer loss-path precheck only; no 384/768 training evidence",
         "precheck/fulltrain candidate only; no mAP, paper, runtime, or deploy claim",
         "default PRECHECK_ONLY keeps training bounded until explicitly unlocked",
         "straight-through hard gather uses a relaxed temporal surrogate for selector gradient evidence",
