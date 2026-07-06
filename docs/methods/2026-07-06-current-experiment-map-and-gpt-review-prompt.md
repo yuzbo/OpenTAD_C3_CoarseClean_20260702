@@ -8,9 +8,9 @@ Primary branch: `codex/gas-vt-stage23-detector-aware-20260706`
 
 Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702`
 
-Latest pushed commit: `acc696039d53458cbe36d65b72a84bb55fdafe6f`
+Latest pushed commit: `3f0041c9847ffc50b43a55d3845ec37ec089c026`
 
-Commit URL: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/acc696039d53458cbe36d65b72a84bb55fdafe6f`
+Commit URL: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/3f0041c9847ffc50b43a55d3845ec37ec089c026`
 
 ## 1. Research Objective
 
@@ -278,10 +278,10 @@ Remote allocation:
 
 ### 3.4 Stage3 TrueTime precheck queue
 
-- RUN_TAG: `duca_stage3_precheck_acc6960_queued_20260707_0008`
-- Waiter PID: `606692`
-- Snapshot: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_acc696039d53_20260707_000121`
-- Driver log: `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_stage3_truetime/duca_stage3_precheck_acc6960_queued_20260707_0008/driver.log`
+- RUN_TAG: `duca_stage3_precheck_3f0041c_queued_20260707_001814`
+- Waiter PID: `687773`
+- Snapshot: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_3f0041c9847f_20260707_001421`
+- Driver log: `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_stage3_truetime/duca_stage3_precheck_3f0041c_queued_20260707_001814/driver.log`
 - State: waiting for the current GPU1 PAction run to exit, then launches
   `PRECHECK_ONLY=1` in Slurm job `1118197`.
 
@@ -405,10 +405,10 @@ Branch:
 codex/gas-vt-stage23-detector-aware-20260706
 
 Commit:
-acc696039d53458cbe36d65b72a84bb55fdafe6f
+3f0041c9847ffc50b43a55d3845ec37ec089c026
 
 Commit URL:
-https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/acc696039d53458cbe36d65b72a84bb55fdafe6f
+https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/3f0041c9847ffc50b43a55d3845ec37ec089c026
 
 Context:
 
