@@ -184,7 +184,7 @@ def _prepared_rows(
     rows: Sequence[Mapping[str, Any]],
     *,
     dynamic_budget_buckets: Sequence[int],
-    expected_split: str | None = None,
+    expected_split: str | None = "training",
 ) -> list[dict[str, Any]]:
     prepared: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
@@ -322,7 +322,7 @@ def run_training(
     budget_ce_loss_weight: float = 0.25,
     device: str = "cuda",
     seed: int = 0,
-    expected_split: str | None = None,
+    expected_split: str | None = "training",
     val_expected_split: str | None = None,
 ) -> dict[str, Any]:
     import torch
@@ -483,7 +483,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--budget-ce-loss-weight", type=float, default=0.25)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--expected-split")
+    parser.add_argument("--expected-split", default="training")
     parser.add_argument("--val-expected-split")
     return parser
 

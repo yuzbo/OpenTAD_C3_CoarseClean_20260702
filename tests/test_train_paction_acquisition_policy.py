@@ -26,6 +26,7 @@ def _read_jsonl(path: Path) -> list[dict]:
 def _sample_row(sample_id: str, p_action: list[float], action_target: list[float], boundaries: list[int]) -> dict:
     return {
         "sample_id": sample_id,
+        "split": "training",
         "dense_len": len(p_action),
         "valid_len": len(p_action),
         "frame_signals": {"p_action": p_action},

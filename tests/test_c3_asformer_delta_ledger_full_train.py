@@ -216,6 +216,9 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
     assert "learned_paction_gap_loss_dynamic_budget" in text
     assert "--require-selected-count" in text
     assert "--require-nonconstant-selected-count" in text
+    assert 'learned_dynamic" && "${split}" != "test" && "${REQUIRE_DYNAMIC_NONCONSTANT}"' not in text
+    assert '[[ "${REQUIRE_DYNAMIC_NONCONSTANT}" == "1" ]] && args+=(--require-dynamic-nonconstant-count)' in text
+    assert '[[ "${variant}" == "learned_dynamic" && "${REQUIRE_DYNAMIC_NONCONSTANT}" == "1" ]]' in text
     assert "ALLOW_C3_PACTION_LEARNED_ADATAD_FULLTRAIN" in text
 
 

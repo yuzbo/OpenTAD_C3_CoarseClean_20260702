@@ -51,6 +51,7 @@ CANONICAL_SIGNATURE_KEYS = tuple(dict.fromkeys(SELECTION_RELEVANT_KEYS + TRUST_R
 STRICT_DEPLOY_FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_gt_for_diagnostics",
+    "diagnostic_only",
     "uses_teacher",
     "uses_oracle",
     "uses_cache",
@@ -59,9 +60,7 @@ STRICT_DEPLOY_FORBIDDEN_TRUE_FLAGS = (
     "prediction_uses_gt",
     "training_only",
 )
-SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS = tuple(
-    key for key in STRICT_DEPLOY_FORBIDDEN_TRUE_FLAGS if key not in {"uses_gt_for_diagnostics", "diagnostic_only"}
-)
+SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS = STRICT_DEPLOY_FORBIDDEN_TRUE_FLAGS
 STRICT_DEPLOY_PAYLOAD_KEYS = (
     "action_target",
     "action_labels",
@@ -100,6 +99,19 @@ PROVENANCE_FALSE_FLAGS = (
     "uses_prediction_cache",
     "uses_raw_prediction",
     "prediction_uses_gt",
+)
+PROVENANCE_FORBIDDEN_TRUE_FLAGS = tuple(
+    dict.fromkeys(
+        STRICT_DEPLOY_FORBIDDEN_TRUE_FLAGS
+        + (
+            "uses_teacher",
+            "uses_oracle",
+            "uses_cache",
+            "uses_prediction_cache",
+            "uses_raw_prediction",
+            "prediction_uses_gt",
+        )
+    )
 )
 
 
@@ -177,6 +189,9 @@ def validate_paction_positive_provenance(provenance: Mapping[str, Any], *, sourc
         raise ValueError(f"{source_name}: p_action positive provenance must include a model/backend/checkpoint marker")
     if provenance.get("no_gt_generation") is not True:
         raise ValueError(f"{source_name}: p_action positive provenance must set no_gt_generation=true")
+    for key in PROVENANCE_FORBIDDEN_TRUE_FLAGS:
+        if _is_true(provenance.get(key, False)):
+            raise ValueError(f"{source_name}: p_action positive provenance forbidden flag {key}=true")
     for key in PROVENANCE_FALSE_FLAGS:
         if provenance.get(key) is not False:
             raise ValueError(f"{source_name}: p_action positive provenance must set {key}=false")

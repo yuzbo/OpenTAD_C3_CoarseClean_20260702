@@ -37,6 +37,7 @@ def test_policy_application_enriches_probe_samples_with_learned_strategies(tmp_p
         summary_json=summary_json,
         fixed_budget=2,
         dynamic_budget_buckets=[1, 2, 4],
+        allow_bootstrap_for_tests=True,
     )
     rows = _read_jsonl(output_jsonl)
 
@@ -58,13 +59,56 @@ def test_policy_application_enriches_probe_samples_with_learned_strategies(tmp_p
     assert provenance["prediction_uses_gt"] is False
 
 
+def test_policy_application_requires_checkpoint_by_default(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.policy.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 4,
+                "valid_len": 4,
+                "frame_signals": {"p_action": [0.10, 0.90, 0.20, 0.80]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="checkpoint_path is required"):
+        apply_policy.run_policy_application(input_jsonl, output_jsonl, fixed_budget=2)
+    assert not output_jsonl.exists()
+
+
+@pytest.mark.parametrize("flag", ["uses_gt", "uses_gt_for_diagnostics", "diagnostic_only", "training_only"])
+def test_policy_application_rejects_leak_flags_even_in_explicit_bootstrap_mode(tmp_path: Path, flag: str) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.policy.jsonl"
+    row = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "frame_signals": {"p_action": [0.10, 0.90, 0.20, 0.80]},
+        flag: True,
+    }
+    input_jsonl.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=flag):
+        apply_policy.run_policy_application(
+            input_jsonl,
+            output_jsonl,
+            fixed_budget=2,
+            allow_bootstrap_for_tests=True,
+        )
+
+
 def test_policy_application_rejects_rows_without_paction_signal(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "samples.jsonl"
     output_jsonl = tmp_path / "samples.policy.jsonl"
     input_jsonl.write_text(json.dumps({"sample_id": "video_test_0001|0", "dense_len": 4}) + "\n", encoding="utf-8")
 
     try:
-        apply_policy.run_policy_application(input_jsonl, output_jsonl)
+        apply_policy.run_policy_application(input_jsonl, output_jsonl, allow_bootstrap_for_tests=True)
     except ValueError as exc:
         assert "p_action" in str(exc)
     else:  # pragma: no cover - failure branch
@@ -113,6 +157,7 @@ def test_policy_application_strict_source_rejects_gt_payload_before_strip(tmp_pa
             fixed_budget=2,
             strip_deploy_invisible_payload=True,
             strict_deploy_source=True,
+            allow_bootstrap_for_tests=True,
         )
 
 
@@ -138,6 +183,7 @@ def test_policy_application_strict_source_requires_verifiable_provenance(tmp_pat
             output_jsonl,
             fixed_budget=2,
             strict_deploy_source=True,
+            allow_bootstrap_for_tests=True,
         )
 
 
@@ -164,6 +210,7 @@ def test_policy_application_strict_source_accepts_provenance_and_strips_signals(
         fixed_budget=2,
         strip_deploy_invisible_payload=True,
         strict_deploy_source=True,
+        allow_bootstrap_for_tests=True,
     )
     rows = _read_jsonl(output_jsonl)
 
@@ -200,7 +247,7 @@ def test_policy_application_matches_short_valid_ratio_fixed_budget(tmp_path: Pat
         encoding="utf-8",
     )
 
-    apply_policy.run_policy_application(input_jsonl, policy_jsonl, fixed_budget=4)
+    apply_policy.run_policy_application(input_jsonl, policy_jsonl, fixed_budget=4, allow_bootstrap_for_tests=True)
     rows = _read_jsonl(policy_jsonl)
 
     selected = rows[0]["strategy_selected_positions"]["learned_paction_gap_loss_value"]
@@ -237,7 +284,7 @@ def test_bootstrap_policy_output_cannot_be_converted_to_deploy_ledger(tmp_path: 
         + "\n",
         encoding="utf-8",
     )
-    apply_policy.run_policy_application(input_jsonl, policy_jsonl, fixed_budget=2)
+    apply_policy.run_policy_application(input_jsonl, policy_jsonl, fixed_budget=2, allow_bootstrap_for_tests=True)
 
     with pytest.raises(ValueError, match="checkpoint policy source"):
         convert_ledger.run_conversion(

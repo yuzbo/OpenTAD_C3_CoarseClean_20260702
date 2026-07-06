@@ -196,8 +196,8 @@ run_ledger_pipeline_for_split() {
   if [[ "${split}" != "test" ]]; then
     [[ -n "${MIN_BOUNDARY_SUPPORT}" ]] && args+=(--min-boundary-support "${MIN_BOUNDARY_SUPPORT}")
     [[ -n "${MIN_ACTION_COVERAGE}" ]] && args+=(--min-action-coverage "${MIN_ACTION_COVERAGE}")
-    [[ "${REQUIRE_DYNAMIC_NONCONSTANT}" == "1" ]] && args+=(--require-dynamic-nonconstant-count)
   fi
+  [[ "${REQUIRE_DYNAMIC_NONCONSTANT}" == "1" ]] && args+=(--require-dynamic-nonconstant-count)
   [[ -n "${MAX_MAX_GAP}" ]] && args+=(--max-max-gap "${MAX_MAX_GAP}")
   [[ -n "${MAX_P95_GAP}" ]] && args+=(--max-p95-gap "${MAX_P95_GAP}")
   [[ -n "${MAX_UNSELECTED_HOLE}" ]] && args+=(--max-unselected-hole "${MAX_UNSELECTED_HOLE}")
@@ -290,7 +290,7 @@ validate_variant_split() {
   elif [[ "${variant}" == "learned_fixed_768" ]]; then
     args+=(--require-selected-count 768)
   fi
-  if [[ "${variant}" == "learned_dynamic" && "${split}" != "test" && "${REQUIRE_DYNAMIC_NONCONSTANT}" == "1" ]]; then
+  if [[ "${variant}" == "learned_dynamic" && "${REQUIRE_DYNAMIC_NONCONSTANT}" == "1" ]]; then
     args+=(--require-nonconstant-selected-count)
   fi
   if [[ "${split}" != "test" ]]; then

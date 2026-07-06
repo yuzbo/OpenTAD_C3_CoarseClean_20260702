@@ -445,13 +445,46 @@ def test_source_sample_canonicalization_treats_provenance_as_canonical(tmp_path:
         )
 
 
-def test_selection_deploy_source_strips_metric_payload_and_rejects_generation_leak_flags(tmp_path: Path) -> None:
+@pytest.mark.parametrize("flag", ["uses_gt", "uses_gt_for_diagnostics", "diagnostic_only", "training_only"])
+def test_paction_positive_provenance_rejects_generation_leak_flags(flag: str) -> None:
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    provenance = dict(row["paction_positive_provenance"])
+    provenance[flag] = True
+
+    with pytest.raises(ValueError, match=flag):
+        paction_source_samples.validate_paction_positive_provenance(provenance, source_name="unit-test")
+
+
+def test_paction_policy_trainer_defaults_to_training_split_guard() -> None:
+    args = train_policy.build_arg_parser().parse_args(
+        [
+            "--train-jsonl",
+            "train.samples.jsonl",
+            "--out-dir",
+            "out",
+        ]
+    )
+
+    assert args.expected_split == "training"
+
+
+@pytest.mark.parametrize("flag", ["uses_gt_for_diagnostics", "diagnostic_only"])
+def test_selection_deploy_source_rejects_true_leak_flags_before_strip(tmp_path: Path, flag: str) -> None:
+    input_jsonl = tmp_path / "source.jsonl"
+    selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    row[flag] = True
+    _write_jsonl(input_jsonl, [row])
+
+    with pytest.raises(ValueError, match=flag):
+        paction_source_samples.write_deploy_selection_source_jsonl(input_jsonl, selection_jsonl)
+
+
+def test_selection_deploy_source_strips_metric_payload_without_laundering_flags(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "source.jsonl"
     selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
     report_json = tmp_path / "selection.report.json"
     row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
-    row["uses_gt_for_diagnostics"] = True
-    row["diagnostic_only"] = True
     row["deploy_selection_ledger"] = False
     _write_jsonl(input_jsonl, [row])
 
@@ -481,6 +514,7 @@ def test_selection_deploy_source_strips_metric_payload_and_rejects_generation_le
         device="cpu",
         strict_deploy_source=True,
         strip_deploy_invisible_payload=True,
+        allow_bootstrap_for_tests=True,
     )
     assert summary["strict_deploy_source"] is True
 

@@ -811,6 +811,54 @@ def test_value_transport_loader_rejects_paction_policy_contract_mismatch(tmp_pat
         )
 
 
+def test_value_transport_loader_rejects_gt_diagnostics_flag(tmp_path):
+    LoadFrames = _load_loadframes_class()
+    ledger_path = tmp_path / "value_transport_ledger.jsonl"
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 2],
+                "selected_count": 2,
+                "target_len": 3,
+                "valid_len": 4,
+                "dense_len": 4,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "uses_gt_for_diagnostics": True,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loader = LoadFrames(
+        num_clips=1,
+        scale_factor=1,
+        method="bata_value_transport_ledger_subsample",
+        method_base="sliding_window",
+        target_len=3,
+        bata_value_transport_ledger_path=str(ledger_path),
+        bata_value_transport_require_deployable=True,
+    )
+
+    with pytest.raises(ValueError, match="uses_gt_for_diagnostics"):
+        loader(
+            {
+                "video_name": "video_test_0001",
+                "window_start_frame": 0,
+                "window_size": 4,
+                "feature_start_idx": 0,
+                "feature_end_idx": 3,
+                "total_frames": 16,
+                "avg_fps": 30,
+                "snippet_stride": 1,
+            }
+        )
+
+
 def test_frontend_launcher_defaults_to_review_safe_precheck_and_uses_supported_dump_cli():
     text = LAUNCHER.read_text(encoding="utf-8")
 

@@ -17,12 +17,16 @@ READY = "C3_PACTION_POLICY_APPLICATION_READY"
 BOOTSTRAP_POLICY_SOURCE = "bootstrap_paction_gap_loss_surrogate_policy"
 CHECKPOINT_POLICY_SOURCE = "learned_paction_gap_loss_policy_checkpoint"
 FORBIDDEN_TRUE_FLAGS = (
+    "uses_gt",
+    "uses_gt_for_diagnostics",
+    "diagnostic_only",
     "uses_teacher",
     "uses_oracle",
     "uses_cache",
     "uses_prediction_cache",
     "uses_raw_prediction",
     "prediction_uses_gt",
+    "training_only",
 )
 DEPLOY_INVISIBLE_PAYLOAD_KEYS = (
     "action_target",
@@ -238,8 +242,14 @@ def run_policy_application(
     device: str = "cuda",
     strip_deploy_invisible_payload: bool = False,
     strict_deploy_source: bool = False,
+    allow_bootstrap_for_tests: bool = False,
 ) -> dict[str, Any]:
     rows = _read_jsonl(input_jsonl)
+    if checkpoint_path is None and not allow_bootstrap_for_tests:
+        raise ValueError(
+            "checkpoint_path is required for learned p_action policy application; "
+            "bootstrap surrogate output is only allowed with allow_bootstrap_for_tests=true"
+        )
     enriched_rows: list[dict[str, Any]] = []
     dynamic_budgets: list[int] = []
     checkpoint_payload: dict[str, Any] | None = None
@@ -286,6 +296,9 @@ def run_policy_application(
         )
         enriched["paction_policy"]["source"] = source
         enriched["paction_policy"]["p_action_provenance"] = p_action_provenance
+        if checkpoint_path is None:
+            enriched["paction_policy"]["diagnostic_only"] = True
+            enriched["paction_policy"]["deploy_selection_ledger"] = False
         if checkpoint_path is not None:
             enriched["paction_policy"]["checkpoint_path"] = str(checkpoint_path)
             enriched["paction_policy"]["checkpoint_sha256"] = str(checkpoint_sha256)
@@ -318,6 +331,7 @@ def run_policy_application(
         "checkpoint_sha256": checkpoint_sha256,
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
         "strict_deploy_source": bool(strict_deploy_source),
+        "allow_bootstrap_for_tests": bool(allow_bootstrap_for_tests),
         "gap_control": "learned_gap_hole_loss_no_uniform_fill",
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
@@ -339,6 +353,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--strip-deploy-invisible-payload", action="store_true")
     parser.add_argument("--strict-deploy-source", action="store_true")
+    parser.add_argument("--allow-bootstrap-for-tests", action="store_true")
     args = parser.parse_args(argv)
 
     summary = run_policy_application(
@@ -351,6 +366,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         device=str(args.device),
         strip_deploy_invisible_payload=bool(args.strip_deploy_invisible_payload),
         strict_deploy_source=bool(args.strict_deploy_source),
+        allow_bootstrap_for_tests=bool(args.allow_bootstrap_for_tests),
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

@@ -374,6 +374,7 @@ class LoadFrames:
                 raise ValueError(f"value-transport ledger sample_id={sample_id} is diagnostic_only")
         for key in (
             "uses_gt",
+            "uses_gt_for_diagnostics",
             "uses_teacher",
             "uses_oracle",
             "uses_cache",
