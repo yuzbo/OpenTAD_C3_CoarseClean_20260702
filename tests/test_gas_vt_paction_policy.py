@@ -203,7 +203,7 @@ def test_gas_vt_training_objective_uses_hard_or_st_mask_for_core_losses() -> Non
         boundary_target=torch.tensor([[1.0, 0.0, 0.0, 1.0]], dtype=torch.float32),
         valid=torch.tensor([[True, True, True, True]]),
         target_budget=torch.tensor([2.0]),
-        action_interior_bins=torch.tensor([[[1.0, 0.0], [0.0, 1.0]]], dtype=torch.float32),
+        action_interior_bins=torch.tensor([[[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]], dtype=torch.float32),
     )
 
     for key in (

@@ -74,6 +74,7 @@ GAS_VT_ADATAD_VARIANTS="${GAS_VT_ADATAD_VARIANTS:-gas_vt_fixed_384 gas_vt_fixed_
 GAS_VT_MAX_UNSELECTED_HOLE="${GAS_VT_MAX_UNSELECTED_HOLE:-96}"
 GAS_VT_MAX_P95_UNSELECTED_HOLE="${GAS_VT_MAX_P95_UNSELECTED_HOLE:-48}"
 GAS_VT_MAX_UNIFORM_SIMILARITY="${GAS_VT_MAX_UNIFORM_SIMILARITY:-0.50}"
+C3_GAS_VT_REUSE_EXISTING_LEDGER_BUILD="${C3_GAS_VT_REUSE_EXISTING_LEDGER_BUILD:-0}"
 
 resolve_path() {
   local raw="$1"
@@ -131,19 +132,23 @@ bash -n "${BASH_SOURCE[0]}"
   "${LEDGER_VALIDATOR}" \
   "${CONFIG_VALIDATOR}"
 
-"${PYTHON}" "${POLICY_TRAINER}" \
-  --train-jsonl "${C3_GAS_VT_TRAIN_SOURCE_JSONL}" \
-  --out-dir "${POLICY_DIR}" \
-  --checkpoint-path "${GAS_VT_POLICY_CHECKPOINT}" \
-  --summary-json "${POLICY_DIR}/train.summary.json" \
-  --epochs "${GAS_VT_POLICY_EPOCHS}" \
-  --batch-size "${GAS_VT_POLICY_BATCH_SIZE}" \
-  --dynamic-budget-buckets ${GAS_VT_DYNAMIC_BUDGET_BUCKETS} \
-  --expected-split training \
-  --allow-missing-split-from-source-path \
-  --allow-gt-diagnostics-in-training-source \
-  --device cuda \
-  --seed "${SEED}"
+if [[ "${C3_GAS_VT_REUSE_EXISTING_LEDGER_BUILD}" == "1" && -f "${GAS_VT_POLICY_CHECKPOINT}" && -f "${POLICY_DIR}/train.summary.json" ]]; then
+  echo "[C3_GAS_VT_ADATAD] reusing existing GAS-VT policy checkpoint: ${GAS_VT_POLICY_CHECKPOINT}"
+else
+  "${PYTHON}" "${POLICY_TRAINER}" \
+    --train-jsonl "${C3_GAS_VT_TRAIN_SOURCE_JSONL}" \
+    --out-dir "${POLICY_DIR}" \
+    --checkpoint-path "${GAS_VT_POLICY_CHECKPOINT}" \
+    --summary-json "${POLICY_DIR}/train.summary.json" \
+    --epochs "${GAS_VT_POLICY_EPOCHS}" \
+    --batch-size "${GAS_VT_POLICY_BATCH_SIZE}" \
+    --dynamic-budget-buckets ${GAS_VT_DYNAMIC_BUDGET_BUCKETS} \
+    --expected-split training \
+    --allow-missing-split-from-source-path \
+    --allow-gt-diagnostics-in-training-source \
+    --device cuda \
+    --seed "${SEED}"
+fi
 
 require_file "${GAS_VT_POLICY_CHECKPOINT}"
 GAS_VT_POLICY_CHECKPOINT_SHA256="$("${PYTHON}" - "${GAS_VT_POLICY_CHECKPOINT}" <<'PY'
@@ -176,9 +181,25 @@ run_ledger_pipeline_for_split() {
     --device cuda
 }
 
-run_ledger_pipeline_for_split train "${C3_GAS_VT_TRAIN_SOURCE_JSONL}"
-run_ledger_pipeline_for_split val "${C3_GAS_VT_VAL_SOURCE_JSONL}"
-run_ledger_pipeline_for_split test "${C3_GAS_VT_TEST_SOURCE_JSONL}"
+maybe_run_ledger_pipeline_for_split() {
+  local split="$1"
+  local input_jsonl="$2"
+  local out_dir="${LEDGER_ROOT}/${split}"
+  if [[ "${C3_GAS_VT_REUSE_EXISTING_LEDGER_BUILD}" == "1" \
+      && -f "${out_dir}/pipeline.summary.json" \
+      && -f "${out_dir}/samples.gas_vt_all.jsonl" \
+      && -f "${out_dir}/value_transport_ledger_gas_vt_fixed_384.jsonl" \
+      && -f "${out_dir}/value_transport_ledger_gas_vt_fixed_768.jsonl" \
+      && -f "${out_dir}/value_transport_ledger_gas_vt_dynamic.jsonl" ]]; then
+    echo "[C3_GAS_VT_ADATAD] reusing existing GAS-VT ledgers for split=${split}: ${out_dir}"
+    return 0
+  fi
+  run_ledger_pipeline_for_split "${split}" "${input_jsonl}"
+}
+
+maybe_run_ledger_pipeline_for_split train "${C3_GAS_VT_TRAIN_SOURCE_JSONL}"
+maybe_run_ledger_pipeline_for_split val "${C3_GAS_VT_VAL_SOURCE_JSONL}"
+maybe_run_ledger_pipeline_for_split test "${C3_GAS_VT_TEST_SOURCE_JSONL}"
 
 ledger_path_for_variant() {
   local split="$1"
