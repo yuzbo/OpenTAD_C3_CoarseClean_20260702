@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 
@@ -22,8 +23,17 @@ def _load_validator():
     return module
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def test_duca_stage23_validator_exists_and_accepts_real_stage3_precheck_proof(tmp_path: Path) -> None:
     proof = tmp_path / "stage3_precheck_proof.json"
+    summary = tmp_path / "stage3_precheck.summary.json"
     proof.write_text(
         json.dumps(
             {
@@ -61,6 +71,8 @@ def test_duca_stage23_validator_exists_and_accepts_real_stage3_precheck_proof(tm
         [
             "--stage",
             "stage3",
+            "--summary-json",
+            str(summary),
             "--stage3-config",
             str(STAGE3_CONFIG),
             "--stage3-exec-config",
@@ -72,6 +84,12 @@ def test_duca_stage23_validator_exists_and_accepts_real_stage3_precheck_proof(tm
     )
 
     assert payload == 0
+    summary_payload = json.loads(summary.read_text(encoding="utf-8"))
+    stage3 = summary_payload["stage3"]
+    assert stage3["stage3_config_sha256"] == _sha256_file(STAGE3_CONFIG)
+    assert stage3["stage3_exec_config_sha256"] == _sha256_file(STAGE3_EXEC_CONFIG)
+    assert stage3["proof"]["proof_json_sha256"] == _sha256_file(proof)
+    assert "matching config/proof hashes" in stage3["full_run_gate"]
 
 
 def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> None:
@@ -82,6 +100,9 @@ def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> No
     assert "run_truetime_joint_selector_precheck.py" in text
     assert "tools/train.py" in text
     assert "ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN" in text
+    assert "proof_json_sha256" in text
+    assert "stale precheck summary" in text
+    assert "bound config/proof hashes" in text
 
 
 def test_duca_stage3_precheck_config_keeps_default_precheck_contract_when_full_run_env(monkeypatch) -> None:

@@ -40,18 +40,50 @@ require_file tools/bata/validate_truetime_joint_selector_precheck.py
 require_file tools/bata/validate_duca_stage23_precheck.py
 
 if [[ "${DUCA_STAGE3_FULL_RUN:-0}" == "1" ]]; then
-  "${PYTHON}" - "${SUMMARY_JSON}" <<'PY'
+  "${PYTHON}" - "${SUMMARY_JSON}" "${CONFIG}" "${EXEC_CONFIG}" "${PROOF_JSON}" <<'PY'
+import hashlib
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
+config_path = Path(sys.argv[2])
+exec_config_path = Path(sys.argv[3])
+proof_path = Path(sys.argv[4])
+
+
+def sha256_file(target: Path) -> str:
+    if not target.is_file():
+        raise SystemExit(f"required full-run gate file missing: {target}")
+    digest = hashlib.sha256()
+    with target.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 if not path.is_file():
     raise SystemExit(f"precheck summary missing: {path}")
 payload = json.loads(path.read_text(encoding="utf-8"))
 if payload.get("decision") != "DUCA_STAGE3_PRECHECK_PASS":
     raise SystemExit(f"precheck summary is not DUCA_STAGE3_PRECHECK_PASS: {payload.get('decision')}")
-print(f"[DUCA_STAGE3_PRECHECK] full-run gate accepted {path}")
+stage3 = payload.get("stage3")
+if not isinstance(stage3, dict):
+    raise SystemExit("precheck summary missing stage3 payload")
+expected = {
+    "stage3_config_sha256": sha256_file(config_path),
+    "stage3_exec_config_sha256": sha256_file(exec_config_path),
+}
+proof = stage3.get("proof")
+if not isinstance(proof, dict):
+    raise SystemExit("precheck summary missing proof payload")
+expected_proof_sha = sha256_file(proof_path)
+for key, value in expected.items():
+    if stage3.get(key) != value:
+        raise SystemExit(f"stale precheck summary: {key} mismatch")
+if proof.get("proof_json_sha256") != expected_proof_sha:
+    raise SystemExit("stale precheck summary: proof_json_sha256 mismatch")
+print(f"[DUCA_STAGE3_PRECHECK] full-run gate accepted {path} with bound config/proof hashes")
 PY
   if [[ "${ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN:-0}" != "1" ]]; then
     fail "ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN=1 is required for DUCA Stage3 full train"

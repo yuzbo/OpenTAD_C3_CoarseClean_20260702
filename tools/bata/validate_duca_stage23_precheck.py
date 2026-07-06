@@ -301,6 +301,7 @@ def _validate_stage3_proof(path: str | Path) -> dict[str, Any]:
     _require({"cls_loss", "reg_loss"}.issubset(set(payload.get("actionformer_loss_keys", []))), "ActionFormer losses missing")
     return {
         "proof_json": str(path),
+        "proof_json_sha256": _sha256_file(path),
         "selector_grad_norm": float(payload.get("selector_grad_norm", 0.0)),
         "detector_loss_selector_grad_norm": float(payload.get("detector_loss_selector_grad_norm", 0.0)),
         "actionformer_detector_loss_selector_grad_norm": float(payload.get("actionformer_detector_loss_selector_grad_norm", 0.0)),
@@ -323,9 +324,13 @@ def validate_stage3(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "decision": STAGE3_READY,
         "stage": "Stage3 TrueTime ST hard selector + real ActionFormer detector loss gradient precheck",
+        "stage3_config": str(args.stage3_config),
+        "stage3_config_sha256": _sha256_file(args.stage3_config),
+        "stage3_exec_config": str(args.stage3_exec_config),
+        "stage3_exec_config_sha256": _sha256_file(args.stage3_exec_config),
         "proof": proof_report,
         "truetime_remap_metadata": "validated in train/val/test Collect meta_keys",
-        "full_run_gate": "PASS artifact required before PRECHECK_ONLY=0 runner",
+        "full_run_gate": "PASS artifact with matching config/proof hashes required before PRECHECK_ONLY=0 runner",
     }
 
 

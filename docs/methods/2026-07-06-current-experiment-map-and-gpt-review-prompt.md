@@ -205,6 +205,9 @@ Current engineering status:
 - The full-run wrapper no longer delegates to the older smoke launcher.
 - `precheck_only_default=True` is separated from `current_run_precheck_only`,
   avoiding the previous `PRECHECK_ONLY=0` gate contradiction.
+- Full-run unlock is bound to the current Stage3 config, execution config, and
+  gradient-proof JSON SHA256 values so a stale PASS summary cannot unlock a
+  different run.
 - Full train remains gated by a PASS precheck summary, an explicit
   `ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN=1`, and Slurm allocation/step.
 
@@ -375,9 +378,8 @@ Current risks:
   selection.
 - Tiny synthetic Stage3 gradient precheck may be mistaken for full THUMOS
   end-to-end evidence.
-- Stage3 full-run gate currently checks a PASS summary but does not yet bind
-  that summary to exact config/proof hashes; this should be tightened before a
-  formal full run claim.
+- Stage3 full-run hash binding now prevents stale PASS summary reuse, but it is
+  still only a launch gate; it is not detector mAP evidence.
 
 Claim locks:
 
