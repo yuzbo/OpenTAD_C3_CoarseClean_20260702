@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 from mmengine.config import Config
@@ -170,6 +171,7 @@ def test_paction_learned_policy_adatad_launcher_validates_ledgers_before_full_tr
     assert "--require-policy-source learned_paction_gap_loss_policy_checkpoint" in text
     assert "--require-checkpoint-path" in text
     assert "--require-checkpoint-sha256" in text
+    assert "--require-paction-provenance" in text
     assert "PACTION_POLICY_CHECKPOINT" in text
     assert "PACTION_POLICY_CHECKPOINT_SHA256" in text
     assert "C3_PACTION_LEDGER_SOURCE" in text
@@ -182,6 +184,7 @@ def test_paction_learned_policy_adatad_launcher_validates_ledgers_before_full_tr
     assert "train/samples.jsonl" in text
     assert "val/samples.jsonl" in text
     assert "test/samples.jsonl" in text
+    assert "source.canonical_unique.jsonl" in text
     assert 'learned_dynamic) echo "${LEDGER_ROOT}/${split}/samples.learned_dynamic.jsonl"' in text
     assert '--val-jsonl "${C3_PACTION_VAL_SOURCE_JSONL}"' not in text
     assert "formal full train must run inside a Slurm allocation/step" in text
@@ -260,3 +263,65 @@ def test_paction_learned_policy_adatad_validator_passes_locked_and_exec_configs(
     )
     assert exec_cfg.c3_paction_learned_ledger_full_train_gate.launch_gate_passed is True
     assert exec_cfg.c3_paction_learned_ledger_full_train_gate.reviewed_execution_config is True
+
+
+def test_paction_learned_policy_adatad_full_train_gate_requires_paction_provenance(tmp_path, monkeypatch):
+    checkpoint_sha = "a" * 64
+    ledger = tmp_path / "value_transport_ledger_learned_fixed_384.jsonl"
+    row = {
+        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+        "sample_id": "video_test_0001|0",
+        "selected_positions_unit": "local_dense_index",
+        "selected_positions": list(range(384)),
+        "target_len": 384,
+        "selected_count": 384,
+        "valid_len": 768,
+        "dense_len": 768,
+        "deploy_selection_ledger": True,
+        "diagnostic_only": False,
+        "policy_source": "learned_paction_gap_loss_policy_checkpoint",
+        "policy_checkpoint_path": str(tmp_path / "policy.pth"),
+        "policy_checkpoint_sha256": checkpoint_sha,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "uses_checkpoint": False,
+        "prediction_uses_gt": False,
+        "training_only": False,
+        "diagnostics": {
+            "uniform_visible_fill_count": 0,
+            "source_strategy": "learned_paction_gap_loss_value",
+            "policy_source": "learned_paction_gap_loss_policy_checkpoint",
+            "policy_checkpoint_sha256": checkpoint_sha,
+        },
+    }
+    ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "learned_fixed_384")
+    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("C3_PACTION_LEDGER_CONFIG_HASH", checkpoint_sha)
+    validator = _load_paction_validator()
+    cfg = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
+
+    try:
+        validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
+    except AssertionError as exc:
+        assert "p_action provenance" in str(exc)
+    else:
+        raise AssertionError("missing p_action provenance should fail the full-train ledger gate")
+
+    row["diagnostics"]["p_action_provenance"] = {
+        "p_action_source": "lowres_action_probe",
+        "probe_model": "mobilenetv3_64px",
+        "no_gt_generation": True,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_raw_prediction": False,
+    }
+    ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+    validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)

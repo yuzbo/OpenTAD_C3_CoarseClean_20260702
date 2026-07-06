@@ -8,6 +8,7 @@ from typing import Any, Sequence
 from tools.bata import apply_paction_acquisition_policy as apply_policy
 from tools.bata import convert_lowres_probe_samples_to_value_transport_ledger as convert_ledger
 from tools.bata import paction_acquisition_policy as policy
+from tools.bata import paction_source_samples
 from tools.bata import validate_paction_learned_policy_ledger as validate_ledger
 
 
@@ -69,9 +70,11 @@ def _convert_and_validate(
         min_action_coverage=min_action_coverage,
         max_max_gap=max_max_gap,
         max_p95_gap=max_p95_gap,
+        boundary_radii=[1, 2, 4, 8],
         require_policy_source=apply_policy.CHECKPOINT_POLICY_SOURCE,
         require_checkpoint_path=checkpoint_path,
         require_checkpoint_sha256=checkpoint_sha256,
+        require_paction_provenance=bool(deploy_selection_ledger),
         summary_json=validation_summary_json,
     )
     return {
@@ -105,14 +108,22 @@ def run_pipeline(
 ) -> dict[str, Any]:
     out_path = Path(out_dir).expanduser()
     out_path.mkdir(parents=True, exist_ok=True)
-    metric_sample_path = Path(input_jsonl).expanduser()
+    canonical_input_jsonl = out_path / "source.canonical_unique.jsonl"
+    source_canonicalization = paction_source_samples.canonicalize_unique_sample_jsonl(
+        input_jsonl,
+        canonical_input_jsonl,
+        report_json=out_path / "source.canonical_unique.report.json",
+        split="",
+    )
+    input_sample_path = canonical_input_jsonl
+    metric_sample_path = canonical_input_jsonl
     checkpoint_sha256 = apply_policy._sha256_file(checkpoint_path)
     ledgers: dict[str, Any] = {}
     for fixed_budget in [int(item) for item in fixed_budgets]:
         name = f"learned_fixed_{fixed_budget}"
         sample_jsonl = out_path / f"samples.{name}.jsonl"
         apply_policy.run_policy_application(
-            input_jsonl,
+            input_sample_path,
             sample_jsonl,
             summary_json=out_path / f"samples.{name}.summary.json",
             fixed_budget=int(fixed_budget),
@@ -141,7 +152,7 @@ def run_pipeline(
         )
     dynamic_sample_jsonl = out_path / "samples.learned_dynamic.jsonl"
     apply_policy.run_policy_application(
-        input_jsonl,
+        input_sample_path,
         dynamic_sample_jsonl,
         summary_json=out_path / "samples.learned_dynamic.summary.json",
         fixed_budget=int(dynamic_target_len),
@@ -172,6 +183,8 @@ def run_pipeline(
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "decision": READY,
         "input_jsonl": str(input_jsonl),
+        "canonical_input_jsonl": str(canonical_input_jsonl),
+        "source_canonicalization": source_canonicalization,
         "metric_sample_jsonl": str(metric_sample_path),
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,

@@ -11,6 +11,7 @@ import numpy as np
 from ..builder import PIPELINES
 from torch.nn import functional as F
 from .boundary_acquisition import load_value_transport_selection_ledger
+from tools.bata import paction_budget_contract
 
 
 def _stable_string_seed(value):
@@ -569,12 +570,12 @@ class LoadFrames:
             else:
                 required_count = int(required_count)
             if required_count is not None and keep_positions.size != required_count:
-                expected_required_count = required_count
-                if self.bata_value_transport_allow_short_valid_ratio_count and valid_len < dense_frame_num:
-                    expected_required_count = int(
-                        np.ceil(float(valid_len) * float(required_count) / float(dense_frame_num))
-                    )
-                    expected_required_count = max(1, min(expected_required_count, int(required_count), int(valid_len)))
+                expected_required_count = paction_budget_contract.expected_selected_count(
+                    required_count,
+                    valid_len=int(valid_len),
+                    dense_len=int(dense_frame_num),
+                    allow_short_valid_ratio_count=bool(self.bata_value_transport_allow_short_valid_ratio_count),
+                )
                 if keep_positions.size == expected_required_count:
                     required_count = expected_required_count
                 else:

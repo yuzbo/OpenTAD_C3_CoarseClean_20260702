@@ -36,6 +36,10 @@ def _require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def _nonempty_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _as_bool(value: Any) -> bool:
     return bool(value)
 
@@ -165,6 +169,24 @@ def _expected_short_count(required: int, *, valid_len: int, dense_len: int) -> i
     return max(1, min(int(required), int(valid_len), int(math.ceil(valid_len * float(required) / float(dense_len)))))
 
 
+def _validate_paction_provenance(path: Path, line_no: int, diagnostics: dict[str, Any]) -> None:
+    provenance = diagnostics.get("p_action_provenance")
+    _require(isinstance(provenance, dict), f"{path}:{line_no}: missing p_action provenance")
+    _require(_nonempty_text(provenance.get("p_action_source")), f"{path}:{line_no}: missing p_action provenance source")
+    model_markers = (
+        provenance.get("probe_model"),
+        provenance.get("matrix_model_id"),
+        provenance.get("official_action_seg_backend"),
+    )
+    _require(
+        any(_nonempty_text(item) for item in model_markers),
+        f"{path}:{line_no}: missing p_action provenance model marker",
+    )
+    _require(provenance.get("no_gt_generation") is True, f"{path}:{line_no}: p_action provenance must not use GT generation")
+    for key in ("uses_teacher", "uses_oracle", "uses_cache", "uses_raw_prediction"):
+        _require(provenance.get(key) is False, f"{path}:{line_no}: p_action provenance must set {key}=false")
+
+
 def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool) -> None:
     path = Path(path)
     _require(str(path) and "REPLACE_WITH" not in str(path), f"ledger path is unresolved: {path}")
@@ -202,6 +224,7 @@ def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool
                     checkpoint_sha256 == cfg.c3_value_transport_config_hash,
                     f"{path}:{line_no}: checkpoint sha256 does not match config hash",
                 )
+            _validate_paction_provenance(path, line_no, diagnostics)
             valid_len = int(row.get("valid_len"))
             dense_len = int(row.get("dense_len"))
             target_len = int(row.get("target_len"))

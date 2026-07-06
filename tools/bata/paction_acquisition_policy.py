@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import copy
 import math
+import os
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+
+from tools.bata import paction_budget_contract
+
+
+if os.name != "nt":
+    from torch.nn import Module as _TorchModuleBase
+else:  # Keep pure-Python imports usable on Windows machines with broken torch DLLs.
+    _TorchModuleBase = object
 
 
 PACTION_FEATURE_NAMES = (
@@ -319,15 +328,13 @@ def decode_budget_from_scores(
 
 
 def short_valid_ratio_budget(required_count: int, *, valid_len: int, dense_len: int) -> int:
-    required = int(required_count)
-    valid = max(0, int(valid_len))
-    dense = max(0, int(dense_len))
-    if required <= 0 or valid <= 0:
-        return 0
-    if dense <= 0 or valid >= dense:
-        return min(required, valid)
-    ratio_required = int(math.ceil(float(valid) * float(required) / float(dense)))
-    return max(1, min(required, valid, ratio_required))
+    expected = paction_budget_contract.expected_selected_count(
+        int(required_count),
+        valid_len=int(valid_len),
+        dense_len=int(dense_len),
+        allow_short_valid_ratio_count=True,
+    )
+    return 0 if expected is None else int(expected)
 
 
 def oracle_budget_from_quality_curve(
@@ -416,8 +423,8 @@ def add_policy_decision_to_sample_row(
     return out
 
 
-class PActionDynamicAcquisitionPolicy:
-    """Tiny torch policy wrapper with frame-value and dynamic-budget heads."""
+class PActionDynamicAcquisitionPolicy(_TorchModuleBase):
+    """Tiny torch policy with frame-value and dynamic-budget heads."""
 
     def __init__(
         self,
@@ -431,6 +438,7 @@ class PActionDynamicAcquisitionPolicy:
         import torch
         import torch.nn as nn
 
+        super().__init__()
         self.torch = torch
         self.nn = nn
         self.budget_buckets = tuple(int(item) for item in budget_buckets)
@@ -457,7 +465,6 @@ class PActionDynamicAcquisitionPolicy:
                     nn.Dropout(float(dropout)),
                 ]
             )
-        self.module = nn.Module()
         self.encoder = nn.Sequential(*layers)
         self.frame_value_head = nn.Conv1d(int(hidden_dim), 1, kernel_size=1)
         self.budget_head = nn.Sequential(
@@ -465,11 +472,8 @@ class PActionDynamicAcquisitionPolicy:
             nn.SiLU(inplace=True),
             nn.Linear(int(hidden_dim), len(self.budget_buckets)),
         )
-        self.module.encoder = self.encoder
-        self.module.frame_value_head = self.frame_value_head
-        self.module.budget_head = self.budget_head
 
-    def __call__(self, features: Any, valid: Any | None = None) -> dict[str, Any]:
+    def forward(self, features: Any, valid: Any | None = None) -> dict[str, Any]:
         torch = self.torch
         if features.ndim != 3:
             raise ValueError(f"paction policy expects [B,T,F], got {tuple(features.shape)}")
@@ -488,24 +492,3 @@ class PActionDynamicAcquisitionPolicy:
             "budget_logits": budget_logits,
             "budget_buckets": torch.tensor(self.budget_buckets, dtype=torch.long, device=budget_logits.device),
         }
-
-    def train(self):
-        self.module.train()
-        return self
-
-    def eval(self):
-        self.module.eval()
-        return self
-
-    def to(self, *args, **kwargs):
-        self.module.to(*args, **kwargs)
-        return self
-
-    def parameters(self):
-        return self.module.parameters()
-
-    def state_dict(self):
-        return self.module.state_dict()
-
-    def load_state_dict(self, state_dict):
-        return self.module.load_state_dict(state_dict)

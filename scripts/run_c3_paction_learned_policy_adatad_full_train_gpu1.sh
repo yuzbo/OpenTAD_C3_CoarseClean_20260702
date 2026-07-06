@@ -207,9 +207,7 @@ sample_path_for_variant() {
 
 metric_sample_path_for_split() {
   case "$1" in
-    train) echo "${C3_PACTION_TRAIN_SOURCE_JSONL}" ;;
-    val) echo "${C3_PACTION_VAL_SOURCE_JSONL}" ;;
-    test) echo "${C3_PACTION_TEST_SOURCE_JSONL}" ;;
+    train|val|test) echo "${LEDGER_ROOT}/$1/source.canonical_unique.jsonl" ;;
     *) fail "unknown split: $1" ;;
   esac
 }
@@ -245,6 +243,7 @@ validate_variant_split() {
   strategy="$(strategy_for_variant "${variant}")"
   require_file "${sample_jsonl}"
   require_file "${ledger_jsonl}"
+  require_file "${metric_jsonl}"
   local args=(
     --sample-jsonl "${sample_jsonl}"
     --metric-sample-jsonl "${metric_jsonl}"
@@ -256,6 +255,7 @@ validate_variant_split() {
     --require-policy-source learned_paction_gap_loss_policy_checkpoint
     --require-checkpoint-path "${PACTION_POLICY_CHECKPOINT}"
     --require-checkpoint-sha256 "${PACTION_POLICY_CHECKPOINT_SHA256}"
+    --require-paction-provenance
     --summary-json "${VALIDATION_DIR}/${split}_${variant}.validation.json"
   )
   if [[ "${variant}" == "learned_fixed_384" ]]; then

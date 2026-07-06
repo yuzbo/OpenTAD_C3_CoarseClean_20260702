@@ -1,6 +1,22 @@
 from __future__ import annotations
 
+import os
+
+import pytest
+
+if os.name == "nt":
+    pytest.skip("torch policy tests run in the Linux/remote OpenTAD environment", allow_module_level=True)
+
+torch = pytest.importorskip("torch")
+
 from tools.bata import paction_acquisition_policy as policy
+from tools.bata import paction_budget_contract as budget_contract
+
+
+def test_dynamic_acquisition_policy_is_standard_torch_module() -> None:
+    model = policy.PActionDynamicAcquisitionPolicy(hidden_dim=8, num_layers=1)
+
+    assert isinstance(model, torch.nn.Module)
 
 
 def test_feature_matrix_exposes_paction_dynamics_uncertainty_and_time() -> None:
@@ -65,6 +81,16 @@ def test_dynamic_budget_decoder_clamps_to_valid_len_and_bounds() -> None:
     assert policy.decode_budget_from_scores([0.1, 0.2, 0.9], [2, 4, 8], valid_len=5) == 5
     assert policy.decode_budget_from_scores([0.1, 0.2, 0.9], [2, 4, 8], valid_len=5, max_budget=4) == 4
     assert policy.decode_budget_from_scores([0.9, 0.2, 0.1], [2, 4, 8], valid_len=5, min_budget=3) == 3
+
+
+def test_short_valid_budget_contract_is_shared_and_matches_failed_remote_case() -> None:
+    assert budget_contract.expected_selected_count(
+        384,
+        valid_len=251,
+        dense_len=768,
+        allow_short_valid_ratio_count=True,
+    ) == 126
+    assert policy.short_valid_ratio_budget(384, valid_len=251, dense_len=768) == 126
 
 
 def test_oracle_budget_uses_smallest_bucket_meeting_quality_target() -> None:

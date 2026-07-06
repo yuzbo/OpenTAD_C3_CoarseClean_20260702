@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.bata import apply_paction_acquisition_policy as apply_policy
 from tools.bata import convert_lowres_probe_samples_to_value_transport_ledger as convert_ledger
 
@@ -139,8 +141,37 @@ def test_policy_application_matches_short_valid_ratio_fixed_budget(tmp_path: Pat
         target_len=4,
         require_selected_count=4,
         allow_short_valid_ratio_count=True,
-        deploy_selection_ledger=True,
+        deploy_selection_ledger=False,
     )
 
     assert summary["min_selected_count"] == 3
     assert summary["max_selected_count"] == 3
+
+
+def test_bootstrap_policy_output_cannot_be_converted_to_deploy_ledger(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    policy_jsonl = tmp_path / "samples.policy.jsonl"
+    ledger_jsonl = tmp_path / "value_transport_ledger.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 4,
+                "valid_len": 4,
+                "frame_signals": {"p_action": [0.10, 0.90, 0.20, 0.80]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    apply_policy.run_policy_application(input_jsonl, policy_jsonl, fixed_budget=2)
+
+    with pytest.raises(ValueError, match="checkpoint policy source"):
+        convert_ledger.run_conversion(
+            policy_jsonl,
+            ledger_jsonl,
+            strategy="learned_paction_gap_loss_value",
+            target_len=2,
+            require_selected_count=2,
+            deploy_selection_ledger=True,
+        )

@@ -7,6 +7,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from tools.bata import paction_budget_contract
+
 
 SUMMARY_SCHEMA_VERSION = "c3_paction_learned_policy_ledger_validation_v1"
 READY = "C3_PACTION_LEARNED_POLICY_LEDGER_VALIDATION_PASS"
@@ -132,6 +134,34 @@ def _action_target(sample_row: Mapping[str, Any]) -> list[float]:
     return []
 
 
+def _nonempty_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_paction_positive_provenance(
+    paction_policy: Mapping[str, Any],
+    *,
+    source_name: str,
+) -> None:
+    provenance = paction_policy.get("p_action_provenance")
+    if not isinstance(provenance, Mapping):
+        raise ValueError(f"{source_name}: p_action positive provenance is required")
+    if not _nonempty_text(provenance.get("p_action_source")):
+        raise ValueError(f"{source_name}: p_action positive provenance must include p_action_source")
+    model_markers = (
+        provenance.get("probe_model"),
+        provenance.get("matrix_model_id"),
+        provenance.get("official_action_seg_backend"),
+    )
+    if not any(_nonempty_text(item) for item in model_markers):
+        raise ValueError(f"{source_name}: p_action positive provenance must include a probe/model backend marker")
+    if provenance.get("no_gt_generation") is not True:
+        raise ValueError(f"{source_name}: p_action positive provenance must set no_gt_generation=true")
+    for key in ("uses_teacher", "uses_oracle", "uses_cache", "uses_raw_prediction"):
+        if provenance.get(key) is not False:
+            raise ValueError(f"{source_name}: p_action positive provenance must set {key}=false")
+
+
 def validate_ledger(
     *,
     sample_jsonl: str | Path,
@@ -144,6 +174,7 @@ def validate_ledger(
     require_nonconstant_selected_count: bool = False,
     require_deployable: bool = True,
     boundary_radius: int = 1,
+    boundary_radii: Sequence[int] | None = None,
     min_boundary_support: float | None = None,
     min_action_coverage: float | None = None,
     max_max_gap: int | None = None,
@@ -151,6 +182,7 @@ def validate_ledger(
     require_policy_source: str | None = None,
     require_checkpoint_path: str | Path | None = None,
     require_checkpoint_sha256: str | None = None,
+    require_paction_provenance: bool = False,
     summary_json: str | Path | None = None,
 ) -> dict[str, Any]:
     sample_by_id = _sample_map(_read_jsonl(sample_jsonl))
@@ -162,6 +194,11 @@ def validate_ledger(
     max_gap = 0
     boundary_hits = 0
     boundary_total = 0
+    radii = [int(item) for item in (boundary_radii if boundary_radii is not None else [boundary_radius])]
+    if not radii:
+        radii = [int(boundary_radius)]
+    radii = sorted(set(radii))
+    boundary_hits_by_radius = {int(radius): 0 for radius in radii}
     action_selected = 0
     action_total = 0
     total_uniform_fill = 0
@@ -223,7 +260,12 @@ def validate_ledger(
                 raise ValueError(
                     f"{sample_jsonl}:{sample_id}: paction_policy.checkpoint_sha256 mismatch"
                 )
-        elif require_policy_source is not None or require_checkpoint_path is not None:
+            if require_paction_provenance:
+                _validate_paction_positive_provenance(
+                    paction_policy,
+                    source_name=f"{sample_jsonl}:{sample_id}",
+                )
+        elif require_policy_source is not None or require_checkpoint_path is not None or require_paction_provenance:
             raise ValueError(f"{sample_jsonl}:{sample_id}: paction_policy metadata is required")
         selected = _positions(row.get("selected_positions"), name=f"{ledger_jsonl}:{line_no}: selected_positions")
         valid_len = int(row.get("valid_len"))
@@ -232,9 +274,12 @@ def validate_ledger(
             raise ValueError(f"{ledger_jsonl}:{line_no}: selected position outside valid_len")
         if expected_target_len is not None and int(row.get("target_len")) != int(expected_target_len):
             raise ValueError(f"{ledger_jsonl}:{line_no}: target_len must be {expected_target_len}")
-        expected_count = require_selected_count
-        if expected_count is not None and allow_short_valid_ratio_count and valid_len < dense_len:
-            expected_count = max(1, min(int(expected_count), valid_len, int(math.ceil(valid_len * float(expected_count) / float(dense_len)))))
+        expected_count = paction_budget_contract.expected_selected_count(
+            require_selected_count,
+            valid_len=valid_len,
+            dense_len=dense_len,
+            allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
+        )
         if expected_count is not None and len(selected) != int(expected_count):
             raise ValueError(f"{ledger_jsonl}:{line_no}: selected_count must be {expected_count}")
         if int(row.get("selected_count")) != len(selected):
@@ -254,6 +299,9 @@ def validate_ledger(
         for boundary in boundaries:
             if any(abs(item - boundary) <= float(boundary_radius) for item in selected_float):
                 boundary_hits += 1
+            for radius in radii:
+                if any(abs(item - boundary) <= float(radius) for item in selected_float):
+                    boundary_hits_by_radius[int(radius)] += 1
         target = _action_target(metric_row)
         if target:
             valid_target = target[:valid_len]
@@ -261,6 +309,10 @@ def validate_ledger(
             action_total += len(positive)
             action_selected += len(positive.intersection(set(selected)))
     boundary_support = None if boundary_total <= 0 else boundary_hits / float(boundary_total)
+    boundary_support_by_radius = {
+        int(radius): None if boundary_total <= 0 else hits / float(boundary_total)
+        for radius, hits in boundary_hits_by_radius.items()
+    }
     action_coverage = None if action_total <= 0 else action_selected / float(action_total)
     if require_nonconstant_selected_count and len(set(selected_counts)) <= 1:
         raise ValueError("selected_count is constant; dynamic budget ledger is degenerate")
@@ -308,7 +360,12 @@ def validate_ledger(
         "required_checkpoint_path": None if require_checkpoint_path is None else str(require_checkpoint_path),
         "required_checkpoint_sha256": require_checkpoint_sha256,
         "actual_checkpoint_sha256": checkpoint_sha256,
+        "require_paction_provenance": bool(require_paction_provenance),
+        "paction_provenance_verified": bool(require_paction_provenance),
+        "gap_metric_definition": "endpoint_inclusive_selected_stride_gap",
     }
+    for radius, value in boundary_support_by_radius.items():
+        summary[f"boundary_support_r{int(radius)}"] = value
     if summary_json is not None:
         _write_json(summary_json, summary)
     return summary
@@ -326,6 +383,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--require-nonconstant-selected-count", action="store_true")
     parser.add_argument("--require-deployable", action="store_true")
     parser.add_argument("--boundary-radius", type=int, default=1)
+    parser.add_argument("--boundary-radii", type=int, nargs="+")
     parser.add_argument("--min-boundary-support", type=float)
     parser.add_argument("--min-action-coverage", type=float)
     parser.add_argument("--max-max-gap", type=int)
@@ -333,6 +391,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--require-policy-source")
     parser.add_argument("--require-checkpoint-path")
     parser.add_argument("--require-checkpoint-sha256")
+    parser.add_argument("--require-paction-provenance", action="store_true")
     parser.add_argument("--summary-json")
     args = parser.parse_args(argv)
     summary = validate_ledger(
@@ -346,6 +405,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_nonconstant_selected_count=bool(args.require_nonconstant_selected_count),
         require_deployable=bool(args.require_deployable),
         boundary_radius=int(args.boundary_radius),
+        boundary_radii=args.boundary_radii,
         min_boundary_support=args.min_boundary_support,
         min_action_coverage=args.min_action_coverage,
         max_max_gap=args.max_max_gap,
@@ -353,6 +413,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_policy_source=args.require_policy_source,
         require_checkpoint_path=args.require_checkpoint_path,
         require_checkpoint_sha256=args.require_checkpoint_sha256,
+        require_paction_provenance=bool(args.require_paction_provenance),
         summary_json=args.summary_json,
     )
     print(json.dumps(summary, sort_keys=True), flush=True)

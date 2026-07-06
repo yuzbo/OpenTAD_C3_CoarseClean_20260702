@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.bata.export_pc_ot_mras_hard_positions import strict_json_value, write_json  # noqa: E402
+from tools.bata import paction_budget_contract  # noqa: E402
 
 
 _BOUNDARY_ACQUISITION_PATH = ROOT / "opentad" / "datasets" / "transforms" / "boundary_acquisition.py"
@@ -33,6 +34,7 @@ OUTPUT_SCHEMA_VERSION = "pc_ot_mras_frontend_value_transport_ledger_v0"
 SUMMARY_SCHEMA_VERSION = "c3_lowres_probe_value_transport_ledger_summary_v0"
 READY = "C3_LOWRES_PROBE_LEDGER_READY"
 NO_GO = "C3_LOWRES_PROBE_LEDGER_NO_GO"
+CHECKPOINT_POLICY_SOURCE = "learned_paction_gap_loss_policy_checkpoint"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -172,17 +174,12 @@ def _expected_required_count(
     dense_len: int | None,
     allow_short_valid_ratio_count: bool,
 ) -> int | None:
-    if require_selected_count is None:
-        return None
-    required = int(require_selected_count)
-    if not allow_short_valid_ratio_count:
-        return required
-    if dense_len is None or int(dense_len) <= 0:
-        return min(required, int(valid_len))
-    if int(valid_len) >= int(dense_len):
-        return required
-    ratio_required = int(math.ceil(float(valid_len) * float(required) / float(dense_len)))
-    return max(1, min(required, int(valid_len), ratio_required))
+    return paction_budget_contract.expected_selected_count(
+        require_selected_count,
+        valid_len=int(valid_len),
+        dense_len=int(dense_len or 0),
+        allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
+    )
 
 
 def _selected_positions_from_sample(
@@ -293,6 +290,15 @@ def sample_row_to_value_transport_row(
         diagnostics["policy_dynamic_budget"] = paction_policy.get("dynamic_budget")
         diagnostics["policy_uses_uniform_scaffold"] = paction_policy.get("uses_uniform_scaffold")
         diagnostics["policy_uses_uniform_fill"] = paction_policy.get("uses_uniform_fill")
+        diagnostics["p_action_provenance"] = paction_policy.get("p_action_provenance")
+    if deploy_selection_ledger and isinstance(paction_policy, Mapping):
+        if paction_policy.get("source") != CHECKPOINT_POLICY_SOURCE:
+            raise ValueError(
+                f"line {line_no}: deploy ledger requires checkpoint policy source "
+                f"{CHECKPOINT_POLICY_SOURCE}, got {paction_policy.get('source')}"
+            )
+        if not paction_policy.get("checkpoint_sha256"):
+            raise ValueError(f"line {line_no}: deploy ledger requires policy checkpoint_sha256")
     boundary_support = None if deploy_selection_ledger else _finite_float_or_none(row.get("boundary_support_r1"))
     if boundary_support is not None:
         diagnostics["diagnostic_boundary_support_r1_ignored_by_selection"] = boundary_support

@@ -126,6 +126,26 @@ def _extract_paction(row: Mapping[str, Any], *, line_no: int) -> list[float]:
     raise ValueError(f"line {line_no}: p_action signal is required in frame_signals.p_action or p_action")
 
 
+def _paction_positive_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
+    p_action_source = row.get("p_action_source") or row.get("source_p_action") or "lowres_action_probe"
+    return {
+        "p_action_source": str(p_action_source),
+        "probe_model": row.get("probe_model"),
+        "tcn_variant": row.get("tcn_variant"),
+        "matrix_model_id": row.get("matrix_model_id"),
+        "official_action_seg_backend": row.get("official_action_seg_backend"),
+        "spatial_size": row.get("spatial_size"),
+        "split": row.get("split") or row.get("subset"),
+        "probe_checkpoint_sha256": row.get("probe_checkpoint_sha256"),
+        "probe_manifest_sha256": row.get("probe_manifest_sha256"),
+        "no_gt_generation": True,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_raw_prediction": False,
+    }
+
+
 def bootstrap_policy_scores(
     p_action: Sequence[Any],
     *,
@@ -253,6 +273,7 @@ def run_policy_application(
             dynamic_budget_buckets=dynamic_budget_buckets,
         )
         enriched["paction_policy"]["source"] = source
+        enriched["paction_policy"]["p_action_provenance"] = _paction_positive_provenance(row)
         if checkpoint_path is not None:
             enriched["paction_policy"]["checkpoint_path"] = str(checkpoint_path)
             enriched["paction_policy"]["checkpoint_sha256"] = str(checkpoint_sha256)
