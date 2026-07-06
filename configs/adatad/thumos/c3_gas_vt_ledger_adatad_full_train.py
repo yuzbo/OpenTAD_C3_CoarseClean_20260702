@@ -283,13 +283,13 @@ model = dict(
 
 solver = dict(
     train=dict(batch_size=2, num_workers=2),
-    val=dict(batch_size=1, num_workers=1),
-    test=dict(batch_size=1, num_workers=1),
+    val=dict(batch_size=2, num_workers=2),
+    test=dict(batch_size=2, num_workers=2),
     clip_grad_norm=1,
     amp=True,
     fp16_compress=True,
     static_graph=True,
-    ema=False,
+    ema=True,
 )
 
 optimizer = dict(
@@ -304,7 +304,7 @@ optimizer = dict(
         exclude=["backbone"],
     ),
 )
-scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=60)
+scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=100)
 
 evaluation = dict(
     type="mAP",
@@ -319,10 +319,9 @@ workflow = dict(
     logging_interval=50,
     checkpoint_interval=2,
     val_loss_interval=-1,
-    val_eval_interval=5,
-    val_eval_epochs=[2, 60],
-    val_eval_interval_anchor_epoch=2,
-    val_start_epoch=1,
+    val_eval_interval=10,
+    val_eval_interval_anchor_epoch=10,
+    val_start_epoch=9,
     end_epoch=60,
     max_train_iters=None,
 )

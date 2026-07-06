@@ -79,9 +79,11 @@ def test_asformer_delta_ledger_full_train_config_is_original_adatad_selected_axi
 
     assert "gt_segments" not in _collect(cfg.dataset.test).get("keys", [])
     assert "gt_labels" not in _collect(cfg.dataset.test).get("keys", [])
-    assert cfg.workflow.val_eval_epochs == [2, 60]
-    assert int(cfg.workflow.val_eval_interval) == 5
-    assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 2
+    assert cfg.solver.ema is True
+    assert "val_eval_epochs" not in cfg.workflow
+    assert int(cfg.workflow.val_eval_interval) == 10
+    assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
+    assert int(cfg.workflow.val_start_epoch) == 9
     assert cfg.workflow.max_train_iters is None
 
 
@@ -109,7 +111,7 @@ def test_asformer_delta_ledger_exec_config_passes_training_guard(monkeypatch):
     assert cfg.c3_asformer_delta_ledger_full_train_gate.reviewed_execution_config is True
 
 
-def test_training_eval_schedule_keeps_legacy_and_runs_epoch60():
+def test_training_eval_schedule_keeps_legacy_and_runs_zero_based_epoch9_to59():
     schedule_spec = importlib.util.spec_from_file_location("train_schedule_c3_asformer_delta_test", SCHEDULE)
     schedule_module = importlib.util.module_from_spec(schedule_spec)
     schedule_spec.loader.exec_module(schedule_module)
@@ -120,9 +122,7 @@ def test_training_eval_schedule_keeps_legacy_and_runs_epoch60():
         for epoch in range(60)
         if epoch >= cfg.workflow.val_start_epoch and schedule_module.should_eval_epoch(epoch, cfg.workflow)
     ]
-    assert 2 in eval_epochs
-    assert 60 in eval_epochs
-    assert eval_epochs[:3] == [2, 7, 12]
+    assert eval_epochs == [10, 20, 30, 40, 50, 60]
 
     class LegacyWorkflow:
         val_eval_interval = 5
@@ -251,6 +251,11 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         assert int(cfg.model.backbone.backbone.total_frames) == target_len
         assert int(cfg.model.projection.max_seq_len) == target_len
         assert cfg.evaluation.ground_truth_filename == cfg.annotation_path
+        assert cfg.solver.ema is True
+        assert "val_eval_epochs" not in cfg.workflow
+        assert int(cfg.workflow.val_eval_interval) == 10
+        assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
+        assert int(cfg.workflow.val_start_epoch) == 9
         assert "frame_selector" not in repr(cfg.model)
         for split in ("train", "val", "test"):
             loader = _loadframes(cfg.dataset[split])

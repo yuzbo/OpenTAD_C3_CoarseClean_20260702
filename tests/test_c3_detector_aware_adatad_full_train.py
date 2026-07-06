@@ -51,6 +51,11 @@ def test_detector_aware_adatad_config_supports_fixed384_fixed768_and_dynamic(mon
         assert cfg.c3_value_transport_source == "learned_detector_aware_policy_checkpoint"
         assert int(cfg.model.backbone.backbone.total_frames) == target_len
         assert int(cfg.model.projection.max_seq_len) == target_len
+        assert cfg.solver.ema is True
+        assert "val_eval_epochs" not in cfg.workflow
+        assert int(cfg.workflow.val_eval_interval) == 10
+        assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
+        assert int(cfg.workflow.val_start_epoch) == 9
         assert cfg.baseline_comparison.matched_budget_baselines == ["p_action_only", "GAS-VT"]
         for split in ("train", "val", "test"):
             loader = _loadframes(cfg.dataset[split])
@@ -84,6 +89,9 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
     assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+    assert 'ALLOW_C3_DETECTOR_AWARE_GPU0="${ALLOW_C3_DETECTOR_AWARE_GPU0:-0}"' in text
+    assert "explicit GPU0 override accepted for Stage-2" in text
+    assert "Set ALLOW_C3_DETECTOR_AWARE_GPU0=1 only when GPU0 is explicitly assigned to this route." in text
     assert "detector_teacher_utility.py" in text
     assert "C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL" in text
     assert "C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON" in text

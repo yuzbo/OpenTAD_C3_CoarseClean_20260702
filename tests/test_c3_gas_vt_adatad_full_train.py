@@ -51,6 +51,11 @@ def test_gas_vt_adatad_config_supports_fixed384_fixed768_and_dynamic(monkeypatch
         assert cfg.c3_value_transport_source == "learned_paction_gas_vt_policy_checkpoint"
         assert int(cfg.model.backbone.backbone.total_frames) == target_len
         assert int(cfg.model.projection.max_seq_len) == target_len
+        assert cfg.solver.ema is True
+        assert "val_eval_epochs" not in cfg.workflow
+        assert int(cfg.workflow.val_eval_interval) == 10
+        assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
+        assert int(cfg.workflow.val_start_epoch) == 9
         assert "frame_selector" not in repr(cfg.model)
         for split in ("train", "val", "test"):
             loader = _loadframes(cfg.dataset[split])
