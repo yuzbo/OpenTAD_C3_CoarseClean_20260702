@@ -9,6 +9,7 @@ import pytest
 from tools.bata import run_paction_learned_policy_ledger_pipeline as ledger_pipeline
 from tools.bata import train_paction_acquisition_policy as train_policy
 from tools.bata import validate_paction_learned_policy_ledger as validate_ledger
+from tools.bata import paction_acquisition_policy as policy
 from tools.bata import paction_source_samples
 
 
@@ -44,6 +45,58 @@ def _sample_row(sample_id: str, p_action: list[float], action_target: list[float
         "gt_boundaries": boundaries,
         "strategy_selected_positions": {"delta_p_action": [1, 4]},
     }
+
+
+def _max_unselected_hole(selected: list[int], valid_len: int) -> int:
+    selected_set = set(selected)
+    current = 0
+    max_hole = 0
+    for idx in range(valid_len):
+        if idx in selected_set:
+            max_hole = max(max_hole, current)
+            current = 0
+        else:
+            current += 1
+    return max(max_hole, current)
+
+
+def test_learned_score_decoder_enforces_max_hole_without_uniform_scaffold() -> None:
+    frame_values = [0.99, 0.98, 0.97, 0.96, 0.95, 0.01, 0.02, 0.03, 0.04, 0.94, 0.93, 0.92]
+
+    plain_topk = policy.constrained_topk(frame_values, budget=6)
+    constrained = policy.constrained_topk(frame_values, budget=6, max_unselected_hole=3)
+
+    assert plain_topk == [0, 1, 2, 3, 4, 9]
+    assert _max_unselected_hole(plain_topk, valid_len=len(frame_values)) == 4
+    assert _max_unselected_hole(constrained, valid_len=len(frame_values)) <= 3
+    assert 8 in constrained
+    assert constrained != [0, 2, 4, 6, 8, 10]
+
+
+def test_policy_row_records_learned_score_constrained_gap_decoder() -> None:
+    row = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 12,
+        "valid_len": 12,
+        "strategy_selected_positions": {},
+        "frame_signals": {"p_action": [0.1] * 12},
+    }
+
+    enriched = policy.add_policy_decision_to_sample_row(
+        row,
+        frame_values=[0.99, 0.98, 0.97, 0.96, 0.95, 0.01, 0.02, 0.03, 0.04, 0.94, 0.93, 0.92],
+        fixed_budget=6,
+        dynamic_budget_scores=[1.0],
+        dynamic_budget_buckets=[6],
+        max_unselected_hole=3,
+    )
+
+    selected = enriched["strategy_selected_positions"]["learned_paction_gap_loss_value"]
+    assert _max_unselected_hole(selected, valid_len=12) <= 3
+    assert enriched["paction_policy"]["max_unselected_hole"] == 3
+    assert enriched["paction_policy"]["gap_control"] == "learned_score_constrained_gap_no_uniform_fill"
+    assert enriched["paction_policy"]["uses_uniform_scaffold"] is False
+    assert enriched["paction_policy"]["uses_uniform_fill"] is False
 
 
 @pytest.mark.skipif(

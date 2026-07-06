@@ -151,6 +151,7 @@ def run_pipeline(
             device=device,
             strip_deploy_invisible_payload=True,
             strict_deploy_source=bool(deploy_selection_ledger),
+            max_unselected_hole=max_unselected_hole,
         )
         ledgers[name] = _convert_and_validate(
             sample_jsonl=sample_jsonl,
@@ -184,6 +185,7 @@ def run_pipeline(
         device=device,
         strip_deploy_invisible_payload=True,
         strict_deploy_source=bool(deploy_selection_ledger),
+        max_unselected_hole=max_unselected_hole,
     )
     ledgers["learned_dynamic"] = _convert_and_validate(
         sample_jsonl=dynamic_sample_jsonl,
@@ -222,7 +224,11 @@ def run_pipeline(
         "dynamic_target_len": int(dynamic_target_len),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "deploy_selection_ledger": bool(deploy_selection_ledger),
-        "gap_control": "learned_gap_hole_loss_no_uniform_fill",
+        "gap_control": (
+            "learned_score_constrained_gap_no_uniform_fill"
+            if max_unselected_hole is not None
+            else "learned_gap_hole_loss_no_uniform_fill"
+        ),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "strip_deploy_invisible_payload": True,

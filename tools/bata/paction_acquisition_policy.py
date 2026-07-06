@@ -108,13 +108,115 @@ def build_paction_feature_matrix(
     return features
 
 
-def constrained_topk(values: Sequence[Any], *, valid: Sequence[Any] | None = None, budget: int) -> list[int]:
+def _unselected_hole_runs(selected: set[int], valid_indices: Sequence[int]) -> list[tuple[int, int, int]]:
+    runs: list[tuple[int, int, int]] = []
+    run_start: int | None = None
+    previous = -1
+    for idx in valid_indices:
+        idx = int(idx)
+        if idx in selected:
+            if run_start is not None:
+                runs.append((int(run_start), int(previous), int(previous - run_start + 1)))
+                run_start = None
+        elif run_start is None:
+            run_start = idx
+        previous = idx
+    if run_start is not None:
+        runs.append((int(run_start), int(previous), int(previous - run_start + 1)))
+    return runs
+
+
+def _max_unselected_hole(selected: set[int], valid_indices: Sequence[int]) -> int:
+    runs = _unselected_hole_runs(selected, valid_indices)
+    return max((length for _, _, length in runs), default=0)
+
+
+def _score_key(values: Sequence[Any], idx: int) -> tuple[float, int]:
+    return (float(values[int(idx)]), -int(idx))
+
+
+def constrained_topk(
+    values: Sequence[Any],
+    *,
+    valid: Sequence[Any] | None = None,
+    budget: int,
+    max_unselected_hole: int | None = None,
+) -> list[int]:
     valid_mask = _valid_mask(valid, len(values))
     if int(budget) <= 0:
         return []
     valid_indices = [idx for idx, is_valid in enumerate(valid_mask) if is_valid]
     ranked = sorted(valid_indices, key=lambda idx: (float(values[idx]), -idx), reverse=True)
-    return sorted(ranked[: min(int(budget), len(ranked))])
+    selected = set(ranked[: min(int(budget), len(ranked))])
+    if max_unselected_hole is None or not selected:
+        return sorted(selected)
+    max_hole = int(max_unselected_hole)
+    if max_hole < 0:
+        raise ValueError("max_unselected_hole must be non-negative")
+    if len(selected) >= len(valid_indices):
+        return sorted(selected)
+    minimum_required = (len(valid_indices) + max_hole) // (max_hole + 1)
+    if len(selected) < minimum_required:
+        return sorted(selected)
+
+    for _ in range(len(valid_indices) + 1):
+        violating = [
+            run
+            for run in _unselected_hole_runs(selected, valid_indices)
+            if int(run[2]) > max_hole
+        ]
+        if not violating:
+            break
+        start, end, _length = max(violating, key=lambda item: (int(item[2]), -int(item[0])))
+        feasible_start = max(int(start), int(end) - max_hole)
+        feasible_end = min(int(end), int(start) + max_hole)
+        repair_candidates = [
+            idx
+            for idx in valid_indices
+            if feasible_start <= int(idx) <= feasible_end and int(idx) not in selected
+        ]
+        if not repair_candidates:
+            repair_candidates = [
+                idx
+                for idx in valid_indices
+                if int(start) <= int(idx) <= int(end) and int(idx) not in selected
+            ]
+        if not repair_candidates:
+            break
+        added = max(repair_candidates, key=lambda idx: _score_key(values, int(idx)))
+        selected.add(int(added))
+        if len(selected) <= int(budget):
+            continue
+
+        removable: list[tuple[float, int, int]] = []
+        for candidate in selected:
+            if int(candidate) == int(added):
+                continue
+            trial = set(selected)
+            trial.remove(int(candidate))
+            trial_hole = _max_unselected_hole(trial, valid_indices)
+            if trial_hole <= max_hole:
+                removable.append((float(values[int(candidate)]), int(candidate), int(trial_hole)))
+        if removable:
+            _score, remove_idx, _trial_hole = min(removable, key=lambda item: (item[0], -item[1]))
+            selected.remove(int(remove_idx))
+            continue
+
+        # Keep the best learned repair even if an exact one-swap repair is not
+        # feasible; choose the removal that leaves the smallest residual hole.
+        fallback: list[tuple[int, float, int]] = []
+        for candidate in selected:
+            if int(candidate) == int(added):
+                continue
+            trial = set(selected)
+            trial.remove(int(candidate))
+            fallback.append((_max_unselected_hole(trial, valid_indices), float(values[int(candidate)]), int(candidate)))
+        if not fallback:
+            selected.remove(int(added))
+            break
+        _trial_hole, _score, remove_idx = min(fallback, key=lambda item: (item[0], item[1], -item[2]))
+        selected.remove(int(remove_idx))
+    return sorted(selected)
 
 
 def temporal_gap_hole_loss_from_probabilities(
@@ -374,6 +476,7 @@ def add_policy_decision_to_sample_row(
     fixed_strategy_name: str = LEARNED_FIXED_STRATEGY,
     dynamic_strategy_name: str = LEARNED_DYNAMIC_STRATEGY,
     gap_loss_max_gap: int = DEFAULT_GAP_LOSS_MAX_GAP,
+    max_unselected_hole: int | None = None,
 ) -> dict[str, Any]:
     out = copy.deepcopy(dict(row))
     valid_len = int(out.get("valid_len") or out.get("dense_len") or len(frame_values))
@@ -387,13 +490,28 @@ def add_policy_decision_to_sample_row(
     )
     dynamic_budget = decode_budget_from_scores(dynamic_budget_scores, dynamic_budget_buckets, valid_len=valid_len)
     strategies = dict(out.get("strategy_selected_positions") or {})
-    fixed_selected = constrained_topk(frame_values, valid=valid, budget=int(fixed_budget))
-    dynamic_selected = constrained_topk(frame_values, valid=valid, budget=int(dynamic_budget))
+    fixed_selected = constrained_topk(
+        frame_values,
+        valid=valid,
+        budget=int(fixed_budget),
+        max_unselected_hole=max_unselected_hole,
+    )
+    dynamic_selected = constrained_topk(
+        frame_values,
+        valid=valid,
+        budget=int(dynamic_budget),
+        max_unselected_hole=max_unselected_hole,
+    )
     strategies[str(fixed_strategy_name)] = fixed_selected
     strategies[str(dynamic_strategy_name)] = dynamic_selected
     fixed_mask = [1.0 if idx in set(fixed_selected) else 0.0 for idx in range(len(frame_values))]
     dynamic_mask = [1.0 if idx in set(dynamic_selected) else 0.0 for idx in range(len(frame_values))]
     out["strategy_selected_positions"] = strategies
+    gap_control = (
+        "learned_score_constrained_gap_no_uniform_fill"
+        if max_unselected_hole is not None
+        else "learned_gap_hole_loss_no_uniform_fill"
+    )
     out["paction_policy"] = {
         "selection_signal": "p_action_gap_loss_policy_value",
         "fixed_strategy": str(fixed_strategy_name),
@@ -404,8 +522,9 @@ def add_policy_decision_to_sample_row(
         "fixed_budget_uses_short_valid_ratio_count": int(valid_len) < int(dense_len),
         "dynamic_budget": int(dynamic_budget),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
-        "gap_control": "learned_gap_hole_loss_no_uniform_fill",
+        "gap_control": gap_control,
         "gap_loss_max_gap": int(gap_loss_max_gap),
+        "max_unselected_hole": None if max_unselected_hole is None else int(max_unselected_hole),
         "loss_terms": dict(DEFAULT_POLICY_LOSS_TERMS),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,

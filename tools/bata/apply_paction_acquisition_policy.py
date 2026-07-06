@@ -243,6 +243,7 @@ def run_policy_application(
     strip_deploy_invisible_payload: bool = False,
     strict_deploy_source: bool = False,
     allow_bootstrap_for_tests: bool = False,
+    max_unselected_hole: int | None = None,
 ) -> dict[str, Any]:
     rows = _read_jsonl(input_jsonl)
     if checkpoint_path is None and not allow_bootstrap_for_tests:
@@ -293,6 +294,7 @@ def run_policy_application(
             fixed_budget=int(fixed_budget),
             dynamic_budget_scores=budget_scores,
             dynamic_budget_buckets=dynamic_budget_buckets,
+            max_unselected_hole=max_unselected_hole,
         )
         enriched["paction_policy"]["source"] = source
         enriched["paction_policy"]["p_action_provenance"] = p_action_provenance
@@ -332,7 +334,12 @@ def run_policy_application(
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
         "strict_deploy_source": bool(strict_deploy_source),
         "allow_bootstrap_for_tests": bool(allow_bootstrap_for_tests),
-        "gap_control": "learned_gap_hole_loss_no_uniform_fill",
+        "gap_control": (
+            "learned_score_constrained_gap_no_uniform_fill"
+            if max_unselected_hole is not None
+            else "learned_gap_hole_loss_no_uniform_fill"
+        ),
+        "max_unselected_hole": None if max_unselected_hole is None else int(max_unselected_hole),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "loss_terms": dict(policy.DEFAULT_POLICY_LOSS_TERMS),
@@ -354,6 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--strip-deploy-invisible-payload", action="store_true")
     parser.add_argument("--strict-deploy-source", action="store_true")
     parser.add_argument("--allow-bootstrap-for-tests", action="store_true")
+    parser.add_argument("--max-unselected-hole", type=int)
     args = parser.parse_args(argv)
 
     summary = run_policy_application(
@@ -367,6 +375,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         strip_deploy_invisible_payload=bool(args.strip_deploy_invisible_payload),
         strict_deploy_source=bool(args.strict_deploy_source),
         allow_bootstrap_for_tests=bool(args.allow_bootstrap_for_tests),
+        max_unselected_hole=args.max_unselected_hole,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0
