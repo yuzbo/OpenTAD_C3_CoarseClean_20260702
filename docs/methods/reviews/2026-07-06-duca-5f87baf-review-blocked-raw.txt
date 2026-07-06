@@ -1,0 +1,300 @@
+A. **总体判定：HOLD / 审查阻塞**
+
+我不能给出目标实现的 PASS/WARN/FAIL 技术判定，因为 **commit 不可见**：`5f87baf` 在 GitHub 返回 404；你指定的目标分支 `codex/gas-vt-stage23-detector-aware-20260706` 也不可见。仓库本身是 public，但当前可见分支列表里只有 `codex/c3-coarse-clean-20260702`、`codex/gas-vt-mainline-20260706`、`codex/detector-aware-selector-20260706`、`codex/truetime-joint-selector-20260706`，没有你要求审查的目标分支。
+
+**未逐行检查目标 GitHub 源码，结论不可信。**
+按你的规则：目标 commit 不可见，目标分支也不可见，因此我不能猜测，也不能用其他相邻分支冒充当前实现审查。请重新 push 目标 commit/branch，或提供固定 commit 的 zip/diff bundle。
+
+---
+
+B. **当前实现完整度百分比：不可判定；可验证完整度为 0%**
+
+| Stage                                  |          目标实现状态 | 当前可验证结论 |
+| -------------------------------------- | --------------: | ------- |
+| Stage1 GAS-VT / p_action strict ledger | 不可从目标 commit 判定 | HOLD    |
+| Stage2 detector utility / selector     | 不可从目标 commit 判定 | HOLD    |
+| Stage3 TrueTime / ST selector          | 不可从目标 commit 判定 | HOLD    |
+| Stage4 curriculum / evidence gate      | 不可从目标 commit 判定 | HOLD    |
+
+我只能确认：仓库公开可访问；目标 commit 和目标分支不可访问；仓库存在几个相关但不是你指定目标分支的分支。不能据此判断 Stage2/3/4 是否完整实现。([GitHub][1])
+
+---
+
+C. **P0 必修问题**
+
+| file:line | 问题                                            | 原因                                                                            | 修复建议                                                                                                     |
+| --------- | --------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| N/A       | **目标 commit 不可见**                             | `5f87baf` 返回 404，无法固定审查。                                                      | 重新 push 固定 commit，并提供完整 SHA URL。                                                                         |
+| N/A       | **目标分支不可见**                                   | `codex/gas-vt-stage23-detector-aware-20260706` 直接访问 404，且不在 all branches 列表中。 | 重新 push 分支，或确认是否应审查 `codex/detector-aware-selector-20260706` / `codex/truetime-joint-selector-20260706`。 |
+| N/A       | **不能做 paper claim / mAP claim / precheck 放行** | 没有目标源码、manifest、validator、config、tests 的固定版本证据。                               | 所有 claim gate 必须保持 fail-closed。                                                                          |
+| N/A       | **不能声称已经实现 Stage2/3/4**                       | 当前只验证到分支不可见，不是代码审查。                                                           | push 后重新逐文件审查。                                                                                           |
+
+---
+
+D. **P1 高价值改进**
+
+这些不是对目标代码的行号审查，而是你 push 后我会优先检查的硬标准：
+
+| 模块                                                            | 必须检查点                                                                                                                                   |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `detector_teacher_utility.py`                                 | teacher utility 是否只在 train split 生成；val/test 是否禁止 GT/teacher/proposal-cache；utility 是否绑定 teacher checkpoint SHA、dataset SHA、config SHA。 |
+| `detector_aware_acquisition_policy.py`                        | selector 输入是否只包含 deployable low-cost observable signals；是否禁止 dense teacher logits/proposals/GT feature 进入测试路径。                          |
+| `apply_detector_aware_acquisition_policy.py`                  | fixed_384/fixed_768 是否真 fixed；dynamic budget 是否有跨视频 calibrated gain threshold，而不是简单 per-video ranking。                                  |
+| `convert_detector_aware_samples_to_value_transport_ledger.py` | `selected_positions` 是否始终是 dense-time/local-dense-index 轴；是否保存 native time / physical time / feature stride metadata。                   |
+| `truetime_geometry.py`                                        | ActionFormer assignment 是否仍在物理时间轴上做 range、center sampling、decode、NMS，而不是 selected-index 轴。                                              |
+| `truetime_joint_selector.py`                                  | ST hard selector 是否真的接收 detector loss 梯度；是否只是 smoke wrapper；是否有 train/eval deterministic gate。                                          |
+| Stage4 validator                                              | 是否拒绝 placeholder evidence、空 manifest、伪 mAP、未绑定 SHA、未跑 full train 的 metric claim。                                                        |
+
+---
+
+E. **当前哪些 claim 可以说，哪些不能说**
+
+**可以说：**
+
+“目标 DUCA-TAD 分支目前对外不可见，无法完成固定 commit 审查。”
+
+“仓库存在与 detector-aware selector 和 TrueTime selector 相关的独立可见分支，但它们不是本轮指定目标分支。”([GitHub][2])
+
+**不能说：**
+
+“当前实现已经完整实现 Stage2/Stage3/Stage4。”
+
+“当前训练已经端到端。”
+
+“当前 selector 已经学到 detector utility。”
+
+“dynamic budget 已经 calibrated。”
+
+“Stage3 sparse detector distillation 已经完成。”
+
+“Stage4 curriculum/bilevel 已经可训练。”
+
+“任何 mAP / high-IoU / compute-saving paper claim 已经解锁。”
+
+---
+
+F. **完整实验路线表格**
+
+| 阶段                      | 实验                                           | 目的                                 | 必须记录                                        | 放行标准                           |
+| ----------------------- | -------------------------------------------- | ---------------------------------- | ------------------------------------------- | ------------------------------ |
+| Dense baseline          | 官方 AdaTAD / ActionFormer dense               | 真正上限与参考                            | config SHA、checkpoint SHA、mAP@0.3–0.7、FLOPs | 可复现接近历史 baseline               |
+| Uniform / random        | fixed 384 / 768 uniform、random-fixed         | 证明不是采样协议混杂                         | selected axis、budget、seed                   | 多 seed 稳定                      |
+| Stage1                  | GAS-VT / p_action strict ledger              | 低成本 actionness baseline            | ledger SHA、probe SHA、split guard            | 不读 GT/teacher/cache            |
+| Stage2 oracle           | teacher utility top-k oracle                 | 验证 utility 本身是否有定位价值               | top-k utility、oracle gap                    | 高于 uniform 才继续                 |
+| Stage2 selector         | observable DUCA selector fixed_384/fixed_768 | 证明低成本信号可模仿 utility                 | utility target、selector input manifest      | 高 IoU 不崩                       |
+| Stage2 signed ablation  | signed vs positive-only                      | 检查 background suppression 价值       | signed utility histogram                    | signed 有可解释收益                  |
+| Stage2 feature ablation | observable vs teacher-feature                | 检查是否 teacher leakage               | input feature source                        | teacher-feature 只作 oracle      |
+| Stage2 dynamic          | rank-only vs calibrated dynamic              | 检查 dynamic 是否真跨视频校准                | budget distribution、gain threshold          | 非 per-video 伪动态                |
+| Stage3 distill          | sparse detector distillation                 | 让 sparse detector 对齐 dense teacher | proposal logits、quality、boundary、reg        | 不破坏 official mAP eval          |
+| Stage3 ST               | runtime hard selector + TrueTime             | 证明非 ledger runtime 可训练             | ST temp、entropy、latency、metadata            | detector loss 回传 selector      |
+| Stage4                  | curriculum / bilevel                         | 稳定整体训练                             | freeze map、loss map、fail gates              | 分阶段提升或不崩                       |
+| Compute                 | backbone/frame/FLOPs accounting              | 支撑 sparse acquisition claim        | selected frames、detector forward count      | detector forward count=1 或明确说明 |
+
+---
+
+G. **最终论文故事与创新点**
+
+DUCA-TAD 的合理论文问题是：
+
+**Temporal Action Detection 的 sparse acquisition 不应只学 actionness，而应学习 detector-specific value of observation：哪些时间片段会真正提升 detector 的边界定位、proposal ranking 和 high-IoU mAP。**
+
+它和普通 `p_action` / actionness 选帧的区别应是：
+
+`p_action` 只回答“这里像不像动作”；DUCA 应回答“看这个片段是否会改善 detector 的 proposal、边界、排序或背景抑制”。这才是 detector-utility calibrated acquisition 的核心。
+
+它和普通 adaptive inference / frame selection / token pruning 的区别应是：
+
+普通方法多优化分类准确率、token efficiency 或视觉冗余；DUCA 应显式绑定 TAD detector 的 proposal-level utility、TrueTime geometry、high-IoU localization 和 sparse ledger/runtime hard selector。
+
+**CVPR 潜力取决于一个硬条件：teacher utility oracle 必须显著优于 uniform/random，并且 observable selector 能保留相当比例的 utility。**
+如果 mAP 不提升，论文故事必须收缩为：一个严谨的 negative study / diagnostic framework，证明 actionness-based acquisition 不足，并提出 detector-utility evidence protocol，而不是声称 SOTA sparse TAD。
+
+---
+
+H. **关键代码设计草案**
+
+**1. detector utility export API**
+
+```python
+@dataclass
+class DetectorUtilityExportConfig:
+    teacher_config: str
+    teacher_checkpoint: str
+    dataset_split: str
+    output_path: str
+    forbid_eval_split_gt: bool = True
+    utility_mode: str = "counterfactual_interval"  # frame, interval, proposal
+    perturbation: str = "mask_or_drop"
+    budget_unit: str = "dense_frame"
+    save_teacher_predictions: bool = False
+```
+
+**2. teacher manifest schema**
+
+```json
+{
+  "schema_version": "duca_teacher_utility_v1",
+  "repo_sha": "...",
+  "teacher_config_sha256": "...",
+  "teacher_checkpoint_sha256": "...",
+  "dataset_annotation_sha256": "...",
+  "split": "train",
+  "utility_mode": "proposal_interval_counterfactual",
+  "uses_gt": false,
+  "uses_val_or_test_gt": false,
+  "uses_prediction_cache": false,
+  "created_at": "..."
+}
+```
+
+**3. signed / counterfactual utility schema**
+
+```python
+@dataclass
+class UtilityRecord:
+    video_id: str
+    window_id: str
+    dense_index: int
+    time_sec: float
+    signed_frame_utility: float
+    positive_gain: float
+    negative_suppression_gain: float
+    proposal_rank_delta: float
+    boundary_quality_delta: float
+    counterfactual_drop_delta: float
+    valid_for_selector_train: bool
+```
+
+**4. dynamic gain calibration loss**
+
+```python
+def dynamic_gain_calibration_loss(pred_gain, teacher_gain, video_ids):
+    # ranking within video
+    rank_loss = pairwise_rank_loss(pred_gain, teacher_gain, group=video_ids)
+
+    # calibration across videos
+    gain_loss = torch.nn.functional.smooth_l1_loss(
+        pred_gain, teacher_gain.clamp(min=-1.0, max=1.0)
+    )
+
+    # budget regularization
+    entropy_loss = -selection_entropy(pred_gain)
+    collapse_penalty = budget_collapse_penalty(pred_gain)
+
+    return rank_loss + 0.5 * gain_loss + 0.05 * collapse_penalty - 0.01 * entropy_loss
+```
+
+**5. sparse detector distillation adapter**
+
+```python
+class SparseDetectorDistillLoss(nn.Module):
+    def forward(self, sparse_outputs, dense_teacher_outputs, truetime_meta):
+        loss_cls = kl_logits(
+            sparse_outputs["proposal_logits"],
+            dense_teacher_outputs["proposal_logits"],
+            mask=truetime_meta["visible_or_transport_mask"],
+        )
+        loss_reg = boundary_distribution_loss(
+            sparse_outputs["boundary_dist"],
+            dense_teacher_outputs["boundary_dist"],
+            truetime_meta,
+        )
+        loss_quality = smooth_l1(
+            sparse_outputs["proposal_quality"],
+            dense_teacher_outputs["proposal_quality"],
+        )
+        loss_rank = proposal_rank_distill_loss(
+            sparse_outputs["ranking_scores"],
+            dense_teacher_outputs["ranking_scores"],
+        )
+        return loss_cls + loss_reg + loss_quality + loss_rank
+```
+
+**6. ST selector + TrueTime interface**
+
+```python
+@dataclass
+class TrueTimeSelectionMeta:
+    selected_dense_indices: torch.Tensor
+    selected_time_sec: torch.Tensor
+    source_dense_stride: float
+    cell_start_sec: torch.Tensor
+    cell_end_sec: torch.Tensor
+    visibility_mask: torch.Tensor
+    transport_weight: torch.Tensor
+    selection_logprob: torch.Tensor
+    st_temperature: float
+```
+
+**7. result-to-claim gate**
+
+```python
+def validate_metric_claim(packet):
+    required = [
+        "repo_sha",
+        "config_sha256",
+        "checkpoint_sha256",
+        "dataset_sha256",
+        "ledger_sha256",
+        "eval_command",
+        "mAP_by_tIoU",
+        "compute_accounting",
+    ]
+    for k in required:
+        if not packet.get(k):
+            raise ValueError(f"metric claim missing {k}")
+
+    if packet.get("precheck_only"):
+        raise ValueError("PRECHECK_ONLY result cannot unlock mAP claim")
+
+    if packet.get("uses_placeholder_evidence"):
+        raise ValueError("placeholder evidence cannot unlock claim")
+
+    if packet.get("split") not in {"val", "test"}:
+        raise ValueError("invalid eval split")
+```
+
+---
+
+I. **下一步 7 天 / 4 周 / 8 周计划**
+
+**7 天：**
+
+重新 push 固定 commit；补齐 manifest；先跑 source-level validators；只允许 `PRECHECK_ONLY` 和 synthetic smoke。重点证明：无 val/test GT leakage、无 teacher leakage、selected axis 正确、claim gate fail-closed。
+
+**4 周：**
+
+完成 Stage2 teacher utility oracle、observable selector fixed_384/fixed_768、signed vs positive-only、rank-only vs calibrated dynamic。只有 teacher-utility top-k 明显强于 uniform，DUCA 才值得继续。
+
+**8 周：**
+
+实现 Stage3 sparse detector distillation 与 Stage3 ST TrueTime runtime selector。Stage4 curriculum 只在 Stage2/3 都有正证据后进入，否则不要做 bilevel 复杂化。
+
+---
+
+J. **是否允许进入 PRECHECK_ONLY / short smoke / full training / paper claim**
+
+| 阶段            | 当前结论                                                                        |
+| ------------- | --------------------------------------------------------------------------- |
+| PRECHECK_ONLY | **不允许基于目标 commit 放行**；目标 commit/branch 不可见。                                 |
+| short smoke   | **不允许基于目标 commit 放行**。                                                      |
+| full training | **禁止**。                                                                     |
+| paper claim   | **禁止**。                                                                     |
+| 重新审查条件        | 重新 push `5f87baf` 完整 SHA，或提供新的固定 commit URL；目标分支必须在 GitHub branches/all 可见。 |
+
+机器可读尾部：
+
+```text
+DUCA_TAD_REVIEW_GATE=HOLD_TARGET_COMMIT_AND_BRANCH_NOT_VISIBLE
+TARGET_COMMIT_VISIBLE=NO
+TARGET_BRANCH_VISIBLE=NO
+LINE_BY_LINE_REVIEW_DONE=NO
+PRECHECK_ONLY_ALLOWED=NO
+SHORT_SMOKE_ALLOWED=NO
+FULL_TRAINING_ALLOWED=NO
+PAPER_CLAIM_ALLOWED=NO
+REQUEST=RE_PUSH_FIXED_COMMIT_OR_PROVIDE_DIFF_BUNDLE
+```
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702: Clean C3 coarse p_action ledger route for OpenTAD/AdaTAD · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/branches/all "Branches · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

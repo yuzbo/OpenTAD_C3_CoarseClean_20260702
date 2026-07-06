@@ -1,0 +1,872 @@
+结论先给：**当前 commit 53124a2 的 GAS-VT Stage0/1 工程链路基本是闭合的，但它只能被称为 “offline GAS-VT sparse ledger → AdaTAD full training/eval pipeline”。它不能被称为 end-to-end，也不能被称为 detector-aware acquisition。** 当前代码已经有较强的 deploy ledger / no-leak / no-uniform-fill 验证链，但论文级 claim 还缺最终 mAP、完整对照、teacher utility、ST joint training 和高 IoU 稳定性证据。指定分支和 commit 可访问，仓库 README 也把当前目标限定为 p_action → strict ledger → OpenTAD/AdaTAD 验证，而非最终论文完整形态。([GitHub][1])
+
+---
+
+## A. 当前实现完整性审查
+
+### A1. GAS-VT Stage0/1 是否完整实现？
+
+**工程上基本完整，论文证据上未完整。**
+
+已经实现的部分包括：GAS-VT policy feature 构造、budget head、hard/ST mask、policy checkpoint 训练、checkpoint policy application、fixed_384 / fixed_768 / dynamic 三类 ledger 生成、deploy source stripping、ledger conversion、strict validator、AdaTAD full-train config/launcher。policy 文件里确实加入了 gap-aware feature，例如 local density、local change、distance to last selection、remaining budget/time、budget pressure、gap urgency，并通过 `add_gas_vt_decision_to_sample_row` 生成 fixed 和 dynamic selections。([GitHub][2])
+
+但它还不是“完整论文主方法”，因为目前 Stage1 的核心证据必须等 AdaTAD full-run mAP/tIoU、uniform/random/p_action-only/Δp_action/dense/boundary-oracle 等对照全部跑完后才能成立。当前 commit 可以说：**Stage0/1 pipeline implemented and guarded**；不能说：**GAS-VT 已证明提升 TAD mAP**。
+
+### A2. 是否只是 offline ledger + detector training，而不是端到端？
+
+**是，明确只是 offline ledger + detector training。**
+
+证据很直接：policy application 脚本先离线加载 GAS-VT checkpoint，把每个 sample 的 p_action 转成 fixed/dynamic selected positions，再写成 ledger；AdaTAD config 通过 `LoadFrames` 的 `bata_value_transport_ledger_subsample` 读取 ledger，而不是在 model forward 内部运行 selector。full-train validator 还显式要求模型中不要出现 `frame_selector` 或 `pc_ot_mras_reader`，这等于从配置层证明当前路线不是端到端。([GitHub][3])
+
+因此当前 commit **不允许 claim “end-to-end temporal acquisition”**。最多可以写成：
+
+> We train a deployable low-cost GAS-VT acquisition policy offline, generate strict sparse acquisition ledgers, and evaluate their downstream effect by training AdaTAD on the selected frame stream.
+
+### A3. 是否存在伪端到端、GT 泄漏、teacher/cache/test-set leakage、uniform fill/scaffold、固定规则补帧、动态预算伪动态？
+
+我的判断分开看：
+
+**伪端到端：存在 claim 风险，不存在代码伪装。**
+代码没有把 offline ledger 假装成 detector 内部模块；相反 validator 明确禁用在线 selector。但如果论文或实验描述中写成 detector loss 回传 selector，那就是 claim 错误。([GitHub][4])
+
+**GT 泄漏：deploy ledger guard 较强；training supervision 使用 GT，需要诚实表述。**
+GAS-VT training 的 `_prepared_rows` 从训练 JSONL 中提取 `action_target`、`boundaries`，并复用旧 p_action policy 的 GT-derived budget target。这对于 train split 监督 selector 可以接受，但不能说 selector “只靠 p_action 自监督学会”。也不能说它 detector-aware。([GitHub][5])
+
+**teacher/cache/test-set leakage：当前 deploy source/ledger validator 设计比较强，但有两个弱点。**
+`paction_source_samples.py` 会 strip 掉 oracle/prediction/cache/raw-score 等 deploy-invisible payload，并要求 false flags；validator 也检查 GT/teacher/oracle/cache/raw prediction flags、duplicate sample_id、checkpoint sha、p_action provenance。([GitHub][6])
+弱点是 `run_gap_aware_ledger_pipeline.py` 默认允许 inferred p_action provenance，这对论文级实验不够严格；另外 launcher 对训练源允许 missing split 和 GT diagnostics，这在 train split 内可以，但必须保证 val/test/deploy fail-closed。([GitHub][6])
+
+**uniform fill/scaffold：deploy ledger 中没有看到 uniform fill；但存在 hand-coded gap repair。**
+ledger conversion 在 deploy mode 下 disallow `fill_to_target_count`，GAS-VT metadata 也写入 `uses_uniform_fill=False` 和 `uses_uniform_scaffold=False`。([GitHub][7])
+但旧的 `constrained_topk` 会在 max-hole 违反时用确定性规则往空洞里补点，再移除低分点。这不是 uniform fill，但它是固定规则 gap repair。论文中不能把最终选择完全描述成纯 learned policy，除非做 no-repair ablation 并把 repair 显式写入方法。([GitHub][8])
+
+**动态预算：有动态形式，但目前仍偏弱。**
+forward 中有 budget head，dynamic route 会 decode budget；validator 也检查 nonconstant selected_count。但训练 target 来自 GT action positives / boundary / coverage 的 hand-designed target，而不是 detector utility 或 detector loss。因此目前只能称为 **GT-supervised dynamic budget policy**，不能称为 detector-aware dynamic computation。([GitHub][2])
+
+### A4. `max_gap / p95_gap / max_uniform_similarity` gate 是否合理？是否过度手工规则化？
+
+**作为安全 sanity gate 合理；作为方法核心或 paper claim 不够优雅。**
+
+`max_gap` / `p95_gap` / `max_unselected_hole` 可以防止 selector collapse 成“只看动作 interior、不看边界与上下文”。`max_uniform_similarity` 可以防止 learned policy 退化成 uniform。launcher 当前默认设置了 `GAS_VT_MAX_UNIFORM_SIMILARITY=0.60`，并对 ledger split/variant 逐个验证。([GitHub][9])
+
+问题是：这些 gate 如果太强，会把研究变成“手工规则化的稀疏采样”，而不是模型学到 TAD-relevant acquisition。特别是 `max_uniform_similarity` 是 proxy：近似 uniform 不一定坏，远离 uniform 也不代表对边界有用。建议把这些 gate 定位为 **failure-prevention constraints**，并做 ablation：无 gap repair、无 uniform-sim gate、仅 budget gate、仅 no-leak gate。
+
+### A5. hard/ST 选帧是否参与 core loss？
+
+**参与了 GAS-VT policy 的 training objective，但没有参与 AdaTAD detector core loss。**
+
+`gas_vt_training_objective` 优先使用 `st_selected_mask`，否则使用 hard mask 或 sigmoid fallback；model forward 也返回 `hard_selected_mask` 和 `st_selected_mask`。([GitHub][2])
+但这个 ST 只影响 selector/policy pretraining loss。AdaTAD full-train 阶段读取的是已经生成好的 ledger，detector loss 不会回传给 selector。因此当前 commit **不允许 claim detector loss trains selector**。
+
+### A6. fixed_384 / fixed_768 / dynamic 三类 ledger 是否足以证明 sparse selector 对 TAD detector 有用？
+
+**不够。它们是必要实验，不是充分证据。**
+
+它们最多证明同一 selector 在不同预算下的 downstream detector 表现。要证明 “sparse selector 对 TAD 有用”，至少还要有：
+
+1. dense AdaTAD same config；
+2. exact-uniform 384 / 768；
+3. random 384 / 768，多 seed；
+4. p_action-only top-k；
+5. Δp_action / boundary-risk-only；
+6. GAS-VT no-gap-repair；
+7. dynamic budget vs fixed budget matched average K；
+8. boundary oracle upper bound；
+9. high IoU mAP@0.6 / 0.7；
+10. FPS/FLOPs/memory/latency。
+
+当前 config 已经设置 tIoU `[0.3,0.4,0.5,0.6,0.7]`，这是对的。([GitHub][10])
+
+### A7. AdaTAD 接入是否可能因路径、sample id、ledger duplicate、split provenance、config env 等失败？
+
+**整体接入是 fail-fast 设计，但仍有 P1 风险。**
+
+好的部分：config 要求 `bata_value_transport_allow_missing_fallback=False`、`require_deployable=True`、指定 source/config hash、selected count 检查，validator 检查 duplicate sample_id、checkpoint sha、policy source、p_action provenance、uniform fill count 等。([GitHub][10])
+
+主要风险：
+
+1. 用户点名的 `tools/bata/validate_c3_gas_vt_adatad_full_train.py` 在该 commit 下不存在；launcher 实际使用的是 generic `validate_c3_paction_learned_adatad_full_train.py`。这不会必然导致运行失败，但会导致审查、复现和文档错配。
+2. dynamic ledger 如果 selected_count variable，而 AdaTAD loader/backbone/collate 仍隐含固定 shape，需要单独 loader smoke test。config 虽然 `target_len=768` 且 `allow_short_valid_ratio_count=True`，但这不等价于证明任意 dynamic K 都能稳定训练。([GitHub][10])
+3. split provenance 依赖 source path inference 和 validator flags，需要 paper-ready manifest 明确 train/val/test source SHA、ledger SHA、checkpoint SHA、annotation SHA。
+
+---
+
+## B. 逐行代码问题分级
+
+下面行号按 commit 53124a2 的 GitHub 源码/函数定位；部分 GitHub raw 内容在工具中压缩展示，我同时给出函数名定位。
+
+| 等级     |                                                                                                                                                   文件/行号 | 问题                                                                                                                                                                                         | 修复建议                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P0** | `tools/bata/apply_gap_aware_acquisition_policy.py:865-1038`; `configs/adatad/thumos/c3_gas_vt_ledger_adatad_full_train.py:1192-1225`; generic validator | 当前路线是 checkpoint policy offline application → ledger → AdaTAD `LoadFrames`，不是 end-to-end。validator 还禁止 `frame_selector` / `pc_ot_mras_reader`。若论文 claim end-to-end，结论无效。([GitHub][3])      | 所有 metadata / README / paper draft 改成 “offline acquisition ledger”。若要 end-to-end，必须把 selector 放入 model forward，并让 detector loss 回传。        |
+| **P0** |                                `tools/bata/train_gap_aware_acquisition_policy.py:1244-1290`; `tools/bata/train_paction_acquisition_policy.py:1521-1558` | GAS-VT training 使用 `action_target`、`boundaries` 和 GT-derived dynamic budget target。它是 train-GT supervised selector，不是纯 p_action，也不是 detector-aware。([GitHub][5])                           | checkpoint metadata 写入 `uses_train_gt_supervision=True`，论文中明确 “GT-supervised selector pretraining”。后续用 dense AdaTAD teacher utility 替代或补充。 |
+| **P0** |                                                                    `opentad/models/necks/pc_ot_mras_detector_bridge.py:2631-2640, 3274-3410, 3657-3664` | PC-OT/MRAS bridge 是 continuous token transport，`uses_hard_gather=False`，不能作为 hard sparse pre-backbone / ST detector-aware evidence。([GitHub][11])                                          | 单独实现 ST hard gather selector；bridge 路线只作为 soft token transport ablation。                                                                   |
+| **P1** |                                                                                        `tools/bata/validate_paction_learned_policy_ledger.py:1708-1725` | `_gap_values` off-by-one。当前用 `item - previous` 和 `valid_len - previous`，如果 positions=[0]，valid_len=10，tail gap 会算 10，而真实未选 tail 是 9。gate 会被系统性放大，且与 `_unselected_holes` 不一致。([GitHub][12]) | 改成 `item - previous - 1` 和 `valid_len - previous - 1`；同步更新测试。代码如下。                                                                         |
+| **P1** |                                                                                                         `tools/bata/gas_vt_paction_policy.py:1551-1608` | `cvar_max_hole_loss` 是 avg-pool window surrogate，不是真实 max unselected hole，也和 validator 的 hole 定义不一致。([GitHub][2])                                                                          | 重命名为 `window_empty_mass_cvar_loss`，或实现与 validator 近似一致的 differentiable run-length penalty；报告二者差异。                                          |
+| **P1** |                                                        `tools/bata/gas_vt_paction_policy.py:1138-1201`; `apply_gap_aware_acquisition_policy.py:865-893` | feature matrix 支持 `selected_so_far`，但 deploy checkpoint scoring 传 `selected_so_far=None`，所以 distance/remaining 等特征不是逐步更新的 sequential acquisition。([GitHub][2])                             | 要么改名为 static gap-aware scoring；要么实现 autoregressive decode，每选一批后重算 features。                                                                |
+| **P1** |                                                                                                    `tools/bata/paction_acquisition_policy.py:1669-1819` | `constrained_topk` 违反 max-hole 时用固定规则补洞/替换。不是 uniform fill，但属于 hand-coded gap repair。([GitHub][8])                                                                                         | 增加 metadata `uses_hard_gap_repair=True`；做 no-repair ablation；论文中把它写成 safety constraint，不写成纯 learned selection。                             |
+| **P1** |                                                         `tools/bata/run_gap_aware_ledger_pipeline.py`; `tools/bata/paction_source_samples.py:1389-1447` | 默认允许 inferred p_action provenance。paper-ready 实验不应默认推断 provenance，否则 source 真实性较弱。([GitHub][6])                                                                                            | deploy/paper pipeline 默认 `allow_inferred_paction_positive_provenance=False`；source JSONL 必须显式提供 source name、sha、split、no-leak flags。       |
+| **P1** |                                                                                                    `tools/bata/validate_c3_gas_vt_adatad_full_train.py` | 用户要求审查的 GAS-specific validator 文件不存在；launcher 使用 generic validator。                                                                                                                        | 新建 wrapper：`from tools.bata.validate_c3_paction_learned_adatad_full_train import main`，并在 tests/launcher 中统一名称。                            |
+| **P1** |                                                                                 `configs/adatad/thumos/c3_gas_vt_ledger_adatad_full_train.py:1192-1225` | dynamic route `require_selected_count=None`，但 `target_len=768`。如果 loader/collate/backbone 实际要求固定 shape，可能在 full train 才暴露。([GitHub][10])                                                   | 增加 loader smoke：同 batch 两个不同 selected_count，检查 tensor shape、mask、gt remap、valid_len、no fallback。                                           |
+| **P2** |                                                                                        `scripts/run_c3_gas_vt_policy_adatad_full_train_gpu1.sh:944-999` | GAS launcher 仍默认 generic p_action validator 名称，工程语义混乱。([GitHub][9])                                                                                                                        | 改为 GAS-specific wrapper；generic validator 保留为 backend。                                                                                     |
+| **P2** |                                                                                            `tools/bata/train_gap_aware_acquisition_policy.py:1448-1596` | policy 训练主流程偏单 split training，没有明显 selector validation / early stopping。([GitHub][5])                                                                                                      | 从 training split 切 internal train/holdout，报告 selector utility/coverage/generalization，不用 val/test 调 selector。                              |
+| **P2** |                                                                                                               `tests/test_gap_aware_ledger_pipeline.py` | pipeline test 使用 monkeypatch/fake checkpoint，能测 contract，不能测真实 checkpoint/model compatibility。([GitHub][13])                                                                               | 增加 tiny real checkpoint smoke：train 2 samples → save → apply → convert → validate → LoadFrames one batch。                                  |
+| **P2** |                                                                                                                                            dynamic gate | `require-nonconstant-selected-count` 只能证明不是常数，不能证明动态预算有用。validator 虽报告 entropy/IQR，但还不等于 downstream utility。([GitHub][12])                                                                 | 加 matched-average-K fixed baseline；报告 budget 与 teacher utility、动作长度、边界密度、mAP gain 的相关性。                                                    |
+| **P3** |                                                                                                                           `gas_vt_paction_policy.py` 命名 | “gap-aware sequential” 容易让人误以为部署时逐步重算。                                                                                                                                                     | 区分 `static_gap_features` 与 `autoregressive_gap_features`。                                                                                  |
+| **P3** |                                                                                                                                      checkpoint summary | summary 有 no-uniform flags，但缺少更醒目的 `uses_train_gt_supervision`。([GitHub][5])                                                                                                               | 在 checkpoint/config/ledger summary 中增加 train supervision 字段。                                                                               |
+| **P3** |                                                                                                                                       docs/config claim | config 中已有 `paper_claim_allowed=False` 一类思路，但 launcher 已可启动 full train，容易混淆“可运行”和“可 claim”。                                                                                                | 明确两级 gate：`run_allowed` 与 `claim_allowed_after_results`。                                                                                   |
+
+`_gap_values` 修复方向：
+
+```python
+def _gap_values(positions: Sequence[int], valid_len: int) -> list[int]:
+    """Return counts of unselected frames before/between/after selected positions."""
+    if valid_len <= 0:
+        return []
+
+    sorted_pos = sorted({int(p) for p in positions if 0 <= int(p) < valid_len})
+    gaps: list[int] = []
+    prev = -1
+
+    for pos in sorted_pos:
+        gaps.append(max(0, pos - prev - 1))
+        prev = pos
+
+    gaps.append(max(0, valid_len - prev - 1))
+    return gaps
+```
+
+---
+
+## C. 后续研究路线判断
+
+### C1. 当前路线能否作为论文主方法？
+
+**不能直接作为 A 会主方法。可以作为 Stage1 baseline / system component / feasibility evidence。**
+
+原因是主创新还停留在 “p_action + GT-supervised policy + offline ledger + strict validation”。这有工程价值，但 A 会 reviewer 会问：
+
+1. 为什么不是 uniform / random / p_action top-k？
+2. 为什么 selector 学到的是 TAD detector 需要的帧，而不是动作 interior？
+3. detector 的 localization error 有没有指导 selector？
+4. 高 IoU 0.6/0.7 是否真的受益？
+5. dynamic budget 是否真的动态，还是 GT-derived hand target？
+6. sparse acquisition 的 compute/latency 是否真实下降？
+
+Stage2/3/4 才更接近论文主方法。
+
+### C2. “pre-backbone temporal acquisition for TAD” 真正解决的问题是什么？
+
+建议把问题定义为：
+
+> 在 TAD 中，pre-backbone 预算受限采样不能只最大化 actionness；它必须在动作 interior、动作边界、短动作、长空洞、上下文与高 IoU localization risk 之间分配观测预算。目标是在不完整观测下，为 detector 保留足够的边界与责任点证据，从而在低计算预算下保持或提升 high-tIoU mAP。
+
+这比“稀疏抽帧省算力”更强，因为 TAD 的关键不是分类准确，而是边界定位。
+
+### C3. 相对已有 TAD / sparse sampling / token pruning / adaptive computation 的创新点在哪里？
+
+可以形成三层创新：
+
+1. **Detector-facing acquisition objective**：不是 video classification actionness，而是 dense TAD teacher 的 point responsibility、cls/reg loss、proposal saliency、counterfactual utility。
+2. **Boundary-aware sparse observation contract**：显式约束 boundary bracket、short-action coverage、CVaR max-hole、anti-collapse，而不是纯 top-k actionness。
+3. **Train-test consistent sparse ledger / online selector bridge**：Stage1 用 strict ledger 做可信归因，Stage3 再转成 ST hard selector joint training，避免一开始端到端 collapse。
+
+当前 GAS-VT 只覆盖了第 2 点的一部分，尚未覆盖第 1 和第 3。
+
+### C4. 仅靠 p_action / Δp_action 是否太弱？
+
+**是。p_action/Δp_action 是 scout signal，不应是最终 supervision。**
+
+p_action 能告诉模型哪里像动作，但 TAD detector 需要的是：哪些时间点负责哪个 GT、哪些点 reg loss 大、哪些 proposal 对最终 NMS/高 IoU 贡献大、删掉哪些帧会让检测崩。这些信息不在 p_action 中。当前 GAS-VT 通过 boundary/coverage/gap loss 补了一部分，但没有 detector utility，因此仍容易选 interior、漏 boundary、短动作不稳。
+
+### C5. detector-aware utility 会不会导致性能下降？如何避免 collapse？
+
+会。风险很大，尤其是 high-IoU mAP。典型 collapse：
+
+1. 只选高 action interior，边界漏采样；
+2. 只追 teacher loss 大的 hard points，采样分布噪声化；
+3. ST top-k 梯度高方差，detector 和 selector 相互破坏；
+4. sparse detector 早期弱，反向信号不可信；
+5. dynamic budget 退化成固定 K 或极端 K。
+
+避免方式：
+
+1. dense teacher → utility pretrain，不直接从随机 sparse detector 开始；
+2. fixed-K warmup，再 dynamic budget；
+3. boundary bracket / short action / CVaR max-hole 保底；
+4. freeze detector backbone/head 初期，只训 selector adapter；
+5. teacher utility + p_action prior + detector loss 混合；
+6. high IoU validation early-stop；
+7. matched-K uniform baseline 每阶段跟跑；
+8. counterfactual utility 只在 train split 生成，val/test 不参与训练。
+
+---
+
+## D. 完整实验计划
+
+### Stage 1：GAS-VT ledger → AdaTAD mAP
+
+目标：证明 offline GAS-VT ledger 是否对 AdaTAD detector 有 downstream 价值。
+
+必须跑：
+
+| 组别                        |               预算 | 目的               |
+| ------------------------- | ---------------: | ---------------- |
+| Dense AdaTAD              |             full | 真实上限/参考          |
+| Uniform                   |        384 / 768 | 最强基础对照           |
+| Random                    | 384 / 768，多 seed | 随机稀疏对照           |
+| p_action top-k            |        384 / 768 | actionness-only  |
+| Δp_action / boundary-risk |        384 / 768 | boundary-only    |
+| GAS-VT no gap repair      |        384 / 768 | learned score 本体 |
+| GAS-VT with gap repair    |        384 / 768 | 当前主结果            |
+| GAS-VT dynamic            |    matched avg K | 动态预算价值           |
+| Boundary oracle           |        matched K | 上界               |
+
+报告：
+
+* mAP@0.3:0.7；
+* Avg-mAP；
+* mAP@0.6 / 0.7 单列；
+* selected_count 分布；
+* boundary_support_r1；
+* action_positive_coverage；
+* max/p95 unselected hole；
+* uniform similarity；
+* FPS/FLOPs/memory；
+* 每个结果至少 3 seed 或明确 deterministic seed。
+
+结论 gate：
+
+* fixed_384 必须超过 uniform_384 或至少在 high IoU 接近且节省更多 compute；
+* dynamic 必须超过 matched-average fixed；
+* no-repair 不能崩到说明全部收益来自手工 gap repair；
+* high-IoU 不能只靠 mAP@0.3/0.4 拉高。
+
+### Stage 2：Dense AdaTAD teacher utility
+
+从 dense AdaTAD teacher 导出：
+
+1. point responsibility：每个 FPN level/time point 是否负责 GT；
+2. cls loss map：哪些点分类错误大；
+3. reg loss map：哪些点边界回归困难；
+4. proposal saliency：哪些点/区域产生最终高分 proposal；
+5. counterfactual frame utility：mask/drop 一段帧后 proposal/mAP surrogate 下降；
+6. boundary utility：start/end 附近 responsibility + reg sensitivity；
+7. uncertainty：teacher ensemble 或 MC dropout 可选。
+
+防泄漏规则：
+
+* teacher 可以在 train split 训练；
+* selector training target 只使用 train split teacher utility；
+* val/test utility 只能做 diagnostics，不能做 selector training、threshold tuning；
+* utility JSONL 写入 teacher checkpoint SHA、training split manifest SHA、annotation SHA；
+* 若 dense teacher 用 val early stopping，需要在论文中说明，不能再用 val utility 训练 selector。
+
+### Stage 3：Detector-aware selector pretrain
+
+输入：
+
+* p_action；
+* Δp_action；
+* local density/change；
+* low-cost visual scout features；
+* optional teacher utility target only during training；
+* gap/budget state。
+
+Loss：
+
+* utility ranking loss；
+* top-k distillation loss；
+* boundary bracket loss；
+* action interior coverage loss；
+* CVaR max-hole loss；
+* budget loss；
+* anti-uniform loss；
+* anti-collapse entropy；
+* p_action prior consistency；
+* teacher utility calibration loss。
+
+关键是不要抛弃 GAS-VT，而是把 GAS-VT 作为 prior：
+
+[
+s_t = f_\theta(p_t, \Delta p_t, gap_t, budget_t, scout_t)
+]
+
+训练 target 从 `GT boundary + teacher utility + p_action prior` 混合：
+
+[
+L = L_{utility-rank} + \lambda_b L_{bracket} + \lambda_h L_{hole} + \lambda_i L_{interior} + \lambda_k L_{budget} + \lambda_p L_{paction-prior}
+]
+
+### Stage 4：ST hard selector + AdaTAD joint training
+
+推荐 curriculum：
+
+1. **Phase 4.0**：加载 dense AdaTAD teacher，冻结 detector，只训 selector，使 selected frames 能复现 teacher utility。
+2. **Phase 4.1**：冻结 backbone，训 sparse detector head + selector adapter。
+3. **Phase 4.2**：partial unfreeze neck/head，低 LR joint fine-tune。
+4. **Phase 4.3**：开启 dynamic budget。
+5. **Phase 4.4**：bilevel：selector step 用 utility/coverage，detector step 用 TAD loss。
+
+ST 选择：
+
+* forward 用 hard top-k；
+* backward 用 soft probability surrogate；
+* detector 输入真实 sparse gathered frames；
+* time coordinate 保留原始时间，不能简单 remap 后丢失 irregular geometry；
+* detector loss 回传 selector 时，必须记录 `detector_loss_reaches_selector=True`。
+
+### Stage 5：Ablation and claim validation
+
+必须做：
+
+1. selector input ablation：p_action、Δp_action、gap、scout feature、teacher utility；
+2. loss ablation：ranking、boundary bracket、interior、hole、budget、entropy；
+3. budget ablation：384、512、768、dynamic matched K；
+4. boundary vs interior ablation；
+5. dynamic budget ablation；
+6. no gap repair vs repair；
+7. no uniform-sim gate vs gate；
+8. online/latency simulation；
+9. short/long action subgroup；
+10. failure visualization：missed boundary、interior-only、short action、dense action cluster、long background.
+
+---
+
+## E. 关键代码建议草案
+
+### E1. Dense AdaTAD teacher utility export
+
+```python
+# tools/bata/export_dense_adatad_teacher_utility.py
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+
+def sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+@torch.no_grad()
+def export_one_batch(model, batch, cfg):
+    """
+    Required model-side contract:
+      - dense forward returns per-level point logits/regression
+      - loss function can return per-point cls/reg losses
+      - assigner can return point->GT responsibility
+    """
+    outputs = model.forward_dense_for_utility(batch["inputs"])
+
+    # These names are intentionally explicit; map them to OpenTAD internals.
+    assign = model.dense_head.assign_points(
+        points=outputs["points"],
+        gt_segments=batch["gt_segments"],
+        gt_labels=batch["gt_labels"],
+    )
+
+    losses = model.dense_head.loss_by_point(
+        cls_logits=outputs["cls_logits"],
+        reg_preds=outputs["reg_preds"],
+        assign_result=assign,
+        reduction="none",
+    )
+
+    proposals = model.dense_head.decode(
+        cls_logits=outputs["cls_logits"],
+        reg_preds=outputs["reg_preds"],
+        points=outputs["points"],
+        valid_mask=batch["valid_mask"],
+    )
+
+    proposal_saliency = model.dense_head.proposal_saliency_by_point(
+        proposals=proposals,
+        assign_result=assign,
+        score_mode="top_proposal_contribution",
+    )
+
+    utility = (
+        cfg.cls_w * losses["cls_loss_point"].detach()
+        + cfg.reg_w * losses["reg_loss_point"].detach()
+        + cfg.resp_w * assign["responsibility"].float()
+        + cfg.sal_w * proposal_saliency.detach()
+    )
+
+    return {
+        "utility": utility.cpu(),
+        "point_responsibility": assign["responsibility"].cpu(),
+        "cls_loss": losses["cls_loss_point"].cpu(),
+        "reg_loss": losses["reg_loss_point"].cpu(),
+        "proposal_saliency": proposal_saliency.cpu(),
+    }
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--split", required=True, choices=["training", "validation", "test"])
+    parser.add_argument("--out-jsonl", required=True)
+    parser.add_argument("--allow-eval-diagnostic-export", action="store_true")
+    args = parser.parse_args()
+
+    if args.split != "training" and not args.allow_eval_diagnostic_export:
+        raise SystemExit("Refuse to export non-training teacher utility for selector training.")
+
+    model, dataset = build_dense_adatad_model_and_dataset(args.config, args.checkpoint, args.split)
+    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+
+    ckpt_sha = sha256_file(args.checkpoint)
+
+    with open(args.out_jsonl, "w", encoding="utf-8") as f:
+        for batch in loader:
+            util = export_one_batch(model, batch, cfg=UtilityWeights())
+            row = {
+                "schema_version": "c3_adatad_teacher_utility_v1",
+                "split": args.split,
+                "sample_id": batch["sample_id"][0],
+                "video_name": batch["video_name"][0],
+                "window_start": int(batch["window_start"][0]),
+                "dense_len": int(batch["dense_len"][0]),
+                "valid_len": int(batch["valid_len"][0]),
+                "teacher": {
+                    "model": "AdaTAD-dense",
+                    "checkpoint_sha256": ckpt_sha,
+                    "trained_splits": ["training"],
+                    "source": "dense_adatad_train_split_teacher",
+                },
+                "targets": {k: v[0].tolist() for k, v in util.items()},
+                "guards": {
+                    "for_selector_training_only": args.split == "training",
+                    "may_tune_selector": args.split == "training",
+                    "uses_gt_for_teacher_assignment": True,
+                    "uses_test_labels": False,
+                },
+            }
+            f.write(json.dumps(row) + "\n")
+```
+
+### E2. Utility target JSONL schema
+
+```json
+{
+  "schema_version": "c3_adatad_teacher_utility_v1",
+  "split": "training",
+  "sample_id": "video_test_0000001|0",
+  "video_name": "video_test_0000001",
+  "window_start": 0,
+  "dense_len": 768,
+  "valid_len": 731,
+  "teacher": {
+    "model": "AdaTAD-dense",
+    "checkpoint_sha256": "...",
+    "config_sha256": "...",
+    "trained_splits": ["training"],
+    "source": "dense_adatad_train_split_teacher"
+  },
+  "inputs": {
+    "p_action_source_sha256": "...",
+    "low_cost_probe": "c3_paction_v1"
+  },
+  "targets": {
+    "utility": [0.0, 0.12, 0.33],
+    "point_responsibility": [0, 1, 0],
+    "cls_loss": [0.01, 0.21, 0.04],
+    "reg_loss": [0.0, 0.43, 0.0],
+    "proposal_saliency": [0.0, 0.18, 0.02],
+    "boundary_start_score": [0.0, 0.7, 0.1],
+    "boundary_end_score": [0.0, 0.2, 0.8]
+  },
+  "guards": {
+    "for_selector_training_only": true,
+    "may_tune_selector": true,
+    "uses_test_labels": false,
+    "uses_val_labels_for_selector_training": false
+  }
+}
+```
+
+### E3. Detector-aware selector dataset
+
+```python
+class DetectorAwareSelectorDataset(torch.utils.data.Dataset):
+    def __init__(self, paction_jsonl, utility_jsonl, split, require_train_utility=True):
+        self.paction = load_by_sample_id(paction_jsonl)
+        self.utility = load_by_sample_id(utility_jsonl)
+        self.split = split
+        self.require_train_utility = require_train_utility
+        self.ids = sorted(set(self.paction) & set(self.utility))
+
+    def __getitem__(self, idx):
+        sid = self.ids[idx]
+        p = self.paction[sid]
+        u = self.utility[sid]
+
+        if self.require_train_utility and u["split"] != "training":
+            raise RuntimeError(f"Refuse selector training on non-training utility: {sid}")
+
+        if u["guards"].get("uses_test_labels", False):
+            raise RuntimeError(f"Teacher utility uses test labels: {sid}")
+
+        x = build_selector_features(
+            p_action=p["p_action"],
+            delta_p_action=finite_diff(p["p_action"]),
+            valid_len=p["valid_len"],
+        )
+
+        return {
+            "sample_id": sid,
+            "features": torch.tensor(x, dtype=torch.float32),
+            "valid_mask": make_valid_mask(p["valid_len"], len(p["p_action"])),
+            "utility": torch.tensor(u["targets"]["utility"], dtype=torch.float32),
+            "responsibility": torch.tensor(u["targets"]["point_responsibility"], dtype=torch.float32),
+            "boundary_start": torch.tensor(u["targets"]["boundary_start_score"], dtype=torch.float32),
+            "boundary_end": torch.tensor(u["targets"]["boundary_end_score"], dtype=torch.float32),
+        }
+```
+
+### E4. Selector model forward API
+
+```python
+class DetectorAwareGASVTSelector(torch.nn.Module):
+    def __init__(self, in_dim, hidden_dim=128, max_budget=768):
+        super().__init__()
+        self.encoder = torch.nn.Sequential(
+            torch.nn.Conv1d(in_dim, hidden_dim, 5, padding=2),
+            torch.nn.ReLU(),
+            torch.nn.Conv1d(hidden_dim, hidden_dim, 5, padding=2),
+            torch.nn.ReLU(),
+        )
+        self.utility_head = torch.nn.Conv1d(hidden_dim, 1, 1)
+        self.boundary_head = torch.nn.Conv1d(hidden_dim, 2, 1)
+        self.budget_head = torch.nn.Linear(hidden_dim, max_budget + 1)
+
+    def forward(self, features, valid_mask, target_budget=None, hard=True, tau=1.0):
+        # features: [B, T, C]
+        h = self.encoder(features.transpose(1, 2))
+        logits = self.utility_head(h).squeeze(1)
+        boundary_logits = self.boundary_head(h).transpose(1, 2)
+
+        pooled = masked_mean(h.transpose(1, 2), valid_mask, dim=1)
+        budget_logits = self.budget_head(pooled)
+
+        if target_budget is None:
+            target_budget = budget_logits.argmax(dim=-1).clamp(min=1)
+
+        st_mask, hard_mask, indices = st_topk_mask(
+            logits=logits,
+            valid_mask=valid_mask,
+            k=target_budget,
+            tau=tau,
+            gumbel=self.training,
+        )
+
+        return {
+            "logits": logits,
+            "st_mask": st_mask,
+            "hard_mask": hard_mask,
+            "indices": indices,
+            "boundary_logits": boundary_logits,
+            "budget_logits": budget_logits,
+        }
+```
+
+### E5. ST hard top-k / Gumbel-top-k
+
+```python
+def sample_gumbel_like(x, eps=1e-6):
+    u = torch.rand_like(x).clamp_(eps, 1.0 - eps)
+    return -torch.log(-torch.log(u))
+
+def st_topk_mask(logits, valid_mask, k, tau=1.0, gumbel=False):
+    """
+    Forward: hard top-k.
+    Backward: soft probability surrogate.
+    k can be [B] tensor.
+    """
+    masked = logits.masked_fill(~valid_mask, -1e30)
+
+    if gumbel:
+        score = (masked + sample_gumbel_like(masked)) / tau
+    else:
+        score = masked / tau
+
+    bsz, t = logits.shape
+    hard = torch.zeros_like(logits)
+
+    max_k = int(k.max().item()) if torch.is_tensor(k) else int(k)
+    top_idx = score.topk(max_k, dim=1).indices
+
+    for b in range(bsz):
+        kb = int(k[b].item()) if torch.is_tensor(k) else int(k)
+        hard[b, top_idx[b, :kb]] = 1.0
+
+    soft = torch.softmax(masked / tau, dim=1)
+    soft = soft * (k.float().unsqueeze(1) if torch.is_tensor(k) else float(k))
+    soft = soft.clamp(0.0, 1.0)
+
+    st = hard + soft - soft.detach()
+    return st, hard, top_idx
+```
+
+### E6. CVaR max-hole loss
+
+```python
+def cvar_max_hole_loss(st_mask, valid_mask, windows=(8, 16, 32, 64), alpha=0.2):
+    """
+    Penalize windows with too few selected frames.
+    This is a differentiable surrogate, not exact discrete max-hole.
+    """
+    x = st_mask[:, None, :] * valid_mask[:, None, :].float()
+    v = valid_mask[:, None, :].float()
+
+    losses = []
+    for w in windows:
+        kernel = torch.ones(1, 1, w, device=st_mask.device)
+        selected = torch.nn.functional.conv1d(x, kernel, padding=w // 2)
+        valid = torch.nn.functional.conv1d(v, kernel, padding=w // 2).clamp_min(1.0)
+
+        empty_ratio = 1.0 - selected / valid
+        empty_ratio = empty_ratio.squeeze(1).masked_fill(~valid_mask, 0.0)
+
+        tail_k = max(1, int(alpha * empty_ratio.shape[1]))
+        tail = empty_ratio.topk(tail_k, dim=1).values
+        losses.append(tail.mean())
+
+    return torch.stack(losses).mean()
+```
+
+### E7. Boundary bracket + action interior loss
+
+```python
+def boundary_bracket_loss(st_mask, start_target, end_target, radius=4, eps=1e-6):
+    """
+    start_target/end_target: [B, T] soft teacher or GT-derived boundary scores.
+    Require selected evidence on both sides of high boundary locations.
+    """
+    bsz, t = st_mask.shape
+    loss_terms = []
+
+    for shift in range(1, radius + 1):
+        left = torch.zeros_like(st_mask)
+        right = torch.zeros_like(st_mask)
+        left[:, shift:] = st_mask[:, :-shift]
+        right[:, :-shift] = st_mask[:, shift:]
+
+        start_cover = torch.maximum(left, right)
+        end_cover = torch.maximum(left, right)
+
+        loss_terms.append(-(start_target * torch.log(start_cover + eps)).sum() /
+                          start_target.sum().clamp_min(1.0))
+        loss_terms.append(-(end_target * torch.log(end_cover + eps)).sum() /
+                          end_target.sum().clamp_min(1.0))
+
+    return torch.stack(loss_terms).mean()
+
+def action_interior_coverage_loss(st_mask, action_target, eps=1e-6):
+    """
+    Encourage some interior coverage, but avoid selecting only interior.
+    """
+    covered_mass = (st_mask * action_target).sum(dim=1)
+    target_mass = action_target.sum(dim=1).clamp_min(1.0)
+    coverage = covered_mass / target_mass
+    return -torch.log(coverage.clamp_min(eps)).mean()
+```
+
+### E8. AdaTAD detector loss 回传 selector 的最小改造点
+
+核心原则：selector 必须在 `forward_train` 里运行，detector loss 必须依赖 `st_mask` 或 differentiable gather surrogate。
+
+```python
+class AdaTADWithSTSelector(torch.nn.Module):
+    def __init__(self, selector, detector, low_cost_probe):
+        super().__init__()
+        self.selector = selector
+        self.detector = detector
+        self.low_cost_probe = low_cost_probe
+
+    def forward_train(self, raw_frames, gt_segments, gt_labels, meta):
+        # 1. Low-cost p_action / scout feature.
+        with torch.no_grad():
+            p_action_feat = self.low_cost_probe(raw_frames)
+
+        valid_mask = meta["valid_mask"]
+
+        # 2. Selector inside model graph.
+        sel = self.selector(
+            features=p_action_feat,
+            valid_mask=valid_mask,
+            target_budget=meta.get("target_budget"),
+            hard=True,
+            tau=meta.get("selector_tau", 1.0),
+        )
+
+        # 3. Hard forward sparse gather.
+        sparse_frames, sparse_time = gather_frames_by_indices(
+            raw_frames=raw_frames,
+            indices=sel["indices"],
+            valid_mask=valid_mask,
+        )
+
+        # 4. Preserve original time coordinates for irregular TAD geometry.
+        sparse_meta = remap_meta_to_sparse_time(
+            meta=meta,
+            sparse_time=sparse_time,
+            gt_segments=gt_segments,
+        )
+
+        # 5. Detector loss.
+        det_losses = self.detector.forward_train(
+            sparse_frames,
+            gt_segments=gt_segments,
+            gt_labels=gt_labels,
+            meta=sparse_meta,
+        )
+
+        # 6. Selector regularizers.
+        selector_losses = {
+            "loss_hole": cvar_max_hole_loss(sel["st_mask"], valid_mask),
+            "loss_boundary": boundary_bracket_loss(
+                sel["st_mask"],
+                meta["boundary_start_target"],
+                meta["boundary_end_target"],
+            ),
+        }
+
+        total = det_losses["loss"] \
+            + 0.1 * selector_losses["loss_hole"] \
+            + 0.1 * selector_losses["loss_boundary"]
+
+        return {
+            "loss": total,
+            **{f"det_{k}": v for k, v in det_losses.items()},
+            **selector_losses,
+            "detector_loss_reaches_selector": True,
+        }
+```
+
+注意：上面仍是最小骨架。真实实现必须处理 VideoMAE/TIA backbone 的输入形状、selected-axis vs native-time 坐标、GT remap、NMS seconds conversion、irregular interval width。
+
+### E9. train/eval launcher 与 config 设计
+
+建议分四套 config，而不是混在一个 launcher 中：
+
+```python
+# configs/adatad/thumos/c3_stage1_gas_vt_offline_ledger.py
+route_type = "offline_ledger"
+detector_loss_reaches_selector = False
+claim_end_to_end_allowed = False
+claim_detector_aware_allowed = False
+
+# configs/adatad/thumos/c3_stage2_teacher_utility_export.py
+route_type = "dense_teacher_utility_export"
+selector_training_allowed_splits = ["training"]
+export_eval_utility_for_diagnostics_only = True
+
+# configs/adatad/thumos/c3_stage3_detector_aware_selector_pretrain.py
+route_type = "detector_aware_selector_pretrain"
+uses_teacher_utility = True
+uses_detector_loss = False
+
+# configs/adatad/thumos/c3_stage4_st_joint_adatad.py
+route_type = "st_hard_selector_joint_training"
+detector_loss_reaches_selector = True
+freeze_schedule = {
+    "phase0": ["detector"],
+    "phase1": ["backbone"],
+    "phase2": []
+}
+```
+
+### E10. validation gate
+
+```python
+def validate_selector_experiment_manifest(manifest):
+    required_false = [
+        "uses_test_labels_for_selector_training",
+        "uses_val_labels_for_selector_training",
+        "uses_prediction_cache_at_deploy",
+        "uses_uniform_fill",
+        "uses_uniform_scaffold",
+    ]
+
+    for key in required_false:
+        if manifest.get(key) is not False:
+            raise ValueError(f"{key} must be explicitly false")
+
+    if manifest["route_type"] == "offline_ledger":
+        assert manifest["detector_loss_reaches_selector"] is False
+        assert manifest["claim_end_to_end_allowed"] is False
+
+    if manifest["route_type"] == "detector_aware_selector_pretrain":
+        assert manifest["teacher_utility"]["split"] == "training"
+        assert manifest["teacher_utility"]["checkpoint_sha256"]
+        assert manifest["claim_detector_aware_allowed"] is True
+
+    if manifest["route_type"] == "st_hard_selector_joint_training":
+        assert manifest["detector_loss_reaches_selector"] is True
+        assert manifest["selector_inside_model_forward"] is True
+        assert manifest["uses_hard_forward_sparse_gather"] is True
+
+    for split in ["train", "val", "test"]:
+        rows = load_jsonl(manifest["ledgers"][split])
+        ids = [r["sample_id"] for r in rows]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"Duplicate sample_id in {split}")
+
+        for r in rows:
+            if r.get("total_uniform_visible_fill_count", 0) != 0:
+                raise ValueError("Uniform visible fill is forbidden")
+            if r.get("uses_gt") or r.get("uses_teacher") or r.get("uses_cache"):
+                raise ValueError("Deploy ledger contains forbidden source")
+```
+
+---
+
+## 最终判断
+
+**1. 当前 commit 是否允许 claim “end-to-end”？**
+不允许。当前是 offline checkpoint policy application + ledger + AdaTAD training，validator 还明确禁止在线 selector 组件进入模型。([GitHub][3])
+
+**2. 当前 commit 是否允许 claim “detector-aware acquisition”？**
+不允许。GAS-VT training 使用 p_action、GT action target、GT boundary/budget supervision；没有 dense AdaTAD teacher utility，也没有 detector loss 回传 selector。([GitHub][5])
+
+**3. 当前 commit 是否允许 claim “GAS-VT sparse ledger improves AdaTAD mAP”？**
+现在还不允许。必须等 fixed_384 / fixed_768 / dynamic 的 full AdaTAD mAP 完整结束，并与 dense、uniform、random、p_action-only、Δp_action、boundary oracle、matched-budget dynamic 对照比较后才能 claim。当前只能说：**GAS-VT sparse ledgers are generated and validated for AdaTAD full training.**
+
+**4. 下一步最短闭环应该做什么？**
+
+最短闭环是：
+
+1. 先完成 `gas_vt_fixed_384` full run；
+2. 同配置立刻跑 `uniform_384` 和 `p_action_topk_384`；
+3. 报 mAP@0.3:0.7，尤其 @0.6/@0.7；
+4. 若 fixed_384 没超过 uniform_384，不要继续包装 Stage1，先查 boundary_support、short-action recall、max-hole、ledger-to-loader remap；
+5. 若 fixed_384 接近/超过 uniform_384，再跑 fixed_768、dynamic matched-K、no-gap-repair；
+6. 同时启动 Stage2 teacher utility export，只在 train split 训练 selector。
+
+我的审稿式判定是：
+
+**Stage0/1：PASS as guarded offline experimental pipeline。**
+**End-to-end claim：FAIL。**
+**Detector-aware claim：FAIL。**
+**Paper main-method readiness：WARN / not ready。**
+**下一步优先级：先用完整 mAP 对照证明 Stage1 是否值得，再进入 Stage2 teacher utility；不要在当前 commit 上宣称端到端或 detector-aware。**
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-mainline-20260706 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at codex/gas-vt-mainline-20260706 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/gas_vt_paction_policy.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/gas_vt_paction_policy.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/apply_gap_aware_acquisition_policy.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/apply_gap_aware_acquisition_policy.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/53124a2/tools/bata/validate_c3_paction_learned_adatad_full_train.py "raw.githubusercontent.com"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/train_gap_aware_acquisition_policy.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_gap_aware_acquisition_policy.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/paction_source_samples.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/paction_source_samples.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/convert_lowres_probe_samples_to_value_transport_ledger.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/convert_lowres_probe_samples_to_value_transport_ledger.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/paction_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/paction_acquisition_policy.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/scripts/run_c3_gas_vt_policy_adatad_full_train_gpu1.sh "OpenTAD_C3_CoarseClean_20260702/scripts/run_c3_gas_vt_policy_adatad_full_train_gpu1.sh at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/configs/adatad/thumos/c3_gas_vt_ledger_adatad_full_train.py "OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/c3_gas_vt_ledger_adatad_full_train.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[11]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/opentad/models/necks/pc_ot_mras_detector_bridge.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/necks/pc_ot_mras_detector_bridge.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[12]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/53124a2/tools/bata/validate_paction_learned_policy_ledger.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_paction_learned_policy_ledger.py at 53124a2c632e3fdba849d5fd9e4dc8f136470907 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[13]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/53124a2/tests/test_gap_aware_ledger_pipeline.py "raw.githubusercontent.com"
