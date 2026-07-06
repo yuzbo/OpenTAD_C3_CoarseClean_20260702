@@ -49,7 +49,7 @@ def _sample(sample_id: str, p_action: list[float], utility: list[float]) -> dict
         "paction_positive_provenance": _paction_provenance(),
         "action_target": [1 if value >= 0.5 else 0 for value in utility],
         "gt_boundaries": [1, 4],
-        "teacher_utility": {"frame_utility": utility},
+        "teacher_utility": {"signed_frame_utility": utility},
         "teacher_utility_provenance": {"split_scope": "train_only"},
     }
 
@@ -537,7 +537,7 @@ def test_detector_aware_real_cpu_checkpoint_generates_deploy_ledgers_without_mon
             "valid_len": 8,
             "frame_signals": {"p_action": [0.1, 0.8, 0.2, 0.7, 0.3, 0.6, 0.4, 0.5]},
             "paction_positive_provenance": _paction_provenance(),
-            "teacher_utility": {"frame_utility": [0.0, 1.0, 0.1, 0.9, 0.2, 0.8, 0.3, 0.7]},
+            "teacher_utility": {"signed_frame_utility": [0.0, 1.0, 0.1, 0.9, 0.2, 0.8, 0.3, 0.7]},
             "teacher_utility_provenance": {"split_scope": "train_only"},
         },
         {
@@ -547,7 +547,7 @@ def test_detector_aware_real_cpu_checkpoint_generates_deploy_ledgers_without_mon
             "valid_len": 8,
             "frame_signals": {"p_action": [0.8, 0.1, 0.7, 0.2, 0.6, 0.3, 0.5, 0.4]},
             "paction_positive_provenance": _paction_provenance(),
-            "teacher_utility": {"frame_utility": [1.0, 0.0, 0.9, 0.1, 0.8, 0.2, 0.7, 0.3]},
+            "teacher_utility": {"signed_frame_utility": [1.0, 0.0, 0.9, 0.1, 0.8, 0.2, 0.7, 0.3]},
             "teacher_utility_provenance": {"split_scope": "train_only"},
         },
     ]
