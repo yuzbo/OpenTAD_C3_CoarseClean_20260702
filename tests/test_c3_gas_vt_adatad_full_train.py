@@ -171,6 +171,7 @@ def test_gas_vt_launcher_is_gpu1_precheck_fail_closed_and_uses_gas_vt_tools() ->
     assert "--allow-gt-diagnostics-in-training-source" in text
     assert 'C3_GAS_VT_REUSE_EXISTING_LEDGER_BUILD="${C3_GAS_VT_REUSE_EXISTING_LEDGER_BUILD:-0}"' in text
     assert "reusing existing GAS-VT ledgers" in text
+    assert 'GAS_VT_MAX_P95_UNSELECTED_HOLE="${GAS_VT_MAX_P95_UNSELECTED_HOLE:-${GAS_VT_MAX_UNSELECTED_HOLE}}"' in text
     assert "run_gap_aware_ledger_pipeline.py" in text
     assert "apply_gap_aware_acquisition_policy.py" in text
     assert "validate_paction_learned_policy_ledger.py" in text
