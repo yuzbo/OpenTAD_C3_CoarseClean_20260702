@@ -49,6 +49,7 @@ def run_smoke(config_path, seed=13):
     grad_norm = selector_grad_norm(detector.frame_selector)
     selected_input_grad_norm = grad_norm
     loss_keys = sorted(key for key in losses if key != "cost")
+    actionformer_payload = _run_actionformer_path_smoke(cfg, dense_len=dense_len, seed=int(seed) + 101)
 
     return {
         "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
@@ -64,6 +65,7 @@ def run_smoke(config_path, seed=13):
         "loss_keys": loss_keys,
         "selector_grad_norm": grad_norm,
         "selector_grad_nonzero": grad_norm > 0.0,
+        **actionformer_payload,
         "selected_count_mean": float(out["selected_count_mean"].detach().cpu().item()),
         "selected_count_std": float(out["selected_count_std"].detach().cpu().item()),
         "entropy": float(out["entropy"].detach().cpu().item()),
@@ -72,6 +74,58 @@ def run_smoke(config_path, seed=13):
             "smoke proof only; no mAP, runtime, paper, or deploy claim",
             "hard top-k detector path is paired with a relaxed temporal surrogate for gradient evidence",
             "evaluator mAP semantics are not modified",
+        ],
+    }
+
+
+def _run_actionformer_path_smoke(cfg, *, dense_len, seed):
+    if "truetime_actionformer_path_smoke_model" not in cfg:
+        raise ValueError("config must define truetime_actionformer_path_smoke_model")
+    torch.manual_seed(int(seed))
+    detector = build_detector(cfg.truetime_actionformer_path_smoke_model)
+    detector.train()
+    detector.zero_grad(set_to_none=True)
+    inputs = torch.randn(2, 3, int(dense_len), requires_grad=True)
+    masks = torch.ones(2, int(dense_len), dtype=torch.bool)
+    metas = [
+        {"video_name": "truetime_actionformer_smoke_0"},
+        {"video_name": "truetime_actionformer_smoke_1"},
+    ]
+    gt_segments = [
+        torch.tensor([[1.0, 3.0]], dtype=torch.float32),
+        torch.tensor([[0.5, 2.5]], dtype=torch.float32),
+    ]
+    gt_labels = [
+        torch.tensor([0], dtype=torch.long),
+        torch.tensor([0], dtype=torch.long),
+    ]
+    losses = detector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=metas,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+    losses["cost"].backward()
+    grad_norm = selector_grad_norm(detector.frame_selector)
+    actionformer_loss_keys = sorted(key for key in losses if key != "cost")
+    finite_loss_values = {
+        key: float(value.detach().cpu().item())
+        for key, value in losses.items()
+        if key != "cost" and torch.is_tensor(value) and value.ndim == 0
+    }
+    return {
+        "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
+        "actionformer_detector_loss_selector_grad_passed": grad_norm > 0.0,
+        "actionformer_detector_loss_selector_grad_norm": grad_norm,
+        "actionformer_loss_keys": actionformer_loss_keys,
+        "actionformer_loss_values": finite_loss_values,
+        "actionformer_selected_axis_smoke": True,
+        "actionformer_physical_grid_smoke": False,
+        "actionformer_smoke_limitations": [
+            "uses the real OpenTAD ActionFormer forward_train/projection/rpn_head path",
+            "uses a tiny selected-axis synthetic batch; it is not a full AdaTAD mAP run",
+            "physical-grid dense-axis assignment remains a separate full-train/precheck gate",
         ],
     }
 

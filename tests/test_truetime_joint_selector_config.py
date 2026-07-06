@@ -38,12 +38,14 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.experiment_scope.deploy_claim_allowed is False
     assert cfg.truetime_joint_selector_gate.launch_gate_passed is False
     assert cfg.truetime_joint_selector_gate.requires_selector_grad_nonzero is True
+    assert cfg.truetime_joint_selector_gate.requires_actionformer_detector_grad_nonzero is True
     assert cfg.truetime_joint_selector_gate.requires_geometry_roundtrip is True
     assert cfg.truetime_joint_selector_gate.end_to_end_claim_allowed is False
     assert cfg.truetime_joint_selector_gate.eight_week_questions_answered_by == [
         "true_time_roundtrip_tests",
         "segment_inverse_map_tests",
         "selector_detector_loss_gradient_smoke",
+        "actionformer_forward_train_selector_gradient_smoke",
         "fail_closed_curriculum_and_claim_gates",
     ]
     assert cfg.truetime_joint_selector_gate.required_phases == [
@@ -66,6 +68,11 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
     assert cfg.truetime_detector_path_smoke_model.frame_selector.detector_gradient_mode == "st_sparse_gather"
     assert cfg.truetime_detector_path_smoke_model.frame_selector.selected_count == 4
     assert cfg.truetime_detector_path_smoke_model.frame_selector.dense_len == 8
+    assert cfg.truetime_actionformer_path_smoke_model.type == "ActionFormer"
+    assert cfg.truetime_actionformer_path_smoke_model.frame_selector.detector_gradient_mode == "st_sparse_gather"
+    assert cfg.truetime_actionformer_path_smoke_model.frame_selector.selected_count == 4
+    assert cfg.truetime_actionformer_path_smoke_model.frame_selector.dense_len == 8
+    assert cfg.truetime_actionformer_path_smoke_model.projection.max_seq_len == 4
     assert cfg.workflow.max_train_iters == 2
     assert cfg.truetime_metrics_to_log == [
         "selector_grad_norm",
@@ -76,6 +83,9 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
         "entropy",
         "loss_cls",
         "loss_reg",
+        "actionformer_cls_loss",
+        "actionformer_reg_loss",
+        "actionformer_detector_loss_selector_grad_norm",
         "geometry_roundtrip",
         "prediction_inverse_map",
         "claim_locks",
@@ -127,6 +137,11 @@ def test_truetime_joint_selector_validator_accepts_detector_loss_proof_schema(tm
                 "selector_grad_nonzero": True,
                 "loss_keys": ["loss_cls", "loss_reg"],
                 "proof_source": "registered_detector_forward_train_cost_backward",
+                "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
+                "actionformer_detector_loss_selector_grad_passed": True,
+                "actionformer_detector_loss_selector_grad_norm": 0.31,
+                "actionformer_loss_keys": ["cls_loss", "reg_loss"],
+                "actionformer_selected_axis_smoke": True,
             }
         ),
         encoding="utf-8",

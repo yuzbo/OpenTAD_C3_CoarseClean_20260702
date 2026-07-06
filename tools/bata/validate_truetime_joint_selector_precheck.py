@@ -41,6 +41,10 @@ def _validate_gate(cfg, *, allow_launch_unlocked):
     _require(_as_bool(gate.smoke_only), "route must remain smoke_only")
     _require(_as_bool(gate.requires_launch_gate), "launch gate must be required")
     _require(_as_bool(gate.requires_selector_grad_nonzero), "selector grad gate must be required")
+    _require(
+        _as_bool(gate.get("requires_actionformer_detector_grad_nonzero", False)),
+        "ActionFormer detector grad gate must be required",
+    )
     _require(_as_bool(gate.requires_geometry_roundtrip), "geometry gate must be required")
     _require(_as_bool(gate.end_to_end_claim_allowed) is False, "end-to-end claim must be locked")
     _require(_as_bool(gate.paper_claim_allowed) is False, "paper claim must be locked")
@@ -83,6 +87,28 @@ def _validate_model(cfg):
     _require(_as_bool(smoke_selector.allow_gt_selection) is False, "smoke GT selection must be disabled")
     _require(_as_bool(smoke_selector.allow_teacher_utility) is False, "smoke teacher selection must be disabled")
 
+    actionformer_smoke = cfg.truetime_actionformer_path_smoke_model
+    actionformer_selector = actionformer_smoke.frame_selector
+    _require(actionformer_smoke.type == "ActionFormer", "wrong ActionFormer detector-path smoke model type")
+    _require(actionformer_selector.type == "TrueTimeRelaxedHardTopKSelector", "wrong ActionFormer smoke selector type")
+    _require(
+        actionformer_selector.detector_gradient_mode == "st_sparse_gather",
+        "ActionFormer smoke detector gradient mode mismatch",
+    )
+    _require(
+        int(actionformer_selector.selected_count) < int(actionformer_selector.dense_len),
+        "ActionFormer smoke selector must be sparse",
+    )
+    _require(
+        int(actionformer_smoke.projection.max_seq_len) == int(actionformer_selector.selected_count),
+        "ActionFormer smoke projection length must equal selected_count",
+    )
+    _require(_as_bool(actionformer_selector.allow_gt_selection) is False, "ActionFormer smoke GT selection must be disabled")
+    _require(
+        _as_bool(actionformer_selector.allow_teacher_utility) is False,
+        "ActionFormer smoke teacher selection must be disabled",
+    )
+
 
 def _validate_dataset_and_leakage(cfg):
     for split in ("train", "val", "test"):
@@ -124,6 +150,7 @@ def _validate_curriculum_and_scope(cfg):
         "true_time_roundtrip_tests",
         "segment_inverse_map_tests",
         "selector_detector_loss_gradient_smoke",
+        "actionformer_forward_train_selector_gradient_smoke",
         "fail_closed_curriculum_and_claim_gates",
     ], "8-week question evidence list changed")
     for metric in (
@@ -135,6 +162,9 @@ def _validate_curriculum_and_scope(cfg):
         "entropy",
         "loss_cls",
         "loss_reg",
+        "actionformer_cls_loss",
+        "actionformer_reg_loss",
+        "actionformer_detector_loss_selector_grad_norm",
         "geometry_roundtrip",
         "prediction_inverse_map",
         "claim_locks",
@@ -177,6 +207,22 @@ def _validate_grad_proof(path):
     _require(payload.get("proof_source") == "registered_detector_forward_train_cost_backward", "wrong proof source")
     _require(float(payload.get("selector_grad_norm", 0.0)) > 0.0, "selector_grad_norm proof must be > 0")
     _require(payload.get("selector_grad_nonzero") is True, "selector_grad_nonzero proof missing")
+    _require(
+        payload.get("actionformer_proof_source") == "opentad_actionformer_forward_train_cost_backward",
+        "wrong ActionFormer proof source",
+    )
+    _require(
+        payload.get("actionformer_detector_loss_selector_grad_passed") is True,
+        "ActionFormer detector-loss selector gradient proof missing",
+    )
+    _require(
+        float(payload.get("actionformer_detector_loss_selector_grad_norm", 0.0)) > 0.0,
+        "ActionFormer detector-loss selector gradient proof must be > 0",
+    )
+    actionformer_loss_keys = payload.get("actionformer_loss_keys", [])
+    _require("cls_loss" in actionformer_loss_keys, "ActionFormer proof missing cls_loss")
+    _require("reg_loss" in actionformer_loss_keys, "ActionFormer proof missing reg_loss")
+    _require(payload.get("actionformer_selected_axis_smoke") is True, "ActionFormer selected-axis smoke flag missing")
 
 
 def validate_config(config_path=CONFIG_DEFAULT, *, require_grad_proof=False, allow_launch_unlocked=False, proof_json=None):
