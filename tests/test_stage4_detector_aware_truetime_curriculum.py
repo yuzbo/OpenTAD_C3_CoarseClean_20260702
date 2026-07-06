@@ -58,6 +58,12 @@ def _stage2_teacher_evidence(tmp_path: Path) -> dict:
                 "dense_len": 4,
                 "valid_len": 4,
                 "teacher_dense_points": [{"point_index": 1, "proposal_score": 0.8}],
+                "teacher_signal_source": "adatad_dense_teacher",
+                "teacher_axis": "dense_frame_index",
+                "fps": 25.0,
+                "snippet_stride": 4,
+                "window_start_frame": 0,
+                "window_size": 768,
             }
         ],
     )
