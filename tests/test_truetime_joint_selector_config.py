@@ -96,7 +96,8 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
         assert "irregular_dense_valid_len" in meta_keys
 
 
-def test_truetime_joint_selector_validator_blocks_end_to_end_without_grad_proof() -> None:
+def test_truetime_joint_selector_validator_blocks_end_to_end_without_grad_proof(monkeypatch) -> None:
+    monkeypatch.delenv("TRUETIME_SELECTOR_GRAD_PROOF_JSON", raising=False)
     validator = _load_validator()
 
     cfg = validator.validate_config(str(CONFIG), require_grad_proof=False)
