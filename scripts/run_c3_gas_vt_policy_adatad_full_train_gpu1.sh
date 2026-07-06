@@ -12,6 +12,7 @@ export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 PRECHECK_ONLY="${PRECHECK_ONLY:-1}"
 ALLOW_C3_GAS_VT_ADATAD_FULLTRAIN="${ALLOW_C3_GAS_VT_ADATAD_FULLTRAIN:-0}"
+ALLOW_C3_GAS_VT_GPU0="${ALLOW_C3_GAS_VT_GPU0:-0}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 RUN_TAG="${RUN_TAG:-c3_gas_vt_adatad_full_train_gpu1_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
@@ -22,7 +23,11 @@ ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_GAS_VT_ADATAD_PRETRAIN_PATH:-
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
-  fail "C3 mainline GAS-VT full train must use GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+  if [[ "${CUDA_VISIBLE_DEVICES}" == "0" && "${ALLOW_C3_GAS_VT_GPU0}" == "1" ]]; then
+    echo "[C3_GAS_VT_ADATAD] explicit GPU0 override accepted for Stage-0/1: CUDA_VISIBLE_DEVICES=0"
+  else
+    fail "C3 mainline GAS-VT full train defaults to GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}. Set ALLOW_C3_GAS_VT_GPU0=1 only after explicitly stopping the GPU0 model zoo."
+  fi
 fi
 
 export HOME="${HOME:-${BASE}/tmp/home}"

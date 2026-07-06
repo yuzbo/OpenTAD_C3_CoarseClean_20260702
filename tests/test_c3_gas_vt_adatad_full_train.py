@@ -163,6 +163,9 @@ def test_gas_vt_launcher_is_gpu1_precheck_fail_closed_and_uses_gas_vt_tools() ->
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
     assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+    assert 'ALLOW_C3_GAS_VT_GPU0="${ALLOW_C3_GAS_VT_GPU0:-0}"' in text
+    assert "explicit GPU0 override accepted for Stage-0/1" in text
+    assert "Set ALLOW_C3_GAS_VT_GPU0=1 only after explicitly stopping the GPU0 model zoo." in text
     assert "train_gap_aware_acquisition_policy.py" in text
     assert "run_gap_aware_ledger_pipeline.py" in text
     assert "apply_gap_aware_acquisition_policy.py" in text
