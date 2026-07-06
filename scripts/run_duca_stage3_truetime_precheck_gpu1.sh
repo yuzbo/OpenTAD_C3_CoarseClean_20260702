@@ -53,9 +53,28 @@ if payload.get("decision") != "DUCA_STAGE3_PRECHECK_PASS":
     raise SystemExit(f"precheck summary is not DUCA_STAGE3_PRECHECK_PASS: {payload.get('decision')}")
 print(f"[DUCA_STAGE3_PRECHECK] full-run gate accepted {path}")
 PY
-  PRECHECK_ONLY=0 ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN=1 \
-    CONFIG="${CONFIG}" EXEC_CONFIG="${EXEC_CONFIG}" \
-    bash scripts/run_c3_truetime_joint_selector_adatad_gpu1.sh
+  if [[ "${ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN:-0}" != "1" ]]; then
+    fail "ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN=1 is required for DUCA Stage3 full train"
+  fi
+  if [[ -z "${SLURM_JOB_ID:-}" && -z "${SLURM_STEP_ID:-}" ]]; then
+    fail "formal DUCA Stage3 full train must run inside a Slurm allocation/step"
+  fi
+  RUN_ID="${RUN_ID:-0}"
+  SEED="${SEED:-0}"
+  MASTER_PORT="${MASTER_PORT:-30231}"
+  RUN_DIR="${RUN_DIR:-${ROUTE_ROOT}/run}"
+  WORK_DIR="${WORK_DIR:-exps/thumos/adatad/c3_truetime_joint_selector_adatad_precheck/${RUN_TAG}}"
+  mkdir -p "${RUN_DIR}" "${WORK_DIR}"
+  export PRECHECK_ONLY=0
+  "${PYTHON}" -m torch.distributed.run \
+    --nproc_per_node=1 \
+    --master_port="${MASTER_PORT}" \
+    tools/train.py \
+    "${EXEC_CONFIG}" \
+    --id "${RUN_ID}" \
+    --seed "${SEED}" \
+    --cfg-options "work_dir=${WORK_DIR}" \
+    2>&1 | tee "${RUN_DIR}/train.out"
   exit 0
 fi
 

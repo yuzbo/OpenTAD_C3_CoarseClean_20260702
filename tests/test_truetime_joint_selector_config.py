@@ -136,12 +136,16 @@ def test_truetime_joint_selector_precheck_config_is_not_smoke_only_and_claim_loc
 
     assert cfg.experiment_scope.route_variant == "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3"
     assert cfg.experiment_scope.stage == "stage3_true_time_e2e_adatad_selector_precheck"
-    assert cfg.experiment_scope.minimum_useful_deliverable == "precheck_ready_true_adatad_selector_training_candidate"
+    assert cfg.experiment_scope.minimum_useful_deliverable == "tiny_synthetic_actionformer_gradient_precheck_ready_fulltrain_candidate"
     assert cfg.experiment_scope.paper_claim_allowed is False
     assert cfg.experiment_scope.deploy_claim_allowed is False
     assert cfg.experiment_scope.end_to_end_claim_allowed is False
     assert cfg.truetime_joint_selector_gate.smoke_only is False
     assert cfg.truetime_joint_selector_gate.precheck_only_default is True
+    assert any(
+        "tiny synthetic real ActionFormer loss-path precheck only" in item
+        for item in cfg.truetime_joint_selector_gate.limitations
+    )
     assert cfg.truetime_joint_selector_gate.real_detector_gradient_proof_required is True
     assert cfg.truetime_joint_selector_gate.launch_gate_passed is False
     assert cfg.truetime_joint_selector_gate.end_to_end_claim_allowed is False

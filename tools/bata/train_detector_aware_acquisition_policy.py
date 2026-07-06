@@ -46,14 +46,13 @@ def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: in
         raw = teacher_utility.get("signed_frame_utility")
     if raw is None and isinstance(row.get("signed_frame_utility"), list):
         raw = row.get("signed_frame_utility")
-    if raw is None and isinstance(teacher_utility, Mapping) and isinstance(teacher_utility.get("frame_utility"), list):
-        raw = teacher_utility.get("frame_utility")
-    if raw is None and isinstance(row.get("frame_utility"), list):
-        raw = row.get("frame_utility")
     if not isinstance(raw, list):
-        raise ValueError(f"line {line_no}: train-only teacher frame_utility is required")
+        raise ValueError(
+            f"line {line_no}: signed_frame_utility is required; "
+            "unsigned frame_utility cannot be used for signed_detector_utility_v1 training"
+        )
     if len(raw) != int(length):
-        raise ValueError(f"line {line_no}: teacher frame_utility length must match p_action length")
+        raise ValueError(f"line {line_no}: signed_frame_utility length must match p_action length")
     return [max(-1.0, min(1.0, float(item))) for item in raw]
 
 
@@ -352,6 +351,7 @@ def run_training(
         "dynamic_budget_buckets": buckets,
         "utility_semantics": "signed_detector_utility_v1",
         "signed_utility_supported": True,
+        "requires_signed_frame_utility": True,
         "dynamic_gain_calibration": dynamic_gain_calibration,
         "loss_terms": dict(detector_policy.DEFAULT_DETECTOR_AWARE_LOSS_TERMS),
         "teacher_target_scope": "train_only",
@@ -376,6 +376,7 @@ def run_training(
         "dynamic_budget_buckets": buckets,
         "utility_semantics": "signed_detector_utility_v1",
         "signed_utility_supported": True,
+        "requires_signed_frame_utility": True,
         "dynamic_gain_calibration": dynamic_gain_calibration,
         "teacher_target_scope": "train_only",
         "uses_uniform_scaffold": False,

@@ -4,11 +4,14 @@ import importlib.util
 import json
 from pathlib import Path
 
+from mmengine.config import Config
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_stage23_precheck.py"
 STAGE3_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_adatad_precheck.py"
 STAGE3_EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_adatad_precheck_exec.py"
+STAGE3_RUNNER = ROOT / "scripts" / "run_duca_stage3_truetime_precheck_gpu1.sh"
 
 
 def _load_validator():
@@ -69,3 +72,22 @@ def test_duca_stage23_validator_exists_and_accepts_real_stage3_precheck_proof(tm
     )
 
     assert payload == 0
+
+
+def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> None:
+    text = STAGE3_RUNNER.read_text(encoding="utf-8")
+
+    assert "run_c3_truetime_joint_selector_adatad_gpu1.sh" not in text
+    assert "run_truetime_joint_selector_smoke.py" not in text
+    assert "run_truetime_joint_selector_precheck.py" in text
+    assert "tools/train.py" in text
+    assert "ALLOW_TRUETIME_JOINT_SELECTOR_FULLTRAIN" in text
+
+
+def test_duca_stage3_precheck_config_keeps_default_precheck_contract_when_full_run_env(monkeypatch) -> None:
+    monkeypatch.setenv("PRECHECK_ONLY", "0")
+    cfg = Config.fromfile(str(STAGE3_CONFIG))
+
+    assert cfg.truetime_joint_selector_gate.precheck_only_default is True
+    assert cfg.truetime_joint_selector_gate.allow_long_training is True
+    assert cfg.truetime_joint_selector_gate.smoke_only is False
