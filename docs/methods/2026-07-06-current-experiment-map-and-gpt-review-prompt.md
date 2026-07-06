@@ -8,7 +8,7 @@ Primary branch: `codex/gas-vt-stage23-detector-aware-20260706`
 
 Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702`
 
-Latest pushed commit: `3f0041c9847ffc50b43a55d3845ec37ec089c026`
+Review target implementation commit: `3f0041c9847ffc50b43a55d3845ec37ec089c026`
 
 Commit URL: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/3f0041c9847ffc50b43a55d3845ec37ec089c026`
 
