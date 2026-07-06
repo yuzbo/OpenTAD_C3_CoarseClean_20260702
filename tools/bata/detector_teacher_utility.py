@@ -5,8 +5,9 @@ import hashlib
 import json
 import math
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 
 ROW_SCHEMA_VERSION = "c3_detector_teacher_utility_row_v1"
@@ -144,6 +145,74 @@ def _point_utility(point: Mapping[str, Any]) -> float:
     return cls * loc * ctr
 
 
+def _score_value(score: Any) -> float:
+    if isinstance(score, Mapping):
+        for key in ("score", "proposal_score", "classification_score"):
+            if key in score:
+                return _finite01(score[key])
+        values = [_finite01(value) for value in score.values()]
+        return max(values) if values else 0.0
+    if isinstance(score, Sequence) and not isinstance(score, (str, bytes, bytearray)):
+        values = [_finite01(value) for value in score]
+        return max(values) if values else 0.0
+    return _finite01(score)
+
+
+def actionformer_predictions_to_dense_points(
+    proposals: Sequence[Any],
+    scores: Sequence[Any],
+    *,
+    dense_len: int,
+    valid_len: int | None = None,
+    topk: int | None = None,
+) -> list[dict[str, Any]]:
+    """Convert ActionFormer proposal/score outputs to dense teacher points.
+
+    This is an online train-split teacher-export adapter, not a deploy-time
+    selector. It maps each proposal center back to a local dense frame index and
+    keeps only score-derived utility. It intentionally does not consume GT,
+    cached test predictions, or evaluator outputs.
+    """
+    dense_len = int(dense_len)
+    valid_len = dense_len if valid_len is None else min(int(valid_len), dense_len)
+    if dense_len <= 0 or valid_len <= 0:
+        raise ValueError("dense_len/valid_len must be positive")
+    if len(proposals) != len(scores):
+        raise ValueError("ActionFormer proposals and scores must have the same length")
+    dense_points: list[dict[str, Any]] = []
+    for proposal, score in zip(proposals, scores):
+        if not isinstance(proposal, Sequence) or isinstance(proposal, (str, bytes, bytearray)) or len(proposal) < 2:
+            continue
+        try:
+            start = float(proposal[0])
+            end = float(proposal[1])
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(start) or not math.isfinite(end):
+            continue
+        center = int(round((start + end) * 0.5))
+        if center < 0 or center >= valid_len:
+            continue
+        proposal_score = _score_value(score)
+        dense_points.append(
+            {
+                "point_index": center,
+                "proposal_score": proposal_score,
+                "classification_score": proposal_score,
+                "segment_start": start,
+                "segment_end": end,
+                "teacher_signal_source": "adatad_dense_teacher_actionformer_prediction",
+            }
+        )
+    dense_points.sort(key=lambda item: float(item["proposal_score"]), reverse=True)
+    if topk is not None:
+        topk = int(topk)
+        if topk <= 0:
+            raise ValueError("topk must be positive when provided")
+        dense_points = dense_points[:topk]
+    return dense_points
+
+
 def _normalize(values: Sequence[float], *, valid_len: int) -> list[float]:
     out = [float(item) for item in values]
     valid = out[: max(0, int(valid_len))]
@@ -191,6 +260,19 @@ def _dense_points(row: Mapping[str, Any], *, line_no: int) -> list[Mapping[str, 
         value = row.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, Mapping)]
+    proposals = row.get("teacher_proposals", row.get("actionformer_proposals"))
+    scores = row.get("teacher_scores", row.get("actionformer_scores"))
+    if isinstance(proposals, list) and isinstance(scores, list):
+        dense_len = int(row.get("dense_len") or row.get("valid_len") or 0)
+        valid_len = int(row.get("valid_len") or dense_len)
+        topk = row.get("teacher_topk_points")
+        return actionformer_predictions_to_dense_points(
+            proposals,
+            scores,
+            dense_len=dense_len,
+            valid_len=valid_len,
+            topk=None if topk is None else int(topk),
+        )
     raise ValueError(f"line {line_no}: teacher_dense_points are required")
 
 
