@@ -5,6 +5,10 @@ Stage2 detector-aware selector import, and the Stage3/4 TrueTime joint-selector
 smoke route. It is intentionally a claim-locked engineering note, not a result
 report.
 
+The latest external route review is recorded in
+`docs/methods/2026-07-06-detector-utility-route-review.md` and absorbed here as
+a method constraint update.
+
 ## Core Position
 
 The current p_action and GAS-VT strict-ledger routes are useful offline evidence
@@ -16,6 +20,23 @@ selector which observations matter for high-IoU temporal localization.
 The CVPR-level story should therefore move from "actionness selects frames" to
 "detector-aware temporal acquisition preserves boundary evidence for high-IoU
 TAD under sparse pre-backbone observation budgets."
+
+The preferred working story is:
+
+```text
+DUCA-TAD: Detector-Utility-Calibrated Acquisition for Temporal Action Detection
+```
+
+or, in claim language:
+
+```text
+Boundary-sensitive value-of-observation learning for sparse temporal action detection.
+```
+
+The teacher should be described as a dense detector critic, not as ground truth:
+
+> We distill the dense detector's marginal value-of-observation into a
+> deployable low-cost acquisition policy.
 
 ## Role of official_asformer
 
@@ -65,18 +86,27 @@ Stage2: Dense AdaTAD teacher utility to detector-aware acquisition.
 
 - train split only
 - teacher signals may include point responsibility, cls/reg utility, proposal
-  saliency, and counterfactual utility
+  saliency, interval/group-level counterfactual utility, boundary value, and
+  background-suppression value
+- utility should be signed, not positive-only, so the selector can preserve
+  frames that suppress false positives or stabilize ranking/NMS
+- fixed budgets need ranking quality; dynamic budgets need calibrated marginal
+  gain across videos, not only within-video rank
 - val/test selector must not use teacher, GT, raw prediction cache, or evaluator
   artifacts
 - answers whether AdaTAD teacher utility is better than p_action-only
 
-Stage3: ST hard selector plus AdaTAD joint training smoke.
+Stage3: Sparse-aware detector distillation, then ST hard selector plus AdaTAD
+joint training smoke.
 
 - forward path uses hard TopK sparse selected inputs
 - backward path keeps a straight-through selector gradient path
 - TrueTime metadata maps selected-axis detector predictions back to dense time
 - ActionFormer target assignment must use `physical_grid_actionformer`; otherwise
   selected-axis outputs and dense-time GT are not a closed localization system
+- sparse detector should first learn from dense teacher proposals, logits,
+  boundary distributions, ranking, or proposal-quality targets before full
+  detector loss is used to update the selector
 - current proof is a gradient smoke, not a full THUMOS mAP proof
 
 Stage4: Curriculum/bilevel stabilization.
@@ -130,6 +160,36 @@ Training stability:
 - detector loss and selector grad norm
 - rank correlation between teacher utility and learned acquisition score
 - compute accounting for scout + selector + sparse detector
+
+## Required Ablations
+
+Detector-utility ablations added by the latest route review:
+
+- teacher utility top-k upper bound, explicitly marked non-deployable
+- observable low-cost selector versus teacher-feature selector to measure the
+  observability gap
+- positive-only utility versus signed utility
+- sparse detector without distillation versus sparse detector with dense-teacher
+  distillation
+- p_action-only, GAS-VT, detector-utility fixed, detector-utility dynamic, and
+  ST runtime selector under the same AdaTAD mAP protocol
+
+The detector-utility learning objective should evolve toward:
+
+```text
+L =
+  L_rank
+  + L_gain_calib
+  + L_budget
+  + L_boundary_bracket
+  + L_interior
+  + L_cvar_utility_gap
+  + L_sparse_distill
+  + 1_stage3 * L_detector
+```
+
+`L_detector` remains claim-locked until Stage2 detector-utility and Stage3
+sparse-distillation evidence are stable.
 
 ## Implementation Status
 
