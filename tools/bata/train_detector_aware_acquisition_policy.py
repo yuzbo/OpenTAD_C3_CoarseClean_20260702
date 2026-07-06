@@ -32,6 +32,16 @@ def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: in
         raise ValueError(f"line {line_no}: teacher utility must be train_only")
     raw = None
     teacher_utility = row.get("teacher_utility")
+    if isinstance(teacher_utility, Mapping) and "marginal_gain_frame_utility" in teacher_utility:
+        raise ValueError(
+            f"line {line_no}: marginal_gain_frame_utility is deprecated; "
+            "train on signed_frame_utility with positive_observation_gain/negative_observation_risk targets"
+        )
+    if "marginal_gain_frame_utility" in row:
+        raise ValueError(
+            f"line {line_no}: marginal_gain_frame_utility is deprecated; "
+            "train on signed_frame_utility with positive_observation_gain/negative_observation_risk targets"
+        )
     if isinstance(teacher_utility, Mapping) and isinstance(teacher_utility.get("signed_frame_utility"), list):
         raw = teacher_utility.get("signed_frame_utility")
     if raw is None and isinstance(row.get("signed_frame_utility"), list):
