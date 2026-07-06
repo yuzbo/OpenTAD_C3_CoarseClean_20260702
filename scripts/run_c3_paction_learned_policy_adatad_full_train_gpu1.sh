@@ -123,6 +123,62 @@ PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 
 mkdir -p "${POLICY_DIR}" "${LEDGER_ROOT}" "${VALIDATION_DIR}" "${RUN_DIR_ROOT}" "${WORK_DIR_ROOT}"
 
+C3_PACTION_TRAIN_SOURCE_JSONL_ORIGINAL="${C3_PACTION_TRAIN_SOURCE_JSONL}"
+C3_PACTION_VAL_SOURCE_JSONL_ORIGINAL="${C3_PACTION_VAL_SOURCE_JSONL}"
+C3_PACTION_TEST_SOURCE_JSONL_ORIGINAL="${C3_PACTION_TEST_SOURCE_JSONL}"
+MATERIALIZED_SOURCE_DIR="${LEARNED_ROOT}/source_split_guard"
+mkdir -p "${MATERIALIZED_SOURCE_DIR}"
+
+materialize_split_source_jsonl() {
+  local input_jsonl="$1"
+  local split_value="$2"
+  local output_jsonl="$3"
+  "${PYTHON}" - "${input_jsonl}" "${split_value}" "${output_jsonl}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+input_jsonl, split_value, output_jsonl = sys.argv[1:4]
+aliases = {
+    "training": {"train", "training"},
+    "validation": {"val", "valid", "validation"},
+    "test": {"test", "testing"},
+}
+allowed = aliases[split_value]
+out_path = Path(output_jsonl)
+out_path.parent.mkdir(parents=True, exist_ok=True)
+count = 0
+with open(input_jsonl, "r", encoding="utf-8-sig") as src, out_path.open("w", encoding="utf-8") as dst:
+    for line_no, line in enumerate(src, start=1):
+        text = line.strip()
+        if not text:
+            continue
+        row = json.loads(text)
+        if not isinstance(row, dict):
+            raise ValueError(f"{input_jsonl}:{line_no}: row must be a JSON object")
+        existing = None
+        for key in ("split", "subset", "subset_name"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                existing = value.strip().lower()
+                break
+        if existing is not None and existing not in allowed:
+            raise ValueError(f"{input_jsonl}:{line_no}: split {existing!r} conflicts with expected {split_value!r}")
+        row['split'] = split_value
+        dst.write(json.dumps(row, sort_keys=True) + "\n")
+        count += 1
+if count <= 0:
+    raise ValueError(f"{input_jsonl}: no sample rows to materialize")
+PY
+}
+
+C3_PACTION_TRAIN_SOURCE_JSONL="${MATERIALIZED_SOURCE_DIR}/train.samples.jsonl"
+C3_PACTION_VAL_SOURCE_JSONL="${MATERIALIZED_SOURCE_DIR}/val.samples.jsonl"
+C3_PACTION_TEST_SOURCE_JSONL="${MATERIALIZED_SOURCE_DIR}/test.samples.jsonl"
+materialize_split_source_jsonl "${C3_PACTION_TRAIN_SOURCE_JSONL_ORIGINAL}" training "${C3_PACTION_TRAIN_SOURCE_JSONL}"
+materialize_split_source_jsonl "${C3_PACTION_VAL_SOURCE_JSONL_ORIGINAL}" validation "${C3_PACTION_VAL_SOURCE_JSONL}"
+materialize_split_source_jsonl "${C3_PACTION_TEST_SOURCE_JSONL_ORIGINAL}" test "${C3_PACTION_TEST_SOURCE_JSONL}"
+
 echo "[C3_PACTION_LEARNED_ADATAD] repo=${REPO_ROOT}"
 echo "[C3_PACTION_LEARNED_ADATAD] head=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 echo "[C3_PACTION_LEARNED_ADATAD] gpu=${CUDA_VISIBLE_DEVICES}"
@@ -130,6 +186,9 @@ echo "[C3_PACTION_LEARNED_ADATAD] slurm_step_gpus=${SLURM_STEP_GPUS:-none} slurm
 echo "[C3_PACTION_LEARNED_ADATAD] precheck_only=${PRECHECK_ONLY} unlock=${ALLOW_C3_PACTION_LEARNED_ADATAD_FULLTRAIN}"
 echo "[C3_PACTION_LEARNED_ADATAD] learned_root=${LEARNED_ROOT}"
 echo "[C3_PACTION_LEARNED_ADATAD] adatad_pretrain_path=${C3_PACTION_ADATAD_PRETRAIN_PATH}"
+echo "[C3_PACTION_LEARNED_ADATAD] source_train=${C3_PACTION_TRAIN_SOURCE_JSONL} original=${C3_PACTION_TRAIN_SOURCE_JSONL_ORIGINAL}"
+echo "[C3_PACTION_LEARNED_ADATAD] source_val=${C3_PACTION_VAL_SOURCE_JSONL} original=${C3_PACTION_VAL_SOURCE_JSONL_ORIGINAL}"
+echo "[C3_PACTION_LEARNED_ADATAD] source_test=${C3_PACTION_TEST_SOURCE_JSONL} original=${C3_PACTION_TEST_SOURCE_JSONL_ORIGINAL}"
 
 if [[ "${PRECHECK_ONLY}" != "1" && -z "${SLURM_JOB_ID:-}${SLURM_STEP_ID:-}" && "${ALLOW_NON_SLURM_C3_PACTION_FULLTRAIN:-0}" != "1" ]]; then
   fail "formal full train must run inside a Slurm allocation/step; set PRECHECK_ONLY=1 for login-node checks"
