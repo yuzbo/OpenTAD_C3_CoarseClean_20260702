@@ -31,6 +31,45 @@ def test_dense_point_utility_maps_to_normalized_frame_utility_with_contract() ->
     assert frame_utility[5] == 0.0
 
 
+def test_actionformer_predictions_map_to_dense_teacher_points_without_gt() -> None:
+    dense_points = teacher_utility.actionformer_predictions_to_dense_points(
+        proposals=[[0.2, 1.8], [3.2, 4.7], [10.0, 12.0], ["bad", 2.0]],
+        scores=[[0.1, 0.9], {"classification_score": 0.4}, 0.2, 1.0],
+        dense_len=6,
+        valid_len=5,
+    )
+
+    assert [point["point_index"] for point in dense_points] == [1, 4]
+    assert dense_points[0]["proposal_score"] == pytest.approx(0.9)
+    assert dense_points[0]["teacher_signal_source"] == "adatad_dense_teacher_actionformer_prediction"
+
+
+def test_teacher_utility_export_accepts_actionformer_prediction_rows(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "actionformer_predictions.jsonl"
+    output_jsonl = tmp_path / "teacher_utility.jsonl"
+    _write_jsonl(
+        input_jsonl,
+        [
+            {
+                "sample_id": "video_test_0001|0",
+                "split": "training",
+                "dense_len": 6,
+                "valid_len": 5,
+                "teacher_proposals": [[0.0, 2.0], [3.0, 5.0]],
+                "teacher_scores": [[0.2, 0.8], [0.3, 0.6]],
+            }
+        ],
+    )
+
+    teacher_utility.run_export(input_jsonl, output_jsonl, expected_split="training")
+    exported = _read_jsonl(output_jsonl)
+
+    assert exported[0]["frame_utility"][1] == pytest.approx(1.0)
+    assert exported[0]["frame_utility"][4] > 0.0
+    assert exported[0]["uses_raw_prediction"] is False
+    assert exported[0]["prediction_uses_gt"] is False
+
+
 def test_teacher_utility_export_rejects_val_or_gt_leakage_and_writes_jsonl_npz(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "dense_teacher.jsonl"
     output_jsonl = tmp_path / "teacher_utility.jsonl"
