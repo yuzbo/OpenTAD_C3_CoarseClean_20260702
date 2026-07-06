@@ -76,6 +76,18 @@ def test_detector_aware_training_preserves_signed_utility_and_calibrated_gain_ta
     assert prepared[0]["dynamic_budget_target"] == 2
 
 
+def test_detector_aware_training_rejects_legacy_abs_marginal_gain_target() -> None:
+    row = _sample_row()
+    row["teacher_utility"] = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "signed_frame_utility": [0.0, 0.9, -0.4, 1.0, -0.8, 0.7],
+        "marginal_gain_frame_utility": [0.0, 0.9, 0.4, 1.0, 0.8, 0.7],
+    }
+
+    with pytest.raises(ValueError, match="marginal_gain_frame_utility"):
+        train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
+
+
 def test_detector_aware_dynamic_budget_uses_train_global_gain_threshold_not_per_video_ranking() -> None:
     high_gain = _sample_row()
     high_gain["sample_id"] = "video_high|0"

@@ -17,6 +17,7 @@ GENERATOR_MANIFEST_READY = "C3_DETECTOR_TEACHER_UTILITY_GENERATOR_MANIFEST_READY
 READY = "C3_DETECTOR_TEACHER_UTILITY_EXPORT_READY"
 STAGE_LABEL = "Stage-2 detector-aware offline selector"
 UTILITY_SEMANTICS = "signed_detector_utility_v1"
+TEACHER_SIGNAL_SOURCE = "adatad_dense_teacher"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_gt_for_selection",
@@ -52,7 +53,19 @@ JSONL_SCHEMA = {
     ],
     "frame_utility": "float list on local dense frame axis; padded positions >= valid_len are zero",
     "signed_frame_utility": "float list in [-1, 1]; negative values encode detector background-suppression/ranking utility",
+    "positive_observation_gain": "float list in [0, 1] equal to max(0, signed_frame_utility)",
+    "negative_observation_risk": "float list in [0, 1] equal to max(0, -signed_frame_utility)",
     "npz": "arrays sample_ids(str), splits(str), dense_lens(int64), valid_lens(int64), frame_utility(float32 padded)",
+}
+
+
+PROVENANCE_LOOKUP_CONTAINERS = ("teacher_utility_provenance", "teacher_provenance", "provenance", "meta")
+SOURCE_PROVENANCE_ALIASES = {
+    "teacher_signal_source": ("teacher_signal_source",),
+    "teacher_axis": ("teacher_axis", "axis", "coordinate_axis", "dense_axis", "frame_axis"),
+    "fps": ("fps", "source_fps", "video_fps"),
+    "snippet_stride": ("snippet_stride", "feature_stride", "sample_stride", "stride"),
+    "window_start_frame": ("window_start_frame", "window_start", "window_index", "window"),
 }
 
 
@@ -92,6 +105,18 @@ def _sha256_file(path: str | Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _require_file_sha256(path: str | Path | None, *, path_key: str, sha_key: str) -> tuple[str, str]:
+    if path is None:
+        raise ValueError(f"{path_key} is required for detector teacher utility export")
+    resolved = Path(path).expanduser()
+    if not resolved.is_file():
+        raise ValueError(f"{path_key} missing: {resolved}")
+    sha256 = _sha256_file(resolved)
+    if not sha256:
+        raise ValueError(f"{sha_key} is required for detector teacher utility export")
+    return str(path), sha256
 
 
 def _git_sha() -> str | None:
@@ -148,6 +173,52 @@ def _finite_signed(value: Any) -> float:
     if not math.isfinite(out):
         return 0.0
     return max(-1.0, min(1.0, out))
+
+
+def _lookup_provenance_value(row: Mapping[str, Any], aliases: Sequence[str]) -> Any:
+    for key in aliases:
+        if key in row and row[key] is not None:
+            return row[key]
+    for container_key in PROVENANCE_LOOKUP_CONTAINERS:
+        container = row.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        for key in aliases:
+            if key in container and container[key] is not None:
+                return container[key]
+    return None
+
+
+def _require_source_provenance(row: Mapping[str, Any], *, line_no: int) -> dict[str, Any]:
+    provenance: dict[str, Any] = {
+        "dense_len": int(row.get("dense_len") or row.get("valid_len") or 0),
+        "valid_len": int(row.get("valid_len") or row.get("dense_len") or 0),
+    }
+    for canonical, aliases in SOURCE_PROVENANCE_ALIASES.items():
+        value = _lookup_provenance_value(row, aliases)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise ValueError(f"line {line_no}: {canonical} provenance is required")
+        provenance[canonical] = value
+    if str(provenance["teacher_signal_source"]) != TEACHER_SIGNAL_SOURCE:
+        raise ValueError(f"line {line_no}: teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
+    if provenance["dense_len"] <= 0:
+        raise ValueError(f"line {line_no}: dense_len provenance is required")
+    try:
+        fps = float(provenance["fps"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"line {line_no}: fps provenance must be numeric") from exc
+    if not math.isfinite(fps) or fps <= 0.0:
+        raise ValueError(f"line {line_no}: fps provenance must be positive")
+    try:
+        stride = float(provenance["snippet_stride"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"line {line_no}: snippet_stride provenance must be numeric") from exc
+    if not math.isfinite(stride) or stride <= 0.0:
+        raise ValueError(f"line {line_no}: snippet_stride provenance must be positive")
+    window_size = _lookup_provenance_value(row, ("window_size", "dense_window_size", "source_window_size"))
+    if window_size is not None:
+        provenance["window_size"] = window_size
+    return provenance
 
 
 def _point_index(point: Mapping[str, Any]) -> int | None:
@@ -372,6 +443,7 @@ def teacher_utility_row_from_dense_teacher(
     spread_radius: int = 1,
 ) -> dict[str, Any]:
     _validate_source_row(row, line_no=line_no, expected_split=expected_split)
+    source_provenance = _require_source_provenance(row, line_no=line_no)
     sample_id = row.get("sample_id")
     if not isinstance(sample_id, str) or not sample_id:
         raise ValueError(f"line {line_no}: sample_id is required")
@@ -392,6 +464,8 @@ def teacher_utility_row_from_dense_teacher(
         valid_len=valid_len,
         spread_radius=spread_radius,
     )
+    positive_observation_gain = [max(0.0, float(item)) for item in signed_frame_utility]
+    negative_observation_risk = [max(0.0, -float(item)) for item in signed_frame_utility]
     return {
         "schema_version": ROW_SCHEMA_VERSION,
         "stage_label": STAGE_LABEL,
@@ -401,14 +475,19 @@ def teacher_utility_row_from_dense_teacher(
         "valid_len": int(valid_len),
         "frame_utility": frame_utility,
         "signed_frame_utility": signed_frame_utility,
+        "positive_observation_gain": positive_observation_gain,
+        "negative_observation_risk": negative_observation_risk,
         "teacher_utility": {
             "utility_semantics": UTILITY_SEMANTICS,
             "frame_utility": frame_utility,
             "signed_frame_utility": signed_frame_utility,
-            "marginal_gain_frame_utility": [abs(float(item)) for item in signed_frame_utility],
+            "positive_observation_gain": positive_observation_gain,
+            "negative_observation_risk": negative_observation_risk,
+            "marginal_gain_frame_utility_diagnostic": positive_observation_gain,
+            "marginal_gain_frame_utility_diagnostic_semantics": "diagnostic_alias_of_positive_observation_gain_not_abs_signed",
         },
         "teacher_utility_provenance": {
-            "teacher_signal_source": str(row.get("teacher_signal_source") or "adatad_dense_teacher"),
+            **source_provenance,
             "teacher_checkpoint_path": row.get("teacher_checkpoint_path"),
             "teacher_checkpoint_sha256": row.get("teacher_checkpoint_sha256"),
             "split_scope": "train_only",
@@ -474,6 +553,8 @@ def _merge_teacher_utility_into_base(
         merged["stage_label"] = STAGE_LABEL
         merged["frame_utility"] = list(utility["frame_utility"])
         merged["signed_frame_utility"] = list(utility["signed_frame_utility"])
+        merged["positive_observation_gain"] = list(utility["positive_observation_gain"])
+        merged["negative_observation_risk"] = list(utility["negative_observation_risk"])
         merged["teacher_utility"] = dict(utility["teacher_utility"])
         merged["teacher_utility_provenance"] = dict(utility["teacher_utility_provenance"])
         merged["uses_teacher"] = True
@@ -495,11 +576,17 @@ def _write_npz(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
     max_len = max(int(row["dense_len"]) for row in rows)
     utility = np.zeros((len(rows), max_len), dtype=np.float32)
     signed_utility = np.zeros((len(rows), max_len), dtype=np.float32)
+    positive_gain = np.zeros((len(rows), max_len), dtype=np.float32)
+    negative_risk = np.zeros((len(rows), max_len), dtype=np.float32)
     for row_idx, row in enumerate(rows):
         values = [float(item) for item in row["frame_utility"]]
         utility[row_idx, : len(values)] = np.asarray(values, dtype=np.float32)
         signed_values = [float(item) for item in row.get("signed_frame_utility", values)]
         signed_utility[row_idx, : len(signed_values)] = np.asarray(signed_values, dtype=np.float32)
+        gain_values = [float(item) for item in row.get("positive_observation_gain", [max(0.0, value) for value in signed_values])]
+        risk_values = [float(item) for item in row.get("negative_observation_risk", [max(0.0, -value) for value in signed_values])]
+        positive_gain[row_idx, : len(gain_values)] = np.asarray(gain_values, dtype=np.float32)
+        negative_risk[row_idx, : len(risk_values)] = np.asarray(risk_values, dtype=np.float32)
     np.savez_compressed(
         out_path,
         sample_ids=np.asarray([str(row["sample_id"]) for row in rows]),
@@ -508,8 +595,35 @@ def _write_npz(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
         valid_lens=np.asarray([int(row["valid_len"]) for row in rows], dtype=np.int64),
         frame_utility=utility,
         signed_frame_utility=signed_utility,
+        positive_observation_gain=positive_gain,
+        negative_observation_risk=negative_risk,
         schema_version=np.asarray([ROW_SCHEMA_VERSION]),
     )
+
+
+def _attach_export_artifact_evidence(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    teacher_checkpoint_path: str,
+    teacher_checkpoint_sha256: str,
+    teacher_config_path: str,
+    teacher_config_sha256: str,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        provenance = dict(item.get("teacher_utility_provenance") or {})
+        provenance.update(
+            {
+                "teacher_checkpoint_path": teacher_checkpoint_path,
+                "teacher_checkpoint_sha256": teacher_checkpoint_sha256,
+                "teacher_config_path": teacher_config_path,
+                "teacher_config_sha256": teacher_config_sha256,
+            }
+        )
+        item["teacher_utility_provenance"] = provenance
+        out.append(item)
+    return out
 
 
 def run_export(
@@ -526,6 +640,16 @@ def run_export(
     spread_radius: int = 1,
 ) -> dict[str, Any]:
     generator_manifest = None if generator_manifest_json is None else validate_generator_manifest(generator_manifest_json)
+    checkpoint_path_text, checkpoint_sha256 = _require_file_sha256(
+        teacher_checkpoint_path,
+        path_key="teacher_checkpoint_path",
+        sha_key="teacher_checkpoint_sha256",
+    )
+    config_path_text, config_sha256 = _require_file_sha256(
+        teacher_config_path,
+        path_key="teacher_config_path",
+        sha_key="teacher_config_sha256",
+    )
     source_rows = _read_jsonl(input_jsonl)
     out_rows = [
         teacher_utility_row_from_dense_teacher(
@@ -536,6 +660,13 @@ def run_export(
         )
         for line_no, row in enumerate(source_rows, start=1)
     ]
+    out_rows = _attach_export_artifact_evidence(
+        out_rows,
+        teacher_checkpoint_path=checkpoint_path_text,
+        teacher_checkpoint_sha256=checkpoint_sha256,
+        teacher_config_path=config_path_text,
+        teacher_config_sha256=config_sha256,
+    )
     if base_samples_jsonl is not None:
         out_rows = _merge_teacher_utility_into_base(
             utility_rows=out_rows,
@@ -545,18 +676,16 @@ def run_export(
     _write_jsonl(output_jsonl, out_rows)
     if output_npz is not None:
         _write_npz(output_npz, out_rows)
-    checkpoint_sha256 = None if teacher_checkpoint_path is None else _sha256_file(teacher_checkpoint_path)
-    config_sha256 = None if teacher_config_path is None else _sha256_file(teacher_config_path)
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "decision": READY,
         "stage_label": STAGE_LABEL,
         "route_label": "DIVERGENT_INNOVATION_DETECTOR_AWARE_UTILITY_DO_NOT_MERGE_WITH_C3",
-        "teacher_signal_source": "adatad_dense_teacher",
+        "teacher_signal_source": TEACHER_SIGNAL_SOURCE,
         "split_scope": "train_only",
-        "teacher_checkpoint_path": None if teacher_checkpoint_path is None else str(teacher_checkpoint_path),
+        "teacher_checkpoint_path": checkpoint_path_text,
         "teacher_checkpoint_sha256": checkpoint_sha256,
-        "teacher_config_path": None if teacher_config_path is None else str(teacher_config_path),
+        "teacher_config_path": config_path_text,
         "teacher_config_sha256": config_sha256,
         "generator_manifest_json": None if generator_manifest is None else generator_manifest["generator_manifest_json"],
         "generator_manifest_sha256": None if generator_manifest is None else generator_manifest["generator_manifest_sha256"],
@@ -571,7 +700,6 @@ def run_export(
         "utility_semantics": UTILITY_SEMANTICS,
         "signed_utility_supported": True,
         "expected_split": expected_split,
-        "split_scope": "train_only",
         "uses_val_or_test_gt_for_selection": False,
         "uses_gt_for_selection": False,
         "uses_prediction_cache": False,
@@ -604,8 +732,8 @@ def validate_generator_manifest(manifest_json: str | Path) -> dict[str, Any]:
         raise ValueError("generator_manifest schema_version mismatch")
     if payload.get("decision") != GENERATOR_MANIFEST_READY:
         raise ValueError("generator_manifest decision is not ready")
-    if payload.get("teacher_signal_source") != "adatad_dense_teacher":
-        raise ValueError("generator_manifest teacher_signal_source must be adatad_dense_teacher")
+    if payload.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
+        raise ValueError(f"generator_manifest teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
     if payload.get("generator_source") != "dense_detector_forward_train":
         raise ValueError("generator_manifest generator_source must be dense_detector_forward_train")
     if payload.get("split_scope") != "train_only":
@@ -640,8 +768,8 @@ def validate_teacher_utility_export_evidence(
         raise ValueError("teacher utility evidence schema_version mismatch")
     if summary.get("decision") != READY:
         raise ValueError("teacher utility export decision is not ready")
-    if summary.get("teacher_signal_source") != "adatad_dense_teacher":
-        raise ValueError("teacher_signal_source must be adatad_dense_teacher")
+    if summary.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
+        raise ValueError(f"teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
     if summary.get("split_scope") != "train_only":
         raise ValueError("split_scope must be train_only")
     if summary.get("utility_semantics") != UTILITY_SEMANTICS:
@@ -679,10 +807,23 @@ def validate_teacher_utility_export_evidence(
         provenance = row.get("teacher_utility_provenance")
         if not isinstance(provenance, Mapping):
             raise ValueError(f"{output_path}:{line_no}: missing teacher_utility_provenance")
-        if provenance.get("teacher_signal_source") != "adatad_dense_teacher":
-            raise ValueError(f"{output_path}:{line_no}: teacher_signal_source must be adatad_dense_teacher")
+        if provenance.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
+            raise ValueError(f"{output_path}:{line_no}: teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
         if provenance.get("split_scope") != "train_only":
             raise ValueError(f"{output_path}:{line_no}: split_scope must be train_only")
+        for key in (
+            "dense_len",
+            "teacher_axis",
+            "fps",
+            "snippet_stride",
+            "window_start_frame",
+            "teacher_checkpoint_path",
+            "teacher_checkpoint_sha256",
+            "teacher_config_path",
+            "teacher_config_sha256",
+        ):
+            if provenance.get(key) is None or (isinstance(provenance.get(key), str) and not provenance.get(key)):
+                raise ValueError(f"{output_path}:{line_no}: teacher_utility_provenance requires {key}")
         if row.get("uses_teacher") is not True or row.get("training_only") is not True:
             raise ValueError(f"{output_path}:{line_no}: teacher utility rows must be training_only teacher artifacts")
         teacher_payload = row.get("teacher_utility")
@@ -693,6 +834,21 @@ def validate_teacher_utility_export_evidence(
         signed = teacher_payload.get("signed_frame_utility", row.get("signed_frame_utility"))
         if not isinstance(signed, list) or len(signed) != int(row.get("dense_len", 0)):
             raise ValueError(f"{output_path}:{line_no}: signed_frame_utility is required")
+        gain = teacher_payload.get("positive_observation_gain", row.get("positive_observation_gain"))
+        risk = teacher_payload.get("negative_observation_risk", row.get("negative_observation_risk"))
+        if not isinstance(gain, list) or len(gain) != len(signed):
+            raise ValueError(f"{output_path}:{line_no}: positive_observation_gain is required")
+        if not isinstance(risk, list) or len(risk) != len(signed):
+            raise ValueError(f"{output_path}:{line_no}: negative_observation_risk is required")
+        for idx, (signed_value, gain_value, risk_value) in enumerate(zip(signed, gain, risk)):
+            expected_gain = max(0.0, float(signed_value))
+            expected_risk = max(0.0, -float(signed_value))
+            if abs(float(gain_value) - expected_gain) > 1e-6:
+                raise ValueError(f"{output_path}:{line_no}: positive_observation_gain mismatch at index {idx}")
+            if abs(float(risk_value) - expected_risk) > 1e-6:
+                raise ValueError(f"{output_path}:{line_no}: negative_observation_risk mismatch at index {idx}")
+        if "marginal_gain_frame_utility" in teacher_payload:
+            raise ValueError(f"{output_path}:{line_no}: marginal_gain_frame_utility is deprecated; use positive_observation_gain")
         for key in FORBIDDEN_TRUE_FLAGS:
             if _is_true(row.get(key, False)):
                 raise ValueError(f"{output_path}:{line_no}: forbidden teacher utility row flag {key}=true")

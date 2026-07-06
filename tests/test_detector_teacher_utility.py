@@ -39,6 +39,41 @@ def _write_generator_manifest(path: Path) -> None:
     )
 
 
+def _write_teacher_artifacts(tmp_path: Path) -> tuple[Path, Path]:
+    checkpoint = tmp_path / "teacher.pth"
+    config = tmp_path / "teacher.py"
+    checkpoint.write_bytes(b"teacher checkpoint")
+    config.write_text("model = dict(type='AdaTAD')\n", encoding="utf-8")
+    return checkpoint, config
+
+
+def _teacher_source_provenance() -> dict:
+    return {
+        "teacher_signal_source": "adatad_dense_teacher",
+        "teacher_axis": "dense_frame_index",
+        "fps": 25.0,
+        "snippet_stride": 4,
+        "window_start_frame": 0,
+        "window_size": 768,
+    }
+
+
+def _dense_teacher_row(**extra: object) -> dict:
+    row = {
+        "sample_id": "video_test_0001|0",
+        "split": "training",
+        "dense_len": 5,
+        "valid_len": 5,
+        "teacher_dense_points": [
+            {"point_index": 0, "classification_score": 0.2, "localization_quality": 0.5},
+            {"point_index": 2, "classification_score": 0.9, "localization_quality": 0.8},
+        ],
+        **_teacher_source_provenance(),
+    }
+    row.update(extra)
+    return row
+
+
 def test_dense_point_utility_maps_to_normalized_frame_utility_with_contract() -> None:
     points = [
         {"point_index": 1, "classification_score": 0.8, "localization_quality": 0.5, "centerness": 1.0},
@@ -85,6 +120,7 @@ def test_actionformer_predictions_map_to_dense_teacher_points_without_gt() -> No
 def test_teacher_utility_export_accepts_actionformer_prediction_rows(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "actionformer_predictions.jsonl"
     output_jsonl = tmp_path / "teacher_utility.jsonl"
+    checkpoint, config = _write_teacher_artifacts(tmp_path)
     _write_jsonl(
         input_jsonl,
         [
@@ -95,11 +131,18 @@ def test_teacher_utility_export_accepts_actionformer_prediction_rows(tmp_path: P
                 "valid_len": 5,
                 "teacher_proposals": [[0.0, 2.0], [3.0, 5.0]],
                 "teacher_scores": [[0.2, 0.8], [0.3, 0.6]],
+                **_teacher_source_provenance(),
             }
         ],
     )
 
-    teacher_utility.run_export(input_jsonl, output_jsonl, expected_split="training")
+    teacher_utility.run_export(
+        input_jsonl,
+        output_jsonl,
+        teacher_checkpoint_path=checkpoint,
+        teacher_config_path=config,
+        expected_split="training",
+    )
     exported = _read_jsonl(output_jsonl)
 
     assert exported[0]["frame_utility"][1] == pytest.approx(1.0)
@@ -113,18 +156,8 @@ def test_teacher_utility_export_rejects_val_or_gt_leakage_and_writes_jsonl_npz(t
     output_jsonl = tmp_path / "teacher_utility.jsonl"
     output_npz = tmp_path / "teacher_utility.npz"
     summary_json = tmp_path / "summary.json"
-    rows = [
-        {
-            "sample_id": "video_test_0001|0",
-            "split": "training",
-            "dense_len": 5,
-            "valid_len": 5,
-            "teacher_dense_points": [
-                {"point_index": 0, "classification_score": 0.2, "localization_quality": 0.5},
-                {"point_index": 2, "classification_score": 0.9, "localization_quality": 0.8},
-            ],
-        }
-    ]
+    checkpoint, config = _write_teacher_artifacts(tmp_path)
+    rows = [_dense_teacher_row()]
     _write_jsonl(input_jsonl, rows)
 
     summary = teacher_utility.run_export(
@@ -132,6 +165,8 @@ def test_teacher_utility_export_rejects_val_or_gt_leakage_and_writes_jsonl_npz(t
         output_jsonl,
         summary_json=summary_json,
         output_npz=output_npz,
+        teacher_checkpoint_path=checkpoint,
+        teacher_config_path=config,
         expected_split="training",
     )
     exported = _read_jsonl(output_jsonl)
@@ -150,19 +185,114 @@ def test_teacher_utility_export_rejects_val_or_gt_leakage_and_writes_jsonl_npz(t
     assert exported[0]["frame_utility"][2] == pytest.approx(1.0)
     assert exported[0]["teacher_utility"]["utility_semantics"] == "signed_detector_utility_v1"
     assert exported[0]["teacher_utility"]["signed_frame_utility"][2] == pytest.approx(1.0)
+    assert exported[0]["teacher_utility"]["positive_observation_gain"][2] == pytest.approx(1.0)
+    assert exported[0]["teacher_utility"]["negative_observation_risk"] == [0.0] * 5
+    assert exported[0]["teacher_utility"]["marginal_gain_frame_utility_diagnostic"] == exported[0]["teacher_utility"]["positive_observation_gain"]
+    assert "marginal_gain_frame_utility" not in exported[0]["teacher_utility"]
     assert summary["utility_semantics"] == "signed_detector_utility_v1"
     assert summary["signed_utility_supported"] is True
+    assert summary["teacher_checkpoint_sha256"] == teacher_utility._sha256_file(checkpoint)
+    assert summary["teacher_config_sha256"] == teacher_utility._sha256_file(config)
 
     rows[0]["split"] = "validation"
     _write_jsonl(input_jsonl, rows)
     with pytest.raises(ValueError, match="expected split training"):
-        teacher_utility.run_export(input_jsonl, output_jsonl, expected_split="training")
+        teacher_utility.run_export(
+            input_jsonl,
+            output_jsonl,
+            teacher_checkpoint_path=checkpoint,
+            teacher_config_path=config,
+            expected_split="training",
+        )
 
     rows[0]["split"] = "training"
     rows[0]["uses_gt"] = True
     _write_jsonl(input_jsonl, rows)
     with pytest.raises(ValueError, match="forbidden teacher source flag uses_gt=true"):
-        teacher_utility.run_export(input_jsonl, output_jsonl, expected_split="training")
+        teacher_utility.run_export(
+            input_jsonl,
+            output_jsonl,
+            teacher_checkpoint_path=checkpoint,
+            teacher_config_path=config,
+            expected_split="training",
+        )
+
+
+def test_teacher_utility_export_splits_negative_utility_from_positive_gain(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "dense_teacher.jsonl"
+    output_jsonl = tmp_path / "teacher_utility.jsonl"
+    checkpoint, config = _write_teacher_artifacts(tmp_path)
+    _write_jsonl(
+        input_jsonl,
+        [
+            _dense_teacher_row(
+                dense_len=4,
+                valid_len=4,
+                teacher_dense_points=[
+                    {"point_index": 1, "signed_utility": 0.5},
+                    {"point_index": 2, "signed_utility": -1.0},
+                ],
+            )
+        ],
+    )
+
+    teacher_utility.run_export(
+        input_jsonl,
+        output_jsonl,
+        teacher_checkpoint_path=checkpoint,
+        teacher_config_path=config,
+        expected_split="training",
+        spread_radius=0,
+    )
+    payload = _read_jsonl(output_jsonl)[0]["teacher_utility"]
+
+    assert payload["signed_frame_utility"] == [0.0, 0.5, -1.0, 0.0]
+    assert payload["positive_observation_gain"] == [0.0, 0.5, 0.0, 0.0]
+    assert payload["negative_observation_risk"] == [0.0, 0.0, 1.0, 0.0]
+    assert payload["marginal_gain_frame_utility_diagnostic"] == [0.0, 0.5, 0.0, 0.0]
+    assert "marginal_gain_frame_utility" not in payload
+
+
+def test_teacher_utility_export_fails_before_writing_without_required_evidence(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "dense_teacher.jsonl"
+    output_jsonl = tmp_path / "teacher_utility.jsonl"
+    checkpoint, config = _write_teacher_artifacts(tmp_path)
+    row = _dense_teacher_row()
+    row.pop("teacher_signal_source")
+    _write_jsonl(input_jsonl, [row])
+
+    with pytest.raises(ValueError, match="teacher_signal_source"):
+        teacher_utility.run_export(
+            input_jsonl,
+            output_jsonl,
+            teacher_checkpoint_path=checkpoint,
+            teacher_config_path=config,
+            expected_split="training",
+        )
+    assert not output_jsonl.exists()
+
+    row = _dense_teacher_row()
+    row.pop("fps")
+    _write_jsonl(input_jsonl, [row])
+    with pytest.raises(ValueError, match="fps"):
+        teacher_utility.run_export(
+            input_jsonl,
+            output_jsonl,
+            teacher_checkpoint_path=checkpoint,
+            teacher_config_path=config,
+            expected_split="training",
+        )
+    assert not output_jsonl.exists()
+
+    _write_jsonl(input_jsonl, [_dense_teacher_row()])
+    with pytest.raises(ValueError, match="teacher_checkpoint_path"):
+        teacher_utility.run_export(
+            input_jsonl,
+            output_jsonl,
+            teacher_config_path=config,
+            expected_split="training",
+        )
+    assert not output_jsonl.exists()
 
 
 def test_teacher_utility_export_merges_base_samples_and_validates_evidence(tmp_path: Path) -> None:
@@ -185,6 +315,7 @@ def test_teacher_utility_export_merges_base_samples_and_validates_evidence(tmp_p
                 "dense_len": 4,
                 "valid_len": 4,
                 "teacher_dense_points": [{"point_index": 1, "proposal_score": 0.8}],
+                **_teacher_source_provenance(),
             }
         ],
     )
