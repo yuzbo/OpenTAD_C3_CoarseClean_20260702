@@ -27,13 +27,13 @@ def run_smoke(config_path, seed=13):
     time_map = TrueTimeMap(selected_positions=selected_positions, dense_len=dense_len, valid_len=dense_len)
     selected_axis = torch.linspace(0.0, float(selected_count - 1), steps=selected_count)
     roundtrip = time_map.true_to_selected(time_map.selected_to_true(selected_axis))
-    geometry_roundtrip_passed = bool(torch.allclose(roundtrip, selected_axis, atol=1.0e-5).item())
+    geometry_roundtrip_passed = bool(torch.allclose(roundtrip, selected_axis, atol=1.0e-5))
 
     inverse_end = min(selected_count - 1, 2)
     predictions = {"segments": torch.tensor([[0.0, float(inverse_end)]]), "coordinate_space": "selected_axis_index"}
     mapped = inverse_map_prediction_segments(predictions, time_map)
     expected_mapped = torch.tensor([[float(selected_positions[0]), float(selected_positions[inverse_end])]])
-    prediction_inverse_map_passed = bool(torch.allclose(mapped["segments"], expected_mapped).item())
+    prediction_inverse_map_passed = bool(torch.allclose(mapped["segments"], expected_mapped))
 
     detector = build_detector(cfg.truetime_detector_path_smoke_model)
     detector.train()
@@ -44,7 +44,7 @@ def run_smoke(config_path, seed=13):
     losses["cost"].backward()
     out = detector.last_selector_outputs
     hard_forward_values_passed = bool(
-        torch.allclose(detector.last_selected_inputs.detach(), detector.last_hard_selected_inputs.detach(), atol=1.0e-6).item()
+        torch.allclose(detector.last_selected_inputs.detach(), detector.last_hard_selected_inputs.detach(), atol=1.0e-6)
     )
     grad_norm = selector_grad_norm(detector.frame_selector)
     selected_input_grad_norm = grad_norm
