@@ -188,6 +188,10 @@ def test_paction_learned_policy_adatad_launcher_validates_ledgers_before_full_tr
     assert "val/samples.jsonl" in text
     assert "test/samples.jsonl" in text
     assert "source.canonical_unique.jsonl" in text
+    assert "ADATAD_PRETRAIN_PATH" in text
+    assert "C3_PACTION_ADATAD_PRETRAIN_PATH" in text
+    assert "model.backbone.custom.pretrain" in text
+    assert "required file missing: ${ADATAD_PRETRAIN_PATH}" in text
     assert 'learned_dynamic) echo "${LEDGER_ROOT}/${split}/samples.learned_dynamic.jsonl"' in text
     assert '--val-jsonl "${C3_PACTION_VAL_SOURCE_JSONL}"' not in text
     assert "formal full train must run inside a Slurm allocation/step" in text
@@ -247,6 +251,20 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
             assert loader.bata_value_transport_allow_missing_fallback is False
             assert loader.bata_value_transport_allow_short_valid_ratio_count is True
             assert loader.remap_gt_to_selected_axis is True
+
+
+def test_paction_learned_policy_adatad_config_uses_reviewed_absolute_pretrain(monkeypatch):
+    pretrain_path = "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth"
+    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "learned_fixed_384")
+    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", "/tmp/c3_paction_train.jsonl")
+    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", "/tmp/c3_paction_val.jsonl")
+    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", "/tmp/c3_paction_test.jsonl")
+    monkeypatch.setenv("C3_PACTION_ADATAD_PRETRAIN_PATH", pretrain_path)
+
+    cfg = Config.fromfile(str(PACTION_CONFIG))
+
+    assert cfg.model.backbone.custom.pretrain == pretrain_path
+    assert cfg.c3_paction_adatad_pretrain_path == pretrain_path
 
 
 def test_paction_learned_policy_adatad_validator_passes_locked_and_exec_configs(monkeypatch):

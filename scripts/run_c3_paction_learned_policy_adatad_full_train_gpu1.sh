@@ -17,6 +17,8 @@ RUN_TAG="${RUN_TAG:-c3_paction_learned_adatad_full_train_gpu1_$(date +%Y%m%d_%H%
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
 MASTER_PORT_BASE="${MASTER_PORT_BASE:-30310}"
+ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_PACTION_ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
@@ -80,10 +82,27 @@ MAX_UNSELECTED_HOLE="${MAX_UNSELECTED_HOLE:-}"
 MAX_P95_UNSELECTED_HOLE="${MAX_P95_UNSELECTED_HOLE:-}"
 MAX_UNIFORM_SIMILARITY="${MAX_UNIFORM_SIMILARITY:-}"
 
+resolve_path() {
+  local raw="$1"
+  if [[ "${raw}" == /* ]]; then
+    echo "${raw}"
+  elif [[ -f "${REPO_ROOT}/${raw}" ]]; then
+    readlink -f "${REPO_ROOT}/${raw}"
+  elif [[ -f "${BASE}/${raw}" ]]; then
+    readlink -f "${BASE}/${raw}"
+  else
+    echo "${REPO_ROOT}/${raw}"
+  fi
+}
+
 require_file() {
   local path="$1"
   [[ -f "${path}" ]] || fail "required file missing: ${path}"
 }
+
+ADATAD_PRETRAIN_PATH="$(resolve_path "${ADATAD_PRETRAIN_PATH}")"
+[[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "required file missing: ${ADATAD_PRETRAIN_PATH}"
+export C3_PACTION_ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH}"
 
 require_file "${CONFIG}"
 require_file "${EXEC_CONFIG}"
@@ -110,6 +129,7 @@ echo "[C3_PACTION_LEARNED_ADATAD] gpu=${CUDA_VISIBLE_DEVICES}"
 echo "[C3_PACTION_LEARNED_ADATAD] slurm_step_gpus=${SLURM_STEP_GPUS:-none} slurm_job_gpus=${SLURM_JOB_GPUS:-none}"
 echo "[C3_PACTION_LEARNED_ADATAD] precheck_only=${PRECHECK_ONLY} unlock=${ALLOW_C3_PACTION_LEARNED_ADATAD_FULLTRAIN}"
 echo "[C3_PACTION_LEARNED_ADATAD] learned_root=${LEARNED_ROOT}"
+echo "[C3_PACTION_LEARNED_ADATAD] adatad_pretrain_path=${C3_PACTION_ADATAD_PRETRAIN_PATH}"
 
 if [[ "${PRECHECK_ONLY}" != "1" && -z "${SLURM_JOB_ID:-}${SLURM_STEP_ID:-}" && "${ALLOW_NON_SLURM_C3_PACTION_FULLTRAIN:-0}" != "1" ]]; then
   fail "formal full train must run inside a Slurm allocation/step; set PRECHECK_ONLY=1 for login-node checks"
@@ -333,7 +353,7 @@ run_adatad_variant() {
     "${EXEC_CONFIG}" \
     --id "${RUN_ID}" \
     --seed "${SEED}" \
-    --cfg-options "work_dir=${work_dir}" \
+    --cfg-options "work_dir=${work_dir}" "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
     2>&1 | tee "${run_dir}/train.out"
 }
 

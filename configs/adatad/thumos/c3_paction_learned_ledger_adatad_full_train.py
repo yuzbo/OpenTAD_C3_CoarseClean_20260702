@@ -53,6 +53,11 @@ class_map = os.environ.get(
 )
 train_data_path = os.environ.get("THUMOS14_TRAIN_DATA_PATH", os.path.join(thumos14_root, "train"))
 test_data_path = os.environ.get("THUMOS14_TEST_DATA_PATH", os.path.join(thumos14_root, "test"))
+adatad_pretrain_filename = "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth"
+c3_paction_adatad_pretrain_path = os.environ.get(
+    "C3_PACTION_ADATAD_PRETRAIN_PATH",
+    os.path.join(yuzibo_root, "pretrained", adatad_pretrain_filename),
+)
 
 _ledger_name = _variant["ledger_name"]
 train_ledger_path = os.environ.get(
@@ -262,6 +267,7 @@ model = dict(
     backbone=dict(
         backbone=dict(total_frames=window_size * scale_factor),
         custom=dict(
+            pretrain=c3_paction_adatad_pretrain_path,
             pre_processing_pipeline=[
                 dict(type="Rearrange", keys=["frames"], ops="b n c (t1 t) h w -> (b t1) n c t h w", t1=chunk_num),
             ],
