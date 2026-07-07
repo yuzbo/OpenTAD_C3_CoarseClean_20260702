@@ -179,6 +179,11 @@ def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> No
     assert "OPENTAD_DUCA_STAGE3_GATE_JSON" in text
     assert "stage3_active_sha256_manifest.txt" in text
     assert "formal DUCA Stage3 full train requires a clean tracked git tree" in text
+    assert 'MASTER_PORT="${MASTER_PORT:-}"' in text
+    assert "pick_master_port()" in text
+    assert "duca_stage3_truetime" in text
+    assert "master_port=${MASTER_PORT}" in text
+    assert 'MASTER_PORT="${MASTER_PORT:-30231}"' not in text
 
 
 def test_duca_stage3_exec_config_requires_bound_entrypoint_gate(tmp_path: Path, monkeypatch) -> None:

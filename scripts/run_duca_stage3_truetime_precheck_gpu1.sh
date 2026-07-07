@@ -13,6 +13,10 @@ export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
+MASTER_PORT="${MASTER_PORT:-}"
+MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
+MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
+MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
@@ -37,6 +41,46 @@ export CONFIG EXEC_CONFIG TRUETIME_SELECTOR_GRAD_PROOF_JSON="${PROOF_JSON}"
 require_file() {
   local path="$1"
   [[ -f "${path}" ]] || fail "required file missing: ${path}"
+}
+
+pick_master_port() {
+  if [[ -n "${MASTER_PORT}" ]]; then
+    echo "${MASTER_PORT}"
+    return 0
+  fi
+  "${PYTHON}" - "${RUN_TAG}" "duca_stage3_truetime" "${MASTER_PORT_LOW}" "${MASTER_PORT_HIGH}" "${MASTER_PORT_MAX_ATTEMPTS}" <<'PY'
+import hashlib
+import os
+import socket
+import sys
+
+run_tag, variant = sys.argv[1], sys.argv[2]
+low, high, max_attempts = int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+if not (1024 <= low <= high <= 65535):
+    raise SystemExit(f"invalid MASTER_PORT range: {low}-{high}")
+span = high - low + 1
+seed = "|".join(
+    [
+        run_tag,
+        variant,
+        os.environ.get("SLURM_JOB_ID", ""),
+        os.environ.get("SLURM_STEP_ID", ""),
+        str(os.getpid()),
+    ]
+)
+start = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % span
+for offset in range(min(max_attempts, span)):
+    port = low + ((start + offset) % span)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
+        try:
+            handle.bind(("0.0.0.0", port))
+        except OSError:
+            continue
+    print(port)
+    break
+else:
+    raise SystemExit(f"no free MASTER_PORT found in {low}-{high} after {max_attempts} attempts")
+PY
 }
 
 require_file "${CONFIG}"
@@ -202,11 +246,12 @@ PY
   echo "[DUCA_STAGE3_PRECHECK] entrypoint gate=${GATE_JSON} sha=${GATE_SHA256}"
   RUN_ID="${RUN_ID:-0}"
   SEED="${SEED:-0}"
-  MASTER_PORT="${MASTER_PORT:-30231}"
   RUN_DIR="${RUN_DIR:-${ROUTE_ROOT}/run}"
   WORK_DIR="${WORK_DIR:-exps/thumos/adatad/c3_truetime_joint_selector_adatad_precheck/${RUN_TAG}}"
+  MASTER_PORT="$(pick_master_port)"
   mkdir -p "${RUN_DIR}" "${WORK_DIR}"
   export PRECHECK_ONLY=0
+  echo "[DUCA_STAGE3_PRECHECK] train work_dir=${WORK_DIR} master_port=${MASTER_PORT}"
   "${PYTHON}" -m torch.distributed.run \
     --nproc_per_node=1 \
     --master_port="${MASTER_PORT}" \
