@@ -98,6 +98,25 @@ def test_detector_aware_training_can_ignore_train_source_gt_diagnostic_flag_when
     assert prepared[0]["detector_utility_target"] == [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]
 
 
+def test_detector_aware_training_can_accept_train_only_teacher_artifact_when_explicitly_allowed() -> None:
+    row = _sample_row()
+    row["uses_teacher"] = True
+    row["training_only"] = True
+
+    with pytest.raises(ValueError, match="uses_teacher"):
+        train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
+
+    prepared = train_detector._prepared_rows(
+        [row],
+        dynamic_budget_buckets=[2, 4],
+        expected_split="training",
+        allow_teacher_utility_training_artifact=True,
+    )
+
+    assert prepared[0]["allowed_teacher_utility_training_artifact"] is True
+    assert prepared[0]["detector_utility_target"] == [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]
+
+
 def test_detector_aware_training_rejects_legacy_abs_marginal_gain_target() -> None:
     row = _sample_row()
     row["teacher_utility"] = {

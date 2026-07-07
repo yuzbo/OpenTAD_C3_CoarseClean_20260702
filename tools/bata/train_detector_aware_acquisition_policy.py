@@ -29,19 +29,33 @@ def _row_for_source_validation(
     *,
     expected_split: str | None,
     allow_gt_diagnostics_in_training_source: bool,
-) -> tuple[Mapping[str, Any], bool]:
+    allow_teacher_utility_training_artifact: bool,
+) -> tuple[Mapping[str, Any], bool, bool]:
     expected_is_training = bool(expected_split and base_train._split_matches("training", str(expected_split)))
     allowed_gt_diagnostics = (
         bool(allow_gt_diagnostics_in_training_source)
         and expected_is_training
         and base_train._is_true(row.get("uses_gt_for_diagnostics", False))
     )
-    if not allowed_gt_diagnostics:
-        return row, False
+    allowed_teacher_artifact = (
+        bool(allow_teacher_utility_training_artifact)
+        and expected_is_training
+        and isinstance(row.get("teacher_utility"), Mapping)
+        and isinstance(row.get("teacher_utility_provenance"), Mapping)
+        and base_train._is_true(row.get("uses_teacher", False))
+        and base_train._is_true(row.get("training_only", False))
+    )
+    if not allowed_gt_diagnostics and not allowed_teacher_artifact:
+        return row, False, False
     patched = dict(row)
-    patched["uses_gt_for_diagnostics"] = False
-    patched["allowed_gt_diagnostics_in_training_source"] = True
-    return patched, True
+    if allowed_gt_diagnostics:
+        patched["uses_gt_for_diagnostics"] = False
+        patched["allowed_gt_diagnostics_in_training_source"] = True
+    if allowed_teacher_artifact:
+        patched["uses_teacher"] = False
+        patched["training_only"] = False
+        patched["allowed_teacher_utility_training_artifact"] = True
+    return patched, bool(allowed_gt_diagnostics), bool(allowed_teacher_artifact)
 
 
 def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: int) -> list[float]:
@@ -214,13 +228,15 @@ def _prepared_rows(
     dynamic_budget_buckets: Sequence[int],
     expected_split: str | None,
     allow_gt_diagnostics_in_training_source: bool = False,
+    allow_teacher_utility_training_artifact: bool = False,
 ) -> list[dict[str, Any]]:
     extracted: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
-        row_for_training, allowed_gt_diagnostics = _row_for_source_validation(
+        row_for_training, allowed_gt_diagnostics, allowed_teacher_artifact = _row_for_source_validation(
             row,
             expected_split=expected_split,
             allow_gt_diagnostics_in_training_source=allow_gt_diagnostics_in_training_source,
+            allow_teacher_utility_training_artifact=allow_teacher_utility_training_artifact,
         )
         _validate_source_row(row_for_training, line_no=line_no, expected_split=expected_split)
         p_action = _extract_paction(row_for_training, line_no=line_no)
@@ -236,6 +252,7 @@ def _prepared_rows(
                 "gain": gain,
                 "risk": risk,
                 "allowed_gt_diagnostics_in_training_source": bool(allowed_gt_diagnostics),
+                "allowed_teacher_utility_training_artifact": bool(allowed_teacher_artifact),
             }
         )
     calibration = _fit_dynamic_gain_calibration(extracted, dynamic_budget_buckets=dynamic_budget_buckets)
@@ -264,6 +281,7 @@ def _prepared_rows(
                 "dynamic_budget_target": dynamic_budget_target,
                 "dynamic_gain_calibration": dict(calibration),
                 "allowed_gt_diagnostics_in_training_source": bool(row["allowed_gt_diagnostics_in_training_source"]),
+                "allowed_teacher_utility_training_artifact": bool(row["allowed_teacher_utility_training_artifact"]),
             }
         )
     return prepared
@@ -367,6 +385,7 @@ def run_training(
     seed: int = 0,
     expected_split: str | None = "training",
     allow_gt_diagnostics_in_training_source: bool = False,
+    allow_teacher_utility_training_artifact: bool = False,
 ) -> dict[str, Any]:
     import torch
 
@@ -383,10 +402,14 @@ def run_training(
         dynamic_budget_buckets=buckets,
         expected_split=expected_split,
         allow_gt_diagnostics_in_training_source=bool(allow_gt_diagnostics_in_training_source),
+        allow_teacher_utility_training_artifact=bool(allow_teacher_utility_training_artifact),
     )
     train_jsonl_sha256 = _sha256_file(train_jsonl)
     allowed_gt_diagnostics_count = sum(
         1 for row in train_rows if bool(row.get("allowed_gt_diagnostics_in_training_source"))
+    )
+    allowed_teacher_artifact_count = sum(
+        1 for row in train_rows if bool(row.get("allowed_teacher_utility_training_artifact"))
     )
     dynamic_gain_calibration = dict(train_rows[0]["dynamic_gain_calibration"]) if train_rows else dict(detector_policy.UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION)
     dynamic_gain_calibration["train_jsonl_sha256"] = train_jsonl_sha256
@@ -436,6 +459,8 @@ def run_training(
         "teacher_target_scope": "train_only",
         "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
         "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
+        "allow_teacher_utility_training_artifact": bool(allow_teacher_utility_training_artifact),
+        "allowed_teacher_utility_training_artifact_row_count": int(allowed_teacher_artifact_count),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "end_to_end": False,
@@ -462,6 +487,8 @@ def run_training(
         "teacher_target_scope": "train_only",
         "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
         "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
+        "allow_teacher_utility_training_artifact": bool(allow_teacher_utility_training_artifact),
+        "allowed_teacher_utility_training_artifact_row_count": int(allowed_teacher_artifact_count),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "end_to_end": False,
@@ -499,6 +526,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "non-consumed diagnostic flag; deploy/eval sources remain strict."
         ),
     )
+    parser.add_argument(
+        "--allow-teacher-utility-training-artifact",
+        action="store_true",
+        help=(
+            "Allow train-only teacher utility rows to carry uses_teacher=true/training_only=true "
+            "as provenance evidence; deploy/eval sources remain strict."
+        ),
+    )
     args = parser.parse_args(argv)
     summary = run_training(
         args.train_jsonl,
@@ -518,6 +553,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
         expected_split=args.expected_split,
         allow_gt_diagnostics_in_training_source=args.allow_gt_diagnostics_in_training_source,
+        allow_teacher_utility_training_artifact=args.allow_teacher_utility_training_artifact,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

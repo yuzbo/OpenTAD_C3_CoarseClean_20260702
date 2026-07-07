@@ -257,6 +257,7 @@ PY
   --dynamic-budget-buckets ${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS} \
   --expected-split training \
   --allow-gt-diagnostics-in-training-source \
+  --allow-teacher-utility-training-artifact \
   --device cuda \
   --seed "${SEED}"
 
