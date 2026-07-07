@@ -142,7 +142,7 @@ experiment_scope = dict(
 
 c3_paction_learned_ledger_full_train_gate = dict(
     route="C3_MAINLINE_OPTIMIZATION",
-    route_variant="C3_PACTION_LEARNED_STRICT_LEDGER",
+    route_variant=_variant.get("route_variant", "C3_PACTION_LEARNED_STRICT_LEDGER"),
     stage="paction_learned_ledger_original_adatad_full_train",
     default_off=True,
     explicit_config_opt_in=True,

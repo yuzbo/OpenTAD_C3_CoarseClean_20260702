@@ -263,14 +263,29 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
 
 def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dynamic(monkeypatch):
     expected = {
-        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value"),
-        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value"),
-        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget"),
-        "paction_lattice_replace_score_only_move50": (384, 384, "paction_lattice_replace_score_only_move50"),
-        "paction_lattice_replace_score_only_move75": (384, 384, "paction_lattice_replace_score_only_move75"),
-        "paction_lattice_replace_score_only_no_protect": (384, 384, "paction_lattice_replace_score_only_no_protect"),
+        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+        "paction_lattice_replace_score_only_move50": (
+            384,
+            384,
+            "paction_lattice_replace_score_only_move50",
+            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+        ),
+        "paction_lattice_replace_score_only_move75": (
+            384,
+            384,
+            "paction_lattice_replace_score_only_move75",
+            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+        ),
+        "paction_lattice_replace_score_only_no_protect": (
+            384,
+            384,
+            "paction_lattice_replace_score_only_no_protect",
+            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+        ),
     }
-    for variant, (target_len, required_count, strategy) in expected.items():
+    for variant, (target_len, required_count, strategy, route_variant) in expected.items():
         monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", variant)
         monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", f"/tmp/{variant}.train.jsonl")
         monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", f"/tmp/{variant}.val.jsonl")
@@ -279,6 +294,8 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         cfg = Config.fromfile(str(PACTION_CONFIG))
 
         assert cfg.experiment_scope.stage == "paction_learned_ledger_original_adatad_full_train"
+        assert cfg.experiment_scope.route_variant == route_variant
+        assert cfg.c3_paction_learned_ledger_full_train_gate.route_variant == route_variant
         assert cfg.experiment_scope.selection_strategy == strategy
         assert cfg.paction_ledger_variant == variant
         assert int(cfg.window_size) == target_len
