@@ -270,3 +270,14 @@ def test_lattice_replacement_pipeline_defaults_to_diagnostic_uniform_scaffold(
     assert ledger_rows[0]["deploy_selection_ledger"] is False
     assert ledger_rows[0]["uses_uniform_scaffold"] is True
     assert ledger_rows[0]["paper_main_claim_allowed"] is False
+
+
+def test_lattice_full_train_launcher_requires_explicit_inferred_provenance_opt_in() -> None:
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "scripts" / "run_c3_paction_lattice_replacement_adatad_full_train_gpu1.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE="${PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE:-0}"' in text
+    assert 'PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE}" == "1"' in text
+    assert "args+=(--allow-inferred-paction-positive-provenance)" in text
