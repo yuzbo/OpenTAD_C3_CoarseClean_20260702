@@ -211,6 +211,15 @@ def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None
         assert "truetime_dense_valid_len" in meta_keys
         assert "irregular_selected_count" in meta_keys
         assert "irregular_dense_valid_len" in meta_keys
+        load_steps = [step for step in cfg.dataset[split].pipeline if isinstance(step, dict) and step.get("type") == "LoadFrames"]
+        assert len(load_steps) == 1
+        if split == "train":
+            assert "window_size" not in cfg.dataset[split]
+            assert load_steps[0].method == "random_trunc"
+            assert load_steps[0].trunc_len == cfg.dense_window_size
+        else:
+            assert cfg.dataset[split].window_size == cfg.dense_window_size
+            assert load_steps[0].method == "sliding_window"
 
 
 def test_truetime_joint_selector_precheck_config_is_not_smoke_only_and_claim_locked() -> None:
@@ -242,6 +251,15 @@ def test_truetime_joint_selector_precheck_config_is_not_smoke_only_and_claim_loc
     assert cfg.workflow.val_eval_interval <= 0
     assert "mAP" not in cfg.truetime_metrics_to_log
     assert "tIoU" not in cfg.truetime_metrics_to_log
+    train_load_steps = [
+        step for step in cfg.dataset.train.pipeline if isinstance(step, dict) and step.get("type") == "LoadFrames"
+    ]
+    assert "window_size" not in cfg.dataset.train
+    assert len(train_load_steps) == 1
+    assert train_load_steps[0].method == "random_trunc"
+    assert train_load_steps[0].trunc_len == cfg.dense_window_size
+    assert cfg.dataset.val.window_size == cfg.dense_window_size
+    assert cfg.dataset.test.window_size == cfg.dense_window_size
 
 
 def test_truetime_joint_selector_precheck_validator_accepts_real_actionformer_proof_schema(tmp_path: Path) -> None:

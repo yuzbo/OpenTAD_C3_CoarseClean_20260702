@@ -168,7 +168,6 @@ c3_truetime_meta_keys = [
 
 dataset = dict(
     train=dict(
-        window_size=dense_window_size,
         pipeline=[
             dict(type="PrepareVideoInfo", format="mp4"),
             dict(type="mmaction.DecordInit", num_threads=4),

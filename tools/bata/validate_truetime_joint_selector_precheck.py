@@ -89,6 +89,12 @@ def _find_collect(pipeline):
     return matches[0]
 
 
+def _find_load_frames(pipeline):
+    matches = [step for step in pipeline if isinstance(step, dict) and step.get("type") == "LoadFrames"]
+    _require(len(matches) == 1, f"expected exactly one LoadFrames step, got {len(matches)}")
+    return matches[0]
+
+
 def _validate_gate(cfg, *, allow_launch_unlocked):
     gate = cfg.truetime_joint_selector_gate
     stage = str(gate.stage)
@@ -259,7 +265,15 @@ def _validate_model(cfg):
 
 def _validate_dataset_and_leakage(cfg):
     for split in ("train", "val", "test"):
-        _require(int(cfg.dataset[split].window_size) == 768, f"{split}: dense dataset window must be 768")
+        split_cfg = cfg.dataset[split]
+        load_frames = _find_load_frames(split_cfg.pipeline)
+        if split == "train":
+            _require("window_size" not in split_cfg, "train: PaddingDataset must not receive window_size")
+            _require(load_frames.method == "random_trunc", "train: dense dataset must use random_trunc")
+            _require(int(load_frames.trunc_len) == 768, "train: dense random_trunc length must be 768")
+        else:
+            _require(int(split_cfg.window_size) == 768, f"{split}: dense dataset window must be 768")
+            _require(load_frames.method == "sliding_window", f"{split}: dense dataset must use sliding_window")
         collect = _find_collect(cfg.dataset[split].pipeline)
         meta_keys = set(collect.get("meta_keys", []))
         for key in (
