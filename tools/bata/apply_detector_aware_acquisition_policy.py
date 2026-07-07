@@ -145,7 +145,8 @@ def checkpoint_policy_scores(
     valid: Sequence[Any] | None = None,
     target_budget: int | None = None,
     device: str = "cuda",
-) -> tuple[list[float], list[float]]:
+    return_context_radius: bool = False,
+) -> tuple[list[float], list[float]] | tuple[list[float], list[float], list[float]]:
     import torch
 
     features = detector_policy.build_detector_aware_feature_matrix(p_action, valid=valid, target_budget=target_budget)
@@ -156,13 +157,52 @@ def checkpoint_policy_scores(
         outputs = model(feature_tensor, valid_tensor, target_budget=budget_tensor)
     frame_values = [float(item) for item in outputs["frame_value"][0].detach().cpu().tolist()]
     budget_scores = [float(item) for item in outputs["budget_logits"][0].detach().cpu().tolist()]
+    if return_context_radius:
+        context_radius = [float(item) for item in outputs["context_radius"][0].detach().cpu().tolist()]
+        return frame_values, budget_scores, context_radius
     return frame_values, budget_scores
 
 
 def _effective_strategy_budget(row: Mapping[str, Any], requested_budget: int, *, frame_len: int) -> int:
     valid_len = int(row.get("valid_len") or row.get("dense_len") or frame_len)
-    dense_len = int(row.get("dense_len") or frame_len)
-    return base_policy.short_valid_ratio_budget(int(requested_budget), valid_len=valid_len, dense_len=dense_len)
+    return detector_policy.fixed_deploy_budget(int(requested_budget), valid_len=valid_len)
+
+
+def _checkpoint_policy_scores_with_context(
+    model: detector_policy.DetectorAwareSequentialAcquisitionPolicy,
+    p_action: Sequence[Any],
+    *,
+    valid: Sequence[Any],
+    target_budget: int,
+    device: str,
+) -> tuple[list[float], list[float], list[float]]:
+    try:
+        result = checkpoint_policy_scores(
+            model,
+            p_action,
+            valid=valid,
+            target_budget=target_budget,
+            device=device,
+            return_context_radius=True,
+        )
+    except TypeError as exc:
+        if "return_context_radius" not in str(exc):
+            raise
+        frame_values, budget_scores = checkpoint_policy_scores(
+            model,
+            p_action,
+            valid=valid,
+            target_budget=target_budget,
+            device=device,
+        )
+        context_radius = [float(detector_policy.DEFAULT_CONTEXT_RADIUS_MAX)] * len(frame_values)
+        return list(frame_values), list(budget_scores), context_radius
+    if len(result) == 2:
+        frame_values, budget_scores = result
+        context_radius = [float(detector_policy.DEFAULT_CONTEXT_RADIUS_MAX)] * len(frame_values)
+        return list(frame_values), list(budget_scores), context_radius
+    frame_values, budget_scores, context_radius = result
+    return list(frame_values), list(budget_scores), list(context_radius)
 
 
 def _checkpoint_budget_conditioned_scores(
@@ -174,10 +214,10 @@ def _checkpoint_budget_conditioned_scores(
     fixed_budgets: Sequence[int],
     dynamic_budget_buckets: Sequence[int],
     device: str,
-) -> tuple[list[float], list[float], dict[str, list[float]], dict[str, int], int]:
+) -> tuple[list[float], list[float], dict[str, list[float]], dict[str, list[float]], dict[str, int], int]:
     valid_len = int(row.get("valid_len") or row.get("dense_len") or len(p_action))
     initial_budget = max([int(item) for item in dynamic_budget_buckets] or [valid_len])
-    _initial_frame_values, budget_scores = checkpoint_policy_scores(
+    _initial_frame_values, budget_scores, _initial_context_radius = _checkpoint_policy_scores_with_context(
         model,
         p_action,
         valid=valid,
@@ -190,6 +230,7 @@ def _checkpoint_budget_conditioned_scores(
         valid_len=valid_len,
     )
     frame_values_by_strategy: dict[str, list[float]] = {}
+    context_radii_by_strategy: dict[str, list[float]] = {}
     target_budgets: dict[str, int] = {}
     fixed_strategy_names = (
         detector_policy.DETECTOR_AWARE_FIXED_384_STRATEGY,
@@ -199,7 +240,7 @@ def _checkpoint_budget_conditioned_scores(
     for strategy_idx, strategy_name in enumerate(fixed_strategy_names):
         requested = fixed_values[strategy_idx] if strategy_idx < len(fixed_values) else fixed_values[-1]
         strategy_budget = _effective_strategy_budget(row, requested, frame_len=len(p_action))
-        frame_values, _unused_budget_scores = checkpoint_policy_scores(
+        frame_values, _unused_budget_scores, context_radius = _checkpoint_policy_scores_with_context(
             model,
             p_action,
             valid=valid,
@@ -207,8 +248,9 @@ def _checkpoint_budget_conditioned_scores(
             device=device,
         )
         frame_values_by_strategy[strategy_name] = frame_values
+        context_radii_by_strategy[strategy_name] = context_radius
         target_budgets[strategy_name] = int(strategy_budget)
-    dynamic_frame_values, _unused_budget_scores = checkpoint_policy_scores(
+    dynamic_frame_values, _unused_budget_scores, dynamic_context_radius = _checkpoint_policy_scores_with_context(
         model,
         p_action,
         valid=valid,
@@ -216,8 +258,9 @@ def _checkpoint_budget_conditioned_scores(
         device=device,
     )
     frame_values_by_strategy[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = dynamic_frame_values
+    context_radii_by_strategy[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = dynamic_context_radius
     target_budgets[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = int(dynamic_budget)
-    return dynamic_frame_values, budget_scores, frame_values_by_strategy, target_budgets, int(initial_budget)
+    return dynamic_frame_values, budget_scores, frame_values_by_strategy, context_radii_by_strategy, target_budgets, int(initial_budget)
 
 
 def run_policy_application(
@@ -283,6 +326,7 @@ def run_policy_application(
                 dynamic_budget_buckets=dynamic_budget_buckets,
             )
             frame_values_by_strategy = None
+            context_radii_by_strategy = None
             apply_time_target_budgets: dict[str, int] = {}
             budget_score_target_budget = None
         else:
@@ -290,6 +334,7 @@ def run_policy_application(
                 frame_values,
                 budget_scores,
                 frame_values_by_strategy,
+                context_radii_by_strategy,
                 apply_time_target_budgets,
                 budget_score_target_budget,
             ) = _checkpoint_budget_conditioned_scores(
@@ -305,6 +350,7 @@ def run_policy_application(
             row,
             frame_values=frame_values,
             frame_values_by_strategy=frame_values_by_strategy,
+            context_radii_by_strategy=context_radii_by_strategy,
             fixed_budgets=fixed_budgets,
             dynamic_budget_scores=budget_scores,
             dynamic_budget_buckets=dynamic_budget_buckets,

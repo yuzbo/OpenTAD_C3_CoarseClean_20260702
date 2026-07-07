@@ -52,8 +52,14 @@ DEFAULT_DETECTOR_AWARE_LOSS_TERMS = {
     "utility_risk_bce": 0.5,
     "selected_utility": 1.0,
     "cvar_max_hole": 1.0,
+    "learned_spacing": 0.75,
+    "action_local_hole": 1.0,
+    "context_radius_cost": 0.05,
     "budget": 1.0,
 }
+DEFAULT_DETECTOR_AWARE_SCORE_DILATION_RADII = (2, 4)
+DEFAULT_CONTEXT_RADIUS_MIN = 2.0
+DEFAULT_CONTEXT_RADIUS_MAX = 16.0
 
 
 def feature_index(name: str) -> int:
@@ -82,6 +88,87 @@ def _strategy_budget_for_name(name: str, fixed_budgets: Sequence[int]) -> int:
     if str(name) == DETECTOR_AWARE_FIXED_768_STRATEGY:
         return budgets[1] if len(budgets) > 1 else budgets[0]
     raise ValueError(f"unknown detector-aware fixed strategy: {name}")
+
+
+def fixed_deploy_budget(requested_budget: int, *, valid_len: int) -> int:
+    """Detector-aware fixed budgets fill the valid dense grid, capped by budget."""
+    requested = int(requested_budget)
+    valid = int(valid_len)
+    if requested <= 0:
+        return 0
+    if valid <= 0:
+        raise ValueError(f"valid_len must be positive, got {valid_len}")
+    return min(requested, valid)
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(out) or math.isinf(out):
+        return 0.0
+    return out
+
+
+def score_dilated_frame_values(
+    frame_values: Sequence[Any],
+    *,
+    valid: Sequence[Any] | None = None,
+    valid_len: int | None = None,
+    radii: Sequence[int] = DEFAULT_DETECTOR_AWARE_SCORE_DILATION_RADII,
+    context_radii: Sequence[Any] | None = None,
+) -> list[float]:
+    """Spread learned detector-utility scores to local context around peaks.
+
+    This is not a uniform scaffold or slot rule: only learned positive peaks
+    seed their neighbours, and the original score still dominates when it is
+    higher. Radii 2 and 4 give AdaTAD local evidence around responsibility
+    points while preserving a hard <=budget selection.
+    """
+
+    values = [_safe_float(item) for item in frame_values]
+    length = len(values)
+    if valid is None:
+        valid_mask = [idx < (length if valid_len is None else int(valid_len)) for idx in range(length)]
+    else:
+        if len(valid) != length:
+            raise ValueError("valid mask length must match frame_values length")
+        valid_mask = [bool(item) for item in valid]
+    limit = length if valid_len is None else max(0, min(int(valid_len), length))
+    valid_mask = [bool(flag) and idx < limit for idx, flag in enumerate(valid_mask)]
+    learned_radii: list[float] | None = None
+    if context_radii is not None:
+        if len(context_radii) != length:
+            raise ValueError("context_radii length must match frame_values length")
+        learned_radii = [
+            max(0.0, min(DEFAULT_CONTEXT_RADIUS_MAX, _safe_float(item)))
+            for item in context_radii
+        ]
+        clean_radii = [max(1, int(math.ceil(max(learned_radii) if learned_radii else 0.0)))]
+    else:
+        clean_radii = sorted({int(radius) for radius in radii if int(radius) > 0})
+    if not clean_radii:
+        return values
+    max_radius = max(clean_radii)
+    inner_radius = min(clean_radii)
+    out = list(values)
+    for center, center_score in enumerate(values):
+        if not valid_mask[center] or center_score <= 0.0:
+            continue
+        center_radius = float(learned_radii[center]) if learned_radii is not None else float(max_radius)
+        for distance in range(1, int(math.ceil(center_radius)) + 1):
+            if learned_radii is not None:
+                weight = max(0.0, 1.0 - (0.08 * float(distance) / max(1.0, center_radius)))
+            elif distance <= inner_radius:
+                weight = max(0.0, 1.0 - 0.02 * float(distance))
+            else:
+                weight = max(0.0, 0.94 - 0.04 * float(distance - inner_radius))
+            candidate_score = center_score * weight - 1e-6 * float(distance)
+            for pos in (center - distance, center + distance):
+                if 0 <= pos < length and valid_mask[pos]:
+                    out[pos] = max(float(out[pos]), float(candidate_score))
+    return [float(item) for item in out]
 
 
 def _has_dynamic_gain_calibration_evidence(calibration: Mapping[str, Any] | None) -> bool:
@@ -125,6 +212,7 @@ def add_detector_aware_decision_to_sample_row(
     *,
     frame_values: Sequence[Any],
     frame_values_by_strategy: Mapping[str, Sequence[Any]] | None = None,
+    context_radii_by_strategy: Mapping[str, Sequence[Any]] | None = None,
     fixed_budgets: Sequence[int] = (384, 768),
     dynamic_budget_scores: Sequence[Any],
     dynamic_budget_buckets: Sequence[Any] = DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS,
@@ -141,11 +229,18 @@ def add_detector_aware_decision_to_sample_row(
     valid = [idx < valid_len for idx in range(len(frame_values))]
     strategies = dict(out.get("strategy_selected_positions") or {})
     strategy_frame_values = dict(frame_values_by_strategy or {})
+    strategy_context_radii = dict(context_radii_by_strategy or {})
     for strategy_name in (DETECTOR_AWARE_FIXED_384_STRATEGY, DETECTOR_AWARE_FIXED_768_STRATEGY):
         requested = _strategy_budget_for_name(strategy_name, fixed_budgets)
-        budget = base_policy.short_valid_ratio_budget(requested, valid_len=valid_len, dense_len=dense_len)
-        strategies[strategy_name] = gas_vt.hard_gap_aware_topk(
+        budget = fixed_deploy_budget(requested, valid_len=valid_len)
+        decoded_values = score_dilated_frame_values(
             strategy_frame_values.get(strategy_name, frame_values),
+            valid=valid,
+            valid_len=valid_len,
+            context_radii=strategy_context_radii.get(strategy_name),
+        )
+        strategies[strategy_name] = gas_vt.hard_gap_aware_topk(
+            decoded_values,
             valid=valid,
             budget=budget,
             max_unselected_hole=max_unselected_hole,
@@ -156,8 +251,14 @@ def add_detector_aware_decision_to_sample_row(
         valid_len=valid_len,
     )
     calibration = _dynamic_budget_calibration_metadata(dynamic_gain_calibration)
-    strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = gas_vt.hard_gap_aware_topk(
+    dynamic_decoded_values = score_dilated_frame_values(
         strategy_frame_values.get(DETECTOR_AWARE_DYNAMIC_STRATEGY, frame_values),
+        valid=valid,
+        valid_len=valid_len,
+        context_radii=strategy_context_radii.get(DETECTOR_AWARE_DYNAMIC_STRATEGY),
+    )
+    strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = gas_vt.hard_gap_aware_topk(
+        dynamic_decoded_values,
         valid=valid,
         budget=dynamic_budget,
         max_unselected_hole=max_unselected_hole,
@@ -177,10 +278,15 @@ def add_detector_aware_decision_to_sample_row(
         "raw_frame_claim_allowed": False,
         "teacher_target_scope": "train_only",
         "source": source,
-        "decode_mode": "hard_gap_aware_topk",
+        "decode_mode": "hard_gap_aware_topk_after_learned_score_dilation_r2_r4",
+        "score_dilation_radii": [int(item) for item in DEFAULT_DETECTOR_AWARE_SCORE_DILATION_RADII],
+        "score_dilation_signal": "learned_positive_detector_utility_peaks_only",
+        "learned_context_radius_used": bool(context_radii_by_strategy),
+        "context_radius_range": [float(DEFAULT_CONTEXT_RADIUS_MIN), float(DEFAULT_CONTEXT_RADIUS_MAX)],
         "fixed_strategies": [DETECTOR_AWARE_FIXED_384_STRATEGY, DETECTOR_AWARE_FIXED_768_STRATEGY],
         "dynamic_strategy": DETECTOR_AWARE_DYNAMIC_STRATEGY,
         "fixed_budgets": [int(item) for item in fixed_budgets],
+        "fixed_budget_contract": "min_requested_budget_or_valid_len_no_short_ratio",
         "dynamic_budget": int(dynamic_budget),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "dynamic_budget_calibration": calibration,
@@ -233,6 +339,7 @@ def detector_aware_training_objective(
     detector_utility_target: Any,
     detector_gain_target: Any | None = None,
     detector_risk_target: Any | None = None,
+    action_target: Any | None = None,
     valid: Any | None = None,
     target_budget: Any | None = None,
     loss_terms: Mapping[str, float] | None = None,
@@ -263,6 +370,9 @@ def detector_aware_training_objective(
     probabilities = torch.sigmoid(frame_logits).masked_fill(~valid_mask, 0.0)
     selected_mask = policy_outputs.get("st_selected_mask", probabilities).to(device=frame_logits.device).float()
     selected_mask = selected_mask.masked_fill(~valid_mask, 0.0)
+    context_radius = policy_outputs.get("context_radius")
+    if context_radius is not None:
+        context_radius = context_radius.to(device=frame_logits.device).float().masked_fill(~valid_mask, 0.0)
     zero = frame_logits.sum() * 0.0
     if bool(valid_mask.any().item()):
         utility_mse = F.mse_loss(signed_prediction[valid_mask], signed_target[valid_mask])
@@ -281,6 +391,40 @@ def detector_aware_training_objective(
         cvar_max_hole_loss = torch.topk(F.relu(1.0 - hole_mass), k=max(1, hole_mass.shape[-1] // 4), dim=-1).values.mean()
     else:
         cvar_max_hole_loss = zero
+    spacing_terms = []
+    action_terms = []
+    action = None if action_target is None else action_target.to(device=frame_logits.device).float().clamp(0.0, 1.0)
+    if context_radius is not None and selected_mask.shape[-1] > 1:
+        steps = torch.arange(selected_mask.shape[-1], device=selected_mask.device, dtype=selected_mask.dtype)
+        distance = (steps[None, :, None] - steps[None, None, :]).abs()
+        radius = context_radius[:, :, None].clamp(DEFAULT_CONTEXT_RADIUS_MIN, DEFAULT_CONTEXT_RADIUS_MAX)
+        soft_context_gate = torch.sigmoid((radius - distance) * 2.0) * valid_mask[:, None, :].float()
+        soft_context_coverage = (selected_mask[:, :, None] * soft_context_gate).amax(dim=1).masked_fill(~valid_mask, 0.0)
+    else:
+        soft_context_coverage = selected_mask
+    for radius in DEFAULT_DETECTOR_AWARE_SCORE_DILATION_RADII:
+        window = min(int(2 * int(radius) + 1), int(selected_mask.shape[-1]))
+        if window <= 1:
+            continue
+        selection_mass = F.avg_pool1d(soft_context_coverage.unsqueeze(1), kernel_size=window, stride=1).squeeze(1) * float(window)
+        valid_mass = F.avg_pool1d(valid_mask.float().unsqueeze(1), kernel_size=window, stride=1).squeeze(1) * float(window)
+        valid_windows = valid_mass >= float(window)
+        if bool(valid_windows.any().item()):
+            spacing_gap = F.relu(1.0 - selection_mass)
+            spacing_terms.append(spacing_gap[valid_windows].square().mean())
+            if action is not None:
+                action_mass = F.avg_pool1d(action.unsqueeze(1), kernel_size=window, stride=1).squeeze(1) * float(window)
+                action_windows = valid_windows & (action_mass > 0.0)
+                if bool(action_windows.any().item()):
+                    normalized_weight = (action_mass / float(window)).clamp(0.0, 1.0)
+                    action_terms.append((spacing_gap.square() * normalized_weight)[action_windows].mean())
+    learned_spacing_loss = torch.stack(spacing_terms).mean() if spacing_terms else zero
+    action_local_hole_loss = torch.stack(action_terms).mean() if action_terms else zero
+    if context_radius is not None:
+        radius_cost = (((context_radius - DEFAULT_CONTEXT_RADIUS_MIN).clamp_min(0.0) / (DEFAULT_CONTEXT_RADIUS_MAX - DEFAULT_CONTEXT_RADIUS_MIN)).square() * selected_mask).sum(dim=-1)
+        radius_cost = (radius_cost / selected_mask.sum(dim=-1).clamp_min(1.0)).mean()
+    else:
+        radius_cost = zero
     if target_budget is not None:
         budget = torch.as_tensor(target_budget, dtype=selected_mask.dtype, device=selected_mask.device)
         if budget.ndim == 0:
@@ -294,6 +438,9 @@ def detector_aware_training_objective(
         + utility_risk_bce * weights["utility_risk_bce"]
         + selected_utility_loss * weights["selected_utility"]
         + cvar_max_hole_loss * weights["cvar_max_hole"]
+        + learned_spacing_loss * weights["learned_spacing"]
+        + action_local_hole_loss * weights["action_local_hole"]
+        + radius_cost * weights["context_radius_cost"]
         + budget_loss * weights["budget"]
     )
     return {
@@ -302,6 +449,9 @@ def detector_aware_training_objective(
         "utility_risk_bce_loss": utility_risk_bce,
         "selected_utility_loss": selected_utility_loss,
         "cvar_max_hole_loss": cvar_max_hole_loss,
+        "learned_spacing_loss": learned_spacing_loss,
+        "action_local_hole_loss": action_local_hole_loss,
+        "context_radius_cost_loss": radius_cost,
         "budget_loss": budget_loss,
         "total_loss": total,
         "policy_family": "detector_aware_offline_selector",
@@ -331,7 +481,28 @@ class DetectorAwareSequentialAcquisitionPolicy(_TorchModuleBase):
             budget_buckets=self.budget_buckets,
             dropout=float(dropout),
         )
+        radius_hidden = max(8, int(hidden_dim) // 2)
+        self.context_radius_head = nn.Sequential(
+            nn.Linear(int(input_dim), int(radius_hidden)),
+            nn.SiLU(inplace=True),
+            nn.Linear(int(radius_hidden), 1),
+        )
         self.identity = nn.Identity()
 
     def forward(self, features: Any, valid: Any | None = None, target_budget: Any | None = None) -> dict[str, Any]:
-        return self.encoder(features, valid=valid, target_budget=target_budget)
+        outputs = self.encoder(features, valid=valid, target_budget=target_budget)
+        radius_logits = self.context_radius_head(features.float()).squeeze(-1)
+        if valid is not None:
+            valid_mask = valid.to(device=radius_logits.device).bool()
+            radius_logits = radius_logits.masked_fill(~valid_mask, -1e4)
+        context_radius = DEFAULT_CONTEXT_RADIUS_MIN + (
+            DEFAULT_CONTEXT_RADIUS_MAX - DEFAULT_CONTEXT_RADIUS_MIN
+        ) * self.torch.sigmoid(radius_logits)
+        outputs["context_radius_logits"] = radius_logits
+        outputs["context_radius"] = context_radius
+        outputs["context_radius_range"] = self.torch.tensor(
+            [DEFAULT_CONTEXT_RADIUS_MIN, DEFAULT_CONTEXT_RADIUS_MAX],
+            dtype=features.dtype,
+            device=features.device,
+        )
+        return outputs

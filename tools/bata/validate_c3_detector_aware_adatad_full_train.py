@@ -63,7 +63,10 @@ def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg
     _require(loader.get("method_base") == "sliding_window", f"{name}: method_base must be sliding_window")
     _require(int(loader.get("target_len")) == int(spec["target_len"]), f"{name}: wrong target_len")
     _require(loader.get("bata_value_transport_require_selected_count") == spec["require_selected_count"], f"{name}: wrong require_selected_count")
-    _require(_as_bool(loader.get("bata_value_transport_allow_short_valid_ratio_count")), f"{name}: short-tail ratio gate off")
+    _require(
+        not _as_bool(loader.get("bata_value_transport_allow_short_valid_ratio_count")),
+        f"{name}: short-tail ratio gate must be off for exact detector-aware budget",
+    )
     _require(_as_bool(loader.get("bata_value_transport_require_deployable")), f"{name}: deployable ledger not required")
     _require(not _as_bool(loader.get("bata_value_transport_allow_missing_fallback")), f"{name}: missing fallback must be off")
     _require(_as_bool(loader.get("remap_gt_to_selected_axis")), f"{name}: selected-axis GT remap must be on")

@@ -163,6 +163,18 @@ def _negative_observation_risk_target(utility: Sequence[float]) -> list[float]:
     return [max(0.0, -max(-1.0, min(1.0, float(item)))) for item in utility]
 
 
+def _extract_action_target(row: Mapping[str, Any], *, line_no: int, length: int, gain: Sequence[float]) -> list[float]:
+    raw = row.get("action_target")
+    if raw is None:
+        return [1.0 if float(item) >= 0.5 else 0.0 for item in gain]
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise ValueError(f"line {line_no}: action_target must be a sequence when provided")
+    values = [1.0 if float(item) >= 0.5 else 0.0 for item in raw]
+    if len(values) != int(length):
+        raise ValueError(f"line {line_no}: action_target length must match p_action length")
+    return values
+
+
 def _normalised_budget_buckets(dynamic_budget_buckets: Sequence[int], *, valid_len: int) -> list[int]:
     return sorted({min(max(1, int(item)), int(valid_len)) for item in dynamic_budget_buckets})
 
@@ -265,6 +277,7 @@ def _prepared_rows(
         utility = _extract_teacher_utility(row_for_training, line_no=line_no, length=len(p_action))
         gain = _marginal_gain_target(utility)
         risk = _negative_observation_risk_target(utility)
+        action = _extract_action_target(row_for_training, line_no=line_no, length=len(p_action), gain=gain)
         extracted.append(
             {
                 "p_action": p_action,
@@ -272,6 +285,7 @@ def _prepared_rows(
                 "utility": utility,
                 "gain": gain,
                 "risk": risk,
+                "action": action,
                 "allowed_gt_diagnostics_in_training_source": bool(allowed_gt_diagnostics),
                 "allowed_teacher_utility_training_artifact": bool(allowed_teacher_artifact),
             }
@@ -298,6 +312,7 @@ def _prepared_rows(
                 "positive_observation_gain_target": row["gain"],
                 "negative_observation_risk_target": row["risk"],
                 "detector_marginal_gain_target": row["gain"],
+                "action_target": row["action"],
                 "valid_len": valid_len,
                 "dynamic_budget_target": dynamic_budget_target,
                 "dynamic_gain_calibration": dict(calibration),
@@ -317,6 +332,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
     utility = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
     gain = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
     risk = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    action = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
     valid = torch.zeros((len(batch), max_len), dtype=torch.bool, device=device)
     buckets = [int(item) for item in dynamic_budget_buckets]
     budget_indices: list[int] = []
@@ -327,6 +343,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
         utility[row_idx, :length] = torch.tensor(row["detector_utility_target"], dtype=torch.float32, device=device)
         gain[row_idx, :length] = torch.tensor(row["detector_marginal_gain_target"], dtype=torch.float32, device=device)
         risk[row_idx, :length] = torch.tensor(row["negative_observation_risk_target"], dtype=torch.float32, device=device)
+        action[row_idx, :length] = torch.tensor(row["action_target"], dtype=torch.float32, device=device)
         valid[row_idx, : int(row["valid_len"])] = True
         target_budget = int(row["dynamic_budget_target"])
         budget_targets.append(target_budget)
@@ -336,6 +353,7 @@ def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynami
         "utility": utility,
         "gain": gain,
         "risk": risk,
+        "action": action,
         "valid": valid,
         "budget_indices": torch.tensor(budget_indices, dtype=torch.long, device=device),
         "budget_targets": torch.tensor(budget_targets, dtype=torch.float32, device=device),
@@ -370,6 +388,7 @@ def _run_epoch(
                 detector_utility_target=tensors["utility"],
                 detector_gain_target=tensors["gain"],
                 detector_risk_target=tensors["risk"],
+                action_target=tensors["action"],
                 valid=tensors["valid"],
                 target_budget=tensors["budget_targets"],
             )

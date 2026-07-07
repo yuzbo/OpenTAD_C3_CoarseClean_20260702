@@ -180,7 +180,7 @@ def c3_detector_aware_loadframes(ledger_path):
         bata_value_transport_allow_missing_fallback=False,
         bata_value_transport_require_deployable=True,
         bata_value_transport_require_selected_count=detector_aware_require_selected_count,
-        bata_value_transport_allow_short_valid_ratio_count=True,
+        bata_value_transport_allow_short_valid_ratio_count=False,
         bata_value_transport_source=c3_value_transport_source,
         bata_value_transport_config_hash=c3_value_transport_config_hash,
     )

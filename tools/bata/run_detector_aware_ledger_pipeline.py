@@ -261,7 +261,7 @@ def run_pipeline(
     dynamic_budget_buckets: Sequence[int] = detector_policy.DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS,
     device: str = "cuda",
     deploy_selection_ledger: bool = True,
-    allow_short_valid_ratio_count: bool = True,
+    allow_short_valid_ratio_count: bool = False,
     max_unselected_hole: int | None = None,
     max_p95_unselected_hole: float | None = None,
     max_uniform_similarity: float | None = None,
@@ -415,6 +415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dynamic-budget-buckets", type=int, nargs="+", default=list(detector_policy.DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS))
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--diagnostic-ledger", action="store_true")
+    parser.add_argument("--allow-short-valid-ratio-count", action="store_true")
     parser.add_argument("--disable-short-valid-ratio-count", action="store_true")
     parser.add_argument("--max-unselected-hole", type=int)
     parser.add_argument("--max-p95-unselected-hole", type=float)
@@ -423,6 +424,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--allow-inferred-paction-positive-provenance", action="store_true")
     parser.add_argument("--require-point-responsibility-utility", action="store_true")
     args = parser.parse_args(argv)
+    allow_short_valid_ratio_count = bool(args.allow_short_valid_ratio_count)
+    if bool(args.disable_short_valid_ratio_count):
+        allow_short_valid_ratio_count = False
     summary = run_pipeline(
         input_jsonl=args.input_jsonl,
         checkpoint_path=args.checkpoint_path,
@@ -432,7 +436,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dynamic_budget_buckets=args.dynamic_budget_buckets,
         device=args.device,
         deploy_selection_ledger=not bool(args.diagnostic_ledger),
-        allow_short_valid_ratio_count=not bool(args.disable_short_valid_ratio_count),
+        allow_short_valid_ratio_count=allow_short_valid_ratio_count,
         max_unselected_hole=args.max_unselected_hole,
         max_p95_unselected_hole=args.max_p95_unselected_hole,
         max_uniform_similarity=args.max_uniform_similarity,

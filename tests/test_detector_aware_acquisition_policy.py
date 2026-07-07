@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,7 @@ def test_detector_aware_training_preparation_targets_teacher_utility_not_action_
     assert prepared[0]["positive_observation_gain_target"] == [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]
     assert prepared[0]["negative_observation_risk_target"] == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     assert prepared[0]["dynamic_budget_target"] == 2
+    assert prepared[0]["action_target"] == [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
     assert len(prepared[0]["features"][0]) == len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)
 
 
@@ -248,6 +250,126 @@ def test_detector_aware_policy_marks_dynamic_budget_uncalibrated_without_fit_evi
     assert calibration["score_semantics"] == "uncalibrated_dynamic_budget_score"
 
 
+def test_detector_aware_fixed_decoder_fills_budget_instead_of_short_ratio_scaling() -> None:
+    row = {
+        "sample_id": "video_short_valid_0001|0",
+        "dense_len": 12,
+        "valid_len": 6,
+    }
+
+    enriched = detector_policy.add_detector_aware_decision_to_sample_row(
+        row,
+        frame_values=[0.9, 0.1, 0.8, 0.2, 0.7, 0.3, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0],
+        fixed_budgets=(8, 10),
+        dynamic_budget_scores=[0.0, 1.0],
+        dynamic_budget_buckets=[2, 4],
+        max_unselected_hole=0,
+    )
+
+    strategies = enriched["strategy_selected_positions"]
+    assert strategies["detector_aware_fixed_384"] == [0, 1, 2, 3, 4, 5]
+    assert strategies["detector_aware_fixed_768"] == [0, 1, 2, 3, 4, 5]
+    assert enriched["detector_aware_policy"]["fixed_budget_contract"] == "min_requested_budget_or_valid_len_no_short_ratio"
+
+
+def test_detector_aware_fixed_decoder_dilates_responsibility_scores_with_r2_then_r4() -> None:
+    row = {
+        "sample_id": "video_boundary_context_0001|0",
+        "dense_len": 11,
+        "valid_len": 11,
+    }
+
+    enriched = detector_policy.add_detector_aware_decision_to_sample_row(
+        row,
+        frame_values=[0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        fixed_budgets=(5, 9),
+        dynamic_budget_scores=[0.0, 1.0],
+        dynamic_budget_buckets=[5, 9],
+    )
+
+    strategies = enriched["strategy_selected_positions"]
+    assert strategies["detector_aware_fixed_384"] == [3, 4, 5, 6, 7]
+    assert strategies["detector_aware_fixed_768"] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    meta = enriched["detector_aware_policy"]
+    assert meta["score_dilation_radii"] == [2, 4]
+    assert meta["decode_mode"] == "hard_gap_aware_topk_after_learned_score_dilation_r2_r4"
+
+
+def test_detector_aware_score_dilation_can_use_learned_continuous_context_radius() -> None:
+    values = [0.0] * 21
+    values[10] = 10.0
+    valid = [True] * len(values)
+
+    narrow = detector_policy.score_dilated_frame_values(
+        values,
+        valid=valid,
+        context_radii=[2.0] * len(values),
+    )
+    wide = detector_policy.score_dilated_frame_values(
+        values,
+        valid=valid,
+        context_radii=[16.0] * len(values),
+    )
+
+    assert detector_policy.gas_vt.hard_gap_aware_topk(narrow, valid=valid, budget=5) == [8, 9, 10, 11, 12]
+    assert detector_policy.gas_vt.hard_gap_aware_topk(wide, valid=valid, budget=17) == [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+    ]
+    assert wide[0] > narrow[0]
+
+
+def test_detector_aware_objective_penalizes_action_local_holes() -> None:
+    if os.name == "nt":
+        pytest.skip("local Windows torch DLL import is not reliable in this workspace")
+    torch = pytest.importorskip("torch")
+    frame_logits = torch.zeros((1, 8), dtype=torch.float32)
+    valid = torch.ones((1, 8), dtype=torch.bool)
+    utility = torch.ones((1, 8), dtype=torch.float32)
+    action = torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]], dtype=torch.float32)
+    sparse_outputs = {
+        "frame_value": frame_logits,
+        "st_selected_mask": torch.tensor([[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]], dtype=torch.float32),
+    }
+    covered_outputs = {
+        "frame_value": frame_logits,
+        "st_selected_mask": torch.tensor([[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0]], dtype=torch.float32),
+    }
+
+    sparse = detector_policy.detector_aware_training_objective(
+        sparse_outputs,
+        detector_utility_target=utility,
+        valid=valid,
+        target_budget=torch.tensor([4.0]),
+        action_target=action,
+    )
+    covered = detector_policy.detector_aware_training_objective(
+        covered_outputs,
+        detector_utility_target=utility,
+        valid=valid,
+        target_budget=torch.tensor([4.0]),
+        action_target=action,
+    )
+
+    assert sparse["action_local_hole_loss"].item() > covered["action_local_hole_loss"].item()
+    assert "learned_spacing_loss" in sparse
+
+
 def test_detector_aware_training_rejects_non_train_teacher_utility() -> None:
     row = _sample_row()
     row["split"] = "validation"
@@ -375,6 +497,62 @@ def test_detector_aware_checkpoint_apply_scores_each_strategy_with_its_target_bu
     }
     assert row["detector_aware_policy"]["budget_conditioning_rule"] == "checkpoint_two_pass_strategy_specific_target_budget"
     assert row["detector_aware_policy"]["budget_conditioned_frame_values"] is True
+
+
+def test_detector_aware_checkpoint_apply_conditions_fixed_scores_on_filled_budget_for_short_valid_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "samples.jsonl"
+    output = tmp_path / "samples.detector_aware.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector-aware checkpoint")
+    _write_jsonl(
+        source,
+        [
+            {
+                "sample_id": "video_short_valid_0001|0",
+                "split": "validation",
+                "dense_len": 12,
+                "valid_len": 6,
+                "frame_signals": {"p_action": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8]},
+                "paction_positive_provenance": _paction_provenance(),
+            }
+        ],
+    )
+    seen_budgets: list[int | None] = []
+
+    monkeypatch.setattr(
+        apply_detector,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4, 6]}),
+    )
+
+    def fake_checkpoint_scores(_model, p_action, *, valid, target_budget, device):
+        seen_budgets.append(target_budget)
+        frame_values = [float(target_budget or 0) + float(idx) / 100.0 for idx, _ in enumerate(p_action)]
+        budget_scores = [0.0, 0.0, 1.0]
+        return frame_values, budget_scores
+
+    monkeypatch.setattr(apply_detector, "checkpoint_policy_scores", fake_checkpoint_scores)
+
+    apply_detector.run_policy_application(
+        source,
+        output,
+        fixed_budgets=(8, 10),
+        checkpoint_path=checkpoint,
+        device="cpu",
+        max_unselected_hole=0,
+    )
+    row = _read_jsonl(output)[0]
+
+    assert seen_budgets == [6, 6, 6, 6]
+    assert row["detector_aware_policy"]["apply_time_target_budgets"] == {
+        "detector_aware_fixed_384": 6,
+        "detector_aware_fixed_768": 6,
+        "detector_aware_dynamic": 6,
+    }
+    assert row["strategy_selected_positions"]["detector_aware_fixed_384"] == [0, 1, 2, 3, 4, 5]
 
 
 def test_detector_aware_apply_rejects_teacher_payload_in_deploy_source(tmp_path: Path) -> None:

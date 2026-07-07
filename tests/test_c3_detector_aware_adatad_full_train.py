@@ -63,6 +63,7 @@ def test_detector_aware_adatad_config_supports_fixed384_fixed768_and_dynamic(mon
             assert int(loader.target_len) == target_len
             assert loader.bata_value_transport_require_selected_count == required_count
             assert loader.bata_value_transport_require_deployable is True
+            assert loader.bata_value_transport_allow_short_valid_ratio_count is False
             assert loader.bata_value_transport_allow_missing_fallback is False
             assert loader.bata_value_transport_source == "learned_detector_aware_policy_checkpoint"
 
@@ -115,6 +116,7 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert "run_detector_aware_ledger_pipeline.py" in text
     assert "validate_detector_aware_policy_ledger.py" in text
     assert "validate_c3_detector_aware_adatad_full_train.py" in text
+    assert "--allow-short-valid-ratio-count" not in text
     assert 'DETECTOR_AWARE_ADATAD_VARIANTS="${DETECTOR_AWARE_ADATAD_VARIANTS:-detector_aware_fixed_384}"' in text
     assert 'ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384="${ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384:-0}"' in text
     assert "exceeds the <=384 main-claim budget" in text

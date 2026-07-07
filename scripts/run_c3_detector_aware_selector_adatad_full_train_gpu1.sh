@@ -370,7 +370,6 @@ validate_variant_split() {
     --ledger-jsonl "${ledger_jsonl}"
     --strategy "${strategy}"
     --expected-target-len "${target_len}"
-    --allow-short-valid-ratio-count
     --require-deployable
     --require-policy-source learned_detector_aware_policy_checkpoint
     --require-checkpoint-path "${DETECTOR_AWARE_POLICY_CHECKPOINT}"

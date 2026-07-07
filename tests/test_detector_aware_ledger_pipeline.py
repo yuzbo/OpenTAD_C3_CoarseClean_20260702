@@ -192,6 +192,57 @@ def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp
         assert validation["map_claim_allowed"] is False
 
 
+def test_detector_aware_pipeline_defaults_to_exact_fixed_budget_for_short_valid_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "short_valid_source.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    row = _sample(
+        "video_short_valid_0001|0",
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8],
+        [0.0, 0.1, 0.2, 0.9, 1.0, 0.9, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0],
+    )
+    row["valid_len"] = 6
+    _write_jsonl(source, [row])
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4, 6]}),
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            [float(target_budget or 0) + float(idx) / 100.0 for idx, _ in enumerate(p_action)],
+            [0.0, 0.0, 1.0],
+            [16.0 for _ in p_action],
+        ),
+    )
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out_short_valid",
+        fixed_budgets=(8, 10),
+        dynamic_target_len=6,
+        dynamic_budget_buckets=[2, 4, 6],
+        device="cpu",
+        allow_tiny_dynamic_diagnostic=True,
+        max_unselected_hole=6,
+        max_p95_unselected_hole=6,
+        max_uniform_similarity=1.0,
+    )
+
+    fixed384 = summary["ledgers"]["detector_aware_fixed_384"]
+    assert fixed384["ledger_summary"]["allow_short_valid_ratio_count"] is False
+    assert fixed384["ledger_summary"]["min_selected_count"] == 6
+    assert fixed384["validation_summary"]["allow_short_valid_ratio_count"] is False
+    assert fixed384["validation_summary"]["min_selected_count"] == 6
+
+
 def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_from_teacher_utility_rows(
     tmp_path: Path,
     monkeypatch,
