@@ -193,6 +193,8 @@ def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_fro
     for row in rows:
         row.pop("paction_positive_provenance")
         row["split"] = "training"
+        row["uses_gt_for_diagnostics"] = True
+        row["diagnostic_only"] = True
         row["uses_teacher"] = True
         row["training_only"] = True
         row["matrix_model_id"] = "official_asformer_lowres"
@@ -248,6 +250,8 @@ def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_fro
     assert report["inferred_paction_positive_provenance_count"] == 2
     assert report["stripped_key_counts"]["teacher_utility"] == 2
     assert report["stripped_key_counts"]["teacher_utility_provenance"] == 2
+    assert report["stripped_key_counts"]["uses_gt_for_diagnostics"] == 2
+    assert report["stripped_key_counts"]["diagnostic_only"] == 2
     assert report["teacher_payload_visible_to_deploy"] is False
 
     deploy_rows = [

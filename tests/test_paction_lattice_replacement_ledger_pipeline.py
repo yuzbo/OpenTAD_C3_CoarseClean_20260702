@@ -9,6 +9,7 @@ import pytest
 from tools.bata import apply_paction_acquisition_policy as apply_policy
 from tools.bata import paction_lattice_replacement_policy as lattice
 from tools.bata import run_paction_lattice_replacement_ledger_pipeline as pipeline
+from tools.bata import validate_paction_lattice_replacement_ledger as lattice_validator
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -232,6 +233,35 @@ def test_lattice_pipeline_infers_deploy_provenance_only_with_explicit_opt_in(
     assert rows[0]["paction_positive_provenance"]["uses_gt_for_diagnostics"] is False
     assert "action_target" not in rows[0]
     assert "gt_boundaries" not in rows[0]
+
+
+def test_lattice_validator_cli_accepts_positive_deploy_compatibility_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: dict = {}
+
+    def fake_validate_lattice_ledger(**kwargs):
+        called.update(kwargs)
+        return {"decision": lattice_validator.READY}
+
+    monkeypatch.setattr(lattice_validator, "validate_lattice_ledger", fake_validate_lattice_ledger)
+
+    rc = lattice_validator.main(
+        [
+            "--sample-jsonl",
+            "samples.jsonl",
+            "--metric-sample-jsonl",
+            "metrics.jsonl",
+            "--ledger-jsonl",
+            "ledger.jsonl",
+            "--strategy",
+            lattice.MOVE50_STRATEGY,
+            "--allow-short-valid-ratio-count",
+            "--require-deployable",
+        ]
+    )
+
+    assert rc == 0
+    assert called["allow_short_valid_ratio_count"] is True
+    assert called["require_deployable"] is True
 
 
 def test_lattice_replacement_pipeline_defaults_to_diagnostic_uniform_scaffold(

@@ -127,6 +127,8 @@ def _detector_deploy_source_jsonl(
             )
             inferred_count += 1
         for key in paction_source_samples.SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS:
+            if key in paction_source_samples.SELECTION_SOURCE_STRIPPABLE_DIAGNOSTIC_TRUE_FLAGS:
+                continue
             if (
                 key in {"uses_teacher", "training_only"}
                 and bool(allow_inferred_paction_positive_provenance)
