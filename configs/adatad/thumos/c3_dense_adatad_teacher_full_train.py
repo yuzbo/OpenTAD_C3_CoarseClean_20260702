@@ -41,6 +41,10 @@ dataset = dict(
     ),
 )
 
+evaluation = dict(
+    ground_truth_filename=annotation_path,
+)
+
 workflow = dict(
     logging_interval=50,
     checkpoint_interval=10,

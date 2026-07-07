@@ -123,6 +123,7 @@ assert cfg.dataset.test.class_map == os.environ["THUMOS14_CLASS_MAP"]
 assert cfg.dataset.train.data_path == os.environ["THUMOS14_TRAIN_DATA_PATH"]
 assert cfg.dataset.val.data_path == os.environ["THUMOS14_TEST_DATA_PATH"]
 assert cfg.dataset.test.data_path == os.environ["THUMOS14_TEST_DATA_PATH"]
+assert cfg.evaluation.ground_truth_filename == os.environ["THUMOS14_ANNOTATION_PATH"]
 eval_epochs = [
     epoch
     for epoch in range(int(cfg.workflow.end_epoch))
@@ -137,6 +138,7 @@ payload = {
     "eval_epochs_zero_based": eval_epochs,
     "checkpoint_epochs_zero_based": [9, 19, 29, 39, 49, 59],
     "annotation_path": cfg.dataset.train.ann_file,
+    "evaluation_ground_truth_filename": cfg.evaluation.ground_truth_filename,
     "class_map": cfg.dataset.train.class_map,
     "train_data_path": cfg.dataset.train.data_path,
     "test_data_path": cfg.dataset.test.data_path,

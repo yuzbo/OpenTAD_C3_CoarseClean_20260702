@@ -49,6 +49,7 @@ def test_dense_teacher_config_inherits_official_adatad_and_uses_requested_schedu
     assert cfg.dataset.train.data_path == "/abs/c3/raw/Validation Data/validation"
     assert cfg.dataset.val.data_path == "/abs/c3/raw/Test Data/TH14_test_set_mp4"
     assert cfg.dataset.test.data_path == "/abs/c3/raw/Test Data/TH14_test_set_mp4"
+    assert cfg.evaluation.ground_truth_filename == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
     assert cfg.workflow.checkpoint_interval == 10
     assert cfg.workflow.val_start_epoch == 9
     assert cfg.workflow.val_eval_interval == 10
