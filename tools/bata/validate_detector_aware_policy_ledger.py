@@ -68,6 +68,14 @@ def _check_detector_metadata(
             raise ValueError(f"{sample_id}: detector-aware policy must declare end_to_end=false")
         if policy.get("uses_uniform_fill") is not False or policy.get("uses_uniform_scaffold") is not False:
             raise ValueError(f"{sample_id}: detector-aware policy must disable uniform fill/scaffold")
+        if policy.get("acquisition_unit") != "temporal_observation_center":
+            raise ValueError(f"{sample_id}: detector-aware policy acquisition_unit must be temporal_observation_center")
+        if policy.get("selected_positions_coordinate_system") != "local_dense_snippet_index":
+            raise ValueError(f"{sample_id}: detector-aware policy coordinate system must be local_dense_snippet_index")
+        if policy.get("dense_grid_unit") != "snippet_center":
+            raise ValueError(f"{sample_id}: detector-aware policy dense_grid_unit must be snippet_center")
+        if policy.get("raw_frame_claim_allowed") is not False:
+            raise ValueError(f"{sample_id}: detector-aware policy must not allow raw-frame claims")
         diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), Mapping) else {}
         ledger_source = row.get("policy_source", diagnostics.get("policy_source"))
         ledger_checkpoint_path = row.get("policy_checkpoint_path", diagnostics.get("policy_checkpoint_path"))

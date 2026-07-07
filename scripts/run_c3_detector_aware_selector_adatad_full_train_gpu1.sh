@@ -13,6 +13,8 @@ export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-1}"
 ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN="${ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN:-0}"
 ALLOW_C3_DETECTOR_AWARE_GPU0="${ALLOW_C3_DETECTOR_AWARE_GPU0:-0}"
+REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY="${REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY:-1}"
+ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC="${ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC:-0}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 RUN_TAG="${RUN_TAG:-c3_detector_aware_stage2_adatad_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
@@ -131,6 +133,14 @@ require_file "${C3_DETECTOR_AWARE_TEST_SOURCE_JSONL}"
 if [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" && -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then
   fail "set only one of C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL or C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL"
 fi
+if [[ -z "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then
+  if [[ "${REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY}" == "1" ]]; then
+    fail "Stage-2 paper-main route requires C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL and C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON. Set REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY=0 and ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC=1 only for proposal-score surrogate diagnostics."
+  fi
+  if [[ "${ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC}" != "1" ]]; then
+    fail "proposal-score surrogate Stage-2 is diagnostic-only; set ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC=1 explicitly"
+  fi
+fi
 if [[ -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then
   require_file "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}"
   [[ -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON}" ]] || fail "C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON is required with responsibility points"
@@ -247,19 +257,24 @@ print(json.dumps({
 }, sort_keys=True), flush=True)
 PY
 
-"${PYTHON}" "${POLICY_TRAINER}" \
-  --train-jsonl "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}" \
-  --out-dir "${POLICY_DIR}" \
-  --checkpoint-path "${DETECTOR_AWARE_POLICY_CHECKPOINT}" \
-  --summary-json "${POLICY_DIR}/train.summary.json" \
-  --epochs "${DETECTOR_AWARE_POLICY_EPOCHS}" \
-  --batch-size "${DETECTOR_AWARE_POLICY_BATCH_SIZE}" \
-  --dynamic-budget-buckets ${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS} \
-  --expected-split training \
-  --allow-gt-diagnostics-in-training-source \
-  --allow-teacher-utility-training-artifact \
-  --device cuda \
+policy_train_args=(
+  --train-jsonl "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}"
+  --out-dir "${POLICY_DIR}"
+  --checkpoint-path "${DETECTOR_AWARE_POLICY_CHECKPOINT}"
+  --summary-json "${POLICY_DIR}/train.summary.json"
+  --epochs "${DETECTOR_AWARE_POLICY_EPOCHS}"
+  --batch-size "${DETECTOR_AWARE_POLICY_BATCH_SIZE}"
+  --dynamic-budget-buckets ${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS}
+  --expected-split training
+  --allow-gt-diagnostics-in-training-source
+  --allow-teacher-utility-training-artifact
+  --device cuda
   --seed "${SEED}"
+)
+if [[ "${REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY}" == "1" ]]; then
+  policy_train_args+=(--require-point-responsibility-utility)
+fi
+"${PYTHON}" "${POLICY_TRAINER}" "${policy_train_args[@]}"
 
 require_file "${DETECTOR_AWARE_POLICY_CHECKPOINT}"
 DETECTOR_AWARE_POLICY_CHECKPOINT_SHA256="$("${PYTHON}" - "${DETECTOR_AWARE_POLICY_CHECKPOINT}" <<'PY'
@@ -280,19 +295,24 @@ run_ledger_pipeline_for_split() {
   local input_jsonl="$2"
   local out_dir="${LEDGER_ROOT}/${split}"
   mkdir -p "${out_dir}"
-  "${PYTHON}" "${LEDGER_PIPELINE}" \
-    --input-jsonl "${input_jsonl}" \
-    --checkpoint-path "${DETECTOR_AWARE_POLICY_CHECKPOINT}" \
-    --out-dir "${out_dir}" \
-    --summary-json "${out_dir}/pipeline.summary.json" \
-    --fixed-budgets 384 768 \
-    --dynamic-target-len 768 \
-    --dynamic-budget-buckets ${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS} \
-    --max-unselected-hole "${DETECTOR_AWARE_MAX_UNSELECTED_HOLE}" \
-    --max-p95-unselected-hole "${DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE}" \
-    --max-uniform-similarity "${DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY}" \
-    --allow-inferred-paction-positive-provenance \
+  local pipeline_args=(
+    --input-jsonl "${input_jsonl}"
+    --checkpoint-path "${DETECTOR_AWARE_POLICY_CHECKPOINT}"
+    --out-dir "${out_dir}"
+    --summary-json "${out_dir}/pipeline.summary.json"
+    --fixed-budgets 384 768
+    --dynamic-target-len 768
+    --dynamic-budget-buckets ${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS}
+    --max-unselected-hole "${DETECTOR_AWARE_MAX_UNSELECTED_HOLE}"
+    --max-p95-unselected-hole "${DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE}"
+    --max-uniform-similarity "${DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY}"
+    --allow-inferred-paction-positive-provenance
     --device cuda
+  )
+  if [[ "${REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY}" == "1" ]]; then
+    pipeline_args+=(--require-point-responsibility-utility)
+  fi
+  "${PYTHON}" "${LEDGER_PIPELINE}" "${pipeline_args[@]}"
 }
 
 run_ledger_pipeline_for_split train "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}"

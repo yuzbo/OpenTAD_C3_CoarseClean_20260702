@@ -75,7 +75,27 @@ def bootstrap_policy_scores(
     return [float(item) for item in frame_values], [float(item) for item in budget_scores]
 
 
-def load_policy_checkpoint(checkpoint_path: str | Path, *, device: str = "cuda") -> tuple[detector_policy.DetectorAwareSequentialAcquisitionPolicy, dict[str, Any]]:
+def _validate_checkpoint_utility_contract(payload: Mapping[str, Any], *, require_point_responsibility_utility: bool) -> None:
+    if not require_point_responsibility_utility:
+        return
+    if payload.get("utility_semantics") != "signed_point_responsibility_utility_v1":
+        raise ValueError("detector-aware main checkpoint must use signed_point_responsibility_utility_v1")
+    if payload.get("utility_source_type") != "point_loss_gradient_responsibility_v1":
+        raise ValueError("detector-aware main checkpoint must use point_loss_gradient_responsibility_v1")
+    if payload.get("point_responsibility_utility") is not True:
+        raise ValueError("detector-aware main checkpoint requires point_responsibility_utility=true")
+    if payload.get("proposal_score_surrogate_utility") is not False:
+        raise ValueError("detector-aware main checkpoint rejects proposal_score_surrogate_utility")
+    if payload.get("paper_main_target_allowed") is not True:
+        raise ValueError("detector-aware main checkpoint must declare paper_main_target_allowed=true")
+
+
+def load_policy_checkpoint(
+    checkpoint_path: str | Path,
+    *,
+    device: str = "cuda",
+    require_point_responsibility_utility: bool = False,
+) -> tuple[detector_policy.DetectorAwareSequentialAcquisitionPolicy, dict[str, Any]]:
     import torch
 
     from tools.bata import train_detector_aware_acquisition_policy as train_policy
@@ -99,6 +119,10 @@ def load_policy_checkpoint(checkpoint_path: str | Path, *, device: str = "cuda")
         raise ValueError("detector-aware policy checkpoint is missing train_jsonl")
     if not isinstance(payload.get("train_jsonl_sha256"), str) or len(payload.get("train_jsonl_sha256", "")) != 64:
         raise ValueError("detector-aware policy checkpoint is missing train_jsonl_sha256")
+    _validate_checkpoint_utility_contract(
+        payload,
+        require_point_responsibility_utility=bool(require_point_responsibility_utility),
+    )
     state_dict = payload.get("policy_state_dict")
     if state_dict is None:
         raise ValueError("detector-aware policy checkpoint is missing policy_state_dict")
@@ -210,6 +234,7 @@ def run_policy_application(
     allow_bootstrap_for_tests: bool = False,
     max_unselected_hole: int | None = None,
     source_jsonl_for_hash: str | Path | None = None,
+    require_point_responsibility_utility: bool = False,
 ) -> dict[str, Any]:
     rows = _read_jsonl(input_jsonl)
     if checkpoint_path is None and not allow_bootstrap_for_tests:
@@ -225,7 +250,11 @@ def run_policy_application(
         checkpoint_sha256 = _sha256_file(checkpoint_path)
         source = CHECKPOINT_POLICY_SOURCE
         if not allow_bootstrap_for_tests:
-            checkpoint_model, checkpoint_payload = load_policy_checkpoint(checkpoint_path, device=device)
+            checkpoint_model, checkpoint_payload = load_policy_checkpoint(
+                checkpoint_path,
+                device=device,
+                require_point_responsibility_utility=bool(require_point_responsibility_utility),
+            )
             dynamic_budget_buckets = checkpoint_payload.get("dynamic_budget_buckets", dynamic_budget_buckets)
     dynamic_gain_calibration = dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION)
     if checkpoint_payload is not None and isinstance(checkpoint_payload.get("dynamic_gain_calibration"), Mapping):
@@ -319,6 +348,7 @@ def run_policy_application(
         "checkpoint_path": None if checkpoint_path is None else str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "policy_checkpoint_sha256": checkpoint_sha256,
+        "require_point_responsibility_utility": bool(require_point_responsibility_utility),
         "source_jsonl_sha256": source_jsonl_sha256,
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
         "strict_deploy_source": bool(strict_deploy_source),
@@ -351,6 +381,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--strip-deploy-invisible-payload", action="store_true")
     parser.add_argument("--strict-deploy-source", action="store_true")
     parser.add_argument("--max-unselected-hole", type=int)
+    parser.add_argument("--require-point-responsibility-utility", action="store_true")
     args = parser.parse_args(argv)
     summary = run_policy_application(
         args.input_jsonl,
@@ -364,6 +395,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         strict_deploy_source=bool(args.strict_deploy_source),
         allow_bootstrap_for_tests=False,
         max_unselected_hole=args.max_unselected_hole,
+        require_point_responsibility_utility=bool(args.require_point_responsibility_utility),
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

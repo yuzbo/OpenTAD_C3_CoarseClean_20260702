@@ -13,6 +13,8 @@ from tools.bata import train_paction_acquisition_policy as base_train
 SUMMARY_SCHEMA_VERSION = "c3_detector_aware_policy_train_v1"
 CHECKPOINT_SCHEMA_VERSION = "c3_detector_aware_policy_checkpoint_v1"
 READY = "C3_DETECTOR_AWARE_POLICY_TRAIN_READY"
+POINT_RESPONSIBILITY_UTILITY_SOURCE_TYPE = "point_loss_gradient_responsibility_v1"
+POINT_RESPONSIBILITY_UTILITY_SEMANTICS = "signed_point_responsibility_utility_v1"
 
 
 _read_jsonl = base_train._read_jsonl
@@ -128,6 +130,25 @@ def _teacher_utility_contract(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
         "point_responsibility_utility": bool(point_responsibility),
         "proposal_score_surrogate_utility": bool(proposal_score_surrogate),
     }
+
+
+def _require_point_responsibility_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("utility_semantics") != POINT_RESPONSIBILITY_UTILITY_SEMANTICS:
+        raise ValueError(
+            "Stage-2 paper-main detector-aware selector requires "
+            f"utility_semantics={POINT_RESPONSIBILITY_UTILITY_SEMANTICS}; "
+            f"got {contract.get('utility_semantics')!r}"
+        )
+    if contract.get("utility_source_type") != POINT_RESPONSIBILITY_UTILITY_SOURCE_TYPE:
+        raise ValueError(
+            "Stage-2 paper-main detector-aware selector requires "
+            f"utility_source_type={POINT_RESPONSIBILITY_UTILITY_SOURCE_TYPE}; "
+            f"got {contract.get('utility_source_type')!r}"
+        )
+    if contract.get("point_responsibility_utility") is not True:
+        raise ValueError("Stage-2 paper-main detector-aware selector requires point_responsibility_utility=true")
+    if contract.get("proposal_score_surrogate_utility") is not False:
+        raise ValueError("Stage-2 paper-main detector-aware selector rejects proposal_score_surrogate_utility")
 
 
 def _marginal_gain_target(utility: Sequence[float]) -> list[float]:
@@ -386,6 +407,7 @@ def run_training(
     expected_split: str | None = "training",
     allow_gt_diagnostics_in_training_source: bool = False,
     allow_teacher_utility_training_artifact: bool = False,
+    require_point_responsibility_utility: bool = False,
 ) -> dict[str, Any]:
     import torch
 
@@ -397,6 +419,8 @@ def run_training(
     buckets = [int(item) for item in dynamic_budget_buckets]
     source_rows = _read_jsonl(train_jsonl)
     utility_contract = _teacher_utility_contract(source_rows)
+    if require_point_responsibility_utility:
+        _require_point_responsibility_contract(utility_contract)
     train_rows = _prepared_rows(
         source_rows,
         dynamic_budget_buckets=buckets,
@@ -461,6 +485,8 @@ def run_training(
         "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
         "allow_teacher_utility_training_artifact": bool(allow_teacher_utility_training_artifact),
         "allowed_teacher_utility_training_artifact_row_count": int(allowed_teacher_artifact_count),
+        "require_point_responsibility_utility": bool(require_point_responsibility_utility),
+        "paper_main_target_allowed": bool(require_point_responsibility_utility),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "end_to_end": False,
@@ -489,6 +515,8 @@ def run_training(
         "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
         "allow_teacher_utility_training_artifact": bool(allow_teacher_utility_training_artifact),
         "allowed_teacher_utility_training_artifact_row_count": int(allowed_teacher_artifact_count),
+        "require_point_responsibility_utility": bool(require_point_responsibility_utility),
+        "paper_main_target_allowed": bool(require_point_responsibility_utility),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "end_to_end": False,
@@ -534,6 +562,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "as provenance evidence; deploy/eval sources remain strict."
         ),
     )
+    parser.add_argument(
+        "--require-point-responsibility-utility",
+        action="store_true",
+        help=(
+            "Fail closed unless train-only utility is signed point-responsibility "
+            "utility, not dense proposal-score surrogate. This is the Stage-2 paper-main path."
+        ),
+    )
     args = parser.parse_args(argv)
     summary = run_training(
         args.train_jsonl,
@@ -554,6 +590,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_split=args.expected_split,
         allow_gt_diagnostics_in_training_source=args.allow_gt_diagnostics_in_training_source,
         allow_teacher_utility_training_artifact=args.allow_teacher_utility_training_artifact,
+        require_point_responsibility_utility=args.require_point_responsibility_utility,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0

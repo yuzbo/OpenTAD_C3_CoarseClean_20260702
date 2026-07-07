@@ -39,6 +39,18 @@ def _has_key_recursive(value: object, key: str) -> bool:
     return False
 
 
+def _policy_unit_contract() -> dict:
+    return {
+        "acquisition_unit": "temporal_observation_center",
+        "selected_positions_coordinate_system": "local_dense_snippet_index",
+        "dense_grid_unit": "snippet_center",
+        "dense_grid_size": 4,
+        "selected_observation_budget_unit": "temporal_observation_center",
+        "claim_unit_allowed": "selected_temporal_observations_only",
+        "raw_frame_claim_allowed": False,
+    }
+
+
 def _sample(sample_id: str, p_action: list[float], utility: list[float]) -> dict:
     return {
         "sample_id": sample_id,
@@ -65,6 +77,7 @@ def _deploy_policy_metadata(checkpoint: Path, sha: str) -> dict:
         "end_to_end": False,
         "uses_uniform_fill": False,
         "uses_uniform_scaffold": False,
+        **_policy_unit_contract(),
         "p_action_provenance": _paction_provenance(),
     }
 
@@ -443,6 +456,7 @@ def test_detector_aware_validator_rejects_teacher_payload_in_deploy_sample(tmp_p
             "policy_family": "detector_aware_offline_selector",
             "uses_uniform_fill": False,
             "uses_uniform_scaffold": False,
+            **_policy_unit_contract(),
             "p_action_provenance": _paction_provenance(),
         },
     }
@@ -550,6 +564,7 @@ def test_detector_aware_validator_ignores_validation_teacher_utility_for_decisio
             "end_to_end": False,
             "uses_uniform_fill": False,
             "uses_uniform_scaffold": False,
+            **_policy_unit_contract(),
             "p_action_provenance": _paction_provenance(),
         },
     }

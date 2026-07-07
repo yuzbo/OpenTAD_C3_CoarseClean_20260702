@@ -90,6 +90,11 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
     assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
     assert 'ALLOW_C3_DETECTOR_AWARE_GPU0="${ALLOW_C3_DETECTOR_AWARE_GPU0:-0}"' in text
+    assert 'REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY="${REQUIRE_C3_DETECTOR_AWARE_POINT_RESPONSIBILITY:-1}"' in text
+    assert 'ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC="${ALLOW_C3_DETECTOR_AWARE_SURROGATE_STAGE2_DIAGNOSTIC:-0}"' in text
+    assert "Stage-2 paper-main route requires C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL" in text
+    assert "proposal-score surrogate Stage-2 is diagnostic-only" in text
+    assert "--require-point-responsibility-utility" in text
     assert "explicit GPU0 override accepted for Stage-2" in text
     assert "Set ALLOW_C3_DETECTOR_AWARE_GPU0=1 only when GPU0 is explicitly assigned to this route." in text
     assert "detector_teacher_utility.py" in text

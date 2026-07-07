@@ -267,6 +267,7 @@ def run_pipeline(
     max_uniform_similarity: float | None = None,
     allow_tiny_dynamic_diagnostic: bool = False,
     allow_inferred_paction_positive_provenance: bool = False,
+    require_point_responsibility_utility: bool = False,
     summary_json: str | Path | None = None,
 ) -> dict[str, Any]:
     out_path = Path(out_dir).expanduser()
@@ -310,6 +311,7 @@ def run_pipeline(
         strict_deploy_source=bool(deploy_selection_ledger),
         max_unselected_hole=max_unselected_hole,
         source_jsonl_for_hash=input_sample_path,
+        require_point_responsibility_utility=bool(require_point_responsibility_utility),
     )
     fixed_budget_list = [int(item) for item in fixed_budgets]
     variant_specs = {
@@ -372,6 +374,7 @@ def run_pipeline(
         "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
         "deploy_selection_ledger": bool(deploy_selection_ledger),
         "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
+        "require_point_responsibility_utility": bool(require_point_responsibility_utility),
         "required_policy_source": detector_policy.DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE,
         "baseline_comparison": {
             "matched_budget_baselines": ["p_action_only", "GAS-VT"],
@@ -418,6 +421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-uniform-similarity", type=float)
     parser.add_argument("--allow-tiny-dynamic-diagnostic", action="store_true")
     parser.add_argument("--allow-inferred-paction-positive-provenance", action="store_true")
+    parser.add_argument("--require-point-responsibility-utility", action="store_true")
     args = parser.parse_args(argv)
     summary = run_pipeline(
         input_jsonl=args.input_jsonl,
@@ -434,6 +438,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_uniform_similarity=args.max_uniform_similarity,
         allow_tiny_dynamic_diagnostic=bool(args.allow_tiny_dynamic_diagnostic),
         allow_inferred_paction_positive_provenance=bool(args.allow_inferred_paction_positive_provenance),
+        require_point_responsibility_utility=bool(args.require_point_responsibility_utility),
         summary_json=args.summary_json,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)

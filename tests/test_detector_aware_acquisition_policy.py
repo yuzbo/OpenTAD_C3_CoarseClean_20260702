@@ -80,6 +80,59 @@ def test_detector_aware_training_preserves_signed_utility_and_calibrated_gain_ta
     assert prepared[0]["dynamic_budget_target"] == 2
 
 
+def test_detector_aware_main_training_requires_point_responsibility_contract() -> None:
+    surrogate = _sample_row()
+    surrogate["teacher_utility"] = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "utility_source_type": "dense_detector_forward_test_proposal_score_surrogate_v1",
+        "signed_frame_utility": [0.0, 0.9, -0.4, 1.0, -0.8, 0.7],
+        "proposal_score_surrogate_utility": True,
+        "point_responsibility_utility": False,
+    }
+    with pytest.raises(ValueError, match="signed_point_responsibility_utility_v1"):
+        train_detector._require_point_responsibility_contract(train_detector._teacher_utility_contract([surrogate]))
+
+    responsibility = _sample_row()
+    responsibility["teacher_utility"] = {
+        "utility_semantics": "signed_point_responsibility_utility_v1",
+        "utility_source_type": "point_loss_gradient_responsibility_v1",
+        "signed_frame_utility": [0.0, 0.9, -0.4, 1.0, -0.8, 0.7],
+        "proposal_score_surrogate_utility": False,
+        "point_responsibility_utility": True,
+    }
+    contract = train_detector._teacher_utility_contract([responsibility])
+    train_detector._require_point_responsibility_contract(contract)
+    assert contract["point_responsibility_utility"] is True
+    assert contract["proposal_score_surrogate_utility"] is False
+
+
+def test_detector_aware_main_checkpoint_rejects_surrogate_contract() -> None:
+    surrogate_payload = {
+        "utility_semantics": "signed_detector_utility_v1",
+        "utility_source_type": "dense_detector_forward_test_proposal_score_surrogate_v1",
+        "point_responsibility_utility": False,
+        "proposal_score_surrogate_utility": True,
+        "paper_main_target_allowed": False,
+    }
+    with pytest.raises(ValueError, match="signed_point_responsibility_utility_v1"):
+        apply_detector._validate_checkpoint_utility_contract(
+            surrogate_payload,
+            require_point_responsibility_utility=True,
+        )
+
+    responsibility_payload = {
+        "utility_semantics": "signed_point_responsibility_utility_v1",
+        "utility_source_type": "point_loss_gradient_responsibility_v1",
+        "point_responsibility_utility": True,
+        "proposal_score_surrogate_utility": False,
+        "paper_main_target_allowed": True,
+    }
+    apply_detector._validate_checkpoint_utility_contract(
+        responsibility_payload,
+        require_point_responsibility_utility=True,
+    )
+
+
 def test_detector_aware_training_can_ignore_train_source_gt_diagnostic_flag_when_explicitly_allowed() -> None:
     row = _sample_row()
     row["uses_gt_for_diagnostics"] = True
