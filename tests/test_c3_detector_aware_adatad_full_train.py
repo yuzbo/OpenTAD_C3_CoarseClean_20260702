@@ -94,17 +94,26 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert "Set ALLOW_C3_DETECTOR_AWARE_GPU0=1 only when GPU0 is explicitly assigned to this route." in text
     assert "detector_teacher_utility.py" in text
     assert "export_dense_adatad_teacher_points.py" in text
+    assert "export_adatad_responsibility_utility.py" in text
+    assert "validate_adatad_responsibility_utility.py" in text
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL" in text
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON" in text
     assert "C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL" in text
     assert "C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON" in text
     assert "--generator-manifest-json" in text
     assert "C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON" in text
     assert "teacher_utility_export.summary.json" in text
+    assert "responsibility_utility_export.summary.json" in text
     assert "validate_teacher_utility_export_evidence" in text
+    assert "validate_responsibility_utility_export" in text
     assert "train_detector_aware_acquisition_policy.py" in text
     assert "run_detector_aware_ledger_pipeline.py" in text
     assert "validate_detector_aware_policy_ledger.py" in text
     assert "validate_c3_detector_aware_adatad_full_train.py" in text
-    assert "detector_aware_fixed_384 detector_aware_fixed_768 detector_aware_dynamic" in text
+    assert 'DETECTOR_AWARE_ADATAD_VARIANTS="${DETECTOR_AWARE_ADATAD_VARIANTS:-detector_aware_fixed_384}"' in text
+    assert 'ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384="${ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384:-0}"' in text
+    assert "exceeds the <=384 main-claim budget" in text
+    assert "ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384=1" in text
     assert "learned_detector_aware_policy_checkpoint" in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN=1" in text

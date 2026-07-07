@@ -73,6 +73,10 @@ def _run_actionformer_path_precheck(cfg, *, dense_len, seed):
     detector.zero_grad(set_to_none=True)
     inputs = torch.randn(2, 3, int(dense_len), requires_grad=True)
     masks = torch.ones(2, int(dense_len), dtype=torch.bool)
+    selector = detector.frame_selector
+    probe_inputs = _fixed_selector_probe_inputs(inputs.detach(), seed=int(seed) + 17)
+    probe_before = [_selector_probe_snapshot(selector, probe, masks) for probe in probe_inputs]
+    params_before = _clone_selector_params(selector)
     metas = [
         {"video_name": "truetime_actionformer_precheck_0"},
         {"video_name": "truetime_actionformer_precheck_1"},
@@ -93,7 +97,12 @@ def _run_actionformer_path_precheck(cfg, *, dense_len, seed):
         gt_labels=gt_labels,
     )
     losses["cost"].backward()
-    grad_norm = selector_grad_norm(detector.frame_selector)
+    grad_norm = selector_grad_norm(selector)
+    optimizer = torch.optim.SGD(selector.parameters(), lr=1.0)
+    optimizer.step()
+    probe_after = [_selector_probe_snapshot(selector, probe, masks) for probe in probe_inputs]
+    selector_param_delta_l2 = _selector_param_delta_l2(params_before, selector)
+    drift_payload = _selector_drift_payload(probe_before, probe_after)
     loss_keys = sorted(key for key in losses if key != "cost")
     finite_loss_values = {
         key: float(value.detach().cpu().item())
@@ -106,6 +115,10 @@ def _run_actionformer_path_precheck(cfg, *, dense_len, seed):
         "real_detector_loss_selector_grad_norm": grad_norm,
         "real_detector_loss_keys": loss_keys,
         "real_detector_loss_values": finite_loss_values,
+        "selector_param_delta_l2": selector_param_delta_l2,
+        "selector_param_delta_passed": selector_param_delta_l2 > 0.0,
+        "selector_step_optimizer": "sgd_lr_1.0_selector_params_only",
+        **drift_payload,
         "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
         "actionformer_detector_loss_selector_grad_passed": grad_norm > 0.0,
         "actionformer_detector_loss_selector_grad_norm": grad_norm,
@@ -117,6 +130,83 @@ def _run_actionformer_path_precheck(cfg, *, dense_len, seed):
         "sparse_distill_claim_allowed": False,
         "sparse_distill_map_claim_allowed": False,
         "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
+    }
+
+
+def _fixed_selector_probe_inputs(base_inputs, *, seed):
+    torch.manual_seed(int(seed))
+    random_probe = torch.randn_like(base_inputs)
+    time = int(base_inputs.shape[-1])
+    ramp = torch.linspace(-1.0, 1.0, steps=time, dtype=base_inputs.dtype, device=base_inputs.device)
+    ramp = ramp.view(1, 1, time).expand_as(base_inputs)
+    alternating = torch.where(
+        (torch.arange(time, device=base_inputs.device) % 2).view(1, 1, time) == 0,
+        torch.ones((), dtype=base_inputs.dtype, device=base_inputs.device),
+        -torch.ones((), dtype=base_inputs.dtype, device=base_inputs.device),
+    ).expand_as(base_inputs)
+    return [
+        base_inputs.detach().clone(),
+        random_probe.detach().clone(),
+        (base_inputs.detach() + 0.25 * ramp).clone(),
+        ramp.detach().clone(),
+        alternating.detach().clone(),
+    ]
+
+
+def _selector_probe_snapshot(selector, probe_inputs, masks):
+    with torch.no_grad():
+        outputs = selector.forward_features(probe_inputs, masks=masks, phase="precheck_fixed_probe")
+    return {
+        "selected_indices": outputs["selected_indices"].detach().cpu().long(),
+        "logits": outputs["logits"].detach().cpu().float(),
+    }
+
+
+def _clone_selector_params(selector):
+    return [(name, param.detach().clone()) for name, param in selector.named_parameters() if param.requires_grad]
+
+
+def _selector_param_delta_l2(params_before, selector):
+    before_by_name = {name: param for name, param in params_before}
+    total = 0.0
+    for name, param in selector.named_parameters():
+        if not param.requires_grad:
+            continue
+        before = before_by_name[name].to(device=param.device, dtype=param.dtype)
+        total += float((param.detach() - before).pow(2).sum().item())
+    return total**0.5
+
+
+def _selector_drift_payload(before_snapshots, after_snapshots):
+    candidates = []
+    for probe_idx, (before, after) in enumerate(zip(before_snapshots, after_snapshots)):
+        selected_before = before["selected_indices"]
+        selected_after = after["selected_indices"]
+        position_delta = (selected_after.float() - selected_before.float()).abs()
+        logits_delta = after["logits"] - before["logits"]
+        logits_abs = logits_delta.abs()
+        candidates.append(
+            {
+                "probe_idx": int(probe_idx),
+                "position_mean": float(position_delta.mean().item()),
+                "position_max": float(position_delta.max().item()),
+                "logits_l2": float(logits_delta.pow(2).sum().sqrt().item()),
+                "logits_max": float(logits_abs.max().item()),
+                "selected_before": selected_before.tolist(),
+                "selected_after": selected_after.tolist(),
+            }
+        )
+    best = max(candidates, key=lambda item: (item["position_max"], item["position_mean"], item["logits_l2"]))
+    return {
+        "selector_probe_index": best["probe_idx"],
+        "selector_probe_selected_indices_before": best["selected_before"],
+        "selector_probe_selected_indices_after": best["selected_after"],
+        "selected_position_drift_mean": best["position_mean"],
+        "selected_position_drift_max": best["position_max"],
+        "selected_position_drift_passed": best["position_max"] > 0.0,
+        "selector_logits_drift_l2": best["logits_l2"],
+        "selector_logits_drift_max": best["logits_max"],
+        "selector_logits_drift_passed": best["logits_l2"] > 0.0,
     }
 
 

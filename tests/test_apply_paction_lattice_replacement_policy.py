@@ -127,10 +127,14 @@ def test_lattice_application_emits_score_only_metadata_and_strips_deploy_payload
     assert metadata["source"] == "learned_paction_gap_loss_policy_checkpoint"
     assert metadata["selection_decoder"] == "score_only_lattice_replacement_v1"
     assert metadata["score_only"] is True
+    assert metadata["diagnostic_only"] is True
+    assert metadata["paper_main_claim_allowed"] is False
+    assert metadata["diagnostic_scope"] == "paction_lattice_replacement_policy_diagnostic_not_main_method"
     assert metadata["uses_manual_boundary_slots"] is False
     assert metadata["uses_manual_transition_slots"] is False
     assert metadata["uses_manual_uncertainty_slots"] is False
-    assert metadata["uses_uniform_scaffold"] is False
+    assert metadata["uses_uniform_scaffold"] is True
+    assert metadata["scaffold_type"] == "uniform_lattice_local_replacement"
     assert metadata["uses_uniform_fill"] is False
     assert metadata["p_action_provenance"]["probe_model"] == "mobilenetv3_64px"
     diagnostics = metadata["lattice_replacement_diagnostics_by_strategy"][lattice.MOVE50_STRATEGY]

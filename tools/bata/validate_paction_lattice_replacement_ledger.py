@@ -50,12 +50,19 @@ def _assert_lattice_metadata(sample_rows: Sequence[Mapping[str, Any]], *, strate
             raise ValueError(f"sample row {row_index}: selection_decoder must be score_only_lattice_replacement_v1")
         if policy.get("score_only") is not True:
             raise ValueError(f"sample row {row_index}: score_only must be true")
+        if policy.get("diagnostic_only") is not True:
+            raise ValueError(f"sample row {row_index}: diagnostic_only must be true")
+        if policy.get("paper_main_claim_allowed") is not False:
+            raise ValueError(f"sample row {row_index}: paper_main_claim_allowed must be false")
+        if policy.get("uses_uniform_scaffold") is not True:
+            raise ValueError(f"sample row {row_index}: uses_uniform_scaffold must be true")
+        if policy.get("scaffold_type") != "uniform_lattice_local_replacement":
+            raise ValueError(f"sample row {row_index}: scaffold_type must be uniform_lattice_local_replacement")
         for key in (
             "uses_manual_boundary_slots",
             "uses_manual_transition_slots",
             "uses_manual_uncertainty_slots",
             "uses_manual_context_slots",
-            "uses_uniform_scaffold",
             "uses_uniform_fill",
         ):
             if policy.get(key) is not False:
@@ -121,6 +128,7 @@ def validate_lattice_ledger(
         require_checkpoint_path=require_checkpoint_path,
         require_checkpoint_sha256=require_checkpoint_sha256,
         require_paction_provenance=bool(require_deployable),
+        allow_policy_uniform_scaffold=True,
     )
     lattice_summary = _assert_lattice_metadata(_read_jsonl(sample_jsonl), strategy=strategy)
     summary = {

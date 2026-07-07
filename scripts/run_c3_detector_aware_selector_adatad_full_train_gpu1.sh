@@ -45,6 +45,8 @@ EXEC_CONFIG="${EXEC_CONFIG:-configs/adatad/thumos/c3_detector_aware_ledger_adata
 CONFIG_VALIDATOR="${CONFIG_VALIDATOR:-tools/bata/validate_c3_detector_aware_adatad_full_train.py}"
 TEACHER_UTILITY_EXPORTER="${TEACHER_UTILITY_EXPORTER:-tools/bata/detector_teacher_utility.py}"
 TEACHER_POINTS_EXPORTER="${TEACHER_POINTS_EXPORTER:-tools/bata/export_dense_adatad_teacher_points.py}"
+RESPONSIBILITY_UTILITY_EXPORTER="${RESPONSIBILITY_UTILITY_EXPORTER:-tools/bata/export_adatad_responsibility_utility.py}"
+RESPONSIBILITY_UTILITY_VALIDATOR="${RESPONSIBILITY_UTILITY_VALIDATOR:-tools/bata/validate_adatad_responsibility_utility.py}"
 POLICY_TRAINER="${POLICY_TRAINER:-tools/bata/train_detector_aware_acquisition_policy.py}"
 POLICY_APPLIER="${POLICY_APPLIER:-tools/bata/apply_detector_aware_acquisition_policy.py}"
 LEDGER_PIPELINE="${LEDGER_PIPELINE:-tools/bata/run_detector_aware_ledger_pipeline.py}"
@@ -72,6 +74,9 @@ else
 fi
 C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL="${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL:-}"
 C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON="${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON:-}"
+C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL="${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL:-}"
+C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON="${C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON:-}"
+C3_DETECTOR_AWARE_RESPONSIBILITY_UTILITY_EXPORT_SUMMARY_JSON="${C3_DETECTOR_AWARE_RESPONSIBILITY_UTILITY_EXPORT_SUMMARY_JSON:-}"
 C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH="${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH:-}"
 C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH="${C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH:-}"
 C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON="${C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON:-}"
@@ -80,7 +85,8 @@ C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL="${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL:-}"
 DETECTOR_AWARE_POLICY_EPOCHS="${DETECTOR_AWARE_POLICY_EPOCHS:-30}"
 DETECTOR_AWARE_POLICY_BATCH_SIZE="${DETECTOR_AWARE_POLICY_BATCH_SIZE:-8}"
 DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS="${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS:-128 192 256 320 384 512 768}"
-DETECTOR_AWARE_ADATAD_VARIANTS="${DETECTOR_AWARE_ADATAD_VARIANTS:-detector_aware_fixed_384 detector_aware_fixed_768 detector_aware_dynamic}"
+DETECTOR_AWARE_ADATAD_VARIANTS="${DETECTOR_AWARE_ADATAD_VARIANTS:-detector_aware_fixed_384}"
+ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384="${ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384:-0}"
 DETECTOR_AWARE_MAX_UNSELECTED_HOLE="${DETECTOR_AWARE_MAX_UNSELECTED_HOLE:-96}"
 DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE="${DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE:-48}"
 DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY="${DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY:-0.50}"
@@ -112,6 +118,8 @@ require_file "${EXEC_CONFIG}"
 require_file "${CONFIG_VALIDATOR}"
 require_file "${TEACHER_UTILITY_EXPORTER}"
 require_file "${TEACHER_POINTS_EXPORTER}"
+require_file "${RESPONSIBILITY_UTILITY_EXPORTER}"
+require_file "${RESPONSIBILITY_UTILITY_VALIDATOR}"
 require_file "${POLICY_TRAINER}"
 require_file "${POLICY_APPLIER}"
 require_file "${LEDGER_PIPELINE}"
@@ -120,7 +128,15 @@ require_file "${THUMOS14_ANNOTATION_PATH}"
 require_file "${THUMOS14_CLASS_MAP}"
 require_file "${C3_DETECTOR_AWARE_VAL_SOURCE_JSONL}"
 require_file "${C3_DETECTOR_AWARE_TEST_SOURCE_JSONL}"
-if [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" ]]; then
+if [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" && -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then
+  fail "set only one of C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL or C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL"
+fi
+if [[ -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then
+  require_file "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}"
+  [[ -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON}" ]] || fail "C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON is required with responsibility points"
+  require_file "${C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON}"
+  require_file "${C3_DETECTOR_AWARE_BASE_TRAIN_SOURCE_JSONL}"
+elif [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" ]]; then
   require_file "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}"
   if [[ -z "${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON}" ]]; then
     dense_points_manifest_candidate="${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL%.jsonl}.manifest.json"
@@ -157,6 +173,8 @@ bash -n "${BASH_SOURCE[0]}"
   tools/train.py \
   "${TEACHER_UTILITY_EXPORTER}" \
   "${TEACHER_POINTS_EXPORTER}" \
+  "${RESPONSIBILITY_UTILITY_EXPORTER}" \
+  "${RESPONSIBILITY_UTILITY_VALIDATOR}" \
   tools/bata/detector_aware_acquisition_policy.py \
   "${POLICY_TRAINER}" \
   "${POLICY_APPLIER}" \
@@ -165,7 +183,18 @@ bash -n "${BASH_SOURCE[0]}"
   "${CONFIG_VALIDATOR}"
 
 TEACHER_UTILITY_SUMMARY_JSON="${C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON}"
-if [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" ]]; then
+TEACHER_UTILITY_KIND="proposal_score_surrogate"
+if [[ -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then
+  C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL="${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL:-${POLICY_DIR}/samples_with_responsibility_utility.jsonl}"
+  TEACHER_UTILITY_SUMMARY_JSON="${C3_DETECTOR_AWARE_RESPONSIBILITY_UTILITY_EXPORT_SUMMARY_JSON:-${POLICY_DIR}/responsibility_utility_export.summary.json}"
+  TEACHER_UTILITY_KIND="point_responsibility"
+  "${PYTHON}" "${RESPONSIBILITY_UTILITY_EXPORTER}" \
+    --source-jsonl "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" \
+    --base-samples-jsonl "${C3_DETECTOR_AWARE_BASE_TRAIN_SOURCE_JSONL}" \
+    --output-jsonl "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}" \
+    --summary-json "${TEACHER_UTILITY_SUMMARY_JSON}" \
+    --manifest-json "${C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON}"
+elif [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" ]]; then
   C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL="${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL:-${POLICY_DIR}/samples_with_teacher_utility.jsonl}"
   TEACHER_UTILITY_SUMMARY_JSON="${TEACHER_UTILITY_SUMMARY_JSON:-${POLICY_DIR}/teacher_utility_export.summary.json}"
   teacher_utility_args=(
@@ -185,21 +214,36 @@ else
 fi
 require_file "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}"
 require_file "${TEACHER_UTILITY_SUMMARY_JSON}"
-"${PYTHON}" - "${TEACHER_UTILITY_SUMMARY_JSON}" "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}" <<'PY'
+"${PYTHON}" - "${TEACHER_UTILITY_KIND}" "${TEACHER_UTILITY_SUMMARY_JSON}" "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}" <<'PY'
 import json
 import sys
-from tools.bata.detector_teacher_utility import validate_teacher_utility_export_evidence
 
-evidence = validate_teacher_utility_export_evidence(
-    sys.argv[1],
-    output_jsonl=sys.argv[2],
-    require_paction=True,
-)
+kind, summary_json, output_jsonl = sys.argv[1:4]
+if kind == "point_responsibility":
+    from tools.bata.validate_adatad_responsibility_utility import validate_responsibility_utility_export
+    evidence = validate_responsibility_utility_export(summary_json, output_jsonl=output_jsonl)
+    payload = {
+        "decision": evidence["decision"],
+        "row_count": evidence["row_count"],
+        "utility_semantics": evidence["utility_semantics"],
+        "utility_source_type": evidence["utility_source_type"],
+        "output_jsonl_sha256": evidence["output_jsonl_sha256"],
+    }
+else:
+    from tools.bata.detector_teacher_utility import validate_teacher_utility_export_evidence
+    evidence = validate_teacher_utility_export_evidence(
+        summary_json,
+        output_jsonl=output_jsonl,
+        require_paction=True,
+    )
+    payload = {
+        "decision": evidence["decision"],
+        "row_count": evidence["row_count"],
+        "teacher_checkpoint_sha256": evidence["teacher_checkpoint_sha256"],
+        "output_jsonl_sha256": evidence["output_jsonl_sha256"],
+    }
 print(json.dumps({
-    "decision": evidence["decision"],
-    "row_count": evidence["row_count"],
-    "teacher_checkpoint_sha256": evidence["teacher_checkpoint_sha256"],
-    "output_jsonl_sha256": evidence["output_jsonl_sha256"],
+    **payload,
 }, sort_keys=True), flush=True)
 PY
 
@@ -278,6 +322,13 @@ strategy_for_variant() {
     detector_aware_dynamic) echo detector_aware_dynamic ;;
     *) fail "unknown detector-aware AdaTAD variant: $1" ;;
   esac
+}
+
+assert_variant_claim_scope() {
+  local variant="$1"
+  if [[ "${variant}" != "detector_aware_fixed_384" && "${ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384}" != "1" ]]; then
+    fail "variant=${variant} exceeds the <=384 main-claim budget. Set ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384=1 only for explicit diagnostic runs."
+  fi
 }
 
 validate_variant_split() {
@@ -365,6 +416,7 @@ run_adatad_variant() {
   -q
 
 for variant in ${DETECTOR_AWARE_ADATAD_VARIANTS}; do
+  assert_variant_claim_scope "${variant}"
   run_adatad_variant "${variant}"
 done
 

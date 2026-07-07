@@ -7,6 +7,10 @@ import pytest
 
 from tools.bata import detector_teacher_utility as teacher_utility
 
+EXPECTED_SOURCE_KIND = "dense_detector_forward_test_proposal_score_surrogate_v1"
+EXPECTED_SOURCE_CLAIM = "proposal_score_surrogate_not_counterfactual"
+EXPECTED_GENERATOR_SOURCE = "dense_detector_forward_test_proposal_score_surrogate"
+
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
@@ -16,14 +20,14 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _write_generator_manifest(path: Path) -> None:
+def _write_generator_manifest(path: Path, **extra: object) -> None:
     path.write_text(
         json.dumps(
             {
                 "schema_version": "c3_detector_teacher_utility_generator_manifest_v1",
                 "decision": "C3_DETECTOR_TEACHER_UTILITY_GENERATOR_MANIFEST_READY",
                 "teacher_signal_source": "adatad_dense_teacher",
-                "generator_source": "dense_detector_forward_train",
+                "generator_source": EXPECTED_GENERATOR_SOURCE,
                 "split_scope": "train_only",
                 "input_split": "training",
                 "uses_evaluator_outputs": False,
@@ -32,6 +36,7 @@ def _write_generator_manifest(path: Path) -> None:
                 "load_from_raw_predictions": False,
                 "uses_val_or_test_gt_for_selection": False,
                 "uses_gt_for_selection": False,
+                **extra,
             }
         )
         + "\n",
@@ -72,6 +77,115 @@ def _dense_teacher_row(**extra: object) -> dict:
     }
     row.update(extra)
     return row
+
+
+def _teacher_source_manifest_fields() -> dict:
+    return {
+        "teacher_utility_source_kind": EXPECTED_SOURCE_KIND,
+        "teacher_utility_source_claim": EXPECTED_SOURCE_CLAIM,
+        "proposal_score_surrogate_utility": True,
+        "counterfactual_utility": False,
+        "point_responsibility_utility": False,
+    }
+
+
+def _summary_source_manifest_fields() -> dict:
+    return {
+        "teacher_utility_source_kind": EXPECTED_SOURCE_KIND,
+        "teacher_utility_source_claim": EXPECTED_SOURCE_CLAIM,
+        "proposal_score_surrogate_utility": True,
+        "counterfactual_utility_supported": False,
+        "point_responsibility_utility_supported": False,
+    }
+
+
+def _write_valid_teacher_utility_evidence(
+    tmp_path: Path,
+    *,
+    row_mutation: tuple[str, str, object] | None = None,
+    summary_mutation: tuple[str, object] | None = None,
+) -> tuple[Path, Path]:
+    output_jsonl = tmp_path / "samples_with_teacher_utility.jsonl"
+    summary_json = tmp_path / "teacher_utility_export.summary.json"
+    checkpoint, config = _write_teacher_artifacts(tmp_path)
+    row = {
+        "schema_version": "c3_detector_teacher_utility_row_v1",
+        "sample_id": "video_test_0001|0",
+        "split": "training",
+        "dense_len": 2,
+        "valid_len": 2,
+        "frame_utility": [0.0, 1.0],
+        "signed_frame_utility": [0.0, 1.0],
+        "positive_observation_gain": [0.0, 1.0],
+        "negative_observation_risk": [0.0, 0.0],
+        "teacher_utility": {
+            "utility_semantics": "signed_detector_utility_v1",
+            "frame_utility": [0.0, 1.0],
+            "signed_frame_utility": [0.0, 1.0],
+            "positive_observation_gain": [0.0, 1.0],
+            "negative_observation_risk": [0.0, 0.0],
+            **_teacher_source_manifest_fields(),
+        },
+        "teacher_utility_provenance": {
+            "teacher_signal_source": "adatad_dense_teacher",
+            "teacher_axis": "dense_frame_index",
+            "fps": 25.0,
+            "snippet_stride": 4,
+            "window_start_frame": 0,
+            "dense_len": 2,
+            "teacher_checkpoint_path": str(checkpoint),
+            "teacher_checkpoint_sha256": teacher_utility._sha256_file(checkpoint),
+            "teacher_config_path": str(config),
+            "teacher_config_sha256": teacher_utility._sha256_file(config),
+            "split_scope": "train_only",
+            **_teacher_source_manifest_fields(),
+        },
+        "uses_teacher": True,
+        "training_only": True,
+        "end_to_end": False,
+        **_teacher_source_manifest_fields(),
+    }
+    if row_mutation is not None:
+        container_name, key, value = row_mutation
+        container = row if container_name == "row" else row[container_name]
+        if value is None:
+            container.pop(key)
+        else:
+            container[key] = value
+    _write_jsonl(output_jsonl, [row])
+
+    summary = {
+        "schema_version": "c3_detector_teacher_utility_export_v1",
+        "decision": "C3_DETECTOR_TEACHER_UTILITY_EXPORT_READY",
+        "stage_label": "Stage-2 detector-aware offline selector",
+        "route_label": "DIVERGENT_INNOVATION_DETECTOR_AWARE_UTILITY_DO_NOT_MERGE_WITH_C3",
+        "teacher_signal_source": "adatad_dense_teacher",
+        "split_scope": "train_only",
+        "utility_semantics": "signed_detector_utility_v1",
+        "signed_utility_supported": True,
+        "teacher_checkpoint_path": str(checkpoint),
+        "teacher_checkpoint_sha256": teacher_utility._sha256_file(checkpoint),
+        "teacher_config_path": str(config),
+        "teacher_config_sha256": teacher_utility._sha256_file(config),
+        "output_jsonl": str(output_jsonl),
+        "output_jsonl_sha256": teacher_utility._sha256_file(output_jsonl),
+        "row_count": 1,
+        "uses_val_or_test_gt_for_selection": False,
+        "uses_gt_for_selection": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "load_from_raw_predictions": False,
+        "end_to_end": False,
+        **_summary_source_manifest_fields(),
+    }
+    if summary_mutation is not None:
+        key, value = summary_mutation
+        if value is None:
+            summary.pop(key)
+        else:
+            summary[key] = value
+    summary_json.write_text(json.dumps(summary, sort_keys=True) + "\n", encoding="utf-8")
+    return summary_json, output_jsonl
 
 
 def test_dense_point_utility_maps_to_normalized_frame_utility_with_contract() -> None:
@@ -189,8 +303,23 @@ def test_teacher_utility_export_rejects_val_or_gt_leakage_and_writes_jsonl_npz(t
     assert exported[0]["teacher_utility"]["negative_observation_risk"] == [0.0] * 5
     assert exported[0]["teacher_utility"]["marginal_gain_frame_utility_diagnostic"] == exported[0]["teacher_utility"]["positive_observation_gain"]
     assert "marginal_gain_frame_utility" not in exported[0]["teacher_utility"]
+    for container in (
+        exported[0],
+        exported[0]["teacher_utility"],
+        exported[0]["teacher_utility_provenance"],
+    ):
+        assert container["teacher_utility_source_kind"] == EXPECTED_SOURCE_KIND
+        assert container["teacher_utility_source_claim"] == EXPECTED_SOURCE_CLAIM
+        assert container["proposal_score_surrogate_utility"] is True
+        assert container["counterfactual_utility"] is False
+        assert container["point_responsibility_utility"] is False
     assert summary["utility_semantics"] == "signed_detector_utility_v1"
     assert summary["signed_utility_supported"] is True
+    assert summary["teacher_utility_source_kind"] == EXPECTED_SOURCE_KIND
+    assert summary["teacher_utility_source_claim"] == EXPECTED_SOURCE_CLAIM
+    assert summary["proposal_score_surrogate_utility"] is True
+    assert summary["counterfactual_utility_supported"] is False
+    assert summary["point_responsibility_utility_supported"] is False
     assert summary["teacher_checkpoint_sha256"] == teacher_utility._sha256_file(checkpoint)
     assert summary["teacher_config_sha256"] == teacher_utility._sha256_file(config)
 
@@ -410,6 +539,59 @@ def test_teacher_utility_evidence_gate_fails_closed_without_provenance(tmp_path:
         teacher_utility.validate_teacher_utility_export_evidence(summary_json, output_jsonl=output_jsonl)
 
 
+@pytest.mark.parametrize(
+    ("summary_mutation", "row_mutation", "match"),
+    [
+        (("teacher_utility_source_kind", None), None, "teacher_utility_source_kind"),
+        (("teacher_utility_source_claim", "counterfactual_point_responsibility"), None, "teacher_utility_source_claim"),
+        (("proposal_score_surrogate_utility", False), None, "proposal_score_surrogate_utility"),
+        (("counterfactual_utility_supported", True), None, "counterfactual_utility_supported"),
+        (("point_responsibility_utility_supported", True), None, "point_responsibility_utility_supported"),
+        (None, ("row", "teacher_utility_source_kind", None), "teacher_utility_source_kind"),
+        (None, ("teacher_utility", "teacher_utility_source_claim", "point_responsibility"), "teacher_utility_source_claim"),
+        (None, ("teacher_utility_provenance", "proposal_score_surrogate_utility", False), "proposal_score_surrogate_utility"),
+        (None, ("teacher_utility", "counterfactual_utility", True), "counterfactual_utility"),
+        (None, ("teacher_utility_provenance", "point_responsibility_utility", True), "point_responsibility_utility"),
+    ],
+)
+def test_teacher_utility_evidence_gate_fails_closed_on_source_manifest_fields(
+    tmp_path: Path,
+    summary_mutation: tuple[str, object] | None,
+    row_mutation: tuple[str, str, object] | None,
+    match: str,
+) -> None:
+    summary_json, output_jsonl = _write_valid_teacher_utility_evidence(
+        tmp_path,
+        summary_mutation=summary_mutation,
+        row_mutation=row_mutation,
+    )
+
+    with pytest.raises(ValueError, match=match):
+        teacher_utility.validate_teacher_utility_export_evidence(summary_json, output_jsonl=output_jsonl)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("teacher_utility_source_kind", "dense_detector_counterfactual_utility_v1"),
+        ("teacher_utility_source_claim", "counterfactual_point_responsibility"),
+        ("proposal_score_surrogate_utility", False),
+        ("counterfactual_utility", True),
+        ("point_responsibility_utility", True),
+    ],
+)
+def test_teacher_utility_generator_manifest_rejects_mismatched_source_manifest_fields(
+    tmp_path: Path,
+    field: str,
+    bad_value: object,
+) -> None:
+    manifest = tmp_path / "teacher_generator.manifest.json"
+    _write_generator_manifest(manifest, **{field: bad_value})
+
+    with pytest.raises(ValueError, match=field):
+        teacher_utility.validate_generator_manifest(manifest)
+
+
 def test_teacher_utility_evidence_requires_generator_manifest_when_claimed(tmp_path: Path) -> None:
     output_jsonl = tmp_path / "samples_with_teacher_utility.jsonl"
     summary_json = tmp_path / "teacher_utility_export.summary.json"
@@ -454,6 +636,7 @@ def test_teacher_utility_evidence_requires_generator_manifest_when_claimed(tmp_p
                 "split_scope": "train_only",
                 "utility_semantics": "signed_detector_utility_v1",
                 "signed_utility_supported": True,
+                **_summary_source_manifest_fields(),
                 "teacher_checkpoint_path": str(checkpoint),
                 "teacher_checkpoint_sha256": teacher_utility._sha256_file(checkpoint),
                 "teacher_config_path": str(config),

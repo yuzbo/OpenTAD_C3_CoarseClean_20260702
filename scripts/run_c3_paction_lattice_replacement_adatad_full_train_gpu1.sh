@@ -176,6 +176,7 @@ run_lattice_pipeline_for_split() {
     --summary-json "${out_dir}/pipeline.summary.json"
     --fixed-budget "${PACTION_LATTICE_FIXED_BUDGET}"
     --device "${PACTION_LATTICE_DEVICE}"
+    --deploy-selection-ledger
     --local-radius "${PACTION_LATTICE_LOCAL_RADIUS}"
     --distance-penalty "${PACTION_LATTICE_DISTANCE_PENALTY}"
     --geometry-distortion-penalty "${PACTION_LATTICE_GEOMETRY_DISTORTION_PENALTY}"

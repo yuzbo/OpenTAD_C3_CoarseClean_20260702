@@ -204,6 +204,12 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
 
     assert "train_paction_acquisition_policy.py" in text
     assert "--expected-split training" in text
+    assert "PACTION_BOUNDARY_MISS_LOSS_WEIGHT" in text
+    assert "PACTION_LARGE_GAP_LOSS_WEIGHT" in text
+    assert "PACTION_TEMPORAL_HOLE_LOSS_WEIGHT" in text
+    assert "--boundary-miss-loss-weight" in text
+    assert "--large-gap-loss-weight" in text
+    assert "--temporal-hole-loss-weight" in text
     assert "materialize_split_source_jsonl" in text
     assert "C3_PACTION_TRAIN_SOURCE_JSONL_ORIGINAL" in text
     assert "row['split'] = split_value" in text
@@ -244,6 +250,7 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
     assert "paction_lattice_replace_score_only_move50 paction_lattice_replace_score_only_move75" in text
     assert "--variants ${PACTION_LATTICE_ADATAD_VARIANTS}" in text
     assert "--fixed-budget \"${PACTION_LATTICE_FIXED_BUDGET}\"" in text
+    assert "--deploy-selection-ledger" in text
     assert "samples.paction_lattice_replacement.jsonl" in text
     assert "value_transport_ledger_${variant}.jsonl" in text
     assert 'C3_PACTION_LEDGER_SOURCE="learned_paction_gap_loss_policy_checkpoint"' in text

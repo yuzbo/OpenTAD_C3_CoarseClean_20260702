@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from collections.abc import Mapping, Sequence
@@ -26,7 +27,7 @@ REQUIRED_PHASES = [
     "dense_teacher_utility_export",
     "detector_aware_selector_pretrain",
     "offline_sparse_detector_warmup",
-    "truetime_st_joint_smoke",
+    "truetime_st_joint_precheck",
     "bilevel_fulltrain_candidate",
 ]
 REQUIRED_QUESTIONS = [
@@ -180,7 +181,10 @@ def _validate_stage2_teacher_evidence(payload: Mapping[str, Any]) -> None:
     _require_existing_file_with_sha(payload, "validated_output_jsonl", "validated_output_jsonl_sha256", context="Stage2 teacher evidence")
     _require_existing_file_with_sha(payload, "generator_manifest_json", "generator_manifest_sha256", context="Stage2 teacher evidence")
     _require_stage2_teacher_summary_chain(payload)
-    _require(payload.get("generator_source") == "dense_detector_forward_train", "Stage2 teacher generator_source must be dense_detector_forward_train")
+    _require(
+        payload.get("generator_source") == detector_teacher_utility.TEACHER_UTILITY_GENERATOR_SOURCE,
+        f"Stage2 teacher generator_source must be {detector_teacher_utility.TEACHER_UTILITY_GENERATOR_SOURCE}",
+    )
     _require_false_flags(payload, context="Stage2 teacher evidence")
     _require(payload.get("end_to_end") is False, "Stage2 teacher evidence must not claim end-to-end")
 
@@ -225,6 +229,16 @@ def _require_numeric_key(payload: Mapping[str, Any], key: str, *, context: str) 
     if value is None:
         return
     _require(isinstance(value, (int, float)) and not isinstance(value, bool), f"{context}: {key} must be numeric or null")
+
+
+def _require_positive_number(payload: Mapping[str, Any], key: str, *, context: str) -> float:
+    _require(key in payload, f"{context}: missing {key}")
+    value = payload.get(key)
+    _require(isinstance(value, (int, float)) and not isinstance(value, bool), f"{context}: {key} must be numeric")
+    number = float(value)
+    _require(math.isfinite(number), f"{context}: {key} must be finite")
+    _require(number > 0.0, f"{context}: {key} must be > 0")
+    return number
 
 
 def _validate_stage2_ledger_summary(payload: Mapping[str, Any]) -> str:
@@ -292,28 +306,39 @@ def _validate_stage2_ledger_summaries(payloads: Sequence[Mapping[str, Any]]) -> 
 
 def _validate_stage3_proof(payload: Mapping[str, Any]) -> None:
     _require(payload.get("route_variant") == STAGE3_ROUTE, "Stage3 proof route mismatch")
+    _require(
+        payload.get("stage") == "stage3_true_time_e2e_adatad_selector_precheck",
+        "Stage3 proof must be the real detector precheck stage",
+    )
     _require(payload.get("geometry_roundtrip_passed") is True, "Stage3 geometry roundtrip proof missing")
     _require(payload.get("prediction_inverse_map_passed") is True, "Stage3 prediction inverse-map proof missing")
     _require(payload.get("selected_input_st_gradient_passed") is True, "Stage3 selected-input ST proof missing")
-    _require(float(payload.get("selected_input_selector_grad_norm", 0.0)) > 0.0, "Stage3 selected-input grad norm must be > 0")
+    _require_positive_number(payload, "selected_input_selector_grad_norm", context="Stage3 proof")
     _require(payload.get("detector_loss_selector_grad_passed") is True, "Stage3 detector-loss selector proof missing")
-    _require(float(payload.get("detector_loss_selector_grad_norm", 0.0)) > 0.0, "Stage3 detector-loss grad norm must be > 0")
+    _require_positive_number(payload, "detector_loss_selector_grad_norm", context="Stage3 proof")
     _require(payload.get("actionformer_detector_loss_selector_grad_passed") is True, "ActionFormer detector-loss proof missing")
-    _require(
-        float(payload.get("actionformer_detector_loss_selector_grad_norm", 0.0)) > 0.0,
-        "ActionFormer detector-loss grad norm must be > 0",
-    )
+    _require_positive_number(payload, "actionformer_detector_loss_selector_grad_norm", context="Stage3 ActionFormer proof")
     _require(payload.get("selector_grad_nonzero") is True, "Stage3 selector_grad_nonzero proof missing")
-    _require(payload.get("proof_source") == "registered_detector_forward_train_cost_backward", "Stage3 proof source mismatch")
+    _require_positive_number(payload, "selector_param_delta_l2", context="Stage3 selector parameter delta proof")
+    _require(payload.get("selector_param_delta_passed") is True, "Stage3 selector parameter delta proof passed flag missing")
+    _require_positive_number(payload, "selected_position_drift_max", context="Stage3 selected-position drift proof")
     _require(
         payload.get("actionformer_proof_source") == "opentad_actionformer_forward_train_cost_backward",
         "Stage3 ActionFormer proof source mismatch",
     )
-    _require("loss_cls" in list(payload.get("loss_keys", [])), "Stage3 proof missing loss_cls")
-    _require("loss_reg" in list(payload.get("loss_keys", [])), "Stage3 proof missing loss_reg")
+    _require(
+        payload.get("real_detector_proof_source") == "opentad_actionformer_forward_train_cost_backward",
+        "Stage3 real detector proof source mismatch",
+    )
+    _require(payload.get("real_detector_loss_selector_grad_passed") is True, "Stage3 real detector-loss proof missing")
+    _require_positive_number(payload, "real_detector_loss_selector_grad_norm", context="Stage3 real detector proof")
+    real_detector_loss_keys = list(payload.get("real_detector_loss_keys", []))
+    _require("cls_loss" in real_detector_loss_keys, "Stage3 real detector proof missing cls_loss")
+    _require("reg_loss" in real_detector_loss_keys, "Stage3 real detector proof missing reg_loss")
     _require("cls_loss" in list(payload.get("actionformer_loss_keys", [])), "Stage3 ActionFormer proof missing cls_loss")
     _require("reg_loss" in list(payload.get("actionformer_loss_keys", [])), "Stage3 ActionFormer proof missing reg_loss")
-    _require(payload.get("actionformer_selected_axis_smoke") is True, "Stage3 selected-axis smoke flag missing")
+    _require(payload.get("actionformer_selected_axis_smoke") is False, "Stage3 proof must not be smoke-only")
+    _require(payload.get("actionformer_physical_grid_precheck") is True, "Stage3 physical-grid precheck flag missing")
     _require(payload.get("sparse_distill_adapter_ready") is True, "Stage3 sparse distill adapter evidence missing")
     _require(payload.get("sparse_distill_claim_allowed") is False, "Stage3 sparse distill claim must remain locked")
     _require(payload.get("sparse_distill_map_claim_allowed") is False, "Stage3 sparse distill mAP claim must remain locked")
@@ -356,7 +381,7 @@ def build_evidence(
         "leakage_locks": {key: False for key in FORBIDDEN_TRUE_FLAGS},
         "stage_status": {
             "stage2_detector_aware_selector": "implemented_evidence_required",
-            "stage3_st_joint_smoke": "implemented_gradient_smoke_required",
+            "stage3_st_joint_precheck": "implemented_real_detector_gradient_precheck_required",
             "stage4_curriculum_bilevel": "planned_gate_only_no_map_claim",
         },
         "end_to_end_claim_allowed": False,
@@ -464,7 +489,7 @@ def _template() -> dict[str, Any]:
             "teacher_config_sha256": "REPLACE_WITH_SHA256",
             "generator_manifest_json": "REPLACE_WITH_TEACHER_GENERATOR_MANIFEST",
             "generator_manifest_sha256": "REPLACE_WITH_SHA256",
-            "generator_source": "dense_detector_forward_train",
+            "generator_source": detector_teacher_utility.TEACHER_UTILITY_GENERATOR_SOURCE,
             "validated_output_jsonl_sha256": "REPLACE_WITH_SHA256",
             "validated_output_jsonl": "REPLACE_WITH_TEACHER_UTILITY_JSONL",
             "utility_semantics": "signed_detector_utility_v1",
@@ -501,6 +526,7 @@ def _template() -> dict[str, Any]:
         stage2_ledger_validation_summaries=ledger_template,
         stage3_proof={
             "route_variant": STAGE3_ROUTE,
+            "stage": "stage3_true_time_e2e_adatad_selector_precheck",
             "geometry_roundtrip_passed": True,
             "prediction_inverse_map_passed": True,
             "selected_input_st_gradient_passed": True,
@@ -508,13 +534,24 @@ def _template() -> dict[str, Any]:
             "detector_loss_selector_grad_passed": True,
             "detector_loss_selector_grad_norm": 0.1,
             "selector_grad_nonzero": True,
-            "loss_keys": ["loss_cls", "loss_reg"],
-            "proof_source": "registered_detector_forward_train_cost_backward",
+            "real_detector_proof_source": "opentad_actionformer_forward_train_cost_backward",
+            "real_detector_loss_selector_grad_passed": True,
+            "real_detector_loss_selector_grad_norm": 0.1,
+            "real_detector_loss_keys": ["cls_loss", "reg_loss"],
             "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
             "actionformer_detector_loss_selector_grad_passed": True,
             "actionformer_detector_loss_selector_grad_norm": 0.1,
             "actionformer_loss_keys": ["cls_loss", "reg_loss"],
-            "actionformer_selected_axis_smoke": True,
+            "actionformer_selected_axis_smoke": False,
+            "actionformer_physical_grid_precheck": True,
+            "selector_param_delta_l2": 0.1,
+            "selector_param_delta_passed": True,
+            "selected_position_drift_mean": 0.0,
+            "selected_position_drift_max": 1.0,
+            "selected_position_drift_passed": True,
+            "selector_logits_drift_l2": 0.1,
+            "selector_logits_drift_max": 0.1,
+            "selector_logits_drift_passed": True,
             "sparse_distill_adapter_ready": True,
             "sparse_distill_claim_allowed": False,
             "sparse_distill_map_claim_allowed": False,

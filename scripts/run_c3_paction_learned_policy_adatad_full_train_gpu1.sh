@@ -70,6 +70,12 @@ PACTION_POLICY_NUM_LAYERS="${PACTION_POLICY_NUM_LAYERS:-3}"
 PACTION_POLICY_DROPOUT="${PACTION_POLICY_DROPOUT:-0.10}"
 PACTION_POLICY_GAP_MAX="${PACTION_POLICY_GAP_MAX:-3}"
 PACTION_POLICY_BUDGET_CE_WEIGHT="${PACTION_POLICY_BUDGET_CE_WEIGHT:-0.25}"
+PACTION_VALUE_TRANSPORT_LOSS_WEIGHT="${PACTION_VALUE_TRANSPORT_LOSS_WEIGHT:-}"
+PACTION_BOUNDARY_MISS_LOSS_WEIGHT="${PACTION_BOUNDARY_MISS_LOSS_WEIGHT:-}"
+PACTION_LARGE_GAP_LOSS_WEIGHT="${PACTION_LARGE_GAP_LOSS_WEIGHT:-}"
+PACTION_TEMPORAL_HOLE_LOSS_WEIGHT="${PACTION_TEMPORAL_HOLE_LOSS_WEIGHT:-}"
+PACTION_BUDGET_LOSS_WEIGHT="${PACTION_BUDGET_LOSS_WEIGHT:-}"
+PACTION_REDUNDANCY_LOSS_WEIGHT="${PACTION_REDUNDANCY_LOSS_WEIGHT:-}"
 PACTION_DYNAMIC_BUDGET_BUCKETS="${PACTION_DYNAMIC_BUDGET_BUCKETS:-128 192 256 320 384 512 768}"
 PACTION_ADATAD_VARIANTS="${PACTION_ADATAD_VARIANTS:-learned_fixed_384 learned_fixed_768 learned_dynamic}"
 REQUIRE_DYNAMIC_NONCONSTANT="${REQUIRE_DYNAMIC_NONCONSTANT:-1}"
@@ -249,24 +255,32 @@ bash -n "${BASH_SOURCE[0]}"
   "${LEDGER_VALIDATOR}" \
   "${CONFIG_VALIDATOR}"
 
-"${PYTHON}" "${POLICY_TRAINER}" \
-  --train-jsonl "${C3_PACTION_TRAIN_SOURCE_JSONL}" \
-  --out-dir "${POLICY_DIR}" \
-  --checkpoint-path "${PACTION_POLICY_CHECKPOINT}" \
-  --summary-json "${POLICY_DIR}/train.summary.json" \
-  --epochs "${PACTION_POLICY_EPOCHS}" \
-  --batch-size "${PACTION_POLICY_BATCH_SIZE}" \
-  --lr "${PACTION_POLICY_LR}" \
-  --weight-decay "${PACTION_POLICY_WEIGHT_DECAY}" \
-  --hidden-dim "${PACTION_POLICY_HIDDEN_DIM}" \
-  --num-layers "${PACTION_POLICY_NUM_LAYERS}" \
-  --dropout "${PACTION_POLICY_DROPOUT}" \
-  --gap-loss-max-gap "${PACTION_POLICY_GAP_MAX}" \
-  --budget-ce-loss-weight "${PACTION_POLICY_BUDGET_CE_WEIGHT}" \
-  --dynamic-budget-buckets ${PACTION_DYNAMIC_BUDGET_BUCKETS} \
-  --expected-split training \
-  --device cuda \
+policy_train_args=(
+  --train-jsonl "${C3_PACTION_TRAIN_SOURCE_JSONL}"
+  --out-dir "${POLICY_DIR}"
+  --checkpoint-path "${PACTION_POLICY_CHECKPOINT}"
+  --summary-json "${POLICY_DIR}/train.summary.json"
+  --epochs "${PACTION_POLICY_EPOCHS}"
+  --batch-size "${PACTION_POLICY_BATCH_SIZE}"
+  --lr "${PACTION_POLICY_LR}"
+  --weight-decay "${PACTION_POLICY_WEIGHT_DECAY}"
+  --hidden-dim "${PACTION_POLICY_HIDDEN_DIM}"
+  --num-layers "${PACTION_POLICY_NUM_LAYERS}"
+  --dropout "${PACTION_POLICY_DROPOUT}"
+  --gap-loss-max-gap "${PACTION_POLICY_GAP_MAX}"
+  --budget-ce-loss-weight "${PACTION_POLICY_BUDGET_CE_WEIGHT}"
+  --dynamic-budget-buckets ${PACTION_DYNAMIC_BUDGET_BUCKETS}
+  --expected-split training
+  --device cuda
   --seed "${SEED}"
+)
+[[ -n "${PACTION_VALUE_TRANSPORT_LOSS_WEIGHT}" ]] && policy_train_args+=(--value-transport-loss-weight "${PACTION_VALUE_TRANSPORT_LOSS_WEIGHT}")
+[[ -n "${PACTION_BOUNDARY_MISS_LOSS_WEIGHT}" ]] && policy_train_args+=(--boundary-miss-loss-weight "${PACTION_BOUNDARY_MISS_LOSS_WEIGHT}")
+[[ -n "${PACTION_LARGE_GAP_LOSS_WEIGHT}" ]] && policy_train_args+=(--large-gap-loss-weight "${PACTION_LARGE_GAP_LOSS_WEIGHT}")
+[[ -n "${PACTION_TEMPORAL_HOLE_LOSS_WEIGHT}" ]] && policy_train_args+=(--temporal-hole-loss-weight "${PACTION_TEMPORAL_HOLE_LOSS_WEIGHT}")
+[[ -n "${PACTION_BUDGET_LOSS_WEIGHT}" ]] && policy_train_args+=(--budget-loss-weight "${PACTION_BUDGET_LOSS_WEIGHT}")
+[[ -n "${PACTION_REDUNDANCY_LOSS_WEIGHT}" ]] && policy_train_args+=(--redundancy-loss-weight "${PACTION_REDUNDANCY_LOSS_WEIGHT}")
+"${PYTHON}" "${POLICY_TRAINER}" "${policy_train_args[@]}"
 
 require_file "${PACTION_POLICY_CHECKPOINT}"
 PACTION_POLICY_CHECKPOINT_SHA256="$("${PYTHON}" - "${PACTION_POLICY_CHECKPOINT}" <<'PY'

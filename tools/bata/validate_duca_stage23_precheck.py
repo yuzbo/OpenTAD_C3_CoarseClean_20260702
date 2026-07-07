@@ -15,9 +15,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools.bata.detector_teacher_utility import validate_teacher_utility_export_evidence
+from tools.bata.validate_adatad_responsibility_utility import validate_responsibility_utility_export
 from tools.bata import detector_deploy_leakage
 from tools.bata.validate_c3_detector_aware_adatad_full_train import validate_config as validate_stage2_config
-from tools.bata.validate_truetime_joint_selector_precheck import validate_config as validate_stage3_config
+from tools.bata.validate_truetime_joint_selector_precheck import (
+    validate_config as validate_stage3_config,
+    validate_selector_step_proof_payload,
+)
 
 
 STAGE2_READY = "DUCA_STAGE2_PRECHECK_PASS"
@@ -155,11 +159,55 @@ def _validate_teacher_rows(output_jsonl: str | Path) -> dict[str, Any]:
     return {"row_count": len(rows), "signed_abs_max": signed_abs_max}
 
 
+def _validate_responsibility_rows(output_jsonl: str | Path) -> dict[str, Any]:
+    signed_abs_max = 0.0
+    rows = _read_jsonl(output_jsonl)
+    for line_no, row in enumerate(rows, start=1):
+        _require(_split(row) in {"train", "training"}, f"{output_jsonl}:{line_no}: responsibility utility must be train-only")
+        _require(row.get("utility_source_type") == "point_loss_gradient_responsibility_v1", f"{output_jsonl}:{line_no}: wrong responsibility utility_source_type")
+        signed_values = _validate_signed_list(
+            row.get("signed_frame_utility"),
+            expected_len=int(row.get("dense_len", 0)),
+            source=f"{output_jsonl}:{line_no}:signed_frame_utility",
+        )
+        provenance = row.get("teacher_utility_provenance")
+        _require(isinstance(provenance, Mapping), f"{output_jsonl}:{line_no}: missing responsibility provenance")
+        _require(provenance.get("split_scope") == "train_only", f"{output_jsonl}:{line_no}: split_scope is not train_only")
+        _require(provenance.get("point_responsibility_utility") is True, f"{output_jsonl}:{line_no}: point_responsibility_utility flag missing")
+        _require(provenance.get("proposal_score_surrogate_utility") is False, f"{output_jsonl}:{line_no}: responsibility row must not be proposal surrogate")
+        for flag in FORBIDDEN_LEAKAGE_FLAGS:
+            if flag == "uses_teacher":
+                continue
+            _require(not _is_true(row.get(flag, False)), f"{output_jsonl}:{line_no}: forbidden flag {flag}=true")
+        signed_abs_max = max(signed_abs_max, max((abs(item) for item in signed_values), default=0.0))
+    _require(signed_abs_max > 0.0, "responsibility utility is present but all values are zero")
+    return {"row_count": len(rows), "signed_abs_max": signed_abs_max}
+
+
 def _validate_policy_summary(summary_json: str | Path, *, checkpoint_path: str | Path | None) -> dict[str, Any]:
     summary = _read_json(summary_json)
     _require(summary.get("decision") == STAGE2_POLICY_READY, "policy summary decision is not ready")
     _require(summary.get("policy_family") == "detector_aware_offline_selector", "wrong policy family")
-    _require(summary.get("utility_semantics") == "signed_detector_utility_v1", "policy must use signed utility")
+    utility_semantics = summary.get("utility_semantics")
+    _require(
+        utility_semantics in {"signed_detector_utility_v1", "signed_point_responsibility_utility_v1"},
+        "policy must use a supported signed detector utility",
+    )
+    if utility_semantics == "signed_point_responsibility_utility_v1":
+        _require(
+            summary.get("utility_source_type") == "point_loss_gradient_responsibility_v1",
+            "responsibility policy must preserve point_loss_gradient_responsibility_v1 source",
+        )
+        _require(summary.get("point_responsibility_utility") is True, "responsibility policy flag missing")
+        _require(
+            summary.get("proposal_score_surrogate_utility") is False,
+            "responsibility policy must not claim proposal-score surrogate utility",
+        )
+    elif summary.get("utility_source_type") is not None:
+        _require(
+            summary.get("utility_source_type") != "point_loss_gradient_responsibility_v1",
+            "point responsibility source requires signed_point_responsibility_utility_v1 semantics",
+        )
     _require(summary.get("signed_utility_supported") is True, "policy must declare signed utility support")
     _require(summary.get("teacher_target_scope") == "train_only", "policy target scope must be train_only")
     _require(summary.get("end_to_end") is False, "Stage2 policy must not claim end_to_end")
@@ -221,6 +269,12 @@ def validate_stage2(args: argparse.Namespace) -> dict[str, Any]:
             expected_sha256=teacher_evidence.get("teacher_config_sha256"),
             label="dense AdaTAD teacher config",
         )
+    elif args.stage2_responsibility_summary_json:
+        teacher_evidence = validate_responsibility_utility_export(
+            args.stage2_responsibility_summary_json,
+            output_jsonl=args.stage2_responsibility_output_jsonl,
+        )
+        teacher_rows = _validate_responsibility_rows(teacher_evidence["validated_output_jsonl"])
     elif args.require_stage2_teacher_evidence:
         raise AssertionError("Stage2 teacher evidence summary is required")
 
@@ -286,6 +340,7 @@ def _validate_stage3_proof(path: str | Path) -> dict[str, Any]:
         float(payload.get("actionformer_detector_loss_selector_grad_norm", 0.0)) > 0.0,
         "ActionFormer detector selector grad must be > 0",
     )
+    selector_step = validate_selector_step_proof_payload(payload)
     if payload.get("stage") == "stage3_true_time_e2e_adatad_selector_precheck":
         _require(
             payload.get("real_detector_proof_source") == "opentad_actionformer_forward_train_cost_backward",
@@ -306,6 +361,7 @@ def _validate_stage3_proof(path: str | Path) -> dict[str, Any]:
         "selector_grad_norm": float(payload.get("selector_grad_norm", 0.0)),
         "detector_loss_selector_grad_norm": float(payload.get("detector_loss_selector_grad_norm", 0.0)),
         "actionformer_detector_loss_selector_grad_norm": float(payload.get("actionformer_detector_loss_selector_grad_norm", 0.0)),
+        **selector_step,
     }
 
 
@@ -354,6 +410,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--require-stage2-generator-manifest", action="store_true")
     parser.add_argument("--stage2-teacher-summary-json")
     parser.add_argument("--stage2-teacher-output-jsonl")
+    parser.add_argument("--stage2-responsibility-summary-json")
+    parser.add_argument("--stage2-responsibility-output-jsonl")
     parser.add_argument("--stage2-teacher-checkpoint-path")
     parser.add_argument("--stage2-teacher-config-path")
     parser.add_argument("--stage2-policy-summary-json")

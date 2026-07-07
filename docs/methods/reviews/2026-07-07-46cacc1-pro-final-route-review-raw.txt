@@ -1,0 +1,422 @@
+## 1. Visibility check
+
+可见性 **PASS**。我能访问公开 repo，并固定在 commit `46cacc113042fcf0931c70774491d44665246e32`；该 commit 页面显示仓库为 Public、commit 为 `46cacc1`，提交信息是 “Fix lattice provenance inference for source exports”，且只改了 2 个文件。以下判断 **仅基于公开 commit**，你列出的 pending patches 只作为路线建议背景，不能作为公开代码证据。([GitHub][1])
+
+公开 README 本身也把当前 C3 阶段定义为“固定预算控制锚点”，用于归因、安全门和失败诊断，而不是最终论文贡献完整形态；这和我下面的判断一致：当前仓库更像工程防线和诊断基座，不是最终 CVPR 方法。([GitHub][2])
+
+一个关键可见性问题：你提到的 `tools/bata/validate_sparse_tad_claim_budget.py` 在该公开 commit 的 `tools/bata` 文件列表中不存在；公开列表包含 `validate_duca_stage23_precheck.py`、`validate_paction_lattice_replacement_ledger.py`、`validate_stage4_detector_aware_truetime_curriculum.py`、`validate_truetime_joint_selector_precheck.py` 等，但没有这个 `<=384` claim-budget gate。([GitHub][3])
+
+## 2. 一句话最终裁决
+
+**当前公开 commit 还不是 CVPR-ready；最终目标应收敛为“train-only AdaTAD responsibility utility distillation + fixed K=384 true-time sparse acquisition + 可选 joint fine-tuning”的 staged detector-utility-calibrated selector，而不是 GAS-VT、lattice replacement、proposal-score utility 或 Stage3 smoke proof。**
+
+## 3. 对你们五个 non-acceptance 决策的判断
+
+我全部同意，并且有代码层面的理由。
+
+**不接受 lattice replacement 作为最终方法：同意。** 公开 commit 的 lattice pipeline 默认 `deploy_selection_ledger=True`，同时 `allow_inferred_paction_positive_provenance=True`，这已经不适合作为 paper-main 的严格 deploy 证据；更严重的是 summary 里仍写 `uses_uniform_scaffold=False`、`uses_uniform_fill=False`，但方法本质是 uniform lattice local replacement，公开 commit 的 summary 语义仍不诚实。([GitHub][4])
+
+**不接受 768 / dynamic >384 作为主结果：同意。** 论文主 claim 必须是每个 768 dense window 内固定 `K<=384`。768/dynamic 可以做 ceiling、oracle 或 failure diagnosis，但不能混入 paper-main。
+
+**不接受 Stage2 proposal-score utility 作为 true detector-aware utility：同意。** 当前 exporter 实际调用 `model.forward_test(...)` 生成 proposals/scores，而 manifest 却写 `generator_source="dense_detector_forward_train"`；随后 `actionformer_predictions_to_dense_points` 明确只保留 “score-derived utility”，把 proposal center 映射到 dense frame index。这不是 point responsibility、不是 loss sensitivity、不是 high-IoU localization responsibility。([GitHub][5])
+
+**不接受 Stage3 gradient smoke/precheck 作为 end-to-end training：同意。** 公开代码里的 TrueTime selector 确实有 ST sparse gather 机制，但 selector 自身 loss 是 `outputs["entropy"] * 0.0`，selected-count loss 也是 0；ActionFormer 在 `selector_train_only=True` 时又会 `inputs = inputs.detach()`，切断 detector loss 到 selector 的路径。precheck 脚本自己也把 limitation 写明为 “no mAP, runtime, paper, end-to-end, or deploy claim”。([GitHub][6])
+
+**不接受“更多工程规则”作为中心 novelty：同意。** 当前 repo 的 ledger、安全门、provenance 约束做得比 utility 学习更成熟；但 CVPR 方法贡献不能是更多 slot、lattice、repair、max-gap 规则，必须变成 detector utility 对 selector 的监督和校准。
+
+## 4. 最终研究贡献应该是什么
+
+最终 paper 不应写成“一个可插拔规则选帧器”，也不应强行写成“完全端到端 sparse TAD”。最稳妥、最诚实、也最可能过审的贡献是：
+
+**DUCA-TAD: Detector-Utility-Calibrated Sparse Temporal Acquisition for Temporal Action Detection**
+
+核心 claim：
+
+> 在固定 `K=384` pre-backbone sparse observation budget 下，使用 train-only dense AdaTAD teacher 的 point/loss/responsibility utility 训练一个低成本 selector；val/test 时 selector 不使用 GT、不使用 teacher、不使用 prediction cache，只根据低成本观测产生 strict sparse ledger，并在 matched AdaTAD 设置下超过 uniform_384，尤其提升或保持 mAP@0.6/0.7。
+
+推荐论文结构是 **staged method**：
+
+1. **Stage 1：low-cost scout / p_action / temporal descriptors**
+   只产生 deploy-time 可用特征：`p_action`、`delta p_action`、uncertainty、temporal position、简单 motion/edge proxy、valid mask。PAction learned fixed_384 是强 baseline，而不是最终方法。
+
+2. **Stage 2：AdaTAD responsibility utility distillation**
+   用 dense AdaTAD teacher 在 train split 上导出 point assignment、per-point cls/reg/quality loss、boundary responsibility、high-IoU proposal responsibility、false-positive risk、gradient sensitivity。这个 utility 只用于训练 selector，不进入 val/test。
+
+3. **Stage 3：fixed-K true-time sparse selector**
+   训练一个小 TCN/Transformer/MLP selector 输出每个 dense position 的 utility logit；用 hard top-k `K=384` 生成 sparse observations，同时保留 `selected_axis_to_true_time_dense_index`，避免 selected-axis / true-time 混淆。
+
+4. **Optional Stage 4：joint fine-tuning**
+   只有在 full THUMOS training 证明 detector loss 可以稳定反传、selector selected positions 发生非塌缩移动、mAP 有收益时，才写成 optional joint fine-tuning。否则只能写成 “joint-ready plumbing”。
+
+不建议写“plug-and-play zero-shot”。更诚实的说法是：**plug-in after detector-aware training**，即模块化接入 OpenTAD/AdaTAD，但需要 train-only utility distillation 或联合 fine-tuning。
+
+## 5. 可信 CVPR paper 的最低结果门槛
+
+**不需要 beat dense AdaTAD teacher。** 你们做的是 sparse pre-backbone acquisition，dense teacher 是 reference/upper-bound/utility source，不是必须击败的对象。主比较对象是 **matched uniform_384**，必须同 commit、同 config、同 detector、同 epoch schedule、同 data split、同 eval script、同 selected-count evidence。
+
+但只 beat uniform_384 **+0.5 Avg-mAP** 很危险。我的门槛是：
+
+* **最低可投稿门槛**：`Avg-mAP >= matched uniform_384 + 0.7`，且 mAP@0.6 / mAP@0.7 至少不下降。
+* **可信 CVPR 门槛**：`Avg-mAP >= matched uniform_384 + 1.0`，并且 mAP@0.6 或 mAP@0.7 至少有 `+1.0` 绝对提升。
+* **强 claim 门槛**：`Avg-mAP +1.5` 以上，mAP@0.7 `+1.5` 以上，同时实际 backbone/projection wall-clock 或 FLOPs 至少有接近 sparse budget 的收益。
+
+注意：selected count 不等于 compute saving。当前 ActionFormer 的 `pad_data` 会在 `feat_len < self.max_seq_len` 时把输入 pad 到 `projection.max_seq_len`；如果 sparse selector 后仍把 384 pad 回 768，那么论文里的 latency/FLOPs claim 会被审稿人直接打穿。必须设置并验证 sparse path 的 `projection.max_seq_len=384` 或等价的真实 sparse compute path。([GitHub][7])
+
+## 6. 当前实现 gap 百分比
+
+以“能支撑 paper-main claim”为标准：
+
+| 维度                                         | 当前公开 commit 完成度 | 评价                                                                   |
+| ------------------------------------------ | --------------: | -------------------------------------------------------------------- |
+| Engineering / ledger / provenance scaffold |             70% | 防泄漏意识强，但 lattice summary、claim-budget gate、short-valid 默认仍有硬伤。       |
+| Detector-aware utility                     |             25% | 目前主要是 proposal-score surrogate，不是 responsibility utility。            |
+| End-to-end training                        |             20% | 有 ST/top-k plumbing 和 precheck，但 selector loss 为 0，且无 fulltrain mAP。 |
+| Experimental evidence                      |             30% | 有 PAction/GAS-VT/teacher 现象，但 uniform_384 matched anchor 未重新锁定。      |
+| Paper claim readiness                      |             15% | 当前最好 sparse route 仍低于你们认为的 uniform_384；公开代码也缺 claim-budget gate。     |
+| CVPR novelty readiness                     |             35% | 若实现 true responsibility utility，可升到 65% 左右；否则只是工程路线。                 |
+
+## 7. P0 / P1 / P2 代码问题
+
+### P0：会直接 invalid paper-main claim
+
+**P0-1：公开 commit 缺少 `<=384` paper-main fail-closed gate。**
+`validate_sparse_tad_claim_budget.py` 不在公开文件树里。没有这个 gate，fixed_768、dynamic >384、diagnostic route 混入 paper-main 的风险仍未由公开代码关闭。([GitHub][3])
+
+**P0-2：lattice replacement 的公开 summary 仍然不诚实。**
+`run_paction_lattice_replacement_ledger_pipeline.py` 默认允许 inferred p_action positive provenance；同一 pipeline 的 summary 又写 `uses_uniform_scaffold=False`。这和方法本质冲突。pending patch 如果已改，应尽快同步；未同步前，lattice 只能作为 diagnostic，不得出现在 main method。([GitHub][4])
+
+**P0-3：Stage2 teacher utility 的 manifest 与实际调用不一致。**
+代码实际使用 `model.forward_test(...)` 生成 proposals/scores，但 manifest 写 `generator_source="dense_detector_forward_train"`。这不是小命名问题，而是 utility 语义错误：reviewer 会认为你把 inference proposal score 包装成 training responsibility。([GitHub][5])
+
+**P0-4：当前 detector utility 不是 detector responsibility。**
+`actionformer_predictions_to_dense_points` 的 docstring 明确说它 “keeps only score-derived utility”，并且实现上取 proposal center、proposal score、classification score，再按 proposal score 排序/topk；这不能支撑 “detector-aware utility” 的强 claim。([GitHub][8])
+
+**P0-5：Stage3 不能 claim end-to-end。**
+TrueTime selector 的 train loss 是 0；ActionFormer 的 `selector_train_only=True` 又 detach selected inputs；随后 cost 只求 selector loss 之和，可能变成 0 也不触发有效训练。这个组合只能证明图上有某些梯度路径，不能证明 end-to-end sparse selector 学到了东西。([GitHub][6])
+
+**P0-6：true-time / selected-axis contract 还必须做 detector-head 级 roundtrip 证明。**
+selector 会写 `selected_axis_to_true_time_dense_index`、`detector_prediction_inverse_map_required=True` 等 meta；ActionFormer 只是根据 head/neck 是否接受 `metas` 来转发，并不自己保证 prediction/loss/eval 全部在 true-time 语义下正确。若 rpn_head 忽略 metas，mAP 坐标就可能落在 selected-axis 上。([GitHub][6])
+
+**P0-7：matched uniform_384 anchor 未锁定。**
+你提供的 dense teacher epoch29 Avg-mAP 64.39，而 uniform_384 被讨论为约 65，这在直觉上已经提示 config/epoch/eval/teacher 状态可能不完全 matched。paper-main 前必须重新跑同 commit/same config 的 exact uniform_384。
+
+### P1：会混淆 attribution 或导致结果不可解释
+
+**P1-1：`allow_short_valid_ratio_count=True` 默认过宽。**
+lattice pipeline 默认允许 short-valid ratio count；validation 也把这个参数传下去。paper-main fixed_384 必须明确：所有有效 dense_len>=384 的样本 exact 384；短窗口如何处理要单独统计，不能 silent pass。([GitHub][4])
+
+**P1-2：Stage2 selector training 默认是 dynamic-budget 风格。**
+`train_detector_aware_acquisition_policy.py` 里 batch 会读取 `dynamic_budget_target`，并训练 `budget_logits` 的 CE；如果 paper-main 是 fixed_384，这条路线必须强制 `budget_buckets=[384]` 或关闭 budget classifier，否则主 claim 会混成 dynamic acquisition。([GitHub][9])
+
+**P1-3：Stage3 precheck 明确锁住 mAP，却容易被误读成训练证据。**
+validator 要求 precheck `max_train_iters<=4`、`allow_detector_map=False`、`val_eval_interval<=0`，并禁止把 mAP/tIoU 写进 smoke metrics。这是好的安全门，但也说明它不能支持任何 mAP 或 end-to-end claim。([GitHub][10])
+
+**P1-4：compute evidence 需要 profiler，而不是 selected_count。**
+由于 `pad_data` 可能把 sparse sequence pad 回 `max_seq_len`，必须保存 actual FLOPs、GPU memory、wall-clock、backbone/projection token count，否则“pre-backbone sparse”只是 ledger sparse，不一定是 compute sparse。([GitHub][7])
+
+**P1-5：utility source manifest 需要分层语义。**
+当前 manifest 有 `uses_raw_prediction=False`、`uses_prediction_cache=False`、`uses_gt=False` 等字段，这是安全的，但对于 true responsibility utility，你们应新增 `uses_train_gt_for_teacher_utility=True`、`uses_val_or_test_gt_for_selection=False`、`utility_source_type=point_loss_gradient_responsibility`，不能继续用粗粒度 `uses_gt=False` 掩盖 train-only GT assignment 的事实。([GitHub][5])
+
+### P2：质量与可维护性问题
+
+* Stage2/Stage3/Stage4/DUCA/C3/GAS-VT 命名太多，reviewer 很难理解主线；建议 paper-main 只保留 `DUCA-384`、`DUCA-Joint-384`、`Lattice-Diag-384` 三个名字。
+* tests 需要从 smoke 扩展到 schema / coordinate / budget / utility semantics / profiler contract。
+* 所有 ledger summary 必须记录 `selected_count_min/max/mean`、`valid_len_min`、`max_gap/p95_gap`、`uniform_jaccard`、`boundary_bracket_recall`、`utility_capture@384`、`short_valid_rows`。
+* 不要让 `diagnostic`, `migration`, `paper_main` 共用一个 manifest schema 而只靠人工解释；schema 本身要 fail-closed。
+
+## 8. 具体实现计划与关键代码 sketch
+
+### 8.1 最终模型结构
+
+```
+raw / low-cost C3 features
+        ↓
+LowCostTemporalScout
+  features: p_action, Δp_action, uncertainty, position encoding,
+            local motion/edge proxy, valid mask
+        ↓
+UtilityCalibratedSelector
+  small TCN / lightweight Transformer / MLP temporal scorer
+        ↓
+fixed hard top-k K=384 with ST relaxed surrogate
+        ↓
+SparseObservationLedger / TrueTime metadata
+        ↓
+AdaTAD / ActionFormer detector
+```
+
+selector 不应依赖 uniform scaffold。可以有 **soft gap regularization** 和 **boundary bracket loss**，但不能把 uniform lattice 当主体结构。
+
+### 8.2 true AdaTAD teacher utility 定义
+
+新增文件：
+
+* `tools/bata/export_adatad_responsibility_utility.py`
+* `tools/bata/validate_adatad_responsibility_utility.py`
+* 修改 `tools/bata/detector_teacher_utility.py`
+* 修改 AdaTAD/ActionFormer dense head，使其能导出 per-level / per-point assignment 和 loss。
+
+每个 teacher point 应记录：
+
+```python
+{
+    "sample_id": "...",
+    "level": level_id,
+    "point_index": point_idx,
+    "true_time_center": center_t,
+    "support_start": support_l,
+    "support_end": support_r,
+    "assigned_gt_id": gt_id_or_minus1,
+    "assigned_gt_start": ...,
+    "assigned_gt_end": ...,
+    "boundary_role": "start" | "end" | "interior" | "background",
+    "cls_loss": float,
+    "reg_loss": float,
+    "quality_loss": float,
+    "pred_iou_to_gt": float,
+    "grad_norm": float,
+    "fp_score": float,
+    "positive_gain": float,
+    "negative_risk": float,
+}
+```
+
+最低可实现版本不要先做昂贵 counterfactual drop/add。先做 **assignment + loss + gradient sensitivity**：
+
+```python
+def export_responsibility_batch(model, batch):
+    model.eval()
+    inputs, masks, metas = batch["inputs"], batch["masks"], batch["metas"]
+    gt_segments, gt_labels = batch["gt_segments"], batch["gt_labels"]
+
+    # 1. forward_train_with_point_dump 需要返回 detector loss 和 per-point assignment
+    outputs = model.forward_train_with_point_dump(
+        inputs=inputs,
+        masks=masks,
+        metas=metas,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+        retain_fpn_grads=True,
+    )
+
+    loss = outputs["loss_cls"] + outputs["loss_reg"] + outputs.get("loss_quality", 0.0)
+    model.zero_grad(set_to_none=True)
+    loss.backward()
+
+    rows = []
+    for p in outputs["points"]:
+        grad_norm = p["feature"].grad.detach().abs().mean().item()
+        is_pos = p["assigned_gt_id"] >= 0
+        iou = float(p.get("pred_iou_to_gt", 0.0))
+        boundary = float(p.get("boundary_weight", 0.0))
+
+        positive_gain = 0.0
+        negative_risk = 0.0
+        if is_pos:
+            positive_gain = (
+                1.0 * p["cls_loss"]
+                + 2.0 * p["reg_loss"]
+                + 1.0 * grad_norm
+                + 1.5 * boundary
+                + 1.0 * max(iou - 0.5, 0.0)
+            )
+        else:
+            negative_risk = p["max_cls_score"] * grad_norm
+
+        rows.append({
+            **p["meta"],
+            "grad_norm": grad_norm,
+            "positive_gain": positive_gain,
+            "negative_risk": negative_risk,
+            "utility_source_type": "point_loss_gradient_responsibility_v1",
+        })
+    return rows
+```
+
+然后把 point utility 映射到 dense frame utility：
+
+```python
+def points_to_dense_utility(points, dense_len):
+    u_pos = torch.zeros(dense_len)
+    u_neg = torch.zeros(dense_len)
+
+    for p in points:
+        s, e = int(p["support_start"]), int(p["support_end"])
+        center = int(p["true_time_center"])
+        sigma = max(1.0, 0.25 * (e - s + 1))
+
+        for t in range(max(0, s), min(dense_len, e + 1)):
+            kernel = math.exp(-abs(t - center) / sigma)
+            u_pos[t] = max(u_pos[t], kernel * p["positive_gain"])
+            u_neg[t] = max(u_neg[t], kernel * p["negative_risk"])
+
+    u_pos = normalize01(u_pos)
+    u_neg = normalize01(u_neg)
+    signed = normalize_signed(u_pos - 0.5 * u_neg)
+    return u_pos, u_neg, signed
+```
+
+### 8.3 selector losses
+
+Stage2 offline selector 训练时：
+
+```python
+def selector_loss(logits, utility, gain, risk, valid, gt_boundary_windows=None):
+    p = torch.sigmoid(logits).masked_fill(~valid, 0.0)
+
+    # Utility distillation
+    bce = F.binary_cross_entropy_with_logits(logits[valid], utility[valid])
+
+    # Ranking: 高 utility 点要排在低 utility 点之前
+    rank = pairwise_rank_loss(logits, utility, valid, num_pairs=4096)
+
+    # False-positive risk: 高 risk 背景点不要被选
+    risk_loss = (p * risk * valid.float()).sum() / valid.float().sum().clamp_min(1)
+
+    # Boundary bracket: 每个 GT start/end 邻域至少有一个高概率点
+    bracket = boundary_bracket_loss(p, gt_boundary_windows)
+
+    # Soft gap: 不用 uniform scaffold，但惩罚过大未观测洞
+    gap = soft_max_hole_loss(p, valid, max_hole=12)
+
+    # Entropy anneal: early exploration, late sharpening
+    entropy = -(p * (p + 1e-8).log() + (1 - p) * (1 - p + 1e-8).log()).mean()
+
+    return (
+        1.0 * bce
+        + 0.5 * rank
+        + 0.5 * risk_loss
+        + 1.0 * bracket
+        + 0.2 * gap
+        - 0.01 * entropy
+    )
+```
+
+hard budget 必须固定：
+
+```python
+selected = torch.topk(logits.masked_fill(~valid, -1e9), k=384, dim=-1).indices
+selected = selected.sort(dim=-1).values
+```
+
+### 8.4 Stage3 joint fine-tuning
+
+修改 `opentad/models/selectors/truetime_joint_selector.py`：
+
+* selector loss 不能再是 `*0.0`；
+* `forward_train` 应从 `metas` 读取 train-only `teacher_utility_target`，只在 train split 使用；
+* 加入 `selector_utility_loss`、`selector_gap_loss`、`selector_boundary_bracket_loss`；
+* eval path 必须 reject teacher target / GT target。
+
+修改 `opentad/models/detectors/actionformer.py`：
+
+* `selector_train_only=True` 时，若总 selector loss 小于 `eps` 必须 fail；
+* joint mode 下不得 detach selected inputs；
+* 保存 param delta、selected-position drift、gap distribution、boundary bracket recall；
+* 若 `frame_selector.selected_count=384`，必须 enforce `projection.max_seq_len=384` 或记录“compute claim disabled”。
+
+关键 guard：
+
+```python
+if self.selector_train_only:
+    selector_cost_terms = [
+        v for k, v in losses.items()
+        if k.startswith("selector_") and k.endswith("_loss")
+    ]
+    if not selector_cost_terms:
+        raise RuntimeError("selector_train_only=True requires nonzero selector losses")
+
+    selector_cost = sum(selector_cost_terms)
+    if float(selector_cost.detach().abs().cpu()) <= 1e-8:
+        raise RuntimeError("selector_train_only=True got zero selector cost")
+    losses["cost"] = selector_cost
+```
+
+### 8.5 必须新增的 claim-budget gate
+
+```python
+def validate_sparse_tad_claim_budget(summary):
+    assert summary["claim_scope"] == "paper_main"
+    assert summary["budget_unit"] == "dense_temporal_position"
+    assert summary["max_selected_count"] <= 384
+    assert summary["min_selected_count"] == 384
+    assert summary["max_selected_count"] == 384
+    assert not summary.get("uses_uniform_scaffold", False)
+    assert not summary.get("diagnostic_route", False)
+    assert not summary.get("allow_inferred_paction_positive_provenance", False)
+    assert not summary.get("uses_teacher_at_deploy", False)
+    assert not summary.get("uses_gt_at_deploy", False)
+    assert not summary.get("uses_prediction_cache_at_deploy", False)
+    assert summary["config_sha256"]
+    assert summary["checkpoint_sha256"]
+    assert summary["ledger_sha256"]
+```
+
+## 9. 实验矩阵与 pass/fail 解释
+
+| 实验                            | 假设                                        |   预算 | 预期 / 失败模式                                       | 是否支持 paper claim       |
+| ----------------------------- | ----------------------------------------- | ---: | ----------------------------------------------- | ---------------------- |
+| Dense AdaTAD teacher          | dense reference 与 utility source          |  768 | 不要求被 sparse 超过；若低于 uniform_384，说明配置未 matched    | 只作 reference           |
+| matched exact uniform_384     | 主 baseline                                |  384 | 必须重新跑；若约 65 成立，所有当前 sparse 都未达标                 | 是，作为 anchor            |
+| raw p_action top-k384         | actionness 是否足够                           |  384 | 可能 high recall 但 high-IoU 不稳                    | baseline only          |
+| PAction learned fixed_384     | 当前最强 sparse                               |  384 | 已有 59.10；若 matched 仍低 uniform 很多，说明 p_action 不够 | baseline only          |
+| GAS-VT fixed_384              | gap/value transport 是否改善                  |  384 | 44.90 plateau 表明目标错或过约束                         | failure evidence       |
+| lattice diagnostic 384        | uniform geometry + local replacement 是否桥接 |  384 | 若接近 uniform，说明 geometry 比 utility 更关键；但不是最终方法   | diagnostic only        |
+| Stage2 proposal-score utility | proposal score 是否有用                       |  384 | 预期略好于 GAS-VT，但很难超 PAction/uniform               | ablation only          |
+| Stage2 responsibility utility | 主方法                                       |  384 | 目标是超 uniform_384；若不能超 PAction，utility 定义失败      | paper-main candidate   |
+| Stage3 joint 384              | detector loss 能否进一步校准 selector            |  384 | 可能提升 high-IoU，也可能 collapse 到 interior           | optional main/ablation |
+| 768 / dynamic ceiling         | 上限诊断                                      | >384 | 只能说明 budget ceiling，不得进 main claim              | diagnostic only        |
+
+每个实验必须保存两类证据。
+
+**Ledger metrics：** selected_count min/max/mean、valid_len min、short-valid row count、max gap、p95 gap、max unselected hole、p95 hole、boundary bracket recall@r、utility capture@384、uniform Jaccard、p_action coverage、foreground/interior/background selection ratio。
+
+**Detector metrics：** Avg-mAP、mAP@0.3/0.4/0.5/0.6/0.7、prediction count、NMS input/output count、per-class AP、checkpoint epoch、EMA/non-EMA、same eval script sha、actual wall-clock/FLOPs/memory。
+
+## 10. 最短能赢 matched uniform_384 的路线
+
+最短路线不是继续堆 GAS-VT，也不是把 lattice 包装成主方法，而是：
+
+1. **先冻结当前所有 claim。**
+   公开 commit 下，lattice、Stage2 proposal utility、Stage3 precheck 都不能 paper-main。
+
+2. **同步并运行 `<=384` claim-budget gate。**
+   fixed_768、dynamic >384、diagnostic route、inferred p_action provenance 必须 fail-closed。
+
+3. **同 commit 重跑 matched uniform_384 与 PAction learned fixed_384。**
+   只要 uniform_384 未锁定，所有 “beat baseline” 都是不可审稿的。
+
+4. **修正 Stage2 exporter 语义。**
+   把当前 proposal-score exporter 改名为 `proposal_score_surrogate`；另写 `responsibility_utility` exporter，导出 assignment/loss/gradient/boundary/FP risk。
+
+5. **训练 fixed_384 responsibility selector。**
+   关闭 dynamic budget classifier，强制 top-k 384。先跑 offline strict ledger，不要一开始 full joint。
+
+6. **训练 AdaTAD detector with strict DUCA-384 ledger。**
+   与 uniform_384 完全同 config，只替换 selected ledger。
+
+7. **只有 Stage2 responsibility 已接近或超过 uniform_384，再做 Stage3 joint fine-tune。**
+   Stage3 目标是 high-IoU 细化，不是从 59/45 直接救到 66。
+
+我的预期很直接：**只靠 PAction/GAS-VT/lattice，很难赢真正 matched uniform_384；靠 true responsibility utility 有机会，但也不是稳的。** 如果 Stage2 responsibility utility 仍然低于 PAction learned fixed_384，说明 teacher utility 映射错了；如果它超过 PAction 但仍低 uniform_384 3 个点以上，说明 pre-backbone sparse selector 的信息损失太大，应该 pivot。
+
+## 11. Pivot 条件
+
+需要设置硬停止线：
+
+* matched uniform_384 确认为 `≈65`，而 Stage2 responsibility utility fulltrain 仍 `<62`：停止把它包装成“beat uniform”论文。
+* Stage2 responsibility utility 不能超过 PAction learned fixed_384 `+1.0`：停止 detector-aware utility 方向，回查 utility target。
+* Stage3 joint 出现 selected positions 向 action interior collapse、mAP@0.7 下降、gap p95 变差：停止 joint main claim，仅保留 offline distillation。
+* profiler 证明 sparse path 仍 pad 回 768 且无实际 compute gain：停止 “pre-backbone efficient acquisition” claim，改成 “selection robustness/diagnostic” 或修 compute path。
+* 若所有 K=384 learned selector 都无法超过 uniform，论文应 pivot 为 **“why strong uniform is hard to beat under pre-backbone sparse TAD, and how responsibility utility narrows the gap”**，或转向 **post-backbone detector-aware token pruning / proposal-level compute allocation**，因为后者更容易从 detector gradient 中获得稳定 utility。
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/46cacc113042fcf0931c70774491d44665246e32 "Fix lattice provenance inference for source exports · yuzbo/OpenTAD_C3_CoarseClean_20260702@46cacc1 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/46cacc113042fcf0931c70774491d44665246e32 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at 46cacc113042fcf0931c70774491d44665246e32 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/46cacc113042fcf0931c70774491d44665246e32/tools/bata "OpenTAD_C3_CoarseClean_20260702/tools/bata at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/run_paction_lattice_replacement_ledger_pipeline.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/run_paction_lattice_replacement_ledger_pipeline.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/export_dense_adatad_teacher_points.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/export_dense_adatad_teacher_points.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/opentad/models/selectors/truetime_joint_selector.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/truetime_joint_selector.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/opentad/models/detectors/actionformer.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/detectors/actionformer.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/detector_teacher_utility.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_teacher_utility.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/train_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_detector_aware_acquisition_policy.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/validate_truetime_joint_selector_precheck.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_truetime_joint_selector_precheck.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

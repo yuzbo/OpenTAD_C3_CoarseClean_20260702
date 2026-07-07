@@ -56,6 +56,46 @@ def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: in
     return [max(-1.0, min(1.0, float(item))) for item in raw]
 
 
+def _teacher_utility_contract(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    utility_semantics: str | None = None
+    utility_source_type: str | None = None
+    point_responsibility = False
+    proposal_score_surrogate = False
+    for line_no, row in enumerate(rows, start=1):
+        teacher_utility = row.get("teacher_utility")
+        provenance = row.get("teacher_utility_provenance")
+        if not isinstance(provenance, Mapping):
+            provenance = teacher_utility.get("provenance") if isinstance(teacher_utility, Mapping) else None
+        candidates = [item for item in (teacher_utility, provenance, row) if isinstance(item, Mapping)]
+        row_semantics = next((str(item["utility_semantics"]) for item in candidates if item.get("utility_semantics")), None)
+        row_source = next((str(item["utility_source_type"]) for item in candidates if item.get("utility_source_type")), None)
+        if row_semantics is None:
+            row_semantics = "signed_detector_utility_v1"
+        if utility_semantics is None:
+            utility_semantics = row_semantics
+        elif utility_semantics != row_semantics:
+            raise ValueError(f"line {line_no}: mixed utility_semantics in detector-aware training JSONL")
+        if row_source is not None:
+            if utility_source_type is None:
+                utility_source_type = row_source
+            elif utility_source_type != row_source:
+                raise ValueError(f"line {line_no}: mixed utility_source_type in detector-aware training JSONL")
+        if any(item.get("point_responsibility_utility") is True for item in candidates):
+            point_responsibility = True
+        if any(item.get("proposal_score_surrogate_utility") is True for item in candidates):
+            proposal_score_surrogate = True
+    if point_responsibility and proposal_score_surrogate:
+        raise ValueError("detector-aware training JSONL mixes responsibility utility and proposal-score surrogate utility")
+    if utility_semantics is None:
+        utility_semantics = "signed_detector_utility_v1"
+    return {
+        "utility_semantics": utility_semantics,
+        "utility_source_type": utility_source_type,
+        "point_responsibility_utility": bool(point_responsibility),
+        "proposal_score_surrogate_utility": bool(proposal_score_surrogate),
+    }
+
+
 def _marginal_gain_target(utility: Sequence[float]) -> list[float]:
     return _positive_observation_gain_target(utility)
 
@@ -307,7 +347,9 @@ def run_training(
     out_path.mkdir(parents=True, exist_ok=True)
     checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else out_path / "detector_aware_policy.pth"
     buckets = [int(item) for item in dynamic_budget_buckets]
-    train_rows = _prepared_rows(_read_jsonl(train_jsonl), dynamic_budget_buckets=buckets, expected_split=expected_split)
+    source_rows = _read_jsonl(train_jsonl)
+    utility_contract = _teacher_utility_contract(source_rows)
+    train_rows = _prepared_rows(source_rows, dynamic_budget_buckets=buckets, expected_split=expected_split)
     train_jsonl_sha256 = _sha256_file(train_jsonl)
     dynamic_gain_calibration = dict(train_rows[0]["dynamic_gain_calibration"]) if train_rows else dict(detector_policy.UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION)
     dynamic_gain_calibration["train_jsonl_sha256"] = train_jsonl_sha256
@@ -349,7 +391,7 @@ def run_training(
         "optimizer_state_dict": optimizer.state_dict(),
         "model_kwargs": model_kwargs,
         "dynamic_budget_buckets": buckets,
-        "utility_semantics": "signed_detector_utility_v1",
+        **utility_contract,
         "signed_utility_supported": True,
         "requires_signed_frame_utility": True,
         "dynamic_gain_calibration": dynamic_gain_calibration,
@@ -374,7 +416,7 @@ def run_training(
         "checkpoint_sha256": _sha256_file(checkpoint),
         "train_jsonl_sha256": train_jsonl_sha256,
         "dynamic_budget_buckets": buckets,
-        "utility_semantics": "signed_detector_utility_v1",
+        **utility_contract,
         "signed_utility_supported": True,
         "requires_signed_frame_utility": True,
         "dynamic_gain_calibration": dynamic_gain_calibration,

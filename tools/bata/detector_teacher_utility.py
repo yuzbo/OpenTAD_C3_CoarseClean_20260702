@@ -18,6 +18,9 @@ READY = "C3_DETECTOR_TEACHER_UTILITY_EXPORT_READY"
 STAGE_LABEL = "Stage-2 detector-aware offline selector"
 UTILITY_SEMANTICS = "signed_detector_utility_v1"
 TEACHER_SIGNAL_SOURCE = "adatad_dense_teacher"
+TEACHER_UTILITY_SOURCE_KIND = "dense_detector_forward_test_proposal_score_surrogate_v1"
+TEACHER_UTILITY_SOURCE_CLAIM = "proposal_score_surrogate_not_counterfactual"
+TEACHER_UTILITY_GENERATOR_SOURCE = "dense_detector_forward_test_proposal_score_surrogate"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_gt_for_selection",
@@ -49,6 +52,11 @@ JSONL_SCHEMA = {
         "valid_len",
         "frame_utility",
         "signed_frame_utility",
+        "teacher_utility_source_kind",
+        "teacher_utility_source_claim",
+        "proposal_score_surrogate_utility",
+        "counterfactual_utility",
+        "point_responsibility_utility",
         "teacher_utility_provenance",
     ],
     "frame_utility": "float list on local dense frame axis; padded positions >= valid_len are zero",
@@ -67,6 +75,65 @@ SOURCE_PROVENANCE_ALIASES = {
     "snippet_stride": ("snippet_stride", "feature_stride", "sample_stride", "stride"),
     "window_start_frame": ("window_start_frame", "window_start", "window_index", "window"),
 }
+
+
+def _teacher_utility_source_manifest_fields() -> dict[str, Any]:
+    return {
+        "teacher_utility_source_kind": TEACHER_UTILITY_SOURCE_KIND,
+        "teacher_utility_source_claim": TEACHER_UTILITY_SOURCE_CLAIM,
+        "proposal_score_surrogate_utility": True,
+        "counterfactual_utility": False,
+        "point_responsibility_utility": False,
+    }
+
+
+def _summary_teacher_utility_source_manifest_fields() -> dict[str, Any]:
+    return {
+        "teacher_utility_source_kind": TEACHER_UTILITY_SOURCE_KIND,
+        "teacher_utility_source_claim": TEACHER_UTILITY_SOURCE_CLAIM,
+        "proposal_score_surrogate_utility": True,
+        "counterfactual_utility_supported": False,
+        "point_responsibility_utility_supported": False,
+    }
+
+
+def _generator_optional_teacher_utility_source_manifest_fields() -> dict[str, Any]:
+    fields = _teacher_utility_source_manifest_fields()
+    fields["counterfactual_utility_supported"] = False
+    fields["point_responsibility_utility_supported"] = False
+    return fields
+
+
+def _require_exact_manifest_fields(
+    payload: Mapping[str, Any],
+    expected_fields: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    for key, expected in expected_fields.items():
+        actual = payload.get(key)
+        if isinstance(expected, bool):
+            if actual is not expected:
+                raise ValueError(f"{context} requires {key}={expected!r}")
+        elif actual != expected:
+            raise ValueError(f"{context} requires {key}={expected!r}")
+
+
+def _validate_optional_manifest_fields(
+    payload: Mapping[str, Any],
+    expected_fields: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    for key, expected in expected_fields.items():
+        if key not in payload:
+            continue
+        actual = payload.get(key)
+        if isinstance(expected, bool):
+            if actual is not expected:
+                raise ValueError(f"{context} {key} must be {expected!r}")
+        elif actual != expected:
+            raise ValueError(f"{context} {key} must be {expected!r}")
 
 
 def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -466,6 +533,7 @@ def teacher_utility_row_from_dense_teacher(
     )
     positive_observation_gain = [max(0.0, float(item)) for item in signed_frame_utility]
     negative_observation_risk = [max(0.0, -float(item)) for item in signed_frame_utility]
+    source_manifest = _teacher_utility_source_manifest_fields()
     return {
         "schema_version": ROW_SCHEMA_VERSION,
         "stage_label": STAGE_LABEL,
@@ -477,6 +545,7 @@ def teacher_utility_row_from_dense_teacher(
         "signed_frame_utility": signed_frame_utility,
         "positive_observation_gain": positive_observation_gain,
         "negative_observation_risk": negative_observation_risk,
+        **source_manifest,
         "teacher_utility": {
             "utility_semantics": UTILITY_SEMANTICS,
             "frame_utility": frame_utility,
@@ -485,6 +554,7 @@ def teacher_utility_row_from_dense_teacher(
             "negative_observation_risk": negative_observation_risk,
             "marginal_gain_frame_utility_diagnostic": positive_observation_gain,
             "marginal_gain_frame_utility_diagnostic_semantics": "diagnostic_alias_of_positive_observation_gain_not_abs_signed",
+            **source_manifest,
         },
         "teacher_utility_provenance": {
             **source_provenance,
@@ -494,6 +564,7 @@ def teacher_utility_row_from_dense_teacher(
             "uses_val_or_test_gt_for_selection": False,
             "uses_gt_for_selection": False,
             "export_schema": ROW_SCHEMA_VERSION,
+            **source_manifest,
         },
         "uses_gt": False,
         "uses_teacher": True,
@@ -557,6 +628,7 @@ def _merge_teacher_utility_into_base(
         merged["negative_observation_risk"] = list(utility["negative_observation_risk"])
         merged["teacher_utility"] = dict(utility["teacher_utility"])
         merged["teacher_utility_provenance"] = dict(utility["teacher_utility_provenance"])
+        merged.update(_teacher_utility_source_manifest_fields())
         merged["uses_teacher"] = True
         merged["training_only"] = True
         merged["end_to_end"] = False
@@ -699,6 +771,7 @@ def run_export(
         "jsonl_row_schema": JSONL_SCHEMA,
         "utility_semantics": UTILITY_SEMANTICS,
         "signed_utility_supported": True,
+        **_summary_teacher_utility_source_manifest_fields(),
         "expected_split": expected_split,
         "uses_val_or_test_gt_for_selection": False,
         "uses_gt_for_selection": False,
@@ -734,8 +807,8 @@ def validate_generator_manifest(manifest_json: str | Path) -> dict[str, Any]:
         raise ValueError("generator_manifest decision is not ready")
     if payload.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
         raise ValueError(f"generator_manifest teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
-    if payload.get("generator_source") != "dense_detector_forward_train":
-        raise ValueError("generator_manifest generator_source must be dense_detector_forward_train")
+    if payload.get("generator_source") != TEACHER_UTILITY_GENERATOR_SOURCE:
+        raise ValueError(f"generator_manifest generator_source must be {TEACHER_UTILITY_GENERATOR_SOURCE}")
     if payload.get("split_scope") != "train_only":
         raise ValueError("generator_manifest split_scope must be train_only")
     if str(payload.get("input_split", "")).strip().lower() not in {"train", "training"}:
@@ -750,6 +823,11 @@ def validate_generator_manifest(manifest_json: str | Path) -> dict[str, Any]:
     ):
         if _is_true(payload.get(key, False)):
             raise ValueError(f"generator_manifest forbidden flag {key}=true")
+    _validate_optional_manifest_fields(
+        payload,
+        _generator_optional_teacher_utility_source_manifest_fields(),
+        context="generator_manifest",
+    )
     out = dict(payload)
     out["generator_manifest_json"] = str(path)
     out["generator_manifest_sha256"] = _sha256_file(path)
@@ -776,6 +854,11 @@ def validate_teacher_utility_export_evidence(
         raise ValueError(f"teacher utility evidence must use {UTILITY_SEMANTICS}")
     if summary.get("signed_utility_supported") is not True:
         raise ValueError("teacher utility evidence must support signed utility")
+    _require_exact_manifest_fields(
+        summary,
+        _summary_teacher_utility_source_manifest_fields(),
+        context="teacher utility evidence summary",
+    )
     for key in ("uses_val_or_test_gt_for_selection", "uses_gt_for_selection", "uses_prediction_cache", "uses_raw_prediction", "load_from_raw_predictions", "end_to_end"):
         if summary.get(key) is not False:
             raise ValueError(f"teacher utility evidence must set {key}=false")
@@ -804,6 +887,11 @@ def validate_teacher_utility_export_evidence(
             raise ValueError(f"{output_path}:{line_no}: teacher utility row schema mismatch")
         if not _split_matches(_split(row), "training"):
             raise ValueError(f"{output_path}:{line_no}: teacher utility rows must be training split")
+        _require_exact_manifest_fields(
+            row,
+            _teacher_utility_source_manifest_fields(),
+            context=f"{output_path}:{line_no}: teacher utility row",
+        )
         provenance = row.get("teacher_utility_provenance")
         if not isinstance(provenance, Mapping):
             raise ValueError(f"{output_path}:{line_no}: missing teacher_utility_provenance")
@@ -824,6 +912,11 @@ def validate_teacher_utility_export_evidence(
         ):
             if provenance.get(key) is None or (isinstance(provenance.get(key), str) and not provenance.get(key)):
                 raise ValueError(f"{output_path}:{line_no}: teacher_utility_provenance requires {key}")
+        _require_exact_manifest_fields(
+            provenance,
+            _teacher_utility_source_manifest_fields(),
+            context=f"{output_path}:{line_no}: teacher_utility_provenance",
+        )
         if row.get("uses_teacher") is not True or row.get("training_only") is not True:
             raise ValueError(f"{output_path}:{line_no}: teacher utility rows must be training_only teacher artifacts")
         teacher_payload = row.get("teacher_utility")
@@ -831,6 +924,11 @@ def validate_teacher_utility_export_evidence(
             raise ValueError(f"{output_path}:{line_no}: missing teacher_utility payload")
         if teacher_payload.get("utility_semantics") != UTILITY_SEMANTICS:
             raise ValueError(f"{output_path}:{line_no}: teacher utility semantics mismatch")
+        _require_exact_manifest_fields(
+            teacher_payload,
+            _teacher_utility_source_manifest_fields(),
+            context=f"{output_path}:{line_no}: teacher_utility payload",
+        )
         signed = teacher_payload.get("signed_frame_utility", row.get("signed_frame_utility"))
         if not isinstance(signed, list) or len(signed) != int(row.get("dense_len", 0)):
             raise ValueError(f"{output_path}:{line_no}: signed_frame_utility is required")

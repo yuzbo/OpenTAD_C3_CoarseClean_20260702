@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from mmengine.config import Config
@@ -28,6 +29,58 @@ def _require(condition, message):
 
 def _as_bool(value):
     return bool(value)
+
+
+def _finite_number(payload, key, *, label):
+    _require(key in payload, f"{label} missing")
+    value = payload.get(key)
+    _require(isinstance(value, (int, float)) and not isinstance(value, bool), f"{label} must be numeric")
+    number = float(value)
+    _require(math.isfinite(number), f"{label} must be finite")
+    return number
+
+
+def validate_selector_step_proof_payload(payload):
+    selector_param_delta = _finite_number(
+        payload,
+        "selector_param_delta_l2",
+        label="selector parameter delta proof",
+    )
+    _require(selector_param_delta > 0.0, "selector parameter delta proof must be > 0")
+    _require(payload.get("selector_param_delta_passed") is True, "selector parameter delta proof passed flag missing")
+
+    position_drift_mean = _finite_number(
+        payload,
+        "selected_position_drift_mean",
+        label="selected-position drift mean proof",
+    )
+    position_drift_max = _finite_number(
+        payload,
+        "selected_position_drift_max",
+        label="selected-position drift max proof",
+    )
+    _require(position_drift_mean >= 0.0, "selected-position drift mean proof must be non-negative")
+    _require(position_drift_max >= 0.0, "selected-position drift max proof must be non-negative")
+    _require(
+        isinstance(payload.get("selected_position_drift_passed"), bool),
+        "selected-position drift passed flag missing",
+    )
+
+    for key, label in (
+        ("selector_logits_drift_l2", "selector logits drift l2 proof"),
+        ("selector_logits_drift_max", "selector logits drift max proof"),
+    ):
+        if key in payload:
+            value = _finite_number(payload, key, label=label)
+            _require(value >= 0.0, f"{label} must be non-negative")
+    if "selector_logits_drift_passed" in payload:
+        _require(isinstance(payload.get("selector_logits_drift_passed"), bool), "selector logits drift passed flag must be boolean")
+
+    return {
+        "selector_param_delta_l2": selector_param_delta,
+        "selected_position_drift_mean": position_drift_mean,
+        "selected_position_drift_max": position_drift_max,
+    }
 
 
 def _find_collect(pipeline):
@@ -319,6 +372,7 @@ def _validate_grad_proof(path, *, require_real_detector=False):
         _require(payload.get("proof_source") == "registered_detector_forward_train_cost_backward", "wrong proof source")
     _require(float(payload.get("selector_grad_norm", 0.0)) > 0.0, "selector_grad_norm proof must be > 0")
     _require(payload.get("selector_grad_nonzero") is True, "selector_grad_nonzero proof missing")
+    validate_selector_step_proof_payload(payload)
     _require(
         payload.get("actionformer_proof_source") == "opentad_actionformer_forward_train_cost_backward",
         "wrong ActionFormer proof source",

@@ -22,7 +22,7 @@ def _generator_manifest(tmp_path: Path) -> Path:
                 "schema_version": "c3_detector_teacher_utility_generator_manifest_v1",
                 "decision": "C3_DETECTOR_TEACHER_UTILITY_GENERATOR_MANIFEST_READY",
                 "teacher_signal_source": "adatad_dense_teacher",
-                "generator_source": "dense_detector_forward_train",
+                "generator_source": detector_teacher_utility.TEACHER_UTILITY_GENERATOR_SOURCE,
                 "split_scope": "train_only",
                 "input_split": "training",
                 "uses_evaluator_outputs": False,
@@ -126,6 +126,7 @@ def _stage2_policy_evidence() -> dict:
 def _stage3_proof() -> dict:
     return {
         "route_variant": stage4.STAGE3_ROUTE,
+        "stage": "stage3_true_time_e2e_adatad_selector_precheck",
         "geometry_roundtrip_passed": True,
         "prediction_inverse_map_passed": True,
         "selected_input_st_gradient_passed": True,
@@ -133,13 +134,24 @@ def _stage3_proof() -> dict:
         "detector_loss_selector_grad_passed": True,
         "detector_loss_selector_grad_norm": 0.25,
         "selector_grad_nonzero": True,
-        "loss_keys": ["loss_cls", "loss_reg"],
-        "proof_source": "registered_detector_forward_train_cost_backward",
+        "real_detector_proof_source": "opentad_actionformer_forward_train_cost_backward",
+        "real_detector_loss_selector_grad_passed": True,
+        "real_detector_loss_selector_grad_norm": 0.31,
+        "real_detector_loss_keys": ["cls_loss", "reg_loss"],
         "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
         "actionformer_detector_loss_selector_grad_passed": True,
         "actionformer_detector_loss_selector_grad_norm": 0.31,
         "actionformer_loss_keys": ["cls_loss", "reg_loss"],
-        "actionformer_selected_axis_smoke": True,
+        "actionformer_selected_axis_smoke": False,
+        "actionformer_physical_grid_precheck": True,
+        "selector_param_delta_l2": 0.004,
+        "selector_param_delta_passed": True,
+        "selected_position_drift_mean": 0.5,
+        "selected_position_drift_max": 1.0,
+        "selected_position_drift_passed": True,
+        "selector_logits_drift_l2": 0.03,
+        "selector_logits_drift_max": 0.02,
+        "selector_logits_drift_passed": True,
         "sparse_distill_adapter_ready": True,
         "sparse_distill_claim_allowed": False,
         "sparse_distill_map_claim_allowed": False,
@@ -289,6 +301,37 @@ def test_stage4_curriculum_evidence_requires_actionformer_detector_grad(tmp_path
     )
 
     with pytest.raises(ValueError, match="ActionFormer detector-loss proof"):
+        stage4.validate_evidence(evidence)
+
+
+def test_stage4_curriculum_evidence_requires_real_detector_precheck_not_smoke(tmp_path: Path) -> None:
+    proof = _stage3_proof()
+    proof["actionformer_selected_axis_smoke"] = True
+    proof.pop("real_detector_proof_source")
+    proof.pop("real_detector_loss_keys")
+    evidence = stage4.build_evidence(
+        stage2_teacher_evidence=_stage2_teacher_evidence(tmp_path),
+        stage2_policy_evidence=_stage2_policy_evidence(),
+        stage2_ledger_validation_summaries=_ledger_summaries(),
+        stage3_proof=proof,
+    )
+
+    with pytest.raises(ValueError, match="real detector"):
+        stage4.validate_evidence(evidence)
+
+
+def test_stage4_curriculum_evidence_requires_stage3_selector_step_delta(tmp_path: Path) -> None:
+    proof = _stage3_proof()
+    proof["selector_param_delta_l2"] = 0.0
+    proof["selector_param_delta_passed"] = False
+    evidence = stage4.build_evidence(
+        stage2_teacher_evidence=_stage2_teacher_evidence(tmp_path),
+        stage2_policy_evidence=_stage2_policy_evidence(),
+        stage2_ledger_validation_summaries=_ledger_summaries(),
+        stage3_proof=proof,
+    )
+
+    with pytest.raises(ValueError, match="selector parameter delta"):
         stage4.validate_evidence(evidence)
 
 

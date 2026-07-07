@@ -331,6 +331,7 @@ def validate_ledger(
     require_checkpoint_path: str | Path | None = None,
     require_checkpoint_sha256: str | None = None,
     require_paction_provenance: bool = False,
+    allow_policy_uniform_scaffold: bool = False,
     summary_json: str | Path | None = None,
     max_hole_top10_csv: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -407,8 +408,12 @@ def validate_ledger(
         if isinstance(policy_metadata, Mapping):
             if policy_metadata.get("uses_uniform_fill") is not False:
                 raise ValueError(f"{sample_jsonl}:{sample_id}: policy uses_uniform_fill must be false")
-            if policy_metadata.get("uses_uniform_scaffold") is not False:
-                raise ValueError(f"{sample_jsonl}:{sample_id}: policy uses_uniform_scaffold must be false")
+            expected_uniform_scaffold = True if allow_policy_uniform_scaffold else False
+            if policy_metadata.get("uses_uniform_scaffold") is not expected_uniform_scaffold:
+                raise ValueError(
+                    f"{sample_jsonl}:{sample_id}: policy uses_uniform_scaffold must be "
+                    f"{str(expected_uniform_scaffold).lower()}"
+                )
             if require_policy_source is not None and policy_metadata.get("source") != str(require_policy_source):
                 raise ValueError(
                     f"{sample_jsonl}:{sample_id}: paction_policy.source must be {require_policy_source}"

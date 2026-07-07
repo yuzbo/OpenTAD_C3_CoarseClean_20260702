@@ -12,6 +12,7 @@ CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_c3
 EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_c3_adatad_smoke_exec.py"
 PRECHECK_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_truetime_joint_selector_adatad_precheck.py"
 VALIDATOR = ROOT / "tools" / "bata" / "validate_truetime_joint_selector_precheck.py"
+DUCA_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_stage23_precheck.py"
 PRECHECK_RUNNER = ROOT / "tools" / "bata" / "run_truetime_joint_selector_precheck.py"
 LAUNCHER = ROOT / "scripts" / "run_c3_truetime_joint_selector_adatad_gpu1.sh"
 
@@ -24,10 +25,91 @@ def _load_validator():
     return module
 
 
+def _load_duca_validator():
+    spec = importlib.util.spec_from_file_location("validate_duca_stage23_test", DUCA_VALIDATOR)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def _collect(split_cfg):
     matches = [step for step in split_cfg.pipeline if isinstance(step, dict) and step.get("type") == "Collect"]
     assert len(matches) == 1
     return matches[0]
+
+
+def _selector_step_proof_fields() -> dict:
+    return {
+        "selector_param_delta_l2": 0.004,
+        "selector_param_delta_passed": True,
+        "selected_position_drift_mean": 0.5,
+        "selected_position_drift_max": 1.0,
+        "selected_position_drift_passed": True,
+        "selector_logits_drift_l2": 0.03,
+        "selector_logits_drift_max": 0.02,
+        "selector_logits_drift_passed": True,
+    }
+
+
+def _real_actionformer_precheck_proof_payload(**overrides) -> dict:
+    payload = {
+        "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
+        "stage": "stage3_true_time_e2e_adatad_selector_precheck",
+        "geometry_roundtrip_passed": True,
+        "prediction_inverse_map_passed": True,
+        "selected_input_st_gradient_passed": True,
+        "selected_input_selector_grad_norm": 0.25,
+        "detector_loss_selector_grad_passed": True,
+        "detector_loss_selector_grad_norm": 0.31,
+        "selector_grad_norm": 0.31,
+        "selector_grad_nonzero": True,
+        "real_detector_loss_selector_grad_passed": True,
+        "real_detector_loss_selector_grad_norm": 0.31,
+        "real_detector_proof_source": "opentad_actionformer_forward_train_cost_backward",
+        "real_detector_loss_keys": ["cls_loss", "reg_loss"],
+        "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
+        "actionformer_detector_loss_selector_grad_passed": True,
+        "actionformer_detector_loss_selector_grad_norm": 0.31,
+        "actionformer_loss_keys": ["cls_loss", "reg_loss"],
+        "actionformer_selected_axis_smoke": False,
+        "actionformer_physical_grid_precheck": True,
+        "sparse_distill_adapter_ready": True,
+        "sparse_distill_claim_allowed": False,
+        "sparse_distill_map_claim_allowed": False,
+        "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
+        **_selector_step_proof_fields(),
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _smoke_detector_loss_proof_payload(**overrides) -> dict:
+    payload = {
+        "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
+        "geometry_roundtrip_passed": True,
+        "prediction_inverse_map_passed": True,
+        "selected_input_st_gradient_passed": True,
+        "selected_input_selector_grad_norm": 0.25,
+        "detector_loss_selector_grad_passed": True,
+        "detector_loss_selector_grad_norm": 0.25,
+        "selector_grad_norm": 0.25,
+        "selector_grad_nonzero": True,
+        "loss_keys": ["loss_cls", "loss_reg"],
+        "proof_source": "registered_detector_forward_train_cost_backward",
+        "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
+        "actionformer_detector_loss_selector_grad_passed": True,
+        "actionformer_detector_loss_selector_grad_norm": 0.31,
+        "actionformer_loss_keys": ["cls_loss", "reg_loss"],
+        "actionformer_selected_axis_smoke": True,
+        "sparse_distill_adapter_ready": True,
+        "sparse_distill_claim_allowed": False,
+        "sparse_distill_map_claim_allowed": False,
+        "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
+        **_selector_step_proof_fields(),
+    }
+    payload.update(overrides)
+    return payload
 
 
 def test_truetime_joint_selector_config_is_stage34_locked_and_explicit() -> None:
@@ -165,34 +247,7 @@ def test_truetime_joint_selector_precheck_config_is_not_smoke_only_and_claim_loc
 def test_truetime_joint_selector_precheck_validator_accepts_real_actionformer_proof_schema(tmp_path: Path) -> None:
     proof = tmp_path / "precheck_proof.json"
     proof.write_text(
-        json.dumps(
-            {
-                "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
-                "stage": "stage3_true_time_e2e_adatad_selector_precheck",
-                "geometry_roundtrip_passed": True,
-                "prediction_inverse_map_passed": True,
-                "selected_input_st_gradient_passed": True,
-                "selected_input_selector_grad_norm": 0.25,
-                "detector_loss_selector_grad_passed": True,
-                "detector_loss_selector_grad_norm": 0.31,
-                "selector_grad_norm": 0.31,
-                "selector_grad_nonzero": True,
-                "real_detector_loss_selector_grad_passed": True,
-                "real_detector_loss_selector_grad_norm": 0.31,
-                "real_detector_proof_source": "opentad_actionformer_forward_train_cost_backward",
-                "real_detector_loss_keys": ["cls_loss", "reg_loss"],
-                "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
-                "actionformer_detector_loss_selector_grad_passed": True,
-                "actionformer_detector_loss_selector_grad_norm": 0.31,
-                "actionformer_loss_keys": ["cls_loss", "reg_loss"],
-                "actionformer_selected_axis_smoke": False,
-                "actionformer_physical_grid_precheck": True,
-                "sparse_distill_adapter_ready": True,
-                "sparse_distill_claim_allowed": False,
-                "sparse_distill_map_claim_allowed": False,
-                "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
-            }
-        ),
+        json.dumps(_real_actionformer_precheck_proof_payload()),
         encoding="utf-8",
     )
     validator = _load_validator()
@@ -215,6 +270,8 @@ def test_truetime_joint_selector_precheck_runner_defaults_to_precheck_config_and
     assert "truetime_actionformer_path_precheck_model" in text
     assert "opentad_actionformer_forward_train_cost_backward" in text
     assert "real_detector_loss_selector_grad_norm" in text
+    assert "selector_param_delta_l2" in text
+    assert "selected_position_drift_mean" in text
     assert "TrueTimeJointSelectorSmokeDetector" not in text
 
 
@@ -245,30 +302,7 @@ def test_truetime_joint_selector_validator_blocks_end_to_end_without_grad_proof(
 def test_truetime_joint_selector_validator_accepts_detector_loss_proof_schema(tmp_path: Path) -> None:
     proof = tmp_path / "proof.json"
     proof.write_text(
-        json.dumps(
-            {
-                "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
-                "geometry_roundtrip_passed": True,
-                "prediction_inverse_map_passed": True,
-                "selected_input_st_gradient_passed": True,
-                "selected_input_selector_grad_norm": 0.25,
-                "detector_loss_selector_grad_passed": True,
-                "detector_loss_selector_grad_norm": 0.25,
-                "selector_grad_norm": 0.25,
-                "selector_grad_nonzero": True,
-                "loss_keys": ["loss_cls", "loss_reg"],
-                "proof_source": "registered_detector_forward_train_cost_backward",
-                "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
-                "actionformer_detector_loss_selector_grad_passed": True,
-                "actionformer_detector_loss_selector_grad_norm": 0.31,
-                "actionformer_loss_keys": ["cls_loss", "reg_loss"],
-                "actionformer_selected_axis_smoke": True,
-                "sparse_distill_adapter_ready": True,
-                "sparse_distill_claim_allowed": False,
-                "sparse_distill_map_claim_allowed": False,
-                "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
-            }
-        ),
+        json.dumps(_smoke_detector_loss_proof_payload()),
         encoding="utf-8",
     )
     validator = _load_validator()
@@ -283,33 +317,72 @@ def test_truetime_joint_selector_validator_accepts_detector_loss_proof_schema(tm
     assert cfg.truetime_joint_selector_gate.launch_gate_passed is True
 
 
-def test_truetime_joint_selector_validator_rejects_unlocked_distill_claim(tmp_path: Path) -> None:
+def test_truetime_joint_selector_validator_rejects_zero_selector_step_delta(tmp_path: Path) -> None:
     proof = tmp_path / "proof.json"
     proof.write_text(
         json.dumps(
-            {
-                "route_variant": "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3",
-                "geometry_roundtrip_passed": True,
-                "prediction_inverse_map_passed": True,
-                "selected_input_st_gradient_passed": True,
-                "selected_input_selector_grad_norm": 0.25,
-                "detector_loss_selector_grad_passed": True,
-                "detector_loss_selector_grad_norm": 0.25,
-                "selector_grad_norm": 0.25,
-                "selector_grad_nonzero": True,
-                "loss_keys": ["loss_cls", "loss_reg"],
-                "proof_source": "registered_detector_forward_train_cost_backward",
-                "actionformer_proof_source": "opentad_actionformer_forward_train_cost_backward",
-                "actionformer_detector_loss_selector_grad_passed": True,
-                "actionformer_detector_loss_selector_grad_norm": 0.31,
-                "actionformer_loss_keys": ["cls_loss", "reg_loss"],
-                "actionformer_selected_axis_smoke": True,
-                "sparse_distill_adapter_ready": True,
-                "sparse_distill_claim_allowed": True,
-                "sparse_distill_map_claim_allowed": False,
-                "sparse_distill_proof_source": "fail_closed_sparse_detector_distillation_adapter",
-            }
+            _real_actionformer_precheck_proof_payload(
+                selector_param_delta_l2=0.0,
+                selector_param_delta_passed=False,
+            )
         ),
+        encoding="utf-8",
+    )
+    validator = _load_validator()
+
+    try:
+        validator.validate_config(
+            str(PRECHECK_CONFIG),
+            require_grad_proof=True,
+            allow_launch_unlocked=False,
+            proof_json=str(proof),
+        )
+    except AssertionError as exc:
+        assert "selector parameter delta" in str(exc)
+    else:
+        raise AssertionError("validator must fail closed without a positive selector parameter step delta")
+
+
+def test_truetime_joint_selector_validator_rejects_missing_position_drift(tmp_path: Path) -> None:
+    payload = _real_actionformer_precheck_proof_payload()
+    payload.pop("selected_position_drift_mean")
+    proof = tmp_path / "proof.json"
+    proof.write_text(json.dumps(payload), encoding="utf-8")
+    validator = _load_validator()
+
+    try:
+        validator.validate_config(
+            str(PRECHECK_CONFIG),
+            require_grad_proof=True,
+            allow_launch_unlocked=False,
+            proof_json=str(proof),
+        )
+    except AssertionError as exc:
+        assert "selected-position drift" in str(exc)
+    else:
+        raise AssertionError("validator must fail closed without selected-position drift evidence")
+
+
+def test_duca_stage23_validator_requires_selector_step_proof(tmp_path: Path) -> None:
+    proof = tmp_path / "proof.json"
+    proof.write_text(
+        json.dumps(_real_actionformer_precheck_proof_payload(selector_param_delta_l2=0.0)),
+        encoding="utf-8",
+    )
+    validator = _load_duca_validator()
+
+    try:
+        validator._validate_stage3_proof(proof)
+    except AssertionError as exc:
+        assert "selector parameter delta" in str(exc)
+    else:
+        raise AssertionError("DUCA Stage2/3 validator must require a positive selector parameter step delta")
+
+
+def test_truetime_joint_selector_validator_rejects_unlocked_distill_claim(tmp_path: Path) -> None:
+    proof = tmp_path / "proof.json"
+    proof.write_text(
+        json.dumps(_smoke_detector_loss_proof_payload(sparse_distill_claim_allowed=True)),
         encoding="utf-8",
     )
     validator = _load_validator()

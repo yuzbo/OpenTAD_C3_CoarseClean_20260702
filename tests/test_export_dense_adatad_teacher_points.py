@@ -89,7 +89,7 @@ def test_dense_teacher_row_from_predictions_is_train_only_and_manifest_compatibl
     assert row["training_only"] is True
     assert row["end_to_end"] is False
     assert [point["point_index"] for point in row["teacher_dense_points"]] == [1, 4]
-    assert row["teacher_utility_provenance"]["generator_source"] == "dense_detector_forward_train"
+    assert row["teacher_utility_provenance"]["generator_source"] == detector_teacher_utility.TEACHER_UTILITY_GENERATOR_SOURCE
 
 
 def test_stage2_launcher_requires_and_passes_generator_manifest() -> None:
@@ -102,5 +102,30 @@ def test_stage2_launcher_requires_and_passes_generator_manifest() -> None:
     assert "export_dense_adatad_teacher_points.py" in stage2
     assert "C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON" in stage2
     assert "--generator-manifest-json" in stage2
+    assert "export_adatad_responsibility_utility.py" in stage2
+    assert "validate_adatad_responsibility_utility.py" in stage2
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL" in stage2
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON" in stage2
+    assert "responsibility_utility_export.summary.json" in stage2
     assert "--require-stage2-generator-manifest" in precheck
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_UTILITY_EXPORT_SUMMARY_JSON" in precheck
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_UTILITY_OUTPUT_JSONL" in precheck
+    assert "--stage2-responsibility-summary-json" in precheck
+    assert "--stage2-responsibility-output-jsonl" in precheck
 
+
+def test_stage2_precheck_does_not_unconditionally_require_dense_teacher_for_responsibility_path() -> None:
+    root = Path(__file__).resolve().parents[1]
+    precheck = (root / "scripts" / "run_duca_stage2_detector_aware_precheck_gpu1.sh").read_text(encoding="utf-8")
+
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL" in precheck
+    assert "C3_DETECTOR_AWARE_RESPONSIBILITY_MANIFEST_JSON" in precheck
+    responsibility_branch = 'if [[ -n "${C3_DETECTOR_AWARE_RESPONSIBILITY_POINTS_JSONL}" ]]; then'
+    teacher_checkpoint_gate = '[[ -n "${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH}" ]] || fail'
+    teacher_config_gate = '[[ -n "${C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH}" ]] || fail'
+    assert responsibility_branch in precheck
+    branch_start = precheck.index(responsibility_branch)
+    checkpoint_gate = precheck.index(teacher_checkpoint_gate)
+    config_gate = precheck.index(teacher_config_gate)
+    else_gate = precheck.index("else", branch_start, checkpoint_gate)
+    assert branch_start < else_gate < checkpoint_gate < config_gate
