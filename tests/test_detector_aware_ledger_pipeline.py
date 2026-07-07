@@ -216,6 +216,55 @@ def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp
         assert validation["map_claim_allowed"] is False
 
 
+def test_detector_aware_pipeline_uses_p95_hole_threshold_as_decoder_constraint(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source_long_hole.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    p_action_a = [0.1] * 101
+    p_action_b = [0.2] * 101
+    _write_jsonl(
+        source,
+        [
+            _sample("video_long_hole_0001|0", p_action_a, [0.0] * len(p_action_a)),
+            _sample("video_long_hole_0002|0", p_action_b, [0.0] * len(p_action_b)),
+        ],
+    )
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [4, 5]}),
+    )
+
+    def endpoint_biased_scores(_model, p_action, *, valid, target_budget=None, device, **kwargs):
+        values = [0.0] * len(p_action)
+        for idx, score in ((0, 10.0), (1, 9.0), (99, 8.0), (100, 7.0), (50, 0.1), (25, 0.09), (75, 0.08)):
+            values[idx] = score
+        budget_scores = [1.0, 0.0] if p_action[0] < 0.15 else [0.0, 1.0]
+        return values, budget_scores, [2.0 for _ in p_action]
+
+    monkeypatch.setattr(detector_pipeline.apply_policy, "checkpoint_policy_scores", endpoint_biased_scores)
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out_long_hole",
+        fixed_budgets=(4, 5),
+        dynamic_target_len=5,
+        dynamic_budget_buckets=[4, 5],
+        device="cpu",
+        max_unselected_hole=96,
+        max_p95_unselected_hole=48,
+        max_uniform_similarity=1.0,
+    )
+
+    assert summary["decoder_effective_max_unselected_hole"] == 48
+    for item in summary["ledgers"].values():
+        validation = item["validation_summary"]
+        assert validation["max_unselected_hole"] <= 96
+        assert validation["p95_unselected_hole"] <= 48
+
+
 def test_detector_aware_pipeline_defaults_to_exact_fixed_budget_for_short_valid_rows(
     tmp_path: Path,
     monkeypatch,

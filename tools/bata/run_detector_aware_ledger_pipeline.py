@@ -251,6 +251,23 @@ def _convert_and_validate(
     }
 
 
+def _effective_decoder_max_unselected_hole(
+    max_unselected_hole: int | None,
+    max_p95_unselected_hole: float | None,
+) -> int | None:
+    candidates: list[int] = []
+    if max_unselected_hole is not None:
+        candidates.append(int(max_unselected_hole))
+    if max_p95_unselected_hole is not None:
+        candidates.append(int(float(max_p95_unselected_hole) // 1))
+    if not candidates:
+        return None
+    effective = min(candidates)
+    if effective < 0:
+        raise ValueError("hole thresholds must be non-negative")
+    return int(effective)
+
+
 def run_pipeline(
     *,
     input_jsonl: str | Path,
@@ -299,6 +316,10 @@ def run_pipeline(
     metric_sample_path = canonical_input_jsonl
     checkpoint_sha256 = apply_policy._sha256_file(checkpoint_path)
     applied_sample_jsonl = out_path / "samples.detector_aware_all.jsonl"
+    decoder_max_unselected_hole = _effective_decoder_max_unselected_hole(
+        max_unselected_hole,
+        max_p95_unselected_hole,
+    )
     apply_policy.run_policy_application(
         input_sample_path,
         applied_sample_jsonl,
@@ -309,7 +330,7 @@ def run_pipeline(
         device=device,
         strip_deploy_invisible_payload=True,
         strict_deploy_source=bool(deploy_selection_ledger),
-        max_unselected_hole=max_unselected_hole,
+        max_unselected_hole=decoder_max_unselected_hole,
         source_jsonl_for_hash=input_sample_path,
         require_point_responsibility_utility=bool(require_point_responsibility_utility),
     )
@@ -372,6 +393,9 @@ def run_pipeline(
         "dynamic_target_len": int(dynamic_target_len),
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
+        "decoder_effective_max_unselected_hole": decoder_max_unselected_hole,
+        "validator_max_unselected_hole": None if max_unselected_hole is None else int(max_unselected_hole),
+        "validator_max_p95_unselected_hole": None if max_p95_unselected_hole is None else float(max_p95_unselected_hole),
         "deploy_selection_ledger": bool(deploy_selection_ledger),
         "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
         "require_point_responsibility_utility": bool(require_point_responsibility_utility),
