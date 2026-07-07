@@ -15,7 +15,14 @@ PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "DUCA Stage2 precheck/full run must use GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+ALLOW_C3_DETECTOR_AWARE_GPU0="${ALLOW_C3_DETECTOR_AWARE_GPU0:-0}"
+if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+  if [[ "${CUDA_VISIBLE_DEVICES}" == "0" && "${ALLOW_C3_DETECTOR_AWARE_GPU0}" == "1" ]]; then
+    echo "[DUCA_STAGE2_PRECHECK] explicit GPU0 override accepted: CUDA_VISIBLE_DEVICES=0"
+  else
+    fail "DUCA Stage2 precheck/full run defaults to GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}. Set ALLOW_C3_DETECTOR_AWARE_GPU0=1 only when GPU0 is explicitly assigned to Stage2."
+  fi
+fi
 
 RUN_TAG="${RUN_TAG:-duca_stage2_detector_aware_precheck_$(date +%Y%m%d_%H%M%S_%z)}"
 export RUN_TAG
