@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 from tools.bata import apply_detector_aware_acquisition_policy as apply_policy
 from tools.bata import convert_detector_aware_samples_to_value_transport_ledger as convert_ledger
 from tools.bata import detector_aware_acquisition_policy as detector_policy
+from tools.bata import detector_deploy_leakage
 from tools.bata import paction_source_samples
 from tools.bata import validate_detector_aware_policy_ledger as validate_ledger
 
@@ -150,9 +151,14 @@ def _detector_deploy_source_jsonl(
             if key in stripped:
                 stripped_key_counts[key] = stripped_key_counts.get(key, 0) + 1
                 stripped.pop(key, None)
+        stripped = detector_deploy_leakage.strip_detector_deploy_forbidden_payloads(stripped)
         stripped["paction_positive_provenance"] = provenance
         stripped["deploy_selection_source_stripped"] = True
         stripped["detector_teacher_payload_stripped"] = True
+        detector_deploy_leakage.reject_detector_deploy_forbidden_payloads(
+            stripped,
+            source_name=f"{source_name}:detector_selection_deploy_source",
+        )
         paction_source_samples.reject_strict_deploy_source_row(
             stripped,
             source_name=f"{source_name}:detector_selection_deploy_source",

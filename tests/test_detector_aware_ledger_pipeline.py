@@ -192,6 +192,7 @@ def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_fro
     ]
     for row in rows:
         row.pop("paction_positive_provenance")
+        row["schema_version"] = "c3_detector_teacher_utility_row_v1"
         row["split"] = "training"
         row["uses_gt_for_diagnostics"] = True
         row["diagnostic_only"] = True
@@ -266,6 +267,7 @@ def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_fro
         assert provenance["uses_teacher"] is False
         assert provenance["training_only"] is False
         assert provenance["official_action_seg_backend"] == "official_asformer"
+        assert "schema_version" not in row
         assert not _has_key_recursive(row, "teacher_utility")
         assert not _has_key_recursive(row, "teacher_utility_provenance")
 
