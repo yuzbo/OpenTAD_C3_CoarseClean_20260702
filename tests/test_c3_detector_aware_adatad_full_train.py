@@ -122,6 +122,11 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert "exceeds the <=384 main-claim budget" in text
     assert "ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384=1" in text
     assert "learned_detector_aware_policy_checkpoint" in text
+    assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-}"' in text
+    assert "pick_master_port()" in text
+    assert '--master_port="${master_port}"' in text
+    assert "master_port=${master_port}" in text
+    assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-30440}"' not in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN=1" in text
     assert "tools/train.py" in text

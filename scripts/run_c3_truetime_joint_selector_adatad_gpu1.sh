@@ -18,7 +18,10 @@ SMOKE_TOOL="${SMOKE_TOOL:-tools/bata/run_truetime_joint_selector_smoke.py}"
 RUN_TAG="${RUN_TAG:-c3_truetime_joint_selector_adatad_gpu1_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
-MASTER_PORT="${MASTER_PORT:-30231}"
+MASTER_PORT="${MASTER_PORT:-}"
+MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
+MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
+MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 export HOME="${HOME:-${BASE}/tmp/home}"
@@ -40,6 +43,46 @@ PYTHON="${PYTHON:-/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python}"
 require_file() {
   local path="$1"
   [[ -f "${path}" ]] || fail "required file missing: ${path}"
+}
+
+pick_master_port() {
+  if [[ -n "${MASTER_PORT}" ]]; then
+    echo "${MASTER_PORT}"
+    return 0
+  fi
+  "${PYTHON}" - "${RUN_TAG}" "truetime_joint_selector" "${MASTER_PORT_LOW}" "${MASTER_PORT_HIGH}" "${MASTER_PORT_MAX_ATTEMPTS}" <<'PY'
+import hashlib
+import os
+import socket
+import sys
+
+run_tag, variant = sys.argv[1], sys.argv[2]
+low, high, max_attempts = int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+if not (1024 <= low <= high <= 65535):
+    raise SystemExit(f"invalid MASTER_PORT range: {low}-{high}")
+span = high - low + 1
+seed = "|".join(
+    [
+        run_tag,
+        variant,
+        os.environ.get("SLURM_JOB_ID", ""),
+        os.environ.get("SLURM_STEP_ID", ""),
+        str(os.getpid()),
+    ]
+)
+start = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % span
+for offset in range(min(max_attempts, span)):
+    port = low + ((start + offset) % span)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
+        try:
+            handle.bind(("0.0.0.0", port))
+        except OSError:
+            continue
+    print(port)
+    break
+else:
+    raise SystemExit(f"no free MASTER_PORT found in {low}-{high} after {max_attempts} attempts")
+PY
 }
 
 require_file "${CONFIG}"
@@ -93,7 +136,9 @@ fi
 
 RUN_DIR="${RUN_DIR:-${OUTPUT_ROOT}/${RUN_TAG}/run}"
 WORK_DIR="${WORK_DIR:-exps/thumos/adatad/c3_truetime_joint_selector_c3_adatad_smoke/${RUN_TAG}}"
+MASTER_PORT="$(pick_master_port)"
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
+echo "[TRUETIME_JOINT_SELECTOR] train work_dir=${WORK_DIR} master_port=${MASTER_PORT}"
 
 "${PYTHON}" -m torch.distributed.run \
   --nproc_per_node=1 \

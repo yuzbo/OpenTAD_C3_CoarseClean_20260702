@@ -430,6 +430,11 @@ def test_truetime_joint_selector_launcher_is_gpu1_precheck_default_and_slurm_gat
     assert "--require-grad-proof" in text
     assert "--proof-json" in text
     assert "validate_truetime_joint_selector_precheck.py" in text
+    assert 'MASTER_PORT="${MASTER_PORT:-}"' in text
+    assert "pick_master_port()" in text
+    assert '--master_port="${MASTER_PORT}"' in text
+    assert "master_port=${MASTER_PORT}" in text
+    assert 'MASTER_PORT="${MASTER_PORT:-30231}"' not in text
     assert "tests/test_truetime" in text
     assert "tests/test_truetime_joint_selector_config.py" in text
     assert "tools/train.py" in text

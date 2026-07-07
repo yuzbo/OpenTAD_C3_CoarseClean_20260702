@@ -257,6 +257,11 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
     assert "value_transport_ledger_${variant}.jsonl" in text
     assert 'C3_PACTION_LEDGER_SOURCE="learned_paction_gap_loss_policy_checkpoint"' in text
     assert 'C3_PACTION_LEDGER_CONFIG_HASH="${PACTION_POLICY_CHECKPOINT_SHA256}"' in text
+    assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-}"' in text
+    assert "pick_master_port()" in text
+    assert '--master_port="${master_port}"' in text
+    assert "master_port=${master_port}" in text
+    assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-30410}"' not in text
     assert "c3_paction_learned_ledger_adatad_full_train_exec.py" in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "tools/train.py" in text
