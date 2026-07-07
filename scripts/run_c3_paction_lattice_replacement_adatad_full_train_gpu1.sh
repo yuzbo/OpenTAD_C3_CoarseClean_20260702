@@ -20,9 +20,15 @@ MASTER_PORT_BASE="${MASTER_PORT_BASE:-30410}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_PACTION_ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
-  fail "C3 p_action lattice AdaTAD full train must use GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+  export CUDA_VISIBLE_DEVICES="1"
+fi
+if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
+  if [[ "${CUDA_VISIBLE_DEVICES}" != "0" && "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+    fail "C3 p_action lattice AdaTAD full train must see one Slurm-bound GPU as logical 0/1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+  fi
+elif [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+  fail "C3 p_action lattice AdaTAD full train must use physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 fi
 
 export HOME="${HOME:-${BASE}/tmp/home}"
