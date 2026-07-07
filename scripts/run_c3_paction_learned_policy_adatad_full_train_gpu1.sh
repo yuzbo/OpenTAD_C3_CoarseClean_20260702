@@ -16,7 +16,10 @@ BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 RUN_TAG="${RUN_TAG:-c3_paction_learned_adatad_full_train_gpu1_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
-MASTER_PORT_BASE="${MASTER_PORT_BASE:-30310}"
+MASTER_PORT_BASE="${MASTER_PORT_BASE:-}"
+MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
+MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
+MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_PACTION_ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
@@ -126,6 +129,49 @@ module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
+
+pick_master_port() {
+  local variant="$1"
+  if [[ -n "${MASTER_PORT_BASE}" ]]; then
+    local explicit_port="${MASTER_PORT_BASE}"
+    MASTER_PORT_BASE="$((MASTER_PORT_BASE + 1))"
+    echo "${explicit_port}"
+    return 0
+  fi
+  "${PYTHON}" - "${RUN_TAG}" "${variant}" "${MASTER_PORT_LOW}" "${MASTER_PORT_HIGH}" "${MASTER_PORT_MAX_ATTEMPTS}" <<'PY'
+import hashlib
+import os
+import socket
+import sys
+
+run_tag, variant = sys.argv[1], sys.argv[2]
+low, high, max_attempts = int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+if not (1024 <= low <= high <= 65535):
+    raise SystemExit(f"invalid MASTER_PORT range: {low}-{high}")
+span = high - low + 1
+seed = "|".join(
+    [
+        run_tag,
+        variant,
+        os.environ.get("SLURM_JOB_ID", ""),
+        os.environ.get("SLURM_STEP_ID", ""),
+        str(os.getpid()),
+    ]
+)
+start = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % span
+for offset in range(min(max_attempts, span)):
+    port = low + ((start + offset) % span)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
+        try:
+            handle.bind(("0.0.0.0", port))
+        except OSError:
+            continue
+    print(port)
+    break
+else:
+    raise SystemExit(f"no free MASTER_PORT found in {low}-{high} after {max_attempts} attempts")
+PY
+}
 
 mkdir -p "${POLICY_DIR}" "${LEDGER_ROOT}" "${VALIDATION_DIR}" "${RUN_DIR_ROOT}" "${WORK_DIR_ROOT}"
 
@@ -457,16 +503,12 @@ run_adatad_variant() {
   local run_dir="${RUN_DIR_ROOT}/${variant}"
   local work_dir="${WORK_DIR_ROOT}/${variant}"
   mkdir -p "${run_dir}" "${work_dir}"
-  local variant_index=0
-  case "${variant}" in
-    learned_fixed_384) variant_index=0 ;;
-    learned_fixed_768) variant_index=1 ;;
-    learned_dynamic) variant_index=2 ;;
-  esac
-  echo "[C3_PACTION_LEARNED_ADATAD] train variant=${variant} target_len=${target_len} work_dir=${work_dir}"
+  local master_port
+  master_port="$(pick_master_port "${variant}")"
+  echo "[C3_PACTION_LEARNED_ADATAD] train variant=${variant} target_len=${target_len} master_port=${master_port} work_dir=${work_dir}"
   "${PYTHON}" -m torch.distributed.run \
     --nproc_per_node=1 \
-    --master_port="$((MASTER_PORT_BASE + variant_index))" \
+    --master_port="${master_port}" \
     tools/train.py \
     "${EXEC_CONFIG}" \
     --id "${RUN_ID}" \

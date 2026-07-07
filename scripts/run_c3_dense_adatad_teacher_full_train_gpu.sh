@@ -16,7 +16,10 @@ BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 RUN_TAG="${RUN_TAG:-c3_dense_adatad_teacher_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
-MASTER_PORT="${MASTER_PORT:-30510}"
+MASTER_PORT="${MASTER_PORT:-}"
+MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
+MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
+MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 CONFIG="${CONFIG:-configs/adatad/thumos/c3_dense_adatad_teacher_full_train.py}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_DENSE_TEACHER_ADATAD_PRETRAIN_PATH:-${BASE}/retrained/${ADATAD_PRETRAIN_FILENAME}}}"
@@ -41,6 +44,39 @@ module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
+
+pick_master_port() {
+  local label="$1"
+  if [[ -n "${MASTER_PORT}" ]]; then
+    echo "${MASTER_PORT}"
+    return 0
+  fi
+  "${PYTHON}" - "${RUN_TAG}" "${label}" "${MASTER_PORT_LOW}" "${MASTER_PORT_HIGH}" "${MASTER_PORT_MAX_ATTEMPTS}" <<'PY'
+import hashlib
+import os
+import socket
+import sys
+
+run_tag, label = sys.argv[1], sys.argv[2]
+low, high, max_attempts = int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+if not (1024 <= low <= high <= 65535):
+    raise SystemExit(f"invalid MASTER_PORT range: {low}-{high}")
+span = high - low + 1
+seed = "|".join([run_tag, label, os.environ.get("SLURM_JOB_ID", ""), os.environ.get("SLURM_STEP_ID", ""), str(os.getpid())])
+start = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % span
+for offset in range(min(max_attempts, span)):
+    port = low + ((start + offset) % span)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
+        try:
+            handle.bind(("0.0.0.0", port))
+        except OSError:
+            continue
+    print(port)
+    break
+else:
+    raise SystemExit(f"no free MASTER_PORT found in {low}-{high} after {max_attempts} attempts")
+PY
+}
 
 resolve_path() {
   local raw="$1"
@@ -159,6 +195,8 @@ echo "[C3_DENSE_ADATAD_TEACHER] RUN_TAG=${RUN_TAG}"
 echo "[C3_DENSE_ADATAD_TEACHER] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "[C3_DENSE_ADATAD_TEACHER] WORK_DIR=${WORK_DIR}"
 echo "[C3_DENSE_ADATAD_TEACHER] LOG_FILE=${LOG_FILE}"
+MASTER_PORT="$(pick_master_port dense_teacher)"
+echo "[C3_DENSE_ADATAD_TEACHER] master_port=${MASTER_PORT}"
 
 exec "${PYTHON}" -m torch.distributed.run \
   --nproc_per_node=1 \

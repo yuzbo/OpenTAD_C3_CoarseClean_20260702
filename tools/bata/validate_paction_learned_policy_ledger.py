@@ -14,6 +14,7 @@ from tools.bata import paction_source_samples
 SUMMARY_SCHEMA_VERSION = "c3_paction_learned_policy_ledger_validation_v1"
 READY = "C3_PACTION_LEARNED_POLICY_LEDGER_VALIDATION_PASS"
 GAS_VT_CHECKPOINT_POLICY_SOURCE = "learned_paction_gas_vt_policy_checkpoint"
+UNIFORM_SIMILARITY_SPARSE_MAX_SELECTED_FRACTION = 0.90
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -343,6 +344,9 @@ def validate_ledger(
     all_gaps: list[int] = []
     all_unselected_holes: list[int] = []
     uniform_similarities: list[float] = []
+    all_uniform_similarities: list[float] = []
+    full_valid_coverage_count = 0
+    high_valid_coverage_count = 0
     max_gap = 0
     max_hole = 0
     boundary_hits = 0
@@ -473,7 +477,15 @@ def validate_ledger(
                 "valid_len": int(valid_len),
             }
         )
-        uniform_similarities.append(_uniform_similarity(selected, valid_len=valid_len))
+        uniform_similarity = _uniform_similarity(selected, valid_len=valid_len)
+        all_uniform_similarities.append(float(uniform_similarity))
+        selected_fraction = len(selected) / float(max(1, int(valid_len)))
+        if len(selected) >= int(valid_len):
+            full_valid_coverage_count += 1
+        elif selected_fraction > UNIFORM_SIMILARITY_SPARSE_MAX_SELECTED_FRACTION:
+            high_valid_coverage_count += 1
+        else:
+            uniform_similarities.append(float(uniform_similarity))
         selected_counts.append(len(selected))
         boundaries = _boundaries(metric_row)
         boundary_total += len(boundaries)
@@ -551,6 +563,8 @@ def validate_ledger(
         raise ValueError(f"p95_unselected_hole above threshold: {p95_unselected_hole}")
     mean_uniform_similarity = _mean(uniform_similarities)
     max_observed_uniform_similarity = max(uniform_similarities) if uniform_similarities else None
+    mean_all_uniform_similarity = _mean(all_uniform_similarities)
+    max_all_uniform_similarity = max(all_uniform_similarities) if all_uniform_similarities else None
     if (
         max_uniform_similarity is not None
         and max_observed_uniform_similarity is not None
@@ -589,6 +603,11 @@ def validate_ledger(
         "mean_uniform_similarity": mean_uniform_similarity,
         "meanK_matched_uniform_similarity": mean_uniform_similarity,
         "max_uniform_similarity": max_observed_uniform_similarity,
+        "full_valid_coverage_count": int(full_valid_coverage_count),
+        "high_valid_coverage_uniform_exempt_count": int(high_valid_coverage_count),
+        "uniform_similarity_sparse_max_selected_fraction": float(UNIFORM_SIMILARITY_SPARSE_MAX_SELECTED_FRACTION),
+        "mean_all_uniform_similarity_including_full_coverage": mean_all_uniform_similarity,
+        "max_all_uniform_similarity_including_full_coverage": max_all_uniform_similarity,
         f"boundary_support_r{int(boundary_radius)}": boundary_support,
         f"boundary_support@r{int(boundary_radius)}": boundary_support,
         "action_positive_coverage": action_coverage,
@@ -614,7 +633,7 @@ def validate_ledger(
         "paction_provenance_verified": bool(require_paction_provenance),
         "gap_metric_definition": "endpoint_inclusive_selected_stride_gap",
         "hole_metric_definition": "max_contiguous_unselected_dense_positions_between_selected_frames",
-        "uniform_similarity_definition": "intersection_over_selected_count_against_round_i_times_valid_len_over_k",
+        "uniform_similarity_definition": "intersection_over_selected_count_against_round_i_times_valid_len_over_k_for_rows_with_selected_fraction_le_0.90",
         "p_action_topk_metric_definition": "selected_set_overlap_with_same_k_top_p_action_frames",
     }
     for radius, value in boundary_support_by_radius.items():

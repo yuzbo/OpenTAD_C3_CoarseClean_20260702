@@ -400,6 +400,107 @@ def test_learned_policy_ledger_validator_rejects_uniform_like_scaffold_pattern(t
         )
 
 
+def test_learned_policy_ledger_validator_excludes_full_valid_coverage_from_uniform_gate(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    sample = _sample_row(
+        "video_short_valid_0001|0",
+        [0.1, 0.9, 0.2],
+        [0, 1, 0],
+        [1],
+    )
+    sample["dense_len"] = 768
+    sample["valid_len"] = 3
+    sample["strategy_selected_positions"] = {"learned_paction_gap_loss_value": [0, 1, 2]}
+    _write_jsonl(samples, [sample])
+    _write_jsonl(
+        ledger,
+        [
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_short_valid_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 1, 2],
+                "target_len": 384,
+                "selected_count": 3,
+                "valid_len": 3,
+                "dense_len": 768,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "uses_gt": False,
+                "uses_teacher": False,
+                "uses_oracle": False,
+                "uses_cache": False,
+                "uses_raw_prediction": False,
+                "uses_checkpoint": False,
+                "diagnostics": {"uniform_visible_fill_count": 0, "source_strategy": "learned_paction_gap_loss_value"},
+            }
+        ],
+    )
+
+    summary = validate_ledger.validate_ledger(
+        sample_jsonl=samples,
+        ledger_jsonl=ledger,
+        strategy="learned_paction_gap_loss_value",
+        expected_target_len=384,
+        require_selected_count=384,
+        require_deployable=True,
+        max_uniform_similarity=0.0,
+    )
+
+    assert summary["full_valid_coverage_count"] == 1
+    assert summary["max_uniform_similarity"] is None
+    assert summary["max_all_uniform_similarity_including_full_coverage"] == 1.0
+
+
+def test_learned_policy_ledger_validator_excludes_high_coverage_rows_from_uniform_gate(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    p_action = [0.9 - 0.01 * idx for idx in range(11)]
+    sample = _sample_row("video_high_coverage_0001|0", p_action, [1] * 11, [1])
+    sample["strategy_selected_positions"] = {"learned_paction_gap_loss_value": list(range(10))}
+    _write_jsonl(samples, [sample])
+    _write_jsonl(
+        ledger,
+        [
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_high_coverage_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": list(range(10)),
+                "target_len": 10,
+                "selected_count": 10,
+                "valid_len": 11,
+                "dense_len": 11,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "uses_gt": False,
+                "uses_teacher": False,
+                "uses_oracle": False,
+                "uses_cache": False,
+                "uses_raw_prediction": False,
+                "uses_checkpoint": False,
+                "diagnostics": {"uniform_visible_fill_count": 0, "source_strategy": "learned_paction_gap_loss_value"},
+            }
+        ],
+    )
+
+    summary = validate_ledger.validate_ledger(
+        sample_jsonl=samples,
+        ledger_jsonl=ledger,
+        strategy="learned_paction_gap_loss_value",
+        expected_target_len=10,
+        require_selected_count=10,
+        require_deployable=True,
+        max_uniform_similarity=0.0,
+    )
+
+    assert summary["full_valid_coverage_count"] == 0
+    assert summary["high_valid_coverage_uniform_exempt_count"] == 1
+    assert summary["max_uniform_similarity"] is None
+    assert summary["max_all_uniform_similarity_including_full_coverage"] == 0.9
+
+
 def test_learned_policy_ledger_validator_requires_paction_positive_provenance(tmp_path: Path) -> None:
     samples = tmp_path / "samples.jsonl"
     ledger = tmp_path / "ledger.jsonl"
