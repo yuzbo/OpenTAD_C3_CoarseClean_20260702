@@ -111,6 +111,26 @@ def _safe_float(value: Any) -> float:
     return out
 
 
+def _clamp_context_radius(value: Any) -> float:
+    return max(DEFAULT_CONTEXT_RADIUS_MIN, min(DEFAULT_CONTEXT_RADIUS_MAX, _safe_float(value)))
+
+
+def _is_score_dilation_seed(values: Sequence[float], valid_mask: Sequence[bool], center: int) -> bool:
+    """Only strict local positive peaks seed context dilation."""
+    if not bool(valid_mask[center]):
+        return False
+    center_score = float(values[center])
+    if center_score <= 0.0:
+        return False
+    neighbours: list[float] = []
+    for pos in (center - 1, center + 1):
+        if 0 <= pos < len(values) and bool(valid_mask[pos]):
+            neighbours.append(float(values[pos]))
+    if not neighbours:
+        return True
+    return center_score > max(neighbours)
+
+
 def score_dilated_frame_values(
     frame_values: Sequence[Any],
     *,
@@ -141,10 +161,7 @@ def score_dilated_frame_values(
     if context_radii is not None:
         if len(context_radii) != length:
             raise ValueError("context_radii length must match frame_values length")
-        learned_radii = [
-            max(0.0, min(DEFAULT_CONTEXT_RADIUS_MAX, _safe_float(item)))
-            for item in context_radii
-        ]
+        learned_radii = [_clamp_context_radius(item) for item in context_radii]
         clean_radii = [max(1, int(math.ceil(max(learned_radii) if learned_radii else 0.0)))]
     else:
         clean_radii = sorted({int(radius) for radius in radii if int(radius) > 0})
@@ -154,7 +171,7 @@ def score_dilated_frame_values(
     inner_radius = min(clean_radii)
     out = list(values)
     for center, center_score in enumerate(values):
-        if not valid_mask[center] or center_score <= 0.0:
+        if not _is_score_dilation_seed(values, valid_mask, center):
             continue
         center_radius = float(learned_radii[center]) if learned_radii is not None else float(max_radius)
         for distance in range(1, int(math.ceil(center_radius)) + 1):

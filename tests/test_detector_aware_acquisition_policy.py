@@ -41,6 +41,7 @@ def _sample_row() -> dict:
         "valid_len": 6,
         "frame_signals": {"p_action": [0.1, 0.8, 0.2, 0.7, 0.3, 0.6]},
         "paction_positive_provenance": _paction_provenance(),
+        "action_target": [0, 1, 0, 1, 0, 1],
         "teacher_utility": {
             "utility_semantics": "signed_detector_utility_v1",
             "frame_utility": [0.0, 0.9, 0.1, 1.0, 0.2, 0.7],
@@ -51,7 +52,8 @@ def _sample_row() -> dict:
 
 
 def test_detector_aware_training_preparation_targets_teacher_utility_not_action_labels() -> None:
-    prepared = train_detector._prepared_rows([_sample_row()], dynamic_budget_buckets=[2, 4], expected_split="training")
+    row = _sample_row()
+    prepared = train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
 
     assert len(prepared) == 1
     assert "detector_utility_target" in prepared[0]
@@ -61,6 +63,14 @@ def test_detector_aware_training_preparation_targets_teacher_utility_not_action_
     assert prepared[0]["dynamic_budget_target"] == 2
     assert prepared[0]["action_target"] == [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
     assert len(prepared[0]["features"][0]) == len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)
+
+
+def test_detector_aware_training_requires_explicit_action_target_for_action_local_loss() -> None:
+    row = _sample_row()
+    row.pop("action_target")
+
+    with pytest.raises(ValueError, match="action_target is required"):
+        train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
 
 
 def test_detector_aware_training_preserves_signed_utility_and_calibrated_gain_target() -> None:
@@ -201,6 +211,7 @@ def test_detector_aware_dynamic_budget_uses_train_global_gain_threshold_not_per_
     high_gain["frame_signals"]["p_action"] = [0.9, 0.8, 0.7, 0.6]
     high_gain["dense_len"] = 4
     high_gain["valid_len"] = 4
+    high_gain["action_target"] = [1, 1, 1, 1]
     high_gain["teacher_utility"] = {
         "utility_semantics": "signed_detector_utility_v1",
         "signed_frame_utility": [0.9, 0.8, 0.7, 0.6],
@@ -210,6 +221,7 @@ def test_detector_aware_dynamic_budget_uses_train_global_gain_threshold_not_per_
     low_gain["frame_signals"]["p_action"] = [0.9, 0.8, 0.7, 0.6]
     low_gain["dense_len"] = 4
     low_gain["valid_len"] = 4
+    low_gain["action_target"] = [1, 1, 1, 1]
     low_gain["teacher_utility"] = {
         "utility_semantics": "signed_detector_utility_v1",
         "signed_frame_utility": [0.2, 0.1, 0.0, 0.0],
@@ -332,6 +344,98 @@ def test_detector_aware_score_dilation_can_use_learned_continuous_context_radius
         18,
     ]
     assert wide[0] > narrow[0]
+
+
+def test_detector_aware_score_dilation_clamps_learned_radius_to_minimum_two() -> None:
+    values = [0.0] * 11
+    values[5] = 10.0
+    valid = [True] * len(values)
+
+    decoded = detector_policy.score_dilated_frame_values(
+        values,
+        valid=valid,
+        context_radii=[0.0] * len(values),
+    )
+
+    assert detector_policy.gas_vt.hard_gap_aware_topk(decoded, valid=valid, budget=5) == [3, 4, 5, 6, 7]
+
+
+def test_detector_aware_score_dilation_uses_local_peaks_not_all_positive_values() -> None:
+    flat_positive = [0.1] * 9
+    valid = [True] * len(flat_positive)
+
+    decoded = detector_policy.score_dilated_frame_values(
+        flat_positive,
+        valid=valid,
+        context_radii=[16.0] * len(flat_positive),
+    )
+
+    assert decoded == pytest.approx(flat_positive)
+
+
+def test_detector_aware_apply_fails_closed_when_checkpoint_lacks_context_radius(monkeypatch) -> None:
+    def legacy_scores(_model, p_action, *, valid, target_budget=None, device="cpu", **_kwargs):
+        return [float(item) for item in p_action], [0.0, 1.0]
+
+    monkeypatch.setattr(apply_detector, "checkpoint_policy_scores", legacy_scores)
+
+    with pytest.raises(ValueError, match="context_radius"):
+        apply_detector._checkpoint_policy_scores_with_context(
+            object(),
+            [0.1, 0.9],
+            valid=[True, True],
+            target_budget=2,
+            device="cpu",
+        )
+
+
+def test_detector_aware_apply_allows_legacy_context_radius_only_with_explicit_opt_in(monkeypatch) -> None:
+    def legacy_scores(_model, p_action, *, valid, target_budget=None, device="cpu", **_kwargs):
+        return [float(item) for item in p_action], [0.0, 1.0]
+
+    monkeypatch.setattr(apply_detector, "checkpoint_policy_scores", legacy_scores)
+
+    frame_values, budget_scores, context_radius = apply_detector._checkpoint_policy_scores_with_context(
+        object(),
+        [0.1, 0.9],
+        valid=[True, True],
+        target_budget=2,
+        device="cpu",
+        allow_legacy_no_context_radius=True,
+        legacy_context_radius=4.0,
+    )
+
+    assert frame_values == [0.1, 0.9]
+    assert budget_scores == [0.0, 1.0]
+    assert context_radius == [4.0, 4.0]
+
+
+def test_detector_aware_context_radius_head_receives_gradient() -> None:
+    if os.name == "nt":
+        pytest.skip("local Windows torch DLL import is not reliable in this workspace")
+    torch = pytest.importorskip("torch")
+    model = detector_policy.DetectorAwareSequentialAcquisitionPolicy(hidden_dim=8, num_layers=1, dropout=0.0)
+    features = torch.zeros((1, 8, len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)), dtype=torch.float32)
+    valid = torch.ones((1, 8), dtype=torch.bool)
+    utility = torch.ones((1, 8), dtype=torch.float32)
+    action = torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]], dtype=torch.float32)
+
+    outputs = model(features, valid, target_budget=torch.tensor([4.0]))
+    losses = detector_policy.detector_aware_training_objective(
+        outputs,
+        detector_utility_target=utility,
+        valid=valid,
+        target_budget=torch.tensor([4.0]),
+        action_target=action,
+    )
+    losses["total_loss"].backward()
+
+    radius_grad = [
+        param.grad.detach().abs().sum().item()
+        for param in model.context_radius_head.parameters()
+        if param.grad is not None
+    ]
+    assert sum(radius_grad) > 0.0
 
 
 def test_detector_aware_objective_penalizes_action_local_holes() -> None:
@@ -472,10 +576,12 @@ def test_detector_aware_checkpoint_apply_scores_each_strategy_with_its_target_bu
         ),
     )
 
-    def fake_checkpoint_scores(_model, p_action, *, valid, target_budget, device):
+    def fake_checkpoint_scores(_model, p_action, *, valid, target_budget, device, return_context_radius=False):
         seen_budgets.append(target_budget)
         frame_values = [float(target_budget or 0) + float(idx) / 100.0 for idx, _ in enumerate(p_action)]
         budget_scores = [0.0, 0.0, 1.0]
+        if return_context_radius:
+            return frame_values, budget_scores, [4.0 for _ in p_action]
         return frame_values, budget_scores
 
     monkeypatch.setattr(apply_detector, "checkpoint_policy_scores", fake_checkpoint_scores)
@@ -528,10 +634,12 @@ def test_detector_aware_checkpoint_apply_conditions_fixed_scores_on_filled_budge
         lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4, 6]}),
     )
 
-    def fake_checkpoint_scores(_model, p_action, *, valid, target_budget, device):
+    def fake_checkpoint_scores(_model, p_action, *, valid, target_budget, device, return_context_radius=False):
         seen_budgets.append(target_budget)
         frame_values = [float(target_budget or 0) + float(idx) / 100.0 for idx, _ in enumerate(p_action)]
         budget_scores = [0.0, 0.0, 1.0]
+        if return_context_radius:
+            return frame_values, budget_scores, [4.0 for _ in p_action]
         return frame_values, budget_scores
 
     monkeypatch.setattr(apply_detector, "checkpoint_policy_scores", fake_checkpoint_scores)

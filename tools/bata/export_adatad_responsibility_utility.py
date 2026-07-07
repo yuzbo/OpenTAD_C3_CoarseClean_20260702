@@ -151,6 +151,9 @@ def _base_samples_by_id(path: str | Path | None) -> dict[str, dict[str, Any]]:
         sample_id = row.get("sample_id")
         if not isinstance(sample_id, str) or not sample_id:
             raise ValueError(f"{path}:{line_no}: sample_id is required")
+        action_target = row.get("action_target")
+        if not isinstance(action_target, Sequence) or isinstance(action_target, (str, bytes, bytearray)):
+            raise ValueError(f"{path}:{line_no}: action_target is required in base_samples_jsonl for Stage2 training")
         if sample_id in samples:
             raise ValueError(f"{path}:{line_no}: duplicate sample_id {sample_id}")
         samples[sample_id] = dict(row)

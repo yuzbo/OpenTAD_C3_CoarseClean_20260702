@@ -166,7 +166,10 @@ def _negative_observation_risk_target(utility: Sequence[float]) -> list[float]:
 def _extract_action_target(row: Mapping[str, Any], *, line_no: int, length: int, gain: Sequence[float]) -> list[float]:
     raw = row.get("action_target")
     if raw is None:
-        return [1.0 if float(item) >= 0.5 else 0.0 for item in gain]
+        raise ValueError(
+            f"line {line_no}: action_target is required for action_local_hole_loss; "
+            "do not infer action labels from detector utility gain"
+        )
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
         raise ValueError(f"line {line_no}: action_target must be a sequence when provided")
     values = [1.0 if float(item) >= 0.5 else 0.0 for item in raw]

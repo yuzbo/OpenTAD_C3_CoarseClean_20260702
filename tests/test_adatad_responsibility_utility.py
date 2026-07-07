@@ -135,6 +135,7 @@ def test_base_paction_samples_must_be_train_split(tmp_path: Path) -> None:
                 "split": "validation",
                 "dense_len": 5,
                 "valid_len": 5,
+                "action_target": [0.0, 1.0, 1.0, 1.0, 0.0],
                 "frame_signals": {"p_action": [0.1, 0.7, 0.4, 0.2, 0.6]},
             }
         ],
@@ -196,6 +197,7 @@ def test_responsibility_export_can_merge_base_paction_samples_for_stage2_trainin
                 "split": "training",
                 "dense_len": 5,
                 "valid_len": 5,
+                "action_target": [0.0, 1.0, 1.0, 1.0, 0.0],
                 "frame_signals": {"p_action": [0.1, 0.7, 0.4, 0.2, 0.6]},
             }
         ],
@@ -224,6 +226,7 @@ def test_responsibility_stage2_policy_summary_preserves_source_semantics(tmp_pat
                 "split": "training",
                 "dense_len": 5,
                 "valid_len": 5,
+                "action_target": [0.0, 1.0, 1.0, 1.0, 0.0],
                 "frame_signals": {"p_action": [0.1, 0.7, 0.4, 0.2, 0.6]},
             }
         ],
@@ -279,6 +282,7 @@ def test_teacher_points_can_generate_responsibility_utility(tmp_path: Path) -> N
                 "split": "training",
                 "dense_len": 12,
                 "valid_len": 12,
+                "action_target": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
                 "gt_segments": [[3.0, 7.0]],
                 "frame_signals": {"p_action": [0.1] * 12},
             }

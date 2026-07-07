@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ from tools.bata import apply_detector_aware_acquisition_policy as detector_apply
 from tools.bata import convert_detector_aware_samples_to_value_transport_ledger as detector_convert
 from tools.bata import run_detector_aware_ledger_pipeline as detector_pipeline
 from tools.bata import validate_detector_aware_policy_ledger as detector_validator
+from tools.bata import validate_c3_detector_aware_adatad_full_train as detector_full_gate
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -129,6 +131,25 @@ def _deploy_ledger_row(checkpoint: Path, sha: str) -> dict:
     }
 
 
+def test_detector_aware_full_train_gate_enforces_exact_selected_count_for_short_valid_rows(tmp_path: Path) -> None:
+    ledger = tmp_path / "short_valid_ledger.jsonl"
+    row = _deploy_ledger_row(tmp_path / "policy.pth", "0" * 64)
+    row["dense_len"] = 12
+    row["valid_len"] = 6
+    row["target_len"] = 8
+    row["selected_positions"] = [0, 1, 2, 3]
+    row["selected_count"] = 4
+    row["diagnostics"]["required_selected_count"] = 6
+    row["diagnostics"]["stage_label"] = "Stage-2 detector-aware offline selector"
+    row["diagnostics"]["end_to_end"] = False
+    _write_jsonl(ledger, [row])
+
+    cfg = SimpleNamespace(detector_aware_ledger_variant="detector_aware_fixed_384")
+
+    with pytest.raises(AssertionError, match="selected count mismatch"):
+        detector_full_gate._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
+
+
 def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "source.jsonl"
     checkpoint = tmp_path / "detector_policy.pth"
@@ -149,10 +170,13 @@ def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp
     monkeypatch.setattr(
         detector_pipeline.apply_policy,
         "checkpoint_policy_scores",
-        lambda _model, p_action, *, valid, target_budget=None, device: detector_pipeline.apply_policy.bootstrap_policy_scores(
-            p_action,
-            valid=valid,
-            dynamic_budget_buckets=[2, 4],
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            *detector_pipeline.apply_policy.bootstrap_policy_scores(
+                p_action,
+                valid=valid,
+                dynamic_budget_buckets=[2, 4],
+            ),
+            [4.0 for _ in p_action],
         ),
     )
 
@@ -287,10 +311,13 @@ def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_fro
     monkeypatch.setattr(
         detector_pipeline.apply_policy,
         "checkpoint_policy_scores",
-        lambda _model, p_action, *, valid, target_budget=None, device: detector_pipeline.apply_policy.bootstrap_policy_scores(
-            p_action,
-            valid=valid,
-            dynamic_budget_buckets=[2, 4],
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            *detector_pipeline.apply_policy.bootstrap_policy_scores(
+                p_action,
+                valid=valid,
+                dynamic_budget_buckets=[2, 4],
+            ),
+            [4.0 for _ in p_action],
         ),
     )
 
@@ -355,7 +382,11 @@ def test_detector_aware_pipeline_rejects_collapsed_dynamic_without_diagnostic_op
     monkeypatch.setattr(
         detector_pipeline.apply_policy,
         "checkpoint_policy_scores",
-        lambda _model, p_action, *, valid, target_budget=None, device: ([float(item) for item in p_action], [1.0, 0.0]),
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            [float(item) for item in p_action],
+            [1.0, 0.0],
+            [4.0 for _ in p_action],
+        ),
     )
 
     with pytest.raises(ValueError, match="dynamic budget ledger is degenerate"):

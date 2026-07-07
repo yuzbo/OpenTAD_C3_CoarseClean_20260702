@@ -7,6 +7,8 @@ from typing import Any
 
 from mmengine.config import Config
 
+from tools.bata import paction_budget_contract
+
 
 CONFIG_DEFAULT = "configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_train.py"
 READY = "C3_DETECTOR_AWARE_LEDGER_FULL_TRAIN_GATE_PASS"
@@ -171,12 +173,19 @@ def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool
             _require(diagnostics.get("stage_label") == "Stage-2 detector-aware offline selector", f"{path}:{line_no}: missing stage label")
             _require(diagnostics.get("end_to_end") is False, f"{path}:{line_no}: end_to_end must be false")
             valid_len = int(row.get("valid_len"))
+            dense_len = int(row.get("dense_len") or valid_len)
             positions = [int(item) for item in row.get("selected_positions", [])]
             _require(positions == sorted(set(positions)), f"{path}:{line_no}: positions must be sorted unique")
             _require(all(0 <= item < valid_len for item in positions), f"{path}:{line_no}: position outside valid_len")
             required = spec["require_selected_count"]
-            if required is not None and valid_len >= 768:
-                _require(len(positions) == int(required), f"{path}:{line_no}: selected count mismatch")
+            expected = paction_budget_contract.expected_selected_count(
+                required,
+                valid_len=valid_len,
+                dense_len=dense_len,
+                allow_short_valid_ratio_count=False,
+            )
+            if expected is not None:
+                _require(len(positions) == int(expected), f"{path}:{line_no}: selected count mismatch")
     _require(rows > 0, f"ledger file has no rows: {path}")
 
 

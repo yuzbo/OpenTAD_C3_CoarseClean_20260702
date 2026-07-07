@@ -175,7 +175,20 @@ def _checkpoint_policy_scores_with_context(
     valid: Sequence[Any],
     target_budget: int,
     device: str,
+    allow_legacy_no_context_radius: bool = False,
+    legacy_context_radius: float | None = None,
 ) -> tuple[list[float], list[float], list[float]]:
+    def legacy_radius(frame_values: Sequence[Any]) -> list[float]:
+        if not bool(allow_legacy_no_context_radius):
+            raise ValueError(
+                "detector-aware checkpoint did not return context_radius; "
+                "retrain with context_radius_head or pass explicit legacy context radius opt-in"
+            )
+        if legacy_context_radius is None:
+            raise ValueError("legacy_context_radius is required when allow_legacy_no_context_radius=true")
+        radius = detector_policy._clamp_context_radius(float(legacy_context_radius))
+        return [float(radius)] * len(frame_values)
+
     try:
         result = checkpoint_policy_scores(
             model,
@@ -195,11 +208,11 @@ def _checkpoint_policy_scores_with_context(
             target_budget=target_budget,
             device=device,
         )
-        context_radius = [float(detector_policy.DEFAULT_CONTEXT_RADIUS_MAX)] * len(frame_values)
+        context_radius = legacy_radius(frame_values)
         return list(frame_values), list(budget_scores), context_radius
     if len(result) == 2:
         frame_values, budget_scores = result
-        context_radius = [float(detector_policy.DEFAULT_CONTEXT_RADIUS_MAX)] * len(frame_values)
+        context_radius = legacy_radius(frame_values)
         return list(frame_values), list(budget_scores), context_radius
     frame_values, budget_scores, context_radius = result
     return list(frame_values), list(budget_scores), list(context_radius)
@@ -214,7 +227,9 @@ def _checkpoint_budget_conditioned_scores(
     fixed_budgets: Sequence[int],
     dynamic_budget_buckets: Sequence[int],
     device: str,
-) -> tuple[list[float], list[float], dict[str, list[float]], dict[str, list[float]], dict[str, int], int]:
+    allow_legacy_no_context_radius: bool = False,
+    legacy_context_radius: float | None = None,
+) -> tuple[list[float], list[float], dict[str, list[float]], dict[str, list[float]], dict[str, int], int, str]:
     valid_len = int(row.get("valid_len") or row.get("dense_len") or len(p_action))
     initial_budget = max([int(item) for item in dynamic_budget_buckets] or [valid_len])
     _initial_frame_values, budget_scores, _initial_context_radius = _checkpoint_policy_scores_with_context(
@@ -223,6 +238,8 @@ def _checkpoint_budget_conditioned_scores(
         valid=valid,
         target_budget=initial_budget,
         device=device,
+        allow_legacy_no_context_radius=bool(allow_legacy_no_context_radius),
+        legacy_context_radius=legacy_context_radius,
     )
     dynamic_budget = base_policy.decode_budget_from_scores(
         budget_scores,
@@ -246,6 +263,8 @@ def _checkpoint_budget_conditioned_scores(
             valid=valid,
             target_budget=strategy_budget,
             device=device,
+            allow_legacy_no_context_radius=bool(allow_legacy_no_context_radius),
+            legacy_context_radius=legacy_context_radius,
         )
         frame_values_by_strategy[strategy_name] = frame_values
         context_radii_by_strategy[strategy_name] = context_radius
@@ -256,11 +275,22 @@ def _checkpoint_budget_conditioned_scores(
         valid=valid,
         target_budget=dynamic_budget,
         device=device,
+        allow_legacy_no_context_radius=bool(allow_legacy_no_context_radius),
+        legacy_context_radius=legacy_context_radius,
     )
     frame_values_by_strategy[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = dynamic_frame_values
     context_radii_by_strategy[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = dynamic_context_radius
     target_budgets[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = int(dynamic_budget)
-    return dynamic_frame_values, budget_scores, frame_values_by_strategy, context_radii_by_strategy, target_budgets, int(initial_budget)
+    context_radius_source = "legacy_fixed_explicit" if bool(allow_legacy_no_context_radius) else "checkpoint_context_radius_head"
+    return (
+        dynamic_frame_values,
+        budget_scores,
+        frame_values_by_strategy,
+        context_radii_by_strategy,
+        target_budgets,
+        int(initial_budget),
+        context_radius_source,
+    )
 
 
 def run_policy_application(
@@ -278,6 +308,8 @@ def run_policy_application(
     max_unselected_hole: int | None = None,
     source_jsonl_for_hash: str | Path | None = None,
     require_point_responsibility_utility: bool = False,
+    allow_legacy_no_context_radius: bool = False,
+    legacy_context_radius: float | None = None,
 ) -> dict[str, Any]:
     rows = _read_jsonl(input_jsonl)
     if checkpoint_path is None and not allow_bootstrap_for_tests:
@@ -327,6 +359,7 @@ def run_policy_application(
             )
             frame_values_by_strategy = None
             context_radii_by_strategy = None
+            context_radius_source = "bootstrap_no_context_radius"
             apply_time_target_budgets: dict[str, int] = {}
             budget_score_target_budget = None
         else:
@@ -337,6 +370,7 @@ def run_policy_application(
                 context_radii_by_strategy,
                 apply_time_target_budgets,
                 budget_score_target_budget,
+                context_radius_source,
             ) = _checkpoint_budget_conditioned_scores(
                 checkpoint_model,
                 row,
@@ -345,6 +379,8 @@ def run_policy_application(
                 fixed_budgets=fixed_budgets,
                 dynamic_budget_buckets=dynamic_budget_buckets,
                 device=device,
+                allow_legacy_no_context_radius=bool(allow_legacy_no_context_radius),
+                legacy_context_radius=legacy_context_radius,
             )
         enriched = detector_policy.add_detector_aware_decision_to_sample_row(
             row,
@@ -366,6 +402,7 @@ def run_policy_application(
             enriched["detector_aware_policy"]["apply_time_target_budgets"] = apply_time_target_budgets
             enriched["detector_aware_policy"]["budget_score_target_budget"] = budget_score_target_budget
             enriched["detector_aware_policy"]["budget_conditioning_rule"] = "checkpoint_two_pass_strategy_specific_target_budget"
+            enriched["detector_aware_policy"]["context_radius_source"] = context_radius_source
         enriched["detector_aware_policy"]["frame_value_summary"] = {
             "min": min(frame_values) if frame_values else None,
             "max": max(frame_values) if frame_values else None,
@@ -395,6 +432,8 @@ def run_policy_application(
         "checkpoint_sha256": checkpoint_sha256,
         "policy_checkpoint_sha256": checkpoint_sha256,
         "require_point_responsibility_utility": bool(require_point_responsibility_utility),
+        "allow_legacy_no_context_radius": bool(allow_legacy_no_context_radius),
+        "legacy_context_radius": None if legacy_context_radius is None else float(detector_policy._clamp_context_radius(legacy_context_radius)),
         "source_jsonl_sha256": source_jsonl_sha256,
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
         "strict_deploy_source": bool(strict_deploy_source),
@@ -428,6 +467,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--strict-deploy-source", action="store_true")
     parser.add_argument("--max-unselected-hole", type=int)
     parser.add_argument("--require-point-responsibility-utility", action="store_true")
+    parser.add_argument("--allow-legacy-no-context-radius", action="store_true")
+    parser.add_argument("--legacy-context-radius", type=float)
     args = parser.parse_args(argv)
     summary = run_policy_application(
         args.input_jsonl,
@@ -442,6 +483,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         allow_bootstrap_for_tests=False,
         max_unselected_hole=args.max_unselected_hole,
         require_point_responsibility_utility=bool(args.require_point_responsibility_utility),
+        allow_legacy_no_context_radius=bool(args.allow_legacy_no_context_radius),
+        legacy_context_radius=args.legacy_context_radius,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0
