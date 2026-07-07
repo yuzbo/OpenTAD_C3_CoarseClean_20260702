@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,30 @@ def test_learned_score_decoder_enforces_max_hole_without_uniform_scaffold() -> N
     assert _max_unselected_hole(constrained, valid_len=len(frame_values)) <= 3
     assert 8 in constrained
     assert constrained != [0, 2, 4, 6, 8, 10]
+
+
+def test_learned_score_gap_repair_scales_to_dense_stage2_apply_case() -> None:
+    valid_len = 768
+    budget = 384
+    max_hole = 96
+    frame_values = [
+        1.0 - float(idx) * 1e-6 if idx < budget else 0.1 - float(idx) * 1e-8
+        for idx in range(valid_len)
+    ]
+
+    started = time.perf_counter()
+    constrained = policy.constrained_topk(
+        frame_values,
+        valid=[True] * valid_len,
+        budget=budget,
+        max_unselected_hole=max_hole,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert len(constrained) == budget
+    assert _max_unselected_hole(constrained, valid_len=valid_len) <= max_hole
+    assert constrained != list(range(budget))
+    assert elapsed < 1.0
 
 
 def test_policy_row_records_learned_score_constrained_gap_decoder() -> None:
