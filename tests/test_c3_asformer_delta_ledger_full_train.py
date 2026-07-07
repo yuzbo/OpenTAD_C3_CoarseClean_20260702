@@ -11,6 +11,7 @@ EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_official_asformer_del
 VALIDATOR = ROOT / "tools" / "bata" / "validate_c3_asformer_delta_ledger_full_train.py"
 LAUNCHER = ROOT / "scripts" / "run_c3_asformer_delta_ledger_adatad_full_train_gpu1.sh"
 PACTION_LAUNCHER = ROOT / "scripts" / "run_c3_paction_learned_policy_adatad_full_train_gpu1.sh"
+PACTION_LATTICE_LAUNCHER = ROOT / "scripts" / "run_c3_paction_lattice_replacement_adatad_full_train_gpu1.sh"
 PACTION_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_paction_learned_ledger_adatad_full_train.py"
 PACTION_EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_paction_learned_ledger_adatad_full_train_exec.py"
 PACTION_VALIDATOR = ROOT / "tools" / "bata" / "validate_c3_paction_learned_adatad_full_train.py"
@@ -229,11 +230,38 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
     assert "ALLOW_C3_PACTION_LEARNED_ADATAD_FULLTRAIN" in text
 
 
+def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_adatad_gate():
+    text = PACTION_LATTICE_LAUNCHER.read_text(encoding="utf-8")
+
+    assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
+    assert 'ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN="${ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN:-0}"' in text
+    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
+    assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+    assert 'PACTION_POLICY_CHECKPOINT must point to a trained learned p_action policy checkpoint' in text
+    assert "run_paction_lattice_replacement_ledger_pipeline.py" in text
+    assert "validate_paction_lattice_replacement_ledger.py" in text
+    assert "validate_c3_paction_learned_adatad_full_train.py" in text
+    assert "paction_lattice_replace_score_only_move50 paction_lattice_replace_score_only_move75" in text
+    assert "--variants ${PACTION_LATTICE_ADATAD_VARIANTS}" in text
+    assert "--fixed-budget \"${PACTION_LATTICE_FIXED_BUDGET}\"" in text
+    assert "samples.paction_lattice_replacement.jsonl" in text
+    assert "value_transport_ledger_${variant}.jsonl" in text
+    assert 'C3_PACTION_LEDGER_SOURCE="learned_paction_gap_loss_policy_checkpoint"' in text
+    assert 'C3_PACTION_LEDGER_CONFIG_HASH="${PACTION_POLICY_CHECKPOINT_SHA256}"' in text
+    assert "c3_paction_learned_ledger_adatad_full_train_exec.py" in text
+    assert "formal full train must run inside a Slurm allocation/step" in text
+    assert "tools/train.py" in text
+    assert "tools/test.py" not in text
+
+
 def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dynamic(monkeypatch):
     expected = {
         "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value"),
         "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value"),
         "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget"),
+        "paction_lattice_replace_score_only_move50": (384, 384, "paction_lattice_replace_score_only_move50"),
+        "paction_lattice_replace_score_only_move75": (384, 384, "paction_lattice_replace_score_only_move75"),
+        "paction_lattice_replace_score_only_no_protect": (384, 384, "paction_lattice_replace_score_only_no_protect"),
     }
     for variant, (target_len, required_count, strategy) in expected.items():
         monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", variant)

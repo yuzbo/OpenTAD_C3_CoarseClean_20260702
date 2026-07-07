@@ -28,6 +28,39 @@ VARIANT_SPECS = {
         source="learned_paction_gap_loss_policy_checkpoint",
         config_hash="c3_paction_learned_gap_loss_dynamic_budget_no_uniform_v1",
     ),
+    "paction_lattice_replace_score_only_move50": dict(
+        target_len=384,
+        require_selected_count=384,
+        strategy="paction_lattice_replace_score_only_move50",
+        ledger_name="paction_lattice_replace_score_only_move50",
+        source="learned_paction_gap_loss_policy_checkpoint",
+        config_hash="c3_paction_lattice_replace_score_only_move50_v1",
+        selector_decoder="score_only_lattice_replacement_v1",
+        geometry_constraint="score_only_local_lattice_replacement_move50",
+        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+    ),
+    "paction_lattice_replace_score_only_move75": dict(
+        target_len=384,
+        require_selected_count=384,
+        strategy="paction_lattice_replace_score_only_move75",
+        ledger_name="paction_lattice_replace_score_only_move75",
+        source="learned_paction_gap_loss_policy_checkpoint",
+        config_hash="c3_paction_lattice_replace_score_only_move75_v1",
+        selector_decoder="score_only_lattice_replacement_v1",
+        geometry_constraint="score_only_local_lattice_replacement_move75",
+        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+    ),
+    "paction_lattice_replace_score_only_no_protect": dict(
+        target_len=384,
+        require_selected_count=384,
+        strategy="paction_lattice_replace_score_only_no_protect",
+        ledger_name="paction_lattice_replace_score_only_no_protect",
+        source="learned_paction_gap_loss_policy_checkpoint",
+        config_hash="c3_paction_lattice_replace_score_only_no_protect_v1",
+        selector_decoder="score_only_lattice_replacement_v1",
+        geometry_constraint="score_only_local_lattice_replacement_no_protect",
+        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+    ),
 }
 
 
@@ -84,10 +117,12 @@ paction_require_selected_count = _variant["require_selected_count"]
 
 experiment_scope = dict(
     route="C3_MAINLINE_OPTIMIZATION",
-    route_variant="C3_PACTION_LEARNED_STRICT_LEDGER",
+    route_variant=_variant.get("route_variant", "C3_PACTION_LEARNED_STRICT_LEDGER"),
     stage="paction_learned_ledger_original_adatad_full_train",
     selector_source="learned_paction_gap_loss_policy_checkpoint",
+    selector_decoder=_variant.get("selector_decoder", "learned_paction_gap_loss_value_decoder"),
     selection_strategy=paction_ledger_strategy,
+    selection_geometry_constraint=_variant.get("geometry_constraint", "learned_score_topk_or_dynamic_budget_no_manual_slots"),
     paction_ledger_variant=paction_ledger_variant,
     detector_stack="original_adatad_actionformer_adapter",
     changes_input_sampling=True,
