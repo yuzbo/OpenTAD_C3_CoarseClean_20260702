@@ -188,6 +188,14 @@ def _iqr(values: Sequence[int]) -> float:
     return _median(upper) - _median(lower)
 
 
+def _count_histogram(values: Sequence[int]) -> dict[str, int]:
+    histogram: dict[str, int] = {}
+    for value in values:
+        key = str(int(value))
+        histogram[key] = histogram.get(key, 0) + 1
+    return dict(sorted(histogram.items(), key=lambda item: int(item[0])))
+
+
 def _entropy(values: Sequence[int]) -> float:
     if not values:
         return 0.0
@@ -349,6 +357,8 @@ def validate_ledger(
     action_bin_selected = 0
     action_bin_total = 0
     spearman_values: list[float] = []
+    p_action_topk_jaccards: list[float] = []
+    p_action_topk_overlap_ratios: list[float] = []
     hole_rows: list[dict[str, Any]] = []
     total_uniform_fill = 0
     for line_no, row in enumerate(ledger_rows, start=1):
@@ -488,6 +498,21 @@ def validate_ledger(
             corr = _spearman(p_values[: len(selected_mask)], selected_mask)
             if corr is not None:
                 spearman_values.append(float(corr))
+            if selected_mask and selected:
+                topk_count = min(len(selected), len(selected_mask))
+                ranked = sorted(
+                    range(len(selected_mask)),
+                    key=lambda idx: (float(p_values[idx]), -int(idx)),
+                    reverse=True,
+                )[:topk_count]
+                topk_set = {int(idx) for idx in ranked}
+                selected_set = {int(idx) for idx in selected if 0 <= int(idx) < len(selected_mask)}
+                intersection = len(selected_set.intersection(topk_set))
+                union = len(selected_set.union(topk_set))
+                if union > 0:
+                    p_action_topk_jaccards.append(intersection / float(union))
+                if topk_count > 0:
+                    p_action_topk_overlap_ratios.append(intersection / float(topk_count))
     boundary_support = None if boundary_total <= 0 else boundary_hits / float(boundary_total)
     boundary_support_by_radius = {
         int(radius): None if boundary_total <= 0 else hits / float(boundary_total)
@@ -551,6 +576,7 @@ def validate_ledger(
         "min_selected_count": min(selected_counts),
         "max_selected_count": max(selected_counts),
         "mean_selected_count": sum(selected_counts) / float(len(selected_counts)),
+        "selected_count_histogram": _count_histogram(selected_counts),
         "max_gap": int(max_gap),
         "p95_gap": p95_gap,
         "max_unselected_hole": int(max_hole),
@@ -563,6 +589,8 @@ def validate_ledger(
         "action_positive_coverage": action_coverage,
         "action_interior_bin_coverage": action_interior_bin_coverage,
         "p_action_rank_spearman": _mean(spearman_values),
+        "p_action_topk_jaccard": _mean(p_action_topk_jaccards),
+        "p_action_topk_overlap_ratio": _mean(p_action_topk_overlap_ratios),
         "dynamic_budget_entropy": _entropy(selected_counts),
         "dynamic_budget_iqr": _iqr(selected_counts),
         "max_hole_by_video_top10": sorted(
@@ -582,6 +610,7 @@ def validate_ledger(
         "gap_metric_definition": "endpoint_inclusive_selected_stride_gap",
         "hole_metric_definition": "max_contiguous_unselected_dense_positions_between_selected_frames",
         "uniform_similarity_definition": "intersection_over_selected_count_against_round_i_times_valid_len_over_k",
+        "p_action_topk_metric_definition": "selected_set_overlap_with_same_k_top_p_action_frames",
     }
     for radius, value in boundary_support_by_radius.items():
         summary[f"boundary_support_r{int(radius)}"] = value

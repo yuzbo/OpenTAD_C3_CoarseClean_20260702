@@ -124,6 +124,7 @@ def add_detector_aware_decision_to_sample_row(
     row: Mapping[str, Any],
     *,
     frame_values: Sequence[Any],
+    frame_values_by_strategy: Mapping[str, Sequence[Any]] | None = None,
     fixed_budgets: Sequence[int] = (384, 768),
     dynamic_budget_scores: Sequence[Any],
     dynamic_budget_buckets: Sequence[Any] = DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS,
@@ -139,11 +140,12 @@ def add_detector_aware_decision_to_sample_row(
     dense_len = int(out.get("dense_len") or len(frame_values))
     valid = [idx < valid_len for idx in range(len(frame_values))]
     strategies = dict(out.get("strategy_selected_positions") or {})
+    strategy_frame_values = dict(frame_values_by_strategy or {})
     for strategy_name in (DETECTOR_AWARE_FIXED_384_STRATEGY, DETECTOR_AWARE_FIXED_768_STRATEGY):
         requested = _strategy_budget_for_name(strategy_name, fixed_budgets)
         budget = base_policy.short_valid_ratio_budget(requested, valid_len=valid_len, dense_len=dense_len)
         strategies[strategy_name] = gas_vt.hard_gap_aware_topk(
-            frame_values,
+            strategy_frame_values.get(strategy_name, frame_values),
             valid=valid,
             budget=budget,
             max_unselected_hole=max_unselected_hole,
@@ -155,7 +157,7 @@ def add_detector_aware_decision_to_sample_row(
     )
     calibration = _dynamic_budget_calibration_metadata(dynamic_gain_calibration)
     strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = gas_vt.hard_gap_aware_topk(
-        frame_values,
+        strategy_frame_values.get(DETECTOR_AWARE_DYNAMIC_STRATEGY, frame_values),
         valid=valid,
         budget=dynamic_budget,
         max_unselected_hole=max_unselected_hole,
@@ -178,6 +180,7 @@ def add_detector_aware_decision_to_sample_row(
         "max_unselected_hole": None if max_unselected_hole is None else int(max_unselected_hole),
         "uses_uniform_fill": False,
         "uses_uniform_scaffold": False,
+        "budget_conditioned_frame_values": bool(frame_values_by_strategy),
         "end_to_end": False,
         "deploy_claim_allowed": False,
         "runtime_flops_claim_allowed": False,

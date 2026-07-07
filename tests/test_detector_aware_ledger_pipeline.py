@@ -136,7 +136,7 @@ def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp
     monkeypatch.setattr(
         detector_pipeline.apply_policy,
         "checkpoint_policy_scores",
-        lambda _model, p_action, *, valid, device: detector_pipeline.apply_policy.bootstrap_policy_scores(
+        lambda _model, p_action, *, valid, target_budget=None, device: detector_pipeline.apply_policy.bootstrap_policy_scores(
             p_action,
             valid=valid,
             dynamic_budget_buckets=[2, 4],
@@ -198,7 +198,7 @@ def test_detector_aware_pipeline_rejects_collapsed_dynamic_without_diagnostic_op
     monkeypatch.setattr(
         detector_pipeline.apply_policy,
         "checkpoint_policy_scores",
-        lambda _model, p_action, *, valid, device: ([float(item) for item in p_action], [1.0, 0.0]),
+        lambda _model, p_action, *, valid, target_budget=None, device: ([float(item) for item in p_action], [1.0, 0.0]),
     )
 
     with pytest.raises(ValueError, match="dynamic budget ledger is degenerate"):

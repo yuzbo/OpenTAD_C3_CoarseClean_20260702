@@ -109,6 +109,59 @@ def test_gas_vt_apply_emits_deploy_safe_metadata_and_strips_invisible_payload(tm
     assert meta["source_jsonl_sha256"] == summary["source_jsonl_sha256"]
 
 
+def test_gas_vt_checkpoint_apply_scores_each_strategy_with_its_target_budget(tmp_path: Path, monkeypatch) -> None:
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.gas_vt.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"fake checkpoint")
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 8,
+                "valid_len": 8,
+                "frame_signals": {"p_action": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]},
+                "paction_positive_provenance": _provenance(),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    seen_budgets: list[int | None] = []
+
+    monkeypatch.setattr(
+        apply_gas_vt,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4, 6]}),
+    )
+
+    def fake_checkpoint_scores(_model, p_action, *, valid, target_budget, device):
+        seen_budgets.append(target_budget)
+        frame_values = [float(target_budget or 0) + float(idx) / 100.0 for idx, _ in enumerate(p_action)]
+        budget_scores = [0.0, 0.0, 1.0]
+        return frame_values, budget_scores
+
+    monkeypatch.setattr(apply_gas_vt, "checkpoint_policy_scores", fake_checkpoint_scores)
+
+    apply_gas_vt.run_policy_application(
+        input_jsonl,
+        output_jsonl,
+        fixed_budgets=(3, 5),
+        checkpoint_path=checkpoint,
+        device="cpu",
+    )
+    row = _read_jsonl(output_jsonl)[0]
+
+    assert seen_budgets == [6, 3, 5, 6]
+    assert row["gas_vt_policy"]["apply_time_target_budgets"] == {
+        "gas_vt_fixed_384": 3,
+        "gas_vt_fixed_768": 5,
+        "gas_vt_dynamic": 6,
+    }
+    assert row["gas_vt_policy"]["budget_conditioning_rule"] == "checkpoint_two_pass_strategy_specific_target_budget"
+    assert row["gas_vt_policy"]["budget_conditioned_frame_values"] is True
+
+
 def test_gas_vt_apply_rejects_gt_payload_in_strict_source(tmp_path: Path) -> None:
     input_jsonl = tmp_path / "samples.jsonl"
     output_jsonl = tmp_path / "samples.gas_vt.jsonl"

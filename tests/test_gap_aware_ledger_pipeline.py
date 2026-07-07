@@ -54,7 +54,7 @@ def test_gap_aware_pipeline_generates_three_named_gas_vt_ledgers_with_separated_
     monkeypatch.setattr(
         gas_pipeline.apply_policy,
         "checkpoint_policy_scores",
-        lambda _model, p_action, *, valid, device: gas_pipeline.apply_policy.bootstrap_policy_scores(
+        lambda _model, p_action, *, valid, target_budget=None, device: gas_pipeline.apply_policy.bootstrap_policy_scores(
             p_action,
             valid=valid,
             dynamic_budget_buckets=[2, 4],
@@ -183,6 +183,9 @@ def test_validator_reports_gas_vt_extra_metrics_and_writes_csv(tmp_path: Path) -
     assert summary["boundary_bracket_support@r1"] == 1.0
     assert summary["action_interior_bin_coverage"] > 0.0
     assert summary["p_action_rank_spearman"] > 0.0
+    assert summary["selected_count_histogram"] == {"7": 1}
+    assert summary["p_action_topk_jaccard"] == pytest.approx(1.0)
+    assert summary["p_action_topk_overlap_ratio"] == pytest.approx(1.0)
     assert summary["dynamic_budget_entropy"] == 0.0
     assert summary["dynamic_budget_iqr"] == 0.0
     assert summary["meanK_matched_uniform_similarity"] == summary["mean_uniform_similarity"]

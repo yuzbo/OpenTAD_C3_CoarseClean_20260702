@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 from tools.bata import apply_gap_aware_acquisition_policy as gas_apply
 from tools.bata import detector_aware_acquisition_policy as detector_policy
 from tools.bata import detector_deploy_leakage
+from tools.bata import paction_acquisition_policy as base_policy
 from tools.bata import paction_source_samples
 
 
@@ -118,18 +119,81 @@ def checkpoint_policy_scores(
     p_action: Sequence[Any],
     *,
     valid: Sequence[Any] | None = None,
+    target_budget: int | None = None,
     device: str = "cuda",
 ) -> tuple[list[float], list[float]]:
     import torch
 
-    features = detector_policy.build_detector_aware_feature_matrix(p_action, valid=valid)
+    features = detector_policy.build_detector_aware_feature_matrix(p_action, valid=valid, target_budget=target_budget)
     with torch.no_grad():
         feature_tensor = torch.tensor([features], dtype=torch.float32, device=device)
         valid_tensor = None if valid is None else torch.tensor([list(valid)], dtype=torch.bool, device=device)
-        outputs = model(feature_tensor, valid_tensor)
+        budget_tensor = None if target_budget is None else torch.tensor([int(target_budget)], dtype=torch.long, device=device)
+        outputs = model(feature_tensor, valid_tensor, target_budget=budget_tensor)
     frame_values = [float(item) for item in outputs["frame_value"][0].detach().cpu().tolist()]
     budget_scores = [float(item) for item in outputs["budget_logits"][0].detach().cpu().tolist()]
     return frame_values, budget_scores
+
+
+def _effective_strategy_budget(row: Mapping[str, Any], requested_budget: int, *, frame_len: int) -> int:
+    valid_len = int(row.get("valid_len") or row.get("dense_len") or frame_len)
+    dense_len = int(row.get("dense_len") or frame_len)
+    return base_policy.short_valid_ratio_budget(int(requested_budget), valid_len=valid_len, dense_len=dense_len)
+
+
+def _checkpoint_budget_conditioned_scores(
+    model: detector_policy.DetectorAwareSequentialAcquisitionPolicy,
+    row: Mapping[str, Any],
+    p_action: Sequence[Any],
+    *,
+    valid: Sequence[Any],
+    fixed_budgets: Sequence[int],
+    dynamic_budget_buckets: Sequence[int],
+    device: str,
+) -> tuple[list[float], list[float], dict[str, list[float]], dict[str, int], int]:
+    valid_len = int(row.get("valid_len") or row.get("dense_len") or len(p_action))
+    initial_budget = max([int(item) for item in dynamic_budget_buckets] or [valid_len])
+    _initial_frame_values, budget_scores = checkpoint_policy_scores(
+        model,
+        p_action,
+        valid=valid,
+        target_budget=initial_budget,
+        device=device,
+    )
+    dynamic_budget = base_policy.decode_budget_from_scores(
+        budget_scores,
+        dynamic_budget_buckets,
+        valid_len=valid_len,
+    )
+    frame_values_by_strategy: dict[str, list[float]] = {}
+    target_budgets: dict[str, int] = {}
+    fixed_strategy_names = (
+        detector_policy.DETECTOR_AWARE_FIXED_384_STRATEGY,
+        detector_policy.DETECTOR_AWARE_FIXED_768_STRATEGY,
+    )
+    fixed_values = [int(item) for item in fixed_budgets]
+    for strategy_idx, strategy_name in enumerate(fixed_strategy_names):
+        requested = fixed_values[strategy_idx] if strategy_idx < len(fixed_values) else fixed_values[-1]
+        strategy_budget = _effective_strategy_budget(row, requested, frame_len=len(p_action))
+        frame_values, _unused_budget_scores = checkpoint_policy_scores(
+            model,
+            p_action,
+            valid=valid,
+            target_budget=strategy_budget,
+            device=device,
+        )
+        frame_values_by_strategy[strategy_name] = frame_values
+        target_budgets[strategy_name] = int(strategy_budget)
+    dynamic_frame_values, _unused_budget_scores = checkpoint_policy_scores(
+        model,
+        p_action,
+        valid=valid,
+        target_budget=dynamic_budget,
+        device=device,
+    )
+    frame_values_by_strategy[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = dynamic_frame_values
+    target_budgets[detector_policy.DETECTOR_AWARE_DYNAMIC_STRATEGY] = int(dynamic_budget)
+    return dynamic_frame_values, budget_scores, frame_values_by_strategy, target_budgets, int(initial_budget)
 
 
 def run_policy_application(
@@ -189,11 +253,29 @@ def run_policy_application(
                 valid=valid,
                 dynamic_budget_buckets=dynamic_budget_buckets,
             )
+            frame_values_by_strategy = None
+            apply_time_target_budgets: dict[str, int] = {}
+            budget_score_target_budget = None
         else:
-            frame_values, budget_scores = checkpoint_policy_scores(checkpoint_model, p_action, valid=valid, device=device)
+            (
+                frame_values,
+                budget_scores,
+                frame_values_by_strategy,
+                apply_time_target_budgets,
+                budget_score_target_budget,
+            ) = _checkpoint_budget_conditioned_scores(
+                checkpoint_model,
+                row,
+                p_action,
+                valid=valid,
+                fixed_budgets=fixed_budgets,
+                dynamic_budget_buckets=dynamic_budget_buckets,
+                device=device,
+            )
         enriched = detector_policy.add_detector_aware_decision_to_sample_row(
             row,
             frame_values=frame_values,
+            frame_values_by_strategy=frame_values_by_strategy,
             fixed_budgets=fixed_budgets,
             dynamic_budget_scores=budget_scores,
             dynamic_budget_buckets=dynamic_budget_buckets,
@@ -205,6 +287,10 @@ def run_policy_application(
             source_jsonl_sha256=source_jsonl_sha256,
         )
         enriched["detector_aware_policy"]["p_action_provenance"] = p_action_provenance
+        if checkpoint_model is not None:
+            enriched["detector_aware_policy"]["apply_time_target_budgets"] = apply_time_target_budgets
+            enriched["detector_aware_policy"]["budget_score_target_budget"] = budget_score_target_budget
+            enriched["detector_aware_policy"]["budget_conditioning_rule"] = "checkpoint_two_pass_strategy_specific_target_budget"
         enriched["detector_aware_policy"]["frame_value_summary"] = {
             "min": min(frame_values) if frame_values else None,
             "max": max(frame_values) if frame_values else None,
@@ -242,6 +328,11 @@ def run_policy_application(
         "end_to_end": False,
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
+        "budget_conditioning_rule": (
+            "bootstrap_max_dynamic_budget"
+            if checkpoint_path is None
+            else "checkpoint_two_pass_strategy_specific_target_budget"
+        ),
     }
     if summary_json is not None:
         _write_json(summary_json, summary)
