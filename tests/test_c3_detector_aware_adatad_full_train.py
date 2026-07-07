@@ -93,7 +93,10 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert "explicit GPU0 override accepted for Stage-2" in text
     assert "Set ALLOW_C3_DETECTOR_AWARE_GPU0=1 only when GPU0 is explicitly assigned to this route." in text
     assert "detector_teacher_utility.py" in text
+    assert "export_dense_adatad_teacher_points.py" in text
     assert "C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL" in text
+    assert "C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON" in text
+    assert "--generator-manifest-json" in text
     assert "C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON" in text
     assert "teacher_utility_export.summary.json" in text
     assert "validate_teacher_utility_export_evidence" in text

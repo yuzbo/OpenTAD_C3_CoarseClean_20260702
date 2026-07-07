@@ -85,6 +85,7 @@ PRECHECK_ONLY=1 bash scripts/run_c3_detector_aware_selector_adatad_full_train_gp
   --stage2-ledger-root "${LEDGER_ROOT}" \
   --require-stage2-ledgers \
   --require-stage2-teacher-evidence \
+  --require-stage2-generator-manifest \
   --require-stage2-policy-evidence \
   --stage2-teacher-summary-json "${C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON}" \
   --stage2-teacher-checkpoint-path "${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH}" \

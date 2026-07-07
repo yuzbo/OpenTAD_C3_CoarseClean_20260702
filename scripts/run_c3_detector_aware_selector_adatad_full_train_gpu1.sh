@@ -44,6 +44,7 @@ CONFIG="${CONFIG:-configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_tra
 EXEC_CONFIG="${EXEC_CONFIG:-configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_train_exec.py}"
 CONFIG_VALIDATOR="${CONFIG_VALIDATOR:-tools/bata/validate_c3_detector_aware_adatad_full_train.py}"
 TEACHER_UTILITY_EXPORTER="${TEACHER_UTILITY_EXPORTER:-tools/bata/detector_teacher_utility.py}"
+TEACHER_POINTS_EXPORTER="${TEACHER_POINTS_EXPORTER:-tools/bata/export_dense_adatad_teacher_points.py}"
 POLICY_TRAINER="${POLICY_TRAINER:-tools/bata/train_detector_aware_acquisition_policy.py}"
 POLICY_APPLIER="${POLICY_APPLIER:-tools/bata/apply_detector_aware_acquisition_policy.py}"
 LEDGER_PIPELINE="${LEDGER_PIPELINE:-tools/bata/run_detector_aware_ledger_pipeline.py}"
@@ -70,6 +71,7 @@ else
   C3_DETECTOR_AWARE_TEST_SOURCE_JSONL="${C3_DETECTOR_AWARE_TEST_SOURCE_JSONL:-${ROUTE_ROOT}/source/test.samples.jsonl}"
 fi
 C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL="${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL:-}"
+C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON="${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON:-}"
 C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH="${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH:-}"
 C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH="${C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH:-}"
 C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON="${C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY_JSON:-}"
@@ -109,6 +111,7 @@ require_file "${CONFIG}"
 require_file "${EXEC_CONFIG}"
 require_file "${CONFIG_VALIDATOR}"
 require_file "${TEACHER_UTILITY_EXPORTER}"
+require_file "${TEACHER_POINTS_EXPORTER}"
 require_file "${POLICY_TRAINER}"
 require_file "${POLICY_APPLIER}"
 require_file "${LEDGER_PIPELINE}"
@@ -119,6 +122,14 @@ require_file "${C3_DETECTOR_AWARE_VAL_SOURCE_JSONL}"
 require_file "${C3_DETECTOR_AWARE_TEST_SOURCE_JSONL}"
 if [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" ]]; then
   require_file "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}"
+  if [[ -z "${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON}" ]]; then
+    dense_points_manifest_candidate="${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL%.jsonl}.manifest.json"
+    if [[ -f "${dense_points_manifest_candidate}" ]]; then
+      C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON="${dense_points_manifest_candidate}"
+    fi
+  fi
+  [[ -n "${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON}" ]] || fail "C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON is required with dense teacher points"
+  require_file "${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON}"
   require_file "${C3_DETECTOR_AWARE_BASE_TRAIN_SOURCE_JSONL}"
   [[ -n "${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH}" ]] || fail "C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH is required with dense teacher points"
   [[ -n "${C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH}" ]] || fail "C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH is required with dense teacher points"
@@ -145,6 +156,7 @@ bash -n "${BASH_SOURCE[0]}"
 "${PYTHON}" -m py_compile \
   tools/train.py \
   "${TEACHER_UTILITY_EXPORTER}" \
+  "${TEACHER_POINTS_EXPORTER}" \
   tools/bata/detector_aware_acquisition_policy.py \
   "${POLICY_TRAINER}" \
   "${POLICY_APPLIER}" \
@@ -156,14 +168,18 @@ TEACHER_UTILITY_SUMMARY_JSON="${C3_DETECTOR_AWARE_TEACHER_UTILITY_EXPORT_SUMMARY
 if [[ -n "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" ]]; then
   C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL="${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL:-${POLICY_DIR}/samples_with_teacher_utility.jsonl}"
   TEACHER_UTILITY_SUMMARY_JSON="${TEACHER_UTILITY_SUMMARY_JSON:-${POLICY_DIR}/teacher_utility_export.summary.json}"
-  "${PYTHON}" "${TEACHER_UTILITY_EXPORTER}" \
-    --input-jsonl "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}" \
-    --base-samples-jsonl "${C3_DETECTOR_AWARE_BASE_TRAIN_SOURCE_JSONL}" \
-    --output-jsonl "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}" \
-    --summary-json "${TEACHER_UTILITY_SUMMARY_JSON}" \
-    --teacher-checkpoint-path "${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH}" \
-    --teacher-config-path "${C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH}" \
+  teacher_utility_args=(
+    --input-jsonl "${C3_DETECTOR_AWARE_DENSE_TEACHER_POINTS_JSONL}"
+    --base-samples-jsonl "${C3_DETECTOR_AWARE_BASE_TRAIN_SOURCE_JSONL}"
+    --output-jsonl "${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL}"
+    --summary-json "${TEACHER_UTILITY_SUMMARY_JSON}"
+    --teacher-checkpoint-path "${C3_DETECTOR_AWARE_TEACHER_CHECKPOINT_PATH}"
+    --teacher-config-path "${C3_DETECTOR_AWARE_TEACHER_CONFIG_PATH}"
+    --generator-manifest-json "${C3_DETECTOR_AWARE_TEACHER_GENERATOR_MANIFEST_JSON}"
     --expected-split training
+  )
+  "${PYTHON}" "${TEACHER_UTILITY_EXPORTER}" \
+    "${teacher_utility_args[@]}"
 else
   C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL="${C3_DETECTOR_AWARE_POLICY_TRAIN_JSONL:-${C3_DETECTOR_AWARE_TRAIN_SOURCE_JSONL}}"
 fi
