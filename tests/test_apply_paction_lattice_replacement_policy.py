@@ -142,3 +142,50 @@ def test_lattice_application_emits_score_only_metadata_and_strips_deploy_payload
     assert diagnostics["protected_uniform_count"] == 192
     for forbidden in ("gt", "teacher", "oracle", "boundary", "transition", "uncertainty", "context", "role"):
         assert not any(forbidden in key.lower() for key in diagnostics)
+
+
+def test_lattice_application_uses_short_valid_ratio_budget_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_checkpoint(monkeypatch)
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_text("dummy checkpoint", encoding="utf-8")
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.lattice.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 768,
+                "valid_len": 251,
+                "frame_signals": {"p_action": [float(idx % 17) / 16.0 for idx in range(768)]},
+                "paction_positive_provenance": _provenance(),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    apply_lattice.run_lattice_replacement_application(
+        input_jsonl,
+        output_jsonl,
+        checkpoint_path=checkpoint,
+        variants=[lattice.MOVE50_STRATEGY, lattice.MOVE75_STRATEGY],
+        fixed_budget=384,
+        device="cpu",
+        local_radius=2,
+    )
+    row = _read_jsonl(output_jsonl)[0]
+
+    assert len(row["strategy_selected_positions"][lattice.MOVE50_STRATEGY]) == 126
+    assert len(row["strategy_selected_positions"][lattice.MOVE75_STRATEGY]) == 126
+    move50 = row["paction_policy"]["lattice_replacement_diagnostics_by_strategy"][lattice.MOVE50_STRATEGY]
+    move75 = row["paction_policy"]["lattice_replacement_diagnostics_by_strategy"][lattice.MOVE75_STRATEGY]
+    assert row["paction_policy"]["effective_lattice_budget"] == 126
+    assert move50["selected_count"] == 126
+    assert move50["protected_uniform_count"] == 63
+    assert move50["replaceable_uniform_count"] == 63
+    assert move75["selected_count"] == 126
+    assert move75["protected_uniform_count"] == 32
+    assert move75["replaceable_uniform_count"] == 94

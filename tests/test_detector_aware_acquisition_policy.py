@@ -80,6 +80,24 @@ def test_detector_aware_training_preserves_signed_utility_and_calibrated_gain_ta
     assert prepared[0]["dynamic_budget_target"] == 2
 
 
+def test_detector_aware_training_can_ignore_train_source_gt_diagnostic_flag_when_explicitly_allowed() -> None:
+    row = _sample_row()
+    row["uses_gt_for_diagnostics"] = True
+
+    with pytest.raises(ValueError, match="uses_gt_for_diagnostics"):
+        train_detector._prepared_rows([row], dynamic_budget_buckets=[2, 4], expected_split="training")
+
+    prepared = train_detector._prepared_rows(
+        [row],
+        dynamic_budget_buckets=[2, 4],
+        expected_split="training",
+        allow_gt_diagnostics_in_training_source=True,
+    )
+
+    assert prepared[0]["allowed_gt_diagnostics_in_training_source"] is True
+    assert prepared[0]["detector_utility_target"] == [0.0, 0.9, 0.1, 1.0, 0.2, 0.7]
+
+
 def test_detector_aware_training_rejects_legacy_abs_marginal_gain_target() -> None:
     row = _sample_row()
     row["teacher_utility"] = {

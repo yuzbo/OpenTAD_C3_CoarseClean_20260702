@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from tools.bata import apply_paction_acquisition_policy as apply_policy
+from tools.bata import paction_budget_contract
 from tools.bata import paction_acquisition_policy as paction_policy
 from tools.bata import paction_lattice_replacement_policy as lattice
 from tools.bata import paction_source_samples
@@ -83,6 +84,7 @@ def run_lattice_replacement_application(
     distance_penalty: float = 0.0,
     geometry_distortion_penalty: float = 0.0,
     max_gap_growth: int | None = None,
+    allow_short_valid_ratio_count: bool = True,
     strip_deploy_invisible_payload: bool = False,
     strict_deploy_source: bool = False,
 ) -> dict[str, Any]:
@@ -114,6 +116,15 @@ def run_lattice_replacement_application(
 
         p_action = apply_policy._extract_paction(row, line_no=line_no)
         valid_len = int(row.get("valid_len") or row.get("dense_len") or len(p_action))
+        dense_len = int(row.get("dense_len") or len(p_action))
+        effective_budget = paction_budget_contract.expected_selected_count(
+            int(fixed_budget),
+            valid_len=int(valid_len),
+            dense_len=int(dense_len),
+            allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
+        )
+        if effective_budget is None:
+            effective_budget = min(int(fixed_budget), int(valid_len))
         valid = [idx < valid_len for idx in range(len(p_action))]
         frame_values, budget_scores = apply_policy.checkpoint_policy_scores(
             checkpoint_model,
@@ -130,7 +141,7 @@ def run_lattice_replacement_application(
                 frame_values=frame_values,
                 valid=valid,
                 variant=str(variant),
-                budget=int(fixed_budget),
+                budget=int(effective_budget),
                 local_radius=int(local_radius),
                 distance_penalty=float(distance_penalty),
                 geometry_distortion_penalty=float(geometry_distortion_penalty),
@@ -161,6 +172,8 @@ def run_lattice_replacement_application(
             "uses_uniform_fill": False,
             "geometry_constraint": "local_lattice_replacement",
             "geometry_lattice_budget": int(fixed_budget),
+            "effective_lattice_budget": int(effective_budget),
+            "allow_short_valid_ratio_count": bool(allow_short_valid_ratio_count),
             "local_radius": int(local_radius),
             "distance_penalty": float(distance_penalty),
             "geometry_distortion_penalty": float(geometry_distortion_penalty),
@@ -186,6 +199,7 @@ def run_lattice_replacement_application(
         "row_count": len(enriched_rows),
         "variants": [str(item) for item in variants],
         "fixed_budget": int(fixed_budget),
+        "allow_short_valid_ratio_count": bool(allow_short_valid_ratio_count),
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "source": apply_policy.CHECKPOINT_POLICY_SOURCE,

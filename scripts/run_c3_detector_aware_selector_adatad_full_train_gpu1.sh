@@ -256,6 +256,7 @@ PY
   --batch-size "${DETECTOR_AWARE_POLICY_BATCH_SIZE}" \
   --dynamic-budget-buckets ${DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS} \
   --expected-split training \
+  --allow-gt-diagnostics-in-training-source \
   --device cuda \
   --seed "${SEED}"
 

@@ -160,6 +160,7 @@ def run_pipeline(
         distance_penalty=float(distance_penalty),
         geometry_distortion_penalty=float(geometry_distortion_penalty),
         max_gap_growth=max_gap_growth,
+        allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
         strip_deploy_invisible_payload=bool(deploy_selection_ledger),
         strict_deploy_source=bool(deploy_selection_ledger),
     )

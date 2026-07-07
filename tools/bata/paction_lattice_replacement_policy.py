@@ -117,6 +117,13 @@ def _phase_shift_uniform_similarity(selected: set[int], valid_positions: Sequenc
     return _jaccard(selected, set(shifted))
 
 
+def _protected_count_for_budget(variant: str, budget: int) -> int:
+    base = int(_PROTECTED_COUNTS[str(variant)])
+    if base <= 0:
+        return 0
+    return int(round(float(budget) * float(base) / float(DEFAULT_BUDGET)))
+
+
 def _best_local_victim(
     candidate: int,
     replaceable: set[int],
@@ -199,7 +206,7 @@ def decode_paction_lattice_replacement(
         raise ValueError("at least one valid position is required")
     valid_set = set(valid_pos)
     base_uniform = _uniform_lattice(valid_pos, int(budget))
-    protected_target = min(int(_PROTECTED_COUNTS[str(variant)]), len(base_uniform))
+    protected_target = min(_protected_count_for_budget(str(variant), len(base_uniform)), len(base_uniform))
     protected_uniform = set(_uniform_lattice(base_uniform, protected_target))
     replaceable_uniform = set(base_uniform) - protected_uniform
     current = set(base_uniform)

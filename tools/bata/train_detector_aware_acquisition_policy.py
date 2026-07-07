@@ -24,6 +24,26 @@ _extract_paction = base_train._extract_paction
 _valid_len = base_train._valid_len
 
 
+def _row_for_source_validation(
+    row: Mapping[str, Any],
+    *,
+    expected_split: str | None,
+    allow_gt_diagnostics_in_training_source: bool,
+) -> tuple[Mapping[str, Any], bool]:
+    expected_is_training = bool(expected_split and base_train._split_matches("training", str(expected_split)))
+    allowed_gt_diagnostics = (
+        bool(allow_gt_diagnostics_in_training_source)
+        and expected_is_training
+        and base_train._is_true(row.get("uses_gt_for_diagnostics", False))
+    )
+    if not allowed_gt_diagnostics:
+        return row, False
+    patched = dict(row)
+    patched["uses_gt_for_diagnostics"] = False
+    patched["allowed_gt_diagnostics_in_training_source"] = True
+    return patched, True
+
+
 def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: int) -> list[float]:
     provenance = row.get("teacher_utility_provenance")
     if not isinstance(provenance, Mapping):
@@ -193,13 +213,19 @@ def _prepared_rows(
     *,
     dynamic_budget_buckets: Sequence[int],
     expected_split: str | None,
+    allow_gt_diagnostics_in_training_source: bool = False,
 ) -> list[dict[str, Any]]:
     extracted: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows, start=1):
-        _validate_source_row(row, line_no=line_no, expected_split=expected_split)
-        p_action = _extract_paction(row, line_no=line_no)
-        valid_len = _valid_len(row, paction_len=len(p_action))
-        utility = _extract_teacher_utility(row, line_no=line_no, length=len(p_action))
+        row_for_training, allowed_gt_diagnostics = _row_for_source_validation(
+            row,
+            expected_split=expected_split,
+            allow_gt_diagnostics_in_training_source=allow_gt_diagnostics_in_training_source,
+        )
+        _validate_source_row(row_for_training, line_no=line_no, expected_split=expected_split)
+        p_action = _extract_paction(row_for_training, line_no=line_no)
+        valid_len = _valid_len(row_for_training, paction_len=len(p_action))
+        utility = _extract_teacher_utility(row_for_training, line_no=line_no, length=len(p_action))
         gain = _marginal_gain_target(utility)
         risk = _negative_observation_risk_target(utility)
         extracted.append(
@@ -209,6 +235,7 @@ def _prepared_rows(
                 "utility": utility,
                 "gain": gain,
                 "risk": risk,
+                "allowed_gt_diagnostics_in_training_source": bool(allowed_gt_diagnostics),
             }
         )
     calibration = _fit_dynamic_gain_calibration(extracted, dynamic_budget_buckets=dynamic_budget_buckets)
@@ -236,6 +263,7 @@ def _prepared_rows(
                 "valid_len": valid_len,
                 "dynamic_budget_target": dynamic_budget_target,
                 "dynamic_gain_calibration": dict(calibration),
+                "allowed_gt_diagnostics_in_training_source": bool(row["allowed_gt_diagnostics_in_training_source"]),
             }
         )
     return prepared
@@ -338,6 +366,7 @@ def run_training(
     device: str = "cuda",
     seed: int = 0,
     expected_split: str | None = "training",
+    allow_gt_diagnostics_in_training_source: bool = False,
 ) -> dict[str, Any]:
     import torch
 
@@ -349,8 +378,16 @@ def run_training(
     buckets = [int(item) for item in dynamic_budget_buckets]
     source_rows = _read_jsonl(train_jsonl)
     utility_contract = _teacher_utility_contract(source_rows)
-    train_rows = _prepared_rows(source_rows, dynamic_budget_buckets=buckets, expected_split=expected_split)
+    train_rows = _prepared_rows(
+        source_rows,
+        dynamic_budget_buckets=buckets,
+        expected_split=expected_split,
+        allow_gt_diagnostics_in_training_source=bool(allow_gt_diagnostics_in_training_source),
+    )
     train_jsonl_sha256 = _sha256_file(train_jsonl)
+    allowed_gt_diagnostics_count = sum(
+        1 for row in train_rows if bool(row.get("allowed_gt_diagnostics_in_training_source"))
+    )
     dynamic_gain_calibration = dict(train_rows[0]["dynamic_gain_calibration"]) if train_rows else dict(detector_policy.UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION)
     dynamic_gain_calibration["train_jsonl_sha256"] = train_jsonl_sha256
     model_kwargs = {
@@ -397,6 +434,8 @@ def run_training(
         "dynamic_gain_calibration": dynamic_gain_calibration,
         "loss_terms": dict(detector_policy.DEFAULT_DETECTOR_AWARE_LOSS_TERMS),
         "teacher_target_scope": "train_only",
+        "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
+        "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "end_to_end": False,
@@ -421,6 +460,8 @@ def run_training(
         "requires_signed_frame_utility": True,
         "dynamic_gain_calibration": dynamic_gain_calibration,
         "teacher_target_scope": "train_only",
+        "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
+        "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "end_to_end": False,
@@ -450,6 +491,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--expected-split", default="training")
+    parser.add_argument(
+        "--allow-gt-diagnostics-in-training-source",
+        action="store_true",
+        help=(
+            "Allow training split source rows to carry uses_gt_for_diagnostics=true as a "
+            "non-consumed diagnostic flag; deploy/eval sources remain strict."
+        ),
+    )
     args = parser.parse_args(argv)
     summary = run_training(
         args.train_jsonl,
@@ -468,6 +517,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         device=args.device,
         seed=args.seed,
         expected_split=args.expected_split,
+        allow_gt_diagnostics_in_training_source=args.allow_gt_diagnostics_in_training_source,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return 0
