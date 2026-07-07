@@ -15,7 +15,13 @@ PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "DUCA Stage3 TrueTime precheck/full run must use GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
+  if [[ "${CUDA_VISIBLE_DEVICES}" != "0" && "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+    fail "DUCA Stage3 TrueTime precheck/full run must see one Slurm-bound GPU as logical 0/1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+  fi
+elif [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+  fail "DUCA Stage3 TrueTime precheck/full run must use physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+fi
 
 RUN_TAG="${RUN_TAG:-duca_stage3_truetime_precheck_$(date +%Y%m%d_%H%M%S_%z)}"
 ROUTE_ROOT="${ROUTE_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_stage3_truetime/${RUN_TAG}}"

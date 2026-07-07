@@ -174,6 +174,8 @@ def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> No
     assert "proof_json_sha256" in text
     assert "stale precheck summary" in text
     assert "bound config/proof hashes" in text
+    assert "SLURM_STEP_GPUS" in text
+    assert "logical 0/1" in text
     assert "OPENTAD_DUCA_STAGE3_GATE_JSON" in text
     assert "stage3_active_sha256_manifest.txt" in text
     assert "formal DUCA Stage3 full train requires a clean tracked git tree" in text
