@@ -32,6 +32,7 @@ def run_pipeline(
     fixed_budget: int = lattice.DEFAULT_BUDGET,
     device: str = "cuda",
     deploy_selection_ledger: bool = True,
+    allow_inferred_paction_positive_provenance: bool = True,
     allow_short_valid_ratio_count: bool = True,
     local_radius: int = 2,
     distance_penalty: float = 0.0,
@@ -64,6 +65,7 @@ def run_pipeline(
             selection_input_jsonl,
             report_json=out_path / "source.selection_deploy.report.json",
             split="",
+            allow_inferred_paction_positive_provenance=bool(allow_inferred_paction_positive_provenance),
         )
     input_sample_path = selection_input_jsonl if selection_input_jsonl is not None else canonical_input_jsonl
     metric_sample_path = canonical_input_jsonl
@@ -149,6 +151,7 @@ def run_pipeline(
         "variants": [str(item) for item in variants],
         "fixed_budget": int(fixed_budget),
         "deploy_selection_ledger": bool(deploy_selection_ledger),
+        "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
         "selection_decoder": "score_only_lattice_replacement_v1",
         "score_only": True,
         "uses_manual_slots": False,
@@ -172,6 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--fixed-budget", type=int, default=lattice.DEFAULT_BUDGET)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--diagnostic-ledger", action="store_true")
+    parser.add_argument("--no-allow-inferred-paction-positive-provenance", action="store_true")
     parser.add_argument("--no-allow-short-valid-ratio-count", action="store_true")
     parser.add_argument("--local-radius", type=int, default=2)
     parser.add_argument("--distance-penalty", type=float, default=0.0)
@@ -192,6 +196,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         fixed_budget=int(args.fixed_budget),
         device=str(args.device),
         deploy_selection_ledger=not bool(args.diagnostic_ledger),
+        allow_inferred_paction_positive_provenance=not bool(args.no_allow_inferred_paction_positive_provenance),
         allow_short_valid_ratio_count=not bool(args.no_allow_short_valid_ratio_count),
         local_radius=int(args.local_radius),
         distance_penalty=float(args.distance_penalty),

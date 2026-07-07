@@ -63,6 +63,16 @@ def _source_row(sample_id: str, p_action: list[float]) -> dict:
     }
 
 
+def _source_row_without_explicit_provenance(sample_id: str, p_action: list[float]) -> dict:
+    row = _source_row(sample_id, p_action)
+    row.pop("paction_positive_provenance")
+    row["matrix_model_id"] = "official_asformer_lowres"
+    row["official_action_seg_backend"] = "official_asformer"
+    row["tcn_variant"] = "official_asformer"
+    row["uses_gt_for_diagnostics"] = True
+    return row
+
+
 def test_lattice_replacement_pipeline_generates_deployable_ledger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -118,3 +128,52 @@ def test_lattice_replacement_pipeline_generates_deployable_ledger(
     validation = summary["ledgers"][lattice.MOVE50_STRATEGY]["validation_summary"]
     assert validation["decision"] == "C3_PACTION_LATTICE_REPLACEMENT_LEDGER_VALIDATION_PASS"
     assert validation["lattice_metadata"]["row_count"] == 2
+
+
+def test_lattice_pipeline_infers_deploy_provenance_from_canonical_source_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_checkpoint(monkeypatch)
+    input_jsonl = tmp_path / "source.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_text("dummy checkpoint", encoding="utf-8")
+    input_jsonl.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    _source_row_without_explicit_provenance(
+                        "video_test_0001|0", [0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6]
+                    )
+                ),
+                json.dumps(
+                    _source_row_without_explicit_provenance(
+                        "video_test_0002|0", [0.8, 0.1, 0.7, 0.2, 0.6, 0.3, 0.5, 0.4]
+                    )
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = pipeline.run_pipeline(
+        input_jsonl=input_jsonl,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out",
+        variants=[lattice.MOVE50_STRATEGY],
+        fixed_budget=4,
+        device="cpu",
+        deploy_selection_ledger=True,
+        local_radius=2,
+    )
+
+    report = summary["selection_source_report"]
+    assert report["allow_inferred_paction_positive_provenance"] is True
+    assert report["inferred_paction_positive_provenance_count"] == 2
+    rows = _read_jsonl(Path(summary["selection_sample_jsonl"]))
+    assert rows[0]["paction_positive_provenance"]["inferred_from_source_row"] is True
+    assert rows[0]["paction_positive_provenance"]["no_gt_generation"] is True
+    assert rows[0]["paction_positive_provenance"]["uses_gt_for_diagnostics"] is False
+    assert "action_target" not in rows[0]
+    assert "gt_boundaries" not in rows[0]
