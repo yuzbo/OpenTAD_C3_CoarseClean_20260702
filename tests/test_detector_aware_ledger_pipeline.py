@@ -179,6 +179,93 @@ def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp
         assert validation["map_claim_allowed"] is False
 
 
+def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_from_teacher_utility_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "source_with_teacher_utility.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    rows = [
+        _sample("video_train_0001|0", [0.1, 0.9, 0.2, 0.8, 0.3, 0.7], [0.0, 1.0, 0.2, 0.9, 0.1, 0.8]),
+        _sample("video_train_0002|0", [0.9, 0.1, 0.8, 0.2, 0.7, 0.3], [1.0, 0.0, 0.9, 0.1, 0.8, 0.2]),
+    ]
+    for row in rows:
+        row.pop("paction_positive_provenance")
+        row["split"] = "training"
+        row["uses_teacher"] = True
+        row["training_only"] = True
+        row["matrix_model_id"] = "official_asformer_lowres"
+        row["official_action_seg_backend"] = "official_asformer"
+    _write_jsonl(source, rows)
+
+    with pytest.raises(ValueError, match="p_action positive provenance is required"):
+        detector_pipeline.run_pipeline(
+            input_jsonl=source,
+            checkpoint_path=checkpoint,
+            out_dir=tmp_path / "out_rejects_implicit_provenance",
+            fixed_budgets=(2, 4),
+            dynamic_target_len=4,
+            dynamic_budget_buckets=[2, 4],
+            device="cpu",
+            allow_tiny_dynamic_diagnostic=True,
+            max_uniform_similarity=1.0,
+        )
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4]}),
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, target_budget=None, device: detector_pipeline.apply_policy.bootstrap_policy_scores(
+            p_action,
+            valid=valid,
+            dynamic_budget_buckets=[2, 4],
+        ),
+    )
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out_allows_explicit_inference",
+        fixed_budgets=(2, 4),
+        dynamic_target_len=4,
+        dynamic_budget_buckets=[2, 4],
+        device="cpu",
+        allow_tiny_dynamic_diagnostic=True,
+        max_unselected_hole=6,
+        max_p95_unselected_hole=6,
+        max_uniform_similarity=1.0,
+        allow_inferred_paction_positive_provenance=True,
+    )
+
+    assert summary["decision"] == "C3_DETECTOR_AWARE_LEDGER_PIPELINE_READY"
+    report = summary["selection_source_report"]
+    assert report["allow_inferred_paction_positive_provenance"] is True
+    assert report["inferred_paction_positive_provenance_count"] == 2
+    assert report["stripped_key_counts"]["teacher_utility"] == 2
+    assert report["stripped_key_counts"]["teacher_utility_provenance"] == 2
+    assert report["teacher_payload_visible_to_deploy"] is False
+
+    deploy_rows = [
+        json.loads(line)
+        for line in Path(summary["selection_sample_jsonl"]).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(deploy_rows) == 2
+    for row in deploy_rows:
+        provenance = row["paction_positive_provenance"]
+        assert provenance["inferred_from_source_row"] is True
+        assert provenance["uses_teacher"] is False
+        assert provenance["training_only"] is False
+        assert provenance["official_action_seg_backend"] == "official_asformer"
+        assert not _has_key_recursive(row, "teacher_utility")
+        assert not _has_key_recursive(row, "teacher_utility_provenance")
+
+
 def test_detector_aware_pipeline_rejects_collapsed_dynamic_without_diagnostic_optout(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "source.jsonl"
     checkpoint = tmp_path / "detector_policy.pth"

@@ -291,6 +291,7 @@ run_ledger_pipeline_for_split() {
     --max-unselected-hole "${DETECTOR_AWARE_MAX_UNSELECTED_HOLE}" \
     --max-p95-unselected-hole "${DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE}" \
     --max-uniform-similarity "${DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY}" \
+    --allow-inferred-paction-positive-provenance \
     --device cuda
 }
 

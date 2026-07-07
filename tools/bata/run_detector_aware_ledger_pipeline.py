@@ -100,17 +100,50 @@ def _detector_deploy_source_jsonl(
     *,
     report_json: str | Path | None = None,
     split: str = "",
+    allow_inferred_paction_positive_provenance: bool = False,
 ) -> dict[str, Any]:
     rows = paction_source_samples._read_jsonl(input_jsonl)
     out_rows: list[dict[str, Any]] = []
     stripped_key_counts: dict[str, int] = {}
+    inferred_count = 0
     for line_no, row in enumerate(rows, start=1):
         source_name = f"{input_jsonl}:{line_no}"
-        provenance = paction_source_samples.paction_positive_provenance_from_row(row, source_name=source_name, strict=True)
+        try:
+            provenance = paction_source_samples.paction_positive_provenance_from_row(
+                row,
+                source_name=source_name,
+                strict=True,
+            )
+        except ValueError as exc:
+            if "p_action positive provenance is required" not in str(exc) or not bool(allow_inferred_paction_positive_provenance):
+                raise
+            inference_row = dict(row)
+            if isinstance(row.get("teacher_utility"), Mapping) and isinstance(row.get("teacher_utility_provenance"), Mapping):
+                inference_row["uses_teacher"] = False
+                inference_row["training_only"] = False
+            provenance = paction_source_samples.infer_paction_positive_provenance_from_row(
+                inference_row,
+                source_name=source_name,
+            )
+            inferred_count += 1
         for key in paction_source_samples.SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS:
+            if (
+                key in {"uses_teacher", "training_only"}
+                and bool(allow_inferred_paction_positive_provenance)
+                and isinstance(row.get("teacher_utility"), Mapping)
+                and isinstance(row.get("teacher_utility_provenance"), Mapping)
+            ):
+                continue
             if paction_source_samples._is_true(row.get(key, False)):
                 raise ValueError(f"{source_name}: forbidden strict deploy p_action source flag {key}=true")
         stripped = dict(row)
+        if (
+            bool(allow_inferred_paction_positive_provenance)
+            and isinstance(row.get("teacher_utility"), Mapping)
+            and isinstance(row.get("teacher_utility_provenance"), Mapping)
+        ):
+            stripped["uses_teacher"] = False
+            stripped["training_only"] = False
         for key in tuple(paction_source_samples.SELECTION_SOURCE_STRIP_KEYS) + DETECTOR_DEPLOY_STRIP_KEYS:
             if key in stripped:
                 stripped_key_counts[key] = stripped_key_counts.get(key, 0) + 1
@@ -137,6 +170,8 @@ def _detector_deploy_source_jsonl(
         "output_rows": len(out_rows),
         "stripped_key_counts": stripped_key_counts,
         "requires_paction_positive_provenance": True,
+        "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
+        "inferred_paction_positive_provenance_count": int(inferred_count),
         "teacher_payload_visible_to_deploy": False,
     }
     if report_json is not None:
@@ -223,6 +258,7 @@ def run_pipeline(
     max_p95_unselected_hole: float | None = None,
     max_uniform_similarity: float | None = None,
     allow_tiny_dynamic_diagnostic: bool = False,
+    allow_inferred_paction_positive_provenance: bool = False,
     summary_json: str | Path | None = None,
 ) -> dict[str, Any]:
     out_path = Path(out_dir).expanduser()
@@ -248,6 +284,7 @@ def run_pipeline(
             selection_input_jsonl,
             report_json=out_path / "source.selection_deploy.detector_clean.report.json",
             split="",
+            allow_inferred_paction_positive_provenance=bool(allow_inferred_paction_positive_provenance),
         )
     input_sample_path = selection_input_jsonl if selection_input_jsonl is not None else canonical_input_jsonl
     metric_sample_path = canonical_input_jsonl
@@ -326,6 +363,7 @@ def run_pipeline(
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "dynamic_gain_calibration": dict(detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION),
         "deploy_selection_ledger": bool(deploy_selection_ledger),
+        "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
         "required_policy_source": detector_policy.DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE,
         "baseline_comparison": {
             "matched_budget_baselines": ["p_action_only", "GAS-VT"],
@@ -371,6 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-p95-unselected-hole", type=float)
     parser.add_argument("--max-uniform-similarity", type=float)
     parser.add_argument("--allow-tiny-dynamic-diagnostic", action="store_true")
+    parser.add_argument("--allow-inferred-paction-positive-provenance", action="store_true")
     args = parser.parse_args(argv)
     summary = run_pipeline(
         input_jsonl=args.input_jsonl,
@@ -386,6 +425,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_p95_unselected_hole=args.max_p95_unselected_hole,
         max_uniform_similarity=args.max_uniform_similarity,
         allow_tiny_dynamic_diagnostic=bool(args.allow_tiny_dynamic_diagnostic),
+        allow_inferred_paction_positive_provenance=bool(args.allow_inferred_paction_positive_provenance),
         summary_json=args.summary_json,
     )
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
