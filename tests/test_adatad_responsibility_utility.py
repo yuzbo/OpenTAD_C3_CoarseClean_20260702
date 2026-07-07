@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools.bata import export_adatad_responsibility_utility as exporter
+from tools.bata import export_adatad_responsibility_points_from_teacher as points_from_teacher
 from tools.bata import train_detector_aware_acquisition_policy as train_detector
 from tools.bata import validate_adatad_responsibility_utility as validator
 
@@ -234,6 +235,81 @@ def test_responsibility_stage2_policy_summary_preserves_source_semantics(tmp_pat
     assert contract["utility_source_type"] == exporter.UTILITY_SOURCE_TYPE
     assert contract["point_responsibility_utility"] is True
     assert contract["proposal_score_surrogate_utility"] is False
+
+
+def test_teacher_points_can_generate_responsibility_utility(tmp_path: Path) -> None:
+    teacher_points = tmp_path / "dense_teacher_points.jsonl"
+    base = tmp_path / "base_samples.jsonl"
+    responsibility_points = tmp_path / "responsibility_points.jsonl"
+    responsibility_manifest = tmp_path / "responsibility_points.manifest.json"
+    responsibility_utility = tmp_path / "samples_with_responsibility_utility.jsonl"
+    responsibility_summary = tmp_path / "responsibility_utility.summary.json"
+    _write_jsonl(
+        teacher_points,
+        [
+            {
+                "sample_id": "video_train_0001|0",
+                "split": "training",
+                "dense_len": 12,
+                "valid_len": 12,
+                "teacher_dense_points": [
+                    {
+                        "point_index": 4,
+                        "proposal_score": 0.8,
+                        "classification_score": 0.8,
+                        "segment_start": 3.0,
+                        "segment_end": 7.0,
+                    },
+                    {
+                        "point_index": 10,
+                        "proposal_score": 0.6,
+                        "classification_score": 0.6,
+                        "segment_start": 9.0,
+                        "segment_end": 11.0,
+                    },
+                ],
+            }
+        ],
+    )
+    _write_jsonl(
+        base,
+        [
+            {
+                "sample_id": "video_train_0001|0",
+                "split": "training",
+                "dense_len": 12,
+                "valid_len": 12,
+                "gt_segments": [[3.0, 7.0]],
+                "frame_signals": {"p_action": [0.1] * 12},
+            }
+        ],
+    )
+
+    points_manifest = points_from_teacher.convert_teacher_points_to_responsibility(
+        teacher_points,
+        base,
+        responsibility_points,
+        manifest_json=responsibility_manifest,
+    )
+    assert points_manifest["decision"] == points_from_teacher.READY
+
+    export_summary = exporter.run_export(
+        responsibility_points,
+        responsibility_utility,
+        summary_json=responsibility_summary,
+        manifest=_train_manifest(),
+        base_samples_jsonl=base,
+    )
+    evidence = validator.validate_responsibility_utility_export(
+        responsibility_summary,
+        output_jsonl=responsibility_utility,
+    )
+    rows = _read_jsonl(responsibility_utility)
+
+    assert export_summary["utility_source_type"] == "point_loss_gradient_responsibility_v1"
+    assert evidence["decision"] == "ADATAD_RESPONSIBILITY_UTILITY_VALIDATION_PASS"
+    assert rows[0]["positive_observation_gain"][3] > 0.0
+    assert rows[0]["negative_observation_risk"][10] > 0.0
 
 
 def _write_responsibility_policy_summary(tmp_path: Path, **extra: object) -> Path:
