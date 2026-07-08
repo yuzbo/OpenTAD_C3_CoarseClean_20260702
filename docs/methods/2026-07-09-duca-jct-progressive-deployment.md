@@ -11,9 +11,9 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 
 - Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git`
 - Branch: `codex/gas-vt-stage23-detector-aware-20260706`
-- Previous pushed implementation checkpoint: `8d26dc3`
-- Previous pushed implementation title:
-  `Document DUCA JCT latest remote deployment handoff`
+- Latest pushed implementation checkpoint: `cbde70d`
+- Latest pushed implementation title:
+  `Align DUCA JCT schedule with optimizer steps`
 - Base deployment commit: `308088c`
 - Base deployment title: `Add DUCA joint training loss schedule`
 - Current local refinement: detector loss remains active for the backend while
@@ -101,10 +101,12 @@ Remote focused validation completed before deployment:
   the online coarse probe, selector encoder, and DUCA-MUST budget controller.
 - Focused pytest on remote: `25 passed in 67.36s`.
 
-Local verification for latest `f5869f9`:
+Local verification for latest `cbde70d`:
 
-- `32 passed, 1 skipped` for the DUCA-JCT focused local set.
-- `py_compile`, `bash -n`, and `git diff --check` passed.
+- `23 passed, 4 skipped` for the local DUCA-JCT focused set. The skipped
+  tests are Torch-heavy Linux-remote gradient checks guarded on Windows because
+  the local Torch DLL import is unstable.
+- `py_compile`, `bash -n`, validators, and `git diff --check` passed.
 - Local suite dry-run with `SUBMIT_JOBS=0` generated all six sbatch files and
   `deployment_summary.json`, including the one-step joint gradient proof
   artifact path. The local dry-run reported `commit=nogit` because Git Bash did
@@ -130,7 +132,7 @@ Slurm jobs currently queued:
 
 These two are the current main paper-method jobs for commit `308088c`.
 
-The latest `f5869f9` suite has not yet been submitted on the remote from this
+The latest `cbde70d` suite has not yet been submitted on the remote from this
 desktop session because non-interactive SSH attempts to
 `ssh.cn-zhongwei-1.paracloud.com` with users `sczc063`, `yuzibo`, and
 `skywalker` returned `Permission denied (password,publickey)`. The following
@@ -145,8 +147,8 @@ cd /data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct
 git fetch origin codex/gas-vt-stage23-detector-aware-20260706
 git checkout codex/gas-vt-stage23-detector-aware-20260706
 git pull --ff-only origin codex/gas-vt-stage23-detector-aware-20260706
-git rev-parse --short HEAD  # must print f5869f9 or newer
-export RUN_TAG=duca_jct_suite_f5869f9_$(date +%Y%m%d_%H%M%S_%z)
+git rev-parse --short HEAD  # must print cbde70d or newer
+export RUN_TAG=duca_jct_suite_cbde70d_$(date +%Y%m%d_%H%M%S_%z)
 bash scripts/submit_duca_jct_experiment_suite.sh
 ```
 
