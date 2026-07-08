@@ -149,6 +149,61 @@ def test_manual_unknown_provenance_does_not_claim_no_thumos_training(tmp_path: P
     assert row["source_provenance"]["thumos_trained"] is None
 
 
+def test_manual_jsonl_preserves_declared_frozen_x3d_provenance(tmp_path: Path) -> None:
+    annotation = tmp_path / "anno.json"
+    samples = tmp_path / "samples.jsonl"
+    manual = tmp_path / "manual.jsonl"
+    output = tmp_path / "actionness.jsonl"
+    summary = tmp_path / "summary.json"
+    provenance = {
+        "source_name": "frozen_kinetics_x3d_xs_actionness",
+        "source_mode": "frozen_kinetics_classifier_confidence",
+        "provider": "x3d_xs",
+        "training_dataset": "Kinetics",
+        "thumos_trained": False,
+        "uses_labels": False,
+        "uses_teacher": False,
+        "uses_gt": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "calibration_split": "none",
+        "checkpoint_hash": "pytorch_provider:x3d_xs:pretrained=True",
+        "prompt_hash": None,
+    }
+    _write_json(annotation, _toy_annotation())
+    _write_jsonl(samples, [{"video_id": "v_alpha", "window_id": "a0", "time_index": 0, "original_time": 0.0}])
+    _write_jsonl(
+        manual,
+        [
+            {
+                "video_id": "v_alpha",
+                "window_id": "a0",
+                "p_action": 0.42,
+                "source_name": provenance["source_name"],
+                "source_provenance": provenance,
+                "checkpoint_hash": provenance["checkpoint_hash"],
+                "prompt_hash": None,
+            }
+        ],
+    )
+
+    actionness.run_eval(
+        annotation_json=annotation,
+        sample_jsonl=samples,
+        output_jsonl=output,
+        summary_json=summary,
+        source_mode="manual_jsonl",
+        manual_jsonl=manual,
+    )
+
+    row = _read_jsonl(output)[0]
+    assert row["source_name"] == "frozen_kinetics_x3d_xs_actionness"
+    assert row["source_provenance"]["provider"] == "x3d_xs"
+    assert row["source_provenance"]["training_dataset"] == "Kinetics"
+    assert row["thumos_trained"] is False
+    assert row["checkpoint_hash"] == "pytorch_provider:x3d_xs:pretrained=True"
+
+
 def test_actionness_validator_rejects_teacher_gt_cache_and_raw_prediction_payloads(tmp_path: Path) -> None:
     actionness_jsonl = tmp_path / "bad_actionness.jsonl"
     summary = tmp_path / "summary.json"

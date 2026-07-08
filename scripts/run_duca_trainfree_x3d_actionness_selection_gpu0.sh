@@ -50,6 +50,9 @@ PYTHON="${PYTHON:-/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python}"
 ACTIONNESS_JSONL="${OUT_ROOT}/${PROVIDER}_${SUBSET}_actionness.jsonl"
 ACTIONNESS_SUMMARY="${OUT_ROOT}/${PROVIDER}_${SUBSET}_actionness.summary.json"
 ACTIONNESS_VALIDATION="${OUT_ROOT}/${PROVIDER}_${SUBSET}_actionness.validation.json"
+COARSE_EVAL_JSONL="${OUT_ROOT}/${PROVIDER}_${SUBSET}_coarse_eval.actionness.jsonl"
+COARSE_EVAL_SUMMARY="${OUT_ROOT}/${PROVIDER}_${SUBSET}_coarse_eval.summary.json"
+COARSE_EVAL_VALIDATION="${OUT_ROOT}/${PROVIDER}_${SUBSET}_coarse_eval.validation.json"
 SELECTION_AUDIT="${OUT_ROOT}/${PROVIDER}_${SUBSET}_selection.audit.jsonl"
 SELECTION_SUMMARY="${OUT_ROOT}/${PROVIDER}_${SUBSET}_selection.summary.json"
 SELECTION_VALIDATION="${OUT_ROOT}/${PROVIDER}_${SUBSET}_selection.validation.json"
@@ -67,7 +70,8 @@ echo "[DUCA_TRAINF_FREE_X3D] slurm_job=${SLURM_JOB_ID:-none} gpu=${CUDA_VISIBLE_
   tools/bata/eval_zero_shot_actionness.py \
   tools/bata/validate_zero_shot_actionness_eval.py \
   tools/bata/run_zero_shot_actionness_selection_eval.py \
-  tools/bata/validate_zero_shot_selection_eval.py
+  tools/bata/validate_zero_shot_selection_eval.py \
+  tools/bata/summarize_trainfree_x3d_interval_grid.py
 
 "${PYTHON}" tools/bata/export_frozen_kinetics_actionness.py \
   --annotation-json "${ANNOTATION_JSON}" \
@@ -91,9 +95,25 @@ echo "[DUCA_TRAINF_FREE_X3D] slurm_job=${SLURM_JOB_ID:-none} gpu=${CUDA_VISIBLE_
   --validation-json "${ACTIONNESS_VALIDATION}" \
   2>&1 | tee "${OUT_ROOT}/validate_actionness.out"
 
+"${PYTHON}" tools/bata/eval_zero_shot_actionness.py \
+  --annotation-json "${ANNOTATION_JSON}" \
+  --sample-jsonl "${ACTIONNESS_JSONL}" \
+  --output-jsonl "${COARSE_EVAL_JSONL}" \
+  --summary-json "${COARSE_EVAL_SUMMARY}" \
+  --source-mode manual_jsonl \
+  --manual-jsonl "${ACTIONNESS_JSONL}" \
+  --recall-k "${BUDGET}" \
+  2>&1 | tee "${OUT_ROOT}/coarse_eval.out"
+
+"${PYTHON}" tools/bata/validate_zero_shot_actionness_eval.py \
+  --actionness-jsonl "${COARSE_EVAL_JSONL}" \
+  --summary-json "${COARSE_EVAL_SUMMARY}" \
+  --validation-json "${COARSE_EVAL_VALIDATION}" \
+  2>&1 | tee "${OUT_ROOT}/validate_coarse_eval.out"
+
 "${PYTHON}" tools/bata/run_zero_shot_actionness_selection_eval.py \
   --annotation-json "${ANNOTATION_JSON}" \
-  --actionness-jsonl "${ACTIONNESS_JSONL}" \
+  --actionness-jsonl "${COARSE_EVAL_JSONL}" \
   --audit-jsonl "${SELECTION_AUDIT}" \
   --summary-json "${SELECTION_SUMMARY}" \
   --budget "${BUDGET}" \
@@ -107,4 +127,4 @@ echo "[DUCA_TRAINF_FREE_X3D] slurm_job=${SLURM_JOB_ID:-none} gpu=${CUDA_VISIBLE_
   --validation-json "${SELECTION_VALIDATION}" \
   2>&1 | tee "${OUT_ROOT}/validate_selection.out"
 
-echo "[DUCA_TRAINF_FREE_X3D] COMPLETE actionness=${ACTIONNESS_SUMMARY} selection=${SELECTION_SUMMARY}"
+echo "[DUCA_TRAINF_FREE_X3D] COMPLETE actionness=${ACTIONNESS_SUMMARY} coarse=${COARSE_EVAL_SUMMARY} selection=${SELECTION_SUMMARY}"

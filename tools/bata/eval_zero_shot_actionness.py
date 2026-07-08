@@ -350,6 +350,8 @@ def _score_rows(
     prompt_hash = None
     checkpoint_hash = None
     thumos_trained: bool | None = False
+    declared_provenance: dict[str, Any] | None = None
+    mixed_declared_provenance = False
     if source_mode == "manual_jsonl":
         if manual_jsonl is None:
             raise ValueError("manual_jsonl source mode requires manual_jsonl")
@@ -375,6 +377,13 @@ def _score_rows(
             provenance = manual.get("source_provenance")
             if isinstance(provenance, Mapping) and "thumos_trained" in provenance:
                 thumos_trained = bool(provenance["thumos_trained"]) if provenance["thumos_trained"] is not None else None
+            if isinstance(provenance, Mapping) and provenance.get("source_name"):
+                current = dict(provenance)
+                _reject_source_leakage(current, source_name=f"{manual_jsonl}:{key}:source_provenance")
+                if declared_provenance is None:
+                    declared_provenance = current
+                elif _sha256_text(declared_provenance) != _sha256_text(current):
+                    mixed_declared_provenance = True
         scores = [min(1.0, max(0.0, item)) for item in raw_scores]
     elif source_mode == "motion":
         scores = _minmax([_motion_score(row) for row in sample_rows])
@@ -388,15 +397,28 @@ def _score_rows(
         ]
     else:
         raise ValueError(f"unsupported source_mode: {source_mode}")
-    provenance = _base_provenance(
-        source_mode=source_mode,
-        prompt_hash=prompt_hash,
-        checkpoint_hash=checkpoint_hash,
-        thumos_trained=thumos_trained,
-        uses_labels=False,
-        uses_teacher=False,
-        calibration_split=None,
-    )
+    if declared_provenance is not None and not mixed_declared_provenance:
+        provenance = dict(declared_provenance)
+        provenance.setdefault("source_mode", source_mode)
+        provenance.setdefault("prompt_hash", None)
+        provenance.setdefault("checkpoint_hash", None)
+        provenance.setdefault("thumos_trained", thumos_trained)
+        provenance.setdefault("uses_labels", False)
+        provenance.setdefault("uses_teacher", False)
+        provenance.setdefault("calibration_split", None)
+        provenance.setdefault("uses_gt", False)
+        provenance.setdefault("uses_prediction_cache", False)
+        provenance.setdefault("uses_raw_prediction", False)
+    else:
+        provenance = _base_provenance(
+            source_mode=source_mode,
+            prompt_hash=prompt_hash,
+            checkpoint_hash=checkpoint_hash,
+            thumos_trained=thumos_trained,
+            uses_labels=False,
+            uses_teacher=False,
+            calibration_split=None,
+        )
     _reject_source_leakage(provenance, source_name=f"{source_mode}:source_provenance")
     return scores, provenance
 

@@ -85,4 +85,16 @@ for provider in ${PROVIDERS}; do
   done
 done
 
-echo "[DUCA_X3D_INTERVAL_GRID] COMPLETE manifest=${MANIFEST}"
+SUMMARY_JSON="${GRID_ROOT}/x3d_interval_grid.summary.json"
+SUMMARY_TSV="${GRID_ROOT}/x3d_interval_grid.summary.tsv"
+PYTHON="${PYTHON:-/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python}"
+[[ -x "${PYTHON}" ]] || PYTHON=python
+
+"${PYTHON}" tools/bata/summarize_trainfree_x3d_interval_grid.py \
+  --manifest-tsv "${MANIFEST}" \
+  --summary-json "${SUMMARY_JSON}" \
+  --summary-tsv "${SUMMARY_TSV}" \
+  --subset "${SUBSET}" \
+  2>&1 | tee "${GRID_ROOT}/summarize_grid.out"
+
+echo "[DUCA_X3D_INTERVAL_GRID] COMPLETE manifest=${MANIFEST} summary=${SUMMARY_JSON}"
