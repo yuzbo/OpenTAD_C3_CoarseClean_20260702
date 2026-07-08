@@ -21,10 +21,16 @@ CROP_SIZE_S="${CROP_SIZE_S:-182}"
 PROVIDERS="${PROVIDERS:-x3d_xs x3d_s}"
 FRAME_INTERVALS="${FRAME_INTERVALS:-1 2 4}"
 RUN_TAG="${RUN_TAG:-duca_trainfree_x3d_interval_grid_$(date +%Y%m%d_%H%M%S_%z)}"
+MATERIALIZE_FORMAL_JSONL="${MATERIALIZE_FORMAL_JSONL:-1}"
+DUCA_X3D_FORMAL_PROVIDER="${DUCA_X3D_FORMAL_PROVIDER:-x3d_xs}"
+DUCA_X3D_FORMAL_FRAME_INTERVAL="${DUCA_X3D_FORMAL_FRAME_INTERVAL:-2}"
+DUCA_X3D_FORMAL_CLIP_FRAMES="${DUCA_X3D_FORMAL_CLIP_FRAMES:-}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
 GRID_ROOT="${GRID_ROOT:-${YUZIBO_ROOT}/projects/c3_lowres_action_probe/trainfree_frozen_actionness/${RUN_TAG}}"
+FORMAL_X3D_ACTIONNESS_JSONL="${DUCA_X3D_ACTIONNESS_JSONL:-${YUZIBO_ROOT}/projects/c3_lowres_action_probe/trainfree_frozen_actionness/best_x3d_actionness.jsonl}"
+FORMAL_X3D_MATERIALIZATION_SUMMARY="${FORMAL_X3D_MATERIALIZATION_SUMMARY:-${FORMAL_X3D_ACTIONNESS_JSONL%.jsonl}.materialization.json}"
 
 export HOME="${HOME:-${BASE}/tmp/home}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${BASE}/tmp/xdg_cache}"
@@ -42,6 +48,7 @@ echo "[DUCA_X3D_INTERVAL_GRID] head=$(git rev-parse --short HEAD 2>/dev/null || 
 echo "[DUCA_X3D_INTERVAL_GRID] providers=${PROVIDERS}"
 echo "[DUCA_X3D_INTERVAL_GRID] frame_intervals=${FRAME_INTERVALS}"
 echo "[DUCA_X3D_INTERVAL_GRID] grid_root=${GRID_ROOT}"
+echo "[DUCA_X3D_INTERVAL_GRID] formal_materialize=${MATERIALIZE_FORMAL_JSONL} provider=${DUCA_X3D_FORMAL_PROVIDER} frame_interval=${DUCA_X3D_FORMAL_FRAME_INTERVAL} output=${FORMAL_X3D_ACTIONNESS_JSONL}"
 
 MANIFEST="${GRID_ROOT}/manifest.tsv"
 printf "provider\tclip_frames\tframe_interval\tcrop_size\tbatch_size\tout_root\tstatus\n" > "${MANIFEST}"
@@ -90,11 +97,31 @@ SUMMARY_TSV="${GRID_ROOT}/x3d_interval_grid.summary.tsv"
 PYTHON="${PYTHON:-/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || PYTHON=python
 
+"${PYTHON}" -m py_compile \
+  tools/bata/summarize_trainfree_x3d_interval_grid.py \
+  tools/bata/materialize_trainfree_x3d_actionness.py
+
 "${PYTHON}" tools/bata/summarize_trainfree_x3d_interval_grid.py \
   --manifest-tsv "${MANIFEST}" \
   --summary-json "${SUMMARY_JSON}" \
   --summary-tsv "${SUMMARY_TSV}" \
   --subset "${SUBSET}" \
   2>&1 | tee "${GRID_ROOT}/summarize_grid.out"
+
+if [[ "${MATERIALIZE_FORMAL_JSONL}" == "1" ]]; then
+  materialize_args=(
+    --grid-summary-json "${SUMMARY_JSON}"
+    --output-jsonl "${FORMAL_X3D_ACTIONNESS_JSONL}"
+    --summary-json "${FORMAL_X3D_MATERIALIZATION_SUMMARY}"
+    --selection-policy pre_registered
+    --provider "${DUCA_X3D_FORMAL_PROVIDER}"
+    --frame-interval "${DUCA_X3D_FORMAL_FRAME_INTERVAL}"
+  )
+  if [[ -n "${DUCA_X3D_FORMAL_CLIP_FRAMES}" ]]; then
+    materialize_args+=(--clip-frames "${DUCA_X3D_FORMAL_CLIP_FRAMES}")
+  fi
+  "${PYTHON}" tools/bata/materialize_trainfree_x3d_actionness.py "${materialize_args[@]}" \
+    2>&1 | tee "${GRID_ROOT}/materialize_formal_x3d_actionness.out"
+fi
 
 echo "[DUCA_X3D_INTERVAL_GRID] COMPLETE manifest=${MANIFEST} summary=${SUMMARY_JSON}"
