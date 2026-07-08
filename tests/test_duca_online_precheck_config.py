@@ -185,7 +185,8 @@ def test_duca_online_official_backend_config_supports_env_budget_curve(monkeypat
 
 
 def test_duca_online_official_backend_validator_allows_budget_curve_mode(monkeypatch):
-    env = dict(**os.environ, DUCA_ONLINE_BUDGET="512")
+    env = os.environ.copy()
+    env["DUCA_ONLINE_BUDGET"] = "512"
     output = subprocess.check_output(
         [
             sys.executable,
