@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -120,6 +121,25 @@ def _parse_squeue(value: str | Path | None) -> dict[str, dict[str, str]]:
             "reason": reason,
         }
     return out
+
+
+def _live_squeue_text(job_ids: list[str]) -> str:
+    ids = [str(job_id).strip() for job_id in job_ids if str(job_id).strip()]
+    if not ids:
+        return ""
+    try:
+        completed = subprocess.run(
+            ["squeue", "-h", "-j", ",".join(ids), "-o", "%i|%j|%T|%R"],
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout
 
 
 def _state_to_status(state: str) -> str:
@@ -317,6 +337,10 @@ def monitor_suite(
     if deployment.get("schema_version") != "duca_jct_experiment_suite_deployment_v1":
         raise ValueError("deployment_summary schema_version must be duca_jct_experiment_suite_deployment_v1")
     run_root = _path(deployment.get("run_root", deployment_path.parent))
+    if squeue_text is None:
+        squeue_text = _live_squeue_text(
+            [str(deployment.get(spec["summary_key"], "") or "") for spec in JOB_SPECS.values()]
+        )
     squeue = _parse_squeue(squeue_text)
     x3d_status = _formal_x3d_status(deployment)
     grad_proof_status = _joint_grad_proof_status(deployment, run_root)

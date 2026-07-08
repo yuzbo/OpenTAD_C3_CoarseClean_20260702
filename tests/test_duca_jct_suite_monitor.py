@@ -122,6 +122,31 @@ def test_duca_jct_suite_monitor_classifies_jobs_and_x3d_readiness(tmp_path: Path
     assert "duca384" not in summary["missing_results"]
 
 
+def test_duca_jct_suite_monitor_queries_live_squeue_by_default(monkeypatch, tmp_path: Path) -> None:
+    deployment = _deployment(tmp_path, with_x3d=True)
+    run_root = deployment.parent
+    _write_text(run_root / "slurm_logs" / "duca_jct_384_102.out", "Average-mAP: 12.34 (%)\n")
+
+    from tools.bata import monitor_duca_jct_experiment_suite as monitor
+
+    class _Completed:
+        returncode = 0
+        stdout = "102|duca_jct_384|RUNNING|None\n"
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[:2] == ["squeue", "-h"]
+        assert "-j" in cmd
+        return _Completed()
+
+    monkeypatch.setattr(monitor.subprocess, "run", fake_run)
+
+    summary = monitor.monitor_suite(deployment_summary=deployment, squeue_text=None)
+
+    assert summary["jobs"]["duca384"]["status"] == "running"
+    assert "duca384" in summary["running_jobs"]
+    assert "duca384" not in summary["missing_results"]
+
+
 def test_duca_jct_suite_monitor_blocks_x3d_downstream_when_formal_jsonl_missing(tmp_path: Path) -> None:
     deployment = _deployment(tmp_path, with_x3d=False)
 
