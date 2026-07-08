@@ -269,39 +269,44 @@ def export_actionness(
         frame_interval=frame_interval,
         crop_size=crop_size,
     )
-    rows: list[dict[str, Any]] = []
+    out = Path(output_jsonl).expanduser()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    row_count = 0
     start_time = time.time()
-    with torch.no_grad():
-        for video_id, payload in videos:
-            duration = float(payload.get("duration", 0.0))
-            times = _sample_times(duration, int(dense_window_size))
-            video_path = video_index[video_id]
-            batch_clips: list[torch.Tensor] = []
-            batch_meta: list[tuple[int, float]] = []
-            for time_index, center_sec in enumerate(times):
-                clip = _decode_clip_decord(
-                    video_path,
-                    center_sec=center_sec,
-                    clip_frames=int(clip_frames),
-                    frame_interval=int(frame_interval),
-                    crop_size=int(crop_size),
-                )
-                batch_clips.append(clip)
-                batch_meta.append((time_index, center_sec))
-                if len(batch_clips) >= int(batch_size) or time_index == len(times) - 1:
-                    inputs = torch.stack(batch_clips, dim=0).to(device_obj, non_blocking=True)
-                    logits = model(inputs)
-                    if isinstance(logits, Mapping):
-                        logits = logits.get("logits", next(iter(logits.values())))
-                    if isinstance(logits, (tuple, list)):
-                        logits = logits[0]
-                    logits = logits if torch.is_tensor(logits) else torch.as_tensor(logits)
-                    p_action = _confidence_actionness(logits.detach().float().cpu(), mode=score_mode)
-                    max_logits = logits.detach().float().cpu().max(dim=1).values
-                    for (idx, original_time), score, raw_logit in zip(batch_meta, p_action.tolist(), max_logits.tolist()):
-                        prob = float(score)
-                        rows.append(
-                            {
+    with out.open("w", encoding="utf-8") as handle:
+        with torch.no_grad():
+            for video_offset, (video_id, payload) in enumerate(videos, start=1):
+                duration = float(payload.get("duration", 0.0))
+                times = _sample_times(duration, int(dense_window_size))
+                video_path = video_index[video_id]
+                batch_clips: list[torch.Tensor] = []
+                batch_meta: list[tuple[int, float]] = []
+                video_rows = 0
+                for time_index, center_sec in enumerate(times):
+                    clip = _decode_clip_decord(
+                        video_path,
+                        center_sec=center_sec,
+                        clip_frames=int(clip_frames),
+                        frame_interval=int(frame_interval),
+                        crop_size=int(crop_size),
+                    )
+                    batch_clips.append(clip)
+                    batch_meta.append((time_index, center_sec))
+                    if len(batch_clips) >= int(batch_size) or time_index == len(times) - 1:
+                        inputs = torch.stack(batch_clips, dim=0).to(device_obj, non_blocking=True)
+                        logits = model(inputs)
+                        if isinstance(logits, Mapping):
+                            logits = logits.get("logits", next(iter(logits.values())))
+                        if isinstance(logits, (tuple, list)):
+                            logits = logits[0]
+                        logits = logits if torch.is_tensor(logits) else torch.as_tensor(logits)
+                        p_action = _confidence_actionness(logits.detach().float().cpu(), mode=score_mode)
+                        max_logits = logits.detach().float().cpu().max(dim=1).values
+                        for (idx, original_time), score, raw_logit in zip(
+                            batch_meta, p_action.tolist(), max_logits.tolist()
+                        ):
+                            prob = float(score)
+                            row = {
                                 "schema_version": OUTPUT_SCHEMA_VERSION,
                                 "video_id": video_id,
                                 "window_id": f"{video_id}_{idx:04d}",
@@ -320,10 +325,20 @@ def export_actionness(
                                 "uses_teacher": False,
                                 "calibration_split": "none",
                             }
-                        )
-                    batch_clips.clear()
-                    batch_meta.clear()
-    row_count = _write_jsonl(output_jsonl, rows)
+                            handle.write(json.dumps(row, sort_keys=True) + "\n")
+                            row_count += 1
+                            video_rows += 1
+                        handle.flush()
+                        batch_clips.clear()
+                        batch_meta.clear()
+                elapsed = time.time() - start_time
+                print(
+                    "[FROZEN_KINETICS_ACTIONNESS] "
+                    f"video={video_offset}/{len(videos)} video_id={video_id} "
+                    f"rows={video_rows} total_rows={row_count} elapsed_sec={elapsed:.1f}",
+                    file=sys.stderr,
+                    flush=True,
+                )
     elapsed = time.time() - start_time
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,

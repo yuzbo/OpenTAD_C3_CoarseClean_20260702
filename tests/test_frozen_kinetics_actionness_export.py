@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -56,3 +57,50 @@ def test_video_index_maps_stems(tmp_path: Path) -> None:
     index = exporter._build_video_index([tmp_path])
 
     assert index["video_test_0000004"] == video
+
+
+@pytest.mark.skipif(os.name == "nt", reason="local Windows torch DLL initialization is not reliable")
+def test_export_actionness_streams_rows_and_progress(tmp_path: Path, monkeypatch, capsys) -> None:
+    torch = pytest.importorskip("torch")
+    video_path = tmp_path / "video_test_0000004.mp4"
+    video_path.write_bytes(b"fake-video")
+
+    class FakeModel:
+        def __call__(self, inputs):
+            return torch.ones(inputs.shape[0], 4)
+
+    monkeypatch.setattr(exporter, "_read_json", lambda _path: {"database": {}})
+    monkeypatch.setattr(
+        exporter,
+        "_video_database",
+        lambda _annotation, subset=None: [("video_test_0000004", {"duration": 2.0})],
+    )
+    monkeypatch.setattr(exporter, "_build_video_index", lambda _roots: {"video_test_0000004": video_path})
+    monkeypatch.setattr(exporter, "_load_model", lambda *args, **kwargs: FakeModel())
+    monkeypatch.setattr(
+        exporter,
+        "_decode_clip_decord",
+        lambda *args, **kwargs: torch.zeros(3, 1, 2, 2),
+    )
+
+    output_jsonl = tmp_path / "actionness.jsonl"
+    summary_json = tmp_path / "summary.json"
+    summary = exporter.export_actionness(
+        annotation_json=tmp_path / "ann.json",
+        video_roots=[tmp_path],
+        output_jsonl=output_jsonl,
+        summary_json=summary_json,
+        provider="x3d_xs",
+        dense_window_size=2,
+        batch_size=1,
+        device="cpu",
+    )
+
+    rows = [json.loads(line) for line in output_jsonl.read_text(encoding="utf-8").splitlines()]
+    captured = capsys.readouterr()
+
+    assert summary["row_count"] == 2
+    assert len(rows) == 2
+    assert rows[0]["video_id"] == "video_test_0000004"
+    assert "[FROZEN_KINETICS_ACTIONNESS] video=1/1" in captured.err
+    assert summary_json.exists()
