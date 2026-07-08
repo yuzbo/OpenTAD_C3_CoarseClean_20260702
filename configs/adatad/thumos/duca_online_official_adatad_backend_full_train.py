@@ -29,8 +29,22 @@ def _env_float(name, default):
 dense_window_size = _env_int("DUCA_ONLINE_DENSE_WINDOW_SIZE", 768)
 window_size = _env_int("DUCA_ONLINE_BUDGET", _env_int("DUCA_OFFICIAL_ADATAD_BUDGET", 384))
 strict_budget_claim_max = _env_int("DUCA_STRICT_CLAIM_MAX_BUDGET", 384)
-duca_loss_schedule_warmup_steps = _env_int("DUCA_LOSS_SCHEDULE_WARMUP_STEPS", 500)
-duca_loss_schedule_transition_steps = _env_int("DUCA_LOSS_SCHEDULE_TRANSITION_STEPS", 4000)
+duca_end_epoch = _env_int("DUCA_OFFICIAL_ADATAD_END_EPOCH", 60)
+duca_schedule_steps_per_epoch = _env_int("DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH", 99)
+duca_loss_schedule_total_steps = _env_int(
+    "DUCA_LOSS_SCHEDULE_TOTAL_STEPS",
+    duca_end_epoch * duca_schedule_steps_per_epoch,
+)
+duca_loss_schedule_warmup_fraction = _env_float("DUCA_LOSS_SCHEDULE_WARMUP_FRACTION", 0.08)
+duca_loss_schedule_transition_fraction = _env_float("DUCA_LOSS_SCHEDULE_TRANSITION_FRACTION", 0.67)
+duca_loss_schedule_warmup_steps = _env_int(
+    "DUCA_LOSS_SCHEDULE_WARMUP_STEPS",
+    int(round(duca_loss_schedule_total_steps * duca_loss_schedule_warmup_fraction)),
+)
+duca_loss_schedule_transition_steps = _env_int(
+    "DUCA_LOSS_SCHEDULE_TRANSITION_STEPS",
+    int(round(duca_loss_schedule_total_steps * duca_loss_schedule_transition_fraction)),
+)
 duca_loss_schedule_shape = os.environ.get("DUCA_LOSS_SCHEDULE_SHAPE", "cosine")
 duca_profile_runtime = os.environ.get("DUCA_PROFILE_RUNTIME", "0") == "1"
 duca_profile_sync_cuda = os.environ.get("DUCA_PROFILE_SYNC_CUDA", "1") != "0"
@@ -62,6 +76,18 @@ if window_size % 16 != 0:
     raise ValueError("DUCA_ONLINE_BUDGET must be divisible by 16 for the VideoMAE tubelet rearrange")
 if duca_loss_schedule_shape not in {"linear", "cosine"}:
     raise ValueError("DUCA_LOSS_SCHEDULE_SHAPE must be linear or cosine")
+if duca_schedule_steps_per_epoch <= 0:
+    raise ValueError("DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH must be positive")
+if duca_loss_schedule_total_steps <= 0:
+    raise ValueError("DUCA_LOSS_SCHEDULE_TOTAL_STEPS must be positive")
+if not (0.0 <= duca_loss_schedule_warmup_fraction < 1.0):
+    raise ValueError("DUCA_LOSS_SCHEDULE_WARMUP_FRACTION must be in [0, 1)")
+if not (0.0 < duca_loss_schedule_transition_fraction <= 1.0):
+    raise ValueError("DUCA_LOSS_SCHEDULE_TRANSITION_FRACTION must be in (0, 1]")
+if duca_loss_schedule_warmup_steps < 0:
+    raise ValueError("DUCA_LOSS_SCHEDULE_WARMUP_STEPS must be non-negative")
+if duca_loss_schedule_transition_steps <= 0:
+    raise ValueError("DUCA_LOSS_SCHEDULE_TRANSITION_STEPS must be positive")
 scale_factor = 1
 chunk_num = window_size * scale_factor // 16
 
@@ -104,6 +130,10 @@ duca_online_main_contract = dict(
     loss_schedule_policy="progressive_joint",
     loss_schedule_step_update="optimizer_step",
     loss_schedule_shape=duca_loss_schedule_shape,
+    loss_schedule_total_steps=duca_loss_schedule_total_steps,
+    loss_schedule_steps_per_epoch=duca_schedule_steps_per_epoch,
+    loss_schedule_warmup_fraction=duca_loss_schedule_warmup_fraction,
+    loss_schedule_transition_fraction=duca_loss_schedule_transition_fraction,
     loss_schedule_warmup_steps=duca_loss_schedule_warmup_steps,
     loss_schedule_transition_steps=duca_loss_schedule_transition_steps,
     coarse_actionness_dominates_initial_training=True,
@@ -256,7 +286,7 @@ workflow = dict(
     val_eval_interval=int(os.environ.get("DUCA_OFFICIAL_ADATAD_VAL_INTERVAL", "5")),
     val_eval_interval_anchor_epoch=5,
     val_start_epoch=int(os.environ.get("DUCA_OFFICIAL_ADATAD_VAL_START_EPOCH", "4")),
-    end_epoch=int(os.environ.get("DUCA_OFFICIAL_ADATAD_END_EPOCH", "60")),
+    end_epoch=duca_end_epoch,
 )
 
 work_dir = "exps/thumos/adatad/duca_online_official_adatad_backend_full_train"

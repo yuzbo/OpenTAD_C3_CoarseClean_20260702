@@ -50,6 +50,22 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
     _require(str(schedule.get("shape", "linear")) in {"linear", "cosine"}, "loss schedule shape must be linear or cosine")
     _require(int(schedule.warmup_steps) >= 0, "loss schedule warmup_steps must be non-negative")
     _require(int(schedule.transition_steps) > 0, "loss schedule transition_steps must be positive")
+    _require(
+        int(getattr(contract, "loss_schedule_total_steps", 0)) > 0,
+        "loss schedule must declare a positive total training-step horizon",
+    )
+    _require(
+        int(getattr(contract, "loss_schedule_steps_per_epoch", 0)) > 0,
+        "loss schedule must declare positive expected steps per epoch",
+    )
+    _require(
+        0.0 <= float(getattr(contract, "loss_schedule_warmup_fraction", -1.0)) < 1.0,
+        "loss schedule warmup must be declared as a fraction of total training",
+    )
+    _require(
+        0.0 < float(getattr(contract, "loss_schedule_transition_fraction", 0.0)) <= 1.0,
+        "loss schedule transition must be declared as a fraction of total training",
+    )
     _require(float(schedule.actionness.start) > float(schedule.actionness.end), "actionness loss must decay after warmup")
     _require(
         getattr(contract, "detector_loss_always_trains_backend", False) is True,
@@ -73,6 +89,10 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
         "loss_schedule_policy": str(schedule.type),
         "loss_schedule_step_update": str(contract.loss_schedule_step_update),
         "loss_schedule_shape": str(schedule.get("shape", "linear")),
+        "loss_schedule_total_steps": int(contract.loss_schedule_total_steps),
+        "loss_schedule_steps_per_epoch": int(contract.loss_schedule_steps_per_epoch),
+        "loss_schedule_warmup_fraction": float(contract.loss_schedule_warmup_fraction),
+        "loss_schedule_transition_fraction": float(contract.loss_schedule_transition_fraction),
         "loss_schedule_warmup_steps": int(schedule.warmup_steps),
         "loss_schedule_transition_steps": int(schedule.transition_steps),
         "loss_schedule_actionness_start": float(schedule.actionness.start),
