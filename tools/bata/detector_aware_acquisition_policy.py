@@ -188,6 +188,116 @@ def score_dilated_frame_values(
     return [float(item) for item in out]
 
 
+def _uniform_reference_positions(*, valid_len: int, selected_count: int) -> list[int]:
+    valid_len = int(valid_len)
+    selected_count = int(selected_count)
+    if valid_len <= 0 or selected_count <= 0:
+        return []
+    if selected_count >= valid_len:
+        return list(range(valid_len))
+    step = float(valid_len) / float(selected_count)
+    positions = [int(round(float(idx) * step)) for idx in range(selected_count)]
+    positions = [max(0, min(valid_len - 1, item)) for item in positions]
+    if len(set(positions)) == len(positions):
+        return sorted(positions)
+    out: list[int] = []
+    used: set[int] = set()
+    for item in positions:
+        candidate = item
+        while candidate in used and candidate + 1 < valid_len:
+            candidate += 1
+        while candidate in used and candidate - 1 >= 0:
+            candidate -= 1
+        if candidate not in used:
+            used.add(candidate)
+            out.append(candidate)
+    return sorted(out)
+
+
+def uniform_reference_similarity(selected: Sequence[int], *, valid_len: int) -> float:
+    selected_set = {int(item) for item in selected}
+    if not selected_set:
+        return 0.0
+    reference = set(_uniform_reference_positions(valid_len=int(valid_len), selected_count=len(selected_set)))
+    return len(selected_set.intersection(reference)) / float(len(selected_set))
+
+
+def detector_aware_hard_gap_aware_topk(
+    frame_values: Sequence[Any],
+    *,
+    valid: Sequence[Any] | None = None,
+    budget: int,
+    max_unselected_hole: int | None = None,
+    max_uniform_similarity: float | None = None,
+) -> list[int]:
+    selected = gas_vt.hard_gap_aware_topk(
+        frame_values,
+        valid=valid,
+        budget=int(budget),
+        max_unselected_hole=max_unselected_hole,
+    )
+    if max_uniform_similarity is None or not selected:
+        return selected
+    target = float(max_uniform_similarity)
+    if target < 0.0:
+        raise ValueError("max_uniform_similarity must be non-negative")
+    valid_mask = [True] * len(frame_values) if valid is None else [bool(item) for item in valid]
+    valid_indices = [idx for idx, flag in enumerate(valid_mask) if bool(flag)]
+    if not valid_indices:
+        return selected
+    valid_len = len(valid_indices)
+    if valid_len != (max(valid_indices) + 1):
+        return selected
+    selected_set = {int(item) for item in selected}
+    budget_count = len(selected_set)
+    if budget_count <= 0 or budget_count >= valid_len:
+        return selected
+    reference = set(_uniform_reference_positions(valid_len=valid_len, selected_count=budget_count))
+    max_hole = None if max_unselected_hole is None else int(max_unselected_hole)
+
+    def hole_ok(candidate: set[int]) -> bool:
+        if max_hole is None:
+            return True
+        return gas_vt.max_unselected_hole(sorted(candidate), valid_len=valid_len) <= max_hole
+
+    for _ in range(max(0, budget_count)):
+        current_similarity = uniform_reference_similarity(sorted(selected_set), valid_len=valid_len)
+        if current_similarity <= target:
+            break
+        removable = sorted(
+            (idx for idx in selected_set if idx in reference),
+            key=lambda idx: (float(frame_values[idx]), -idx),
+        )
+        addable = sorted(
+            (idx for idx in valid_indices if idx not in selected_set and idx not in reference),
+            key=lambda idx: (float(frame_values[idx]), -idx),
+            reverse=True,
+        )
+        best: tuple[float, float, int, int] | None = None
+        for remove_idx in removable:
+            for add_idx in addable[: max(32, budget_count)]:
+                candidate = set(selected_set)
+                candidate.remove(int(remove_idx))
+                candidate.add(int(add_idx))
+                if not hole_ok(candidate):
+                    continue
+                new_similarity = uniform_reference_similarity(sorted(candidate), valid_len=valid_len)
+                if new_similarity >= current_similarity:
+                    continue
+                utility_delta = float(frame_values[add_idx]) - float(frame_values[remove_idx])
+                similarity_gain = current_similarity - new_similarity
+                objective = utility_delta + 0.05 * similarity_gain
+                item = (float(objective), float(utility_delta), int(add_idx), int(remove_idx))
+                if best is None or item > best:
+                    best = item
+        if best is None:
+            break
+        _objective, _utility_delta, add_idx, remove_idx = best
+        selected_set.remove(int(remove_idx))
+        selected_set.add(int(add_idx))
+    return sorted(selected_set)
+
+
 def _has_dynamic_gain_calibration_evidence(calibration: Mapping[str, Any] | None) -> bool:
     if not isinstance(calibration, Mapping):
         return False
@@ -235,6 +345,7 @@ def add_detector_aware_decision_to_sample_row(
     dynamic_budget_buckets: Sequence[Any] = DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS,
     dynamic_gain_calibration: Mapping[str, Any] | None = None,
     max_unselected_hole: int | None = None,
+    max_uniform_similarity: float | None = None,
     source: str | None = None,
     checkpoint_path: str | None = None,
     checkpoint_sha256: str | None = None,
@@ -256,11 +367,12 @@ def add_detector_aware_decision_to_sample_row(
             valid_len=valid_len,
             context_radii=strategy_context_radii.get(strategy_name),
         )
-        strategies[strategy_name] = gas_vt.hard_gap_aware_topk(
+        strategies[strategy_name] = detector_aware_hard_gap_aware_topk(
             decoded_values,
             valid=valid,
             budget=budget,
             max_unselected_hole=max_unselected_hole,
+            max_uniform_similarity=max_uniform_similarity,
         )
     dynamic_budget = base_policy.decode_budget_from_scores(
         dynamic_budget_scores,
@@ -274,11 +386,12 @@ def add_detector_aware_decision_to_sample_row(
         valid_len=valid_len,
         context_radii=strategy_context_radii.get(DETECTOR_AWARE_DYNAMIC_STRATEGY),
     )
-    strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = gas_vt.hard_gap_aware_topk(
+    strategies[DETECTOR_AWARE_DYNAMIC_STRATEGY] = detector_aware_hard_gap_aware_topk(
         dynamic_decoded_values,
         valid=valid,
         budget=dynamic_budget,
         max_unselected_hole=max_unselected_hole,
+        max_uniform_similarity=max_uniform_similarity,
     )
     out["strategy_selected_positions"] = strategies
     out["detector_aware_policy"] = {
@@ -308,6 +421,7 @@ def add_detector_aware_decision_to_sample_row(
         "dynamic_budget_buckets": [int(item) for item in dynamic_budget_buckets],
         "dynamic_budget_calibration": calibration,
         "max_unselected_hole": None if max_unselected_hole is None else int(max_unselected_hole),
+        "max_uniform_similarity": None if max_uniform_similarity is None else float(max_uniform_similarity),
         "uses_uniform_fill": False,
         "uses_uniform_scaffold": False,
         "budget_conditioned_frame_values": bool(frame_values_by_strategy),
@@ -316,6 +430,8 @@ def add_detector_aware_decision_to_sample_row(
         "runtime_flops_claim_allowed": False,
         "paper_claim_allowed": False,
         "map_claim_allowed": False,
+        "anti_uniform_rerank": bool(max_uniform_similarity is not None),
+        "anti_uniform_rerank_signal": "learned_detector_utility_score",
         "loss_terms": dict(DEFAULT_DETECTOR_AWARE_LOSS_TERMS),
         "checkpoint_path": checkpoint_path,
         "checkpoint_sha256": checkpoint_sha256,

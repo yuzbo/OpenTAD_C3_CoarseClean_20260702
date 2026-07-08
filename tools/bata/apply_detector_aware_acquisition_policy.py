@@ -306,6 +306,7 @@ def run_policy_application(
     strict_deploy_source: bool = False,
     allow_bootstrap_for_tests: bool = False,
     max_unselected_hole: int | None = None,
+    max_uniform_similarity: float | None = None,
     source_jsonl_for_hash: str | Path | None = None,
     require_point_responsibility_utility: bool = False,
     allow_legacy_no_context_radius: bool = False,
@@ -392,6 +393,7 @@ def run_policy_application(
             dynamic_budget_buckets=dynamic_budget_buckets,
             dynamic_gain_calibration=dynamic_gain_calibration,
             max_unselected_hole=max_unselected_hole,
+            max_uniform_similarity=max_uniform_similarity,
             source=source,
             checkpoint_path=None if checkpoint_path is None else str(checkpoint_path),
             checkpoint_sha256=checkpoint_sha256,
@@ -435,6 +437,7 @@ def run_policy_application(
         "allow_legacy_no_context_radius": bool(allow_legacy_no_context_radius),
         "legacy_context_radius": None if legacy_context_radius is None else float(detector_policy._clamp_context_radius(legacy_context_radius)),
         "source_jsonl_sha256": source_jsonl_sha256,
+        "decoder_max_uniform_similarity": None if max_uniform_similarity is None else float(max_uniform_similarity),
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
         "strict_deploy_source": bool(strict_deploy_source),
         "allow_bootstrap_for_tests": bool(allow_bootstrap_for_tests),
@@ -466,6 +469,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--strip-deploy-invisible-payload", action="store_true")
     parser.add_argument("--strict-deploy-source", action="store_true")
     parser.add_argument("--max-unselected-hole", type=int)
+    parser.add_argument("--max-uniform-similarity", type=float)
     parser.add_argument("--require-point-responsibility-utility", action="store_true")
     parser.add_argument("--allow-legacy-no-context-radius", action="store_true")
     parser.add_argument("--legacy-context-radius", type=float)
@@ -482,6 +486,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         strict_deploy_source=bool(args.strict_deploy_source),
         allow_bootstrap_for_tests=False,
         max_unselected_hole=args.max_unselected_hole,
+        max_uniform_similarity=args.max_uniform_similarity,
         require_point_responsibility_utility=bool(args.require_point_responsibility_utility),
         allow_legacy_no_context_radius=bool(args.allow_legacy_no_context_radius),
         legacy_context_radius=args.legacy_context_radius,

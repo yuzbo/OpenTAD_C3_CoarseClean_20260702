@@ -331,6 +331,7 @@ def run_pipeline(
         strip_deploy_invisible_payload=True,
         strict_deploy_source=bool(deploy_selection_ledger),
         max_unselected_hole=decoder_max_unselected_hole,
+        max_uniform_similarity=max_uniform_similarity,
         source_jsonl_for_hash=input_sample_path,
         require_point_responsibility_utility=bool(require_point_responsibility_utility),
     )

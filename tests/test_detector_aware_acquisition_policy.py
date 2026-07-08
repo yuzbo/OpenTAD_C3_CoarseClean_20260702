@@ -373,6 +373,31 @@ def test_detector_aware_score_dilation_uses_local_peaks_not_all_positive_values(
     assert decoded == pytest.approx(flat_positive)
 
 
+def test_detector_aware_decoder_uses_utility_guided_anti_uniform_rerank() -> None:
+    values = [1.0 if idx % 2 == 0 else 0.99 for idx in range(20)]
+    valid = [True] * len(values)
+
+    baseline = detector_policy.detector_aware_hard_gap_aware_topk(
+        values,
+        valid=valid,
+        budget=10,
+        max_unselected_hole=2,
+    )
+    reranked = detector_policy.detector_aware_hard_gap_aware_topk(
+        values,
+        valid=valid,
+        budget=10,
+        max_unselected_hole=2,
+        max_uniform_similarity=0.5,
+    )
+
+    assert detector_policy.uniform_reference_similarity(baseline, valid_len=20) == pytest.approx(1.0)
+    assert detector_policy.uniform_reference_similarity(reranked, valid_len=20) <= 0.5
+    assert len(reranked) == 10
+    assert detector_policy.gas_vt.max_unselected_hole(reranked, valid_len=20) <= 2
+    assert sum(values[idx] for idx in reranked) >= sum(values[idx] for idx in baseline) - 0.1
+
+
 def test_detector_aware_apply_fails_closed_when_checkpoint_lacks_context_radius(monkeypatch) -> None:
     def legacy_scores(_model, p_action, *, valid, target_budget=None, device="cpu", **_kwargs):
         return [float(item) for item in p_action], [0.0, 1.0]
