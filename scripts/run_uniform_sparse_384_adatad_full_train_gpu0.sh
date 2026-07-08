@@ -315,7 +315,8 @@ generate_ledger_for_split() {
     --output-jsonl "${ledger_jsonl}" \
     --summary-json "${summary_json}" \
     --target-len "${UNIFORM_SPARSE_TARGET_LEN}" \
-    --allow-short-valid
+    --allow-short-valid \
+    --allow-duplicate-identical-sample-id
   add_uniform_deploy_metadata "${ledger_jsonl}" "${summary_json}"
   validate_uniform_ledger "${ledger_jsonl}"
 }

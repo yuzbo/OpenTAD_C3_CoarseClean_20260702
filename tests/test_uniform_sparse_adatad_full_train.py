@@ -111,6 +111,7 @@ def test_uniform_sparse_384_launcher_is_gpu0_precheck_first_and_fail_closed() ->
     assert "generate_uniform_sparse_ledger.py" in text
     assert "--target-len \"${UNIFORM_SPARSE_TARGET_LEN}\"" in text
     assert "--allow-short-valid" in text
+    assert "--allow-duplicate-identical-sample-id" in text
     assert "expected_count = min(valid_len, 384)" in text
     assert "strict uniform budget cap 384" in text
     assert "UNIFORM_SPARSE_TARGET_LEN=\"${UNIFORM_SPARSE_TARGET_LEN:-384}\"" in text

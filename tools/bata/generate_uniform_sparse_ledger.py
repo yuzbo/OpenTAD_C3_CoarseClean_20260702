@@ -63,6 +63,25 @@ def _write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
     out_path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _dedupe_identical_sample_ids(rows: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    deduped: list[dict[str, Any]] = []
+    seen: dict[str, Mapping[str, Any]] = {}
+    duplicate_count = 0
+    for row in rows:
+        row_dict = dict(row)
+        sample_id = row_dict.get("sample_id")
+        if isinstance(sample_id, str) and sample_id:
+            previous = seen.get(sample_id)
+            if previous is not None:
+                if dict(previous) != row_dict:
+                    raise ValueError(f"duplicate sample_id has non-identical source rows: {sample_id}")
+                duplicate_count += 1
+                continue
+            seen[sample_id] = row_dict
+        deduped.append(row_dict)
+    return deduped, duplicate_count
+
+
 def _is_true(value: Any) -> bool:
     if value is True:
         return True
@@ -230,11 +249,16 @@ def run_generation(
     summary_json: str | Path | None = None,
     target_len: int = 384,
     allow_short_valid: bool = False,
+    allow_duplicate_identical_sample_id: bool = False,
 ) -> dict[str, Any]:
     target_len = _strict_int(target_len, name="target_len")
     if target_len <= 0:
         raise ValueError("target_len must be positive")
     source_rows = _read_jsonl(input_jsonl)
+    source_row_count = len(source_rows)
+    duplicate_identical_count = 0
+    if allow_duplicate_identical_sample_id:
+        source_rows, duplicate_identical_count = _dedupe_identical_sample_ids(source_rows)
     ledger_rows = [
         source_row_to_ledger_row(
             row,
@@ -255,10 +279,13 @@ def run_generation(
         "decision": READY,
         "input_jsonl": str(input_jsonl),
         "output_jsonl": str(output_jsonl),
+        "source_row_count": int(source_row_count),
         "row_count": len(ledger_rows),
         "target_len": int(target_len),
         "selection_family": SELECTION_FAMILY,
         "allow_short_valid": bool(allow_short_valid),
+        "allow_duplicate_identical_sample_id": bool(allow_duplicate_identical_sample_id),
+        "duplicate_identical_sample_id_count": int(duplicate_identical_count),
         "short_valid_count": int(short_valid_count),
         "selected_count_histogram": _count_histogram(selected_counts),
         "min_selected_count": min(selected_counts),
@@ -283,6 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--summary-json")
     parser.add_argument("--target-len", type=int, default=384)
     parser.add_argument("--allow-short-valid", action="store_true")
+    parser.add_argument("--allow-duplicate-identical-sample-id", action="store_true")
     args = parser.parse_args(argv)
     try:
         summary = run_generation(
@@ -291,6 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             summary_json=args.summary_json,
             target_len=int(args.target_len),
             allow_short_valid=bool(args.allow_short_valid),
+            allow_duplicate_identical_sample_id=bool(args.allow_duplicate_identical_sample_id),
         )
     except Exception as exc:  # pragma: no cover - CLI guard
         print(json.dumps({"schema_version": SUMMARY_SCHEMA_VERSION, "decision": NO_GO, "error": str(exc)}), flush=True)

@@ -41,6 +41,9 @@ def test_generate_uniform_sparse_ledger_exact_384_rows(tmp_path: Path) -> None:
     assert summary["min_selected_count"] == 384
     assert summary["max_selected_count"] == 384
     assert summary["short_valid_count"] == 0
+    assert summary["source_row_count"] == 2
+    assert summary["allow_duplicate_identical_sample_id"] is False
+    assert summary["duplicate_identical_sample_id_count"] == 0
     assert summary["source_sha256"] == uniform_ledger.sha256_file(source)
     assert summary["ledger_sha256"] == uniform_ledger.sha256_file(ledger)
     assert json.loads(summary_json.read_text(encoding="utf-8")) == summary
@@ -96,6 +99,47 @@ def test_generate_uniform_sparse_ledger_short_valid_opt_in_records_summary(tmp_p
     assert summary["allow_short_valid"] is True
 
 
+def test_generate_uniform_sparse_ledger_can_dedupe_identical_sample_rows(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    duplicate = {"sample_id": "video_dup|0", "dense_len": 768, "valid_len": 768}
+    _write_jsonl(source, [duplicate, dict(duplicate)])
+
+    summary = uniform_ledger.run_generation(
+        source,
+        ledger,
+        target_len=384,
+        allow_duplicate_identical_sample_id=True,
+    )
+
+    rows = _read_jsonl(ledger)
+    assert len(rows) == 1
+    assert rows[0]["sample_id"] == "video_dup|0"
+    assert summary["source_row_count"] == 2
+    assert summary["row_count"] == 1
+    assert summary["allow_duplicate_identical_sample_id"] is True
+    assert summary["duplicate_identical_sample_id_count"] == 1
+
+
+def test_generate_uniform_sparse_ledger_rejects_nonidentical_duplicate_sample_rows(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    _write_jsonl(
+        source,
+        [
+            {"sample_id": "video_dup|0", "dense_len": 768, "valid_len": 768},
+            {"sample_id": "video_dup|0", "dense_len": 768, "valid_len": 700},
+        ],
+    )
+
+    with pytest.raises(ValueError, match="duplicate sample_id has non-identical source rows"):
+        uniform_ledger.run_generation(
+            source,
+            tmp_path / "ledger.jsonl",
+            target_len=384,
+            allow_duplicate_identical_sample_id=True,
+        )
+
+
 def test_uniform_positions_are_sorted_unique_and_within_valid_range() -> None:
     positions = uniform_ledger.uniform_positions(valid_len=401, target_len=384)
 
@@ -120,6 +164,10 @@ def test_generate_uniform_sparse_ledger_summary_and_no_leak_flags(tmp_path: Path
     assert summary["uses_teacher"] is False
     assert summary["uses_prediction_cache"] is False
     assert summary["deploy_selection_ledger"] is True
+    assert summary["source_row_count"] == 1
+    assert summary["row_count"] == 1
+    assert summary["allow_duplicate_identical_sample_id"] is False
+    assert summary["duplicate_identical_sample_id_count"] == 0
     assert rows == [
         {
             "schema_version": "c3_uniform_sparse_ledger_v1",
