@@ -241,10 +241,12 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
 
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
     assert 'ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN="${ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN:-0}"' in text
-    assert 'export CUDA_VISIBLE_DEVICES="1"' in text
+    assert 'export CUDA_VISIBLE_DEVICES="0"' in text
+    assert 'export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
     assert 'SLURM_STEP_GPUS' in text
     assert 'must see one Slurm-bound GPU as logical 0/1' in text
     assert 'must use physical GPU1 outside Slurm remapping' in text
+    assert "CUDA is unavailable for PACTION_LATTICE_DEVICE=cuda" in text
     assert 'PACTION_POLICY_CHECKPOINT must point to a trained learned p_action policy checkpoint' in text
     assert "run_paction_lattice_replacement_ledger_pipeline.py" in text
     assert "validate_paction_lattice_replacement_ledger.py" in text

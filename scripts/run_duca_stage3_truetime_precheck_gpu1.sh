@@ -25,13 +25,16 @@ MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
 MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
 MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
   if [[ "${CUDA_VISIBLE_DEVICES}" != "0" && "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
     fail "DUCA Stage3 TrueTime precheck/full run must see one Slurm-bound GPU as logical 0/1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
   fi
-elif [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
-  fail "DUCA Stage3 TrueTime precheck/full run must use physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+else
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+  if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+    fail "DUCA Stage3 TrueTime precheck/full run must use physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+  fi
 fi
 
 RUN_TAG="${RUN_TAG:-duca_stage3_truetime_precheck_$(date +%Y%m%d_%H%M%S_%z)}"

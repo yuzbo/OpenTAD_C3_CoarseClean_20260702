@@ -23,15 +23,18 @@ MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_PACTION_ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
-if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
-  export CUDA_VISIBLE_DEVICES="1"
-fi
 if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
+  if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+    export CUDA_VISIBLE_DEVICES="0"
+  fi
   if [[ "${CUDA_VISIBLE_DEVICES}" != "0" && "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
     fail "C3 p_action lattice AdaTAD full train must see one Slurm-bound GPU as logical 0/1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
   fi
-elif [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
-  fail "C3 p_action lattice AdaTAD full train must use physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+else
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+  if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+    fail "C3 p_action lattice AdaTAD full train must use physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+  fi
 fi
 
 export HOME="${HOME:-${BASE}/tmp/home}"
@@ -192,6 +195,22 @@ echo "[C3_PACTION_LATTICE_ADATAD] disable_checkpoint=${C3_PACTION_ADATAD_DISABLE
 
 if [[ "${PRECHECK_ONLY}" != "1" && -z "${SLURM_JOB_ID:-}${SLURM_STEP_ID:-}" && "${ALLOW_NON_SLURM_C3_PACTION_FULLTRAIN:-0}" != "1" ]]; then
   fail "formal full train must run inside a Slurm allocation/step; set PRECHECK_ONLY=1 for login-node checks"
+fi
+
+if [[ "${PACTION_LATTICE_DEVICE}" == cuda* ]]; then
+  "${PYTHON}" - <<'PY'
+import os
+import torch
+
+if not torch.cuda.is_available():
+    raise SystemExit(
+        "CUDA is unavailable for PACTION_LATTICE_DEVICE=cuda; "
+        f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '')!r}, "
+        f"SLURM_STEP_GPUS={os.environ.get('SLURM_STEP_GPUS', '')!r}, "
+        f"SLURM_JOB_GPUS={os.environ.get('SLURM_JOB_GPUS', '')!r}. "
+        "Inside a Slurm GPU step, use logical CUDA_VISIBLE_DEVICES=0."
+    )
+PY
 fi
 
 bash -n "${BASH_SOURCE[0]}"
