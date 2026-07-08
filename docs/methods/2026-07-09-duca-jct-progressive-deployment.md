@@ -1,7 +1,7 @@
 ---
 updated: 2026-07-09
 status: active
-scope: Record the DUCA-JCT progressive collaborative training implementation and remote experiment deployment state for commit 308088c.
+scope: Record the DUCA-JCT progressive collaborative training implementation, detector-gradient bridge refinement, and remote experiment deployment state.
 out-of-scope: Final mAP numbers; result interpretation; paper claims before full runs complete.
 ---
 
@@ -11,8 +11,10 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 
 - Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git`
 - Branch: `codex/gas-vt-stage23-detector-aware-20260706`
-- Commit: `308088c`
-- Commit title: `Add DUCA joint training loss schedule`
+- Base deployment commit: `308088c`
+- Base deployment title: `Add DUCA joint training loss schedule`
+- Current local refinement: detector loss remains active for the backend while
+  the detector-to-selector ST gradient bridge is scheduled separately.
 - Remote worktree: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct`
 
 This commit is the current implementation checkpoint for the single-run DUCA-JCT route:
@@ -32,8 +34,9 @@ The main fixed-384 and DUCA-MUST configs both validate:
 - `loss_schedule_shape = cosine`
 - `loss_schedule_warmup_steps = 500`
 - `loss_schedule_transition_steps = 4000`
-- `loss_schedule_detector_start = 0.0`
-- `loss_schedule_detector_end = 1.0`
+- `loss_schedule_detector_loss_always_on = true`
+- `loss_schedule_detector_gradient_start = 0.0`
+- `loss_schedule_detector_gradient_end = 1.0`
 - `loss_schedule_actionness_start = 1.0`
 - `loss_schedule_actionness_end = 0.25`
 - `loss_schedule_hole_start = 0.0`
@@ -47,7 +50,9 @@ For DUCA-MUST, the dynamic-budget loss is also scheduled:
 This means the intended training sequence is continuous within one run:
 
 1. Coarse actionness supervision dominates early training.
-2. Detector loss and selection distribution loss are gradually enabled.
+2. The detector backend trains from the start, while the detector-to-selector
+   ST/surrogate gradient bridge and selection distribution losses are gradually
+   enabled.
 3. Dynamic budget regularization is gradually enabled for DUCA-MUST.
 
 This is not a multi-stage p_action export pipeline.

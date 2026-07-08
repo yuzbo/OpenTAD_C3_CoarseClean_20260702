@@ -47,8 +47,22 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
     _require(int(schedule.warmup_steps) >= 0, "loss schedule warmup_steps must be non-negative")
     _require(int(schedule.transition_steps) > 0, "loss schedule transition_steps must be positive")
     _require(float(schedule.actionness.start) > float(schedule.actionness.end), "actionness loss must decay after warmup")
-    _require(float(schedule.detector.start) == 0.0, "detector loss must be disabled at schedule start")
-    _require(float(schedule.detector.end) == 1.0, "detector loss must be fully enabled after schedule transition")
+    _require(
+        getattr(contract, "detector_loss_always_trains_backend", False) is True,
+        "detector loss must train the backend from the start",
+    )
+    _require(
+        getattr(contract, "detector_gradient_bridge_enabled_after_schedule_transition", False) is True,
+        "detector-to-selector gradient bridge must be explicitly scheduled",
+    )
+    _require(
+        float(schedule.detector_gradient.start) == 0.0,
+        "detector-to-selector gradient bridge must be disabled at schedule start",
+    )
+    _require(
+        float(schedule.detector_gradient.end) == 1.0,
+        "detector-to-selector gradient bridge must be fully enabled after schedule transition",
+    )
     _require(float(schedule.hole.start) == 0.0, "selection distribution loss must be disabled at schedule start")
     _require(float(schedule.hole.end) > 0.0, "selection distribution loss must be enabled after transition")
     return {
@@ -58,8 +72,10 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
         "loss_schedule_transition_steps": int(schedule.transition_steps),
         "loss_schedule_actionness_start": float(schedule.actionness.start),
         "loss_schedule_actionness_end": float(schedule.actionness.end),
-        "loss_schedule_detector_start": float(schedule.detector.start),
-        "loss_schedule_detector_end": float(schedule.detector.end),
+        "loss_schedule_detector_loss_always_on": True,
+        "loss_schedule_detector_gradient_bridge_scheduled": True,
+        "loss_schedule_detector_gradient_start": float(schedule.detector_gradient.start),
+        "loss_schedule_detector_gradient_end": float(schedule.detector_gradient.end),
         "loss_schedule_hole_start": float(schedule.hole.start),
         "loss_schedule_hole_end": float(schedule.hole.end),
     }

@@ -149,7 +149,7 @@ def test_progressive_loss_schedule_starts_with_actionness_and_shifts_to_detector
             "warmup_steps": 0,
             "transition_steps": 1,
             "actionness": {"start": 1.0, "end": 0.25},
-            "detector": {"start": 0.0, "end": 1.0},
+            "detector_gradient": {"start": 0.0, "end": 1.0},
             "hole": {"start": 0.0, "end": 1.0},
             "budget": {"start": 0.0, "end": 1.0},
             "entropy": {"start": 0.0, "end": 0.2},
@@ -181,16 +181,16 @@ def test_progressive_loss_schedule_starts_with_actionness_and_shifts_to_detector
     assert first_schedule["step"] == 0
     assert first_schedule["phase"] == "coarse_actionness_warmup"
     assert first_schedule["weights"]["actionness"] == pytest.approx(1.0)
-    assert first_schedule["weights"]["detector"] == pytest.approx(0.0)
+    assert first_schedule["detector_gradient_weight"] == pytest.approx(0.0)
     assert first_schedule["weights"]["hole"] == pytest.approx(0.0)
     assert second_schedule["step"] == 1
     assert second_schedule["phase"] == "joint_detection_selection"
     assert second_schedule["weights"]["actionness"] == pytest.approx(0.25)
-    assert second_schedule["weights"]["detector"] == pytest.approx(1.0)
+    assert second_schedule["detector_gradient_weight"] == pytest.approx(1.0)
     assert second_schedule["weights"]["hole"] == pytest.approx(1.0)
 
 
-def test_single_stage_detector_scales_detector_loss_with_duca_progressive_schedule() -> None:
+def test_detector_loss_is_not_muted_while_selector_gradient_bridge_warms_up() -> None:
     model = build_detector(
         {
             "type": "SingleStageDetector",
@@ -230,7 +230,7 @@ def test_single_stage_detector_scales_detector_loss_with_duca_progressive_schedu
                     "warmup_steps": 0,
                     "transition_steps": 1,
                     "actionness": {"start": 1.0, "end": 0.25},
-                    "detector": {"start": 0.0, "end": 1.0},
+                    "detector_gradient": {"start": 0.0, "end": 1.0},
                 },
             },
             "rpn_head": {"type": "DucaOnlinePrecheckHead", "in_channels": 3},
@@ -245,8 +245,80 @@ def test_single_stage_detector_scales_detector_loss_with_duca_progressive_schedu
         return_loss=True,
     )
 
-    assert losses["loss_detector"].detach().item() == pytest.approx(0.0)
+    assert losses["loss_detector"].detach().item() > 0.0
     assert losses["selector_actionness_bce_loss"].detach().item() > 0.0
+
+
+def test_detector_gradient_bridge_is_scheduled_independently_from_detector_loss() -> None:
+    torch.manual_seed(7)
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=2,
+        dense_window_size=8,
+        max_radius=1,
+        selector_hidden_channels=8,
+        detector_gradient_mode="st_sparse_gather_soft_context",
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "source_name": "zero_shot_motion_actionness",
+            "mode": "motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+            "checkpoint_hash": "no_checkpoint_motion_energy",
+        },
+        loss_weights={
+            "actionness": 0.0,
+            "detector": 1.0,
+            "hole": 0.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+            "budget": 0.0,
+        },
+        loss_weight_schedule={
+            "type": "progressive_joint",
+            "warmup_steps": 0,
+            "transition_steps": 1,
+            "detector_gradient": {"start": 0.0, "end": 1.0},
+        },
+    )
+    selector.train()
+    inputs = torch.randn(1, 3, 8)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+    gt_segments = [torch.tensor([[1.0, 6.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    warmup = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+    warmup["inputs"].pow(2).mean().backward()
+    warmup_center_grad = _grad_sum(selector.adapter.center_head)
+
+    selector.zero_grad(set_to_none=True)
+    joint = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+    joint["inputs"].pow(2).mean().backward()
+    joint_center_grad = _grad_sum(selector.adapter.center_head)
+
+    assert warmup["selector_outputs"]["loss_weight_schedule"]["detector_gradient_weight"] == pytest.approx(0.0)
+    assert joint["selector_outputs"]["loss_weight_schedule"]["detector_gradient_weight"] == pytest.approx(1.0)
+    assert warmup_center_grad == pytest.approx(0.0)
+    assert joint_center_grad > 0.0
 
 
 def test_detector_cost_backpropagates_to_official_asformer_probe_selector_and_budget_controller() -> None:

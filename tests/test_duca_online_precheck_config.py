@@ -157,8 +157,9 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
-    assert cfg.model.frame_selector.loss_weight_schedule.detector.start == 0.0
-    assert cfg.model.frame_selector.loss_weight_schedule.detector.end == 1.0
+    assert cfg.duca_online_main_contract.detector_loss_always_trains_backend is True
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
@@ -193,8 +194,10 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["uses_ledger_for_decision"] is False
     assert summary["budget_lte_384"] is True
     assert summary["loss_schedule_policy"] == "progressive_joint"
-    assert summary["loss_schedule_detector_start"] == 0.0
-    assert summary["loss_schedule_detector_end"] == 1.0
+    assert summary["loss_schedule_detector_loss_always_on"] is True
+    assert summary["loss_schedule_detector_gradient_bridge_scheduled"] is True
+    assert summary["loss_schedule_detector_gradient_start"] == 0.0
+    assert summary["loss_schedule_detector_gradient_end"] == 1.0
     assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
@@ -292,8 +295,9 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
-    assert cfg.model.frame_selector.loss_weight_schedule.detector.start == 0.0
-    assert cfg.model.frame_selector.loss_weight_schedule.detector.end == 1.0
+    assert cfg.duca_must_dynamic_contract.detector_loss_always_trains_backend is True
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.start == 0.0
@@ -327,8 +331,10 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["runtime_flops_claim_allowed"] is False
     assert summary["forced_budget_curve"] is False
     assert summary["loss_schedule_policy"] == "progressive_joint"
-    assert summary["loss_schedule_detector_start"] == 0.0
-    assert summary["loss_schedule_detector_end"] == 1.0
+    assert summary["loss_schedule_detector_loss_always_on"] is True
+    assert summary["loss_schedule_detector_gradient_bridge_scheduled"] is True
+    assert summary["loss_schedule_detector_gradient_start"] == 0.0
+    assert summary["loss_schedule_detector_gradient_end"] == 1.0
     assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
     assert summary["loss_schedule_lagrangian_budget_start"] == 0.0
     assert summary["loss_schedule_lagrangian_budget_end"] > 0.0

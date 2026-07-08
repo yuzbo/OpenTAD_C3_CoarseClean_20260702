@@ -102,7 +102,11 @@ def _add_soft_context_gradient_path(
     dense_inputs: torch.Tensor,
     soft_coverage: torch.Tensor,
     slot_mask: torch.Tensor,
+    bridge_weight: float = 1.0,
 ) -> torch.Tensor:
+    bridge = float(bridge_weight)
+    if bridge <= 0.0:
+        return hard_selected
     weights = soft_coverage.to(device=dense_inputs.device, dtype=dense_inputs.dtype)
     weights = weights / weights.sum(dim=1, keepdim=True).clamp_min(torch.finfo(weights.dtype).eps)
     if dense_inputs.ndim == 3:
@@ -119,7 +123,7 @@ def _add_soft_context_gradient_path(
         slot = slot_mask[:, None, None, :, None, None]
     else:
         raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
-    return hard_selected + (context - context.detach()) * slot.to(dtype=hard_selected.dtype)
+    return hard_selected + (context - context.detach()) * slot.to(dtype=hard_selected.dtype) * bridge
 
 
 @SELECTORS.register_module()
@@ -296,7 +300,7 @@ class DucaOnlineFrameSelector(nn.Module):
         self._reject_train_decision_payload(metas)
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
         schedule_state = self._loss_schedule_state()
-        outputs = self._forward_select(inputs, masks, metas, budget=budget)
+        outputs = self._forward_select(inputs, masks, metas, budget=budget, schedule_state=schedule_state)
         outputs["selector_outputs"]["loss_weight_schedule"] = schedule_state
         if action_target is not None:
             outputs["selector_outputs"]["action_target"] = action_target
@@ -363,6 +367,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 "progress": 1.0,
                 "phase": "constant_joint",
                 "weights": weights,
+                "detector_gradient_weight": 1.0,
             }
         progress = self._loss_schedule_progress(step)
         for key, (start, end) in self.loss_weight_schedule["entries"].items():
@@ -383,6 +388,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "progress": float(progress),
             "phase": phase,
             "weights": weights,
+            "detector_gradient_weight": float(weights.get("detector_gradient", weights.get("detector", 1.0))),
         }
 
     def _loss_schedule_progress(self, step: int) -> float:
@@ -443,7 +449,14 @@ class DucaOnlineFrameSelector(nn.Module):
             "selector_outputs": outputs["selector_outputs"],
         }
 
-    def _forward_select(self, inputs: torch.Tensor, masks: torch.Tensor, metas, budget=None) -> dict[str, Any]:
+    def _forward_select(
+        self,
+        inputs: torch.Tensor,
+        masks: torch.Tensor,
+        metas,
+        budget=None,
+        schedule_state: Optional[Mapping[str, Any]] = None,
+    ) -> dict[str, Any]:
         profile_enabled = bool(self.profile_runtime)
         sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
         total_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
@@ -498,16 +511,20 @@ class DucaOnlineFrameSelector(nn.Module):
         slot_mask = positions >= 0
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_selected = _gather_time(inputs, positions, slot_mask)
+        detector_gradient_weight = self._detector_gradient_weight(schedule_state)
         if self.detector_gradient_mode == "st_sparse_gather_soft_context":
             hard_selected = _add_soft_context_gradient_path(
                 hard_selected,
                 inputs,
                 scores["soft_coverage"],
                 slot_mask,
+                bridge_weight=detector_gradient_weight,
             )
         st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
             dtype=scores["selected_mask_st"].dtype
         )
+        hard_slot_weights = slot_mask.to(dtype=st_weights.dtype)
+        st_weights = hard_slot_weights + float(detector_gradient_weight) * (st_weights - st_weights.detach())
         selected_inputs = _apply_slot_weights(hard_selected, st_weights)
         gather_ms = _elapsed_ms(gather_start, inputs, enabled=sync_enabled)
         total_selector_ms = _elapsed_ms(total_start, inputs, enabled=sync_enabled)
@@ -545,6 +562,7 @@ class DucaOnlineFrameSelector(nn.Module):
         scores["grid"] = grid
         scores["hard_selected_inputs"] = hard_selected
         scores["selected_input_st_gradient_path"] = self.detector_gradient_mode
+        scores["detector_gradient_weight"] = float(detector_gradient_weight)
         scores["sparse_grid"] = grid
         selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
         self.last_forward_summary = {
@@ -562,6 +580,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "coordinate": grid.coordinate,
             self.metadata_keys["source"]: actionness_source_name,
             "compute_profile": compute_profile,
+            "detector_gradient_weight": float(detector_gradient_weight),
         }
         return {
             "inputs": selected_inputs,
@@ -574,6 +593,17 @@ class DucaOnlineFrameSelector(nn.Module):
             ),
             "selector_outputs": scores,
         }
+
+    @staticmethod
+    def _detector_gradient_weight(schedule_state: Optional[Mapping[str, Any]]) -> float:
+        if not isinstance(schedule_state, Mapping):
+            return 1.0
+        if "detector_gradient_weight" in schedule_state:
+            return float(schedule_state["detector_gradient_weight"])
+        weights = schedule_state.get("weights", {})
+        if isinstance(weights, Mapping):
+            return float(weights.get("detector_gradient", weights.get("detector", 1.0)))
+        return 1.0
 
     @staticmethod
     def _replace_actionness_profile(profile: Mapping[str, Any], actionness_profile: Mapping[str, Any]) -> dict[str, Any]:
