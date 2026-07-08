@@ -11,6 +11,9 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 
 - Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git`
 - Branch: `codex/gas-vt-stage23-detector-aware-20260706`
+- Latest pushed implementation commit: `f5869f9`
+- Latest pushed implementation title:
+  `Add DUCA JCT one-step gradient proof gate`
 - Base deployment commit: `308088c`
 - Base deployment title: `Add DUCA joint training loss schedule`
 - Current local refinement: detector loss remains active for the backend while
@@ -90,6 +93,16 @@ Remote focused validation completed before deployment:
   the online coarse probe, selector encoder, and DUCA-MUST budget controller.
 - Focused pytest on remote: `25 passed in 67.36s`.
 
+Local verification for latest `f5869f9`:
+
+- `32 passed, 1 skipped` for the DUCA-JCT focused local set.
+- `py_compile`, `bash -n`, and `git diff --check` passed.
+- Local suite dry-run with `SUBMIT_JOBS=0` generated all six sbatch files and
+  `deployment_summary.json`, including the one-step joint gradient proof
+  artifact path. The local dry-run reported `commit=nogit` because Git Bash did
+  not resolve the Windows worktree as a git checkout; the remote Linux worktree
+  should record the real commit.
+
 The remote pytest set covered:
 
 - `tests/test_duca_joint_training_contract.py`
@@ -108,6 +121,33 @@ Slurm jobs currently queued:
 - DUCA-MUST dynamic official full train: `1151135`
 
 These two are the current main paper-method jobs for commit `308088c`.
+
+The latest `f5869f9` suite has not yet been submitted on the remote from this
+desktop session because non-interactive SSH attempts to
+`ssh.cn-zhongwei-1.paracloud.com` with users `sczc063`, `yuzibo`, and
+`skywalker` returned `Permission denied (password,publickey)`. The following
+commands are the exact remote-side deployment path once shell access is
+available:
+
+```bash
+module load cuda/11.8
+module load miniforge3/24.11
+source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+cd /data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct
+git fetch origin codex/gas-vt-stage23-detector-aware-20260706
+git checkout codex/gas-vt-stage23-detector-aware-20260706
+git pull --ff-only origin codex/gas-vt-stage23-detector-aware-20260706
+git rev-parse --short HEAD  # must print f5869f9 or newer
+export RUN_TAG=duca_jct_suite_f5869f9_$(date +%Y%m%d_%H%M%S_%z)
+bash scripts/submit_duca_jct_experiment_suite.sh
+```
+
+After submission, monitor with:
+
+```bash
+bash scripts/monitor_duca_jct_experiment_suite.sh \
+  /data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/${RUN_TAG}/deployment_summary.json
+```
 
 The newer suite runner writes a fresh run root and submits:
 
