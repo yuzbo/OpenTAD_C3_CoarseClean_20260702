@@ -105,8 +105,7 @@ def run_precheck(seed: int = 11, batch_size: int = 2, dense_len: int = 768, chan
         "detector_input_length": int(test_result["detector_input"].shape[1]),
         "detector_consumes_selected_positions": bool(grid.detector_consumes_selected_positions),
         "train_detector_batch_sanitized": "teacher_utility" not in train_batch_keys
-        and "dense_teacher_payload" not in train_batch_keys
-        and "gt_segments" not in train_batch_keys,
+        and "dense_teacher_payload" not in train_batch_keys,
         "train_detector_loss_present": "detector_loss" in train_result["losses"],
         "precheck_pass": True,
     }

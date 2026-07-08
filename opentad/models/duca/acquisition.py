@@ -985,7 +985,10 @@ def duca_forward_train(
     detector_output = None
     detector_loss = None
     if detector is not None:
-        detector_batch = _sanitize_detector_batch(batch_dict)
+        detector_batch = _sanitize_detector_batch(
+            batch_dict,
+            forbidden_keys=FORBIDDEN_DECISION_KEYS - {"gt_segments", "gt_labels"},
+        )
         detector_output = _call_detector(detector, out["detector_input"], out["grid"], detector_batch, train=True)
         detector_loss = _extract_detector_loss(detector_output, observations.device)
     losses = duca_losses(
@@ -998,7 +1001,12 @@ def duca_forward_train(
     )
     out["detector_output"] = detector_output
     out["losses"] = losses
-    out["audit"] = make_audit_record(out["grid"], uses_teacher=False, mode="train_forward")
+    out["audit"] = make_audit_record(
+        out["grid"],
+        uses_teacher=False,
+        mode="train_forward",
+        extra={"uses_teacher_for_decision": False, "uses_teacher_for_train_loss": teacher is not None},
+    )
     return out
 
 
@@ -1016,18 +1024,7 @@ def duca_forward_test(
     """Teacher-free hard-forward inference path."""
 
     batch_dict = dict(batch or {})
-    forbidden = {
-        "teacher_utility",
-        "teacher_points",
-        "gt_segments",
-        "gt_labels",
-        "oracle_boundary",
-        "prediction_cache",
-        "raw_prediction",
-        "ledger",
-        "ledger_path",
-    }
-    _assert_no_forbidden_payload(batch_dict, forbidden)
+    _assert_no_forbidden_payload(batch_dict, FORBIDDEN_DECISION_KEYS)
     adapter = adapter or acquisition
     if adapter is None:
         raise ValueError("adapter or acquisition must be provided")
@@ -1175,6 +1172,9 @@ def make_audit_record(grid: SparseTemporalGrid, uses_teacher: bool, mode: str, e
         "selected_count": [int(item) for item in grid.selected_count.detach().cpu().tolist()],
         "uses_gt": False,
         "uses_teacher": bool(uses_teacher),
+        "uses_teacher_for_decision": False,
+        "uses_teacher_for_train_loss": bool(uses_teacher) if str(mode).startswith("train") else False,
+        "uses_teacher_at_inference": False,
         "uses_oracle": False,
         "uses_raw_prediction": False,
         "uses_prediction_cache": False,
