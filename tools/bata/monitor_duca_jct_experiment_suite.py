@@ -271,6 +271,14 @@ def _extract_metrics(text: str) -> dict[str, float]:
             "lr_backbone",
             "lr_det",
             "mem",
+            "duca_schedule_step",
+            "duca_schedule_progress",
+            "duca_detector_grad_w",
+            "duca_actionness_w",
+            "duca_hole_w",
+            "duca_lagrangian_budget_w",
+            "duca_requested_budget_mean",
+            "duca_effective_budget_mean",
         ):
             match = re.search(rf"\b{re.escape(key)}=([-+0-9.eE]+)", last_line)
             if match:

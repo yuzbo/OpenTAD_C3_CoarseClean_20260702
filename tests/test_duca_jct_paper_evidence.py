@@ -77,6 +77,14 @@ def _monitor_summary(
                         "latest_reg_loss": 0.25,
                         "latest_lr_det": 1.0e-4,
                         "latest_mem_mb": 4558.0,
+                        "latest_duca_schedule_step": 550.0,
+                        "latest_duca_schedule_progress": 0.12,
+                        "latest_duca_detector_grad_w": 0.12,
+                        "latest_duca_actionness_w": 0.91,
+                        "latest_duca_hole_w": 0.006,
+                        "latest_duca_lagrangian_budget_w": 0.12,
+                        "latest_duca_requested_budget_mean": 288.0,
+                        "latest_duca_effective_budget_mean": 288.0,
                     },
                     "result_artifacts": [str(tmp_path / "duca_must" / "result_detection.json")],
                 },
@@ -152,6 +160,11 @@ def test_duca_jct_paper_evidence_allows_claim_only_with_baseline_and_high_iou(tm
     assert must_row["latest_lagrangian_budget_loss"] == -0.02
     assert must_row["latest_cls_loss"] == 0.44
     assert must_row["latest_reg_loss"] == 0.25
+    assert must_row["latest_duca_schedule_step"] == 550.0
+    assert must_row["latest_duca_schedule_progress"] == 0.12
+    assert must_row["latest_duca_detector_grad_w"] == 0.12
+    assert must_row["latest_duca_actionness_w"] == 0.91
+    assert must_row["latest_duca_requested_budget_mean"] == 288.0
     assert [row["method"] for row in summary["table_rows"]] == [
         "duca384",
         "duca_must",
@@ -225,6 +238,9 @@ def test_duca_jct_paper_evidence_cli_writes_json_and_tsv(tmp_path: Path) -> None
     assert rows[1]["latest_lagrangian_budget_loss"] == "-0.02"
     assert rows[1]["latest_cls_loss"] == "0.44"
     assert rows[1]["latest_reg_loss"] == "0.25"
+    assert rows[1]["latest_duca_schedule_progress"] == "0.12"
+    assert rows[1]["latest_duca_detector_grad_w"] == "0.12"
+    assert rows[1]["latest_duca_requested_budget_mean"] == "288.0"
 
     wrapper_text = (ROOT / "scripts" / "collect_duca_jct_paper_evidence.sh").read_text(encoding="utf-8")
     assert "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python" in wrapper_text

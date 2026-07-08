@@ -95,7 +95,11 @@ def train_one_epoch(
             if curr_backbone_lr is not None:
                 block4 = "lr_backbone={:.1e}".format(curr_backbone_lr) + "  " + block4
             block5 = "mem={:.0f}MB".format(torch.cuda.max_memory_allocated() / 1024.0 / 1024.0)
-            logger.info("  ".join([block1, block2, "  ".join(block3), block4, block5]))
+            blocks = [block1, block2, "  ".join(block3), block4, block5]
+            selector_diagnostics = _format_frame_selector_diagnostics(model)
+            if selector_diagnostics:
+                blocks.append(selector_diagnostics)
+            logger.info("  ".join(blocks))
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
             logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
             break
@@ -117,6 +121,47 @@ def _call_after_optimizer_step(model):
         if callable(hook):
             hook()
             return
+
+
+def _format_frame_selector_diagnostics(model):
+    module = getattr(model, "module", model)
+    selector = getattr(module, "frame_selector", None)
+    summary = getattr(selector, "last_forward_summary", None)
+    if not isinstance(summary, dict):
+        return ""
+    items = []
+    schedule = summary.get("loss_weight_schedule")
+    if isinstance(schedule, dict):
+        if "step" in schedule:
+            items.append("duca_schedule_step={}".format(int(schedule["step"])))
+        phase = schedule.get("phase")
+        if phase:
+            items.append("duca_phase={}".format(str(phase)))
+        if "progress" in schedule:
+            items.append("duca_schedule_progress={:.4f}".format(float(schedule["progress"])))
+        if "detector_gradient_weight" in schedule:
+            items.append("duca_detector_grad_w={:.4f}".format(float(schedule["detector_gradient_weight"])))
+        weights = schedule.get("weights")
+        if isinstance(weights, dict):
+            for key in ("actionness", "hole", "lagrangian_budget"):
+                if key in weights:
+                    items.append("duca_{}_w={:.4f}".format(key, float(weights[key])))
+    for key, label in (
+        ("budget", "duca_budget"),
+        ("dynamic_budget", "duca_dynamic_budget"),
+        ("budget_policy", "duca_budget_policy"),
+    ):
+        if key in summary:
+            items.append("{}={}".format(label, summary[key]))
+    for key, label in (("requested_budget", "duca_requested_budget"), ("effective_budget", "duca_effective_budget")):
+        value = summary.get(key)
+        if isinstance(value, (list, tuple)) and value:
+            try:
+                mean_value = sum(float(item) for item in value) / len(value)
+            except (TypeError, ValueError):
+                continue
+            items.append("{}_mean={:.2f}".format(label, mean_value))
+    return "  ".join(items)
 
 
 def val_one_epoch(

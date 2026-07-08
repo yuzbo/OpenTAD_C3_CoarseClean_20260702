@@ -160,7 +160,7 @@ def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp
                 "2026 Train INFO: Average-mAP: 3.85 (%)",
                 "2026 Train INFO: mAP at tIoU 0.60 is 1.07%",
                 "2026 Train INFO: mAP at tIoU 0.70 is 0.45%",
-                "2026 Train INFO: [Train]: [005][00050/00099]  Loss=2.0955  actionness_bce_loss=0.6100  action_local_hole_loss=0.0500  lagrangian_budget_loss=-0.0100  cls_loss=0.4000  reg_loss=0.2500  lr_det=9.0e-05  mem=4557MB",
+                "2026 Train INFO: [Train]: [005][00050/00099]  Loss=2.0955  actionness_bce_loss=0.6100  action_local_hole_loss=0.0500  lagrangian_budget_loss=-0.0100  cls_loss=0.4000  reg_loss=0.2500  lr_det=9.0e-05  mem=4557MB  duca_schedule_step=550  duca_schedule_progress=0.1200  duca_detector_grad_w=0.1200  duca_actionness_w=0.9100  duca_hole_w=0.0060  duca_lagrangian_budget_w=0.1200  duca_requested_budget_mean=288.00  duca_effective_budget_mean=288.00",
                 "2026 Train INFO: Evaluation starts...",
                 "2026 Train INFO: Average-mAP: 4.25 (%)",
                 "2026 Train INFO: mAP at tIoU 0.60 is 1.20%",
@@ -189,6 +189,14 @@ def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp
     assert metrics["latest_reg_loss"] == 0.25
     assert metrics["latest_lr_det"] == 9.0e-05
     assert metrics["latest_mem_mb"] == 4557.0
+    assert metrics["latest_duca_schedule_step"] == 550.0
+    assert metrics["latest_duca_schedule_progress"] == 0.12
+    assert metrics["latest_duca_detector_grad_w"] == 0.12
+    assert metrics["latest_duca_actionness_w"] == 0.91
+    assert metrics["latest_duca_hole_w"] == 0.006
+    assert metrics["latest_duca_lagrangian_budget_w"] == 0.12
+    assert metrics["latest_duca_requested_budget_mean"] == 288.0
+    assert metrics["latest_duca_effective_budget_mean"] == 288.0
 
 
 def test_duca_jct_suite_monitor_blocks_x3d_downstream_when_formal_jsonl_missing(tmp_path: Path) -> None:

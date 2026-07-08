@@ -49,6 +49,28 @@ class _DDPStyleWrapper(nn.Module):
         return self.module(**kwargs)
 
 
+class _Selector:
+    def __init__(self) -> None:
+        self.last_forward_summary = {
+            "budget": 384,
+            "dynamic_budget": True,
+            "budget_policy": "prefix_marginal_utility_stop",
+            "requested_budget": [256, 320],
+            "effective_budget": [256, 320],
+            "loss_weight_schedule": {
+                "step": 12,
+                "phase": "transition_detector_utility",
+                "progress": 0.25,
+                "detector_gradient_weight": 0.5,
+                "weights": {
+                    "actionness": 0.75,
+                    "hole": 0.0125,
+                    "lagrangian_budget": 0.25,
+                },
+            },
+        }
+
+
 class _FakeScaler:
     def __init__(self, *, skip_step: bool) -> None:
         self.skip_step = bool(skip_step)
@@ -115,3 +137,20 @@ def test_after_optimizer_step_hook_runs_after_real_amp_optimizer_step(monkeypatc
     assert model.module.after_step_calls == 1
     assert model.module.weight.detach().item() < 1.0
     assert scheduler.step_calls == 1
+
+
+def test_frame_selector_diagnostics_format_schedule_and_budget_state() -> None:
+    model = _DDPStyleWrapper()
+    model.module.frame_selector = _Selector()
+
+    message = train_engine._format_frame_selector_diagnostics(model)
+
+    assert "duca_schedule_step=12" in message
+    assert "duca_phase=transition_detector_utility" in message
+    assert "duca_schedule_progress=0.2500" in message
+    assert "duca_detector_grad_w=0.5000" in message
+    assert "duca_actionness_w=0.7500" in message
+    assert "duca_lagrangian_budget_w=0.2500" in message
+    assert "duca_budget=384" in message
+    assert "duca_dynamic_budget=True" in message
+    assert "duca_requested_budget_mean=288.00" in message

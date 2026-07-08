@@ -30,6 +30,14 @@ TRAINING_DIAGNOSTIC_KEYS = (
     "latest_reg_loss",
     "latest_lr_det",
     "latest_mem_mb",
+    "latest_duca_schedule_step",
+    "latest_duca_schedule_progress",
+    "latest_duca_detector_grad_w",
+    "latest_duca_actionness_w",
+    "latest_duca_hole_w",
+    "latest_duca_lagrangian_budget_w",
+    "latest_duca_requested_budget_mean",
+    "latest_duca_effective_budget_mean",
 )
 
 
