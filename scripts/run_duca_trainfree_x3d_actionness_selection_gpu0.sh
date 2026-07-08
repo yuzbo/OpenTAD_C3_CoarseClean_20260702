@@ -57,6 +57,7 @@ SELECTION_VALIDATION="${OUT_ROOT}/${PROVIDER}_${SUBSET}_selection.validation.jso
 echo "[DUCA_TRAINF_FREE_X3D] repo=${REPO_ROOT}"
 echo "[DUCA_TRAINF_FREE_X3D] head=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 echo "[DUCA_TRAINF_FREE_X3D] provider=${PROVIDER} subset=${SUBSET} max_videos=${MAX_VIDEOS}"
+echo "[DUCA_TRAINF_FREE_X3D] clip_frames=${CLIP_FRAMES} frame_interval=${FRAME_INTERVAL} crop_size=${CROP_SIZE} batch_size=${BATCH_SIZE}"
 echo "[DUCA_TRAINF_FREE_X3D] roots=${VIDEO_ROOTS}"
 echo "[DUCA_TRAINF_FREE_X3D] out=${OUT_ROOT}"
 echo "[DUCA_TRAINF_FREE_X3D] slurm_job=${SLURM_JOB_ID:-none} gpu=${CUDA_VISIBLE_DEVICES} step_gpus=${SLURM_STEP_GPUS:-none}"
