@@ -239,16 +239,45 @@ def _extract_metrics(text: str) -> dict[str, float]:
         metrics[f"mAP@{match.group(1)}_percent"] = float(match.group(2))
     train_matches = list(
         re.finditer(
-            r"\[Train\]:\s+\[(\d+)\]\[(\d+)/(\d+)\].*?\bLoss=([-+0-9.eE]+)",
+            r"^.*?\[Train\]:\s+\[(\d+)\]\[(\d+)/(\d+)\].*?\bLoss=([-+0-9.eE]+).*$",
             text,
+            flags=re.MULTILINE,
         )
     )
     if train_matches:
         last = train_matches[-1]
+        last_line = last.group(0)
         metrics["latest_train_epoch"] = float(int(last.group(1)))
         metrics["latest_train_iter"] = float(int(last.group(2)))
         metrics["latest_train_iter_max"] = float(int(last.group(3)))
         metrics["latest_train_loss"] = float(last.group(4))
+        for key in (
+            "detector_loss",
+            "budget_loss",
+            "lagrangian_budget_loss",
+            "marginal_monotonic_loss",
+            "hard_budget_cap_loss",
+            "dynamic_budget_mean_lossless_metric",
+            "teacher_utility_loss",
+            "boundary_coverage_loss",
+            "actionness_bce_loss",
+            "action_local_hole_loss",
+            "redundancy_loss",
+            "radius_cost_loss",
+            "entropy_anti_collapse_loss",
+            "total_loss",
+            "cls_loss",
+            "reg_loss",
+            "lr_backbone",
+            "lr_det",
+            "mem",
+        ):
+            match = re.search(rf"\b{re.escape(key)}=([-+0-9.eE]+)", last_line)
+            if match:
+                metric_key = f"latest_{key}"
+                if key == "mem":
+                    metric_key = "latest_mem_mb"
+                metrics[metric_key] = float(match.group(1))
     return metrics
 
 

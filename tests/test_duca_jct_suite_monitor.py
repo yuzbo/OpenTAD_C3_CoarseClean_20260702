@@ -155,12 +155,12 @@ def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp
         run_root / "duca384_jct" / "logs" / "train.out",
         "\n".join(
             [
-                "2026 Train INFO: [Train]: [004][00099/00099]  Loss=2.1000  cls_loss=0.5",
+                "2026 Train INFO: [Train]: [004][00099/00099]  Loss=2.1000  actionness_bce_loss=0.6200  cls_loss=0.5  reg_loss=0.3  lr_det=1.0e-04  mem=4096MB",
                 "2026 Train INFO: Evaluation starts...",
                 "2026 Train INFO: Average-mAP: 3.85 (%)",
                 "2026 Train INFO: mAP at tIoU 0.60 is 1.07%",
                 "2026 Train INFO: mAP at tIoU 0.70 is 0.45%",
-                "2026 Train INFO: [Train]: [005][00050/00099]  Loss=2.0955  cls_loss=0.5",
+                "2026 Train INFO: [Train]: [005][00050/00099]  Loss=2.0955  actionness_bce_loss=0.6100  action_local_hole_loss=0.0500  lagrangian_budget_loss=-0.0100  cls_loss=0.4000  reg_loss=0.2500  lr_det=9.0e-05  mem=4557MB",
                 "2026 Train INFO: Evaluation starts...",
                 "2026 Train INFO: Average-mAP: 4.25 (%)",
                 "2026 Train INFO: mAP at tIoU 0.60 is 1.20%",
@@ -182,6 +182,13 @@ def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp
     assert metrics["eval_block_count"] == 2.0
     assert metrics["latest_train_epoch"] == 5.0
     assert metrics["latest_train_loss"] == 2.0955
+    assert metrics["latest_actionness_bce_loss"] == 0.61
+    assert metrics["latest_action_local_hole_loss"] == 0.05
+    assert metrics["latest_lagrangian_budget_loss"] == -0.01
+    assert metrics["latest_cls_loss"] == 0.4
+    assert metrics["latest_reg_loss"] == 0.25
+    assert metrics["latest_lr_det"] == 9.0e-05
+    assert metrics["latest_mem_mb"] == 4557.0
 
 
 def test_duca_jct_suite_monitor_blocks_x3d_downstream_when_formal_jsonl_missing(tmp_path: Path) -> None:
