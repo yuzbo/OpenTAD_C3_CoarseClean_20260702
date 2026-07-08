@@ -224,6 +224,7 @@ class ActionFormer(SingleStageDetector):
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
+            self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
             x = self.backbone(inputs)

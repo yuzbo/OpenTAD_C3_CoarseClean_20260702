@@ -67,8 +67,11 @@ def test_build_detector_constructs_duca_selector_and_standard_forward_trains_sel
     assert "loss_detector" in losses
     assert "selector_entropy_anti_collapse_loss" in losses
     assert selector_grad_norm(model.frame_selector) > 0.0
-    assert model.rpn_head.last_gt_segments is gt_segments
+    assert model.rpn_head.last_gt_segments is not None
+    assert len(model.rpn_head.last_gt_segments) == len(gt_segments)
     assert model.rpn_head.last_gt_labels is gt_labels
+    assert model.rpn_head.last_metas[0]["gt_remapped_to_selected_axis"] is True
+    assert model.rpn_head.last_metas[0]["gt_segments_original_time"] == gt_segments[0].tolist()
     assert model.rpn_head.last_masks.sum(dim=1).tolist() == [4, 4]
 
 
