@@ -1,5 +1,6 @@
 from .acquisition import (
     DucaAcquisitionAdapter,
+    DucaOnlineSparseDetectorWrapper,
     SparseTemporalGrid,
     ZeroShotActionnessSource,
     budgeted_center_radius_decode,
@@ -13,6 +14,7 @@ from .acquisition import (
 
 __all__ = [
     "DucaAcquisitionAdapter",
+    "DucaOnlineSparseDetectorWrapper",
     "SparseTemporalGrid",
     "ZeroShotActionnessSource",
     "budgeted_center_radius_decode",

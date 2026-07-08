@@ -33,6 +33,33 @@ class RecordingSparseDetector(torch.nn.Module):
         return {"loss": observations.float().mean(), "num_observations": observations.shape[1]}
 
 
+class DetectorLossOnly(torch.nn.Module):
+    def forward_sparse(self, observations, sparse_grid=None, **kwargs):
+        return {"loss": observations.pow(2).mean()}
+
+
+class ForbiddenPayloadDetector(torch.nn.Module):
+    forbidden = {"teacher_utility", "teacher_points", "dense_teacher", "dense_teacher_payload", "prediction_cache"}
+
+    def forward_sparse(self, observations, sparse_grid=None, batch=None, **kwargs):
+        hits = []
+
+        def walk(obj, path="batch"):
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if key in self.forbidden or key.startswith("dense_teacher"):
+                        hits.append(f"{path}.{key}")
+                    walk(value, f"{path}.{key}")
+            elif isinstance(obj, (list, tuple)):
+                for idx, value in enumerate(obj):
+                    walk(value, f"{path}[{idx}]")
+
+        walk(batch)
+        if hits:
+            raise AssertionError(f"forbidden detector payload leaked: {hits}")
+        return {"loss": observations.float().mean()}
+
+
 def _manual_source(p_action: torch.Tensor) -> ZeroShotActionnessSource:
     uncertainty = 1.0 - torch.abs(2.0 * p_action - 1.0)
     return ZeroShotActionnessSource.from_manual(p_action=p_action, uncertainty=uncertainty)
@@ -65,6 +92,8 @@ def test_sparse_temporal_grid_validate_fail_closed() -> None:
         original_length=8,
         valid_len=torch.tensor([8]),
         budget=3,
+        requested_budget=torch.tensor([3]),
+        effective_budget=torch.tensor([3]),
         detector_input_length=torch.tensor([3]),
     )
     assert grid.validate() is grid
@@ -77,6 +106,8 @@ def test_sparse_temporal_grid_validate_fail_closed() -> None:
             original_length=8,
             valid_len=torch.tensor([8]),
             budget=2,
+            requested_budget=torch.tensor([2]),
+            effective_budget=torch.tensor([2]),
         ).validate()
 
     with pytest.raises(ValueError, match="coordinate"):
@@ -86,6 +117,8 @@ def test_sparse_temporal_grid_validate_fail_closed() -> None:
             original_length=8,
             valid_len=torch.tensor([8]),
             budget=3,
+            requested_budget=torch.tensor([3]),
+            effective_budget=torch.tensor([3]),
             coordinate="selected_rank",
         ).validate()
 
@@ -98,6 +131,8 @@ def test_sparse_temporal_grid_validate_fail_closed() -> None:
             original_length=8,
             valid_len=torch.tensor([8]),
             budget=4,
+            requested_budget=torch.tensor([4]),
+            effective_budget=torch.tensor([4]),
         ).validate()
 
 
@@ -174,10 +209,52 @@ def test_adapter_acquire_768_to_384_returns_valid_original_time_grid() -> None:
     assert grid.selected_positions.shape == (1, 384)
     assert grid.selected_count.tolist() == [384]
     assert grid.coordinate == "original_time"
-    assert grid.budget_unit == "detector_temporal_observation"
+    assert grid.budget_unit == "detector_consumed_temporal_observation"
     assert grid.detector_consumes_selected_positions is True
     assert scores["radius"].max().item() <= 16.0
     grid.validate()
+
+
+def test_detector_loss_only_backpropagates_to_adapter_parameters() -> None:
+    torch.manual_seed(7)
+    dense = torch.randn(2, 24, 3)
+    adapter = DucaAcquisitionAdapter(feature_dim=3, budget=8, max_radius=4)
+    detector = DetectorLossOnly()
+
+    output = duca_forward_train(
+        detector=detector,
+        adapter=adapter,
+        batch={"observations": dense},
+        loss_weights={
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "hole": 0.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+            "budget": 0.0,
+            "detector": 1.0,
+        },
+    )
+    output["losses"]["total_loss"].backward()
+
+    grads = [
+        param.grad.detach().abs().sum().item()
+        for name, param in adapter.named_parameters()
+        if ("center_head" in name or "encoder" in name) and param.grad is not None
+    ]
+    assert grads
+    assert sum(grads) > 0.0
+
+
+def test_selected_mask_st_hard_forward_matches_actual_decoded_union() -> None:
+    dense = torch.randn(1, 16, 2)
+    p_action = torch.tensor([[0.05, 0.10, 0.50, 0.95, 0.55, 0.10, 0.05, 0.90, 0.52, 0.08, 0.03, 0.02, 0.01, 0.0, 0.0, 0.0]])
+    adapter = DucaAcquisitionAdapter(actionness_source=_manual_source(p_action), budget=6, max_radius=4)
+
+    out = adapter.forward_acquire(dense)
+
+    assert torch.equal(out["selected_mask_st"].detach().bool(), out["grid"].selected_mask)
 
 
 def test_train_and_test_forward_are_hard_sparse_and_teacher_free_at_inference() -> None:
@@ -211,6 +288,68 @@ def test_train_and_test_forward_are_hard_sparse_and_teacher_free_at_inference() 
     assert test_output["audit"]["uses_ledger_for_decision"] is False
 
 
+def test_train_detector_batch_is_sanitized_of_teacher_payload() -> None:
+    dense = torch.randn(1, 12, 3)
+    adapter = DucaAcquisitionAdapter(feature_dim=3, budget=4, max_radius=2)
+    detector = ForbiddenPayloadDetector()
+    batch = {
+        "observations": dense,
+        "teacher_utility": torch.rand(1, 12),
+        "nested": {"teacher_points": torch.rand(1, 12), "dense_teacher_payload": {"score": 1.0}},
+    }
+
+    duca_forward_train(detector=detector, adapter=adapter, batch=batch)
+
+
+def test_test_forward_recursively_rejects_forbidden_payloads() -> None:
+    dense = torch.randn(1, 12, 3)
+    adapter = DucaAcquisitionAdapter(feature_dim=3, budget=4, max_radius=2)
+    batch = {
+        "observations": dense,
+        "metas": [{"video_name": "x", "teacher_utility": [1, 2, 3]}],
+    }
+
+    with pytest.raises(ValueError, match="teacher_utility"):
+        duca_forward_test(adapter=adapter, batch=batch)
+
+    with pytest.raises(ValueError, match="prediction_cache"):
+        duca_forward_test(adapter=adapter, batch={"observations": dense, "meta": {"prediction_cache": {"x": 1}}})
+
+
+def test_manual_actionness_provenance_is_conservative_unless_declared() -> None:
+    source = _manual_source(torch.tensor([[0.2, 0.8]]))
+    provenance = source(torch.zeros(1, 2, 3))["provenance"]
+
+    assert provenance["source_type"] == "manual"
+    assert provenance["thumos_trained"] in {None, "unknown", True}
+    assert provenance["uses_labels"] in {None, "unknown", True}
+
+
+def test_dynamic_per_sample_budget_is_validated_per_row() -> None:
+    dense = torch.randn(2, 12, 3)
+    adapter = DucaAcquisitionAdapter(feature_dim=3, budget=8, max_radius=2)
+
+    grid, _ = adapter.acquire(dense, budget=torch.tensor([4, 7]))
+
+    assert grid.selected_count.tolist() == [4, 7]
+    assert grid.requested_budget.tolist() == [4, 7]
+    assert grid.effective_budget.tolist() == [4, 7]
+    grid.validate()
+
+
+def test_non_arange_dense_positions_fail_closed() -> None:
+    scores = torch.tensor([[0.9, 0.8, 0.7, 0.6]])
+    dense_positions = torch.tensor([[0, 2, 4, 8]])
+
+    with pytest.raises(ValueError, match="dense_positions"):
+        budgeted_center_radius_decode(
+            center_scores=scores,
+            radius=torch.zeros_like(scores),
+            budget=2,
+            dense_positions=dense_positions,
+        )
+
+
 def test_duca_losses_expose_required_components() -> None:
     dense = torch.randn(1, 10, 3)
     adapter = DucaAcquisitionAdapter(feature_dim=3, budget=4, max_radius=4)
@@ -236,6 +375,22 @@ def test_duca_losses_expose_required_components() -> None:
     }
     assert expected <= set(losses)
     assert losses["total_loss"].requires_grad
+
+
+def test_signed_teacher_utility_does_not_reward_negative_points() -> None:
+    scores = torch.tensor([[2.0, 1.0, 0.5, 0.1]], requires_grad=True)
+    selected_mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], requires_grad=True)
+    utility = torch.tensor([[-2.0, 1.0, 0.5, -0.5]])
+
+    losses = duca_losses(
+        scores=scores,
+        selected_mask_st=selected_mask,
+        budget=2,
+        teacher_utility=utility,
+        loss_weights={"teacher": 1.0, "budget": 0.0, "entropy": 0.0},
+    )
+
+    assert losses["teacher_utility_loss"].item() >= 0.0
 
 
 def test_online_interfaces_do_not_accept_ledger_or_teacher_in_test_signature() -> None:

@@ -10,8 +10,23 @@ import torch.nn.functional as F
 
 TensorLikeBudget = Union[int, torch.Tensor]
 
-DEFAULT_BUDGET_UNIT = "detector_temporal_observation"
+DEFAULT_BUDGET_UNIT = "detector_consumed_temporal_observation"
 DEFAULT_COORDINATE = "original_time"
+FORBIDDEN_DECISION_KEYS = {
+    "teacher_utility",
+    "teacher_points",
+    "dense_teacher",
+    "dense_teacher_payload",
+    "dense_teacher_points",
+    "gt_segments",
+    "gt_labels",
+    "oracle_boundary",
+    "prediction_cache",
+    "raw_prediction",
+    "raw_predictions",
+    "ledger",
+    "ledger_path",
+}
 
 
 def _neg(dtype: torch.dtype) -> float:
@@ -73,6 +88,8 @@ class SparseTemporalGrid:
     original_length: int
     valid_len: Optional[torch.Tensor]
     budget: int
+    requested_budget: Optional[torch.Tensor] = None
+    effective_budget: Optional[torch.Tensor] = None
     budget_unit: str = DEFAULT_BUDGET_UNIT
     coordinate: str = DEFAULT_COORDINATE
     detector_consumes_selected_positions: bool = True
@@ -112,6 +129,26 @@ class SparseTemporalGrid:
             raise ValueError("valid_len must lie in (0, original_length]")
         if int(self.budget) <= 0:
             raise ValueError("budget must be positive")
+        if self.requested_budget is None:
+            raise ValueError("requested_budget is required for fail-closed validation")
+        if self.effective_budget is None:
+            raise ValueError("effective_budget is required for fail-closed validation")
+        requested_budget = self.requested_budget.to(device=self.selected_positions.device, dtype=torch.long)
+        effective_budget = self.effective_budget.to(device=self.selected_positions.device, dtype=torch.long)
+        if requested_budget.ndim == 0:
+            requested_budget = requested_budget.expand(self.selected_positions.shape[0])
+        if effective_budget.ndim == 0:
+            effective_budget = effective_budget.expand(self.selected_positions.shape[0])
+        if requested_budget.shape != valid_len.shape or effective_budget.shape != valid_len.shape:
+            raise ValueError("requested_budget/effective_budget must be scalar or [B]")
+        if torch.any(requested_budget <= 0) or torch.any(effective_budget <= 0):
+            raise ValueError("requested_budget/effective_budget must be positive")
+        if torch.any(requested_budget > int(self.budget)):
+            raise ValueError("requested_budget cannot exceed max budget")
+        if torch.any(effective_budget > requested_budget):
+            raise ValueError("effective_budget cannot exceed requested_budget")
+        if torch.any(effective_budget > valid_len):
+            raise ValueError("effective_budget cannot exceed valid_len")
         if self.budget_unit != DEFAULT_BUDGET_UNIT:
             raise ValueError(f"budget_unit must be {DEFAULT_BUDGET_UNIT}")
         if self.coordinate != DEFAULT_COORDINATE:
@@ -123,8 +160,8 @@ class SparseTemporalGrid:
         count_from_mask = selected_mask.long().sum(dim=1)
         if torch.any(count_from_mask > int(self.budget)):
             raise ValueError("selected count exceeds detector-consumed budget")
-        if torch.any(count_from_mask > valid_len):
-            raise ValueError("selected count exceeds valid_len")
+        if torch.any(count_from_mask > effective_budget):
+            raise ValueError("selected count exceeds effective_budget")
 
         pos = self.selected_positions.to(device=selected_mask.device, dtype=torch.long)
         for batch_idx in range(pos.shape[0]):
@@ -174,6 +211,14 @@ class ZeroShotActionnessSource(nn.Module):
         action_prompts: Optional[Iterable[str]] = None,
         background_prompts: Optional[Iterable[str]] = None,
         temperature: float = 1.0,
+        provenance: Optional[Mapping[str, Any]] = None,
+        source_name: Optional[str] = None,
+        checkpoint_hash: Optional[str] = None,
+        thumos_trained: Optional[bool] = None,
+        uses_labels: Optional[bool] = None,
+        uses_teacher: Optional[bool] = None,
+        calibration_split: Optional[str] = None,
+        prompt_hash: Optional[str] = None,
     ) -> None:
         super().__init__()
         if mode not in {"motion", "feature_mlp", "manual", "video_text"}:
@@ -202,6 +247,25 @@ class ZeroShotActionnessSource(nn.Module):
                 "a video clip of irrelevant context",
             )
         )
+        default_no_thumos = mode in {"motion", "video_text"}
+        explicit = dict(provenance or {})
+        self._provenance_override = {
+            "source_name": source_name or explicit.get("source_name") or mode,
+            "checkpoint_hash": checkpoint_hash if checkpoint_hash is not None else explicit.get("checkpoint_hash"),
+            "thumos_trained": (
+                thumos_trained
+                if thumos_trained is not None
+                else explicit.get("thumos_trained", False if default_no_thumos else None)
+            ),
+            "uses_labels": (
+                uses_labels if uses_labels is not None else explicit.get("uses_labels", False if default_no_thumos else None)
+            ),
+            "uses_teacher": (
+                uses_teacher if uses_teacher is not None else explicit.get("uses_teacher", False if default_no_thumos else None)
+            ),
+            "calibration_split": calibration_split if calibration_split is not None else explicit.get("calibration_split"),
+            "prompt_hash": prompt_hash if prompt_hash is not None else explicit.get("prompt_hash"),
+        }
 
         if mode == "manual":
             if p_action is None or uncertainty is None:
@@ -232,15 +296,25 @@ class ZeroShotActionnessSource(nn.Module):
                 param.requires_grad_(False)
 
     @classmethod
-    def from_manual(cls, p_action: torch.Tensor, uncertainty: torch.Tensor) -> "ZeroShotActionnessSource":
-        return cls(mode="manual", p_action=p_action, uncertainty=uncertainty)
+    def from_manual(
+        cls,
+        p_action: torch.Tensor,
+        uncertainty: torch.Tensor,
+        provenance: Optional[Mapping[str, Any]] = None,
+        **kwargs: Any,
+    ) -> "ZeroShotActionnessSource":
+        return cls(mode="manual", p_action=p_action, uncertainty=uncertainty, provenance=provenance, **kwargs)
 
     def _provenance(self) -> Dict[str, Any]:
         return {
             "source_type": self.mode,
-            "thumos_trained": False,
-            "uses_labels": False,
-            "uses_teacher": False,
+            "source_name": self._provenance_override["source_name"],
+            "checkpoint_hash": self._provenance_override["checkpoint_hash"],
+            "thumos_trained": self._provenance_override["thumos_trained"],
+            "uses_labels": self._provenance_override["uses_labels"],
+            "uses_teacher": self._provenance_override["uses_teacher"],
+            "calibration_split": self._provenance_override["calibration_split"],
+            "prompt_hash": self._provenance_override["prompt_hash"],
             "uses_gt": False,
             "uses_prediction_cache": False,
             "temperature": self.temperature,
@@ -473,12 +547,15 @@ class DucaAcquisitionAdapter(nn.Module):
         )
         budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
         valid_len = scores["valid_mask"].long().sum(dim=1)
+        effective_budget = decoded["effective_budget"].to(device=dense_observations.device, dtype=torch.long)
         grid = SparseTemporalGrid(
             selected_positions=decoded["selected_positions"],
             selected_mask=decoded["selected_mask"],
             original_length=int(dense_observations.shape[1]),
             valid_len=valid_len,
             budget=int(budgets.max().item()),
+            requested_budget=budgets,
+            effective_budget=effective_budget,
             detector_input_length=decoded["detector_input_length"],
             metadata={
                 "selected_centers": decoded["selected_centers"],
@@ -488,17 +565,21 @@ class DucaAcquisitionAdapter(nn.Module):
                 "radius_is_metadata": True,
             },
         ).validate()
-        selection_st, selected_indices, aux = hard_topk_st(
-            scores["center_scores"],
-            budget=budget,
+        soft_coverage = soft_center_radius_coverage(
+            center_scores=scores["center_scores"],
+            radius=scores["radius"],
             valid_mask=scores["valid_mask"],
-            return_aux=True,
+            budget=budget,
+            max_radius=self.max_radius,
         )
+        hard_union = grid.selected_mask.to(dtype=scores["center_scores"].dtype)
+        selection_st = hard_union + soft_coverage - soft_coverage.detach()
+        selected_indices = grid.selected_positions
         scores.update(
             {
                 "selected_mask_st": selection_st,
                 "selected_indices_st": selected_indices,
-                "hard_topk_aux": aux,
+                "soft_coverage": soft_coverage,
                 "decode_metadata": grid.metadata,
             }
         )
@@ -521,10 +602,15 @@ class DucaAcquisitionAdapter(nn.Module):
             p_action=p_action,
         )
         gathered = gather_selected_observations(dense_observations, grid.selected_positions, grid.selected_mask)
+        st_weights = torch.gather(scores["selected_mask_st"], 1, grid.selected_positions.clamp_min(0))
+        view_shape = (st_weights.shape[0], st_weights.shape[1]) + (1,) * (gathered["observations"].ndim - 2)
+        detector_input = gathered["observations"] * st_weights.view(view_shape).to(gathered["observations"].dtype)
         out: Dict[str, Any] = {
             "grid": grid,
             "sparse_grid": grid,
-            "detector_input": gathered["observations"],
+            "detector_input": detector_input,
+            "hard_detector_input": gathered["observations"],
+            "detector_input_st_weights": st_weights,
             "detector_input_mask": gathered["mask"],
             "selected_positions": grid.selected_positions,
             "selected_mask": grid.selected_mask,
@@ -587,6 +673,32 @@ def hard_topk_st(
     return st_mask, sorted_idx
 
 
+def soft_center_radius_coverage(
+    center_scores: torch.Tensor,
+    radius: torch.Tensor,
+    budget: TensorLikeBudget,
+    valid_mask: Optional[torch.Tensor] = None,
+    max_radius: int = 16,
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    """Differentiable coverage surrogate aligned to center-radius decoding."""
+
+    valid = _as_valid_mask(center_scores, valid_mask)
+    budgets = _budget_tensor(budget, center_scores.shape[0], center_scores.device)
+    valid_counts = valid.long().sum(dim=1)
+    effective_budget = torch.minimum(budgets, valid_counts).to(center_scores.dtype)
+    masked_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
+    center_mass = F.softmax(masked_scores / float(temperature), dim=1) * effective_budget[:, None]
+    positions = torch.arange(center_scores.shape[1], device=center_scores.device, dtype=center_scores.dtype)
+    distance = (positions[None, :, None] - positions[None, None, :]).abs()
+    sigma = radius.to(center_scores.dtype).clamp(0.0, float(max_radius))[:, None, :] + 1.0
+    kernel = torch.exp(-0.5 * (distance / sigma).pow(2))
+    raw_coverage = torch.bmm(kernel, center_mass[:, :, None]).squeeze(-1).masked_fill(~valid, 0.0)
+    scale = raw_coverage.detach().amax(dim=1, keepdim=True).clamp_min(1e-6)
+    coverage = (raw_coverage / scale).masked_fill(~valid, 0.0)
+    return coverage
+
+
 def budgeted_center_radius_decode(
     center_scores: Optional[torch.Tensor] = None,
     radius: Optional[torch.Tensor] = None,
@@ -631,6 +743,9 @@ def budgeted_center_radius_decode(
             dense_positions = dense_positions.round().long().view(1, -1).expand(batch_size, -1)
     if dense_positions.shape != center_scores.shape:
         raise ValueError("dense_positions must be [B,T]")
+    expected_positions = torch.arange(center_scores.shape[1], device=center_scores.device).view(1, -1).expand_as(center_scores)
+    if not torch.equal(dense_positions.to(center_scores.device, dtype=torch.long), expected_positions):
+        raise ValueError("dense_positions must be contiguous arange original-time indices in this decoder")
     if radius is None:
         radius = torch.zeros_like(center_scores)
     if radius.ndim == 1:
@@ -783,6 +898,60 @@ def gather_selected_observations(
     return {"observations": gathered, "sparse_observations": gathered, "features": gathered, "mask": valid_pos}
 
 
+class DucaOnlineSparseDetectorWrapper(nn.Module):
+    """Online acquisition wrapper that inserts DUCA before a sparse-capable detector.
+
+    This is the minimal deployable contract: the adapter makes a hard online
+    acquisition decision, and the wrapped detector receives only the gathered
+    detector-consumed temporal observations.
+    """
+
+    def __init__(
+        self,
+        detector: nn.Module,
+        adapter: Optional[DucaAcquisitionAdapter] = None,
+        feature_dim: Optional[int] = None,
+        budget: int = 384,
+        max_radius: int = 16,
+    ) -> None:
+        super().__init__()
+        self.detector = detector
+        self.adapter = adapter or DucaAcquisitionAdapter(feature_dim=feature_dim, budget=budget, max_radius=max_radius)
+        self.budget = int(budget)
+
+    def forward(
+        self,
+        batch: Optional[Mapping[str, Any]] = None,
+        dense_observations: Optional[torch.Tensor] = None,
+        mode: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        train_mode = self.training if mode is None else str(mode).lower() in {"loss", "train", "training"}
+        common = {
+            "detector": self.detector,
+            "adapter": self.adapter,
+            "batch": batch,
+            "dense_observations": dense_observations,
+            "budget": kwargs.pop("budget", self.budget),
+            "valid_mask": kwargs.pop("valid_mask", None),
+            "actionness_logits": kwargs.pop("actionness_logits", None),
+            "p_action": kwargs.pop("p_action", None),
+        }
+        if train_mode:
+            return duca_forward_train(
+                **common,
+                teacher_utility=kwargs.pop("teacher_utility", None),
+                loss_weights=kwargs.pop("loss_weights", None),
+            )
+        return duca_forward_test(**common)
+
+    def forward_sparse(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return self.forward(*args, **kwargs)
+
+    def forward_acquire(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return self.adapter.forward_acquire(*args, **kwargs)
+
+
 def duca_forward_train(
     detector: Optional[nn.Module] = None,
     adapter: Optional[DucaAcquisitionAdapter] = None,
@@ -816,7 +985,8 @@ def duca_forward_train(
     detector_output = None
     detector_loss = None
     if detector is not None:
-        detector_output = _call_detector(detector, out["detector_input"], out["grid"], batch_dict, train=True)
+        detector_batch = _sanitize_detector_batch(batch_dict)
+        detector_output = _call_detector(detector, out["detector_input"], out["grid"], detector_batch, train=True)
         detector_loss = _extract_detector_loss(detector_output, observations.device)
     losses = duca_losses(
         scores=out,
@@ -857,9 +1027,7 @@ def duca_forward_test(
         "ledger",
         "ledger_path",
     }
-    present = sorted(key for key in forbidden if key in batch_dict)
-    if present:
-        raise ValueError(f"DUCA test/inference forbids decision-time payloads: {present}")
+    _assert_no_forbidden_payload(batch_dict, forbidden)
     adapter = adapter or acquisition
     if adapter is None:
         raise ValueError("adapter or acquisition must be provided")
@@ -890,6 +1058,8 @@ def duca_losses(
     boundary_target: Optional[torch.Tensor] = None,
     action_target: Optional[torch.Tensor] = None,
     detector_loss: Optional[torch.Tensor] = None,
+    utility_gain: Optional[torch.Tensor] = None,
+    utility_risk: Optional[torch.Tensor] = None,
     radius: Optional[torch.Tensor] = None,
     p_action: Optional[torch.Tensor] = None,
     uncertainty: Optional[torch.Tensor] = None,
@@ -940,7 +1110,20 @@ def duca_losses(
         if teacher_utility.shape != center_scores.shape:
             raise ValueError("teacher_utility must match scores [B,T]")
         utility = teacher_utility.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
-        losses["teacher_utility_loss"] = -((selected * utility).sum(dim=1) / budgets.clamp_min(1.0)).mean() * weights["teacher"]
+        positive_utility = utility.clamp_min(0.0)
+        negative_utility = (-utility).clamp_min(0.0)
+        gain_loss = -((selected * positive_utility).sum(dim=1) / budgets.clamp_min(1.0)).mean()
+        risk_loss = ((selected * negative_utility).sum(dim=1) / budgets.clamp_min(1.0)).mean()
+        losses["teacher_utility_gain_loss_unweighted"] = gain_loss
+        losses["teacher_utility_risk_loss_unweighted"] = risk_loss
+        losses["teacher_utility_loss"] = (gain_loss + risk_loss) * weights["teacher"]
+    elif utility_gain is not None or utility_risk is not None:
+        gain = torch.zeros_like(center_scores) if utility_gain is None else utility_gain.to(center_scores.device, center_scores.dtype)
+        risk = torch.zeros_like(center_scores) if utility_risk is None else utility_risk.to(center_scores.device, center_scores.dtype)
+        losses["teacher_utility_loss"] = (
+            -((selected * gain.clamp_min(0.0)).sum(dim=1) / budgets.clamp_min(1.0)).mean()
+            + ((selected * risk.clamp_min(0.0)).sum(dim=1) / budgets.clamp_min(1.0)).mean()
+        ) * weights["teacher"]
     else:
         losses["teacher_utility_loss"] = center_scores.sum() * 0.0
     if boundary_target is not None:
@@ -996,6 +1179,7 @@ def make_audit_record(grid: SparseTemporalGrid, uses_teacher: bool, mode: str, e
         "uses_raw_prediction": False,
         "uses_prediction_cache": False,
         "uses_ledger_for_decision": False,
+        "no_leak_scan_passed": True,
     }
     if extra:
         record.update(dict(extra))
@@ -1013,6 +1197,44 @@ def _get_observations(batch: Mapping[str, Any]) -> torch.Tensor:
         if torch.is_tensor(value):
             return value
     raise ValueError("batch must contain observations/dense_observations/features/inputs/x")
+
+
+def _assert_no_forbidden_payload(obj: Any, forbidden_keys: Optional[set[str]] = None, path: str = "batch") -> None:
+    keys = forbidden_keys or FORBIDDEN_DECISION_KEYS
+    hits: List[str] = []
+
+    def walk(value: Any, current: str) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                key_str = str(key)
+                child_path = f"{current}.{key_str}"
+                if key_str in keys or key_str.startswith("dense_teacher"):
+                    hits.append(child_path)
+                walk(child, child_path)
+        elif isinstance(value, (list, tuple)):
+            for idx, child in enumerate(value):
+                walk(child, f"{current}[{idx}]")
+
+    walk(obj, path)
+    if hits:
+        raise ValueError(f"DUCA test/inference forbids decision-time payloads: {hits}")
+
+
+def _sanitize_detector_batch(obj: Any, forbidden_keys: Optional[set[str]] = None) -> Any:
+    keys = forbidden_keys or FORBIDDEN_DECISION_KEYS
+    if isinstance(obj, Mapping):
+        out: Dict[Any, Any] = {}
+        for key, value in obj.items():
+            key_str = str(key)
+            if key_str in keys or key_str.startswith("dense_teacher"):
+                continue
+            out[key] = _sanitize_detector_batch(value, keys)
+        return out
+    if isinstance(obj, list):
+        return [_sanitize_detector_batch(value, keys) for value in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_detector_batch(value, keys) for value in obj)
+    return obj
 
 
 def _extract_detector_loss(detector_output: Any, device: torch.device) -> Optional[torch.Tensor]:
