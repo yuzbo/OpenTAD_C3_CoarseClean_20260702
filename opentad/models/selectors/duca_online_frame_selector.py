@@ -7,8 +7,13 @@ import torch
 import torch.nn as nn
 
 from ..builder import SELECTORS
-from ..duca import DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
-from ..duca.acquisition import _assert_no_forbidden_payload, validate_actionness_provenance
+from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
+from ..duca.acquisition import (
+    _assert_no_forbidden_payload,
+    _elapsed_ms,
+    _sync_profile_clock,
+    validate_actionness_provenance,
+)
 from ..utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS, TrueTimeMap
 
 
@@ -151,6 +156,8 @@ class DucaOnlineFrameSelector(nn.Module):
         external_actionness_provenance_meta_key: Optional[str] = None,
         external_actionness_source_meta_key: Optional[str] = None,
         require_external_actionness: bool = False,
+        profile_runtime: bool = False,
+        profile_sync_cuda: bool = True,
         metadata_keys: Optional[Mapping[str, str]] = None,
         **kwargs: Any,
     ) -> None:
@@ -198,6 +205,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self.external_actionness_provenance_meta_key = external_actionness_provenance_meta_key
         self.external_actionness_source_meta_key = external_actionness_source_meta_key
         self.require_external_actionness = bool(require_external_actionness)
+        self.profile_runtime = bool(profile_runtime)
+        self.profile_sync_cuda = bool(profile_sync_cuda)
         self.metadata_keys = dict(_DEFAULT_METADATA_KEYS)
         if metadata_keys:
             self.metadata_keys.update(dict(metadata_keys))
@@ -221,12 +230,27 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("selected-axis detector output requires remap_gt_to_selected_axis=True")
 
         actionness_source = None
+        self.raw_actionness_source = None
         self.actionness_source_name = "duca_adapter_internal"
         if actionness_source_cfg:
             cfg = dict(actionness_source_cfg)
             source_type = cfg.pop("type", "ZeroShotActionnessSource")
             self.actionness_source_name = str(cfg.get("source_name") or source_type)
-            if source_type in {"DucaOnlineProbeActionnessSource", "ZeroShotMotionActionnessSource"}:
+            if source_type == "C3CoarseProbeActionnessSource":
+                cfg.setdefault("source_name", self.actionness_source_name)
+                self.raw_actionness_source = C3CoarseProbeActionnessSource(**cfg)
+                actionness_source = ZeroShotActionnessSource(
+                    mode="motion",
+                    source_name=f"{self.actionness_source_name}_logit_passthrough",
+                    thumos_trained=False,
+                    uses_labels=False,
+                    uses_teacher=False,
+                    uses_gt=False,
+                    uses_prediction_cache=False,
+                    calibration_split="none",
+                    checkpoint_hash="online_c3_coarse_probe_passthrough",
+                )
+            elif source_type in {"DucaOnlineProbeActionnessSource", "ZeroShotMotionActionnessSource"}:
                 cfg.setdefault("mode", "motion")
                 cfg.setdefault("source_name", self.actionness_source_name)
                 cfg.setdefault("thumos_trained", False)
@@ -251,6 +275,8 @@ class DucaOnlineFrameSelector(nn.Module):
             max_radius=self.max_radius,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
+            profile_runtime=self.profile_runtime,
+            profile_sync_cuda=self.profile_sync_cuda,
         )
 
     def forward_train(
@@ -295,17 +321,43 @@ class DucaOnlineFrameSelector(nn.Module):
         }
 
     def _forward_select(self, inputs: torch.Tensor, masks: torch.Tensor, metas, budget=None) -> dict[str, Any]:
+        profile_enabled = bool(self.profile_runtime)
+        sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
+        total_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
+        descriptor_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         descriptors = _time_descriptors_btc(inputs)
+        descriptor_ms = _elapsed_ms(descriptor_start, inputs, enabled=sync_enabled)
+        descriptor_profile = self._descriptor_compute_profile(inputs, descriptors)
         if descriptors.shape[-1] != self.in_channels:
             raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
         masks = masks.to(device=inputs.device, dtype=torch.bool)
         external_actionness = self._external_actionness_from_metas(metas, descriptors=descriptors)
+        online_actionness = None
+        if external_actionness is None and self.raw_actionness_source is not None:
+            online_actionness = self.raw_actionness_source(inputs, valid_mask=masks)
+        profile_context = {
+            "external_cached_actionness": external_actionness is not None,
+            "external_actionness_source_name": (
+                None if external_actionness is None else external_actionness.get("source_name")
+            ),
+            "descriptor_profile": descriptor_profile,
+        }
+        actionness_logits = None
+        p_action = None
+        if external_actionness is not None:
+            actionness_logits = external_actionness.get("actionness_logits")
+            p_action = external_actionness.get("p_action")
+        elif online_actionness is not None:
+            actionness_logits = online_actionness.get("logits")
+            if actionness_logits is None:
+                actionness_logits = online_actionness.get("actionness_logits")
         grid, scores = self.adapter.acquire(
             descriptors,
             budget=budget,
             valid_mask=masks,
-            actionness_logits=None if external_actionness is None else external_actionness.get("actionness_logits"),
-            p_action=None if external_actionness is None else external_actionness.get("p_action"),
+            actionness_logits=actionness_logits,
+            p_action=p_action,
+            compute_profile_context=profile_context,
         )
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
@@ -313,9 +365,15 @@ class DucaOnlineFrameSelector(nn.Module):
             scores["external_actionness_provenance"] = external_actionness["provenance"]
             scores["external_actionness_source"] = external_actionness["source_name"]
             actionness_source_name = external_actionness["source_name"]
+        elif online_actionness is not None:
+            scores["provenance"] = online_actionness["provenance"]
+            scores["online_actionness_provenance"] = online_actionness["provenance"]
+            scores["online_actionness_source"] = online_actionness["source_name"]
+            actionness_source_name = online_actionness["source_name"]
         validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
         positions = grid.selected_positions.to(device=inputs.device)
         slot_mask = positions >= 0
+        gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_selected = _gather_time(inputs, positions, slot_mask)
         if self.detector_gradient_mode == "st_sparse_gather_soft_context":
             hard_selected = _add_soft_context_gradient_path(
@@ -328,6 +386,38 @@ class DucaOnlineFrameSelector(nn.Module):
             dtype=scores["selected_mask_st"].dtype
         )
         selected_inputs = _apply_slot_weights(hard_selected, st_weights)
+        gather_ms = _elapsed_ms(gather_start, inputs, enabled=sync_enabled)
+        total_selector_ms = _elapsed_ms(total_start, inputs, enabled=sync_enabled)
+        compute_profile = dict(scores.get("compute_profile", {}))
+        latency_ms = dict(compute_profile.get("latency_ms", {}))
+        latency_ms.update(
+            {
+                "enabled": profile_enabled,
+                "descriptor_ms": descriptor_ms,
+                "gather_ms": gather_ms,
+                "total_selector_ms": total_selector_ms,
+            }
+        )
+        compute_profile["latency_ms"] = latency_ms
+        compute_profile["descriptor"] = descriptor_profile
+        if external_actionness is not None:
+            actionness_profile = dict(compute_profile.get("actionness", {}))
+            actionness_profile.update(
+                {
+                    "source_name": external_actionness["source_name"],
+                    "source_kind": "external_cached_prior",
+                    "cache_lookup_or_interpolation": True,
+                    "online_backbone_flops_included": False,
+                }
+            )
+            compute_profile["actionness"] = actionness_profile
+            compute_profile["pre_backbone_model"] = "ExternalCachedActionness+DUCASelectorMLP"
+        elif online_actionness is not None:
+            compute_profile = self._replace_actionness_profile(
+                compute_profile,
+                dict(online_actionness.get("compute_profile", {})),
+            )
+        scores["compute_profile"] = compute_profile
         selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
         scores["grid"] = grid
         scores["hard_selected_inputs"] = hard_selected
@@ -348,12 +438,96 @@ class DucaOnlineFrameSelector(nn.Module):
             "budget_unit": grid.budget_unit,
             "coordinate": grid.coordinate,
             self.metadata_keys["source"]: actionness_source_name,
+            "compute_profile": compute_profile,
         }
         return {
             "inputs": selected_inputs,
             "masks": selected_masks,
-            "metas": self._write_metas(metas, grid, actionness_source_name=actionness_source_name),
+            "metas": self._write_metas(
+                metas,
+                grid,
+                actionness_source_name=actionness_source_name,
+                compute_profile=compute_profile,
+            ),
             "selector_outputs": scores,
+        }
+
+    @staticmethod
+    def _replace_actionness_profile(profile: Mapping[str, Any], actionness_profile: Mapping[str, Any]) -> dict[str, Any]:
+        out = dict(profile)
+        components = dict(out.get("components", {}))
+        old = dict(components.get("actionness", {}))
+        new = dict(actionness_profile)
+        components["actionness"] = new
+        out["components"] = components
+        out["actionness"] = new
+        old_macs = int(old.get("estimated_macs", 0) or 0)
+        old_flops = int(old.get("estimated_flops", 0) or 0)
+        new_macs = int(new.get("estimated_macs", 0) or 0)
+        new_flops = int(new.get("estimated_flops", 0) or 0)
+        out["estimated_macs"] = int(out.get("estimated_macs", 0) or 0) - old_macs + new_macs
+        out["estimated_flops"] = int(out.get("estimated_flops", 0) or 0) - old_flops + new_flops
+        old_params = old.get("parameters", {})
+        new_params = new.get("parameters", {})
+        if isinstance(old_params, Mapping) and isinstance(new_params, Mapping):
+            total_params = int(out.get("parameters", {}).get("total", 0) or 0)
+            trainable_params = int(out.get("parameters", {}).get("trainable", 0) or 0)
+            total_params = total_params - int(old_params.get("total", 0) or 0) + int(new_params.get("total", 0) or 0)
+            trainable_params = trainable_params - int(old_params.get("trainable", 0) or 0) + int(
+                new_params.get("trainable", 0) or 0
+            )
+            out["parameters"] = {"total": int(total_params), "trainable": int(trainable_params)}
+        out["pre_backbone_model"] = f"{new.get('model_family', new.get('source_name', 'C3CoarseProbe'))}+DUCASelectorMLP"
+        latency = dict(out.get("latency_ms", {}))
+        probe_latency = new.get("latency_ms")
+        if isinstance(probe_latency, Mapping):
+            latency.update(probe_latency)
+        out["latency_ms"] = latency
+        out["flop_accounting"] = "static_estimate_for_online_coarse_probe_plus_selector_path_excludes_detector_backbone"
+        return out
+
+    @staticmethod
+    def _descriptor_compute_profile(inputs: torch.Tensor, descriptors: torch.Tensor) -> dict[str, Any]:
+        shape = [int(item) for item in inputs.shape]
+        output_shape = [int(item) for item in descriptors.shape]
+        if inputs.ndim == 3:
+            return {
+                "operation": "transpose_feature_sequence",
+                "input_shape": shape,
+                "output_shape": output_shape,
+                "estimated_macs": 0,
+                "estimated_flops": 0,
+            }
+        if inputs.ndim == 5:
+            batch, channels, temporal, height, width = [int(item) for item in inputs.shape]
+            reduce_count = int(height * width)
+            flops = batch * channels * temporal * max(reduce_count, 1)
+            return {
+                "operation": "spatial_mean_to_rgb_temporal_descriptor",
+                "input_shape": shape,
+                "output_shape": output_shape,
+                "estimated_macs": 0,
+                "estimated_flops": int(flops),
+                "reduction_elements_per_descriptor": reduce_count,
+            }
+        if inputs.ndim == 6:
+            batch, clips, channels, temporal, height, width = [int(item) for item in inputs.shape]
+            reduce_count = int(clips * height * width)
+            flops = batch * channels * temporal * max(reduce_count, 1)
+            return {
+                "operation": "clip_spatial_mean_to_rgb_temporal_descriptor",
+                "input_shape": shape,
+                "output_shape": output_shape,
+                "estimated_macs": 0,
+                "estimated_flops": int(flops),
+                "reduction_elements_per_descriptor": reduce_count,
+            }
+        return {
+            "operation": "unknown_descriptor",
+            "input_shape": shape,
+            "output_shape": output_shape,
+            "estimated_macs": 0,
+            "estimated_flops": 0,
         }
 
     def _external_actionness_from_metas(self, metas, descriptors: torch.Tensor) -> Optional[dict[str, Any]]:
@@ -508,7 +682,14 @@ class DucaOnlineFrameSelector(nn.Module):
             updated_metas[idx] = meta
         return remapped_segments, gt_labels, updated_metas
 
-    def _write_metas(self, metas, grid, *, actionness_source_name: str) -> list[dict[str, Any]]:
+    def _write_metas(
+        self,
+        metas,
+        grid,
+        *,
+        actionness_source_name: str,
+        compute_profile: Optional[Mapping[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
         batch = int(grid.selected_positions.shape[0])
         if metas is None:
             out = [{} for _ in range(batch)]
@@ -543,6 +724,8 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_online_selected_count"] = len(positions)
             meta["duca_online_selected_axis_remap"] = remap
             meta["duca_online_actionness_source"] = actionness_source_name
+            if compute_profile is not None:
+                meta["duca_online_compute_profile"] = dict(compute_profile)
             meta["duca_online_budget_unit"] = grid.budget_unit
             meta["duca_online_coordinate"] = grid.coordinate
             meta["detector_output_coordinate_space"] = self.detector_output_coordinate_space

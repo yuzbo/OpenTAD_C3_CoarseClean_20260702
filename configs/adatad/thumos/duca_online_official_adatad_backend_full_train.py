@@ -11,9 +11,29 @@ def _env_int(name, default):
         raise ValueError(f"{name} must be an integer, got {value!r}") from exc
 
 
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return bool(default)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 dense_window_size = _env_int("DUCA_ONLINE_DENSE_WINDOW_SIZE", 768)
 window_size = _env_int("DUCA_ONLINE_BUDGET", _env_int("DUCA_OFFICIAL_ADATAD_BUDGET", 384))
 strict_budget_claim_max = _env_int("DUCA_STRICT_CLAIM_MAX_BUDGET", 384)
+duca_profile_runtime = os.environ.get("DUCA_PROFILE_RUNTIME", "0") == "1"
+duca_profile_sync_cuda = os.environ.get("DUCA_PROFILE_SYNC_CUDA", "1") != "0"
+duca_coarse_probe_model = os.environ.get("DUCA_COARSE_PROBE_MODEL", "temporal-tcn")
+duca_coarse_tcn_variant = os.environ.get("DUCA_COARSE_TCN_VARIANT", "asformer_lite")
+duca_coarse_spatial_size = _env_int("DUCA_COARSE_SPATIAL_SIZE", 64)
+duca_coarse_hidden_dim = _env_int("DUCA_COARSE_HIDDEN_DIM", 96)
+duca_coarse_checkpoint = os.environ.get("DUCA_COARSE_PROBE_CHECKPOINT", "")
+duca_coarse_require_checkpoint = _env_bool("DUCA_COARSE_REQUIRE_CHECKPOINT", False)
+duca_coarse_frozen = _env_bool("DUCA_COARSE_FROZEN", False)
+duca_coarse_source_name = os.environ.get(
+    "DUCA_COARSE_SOURCE_NAME",
+    f"online_c3_{duca_coarse_probe_model}_{duca_coarse_tcn_variant}_coarse_actionness",
+)
 if dense_window_size <= 0:
     raise ValueError("DUCA_ONLINE_DENSE_WINDOW_SIZE must be positive")
 if window_size <= 0:
@@ -52,13 +72,18 @@ duca_online_main_contract = dict(
     stage="duca_online_official_adatad_backend_full_train",
     official_adatad_backend=True,
     official_base_config="./e2e_thumos_videomae_s_768x1_160_adapter.py",
-    detector_stack="official_OpenTAD_AdaTAD_VideoMAE-S_ActionFormerHead_plus_DUCA_prebackbone_plugin",
+    detector_stack="official_OpenTAD_AdaTAD_VideoMAE-S_ActionFormerHead_plus_DUCA_prebackbone_plugin_plus_online_C3_coarse_probe",
     detector_head_type="ActionFormerHead",
     main_method_candidate=True,
     diagnostic_only=False,
     no_ledger_decision=True,
     online_acquisition=True,
     pre_backbone_plugin=True,
+    actionness_source="online_trainable_c3_coarse_probe",
+    coarse_probe_model=duca_coarse_probe_model,
+    coarse_probe_tcn_variant=duca_coarse_tcn_variant,
+    coarse_probe_joint_trainable=not duca_coarse_frozen,
+    coarse_probe_checkpoint_is_initialization=bool(duca_coarse_checkpoint),
     budget_max=window_size,
     strict_budget_claim_max=strict_budget_claim_max,
     strict_budget_lte_384=window_size <= 384,
@@ -82,6 +107,8 @@ duca_online_main_contract = dict(
     metric_claim_allowed=False,
     paper_claim_allowed=False,
     runtime_flops_claim_allowed=False,
+    runtime_profile_available=True,
+    runtime_profile_default_enabled=duca_profile_runtime,
     metadata_keys=duca_online_metadata_keys,
 )
 
@@ -133,23 +160,29 @@ model = dict(
         selected_axis_remap_required=True,
         forbid_ledger=True,
         forbid_raw_prediction_cache=True,
+        profile_runtime=duca_profile_runtime,
+        profile_sync_cuda=duca_profile_sync_cuda,
         metadata_keys=duca_online_metadata_keys,
         actionness_source_cfg=dict(
-            type="ZeroShotMotionActionnessSource",
-            source_name="zero_shot_motion_actionness",
-            mode="motion",
+            type="C3CoarseProbeActionnessSource",
+            source_name=duca_coarse_source_name,
+            probe_model=duca_coarse_probe_model,
+            tcn_variant=duca_coarse_tcn_variant,
+            spatial_size=duca_coarse_spatial_size,
+            tcn_hidden_dim=duca_coarse_hidden_dim,
+            checkpoint_path=duca_coarse_checkpoint,
+            require_checkpoint=duca_coarse_require_checkpoint,
+            frozen=duca_coarse_frozen,
+            trainable=not duca_coarse_frozen,
+            mobilenet_pretrained=True,
+            mobilenet_freeze_backbone=False,
+            official_action_seg_backend=os.environ.get("DUCA_COARSE_OFFICIAL_BACKEND", "official_asformer"),
             thumos_trained=False,
             uses_labels=False,
             uses_teacher=False,
             uses_gt=False,
             uses_prediction_cache=False,
-            no_train_gt=True,
-            no_teacher=True,
-            no_oracle=True,
-            no_raw_prediction_cache=True,
-            no_gt_generation=True,
             calibration_split="none",
-            checkpoint_hash="no_checkpoint_motion_energy",
         ),
     ),
     backbone=dict(

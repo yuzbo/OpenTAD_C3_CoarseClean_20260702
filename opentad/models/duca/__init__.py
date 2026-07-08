@@ -1,4 +1,5 @@
 from .acquisition import (
+    C3CoarseProbeActionnessSource,
     DucaAcquisitionAdapter,
     DucaOnlineSparseDetectorWrapper,
     SparseTemporalGrid,
@@ -16,6 +17,7 @@ from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetCo
 
 __all__ = [
     "DucaAcquisitionAdapter",
+    "C3CoarseProbeActionnessSource",
     "DucaOnlineSparseDetectorWrapper",
     "DynamicBudgetDecision",
     "PrefixMarginalUtilityBudgetController",

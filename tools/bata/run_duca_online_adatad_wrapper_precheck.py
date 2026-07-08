@@ -43,7 +43,7 @@ class _FakeAdaTADSparseDetector:
 
 def run_precheck(seed: int = 11, batch_size: int = 2, dense_len: int = 768, channels: int = 8, budget: int = 384) -> dict[str, Any]:
     import torch
-    from opentad.models.duca import DucaOnlineSparseDetectorWrapper
+    from opentad.models.duca import DucaAcquisitionAdapter, DucaOnlineSparseDetectorWrapper
 
     config_path = REPO_ROOT / "configs" / "adatad" / "thumos" / "duca_online_adatad_smoke.py"
     config = runpy.run_path(str(config_path))["duca_online_plugin"]
@@ -51,7 +51,19 @@ def run_precheck(seed: int = 11, batch_size: int = 2, dense_len: int = 768, chan
     observations = torch.randn(int(batch_size), int(dense_len), int(channels))
     valid_mask = torch.ones(int(batch_size), int(dense_len), dtype=torch.bool)
     detector = _FakeAdaTADSparseDetector()
-    wrapper = DucaOnlineSparseDetectorWrapper(detector=detector, feature_dim=int(channels), budget=int(budget), max_radius=16)
+    adapter = DucaAcquisitionAdapter(
+        feature_dim=int(channels),
+        budget=int(budget),
+        max_radius=16,
+        profile_runtime=True,
+    )
+    wrapper = DucaOnlineSparseDetectorWrapper(
+        detector=detector,
+        adapter=adapter,
+        feature_dim=int(channels),
+        budget=int(budget),
+        max_radius=16,
+    )
 
     wrapper.train()
     train_result = wrapper(
@@ -88,6 +100,7 @@ def run_precheck(seed: int = 11, batch_size: int = 2, dense_len: int = 768, chan
     grid = test_result["grid"].validate()
     selected_counts = [int(v) for v in grid.selected_count.detach().cpu().tolist()]
     train_batch_keys = detector.calls[0]["batch_keys"]
+    compute_profile = dict(test_result.get("compute_profile", {}))
     return {
         "status": "ok",
         "implementation": "opentad.models.duca.acquisition",
@@ -107,6 +120,10 @@ def run_precheck(seed: int = 11, batch_size: int = 2, dense_len: int = 768, chan
         "train_detector_batch_sanitized": "teacher_utility" not in train_batch_keys
         and "dense_teacher_payload" not in train_batch_keys,
         "train_detector_loss_present": "detector_loss" in train_result["losses"],
+        "pre_backbone_model": compute_profile.get("pre_backbone_model"),
+        "estimated_macs": int(compute_profile.get("estimated_macs", 0)),
+        "estimated_flops": int(compute_profile.get("estimated_flops", 0)),
+        "compute_profile": compute_profile,
         "precheck_pass": True,
     }
 

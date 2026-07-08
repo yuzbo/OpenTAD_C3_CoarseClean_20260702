@@ -38,7 +38,12 @@ def _config_text(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8").lower()
 
 
-def validate_config(config_path: str = CONFIG_DEFAULT, *, max_budget: int = 384) -> dict[str, Any]:
+def validate_config(
+    config_path: str = CONFIG_DEFAULT,
+    *,
+    max_budget: int = 384,
+    require_online_c3_actionness: bool = True,
+) -> dict[str, Any]:
     config_path = str(config_path)
     max_budget = int(max_budget)
     cfg = _load(config_path)
@@ -104,12 +109,24 @@ def validate_config(config_path: str = CONFIG_DEFAULT, *, max_budget: int = 384)
     _require(cfg.dataset.test.pipeline[2].method == "sliding_window", "test LoadFrames must stay online sliding_window")
 
     source_cfg = selector.actionness_source_cfg
-    for key in ("uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
-        _require(source_cfg.get(key) is False, f"actionness source must set {key}=False")
-    for key in ("no_train_gt", "no_teacher", "no_oracle", "no_raw_prediction_cache", "no_gt_generation"):
-        _require(source_cfg.get(key) is True, f"actionness source must set {key}=True")
+    if require_online_c3_actionness:
+        _require(
+            contract.actionness_source == "online_trainable_c3_coarse_probe",
+            "main source must be online C3 coarse probe",
+        )
+        _require(source_cfg.type == "C3CoarseProbeActionnessSource", "main source must be online C3 coarse probe module")
+        _require(
+            source_cfg.probe_model in {"mobilenetv3", "temporal-tcn", "official-action-seg", "matrix-zoo"},
+            "unsupported coarse probe model",
+        )
+        _require(source_cfg.get("trainable") is True, "coarse probe must be trainable for the main end-to-end config")
+        _require(source_cfg.get("frozen") is False, "coarse probe must not be frozen for the main end-to-end config")
+        _require(contract.coarse_probe_joint_trainable is True, "contract must declare joint-trainable coarse probe")
+        _require(contract.runtime_profile_available is True, "contract must expose compute/latency profiling")
+        for key in ("uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
+            _require(source_cfg.get(key) is False, f"actionness source must set {key}=False")
 
-    return {
+    summary = {
         "ok": True,
         "config_path": config_path,
         "official_base_config": OFFICIAL_BASE_CONFIG,
@@ -140,6 +157,17 @@ def validate_config(config_path: str = CONFIG_DEFAULT, *, max_budget: int = 384)
         "selected_positions_unit": str(selector.selected_positions_unit),
         "detector_output_coordinate_space": str(selector.detector_output_coordinate_space),
     }
+    if require_online_c3_actionness:
+        summary.update(
+            {
+                "actionness_source": str(contract.actionness_source),
+                "coarse_probe_model": str(source_cfg.probe_model),
+                "coarse_probe_tcn_variant": str(source_cfg.get("tcn_variant", "")),
+                "coarse_probe_joint_trainable": bool(contract.coarse_probe_joint_trainable),
+                "runtime_profile_available": bool(contract.runtime_profile_available),
+            }
+        )
+    return summary
 
 
 def main(argv: list[str] | None = None) -> int:

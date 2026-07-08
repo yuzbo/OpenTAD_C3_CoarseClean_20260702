@@ -41,4 +41,9 @@ def test_duca_online_adatad_wrapper_precheck_runs_real_sparse_path(tmp_path: Pat
     assert payload["detector_consumes_selected_positions"] is True
     assert payload["train_detector_batch_sanitized"] is True
     assert payload["train_detector_loss_present"] is True
+    assert payload["pre_backbone_model"] == "ZeroShotActionnessSource(mode=motion)+DUCASelectorMLP"
+    assert payload["estimated_flops"] > 0
+    assert payload["estimated_macs"] > 0
+    assert payload["compute_profile"]["parameters"]["trainable"] > 0
+    assert payload["compute_profile"]["latency_ms"]["adapter_total_ms"] >= 0.0
     assert payload["precheck_pass"] is True

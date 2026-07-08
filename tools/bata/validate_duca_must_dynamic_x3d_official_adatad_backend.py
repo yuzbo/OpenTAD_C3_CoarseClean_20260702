@@ -78,7 +78,7 @@ def _validate_x3d_external_path(cfg: Config, *, require_jsonl_exists: bool) -> d
 
 
 def validate_config(config_path: str = CONFIG_DEFAULT, *, max_budget: int = 384, require_jsonl_exists: bool = False) -> dict[str, Any]:
-    summary = validate_must_config(config_path, max_budget=max_budget)
+    summary = validate_must_config(config_path, max_budget=max_budget, require_online_c3_actionness=False)
     cfg = _load(config_path)
     summary.update(_validate_x3d_external_path(cfg, require_jsonl_exists=bool(require_jsonl_exists)))
     return summary

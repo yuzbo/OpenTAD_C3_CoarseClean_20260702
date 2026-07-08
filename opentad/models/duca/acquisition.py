@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import os
+import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import torch
@@ -37,6 +40,42 @@ _PROVENANCE_FALSE_KEYS = (
     "uses_gt",
     "uses_prediction_cache",
 )
+
+
+def _sync_profile_clock(reference: torch.Tensor, *, enabled: bool) -> float:
+    if enabled and torch.is_tensor(reference) and reference.is_cuda:
+        torch.cuda.synchronize(reference.device)
+    return time.perf_counter()
+
+
+def _elapsed_ms(start: Optional[float], reference: torch.Tensor, *, enabled: bool) -> Optional[float]:
+    if start is None:
+        return None
+    end = _sync_profile_clock(reference, enabled=enabled)
+    return float((end - start) * 1000.0)
+
+
+def _module_param_counts(module: Optional[nn.Module]) -> Dict[str, int]:
+    if module is None:
+        return {"total": 0, "trainable": 0}
+    total = 0
+    trainable = 0
+    for param in module.parameters():
+        count = int(param.numel())
+        total += count
+        if param.requires_grad:
+            trainable += count
+    return {"total": total, "trainable": trainable}
+
+
+def _known_number(value: Optional[Union[int, float]]) -> int:
+    if value is None:
+        return 0
+    return int(value)
+
+
+def _sum_known(values: Iterable[Optional[Union[int, float]]]) -> int:
+    return int(sum(_known_number(value) for value in values))
 
 
 def validate_actionness_provenance(
@@ -465,6 +504,264 @@ class ZeroShotActionnessSource(nn.Module):
         }
 
 
+class C3CoarseProbeActionnessSource(nn.Module):
+    """Task-adapted coarse frame classifier source for DUCA pre-backbone selection.
+
+    This wraps the validated low-resolution MobileNet/TCN/ASFormer-style C3
+    probes and exposes the same p_action/logit contract as DUCA's actionness
+    source. It is intended to run before the detector backbone and to stay
+    frozen during detector/selector training.
+    """
+
+    def __init__(
+        self,
+        probe_model: str = "temporal-tcn",
+        spatial_size: int = 64,
+        checkpoint_path: Optional[str] = None,
+        require_checkpoint: bool = False,
+        frozen: bool = True,
+        trainable: Optional[bool] = None,
+        source_name: Optional[str] = None,
+        checkpoint_hash: Optional[str] = None,
+        tcn_variant: str = "asformer_lite",
+        tcn_hidden_dim: int = 96,
+        dropout: float = 0.0,
+        mobilenet_pretrained: bool = True,
+        mobilenet_variant: str = "small",
+        mobilenet_freeze_backbone: bool = True,
+        mobilenet_weights_path: Optional[str] = None,
+        official_action_seg_backend: str = "official_asformer",
+        official_num_layers: int = 2,
+        matrix_model_id: str = "timm_mobilenetv3_large_100_tsm_tcn",
+        matrix_pretrained: bool = True,
+        matrix_freeze_backbone: bool = True,
+        train_split_supervised: bool = True,
+        calibration_split: Optional[str] = "train_only",
+        thumos_trained: bool = False,
+        uses_labels: bool = False,
+        uses_teacher: bool = False,
+        uses_gt: bool = False,
+        uses_prediction_cache: bool = False,
+        **_: Any,
+    ) -> None:
+        super().__init__()
+        self.probe_model = str(probe_model)
+        self.spatial_size = int(spatial_size)
+        self.checkpoint_path = self._resolve_path(checkpoint_path)
+        self.require_checkpoint = bool(require_checkpoint)
+        self.frozen = bool(frozen if trainable is None else not bool(trainable))
+        self.tcn_variant = str(tcn_variant)
+        self.tcn_hidden_dim = int(tcn_hidden_dim)
+        self.dropout = float(dropout)
+        self.source_name = str(source_name or self._default_source_name())
+        self.train_split_supervised = bool(train_split_supervised)
+        self.calibration_split = calibration_split
+        if self.require_checkpoint and not self.checkpoint_path:
+            raise ValueError("C3CoarseProbeActionnessSource requires checkpoint_path")
+        if self.checkpoint_path and not os.path.isfile(self.checkpoint_path):
+            raise FileNotFoundError(f"C3 coarse probe checkpoint missing: {self.checkpoint_path}")
+        self.checkpoint_hash = checkpoint_hash or self._checkpoint_hash(self.checkpoint_path)
+        self._provenance_override = {
+            "source_type": "c3_coarse_probe",
+            "source_name": self.source_name,
+            "probe_model": self.probe_model,
+            "tcn_variant": self.tcn_variant if self.probe_model == "temporal-tcn" else None,
+            "official_action_seg_backend": (
+                str(official_action_seg_backend) if self.probe_model == "official-action-seg" else None
+            ),
+            "matrix_model_id": str(matrix_model_id) if self.probe_model == "matrix-zoo" else None,
+            "spatial_size": self.spatial_size,
+            "checkpoint_path": self.checkpoint_path,
+            "checkpoint_hash": self.checkpoint_hash,
+            "train_split_supervised": self.train_split_supervised,
+            "calibration_split": self.calibration_split,
+            "thumos_trained": bool(thumos_trained),
+            "uses_labels": bool(uses_labels),
+            "uses_teacher": bool(uses_teacher),
+            "uses_gt": bool(uses_gt),
+            "uses_prediction_cache": bool(uses_prediction_cache),
+            "uses_labels_at_inference": False,
+            "uses_gt_at_inference": False,
+            "uses_teacher_at_inference": False,
+            "joint_trainable": not self.frozen,
+            "checkpoint_is_initialization": bool(self.checkpoint_path),
+        }
+
+        probe_mod = self._probe_module()
+        if self.probe_model == "mobilenetv3":
+            self.probe = probe_mod.C3MobileNetV3ActionProbe(
+                pretrained=bool(mobilenet_pretrained),
+                variant=str(mobilenet_variant),
+                freeze_backbone=bool(mobilenet_freeze_backbone),
+                weights_path=mobilenet_weights_path,
+            )
+        elif self.probe_model == "temporal-tcn":
+            self.probe = probe_mod.C3TemporalTCNActionProbe(
+                variant=self.tcn_variant,
+                spatial_size=self.spatial_size,
+                hidden_dim=self.tcn_hidden_dim,
+                dropout=self.dropout,
+            )
+        elif self.probe_model == "official-action-seg":
+            self.probe = probe_mod.C3OfficialActionSegmentationProbe(
+                backend=str(official_action_seg_backend),
+                spatial_size=self.spatial_size,
+                hidden_dim=self.tcn_hidden_dim,
+                num_layers=int(official_num_layers),
+                dropout=self.dropout,
+            )
+        elif self.probe_model == "matrix-zoo":
+            self.probe = probe_mod.C3MatrixZooActionProbe(
+                model_id=str(matrix_model_id),
+                pretrained=bool(matrix_pretrained),
+                freeze_backbone=bool(matrix_freeze_backbone),
+            )
+        else:
+            raise ValueError(
+                "probe_model must be one of mobilenetv3, temporal-tcn, official-action-seg, or matrix-zoo"
+            )
+        module = getattr(self.probe, "module", None)
+        if isinstance(module, nn.Module):
+            self.probe_module = module
+        else:
+            self.probe_module = None
+        if self.checkpoint_path:
+            probe_mod._load_probe_checkpoint(self.probe, self.checkpoint_path)
+        if self.frozen:
+            self.eval()
+            for param in self.parameters():
+                param.requires_grad_(False)
+
+    @staticmethod
+    def _resolve_path(path: Optional[str]) -> Optional[str]:
+        if path in (None, ""):
+            return None
+        return os.path.abspath(os.path.expandvars(os.path.expanduser(str(path))))
+
+    @staticmethod
+    def _checkpoint_hash(path: Optional[str]) -> Optional[str]:
+        if not path:
+            return None
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _default_source_name(self) -> str:
+        if self.probe_model == "temporal-tcn":
+            return f"c3_{self.tcn_variant}_coarse_actionness"
+        return f"c3_{self.probe_model}_coarse_actionness"
+
+    @staticmethod
+    def _probe_module():
+        try:
+            from tools.bata import train_lowres_action_probe as probe_mod
+        except Exception as exc:  # pragma: no cover - import errors are environment dependent.
+            raise RuntimeError("C3 coarse probe source requires tools.bata.train_lowres_action_probe") from exc
+        return probe_mod
+
+    def _provenance(self) -> Dict[str, Any]:
+        return dict(self._provenance_override)
+
+    def _prepare_probe_inputs(self, inputs: torch.Tensor) -> torch.Tensor:
+        probe_mod = self._probe_module()
+        return probe_mod.prepare_probe_inputs(inputs, probe_model=self.probe_model, spatial_size=self.spatial_size)
+
+    def _estimate_probe_profile(self, inputs: torch.Tensor, logits: torch.Tensor, latency_ms: Optional[float]) -> Dict[str, Any]:
+        params = _module_param_counts(self)
+        batch = int(logits.shape[0])
+        temporal_len = int(logits.shape[1])
+        tokens = batch * temporal_len
+        spatial = int(self.spatial_size)
+        if self.probe_model == "mobilenetv3":
+            per_frame_macs = int(56_500_000 * (spatial / 224.0) ** 2)
+            macs = tokens * per_frame_macs
+            family = "MobileNetV3-small"
+        elif self.probe_model == "temporal-tcn":
+            hidden = max(96 if self.tcn_variant in {"asformer_lite", "fact_lite", "temporal_mamba_lite", "ms_tcnpp", "c2f_tcn"} else 32, self.tcn_hidden_dim)
+            stem_macs = tokens * (3 * hidden * 9 * max(1, spatial // 2) * max(1, spatial // 2) // 16)
+            temporal_macs = tokens * hidden * hidden * (10 if self.tcn_variant == "asformer_lite" else 6)
+            if self.tcn_variant == "asformer_lite":
+                temporal_macs += batch * temporal_len * temporal_len * hidden * 4
+            macs = int(stem_macs + temporal_macs)
+            family = f"TemporalTCN/{self.tcn_variant}"
+        elif self.probe_model == "official-action-seg":
+            hidden = max(16, self.tcn_hidden_dim)
+            macs = int(tokens * hidden * hidden * 10 + batch * temporal_len * temporal_len * hidden * 4)
+            family = "official-action-seg"
+        else:
+            macs = int(tokens * max(params["total"], 1))
+            family = "matrix-zoo"
+        return {
+            "source_name": self.source_name,
+            "source_type": "c3_coarse_probe",
+            "source_kind": "task_adapted_coarse_classifier",
+            "probe_model": self.probe_model,
+            "model_family": family,
+            "spatial_size": spatial,
+            "checkpoint_path": self.checkpoint_path,
+            "checkpoint_hash": self.checkpoint_hash,
+            "train_split_supervised": self.train_split_supervised,
+            "cache_lookup_or_interpolation": False,
+            "online_backbone_flops_included": True,
+            "estimated_macs": int(macs),
+            "estimated_flops": int(2 * macs),
+            "parameters": params,
+            "latency_ms": {"coarse_probe_ms": latency_ms},
+            "input_shape": [int(v) for v in inputs.shape],
+            "output_shape": [int(v) for v in logits.shape],
+        }
+
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
+        **_: Any,
+    ) -> Dict[str, Any]:
+        if inputs.ndim not in {5, 6}:
+            raise ValueError(f"C3 coarse probe actionness expects raw video [B,C,T,H,W] or [B,N,C,T,H,W], got {tuple(inputs.shape)}")
+        if inputs.ndim == 6:
+            temporal_len = int(inputs.shape[3])
+            batch = int(inputs.shape[0])
+        else:
+            temporal_len = int(inputs.shape[2])
+            batch = int(inputs.shape[0])
+        if valid_mask is None:
+            valid = torch.ones(batch, temporal_len, dtype=torch.bool, device=inputs.device)
+        else:
+            valid = valid_mask.to(device=inputs.device, dtype=torch.bool)
+        if valid.shape != (batch, temporal_len):
+            raise ValueError(f"valid_mask must be [B,T]={batch, temporal_len}, got {tuple(valid.shape)}")
+        start = time.perf_counter()
+        probe_inputs = self._prepare_probe_inputs(inputs)
+        if hasattr(probe_inputs, "to"):
+            probe_inputs = probe_inputs.to(device=inputs.device)
+        if self.frozen:
+            with torch.no_grad():
+                logits = self.probe(probe_inputs, valid)
+        else:
+            logits = self.probe(probe_inputs, valid)
+        logits = logits.float().to(device=inputs.device).masked_fill(~valid, _neg(torch.float32))
+        latency_ms = float((time.perf_counter() - start) * 1000.0)
+        p_action = torch.sigmoid(logits).masked_fill(~valid, 0.0)
+        uncertainty = (1.0 - torch.abs(2.0 * p_action - 1.0)).masked_fill(~valid, 0.0)
+        entropy = _binary_entropy(p_action).masked_fill(~valid, 0.0)
+        profile = self._estimate_probe_profile(inputs, logits, latency_ms)
+        return {
+            "p_action": p_action,
+            "logits": logits,
+            "actionness_logits": logits,
+            "uncertainty": uncertainty,
+            "entropy": entropy,
+            "features": torch.stack((p_action, uncertainty, entropy), dim=-1),
+            "valid_mask": valid,
+            "provenance": self._provenance(),
+            "compute_profile": profile,
+            "source_name": self.source_name,
+        }
+
+
 class DucaAcquisitionAdapter(nn.Module):
     """Online DUCA acquisition adapter with hard budgeted sparse output."""
 
@@ -485,6 +782,8 @@ class DucaAcquisitionAdapter(nn.Module):
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 0.25,
+        profile_runtime: bool = False,
+        profile_sync_cuda: bool = True,
     ) -> None:
         super().__init__()
         self.budget_mode = str(budget_mode)
@@ -528,6 +827,9 @@ class DucaAcquisitionAdapter(nn.Module):
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
+        self.profile_runtime = bool(profile_runtime)
+        self.profile_sync_cuda = bool(profile_sync_cuda)
+        self.last_compute_profile: Dict[str, Any] = {}
         self.actionness_source = actionness_source or ZeroShotActionnessSource(feature_dim=feature_dim, mode="motion")
         self.feature_dim = None if feature_dim is None else int(feature_dim)
         if self.feature_dim is None:
@@ -563,6 +865,221 @@ class DucaAcquisitionAdapter(nn.Module):
             )
         else:
             self.budget_controller = budget_controller
+
+    def _estimate_actionness_profile(
+        self,
+        *,
+        batch_size: int,
+        temporal_len: int,
+        feature_dim: int,
+        external_cached: bool,
+        external_source_name: Optional[str],
+    ) -> Dict[str, Any]:
+        source_mode = str(getattr(self.actionness_source, "mode", "unknown"))
+        source_name = str(external_source_name or getattr(self.actionness_source, "_provenance", lambda: {})().get("source_name", source_mode))
+        tokens = int(batch_size) * int(temporal_len)
+        params = _module_param_counts(self.actionness_source)
+        if external_cached:
+            flops = tokens * 16
+            return {
+                "source_name": source_name,
+                "source_type": source_mode,
+                "source_kind": "external_cached_prior",
+                "cache_lookup_or_interpolation": True,
+                "online_backbone_flops_included": False,
+                "estimated_macs": 0,
+                "estimated_flops": int(flops),
+                "parameters": params,
+            }
+        if source_mode == "motion":
+            motion_flops = tokens * (8 * int(feature_dim) + 40)
+            return {
+                "source_name": source_name,
+                "source_type": source_mode,
+                "source_kind": "online_zero_shot_motion",
+                "cache_lookup_or_interpolation": False,
+                "online_backbone_flops_included": True,
+                "estimated_macs": 0,
+                "estimated_flops": int(motion_flops),
+                "parameters": params,
+            }
+        if source_mode == "feature_mlp" and getattr(self.actionness_source, "net", None) is not None:
+            hidden = int(self.actionness_source.net[1].out_features)
+            macs = tokens * (int(feature_dim) * hidden + hidden)
+            flops = 2 * macs + tokens * (6 * int(feature_dim) + 8 * hidden + 16)
+            return {
+                "source_name": source_name,
+                "source_type": source_mode,
+                "source_kind": "online_feature_mlp",
+                "cache_lookup_or_interpolation": False,
+                "online_backbone_flops_included": True,
+                "estimated_macs": int(macs),
+                "estimated_flops": int(flops),
+                "parameters": params,
+            }
+        if source_mode == "video_text":
+            return {
+                "source_name": source_name,
+                "source_type": source_mode,
+                "source_kind": "online_video_text_external_model",
+                "cache_lookup_or_interpolation": False,
+                "online_backbone_flops_included": False,
+                "estimated_macs": 0,
+                "estimated_flops": 0,
+                "parameters": params,
+                "note": "injected video-text backbone FLOPs are provider/model dependent and are not estimated here",
+            }
+        flops = tokens * 16
+        return {
+            "source_name": source_name,
+            "source_type": source_mode,
+            "source_kind": f"online_{source_mode}",
+            "cache_lookup_or_interpolation": False,
+            "online_backbone_flops_included": True,
+            "estimated_macs": 0,
+            "estimated_flops": int(flops),
+            "parameters": params,
+        }
+
+    def _estimate_selector_profile(
+        self,
+        *,
+        batch_size: int,
+        temporal_len: int,
+        feature_dim: int,
+    ) -> Dict[str, Any]:
+        tokens = int(batch_size) * int(temporal_len)
+        params = _module_param_counts(self)
+        actionness_params = _module_param_counts(self.actionness_source)
+        selector_params = {
+            "total": int(params["total"] - actionness_params["total"]),
+            "trainable": int(params["trainable"] - actionness_params["trainable"]),
+        }
+        if self.encoder is None:
+            flops = tokens * 24
+            return {
+                "head": "analytic_score_no_mlp",
+                "hidden_dim": 0,
+                "estimated_macs": 0,
+                "estimated_flops": int(flops),
+                "parameters": selector_params,
+            }
+        hidden = int(self.center_head.in_features)
+        in_dim = int(feature_dim) + 3
+        macs = tokens * (in_dim * hidden + hidden * hidden + 4 * hidden)
+        flops = 2 * macs + tokens * (6 * in_dim + 12 * hidden + 48)
+        return {
+            "head": "DUCASelectorMLP",
+            "hidden_dim": hidden,
+            "input_dim": in_dim,
+            "estimated_macs": int(macs),
+            "estimated_flops": int(flops),
+            "parameters": selector_params,
+        }
+
+    def _estimate_budget_controller_profile(
+        self,
+        *,
+        batch_size: int,
+        temporal_len: int,
+    ) -> Dict[str, Any]:
+        params = _module_param_counts(self.budget_controller)
+        if not self.dynamic_budget or self.budget_controller is None:
+            return {
+                "enabled": False,
+                "policy": "fixed_budget",
+                "estimated_macs": 0,
+                "estimated_flops": 0,
+                "parameters": params,
+            }
+        hidden = int(getattr(self.budget_controller, "hidden_dim", 0))
+        blocks = int(getattr(self.budget_controller, "num_extra_blocks", 0))
+        macs = int(batch_size) * (hidden * hidden + blocks * (2 * hidden * hidden + hidden))
+        flops = 2 * macs + int(batch_size) * (int(temporal_len) * hidden + blocks * (16 * hidden + 20))
+        return {
+            "enabled": True,
+            "policy": str(getattr(self.budget_controller, "policy_name", "prefix_marginal_utility_stop")),
+            "num_extra_blocks": blocks,
+            "estimated_macs": int(macs),
+            "estimated_flops": int(flops),
+            "parameters": params,
+        }
+
+    def compute_profile(
+        self,
+        dense_observations: torch.Tensor,
+        *,
+        external_cached_actionness: bool = False,
+        external_actionness_source_name: Optional[str] = None,
+        descriptor_profile: Optional[Mapping[str, Any]] = None,
+        latency_ms: Optional[Mapping[str, Optional[float]]] = None,
+    ) -> Dict[str, Any]:
+        if dense_observations.ndim != 3:
+            raise ValueError("dense_observations must be [B,T,C] for DUCA compute profiling")
+        batch_size, temporal_len, feature_dim = [int(v) for v in dense_observations.shape]
+        actionness = self._estimate_actionness_profile(
+            batch_size=batch_size,
+            temporal_len=temporal_len,
+            feature_dim=feature_dim,
+            external_cached=bool(external_cached_actionness),
+            external_source_name=external_actionness_source_name,
+        )
+        selector = self._estimate_selector_profile(
+            batch_size=batch_size,
+            temporal_len=temporal_len,
+            feature_dim=feature_dim,
+        )
+        budget_controller = self._estimate_budget_controller_profile(
+            batch_size=batch_size,
+            temporal_len=temporal_len,
+        )
+        descriptor = dict(descriptor_profile or {"estimated_macs": 0, "estimated_flops": 0})
+        soft_coverage_macs = batch_size * temporal_len * temporal_len
+        soft_coverage_flops = soft_coverage_macs * 8
+        gather_flops = batch_size * min(self.budget, temporal_len) * feature_dim
+        components = {
+            "descriptor": descriptor,
+            "actionness": actionness,
+            "selector": selector,
+            "budget_controller": budget_controller,
+            "soft_coverage": {
+                "estimated_macs": int(soft_coverage_macs),
+                "estimated_flops": int(soft_coverage_flops),
+                "complexity": "O(B*T^2)",
+            },
+            "hard_decode": {
+                "estimated_macs": 0,
+                "estimated_flops": 0,
+                "topk_elements": int(batch_size * temporal_len),
+                "note": "top-k and Python interval fill are reported through latency rather than FLOP accounting",
+            },
+            "sparse_gather": {
+                "estimated_macs": 0,
+                "estimated_flops": int(gather_flops),
+            },
+        }
+        total_macs = _sum_known(component.get("estimated_macs") for component in components.values())
+        total_flops = _sum_known(component.get("estimated_flops") for component in components.values())
+        param_counts = _module_param_counts(self)
+        profile = {
+            "pre_backbone_model": (
+                "ExternalCachedActionness+DUCASelectorMLP"
+                if external_cached_actionness
+                else f"ZeroShotActionnessSource(mode={getattr(self.actionness_source, 'mode', 'unknown')})+DUCASelectorMLP"
+            ),
+            "input_shape": [batch_size, temporal_len, feature_dim],
+            "budget_mode": self.budget_mode,
+            "budget_max": int(self.budget),
+            "estimated_macs": int(total_macs),
+            "estimated_flops": int(total_flops),
+            "parameters": param_counts,
+            "actionness": actionness,
+            "components": components,
+            "latency_ms": dict(latency_ms or {"enabled": False}),
+            "flop_accounting": "static_estimate_for_selector_path_excludes_detector_backbone_and_external_cached_x3d_extraction",
+        }
+        self.last_compute_profile = profile
+        return profile
 
     def forward_scores(
         self,
@@ -627,24 +1144,35 @@ class DucaAcquisitionAdapter(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
+        compute_profile_context: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
+        profile_enabled = bool(self.profile_runtime)
+        sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
+        adapter_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
+        score_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
         scores = self.forward_scores(
             dense_observations=dense_observations,
             valid_mask=valid_mask,
             actionness_logits=actionness_logits,
             p_action=p_action,
         )
+        score_ms = _elapsed_ms(score_start, dense_observations, enabled=sync_enabled)
         budget_decision: Optional[DynamicBudgetDecision] = None
+        budget_controller_ms: Optional[float] = None
         if self.dynamic_budget:
             if budget is not None and not self.allow_external_budget_override:
                 raise ValueError("external budget override is forbidden for dynamic_must DUCA acquisition")
             if self.budget_controller is None:
                 raise ValueError("dynamic_must requires a budget_controller")
+            budget_controller_start = (
+                _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
+            )
             budget_decision = self.budget_controller(
                 scores["selection_features"],
                 scores["center_scores"],
                 scores["valid_mask"],
             )
+            budget_controller_ms = _elapsed_ms(budget_controller_start, dense_observations, enabled=sync_enabled)
             budget_decision.validate(batch_size=dense_observations.shape[0])
             if budget is None:
                 budgets = budget_decision.budget_hard.to(device=dense_observations.device, dtype=torch.long)
@@ -659,6 +1187,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 f"budget override exceeds hard cap: requested={budgets.detach().cpu().tolist()} "
                 f"hard_cap={self.budget}"
             )
+        decode_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
         decoded = budgeted_center_radius_decode(
             center_scores=scores["center_scores"],
             radius=scores["radius"],
@@ -666,6 +1195,7 @@ class DucaAcquisitionAdapter(nn.Module):
             valid_mask=scores["valid_mask"],
             max_radius=self.max_radius,
         )
+        decode_ms = _elapsed_ms(decode_start, dense_observations, enabled=sync_enabled)
         valid_len = scores["valid_mask"].long().sum(dim=1)
         effective_budget = decoded["effective_budget"].to(device=dense_observations.device, dtype=torch.long)
         grid = SparseTemporalGrid(
@@ -696,6 +1226,9 @@ class DucaAcquisitionAdapter(nn.Module):
         ).validate()
         if torch.any(grid.selected_count > int(self.budget)):
             raise RuntimeError("DUCA dynamic acquisition selected more observations than the hard cap")
+        soft_coverage_start = (
+            _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
+        )
         soft_coverage = soft_center_radius_coverage(
             center_scores=scores["center_scores"],
             radius=scores["radius"],
@@ -703,9 +1236,27 @@ class DucaAcquisitionAdapter(nn.Module):
             budget=budgets,
             max_radius=self.max_radius,
         )
+        soft_coverage_ms = _elapsed_ms(soft_coverage_start, dense_observations, enabled=sync_enabled)
         hard_union = grid.selected_mask.to(dtype=scores["center_scores"].dtype)
         selection_st = hard_union + soft_coverage - soft_coverage.detach()
         selected_indices = grid.selected_positions
+        adapter_total_ms = _elapsed_ms(adapter_start, dense_observations, enabled=sync_enabled)
+        profile_context = dict(compute_profile_context or {})
+        latency_ms = {
+            "enabled": profile_enabled,
+            "adapter_total_ms": adapter_total_ms,
+            "forward_scores_ms": score_ms,
+            "budget_controller_ms": budget_controller_ms,
+            "hard_decode_ms": decode_ms,
+            "soft_coverage_ms": soft_coverage_ms,
+        }
+        compute_profile = self.compute_profile(
+            dense_observations,
+            external_cached_actionness=bool(profile_context.get("external_cached_actionness", False)),
+            external_actionness_source_name=profile_context.get("external_actionness_source_name"),
+            descriptor_profile=profile_context.get("descriptor_profile"),
+            latency_ms=latency_ms,
+        )
         scores.update(
             {
                 "selected_mask_st": selection_st,
@@ -723,6 +1274,7 @@ class DucaAcquisitionAdapter(nn.Module):
                     "budget_target": float(self.target_budget),
                     "budget_policy": grid.metadata["budget_policy"],
                 },
+                "compute_profile": compute_profile,
             }
         )
         return grid, scores

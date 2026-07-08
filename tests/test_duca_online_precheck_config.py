@@ -141,6 +141,13 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.coordinate_space == "original_time"
     assert cfg.model.frame_selector.detector_output_coordinate_space == "selected_axis_index"
     assert cfg.model.frame_selector.remap_gt_to_selected_axis is True
+    assert cfg.duca_online_main_contract.actionness_source == "online_trainable_c3_coarse_probe"
+    assert cfg.duca_online_main_contract.coarse_probe_joint_trainable is True
+    assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
+    assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "temporal-tcn"
+    assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "asformer_lite"
+    assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
+    assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.rpn_head == official.model.rpn_head
     assert "physical_grid_actionformer" not in cfg.model.rpn_head
     assert "bata_value_transport" not in repr(cfg).lower()
@@ -241,6 +248,8 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.duca_must_dynamic_contract.main_method_candidate is True
     assert cfg.duca_must_dynamic_contract.dynamic_budget is True
     assert cfg.duca_must_dynamic_contract.budget_policy == "prefix_marginal_utility_stop"
+    assert cfg.duca_must_dynamic_contract.actionness_source == "online_trainable_c3_coarse_probe"
+    assert cfg.duca_must_dynamic_contract.coarse_probe_joint_trainable is True
     assert cfg.duca_must_dynamic_contract.budget_max == 384
     assert cfg.duca_must_dynamic_contract.budget_target <= cfg.duca_must_dynamic_contract.budget_max
     assert cfg.duca_must_dynamic_contract.external_budget_override_allowed is False
@@ -254,6 +263,11 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.budget_multiple == 16
     assert cfg.model.frame_selector.target_budget == 256
     assert cfg.model.frame_selector.allow_external_budget_override is False
+    assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
+    assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "temporal-tcn"
+    assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "asformer_lite"
+    assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
+    assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.rpn_head == official.model.rpn_head
     assert cfg.window_size == 384
     assert cfg.model.backbone.backbone.total_frames == 384
