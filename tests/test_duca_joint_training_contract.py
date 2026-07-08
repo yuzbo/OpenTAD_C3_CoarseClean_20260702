@@ -1,0 +1,307 @@
+from __future__ import annotations
+
+import pytest
+
+try:
+    import torch
+    import torch.nn as nn
+except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
+    pytest.skip(f"torch is unavailable in this environment: {exc}", allow_module_level=True)
+
+from opentad.models import build_detector
+from opentad.models.detectors.actionformer import ActionFormer
+from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+
+
+def _grad_sum(module: nn.Module) -> float:
+    total = 0.0
+    for param in module.parameters():
+        if param.requires_grad and param.grad is not None:
+            total += float(param.grad.detach().abs().sum().item())
+    return total
+
+
+def _official_asformer_source_cfg() -> dict:
+    return {
+        "type": "C3CoarseProbeActionnessSource",
+        "source_name": "online_c3_official_asformer_coarse_actionness",
+        "probe_model": "official-action-seg",
+        "official_action_seg_backend": "official_asformer",
+        "spatial_size": 16,
+        "tcn_hidden_dim": 16,
+        "official_num_layers": 1,
+        "dropout": 0.0,
+        "frozen": False,
+        "trainable": True,
+        "thumos_trained": False,
+        "uses_labels": False,
+        "uses_teacher": False,
+        "uses_gt": False,
+        "uses_prediction_cache": False,
+        "calibration_split": "none",
+    }
+
+
+def test_actionformer_optimizer_covers_every_trainable_duca_frame_selector_parameter() -> None:
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=4,
+        dense_window_size=8,
+        max_radius=2,
+        selector_hidden_channels=8,
+        actionness_source_cfg=_official_asformer_source_cfg(),
+    )
+    model = nn.Module()
+    model.frame_selector = selector
+    model.rpn_head = nn.Linear(1, 1)
+
+    groups = ActionFormer.get_optim_groups(model, {"lr": 1e-4, "weight_decay": 0.05})
+    covered = {id(param) for group in groups for param in group["params"]}
+    missing = [
+        name
+        for name, param in model.named_parameters()
+        if name.startswith("frame_selector.") and param.requires_grad and id(param) not in covered
+    ]
+
+    assert not missing
+
+
+def test_train_forward_builds_gt_action_target_for_selector_loss() -> None:
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=1,
+        dense_window_size=20,
+        max_radius=1,
+        selector_hidden_channels=4,
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "source_name": "zero_shot_motion_actionness",
+            "mode": "motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+            "checkpoint_hash": "no_checkpoint_motion_energy",
+        },
+        loss_weights={
+            "actionness": 1.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "hole": 1.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+            "budget": 0.0,
+        },
+    )
+    inputs = torch.randn(1, 3, 20)
+    masks = torch.ones(1, 20, dtype=torch.bool)
+    gt_segments = [torch.tensor([[0.0, 20.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    out = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+
+    assert out["selector_outputs"]["action_target"].shape == (1, 20)
+    assert out["losses"]["actionness_bce_loss"].detach().item() > 0.0
+    assert out["losses"]["action_local_hole_loss"].detach().item() > 0.0
+
+
+def test_progressive_loss_schedule_starts_with_actionness_and_shifts_to_detector_selection_losses() -> None:
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=1,
+        dense_window_size=20,
+        max_radius=1,
+        selector_hidden_channels=4,
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "source_name": "zero_shot_motion_actionness",
+            "mode": "motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+            "checkpoint_hash": "no_checkpoint_motion_energy",
+        },
+        loss_weights={
+            "actionness": 1.0,
+            "detector": 1.0,
+            "hole": 1.0,
+            "budget": 1.0,
+            "entropy": 1.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+        },
+        loss_weight_schedule={
+            "type": "progressive_joint",
+            "warmup_steps": 0,
+            "transition_steps": 1,
+            "actionness": {"start": 1.0, "end": 0.25},
+            "detector": {"start": 0.0, "end": 1.0},
+            "hole": {"start": 0.0, "end": 1.0},
+            "budget": {"start": 0.0, "end": 1.0},
+            "entropy": {"start": 0.0, "end": 0.2},
+        },
+    )
+    inputs = torch.randn(1, 3, 20)
+    masks = torch.ones(1, 20, dtype=torch.bool)
+    gt_segments = [torch.tensor([[0.0, 20.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    first = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+    second = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+
+    first_schedule = first["selector_outputs"]["loss_weight_schedule"]
+    second_schedule = second["selector_outputs"]["loss_weight_schedule"]
+
+    assert first_schedule["step"] == 0
+    assert first_schedule["phase"] == "coarse_actionness_warmup"
+    assert first_schedule["weights"]["actionness"] == pytest.approx(1.0)
+    assert first_schedule["weights"]["detector"] == pytest.approx(0.0)
+    assert first_schedule["weights"]["hole"] == pytest.approx(0.0)
+    assert second_schedule["step"] == 1
+    assert second_schedule["phase"] == "joint_detection_selection"
+    assert second_schedule["weights"]["actionness"] == pytest.approx(0.25)
+    assert second_schedule["weights"]["detector"] == pytest.approx(1.0)
+    assert second_schedule["weights"]["hole"] == pytest.approx(1.0)
+
+
+def test_single_stage_detector_scales_detector_loss_with_duca_progressive_schedule() -> None:
+    model = build_detector(
+        {
+            "type": "SingleStageDetector",
+            "frame_selector": {
+                "type": "DucaOnlineFrameSelector",
+                "in_channels": 3,
+                "budget": 2,
+                "dense_window_size": 8,
+                "max_radius": 1,
+                "selector_hidden_channels": 4,
+                "detector_gradient_mode": "st_sparse_gather_soft_context",
+                "actionness_source_cfg": {
+                    "type": "ZeroShotMotionActionnessSource",
+                    "source_name": "zero_shot_motion_actionness",
+                    "mode": "motion",
+                    "thumos_trained": False,
+                    "uses_labels": False,
+                    "uses_teacher": False,
+                    "uses_gt": False,
+                    "uses_prediction_cache": False,
+                    "calibration_split": "none",
+                    "checkpoint_hash": "no_checkpoint_motion_energy",
+                },
+                "loss_weights": {
+                    "actionness": 1.0,
+                    "detector": 1.0,
+                    "hole": 0.0,
+                    "teacher": 0.0,
+                    "boundary": 0.0,
+                    "redundancy": 0.0,
+                    "radius": 0.0,
+                    "entropy": 0.0,
+                    "budget": 0.0,
+                },
+                "loss_weight_schedule": {
+                    "type": "progressive_joint",
+                    "warmup_steps": 0,
+                    "transition_steps": 1,
+                    "actionness": {"start": 1.0, "end": 0.25},
+                    "detector": {"start": 0.0, "end": 1.0},
+                },
+            },
+            "rpn_head": {"type": "DucaOnlinePrecheckHead", "in_channels": 3},
+        }
+    )
+    losses = model(
+        torch.randn(1, 3, 8, 8, 8),
+        torch.ones(1, 8, dtype=torch.bool),
+        [{"video_name": "v"}],
+        gt_segments=[torch.tensor([[1.0, 6.0]], dtype=torch.float32)],
+        gt_labels=[torch.tensor([1], dtype=torch.long)],
+        return_loss=True,
+    )
+
+    assert losses["loss_detector"].detach().item() == pytest.approx(0.0)
+    assert losses["selector_actionness_bce_loss"].detach().item() > 0.0
+
+
+def test_detector_cost_backpropagates_to_official_asformer_probe_selector_and_budget_controller() -> None:
+    torch.manual_seed(11)
+    model = build_detector(
+        {
+            "type": "SingleStageDetector",
+            "frame_selector": {
+                "type": "DucaOnlineFrameSelector",
+                "in_channels": 3,
+                "budget": None,
+                "budget_mode": "dynamic_must",
+                "budget_min": 2,
+                "budget_max": 4,
+                "budget_multiple": 1,
+                "target_budget": 3,
+                "allow_external_budget_override": False,
+                "dense_window_size": 8,
+                "max_radius": 2,
+                "selector_hidden_channels": 8,
+                "detector_gradient_mode": "st_sparse_gather_soft_context",
+                "actionness_source_cfg": _official_asformer_source_cfg(),
+                "loss_weights": {
+                    "actionness": 0.5,
+                    "lagrangian_budget": 1.0,
+                    "marginal_monotonic": 0.01,
+                    "hole": 0.1,
+                    "teacher": 0.0,
+                    "boundary": 0.0,
+                    "redundancy": 0.0,
+                    "radius": 0.0,
+                    "entropy": 0.0,
+                    "budget": 0.0,
+                },
+            },
+            "rpn_head": {"type": "DucaOnlinePrecheckHead", "in_channels": 3},
+        }
+    )
+    model.train()
+    inputs = torch.randn(1, 3, 8, 16, 16)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+    gt_segments = [torch.tensor([[1.0, 6.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    losses = model(
+        inputs,
+        masks,
+        [{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+        return_loss=True,
+    )
+    losses["cost"].backward()
+
+    assert losses["selector_action_local_hole_loss"].detach().item() >= 0.0
+    assert _grad_sum(model.frame_selector.raw_actionness_source) > 0.0
+    assert _grad_sum(model.frame_selector.adapter.center_head) > 0.0
+    assert _grad_sum(model.frame_selector.adapter.budget_controller) > 0.0

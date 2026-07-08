@@ -21,11 +21,13 @@ def _selector() -> DucaOnlineFrameSelector:
         profile_runtime=True,
         actionness_source_cfg={
             "type": "C3CoarseProbeActionnessSource",
-            "source_name": "online_c3_asformer_lite_coarse_actionness",
-            "probe_model": "temporal-tcn",
-            "tcn_variant": "asformer_lite",
+            "source_name": "online_c3_official_asformer_coarse_actionness",
+            "probe_model": "official-action-seg",
+            "official_action_seg_backend": "official_asformer",
             "spatial_size": 16,
-            "tcn_hidden_dim": 32,
+            "tcn_hidden_dim": 16,
+            "official_num_layers": 1,
+            "dropout": 0.0,
             "frozen": False,
             "trainable": True,
             "thumos_trained": False,
@@ -47,7 +49,7 @@ def _selector() -> DucaOnlineFrameSelector:
     )
 
 
-def test_online_c3_asformer_probe_produces_actionness_profile() -> None:
+def test_online_c3_official_asformer_probe_produces_actionness_profile() -> None:
     selector = _selector()
     inputs = torch.randn(1, 3, 8, 16, 16)
     masks = torch.ones(1, 8, dtype=torch.bool)
@@ -55,10 +57,11 @@ def test_online_c3_asformer_probe_produces_actionness_profile() -> None:
     out = selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "v"}])
 
     profile = out["selector_outputs"]["compute_profile"]
-    assert out["metas"][0]["duca_online_actionness_source"] == "online_c3_asformer_lite_coarse_actionness"
+    assert out["metas"][0]["duca_online_actionness_source"] == "online_c3_official_asformer_coarse_actionness"
     assert profile["actionness"]["source_kind"] == "task_adapted_coarse_classifier"
-    assert profile["actionness"]["probe_model"] == "temporal-tcn"
-    assert profile["actionness"]["model_family"] == "TemporalTCN/asformer_lite"
+    assert profile["actionness"]["probe_model"] == "official-action-seg"
+    assert profile["actionness"]["official_action_seg_backend"] == "official_asformer"
+    assert profile["actionness"]["model_family"] == "OfficialActionSeg/official_asformer"
     assert profile["actionness"]["online_backbone_flops_included"] is True
     assert profile["estimated_flops"] >= profile["actionness"]["estimated_flops"]
     assert profile["latency_ms"]["coarse_probe_ms"] >= 0.0

@@ -509,8 +509,8 @@ class C3CoarseProbeActionnessSource(nn.Module):
 
     This wraps the validated low-resolution MobileNet/TCN/ASFormer-style C3
     probes and exposes the same p_action/logit contract as DUCA's actionness
-    source. It is intended to run before the detector backbone and to stay
-    frozen during detector/selector training.
+    source. It is intended to run before the detector backbone and can be
+    jointly optimized with the selector and detector when configured trainable.
     """
 
     def __init__(
@@ -523,7 +523,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         trainable: Optional[bool] = None,
         source_name: Optional[str] = None,
         checkpoint_hash: Optional[str] = None,
-        tcn_variant: str = "asformer_lite",
+        tcn_variant: str = "lite",
         tcn_hidden_dim: int = 96,
         dropout: float = 0.0,
         mobilenet_pretrained: bool = True,
@@ -689,7 +689,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         elif self.probe_model == "official-action-seg":
             hidden = max(16, self.tcn_hidden_dim)
             macs = int(tokens * hidden * hidden * 10 + batch * temporal_len * temporal_len * hidden * 4)
-            family = "official-action-seg"
+            family = f"OfficialActionSeg/{self._provenance_override.get('official_action_seg_backend')}"
         else:
             macs = int(tokens * max(params["total"], 1))
             family = "matrix-zoo"
@@ -699,6 +699,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "source_kind": "task_adapted_coarse_classifier",
             "probe_model": self.probe_model,
             "model_family": family,
+            "official_action_seg_backend": self._provenance_override.get("official_action_seg_backend"),
             "spatial_size": spatial,
             "checkpoint_path": self.checkpoint_path,
             "checkpoint_hash": self.checkpoint_hash,
@@ -1755,6 +1756,7 @@ def duca_losses(
     radius: Optional[torch.Tensor] = None,
     p_action: Optional[torch.Tensor] = None,
     uncertainty: Optional[torch.Tensor] = None,
+    actionness_logits: Optional[torch.Tensor] = None,
     loss_weights: Optional[Mapping[str, float]] = None,
 ) -> Dict[str, torch.Tensor]:
     """DUCA acquisition regularizers plus optional train-only utility loss."""
@@ -1776,6 +1778,7 @@ def duca_losses(
         radius = radius if radius is not None else output.get("radius")
         p_action = p_action if p_action is not None else output.get("p_action")
         uncertainty = uncertainty if uncertainty is not None else output.get("uncertainty")
+        actionness_logits = actionness_logits if actionness_logits is not None else output.get("actionness_logits")
     else:
         center_scores = scores
     if selected_mask_st is None:
@@ -1787,6 +1790,7 @@ def duca_losses(
         raise ValueError("selected_mask_st must match scores")
     weights = {
         "detector": 1.0,
+        "actionness": 0.0,
         "budget": 0.05,
         "boundary": 0.25,
         "hole": 0.25,
@@ -1867,10 +1871,21 @@ def duca_losses(
         if action_target.shape != center_scores.shape:
             raise ValueError("action_target must match scores")
         action = action_target.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
+        if actionness_logits is not None:
+            logits = actionness_logits.to(center_scores.device, center_scores.dtype)
+            if logits.shape != center_scores.shape:
+                raise ValueError("actionness_logits must match scores when action_target is provided")
+            logits = logits.masked_fill(~valid, 0.0)
+            bce = F.binary_cross_entropy_with_logits(logits, action, reduction="none").masked_fill(~valid, 0.0)
+            denom = valid.to(center_scores.dtype).sum(dim=1).clamp_min(1.0)
+            losses["actionness_bce_loss"] = ((bce.sum(dim=1) / denom).mean()) * weights["actionness"]
+        else:
+            losses["actionness_bce_loss"] = center_scores.sum() * 0.0
         local = F.max_pool1d(selected[:, None, :].clamp(0.0, 1.0), kernel_size=9, stride=1, padding=4).squeeze(1)
         denom = action.sum(dim=1).clamp_min(1.0)
         losses["action_local_hole_loss"] = ((action * (1.0 - local)).sum(dim=1) / denom).mean() * weights["hole"]
     else:
+        losses["actionness_bce_loss"] = center_scores.sum() * 0.0
         losses["action_local_hole_loss"] = center_scores.sum() * 0.0
     losses["redundancy_loss"] = (selected[:, 1:] * selected[:, :-1]).mean() * weights["redundancy"]
     if radius is not None:

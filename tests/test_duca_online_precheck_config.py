@@ -144,10 +144,23 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.duca_online_main_contract.actionness_source == "online_trainable_c3_coarse_probe"
     assert cfg.duca_online_main_contract.coarse_probe_joint_trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
-    assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "temporal-tcn"
-    assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "asformer_lite"
+    assert cfg.duca_online_main_contract.acquisition_policy == "duca_center_radius_st_acquisition"
+    assert cfg.duca_online_main_contract.budget_policy == "fixed_budget"
+    assert cfg.model.frame_selector.budget_mode == "fixed"
+    assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
+    assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
+    assert cfg.model.frame_selector.actionness_source_cfg.get("tcn_variant", None) != "asformer_lite"
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
+    assert cfg.model.frame_selector.loss_weights.actionness > 0
+    assert cfg.model.frame_selector.loss_weights.hole > 0
+    assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
+    assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
+    assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
+    assert cfg.model.frame_selector.loss_weight_schedule.detector.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector.end == 1.0
+    assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
     assert "physical_grid_actionformer" not in cfg.model.rpn_head
     assert "bata_value_transport" not in repr(cfg).lower()
@@ -179,6 +192,10 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["physical_grid_actionformer_enabled"] is False
     assert summary["uses_ledger_for_decision"] is False
     assert summary["budget_lte_384"] is True
+    assert summary["loss_schedule_policy"] == "progressive_joint"
+    assert summary["loss_schedule_detector_start"] == 0.0
+    assert summary["loss_schedule_detector_end"] == 1.0
+    assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
     assert "duca_online_official_adatad_backend_full_train.py" in text
@@ -247,6 +264,7 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert "duca_online_budget" not in text
     assert cfg.duca_must_dynamic_contract.main_method_candidate is True
     assert cfg.duca_must_dynamic_contract.dynamic_budget is True
+    assert cfg.duca_must_dynamic_contract.acquisition_policy == "duca_center_radius_st_acquisition"
     assert cfg.duca_must_dynamic_contract.budget_policy == "prefix_marginal_utility_stop"
     assert cfg.duca_must_dynamic_contract.actionness_source == "online_trainable_c3_coarse_probe"
     assert cfg.duca_must_dynamic_contract.coarse_probe_joint_trainable is True
@@ -264,10 +282,22 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.target_budget == 256
     assert cfg.model.frame_selector.allow_external_budget_override is False
     assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
-    assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "temporal-tcn"
-    assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "asformer_lite"
+    assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
+    assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
+    assert cfg.model.frame_selector.actionness_source_cfg.get("tcn_variant", None) != "asformer_lite"
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
+    assert cfg.model.frame_selector.loss_weights.actionness > 0
+    assert cfg.model.frame_selector.loss_weights.hole > 0
+    assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
+    assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
+    assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
+    assert cfg.model.frame_selector.loss_weight_schedule.detector.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector.end == 1.0
+    assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.end > 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
     assert cfg.window_size == 384
     assert cfg.model.backbone.backbone.total_frames == 384
@@ -296,6 +326,12 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["uses_env_budget_override"] is False
     assert summary["runtime_flops_claim_allowed"] is False
     assert summary["forced_budget_curve"] is False
+    assert summary["loss_schedule_policy"] == "progressive_joint"
+    assert summary["loss_schedule_detector_start"] == 0.0
+    assert summary["loss_schedule_detector_end"] == 1.0
+    assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
+    assert summary["loss_schedule_lagrangian_budget_start"] == 0.0
+    assert summary["loss_schedule_lagrangian_budget_end"] > 0.0
 
 
 def test_duca_must_dynamic_launcher_is_precheck_first_and_not_forced_budget_curve():

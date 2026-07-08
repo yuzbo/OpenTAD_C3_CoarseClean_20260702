@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -51,6 +53,7 @@ class DucaOnlinePrecheckHead(nn.Module):
             }
         )
         self.extra_config = dict(kwargs)
+        self.prior_generator = SimpleNamespace(strides=[1])
         self.conv = nn.Conv1d(self.in_channels, self.num_classes, kernel_size=1)
         self.last_gt_segments = None
         self.last_gt_labels = None

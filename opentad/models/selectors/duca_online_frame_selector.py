@@ -146,6 +146,7 @@ class DucaOnlineFrameSelector(nn.Module):
         selected_positions_unit: str = "original_time_index",
         true_time_source_axis: str = TRUE_TIME_AXIS,
         loss_weights: Optional[Mapping[str, float]] = None,
+        loss_weight_schedule: Optional[Mapping[str, Any]] = None,
         no_ledger_decision: bool = True,
         remap_gt_to_selected_axis: bool = True,
         selected_axis_remap_required: bool = True,
@@ -195,6 +196,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self.selected_positions_unit = str(selected_positions_unit)
         self.true_time_source_axis = str(true_time_source_axis)
         self.loss_weights = dict(loss_weights or {})
+        self.loss_weight_schedule = self._normalize_loss_weight_schedule(loss_weight_schedule)
+        self.register_buffer("_loss_weight_schedule_step", torch.zeros((), dtype=torch.long), persistent=True)
         self.no_ledger_decision = bool(no_ledger_decision)
         self.remap_gt_to_selected_axis = bool(remap_gt_to_selected_axis)
         self.selected_axis_remap_required = bool(selected_axis_remap_required)
@@ -291,15 +294,22 @@ class DucaOnlineFrameSelector(nn.Module):
         **kwargs: Any,
     ) -> dict[str, Any]:
         self._reject_train_decision_payload(metas)
+        action_target = self._action_target_from_gt_segments(gt_segments, masks)
+        schedule_state = self._loss_schedule_state()
         outputs = self._forward_select(inputs, masks, metas, budget=budget)
+        outputs["selector_outputs"]["loss_weight_schedule"] = schedule_state
+        if action_target is not None:
+            outputs["selector_outputs"]["action_target"] = action_target
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
             gt_segments, gt_labels, outputs["metas"]
         )
         selector_losses = duca_losses(
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
-            loss_weights=self.loss_weights,
+            action_target=action_target,
+            loss_weights=schedule_state["weights"],
         )
+        self._advance_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
             "masks": outputs["masks"],
@@ -309,6 +319,119 @@ class DucaOnlineFrameSelector(nn.Module):
             "losses": selector_losses,
             "selector_outputs": outputs["selector_outputs"],
         }
+
+    @staticmethod
+    def _normalize_loss_weight_schedule(config: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:
+        if config is None:
+            return None
+        if not isinstance(config, Mapping):
+            raise ValueError("loss_weight_schedule must be a mapping")
+        out = dict(config)
+        schedule_type = str(out.get("type", "progressive_joint"))
+        if schedule_type not in {"progressive_joint", "constant"}:
+            raise ValueError("loss_weight_schedule.type must be progressive_joint or constant")
+        out["type"] = schedule_type
+        out["warmup_steps"] = int(out.get("warmup_steps", 0))
+        out["transition_steps"] = int(out.get("transition_steps", out.get("ramp_steps", 1)))
+        if out["warmup_steps"] < 0:
+            raise ValueError("loss_weight_schedule.warmup_steps must be non-negative")
+        if out["transition_steps"] < 0:
+            raise ValueError("loss_weight_schedule.transition_steps must be non-negative")
+        out["shape"] = str(out.get("shape", out.get("curve", "linear"))).lower()
+        if out["shape"] not in {"linear", "cosine"}:
+            raise ValueError("loss_weight_schedule.shape must be linear or cosine")
+        entries: dict[str, tuple[float, float]] = {}
+        reserved = {"type", "warmup_steps", "transition_steps", "ramp_steps", "shape", "curve", "enabled"}
+        for key, value in out.items():
+            if key in reserved:
+                continue
+            if isinstance(value, Mapping):
+                if "start" not in value or "end" not in value:
+                    raise ValueError(f"loss_weight_schedule.{key} must define start and end")
+                entries[str(key)] = (float(value["start"]), float(value["end"]))
+        out["entries"] = entries
+        return out
+
+    def _loss_schedule_state(self) -> dict[str, Any]:
+        step = int(self._loss_weight_schedule_step.detach().item())
+        weights = {str(key): float(value) for key, value in self.loss_weights.items()}
+        if self.loss_weight_schedule is None or self.loss_weight_schedule.get("type") == "constant":
+            return {
+                "enabled": False,
+                "type": "constant",
+                "step": step,
+                "progress": 1.0,
+                "phase": "constant_joint",
+                "weights": weights,
+            }
+        progress = self._loss_schedule_progress(step)
+        for key, (start, end) in self.loss_weight_schedule["entries"].items():
+            weights[key] = float(start + (end - start) * progress)
+        if progress <= 0.0:
+            phase = "coarse_actionness_warmup"
+        elif progress >= 1.0:
+            phase = "joint_detection_selection"
+        else:
+            phase = "transition_detector_utility"
+        return {
+            "enabled": True,
+            "type": str(self.loss_weight_schedule["type"]),
+            "shape": str(self.loss_weight_schedule["shape"]),
+            "step": step,
+            "warmup_steps": int(self.loss_weight_schedule["warmup_steps"]),
+            "transition_steps": int(self.loss_weight_schedule["transition_steps"]),
+            "progress": float(progress),
+            "phase": phase,
+            "weights": weights,
+        }
+
+    def _loss_schedule_progress(self, step: int) -> float:
+        if self.loss_weight_schedule is None:
+            return 1.0
+        warmup = int(self.loss_weight_schedule["warmup_steps"])
+        transition = int(self.loss_weight_schedule["transition_steps"])
+        if step <= warmup:
+            raw = 0.0
+        elif transition <= 0:
+            raw = 1.0
+        else:
+            raw = min(1.0, max(0.0, float(step - warmup) / float(transition)))
+        if self.loss_weight_schedule.get("shape") == "cosine":
+            pi = torch.acos(torch.zeros((), dtype=torch.float64)).item() * 2.0
+            raw = 0.5 - 0.5 * torch.cos(torch.tensor(raw * pi, dtype=torch.float64)).item()
+        return float(raw)
+
+    def _advance_loss_schedule_step(self) -> None:
+        if self.training:
+            self._loss_weight_schedule_step.add_(1)
+
+    @staticmethod
+    def _action_target_from_gt_segments(gt_segments, masks: torch.Tensor) -> Optional[torch.Tensor]:
+        if gt_segments is None:
+            return None
+        if masks.ndim != 2:
+            raise ValueError("DUCA action target generation expects dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match batch size for DUCA action target generation")
+        device = masks.device
+        dtype = torch.float32
+        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
+        target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        valid = masks.to(device=device, dtype=torch.bool)
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
+            seg = seg.to(device=device, dtype=dtype)
+            if seg.numel() == 0:
+                continue
+            seg = seg.reshape(-1, 2)
+            starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
+            ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
+            covered = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
+            target[batch_idx] = covered.to(dtype=dtype)
+        return target.masked_fill(~valid, 0.0)
 
     def forward_test(self, inputs: torch.Tensor, masks: torch.Tensor, metas=None, budget=None, **kwargs: Any) -> dict[str, Any]:
         _assert_no_forbidden_payload({"metas": metas, "kwargs": kwargs})

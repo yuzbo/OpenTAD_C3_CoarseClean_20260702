@@ -18,16 +18,28 @@ def _env_bool(name, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name, default):
+    value = os.environ.get(name, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a float, got {value!r}") from exc
+
+
 dense_window_size = _env_int("DUCA_MUST_DENSE_WINDOW_SIZE", 768)
 budget_max = _env_int("DUCA_MUST_BUDGET_MAX", 384)
 budget_min = _env_int("DUCA_MUST_BUDGET_MIN", 64)
 budget_target = _env_int("DUCA_MUST_BUDGET_TARGET", 256)
 budget_multiple = _env_int("DUCA_MUST_BUDGET_MULTIPLE", 16)
 strict_budget_claim_max = _env_int("DUCA_STRICT_CLAIM_MAX_BUDGET", 384)
+duca_loss_schedule_warmup_steps = _env_int("DUCA_LOSS_SCHEDULE_WARMUP_STEPS", 500)
+duca_loss_schedule_transition_steps = _env_int("DUCA_LOSS_SCHEDULE_TRANSITION_STEPS", 4000)
+duca_loss_schedule_shape = os.environ.get("DUCA_LOSS_SCHEDULE_SHAPE", "cosine")
 duca_profile_runtime = os.environ.get("DUCA_PROFILE_RUNTIME", "0") == "1"
 duca_profile_sync_cuda = os.environ.get("DUCA_PROFILE_SYNC_CUDA", "1") != "0"
-duca_coarse_probe_model = os.environ.get("DUCA_COARSE_PROBE_MODEL", "temporal-tcn")
-duca_coarse_tcn_variant = os.environ.get("DUCA_COARSE_TCN_VARIANT", "asformer_lite")
+duca_coarse_probe_model = os.environ.get("DUCA_COARSE_PROBE_MODEL", "official-action-seg")
+duca_coarse_tcn_variant = os.environ.get("DUCA_COARSE_TCN_VARIANT", "lite")
+duca_coarse_official_backend = os.environ.get("DUCA_COARSE_OFFICIAL_BACKEND", "official_asformer")
 duca_coarse_spatial_size = _env_int("DUCA_COARSE_SPATIAL_SIZE", 64)
 duca_coarse_hidden_dim = _env_int("DUCA_COARSE_HIDDEN_DIM", 96)
 duca_coarse_checkpoint = os.environ.get("DUCA_COARSE_PROBE_CHECKPOINT", "")
@@ -35,8 +47,14 @@ duca_coarse_require_checkpoint = _env_bool("DUCA_COARSE_REQUIRE_CHECKPOINT", Fal
 duca_coarse_frozen = _env_bool("DUCA_COARSE_FROZEN", False)
 duca_coarse_source_name = os.environ.get(
     "DUCA_COARSE_SOURCE_NAME",
-    f"online_c3_{duca_coarse_probe_model}_{duca_coarse_tcn_variant}_coarse_actionness",
+    (
+        f"online_c3_{duca_coarse_official_backend}_coarse_actionness"
+        if duca_coarse_probe_model == "official-action-seg"
+        else f"online_c3_{duca_coarse_probe_model}_{duca_coarse_tcn_variant}_coarse_actionness"
+    ),
 )
+if duca_coarse_tcn_variant == "asformer_lite":
+    raise ValueError("DUCA main method forbids asformer_lite; use official-action-seg with official_asformer")
 if dense_window_size <= 0:
     raise ValueError("DUCA_MUST_DENSE_WINDOW_SIZE must be positive")
 if budget_max <= 0:
@@ -51,6 +69,8 @@ if budget_target <= 0 or budget_target > budget_max:
     raise ValueError("DUCA_MUST_BUDGET_TARGET must lie in (0, DUCA_MUST_BUDGET_MAX]")
 if budget_max % 16 != 0:
     raise ValueError("DUCA_MUST_BUDGET_MAX must be divisible by 16 for the VideoMAE tubelet rearrange")
+if duca_loss_schedule_shape not in {"linear", "cosine"}:
+    raise ValueError("DUCA_LOSS_SCHEDULE_SHAPE must be linear or cosine")
 
 window_size = budget_max
 scale_factor = 1
@@ -91,9 +111,18 @@ duca_must_dynamic_contract = dict(
     actionness_source="online_trainable_c3_coarse_probe",
     coarse_probe_model=duca_coarse_probe_model,
     coarse_probe_tcn_variant=duca_coarse_tcn_variant,
+    coarse_probe_official_backend=duca_coarse_official_backend,
     coarse_probe_joint_trainable=not duca_coarse_frozen,
     coarse_probe_checkpoint_is_initialization=bool(duca_coarse_checkpoint),
     budget_policy="prefix_marginal_utility_stop",
+    acquisition_policy="duca_center_radius_st_acquisition",
+    loss_schedule_policy="progressive_joint",
+    loss_schedule_shape=duca_loss_schedule_shape,
+    loss_schedule_warmup_steps=duca_loss_schedule_warmup_steps,
+    loss_schedule_transition_steps=duca_loss_schedule_transition_steps,
+    coarse_actionness_dominates_initial_training=True,
+    detector_loss_enabled_after_schedule_transition=True,
+    budget_controller_enabled_after_schedule_transition=True,
     budget_max=budget_max,
     budget_min=budget_min,
     budget_target=budget_target,
@@ -171,16 +200,33 @@ model = dict(
         detector_output_coordinate_space="selected_axis_index",
         selected_positions_unit="original_time_index",
         loss_weights=dict(
+            actionness=0.5,
             detector=1.0,
             lagrangian_budget=1.0,
             marginal_monotonic=0.01,
             budget=0.0,
             boundary=0.0,
-            hole=0.0,
+            hole=0.05,
             redundancy=0.0,
             radius=0.0,
             entropy=0.0,
             teacher=0.0,
+        ),
+        loss_weight_schedule=dict(
+            type="progressive_joint",
+            shape=duca_loss_schedule_shape,
+            warmup_steps=duca_loss_schedule_warmup_steps,
+            transition_steps=duca_loss_schedule_transition_steps,
+            actionness=dict(
+                start=_env_float("DUCA_LOSS_ACTIONNESS_START", 1.0),
+                end=_env_float("DUCA_LOSS_ACTIONNESS_END", 0.25),
+            ),
+            detector=dict(start=_env_float("DUCA_LOSS_DETECTOR_START", 0.0), end=1.0),
+            hole=dict(start=0.0, end=_env_float("DUCA_LOSS_HOLE_END", 0.05)),
+            lagrangian_budget=dict(start=0.0, end=1.0),
+            marginal_monotonic=dict(start=0.0, end=0.01),
+            budget=dict(start=0.0, end=0.0),
+            entropy=dict(start=0.0, end=0.0),
         ),
         no_ledger_decision=True,
         remap_gt_to_selected_axis=True,
@@ -203,7 +249,7 @@ model = dict(
             trainable=not duca_coarse_frozen,
             mobilenet_pretrained=True,
             mobilenet_freeze_backbone=False,
-            official_action_seg_backend=os.environ.get("DUCA_COARSE_OFFICIAL_BACKEND", "official_asformer"),
+            official_action_seg_backend=duca_coarse_official_backend,
             thumos_trained=False,
             uses_labels=False,
             uses_teacher=False,

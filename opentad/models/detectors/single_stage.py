@@ -63,6 +63,7 @@ class SingleStageDetector(BaseDetector):
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
         selector_loss_keys = set()
+        selector_detector_loss_weight = None
         if self.with_frame_selector:
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
@@ -79,6 +80,7 @@ class SingleStageDetector(BaseDetector):
             gt_labels = selector_outputs["gt_labels"]
             self._merge_selector_losses(losses, selector_outputs.get("losses", {}))
             selector_loss_keys = set(losses)
+            selector_detector_loss_weight = self._selector_detector_loss_weight(selector_outputs)
 
         if self.with_backbone:
             x = self.backbone(inputs, masks)
@@ -100,6 +102,7 @@ class SingleStageDetector(BaseDetector):
                 gt_labels=gt_labels,
                 **kwargs,
             )
+            rpn_losses = self._scale_detector_losses(rpn_losses, selector_detector_loss_weight)
             self._merge_detector_losses(
                 losses,
                 rpn_losses,
@@ -276,6 +279,24 @@ class SingleStageDetector(BaseDetector):
             if key in protected_keys:
                 raise ValueError(f"{source_name} loss key collision with frame_selector: {key}")
             losses[key] = value
+
+    @staticmethod
+    def _selector_detector_loss_weight(selector_outputs):
+        selector_payload = selector_outputs.get("selector_outputs", {}) if isinstance(selector_outputs, Mapping) else {}
+        schedule = selector_payload.get("loss_weight_schedule", {})
+        if not isinstance(schedule, Mapping):
+            return None
+        weights = schedule.get("weights", {})
+        if not isinstance(weights, Mapping) or "detector" not in weights:
+            return None
+        return float(weights["detector"])
+
+    @staticmethod
+    def _scale_detector_losses(detector_losses, detector_loss_weight):
+        if detector_loss_weight is None:
+            return detector_losses
+        weight = float(detector_loss_weight)
+        return {key: value * weight for key, value in detector_losses.items()}
 
     @staticmethod
     def _require_selector_remap_metadata(metas):

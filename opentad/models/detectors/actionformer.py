@@ -125,6 +125,7 @@ class ActionFormer(SingleStageDetector):
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
+        selector_detector_loss_weight = None
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
@@ -139,6 +140,7 @@ class ActionFormer(SingleStageDetector):
             gt_segments = selector_outputs["gt_segments"]
             gt_labels = selector_outputs["gt_labels"]
             losses.update(selector_outputs.get("losses", {}))
+            selector_detector_loss_weight = self._selector_detector_loss_weight(selector_outputs)
             if self.selector_train_only:
                 inputs = inputs.detach()
 
@@ -193,6 +195,7 @@ class ActionFormer(SingleStageDetector):
             gt_labels=gt_labels,
             **kwargs,
         )
+        loc_losses = self._scale_detector_losses(loc_losses, selector_detector_loss_weight)
         losses.update(loc_losses)
         self._merge_pc_ot_mras_extra_losses(
             losses,
@@ -269,8 +272,15 @@ class ActionFormer(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d)
-        blacklist_weight_modules = (nn.LayerNorm, nn.GroupNorm)
+        whitelist_weight_modules = (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)
+        blacklist_weight_modules = (
+            nn.LayerNorm,
+            nn.GroupNorm,
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.Embedding,
+        )
 
         # loop over all modules / params
         for mn, m in self.named_modules():
@@ -305,8 +315,16 @@ class ActionFormer(SingleStageDetector):
                     # pre-backbone selector reader slot queries are learned embeddings
                     no_decay.add(fpn)
 
-        # validate that we considered every parameter
         param_dict = {pn: p for pn, p in self.named_parameters() if not pn.startswith("backbone") and p.requires_grad}
+        for fpn, param in param_dict.items():
+            if fpn in decay or fpn in no_decay or not fpn.startswith("frame_selector."):
+                continue
+            if fpn.endswith(".weight") and param.ndim >= 2:
+                decay.add(fpn)
+            else:
+                no_decay.add(fpn)
+
+        # validate that we considered every parameter
         inter_params = decay & no_decay
         union_params = decay | no_decay
         assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)

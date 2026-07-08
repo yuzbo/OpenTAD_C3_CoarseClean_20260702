@@ -39,6 +39,32 @@ def _config_text(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8").lower()
 
 
+def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
+    _require(contract.loss_schedule_policy == "progressive_joint", "main config must declare progressive_joint loss schedule")
+    schedule = selector.loss_weight_schedule
+    _require(schedule.type == "progressive_joint", "selector must use progressive_joint loss_weight_schedule")
+    _require(str(schedule.get("shape", "linear")) in {"linear", "cosine"}, "loss schedule shape must be linear or cosine")
+    _require(int(schedule.warmup_steps) >= 0, "loss schedule warmup_steps must be non-negative")
+    _require(int(schedule.transition_steps) > 0, "loss schedule transition_steps must be positive")
+    _require(float(schedule.actionness.start) > float(schedule.actionness.end), "actionness loss must decay after warmup")
+    _require(float(schedule.detector.start) == 0.0, "detector loss must be disabled at schedule start")
+    _require(float(schedule.detector.end) == 1.0, "detector loss must be fully enabled after schedule transition")
+    _require(float(schedule.hole.start) == 0.0, "selection distribution loss must be disabled at schedule start")
+    _require(float(schedule.hole.end) > 0.0, "selection distribution loss must be enabled after transition")
+    return {
+        "loss_schedule_policy": str(schedule.type),
+        "loss_schedule_shape": str(schedule.get("shape", "linear")),
+        "loss_schedule_warmup_steps": int(schedule.warmup_steps),
+        "loss_schedule_transition_steps": int(schedule.transition_steps),
+        "loss_schedule_actionness_start": float(schedule.actionness.start),
+        "loss_schedule_actionness_end": float(schedule.actionness.end),
+        "loss_schedule_detector_start": float(schedule.detector.start),
+        "loss_schedule_detector_end": float(schedule.detector.end),
+        "loss_schedule_hole_start": float(schedule.hole.start),
+        "loss_schedule_hole_end": float(schedule.hole.end),
+    }
+
+
 def validate_config(
     config_path: str = CONFIG_DEFAULT,
     *,
@@ -65,6 +91,7 @@ def validate_config(
     _require(contract.physical_grid_actionformer_required is False, "main config must not require physical-grid head")
     _require(cfg.model.type == "ActionFormer", "official AdaTAD backend must keep ActionFormer detector")
     _require(selector.type == "DucaOnlineFrameSelector", "main config must use DucaOnlineFrameSelector")
+    _require(selector.budget_mode == "fixed", "fixed official config must explicitly set budget_mode=fixed")
     _require(max_budget > 0, "max_budget must be positive")
     _require(int(selector.budget) <= max_budget, f"selector budget must be <={max_budget}")
     _require(int(selector.dense_window_size) == 768, "candidate dense window must stay 768")
@@ -99,17 +126,21 @@ def validate_config(
             contract.actionness_source == "online_trainable_c3_coarse_probe",
             "main source must be online C3 coarse probe",
         )
+        _require(contract.acquisition_policy == "duca_center_radius_st_acquisition", "unexpected acquisition policy")
+        _require(contract.budget_policy == "fixed_budget", "fixed config must declare fixed_budget special case")
         _require(source_cfg.type == "C3CoarseProbeActionnessSource", "main source must be online C3 coarse probe module")
-        _require(
-            source_cfg.probe_model in {"mobilenetv3", "temporal-tcn", "official-action-seg", "matrix-zoo"},
-            "unsupported coarse probe model",
-        )
+        _require(source_cfg.probe_model == "official-action-seg", "main method must use official action-seg probe")
+        _require(source_cfg.get("official_action_seg_backend") == "official_asformer", "ASFormer must use official code")
+        _require(source_cfg.get("tcn_variant", None) != "asformer_lite", "main method forbids asformer_lite")
         _require(source_cfg.get("trainable") is True, "coarse probe must be trainable for the main end-to-end config")
         _require(source_cfg.get("frozen") is False, "coarse probe must not be frozen for the main end-to-end config")
+        _require(float(selector.loss_weights.get("actionness", 0.0)) > 0.0, "main config must enable actionness BCE loss")
+        _require(float(selector.loss_weights.get("hole", 0.0)) > 0.0, "main config must enable action coverage loss")
         _require(contract.coarse_probe_joint_trainable is True, "contract must declare joint-trainable coarse probe")
         _require(contract.runtime_profile_available is True, "contract must expose compute/latency profiling")
         for key in ("uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
             _require(source_cfg.get(key) is False, f"actionness source must set {key}=False")
+    schedule_summary = _loss_schedule_summary(selector, contract)
 
     summary = {
         "ok": True,
@@ -135,14 +166,18 @@ def validate_config(
         "selected_positions_unit": str(selector.selected_positions_unit),
         "detector_output_coordinate_space": str(selector.detector_output_coordinate_space),
     }
+    summary.update(schedule_summary)
     if require_online_c3_actionness:
         summary.update(
             {
                 "actionness_source": str(contract.actionness_source),
                 "coarse_probe_model": str(source_cfg.probe_model),
                 "coarse_probe_tcn_variant": str(source_cfg.get("tcn_variant", "")),
+                "coarse_probe_official_backend": str(source_cfg.get("official_action_seg_backend", "")),
                 "coarse_probe_joint_trainable": bool(contract.coarse_probe_joint_trainable),
                 "runtime_profile_available": bool(contract.runtime_profile_available),
+                "acquisition_policy": str(contract.acquisition_policy),
+                "budget_policy": str(contract.budget_policy),
             }
         )
     return summary
