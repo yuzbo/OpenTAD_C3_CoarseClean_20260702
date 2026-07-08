@@ -1816,10 +1816,11 @@ def duca_losses(
     budgets = _budget_tensor(budget, center_scores.shape[0], center_scores.device).to(center_scores.dtype)
     selected = selected_mask_st.masked_fill(~valid, 0.0)
     losses: Dict[str, torch.Tensor] = {}
+    zero = center_scores.new_zeros(())
     if detector_loss is not None:
         losses["detector_loss"] = detector_loss * weights["detector"]
     else:
-        losses["detector_loss"] = center_scores.sum() * 0.0
+        losses["detector_loss"] = zero
     over = F.relu(selected.sum(dim=1) - budgets)
     losses["budget_loss"] = over.pow(2).mean() * weights["budget"]
     if budget_decision is not None:
@@ -1842,11 +1843,11 @@ def duca_losses(
         if marginal.shape[1] > 1:
             monotonic = F.relu(marginal[:, 1:] - marginal[:, :-1]).pow(2).mean()
         else:
-            monotonic = center_scores.sum() * 0.0
+            monotonic = zero
         losses["marginal_monotonic_loss"] = monotonic * weights["marginal_monotonic"]
         hard_over = F.relu(budget_decision.budget_hard.to(center_scores.dtype) - float(budget_decision.budget_max))
         losses["hard_budget_cap_loss"] = hard_over.pow(2).mean() * weights["hard_budget_cap"]
-        losses["dynamic_budget_mean_lossless_metric"] = dynamic_cost.detach().mean() * 0.0
+        losses["dynamic_budget_mean_lossless_metric"] = zero
     if teacher_utility is not None:
         if teacher_utility.shape != center_scores.shape:
             raise ValueError("teacher_utility must match scores [B,T]")
@@ -1866,7 +1867,7 @@ def duca_losses(
             + ((selected * risk.clamp_min(0.0)).sum(dim=1) / budgets.clamp_min(1.0)).mean()
         ) * weights["teacher"]
     else:
-        losses["teacher_utility_loss"] = center_scores.sum() * 0.0
+        losses["teacher_utility_loss"] = zero
     if boundary_target is not None:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")
@@ -1875,7 +1876,7 @@ def duca_losses(
         uncovered = (target * (1.0 - selected.clamp(0.0, 1.0))).sum(dim=1) / denom
         losses["boundary_coverage_loss"] = uncovered.mean() * weights["boundary"]
     else:
-        losses["boundary_coverage_loss"] = center_scores.sum() * 0.0
+        losses["boundary_coverage_loss"] = zero
     if action_target is not None:
         if action_target.shape != center_scores.shape:
             raise ValueError("action_target must match scores")
@@ -1889,18 +1890,18 @@ def duca_losses(
             denom = valid.to(center_scores.dtype).sum(dim=1).clamp_min(1.0)
             losses["actionness_bce_loss"] = ((bce.sum(dim=1) / denom).mean()) * weights["actionness"]
         else:
-            losses["actionness_bce_loss"] = center_scores.sum() * 0.0
+            losses["actionness_bce_loss"] = zero
         local = F.max_pool1d(selected[:, None, :].clamp(0.0, 1.0), kernel_size=9, stride=1, padding=4).squeeze(1)
         denom = action.sum(dim=1).clamp_min(1.0)
         losses["action_local_hole_loss"] = ((action * (1.0 - local)).sum(dim=1) / denom).mean() * weights["hole"]
     else:
-        losses["actionness_bce_loss"] = center_scores.sum() * 0.0
-        losses["action_local_hole_loss"] = center_scores.sum() * 0.0
+        losses["actionness_bce_loss"] = zero
+        losses["action_local_hole_loss"] = zero
     losses["redundancy_loss"] = (selected[:, 1:] * selected[:, :-1]).mean() * weights["redundancy"]
     if radius is not None:
         losses["radius_cost_loss"] = radius.to(center_scores.dtype).masked_fill(~valid, 0.0).mean() * weights["radius"]
     else:
-        losses["radius_cost_loss"] = center_scores.sum() * 0.0
+        losses["radius_cost_loss"] = zero
     if p_action is not None:
         prob = p_action.to(center_scores.dtype).clamp(1e-6, 1.0 - 1e-6)
         entropy = _binary_entropy(prob).masked_fill(~valid, 0.0)
@@ -1909,7 +1910,7 @@ def duca_losses(
     else:
         entropy = _binary_entropy(torch.sigmoid(center_scores)).masked_fill(~valid, 0.0)
     losses["entropy_anti_collapse_loss"] = -entropy.mean() * weights["entropy"]
-    total = center_scores.sum() * 0.0
+    total = zero
     for value in losses.values():
         total = total + value
     losses["total_loss"] = total

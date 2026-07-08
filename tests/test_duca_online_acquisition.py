@@ -377,6 +377,33 @@ def test_duca_losses_expose_required_components() -> None:
     assert losses["total_loss"].requires_grad
 
 
+def test_duca_inactive_zero_losses_do_not_overflow_when_score_sum_overflows() -> None:
+    scores = torch.full((1, 768), -torch.finfo(torch.float32).max / 4.0, dtype=torch.float32)
+    selected_mask = torch.zeros_like(scores)
+    selected_mask[:, :384] = 1.0
+    losses = duca_losses(
+        scores=scores,
+        selected_mask_st=selected_mask,
+        budget=384,
+        p_action=torch.full_like(scores, 0.5),
+        loss_weights={
+            "detector": 1.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "actionness": 0.0,
+            "hole": 0.0,
+            "budget": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+        },
+    )
+
+    assert torch.isfinite(losses["detector_loss"])
+    assert torch.isfinite(losses["teacher_utility_loss"])
+    assert torch.isfinite(losses["boundary_coverage_loss"])
+    assert torch.isfinite(losses["total_loss"])
+
+
 def test_signed_teacher_utility_does_not_reward_negative_points() -> None:
     scores = torch.tensor([[2.0, 1.0, 0.5, 0.1]], requires_grad=True)
     selected_mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], requires_grad=True)
