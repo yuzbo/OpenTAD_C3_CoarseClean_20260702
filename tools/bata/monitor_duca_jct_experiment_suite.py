@@ -157,16 +157,34 @@ def _state_to_status(state: str) -> str:
 
 def _job_logs(run_root: Path, slurm_name: str, job_id: str) -> list[Path]:
     log_root = run_root / "slurm_logs"
-    if not log_root.is_dir():
-        return []
     patterns = []
     if job_id:
         patterns.extend([f"{slurm_name}_{job_id}.out", f"{slurm_name}_{job_id}.err", f"{slurm_name}_*{job_id}*.out", f"{slurm_name}_*{job_id}*.err"])
     patterns.extend([f"{slurm_name}_*.out", f"{slurm_name}_*.err"])
     paths: list[Path] = []
     seen = set()
+    if log_root.is_dir():
+        for pattern in patterns:
+            for path in sorted(log_root.glob(pattern)):
+                if path not in seen:
+                    paths.append(path)
+                    seen.add(path)
+    return paths
+
+
+def _job_train_logs(run_root: Path, spec: Mapping[str, Any]) -> list[Path]:
+    parts = spec.get("work_dir")
+    if not parts:
+        return []
+    run_dir = run_root / str(parts[0])
+    log_dir = run_dir / "logs"
+    if not log_dir.is_dir():
+        return []
+    patterns = ("train.out", "train.log", "*.out", "*.log", "*.err")
+    paths: list[Path] = []
+    seen = set()
     for pattern in patterns:
-        for path in sorted(log_root.glob(pattern)):
+        for path in sorted(log_dir.glob(pattern)):
             if path not in seen:
                 paths.append(path)
                 seen.add(path)
@@ -213,11 +231,24 @@ def _scan_logs(paths: list[Path]) -> dict[str, Any]:
 
 def _extract_metrics(text: str) -> dict[str, float]:
     metrics: dict[str, float] = {}
-    average = re.search(r"Average-mAP:\s*([0-9]+(?:\.[0-9]+)?)\s*\(%\)", text)
-    if average:
-        metrics["average_mAP_percent"] = float(average.group(1))
+    average_matches = list(re.finditer(r"Average-mAP:\s*([0-9]+(?:\.[0-9]+)?)\s*\(%\)", text))
+    if average_matches:
+        metrics["average_mAP_percent"] = float(average_matches[-1].group(1))
+        metrics["eval_block_count"] = float(len(average_matches))
     for match in re.finditer(r"mAP at tIoU\s+([0-9.]+)\s+is\s+([0-9]+(?:\.[0-9]+)?)%", text):
         metrics[f"mAP@{match.group(1)}_percent"] = float(match.group(2))
+    train_matches = list(
+        re.finditer(
+            r"\[Train\]:\s+\[(\d+)\]\[(\d+)/(\d+)\].*?\bLoss=([-+0-9.eE]+)",
+            text,
+        )
+    )
+    if train_matches:
+        last = train_matches[-1]
+        metrics["latest_train_epoch"] = float(int(last.group(1)))
+        metrics["latest_train_iter"] = float(int(last.group(2)))
+        metrics["latest_train_iter_max"] = float(int(last.group(3)))
+        metrics["latest_train_loss"] = float(last.group(4))
     return metrics
 
 
@@ -363,7 +394,7 @@ def monitor_suite(
     for label, spec in JOB_SPECS.items():
         job_id = str(deployment.get(spec["summary_key"], "") or "")
         slurm_name = str(spec["slurm_name"])
-        logs = _job_logs(run_root, slurm_name, job_id)
+        logs = _job_logs(run_root, slurm_name, job_id) + _job_train_logs(run_root, spec)
         log_scan = _scan_logs(logs)
         artifacts = _result_artifacts(run_root, spec)
         squeue_row = squeue.get(job_id)

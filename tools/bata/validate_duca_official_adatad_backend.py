@@ -164,6 +164,31 @@ def validate_config(
     source_cfg = selector.actionness_source_cfg
     if require_online_c3_actionness:
         _require(
+            "ducaexternalactionnessfromjsonl" not in full_text,
+            "main config must not load external X3D/JSONL actionness",
+        )
+        _require("duca_x3d" not in full_text, "main config must not reference DUCA_X3D train-free baseline inputs")
+        _require(
+            selector.get("external_actionness_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external p_action metas",
+        )
+        _require(
+            selector.get("external_actionness_logits_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external actionness logits metas",
+        )
+        _require(
+            selector.get("external_actionness_provenance_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external actionness provenance metas",
+        )
+        _require(
+            selector.get("external_actionness_source_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external actionness source metas",
+        )
+        _require(
+            selector.get("require_external_actionness", False) is False,
+            "main DUCA-JCT selector must not require external actionness",
+        )
+        _require(
             contract.actionness_source == "online_trainable_c3_coarse_probe",
             "main source must be online C3 coarse probe",
         )
@@ -198,6 +223,9 @@ def validate_config(
         "rpn_head_matches_official_base": True,
         "physical_grid_actionformer_enabled": False,
         "uses_ledger_for_decision": False,
+        "uses_external_actionness": False,
+        "requires_external_actionness": False,
+        "train_free_x3d_is_main_method": False,
         "budget_lte_384": int(selector.budget) <= 384,
         "strict_budget_lte_384": int(selector.budget) <= 384,
         "budget_lte_max": int(selector.budget) <= max_budget,

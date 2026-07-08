@@ -147,6 +147,43 @@ def test_duca_jct_suite_monitor_queries_live_squeue_by_default(monkeypatch, tmp_
     assert "duca384" not in summary["missing_results"]
 
 
+def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp_path: Path) -> None:
+    deployment = _deployment(tmp_path, with_x3d=True)
+    run_root = deployment.parent
+    _write_text(run_root / "slurm_logs" / "duca_jct_384_102.out", "job started\n")
+    _write_text(
+        run_root / "duca384_jct" / "logs" / "train.out",
+        "\n".join(
+            [
+                "2026 Train INFO: [Train]: [004][00099/00099]  Loss=2.1000  cls_loss=0.5",
+                "2026 Train INFO: Evaluation starts...",
+                "2026 Train INFO: Average-mAP: 3.85 (%)",
+                "2026 Train INFO: mAP at tIoU 0.60 is 1.07%",
+                "2026 Train INFO: mAP at tIoU 0.70 is 0.45%",
+                "2026 Train INFO: [Train]: [005][00050/00099]  Loss=2.0955  cls_loss=0.5",
+                "2026 Train INFO: Evaluation starts...",
+                "2026 Train INFO: Average-mAP: 4.25 (%)",
+                "2026 Train INFO: mAP at tIoU 0.60 is 1.20%",
+                "2026 Train INFO: mAP at tIoU 0.70 is 0.55%",
+            ]
+        )
+        + "\n",
+    )
+
+    from tools.bata.monitor_duca_jct_experiment_suite import monitor_suite
+
+    summary = monitor_suite(deployment_summary=deployment, squeue_text=None)
+    metrics = summary["jobs"]["duca384"]["metrics"]
+
+    assert summary["jobs"]["duca384"]["success_marker"] is True
+    assert metrics["average_mAP_percent"] == 4.25
+    assert metrics["mAP@0.60_percent"] == 1.20
+    assert metrics["mAP@0.70_percent"] == 0.55
+    assert metrics["eval_block_count"] == 2.0
+    assert metrics["latest_train_epoch"] == 5.0
+    assert metrics["latest_train_loss"] == 2.0955
+
+
 def test_duca_jct_suite_monitor_blocks_x3d_downstream_when_formal_jsonl_missing(tmp_path: Path) -> None:
     deployment = _deployment(tmp_path, with_x3d=False)
 

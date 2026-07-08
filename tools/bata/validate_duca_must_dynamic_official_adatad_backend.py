@@ -190,6 +190,31 @@ def validate_config(
     source_cfg = selector.actionness_source_cfg
     if require_online_c3_actionness:
         _require(
+            "ducaexternalactionnessfromjsonl" not in full_text,
+            "main config must not load external X3D/JSONL actionness",
+        )
+        _require("duca_x3d" not in full_text, "main config must not reference DUCA_X3D train-free baseline inputs")
+        _require(
+            selector.get("external_actionness_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external p_action metas",
+        )
+        _require(
+            selector.get("external_actionness_logits_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external actionness logits metas",
+        )
+        _require(
+            selector.get("external_actionness_provenance_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external actionness provenance metas",
+        )
+        _require(
+            selector.get("external_actionness_source_meta_key", None) in (None, ""),
+            "main DUCA-JCT selector must not read external actionness source metas",
+        )
+        _require(
+            selector.get("require_external_actionness", False) is False,
+            "main DUCA-JCT selector must not require external actionness",
+        )
+        _require(
             contract.actionness_source == "online_trainable_c3_coarse_probe",
             "main source must be online C3 coarse probe",
         )
@@ -240,6 +265,9 @@ def validate_config(
         "runtime_flops_claim_allowed": False,
         "actual_variable_length_detector": False,
         "uses_ledger_for_decision": False,
+        "uses_external_actionness": False,
+        "requires_external_actionness": False,
+        "train_free_x3d_is_main_method": False,
         "detector_consumed_cap_length": int(cfg.window_size),
         "dense_window_size": int(cfg.dense_window_size),
         "changes_detector_head": False,

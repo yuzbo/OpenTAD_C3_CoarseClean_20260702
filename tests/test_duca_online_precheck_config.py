@@ -147,6 +147,9 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.duca_online_main_contract.acquisition_policy == "duca_center_radius_st_acquisition"
     assert cfg.duca_online_main_contract.budget_policy == "fixed_budget"
     assert cfg.model.frame_selector.budget_mode == "fixed"
+    assert cfg.model.frame_selector.get("external_actionness_meta_key", None) is None
+    assert cfg.model.frame_selector.get("external_actionness_logits_meta_key", None) is None
+    assert cfg.model.frame_selector.get("require_external_actionness", False) is False
     assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
     assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
     assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "official_asformer"
@@ -180,6 +183,8 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.rpn_head == official.model.rpn_head
     assert "physical_grid_actionformer" not in cfg.model.rpn_head
     assert "bata_value_transport" not in repr(cfg).lower()
+    assert "ducaexternalactionnessfromjsonl" not in repr(cfg).lower()
+    assert "duca_x3d" not in OFFICIAL_BACKEND_CONFIG.read_text(encoding="utf-8").lower()
     assert "ledger_path" not in repr(cfg.model).lower()
     assert cfg.model.backbone.backbone.total_frames == 384
     assert cfg.model.projection.max_seq_len == 384
@@ -207,6 +212,9 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["rpn_head_matches_official_base"] is True
     assert summary["physical_grid_actionformer_enabled"] is False
     assert summary["uses_ledger_for_decision"] is False
+    assert summary["uses_external_actionness"] is False
+    assert summary["requires_external_actionness"] is False
+    assert summary["train_free_x3d_is_main_method"] is False
     assert summary["budget_lte_384"] is True
     assert summary["loss_schedule_policy"] == "progressive_joint"
     assert summary["loss_schedule_step_update"] == "optimizer_step"
@@ -332,6 +340,9 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.budget_multiple == 16
     assert cfg.model.frame_selector.target_budget == 256
     assert cfg.model.frame_selector.allow_external_budget_override is False
+    assert cfg.model.frame_selector.get("external_actionness_meta_key", None) is None
+    assert cfg.model.frame_selector.get("external_actionness_logits_meta_key", None) is None
+    assert cfg.model.frame_selector.get("require_external_actionness", False) is False
     assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
     assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
     assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
@@ -366,6 +377,8 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.end > 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
+    assert "ducaexternalactionnessfromjsonl" not in repr(cfg).lower()
+    assert "duca_x3d" not in text
     assert cfg.window_size == 384
     assert cfg.model.backbone.backbone.total_frames == 384
     assert cfg.model.projection.max_seq_len == 384
@@ -393,6 +406,9 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["dynamic_budget_dual_update_source"] == "dynamic_must_expected_cost"
     assert summary["budget_max_lte_384"] is True
     assert summary["external_budget_override_allowed"] is False
+    assert summary["uses_external_actionness"] is False
+    assert summary["requires_external_actionness"] is False
+    assert summary["train_free_x3d_is_main_method"] is False
     assert summary["uses_env_budget_override"] is False
     assert summary["runtime_flops_claim_allowed"] is False
     assert summary["forced_budget_curve"] is False
