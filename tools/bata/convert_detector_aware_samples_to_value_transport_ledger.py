@@ -36,6 +36,60 @@ def _selected_positions_from_sample(row: Mapping[str, Any], *, line_no: int, str
     raise ValueError(f"line {line_no}: strategy '{strategy}' is missing from strategy_selected_positions")
 
 
+def _expanded_observation_contract(
+    row: Mapping[str, Any],
+    *,
+    selected: Sequence[int],
+    strategy: str,
+    valid_len: int,
+) -> dict[str, Any]:
+    policy_metadata = row.get("detector_aware_policy")
+    if not isinstance(policy_metadata, Mapping):
+        return {}
+    radii_by_strategy = policy_metadata.get("context_radius_by_strategy")
+    if not isinstance(radii_by_strategy, Mapping) or strategy not in radii_by_strategy:
+        return {}
+    dense_radii = radii_by_strategy[strategy]
+    if not isinstance(dense_radii, Sequence) or isinstance(dense_radii, (str, bytes)):
+        raise ValueError(f"context_radius_by_strategy.{strategy} must be a sequence")
+    if len(dense_radii) < int(valid_len):
+        raise ValueError(f"context_radius_by_strategy.{strategy} shorter than valid_len={valid_len}")
+    radius_min, radius_max = detector_policy.DEFAULT_CONTEXT_RADIUS_MIN, detector_policy.DEFAULT_CONTEXT_RADIUS_MAX
+    context_radius_float_by_position: list[float] = []
+    context_radius_by_position: list[int] = []
+    observations: list[dict[str, int]] = []
+    expanded: set[int] = set()
+    for center in selected:
+        raw_radius = detector_policy._clamp_context_radius(dense_radii[int(center)])
+        radius_float = float(raw_radius)
+        radius = int(round(radius_float))
+        radius = max(int(radius_min), min(int(radius_max), radius))
+        start = max(0, int(center) - radius)
+        end = min(int(valid_len) - 1, int(center) + radius)
+        context_radius_float_by_position.append(radius_float)
+        context_radius_by_position.append(radius)
+        observations.append(
+            {
+                "center": int(center),
+                "radius": int(radius),
+                "expanded_start": int(start),
+                "expanded_end": int(end),
+            }
+        )
+        expanded.update(range(start, end + 1))
+    expanded_positions = sorted(expanded)
+    return {
+        "selected_positions_are_centers": True,
+        "context_radius_unit": str(policy_metadata.get("context_radius_unit") or "local_dense_snippet_index"),
+        "context_radius_range": [float(radius_min), float(radius_max)],
+        "context_radius_by_position": context_radius_by_position,
+        "context_radius_float_by_position": context_radius_float_by_position,
+        "selected_observations": observations,
+        "expanded_selected_positions": expanded_positions,
+        "expanded_selected_count": int(len(expanded_positions)),
+    }
+
+
 def sample_row_to_value_transport_row(
     row: Mapping[str, Any],
     *,
@@ -90,6 +144,21 @@ def sample_row_to_value_transport_row(
         "required_selected_count": expected_required_count,
         "allow_short_valid_ratio_count": bool(allow_short_valid_ratio_count),
     }
+    observation_contract = _expanded_observation_contract(
+        row,
+        selected=selected,
+        strategy=strategy,
+        valid_len=int(valid_len),
+    )
+    if observation_contract:
+        diagnostics.update(
+            {
+                "selected_positions_are_centers": True,
+                "context_radius_unit": observation_contract["context_radius_unit"],
+                "context_radius_range": observation_contract["context_radius_range"],
+                "expanded_selected_count": observation_contract["expanded_selected_count"],
+            }
+        )
     if isinstance(policy_metadata, Mapping):
         diagnostics.update(
             {
@@ -150,6 +219,7 @@ def sample_row_to_value_transport_row(
         "uses_checkpoint": False,
         "prediction_uses_gt": False,
     }
+    ledger_row.update(observation_contract)
     validate_value_transport_selection_row(
         ledger_row,
         line_no=line_no,

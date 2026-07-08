@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ VARIANT_SPECS = {
     "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
     "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
     "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
+    "paction_lattice_replace_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
     "paction_lattice_replace_score_only_move50": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move50", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
     "paction_lattice_replace_score_only_move75": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move75", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
     "paction_lattice_replace_score_only_no_protect": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_no_protect", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
@@ -132,6 +134,19 @@ def _validate_dataset(cfg: Config) -> None:
 def _validate_model_and_train(cfg: Config) -> None:
     spec = _variant_spec(cfg)
     target_len = int(spec["target_len"])
+    expected_eval_interval = int(os.environ.get("C3_PACTION_ADATAD_EXPECT_VAL_EVAL_INTERVAL", os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "10")))
+    expected_eval_anchor = int(
+        os.environ.get(
+            "C3_PACTION_ADATAD_EXPECT_VAL_EVAL_INTERVAL_ANCHOR_EPOCH",
+            os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", str(expected_eval_interval)),
+        )
+    )
+    expected_val_start = int(
+        os.environ.get(
+            "C3_PACTION_ADATAD_EXPECT_VAL_START_EPOCH",
+            os.environ.get("C3_PACTION_ADATAD_VAL_START_EPOCH", str(max(0, expected_eval_interval - 1))),
+        )
+    )
     _require(int(cfg.window_size) == target_len, "selected window_size mismatch")
     _require(int(cfg.dense_window_size) == 768, "dense_window_size must be 768")
     _require(int(cfg.model.backbone.backbone.total_frames) == target_len, "backbone total_frames mismatch")
@@ -148,10 +163,19 @@ def _validate_model_and_train(cfg: Config) -> None:
     )
     _require(int(cfg.workflow.end_epoch) == 60, "formal full train must run 60 epochs")
     _require(cfg.workflow.get("max_train_iters", None) is None, "full train must not cap train iterations")
-    _require(int(cfg.workflow.val_eval_interval) == 10, "validation interval must be 10")
+    _require(
+        int(cfg.workflow.val_eval_interval) == expected_eval_interval,
+        f"validation interval must be {expected_eval_interval}",
+    )
     _require("val_eval_epochs" not in cfg.workflow, "validation must use interval scheduling, not explicit epochs")
-    _require(int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == 10, "validation anchor must be epoch 10")
-    _require(int(cfg.workflow.val_start_epoch) == 9, "validation must start from zero-based epoch 9")
+    _require(
+        int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == expected_eval_anchor,
+        f"validation anchor must be epoch {expected_eval_anchor}",
+    )
+    _require(
+        int(cfg.workflow.val_start_epoch) == expected_val_start,
+        f"validation must start from zero-based epoch {expected_val_start}",
+    )
     _require(_as_bool(cfg.solver.get("ema", False)), "EMA should stay on to match the reviewed AdaTAD protocol")
 
 

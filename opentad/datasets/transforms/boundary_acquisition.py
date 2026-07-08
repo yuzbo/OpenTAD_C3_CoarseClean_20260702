@@ -42,6 +42,56 @@ def _strict_int(value, name):
     raise ValueError(f"{name} must be an integer")
 
 
+def _validate_optional_context_radius_contract(row, positions, line_no, valid_len):
+    if "context_radius_by_position" not in row and "selected_observations" not in row:
+        return
+    if row.get("selected_positions_are_centers") is not True:
+        raise ValueError(f"line {line_no}: context-radius ledger rows must set selected_positions_are_centers=true")
+    if row.get("context_radius_unit") != "local_dense_snippet_index":
+        raise ValueError(f"line {line_no}: context_radius_unit must be local_dense_snippet_index")
+    radius_range = row.get("context_radius_range")
+    if not isinstance(radius_range, list) or len(radius_range) != 2:
+        raise ValueError(f"line {line_no}: context_radius_range must be [min, max]")
+    radius_min, radius_max = float(radius_range[0]), float(radius_range[1])
+    if radius_min < 0 or radius_max < radius_min:
+        raise ValueError(f"line {line_no}: invalid context_radius_range")
+    radii = row.get("context_radius_by_position")
+    if not isinstance(radii, list) or len(radii) != len(positions):
+        raise ValueError(f"line {line_no}: context_radius_by_position length must match selected_positions")
+    observations = row.get("selected_observations")
+    if not isinstance(observations, list) or len(observations) != len(positions):
+        raise ValueError(f"line {line_no}: selected_observations length must match selected_positions")
+    expanded = row.get("expanded_selected_positions")
+    if not isinstance(expanded, list) or not expanded:
+        raise ValueError(f"line {line_no}: expanded_selected_positions must be a non-empty list")
+    expanded_positions = [_strict_int(value, f"line {line_no}: expanded_selected_positions[{idx}]") for idx, value in enumerate(expanded)]
+    if expanded_positions != sorted(expanded_positions) or len(set(expanded_positions)) != len(expanded_positions):
+        raise ValueError(f"line {line_no}: expanded_selected_positions must be sorted unique")
+    expected_expanded = set()
+    for idx, (center, raw_radius, observation) in enumerate(zip(positions, radii, observations)):
+        radius = _strict_int(raw_radius, f"line {line_no}: context_radius_by_position[{idx}]")
+        if radius < radius_min or radius > radius_max:
+            raise ValueError(f"line {line_no}: context_radius_by_position[{idx}] outside context_radius_range")
+        if not isinstance(observation, dict):
+            raise ValueError(f"line {line_no}: selected_observations[{idx}] must be a JSON object")
+        if _strict_int(observation.get("center"), f"line {line_no}: selected_observations[{idx}].center") != center:
+            raise ValueError(f"line {line_no}: selected_observations[{idx}].center mismatch")
+        if _strict_int(observation.get("radius"), f"line {line_no}: selected_observations[{idx}].radius") != radius:
+            raise ValueError(f"line {line_no}: selected_observations[{idx}].radius mismatch")
+        start = max(0, center - radius)
+        end = center + radius if valid_len is None else min(_strict_int(valid_len, f"line {line_no}: valid_len") - 1, center + radius)
+        if _strict_int(observation.get("expanded_start"), f"line {line_no}: selected_observations[{idx}].expanded_start") != start:
+            raise ValueError(f"line {line_no}: selected_observations[{idx}].expanded_start mismatch")
+        if _strict_int(observation.get("expanded_end"), f"line {line_no}: selected_observations[{idx}].expanded_end") != end:
+            raise ValueError(f"line {line_no}: selected_observations[{idx}].expanded_end mismatch")
+        expected_expanded.update(range(start, end + 1))
+    if expanded_positions != sorted(expected_expanded):
+        raise ValueError(f"line {line_no}: expanded_selected_positions mismatch selected_observations")
+    expanded_count = row.get("expanded_selected_count")
+    if expanded_count is not None and _strict_int(expanded_count, f"line {line_no}: expanded_selected_count") != len(expanded_positions):
+        raise ValueError(f"line {line_no}: expanded_selected_count mismatch")
+
+
 def validate_value_transport_selection_row(row, line_no=0, require_deployable=True):
     if not isinstance(row, dict):
         raise ValueError(f"line {line_no}: value-transport row must be a JSON object")
@@ -70,6 +120,7 @@ def validate_value_transport_selection_row(row, line_no=0, require_deployable=Tr
         raise ValueError(f"line {line_no}: selected_positions exceed valid_len")
     if dense_len is not None and positions[-1] >= _strict_int(dense_len, f"line {line_no}: dense_len"):
         raise ValueError(f"line {line_no}: selected_positions exceed dense_len")
+    _validate_optional_context_radius_contract(row, positions, line_no, valid_len)
 
     for key in FORBIDDEN_VALUE_TRANSPORT_FLAGS:
         if _is_true(row.get(key, False)):

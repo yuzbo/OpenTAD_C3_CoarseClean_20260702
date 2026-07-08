@@ -16,6 +16,7 @@ from tools.bata import paction_source_samples
 SUMMARY_SCHEMA_VERSION = "c3_paction_lattice_replacement_application_v1"
 READY = "C3_PACTION_LATTICE_REPLACEMENT_APPLICATION_READY"
 DEFAULT_VARIANTS = (
+    lattice.MOVE25_STRATEGY,
     lattice.MOVE50_STRATEGY,
     lattice.MOVE75_STRATEGY,
     lattice.NO_PROTECT_STRATEGY,

@@ -58,7 +58,7 @@ DEFAULT_DETECTOR_AWARE_LOSS_TERMS = {
     "budget": 1.0,
 }
 DEFAULT_DETECTOR_AWARE_SCORE_DILATION_RADII = (2, 4)
-DEFAULT_CONTEXT_RADIUS_MIN = 2.0
+DEFAULT_CONTEXT_RADIUS_MIN = 0.0
 DEFAULT_CONTEXT_RADIUS_MAX = 16.0
 
 
@@ -357,7 +357,10 @@ def add_detector_aware_decision_to_sample_row(
     valid = [idx < valid_len for idx in range(len(frame_values))]
     strategies = dict(out.get("strategy_selected_positions") or {})
     strategy_frame_values = dict(frame_values_by_strategy or {})
-    strategy_context_radii = dict(context_radii_by_strategy or {})
+    strategy_context_radii = {
+        str(key): [_clamp_context_radius(item) for item in value]
+        for key, value in dict(context_radii_by_strategy or {}).items()
+    }
     for strategy_name in (DETECTOR_AWARE_FIXED_384_STRATEGY, DETECTOR_AWARE_FIXED_768_STRATEGY):
         requested = _strategy_budget_for_name(strategy_name, fixed_budgets)
         budget = fixed_deploy_budget(requested, valid_len=valid_len)
@@ -413,6 +416,8 @@ def add_detector_aware_decision_to_sample_row(
         "score_dilation_signal": "learned_positive_detector_utility_peaks_only",
         "learned_context_radius_used": bool(context_radii_by_strategy),
         "context_radius_range": [float(DEFAULT_CONTEXT_RADIUS_MIN), float(DEFAULT_CONTEXT_RADIUS_MAX)],
+        "context_radius_unit": "local_dense_snippet_index",
+        "context_radius_by_strategy": strategy_context_radii,
         "fixed_strategies": [DETECTOR_AWARE_FIXED_384_STRATEGY, DETECTOR_AWARE_FIXED_768_STRATEGY],
         "dynamic_strategy": DETECTOR_AWARE_DYNAMIC_STRATEGY,
         "fixed_budgets": [int(item) for item in fixed_budgets],

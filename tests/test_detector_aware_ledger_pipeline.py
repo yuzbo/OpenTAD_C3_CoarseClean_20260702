@@ -150,6 +150,47 @@ def test_detector_aware_full_train_gate_enforces_exact_selected_count_for_short_
         detector_full_gate._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
 
 
+def test_detector_aware_conversion_writes_context_radius_observations_and_expanded_mask(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = _deploy_sample(checkpoint, sha)
+    sample["dense_len"] = 8
+    sample["valid_len"] = 8
+    sample["strategy_selected_positions"] = {"detector_aware_fixed_384": [1, 5]}
+    sample["detector_aware_policy"]["context_radius_range"] = [0.0, 16.0]
+    sample["detector_aware_policy"]["context_radius_unit"] = "local_dense_snippet_index"
+    sample["detector_aware_policy"]["context_radius_by_strategy"] = {
+        "detector_aware_fixed_384": [0.0, 2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0]
+    }
+    _write_jsonl(samples, [sample])
+
+    detector_convert.run_conversion(
+        samples,
+        ledger,
+        strategy="detector_aware_fixed_384",
+        target_len=2,
+        require_selected_count=2,
+        deploy_selection_ledger=True,
+    )
+    row = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()][0]
+
+    assert row["selected_positions_are_centers"] is True
+    assert row["context_radius_unit"] == "local_dense_snippet_index"
+    assert row["context_radius_range"] == [0.0, 16.0]
+    assert row["context_radius_by_position"] == [2, 3]
+    assert row["context_radius_float_by_position"] == [2.0, 3.0]
+    assert row["selected_observations"] == [
+        {"center": 1, "radius": 2, "expanded_start": 0, "expanded_end": 3},
+        {"center": 5, "radius": 3, "expanded_start": 2, "expanded_end": 7},
+    ]
+    assert row["expanded_selected_positions"] == list(range(8))
+    assert row["expanded_selected_count"] == 8
+    assert row["diagnostics"]["expanded_selected_count"] == 8
+
+
 def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "source.jsonl"
     checkpoint = tmp_path / "detector_policy.pth"

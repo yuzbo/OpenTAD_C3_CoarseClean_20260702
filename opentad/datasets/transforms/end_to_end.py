@@ -211,6 +211,7 @@ class LoadFrames:
         bata_value_transport_allow_short_valid_ratio_count=False,
         bata_value_transport_source="pc_ot_mras_frontend_hard_positions",
         bata_value_transport_config_hash="",
+        bata_value_transport_use_expanded_positions=False,
     ):
         self.num_clips = num_clips
         self.scale_factor = scale_factor  # multiply by the frame number, if backbone has downsampling
@@ -233,6 +234,7 @@ class LoadFrames:
         )
         self.bata_value_transport_source = bata_value_transport_source
         self.bata_value_transport_config_hash = bata_value_transport_config_hash
+        self.bata_value_transport_use_expanded_positions = bool(bata_value_transport_use_expanded_positions)
         self._bata_value_transport_ledger = None
 
     def random_trunc(self, feats, trunc_len, gt_segments, gt_labels, offset=0, max_num_trials=200):
@@ -625,6 +627,17 @@ class LoadFrames:
                 frame_num=frame_num,
                 target_len=target_len,
             )
+            if self.bata_value_transport_use_expanded_positions and "expanded_selected_positions" in ledger_row:
+                keep_positions = np.asarray(
+                    [int(item) for item in ledger_row["expanded_selected_positions"]],
+                    dtype=np.int64,
+                )
+                if keep_positions.size == 0:
+                    raise ValueError("expanded_selected_positions must not be empty")
+                if keep_positions.tolist() != sorted(set(int(item) for item in keep_positions.tolist())):
+                    raise ValueError("expanded_selected_positions must be sorted unique")
+                if keep_positions[0] < 0 or keep_positions[-1] >= valid_len:
+                    raise ValueError("expanded_selected_positions exceed valid_len")
             if keep_positions.size > int(frame_num):
                 sample_id = ledger_row.get("sample_id", self._value_transport_sample_id(results))
                 raise ValueError(
@@ -693,6 +706,14 @@ class LoadFrames:
                     "target_len",
                     "selected_count",
                     "selected_positions_unit",
+                    "selected_positions_are_centers",
+                    "context_radius_unit",
+                    "context_radius_range",
+                    "context_radius_by_position",
+                    "context_radius_float_by_position",
+                    "selected_observations",
+                    "expanded_selected_positions",
+                    "expanded_selected_count",
                     "diagnostics",
                     "diagnostic_only",
                     "training_only",

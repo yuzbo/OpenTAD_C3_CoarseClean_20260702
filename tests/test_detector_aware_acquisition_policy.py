@@ -346,7 +346,7 @@ def test_detector_aware_score_dilation_can_use_learned_continuous_context_radius
     assert wide[0] > narrow[0]
 
 
-def test_detector_aware_score_dilation_clamps_learned_radius_to_minimum_two() -> None:
+def test_detector_aware_score_dilation_allows_zero_learned_radius() -> None:
     values = [0.0] * 11
     values[5] = 10.0
     valid = [True] * len(values)
@@ -357,7 +357,37 @@ def test_detector_aware_score_dilation_clamps_learned_radius_to_minimum_two() ->
         context_radii=[0.0] * len(values),
     )
 
-    assert detector_policy.gas_vt.hard_gap_aware_topk(decoded, valid=valid, budget=5) == [3, 4, 5, 6, 7]
+    assert decoded[5] == pytest.approx(10.0)
+    assert decoded[4] == pytest.approx(0.0)
+    assert decoded[6] == pytest.approx(0.0)
+    assert detector_policy._clamp_context_radius(-3.0) == pytest.approx(0.0)
+
+
+def test_detector_aware_decision_records_strategy_context_radius_contract() -> None:
+    row = {
+        "sample_id": "video_context_radius_0001|0",
+        "dense_len": 6,
+        "valid_len": 6,
+    }
+
+    enriched = detector_policy.add_detector_aware_decision_to_sample_row(
+        row,
+        frame_values=[0.0, 10.0, 0.0, 8.0, 0.0, 6.0],
+        context_radii_by_strategy={
+            "detector_aware_fixed_384": [0.0, 16.0, 2.0, 4.0, 1.0, 8.0],
+            "detector_aware_fixed_768": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "detector_aware_dynamic": [6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+        },
+        fixed_budgets=(3, 5),
+        dynamic_budget_scores=[1.0, 0.0],
+        dynamic_budget_buckets=[3, 5],
+    )
+
+    meta = enriched["detector_aware_policy"]
+    assert meta["learned_context_radius_used"] is True
+    assert meta["context_radius_range"] == [0.0, 16.0]
+    assert meta["context_radius_unit"] == "local_dense_snippet_index"
+    assert meta["context_radius_by_strategy"]["detector_aware_fixed_384"] == [0.0, 16.0, 2.0, 4.0, 1.0, 8.0]
 
 
 def test_detector_aware_score_dilation_uses_local_peaks_not_all_positive_values() -> None:

@@ -171,7 +171,7 @@ def test_lattice_application_uses_short_valid_ratio_budget_contract(
         input_jsonl,
         output_jsonl,
         checkpoint_path=checkpoint,
-        variants=[lattice.MOVE50_STRATEGY, lattice.MOVE75_STRATEGY],
+        variants=[lattice.MOVE25_STRATEGY, lattice.MOVE50_STRATEGY, lattice.MOVE75_STRATEGY],
         fixed_budget=384,
         device="cpu",
         local_radius=2,
@@ -180,9 +180,13 @@ def test_lattice_application_uses_short_valid_ratio_budget_contract(
 
     assert len(row["strategy_selected_positions"][lattice.MOVE50_STRATEGY]) == 126
     assert len(row["strategy_selected_positions"][lattice.MOVE75_STRATEGY]) == 126
+    move25 = row["paction_policy"]["lattice_replacement_diagnostics_by_strategy"][lattice.MOVE25_STRATEGY]
     move50 = row["paction_policy"]["lattice_replacement_diagnostics_by_strategy"][lattice.MOVE50_STRATEGY]
     move75 = row["paction_policy"]["lattice_replacement_diagnostics_by_strategy"][lattice.MOVE75_STRATEGY]
     assert row["paction_policy"]["effective_lattice_budget"] == 126
+    assert move25["selected_count"] == 126
+    assert move25["protected_uniform_count"] == 94
+    assert move25["replaceable_uniform_count"] == 32
     assert move50["selected_count"] == 126
     assert move50["protected_uniform_count"] == 63
     assert move50["replaceable_uniform_count"] == 63

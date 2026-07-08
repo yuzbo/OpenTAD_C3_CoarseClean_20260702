@@ -28,6 +28,17 @@ VARIANT_SPECS = {
         source="learned_paction_gap_loss_policy_checkpoint",
         config_hash="c3_paction_learned_gap_loss_dynamic_budget_no_uniform_v1",
     ),
+    "paction_lattice_replace_score_only_move25": dict(
+        target_len=384,
+        require_selected_count=384,
+        strategy="paction_lattice_replace_score_only_move25",
+        ledger_name="paction_lattice_replace_score_only_move25",
+        source="learned_paction_gap_loss_policy_checkpoint",
+        config_hash="c3_paction_lattice_replace_score_only_move25_v1",
+        selector_decoder="score_only_lattice_replacement_v1",
+        geometry_constraint="score_only_local_lattice_replacement_move25",
+        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+    ),
     "paction_lattice_replace_score_only_move50": dict(
         target_len=384,
         require_selected_count=384,
@@ -93,6 +104,13 @@ c3_paction_adatad_pretrain_path = os.environ.get(
 )
 paction_adatad_checkpoint_interval = int(os.environ.get("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", "10"))
 paction_adatad_disable_checkpoint = os.environ.get("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", "0") == "1"
+paction_adatad_val_eval_interval = int(os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "10"))
+paction_adatad_val_eval_anchor_epoch = int(
+    os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", str(paction_adatad_val_eval_interval))
+)
+paction_adatad_val_start_epoch = int(
+    os.environ.get("C3_PACTION_ADATAD_VAL_START_EPOCH", str(max(0, paction_adatad_val_eval_interval - 1)))
+)
 
 _ledger_name = _variant["ledger_name"]
 train_ledger_path = os.environ.get(
@@ -356,9 +374,9 @@ workflow = dict(
     logging_interval=50,
     checkpoint_interval=paction_adatad_checkpoint_interval,
     val_loss_interval=-1,
-    val_eval_interval=10,
-    val_eval_interval_anchor_epoch=10,
-    val_start_epoch=9,
+    val_eval_interval=paction_adatad_val_eval_interval,
+    val_eval_interval_anchor_epoch=paction_adatad_val_eval_anchor_epoch,
+    val_start_epoch=paction_adatad_val_start_epoch,
     end_epoch=60,
     max_train_iters=None,
     disable_checkpoint=paction_adatad_disable_checkpoint,

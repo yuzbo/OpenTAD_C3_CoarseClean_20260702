@@ -5,11 +5,13 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 
+MOVE25_STRATEGY = "paction_lattice_replace_score_only_move25"
 MOVE50_STRATEGY = "paction_lattice_replace_score_only_move50"
 MOVE75_STRATEGY = "paction_lattice_replace_score_only_move75"
 NO_PROTECT_STRATEGY = "paction_lattice_replace_score_only_no_protect"
 DEFAULT_BUDGET = 384
 _PROTECTED_COUNTS = {
+    MOVE25_STRATEGY: 288,
     MOVE50_STRATEGY: 192,
     MOVE75_STRATEGY: 96,
     NO_PROTECT_STRATEGY: 0,

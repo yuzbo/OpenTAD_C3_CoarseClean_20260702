@@ -27,9 +27,29 @@ def test_move50_protects_exactly_192_anchors_and_keeps_384_selected_on_long_vali
     assert len(result.selected_positions) == 384
 
 
+def test_move25_protects_288_anchors_and_replaces_only_one_quarter_budget() -> None:
+    scores = _scores_with_local_peaks(1024, list(range(2, 1024, 3))[:220])
+
+    result = policy.decode_paction_lattice_replacement(
+        frame_values=scores,
+        variant=policy.MOVE25_STRATEGY,
+        local_radius=2,
+    )
+
+    assert result.diagnostics["protected_uniform_count"] == 288
+    assert result.diagnostics["replaceable_uniform_count"] == 96
+    assert result.diagnostics["selected_count"] == 384
+    assert len(result.selected_positions) == 384
+
+
 def test_move75_allows_more_replacements_than_move50_on_same_score_vector() -> None:
     scores = _scores_with_local_peaks(1024, list(range(2, 1024, 3))[:320])
 
+    move25 = policy.decode_paction_lattice_replacement(
+        frame_values=scores,
+        variant=policy.MOVE25_STRATEGY,
+        local_radius=2,
+    )
     move50 = policy.decode_paction_lattice_replacement(
         frame_values=scores,
         variant=policy.MOVE50_STRATEGY,
@@ -43,6 +63,7 @@ def test_move75_allows_more_replacements_than_move50_on_same_score_vector() -> N
 
     assert move75.diagnostics["protected_uniform_count"] == 96
     assert move75.diagnostics["replaceable_uniform_count"] == 288
+    assert move50.diagnostics["replaced_uniform_count"] > move25.diagnostics["replaced_uniform_count"]
     assert move75.diagnostics["replaced_uniform_count"] > move50.diagnostics["replaced_uniform_count"]
 
 

@@ -311,7 +311,9 @@ def test_lattice_full_train_launcher_requires_explicit_inferred_provenance_opt_i
     assert 'PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE="${PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE:-0}"' in text
     assert 'PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE}" == "1"' in text
     assert "args+=(--allow-inferred-paction-positive-provenance)" in text
-    assert 'PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-1}"' in text
-    assert 'PACTION_LATTICE_CHECKPOINT_INTERVAL="${PACTION_LATTICE_CHECKPOINT_INTERVAL:-10}"' in text
+    assert 'PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-0}"' in text
+    assert 'PACTION_LATTICE_CHECKPOINT_INTERVAL="${PACTION_LATTICE_CHECKPOINT_INTERVAL:-2}"' in text
+    assert 'PACTION_LATTICE_VAL_EVAL_INTERVAL="${PACTION_LATTICE_VAL_EVAL_INTERVAL:-5}"' in text
     assert 'C3_PACTION_ADATAD_DISABLE_CHECKPOINT="${C3_PACTION_ADATAD_DISABLE_CHECKPOINT:-${PACTION_LATTICE_DISABLE_CHECKPOINT}}"' in text
+    assert 'workflow.val_eval_interval=${C3_PACTION_ADATAD_VAL_EVAL_INTERVAL}' in text
     assert "insufficient free space for full train" in text

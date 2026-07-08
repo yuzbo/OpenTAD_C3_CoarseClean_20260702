@@ -251,7 +251,8 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
     assert "run_paction_lattice_replacement_ledger_pipeline.py" in text
     assert "validate_paction_lattice_replacement_ledger.py" in text
     assert "validate_c3_paction_learned_adatad_full_train.py" in text
-    assert "paction_lattice_replace_score_only_move50 paction_lattice_replace_score_only_move75" in text
+    assert "paction_lattice_replace_score_only_move25" in text
+    assert "paction_lattice_replace_score_only_move50 paction_lattice_replace_score_only_move75" not in text
     assert "--variants ${PACTION_LATTICE_ADATAD_VARIANTS}" in text
     assert "--fixed-budget \"${PACTION_LATTICE_FIXED_BUDGET}\"" in text
     assert "--deploy-selection-ledger" in text
@@ -265,11 +266,16 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
     assert "master_port=${master_port}" in text
     assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-30410}"' not in text
     assert "c3_paction_learned_ledger_adatad_full_train_exec.py" in text
-    assert 'PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-1}"' in text
+    assert 'PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-0}"' in text
+    assert 'PACTION_LATTICE_CHECKPOINT_INTERVAL="${PACTION_LATTICE_CHECKPOINT_INTERVAL:-2}"' in text
+    assert 'PACTION_LATTICE_VAL_EVAL_INTERVAL="${PACTION_LATTICE_VAL_EVAL_INTERVAL:-5}"' in text
     assert 'PACTION_LATTICE_MIN_FREE_MB="${PACTION_LATTICE_MIN_FREE_MB:-2048}"' in text
     assert "insufficient free space for full train" in text
     assert '"workflow.disable_checkpoint=${C3_PACTION_ADATAD_DISABLE_CHECKPOINT}"' in text
     assert '"workflow.checkpoint_interval=${C3_PACTION_ADATAD_CHECKPOINT_INTERVAL}"' in text
+    assert '"workflow.val_eval_interval=${C3_PACTION_ADATAD_VAL_EVAL_INTERVAL}"' in text
+    assert '"workflow.val_eval_interval_anchor_epoch=${C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH}"' in text
+    assert '"workflow.val_start_epoch=${C3_PACTION_ADATAD_VAL_START_EPOCH}"' in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "tools/train.py" in text
     assert "tools/test.py" not in text
@@ -282,6 +288,12 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
         "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
         "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+        "paction_lattice_replace_score_only_move25": (
+            384,
+            384,
+            "paction_lattice_replace_score_only_move25",
+            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+        ),
         "paction_lattice_replace_score_only_move50": (
             384,
             384,
@@ -336,6 +348,29 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
             assert loader.bata_value_transport_allow_missing_fallback is False
             assert loader.bata_value_transport_allow_short_valid_ratio_count is True
             assert loader.remap_gt_to_selected_axis is True
+
+
+def test_paction_lattice_move25_config_allows_fast_eval_and_checkpoint_schedule(monkeypatch):
+    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "paction_lattice_replace_score_only_move25")
+    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", "/tmp/move25.train.jsonl")
+    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", "/tmp/move25.val.jsonl")
+    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", "/tmp/move25.test.jsonl")
+    monkeypatch.setenv("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", "0")
+    monkeypatch.setenv("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", "2")
+    monkeypatch.setenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "5")
+    monkeypatch.setenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", "5")
+    monkeypatch.setenv("C3_PACTION_ADATAD_VAL_START_EPOCH", "4")
+
+    cfg = Config.fromfile(str(PACTION_CONFIG))
+    validator = _load_paction_validator()
+    validated = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
+
+    assert cfg.paction_ledger_variant == "paction_lattice_replace_score_only_move25"
+    assert int(validated.workflow.checkpoint_interval) == 2
+    assert int(validated.workflow.val_eval_interval) == 5
+    assert int(validated.workflow.val_eval_interval_anchor_epoch) == 5
+    assert int(validated.workflow.val_start_epoch) == 4
+    assert validated.workflow.disable_checkpoint is False
 
 
 def test_paction_learned_policy_adatad_config_uses_reviewed_absolute_pretrain(monkeypatch):
