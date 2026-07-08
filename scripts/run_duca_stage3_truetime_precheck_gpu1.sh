@@ -13,6 +13,13 @@ export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
+export YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
+export THUMOS14_ANNOTATION_PATH="${THUMOS14_ANNOTATION_PATH:-${BASE}/thumos14/annotations/thumos_14_anno.json}"
+export THUMOS14_CLASS_MAP="${THUMOS14_CLASS_MAP:-${BASE}/thumos14/annotations/category_idx.txt}"
+export THUMOS14_TRAIN_DATA_PATH="${THUMOS14_TRAIN_DATA_PATH:-${BASE}/raw/Validation Data/validation}"
+export THUMOS14_TEST_DATA_PATH="${THUMOS14_TEST_DATA_PATH:-${BASE}/raw/Test Data/TH14_test_set_mp4}"
+export TRUETIME_DISABLE_CHECKPOINT="${TRUETIME_DISABLE_CHECKPOINT:-1}"
+export TRUETIME_CHECKPOINT_INTERVAL="${TRUETIME_CHECKPOINT_INTERVAL:-10}"
 MASTER_PORT="${MASTER_PORT:-}"
 MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
 MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
@@ -85,6 +92,8 @@ PY
 
 require_file "${CONFIG}"
 require_file "${EXEC_CONFIG}"
+require_file "${THUMOS14_ANNOTATION_PATH}"
+require_file "${THUMOS14_CLASS_MAP}"
 require_file tools/bata/run_truetime_joint_selector_precheck.py
 require_file tools/bata/validate_truetime_joint_selector_precheck.py
 require_file tools/bata/validate_duca_stage23_precheck.py

@@ -263,6 +263,11 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
     assert "master_port=${master_port}" in text
     assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-30410}"' not in text
     assert "c3_paction_learned_ledger_adatad_full_train_exec.py" in text
+    assert 'PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-1}"' in text
+    assert 'PACTION_LATTICE_MIN_FREE_MB="${PACTION_LATTICE_MIN_FREE_MB:-2048}"' in text
+    assert "insufficient free space for full train" in text
+    assert '"workflow.disable_checkpoint=${C3_PACTION_ADATAD_DISABLE_CHECKPOINT}"' in text
+    assert '"workflow.checkpoint_interval=${C3_PACTION_ADATAD_CHECKPOINT_INTERVAL}"' in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "tools/train.py" in text
     assert "tools/test.py" not in text
@@ -315,6 +320,8 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         assert int(cfg.workflow.val_eval_interval) == 10
         assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
         assert int(cfg.workflow.val_start_epoch) == 9
+        assert int(cfg.workflow.checkpoint_interval) == 10
+        assert cfg.workflow.disable_checkpoint is False
         assert "frame_selector" not in repr(cfg.model)
         for split in ("train", "val", "test"):
             loader = _loadframes(cfg.dataset[split])

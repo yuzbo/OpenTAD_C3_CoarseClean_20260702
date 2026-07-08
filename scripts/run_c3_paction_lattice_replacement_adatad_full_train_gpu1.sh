@@ -82,6 +82,11 @@ PACTION_LATTICE_DISTANCE_PENALTY="${PACTION_LATTICE_DISTANCE_PENALTY:-0.0}"
 PACTION_LATTICE_GEOMETRY_DISTORTION_PENALTY="${PACTION_LATTICE_GEOMETRY_DISTORTION_PENALTY:-0.0}"
 PACTION_LATTICE_MAX_GAP_GROWTH="${PACTION_LATTICE_MAX_GAP_GROWTH:-}"
 PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE="${PACTION_LATTICE_ALLOW_INFERRED_PROVENANCE:-0}"
+PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-1}"
+PACTION_LATTICE_CHECKPOINT_INTERVAL="${PACTION_LATTICE_CHECKPOINT_INTERVAL:-10}"
+PACTION_LATTICE_MIN_FREE_MB="${PACTION_LATTICE_MIN_FREE_MB:-2048}"
+export C3_PACTION_ADATAD_DISABLE_CHECKPOINT="${C3_PACTION_ADATAD_DISABLE_CHECKPOINT:-${PACTION_LATTICE_DISABLE_CHECKPOINT}}"
+export C3_PACTION_ADATAD_CHECKPOINT_INTERVAL="${C3_PACTION_ADATAD_CHECKPOINT_INTERVAL:-${PACTION_LATTICE_CHECKPOINT_INTERVAL}}"
 
 MAX_MAX_GAP="${MAX_MAX_GAP:-}"
 MAX_P95_GAP="${MAX_P95_GAP:-}"
@@ -183,6 +188,7 @@ echo "[C3_PACTION_LATTICE_ADATAD] learned_root=${LEARNED_ROOT}"
 echo "[C3_PACTION_LATTICE_ADATAD] policy_checkpoint=${PACTION_POLICY_CHECKPOINT}"
 echo "[C3_PACTION_LATTICE_ADATAD] adatad_pretrain_path=${C3_PACTION_ADATAD_PRETRAIN_PATH}"
 echo "[C3_PACTION_LATTICE_ADATAD] variants=${PACTION_LATTICE_ADATAD_VARIANTS}"
+echo "[C3_PACTION_LATTICE_ADATAD] disable_checkpoint=${C3_PACTION_ADATAD_DISABLE_CHECKPOINT} checkpoint_interval=${C3_PACTION_ADATAD_CHECKPOINT_INTERVAL}"
 
 if [[ "${PRECHECK_ONLY}" != "1" && -z "${SLURM_JOB_ID:-}${SLURM_STEP_ID:-}" && "${ALLOW_NON_SLURM_C3_PACTION_FULLTRAIN:-0}" != "1" ]]; then
   fail "formal full train must run inside a Slurm allocation/step; set PRECHECK_ONLY=1 for login-node checks"
@@ -324,6 +330,11 @@ run_adatad_variant() {
   if [[ "${ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN}" != "1" ]]; then
     fail "ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN=1 is required for formal full train"
   fi
+  local free_mb
+  free_mb="$(df -Pm "${WORK_DIR_ROOT}" | awk 'NR==2 {print $4}')"
+  if [[ -z "${free_mb}" || "${free_mb}" -lt "${PACTION_LATTICE_MIN_FREE_MB}" ]]; then
+    fail "insufficient free space for full train under ${WORK_DIR_ROOT}: free_mb=${free_mb:-unknown}, required_mb=${PACTION_LATTICE_MIN_FREE_MB}"
+  fi
 
   local run_dir="${RUN_DIR_ROOT}/${variant}"
   local work_dir="${WORK_DIR_ROOT}/${variant}"
@@ -338,7 +349,11 @@ run_adatad_variant() {
     "${EXEC_CONFIG}" \
     --id "${RUN_ID}" \
     --seed "${SEED}" \
-    --cfg-options "work_dir=${work_dir}" "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+    --cfg-options \
+    "work_dir=${work_dir}" \
+    "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+    "workflow.disable_checkpoint=${C3_PACTION_ADATAD_DISABLE_CHECKPOINT}" \
+    "workflow.checkpoint_interval=${C3_PACTION_ADATAD_CHECKPOINT_INTERVAL}" \
     2>&1 | tee "${run_dir}/train.out"
 }
 

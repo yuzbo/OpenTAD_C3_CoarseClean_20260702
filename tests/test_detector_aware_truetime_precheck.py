@@ -184,6 +184,8 @@ def test_duca_stage3_runner_full_run_does_not_delegate_to_smoke_launcher() -> No
     assert "duca_stage3_truetime" in text
     assert "master_port=${MASTER_PORT}" in text
     assert 'MASTER_PORT="${MASTER_PORT:-30231}"' not in text
+    assert 'THUMOS14_ANNOTATION_PATH="${THUMOS14_ANNOTATION_PATH:-${BASE}/thumos14/annotations/thumos_14_anno.json}"' in text
+    assert 'TRUETIME_DISABLE_CHECKPOINT="${TRUETIME_DISABLE_CHECKPOINT:-1}"' in text
 
 
 def test_duca_stage3_exec_config_requires_bound_entrypoint_gate(tmp_path: Path, monkeypatch) -> None:
@@ -218,8 +220,25 @@ def test_duca_stage3_exec_config_requires_bound_entrypoint_gate(tmp_path: Path, 
 
 def test_duca_stage3_precheck_config_keeps_default_precheck_contract_when_full_run_env(monkeypatch) -> None:
     monkeypatch.setenv("PRECHECK_ONLY", "0")
+    monkeypatch.setenv("YUZIBO_ROOT", "/abs/c3")
+    monkeypatch.setenv("THUMOS14_ANNOTATION_PATH", "/abs/c3/thumos14/annotations/thumos_14_anno.json")
+    monkeypatch.setenv("THUMOS14_CLASS_MAP", "/abs/c3/thumos14/annotations/category_idx.txt")
+    monkeypatch.setenv("THUMOS14_TRAIN_DATA_PATH", "/abs/c3/raw/Validation Data/validation")
+    monkeypatch.setenv("THUMOS14_TEST_DATA_PATH", "/abs/c3/raw/Test Data/TH14_test_set_mp4")
     cfg = Config.fromfile(str(STAGE3_CONFIG))
 
     assert cfg.truetime_joint_selector_gate.precheck_only_default is True
     assert cfg.truetime_joint_selector_gate.allow_long_training is True
     assert cfg.truetime_joint_selector_gate.smoke_only is False
+    assert cfg.dataset.train.ann_file == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.dataset.val.ann_file == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.dataset.test.ann_file == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.dataset.train.class_map == "/abs/c3/thumos14/annotations/category_idx.txt"
+    assert cfg.dataset.val.class_map == "/abs/c3/thumos14/annotations/category_idx.txt"
+    assert cfg.dataset.test.class_map == "/abs/c3/thumos14/annotations/category_idx.txt"
+    assert cfg.dataset.train.data_path == "/abs/c3/raw/Validation Data/validation"
+    assert cfg.dataset.val.data_path == "/abs/c3/raw/Test Data/TH14_test_set_mp4"
+    assert cfg.dataset.test.data_path == "/abs/c3/raw/Test Data/TH14_test_set_mp4"
+    assert cfg.evaluation.ground_truth_filename == "/abs/c3/thumos14/annotations/thumos_14_anno.json"
+    assert cfg.workflow.disable_checkpoint is True
+    assert cfg.workflow.checkpoint_interval == 10

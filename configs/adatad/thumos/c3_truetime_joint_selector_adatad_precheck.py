@@ -6,10 +6,30 @@ import os
 route_label = "DIVERGENT_INNOVATION_TRUETIME_JOINT_SELECTOR_DO_NOT_MERGE_WITH_C3"
 selected_window_size = 384
 dense_window_size = 768
+yuzibo_root = os.environ.get("YUZIBO_ROOT", "/data/run01/sczc063/yuzibo")
+thumos14_root = os.environ.get("THUMOS14_ROOT", os.path.join(yuzibo_root, "thumos14"))
+annotation_path = os.environ.get(
+    "THUMOS14_ANNOTATION_PATH",
+    os.path.join(thumos14_root, "annotations", "thumos_14_anno.json"),
+)
+class_map = os.environ.get(
+    "THUMOS14_CLASS_MAP",
+    os.path.join(thumos14_root, "annotations", "category_idx.txt"),
+)
+train_data_path = os.environ.get(
+    "THUMOS14_TRAIN_DATA_PATH",
+    os.path.join(yuzibo_root, "raw", "Validation Data", "validation"),
+)
+test_data_path = os.environ.get(
+    "THUMOS14_TEST_DATA_PATH",
+    os.path.join(yuzibo_root, "raw", "Test Data", "TH14_test_set_mp4"),
+)
 precheck_only = os.environ.get("PRECHECK_ONLY", "1") != "0"
 precheck_only_default = True
 precheck_max_train_iters = int(os.environ.get("TRUETIME_PRECHECK_MAX_TRAIN_ITERS", "4" if precheck_only else "2000"))
 precheck_end_epoch = int(os.environ.get("TRUETIME_PRECHECK_END_EPOCH", "1" if precheck_only else "12"))
+truetime_disable_checkpoint = os.environ.get("TRUETIME_DISABLE_CHECKPOINT", "1") != "0"
+truetime_checkpoint_interval = int(os.environ.get("TRUETIME_CHECKPOINT_INTERVAL", "10"))
 truetime_selector_grad_proof_path = os.environ.get(
     "TRUETIME_SELECTOR_GRAD_PROOF_JSON",
     "REPLACE_WITH_TRUETIME_SELECTOR_GRAD_PROOF_JSON",
@@ -162,13 +182,35 @@ truetime_joint_selector_gate = dict(
 
 workflow = dict(
     logging_interval=1,
-    checkpoint_interval=1,
+    checkpoint_interval=truetime_checkpoint_interval,
     val_loss_interval=-1,
     val_eval_interval=-1,
     val_start_epoch=999,
     end_epoch=precheck_end_epoch,
     max_train_iters=precheck_max_train_iters,
-    disable_checkpoint=precheck_only,
+    disable_checkpoint=truetime_disable_checkpoint,
+)
+
+dataset = dict(
+    train=dict(
+        ann_file=annotation_path,
+        class_map=class_map,
+        data_path=train_data_path,
+    ),
+    val=dict(
+        ann_file=annotation_path,
+        class_map=class_map,
+        data_path=test_data_path,
+    ),
+    test=dict(
+        ann_file=annotation_path,
+        class_map=class_map,
+        data_path=test_data_path,
+    ),
+)
+
+evaluation = dict(
+    ground_truth_filename=annotation_path,
 )
 
 truetime_actionformer_path_precheck_model = dict(
