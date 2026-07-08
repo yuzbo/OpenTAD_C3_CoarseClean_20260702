@@ -1945,6 +1945,28 @@ def _load_official_fact_module(repo_root: Path):
                 sys.modules[name] = previous
 
 
+_OFFICIAL_ACTION_SEG_MODULE_CACHE: dict[tuple[str, str], Any] = {}
+
+
+def _load_official_action_seg_module(backend: str, repo_root: Path):
+    key = (str(backend), str(repo_root.resolve()))
+    cached = _OFFICIAL_ACTION_SEG_MODULE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if backend == "official_ms_tcn2":
+        module = _load_official_mstcn2_module(repo_root)
+    elif backend == "official_asformer":
+        module = _load_official_asformer_module(repo_root)
+    elif backend == "official_fact":
+        module = _load_official_fact_module(repo_root)
+    elif backend == "official_video_mamba_asformer":
+        module = _load_official_video_mamba_asformer_module(repo_root)
+    else:
+        raise ValueError(f"unsupported official action segmentation backend: {backend}")
+    _OFFICIAL_ACTION_SEG_MODULE_CACHE[key] = module
+    return module
+
+
 def official_action_seg_backend_available(backend: str) -> bool:
     if backend not in SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS:
         return False
@@ -2039,8 +2061,8 @@ class C3OfficialActionSegmentationProbe:
         self.module.spatial_stem = self.spatial_stem
 
         if self.backend == "official_ms_tcn2":
-            official = _load_official_mstcn2_module(repo_root)
-            self.official_module = official
+            official = _load_official_action_seg_module(self.backend, repo_root)
+            self.official_module_name = getattr(official, "__name__", self.backend)
             self.official_temporal = official.MS_TCN2(
                 max(1, int(num_layers)),
                 max(1, int(num_layers)),
@@ -2054,9 +2076,9 @@ class C3OfficialActionSegmentationProbe:
                 compatibility_shim="in_memory_fix_for_stray_MS_TCB_token_and_skip_trainer",
             )
         elif self.backend == "official_asformer":
-            official = _load_official_asformer_module(repo_root)
+            official = _load_official_action_seg_module(self.backend, repo_root)
             official.device = torch.device("cpu")
-            self.official_module = official
+            self.official_module_name = getattr(official, "__name__", self.backend)
             self.official_temporal = official.MyTransformer(
                 1,
                 max(1, int(num_layers)),
@@ -2072,15 +2094,15 @@ class C3OfficialActionSegmentationProbe:
                 compatibility_shim="in_memory_drop_unused_eval_import_and_skip_trainer",
             )
         elif self.backend == "official_fact":
-            official = _load_official_fact_module(repo_root)
-            self.official_module = official
+            official = _load_official_action_seg_module(self.backend, repo_root)
+            self.official_module_name = getattr(official, "__name__", self.backend)
             cfg = self._make_fact_cfg(temporal_dim=temporal_dim, dropout=float(dropout))
             self.official_temporal = official.FACT(cfg, temporal_dim, 2)
             self.official_source.update(repo_path=str(repo_root / "CVPR2024-FACT"), compatibility_shim="minimal_cfg_namespace")
         else:
-            official = _load_official_video_mamba_asformer_module(repo_root)
+            official = _load_official_action_seg_module(self.backend, repo_root)
             official.device = torch.device("cpu")
-            self.official_module = official
+            self.official_module_name = getattr(official, "__name__", self.backend)
             self.official_temporal = official.MaTransformer(
                 1,
                 max(1, int(num_layers)),
@@ -2143,8 +2165,9 @@ class C3OfficialActionSegmentationProbe:
         features = self.spatial_stem(flat).flatten(1).reshape(batch, dense_len, -1).transpose(1, 2)
         mask = valid.to(device=features.device).bool()
         features = features.masked_fill(~mask[:, None, :], 0.0)
-        if hasattr(self, "official_module") and hasattr(self.official_module, "device"):
-            self.official_module.device = torch.device(features.device)
+        official_module = _load_official_action_seg_module(self.backend, _official_repos_root())
+        if hasattr(official_module, "device"):
+            official_module.device = torch.device(features.device)
         self._sync_official_runtime_tensors(features.device)
         if self.backend == "official_ms_tcn2":
             outputs = self.official_temporal(features)

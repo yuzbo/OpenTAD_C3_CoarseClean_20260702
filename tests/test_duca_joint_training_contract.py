@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import types
 
 import pytest
 
@@ -16,6 +17,7 @@ except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard
 from opentad.models import build_detector
 from opentad.models.detectors.actionformer import ActionFormer
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+from opentad.utils.ema import ModelEma
 
 
 def _grad_sum(module: nn.Module) -> float:
@@ -69,6 +71,32 @@ def test_actionformer_optimizer_covers_every_trainable_duca_frame_selector_param
     ]
 
     assert not missing
+
+
+def test_official_asformer_duca_model_is_ema_deepcopyable() -> None:
+    model = build_detector(
+        {
+            "type": "SingleStageDetector",
+            "frame_selector": {
+                "type": "DucaOnlineFrameSelector",
+                "in_channels": 3,
+                "budget": 4,
+                "dense_window_size": 8,
+                "max_radius": 2,
+                "selector_hidden_channels": 8,
+                "actionness_source_cfg": _official_asformer_source_cfg(),
+            },
+            "rpn_head": {"type": "DucaOnlinePrecheckHead", "in_channels": 3},
+        }
+    )
+
+    probe_state = vars(model.frame_selector.raw_actionness_source.probe)
+    module_attrs = [name for name, value in probe_state.items() if isinstance(value, types.ModuleType)]
+    assert not module_attrs
+    ema = ModelEma(model)
+
+    assert ema.module is not model
+    assert ema.module.frame_selector.raw_actionness_source is not model.frame_selector.raw_actionness_source
 
 
 def test_train_forward_builds_gt_action_target_for_selector_loss() -> None:
