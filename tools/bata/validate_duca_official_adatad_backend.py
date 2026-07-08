@@ -83,6 +83,8 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
         float(schedule.detector_gradient.end) == 1.0,
         "detector-to-selector gradient bridge must be fully enabled after schedule transition",
     )
+    _require(float(schedule.detector_utility.start) == 0.0, "detector utility loss must be disabled at schedule start")
+    _require(float(schedule.detector_utility.end) > 0.0, "detector utility loss must be enabled after transition")
     _require(float(schedule.hole.start) == 0.0, "selection distribution loss must be disabled at schedule start")
     _require(float(schedule.hole.end) > 0.0, "selection distribution loss must be enabled after transition")
     return {
@@ -101,6 +103,8 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
         "loss_schedule_detector_gradient_bridge_scheduled": True,
         "loss_schedule_detector_gradient_start": float(schedule.detector_gradient.start),
         "loss_schedule_detector_gradient_end": float(schedule.detector_gradient.end),
+        "loss_schedule_detector_utility_start": float(schedule.detector_utility.start),
+        "loss_schedule_detector_utility_end": float(schedule.detector_utility.end),
         "loss_schedule_hole_start": float(schedule.hole.start),
         "loss_schedule_hole_end": float(schedule.hole.end),
     }

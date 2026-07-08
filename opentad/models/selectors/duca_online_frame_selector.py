@@ -307,11 +307,18 @@ class DucaOnlineFrameSelector(nn.Module):
     ) -> dict[str, Any]:
         self._reject_train_decision_payload(metas)
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
+        detector_utility_target = self._detector_utility_target_from_gt_segments(
+            gt_segments,
+            masks,
+            boundary_radius=max(1, min(int(self.max_radius), 4)),
+        )
         schedule_state = self._loss_schedule_state()
         outputs = self._forward_select(inputs, masks, metas, budget=budget, schedule_state=schedule_state)
         outputs["selector_outputs"]["loss_weight_schedule"] = schedule_state
         if action_target is not None:
             outputs["selector_outputs"]["action_target"] = action_target
+        if detector_utility_target is not None:
+            outputs["selector_outputs"]["detector_utility_target"] = detector_utility_target
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
             gt_segments, gt_labels, outputs["metas"]
         )
@@ -319,6 +326,7 @@ class DucaOnlineFrameSelector(nn.Module):
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
             action_target=action_target,
+            detector_utility_target=detector_utility_target,
             loss_weights=schedule_state["weights"],
         )
         self._record_pending_loss_schedule_step()
@@ -494,6 +502,43 @@ class DucaOnlineFrameSelector(nn.Module):
             ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
             covered = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
             target[batch_idx] = covered.to(dtype=dtype)
+        return target.masked_fill(~valid, 0.0)
+
+    @staticmethod
+    def _detector_utility_target_from_gt_segments(
+        gt_segments,
+        masks: torch.Tensor,
+        *,
+        boundary_radius: int,
+    ) -> Optional[torch.Tensor]:
+        if gt_segments is None:
+            return None
+        if masks.ndim != 2:
+            raise ValueError("DUCA detector utility target generation expects dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match batch size for DUCA detector utility target generation")
+        device = masks.device
+        dtype = torch.float32
+        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
+        target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        valid = masks.to(device=device, dtype=torch.bool)
+        radius = float(max(1, int(boundary_radius)))
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
+            seg = seg.to(device=device, dtype=dtype)
+            if seg.numel() == 0:
+                continue
+            seg = seg.reshape(-1, 2)
+            starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
+            ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
+            inside = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
+            near_start = (centers[None, :] - starts).abs() <= radius
+            near_end = (centers[None, :] - ends).abs() <= radius
+            boundary = (near_start | near_end).any(dim=0)
+            target[batch_idx] = torch.maximum(inside.to(dtype=dtype), boundary.to(dtype=dtype) * 1.5)
         return target.masked_fill(~valid, 0.0)
 
     def forward_test(self, inputs: torch.Tensor, masks: torch.Tensor, metas=None, budget=None, **kwargs: Any) -> dict[str, Any]:

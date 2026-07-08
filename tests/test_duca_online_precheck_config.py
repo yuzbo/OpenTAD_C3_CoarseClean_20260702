@@ -157,6 +157,7 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.frame_selector.loss_weights.actionness > 0
+    assert cfg.model.frame_selector.loss_weights.detector_utility > 0
     assert cfg.model.frame_selector.loss_weights.hole > 0
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_online_main_contract.loss_schedule_step_update == "optimizer_step"
@@ -178,6 +179,8 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.duca_online_main_contract.detector_loss_always_trains_backend is True
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
@@ -225,6 +228,8 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["loss_schedule_detector_gradient_bridge_scheduled"] is True
     assert summary["loss_schedule_detector_gradient_start"] == 0.0
     assert summary["loss_schedule_detector_gradient_end"] == 1.0
+    assert summary["loss_schedule_detector_utility_start"] == 0.0
+    assert summary["loss_schedule_detector_utility_end"] > 0.0
     assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
@@ -351,6 +356,7 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.frame_selector.loss_weights.actionness > 0
+    assert cfg.model.frame_selector.loss_weights.detector_utility > 0
     assert cfg.model.frame_selector.loss_weights.hole > 0
     assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_must_dynamic_contract.loss_schedule_step_update == "optimizer_step"
@@ -372,6 +378,8 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.duca_must_dynamic_contract.detector_loss_always_trains_backend is True
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.start == 0.0
@@ -420,6 +428,8 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["loss_schedule_detector_gradient_bridge_scheduled"] is True
     assert summary["loss_schedule_detector_gradient_start"] == 0.0
     assert summary["loss_schedule_detector_gradient_end"] == 1.0
+    assert summary["loss_schedule_detector_utility_start"] == 0.0
+    assert summary["loss_schedule_detector_utility_end"] > 0.0
     assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
     assert summary["loss_schedule_lagrangian_budget_start"] == 0.0
     assert summary["loss_schedule_lagrangian_budget_end"] > 0.0

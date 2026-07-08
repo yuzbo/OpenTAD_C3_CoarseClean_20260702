@@ -1762,6 +1762,7 @@ def duca_losses(
     detector_loss: Optional[torch.Tensor] = None,
     utility_gain: Optional[torch.Tensor] = None,
     utility_risk: Optional[torch.Tensor] = None,
+    detector_utility_target: Optional[torch.Tensor] = None,
     radius: Optional[torch.Tensor] = None,
     p_action: Optional[torch.Tensor] = None,
     uncertainty: Optional[torch.Tensor] = None,
@@ -1788,6 +1789,11 @@ def duca_losses(
         p_action = p_action if p_action is not None else output.get("p_action")
         uncertainty = uncertainty if uncertainty is not None else output.get("uncertainty")
         actionness_logits = actionness_logits if actionness_logits is not None else output.get("actionness_logits")
+        detector_utility_target = (
+            detector_utility_target
+            if detector_utility_target is not None
+            else output.get("detector_utility_target")
+        )
     else:
         center_scores = scores
     if selected_mask_st is None:
@@ -1807,6 +1813,7 @@ def duca_losses(
         "radius": 0.02,
         "entropy": 0.01,
         "teacher": 0.50,
+        "detector_utility": 0.0,
         "lagrangian_budget": 1.0,
         "marginal_monotonic": 0.01,
         "hard_budget_cap": 1.0,
@@ -1868,6 +1875,24 @@ def duca_losses(
         ) * weights["teacher"]
     else:
         losses["teacher_utility_loss"] = zero
+    if detector_utility_target is not None:
+        if detector_utility_target.shape != center_scores.shape:
+            raise ValueError("detector_utility_target must match scores")
+        utility = detector_utility_target.to(center_scores.device, center_scores.dtype).clamp_min(0.0)
+        utility = utility.masked_fill(~valid, 0.0)
+        selected_positive = selected.clamp_min(0.0).masked_fill(~valid, 0.0)
+        eps = torch.finfo(center_scores.dtype).eps
+        utility_sum = utility.sum(dim=1)
+        active = utility_sum > eps
+        if bool(active.any().item()):
+            target_dist = utility / utility_sum.clamp_min(eps)[:, None]
+            selected_dist = selected_positive / selected_positive.sum(dim=1).clamp_min(eps)[:, None]
+            kl = target_dist * (target_dist.clamp_min(eps).log() - selected_dist.clamp_min(eps).log())
+            losses["detector_utility_distribution_loss"] = kl.sum(dim=1)[active].mean() * weights["detector_utility"]
+        else:
+            losses["detector_utility_distribution_loss"] = zero
+    else:
+        losses["detector_utility_distribution_loss"] = zero
     if boundary_target is not None:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")

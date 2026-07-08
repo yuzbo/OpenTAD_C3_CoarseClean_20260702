@@ -211,6 +211,7 @@ model = dict(
         loss_weights=dict(
             actionness=0.5,
             detector=1.0,
+            detector_utility=0.05,
             teacher=0.0,
             budget=0.0,
             boundary=0.0,
@@ -229,6 +230,7 @@ model = dict(
                 end=_env_float("DUCA_LOSS_ACTIONNESS_END", 0.25),
             ),
             detector_gradient=dict(start=_env_float("DUCA_LOSS_DETECTOR_GRADIENT_START", 0.0), end=1.0),
+            detector_utility=dict(start=0.0, end=_env_float("DUCA_LOSS_DETECTOR_UTILITY_END", 0.05)),
             hole=dict(start=0.0, end=_env_float("DUCA_LOSS_HOLE_END", 0.05)),
             budget=dict(start=0.0, end=0.0),
             entropy=dict(start=0.0, end=0.0),

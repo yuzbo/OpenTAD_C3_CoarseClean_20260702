@@ -143,7 +143,7 @@ def _format_frame_selector_diagnostics(model):
             items.append("duca_detector_grad_w={:.4f}".format(float(schedule["detector_gradient_weight"])))
         weights = schedule.get("weights")
         if isinstance(weights, dict):
-            for key in ("actionness", "hole", "lagrangian_budget"):
+            for key in ("actionness", "detector_utility", "hole", "lagrangian_budget"):
                 if key in weights:
                     items.append("duca_{}_w={:.4f}".format(key, float(weights[key])))
     for key, label in (

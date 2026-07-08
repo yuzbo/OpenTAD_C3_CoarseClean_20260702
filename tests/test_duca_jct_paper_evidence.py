@@ -71,6 +71,7 @@ def _monitor_summary(
                         "latest_train_iter": 99.0,
                         "latest_train_loss": 1.23,
                         "latest_actionness_bce_loss": 0.21,
+                        "latest_detector_utility_distribution_loss": 0.04,
                         "latest_action_local_hole_loss": 0.03,
                         "latest_lagrangian_budget_loss": -0.02,
                         "latest_cls_loss": 0.44,
@@ -81,6 +82,7 @@ def _monitor_summary(
                         "latest_duca_schedule_progress": 0.12,
                         "latest_duca_detector_grad_w": 0.12,
                         "latest_duca_actionness_w": 0.91,
+                        "latest_duca_detector_utility_w": 0.02,
                         "latest_duca_hole_w": 0.006,
                         "latest_duca_lagrangian_budget_w": 0.12,
                         "latest_duca_requested_budget_mean": 288.0,
@@ -156,6 +158,7 @@ def test_duca_jct_paper_evidence_allows_claim_only_with_baseline_and_high_iou(tm
     assert not summary["claim_gate"]["blockers"]
     must_row = summary["table_rows"][1]
     assert must_row["latest_actionness_bce_loss"] == 0.21
+    assert must_row["latest_detector_utility_distribution_loss"] == 0.04
     assert must_row["latest_action_local_hole_loss"] == 0.03
     assert must_row["latest_lagrangian_budget_loss"] == -0.02
     assert must_row["latest_cls_loss"] == 0.44
@@ -164,6 +167,7 @@ def test_duca_jct_paper_evidence_allows_claim_only_with_baseline_and_high_iou(tm
     assert must_row["latest_duca_schedule_progress"] == 0.12
     assert must_row["latest_duca_detector_grad_w"] == 0.12
     assert must_row["latest_duca_actionness_w"] == 0.91
+    assert must_row["latest_duca_detector_utility_w"] == 0.02
     assert must_row["latest_duca_requested_budget_mean"] == 288.0
     assert [row["method"] for row in summary["table_rows"]] == [
         "duca384",
@@ -234,12 +238,14 @@ def test_duca_jct_paper_evidence_cli_writes_json_and_tsv(tmp_path: Path) -> None
     assert rows[1]["average_mAP_percent"] == "66.4"
     assert rows[1]["delta_vs_primary_average_mAP"] == "1.4"
     assert rows[1]["latest_actionness_bce_loss"] == "0.21"
+    assert rows[1]["latest_detector_utility_distribution_loss"] == "0.04"
     assert rows[1]["latest_action_local_hole_loss"] == "0.03"
     assert rows[1]["latest_lagrangian_budget_loss"] == "-0.02"
     assert rows[1]["latest_cls_loss"] == "0.44"
     assert rows[1]["latest_reg_loss"] == "0.25"
     assert rows[1]["latest_duca_schedule_progress"] == "0.12"
     assert rows[1]["latest_duca_detector_grad_w"] == "0.12"
+    assert rows[1]["latest_duca_detector_utility_w"] == "0.02"
     assert rows[1]["latest_duca_requested_budget_mean"] == "288.0"
 
     wrapper_text = (ROOT / "scripts" / "collect_duca_jct_paper_evidence.sh").read_text(encoding="utf-8")

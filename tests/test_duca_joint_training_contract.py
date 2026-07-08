@@ -147,6 +147,73 @@ def test_train_forward_builds_gt_action_target_for_selector_loss() -> None:
     assert out["losses"]["action_local_hole_loss"].detach().item() > 0.0
 
 
+def test_train_forward_builds_detector_utility_distribution_target_without_teacher() -> None:
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=2,
+        dense_window_size=20,
+        max_radius=2,
+        selector_hidden_channels=4,
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "source_name": "zero_shot_motion_actionness",
+            "mode": "motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+            "checkpoint_hash": "no_checkpoint_motion_energy",
+        },
+        loss_weights={
+            "actionness": 0.0,
+            "detector_utility": 1.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "hole": 0.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+            "budget": 0.0,
+        },
+        loss_weight_schedule={
+            "type": "progressive_joint",
+            "warmup_steps": 0,
+            "transition_steps": 1,
+            "detector_utility": {"start": 0.0, "end": 1.0},
+        },
+    )
+    inputs = torch.randn(1, 3, 20)
+    masks = torch.ones(1, 20, dtype=torch.bool)
+    gt_segments = [torch.tensor([[5.0, 12.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    warmup = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+    selector.after_optimizer_step()
+    joint = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+
+    target = joint["selector_outputs"]["detector_utility_target"]
+    assert target.shape == (1, 20)
+    assert target[0, 5:12].mean().item() > target[0, :4].mean().item()
+    assert joint["losses"]["detector_utility_distribution_loss"].detach().item() > 0.0
+    assert warmup["losses"]["detector_utility_distribution_loss"].detach().item() == pytest.approx(0.0)
+    assert "teacher_utility_gain_loss_unweighted" not in joint["losses"]
+    assert joint["selector_outputs"]["loss_weight_schedule"]["weights"]["detector_utility"] == pytest.approx(1.0)
+
+
 def test_progressive_loss_schedule_starts_with_actionness_and_shifts_to_detector_selection_losses() -> None:
     selector = DucaOnlineFrameSelector(
         in_channels=3,
