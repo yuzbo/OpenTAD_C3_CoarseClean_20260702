@@ -308,3 +308,81 @@ def test_lattice_radius_variant_uses_budgeted_centers_and_expanded_positions(
     assert expanded == sorted(set(expanded))
     assert len(expanded) == 8
     assert set(selected).issubset(set(expanded))
+
+
+def test_lattice_radius_move50_uses_move50_centers_and_budgeted_expansion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_checkpoint(monkeypatch)
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_text("dummy checkpoint", encoding="utf-8")
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.lattice.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 24,
+                "valid_len": 24,
+                "frame_signals": {
+                    "p_action": [
+                        0.05,
+                        0.10,
+                        0.90,
+                        0.85,
+                        0.20,
+                        0.15,
+                        0.75,
+                        0.80,
+                        0.30,
+                        0.25,
+                        0.70,
+                        0.65,
+                        0.40,
+                        0.35,
+                        0.60,
+                        0.55,
+                        0.92,
+                        0.12,
+                        0.82,
+                        0.18,
+                        0.72,
+                        0.22,
+                        0.62,
+                        0.32,
+                    ]
+                },
+                "paction_positive_provenance": _provenance(),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    apply_lattice.run_lattice_replacement_application(
+        input_jsonl,
+        output_jsonl,
+        checkpoint_path=checkpoint,
+        variants=[lattice.RADIUS_MOVE50_STRATEGY],
+        fixed_budget=8,
+        device="cpu",
+        local_radius=2,
+    )
+    row = _read_jsonl(output_jsonl)[0]
+    selected = row["strategy_selected_positions"][lattice.RADIUS_MOVE50_STRATEGY]
+    metadata = row["paction_policy"]
+    expanded = metadata["budgeted_expanded_positions_by_strategy"][lattice.RADIUS_MOVE50_STRATEGY]
+    diagnostics = metadata["lattice_replacement_diagnostics_by_strategy"][lattice.RADIUS_MOVE50_STRATEGY]
+
+    assert len(selected) == 4
+    assert diagnostics["protected_uniform_count"] == 2
+    assert diagnostics["replaceable_uniform_count"] == 2
+    assert diagnostics["center_count"] == 4
+    assert diagnostics["selected_count"] == 4
+    assert diagnostics["expanded_budget"] == 8
+    assert diagnostics["budgeted_expanded_count"] == 8
+    assert diagnostics["budgeted_expanded_selection"] is True
+    assert expanded == sorted(set(expanded))
+    assert len(expanded) == 8
+    assert set(selected).issubset(set(expanded))

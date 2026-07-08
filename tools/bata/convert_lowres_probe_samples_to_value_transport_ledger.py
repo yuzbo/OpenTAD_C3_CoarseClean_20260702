@@ -42,6 +42,11 @@ DEPLOY_CHECKPOINT_POLICY_SOURCES = {
     GAS_VT_CHECKPOINT_POLICY_SOURCE,
 }
 RADIUS_MOVE25_STRATEGY = "paction_lattice_radius_score_only_move25"
+RADIUS_MOVE50_STRATEGY = "paction_lattice_radius_score_only_move50"
+RADIUS_STRATEGIES = {
+    RADIUS_MOVE25_STRATEGY,
+    RADIUS_MOVE50_STRATEGY,
+}
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -297,7 +302,7 @@ def _expanded_observation_contract(
         expanded_positions = budgeted_expanded_positions
     else:
         expanded_positions = sorted(expanded)
-        if expanded_budget is not None and str(strategy) == RADIUS_MOVE25_STRATEGY and len(expanded_positions) > int(expanded_budget):
+        if expanded_budget is not None and str(strategy) in RADIUS_STRATEGIES and len(expanded_positions) > int(expanded_budget):
             raise ValueError(
                 f"line {line_no}: adaptive radius expanded count {len(expanded_positions)} exceeds budget {int(expanded_budget)}"
             )

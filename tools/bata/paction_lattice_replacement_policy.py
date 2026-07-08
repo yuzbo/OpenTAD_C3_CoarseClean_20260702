@@ -8,6 +8,7 @@ from typing import Any, Sequence
 MOVE25_STRATEGY = "paction_lattice_replace_score_only_move25"
 RADIUS_MOVE25_STRATEGY = "paction_lattice_radius_score_only_move25"
 MOVE50_STRATEGY = "paction_lattice_replace_score_only_move50"
+RADIUS_MOVE50_STRATEGY = "paction_lattice_radius_score_only_move50"
 MOVE75_STRATEGY = "paction_lattice_replace_score_only_move75"
 NO_PROTECT_STRATEGY = "paction_lattice_replace_score_only_no_protect"
 DEFAULT_BUDGET = 384
@@ -18,8 +19,13 @@ _PROTECTED_COUNTS = {
     MOVE25_STRATEGY: 288,
     RADIUS_MOVE25_STRATEGY: 288,
     MOVE50_STRATEGY: 192,
+    RADIUS_MOVE50_STRATEGY: 192,
     MOVE75_STRATEGY: 96,
     NO_PROTECT_STRATEGY: 0,
+}
+_ADAPTIVE_RADIUS_STRATEGIES = {
+    RADIUS_MOVE25_STRATEGY,
+    RADIUS_MOVE50_STRATEGY,
 }
 
 
@@ -118,7 +124,7 @@ def _jaccard(left: set[int], right: set[int]) -> float:
 
 
 def is_adaptive_radius_strategy(variant: str) -> bool:
-    return str(variant) == RADIUS_MOVE25_STRATEGY
+    return str(variant) in _ADAPTIVE_RADIUS_STRATEGIES
 
 
 def adaptive_radius_center_budget(expanded_budget: int) -> int:

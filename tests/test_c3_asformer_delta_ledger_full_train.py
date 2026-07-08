@@ -298,6 +298,13 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
             "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
             True,
         ),
+        "paction_lattice_radius_score_only_move50": (
+            384,
+            384,
+            "paction_lattice_radius_score_only_move50",
+            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
+            True,
+        ),
         "paction_lattice_replace_score_only_move25": (
             384,
             384,
