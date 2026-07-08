@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,9 @@ OFFICIAL_BACKEND_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_official_a
 ADATAD_LAUNCHER = ROOT / "scripts" / "run_duca_online_adatad_precheck_gpu1.sh"
 ZEROSHOT_LAUNCHER = ROOT / "scripts" / "run_duca_online_zeroshot_actionness_precheck_gpu1.sh"
 OFFICIAL_BACKEND_LAUNCHER = ROOT / "scripts" / "run_duca_online_official_adatad_backend_gpu1.sh"
+OFFICIAL_BACKEND_BUDGET_CURVE_LAUNCHER = (
+    ROOT / "scripts" / "run_duca_online_official_adatad_budget_curve_gpu1.sh"
+)
 ACTIONFORMER_NO_PHYSICAL_LAUNCHER = (
     ROOT / "scripts" / "run_duca_online_actionformer_no_physical_grid_precheck_gpu1.sh"
 )
@@ -160,6 +164,56 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
     assert "FULLTRAIN_CANDIDATE=1" in text
     assert "tools/train.py" in text
+
+
+def test_duca_online_official_backend_config_supports_env_budget_curve(monkeypatch):
+    monkeypatch.setenv("DUCA_ONLINE_BUDGET", "256")
+
+    cfg = _cfg(OFFICIAL_BACKEND_CONFIG)
+
+    assert cfg.window_size == 256
+    assert cfg.chunk_num == 16
+    assert cfg.duca_online_main_contract.budget_max == 256
+    assert cfg.model.frame_selector.budget == 256
+    assert cfg.model.backbone.backbone.total_frames == 256
+    assert cfg.model.projection.max_seq_len == 256
+
+
+def test_duca_online_official_backend_validator_allows_budget_curve_mode(monkeypatch):
+    env = dict(**os.environ, DUCA_ONLINE_BUDGET="512")
+    output = subprocess.check_output(
+        [
+            sys.executable,
+            str(OFFICIAL_BACKEND_VALIDATOR),
+            "--config",
+            str(OFFICIAL_BACKEND_CONFIG),
+            "--max-budget",
+            "768",
+        ],
+        cwd=str(ROOT),
+        env=env,
+        text=True,
+    )
+    summary = json.loads(output)
+
+    assert summary["ok"] is True
+    assert summary["budget"] == 512
+    assert summary["detector_consumed_length"] == 512
+    assert summary["budget_lte_max"] is True
+    assert summary["strict_budget_lte_384"] is False
+
+
+def test_duca_online_official_backend_budget_curve_launcher_is_continuous_and_precheck_first():
+    text = OFFICIAL_BACKEND_BUDGET_CURVE_LAUNCHER.read_text(encoding="utf-8")
+
+    assert 'DUCA_ONLINE_BUDGET_START="${DUCA_ONLINE_BUDGET_START:-128}"' in text
+    assert 'DUCA_ONLINE_BUDGET_END="${DUCA_ONLINE_BUDGET_END:-768}"' in text
+    assert 'DUCA_ONLINE_BUDGET_STEP="${DUCA_ONLINE_BUDGET_STEP:-32}"' in text
+    assert 'DUCA_ONLINE_BUDGET="${budget}"' in text
+    assert 'DUCA_VALIDATOR_MAX_BUDGET="${DUCA_VALIDATOR_MAX_BUDGET:-${DUCA_ONLINE_BUDGET_END}}"' in text
+    assert "run_duca_online_official_adatad_backend_gpu1.sh" in text
+    assert 'PRECHECK_ONLY="${PRECHECK_ONLY}"' in text
+    assert 'FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE}"' in text
 
 
 def test_duca_online_validator_json_summary_fields(monkeypatch):

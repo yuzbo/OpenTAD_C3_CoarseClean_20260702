@@ -17,6 +17,9 @@ RUN_TAG="${RUN_TAG:-duca_online_official_adatad_backend_$(date +%Y%m%d_%H%M%S_%z
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
 MASTER_PORT="${MASTER_PORT:-30261}"
+export DUCA_ONLINE_BUDGET="${DUCA_ONLINE_BUDGET:-384}"
+export DUCA_ONLINE_DENSE_WINDOW_SIZE="${DUCA_ONLINE_DENSE_WINDOW_SIZE:-768}"
+DUCA_VALIDATOR_MAX_BUDGET="${DUCA_VALIDATOR_MAX_BUDGET:-384}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 export HOME="${HOME:-${BASE}/tmp/home}"
@@ -52,10 +55,11 @@ echo "[DUCA_OFFICIAL_ADATAD_BACKEND] config=${CONFIG}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] gpu=${CUDA_VISIBLE_DEVICES}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] slurm_job=${SLURM_JOB_ID:-none} slurm_step=${SLURM_STEP_ID:-none} slurm_step_gpus=${SLURM_STEP_GPUS:-none}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] precheck_only=${PRECHECK_ONLY} fulltrain_candidate=${FULLTRAIN_CANDIDATE}"
+echo "[DUCA_OFFICIAL_ADATAD_BACKEND] budget=${DUCA_ONLINE_BUDGET} dense_window=${DUCA_ONLINE_DENSE_WINDOW_SIZE} validator_max_budget=${DUCA_VALIDATOR_MAX_BUDGET}"
 
 bash -n "${BASH_SOURCE[0]}"
 "${PYTHON}" -m py_compile "${CONFIG}" "${VALIDATOR}"
-"${PYTHON}" "${VALIDATOR}" --config "${CONFIG}"
+"${PYTHON}" "${VALIDATOR}" --config "${CONFIG}" --max-budget "${DUCA_VALIDATOR_MAX_BUDGET}"
 "${PYTHON}" -m pytest tests/test_duca_online_precheck_config.py -q
 
 if [[ "${PRECHECK_ONLY}" == "1" ]]; then
@@ -71,8 +75,8 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
   fail "formal full train must run inside a Slurm allocation/step"
 fi
 
-RUN_DIR="${RUN_DIR:-logs/${RUN_TAG}}"
-WORK_DIR="${WORK_DIR:-exps/thumos/adatad/duca_online_official_adatad_backend/${RUN_TAG}}"
+RUN_DIR="${RUN_DIR:-logs/${RUN_TAG}/budget_${DUCA_ONLINE_BUDGET}}"
+WORK_DIR="${WORK_DIR:-exps/thumos/adatad/duca_online_official_adatad_backend/${RUN_TAG}/budget_${DUCA_ONLINE_BUDGET}}"
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 
 "${PYTHON}" -m torch.distributed.run \

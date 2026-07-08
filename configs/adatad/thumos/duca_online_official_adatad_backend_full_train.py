@@ -3,8 +3,25 @@ _base_ = ["./e2e_thumos_videomae_s_768x1_160_adapter.py"]
 import os
 
 
-dense_window_size = 768
-window_size = 384
+def _env_int(name, default):
+    value = os.environ.get(name, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer, got {value!r}") from exc
+
+
+dense_window_size = _env_int("DUCA_ONLINE_DENSE_WINDOW_SIZE", 768)
+window_size = _env_int("DUCA_ONLINE_BUDGET", _env_int("DUCA_OFFICIAL_ADATAD_BUDGET", 384))
+strict_budget_claim_max = _env_int("DUCA_STRICT_CLAIM_MAX_BUDGET", 384)
+if dense_window_size <= 0:
+    raise ValueError("DUCA_ONLINE_DENSE_WINDOW_SIZE must be positive")
+if window_size <= 0:
+    raise ValueError("DUCA_ONLINE_BUDGET must be positive")
+if window_size > dense_window_size:
+    raise ValueError("DUCA_ONLINE_BUDGET must be <= DUCA_ONLINE_DENSE_WINDOW_SIZE")
+if window_size % 16 != 0:
+    raise ValueError("DUCA_ONLINE_BUDGET must be divisible by 16 for the VideoMAE tubelet rearrange")
 scale_factor = 1
 chunk_num = window_size * scale_factor // 16
 
@@ -43,6 +60,9 @@ duca_online_main_contract = dict(
     online_acquisition=True,
     pre_backbone_plugin=True,
     budget_max=window_size,
+    strict_budget_claim_max=strict_budget_claim_max,
+    strict_budget_lte_384=window_size <= 384,
+    budget_curve_mode=os.environ.get("DUCA_BUDGET_CURVE_MODE", "0") == "1",
     dense_window_size=dense_window_size,
     selected_positions_unit="original_time_index",
     coordinate_space="original_time",

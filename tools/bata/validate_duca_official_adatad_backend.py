@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,9 @@ def _config_text(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8").lower()
 
 
-def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
+def validate_config(config_path: str = CONFIG_DEFAULT, *, max_budget: int = 384) -> dict[str, Any]:
     config_path = str(config_path)
+    max_budget = int(max_budget)
     cfg = _load(config_path)
     official = _load(str(ROOT / OFFICIAL_BASE_CONFIG))
     contract = cfg.duca_online_main_contract
@@ -58,7 +60,8 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
     _require(contract.physical_grid_actionformer_required is False, "main config must not require physical-grid head")
     _require(cfg.model.type == "ActionFormer", "official AdaTAD backend must keep ActionFormer detector")
     _require(selector.type == "DucaOnlineFrameSelector", "main config must use DucaOnlineFrameSelector")
-    _require(int(selector.budget) <= 384, "selector budget must be <=384")
+    _require(max_budget > 0, "max_budget must be positive")
+    _require(int(selector.budget) <= max_budget, f"selector budget must be <={max_budget}")
     _require(int(selector.dense_window_size) == 768, "candidate dense window must stay 768")
     _require(selector.coordinate_space == "original_time", "selected positions must be original-time")
     _require(selector.detector_output_coordinate_space == "selected_axis_index", "detector outputs must be selected-axis before wrapper remap")
@@ -72,11 +75,15 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
     _require("ledger_path" not in model_text, "model must not include ledger_path")
     _require("load_from_raw_predictions': true" not in repr(cfg.inference).lower(), "raw prediction loading must be disabled")
     _require("save_raw_prediction': true" not in repr(cfg.inference).lower(), "raw prediction saving must be disabled")
-    _require(int(cfg.window_size) == 384, "detector-consumed DUCA sequence length must be 384")
+    _require(int(cfg.window_size) == int(selector.budget), "detector-consumed DUCA sequence length must match selector budget")
     _require(int(cfg.dense_window_size) == 768, "candidate dense observation length must be 768")
-    _require(int(cfg.chunk_num) == 24, "VideoMAE chunk count must match 384/16")
-    _require(int(cfg.model.backbone.backbone.total_frames) == 384, "VideoMAE backend must consume selected 384 frames")
-    _require(int(cfg.model.projection.max_seq_len) == 384, "projection max_seq_len must match selected budget")
+    _require(int(cfg.window_size) % 16 == 0, "detector-consumed DUCA sequence length must be divisible by 16")
+    _require(int(cfg.chunk_num) == int(cfg.window_size) // 16, "VideoMAE chunk count must match selected budget/16")
+    _require(
+        int(cfg.model.backbone.backbone.total_frames) == int(cfg.window_size),
+        "VideoMAE backend must consume selected budget frames",
+    )
+    _require(int(cfg.model.projection.max_seq_len) == int(cfg.window_size), "projection max_seq_len must match selected budget")
     _require(cfg.dataset.train.pipeline[2].method == "random_trunc", "train LoadFrames must stay online random_trunc, not ledger")
     _require(cfg.dataset.val.pipeline[2].method == "sliding_window", "val LoadFrames must stay online sliding_window, not ledger")
     _require(cfg.dataset.test.pipeline[2].method == "sliding_window", "test LoadFrames must stay online sliding_window, not ledger")
@@ -98,7 +105,10 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
         "rpn_head_matches_official_base": True,
         "physical_grid_actionformer_enabled": False,
         "uses_ledger_for_decision": False,
-        "budget_lte_384": True,
+        "budget_lte_384": int(selector.budget) <= 384,
+        "strict_budget_lte_384": int(selector.budget) <= 384,
+        "budget_lte_max": int(selector.budget) <= max_budget,
+        "validator_max_budget": max_budget,
         "budget": int(selector.budget),
         "dense_window_size": int(selector.dense_window_size),
         "detector_consumed_length": int(cfg.window_size),
@@ -113,10 +123,11 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=CONFIG_DEFAULT)
+    parser.add_argument("--max-budget", type=int, default=int(os.environ.get("DUCA_VALIDATOR_MAX_BUDGET", "384")))
     parser.add_argument("--output-json")
     args = parser.parse_args(argv)
     try:
-        summary = validate_config(args.config)
+        summary = validate_config(args.config, max_budget=int(args.max_budget))
     except Exception as exc:
         summary = {
             "ok": False,
