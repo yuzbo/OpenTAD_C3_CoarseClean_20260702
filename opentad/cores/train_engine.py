@@ -57,20 +57,26 @@ def train_one_epoch(
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
 
         # update parameters
+        optimizer_step_ran = True
         if use_amp:
+            scale_before_step = scaler.get_scale()
             scaler.step(optimizer)
             scaler.update()
+            # GradScaler silently skips optimizer.step() on non-finite grads and
+            # lowers the scale. DUCA schedule/dual hooks must track real updates.
+            optimizer_step_ran = scaler.get_scale() >= scale_before_step
         else:
             optimizer.step()
 
-        _call_after_optimizer_step(model)
+        if optimizer_step_ran:
+            _call_after_optimizer_step(model)
 
-        # update scheduler
-        scheduler.step()
+            # update scheduler
+            scheduler.step()
 
-        # update ema
-        if model_ema is not None:
-            model_ema.update(model)
+            # update ema
+            if model_ema is not None:
+                model_ema.update(model)
 
         # track all losses
         losses = reduce_loss(losses)  # only for log
