@@ -20,6 +20,9 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
   expected selected-cost mean, closing the primal-dual budget constraint loop.
 - Current experiment-suite entrypoint:
   `scripts/submit_duca_jct_experiment_suite.sh`
+- Current experiment-suite monitor:
+  `scripts/monitor_duca_jct_experiment_suite.sh` and
+  `tools/bata/monitor_duca_jct_experiment_suite.py`
 - Remote worktree: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct`
 
 This commit is the current implementation checkpoint for the single-run DUCA-JCT route:
@@ -109,6 +112,19 @@ The X3D downstream jobs depend on the X3D grid job via `afterok`, and read the
 formal `best_x3d_actionness.jsonl` materialized by
 `tools/bata/materialize_trainfree_x3d_actionness.py`.
 
+After submission, the monitor should be run against the suite
+`deployment_summary.json`:
+
+```bash
+bash scripts/monitor_duca_jct_experiment_suite.sh /path/to/deployment_summary.json
+```
+
+The monitor records Slurm state, log failure markers, materialized X3D
+readiness, result artifacts, and missing-result gates in
+`duca_jct_suite_monitor.summary.json`. It does not turn a finished job into a
+paper metric claim unless detector result artifacts or logged mAP values are
+actually present.
+
 ## X3D Train-Free Baseline
 
 The X3D train-free downstream detector jobs are not yet in Slurm because the account hit `AssocMaxSubmitJobLimit`.
@@ -150,6 +166,8 @@ Achieved:
 - Fixed and dynamic main-method configs with strict schedule validators.
 - DUCA-MUST primal-dual budget update hook is implemented through the generic
   training-engine `after_optimizer_step` callback.
+- DUCA-JCT suite monitoring is implemented for Slurm state, failure logs,
+  formal X3D actionness readiness, and missing detector-result artifacts.
 - Train-free X3D downstream configs kept separate from the main method.
 - Main fixed-384 and DUCA-MUST full runs queued for commit `308088c`.
 

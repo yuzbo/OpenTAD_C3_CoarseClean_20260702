@@ -136,6 +136,7 @@ write_sbatch "${tests_script}" "duca_jct_tests" '
   opentad/models/detectors/single_stage.py \
   opentad/models/detectors/actionformer.py \
   tools/bata/materialize_trainfree_x3d_actionness.py \
+  tools/bata/monitor_duca_jct_experiment_suite.py \
   tools/bata/validate_duca_official_adatad_backend.py \
   tools/bata/validate_duca_must_dynamic_official_adatad_backend.py
 "${PYTHON}" tools/bata/validate_duca_official_adatad_backend.py --config configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py --max-budget 384
@@ -144,6 +145,7 @@ write_sbatch "${tests_script}" "duca_jct_tests" '
   tests/test_duca_joint_training_contract.py \
   tests/test_duca_online_coarse_probe_actionness.py \
   tests/test_duca_online_precheck_config.py \
+  tests/test_duca_jct_suite_monitor.py \
   tests/test_trainfree_x3d_actionness_materialize.py \
   -q
 '

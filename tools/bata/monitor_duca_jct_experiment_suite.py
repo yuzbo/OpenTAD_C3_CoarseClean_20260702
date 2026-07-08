@@ -1,0 +1,356 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Any, Mapping
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+SCHEMA_VERSION = "duca_jct_suite_monitor_v1"
+X3D_READY = "TRAINFREE_X3D_ACTIONNESS_MATERIALIZED"
+
+JOB_SPECS = {
+    "duca_jct_tests": {
+        "summary_key": "duca_jct_tests_job",
+        "slurm_name": "duca_jct_tests",
+        "requires_result": False,
+    },
+    "duca384": {
+        "summary_key": "duca384_job",
+        "slurm_name": "duca_jct_384",
+        "work_dir": ("duca384_jct", "work_dir"),
+        "requires_result": True,
+    },
+    "duca_must": {
+        "summary_key": "duca_must_job",
+        "slurm_name": "duca_jct_must",
+        "work_dir": ("duca_must_jct", "work_dir"),
+        "requires_result": True,
+    },
+    "x3d_grid": {
+        "summary_key": "x3d_grid_job",
+        "slurm_name": "duca_x3d_grid",
+        "requires_result": False,
+    },
+    "x3d_duca384": {
+        "summary_key": "x3d_duca384_job",
+        "slurm_name": "duca_x3d_384",
+        "work_dir": ("x3d_duca384", "work_dir"),
+        "requires_result": True,
+        "requires_x3d": True,
+    },
+    "x3d_must": {
+        "summary_key": "x3d_must_job",
+        "slurm_name": "duca_x3d_must",
+        "work_dir": ("x3d_must", "work_dir"),
+        "requires_result": True,
+        "requires_x3d": True,
+    },
+}
+
+FAILURE_PATTERNS = (
+    re.compile(r"\bTraceback\b"),
+    re.compile(r"\bCUDA out of memory\b", re.IGNORECASE),
+    re.compile(r"\bRuntimeError\b"),
+    re.compile(r"\[FAIL\]"),
+    re.compile(r"\bFAILED\b"),
+    re.compile(r"\bNon-finite loss\b", re.IGNORECASE),
+    re.compile(r"\bNaN\b"),
+)
+
+RECOVERABLE_NONFINITE_GRAD = re.compile(r"non[- ]finite parameter gradient", re.IGNORECASE)
+
+
+def _path(path: str | Path) -> Path:
+    return Path(os.path.expandvars(os.path.expanduser(str(path))))
+
+
+def _read_json(path: str | Path) -> dict[str, Any]:
+    payload = json.loads(_path(path).read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON root must be an object: {path}")
+    return payload
+
+
+def _maybe_read_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    return _read_json(path)
+
+
+def _read_text_input(value: str | Path | None) -> str:
+    if value is None:
+        return ""
+    path = _path(value)
+    if path.is_file():
+        return path.read_text(encoding="utf-8", errors="replace")
+    return str(value)
+
+
+def _parse_squeue(value: str | Path | None) -> dict[str, dict[str, str]]:
+    text = _read_text_input(value)
+    out: dict[str, dict[str, str]] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.lower().startswith("jobid"):
+            continue
+        if "|" in line:
+            parts = [part.strip() for part in line.split("|")]
+        else:
+            parts = line.split()
+        if not parts:
+            continue
+        job_id = parts[0]
+        name = parts[1] if len(parts) > 1 else ""
+        state = parts[2] if len(parts) > 2 else ""
+        reason = parts[3] if len(parts) > 3 else ""
+        out[str(job_id)] = {
+            "job_id": str(job_id),
+            "name": name,
+            "state": state,
+            "reason": reason,
+        }
+    return out
+
+
+def _state_to_status(state: str) -> str:
+    normalized = str(state).strip().upper()
+    if normalized in {"R", "RUNNING", "CG", "COMPLETING", "CONFIGURING"}:
+        return "running"
+    if normalized in {"PD", "PENDING", "CF"}:
+        return "pending"
+    if normalized in {"F", "FAILED", "CA", "CANCELLED", "TO", "TIMEOUT", "NF", "NODE_FAIL", "OOM", "OUT_OF_MEMORY"}:
+        return "failed"
+    if normalized in {"CD", "COMPLETED"}:
+        return "completed"
+    return "queued" if normalized else "unknown"
+
+
+def _job_logs(run_root: Path, slurm_name: str, job_id: str) -> list[Path]:
+    log_root = run_root / "slurm_logs"
+    if not log_root.is_dir():
+        return []
+    patterns = []
+    if job_id:
+        patterns.extend([f"{slurm_name}_{job_id}.out", f"{slurm_name}_{job_id}.err", f"{slurm_name}_*{job_id}*.out", f"{slurm_name}_*{job_id}*.err"])
+    patterns.extend([f"{slurm_name}_*.out", f"{slurm_name}_*.err"])
+    paths: list[Path] = []
+    seen = set()
+    for pattern in patterns:
+        for path in sorted(log_root.glob(pattern)):
+            if path not in seen:
+                paths.append(path)
+                seen.add(path)
+    return paths
+
+
+def _scan_logs(paths: list[Path]) -> dict[str, Any]:
+    combined = []
+    failure_hits: list[str] = []
+    nonfinite_grad_skips = 0
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        combined.append(text)
+        nonfinite_grad_skips += len(RECOVERABLE_NONFINITE_GRAD.findall(text))
+        for pattern in FAILURE_PATTERNS:
+            for match in pattern.finditer(text):
+                line_start = text.rfind("\n", 0, match.start()) + 1
+                line_end = text.find("\n", match.end())
+                if line_end < 0:
+                    line_end = len(text)
+                line = text[line_start:line_end].strip()
+                if RECOVERABLE_NONFINITE_GRAD.search(line):
+                    continue
+                failure_hits.append(line or pattern.pattern)
+    text_all = "\n".join(combined)
+    success = bool(
+        re.search(r"\bpassed\b", text_all)
+        or X3D_READY in text_all
+        or re.search(r"Average-mAP", text_all)
+        or re.search(r"Training Finished|Finished training", text_all, re.IGNORECASE)
+    )
+    metrics = _extract_metrics(text_all)
+    return {
+        "has_logs": bool(paths),
+        "failure_hits": failure_hits,
+        "success_marker": success,
+        "nonfinite_grad_skip_count": int(nonfinite_grad_skips),
+        "metrics": metrics,
+    }
+
+
+def _extract_metrics(text: str) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    average = re.search(r"Average-mAP:\s*([0-9]+(?:\.[0-9]+)?)\s*\(%\)", text)
+    if average:
+        metrics["average_mAP_percent"] = float(average.group(1))
+    for match in re.finditer(r"mAP at tIoU\s+([0-9.]+)\s+is\s+([0-9]+(?:\.[0-9]+)?)%", text):
+        metrics[f"mAP@{match.group(1)}_percent"] = float(match.group(2))
+    return metrics
+
+
+def _result_artifacts(run_root: Path, spec: Mapping[str, Any]) -> list[Path]:
+    parts = spec.get("work_dir")
+    if not parts:
+        return []
+    work_dir = run_root.joinpath(*parts)
+    if not work_dir.exists():
+        return []
+    patterns = ("result_detection.json", "result_detection*.json", "*.summary.json", "*.validation.json")
+    out: list[Path] = []
+    seen = set()
+    for pattern in patterns:
+        for path in sorted(work_dir.rglob(pattern)):
+            if path not in seen:
+                out.append(path)
+                seen.add(path)
+    return out
+
+
+def _formal_x3d_status(deployment: Mapping[str, Any]) -> dict[str, Any]:
+    summary_path = _path(deployment.get("formal_x3d_materialization_summary", ""))
+    jsonl_path = _path(deployment.get("formal_x3d_actionness_jsonl", ""))
+    materialization = _maybe_read_json(summary_path)
+    decision = None if materialization is None else materialization.get("decision")
+    downstream_ready = bool(materialization.get("downstream_detector_ready")) if materialization else False
+    jsonl_exists = jsonl_path.is_file()
+    ready = bool(decision == X3D_READY and downstream_ready and jsonl_exists)
+    return {
+        "ready": ready,
+        "summary_path": str(summary_path),
+        "summary_exists": summary_path.is_file(),
+        "jsonl_path": str(jsonl_path),
+        "jsonl_exists": jsonl_exists,
+        "decision": decision,
+        "downstream_detector_ready": downstream_ready,
+        "train_free_baseline": bool(materialization.get("train_free_baseline")) if materialization else False,
+        "not_main_method": bool(materialization.get("not_main_method")) if materialization else False,
+    }
+
+
+def monitor_suite(
+    *,
+    deployment_summary: str | Path,
+    squeue_text: str | Path | None = None,
+) -> dict[str, Any]:
+    deployment_path = _path(deployment_summary)
+    deployment = _read_json(deployment_path)
+    if deployment.get("schema_version") != "duca_jct_experiment_suite_deployment_v1":
+        raise ValueError("deployment_summary schema_version must be duca_jct_experiment_suite_deployment_v1")
+    run_root = _path(deployment.get("run_root", deployment_path.parent))
+    squeue = _parse_squeue(squeue_text)
+    x3d_status = _formal_x3d_status(deployment)
+
+    jobs: dict[str, dict[str, Any]] = {}
+    hard_failures: list[str] = []
+    running_jobs: list[str] = []
+    pending_jobs: list[str] = []
+    missing_results: list[str] = []
+    missing_prerequisites: list[str] = []
+    if not x3d_status["summary_exists"]:
+        missing_prerequisites.append("formal_x3d_materialization_summary")
+    if not x3d_status["jsonl_exists"]:
+        missing_prerequisites.append("formal_x3d_actionness_jsonl")
+
+    for label, spec in JOB_SPECS.items():
+        job_id = str(deployment.get(spec["summary_key"], "") or "")
+        slurm_name = str(spec["slurm_name"])
+        logs = _job_logs(run_root, slurm_name, job_id)
+        log_scan = _scan_logs(logs)
+        artifacts = _result_artifacts(run_root, spec)
+        squeue_row = squeue.get(job_id)
+        status = "not_submitted" if not job_id else "finished_or_unknown"
+        if spec.get("requires_x3d") and not x3d_status["ready"]:
+            status = "blocked_missing_x3d_actionness"
+        elif squeue_row is not None:
+            status = _state_to_status(squeue_row.get("state", ""))
+        elif log_scan["failure_hits"]:
+            status = "failed"
+        elif artifacts or log_scan["success_marker"]:
+            status = "completed"
+
+        if status == "failed":
+            hard_failures.append(label)
+        if status == "running":
+            running_jobs.append(label)
+        if status == "pending":
+            pending_jobs.append(label)
+        if (
+            spec.get("requires_result")
+            and status in {"completed", "finished_or_unknown"}
+            and not any(path.name.startswith("result_detection") for path in artifacts)
+        ):
+            missing_results.append(label)
+
+        jobs[label] = {
+            "job_id": job_id,
+            "slurm_name": slurm_name,
+            "status": status,
+            "squeue": squeue_row,
+            "log_paths": [str(path) for path in logs],
+            "failure_hits": list(log_scan["failure_hits"]),
+            "nonfinite_grad_skip_count": int(log_scan["nonfinite_grad_skip_count"]),
+            "success_marker": bool(log_scan["success_marker"]),
+            "metrics": dict(log_scan["metrics"]),
+            "result_artifacts": [str(path) for path in artifacts],
+            "requires_result": bool(spec.get("requires_result", False)),
+        }
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "deployment_summary": str(deployment_path),
+        "run_root": str(run_root),
+        "commit": deployment.get("commit"),
+        "branch": deployment.get("branch"),
+        "formal_x3d_actionness": x3d_status,
+        "jobs": jobs,
+        "hard_failures": hard_failures,
+        "running_jobs": running_jobs,
+        "pending_jobs": pending_jobs,
+        "missing_results": missing_results,
+        "missing_prerequisites": missing_prerequisites,
+    }
+
+
+def _print_table(summary: Mapping[str, Any]) -> None:
+    print("job\tjob_id\tstatus\tmetrics")
+    for label, job in summary["jobs"].items():
+        print(f"{label}\t{job.get('job_id', '')}\t{job.get('status', '')}\t{json.dumps(job.get('metrics', {}), sort_keys=True)}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Monitor a submitted DUCA-JCT experiment suite.")
+    parser.add_argument("--deployment-summary", required=True)
+    parser.add_argument("--squeue-text")
+    parser.add_argument("--output-json")
+    parser.add_argument("--print-table", action="store_true")
+    args = parser.parse_args(argv)
+
+    summary = monitor_suite(deployment_summary=args.deployment_summary, squeue_text=args.squeue_text)
+    if args.output_json:
+        out = _path(args.output_json)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(summary)
+        payload["output_json"] = str(out)
+        out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        summary = payload
+    if args.print_table:
+        _print_table(summary)
+    else:
+        print(json.dumps(summary, sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
