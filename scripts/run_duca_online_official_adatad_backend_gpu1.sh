@@ -28,12 +28,17 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${BASE}/tmp/xdg_config}"
 export YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
 mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" logs
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
-  if [[ -z "${SLURM_STEP_GPUS:-}" ]]; then
-    fail "official-backend DUCA run defaults to physical GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+  if [[ "${CUDA_VISIBLE_DEVICES}" != "0" && "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+    fail "official-backend DUCA run must see one Slurm-bound GPU as logical 0/1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
   fi
-  echo "[DUCA_OFFICIAL_ADATAD_BACKEND] accepting Slurm step GPU mapping: CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} SLURM_STEP_GPUS=${SLURM_STEP_GPUS}"
+  echo "[DUCA_OFFICIAL_ADATAD_BACKEND] accepting Slurm GPU mapping: CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} SLURM_STEP_GPUS=${SLURM_STEP_GPUS:-none} SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}"
+else
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+  if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
+    fail "official-backend DUCA run defaults to physical GPU1 outside Slurm remapping; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+  fi
 fi
 
 require_file() {
@@ -53,7 +58,7 @@ echo "[DUCA_OFFICIAL_ADATAD_BACKEND] repo=${REPO_ROOT}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] head=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] config=${CONFIG}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] gpu=${CUDA_VISIBLE_DEVICES}"
-echo "[DUCA_OFFICIAL_ADATAD_BACKEND] slurm_job=${SLURM_JOB_ID:-none} slurm_step=${SLURM_STEP_ID:-none} slurm_step_gpus=${SLURM_STEP_GPUS:-none}"
+echo "[DUCA_OFFICIAL_ADATAD_BACKEND] slurm_job=${SLURM_JOB_ID:-none} slurm_step=${SLURM_STEP_ID:-none} slurm_step_gpus=${SLURM_STEP_GPUS:-none} slurm_job_gpus=${SLURM_JOB_GPUS:-none}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] precheck_only=${PRECHECK_ONLY} fulltrain_candidate=${FULLTRAIN_CANDIDATE}"
 echo "[DUCA_OFFICIAL_ADATAD_BACKEND] budget=${DUCA_ONLINE_BUDGET} dense_window=${DUCA_ONLINE_DENSE_WINDOW_SIZE} validator_max_budget=${DUCA_VALIDATOR_MAX_BUDGET}"
 

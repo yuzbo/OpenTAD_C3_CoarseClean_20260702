@@ -208,6 +208,10 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert "validate_duca_official_adatad_backend.py" in text
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
     assert "FULLTRAIN_CANDIDATE=1" in text
+    assert 'if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]' in text
+    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"' in text
+    assert 'SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}' in text
+    assert "physical GPU1 outside Slurm remapping" in text
     assert "tools/train.py" in text
 
 
@@ -358,8 +362,10 @@ def test_duca_must_dynamic_launcher_is_precheck_first_and_not_forced_budget_curv
     assert "validate_duca_must_dynamic_official_adatad_backend.py" in text
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
     assert "FULLTRAIN_CANDIDATE" in text
-    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
-    assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+    assert 'if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]' in text
+    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"' in text
+    assert 'SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}' in text
+    assert "physical GPU1 outside Slurm remapping" in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "tools/train.py" in text
     assert "DUCA_ONLINE_BUDGET" not in text
@@ -413,6 +419,8 @@ def test_duca_online_launchers_are_precheck_first_gpu1_guarded_and_fail_closed()
         assert "FULLTRAIN_CANDIDATE" in text
         assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
         assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+        assert 'SLURM_JOB_GPUS:-' in text
+        assert 'SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}' in text
         assert "validate_duca_online_adatad_precheck.py" in text
         assert "tests/test_duca_online_precheck_config.py" in text
         assert "formal full train must run inside a Slurm allocation/step" in text
