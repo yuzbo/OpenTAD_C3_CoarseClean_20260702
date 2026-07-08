@@ -212,6 +212,9 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"' in text
     assert 'SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}' in text
     assert "physical GPU1 outside Slurm remapping" in text
+    assert "ADATAD_PRETRAIN_PATH" in text
+    assert "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" in text
+    assert "required file missing: ${ADATAD_PRETRAIN_PATH}" in text
     assert "tools/train.py" in text
 
 
@@ -366,6 +369,9 @@ def test_duca_must_dynamic_launcher_is_precheck_first_and_not_forced_budget_curv
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"' in text
     assert 'SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}' in text
     assert "physical GPU1 outside Slurm remapping" in text
+    assert "ADATAD_PRETRAIN_PATH" in text
+    assert "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" in text
+    assert "required file missing: ${ADATAD_PRETRAIN_PATH}" in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "tools/train.py" in text
     assert "DUCA_ONLINE_BUDGET" not in text

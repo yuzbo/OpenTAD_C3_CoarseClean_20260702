@@ -17,6 +17,8 @@ RUN_TAG="${RUN_TAG:-duca_must_dynamic_official_adatad_backend_$(date +%Y%m%d_%H%
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
 MASTER_PORT="${MASTER_PORT:-30271}"
+ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${DUCA_ADATAD_PRETRAIN_PATH:-${BASE:-/data/run01/sczc063/yuzibo}/pretrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
 export DUCA_MUST_DENSE_WINDOW_SIZE="${DUCA_MUST_DENSE_WINDOW_SIZE:-768}"
 export DUCA_MUST_BUDGET_MAX="${DUCA_MUST_BUDGET_MAX:-384}"
@@ -44,13 +46,30 @@ else
   fi
 fi
 
+resolve_path() {
+  local raw="$1"
+  if [[ "${raw}" == /* ]]; then
+    echo "${raw}"
+  elif [[ -f "${REPO_ROOT}/${raw}" ]]; then
+    readlink -f "${REPO_ROOT}/${raw}"
+  elif [[ -f "${BASE}/${raw}" ]]; then
+    readlink -f "${BASE}/${raw}"
+  else
+    echo "${REPO_ROOT}/${raw}"
+  fi
+}
+
 require_file() {
   local path="$1"
   [[ -f "${path}" ]] || fail "required file missing: ${path}"
 }
 
+ADATAD_PRETRAIN_PATH="$(resolve_path "${ADATAD_PRETRAIN_PATH}")"
+export DUCA_ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH}"
+
 require_file "${CONFIG}"
 require_file "${VALIDATOR}"
+[[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "required file missing: ${ADATAD_PRETRAIN_PATH}"
 
 module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
@@ -64,6 +83,7 @@ echo "[DUCA_MUST_DYNAMIC_BACKEND] gpu=${CUDA_VISIBLE_DEVICES}"
 echo "[DUCA_MUST_DYNAMIC_BACKEND] slurm_job=${SLURM_JOB_ID:-none} slurm_step=${SLURM_STEP_ID:-none} slurm_step_gpus=${SLURM_STEP_GPUS:-none} slurm_job_gpus=${SLURM_JOB_GPUS:-none}"
 echo "[DUCA_MUST_DYNAMIC_BACKEND] precheck_only=${PRECHECK_ONLY} fulltrain_candidate=${FULLTRAIN_CANDIDATE}"
 echo "[DUCA_MUST_DYNAMIC_BACKEND] dense=${DUCA_MUST_DENSE_WINDOW_SIZE} budget_min=${DUCA_MUST_BUDGET_MIN} budget_target=${DUCA_MUST_BUDGET_TARGET} budget_max=${DUCA_MUST_BUDGET_MAX} multiple=${DUCA_MUST_BUDGET_MULTIPLE}"
+echo "[DUCA_MUST_DYNAMIC_BACKEND] adatad_pretrain_path=${ADATAD_PRETRAIN_PATH}"
 
 bash -n "${BASH_SOURCE[0]}"
 "${PYTHON}" -m py_compile "${CONFIG}" "${VALIDATOR}"
@@ -94,5 +114,5 @@ mkdir -p "${RUN_DIR}" "${WORK_DIR}"
   "${CONFIG}" \
   --id "${RUN_ID}" \
   --seed "${SEED}" \
-  --cfg-options "work_dir=${WORK_DIR}" \
+  --cfg-options "work_dir=${WORK_DIR}" "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
   2>&1 | tee "${RUN_DIR}/train.out"
