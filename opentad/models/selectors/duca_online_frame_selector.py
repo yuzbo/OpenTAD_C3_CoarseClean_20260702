@@ -54,12 +54,13 @@ _ACTIONNESS_KWARGS = {
 def _time_descriptors_btc(inputs: torch.Tensor) -> torch.Tensor:
     if not torch.is_tensor(inputs):
         raise ValueError("inputs must be a tensor")
+    descriptor_inputs = inputs if torch.is_floating_point(inputs) or torch.is_complex(inputs) else inputs.float()
     if inputs.ndim == 3:
-        return inputs.transpose(1, 2).contiguous()
+        return descriptor_inputs.transpose(1, 2).contiguous()
     if inputs.ndim == 5:
-        return inputs.mean(dim=(3, 4)).transpose(1, 2).contiguous()
+        return descriptor_inputs.mean(dim=(3, 4)).transpose(1, 2).contiguous()
     if inputs.ndim == 6:
-        return inputs.mean(dim=(1, 4, 5)).transpose(1, 2).contiguous()
+        return descriptor_inputs.mean(dim=(1, 4, 5)).transpose(1, 2).contiguous()
     raise ValueError(f"unsupported DUCA selector input shape: {tuple(inputs.shape)}")
 
 
@@ -107,23 +108,25 @@ def _add_soft_context_gradient_path(
     bridge = float(bridge_weight)
     if bridge <= 0.0:
         return hard_selected
-    weights = soft_coverage.to(device=dense_inputs.device, dtype=dense_inputs.dtype)
+    context_inputs = dense_inputs if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs) else dense_inputs.float()
+    hard_base = hard_selected if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected) else hard_selected.float()
+    weights = soft_coverage.to(device=context_inputs.device, dtype=context_inputs.dtype)
     weights = weights / weights.sum(dim=1, keepdim=True).clamp_min(torch.finfo(weights.dtype).eps)
-    if dense_inputs.ndim == 3:
-        context = torch.einsum("bct,bt->bc", dense_inputs, weights)
+    if context_inputs.ndim == 3:
+        context = torch.einsum("bct,bt->bc", context_inputs, weights)
         context = context[:, :, None].expand_as(hard_selected)
         slot = slot_mask[:, None, :]
-    elif dense_inputs.ndim == 5:
-        context = (dense_inputs * weights[:, None, :, None, None]).sum(dim=2)
+    elif context_inputs.ndim == 5:
+        context = (context_inputs * weights[:, None, :, None, None]).sum(dim=2)
         context = context[:, :, None, :, :].expand_as(hard_selected)
         slot = slot_mask[:, None, :, None, None]
-    elif dense_inputs.ndim == 6:
-        context = (dense_inputs * weights[:, None, None, :, None, None]).sum(dim=3)
+    elif context_inputs.ndim == 6:
+        context = (context_inputs * weights[:, None, None, :, None, None]).sum(dim=3)
         context = context[:, :, :, None, :, :].expand_as(hard_selected)
         slot = slot_mask[:, None, None, :, None, None]
     else:
         raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
-    return hard_selected + (context - context.detach()) * slot.to(dtype=hard_selected.dtype) * bridge
+    return hard_base + (context - context.detach()) * slot.to(dtype=context.dtype) * bridge
 
 
 @SELECTORS.register_module()

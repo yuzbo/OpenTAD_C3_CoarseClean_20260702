@@ -88,3 +88,22 @@ def test_detector_path_can_backprop_into_online_coarse_probe() -> None:
     ]
     assert grads
     assert sum(grads) > 0.0
+
+
+def test_online_selector_accepts_uint8_window_tensor_from_full_train_loader() -> None:
+    selector = _selector()
+    inputs = torch.randint(0, 255, (1, 1, 3, 8, 16, 16), dtype=torch.uint8)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+    gt_segments = [torch.tensor([[1.0, 6.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    out = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+
+    assert out["inputs"].shape[3] == 4
+    assert out["inputs"].is_floating_point()
