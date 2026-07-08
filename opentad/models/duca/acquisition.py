@@ -1195,6 +1195,7 @@ class DucaAcquisitionAdapter(nn.Module):
             budget=budgets,
             valid_mask=scores["valid_mask"],
             max_radius=self.max_radius,
+            output_slots=int(self.budget),
         )
         decode_ms = _elapsed_ms(decode_start, dense_observations, enabled=sync_enabled)
         valid_len = scores["valid_mask"].long().sum(dim=1)
@@ -1223,6 +1224,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 "budget_multiple": int(self.budget_multiple),
                 "budget_target": float(self.target_budget),
                 "predicted_budget": budgets.detach().cpu().tolist(),
+                "detector_physical_input_length": int(self.budget),
             },
         ).validate()
         if torch.any(grid.selected_count > int(self.budget)):
@@ -1406,6 +1408,7 @@ def budgeted_center_radius_decode(
     dense_len: Optional[int] = None,
     max_radius: int = 16,
     candidate_multiplier: float = 2.0,
+    output_slots: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Decode center/radius decisions into detector-consumed positions.
 
@@ -1458,6 +1461,12 @@ def budgeted_center_radius_decode(
         candidate_positions = candidate_positions.clamp(0, max_position)
 
     max_out = int(effective_budgets.max().item())
+    if output_slots is not None:
+        max_out = int(output_slots)
+        if max_out <= 0:
+            raise ValueError("output_slots must be positive when provided")
+        if torch.any(effective_budgets > max_out):
+            raise ValueError("output_slots cannot be smaller than any effective budget")
     rows: List[torch.Tensor] = []
     masks: List[torch.Tensor] = []
     center_rows: List[torch.Tensor] = []

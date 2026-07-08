@@ -88,6 +88,7 @@ def test_dynamic_adapter_predicts_budget_and_forbids_external_override() -> None
     assert torch.equal(grid.requested_budget, decision.budget_hard.to(grid.requested_budget.device))
     assert torch.all(grid.selected_count <= 8)
     assert torch.all(grid.selected_count <= grid.effective_budget)
+    assert grid.selected_positions.shape[1] == 8
     assert out["detector_input"].shape[1] == int(grid.selected_positions.shape[1])
     assert out["dynamic_budget"] is True
 

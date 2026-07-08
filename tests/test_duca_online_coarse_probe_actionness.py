@@ -107,3 +107,16 @@ def test_online_selector_accepts_uint8_window_tensor_from_full_train_loader() ->
 
     assert out["inputs"].shape[3] == 4
     assert out["inputs"].is_floating_point()
+
+
+def test_online_selector_pads_physical_slots_for_short_valid_window() -> None:
+    selector = _selector()
+    inputs = torch.randn(1, 1, 3, 8, 16, 16)
+    masks = torch.tensor([[1, 1, 1, 0, 0, 0, 0, 0]], dtype=torch.bool)
+
+    out = selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "short"}])
+
+    assert out["inputs"].shape[3] == 4
+    assert out["masks"].shape == (1, 4)
+    assert out["masks"].sum().item() == 3
+    assert out["metas"][0]["duca_online_selected_count"] == 3
