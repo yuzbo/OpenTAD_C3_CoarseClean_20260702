@@ -15,6 +15,8 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 - Base deployment title: `Add DUCA joint training loss schedule`
 - Current local refinement: detector loss remains active for the backend while
   the detector-to-selector ST gradient bridge is scheduled separately.
+- Current experiment-suite entrypoint:
+  `scripts/submit_duca_jct_experiment_suite.sh`
 - Remote worktree: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct`
 
 This commit is the current implementation checkpoint for the single-run DUCA-JCT route:
@@ -85,6 +87,19 @@ Slurm jobs currently queued:
 - DUCA-MUST dynamic official full train: `1151135`
 
 These two are the current main paper-method jobs for commit `308088c`.
+
+The newer suite runner writes a fresh run root and submits:
+
+- focused DUCA-JCT tests and validators;
+- DUCA-JCT fixed-384 official full train;
+- DUCA-MUST dynamic official full train;
+- train-free X3D interval grid with pre-registered formal JSONL materialization;
+- X3D -> DUCA fixed-384 official downstream full train;
+- X3D -> DUCA-MUST dynamic official downstream full train.
+
+The X3D downstream jobs depend on the X3D grid job via `afterok`, and read the
+formal `best_x3d_actionness.jsonl` materialized by
+`tools/bata/materialize_trainfree_x3d_actionness.py`.
 
 ## X3D Train-Free Baseline
 
