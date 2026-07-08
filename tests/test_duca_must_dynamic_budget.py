@@ -13,6 +13,7 @@ from opentad.models.duca import (  # noqa: E402
     PrefixMarginalUtilityBudgetController,
     duca_losses,
 )
+from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector  # noqa: E402
 
 
 def test_prefix_marginal_controller_outputs_st_dynamic_budget() -> None:
@@ -132,6 +133,67 @@ def test_duca_losses_include_must_lagrangian_terms_and_backpropagate_to_budget_p
     ]
     assert grads
     assert sum(grads) > 0.0
+
+
+def test_dynamic_selector_updates_dual_after_optimizer_step_from_pending_budget() -> None:
+    torch.manual_seed(37)
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=None,
+        budget_mode="dynamic_must",
+        budget_min=4,
+        budget_max=8,
+        budget_multiple=2,
+        target_budget=4,
+        max_radius=2,
+        selector_hidden_channels=8,
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "source_name": "zero_shot_motion_actionness",
+            "mode": "motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+            "checkpoint_hash": "no_checkpoint_motion_energy",
+        },
+        loss_weights={
+            "actionness": 0.0,
+            "detector": 0.0,
+            "lagrangian_budget": 1.0,
+            "marginal_monotonic": 0.0,
+            "budget": 0.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "hole": 0.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+        },
+    )
+    selector.train()
+    controller = selector.adapter.budget_controller
+    assert controller is not None
+    before = controller.lambda_dual.detach().clone()
+
+    selector.forward_train(
+        inputs=torch.randn(2, 3, 12),
+        masks=torch.ones(2, 12, dtype=torch.bool),
+        metas=[{"video_name": "v0"}, {"video_name": "v1"}],
+        gt_segments=[torch.empty(0, 2), torch.empty(0, 2)],
+        gt_labels=[torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)],
+    )
+    summary = selector.after_optimizer_step()
+
+    after = controller.lambda_dual.detach()
+    assert summary["updated"] is True
+    assert summary["source"] == "dynamic_must_expected_cost"
+    assert summary["observed_mean_budget"] > 4.0
+    assert float(after.item()) > float(before.item())
+    assert summary["lambda_after"] == pytest.approx(float(after.item()))
+    assert selector.last_dual_update_summary == summary
 
 
 def test_dynamic_budget_contract_rejects_invalid_multiple() -> None:

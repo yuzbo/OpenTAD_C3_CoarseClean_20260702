@@ -63,6 +63,8 @@ def train_one_epoch(
         else:
             optimizer.step()
 
+        _call_after_optimizer_step(model)
+
         # update scheduler
         scheduler.step()
 
@@ -91,6 +93,24 @@ def train_one_epoch(
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
             logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
             break
+
+
+def _call_after_optimizer_step(model):
+    module = getattr(model, "module", None)
+    targets = []
+    if module is not None:
+        targets.append(module)
+    targets.append(model)
+    seen = set()
+    for target in targets:
+        target_id = id(target)
+        if target_id in seen:
+            continue
+        seen.add(target_id)
+        hook = getattr(target, "after_optimizer_step", None)
+        if callable(hook):
+            hook()
+            return
 
 
 def val_one_epoch(

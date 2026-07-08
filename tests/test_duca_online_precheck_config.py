@@ -269,6 +269,8 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.duca_must_dynamic_contract.dynamic_budget is True
     assert cfg.duca_must_dynamic_contract.acquisition_policy == "duca_center_radius_st_acquisition"
     assert cfg.duca_must_dynamic_contract.budget_policy == "prefix_marginal_utility_stop"
+    assert cfg.duca_must_dynamic_contract.dynamic_budget_dual_update_after_optimizer_step is True
+    assert cfg.duca_must_dynamic_contract.dynamic_budget_dual_update_source == "dynamic_must_expected_cost"
     assert cfg.duca_must_dynamic_contract.actionness_source == "online_trainable_c3_coarse_probe"
     assert cfg.duca_must_dynamic_contract.coarse_probe_joint_trainable is True
     assert cfg.duca_must_dynamic_contract.budget_max == 384
@@ -325,6 +327,8 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["ok"] is True
     assert summary["dynamic_budget"] is True
     assert summary["budget_policy"] == "prefix_marginal_utility_stop"
+    assert summary["dynamic_budget_dual_update_after_optimizer_step"] is True
+    assert summary["dynamic_budget_dual_update_source"] == "dynamic_must_expected_cost"
     assert summary["budget_max_lte_384"] is True
     assert summary["external_budget_override_allowed"] is False
     assert summary["uses_env_budget_override"] is False

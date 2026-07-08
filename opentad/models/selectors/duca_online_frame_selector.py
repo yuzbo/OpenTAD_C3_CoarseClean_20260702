@@ -219,6 +219,9 @@ class DucaOnlineFrameSelector(nn.Module):
             self.metadata_keys.update(dict(metadata_keys))
         self.extra_config = dict(kwargs)
         self.last_forward_summary: dict[str, Any] = {}
+        self.last_dual_update_summary: dict[str, Any] = {}
+        self._pending_dynamic_budget_dual_mean: Optional[torch.Tensor] = None
+        self._pending_dynamic_budget_dual_summary: Optional[dict[str, Any]] = None
         if self.detector_gradient_mode not in {"st_sparse_gather", "st_sparse_gather_soft_context"}:
             raise ValueError("detector_gradient_mode must be st_sparse_gather or st_sparse_gather_soft_context")
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
@@ -411,6 +414,34 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.training:
             self._loss_weight_schedule_step.add_(1)
 
+    def after_optimizer_step(self) -> Optional[dict[str, Any]]:
+        if self.budget_mode != "dynamic_must":
+            return None
+        pending = self._pending_dynamic_budget_dual_mean
+        if pending is None:
+            return {"updated": False, "reason": "no_pending_dynamic_budget"}
+        controller = getattr(self.adapter, "budget_controller", None)
+        if controller is None or not hasattr(controller, "update_dual"):
+            return {"updated": False, "reason": "missing_dynamic_budget_controller"}
+        before = controller.lambda_dual.detach().clone()
+        updated = controller.update_dual(pending)
+        after = updated.detach()
+        summary = dict(self._pending_dynamic_budget_dual_summary or {})
+        summary.update(
+            {
+                "updated": True,
+                "source": "dynamic_must_expected_cost",
+                "lambda_before": float(before.detach().cpu().item()),
+                "lambda_after": float(after.detach().cpu().item()),
+            }
+        )
+        self.last_dual_update_summary = summary
+        if isinstance(self.last_forward_summary, dict):
+            self.last_forward_summary["dynamic_budget_dual_update"] = summary
+        self._pending_dynamic_budget_dual_mean = None
+        self._pending_dynamic_budget_dual_summary = None
+        return summary
+
     @staticmethod
     def _action_target_from_gt_segments(gt_segments, masks: torch.Tensor) -> Optional[torch.Tensor]:
         if gt_segments is None:
@@ -565,6 +596,7 @@ class DucaOnlineFrameSelector(nn.Module):
         scores["detector_gradient_weight"] = float(detector_gradient_weight)
         scores["sparse_grid"] = grid
         selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
+        self._record_pending_dynamic_budget_dual(scores, grid)
         self.last_forward_summary = {
             self.metadata_keys["selected_count"]: int(selected_counts[0]) if selected_counts else 0,
             "budget": int(grid.budget),
@@ -592,6 +624,30 @@ class DucaOnlineFrameSelector(nn.Module):
                 compute_profile=compute_profile,
             ),
             "selector_outputs": scores,
+        }
+
+    def _record_pending_dynamic_budget_dual(self, scores: Mapping[str, Any], grid) -> None:
+        self._pending_dynamic_budget_dual_mean = None
+        self._pending_dynamic_budget_dual_summary = None
+        if not self.training or self.budget_mode != "dynamic_must":
+            return
+        decision = scores.get("budget_decision")
+        if decision is None:
+            return
+        expected = decision.expected_cost.detach().float()
+        observed_mean = expected.mean()
+        hard_mean = decision.budget_hard.detach().float().mean()
+        selected_mean = grid.selected_count.detach().float().mean()
+        target = float(decision.target_budget)
+        self._pending_dynamic_budget_dual_mean = observed_mean
+        self._pending_dynamic_budget_dual_summary = {
+            "observed_mean_budget": float(observed_mean.detach().cpu().item()),
+            "hard_mean_budget": float(hard_mean.detach().cpu().item()),
+            "selected_mean_budget": float(selected_mean.detach().cpu().item()),
+            "target_budget": target,
+            "budget_min": int(decision.budget_min),
+            "budget_max": int(decision.budget_max),
+            "budget_multiple": int(decision.budget_multiple),
         }
 
     @staticmethod

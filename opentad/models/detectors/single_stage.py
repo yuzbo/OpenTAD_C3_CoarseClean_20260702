@@ -60,6 +60,13 @@ class SingleStageDetector(BaseDetector):
         """bool: whether the detector has localization head"""
         return hasattr(self, "rpn_head") and self.rpn_head is not None
 
+    def after_optimizer_step(self):
+        if self.with_frame_selector:
+            hook = getattr(self.frame_selector, "after_optimizer_step", None)
+            if callable(hook):
+                return hook()
+        return None
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
         selector_loss_keys = set()

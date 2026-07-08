@@ -74,11 +74,16 @@ class _ToyLoader:
 
 
 class _ToyModel:
-    def __init__(self):
+    def __init__(self, *, with_after_step_hook=False):
         self.module = types.SimpleNamespace()
+        if with_after_step_hook:
+            self.module.after_optimizer_step = self.after_optimizer_step
         self.train_calls = 0
         self.forward_calls = 0
         self.backward_calls = 0
+        self.after_optimizer_step_calls = 0
+        self.after_optimizer_seen_steps = []
+        self.optimizer = None
 
     def train(self):
         self.train_calls += 1
@@ -88,6 +93,11 @@ class _ToyModel:
         self.forward_calls += 1
         cost = _Loss(x, self)
         return {"cost": cost, "aux_loss": _Loss(x * 0.5, self)}
+
+    def after_optimizer_step(self):
+        self.after_optimizer_step_calls += 1
+        if self.optimizer is not None:
+            self.after_optimizer_seen_steps.append(self.optimizer.steps)
 
 
 class _ToyOptimizer:
@@ -173,6 +183,28 @@ def test_train_one_epoch_stops_after_max_train_iters(monkeypatch):
     assert optimizer.steps == 2
     assert scheduler.steps == 2
     assert any("max_train_iters=2 reached" in message for message in logger.messages)
+
+
+def test_train_one_epoch_calls_after_optimizer_step_hook_after_each_optimizer_step(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model = _ToyModel(with_after_step_hook=True)
+    optimizer = _ToyOptimizer()
+    model.optimizer = optimizer
+    scheduler = _ToyScheduler()
+
+    train_engine.train_one_epoch(
+        _ToyLoader(length=3),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=0,
+        logger=_Logger(),
+        logging_interval=1,
+    )
+
+    assert optimizer.steps == 3
+    assert model.after_optimizer_step_calls == 3
+    assert model.after_optimizer_seen_steps == [1, 2, 3]
 
 
 @pytest.mark.parametrize("max_train_iters", [0, -1])

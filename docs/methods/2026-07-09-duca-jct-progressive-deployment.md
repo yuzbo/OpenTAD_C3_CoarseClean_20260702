@@ -15,6 +15,9 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 - Base deployment title: `Add DUCA joint training loss schedule`
 - Current local refinement: detector loss remains active for the backend while
   the detector-to-selector ST gradient bridge is scheduled separately.
+- Current dynamic-budget refinement: DUCA-MUST now updates the budget
+  controller dual variable after each optimizer step from the controller's
+  expected selected-cost mean, closing the primal-dual budget constraint loop.
 - Current experiment-suite entrypoint:
   `scripts/submit_duca_jct_experiment_suite.sh`
 - Remote worktree: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct`
@@ -48,6 +51,8 @@ For DUCA-MUST, the dynamic-budget loss is also scheduled:
 
 - `loss_schedule_lagrangian_budget_start = 0.0`
 - `loss_schedule_lagrangian_budget_end = 1.0`
+- `dynamic_budget_dual_update_after_optimizer_step = true`
+- `dynamic_budget_dual_update_source = dynamic_must_expected_cost`
 
 This means the intended training sequence is continuous within one run:
 
@@ -55,7 +60,10 @@ This means the intended training sequence is continuous within one run:
 2. The detector backend trains from the start, while the detector-to-selector
    ST/surrogate gradient bridge and selection distribution losses are gradually
    enabled.
-3. Dynamic budget regularization is gradually enabled for DUCA-MUST.
+3. Dynamic budget regularization is gradually enabled for DUCA-MUST; after
+   each optimizer update, the budget controller updates its dual variable from
+   the observed expected cost, so the learned `K(x)` is governed by a budget
+   constraint rather than a forced budget curve.
 
 This is not a multi-stage p_action export pipeline.
 
@@ -140,6 +148,8 @@ Achieved:
 
 - Single-run progressive DUCA-JCT implementation.
 - Fixed and dynamic main-method configs with strict schedule validators.
+- DUCA-MUST primal-dual budget update hook is implemented through the generic
+  training-engine `after_optimizer_step` callback.
 - Train-free X3D downstream configs kept separate from the main method.
 - Main fixed-384 and DUCA-MUST full runs queued for commit `308088c`.
 

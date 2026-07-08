@@ -106,6 +106,14 @@ def validate_config(
     _require(contract.diagnostic_only is False, "dynamic main config must not be diagnostic_only")
     _require(contract.dynamic_budget is True, "contract must declare dynamic_budget=True")
     _require(contract.budget_policy == "prefix_marginal_utility_stop", "unexpected dynamic budget policy")
+    _require(
+        getattr(contract, "dynamic_budget_dual_update_after_optimizer_step", False) is True,
+        "dynamic budget controller must update its dual variable after optimizer.step",
+    )
+    _require(
+        getattr(contract, "dynamic_budget_dual_update_source", "") == "dynamic_must_expected_cost",
+        "dynamic budget dual update must use dynamic_must_expected_cost",
+    )
     _require(contract.external_budget_override_allowed is False, "dynamic main config must forbid external budget override")
     _require(contract.forced_budget_curve is False, "dynamic main config must not be a forced-budget curve")
     _require(contract.no_ledger_decision is True, "main config must be online/no-ledger")
@@ -186,6 +194,11 @@ def validate_config(
         "rpn_head_matches_official_base": True,
         "dynamic_budget": True,
         "budget_policy": str(contract.budget_policy),
+        "dynamic_budget_dual_update_after_optimizer_step": True,
+        "dynamic_budget_dual_update_source": str(contract.dynamic_budget_dual_update_source),
+        "dynamic_budget_dual_update_observation": str(
+            getattr(contract, "dynamic_budget_dual_update_observation", "expected_cost_mean")
+        ),
         "budget_min": int(selector.budget_min),
         "budget_max": int(selector.budget_max),
         "budget_target": int(selector.target_budget),
