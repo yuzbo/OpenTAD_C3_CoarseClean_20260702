@@ -24,6 +24,7 @@ FORBIDDEN_TRUE_FLAGS = (
     "load_from_raw_predictions",
 )
 TRAIN_SPLITS = {"train", "training"}
+THUMOS_TRAIN_ALIASES = {"validation"}
 
 
 def _read_json(path: str | Path) -> dict[str, Any]:
@@ -89,9 +90,31 @@ def _row_split(row: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _require_train_split(row: Mapping[str, Any], *, context: str) -> None:
+def _path_claims_train(path: str | Path) -> bool:
+    target = Path(path).expanduser()
+    parts = {part.lower() for part in target.parts}
+    name = target.name.lower()
+    return bool(parts & TRAIN_SPLITS) or name.startswith(("train.", "training."))
+
+
+def _require_train_split(
+    row: Mapping[str, Any],
+    *,
+    context: str,
+    allow_thumos_validation_alias: bool = False,
+) -> None:
     split = _row_split(row)
-    if split not in TRAIN_SPLITS:
+    if split in TRAIN_SPLITS:
+        return
+    if allow_thumos_validation_alias and (
+        split is None or split in THUMOS_TRAIN_ALIASES
+    ):
+        sample_id = row.get("sample_id")
+        if isinstance(sample_id, str) and sample_id.startswith("video_validation_"):
+            return
+    if allow_thumos_validation_alias:
+        raise ValueError(f"{context}: split must be train/training or THUMOS validation-as-training")
+    else:
         raise ValueError(f"{context}: split must be train/training")
 
 
@@ -145,9 +168,14 @@ def _validate_manifest(manifest: Mapping[str, Any] | None) -> dict[str, Any]:
 def _base_samples_by_id(path: str | Path | None) -> dict[str, dict[str, Any]]:
     if path is None:
         return {}
+    allow_thumos_validation_alias = _path_claims_train(path)
     samples: dict[str, dict[str, Any]] = {}
     for line_no, row in enumerate(_read_jsonl(path), start=1):
-        _require_train_split(row, context=f"base_samples_jsonl:{line_no}")
+        _require_train_split(
+            row,
+            context=f"base_samples_jsonl:{line_no}",
+            allow_thumos_validation_alias=allow_thumos_validation_alias,
+        )
         sample_id = row.get("sample_id")
         if not isinstance(sample_id, str) or not sample_id:
             raise ValueError(f"{path}:{line_no}: sample_id is required")

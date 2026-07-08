@@ -274,6 +274,8 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
 
 
 def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dynamic(monkeypatch):
+    monkeypatch.delenv("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", raising=False)
+    monkeypatch.delenv("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", raising=False)
     expected = {
         "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
         "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),

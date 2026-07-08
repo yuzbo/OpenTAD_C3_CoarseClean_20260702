@@ -145,6 +145,35 @@ def test_base_paction_samples_must_be_train_split(tmp_path: Path) -> None:
         exporter.run_export(source, output, manifest=_train_manifest(), base_samples_jsonl=base)
 
 
+def test_thumos_validation_named_base_samples_are_allowed_only_under_train_path(tmp_path: Path) -> None:
+    source = tmp_path / "points.jsonl"
+    train_dir = tmp_path / "train"
+    train_dir.mkdir()
+    base = train_dir / "samples.jsonl"
+    output = tmp_path / "samples_with_responsibility_utility.jsonl"
+    _write_jsonl(source, [_source_row(sample_id="video_validation_0001|0", split="training")])
+    _write_jsonl(
+        base,
+        [
+            {
+                "sample_id": "video_validation_0001|0",
+                "split": "validation",
+                "dense_len": 5,
+                "valid_len": 5,
+                "action_target": [0.0, 1.0, 1.0, 1.0, 0.0],
+                "frame_signals": {"p_action": [0.1, 0.7, 0.4, 0.2, 0.6]},
+            }
+        ],
+    )
+
+    summary = exporter.run_export(source, output, manifest=_train_manifest(), base_samples_jsonl=base)
+
+    assert summary["row_count"] == 1
+    row = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+    assert row["sample_id"] == "video_validation_0001|0"
+    assert row["action_target"] == [0.0, 1.0, 1.0, 1.0, 0.0]
+
+
 def test_missing_point_fields_fail_closed(tmp_path: Path) -> None:
     source = tmp_path / "missing_fields.jsonl"
     output = tmp_path / "missing_fields.utility.jsonl"
