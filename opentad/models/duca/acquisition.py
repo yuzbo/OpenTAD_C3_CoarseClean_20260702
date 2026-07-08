@@ -1,0 +1,1054 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+TensorLikeBudget = Union[int, torch.Tensor]
+
+DEFAULT_BUDGET_UNIT = "detector_temporal_observation"
+DEFAULT_COORDINATE = "original_time"
+
+
+def _neg(dtype: torch.dtype) -> float:
+    return float(torch.finfo(dtype).min / 4.0)
+
+
+def _as_valid_mask(reference: torch.Tensor, valid_mask: Optional[torch.Tensor]) -> torch.Tensor:
+    if reference.ndim != 2:
+        raise ValueError(f"reference must be [B,T], got {tuple(reference.shape)}")
+    if valid_mask is None:
+        return torch.ones_like(reference, dtype=torch.bool)
+    if valid_mask.shape != reference.shape:
+        raise ValueError(f"valid_mask must match [B,T] {tuple(reference.shape)}, got {tuple(valid_mask.shape)}")
+    if valid_mask.dtype != torch.bool:
+        if not torch.logical_or(valid_mask == 0, valid_mask == 1).all():
+            raise ValueError("valid_mask must be boolean or binary")
+    valid = valid_mask.bool()
+    if torch.any(valid.long().sum(dim=1) <= 0):
+        raise ValueError("each sample must contain at least one valid temporal observation")
+    return valid
+
+
+def _budget_tensor(budget: TensorLikeBudget, batch_size: int, device: torch.device) -> torch.Tensor:
+    if isinstance(budget, int):
+        out = torch.full((batch_size,), int(budget), dtype=torch.long, device=device)
+    elif torch.is_tensor(budget):
+        if budget.ndim == 0:
+            out = torch.full((batch_size,), int(budget.item()), dtype=torch.long, device=device)
+        elif budget.ndim == 1 and budget.numel() == batch_size:
+            out = budget.to(device=device, dtype=torch.long)
+        else:
+            raise ValueError(f"budget tensor must be scalar or [B], got {tuple(budget.shape)}")
+    else:
+        raise TypeError("budget must be int or tensor")
+    if torch.any(out <= 0):
+        raise ValueError("budget must be positive")
+    return out
+
+
+def _per_sample_value(value: Union[int, torch.Tensor], row: int) -> int:
+    if isinstance(value, int):
+        return int(value)
+    if value.ndim == 0:
+        return int(value.item())
+    return int(value[row].item())
+
+
+@dataclass
+class SparseTemporalGrid:
+    """Fail-closed detector-consumed original-time sparse temporal grid.
+
+    `selected_positions` are the only temporal observations the detector is
+    allowed to consume. Center and radius decisions can be stored in metadata,
+    but they are not the budget unit.
+    """
+
+    selected_positions: torch.Tensor
+    selected_mask: torch.Tensor
+    original_length: int
+    valid_len: Optional[torch.Tensor]
+    budget: int
+    budget_unit: str = DEFAULT_BUDGET_UNIT
+    coordinate: str = DEFAULT_COORDINATE
+    detector_consumes_selected_positions: bool = True
+    detector_input_length: Optional[torch.Tensor] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def dense_length(self) -> int:
+        return int(self.original_length)
+
+    @property
+    def selected_count(self) -> torch.Tensor:
+        return self.selected_mask.bool().long().sum(dim=1)
+
+    def validate(self) -> "SparseTemporalGrid":
+        if not torch.is_tensor(self.selected_positions) or self.selected_positions.ndim != 2:
+            raise ValueError("selected_positions must be a [B,K] tensor")
+        if not torch.is_tensor(self.selected_mask) or self.selected_mask.ndim != 2:
+            raise ValueError("selected_mask must be a dense [B,T] tensor")
+        if self.selected_positions.shape[0] != self.selected_mask.shape[0]:
+            raise ValueError("selected_positions and selected_mask batch dimensions must match")
+        if int(self.original_length) <= 0:
+            raise ValueError("original_length must be positive")
+        if self.selected_mask.shape[1] != int(self.original_length):
+            raise ValueError("selected_mask temporal dimension must equal original_length")
+        if self.valid_len is None:
+            raise ValueError("valid_len is required for fail-closed validation")
+        if self.valid_len.ndim == 0:
+            valid_len = self.valid_len.expand(self.selected_positions.shape[0]).to(
+                device=self.selected_positions.device, dtype=torch.long
+            )
+        elif self.valid_len.ndim == 1 and self.valid_len.numel() == self.selected_positions.shape[0]:
+            valid_len = self.valid_len.to(device=self.selected_positions.device, dtype=torch.long)
+        else:
+            raise ValueError("valid_len must be scalar or [B]")
+        if torch.any(valid_len <= 0) or torch.any(valid_len > int(self.original_length)):
+            raise ValueError("valid_len must lie in (0, original_length]")
+        if int(self.budget) <= 0:
+            raise ValueError("budget must be positive")
+        if self.budget_unit != DEFAULT_BUDGET_UNIT:
+            raise ValueError(f"budget_unit must be {DEFAULT_BUDGET_UNIT}")
+        if self.coordinate != DEFAULT_COORDINATE:
+            raise ValueError(f"coordinate must be {DEFAULT_COORDINATE}")
+        if not bool(self.detector_consumes_selected_positions):
+            raise ValueError("detector_consumes_selected_positions must be True")
+
+        selected_mask = self.selected_mask.bool()
+        count_from_mask = selected_mask.long().sum(dim=1)
+        if torch.any(count_from_mask > int(self.budget)):
+            raise ValueError("selected count exceeds detector-consumed budget")
+        if torch.any(count_from_mask > valid_len):
+            raise ValueError("selected count exceeds valid_len")
+
+        pos = self.selected_positions.to(device=selected_mask.device, dtype=torch.long)
+        for batch_idx in range(pos.shape[0]):
+            row_pos = pos[batch_idx]
+            valid_pos = row_pos[row_pos >= 0]
+            if valid_pos.numel() != int(count_from_mask[batch_idx].item()):
+                raise ValueError("selected_positions count must equal selected_mask count")
+            if valid_pos.numel() == 0:
+                raise ValueError("each sample must select at least one observation")
+            if torch.any(valid_pos >= int(self.original_length)):
+                raise ValueError("selected_positions contain out-of-range original-time indices")
+            if torch.any(valid_pos >= int(valid_len[batch_idx].item())):
+                raise ValueError("selected_positions exceed per-sample valid_len")
+            if valid_pos.numel() > 1:
+                if not torch.all(valid_pos[1:] > valid_pos[:-1]):
+                    raise ValueError("selected_positions must be sorted and unique")
+            mask_pos = torch.nonzero(selected_mask[batch_idx], as_tuple=False).flatten()
+            if not torch.equal(valid_pos.cpu(), mask_pos.cpu()):
+                raise ValueError("selected_mask must exactly match selected_positions")
+
+        if self.detector_input_length is not None:
+            if self.detector_input_length.shape != count_from_mask.shape:
+                raise ValueError("detector_input_length must be [B]")
+            if not torch.equal(self.detector_input_length.to(count_from_mask.device, dtype=torch.long), count_from_mask):
+                raise ValueError("detector_input_length must equal selected count")
+        return self
+
+
+class ZeroShotActionnessSource(nn.Module):
+    """Deploy-visible no-THUMOS-label actionness abstraction.
+
+    The default fallback is lightweight motion / feature-energy actionness. A
+    CLIP-like video-text source can be injected through `video_text_model` and
+    `tokenizer`; unit tests do not download or require those models.
+    """
+
+    def __init__(
+        self,
+        feature_dim: Optional[int] = None,
+        hidden_dim: int = 64,
+        frozen: bool = True,
+        mode: str = "motion",
+        p_action: Optional[torch.Tensor] = None,
+        uncertainty: Optional[torch.Tensor] = None,
+        video_text_model: Optional[nn.Module] = None,
+        tokenizer: Optional[Any] = None,
+        action_prompts: Optional[Iterable[str]] = None,
+        background_prompts: Optional[Iterable[str]] = None,
+        temperature: float = 1.0,
+    ) -> None:
+        super().__init__()
+        if mode not in {"motion", "feature_mlp", "manual", "video_text"}:
+            raise ValueError("mode must be one of motion, feature_mlp, manual, video_text")
+        self.mode = mode
+        self.temperature = float(temperature)
+        if self.temperature <= 0.0:
+            raise ValueError("temperature must be positive")
+        self.video_text_model = video_text_model
+        self.tokenizer = tokenizer
+        self.action_prompts = tuple(
+            action_prompts
+            or (
+                "a video clip of a person performing an action",
+                "a video clip showing a human activity",
+                "a video clip with a salient temporal action",
+                "a video clip where something is happening",
+            )
+        )
+        self.background_prompts = tuple(
+            background_prompts
+            or (
+                "a video clip of background",
+                "a video clip where no action is happening",
+                "a video clip without a salient action",
+                "a video clip of irrelevant context",
+            )
+        )
+
+        if mode == "manual":
+            if p_action is None or uncertainty is None:
+                raise ValueError("manual mode requires p_action and uncertainty")
+            if p_action.shape != uncertainty.shape:
+                raise ValueError("manual p_action and uncertainty must share shape")
+            self.register_buffer("manual_p_action", p_action.float())
+            self.register_buffer("manual_uncertainty", uncertainty.float())
+        else:
+            self.manual_p_action = None
+            self.manual_uncertainty = None
+
+        self.feature_dim = None if feature_dim is None else int(feature_dim)
+        if mode == "feature_mlp":
+            if self.feature_dim is None:
+                raise ValueError("feature_mlp mode requires feature_dim")
+            self.net = nn.Sequential(
+                nn.LayerNorm(self.feature_dim),
+                nn.Linear(self.feature_dim, int(hidden_dim)),
+                nn.GELU(),
+                nn.Linear(int(hidden_dim), 1),
+            )
+        else:
+            self.net = None
+
+        if frozen:
+            for param in self.parameters():
+                param.requires_grad_(False)
+
+    @classmethod
+    def from_manual(cls, p_action: torch.Tensor, uncertainty: torch.Tensor) -> "ZeroShotActionnessSource":
+        return cls(mode="manual", p_action=p_action, uncertainty=uncertainty)
+
+    def _provenance(self) -> Dict[str, Any]:
+        return {
+            "source_type": self.mode,
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "temperature": self.temperature,
+            "action_prompts": list(self.action_prompts),
+            "background_prompts": list(self.background_prompts),
+        }
+
+    def forward(
+        self,
+        features: Optional[torch.Tensor] = None,
+        logits: Optional[torch.Tensor] = None,
+        valid_mask: Optional[torch.Tensor] = None,
+        p_action: Optional[torch.Tensor] = None,
+    ) -> Dict[str, Any]:
+        if p_action is not None:
+            if p_action.ndim != 2:
+                raise ValueError("p_action must be [B,T]")
+            valid = _as_valid_mask(p_action, valid_mask)
+            prob = p_action.float().clamp(0.0, 1.0).masked_fill(~valid, 0.0)
+            logits_out = torch.logit(prob.clamp(1e-6, 1.0 - 1e-6)).masked_fill(~valid, _neg(prob.dtype))
+            return self._format_output(prob, logits_out, valid)
+
+        if self.mode == "manual":
+            prob = self.manual_p_action
+            valid = _as_valid_mask(prob, valid_mask)
+            prob = prob.masked_fill(~valid, 0.0)
+            logits_out = torch.logit(prob.clamp(1e-6, 1.0 - 1e-6)).masked_fill(~valid, _neg(prob.dtype))
+            out = self._format_output(prob, logits_out, valid)
+            out["uncertainty"] = self.manual_uncertainty.to(prob.device, prob.dtype).masked_fill(~valid, 0.0)
+            return out
+
+        if logits is not None:
+            if logits.ndim == 3 and logits.shape[-1] == 1:
+                logits = logits.squeeze(-1)
+            if logits.ndim != 2:
+                raise ValueError("logits must be [B,T] or [B,T,1]")
+            valid = _as_valid_mask(logits, valid_mask)
+            logits_out = logits.float().masked_fill(~valid, _neg(logits.float().dtype))
+            prob = torch.sigmoid(logits_out / self.temperature).masked_fill(~valid, 0.0)
+            return self._format_output(prob, logits_out, valid)
+
+        if features is None:
+            raise ValueError("features, logits, or p_action must be provided")
+        if features.ndim != 3:
+            raise ValueError(f"features must be [B,T,C], got {tuple(features.shape)}")
+
+        ref = features[..., 0]
+        valid = _as_valid_mask(ref, valid_mask)
+        if self.mode == "feature_mlp":
+            if features.shape[-1] != self.feature_dim:
+                raise ValueError(f"expected feature_dim={self.feature_dim}, got {features.shape[-1]}")
+            logits_out = self.net(features).squeeze(-1).masked_fill(~valid, _neg(features.dtype))
+            prob = torch.sigmoid(logits_out / self.temperature).masked_fill(~valid, 0.0)
+            return self._format_output(prob, logits_out, valid)
+
+        if self.mode == "video_text":
+            if self.video_text_model is None or self.tokenizer is None:
+                raise ValueError("video_text mode requires injected video_text_model and tokenizer")
+            logits_out = self._video_text_logits(features).masked_fill(~valid, _neg(features.dtype))
+            prob = torch.sigmoid(logits_out / self.temperature).masked_fill(~valid, 0.0)
+            return self._format_output(prob, logits_out, valid)
+
+        # Lightweight fallback: feature energy plus temporal change, normalized
+        # within each video without any dataset labels or calibration.
+        energy = features.float().pow(2).mean(dim=-1).sqrt()
+        delta = torch.zeros_like(energy)
+        delta[:, 1:] = (features[:, 1:].float() - features[:, :-1].float()).pow(2).mean(dim=-1).sqrt()
+        raw = energy + delta
+        raw = raw.masked_fill(~valid, 0.0)
+        denom = valid.long().sum(dim=1).clamp_min(1).to(raw.dtype)
+        mean = raw.sum(dim=1, keepdim=True) / denom[:, None]
+        centered = raw - mean
+        scale = centered.masked_fill(~valid, 0.0).abs().sum(dim=1, keepdim=True) / denom[:, None]
+        logits_out = (centered / scale.clamp_min(1e-6)).masked_fill(~valid, _neg(raw.dtype))
+        prob = torch.sigmoid(logits_out).masked_fill(~valid, 0.0)
+        return self._format_output(prob, logits_out, valid)
+
+    def _video_text_logits(self, features: torch.Tensor) -> torch.Tensor:
+        flat = features.reshape(features.shape[0] * features.shape[1], features.shape[2])
+        video_feat = self.video_text_model.encode_video(flat)
+        action_tokens = self.tokenizer(list(self.action_prompts)).to(features.device)
+        background_tokens = self.tokenizer(list(self.background_prompts)).to(features.device)
+        action_text = self.video_text_model.encode_text(action_tokens)
+        background_text = self.video_text_model.encode_text(background_tokens)
+        video_feat = F.normalize(video_feat.float(), dim=-1)
+        action_text = F.normalize(action_text.float(), dim=-1)
+        background_text = F.normalize(background_text.float(), dim=-1)
+        sim_action = video_feat @ action_text.t()
+        sim_background = video_feat @ background_text.t()
+        logits = sim_action.mean(dim=-1) - sim_background.mean(dim=-1)
+        return logits.reshape(features.shape[0], features.shape[1])
+
+    def _format_output(self, p_action: torch.Tensor, logits: torch.Tensor, valid: torch.Tensor) -> Dict[str, Any]:
+        uncertainty = (1.0 - torch.abs(2.0 * p_action - 1.0)).masked_fill(~valid, 0.0)
+        entropy = _binary_entropy(p_action).masked_fill(~valid, 0.0)
+        source_features = torch.stack((p_action, uncertainty, entropy), dim=-1)
+        return {
+            "p_action": p_action,
+            "uncertainty": uncertainty,
+            "entropy": entropy,
+            "features": source_features,
+            "logits": logits,
+            "valid_mask": valid,
+            "provenance": self._provenance(),
+        }
+
+
+class DucaAcquisitionAdapter(nn.Module):
+    """Online DUCA acquisition adapter with hard budgeted sparse output."""
+
+    def __init__(
+        self,
+        feature_dim: Optional[int] = None,
+        hidden_dim: int = 96,
+        actionness_source: Optional[nn.Module] = None,
+        budget: int = 384,
+        max_radius: int = 16,
+        uncertainty_weight: float = 0.25,
+        utility_weight: float = 0.50,
+        boundary_weight: float = 0.25,
+    ) -> None:
+        super().__init__()
+        self.budget = int(budget)
+        self.default_budget = int(budget)
+        self.max_radius = int(max_radius)
+        if self.budget <= 0:
+            raise ValueError("budget must be positive")
+        if self.max_radius < 0:
+            raise ValueError("max_radius must be non-negative")
+        self.uncertainty_weight = float(uncertainty_weight)
+        self.utility_weight = float(utility_weight)
+        self.boundary_weight = float(boundary_weight)
+        self.actionness_source = actionness_source or ZeroShotActionnessSource(feature_dim=feature_dim, mode="motion")
+        self.feature_dim = None if feature_dim is None else int(feature_dim)
+        if self.feature_dim is None:
+            self.encoder = None
+            self.center_head = None
+            self.radius_head = None
+            self.boundary_head = None
+            self.utility_head = None
+        else:
+            in_dim = self.feature_dim + 3
+            self.encoder = nn.Sequential(
+                nn.LayerNorm(in_dim),
+                nn.Linear(in_dim, int(hidden_dim)),
+                nn.GELU(),
+                nn.Linear(int(hidden_dim), int(hidden_dim)),
+                nn.GELU(),
+            )
+            self.center_head = nn.Linear(int(hidden_dim), 1)
+            self.radius_head = nn.Linear(int(hidden_dim), 1)
+            self.boundary_head = nn.Linear(int(hidden_dim), 1)
+            self.utility_head = nn.Linear(int(hidden_dim), 1)
+
+    def forward_scores(
+        self,
+        dense_observations: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
+        actionness_logits: Optional[torch.Tensor] = None,
+        p_action: Optional[torch.Tensor] = None,
+    ) -> Dict[str, Any]:
+        if dense_observations.ndim != 3:
+            raise ValueError(f"dense_observations must be [B,T,C], got {tuple(dense_observations.shape)}")
+        source = self.actionness_source(
+            dense_observations,
+            logits=actionness_logits,
+            valid_mask=valid_mask,
+            p_action=p_action,
+        )
+        valid = source["valid_mask"]
+        if self.encoder is None:
+            center_scores = source["logits"] + self.uncertainty_weight * source["uncertainty"]
+            boundary_logits = source["uncertainty"]
+            utility_scores = source["p_action"] + source["uncertainty"]
+            radius = self.max_radius * torch.sigmoid(source["uncertainty"] * 4.0 - 2.0)
+        else:
+            if dense_observations.shape[-1] != self.feature_dim:
+                raise ValueError(f"expected feature_dim={self.feature_dim}, got {dense_observations.shape[-1]}")
+            browser_features = torch.cat((dense_observations.float(), source["features"].float()), dim=-1)
+            encoded = self.encoder(browser_features)
+            center_scores = self.center_head(encoded).squeeze(-1)
+            radius = self.max_radius * torch.sigmoid(self.radius_head(encoded).squeeze(-1))
+            boundary_logits = self.boundary_head(encoded).squeeze(-1)
+            utility_scores = self.utility_head(encoded).squeeze(-1)
+            center_scores = (
+                center_scores
+                + source["logits"]
+                + self.uncertainty_weight * source["uncertainty"]
+                + self.utility_weight * utility_scores
+                + self.boundary_weight * boundary_logits
+            )
+        center_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
+        radius = radius.masked_fill(~valid, 0.0).clamp(0.0, float(self.max_radius))
+        return {
+            "center_scores": center_scores,
+            "scores": center_scores,
+            "radius": radius,
+            "boundary_logits": boundary_logits.masked_fill(~valid, 0.0),
+            "utility_scores": utility_scores.masked_fill(~valid, 0.0),
+            "p_action": source["p_action"],
+            "uncertainty": source["uncertainty"],
+            "entropy": source["entropy"],
+            "actionness_logits": source["logits"],
+            "valid_mask": valid,
+            "provenance": source["provenance"],
+        }
+
+    def acquire(
+        self,
+        dense_observations: torch.Tensor,
+        budget: Optional[TensorLikeBudget] = None,
+        valid_mask: Optional[torch.Tensor] = None,
+        actionness_logits: Optional[torch.Tensor] = None,
+        p_action: Optional[torch.Tensor] = None,
+    ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
+        if budget is None:
+            budget = self.budget
+        scores = self.forward_scores(
+            dense_observations=dense_observations,
+            valid_mask=valid_mask,
+            actionness_logits=actionness_logits,
+            p_action=p_action,
+        )
+        decoded = budgeted_center_radius_decode(
+            center_scores=scores["center_scores"],
+            radius=scores["radius"],
+            budget=budget,
+            valid_mask=scores["valid_mask"],
+            max_radius=self.max_radius,
+        )
+        budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
+        valid_len = scores["valid_mask"].long().sum(dim=1)
+        grid = SparseTemporalGrid(
+            selected_positions=decoded["selected_positions"],
+            selected_mask=decoded["selected_mask"],
+            original_length=int(dense_observations.shape[1]),
+            valid_len=valid_len,
+            budget=int(budgets.max().item()),
+            detector_input_length=decoded["detector_input_length"],
+            metadata={
+                "selected_centers": decoded["selected_centers"],
+                "selected_radius": decoded["selected_radius"],
+                "fill_strategy": decoded["fill_strategy"],
+                "decoder": "budgeted_center_radius_decode",
+                "radius_is_metadata": True,
+            },
+        ).validate()
+        selection_st, selected_indices, aux = hard_topk_st(
+            scores["center_scores"],
+            budget=budget,
+            valid_mask=scores["valid_mask"],
+            return_aux=True,
+        )
+        scores.update(
+            {
+                "selected_mask_st": selection_st,
+                "selected_indices_st": selected_indices,
+                "hard_topk_aux": aux,
+                "decode_metadata": grid.metadata,
+            }
+        )
+        return grid, scores
+
+    def forward_acquire(
+        self,
+        dense_observations: torch.Tensor,
+        budget: Optional[TensorLikeBudget] = None,
+        valid_mask: Optional[torch.Tensor] = None,
+        actionness_logits: Optional[torch.Tensor] = None,
+        p_action: Optional[torch.Tensor] = None,
+        return_audit: bool = False,
+    ) -> Dict[str, Any]:
+        grid, scores = self.acquire(
+            dense_observations=dense_observations,
+            budget=budget,
+            valid_mask=valid_mask,
+            actionness_logits=actionness_logits,
+            p_action=p_action,
+        )
+        gathered = gather_selected_observations(dense_observations, grid.selected_positions, grid.selected_mask)
+        out: Dict[str, Any] = {
+            "grid": grid,
+            "sparse_grid": grid,
+            "detector_input": gathered["observations"],
+            "detector_input_mask": gathered["mask"],
+            "selected_positions": grid.selected_positions,
+            "selected_mask": grid.selected_mask,
+            "detector_input_length": grid.detector_input_length,
+        }
+        out.update(scores)
+        if return_audit:
+            out["audit"] = make_audit_record(grid, uses_teacher=False, mode="acquire")
+        return out
+
+    def forward(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return self.forward_acquire(*args, **kwargs)
+
+
+def hard_topk_st(
+    scores: torch.Tensor,
+    budget: Optional[TensorLikeBudget] = None,
+    valid_mask: Optional[torch.Tensor] = None,
+    temperature: float = 1.0,
+    k: Optional[TensorLikeBudget] = None,
+    return_aux: bool = False,
+) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]]:
+    """Hard top-k forward with straight-through softmax surrogate backward."""
+
+    if budget is None:
+        if k is None:
+            raise ValueError("budget or k must be provided")
+        budget = k
+    elif k is not None:
+        raise ValueError("provide only one of budget or k")
+    valid = _as_valid_mask(scores, valid_mask)
+    budgets = _budget_tensor(budget, scores.shape[0], scores.device)
+    valid_counts = valid.long().sum(dim=1)
+    effective_budgets = torch.minimum(budgets, valid_counts)
+    if float(temperature) <= 0.0:
+        raise ValueError("temperature must be positive")
+
+    masked_scores = scores.masked_fill(~valid, _neg(scores.dtype))
+    max_budget = int(effective_budgets.max().item())
+    topk_idx = torch.topk(masked_scores, k=max_budget, dim=1, largest=True, sorted=False).indices
+    rank = torch.arange(max_budget, device=scores.device)[None, :]
+    keep = rank < effective_budgets[:, None]
+    hard = torch.zeros_like(scores)
+    hard.scatter_(1, topk_idx, keep.to(dtype=scores.dtype))
+    hard = hard.masked_fill(~valid, 0.0)
+
+    soft = F.softmax(masked_scores / float(temperature), dim=1) * effective_budgets.to(scores.dtype)[:, None]
+    soft = soft.masked_fill(~valid, 0.0)
+    st_mask = hard + soft - soft.detach()
+    sorted_idx = topk_idx.masked_fill(~keep, scores.shape[1]).sort(dim=1).values
+    sorted_idx = sorted_idx.masked_fill(sorted_idx == scores.shape[1], -1)
+    if return_aux:
+        return st_mask, sorted_idx, {
+            "hard_mask": hard,
+            "soft_mask": soft,
+            "budget": budgets,
+            "effective_budget": effective_budgets,
+            "valid_count": valid_counts,
+        }
+    return st_mask, sorted_idx
+
+
+def budgeted_center_radius_decode(
+    center_scores: Optional[torch.Tensor] = None,
+    radius: Optional[torch.Tensor] = None,
+    budget: Optional[TensorLikeBudget] = None,
+    valid_mask: Optional[torch.Tensor] = None,
+    centers: Optional[torch.Tensor] = None,
+    radii: Optional[torch.Tensor] = None,
+    scores: Optional[torch.Tensor] = None,
+    dense_positions: Optional[torch.Tensor] = None,
+    dense_len: Optional[int] = None,
+    max_radius: int = 16,
+    candidate_multiplier: float = 2.0,
+) -> Dict[str, Any]:
+    """Decode center/radius decisions into detector-consumed positions.
+
+    The output budget is measured only in final `selected_positions`. Center and
+    radius are recorded as metadata and never counted as detector observations.
+    """
+
+    if center_scores is None:
+        center_scores = scores
+    if center_scores is None:
+        raise ValueError("center_scores or scores must be provided")
+    if center_scores.ndim != 2:
+        raise ValueError("center_scores must be [B,T]")
+    if budget is None:
+        raise ValueError("budget must be provided")
+    if radius is not None and radii is not None:
+        raise ValueError("provide only one of radius or radii")
+    if radius is None:
+        radius = radii
+    valid = _as_valid_mask(center_scores, valid_mask)
+    budgets = _budget_tensor(budget, center_scores.shape[0], center_scores.device)
+    valid_counts = valid.long().sum(dim=1)
+    effective_budgets = torch.minimum(budgets, valid_counts)
+    batch_size, temporal_len = center_scores.shape
+    if dense_positions is None:
+        if dense_len is None:
+            dense_positions = torch.arange(temporal_len, device=center_scores.device).view(1, -1).expand(batch_size, -1)
+        else:
+            dense_positions = torch.linspace(0, int(dense_len) - 1, steps=temporal_len, device=center_scores.device)
+            dense_positions = dense_positions.round().long().view(1, -1).expand(batch_size, -1)
+    if dense_positions.shape != center_scores.shape:
+        raise ValueError("dense_positions must be [B,T]")
+    if radius is None:
+        radius = torch.zeros_like(center_scores)
+    if radius.ndim == 1:
+        radius = radius[:, None].expand_as(center_scores)
+    if radius.shape != center_scores.shape:
+        raise ValueError("radius must be [B,T] or [B]")
+    radius = radius.to(center_scores.device, dtype=center_scores.dtype).clamp(0.0, float(max_radius))
+
+    candidate_positions = dense_positions
+    if centers is not None:
+        if centers.shape != center_scores.shape:
+            raise ValueError("centers must match center_scores when provided")
+        candidate_positions = centers.to(center_scores.device).round().long()
+        max_position = int(dense_positions.max().item())
+        candidate_positions = candidate_positions.clamp(0, max_position)
+
+    max_out = int(effective_budgets.max().item())
+    rows: List[torch.Tensor] = []
+    masks: List[torch.Tensor] = []
+    center_rows: List[torch.Tensor] = []
+    radius_rows: List[torch.Tensor] = []
+    fill_strategies: List[str] = []
+    masked_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
+
+    for bidx in range(batch_size):
+        target = int(effective_budgets[bidx].item())
+        order_len = min(int(valid_counts[bidx].item()), max(target, int(target * float(candidate_multiplier))))
+        order = torch.topk(masked_scores[bidx], k=order_len, largest=True, sorted=True).indices.tolist()
+        selected: Dict[int, float] = {}
+        selected_centers: List[int] = []
+        selected_radius: List[int] = []
+        valid_set = set(torch.nonzero(valid[bidx], as_tuple=False).flatten().tolist())
+
+        for candidate_idx in order:
+            if len(selected) >= target:
+                break
+            if candidate_idx not in valid_set:
+                continue
+            center_position = int(candidate_positions[bidx, candidate_idx].item())
+            rad = int(torch.round(radius[bidx, candidate_idx]).item())
+            left = max(0, center_position - rad)
+            right = min(temporal_len - 1, center_position + rad)
+            interval = [pos for pos in range(left, right + 1) if pos in valid_set and pos not in selected]
+            if not interval:
+                continue
+            interval = sorted(
+                interval,
+                key=lambda pos: (
+                    float(masked_scores[bidx, pos].item()),
+                    -abs(pos - center_position),
+                    -pos,
+                ),
+                reverse=True,
+            )
+            for pos in interval:
+                if len(selected) >= target:
+                    break
+                selected[pos] = float(masked_scores[bidx, candidate_idx].item())
+            selected_centers.append(center_position)
+            selected_radius.append(rad)
+
+        if len(selected) < target:
+            fill_strategies.append("score_residual_fill")
+            for pos in torch.argsort(masked_scores[bidx], descending=True).tolist():
+                if len(selected) >= target:
+                    break
+                if pos in valid_set and pos not in selected:
+                    selected[int(pos)] = float(masked_scores[bidx, pos].item())
+        else:
+            fill_strategies.append("center_radius_union")
+
+        selected_positions = sorted(selected.keys())
+        if len(selected_positions) != target:
+            raise ValueError("decoder failed to produce a valid strict-budget selection")
+        row = torch.full((max_out,), -1, dtype=torch.long, device=center_scores.device)
+        row[: len(selected_positions)] = torch.tensor(selected_positions, dtype=torch.long, device=center_scores.device)
+        rows.append(row)
+        dense_mask = torch.zeros((temporal_len,), dtype=torch.bool, device=center_scores.device)
+        if selected_positions:
+            dense_mask[torch.tensor(selected_positions, dtype=torch.long, device=center_scores.device)] = True
+        masks.append(dense_mask)
+        center_row = torch.full((max_out,), -1, dtype=torch.long, device=center_scores.device)
+        radius_row = torch.full((max_out,), -1, dtype=torch.long, device=center_scores.device)
+        usable = min(len(selected_centers), max_out)
+        if usable:
+            center_row[:usable] = torch.tensor(selected_centers[:usable], dtype=torch.long, device=center_scores.device)
+            radius_row[:usable] = torch.tensor(selected_radius[:usable], dtype=torch.long, device=center_scores.device)
+        center_rows.append(center_row)
+        radius_rows.append(radius_row)
+
+    selected_positions = torch.stack(rows, dim=0)
+    selected_mask = torch.stack(masks, dim=0)
+    selected_centers = torch.stack(center_rows, dim=0)
+    selected_radius = torch.stack(radius_rows, dim=0)
+    detector_input_length = selected_mask.long().sum(dim=1)
+    return {
+        "selected_positions": selected_positions,
+        "positions": selected_positions,
+        "selected_mask": selected_mask,
+        "selected_centers": selected_centers,
+        "selected_radius": selected_radius,
+        "detector_input_length": detector_input_length,
+        "fill_strategy": fill_strategies,
+        "budget": budgets,
+        "effective_budget": effective_budgets,
+    }
+
+
+def gather_selected_observations(
+    x: torch.Tensor,
+    selected_positions: torch.Tensor,
+    selected_mask: Optional[torch.Tensor] = None,
+    time_dim: int = 1,
+    pad_value: float = 0.0,
+) -> Dict[str, torch.Tensor]:
+    """Gather detector input only from original-time selected positions."""
+
+    if x.ndim < 3:
+        raise ValueError("x must be at least [B,T,C] or [B,C,T]")
+    if selected_positions.ndim != 2:
+        raise ValueError("selected_positions must be [B,K]")
+    if selected_positions.shape[0] != x.shape[0]:
+        raise ValueError("selected_positions batch size must match x")
+    if time_dim < 0:
+        time_dim = x.ndim + time_dim
+    if time_dim <= 0 or time_dim >= x.ndim:
+        raise ValueError("time_dim must refer to a non-batch dimension")
+    length = x.shape[time_dim]
+    pos = selected_positions.to(device=x.device, dtype=torch.long)
+    valid_pos = pos >= 0
+    if torch.any(pos[valid_pos] >= length):
+        raise ValueError("selected_positions contain out-of-range indices for x")
+    if selected_mask is not None:
+        if selected_mask.shape != (x.shape[0], length):
+            raise ValueError("selected_mask must be dense [B,T] matching x time dimension")
+        for bidx in range(x.shape[0]):
+            mask_pos = torch.nonzero(selected_mask[bidx].to(device=x.device).bool(), as_tuple=False).flatten()
+            row_pos = pos[bidx][pos[bidx] >= 0]
+            if not torch.equal(mask_pos.cpu(), row_pos.cpu()):
+                raise ValueError("selected_mask does not match selected_positions")
+
+    moved = x.movedim(time_dim, 1)
+    gather_idx = pos.clamp_min(0)
+    expand_shape = (gather_idx.shape[0], gather_idx.shape[1]) + moved.shape[2:]
+    gather_idx = gather_idx.view(gather_idx.shape[0], gather_idx.shape[1], *([1] * (moved.ndim - 2))).expand(expand_shape)
+    gathered = moved.gather(dim=1, index=gather_idx)
+    gathered = gathered.masked_fill(~valid_pos.view(valid_pos.shape[0], valid_pos.shape[1], *([1] * (gathered.ndim - 2))), pad_value)
+    if time_dim != 1:
+        gathered = gathered.movedim(1, time_dim)
+    return {"observations": gathered, "sparse_observations": gathered, "features": gathered, "mask": valid_pos}
+
+
+def duca_forward_train(
+    detector: Optional[nn.Module] = None,
+    adapter: Optional[DucaAcquisitionAdapter] = None,
+    batch: Optional[Mapping[str, Any]] = None,
+    dense_observations: Optional[torch.Tensor] = None,
+    budget: Optional[TensorLikeBudget] = None,
+    valid_mask: Optional[torch.Tensor] = None,
+    teacher_utility: Optional[torch.Tensor] = None,
+    actionness_logits: Optional[torch.Tensor] = None,
+    p_action: Optional[torch.Tensor] = None,
+    loss_weights: Optional[Mapping[str, float]] = None,
+    acquisition: Optional[DucaAcquisitionAdapter] = None,
+) -> Dict[str, Any]:
+    """Hard-forward train path. Teacher utility is train-loss-only."""
+
+    adapter = adapter or acquisition
+    if adapter is None:
+        raise ValueError("adapter or acquisition must be provided")
+    batch_dict = dict(batch or {})
+    observations = dense_observations if dense_observations is not None else _get_observations(batch_dict)
+    valid = valid_mask if valid_mask is not None else batch_dict.get("valid_mask")
+    teacher = teacher_utility if teacher_utility is not None else batch_dict.get("teacher_utility")
+    out = adapter.forward_acquire(
+        dense_observations=observations,
+        budget=budget,
+        valid_mask=valid,
+        actionness_logits=actionness_logits if actionness_logits is not None else batch_dict.get("actionness_logits"),
+        p_action=p_action if p_action is not None else batch_dict.get("p_action"),
+        return_audit=True,
+    )
+    detector_output = None
+    detector_loss = None
+    if detector is not None:
+        detector_output = _call_detector(detector, out["detector_input"], out["grid"], batch_dict, train=True)
+        detector_loss = _extract_detector_loss(detector_output, observations.device)
+    losses = duca_losses(
+        scores=out,
+        teacher_utility=teacher,
+        boundary_target=batch_dict.get("boundary_target"),
+        action_target=batch_dict.get("action_target"),
+        detector_loss=detector_loss,
+        loss_weights=loss_weights,
+    )
+    out["detector_output"] = detector_output
+    out["losses"] = losses
+    out["audit"] = make_audit_record(out["grid"], uses_teacher=False, mode="train_forward")
+    return out
+
+
+def duca_forward_test(
+    detector: Optional[nn.Module] = None,
+    adapter: Optional[DucaAcquisitionAdapter] = None,
+    batch: Optional[Mapping[str, Any]] = None,
+    dense_observations: Optional[torch.Tensor] = None,
+    budget: Optional[TensorLikeBudget] = None,
+    valid_mask: Optional[torch.Tensor] = None,
+    actionness_logits: Optional[torch.Tensor] = None,
+    p_action: Optional[torch.Tensor] = None,
+    acquisition: Optional[DucaAcquisitionAdapter] = None,
+) -> Dict[str, Any]:
+    """Teacher-free hard-forward inference path."""
+
+    batch_dict = dict(batch or {})
+    forbidden = {
+        "teacher_utility",
+        "teacher_points",
+        "gt_segments",
+        "gt_labels",
+        "oracle_boundary",
+        "prediction_cache",
+        "raw_prediction",
+        "ledger",
+        "ledger_path",
+    }
+    present = sorted(key for key in forbidden if key in batch_dict)
+    if present:
+        raise ValueError(f"DUCA test/inference forbids decision-time payloads: {present}")
+    adapter = adapter or acquisition
+    if adapter is None:
+        raise ValueError("adapter or acquisition must be provided")
+    observations = dense_observations if dense_observations is not None else _get_observations(batch_dict)
+    valid = valid_mask if valid_mask is not None else batch_dict.get("valid_mask")
+    out = adapter.forward_acquire(
+        dense_observations=observations,
+        budget=budget,
+        valid_mask=valid,
+        actionness_logits=actionness_logits if actionness_logits is not None else batch_dict.get("actionness_logits"),
+        p_action=p_action if p_action is not None else batch_dict.get("p_action"),
+        return_audit=True,
+    )
+    detector_output = None
+    if detector is not None:
+        detector_output = _call_detector(detector, out["detector_input"], out["grid"], batch_dict, train=False)
+    out["detector_output"] = detector_output
+    out["audit"] = make_audit_record(out["grid"], uses_teacher=False, mode="test_forward")
+    return out
+
+
+def duca_losses(
+    scores: Union[Mapping[str, Any], torch.Tensor],
+    selected_mask_st: Optional[torch.Tensor] = None,
+    budget: Optional[TensorLikeBudget] = None,
+    valid_mask: Optional[torch.Tensor] = None,
+    teacher_utility: Optional[torch.Tensor] = None,
+    boundary_target: Optional[torch.Tensor] = None,
+    action_target: Optional[torch.Tensor] = None,
+    detector_loss: Optional[torch.Tensor] = None,
+    radius: Optional[torch.Tensor] = None,
+    p_action: Optional[torch.Tensor] = None,
+    uncertainty: Optional[torch.Tensor] = None,
+    loss_weights: Optional[Mapping[str, float]] = None,
+) -> Dict[str, torch.Tensor]:
+    """DUCA acquisition regularizers plus optional train-only utility loss."""
+
+    if isinstance(scores, Mapping):
+        output = scores
+        center_scores = output["center_scores"] if "center_scores" in output else output["scores"]
+        selected_mask_st = selected_mask_st if selected_mask_st is not None else output["selected_mask_st"]
+        budget = budget if budget is not None else int(output["grid"].budget)
+        valid_mask = valid_mask if valid_mask is not None else output.get("valid_mask")
+        radius = radius if radius is not None else output.get("radius")
+        p_action = p_action if p_action is not None else output.get("p_action")
+        uncertainty = uncertainty if uncertainty is not None else output.get("uncertainty")
+    else:
+        center_scores = scores
+    if selected_mask_st is None:
+        raise ValueError("selected_mask_st must be provided")
+    if budget is None:
+        raise ValueError("budget must be provided")
+    valid = _as_valid_mask(center_scores, valid_mask)
+    if selected_mask_st.shape != center_scores.shape:
+        raise ValueError("selected_mask_st must match scores")
+    weights = {
+        "detector": 1.0,
+        "budget": 0.05,
+        "boundary": 0.25,
+        "hole": 0.25,
+        "redundancy": 0.05,
+        "radius": 0.02,
+        "entropy": 0.01,
+        "teacher": 0.50,
+    }
+    if loss_weights is not None:
+        weights.update({key: float(value) for key, value in loss_weights.items()})
+    budgets = _budget_tensor(budget, center_scores.shape[0], center_scores.device).to(center_scores.dtype)
+    selected = selected_mask_st.masked_fill(~valid, 0.0)
+    losses: Dict[str, torch.Tensor] = {}
+    if detector_loss is not None:
+        losses["detector_loss"] = detector_loss * weights["detector"]
+    else:
+        losses["detector_loss"] = center_scores.sum() * 0.0
+    over = F.relu(selected.sum(dim=1) - budgets)
+    losses["budget_loss"] = over.pow(2).mean() * weights["budget"]
+    if teacher_utility is not None:
+        if teacher_utility.shape != center_scores.shape:
+            raise ValueError("teacher_utility must match scores [B,T]")
+        utility = teacher_utility.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
+        losses["teacher_utility_loss"] = -((selected * utility).sum(dim=1) / budgets.clamp_min(1.0)).mean() * weights["teacher"]
+    else:
+        losses["teacher_utility_loss"] = center_scores.sum() * 0.0
+    if boundary_target is not None:
+        if boundary_target.shape != center_scores.shape:
+            raise ValueError("boundary_target must match scores")
+        target = boundary_target.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
+        denom = target.sum(dim=1).clamp_min(1.0)
+        uncovered = (target * (1.0 - selected.clamp(0.0, 1.0))).sum(dim=1) / denom
+        losses["boundary_coverage_loss"] = uncovered.mean() * weights["boundary"]
+    else:
+        losses["boundary_coverage_loss"] = center_scores.sum() * 0.0
+    if action_target is not None:
+        if action_target.shape != center_scores.shape:
+            raise ValueError("action_target must match scores")
+        action = action_target.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
+        local = F.max_pool1d(selected[:, None, :].clamp(0.0, 1.0), kernel_size=9, stride=1, padding=4).squeeze(1)
+        denom = action.sum(dim=1).clamp_min(1.0)
+        losses["action_local_hole_loss"] = ((action * (1.0 - local)).sum(dim=1) / denom).mean() * weights["hole"]
+    else:
+        losses["action_local_hole_loss"] = center_scores.sum() * 0.0
+    losses["redundancy_loss"] = (selected[:, 1:] * selected[:, :-1]).mean() * weights["redundancy"]
+    if radius is not None:
+        losses["radius_cost_loss"] = radius.to(center_scores.dtype).masked_fill(~valid, 0.0).mean() * weights["radius"]
+    else:
+        losses["radius_cost_loss"] = center_scores.sum() * 0.0
+    if p_action is not None:
+        prob = p_action.to(center_scores.dtype).clamp(1e-6, 1.0 - 1e-6)
+        entropy = _binary_entropy(prob).masked_fill(~valid, 0.0)
+    elif uncertainty is not None:
+        entropy = uncertainty.to(center_scores.dtype).masked_fill(~valid, 0.0)
+    else:
+        entropy = _binary_entropy(torch.sigmoid(center_scores)).masked_fill(~valid, 0.0)
+    losses["entropy_anti_collapse_loss"] = -entropy.mean() * weights["entropy"]
+    total = center_scores.sum() * 0.0
+    for value in losses.values():
+        total = total + value
+    losses["total_loss"] = total
+    return losses
+
+
+def make_audit_record(grid: SparseTemporalGrid, uses_teacher: bool, mode: str, extra: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    grid.validate()
+    record: Dict[str, Any] = {
+        "mode": str(mode),
+        "budget": int(grid.budget),
+        "budget_unit": grid.budget_unit,
+        "coordinate": grid.coordinate,
+        "detector_consumes_selected_positions": bool(grid.detector_consumes_selected_positions),
+        "selected_count": [int(item) for item in grid.selected_count.detach().cpu().tolist()],
+        "uses_gt": False,
+        "uses_teacher": bool(uses_teacher),
+        "uses_oracle": False,
+        "uses_raw_prediction": False,
+        "uses_prediction_cache": False,
+        "uses_ledger_for_decision": False,
+    }
+    if extra:
+        record.update(dict(extra))
+    return record
+
+
+def _binary_entropy(prob: torch.Tensor) -> torch.Tensor:
+    prob = prob.clamp(1e-6, 1.0 - 1e-6)
+    return -(prob * prob.log() + (1.0 - prob) * (1.0 - prob).log())
+
+
+def _get_observations(batch: Mapping[str, Any]) -> torch.Tensor:
+    for key in ("observations", "dense_observations", "features", "inputs", "x"):
+        value = batch.get(key)
+        if torch.is_tensor(value):
+            return value
+    raise ValueError("batch must contain observations/dense_observations/features/inputs/x")
+
+
+def _extract_detector_loss(detector_output: Any, device: torch.device) -> Optional[torch.Tensor]:
+    if detector_output is None:
+        return None
+    if torch.is_tensor(detector_output):
+        return detector_output
+    if isinstance(detector_output, Mapping):
+        for key in ("loss", "total_loss", "cost"):
+            value = detector_output.get(key)
+            if torch.is_tensor(value):
+                return value
+        losses = detector_output.get("losses")
+        if isinstance(losses, Mapping):
+            tensors = [value for value in losses.values() if torch.is_tensor(value)]
+            if tensors:
+                total = torch.zeros((), device=device)
+                for value in tensors:
+                    total = total + value.to(device)
+                return total
+    return None
+
+
+def _call_detector(
+    detector: nn.Module,
+    observations: torch.Tensor,
+    grid: SparseTemporalGrid,
+    batch: Mapping[str, Any],
+    train: bool,
+) -> Any:
+    if hasattr(detector, "forward_sparse"):
+        return detector.forward_sparse(observations, sparse_grid=grid, batch=batch, mode="loss" if train else "predict")
+    try:
+        return detector(observations, sparse_grid=grid, batch=batch, mode="loss" if train else "predict")
+    except TypeError:
+        try:
+            return detector(observations, sparse_grid=grid)
+        except TypeError:
+            return detector(observations)
