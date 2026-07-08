@@ -124,7 +124,13 @@ class DucaOnlineFrameSelector(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        budget: int = 384,
+        budget: Optional[int] = 384,
+        budget_mode: str = "fixed",
+        budget_min: int = 64,
+        budget_max: Optional[int] = None,
+        budget_multiple: int = 16,
+        target_budget: Optional[float] = None,
+        allow_external_budget_override: Optional[bool] = None,
         max_radius: int = 16,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
@@ -145,7 +151,29 @@ class DucaOnlineFrameSelector(nn.Module):
     ) -> None:
         super().__init__()
         self.in_channels = int(in_channels)
-        self.budget = int(budget)
+        self.budget_mode = str(budget_mode)
+        if self.budget_mode not in {"fixed", "dynamic_must"}:
+            raise ValueError("budget_mode must be fixed or dynamic_must")
+        if self.budget_mode == "dynamic_must":
+            if budget is not None:
+                raise ValueError("dynamic_must selector must set fixed budget=None and use budget_max")
+            if budget_max is None:
+                raise ValueError("dynamic_must selector requires budget_max")
+            if allow_external_budget_override is True:
+                raise ValueError("main dynamic_must selector forbids external budget override")
+            self.budget = int(budget_max)
+            self.allow_external_budget_override = False
+        else:
+            if budget is None:
+                raise ValueError("fixed selector budget cannot be None")
+            self.budget = int(budget)
+            self.allow_external_budget_override = (
+                True if allow_external_budget_override is None else bool(allow_external_budget_override)
+            )
+        self.budget_min = int(budget_min if self.budget_mode == "dynamic_must" else self.budget)
+        self.budget_max = int(self.budget)
+        self.budget_multiple = int(budget_multiple)
+        self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
         self.detector_gradient_mode = str(detector_gradient_mode)
@@ -203,7 +231,13 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError(f"unsupported actionness_source_cfg type {source_type!r}")
         self.adapter = DucaAcquisitionAdapter(
             feature_dim=self.in_channels,
-            budget=self.budget,
+            budget=None if self.budget_mode == "dynamic_must" else self.budget,
+            budget_mode=self.budget_mode,
+            budget_min=self.budget_min,
+            budget_max=self.budget_max if self.budget_mode == "dynamic_must" else None,
+            budget_multiple=self.budget_multiple,
+            target_budget=self.target_budget,
+            allow_external_budget_override=self.allow_external_budget_override,
             max_radius=self.max_radius,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
@@ -280,6 +314,14 @@ class DucaOnlineFrameSelector(nn.Module):
         self.last_forward_summary = {
             self.metadata_keys["selected_count"]: int(selected_counts[0]) if selected_counts else 0,
             "budget": int(grid.budget),
+            "requested_budget": [
+                int(item) for item in grid.requested_budget.detach().cpu().reshape(-1).tolist()
+            ],
+            "effective_budget": [
+                int(item) for item in grid.effective_budget.detach().cpu().reshape(-1).tolist()
+            ],
+            "dynamic_budget": bool(grid.metadata.get("budget_is_dynamic", False)),
+            "budget_policy": str(grid.metadata.get("budget_policy", "fixed_budget")),
             "budget_unit": grid.budget_unit,
             "coordinate": grid.coordinate,
             self.metadata_keys["source"]: self.actionness_source_name,
@@ -365,6 +407,8 @@ class DucaOnlineFrameSelector(nn.Module):
             out = [dict(meta) for meta in metas]
         positions_cpu = grid.selected_positions.detach().cpu().long()
         valid_lens = grid.valid_len.detach().cpu().long()
+        requested_budget = grid.requested_budget.detach().cpu().long()
+        effective_budget = grid.effective_budget.detach().cpu().long()
         for idx, meta in enumerate(out):
             positions = [int(item) for item in positions_cpu[idx].tolist() if int(item) >= 0]
             dense_valid_len = int(valid_lens[idx].item())
@@ -379,6 +423,12 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_online_selected_positions_unit"] = self.selected_positions_unit
             meta["duca_online_selected_mask"] = [True] * len(positions)
             meta["duca_online_budget"] = int(grid.budget)
+            meta["duca_online_requested_budget"] = int(requested_budget[idx].item())
+            meta["duca_online_effective_budget"] = int(effective_budget[idx].item())
+            meta["duca_online_dynamic_budget"] = bool(grid.metadata.get("budget_is_dynamic", False))
+            meta["duca_online_budget_policy"] = str(grid.metadata.get("budget_policy", "fixed_budget"))
+            meta["duca_online_budget_target"] = float(grid.metadata.get("budget_target", float(grid.budget)))
+            meta["duca_online_budget_multiple"] = int(grid.metadata.get("budget_multiple", 1))
             meta["duca_online_selected_count"] = len(positions)
             meta["duca_online_selected_axis_remap"] = remap
             meta["duca_online_actionness_source"] = self.actionness_source_name

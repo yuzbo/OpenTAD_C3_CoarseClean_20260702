@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
+
 
 TensorLikeBudget = Union[int, torch.Tensor]
 
@@ -471,18 +473,56 @@ class DucaAcquisitionAdapter(nn.Module):
         feature_dim: Optional[int] = None,
         hidden_dim: int = 96,
         actionness_source: Optional[nn.Module] = None,
-        budget: int = 384,
+        budget: Optional[int] = 384,
+        budget_mode: str = "fixed",
+        budget_min: int = 64,
+        budget_max: Optional[int] = None,
+        budget_multiple: int = 16,
+        target_budget: Optional[float] = None,
+        allow_external_budget_override: Optional[bool] = None,
+        budget_controller: Optional[nn.Module] = None,
         max_radius: int = 16,
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 0.25,
     ) -> None:
         super().__init__()
-        self.budget = int(budget)
-        self.default_budget = int(budget)
+        self.budget_mode = str(budget_mode)
+        if self.budget_mode not in {"fixed", "dynamic_must"}:
+            raise ValueError("budget_mode must be fixed or dynamic_must")
+        if self.budget_mode == "dynamic_must":
+            if budget_max is None:
+                raise ValueError("dynamic_must requires budget_max")
+            hard_cap = int(budget_max)
+            self.allow_external_budget_override = (
+                False if allow_external_budget_override is None else bool(allow_external_budget_override)
+            )
+        else:
+            if budget is None:
+                raise ValueError("fixed budget mode requires budget")
+            hard_cap = int(budget)
+            self.allow_external_budget_override = (
+                True if allow_external_budget_override is None else bool(allow_external_budget_override)
+            )
+        self.dynamic_budget = self.budget_mode == "dynamic_must"
+        self.budget = int(hard_cap)
+        self.default_budget = int(hard_cap if budget is None else budget)
+        self.budget_min = int(budget_min if self.dynamic_budget else self.budget)
+        self.budget_max = int(self.budget)
+        self.budget_multiple = int(budget_multiple)
+        self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
         if self.budget <= 0:
             raise ValueError("budget must be positive")
+        if self.dynamic_budget:
+            if self.budget_min <= 0 or self.budget_min > self.budget:
+                raise ValueError("budget_min must lie in (0, budget_max]")
+            if self.budget_multiple <= 0:
+                raise ValueError("budget_multiple must be positive")
+            if (self.budget - self.budget_min) % self.budget_multiple != 0:
+                raise ValueError("budget_multiple must divide budget_max - budget_min")
+            if not (0.0 < self.target_budget <= float(self.budget)):
+                raise ValueError("target_budget must lie in (0, budget_max]")
         if self.max_radius < 0:
             raise ValueError("max_radius must be non-negative")
         self.uncertainty_weight = float(uncertainty_weight)
@@ -496,8 +536,11 @@ class DucaAcquisitionAdapter(nn.Module):
             self.radius_head = None
             self.boundary_head = None
             self.utility_head = None
+            selector_feature_dim = 3
         else:
             in_dim = self.feature_dim + 3
+            if self.dynamic_budget and int(hidden_dim) <= 0:
+                raise ValueError("dynamic_must requires a positive hidden_dim when feature_dim is provided")
             self.encoder = nn.Sequential(
                 nn.LayerNorm(in_dim),
                 nn.Linear(in_dim, int(hidden_dim)),
@@ -509,6 +552,17 @@ class DucaAcquisitionAdapter(nn.Module):
             self.radius_head = nn.Linear(int(hidden_dim), 1)
             self.boundary_head = nn.Linear(int(hidden_dim), 1)
             self.utility_head = nn.Linear(int(hidden_dim), 1)
+            selector_feature_dim = int(hidden_dim)
+        if self.dynamic_budget:
+            self.budget_controller = budget_controller or PrefixMarginalUtilityBudgetController(
+                hidden_dim=selector_feature_dim,
+                budget_min=self.budget_min,
+                budget_max=self.budget,
+                budget_multiple=self.budget_multiple,
+                target_budget=self.target_budget,
+            )
+        else:
+            self.budget_controller = budget_controller
 
     def forward_scores(
         self,
@@ -531,11 +585,13 @@ class DucaAcquisitionAdapter(nn.Module):
             boundary_logits = source["uncertainty"]
             utility_scores = source["p_action"] + source["uncertainty"]
             radius = self.max_radius * torch.sigmoid(source["uncertainty"] * 4.0 - 2.0)
+            selection_features = source["features"].float()
         else:
             if dense_observations.shape[-1] != self.feature_dim:
                 raise ValueError(f"expected feature_dim={self.feature_dim}, got {dense_observations.shape[-1]}")
             browser_features = torch.cat((dense_observations.float(), source["features"].float()), dim=-1)
             encoded = self.encoder(browser_features)
+            selection_features = encoded
             center_scores = self.center_head(encoded).squeeze(-1)
             radius = self.max_radius * torch.sigmoid(self.radius_head(encoded).squeeze(-1))
             boundary_logits = self.boundary_head(encoded).squeeze(-1)
@@ -559,6 +615,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "uncertainty": source["uncertainty"],
             "entropy": source["entropy"],
             "actionness_logits": source["logits"],
+            "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
             "valid_mask": valid,
             "provenance": source["provenance"],
         }
@@ -571,20 +628,37 @@ class DucaAcquisitionAdapter(nn.Module):
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
-        if budget is None:
-            budget = self.budget
-        budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
-        if torch.any(budgets > self.budget):
-            raise ValueError(
-                f"budget override exceeds hard cap: requested={budgets.detach().cpu().tolist()} "
-                f"hard_cap={self.budget}"
-            )
         scores = self.forward_scores(
             dense_observations=dense_observations,
             valid_mask=valid_mask,
             actionness_logits=actionness_logits,
             p_action=p_action,
         )
+        budget_decision: Optional[DynamicBudgetDecision] = None
+        if self.dynamic_budget:
+            if budget is not None and not self.allow_external_budget_override:
+                raise ValueError("external budget override is forbidden for dynamic_must DUCA acquisition")
+            if self.budget_controller is None:
+                raise ValueError("dynamic_must requires a budget_controller")
+            budget_decision = self.budget_controller(
+                scores["selection_features"],
+                scores["center_scores"],
+                scores["valid_mask"],
+            )
+            budget_decision.validate(batch_size=dense_observations.shape[0])
+            if budget is None:
+                budgets = budget_decision.budget_hard.to(device=dense_observations.device, dtype=torch.long)
+            else:
+                budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
+        else:
+            if budget is None:
+                budget = self.budget
+            budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
+        if torch.any(budgets > self.budget):
+            raise ValueError(
+                f"budget override exceeds hard cap: requested={budgets.detach().cpu().tolist()} "
+                f"hard_cap={self.budget}"
+            )
         decoded = budgeted_center_radius_decode(
             center_scores=scores["center_scores"],
             radius=scores["radius"],
@@ -609,8 +683,19 @@ class DucaAcquisitionAdapter(nn.Module):
                 "fill_strategy": decoded["fill_strategy"],
                 "decoder": "budgeted_center_radius_decode",
                 "radius_is_metadata": True,
+                "budget_is_dynamic": bool(self.dynamic_budget),
+                "budget_policy": (
+                    getattr(budget_decision, "policy_name", "fixed_budget") if budget_decision is not None else "fixed_budget"
+                ),
+                "budget_max": int(self.budget),
+                "budget_min": int(self.budget_min),
+                "budget_multiple": int(self.budget_multiple),
+                "budget_target": float(self.target_budget),
+                "predicted_budget": budgets.detach().cpu().tolist(),
             },
         ).validate()
+        if torch.any(grid.selected_count > int(self.budget)):
+            raise RuntimeError("DUCA dynamic acquisition selected more observations than the hard cap")
         soft_coverage = soft_center_radius_coverage(
             center_scores=scores["center_scores"],
             radius=scores["radius"],
@@ -627,6 +712,17 @@ class DucaAcquisitionAdapter(nn.Module):
                 "selected_indices_st": selected_indices,
                 "soft_coverage": soft_coverage,
                 "decode_metadata": grid.metadata,
+                "budget_decision": budget_decision,
+                "dynamic_budget": bool(self.dynamic_budget),
+                "budget_mode": self.budget_mode,
+                "requested_budget": budgets,
+                "effective_budget": effective_budget,
+                "budget_metrics": {
+                    "budget_mean": float(grid.selected_count.float().mean().detach().cpu().item()),
+                    "budget_max": int(self.budget),
+                    "budget_target": float(self.target_budget),
+                    "budget_policy": grid.metadata["budget_policy"],
+                },
             }
         )
         return grid, scores
@@ -973,12 +1069,13 @@ class DucaOnlineSparseDetectorWrapper(nn.Module):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         train_mode = self.training if mode is None else str(mode).lower() in {"loss", "train", "training"}
+        default_budget = None if bool(getattr(self.adapter, "dynamic_budget", False)) else self.budget
         common = {
             "detector": self.detector,
             "adapter": self.adapter,
             "batch": batch,
             "dense_observations": dense_observations,
-            "budget": kwargs.pop("budget", self.budget),
+            "budget": kwargs.pop("budget", default_budget),
             "valid_mask": kwargs.pop("valid_mask", None),
             "actionness_logits": kwargs.pop("actionness_logits", None),
             "p_action": kwargs.pop("p_action", None),
@@ -1110,11 +1207,19 @@ def duca_losses(
 ) -> Dict[str, torch.Tensor]:
     """DUCA acquisition regularizers plus optional train-only utility loss."""
 
+    budget_decision = None
+    grid = None
     if isinstance(scores, Mapping):
         output = scores
         center_scores = output["center_scores"] if "center_scores" in output else output["scores"]
         selected_mask_st = selected_mask_st if selected_mask_st is not None else output["selected_mask_st"]
-        budget = budget if budget is not None else int(output["grid"].budget)
+        grid = output.get("grid")
+        budget_decision = output.get("budget_decision")
+        if budget is None:
+            if output.get("requested_budget") is not None:
+                budget = output["requested_budget"]
+            elif grid is not None:
+                budget = int(grid.budget)
         valid_mask = valid_mask if valid_mask is not None else output.get("valid_mask")
         radius = radius if radius is not None else output.get("radius")
         p_action = p_action if p_action is not None else output.get("p_action")
@@ -1137,6 +1242,9 @@ def duca_losses(
         "radius": 0.02,
         "entropy": 0.01,
         "teacher": 0.50,
+        "lagrangian_budget": 1.0,
+        "marginal_monotonic": 0.01,
+        "hard_budget_cap": 1.0,
     }
     if loss_weights is not None:
         weights.update({key: float(value) for key, value in loss_weights.items()})
@@ -1149,6 +1257,31 @@ def duca_losses(
         losses["detector_loss"] = center_scores.sum() * 0.0
     over = F.relu(selected.sum(dim=1) - budgets)
     losses["budget_loss"] = over.pow(2).mean() * weights["budget"]
+    if budget_decision is not None:
+        if not isinstance(budget_decision, DynamicBudgetDecision):
+            raise TypeError("budget_decision must be a DynamicBudgetDecision")
+        budget_decision.validate(batch_size=center_scores.shape[0])
+        if grid is not None and torch.any(grid.selected_count.to(center_scores.device) > int(budget_decision.budget_max)):
+            raise RuntimeError("selected count exceeds dynamic hard budget cap")
+        dynamic_cost = budget_decision.expected_cost.to(device=center_scores.device, dtype=center_scores.dtype)
+        target = torch.as_tensor(
+            float(budget_decision.target_budget),
+            device=center_scores.device,
+            dtype=center_scores.dtype,
+        )
+        lambda_dual = budget_decision.lambda_dual.to(device=center_scores.device, dtype=center_scores.dtype).detach()
+        losses["lagrangian_budget_loss"] = (
+            lambda_dual * (dynamic_cost.mean() - target) / target.clamp_min(1.0)
+        ) * weights["lagrangian_budget"]
+        marginal = budget_decision.marginal_utility.to(device=center_scores.device, dtype=center_scores.dtype)
+        if marginal.shape[1] > 1:
+            monotonic = F.relu(marginal[:, 1:] - marginal[:, :-1]).pow(2).mean()
+        else:
+            monotonic = center_scores.sum() * 0.0
+        losses["marginal_monotonic_loss"] = monotonic * weights["marginal_monotonic"]
+        hard_over = F.relu(budget_decision.budget_hard.to(center_scores.dtype) - float(budget_decision.budget_max))
+        losses["hard_budget_cap_loss"] = hard_over.pow(2).mean() * weights["hard_budget_cap"]
+        losses["dynamic_budget_mean_lossless_metric"] = dynamic_cost.detach().mean() * 0.0
     if teacher_utility is not None:
         if teacher_utility.shape != center_scores.shape:
             raise ValueError("teacher_utility must match scores [B,T]")

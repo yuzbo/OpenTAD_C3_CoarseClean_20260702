@@ -20,11 +20,16 @@ ACTIONFORMER_PHYSICAL_CONFIG = (
 OFFICIAL_BACKEND_CONFIG = (
     ROOT / "configs" / "adatad" / "thumos" / "duca_online_official_adatad_backend_full_train.py"
 )
+DUCA_MUST_DYNAMIC_CONFIG = (
+    ROOT / "configs" / "adatad" / "thumos" / "duca_must_dynamic_official_adatad_backend_full_train.py"
+)
 VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_online_adatad_precheck.py"
 OFFICIAL_BACKEND_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_official_adatad_backend.py"
+DUCA_MUST_DYNAMIC_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_must_dynamic_official_adatad_backend.py"
 ADATAD_LAUNCHER = ROOT / "scripts" / "run_duca_online_adatad_precheck_gpu1.sh"
 ZEROSHOT_LAUNCHER = ROOT / "scripts" / "run_duca_online_zeroshot_actionness_precheck_gpu1.sh"
 OFFICIAL_BACKEND_LAUNCHER = ROOT / "scripts" / "run_duca_online_official_adatad_backend_gpu1.sh"
+DUCA_MUST_DYNAMIC_LAUNCHER = ROOT / "scripts" / "run_duca_must_dynamic_official_adatad_backend_gpu1.sh"
 OFFICIAL_BACKEND_BUDGET_CURVE_LAUNCHER = (
     ROOT / "scripts" / "run_duca_online_official_adatad_budget_curve_gpu1.sh"
 )
@@ -214,6 +219,73 @@ def test_duca_online_official_backend_budget_curve_launcher_is_continuous_and_pr
     assert "run_duca_online_official_adatad_backend_gpu1.sh" in text
     assert 'PRECHECK_ONLY="${PRECHECK_ONLY}"' in text
     assert 'FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE}"' in text
+
+
+def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
+    cfg = _cfg(DUCA_MUST_DYNAMIC_CONFIG)
+    official = _cfg(ROOT / "configs" / "adatad" / "thumos" / "e2e_thumos_videomae_s_768x1_160_adapter.py")
+    text = DUCA_MUST_DYNAMIC_CONFIG.read_text(encoding="utf-8").lower()
+
+    assert "duca_online_budget" not in text
+    assert cfg.duca_must_dynamic_contract.main_method_candidate is True
+    assert cfg.duca_must_dynamic_contract.dynamic_budget is True
+    assert cfg.duca_must_dynamic_contract.budget_policy == "prefix_marginal_utility_stop"
+    assert cfg.duca_must_dynamic_contract.budget_max == 384
+    assert cfg.duca_must_dynamic_contract.budget_target <= cfg.duca_must_dynamic_contract.budget_max
+    assert cfg.duca_must_dynamic_contract.external_budget_override_allowed is False
+    assert cfg.duca_must_dynamic_contract.runtime_flops_claim_allowed is False
+    assert cfg.duca_must_dynamic_contract.actual_variable_length_detector is False
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.frame_selector.type == "DucaOnlineFrameSelector"
+    assert cfg.model.frame_selector.budget is None
+    assert cfg.model.frame_selector.budget_mode == "dynamic_must"
+    assert cfg.model.frame_selector.budget_max == 384
+    assert cfg.model.frame_selector.budget_multiple == 16
+    assert cfg.model.frame_selector.target_budget == 256
+    assert cfg.model.frame_selector.allow_external_budget_override is False
+    assert cfg.model.rpn_head == official.model.rpn_head
+    assert cfg.window_size == 384
+    assert cfg.model.backbone.backbone.total_frames == 384
+    assert cfg.model.projection.max_seq_len == 384
+
+
+def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_budget_curve():
+    assert DUCA_MUST_DYNAMIC_VALIDATOR.exists()
+    output = subprocess.check_output(
+        [
+            sys.executable,
+            str(DUCA_MUST_DYNAMIC_VALIDATOR),
+            "--config",
+            str(DUCA_MUST_DYNAMIC_CONFIG),
+        ],
+        cwd=str(ROOT),
+        text=True,
+    )
+    summary = json.loads(output)
+
+    assert summary["ok"] is True
+    assert summary["dynamic_budget"] is True
+    assert summary["budget_policy"] == "prefix_marginal_utility_stop"
+    assert summary["budget_max_lte_384"] is True
+    assert summary["external_budget_override_allowed"] is False
+    assert summary["uses_env_budget_override"] is False
+    assert summary["runtime_flops_claim_allowed"] is False
+    assert summary["forced_budget_curve"] is False
+
+
+def test_duca_must_dynamic_launcher_is_precheck_first_and_not_forced_budget_curve():
+    assert DUCA_MUST_DYNAMIC_LAUNCHER.exists()
+    text = DUCA_MUST_DYNAMIC_LAUNCHER.read_text(encoding="utf-8")
+
+    assert "duca_must_dynamic_official_adatad_backend_full_train.py" in text
+    assert "validate_duca_must_dynamic_official_adatad_backend.py" in text
+    assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
+    assert "FULLTRAIN_CANDIDATE" in text
+    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
+    assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]' in text
+    assert "formal full train must run inside a Slurm allocation/step" in text
+    assert "tools/train.py" in text
+    assert "DUCA_ONLINE_BUDGET" not in text
 
 
 def test_duca_online_validator_json_summary_fields(monkeypatch):

@@ -12,10 +12,13 @@ from .acquisition import (
     make_audit_record,
     validate_actionness_provenance,
 )
+from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
 
 __all__ = [
     "DucaAcquisitionAdapter",
     "DucaOnlineSparseDetectorWrapper",
+    "DynamicBudgetDecision",
+    "PrefixMarginalUtilityBudgetController",
     "SparseTemporalGrid",
     "ZeroShotActionnessSource",
     "budgeted_center_radius_decode",
