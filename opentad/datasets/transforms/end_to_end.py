@@ -1,5 +1,7 @@
 import copy
 import hashlib
+import json
+import math
 import os
 import pickle
 import random
@@ -36,6 +38,179 @@ class PrepareVideoInfo:
             results["data_path"],
             self.prefix + results["video_name"] + "." + self.format,
         )
+        return results
+
+
+@PIPELINES.register_module()
+class DucaExternalActionnessFromJsonl:
+    """Attach deployable external actionness to metas for DUCA online selection."""
+
+    def __init__(
+        self,
+        actionness_jsonl,
+        p_action_key="duca_external_p_action",
+        logits_key="duca_external_actionness_logits",
+        valid_key="duca_external_actionness_valid",
+        provenance_key="duca_external_actionness_provenance",
+        source_key="duca_external_actionness_source",
+        observation_times_key="duca_external_actionness_observation_times",
+        allow_missing=False,
+    ):
+        self.actionness_jsonl = os.path.expandvars(os.path.expanduser(str(actionness_jsonl)))
+        self.p_action_key = str(p_action_key)
+        self.logits_key = str(logits_key)
+        self.valid_key = str(valid_key)
+        self.provenance_key = str(provenance_key)
+        self.source_key = str(source_key)
+        self.observation_times_key = str(observation_times_key)
+        self.allow_missing = bool(allow_missing)
+        self._index = self._load_actionness_jsonl(self.actionness_jsonl)
+
+    @staticmethod
+    def _logit(prob):
+        clipped = min(1.0 - 1e-6, max(1e-6, float(prob)))
+        return math.log(clipped / (1.0 - clipped))
+
+    @staticmethod
+    def _forbidden_true(value):
+        if value is True:
+            return True
+        return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}
+
+    @classmethod
+    def _validate_provenance(cls, provenance, *, source_name):
+        if not isinstance(provenance, dict):
+            raise ValueError(f"{source_name}: source_provenance must be an object")
+        for key in ("thumos_trained", "uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
+            if provenance.get(key) is not False:
+                raise ValueError(f"{source_name}: source_provenance.{key} must be false")
+        if provenance.get("calibration_split") not in (None, "", "none", "train_only"):
+            raise ValueError(f"{source_name}: source_provenance.calibration_split must be none/train_only")
+        for key in ("uses_raw_prediction", "uses_oracle", "uses_cache", "training_only"):
+            if cls._forbidden_true(provenance.get(key, False)):
+                raise ValueError(f"{source_name}: forbidden source_provenance flag {key}=true")
+
+    @classmethod
+    def _load_actionness_jsonl(cls, path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"external actionness JSONL missing: {path}")
+        grouped = {}
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                text = line.strip()
+                if not text:
+                    continue
+                row = json.loads(text)
+                if not isinstance(row, dict):
+                    raise ValueError(f"{path}:{line_no}: row must be an object")
+                video_id = str(row.get("video_id") or row.get("video_name") or "")
+                if not video_id:
+                    raise ValueError(f"{path}:{line_no}: missing video_id")
+                provenance = row.get("source_provenance")
+                cls._validate_provenance(provenance, source_name=f"{path}:{line_no}")
+                if row.get("valid") is not True:
+                    continue
+                grouped.setdefault(video_id, []).append(
+                    {
+                        "time": float(row["original_time"]),
+                        "p_action": float(row["p_action"]),
+                        "logit": float(row.get("logit", cls._logit(float(row["p_action"])))),
+                        "source_name": str(row.get("source_name") or provenance.get("source_name") or "external_actionness"),
+                        "provenance": dict(provenance),
+                    }
+                )
+        if not grouped:
+            raise ValueError(f"external actionness JSONL has no valid rows: {path}")
+        out = {}
+        for video_id, rows in grouped.items():
+            rows = sorted(rows, key=lambda item: item["time"])
+            times = np.asarray([item["time"] for item in rows], dtype=np.float32)
+            if np.unique(times).size != times.size:
+                raise ValueError(f"{path}: duplicate original_time values for video_id={video_id}")
+            provenance = rows[0]["provenance"]
+            source_name = rows[0]["source_name"]
+            for item in rows[1:]:
+                if item["source_name"] != source_name:
+                    raise ValueError(f"{path}: mixed source_name for video_id={video_id}")
+                for key in ("thumos_trained", "uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
+                    if item["provenance"].get(key) != provenance.get(key):
+                        raise ValueError(f"{path}: mixed provenance field {key} for video_id={video_id}")
+            out[video_id] = {
+                "times": times,
+                "p_action": np.asarray([item["p_action"] for item in rows], dtype=np.float32),
+                "logits": np.asarray([item["logit"] for item in rows], dtype=np.float32),
+                "source_name": source_name,
+                "provenance": provenance,
+            }
+        return out
+
+    @staticmethod
+    def _observation_times(results):
+        if "frame_inds" not in results:
+            raise ValueError("external actionness alignment requires frame_inds")
+        fps = float(results.get("avg_fps", results.get("fps", 0.0)))
+        if fps <= 0.0:
+            raise ValueError("external actionness alignment requires positive avg_fps/fps")
+        frame_inds = results["frame_inds"]
+        if torch.is_tensor(frame_inds):
+            frames = frame_inds.detach().cpu().numpy()
+        else:
+            frames = np.asarray(frame_inds)
+        frames = frames.reshape(-1).astype(np.float32)
+        if frames.size <= 0:
+            raise ValueError("external actionness alignment received empty frame_inds")
+        masks = results.get("masks")
+        if masks is None:
+            obs_len = int(frames.size)
+        elif torch.is_tensor(masks):
+            obs_len = int(masks.numel())
+        else:
+            obs_len = int(np.asarray(masks).size)
+        if obs_len <= 0:
+            raise ValueError("external actionness alignment received empty masks")
+        if frames.size == obs_len:
+            centers = frames
+        elif frames.size % obs_len == 0:
+            centers = frames.reshape(obs_len, frames.size // obs_len).mean(axis=1)
+        else:
+            raise ValueError(
+                f"frame_inds length {frames.size} must equal or be divisible by observation length {obs_len}"
+            )
+        return centers / fps
+
+    @staticmethod
+    def _mask_valid(results, obs_len):
+        masks = results.get("masks")
+        if masks is None:
+            return [True] * int(obs_len)
+        if torch.is_tensor(masks):
+            values = masks.detach().cpu().bool().reshape(-1).tolist()
+        else:
+            values = np.asarray(masks).astype(bool).reshape(-1).tolist()
+        if len(values) != int(obs_len):
+            raise ValueError("external actionness mask length must match observation length")
+        return [bool(item) for item in values]
+
+    def __call__(self, results):
+        video_id = str(results.get("video_name") or results.get("video_id") or "")
+        if not video_id:
+            raise ValueError("external actionness requires video_name/video_id")
+        entry = self._index.get(video_id)
+        if entry is None:
+            if self.allow_missing:
+                return results
+            raise ValueError(f"missing external actionness for video_id={video_id}")
+        observation_times = self._observation_times(results)
+        p_action = np.interp(observation_times, entry["times"], entry["p_action"]).astype(np.float32)
+        logits = np.interp(observation_times, entry["times"], entry["logits"]).astype(np.float32)
+        valid = self._mask_valid(results, len(observation_times))
+        results[self.p_action_key] = [float(item) for item in p_action.tolist()]
+        results[self.logits_key] = [float(item) for item in logits.tolist()]
+        results[self.valid_key] = valid
+        results[self.provenance_key] = dict(entry["provenance"])
+        results[self.source_key] = str(entry["source_name"])
+        results[self.observation_times_key] = [float(item) for item in observation_times.tolist()]
+        results["duca_external_actionness_jsonl"] = self.actionness_jsonl
         return results
 
 

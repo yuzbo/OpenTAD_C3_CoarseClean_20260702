@@ -23,13 +23,23 @@ OFFICIAL_BACKEND_CONFIG = (
 DUCA_MUST_DYNAMIC_CONFIG = (
     ROOT / "configs" / "adatad" / "thumos" / "duca_must_dynamic_official_adatad_backend_full_train.py"
 )
+X3D_OFFICIAL_BACKEND_CONFIG = (
+    ROOT / "configs" / "adatad" / "thumos" / "duca_online_x3d_official_adatad_backend_full_train.py"
+)
+X3D_MUST_DYNAMIC_CONFIG = (
+    ROOT / "configs" / "adatad" / "thumos" / "duca_must_dynamic_x3d_official_adatad_backend_full_train.py"
+)
 VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_online_adatad_precheck.py"
 OFFICIAL_BACKEND_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_official_adatad_backend.py"
 DUCA_MUST_DYNAMIC_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_must_dynamic_official_adatad_backend.py"
+X3D_OFFICIAL_BACKEND_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_x3d_official_adatad_backend.py"
+X3D_MUST_DYNAMIC_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_must_dynamic_x3d_official_adatad_backend.py"
 ADATAD_LAUNCHER = ROOT / "scripts" / "run_duca_online_adatad_precheck_gpu1.sh"
 ZEROSHOT_LAUNCHER = ROOT / "scripts" / "run_duca_online_zeroshot_actionness_precheck_gpu1.sh"
 OFFICIAL_BACKEND_LAUNCHER = ROOT / "scripts" / "run_duca_online_official_adatad_backend_gpu1.sh"
 DUCA_MUST_DYNAMIC_LAUNCHER = ROOT / "scripts" / "run_duca_must_dynamic_official_adatad_backend_gpu1.sh"
+X3D_OFFICIAL_BACKEND_LAUNCHER = ROOT / "scripts" / "run_duca_x3d_official_adatad_backend_gpu1.sh"
+X3D_MUST_DYNAMIC_LAUNCHER = ROOT / "scripts" / "run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh"
 OFFICIAL_BACKEND_BUDGET_CURVE_LAUNCHER = (
     ROOT / "scripts" / "run_duca_online_official_adatad_budget_curve_gpu1.sh"
 )
@@ -348,3 +358,101 @@ def test_duca_online_launchers_are_precheck_first_gpu1_guarded_and_fail_closed()
     launcher_text = ACTIONFORMER_PHYSICAL_LAUNCHER.read_text(encoding="utf-8")
     assert "duca_online_actionformer_physical_grid_precheck.py" in launcher_text
     assert "run_duca_online_adatad_precheck_gpu1.sh" in launcher_text
+
+
+def _assert_x3d_external_pipeline(cfg, *, dynamic: bool) -> None:
+    selector = cfg.model.frame_selector
+    assert selector.external_actionness_meta_key == "duca_external_p_action"
+    assert selector.external_actionness_logits_meta_key == "duca_external_actionness_logits"
+    assert selector.external_actionness_provenance_meta_key == "duca_external_actionness_provenance"
+    assert selector.external_actionness_source_meta_key == "duca_external_actionness_source"
+    assert selector.require_external_actionness is True
+    assert selector.actionness_source_cfg.uses_gt is False
+    assert selector.actionness_source_cfg.uses_labels is False
+    assert selector.actionness_source_cfg.uses_teacher is False
+
+    for split in ("train", "val", "test"):
+        pipeline = cfg.dataset[split].pipeline
+        assert pipeline[3].type == "DucaExternalActionnessFromJsonl"
+        assert pipeline[3].actionness_jsonl == cfg.duca_x3d_actionness_jsonl
+        collect = pipeline[-1]
+        assert "duca_external_p_action" in collect.meta_keys
+        assert "duca_external_actionness_logits" in collect.meta_keys
+        assert "duca_external_actionness_provenance" in collect.meta_keys
+        assert "duca_external_actionness_source" in collect.meta_keys
+    if dynamic:
+        assert cfg.duca_must_dynamic_contract.external_actionness_source == "train_free_x3d_jsonl"
+        assert cfg.duca_must_dynamic_contract.requires_external_actionness is True
+    else:
+        assert cfg.duca_online_main_contract.external_actionness_source == "train_free_x3d_jsonl"
+        assert cfg.duca_online_main_contract.requires_external_actionness is True
+
+
+def test_duca_x3d_official_backend_config_wires_jsonl_actionness_to_selector():
+    cfg = _cfg(X3D_OFFICIAL_BACKEND_CONFIG)
+
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.frame_selector.type == "DucaOnlineFrameSelector"
+    assert cfg.model.frame_selector.budget == 384
+    assert cfg.duca_online_main_contract.x3d_downstream_detector_full_train is True
+    assert cfg.duca_online_main_contract.uses_offline_deploy_selection_ledger is False
+    _assert_x3d_external_pipeline(cfg, dynamic=False)
+
+
+def test_duca_must_dynamic_x3d_backend_config_wires_jsonl_actionness_to_selector():
+    cfg = _cfg(X3D_MUST_DYNAMIC_CONFIG)
+
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.frame_selector.type == "DucaOnlineFrameSelector"
+    assert cfg.model.frame_selector.budget is None
+    assert cfg.model.frame_selector.budget_mode == "dynamic_must"
+    assert cfg.duca_must_dynamic_contract.x3d_downstream_detector_full_train is True
+    assert cfg.duca_must_dynamic_contract.uses_offline_deploy_selection_ledger is False
+    _assert_x3d_external_pipeline(cfg, dynamic=True)
+
+
+def test_duca_x3d_backend_validators_require_external_actionness():
+    for validator, config in (
+        (X3D_OFFICIAL_BACKEND_VALIDATOR, X3D_OFFICIAL_BACKEND_CONFIG),
+        (X3D_MUST_DYNAMIC_VALIDATOR, X3D_MUST_DYNAMIC_CONFIG),
+    ):
+        assert validator.exists()
+        output = subprocess.check_output(
+            [
+                sys.executable,
+                str(validator),
+                "--config",
+                str(config),
+            ],
+            cwd=str(ROOT),
+            text=True,
+        )
+        summary = json.loads(output)
+        assert summary["ok"] is True
+        assert summary["external_actionness_source"] == "train_free_x3d_jsonl"
+        assert summary["requires_external_actionness"] is True
+
+
+def test_duca_x3d_backend_launchers_require_jsonl_and_delegate_to_official_scripts():
+    expectations = (
+        (
+            X3D_OFFICIAL_BACKEND_LAUNCHER,
+            "duca_online_x3d_official_adatad_backend_full_train.py",
+            "validate_duca_x3d_official_adatad_backend.py",
+            "run_duca_online_official_adatad_backend_gpu1.sh",
+        ),
+        (
+            X3D_MUST_DYNAMIC_LAUNCHER,
+            "duca_must_dynamic_x3d_official_adatad_backend_full_train.py",
+            "validate_duca_must_dynamic_x3d_official_adatad_backend.py",
+            "run_duca_must_dynamic_official_adatad_backend_gpu1.sh",
+        ),
+    )
+    for launcher, config_name, validator_name, delegate_name in expectations:
+        assert launcher.exists()
+        text = launcher.read_text(encoding="utf-8")
+        assert config_name in text
+        assert validator_name in text
+        assert delegate_name in text
+        assert "DUCA_X3D_ACTIONNESS_JSONL" in text
+        assert "DUCA_X3D_REQUIRE_JSONL_EXISTS=1" in text

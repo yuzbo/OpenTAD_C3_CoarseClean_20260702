@@ -146,6 +146,11 @@ class DucaOnlineFrameSelector(nn.Module):
         selected_axis_remap_required: bool = True,
         forbid_ledger: bool = True,
         forbid_raw_prediction_cache: bool = True,
+        external_actionness_meta_key: Optional[str] = None,
+        external_actionness_logits_meta_key: Optional[str] = None,
+        external_actionness_provenance_meta_key: Optional[str] = None,
+        external_actionness_source_meta_key: Optional[str] = None,
+        require_external_actionness: bool = False,
         metadata_keys: Optional[Mapping[str, str]] = None,
         **kwargs: Any,
     ) -> None:
@@ -188,6 +193,11 @@ class DucaOnlineFrameSelector(nn.Module):
         self.selected_axis_remap_required = bool(selected_axis_remap_required)
         self.forbid_ledger = bool(forbid_ledger)
         self.forbid_raw_prediction_cache = bool(forbid_raw_prediction_cache)
+        self.external_actionness_meta_key = external_actionness_meta_key
+        self.external_actionness_logits_meta_key = external_actionness_logits_meta_key
+        self.external_actionness_provenance_meta_key = external_actionness_provenance_meta_key
+        self.external_actionness_source_meta_key = external_actionness_source_meta_key
+        self.require_external_actionness = bool(require_external_actionness)
         self.metadata_keys = dict(_DEFAULT_METADATA_KEYS)
         if metadata_keys:
             self.metadata_keys.update(dict(metadata_keys))
@@ -289,7 +299,20 @@ class DucaOnlineFrameSelector(nn.Module):
         if descriptors.shape[-1] != self.in_channels:
             raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
         masks = masks.to(device=inputs.device, dtype=torch.bool)
-        grid, scores = self.adapter.acquire(descriptors, budget=budget, valid_mask=masks)
+        external_actionness = self._external_actionness_from_metas(metas, descriptors=descriptors)
+        grid, scores = self.adapter.acquire(
+            descriptors,
+            budget=budget,
+            valid_mask=masks,
+            actionness_logits=None if external_actionness is None else external_actionness.get("actionness_logits"),
+            p_action=None if external_actionness is None else external_actionness.get("p_action"),
+        )
+        actionness_source_name = self.actionness_source_name
+        if external_actionness is not None:
+            scores["provenance"] = external_actionness["provenance"]
+            scores["external_actionness_provenance"] = external_actionness["provenance"]
+            scores["external_actionness_source"] = external_actionness["source_name"]
+            actionness_source_name = external_actionness["source_name"]
         validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
         positions = grid.selected_positions.to(device=inputs.device)
         slot_mask = positions >= 0
@@ -324,14 +347,102 @@ class DucaOnlineFrameSelector(nn.Module):
             "budget_policy": str(grid.metadata.get("budget_policy", "fixed_budget")),
             "budget_unit": grid.budget_unit,
             "coordinate": grid.coordinate,
-            self.metadata_keys["source"]: self.actionness_source_name,
+            self.metadata_keys["source"]: actionness_source_name,
         }
         return {
             "inputs": selected_inputs,
             "masks": selected_masks,
-            "metas": self._write_metas(metas, grid),
+            "metas": self._write_metas(metas, grid, actionness_source_name=actionness_source_name),
             "selector_outputs": scores,
         }
+
+    def _external_actionness_from_metas(self, metas, descriptors: torch.Tensor) -> Optional[dict[str, Any]]:
+        if not (
+            self.external_actionness_meta_key
+            or self.external_actionness_logits_meta_key
+            or self.require_external_actionness
+        ):
+            return None
+        if metas is None:
+            if self.require_external_actionness:
+                raise ValueError("external actionness is required but metas are missing")
+            return None
+        if len(metas) != descriptors.shape[0]:
+            raise ValueError("external actionness metas length must match batch size")
+
+        p_rows = []
+        logit_rows = []
+        provenances = []
+        source_names = []
+        need_p = self.external_actionness_meta_key
+        need_logits = self.external_actionness_logits_meta_key
+        for batch_idx, meta in enumerate(metas):
+            if not isinstance(meta, Mapping):
+                raise ValueError(f"metas[{batch_idx}] must be a mapping for external actionness")
+            p_value = self._lookup_meta_value(meta, need_p) if need_p else None
+            logits_value = self._lookup_meta_value(meta, need_logits) if need_logits else None
+            if p_value is None and logits_value is None:
+                if self.require_external_actionness:
+                    raise ValueError(f"external actionness is required for metas[{batch_idx}]")
+                return None
+            if self.external_actionness_provenance_meta_key is None:
+                raise ValueError("external actionness provenance meta key is required")
+            provenance = self._lookup_meta_value(meta, self.external_actionness_provenance_meta_key)
+            validate_actionness_provenance(provenance, context=f"external actionness provenance metas[{batch_idx}]")
+            source_name = None
+            if self.external_actionness_source_meta_key:
+                source_name = self._lookup_meta_value(meta, self.external_actionness_source_meta_key)
+            source_name = str(source_name or provenance.get("source_name") or "external_actionness")
+            source_names.append(source_name)
+            provenances.append(dict(provenance))
+            if p_value is not None:
+                p_rows.append(self._actionness_row_tensor(p_value, descriptors, batch_idx, name="external p_action"))
+            if logits_value is not None:
+                logit_rows.append(
+                    self._actionness_row_tensor(logits_value, descriptors, batch_idx, name="external actionness logits")
+                )
+        if len(set(source_names)) != 1:
+            raise ValueError(f"external actionness source must be identical within a batch, got {source_names}")
+        first_provenance = provenances[0]
+        for provenance in provenances[1:]:
+            for key in ("thumos_trained", "uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
+                if provenance.get(key) != first_provenance.get(key):
+                    raise ValueError(f"external actionness provenance field {key} differs within batch")
+
+        output: dict[str, Any] = {
+            "source_name": source_names[0],
+            "provenance": dict(first_provenance),
+        }
+        if p_rows:
+            output["p_action"] = torch.stack(p_rows, dim=0)
+        if logit_rows:
+            output["actionness_logits"] = torch.stack(logit_rows, dim=0)
+        return output
+
+    @staticmethod
+    def _lookup_meta_value(meta: Mapping[str, Any], key: Optional[str]) -> Any:
+        if not key:
+            return None
+        if key in meta:
+            return meta[key]
+        current: Any = meta
+        for part in str(key).split("."):
+            if not isinstance(current, Mapping) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    @staticmethod
+    def _actionness_row_tensor(value: Any, reference: torch.Tensor, batch_idx: int, *, name: str) -> torch.Tensor:
+        tensor = value if torch.is_tensor(value) else torch.as_tensor(value, dtype=torch.float32)
+        tensor = tensor.to(device=reference.device, dtype=torch.float32)
+        if tensor.ndim != 1:
+            raise ValueError(f"{name} for metas[{batch_idx}] must be a 1-D sequence")
+        if tensor.numel() != reference.shape[1]:
+            raise ValueError(
+                f"{name} for metas[{batch_idx}] length {tensor.numel()} must match dense window {reference.shape[1]}"
+            )
+        return tensor
 
     @staticmethod
     def _reject_train_decision_payload(metas) -> None:
@@ -397,7 +508,7 @@ class DucaOnlineFrameSelector(nn.Module):
             updated_metas[idx] = meta
         return remapped_segments, gt_labels, updated_metas
 
-    def _write_metas(self, metas, grid) -> list[dict[str, Any]]:
+    def _write_metas(self, metas, grid, *, actionness_source_name: str) -> list[dict[str, Any]]:
         batch = int(grid.selected_positions.shape[0])
         if metas is None:
             out = [{} for _ in range(batch)]
@@ -431,7 +542,7 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_online_budget_multiple"] = int(grid.metadata.get("budget_multiple", 1))
             meta["duca_online_selected_count"] = len(positions)
             meta["duca_online_selected_axis_remap"] = remap
-            meta["duca_online_actionness_source"] = self.actionness_source_name
+            meta["duca_online_actionness_source"] = actionness_source_name
             meta["duca_online_budget_unit"] = grid.budget_unit
             meta["duca_online_coordinate"] = grid.coordinate
             meta["detector_output_coordinate_space"] = self.detector_output_coordinate_space
@@ -450,5 +561,5 @@ class DucaOnlineFrameSelector(nn.Module):
             meta[self.metadata_keys["selected_mask"]] = [True] * len(positions)
             meta[self.metadata_keys["selected_count"]] = len(positions)
             meta[self.metadata_keys["remap"]] = remap
-            meta[self.metadata_keys["source"]] = self.actionness_source_name
+            meta[self.metadata_keys["source"]] = actionness_source_name
         return out

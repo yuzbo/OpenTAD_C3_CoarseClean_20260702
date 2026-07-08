@@ -132,3 +132,66 @@ def test_duca_selector_rejects_unknown_manual_actionness_provenance_for_deploy_p
 
     with pytest.raises(ValueError, match="actionness provenance"):
         selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "v"}])
+
+
+def _x3d_provenance() -> dict:
+    return {
+        "source_name": "frozen_kinetics_x3d_xs_actionness",
+        "thumos_trained": False,
+        "uses_labels": False,
+        "uses_teacher": False,
+        "uses_gt": False,
+        "uses_prediction_cache": False,
+        "calibration_split": "none",
+        "checkpoint_hash": "pytorch_provider:x3d_xs:pretrained=True",
+    }
+
+
+def test_duca_selector_uses_external_x3d_p_action_from_metas() -> None:
+    internal = torch.tensor([[0.05, 0.95, 0.10, 0.90, 0.15, 0.85]])
+    external = [0.99, 0.01, 0.98, 0.02, 0.97, 0.03]
+    selector = _selector(
+        internal,
+        budget=3,
+        external_actionness_meta_key="duca_external_p_action",
+        external_actionness_logits_meta_key="duca_external_actionness_logits",
+        external_actionness_provenance_meta_key="duca_external_actionness_provenance",
+        require_external_actionness=True,
+    )
+    inputs = torch.arange(1 * 2 * 6, dtype=torch.float32).reshape(1, 2, 6)
+    masks = torch.ones(1, 6, dtype=torch.bool)
+
+    out = selector.forward_test(
+        inputs=inputs,
+        masks=masks,
+        metas=[
+            {
+                "video_name": "v",
+                "duca_external_p_action": external,
+                "duca_external_actionness_logits": torch.logit(torch.tensor(external).clamp(1e-6, 1 - 1e-6)).tolist(),
+                "duca_external_actionness_provenance": _x3d_provenance(),
+            }
+        ],
+    )
+
+    assert out["metas"][0]["duca_online_selected_positions"] == [0, 2, 4]
+    assert out["metas"][0]["duca_online_actionness_source"] == "frozen_kinetics_x3d_xs_actionness"
+    assert out["selector_outputs"]["p_action"].detach().cpu().tolist()[0] == pytest.approx(external)
+
+
+def test_duca_selector_requires_external_x3d_p_action_when_configured() -> None:
+    internal = torch.tensor([[0.05, 0.95, 0.10, 0.90]])
+    selector = _selector(
+        internal,
+        budget=2,
+        external_actionness_meta_key="duca_external_p_action",
+        external_actionness_provenance_meta_key="duca_external_actionness_provenance",
+        require_external_actionness=True,
+    )
+
+    with pytest.raises(ValueError, match="external actionness"):
+        selector.forward_test(
+            inputs=torch.randn(1, 2, 4),
+            masks=torch.ones(1, 4, dtype=torch.bool),
+            metas=[{"video_name": "missing"}],
+        )
