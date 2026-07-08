@@ -220,6 +220,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self.extra_config = dict(kwargs)
         self.last_forward_summary: dict[str, Any] = {}
         self.last_dual_update_summary: dict[str, Any] = {}
+        self.last_loss_schedule_update_summary: dict[str, Any] = {}
+        self._pending_loss_schedule_advance = False
         self._pending_dynamic_budget_dual_mean: Optional[torch.Tensor] = None
         self._pending_dynamic_budget_dual_summary: Optional[dict[str, Any]] = None
         if self.detector_gradient_mode not in {"st_sparse_gather", "st_sparse_gather_soft_context"}:
@@ -316,7 +318,7 @@ class DucaOnlineFrameSelector(nn.Module):
             action_target=action_target,
             loss_weights=schedule_state["weights"],
         )
-        self._advance_loss_schedule_step()
+        self._record_pending_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
             "masks": outputs["masks"],
@@ -410,13 +412,34 @@ class DucaOnlineFrameSelector(nn.Module):
             raw = 0.5 - 0.5 * torch.cos(torch.tensor(raw * pi, dtype=torch.float64)).item()
         return float(raw)
 
-    def _advance_loss_schedule_step(self) -> None:
-        if self.training:
-            self._loss_weight_schedule_step.add_(1)
+    def _record_pending_loss_schedule_step(self) -> None:
+        self._pending_loss_schedule_advance = bool(self.training and self.loss_weight_schedule is not None)
 
     def after_optimizer_step(self) -> Optional[dict[str, Any]]:
+        schedule_summary = self._advance_loss_schedule_step_after_optimizer_step()
         if self.budget_mode != "dynamic_must":
-            return None
+            return schedule_summary
+        return self._update_dynamic_budget_dual_after_optimizer_step()
+
+    def _advance_loss_schedule_step_after_optimizer_step(self) -> dict[str, Any]:
+        if not self._pending_loss_schedule_advance:
+            return {"updated": False, "reason": "no_pending_loss_schedule_step"}
+        before = int(self._loss_weight_schedule_step.detach().item())
+        self._loss_weight_schedule_step.add_(1)
+        after = int(self._loss_weight_schedule_step.detach().item())
+        self._pending_loss_schedule_advance = False
+        summary = {
+            "updated": True,
+            "source": "optimizer_step",
+            "step_before": before,
+            "step_after": after,
+        }
+        self.last_loss_schedule_update_summary = summary
+        if isinstance(self.last_forward_summary, dict):
+            self.last_forward_summary["loss_schedule_step_update"] = summary
+        return summary
+
+    def _update_dynamic_budget_dual_after_optimizer_step(self) -> dict[str, Any]:
         pending = self._pending_dynamic_budget_dual_mean
         if pending is None:
             return {"updated": False, "reason": "no_pending_dynamic_budget"}

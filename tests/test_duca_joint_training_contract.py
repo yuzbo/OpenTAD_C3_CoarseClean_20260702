@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
+
 import pytest
+
+if os.name == "nt":
+    pytest.skip("local Windows torch/c10.dll import is unstable; Linux remote runs this suite", allow_module_level=True)
 
 try:
     import torch
@@ -167,6 +172,7 @@ def test_progressive_loss_schedule_starts_with_actionness_and_shifts_to_detector
         gt_segments=gt_segments,
         gt_labels=gt_labels,
     )
+    schedule_step = selector.after_optimizer_step()
     second = selector.forward_train(
         inputs=inputs,
         masks=masks,
@@ -183,6 +189,10 @@ def test_progressive_loss_schedule_starts_with_actionness_and_shifts_to_detector
     assert first_schedule["weights"]["actionness"] == pytest.approx(1.0)
     assert first_schedule["detector_gradient_weight"] == pytest.approx(0.0)
     assert first_schedule["weights"]["hole"] == pytest.approx(0.0)
+    assert schedule_step["updated"] is True
+    assert schedule_step["source"] == "optimizer_step"
+    assert schedule_step["step_before"] == 0
+    assert schedule_step["step_after"] == 1
     assert second_schedule["step"] == 1
     assert second_schedule["phase"] == "joint_detection_selection"
     assert second_schedule["weights"]["actionness"] == pytest.approx(0.25)
@@ -303,6 +313,7 @@ def test_detector_gradient_bridge_is_scheduled_independently_from_detector_loss(
     )
     warmup["inputs"].pow(2).mean().backward()
     warmup_center_grad = _grad_sum(selector.adapter.center_head)
+    schedule_step = selector.after_optimizer_step()
 
     selector.zero_grad(set_to_none=True)
     joint = selector.forward_train(
@@ -316,9 +327,61 @@ def test_detector_gradient_bridge_is_scheduled_independently_from_detector_loss(
     joint_center_grad = _grad_sum(selector.adapter.center_head)
 
     assert warmup["selector_outputs"]["loss_weight_schedule"]["detector_gradient_weight"] == pytest.approx(0.0)
+    assert schedule_step["updated"] is True
+    assert schedule_step["step_after"] == 1
     assert joint["selector_outputs"]["loss_weight_schedule"]["detector_gradient_weight"] == pytest.approx(1.0)
     assert warmup_center_grad == pytest.approx(0.0)
     assert joint_center_grad > 0.0
+
+
+def test_progressive_loss_schedule_does_not_advance_without_optimizer_step() -> None:
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=1,
+        dense_window_size=8,
+        max_radius=1,
+        selector_hidden_channels=4,
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "source_name": "zero_shot_motion_actionness",
+            "mode": "motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+            "checkpoint_hash": "no_checkpoint_motion_energy",
+        },
+        loss_weight_schedule={
+            "type": "progressive_joint",
+            "warmup_steps": 0,
+            "transition_steps": 1,
+            "detector_gradient": {"start": 0.0, "end": 1.0},
+        },
+    )
+    inputs = torch.randn(1, 3, 8)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+    gt_segments = [torch.tensor([[1.0, 6.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    first = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+    second = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "v"}],
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+
+    assert first["selector_outputs"]["loss_weight_schedule"]["step"] == 0
+    assert second["selector_outputs"]["loss_weight_schedule"]["step"] == 0
 
 
 def test_detector_cost_backpropagates_to_official_asformer_probe_selector_and_budget_controller() -> None:

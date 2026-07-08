@@ -11,13 +11,20 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 
 - Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git`
 - Branch: `codex/gas-vt-stage23-detector-aware-20260706`
-- Latest pushed implementation commit: `f5869f9`
-- Latest pushed implementation title:
-  `Add DUCA JCT one-step gradient proof gate`
+- Previous pushed implementation checkpoint: `8d26dc3`
+- Previous pushed implementation title:
+  `Document DUCA JCT latest remote deployment handoff`
 - Base deployment commit: `308088c`
 - Base deployment title: `Add DUCA joint training loss schedule`
 - Current local refinement: detector loss remains active for the backend while
   the detector-to-selector ST gradient bridge is scheduled separately.
+- Current optimizer-step refinement: the progressive loss schedule advances
+  only after `optimizer.step()` through the same `after_optimizer_step` hook as
+  the DUCA-MUST primal-dual controller, so the coarse-probe/selector/budget
+  curriculum is tied to true parameter updates rather than raw forward counts.
+- Current official-probe refinement: the main configs default to
+  `official-action-seg` with `official_asformer` and no longer carry a
+  misleading `lite` default for the official ASFormer path.
 - Current dynamic-budget refinement: DUCA-MUST now updates the budget
   controller dual variable after each optimizer step from the controller's
   expected selected-cost mean, closing the primal-dual budget constraint loop.
@@ -48,6 +55,7 @@ online coarse actionness probe
 The main fixed-384 and DUCA-MUST configs both validate:
 
 - `loss_schedule_policy = progressive_joint`
+- `loss_schedule_step_update = optimizer_step`
 - `loss_schedule_shape = cosine`
 - `loss_schedule_warmup_steps = 500`
 - `loss_schedule_transition_steps = 4000`
@@ -71,7 +79,7 @@ This means the intended training sequence is continuous within one run:
 1. Coarse actionness supervision dominates early training.
 2. The detector backend trains from the start, while the detector-to-selector
    ST/surrogate gradient bridge and selection distribution losses are gradually
-   enabled.
+   enabled after real optimizer updates.
 3. Dynamic budget regularization is gradually enabled for DUCA-MUST; after
    each optimizer update, the budget controller updates its dual variable from
    the observed expected cost, so the learned `K(x)` is governed by a budget

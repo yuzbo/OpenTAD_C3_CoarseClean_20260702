@@ -63,11 +63,16 @@ def test_duca_jct_one_step_grad_proof_writes_joint_training_artifact(tmp_path: P
     assert payload["fixed384"]["coarse_probe_grad_sum"] > 0.0
     assert payload["fixed384"]["selector_encoder_grad_sum"] > 0.0
     assert payload["fixed384"]["budget_controller_grad_sum"] is None
+    assert payload["fixed384"]["loss_schedule_step_update"]["updated"] is True
+    assert payload["fixed384"]["loss_schedule_step_update"]["source"] == "optimizer_step"
+    assert payload["fixed384"]["dynamic_budget_dual_update"] is None
     assert payload["duca_must"]["official_config_loaded"] is True
     assert payload["duca_must"]["optimizer_step_ran"] is True
     assert payload["duca_must"]["coarse_probe_grad_sum"] > 0.0
     assert payload["duca_must"]["selector_encoder_grad_sum"] > 0.0
     assert payload["duca_must"]["budget_controller_grad_sum"] > 0.0
+    assert payload["duca_must"]["loss_schedule_step_update"]["updated"] is True
+    assert payload["duca_must"]["loss_schedule_step_update"]["source"] == "optimizer_step"
     assert payload["duca_must"]["dynamic_budget_dual_update"]["updated"] is True
     assert payload["duca_must"]["loss_schedule"]["type"] == "progressive_joint"
 

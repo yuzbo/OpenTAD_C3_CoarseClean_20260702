@@ -51,11 +51,14 @@ def _deployment(tmp_path: Path, *, with_x3d: bool = True, with_grad_proof: bool 
                     "coarse_probe_grad_sum": 1.0,
                     "selector_encoder_grad_sum": 1.0,
                     "budget_controller_grad_sum": None,
+                    "loss_schedule_step_update": {"updated": True, "source": "optimizer_step"},
+                    "dynamic_budget_dual_update": None,
                 },
                 "duca_must": {
                     "coarse_probe_grad_sum": 1.0,
                     "selector_encoder_grad_sum": 1.0,
                     "budget_controller_grad_sum": 1.0,
+                    "loss_schedule_step_update": {"updated": True, "source": "optimizer_step"},
                     "dynamic_budget_dual_update": {"updated": True},
                 },
             },
@@ -106,6 +109,8 @@ def test_duca_jct_suite_monitor_classifies_jobs_and_x3d_readiness(tmp_path: Path
     assert summary["joint_grad_proof"]["ready"] is True
     assert summary["joint_grad_proof"]["proof_passed"] is True
     assert summary["joint_grad_proof"]["duca_must_budget_controller_grad_sum"] == 1.0
+    assert summary["joint_grad_proof"]["fixed_loss_schedule_step_update"]["source"] == "optimizer_step"
+    assert summary["joint_grad_proof"]["duca_must_loss_schedule_step_update"]["source"] == "optimizer_step"
     assert summary["formal_x3d_actionness"]["ready"] is True
     assert summary["formal_x3d_actionness"]["downstream_detector_ready"] is True
     assert summary["jobs"]["duca_jct_tests"]["status"] == "completed"

@@ -40,6 +40,10 @@ def _config_text(path: str | Path) -> str:
 
 def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
     _require(contract.loss_schedule_policy == "progressive_joint", "main config must declare progressive_joint loss schedule")
+    _require(
+        getattr(contract, "loss_schedule_step_update", "") == "optimizer_step",
+        "loss schedule must advance after optimizer.step, not on raw forward count",
+    )
     schedule = selector.loss_weight_schedule
     _require(schedule.type == "progressive_joint", "selector must use progressive_joint loss_weight_schedule")
     _require(str(schedule.get("shape", "linear")) in {"linear", "cosine"}, "loss schedule shape must be linear or cosine")
@@ -68,6 +72,7 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
     _require(float(schedule.lagrangian_budget.end) > 0.0, "dynamic budget loss must be enabled after transition")
     return {
         "loss_schedule_policy": str(schedule.type),
+        "loss_schedule_step_update": str(contract.loss_schedule_step_update),
         "loss_schedule_shape": str(schedule.get("shape", "linear")),
         "loss_schedule_warmup_steps": int(schedule.warmup_steps),
         "loss_schedule_transition_steps": int(schedule.transition_steps),
@@ -172,6 +177,10 @@ def validate_config(
         _require(source_cfg.type == "C3CoarseProbeActionnessSource", "main source must be online C3 coarse probe module")
         _require(source_cfg.probe_model == "official-action-seg", "main method must use official action-seg probe")
         _require(source_cfg.get("official_action_seg_backend") == "official_asformer", "ASFormer must use official code")
+        _require(
+            source_cfg.get("tcn_variant", None) in (None, "", "official_asformer"),
+            "official-action-seg main path must not carry a private/lightweight TCN variant",
+        )
         _require(source_cfg.get("tcn_variant", None) != "asformer_lite", "main method forbids asformer_lite")
         _require(source_cfg.get("trainable") is True, "coarse probe must be trainable for the main end-to-end config")
         _require(source_cfg.get("frozen") is False, "coarse probe must not be frozen for the main end-to-end config")

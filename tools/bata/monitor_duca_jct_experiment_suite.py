@@ -264,14 +264,28 @@ def _joint_grad_proof_status(deployment: Mapping[str, Any], run_root: Path) -> d
     fixed = payload.get("fixed384") if isinstance(payload.get("fixed384"), Mapping) else {}
     must = payload.get("duca_must") if isinstance(payload.get("duca_must"), Mapping) else {}
     dual_update = must.get("dynamic_budget_dual_update") if isinstance(must.get("dynamic_budget_dual_update"), Mapping) else {}
+    fixed_schedule_update = (
+        fixed.get("loss_schedule_step_update")
+        if isinstance(fixed.get("loss_schedule_step_update"), Mapping)
+        else {}
+    )
+    must_schedule_update = (
+        must.get("loss_schedule_step_update")
+        if isinstance(must.get("loss_schedule_step_update"), Mapping)
+        else {}
+    )
     checks = {
         "schema": payload.get("schema_version") == GRAD_PROOF_SCHEMA_VERSION,
         "proof_passed": payload.get("proof_passed") is True,
         "fixed_coarse_probe_grad": _positive_number(fixed.get("coarse_probe_grad_sum")),
         "fixed_selector_encoder_grad": _positive_number(fixed.get("selector_encoder_grad_sum")),
+        "fixed_loss_schedule_optimizer_step": fixed_schedule_update.get("source") == "optimizer_step"
+        and fixed_schedule_update.get("updated") is True,
         "must_coarse_probe_grad": _positive_number(must.get("coarse_probe_grad_sum")),
         "must_selector_encoder_grad": _positive_number(must.get("selector_encoder_grad_sum")),
         "must_budget_controller_grad": _positive_number(must.get("budget_controller_grad_sum")),
+        "must_loss_schedule_optimizer_step": must_schedule_update.get("source") == "optimizer_step"
+        and must_schedule_update.get("updated") is True,
         "must_dual_update": dual_update.get("updated") is True,
     }
     failed = sorted(key for key, ok in checks.items() if not ok)
@@ -287,6 +301,8 @@ def _joint_grad_proof_status(deployment: Mapping[str, Any], run_root: Path) -> d
         "duca_must_coarse_probe_grad_sum": must.get("coarse_probe_grad_sum"),
         "duca_must_selector_encoder_grad_sum": must.get("selector_encoder_grad_sum"),
         "duca_must_budget_controller_grad_sum": must.get("budget_controller_grad_sum"),
+        "fixed_loss_schedule_step_update": dict(fixed_schedule_update),
+        "duca_must_loss_schedule_step_update": dict(must_schedule_update),
         "duca_must_dual_update": dict(dual_update),
     }
 

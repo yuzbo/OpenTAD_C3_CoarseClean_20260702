@@ -178,8 +178,10 @@ def _run_route(
     cost.backward()
     optimizer = torch.optim.SGD((param for param in model.parameters() if param.requires_grad), lr=1e-4)
     optimizer.step()
-    dual_update = model.after_optimizer_step()
     selector = model.frame_selector
+    after_optimizer_step_summary = model.after_optimizer_step()
+    loss_schedule_step_update = selector.last_forward_summary.get("loss_schedule_step_update", {})
+    dynamic_budget_dual_update = after_optimizer_step_summary if selector.budget_mode == "dynamic_must" else None
     result = {
         "route": route,
         "config_path": str(_path(config_path)),
@@ -195,7 +197,9 @@ def _run_route(
         "selector_encoder_grad_sum": _grad_sum(selector.adapter.encoder),
         "selector_center_head_grad_sum": _grad_sum(selector.adapter.center_head),
         "budget_controller_grad_sum": _grad_sum(selector.adapter.budget_controller),
-        "dynamic_budget_dual_update": dual_update,
+        "after_optimizer_step_summary": after_optimizer_step_summary,
+        "loss_schedule_step_update": loss_schedule_step_update,
+        "dynamic_budget_dual_update": dynamic_budget_dual_update,
         "loss_schedule": selector.last_forward_summary.get("loss_weight_schedule", {}),
         "selected_count": int(selector.last_forward_summary.get(selector.metadata_keys["selected_count"], 0)),
         "compute_profile": selector.last_forward_summary.get("compute_profile", {}),
@@ -206,7 +210,11 @@ def _run_route(
     missing = [key for key in required if result.get(key) is None or float(result[key]) <= 0.0]
     if missing:
         raise RuntimeError(f"{route}: nonzero gradient proof failed for {missing}")
-    if selector.budget_mode == "dynamic_must" and not (isinstance(dual_update, dict) and dual_update.get("updated")):
+    if not (isinstance(loss_schedule_step_update, dict) and loss_schedule_step_update.get("updated")):
+        raise RuntimeError(f"{route}: loss schedule did not advance after optimizer step")
+    if selector.budget_mode == "dynamic_must" and not (
+        isinstance(dynamic_budget_dual_update, dict) and dynamic_budget_dual_update.get("updated")
+    ):
         raise RuntimeError(f"{route}: dynamic budget dual update did not run")
     return result
 

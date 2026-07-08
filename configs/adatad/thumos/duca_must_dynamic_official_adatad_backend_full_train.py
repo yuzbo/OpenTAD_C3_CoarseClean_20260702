@@ -38,7 +38,7 @@ duca_loss_schedule_shape = os.environ.get("DUCA_LOSS_SCHEDULE_SHAPE", "cosine")
 duca_profile_runtime = os.environ.get("DUCA_PROFILE_RUNTIME", "0") == "1"
 duca_profile_sync_cuda = os.environ.get("DUCA_PROFILE_SYNC_CUDA", "1") != "0"
 duca_coarse_probe_model = os.environ.get("DUCA_COARSE_PROBE_MODEL", "official-action-seg")
-duca_coarse_tcn_variant = os.environ.get("DUCA_COARSE_TCN_VARIANT", "lite")
+duca_coarse_tcn_variant = os.environ.get("DUCA_COARSE_TCN_VARIANT", "official_asformer")
 duca_coarse_official_backend = os.environ.get("DUCA_COARSE_OFFICIAL_BACKEND", "official_asformer")
 duca_coarse_spatial_size = _env_int("DUCA_COARSE_SPATIAL_SIZE", 64)
 duca_coarse_hidden_dim = _env_int("DUCA_COARSE_HIDDEN_DIM", 96)
@@ -120,6 +120,7 @@ duca_must_dynamic_contract = dict(
     dynamic_budget_dual_update_observation="expected_cost_mean",
     acquisition_policy="duca_center_radius_st_acquisition",
     loss_schedule_policy="progressive_joint",
+    loss_schedule_step_update="optimizer_step",
     loss_schedule_shape=duca_loss_schedule_shape,
     loss_schedule_warmup_steps=duca_loss_schedule_warmup_steps,
     loss_schedule_transition_steps=duca_loss_schedule_transition_steps,

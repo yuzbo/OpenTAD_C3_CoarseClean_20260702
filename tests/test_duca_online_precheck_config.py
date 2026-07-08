@@ -149,12 +149,14 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.budget_mode == "fixed"
     assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
     assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
+    assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "official_asformer"
     assert cfg.model.frame_selector.actionness_source_cfg.get("tcn_variant", None) != "asformer_lite"
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.frame_selector.loss_weights.actionness > 0
     assert cfg.model.frame_selector.loss_weights.hole > 0
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
+    assert cfg.duca_online_main_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
     assert cfg.duca_online_main_contract.detector_loss_always_trains_backend is True
@@ -194,6 +196,7 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["uses_ledger_for_decision"] is False
     assert summary["budget_lte_384"] is True
     assert summary["loss_schedule_policy"] == "progressive_joint"
+    assert summary["loss_schedule_step_update"] == "optimizer_step"
     assert summary["loss_schedule_detector_loss_always_on"] is True
     assert summary["loss_schedule_detector_gradient_bridge_scheduled"] is True
     assert summary["loss_schedule_detector_gradient_start"] == 0.0
@@ -289,12 +292,14 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
     assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
     assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
+    assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "official_asformer"
     assert cfg.model.frame_selector.actionness_source_cfg.get("tcn_variant", None) != "asformer_lite"
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.frame_selector.loss_weights.actionness > 0
     assert cfg.model.frame_selector.loss_weights.hole > 0
     assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
+    assert cfg.duca_must_dynamic_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
     assert cfg.duca_must_dynamic_contract.detector_loss_always_trains_backend is True
@@ -327,6 +332,7 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["ok"] is True
     assert summary["dynamic_budget"] is True
     assert summary["budget_policy"] == "prefix_marginal_utility_stop"
+    assert summary["loss_schedule_step_update"] == "optimizer_step"
     assert summary["dynamic_budget_dual_update_after_optimizer_step"] is True
     assert summary["dynamic_budget_dual_update_source"] == "dynamic_must_expected_cost"
     assert summary["budget_max_lte_384"] is True
