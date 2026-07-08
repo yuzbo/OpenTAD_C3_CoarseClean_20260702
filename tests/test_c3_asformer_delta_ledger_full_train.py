@@ -251,7 +251,7 @@ def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_
     assert "run_paction_lattice_replacement_ledger_pipeline.py" in text
     assert "validate_paction_lattice_replacement_ledger.py" in text
     assert "validate_c3_paction_learned_adatad_full_train.py" in text
-    assert "paction_lattice_replace_score_only_move25" in text
+    assert "paction_lattice_radius_score_only_move25" in text
     assert "paction_lattice_replace_score_only_move50 paction_lattice_replace_score_only_move75" not in text
     assert "--variants ${PACTION_LATTICE_ADATAD_VARIANTS}" in text
     assert "--fixed-budget \"${PACTION_LATTICE_FIXED_BUDGET}\"" in text
@@ -288,6 +288,12 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
         "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
         "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+        "paction_lattice_radius_score_only_move25": (
+            384,
+            384,
+            "paction_lattice_radius_score_only_move25",
+            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
+        ),
         "paction_lattice_replace_score_only_move25": (
             384,
             384,
@@ -350,11 +356,11 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
             assert loader.remap_gt_to_selected_axis is True
 
 
-def test_paction_lattice_move25_config_allows_fast_eval_and_checkpoint_schedule(monkeypatch):
-    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "paction_lattice_replace_score_only_move25")
-    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", "/tmp/move25.train.jsonl")
-    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", "/tmp/move25.val.jsonl")
-    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", "/tmp/move25.test.jsonl")
+def test_paction_lattice_radius_move25_config_allows_fast_eval_and_checkpoint_schedule(monkeypatch):
+    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "paction_lattice_radius_score_only_move25")
+    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", "/tmp/radius_move25.train.jsonl")
+    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", "/tmp/radius_move25.val.jsonl")
+    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", "/tmp/radius_move25.test.jsonl")
     monkeypatch.setenv("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", "0")
     monkeypatch.setenv("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", "2")
     monkeypatch.setenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "5")
@@ -365,7 +371,7 @@ def test_paction_lattice_move25_config_allows_fast_eval_and_checkpoint_schedule(
     validator = _load_paction_validator()
     validated = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
 
-    assert cfg.paction_ledger_variant == "paction_lattice_replace_score_only_move25"
+    assert cfg.paction_ledger_variant == "paction_lattice_radius_score_only_move25"
     assert int(validated.workflow.checkpoint_interval) == 2
     assert int(validated.workflow.val_eval_interval) == 5
     assert int(validated.workflow.val_eval_interval_anchor_epoch) == 5

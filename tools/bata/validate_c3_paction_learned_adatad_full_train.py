@@ -17,10 +17,12 @@ DYNAMIC_STRATEGY = "learned_paction_gap_loss_dynamic_budget"
 GAS_VT_SOURCE = "learned_paction_gas_vt_policy_checkpoint"
 PACTION_CHECKPOINT_SOURCE = "learned_paction_gap_loss_policy_checkpoint"
 LATTICE_ROUTE_VARIANT = "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT"
+LATTICE_RADIUS_ROUTE_VARIANT = "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS"
 VARIANT_SPECS = {
     "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
     "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
     "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
+    "paction_lattice_radius_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_radius_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_RADIUS_ROUTE_VARIANT),
     "paction_lattice_replace_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
     "paction_lattice_replace_score_only_move50": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move50", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
     "paction_lattice_replace_score_only_move75": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move75", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),

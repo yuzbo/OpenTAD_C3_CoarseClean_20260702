@@ -235,6 +235,43 @@ def test_lattice_pipeline_infers_deploy_provenance_only_with_explicit_opt_in(
     assert "gt_boundaries" not in rows[0]
 
 
+def test_lattice_radius_pipeline_writes_expanded_observation_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_checkpoint(monkeypatch)
+    input_jsonl = tmp_path / "source.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_text("dummy checkpoint", encoding="utf-8")
+    input_jsonl.write_text(
+        json.dumps(_source_row("video_test_0001|0", [0.02, 0.05, 0.10, 0.90, 0.88, 0.55, 0.48, 0.80, 0.20, 0.10, 0.05, 0.01]))
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = pipeline.run_pipeline(
+        input_jsonl=input_jsonl,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out",
+        variants=[lattice.RADIUS_MOVE25_STRATEGY],
+        fixed_budget=6,
+        device="cpu",
+        deploy_selection_ledger=True,
+        local_radius=2,
+        summary_json=tmp_path / "out" / "pipeline.summary.json",
+    )
+
+    ledger_row = _read_jsonl(Path(summary["ledgers"][lattice.RADIUS_MOVE25_STRATEGY]["ledger_jsonl"]))[0]
+    assert ledger_row["selected_positions_are_centers"] is True
+    assert ledger_row["context_radius_unit"] == "local_dense_snippet_index"
+    assert ledger_row["context_radius_range"] == [0.0, 16.0]
+    assert len(ledger_row["context_radius_by_position"]) == ledger_row["selected_count"]
+    assert len(ledger_row["selected_observations"]) == ledger_row["selected_count"]
+    assert ledger_row["expanded_selected_count"] >= ledger_row["selected_count"]
+    assert ledger_row["expanded_selected_positions"] == sorted(set(ledger_row["expanded_selected_positions"]))
+    assert ledger_row["diagnostics"]["expanded_selected_count"] == ledger_row["expanded_selected_count"]
+
+
 def test_lattice_validator_cli_accepts_positive_deploy_compatibility_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict = {}
 

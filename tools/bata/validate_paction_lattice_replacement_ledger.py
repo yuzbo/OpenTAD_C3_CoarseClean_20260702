@@ -46,8 +46,11 @@ def _assert_lattice_metadata(sample_rows: Sequence[Mapping[str, Any]], *, strate
             raise ValueError(f"sample row {row_index}: paction_policy metadata is required")
         if policy.get("source") != apply_policy.CHECKPOINT_POLICY_SOURCE:
             raise ValueError(f"sample row {row_index}: paction_policy.source must be {apply_policy.CHECKPOINT_POLICY_SOURCE}")
-        if policy.get("selection_decoder") != "score_only_lattice_replacement_v1":
-            raise ValueError(f"sample row {row_index}: selection_decoder must be score_only_lattice_replacement_v1")
+        if policy.get("selection_decoder") not in {
+            "score_only_lattice_replacement_v1",
+            "score_only_lattice_replacement_with_adaptive_radius_v1",
+        }:
+            raise ValueError(f"sample row {row_index}: unsupported selection_decoder={policy.get('selection_decoder')!r}")
         if policy.get("score_only") is not True:
             raise ValueError(f"sample row {row_index}: score_only must be true")
         if policy.get("diagnostic_only") is not True:
@@ -79,6 +82,18 @@ def _assert_lattice_metadata(sample_rows: Sequence[Mapping[str, Any]], *, strate
         selected_counts.append(int(diagnostics.get("selected_count", 0)))
         replaced_counts.append(int(diagnostics.get("replaced_uniform_count", 0)))
         protected_counts.append(int(diagnostics.get("protected_uniform_count", 0)))
+        if lattice.is_adaptive_radius_strategy(str(strategy)):
+            radii_by_strategy = policy.get("context_radius_by_strategy")
+            if not isinstance(radii_by_strategy, Mapping) or str(strategy) not in radii_by_strategy:
+                raise ValueError(f"sample row {row_index}: missing context_radius_by_strategy for {strategy}")
+            if policy.get("context_radius_unit") != "local_dense_snippet_index":
+                raise ValueError(f"sample row {row_index}: context_radius_unit must be local_dense_snippet_index")
+            radius_range = policy.get("context_radius_range")
+            if radius_range != [0.0, 16.0]:
+                raise ValueError(f"sample row {row_index}: context_radius_range must be [0.0, 16.0]")
+            radius_diagnostics = policy.get("lattice_radius_diagnostics_by_strategy")
+            if not isinstance(radius_diagnostics, Mapping) or str(strategy) not in radius_diagnostics:
+                raise ValueError(f"sample row {row_index}: missing lattice radius diagnostics for {strategy}")
     return {
         "row_count": len(sample_rows),
         "min_selected_count": min(selected_counts) if selected_counts else None,

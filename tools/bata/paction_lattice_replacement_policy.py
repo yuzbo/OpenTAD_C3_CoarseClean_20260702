@@ -6,12 +6,16 @@ from typing import Any, Sequence
 
 
 MOVE25_STRATEGY = "paction_lattice_replace_score_only_move25"
+RADIUS_MOVE25_STRATEGY = "paction_lattice_radius_score_only_move25"
 MOVE50_STRATEGY = "paction_lattice_replace_score_only_move50"
 MOVE75_STRATEGY = "paction_lattice_replace_score_only_move75"
 NO_PROTECT_STRATEGY = "paction_lattice_replace_score_only_no_protect"
 DEFAULT_BUDGET = 384
+DEFAULT_CONTEXT_RADIUS_MIN = 0.0
+DEFAULT_CONTEXT_RADIUS_MAX = 16.0
 _PROTECTED_COUNTS = {
     MOVE25_STRATEGY: 288,
+    RADIUS_MOVE25_STRATEGY: 288,
     MOVE50_STRATEGY: 192,
     MOVE75_STRATEGY: 96,
     NO_PROTECT_STRATEGY: 0,
@@ -110,6 +114,117 @@ def _gap_stats(selected: Sequence[int]) -> dict[str, float]:
 def _jaccard(left: set[int], right: set[int]) -> float:
     union = left | right
     return 1.0 if not union else len(left & right) / float(len(union))
+
+
+def is_adaptive_radius_strategy(variant: str) -> bool:
+    return str(variant) == RADIUS_MOVE25_STRATEGY
+
+
+def _normalize01(values: Sequence[float]) -> list[float]:
+    finite = [float(item) for item in values if math.isfinite(float(item))]
+    if not finite:
+        return [0.0 for _ in values]
+    lo = min(finite)
+    hi = max(finite)
+    if hi <= lo:
+        return [0.0 for _ in values]
+    return [max(0.0, min(1.0, (float(item) - lo) / (hi - lo))) for item in values]
+
+
+def _clamp_radius(value: Any) -> float:
+    try:
+        radius = float(value)
+    except (TypeError, ValueError):
+        radius = 0.0
+    if not math.isfinite(radius):
+        radius = 0.0
+    return max(DEFAULT_CONTEXT_RADIUS_MIN, min(DEFAULT_CONTEXT_RADIUS_MAX, radius))
+
+
+def _selected_summary(values: Sequence[float]) -> dict[str, float | None]:
+    if not values:
+        return {"min": None, "max": None, "mean": None}
+    numeric = [float(item) for item in values]
+    return {
+        "min": float(min(numeric)),
+        "max": float(max(numeric)),
+        "mean": float(sum(numeric) / float(len(numeric))),
+    }
+
+
+def _boundary_likelihood(p_action: Sequence[float]) -> list[float]:
+    if not p_action:
+        return []
+    out: list[float] = []
+    for idx, value in enumerate(p_action):
+        left = abs(float(value) - float(p_action[idx - 1])) if idx > 0 else 0.0
+        right = abs(float(p_action[idx + 1]) - float(value)) if idx + 1 < len(p_action) else 0.0
+        out.append(max(left, right))
+    return _normalize01(out)
+
+
+def adaptive_context_radius_by_position(
+    *,
+    p_action: Sequence[Any],
+    frame_values: Sequence[Any],
+    selected_positions: Sequence[int],
+    valid: Sequence[Any] | None = None,
+    teacher_utility: Sequence[Any] | None = None,
+    radius_max: float = DEFAULT_CONTEXT_RADIUS_MAX,
+) -> tuple[list[float], dict[str, Any]]:
+    p_values = [float(item) for item in p_action]
+    value_signal = _normalize01([float(item) for item in frame_values])
+    utility_signal = (
+        _normalize01([max(0.0, float(item)) for item in teacher_utility])
+        if teacher_utility is not None
+        else value_signal
+    )
+    if len(value_signal) != len(p_values):
+        raise ValueError("frame_values length must match p_action length")
+    if len(utility_signal) != len(p_values):
+        raise ValueError("teacher_utility length must match p_action length")
+    valid_mask = [True for _ in p_values] if valid is None else [bool(item) for item in valid]
+    if len(valid_mask) != len(p_values):
+        raise ValueError("valid mask length must match p_action length")
+
+    actionness = [max(0.0, min(1.0, float(item))) for item in p_values]
+    uncertainty = [1.0 - abs(2.0 * item - 1.0) for item in actionness]
+    boundary = _boundary_likelihood(actionness)
+    selected_set = {int(item) for item in selected_positions}
+    radii: list[float] = []
+    component_rows: list[dict[str, float | int]] = []
+    for idx, is_valid in enumerate(valid_mask):
+        if not is_valid:
+            radius = 0.0
+        else:
+            signal = (
+                0.25 * actionness[idx]
+                + 0.25 * uncertainty[idx]
+                + 0.30 * boundary[idx]
+                + 0.20 * utility_signal[idx]
+            )
+            radius = _clamp_radius(float(radius_max) * max(0.0, min(1.0, signal)))
+        radii.append(radius)
+        if idx in selected_set:
+            component_rows.append(
+                {
+                    "position": int(idx),
+                    "p_action": float(actionness[idx]),
+                    "uncertainty": float(uncertainty[idx]),
+                    "boundary_likelihood": float(boundary[idx]),
+                    "utility_signal": float(utility_signal[idx]),
+                    "radius": float(radius),
+                }
+            )
+    selected_radii = [radii[int(item)] for item in selected_positions if 0 <= int(item) < len(radii)]
+    diagnostics = {
+        "radius_source": "p_action_uncertainty_boundary_and_optional_detector_utility",
+        "radius_range": [float(DEFAULT_CONTEXT_RADIUS_MIN), float(DEFAULT_CONTEXT_RADIUS_MAX)],
+        "teacher_utility_used": teacher_utility is not None,
+        "selected_radius": _selected_summary(selected_radii),
+        "selected_components": component_rows[:16],
+    }
+    return radii, diagnostics
 
 
 def _phase_shift_uniform_similarity(selected: set[int], valid_positions: Sequence[int], budget: int) -> float:

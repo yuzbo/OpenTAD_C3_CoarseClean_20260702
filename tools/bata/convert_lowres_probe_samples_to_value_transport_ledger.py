@@ -203,6 +203,69 @@ def _selected_positions_from_sample(
     raise ValueError(f"line {line_no}: strategy '{strategy}' is missing from strategy_selected_positions")
 
 
+def _expanded_observation_contract(
+    row: Mapping[str, Any],
+    *,
+    selected: Sequence[int],
+    strategy: str,
+    valid_len: int,
+) -> dict[str, Any]:
+    policy_metadata = row.get("paction_policy")
+    if not isinstance(policy_metadata, Mapping):
+        policy_metadata = row.get("gas_vt_policy")
+    if not isinstance(policy_metadata, Mapping):
+        return {}
+    radii_by_strategy = policy_metadata.get("context_radius_by_strategy")
+    if not isinstance(radii_by_strategy, Mapping) or str(strategy) not in radii_by_strategy:
+        return {}
+    dense_radii = radii_by_strategy[str(strategy)]
+    if not isinstance(dense_radii, Sequence) or isinstance(dense_radii, (str, bytes, bytearray)):
+        raise ValueError(f"context_radius_by_strategy.{strategy} must be a sequence")
+    if len(dense_radii) < int(valid_len):
+        raise ValueError(f"context_radius_by_strategy.{strategy} shorter than valid_len={valid_len}")
+    radius_range = policy_metadata.get("context_radius_range")
+    if not (
+        isinstance(radius_range, Sequence)
+        and not isinstance(radius_range, (str, bytes, bytearray))
+        and len(radius_range) == 2
+    ):
+        radius_range = [0.0, 16.0]
+    radius_min = float(radius_range[0])
+    radius_max = float(radius_range[1])
+    context_radius_float_by_position: list[float] = []
+    context_radius_by_position: list[int] = []
+    observations: list[dict[str, int]] = []
+    expanded: set[int] = set()
+    for center in selected:
+        radius_float = max(radius_min, min(radius_max, float(dense_radii[int(center)])))
+        radius = int(round(radius_float))
+        radius = max(int(round(radius_min)), min(int(round(radius_max)), radius))
+        start = max(0, int(center) - radius)
+        end = min(int(valid_len) - 1, int(center) + radius)
+        context_radius_float_by_position.append(float(radius_float))
+        context_radius_by_position.append(int(radius))
+        observations.append(
+            {
+                "center": int(center),
+                "radius": int(radius),
+                "expanded_start": int(start),
+                "expanded_end": int(end),
+            }
+        )
+        expanded.update(range(start, end + 1))
+    expanded_positions = sorted(expanded)
+    return {
+        "selected_positions_are_centers": True,
+        "context_radius_unit": str(policy_metadata.get("context_radius_unit") or "local_dense_snippet_index"),
+        "context_radius_range": [float(radius_min), float(radius_max)],
+        "context_radius_by_position": context_radius_by_position,
+        "context_radius_float_by_position": context_radius_float_by_position,
+        "selected_observations": observations,
+        "expanded_selected_positions": expanded_positions,
+        "expanded_selected_count": int(len(expanded_positions)),
+    }
+
+
 def sample_row_to_value_transport_row(
     row: Mapping[str, Any],
     *,
@@ -305,6 +368,21 @@ def sample_row_to_value_transport_row(
         diagnostics["policy_uses_uniform_scaffold"] = policy_metadata.get("uses_uniform_scaffold")
         diagnostics["policy_uses_uniform_fill"] = policy_metadata.get("uses_uniform_fill")
         diagnostics["p_action_provenance"] = policy_metadata.get("p_action_provenance")
+    observation_contract = _expanded_observation_contract(
+        row,
+        selected=selected,
+        strategy=strategy,
+        valid_len=int(valid_len),
+    )
+    if observation_contract:
+        diagnostics.update(
+            {
+                "selected_positions_are_centers": True,
+                "context_radius_unit": observation_contract["context_radius_unit"],
+                "context_radius_range": observation_contract["context_radius_range"],
+                "expanded_selected_count": observation_contract["expanded_selected_count"],
+            }
+        )
     if deploy_selection_ledger and isinstance(policy_metadata, Mapping):
         if policy_metadata.get("source") not in DEPLOY_CHECKPOINT_POLICY_SOURCES:
             raise ValueError(
@@ -353,6 +431,7 @@ def sample_row_to_value_transport_row(
         "uses_checkpoint": False,
         "prediction_uses_gt": False,
     }
+    ledger_row.update(observation_contract)
     validate_value_transport_selection_row(
         ledger_row,
         line_no=line_no,

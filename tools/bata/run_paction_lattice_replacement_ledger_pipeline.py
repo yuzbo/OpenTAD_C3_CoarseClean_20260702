@@ -122,6 +122,11 @@ def run_pipeline(
 ) -> dict[str, Any]:
     if not variants:
         raise ValueError("at least one lattice replacement variant is required")
+    selection_decoder = (
+        "score_only_lattice_replacement_with_adaptive_radius_v1"
+        if any(lattice.is_adaptive_radius_strategy(str(item)) for item in variants)
+        else "score_only_lattice_replacement_v1"
+    )
     out_path = Path(out_dir).expanduser()
     out_path.mkdir(parents=True, exist_ok=True)
     canonical_input_jsonl = out_path / "source.canonical_unique.jsonl"
@@ -284,7 +289,7 @@ def run_pipeline(
             if allow_inferred_paction_positive_provenance
             else "disabled_for_formal_deploy"
         ),
-        "selection_decoder": "score_only_lattice_replacement_v1",
+        "selection_decoder": selection_decoder,
         "score_only": True,
         "uses_manual_slots": False,
         "uses_uniform_scaffold": True,

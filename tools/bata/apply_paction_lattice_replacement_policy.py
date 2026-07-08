@@ -16,6 +16,7 @@ from tools.bata import paction_source_samples
 SUMMARY_SCHEMA_VERSION = "c3_paction_lattice_replacement_application_v1"
 READY = "C3_PACTION_LATTICE_REPLACEMENT_APPLICATION_READY"
 DEFAULT_VARIANTS = (
+    lattice.RADIUS_MOVE25_STRATEGY,
     lattice.MOVE25_STRATEGY,
     lattice.MOVE50_STRATEGY,
     lattice.MOVE75_STRATEGY,
@@ -72,6 +73,32 @@ def _frame_value_summary(frame_values: Sequence[float]) -> dict[str, float | Non
     }
 
 
+def _optional_teacher_utility(row: Mapping[str, Any], *, length: int) -> list[float] | None:
+    candidates: list[Any] = []
+    teacher = row.get("teacher_utility")
+    if isinstance(teacher, Mapping):
+        candidates.extend(
+            [
+                teacher.get("signed_frame_utility"),
+                teacher.get("frame_utility"),
+                teacher.get("positive_observation_gain"),
+            ]
+        )
+    candidates.extend(
+        [
+            row.get("signed_frame_utility"),
+            row.get("frame_utility"),
+            row.get("positive_observation_gain"),
+        ]
+    )
+    for candidate in candidates:
+        if isinstance(candidate, Sequence) and not isinstance(candidate, (str, bytes, bytearray)):
+            values = [float(item) for item in candidate]
+            if len(values) >= int(length):
+                return values[: int(length)]
+    return None
+
+
 def run_lattice_replacement_application(
     input_jsonl: str | Path,
     output_jsonl: str | Path,
@@ -103,6 +130,12 @@ def run_lattice_replacement_application(
     enriched_rows: list[dict[str, Any]] = []
     replacement_counts_by_variant: dict[str, list[int]] = {str(name): [] for name in variants}
     selected_counts_by_variant: dict[str, list[int]] = {str(name): [] for name in variants}
+    radius_enabled = any(lattice.is_adaptive_radius_strategy(str(name)) for name in variants)
+    selection_decoder = (
+        "score_only_lattice_replacement_with_adaptive_radius_v1"
+        if radius_enabled
+        else "score_only_lattice_replacement_v1"
+    )
 
     for line_no, row in enumerate(rows, start=1):
         if strict_deploy_source:
@@ -137,6 +170,9 @@ def run_lattice_replacement_application(
         enriched = copy.deepcopy(dict(row))
         strategies = dict(enriched.get("strategy_selected_positions") or {})
         diagnostics_by_variant: dict[str, Any] = {}
+        context_radius_by_strategy: dict[str, list[float]] = {}
+        radius_diagnostics_by_strategy: dict[str, Any] = {}
+        teacher_utility = _optional_teacher_utility(row, length=len(p_action))
         for variant in variants:
             result = lattice.decode_paction_lattice_replacement(
                 frame_values=frame_values,
@@ -152,13 +188,23 @@ def run_lattice_replacement_application(
             diagnostics_by_variant[str(variant)] = result.diagnostics
             replacement_counts_by_variant[str(variant)].append(int(result.diagnostics["replaced_uniform_count"]))
             selected_counts_by_variant[str(variant)].append(int(result.diagnostics["selected_count"]))
+            if lattice.is_adaptive_radius_strategy(str(variant)):
+                radii, radius_diagnostics = lattice.adaptive_context_radius_by_position(
+                    p_action=p_action,
+                    frame_values=frame_values,
+                    selected_positions=result.selected_positions,
+                    valid=valid,
+                    teacher_utility=teacher_utility,
+                )
+                context_radius_by_strategy[str(variant)] = radii
+                radius_diagnostics_by_strategy[str(variant)] = radius_diagnostics
 
         enriched["strategy_selected_positions"] = strategies
         enriched["paction_policy"] = {
             "source": apply_policy.CHECKPOINT_POLICY_SOURCE,
             "policy_family": "paction_score_lattice_replacement",
             "selection_signal": "p_action_gap_loss_policy_frame_value",
-            "selection_decoder": "score_only_lattice_replacement_v1",
+            "selection_decoder": selection_decoder,
             "score_source": apply_policy.CHECKPOINT_POLICY_SOURCE,
             "score_only": True,
             "diagnostic_only": True,
@@ -171,6 +217,12 @@ def run_lattice_replacement_application(
             "uses_uniform_scaffold": True,
             "scaffold_type": "uniform_lattice_local_replacement",
             "uses_uniform_fill": False,
+            "adaptive_context_radius_used": bool(context_radius_by_strategy),
+            "learned_context_radius_used": bool(context_radius_by_strategy),
+            "context_radius_range": [float(lattice.DEFAULT_CONTEXT_RADIUS_MIN), float(lattice.DEFAULT_CONTEXT_RADIUS_MAX)],
+            "context_radius_unit": "local_dense_snippet_index",
+            "context_radius_by_strategy": context_radius_by_strategy,
+            "lattice_radius_diagnostics_by_strategy": radius_diagnostics_by_strategy,
             "geometry_constraint": "local_lattice_replacement",
             "geometry_lattice_budget": int(fixed_budget),
             "effective_lattice_budget": int(effective_budget),
@@ -204,7 +256,7 @@ def run_lattice_replacement_application(
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "source": apply_policy.CHECKPOINT_POLICY_SOURCE,
-        "selection_decoder": "score_only_lattice_replacement_v1",
+        "selection_decoder": selection_decoder,
         "score_only": True,
         "diagnostic_only": True,
         "paper_main_claim_allowed": False,
@@ -213,6 +265,9 @@ def run_lattice_replacement_application(
         "uses_uniform_scaffold": True,
         "scaffold_type": "uniform_lattice_local_replacement",
         "uses_uniform_fill": False,
+        "adaptive_context_radius_used": bool(radius_enabled),
+        "context_radius_range": [float(lattice.DEFAULT_CONTEXT_RADIUS_MIN), float(lattice.DEFAULT_CONTEXT_RADIUS_MAX)],
+        "context_radius_unit": "local_dense_snippet_index",
         "strip_deploy_invisible_payload": bool(strip_deploy_invisible_payload),
         "strict_deploy_source": bool(strict_deploy_source),
         "local_radius": int(local_radius),

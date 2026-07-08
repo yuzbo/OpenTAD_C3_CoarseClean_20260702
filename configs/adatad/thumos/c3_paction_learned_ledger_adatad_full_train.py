@@ -28,6 +28,17 @@ VARIANT_SPECS = {
         source="learned_paction_gap_loss_policy_checkpoint",
         config_hash="c3_paction_learned_gap_loss_dynamic_budget_no_uniform_v1",
     ),
+    "paction_lattice_radius_score_only_move25": dict(
+        target_len=384,
+        require_selected_count=384,
+        strategy="paction_lattice_radius_score_only_move25",
+        ledger_name="paction_lattice_radius_score_only_move25",
+        source="learned_paction_gap_loss_policy_checkpoint",
+        config_hash="c3_paction_lattice_radius_score_only_move25_v1",
+        selector_decoder="score_only_lattice_replacement_with_adaptive_radius_v1",
+        geometry_constraint="score_only_local_lattice_replacement_move25_adaptive_radius_0_16",
+        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
+    ),
     "paction_lattice_replace_score_only_move25": dict(
         target_len=384,
         require_selected_count=384,

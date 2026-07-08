@@ -193,3 +193,50 @@ def test_lattice_application_uses_short_valid_ratio_budget_contract(
     assert move75["selected_count"] == 126
     assert move75["protected_uniform_count"] == 32
     assert move75["replaceable_uniform_count"] == 94
+
+
+def test_lattice_radius_variant_records_adaptive_context_radius_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_checkpoint(monkeypatch)
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_text("dummy checkpoint", encoding="utf-8")
+    input_jsonl = tmp_path / "samples.jsonl"
+    output_jsonl = tmp_path / "samples.lattice.jsonl"
+    input_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "video_test_0001|0",
+                "dense_len": 12,
+                "valid_len": 12,
+                "frame_signals": {"p_action": [0.02, 0.05, 0.10, 0.90, 0.88, 0.55, 0.48, 0.80, 0.20, 0.10, 0.05, 0.01]},
+                "paction_positive_provenance": _provenance(),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    apply_lattice.run_lattice_replacement_application(
+        input_jsonl,
+        output_jsonl,
+        checkpoint_path=checkpoint,
+        variants=[lattice.RADIUS_MOVE25_STRATEGY],
+        fixed_budget=6,
+        device="cpu",
+        local_radius=2,
+    )
+    row = _read_jsonl(output_jsonl)[0]
+    selected = row["strategy_selected_positions"][lattice.RADIUS_MOVE25_STRATEGY]
+    metadata = row["paction_policy"]
+    radii = metadata["context_radius_by_strategy"][lattice.RADIUS_MOVE25_STRATEGY]
+
+    assert metadata["selection_decoder"] == "score_only_lattice_replacement_with_adaptive_radius_v1"
+    assert metadata["learned_context_radius_used"] is True
+    assert metadata["context_radius_range"] == [0.0, 16.0]
+    assert metadata["context_radius_unit"] == "local_dense_snippet_index"
+    assert len(radii) == 12
+    assert all(0.0 <= float(item) <= 16.0 for item in radii)
+    assert any(float(radii[position]) > 0.0 for position in selected)
+    assert metadata["lattice_radius_diagnostics_by_strategy"][lattice.RADIUS_MOVE25_STRATEGY]["selected_radius"]["max"] <= 16.0
