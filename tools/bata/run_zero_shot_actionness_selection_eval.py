@@ -9,6 +9,10 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from tools.bata import eval_zero_shot_actionness as actionness_eval
 from tools.bata import validate_zero_shot_actionness_eval
 
