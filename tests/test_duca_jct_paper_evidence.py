@@ -65,7 +65,19 @@ def _monitor_summary(
                 },
                 "duca_must": {
                     "status": "completed",
-                    "metrics": metrics,
+                    "metrics": {
+                        **metrics,
+                        "latest_train_epoch": 12.0,
+                        "latest_train_iter": 99.0,
+                        "latest_train_loss": 1.23,
+                        "latest_actionness_bce_loss": 0.21,
+                        "latest_action_local_hole_loss": 0.03,
+                        "latest_lagrangian_budget_loss": -0.02,
+                        "latest_cls_loss": 0.44,
+                        "latest_reg_loss": 0.25,
+                        "latest_lr_det": 1.0e-4,
+                        "latest_mem_mb": 4558.0,
+                    },
                     "result_artifacts": [str(tmp_path / "duca_must" / "result_detection.json")],
                 },
                 "x3d_duca384": {
@@ -134,6 +146,12 @@ def test_duca_jct_paper_evidence_allows_claim_only_with_baseline_and_high_iou(tm
     assert summary["claim_gate"]["best_main_method"] == "duca_must"
     assert summary["claim_gate"]["best_main_average_mAP_delta"] == 1.4
     assert not summary["claim_gate"]["blockers"]
+    must_row = summary["table_rows"][1]
+    assert must_row["latest_actionness_bce_loss"] == 0.21
+    assert must_row["latest_action_local_hole_loss"] == 0.03
+    assert must_row["latest_lagrangian_budget_loss"] == -0.02
+    assert must_row["latest_cls_loss"] == 0.44
+    assert must_row["latest_reg_loss"] == 0.25
     assert [row["method"] for row in summary["table_rows"]] == [
         "duca384",
         "duca_must",
@@ -202,6 +220,11 @@ def test_duca_jct_paper_evidence_cli_writes_json_and_tsv(tmp_path: Path) -> None
     assert rows[1]["method"] == "duca_must"
     assert rows[1]["average_mAP_percent"] == "66.4"
     assert rows[1]["delta_vs_primary_average_mAP"] == "1.4"
+    assert rows[1]["latest_actionness_bce_loss"] == "0.21"
+    assert rows[1]["latest_action_local_hole_loss"] == "0.03"
+    assert rows[1]["latest_lagrangian_budget_loss"] == "-0.02"
+    assert rows[1]["latest_cls_loss"] == "0.44"
+    assert rows[1]["latest_reg_loss"] == "0.25"
 
     wrapper_text = (ROOT / "scripts" / "collect_duca_jct_paper_evidence.sh").read_text(encoding="utf-8")
     assert "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python" in wrapper_text

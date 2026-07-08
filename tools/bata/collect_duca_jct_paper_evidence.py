@@ -19,6 +19,18 @@ MAIN_METHODS = ("duca384", "duca_must")
 TRAINFREE_METHODS = ("x3d_duca384", "x3d_must")
 HIGH_IOU_KEYS = ("mAP@0.60_percent", "mAP@0.70_percent")
 AVG_KEY = "average_mAP_percent"
+TRAINING_DIAGNOSTIC_KEYS = (
+    "latest_train_epoch",
+    "latest_train_iter",
+    "latest_train_loss",
+    "latest_actionness_bce_loss",
+    "latest_action_local_hole_loss",
+    "latest_lagrangian_budget_loss",
+    "latest_cls_loss",
+    "latest_reg_loss",
+    "latest_lr_det",
+    "latest_mem_mb",
+)
 
 
 def _path(path: str | Path) -> Path:
@@ -102,7 +114,7 @@ def _row(
     metrics = _job_metrics(monitor, method)
     avg = _metric(metrics, AVG_KEY)
     baseline_avg = _metric(baseline, AVG_KEY)
-    return {
+    row = {
         "method": method,
         "role": role,
         "status": str(job.get("status", "missing")),
@@ -122,6 +134,9 @@ def _row(
             else _metric(metrics, "mAP@0.70_percent") - _metric(baseline, "mAP@0.70_percent")
         ),
     }
+    for key in TRAINING_DIAGNOSTIC_KEYS:
+        row[key] = _round(_metric(metrics, key))
+    return row
 
 
 def _has_result(row: Mapping[str, Any]) -> bool:
@@ -267,6 +282,7 @@ def write_tsv(path: str | Path, rows: list[Mapping[str, Any]]) -> None:
         "delta_vs_primary_average_mAP",
         "delta_vs_primary_mAP@0.60",
         "delta_vs_primary_mAP@0.70",
+        *TRAINING_DIAGNOSTIC_KEYS,
     ]
     with out.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", extrasaction="ignore")
