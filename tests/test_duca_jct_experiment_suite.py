@@ -17,7 +17,10 @@ def test_duca_jct_suite_submits_all_required_main_and_trainfree_jobs() -> None:
     assert "run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh" in text
     assert "monitor_duca_jct_experiment_suite.py" in text
     assert "collect_duca_jct_paper_evidence.py" in text
+    assert "run_duca_jct_one_step_grad_proof.py" in text
+    assert "duca_jct_one_step_grad_proof.json" in text
     assert "tests/test_duca_joint_training_contract.py" in text
+    assert "tests/test_duca_jct_one_step_grad_proof.py" in text
     assert "tests/test_trainfree_x3d_actionness_materialize.py" in text
     assert "tests/test_duca_jct_suite_monitor.py" in text
     assert "tests/test_duca_jct_paper_evidence.py" in text

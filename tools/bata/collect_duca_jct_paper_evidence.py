@@ -154,12 +154,16 @@ def collect_evidence(
     hard_failures = list(monitor.get("hard_failures", []))
     missing_results = list(monitor.get("missing_results", []))
     missing_prerequisites = list(monitor.get("missing_prerequisites", []))
+    joint_grad_proof = monitor.get("joint_grad_proof") if isinstance(monitor.get("joint_grad_proof"), Mapping) else {}
+    joint_grad_proof_ready = bool(joint_grad_proof.get("ready") is True and joint_grad_proof.get("proof_passed") is True)
     if hard_failures:
         blockers.append("hard_failures_present")
     if missing_results:
         blockers.append("missing_detector_result_artifacts")
     if missing_prerequisites:
         blockers.append("missing_prerequisites")
+    if not joint_grad_proof_ready:
+        blockers.append("missing_or_failed_joint_grad_proof")
     if not primary_baseline or not baseline_metrics:
         blockers.append("missing_matched_reference_baseline")
     for key in (AVG_KEY, *HIGH_IOU_KEYS):
@@ -228,6 +232,7 @@ def collect_evidence(
         "branch": monitor.get("branch"),
         "main_duca_results_complete": bool(main_complete),
         "trainfree_baseline_results_complete": bool(trainfree_complete),
+        "joint_grad_proof_ready": bool(joint_grad_proof_ready),
         "paper_claim_allowed": not blockers,
         "table_rows": table_rows,
         "claim_gate": {

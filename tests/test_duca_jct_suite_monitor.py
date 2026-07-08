@@ -23,7 +23,7 @@ def _write_text(path: Path, text: str) -> Path:
     return path
 
 
-def _deployment(tmp_path: Path, *, with_x3d: bool = True) -> Path:
+def _deployment(tmp_path: Path, *, with_x3d: bool = True, with_grad_proof: bool = True) -> Path:
     run_root = tmp_path / "duca_jct_suite"
     materialization = run_root / "trainfree_frozen_actionness" / "best_x3d_actionness.materialization.json"
     actionness = run_root / "trainfree_frozen_actionness" / "best_x3d_actionness.jsonl"
@@ -39,6 +39,25 @@ def _deployment(tmp_path: Path, *, with_x3d: bool = True) -> Path:
                 "not_main_method": True,
                 "output_jsonl": str(actionness),
                 "output_row_count": 1,
+            },
+        )
+    if with_grad_proof:
+        _write_json(
+            run_root / "duca_jct_one_step_grad_proof.json",
+            {
+                "schema_version": "duca_jct_one_step_grad_proof_v1",
+                "proof_passed": True,
+                "fixed384": {
+                    "coarse_probe_grad_sum": 1.0,
+                    "selector_encoder_grad_sum": 1.0,
+                    "budget_controller_grad_sum": None,
+                },
+                "duca_must": {
+                    "coarse_probe_grad_sum": 1.0,
+                    "selector_encoder_grad_sum": 1.0,
+                    "budget_controller_grad_sum": 1.0,
+                    "dynamic_budget_dual_update": {"updated": True},
+                },
             },
         )
     return _write_json(
@@ -84,6 +103,9 @@ def test_duca_jct_suite_monitor_classifies_jobs_and_x3d_readiness(tmp_path: Path
     summary = monitor_suite(deployment_summary=deployment, squeue_text=squeue)
 
     assert summary["schema_version"] == "duca_jct_suite_monitor_v1"
+    assert summary["joint_grad_proof"]["ready"] is True
+    assert summary["joint_grad_proof"]["proof_passed"] is True
+    assert summary["joint_grad_proof"]["duca_must_budget_controller_grad_sum"] == 1.0
     assert summary["formal_x3d_actionness"]["ready"] is True
     assert summary["formal_x3d_actionness"]["downstream_detector_ready"] is True
     assert summary["jobs"]["duca_jct_tests"]["status"] == "completed"
@@ -107,6 +129,17 @@ def test_duca_jct_suite_monitor_blocks_x3d_downstream_when_formal_jsonl_missing(
     assert "formal_x3d_actionness_jsonl" in summary["missing_prerequisites"]
     assert summary["jobs"]["x3d_duca384"]["status"] == "blocked_missing_x3d_actionness"
     assert summary["jobs"]["x3d_must"]["status"] == "blocked_missing_x3d_actionness"
+
+
+def test_duca_jct_suite_monitor_requires_one_step_joint_grad_proof(tmp_path: Path) -> None:
+    deployment = _deployment(tmp_path, with_x3d=True, with_grad_proof=False)
+
+    from tools.bata.monitor_duca_jct_experiment_suite import monitor_suite
+
+    summary = monitor_suite(deployment_summary=deployment, squeue_text=None)
+
+    assert summary["joint_grad_proof"]["ready"] is False
+    assert "duca_jct_one_step_grad_proof" in summary["missing_prerequisites"]
 
 
 def test_duca_jct_suite_monitor_cli_writes_json_and_wrapper_uses_squeue(tmp_path: Path) -> None:

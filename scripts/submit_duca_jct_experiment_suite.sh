@@ -62,8 +62,10 @@ for path in \
   scripts/run_duca_trainfree_x3d_interval_grid_gpu0.sh \
   scripts/run_duca_x3d_official_adatad_backend_gpu1.sh \
   scripts/run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh \
+  tools/bata/run_duca_jct_one_step_grad_proof.py \
   tools/bata/materialize_trainfree_x3d_actionness.py \
   tests/test_duca_joint_training_contract.py \
+  tests/test_duca_jct_one_step_grad_proof.py \
   tests/test_trainfree_x3d_actionness_materialize.py; do
   require_file "${path}"
 done
@@ -87,6 +89,7 @@ module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
 export BASE="${BASE}"
 export YUZIBO_ROOT="${YUZIBO_ROOT}"
+export RUN_ROOT="${RUN_ROOT}"
 export HOME="\${HOME:-${BASE}/tmp/home}"
 export XDG_CACHE_HOME="\${XDG_CACHE_HOME:-${BASE}/tmp/xdg_cache}"
 export XDG_CONFIG_HOME="\${XDG_CONFIG_HOME:-${BASE}/tmp/xdg_config}"
@@ -136,14 +139,27 @@ write_sbatch "${tests_script}" "duca_jct_tests" '
   opentad/models/detectors/single_stage.py \
   opentad/models/detectors/actionformer.py \
   tools/bata/materialize_trainfree_x3d_actionness.py \
+  tools/bata/run_duca_jct_one_step_grad_proof.py \
   tools/bata/monitor_duca_jct_experiment_suite.py \
   tools/bata/collect_duca_jct_paper_evidence.py \
   tools/bata/validate_duca_official_adatad_backend.py \
   tools/bata/validate_duca_must_dynamic_official_adatad_backend.py
 "${PYTHON}" tools/bata/validate_duca_official_adatad_backend.py --config configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py --max-budget 384
 "${PYTHON}" tools/bata/validate_duca_must_dynamic_official_adatad_backend.py --config configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py --max-budget 384
+"${PYTHON}" tools/bata/run_duca_jct_one_step_grad_proof.py \
+  --fixed-config configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py \
+  --must-config configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py \
+  --output-json "${RUN_ROOT}/duca_jct_one_step_grad_proof.json" \
+  --proof-temporal-len 16 \
+  --proof-budget 16 \
+  --proof-budget-min 4 \
+  --proof-budget-target 8 \
+  --proof-budget-multiple 4 \
+  --proof-spatial-size 16 \
+  --proof-hidden-dim 16
 "${PYTHON}" -m pytest \
   tests/test_duca_joint_training_contract.py \
+  tests/test_duca_jct_one_step_grad_proof.py \
   tests/test_duca_online_coarse_probe_actionness.py \
   tests/test_duca_online_precheck_config.py \
   tests/test_duca_jct_suite_monitor.py \
@@ -239,6 +255,7 @@ payload = {
     "branch": "${BRANCH}",
     "repo": "${REPO_ROOT}",
     "run_root": "${RUN_ROOT}",
+    "duca_jct_one_step_grad_proof": "${RUN_ROOT}/duca_jct_one_step_grad_proof.json",
     "formal_x3d_actionness_jsonl": "${FORMAL_X3D_ACTIONNESS_JSONL}",
     "formal_x3d_materialization_summary": "${FORMAL_X3D_MATERIALIZATION_SUMMARY}",
     "duca_jct_tests_job": "${tests_job}",

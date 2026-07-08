@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 SCHEMA_VERSION = "duca_jct_suite_monitor_v1"
 X3D_READY = "TRAINFREE_X3D_ACTIONNESS_MATERIALIZED"
+GRAD_PROOF_SCHEMA_VERSION = "duca_jct_one_step_grad_proof_v1"
 
 JOB_SPECS = {
     "duca_jct_tests": {
@@ -239,6 +240,57 @@ def _formal_x3d_status(deployment: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _positive_number(value: Any) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        return float(value) > 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _joint_grad_proof_status(deployment: Mapping[str, Any], run_root: Path) -> dict[str, Any]:
+    proof_path = _path(deployment.get("duca_jct_one_step_grad_proof", run_root / "duca_jct_one_step_grad_proof.json"))
+    payload = _maybe_read_json(proof_path)
+    if payload is None:
+        return {
+            "ready": False,
+            "path": str(proof_path),
+            "exists": False,
+            "proof_passed": False,
+            "schema_version": None,
+            "reason": "missing_duca_jct_one_step_grad_proof",
+        }
+    fixed = payload.get("fixed384") if isinstance(payload.get("fixed384"), Mapping) else {}
+    must = payload.get("duca_must") if isinstance(payload.get("duca_must"), Mapping) else {}
+    dual_update = must.get("dynamic_budget_dual_update") if isinstance(must.get("dynamic_budget_dual_update"), Mapping) else {}
+    checks = {
+        "schema": payload.get("schema_version") == GRAD_PROOF_SCHEMA_VERSION,
+        "proof_passed": payload.get("proof_passed") is True,
+        "fixed_coarse_probe_grad": _positive_number(fixed.get("coarse_probe_grad_sum")),
+        "fixed_selector_encoder_grad": _positive_number(fixed.get("selector_encoder_grad_sum")),
+        "must_coarse_probe_grad": _positive_number(must.get("coarse_probe_grad_sum")),
+        "must_selector_encoder_grad": _positive_number(must.get("selector_encoder_grad_sum")),
+        "must_budget_controller_grad": _positive_number(must.get("budget_controller_grad_sum")),
+        "must_dual_update": dual_update.get("updated") is True,
+    }
+    failed = sorted(key for key, ok in checks.items() if not ok)
+    return {
+        "ready": not failed,
+        "path": str(proof_path),
+        "exists": True,
+        "proof_passed": payload.get("proof_passed") is True,
+        "schema_version": payload.get("schema_version"),
+        "failed_checks": failed,
+        "fixed_coarse_probe_grad_sum": fixed.get("coarse_probe_grad_sum"),
+        "fixed_selector_encoder_grad_sum": fixed.get("selector_encoder_grad_sum"),
+        "duca_must_coarse_probe_grad_sum": must.get("coarse_probe_grad_sum"),
+        "duca_must_selector_encoder_grad_sum": must.get("selector_encoder_grad_sum"),
+        "duca_must_budget_controller_grad_sum": must.get("budget_controller_grad_sum"),
+        "duca_must_dual_update": dict(dual_update),
+    }
+
+
 def monitor_suite(
     *,
     deployment_summary: str | Path,
@@ -251,6 +303,7 @@ def monitor_suite(
     run_root = _path(deployment.get("run_root", deployment_path.parent))
     squeue = _parse_squeue(squeue_text)
     x3d_status = _formal_x3d_status(deployment)
+    grad_proof_status = _joint_grad_proof_status(deployment, run_root)
 
     jobs: dict[str, dict[str, Any]] = {}
     hard_failures: list[str] = []
@@ -262,6 +315,10 @@ def monitor_suite(
         missing_prerequisites.append("formal_x3d_materialization_summary")
     if not x3d_status["jsonl_exists"]:
         missing_prerequisites.append("formal_x3d_actionness_jsonl")
+    if not grad_proof_status["exists"]:
+        missing_prerequisites.append("duca_jct_one_step_grad_proof")
+    elif not grad_proof_status["ready"]:
+        hard_failures.append("duca_jct_one_step_grad_proof")
 
     for label, spec in JOB_SPECS.items():
         job_id = str(deployment.get(spec["summary_key"], "") or "")
@@ -314,6 +371,7 @@ def monitor_suite(
         "commit": deployment.get("commit"),
         "branch": deployment.get("branch"),
         "formal_x3d_actionness": x3d_status,
+        "joint_grad_proof": grad_proof_status,
         "jobs": jobs,
         "hard_failures": hard_failures,
         "running_jobs": running_jobs,

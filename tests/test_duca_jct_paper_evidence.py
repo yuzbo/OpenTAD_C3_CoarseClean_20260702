@@ -22,6 +22,7 @@ def _monitor_summary(
     *,
     include_high_iou: bool = True,
     include_trainfree_results: bool = True,
+    include_joint_grad_proof: bool = True,
 ) -> Path:
     metrics = {
         "average_mAP_percent": 66.4,
@@ -43,6 +44,15 @@ def _monitor_summary(
             "missing_results": [],
             "missing_prerequisites": [],
             "formal_x3d_actionness": {"ready": True, "train_free_baseline": True, "not_main_method": True},
+            "joint_grad_proof": {
+                "ready": include_joint_grad_proof,
+                "proof_passed": include_joint_grad_proof,
+                "fixed_coarse_probe_grad_sum": 1.0 if include_joint_grad_proof else 0.0,
+                "fixed_selector_encoder_grad_sum": 1.0 if include_joint_grad_proof else 0.0,
+                "duca_must_coarse_probe_grad_sum": 1.0 if include_joint_grad_proof else 0.0,
+                "duca_must_selector_encoder_grad_sum": 1.0 if include_joint_grad_proof else 0.0,
+                "duca_must_budget_controller_grad_sum": 1.0 if include_joint_grad_proof else 0.0,
+            },
             "jobs": {
                 "duca384": {
                     "status": "completed",
@@ -118,6 +128,7 @@ def test_duca_jct_paper_evidence_allows_claim_only_with_baseline_and_high_iou(tm
     assert summary["schema_version"] == "duca_jct_paper_evidence_v1"
     assert summary["main_duca_results_complete"] is True
     assert summary["trainfree_baseline_results_complete"] is True
+    assert summary["joint_grad_proof_ready"] is True
     assert summary["paper_claim_allowed"] is True
     assert summary["claim_gate"]["primary_baseline"] == "uniform384"
     assert summary["claim_gate"]["best_main_method"] == "duca_must"
@@ -153,6 +164,13 @@ def test_duca_jct_paper_evidence_blocks_claim_without_baseline_or_high_iou(tmp_p
     assert missing_trainfree["paper_claim_allowed"] is False
     assert "trainfree_method_not_completed:x3d_duca384" in missing_trainfree["claim_gate"]["blockers"]
     assert "missing_trainfree_high_iou_metric:mAP@0.70_percent" in missing_trainfree["claim_gate"]["blockers"]
+
+    missing_grad_proof = collect_evidence(
+        monitor_summary=_monitor_summary(tmp_path / "missing_grad_proof", include_joint_grad_proof=False),
+        baseline_summary=_baseline_summary(tmp_path / "missing_grad_proof"),
+    )
+    assert missing_grad_proof["paper_claim_allowed"] is False
+    assert "missing_or_failed_joint_grad_proof" in missing_grad_proof["claim_gate"]["blockers"]
 
 
 def test_duca_jct_paper_evidence_cli_writes_json_and_tsv(tmp_path: Path) -> None:

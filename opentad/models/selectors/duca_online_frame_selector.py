@@ -614,6 +614,8 @@ class DucaOnlineFrameSelector(nn.Module):
             "compute_profile": compute_profile,
             "detector_gradient_weight": float(detector_gradient_weight),
         }
+        if isinstance(schedule_state, Mapping):
+            self.last_forward_summary["loss_weight_schedule"] = dict(schedule_state)
         return {
             "inputs": selected_inputs,
             "masks": selected_masks,
