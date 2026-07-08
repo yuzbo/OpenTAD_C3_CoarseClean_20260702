@@ -19,17 +19,17 @@ PACTION_CHECKPOINT_SOURCE = "learned_paction_gap_loss_policy_checkpoint"
 LATTICE_ROUTE_VARIANT = "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT"
 LATTICE_RADIUS_ROUTE_VARIANT = "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS"
 VARIANT_SPECS = {
-    "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
-    "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
-    "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER"),
-    "paction_lattice_radius_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_radius_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_RADIUS_ROUTE_VARIANT),
-    "paction_lattice_replace_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
-    "paction_lattice_replace_score_only_move50": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move50", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
-    "paction_lattice_replace_score_only_move75": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move75", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
-    "paction_lattice_replace_score_only_no_protect": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_no_protect", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT),
-    "gas_vt_fixed_384": dict(target_len=384, require_selected_count=384, strategy="gas_vt_fixed_384", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER"),
-    "gas_vt_fixed_768": dict(target_len=768, require_selected_count=768, strategy="gas_vt_fixed_768", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER"),
-    "gas_vt_dynamic": dict(target_len=768, require_selected_count=None, strategy="gas_vt_dynamic", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER"),
+    "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER", use_expanded_positions=False),
+    "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER", use_expanded_positions=False),
+    "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER", use_expanded_positions=False),
+    "paction_lattice_radius_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_radius_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_RADIUS_ROUTE_VARIANT, use_expanded_positions=True),
+    "paction_lattice_replace_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
+    "paction_lattice_replace_score_only_move50": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move50", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
+    "paction_lattice_replace_score_only_move75": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move75", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
+    "paction_lattice_replace_score_only_no_protect": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_no_protect", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
+    "gas_vt_fixed_384": dict(target_len=384, require_selected_count=384, strategy="gas_vt_fixed_384", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER", use_expanded_positions=False),
+    "gas_vt_fixed_768": dict(target_len=768, require_selected_count=768, strategy="gas_vt_fixed_768", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER", use_expanded_positions=False),
+    "gas_vt_dynamic": dict(target_len=768, require_selected_count=None, strategy="gas_vt_dynamic", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER", use_expanded_positions=False),
 }
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
@@ -96,6 +96,10 @@ def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg
     _require(_as_bool(loader.get("bata_value_transport_require_deployable")), f"{name}: deployable ledger not required")
     _require(not _as_bool(loader.get("bata_value_transport_allow_missing_fallback")), f"{name}: missing fallback must be off")
     _require(_as_bool(loader.get("remap_gt_to_selected_axis")), f"{name}: selected-axis GT remap must be on")
+    _require(
+        _as_bool(loader.get("bata_value_transport_use_expanded_positions", False)) is bool(spec["use_expanded_positions"]),
+        f"{name}: expanded-position consumption mismatch",
+    )
     _require(loader.get("bata_value_transport_ledger_path") == expected_ledger_path, f"{name}: wrong ledger path")
     _require(loader.get("bata_value_transport_source") == cfg.c3_value_transport_source, f"{name}: wrong ledger source")
     _require(
@@ -286,7 +290,30 @@ def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool
             required = spec["require_selected_count"]
             if required is not None:
                 expected = _expected_short_count(int(required), valid_len=valid_len, dense_len=dense_len)
-                _require(len(positions) == expected, f"{path}:{line_no}: expected {expected} selected positions")
+                if spec.get("use_expanded_positions"):
+                    _require(row.get("selected_positions_are_centers") is True, f"{path}:{line_no}: radius selected_positions must be centers")
+                    expanded = [int(item) for item in row.get("expanded_selected_positions", [])]
+                    _require(bool(expanded), f"{path}:{line_no}: missing expanded_selected_positions")
+                    _require(expanded == sorted(set(expanded)), f"{path}:{line_no}: expanded positions must be sorted unique")
+                    _require(
+                        len(expanded) == int(row.get("expanded_selected_count")),
+                        f"{path}:{line_no}: expanded_selected_count mismatch",
+                    )
+                    _require(len(expanded) <= target_len, f"{path}:{line_no}: expanded_selected_count exceeds target_len")
+                    _require(all(0 <= item < valid_len for item in expanded), f"{path}:{line_no}: expanded position outside valid_len")
+                    _require(len(expanded) == expected, f"{path}:{line_no}: expected {expected} expanded positions")
+                    _require(diagnostics.get("budgeted_expanded_selection") is True, f"{path}:{line_no}: budgeted expanded selection missing")
+                    _require(int(diagnostics.get("center_count", -1)) == len(positions), f"{path}:{line_no}: center_count mismatch")
+                    _require(
+                        int(diagnostics.get("budgeted_expanded_count", -1)) == len(expanded),
+                        f"{path}:{line_no}: budgeted_expanded_count mismatch",
+                    )
+                    _require(
+                        int(diagnostics.get("expanded_budget", expected)) == expected,
+                        f"{path}:{line_no}: expanded_budget mismatch",
+                    )
+                else:
+                    _require(len(positions) == expected, f"{path}:{line_no}: expected {expected} selected positions")
     _require(rows > 0, f"ledger file has no rows: {path}")
 
 

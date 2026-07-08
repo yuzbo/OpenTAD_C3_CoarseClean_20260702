@@ -41,6 +41,7 @@ DEPLOY_CHECKPOINT_POLICY_SOURCES = {
     CHECKPOINT_POLICY_SOURCE,
     GAS_VT_CHECKPOINT_POLICY_SOURCE,
 }
+RADIUS_MOVE25_STRATEGY = "paction_lattice_radius_score_only_move25"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -203,16 +204,44 @@ def _selected_positions_from_sample(
     raise ValueError(f"line {line_no}: strategy '{strategy}' is missing from strategy_selected_positions")
 
 
+def _policy_metadata(row: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    paction_policy = row.get("paction_policy")
+    gas_vt_policy = row.get("gas_vt_policy")
+    if isinstance(paction_policy, Mapping):
+        return paction_policy
+    if isinstance(gas_vt_policy, Mapping):
+        return gas_vt_policy
+    return None
+
+
+def _budgeted_expanded_positions_from_policy(
+    row: Mapping[str, Any],
+    *,
+    strategy: str,
+    line_no: int,
+) -> list[int] | None:
+    policy_metadata = _policy_metadata(row)
+    if not isinstance(policy_metadata, Mapping):
+        return None
+    by_strategy = policy_metadata.get("budgeted_expanded_positions_by_strategy")
+    if not isinstance(by_strategy, Mapping) or str(strategy) not in by_strategy:
+        return None
+    return _int_positions(
+        by_strategy[str(strategy)],
+        name=f"line {line_no}: budgeted_expanded_positions_by_strategy.{strategy}",
+    )
+
+
 def _expanded_observation_contract(
     row: Mapping[str, Any],
     *,
+    line_no: int,
     selected: Sequence[int],
     strategy: str,
     valid_len: int,
+    expanded_budget: int | None,
 ) -> dict[str, Any]:
-    policy_metadata = row.get("paction_policy")
-    if not isinstance(policy_metadata, Mapping):
-        policy_metadata = row.get("gas_vt_policy")
+    policy_metadata = _policy_metadata(row)
     if not isinstance(policy_metadata, Mapping):
         return {}
     radii_by_strategy = policy_metadata.get("context_radius_by_strategy")
@@ -253,7 +282,33 @@ def _expanded_observation_contract(
             }
         )
         expanded.update(range(start, end + 1))
-    expanded_positions = sorted(expanded)
+    budgeted_expanded_positions = _budgeted_expanded_positions_from_policy(
+        row,
+        strategy=strategy,
+        line_no=line_no,
+    )
+    if budgeted_expanded_positions is not None:
+        if any(position >= int(valid_len) for position in budgeted_expanded_positions):
+            raise ValueError(f"line {line_no}: budgeted expanded positions exceed valid_len={valid_len}")
+        if expanded_budget is not None and len(budgeted_expanded_positions) > int(expanded_budget):
+            raise ValueError(
+                f"line {line_no}: budgeted expanded count {len(budgeted_expanded_positions)} exceeds budget {int(expanded_budget)}"
+            )
+        expanded_positions = budgeted_expanded_positions
+    else:
+        expanded_positions = sorted(expanded)
+        if expanded_budget is not None and str(strategy) == RADIUS_MOVE25_STRATEGY and len(expanded_positions) > int(expanded_budget):
+            raise ValueError(
+                f"line {line_no}: adaptive radius expanded count {len(expanded_positions)} exceeds budget {int(expanded_budget)}"
+            )
+    budgeted_diagnostics_by_strategy = policy_metadata.get("budgeted_expanded_diagnostics_by_strategy")
+    budgeted_diagnostics = (
+        budgeted_diagnostics_by_strategy.get(str(strategy))
+        if isinstance(budgeted_diagnostics_by_strategy, Mapping)
+        else None
+    )
+    if not isinstance(budgeted_diagnostics, Mapping):
+        budgeted_diagnostics = {}
     return {
         "selected_positions_are_centers": True,
         "context_radius_unit": str(policy_metadata.get("context_radius_unit") or "local_dense_snippet_index"),
@@ -263,6 +318,7 @@ def _expanded_observation_contract(
         "selected_observations": observations,
         "expanded_selected_positions": expanded_positions,
         "expanded_selected_count": int(len(expanded_positions)),
+        "budgeted_expanded_diagnostics": dict(budgeted_diagnostics),
     }
 
 
@@ -318,6 +374,11 @@ def sample_row_to_value_transport_row(
         dense_len=dense_len,
         allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
     )
+    has_budgeted_expanded_positions = _budgeted_expanded_positions_from_policy(
+        row,
+        strategy=strategy,
+        line_no=line_no,
+    ) is not None
     fill_count = 0
     if fill_to_target_count and expected_required_count is not None and len(selected) < int(expected_required_count):
         selected, fill_count = _uniform_fill_positions(
@@ -325,7 +386,11 @@ def sample_row_to_value_transport_row(
             valid_len=int(valid_len),
             target_count=int(expected_required_count),
         )
-    if expected_required_count is not None and len(selected) != int(expected_required_count):
+    if (
+        expected_required_count is not None
+        and len(selected) != int(expected_required_count)
+        and not has_budgeted_expanded_positions
+    ):
         raise ValueError(
             f"line {line_no}: selected_count={len(selected)} does not match required count {int(expected_required_count)}"
         )
@@ -350,9 +415,7 @@ def sample_row_to_value_transport_row(
             and not (isinstance(row.get("strategy_selected_positions"), Mapping) and strategy in row["strategy_selected_positions"])
         ),
     }
-    paction_policy = row.get("paction_policy")
-    gas_vt_policy = row.get("gas_vt_policy")
-    policy_metadata = paction_policy if isinstance(paction_policy, Mapping) else gas_vt_policy
+    policy_metadata = _policy_metadata(row)
     if deploy_selection_ledger and not isinstance(policy_metadata, Mapping):
         raise ValueError(
             f"line {line_no}: paction_policy metadata is required for deploy selection ledger "
@@ -370,11 +433,21 @@ def sample_row_to_value_transport_row(
         diagnostics["p_action_provenance"] = policy_metadata.get("p_action_provenance")
     observation_contract = _expanded_observation_contract(
         row,
+        line_no=line_no,
         selected=selected,
         strategy=strategy,
         valid_len=int(valid_len),
+        expanded_budget=expected_required_count,
     )
     if observation_contract:
+        budgeted_diagnostics = observation_contract.pop("budgeted_expanded_diagnostics", {})
+        if has_budgeted_expanded_positions and expected_required_count is not None:
+            expanded_count = int(observation_contract["expanded_selected_count"])
+            if expanded_count != int(expected_required_count):
+                raise ValueError(
+                    f"line {line_no}: expanded_selected_count={expanded_count} "
+                    f"does not match required count {int(expected_required_count)}"
+                )
         diagnostics.update(
             {
                 "selected_positions_are_centers": True,
@@ -383,6 +456,16 @@ def sample_row_to_value_transport_row(
                 "expanded_selected_count": observation_contract["expanded_selected_count"],
             }
         )
+        for key in (
+            "expanded_budget",
+            "center_count",
+            "budgeted_expanded_count",
+            "budgeted_expanded_selection",
+            "candidate_union_count",
+            "expanded_score_source",
+        ):
+            if key in budgeted_diagnostics:
+                diagnostics[key] = budgeted_diagnostics[key]
     if deploy_selection_ledger and isinstance(policy_metadata, Mapping):
         if policy_metadata.get("source") not in DEPLOY_CHECKPOINT_POLICY_SOURCES:
             raise ValueError(

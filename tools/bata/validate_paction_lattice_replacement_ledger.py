@@ -94,6 +94,12 @@ def _assert_lattice_metadata(sample_rows: Sequence[Mapping[str, Any]], *, strate
             radius_diagnostics = policy.get("lattice_radius_diagnostics_by_strategy")
             if not isinstance(radius_diagnostics, Mapping) or str(strategy) not in radius_diagnostics:
                 raise ValueError(f"sample row {row_index}: missing lattice radius diagnostics for {strategy}")
+            expanded_by_strategy = policy.get("budgeted_expanded_positions_by_strategy")
+            if not isinstance(expanded_by_strategy, Mapping) or str(strategy) not in expanded_by_strategy:
+                raise ValueError(f"sample row {row_index}: missing budgeted expanded positions for {strategy}")
+            expanded_diagnostics = policy.get("budgeted_expanded_diagnostics_by_strategy")
+            if not isinstance(expanded_diagnostics, Mapping) or str(strategy) not in expanded_diagnostics:
+                raise ValueError(f"sample row {row_index}: missing budgeted expanded diagnostics for {strategy}")
     return {
         "row_count": len(sample_rows),
         "min_selected_count": min(selected_counts) if selected_counts else None,
@@ -101,6 +107,59 @@ def _assert_lattice_metadata(sample_rows: Sequence[Mapping[str, Any]], *, strate
         "mean_replaced_uniform_count": None if not replaced_counts else sum(replaced_counts) / float(len(replaced_counts)),
         "min_protected_uniform_count": min(protected_counts) if protected_counts else None,
         "max_protected_uniform_count": max(protected_counts) if protected_counts else None,
+    }
+
+
+def _assert_radius_expanded_budget(
+    ledger_rows: Sequence[Mapping[str, Any]],
+    *,
+    ledger_jsonl: str | Path,
+    require_selected_count: int | None,
+    allow_short_valid_ratio_count: bool,
+) -> dict[str, Any]:
+    expanded_counts: list[int] = []
+    center_counts: list[int] = []
+    for line_no, row in enumerate(ledger_rows, start=1):
+        selected = base_validator._positions(row.get("selected_positions"), name=f"{ledger_jsonl}:{line_no}: selected_positions")
+        expanded = base_validator._positions(
+            row.get("expanded_selected_positions"),
+            name=f"{ledger_jsonl}:{line_no}: expanded_selected_positions",
+        )
+        valid_len = int(row.get("valid_len"))
+        dense_len = int(row.get("dense_len") or valid_len)
+        if row.get("selected_positions_are_centers") is not True:
+            raise ValueError(f"{ledger_jsonl}:{line_no}: radius ledger selected_positions must be centers")
+        if int(row.get("selected_count")) != len(selected):
+            raise ValueError(f"{ledger_jsonl}:{line_no}: selected_count mismatch")
+        if int(row.get("expanded_selected_count")) != len(expanded):
+            raise ValueError(f"{ledger_jsonl}:{line_no}: expanded_selected_count mismatch")
+        if any(item >= valid_len for item in expanded):
+            raise ValueError(f"{ledger_jsonl}:{line_no}: expanded position outside valid_len")
+        target_len = int(row.get("target_len"))
+        if len(expanded) > target_len:
+            raise ValueError(f"{ledger_jsonl}:{line_no}: expanded_selected_count exceeds target_len")
+        expected_count = base_validator.paction_budget_contract.expected_selected_count(
+            require_selected_count,
+            valid_len=valid_len,
+            dense_len=dense_len,
+            allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
+        )
+        if expected_count is not None and len(expanded) != int(expected_count):
+            raise ValueError(f"{ledger_jsonl}:{line_no}: expanded_selected_count must be {expected_count}")
+        diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), Mapping) else {}
+        if diagnostics.get("budgeted_expanded_selection") is not True:
+            raise ValueError(f"{ledger_jsonl}:{line_no}: budgeted_expanded_selection must be true")
+        if int(diagnostics.get("center_count", -1)) != len(selected):
+            raise ValueError(f"{ledger_jsonl}:{line_no}: center_count mismatch")
+        if int(diagnostics.get("budgeted_expanded_count", -1)) != len(expanded):
+            raise ValueError(f"{ledger_jsonl}:{line_no}: budgeted_expanded_count mismatch")
+        expanded_counts.append(len(expanded))
+        center_counts.append(len(selected))
+    return {
+        "min_center_count": min(center_counts) if center_counts else None,
+        "max_center_count": max(center_counts) if center_counts else None,
+        "min_expanded_selected_count": min(expanded_counts) if expanded_counts else None,
+        "max_expanded_selected_count": max(expanded_counts) if expanded_counts else None,
     }
 
 
@@ -123,13 +182,14 @@ def validate_lattice_ledger(
     max_uniform_similarity: float | None = None,
     summary_json: str | Path | None = None,
 ) -> dict[str, Any]:
+    is_radius = lattice.is_adaptive_radius_strategy(str(strategy))
     base_summary = base_validator.validate_ledger(
         sample_jsonl=sample_jsonl,
         metric_sample_jsonl=metric_sample_jsonl,
         ledger_jsonl=ledger_jsonl,
         strategy=strategy,
         expected_target_len=int(expected_target_len),
-        require_selected_count=require_selected_count,
+        require_selected_count=None if is_radius else require_selected_count,
         allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
         require_nonconstant_selected_count=False,
         require_deployable=bool(require_deployable),
@@ -146,6 +206,14 @@ def validate_lattice_ledger(
         allow_policy_uniform_scaffold=True,
     )
     lattice_summary = _assert_lattice_metadata(_read_jsonl(sample_jsonl), strategy=strategy)
+    radius_budget_summary = None
+    if is_radius:
+        radius_budget_summary = _assert_radius_expanded_budget(
+            _read_jsonl(ledger_jsonl),
+            ledger_jsonl=ledger_jsonl,
+            require_selected_count=require_selected_count,
+            allow_short_valid_ratio_count=bool(allow_short_valid_ratio_count),
+        )
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "decision": READY,
@@ -155,6 +223,7 @@ def validate_lattice_ledger(
         "ledger_jsonl": str(ledger_jsonl),
         "base_validation": base_summary,
         "lattice_metadata": lattice_summary,
+        "radius_budget": radius_budget_summary,
     }
     if summary_json is not None:
         _write_json(summary_json, summary)

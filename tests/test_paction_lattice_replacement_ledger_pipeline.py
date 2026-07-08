@@ -267,9 +267,14 @@ def test_lattice_radius_pipeline_writes_expanded_observation_contract(
     assert ledger_row["context_radius_range"] == [0.0, 16.0]
     assert len(ledger_row["context_radius_by_position"]) == ledger_row["selected_count"]
     assert len(ledger_row["selected_observations"]) == ledger_row["selected_count"]
-    assert ledger_row["expanded_selected_count"] >= ledger_row["selected_count"]
+    assert ledger_row["selected_count"] == 3
+    assert ledger_row["expanded_selected_count"] == 6
     assert ledger_row["expanded_selected_positions"] == sorted(set(ledger_row["expanded_selected_positions"]))
     assert ledger_row["diagnostics"]["expanded_selected_count"] == ledger_row["expanded_selected_count"]
+    assert ledger_row["diagnostics"]["center_count"] == ledger_row["selected_count"]
+    assert ledger_row["diagnostics"]["expanded_budget"] == 6
+    assert ledger_row["diagnostics"]["budgeted_expanded_count"] == 6
+    assert ledger_row["diagnostics"]["budgeted_expanded_selection"] is True
 
 
 def test_lattice_validator_cli_accepts_positive_deploy_compatibility_flags(monkeypatch: pytest.MonkeyPatch) -> None:

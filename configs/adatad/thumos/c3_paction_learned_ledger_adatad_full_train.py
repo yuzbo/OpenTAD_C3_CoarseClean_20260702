@@ -38,6 +38,7 @@ VARIANT_SPECS = {
         selector_decoder="score_only_lattice_replacement_with_adaptive_radius_v1",
         geometry_constraint="score_only_local_lattice_replacement_move25_adaptive_radius_0_16",
         route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
+        use_expanded_positions=True,
     ),
     "paction_lattice_replace_score_only_move25": dict(
         target_len=384,
@@ -249,6 +250,7 @@ def c3_paction_loadframes(ledger_path):
         bata_value_transport_allow_short_valid_ratio_count=True,
         bata_value_transport_source=c3_value_transport_source,
         bata_value_transport_config_hash=c3_value_transport_config_hash,
+        bata_value_transport_use_expanded_positions=bool(_variant.get("use_expanded_positions", False)),
     )
 
 

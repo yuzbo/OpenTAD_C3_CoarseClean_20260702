@@ -288,41 +288,46 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
     monkeypatch.delenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", raising=False)
     monkeypatch.delenv("C3_PACTION_ADATAD_VAL_START_EPOCH", raising=False)
     expected = {
-        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
-        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER"),
-        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER", False),
+        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER", False),
+        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget", "C3_PACTION_LEARNED_STRICT_LEDGER", False),
         "paction_lattice_radius_score_only_move25": (
             384,
             384,
             "paction_lattice_radius_score_only_move25",
             "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
+            True,
         ),
         "paction_lattice_replace_score_only_move25": (
             384,
             384,
             "paction_lattice_replace_score_only_move25",
             "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+            False,
         ),
         "paction_lattice_replace_score_only_move50": (
             384,
             384,
             "paction_lattice_replace_score_only_move50",
             "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+            False,
         ),
         "paction_lattice_replace_score_only_move75": (
             384,
             384,
             "paction_lattice_replace_score_only_move75",
             "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+            False,
         ),
         "paction_lattice_replace_score_only_no_protect": (
             384,
             384,
             "paction_lattice_replace_score_only_no_protect",
             "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
+            False,
         ),
     }
-    for variant, (target_len, required_count, strategy, route_variant) in expected.items():
+    for variant, (target_len, required_count, strategy, route_variant, use_expanded_positions) in expected.items():
         monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", variant)
         monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", f"/tmp/{variant}.train.jsonl")
         monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", f"/tmp/{variant}.val.jsonl")
@@ -356,6 +361,7 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
             assert loader.bata_value_transport_require_deployable is True
             assert loader.bata_value_transport_allow_missing_fallback is False
             assert loader.bata_value_transport_allow_short_valid_ratio_count is True
+            assert bool(loader.get("bata_value_transport_use_expanded_positions", False)) is use_expanded_positions
             assert loader.remap_gt_to_selected_axis is True
 
 
@@ -380,6 +386,9 @@ def test_paction_lattice_radius_move25_config_allows_fast_eval_and_checkpoint_sc
     assert int(validated.workflow.val_eval_interval_anchor_epoch) == 5
     assert int(validated.workflow.val_start_epoch) == 4
     assert validated.workflow.disable_checkpoint is False
+    for split in ("train", "val", "test"):
+        loader = _loadframes(validated.dataset[split])
+        assert loader.bata_value_transport_use_expanded_positions is True
 
 
 def test_paction_learned_policy_adatad_config_uses_reviewed_absolute_pretrain(monkeypatch):
@@ -478,3 +487,78 @@ def test_paction_learned_policy_adatad_full_train_gate_requires_paction_provenan
     }
     ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
     validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
+
+
+def test_paction_radius_full_train_gate_uses_expanded_budget_not_center_count(tmp_path, monkeypatch):
+    checkpoint_sha = "b" * 64
+    ledger = tmp_path / "value_transport_ledger_paction_lattice_radius_score_only_move25.jsonl"
+    provenance = {
+        "p_action_source": "lowres_action_probe",
+        "probe_model": "mobilenetv3_64px",
+        "no_gt_generation": True,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
+    }
+    row = {
+        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+        "sample_id": "video_test_0001|0",
+        "selected_positions_unit": "local_dense_index",
+        "selected_positions": list(range(0, 384, 2)),
+        "target_len": 384,
+        "selected_count": 192,
+        "valid_len": 768,
+        "dense_len": 768,
+        "selected_positions_are_centers": True,
+        "expanded_selected_positions": list(range(384)),
+        "expanded_selected_count": 384,
+        "deploy_selection_ledger": True,
+        "diagnostic_only": False,
+        "policy_source": "learned_paction_gap_loss_policy_checkpoint",
+        "policy_checkpoint_path": str(tmp_path / "policy.pth"),
+        "policy_checkpoint_sha256": checkpoint_sha,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "uses_checkpoint": False,
+        "prediction_uses_gt": False,
+        "training_only": False,
+        "diagnostics": {
+            "uniform_visible_fill_count": 0,
+            "source_strategy": "paction_lattice_radius_score_only_move25",
+            "policy_source": "learned_paction_gap_loss_policy_checkpoint",
+            "policy_checkpoint_sha256": checkpoint_sha,
+            "p_action_provenance": provenance,
+            "expanded_budget": 384,
+            "center_count": 192,
+            "budgeted_expanded_count": 384,
+            "budgeted_expanded_selection": True,
+        },
+    }
+    ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "paction_lattice_radius_score_only_move25")
+    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", str(ledger))
+    monkeypatch.setenv("C3_PACTION_LEDGER_CONFIG_HASH", checkpoint_sha)
+    validator = _load_paction_validator()
+    cfg = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
+
+    validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
+
+    row["expanded_selected_positions"] = list(range(385))
+    row["expanded_selected_count"] = 385
+    row["diagnostics"]["budgeted_expanded_count"] = 385
+    ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
+    except AssertionError as exc:
+        assert "expanded" in str(exc)
+    else:
+        raise AssertionError("radius full-train ledger gate must reject expanded positions over target_len")

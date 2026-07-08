@@ -68,6 +68,7 @@ def test_detector_aware_adatad_config_supports_fixed384_fixed768_and_dynamic(mon
             assert loader.bata_value_transport_allow_short_valid_ratio_count is False
             assert loader.bata_value_transport_allow_missing_fallback is False
             assert loader.bata_value_transport_source == "learned_detector_aware_policy_checkpoint"
+            assert bool(loader.get("bata_value_transport_use_expanded_positions", False)) is False
 
 
 def test_detector_aware_validator_passes_locked_and_exec_configs(monkeypatch) -> None:

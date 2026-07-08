@@ -72,6 +72,10 @@ def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg
     _require(_as_bool(loader.get("bata_value_transport_require_deployable")), f"{name}: deployable ledger not required")
     _require(not _as_bool(loader.get("bata_value_transport_allow_missing_fallback")), f"{name}: missing fallback must be off")
     _require(_as_bool(loader.get("remap_gt_to_selected_axis")), f"{name}: selected-axis GT remap must be on")
+    _require(
+        not _as_bool(loader.get("bata_value_transport_use_expanded_positions", False)),
+        f"{name}: detector-aware center-budget variants must not consume expanded positions",
+    )
     _require(loader.get("bata_value_transport_ledger_path") == expected_ledger_path, f"{name}: wrong ledger path")
     _require(loader.get("bata_value_transport_source") == SOURCE, f"{name}: wrong detector-aware source")
 

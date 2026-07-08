@@ -85,7 +85,14 @@ def _validate_optional_context_radius_contract(row, positions, line_no, valid_le
         if _strict_int(observation.get("expanded_end"), f"line {line_no}: selected_observations[{idx}].expanded_end") != end:
             raise ValueError(f"line {line_no}: selected_observations[{idx}].expanded_end mismatch")
         expected_expanded.update(range(start, end + 1))
-    if expanded_positions != sorted(expected_expanded):
+    diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
+    if diagnostics.get("budgeted_expanded_selection") is True:
+        expanded_set = set(expanded_positions)
+        if not expanded_set.issubset(expected_expanded):
+            raise ValueError(f"line {line_no}: budgeted expanded positions must stay inside selected_observations")
+        if not set(positions).issubset(expanded_set):
+            raise ValueError(f"line {line_no}: budgeted expanded positions must include selected centers")
+    elif expanded_positions != sorted(expected_expanded):
         raise ValueError(f"line {line_no}: expanded_selected_positions mismatch selected_observations")
     expanded_count = row.get("expanded_selected_count")
     if expanded_count is not None and _strict_int(expanded_count, f"line {line_no}: expanded_selected_count") != len(expanded_positions):

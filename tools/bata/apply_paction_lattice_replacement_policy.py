@@ -172,20 +172,27 @@ def run_lattice_replacement_application(
         diagnostics_by_variant: dict[str, Any] = {}
         context_radius_by_strategy: dict[str, list[float]] = {}
         radius_diagnostics_by_strategy: dict[str, Any] = {}
+        budgeted_expanded_positions_by_strategy: dict[str, list[int]] = {}
+        budgeted_expanded_diagnostics_by_strategy: dict[str, Any] = {}
         teacher_utility = _optional_teacher_utility(row, length=len(p_action))
         for variant in variants:
+            decode_budget = (
+                lattice.adaptive_radius_center_budget(int(effective_budget))
+                if lattice.is_adaptive_radius_strategy(str(variant))
+                else int(effective_budget)
+            )
             result = lattice.decode_paction_lattice_replacement(
                 frame_values=frame_values,
                 valid=valid,
                 variant=str(variant),
-                budget=int(effective_budget),
+                budget=int(decode_budget),
                 local_radius=int(local_radius),
                 distance_penalty=float(distance_penalty),
                 geometry_distortion_penalty=float(geometry_distortion_penalty),
                 max_gap_growth=max_gap_growth,
             )
             strategies[str(variant)] = result.selected_positions
-            diagnostics_by_variant[str(variant)] = result.diagnostics
+            variant_diagnostics = dict(result.diagnostics)
             replacement_counts_by_variant[str(variant)].append(int(result.diagnostics["replaced_uniform_count"]))
             selected_counts_by_variant[str(variant)].append(int(result.diagnostics["selected_count"]))
             if lattice.is_adaptive_radius_strategy(str(variant)):
@@ -198,6 +205,19 @@ def run_lattice_replacement_application(
                 )
                 context_radius_by_strategy[str(variant)] = radii
                 radius_diagnostics_by_strategy[str(variant)] = radius_diagnostics
+                expanded_positions, expanded_diagnostics = lattice.budgeted_adaptive_radius_expansion(
+                    p_action=p_action,
+                    frame_values=frame_values,
+                    selected_positions=result.selected_positions,
+                    context_radius_by_position=radii,
+                    valid=valid,
+                    teacher_utility=teacher_utility,
+                    expanded_budget=int(effective_budget),
+                )
+                budgeted_expanded_positions_by_strategy[str(variant)] = expanded_positions
+                budgeted_expanded_diagnostics_by_strategy[str(variant)] = expanded_diagnostics
+                variant_diagnostics.update(expanded_diagnostics)
+            diagnostics_by_variant[str(variant)] = variant_diagnostics
 
         enriched["strategy_selected_positions"] = strategies
         enriched["paction_policy"] = {
@@ -223,6 +243,8 @@ def run_lattice_replacement_application(
             "context_radius_unit": "local_dense_snippet_index",
             "context_radius_by_strategy": context_radius_by_strategy,
             "lattice_radius_diagnostics_by_strategy": radius_diagnostics_by_strategy,
+            "budgeted_expanded_positions_by_strategy": budgeted_expanded_positions_by_strategy,
+            "budgeted_expanded_diagnostics_by_strategy": budgeted_expanded_diagnostics_by_strategy,
             "geometry_constraint": "local_lattice_replacement",
             "geometry_lattice_budget": int(fixed_budget),
             "effective_lattice_budget": int(effective_budget),

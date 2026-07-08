@@ -13,6 +13,7 @@ NO_PROTECT_STRATEGY = "paction_lattice_replace_score_only_no_protect"
 DEFAULT_BUDGET = 384
 DEFAULT_CONTEXT_RADIUS_MIN = 0.0
 DEFAULT_CONTEXT_RADIUS_MAX = 16.0
+DEFAULT_RADIUS_CENTER_FRACTION = 0.5
 _PROTECTED_COUNTS = {
     MOVE25_STRATEGY: 288,
     RADIUS_MOVE25_STRATEGY: 288,
@@ -120,6 +121,13 @@ def is_adaptive_radius_strategy(variant: str) -> bool:
     return str(variant) == RADIUS_MOVE25_STRATEGY
 
 
+def adaptive_radius_center_budget(expanded_budget: int) -> int:
+    budget = int(expanded_budget)
+    if budget <= 0:
+        raise ValueError("expanded_budget must be positive")
+    return min(budget, max(1, int(math.ceil(float(budget) * DEFAULT_RADIUS_CENTER_FRACTION))))
+
+
 def _normalize01(values: Sequence[float]) -> list[float]:
     finite = [float(item) for item in values if math.isfinite(float(item))]
     if not finite:
@@ -161,6 +169,93 @@ def _boundary_likelihood(p_action: Sequence[float]) -> list[float]:
         right = abs(float(p_action[idx + 1]) - float(value)) if idx + 1 < len(p_action) else 0.0
         out.append(max(left, right))
     return _normalize01(out)
+
+
+def budgeted_adaptive_radius_expansion(
+    *,
+    p_action: Sequence[Any],
+    frame_values: Sequence[Any],
+    selected_positions: Sequence[int],
+    context_radius_by_position: Sequence[Any],
+    valid: Sequence[Any] | None = None,
+    teacher_utility: Sequence[Any] | None = None,
+    expanded_budget: int = DEFAULT_BUDGET,
+) -> tuple[list[int], dict[str, Any]]:
+    p_values = [float(item) for item in p_action]
+    value_signal = _normalize01([float(item) for item in frame_values])
+    if len(value_signal) != len(p_values):
+        raise ValueError("frame_values length must match p_action length")
+    if len(context_radius_by_position) < len(p_values):
+        raise ValueError("context_radius_by_position must cover p_action length")
+    utility_signal = (
+        _normalize01([max(0.0, float(item)) for item in teacher_utility])
+        if teacher_utility is not None
+        else value_signal
+    )
+    if len(utility_signal) != len(p_values):
+        raise ValueError("teacher_utility length must match p_action length")
+    valid_mask = [True for _ in p_values] if valid is None else [bool(item) for item in valid]
+    if len(valid_mask) != len(p_values):
+        raise ValueError("valid mask length must match p_action length")
+    valid_positions = [idx for idx, is_valid in enumerate(valid_mask) if is_valid]
+    if not valid_positions:
+        raise ValueError("at least one valid position is required")
+    budget = min(int(expanded_budget), len(valid_positions))
+    if budget <= 0:
+        raise ValueError("expanded_budget must be positive")
+
+    actionness = [max(0.0, min(1.0, float(item))) for item in p_values]
+    edge_signal = _boundary_likelihood(actionness)
+    score_by_position = [
+        0.35 * float(value_signal[idx])
+        + 0.25 * float(actionness[idx])
+        + 0.25 * float(edge_signal[idx])
+        + 0.15 * float(utility_signal[idx])
+        for idx in range(len(p_values))
+    ]
+
+    centers = sorted({int(item) for item in selected_positions if 0 <= int(item) < len(p_values) and valid_mask[int(item)]})
+    candidate_union: set[int] = set()
+    for center in centers:
+        radius = int(round(_clamp_radius(context_radius_by_position[int(center)])))
+        start = max(0, int(center) - radius)
+        end = min(len(p_values) - 1, int(center) + radius)
+        candidate_union.update(idx for idx in range(start, end + 1) if valid_mask[idx])
+
+    if not candidate_union:
+        candidate_union.update(centers)
+    center_set = set(centers)
+    if len(centers) <= budget:
+        chosen = set(centers)
+    else:
+        chosen = set(
+            sorted(centers, key=lambda idx: (score_by_position[idx], -idx), reverse=True)[:budget]
+        )
+    remaining_budget = max(0, budget - len(chosen))
+    if remaining_budget > 0:
+        def _nearest_center_distance(idx: int) -> int:
+            if not centers:
+                return 0
+            return min(abs(int(idx) - int(center)) for center in centers)
+
+        ranked_candidates = sorted(
+            (idx for idx in candidate_union if idx not in chosen),
+            key=lambda idx: (score_by_position[idx], -_nearest_center_distance(idx), -idx),
+            reverse=True,
+        )
+        chosen.update(ranked_candidates[:remaining_budget])
+
+    expanded = sorted(chosen)
+    diagnostics = {
+        "expanded_budget": int(budget),
+        "center_count": int(len(centers)),
+        "candidate_union_count": int(len(candidate_union)),
+        "budgeted_expanded_count": int(len(expanded)),
+        "budgeted_expanded_selection": True,
+        "expanded_score_source": "frame_value_paction_edge_utility",
+        "expanded_centers_preserved": int(len(set(expanded).intersection(center_set))),
+    }
+    return expanded, diagnostics
 
 
 def adaptive_context_radius_by_position(
