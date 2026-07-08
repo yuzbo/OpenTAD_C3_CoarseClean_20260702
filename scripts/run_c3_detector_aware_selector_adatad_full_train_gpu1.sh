@@ -95,6 +95,11 @@ ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_GT384="${ALLOW_C3_DETECTOR_AWARE_DIAGNOSTIC_G
 DETECTOR_AWARE_MAX_UNSELECTED_HOLE="${DETECTOR_AWARE_MAX_UNSELECTED_HOLE:-96}"
 DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE="${DETECTOR_AWARE_MAX_P95_UNSELECTED_HOLE:-48}"
 DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY="${DETECTOR_AWARE_MAX_UNIFORM_SIMILARITY:-0.50}"
+DETECTOR_AWARE_DISABLE_CHECKPOINT="${DETECTOR_AWARE_DISABLE_CHECKPOINT:-1}"
+DETECTOR_AWARE_CHECKPOINT_INTERVAL="${DETECTOR_AWARE_CHECKPOINT_INTERVAL:-10}"
+DETECTOR_AWARE_MIN_FREE_MB="${DETECTOR_AWARE_MIN_FREE_MB:-2048}"
+export C3_DETECTOR_AWARE_ADATAD_DISABLE_CHECKPOINT="${C3_DETECTOR_AWARE_ADATAD_DISABLE_CHECKPOINT:-${DETECTOR_AWARE_DISABLE_CHECKPOINT}}"
+export C3_DETECTOR_AWARE_ADATAD_CHECKPOINT_INTERVAL="${C3_DETECTOR_AWARE_ADATAD_CHECKPOINT_INTERVAL:-${DETECTOR_AWARE_CHECKPOINT_INTERVAL}}"
 
 resolve_path() {
   local raw="$1"
@@ -461,6 +466,11 @@ run_adatad_variant() {
   if [[ "${ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN}" != "1" ]]; then
     fail "ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN=1 is required for formal full train"
   fi
+  local free_mb
+  free_mb="$(df -Pm "${WORK_DIR_ROOT}" | awk 'NR==2 {print $4}')"
+  if [[ -z "${free_mb}" || "${free_mb}" -lt "${DETECTOR_AWARE_MIN_FREE_MB}" ]]; then
+    fail "insufficient free space for full train under ${WORK_DIR_ROOT}: free_mb=${free_mb:-unknown}, required_mb=${DETECTOR_AWARE_MIN_FREE_MB}"
+  fi
 
   local run_dir="${RUN_DIR_ROOT}/${variant}"
   local work_dir="${WORK_DIR_ROOT}/${variant}"
@@ -475,7 +485,11 @@ run_adatad_variant() {
     "${EXEC_CONFIG}" \
     --id "${RUN_ID}" \
     --seed "${SEED}" \
-    --cfg-options "work_dir=${work_dir}" "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+    --cfg-options \
+    "work_dir=${work_dir}" \
+    "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+    "workflow.disable_checkpoint=${C3_DETECTOR_AWARE_ADATAD_DISABLE_CHECKPOINT}" \
+    "workflow.checkpoint_interval=${C3_DETECTOR_AWARE_ADATAD_CHECKPOINT_INTERVAL}" \
     2>&1 | tee "${run_dir}/train.out"
 }
 

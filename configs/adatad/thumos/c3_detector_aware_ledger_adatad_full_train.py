@@ -32,6 +32,8 @@ VARIANT_SPECS = {
 
 
 detector_aware_ledger_variant = os.environ.get("C3_DETECTOR_AWARE_LEDGER_VARIANT", "detector_aware_fixed_384")
+detector_aware_disable_checkpoint = os.environ.get("C3_DETECTOR_AWARE_ADATAD_DISABLE_CHECKPOINT", "1") != "0"
+detector_aware_checkpoint_interval = int(os.environ.get("C3_DETECTOR_AWARE_ADATAD_CHECKPOINT_INTERVAL", "10"))
 if detector_aware_ledger_variant not in VARIANT_SPECS:
     raise ValueError(f"unknown C3_DETECTOR_AWARE_LEDGER_VARIANT={detector_aware_ledger_variant}")
 _variant = VARIANT_SPECS[detector_aware_ledger_variant]
@@ -317,7 +319,8 @@ inference = dict(load_from_raw_predictions=False, save_raw_prediction=False)
 
 workflow = dict(
     logging_interval=50,
-    checkpoint_interval=2,
+    checkpoint_interval=detector_aware_checkpoint_interval,
+    disable_checkpoint=detector_aware_disable_checkpoint,
     val_loss_interval=-1,
     val_eval_interval=10,
     val_eval_interval_anchor_epoch=10,

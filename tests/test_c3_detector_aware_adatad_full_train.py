@@ -56,6 +56,8 @@ def test_detector_aware_adatad_config_supports_fixed384_fixed768_and_dynamic(mon
         assert int(cfg.workflow.val_eval_interval) == 10
         assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
         assert int(cfg.workflow.val_start_epoch) == 9
+        assert cfg.workflow.disable_checkpoint is True
+        assert int(cfg.workflow.checkpoint_interval) == 10
         assert cfg.baseline_comparison.matched_budget_baselines == ["p_action_only", "GAS-VT"]
         for split in ("train", "val", "test"):
             loader = _loadframes(cfg.dataset[split])
@@ -127,6 +129,9 @@ def test_detector_aware_launcher_is_gpu1_precheck_fail_closed_and_uses_detector_
     assert '--master_port="${master_port}"' in text
     assert "master_port=${master_port}" in text
     assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-30440}"' not in text
+    assert 'DETECTOR_AWARE_DISABLE_CHECKPOINT="${DETECTOR_AWARE_DISABLE_CHECKPOINT:-1}"' in text
+    assert "workflow.disable_checkpoint=${C3_DETECTOR_AWARE_ADATAD_DISABLE_CHECKPOINT}" in text
+    assert "insufficient free space for full train" in text
     assert "formal full train must run inside a Slurm allocation/step" in text
     assert "ALLOW_C3_DETECTOR_AWARE_ADATAD_FULLTRAIN=1" in text
     assert "tools/train.py" in text
