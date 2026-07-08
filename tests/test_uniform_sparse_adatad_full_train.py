@@ -110,6 +110,9 @@ def test_uniform_sparse_384_launcher_is_gpu0_precheck_first_and_fail_closed() ->
     assert 'if [[ "${CUDA_VISIBLE_DEVICES}" != "0" ]]' in text
     assert "generate_uniform_sparse_ledger.py" in text
     assert "--target-len \"${UNIFORM_SPARSE_TARGET_LEN}\"" in text
+    assert "--allow-short-valid" in text
+    assert "expected_count = min(valid_len, 384)" in text
+    assert "strict uniform budget cap 384" in text
     assert "UNIFORM_SPARSE_TARGET_LEN=\"${UNIFORM_SPARSE_TARGET_LEN:-384}\"" in text
     assert "C3_UNIFORM_SPARSE_LEDGER_SOURCE=\"uniform_exact_sparse_384\"" in text
     assert "C3_UNIFORM_SPARSE_LEDGER_CONFIG_HASH" in text
@@ -161,3 +164,11 @@ def test_uniform_sparse_384_ledger_rows_match_loader_contract(tmp_path: Path, mo
         assert loader.bata_value_transport_ledger_path == str(ledger)
         assert loader.bata_value_transport_source == row["policy_source"]
         assert loader.bata_value_transport_config_hash == row["policy_checkpoint_sha256"]
+
+
+def test_uniform_sparse_384_launcher_accepts_short_valid_budget_cap() -> None:
+    text = LAUNCHER.read_text(encoding="utf-8")
+
+    assert "selected_count=min(valid_len,384)" in text
+    assert "len(positions) != expected_count" in text
+    assert "valid_len <= 0 or positions[0] < 0 or positions[-1] >= valid_len" in text

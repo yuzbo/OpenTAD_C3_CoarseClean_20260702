@@ -224,8 +224,12 @@ for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), st
     row["deploy_selection_ledger"] = True
     if row.get("selection_family") != "uniform_exact":
         raise ValueError(f"{path}:{line_no}: expected selection_family=uniform_exact")
-    if int(row.get("target_len", -1)) != 384 or int(row.get("selected_count", -1)) != 384:
-        raise ValueError(f"{path}:{line_no}: expected exact 384 selected positions")
+    valid_len = int(row.get("valid_len", -1))
+    expected_count = min(valid_len, 384)
+    if int(row.get("target_len", -1)) != 384 or int(row.get("selected_count", -1)) != expected_count:
+        raise ValueError(
+            f"{path}:{line_no}: expected strict uniform budget cap selected_count=min(valid_len,384)={expected_count}"
+        )
     rows.append(row)
 if not rows:
     raise ValueError(f"{path}: no ledger rows")
@@ -282,14 +286,15 @@ for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), st
     if row.get("selection_family") != "uniform_exact" or row.get("uses_uniform_scaffold") is not True or row.get("uses_uniform_fill") is True:
         raise ValueError(f"{path}:{line_no}: wrong uniform provenance")
     positions = [int(item) for item in row.get("selected_positions", [])]
-    if int(row.get("target_len", -1)) != 384 or int(row.get("selected_count", -1)) != 384 or len(positions) != 384:
-        raise ValueError(f"{path}:{line_no}: not exact uniform_384")
+    valid_len = int(row.get("valid_len", -1))
+    expected_count = min(valid_len, 384)
+    if int(row.get("target_len", -1)) != 384 or int(row.get("selected_count", -1)) != expected_count or len(positions) != expected_count:
+        raise ValueError(f"{path}:{line_no}: not strict uniform budget cap 384")
     if positions != sorted(set(positions)):
         raise ValueError(f"{path}:{line_no}: positions must be sorted unique")
     if int(row.get("dense_len", -1)) != 768:
         raise ValueError(f"{path}:{line_no}: dense_len must be 768 for matched AdaTAD baseline")
-    valid_len = int(row.get("valid_len", -1))
-    if valid_len < 384 or positions[0] < 0 or positions[-1] >= valid_len:
+    if valid_len <= 0 or positions[0] < 0 or positions[-1] >= valid_len:
         raise ValueError(f"{path}:{line_no}: invalid valid_len/positions")
 if rows <= 0:
     raise ValueError(f"{path}: no rows")
@@ -309,7 +314,8 @@ generate_ledger_for_split() {
     --input-jsonl "${source_jsonl}" \
     --output-jsonl "${ledger_jsonl}" \
     --summary-json "${summary_json}" \
-    --target-len "${UNIFORM_SPARSE_TARGET_LEN}"
+    --target-len "${UNIFORM_SPARSE_TARGET_LEN}" \
+    --allow-short-valid
   add_uniform_deploy_metadata "${ledger_jsonl}" "${summary_json}"
   validate_uniform_ledger "${ledger_jsonl}"
 }
