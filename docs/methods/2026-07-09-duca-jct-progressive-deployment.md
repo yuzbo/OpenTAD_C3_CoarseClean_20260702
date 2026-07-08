@@ -23,6 +23,9 @@ out-of-scope: Final mAP numbers; result interpretation; paper claims before full
 - Current experiment-suite monitor:
   `scripts/monitor_duca_jct_experiment_suite.sh` and
   `tools/bata/monitor_duca_jct_experiment_suite.py`
+- Current paper-evidence collector:
+  `scripts/collect_duca_jct_paper_evidence.sh` and
+  `tools/bata/collect_duca_jct_paper_evidence.py`
 - Remote worktree: `/data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct`
 
 This commit is the current implementation checkpoint for the single-run DUCA-JCT route:
@@ -125,6 +128,21 @@ readiness, result artifacts, and missing-result gates in
 paper metric claim unless detector result artifacts or logged mAP values are
 actually present.
 
+After the monitor summary exists, the paper-evidence collector can build the
+method table and claim gate:
+
+```bash
+bash scripts/collect_duca_jct_paper_evidence.sh \
+  /path/to/duca_jct_suite_monitor.summary.json \
+  /path/to/matched_baselines.json
+```
+
+The collector writes `duca_jct_paper_evidence.summary.json` and
+`duca_jct_paper_evidence.table.tsv`. It keeps `paper_claim_allowed=false` if
+matched baselines are missing, detector result artifacts are missing, Avg-mAP
+does not clear the configured delta, DUCA/X3D train-free downstream runs are
+incomplete, or mAP@0.6/0.7 is absent or worse than the matched baseline.
+
 ## X3D Train-Free Baseline
 
 The X3D train-free downstream detector jobs are not yet in Slurm because the account hit `AssocMaxSubmitJobLimit`.
@@ -168,6 +186,8 @@ Achieved:
   training-engine `after_optimizer_step` callback.
 - DUCA-JCT suite monitoring is implemented for Slurm state, failure logs,
   formal X3D actionness readiness, and missing detector-result artifacts.
+- DUCA-JCT paper-evidence collection is implemented for method rows, X3D
+  train-free baselines, high-IoU mAP gates, and matched-baseline claim locks.
 - Train-free X3D downstream configs kept separate from the main method.
 - Main fixed-384 and DUCA-MUST full runs queued for commit `308088c`.
 
