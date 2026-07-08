@@ -202,3 +202,7 @@ def test_duca_jct_paper_evidence_cli_writes_json_and_tsv(tmp_path: Path) -> None
     assert rows[1]["method"] == "duca_must"
     assert rows[1]["average_mAP_percent"] == "66.4"
     assert rows[1]["delta_vs_primary_average_mAP"] == "1.4"
+
+    wrapper_text = (ROOT / "scripts" / "collect_duca_jct_paper_evidence.sh").read_text(encoding="utf-8")
+    assert "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python" in wrapper_text
+    assert "collect_duca_jct_paper_evidence.py" in wrapper_text

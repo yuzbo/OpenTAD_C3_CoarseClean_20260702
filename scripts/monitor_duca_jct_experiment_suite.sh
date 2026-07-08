@@ -10,6 +10,17 @@ if [[ -z "${DEPLOYMENT_SUMMARY}" ]]; then
   exit 2
 fi
 
+if [[ -z "${PYTHON:-}" ]]; then
+  for candidate in \
+    /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python \
+    python3 \
+    python; do
+    if [[ -x "${candidate}" ]] || command -v "${candidate}" >/dev/null 2>&1; then
+      PYTHON="${candidate}"
+      break
+    fi
+  done
+fi
 PYTHON="${PYTHON:-python}"
 RUN_ROOT="$("${PYTHON}" - "${DEPLOYMENT_SUMMARY}" <<'PY'
 import json

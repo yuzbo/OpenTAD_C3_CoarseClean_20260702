@@ -123,43 +123,66 @@ The remote pytest set covered:
 
 Deployment root:
 
-`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_jct_progressive_308088c_20260709`
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_jct_suite_0ab2d28_20260709_035254_+0800`
 
-Slurm jobs currently queued:
+Slurm jobs submitted for the latest suite:
 
-- DUCA-JCT fixed-384 official full train: `1151134`
-- DUCA-MUST dynamic official full train: `1151135`
+- Focused validators and one-step joint gradient proof: `1151302`
+- DUCA-JCT fixed-384 official full train: `1151303`
+- DUCA-MUST dynamic official full train: `1151304`
+- Train-free X3D formal actionness grid/materialization: `1151305`
+- X3D -> DUCA fixed-384 official downstream full train: `1151306`
+- X3D -> DUCA-MUST dynamic official downstream full train: `1151307`
 
-These two are the current main paper-method jobs for commit `308088c`.
+These are the current paper-method and train-free-baseline jobs for commit
+`0ab2d28`. Older commit-`308088c` jobs may still appear in Slurm, but they are
+superseded by this latest suite.
 
-The latest `cbde70d` suite has not yet been submitted on the remote from this
-desktop session because non-interactive SSH attempts to
-`ssh.cn-zhongwei-1.paracloud.com` with users `sczc063`, `yuzibo`, and
-`skywalker` returned `Permission denied (password,publickey)`. The following
-commands are the exact remote-side deployment path once shell access is
-available:
+Remote SSH works with the cluster-specific login name:
+
+```bash
+ssh -o IdentitiesOnly=yes \
+  -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+  -o HostkeyAlgorithms=+ssh-rsa \
+  -i C:\Users\skywalker\.ssh\id_rsa \
+  -p 22 \
+  -l "sczc063@BSCC-N16R4" \
+  ssh.cn-zhongwei-1.paracloud.com
+```
+
+The suite was submitted from:
 
 ```bash
 module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 cd /data/run01/sczc063/yuzibo/projects/opentad_stage23_308088c_20260709_jct
-git fetch origin codex/gas-vt-stage23-detector-aware-20260706
-git checkout codex/gas-vt-stage23-detector-aware-20260706
-git pull --ff-only origin codex/gas-vt-stage23-detector-aware-20260706
-git rev-parse --short HEAD  # must print cbde70d or newer
-export RUN_TAG=duca_jct_suite_cbde70d_$(date +%Y%m%d_%H%M%S_%z)
+git rev-parse --short HEAD  # 0ab2d28 at submission
+export RUN_TAG=duca_jct_suite_0ab2d28_20260709_035254_+0800
 bash scripts/submit_duca_jct_experiment_suite.sh
 ```
 
-After submission, monitor with:
+Monitor with:
 
 ```bash
+PYTHON=/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python \
 bash scripts/monitor_duca_jct_experiment_suite.sh \
-  /data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/${RUN_TAG}/deployment_summary.json
+  /data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_jct_suite_0ab2d28_20260709_035254_+0800/deployment_summary.json
 ```
 
-The newer suite runner writes a fresh run root and submits:
+Current monitor snapshot immediately after submission:
+
+- `duca_jct_tests`: pending, reason `Priority`.
+- `duca384`: pending, dependency on focused tests.
+- `duca_must`: pending, dependency on focused tests.
+- `x3d_grid`: pending, dependency on focused tests.
+- `x3d_duca384`: blocked until formal X3D JSONL/materialization exists.
+- `x3d_must`: blocked until formal X3D JSONL/materialization exists.
+- Missing prerequisites at this point are expected:
+  `duca_jct_one_step_grad_proof`, `formal_x3d_materialization_summary`, and
+  `formal_x3d_actionness_jsonl`.
+
+The suite runner writes a fresh run root and submits:
 
 - focused DUCA-JCT tests and validators;
 - DUCA-JCT fixed-384 official full train;
@@ -203,15 +226,16 @@ incomplete, or mAP@0.6/0.7 is absent or worse than the matched baseline.
 
 ## X3D Train-Free Baseline
 
-The X3D train-free downstream detector jobs are not yet in Slurm because the account hit `AssocMaxSubmitJobLimit`.
+The X3D train-free baseline jobs are now in Slurm as part of the latest suite.
+They are intentionally separate from the main joint-trainable DUCA-JCT method.
 
 Current dependency:
 
-- X3D grid job: `1151093`
-- Intended downstream dependency: `afterok:1151093`
-- Waiting submitter PID: `2125160`
-- Waiting submitter state file:
-  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_jct_progressive_308088c_20260709/x3d_wait_submitter_state.json`
+- X3D formal actionness grid/materialization: `1151305`
+- X3D -> DUCA fixed-384 downstream: `1151306`, dependency `afterok:1151305`
+- X3D -> DUCA-MUST downstream: `1151307`, dependency `afterok:1151305`
+- Formal actionness JSONL:
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/trainfree_frozen_actionness/best_x3d_actionness.jsonl`
 
 The downstream configs remain baselines:
 
@@ -223,16 +247,13 @@ They must not be described as the main joint-trainable coarse-probe method.
 
 ## Known Queue Constraints
 
-Slurm rejected initial submissions until the wrapper used:
+Slurm previously rejected initial submissions until the wrapper used:
 
 - `#SBATCH --cpus-per-task=4`
 - no explicit `#SBATCH --mem=...`
 
-Further submission is currently blocked by:
-
-`AssocMaxSubmitJobLimit`
-
-No existing user jobs were cancelled.
+The latest `0ab2d28` suite submitted successfully. No existing user jobs were
+cancelled.
 
 ## Current Completion Status
 
@@ -247,11 +268,15 @@ Achieved:
 - DUCA-JCT paper-evidence collection is implemented for method rows, X3D
   train-free baselines, high-IoU mAP gates, and matched-baseline claim locks.
 - Train-free X3D downstream configs kept separate from the main method.
-- Main fixed-384 and DUCA-MUST full runs queued for commit `308088c`.
+- Latest suite submitted for commit `0ab2d28`, including focused proof,
+  fixed-384 main, DUCA-MUST main, X3D materialization, and X3D downstream
+  detector baselines.
 
 Still pending:
 
+- Focused Slurm job `1151302` completion and generation of
+  `duca_jct_one_step_grad_proof.json`.
 - Main full-run completion and mAP collection.
 - X3D grid completion and production of the formal X3D actionness JSONL.
-- X3D downstream detector jobs entering Slurm after submit limit clears.
+- X3D downstream detector jobs running after formal JSONL materialization.
 - Full result analysis and paper-claim audit.

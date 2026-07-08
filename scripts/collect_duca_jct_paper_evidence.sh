@@ -11,6 +11,17 @@ if [[ -z "${MONITOR_SUMMARY}" ]]; then
 fi
 
 BASELINE_SUMMARY="${2:-${BASELINE_SUMMARY:-}}"
+if [[ -z "${PYTHON:-}" ]]; then
+  for candidate in \
+    /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python \
+    python3 \
+    python; do
+    if [[ -x "${candidate}" ]] || command -v "${candidate}" >/dev/null 2>&1; then
+      PYTHON="${candidate}"
+      break
+    fi
+  done
+fi
 PYTHON="${PYTHON:-python}"
 RUN_ROOT="$("${PYTHON}" - "${MONITOR_SUMMARY}" <<'PY'
 import json

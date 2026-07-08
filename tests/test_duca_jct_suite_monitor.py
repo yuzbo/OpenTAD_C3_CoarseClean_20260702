@@ -172,4 +172,5 @@ def test_duca_jct_suite_monitor_cli_writes_json_and_wrapper_uses_squeue(tmp_path
 
     wrapper_text = WRAPPER.read_text(encoding="utf-8")
     assert "squeue" in wrapper_text
+    assert "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python" in wrapper_text
     assert "monitor_duca_jct_experiment_suite.py" in wrapper_text
