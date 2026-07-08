@@ -259,6 +259,7 @@ class ActionFormer(SingleStageDetector):
             x, masks, metas = self._call_neck_forward(x, masks, metas=metas)
 
         rpn_proposals, rpn_scores = self._call_rpn_head_forward_test(x, masks, metas=metas, **kwargs)
+        self._last_forward_test_metas = metas
         predictions = rpn_proposals, rpn_scores
         return predictions
 

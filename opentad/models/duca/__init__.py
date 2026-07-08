@@ -10,6 +10,7 @@ from .acquisition import (
     gather_selected_observations,
     hard_topk_st,
     make_audit_record,
+    validate_actionness_provenance,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "gather_selected_observations",
     "hard_topk_st",
     "make_audit_record",
+    "validate_actionness_provenance",
 ]

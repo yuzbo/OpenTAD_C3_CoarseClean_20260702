@@ -140,6 +140,7 @@ class SingleStageDetector(BaseDetector):
         else:
             rpn_proposals = rpn_scores = None
 
+        self._last_forward_test_metas = metas
         predictions = rpn_proposals, rpn_scores
         return predictions
 

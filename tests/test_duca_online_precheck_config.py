@@ -10,9 +10,26 @@ from mmengine.config import Config
 ROOT = Path(__file__).resolve().parents[1]
 ADATAD_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "duca_online_adatad_precheck.py"
 ZEROSHOT_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "duca_online_zeroshot_actionness_precheck.py"
+ACTIONFORMER_NO_PHYSICAL_CONFIG = (
+    ROOT / "configs" / "adatad" / "thumos" / "duca_online_actionformer_no_physical_grid_precheck.py"
+)
+ACTIONFORMER_PHYSICAL_CONFIG = (
+    ROOT / "configs" / "adatad" / "thumos" / "duca_online_actionformer_physical_grid_precheck.py"
+)
+OFFICIAL_BACKEND_CONFIG = (
+    ROOT / "configs" / "adatad" / "thumos" / "duca_online_official_adatad_backend_full_train.py"
+)
 VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_online_adatad_precheck.py"
+OFFICIAL_BACKEND_VALIDATOR = ROOT / "tools" / "bata" / "validate_duca_official_adatad_backend.py"
 ADATAD_LAUNCHER = ROOT / "scripts" / "run_duca_online_adatad_precheck_gpu1.sh"
 ZEROSHOT_LAUNCHER = ROOT / "scripts" / "run_duca_online_zeroshot_actionness_precheck_gpu1.sh"
+OFFICIAL_BACKEND_LAUNCHER = ROOT / "scripts" / "run_duca_online_official_adatad_backend_gpu1.sh"
+ACTIONFORMER_NO_PHYSICAL_LAUNCHER = (
+    ROOT / "scripts" / "run_duca_online_actionformer_no_physical_grid_precheck_gpu1.sh"
+)
+ACTIONFORMER_PHYSICAL_LAUNCHER = (
+    ROOT / "scripts" / "run_duca_online_actionformer_physical_grid_diagnostic_precheck_gpu1.sh"
+)
 
 
 def _load_validator():
@@ -27,15 +44,18 @@ def _cfg(path):
 
 
 def _assert_common_config_contract(cfg):
-    assert cfg.model.type == "SingleStageDetector"
+    assert cfg.model.type in {"SingleStageDetector", "ActionFormer"}
     assert cfg.model.frame_selector.type == "DucaOnlineFrameSelector"
-    assert cfg.model.rpn_head.type == "DucaOnlinePrecheckHead"
+    assert cfg.model.rpn_head.type in {"DucaOnlinePrecheckHead", "ActionFormerHead"}
     assert int(cfg.model.frame_selector.budget) <= 384
     assert int(cfg.duca_online_precheck_contract.budget_max) <= 384
     assert cfg.duca_online_precheck_contract.no_ledger_decision is True
     assert cfg.duca_online_precheck_contract.coordinate_space == "original_time"
     assert cfg.duca_online_precheck_contract.teacher_free_eval is True
-    assert cfg.duca_online_precheck_contract.selected_axis_remap_required is True
+    if cfg.duca_online_precheck_contract.get("physical_grid_actionformer_required", False):
+        assert cfg.duca_online_precheck_contract.selected_axis_remap_required is False
+    else:
+        assert cfg.duca_online_precheck_contract.selected_axis_remap_required is True
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False
     selector_text = repr(cfg.model.frame_selector).lower()
@@ -59,6 +79,87 @@ def test_duca_online_zeroshot_precheck_config_uses_zero_shot_actionness_source()
     assert cfg.model.frame_selector.actionness_source_cfg.type == "ZeroShotMotionActionnessSource"
     assert cfg.model.frame_selector.actionness_source_cfg.no_train_gt is True
     assert cfg.model.frame_selector.actionness_source_cfg.no_teacher is True
+
+
+def test_duca_online_actionformer_no_physical_grid_is_main_plugin_path():
+    cfg = _cfg(ACTIONFORMER_NO_PHYSICAL_CONFIG)
+    _assert_common_config_contract(cfg)
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.rpn_head.type == "ActionFormerHead"
+    assert "physical_grid_actionformer" not in cfg.model.rpn_head
+    assert cfg.model.frame_selector.remap_gt_to_selected_axis is True
+    assert cfg.model.frame_selector.detector_output_coordinate_space == "selected_axis_index"
+    assert cfg.duca_online_precheck_contract.main_method_candidate is True
+    assert cfg.duca_online_precheck_contract.diagnostic_only is False
+
+
+def test_duca_online_actionformer_physical_grid_is_diagnostic_only():
+    cfg = _cfg(ACTIONFORMER_PHYSICAL_CONFIG)
+    _assert_common_config_contract(cfg)
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.rpn_head.type == "ActionFormerHead"
+    assert cfg.model.rpn_head.physical_grid_actionformer.enabled is True
+    assert cfg.model.rpn_head.physical_grid_actionformer.required is True
+    assert cfg.model.frame_selector.remap_gt_to_selected_axis is False
+    assert cfg.model.frame_selector.detector_output_coordinate_space == "true_time_dense_index"
+    assert cfg.duca_online_precheck_contract.diagnostic_only is True
+
+
+def test_duca_online_official_backend_main_config_preserves_adatad_head_contract():
+    cfg = _cfg(OFFICIAL_BACKEND_CONFIG)
+    official = _cfg(ROOT / "configs" / "adatad" / "thumos" / "e2e_thumos_videomae_s_768x1_160_adapter.py")
+
+    assert cfg.duca_online_main_contract.main_method_candidate is True
+    assert cfg.duca_online_main_contract.official_adatad_backend is True
+    assert cfg.duca_online_main_contract.changes_detector_head is False
+    assert cfg.duca_online_main_contract.changes_loss_assignment is False
+    assert cfg.duca_online_main_contract.no_ledger_decision is True
+    assert cfg.duca_online_main_contract.physical_grid_actionformer_required is False
+    assert cfg.model.type == "ActionFormer"
+    assert cfg.model.frame_selector.type == "DucaOnlineFrameSelector"
+    assert cfg.model.frame_selector.budget == 384
+    assert cfg.model.frame_selector.dense_window_size == 768
+    assert cfg.model.frame_selector.coordinate_space == "original_time"
+    assert cfg.model.frame_selector.detector_output_coordinate_space == "selected_axis_index"
+    assert cfg.model.frame_selector.remap_gt_to_selected_axis is True
+    assert cfg.model.rpn_head == official.model.rpn_head
+    assert "physical_grid_actionformer" not in cfg.model.rpn_head
+    assert "bata_value_transport" not in repr(cfg).lower()
+    assert "ledger_path" not in repr(cfg.model).lower()
+    assert cfg.model.backbone.backbone.total_frames == 384
+    assert cfg.model.projection.max_seq_len == 384
+    assert cfg.dataset.train.pipeline[2].method == "random_trunc"
+    assert cfg.dataset.val.pipeline[2].method == "sliding_window"
+    assert cfg.inference.load_from_raw_predictions is False
+    assert cfg.inference.save_raw_prediction is False
+
+
+def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
+    assert OFFICIAL_BACKEND_VALIDATOR.exists()
+    output = subprocess.check_output(
+        [
+            sys.executable,
+            str(OFFICIAL_BACKEND_VALIDATOR),
+            "--config",
+            str(OFFICIAL_BACKEND_CONFIG),
+        ],
+        cwd=str(ROOT),
+        text=True,
+    )
+    summary = json.loads(output)
+    assert summary["ok"] is True
+    assert summary["official_adatad_backend"] is True
+    assert summary["rpn_head_matches_official_base"] is True
+    assert summary["physical_grid_actionformer_enabled"] is False
+    assert summary["uses_ledger_for_decision"] is False
+    assert summary["budget_lte_384"] is True
+
+    text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
+    assert "duca_online_official_adatad_backend_full_train.py" in text
+    assert "validate_duca_official_adatad_backend.py" in text
+    assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
+    assert "FULLTRAIN_CANDIDATE=1" in text
+    assert "tools/train.py" in text
 
 
 def test_duca_online_validator_json_summary_fields(monkeypatch):
@@ -94,6 +195,13 @@ def test_duca_online_validator_json_summary_fields(monkeypatch):
     assert cli_summary["config_path"].endswith("duca_online_adatad_precheck.py")
     assert cli_summary["build_detector"] == "skipped"
 
+    for config in (ACTIONFORMER_NO_PHYSICAL_CONFIG, ACTIONFORMER_PHYSICAL_CONFIG):
+        summary = validator.validate_config(str(config), run_runtime=False)
+        assert summary["config_import"] is True
+        assert summary["rpn_head_type"] == "ActionFormerHead"
+        assert summary["budget_lte_384"] is True
+        assert summary["raw_prediction_cache_forbidden"] is True
+
 
 def test_duca_online_launchers_are_precheck_first_gpu1_guarded_and_fail_closed():
     for launcher in (ADATAD_LAUNCHER, ZEROSHOT_LAUNCHER):
@@ -106,3 +214,10 @@ def test_duca_online_launchers_are_precheck_first_gpu1_guarded_and_fail_closed()
         assert "tests/test_duca_online_precheck_config.py" in text
         assert "formal full train must run inside a Slurm allocation/step" in text
         assert "tools/train.py" in text
+
+    launcher_text = ACTIONFORMER_NO_PHYSICAL_LAUNCHER.read_text(encoding="utf-8")
+    assert "duca_online_actionformer_no_physical_grid_precheck.py" in launcher_text
+    assert "run_duca_online_adatad_precheck_gpu1.sh" in launcher_text
+    launcher_text = ACTIONFORMER_PHYSICAL_LAUNCHER.read_text(encoding="utf-8")
+    assert "duca_online_actionformer_physical_grid_precheck.py" in launcher_text
+    assert "run_duca_online_adatad_precheck_gpu1.sh" in launcher_text

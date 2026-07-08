@@ -44,6 +44,7 @@ class BaseDetector(torch.nn.Module):
             predictions = load_predictions(metas, infer_cfg)
         else:
             predictions = self.forward_test(inputs, masks, metas, infer_cfg)
+            metas = getattr(self, "_last_forward_test_metas", metas)
 
             if infer_cfg.save_raw_prediction:  # save the predictions to disk
                 save_predictions(predictions, metas, infer_cfg.folder)

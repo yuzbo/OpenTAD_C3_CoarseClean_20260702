@@ -8,8 +8,8 @@ import torch.nn as nn
 
 from ..builder import SELECTORS
 from ..duca import DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
-from ..duca.acquisition import _assert_no_forbidden_payload
-from ..utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS
+from ..duca.acquisition import _assert_no_forbidden_payload, validate_actionness_provenance
+from ..utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS, TrueTimeMap
 
 
 _DEFAULT_METADATA_KEYS = {
@@ -39,6 +39,8 @@ _ACTIONNESS_KWARGS = {
     "thumos_trained",
     "uses_labels",
     "uses_teacher",
+    "uses_gt",
+    "uses_prediction_cache",
     "calibration_split",
     "prompt_hash",
 }
@@ -90,6 +92,31 @@ def _apply_slot_weights(inputs: torch.Tensor, weights: torch.Tensor) -> torch.Te
     raise ValueError(f"unsupported DUCA selector input shape: {tuple(inputs.shape)}")
 
 
+def _add_soft_context_gradient_path(
+    hard_selected: torch.Tensor,
+    dense_inputs: torch.Tensor,
+    soft_coverage: torch.Tensor,
+    slot_mask: torch.Tensor,
+) -> torch.Tensor:
+    weights = soft_coverage.to(device=dense_inputs.device, dtype=dense_inputs.dtype)
+    weights = weights / weights.sum(dim=1, keepdim=True).clamp_min(torch.finfo(weights.dtype).eps)
+    if dense_inputs.ndim == 3:
+        context = torch.einsum("bct,bt->bc", dense_inputs, weights)
+        context = context[:, :, None].expand_as(hard_selected)
+        slot = slot_mask[:, None, :]
+    elif dense_inputs.ndim == 5:
+        context = (dense_inputs * weights[:, None, :, None, None]).sum(dim=2)
+        context = context[:, :, None, :, :].expand_as(hard_selected)
+        slot = slot_mask[:, None, :, None, None]
+    elif dense_inputs.ndim == 6:
+        context = (dense_inputs * weights[:, None, None, :, None, None]).sum(dim=3)
+        context = context[:, :, :, None, :, :].expand_as(hard_selected)
+        slot = slot_mask[:, None, None, :, None, None]
+    else:
+        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
+    return hard_selected + (context - context.detach()) * slot.to(dtype=hard_selected.dtype)
+
+
 @SELECTORS.register_module()
 class DucaOnlineFrameSelector(nn.Module):
     """Registry-buildable online DUCA selector for OpenTAD frame_selector hooks."""
@@ -104,6 +131,7 @@ class DucaOnlineFrameSelector(nn.Module):
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
         coordinate_space: str = SELECTED_AXIS,
+        detector_output_coordinate_space: str = SELECTED_AXIS,
         selected_positions_unit: str = "original_time_index",
         true_time_source_axis: str = TRUE_TIME_AXIS,
         loss_weights: Optional[Mapping[str, float]] = None,
@@ -122,7 +150,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
         self.detector_gradient_mode = str(detector_gradient_mode)
         self.selected_positions_coordinate = str(coordinate_space)
-        self.coordinate_space = SELECTED_AXIS
+        self.detector_output_coordinate_space = str(detector_output_coordinate_space)
+        self.coordinate_space = self.detector_output_coordinate_space
         self.selected_positions_unit = str(selected_positions_unit)
         self.true_time_source_axis = str(true_time_source_axis)
         self.loss_weights = dict(loss_weights or {})
@@ -136,10 +165,12 @@ class DucaOnlineFrameSelector(nn.Module):
             self.metadata_keys.update(dict(metadata_keys))
         self.extra_config = dict(kwargs)
         self.last_forward_summary: dict[str, Any] = {}
-        if self.detector_gradient_mode != "st_sparse_gather":
-            raise ValueError("detector_gradient_mode must be st_sparse_gather")
+        if self.detector_gradient_mode not in {"st_sparse_gather", "st_sparse_gather_soft_context"}:
+            raise ValueError("detector_gradient_mode must be st_sparse_gather or st_sparse_gather_soft_context")
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
+        if self.detector_output_coordinate_space not in {SELECTED_AXIS, TRUE_TIME_AXIS}:
+            raise ValueError("detector_output_coordinate_space must be selected-axis or true-time")
         if self.selected_positions_unit != "original_time_index":
             raise ValueError("selected_positions_unit must be original_time_index")
         if self.true_time_source_axis != TRUE_TIME_AXIS:
@@ -148,8 +179,8 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("dense_window_size must be positive")
         if not self.no_ledger_decision:
             raise ValueError("DUCA online selector requires no_ledger_decision=True")
-        if not self.remap_gt_to_selected_axis:
-            raise ValueError("DUCA online selector requires remap_gt_to_selected_axis=True")
+        if self.detector_output_coordinate_space == SELECTED_AXIS and not self.remap_gt_to_selected_axis:
+            raise ValueError("selected-axis detector output requires remap_gt_to_selected_axis=True")
 
         actionness_source = None
         self.actionness_source_name = "duca_adapter_internal"
@@ -191,6 +222,9 @@ class DucaOnlineFrameSelector(nn.Module):
     ) -> dict[str, Any]:
         self._reject_train_decision_payload(metas)
         outputs = self._forward_select(inputs, masks, metas, budget=budget)
+        gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
+            gt_segments, gt_labels, outputs["metas"]
+        )
         selector_losses = duca_losses(
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
@@ -199,7 +233,7 @@ class DucaOnlineFrameSelector(nn.Module):
         return {
             "inputs": outputs["inputs"],
             "masks": outputs["masks"],
-            "metas": outputs["metas"],
+            "metas": metas,
             "gt_segments": gt_segments,
             "gt_labels": gt_labels,
             "losses": selector_losses,
@@ -222,9 +256,17 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
         masks = masks.to(device=inputs.device, dtype=torch.bool)
         grid, scores = self.adapter.acquire(descriptors, budget=budget, valid_mask=masks)
+        validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
         positions = grid.selected_positions.to(device=inputs.device)
         slot_mask = positions >= 0
         hard_selected = _gather_time(inputs, positions, slot_mask)
+        if self.detector_gradient_mode == "st_sparse_gather_soft_context":
+            hard_selected = _add_soft_context_gradient_path(
+                hard_selected,
+                inputs,
+                scores["soft_coverage"],
+                slot_mask,
+            )
         st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
             dtype=scores["selected_mask_st"].dtype
         )
@@ -277,6 +319,42 @@ class DucaOnlineFrameSelector(nn.Module):
                 },
             )
 
+    def _remap_train_targets_to_selected_axis(self, gt_segments, gt_labels, metas):
+        if gt_segments is None:
+            return gt_segments, gt_labels, metas
+        if not self.remap_gt_to_selected_axis:
+            return gt_segments, gt_labels, metas
+        if len(gt_segments) != len(metas):
+            raise ValueError("gt_segments length must match metas length")
+        remapped_segments = []
+        updated_metas = [dict(meta) for meta in metas]
+        for idx, (segments, meta) in enumerate(zip(gt_segments, updated_metas)):
+            if segments is None:
+                remapped_segments.append(segments)
+                continue
+            positions = meta.get("selected_axis_to_true_time_dense_index")
+            if not positions:
+                raise ValueError("DUCA GT remap requires selected_axis_to_true_time_dense_index metadata")
+            segments_tensor = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=torch.float32)
+            true_map = TrueTimeMap(
+                positions,
+                dense_len=int(meta.get("truetime_dense_len", max(positions) + 1)),
+                valid_len=int(meta.get("truetime_dense_valid_len", meta.get("truetime_dense_len", max(positions) + 1))),
+            )
+            remapped = true_map.remap_segments(
+                segments_tensor,
+                source_coordinate_space=TRUE_TIME_AXIS,
+                target_coordinate_space=SELECTED_AXIS,
+            ).to(device=segments_tensor.device, dtype=segments_tensor.dtype)
+            remapped_segments.append(remapped)
+            meta["gt_segments_original_time"] = segments_tensor.detach().cpu().tolist()
+            meta["gt_segments_selected_axis"] = remapped.detach().cpu().tolist()
+            meta["gt_remapped_to_selected_axis"] = True
+            meta["gt_coordinate_space"] = SELECTED_AXIS
+            meta["gt_original_coordinate_space"] = TRUE_TIME_AXIS
+            updated_metas[idx] = meta
+        return remapped_segments, gt_labels, updated_metas
+
     def _write_metas(self, metas, grid) -> list[dict[str, Any]]:
         batch = int(grid.selected_positions.shape[0])
         if metas is None:
@@ -306,8 +384,8 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_online_actionness_source"] = self.actionness_source_name
             meta["duca_online_budget_unit"] = grid.budget_unit
             meta["duca_online_coordinate"] = grid.coordinate
-            meta["detector_output_coordinate_space"] = self.coordinate_space
-            meta["detector_prediction_inverse_map_required"] = True
+            meta["detector_output_coordinate_space"] = self.detector_output_coordinate_space
+            meta["detector_prediction_inverse_map_required"] = self.detector_output_coordinate_space == SELECTED_AXIS
             meta["selected_axis_to_true_time_dense_index"] = positions
             meta["truetime_selected_positions"] = positions
             meta["truetime_dense_len"] = int(grid.original_length)
@@ -317,10 +395,10 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["irregular_selected_count"] = len(positions)
             meta["irregular_dense_valid_len"] = dense_valid_len
             meta["irregular_selected_valid_len"] = len(positions)
-            meta.setdefault(self.metadata_keys["selected_positions"], positions)
-            meta.setdefault(self.metadata_keys["selected_positions_unit"], self.selected_positions_unit)
-            meta.setdefault(self.metadata_keys["selected_mask"], [True] * len(positions))
-            meta.setdefault(self.metadata_keys["selected_count"], len(positions))
-            meta.setdefault(self.metadata_keys["remap"], remap)
-            meta.setdefault(self.metadata_keys["source"], self.actionness_source_name)
+            meta[self.metadata_keys["selected_positions"]] = positions
+            meta[self.metadata_keys["selected_positions_unit"]] = self.selected_positions_unit
+            meta[self.metadata_keys["selected_mask"]] = [True] * len(positions)
+            meta[self.metadata_keys["selected_count"]] = len(positions)
+            meta[self.metadata_keys["remap"]] = remap
+            meta[self.metadata_keys["source"]] = self.actionness_source_name
         return out

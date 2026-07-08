@@ -56,9 +56,9 @@ def _validate_static_config(cfg: Config, config_path: str) -> dict[str, Any]:
     source_cfg = selector.get("actionness_source_cfg", {})
     keys = _metadata_keys(cfg)
 
-    _require(cfg.model.type == "SingleStageDetector", "model.type must be SingleStageDetector")
+    _require(cfg.model.type in {"SingleStageDetector", "ActionFormer"}, "model.type must be SingleStageDetector or ActionFormer")
     _require(selector.type == "DucaOnlineFrameSelector", "frame_selector must be DucaOnlineFrameSelector")
-    _require(head.type == "DucaOnlinePrecheckHead", "rpn_head must be DucaOnlinePrecheckHead")
+    _require(head.type in {"DucaOnlinePrecheckHead", "ActionFormerHead"}, "rpn_head must be DucaOnlinePrecheckHead or ActionFormerHead")
     _require(contract.no_ledger_decision is True, "contract must declare no_ledger_decision")
     _require(selector.get("no_ledger_decision") is True, "selector must declare no_ledger_decision")
     _require(selector.get("forbid_ledger") is True, "selector must forbid ledgers")
@@ -69,19 +69,49 @@ def _validate_static_config(cfg: Config, config_path: str) -> dict[str, Any]:
     _require(contract.selected_positions_unit == "original_time_index", "positions unit must be original_time_index")
     _require(selector.selected_positions_unit == "original_time_index", "selector positions unit must be original_time_index")
     _require(contract.teacher_free_eval is True, "eval must be teacher-free")
-    _require(teacher_cfg.get("train_only") is True, "teacher config must be train-only")
-    _require(teacher_cfg.get("enabled_for_inference") is False, "teacher must be disabled for inference")
-    _require(teacher_cfg.get("forbid_inference") is True, "teacher inference must be forbidden")
-    _require(contract.selected_axis_remap_required is True, "selected-axis remap must be required")
-    _require(selector.get("remap_gt_to_selected_axis") is True, "selector must remap GT to selected axis")
-    _require(head.get("require_selected_axis_remap") is True, "head must require selected-axis remap")
-    _require(head.get("require_gt_in_train") is True, "head must require train GT")
+    if head.type == "DucaOnlinePrecheckHead":
+        _require(teacher_cfg.get("train_only") is True, "teacher config must be train-only")
+        _require(teacher_cfg.get("enabled_for_inference") is False, "teacher must be disabled for inference")
+        _require(teacher_cfg.get("forbid_inference") is True, "teacher inference must be forbidden")
+        _require(contract.selected_axis_remap_required is True, "selected-axis remap must be required")
+        _require(selector.get("remap_gt_to_selected_axis") is True, "selector must remap GT to selected axis")
+        _require(head.get("require_selected_axis_remap") is True, "head must require selected-axis remap")
+        _require(head.get("require_gt_in_train") is True, "head must require train GT")
+    else:
+        _require(cfg.model.type == "ActionFormer", "real ActionFormerHead precheck must use model.type=ActionFormer")
+        _require(contract.get("real_head_required") is True, "real ActionFormerHead config must declare real_head_required")
+        _require(contract.get("toy_head_allowed") is False, "real ActionFormerHead config must forbid toy-head evidence")
+        physical = head.get("physical_grid_actionformer", {})
+        physical_enabled = bool(physical.get("enabled", False))
+        physical_required = bool(contract.get("physical_grid_actionformer_required", False))
+        _require(physical_enabled == physical_required, "physical-grid config/contract mismatch")
+        detector_axis = selector.get("detector_output_coordinate_space", "selected_axis_index")
+        if physical_enabled:
+            _require(physical.get("required") is True, "physical_grid_actionformer.required must be true")
+            _require(physical.get("strict") is True, "physical_grid_actionformer.strict must be true")
+            _require(selector.get("remap_gt_to_selected_axis") is False, "physical-grid ActionFormer must keep GT in true-time")
+            _require(detector_axis == "true_time_dense_index", "physical-grid detector output must be true-time")
+            _require(contract.get("diagnostic_only") is True, "physical-grid DUCA comparison must be marked diagnostic_only")
+        else:
+            _require("physical_grid_actionformer" not in head or not bool(physical.get("enabled", False)), "no-physical-grid main config must not enable physical_grid_actionformer")
+            _require(selector.get("remap_gt_to_selected_axis") is True, "no-physical-grid ActionFormer must remap GT to selected axis")
+            _require(detector_axis == "selected_axis_index", "no-physical-grid detector output must be selected-axis")
+            _require(contract.selected_axis_remap_required is True, "no-physical-grid path must require prediction remap")
+            _require(contract.get("main_method_candidate") is True, "no-physical-grid DUCA path must be marked main_method_candidate")
     _require(not _as_bool(cfg.inference.load_from_raw_predictions), "raw prediction loading must be off")
     _require(not _as_bool(cfg.inference.save_raw_prediction), "raw prediction saving must be off")
-    _require(source_cfg.get("no_teacher") is True, "actionness source must not use teacher")
-    _require(source_cfg.get("no_oracle") is True, "actionness source must not use oracle")
-    _require(source_cfg.get("no_raw_prediction_cache") is True, "actionness source must not use raw prediction cache")
-    _require(source_cfg.get("no_gt_generation") is True, "actionness source must not generate from GT")
+    _require(source_cfg.get("uses_teacher", False) is False, "actionness source must not use teacher")
+    _require(source_cfg.get("uses_labels", False) is False, "actionness source must not use labels")
+    _require(source_cfg.get("uses_gt", False) is False, "actionness source must not use GT")
+    _require(source_cfg.get("uses_prediction_cache", False) is False, "actionness source must not use prediction cache")
+    if "no_teacher" in source_cfg:
+        _require(source_cfg.get("no_teacher") is True, "actionness source must not use teacher")
+    if "no_oracle" in source_cfg:
+        _require(source_cfg.get("no_oracle") is True, "actionness source must not use oracle")
+    if "no_raw_prediction_cache" in source_cfg:
+        _require(source_cfg.get("no_raw_prediction_cache") is True, "actionness source must not use raw prediction cache")
+    if "no_gt_generation" in source_cfg:
+        _require(source_cfg.get("no_gt_generation") is True, "actionness source must not generate from GT")
     if contract.actionness_source == "zero_shot_motion":
         _require(source_cfg.type == "ZeroShotMotionActionnessSource", "zero-shot config must use zero-shot source")
         _require(source_cfg.get("no_train_gt") is True, "zero-shot source must not use train GT")
@@ -96,6 +126,7 @@ def _validate_static_config(cfg: Config, config_path: str) -> dict[str, Any]:
         "model_type": str(cfg.model.type),
         "frame_selector_type": str(selector.type),
         "rpn_head_type": str(head.type),
+        "detector_head_type": str(contract.get("detector_head_type", head.type)),
         "actionness_source": str(contract.actionness_source),
         "actionness_source_type": str(source_cfg.type),
         "no_ledger": True,
@@ -105,7 +136,10 @@ def _validate_static_config(cfg: Config, config_path: str) -> dict[str, Any]:
         "budget": int(selector.budget),
         "coordinate_space": str(contract.coordinate_space),
         "selected_positions_unit": str(contract.selected_positions_unit),
-        "selected_axis_remap_required": True,
+        "selected_axis_remap_required": bool(contract.get("selected_axis_remap_required", False)),
+        "physical_grid_actionformer_required": bool(contract.get("physical_grid_actionformer_required", False)),
+        "main_method_candidate": bool(contract.get("main_method_candidate", False)),
+        "diagnostic_only": bool(contract.get("diagnostic_only", False)),
         "raw_prediction_cache_forbidden": True,
         "metadata_keys": dict(keys),
     }
@@ -245,7 +279,7 @@ def _validate_runtime(cfg: Config) -> dict[str, Any]:
     model.eval()
     _, _, test_metas, _, _ = _toy_batch(cfg)
     with torch.no_grad():
-        model(
+        detection_results = model(
             inputs,
             masks,
             test_metas,
@@ -257,7 +291,8 @@ def _validate_runtime(cfg: Config) -> dict[str, Any]:
             ext_cls=[f"class_{idx}" for idx in range(int(cfg.get("num_classes", 20)))],
         )
 
-    runtime = _summary_from_runtime_objects(model, test_metas, keys)
+    post_metas = getattr(model, "_last_forward_test_metas", test_metas)
+    runtime = _summary_from_runtime_objects(model, post_metas, keys)
     positions = [int(item) for item in runtime["positions"]]
     budget = int(cfg.model.frame_selector.budget)
     dense_len = int(cfg.dense_window_size)
@@ -275,9 +310,10 @@ def _validate_runtime(cfg: Config) -> dict[str, Any]:
     )
 
     train_loss_keys = sorted(str(key) for key in train_losses.keys())
-    inference_text = repr(test_metas).lower() + repr(runtime["runtime_debug"]).lower()
+    inference_text = repr(post_metas).lower() + repr(runtime["runtime_debug"]).lower()
     _require("teacher" not in inference_text, "teacher metadata/debug output must not appear in inference")
     _require("raw_prediction_cache" not in inference_text, "raw prediction cache must not appear in inference metadata")
+    detection_nonempty = bool(detection_results) if isinstance(detection_results, Mapping) else detection_results is not None
 
     return {
         "build_detector": True,
@@ -294,6 +330,8 @@ def _validate_runtime(cfg: Config) -> dict[str, Any]:
         "uses_ledger_for_decision": False,
         "train_loss_keys": train_loss_keys,
         "runtime_selected_count": len(positions),
+        "post_processing_uses_selector_updated_metas": post_metas is not test_metas,
+        "detection_output_nonempty": detection_nonempty,
     }
 
 

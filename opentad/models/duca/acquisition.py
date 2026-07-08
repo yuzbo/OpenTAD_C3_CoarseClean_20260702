@@ -28,6 +28,39 @@ FORBIDDEN_DECISION_KEYS = {
     "ledger_path",
 }
 
+_PROVENANCE_FALSE_KEYS = (
+    "thumos_trained",
+    "uses_labels",
+    "uses_teacher",
+    "uses_gt",
+    "uses_prediction_cache",
+)
+
+
+def validate_actionness_provenance(
+    provenance: Mapping[str, object],
+    *,
+    context: str = "actionness provenance",
+) -> None:
+    """Fail closed unless an actionness source is explicitly deployable."""
+    if not isinstance(provenance, Mapping):
+        raise ValueError(f"{context} must be a mapping")
+    missing = [key for key in _PROVENANCE_FALSE_KEYS if key not in provenance]
+    if missing:
+        raise ValueError(f"{context} missing explicit fields: {', '.join(missing)}")
+    unsafe = [key for key in _PROVENANCE_FALSE_KEYS if provenance.get(key) is not False]
+    if unsafe:
+        raise ValueError(
+            f"{context} is not deployable/no-target-label clean: "
+            + ", ".join(f"{key}={provenance.get(key)!r}" for key in unsafe)
+        )
+    calibration_split = provenance.get("calibration_split")
+    if calibration_split not in (None, "", "none", "train_only"):
+        raise ValueError(
+            f"{context} has target calibration split {calibration_split!r}; "
+            "deployable DUCA actionness must not be calibrated on val/test labels"
+        )
+
 
 def _neg(dtype: torch.dtype) -> float:
     return float(torch.finfo(dtype).min / 4.0)
@@ -217,6 +250,8 @@ class ZeroShotActionnessSource(nn.Module):
         thumos_trained: Optional[bool] = None,
         uses_labels: Optional[bool] = None,
         uses_teacher: Optional[bool] = None,
+        uses_gt: Optional[bool] = None,
+        uses_prediction_cache: Optional[bool] = None,
         calibration_split: Optional[str] = None,
         prompt_hash: Optional[str] = None,
     ) -> None:
@@ -262,6 +297,12 @@ class ZeroShotActionnessSource(nn.Module):
             ),
             "uses_teacher": (
                 uses_teacher if uses_teacher is not None else explicit.get("uses_teacher", False if default_no_thumos else None)
+            ),
+            "uses_gt": uses_gt if uses_gt is not None else explicit.get("uses_gt", False if default_no_thumos else None),
+            "uses_prediction_cache": (
+                uses_prediction_cache
+                if uses_prediction_cache is not None
+                else explicit.get("uses_prediction_cache", False if default_no_thumos else None)
             ),
             "calibration_split": calibration_split if calibration_split is not None else explicit.get("calibration_split"),
             "prompt_hash": prompt_hash if prompt_hash is not None else explicit.get("prompt_hash"),
@@ -315,8 +356,8 @@ class ZeroShotActionnessSource(nn.Module):
             "uses_teacher": self._provenance_override["uses_teacher"],
             "calibration_split": self._provenance_override["calibration_split"],
             "prompt_hash": self._provenance_override["prompt_hash"],
-            "uses_gt": False,
-            "uses_prediction_cache": False,
+            "uses_gt": self._provenance_override["uses_gt"],
+            "uses_prediction_cache": self._provenance_override["uses_prediction_cache"],
             "temperature": self.temperature,
             "action_prompts": list(self.action_prompts),
             "background_prompts": list(self.background_prompts),
@@ -532,6 +573,12 @@ class DucaAcquisitionAdapter(nn.Module):
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
         if budget is None:
             budget = self.budget
+        budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
+        if torch.any(budgets > self.budget):
+            raise ValueError(
+                f"budget override exceeds hard cap: requested={budgets.detach().cpu().tolist()} "
+                f"hard_cap={self.budget}"
+            )
         scores = self.forward_scores(
             dense_observations=dense_observations,
             valid_mask=valid_mask,
@@ -541,11 +588,10 @@ class DucaAcquisitionAdapter(nn.Module):
         decoded = budgeted_center_radius_decode(
             center_scores=scores["center_scores"],
             radius=scores["radius"],
-            budget=budget,
+            budget=budgets,
             valid_mask=scores["valid_mask"],
             max_radius=self.max_radius,
         )
-        budgets = _budget_tensor(budget, dense_observations.shape[0], dense_observations.device)
         valid_len = scores["valid_mask"].long().sum(dim=1)
         effective_budget = decoded["effective_budget"].to(device=dense_observations.device, dtype=torch.long)
         grid = SparseTemporalGrid(
@@ -553,7 +599,7 @@ class DucaAcquisitionAdapter(nn.Module):
             selected_mask=decoded["selected_mask"],
             original_length=int(dense_observations.shape[1]),
             valid_len=valid_len,
-            budget=int(budgets.max().item()),
+            budget=int(self.budget),
             requested_budget=budgets,
             effective_budget=effective_budget,
             detector_input_length=decoded["detector_input_length"],
@@ -569,7 +615,7 @@ class DucaAcquisitionAdapter(nn.Module):
             center_scores=scores["center_scores"],
             radius=scores["radius"],
             valid_mask=scores["valid_mask"],
-            budget=budget,
+            budget=budgets,
             max_radius=self.max_radius,
         )
         hard_union = grid.selected_mask.to(dtype=scores["center_scores"].dtype)
