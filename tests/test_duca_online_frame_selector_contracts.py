@@ -195,3 +195,29 @@ def test_duca_selector_requires_external_x3d_p_action_when_configured() -> None:
             masks=torch.ones(1, 4, dtype=torch.bool),
             metas=[{"video_name": "missing"}],
         )
+
+
+def test_main_duca_selector_forbids_cached_external_actionness_payloads_even_when_unconfigured() -> None:
+    internal = torch.tensor([[0.05, 0.95, 0.10, 0.90]])
+    external = [0.99, 0.01, 0.98, 0.02]
+    selector = _selector(
+        internal,
+        budget=2,
+        forbid_external_actionness=True,
+    )
+
+    with pytest.raises(ValueError, match="forbids external actionness"):
+        selector.forward_test(
+            inputs=torch.randn(1, 2, 4),
+            masks=torch.ones(1, 4, dtype=torch.bool),
+            metas=[
+                {
+                    "video_name": "v",
+                    "duca_external_p_action": external,
+                    "duca_external_actionness_logits": torch.logit(
+                        torch.tensor(external).clamp(1e-6, 1 - 1e-6)
+                    ).tolist(),
+                    "duca_external_actionness_provenance": _x3d_provenance(),
+                }
+            ],
+        )

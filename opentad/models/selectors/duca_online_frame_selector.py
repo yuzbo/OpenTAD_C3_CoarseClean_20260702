@@ -26,6 +26,16 @@ _DEFAULT_METADATA_KEYS = {
     "source": "duca_online_actionness_source",
 }
 
+_EXTERNAL_ACTIONNESS_PAYLOAD_KEYS = {
+    "duca_external_p_action",
+    "duca_external_actionness_logits",
+    "duca_external_actionness_valid",
+    "duca_external_actionness_provenance",
+    "duca_external_actionness_source",
+    "duca_external_actionness_observation_times",
+    "duca_external_actionness_jsonl",
+}
+
 _ACTIONNESS_KWARGS = {
     "feature_dim",
     "hidden_dim",
@@ -159,6 +169,7 @@ class DucaOnlineFrameSelector(nn.Module):
         selected_axis_remap_required: bool = True,
         forbid_ledger: bool = True,
         forbid_raw_prediction_cache: bool = True,
+        forbid_external_actionness: bool = False,
         external_actionness_meta_key: Optional[str] = None,
         external_actionness_logits_meta_key: Optional[str] = None,
         external_actionness_provenance_meta_key: Optional[str] = None,
@@ -210,6 +221,7 @@ class DucaOnlineFrameSelector(nn.Module):
         self.selected_axis_remap_required = bool(selected_axis_remap_required)
         self.forbid_ledger = bool(forbid_ledger)
         self.forbid_raw_prediction_cache = bool(forbid_raw_prediction_cache)
+        self.forbid_external_actionness = bool(forbid_external_actionness)
         self.external_actionness_meta_key = external_actionness_meta_key
         self.external_actionness_logits_meta_key = external_actionness_logits_meta_key
         self.external_actionness_provenance_meta_key = external_actionness_provenance_meta_key
@@ -243,6 +255,12 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("DUCA online selector requires no_ledger_decision=True")
         if self.detector_output_coordinate_space == SELECTED_AXIS and not self.remap_gt_to_selected_axis:
             raise ValueError("selected-axis detector output requires remap_gt_to_selected_axis=True")
+        if self.forbid_external_actionness and (
+            self.external_actionness_meta_key
+            or self.external_actionness_logits_meta_key
+            or self.require_external_actionness
+        ):
+            raise ValueError("forbid_external_actionness conflicts with configured external actionness inputs")
 
         actionness_source = None
         self.raw_actionness_source = None
@@ -305,6 +323,7 @@ class DucaOnlineFrameSelector(nn.Module):
         budget=None,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        self._reject_external_actionness_payload(metas)
         self._reject_train_decision_payload(metas)
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
         detector_utility_target = self._detector_utility_target_from_gt_segments(
@@ -542,6 +561,7 @@ class DucaOnlineFrameSelector(nn.Module):
         return target.masked_fill(~valid, 0.0)
 
     def forward_test(self, inputs: torch.Tensor, masks: torch.Tensor, metas=None, budget=None, **kwargs: Any) -> dict[str, Any]:
+        self._reject_external_actionness_payload(metas)
         _assert_no_forbidden_payload({"metas": metas, "kwargs": kwargs})
         outputs = self._forward_select(inputs, masks, metas, budget=budget)
         return {
@@ -813,6 +833,7 @@ class DucaOnlineFrameSelector(nn.Module):
         }
 
     def _external_actionness_from_metas(self, metas, descriptors: torch.Tensor) -> Optional[dict[str, Any]]:
+        self._reject_external_actionness_payload(metas)
         if not (
             self.external_actionness_meta_key
             or self.external_actionness_logits_meta_key
@@ -874,6 +895,31 @@ class DucaOnlineFrameSelector(nn.Module):
         if logit_rows:
             output["actionness_logits"] = torch.stack(logit_rows, dim=0)
         return output
+
+    def _reject_external_actionness_payload(self, metas) -> None:
+        if not self.forbid_external_actionness or metas is None:
+            return
+        hits: list[str] = []
+
+        def walk(value: Any, path: str) -> None:
+            if isinstance(value, Mapping):
+                for key, child in value.items():
+                    key_str = str(key)
+                    child_path = f"{path}.{key_str}"
+                    if (
+                        key_str in _EXTERNAL_ACTIONNESS_PAYLOAD_KEYS
+                        or key_str.startswith("duca_external_actionness")
+                        or key_str.startswith("external_actionness")
+                    ):
+                        hits.append(child_path)
+                    walk(child, child_path)
+            elif isinstance(value, (list, tuple)):
+                for idx, child in enumerate(value):
+                    walk(child, f"{path}[{idx}]")
+
+        walk(metas, "metas")
+        if hits:
+            raise ValueError(f"DUCA main selector forbids external actionness payloads: {hits}")
 
     @staticmethod
     def _lookup_meta_value(meta: Mapping[str, Any], key: Optional[str]) -> Any:

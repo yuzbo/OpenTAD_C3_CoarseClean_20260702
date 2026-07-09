@@ -150,6 +150,8 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.get("external_actionness_meta_key", None) is None
     assert cfg.model.frame_selector.get("external_actionness_logits_meta_key", None) is None
     assert cfg.model.frame_selector.get("require_external_actionness", False) is False
+    assert cfg.model.frame_selector.forbid_external_actionness is True
+    assert cfg.duca_online_main_contract.forbid_external_actionness is True
     assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
     assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
     assert cfg.model.frame_selector.actionness_source_cfg.tcn_variant == "official_asformer"
@@ -348,6 +350,8 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.get("external_actionness_meta_key", None) is None
     assert cfg.model.frame_selector.get("external_actionness_logits_meta_key", None) is None
     assert cfg.model.frame_selector.get("require_external_actionness", False) is False
+    assert cfg.model.frame_selector.forbid_external_actionness is True
+    assert cfg.duca_must_dynamic_contract.forbid_external_actionness is True
     assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
     assert cfg.model.frame_selector.actionness_source_cfg.probe_model == "official-action-seg"
     assert cfg.model.frame_selector.actionness_source_cfg.official_action_seg_backend == "official_asformer"
