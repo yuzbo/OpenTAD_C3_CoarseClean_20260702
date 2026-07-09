@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 import torch
 import torch.nn as nn
-from mmengine.config import Config
+from mmengine.config import Config, ConfigDict
 
 from opentad.models import build_detector
 
@@ -214,6 +214,8 @@ def _scaled_model_cfg(
     neck = _plain(cfg.model.neck)
     neck.update({"in_channels": feature_dim, "out_channels": feature_dim, "num_levels": levels})
     rpn_head = _plain(cfg.model.rpn_head)
+    if isinstance(rpn_head.get("loss"), dict):
+        rpn_head["loss"] = ConfigDict(rpn_head["loss"])
     rpn_head.update(
         {
             "type": "ActionFormerHead",
