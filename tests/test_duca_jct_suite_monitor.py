@@ -75,6 +75,8 @@ def _deployment(tmp_path: Path, *, with_x3d: bool = True, with_grad_proof: bool 
             "duca_jct_tests_job": "101",
             "duca384_job": "102",
             "duca_must_job": "103",
+            "duca_budget_curve_job": "107",
+            "duca_must_target_curve_job": "108",
             "x3d_grid_job": "104",
             "x3d_duca384_job": "105",
             "x3d_must_job": "106",
@@ -116,6 +118,8 @@ def test_duca_jct_suite_monitor_classifies_jobs_and_x3d_readiness(tmp_path: Path
     assert summary["jobs"]["duca_jct_tests"]["status"] == "completed"
     assert summary["jobs"]["duca384"]["status"] == "running"
     assert summary["jobs"]["duca_must"]["status"] == "failed"
+    assert summary["jobs"]["duca_budget_curve"]["status"] == "finished_or_unknown"
+    assert summary["jobs"]["duca_must_target_curve"]["status"] == "finished_or_unknown"
     assert summary["jobs"]["x3d_duca384"]["status"] == "pending"
     assert "duca_must" in summary["hard_failures"]
     assert "duca384" in summary["running_jobs"]

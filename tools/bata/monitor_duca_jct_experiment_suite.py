@@ -37,6 +37,16 @@ JOB_SPECS = {
         "work_dir": ("duca_must_jct", "work_dir"),
         "requires_result": True,
     },
+    "duca_budget_curve": {
+        "summary_key": "duca_budget_curve_job",
+        "slurm_name": "duca_budget_curve",
+        "requires_result": False,
+    },
+    "duca_must_target_curve": {
+        "summary_key": "duca_must_target_curve_job",
+        "slurm_name": "duca_must_curve",
+        "requires_result": False,
+    },
     "x3d_grid": {
         "summary_key": "x3d_grid_job",
         "slurm_name": "duca_x3d_grid",

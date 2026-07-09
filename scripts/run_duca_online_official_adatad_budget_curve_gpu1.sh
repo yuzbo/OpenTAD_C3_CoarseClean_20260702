@@ -17,6 +17,8 @@ DUCA_ONLINE_BUDGET_STEP="${DUCA_ONLINE_BUDGET_STEP:-32}"
 DUCA_ONLINE_DENSE_WINDOW_SIZE="${DUCA_ONLINE_DENSE_WINDOW_SIZE:-768}"
 DUCA_VALIDATOR_MAX_BUDGET="${DUCA_VALIDATOR_MAX_BUDGET:-${DUCA_ONLINE_BUDGET_END}}"
 RUN_TAG_BASE="${RUN_TAG_BASE:-duca_online_official_budget_curve_$(date +%Y%m%d_%H%M%S_%z)}"
+RUN_DIR_BASE="${RUN_DIR_BASE:-logs/${RUN_TAG_BASE}}"
+WORK_DIR_BASE="${WORK_DIR_BASE:-exps/thumos/adatad/duca_online_official_budget_curve/${RUN_TAG_BASE}}"
 MASTER_PORT_BASE="${MASTER_PORT_BASE:-30320}"
 CONTINUE_ON_FAILURE="${CONTINUE_ON_FAILURE:-0}"
 
@@ -39,8 +41,8 @@ echo "[DUCA_OFFICIAL_BUDGET_CURVE] budgets=${budget_values[*]}"
 echo "[DUCA_OFFICIAL_BUDGET_CURVE] dense_window=${DUCA_ONLINE_DENSE_WINDOW_SIZE} validator_max_budget=${DUCA_VALIDATOR_MAX_BUDGET}"
 echo "[DUCA_OFFICIAL_BUDGET_CURVE] precheck_only=${PRECHECK_ONLY} fulltrain_candidate=${FULLTRAIN_CANDIDATE}"
 
-mkdir -p "logs/${RUN_TAG_BASE}"
-manifest="logs/${RUN_TAG_BASE}/budget_curve_manifest.tsv"
+mkdir -p "${RUN_DIR_BASE}" "${WORK_DIR_BASE}"
+manifest="${RUN_DIR_BASE}/budget_curve_manifest.tsv"
 printf "budget\tstatus\trun_tag\n" > "${manifest}"
 
 idx=0
@@ -67,6 +69,8 @@ for budget in "${budget_values[@]}"; do
   PRECHECK_ONLY="${PRECHECK_ONLY}" \
   FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE}" \
   RUN_TAG="${run_tag}" \
+  RUN_DIR="${RUN_DIR_BASE}/budget_${budget}/logs" \
+  WORK_DIR="${WORK_DIR_BASE}/budget_${budget}/work_dir" \
   RUN_ID="${idx}" \
   MASTER_PORT="${master_port}" \
   bash scripts/run_duca_online_official_adatad_backend_gpu1.sh

@@ -11,7 +11,9 @@ def test_duca_jct_suite_submits_all_required_main_and_trainfree_jobs() -> None:
     text = SUITE.read_text(encoding="utf-8")
 
     assert "run_duca_online_official_adatad_backend_gpu1.sh" in text
+    assert "run_duca_online_official_adatad_budget_curve_gpu1.sh" in text
     assert "run_duca_must_dynamic_official_adatad_backend_gpu1.sh" in text
+    assert "run_duca_must_dynamic_budget_target_curve_gpu1.sh" in text
     assert "run_duca_trainfree_x3d_interval_grid_gpu0.sh" in text
     assert "run_duca_x3d_official_adatad_backend_gpu1.sh" in text
     assert "run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh" in text
@@ -24,6 +26,19 @@ def test_duca_jct_suite_submits_all_required_main_and_trainfree_jobs() -> None:
     assert "tests/test_trainfree_x3d_actionness_materialize.py" in text
     assert "tests/test_duca_jct_suite_monitor.py" in text
     assert "tests/test_duca_jct_paper_evidence.py" in text
+
+
+def test_duca_jct_suite_registers_fixed_and_dynamic_budget_studies() -> None:
+    text = SUITE.read_text(encoding="utf-8")
+
+    assert "duca_budget_curve_job" in text
+    assert "duca_must_target_curve_job" in text
+    assert "DUCA_ONLINE_BUDGETS" in text
+    assert "128 192 256 320 384" in text
+    assert "DUCA_MUST_TARGETS" in text
+    assert "128 192 256 320" in text
+    assert "fixed_budget_curve" in text
+    assert "dynamic_target_curve" in text
 
 
 def test_duca_jct_suite_preserves_x3d_dependency_and_formal_jsonl_contract() -> None:

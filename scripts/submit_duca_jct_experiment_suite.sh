@@ -58,7 +58,9 @@ require_file() {
 
 for path in \
   scripts/run_duca_online_official_adatad_backend_gpu1.sh \
+  scripts/run_duca_online_official_adatad_budget_curve_gpu1.sh \
   scripts/run_duca_must_dynamic_official_adatad_backend_gpu1.sh \
+  scripts/run_duca_must_dynamic_budget_target_curve_gpu1.sh \
   scripts/run_duca_trainfree_x3d_interval_grid_gpu0.sh \
   scripts/run_duca_x3d_official_adatad_backend_gpu1.sh \
   scripts/run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh \
@@ -179,6 +181,20 @@ export MASTER_PORT=30301
 bash scripts/run_duca_online_official_adatad_backend_gpu1.sh
 "
 
+budget_curve_script="${SCRIPT_ROOT}/duca_jct_fixed_budget_curve.sbatch"
+write_sbatch "${budget_curve_script}" "duca_budget_curve" "
+export PRECHECK_ONLY=0
+export FULLTRAIN_CANDIDATE=1
+export DUCA_ONLINE_BUDGETS=\"\${DUCA_ONLINE_BUDGETS:-128 192 256 320 384}\"
+export DUCA_ONLINE_DENSE_WINDOW_SIZE=\"\${DUCA_ONLINE_DENSE_WINDOW_SIZE:-768}\"
+export DUCA_VALIDATOR_MAX_BUDGET=\"\${DUCA_VALIDATOR_MAX_BUDGET:-384}\"
+export RUN_TAG_BASE=${RUN_TAG}_fixed_budget_curve
+export RUN_DIR_BASE=${RUN_ROOT}/fixed_budget_curve
+export WORK_DIR_BASE=${RUN_ROOT}/fixed_budget_curve/work_dir
+export MASTER_PORT_BASE=30341
+bash scripts/run_duca_online_official_adatad_budget_curve_gpu1.sh
+"
+
 must_script="${SCRIPT_ROOT}/duca_jct_must_dynamic_fulltrain.sbatch"
 write_sbatch "${must_script}" "duca_jct_must" "
 export PRECHECK_ONLY=0
@@ -188,6 +204,22 @@ export RUN_DIR=${RUN_ROOT}/duca_must_jct/logs
 export WORK_DIR=${RUN_ROOT}/duca_must_jct/work_dir
 export MASTER_PORT=30311
 bash scripts/run_duca_must_dynamic_official_adatad_backend_gpu1.sh
+"
+
+must_target_curve_script="${SCRIPT_ROOT}/duca_jct_must_target_curve.sbatch"
+write_sbatch "${must_target_curve_script}" "duca_must_curve" "
+export PRECHECK_ONLY=0
+export FULLTRAIN_CANDIDATE=1
+export DUCA_MUST_TARGETS=\"\${DUCA_MUST_TARGETS:-128 192 256 320}\"
+export DUCA_MUST_DENSE_WINDOW_SIZE=\"\${DUCA_MUST_DENSE_WINDOW_SIZE:-768}\"
+export DUCA_MUST_BUDGET_MIN=\"\${DUCA_MUST_BUDGET_MIN:-64}\"
+export DUCA_MUST_BUDGET_MAX=\"\${DUCA_MUST_BUDGET_MAX:-384}\"
+export DUCA_MUST_BUDGET_MULTIPLE=\"\${DUCA_MUST_BUDGET_MULTIPLE:-16}\"
+export RUN_TAG_BASE=${RUN_TAG}_dynamic_target_curve
+export RUN_DIR_BASE=${RUN_ROOT}/dynamic_target_curve
+export WORK_DIR_BASE=${RUN_ROOT}/dynamic_target_curve/work_dir
+export MASTER_PORT_BASE=30391
+bash scripts/run_duca_must_dynamic_budget_target_curve_gpu1.sh
 "
 
 x3d_grid_script="${SCRIPT_ROOT}/duca_x3d_interval_grid.sbatch"
@@ -230,6 +262,8 @@ bash scripts/run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh
 tests_job=""
 fixed_job=""
 must_job=""
+budget_curve_job=""
+must_target_curve_job=""
 x3d_grid_job=""
 x3d_fixed_job=""
 x3d_must_job=""
@@ -260,6 +294,8 @@ payload = {
     "duca_jct_tests_job": "${tests_job}",
     "duca384_job": "${fixed_job}",
     "duca_must_job": "${must_job}",
+    "duca_budget_curve_job": "${budget_curve_job}",
+    "duca_must_target_curve_job": "${must_target_curve_job}",
     "x3d_grid_job": "${x3d_grid_job}",
     "x3d_duca384_job": "${x3d_fixed_job}",
     "x3d_must_job": "${x3d_must_job}",
@@ -271,6 +307,8 @@ payload = {
         "duca_jct_tests": "${tests_script}",
         "duca384": "${fixed_script}",
         "duca_must": "${must_script}",
+        "duca_budget_curve": "${budget_curve_script}",
+        "duca_must_target_curve": "${must_target_curve_script}",
         "x3d_grid": "${x3d_grid_script}",
         "x3d_duca384": "${x3d_fixed_script}",
         "x3d_must": "${x3d_must_script}",
@@ -291,6 +329,8 @@ if [[ -n "${tests_job}" ]]; then
 fi
 fixed_job="$(submit_with_retry duca_jct_384 "${dep_args[@]}" "${fixed_script}")"
 must_job="$(submit_with_retry duca_jct_must "${dep_args[@]}" "${must_script}")"
+budget_curve_job="$(submit_with_retry duca_budget_curve "${dep_args[@]}" "${budget_curve_script}")"
+must_target_curve_job="$(submit_with_retry duca_must_curve "${dep_args[@]}" "${must_target_curve_script}")"
 x3d_grid_job="$(submit_with_retry duca_x3d_grid "${dep_args[@]}" "${x3d_grid_script}")"
 x3d_dep_args=()
 if [[ -n "${x3d_grid_job}" ]]; then
