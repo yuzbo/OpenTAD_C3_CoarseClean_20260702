@@ -11,6 +11,7 @@ from .acquisition import (
     gather_selected_observations,
     hard_topk_st,
     make_audit_record,
+    temporal_max_gap_hole_loss,
     validate_actionness_provenance,
 )
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
@@ -30,5 +31,6 @@ __all__ = [
     "gather_selected_observations",
     "hard_topk_st",
     "make_audit_record",
+    "temporal_max_gap_hole_loss",
     "validate_actionness_provenance",
 ]

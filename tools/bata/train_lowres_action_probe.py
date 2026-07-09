@@ -1339,7 +1339,7 @@ class C3MobileNetV3ActionProbe:
                 for param in self.backbone.classifier.parameters():
                     param.requires_grad = True
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
         torch, _F = _import_torch()
         if frames.ndim != 5:
             raise ValueError(f"MobileNetV3 probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
@@ -1352,20 +1352,33 @@ class C3MobileNetV3ActionProbe:
         mean = torch.tensor([0.485, 0.456, 0.406], dtype=flat.dtype, device=flat.device).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], dtype=flat.dtype, device=flat.device).view(1, 3, 1, 1)
         flat = (flat - mean) / std
+        hidden = None
         if self._external_backbone is not None:
             out = self._external_backbone(flat)
         else:
-            out = self.backbone(flat)
+            if hasattr(self.backbone, "features") and hasattr(self.backbone, "avgpool") and hasattr(self.backbone, "classifier"):
+                feat = self.backbone.features(flat)
+                pooled = self.backbone.avgpool(feat)
+                hidden = torch.flatten(pooled, 1)
+                out = self.backbone.classifier(hidden)
+            else:
+                out = self.backbone(flat)
         if isinstance(out, (tuple, list)):
             out = out[0]
         if out.ndim > 2:
             out = out.flatten(1)
+        if hidden is None:
+            hidden = out
         if self.output_head is not None:
             out = self.output_head(out)
         logits = out.reshape(batch, dense_len, -1)[..., 0]
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
-        return logits.masked_fill(~valid, 0.0)
+        logits = logits.masked_fill(~valid, 0.0)
+        if not return_hidden:
+            return logits
+        hidden = hidden.reshape(batch, dense_len, -1).masked_fill(~valid[:, :, None], 0.0)
+        return {"logits": logits, "hidden": hidden}
 
     def train(self):
         self.module.train()
@@ -1750,7 +1763,7 @@ class C3TemporalTCNActionProbe:
         self.classifier = nn.Conv1d(classifier_in, 1, kernel_size=1)
         self.module.classifier = self.classifier
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
         torch, _F = _import_torch()
         if frames.ndim != 5:
             raise ValueError(f"Temporal TCN probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
@@ -1775,7 +1788,11 @@ class C3TemporalTCNActionProbe:
         logits = self.classifier(features).squeeze(1)
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
-        return logits.masked_fill(~valid, 0.0)
+        logits = logits.masked_fill(~valid, 0.0)
+        if not return_hidden:
+            return logits
+        hidden = features.transpose(1, 2).contiguous().masked_fill(~valid[:, :, None], 0.0)
+        return {"logits": logits, "hidden": hidden}
 
     def train(self):
         self.module.train()
@@ -2151,7 +2168,7 @@ class C3OfficialActionSegmentationProbe:
         )
         return cfg
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
         torch, _F = _import_torch()
         if frames.ndim != 5:
             raise ValueError(f"Official action-seg probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
@@ -2192,7 +2209,11 @@ class C3OfficialActionSegmentationProbe:
                 outputs = self.official_temporal(features[idx : idx + 1], mask[idx : idx + 1, None, :].float())
                 rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
             logits = torch.stack(rows, dim=0)
-        return logits.masked_fill(~mask, 0.0)
+        logits = logits.masked_fill(~mask, 0.0)
+        if not return_hidden:
+            return logits
+        hidden = features.transpose(1, 2).contiguous().masked_fill(~mask[:, :, None], 0.0)
+        return {"logits": logits, "hidden": hidden}
 
     def train(self):
         self.module.train()
@@ -2372,7 +2393,7 @@ class C3MatrixZooActionProbe:
         std = torch.tensor([0.229, 0.224, 0.225], dtype=frames.dtype, device=frames.device).view(1, 1, 3, 1, 1)
         return (frames - mean) / std
 
-    def _image_logits(self, frames: Any, valid: Any):
+    def _image_logits(self, frames: Any, valid: Any, return_hidden: bool = False):
         batch, dense_len, channels, height, width = frames.shape
         flat = self._normalize_frames(frames).reshape(batch * dense_len, channels, height, width)
         features = self.backbone(flat)
@@ -2382,7 +2403,10 @@ class C3MatrixZooActionProbe:
             features = features.flatten(1)
         features = features.reshape(batch, dense_len, -1).transpose(1, 2)
         logits = self.temporal_head(features).squeeze(1)
-        return logits
+        if not return_hidden:
+            return logits
+        hidden = features.transpose(1, 2).contiguous()
+        return logits, hidden
 
     def _anchor_positions(self, dense_len: int) -> list[int]:
         if dense_len <= 1:
@@ -2424,20 +2448,30 @@ class C3MatrixZooActionProbe:
             raise RuntimeError("torch.nn.functional is required for video logit interpolation")
         return F.interpolate(anchor_logits.unsqueeze(1), size=int(dense_len), mode="linear", align_corners=False).squeeze(1)
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
         if frames.ndim != 5:
             raise ValueError(f"matrix-zoo probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
         if int(frames.shape[2]) != 3:
             raise ValueError("matrix-zoo probe expects RGB frame tensors with 3 channels")
         if self.mode == "image_backbone_temporal_head":
-            logits = self._image_logits(frames, valid)
+            image_out = self._image_logits(frames, valid, return_hidden=return_hidden)
+            if return_hidden:
+                logits, hidden = image_out
+            else:
+                logits = image_out
+                hidden = None
         elif self.mode == "video_clip_interpolated":
             logits = self._video_logits(frames, valid)
+            hidden = logits.unsqueeze(-1)
         else:
             raise RuntimeError(f"unsupported matrix-zoo mode: {self.mode}")
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
-        return logits.masked_fill(~valid, 0.0)
+        logits = logits.masked_fill(~valid, 0.0)
+        if not return_hidden:
+            return logits
+        hidden = hidden.to(device=logits.device, dtype=logits.dtype).masked_fill(~valid[:, :, None], 0.0)
+        return {"logits": logits, "hidden": hidden}
 
     def train(self):
         self.module.train()

@@ -616,6 +616,8 @@ class C3CoarseProbeActionnessSource(nn.Module):
         uses_teacher: bool = False,
         uses_gt: bool = False,
         uses_prediction_cache: bool = False,
+        return_hidden_features: bool = True,
+        require_hidden_features: bool = True,
         **_: Any,
     ) -> None:
         super().__init__()
@@ -630,6 +632,8 @@ class C3CoarseProbeActionnessSource(nn.Module):
         self.source_name = str(source_name or self._default_source_name())
         self.train_split_supervised = bool(train_split_supervised)
         self.calibration_split = calibration_split
+        self.return_hidden_features = bool(return_hidden_features)
+        self.require_hidden_features = bool(require_hidden_features)
         if self.require_checkpoint and not self.checkpoint_path:
             raise ValueError("C3CoarseProbeActionnessSource requires checkpoint_path")
         if self.checkpoint_path and not os.path.isfile(self.checkpoint_path):
@@ -659,6 +663,8 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "uses_teacher_at_inference": False,
             "joint_trainable": not self.frozen,
             "checkpoint_is_initialization": bool(self.checkpoint_path),
+            "returns_hidden_features": self.return_hidden_features,
+            "requires_hidden_features": self.require_hidden_features,
         }
 
         probe_mod = self._probe_module()
@@ -812,17 +818,45 @@ class C3CoarseProbeActionnessSource(nn.Module):
         probe_inputs = self._prepare_probe_inputs(inputs)
         if hasattr(probe_inputs, "to"):
             probe_inputs = probe_inputs.to(device=inputs.device)
+        def call_probe() -> Any:
+            try:
+                return self.probe(probe_inputs, valid, return_hidden=self.return_hidden_features)
+            except TypeError:
+                if self.return_hidden_features and self.require_hidden_features:
+                    raise
+                return self.probe(probe_inputs, valid)
+
         if self.frozen:
             with torch.no_grad():
-                logits = self.probe(probe_inputs, valid)
+                probe_output = call_probe()
         else:
-            logits = self.probe(probe_inputs, valid)
+            probe_output = call_probe()
+        hidden = None
+        if isinstance(probe_output, Mapping):
+            logits = probe_output.get("logits")
+            hidden = (
+                probe_output.get("coarse_hidden_features")
+                if probe_output.get("coarse_hidden_features") is not None
+                else probe_output.get("hidden")
+            )
+            if logits is None:
+                raise ValueError("C3 coarse probe output mapping must contain logits")
+        else:
+            logits = probe_output
+        if hidden is None and self.return_hidden_features and self.require_hidden_features:
+            raise ValueError("C3 coarse probe must return hidden features for final DUCA selector fusion")
         logits = logits.float().to(device=inputs.device).masked_fill(~valid, _neg(torch.float32))
+        if hidden is not None:
+            if hidden.ndim != 3:
+                raise ValueError(f"C3 coarse hidden features must be [B,T,D], got {tuple(hidden.shape)}")
+            if hidden.shape[:2] != logits.shape:
+                raise ValueError("C3 coarse hidden features must align with logits [B,T]")
+            hidden = hidden.float().to(device=inputs.device).masked_fill(~valid[:, :, None], 0.0)
         latency_ms = float((time.perf_counter() - start) * 1000.0)
         p_action = torch.sigmoid(logits).masked_fill(~valid, 0.0)
         transition = _actionness_transition_payload(p_action, valid)
         profile = self._estimate_probe_profile(inputs, logits, latency_ms)
-        return {
+        output = {
             "p_action": transition["p_action"],
             "logits": logits,
             "actionness_logits": logits,
@@ -838,6 +872,11 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "compute_profile": profile,
             "source_name": self.source_name,
         }
+        if hidden is not None:
+            output["coarse_hidden_features"] = hidden
+            output["hidden_features"] = hidden
+            profile["hidden_output_shape"] = [int(v) for v in hidden.shape]
+        return output
 
 
 class DucaAcquisitionAdapter(nn.Module):
@@ -862,6 +901,11 @@ class DucaAcquisitionAdapter(nn.Module):
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
+        coarse_hidden_dim: Optional[int] = None,
+        require_coarse_hidden_features: bool = False,
+        max_unselected_hole: Optional[int] = None,
+        hard_max_gap_repair: bool = True,
+        fail_on_infeasible_max_gap: bool = True,
         profile_runtime: bool = False,
         profile_sync_cuda: bool = True,
     ) -> None:
@@ -909,6 +953,15 @@ class DucaAcquisitionAdapter(nn.Module):
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
+        self.coarse_hidden_dim = 0 if coarse_hidden_dim in (None, 0) else int(coarse_hidden_dim)
+        if self.coarse_hidden_dim < 0:
+            raise ValueError("coarse_hidden_dim must be non-negative")
+        self.require_coarse_hidden_features = bool(require_coarse_hidden_features)
+        self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
+        if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
+            raise ValueError("max_unselected_hole must be non-negative")
+        self.hard_max_gap_repair = bool(hard_max_gap_repair)
+        self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
         self.profile_runtime = bool(profile_runtime)
         self.profile_sync_cuda = bool(profile_sync_cuda)
         self.last_compute_profile: Dict[str, Any] = {}
@@ -922,7 +975,7 @@ class DucaAcquisitionAdapter(nn.Module):
             self.utility_head = None
             selector_feature_dim = DUCA_ACTIONNESS_FEATURE_DIM
         else:
-            in_dim = self.feature_dim + DUCA_ACTIONNESS_FEATURE_DIM
+            in_dim = self.feature_dim + DUCA_ACTIONNESS_FEATURE_DIM + self.coarse_hidden_dim
             if self.dynamic_budget and int(hidden_dim) <= 0:
                 raise ValueError("dynamic_must requires a positive hidden_dim when feature_dim is provided")
             self.encoder = nn.Sequential(
@@ -1047,13 +1100,15 @@ class DucaAcquisitionAdapter(nn.Module):
                 "parameters": selector_params,
             }
         hidden = int(self.center_head.in_features)
-        in_dim = int(feature_dim) + DUCA_ACTIONNESS_FEATURE_DIM
+        in_dim = int(feature_dim) + DUCA_ACTIONNESS_FEATURE_DIM + int(self.coarse_hidden_dim)
         macs = tokens * (in_dim * hidden + hidden * hidden + 4 * hidden)
         flops = 2 * macs + tokens * (6 * in_dim + 12 * hidden + 48)
         return {
             "head": "DUCASelectorMLP",
             "hidden_dim": hidden,
             "input_dim": in_dim,
+            "coarse_hidden_dim": int(self.coarse_hidden_dim),
+            "uses_coarse_hidden_features": bool(self.coarse_hidden_dim > 0),
             "estimated_macs": int(macs),
             "estimated_flops": int(flops),
             "parameters": selector_params,
@@ -1169,6 +1224,7 @@ class DucaAcquisitionAdapter(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
+        coarse_hidden_features: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         if dense_observations.ndim != 3:
             raise ValueError(f"dense_observations must be [B,T,C], got {tuple(dense_observations.shape)}")
@@ -1182,6 +1238,30 @@ class DucaAcquisitionAdapter(nn.Module):
         transition_score = source.get("transition_score", source["uncertainty"])
         transition_score = transition_score.to(dense_observations.device, dense_observations.dtype).masked_fill(~valid, 0.0)
         actionness_aux = source["p_action"].to(dense_observations.device, dense_observations.dtype).masked_fill(~valid, 0.0)
+        coarse_hidden = None
+        has_coarse_hidden_features = False
+        if coarse_hidden_features is not None:
+            if coarse_hidden_features.ndim != 3:
+                raise ValueError("coarse_hidden_features must be [B,T,D]")
+            if coarse_hidden_features.shape[:2] != dense_observations.shape[:2]:
+                raise ValueError("coarse_hidden_features must align with dense_observations [B,T]")
+            if self.coarse_hidden_dim <= 0:
+                raise ValueError("coarse_hidden_dim must be configured when coarse_hidden_features are provided")
+            if int(coarse_hidden_features.shape[-1]) != int(self.coarse_hidden_dim):
+                raise ValueError(
+                    f"expected coarse_hidden_dim={self.coarse_hidden_dim}, got {coarse_hidden_features.shape[-1]}"
+                )
+            coarse_hidden = coarse_hidden_features.to(dense_observations.device, dense_observations.dtype)
+            coarse_hidden = coarse_hidden.masked_fill(~valid[:, :, None], 0.0)
+            has_coarse_hidden_features = True
+        elif self.require_coarse_hidden_features:
+            raise ValueError("DUCA final selector requires online coarse_hidden_features")
+        elif self.coarse_hidden_dim > 0:
+            coarse_hidden = dense_observations.new_zeros(
+                dense_observations.shape[0],
+                dense_observations.shape[1],
+                int(self.coarse_hidden_dim),
+            )
         if self.encoder is None:
             boundary_logits = transition_score
             utility_scores = transition_score + 0.5 * actionness_aux
@@ -1197,7 +1277,10 @@ class DucaAcquisitionAdapter(nn.Module):
         else:
             if dense_observations.shape[-1] != self.feature_dim:
                 raise ValueError(f"expected feature_dim={self.feature_dim}, got {dense_observations.shape[-1]}")
-            browser_features = torch.cat((dense_observations.float(), source["features"].float()), dim=-1)
+            feature_parts = [dense_observations.float(), source["features"].float()]
+            if coarse_hidden is not None:
+                feature_parts.append(coarse_hidden.float())
+            browser_features = torch.cat(feature_parts, dim=-1)
             encoded = self.encoder(browser_features)
             selection_features = encoded
             center_scores = self.center_head(encoded).squeeze(-1)
@@ -1229,6 +1312,8 @@ class DucaAcquisitionAdapter(nn.Module):
             "transition_score": transition_score.masked_fill(~valid, 0.0),
             "actionness_logits": source["logits"],
             "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
+            "coarse_hidden_features": None if coarse_hidden is None else coarse_hidden.masked_fill(~valid[:, :, None], 0.0),
+            "uses_coarse_hidden_features": bool(has_coarse_hidden_features),
             "valid_mask": valid,
             "provenance": source["provenance"],
         }
@@ -1240,6 +1325,7 @@ class DucaAcquisitionAdapter(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
+        coarse_hidden_features: Optional[torch.Tensor] = None,
         compute_profile_context: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
         profile_enabled = bool(self.profile_runtime)
@@ -1251,6 +1337,7 @@ class DucaAcquisitionAdapter(nn.Module):
             valid_mask=valid_mask,
             actionness_logits=actionness_logits,
             p_action=p_action,
+            coarse_hidden_features=coarse_hidden_features,
         )
         score_ms = _elapsed_ms(score_start, dense_observations, enabled=sync_enabled)
         budget_decision: Optional[DynamicBudgetDecision] = None
@@ -1291,6 +1378,9 @@ class DucaAcquisitionAdapter(nn.Module):
             valid_mask=scores["valid_mask"],
             max_radius=self.max_radius,
             output_slots=int(self.budget),
+            max_unselected_hole=self.max_unselected_hole,
+            hard_max_gap_repair=self.hard_max_gap_repair,
+            fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
         )
         decode_ms = _elapsed_ms(decode_start, dense_observations, enabled=sync_enabled)
         valid_len = scores["valid_mask"].long().sum(dim=1)
@@ -1320,6 +1410,9 @@ class DucaAcquisitionAdapter(nn.Module):
                 "budget_target": float(self.target_budget),
                 "predicted_budget": budgets.detach().cpu().tolist(),
                 "detector_physical_input_length": int(self.budget),
+                "max_unselected_hole": self.max_unselected_hole,
+                "hard_max_gap_repair": bool(self.hard_max_gap_repair),
+                "max_gap_repair": decoded.get("max_gap_repair", []),
             },
         ).validate()
         if torch.any(grid.selected_count > int(self.budget)):
@@ -1366,11 +1459,13 @@ class DucaAcquisitionAdapter(nn.Module):
                 "budget_mode": self.budget_mode,
                 "requested_budget": budgets,
                 "effective_budget": effective_budget,
+                "max_unselected_hole": self.max_unselected_hole,
                 "budget_metrics": {
                     "budget_mean": float(grid.selected_count.float().mean().detach().cpu().item()),
                     "budget_max": int(self.budget),
                     "budget_target": float(self.target_budget),
                     "budget_policy": grid.metadata["budget_policy"],
+                    "max_unselected_hole": self.max_unselected_hole,
                 },
                 "compute_profile": compute_profile,
             }
@@ -1384,6 +1479,7 @@ class DucaAcquisitionAdapter(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
+        coarse_hidden_features: Optional[torch.Tensor] = None,
         return_audit: bool = False,
     ) -> Dict[str, Any]:
         grid, scores = self.acquire(
@@ -1392,6 +1488,7 @@ class DucaAcquisitionAdapter(nn.Module):
             valid_mask=valid_mask,
             actionness_logits=actionness_logits,
             p_action=p_action,
+            coarse_hidden_features=coarse_hidden_features,
         )
         gathered = gather_selected_observations(dense_observations, grid.selected_positions, grid.selected_mask)
         st_weights = torch.gather(scores["selected_mask_st"], 1, grid.selected_positions.clamp_min(0))
@@ -1491,6 +1588,143 @@ def soft_center_radius_coverage(
     return coverage
 
 
+def temporal_max_gap_hole_loss(
+    selection_mass: torch.Tensor,
+    valid_mask: Optional[torch.Tensor] = None,
+    *,
+    max_unselected_hole: int,
+    min_window_mass: float = 1.0,
+) -> torch.Tensor:
+    """Penalize local windows that could decode into large temporal holes."""
+
+    if selection_mass.ndim != 2:
+        raise ValueError(f"selection_mass must be [B,T], got {tuple(selection_mass.shape)}")
+    max_hole = int(max_unselected_hole)
+    if max_hole <= 0:
+        return selection_mass.new_zeros(())
+    valid = _as_valid_mask(selection_mass, valid_mask)
+    mass = selection_mass.to(dtype=torch.float32).clamp_min(0.0).masked_fill(~valid, 0.0)
+    valid_float = valid.to(dtype=mass.dtype)
+    window = max_hole + 1
+    valid_counts = valid_float.sum(dim=1)
+    penalties: List[torch.Tensor] = []
+    short = valid_counts <= float(window)
+    if bool(short.any().item()):
+        total_mass = mass.sum(dim=1)
+        penalties.append(F.relu(float(min_window_mass) - total_mass[short]).pow(2))
+    if selection_mass.shape[1] >= window:
+        window_mass = F.avg_pool1d(mass[:, None, :], kernel_size=window, stride=1)[:, 0, :] * float(window)
+        window_valid = F.avg_pool1d(valid_float[:, None, :], kernel_size=window, stride=1)[:, 0, :] * float(window)
+        full = window_valid >= float(window)
+        if bool(full.any().item()):
+            penalties.append(F.relu(float(min_window_mass) - window_mass[full]).pow(2))
+    if not penalties:
+        return selection_mass.new_zeros(())
+    return torch.cat([item.reshape(-1) for item in penalties], dim=0).mean().to(dtype=selection_mass.dtype)
+
+
+def _unselected_hole_runs(selected: set[int], valid_positions: List[int]) -> List[Tuple[int, int, int]]:
+    runs: List[Tuple[int, int, int]] = []
+    start: Optional[int] = None
+    previous = -1
+    for pos in valid_positions:
+        pos = int(pos)
+        if pos in selected:
+            if start is not None:
+                runs.append((int(start), int(previous), int(previous - start + 1)))
+                start = None
+        elif start is None:
+            start = pos
+        previous = pos
+    if start is not None:
+        runs.append((int(start), int(previous), int(previous - start + 1)))
+    return runs
+
+
+def _max_unselected_hole(selected: set[int], valid_positions: List[int]) -> int:
+    return max((length for _start, _end, length in _unselected_hole_runs(selected, valid_positions)), default=0)
+
+
+def _minimum_selection_for_max_hole(valid_count: int, max_unselected_hole: int) -> int:
+    if valid_count <= 0:
+        return 0
+    max_hole = int(max_unselected_hole)
+    if max_hole < 0:
+        raise ValueError("max_unselected_hole must be non-negative")
+    if int(valid_count) <= max_hole:
+        return 1
+    numerator = max(0, int(valid_count) - max_hole)
+    return max(1, int((numerator + max_hole) // (max_hole + 1)))
+
+
+def _repair_selected_max_unselected_hole(
+    selected_positions: List[int],
+    score_values: torch.Tensor,
+    valid_positions: List[int],
+    *,
+    budget: int,
+    max_unselected_hole: int,
+) -> Tuple[List[int], Dict[str, Any]]:
+    max_hole = int(max_unselected_hole)
+    selected = {int(pos) for pos in selected_positions}
+    if len(selected) != int(budget):
+        raise ValueError("hard max-gap repair expects a strict-budget selection")
+    minimum_required = _minimum_selection_for_max_hole(len(valid_positions), max_hole)
+    metadata: Dict[str, Any] = {
+        "enabled": True,
+        "max_unselected_hole": max_hole,
+        "minimum_required_budget": int(minimum_required),
+        "requested_budget": int(budget),
+        "feasible": int(budget) >= int(minimum_required),
+        "repair_count": 0,
+        "max_unselected_hole_before": int(_max_unselected_hole(selected, valid_positions)),
+        "max_unselected_hole_after": None,
+    }
+    if not metadata["feasible"]:
+        metadata["max_unselected_hole_after"] = metadata["max_unselected_hole_before"]
+        return sorted(selected), metadata
+    valid_set = set(valid_positions)
+
+    def score(pos: int) -> float:
+        return float(score_values[int(pos)].detach().cpu().item())
+
+    for _ in range(len(valid_positions) + 1):
+        violating = [run for run in _unselected_hole_runs(selected, valid_positions) if int(run[2]) > max_hole]
+        if not violating:
+            break
+        start, end, length = max(violating, key=lambda item: (int(item[2]), -int(item[0])))
+        feasible_start = max(int(start), int(end) - max_hole)
+        feasible_end = min(int(end), int(start) + max_hole)
+        candidates = [pos for pos in range(feasible_start, feasible_end + 1) if pos in valid_set and pos not in selected]
+        if not candidates:
+            candidates = [pos for pos in range(int(start), int(end) + 1) if pos in valid_set and pos not in selected]
+        if not candidates:
+            break
+        added = max(candidates, key=lambda pos: (score(pos), -abs(pos - (int(start) + int(end)) // 2), -pos))
+        selected.add(int(added))
+        removable = []
+        for victim in sorted(selected):
+            if int(victim) == int(added):
+                continue
+            trial = set(selected)
+            trial.remove(int(victim))
+            trial_hole = _max_unselected_hole(trial, valid_positions)
+            removable.append((trial_hole <= max_hole, trial_hole, score(int(victim)), -int(victim), int(victim)))
+        safe = [item for item in removable if item[0]]
+        if safe:
+            victim = min(safe, key=lambda item: (item[2], item[3]))[-1]
+        elif removable:
+            victim = min(removable, key=lambda item: (item[1], item[2], item[3]))[-1]
+        else:
+            selected.remove(int(added))
+            break
+        selected.remove(int(victim))
+        metadata["repair_count"] = int(metadata["repair_count"]) + 1
+    metadata["max_unselected_hole_after"] = int(_max_unselected_hole(selected, valid_positions))
+    metadata["satisfied"] = metadata["max_unselected_hole_after"] <= max_hole
+    return sorted(selected), metadata
+
+
 def budgeted_center_radius_decode(
     center_scores: Optional[torch.Tensor] = None,
     radius: Optional[torch.Tensor] = None,
@@ -1504,6 +1738,9 @@ def budgeted_center_radius_decode(
     max_radius: int = 16,
     candidate_multiplier: float = 2.0,
     output_slots: Optional[int] = None,
+    max_unselected_hole: Optional[int] = None,
+    hard_max_gap_repair: bool = True,
+    fail_on_infeasible_max_gap: bool = True,
 ) -> Dict[str, Any]:
     """Decode center/radius decisions into detector-consumed positions.
 
@@ -1567,6 +1804,7 @@ def budgeted_center_radius_decode(
     center_rows: List[torch.Tensor] = []
     radius_rows: List[torch.Tensor] = []
     fill_strategies: List[str] = []
+    max_gap_repairs: List[Dict[str, Any]] = []
     masked_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
 
     for bidx in range(batch_size):
@@ -1619,6 +1857,30 @@ def budgeted_center_radius_decode(
         selected_positions = sorted(selected.keys())
         if len(selected_positions) != target:
             raise ValueError("decoder failed to produce a valid strict-budget selection")
+        repair_meta: Dict[str, Any] = {"enabled": False}
+        if hard_max_gap_repair and max_unselected_hole not in (None, 0):
+            selected_positions, repair_meta = _repair_selected_max_unselected_hole(
+                selected_positions,
+                masked_scores[bidx],
+                sorted(valid_set),
+                budget=target,
+                max_unselected_hole=int(max_unselected_hole),
+            )
+            if not repair_meta.get("feasible", True) and fail_on_infeasible_max_gap:
+                raise ValueError(
+                    "max_unselected_hole is infeasible for this valid length and budget: "
+                    f"valid_count={len(valid_set)} budget={target} "
+                    f"max_unselected_hole={int(max_unselected_hole)} "
+                    f"minimum_required_budget={repair_meta.get('minimum_required_budget')}"
+                )
+            if repair_meta.get("feasible", True) and not repair_meta.get("satisfied", False) and fail_on_infeasible_max_gap:
+                raise RuntimeError(
+                    "hard max-gap repair failed to satisfy max_unselected_hole: "
+                    f"{repair_meta}"
+                )
+            if int(repair_meta.get("repair_count", 0)) > 0:
+                fill_strategies[-1] = f"{fill_strategies[-1]}+max_gap_repair"
+        max_gap_repairs.append(repair_meta)
         row = torch.full((max_out,), -1, dtype=torch.long, device=center_scores.device)
         row[: len(selected_positions)] = torch.tensor(selected_positions, dtype=torch.long, device=center_scores.device)
         rows.append(row)
@@ -1648,6 +1910,7 @@ def budgeted_center_radius_decode(
         "selected_radius": selected_radius,
         "detector_input_length": detector_input_length,
         "fill_strategy": fill_strategies,
+        "max_gap_repair": max_gap_repairs,
         "budget": budgets,
         "effective_budget": effective_budgets,
     }
@@ -1858,10 +2121,14 @@ def duca_losses(
     utility_gain: Optional[torch.Tensor] = None,
     utility_risk: Optional[torch.Tensor] = None,
     detector_utility_target: Optional[torch.Tensor] = None,
+    boundary_utility_proxy_target: Optional[torch.Tensor] = None,
     radius: Optional[torch.Tensor] = None,
     p_action: Optional[torch.Tensor] = None,
     uncertainty: Optional[torch.Tensor] = None,
     actionness_logits: Optional[torch.Tensor] = None,
+    max_unselected_hole: Optional[int] = None,
+    max_gap_loss_min_window_mass: float = 1.0,
+    max_gap_loss_source: str = "soft_coverage",
     loss_weights: Optional[Mapping[str, float]] = None,
 ) -> Dict[str, torch.Tensor]:
     """DUCA acquisition regularizers plus optional train-only utility loss."""
@@ -1889,6 +2156,13 @@ def duca_losses(
             if detector_utility_target is not None
             else output.get("detector_utility_target")
         )
+        boundary_utility_proxy_target = (
+            boundary_utility_proxy_target
+            if boundary_utility_proxy_target is not None
+            else output.get("boundary_utility_proxy_target")
+        )
+        if max_unselected_hole is None:
+            max_unselected_hole = output.get("max_unselected_hole")
     else:
         center_scores = scores
     if selected_mask_st is None:
@@ -1904,6 +2178,7 @@ def duca_losses(
         "budget": 0.05,
         "boundary": 0.25,
         "hole": 0.25,
+        "max_gap_hole": 0.0,
         "redundancy": 0.05,
         "radius": 0.02,
         "entropy": 0.01,
@@ -1970,10 +2245,12 @@ def duca_losses(
         ) * weights["teacher"]
     else:
         losses["teacher_utility_loss"] = zero
-    if detector_utility_target is not None:
-        if detector_utility_target.shape != center_scores.shape:
-            raise ValueError("detector_utility_target must match scores")
-        utility = detector_utility_target.to(center_scores.device, center_scores.dtype).clamp_min(0.0)
+    utility_proxy = boundary_utility_proxy_target if boundary_utility_proxy_target is not None else detector_utility_target
+    utility_proxy_loss: Optional[torch.Tensor] = None
+    if utility_proxy is not None:
+        if utility_proxy.shape != center_scores.shape:
+            raise ValueError("boundary_utility_proxy_target must match scores")
+        utility = utility_proxy.to(center_scores.device, center_scores.dtype).clamp_min(0.0)
         utility = utility.masked_fill(~valid, 0.0)
         selected_positive = selected.clamp_min(0.0).masked_fill(~valid, 0.0)
         eps = torch.finfo(center_scores.dtype).eps
@@ -1983,11 +2260,12 @@ def duca_losses(
             target_dist = utility / utility_sum.clamp_min(eps)[:, None]
             selected_dist = selected_positive / selected_positive.sum(dim=1).clamp_min(eps)[:, None]
             kl = target_dist * (target_dist.clamp_min(eps).log() - selected_dist.clamp_min(eps).log())
-            losses["detector_utility_distribution_loss"] = kl.sum(dim=1)[active].mean() * weights["detector_utility"]
+            utility_proxy_loss = kl.sum(dim=1)[active].mean() * weights["detector_utility"]
         else:
-            losses["detector_utility_distribution_loss"] = zero
+            utility_proxy_loss = zero
     else:
-        losses["detector_utility_distribution_loss"] = zero
+        utility_proxy_loss = zero
+    losses["boundary_utility_proxy_distribution_loss"] = utility_proxy_loss
     if boundary_target is not None:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")
@@ -2017,6 +2295,22 @@ def duca_losses(
     else:
         losses["actionness_bce_loss"] = zero
         losses["action_local_hole_loss"] = zero
+    if max_unselected_hole not in (None, 0):
+        if isinstance(scores, Mapping) and str(max_gap_loss_source) == "soft_coverage" and scores.get("soft_coverage") is not None:
+            gap_mass = scores["soft_coverage"]
+        else:
+            gap_mass = selected
+        losses["temporal_max_gap_hole_loss"] = (
+            temporal_max_gap_hole_loss(
+                gap_mass,
+                valid,
+                max_unselected_hole=int(max_unselected_hole),
+                min_window_mass=float(max_gap_loss_min_window_mass),
+            )
+            * weights["max_gap_hole"]
+        )
+    else:
+        losses["temporal_max_gap_hole_loss"] = zero
     losses["redundancy_loss"] = (selected[:, 1:] * selected[:, :-1]).mean() * weights["redundancy"]
     if radius is not None:
         losses["radius_cost_loss"] = radius.to(center_scores.dtype).masked_fill(~valid, 0.0).mean() * weights["radius"]
@@ -2034,6 +2328,7 @@ def duca_losses(
     for value in losses.values():
         total = total + value
     losses["total_loss"] = total
+    losses["detector_utility_distribution_loss"] = losses["boundary_utility_proxy_distribution_loss"]
     return losses
 
 

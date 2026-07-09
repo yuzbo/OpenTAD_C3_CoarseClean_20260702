@@ -159,9 +159,18 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.actionness_source_cfg.get("tcn_variant", None) != "asformer_lite"
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
+    assert cfg.model.frame_selector.use_coarse_hidden_features is True
+    assert cfg.model.frame_selector.require_coarse_hidden_features is True
+    assert cfg.model.frame_selector.coarse_hidden_dim > 0
+    assert cfg.model.frame_selector.actionness_source_cfg.return_hidden_features is True
+    assert cfg.model.frame_selector.actionness_source_cfg.require_hidden_features is True
+    assert cfg.model.frame_selector.max_unselected_hole == 15
+    assert cfg.model.frame_selector.hard_max_gap_repair is True
+    assert cfg.model.frame_selector.max_gap_loss_max_unselected_hole == 15
     assert cfg.model.frame_selector.loss_weights.actionness > 0
     assert cfg.model.frame_selector.loss_weights.boundary > cfg.model.frame_selector.loss_weights.actionness
     assert cfg.model.frame_selector.loss_weights.detector_utility > 0
+    assert cfg.model.frame_selector.loss_weights.max_gap_hole > 0
     assert cfg.model.frame_selector.loss_weights.hole == 0.0
     assert cfg.duca_online_main_contract.coarse_actionness_dominates_initial_training is False
     assert cfg.duca_online_main_contract.state_transition_boundary_dominates_selection is True
@@ -173,8 +182,12 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.boundary_weight == cfg.duca_online_main_contract.selector_score_boundary_weight
     assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.transition_weight
     assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.boundary_weight
-    assert cfg.duca_online_main_contract.detector_utility_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_online_main_contract.boundary_utility_proxy_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_online_main_contract.detector_utility_target_kind == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert cfg.duca_online_main_contract.detector_utility_target_is_true_detector_derived is False
+    assert cfg.duca_online_main_contract.max_unselected_hole == 15
+    assert cfg.duca_online_main_contract.soft_max_gap_loss == "temporal_max_gap_hole_loss"
+    assert cfg.duca_online_main_contract.hard_max_gap_repair is True
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_online_main_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_online_main_contract.loss_schedule_total_steps == (
@@ -199,6 +212,8 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.end > 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.max_gap_hole.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.max_gap_hole.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.end == 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
@@ -252,12 +267,18 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["loss_schedule_boundary_start"] > summary["loss_schedule_actionness_start"]
     assert summary["loss_schedule_boundary_end"] >= summary["loss_schedule_boundary_start"]
     assert summary["loss_schedule_hole_end"] == 0.0
+    assert summary["loss_schedule_max_gap_hole_end"] > 0.0
     assert summary["selector_score_priority"] == "transition_boundary_utility_first"
     assert summary["actionness_score_role"] == "small_auxiliary_score"
     assert summary["selector_score_actionness_weight"] < summary["selector_score_transition_weight"]
     assert summary["selector_score_actionness_weight"] < summary["selector_score_boundary_weight"]
-    assert summary["detector_utility_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["boundary_utility_proxy_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["detector_utility_target_kind"] == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert summary["detector_utility_target_is_true_detector_derived"] is False
+    assert summary["uses_coarse_hidden_features"] is True
+    assert summary["require_coarse_hidden_features"] is True
+    assert summary["max_unselected_hole"] == 15
+    assert summary["hard_max_gap_repair"] is True
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
     assert "duca_online_official_adatad_backend_full_train.py" in text
@@ -385,9 +406,18 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.actionness_source_cfg.get("tcn_variant", None) != "asformer_lite"
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
+    assert cfg.model.frame_selector.use_coarse_hidden_features is True
+    assert cfg.model.frame_selector.require_coarse_hidden_features is True
+    assert cfg.model.frame_selector.coarse_hidden_dim > 0
+    assert cfg.model.frame_selector.actionness_source_cfg.return_hidden_features is True
+    assert cfg.model.frame_selector.actionness_source_cfg.require_hidden_features is True
+    assert cfg.model.frame_selector.max_unselected_hole == 15
+    assert cfg.model.frame_selector.hard_max_gap_repair is True
+    assert cfg.model.frame_selector.max_gap_loss_max_unselected_hole == 15
     assert cfg.model.frame_selector.loss_weights.actionness > 0
     assert cfg.model.frame_selector.loss_weights.boundary > cfg.model.frame_selector.loss_weights.actionness
     assert cfg.model.frame_selector.loss_weights.detector_utility > 0
+    assert cfg.model.frame_selector.loss_weights.max_gap_hole > 0
     assert cfg.model.frame_selector.loss_weights.hole == 0.0
     assert cfg.duca_must_dynamic_contract.coarse_actionness_dominates_initial_training is False
     assert cfg.duca_must_dynamic_contract.state_transition_boundary_dominates_selection is True
@@ -399,8 +429,12 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.boundary_weight == cfg.duca_must_dynamic_contract.selector_score_boundary_weight
     assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.transition_weight
     assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.boundary_weight
-    assert cfg.duca_must_dynamic_contract.detector_utility_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_must_dynamic_contract.boundary_utility_proxy_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_must_dynamic_contract.detector_utility_target_kind == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert cfg.duca_must_dynamic_contract.detector_utility_target_is_true_detector_derived is False
+    assert cfg.duca_must_dynamic_contract.max_unselected_hole == 15
+    assert cfg.duca_must_dynamic_contract.soft_max_gap_loss == "temporal_max_gap_hole_loss"
+    assert cfg.duca_must_dynamic_contract.hard_max_gap_repair is True
     assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_must_dynamic_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_must_dynamic_contract.loss_schedule_total_steps == (
@@ -425,6 +459,8 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.end > 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.max_gap_hole.start == 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.max_gap_hole.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.end == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.start == 0.0
@@ -479,12 +515,18 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["loss_schedule_boundary_start"] > summary["loss_schedule_actionness_start"]
     assert summary["loss_schedule_boundary_end"] >= summary["loss_schedule_boundary_start"]
     assert summary["loss_schedule_hole_end"] == 0.0
+    assert summary["loss_schedule_max_gap_hole_end"] > 0.0
     assert summary["selector_score_priority"] == "transition_boundary_utility_first"
     assert summary["actionness_score_role"] == "small_auxiliary_score"
     assert summary["selector_score_actionness_weight"] < summary["selector_score_transition_weight"]
     assert summary["selector_score_actionness_weight"] < summary["selector_score_boundary_weight"]
-    assert summary["detector_utility_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["boundary_utility_proxy_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["detector_utility_target_kind"] == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert summary["detector_utility_target_is_true_detector_derived"] is False
+    assert summary["uses_coarse_hidden_features"] is True
+    assert summary["require_coarse_hidden_features"] is True
+    assert summary["max_unselected_hole"] == 15
+    assert summary["hard_max_gap_repair"] is True
     assert summary["loss_schedule_lagrangian_budget_start"] == 0.0
     assert summary["loss_schedule_lagrangian_budget_end"] > 0.0
 

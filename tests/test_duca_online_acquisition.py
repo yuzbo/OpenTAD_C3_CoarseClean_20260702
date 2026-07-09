@@ -20,6 +20,7 @@ from opentad.models.duca import (  # noqa: E402
     gather_selected_observations,
     hard_topk_st,
     make_audit_record,
+    temporal_max_gap_hole_loss,
 )
 
 
@@ -194,6 +195,31 @@ def test_hard_topk_st_returns_hard_forward_and_surrogate_gradient() -> None:
     assert scores.grad.abs().sum().item() > 0
 
 
+def test_temporal_max_gap_hole_loss_penalizes_empty_windows_and_backprops() -> None:
+    clustered = torch.tensor([[1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]], requires_grad=True)
+    covered = torch.tensor([[1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]], requires_grad=True)
+    valid = torch.ones(1, 7, dtype=torch.bool)
+
+    clustered_loss = temporal_max_gap_hole_loss(
+        clustered,
+        valid,
+        max_unselected_hole=2,
+        min_window_mass=0.5,
+    )
+    covered_loss = temporal_max_gap_hole_loss(
+        covered,
+        valid,
+        max_unselected_hole=2,
+        min_window_mass=0.5,
+    )
+
+    assert clustered_loss.item() > covered_loss.item()
+    clustered_loss.backward()
+    assert clustered.grad is not None
+    assert torch.isfinite(clustered.grad).all()
+    assert clustered.grad.abs().sum().item() > 0.0
+
+
 def test_budgeted_center_radius_decode_outputs_consumed_original_positions() -> None:
     scores = torch.tensor([[0.1, 0.9, 0.4, 0.8, 0.2, 0.7, 0.6, 0.3]])
     radius = torch.tensor([[0.0, 2.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0]])
@@ -208,6 +234,46 @@ def test_budgeted_center_radius_decode_outputs_consumed_original_positions() -> 
     assert decoded["selected_mask"].sum().item() == 4
     assert decoded["selected_centers"].shape[1] <= 4
     assert decoded["selected_radius"].shape[1] <= 4
+
+
+def test_budgeted_center_radius_decode_repairs_max_unselected_hole_without_changing_budget() -> None:
+    scores = torch.tensor([[12.0, 11.0, 10.0, 9.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.4, 0.3, 0.2]])
+    radius = torch.zeros_like(scores)
+
+    decoded = budgeted_center_radius_decode(
+        center_scores=scores,
+        radius=radius,
+        budget=4,
+        max_unselected_hole=2,
+    )
+
+    positions = [int(item) for item in decoded["selected_positions"][0].tolist() if int(item) >= 0]
+    assert len(positions) == 4
+    assert positions == sorted(set(positions))
+    assert decoded["selected_mask"].sum().item() == 4
+    holes = []
+    run = 0
+    for idx in range(scores.shape[1]):
+        if idx in positions:
+            run = 0
+        else:
+            run += 1
+            holes.append(run)
+    assert max(holes) <= 2
+    assert decoded["max_gap_repair"][0]["repair_count"] > 0
+    assert decoded["max_gap_repair"][0]["satisfied"] is True
+
+
+def test_budgeted_center_radius_decode_fails_closed_when_max_gap_is_infeasible() -> None:
+    scores = torch.linspace(1.0, 0.0, 10).view(1, 10)
+
+    with pytest.raises(ValueError, match="max_unselected_hole is infeasible"):
+        budgeted_center_radius_decode(
+            center_scores=scores,
+            radius=torch.zeros_like(scores),
+            budget=4,
+            max_unselected_hole=1,
+        )
 
 
 def test_budgeted_decode_short_window_selects_no_more_than_valid_len() -> None:
@@ -330,6 +396,24 @@ def test_train_and_test_forward_are_hard_sparse_and_teacher_free_at_inference() 
     assert test_output["audit"]["uses_ledger_for_decision"] is False
 
 
+def test_optional_coarse_hidden_dim_uses_zero_fallback_without_shape_mismatch() -> None:
+    dense = torch.randn(1, 12, 3)
+    adapter = DucaAcquisitionAdapter(
+        feature_dim=3,
+        budget=4,
+        max_radius=2,
+        coarse_hidden_dim=5,
+        require_coarse_hidden_features=False,
+    )
+
+    output = adapter.forward_acquire(dense)
+
+    assert output["detector_input"].shape == (1, 4, 3)
+    assert output["uses_coarse_hidden_features"] is False
+    assert output["coarse_hidden_features"].shape == (1, 12, 5)
+    assert output["coarse_hidden_features"].abs().sum().item() == 0.0
+
+
 def test_train_detector_batch_is_sanitized_of_teacher_payload() -> None:
     dense = torch.randn(1, 12, 3)
     adapter = DucaAcquisitionAdapter(feature_dim=3, budget=4, max_radius=2)
@@ -417,6 +501,31 @@ def test_duca_losses_expose_required_components() -> None:
     }
     assert expected <= set(losses)
     assert losses["total_loss"].requires_grad
+
+
+def test_duca_losses_include_temporal_max_gap_hole_loss() -> None:
+    dense = torch.randn(1, 12, 3)
+    adapter = DucaAcquisitionAdapter(feature_dim=3, budget=4, max_radius=1, max_unselected_hole=2)
+    output = adapter.forward_acquire(dense)
+
+    losses = duca_losses(
+        output,
+        loss_weights={
+            "detector": 0.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "actionness": 0.0,
+            "hole": 0.0,
+            "max_gap_hole": 1.0,
+            "budget": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+        },
+    )
+
+    assert "temporal_max_gap_hole_loss" in losses
+    assert torch.isfinite(losses["temporal_max_gap_hole_loss"])
+    assert losses["temporal_max_gap_hole_loss"].requires_grad
 
 
 def test_duca_inactive_zero_losses_do_not_overflow_when_score_sum_overflows() -> None:

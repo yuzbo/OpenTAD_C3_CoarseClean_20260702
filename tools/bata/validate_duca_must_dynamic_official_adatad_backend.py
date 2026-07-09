@@ -89,6 +89,8 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
     _require(float(schedule.actionness.end) < float(schedule.boundary.end), "actionness must remain auxiliary to boundary supervision")
     _require(float(schedule.hole.start) == 0.0, "action-coverage hole loss must be disabled at schedule start")
     _require(float(schedule.hole.end) == 0.0, "main DUCA-MUST selector must not optimize action-coverage hole loss")
+    _require(float(schedule.max_gap_hole.start) == 0.0, "temporal max-gap loss must be scheduled from zero")
+    _require(float(schedule.max_gap_hole.end) > 0.0, "temporal max-gap loss must be enabled after transition")
     _require(float(schedule.lagrangian_budget.start) == 0.0, "dynamic budget loss must be disabled at schedule start")
     _require(float(schedule.lagrangian_budget.end) > 0.0, "dynamic budget loss must be enabled after transition")
     return {
@@ -113,6 +115,8 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
         "loss_schedule_detector_utility_end": float(schedule.detector_utility.end),
         "loss_schedule_hole_start": float(schedule.hole.start),
         "loss_schedule_hole_end": float(schedule.hole.end),
+        "loss_schedule_max_gap_hole_start": float(schedule.max_gap_hole.start),
+        "loss_schedule_max_gap_hole_end": float(schedule.max_gap_hole.end),
         "loss_schedule_lagrangian_budget_start": float(schedule.lagrangian_budget.start),
         "loss_schedule_lagrangian_budget_end": float(schedule.lagrangian_budget.end),
     }
@@ -169,8 +173,12 @@ def validate_config(
         "dynamic main config must declare actionness score as a small auxiliary term",
     )
     _require(
-        getattr(contract, "detector_utility_target_kind", "") == "gt_boundary_utility_proxy",
+        getattr(contract, "boundary_utility_proxy_target_kind", "") == "gt_boundary_utility_proxy",
         "dynamic main config must honestly declare GT boundary utility proxy target",
+    )
+    _require(
+        getattr(contract, "detector_utility_target_kind", "") == "deprecated_alias_to_gt_boundary_utility_proxy",
+        "detector_utility_target must be only a deprecated compatibility alias",
     )
     _require(
         getattr(contract, "detector_utility_target_is_true_detector_derived", True) is False,
@@ -200,6 +208,15 @@ def validate_config(
     _require(selector.remap_gt_to_selected_axis is True, "official head path must remap GT to selected-axis")
     _require(selector.no_ledger_decision is True, "selector must be online/no-ledger")
     _require(selector.forbid_ledger is True, "selector must forbid ledger payload")
+    _require(selector.use_coarse_hidden_features is True, "main selector must fuse coarse hidden features")
+    _require(selector.require_coarse_hidden_features is True, "main selector must fail closed without coarse hidden features")
+    _require(int(selector.coarse_hidden_dim) > 0, "main selector must declare coarse_hidden_dim")
+    _require(int(selector.max_unselected_hole) > 0, "main selector must declare max_unselected_hole")
+    _require(selector.hard_max_gap_repair is True, "main selector must enable hard max-gap repair")
+    _require(
+        int(selector.max_gap_loss_max_unselected_hole) == int(selector.max_unselected_hole),
+        "soft max-gap loss must match hard max-gap repair threshold",
+    )
     _require(head.type == "ActionFormerHead", "official backend must use ActionFormerHead")
     _require(_as_plain(head) == _as_plain(official.model.rpn_head), "ActionFormerHead config must match official base")
     _require("physical_grid_actionformer" not in head, "main config must not enable physical-grid ActionFormer")
@@ -291,6 +308,12 @@ def validate_config(
             float(selector.loss_weights.get("hole", 0.0)) == 0.0,
             "main DUCA-MUST selector must disable action-coverage hole loss",
         )
+        _require(
+            float(selector.loss_weights.get("max_gap_hole", 0.0)) > 0.0,
+            "main DUCA-MUST selector must enable temporal max-gap loss",
+        )
+        _require(source_cfg.get("return_hidden_features") is True, "coarse source must return hidden features")
+        _require(source_cfg.get("require_hidden_features") is True, "coarse source must require hidden features")
         _require(contract.coarse_probe_joint_trainable is True, "contract must declare joint-trainable coarse probe")
         _require(contract.runtime_profile_available is True, "contract must expose compute/latency profiling")
         for key in ("uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
@@ -335,6 +358,7 @@ def validate_config(
         "pre_backbone_plugin": True,
         "selected_positions_unit": str(selector.selected_positions_unit),
         "detector_output_coordinate_space": str(selector.detector_output_coordinate_space),
+        "boundary_utility_proxy_target_kind": str(contract.boundary_utility_proxy_target_kind),
         "detector_utility_target_kind": str(contract.detector_utility_target_kind),
         "detector_utility_target_is_true_detector_derived": bool(
             contract.detector_utility_target_is_true_detector_derived
@@ -346,6 +370,11 @@ def validate_config(
         "selector_score_uncertainty_weight": float(selector.uncertainty_weight),
         "selector_score_utility_weight": float(selector.utility_weight),
         "selector_score_boundary_weight": float(selector.boundary_weight),
+        "coarse_hidden_dim": int(selector.coarse_hidden_dim),
+        "uses_coarse_hidden_features": bool(selector.use_coarse_hidden_features),
+        "require_coarse_hidden_features": bool(selector.require_coarse_hidden_features),
+        "max_unselected_hole": int(selector.max_unselected_hole),
+        "hard_max_gap_repair": bool(selector.hard_max_gap_repair),
     }
     summary.update(schedule_summary)
     if require_online_c3_actionness:

@@ -68,6 +68,9 @@ def test_online_c3_official_asformer_probe_produces_actionness_profile() -> None
     assert profile["actionness"]["official_action_seg_backend"] == "official_asformer"
     assert profile["actionness"]["model_family"] == "OfficialActionSeg/official_asformer"
     assert profile["actionness"]["online_backbone_flops_included"] is True
+    assert profile["components"]["selector"]["uses_coarse_hidden_features"] is True
+    assert out["selector_outputs"]["uses_coarse_hidden_features"] is True
+    assert out["selector_outputs"]["coarse_hidden_features"].shape == (1, 8, 16)
     assert profile["estimated_flops"] >= profile["actionness"]["estimated_flops"]
     assert profile["latency_ms"]["coarse_probe_ms"] >= 0.0
 

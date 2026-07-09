@@ -69,6 +69,7 @@ duca_selector_transition_weight = _env_float("DUCA_SELECTOR_TRANSITION_WEIGHT", 
 duca_selector_uncertainty_weight = _env_float("DUCA_SELECTOR_UNCERTAINTY_WEIGHT", 0.25)
 duca_selector_utility_weight = _env_float("DUCA_SELECTOR_UTILITY_WEIGHT", 0.50)
 duca_selector_boundary_weight = _env_float("DUCA_SELECTOR_BOUNDARY_WEIGHT", 1.0)
+duca_max_unselected_hole = _env_int("DUCA_MAX_UNSELECTED_HOLE", 15)
 if duca_coarse_tcn_variant == "asformer_lite":
     raise ValueError("DUCA main method forbids asformer_lite; use official-action-seg with official_asformer")
 if dense_window_size <= 0:
@@ -93,6 +94,8 @@ if duca_loss_schedule_warmup_steps < 0:
     raise ValueError("DUCA_LOSS_SCHEDULE_WARMUP_STEPS must be non-negative")
 if duca_loss_schedule_transition_steps <= 0:
     raise ValueError("DUCA_LOSS_SCHEDULE_TRANSITION_STEPS must be positive")
+if duca_max_unselected_hole <= 0:
+    raise ValueError("DUCA_MAX_UNSELECTED_HOLE must be positive")
 if not (
     0.0 <= duca_selector_actionness_weight < duca_selector_transition_weight
     and duca_selector_actionness_weight < duca_selector_boundary_weight
@@ -157,8 +160,12 @@ duca_online_main_contract = dict(
     selector_score_utility_weight=duca_selector_utility_weight,
     selector_score_boundary_weight=duca_selector_boundary_weight,
     selection_supervision="state_transition_boundary_first",
-    detector_utility_target_kind="gt_boundary_utility_proxy",
+    boundary_utility_proxy_target_kind="gt_boundary_utility_proxy",
+    detector_utility_target_kind="deprecated_alias_to_gt_boundary_utility_proxy",
     detector_utility_target_is_true_detector_derived=False,
+    max_unselected_hole=duca_max_unselected_hole,
+    soft_max_gap_loss="temporal_max_gap_hole_loss",
+    hard_max_gap_repair=True,
     detector_loss_always_trains_backend=True,
     detector_gradient_bridge_enabled_after_schedule_transition=True,
     actionness_source="online_trainable_c3_coarse_probe",
@@ -227,6 +234,14 @@ model = dict(
         budget_mode="fixed",
         max_radius=16,
         selector_hidden_channels=64,
+        coarse_hidden_dim=duca_coarse_hidden_dim,
+        use_coarse_hidden_features=True,
+        require_coarse_hidden_features=True,
+        max_unselected_hole=duca_max_unselected_hole,
+        max_gap_loss_max_unselected_hole=duca_max_unselected_hole,
+        max_gap_loss_min_window_mass=1.0,
+        hard_max_gap_repair=True,
+        fail_on_infeasible_max_gap=True,
         actionness_weight=duca_selector_actionness_weight,
         transition_weight=duca_selector_transition_weight,
         uncertainty_weight=duca_selector_uncertainty_weight,
@@ -240,6 +255,7 @@ model = dict(
             actionness=0.10,
             detector=1.0,
             detector_utility=0.10,
+            max_gap_hole=0.25,
             teacher=0.0,
             budget=0.0,
             boundary=1.0,
@@ -260,6 +276,7 @@ model = dict(
             boundary=dict(start=_env_float("DUCA_LOSS_BOUNDARY_START", 0.50), end=_env_float("DUCA_LOSS_BOUNDARY_END", 1.0)),
             detector_gradient=dict(start=_env_float("DUCA_LOSS_DETECTOR_GRADIENT_START", 0.0), end=1.0),
             detector_utility=dict(start=0.0, end=_env_float("DUCA_LOSS_DETECTOR_UTILITY_END", 0.10)),
+            max_gap_hole=dict(start=0.0, end=_env_float("DUCA_LOSS_MAX_GAP_HOLE_END", 0.25)),
             hole=dict(start=0.0, end=_env_float("DUCA_LOSS_HOLE_END", 0.0)),
             budget=dict(start=0.0, end=0.0),
             entropy=dict(start=0.0, end=0.0),
@@ -280,6 +297,8 @@ model = dict(
             tcn_variant=duca_coarse_tcn_variant,
             spatial_size=duca_coarse_spatial_size,
             tcn_hidden_dim=duca_coarse_hidden_dim,
+            return_hidden_features=True,
+            require_hidden_features=True,
             checkpoint_path=duca_coarse_checkpoint,
             require_checkpoint=duca_coarse_require_checkpoint,
             frozen=duca_coarse_frozen,

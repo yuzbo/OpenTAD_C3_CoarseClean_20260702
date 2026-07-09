@@ -205,6 +205,14 @@ class DucaOnlineFrameSelector(nn.Module):
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
+        coarse_hidden_dim: Optional[int] = None,
+        use_coarse_hidden_features: bool = True,
+        require_coarse_hidden_features: Optional[bool] = None,
+        max_unselected_hole: Optional[int] = None,
+        hard_max_gap_repair: bool = True,
+        fail_on_infeasible_max_gap: bool = True,
+        max_gap_loss_max_unselected_hole: Optional[int] = None,
+        max_gap_loss_min_window_mass: float = 1.0,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
         coordinate_space: str = SELECTED_AXIS,
@@ -261,6 +269,24 @@ class DucaOnlineFrameSelector(nn.Module):
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
+        self.coarse_hidden_dim = 0 if coarse_hidden_dim in (None, 0) else int(coarse_hidden_dim)
+        if self.coarse_hidden_dim < 0:
+            raise ValueError("coarse_hidden_dim must be non-negative")
+        self.use_coarse_hidden_features = bool(use_coarse_hidden_features)
+        self.require_coarse_hidden_features = (
+            None if require_coarse_hidden_features is None else bool(require_coarse_hidden_features)
+        )
+        self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
+        if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
+            raise ValueError("max_unselected_hole must be non-negative")
+        self.hard_max_gap_repair = bool(hard_max_gap_repair)
+        self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
+        self.max_gap_loss_max_unselected_hole = (
+            self.max_unselected_hole
+            if max_gap_loss_max_unselected_hole in (None, 0)
+            else int(max_gap_loss_max_unselected_hole)
+        )
+        self.max_gap_loss_min_window_mass = float(max_gap_loss_min_window_mass)
         self.detector_gradient_mode = str(detector_gradient_mode)
         self.selected_positions_coordinate = str(coordinate_space)
         self.detector_output_coordinate_space = str(detector_output_coordinate_space)
@@ -331,6 +357,19 @@ class DucaOnlineFrameSelector(nn.Module):
             source_type = cfg.pop("type", "ZeroShotActionnessSource")
             self.actionness_source_name = str(cfg.get("source_name") or source_type)
             if source_type == "C3CoarseProbeActionnessSource":
+                inferred_hidden_dim = int(
+                    cfg.get("coarse_hidden_dim")
+                    or cfg.get("tcn_hidden_dim")
+                    or cfg.get("hidden_dim")
+                    or 0
+                )
+                if self.coarse_hidden_dim <= 0 and inferred_hidden_dim > 0:
+                    self.coarse_hidden_dim = inferred_hidden_dim
+                cfg.setdefault("return_hidden_features", bool(self.use_coarse_hidden_features))
+                cfg.setdefault(
+                    "require_hidden_features",
+                    bool(self.use_coarse_hidden_features and self.require_coarse_hidden_features is not False),
+                )
                 cfg.setdefault("source_name", self.actionness_source_name)
                 self.raw_actionness_source = C3CoarseProbeActionnessSource(**cfg)
                 actionness_source = ZeroShotActionnessSource(
@@ -374,6 +413,15 @@ class DucaOnlineFrameSelector(nn.Module):
             uncertainty_weight=self.uncertainty_weight,
             utility_weight=self.utility_weight,
             boundary_weight=self.boundary_weight,
+            coarse_hidden_dim=self.coarse_hidden_dim if self.use_coarse_hidden_features else 0,
+            require_coarse_hidden_features=bool(
+                self.use_coarse_hidden_features
+                and self.raw_actionness_source is not None
+                and self.require_coarse_hidden_features is not False
+            ),
+            max_unselected_hole=self.max_unselected_hole,
+            hard_max_gap_repair=self.hard_max_gap_repair,
+            fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
             profile_runtime=self.profile_runtime,
             profile_sync_cuda=self.profile_sync_cuda,
         )
@@ -411,8 +459,9 @@ class DucaOnlineFrameSelector(nn.Module):
             outputs["selector_outputs"]["boundary_target"] = boundary_target
         if boundary_utility_proxy_target is not None:
             outputs["selector_outputs"]["boundary_utility_proxy_target"] = boundary_utility_proxy_target
+            outputs["selector_outputs"]["boundary_utility_proxy_target_kind"] = "gt_boundary_utility_proxy"
             outputs["selector_outputs"]["detector_utility_target"] = boundary_utility_proxy_target
-            outputs["selector_outputs"]["detector_utility_target_kind"] = "gt_boundary_utility_proxy"
+            outputs["selector_outputs"]["detector_utility_target_kind"] = "deprecated_alias_to_gt_boundary_utility_proxy"
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
             gt_segments, gt_labels, outputs["metas"]
         )
@@ -421,7 +470,9 @@ class DucaOnlineFrameSelector(nn.Module):
             teacher_utility=teacher_utility,
             boundary_target=boundary_target,
             action_target=action_target,
-            detector_utility_target=boundary_utility_proxy_target,
+            boundary_utility_proxy_target=boundary_utility_proxy_target,
+            max_unselected_hole=self.max_gap_loss_max_unselected_hole,
+            max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
             loss_weights=schedule_state["weights"],
         )
         self._record_pending_loss_schedule_step()
@@ -713,6 +764,7 @@ class DucaOnlineFrameSelector(nn.Module):
         }
         actionness_logits = None
         p_action = None
+        coarse_hidden_features = None
         if external_actionness is not None:
             actionness_logits = external_actionness.get("actionness_logits")
             p_action = external_actionness.get("p_action")
@@ -720,12 +772,17 @@ class DucaOnlineFrameSelector(nn.Module):
             actionness_logits = online_actionness.get("logits")
             if actionness_logits is None:
                 actionness_logits = online_actionness.get("actionness_logits")
+            if self.use_coarse_hidden_features:
+                coarse_hidden_features = online_actionness.get("coarse_hidden_features")
+                if coarse_hidden_features is None:
+                    coarse_hidden_features = online_actionness.get("hidden_features")
         grid, scores = self.adapter.acquire(
             descriptors,
             budget=budget,
             valid_mask=masks,
             actionness_logits=actionness_logits,
             p_action=p_action,
+            coarse_hidden_features=coarse_hidden_features,
             compute_profile_context=profile_context,
         )
         actionness_source_name = self.actionness_source_name
@@ -843,6 +900,8 @@ class DucaOnlineFrameSelector(nn.Module):
             self.metadata_keys["source"]: actionness_source_name,
             "compute_profile": compute_profile,
             "detector_gradient_weight": float(detector_gradient_weight),
+            "uses_coarse_hidden_features": bool(scores.get("uses_coarse_hidden_features", False)),
+            "max_unselected_hole": self.max_unselected_hole,
         }
         if isinstance(schedule_state, Mapping):
             self.last_forward_summary["loss_weight_schedule"] = dict(schedule_state)

@@ -145,7 +145,8 @@ def test_train_forward_builds_gt_action_target_for_selector_loss() -> None:
     assert out["selector_outputs"]["action_target"].shape == (1, 20)
     assert out["selector_outputs"]["boundary_target"].shape == (1, 20)
     assert out["selector_outputs"]["boundary_utility_proxy_target"].shape == (1, 20)
-    assert out["selector_outputs"]["detector_utility_target_kind"] == "gt_boundary_utility_proxy"
+    assert out["selector_outputs"]["boundary_utility_proxy_target_kind"] == "gt_boundary_utility_proxy"
+    assert out["selector_outputs"]["detector_utility_target_kind"] == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert out["selector_outputs"]["boundary_target"].detach().sum().item() > 0.0
     assert out["selector_outputs"]["boundary_utility_proxy_target"].detach().sum().item() > 0.0
     assert out["losses"]["actionness_bce_loss"].detach().item() > 0.0
