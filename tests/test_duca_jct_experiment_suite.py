@@ -44,6 +44,8 @@ def test_duca_jct_suite_is_submit_limit_tolerant_and_records_summary() -> None:
     assert "AssocMaxSubmitJobLimit" in text
     assert "submit_with_retry" in text
     assert "deployment_summary.json" in text
+    assert "deployment_summary.pending.json" in text
+    assert text.index("write_deployment_summary pending") < text.index('tests_job="$(submit_with_retry')
     assert "git pull --ff-only" in text
     assert "#SBATCH --cpus-per-task=4" in text
     assert "#SBATCH --mem=" not in text

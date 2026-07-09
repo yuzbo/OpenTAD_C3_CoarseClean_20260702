@@ -227,30 +227,29 @@ export DUCA_X3D_ACTIONNESS_JSONL=${FORMAL_X3D_ACTIONNESS_JSONL}
 bash scripts/run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh
 "
 
-tests_job="$(submit_with_retry duca_jct_tests "${tests_script}")"
-dep_args=()
-if [[ -n "${tests_job}" ]]; then
-  dep_args=(--dependency=afterok:${tests_job})
-fi
-fixed_job="$(submit_with_retry duca_jct_384 "${dep_args[@]}" "${fixed_script}")"
-must_job="$(submit_with_retry duca_jct_must "${dep_args[@]}" "${must_script}")"
-x3d_grid_job="$(submit_with_retry duca_x3d_grid "${dep_args[@]}" "${x3d_grid_script}")"
-x3d_dep_args=()
-if [[ -n "${x3d_grid_job}" ]]; then
-  x3d_dep_args=(--dependency=afterok:${x3d_grid_job})
-fi
-x3d_fixed_job="$(submit_with_retry duca_x3d_384 "${x3d_dep_args[@]}" "${x3d_fixed_script}")"
-x3d_must_job="$(submit_with_retry duca_x3d_must "${x3d_dep_args[@]}" "${x3d_must_script}")"
+tests_job=""
+fixed_job=""
+must_job=""
+x3d_grid_job=""
+x3d_fixed_job=""
+x3d_must_job=""
 
-SUMMARY_JSON="${RUN_ROOT}/deployment_summary.json"
-"${PYTHON}" - "${SUMMARY_JSON}" <<PY
+write_deployment_summary() {
+  local status="$1"
+  local summary_json="${RUN_ROOT}/deployment_summary.json"
+  if [[ "${status}" == "pending" ]]; then
+    summary_json="${RUN_ROOT}/deployment_summary.pending.json"
+  fi
+  "${PYTHON}" - "${summary_json}" "${status}" <<PY
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
+status = sys.argv[2]
 payload = {
     "schema_version": "duca_jct_experiment_suite_deployment_v1",
+    "deployment_status": status,
     "commit": "${COMMIT}",
     "branch": "${BRANCH}",
     "repo": "${REPO_ROOT}",
@@ -268,9 +267,36 @@ payload = {
     "selection_policy": "pre_registered",
     "x3d_formal_provider": "${DUCA_X3D_FORMAL_PROVIDER}",
     "x3d_formal_frame_interval": "${DUCA_X3D_FORMAL_FRAME_INTERVAL}",
+    "sbatch_scripts": {
+        "duca_jct_tests": "${tests_script}",
+        "duca384": "${fixed_script}",
+        "duca_must": "${must_script}",
+        "x3d_grid": "${x3d_grid_script}",
+        "x3d_duca384": "${x3d_fixed_script}",
+        "x3d_must": "${x3d_must_script}",
+    },
 }
 path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print(json.dumps(payload, sort_keys=True))
 PY
+  log "deployment ${status} summary: ${summary_json}"
+}
 
-log "deployment summary: ${SUMMARY_JSON}"
+write_deployment_summary pending
+
+tests_job="$(submit_with_retry duca_jct_tests "${tests_script}")"
+dep_args=()
+if [[ -n "${tests_job}" ]]; then
+  dep_args=(--dependency=afterok:${tests_job})
+fi
+fixed_job="$(submit_with_retry duca_jct_384 "${dep_args[@]}" "${fixed_script}")"
+must_job="$(submit_with_retry duca_jct_must "${dep_args[@]}" "${must_script}")"
+x3d_grid_job="$(submit_with_retry duca_x3d_grid "${dep_args[@]}" "${x3d_grid_script}")"
+x3d_dep_args=()
+if [[ -n "${x3d_grid_job}" ]]; then
+  x3d_dep_args=(--dependency=afterok:${x3d_grid_job})
+fi
+x3d_fixed_job="$(submit_with_retry duca_x3d_384 "${x3d_dep_args[@]}" "${x3d_fixed_script}")"
+x3d_must_job="$(submit_with_retry duca_x3d_must "${x3d_dep_args[@]}" "${x3d_must_script}")"
+
+write_deployment_summary submitted
