@@ -34,6 +34,12 @@ export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${BASE}/tmp/xdg_cache}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${BASE}/tmp/xdg_config}"
 export TORCH_HOME="${TORCH_HOME:-${BASE}/tmp/torch_cache}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export http_proxy="${http_proxy:-http://u-MtfrT7:vH5orjDV@10.244.6.36:3128}"
+export https_proxy="${https_proxy:-${http_proxy}}"
+export HTTP_PROXY="${HTTP_PROXY:-${http_proxy}}"
+export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy}}"
+export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}"
+export no_proxy="${no_proxy:-${NO_PROXY}}"
 mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${TORCH_HOME}" "${OUT_ROOT}"
 
 if [[ "${CUDA_VISIBLE_DEVICES}" != "0" && -z "${SLURM_STEP_GPUS:-}" ]]; then
