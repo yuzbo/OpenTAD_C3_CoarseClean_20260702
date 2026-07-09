@@ -14,6 +14,9 @@ def test_lightweight_provider_set_excludes_heavy_prebackbone_models() -> None:
     assert "x3d_xs" in exporter.LIGHTWEIGHT_PROVIDERS
     assert "videomae_s" not in exporter.LIGHTWEIGHT_PROVIDERS
     assert "slowfast_r50" not in exporter.LIGHTWEIGHT_PROVIDERS
+    assert "slowfast_r50_fast" not in exporter.LIGHTWEIGHT_PROVIDERS
+    assert "slowfast_r50_fast" in exporter.SLOWFAST_FAST_BOUNDARY_PRIOR_PROVIDERS
+    assert "slowfast_r50_fast" in exporter.EXPORT_PROVIDERS
     assert "videomae_s" in exporter.HEAVY_OR_UPPER_BOUND_PROVIDERS
     with pytest.raises(ValueError, match="too heavy|not a lightweight"):
         exporter.export_actionness(
@@ -42,6 +45,23 @@ def test_frozen_kinetics_provenance_is_no_thumos_and_cost_visible() -> None:
     assert provenance["uses_gt"] is False
     assert provenance["calibration_split"] == "none"
     assert provenance["efficiency_claim_role"] == "lightweight_train_free_prebackbone_candidate"
+
+
+def test_slowfast_fast_provenance_marks_boundary_prior_not_main_lightweight_method() -> None:
+    provenance = exporter._source_provenance(
+        provider="slowfast_r50_fast",
+        pretrained=True,
+        score_mode="entropy_mix",
+        clip_frames=32,
+        frame_interval=2,
+        crop_size=224,
+    )
+
+    assert provenance["source_name"] == "frozen_kinetics_slowfast_r50_fast_boundary_prior"
+    assert provenance["source_mode"] == "frozen_kinetics_slowfast_fast_pathway_boundary_prior"
+    assert provenance["primary_selection_signal"] == "fast_pathway_feature_delta_boundary_score"
+    assert provenance["p_action_role"] == "auxiliary_classifier_confidence_not_primary_selection_score"
+    assert provenance["efficiency_claim_role"] == "frozen_video_prior_diagnostic_not_lightweight_main_prebackbone"
 
 
 def test_sample_times_use_original_time_bin_centers() -> None:
@@ -102,5 +122,7 @@ def test_export_actionness_streams_rows_and_progress(tmp_path: Path, monkeypatch
     assert summary["row_count"] == 2
     assert len(rows) == 2
     assert rows[0]["video_id"] == "video_test_0000004"
+    assert "boundary_score" in rows[0]
+    assert "selection_priority_score" in rows[0]
     assert "[FROZEN_KINETICS_ACTIONNESS] video=1/1" in captured.err
     assert summary_json.exists()

@@ -61,6 +61,8 @@ def _actionness_rows() -> list[dict]:
                     "time_index": idx,
                     "original_time": float(idx),
                     "p_action": float(value),
+                    "boundary_score": 1.0 if idx in {1, 4} else 0.0,
+                    "selection_priority_score": (1.0 if idx in {1, 4} else 0.0) + 0.05 * float(value),
                     "logit": float(value),
                     "valid": True,
                     "source_name": "manual_jsonl",
@@ -101,7 +103,7 @@ def test_selection_eval_generates_all_baselines_and_duca_valid_positions(tmp_pat
         audit_jsonl=audit_jsonl,
         summary_json=summary_json,
         budget=3,
-        baselines=["uniform", "random", "motion", "manual", "oracle-actionness"],
+        baselines=["uniform", "random", "motion", "manual", "boundary-first", "oracle-actionness"],
         random_seed=7,
         boundary_radius=1,
     )
@@ -116,6 +118,8 @@ def test_selection_eval_generates_all_baselines_and_duca_valid_positions(tmp_pat
         ("motion", "v_beta"),
         ("manual", "v_alpha"),
         ("manual", "v_beta"),
+        ("boundary-first", "v_alpha"),
+        ("boundary-first", "v_beta"),
         ("oracle-actionness", "v_alpha"),
         ("oracle-actionness", "v_beta"),
     }
@@ -139,16 +143,35 @@ def test_selection_eval_generates_all_baselines_and_duca_valid_positions(tmp_pat
     oracle_rows = [row for row in rows if row["baseline"] == "oracle-actionness"]
     assert all(row["diagnostic_only"] is True for row in oracle_rows)
     assert all(row["uses_gt_for_selection"] is True for row in oracle_rows)
-    assert summary["deployable_claim_baselines"] == ["uniform", "random", "motion", "manual"]
+    assert summary["deployable_claim_baselines"] == ["uniform", "random", "motion", "manual", "boundary-first"]
     assert "oracle-actionness" not in summary["deployable_claim_baselines"]
     assert set(_read_json(summary_json)["baseline_summaries"]) == {
         "uniform",
         "random",
         "motion",
         "manual",
+        "boundary-first",
         "oracle-actionness",
     }
     validator.validate_selection_eval(audit_jsonl=audit_jsonl, summary_json=summary_json)
+
+
+def test_boundary_first_scores_prioritize_boundary_fields_over_actionness() -> None:
+    rows = [
+        {"video_id": "v", "p_action": 0.95, "boundary_score": 0.0},
+        {"video_id": "v", "p_action": 0.10, "boundary_score": 1.0},
+        {"video_id": "v", "p_action": 0.90, "boundary_score": 0.0},
+        {"video_id": "v", "p_action": 0.80, "boundary_score": 0.0},
+        {"video_id": "v", "p_action": 0.05, "boundary_score": 0.8},
+    ]
+
+    scores = selection_eval._selection_scores_for_baseline(
+        baseline="boundary-first",
+        rows=rows,
+        labels=[0, 0, 1, 1, 0],
+    )
+
+    assert sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)[:2] == [1, 4]
 
 
 def test_selection_validator_rejects_oracle_without_diagnostic_flag(tmp_path: Path) -> None:

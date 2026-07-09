@@ -28,6 +28,18 @@ SUPPORTED_SOURCE_MODES = {
     "videomae",
 }
 RESERVED_EXTERNAL_PROVIDER_MODES = {"xclip", "actionclip", "slowfast", "videomae"}
+SAFE_MANUAL_SCORE_FIELDS = (
+    "boundary_score",
+    "transition_score",
+    "selection_priority_score",
+    "selection_priority_policy",
+    "delta_p_action",
+    "abs_delta_p_action",
+    "uncertainty_peak",
+    "fast_feature_energy",
+    "fast_feature_delta",
+    "fast_input_motion",
+)
 FORBIDDEN_SOURCE_KEYS = (
     "teacher",
     "teacher_logits",
@@ -479,6 +491,9 @@ def run_eval(
             "calibration_split": provenance["calibration_split"],
             "gt_action": _gt_action_for_time(segments_by_video.get(video_id, []), original_time),
         }
+        for key in SAFE_MANUAL_SCORE_FIELDS:
+            if key in row:
+                out[key] = row[key]
         output_rows.append(out)
     metrics = compute_metrics(output_rows, recall_k=recall_k)
     _write_jsonl(output_jsonl, output_rows)

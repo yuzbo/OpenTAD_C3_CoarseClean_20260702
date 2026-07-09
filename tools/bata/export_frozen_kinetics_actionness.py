@@ -28,6 +28,13 @@ LIGHTWEIGHT_PROVIDERS = {
     "torchvision_mc3_18": ("torchvision", "mc3_18"),
     "torchvision_r2plus1d_18": ("torchvision", "r2plus1d_18"),
 }
+SLOWFAST_FAST_BOUNDARY_PRIOR_PROVIDERS = {
+    "slowfast_r50_fast": ("pytorchvideo_slowfast_fast", "slowfast_r50"),
+}
+EXPORT_PROVIDERS = {
+    **LIGHTWEIGHT_PROVIDERS,
+    **SLOWFAST_FAST_BOUNDARY_PRIOR_PROVIDERS,
+}
 HEAVY_OR_UPPER_BOUND_PROVIDERS = {
     "videomae_s",
     "videomae_b",
@@ -67,6 +74,16 @@ def _write_jsonl(path: str | Path, rows: Iterable[Mapping[str, Any]]) -> int:
 def _logit(prob: float) -> float:
     clipped = min(1.0 - 1e-6, max(1e-6, float(prob)))
     return math.log(clipped / (1.0 - clipped))
+
+
+def _minmax(values: Sequence[float]) -> list[float]:
+    if not values:
+        return []
+    low = min(float(item) for item in values)
+    high = max(float(item) for item in values)
+    if high <= low:
+        return [0.0 for _item in values]
+    return [(float(item) - low) / (high - low) for item in values]
 
 
 def _video_database(annotation: Mapping[str, Any], *, subset: str | None) -> list[tuple[str, Mapping[str, Any]]]:
@@ -119,10 +136,10 @@ def _load_model(provider: str, *, device: Any, pretrained: bool = True) -> Any:
             f"{provider} is intentionally not a lightweight pre-backbone provider; "
             "use it only as teacher/upper-bound outside this exporter"
         )
-    if provider not in LIGHTWEIGHT_PROVIDERS:
-        raise ValueError(f"provider must be one of {sorted(LIGHTWEIGHT_PROVIDERS)}")
-    backend, name = LIGHTWEIGHT_PROVIDERS[provider]
-    if backend == "pytorchvideo":
+    if provider not in EXPORT_PROVIDERS:
+        raise ValueError(f"provider must be one of {sorted(EXPORT_PROVIDERS)}")
+    backend, name = EXPORT_PROVIDERS[provider]
+    if backend in {"pytorchvideo", "pytorchvideo_slowfast_fast"}:
         from pytorchvideo.models import hub
 
         model = getattr(hub, name)(pretrained=bool(pretrained))
@@ -143,6 +160,48 @@ def _load_model(provider: str, *, device: Any, pretrained: bool = True) -> Any:
     for param in model.parameters():
         param.requires_grad_(False)
     return model
+
+
+def _is_slowfast_fast_prior(provider: str) -> bool:
+    return provider in SLOWFAST_FAST_BOUNDARY_PRIOR_PROVIDERS
+
+
+def _make_slowfast_inputs(inputs: Any, *, alpha: int) -> list[Any]:
+    import torch
+
+    fast = inputs
+    temporal = int(fast.shape[2])
+    slow_count = max(1, int(round(temporal / max(1, int(alpha)))))
+    indices = torch.linspace(0, temporal - 1, slow_count, device=fast.device).long()
+    slow = torch.index_select(fast, 2, indices)
+    return [slow, fast]
+
+
+class _SlowFastFastPathwayCapture:
+    def __init__(self, model: Any) -> None:
+        self.tensor: Any | None = None
+        try:
+            module = model.blocks[4].multipathway_blocks[1]
+        except Exception as exc:  # pragma: no cover - depends on pytorchvideo internals
+            raise RuntimeError("cannot resolve SlowFast fast pathway module blocks[4].multipathway_blocks[1]") from exc
+        self._handle = module.register_forward_hook(self._hook)
+
+    def _hook(self, _module: Any, _inputs: Any, output: Any) -> None:
+        self.tensor = output.detach()
+
+    def clear(self) -> None:
+        self.tensor = None
+
+    def close(self) -> None:
+        self._handle.remove()
+
+
+def _fast_input_motion(inputs: Any) -> Any:
+    import torch
+
+    if int(inputs.shape[2]) <= 1:
+        return torch.zeros((int(inputs.shape[0]),), dtype=inputs.dtype, device=inputs.device)
+    return (inputs[:, :, 1:] - inputs[:, :, :-1]).abs().mean(dim=(1, 2, 3, 4))
 
 
 def _decode_clip_decord(
@@ -205,6 +264,31 @@ def _source_provenance(
     frame_interval: int,
     crop_size: int,
 ) -> dict[str, Any]:
+    if _is_slowfast_fast_prior(provider):
+        return {
+            "source_name": f"frozen_kinetics_{provider}_boundary_prior",
+            "source_mode": "frozen_kinetics_slowfast_fast_pathway_boundary_prior",
+            "provider": provider,
+            "pretrained": bool(pretrained),
+            "training_dataset": "Kinetics",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "uses_raw_prediction": False,
+            "calibration_split": "none",
+            "checkpoint_hash": f"pytorch_provider:slowfast_r50:fast_pathway:pretrained={bool(pretrained)}",
+            "prompt_hash": None,
+            "score_mode": score_mode,
+            "clip_frames": int(clip_frames),
+            "frame_interval": int(frame_interval),
+            "crop_size": int(crop_size),
+            "weights_downloaded": bool(pretrained),
+            "primary_selection_signal": "fast_pathway_feature_delta_boundary_score",
+            "p_action_role": "auxiliary_classifier_confidence_not_primary_selection_score",
+            "efficiency_claim_role": "frozen_video_prior_diagnostic_not_lightweight_main_prebackbone",
+        }
     return {
         "source_name": f"frozen_kinetics_{provider}_actionness",
         "source_mode": "frozen_kinetics_classifier_confidence",
@@ -229,6 +313,83 @@ def _source_provenance(
     }
 
 
+def _augment_transition_boundary_scores(
+    rows: list[dict[str, Any]],
+    *,
+    fast_vectors: Sequence[Any] | None,
+    fast_input_motion_scores: Sequence[float] | None,
+    actionness_aux_weight: float,
+) -> None:
+    import torch
+
+    if not rows:
+        return
+    p_action = [float(row["p_action"]) for row in rows]
+    abs_delta: list[float] = []
+    signed_delta: list[float] = []
+    for idx, score in enumerate(p_action):
+        prev_score = p_action[idx - 1] if idx > 0 else score
+        next_score = p_action[idx + 1] if idx + 1 < len(p_action) else score
+        left = score - prev_score
+        right = next_score - score
+        signed_delta.append(float(right if abs(right) >= abs(left) else left))
+        abs_delta.append(float(max(abs(left), abs(right))))
+
+    uncertainty = [1.0 - abs(2.0 * score - 1.0) for score in p_action]
+    uncertainty_peak: list[float] = []
+    for idx, value in enumerate(uncertainty):
+        prev_value = uncertainty[idx - 1] if idx > 0 else value
+        next_value = uncertainty[idx + 1] if idx + 1 < len(uncertainty) else value
+        uncertainty_peak.append(float(max(0.0, value - max(prev_value, next_value))))
+
+    feature_delta = [0.0 for _row in rows]
+    feature_energy = [0.0 for _row in rows]
+    if fast_vectors and len(fast_vectors) == len(rows):
+        vectors = torch.stack([item.detach().float().cpu() for item in fast_vectors], dim=0)
+        feature_energy = torch.linalg.vector_norm(vectors, dim=1).tolist()
+        left = torch.zeros((vectors.shape[0],), dtype=vectors.dtype)
+        right = torch.zeros((vectors.shape[0],), dtype=vectors.dtype)
+        if vectors.shape[0] > 1:
+            diffs = torch.linalg.vector_norm(vectors[1:] - vectors[:-1], dim=1)
+            left[1:] = diffs
+            right[:-1] = diffs
+        feature_delta = torch.maximum(left, right).tolist()
+
+    motion = list(fast_input_motion_scores or [0.0 for _row in rows])
+    if len(motion) != len(rows):
+        motion = [0.0 for _row in rows]
+
+    feature_delta_norm = _minmax(feature_delta)
+    motion_norm = _minmax(motion)
+    abs_delta_norm = _minmax(abs_delta)
+    uncertainty_norm = _minmax(uncertainty_peak)
+    has_fast_features = bool(fast_vectors and len(fast_vectors) == len(rows))
+    for idx, row in enumerate(rows):
+        if has_fast_features:
+            boundary_score = (
+                0.75 * float(feature_delta_norm[idx])
+                + 0.20 * float(motion_norm[idx])
+                + 0.05 * float(uncertainty_norm[idx])
+            )
+        else:
+            boundary_score = 0.85 * float(abs_delta_norm[idx]) + 0.15 * float(uncertainty_norm[idx])
+        selection_priority = float(boundary_score) + float(actionness_aux_weight) * float(p_action[idx])
+        row.update(
+            {
+                "delta_p_action": float(signed_delta[idx]),
+                "abs_delta_p_action": float(abs_delta[idx]),
+                "uncertainty_peak": float(uncertainty_peak[idx]),
+                "fast_feature_energy": float(feature_energy[idx]),
+                "fast_feature_delta": float(feature_delta[idx]),
+                "fast_input_motion": float(motion[idx]),
+                "boundary_score": float(max(0.0, min(1.0, boundary_score))),
+                "transition_score": float(max(0.0, min(1.0, feature_delta_norm[idx] if has_fast_features else abs_delta_norm[idx]))),
+                "selection_priority_score": float(selection_priority),
+                "selection_priority_policy": "boundary_first_with_small_actionness_auxiliary",
+            }
+        )
+
+
 def export_actionness(
     *,
     annotation_json: str | Path,
@@ -246,6 +407,8 @@ def export_actionness(
     pretrained: bool = True,
     max_videos: int = 0,
     score_mode: str = "entropy_mix",
+    slowfast_alpha: int = 4,
+    actionness_aux_weight: float = 0.05,
 ) -> dict[str, Any]:
     if provider in HEAVY_OR_UPPER_BOUND_PROVIDERS:
         raise ValueError(f"{provider} is too heavy for the train-free pre-backbone branch")
@@ -273,72 +436,100 @@ def export_actionness(
     out.parent.mkdir(parents=True, exist_ok=True)
     row_count = 0
     start_time = time.time()
-    with out.open("w", encoding="utf-8") as handle:
-        with torch.no_grad():
-            for video_offset, (video_id, payload) in enumerate(videos, start=1):
-                duration = float(payload.get("duration", 0.0))
-                times = _sample_times(duration, int(dense_window_size))
-                video_path = video_index[video_id]
-                batch_clips: list[torch.Tensor] = []
-                batch_meta: list[tuple[int, float]] = []
-                video_rows = 0
-                for time_index, center_sec in enumerate(times):
-                    clip = _decode_clip_decord(
-                        video_path,
-                        center_sec=center_sec,
-                        clip_frames=int(clip_frames),
-                        frame_interval=int(frame_interval),
-                        crop_size=int(crop_size),
+    fast_capture = _SlowFastFastPathwayCapture(model) if _is_slowfast_fast_prior(provider) else None
+    try:
+        with out.open("w", encoding="utf-8") as handle:
+            with torch.no_grad():
+                for video_offset, (video_id, payload) in enumerate(videos, start=1):
+                    duration = float(payload.get("duration", 0.0))
+                    times = _sample_times(duration, int(dense_window_size))
+                    video_path = video_index[video_id]
+                    batch_clips: list[torch.Tensor] = []
+                    batch_meta: list[tuple[int, float]] = []
+                    pending_video_rows: list[dict[str, Any]] = []
+                    fast_vectors: list[Any] = []
+                    fast_motion_scores: list[float] = []
+                    for time_index, center_sec in enumerate(times):
+                        clip = _decode_clip_decord(
+                            video_path,
+                            center_sec=center_sec,
+                            clip_frames=int(clip_frames),
+                            frame_interval=int(frame_interval),
+                            crop_size=int(crop_size),
+                        )
+                        batch_clips.append(clip)
+                        batch_meta.append((time_index, center_sec))
+                        if len(batch_clips) >= int(batch_size) or time_index == len(times) - 1:
+                            inputs = torch.stack(batch_clips, dim=0).to(device_obj, non_blocking=True)
+                            if _is_slowfast_fast_prior(provider):
+                                if fast_capture is None:  # pragma: no cover
+                                    raise RuntimeError("SlowFast fast capture was not initialized")
+                                fast_capture.clear()
+                                logits = model(_make_slowfast_inputs(inputs, alpha=int(slowfast_alpha)))
+                                if fast_capture.tensor is None:
+                                    raise RuntimeError("SlowFast fast pathway hook did not capture activations")
+                                fast_vectors.extend(fast_capture.tensor.detach().float().mean(dim=(2, 3, 4)).cpu())
+                                fast_motion_scores.extend(_fast_input_motion(inputs).detach().float().cpu().tolist())
+                            else:
+                                logits = model(inputs)
+                            if isinstance(logits, Mapping):
+                                logits = logits.get("logits", next(iter(logits.values())))
+                            if isinstance(logits, (tuple, list)):
+                                logits = logits[0]
+                            logits = logits if torch.is_tensor(logits) else torch.as_tensor(logits)
+                            p_action = _confidence_actionness(logits.detach().float().cpu(), mode=score_mode)
+                            max_logits = logits.detach().float().cpu().max(dim=1).values
+                            for (idx, original_time), score, raw_logit in zip(
+                                batch_meta, p_action.tolist(), max_logits.tolist()
+                            ):
+                                prob = float(score)
+                                row = {
+                                    "schema_version": OUTPUT_SCHEMA_VERSION,
+                                    "video_id": video_id,
+                                    "window_id": f"{video_id}_{idx:04d}",
+                                    "time_index": int(idx),
+                                    "original_time": float(original_time),
+                                    "p_action": prob,
+                                    "logit": _logit(prob),
+                                    "raw_classifier_logit": float(raw_logit),
+                                    "valid": True,
+                                    "source_name": provenance["source_name"],
+                                    "source_provenance": dict(provenance),
+                                    "prompt_hash": None,
+                                    "checkpoint_hash": provenance["checkpoint_hash"],
+                                    "thumos_trained": False,
+                                    "uses_labels": False,
+                                    "uses_teacher": False,
+                                    "calibration_split": "none",
+                                }
+                                pending_video_rows.append(row)
+                            if not _is_slowfast_fast_prior(provider):
+                                fast_motion_scores.extend(_fast_input_motion(inputs).detach().float().cpu().tolist())
+                            handle.flush()
+                            batch_clips.clear()
+                            batch_meta.clear()
+                    _augment_transition_boundary_scores(
+                        pending_video_rows,
+                        fast_vectors=fast_vectors if _is_slowfast_fast_prior(provider) else None,
+                        fast_input_motion_scores=fast_motion_scores,
+                        actionness_aux_weight=float(actionness_aux_weight),
                     )
-                    batch_clips.append(clip)
-                    batch_meta.append((time_index, center_sec))
-                    if len(batch_clips) >= int(batch_size) or time_index == len(times) - 1:
-                        inputs = torch.stack(batch_clips, dim=0).to(device_obj, non_blocking=True)
-                        logits = model(inputs)
-                        if isinstance(logits, Mapping):
-                            logits = logits.get("logits", next(iter(logits.values())))
-                        if isinstance(logits, (tuple, list)):
-                            logits = logits[0]
-                        logits = logits if torch.is_tensor(logits) else torch.as_tensor(logits)
-                        p_action = _confidence_actionness(logits.detach().float().cpu(), mode=score_mode)
-                        max_logits = logits.detach().float().cpu().max(dim=1).values
-                        for (idx, original_time), score, raw_logit in zip(
-                            batch_meta, p_action.tolist(), max_logits.tolist()
-                        ):
-                            prob = float(score)
-                            row = {
-                                "schema_version": OUTPUT_SCHEMA_VERSION,
-                                "video_id": video_id,
-                                "window_id": f"{video_id}_{idx:04d}",
-                                "time_index": int(idx),
-                                "original_time": float(original_time),
-                                "p_action": prob,
-                                "logit": _logit(prob),
-                                "raw_classifier_logit": float(raw_logit),
-                                "valid": True,
-                                "source_name": provenance["source_name"],
-                                "source_provenance": dict(provenance),
-                                "prompt_hash": None,
-                                "checkpoint_hash": provenance["checkpoint_hash"],
-                                "thumos_trained": False,
-                                "uses_labels": False,
-                                "uses_teacher": False,
-                                "calibration_split": "none",
-                            }
-                            handle.write(json.dumps(row, sort_keys=True) + "\n")
-                            row_count += 1
-                            video_rows += 1
-                        handle.flush()
-                        batch_clips.clear()
-                        batch_meta.clear()
-                elapsed = time.time() - start_time
-                print(
-                    "[FROZEN_KINETICS_ACTIONNESS] "
-                    f"video={video_offset}/{len(videos)} video_id={video_id} "
-                    f"rows={video_rows} total_rows={row_count} elapsed_sec={elapsed:.1f}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+                    for row in pending_video_rows:
+                        handle.write(json.dumps(row, sort_keys=True) + "\n")
+                    row_count += len(pending_video_rows)
+                    video_rows = len(pending_video_rows)
+                    handle.flush()
+                    elapsed = time.time() - start_time
+                    print(
+                        "[FROZEN_KINETICS_ACTIONNESS] "
+                        f"video={video_offset}/{len(videos)} video_id={video_id} "
+                        f"rows={video_rows} total_rows={row_count} elapsed_sec={elapsed:.1f}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+    finally:
+        if fast_capture is not None:
+            fast_capture.close()
     elapsed = time.time() - start_time
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
@@ -363,6 +554,9 @@ def export_actionness(
             "raw_video_decode": True,
             "detector_forward": False,
         },
+        "slowfast_alpha": int(slowfast_alpha),
+        "actionness_aux_weight": float(actionness_aux_weight),
+        "primary_selection_signal": provenance.get("primary_selection_signal", "p_action"),
         "source_scoring_reads_gt": False,
         "gt_labels_eval_only": True,
         "not_a_detector_mAP_result": True,
@@ -382,7 +576,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--video-roots", required=True, help="Colon-separated roots containing THUMOS mp4 files.")
     parser.add_argument("--output-jsonl", required=True)
     parser.add_argument("--summary-json")
-    parser.add_argument("--provider", default="efficient_x3d_xs", choices=sorted(LIGHTWEIGHT_PROVIDERS))
+    parser.add_argument("--provider", default="efficient_x3d_xs", choices=sorted(EXPORT_PROVIDERS))
     parser.add_argument("--subset", default="validation")
     parser.add_argument("--dense-window-size", type=int, default=768)
     parser.add_argument("--clip-frames", type=int, default=4)
@@ -393,6 +587,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-videos", type=int, default=0)
     parser.add_argument("--score-mode", default="entropy_mix", choices=("max_prob", "inverse_entropy", "entropy_mix"))
+    parser.add_argument("--slowfast-alpha", type=int, default=4)
+    parser.add_argument("--actionness-aux-weight", type=float, default=0.05)
     args = parser.parse_args(argv)
     summary = export_actionness(
         annotation_json=args.annotation_json,
@@ -410,6 +606,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         pretrained=bool(args.pretrained),
         max_videos=int(args.max_videos),
         score_mode=args.score_mode,
+        slowfast_alpha=int(args.slowfast_alpha),
+        actionness_aux_weight=float(args.actionness_aux_weight),
     )
     print(json.dumps(summary, sort_keys=True), flush=True)
     return 0

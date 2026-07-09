@@ -21,8 +21,8 @@ AUDIT_SCHEMA_VERSION = "zero_shot_actionness_selection_audit_v1"
 SUMMARY_SCHEMA_VERSION = "zero_shot_actionness_selection_summary_v1"
 READY = "ZERO_SHOT_ACTIONNESS_SELECTION_EVAL_READY"
 LEDGER_ROLE = "audit_only_or_baseline_selection_artifact"
-DEFAULT_BASELINES = ("uniform", "random", "motion", "manual", "oracle-actionness")
-DEPLOYABLE_BASELINES = ("uniform", "random", "motion", "manual")
+DEFAULT_BASELINES = ("uniform", "random", "motion", "manual", "boundary-first", "oracle-actionness")
+DEPLOYABLE_BASELINES = ("uniform", "random", "motion", "manual", "boundary-first")
 FORBIDDEN_TRUE_FLAGS = (
     "uses_teacher",
     "uses_raw_prediction",
@@ -139,6 +139,49 @@ def _duca_budgeted_decode(scores: Sequence[float], *, budget: int, valid_len: in
         return [int(item) for item in decoded["selected_positions"][0].detach().cpu().tolist() if int(item) >= 0]
     except BaseException:
         return _fallback_budgeted_decode(scores, budget=budget, valid_len=valid_len)
+
+
+def _numeric(row: Mapping[str, Any], key: str) -> float | None:
+    value = row.get(key)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def _p_action_transition_scores(rows: Sequence[Mapping[str, Any]]) -> list[float]:
+    scores = [float(row["p_action"]) for row in rows]
+    out: list[float] = []
+    for idx, score in enumerate(scores):
+        prev_score = scores[idx - 1] if idx > 0 else score
+        next_score = scores[idx + 1] if idx + 1 < len(scores) else score
+        out.append(float(max(abs(score - prev_score), abs(next_score - score))))
+    return out
+
+
+def _selection_scores_for_baseline(
+    *,
+    baseline: str,
+    rows: Sequence[Mapping[str, Any]],
+    labels: Sequence[int],
+) -> list[float]:
+    if baseline in {"manual", "motion"}:
+        return [float(row["p_action"]) for row in rows]
+    if baseline == "boundary-first":
+        fallback_delta = _p_action_transition_scores(rows)
+        scores: list[float] = []
+        for idx, row in enumerate(rows):
+            primary = None
+            for key in ("selection_priority_score", "boundary_score", "transition_score", "abs_delta_p_action"):
+                primary = _numeric(row, key)
+                if primary is not None:
+                    break
+            if primary is None:
+                primary = fallback_delta[idx]
+            scores.append(float(primary) + 0.05 * float(row["p_action"]))
+        return scores
+    if baseline == "oracle-actionness":
+        return [float(label) + 1e-4 * float(row["p_action"]) for label, row in zip(labels, rows)]
+    return [float(row["p_action"]) for row in rows]
 
 
 def validate_sparse_temporal_grid_row(row: Mapping[str, Any]) -> str:
@@ -286,11 +329,11 @@ def _select_positions(
     if baseline == "random":
         rng = random.Random(int(random_seed) + sum(ord(ch) for ch in str(rows[0]["video_id"])))
         return sorted(rng.sample(list(range(valid_len)), k=min(int(budget), valid_len)))
-    if baseline in {"manual", "motion"}:
-        scores = [float(row["p_action"]) for row in rows]
+    if baseline in {"manual", "motion", "boundary-first"}:
+        scores = _selection_scores_for_baseline(baseline=baseline, rows=rows, labels=labels)
         return _duca_budgeted_decode(scores, budget=budget, valid_len=valid_len)
     if baseline == "oracle-actionness":
-        scores = [float(label) + 1e-4 * float(row["p_action"]) for label, row in zip(labels, rows)]
+        scores = _selection_scores_for_baseline(baseline=baseline, rows=rows, labels=labels)
         return _duca_budgeted_decode(scores, budget=budget, valid_len=valid_len)
     raise ValueError(f"unsupported baseline: {baseline}")
 
@@ -356,9 +399,10 @@ def run_selection_eval(
                 budget=int(budget),
                 random_seed=int(random_seed),
             )
+            selection_scores = _selection_scores_for_baseline(baseline=baseline, rows=valid_rows, labels=labels)
             selected = _fill_to_budget(
                 selected,
-                scores=[float(row["p_action"]) for row in valid_rows],
+                scores=selection_scores,
                 valid_len=len(valid_rows),
                 budget=int(budget),
             )
@@ -387,7 +431,12 @@ def run_selection_eval(
                 "uses_teacher": False,
                 "uses_raw_prediction": False,
                 "uses_prediction_cache": False,
-                "duca_decode": baseline in {"manual", "motion", "oracle-actionness"},
+                "duca_decode": baseline in {"manual", "motion", "boundary-first", "oracle-actionness"},
+                "selection_score_policy": (
+                    "boundary_or_transition_primary_actionness_auxiliary"
+                    if baseline == "boundary-first"
+                    else "p_action_or_oracle_baseline"
+                ),
                 "sparse_grid_validation": "pending",
                 **metrics,
             }
