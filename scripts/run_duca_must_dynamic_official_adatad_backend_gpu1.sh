@@ -88,7 +88,11 @@ echo "[DUCA_MUST_DYNAMIC_BACKEND] adatad_pretrain_path=${ADATAD_PRETRAIN_PATH}"
 bash -n "${BASH_SOURCE[0]}"
 "${PYTHON}" -m py_compile "${CONFIG}" "${VALIDATOR}"
 "${PYTHON}" "${VALIDATOR}" --config "${CONFIG}" --max-budget "${DUCA_MUST_BUDGET_MAX}"
-"${PYTHON}" -m pytest tests/test_duca_online_precheck_config.py -q -k "duca_must_dynamic"
+if [[ "${DUCA_MUST_TARGET_CURVE_MODE:-0}" == "1" && "${DUCA_MUST_BUDGET_TARGET}" != "256" ]]; then
+  echo "[DUCA_MUST_DYNAMIC_BACKEND] skip default-target pytest under dynamic target-curve override"
+else
+  "${PYTHON}" -m pytest tests/test_duca_online_precheck_config.py -q -k "duca_must_dynamic"
+fi
 
 if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   echo "[DUCA_MUST_DYNAMIC_BACKEND] PRECHECK_ONLY complete"

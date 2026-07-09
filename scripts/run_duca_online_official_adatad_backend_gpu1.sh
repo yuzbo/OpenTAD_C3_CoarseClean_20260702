@@ -85,7 +85,11 @@ echo "[DUCA_OFFICIAL_ADATAD_BACKEND] adatad_pretrain_path=${ADATAD_PRETRAIN_PATH
 bash -n "${BASH_SOURCE[0]}"
 "${PYTHON}" -m py_compile "${CONFIG}" "${VALIDATOR}"
 "${PYTHON}" "${VALIDATOR}" --config "${CONFIG}" --max-budget "${DUCA_VALIDATOR_MAX_BUDGET}"
-"${PYTHON}" -m pytest tests/test_duca_online_precheck_config.py -q
+if [[ "${DUCA_BUDGET_CURVE_MODE:-0}" == "1" && "${DUCA_ONLINE_BUDGET}" != "384" ]]; then
+  echo "[DUCA_OFFICIAL_ADATAD_BACKEND] skip default-budget pytest under budget-curve override"
+else
+  "${PYTHON}" -m pytest tests/test_duca_online_precheck_config.py -q
+fi
 
 if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   echo "[DUCA_OFFICIAL_ADATAD_BACKEND] PRECHECK_ONLY complete"

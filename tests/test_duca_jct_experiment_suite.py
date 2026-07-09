@@ -39,6 +39,9 @@ def test_duca_jct_suite_registers_fixed_and_dynamic_budget_studies() -> None:
     assert "128 192 256 320" in text
     assert "fixed_budget_curve" in text
     assert "dynamic_target_curve" in text
+    assert "SLURM_JOB_ID" in text
+    assert r"MASTER_PORT=\$((20000" in text
+    assert r"MASTER_PORT_BASE=\$((25000" in text
 
 
 def test_duca_jct_suite_preserves_x3d_dependency_and_formal_jsonl_contract() -> None:

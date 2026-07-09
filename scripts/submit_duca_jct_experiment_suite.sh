@@ -177,7 +177,7 @@ export FULLTRAIN_CANDIDATE=1
 export RUN_TAG=${RUN_TAG}_duca384
 export RUN_DIR=${RUN_ROOT}/duca384_jct/logs
 export WORK_DIR=${RUN_ROOT}/duca384_jct/work_dir
-export MASTER_PORT=30301
+export MASTER_PORT=\$((20000 + (\${SLURM_JOB_ID:-0} % 20000)))
 bash scripts/run_duca_online_official_adatad_backend_gpu1.sh
 "
 
@@ -191,7 +191,7 @@ export DUCA_VALIDATOR_MAX_BUDGET=\"\${DUCA_VALIDATOR_MAX_BUDGET:-384}\"
 export RUN_TAG_BASE=${RUN_TAG}_fixed_budget_curve
 export RUN_DIR_BASE=${RUN_ROOT}/fixed_budget_curve
 export WORK_DIR_BASE=${RUN_ROOT}/fixed_budget_curve/work_dir
-export MASTER_PORT_BASE=30341
+export MASTER_PORT_BASE=\$((25000 + (\${SLURM_JOB_ID:-0} % 20000)))
 bash scripts/run_duca_online_official_adatad_budget_curve_gpu1.sh
 "
 
@@ -202,7 +202,7 @@ export FULLTRAIN_CANDIDATE=1
 export RUN_TAG=${RUN_TAG}_duca_must
 export RUN_DIR=${RUN_ROOT}/duca_must_jct/logs
 export WORK_DIR=${RUN_ROOT}/duca_must_jct/work_dir
-export MASTER_PORT=30311
+export MASTER_PORT=\$((30000 + (\${SLURM_JOB_ID:-0} % 20000)))
 bash scripts/run_duca_must_dynamic_official_adatad_backend_gpu1.sh
 "
 
@@ -218,7 +218,7 @@ export DUCA_MUST_BUDGET_MULTIPLE=\"\${DUCA_MUST_BUDGET_MULTIPLE:-16}\"
 export RUN_TAG_BASE=${RUN_TAG}_dynamic_target_curve
 export RUN_DIR_BASE=${RUN_ROOT}/dynamic_target_curve
 export WORK_DIR_BASE=${RUN_ROOT}/dynamic_target_curve/work_dir
-export MASTER_PORT_BASE=30391
+export MASTER_PORT_BASE=\$((35000 + (\${SLURM_JOB_ID:-0} % 20000)))
 bash scripts/run_duca_must_dynamic_budget_target_curve_gpu1.sh
 "
 
@@ -242,7 +242,7 @@ export FULLTRAIN_CANDIDATE=1
 export RUN_TAG=${RUN_TAG}_x3d_duca384
 export RUN_DIR=${RUN_ROOT}/x3d_duca384/logs
 export WORK_DIR=${RUN_ROOT}/x3d_duca384/work_dir
-export MASTER_PORT=30321
+export MASTER_PORT=\$((40000 + (\${SLURM_JOB_ID:-0} % 20000)))
 export DUCA_X3D_ACTIONNESS_JSONL=${FORMAL_X3D_ACTIONNESS_JSONL}
 bash scripts/run_duca_x3d_official_adatad_backend_gpu1.sh
 "
@@ -254,7 +254,7 @@ export FULLTRAIN_CANDIDATE=1
 export RUN_TAG=${RUN_TAG}_x3d_must
 export RUN_DIR=${RUN_ROOT}/x3d_must/logs
 export WORK_DIR=${RUN_ROOT}/x3d_must/work_dir
-export MASTER_PORT=30331
+export MASTER_PORT=\$((45000 + (\${SLURM_JOB_ID:-0} % 20000)))
 export DUCA_X3D_ACTIONNESS_JSONL=${FORMAL_X3D_ACTIONNESS_JSONL}
 bash scripts/run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh
 "
