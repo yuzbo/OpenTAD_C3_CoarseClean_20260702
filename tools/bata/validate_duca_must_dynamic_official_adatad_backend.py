@@ -84,8 +84,11 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
     )
     _require(float(schedule.detector_utility.start) == 0.0, "detector utility loss must be disabled at schedule start")
     _require(float(schedule.detector_utility.end) > 0.0, "detector utility loss must be enabled after transition")
-    _require(float(schedule.hole.start) == 0.0, "selection distribution loss must be disabled at schedule start")
-    _require(float(schedule.hole.end) > 0.0, "selection distribution loss must be enabled after transition")
+    _require(float(schedule.boundary.start) > float(schedule.actionness.start), "boundary supervision must dominate actionness at schedule start")
+    _require(float(schedule.boundary.end) >= float(schedule.boundary.start), "boundary supervision must stay active after transition")
+    _require(float(schedule.actionness.end) < float(schedule.boundary.end), "actionness must remain auxiliary to boundary supervision")
+    _require(float(schedule.hole.start) == 0.0, "action-coverage hole loss must be disabled at schedule start")
+    _require(float(schedule.hole.end) == 0.0, "main DUCA-MUST selector must not optimize action-coverage hole loss")
     _require(float(schedule.lagrangian_budget.start) == 0.0, "dynamic budget loss must be disabled at schedule start")
     _require(float(schedule.lagrangian_budget.end) > 0.0, "dynamic budget loss must be enabled after transition")
     return {
@@ -100,6 +103,8 @@ def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
         "loss_schedule_transition_steps": int(schedule.transition_steps),
         "loss_schedule_actionness_start": float(schedule.actionness.start),
         "loss_schedule_actionness_end": float(schedule.actionness.end),
+        "loss_schedule_boundary_start": float(schedule.boundary.start),
+        "loss_schedule_boundary_end": float(schedule.boundary.end),
         "loss_schedule_detector_loss_always_on": True,
         "loss_schedule_detector_gradient_bridge_scheduled": True,
         "loss_schedule_detector_gradient_start": float(schedule.detector_gradient.start),
@@ -147,6 +152,14 @@ def validate_config(
     _require(contract.forced_budget_curve is False, "dynamic main config must not be a forced-budget curve")
     _require(contract.no_ledger_decision is True, "main config must be online/no-ledger")
     _require(contract.pre_backbone_plugin is True, "DUCA-MUST must be declared as pre-backbone plugin")
+    _require(
+        getattr(contract, "coarse_actionness_dominates_initial_training", True) is False,
+        "dynamic main config must not declare coarse actionness as the dominant selector objective",
+    )
+    _require(
+        getattr(contract, "state_transition_boundary_dominates_selection", False) is True,
+        "dynamic main config must declare state-transition/boundary-first selection",
+    )
     _require(contract.changes_detector_head is False, "main config must not change detector head")
     _require(contract.changes_loss_assignment is False, "main config must not change detector assignment/loss")
     _require(contract.actual_variable_length_detector is False, "current backend must declare padded cap detector input")
@@ -233,8 +246,15 @@ def validate_config(
         _require(source_cfg.get("tcn_variant", None) != "asformer_lite", "main method forbids asformer_lite")
         _require(source_cfg.get("trainable") is True, "coarse probe must be trainable for the main end-to-end config")
         _require(source_cfg.get("frozen") is False, "coarse probe must not be frozen for the main end-to-end config")
-        _require(float(selector.loss_weights.get("actionness", 0.0)) > 0.0, "main config must enable actionness BCE loss")
-        _require(float(selector.loss_weights.get("hole", 0.0)) > 0.0, "main config must enable action coverage loss")
+        _require(float(selector.loss_weights.get("actionness", 0.0)) > 0.0, "main config must keep actionness BCE as auxiliary calibration")
+        _require(
+            float(selector.loss_weights.get("boundary", 0.0)) > float(selector.loss_weights.get("actionness", 0.0)),
+            "main DUCA-MUST selector must make state-transition/boundary supervision dominate actionness",
+        )
+        _require(
+            float(selector.loss_weights.get("hole", 0.0)) == 0.0,
+            "main DUCA-MUST selector must disable action-coverage hole loss",
+        )
         _require(contract.coarse_probe_joint_trainable is True, "contract must declare joint-trainable coarse probe")
         _require(contract.runtime_profile_available is True, "contract must expose compute/latency profiling")
         for key in ("uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):

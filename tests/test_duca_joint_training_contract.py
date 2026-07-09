@@ -121,7 +121,7 @@ def test_train_forward_builds_gt_action_target_for_selector_loss() -> None:
         loss_weights={
             "actionness": 1.0,
             "teacher": 0.0,
-            "boundary": 0.0,
+            "boundary": 1.0,
             "hole": 1.0,
             "redundancy": 0.0,
             "radius": 0.0,
@@ -143,7 +143,10 @@ def test_train_forward_builds_gt_action_target_for_selector_loss() -> None:
     )
 
     assert out["selector_outputs"]["action_target"].shape == (1, 20)
+    assert out["selector_outputs"]["boundary_target"].shape == (1, 20)
+    assert out["selector_outputs"]["boundary_target"].detach().sum().item() > 0.0
     assert out["losses"]["actionness_bce_loss"].detach().item() > 0.0
+    assert out["losses"]["boundary_coverage_loss"].detach().item() >= 0.0
     assert out["losses"]["action_local_hole_loss"].detach().item() > 0.0
 
 

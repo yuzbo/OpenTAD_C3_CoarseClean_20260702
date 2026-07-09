@@ -160,8 +160,12 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.frame_selector.loss_weights.actionness > 0
+    assert cfg.model.frame_selector.loss_weights.boundary > cfg.model.frame_selector.loss_weights.actionness
     assert cfg.model.frame_selector.loss_weights.detector_utility > 0
-    assert cfg.model.frame_selector.loss_weights.hole > 0
+    assert cfg.model.frame_selector.loss_weights.hole == 0.0
+    assert cfg.duca_online_main_contract.coarse_actionness_dominates_initial_training is False
+    assert cfg.duca_online_main_contract.state_transition_boundary_dominates_selection is True
+    assert cfg.duca_online_main_contract.actionness_role == "auxiliary_calibration_not_coverage"
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_online_main_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_online_main_contract.loss_schedule_total_steps == (
@@ -179,13 +183,15 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
         * cfg.duca_online_main_contract.loss_schedule_transition_fraction
     )
     assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
+    assert cfg.model.frame_selector.loss_weight_schedule.boundary.start > cfg.model.frame_selector.loss_weight_schedule.actionness.start
+    assert cfg.model.frame_selector.loss_weight_schedule.boundary.end >= cfg.model.frame_selector.loss_weight_schedule.boundary.start
     assert cfg.duca_online_main_contract.detector_loss_always_trains_backend is True
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
-    assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.hole.end == 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
     assert "physical_grid_actionformer" not in cfg.model.rpn_head
     assert "bata_value_transport" not in repr(cfg).lower()
@@ -234,6 +240,9 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["loss_schedule_detector_utility_start"] == 0.0
     assert summary["loss_schedule_detector_utility_end"] > 0.0
     assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
+    assert summary["loss_schedule_boundary_start"] > summary["loss_schedule_actionness_start"]
+    assert summary["loss_schedule_boundary_end"] >= summary["loss_schedule_boundary_start"]
+    assert summary["loss_schedule_hole_end"] == 0.0
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
     assert "duca_online_official_adatad_backend_full_train.py" in text
@@ -362,8 +371,12 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.actionness_source_cfg.trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.frozen is False
     assert cfg.model.frame_selector.loss_weights.actionness > 0
+    assert cfg.model.frame_selector.loss_weights.boundary > cfg.model.frame_selector.loss_weights.actionness
     assert cfg.model.frame_selector.loss_weights.detector_utility > 0
-    assert cfg.model.frame_selector.loss_weights.hole > 0
+    assert cfg.model.frame_selector.loss_weights.hole == 0.0
+    assert cfg.duca_must_dynamic_contract.coarse_actionness_dominates_initial_training is False
+    assert cfg.duca_must_dynamic_contract.state_transition_boundary_dominates_selection is True
+    assert cfg.duca_must_dynamic_contract.actionness_role == "auxiliary_calibration_not_coverage"
     assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_must_dynamic_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_must_dynamic_contract.loss_schedule_total_steps == (
@@ -381,13 +394,15 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
         * cfg.duca_must_dynamic_contract.loss_schedule_transition_fraction
     )
     assert cfg.model.frame_selector.loss_weight_schedule.actionness.start > cfg.model.frame_selector.loss_weight_schedule.actionness.end
+    assert cfg.model.frame_selector.loss_weight_schedule.boundary.start > cfg.model.frame_selector.loss_weight_schedule.actionness.start
+    assert cfg.model.frame_selector.loss_weight_schedule.boundary.end >= cfg.model.frame_selector.loss_weight_schedule.boundary.start
     assert cfg.duca_must_dynamic_contract.detector_loss_always_trains_backend is True
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_gradient.end == 1.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.detector_utility.end > 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.hole.start == 0.0
-    assert cfg.model.frame_selector.loss_weight_schedule.hole.end > 0.0
+    assert cfg.model.frame_selector.loss_weight_schedule.hole.end == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.start == 0.0
     assert cfg.model.frame_selector.loss_weight_schedule.lagrangian_budget.end > 0.0
     assert cfg.model.rpn_head == official.model.rpn_head
@@ -437,6 +452,9 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["loss_schedule_detector_utility_start"] == 0.0
     assert summary["loss_schedule_detector_utility_end"] > 0.0
     assert summary["loss_schedule_actionness_start"] > summary["loss_schedule_actionness_end"]
+    assert summary["loss_schedule_boundary_start"] > summary["loss_schedule_actionness_start"]
+    assert summary["loss_schedule_boundary_end"] >= summary["loss_schedule_boundary_start"]
+    assert summary["loss_schedule_hole_end"] == 0.0
     assert summary["loss_schedule_lagrangian_budget_start"] == 0.0
     assert summary["loss_schedule_lagrangian_budget_end"] > 0.0
 
