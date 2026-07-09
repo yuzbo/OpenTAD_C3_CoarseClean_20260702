@@ -140,6 +140,7 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.dense_window_size == 768
     assert cfg.model.frame_selector.coordinate_space == "original_time"
     assert cfg.model.frame_selector.detector_output_coordinate_space == "selected_axis_index"
+    assert cfg.model.frame_selector.detector_gradient_mode == "soft_to_hard_resample"
     assert cfg.model.frame_selector.remap_gt_to_selected_axis is True
     assert cfg.duca_online_main_contract.actionness_source == "online_trainable_c3_coarse_probe"
     assert cfg.duca_online_main_contract.coarse_probe_joint_trainable is True
@@ -347,6 +348,7 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.model.frame_selector.budget_multiple == 16
     assert cfg.model.frame_selector.target_budget == 256
     assert cfg.model.frame_selector.allow_external_budget_override is False
+    assert cfg.model.frame_selector.detector_gradient_mode == "soft_to_hard_resample"
     assert cfg.model.frame_selector.get("external_actionness_meta_key", None) is None
     assert cfg.model.frame_selector.get("external_actionness_logits_meta_key", None) is None
     assert cfg.model.frame_selector.get("require_external_actionness", False) is False

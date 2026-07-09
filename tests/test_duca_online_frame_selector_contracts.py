@@ -34,10 +34,11 @@ def _manual_actionness_cfg(p_action: torch.Tensor, *, no_target: bool = True) ->
 
 
 def _selector(p_action: torch.Tensor, *, budget: int = 4, no_target: bool = True, **kwargs) -> DucaOnlineFrameSelector:
+    max_radius = int(kwargs.pop("max_radius", 0))
     return DucaOnlineFrameSelector(
         in_channels=2,
         budget=budget,
-        max_radius=0,
+        max_radius=max_radius,
         dense_window_size=p_action.shape[1],
         actionness_source_cfg=_manual_actionness_cfg(p_action, no_target=no_target),
         loss_weights={
@@ -221,3 +222,30 @@ def test_main_duca_selector_forbids_cached_external_actionness_payloads_even_whe
                 }
             ],
         )
+
+
+def test_soft_to_hard_resample_keeps_hard_forward_but_gives_neighbor_frames_gradient() -> None:
+    p_action = torch.tensor([[0.01, 0.02, 0.80, 0.99, 0.75, 0.02]], dtype=torch.float32)
+    selector = _selector(
+        p_action,
+        budget=1,
+        max_radius=2,
+        detector_gradient_mode="soft_to_hard_resample",
+    )
+    inputs = torch.arange(1 * 2 * 6, dtype=torch.float32).reshape(1, 2, 6).requires_grad_(True)
+    masks = torch.ones(1, 6, dtype=torch.bool)
+
+    out = selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "v"}])
+    selected = out["metas"][0]["duca_online_selected_positions"]
+    loss = out["inputs"].sum()
+    loss.backward()
+
+    assert selected == [3]
+    assert torch.equal(out["inputs"].detach(), inputs.detach()[:, :, selected])
+    weights = out["selector_outputs"]["soft_resample_weights"]
+    assert weights.shape == (1, 1, 6)
+    assert weights[0, 0].sum().item() == pytest.approx(1.0, abs=1e-5)
+    assert weights[0, 0, 2].item() > 0.0
+    assert weights[0, 0, 4].item() > 0.0
+    assert inputs.grad[0, :, 2].abs().sum().item() > 0.0
+    assert inputs.grad[0, :, 4].abs().sum().item() > 0.0

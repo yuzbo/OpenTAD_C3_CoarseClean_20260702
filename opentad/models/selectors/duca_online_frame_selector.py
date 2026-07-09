@@ -139,6 +139,50 @@ def _add_soft_context_gradient_path(
     return hard_base + (context - context.detach()) * slot.to(dtype=context.dtype) * bridge
 
 
+def _add_soft_to_hard_resample_gradient_path(
+    hard_selected: torch.Tensor,
+    dense_inputs: torch.Tensor,
+    *,
+    selected_positions: torch.Tensor,
+    slot_mask: torch.Tensor,
+    center_scores: torch.Tensor,
+    radius: torch.Tensor,
+    valid_mask: torch.Tensor,
+    bridge_weight: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    bridge = float(bridge_weight)
+    context_inputs = dense_inputs if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs) else dense_inputs.float()
+    hard_base = hard_selected if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected) else hard_selected.float()
+    batch, temporal_len = int(center_scores.shape[0]), int(center_scores.shape[1])
+    if selected_positions.shape[0] != batch:
+        raise ValueError("selected_positions batch must match center_scores")
+    positions = torch.arange(temporal_len, device=center_scores.device, dtype=center_scores.dtype)
+    selected = selected_positions.to(device=center_scores.device, dtype=torch.long).clamp_min(0)
+    selected_float = selected.to(dtype=center_scores.dtype)
+    slot_radius = torch.gather(radius.to(device=center_scores.device, dtype=center_scores.dtype), 1, selected)
+    sigma = slot_radius.clamp_min(0.0) + 1.0
+    distance = (positions[None, None, :] - selected_float[:, :, None]).abs()
+    logits = center_scores[:, None, :] - distance / sigma[:, :, None].clamp_min(torch.finfo(center_scores.dtype).eps)
+    valid = valid_mask.to(device=center_scores.device, dtype=torch.bool)
+    logits = logits.masked_fill(~valid[:, None, :], torch.finfo(center_scores.dtype).min / 4.0)
+    weights = torch.softmax(logits, dim=-1).masked_fill(~valid[:, None, :], 0.0)
+    weights = weights * slot_mask.to(device=center_scores.device, dtype=weights.dtype)[:, :, None]
+    weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(torch.finfo(weights.dtype).eps)
+    weights = weights.to(device=context_inputs.device, dtype=context_inputs.dtype)
+    if context_inputs.ndim == 3:
+        soft = torch.einsum("bct,bkt->bck", context_inputs, weights)
+        slot = slot_mask[:, None, :]
+    elif context_inputs.ndim == 5:
+        soft = torch.einsum("bcthw,bkt->bckhw", context_inputs, weights)
+        slot = slot_mask[:, None, :, None, None]
+    elif context_inputs.ndim == 6:
+        soft = torch.einsum("bncthw,bkt->bnckhw", context_inputs, weights)
+        slot = slot_mask[:, None, None, :, None, None]
+    else:
+        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
+    return hard_base + (soft - soft.detach()) * slot.to(dtype=soft.dtype) * bridge, weights
+
+
 @SELECTORS.register_module()
 class DucaOnlineFrameSelector(nn.Module):
     """Registry-buildable online DUCA selector for OpenTAD frame_selector hooks."""
@@ -239,8 +283,15 @@ class DucaOnlineFrameSelector(nn.Module):
         self._pending_loss_schedule_advance = False
         self._pending_dynamic_budget_dual_mean: Optional[torch.Tensor] = None
         self._pending_dynamic_budget_dual_summary: Optional[dict[str, Any]] = None
-        if self.detector_gradient_mode not in {"st_sparse_gather", "st_sparse_gather_soft_context"}:
-            raise ValueError("detector_gradient_mode must be st_sparse_gather or st_sparse_gather_soft_context")
+        if self.detector_gradient_mode not in {
+            "st_sparse_gather",
+            "st_sparse_gather_soft_context",
+            "soft_to_hard_resample",
+        }:
+            raise ValueError(
+                "detector_gradient_mode must be st_sparse_gather, "
+                "st_sparse_gather_soft_context, or soft_to_hard_resample"
+            )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
         if self.detector_output_coordinate_space not in {SELECTED_AXIS, TRUE_TIME_AXIS}:
@@ -634,12 +685,24 @@ class DucaOnlineFrameSelector(nn.Module):
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_selected = _gather_time(inputs, positions, slot_mask)
         detector_gradient_weight = self._detector_gradient_weight(schedule_state)
+        soft_resample_weights = None
         if self.detector_gradient_mode == "st_sparse_gather_soft_context":
             hard_selected = _add_soft_context_gradient_path(
                 hard_selected,
                 inputs,
                 scores["soft_coverage"],
                 slot_mask,
+                bridge_weight=detector_gradient_weight,
+            )
+        elif self.detector_gradient_mode == "soft_to_hard_resample":
+            hard_selected, soft_resample_weights = _add_soft_to_hard_resample_gradient_path(
+                hard_selected,
+                inputs,
+                selected_positions=positions,
+                slot_mask=slot_mask,
+                center_scores=scores["center_scores"],
+                radius=scores["radius"],
+                valid_mask=masks,
                 bridge_weight=detector_gradient_weight,
             )
         st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
@@ -685,6 +748,8 @@ class DucaOnlineFrameSelector(nn.Module):
         scores["hard_selected_inputs"] = hard_selected
         scores["selected_input_st_gradient_path"] = self.detector_gradient_mode
         scores["detector_gradient_weight"] = float(detector_gradient_weight)
+        if soft_resample_weights is not None:
+            scores["soft_resample_weights"] = soft_resample_weights
         scores["sparse_grid"] = grid
         selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
         self._record_pending_dynamic_budget_dual(scores, grid)
