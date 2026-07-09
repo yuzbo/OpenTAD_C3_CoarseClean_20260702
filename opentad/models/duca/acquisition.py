@@ -17,6 +17,16 @@ TensorLikeBudget = Union[int, torch.Tensor]
 
 DEFAULT_BUDGET_UNIT = "detector_consumed_temporal_observation"
 DEFAULT_COORDINATE = "original_time"
+DUCA_ACTIONNESS_FEATURE_NAMES = (
+    "p_action",
+    "uncertainty",
+    "entropy",
+    "delta_p_action",
+    "abs_delta_p_action",
+    "uncertainty_peak",
+    "transition_score",
+)
+DUCA_ACTIONNESS_FEATURE_DIM = len(DUCA_ACTIONNESS_FEATURE_NAMES)
 FORBIDDEN_DECISION_KEYS = {
     "teacher_utility",
     "teacher_points",
@@ -121,6 +131,62 @@ def _as_valid_mask(reference: torch.Tensor, valid_mask: Optional[torch.Tensor]) 
     if torch.any(valid.long().sum(dim=1) <= 0):
         raise ValueError("each sample must contain at least one valid temporal observation")
     return valid
+
+
+def _actionness_transition_payload(
+    p_action: torch.Tensor,
+    valid: torch.Tensor,
+    uncertainty_override: Optional[torch.Tensor] = None,
+) -> Dict[str, torch.Tensor]:
+    prob = p_action.float().masked_fill(~valid, 0.0)
+    if uncertainty_override is None:
+        uncertainty = 1.0 - torch.abs(2.0 * prob - 1.0)
+    else:
+        uncertainty = uncertainty_override.to(device=prob.device, dtype=prob.dtype)
+        if uncertainty.shape != prob.shape:
+            raise ValueError("uncertainty_override must match p_action shape")
+    uncertainty = uncertainty.masked_fill(~valid, 0.0)
+    entropy = _binary_entropy(prob).masked_fill(~valid, 0.0)
+    delta = torch.zeros_like(prob)
+    if prob.shape[1] > 1:
+        delta[:, 1:] = prob[:, 1:] - prob[:, :-1]
+        prev_valid = torch.zeros_like(valid)
+        prev_valid[:, 1:] = valid[:, 1:] & valid[:, :-1]
+        delta = delta.masked_fill(~prev_valid, 0.0)
+    abs_delta = delta.abs().masked_fill(~valid, 0.0)
+    if prob.shape[1] > 1:
+        left = torch.zeros_like(uncertainty)
+        right = torch.zeros_like(uncertainty)
+        left[:, 1:] = uncertainty[:, :-1]
+        right[:, :-1] = uncertainty[:, 1:]
+        neighbor = torch.maximum(left, right)
+        uncertainty_peak = F.relu(uncertainty - neighbor)
+    else:
+        uncertainty_peak = uncertainty
+    uncertainty_peak = uncertainty_peak.masked_fill(~valid, 0.0)
+    transition_score = (abs_delta + uncertainty_peak).masked_fill(~valid, 0.0)
+    features = torch.stack(
+        (
+            prob,
+            uncertainty,
+            entropy,
+            delta,
+            abs_delta,
+            uncertainty_peak,
+            transition_score,
+        ),
+        dim=-1,
+    )
+    return {
+        "p_action": prob,
+        "uncertainty": uncertainty,
+        "entropy": entropy,
+        "delta_p_action": delta,
+        "abs_delta_p_action": abs_delta,
+        "uncertainty_peak": uncertainty_peak,
+        "transition_score": transition_score,
+        "features": features,
+    }
 
 
 def _budget_tensor(budget: TensorLikeBudget, batch_size: int, device: torch.device) -> torch.Tensor:
@@ -424,9 +490,8 @@ class ZeroShotActionnessSource(nn.Module):
             valid = _as_valid_mask(prob, valid_mask)
             prob = prob.masked_fill(~valid, 0.0)
             logits_out = torch.logit(prob.clamp(1e-6, 1.0 - 1e-6)).masked_fill(~valid, _neg(prob.dtype))
-            out = self._format_output(prob, logits_out, valid)
-            out["uncertainty"] = self.manual_uncertainty.to(prob.device, prob.dtype).masked_fill(~valid, 0.0)
-            return out
+            manual_uncertainty = self.manual_uncertainty.to(prob.device, prob.dtype)
+            return self._format_output(prob, logits_out, valid, uncertainty=manual_uncertainty)
 
         if logits is not None:
             if logits.ndim == 3 and logits.shape[-1] == 1:
@@ -489,16 +554,25 @@ class ZeroShotActionnessSource(nn.Module):
         logits = sim_action.mean(dim=-1) - sim_background.mean(dim=-1)
         return logits.reshape(features.shape[0], features.shape[1])
 
-    def _format_output(self, p_action: torch.Tensor, logits: torch.Tensor, valid: torch.Tensor) -> Dict[str, Any]:
-        uncertainty = (1.0 - torch.abs(2.0 * p_action - 1.0)).masked_fill(~valid, 0.0)
-        entropy = _binary_entropy(p_action).masked_fill(~valid, 0.0)
-        source_features = torch.stack((p_action, uncertainty, entropy), dim=-1)
+    def _format_output(
+        self,
+        p_action: torch.Tensor,
+        logits: torch.Tensor,
+        valid: torch.Tensor,
+        uncertainty: Optional[torch.Tensor] = None,
+    ) -> Dict[str, Any]:
+        transition = _actionness_transition_payload(p_action, valid, uncertainty_override=uncertainty)
         return {
-            "p_action": p_action,
-            "uncertainty": uncertainty,
-            "entropy": entropy,
-            "features": source_features,
+            "p_action": transition["p_action"],
+            "uncertainty": transition["uncertainty"],
+            "entropy": transition["entropy"],
+            "delta_p_action": transition["delta_p_action"],
+            "abs_delta_p_action": transition["abs_delta_p_action"],
+            "uncertainty_peak": transition["uncertainty_peak"],
+            "transition_score": transition["transition_score"],
+            "features": transition["features"],
             "logits": logits,
+            "actionness_logits": logits,
             "valid_mask": valid,
             "provenance": self._provenance(),
         }
@@ -746,16 +820,19 @@ class C3CoarseProbeActionnessSource(nn.Module):
         logits = logits.float().to(device=inputs.device).masked_fill(~valid, _neg(torch.float32))
         latency_ms = float((time.perf_counter() - start) * 1000.0)
         p_action = torch.sigmoid(logits).masked_fill(~valid, 0.0)
-        uncertainty = (1.0 - torch.abs(2.0 * p_action - 1.0)).masked_fill(~valid, 0.0)
-        entropy = _binary_entropy(p_action).masked_fill(~valid, 0.0)
+        transition = _actionness_transition_payload(p_action, valid)
         profile = self._estimate_probe_profile(inputs, logits, latency_ms)
         return {
-            "p_action": p_action,
+            "p_action": transition["p_action"],
             "logits": logits,
             "actionness_logits": logits,
-            "uncertainty": uncertainty,
-            "entropy": entropy,
-            "features": torch.stack((p_action, uncertainty, entropy), dim=-1),
+            "uncertainty": transition["uncertainty"],
+            "entropy": transition["entropy"],
+            "delta_p_action": transition["delta_p_action"],
+            "abs_delta_p_action": transition["abs_delta_p_action"],
+            "uncertainty_peak": transition["uncertainty_peak"],
+            "transition_score": transition["transition_score"],
+            "features": transition["features"],
             "valid_mask": valid,
             "provenance": self._provenance(),
             "compute_profile": profile,
@@ -780,9 +857,11 @@ class DucaAcquisitionAdapter(nn.Module):
         allow_external_budget_override: Optional[bool] = None,
         budget_controller: Optional[nn.Module] = None,
         max_radius: int = 16,
+        actionness_weight: float = 0.05,
+        transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
-        boundary_weight: float = 0.25,
+        boundary_weight: float = 1.0,
         profile_runtime: bool = False,
         profile_sync_cuda: bool = True,
     ) -> None:
@@ -825,6 +904,8 @@ class DucaAcquisitionAdapter(nn.Module):
                 raise ValueError("target_budget must lie in (0, budget_max]")
         if self.max_radius < 0:
             raise ValueError("max_radius must be non-negative")
+        self.actionness_weight = float(actionness_weight)
+        self.transition_weight = float(transition_weight)
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
@@ -839,9 +920,9 @@ class DucaAcquisitionAdapter(nn.Module):
             self.radius_head = None
             self.boundary_head = None
             self.utility_head = None
-            selector_feature_dim = 3
+            selector_feature_dim = DUCA_ACTIONNESS_FEATURE_DIM
         else:
-            in_dim = self.feature_dim + 3
+            in_dim = self.feature_dim + DUCA_ACTIONNESS_FEATURE_DIM
             if self.dynamic_budget and int(hidden_dim) <= 0:
                 raise ValueError("dynamic_must requires a positive hidden_dim when feature_dim is provided")
             self.encoder = nn.Sequential(
@@ -966,7 +1047,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 "parameters": selector_params,
             }
         hidden = int(self.center_head.in_features)
-        in_dim = int(feature_dim) + 3
+        in_dim = int(feature_dim) + DUCA_ACTIONNESS_FEATURE_DIM
         macs = tokens * (in_dim * hidden + hidden * hidden + 4 * hidden)
         flops = 2 * macs + tokens * (6 * in_dim + 12 * hidden + 48)
         return {
@@ -1098,10 +1179,19 @@ class DucaAcquisitionAdapter(nn.Module):
             p_action=p_action,
         )
         valid = source["valid_mask"]
+        transition_score = source.get("transition_score", source["uncertainty"])
+        transition_score = transition_score.to(dense_observations.device, dense_observations.dtype).masked_fill(~valid, 0.0)
+        actionness_aux = source["p_action"].to(dense_observations.device, dense_observations.dtype).masked_fill(~valid, 0.0)
         if self.encoder is None:
-            center_scores = source["logits"] + self.uncertainty_weight * source["uncertainty"]
-            boundary_logits = source["uncertainty"]
-            utility_scores = source["p_action"] + source["uncertainty"]
+            boundary_logits = transition_score
+            utility_scores = transition_score + 0.5 * actionness_aux
+            center_scores = (
+                self.transition_weight * transition_score
+                + self.boundary_weight * boundary_logits
+                + self.utility_weight * utility_scores
+                + self.uncertainty_weight * source["uncertainty"]
+                + self.actionness_weight * actionness_aux
+            )
             radius = self.max_radius * torch.sigmoid(source["uncertainty"] * 4.0 - 2.0)
             selection_features = source["features"].float()
         else:
@@ -1116,10 +1206,11 @@ class DucaAcquisitionAdapter(nn.Module):
             utility_scores = self.utility_head(encoded).squeeze(-1)
             center_scores = (
                 center_scores
-                + source["logits"]
+                + self.transition_weight * transition_score
                 + self.uncertainty_weight * source["uncertainty"]
                 + self.utility_weight * utility_scores
                 + self.boundary_weight * boundary_logits
+                + self.actionness_weight * actionness_aux
             )
         center_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
         radius = radius.masked_fill(~valid, 0.0).clamp(0.0, float(self.max_radius))
@@ -1132,6 +1223,10 @@ class DucaAcquisitionAdapter(nn.Module):
             "p_action": source["p_action"],
             "uncertainty": source["uncertainty"],
             "entropy": source["entropy"],
+            "delta_p_action": source["delta_p_action"],
+            "abs_delta_p_action": source["abs_delta_p_action"],
+            "uncertainty_peak": source["uncertainty_peak"],
+            "transition_score": transition_score.masked_fill(~valid, 0.0),
             "actionness_logits": source["logits"],
             "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
             "valid_mask": valid,

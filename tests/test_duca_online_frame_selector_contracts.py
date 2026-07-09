@@ -86,8 +86,8 @@ def test_duca_selector_remaps_train_gt_to_selected_axis() -> None:
     )
 
     positions = out["metas"][0]["duca_online_selected_positions"]
-    assert positions == [1, 3, 5, 7]
-    assert torch.allclose(out["gt_segments"][0], torch.tensor([[0.0, 3.0], [0.5, 2.5]]), atol=1e-4)
+    assert positions == [1, 2, 3, 4]
+    assert torch.allclose(out["gt_segments"][0], torch.tensor([[0.0, 3.0], [1.0, 3.0]]), atol=1e-4)
     assert out["metas"][0]["gt_segments_original_time"][0] == [1.0, 7.0]
     assert out["metas"][0]["gt_segments_selected_axis"][0] == pytest.approx([0.0, 3.0])
 
@@ -118,7 +118,7 @@ def test_duca_selector_metadata_matches_actual_gather_and_overwrites_reserved_ke
     out = selector.forward_test(inputs=inputs, masks=masks, metas=[stale_meta])
 
     positions = out["metas"][0]["custom_selected_positions"]
-    assert positions == [1, 3, 5]
+    assert positions == [1, 2, 4]
     assert out["metas"][0]["custom_selected_count"] == 3
     assert "selected_to_original" in out["metas"][0]["custom_remap"]
     assert torch.equal(out["inputs"], inputs[:, :, positions])
@@ -175,7 +175,7 @@ def test_duca_selector_uses_external_x3d_p_action_from_metas() -> None:
         ],
     )
 
-    assert out["metas"][0]["duca_online_selected_positions"] == [0, 2, 4]
+    assert out["metas"][0]["duca_online_selected_positions"] == [1, 2, 4]
     assert out["metas"][0]["duca_online_actionness_source"] == "frozen_kinetics_x3d_xs_actionness"
     assert out["selector_outputs"]["p_action"].detach().cpu().tolist()[0] == pytest.approx(external)
 
@@ -240,12 +240,14 @@ def test_soft_to_hard_resample_keeps_hard_forward_but_gives_neighbor_frames_grad
     loss = out["inputs"].sum()
     loss.backward()
 
-    assert selected == [3]
+    assert selected == [2]
     assert torch.equal(out["inputs"].detach(), inputs.detach()[:, :, selected])
     weights = out["selector_outputs"]["soft_resample_weights"]
     assert weights.shape == (1, 1, 6)
     assert weights[0, 0].sum().item() == pytest.approx(1.0, abs=1e-5)
+    assert weights[0, 0, 1].item() > 0.0
     assert weights[0, 0, 2].item() > 0.0
-    assert weights[0, 0, 4].item() > 0.0
+    assert weights[0, 0, 3].item() > 0.0
+    assert inputs.grad[0, :, 1].abs().sum().item() > 0.0
     assert inputs.grad[0, :, 2].abs().sum().item() > 0.0
-    assert inputs.grad[0, :, 4].abs().sum().item() > 0.0
+    assert inputs.grad[0, :, 3].abs().sum().item() > 0.0

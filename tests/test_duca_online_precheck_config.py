@@ -166,6 +166,15 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.duca_online_main_contract.coarse_actionness_dominates_initial_training is False
     assert cfg.duca_online_main_contract.state_transition_boundary_dominates_selection is True
     assert cfg.duca_online_main_contract.actionness_role == "auxiliary_calibration_not_coverage"
+    assert cfg.duca_online_main_contract.actionness_score_role == "small_auxiliary_score"
+    assert cfg.duca_online_main_contract.selector_score_priority == "transition_boundary_utility_first"
+    assert cfg.model.frame_selector.actionness_weight == cfg.duca_online_main_contract.selector_score_actionness_weight
+    assert cfg.model.frame_selector.transition_weight == cfg.duca_online_main_contract.selector_score_transition_weight
+    assert cfg.model.frame_selector.boundary_weight == cfg.duca_online_main_contract.selector_score_boundary_weight
+    assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.transition_weight
+    assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.boundary_weight
+    assert cfg.duca_online_main_contract.detector_utility_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_online_main_contract.detector_utility_target_is_true_detector_derived is False
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_online_main_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_online_main_contract.loss_schedule_total_steps == (
@@ -243,6 +252,12 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["loss_schedule_boundary_start"] > summary["loss_schedule_actionness_start"]
     assert summary["loss_schedule_boundary_end"] >= summary["loss_schedule_boundary_start"]
     assert summary["loss_schedule_hole_end"] == 0.0
+    assert summary["selector_score_priority"] == "transition_boundary_utility_first"
+    assert summary["actionness_score_role"] == "small_auxiliary_score"
+    assert summary["selector_score_actionness_weight"] < summary["selector_score_transition_weight"]
+    assert summary["selector_score_actionness_weight"] < summary["selector_score_boundary_weight"]
+    assert summary["detector_utility_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["detector_utility_target_is_true_detector_derived"] is False
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
     assert "duca_online_official_adatad_backend_full_train.py" in text
@@ -377,6 +392,15 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     assert cfg.duca_must_dynamic_contract.coarse_actionness_dominates_initial_training is False
     assert cfg.duca_must_dynamic_contract.state_transition_boundary_dominates_selection is True
     assert cfg.duca_must_dynamic_contract.actionness_role == "auxiliary_calibration_not_coverage"
+    assert cfg.duca_must_dynamic_contract.actionness_score_role == "small_auxiliary_score"
+    assert cfg.duca_must_dynamic_contract.selector_score_priority == "transition_boundary_utility_first"
+    assert cfg.model.frame_selector.actionness_weight == cfg.duca_must_dynamic_contract.selector_score_actionness_weight
+    assert cfg.model.frame_selector.transition_weight == cfg.duca_must_dynamic_contract.selector_score_transition_weight
+    assert cfg.model.frame_selector.boundary_weight == cfg.duca_must_dynamic_contract.selector_score_boundary_weight
+    assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.transition_weight
+    assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.boundary_weight
+    assert cfg.duca_must_dynamic_contract.detector_utility_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_must_dynamic_contract.detector_utility_target_is_true_detector_derived is False
     assert cfg.duca_must_dynamic_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_must_dynamic_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_must_dynamic_contract.loss_schedule_total_steps == (
@@ -455,6 +479,12 @@ def test_duca_must_dynamic_validator_is_fail_closed_and_separate_from_forced_bud
     assert summary["loss_schedule_boundary_start"] > summary["loss_schedule_actionness_start"]
     assert summary["loss_schedule_boundary_end"] >= summary["loss_schedule_boundary_start"]
     assert summary["loss_schedule_hole_end"] == 0.0
+    assert summary["selector_score_priority"] == "transition_boundary_utility_first"
+    assert summary["actionness_score_role"] == "small_auxiliary_score"
+    assert summary["selector_score_actionness_weight"] < summary["selector_score_transition_weight"]
+    assert summary["selector_score_actionness_weight"] < summary["selector_score_boundary_weight"]
+    assert summary["detector_utility_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["detector_utility_target_is_true_detector_derived"] is False
     assert summary["loss_schedule_lagrangian_budget_start"] == 0.0
     assert summary["loss_schedule_lagrangian_budget_end"] > 0.0
 

@@ -73,12 +73,54 @@ def test_zero_shot_actionness_fallback_has_no_thumos_label_provenance() -> None:
 
     assert output["p_action"].shape == (2, 12)
     assert output["uncertainty"].shape == (2, 12)
-    assert output["features"].shape == (2, 12, 3)
+    assert output["delta_p_action"].shape == (2, 12)
+    assert output["abs_delta_p_action"].shape == (2, 12)
+    assert output["uncertainty_peak"].shape == (2, 12)
+    assert output["transition_score"].shape == (2, 12)
+    assert output["features"].shape == (2, 12, 7)
     assert output["provenance"]["thumos_trained"] is False
     assert output["provenance"]["uses_labels"] is False
     assert output["provenance"]["uses_teacher"] is False
     assert "labels" not in output
     assert "gt_segments" not in output
+
+
+def test_actionness_source_exposes_state_transition_features() -> None:
+    p_action = torch.tensor([[0.05, 0.05, 0.95, 0.95, 0.05, 0.05]], dtype=torch.float32)
+    source = _manual_source(p_action)
+
+    output = source(torch.zeros(1, 6, 1))
+
+    assert output["delta_p_action"].tolist()[0] == pytest.approx([0.0, 0.0, 0.90, 0.0, -0.90, 0.0])
+    assert output["abs_delta_p_action"].tolist()[0] == pytest.approx([0.0, 0.0, 0.90, 0.0, 0.90, 0.0])
+    assert output["transition_score"][0, 2].item() > output["transition_score"][0, 3].item()
+    assert output["transition_score"][0, 4].item() > output["transition_score"][0, 3].item()
+    assert output["features"][0, :, 3].tolist() == pytest.approx(output["delta_p_action"][0].tolist())
+    assert output["features"][0, :, 4].tolist() == pytest.approx(output["abs_delta_p_action"][0].tolist())
+
+
+def test_manual_actionness_uncertainty_drives_uncertainty_peak_features() -> None:
+    p_action = torch.tensor([[0.10, 0.20, 0.30]], dtype=torch.float32)
+    manual_uncertainty = torch.tensor([[0.0, 1.0, 0.0]], dtype=torch.float32)
+    source = ZeroShotActionnessSource.from_manual(p_action=p_action, uncertainty=manual_uncertainty)
+
+    output = source(torch.zeros(1, 3, 1))
+
+    assert output["uncertainty"].tolist()[0] == pytest.approx([0.0, 1.0, 0.0])
+    assert output["features"][0, :, 1].tolist() == pytest.approx([0.0, 1.0, 0.0])
+    assert output["uncertainty_peak"].tolist()[0] == pytest.approx([0.0, 1.0, 0.0])
+
+
+def test_adapter_default_scoring_is_transition_first_with_actionness_auxiliary() -> None:
+    p_action = torch.tensor([[0.05, 0.05, 0.60, 0.99, 0.60, 0.05, 0.05]], dtype=torch.float32)
+    adapter = DucaAcquisitionAdapter(actionness_source=_manual_source(p_action), budget=2, max_radius=0)
+
+    scores = adapter.forward_scores(torch.zeros(1, 7, 1))
+
+    assert adapter.actionness_weight < adapter.transition_weight
+    assert adapter.actionness_weight < adapter.boundary_weight
+    assert scores["center_scores"][0, 2].item() > scores["center_scores"][0, 3].item()
+    assert scores["center_scores"][0, 4].item() > scores["center_scores"][0, 3].item()
 
 
 def test_sparse_temporal_grid_validate_fail_closed() -> None:

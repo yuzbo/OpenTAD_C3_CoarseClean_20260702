@@ -200,6 +200,11 @@ class DucaOnlineFrameSelector(nn.Module):
         max_radius: int = 16,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
+        actionness_weight: float = 0.05,
+        transition_weight: float = 1.0,
+        uncertainty_weight: float = 0.25,
+        utility_weight: float = 0.50,
+        boundary_weight: float = 1.0,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
         coordinate_space: str = SELECTED_AXIS,
@@ -251,6 +256,11 @@ class DucaOnlineFrameSelector(nn.Module):
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
+        self.actionness_weight = float(actionness_weight)
+        self.transition_weight = float(transition_weight)
+        self.uncertainty_weight = float(uncertainty_weight)
+        self.utility_weight = float(utility_weight)
+        self.boundary_weight = float(boundary_weight)
         self.detector_gradient_mode = str(detector_gradient_mode)
         self.selected_positions_coordinate = str(coordinate_space)
         self.detector_output_coordinate_space = str(detector_output_coordinate_space)
@@ -359,6 +369,11 @@ class DucaOnlineFrameSelector(nn.Module):
             max_radius=self.max_radius,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
+            actionness_weight=self.actionness_weight,
+            transition_weight=self.transition_weight,
+            uncertainty_weight=self.uncertainty_weight,
+            utility_weight=self.utility_weight,
+            boundary_weight=self.boundary_weight,
             profile_runtime=self.profile_runtime,
             profile_sync_cuda=self.profile_sync_cuda,
         )
@@ -382,7 +397,7 @@ class DucaOnlineFrameSelector(nn.Module):
             masks,
             boundary_radius=max(1, min(int(self.max_radius), 4)),
         )
-        detector_utility_target = self._detector_utility_target_from_gt_segments(
+        boundary_utility_proxy_target = self._boundary_utility_proxy_target_from_gt_segments(
             gt_segments,
             masks,
             boundary_radius=max(1, min(int(self.max_radius), 4)),
@@ -394,8 +409,10 @@ class DucaOnlineFrameSelector(nn.Module):
             outputs["selector_outputs"]["action_target"] = action_target
         if boundary_target is not None:
             outputs["selector_outputs"]["boundary_target"] = boundary_target
-        if detector_utility_target is not None:
-            outputs["selector_outputs"]["detector_utility_target"] = detector_utility_target
+        if boundary_utility_proxy_target is not None:
+            outputs["selector_outputs"]["boundary_utility_proxy_target"] = boundary_utility_proxy_target
+            outputs["selector_outputs"]["detector_utility_target"] = boundary_utility_proxy_target
+            outputs["selector_outputs"]["detector_utility_target_kind"] = "gt_boundary_utility_proxy"
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
             gt_segments, gt_labels, outputs["metas"]
         )
@@ -404,7 +421,7 @@ class DucaOnlineFrameSelector(nn.Module):
             teacher_utility=teacher_utility,
             boundary_target=boundary_target,
             action_target=action_target,
-            detector_utility_target=detector_utility_target,
+            detector_utility_target=boundary_utility_proxy_target,
             loss_weights=schedule_state["weights"],
         )
         self._record_pending_loss_schedule_step()
@@ -618,7 +635,7 @@ class DucaOnlineFrameSelector(nn.Module):
         return target.masked_fill(~valid, 0.0)
 
     @staticmethod
-    def _detector_utility_target_from_gt_segments(
+    def _boundary_utility_proxy_target_from_gt_segments(
         gt_segments,
         masks: torch.Tensor,
         *,
@@ -627,10 +644,10 @@ class DucaOnlineFrameSelector(nn.Module):
         if gt_segments is None:
             return None
         if masks.ndim != 2:
-            raise ValueError("DUCA detector utility target generation expects dense masks [B,T]")
+            raise ValueError("DUCA boundary utility proxy generation expects dense masks [B,T]")
         batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
         if len(gt_segments) != batch:
-            raise ValueError("gt_segments length must match batch size for DUCA detector utility target generation")
+            raise ValueError("gt_segments length must match batch size for DUCA boundary utility proxy generation")
         device = masks.device
         dtype = torch.float32
         centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5

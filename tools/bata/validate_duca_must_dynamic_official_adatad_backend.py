@@ -160,6 +160,22 @@ def validate_config(
         getattr(contract, "state_transition_boundary_dominates_selection", False) is True,
         "dynamic main config must declare state-transition/boundary-first selection",
     )
+    _require(
+        getattr(contract, "selector_score_priority", "") == "transition_boundary_utility_first",
+        "dynamic main config must declare transition/boundary/utility-first selector scoring",
+    )
+    _require(
+        getattr(contract, "actionness_score_role", "") == "small_auxiliary_score",
+        "dynamic main config must declare actionness score as a small auxiliary term",
+    )
+    _require(
+        getattr(contract, "detector_utility_target_kind", "") == "gt_boundary_utility_proxy",
+        "dynamic main config must honestly declare GT boundary utility proxy target",
+    )
+    _require(
+        getattr(contract, "detector_utility_target_is_true_detector_derived", True) is False,
+        "dynamic main config must not claim true detector-derived utility for the GT boundary proxy",
+    )
     _require(contract.changes_detector_head is False, "main config must not change detector head")
     _require(contract.changes_loss_assignment is False, "main config must not change detector assignment/loss")
     _require(contract.actual_variable_length_detector is False, "current backend must declare padded cap detector input")
@@ -252,6 +268,26 @@ def validate_config(
             "main DUCA-MUST selector must make state-transition/boundary supervision dominate actionness",
         )
         _require(
+            float(selector.actionness_weight) == float(contract.selector_score_actionness_weight),
+            "selector actionness scoring weight must match contract",
+        )
+        _require(
+            float(selector.transition_weight) == float(contract.selector_score_transition_weight),
+            "selector transition scoring weight must match contract",
+        )
+        _require(
+            float(selector.boundary_weight) == float(contract.selector_score_boundary_weight),
+            "selector boundary scoring weight must match contract",
+        )
+        _require(
+            float(selector.actionness_weight) < float(selector.transition_weight),
+            "selector score must weight transition higher than actionness",
+        )
+        _require(
+            float(selector.actionness_weight) < float(selector.boundary_weight),
+            "selector score must weight boundary higher than actionness",
+        )
+        _require(
             float(selector.loss_weights.get("hole", 0.0)) == 0.0,
             "main DUCA-MUST selector must disable action-coverage hole loss",
         )
@@ -299,6 +335,17 @@ def validate_config(
         "pre_backbone_plugin": True,
         "selected_positions_unit": str(selector.selected_positions_unit),
         "detector_output_coordinate_space": str(selector.detector_output_coordinate_space),
+        "detector_utility_target_kind": str(contract.detector_utility_target_kind),
+        "detector_utility_target_is_true_detector_derived": bool(
+            contract.detector_utility_target_is_true_detector_derived
+        ),
+        "selector_score_priority": str(contract.selector_score_priority),
+        "actionness_score_role": str(contract.actionness_score_role),
+        "selector_score_actionness_weight": float(selector.actionness_weight),
+        "selector_score_transition_weight": float(selector.transition_weight),
+        "selector_score_uncertainty_weight": float(selector.uncertainty_weight),
+        "selector_score_utility_weight": float(selector.utility_weight),
+        "selector_score_boundary_weight": float(selector.boundary_weight),
     }
     summary.update(schedule_summary)
     if require_online_c3_actionness:

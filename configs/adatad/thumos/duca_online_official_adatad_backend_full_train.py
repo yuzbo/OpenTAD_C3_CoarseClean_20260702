@@ -64,6 +64,11 @@ duca_coarse_source_name = os.environ.get(
         else f"online_c3_{duca_coarse_probe_model}_{duca_coarse_tcn_variant}_coarse_actionness"
     ),
 )
+duca_selector_actionness_weight = _env_float("DUCA_SELECTOR_ACTIONNESS_WEIGHT", 0.05)
+duca_selector_transition_weight = _env_float("DUCA_SELECTOR_TRANSITION_WEIGHT", 1.0)
+duca_selector_uncertainty_weight = _env_float("DUCA_SELECTOR_UNCERTAINTY_WEIGHT", 0.25)
+duca_selector_utility_weight = _env_float("DUCA_SELECTOR_UTILITY_WEIGHT", 0.50)
+duca_selector_boundary_weight = _env_float("DUCA_SELECTOR_BOUNDARY_WEIGHT", 1.0)
 if duca_coarse_tcn_variant == "asformer_lite":
     raise ValueError("DUCA main method forbids asformer_lite; use official-action-seg with official_asformer")
 if dense_window_size <= 0:
@@ -88,6 +93,11 @@ if duca_loss_schedule_warmup_steps < 0:
     raise ValueError("DUCA_LOSS_SCHEDULE_WARMUP_STEPS must be non-negative")
 if duca_loss_schedule_transition_steps <= 0:
     raise ValueError("DUCA_LOSS_SCHEDULE_TRANSITION_STEPS must be positive")
+if not (
+    0.0 <= duca_selector_actionness_weight < duca_selector_transition_weight
+    and duca_selector_actionness_weight < duca_selector_boundary_weight
+):
+    raise ValueError("DUCA selector scoring must keep actionness as a small auxiliary term")
 scale_factor = 1
 chunk_num = window_size * scale_factor // 16
 
@@ -139,7 +149,16 @@ duca_online_main_contract = dict(
     coarse_actionness_dominates_initial_training=False,
     state_transition_boundary_dominates_selection=True,
     actionness_role="auxiliary_calibration_not_coverage",
+    actionness_score_role="small_auxiliary_score",
+    selector_score_priority="transition_boundary_utility_first",
+    selector_score_actionness_weight=duca_selector_actionness_weight,
+    selector_score_transition_weight=duca_selector_transition_weight,
+    selector_score_uncertainty_weight=duca_selector_uncertainty_weight,
+    selector_score_utility_weight=duca_selector_utility_weight,
+    selector_score_boundary_weight=duca_selector_boundary_weight,
     selection_supervision="state_transition_boundary_first",
+    detector_utility_target_kind="gt_boundary_utility_proxy",
+    detector_utility_target_is_true_detector_derived=False,
     detector_loss_always_trains_backend=True,
     detector_gradient_bridge_enabled_after_schedule_transition=True,
     actionness_source="online_trainable_c3_coarse_probe",
@@ -208,6 +227,11 @@ model = dict(
         budget_mode="fixed",
         max_radius=16,
         selector_hidden_channels=64,
+        actionness_weight=duca_selector_actionness_weight,
+        transition_weight=duca_selector_transition_weight,
+        uncertainty_weight=duca_selector_uncertainty_weight,
+        utility_weight=duca_selector_utility_weight,
+        boundary_weight=duca_selector_boundary_weight,
         detector_gradient_mode="soft_to_hard_resample",
         coordinate_space="original_time",
         detector_output_coordinate_space="selected_axis_index",
