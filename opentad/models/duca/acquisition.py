@@ -1657,6 +1657,25 @@ def _minimum_selection_for_max_hole(valid_count: int, max_unselected_hole: int) 
     return max(1, int((numerator + max_hole) // (max_hole + 1)))
 
 
+def _max_gap_scaffold_positions(valid_positions: List[int], max_unselected_hole: int) -> List[int]:
+    """Return a minimal deterministic scaffold that satisfies the hard max-gap."""
+
+    if not valid_positions:
+        return []
+    max_hole = int(max_unselected_hole)
+    if max_hole < 0:
+        raise ValueError("max_unselected_hole must be non-negative")
+    valid = [int(pos) for pos in valid_positions]
+    if len(valid) <= max_hole:
+        return [valid[-1]]
+    step = max_hole + 1
+    ranks = list(range(max_hole, len(valid), step))
+    if not ranks or ranks[-1] != len(valid) - 1:
+        ranks.append(len(valid) - 1)
+    scaffold = [valid[int(rank)] for rank in ranks]
+    return sorted(set(scaffold))
+
+
 def _repair_selected_max_unselected_hole(
     selected_positions: List[int],
     score_values: torch.Tensor,
@@ -1666,60 +1685,48 @@ def _repair_selected_max_unselected_hole(
     max_unselected_hole: int,
 ) -> Tuple[List[int], Dict[str, Any]]:
     max_hole = int(max_unselected_hole)
-    selected = {int(pos) for pos in selected_positions}
-    if len(selected) != int(budget):
+    original_selected = {int(pos) for pos in selected_positions}
+    if len(original_selected) != int(budget):
         raise ValueError("hard max-gap repair expects a strict-budget selection")
     minimum_required = _minimum_selection_for_max_hole(len(valid_positions), max_hole)
     metadata: Dict[str, Any] = {
         "enabled": True,
+        "mode": "scaffold_first",
         "max_unselected_hole": max_hole,
         "minimum_required_budget": int(minimum_required),
         "requested_budget": int(budget),
         "feasible": int(budget) >= int(minimum_required),
         "repair_count": 0,
-        "max_unselected_hole_before": int(_max_unselected_hole(selected, valid_positions)),
+        "scaffold_count": 0,
+        "remaining_budget_after_scaffold": max(0, int(budget)),
+        "max_unselected_hole_before": int(_max_unselected_hole(original_selected, valid_positions)),
         "max_unselected_hole_after": None,
     }
     if not metadata["feasible"]:
         metadata["max_unselected_hole_after"] = metadata["max_unselected_hole_before"]
-        return sorted(selected), metadata
-    valid_set = set(valid_positions)
+        return sorted(original_selected), metadata
+    if metadata["max_unselected_hole_before"] <= max_hole:
+        metadata["max_unselected_hole_after"] = metadata["max_unselected_hole_before"]
+        metadata["satisfied"] = True
+        return sorted(original_selected), metadata
 
     def score(pos: int) -> float:
         return float(score_values[int(pos)].detach().cpu().item())
 
-    for _ in range(len(valid_positions) + 1):
-        violating = [run for run in _unselected_hole_runs(selected, valid_positions) if int(run[2]) > max_hole]
-        if not violating:
+    scaffold = _max_gap_scaffold_positions(valid_positions, max_hole)
+    selected = {int(pos) for pos in scaffold}
+    metadata["scaffold_count"] = int(len(selected))
+    metadata["remaining_budget_after_scaffold"] = max(0, int(budget) - int(len(selected)))
+    ranked_remaining = sorted(
+        (int(pos) for pos in valid_positions if int(pos) not in selected),
+        key=lambda pos: (score(pos), -int(pos)),
+        reverse=True,
+    )
+    for pos in ranked_remaining:
+        if len(selected) >= int(budget):
             break
-        start, end, length = max(violating, key=lambda item: (int(item[2]), -int(item[0])))
-        feasible_start = max(int(start), int(end) - max_hole)
-        feasible_end = min(int(end), int(start) + max_hole)
-        candidates = [pos for pos in range(feasible_start, feasible_end + 1) if pos in valid_set and pos not in selected]
-        if not candidates:
-            candidates = [pos for pos in range(int(start), int(end) + 1) if pos in valid_set and pos not in selected]
-        if not candidates:
-            break
-        added = max(candidates, key=lambda pos: (score(pos), -abs(pos - (int(start) + int(end)) // 2), -pos))
-        selected.add(int(added))
-        removable = []
-        for victim in sorted(selected):
-            if int(victim) == int(added):
-                continue
-            trial = set(selected)
-            trial.remove(int(victim))
-            trial_hole = _max_unselected_hole(trial, valid_positions)
-            removable.append((trial_hole <= max_hole, trial_hole, score(int(victim)), -int(victim), int(victim)))
-        safe = [item for item in removable if item[0]]
-        if safe:
-            victim = min(safe, key=lambda item: (item[2], item[3]))[-1]
-        elif removable:
-            victim = min(removable, key=lambda item: (item[1], item[2], item[3]))[-1]
-        else:
-            selected.remove(int(added))
-            break
-        selected.remove(int(victim))
-        metadata["repair_count"] = int(metadata["repair_count"]) + 1
+        selected.add(int(pos))
+    metadata["repair_count"] = int(len(selected.difference(original_selected)))
     metadata["max_unselected_hole_after"] = int(_max_unselected_hole(selected, valid_positions))
     metadata["satisfied"] = metadata["max_unselected_hole_after"] <= max_hole
     return sorted(selected), metadata

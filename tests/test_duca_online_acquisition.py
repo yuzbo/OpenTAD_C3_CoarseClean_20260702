@@ -264,6 +264,36 @@ def test_budgeted_center_radius_decode_repairs_max_unselected_hole_without_chang
     assert decoded["max_gap_repair"][0]["satisfied"] is True
 
 
+@pytest.mark.parametrize("budget", [64, 128, 256, 384])
+def test_budgeted_center_radius_decode_builds_max_gap_scaffold_before_utility_fill(budget: int) -> None:
+    scores = torch.linspace(768.0, 1.0, 768).view(1, 768)
+    radius = torch.zeros_like(scores)
+
+    decoded = budgeted_center_radius_decode(
+        center_scores=scores,
+        radius=radius,
+        budget=budget,
+        max_unselected_hole=15,
+    )
+
+    positions = [int(item) for item in decoded["selected_positions"][0].tolist() if int(item) >= 0]
+    assert len(positions) == budget
+    assert positions == sorted(set(positions))
+    assert decoded["selected_mask"].sum().item() == budget
+    holes = []
+    run = 0
+    for idx in range(scores.shape[1]):
+        if idx in positions:
+            run = 0
+        else:
+            run += 1
+            holes.append(run)
+    assert max(holes) <= 15
+    assert decoded["max_gap_repair"][0]["satisfied"] is True
+    assert decoded["max_gap_repair"][0]["scaffold_count"] == 48
+    assert decoded["max_gap_repair"][0]["remaining_budget_after_scaffold"] == budget - 48
+
+
 def test_budgeted_center_radius_decode_fails_closed_when_max_gap_is_infeasible() -> None:
     scores = torch.linspace(1.0, 0.0, 10).view(1, 10)
 
