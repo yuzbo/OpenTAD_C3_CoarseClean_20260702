@@ -10,13 +10,18 @@ except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
 
 
-def _motion_selector(*, profile_runtime: bool = True) -> DucaOnlineFrameSelector:
+def _motion_selector(
+    *,
+    profile_runtime: bool = True,
+    detector_gradient_mode: str = "st_sparse_gather",
+) -> DucaOnlineFrameSelector:
     return DucaOnlineFrameSelector(
         in_channels=3,
         budget=4,
         max_radius=2,
         selector_hidden_channels=8,
         dense_window_size=8,
+        detector_gradient_mode=detector_gradient_mode,
         profile_runtime=profile_runtime,
         actionness_source_cfg={
             "type": "ZeroShotMotionActionnessSource",
@@ -64,6 +69,26 @@ def test_duca_selector_reports_compute_and_latency_profile_for_motion_source() -
     assert profile["latency_ms"]["descriptor_ms"] >= 0.0
     assert out["metas"][0]["duca_online_compute_profile"]["estimated_flops"] == profile["estimated_flops"]
     assert selector.last_forward_summary["compute_profile"]["estimated_flops"] == profile["estimated_flops"]
+
+
+def test_soft_to_hard_resample_profile_accounts_slotwise_temporal_bridge() -> None:
+    selector = _motion_selector(profile_runtime=True, detector_gradient_mode="soft_to_hard_resample")
+    inputs = torch.randn(1, 3, 8, 4, 4)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+
+    out = selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "v"}])
+
+    profile = out["selector_outputs"]["compute_profile"]
+    bridge = profile["components"]["soft_to_hard_resample"]
+    assert profile["detector_gradient_bridge"]["mode"] == "soft_to_hard_resample"
+    assert bridge["enabled"] is True
+    assert bridge["slot_count"] == 4
+    assert bridge["dense_temporal_len"] == 8
+    assert bridge["feature_dim"] == 3
+    assert bridge["estimated_macs"] == 1 * 4 * 8 * 3
+    assert bridge["estimated_flops"] >= bridge["estimated_macs"]
+    assert profile["estimated_flops"] >= bridge["estimated_flops"]
+    assert out["metas"][0]["duca_online_compute_profile"]["components"]["soft_to_hard_resample"]["enabled"] is True
 
 
 def test_duca_selector_marks_external_x3d_actionness_as_cached_prior_in_profile() -> None:

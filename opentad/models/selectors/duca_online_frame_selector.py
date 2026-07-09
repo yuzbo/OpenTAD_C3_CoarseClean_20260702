@@ -686,6 +686,8 @@ class DucaOnlineFrameSelector(nn.Module):
         hard_selected = _gather_time(inputs, positions, slot_mask)
         detector_gradient_weight = self._detector_gradient_weight(schedule_state)
         soft_resample_weights = None
+        bridge_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
+        bridge_ms = None
         if self.detector_gradient_mode == "st_sparse_gather_soft_context":
             hard_selected = _add_soft_context_gradient_path(
                 hard_selected,
@@ -705,6 +707,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 valid_mask=masks,
                 bridge_weight=detector_gradient_weight,
             )
+        bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
         st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
             dtype=scores["selected_mask_st"].dtype
         )
@@ -719,6 +722,7 @@ class DucaOnlineFrameSelector(nn.Module):
             {
                 "enabled": profile_enabled,
                 "descriptor_ms": descriptor_ms,
+                "detector_gradient_bridge_ms": bridge_ms,
                 "gather_ms": gather_ms,
                 "total_selector_ms": total_selector_ms,
             }
@@ -742,6 +746,16 @@ class DucaOnlineFrameSelector(nn.Module):
                 compute_profile,
                 dict(online_actionness.get("compute_profile", {})),
             )
+        self._add_detector_gradient_bridge_profile(
+            compute_profile,
+            batch_size=int(descriptors.shape[0]),
+            slot_count=int(positions.shape[1]),
+            temporal_len=int(descriptors.shape[1]),
+            feature_dim=int(descriptors.shape[2]),
+            mode=self.detector_gradient_mode,
+            bridge_weight=float(detector_gradient_weight),
+            bridge_ms=bridge_ms,
+        )
         scores["compute_profile"] = compute_profile
         selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
         scores["grid"] = grid
@@ -782,6 +796,44 @@ class DucaOnlineFrameSelector(nn.Module):
                 compute_profile=compute_profile,
             ),
             "selector_outputs": scores,
+        }
+
+    @staticmethod
+    def _add_detector_gradient_bridge_profile(
+        profile: dict[str, Any],
+        *,
+        batch_size: int,
+        slot_count: int,
+        temporal_len: int,
+        feature_dim: int,
+        mode: str,
+        bridge_weight: float,
+        bridge_ms: Optional[float],
+    ) -> None:
+        components = dict(profile.get("components", {}))
+        enabled = mode == "soft_to_hard_resample"
+        macs = int(batch_size * slot_count * temporal_len * feature_dim) if enabled else 0
+        softmax_flops = int(batch_size * slot_count * temporal_len * 8) if enabled else 0
+        flops = int(2 * macs + softmax_flops)
+        component = {
+            "enabled": bool(enabled),
+            "mode": str(mode),
+            "slot_count": int(slot_count),
+            "dense_temporal_len": int(temporal_len),
+            "feature_dim": int(feature_dim),
+            "estimated_macs": int(macs),
+            "estimated_flops": int(flops),
+            "complexity": "O(B*K*T*C) soft slot resampling" if enabled else "disabled",
+        }
+        components["soft_to_hard_resample"] = component
+        profile["components"] = components
+        profile["estimated_macs"] = int(profile.get("estimated_macs", 0) or 0) + int(macs)
+        profile["estimated_flops"] = int(profile.get("estimated_flops", 0) or 0) + int(flops)
+        profile["detector_gradient_bridge"] = {
+            "mode": str(mode),
+            "bridge_weight": float(bridge_weight),
+            "latency_ms": bridge_ms,
+            "component": "soft_to_hard_resample",
         }
 
     def _record_pending_dynamic_budget_dual(self, scores: Mapping[str, Any], grid) -> None:
