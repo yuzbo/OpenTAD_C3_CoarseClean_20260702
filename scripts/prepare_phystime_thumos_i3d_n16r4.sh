@@ -19,6 +19,8 @@ GDRIVE_URL="${PHYSTIME_I3D_URL:-https://drive.google.com/file/d/1iemRUtCVshYD3o9
 READY_JSON="${DATA_ROOT}/data_ready.json"
 MIN_FEATURE_FILES="${PHYSTIME_MIN_FEATURE_FILES:-300}"
 DOWNLOAD_PROXY="${PHYSTIME_DOWNLOAD_PROXY:-}"
+DOWNLOAD_ATTEMPTS="${PHYSTIME_DOWNLOAD_ATTEMPTS:-12}"
+DOWNLOAD_RETRY_DELAY_SEC="${PHYSTIME_DOWNLOAD_RETRY_DELAY_SEC:-60}"
 
 if [[ -n "${DOWNLOAD_PROXY}" ]]; then
   export http_proxy="${DOWNLOAD_PROXY}"
@@ -40,7 +42,18 @@ if (( feature_count < MIN_FEATURE_FILES )); then
   fi
   # gdown 6.x accepts Drive URLs directly and uses --continue for both fresh
   # downloads and resumable partial archives.
-  PYTHONPATH="${GDOWN_ROOT}" "${PYTHON}" -m gdown --continue "${GDRIVE_URL}" -O "${ARCHIVE}"
+  download_ok=0
+  for ((attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++)); do
+    if PYTHONPATH="${GDOWN_ROOT}" "${PYTHON}" -m gdown --continue "${GDRIVE_URL}" -O "${ARCHIVE}"; then
+      download_ok=1
+      break
+    fi
+    echo "[PHYSTIME_DATA] download attempt ${attempt}/${DOWNLOAD_ATTEMPTS} failed" >&2
+    if (( attempt < DOWNLOAD_ATTEMPTS )); then
+      sleep "${DOWNLOAD_RETRY_DELAY_SEC}"
+    fi
+  done
+  (( download_ok == 1 )) || fail "I3D archive download failed after ${DOWNLOAD_ATTEMPTS} attempts"
   rm -rf "${EXTRACT_DIR}"
   mkdir -p "${EXTRACT_DIR}"
   "${PYTHON}" - "${ARCHIVE}" "${EXTRACT_DIR}" <<'PY'

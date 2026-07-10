@@ -48,6 +48,8 @@ def test_data_and_training_launchers_are_fail_closed():
     assert "gdown --continue" in data_script
     assert "--fuzzy" not in data_script
     assert "PHYSTIME_DOWNLOAD_PROXY" in data_script
+    assert "PHYSTIME_DOWNLOAD_ATTEMPTS" in data_script
+    assert "download attempt ${attempt}/${DOWNLOAD_ATTEMPTS} failed" in data_script
     assert "data_ready.json" in train_script
     assert "torchrun" in train_script.lower()
     assert "TRAINING_COMPLETE" in train_script
