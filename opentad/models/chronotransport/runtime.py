@@ -18,6 +18,7 @@ from .profiler import ChronoProfiler
 from .risk import ScheduleQuantileRiskPredictor
 from .scheduler import MeasuredCostTable, RiskConstrainedScheduler, ScheduleLibrary
 from .transport import TemporalTransportAdapter
+from .cost_lookup import ScheduleCostLookup
 
 
 class ChronoTransportRuntime(nn.Module):
@@ -53,6 +54,10 @@ class ChronoTransportRuntime(nn.Module):
         cache_detach: bool = True,
         profile_sync_cuda: bool = False,
         measured_cost: Mapping[str, Sequence[float] | float] | None = None,
+        nonlinear_cost_entries: Mapping[str, Mapping[str, float]] | None = None,
+        cost_hardware: str = "",
+        cost_precision: str = "",
+        cost_statistic: str = "p50",
         allow_unmeasured_cost_for_debug: bool = False,
         risk_ready: bool = False,
         require_checkpoint_for_dynamic: bool = False,
@@ -72,6 +77,7 @@ class ChronoTransportRuntime(nn.Module):
         self.require_checkpoint_for_dynamic = bool(require_checkpoint_for_dynamic)
         self.checkpoint_loaded = False
         self.cost_is_measured = measured_cost is not None
+        self.nonlinear_cost_ready = nonlinear_cost_entries is not None
         self.layer_groups = normalize_layer_groups(self.depth, layer_groups)
         if self.embed_dims <= 0 or self.chunks_per_window <= 0 or self.signal_dims <= 0:
             raise ValueError("runtime dimensions must be positive")
@@ -128,6 +134,14 @@ class ChronoTransportRuntime(nn.Module):
             cost_table=self.cost_table,
             epsilon=float(risk_epsilon),
             max_cache_age=self.max_cache_age,
+            schedule_cost_lookup=(
+                None
+                if nonlinear_cost_entries is None
+                else ScheduleCostLookup(nonlinear_cost_entries)
+            ),
+            cost_hardware=cost_hardware,
+            cost_precision=cost_precision,
+            cost_statistic=cost_statistic,
         )
         self.latest_summary: dict[str, Any] | None = None
         self.latest_schedule: ChronoSchedule | None = None
@@ -310,6 +324,7 @@ class ChronoTransportRuntime(nn.Module):
             "runtime_fail_closed_repairs": 0,
             "dense_output_shape_preserved": True,
             "cost_is_measured": self.cost_is_measured,
+            "nonlinear_cost_ready": self.nonlinear_cost_ready,
             "risk_ready": self.risk_ready,
             "checkpoint_loaded": self.checkpoint_loaded,
             "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,
@@ -488,6 +503,17 @@ class ChronoTransportRuntime(nn.Module):
                     w,
                     profiler=profiler,
                     reason="unmeasured_cost_table",
+                    batch_size=batch_size,
+                    geometry=geometry,
+                )
+            if not self.nonlinear_cost_ready and not self.allow_unmeasured_cost_for_debug:
+                return self._dense_fail_closed(
+                    x,
+                    blocks,
+                    h,
+                    w,
+                    profiler=profiler,
+                    reason="schedule_shape_cost_lookup_missing",
                     batch_size=batch_size,
                     geometry=geometry,
                 )

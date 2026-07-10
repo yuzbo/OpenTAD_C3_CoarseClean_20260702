@@ -14,6 +14,7 @@ from .actions import (
     dense_action_tensor,
 )
 from .risk import ScheduleQuantileRiskPredictor
+from .cost_lookup import CostLookupKey, ScheduleCostLookup
 
 
 @dataclass(frozen=True)
@@ -246,6 +247,10 @@ class RiskConstrainedScheduler(nn.Module):
         *,
         epsilon: float,
         max_cache_age: int,
+        schedule_cost_lookup: ScheduleCostLookup | None = None,
+        cost_hardware: str = "",
+        cost_precision: str = "",
+        cost_statistic: str = "p50",
     ) -> None:
         super().__init__()
         self.predictor = predictor
@@ -253,12 +258,41 @@ class RiskConstrainedScheduler(nn.Module):
         self.cost_table = cost_table
         self.epsilon = float(epsilon)
         self.max_cache_age = int(max_cache_age)
+        self.schedule_cost_lookup = schedule_cost_lookup
+        self.cost_hardware = str(cost_hardware)
+        self.cost_precision = str(cost_precision)
+        self.cost_statistic = str(cost_statistic)
         if self.epsilon < 0.0:
             raise ValueError("epsilon must be non-negative")
         if self.max_cache_age <= 0:
             raise ValueError("max_cache_age must be positive")
         if self.cost_table.num_groups != self.schedule_library.num_groups:
             raise ValueError("cost table and schedule library group counts differ")
+        if self.schedule_cost_lookup is not None:
+            if not self.cost_hardware or not self.cost_precision:
+                raise ValueError("nonlinear cost lookup requires hardware and precision")
+            if self.cost_statistic not in {"p50", "p95"}:
+                raise ValueError("cost statistic must be p50 or p95")
+
+    def _candidate_cost(self, candidates: Tensor, batch_size: int) -> Tensor:
+        if self.schedule_cost_lookup is None:
+            return self.cost_table.estimate(candidates)
+        costs = []
+        for index, name in enumerate(self.schedule_library.names):
+            actions = candidates[index]
+            rows = tuple(
+                int((actions[:, group] == int(ChronoAction.RECOMPUTE)).sum().item())
+                for group in range(int(actions.shape[1]))
+            )
+            key = CostLookupKey(
+                hardware=self.cost_hardware,
+                precision=self.cost_precision,
+                batch_size=int(batch_size),
+                candidate_schedule=name,
+                selected_rows_per_group=rows,
+            )
+            costs.append(self.schedule_cost_lookup.get(key, self.cost_statistic))
+        return torch.tensor(costs, dtype=torch.float32, device=candidates.device)
 
     def _age_feasible(self, candidates: Tensor) -> Tensor:
         # candidates: [K,C,G]
@@ -284,7 +318,7 @@ class RiskConstrainedScheduler(nn.Module):
 
         candidates = self.schedule_library.stacked_actions(device=signals.device)
         candidate_risk = self.predictor(signals, candidates)
-        candidate_cost_1d = self.cost_table.estimate(candidates)
+        candidate_cost_1d = self._candidate_cost(candidates, batch_size)
         candidate_cost = candidate_cost_1d.unsqueeze(0).expand(batch_size, -1)
         age_feasible = self._age_feasible(candidates).unsqueeze(0).expand(batch_size, -1)
 

@@ -125,3 +125,40 @@ def test_expected_production_and_tdd_files_exist() -> None:
     assert all((package / name).is_file() for name in expected)
     assert (ROOT / "tests/test_chronotransport_core.py").is_file()
     assert (ROOT / "docs/methods/2026-07-10-chronotransport-implementation-plan.md").is_file()
+
+
+def test_paired_replay_stage_b_and_cost_lookup_files_exist() -> None:
+    expected = (
+        "opentad/models/chronotransport/replay.py",
+        "opentad/models/chronotransport/training.py",
+        "opentad/models/chronotransport/cost_lookup.py",
+        "tools/bata/run_chronotransport_paired_replay.py",
+        "tools/bata/train_chronotransport_stage_b.py",
+        "tools/bata/profile_chronotransport_schedules.py",
+        "configs/adatad/thumos/c3_chronotransport_adatad_videomae_s_768x1_160_stage_b.py",
+        "configs/adatad/thumos/c3_chronotransport_adatad_videomae_s_768x1_160_stage_c.py",
+    )
+    assert all((ROOT / path).is_file() for path in expected)
+
+
+def test_paired_replay_source_forbids_deployment_prediction_payloads() -> None:
+    path = ROOT / "opentad/models/chronotransport/replay.py"
+    text = path.read_text(encoding="utf-8")
+    assert "raw_predictions" not in text
+    assert "full_token_state" not in text
+    assert "RNGSnapshot" in text
+    assert "nonnegative_detector_regret" in text
+
+
+def test_learned_cost_lookup_is_schedule_shape_keyed() -> None:
+    text = (ROOT / "opentad/models/chronotransport/cost_lookup.py").read_text(encoding="utf-8")
+    for token in (
+        "hardware",
+        "precision",
+        "batch_size",
+        "candidate_schedule",
+        "selected_rows_per_group",
+        "p50",
+        "p95",
+    ):
+        assert token in text

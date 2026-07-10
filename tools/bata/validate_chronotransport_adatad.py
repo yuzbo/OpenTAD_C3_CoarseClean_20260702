@@ -88,6 +88,7 @@ def validate_config(
     runtime_cfg = backbone_cfg.chronotransport
     groups = _validate_layer_groups(runtime_cfg.layer_groups, depth=int(backbone_cfg.depth))
     measured_cost = _validate_measured_cost(runtime_cfg.get("measured_cost", None), len(groups))
+    nonlinear_cost = runtime_cfg.get("nonlinear_cost_entries", None)
 
     _require(contract.schema_version == "chronotransport_adatad_contract_v1", "unexpected contract schema")
     _require(contract.review_base_commit == REVIEW_BASE_COMMIT, "review base commit must be fixed")
@@ -153,6 +154,10 @@ def validate_config(
         _require(contract.learned_mode_expected_fail_closed is True, "unready learned mode must declare dense fail-closed")
     if require_measured_cost:
         _require(measured_cost is not None, "formal dynamic run requires a measured cost table")
+        _require(
+            isinstance(nonlinear_cost, Mapping) and len(nonlinear_cost) > 0,
+            "formal dynamic run requires schedule-shape p50/p95 cost lookup",
+        )
     if require_risk_ready:
         _require(risk_ready, "formal dynamic run requires an explicitly calibrated risk checkpoint")
         _require(

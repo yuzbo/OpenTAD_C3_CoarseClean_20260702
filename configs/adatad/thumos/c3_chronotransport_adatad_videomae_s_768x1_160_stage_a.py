@@ -71,6 +71,25 @@ def _load_measured_cost(path: str) -> dict | None:
     }
 
 
+def _load_schedule_cost(path: str) -> dict | None:
+    if not path:
+        return None
+    payload = json.loads(pathlib.Path(path).expanduser().resolve().read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "chronotransport_schedule_cost_v1":
+        raise ValueError("unsupported ChronoTransport schedule cost schema")
+    entries = payload.get("entries")
+    if not isinstance(entries, dict) or not entries:
+        raise ValueError("schedule cost lookup must contain entries")
+    for key, value in entries.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            raise ValueError("invalid schedule cost entry")
+        for statistic in ("p50", "p95"):
+            number = float(value[statistic])
+            if not math.isfinite(number) or number < 0.0:
+                raise ValueError("schedule p50/p95 must be finite and non-negative")
+    return entries
+
+
 window_size = 768
 videomae_clip_frames = 16
 videomae_tubelet_size = 2
@@ -105,6 +124,10 @@ chronotransport_forced_schedule = (
 )
 chronotransport_cost_path = os.environ.get("CHRONOTRANSPORT_COST_JSON", "").strip()
 chronotransport_measured_cost = _load_measured_cost(chronotransport_cost_path)
+chronotransport_schedule_cost_path = os.environ.get(
+    "CHRONOTRANSPORT_SCHEDULE_COST_JSON", ""
+).strip()
+chronotransport_schedule_cost = _load_schedule_cost(chronotransport_schedule_cost_path)
 chronotransport_risk_ready = _env_bool("CHRONOTRANSPORT_RISK_READY", False)
 chronotransport_allow_unmeasured_debug = _env_bool(
     "CHRONOTRANSPORT_ALLOW_UNMEASURED_DEBUG",
@@ -134,6 +157,10 @@ chronotransport_runtime_cfg = dict(
     cache_detach=True,
     profile_sync_cuda=_env_bool("CHRONOTRANSPORT_PROFILE_SYNC_CUDA", True),
     measured_cost=chronotransport_measured_cost,
+    nonlinear_cost_entries=chronotransport_schedule_cost,
+    cost_hardware=os.environ.get("CHRONOTRANSPORT_COST_HARDWARE", ""),
+    cost_precision=os.environ.get("CHRONOTRANSPORT_COST_PRECISION", ""),
+    cost_statistic=os.environ.get("CHRONOTRANSPORT_COST_STATISTIC", "p50"),
     allow_unmeasured_cost_for_debug=chronotransport_allow_unmeasured_debug,
     risk_ready=chronotransport_risk_ready,
     require_checkpoint_for_dynamic=True,
@@ -181,6 +208,7 @@ chronotransport_contract = dict(
     mode=chronotransport_mode,
     forced_schedule=chronotransport_forced_schedule,
     measured_cost_available=chronotransport_measured_cost is not None,
+    nonlinear_schedule_cost_available=chronotransport_schedule_cost is not None,
     risk_ready=chronotransport_risk_ready,
     learned_mode_expected_fail_closed=(
         chronotransport_mode == "learned"
