@@ -322,7 +322,7 @@ class RiskConstrainedScheduler(nn.Module):
         candidate_cost = candidate_cost_1d.unsqueeze(0).expand(batch_size, -1)
         age_feasible = self._age_feasible(candidates).unsqueeze(0).expand(batch_size, -1)
 
-        finite_signals = torch.isfinite(signals).all(dim=(-1, -2, -3))
+        finite_signals = torch.isfinite(signals).reshape(batch_size, -1).all(dim=1)
         finite_risk = torch.isfinite(candidate_risk)
         feasible = finite_risk & age_feasible & (candidate_risk <= self.epsilon)
 

@@ -506,17 +506,6 @@ class ChronoTransportRuntime(nn.Module):
                     batch_size=batch_size,
                     geometry=geometry,
                 )
-            if not self.nonlinear_cost_ready and not self.allow_unmeasured_cost_for_debug:
-                return self._dense_fail_closed(
-                    x,
-                    blocks,
-                    h,
-                    w,
-                    profiler=profiler,
-                    reason="schedule_shape_cost_lookup_missing",
-                    batch_size=batch_size,
-                    geometry=geometry,
-                )
             if not self.risk_ready:
                 return self._dense_fail_closed(
                     x,
@@ -536,6 +525,17 @@ class ChronoTransportRuntime(nn.Module):
                     w,
                     profiler=profiler,
                     reason="risk_checkpoint_not_loaded",
+                    batch_size=batch_size,
+                    geometry=geometry,
+                )
+            if not self.nonlinear_cost_ready and not self.allow_unmeasured_cost_for_debug:
+                return self._dense_fail_closed(
+                    x,
+                    blocks,
+                    h,
+                    w,
+                    profiler=profiler,
+                    reason="schedule_shape_cost_lookup_missing",
                     batch_size=batch_size,
                     geometry=geometry,
                 )
