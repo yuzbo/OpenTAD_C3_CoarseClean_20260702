@@ -10,11 +10,15 @@
 2. [决策台账](decision_register.md)：每次路线选择、否定理由和恢复条件。
 3. [经验与禁区](lessons.md)：已经用代码、实验或评审代价换来的教训。
 4. [讨论时间线](timeline.md)：C3、GAS-VT、DUCA、PIVOT/ChronoTransport 到 PhysTime 的演进。
-5. [Idea 总目录](idea_catalog.md)：所有主要 idea、23 个发散候选及其去留。
+5. [Idea 总目录](idea_catalog.md)：所有主要 idea、两轮 23+24 个发散候选及其去留。
 6. [实验台账](experiment_register.md)：已完成、取消、诊断、待部署实验的统一分类。
 7. [证据来源](source_map.md)：原始附件、评审记录、代码提交与文献来源。
 8. [压缩上下文](query_pack.md)：供新 agent 或新一轮 ideation 首先读取的 8000 字以内摘要。
 9. [记忆维护协议](memory_protocol.md)：怎样保证 Wiki 不再次失效。
+10. [三条路线完整档案](routes/index.md)：DUCA、ChronoTransport、PhysTime 的讨论、代码、实验和裁决。
+11. [讨论覆盖矩阵](discussion_coverage.md)：逐主题说明内容归档位置与原始来源。
+12. [原始讨论归档](sources/README.md)：主任务用户原文与跨代理近期记录。
+13. [跨 Worktree 库存](worktree_inventory.md)：所有历史 checkout、分支 HEAD 与证据边界。
 
 ## 当前实体
 
@@ -31,6 +35,9 @@
 - `idea:trainfree-x3d`：冻结 X3D 动作先验。
 - `idea:slowfast-fast-prior`：冻结 SlowFast Fast 侧先验。
 - `idea:chronotransport-dcrt`：按 time x layer 重算/传输/复用。
+- `idea:cvcr-tad`：counterfactual value-of-compute routing。
+- `idea:bcft`：boundary-certified feature transport。
+- `idea:codetad`：GOP-dependent partial decode。
 - `idea:coder-tal`：codec-native rate-distortion TAD。
 - `idea:actal`：streaming compute-to-resolve。
 - `idea:no-free-frames`：全栈效率审计协议。
@@ -46,6 +53,8 @@
 - `exp:x3d-trainfree-grid`
 - `exp:slowfast-fast-diagnostic`
 - `exp:duca-repaired-final`
+- `exp:duca-cost-structural-audit`
+- `exp:chronotransport-engineering-track`
 - `exp:phystime-feature-track`
 - `exp:phystime-adatad-k384`
 

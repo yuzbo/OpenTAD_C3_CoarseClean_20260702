@@ -76,7 +76,20 @@
 | `5a46ea6` | PhysTime-TAD 2.0 feature detector 核心实现 |
 | `696f77d` 至 `1893004` | feature-track 部署、数据恢复与最终取消记录 |
 | `9266ebc` | PhysTime-AdaTAD raw-video 设计规格 |
-| `517785d` | PhysTime-AdaTAD implementation plan，当前 HEAD |
+| `517785d` | PhysTime-AdaTAD implementation plan 锚点 |
+| `2b7f83f` | 当前 PhysTime 分支首版 persistent Wiki |
+| `92029ea` | ChronoTransport formal Stage-B 闭环与 P3 负 gate |
+
+### 额外分支来源
+
+- ChronoTransport 完整实现：本地 `codex/c3-coarse-clean-20260702`，commits `6e4bc54..92029ea`；对应 origin 仍在 `3554b6f`，本地 ahead 15。
+- ChronoTransport final spec：`git show 92029ea:docs/superpowers/specs/2026-07-10-chronotransport-design.md`。
+- ChronoTransport implementation/formal P3 record：`git show 92029ea:docs/methods/2026-07-10-chronotransport-implementation-plan.md`。
+- ChronoTransport/C3 原始任务归档：`git show 92029ea:research-wiki/sources/thread-019f49d2-user-record.md` 与 `.../delegated-thread-recent-record.md`；现已复制到本 Wiki `sources/`。
+- DUCA full-stack/structural audit：commit `a5e1774`，不在当前 HEAD ancestry。
+- DUCA ResearchClaw raw audit SHA256：`E4344DAED297F02E23CE355A4B0BBA1845F2C05393820CE04843374AAB6A59AC`。
+
+完整本地 worktree/branch/HEAD 快照见 `worktree_inventory.md`。原始讨论归档哈希见 `sources/README.md`。
 
 ## 5. 外部文献锚点
 
@@ -89,4 +102,4 @@
 
 ## 6. 覆盖声明
 
-本 Wiki 已覆盖本线程中出现的主要目标争论、训练方式争论、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、23 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 头隔离和秒/帧坐标讨论。原始附件中的长代码建议没有逐行复制，但其方法决策、风险、停止条件和可复用机制均已进入对应实体页与 lessons。
+本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 头隔离和秒/帧坐标讨论。三份 `routes/*-complete-record.md` 进一步记录了跨分支实现与实验谱系。原始附件中的长代码建议没有逐行复制，但其方法决策、风险、停止条件、代码落点和可复用机制均已纳入。

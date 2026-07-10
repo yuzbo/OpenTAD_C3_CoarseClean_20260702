@@ -47,7 +47,40 @@
 | C22 | Detector-aware SOFT-TopK | OT 可微 top-k | 正是应停止的旧结构，淘汰 |
 | C23 | Uncertainty-K | entropy 直接决定 K | 过于简单且不是真实 variable execution，淘汰 |
 
-## C. 明确停止重复的 idea 形态
+## C. ResearchClaw 对 DUCA 产生的第二组 24 个候选
+
+这组 I1-I24 来自对 `70aa069` 的另一轮发散审查，不应与上面的 C1-C23 混为同一轮。
+
+| ID | 名称 | 核心问题 | 裁决 |
+| --- | --- | --- | --- |
+| I1 | Deterministic Codec Skeleton | 用 codec 结构建立低成本 observation skeleton | baseline/诊断 |
+| I2 | CoDeTAD | GOP dependency-aware partial decode | 该轮 Top-2，高风险 codec 路线，未实现 |
+| I3 | Boundary-Triggered Decode Refinement | 边界风险触发更高质量 decode | 并入 codec 路线 |
+| I4 | CVCR-TAD | time x layer counterfactual value-of-compute routing | 该轮 Top-1，未实现，后与 ChronoTransport 接近 |
+| I5 | Packed Time-Layer Mixture-of-Depths | packed token/time-layer depth routing | 与 MoD 碰撞强，淘汰 |
+| I6 | Monotone Anytime Depth Ladder | 单调增加计算深度的 anytime 路线 | 高风险，未选 |
+| I7 | BCFT | boundary-certified feature transport | 该轮 Top-3，未独立实现；思想并入 ChronoTransport |
+| I8 | Codec-MV Residual Refresh Transport | codec motion/residual 触发 feature refresh | 作为 transport baseline |
+| I9 | Cross-Video Prototype Feature Cache | 跨视频 prototype cache | leakage/domain 风险高，淘汰 |
+| I10 | Continuous-Time Physical-Grid TAD Head | 直接修复不规则时间几何 | Top-5，后来演化为 PhysTime |
+| I11 | Gap-Aware Temporal Convolution | 卷积显式感知真实时间 gap | 可作 PhysTime baseline/消融 |
+| I12 | Time-Warp Consistency Training | 时间重采样/warp consistency | 并入 robustness baseline，不能单独成贡献 |
+| I13 | Joint Spatio-Temporal Compute Allocation | 联合时间和空间分辨率预算 | 范围过大，未选 |
+| I14 | Boundary-Only High-Resolution Zoom | 只对边界区域高分辨率处理 | 近似 adaptive focus，未选 |
+| I15 | Short-Action Insurance Budget | 为短动作 tail 预留风险预算 | 作为目标/诊断，不独立成文 |
+| I16 | One-Swap Detector Utility Distillation | 用真实 hard swap loss change 校准 surrogate | DUCA 必要审计，未完成 |
+| I17 | High-tIoU Risk-Rate Distortion | 以 high-IoU tail 为 distortion | 可并入 Chrono/codec 风险目标 |
+| I18 | Compute Attribution and Identifiability Audit | 判断收益来自 learning、geometry 还是 omitted cost | 必要诊断协议 |
+| I19 | Unified Temporal Compute Controller | 跨 TAD/TAS/AQA controller | 范围过大，未选 |
+| I20 | Procedure-State-Aware Compute Allocation | 按过程阶段分配计算 | thesis 不够聚焦，未选 |
+| I21 | Dense Physical Compute Plugin API | 保留 physical grid 的通用 conditional compute API | 基础设施候选，未实现 |
+| I22 | End-to-End Video Compute Ledger and Measured-Cost Optimizer | 完整系统成本账本 | Top-5/必要伴随线；部分进入 a5e1774 profiler |
+| I23 | Distribution-Shift Calibrated Compute Risk | OOD 下校准计算风险 | 并入 ChronoTransport risk/fail-closed |
+| I24 | Offline Global Video Budget Allocation | 全视频离线全局预算优化 | 易变成僵硬分层调度，未选 |
+
+该轮 Top-5：I4、I2、I7、I10、I22。吸收裁决没有直接执行“CVCR 必须替代 DUCA”，而是先要求 full-stack cost、one-swap utility、same-selected-frames geometry 三项决定性审计。
+
+## D. 明确停止重复的 idea 形态
 
 - 新的 frozen actionness prior；
 - 新的 boundary/actionness/uncertainty 权重组合；

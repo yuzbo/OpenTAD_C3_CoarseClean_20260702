@@ -31,6 +31,13 @@
 {"from":"idea:phystime-adatad-1","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Actual timeline coordinate comparison."}
 {"from":"idea:no-free-frames","to":"gap:G7","type":"addresses_gap","evidence":"Full-stack compute accounting."}
 {"from":"idea:chronotransport-dcrt","to":"gap:G7","type":"addresses_gap","evidence":"Targets repeated feature recomputation with measured full-stack risk-cost decisions."}
+{"from":"idea:chronotransport-dcrt","to":"exp:chronotransport-engineering-track","type":"tested_by","evidence":"Stage-A, paired replay and formal Stage-B implementation on local commit 92029ea."}
+{"from":"exp:chronotransport-engineering-track","to":"idea:chronotransport-dcrt","type":"invalidates","evidence":"Formal P3 gate fails risk ranking/scale and stable feature-transport criteria; engineering feasibility remains."}
+{"from":"idea:duca","to":"exp:duca-cost-structural-audit","type":"tested_by","evidence":"Full-stack cost and official-source structural audit on a5e1774."}
+{"from":"exp:duca-cost-structural-audit","to":"idea:duca","type":"supports","evidence":"Supports auditable cost/source accounting, not DUCA effectiveness."}
+{"from":"idea:cvcr-tad","to":"gap:G7","type":"addresses_gap","evidence":"Counterfactual value-of-compute routing targets repeated time-layer computation."}
+{"from":"idea:bcft","to":"gap:G7","type":"addresses_gap","evidence":"Boundary-certified feature transport targets safe compute reuse."}
+{"from":"idea:codetad","to":"gap:G7","type":"addresses_gap","evidence":"GOP-dependent partial decode targets real decoder cost."}
 {"from":"idea:coder-tal","to":"gap:G7","type":"addresses_gap","evidence":"Targets decode and codec costs rather than counting only requested frames."}
 {"from":"idea:actal","to":"gap:G7","type":"addresses_gap","evidence":"Treats compute and latency as explicit actions in a streaming setting, though outside the current offline scope."}
 {"from":"idea:phystime-tal-1","to":"gap:G1","type":"addresses_gap","evidence":"First attempt at irregular physical-time modeling."}

@@ -49,7 +49,17 @@
 - Pro 审计判定：重要问题是长视频真实计算与高-IoU 风险，但把它压缩成 pre-backbone frame subset selection 过窄。
 - 产生 23 个候选方向，幸存者为 ChronoTransport/DCRT、CoDeR-TAL、ACTAL、PhysTime-TAL 和 No-Free-Frames。
 - Pro 首推 ChronoTransport：time x layer 选择 recompute/transport/reuse，以 counterfactual localization regret 约束。
+- ChronoTransport 并非只停在 idea：另一 local worktree 已完成 Stage-A runtime、OpenTAD replay 和 formal Stage-B fit/calibration/evaluation，方法提交链为 `6e4bc54..92029ea`。
+- 正式 seed-3407 的 P3 science gate 为 FAIL：risk-regret 排序为负、cell-risk/window-target 尺度错配、feature transport 改善不稳定；Stage C 与 P5 因此未解锁。
+- 该本地分支比 origin 多 15 个提交，只能称为“工程闭环已形成、科学 gate 已失败”，不能误记为未实现或已验证。
 - 用户否定该主线：它接近更复杂的 MoD/feature reuse，层级动作与 token/tubelet 单位僵硬，系统工程和创新归因风险过高。
+
+## 2026-07-10：DUCA 全栈成本与结构审计分支
+
+- commit `a5e1774` 在另一 DUCA 分支加入 full-stack profiler、官方 OpenTAD source-parity audit 和第二轮 ResearchClaw 24-idea 发散审计。
+- 结构审计确认：部分 AdaTAD base config/ActionFormerHead 可保持一致，但 single-stage wrapper、ActionFormer、anchor-free head 和 ViT adapter 已为 selected-axis/selector 路线扩展；论文只能称 official-derived components，不能笼统称“完全未修改 official AdaTAD”。
+- 该轮提出 CVCR-TAD、CoDeTAD、BCFT、continuous-time physical head 和 full compute ledger 等候选，但未直接替换 DUCA；当时先要求完成 full-stack trace、hard one-swap utility audit 与 same-selected-frames geometry 对照。
+- 这些审计实验没有形成完整论文闭环，后续 PhysTime 转向吸收了 physical-time geometry 问题，而非把所有 DUCA 主张视为已证实。
 
 ## 2026-07-10：选择 PhysTime-TAL/TAD
 

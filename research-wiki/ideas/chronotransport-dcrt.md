@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:chronotransport-dcrt
 title: "ChronoTransport / DCRT"
-stage: archived
-outcome: negative
+stage: paused_after_failed_p3
+outcome: negative_gate
 thesis: "在 dense physical-time lattice 上，对 time x layer 单元选择 recompute、transport 或 reuse，并以定位风险约束节省。"
 risks: "接近 MoD、DFF、AdaFuse 和 feature cache；层级动作僵硬；系统实现与多任务验证过大。"
 based_on: []
@@ -29,6 +29,10 @@ updated: 2026-07-11T00:00:00+08:00
 ## 可复用资产
 
 No-Free-Frames 全栈计费、counterfactual risk 与 periodic refresh baseline 仍应保留为未来工作。
+
+## 实现事实
+
+该路线并非只有 idea：本地分支 `codex/c3-coarse-clean-20260702` 已实现到正式 Stage-B fit/calibration/evaluation，最新方法 commit 为 `92029ea`。P3 science gate 因 risk 尺度/排序失败和 feature transport 优势不稳定而失败；对应 origin 落后 15 commits，P5 未解锁。完整代码、训练和证据边界见 `routes/chronotransport-complete-record.md`。
 
 ## 恢复条件
 

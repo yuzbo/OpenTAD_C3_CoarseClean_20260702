@@ -25,6 +25,7 @@
 - MUST 的 expected/hard/unique/padded/backbone K 不统一，padded cap 不是真 variable compute；动态预算降级 appendix。
 - X3D 和 SlowFast Fast 是 frozen prior appendix，dense inference 过慢且有 Kinetics prior/类别重叠风险，不能作为低成本主 probe。
 - ChronoTransport/DCRT 虽被 Pro 推荐，但用户否决为当前主线：接近 MoD/feature reuse，层级策略僵硬、系统工程与归因风险高。
+- ChronoTransport 不是纯 idea：本地 `codex/c3-coarse-clean-20260702` 已在 `92029ea` 完成正式单种子 Stage-B 闭环，但 P3 science gate 因 risk-regret 负相关、risk target 尺度错配和 feature transport 优势不稳定而失败；origin 落后 15 commits，P5 未解锁，所以状态是“工程闭环存在、科学 gate 失败、当前暂停”。
 - CoDeR 依赖 codec/硬件；ACTAL 是 streaming 新任务；均偏离离线 TAD。
 - PhysTime-TAL 1.0 的 normalized time、support width、固定 M、hazard 和双视图一致性定义不严，被 PhysTime-TAD 2.0 取代。
 - I3D feature-token PhysTime jobs 已取消；只保留算子测试，不是 raw-video 论文证据。
@@ -57,3 +58,5 @@
 3. support-integrated operator 是否明显胜 timestamp embedding、interpolation 和 mTAN-like projection？
 4. K=384 raw-video 节省在完整 decode/VideoMAE/head latency 中是否真实？
 5. 第二数据集和 held-out sampling family 是否复现？
+
+完整历史细节必须读取 `research-wiki/routes/`，不能只凭本 query pack 恢复 DUCA 或 ChronoTransport。

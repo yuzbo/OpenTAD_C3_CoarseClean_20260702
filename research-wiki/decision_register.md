@@ -14,7 +14,7 @@
 | DR-008 | X3D 和 SlowFast Fast 不作主 pre-backbone 模块 | 已锁定 | dense frozen video prior 运行过慢，可能吞没后续 backbone 节省；Kinetics 类别重叠和外部预训练也扩大审稿面 | 只作 appendix frozen prior/上界；必须全栈计时和 class-overlap audit |
 | DR-009 | “online DUCA”术语被纠正 | 已锁定 | 项目是离线 TAD；当时的 online 只是同一 forward 内 runtime-generated、cache-free、full-window，不是 streaming/prefix-causal | 统一使用 offline、in-forward、full-window、cache-free |
 | DR-010 | DUCA 主线 pivot | 已锁定 | 长期迭代发现核心仍是复杂 score + top-k + scaffold，资源决策空间过窄，真实定位 regret 和全栈成本未被直接优化 | DUCA 代码保留为 baseline、contract 和测试资产，不继续堆权重/loss/prior |
-| DR-011 | ChronoTransport/DCRT 不作为当前主线 | 用户否决 | 虽然 Pro 推荐 time x layer 的 recompute/transport/reuse，但它接近 MoD/feature reuse，层级动作僵硬、系统工程面大、创新归因和三个月闭环风险高；不符合用户希望的新 TAD 检测方法 | 只有 profiling 证明 feature recompute 是绝对主瓶颈，且 risk-certified transport 明显胜 periodic refresh，才可作为独立未来项目 |
+| DR-011 | ChronoTransport/DCRT 不作为当前主线 | 用户否决 + 负 gate | 本地 `6e4bc54..92029ea` 已实现 formal Stage-B，说明它不是空想；但 P3 因 risk 排序/尺度和 feature transport 稳定性失败，P5 未解锁，且方法接近 MoD/feature reuse、层级动作僵硬、系统工程面大，不符合用户希望的新 TAD 检测方法 | 只有修复并重新预注册 P3、证明 feature recompute 是绝对主瓶颈、risk-certified transport 明显胜 periodic refresh，且本地实现先推送可复现，才可作为独立未来项目 |
 | DR-012 | CoDeR-TAL 与 ACTAL 暂不进入主线 | 已锁定 | CoDeR 依赖 codec/partial decode 和硬件；ACTAL 是 streaming 新任务，均偏离当前离线 TAD 问题 | 只在解码瓶颈或在线任务被明确选择时恢复 |
 | DR-013 | 选择独立 PhysTime-TAL/TAD 方向 | 已锁定 | 它直接解决所有不规则采样都会遇到的 selected-rank 几何错误，输出仍是完整 TAD 区间，不是插件工程叠加 | 必须处理 mTAN、TE-TAD、robustness benchmark、LiquidTAD 的新颖性碰撞 |
 | DR-014 | PhysTime-TAL 1.0 不直接实现为论文最终版 | 已锁定 | continuous embedding、reference query、双视图一致性都已有强邻居；support width、固定 M、hazard 语义和真实缺失定义不严谨 | 被 PhysTime-TAD 2.0 support-integrated measure operator 取代 |
@@ -24,6 +24,7 @@
 | DR-018 | primary comparison 不加 paired consistency | 当前执行 | consistency 会给 PhysTime 额外监督，破坏三头公平性；先证明 architecture 本身 | 仅 Phase 2 作为消融/鲁棒训练扩展 |
 | DR-019 | 所有老 commit/job 均按证据类别管理 | 已锁定 | 不同 commit、config、预训练和修复状态的 mAP 不可混为论文主证据 | 只有同 commit、同 selected indices、同 schedule 的 matched runs 可进主表 |
 | DR-020 | 全栈成本必须计入 | 已锁定 | selected count 或 backbone FLOPs 会遗漏 decode、preprocess、scout、H2D、padding、cache/ledger generation | 报告 p50/p95 latency、显存、吞吐、decode 与 backbone 分解 |
+| DR-021 | 全量历史回顾必须扫描全部 local worktree、local branch、remote branch 与未合入 commit | 已锁定 | 第一版 Wiki 只看当前 PhysTime HEAD，因而曾把 ChronoTransport 的真实实现和 DUCA `a5e1774` 审计分支漏掉；单一 checkout 不能代表项目完整历史 | 每次宣称“全面纳入”前，必须记录 `git worktree list`、`git branch -a --contains`、关键 dangling/divergent commit 与 source hash；无法访问的来源必须显式列为 coverage gap |
 
 ## 不得静默推翻
 

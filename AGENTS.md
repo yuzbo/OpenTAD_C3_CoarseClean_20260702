@@ -13,6 +13,7 @@
 3. `research-wiki/decision_register.md`
 4. `research-wiki/lessons.md`
 5. 与任务相关的 `research-wiki/ideas/` 和 `research-wiki/experiments/` 页面
+6. 涉及历史路线时读取 `research-wiki/routes/` 对应完整档案
 
 新的 idea、否定理由、实验状态、评审结论或方向变化必须按 `research-wiki/memory_protocol.md` 更新，不得只留在聊天记录中。
 
