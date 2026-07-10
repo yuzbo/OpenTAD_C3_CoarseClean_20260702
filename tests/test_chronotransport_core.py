@@ -531,6 +531,7 @@ def test_dynamic_runtime_requires_chronotransport_checkpoint_when_guarded() -> N
             "hold": (0.1,),
             "scheduler_overhead": 0.1,
         },
+        allow_unmeasured_cost_for_debug=True,
         risk_ready=True,
         require_checkpoint_for_dynamic=True,
     )
