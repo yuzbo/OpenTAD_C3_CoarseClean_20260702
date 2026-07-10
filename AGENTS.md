@@ -42,3 +42,14 @@ python -m pytest tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_a
 ```
 
 远端训练前先跑对应 `PRECHECK_ONLY=1` 启动器或 validator。
+
+## ChronoTransport Parallel Route
+
+ChronoTransport 是与 C3/DUCA 并行的动态特征刷新路线，不删除或重写现有路线。允许维护：
+
+- `opentad/models/chronotransport/`；
+- `configs/adatad/thumos/*chronotransport*`；
+- `tools/bata/` 与 `scripts/` 中对应 validator/launcher；
+- focused ChronoTransport tests 与方法文档。
+
+v1 保持外部 768 点 detector 网格、384 点内部 tubelet 网格，以及 dense patch embedding、AdaTAD temporal adapter、head 和 NMS。无实测成本、校准风险、有效 cache 或专用 checkpoint 时必须回退 dense。validation/test GT、teacher、raw-prediction cache 和 counterfactual ledger 不得参与推理决策。
