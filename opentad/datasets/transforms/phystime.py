@@ -247,3 +247,77 @@ class BuildPairedPhysTimeFeatureViews:
         results["paired_masks"] = second["masks"]
         results["paired_metas"] = {key: second[key] for key in self._META_KEYS if key in second}
         return results
+
+
+@PIPELINES.register_module()
+class BuildSelectedAxisFeatureBaseline:
+    """Build an auditable selected-rank baseline from the same retained observations."""
+
+    def __init__(self, append_timestamp_channels=False):
+        self.append_timestamp_channels = bool(append_timestamp_channels)
+
+    @staticmethod
+    def _map_coordinate(coordinate, local_positions, source_valid_count):
+        xp = np.concatenate(
+            (local_positions.astype(np.float32), np.asarray([float(source_valid_count)], dtype=np.float32))
+        )
+        fp = np.arange(local_positions.size + 1, dtype=np.float32)
+        return float(np.interp(float(coordinate), xp, fp))
+
+    def __call__(self, results):
+        features = results.get("feats")
+        if not isinstance(features, torch.Tensor) or features.ndim != 2:
+            raise ValueError("BuildSelectedAxisFeatureBaseline requires tensor features shaped [T, C]")
+        valid_count = _valid_prefix_count(results.get("masks", torch.ones(features.shape[0], dtype=torch.bool)))
+        window_start = int(results.get("phystime_window_start_feature_idx", results.get("feature_start_idx", 0)))
+        source_valid_count = int(results.get("phystime_window_valid_feature_count", valid_count))
+        selected_indices = np.asarray(results.get("phystime_selected_feature_indices", []), dtype=np.int64)
+        if selected_indices.size != valid_count:
+            raise ValueError("selected-axis baseline requires one original feature index per valid token")
+        local_positions = selected_indices - window_start
+        if local_positions.size > 1 and np.any(local_positions[1:] <= local_positions[:-1]):
+            raise ValueError("selected-axis baseline positions must be strictly increasing")
+
+        gt_segments = torch.as_tensor(results["gt_segments"], dtype=torch.float32)
+        remapped = gt_segments.clone()
+        for row_idx in range(gt_segments.shape[0]):
+            remapped[row_idx, 0] = self._map_coordinate(
+                gt_segments[row_idx, 0], local_positions, source_valid_count
+            )
+            remapped[row_idx, 1] = self._map_coordinate(
+                gt_segments[row_idx, 1], local_positions, source_valid_count
+            )
+        results["gt_segments"] = remapped
+
+        if self.append_timestamp_channels:
+            fps = float(results["fps"])
+            snippet_stride = float(results["snippet_stride"])
+            offset_frames = float(results.get("offset_frames", 0.0))
+            duration = max(float(results["duration"]), 1.0e-6)
+            centers_sec = (selected_indices.astype(np.float32) * snippet_stride + offset_frames) / fps
+            normalized = torch.as_tensor(centers_sec / duration, dtype=features.dtype, device=features.device)
+            support_width = torch.full_like(normalized, snippet_stride / fps)
+            time_channels = torch.stack(
+                (
+                    normalized,
+                    torch.sin(2.0 * torch.pi * normalized),
+                    torch.cos(2.0 * torch.pi * normalized),
+                    torch.log1p(support_width),
+                ),
+                dim=-1,
+            )
+            padded_channels = features.new_zeros((features.shape[0], 4))
+            padded_channels[:valid_count] = time_channels
+            results["feats"] = torch.cat((features, padded_channels), dim=-1)
+
+        positions = local_positions.astype(np.float32).tolist()
+        results["irregular_selected_positions"] = positions
+        results["selected_dense_indices"] = positions
+        results["selected_valid_len"] = valid_count
+        results["irregular_selected_valid_len"] = float(source_valid_count)
+        results["irregular_dense_valid_len"] = float(source_valid_count)
+        results["irregular_native_axis"] = False
+        results["remap_gt_to_selected_axis"] = True
+        results["gt_remapped_to_selected_axis"] = True
+        results["gt_time_unit"] = "selected_index"
+        return results

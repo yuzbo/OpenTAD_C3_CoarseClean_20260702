@@ -53,6 +53,8 @@ class SupportIntegratedMeasureAttention(nn.Module):
         attention_channels=128,
         content_logits=True,
         relative_time_logits=True,
+        observation_measure="support_overlap",
+        point_radius_cells=4.0,
         dropout=0.0,
         eps=1.0e-8,
     ):
@@ -62,7 +64,13 @@ class SupportIntegratedMeasureAttention(nn.Module):
         self.attention_channels = int(attention_channels)
         self.content_logits = bool(content_logits)
         self.relative_time_logits = bool(relative_time_logits)
+        self.observation_measure = str(observation_measure)
+        self.point_radius_cells = float(point_radius_cells)
         self.eps = float(eps)
+        if self.observation_measure not in {"support_overlap", "point_gaussian"}:
+            raise ValueError(f"unsupported observation_measure: {self.observation_measure}")
+        if self.point_radius_cells <= 0:
+            raise ValueError("point_radius_cells must be positive")
 
         self.value_proj = nn.Linear(self.in_channels, self.out_channels)
         self.output_proj = nn.Linear(self.out_channels, self.out_channels)
@@ -91,7 +99,15 @@ class SupportIntegratedMeasureAttention(nn.Module):
         if observations.shape[:2] != timestamps.shape or observations.shape[-1] != self.in_channels:
             raise ValueError("observation features and physical geometry have incompatible shapes")
 
-        mass = support_overlap_mass(ownership, query_intervals, observation_mask)
+        if self.observation_measure == "support_overlap":
+            mass = support_overlap_mass(ownership, query_intervals, observation_mask)
+        else:
+            safe_width = query_widths[:, :, None].clamp_min(self.eps)
+            normalized_distance = (timestamps[:, None, :] - query_centers[:, :, None]).abs() / safe_width
+            mass = torch.exp(-0.5 * normalized_distance.square())
+            mass = mass * (normalized_distance <= self.point_radius_cells).to(mass.dtype)
+            mass = mass * observation_mask[:, None, :].to(mass.dtype)
+            mass = mass * query_mask[:, :, None].to(mass.dtype)
         logits = observations.new_zeros(mass.shape)
         if self.content_logits:
             queries = self.query_embedding(query_centers, query_widths, duration)
@@ -100,7 +116,10 @@ class SupportIntegratedMeasureAttention(nn.Module):
         if self.relative_time_logits:
             safe_width = query_widths[:, :, None].clamp_min(self.eps)
             signed_offset = (timestamps[:, None, :] - query_centers[:, :, None]) / safe_width
-            support_width = ownership[..., 1] - ownership[..., 0]
+            if self.observation_measure == "support_overlap":
+                support_width = ownership[..., 1] - ownership[..., 0]
+            else:
+                support_width = torch.zeros_like(timestamps)
             relative_features = torch.stack(
                 (
                     signed_offset,
@@ -123,7 +142,10 @@ class SupportIntegratedMeasureAttention(nn.Module):
 
         values = self.value_proj(observations)
         output = self.output_proj(torch.einsum("bqk,bkc->bqc", weights, values))
-        coverage = mass.sum(dim=-1)
+        if self.observation_measure == "support_overlap":
+            coverage = mass.sum(dim=-1)
+        else:
+            coverage = (mass.sum(dim=-1) > self.eps).to(mass.dtype) * query_widths
         output_mask = query_mask & (coverage > self.eps)
         output = output * output_mask[..., None].to(output.dtype)
         diagnostics = {
@@ -143,6 +165,8 @@ class PhysTimeMeasureProjection(nn.Module):
         base_spacing_sec,
         num_levels,
         attention_channels=128,
+        observation_measure="support_overlap",
+        point_radius_cells=4.0,
         dropout=0.0,
     ):
         super().__init__()
@@ -156,6 +180,8 @@ class PhysTimeMeasureProjection(nn.Module):
                     in_channels=self.in_channels,
                     out_channels=self.out_channels,
                     attention_channels=attention_channels,
+                    observation_measure=observation_measure,
+                    point_radius_cells=point_radius_cells,
                     dropout=dropout,
                 )
                 for _ in range(self.num_levels)

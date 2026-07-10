@@ -146,3 +146,30 @@ def test_projection_builds_every_level_directly_from_original_observations():
     for attention in projection.level_attentions:
         assert attention.value_proj.weight.grad is not None
         assert attention.value_proj.weight.grad.abs().sum().item() > 0
+
+
+def test_point_gaussian_baseline_does_not_use_support_interval_mass():
+    attention = SupportIntegratedMeasureAttention(
+        in_channels=1,
+        out_channels=1,
+        attention_channels=1,
+        content_logits=False,
+        relative_time_logits=True,
+        observation_measure="point_gaussian",
+        point_radius_cells=4.0,
+    )
+    _set_scalar_identity(attention)
+    observations = torch.tensor([[[2.0], [6.0]]])
+    query = _query([[0.0, 2.0]])
+    narrow = _geometry([0.5, 1.5], [[0.4, 0.6], [1.4, 1.6]])
+    wide = _geometry([0.5, 1.5], [[0.0, 1.0], [1.0, 2.0]])
+
+    narrow_output, _, narrow_diagnostics = attention(observations, narrow, query)
+    wide_output, _, wide_diagnostics = attention(observations, wide, query)
+
+    assert torch.allclose(narrow_output, wide_output, atol=1.0e-6)
+    assert torch.allclose(
+        narrow_diagnostics["overlap_mass"],
+        wide_diagnostics["overlap_mass"],
+        atol=1.0e-6,
+    )

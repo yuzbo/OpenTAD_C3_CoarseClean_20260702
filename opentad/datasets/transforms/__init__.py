@@ -4,6 +4,7 @@ from .end_to_end import DucaExternalActionnessFromJsonl, PrepareVideoInfo, LoadS
 from .phystime import (
     BuildPairedPhysTimeFeatureViews,
     BuildPhysTimeFeatureGeometry,
+    BuildSelectedAxisFeatureBaseline,
     SampleIrregularFeatureObservations,
 )
 
@@ -24,4 +25,5 @@ __all__ = [
     "BuildPhysTimeFeatureGeometry",
     "SampleIrregularFeatureObservations",
     "BuildPairedPhysTimeFeatureViews",
+    "BuildSelectedAxisFeatureBaseline",
 ]

@@ -6,6 +6,7 @@ torch = pytest.importorskip("torch")
 
 from opentad.datasets.transforms.loading import RandomTrunc
 from opentad.datasets.transforms.phystime import (
+    BuildSelectedAxisFeatureBaseline,
     BuildPairedPhysTimeFeatureViews,
     BuildPhysTimeFeatureGeometry,
     SampleIrregularFeatureObservations,
@@ -178,3 +179,49 @@ def test_collect_and_dataloader_collate_stack_paired_inputs_and_masks():
     assert batch["paired_inputs"].shape == (2, 4, 3)
     assert batch["paired_masks"].shape == (2, 3)
     assert isinstance(batch["paired_metas"], list) and len(batch["paired_metas"]) == 2
+
+
+def test_selected_axis_baseline_remaps_gt_and_records_inverse_map_metadata():
+    transform = BuildSelectedAxisFeatureBaseline(append_timestamp_channels=False)
+    results = {
+        "feats": torch.randn(3, 4),
+        "masks": torch.ones(3, dtype=torch.bool),
+        "phystime_selected_feature_indices": [10, 12, 15],
+        "phystime_window_start_feature_idx": 10,
+        "phystime_window_valid_feature_count": 6,
+        "gt_segments": torch.tensor([[1.0, 4.0]]),
+        "fps": 4.0,
+        "snippet_stride": 4,
+        "offset_frames": 0,
+        "duration": 20.0,
+    }
+
+    output = transform(results)
+
+    assert torch.allclose(output["gt_segments"], torch.tensor([[0.5, 1.6666667]]), atol=1.0e-5)
+    assert output["irregular_selected_positions"] == pytest.approx([0.0, 2.0, 5.0])
+    assert output["irregular_selected_valid_len"] == pytest.approx(6.0)
+    assert output["irregular_native_axis"] is False
+    assert output["remap_gt_to_selected_axis"] is True
+    assert output["gt_remapped_to_selected_axis"] is True
+
+
+def test_timestamp_selected_axis_baseline_appends_four_physical_time_channels():
+    transform = BuildSelectedAxisFeatureBaseline(append_timestamp_channels=True)
+    results = {
+        "feats": torch.randn(3, 4),
+        "masks": torch.ones(3, dtype=torch.bool),
+        "phystime_selected_feature_indices": [0, 2, 5],
+        "phystime_window_start_feature_idx": 0,
+        "phystime_window_valid_feature_count": 6,
+        "gt_segments": torch.tensor([[1.0, 4.0]]),
+        "fps": 4.0,
+        "snippet_stride": 4,
+        "offset_frames": 0,
+        "duration": 20.0,
+    }
+
+    output = transform(results)
+
+    assert output["feats"].shape == (3, 8)
+    assert torch.isfinite(output["feats"][:, -4:]).all()

@@ -32,7 +32,8 @@ mkdir -p "$(dirname "${OUTPUT}")"
   opentad/models/dense_heads/phystime_head.py \
   opentad/models/detectors/phystime_tad.py \
   opentad/datasets/transforms/phystime.py \
-  tools/bata/run_phystime_tad_precheck.py
+  tools/bata/run_phystime_tad_precheck.py \
+  tools/bata/run_phystime_real_data_gate.py
 
 "${PYTHON}" -m pytest \
   tests/test_phystime_geometry.py \
@@ -41,6 +42,8 @@ mkdir -p "$(dirname "${OUTPUT}")"
   tests/test_phystime_data_pipeline.py \
   tests/test_phystime_detector.py \
   tests/test_phystime_config_precheck.py \
+  tests/test_phystime_experiment_configs.py \
+  tests/test_phystime_experiment_deployment.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \
   tests/test_c3_physical_grid_actionformer_candidate.py \

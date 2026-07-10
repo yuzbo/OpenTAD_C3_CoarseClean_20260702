@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "track": "phystime-tad-feature-token",
+  "branch": "codex/phystime-tad-2",
+  "base_commit": "5a46ea6",
+  "dataset": "THUMOS14",
+  "feature_source": "ActionFormer I3D two-stream stride-4",
+  "phases": [
+    {"id": "data", "depends_on": []},
+    {"id": "real_gate", "depends_on": ["data"]},
+    {"id": "pilots", "depends_on": ["real_gate"], "job_count": 7},
+    {"id": "multi_seed_robustness", "depends_on": ["pilot_result_gate"], "auto_submit": false}
+  ],
+  "pilots": [
+    {"id": "phys_support_k384_s42", "config": "phystime", "k": 384, "seed": 42},
+    {"id": "phys_point_k384_s42", "config": "phystime", "k": 384, "seed": 42},
+    {"id": "phys_nodisc_k384_s42", "config": "phystime", "k": 384, "seed": 42},
+    {"id": "selected_k384_s42", "config": "selected", "k": 384, "seed": 42},
+    {"id": "timestamp_k384_s42", "config": "timestamp", "k": 384, "seed": 42},
+    {"id": "phys_support_k192_s42", "config": "phystime", "k": 192, "seed": 42},
+    {"id": "phys_support_k768_s42", "config": "phystime", "k": 768, "seed": 42}
+  ]
+}
