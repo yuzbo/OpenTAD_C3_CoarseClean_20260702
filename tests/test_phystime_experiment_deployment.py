@@ -46,6 +46,7 @@ def test_data_and_training_launchers_are_fail_closed():
     assert "original_feature_ownership_cells" in data_script
     assert "gdown --continue" in data_script
     assert "--fuzzy" not in data_script
+    assert "PHYSTIME_DOWNLOAD_PROXY" in data_script
     assert "data_ready.json" in train_script
     assert "torchrun" in train_script.lower()
     assert "TRAINING_COMPLETE" in train_script
@@ -62,4 +63,5 @@ def test_submission_uses_parseable_job_ids_and_bounded_retry():
 
     assert "sbatch --parsable" in script
     assert "PHYSTIME_SUBMIT_RETRIES" in script
+    assert "PHYSTIME_DOWNLOAD_PROXY" in script
     assert "failed after ${retries} attempts" in script

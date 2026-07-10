@@ -39,6 +39,9 @@ write_job() {
     echo "export PYTHON='${PYTHON}'"
     echo "export PHYSTIME_REPO_ROOT='${REPO_ROOT}'"
     echo "export PHYSTIME_THUMOS_ROOT='${DATA_ROOT}'"
+    if [[ -n "${PHYSTIME_DOWNLOAD_PROXY:-}" ]]; then
+      printf 'export PHYSTIME_DOWNLOAD_PROXY=%q\n' "${PHYSTIME_DOWNLOAD_PROXY}"
+    fi
     printf '%s\n' "${body}"
   } > "${path}"
   chmod +x "${path}"

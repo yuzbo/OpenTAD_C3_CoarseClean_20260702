@@ -18,6 +18,14 @@ GDOWN_ROOT="${BASE}/tools/gdown_lib"
 GDRIVE_URL="${PHYSTIME_I3D_URL:-https://drive.google.com/file/d/1iemRUtCVshYD3o9WahUrTTOW08GyCjfi/view?usp=sharing}"
 READY_JSON="${DATA_ROOT}/data_ready.json"
 MIN_FEATURE_FILES="${PHYSTIME_MIN_FEATURE_FILES:-300}"
+DOWNLOAD_PROXY="${PHYSTIME_DOWNLOAD_PROXY:-}"
+
+if [[ -n "${DOWNLOAD_PROXY}" ]]; then
+  export http_proxy="${DOWNLOAD_PROXY}"
+  export https_proxy="${DOWNLOAD_PROXY}"
+  export HTTP_PROXY="${DOWNLOAD_PROXY}"
+  export HTTPS_PROXY="${DOWNLOAD_PROXY}"
+fi
 
 mkdir -p "${DOWNLOAD_DIR}" "${FEATURE_DIR}" "${DATA_ROOT}/annotations"
 [[ -x "${PYTHON}" ]] || fail "Python environment missing: ${PYTHON}"
