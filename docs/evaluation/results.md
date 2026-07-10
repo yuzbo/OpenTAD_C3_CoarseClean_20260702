@@ -14,8 +14,8 @@ out-of-scope: 方法设计、未完成实验的推测性结论
 | Gate | Commit | 状态 | 证据 |
 | --- | --- | --- | --- |
 | 合成算子与 CUDA Gate 0B | `a8c4234` | passed | Slurm `1156182`，`97 passed`，CUDA precheck passed |
-| 官方 I3D 数据准备 | `18cf111` | recovering | Slurm `1156248` 在约 `588 MB` 处因网络 `IncompleteRead` 失败；`1157170` 已从断点续传，官方归档 `5.26 GB` |
-| 真实 THUMOS one-batch | `7098049` | pending | Slurm `1156249`，依赖已更新为 `afterok:1157170` |
+| 官方 I3D 数据准备 | `18cf111` | cancelled | Slurm `1156248` 网络失败；恢复作业 `1157170` 因研究主线改为 raw-video AdaTAD 而主动取消 |
+| 真实 THUMOS feature one-batch | `7098049` | cancelled | Slurm `1156249` 及其依赖全部取消；不得作为 PhysTime-AdaTAD 证据 |
 
 ## Matched Pilot
 
@@ -23,13 +23,13 @@ out-of-scope: 方法设计、未完成实验的推测性结论
 
 | 实验 ID | Job | 方法 | K | 训练视图 | Seed | 状态 | Avg-mAP | mAP@0.7 | 结果路径 |
 | --- | ---: | --- | ---: | --- | ---: | --- | ---: | ---: | --- |
-| `phys_support_k384_s42` | `1156250` | PhysTime support measure | 384 | random + bursty | 42 | pending | - | - | run root 下同名目录 |
-| `phys_point_k384_s42` | `1156251` | physical point-only | 384 | random | 42 | pending | - | - | run root 下同名目录 |
-| `phys_nodisc_k384_s42` | `1156252` | PhysTime no consistency | 384 | random | 42 | pending | - | - | run root 下同名目录 |
-| `selected_k384_s42` | `1156253` | selected-axis ActionFormer | 384 | random | 42 | pending | - | - | run root 下同名目录 |
-| `timestamp_k384_s42` | `1156254` | timestamp-channel selected-axis | 384 | random | 42 | pending | - | - | run root 下同名目录 |
-| `phys_support_k192_s42` | `1156255` | PhysTime support measure | 192 | random + bursty | 42 | pending | - | - | run root 下同名目录 |
-| `phys_support_k768_s42` | `1156256` | PhysTime support measure | 768 | random + bursty | 42 | pending | - | - | run root 下同名目录 |
+| `phys_support_k384_s42` | `1156250` | PhysTime support measure | 384 | random + bursty | 42 | cancelled | - | - | feature-token 旧路线 |
+| `phys_point_k384_s42` | `1156251` | physical point-only | 384 | random | 42 | cancelled | - | - | feature-token 旧路线 |
+| `phys_nodisc_k384_s42` | `1156252` | PhysTime no consistency | 384 | random | 42 | cancelled | - | - | feature-token 旧路线 |
+| `selected_k384_s42` | `1156253` | selected-axis ActionFormer | 384 | random | 42 | cancelled | - | - | feature-token 旧路线 |
+| `timestamp_k384_s42` | `1156254` | timestamp-channel selected-axis | 384 | random | 42 | cancelled | - | - | feature-token 旧路线 |
+| `phys_support_k192_s42` | `1156255` | PhysTime support measure | 192 | random + bursty | 42 | cancelled | - | - | feature-token 旧路线 |
+| `phys_support_k768_s42` | `1156256` | PhysTime support measure | 768 | random + bursty | 42 | cancelled | - | - | feature-token 旧路线 |
 
 ## 扩展门槛
 
