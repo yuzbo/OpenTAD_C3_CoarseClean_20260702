@@ -14,9 +14,12 @@ from opentad.models.chronotransport.replay import (
     validate_compact_record,
 )
 from opentad.models.chronotransport.training import (
+    snapshot_model_state,
     compose_stage_b_loss,
     configure_stage_b,
     configure_stage_c,
+    set_stage_b_module_modes,
+    validate_stage_b_state_changes,
     validate_split_partition,
 )
 
@@ -72,6 +75,34 @@ def test_stage_b_and_c_trainable_parameter_contracts() -> None:
     stage_c = configure_stage_c(model)
     assert any(name.startswith("adapter") for name in stage_c)
     assert all("heavy" not in name for name in stage_c)
+
+
+def test_stage_b_module_modes_freeze_detector_state_but_train_dynamic_modules() -> None:
+    model = FakeDetector()
+    configure_stage_b(model)
+    set_stage_b_module_modes(model)
+    assert model.training is False
+    assert model.heavy.training is False
+    assert model.adapter.training is False
+    assert model.chronotransport.transport.training is True
+    assert model.chronotransport.risk_predictor.training is True
+
+
+def test_stage_b_state_audit_requires_dynamic_change_and_rejects_frozen_change() -> None:
+    model = FakeDetector()
+    before = snapshot_model_state(model)
+    with torch.no_grad():
+        model.chronotransport.transport.weight.add_(1.0)
+    report = validate_stage_b_state_changes(before, model)
+    assert report["status"] == "PASS"
+    assert report["dynamic_changed"] == 1
+    assert report["frozen_changed"] == []
+
+    before = snapshot_model_state(model)
+    with torch.no_grad():
+        model.heavy.bias.add_(1.0)
+    with pytest.raises(RuntimeError, match="frozen model state changed"):
+        validate_stage_b_state_changes(before, model)
 
 
 def test_stage_b_loss_detaches_dense_reference() -> None:

@@ -3,8 +3,8 @@
 - 日期：2026-07-10
 - 固定审查基线：`c26b349ee27b6e427fa5cbff8c011778c2684b17`
 - 目标后端：THUMOS14 / AdaTAD / VideoMAE-S / ActionFormerHead
-- 当前实现级别：核心 runtime 垂直切片 + Stage-A 配置/validator/启动保护
-- 尚未完成：detector-level paired counterfactual replay、Stage-B loss 接线、Stage-C 联调、GPU 实测与三种子科学结论
+- 当前实现级别：P0–P4 工程代码与聚焦测试已落地；P1/P2 已完成真实 GPU1 smoke，P3 已完成真实单步训练闭环与权重审计
+- 尚未完成：P3 正式训练/fit-calibration-evaluation gate、P4 三种子训练、P5 实测成本与科学 kill gate
 
 ## 1. 裁决
 
@@ -84,7 +84,7 @@ opentad/models/chronotransport/
 
 Gate：focused tests 全绿、`compileall` 通过、默认 claim flags 全 false。
 
-### P1：生产 backbone 接入与 Stage-A smoke（补丁已提供，GPU 未执行）
+### P1：生产 backbone 接入与 Stage-A smoke（已实现并远端通过）
 
 - `VisionTransformerAdapter(chronotransport=...)`；
 - legacy dense checkpoint 仅用于 forced baseline；
@@ -94,7 +94,9 @@ Gate：focused tests 全绿、`compileall` 通过、默认 claim flags 全 false
 
 Gate：dense-off 与 forced-dense 对原 checkpoint 输出误差为 0（或 bitwise 相等）；至少一个合法 GPU1 smoke 可观察；packed route 互斥测试通过。
 
-### P2：Stage-A paired counterfactual replay（未实现）
+远端已在 Slurm 作业 `1118197` 的物理 GPU1 完成真实 AdaTAD/VideoMAE-S 单 batch forced-dense smoke；使用 EMA 权重，测试循环正常开始和结束，退出后 GPU1 回到空闲。日志只保留在允许的远端运行目录，未复制进仓库。
+
+### P2：Stage-A paired counterfactual replay（已实现并远端 smoke）
 
 新增独立 runner，而不是复用 raw-prediction shortcut：
 
@@ -106,7 +108,9 @@ Gate：dense-off 与 forced-dense 对原 checkpoint 输出误差为 0（或 bitw
 
 Gate：相同 dense schedule 的 regret≈0；重复运行 ledger hash 一致；val/test inference 决策不读取 ledger。
 
-### P3：Stage-B transport + risk（未实现）
+实现已接入真实 OpenTAD dataset/model/checkpoint factory，而非 fake callback。`periodic2_transport` 已产生一条 compact diagnostic ledger；两次 dense replay 逐字节一致，SHA256 均为 `c3bd28b560b641d5f3d80fdf41d3f2207e82ac24c17752e8fb0d37d0b3e88087`，dense regret 与绝对 loss 差均为 `1.1920928955078125e-07`，通过 `1e-6` gate。该证据只证明 replay/确定性锚点可运行，不代表全数据性能。
+
+### P3：Stage-B transport + risk（工程已实现，单步闭环通过，科学 gate 未通过）
 
 - 冻结 VideoMAE 原参数、projection/head；
 - detector 冻结参数但保留 input gradient；
@@ -125,7 +129,9 @@ L = L_task_cf
 
 Gate：transport 比 HOLD-only 显著降低 feature/detector regret；risk–regret rank correlation 明显为正；coverage 在 calibration held-out 上达到目标。
 
-### P4：Stage-C AdaTAD adapter 联调（未实现）
+真实 Stage-B 单步在物理 GPU1 完成，训练 30 个动态参数张量。训练器内置状态快照门显示 18 个 ChronoTransport 状态发生变化、冻结 detector 参数/缓冲区变化为 0、非有限值为 0。审计检查点为 `stage_b_step1_audited.pth`，SHA256 为 `3554069d4066c5311e20586ccf6ac9100b2313d0e15efeb379262d6bdf8af4a0`。检查点继续明确记录 `calibration_ready=False`、`measured_cost_ready=False`，所有 claim flag 为 `False`。因此只确认训练链路成立，尚未达到上述 P3 科学 gate。
+
+### P4：Stage-C AdaTAD adapter 联调（工程合同已实现，正式训练锁定）
 
 - 解冻现有 AdaTAD adapters + transport + risk；
 - dense backbone 原权重继续冻结；
@@ -134,6 +140,8 @@ Gate：transport 比 HOLD-only 显著降低 feature/detector regret；risk–reg
 - 三 seed，报告 seed CI 与 bootstrap sample CI。
 
 Gate：通过预注册停止条件后才解锁 `metric/latency/paper_claim_allowed`。
+
+Stage-C 配置、三 seed 合同和只解冻官方 AdaTAD adapter/transport/risk 的参数选择已落地并通过聚焦测试。由于 P3 的 transport-vs-HOLD、risk-regret correlation 与 held-out calibration gate 尚无正式结果，本轮没有启动 Stage-C 三种子训练。
 
 ### P5：真实成本与科学 kill gate（未执行）
 
@@ -167,12 +175,19 @@ Gate：通过预注册停止条件后才解锁 `metric/latency/paper_claim_allow
 
 ## 6. 当前证据边界
 
-本轮只能证明核心执行契约在 CPU/fake-block focused tests 上成立，不能证明：
+本轮已经证明：
 
-- AdaTAD GPU latency 已下降；
-- transport 已学到 detector-useful correction；
-- calibrated risk 能保护 mAP@0.7/短动作；
-- Stage-B/C 已闭环；
-- 三种子 kill gate 已通过。
+- 核心、真实 ViT adapter、repository contract、Stage-A、paired replay、Stage-B 训练器以及既有 C3 回归在远端统一验证中通过，结果为 `93 passed`；
+- 真实 AdaTAD EMA checkpoint 可完成 GPU1 Stage-A 单 batch smoke；
+- P2 的真实 paired replay、dense 零 regret 近似与逐字节确定性 gate 可运行；
+- P3 的真实单步前向、反向、优化、OpenTAD 格式检查点重载与冻结状态审计可运行。
+
+本轮仍不能证明：
+
+- AdaTAD 端到端 p50/p95 latency 已下降；
+- transport 相对 HOLD-only 已显著降低 detector regret；
+- calibrated risk 能保护 mAP@0.7/短动作并满足 coverage；
+- Stage-C 三种子训练和 P5 kill gate 已通过；
+- 当前检查点可用于 learned deployment 或论文性能声明。
 
 因此所有 deploy/metric/latency/paper claim 默认保持 `False`。

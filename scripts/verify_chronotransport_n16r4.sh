@@ -9,8 +9,10 @@ case "${BASE}" in
   *) echo "YUZIBO_ROOT must stay under /data/run01/sczc063/yuzibo" >&2; exit 2 ;;
 esac
 
-module load cuda/11.8
-module load miniforge3/24.11
+if command -v module >/dev/null 2>&1; then
+  module load cuda/11.8
+  module load miniforge3/24.11
+fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
 
@@ -45,9 +47,11 @@ PY_FILES=(
   tools/bata/profile_chronotransport_schedules.py
   tools/bata/check_chronotransport_checkpoint.py
   tools/bata/chronotransport_opentad_factory.py
+  tools/bata/validate_chronotransport_dense_gate.py
 )
 python -m py_compile "${PY_FILES[@]}"
 
 bash -n scripts/run_chronotransport_adatad_gpu1.sh
 bash -n scripts/run_chronotransport_paired_replay_gpu1.sh
+bash -n scripts/run_chronotransport_stage_b_gpu1.sh
 echo "CHRONOTRANSPORT_REMOTE_VERIFY_PASS"

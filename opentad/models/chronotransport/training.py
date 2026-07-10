@@ -26,6 +26,82 @@ def configure_stage_b(model: nn.Module) -> tuple[str, ...]:
     )
 
 
+def set_stage_b_module_modes(model: nn.Module) -> tuple[str, ...]:
+    model.eval()
+    enabled = []
+    for name, module in model.named_modules():
+        if (
+            "chronotransport.transport" in name
+            or "chronotransport.risk_predictor" in name
+        ):
+            module.train()
+            enabled.append(name)
+    if not enabled:
+        raise RuntimeError("Stage B found no ChronoTransport train-mode modules")
+    return tuple(enabled)
+
+
+def snapshot_model_state(model: nn.Module) -> dict[str, Tensor]:
+    """Capture an immutable CPU snapshot for post-step mutation auditing."""
+    return {
+        name: value.detach().cpu().clone()
+        for name, value in model.state_dict().items()
+    }
+
+
+def _is_stage_b_dynamic_state(name: str) -> bool:
+    return any(
+        fragment in name
+        for fragment in (
+            "chronotransport.transport",
+            "chronotransport.risk_predictor",
+            # The scheduler holds a registered alias of risk_predictor.
+            "chronotransport.scheduler.predictor",
+        )
+    )
+
+
+def validate_stage_b_state_changes(
+    before: Mapping[str, Tensor], model: nn.Module
+) -> dict[str, object]:
+    """Fail unless a Stage-B step changes only its dynamic state."""
+    after = model.state_dict()
+    missing = sorted(set(before) - set(after))
+    unexpected = sorted(set(after) - set(before))
+    if missing or unexpected:
+        raise RuntimeError(
+            f"model state keys changed during Stage B: missing={missing}, unexpected={unexpected}"
+        )
+
+    changed = []
+    nonfinite = []
+    for name, value in after.items():
+        current = value.detach().cpu()
+        if not torch.equal(before[name], current):
+            changed.append(name)
+        if (current.is_floating_point() or current.is_complex()) and not torch.isfinite(
+            current
+        ).all():
+            nonfinite.append(name)
+
+    dynamic_changed = sorted(name for name in changed if _is_stage_b_dynamic_state(name))
+    frozen_changed = sorted(name for name in changed if not _is_stage_b_dynamic_state(name))
+    if frozen_changed:
+        raise RuntimeError(f"frozen model state changed during Stage B: {frozen_changed}")
+    if not dynamic_changed:
+        raise RuntimeError("Stage B completed without changing dynamic model state")
+    if nonfinite:
+        raise RuntimeError(f"non-finite model state after Stage B: {sorted(nonfinite)}")
+    return {
+        "status": "PASS",
+        "changed_total": len(changed),
+        "dynamic_changed": len(dynamic_changed),
+        "dynamic_changed_examples": dynamic_changed[:8],
+        "frozen_changed": [],
+        "nonfinite": [],
+    }
+
+
 def configure_stage_c(model: nn.Module) -> tuple[str, ...]:
     return _set_trainable(
         model,

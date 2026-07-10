@@ -301,6 +301,25 @@ def test_runtime_mixed_schedule_preserves_dense_shape_and_reduces_heavy_rows() -
     assert runtime.latest_summary["adapter_dense_forward_count"] == len(blocks)
 
 
+def test_runtime_opt_in_captures_only_compact_signals_and_ephemeral_output() -> None:
+    blocks = nn.ModuleList([_FakeBlock(4, False)])
+    x = torch.randn(4, 2, 4)
+    runtime = ChronoTransportRuntime(
+        embed_dims=4,
+        depth=1,
+        chunks_per_window=4,
+        layer_groups=[(0, 1)],
+        forced_schedule="periodic2_transport",
+        signal_dims=3,
+        max_cache_age=2,
+    )
+    runtime.capture_replay_signals = True
+    out = runtime(x, blocks, h=1, w=2)
+    assert runtime.latest_signals.shape == (1, 4, 1, 3)
+    assert runtime.latest_signals.requires_grad is False
+    assert torch.equal(runtime.latest_output, out)
+
+
 def test_runtime_repairs_illegal_hold_to_recompute_and_never_returns_nonfinite() -> None:
     blocks = nn.ModuleList([_FakeBlock(4, False)])
     x = torch.randn(4, 2, 4)

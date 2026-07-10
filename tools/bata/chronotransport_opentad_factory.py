@@ -15,6 +15,8 @@ from mmengine.config import Config
 
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
+from opentad.models.chronotransport.replay import paired_detector_losses
+from opentad.models.chronotransport.training import compose_stage_b_loss
 from opentad.utils import set_seed
 from tools.bata.check_chronotransport_checkpoint import (
     _strip_ddp_prefix,
@@ -69,6 +71,17 @@ def _prepared_batches(
         yield prepare_replay_batch(moved, batch_index=batch_index, split=split)
 
 
+def _chronotransport_runtime(detector):
+    runtimes = [
+        module
+        for module in detector.modules()
+        if module.__class__.__name__ == "ChronoTransportRuntime"
+    ]
+    if len(runtimes) != 1:
+        raise RuntimeError("OpenTAD factory requires exactly one ChronoTransportRuntime")
+    return runtimes[0]
+
+
 def paired_replay_factory():
     config_path = os.environ.get(
         "CHRONOTRANSPORT_CONFIG",
@@ -104,4 +117,57 @@ def paired_replay_factory():
     device = torch.device("cuda:0")
     detector = detector.to(device)
     detector.train()
+    _chronotransport_runtime(detector).capture_replay_signals = True
     return detector, _prepared_batches(loader, split=split, device=device)
+
+
+def stage_b_factory():
+    split = os.environ.get("CHRONOTRANSPORT_REPLAY_SPLIT", "train").strip()
+    if split != "train":
+        raise ValueError("Stage B factory requires CHRONOTRANSPORT_REPLAY_SPLIT=train")
+    detector, batches = paired_replay_factory()
+    schedule = os.environ.get(
+        "CHRONOTRANSPORT_STAGE_B_SCHEDULE", "periodic2_transport"
+    ).strip()
+    transport_weight = float(os.environ.get("CHRONOTRANSPORT_TRANSPORT_WEIGHT", "0.1"))
+    risk_weight = float(os.environ.get("CHRONOTRANSPORT_RISK_WEIGHT", "0.1"))
+    learning_rate = float(os.environ.get("CHRONOTRANSPORT_STAGE_B_LR", "0.0001"))
+
+    def loss_step(model, batch):
+        forward_batch = dict(batch)
+        forward_batch.pop("sample_id", None)
+        forward_batch.pop("split", None)
+        result = paired_detector_losses(
+            model,
+            forward_batch,
+            counterfactual_schedule=schedule,
+            track_counterfactual_grad=True,
+        )
+        if result.dense_features is None or result.counterfactual_features is None:
+            raise RuntimeError("Stage B requires ephemeral dense/counterfactual features")
+        runtime = _chronotransport_runtime(model)
+        signals = runtime.latest_signals
+        executed = runtime.latest_schedule
+        if signals is None or executed is None:
+            raise RuntimeError("Stage B requires deploy-visible signals and executed schedule")
+        predicted = runtime.risk_predictor(
+            signals,
+            executed.actions.unsqueeze(1),
+        ).squeeze(1)
+        target = result.regret.detach().reshape(1).expand_as(predicted)
+        losses = compose_stage_b_loss(
+            counterfactual_task_loss=result.counterfactual_total,
+            transported=result.counterfactual_features,
+            dense_reference=result.dense_features,
+            predicted_quantile=predicted,
+            regret_target=target,
+            transport_weight=transport_weight,
+            risk_weight=risk_weight,
+            quantile=float(runtime.risk_predictor.quantile),
+        )
+        return losses.total
+
+    def optimizer_factory(parameters):
+        return torch.optim.AdamW(list(parameters), lr=learning_rate, weight_decay=0.0)
+
+    return detector, batches, loss_step, optimizer_factory

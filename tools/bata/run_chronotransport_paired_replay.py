@@ -43,9 +43,13 @@ def _compact_runtime_payload(detector) -> tuple[dict, dict]:
         )
         if key in summary
     }
+    latest_signals = getattr(runtimes[0], "latest_signals", None)
+    if latest_signals is not None:
+        signals["features"] = latest_signals.detach().cpu().tolist()
+        signals["shape"] = list(latest_signals.shape)
     cost = {
         key: summary[key]
-        for key in ("recompute_rows", "transport_rows", "hold_rows", "profile")
+        for key in ("recompute_rows", "transport_rows", "hold_rows")
         if key in summary
     }
     return signals, cost

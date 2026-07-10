@@ -71,6 +71,22 @@ class PairedReplayResult:
     dense_total: Tensor
     counterfactual_total: Tensor
     regret: Tensor
+    dense_features: Tensor | None = None
+    counterfactual_features: Tensor | None = None
+
+
+def _ephemeral_runtime_output(model: nn.Module) -> Tensor | None:
+    outputs = [
+        module.latest_output
+        for module in model.modules()
+        if module.__class__.__name__ == "ChronoTransportRuntime"
+        and isinstance(getattr(module, "latest_output", None), Tensor)
+    ]
+    if not outputs:
+        return None
+    if len(outputs) != 1:
+        raise ValueError("paired replay v1 requires exactly one ChronoTransportRuntime output")
+    return outputs[0]
 
 
 def paired_detector_losses(
@@ -81,14 +97,28 @@ def paired_detector_losses(
     track_counterfactual_grad: bool = True,
 ) -> PairedReplayResult:
     initial = RNGSnapshot.capture()
-    with runtime_schedule(detector, "dense"), torch.no_grad():
-        dense_losses = detector(**dict(forward_kwargs))
-        dense_total = _loss_total(dense_losses)
-    initial.restore()
-    counterfactual_context = nullcontext() if track_counterfactual_grad else torch.no_grad()
-    with runtime_schedule(detector, counterfactual_schedule), counterfactual_context:
-        counterfactual_losses = detector(**dict(forward_kwargs))
-        counterfactual_total = _loss_total(counterfactual_losses)
+    sdp_context = (
+        nullcontext()
+        if track_counterfactual_grad
+        else torch.backends.cuda.sdp_kernel(
+            enable_flash=False,
+            enable_math=True,
+            enable_mem_efficient=False,
+        )
+    )
+    with sdp_context:
+        with runtime_schedule(detector, "dense"), torch.no_grad():
+            dense_losses = detector(**dict(forward_kwargs))
+            dense_total = _loss_total(dense_losses)
+            dense_features = _ephemeral_runtime_output(detector)
+            if dense_features is not None:
+                dense_features = dense_features.detach()
+        initial.restore()
+        counterfactual_context = nullcontext() if track_counterfactual_grad else torch.no_grad()
+        with runtime_schedule(detector, counterfactual_schedule), counterfactual_context:
+            counterfactual_losses = detector(**dict(forward_kwargs))
+            counterfactual_total = _loss_total(counterfactual_losses)
+            counterfactual_features = _ephemeral_runtime_output(detector)
     initial.restore()
     regret = nonnegative_detector_regret(counterfactual_total, dense_total)
     return PairedReplayResult(
@@ -97,6 +127,8 @@ def paired_detector_losses(
         dense_total=dense_total.detach(),
         counterfactual_total=counterfactual_total,
         regret=regret,
+        dense_features=dense_features,
+        counterfactual_features=counterfactual_features,
     )
 
 

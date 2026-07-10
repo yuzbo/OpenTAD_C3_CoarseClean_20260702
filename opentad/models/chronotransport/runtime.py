@@ -145,6 +145,9 @@ class ChronoTransportRuntime(nn.Module):
         )
         self.latest_summary: dict[str, Any] | None = None
         self.latest_schedule: ChronoSchedule | None = None
+        self.latest_signals: Tensor | None = None
+        self.latest_output: Tensor | None = None
+        self.capture_replay_signals = False
 
     def set_checkpoint_loaded(self, loaded: bool) -> None:
         """Mark whether a ChronoTransport-trained checkpoint populated the runtime."""
@@ -312,6 +315,7 @@ class ChronoTransportRuntime(nn.Module):
         self.latest_schedule = schedule
         with profiler.stage("recompute"):
             out = self._dense_forward(x, blocks, h, w)
+        self.latest_output = out
         dense_rows = int(x.shape[0]) * self.depth
         self.latest_summary = {
             "schema_version": "chronotransport_runtime_v1",
@@ -468,6 +472,8 @@ class ChronoTransportRuntime(nn.Module):
         return state
 
     def forward(self, x: Tensor, blocks: Sequence[nn.Module], h: int, w: int) -> Tensor:
+        self.latest_signals = None
+        self.latest_output = None
         if x.ndim != 3:
             raise ValueError("ChronoTransport runtime expects [B*chunks, N, C]")
         if int(x.shape[0]) % self.chunks_per_window != 0:
@@ -486,11 +492,18 @@ class ChronoTransportRuntime(nn.Module):
                 "dense_output_shape_preserved": True,
                 **geometry,
             }
-            return self._dense_forward(x, blocks, h, w)
+            out = self._dense_forward(x, blocks, h, w)
+            self.latest_output = out
+            return out
 
         batch_size = int(x.shape[0]) // self.chunks_per_window
         state = x.reshape(batch_size, self.chunks_per_window, int(x.shape[1]), int(x.shape[2]))
         profiler = ChronoProfiler(sync_cuda=self.profile_sync_cuda)
+        signals = None
+        if self.capture_replay_signals:
+            with profiler.stage("scheduler"):
+                signals = self._signals(state).detach()
+            self.latest_signals = signals
         counters = {
             "recompute_rows": 0,
             "transport_rows": 0,
@@ -555,9 +568,10 @@ class ChronoTransportRuntime(nn.Module):
             upper_risk = torch.zeros(batch_size, dtype=x.dtype, device=x.device)
             estimated_cost = self.cost_table.estimate(schedule.actions)
         else:
-            with profiler.stage("scheduler"):
-                signals = self._signals(state)
-                selection = self.scheduler.select(signals)
+            if signals is None:
+                with profiler.stage("scheduler"):
+                    signals = self._signals(state)
+            selection = self.scheduler.select(signals)
             actions, repairs, first_chunk_forced = self._repair_schedule(selection.schedule.actions)
             schedule_repair_count += repairs
             schedule = ChronoSchedule(
@@ -575,6 +589,7 @@ class ChronoTransportRuntime(nn.Module):
         if schedule.is_dense():
             with profiler.stage("recompute"):
                 out = self._dense_forward(x, blocks, h, w)
+            self.latest_output = out
             dense_rows = int(x.shape[0]) * self.depth
             self.latest_summary = {
                 "schema_version": "chronotransport_runtime_v1",
@@ -676,4 +691,5 @@ class ChronoTransportRuntime(nn.Module):
             "requested_action_counts": requested_action_counts,
             "profile": profiler.summary(fill_missing=True),
         }
+        self.latest_output = out
         return out
