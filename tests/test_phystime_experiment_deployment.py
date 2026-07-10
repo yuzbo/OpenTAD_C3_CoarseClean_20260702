@@ -65,4 +65,6 @@ def test_submission_uses_parseable_job_ids_and_bounded_retry():
     assert "sbatch --parsable" in script
     assert "PHYSTIME_SUBMIT_RETRIES" in script
     assert "PHYSTIME_DOWNLOAD_PROXY" in script
+    assert "export HOME=" in script
+    assert "XDG_CACHE_HOME" in script
     assert "failed after ${retries} attempts" in script

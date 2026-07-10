@@ -37,6 +37,11 @@ write_job() {
     echo 'module load miniforge3/24.11 >/dev/null 2>&1 || true'
     echo "export BASE='${BASE}'"
     echo "export PYTHON='${PYTHON}'"
+    echo "export HOME='${BASE}/tmp/home'"
+    echo "export XDG_CACHE_HOME='${BASE}/tmp/xdg_cache'"
+    echo "export XDG_CONFIG_HOME='${BASE}/tmp/xdg_config'"
+    echo "export HF_HOME='${BASE}/hf_cache'"
+    echo "mkdir -p '${BASE}/tmp/home' '${BASE}/tmp/xdg_cache' '${BASE}/tmp/xdg_config' '${BASE}/hf_cache'"
     echo "export PHYSTIME_REPO_ROOT='${REPO_ROOT}'"
     echo "export PHYSTIME_THUMOS_ROOT='${DATA_ROOT}'"
     if [[ -n "${PHYSTIME_DOWNLOAD_PROXY:-}" ]]; then
