@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextlib import nullcontext
 from dataclasses import dataclass
 import hashlib
 import json
@@ -77,13 +78,15 @@ def paired_detector_losses(
     forward_kwargs: Mapping[str, Any],
     *,
     counterfactual_schedule: str,
+    track_counterfactual_grad: bool = True,
 ) -> PairedReplayResult:
     initial = RNGSnapshot.capture()
     with runtime_schedule(detector, "dense"), torch.no_grad():
         dense_losses = detector(**dict(forward_kwargs))
         dense_total = _loss_total(dense_losses)
     initial.restore()
-    with runtime_schedule(detector, counterfactual_schedule):
+    counterfactual_context = nullcontext() if track_counterfactual_grad else torch.no_grad()
+    with runtime_schedule(detector, counterfactual_schedule), counterfactual_context:
         counterfactual_losses = detector(**dict(forward_kwargs))
         counterfactual_total = _loss_total(counterfactual_losses)
     initial.restore()

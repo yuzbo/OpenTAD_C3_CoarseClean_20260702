@@ -4,7 +4,12 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from opentad.models.chronotransport.replay import (
     canonical_record_line,
@@ -16,6 +21,34 @@ from opentad.models.chronotransport.replay import (
 def _factory(spec: str):
     module_name, function_name = spec.split(":", 1)
     return getattr(importlib.import_module(module_name), function_name)
+
+
+def _compact_runtime_payload(detector) -> tuple[dict, dict]:
+    runtimes = [
+        module
+        for module in detector.modules()
+        if module.__class__.__name__ == "ChronoTransportRuntime"
+    ]
+    if len(runtimes) != 1 or not isinstance(runtimes[0].latest_summary, dict):
+        raise RuntimeError("paired replay requires one executed ChronoTransportRuntime")
+    summary = runtimes[0].latest_summary
+    signals = {
+        key: summary[key]
+        for key in (
+            "selected_schedule_names",
+            "action_counts",
+            "requested_action_counts",
+            "schedule_repair_count",
+            "first_chunk_forced_recompute",
+        )
+        if key in summary
+    }
+    cost = {
+        key: summary[key]
+        for key in ("recompute_rows", "transport_rows", "hold_rows", "profile")
+        if key in summary
+    }
+    return signals, cost
 
 
 def run(factory_spec: str, output: Path, schedule: str, limit: int | None = None) -> dict:
@@ -30,13 +63,20 @@ def run(factory_spec: str, output: Path, schedule: str, limit: int | None = None
             detector,
             batch,
             counterfactual_schedule=schedule,
+            track_counterfactual_grad=False,
         )
+        signals, cost = _compact_runtime_payload(detector)
         records.append(
             {
                 "sample_id": sample_id,
                 "split": split,
                 "schedule": schedule,
-                "cost": {},
+                "signals": signals,
+                "pooled_targets": {
+                    "dense_loss": float(result.dense_total.detach().cpu()),
+                    "counterfactual_loss": float(result.counterfactual_total.detach().cpu()),
+                },
+                "cost": cost,
                 "regret": float(result.regret.detach().cpu()),
             }
         )
