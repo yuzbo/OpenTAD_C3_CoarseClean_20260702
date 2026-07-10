@@ -6,7 +6,8 @@ fail() {
   exit 1
 }
 
-REPO_ROOT="${PHYSTIME_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${PHYSTIME_REPO_ROOT:-${SCRIPT_ROOT}}"
 cd "${REPO_ROOT}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"

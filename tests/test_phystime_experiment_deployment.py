@@ -39,6 +39,7 @@ def test_submission_script_binds_all_pilots_to_real_gate_and_forbids_old_routes(
 def test_data_and_training_launchers_are_fail_closed():
     data_script = (ROOT / "scripts" / "prepare_phystime_thumos_i3d_n16r4.sh").read_text(encoding="utf-8")
     train_script = (ROOT / "scripts" / "run_phystime_feature_full_train_gpu1.sh").read_text(encoding="utf-8")
+    gate_script = (ROOT / "scripts" / "run_phystime_tad_gate0b_gpu1.sh").read_text(encoding="utf-8")
 
     assert "PHYSTIME_MIN_FEATURE_FILES" in data_script
     assert "data_ready.json" in data_script
@@ -48,6 +49,10 @@ def test_data_and_training_launchers_are_fail_closed():
     assert "data_ready.json" in train_script
     assert "torchrun" in train_script.lower()
     assert "TRAINING_COMPLETE" in train_script
+    assert "BASH_SOURCE[0]" in train_script
+    assert "SLURM_SUBMIT_DIR" not in train_script
+    assert "BASH_SOURCE[0]" in gate_script
+    assert "SLURM_SUBMIT_DIR" not in gate_script
 
 
 def test_submission_uses_parseable_job_ids_and_bounded_retry():
