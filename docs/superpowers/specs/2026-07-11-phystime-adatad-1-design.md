@@ -65,7 +65,9 @@ classification, endpoint prediction, and boundary regression directly in
 seconds.
 
 Predictions remain in seconds through window merging and NMS. They must not be
-converted through a selected-rank inverse map.
+converted through a selected-rank inverse map. A prediction in seconds may be
+converted without loss of temporal meaning to an original-video frame number
+with `round(time_sec * fps)` for visualization or frame-level export.
 
 ### 4.4 Dense AdaTAD Reference
 
@@ -113,9 +115,10 @@ indices and before `Collect` removes metadata. It produces:
 - selected-index and no-GT audit flags.
 
 Each valid observation timestamp is its original frame index divided by the
-video FPS. Its support is the original one-frame cell clipped to video bounds.
-Sparse gaps are not assigned to neighboring frames and support intervals must
-not be inflated into Voronoi cells.
+video FPS. Its support is the original dense sampling cell of width
+`snippet_stride / fps`, clipped to video bounds. Sparse gaps are not assigned
+to neighboring observations and support intervals must not be inflated into
+Voronoi cells.
 
 Ground-truth segments are converted once from the current crop/window axis to
 video-absolute seconds. Double conversion and selected-axis conversion are
