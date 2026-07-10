@@ -196,19 +196,21 @@ def _add_structured_zero_forward_gradient_path(
     bridge = float(bridge_weight)
     if bridge <= 0.0:
         return hard_selected
-    weights = soft_slot_assignment.to(device=dense_inputs.device, dtype=dense_inputs.dtype)
-    if dense_inputs.ndim == 3:
-        soft = torch.einsum("bct,bkt->bck", dense_inputs, weights)
+    context_inputs = dense_inputs if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs) else dense_inputs.float()
+    hard_base = hard_selected if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected) else hard_selected.float()
+    weights = soft_slot_assignment.to(device=context_inputs.device, dtype=context_inputs.dtype)
+    if context_inputs.ndim == 3:
+        soft = torch.einsum("bct,bkt->bck", context_inputs, weights)
         slot = slot_mask[:, None, :]
-    elif dense_inputs.ndim == 5:
-        soft = torch.einsum("bcthw,bkt->bckhw", dense_inputs, weights)
+    elif context_inputs.ndim == 5:
+        soft = torch.einsum("bcthw,bkt->bckhw", context_inputs, weights)
         slot = slot_mask[:, None, :, None, None]
-    elif dense_inputs.ndim == 6:
-        soft = torch.einsum("bncthw,bkt->bnckhw", dense_inputs, weights)
+    elif context_inputs.ndim == 6:
+        soft = torch.einsum("bncthw,bkt->bnckhw", context_inputs, weights)
         slot = slot_mask[:, None, None, :, None, None]
     else:
         raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
-    return hard_selected + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
+    return hard_base + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
 
 
 @SELECTORS.register_module()

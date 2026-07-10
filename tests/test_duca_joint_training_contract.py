@@ -309,6 +309,35 @@ def test_full_window_structured_selector_has_exact_hard_forward_and_detector_gra
     assert _grad_sum(selector.adapter.center_head) > 0.0
 
 
+def test_structured_detector_bridge_accepts_uint8_full_train_windows() -> None:
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=4,
+        dense_window_size=9,
+        selector_hidden_channels=8,
+        coarse_hidden_dim=16,
+        acquisition_policy="global_structured_topk",
+        structured_temperature=0.7,
+        max_unselected_hole=2,
+        hard_max_gap_repair=False,
+        detector_gradient_mode="structured_zero_forward",
+        actionness_source_cfg=_official_asformer_source_cfg(),
+    )
+    inputs = torch.randint(0, 255, (1, 1, 3, 9, 16, 16), dtype=torch.uint8)
+
+    out = selector.forward_train(
+        inputs=inputs,
+        masks=torch.ones(1, 9, dtype=torch.bool),
+        metas=[{"video_name": "uint8_window"}],
+        gt_segments=[torch.tensor([[2.0, 7.0]], dtype=torch.float32)],
+        gt_labels=[torch.tensor([1], dtype=torch.long)],
+    )
+
+    assert out["inputs"].is_floating_point()
+    out["inputs"].square().mean().backward()
+    assert _grad_sum(selector.adapter.center_head) > 0.0
+
+
 def test_structured_curriculum_uses_stable_hard_input_before_learned_policy() -> None:
     selector = DucaOnlineFrameSelector(
         in_channels=3,

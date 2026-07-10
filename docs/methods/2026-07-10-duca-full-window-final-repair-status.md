@@ -49,3 +49,7 @@ For `T=768`, `K=384`, and maximum unselected hole 15 on remote CPU, the structur
 2. The structured relaxation is exact in budget and feasible-state definition, but its detector-utility direction still needs a hard one-swap finite-difference surrogate audit.
 3. The endpoint/context target is a GT boundary-utility proxy, not detector-derived utility. The paper must retain that name unless a train-only detector sensitivity teacher is implemented and audited.
 4. A true dynamic-compute MUST implementation is not present in this repair and must not be implied by padded masks or soft expected K.
+
+## First GPU smoke finding
+
+The first clean-snapshot fixed-384 GPU smoke (`1154930`) reached the real training loop and failed before the first logged iteration with `baddbmm_cuda not implemented for Byte`. The full-train loader correctly supplied a `uint8 [B,N,C,T,H,W]` window, but the new structured detector-gradient bridge used that tensor directly in `einsum`. The bridge now follows the existing DUCA bridge contract: non-floating dense and hard tensors are promoted to floating point before soft assignment, while preserving the exact hard forward value. A 6D uint8 official-ASFormer regression test covers forward dtype and detector-to-selector backward.
