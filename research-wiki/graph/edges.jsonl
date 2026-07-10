@@ -1,0 +1,47 @@
+{"from":"idea:c3-coarse-actionness","to":"gap:G5","type":"addresses_gap","evidence":"Separates low-cost semantic evidence from selector quality.","updated":"2026-07-11"}
+{"from":"idea:c3-coarse-actionness","to":"exp:stage1-paction-gasvt","type":"tested_by","evidence":"PAction/GAS-VT routes consume C3-derived signals.","updated":"2026-07-11"}
+{"from":"idea:paction-strict-ledger","to":"exp:stage1-paction-gasvt","type":"tested_by","evidence":"Historical fixed-budget ledger experiments.","updated":"2026-07-11"}
+{"from":"idea:gas-vt","to":"exp:stage1-paction-gasvt","type":"tested_by","evidence":"Historical GAS-VT Stage1 runs and audits.","updated":"2026-07-11"}
+{"from":"idea:lattice-boundary-replacement","to":"exp:lattice-move-diagnostics","type":"tested_by","evidence":"move25/move50/radius geometry diagnostics.","updated":"2026-07-11"}
+{"from":"idea:detector-aware-teacher","to":"gap:G2","type":"addresses_gap","evidence":"Attempts to calibrate acquisition by detector utility.","updated":"2026-07-11"}
+{"from":"idea:detector-aware-teacher","to":"gap:G10","type":"addresses_gap","evidence":"Requires train-only provenance and no-leak gates.","updated":"2026-07-11"}
+{"from":"idea:truetime-joint","to":"gap:G2","type":"addresses_gap","evidence":"Connects detector gradients to selector.","updated":"2026-07-11"}
+{"from":"idea:truetime-joint","to":"gap:G3","type":"addresses_gap","evidence":"Introduces true-time remapping for selected positions.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"exp:duca-7e3-budget-suite","type":"tested_by","evidence":"Old fixed/dynamic suite exposed contract failures.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"exp:duca-70aa-fixed384","type":"tested_by","evidence":"Current repaired fixed-384 full run.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"exp:duca-a5e-cost","type":"tested_by","evidence":"Full-stack cost and backend contract audit.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"gap:G1","type":"addresses_gap","evidence":"Must beat matched strong baselines.","updated":"2026-07-11"}
+{"from":"idea:transition-boundary-first","to":"gap:G8","type":"addresses_gap","evidence":"Targets high-tIoU boundary protection.","updated":"2026-07-11"}
+{"from":"idea:transition-boundary-first","to":"exp:duca-70aa-fixed384","type":"tested_by","evidence":"Active component in 70aa fixed-384.","updated":"2026-07-11"}
+{"from":"idea:fixed-budget-max-gap","to":"exp:duca-7e3-budget-suite","type":"tested_by","evidence":"Old fixed budget and max-gap suite.","updated":"2026-07-11"}
+{"from":"idea:fixed-budget-max-gap","to":"exp:duca-70aa-fixed384","type":"tested_by","evidence":"Current fixed-384 anchor.","updated":"2026-07-11"}
+{"from":"idea:fixed-budget-max-gap","to":"gap:G6","type":"addresses_gap","evidence":"Requires requested/effective K reconciliation.","updated":"2026-07-11"}
+{"from":"idea:duca-must","to":"exp:duca-7e3-budget-suite","type":"tested_by","evidence":"Historical MUST runs.","updated":"2026-07-11"}
+{"from":"idea:duca-must","to":"gap:G7","type":"addresses_gap","evidence":"Dynamic real-budget calibration remains open.","updated":"2026-07-11"}
+{"from":"idea:trainfree-video-prior","to":"exp:trainfree-video-prior","type":"tested_by","evidence":"X3D/SlowFast diagnostics.","updated":"2026-07-11"}
+{"from":"idea:physical-grid","to":"gap:G3","type":"addresses_gap","evidence":"Potential physical-time detector fix.","updated":"2026-07-11"}
+{"from":"idea:cfpa-streaming","to":"gap:G12","type":"addresses_gap","evidence":"Only relevant if task pivots to causal streaming.","updated":"2026-07-11"}
+{"from":"idea:cvcr-bcft-codetad","to":"gap:G2","type":"addresses_gap","evidence":"Alternative marginal-compute value formulations.","updated":"2026-07-11"}
+{"from":"idea:cvcr-bcft-codetad","to":"gap:G4","type":"addresses_gap","evidence":"Alternative routing may improve real compute value.","updated":"2026-07-11"}
+{"from":"idea:chronotransport","to":"exp:parallel-routes","type":"tested_by","evidence":"ChronoTransport gates and deployments.","updated":"2026-07-11"}
+{"from":"idea:chronotransport","to":"gap:G4","type":"addresses_gap","evidence":"Reduces internal heavy-subpath computation.","updated":"2026-07-11"}
+{"from":"idea:phystime","to":"exp:parallel-routes","type":"tested_by","evidence":"PhysTime data and gate deployments.","updated":"2026-07-11"}
+{"from":"idea:phystime","to":"gap:G3","type":"addresses_gap","evidence":"Preserves explicit physical-time geometry.","updated":"2026-07-11"}
+{"from":"exp:stage1-paction-gasvt","to":"claim:C1","type":"supports","evidence":"Partial historical evidence that coarse semantic signals are useful; unmatched.","updated":"2026-07-11"}
+{"from":"exp:lattice-move-diagnostics","to":"claim:C2","type":"supports","evidence":"Mechanistic evidence that actionness-centered clusters can miss boundaries.","updated":"2026-07-11"}
+{"from":"exp:duca-7e3-budget-suite","to":"claim:C5","type":"invalidates","evidence":"Current dynamic controller was unstable and underperformed.","updated":"2026-07-11"}
+{"from":"exp:trainfree-video-prior","to":"claim:C6","type":"invalidates","evidence":"Dense frozen prior cost was incompatible with main low-cost claim.","updated":"2026-07-11"}
+{"from":"exp:duca-70aa-fixed384","to":"claim:C1","type":"supports","evidence":"Training curve shows repaired coarse-to-detector path is learnable; matched baseline pending.","updated":"2026-07-11"}
+{"from":"exp:duca-a5e-cost","to":"claim:C7","type":"supports","evidence":"Profiler readiness only, not final cost superiority.","updated":"2026-07-11"}
+{"from":"exp:parallel-routes","to":"claim:C8","type":"supports","evidence":"Only supports existence of parallel hypotheses, not DUCA detector generality.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"claim:C9","type":"supports","evidence":"Method contract is offline full-window runtime-generated selection.","updated":"2026-07-11"}
+{"from":"exp:duca-a5e-cost","to":"claim:C9","type":"supports","evidence":"Validator and config explicitly declare non-streaming full-window protocol.","updated":"2026-07-11"}
+{"from":"exp:duca-a5e-cost","to":"claim:C10","type":"invalidates","evidence":"Official source/blob audit refutes source-identical AdaTAD wording.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"gap:G9","type":"addresses_gap","evidence":"Plugin claim requires cross-detector evidence.","updated":"2026-07-11"}
+{"from":"idea:transition-boundary-first","to":"claim:C2","type":"supports","evidence":"Current design explicitly prioritizes transition/boundary over actionness.","updated":"2026-07-11"}
+{"from":"idea:truetime-joint","to":"claim:C4","type":"supports","evidence":"Gradient connectivity implemented, but utility benefit unproven.","updated":"2026-07-11"}
+{"from":"idea:duca-must","to":"claim:C5","type":"supports","evidence":"Defines the intended dynamic-budget hypothesis despite negative current evidence.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"claim:C3","type":"supports","evidence":"Defines fixed-K learned acquisition claim; no matched evidence yet.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"claim:C7","type":"supports","evidence":"Defines system-cost claim; formal profile pending.","updated":"2026-07-11"}
+{"from":"idea:duca-offline-full-window","to":"claim:C8","type":"supports","evidence":"Defines plugin-generalization claim; AdaTAD-only evidence.","updated":"2026-07-11"}
+{"from":"idea:physical-grid","to":"claim:C10","type":"invalidates","evidence":"Presence of optional detector extensions prevents unmodified-official wording.","updated":"2026-07-11"}

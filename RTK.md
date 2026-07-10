@@ -1,17 +1,18 @@
 # RTK Project Rules
 
-本文件是当前纯净仓库的简短上下文锚点。它只记录当前 C3 粗分类 + OpenTAD 路线所需规则，不承载历史 wiki、旧日志或旧实验追踪。
+本文件是当前仓库的简短上下文锚点。详细研究记忆以 `research-wiki/` 为单一事实源。
 
 ## 当前目标
 
 最终研究目标是任务感知动态时序采集：根据视频、窗口、动作区域和难度动态分配帧/片段/Token，减少持续时序冗余，把更有用的信息送入 TAD 检测器，并保护高 IoU 定位性能。
 
-当前仓库的阶段性目标是固定预算 C3 控制锚点：
+当前研究执行状态：
 
-- 用低成本粗分类模型估计动作/背景概率 `p_action`；
-- 将 `p_action` 转换为严格的 value-transport 帧选择 ledger；
-- 将 384/768 选择输入接入 OpenTAD/AdaTAD；
-- 验证输入侧粗分类采集是否能在无测试 GT、无测试 teacher、无 raw-prediction shortcut 的协议下支撑检测。
+- C3/PAction/GAS-VT/lattice 保留为固定预算、no-leak、归因与失败诊断基线；
+- DUCA 是离线全窗口、forward 内即时生成选择的待裁决候选，不是流式 Online TAD；
+- `70aa069` 是当前正式 fixed-384 训练版本，`a5e1774` 是最新成本/后端审计版本；
+- 在 matched baseline、hard/soft utility、selected-axis geometry 和 full-stack cost 闭环前，不得把 DUCA 称为论文最终方法；
+- ChronoTransport 与 PhysTime 是独立并行假设，不得混用 DUCA 结果。
 
 固定 384/768 或 50% 输入只是归因、安全门和失败诊断锚点，不是最终动态采集目标。
 
@@ -24,12 +25,15 @@
 - `tools/bata/` 中当前 coarse probe、model matrix、ledger conversion、validator；
 - `scripts/` 中当前 N16R4 GPU1 启动器/ watcher；
 - focused `tests/`；
+- `research-wiki/` 当前研究记忆；
 - `README.md`、`AGENTS.md`、本 `RTK.md`。
 
-不要加入历史 `research-wiki/`、旧 tracker、旧 server logs、生成图、检查点、数据集、压缩包、bundle、临时 worktree 或旧路线报告。
+不要加入旧 tracker、旧 server logs、生成图、检查点、数据集、压缩包、bundle、临时 worktree 或旧路线报告。
 
 ## 协议规则
 
+- 开始工作前必须读 `research-wiki/query_pack.md` 与 `research-wiki/anti_repetition.md`。
+- 新决策、否定路线、实验结果和 claim 变化必须同步更新 wiki 与 append-only `research-wiki/log.md`。
 - 不允许 validation/test GT 参与测试时选择。
 - 不允许 validation/test teacher leakage。
 - 不允许 hidden raw-prediction cache shortcut。
