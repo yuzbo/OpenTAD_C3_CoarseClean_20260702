@@ -65,7 +65,9 @@ submit() {
 }
 
 data_script="${SBATCH_ROOT}/data.sbatch"
-write_job "${data_script}" phystime_data 0 "bash scripts/prepare_phystime_thumos_i3d_n16r4.sh"
+# The N16R4 public partition rejects jobs without an explicit GPU request,
+# even though data preparation itself does not execute CUDA kernels.
+write_job "${data_script}" phystime_data 1 "bash scripts/prepare_phystime_thumos_i3d_n16r4.sh"
 data_job="$(submit "${data_script}")"
 
 gate_script="${SBATCH_ROOT}/real_gate.sbatch"

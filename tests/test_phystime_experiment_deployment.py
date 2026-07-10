@@ -32,6 +32,7 @@ def test_submission_script_binds_all_pilots_to_real_gate_and_forbids_old_routes(
         assert experiment_id in script
     assert 'afterok:${data_job}' in script
     assert 'afterok:${gate_job}' in script
+    assert 'write_job "${data_script}" phystime_data 1' in script
     for forbidden in ("DUCA", "X3D", "ledger", "actionness"):
         assert forbidden not in script
 
