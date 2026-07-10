@@ -14,8 +14,8 @@ out-of-scope: 方法设计、未完成实验的推测性结论
 | Gate | Commit | 状态 | 证据 |
 | --- | --- | --- | --- |
 | 合成算子与 CUDA Gate 0B | `a8c4234` | passed | Slurm `1156182`，`97 passed`，CUDA precheck passed |
-| 官方 I3D 数据准备 | `7098049` | running | Slurm `1156248`，官方归档 `5.26 GB`，`data_ready.json` 待生成 |
-| 真实 THUMOS one-batch | `7098049` | pending | Slurm `1156249`，依赖 `afterok:1156248` |
+| 官方 I3D 数据准备 | `18cf111` | recovering | Slurm `1156248` 在约 `588 MB` 处因网络 `IncompleteRead` 失败；`1157170` 已从断点续传，官方归档 `5.26 GB` |
+| 真实 THUMOS one-batch | `7098049` | pending | Slurm `1156249`，依赖已更新为 `afterok:1157170` |
 
 ## Matched Pilot
 
