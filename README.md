@@ -1,3 +1,7 @@
+# OpenTAD PhysTime Research Repository
+
+> 当前研究方向、历史路线裁决和实验边界以 [research-wiki/index.md](research-wiki/index.md) 为准。仓库已从 C3/DUCA 选帧主线转向 PhysTime-AdaTAD/PhysTime-TAD；下方旧 C3 内容仅作为仓库来源与历史说明。
+
 # C3 粗分类模型 + OpenTAD 纯净代码库
 
 这是当前 C3 粗分类路线的纯净工作仓库，只保留 OpenTAD 代码库、当前粗分类探针、value-transport ledger 转换、C3 配置、N16R4 启动器和 focused tests。历史 `research-wiki/`、`logs/`、图表、检查点、压缩包和旧路线报告不属于本仓库。
@@ -103,4 +107,3 @@ PRECHECK_ONLY=1 bash scripts/run_c3_asformer_delta_ledger_adatad_full_train_gpu1
 ```
 
 C3 主线优化默认使用物理 GPU1。GPU0 保留给发散创新实验，除非用户在同一轮明确覆盖。
-

@@ -1,0 +1,67 @@
+# Research Wiki Index
+
+更新时间：2026-07-11
+
+这不是论文草稿，而是本项目的长期研究记忆。所有后续方法修改、实验部署和论文主张，必须先读取本页指向的当前方向、决策和失败记录。
+
+## 必读入口
+
+1. [当前唯一方向](current_direction.md)：现在究竟要实现什么，哪些内容尚未实现。
+2. [决策台账](decision_register.md)：每次路线选择、否定理由和恢复条件。
+3. [经验与禁区](lessons.md)：已经用代码、实验或评审代价换来的教训。
+4. [讨论时间线](timeline.md)：C3、GAS-VT、DUCA、PIVOT/ChronoTransport 到 PhysTime 的演进。
+5. [Idea 总目录](idea_catalog.md)：所有主要 idea、23 个发散候选及其去留。
+6. [实验台账](experiment_register.md)：已完成、取消、诊断、待部署实验的统一分类。
+7. [证据来源](source_map.md)：原始附件、评审记录、代码提交与文献来源。
+8. [压缩上下文](query_pack.md)：供新 agent 或新一轮 ideation 首先读取的 8000 字以内摘要。
+9. [记忆维护协议](memory_protocol.md)：怎样保证 Wiki 不再次失效。
+
+## 当前实体
+
+### Ideas
+
+- `idea:c3-coarse-actionness`：低成本粗二分类产生 `p_action`。
+- `idea:paction-selector`：PAction 学习式选帧基线。
+- `idea:gas-vt`：gap/value-transport 路线。
+- `idea:lattice-center-radius`：move25/move50 与膨胀/半径诊断。
+- `idea:duca`：detector-utility-calibrated acquisition。
+- `idea:duca-jct`：单作业协同训练 DUCA。
+- `idea:duca-must`：动态预算 MUST。
+- `idea:cfpa-structured-policy`：exact-K/max-gap 同构结构化策略。
+- `idea:trainfree-x3d`：冻结 X3D 动作先验。
+- `idea:slowfast-fast-prior`：冻结 SlowFast Fast 侧先验。
+- `idea:chronotransport-dcrt`：按 time x layer 重算/传输/复用。
+- `idea:coder-tal`：codec-native rate-distortion TAD。
+- `idea:actal`：streaming compute-to-resolve。
+- `idea:no-free-frames`：全栈效率审计协议。
+- `idea:phystime-tal-1`：第一版连续/物理时间 TAD 规格。
+- `idea:phystime-tad-2`：support-integrated physical-time detector。
+- `idea:phystime-adatad-1`：当前 raw-video AdaTAD 头部隔离主线。
+
+### Experiments
+
+- `exp:c3-stage1-selector-matrix`
+- `exp:move25-move50-geometry`
+- `exp:duca-joint-old-commits`
+- `exp:x3d-trainfree-grid`
+- `exp:slowfast-fast-diagnostic`
+- `exp:duca-repaired-final`
+- `exp:phystime-feature-track`
+- `exp:phystime-adatad-k384`
+
+### Papers
+
+- `paper:zhang2022_actionformer`
+- `paper:liu2024_adatad`
+- `paper:kim2024_te_tad`
+- `paper:zeng2024_temporal_robustness`
+- `paper:shukla2021_mtan`
+- `paper:sun2026_liquidtad`
+
+### Claims
+
+当前不创建 claim 实体。研究 Wiki 约定 claim 只能由严格的 proof/claim audit 产生；目前只有候选主张和实验门槛，记录在当前方向与 gap map 中，不能冒充已证实结论。
+
+## 当前状态一句话
+
+当前唯一可执行主线是 `PhysTime-AdaTAD 1.0`：在相同、无学习、无 GT 的不规则 K=384 原始帧观测和相同官方 AdaTAD/VideoMAE-S backbone 下，只比较 selected-axis、physical-grid ActionFormer 与 PhysTime 物理时间检测头；长期目标是一个能直接处理任意不规则视频观测、在真实物理时间上分类和定位的独立离线 TAD 检测器。

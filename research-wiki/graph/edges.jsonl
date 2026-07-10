@@ -1,0 +1,48 @@
+{"from":"idea:c3-coarse-actionness","to":"exp:c3-stage1-selector-matrix","type":"tested_by","evidence":"Historical Stage1 selector matrix."}
+{"from":"idea:paction-selector","to":"exp:c3-stage1-selector-matrix","type":"tested_by","evidence":"PAction learned evaluated as a strong Stage1 baseline."}
+{"from":"idea:gas-vt","to":"exp:c3-stage1-selector-matrix","type":"tested_by","evidence":"GAS-VT fixed-budget detector and geometry diagnostics."}
+{"from":"exp:c3-stage1-selector-matrix","to":"idea:c3-coarse-actionness","type":"supports","evidence":"Low-cost actionness can preserve useful sparse TAD evidence, but does not establish detector utility."}
+{"from":"exp:c3-stage1-selector-matrix","to":"idea:gas-vt","type":"invalidates","evidence":"Results and audits reject GAS-VT as the final paper method."}
+{"from":"idea:lattice-center-radius","to":"exp:move25-move50-geometry","type":"tested_by","evidence":"Move25/Move50 and dilation diagnostics."}
+{"from":"exp:move25-move50-geometry","to":"idea:lattice-center-radius","type":"supports","evidence":"Supports its value as a geometry diagnostic only; does not support a main-method claim."}
+{"from":"idea:duca-jct","to":"exp:duca-joint-old-commits","type":"tested_by","evidence":"Old DUCA JCT/fixed/dynamic runs."}
+{"from":"idea:duca-must","to":"exp:duca-joint-old-commits","type":"tested_by","evidence":"Old dynamic MUST runs and accounting diagnostics."}
+{"from":"idea:duca","to":"exp:duca-joint-old-commits","type":"tested_by","evidence":"Fixed, JCT and dynamic runs tested successive DUCA implementations."}
+{"from":"exp:duca-joint-old-commits","to":"idea:duca-jct","type":"invalidates","evidence":"Old implementation and results do not support DUCA-JCT as the final main route."}
+{"from":"exp:duca-joint-old-commits","to":"idea:duca-must","type":"invalidates","evidence":"Padded-cap MUST did not establish stable variable compute."}
+{"from":"exp:duca-joint-old-commits","to":"idea:duca","type":"invalidates","evidence":"The evidence and audits reject DUCA frame selection as the final paper center while retaining its engineering assets."}
+{"from":"idea:trainfree-x3d","to":"exp:x3d-trainfree-grid","type":"tested_by","evidence":"Frozen X3D grid/export deployment."}
+{"from":"exp:x3d-trainfree-grid","to":"idea:trainfree-x3d","type":"invalidates","evidence":"Dense frozen X3D was too slow to serve as the low-cost main scout."}
+{"from":"idea:slowfast-fast-prior","to":"exp:slowfast-fast-diagnostic","type":"tested_by","evidence":"Fast-side frozen boundary-prior diagnostic code path."}
+{"from":"idea:cfpa-structured-policy","to":"exp:duca-repaired-final","type":"tested_by","evidence":"Structured exact-K/max-gap software gates."}
+{"from":"exp:duca-repaired-final","to":"idea:cfpa-structured-policy","type":"supports","evidence":"Supports engineering correctness of the structured policy, not detector effectiveness."}
+{"from":"idea:phystime-tad-2","to":"exp:phystime-feature-track","type":"tested_by","evidence":"Feature-token track tested software geometry before cancellation."}
+{"from":"idea:phystime-adatad-1","to":"exp:phystime-adatad-k384","type":"tested_by","evidence":"Frozen primary raw-video matched-head experiment definition."}
+{"from":"idea:phystime-tal-1","to":"paper:shukla2021_mtan","type":"inspired_by","evidence":"Continuous-time embeddings and attention for irregular observations."}
+{"from":"idea:phystime-tal-1","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Actual timeline coordinates in TAD."}
+{"from":"idea:phystime-tal-1","to":"paper:zeng2024_temporal_robustness","type":"inspired_by","evidence":"Missing-frame localization robustness and consistency training."}
+{"from":"idea:phystime-tal-1","to":"paper:sun2026_liquidtad","type":"inspired_by","evidence":"Continuous-dynamics-inspired efficient TAD and novelty collision."}
+{"from":"idea:phystime-tad-2","to":"paper:shukla2021_mtan","type":"inspired_by","evidence":"Direct baseline for irregular-time projection."}
+{"from":"idea:phystime-tad-2","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Direct baseline for time-aligned coordinates."}
+{"from":"idea:phystime-tad-2","to":"paper:zeng2024_temporal_robustness","type":"inspired_by","evidence":"Robustness protocol and localization-error diagnosis."}
+{"from":"idea:phystime-tad-2","to":"paper:sun2026_liquidtad","type":"inspired_by","evidence":"Continuous-time TAD novelty guard and efficiency baseline."}
+{"from":"idea:phystime-adatad-1","to":"paper:zhang2022_actionformer","type":"inspired_by","evidence":"Selected-axis and physical-grid detection baselines."}
+{"from":"idea:phystime-adatad-1","to":"paper:liu2024_adatad","type":"inspired_by","evidence":"Official raw-video VideoMAE adapter backbone."}
+{"from":"idea:phystime-adatad-1","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Actual timeline coordinate comparison."}
+{"from":"idea:no-free-frames","to":"gap:G7","type":"addresses_gap","evidence":"Full-stack compute accounting."}
+{"from":"idea:chronotransport-dcrt","to":"gap:G7","type":"addresses_gap","evidence":"Targets repeated feature recomputation with measured full-stack risk-cost decisions."}
+{"from":"idea:coder-tal","to":"gap:G7","type":"addresses_gap","evidence":"Targets decode and codec costs rather than counting only requested frames."}
+{"from":"idea:actal","to":"gap:G7","type":"addresses_gap","evidence":"Treats compute and latency as explicit actions in a streaming setting, though outside the current offline scope."}
+{"from":"idea:phystime-tal-1","to":"gap:G1","type":"addresses_gap","evidence":"First attempt at irregular physical-time modeling."}
+{"from":"idea:phystime-tal-1","to":"gap:G2","type":"addresses_gap","evidence":"Introduced support-width awareness, later found insufficient."}
+{"from":"idea:phystime-tad-2","to":"gap:G1","type":"addresses_gap","evidence":"Physical-time support-integrated operators replace selected-rank geometry."}
+{"from":"idea:phystime-tad-2","to":"gap:G2","type":"addresses_gap","evidence":"Explicit non-expanding ownership intervals and overlap mass."}
+{"from":"idea:phystime-tad-2","to":"gap:G3","type":"addresses_gap","evidence":"Narrow support-measure claim distinguishes the route from generic continuous-time TAD."}
+{"from":"idea:phystime-adatad-1","to":"gap:G4","type":"addresses_gap","evidence":"Matched same-observation three-head comparison."}
+{"from":"idea:phystime-adatad-1","to":"gap:G5","type":"addresses_gap","evidence":"High-IoU and boundary-localization evaluation gate."}
+{"from":"idea:phystime-adatad-1","to":"gap:G7","type":"addresses_gap","evidence":"Raw decode and official AdaTAD compute measurement."}
+{"from":"idea:phystime-adatad-1","to":"gap:G9","type":"addresses_gap","evidence":"Implementation plan closes raw-video integration gaps."}
+{"from":"paper:shukla2021_mtan","to":"gap:G1","type":"addresses_gap","evidence":"General irregular-time attention baseline."}
+{"from":"paper:kim2024_te_tad","to":"gap:G1","type":"addresses_gap","evidence":"Time-aligned TAD coordinate expression."}
+{"from":"paper:zeng2024_temporal_robustness","to":"gap:G6","type":"addresses_gap","evidence":"Temporal corruption benchmark and robust training."}
+{"from":"paper:sun2026_liquidtad","to":"gap:G3","type":"addresses_gap","evidence":"Occupies broad continuous-dynamics TAD novelty space."}
