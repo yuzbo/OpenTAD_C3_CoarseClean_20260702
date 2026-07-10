@@ -45,7 +45,7 @@ def _deployment(tmp_path: Path, *, with_x3d: bool = True, with_grad_proof: bool 
         _write_json(
             run_root / "duca_jct_one_step_grad_proof.json",
             {
-                "schema_version": "duca_jct_one_step_grad_proof_v1",
+                "schema_version": "duca_official_adatad_one_step_grad_proof_v1",
                 "proof_passed": True,
                 "fixed384": {
                     "coarse_probe_grad_sum": 1.0,
@@ -187,7 +187,7 @@ def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp
     assert metrics["latest_train_epoch"] == 5.0
     assert metrics["latest_train_loss"] == 2.0955
     assert metrics["latest_actionness_bce_loss"] == 0.61
-    assert metrics["latest_detector_utility_distribution_loss"] == 0.03
+    assert metrics["latest_boundary_utility_proxy_distribution_loss"] == 0.03
     assert metrics["latest_action_local_hole_loss"] == 0.05
     assert metrics["latest_lagrangian_budget_loss"] == -0.01
     assert metrics["latest_cls_loss"] == 0.4
@@ -203,6 +203,18 @@ def test_duca_jct_suite_monitor_reads_per_run_train_log_and_uses_latest_eval(tmp
     assert metrics["latest_duca_lagrangian_budget_w"] == 0.12
     assert metrics["latest_duca_requested_budget_mean"] == 288.0
     assert metrics["latest_duca_effective_budget_mean"] == 288.0
+
+
+def test_duca_jct_suite_monitor_normalizes_canonical_boundary_utility_metric() -> None:
+    from tools.bata.monitor_duca_jct_experiment_suite import _extract_metrics
+
+    metrics = _extract_metrics(
+        "2026 Train INFO: [Train]: [006][00010/00099]  Loss=1.5000  "
+        "boundary_utility_proxy_distribution_loss=0.0125  cls_loss=0.4000\n"
+    )
+
+    assert metrics["latest_boundary_utility_proxy_distribution_loss"] == 0.0125
+    assert "latest_detector_utility_distribution_loss" not in metrics
 
 
 def test_duca_jct_suite_monitor_blocks_x3d_downstream_when_formal_jsonl_missing(tmp_path: Path) -> None:

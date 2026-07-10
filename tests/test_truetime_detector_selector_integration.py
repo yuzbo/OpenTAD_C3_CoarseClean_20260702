@@ -57,6 +57,9 @@ def test_single_stage_detector_loss_backpropagates_to_truetime_selector() -> Non
         gt_segments=[torch.empty(0, 2), torch.empty(0, 2)],
         gt_labels=[torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)],
     )
+
+    assert "selector_selected_count_mean" not in losses
+    assert "selector_selected_count_std" not in losses
     losses["cost"].backward()
 
     assert "loss_detector" in losses

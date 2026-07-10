@@ -25,6 +25,25 @@ def test_truetime_selected_dense_roundtrip_preserves_fractional_positions() -> N
     assert time_map.true_time_axis_name == "true_time_dense_index"
 
 
+def test_truetime_identity_map_preserves_half_open_right_edge() -> None:
+    time_map = TrueTimeMap(selected_positions=range(8), dense_len=8, valid_len=8)
+    segment = torch.tensor([[0.0, 8.0]])
+
+    assert torch.equal(time_map.selected_to_true(segment), segment)
+
+
+def test_truetime_sparse_map_roundtrip_preserves_head_and_tail_boundaries() -> None:
+    time_map = TrueTimeMap(selected_positions=[1, 2, 3, 4], dense_len=8, valid_len=8)
+    segments = torch.tensor([[0.0, 1.0], [1.0, 7.0], [4.0, 8.0]])
+
+    selected = time_map.true_to_selected(segments)
+    roundtrip = time_map.selected_to_true(selected)
+
+    assert torch.allclose(roundtrip, segments, atol=1e-6)
+    assert selected[0, 0].item() == -1.0
+    assert selected[-1, 1].item() == 4.0
+
+
 def test_truetime_segment_remap_is_explicit_about_coordinate_spaces() -> None:
     time_map = TrueTimeMap(selected_positions=[0, 2, 5, 9], dense_len=10, valid_len=10)
     selected_segments = torch.tensor([[0.0, 1.0], [1.5, 3.0]])

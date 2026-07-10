@@ -138,7 +138,7 @@ def validate_config(
     _require(contract.official_adatad_backend is True, "contract must declare official_adatad_backend=True")
     _require(contract.main_method_candidate is True, "contract must declare main_method_candidate=True")
     _require(contract.diagnostic_only is False, "main official backend config must not be diagnostic_only")
-    _require(contract.no_ledger_decision is True, "main config must be online/no-ledger")
+    _require(contract.no_ledger_decision is True, "main config must be runtime-generated/no-ledger")
     _require(contract.pre_backbone_plugin is True, "DUCA must be declared as pre-backbone plugin")
     _require(
         getattr(contract, "coarse_actionness_dominates_initial_training", True) is False,
@@ -157,8 +157,9 @@ def validate_config(
         "main config must declare actionness score as a small auxiliary term",
     )
     _require(
-        getattr(contract, "boundary_utility_proxy_target_kind", "") == "gt_boundary_utility_proxy",
-        "main config must honestly declare GT boundary utility proxy target",
+        getattr(contract, "boundary_utility_proxy_target_kind", "")
+        == "instance_normalized_start_end_context_proxy",
+        "main config must declare the normalized endpoint/context utility proxy",
     )
     _require(
         getattr(contract, "detector_utility_target_kind", "") == "deprecated_alias_to_gt_boundary_utility_proxy",
@@ -180,13 +181,17 @@ def validate_config(
     _require(selector.coordinate_space == "original_time", "selected positions must be original-time")
     _require(selector.detector_output_coordinate_space == "selected_axis_index", "detector outputs must be selected-axis before wrapper remap")
     _require(selector.remap_gt_to_selected_axis is True, "official head path must remap GT to selected-axis")
-    _require(selector.no_ledger_decision is True, "selector must be online/no-ledger")
+    _require(selector.no_ledger_decision is True, "selector must be runtime-generated/no-ledger")
     _require(selector.forbid_ledger is True, "selector must forbid ledger payload")
     _require(selector.use_coarse_hidden_features is True, "main selector must fuse coarse hidden features")
     _require(selector.require_coarse_hidden_features is True, "main selector must fail closed without coarse hidden features")
     _require(int(selector.coarse_hidden_dim) > 0, "main selector must declare coarse_hidden_dim")
     _require(int(selector.max_unselected_hole) > 0, "main selector must declare max_unselected_hole")
-    _require(selector.hard_max_gap_repair is True, "main selector must enable hard max-gap repair")
+    _require(selector.hard_max_gap_repair is False, "structured selector must not use post-hoc max-gap repair")
+    _require(selector.acquisition_policy == "global_structured_topk", "main selector must use global structured top-k")
+    _require(selector.detector_gradient_mode == "structured_zero_forward", "detector bridge must use structured slot marginals")
+    _require(getattr(contract, "full_window_selector", False) is True, "main selector must declare full-window scope")
+    _require(getattr(contract, "streaming", True) is False, "main method must not claim streaming inference")
     _require(
         int(selector.max_gap_loss_max_unselected_hole) == int(selector.max_unselected_hole),
         "soft max-gap loss must match hard max-gap repair threshold",
@@ -239,10 +244,10 @@ def validate_config(
             "main DUCA-JCT selector must not require external actionness",
         )
         _require(
-            contract.actionness_source == "online_trainable_c3_coarse_probe",
-            "main source must be online C3 coarse probe",
+            contract.actionness_source == "runtime_trainable_c3_coarse_probe",
+            "main source must be an in-forward C3 coarse probe",
         )
-        _require(contract.acquisition_policy == "duca_center_radius_st_acquisition", "unexpected acquisition policy")
+        _require(contract.acquisition_policy == "global_structured_topk", "unexpected acquisition policy")
         _require(contract.budget_policy == "fixed_budget", "fixed config must declare fixed_budget special case")
         _require(source_cfg.type == "C3CoarseProbeActionnessSource", "main source must be online C3 coarse probe module")
         _require(source_cfg.probe_model == "official-action-seg", "main method must use official action-seg probe")
@@ -338,6 +343,8 @@ def validate_config(
         "require_coarse_hidden_features": bool(selector.require_coarse_hidden_features),
         "max_unselected_hole": int(selector.max_unselected_hole),
         "hard_max_gap_repair": bool(selector.hard_max_gap_repair),
+        "full_window_selector": bool(contract.full_window_selector),
+        "streaming": bool(contract.streaming),
     }
     summary.update(schedule_summary)
     if require_online_c3_actionness:

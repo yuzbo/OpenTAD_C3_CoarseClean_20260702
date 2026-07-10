@@ -136,7 +136,12 @@ def _scaled_selector_cfg(
     selector_cfg["max_radius"] = min(int(selector_cfg.get("max_radius", 16)), max(1, int(proof_temporal_len) // 4))
     selector_cfg["profile_runtime"] = False
     selector_cfg["profile_sync_cuda"] = False
-    selector_cfg["detector_gradient_mode"] = "soft_to_hard_resample"
+    if selector_cfg.get("acquisition_policy") == "global_structured_topk":
+        selector_cfg["max_radius"] = 0
+        selector_cfg["hard_max_gap_repair"] = False
+        selector_cfg["detector_gradient_mode"] = "structured_zero_forward"
+    else:
+        selector_cfg["detector_gradient_mode"] = "soft_to_hard_resample"
     if selector_cfg.get("budget_mode") == "dynamic_must":
         selector_cfg["budget"] = None
         selector_cfg["budget_min"] = int(proof_budget_min)
@@ -341,6 +346,12 @@ def _run_route(
     )
     model.to(device)
     model.train()
+    selector = model.frame_selector
+    schedule = selector.loss_weight_schedule
+    proof_schedule_step = 0
+    if schedule is not None and schedule.get("type") != "constant":
+        proof_schedule_step = int(schedule["warmup_steps"]) + max(1, int(schedule["transition_steps"]))
+        selector._loss_weight_schedule_step.fill_(proof_schedule_step)
     optimizer_coverage = assert_frame_selector_optimizer_coverage(model, lr=1.0e-4, weight_decay=0.05)
     optimizer = torch.optim.AdamW(model.get_optim_groups({"lr": 1.0e-4, "weight_decay": 0.05}))
     torch.manual_seed(20260709)
@@ -369,7 +380,6 @@ def _run_route(
     losses["cost"].backward()
     optimizer.step()
     after_optimizer_step_summary = model.after_optimizer_step()
-    selector = model.frame_selector
     result = dict(summary)
     result.update(
         {
@@ -378,6 +388,8 @@ def _run_route(
             "loss_cost": float(losses["cost"].detach().cpu().item()),
             "loss_keys": sorted(str(key) for key in losses.keys()),
             "optimizer_step_ran": True,
+            "proof_schedule_step_before_forward": int(proof_schedule_step),
+            "proof_schedule_phase": selector.last_forward_summary.get("loss_weight_schedule", {}).get("phase"),
             "optimizer_coverage": optimizer_coverage,
             "coarse_probe_grad_sum": _grad_sum(selector.raw_actionness_source),
             "selector_encoder_grad_sum": _grad_sum(selector.adapter.encoder),

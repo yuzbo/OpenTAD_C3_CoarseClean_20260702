@@ -262,19 +262,26 @@ class SingleStageDetector(BaseDetector):
         return self.rpn_head.forward_test(feat_list, mask_list, **call_kwargs)
 
     @staticmethod
-    def _merge_selector_losses(losses, selector_losses):
+    def _validate_selector_losses(selector_losses):
         for key, value in selector_losses.items():
-            if key == "cost":
-                raise ValueError("frame_selector losses must not return a cost key")
+            if key in {"cost", "total_loss", "detector_utility_distribution_loss"}:
+                raise ValueError(f"frame_selector aggregate or alias loss is forbidden: {key}")
+            if not str(key).endswith("_loss"):
+                raise ValueError(f"frame_selector loss key must name a leaf loss: {key}")
+            if not torch.is_tensor(value):
+                raise ValueError(f"frame_selector loss value for {key} must be a tensor")
+            if value.ndim != 0:
+                raise ValueError(f"frame_selector loss value for {key} must be scalar")
+            if torch.is_complex(value) or not bool(torch.isfinite(value).all().item()):
+                raise ValueError(f"frame_selector loss value for {key} must be finite and real-valued")
+
+    @staticmethod
+    def _merge_selector_losses(losses, selector_losses):
+        SingleStageDetector._validate_selector_losses(selector_losses)
+        for key, value in selector_losses.items():
             prefixed_key = key if str(key).startswith("selector_") else f"selector_{key}"
             if prefixed_key in losses:
                 raise ValueError(f"frame_selector loss key collision: {prefixed_key}")
-            if not torch.is_tensor(value):
-                raise ValueError(f"frame_selector loss value for {prefixed_key} must be a tensor")
-            if value.ndim != 0:
-                raise ValueError(f"frame_selector loss value for {prefixed_key} must be scalar")
-            if torch.is_complex(value) or not bool(torch.isfinite(value).all().item()):
-                raise ValueError(f"frame_selector loss value for {prefixed_key} must be finite and real-valued")
             losses[prefixed_key] = value
 
     @staticmethod

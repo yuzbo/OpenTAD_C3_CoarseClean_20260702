@@ -86,5 +86,6 @@ def test_official_adatad_one_step_cost_backward_reaches_probe_selector_and_budge
         assert result["coarse_probe_grad_sum"] > 0.0
         assert result["selector_encoder_grad_sum"] > 0.0
         assert result["selector_center_head_grad_sum"] > 0.0
+        assert result["proof_schedule_phase"] == "joint_detection_selection"
         assert result["optimizer_coverage"]["missing_frame_selector_params"] == []
     assert payload["duca_must"]["budget_controller_grad_sum"] > 0.0

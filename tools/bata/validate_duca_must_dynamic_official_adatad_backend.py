@@ -140,8 +140,12 @@ def validate_config(
 
     _require("duca_online_budget" not in full_text, "dynamic main config must not use external budget override env")
     _require(contract.official_adatad_backend is True, "contract must declare official_adatad_backend=True")
-    _require(contract.main_method_candidate is True, "contract must declare main_method_candidate=True")
-    _require(contract.diagnostic_only is False, "dynamic main config must not be diagnostic_only")
+    _require(contract.main_method_candidate is False, "current padded-cap MUST must not be a main-method candidate")
+    _require(contract.diagnostic_only is True, "current padded-cap MUST must be diagnostic_only")
+    _require(
+        getattr(contract, "dynamic_compute_realized", True) is False,
+        "current padded-cap MUST must declare dynamic_compute_realized=False",
+    )
     _require(contract.dynamic_budget is True, "contract must declare dynamic_budget=True")
     _require(contract.budget_policy == "prefix_marginal_utility_stop", "unexpected dynamic budget policy")
     _require(
@@ -154,7 +158,7 @@ def validate_config(
     )
     _require(contract.external_budget_override_allowed is False, "dynamic main config must forbid external budget override")
     _require(contract.forced_budget_curve is False, "dynamic main config must not be a forced-budget curve")
-    _require(contract.no_ledger_decision is True, "main config must be online/no-ledger")
+    _require(contract.no_ledger_decision is True, "diagnostic config must be runtime-generated/no-ledger")
     _require(contract.pre_backbone_plugin is True, "DUCA-MUST must be declared as pre-backbone plugin")
     _require(
         getattr(contract, "coarse_actionness_dominates_initial_training", True) is False,
@@ -206,7 +210,7 @@ def validate_config(
     _require(selector.coordinate_space == "original_time", "selected positions must be original-time")
     _require(selector.detector_output_coordinate_space == "selected_axis_index", "detector outputs must be selected-axis")
     _require(selector.remap_gt_to_selected_axis is True, "official head path must remap GT to selected-axis")
-    _require(selector.no_ledger_decision is True, "selector must be online/no-ledger")
+    _require(selector.no_ledger_decision is True, "selector must be runtime-generated/no-ledger")
     _require(selector.forbid_ledger is True, "selector must forbid ledger payload")
     _require(selector.use_coarse_hidden_features is True, "main selector must fuse coarse hidden features")
     _require(selector.require_coarse_hidden_features is True, "main selector must fail closed without coarse hidden features")
@@ -265,8 +269,8 @@ def validate_config(
             "main DUCA-JCT selector must not require external actionness",
         )
         _require(
-            contract.actionness_source == "online_trainable_c3_coarse_probe",
-            "main source must be online C3 coarse probe",
+            contract.actionness_source == "runtime_trainable_c3_coarse_probe",
+            "source must be an in-forward C3 coarse probe",
         )
         _require(contract.acquisition_policy == "duca_center_radius_st_acquisition", "unexpected acquisition policy")
         _require(source_cfg.type == "C3CoarseProbeActionnessSource", "main source must be online C3 coarse probe module")
@@ -330,6 +334,10 @@ def validate_config(
         "rpn_head_type": str(head.type),
         "rpn_head_matches_official_base": True,
         "dynamic_budget": True,
+        "main_method_candidate": False,
+        "diagnostic_only": True,
+        "diagnostic_reason": str(contract.diagnostic_reason),
+        "dynamic_compute_realized": False,
         "budget_policy": str(contract.budget_policy),
         "dynamic_budget_dual_update_after_optimizer_step": True,
         "dynamic_budget_dual_update_source": str(contract.dynamic_budget_dual_update_source),
@@ -375,6 +383,8 @@ def validate_config(
         "require_coarse_hidden_features": bool(selector.require_coarse_hidden_features),
         "max_unselected_hole": int(selector.max_unselected_hole),
         "hard_max_gap_repair": bool(selector.hard_max_gap_repair),
+        "full_window_selector": bool(contract.full_window_selector),
+        "streaming": bool(contract.streaming),
     }
     summary.update(schedule_summary)
     if require_online_c3_actionness:

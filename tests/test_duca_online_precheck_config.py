@@ -140,12 +140,14 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.dense_window_size == 768
     assert cfg.model.frame_selector.coordinate_space == "original_time"
     assert cfg.model.frame_selector.detector_output_coordinate_space == "selected_axis_index"
-    assert cfg.model.frame_selector.detector_gradient_mode == "soft_to_hard_resample"
+    assert cfg.model.frame_selector.detector_gradient_mode == "structured_zero_forward"
     assert cfg.model.frame_selector.remap_gt_to_selected_axis is True
-    assert cfg.duca_online_main_contract.actionness_source == "online_trainable_c3_coarse_probe"
+    assert cfg.duca_online_main_contract.actionness_source == "runtime_trainable_c3_coarse_probe"
     assert cfg.duca_online_main_contract.coarse_probe_joint_trainable is True
     assert cfg.model.frame_selector.actionness_source_cfg.type == "C3CoarseProbeActionnessSource"
-    assert cfg.duca_online_main_contract.acquisition_policy == "duca_center_radius_st_acquisition"
+    assert cfg.duca_online_main_contract.acquisition_policy == "global_structured_topk"
+    assert cfg.duca_online_main_contract.full_window_selector is True
+    assert cfg.duca_online_main_contract.streaming is False
     assert cfg.duca_online_main_contract.budget_policy == "fixed_budget"
     assert cfg.model.frame_selector.budget_mode == "fixed"
     assert cfg.model.frame_selector.get("external_actionness_meta_key", None) is None
@@ -165,7 +167,7 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.actionness_source_cfg.return_hidden_features is True
     assert cfg.model.frame_selector.actionness_source_cfg.require_hidden_features is True
     assert cfg.model.frame_selector.max_unselected_hole == 15
-    assert cfg.model.frame_selector.hard_max_gap_repair is True
+    assert cfg.model.frame_selector.hard_max_gap_repair is False
     assert cfg.model.frame_selector.max_gap_loss_max_unselected_hole == 15
     assert cfg.model.frame_selector.loss_weights.actionness > 0
     assert cfg.model.frame_selector.loss_weights.boundary > cfg.model.frame_selector.loss_weights.actionness
@@ -182,19 +184,19 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
     assert cfg.model.frame_selector.boundary_weight == cfg.duca_online_main_contract.selector_score_boundary_weight
     assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.transition_weight
     assert cfg.model.frame_selector.actionness_weight < cfg.model.frame_selector.boundary_weight
-    assert cfg.duca_online_main_contract.boundary_utility_proxy_target_kind == "gt_boundary_utility_proxy"
+    assert cfg.duca_online_main_contract.boundary_utility_proxy_target_kind == "instance_normalized_start_end_context_proxy"
     assert cfg.duca_online_main_contract.detector_utility_target_kind == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert cfg.duca_online_main_contract.detector_utility_target_is_true_detector_derived is False
     assert cfg.duca_online_main_contract.max_unselected_hole == 15
     assert cfg.duca_online_main_contract.soft_max_gap_loss == "temporal_max_gap_hole_loss"
-    assert cfg.duca_online_main_contract.hard_max_gap_repair is True
+    assert cfg.duca_online_main_contract.hard_max_gap_repair is False
     assert cfg.duca_online_main_contract.loss_schedule_policy == "progressive_joint"
     assert cfg.duca_online_main_contract.loss_schedule_step_update == "optimizer_step"
     assert cfg.duca_online_main_contract.loss_schedule_total_steps == (
         cfg.workflow.end_epoch * cfg.duca_schedule_steps_per_epoch
     )
-    assert cfg.duca_online_main_contract.loss_schedule_warmup_fraction == 0.08
-    assert cfg.duca_online_main_contract.loss_schedule_transition_fraction == 0.67
+    assert cfg.duca_online_main_contract.loss_schedule_warmup_fraction == 0.05
+    assert cfg.duca_online_main_contract.loss_schedule_transition_fraction == 0.15
     assert cfg.model.frame_selector.loss_weight_schedule.type == "progressive_joint"
     assert cfg.model.frame_selector.loss_weight_schedule.warmup_steps == round(
         cfg.duca_online_main_contract.loss_schedule_total_steps
@@ -255,8 +257,8 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["loss_schedule_policy"] == "progressive_joint"
     assert summary["loss_schedule_step_update"] == "optimizer_step"
     assert summary["loss_schedule_total_steps"] > 0
-    assert summary["loss_schedule_warmup_fraction"] == 0.08
-    assert summary["loss_schedule_transition_fraction"] == 0.67
+    assert summary["loss_schedule_warmup_fraction"] == 0.05
+    assert summary["loss_schedule_transition_fraction"] == 0.15
     assert summary["loss_schedule_detector_loss_always_on"] is True
     assert summary["loss_schedule_detector_gradient_bridge_scheduled"] is True
     assert summary["loss_schedule_detector_gradient_start"] == 0.0
@@ -272,13 +274,15 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     assert summary["actionness_score_role"] == "small_auxiliary_score"
     assert summary["selector_score_actionness_weight"] < summary["selector_score_transition_weight"]
     assert summary["selector_score_actionness_weight"] < summary["selector_score_boundary_weight"]
-    assert summary["boundary_utility_proxy_target_kind"] == "gt_boundary_utility_proxy"
+    assert summary["boundary_utility_proxy_target_kind"] == "instance_normalized_start_end_context_proxy"
     assert summary["detector_utility_target_kind"] == "deprecated_alias_to_gt_boundary_utility_proxy"
     assert summary["detector_utility_target_is_true_detector_derived"] is False
     assert summary["uses_coarse_hidden_features"] is True
     assert summary["require_coarse_hidden_features"] is True
     assert summary["max_unselected_hole"] == 15
-    assert summary["hard_max_gap_repair"] is True
+    assert summary["hard_max_gap_repair"] is False
+    assert summary["full_window_selector"] is True
+    assert summary["streaming"] is False
 
     text = OFFICIAL_BACKEND_LAUNCHER.read_text(encoding="utf-8")
     assert "duca_online_official_adatad_backend_full_train.py" in text
@@ -372,13 +376,18 @@ def test_duca_must_dynamic_main_config_declares_model_internal_budget_policy():
     text = DUCA_MUST_DYNAMIC_CONFIG.read_text(encoding="utf-8").lower()
 
     assert "duca_online_budget" not in text
-    assert cfg.duca_must_dynamic_contract.main_method_candidate is True
+    assert cfg.duca_must_dynamic_contract.main_method_candidate is False
+    assert cfg.duca_must_dynamic_contract.diagnostic_only is True
+    assert cfg.duca_must_dynamic_contract.dynamic_compute_realized is False
+    assert cfg.duca_must_dynamic_contract.online_acquisition is False
+    assert cfg.duca_must_dynamic_contract.full_window_selector is True
+    assert cfg.duca_must_dynamic_contract.streaming is False
     assert cfg.duca_must_dynamic_contract.dynamic_budget is True
     assert cfg.duca_must_dynamic_contract.acquisition_policy == "duca_center_radius_st_acquisition"
     assert cfg.duca_must_dynamic_contract.budget_policy == "prefix_marginal_utility_stop"
     assert cfg.duca_must_dynamic_contract.dynamic_budget_dual_update_after_optimizer_step is True
     assert cfg.duca_must_dynamic_contract.dynamic_budget_dual_update_source == "dynamic_must_expected_cost"
-    assert cfg.duca_must_dynamic_contract.actionness_source == "online_trainable_c3_coarse_probe"
+    assert cfg.duca_must_dynamic_contract.actionness_source == "runtime_trainable_c3_coarse_probe"
     assert cfg.duca_must_dynamic_contract.coarse_probe_joint_trainable is True
     assert cfg.duca_must_dynamic_contract.budget_max == 384
     assert cfg.duca_must_dynamic_contract.budget_target <= cfg.duca_must_dynamic_contract.budget_max

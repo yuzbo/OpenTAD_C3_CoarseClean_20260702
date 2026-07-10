@@ -183,6 +183,34 @@ def _add_soft_to_hard_resample_gradient_path(
     return hard_base + (soft - soft.detach()) * slot.to(dtype=soft.dtype) * bridge, weights
 
 
+def _add_structured_zero_forward_gradient_path(
+    hard_selected: torch.Tensor,
+    dense_inputs: torch.Tensor,
+    *,
+    soft_slot_assignment: torch.Tensor,
+    slot_mask: torch.Tensor,
+    bridge_weight: float,
+) -> torch.Tensor:
+    if soft_slot_assignment.ndim != 3:
+        raise ValueError("structured soft_slot_assignment must be [B,K,T]")
+    bridge = float(bridge_weight)
+    if bridge <= 0.0:
+        return hard_selected
+    weights = soft_slot_assignment.to(device=dense_inputs.device, dtype=dense_inputs.dtype)
+    if dense_inputs.ndim == 3:
+        soft = torch.einsum("bct,bkt->bck", dense_inputs, weights)
+        slot = slot_mask[:, None, :]
+    elif dense_inputs.ndim == 5:
+        soft = torch.einsum("bcthw,bkt->bckhw", dense_inputs, weights)
+        slot = slot_mask[:, None, :, None, None]
+    elif dense_inputs.ndim == 6:
+        soft = torch.einsum("bncthw,bkt->bnckhw", dense_inputs, weights)
+        slot = slot_mask[:, None, None, :, None, None]
+    else:
+        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
+    return hard_selected + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
+
+
 @SELECTORS.register_module()
 class DucaOnlineFrameSelector(nn.Module):
     """Registry-buildable online DUCA selector for OpenTAD frame_selector hooks."""
@@ -198,6 +226,8 @@ class DucaOnlineFrameSelector(nn.Module):
         target_budget: Optional[float] = None,
         allow_external_budget_override: Optional[bool] = None,
         max_radius: int = 16,
+        acquisition_policy: str = "legacy_center_radius",
+        structured_temperature: float = 1.0,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
         actionness_weight: float = 0.05,
@@ -263,6 +293,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self.budget_multiple = int(budget_multiple)
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
+        self.acquisition_policy = str(acquisition_policy)
+        self.structured_temperature = float(structured_temperature)
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
         self.actionness_weight = float(actionness_weight)
         self.transition_weight = float(transition_weight)
@@ -323,10 +355,11 @@ class DucaOnlineFrameSelector(nn.Module):
             "st_sparse_gather",
             "st_sparse_gather_soft_context",
             "soft_to_hard_resample",
+            "structured_zero_forward",
         }:
             raise ValueError(
                 "detector_gradient_mode must be st_sparse_gather, "
-                "st_sparse_gather_soft_context, or soft_to_hard_resample"
+                "st_sparse_gather_soft_context, soft_to_hard_resample, or structured_zero_forward"
             )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
@@ -406,6 +439,8 @@ class DucaOnlineFrameSelector(nn.Module):
             target_budget=self.target_budget,
             allow_external_budget_override=self.allow_external_budget_override,
             max_radius=self.max_radius,
+            acquisition_policy=self.acquisition_policy,
+            structured_temperature=self.structured_temperature,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -440,26 +475,50 @@ class DucaOnlineFrameSelector(nn.Module):
         self._reject_external_actionness_payload(metas)
         self._reject_train_decision_payload(metas)
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
-        boundary_target = self._boundary_target_from_gt_segments(
-            gt_segments,
-            masks,
-            boundary_radius=max(1, min(int(self.max_radius), 4)),
-        )
-        boundary_utility_proxy_target = self._boundary_utility_proxy_target_from_gt_segments(
-            gt_segments,
-            masks,
-            boundary_radius=max(1, min(int(self.max_radius), 4)),
-        )
+        endpoint_targets = self._endpoint_targets_from_gt_segments(gt_segments, masks)
+        if endpoint_targets is None:
+            start_target = end_target = context_target = boundary_target = None
+            boundary_utility_proxy_target = None
+        else:
+            start_target, end_target, context_target = endpoint_targets
+            boundary_target = start_target + end_target
+            boundary_utility_proxy_target = 0.45 * start_target + 0.45 * end_target + 0.10 * context_target
+            proxy_mass = boundary_utility_proxy_target.sum(dim=1, keepdim=True)
+            boundary_utility_proxy_target = torch.where(
+                proxy_mass > 0,
+                boundary_utility_proxy_target / proxy_mass.clamp_min(torch.finfo(proxy_mass.dtype).eps),
+                boundary_utility_proxy_target,
+            )
         schedule_state = self._loss_schedule_state()
         outputs = self._forward_select(inputs, masks, metas, budget=budget, schedule_state=schedule_state)
         outputs["selector_outputs"]["loss_weight_schedule"] = schedule_state
+        outputs["selector_outputs"]["training_provenance"] = {
+            "uses_labels": gt_segments is not None,
+            "uses_gt_segments": gt_segments is not None,
+            "uses_gt_labels": gt_labels is not None,
+            "label_scope": "train_only",
+            "uses_labels_at_inference": False,
+            "target_kinds": [
+                "coarse_actionness",
+                "start_endpoint",
+                "end_endpoint",
+                "boundary_context",
+            ]
+            if gt_segments is not None
+            else [],
+        }
         if action_target is not None:
             outputs["selector_outputs"]["action_target"] = action_target
         if boundary_target is not None:
             outputs["selector_outputs"]["boundary_target"] = boundary_target
+            outputs["selector_outputs"]["start_target"] = start_target
+            outputs["selector_outputs"]["end_target"] = end_target
+            outputs["selector_outputs"]["context_target"] = context_target
         if boundary_utility_proxy_target is not None:
             outputs["selector_outputs"]["boundary_utility_proxy_target"] = boundary_utility_proxy_target
-            outputs["selector_outputs"]["boundary_utility_proxy_target_kind"] = "gt_boundary_utility_proxy"
+            outputs["selector_outputs"]["boundary_utility_proxy_target_kind"] = (
+                "instance_normalized_start_end_context_proxy"
+            )
             outputs["selector_outputs"]["detector_utility_target"] = boundary_utility_proxy_target
             outputs["selector_outputs"]["detector_utility_target_kind"] = "deprecated_alias_to_gt_boundary_utility_proxy"
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
@@ -469,6 +528,9 @@ class DucaOnlineFrameSelector(nn.Module):
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
             boundary_target=boundary_target,
+            start_target=start_target,
+            end_target=end_target,
+            context_target=context_target,
             action_target=action_target,
             boundary_utility_proxy_target=boundary_utility_proxy_target,
             max_unselected_hole=self.max_gap_loss_max_unselected_hole,
@@ -569,6 +631,20 @@ class DucaOnlineFrameSelector(nn.Module):
             raw = 0.5 - 0.5 * torch.cos(torch.tensor(raw * pi, dtype=torch.float64)).item()
         return float(raw)
 
+    def _use_stable_structured_selection(self, schedule_state: Optional[Mapping[str, Any]]) -> bool:
+        if self.acquisition_policy != "global_structured_topk" or not self.training:
+            return False
+        if not isinstance(schedule_state, Mapping) or not bool(schedule_state.get("enabled", False)):
+            return False
+        progress = float(schedule_state.get("progress", 1.0))
+        if progress <= 0.0:
+            return True
+        if progress >= 1.0:
+            return False
+        step = int(schedule_state.get("step", 0))
+        learned_threshold = int(round(progress * 100.0))
+        return (step % 100) >= learned_threshold
+
     def _record_pending_loss_schedule_step(self) -> None:
         self._pending_loss_schedule_advance = bool(self.training and self.loss_weight_schedule is not None)
 
@@ -633,7 +709,7 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("gt_segments length must match batch size for DUCA action target generation")
         device = masks.device
         dtype = torch.float32
-        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
+        centers = torch.arange(temporal_len, device=device, dtype=dtype)
         target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
         valid = masks.to(device=device, dtype=torch.bool)
         for batch_idx, segments in enumerate(gt_segments):
@@ -646,9 +722,58 @@ class DucaOnlineFrameSelector(nn.Module):
             seg = seg.reshape(-1, 2)
             starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
             ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
-            covered = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
+            covered = ((centers[None, :] >= starts) & (centers[None, :] < ends)).any(dim=0)
             target[batch_idx] = covered.to(dtype=dtype)
         return target.masked_fill(~valid, 0.0)
+
+    @staticmethod
+    def _endpoint_targets_from_gt_segments(
+        gt_segments,
+        masks: torch.Tensor,
+    ) -> Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        if gt_segments is None:
+            return None
+        if masks.ndim != 2:
+            raise ValueError("DUCA endpoint target generation expects dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match batch size for DUCA endpoint target generation")
+        device = masks.device
+        dtype = torch.float32
+        centers = torch.arange(temporal_len, device=device, dtype=dtype)
+        start_target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        end_target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        context_target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        valid = masks.to(device=device, dtype=torch.bool)
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
+            seg = seg.to(device=device, dtype=dtype)
+            if seg.numel() == 0:
+                continue
+            seg = seg.reshape(-1, 2)
+            starts = torch.minimum(seg[:, 0], seg[:, 1])
+            ends = torch.maximum(seg[:, 0], seg[:, 1])
+            row_valid = valid[batch_idx].to(dtype=dtype)
+            for start, end in zip(starts, ends):
+                duration = (end - start).clamp_min(1.0)
+                sigma = (0.08 * duration).clamp(min=0.75, max=4.0)
+                start_kernel = torch.exp(-0.5 * ((centers - start) / sigma).square()) * row_valid
+                end_kernel = torch.exp(-0.5 * ((centers - end) / sigma).square()) * row_valid
+                start_target[batch_idx] += start_kernel / start_kernel.sum().clamp_min(1.0e-6)
+                end_target[batch_idx] += end_kernel / end_kernel.sum().clamp_min(1.0e-6)
+
+                context_offset = (1.5 * sigma).clamp(min=1.0, max=6.0)
+                pre_kernel = torch.exp(-0.5 * ((centers - (start - context_offset)) / sigma).square()) * row_valid
+                post_kernel = torch.exp(-0.5 * ((centers - (end + context_offset)) / sigma).square()) * row_valid
+                context_target[batch_idx] += 0.5 * pre_kernel / pre_kernel.sum().clamp_min(1.0e-6)
+                context_target[batch_idx] += 0.5 * post_kernel / post_kernel.sum().clamp_min(1.0e-6)
+        return (
+            start_target.masked_fill(~valid, 0.0),
+            end_target.masked_fill(~valid, 0.0),
+            context_target.masked_fill(~valid, 0.0),
+        )
 
     @staticmethod
     def _boundary_target_from_gt_segments(
@@ -657,33 +782,12 @@ class DucaOnlineFrameSelector(nn.Module):
         *,
         boundary_radius: int,
     ) -> Optional[torch.Tensor]:
-        if gt_segments is None:
+        del boundary_radius
+        targets = DucaOnlineFrameSelector._endpoint_targets_from_gt_segments(gt_segments, masks)
+        if targets is None:
             return None
-        if masks.ndim != 2:
-            raise ValueError("DUCA boundary target generation expects dense masks [B,T]")
-        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
-        if len(gt_segments) != batch:
-            raise ValueError("gt_segments length must match batch size for DUCA boundary target generation")
-        device = masks.device
-        dtype = torch.float32
-        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
-        target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
-        valid = masks.to(device=device, dtype=torch.bool)
-        radius = float(max(1, int(boundary_radius)))
-        for batch_idx, segments in enumerate(gt_segments):
-            if segments is None:
-                continue
-            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
-            seg = seg.to(device=device, dtype=dtype)
-            if seg.numel() == 0:
-                continue
-            seg = seg.reshape(-1, 2)
-            starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
-            ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
-            near_start = (centers[None, :] - starts).abs() <= radius
-            near_end = (centers[None, :] - ends).abs() <= radius
-            target[batch_idx] = (near_start | near_end).any(dim=0).to(dtype=dtype)
-        return target.masked_fill(~valid, 0.0)
+        start_target, end_target, _ = targets
+        return start_target + end_target
 
     @staticmethod
     def _boundary_utility_proxy_target_from_gt_segments(
@@ -692,35 +796,18 @@ class DucaOnlineFrameSelector(nn.Module):
         *,
         boundary_radius: int,
     ) -> Optional[torch.Tensor]:
-        if gt_segments is None:
+        del boundary_radius
+        targets = DucaOnlineFrameSelector._endpoint_targets_from_gt_segments(gt_segments, masks)
+        if targets is None:
             return None
-        if masks.ndim != 2:
-            raise ValueError("DUCA boundary utility proxy generation expects dense masks [B,T]")
-        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
-        if len(gt_segments) != batch:
-            raise ValueError("gt_segments length must match batch size for DUCA boundary utility proxy generation")
-        device = masks.device
-        dtype = torch.float32
-        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
-        target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
-        valid = masks.to(device=device, dtype=torch.bool)
-        radius = float(max(1, int(boundary_radius)))
-        for batch_idx, segments in enumerate(gt_segments):
-            if segments is None:
-                continue
-            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
-            seg = seg.to(device=device, dtype=dtype)
-            if seg.numel() == 0:
-                continue
-            seg = seg.reshape(-1, 2)
-            starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
-            ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
-            inside = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
-            near_start = (centers[None, :] - starts).abs() <= radius
-            near_end = (centers[None, :] - ends).abs() <= radius
-            boundary = (near_start | near_end).any(dim=0)
-            target[batch_idx] = torch.maximum(inside.to(dtype=dtype), boundary.to(dtype=dtype) * 1.5)
-        return target.masked_fill(~valid, 0.0)
+        start_target, end_target, context_target = targets
+        target = 0.45 * start_target + 0.45 * end_target + 0.10 * context_target
+        mass = target.sum(dim=1, keepdim=True)
+        return torch.where(
+            mass > 0,
+            target / mass.clamp_min(torch.finfo(target.dtype).eps),
+            target,
+        )
 
     def forward_test(self, inputs: torch.Tensor, masks: torch.Tensor, metas=None, budget=None, **kwargs: Any) -> dict[str, Any]:
         self._reject_external_actionness_payload(metas)
@@ -776,6 +863,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 coarse_hidden_features = online_actionness.get("coarse_hidden_features")
                 if coarse_hidden_features is None:
                     coarse_hidden_features = online_actionness.get("hidden_features")
+        stable_selection = self._use_stable_structured_selection(schedule_state)
         grid, scores = self.adapter.acquire(
             descriptors,
             budget=budget,
@@ -784,6 +872,7 @@ class DucaOnlineFrameSelector(nn.Module):
             p_action=p_action,
             coarse_hidden_features=coarse_hidden_features,
             compute_profile_context=profile_context,
+            stable_selection=stable_selection,
         )
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
@@ -800,7 +889,8 @@ class DucaOnlineFrameSelector(nn.Module):
         positions = grid.selected_positions.to(device=inputs.device)
         slot_mask = positions >= 0
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
-        hard_selected = _gather_time(inputs, positions, slot_mask)
+        hard_gathered = _gather_time(inputs, positions, slot_mask)
+        hard_selected = hard_gathered
         detector_gradient_weight = self._detector_gradient_weight(schedule_state)
         soft_resample_weights = None
         bridge_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
@@ -824,12 +914,27 @@ class DucaOnlineFrameSelector(nn.Module):
                 valid_mask=masks,
                 bridge_weight=detector_gradient_weight,
             )
+        elif self.detector_gradient_mode == "structured_zero_forward":
+            assignment = scores.get("structured_soft_slot_assignment")
+            if assignment is None:
+                raise ValueError("structured_zero_forward requires global_structured_topk slot marginals")
+            hard_selected = _add_structured_zero_forward_gradient_path(
+                hard_selected,
+                inputs,
+                soft_slot_assignment=assignment,
+                slot_mask=slot_mask,
+                bridge_weight=detector_gradient_weight,
+            )
         bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
-        st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
-            dtype=scores["selected_mask_st"].dtype
-        )
-        hard_slot_weights = slot_mask.to(dtype=st_weights.dtype)
-        st_weights = hard_slot_weights + float(detector_gradient_weight) * (st_weights - st_weights.detach())
+        hard_slot_weights = slot_mask.to(dtype=scores["center_scores"].dtype)
+        if self.detector_gradient_mode == "structured_zero_forward":
+            st_weights = hard_slot_weights
+        else:
+            st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
+                dtype=scores["selected_mask_st"].dtype
+            )
+            hard_slot_weights = slot_mask.to(dtype=st_weights.dtype)
+            st_weights = hard_slot_weights + float(detector_gradient_weight) * (st_weights - st_weights.detach())
         selected_inputs = _apply_slot_weights(hard_selected, st_weights)
         gather_ms = _elapsed_ms(gather_start, inputs, enabled=sync_enabled)
         total_selector_ms = _elapsed_ms(total_start, inputs, enabled=sync_enabled)
@@ -876,7 +981,7 @@ class DucaOnlineFrameSelector(nn.Module):
         scores["compute_profile"] = compute_profile
         selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
         scores["grid"] = grid
-        scores["hard_selected_inputs"] = hard_selected
+        scores["hard_selected_inputs"] = hard_gathered
         scores["selected_input_st_gradient_path"] = self.detector_gradient_mode
         scores["detector_gradient_weight"] = float(detector_gradient_weight)
         if soft_resample_weights is not None:
@@ -902,6 +1007,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "detector_gradient_weight": float(detector_gradient_weight),
             "uses_coarse_hidden_features": bool(scores.get("uses_coarse_hidden_features", False)),
             "max_unselected_hole": self.max_unselected_hole,
+            "selection_path": scores.get("selection_path", "legacy_center_radius"),
         }
         if isinstance(schedule_state, Mapping):
             self.last_forward_summary["loss_weight_schedule"] = dict(schedule_state)

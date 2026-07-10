@@ -228,8 +228,6 @@ class TrueTimeRelaxedHardTopKSelector(nn.Module):
         out_metas = self._write_metas(metas, outputs)
         losses = {
             "selector_entropy_loss": outputs["entropy"] * 0.0,
-            "selector_selected_count_mean": outputs["selected_count_mean"].detach() * 0.0,
-            "selector_selected_count_std": outputs["selected_count_std"].detach() * 0.0,
         }
         return {
             "inputs": selected_inputs,

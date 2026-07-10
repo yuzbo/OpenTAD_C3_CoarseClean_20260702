@@ -79,33 +79,41 @@ class TrueTimeMap:
     def selected_len(self) -> int:
         return int(self.selected_positions.numel())
 
+    def _interpolation_knots(self):
+        selected_axis = torch.arange(
+            self.selected_len,
+            device=self.selected_positions.device,
+            dtype=self.selected_positions.dtype,
+        )
+        true_time = self.selected_positions
+        if float(true_time[0].item()) > 0.0:
+            selected_axis = torch.cat((selected_axis.new_tensor([-1.0]), selected_axis))
+            true_time = torch.cat((true_time.new_tensor([0.0]), true_time))
+        if float(true_time[-1].item()) < float(self.valid_len):
+            selected_axis = torch.cat((selected_axis, selected_axis.new_tensor([float(self.selected_len)])))
+            true_time = torch.cat((true_time, true_time.new_tensor([float(self.valid_len)])))
+        return selected_axis, true_time
+
+    @staticmethod
+    def _piecewise_linear(values, source_knots, target_knots):
+        clipped = values.clamp(float(source_knots[0].item()), float(source_knots[-1].item()))
+        right = torch.searchsorted(source_knots, clipped, right=False)
+        right = torch.clamp(right, min=1, max=int(source_knots.numel()) - 1)
+        left = right - 1
+        left_source = source_knots[left]
+        right_source = source_knots[right]
+        fraction = (clipped - left_source) / (right_source - left_source).clamp_min(1.0e-6)
+        return target_knots[left] + (target_knots[right] - target_knots[left]) * fraction
+
     def selected_to_true(self, values):
         values_t = _as_float_tensor(values, device=self.selected_positions.device)
-        if self.selected_len == 1:
-            return torch.zeros_like(values_t) + self.selected_positions[0]
-
-        clipped = values_t.clamp(0.0, float(self.selected_len - 1))
-        left = torch.floor(clipped).long()
-        right = torch.clamp(left + 1, max=self.selected_len - 1)
-        frac = clipped - left.to(dtype=clipped.dtype)
-        left_pos = self.selected_positions[left]
-        right_pos = self.selected_positions[right]
-        return left_pos + (right_pos - left_pos) * frac
+        selected_axis, true_time = self._interpolation_knots()
+        return self._piecewise_linear(values_t, selected_axis, true_time)
 
     def true_to_selected(self, values):
         values_t = _as_float_tensor(values, device=self.selected_positions.device)
-        if self.selected_len == 1:
-            return torch.zeros_like(values_t)
-
-        clipped = values_t.clamp(float(self.selected_positions[0].item()), float(self.selected_positions[-1].item()))
-        right = torch.searchsorted(self.selected_positions, clipped, right=False)
-        right = torch.clamp(right, min=1, max=self.selected_len - 1)
-        left = right - 1
-        left_pos = self.selected_positions[left]
-        right_pos = self.selected_positions[right]
-        denom = (right_pos - left_pos).clamp_min(1.0e-6)
-        frac = (clipped - left_pos) / denom
-        return left.to(dtype=clipped.dtype) + frac
+        selected_axis, true_time = self._interpolation_knots()
+        return self._piecewise_linear(values_t, true_time, selected_axis)
 
     def remap_segments(self, segments, *, source_coordinate_space: str, target_coordinate_space: str):
         if source_coordinate_space == target_coordinate_space:

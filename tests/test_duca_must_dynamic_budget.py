@@ -50,11 +50,40 @@ def test_prefix_marginal_controller_outputs_st_dynamic_budget() -> None:
     assert torch.all((decision.budget_hard - 4) % 2 == 0)
     assert torch.all(decision.budget_soft >= 4)
     assert torch.all(decision.budget_soft <= 8)
+    assert torch.equal(decision.hard_requested_k, decision.budget_hard)
+    assert torch.equal(decision.st_budget_k, decision.budget_soft)
+    assert torch.equal(decision.soft_expected_k, decision.expected_cost)
+    assert decision.dual_target_unit == "detector_valid_temporal_observations"
+    assert torch.any((decision.soft_expected_k.detach() - decision.hard_requested_k.float()).abs() > 1e-5)
 
     decision.budget_soft.sum().backward()
     assert features.grad is not None
     assert torch.isfinite(features.grad).all()
     assert features.grad.abs().sum().item() > 0.0
+
+
+def test_normalized_dual_update_does_not_bang_bang_between_budget_extremes() -> None:
+    torch.manual_seed(3)
+    controller = PrefixMarginalUtilityBudgetController(
+        hidden_dim=4,
+        budget_min=64,
+        budget_max=384,
+        budget_multiple=16,
+        target_budget=256,
+        dual_lr=0.01,
+    )
+    features = torch.zeros(1, 384, 4)
+    scores = torch.linspace(1.0, 0.0, 384)[None]
+    valid = torch.ones(1, 384, dtype=torch.bool)
+    observed = []
+
+    for _ in range(4):
+        decision = controller(features, scores, valid)
+        observed.append(int(decision.hard_requested_k.item()))
+        controller.update_dual(decision.soft_expected_k.mean())
+
+    assert not any(left == 384 and right == 64 for left, right in zip(observed, observed[1:]))
+    assert not any(left == 64 and right == 384 for left, right in zip(observed, observed[1:]))
 
 
 def test_dynamic_adapter_predicts_budget_and_forbids_external_override() -> None:
@@ -91,6 +120,13 @@ def test_dynamic_adapter_predicts_budget_and_forbids_external_override() -> None
     assert grid.selected_positions.shape[1] == 8
     assert out["detector_input"].shape[1] == int(grid.selected_positions.shape[1])
     assert out["dynamic_budget"] is True
+    ledger = grid.metadata["cost_ledger"]
+    assert ledger["hard_requested_k"] == grid.requested_budget.tolist()
+    assert ledger["hard_effective_k"] == grid.effective_budget.tolist()
+    assert ledger["hard_unique_k"] == grid.selected_count.tolist()
+    assert ledger["padded_detector_k"] == [8, 8]
+    assert ledger["backbone_input_k"] == [8, 8]
+    assert ledger["dynamic_compute_realized"] is False
 
     with pytest.raises(ValueError, match="external budget override"):
         adapter.acquire(dense, budget=6)
@@ -128,10 +164,10 @@ def test_duca_losses_include_must_lagrangian_terms_and_backpropagate_to_budget_p
     assert "lagrangian_budget_loss" in losses
     assert "marginal_monotonic_loss" in losses
     assert "hard_budget_cap_loss" in losses
-    assert "dynamic_budget_mean_lossless_metric" in losses
-    assert losses["total_loss"].requires_grad
+    assert "dynamic_budget_mean_lossless_metric" not in losses
+    assert all(key.endswith("_loss") for key in losses)
 
-    losses["total_loss"].backward()
+    sum(losses.values()).backward()
     grads = [
         param.grad.detach().abs().sum().item()
         for name, param in adapter.named_parameters()

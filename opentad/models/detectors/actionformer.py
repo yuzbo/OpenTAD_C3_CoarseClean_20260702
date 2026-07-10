@@ -125,6 +125,7 @@ class ActionFormer(SingleStageDetector):
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
+        selector_loss_keys = set()
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
@@ -138,7 +139,13 @@ class ActionFormer(SingleStageDetector):
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
             gt_labels = selector_outputs["gt_labels"]
-            losses.update(selector_outputs.get("losses", {}))
+            selector_losses = selector_outputs.get("losses", {})
+            self._validate_selector_losses(selector_losses)
+            for key, value in selector_losses.items():
+                if key in losses:
+                    raise ValueError(f"frame_selector loss key collision: {key}")
+                losses[key] = value
+            selector_loss_keys = set(losses)
             if self.selector_train_only:
                 inputs = inputs.detach()
 
@@ -193,7 +200,12 @@ class ActionFormer(SingleStageDetector):
             gt_labels=gt_labels,
             **kwargs,
         )
-        losses.update(loc_losses)
+        self._merge_detector_losses(
+            losses,
+            loc_losses,
+            source_name="rpn_head",
+            protected_keys=selector_loss_keys,
+        )
         self._merge_pc_ot_mras_extra_losses(
             losses,
             reader_extra_losses,

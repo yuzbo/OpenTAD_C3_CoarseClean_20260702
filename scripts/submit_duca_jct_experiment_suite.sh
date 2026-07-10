@@ -10,6 +10,10 @@ log() {
   echo "[DUCA_JCT_SUITE] $*" >&2
 }
 
+if [[ "${ALLOW_LEGACY_DIAGNOSTIC_SUITE:-0}" != "1" ]]; then
+  fail "legacy suite mixes padded-cap MUST and X3D appendix jobs; set ALLOW_LEGACY_DIAGNOSTIC_SUITE=1 only for diagnostic replay"
+fi
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
@@ -64,7 +68,7 @@ for path in \
   scripts/run_duca_trainfree_x3d_interval_grid_gpu0.sh \
   scripts/run_duca_x3d_official_adatad_backend_gpu1.sh \
   scripts/run_duca_must_dynamic_x3d_official_adatad_backend_gpu1.sh \
-  tools/bata/run_duca_jct_one_step_grad_proof.py \
+  tools/bata/run_duca_official_adatad_one_step_grad_proof.py \
   tools/bata/materialize_trainfree_x3d_actionness.py \
   tests/test_duca_joint_training_contract.py \
   tests/test_duca_jct_one_step_grad_proof.py \
@@ -141,14 +145,14 @@ write_sbatch "${tests_script}" "duca_jct_tests" '
   opentad/models/detectors/single_stage.py \
   opentad/models/detectors/actionformer.py \
   tools/bata/materialize_trainfree_x3d_actionness.py \
-  tools/bata/run_duca_jct_one_step_grad_proof.py \
+  tools/bata/run_duca_official_adatad_one_step_grad_proof.py \
   tools/bata/monitor_duca_jct_experiment_suite.py \
   tools/bata/collect_duca_jct_paper_evidence.py \
   tools/bata/validate_duca_official_adatad_backend.py \
   tools/bata/validate_duca_must_dynamic_official_adatad_backend.py
 "${PYTHON}" tools/bata/validate_duca_official_adatad_backend.py --config configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py --max-budget 384
 "${PYTHON}" tools/bata/validate_duca_must_dynamic_official_adatad_backend.py --config configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py --max-budget 384
-"${PYTHON}" tools/bata/run_duca_jct_one_step_grad_proof.py \
+"${PYTHON}" tools/bata/run_duca_official_adatad_one_step_grad_proof.py \
   --fixed-config configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py \
   --must-config configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py \
   --output-json "${RUN_ROOT}/duca_jct_one_step_grad_proof.json" \
@@ -158,7 +162,8 @@ write_sbatch "${tests_script}" "duca_jct_tests" '
   --proof-budget-target 8 \
   --proof-budget-multiple 4 \
   --proof-spatial-size 16 \
-  --proof-hidden-dim 16
+  --proof-hidden-dim 16 \
+  --proof-feature-dim 16
 "${PYTHON}" -m pytest \
   tests/test_duca_joint_training_contract.py \
   tests/test_duca_jct_one_step_grad_proof.py \

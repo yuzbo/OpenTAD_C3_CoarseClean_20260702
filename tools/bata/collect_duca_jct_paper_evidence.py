@@ -24,7 +24,7 @@ TRAINING_DIAGNOSTIC_KEYS = (
     "latest_train_iter",
     "latest_train_loss",
     "latest_actionness_bce_loss",
-    "latest_detector_utility_distribution_loss",
+    "latest_boundary_utility_proxy_distribution_loss",
     "latest_action_local_hole_loss",
     "latest_lagrangian_budget_loss",
     "latest_cls_loss",
@@ -89,6 +89,10 @@ def _job_metrics(monitor: Mapping[str, Any], method: str) -> dict[str, float]:
         numeric = _number(value)
         if numeric is not None:
             out[str(key)] = float(numeric)
+    canonical_key = "latest_boundary_utility_proxy_distribution_loss"
+    legacy_key = "latest_detector_utility_distribution_loss"
+    if canonical_key not in out and legacy_key in out:
+        out[canonical_key] = out[legacy_key]
     return out
 
 

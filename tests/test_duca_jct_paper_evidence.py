@@ -158,7 +158,7 @@ def test_duca_jct_paper_evidence_allows_claim_only_with_baseline_and_high_iou(tm
     assert not summary["claim_gate"]["blockers"]
     must_row = summary["table_rows"][1]
     assert must_row["latest_actionness_bce_loss"] == 0.21
-    assert must_row["latest_detector_utility_distribution_loss"] == 0.04
+    assert must_row["latest_boundary_utility_proxy_distribution_loss"] == 0.04
     assert must_row["latest_action_local_hole_loss"] == 0.03
     assert must_row["latest_lagrangian_budget_loss"] == -0.02
     assert must_row["latest_cls_loss"] == 0.44
@@ -238,7 +238,7 @@ def test_duca_jct_paper_evidence_cli_writes_json_and_tsv(tmp_path: Path) -> None
     assert rows[1]["average_mAP_percent"] == "66.4"
     assert rows[1]["delta_vs_primary_average_mAP"] == "1.4"
     assert rows[1]["latest_actionness_bce_loss"] == "0.21"
-    assert rows[1]["latest_detector_utility_distribution_loss"] == "0.04"
+    assert rows[1]["latest_boundary_utility_proxy_distribution_loss"] == "0.04"
     assert rows[1]["latest_action_local_hole_loss"] == "0.03"
     assert rows[1]["latest_lagrangian_budget_loss"] == "-0.02"
     assert rows[1]["latest_cls_loss"] == "0.44"

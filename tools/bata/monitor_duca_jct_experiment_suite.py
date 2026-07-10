@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 
 SCHEMA_VERSION = "duca_jct_suite_monitor_v1"
 X3D_READY = "TRAINFREE_X3D_ACTIONNESS_MATERIALIZED"
-GRAD_PROOF_SCHEMA_VERSION = "duca_jct_one_step_grad_proof_v1"
+GRAD_PROOF_SCHEMA_VERSION = "duca_official_adatad_one_step_grad_proof_v1"
 
 JOB_SPECS = {
     "duca_jct_tests": {
@@ -271,7 +271,7 @@ def _extract_metrics(text: str) -> dict[str, float]:
             "teacher_utility_loss",
             "boundary_coverage_loss",
             "actionness_bce_loss",
-            "detector_utility_distribution_loss",
+            "boundary_utility_proxy_distribution_loss",
             "action_local_hole_loss",
             "redundancy_loss",
             "radius_cost_loss",
@@ -298,6 +298,10 @@ def _extract_metrics(text: str) -> dict[str, float]:
                 if key == "mem":
                     metric_key = "latest_mem_mb"
                 metrics[metric_key] = float(match.group(1))
+        if "latest_boundary_utility_proxy_distribution_loss" not in metrics:
+            legacy_match = re.search(r"\bdetector_utility_distribution_loss=([-+0-9.eE]+)", last_line)
+            if legacy_match:
+                metrics["latest_boundary_utility_proxy_distribution_loss"] = float(legacy_match.group(1))
     return metrics
 
 

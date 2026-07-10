@@ -1,0 +1,1183 @@
+# 总裁决
+
+**当前主实验提交 `7e3a508` 不是一个损失聚合正确、训练与推理同构、严格在线且足以作为 CCF-A 论文最终主方法的 DUCA；`88e50b1` 新增的 SlowFast Fast-side frozen-prior 诊断没有修复这些主方法缺陷，MUST 当前也必须退出主贡献。**
+
+我将主方法固定在 `7e3a5081f58958fc924accf43088b24e2bf3093a`，并把 `88e50b17241cf4ef7d891e87b5455f45d72e345d` 的后续差异单独处理，没有用 SlowFast 诊断替主方法背书。两个提交、目标分支和差异均可确认。([GitHub][1])号、代码上下文、diff、测试清单和 patch 骨架在以下文件中：
+
+* [完整最终审查报告](sandbox:/mnt/data/DUCA_FINAL_METHOD_AUDIT_20260710.md)
+* [逐行代码证据报告](sandbox:/mnt/data/DUCA_CODE_EVIDENCE_REPORT.md)
+* [完整证据包：提交校验、diff、编号源码、测试日志](sandbox:/mnt/data/DUCA_final_audit_bundle_20260710.tar.gz)
+* [静态发现 JSON](sandbox:/mnt/data/duca_static_findings.json)
+
+下文的文件/函数定位均对应固定 SHA；精确 `Lx–Ly` 及上下文位于上述两份报告的第 2–3 节，避免在聊天文本中给出未经固定源码生成的近似行号。
+
+---
+
+# 一、最严重的代码审查结论
+
+| 优先级 | 判定            | 位置                                                            | 实际问题                                                                                                                       | 直接后果                                                                                       |
+| --- | ------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| P0  | **已确认错误**     | `actionformer.py::forward_train`；`train_engine.py` 的总损失求和     | selector 叶子损失、已经包含叶子损失的 `total_loss`、以及 `detector_utility_distribution_loss` 重复别名一起进入最终求和                                  | 普通 selector 子损失被计算 2 次，utility-distribution 被计算 3 次，detector cls/reg 只计算 1 次               |
+| P0  | **已确认错误**     | 同上                                                            | 你给出的 `1.1038 + 1.1038 + 0.5645 + 0.2378 + 0.2363` 与最终 `3.2463` 完整闭环                                                        | 当前联合训练不是“detector loss 主导的 selector 学习”，而是重复 proxy 主导                                      |
+| P0  | **已确认错误**     | `duca_online_frame_selector.py`、`acquisition.py`              | detector backward 使用 soft-resample/soft policy，hard forward/inference 使用 center-radius、union、top-k、scaffold、max-gap repair | 非零梯度指向另一个策略；梯度可达不等于 hard set 的检测效用上升                                                       |
+| P0  | **高置信风险**     | selector/acquisition 的完整窗口 top-k 或全局裁剪                        | 即使每个时刻的 score 由 causal encoder 产生，过去帧是否入选仍可能取决于未来 score 的全局排名                                                              | 若 prefix-decision invariance 不通过，方法不是严格 online，而是 causal scoring + offline subset decoding |
+| P0  | **已确认错误**     | `dynamic_budget.py`、MUST config                               | soft expected cost、hard K、dual update、min/max clamp 和 padded detector cap 不是同一个“实际消费量”                                     | MUST384 退化成 fixed384；320/256 出现结构性坍缩；当前不能声称动态计算                                            |
+| P1  | **已确认错误**     | `boundary_utility_proxy` 构造                                   | 动作内部逐点为 `1.0`，边界逐点仅为 `1.5`，未按动作实例或端点归一化                                                                                    | 长动作内部累计质量远大于端点；“boundary-first”在数学上不成立                                                     |
+| P1  | **高置信风险**     | `boundary_head`、`utility_head`、`radius_head`                  | head-specific 直接监督不完整；多个无界 logits 用固定系数相加                                                                                  | 配置中的 boundary weight 不能控制实际排序，模型可通过改变 logit 尺度绕过权重                                         |
+| P1  | **已确认错误**     | radius hard decode、fixed config                               | radius 经 `round(...).item()`/Python 整数进入 hard decoder，同时 `radius_loss=0`；repair 是纯离散后处理                                    | radius 与 gap 决策没有和 detector objective 同构的梯度路径                                              |
+| P1  | **已确认错误**     | fixed config 的 warmup/transition；`ActionFormer.forward_train` | warmup 只令 detector-to-selector bridge 为 0，但 detector 仍消费不断变化的 hard selection                                               | detector 从训练第一步就在追逐随机、非平稳的输入分布                                                             |
+| P1  | **已确认错误**     | fixed config schedule                                         | `475 + 3980 = 4455` steps；按约 99 step/epoch，到约 epoch45 才完全开放联合梯度                                                            | 60 epoch 中完整联合阶段只有约 15 epoch，而且此前已形成错误共适应                                                  |
+| P1  | **已确认错误**     | official-ASFormer coarse path 和 config                        | “official”描述的是代码结构来源；没有等价于加载 official pretrained checkpoint 的有效路径                                                          | coarse probe 实际从随机状态开始，不能把 architecture provenance 写成 pretrained initialization            |
+| P1  | **尚待实验验证的假设** | dense/selected/original-time 映射链                              | snippet center、`+0.5`、stride、window offset、半开区间和预测反映射可能存在偏移                                                                | 高 tIoU 退化与该问题相容，但仅凭曲线不能定罪，必须做合成 round-trip                                                 |
+| P2  | **已确认错误**     | one-step gradient proof                                       | 主要证明参数梯度非零，没有证明梯度尺度、方向、有限差分一致性、aux-detector 夹角                                                                             | “gradient reachable”被错误地当成“gradient useful”                                                |
+| P2  | **已确认错误**     | provenance 字段与 action target 路径                               | `thumos_trained=False/uses_labels=False` 与训练时使用 THUMOS actionness target 的语义冲突                                             | no-label/train-free/provenance claim 不可信                                                   |
+| P2  | **高置信风险**     | selected-frame handoff                                        | 仅断言 `selected_positions<=K` 不足以证明未选帧不影响 detector，也不足以证明 backbone 实际只计算 K 帧                                                 | 必须用 sentinel non-interference 和 profiler 证明 selected-only consumption                      |
+| P3  | **尚待实验验证的假设** | `88e50b1` SlowFast Fast-side 诊断                               | frozen 不等于低成本；Fast pathway 仍可能是 dense、昂贵的预主干网络                                                                             | 在完整 GFLOPs、解码、延迟和显存账本前只能作为附录诊断                                                             |
+
+核心 detector、selector、acquisition、train engine 和两个配置文件的上述数据流可直接在固定提交源码中对应。mic-budget 及 MUST 配置中。
+当前 one-step proof 的
+
+---
+
+# 二、重复损失的精确账本
+
+按你提供的真实日志：
+
+[
+1.1038s}}
++1.1038_{\text{selector total}}
++0.5645_{\text{utility alias}}
++0.2378_{\text{cls}}
++0.2363_{\text{reg}}
+=3.2462.
+]
+
+日志打印 `3.2463` 与各分项先四舍五入后的误差完全一致。
+
+因此：
+
+| 损失类别                                      |                                 实际累计次数 |
+| ----------------------------------------- | -------------------------------------: |
+| 普通 selector 叶子损失                          |         **2 次**：叶子本身 + `total_loss` 内部 |
+| `detector_utility_distribution_loss` 对应叶子 | **3 次**：叶子本身 + `total_loss` 内部 + alias |
+| detector classification loss              |                                **1 次** |
+| detector regression loss                  |                                **1 次** |
+
+进一步分解：
+
+[
+L_{\text{aux, effective}}
+=2(1.1038)+0.5645
+=2.7721,
+]
+
+[
+L_{\text{det}}
+=0.2378+0.2363
+=0.4741.
+]
+
+于是：
+
+* 重复后的辅助项占总标量约 **85.4%**；
+* detector cls/reg 只占约 **14.6%**；
+* utility 单项的有效贡献为 (3\times0.5645=1.6935)，占总标量约 **52.2%**。
+
+这不能单独证明辅助梯度范数一定比 detector 大，因为不同 loss 的 Jacobian 不同；但它已经彻底否定“detector loss 是 selector 首要优化信号”的默认叙事。真正需要记录的是：
+
+[
+|g_{\mathrm{det}}|,\quad
+|g_{\mathrm{aux}}|,\quad
+\frac{|g_{\mathrm{det}}|}{|g_{\mathrm{aux}}|},\quad
+\cos(g_{\mathrm{det}},g_{\mathrm{aux}})
+]
+
+在 probe trunk、policy trunk、boundary head、utility head 上的分模块值。
+
+**正确修复不是把某个权重除以 2 或 3。** 正确 contract 是：
+
+1. selector 只返回互不重复的叶子损失；
+2. `total_loss` 不得出现在 loss dictionary；
+3. 不得创建语义相同的 alias；
+4. 全项目只有一个聚合点。
+
+---
+
+# 三、`boundary_utility_proxy` 为什么不是 boundary-first
+
+当前 proxy 的核心问题不是“1.5 太小，改成 5.0 即可”，而是它把逐点 action-body target 与端点事件 target 混在了同一张未归一化图中。
+
+设动作长度为 (L)，每个端点监督带宽为 (w)。忽略重叠时：
+
+* 内部累计质量约为 (L-2w)；
+* 两个边界累计质量约为 (2\times1.5w=3w)。
+
+只有在
+
+[
+L-2w < 3w
+\quad\Longleftrightarrow\quad
+L<5w
+]
+
+时，边界总质量才可能超过内部。对长动作，内部必然主导。再叠加当前 loss 的重复累计，selector 更可能学到“覆盖动作主体”而不是“覆盖起止转换”。
+
+正确监督必须拆开：
+
+[
+y_t^A:\text{ inside/background calibration},
+]
+
+[
+y_t^S:\text{ start transition hazard},
+\qquad
+y_t^E:\text{ end transition hazard},
+]
+
+[
+y_t^C:\text{ outside-boundary context},
+]
+
+[
+y_t^U:\text{ detector-derived utility}.
+]
+
+其中每个 GT 实例的 start 和 end target 都应分别归一化为固定质量 1，不随动作时长增长：
+
+[
+\sum_t y_{i,t}^{S}=1,\qquad
+\sum_t y_{i,t}^{E}=1.
+]
+
+这样长动作不会凭长度获得更大的监督权重。
+
+---
+
+# 四、联合版低于分离版的完整因果链
+
+不是一个单一 bug，而是一条已经能闭环的训练失效链。
+
+## 4.1 早期输入分布先被破坏
+
+online ASFormer/coarse probe 没有明确加载可用 coarse checkpoint，从随机状态开始。最初的 (p_{\text{action}})、transition 和 hidden state 均未校准。
+
+但 warmup 并没有让 detector 看稳定的 uniform/fixed input。它只把 detector 到 selector 的 gradient bridge 设为零，hard selector 仍在改变。因此 detector 在最初阶段训练于不断变化的随机子集。
+
+结果是：
+
+[
+\text{random probe}
+\rightarrow
+\text{moving hard subset}
+\rightarrow
+\text{nonstationary detector input}
+\rightarrow
+\text{early detector-policy co-adaptation}.
+]
+
+## 4.2 selector 随后被错误代理目标主导
+
+selector 所有叶子损失被算两次，utility 项被算三次。与此同时，boundary proxy 的累计质量仍由动作内部主导。
+
+因此早期 policy 学到的是：
+
+* 选择高 actionness body；
+* 拟合 proxy distribution；
+* 依赖未校准多头的相对 logit 尺度；
+
+而不是：
+
+* 选择真正影响 proposal start/end 的帧；
+* 最小化 detector regression/IoU 损失；
+* 保持 physical-time boundary coverage。
+
+## 4.3 radius、repair 与真正 hard policy 不可学习
+
+radius 进入 hard decode 前被 `round(...).item()` 转成 Python 标量，而对应 loss 为零。max-gap repair 又在 hard set 形成后执行。
+
+所以真正部署行为中的两个关键因素——扩张半径和 gap 修复——没有与 detector loss 对应的直接梯度。所谓固定 `boundary_weight`、`utility_weight` 也不能约束这些离散行为。
+
+## 4.4 detector 梯度迟到且方向不对应 hard inference
+
+完整 bridge 到约 epoch45 才达到 1。此时 detector 和 selector 已在错误代理下共适应了约四分之三训练。
+
+更严重的是，后来到达的 detector gradient 沿 soft-resample policy 反传，而测试执行 center-radius union、top-k、scaffold、repair。它不是 hard decoder 的局部可微近似，而是另一个选择器。
+
+因此：
+
+[
+\nabla_\theta L_{\mathrm{det}}(S_{\mathrm{soft}})
+\not\approx
+\Delta L_{\mathrm{det}}(S_{\mathrm{hard}}).
+]
+
+one-step proof 只能证明左边非零，不能证明它能改善右边。
+
+## 4.5 结果曲线正好符合该机制
+
+相对分离版最佳 epoch29：
+
+| 指标   |  分离最佳 | DUCA fixed384 |        差值 |
+| ---- | ----: | ------------: | --------: |
+| Avg  | 61.02 |         56.26 | **−4.76** |
+| @0.3 | 76.03 |         74.04 |     −1.99 |
+| @0.4 | 71.71 |         68.83 |     −2.88 |
+| @0.5 | 64.07 |         59.50 |     −4.57 |
+| @0.6 | 53.21 |         47.06 |     −6.15 |
+| @0.7 | 40.05 |         31.87 | **−8.18** |
+
+相对分离版最终结果：
+
+| 指标   |  分离最终 | DUCA fixed384 |        差值 |
+| ---- | ----: | ------------: | --------: |
+| Avg  | 59.10 |         56.26 |     −2.84 |
+| @0.3 | 74.32 |         74.04 |     −0.28 |
+| @0.4 | 68.50 |         68.83 |     +0.33 |
+| @0.5 | 61.71 |         59.50 |     −2.21 |
+| @0.6 | 51.47 |         47.06 |     −4.41 |
+| @0.7 | 39.51 |         31.87 | **−7.64** |
+
+低 tIoU 基本保住而高 tIoU 单调扩大，说明粗动作识别不是主要瓶颈；主要问题落在：
+
+1. 起止转换采样不足；
+2. hard policy 与训练代理不一致；
+3. physical-time/selected-axis 映射可能存在误差。
+
+第三项仍是待证假设。前两项已经足以解释大部分退化。
+
+`54.50 → 55.42 → 56.12 → 56.26` 只证明后期仍有微小改善，而且增量正在缩小；它不能支持“继续训练即可自然补回 4.76 Avg 和 8.18 @0.7”的判断。
+
+---
+
+# 五、MUST 当前不是动态预算方法
+
+当前数据已经足以暂停 MUST：
+
+| 方法       |   Avg |
+| -------- | ----: |
+| fixed384 | 56.26 |
+| MUST384  | 56.17 |
+| fixed256 | 49.19 |
+| MUST320  | 30.98 |
+| MUST256  | 31.19 |
+
+三个异常信号非常明确：
+
+1. MUST384 与 fixed384 几乎完全相同，差 `−0.09`，说明动态机制在高 cap 下没有提供额外价值；
+2. MUST320 比 fixed256 还低约 `18.21`，不是正常的预算—精度曲线；
+3. MUST256 在 NODE_FAIL 前只有 31.19，而 fixed256 为 49.19，说明 controller 或其训练目标发生结构性坍缩。
+
+MUST 当前至少有五种不同预算量：
+
+[
+E[K]*{\mathrm{soft}},
+\quad
+K*{\mathrm{hard}},
+\quad
+K_{\mathrm{unique}},
+\quad
+K_{\mathrm{padded}},
+\quad
+K_{\mathrm{backbone-consumed}}.
+]
+
+只优化前两个，却用第四个喂 detector，再用第五个做计算 claim，是不能通过审稿的。
+
+在每个样本上必须同时记录：
+
+```text
+expected_soft_k
+hard_decoded_k
+unique_selected_k
+padded_detector_k
+actual_backbone_consumed_k
+measured_GFLOPs
+measured_latency
+```
+
+这些量没有统一之前，MUST 不是“动态预算”，只是一个带软 cost loss 的不稳定 K 生成器。
+
+---
+
+# 六、四种最终架构比较
+
+| 方案                                       | 核心原理                                                                   | 优点                                                       | 缺点                                                       | 创新性   | 审稿风险                           | 复杂度 |
+| ---------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------- | ----- | ------------------------------ | --- |
+| A. DUCA-v2 最小修复                          | 修复 loss；直接监督 heads；用单一 constrained top-K ST operator；warmup 固定 uniform | 最快利用现有代码                                                 | 仍容易成为 top-k、scaffold、多个 loss 的工程堆叠；严格在线性仍有问题             | 中低    | 高：容易被判 incremental engineering | 低—中 |
+| B. Boundary Event Skeleton               | 先用结构化 skeleton 保证 coverage，剩余 slots 分配给 start/end event                | 边界与 gap 解释清楚；取消 radius repair                            | 若剩余 slot 仍全窗 top-k，就不是严格在线；固定 skeleton 可能被视为手工 heuristic | 中     | 中                              | 中   |
+| C. **Causal Feasible-Path Acquisition**  | 将选帧定义为 exact-K、max-gap 可达性自动机上的逐时刻 select/skip                         | 训练、测试、预算、max-gap、online 决策同构；彻底删除 radius/top-k/repair 冲突 | 需要实现约束状态机和可信 ST bridge                                   | **高** | 主要风险集中在 surrogate bias，可被定量审计  | 中—高 |
+| D. EMA detector-sensitivity distillation | 训练时由 dense/EMA detector 产生遮挡边际或梯度敏感度 utility                           | utility 真正来自 detector，而非 GT heuristic                    | 训练成本高；若叙事不清容易被认为多路径 teacher system                       | 中高    | 中高                             | 高   |
+
+## 我的唯一推荐
+
+**采用方案 C：Causal Feasible-Path Acquisition，训练时可低频结合方案 D 的 detector-sensitivity target；停止继续扩展当前 center/radius/top-k/scaffold/repair 架构。**
+
+这不是把现有 DUCA 再调权重，而是换掉 acquisition 的核心定义。
+
+---
+
+# 七、推荐方法：Causal Feasible-Path Acquisition，CFPA
+
+## 7.1 唯一核心原理
+
+在每个时刻 (t)，policy 只能根据已见 prefix 做不可撤销的 `select/skip`。预算与最大间隔不是 loss 或事后 repair，而是状态空间的可行性约束。
+
+状态定义为：
+
+[
+s_t=(t,k_t,g_t),
+]
+
+其中：
+
+* (t)：当前原始时间位置；
+* (k_t)：已经选择的 observation 数；
+* (g_t)：距最近一次选择的 original-time gap。
+
+对给定 (T,K,G)，预先计算一个与视频内容无关的布尔可达性表：
+
+[
+R(t,k,g)\in{0,1},
+]
+
+表示从该状态出发，是否仍可能在末端满足：
+
+[
+k_T=K,
+\qquad
+\max\operatorname{gap}(S)\le G.
+]
+
+某个 `select/skip` 动作只有在下一状态仍满足 (R=1) 时才允许。
+
+由此自然得到：
+
+* exact fixed budget；
+* strict hard max-gap；
+* 不需要 scaffold repair；
+* 不需要 radius expansion；
+* 不需要完整窗口 top-k；
+* 不会回看未来修改过去决定。
+
+## 7.2 policy 输入
+
+causal probe 输出：
+
+[
+h_t,\qquad p_t=P(\text{action}\mid x_{\le t}).
+]
+
+policy 输入应包括：
+
+[
+e_t=[
+h_t,,
+p_t,,
+\Delta p_t,,
+|\Delta p_t|,,
+H(p_t),,
+c_t,,
+(K-k_t)/(T-t),,
+g_t/G
+].
+]
+
+另外使用独立概率头：
+
+[
+q_t^S=P(\text{start transition at }t),
+]
+
+[
+q_t^E=P(\text{end transition at }t),
+]
+
+[
+u_t=\text{detector-derived utility}.
+]
+
+不要再把多个无界 logits 乘固定权重后相加。先把语义头校准为概率或标准化分数，再由 policy MLP 统一决策。
+
+## 7.3 hard/soft 同一路径
+
+当 select 与 skip 都可达时：
+
+[
+\tilde a_t
+==========
+
+\sigma\left(
+\frac{\ell_t+\epsilon_t}{\tau}
+\right),
+]
+
+[
+a_t^{\mathrm{hard}}
+===================
+
+\mathbb 1[\tilde a_t\ge 0.5],
+]
+
+[
+a_t^{\mathrm{ST}}
+=================
+
+a_t^{\mathrm{hard}}
++\tilde a_t
+-\operatorname{sg}(\tilde a_t).
+]
+
+若只有一个动作可达，则直接执行强制动作，不制造伪梯度。
+
+状态更新使用 hard action，保证 forward 与测试完全一致；soft 部分只提供同一决策的局部梯度。
+
+## 7.4 真正的 online 条件
+
+必须满足：
+
+[
+D_t(x_{1:T})=D_t(x_{1:t}),
+]
+
+其中 (D_t) 表示截至时刻 (t) 已经作出的全部选择决定。
+
+这比“causal convolution 没看到未来”严格得多。全局 top-k 即使基于 causal score，也通常不满足该式。
+
+---
+
+# 八、完整数据流
+
+## 训练 hard forward
+
+```text
+raw frame stream
+→ official causal ASFormer probe
+→ h_t, p_action
+→ start/end/utility evidence
+→ CFPA feasible-state policy
+→ irreversible original-time selected positions S
+→ hard gather raw frames, |S| = K
+→ VideoMAE-S consumes only selected frames
+→ physical-time scatter/interpolation adapter
+→ official AdaTAD temporal neck
+→ official ActionFormerHead
+→ detector classification/regression losses
+```
+
+## 反向梯度流
+
+```text
+L_det
+→ ActionFormerHead
+→ temporal neck / projection
+→ selected-frame VideoMAE features
+→ zero-forward ST bridge
+→ CFPA policy logits
+→ boundary / utility evidence
+→ causal probe hidden representation
+```
+
+其他监督：
+
+```text
+L_action → actionness head + causal probe
+L_start/end → transition heads + causal probe
+L_utility → utility head + policy trunk
+L_context → context head / policy
+```
+
+teacher utility target 必须 `stop_gradient`，不能让 student 反向修改 teacher target。
+
+## 测试 hard inference
+
+```text
+prefix x_1:t
+→ causal probe
+→ current feasible select/skip
+→ decision immediately committed
+→ selected frame enters VideoMAE-S
+→ no revision of previous decisions
+```
+
+测试阶段不存在：
+
+* GT；
+* teacher；
+* oracle；
+* ledger；
+* prediction cache；
+* 全窗 top-k；
+* radius expansion；
+* post-hoc gap repair。
+
+---
+
+# 九、正确的监督设计
+
+## 9.1 Actionness BCE
+
+actionness BCE 只承担粗分类校准：
+
+[
+L_A=\operatorname{BCE}(p_t,y_t^A).
+]
+
+它不能直接作为 acquisition target，也不能通过逐点累计压过 boundary loss。
+
+建议：
+
+* 对正负类别做平衡；
+* 报告 AP、ROC-AUC、ECE，而不只报告 BCE；
+* 不把 (p_t) 当最终 utility；
+* 在共享 probe trunk 上监控 (g_A) 与 (g_{\mathrm{det}}) 的冲突。
+
+## 9.2 Start/end transition target
+
+对动作实例 ([s_i,e_i))：
+
+[
+\tilde y_{i,t}^S
+================
+
+\exp\left(
+-\frac{(t-s_i)^2}{2\sigma_i^2}
+\right),
+]
+
+[
+\tilde y_{i,t}^E
+================
+
+\exp\left(
+-\frac{(t-e_i)^2}{2\sigma_i^2}
+\right),
+]
+
+其中：
+
+[
+\sigma_i
+========
+
+\operatorname{clip}
+\left(
+\alpha(e_i-s_i),
+\sigma_{\min},
+\sigma_{\max}
+\right).
+]
+
+逐实例归一化：
+
+[
+y_{i,t}^{S}
+===========
+
+\frac{\tilde y_{i,t}^{S}}
+{\sum_\tau\tilde y_{i,\tau}^{S}},
+\qquad
+y_{i,t}^{E}
+===========
+
+\frac{\tilde y_{i,t}^{E}}
+{\sum_\tau\tilde y_{i,\tau}^{E}}.
+]
+
+这能保证短动作和长动作的每个端点获得同等监督质量。
+
+## 9.3 双端点覆盖
+
+仅训练 boundary classifier 还不够，应直接约束 acquisition 对每个端点有 observation support：
+
+[
+L_{\mathrm{cov}}
+================
+
+\sum_i
+\left[
+-\log
+\left(
+\sum_t z_t^{\mathrm{soft}}y_{i,t}^{S}
++\epsilon
+\right)
+-------
+
+\log
+\left(
+\sum_t z_t^{\mathrm{soft}}y_{i,t}^{E}
++\epsilon
+\right)
+\right].
+]
+
+该项按实例计算，不按动作长度累计。
+
+## 9.4 背景上下文
+
+在 start 之前和 end 之后设置窄 context band，避免 selector 把所有预算都放到 action interior：
+
+[
+L_C
+===
+
+\operatorname{BCE}(q_t^C,y_t^C).
+]
+
+context 不应与 actionness 负样本完全等价；它表示对 boundary discrimination 有价值的近邻背景。
+
+## 9.5 Detector-derived utility
+
+推荐训练时使用 EMA dense detector 的梯度敏感度：
+
+[
+r_t
+===
+
+\left|
+\frac{\partial L_{\mathrm{det}}}
+{\partial f_t}
+\right|_2
+\cdot
+|f_t|_2.
+]
+
+在视频内进行 rank/temperature normalization：
+
+[
+y_t^U
+=====
+
+\operatorname{softmax}(r_t/\tau_U).
+]
+
+utility head 用：
+
+[
+L_U
+===
+
+\operatorname{KL}
+\left(
+\operatorname{softmax}(u/\tau_U)
+;|;
+\operatorname{sg}(y^U)
+\right).
+]
+
+低频用真实 mask-out marginal 验证 gradient×feature proxy：
+
+[
+\Delta_t
+========
+
+## L_{\mathrm{det}}(x_{\setminus t})
+
+L_{\mathrm{det}}(x).
+]
+
+如果 (r_t) 与 (\Delta_t) 排名相关性长期很低，utility teacher 本身必须停止使用。
+
+---
+
+# 十、总损失：每项只出现一次
+
+推荐：
+
+[
+\begin{aligned}
+L
+=&;
+L_{\mathrm{det}}
++\lambda_A L_A\
+&+\lambda_B
+\left(
+L_S+L_E+L_{\mathrm{cov}}
+\right)\
+&+\lambda_U L_U
++\lambda_C L_C\
+&+\lambda_G L_{\mathrm{gap}}^{\mathrm{soft}}
++\lambda_{\mathrm{cal}}L_{\mathrm{cal}}.
+\end{aligned}
+]
+
+其中：
+
+* (L_{\mathrm{det}})：官方 detector cls/reg/quality loss；
+* (L_A)：actionness calibration；
+* (L_S,L_E)：start/end transition；
+* (L_{\mathrm{cov}})：双端点 observation coverage；
+* (L_U)：detector utility distillation；
+* (L_C)：边界外上下文；
+* (L_{\mathrm{gap}}^{\mathrm{soft}})：鼓励 policy 不等到强制 deadline；
+* hard max-gap 由状态机保证，不由 (L_{\mathrm{gap}}) 保证。
+
+固定预算模式下不需要 expected-budget loss，因为 exact (K) 已由状态机保证。
+
+梯度边界：
+
+| 损失                         | 更新模块                                         |
+| -------------------------- | -------------------------------------------- |
+| (L_{\mathrm{det}})         | detector、bridge、policy、可选 probe shared trunk |
+| (L_A)                      | probe/actionness head                        |
+| (L_S,L_E,L_{\mathrm{cov}}) | probe、transition heads、policy                |
+| (L_U)                      | utility head、policy；teacher stop-grad        |
+| (L_C)                      | context head、policy                          |
+| hard feasibility           | 无参数，不反传                                      |
+
+在 policy shared trunk 上分别计算：
+
+[
+g_D=\nabla_\theta L_{\mathrm{det}},
+\quad
+g_B=\nabla_\theta L_B,
+\quad
+g_U=\nabla_\theta L_U.
+]
+
+建议门槛：
+
+* 若 (|g_D|/|g_{\mathrm{aux}}|\notin[0.1,10])，先归一化或调整权重；
+* 若 (\cos(g_D,g_B)<-0.2) 或 (\cos(g_D,g_U)<-0.2) 持续出现，使用 PCGrad 或受控 stop-gradient；
+* GradNorm 只能解决量纲，不解决方向相反。
+
+---
+
+# 十一、单一训练作业，不是三个独立阶段
+
+允许 curriculum，但禁止导出三个独立模型再离线拼接。
+
+## 0–5% steps：稳定输入校准
+
+* hard path 使用 feasibility-uniform policy；
+* detector、probe、actionness/start/end heads 正常训练；
+* learned policy 计算 logits，但暂不控制 hard selection；
+* 不导出 checkpoint 给下一阶段单独加载。
+
+## 5–20% steps：连续开放 learned policy
+
+设 (\rho) 为 learned-path 概率，(\beta) 为 detector bridge：
+
+[
+\rho,\beta:
+0\rightarrow1.
+]
+
+每个 batch 在 stable feasible path 和 learned CFPA path 之间逐步切换；detector 不再从第一步追逐随机 subset。
+
+## 20–100% steps：完整联合
+
+* hard path 全部由 CFPA 控制；
+* detector bridge 为 1；
+* 周期性执行 gradient norm/cosine audit；
+* EMA teacher 在 optimizer step 后更新；
+* K 从 `{128,256,384}` 中条件采样，共享同一 policy。
+
+这仍然是：
+
+* 单模型；
+* 单训练作业；
+* 单 optimizer 生命周期；
+* 无离线 ledger 拼接；
+* 无三个独立 checkpoint。
+
+通用 VideoMAE 预训练属于初始化。
+使用公开 ASFormer checkpoint也属于初始化，但必须准确披露其训练数据。
+先在 THUMOS 上训练 probe、保存 checkpoint、再训练 selector/detector，则会被审稿人视为多阶段训练。
+
+---
+
+# 十二、核心 patch
+
+## 12.1 修复 loss aggregation
+
+```python
+# selector: 只返回叶子损失
+selector_losses = {
+    "loss_action_cal": loss_action_cal,
+    "loss_start": loss_start,
+    "loss_end": loss_end,
+    "loss_boundary_coverage": loss_boundary_coverage,
+    "loss_utility": loss_utility,
+    "loss_context": loss_context,
+    "loss_gap_soft": loss_gap_soft,
+}
+
+# 禁止：
+# selector_losses["total_loss"] = ...
+# selector_losses["detector_utility_distribution_loss"] = loss_utility
+return selector_output, selector_losses
+```
+
+```python
+# actionformer.py
+losses = dict(detector_losses)
+
+for name, value in selector_losses.items():
+    if not name.startswith("loss_"):
+        raise ValueError(f"Non-leaf loss key: {name}")
+    if name in losses:
+        raise KeyError(f"Duplicate loss key: {name}")
+    if name in {"total_loss", "detector_utility_distribution_loss"}:
+        raise ValueError(f"Aggregate or alias is forbidden: {name}")
+    losses[name] = value
+
+return losses
+```
+
+```python
+# train_engine.py：唯一聚合点
+leaf_losses = {
+    name: value
+    for name, value in losses.items()
+    if name.startswith("loss_")
+}
+
+if len(leaf_losses) != len(losses):
+    unknown = set(losses) - set(leaf_losses)
+    raise RuntimeError(f"Non-leaf entries in loss dict: {unknown}")
+
+total_loss = torch.stack(
+    [value.float() for value in leaf_losses.values()]
+).sum()
+```
+
+## 12.2 端点 target
+
+```python
+from __future__ import annotations
+
+import torch
+
+
+def build_endpoint_targets(
+    segments: torch.Tensor,
+    temporal_length: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Build per-instance-mass-normalized start/end targets.
+
+    Coordinates must already use the single canonical continuous
+    snippet-center system. Segments follow [start, end).
+    """
+    if segments.ndim != 2 or segments.shape[-1] != 2:
+        raise ValueError(f"Expected [N, 2], got {tuple(segments.shape)}")
+
+    grid = torch.arange(
+        temporal_length,
+        device=segments.device,
+        dtype=torch.float32,
+    )
+    start_target = torch.zeros_like(grid)
+    end_target = torch.zeros_like(grid)
+
+    for start, end in segments.float():
+        duration = (end - start).clamp_min(1.0)
+        sigma = (0.08 * duration).clamp(min=0.75, max=4.0)
+
+        start_gaussian = torch.exp(
+            -0.5 * ((grid - start) / sigma).square()
+        )
+        end_gaussian = torch.exp(
+            -0.5 * ((grid - end) / sigma).square()
+        )
+
+        start_target += (
+            start_gaussian
+            / start_gaussian.sum().clamp_min(1e-6)
+        )
+        end_target += (
+            end_gaussian
+            / end_gaussian.sum().clamp_min(1e-6)
+        )
+
+    return start_target.clamp_max(1.0), end_target.clamp_max(1.0)
+```
+
+## 12.3 exact-K/max-gap 状态机
+
+```python
+from dataclasses import dataclass
+
+import torch
+
+
+@dataclass(frozen=True)
+class AcquireState:
+    t: int
+    selected: int
+    gap: int
+
+
+def feasible_actions(
+    reachable: torch.Tensor,
+    state: AcquireState,
+) -> tuple[bool, bool]:
+    """Return (can_skip, can_select)."""
+    next_t = state.t + 1
+
+    can_skip = (
+        state.gap + 1 < reachable.shape[2]
+        and bool(
+            reachable[
+                next_t,
+                state.selected,
+                state.gap + 1,
+            ]
+        )
+    )
+
+    can_select = (
+        state.selected + 1 < reachable.shape[1]
+        and bool(
+            reachable[
+                next_t,
+                state.selected + 1,
+                0,
+            ]
+        )
+    )
+    return can_skip, can_select
+
+
+def straight_through_action(
+    logit: torch.Tensor,
+    *,
+    can_skip: bool,
+    can_select: bool,
+    temperature: float,
+    training: bool,
+) -> tuple[torch.Tensor, int]:
+    if can_select and not can_skip:
+        return logit.new_tensor(1.0), 1
+
+    if can_skip and not can_select:
+        return logit.new_tensor(0.0), 0
+
+    if not can_skip and not can_select:
+        raise RuntimeError("Reached an infeasible acquisition state")
+
+    if training:
+        uniform = torch.rand_like(logit).clamp_(1e-6, 1 - 1e-6)
+        logistic_noise = torch.log(uniform) - torch.log1p(-uniform)
+        soft = torch.sigmoid(
+            (logit + logistic_noise) / temperature
+        )
+    else:
+        soft = torch.sigmoid(logit / temperature)
+
+    hard = (soft >= 0.5).to(soft.dtype)
+    straight_through = hard + soft - soft.detach()
+
+    return straight_through, int(hard.detach().item())
+```
+
+`reachable` 的 terminal condition 必须显式包含：
+
+```text
+selected == K
+tail gap <= G
+```
+
+并对首帧/末帧是否纳入 gap 约束使用唯一约定。
+
+## 12.4 zero-forward detector bridge
+
+```python
+# hard_features 来自真正 hard gather 后的 VideoMAE。
+hard_features = video_backbone(selected_frames)
+
+# soft_slot_features 必须由同一个 CFPA policy 的 soft occupancy 产生，
+# 不能再调用另一套 soft-resample policy。
+bridge_features = bridge_projection(soft_slot_features)
+
+# 数值 forward 严格等于 hard_features；
+# backward 才通过 bridge 回到 policy。
+features_for_detector = (
+    hard_features
+    + bridge_scale
+    * (bridge_features - bridge_features.detach())
+)
+
+# eval 时：
+# bridge_scale = 0
+# 不执行 soft branch
+```
+
+必须用 finite-difference hard swap 实验验证该 bridge 的方向，而不是仅断言 gradient nonzero。
+
+## 12.5 curriculum 与 optimizer groups
+
+```python
+def curriculum(
+    global_step: int,
+    total_steps: int,
+) -> tuple[float, float]:
+    ratio = global_step / max(total_steps, 1)
+
+    if ratio < 0.05:
+        return 0.0, 0.0  # learned_path_prob, bridge_scale
+
+    if ratio < 0.20:
+        ramp = (ratio - 0.05) / 0.15
+        return ramp, ramp
+
+    return 1.0, 1.0
+```
+
+```python
+optimizer = torch.optim.AdamW(
+    [
+        {
+            "params": detector_parameters,
+            "lr": 1.0e-4,
+            "weight_decay": 0.05,
+            "name": "detector",
+        },
+        {
+            "params": probe_parameters,
+            "lr": 3.0e-5,
+            "weight_decay": 0.02,
+            "name": "causal_probe",
+        },
+        {
+            "params": policy_parameters,
+            "lr": 1.0e-4,
+            "weight_decay": 0.01,
+            "name": "acquisition_policy",
+        },
+        {
+            "params": bridge_parameters,
+            "lr": 1.0e-4,
+            "weight_decay": 0.01,
+            "name": "gradient_bridge",
+        },
+    ]
+)
+```
+
+必须增加参数唯一性检查，防止同一参数出现在多个 group 中。
+
+---
+
+# 十三、必须增加的测试
+
+| 测试                                      | 强制断言                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| `test_loss_leaf_uniqueness`             | loss dict 不包含 `total_loss` 或 alias；所有 key 唯一                              |
+| `test_loss_gradient_multiplicity`       | 给每个叶子 loss 挂独立 scalar 参数，最终梯度必须恰为 1；utility 也不能为 3                        |
+| `test_prefix_decision_invariance`       | 追加未来帧后，所有已发生的 select/skip 决定完全不变                                          |
+| `test_exact_budget_and_gap_property`    | 随机 (T,K,G) 和 logits；`sum(z)==K`、`max_gap<=G`、indices 严格递增                 |
+| `test_original_time_positions`          | 所有 position 位于原始时间轴，不得混入 selected-axis index                              |
+| `test_unselected_frame_noninterference` | eval 中修改所有未选帧，detector logits/predictions 必须不变                            |
+| `test_actual_backbone_consumption`      | profiler 证明 VideoMAE 输入帧数严格等于 hard unique K，而非 padded cap                 |
+| `test_coordinate_round_trip`            | dense GT→selected axis→head prediction→original time 误差 `<1e-6`           |
+| `test_half_open_boundary_cases`         | 覆盖首帧、末帧、长度1/2、非零 window offset、stride=8                                   |
+| `test_hard_soft_forward_identity`       | ST bridge 的 forward 与纯 hard features 数值一致                                 |
+| `test_surrogate_finite_difference`      | hard one-swap loss delta 与 surrogate gradient 排名 Spearman >0.3，方向正确率 >65% |
+| `test_full_videomae_gradient_audit`     | 在完整 VideoMAE-S 后端记录 detector/aux norm 和 cosine；仅非零不算通过                    |
+| `test_head_calibration`                 | start/end AP、ECE、logit std；不同 head 的 std 不应无约束相差超过约 3 倍                   |
+| `test_provenance_truthfulness`          | 使用 THUMOS action target 时，runtime `uses_labels=True`                      |
+| `test_dynamic_cost_accounting`          | soft K、hard K、unique K、backbone K、padded K 同时记录并区分                        |
+
+现有 optimizer、gradient、coordinate、max-gap、budget 和 no-leak tests 即使全部通过，也不能替代上述语义断言。特别是“输出长度不超过 384”“梯度非零”“causal convolution mask 正确”都不足以证明最终论文 claim。
+
+---
+
+# 十四、最小决定性实验矩阵
+
+不要再扩展 frozen prior 动物园。只做以下实验。
+
+| 实验                            | 唯一变化                                                   | 要证伪的根因                             | 通过门槛                                               |
+| ----------------------------- | ------------------------------------------------------ | ---------------------------------- | -------------------------------------------------- |
+| E0 coordinate identity        | 无训练，只跑合成 round-trip                                    | `+0.5`、stride、window offset、反映射    | 全部误差 `<1e-6`；失败则停止所有 full train                    |
+| E1 loss-only patch            | 只删除 total/alias 重复                                     | 重复 proxy 的因果贡献                     | fixed384 Avg 至少 +1.0 或 @0.7 至少 +2.0                |
+| E2 stable-input warmup        | 当前 moving-hard 对比 uniform/frozen feasible path，5 epoch | detector 早期非平稳输入                   | early detector loss 更低、selection drift 显著下降        |
+| E3 surrogate audit            | 同一 batch hard one-swap finite difference               | soft bridge 是否指向 hard utility      | Spearman >0.3，方向正确率 >65%                           |
+| E4 endpoint-normalized target | 旧 1/1.5 proxy 对比 start/end normalized target           | action-body mass 是否吞没边界            | @0.7 至少 +2.0，@0.3 不降超过 0.5                         |
+| E5 CFPA fixed384              | 相同 probe、backbone、训练预算                                 | 统一 policy 是否值得替代 heuristic decoder | 至少达到分离最终 59.10，@0.7 ≥39.5                          |
+| E6 CFPA shared budgets        | 单一 policy，K=128/256/384                                | budget conditioning 是否稳定           | 每档距独立 fixed policy ≤0.5 Avg，约束零违规                  |
+| E7 dynamic gate               | dynamic 对 matched actual-K fixed                       | MUST 是否有复活资格                       | 3 seeds +≥0.5 Avg，@0.7 不低超过0.5，K-MAE≤5%，真实延迟下降≥15% |
+
+项目历史记录中的 exact-uniform 50% 约 65.57/65.73 若与当前 backend、输入、训练和评测完全 matched，则它比 PAction 61.02 和 DUCA 56.26 都更强。此时“超过 separated PAction”也不够；主方法必须首先超过 matched exact-uniform。不同 protocol 的数字不得混表。
+
+---
+
+# 十五、论文现在能声称与不能声称的内容
+
+## 当前可以安全声称
+
+1. 已完成一个接入 official AdaTAD/VideoMAE-S/ActionFormerHead 的 hard selected-frame 联合训练原型；
+2. 已获得 fixed384/256/128 的预算曲线；
+3. 当前 joint prototype 明显低于 separated fixed384，且退化集中在高 tIoU；
+4. MUST 当前不稳定，尚未证明动态预算优势；
+5. `88e50b1` 的 SlowFast Fast-side 是 frozen-prior 诊断，不是最终主方法。
+
+## 当前不能声称
+
+1. 不能声称 **detector-utility-calibrated**：当前 detector signal 被重复 proxy 和不一致 surrogate 淹没；
+2. 不能声称 **boundary-first**：1.0 interior / 1.5 boundary 的累计质量不支持；
+3. 不能声称 **strict online**：必须先通过 prefix-decision invariance；
+4. 不能声称 **train/inference consistent**：soft-resample 与 hard decoder 不同构；
+5. 不能声称 **dynamic compute**：必须用 actual backbone-consumed K 和真实 latency/FLOPs；
+6. 不能把 **official implementation** 写成 **official pretrained weights**；
+7. 不能把使用 THUMOS actionness GT 的训练写成 **no-label/train-free**；
+8. 不能把 one-step nonzero gradient proof 写成有效 detector-to-selector learning proof；
+9. 不能声称 frozen X3D/SlowFast 是低成本 pre-backbone 插件，除非完整计入 dense prior 的成本。
+
+---
+
+# 十六、量化继续/终止线
+
+## 当前 center/radius/top-k/repair 路线
+
+完成 loss 修复和 coordinate identity 后：
+
+* fixed384 若仍低于 **59.10 Avg**；
+* 或 @0.7 仍低于 **39.5**；
+* 或 surrogate finite-difference Spearman ≤0.3；
+
+则停止继续给现有 decoder 调权重、加 loss 或延长训练。
+
+## CFPA 主线
+
+最低继续标准：
+
+* 3 seeds 平均至少达到 separated final：**Avg ≥59.10**；
+* **@0.7 ≥39.5**；
+* exact budget、hard max-gap、prefix invariance 均为零违规。
+
+论文主方法标准应更高：
+
+* 超过 separated best：**Avg >61.02**；
+* **@0.7 ≥40.5**；
+* 并超过同 protocol 的 matched exact-uniform baseline，或在同等精度下给出真实显著计算收益。
+
+## MUST/dynamic
+
+只有同时满足以下条件才能回到主表：
+
+* 对 matched actual-backbone-K fixed baseline，3 seeds 平均 **+0.5 Avg**；
+* @0.7 不下降超过 0.5；
+* budget MAE ≤5%；
+* K 分布无 64/384 双峰坍缩；
+* 实测 end-to-end latency或主干 FLOPs 至少下降 15%；
+* detector 不只是 pad 回 384 后照常计算。
+
+否则永久放附录或删除。
+
+---
+
+# 最终拒稿视角
+
+当前方法仍然可以被一句话概括为：
+
+> actionness/transition/utility 多头，加 center/radius、top-k、scaffold、repair、warmup 和多个 proxy loss，再用另一套 soft-resample 提供梯度。
+
+这不是一个统一方法，而是训练策略、硬推理策略、预算策略和论文 claim 分别由不同组件定义的系统。修复重复 loss 后，它仍然会面临同一个拒稿理由。
+
+CFPA 的价值在于把方法压缩成一个可证伪的核心命题：
+
+> **在因果可达性自动机上学习边界效用驱动的逐时刻 select/skip policy；exact budget 与 max-gap 是状态约束，hard inference 与 soft backward 是同一决策路径的两种表示。**
+
+只有当真实代码、训练数据流、测试行为和论文 claim 都逐项满足这句话时，这个项目才从“能运行的联合原型”变成“可投 CCF-A 的最终方法”。
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/88e50b17241cf4ef7d891e87b5455f45d72e345d "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/88e50b17241cf4ef7d891e87b5455f45d72e345d"

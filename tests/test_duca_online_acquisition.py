@@ -374,7 +374,7 @@ def test_detector_loss_only_backpropagates_to_adapter_parameters() -> None:
             "detector": 1.0,
         },
     )
-    output["losses"]["total_loss"].backward()
+    sum(output["losses"].values()).backward()
 
     grads = [
         param.grad.detach().abs().sum().item()
@@ -527,10 +527,49 @@ def test_duca_losses_expose_required_components() -> None:
         "radius_cost_loss",
         "entropy_anti_collapse_loss",
         "teacher_utility_loss",
-        "total_loss",
     }
     assert expected <= set(losses)
-    assert losses["total_loss"].requires_grad
+    assert all(key.endswith("_loss") for key in losses)
+    assert any(value.requires_grad for value in losses.values())
+
+
+def test_duca_loss_aggregation_counts_boundary_utility_gradient_once() -> None:
+    scores = torch.tensor([[1.0, 0.5, -0.5, -1.0]], requires_grad=True)
+    selected = torch.tensor([[0.7, 0.2, 0.1, 0.0]], requires_grad=True)
+    utility_logits = torch.tensor([[0.1, 0.2, -0.2, -0.4]], requires_grad=True)
+    utility_target = torch.tensor([[0.0, 1.0, 0.0, 0.0]])
+    losses = duca_losses(
+        scores={
+            "center_scores": scores,
+            "selected_mask_st": selected,
+            "requested_budget": torch.tensor([1]),
+            "utility_scores": utility_logits,
+        },
+        selected_mask_st=selected,
+        budget=1,
+        boundary_utility_proxy_target=utility_target,
+        loss_weights={
+            "detector": 0.0,
+            "teacher": 0.0,
+            "boundary": 0.0,
+            "actionness": 0.0,
+            "detector_utility": 1.0,
+            "hole": 0.0,
+            "max_gap_hole": 0.0,
+            "budget": 0.0,
+            "redundancy": 0.0,
+            "radius": 0.0,
+            "entropy": 0.0,
+        },
+    )
+
+    leaf = losses["boundary_utility_proxy_distribution_loss"]
+    leaf_grad = torch.autograd.grad(leaf, utility_logits, retain_graph=True)[0]
+    aggregate_grad = torch.autograd.grad(sum(losses.values()), utility_logits)[0]
+
+    assert "total_loss" not in losses
+    assert "detector_utility_distribution_loss" not in losses
+    assert torch.allclose(aggregate_grad, leaf_grad)
 
 
 def test_duca_losses_include_temporal_max_gap_hole_loss() -> None:
@@ -582,7 +621,7 @@ def test_duca_inactive_zero_losses_do_not_overflow_when_score_sum_overflows() ->
     assert torch.isfinite(losses["detector_loss"])
     assert torch.isfinite(losses["teacher_utility_loss"])
     assert torch.isfinite(losses["boundary_coverage_loss"])
-    assert torch.isfinite(losses["total_loss"])
+    assert all(torch.isfinite(value) for value in losses.values())
 
 
 def test_signed_teacher_utility_does_not_reward_negative_points() -> None:

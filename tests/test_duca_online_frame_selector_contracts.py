@@ -71,6 +71,15 @@ def test_duca_selector_rejects_runtime_budget_above_hard_cap() -> None:
         )
 
 
+def test_duca_action_target_uses_integer_points_and_half_open_segments() -> None:
+    target = DucaOnlineFrameSelector._action_target_from_gt_segments(
+        [torch.tensor([[0.5, 1.5]])],
+        torch.ones(1, 3, dtype=torch.bool),
+    )
+
+    assert target.tolist() == [[0.0, 1.0, 0.0]]
+
+
 def test_duca_selector_remaps_train_gt_to_selected_axis() -> None:
     p_action = torch.tensor([[0.1, 0.95, 0.2, 0.85, 0.3, 0.75, 0.4, 0.65]])
     selector = _selector(p_action, budget=4)
@@ -87,9 +96,9 @@ def test_duca_selector_remaps_train_gt_to_selected_axis() -> None:
 
     positions = out["metas"][0]["duca_online_selected_positions"]
     assert positions == [1, 2, 3, 4]
-    assert torch.allclose(out["gt_segments"][0], torch.tensor([[0.0, 3.0], [1.0, 3.0]]), atol=1e-4)
+    assert torch.allclose(out["gt_segments"][0], torch.tensor([[0.0, 3.75], [1.0, 3.5]]), atol=1e-4)
     assert out["metas"][0]["gt_segments_original_time"][0] == [1.0, 7.0]
-    assert out["metas"][0]["gt_segments_selected_axis"][0] == pytest.approx([0.0, 3.0])
+    assert out["metas"][0]["gt_segments_selected_axis"][0] == pytest.approx([0.0, 3.75])
 
 
 def test_duca_selector_metadata_matches_actual_gather_and_overwrites_reserved_keys() -> None:

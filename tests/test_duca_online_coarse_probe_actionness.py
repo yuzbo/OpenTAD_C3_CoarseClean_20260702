@@ -15,7 +15,7 @@ except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
 
 
-def _selector() -> DucaOnlineFrameSelector:
+def _selector(*, frozen: bool = False) -> DucaOnlineFrameSelector:
     return DucaOnlineFrameSelector(
         in_channels=3,
         budget=4,
@@ -33,8 +33,8 @@ def _selector() -> DucaOnlineFrameSelector:
             "tcn_hidden_dim": 16,
             "official_num_layers": 1,
             "dropout": 0.0,
-            "frozen": False,
-            "trainable": True,
+            "frozen": frozen,
+            "trainable": not frozen,
             "thumos_trained": False,
             "uses_labels": False,
             "uses_teacher": False,
@@ -91,6 +91,17 @@ def test_detector_path_can_backprop_into_online_coarse_probe() -> None:
     ]
     assert grads
     assert sum(grads) > 0.0
+
+
+def test_frozen_coarse_probe_stays_in_eval_when_parent_enters_train_mode() -> None:
+    selector = _selector(frozen=True)
+
+    selector.train()
+
+    assert selector.training is True
+    assert selector.raw_actionness_source.training is False
+    assert selector.raw_actionness_source.probe.module.training is False
+    assert all(not param.requires_grad for param in selector.raw_actionness_source.parameters())
 
 
 def test_online_selector_accepts_uint8_window_tensor_from_full_train_loader() -> None:

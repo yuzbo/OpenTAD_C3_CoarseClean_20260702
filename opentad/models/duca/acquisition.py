@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import math
 import os
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
@@ -11,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
+from .structured_selection import global_structured_topk
 
 
 TensorLikeBudget = Union[int, torch.Tensor]
@@ -712,6 +714,12 @@ class C3CoarseProbeActionnessSource(nn.Module):
             for param in self.parameters():
                 param.requires_grad_(False)
 
+    def train(self, mode: bool = True) -> "C3CoarseProbeActionnessSource":
+        if self.frozen:
+            super().train(False)
+            return self
+        return super().train(mode)
+
     @staticmethod
     def _resolve_path(path: Optional[str]) -> Optional[str]:
         if path in (None, ""):
@@ -896,6 +904,8 @@ class DucaAcquisitionAdapter(nn.Module):
         allow_external_budget_override: Optional[bool] = None,
         budget_controller: Optional[nn.Module] = None,
         max_radius: int = 16,
+        acquisition_policy: str = "legacy_center_radius",
+        structured_temperature: float = 1.0,
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
@@ -935,6 +945,12 @@ class DucaAcquisitionAdapter(nn.Module):
         self.budget_multiple = int(budget_multiple)
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
+        self.acquisition_policy = str(acquisition_policy)
+        if self.acquisition_policy not in {"legacy_center_radius", "global_structured_topk"}:
+            raise ValueError("acquisition_policy must be legacy_center_radius or global_structured_topk")
+        self.structured_temperature = float(structured_temperature)
+        if not math.isfinite(self.structured_temperature) or self.structured_temperature <= 0.0:
+            raise ValueError("structured_temperature must be finite and positive")
         if self.budget <= 0:
             raise ValueError("budget must be positive")
         if self.dynamic_budget:
@@ -961,6 +977,8 @@ class DucaAcquisitionAdapter(nn.Module):
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
         self.hard_max_gap_repair = bool(hard_max_gap_repair)
+        if self.acquisition_policy == "global_structured_topk" and self.hard_max_gap_repair:
+            raise ValueError("global_structured_topk encodes max-gap in the policy and forbids hard repair")
         self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
         self.profile_runtime = bool(profile_runtime)
         self.profile_sync_cuda = bool(profile_sync_cuda)
@@ -971,7 +989,9 @@ class DucaAcquisitionAdapter(nn.Module):
             self.encoder = None
             self.center_head = None
             self.radius_head = None
-            self.boundary_head = None
+            self.start_head = None
+            self.end_head = None
+            self.context_head = None
             self.utility_head = None
             selector_feature_dim = DUCA_ACTIONNESS_FEATURE_DIM
         else:
@@ -986,8 +1006,12 @@ class DucaAcquisitionAdapter(nn.Module):
                 nn.GELU(),
             )
             self.center_head = nn.Linear(int(hidden_dim), 1)
-            self.radius_head = nn.Linear(int(hidden_dim), 1)
-            self.boundary_head = nn.Linear(int(hidden_dim), 1)
+            self.radius_head = (
+                nn.Linear(int(hidden_dim), 1) if self.acquisition_policy == "legacy_center_radius" else None
+            )
+            self.start_head = nn.Linear(int(hidden_dim), 1)
+            self.end_head = nn.Linear(int(hidden_dim), 1)
+            self.context_head = nn.Linear(int(hidden_dim), 1)
             self.utility_head = nn.Linear(int(hidden_dim), 1)
             selector_feature_dim = int(hidden_dim)
         if self.dynamic_budget:
@@ -1101,8 +1125,8 @@ class DucaAcquisitionAdapter(nn.Module):
             }
         hidden = int(self.center_head.in_features)
         in_dim = int(feature_dim) + DUCA_ACTIONNESS_FEATURE_DIM + int(self.coarse_hidden_dim)
-        macs = tokens * (in_dim * hidden + hidden * hidden + 4 * hidden)
-        flops = 2 * macs + tokens * (6 * in_dim + 12 * hidden + 48)
+        macs = tokens * (in_dim * hidden + hidden * hidden + 6 * hidden)
+        flops = 2 * macs + tokens * (6 * in_dim + 16 * hidden + 64)
         return {
             "head": "DUCASelectorMLP",
             "hidden_dim": hidden,
@@ -1263,12 +1287,20 @@ class DucaAcquisitionAdapter(nn.Module):
                 int(self.coarse_hidden_dim),
             )
         if self.encoder is None:
-            boundary_logits = transition_score
+            delta = source["delta_p_action"].to(dense_observations.device, dense_observations.dtype)
+            eps = torch.finfo(delta.dtype).eps
+            start_prob = delta.clamp(0.0, 1.0).clamp(eps, 1.0 - eps)
+            end_prob = (-delta).clamp(0.0, 1.0).clamp(eps, 1.0 - eps)
+            start_logits = torch.logit(start_prob)
+            end_logits = torch.logit(end_prob)
+            context_logits = torch.logit((1.0 - actionness_aux).clamp(eps, 1.0 - eps))
+            boundary_prob = 0.5 * (start_prob + end_prob)
             utility_scores = transition_score + 0.5 * actionness_aux
+            utility_prob = torch.sigmoid(utility_scores)
             center_scores = (
                 self.transition_weight * transition_score
-                + self.boundary_weight * boundary_logits
-                + self.utility_weight * utility_scores
+                + self.boundary_weight * boundary_prob
+                + self.utility_weight * utility_prob
                 + self.uncertainty_weight * source["uncertainty"]
                 + self.actionness_weight * actionness_aux
             )
@@ -1283,16 +1315,24 @@ class DucaAcquisitionAdapter(nn.Module):
             browser_features = torch.cat(feature_parts, dim=-1)
             encoded = self.encoder(browser_features)
             selection_features = encoded
-            center_scores = self.center_head(encoded).squeeze(-1)
-            radius = self.max_radius * torch.sigmoid(self.radius_head(encoded).squeeze(-1))
-            boundary_logits = self.boundary_head(encoded).squeeze(-1)
+            center_base = torch.tanh(self.center_head(encoded).squeeze(-1))
+            radius = (
+                self.max_radius * torch.sigmoid(self.radius_head(encoded).squeeze(-1))
+                if self.radius_head is not None
+                else encoded.new_zeros(encoded.shape[:2])
+            )
+            start_logits = self.start_head(encoded).squeeze(-1)
+            end_logits = self.end_head(encoded).squeeze(-1)
+            context_logits = self.context_head(encoded).squeeze(-1)
             utility_scores = self.utility_head(encoded).squeeze(-1)
+            boundary_prob = 0.5 * (torch.sigmoid(start_logits) + torch.sigmoid(end_logits))
+            utility_prob = torch.sigmoid(utility_scores)
             center_scores = (
-                center_scores
+                center_base
                 + self.transition_weight * transition_score
                 + self.uncertainty_weight * source["uncertainty"]
-                + self.utility_weight * utility_scores
-                + self.boundary_weight * boundary_logits
+                + self.utility_weight * utility_prob
+                + self.boundary_weight * boundary_prob
                 + self.actionness_weight * actionness_aux
             )
         center_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
@@ -1301,7 +1341,10 @@ class DucaAcquisitionAdapter(nn.Module):
             "center_scores": center_scores,
             "scores": center_scores,
             "radius": radius,
-            "boundary_logits": boundary_logits.masked_fill(~valid, 0.0),
+            "start_logits": start_logits.masked_fill(~valid, 0.0),
+            "end_logits": end_logits.masked_fill(~valid, 0.0),
+            "context_logits": context_logits.masked_fill(~valid, 0.0),
+            "boundary_logits": torch.maximum(start_logits, end_logits).masked_fill(~valid, 0.0),
             "utility_scores": utility_scores.masked_fill(~valid, 0.0),
             "p_action": source["p_action"],
             "uncertainty": source["uncertainty"],
@@ -1318,6 +1361,84 @@ class DucaAcquisitionAdapter(nn.Module):
             "provenance": source["provenance"],
         }
 
+    def _decode_global_structured(
+        self,
+        center_scores: torch.Tensor,
+        valid_mask: torch.Tensor,
+        budgets: torch.Tensor,
+        *,
+        stable_selection: bool,
+    ) -> Dict[str, Any]:
+        batch, temporal_len = center_scores.shape
+        max_slots = int(self.budget)
+        position_rows = []
+        dense_masks = []
+        selection_st_rows = []
+        soft_rows = []
+        slot_rows = []
+        effective_rows = []
+        for batch_idx in range(batch):
+            valid_positions = torch.nonzero(valid_mask[batch_idx], as_tuple=False).flatten()
+            valid_count = int(valid_positions.numel())
+            expected = torch.arange(valid_count, device=valid_positions.device, dtype=valid_positions.dtype)
+            if not torch.equal(valid_positions, expected):
+                raise ValueError("global_structured_topk requires a contiguous valid prefix")
+            effective_k = min(int(budgets[batch_idx].item()), valid_count)
+            max_hole = valid_count if self.max_unselected_hole is None else int(self.max_unselected_hole)
+            policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
+            if stable_selection:
+                if effective_k == 0:
+                    policy_scores = policy_scores.detach().new_zeros((1, valid_count))
+                else:
+                    positions = torch.arange(valid_count, device=center_scores.device, dtype=center_scores.dtype)
+                    targets = (
+                        (torch.arange(effective_k, device=center_scores.device, dtype=center_scores.dtype) + 0.5)
+                        * float(valid_count)
+                        / float(effective_k)
+                        - 0.5
+                    )
+                    policy_scores = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values[None, :]
+            structured = global_structured_topk(
+                policy_scores,
+                k=effective_k,
+                max_unselected_hole=max_hole,
+                temperature=self.structured_temperature,
+                training=self.training,
+            )
+            row = torch.full((max_slots,), -1, dtype=torch.long, device=center_scores.device)
+            row[:effective_k] = structured.selected_positions[0]
+            position_rows.append(row)
+            dense_mask = torch.zeros(temporal_len, dtype=torch.bool, device=center_scores.device)
+            dense_mask[:valid_count] = structured.hard_occupancy[0].bool()
+            dense_masks.append(dense_mask)
+            selection_st = center_scores.new_zeros(temporal_len)
+            selection_st[:valid_count] = structured.selection_st[0]
+            selection_st_rows.append(selection_st)
+            soft = center_scores.new_zeros(temporal_len)
+            soft[:valid_count] = structured.soft_occupancy[0]
+            soft_rows.append(soft)
+            slots = center_scores.new_zeros((max_slots, temporal_len))
+            slots[:effective_k, :valid_count] = structured.soft_slot_assignment[0]
+            slot_rows.append(slots)
+            effective_rows.append(effective_k)
+        effective = torch.tensor(effective_rows, dtype=torch.long, device=center_scores.device)
+        return {
+            "selected_positions": torch.stack(position_rows, dim=0),
+            "selected_mask": torch.stack(dense_masks, dim=0),
+            "selection_st": torch.stack(selection_st_rows, dim=0),
+            "soft_coverage": torch.stack(soft_rows, dim=0),
+            "soft_slot_assignment": torch.stack(slot_rows, dim=0),
+            "effective_budget": effective,
+            "detector_input_length": effective.clone(),
+            "selected_centers": [[] for _ in range(batch)],
+            "selected_radius": [[] for _ in range(batch)],
+            "fill_strategy": ["global_structured_map" for _ in range(batch)],
+            "max_gap_repair": [{"enabled": False, "encoded_in_policy": True} for _ in range(batch)],
+            "selection_path": (
+                "stable_structured_reference" if stable_selection else "learned_global_structured"
+            ),
+        }
+
     def acquire(
         self,
         dense_observations: torch.Tensor,
@@ -1327,6 +1448,7 @@ class DucaAcquisitionAdapter(nn.Module):
         p_action: Optional[torch.Tensor] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
         compute_profile_context: Optional[Mapping[str, Any]] = None,
+        stable_selection: bool = False,
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
         profile_enabled = bool(self.profile_runtime)
         sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
@@ -1371,20 +1493,50 @@ class DucaAcquisitionAdapter(nn.Module):
                 f"hard_cap={self.budget}"
             )
         decode_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
-        decoded = budgeted_center_radius_decode(
-            center_scores=scores["center_scores"],
-            radius=scores["radius"],
-            budget=budgets,
-            valid_mask=scores["valid_mask"],
-            max_radius=self.max_radius,
-            output_slots=int(self.budget),
-            max_unselected_hole=self.max_unselected_hole,
-            hard_max_gap_repair=self.hard_max_gap_repair,
-            fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
-        )
+        if self.acquisition_policy == "global_structured_topk":
+            decoded = self._decode_global_structured(
+                scores["center_scores"],
+                scores["valid_mask"],
+                budgets,
+                stable_selection=bool(stable_selection),
+            )
+        else:
+            decoded = budgeted_center_radius_decode(
+                center_scores=scores["center_scores"],
+                radius=scores["radius"],
+                budget=budgets,
+                valid_mask=scores["valid_mask"],
+                max_radius=self.max_radius,
+                output_slots=int(self.budget),
+                max_unselected_hole=self.max_unselected_hole,
+                hard_max_gap_repair=self.hard_max_gap_repair,
+                fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
+            )
         decode_ms = _elapsed_ms(decode_start, dense_observations, enabled=sync_enabled)
         valid_len = scores["valid_mask"].long().sum(dim=1)
         effective_budget = decoded["effective_budget"].to(device=dense_observations.device, dtype=torch.long)
+        hard_unique_k = decoded["detector_input_length"].to(device=dense_observations.device, dtype=torch.long)
+        padded_detector_k = torch.full_like(hard_unique_k, int(self.budget))
+        cost_ledger = {
+            "unit": DEFAULT_BUDGET_UNIT,
+            "hard_requested_k": [int(item) for item in budgets.detach().cpu().tolist()],
+            "hard_effective_k": [int(item) for item in effective_budget.detach().cpu().tolist()],
+            "hard_unique_k": [int(item) for item in hard_unique_k.detach().cpu().tolist()],
+            "padded_detector_k": [int(item) for item in padded_detector_k.detach().cpu().tolist()],
+            "backbone_input_k": [int(item) for item in padded_detector_k.detach().cpu().tolist()],
+            "dynamic_compute_realized": False,
+            "dynamic_compute_blocker": "detector_tensor_is_padded_to_budget_max" if self.dynamic_budget else None,
+        }
+        if budget_decision is not None:
+            cost_ledger.update(
+                {
+                    "soft_expected_k": [
+                        float(item) for item in budget_decision.soft_expected_k.detach().cpu().tolist()
+                    ],
+                    "st_budget_k": [float(item) for item in budget_decision.st_budget_k.detach().cpu().tolist()],
+                    "dual_target_unit": str(budget_decision.dual_target_unit),
+                }
+            )
         grid = SparseTemporalGrid(
             selected_positions=decoded["selected_positions"],
             selected_mask=decoded["selected_mask"],
@@ -1398,8 +1550,9 @@ class DucaAcquisitionAdapter(nn.Module):
                 "selected_centers": decoded["selected_centers"],
                 "selected_radius": decoded["selected_radius"],
                 "fill_strategy": decoded["fill_strategy"],
-                "decoder": "budgeted_center_radius_decode",
-                "radius_is_metadata": True,
+                "decoder": self.acquisition_policy,
+                "selection_scope": "full_window_non_streaming",
+                "radius_is_metadata": self.acquisition_policy == "legacy_center_radius",
                 "budget_is_dynamic": bool(self.dynamic_budget),
                 "budget_policy": (
                     getattr(budget_decision, "policy_name", "fixed_budget") if budget_decision is not None else "fixed_budget"
@@ -1413,23 +1566,26 @@ class DucaAcquisitionAdapter(nn.Module):
                 "max_unselected_hole": self.max_unselected_hole,
                 "hard_max_gap_repair": bool(self.hard_max_gap_repair),
                 "max_gap_repair": decoded.get("max_gap_repair", []),
+                "cost_ledger": cost_ledger,
             },
         ).validate()
         if torch.any(grid.selected_count > int(self.budget)):
             raise RuntimeError("DUCA dynamic acquisition selected more observations than the hard cap")
-        soft_coverage_start = (
-            _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
-        )
-        soft_coverage = soft_center_radius_coverage(
-            center_scores=scores["center_scores"],
-            radius=scores["radius"],
-            valid_mask=scores["valid_mask"],
-            budget=budgets,
-            max_radius=self.max_radius,
-        )
+        soft_coverage_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
+        if self.acquisition_policy == "global_structured_topk":
+            soft_coverage = decoded["soft_coverage"]
+            selection_st = decoded["selection_st"]
+        else:
+            soft_coverage = soft_center_radius_coverage(
+                center_scores=scores["center_scores"],
+                radius=scores["radius"],
+                valid_mask=scores["valid_mask"],
+                budget=budgets,
+                max_radius=self.max_radius,
+            )
+            hard_union = grid.selected_mask.to(dtype=scores["center_scores"].dtype)
+            selection_st = hard_union + soft_coverage - soft_coverage.detach()
         soft_coverage_ms = _elapsed_ms(soft_coverage_start, dense_observations, enabled=sync_enabled)
-        hard_union = grid.selected_mask.to(dtype=scores["center_scores"].dtype)
-        selection_st = hard_union + soft_coverage - soft_coverage.detach()
         selected_indices = grid.selected_positions
         adapter_total_ms = _elapsed_ms(adapter_start, dense_observations, enabled=sync_enabled)
         profile_context = dict(compute_profile_context or {})
@@ -1453,6 +1609,8 @@ class DucaAcquisitionAdapter(nn.Module):
                 "selected_mask_st": selection_st,
                 "selected_indices_st": selected_indices,
                 "soft_coverage": soft_coverage,
+                "structured_soft_slot_assignment": decoded.get("soft_slot_assignment"),
+                "selection_path": decoded.get("selection_path", "legacy_center_radius"),
                 "decode_metadata": grid.metadata,
                 "budget_decision": budget_decision,
                 "dynamic_budget": bool(self.dynamic_budget),
@@ -2116,6 +2274,26 @@ def duca_forward_test(
     return out
 
 
+def _target_distribution_loss(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    valid_mask: torch.Tensor,
+) -> torch.Tensor:
+    if logits.shape != target.shape or logits.shape != valid_mask.shape:
+        raise ValueError("distribution logits, target, and valid_mask must have identical [B,T] shapes")
+    valid = valid_mask.to(device=logits.device, dtype=torch.bool)
+    target = target.to(device=logits.device, dtype=logits.dtype).clamp_min(0.0).masked_fill(~valid, 0.0)
+    eps = torch.finfo(logits.dtype).eps
+    target_mass = target.sum(dim=1)
+    active = target_mass > eps
+    if not bool(active.any().item()):
+        return logits.new_zeros(())
+    target_dist = target / target_mass.clamp_min(eps)[:, None]
+    masked_logits = logits.masked_fill(~valid, _neg(logits.dtype))
+    log_probs = F.log_softmax(masked_logits, dim=1)
+    return -(target_dist * log_probs).sum(dim=1)[active].mean()
+
+
 def duca_losses(
     scores: Union[Mapping[str, Any], torch.Tensor],
     selected_mask_st: Optional[torch.Tensor] = None,
@@ -2123,6 +2301,9 @@ def duca_losses(
     valid_mask: Optional[torch.Tensor] = None,
     teacher_utility: Optional[torch.Tensor] = None,
     boundary_target: Optional[torch.Tensor] = None,
+    start_target: Optional[torch.Tensor] = None,
+    end_target: Optional[torch.Tensor] = None,
+    context_target: Optional[torch.Tensor] = None,
     action_target: Optional[torch.Tensor] = None,
     detector_loss: Optional[torch.Tensor] = None,
     utility_gain: Optional[torch.Tensor] = None,
@@ -2142,6 +2323,10 @@ def duca_losses(
 
     budget_decision = None
     grid = None
+    start_logits = None
+    end_logits = None
+    context_logits = None
+    utility_scores = None
     if isinstance(scores, Mapping):
         output = scores
         center_scores = output["center_scores"] if "center_scores" in output else output["scores"]
@@ -2158,6 +2343,10 @@ def duca_losses(
         p_action = p_action if p_action is not None else output.get("p_action")
         uncertainty = uncertainty if uncertainty is not None else output.get("uncertainty")
         actionness_logits = actionness_logits if actionness_logits is not None else output.get("actionness_logits")
+        start_logits = output.get("start_logits")
+        end_logits = output.get("end_logits")
+        context_logits = output.get("context_logits")
+        utility_scores = output.get("utility_scores")
         detector_utility_target = (
             detector_utility_target
             if detector_utility_target is not None
@@ -2191,6 +2380,9 @@ def duca_losses(
         "entropy": 0.01,
         "teacher": 0.50,
         "detector_utility": 0.0,
+        "start": 0.0,
+        "end": 0.0,
+        "context": 0.0,
         "lagrangian_budget": 1.0,
         "marginal_monotonic": 0.01,
         "hard_budget_cap": 1.0,
@@ -2231,7 +2423,6 @@ def duca_losses(
         losses["marginal_monotonic_loss"] = monotonic * weights["marginal_monotonic"]
         hard_over = F.relu(budget_decision.budget_hard.to(center_scores.dtype) - float(budget_decision.budget_max))
         losses["hard_budget_cap_loss"] = hard_over.pow(2).mean() * weights["hard_budget_cap"]
-        losses["dynamic_budget_mean_lossless_metric"] = zero
     if teacher_utility is not None:
         if teacher_utility.shape != center_scores.shape:
             raise ValueError("teacher_utility must match scores [B,T]")
@@ -2240,8 +2431,6 @@ def duca_losses(
         negative_utility = (-utility).clamp_min(0.0)
         gain_loss = -((selected * positive_utility).sum(dim=1) / budgets.clamp_min(1.0)).mean()
         risk_loss = ((selected * negative_utility).sum(dim=1) / budgets.clamp_min(1.0)).mean()
-        losses["teacher_utility_gain_loss_unweighted"] = gain_loss
-        losses["teacher_utility_risk_loss_unweighted"] = risk_loss
         losses["teacher_utility_loss"] = (gain_loss + risk_loss) * weights["teacher"]
     elif utility_gain is not None or utility_risk is not None:
         gain = torch.zeros_like(center_scores) if utility_gain is None else utility_gain.to(center_scores.device, center_scores.dtype)
@@ -2259,20 +2448,35 @@ def duca_losses(
             raise ValueError("boundary_utility_proxy_target must match scores")
         utility = utility_proxy.to(center_scores.device, center_scores.dtype).clamp_min(0.0)
         utility = utility.masked_fill(~valid, 0.0)
-        selected_positive = selected.clamp_min(0.0).masked_fill(~valid, 0.0)
-        eps = torch.finfo(center_scores.dtype).eps
-        utility_sum = utility.sum(dim=1)
-        active = utility_sum > eps
-        if bool(active.any().item()):
-            target_dist = utility / utility_sum.clamp_min(eps)[:, None]
-            selected_dist = selected_positive / selected_positive.sum(dim=1).clamp_min(eps)[:, None]
-            kl = target_dist * (target_dist.clamp_min(eps).log() - selected_dist.clamp_min(eps).log())
-            utility_proxy_loss = kl.sum(dim=1)[active].mean() * weights["detector_utility"]
-        else:
-            utility_proxy_loss = zero
+        utility_logits = center_scores if utility_scores is None else utility_scores.to(center_scores.device, center_scores.dtype)
+        utility_proxy_loss = _target_distribution_loss(utility_logits, utility, valid) * weights["detector_utility"]
     else:
         utility_proxy_loss = zero
     losses["boundary_utility_proxy_distribution_loss"] = utility_proxy_loss
+    if start_target is not None:
+        if start_logits is None:
+            raise ValueError("start_logits are required when start_target is provided")
+        losses["start_endpoint_distribution_loss"] = (
+            _target_distribution_loss(start_logits.to(center_scores.dtype), start_target, valid) * weights["start"]
+        )
+    else:
+        losses["start_endpoint_distribution_loss"] = zero
+    if end_target is not None:
+        if end_logits is None:
+            raise ValueError("end_logits are required when end_target is provided")
+        losses["end_endpoint_distribution_loss"] = (
+            _target_distribution_loss(end_logits.to(center_scores.dtype), end_target, valid) * weights["end"]
+        )
+    else:
+        losses["end_endpoint_distribution_loss"] = zero
+    if context_target is not None:
+        if context_logits is None:
+            raise ValueError("context_logits are required when context_target is provided")
+        losses["boundary_context_distribution_loss"] = (
+            _target_distribution_loss(context_logits.to(center_scores.dtype), context_target, valid) * weights["context"]
+        )
+    else:
+        losses["boundary_context_distribution_loss"] = zero
     if boundary_target is not None:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")
@@ -2331,11 +2535,6 @@ def duca_losses(
     else:
         entropy = _binary_entropy(torch.sigmoid(center_scores)).masked_fill(~valid, 0.0)
     losses["entropy_anti_collapse_loss"] = -entropy.mean() * weights["entropy"]
-    total = zero
-    for value in losses.values():
-        total = total + value
-    losses["total_loss"] = total
-    losses["detector_utility_distribution_loss"] = losses["boundary_utility_proxy_distribution_loss"]
     return losses
 
 
