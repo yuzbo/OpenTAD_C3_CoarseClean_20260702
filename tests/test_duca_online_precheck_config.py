@@ -130,6 +130,21 @@ def test_duca_online_official_backend_main_config_preserves_adatad_head_contract
 
     assert cfg.duca_online_main_contract.main_method_candidate is True
     assert cfg.duca_online_main_contract.official_adatad_backend is True
+    assert (
+        cfg.duca_online_main_contract.official_backend_semantics
+        == "official_components_with_duca_wrapper_not_source_identical"
+    )
+    assert cfg.duca_online_main_contract.official_base_config_byte_identical is True
+    assert cfg.duca_online_main_contract.official_detector_source_identical is False
+    assert cfg.duca_online_main_contract.detector_head_config_matches_official is True
+    assert cfg.duca_online_main_contract.detector_head_source_extended is True
+    assert cfg.duca_online_main_contract.physical_grid_extension_active is False
+    assert cfg.duca_online_main_contract.loss_assignment_formula_changed is False
+    assert cfg.duca_online_main_contract.loss_assignment_coordinate_system_changed is True
+    assert cfg.duca_online_main_contract.detector_input_length_changed is True
+    assert cfg.duca_online_main_contract.selected_axis_adapter_active is True
+    assert cfg.duca_online_main_contract.gt_remap_active is True
+    assert cfg.duca_online_main_contract.posthoc_true_time_remap_active is True
     assert cfg.duca_online_main_contract.changes_detector_head is False
     assert cfg.duca_online_main_contract.changes_loss_assignment is False
     assert cfg.duca_online_main_contract.no_ledger_decision is True
@@ -247,6 +262,18 @@ def test_duca_online_official_backend_validator_and_launcher_are_fail_closed():
     summary = json.loads(output)
     assert summary["ok"] is True
     assert summary["official_adatad_backend"] is True
+    assert summary["official_backend_semantics"] == "official_components_with_duca_wrapper_not_source_identical"
+    assert summary["official_base_config_byte_identical"] is True
+    assert summary["official_detector_source_identical"] is False
+    assert summary["detector_head_config_matches_official"] is True
+    assert summary["detector_head_source_extended"] is True
+    assert summary["physical_grid_extension_active"] is False
+    assert summary["loss_assignment_formula_changed"] is False
+    assert summary["loss_assignment_coordinate_system_changed"] is True
+    assert summary["detector_input_length_changed"] is True
+    assert summary["selected_axis_adapter_active"] is True
+    assert summary["gt_remap_active"] is True
+    assert summary["posthoc_true_time_remap_active"] is True
     assert summary["rpn_head_matches_official_base"] is True
     assert summary["physical_grid_actionformer_enabled"] is False
     assert summary["uses_ledger_for_decision"] is False

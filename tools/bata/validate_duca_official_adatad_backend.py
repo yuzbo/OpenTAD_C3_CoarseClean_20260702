@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -37,6 +38,12 @@ def _load(path: str | Path) -> Config:
 
 def _config_text(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8").lower()
+
+
+def _git_blob_sha1(path: str | Path) -> str:
+    content = Path(path).read_bytes()
+    header = f"blob {len(content)}\0".encode("ascii")
+    return hashlib.sha1(header + content).hexdigest()
 
 
 def _loss_schedule_summary(selector: Any, contract: Any) -> dict[str, Any]:
@@ -128,7 +135,8 @@ def validate_config(
     config_path = str(config_path)
     max_budget = int(max_budget)
     cfg = _load(config_path)
-    official = _load(str(ROOT / OFFICIAL_BASE_CONFIG))
+    official_path = ROOT / OFFICIAL_BASE_CONFIG
+    official = _load(str(official_path))
     contract = cfg.duca_online_main_contract
     selector = cfg.model.frame_selector
     head = cfg.model.rpn_head
@@ -136,6 +144,35 @@ def validate_config(
     full_text = _config_text(config_path)
 
     _require(contract.official_adatad_backend is True, "contract must declare official_adatad_backend=True")
+    _require(
+        contract.official_backend_semantics == "official_components_with_duca_wrapper_not_source_identical",
+        "official backend must be described as extended components, not source-identical AdaTAD",
+    )
+    _require(contract.official_base_config_byte_identical is True, "official base config must be byte-identical")
+    _require(
+        _git_blob_sha1(official_path) == str(contract.official_base_config_blob_sha1),
+        "local official base config blob does not match the audited upstream OpenTAD blob",
+    )
+    _require(
+        contract.official_detector_source_identical is False,
+        "DUCA wrapper and selected-axis support mean detector sources are not source-identical",
+    )
+    _require(contract.detector_head_config_matches_official is True, "detector head config must match official base")
+    _require(contract.detector_head_source_extended is True, "detector source extensions must be disclosed")
+    _require(contract.physical_grid_extension_active is False, "main DUCA path must keep physical-grid extension inactive")
+    _require(contract.loss_assignment_formula_changed is False, "main DUCA path must preserve assignment formulas")
+    _require(
+        contract.loss_assignment_coordinate_system_changed is True,
+        "selected-axis GT remapping must be disclosed as an assignment-coordinate change",
+    )
+    _require(contract.detector_input_length_changed is True, "DUCA must disclose the selected detector input length")
+    _require(contract.selected_axis_adapter_active is True, "selected-axis adapter must be active")
+    _require(contract.gt_remap_active is True, "GT remapping to selected-axis must be active")
+    _require(contract.posthoc_true_time_remap_active is True, "post-hoc true-time remapping must be active")
+    _require(
+        contract.legacy_changes_fields_scope == "head_config_and_assignment_formula_only",
+        "legacy changes_* aliases must be scoped to config/formula equivalence",
+    )
     _require(contract.main_method_candidate is True, "contract must declare main_method_candidate=True")
     _require(contract.diagnostic_only is False, "main official backend config must not be diagnostic_only")
     _require(contract.no_ledger_decision is True, "main config must be runtime-generated/no-ledger")
@@ -305,6 +342,22 @@ def validate_config(
         "config_path": config_path,
         "official_base_config": OFFICIAL_BASE_CONFIG,
         "official_adatad_backend": True,
+        "official_backend_semantics": str(contract.official_backend_semantics),
+        "official_upstream_repository": str(contract.official_upstream_repository),
+        "official_upstream_commit": str(contract.official_upstream_commit),
+        "official_base_config_blob_sha1": str(contract.official_base_config_blob_sha1),
+        "official_base_config_byte_identical": bool(contract.official_base_config_byte_identical),
+        "official_detector_source_identical": bool(contract.official_detector_source_identical),
+        "detector_head_config_matches_official": bool(contract.detector_head_config_matches_official),
+        "detector_head_source_extended": bool(contract.detector_head_source_extended),
+        "physical_grid_extension_active": bool(contract.physical_grid_extension_active),
+        "loss_assignment_formula_changed": bool(contract.loss_assignment_formula_changed),
+        "loss_assignment_coordinate_system_changed": bool(contract.loss_assignment_coordinate_system_changed),
+        "detector_input_length_changed": bool(contract.detector_input_length_changed),
+        "selected_axis_adapter_active": bool(contract.selected_axis_adapter_active),
+        "gt_remap_active": bool(contract.gt_remap_active),
+        "posthoc_true_time_remap_active": bool(contract.posthoc_true_time_remap_active),
+        "legacy_changes_fields_scope": str(contract.legacy_changes_fields_scope),
         "model_type": str(cfg.model.type),
         "selector_type": str(selector.type),
         "rpn_head_type": str(head.type),

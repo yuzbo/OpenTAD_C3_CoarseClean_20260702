@@ -149,8 +149,10 @@ def _add_soft_to_hard_resample_gradient_path(
     radius: torch.Tensor,
     valid_mask: torch.Tensor,
     bridge_weight: float = 1.0,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
     bridge = float(bridge_weight)
+    if bridge <= 0.0:
+        return hard_selected, None
     context_inputs = dense_inputs if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs) else dense_inputs.float()
     hard_base = hard_selected if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected) else hard_selected.float()
     batch, temporal_len = int(center_scores.shape[0]), int(center_scores.shape[1])
@@ -893,7 +895,10 @@ class DucaOnlineFrameSelector(nn.Module):
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_gathered = _gather_time(inputs, positions, slot_mask)
         hard_selected = hard_gathered
-        detector_gradient_weight = self._detector_gradient_weight(schedule_state)
+        # The surrogate exists only to carry detector gradients during training.
+        # Running its zero-forward raw-pixel mixture in eval changes no values and
+        # only adds dense compute and memory traffic.
+        detector_gradient_weight = self._detector_gradient_weight(schedule_state) if self.training else 0.0
         soft_resample_weights = None
         bridge_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         bridge_ms = None
@@ -972,10 +977,10 @@ class DucaOnlineFrameSelector(nn.Module):
             )
         self._add_detector_gradient_bridge_profile(
             compute_profile,
+            dense_inputs=inputs,
             batch_size=int(descriptors.shape[0]),
             slot_count=int(positions.shape[1]),
             temporal_len=int(descriptors.shape[1]),
-            feature_dim=int(descriptors.shape[2]),
             mode=self.detector_gradient_mode,
             bridge_weight=float(detector_gradient_weight),
             bridge_ms=bridge_ms,
@@ -1029,38 +1034,66 @@ class DucaOnlineFrameSelector(nn.Module):
     def _add_detector_gradient_bridge_profile(
         profile: dict[str, Any],
         *,
+        dense_inputs: torch.Tensor,
         batch_size: int,
         slot_count: int,
         temporal_len: int,
-        feature_dim: int,
         mode: str,
         bridge_weight: float,
         bridge_ms: Optional[float],
     ) -> None:
         components = dict(profile.get("components", {}))
-        enabled = mode == "soft_to_hard_resample"
-        macs = int(batch_size * slot_count * temporal_len * feature_dim) if enabled else 0
-        softmax_flops = int(batch_size * slot_count * temporal_len * 8) if enabled else 0
+        component_name = str(mode)
+        supported_modes = {"soft_to_hard_resample", "structured_zero_forward"}
+        enabled = component_name in supported_modes and float(bridge_weight) > 0.0
+        dense_input_elements = int(dense_inputs.numel())
+        if temporal_len <= 0 or dense_input_elements % int(temporal_len) != 0:
+            raise ValueError("detector gradient bridge requires a valid dense temporal dimension")
+        macs = dense_input_elements * int(slot_count) if enabled else 0
+        softmax_flops = (
+            int(batch_size * slot_count * temporal_len * 8)
+            if enabled and component_name == "soft_to_hard_resample"
+            else 0
+        )
         flops = int(2 * macs + softmax_flops)
+        context_element_size = int(dense_inputs.element_size()) if dense_inputs.is_floating_point() else 4
+        soft_selected_output_elements = (dense_input_elements // int(temporal_len)) * int(slot_count)
         component = {
             "enabled": bool(enabled),
-            "mode": str(mode),
+            "mode": component_name,
             "slot_count": int(slot_count),
             "dense_temporal_len": int(temporal_len),
-            "feature_dim": int(feature_dim),
+            "dense_input_shape": [int(value) for value in dense_inputs.shape],
+            "dense_input_dtype": str(dense_inputs.dtype),
+            "dense_input_elements": dense_input_elements,
             "estimated_macs": int(macs),
             "estimated_flops": int(flops),
-            "complexity": "O(B*K*T*C) soft slot resampling" if enabled else "disabled",
+            "dense_float_copy_bytes": (
+                dense_input_elements * 4 if enabled and not dense_inputs.is_floating_point() else 0
+            ),
+            "soft_selected_output_elements": int(soft_selected_output_elements),
+            "soft_selected_output_bytes": (
+                int(soft_selected_output_elements * context_element_size) if enabled else 0
+            ),
+            "slot_assignment_elements": int(batch_size * slot_count * temporal_len),
+            "complexity": "O(numel(dense_raw_video)*K) soft slot resampling" if enabled else "disabled",
+            "accounting_scope": "dominant_einsum_lower_bound",
+            "estimated_flops_are_lower_bound": True,
+            "complete_memory_accounting": False,
         }
-        components["soft_to_hard_resample"] = component
+        components[component_name] = component
         profile["components"] = components
         profile["estimated_macs"] = int(profile.get("estimated_macs", 0) or 0) + int(macs)
         profile["estimated_flops"] = int(profile.get("estimated_flops", 0) or 0) + int(flops)
+        if enabled:
+            profile["estimated_flops_are_lower_bound"] = True
+            profile["complete_memory_accounting"] = False
         profile["detector_gradient_bridge"] = {
-            "mode": str(mode),
+            "mode": component_name,
             "bridge_weight": float(bridge_weight),
             "latency_ms": bridge_ms,
-            "component": "soft_to_hard_resample",
+            "component": component_name,
+            "training_only": True,
         }
 
     def _record_pending_dynamic_budget_dual(self, scores: Mapping[str, Any], grid) -> None:
