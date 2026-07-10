@@ -68,7 +68,8 @@ python tools/bata/validate_chronotransport_adatad.py "${VALIDATOR_ARGS[@]}"
 python -m pytest -p no:cacheprovider \
   tests/test_chronotransport_core.py \
   tests/test_chronotransport_repository_contract.py \
-  tests/test_chronotransport_vit_adapter_integration.py -q
+  tests/test_chronotransport_vit_adapter_integration.py \
+  tests/test_chronotransport_stage_a_smoke.py -q
 python - <<'PY'
 from pathlib import Path
 paths = [
@@ -81,6 +82,7 @@ paths = [
     Path("opentad/models/chronotransport/profiler.py"),
     Path("opentad/models/chronotransport/runtime.py"),
     Path("tools/bata/validate_chronotransport_adatad.py"),
+    Path("tools/bata/check_chronotransport_checkpoint.py"),
 ]
 for path in paths:
     compile(path.read_text(encoding="utf-8"), str(path), "exec")
@@ -96,9 +98,13 @@ fi
 [[ -n "${CHECKPOINT}" ]] || fail "CHRONOTRANSPORT_CHECKPOINT is required for Stage-A model execution"
 [[ -f "${CHECKPOINT}" ]] || fail "checkpoint does not exist: ${CHECKPOINT}"
 
+python tools/bata/check_chronotransport_checkpoint.py \
+  --config "${CONFIG}" \
+  --checkpoint "${CHECKPOINT}"
+
 TEST_ARGS=("${CONFIG}" --checkpoint "${CHECKPOINT}" --seed "${SEED}" --id "${RUN_ID}")
 if [[ "${RUN_KIND}" == "stage_a_smoke" ]]; then
-  TEST_ARGS+=(--not_eval)
+  TEST_ARGS+=(--not_eval --max-batches "1")
 fi
 
 LAUNCH_LOG="${OUT_ROOT}/${RUN_KIND}_${CHRONOTRANSPORT_MODE:-dense}_seed${SEED}_id${RUN_ID}.launch.log"

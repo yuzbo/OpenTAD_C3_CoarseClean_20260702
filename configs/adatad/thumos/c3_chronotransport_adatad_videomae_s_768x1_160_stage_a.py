@@ -250,9 +250,13 @@ solver = dict(
 
 inference = dict(load_from_raw_predictions=False, save_raw_prediction=False)
 
-_yuzibo_root = pathlib.Path(os.environ.get("YUZIBO_ROOT", "/data/run01/sczc063/yuzibo")).expanduser()
+_yuzibo_root = str(
+    pathlib.Path(
+        os.environ.get("YUZIBO_ROOT", "/data/run01/sczc063/yuzibo")
+    ).expanduser()
+)
 work_dir = str(
-    _yuzibo_root
+    pathlib.Path(_yuzibo_root)
     / "exps"
     / "thumos"
     / "chronotransport"

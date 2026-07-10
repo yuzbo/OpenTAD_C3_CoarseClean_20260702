@@ -11,6 +11,15 @@ from opentad.evaluations import build_evaluator
 from opentad.datasets.base import SlidingWindowDataset
 
 
+def iter_limited_batches(iterable, max_batches=None):
+    if max_batches is not None and max_batches <= 0:
+        raise ValueError("max_batches must be positive when provided")
+    for batch_idx, batch in enumerate(iterable):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
+        yield batch
+
+
 def eval_one_epoch(
     test_loader,
     model,
@@ -21,6 +30,7 @@ def eval_one_epoch(
     use_amp=False,
     world_size=0,
     not_eval=False,
+    max_batches=None,
 ):
     """Inference and Evaluation the model"""
 
@@ -46,7 +56,10 @@ def eval_one_epoch(
     # model forward
     model.eval()
     result_dict = {}
-    for data_dict in tqdm.tqdm(test_loader, disable=(rank != 0)):
+    for data_dict in tqdm.tqdm(
+        iter_limited_batches(test_loader, max_batches=max_batches),
+        disable=(rank != 0),
+    ):
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             with torch.no_grad():
                 results = model(

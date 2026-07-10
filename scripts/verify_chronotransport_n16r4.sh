@@ -28,6 +28,7 @@ TESTS=(
   tests/test_chronotransport_repository_contract.py
   tests/test_chronotransport_vit_adapter_integration.py
   tests/test_chronotransport_pipeline.py
+  tests/test_chronotransport_stage_a_smoke.py
   tests/test_c3_coarse_classifier_model_matrix.py
   tests/test_c3_asformer_delta_ledger_full_train.py
 )
@@ -41,6 +42,7 @@ PY_FILES=(
   tools/bata/run_chronotransport_paired_replay.py
   tools/bata/train_chronotransport_stage_b.py
   tools/bata/profile_chronotransport_schedules.py
+  tools/bata/check_chronotransport_checkpoint.py
 )
 python -m py_compile "${PY_FILES[@]}"
 
