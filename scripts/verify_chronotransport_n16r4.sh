@@ -23,9 +23,26 @@ export CUDA_VISIBLE_DEVICES=""
 
 cd "${ROOT}"
 
-python -m pytest -p no:cacheprovider +  tests/test_chronotransport_core.py +  tests/test_chronotransport_repository_contract.py +  tests/test_chronotransport_vit_adapter_integration.py +  tests/test_chronotransport_pipeline.py +  tests/test_c3_coarse_classifier_model_matrix.py +  tests/test_c3_asformer_delta_ledger_full_train.py -q
+TESTS=(
+  tests/test_chronotransport_core.py
+  tests/test_chronotransport_repository_contract.py
+  tests/test_chronotransport_vit_adapter_integration.py
+  tests/test_chronotransport_pipeline.py
+  tests/test_c3_coarse_classifier_model_matrix.py
+  tests/test_c3_asformer_delta_ledger_full_train.py
+)
+python -m pytest -p no:cacheprovider "${TESTS[@]}" -q
 
-python -m py_compile +  tools/train.py +  tools/test.py +  tools/bata/train_lowres_action_probe.py +  tools/bata/validate_chronotransport_adatad.py +  tools/bata/run_chronotransport_paired_replay.py +  tools/bata/train_chronotransport_stage_b.py +  tools/bata/profile_chronotransport_schedules.py
+PY_FILES=(
+  tools/train.py
+  tools/test.py
+  tools/bata/train_lowres_action_probe.py
+  tools/bata/validate_chronotransport_adatad.py
+  tools/bata/run_chronotransport_paired_replay.py
+  tools/bata/train_chronotransport_stage_b.py
+  tools/bata/profile_chronotransport_schedules.py
+)
+python -m py_compile "${PY_FILES[@]}"
 
 bash -n scripts/run_chronotransport_adatad_gpu1.sh
 echo "CHRONOTRANSPORT_REMOTE_VERIFY_PASS"
