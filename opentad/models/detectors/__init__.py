@@ -16,6 +16,7 @@ from .vsgn import VSGN
 from .mamba import VideoMambaSuite
 from .dyfadet import DyFADet
 from .truetime_joint_selector_smoke import TrueTimeJointSelectorSmokeDetector
+from .phystime_tad import PhysTimeTAD
 
 __all__ = [
     "BaseDetector",
@@ -36,4 +37,5 @@ __all__ = [
     "DETR",
     "DeformableDETR",
     "TadTR",
+    "PhysTimeTAD",
 ]

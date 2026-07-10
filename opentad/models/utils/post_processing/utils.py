@@ -107,6 +107,10 @@ def _selected_axis_segments_to_dense_axis(segments, meta):
 
 
 def convert_to_seconds(segments, meta):
+    if meta.get("prediction_time_unit") == "seconds":
+        if segments.shape[0] > 0:
+            segments.clamp_(min=0.0, max=float(meta["duration"]))
+        return segments
     if meta["fps"] == -1:  # resize setting, like in anet / hacs
         segments = segments / meta["resize_length"] * meta["duration"]
     else:  # sliding window / padding setting, like in thumos / ego4d

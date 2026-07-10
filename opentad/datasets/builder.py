@@ -48,7 +48,7 @@ def collate(batch):
     if not isinstance(batch, Sequence):
         raise TypeError(f"{batch.dtype} is not supported.")
 
-    gpu_stack_keys = ["inputs", "masks"]
+    gpu_stack_keys = ["inputs", "masks", "paired_inputs", "paired_masks"]
 
     collate_data = {}
     for key in batch[0]:

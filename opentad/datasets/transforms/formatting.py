@@ -33,6 +33,9 @@ class Collect:
         self,
         inputs,
         keys=[],
+        paired_inputs=None,
+        paired_masks="paired_masks",
+        paired_metas="paired_metas",
         meta_keys=[
             "video_name",
             "data_path",
@@ -52,10 +55,26 @@ class Collect:
             "remap_gt_to_selected_axis",
             "gt_remapped_to_selected_axis",
             "pc_ot_mras_prebackbone_remap_gt_to_selected_axis",
+            "gt_time_unit",
+            "prediction_time_unit",
+            "phystime_timestamps_sec",
+            "phystime_support_intervals_sec",
+            "phystime_duration_sec",
+            "phystime_domain_start_sec",
+            "phystime_domain_end_sec",
+            "phystime_support_provenance",
+            "phystime_selected_feature_indices",
+            "phystime_window_start_feature_idx",
+            "phystime_window_valid_feature_count",
+            "phystime_sampling_strategy",
+            "phystime_sampling_uses_gt",
         ],
     ):
         self.inputs = inputs
         self.keys = keys
+        self.paired_inputs = paired_inputs
+        self.paired_masks = paired_masks
+        self.paired_metas = paired_metas
         self.meta_keys = meta_keys
 
     def __call__(self, results):
@@ -69,6 +88,11 @@ class Collect:
             if key == "masks" and key not in results.keys():
                 results["masks"] = torch.ones(data["inputs"].shape[-1]).bool()
             data[key] = results[key]
+
+        if self.paired_inputs is not None:
+            data["paired_inputs"] = results[self.paired_inputs]
+            data["paired_masks"] = results[self.paired_masks]
+            data["paired_metas"] = results[self.paired_metas]
 
         # meta keys
         if len(self.meta_keys) != 0:
