@@ -1387,8 +1387,9 @@ class DucaAcquisitionAdapter(nn.Module):
             max_hole = valid_count if self.max_unselected_hole is None else int(self.max_unselected_hole)
             policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
             if stable_selection:
+                learned_scores = policy_scores
                 if effective_k == 0:
-                    policy_scores = policy_scores.detach().new_zeros((1, valid_count))
+                    reference_scores = policy_scores.detach().new_zeros((1, valid_count))
                 else:
                     positions = torch.arange(valid_count, device=center_scores.device, dtype=center_scores.dtype)
                     targets = (
@@ -1397,7 +1398,8 @@ class DucaAcquisitionAdapter(nn.Module):
                         / float(effective_k)
                         - 0.5
                     )
-                    policy_scores = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values[None, :]
+                    reference_scores = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values[None, :]
+                policy_scores = reference_scores + learned_scores * 0.0
             structured = global_structured_topk(
                 policy_scores,
                 k=effective_k,

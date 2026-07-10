@@ -383,6 +383,12 @@ def test_structured_curriculum_uses_stable_hard_input_before_learned_policy() ->
         first["selector_outputs"]["grid"].selected_positions,
         second["selector_outputs"]["grid"].selected_positions,
     )
+    sum(first["losses"].values()).backward()
+    center_grads = [param.grad for param in selector.adapter.center_head.parameters() if param.requires_grad]
+    assert center_grads
+    assert all(grad is not None for grad in center_grads)
+    assert sum(float(grad.detach().abs().sum().item()) for grad in center_grads) == pytest.approx(0.0)
+    selector.zero_grad(set_to_none=True)
 
     selector.after_optimizer_step()
     learned = selector.forward_train(inputs=torch.randn(1, 3, 9), **common)
