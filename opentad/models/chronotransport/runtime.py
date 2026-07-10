@@ -181,7 +181,13 @@ class ChronoTransportRuntime(nn.Module):
             device=state.device,
             dtype=state.dtype,
         ).view(1, -1, 1).expand(int(state.shape[0]), -1, -1)
-        finite = torch.isfinite(state).all(dim=(2, 3), keepdim=False).unsqueeze(-1).to(state.dtype)
+        finite = (
+            torch.isfinite(state)
+            .reshape(int(state.shape[0]), int(state.shape[1]), -1)
+            .all(dim=-1)
+            .unsqueeze(-1)
+            .to(state.dtype)
+        )
         raw = torch.cat(
             (
                 energy.to(state.dtype),
