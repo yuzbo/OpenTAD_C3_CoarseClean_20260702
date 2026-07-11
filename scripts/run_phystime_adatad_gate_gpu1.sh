@@ -30,8 +30,10 @@ PYTHON="${PHYSTIME_PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -d "${OPENTAD_THUMOS14_TEST_VIDEOS}" ]] || fail "test video directory not found"
 [[ -f "${PHYSTIME_VIDEOMAE_CHECKPOINT}" ]] || fail "VideoMAE-S checkpoint not found"
 
-module load cuda/11.8
-module load miniforge3/24.11
+if command -v module >/dev/null 2>&1; then
+  module load cuda/11.8 >/dev/null 2>&1 || true
+  module load miniforge3/24.11 >/dev/null 2>&1 || true
+fi
 source "${BASE}/conda_envs/opentad/bin/activate"
 cd "${WORK_DIR}"
 export PYTHONPATH="${WORK_DIR}:${PYTHONPATH:-}"

@@ -10,6 +10,7 @@ def test_training_launcher_is_raw_video_gate_locked_and_auditable():
     text = TRAIN.read_text(encoding="utf-8")
     assert '[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]]' in text
     assert "SLURM_JOB_ID" in text
+    assert "command -v module" in text
     assert "PHYSTIME_REAL_GATE_JSON" in text
     assert 'payload.get("gate_pass") is True' in text
     assert 'payload.get("git_commit") == commit' in text

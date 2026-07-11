@@ -40,6 +40,12 @@ export CUDA_VISIBLE_DEVICES
 [[ -d "${OPENTAD_THUMOS14_TEST_VIDEOS}" ]] || fail "test video directory not found"
 command -v nvidia-smi >/dev/null 2>&1 || fail "nvidia-smi is required for cost accounting"
 
+if command -v module >/dev/null 2>&1; then
+  module load cuda/11.8 >/dev/null 2>&1 || true
+  module load miniforge3/24.11 >/dev/null 2>&1 || true
+fi
+source "${BASE}/conda_envs/opentad/bin/activate"
+
 case "$(basename "${CONFIG}")" in
   selected_axis_adatad_sparse_k384.py|physical_grid_adatad_sparse_k384.py|phystime_adatad_sparse_k384.py) ;;
   *) fail "formal Phase 1 accepts only the three matched K384 raw-video configs" ;;

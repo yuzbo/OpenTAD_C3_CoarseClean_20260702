@@ -14,3 +14,4 @@
 - 2026-07-11：迁入主任务用户侧完整导出与跨代理近期记录，固定 SHA256；新增 11-worktree 审计库存，防止单一 checkout 遗忘历史实现。
 - 2026-07-11：第二轮 lint：36 个实体、10 个 gaps、55 条关系、0 孤立实体、0 失效关系、0 断链，query pack 3351 字符。
 - 2026-07-11：PhysTime-AdaTAD 1.0 在 `549bb81` 完成 raw-video K384 三头 matched pipeline、原帧 same-index 审计、one-step 梯度证明、真实 CUDA gate 工具及 gate-dependent 启动器；远端 focused suite `45 passed`。状态为 `tested`，真实 THUMOS gate、正式训练与 mAP 仍 pending。
+- 2026-07-11：首次 raw-video gate `1158528` 在 Python/模型执行前因非登录 shell 无 `module` 命令以 127 退出；依赖训练 `1158529/1158530/1158531` 未启动并取消。分类为 infrastructure failure；GPU launchers 改为可选 module 初始化并新增回归测试，等待新 commit 重跑。

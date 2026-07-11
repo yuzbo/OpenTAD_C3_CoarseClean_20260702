@@ -6,7 +6,7 @@
 
 唯一主线是 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768 时间位置，用相同、确定性、无学习、无 GT 的策略选 K=384，`DecordDecode` 和 VideoMAE-S 只消费选中帧。在完全相同 backbone、checkpoint、增强、schedule、seed、NMS 和 selected indices 下比较：selected-axis ActionFormer、physical-grid ActionFormer、`PhysTimeMeasureProjection + PhysTimeHead`。长期目标是一个独立离线 TAD detector，输入任意不规则观测及真实时间戳/支持区间，直接在秒坐标上分类和定位。
 
-当前事实：PhysTime-TAD 2.0 的 feature-geometry 核心代码已实现。PhysTime-AdaTAD 1.0 已在代码提交 `549bb81` 完成 raw-video transform、三份 matched K384 配置、same-index validator、one-step 梯度证明、真实 gate 工具及 gate-dependent 三头启动器；远端 focused suite 为 `45 passed`。真实 THUMOS CUDA gate 尚未运行，正式训练尚未释放，不得声称已经部署或已有 mAP。
+当前事实：PhysTime-TAD 2.0 的 feature-geometry 核心代码已实现。PhysTime-AdaTAD 1.0 已在代码提交 `549bb81` 完成 raw-video transform、三份 matched K384 配置、same-index validator、one-step 梯度证明、真实 gate 工具及 gate-dependent 三头启动器；远端 focused suite 为 `45 passed`。首次真实 gate `1158528` 在 Python 前因非登录 shell 缺少 `module` 命令而失败，依赖训练未启动；launcher 已加入可选 module 初始化并通过回归测试，仍需新 commit 重跑。不得声称已有真实 gate 或 mAP。
 
 ## Top gaps
 

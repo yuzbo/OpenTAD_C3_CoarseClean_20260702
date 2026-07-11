@@ -36,8 +36,10 @@ added: 2026-07-11T00:00:00+08:00
 - raw geometry、matched configs、validator、one-step gradient、gate contract 与 deployment contract：远端 `45 passed`；
 - matched validator：`contract_pass=true`；
 - real THUMOS CUDA gate：pending；
-- formal jobs：not submitted；
+- formal jobs：首次依赖作业未启动并取消，新提交 pending；
 - mAP：NA。
+
+首次部署 gate `1158528` 在进入 Python 前因计算节点非登录 shell 缺少 `module` 命令失败，三个依赖训练均未启动并取消。该事件分类为 infrastructure failure；launcher 已改为可选 module 初始化并通过回归测试，仍需在新 commit 重跑真实 gate。
 
 ## Current verdict
 

@@ -142,6 +142,7 @@ def test_gate_launcher_requires_gpu1_raw_paths_and_checkpoint():
     assert "OPENTAD_THUMOS14_TEST_VIDEOS" in text
     assert "PHYSTIME_VIDEOMAE_CHECKPOINT" in text
     assert "SLURM_JOB_ID" in text
+    assert "command -v module" in text
     assert "run_phystime_adatad_real_gate.py" in text
     assert "PHYSTIME_FEATURE_PATH" not in text
     assert "LoadFeats" not in text
