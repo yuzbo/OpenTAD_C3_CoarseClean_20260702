@@ -176,6 +176,21 @@ def test_local_boundary_coverage_rewards_mass_inside_boundary_neighborhood() -> 
     assert torch.isfinite(far_loss)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
+def test_local_boundary_coverage_is_finite_for_padded_windows_under_fp16_autocast() -> None:
+    soft = torch.zeros(1, 768, device="cuda", dtype=torch.float16)
+    soft[:, :453] = 0.85
+    target = torch.zeros(1, 768, device="cuda", dtype=torch.float32)
+    target[:, 390] = 1.0
+    valid = torch.zeros(1, 768, device="cuda", dtype=torch.bool)
+    valid[:, :453] = True
+
+    with torch.cuda.amp.autocast(dtype=torch.float16):
+        loss = local_boundary_coverage_loss(soft, target, valid, radius=4)
+
+    assert torch.isfinite(loss)
+
+
 def _transition_adapter() -> DucaAcquisitionAdapter:
     return DucaAcquisitionAdapter(
         feature_dim=3,

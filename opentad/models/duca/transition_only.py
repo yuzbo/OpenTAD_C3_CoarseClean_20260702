@@ -256,17 +256,19 @@ def local_boundary_coverage_loss(
     radius = int(radius)
     if radius < 0:
         raise ValueError("boundary coverage radius must be non-negative")
-    occupancy = soft_occupancy.float().clamp(0.0, 1.0).masked_fill(~valid, 0.0)
-    kernel = occupancy.new_ones((1, 1, 2 * radius + 1))
-    local_mass = F.conv1d(occupancy[:, None, :], kernel, padding=radius).squeeze(1).clamp_min(1e-8)
-    target = boundary_target.to(device=occupancy.device, dtype=occupancy.dtype).masked_fill(~valid, 0.0)
-    target_mass = target.sum(dim=1, keepdim=True)
-    normalized = torch.where(target_mass > 0.0, target / target_mass.clamp_min(1e-8), target)
-    per_batch = -(normalized * torch.log(local_mass)).sum(dim=1)
-    active = target_mass.squeeze(1) > 0.0
-    if not bool(active.any().item()):
-        return soft_occupancy.sum() * 0.0
-    return per_batch[active].mean().to(dtype=soft_occupancy.dtype)
+    with torch.cuda.amp.autocast(enabled=False):
+        occupancy = soft_occupancy.float().clamp(0.0, 1.0).masked_fill(~valid, 0.0)
+        kernel = occupancy.new_ones((1, 1, 2 * radius + 1))
+        local_mass = F.conv1d(occupancy[:, None, :], kernel, padding=radius).squeeze(1).clamp_min(1e-8)
+        target = boundary_target.to(device=occupancy.device, dtype=occupancy.dtype).masked_fill(~valid, 0.0)
+        target_mass = target.sum(dim=1, keepdim=True)
+        normalized = torch.where(target_mass > 0.0, target / target_mass.clamp_min(1e-8), target)
+        per_batch = -(normalized * torch.log(local_mass)).sum(dim=1)
+        active = target_mass.squeeze(1) > 0.0
+        if not bool(active.any().item()):
+            return soft_occupancy.sum() * 0.0
+        loss = per_batch[active].mean()
+    return loss.to(dtype=soft_occupancy.dtype)
 
 
 __all__ = [
