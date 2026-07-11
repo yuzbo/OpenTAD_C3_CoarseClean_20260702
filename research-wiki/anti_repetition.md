@@ -16,6 +16,8 @@
 - 单视频 one-step gate 只能证明局部合同，不能覆盖批间时长、support、mask 与 logit 极值；正式训练至少要越过首个 logging window，并扫描每个 leaf loss 的非有限值。
 - gate 通过后 formal 仍可能揭示实现错误；此时必须将 gate 与 full-run 证据分级记录，旧作业降为 diagnostic，并以同一修复 commit 重跑全部 matched heads。
 - 只越过 epoch 0 或首个 logging window 仍不足以证明稳定；`0bbf0e9` 的 PhysTime 在 epoch 1 end 才首次记录全 NaN，后续 gate 必须执行多 optimizer step 并 fail-closed。
+- 不要把 AMP 缩放后的纯 Inf 与模型 NaN 混为一谈。先在 `unscale_` 后按参数记录 NaN/Inf，再决定：纯 Inf 且 scale 正常下降可在严格次数预算内恢复；任何 NaN、参数污染或跳步超限立即失败。绝不能对 Inf 梯度继续做 `clip_grad_norm_`。
+- 单 GPU 不启用 FP16 DDP bucket compression；它没有通信收益，还会放大 scaled-gradient 溢出风险。PhysTime matched 协议固定 `amp_init_scale=1024`。
 - 正式 gate 必须实际构建 evaluator 并验证 annotation/class-map 解析；训练配置能读数据不等于 evaluator 的独立相对路径可用。
 
 ## 当前唯一主线

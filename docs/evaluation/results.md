@@ -1,5 +1,5 @@
 ---
-updated: 2026-07-11
+updated: 2026-07-12
 status: active
 scope: PhysTime-TAD 实验结果的唯一数字来源
 out-of-scope: 方法设计、未完成实验的推测性结论
@@ -70,6 +70,20 @@ selected-axis 的一次性 14.16 s 包含首个 CUDA/CuDNN warm-up，不可当�
 | PhysTime | `1158721` | `0bbf0e9` | failed；epoch 1 end 起持续全 NaN，epoch 41 验证另遇 GT annotation 路径错误 | epoch 41 end loss NaN；checkpoint 不构成有效结果 | NA | NA |
 
 三头验证均因 `evaluation.ground_truth_filename` 仍指向相对路径 `data/thumos-14/annotations/thumos_14_anno.json` 而 `FileNotFoundError`。这是共享部署配置错误。PhysTime 还有独立且更严重的训练稳定性错误：首次记录的全 NaN 位于 epoch 1 step 99，此后分类、回归、端点和总 loss 持续为 NaN；因此修复标注路径后也不能直接把该 checkpoint 用作正式结果。
+
+## Final repaired raw-video K384 track (2026-07-12)
+
+Run root: `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_3ac93a1_k384_final_20260712_023243_+0800`
+
+| Stage / head | Job | Commit | Status | Raw evidence | Avg-mAP | mAP@0.7 |
+| --- | ---: | --- | --- | --- | ---: | ---: |
+| three-step AMP + evaluator gate | `1159491` | `3ac93a1` | passed | evaluator constructed from runtime absolute annotation; all three heads completed 3 optimizer steps with finite gradients and parameters | NA | NA |
+| PhysTime two-epoch stability gate | `1159492` | `3ac93a1` | passed | epoch 0 end loss 1.5824; epoch 1 end loss 1.1674; zero AMP skips; `STABILITY_GATE_COMPLETE` present | NA | NA |
+| selected-axis | `1159493` | `3ac93a1` | running | formal matched full train | NA | NA |
+| physical-grid | `1159494` | `3ac93a1` | running | formal matched full train | NA | NA |
+| PhysTime | `1159495` | `3ac93a1` | running | formal matched full train | NA | NA |
+
+Failure localization retained for audit: commit `52b5756` gate `1159481` passed, but stability job `1159482` failed closed. Diagnostic job `1159489` found the first event at epoch 0 iter 47: finite forward losses and 11 Inf entries in `rpn_head.cls_head.weight` gradient, no NaN. Final protocol lowers AMP initial scale from 65536 to 1024 and bounds recoverable scaler skips; remote regression suite is `102 passed`.
 
 ## Matched Pilot
 

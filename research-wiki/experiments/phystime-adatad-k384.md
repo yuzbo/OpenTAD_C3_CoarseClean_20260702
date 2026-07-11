@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:phystime-adatad-k384
 title: "PhysTime-AdaTAD matched raw-video K384 head comparison"
 idea: idea:phystime-adatad-1
-status: experiment_failed
-verdict: invalid_run
+status: experiment_running
+verdict: pending
 confidence: high
-metrics: "No valid mAP; shared evaluation path failure and PhysTime sustained NaN."
+metrics: "Final 3ac93a1 matched run is active; gates passed; mAP pending."
 provenance: "docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md"
 added: 2026-07-11T00:00:00+08:00
 ---
@@ -58,6 +58,15 @@ AMP gate `1158668` 在 `bd27544` 完成并通过，但它只覆盖单个样本�
 ## Current verdict
 
 本次 matched run 无效，不能支持任何效果 claim。重新运行前必须同时关闭两个独立缺口：把 evaluator annotation 解析绑定到已验证的真实绝对路径，并定位 PhysTime 在累计优化后产生非有限参数/激活/梯度的首个 step。新的 gate 还必须覆盖多 optimizer step 与真实 evaluator 构建，单样本 one-step 不再足够。
+
+## 2026-07-12 final repair and redeployment
+
+- `52b5756` fixed the runtime evaluator path and moved physical geometry, measure attention, and seconds-coordinate DIoU to FP32. Its real three-step AMP/evaluator gate `1159481` passed, but the two-epoch stability gate `1159482` correctly failed closed before formal training.
+- Diagnostic commit `d91c7a9`, job `1159489`, localized the first failure to epoch 0 iter 47 on `video_validation_0000948` and `video_validation_0000987`: the forward losses were finite; only 11 elements of `rpn_head.cls_head.weight` gradient were Inf, with no NaN. This was default AMP loss-scale overflow, not a new physical-time forward NaN.
+- Final commit `3ac93a1` uses AMP initial scale 1024, disables useless single-GPU FP16 DDP compression, skips clipping on recoverable scaled-Inf gradients, and fails on NaN, parameter pollution, more than 4 consecutive skips, or more than 8 skips per epoch.
+- Remote regression suite: `102 passed`. Final real gate `1159491` passed three AMP optimizer steps, evaluator construction, optimizer coverage, same-frame/input checks, and finite gradients/parameters.
+- Final stability gate `1159492` completed two full epochs with no AMP skips: epoch 0 end loss 1.5824; epoch 1 end loss 1.1674. `STABILITY_GATE_COMPLETE` exists.
+- Formal matched jobs `1159493/1159494/1159495` are running from run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_3ac93a1_k384_final_20260712_023243_+0800`. No mAP exists yet; status is `experiment_running`, not `empirically_supported`.
 
 ## Connections
 

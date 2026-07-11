@@ -13,7 +13,7 @@
 | `exp:duca-cost-structural-audit` | DUCA full-stack cost/source parity | 工程完成、科学裁决未完成 | engineering audit | `a5e1774` 分支补齐成本/结构事实，但无决定性结果 |
 | `exp:chronotransport-engineering-track` | Chrono Stage-A/replay/formal Stage-B | P3 负结果后暂停 | negative scientific gate | 真实链路可运行，但 risk 排序/尺度与 feature transport gate 失败；Stage C/P5 未解锁，commits 未推远端 |
 | `exp:phystime-feature-track` | I3D feature-token PhysTime pilots | 已取消 | software/feature diagnostic | 不得作为 raw-video PhysTime-AdaTAD 证据 |
-| `exp:phystime-adatad-k384` | raw-video 三头 matched comparison | formal run failed | invalid run | 三头 evaluator path 错误；PhysTime 另有持续 NaN；无 mAP，修复后必须整套重跑 |
+| `exp:phystime-adatad-k384` | raw-video 三头 matched comparison | experiment running | pending | `3ac93a1` gate 与两 epoch stability gate 已通过；jobs `1159493/1159494/1159495` 运行中；mAP pending |
 
 ## 证据等级定义
 

@@ -6,7 +6,7 @@
 
 唯一主线是 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768 时间位置，用相同、确定性、无学习、无 GT 的策略选 K=384，`DecordDecode` 和 VideoMAE-S 只消费选中帧。在完全相同 backbone、checkpoint、增强、schedule、seed、NMS 和 selected indices 下比较：selected-axis ActionFormer、physical-grid ActionFormer、`PhysTimeMeasureProjection + PhysTimeHead`。长期目标是一个独立离线 TAD detector，输入任意不规则观测及真实时间戳/支持区间，直接在秒坐标上分类和定位。
 
-当前事实：PhysTime-AdaTAD 1.0 的最近实验 commit 为 `0bbf0e9`。真实 THUMOS AMP gate `1158718` 虽通过三头单步合同，但 formal jobs `1158719/1158720/1158721` 均失败。selected-axis 与 physical-grid 训练至 epoch 41 后因 evaluator GT annotation 仍使用不存在的相对路径而退出；PhysTime 还从 epoch 1 step 99 起持续 cls/reg/endpoint/total loss 全 NaN，checkpoint 无效。当前状态是 `experiment_failed`，mAP 为 NA。重跑前必须修正 evaluator 路径、定位累计优化 NaN，并把 multi-step finite check 与 evaluator construction 纳入 gate。
+当前事实：最终修复 commit 为 `3ac93a1`。evaluator 已绑定 runtime annotation 绝对路径；物理几何、measure attention 与秒坐标 DIoU 使用 FP32；AMP 初始 scale 为 1024，并对恢复性 Inf 跳步与真正 NaN/超限分别处理。真实 gate `1159491` 和两完整 epoch 稳定性 gate `1159492` 均通过且无 AMP skip。formal jobs `1159493/1159494/1159495` 正在同 commit 运行，mAP 仍为 NA；当前只能称 `experiment_running`，不能称 `empirically_supported`。
 
 ## Top gaps
 
