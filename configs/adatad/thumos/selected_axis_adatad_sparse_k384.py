@@ -124,6 +124,9 @@ evaluation = dict(ground_truth_filename=annotation_path)
 
 solver = dict(
     fail_on_non_finite_grad=True,
+    amp_init_scale=1024.0,
+    max_consecutive_amp_skips=4,
+    max_total_amp_skips_per_epoch=8,
     # Formal Phase 1 is single-GPU; FP16 DDP bucket compression has no
     # communication benefit and can overflow already-scaled AMP gradients.
     fp16_compress=False,

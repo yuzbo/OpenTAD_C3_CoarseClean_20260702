@@ -32,6 +32,7 @@ def _valid_report():
         "adapter_gradient_nonzero": True,
         "detector_gradient_nonzero": True,
         "amp_enabled": True,
+        "amp_initial_scale": 1024.0,
         "finite_loss": True,
         "finite_predictions": True,
         "optimizer_coverage": True,

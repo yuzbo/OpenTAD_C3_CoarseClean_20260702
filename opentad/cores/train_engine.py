@@ -68,6 +68,8 @@ def train_one_epoch(
     scaler=None,
     max_train_iters=None,
     fail_on_non_finite_grad=False,
+    max_consecutive_amp_skips=4,
+    max_total_amp_skips=8,
 ):
     """Training the model for one epoch"""
 
@@ -80,6 +82,8 @@ def train_one_epoch(
             raise ValueError("max_train_iters must be positive when provided")
         num_iters = min(num_iters, max_train_iters)
     use_amp = False if scaler is None else True
+    consecutive_amp_skips = 0
+    total_amp_skips = 0
 
     model.train()
     for iter_idx, data_dict in enumerate(train_loader):
@@ -107,31 +111,48 @@ def train_one_epoch(
         else:
             losses["cost"].backward()
 
-        # gradient clipping (to stabilize training if necessary)
-        if clip_grad_l2norm > 0.0:
-            if use_amp:
-                scaler.unscale_(optimizer)
-            optimized_parameters = [
-                parameter
-                for group in optimizer.param_groups
-                for parameter in group["params"]
-                if parameter.grad is not None
-            ]
-            try:
-                torch.nn.utils.clip_grad_norm_(
-                    optimized_parameters,
-                    clip_grad_l2norm,
-                    error_if_nonfinite=bool(fail_on_non_finite_grad),
-                )
-            except RuntimeError as error:
-                if not fail_on_non_finite_grad:
-                    raise
-                gradient_summary = _gradient_failure_summary(model, optimizer)
-                raise FloatingPointError(
-                    "non-finite gradient norm at "
-                    f"epoch={curr_epoch} iter={iter_idx} "
-                    f"batch={_batch_identity(data_dict)} gradients={gradient_summary}"
-                ) from error
+        optimized_parameters = [
+            parameter
+            for group in optimizer.param_groups
+            for parameter in group["params"]
+            if parameter.grad is not None
+        ]
+        inspect_gradients = use_amp or fail_on_non_finite_grad
+        if use_amp and (clip_grad_l2norm > 0.0 or fail_on_non_finite_grad):
+            scaler.unscale_(optimizer)
+        gradients_finite = True
+        gradients_have_nan = False
+        if inspect_gradients:
+            gradients_finite = all(
+                bool(torch.isfinite(parameter.grad).all().item())
+                for parameter in optimized_parameters
+            )
+            gradients_have_nan = any(
+                bool(torch.isnan(parameter.grad).any().item())
+                for parameter in optimized_parameters
+            )
+        if fail_on_non_finite_grad and gradients_have_nan:
+            raise FloatingPointError(
+                "NaN gradient at "
+                f"epoch={curr_epoch} iter={iter_idx} "
+                f"batch={_batch_identity(data_dict)} "
+                f"gradients={_gradient_failure_summary(model, optimizer)}"
+            )
+
+        # Never multiply Inf gradients by a zero clip coefficient. AMP owns
+        # recoverable scaled-Inf handling and will skip the optimizer step.
+        if clip_grad_l2norm > 0.0 and gradients_finite:
+            torch.nn.utils.clip_grad_norm_(
+                optimized_parameters,
+                clip_grad_l2norm,
+                error_if_nonfinite=bool(fail_on_non_finite_grad),
+            )
+        elif fail_on_non_finite_grad and not use_amp and not gradients_finite:
+            raise FloatingPointError(
+                "non-finite non-AMP gradient at "
+                f"epoch={curr_epoch} iter={iter_idx} "
+                f"gradients={_gradient_failure_summary(model, optimizer)}"
+            )
 
         # update parameters
         optimizer_step_ran = True
@@ -142,6 +163,31 @@ def train_one_epoch(
             # GradScaler silently skips optimizer.step() on non-finite grads and
             # lowers the scale. DUCA schedule/dual hooks must track real updates.
             optimizer_step_ran = scaler.get_scale() >= scale_before_step
+            if optimizer_step_ran:
+                consecutive_amp_skips = 0
+            else:
+                consecutive_amp_skips += 1
+                total_amp_skips += 1
+                logger.info(
+                    "[Train]: AMP optimizer step skipped epoch=%d iter=%d "
+                    "scale=%.1f->%.1f consecutive=%d total=%d gradients=%s",
+                    curr_epoch,
+                    iter_idx,
+                    scale_before_step,
+                    scaler.get_scale(),
+                    consecutive_amp_skips,
+                    total_amp_skips,
+                    _gradient_failure_summary(model, optimizer),
+                )
+                if fail_on_non_finite_grad and (
+                    consecutive_amp_skips > int(max_consecutive_amp_skips)
+                    or total_amp_skips > int(max_total_amp_skips)
+                ):
+                    raise FloatingPointError(
+                        "AMP overflow budget exceeded at "
+                        f"epoch={curr_epoch} iter={iter_idx}: "
+                        f"consecutive={consecutive_amp_skips}, total={total_amp_skips}"
+                    )
         else:
             optimizer.step()
 
@@ -191,6 +237,13 @@ def train_one_epoch(
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
             logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
             break
+
+    if total_amp_skips:
+        logger.info(
+            "[Train]: Epoch %d completed with %d recoverable AMP optimizer skips",
+            curr_epoch,
+            total_amp_skips,
+        )
 
 
 def _call_after_optimizer_step(model):

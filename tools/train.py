@@ -142,7 +142,10 @@ def main():
     use_amp = getattr(cfg.solver, "amp", False)
     if use_amp:
         logger.info("Using Automatic Mixed Precision...")
-        scaler = GradScaler()
+        scaler = GradScaler(
+            init_scale=float(cfg.solver.get("amp_init_scale", 2.0**16)),
+            growth_interval=int(cfg.solver.get("amp_growth_interval", 2000)),
+        )
     else:
         scaler = None
 
@@ -193,6 +196,8 @@ def main():
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
             fail_on_non_finite_grad=cfg.solver.get("fail_on_non_finite_grad", False),
+            max_consecutive_amp_skips=cfg.solver.get("max_consecutive_amp_skips", 4),
+            max_total_amp_skips=cfg.solver.get("max_total_amp_skips_per_epoch", 8),
         )
 
         # save checkpoint

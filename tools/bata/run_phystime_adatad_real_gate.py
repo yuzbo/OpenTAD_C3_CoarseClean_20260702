@@ -262,7 +262,8 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
     torch.cuda.synchronize(device)
     train_started = time.perf_counter()
     use_amp = bool(cfg.solver.get("amp", False))
-    scaler = GradScaler(enabled=use_amp)
+    initial_amp_scale = float(cfg.solver.get("amp_init_scale", 2.0**16))
+    scaler = GradScaler(enabled=use_amp, init_scale=initial_amp_scale)
     optimized_parameters = _optimized_parameters(optimizer)
     step_losses = []
     all_gradients_finite = True
@@ -369,6 +370,7 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
         "adapter_gradient_nonzero": adapter["nonzero"],
         "detector_gradient_nonzero": detector["nonzero"],
         "amp_enabled": use_amp,
+        "amp_initial_scale": initial_amp_scale,
         "finite_loss": _finite_tree(losses),
         "finite_predictions": _finite_tree(predictions),
         "optimizer_step_count": OPTIMIZER_STEPS,
@@ -435,6 +437,7 @@ def validate_gate_report(report):
             "adapter_gradient_nonzero": True,
             "detector_gradient_nonzero": True,
             "amp_enabled": True,
+            "amp_initial_scale": 1024.0,
             "finite_loss": True,
             "finite_predictions": True,
             "optimizer_step_count": OPTIMIZER_STEPS,

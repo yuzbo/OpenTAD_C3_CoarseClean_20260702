@@ -79,6 +79,9 @@ def test_sparse_configs_route_evaluation_to_the_runtime_annotation(monkeypatch, 
         Path(cfg.evaluation.ground_truth_filename) for cfg in cfgs.values()
     } == {annotation}
     assert all(cfg.solver.fail_on_non_finite_grad is True for cfg in cfgs.values())
+    assert all(cfg.solver.amp_init_scale == 1024.0 for cfg in cfgs.values())
+    assert all(cfg.solver.max_consecutive_amp_skips == 4 for cfg in cfgs.values())
+    assert all(cfg.solver.max_total_amp_skips_per_epoch == 8 for cfg in cfgs.values())
     assert all(cfg.solver.fp16_compress is False for cfg in cfgs.values())
 
 
