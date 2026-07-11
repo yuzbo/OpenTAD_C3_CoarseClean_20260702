@@ -4,6 +4,57 @@ import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
 
 
+def _gradient_failure_summary(model, optimizer, max_entries=12):
+    names = {id(parameter): name for name, parameter in model.named_parameters()}
+    bad = []
+    largest = []
+    for group in optimizer.param_groups:
+        for parameter in group["params"]:
+            if parameter.grad is None:
+                continue
+            gradient = parameter.grad.detach()
+            if gradient.is_sparse:
+                gradient = gradient.coalesce().values()
+            finite = torch.isfinite(gradient)
+            name = names.get(id(parameter), f"unnamed_parameter_{id(parameter)}")
+            if not bool(finite.all().item()):
+                finite_values = gradient[finite]
+                max_finite = (
+                    float(finite_values.abs().max().item())
+                    if finite_values.numel() > 0
+                    else float("nan")
+                )
+                bad.append(
+                    f"{name}(nan={int(torch.isnan(gradient).sum().item())},"
+                    f"inf={int(torch.isinf(gradient).sum().item())},"
+                    f"max_finite={max_finite:.3e})"
+                )
+            else:
+                norm = float(torch.linalg.vector_norm(gradient.double()).item())
+                largest.append((norm, name))
+    if bad:
+        return "; ".join(bad[: int(max_entries)])
+    largest.sort(reverse=True)
+    return "largest_finite_norms=" + ",".join(
+        f"{name}:{norm:.3e}" for norm, name in largest[: int(max_entries)]
+    )
+
+
+def _batch_identity(data_dict):
+    identities = []
+    for meta in data_dict.get("metas", ()):
+        if not isinstance(meta, dict):
+            continue
+        identities.append(
+            {
+                "video": meta.get("video_name"),
+                "domain_start_sec": meta.get("phystime_domain_start_sec"),
+                "domain_end_sec": meta.get("phystime_domain_end_sec"),
+            }
+        )
+    return identities
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -66,11 +117,21 @@ def train_one_epoch(
                 for parameter in group["params"]
                 if parameter.grad is not None
             ]
-            torch.nn.utils.clip_grad_norm_(
-                optimized_parameters,
-                clip_grad_l2norm,
-                error_if_nonfinite=bool(fail_on_non_finite_grad),
-            )
+            try:
+                torch.nn.utils.clip_grad_norm_(
+                    optimized_parameters,
+                    clip_grad_l2norm,
+                    error_if_nonfinite=bool(fail_on_non_finite_grad),
+                )
+            except RuntimeError as error:
+                if not fail_on_non_finite_grad:
+                    raise
+                gradient_summary = _gradient_failure_summary(model, optimizer)
+                raise FloatingPointError(
+                    "non-finite gradient norm at "
+                    f"epoch={curr_epoch} iter={iter_idx} "
+                    f"batch={_batch_identity(data_dict)} gradients={gradient_summary}"
+                ) from error
 
         # update parameters
         optimizer_step_ran = True

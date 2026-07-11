@@ -154,3 +154,14 @@ def test_frame_selector_diagnostics_format_schedule_and_budget_state() -> None:
     assert "duca_budget=384" in message
     assert "duca_dynamic_budget=True" in message
     assert "duca_requested_budget_mean=288.00" in message
+
+
+def test_gradient_failure_summary_names_non_finite_optimizer_parameter() -> None:
+    model = _DDPStyleWrapper()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    model.module.weight.grad = torch.tensor(float("nan"))
+
+    summary = train_engine._gradient_failure_summary(model, optimizer)
+
+    assert "module.weight" in summary
+    assert "nan=1" in summary
