@@ -6,7 +6,7 @@
 
 唯一主线是 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768 时间位置，用相同、确定性、无学习、无 GT 的策略选 K=384，`DecordDecode` 和 VideoMAE-S 只消费选中帧。在完全相同 backbone、checkpoint、增强、schedule、seed、NMS 和 selected indices 下比较：selected-axis ActionFormer、physical-grid ActionFormer、`PhysTimeMeasureProjection + PhysTimeHead`。长期目标是一个独立离线 TAD detector，输入任意不规则观测及真实时间戳/支持区间，直接在秒坐标上分类和定位。
 
-当前事实：PhysTime-TAD 2.0 的 feature-geometry 核心代码已实现。PhysTime-AdaTAD 1.0 已完成 raw-video transform、三份 matched K384 配置、same-index validator、one-step 梯度证明、真实 gate 工具及 gate-dependent 三头启动器。四次 gate 均在模型构建前关闭具体基础设施/确定性缺口，依赖训练均未启动；最新逐 transform 诊断 `1158614` 已证明三头从 decode 到 ColorJitter/FormatShape 的像素 hash 一致。仍需新 commit 通过完整 detector gate，不得声称已有 mAP。
+当前事实：PhysTime-AdaTAD 1.0 已完成 raw-video transform、三份 matched K384 配置、same-index/同增强 validator、one-step 梯度证明、真实 gate 与 gate-dependent 启动器。FP32 real gate `1158636` 已通过真实 THUMOS 三头 decode/forward/backward/inference；formal `1158639` 随后暴露 PhysTime endpoint BCE 不兼容 AMP，已作语义等价的 event-logit BCE 修复，并把 gate 升级为 AMP。`1158638` 是 torchrun rendezvous 基础设施失败，`1158637` 仅为旧 commit 诊断。最新同 commit AMP gate 与三头 full run 尚待重排，不得声称已有 mAP。
 
 ## Top gaps
 

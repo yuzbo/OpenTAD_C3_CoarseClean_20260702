@@ -23,6 +23,9 @@ def test_training_launcher_is_raw_video_gate_locked_and_auditable():
     assert "OPENTAD_THUMOS14_TEST_VIDEOS" in text
     assert "PHYSTIME_VIDEOMAE_CHECKPOINT" in text
     assert "tools/train.py" in text
+    assert "--standalone" not in text
+    assert "SLURM_JOB_ID" in text and "MASTER_PORT" in text
+    assert "--master_port" in text
     assert "model.backbone.custom.pretrain" in text
     assert "TRAINING_COMPLETE" in text
     assert "peak_gpu_memory_mb" in text

@@ -30,6 +30,7 @@ def _valid_report():
         "inference_backbone_feature_length": 384,
         "adapter_gradient_nonzero": True,
         "detector_gradient_nonzero": True,
+        "amp_enabled": True,
         "finite_loss": True,
         "finite_predictions": True,
         "optimizer_coverage": True,

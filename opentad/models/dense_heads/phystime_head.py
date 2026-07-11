@@ -75,6 +75,13 @@ class PhysTimeHead(nn.Module):
             widths = widths.unsqueeze(-1)
         return -torch.expm1(-intensity * widths).clamp(max=1.0)
 
+    @staticmethod
+    def integrated_event_logit(endpoint_logits, cell_widths_sec):
+        probability = PhysTimeHead.integrated_event_probability(
+            endpoint_logits, cell_widths_sec
+        ).clamp(1.0e-6, 1.0 - 1.0e-6)
+        return torch.logit(probability)
+
     def build_physical_points(self, level_geometry):
         if len(level_geometry) != len(self.regression_ranges_sec):
             raise ValueError("PhysTimeHead regression range count must match physical query levels")
@@ -225,12 +232,16 @@ class PhysTimeHead(nn.Module):
         else:
             reg_loss = raw["proposals_sec"].sum() * 0.0
 
-        endpoint_probability = torch.cat(raw["endpoint_probabilities"], dim=1).clamp(1.0e-6, 1.0 - 1.0e-6)
-        endpoint_loss = F.binary_cross_entropy(
-            endpoint_probability[valid_mask],
-            endpoint_target[valid_mask],
-            reduction="sum",
-        ) / valid_mask.sum().clamp_min(1)
+        with torch.cuda.amp.autocast(enabled=False):
+            endpoint_event_logits = self.integrated_event_logit(
+                torch.cat(raw["endpoint_logits"], dim=1).float(),
+                raw["cell_widths_sec"].float(),
+            )
+            endpoint_loss = F.binary_cross_entropy_with_logits(
+                endpoint_event_logits[valid_mask],
+                endpoint_target[valid_mask].float(),
+                reduction="sum",
+            ) / valid_mask.sum().clamp_min(1)
         return {
             "cls_loss": cls_loss,
             "reg_loss": reg_loss,

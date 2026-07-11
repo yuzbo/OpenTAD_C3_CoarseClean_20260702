@@ -226,14 +226,16 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
     torch.cuda.reset_peak_memory_stats(device)
     torch.cuda.synchronize(device)
     train_started = time.perf_counter()
-    losses = model(
-        inputs=batch["inputs"],
-        masks=batch["masks"],
-        metas=batch["metas"],
-        gt_segments=batch["gt_segments"],
-        gt_labels=batch["gt_labels"],
-        return_loss=True,
-    )
+    use_amp = bool(cfg.solver.get("amp", False))
+    with torch.cuda.amp.autocast(enabled=use_amp):
+        losses = model(
+            inputs=batch["inputs"],
+            masks=batch["masks"],
+            metas=batch["metas"],
+            gt_segments=batch["gt_segments"],
+            gt_labels=batch["gt_labels"],
+            return_loss=True,
+        )
     _require("cost" in losses and torch.is_tensor(losses["cost"]), f"{variant} must return losses['cost']")
     _require(_finite_tree(losses), f"{variant} produced non-finite training losses")
     losses["cost"].backward()
@@ -271,7 +273,8 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
     torch.cuda.synchronize(device)
     infer_started = time.perf_counter()
     with torch.no_grad():
-        predictions = model.forward_test(batch["inputs"], batch["masks"], batch["metas"])
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            predictions = model.forward_test(batch["inputs"], batch["masks"], batch["metas"])
     torch.cuda.synchronize(device)
     infer_ms = (time.perf_counter() - infer_started) * 1000.0
     hook.remove()
@@ -283,6 +286,7 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
         "inference_backbone_feature_length": int(backbone_lengths[-1]),
         "adapter_gradient_nonzero": adapter["nonzero"],
         "detector_gradient_nonzero": detector["nonzero"],
+        "amp_enabled": use_amp,
         "finite_loss": _finite_tree(losses),
         "finite_predictions": _finite_tree(predictions),
         "optimizer_coverage": optimizer_report["covered"],
@@ -343,6 +347,7 @@ def validate_gate_report(report):
             "inference_backbone_feature_length": TARGET_LEN,
             "adapter_gradient_nonzero": True,
             "detector_gradient_nonzero": True,
+            "amp_enabled": True,
             "finite_loss": True,
             "finite_predictions": True,
             "optimizer_coverage": True,

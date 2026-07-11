@@ -18,3 +18,4 @@
 - 2026-07-11：第二次 gate `1158546` 的 matched validator 通过，但 submission 覆盖 Slurm GPU mask，导致模型构建前 `CUDA is not available`；依赖训练 `1158547/1158548/1158549` 未启动并取消。launcher 已改为 Slurm 内保留调度器 mask，专项测试通过，等待新 commit 重跑。
 - 2026-07-11：第三次 gate `1158556` 通过 CUDA、真实 THUMOS decode 与 same-frame checksum，但 imgaug 独立 RNG 导致增强后像素不一致；模型未构建，依赖训练 `1158557/1158558/1158559` 未启动并取消。gate 已统一 Python/NumPy/Torch/imgaug/OpenCV seed 并新增确定性测试。
 - 2026-07-11：第四次 gate `1158576` 与逐 transform 诊断 `1158591` 将剩余分叉定位到首次 ImgAug 构造改变 ColorJitter 的 NumPy 状态；加入增强库预热后，真实诊断 `1158614` 证明三头 decode、crop、ImgAug、ColorJitter、FormatShape 像素 hash 全部一致。仍需重跑完整 detector gate。
+- 2026-07-11：FP32 real gate `1158636` 完成三头真实 raw-video forward/backward/inference 并通过全部梯度/optimizer contract；formal selected-axis `1158637` 启动，physical-grid `1158638` 因 torchrun rendezvous broken pipe 失败，PhysTime `1158639` 因 endpoint probability BCE 不兼容 AMP 失败。已作 event-logit BCE 等价修复并将 gate 升级为 AMP，等待同 commit 重排完整三头。

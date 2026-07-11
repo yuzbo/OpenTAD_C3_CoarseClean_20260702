@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:phystime-adatad-k384
 title: "PhysTime-AdaTAD matched raw-video K384 head comparison"
 idea: idea:phystime-adatad-1
-status: tested
+status: experiment_running
 verdict: pending
 confidence: low
 metrics: "No result yet."
@@ -32,11 +32,11 @@ added: 2026-07-11T00:00:00+08:00
 
 ## Software gate status
 
-- implementation commit：`549bb81`；
-- raw geometry、matched configs、validator、one-step gradient、gate contract 与 deployment contract：远端 `45 passed`；
+- implementation commit：`d31e99c` 后续 AMP 修复待提交；
+- raw geometry、matched configs、validator、one-step gradient、gate contract 与 deployment contract：最新远端 focused suite `49 passed`；
 - matched validator：`contract_pass=true`；
-- real THUMOS CUDA gate：pending；
-- formal jobs：首次依赖作业未启动并取消，新提交 pending；
+- real THUMOS CUDA gate：`1158636` passed，但为 FP32；最新 gate 已改为 AMP，待重跑；
+- formal jobs：`1158637` running diagnostic；`1158638` infrastructure failed；`1158639` 暴露 AMP BCE 实现错误并已修复；
 - mAP：NA。
 
 首次部署 gate `1158528` 在进入 Python 前因计算节点非登录 shell 缺少 `module` 命令失败，三个依赖训练均未启动并取消。该事件分类为 infrastructure failure；launcher 已改为可选 module 初始化并通过回归测试，仍需在新 commit 重跑真实 gate。
@@ -47,9 +47,11 @@ added: 2026-07-11T00:00:00+08:00
 
 第四次 gate `1158576` 进一步证明分叉只发生在同一进程首个配置的 ColorJitter：ImgAug 首次构造会额外消耗 NumPy 状态。gate 现先预热增强库再重新 seed。真实逐 transform 诊断 `1158614` 已确认三头在 decode、crop、ImgAug、ColorJitter 和最终 FormatShape 后的像素 hash 全部一致；这只关闭数据确定性缺口，仍不是 detector gate 或效果证据。
 
+第五次 gate `1158636` 已完成三头真实 raw-video decode、forward、backward 与 inference，梯度和 optimizer coverage 全部通过；但它使用 FP32，随后 formal PhysTime `1158639` 在 epoch 0 暴露 endpoint probability BCE 不兼容 AMP。现已保持积分事件概率语义，用 event-logit `BCEWithLogits` 等价改写，并把 gate 升级为 AMP。physical-grid `1158638` 是 torchrun rendezvous 基础设施失败；selected-axis `1158637` 仍仅作旧 commit 诊断。
+
 ## Current verdict
 
-尚无真实实验结果，不能支持任何效果 claim。`tested` 仅表示软件合同通过 focused tests；真实 gate 通过后才能进入 `experiment_running`，三头完成后必须由 result-to-claim 更新。
+尚无 mAP 结果，不能支持任何效果 claim。状态提升为 `experiment_running` 只表示真实 gate 曾通过且 formal 作业实际启动；最新 AMP 修复 commit 的三头 matched full run 仍须重新提交，完成后由 result-to-claim 更新。
 
 ## Connections
 

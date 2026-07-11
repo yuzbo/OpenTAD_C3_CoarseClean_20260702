@@ -1,4 +1,5 @@
 import pytest
+import inspect
 
 torch = pytest.importorskip("torch")
 
@@ -58,6 +59,24 @@ def test_integrated_event_probability_increases_with_physical_cell_width():
     assert probability[0, 1] > probability[0, 0]
     expected = 1.0 - torch.exp(-torch.nn.functional.softplus(torch.tensor(0.0)) * widths)
     assert torch.allclose(probability, expected)
+
+
+def test_integrated_event_logit_preserves_clamped_event_probability():
+    endpoint_logits = torch.tensor([[-1.0, 0.5]], dtype=torch.float32)
+    widths = torch.tensor([[0.5, 2.0]], dtype=torch.float32)
+
+    event_logits = PhysTimeHead.integrated_event_logit(endpoint_logits, widths)
+    expected = PhysTimeHead.integrated_event_probability(endpoint_logits, widths).clamp(
+        1.0e-6, 1.0 - 1.0e-6
+    )
+
+    assert torch.allclose(event_logits.sigmoid(), expected, atol=1.0e-6, rtol=1.0e-6)
+
+
+def test_endpoint_loss_uses_amp_safe_logits_form():
+    source = inspect.getsource(PhysTimeHead._losses)
+    assert "binary_cross_entropy_with_logits" in source
+    assert "binary_cross_entropy(" not in source
 
 
 def test_decode_uses_physical_cell_width_and_orders_segments():

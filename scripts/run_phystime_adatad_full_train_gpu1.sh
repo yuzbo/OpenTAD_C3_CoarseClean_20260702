@@ -128,6 +128,8 @@ Path(run_dir, "run_manifest.json").write_text(
 )
 PY
 
+MASTER_PORT="$((20000 + (10#${SLURM_JOB_ID} % 20000)))"
+export PHYSTIME_MASTER_PORT="${MASTER_PORT}"
 env | grep -E '^(PHYSTIME_|OPENTAD_THUMOS14_|CUDA_VISIBLE_DEVICES=)' | sort > "${RUN_DIR}/environment.txt"
 printf '%s\n' "${COMMIT}" > "${RUN_DIR}/commit.txt"
 
@@ -153,7 +155,9 @@ trap cleanup_monitor EXIT
 
 START_TIME="$(date +%s)"
 set +e
-"${TORCHRUN}" --standalone --nproc_per_node=1 tools/train.py "${CONFIG}" \
+"${TORCHRUN}" --nnodes=1 --nproc_per_node=1 --node_rank=0 \
+  --master_addr=127.0.0.1 --master_port="${MASTER_PORT}" \
+  tools/train.py "${CONFIG}" \
   --seed "${SEED}" --id 0 \
   --cfg-options \
   "model.backbone.custom.pretrain=${PHYSTIME_VIDEOMAE_CHECKPOINT}" \

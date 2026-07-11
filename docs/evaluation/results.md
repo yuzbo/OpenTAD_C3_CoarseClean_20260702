@@ -21,6 +21,27 @@ out-of-scope: 方法设计、未完成实验的推测性结论
 | PhysTime-AdaTAD raw-video gate 第三次提交 | `92ea441` | determinism gate failed | Slurm `1158556` 通过 raw config、CUDA、真实 THUMOS decode 与 same-frame checksum，但三次独立 train pipeline 的增强后像素 checksum 不同；根因为 imgaug RNG 未纳入统一 seed。模型未构建，依赖 `1158557/1158558/1158559` 未启动并取消，不构成方法证据 |
 | PhysTime-AdaTAD raw-video gate 第四次提交 | `c448f1f` | determinism gate failed | Slurm `1158576` 显示 physical-grid/PhysTime 输入一致，而进程内首个构建的 selected-axis 只在 ColorJitter 后分叉；逐 transform 诊断 `1158591` 定位为首次 ImgAug 构造消耗 NumPy 状态。模型未构建，依赖 `1158577/1158578/1158579` 未启动并取消 |
 | 三头真实 pipeline 增强确定性诊断 | post-`c448f1f` fix | passed | Slurm `1158614`：三头在 DecordDecode、RandomResizedCrop、ImgAug、ColorJitter、FormatShape 后的像素 SHA256 均逐级相同；这是数据合同证据，不是 mAP 证据 |
+| PhysTime-AdaTAD raw-video FP32 gate | `d31e99c` | passed | Slurm `1158636`，`gate_pass=true`；真实 THUMOS MP4、K=384/768、same frame/input checksum、三头 optimizer coverage、adapter 梯度及 PhysTime projection/classification/regression/endpoint 梯度均通过。后续 gate 已升级为 AMP |
+
+### Raw-video gate `1158636` 原始指标
+
+| Head | cost | train forward+backward (ms) | inference (ms) | peak CUDA memory (MB) | adapter grad | detector grad |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| selected-axis | 0.265581 | 14162.69 | 55.61 | 1296.67 | nonzero | nonzero |
+| physical-grid | 0.266731 | 448.40 | 62.89 | 1296.26 | nonzero | nonzero |
+| PhysTime | 0.550057 | 1088.00 | 74.32 | 1141.34 | nonzero | nonzero |
+
+selected-axis 的一次性 14.16 s 包含首个 CUDA/CuDNN warm-up，不可当作稳态延时比较；正式成本结论等待 full-run 账本。
+
+## Raw-video K384 Formal Track
+
+统一 run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_d31e99c_k384_20260711_161413_+0800`。
+
+| Head | Job | Commit | 状态 | 当前证据 | Avg-mAP | mAP@0.7 |
+| --- | ---: | --- | --- | --- | ---: | ---: |
+| selected-axis | `1158637` | `d31e99c` | running / diagnostic | 已进入 epoch 0；修复后套件必须同 commit 重跑，故本作业不进入最终 matched table | NA | NA |
+| physical-grid | `1158638` | `d31e99c` | infrastructure failed | epoch 0 首步后 torchrun rendezvous broken pipe；无方法失败证据 | NA | NA |
+| PhysTime | `1158639` | `d31e99c` | implementation failed | epoch 0 首批触发 autocast 不允许 probability BCE；已按等价 event-logit BCE 修复 | NA | NA |
 
 ## Matched Pilot
 
