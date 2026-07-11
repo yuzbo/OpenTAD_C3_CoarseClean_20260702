@@ -53,6 +53,13 @@ r2 test, existing ChronoTransport core/integration/formal-Stage-B/repository con
 required C3 focused suites. This confirms the currently implemented surfaces only; it does not fill the
 known missing Gate-3/Gate-4 adjudicators, overflow retry, full formal runners, or create registration R.
 
+## Independent audit
+
+A fresh no-conversation-context agent returned `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`. Seven
+registration-blocking gaps remain: Gate 3/4, executable r2 Stage B/C/matched dense, overflow retry, B*
+and exact cost feasibility, full-stack profiling/provenance, strict derived registration validation,
+and a registration-bound fixed Gate-1 input chain. I/R and formal deployment remain locked.
+
 ## Connections
 
 由 `research-wiki/graph/edges.jsonl` 维护。

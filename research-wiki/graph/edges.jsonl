@@ -48,3 +48,4 @@
 {"from":"idea:duca-offline-full-window","to":"claim:C8","type":"supports","evidence":"Defines plugin-generalization claim; AdaTAD-only evidence.","updated":"2026-07-11"}
 {"from":"idea:physical-grid","to":"claim:C10","type":"invalidates","evidence":"Presence of optional detector extensions prevents unmodified-official wording.","updated":"2026-07-11"}
 {"from":"exp:chronotransport-r2-implementation-verification","to":"idea:chronotransport","type":"tests_implementation_of","evidence":"Remote protocol and candidate/control/cache focused tests passed; no science gate unlocked.","updated":"2026-07-12"}
+{"from":"source:chronotransport-r2-independent-implementation-audit","to":"exp:chronotransport-r2-implementation-verification","type":"audits","evidence":"REVISE_IMPLEMENTATION_BEFORE_REGISTRATION; seven blocking gaps remain.","updated":"2026-07-12"}

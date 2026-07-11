@@ -57,3 +57,6 @@ append_only: true
 - 2026-07-12: Remote combined verification passed 110/110 in 84.58s. An independent implementation
   audit was then requested before freezing implementation commit I or registration R. Known incomplete
   surfaces remain explicitly unregistered and no formal Gate has run.
+- 2026-07-12: Independent zero-context implementation audit returned
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` with seven registration-blocking gaps. I/R and formal
+  deployment remain locked; the passing 110-test suite is partial implementation evidence only.

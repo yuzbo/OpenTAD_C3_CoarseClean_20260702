@@ -54,4 +54,8 @@ runtime 与唯一 window-risk head 随后达到局部 `tested`：runtime/integra
 35/35，risk/core focused suite 30/30。当前下一项转为 paired replay、正式 Stage B 与 Gate
 adjudication；仍未注册、未运行任何新 Gate。
 
+独立 implementation audit 裁决 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。110 个远端测试
+通过只覆盖已实现子集，不能抵消 Gate 3/4、正式 Stage B/C/matched dense、overflow retry、
+B* 与 exact cost、full-stack profiler 及严格 registration input-chain 仍缺失。禁止冻结 I/R。
+
 由 `research-wiki/graph/edges.jsonl` 维护。
