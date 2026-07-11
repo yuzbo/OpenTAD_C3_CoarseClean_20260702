@@ -41,3 +41,6 @@ append_only: true
   `APPROVE_SPEC_FOR_PLAN` verdict. The plan preserves remote-only behavioral verification,
   implementation/registration commit separation, and the Gate-1-first hard stop chain. Status is
   `implementation_planned`; no new behavior is yet claimed implemented or tested by this entry.
+- 2026-07-12: ChronoTransport r2 implementation batch 1 reached partial `tested` status on the remote
+  CPU environment: protocol tests 7/7 and candidate/control/cache plus legacy-core tests 36/36. This
+  does not unlock a Gate or scientific claim; runtime and later protocol surfaces remain in progress.

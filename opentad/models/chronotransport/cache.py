@@ -18,7 +18,7 @@ class CacheEntry:
 
     anchor: Tensor | None = None
     latest: Tensor | None = None
-    recompute_age: int = 0
+    actual_age: int = 0
     anchor_time: int = -1
     latest_time: int = -1
 
@@ -26,10 +26,20 @@ class CacheEntry:
     def valid(self) -> bool:
         return self.anchor is not None and self.latest is not None
 
+    @property
+    def recompute_age(self) -> int:
+        """Backward-compatible name for the un-clamped actual age."""
+
+        return int(self.actual_age)
+
+    @recompute_age.setter
+    def recompute_age(self, value: int) -> None:
+        self.actual_age = int(value)
+
     def clear(self) -> None:
         self.anchor = None
         self.latest = None
-        self.recompute_age = 0
+        self.actual_age = 0
         self.anchor_time = -1
         self.latest_time = -1
 
@@ -43,6 +53,8 @@ class ChronoCacheBank:
         *,
         detach_policy: DetachPolicy = "always",
         training: bool = False,
+        hard_cache_validity_age: int = 47,
+        transport_age_embedding_cap: int = 8,
     ) -> None:
         self.num_groups = int(num_groups)
         if self.num_groups <= 0:
@@ -51,6 +63,12 @@ class ChronoCacheBank:
             raise ValueError(f"unsupported cache detach policy: {detach_policy}")
         self.detach_policy: DetachPolicy = detach_policy
         self.training = bool(training)
+        self.hard_cache_validity_age = int(hard_cache_validity_age)
+        self.transport_age_embedding_cap = int(transport_age_embedding_cap)
+        if self.hard_cache_validity_age < 0:
+            raise ValueError("hard_cache_validity_age must be non-negative")
+        if self.transport_age_embedding_cap < 0:
+            raise ValueError("transport_age_embedding_cap must be non-negative")
         self._entries: list[list[CacheEntry]] = []
 
     def reset(self, batch_size: int) -> None:
@@ -99,7 +117,19 @@ class ChronoCacheBank:
         return entry.latest
 
     def age(self, stream_index: int, group_index: int) -> int:
-        return int(self.entry(stream_index, group_index).recompute_age)
+        """Legacy alias for the true executed age (never embedding-clamped)."""
+
+        return self.actual_age(stream_index, group_index)
+
+    def actual_age(self, stream_index: int, group_index: int) -> int:
+        return int(self.entry(stream_index, group_index).actual_age)
+
+    def transport_embedding_age(self, stream_index: int, group_index: int) -> int:
+        return min(self.actual_age(stream_index, group_index), self.transport_age_embedding_cap)
+
+    def normalized_actual_age(self, stream_index: int, group_index: int) -> float:
+        age = self.actual_age(stream_index, group_index)
+        return float(age) / float(1 + age)
 
     def commit(
         self,
@@ -118,18 +148,20 @@ class ChronoCacheBank:
         if action is ChronoAction.RECOMPUTE:
             entry.anchor = state
             entry.latest = state
-            entry.recompute_age = 0
+            entry.actual_age = 0
             entry.anchor_time = chunk_index
             entry.latest_time = chunk_index
             return
 
         if not entry.valid:
             raise RuntimeError(f"invalid cache: {action.name} requires a prior RECOMPUTE")
+        if entry.actual_age >= self.hard_cache_validity_age:
+            raise RuntimeError("hard cache validity age would be exceeded")
 
         if action is ChronoAction.TRANSPORT:
             entry.latest = state
             entry.latest_time = chunk_index
-            entry.recompute_age += 1
+            entry.actual_age += 1
             return
 
         if action is ChronoAction.HOLD:
@@ -137,7 +169,7 @@ class ChronoCacheBank:
             # cached object/value and is not used to overwrite the cache.
             if entry.latest is None or not torch.equal(state, entry.latest):
                 raise ValueError("HOLD state must equal the latest cached state")
-            entry.recompute_age += 1
+            entry.actual_age += 1
             return
 
         raise AssertionError(f"unhandled action: {action}")
@@ -147,7 +179,11 @@ class ChronoCacheBank:
             [
                 {
                     "valid": entry.valid,
-                    "recompute_age": int(entry.recompute_age),
+                    "actual_age": int(entry.actual_age),
+                    "recompute_age": int(entry.actual_age),
+                    "transport_embedding_age": min(
+                        int(entry.actual_age), self.transport_age_embedding_cap
+                    ),
                     "anchor_time": int(entry.anchor_time),
                     "latest_time": int(entry.latest_time),
                 }

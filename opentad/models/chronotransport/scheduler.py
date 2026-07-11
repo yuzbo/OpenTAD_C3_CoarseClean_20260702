@@ -15,6 +15,27 @@ from .actions import (
 )
 from .risk import ScheduleQuantileRiskPredictor
 from .cost_lookup import CostLookupKey, ScheduleCostLookup
+from .protocol import canonical_sha256
+
+
+R2_NON_DENSE_NAMES = (
+    "periodic2_transport",
+    "periodic2_hold",
+    "periodic4_transport",
+    "periodic4_hold",
+    "periodic8_transport",
+    "periodic8_hold",
+    "transport_only",
+    "hold_only",
+    "layer_only_early_recompute",
+    "layer_only_early_recompute_hold",
+    "layer_only_late_recompute",
+    "layer_only_late_recompute_hold",
+    "joint_progressive_transport",
+    "joint_progressive_hold",
+    "joint_reverse_transport",
+    "joint_reverse_hold",
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +89,38 @@ class ScheduleLibrary:
     def names(self) -> tuple[str, ...]:
         return tuple(candidate.name for candidate in self.candidates)
 
+    @property
+    def canonical_names(self) -> tuple[str, ...]:
+        if set(self.names) == {"dense", *R2_NON_DENSE_NAMES}:
+            return R2_NON_DENSE_NAMES + ("dense",)
+        return self.names
+
+    def canonical_payload(self) -> dict[str, object]:
+        candidates = []
+        for name in self.canonical_names:
+            candidate = self.find(name)
+            action_matrix = candidate.actions.detach().cpu().to(torch.long).tolist()
+            candidates.append(
+                {
+                    "name": name,
+                    "actions": action_matrix,
+                    "hard_valid": True,
+                    "action_sha256": canonical_sha256(action_matrix),
+                }
+            )
+        body: dict[str, object] = {
+            "schema": "chronotransport-r2-library-v1",
+            "num_chunks": self.num_chunks,
+            "num_groups": self.num_groups,
+            "candidates": candidates,
+        }
+        body["library_sha256"] = canonical_sha256(body)
+        return body
+
+    @property
+    def library_sha256(self) -> str:
+        return str(self.canonical_payload()["library_sha256"])
+
     def stacked_actions(self, *, device: torch.device | str | None = None) -> Tensor:
         return torch.stack([candidate.actions for candidate in self.candidates], dim=0).to(device=device)
 
@@ -76,6 +129,59 @@ class ScheduleLibrary:
             if candidate.name == name:
                 return candidate
         raise KeyError(f"unknown schedule candidate: {name}")
+
+    @classmethod
+    def r2(
+        cls,
+        *,
+        num_chunks: int = 48,
+        layer_groups: tuple[LayerGroup, ...],
+    ) -> "ScheduleLibrary":
+        if int(num_chunks) != 48:
+            raise ValueError("r2 schedule library requires exactly 48 clips")
+        if len(layer_groups) != 3:
+            raise ValueError("r2 schedule library requires exactly three layer groups")
+
+        def periodic(period: int, fallback: ChronoAction) -> Tensor:
+            actions = torch.full((48, 3), int(fallback), dtype=torch.long)
+            actions[:: int(period), :] = int(ChronoAction.RECOMPUTE)
+            return actions
+
+        def only(group: int, fallback: ChronoAction) -> Tensor:
+            actions = torch.full((48, 3), int(fallback), dtype=torch.long)
+            actions[:, int(group)] = int(ChronoAction.RECOMPUTE)
+            actions[0, :] = int(ChronoAction.RECOMPUTE)
+            return actions
+
+        def joint(periods: tuple[int, int, int], fallback: ChronoAction) -> Tensor:
+            actions = torch.full((48, 3), int(fallback), dtype=torch.long)
+            for group, period in enumerate(periods):
+                actions[::period, group] = int(ChronoAction.RECOMPUTE)
+            actions[0, :] = int(ChronoAction.RECOMPUTE)
+            return actions
+
+        dense = torch.zeros((48, 3), dtype=torch.long)
+        matrices = {
+            "periodic2_transport": periodic(2, ChronoAction.TRANSPORT),
+            "periodic2_hold": periodic(2, ChronoAction.HOLD),
+            "periodic4_transport": periodic(4, ChronoAction.TRANSPORT),
+            "periodic4_hold": periodic(4, ChronoAction.HOLD),
+            "periodic8_transport": periodic(8, ChronoAction.TRANSPORT),
+            "periodic8_hold": periodic(8, ChronoAction.HOLD),
+            "transport_only": periodic(49, ChronoAction.TRANSPORT),
+            "hold_only": periodic(49, ChronoAction.HOLD),
+            "layer_only_early_recompute": only(0, ChronoAction.TRANSPORT),
+            "layer_only_early_recompute_hold": only(0, ChronoAction.HOLD),
+            "layer_only_late_recompute": only(2, ChronoAction.TRANSPORT),
+            "layer_only_late_recompute_hold": only(2, ChronoAction.HOLD),
+            "joint_progressive_transport": joint((8, 4, 2), ChronoAction.TRANSPORT),
+            "joint_progressive_hold": joint((8, 4, 2), ChronoAction.HOLD),
+            "joint_reverse_transport": joint((2, 4, 8), ChronoAction.TRANSPORT),
+            "joint_reverse_hold": joint((2, 4, 8), ChronoAction.HOLD),
+        }
+        candidates = [ScheduleCandidate("dense", dense)]
+        candidates.extend(ScheduleCandidate(name, matrices[name]) for name in R2_NON_DENSE_NAMES)
+        return cls(candidates, layer_groups=layer_groups)
 
     @classmethod
     def default(

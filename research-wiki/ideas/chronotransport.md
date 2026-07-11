@@ -41,4 +41,13 @@ spec-only reviewer 已返回 `APPROVE_SPEC_FOR_PLAN`。当前只解锁 implement
 
 ## Connections
 
+## r2 实现状态（2026-07-12）
+
+第一批达到局部 `tested`：canonical split/window/exposure protocol、固定 16-candidate library、
+motion/random exact-count controls，以及 hard-cache age 与 transport embedding age 分离。远端
+focused checks 分别为 7/7 和 36/36；这只是实现证据，不是 Gate 或 science evidence。
+
+implementation plan commit 为 `18cc1c0`；下一项是 runtime live-tensor、all-row adapter 与
+requested/executed contract。完整实现和 pre-Gate1 registration 之前不得运行或声称 Gate 1。
+
 由 `research-wiki/graph/edges.jsonl` 维护。
