@@ -50,6 +50,7 @@ class Collect:
             "irregular_selected_valid_len",
             "irregular_native_axis",
             "selected_dense_indices",
+            "selected_raw_frame_indices",
             "selected_valid_len",
             "irregular_dense_valid_len",
             "remap_gt_to_selected_axis",

@@ -31,6 +31,11 @@ class BuildPhysTimeRawFrameGeometry:
         if frame_indices.size < valid_count:
             raise ValueError("PhysTime raw frame indices must cover every valid observation")
         selected_frames = frame_indices[:valid_count]
+        audited_frames = np.asarray(
+            results.get("selected_raw_frame_indices", selected_frames), dtype=np.float64
+        ).reshape(-1)
+        if audited_frames.size != valid_count or not np.array_equal(audited_frames, selected_frames):
+            raise ValueError("PhysTime raw-frame audit metadata does not match decoded frame indices")
 
         selected_dense = np.asarray(results["selected_dense_indices"], dtype=np.float64).reshape(-1)
         if selected_dense.size != valid_count:

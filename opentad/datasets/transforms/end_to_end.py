@@ -927,6 +927,12 @@ class LoadFrames:
 
         assert frame_idxs.shape[0] == frame_num, "snippet center number should be equal to snippet number"
 
+        if "selected_dense_indices" in results:
+            selected_count = int(torch.as_tensor(masks, dtype=torch.bool).sum().item())
+            if selected_count <= 0 or selected_count > frame_idxs.shape[0]:
+                raise ValueError("irregular sampling must expose a non-empty valid raw-frame prefix")
+            results["selected_raw_frame_indices"] = frame_idxs[:selected_count].astype(np.int64).tolist()
+
         results["frame_inds"] = frame_idxs.astype(int)
         results["num_clips"] = self.num_clips
         results["clip_len"] = frame_num // self.num_clips
