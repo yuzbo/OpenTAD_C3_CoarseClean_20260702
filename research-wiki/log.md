@@ -27,3 +27,8 @@ append_only: true
   `random_trunc`、edge padding 与 all-time adapter。不同意原样照抄三处未闭合文本：split
   digest 字节协议、Gate-3 coverage margin 和 Gate-4 seed-level mAP bootstrap 必须在 r2
   中精确定义。当前状态为 `spec_revision_in_progress`，尚未实现或部署。
+- 2026-07-12：完成 ChronoTransport r2 单文件书面规格 commit `d825520`，853 行，
+  committed-blob 与 worktree 双重 SHA-256 均为
+  `2551DC68F2FE94A204BAF722E8FC60143FD0D77B6024979F32EBC65BE4F69912`。完整吸收十项
+  amendments，并额外冻结 split digest 字节协议、Gate-3 coverage margin 与 Gate-4
+  seed-level mAP bootstrap。状态为 `written_spec_pending_spec_only_review`；尚未授权实现。
