@@ -6,6 +6,7 @@ import numpy as np
 from mmengine.config import Config
 
 from opentad.datasets.transforms.end_to_end import LoadFrames
+from tools.bata.validate_phystime_adatad_track import validate_track
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,3 +111,17 @@ def test_all_heads_select_identical_frames_for_same_window():
         selected.append(loader(dict(sample_results))["frame_inds"])
 
     assert len({checksum(item) for item in selected}) == 1
+
+
+def test_track_validator_emits_one_shared_sampling_contract(tmp_path):
+    output = tmp_path / "phystime_adatad_contract.json"
+
+    payload = validate_track(config_paths=CONFIGS, output=output)
+
+    assert payload["contract_pass"] is True
+    assert payload["raw_video_only"] is True
+    assert payload["target_len"] == 384
+    assert payload["dense_window_size"] == 768
+    assert len(payload["sampling_contract_sha256"]) == 64
+    assert len(set(payload["resolved_config_sha256"].values())) == 3
+    assert output.is_file()
