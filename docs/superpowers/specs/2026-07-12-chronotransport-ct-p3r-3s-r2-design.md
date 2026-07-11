@@ -704,6 +704,23 @@ seed，在相同 outer-resampled video multiset 上用 synthetic IDs
 replicate statistic 是三个 resampled-seed mAP 的 arithmetic mean。不得把不同 seed 的
 predictions 合并后做跨 seed NMS，也不得把重复 timing invocations 当额外 mAP samples。
 
+detector-regret bootstrap：只使用 official full-video/sliding-window population 中每个
+unique official invocation 一次；timing repetitions 不得成为额外 regret samples。对 official
+invocation `j`、seed `s` 和 arms `A in {D,C,S}`，使用相同 GT assignment 在
+evaluation-only adjudicator 中计算 `L_detector(j,s,A)`；GT、loss 或 regret 不得进入
+scheduler、checkpoint、calibration 或 inference payload。定义：
+
+`r_A(j,s)=max(L_detector(j,s,A)-L_detector(j,s,D),0)`，
+
+`delta_regret(j,s)=r_S(j,s)-r_C(j,s)`。
+
+bootstrap outer resample official video IDs，并随每个 sampled video 整体移动其全部 unique
+official invocations及完整 D/C/S arm vector；inner resample 三 seeds。每个 replicate 的
+detector-regret statistic 是全部 resampled `seed × unique official invocation` 上
+`delta_regret` 的 arithmetic mean。Gate 4 hard condition 6 使用该 statistic 的 percentile
+95% CI lower `>0`。不得继承 Gate 1--3 的 manifested-window bootstrap，也不得对 invocation、
+arm rows 或 timing repetitions 作伪独立 resampling。
+
 bootstrap replicates=5000，seed=`20260711`。
 
 ### 13.8 Gate-4 hard conditions
