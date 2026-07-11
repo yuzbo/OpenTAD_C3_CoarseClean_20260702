@@ -102,7 +102,7 @@ def test_exact_coverage_rejects_frozen_model_parameter() -> None:
         optimizer_module.assert_optimizer_exact_coverage(model, optimizer)
 
 
-def test_exclude_freezes_non_custom_parameter_and_preserves_custom_override() -> None:
+def test_exclude_requires_pre_ddp_freeze_and_preserves_custom_override() -> None:
     model = _WrappedModel()
     cfg = {
         "lr": 1.0e-4,
@@ -111,7 +111,12 @@ def test_exclude_freezes_non_custom_parameter_and_preserves_custom_override() ->
         "exclude": ["excluded"],
     }
 
-    groups = optimizer_module.get_backbone_optim_groups(cfg, model, logging.getLogger(__name__))
+    logger = logging.getLogger(__name__)
+    with pytest.raises(RuntimeError, match="must be frozen before DDP"):
+        optimizer_module.get_backbone_optim_groups(cfg, model, logger)
+
+    optimizer_module.prepare_optimizer_parameter_freezing(cfg, model, logger)
+    groups = optimizer_module.get_backbone_optim_groups(cfg, model, logger)
     grouped_param_ids = {id(param) for group in groups for param in group["params"]}
 
     assert model.module.backbone.excluded.requires_grad is False
