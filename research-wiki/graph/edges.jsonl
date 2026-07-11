@@ -24,6 +24,8 @@
 {"from":"idea:cvcr-bcft-codetad","to":"gap:G2","type":"addresses_gap","evidence":"Alternative marginal-compute value formulations.","updated":"2026-07-11"}
 {"from":"idea:cvcr-bcft-codetad","to":"gap:G4","type":"addresses_gap","evidence":"Alternative routing may improve real compute value.","updated":"2026-07-11"}
 {"from":"idea:chronotransport","to":"exp:parallel-routes","type":"tested_by","evidence":"ChronoTransport gates and deployments.","updated":"2026-07-11"}
+{"from":"idea:chronotransport","to":"exp:chronotransport-formal-stage-b","type":"tested_by","evidence":"Formal seed-3407 Stage-B fit/calibration/evaluation at 92029ea.","updated":"2026-07-11"}
+{"from":"exp:chronotransport-formal-stage-b","to":"idea:chronotransport","type":"invalidates","evidence":"Current P3 risk ranking/scale and stable feature-transport gates failed; engineering feasibility remains.","updated":"2026-07-11"}
 {"from":"idea:chronotransport","to":"gap:G4","type":"addresses_gap","evidence":"Reduces internal heavy-subpath computation.","updated":"2026-07-11"}
 {"from":"idea:phystime","to":"exp:parallel-routes","type":"tested_by","evidence":"PhysTime data and gate deployments.","updated":"2026-07-11"}
 {"from":"idea:phystime","to":"gap:G3","type":"addresses_gap","evidence":"Preserves explicit physical-time geometry.","updated":"2026-07-11"}

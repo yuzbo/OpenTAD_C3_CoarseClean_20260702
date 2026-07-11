@@ -59,6 +59,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [70aa069 fixed-384](experiments/duca-70aa-fixed384.md)
 - [a5e1774 full-stack cost](experiments/duca-a5e-cost.md)
 - [parallel routes](experiments/parallel-routes.md)
+- [ChronoTransport formal Stage-B 负 gate](experiments/chronotransport-formal-stage-b.md)
 
 ### Claims
 

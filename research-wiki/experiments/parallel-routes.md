@@ -3,9 +3,9 @@ type: experiment
 node_id: exp:parallel-routes
 title: "ChronoTransport / PhysTime parallel route gates"
 idea: idea:chronotransport
-verdict: pending
+verdict: mixed
 confidence: medium
-commit: "78d4c00 and PhysTime branches"
+commit: "92029ea and PhysTime branches"
 jobs: "1157170 and dependent PhysTime jobs; ChronoTransport gates"
 updated: 2026-07-11
 ---
@@ -14,7 +14,7 @@ updated: 2026-07-11
 
 ## Raw metrics / observations
 
-代码、precheck、数据恢复和部分 paired replay 已部署；正式 paper-level 多 seed 与 matched result 尚未完成。
+ChronoTransport 已完成正式单种子 Stage-B，但 P3 science gate 失败；PhysTime 仍处于独立设计/实现与 gate 推进状态。两条路线不能合并成一个 pending 成功信号。
 
 ## Interpretation
 
@@ -22,7 +22,7 @@ updated: 2026-07-11
 
 ## Limitations
 
-仍需真实成本、官方 detector parity、risk/regret 或 physical-time 收益门槛。
+ChronoTransport 需先修复风险尺度并重新通过 P3；PhysTime 仍需真实数据、官方 detector parity 与 matched physical-time 收益门槛。
 
 ## Provenance
 

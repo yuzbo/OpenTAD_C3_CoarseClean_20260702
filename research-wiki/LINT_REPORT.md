@@ -10,13 +10,13 @@ status: pass_with_source_warnings
 
 - Curated Markdown files: structurally valid.
 - Ideas: 16.
-- Experiments: 7.
+- Experiments: 8.
 - Claims: 10.
-- Graph edges: 47 valid JSONL rows.
+- Graph edges: 49 valid JSONL rows.
 - Missing graph node references: 0.
 - Orphan idea/experiment/claim nodes: 0.
 - Broken curated relative links: 0.
-- `query_pack.md`: 2825 characters, below the 8000-character limit.
+- `query_pack.md`: 2919 characters, below the 8000-character limit.
 
 ## Source-record warnings
 
@@ -32,3 +32,4 @@ status: pass_with_source_warnings
 - `70aa069` fixed-384 仍在运行，完成后必须更新 experiment 与 claim 节点。
 - formal trained-checkpoint cost matrix、matched baseline、finite-difference 和 geometry
   audit 仍未完成。
+- ChronoTransport formal P3 已记录为 negative gate；Stage C/P5 不再列作自动待运行任务，除非先有 superseding 设计与重新预注册。

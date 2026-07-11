@@ -15,3 +15,4 @@ append_only: true
   审计代码；正式论文 claim 尚未闭环。
 - 2026-07-11：wiki lint 通过：16 ideas、7 experiments、10 claims、47 edges、
   0 orphan nodes、0 curated broken links；query pack 2825 chars。
+- 2026-07-11：纠正 ChronoTransport 过期状态：`92029ea` formal Stage-B P3 science gate 为负，Stage C/P5 未解锁；新增独立 negative experiment 节点，路线暂停。

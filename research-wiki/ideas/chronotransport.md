@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
-stage: parallel_active
-outcome: pending
+stage: paused_after_failed_p3
+outcome: negative_gate
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
 ---
@@ -20,11 +20,11 @@ added: 2026-07-11
 
 ## 已有证据
 
-Stage-A/B、paired replay、risk/regret gates 和部署代码已落地，正式 paper gate 尚未闭环。
+Stage-A、paired replay 和正式 Stage-B fit/calibration/evaluation 已落地。`92029ea` 的预注册 P3 science gate 为 FAIL：risk-regret 排序为负，cell-risk/window-target 尺度错配，feature transport 改善不稳定；Stage C/P5 未解锁。
 
 ## 当前选择或否定理由
 
-作为与 C3/DUCA 并行路线，不能混用 DUCA 结果或改写其 claim。
+暂停，不作为当前主线。它证明 conditional-compute 工程闭环可运行，但没有证明 risk-certified transport 的科学有效性，也不能混用 DUCA 结果改写 claim。
 
 ## 风险与失败模式
 
@@ -32,7 +32,7 @@ transport 可能不优于 HOLD；cache 状态与校准；真实 kernel cost。
 
 ## 下一次允许采取的动作
 
-先过 transport-vs-HOLD、risk-regret correlation、held-out calibration，再启动多 seed。
+只有重新定义风险聚合尺度、重新预注册并通过 P3，才允许启动 Stage C、多 seed 与 P5。
 
 ## Connections
 
