@@ -16,6 +16,16 @@ from .acquisition import (
 )
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
 from .structured_selection import StructuredSelectionOutput, global_structured_topk
+from .transition_only import (
+    ASFORMER_ENCODER_HIDDEN_KIND,
+    DucaTransitionUtilityScorer,
+    balanced_binary_actionness_loss,
+    build_transition_descriptors,
+    continuous_policy_logits,
+    local_boundary_coverage_loss,
+    transition_distribution_loss,
+    transition_utility_paths,
+)
 
 __all__ = [
     "DucaAcquisitionAdapter",
@@ -25,6 +35,9 @@ __all__ = [
     "PrefixMarginalUtilityBudgetController",
     "SparseTemporalGrid",
     "StructuredSelectionOutput",
+    "ASFORMER_ENCODER_HIDDEN_KIND",
+    "DucaTransitionUtilityScorer",
+    "balanced_binary_actionness_loss",
     "ZeroShotActionnessSource",
     "budgeted_center_radius_decode",
     "duca_forward_test",
@@ -33,7 +46,12 @@ __all__ = [
     "gather_selected_observations",
     "hard_topk_st",
     "global_structured_topk",
+    "build_transition_descriptors",
+    "continuous_policy_logits",
+    "local_boundary_coverage_loss",
     "make_audit_record",
     "temporal_max_gap_hole_loss",
+    "transition_distribution_loss",
+    "transition_utility_paths",
     "validate_actionness_provenance",
 ]

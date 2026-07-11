@@ -232,13 +232,18 @@ class DucaOnlineFrameSelector(nn.Module):
         max_radius: int = 16,
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
+        inference_policy_alpha: float = 1.0,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
+        coarse_trunk_lr: float = 2.5e-5,
+        action_head_lr: float = 5.0e-5,
+        transition_scorer_lr: float = 1.0e-4,
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
+        selector_variant: str = "direct_boundary",
         coarse_hidden_dim: Optional[int] = None,
         use_coarse_hidden_features: bool = True,
         require_coarse_hidden_features: Optional[bool] = None,
@@ -247,6 +252,11 @@ class DucaOnlineFrameSelector(nn.Module):
         fail_on_infeasible_max_gap: bool = True,
         max_gap_loss_max_unselected_hole: Optional[int] = None,
         max_gap_loss_min_window_mass: float = 1.0,
+        soft_max_gap_loss_enabled: bool = True,
+        transition_target_sigma: float = 2.0,
+        transition_target_radius: int = 4,
+        transition_boundary_radius: int = 4,
+        transition_distribution_temperature: float = 0.7,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
         coordinate_space: str = SELECTED_AXIS,
@@ -299,12 +309,23 @@ class DucaOnlineFrameSelector(nn.Module):
         self.max_radius = int(max_radius)
         self.acquisition_policy = str(acquisition_policy)
         self.structured_temperature = float(structured_temperature)
+        self.inference_policy_alpha = float(inference_policy_alpha)
+        if not 0.0 <= self.inference_policy_alpha <= 1.0:
+            raise ValueError("inference_policy_alpha must lie in [0,1]")
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
+        self.coarse_trunk_lr = float(coarse_trunk_lr)
+        self.action_head_lr = float(action_head_lr)
+        self.transition_scorer_lr = float(transition_scorer_lr)
+        if min(self.coarse_trunk_lr, self.action_head_lr, self.transition_scorer_lr) <= 0.0:
+            raise ValueError("transition-only component learning rates must be positive")
         self.actionness_weight = float(actionness_weight)
         self.transition_weight = float(transition_weight)
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
+        self.selector_variant = str(selector_variant)
+        if self.selector_variant not in {"direct_boundary", "transition_only"}:
+            raise ValueError("selector_variant must be direct_boundary or transition_only")
         self.coarse_hidden_dim = 0 if coarse_hidden_dim in (None, 0) else int(coarse_hidden_dim)
         if self.coarse_hidden_dim < 0:
             raise ValueError("coarse_hidden_dim must be non-negative")
@@ -323,6 +344,17 @@ class DucaOnlineFrameSelector(nn.Module):
             else int(max_gap_loss_max_unselected_hole)
         )
         self.max_gap_loss_min_window_mass = float(max_gap_loss_min_window_mass)
+        self.soft_max_gap_loss_enabled = bool(soft_max_gap_loss_enabled)
+        self.transition_target_sigma = float(transition_target_sigma)
+        self.transition_target_radius = int(transition_target_radius)
+        self.transition_boundary_radius = int(transition_boundary_radius)
+        self.transition_distribution_temperature = float(transition_distribution_temperature)
+        if self.transition_target_sigma <= 0.0:
+            raise ValueError("transition_target_sigma must be positive")
+        if self.transition_distribution_temperature <= 0.0:
+            raise ValueError("transition_distribution_temperature must be positive")
+        if self.transition_target_radius < 0 or self.transition_boundary_radius < 0:
+            raise ValueError("transition target/coverage radii must be non-negative")
         self.detector_gradient_mode = str(detector_gradient_mode)
         self.selected_positions_coordinate = str(coordinate_space)
         self.detector_output_coordinate_space = str(detector_output_coordinate_space)
@@ -385,6 +417,17 @@ class DucaOnlineFrameSelector(nn.Module):
             or self.require_external_actionness
         ):
             raise ValueError("forbid_external_actionness conflicts with configured external actionness inputs")
+        if self.selector_variant == "transition_only":
+            if self.budget_mode != "fixed":
+                raise ValueError("transition_only currently supports only a fixed exact budget")
+            if self.acquisition_policy != "global_structured_topk":
+                raise ValueError("transition_only requires global_structured_topk")
+            if self.max_unselected_hole is None:
+                raise ValueError("transition_only requires max_unselected_hole")
+            if not self.use_coarse_hidden_features:
+                raise ValueError("transition_only requires official ASFormer encoder hidden features")
+            if not self.forbid_external_actionness:
+                raise ValueError("transition_only requires an in-graph coarse probe, not external actionness")
 
         actionness_source = None
         self.raw_actionness_source = None
@@ -394,6 +437,13 @@ class DucaOnlineFrameSelector(nn.Module):
             source_type = cfg.pop("type", "ZeroShotActionnessSource")
             self.actionness_source_name = str(cfg.get("source_name") or source_type)
             if source_type == "C3CoarseProbeActionnessSource":
+                if self.selector_variant == "transition_only":
+                    if str(cfg.get("probe_model", "")) != "official-action-seg":
+                        raise ValueError("transition_only requires probe_model='official-action-seg'")
+                    if str(cfg.get("official_action_seg_backend", "")) != "official_asformer":
+                        raise ValueError("transition_only requires the official ASFormer backend")
+                    if bool(cfg.get("frozen", False)) or cfg.get("trainable") is False:
+                        raise ValueError("transition_only requires a trainable shared ASFormer probe")
                 inferred_hidden_dim = int(
                     cfg.get("coarse_hidden_dim")
                     or cfg.get("tcn_hidden_dim")
@@ -452,6 +502,7 @@ class DucaOnlineFrameSelector(nn.Module):
             uncertainty_weight=self.uncertainty_weight,
             utility_weight=self.utility_weight,
             boundary_weight=self.boundary_weight,
+            selector_variant=self.selector_variant,
             coarse_hidden_dim=self.coarse_hidden_dim if self.use_coarse_hidden_features else 0,
             require_coarse_hidden_features=bool(
                 self.use_coarse_hidden_features
@@ -479,20 +530,32 @@ class DucaOnlineFrameSelector(nn.Module):
         self._reject_external_actionness_payload(metas)
         self._reject_train_decision_payload(metas)
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
-        endpoint_targets = self._endpoint_targets_from_gt_segments(gt_segments, masks)
-        if endpoint_targets is None:
-            start_target = end_target = context_target = boundary_target = None
+        transition_target = None
+        if self.selector_variant == "transition_only":
+            start_target = end_target = context_target = None
+            transition_target = self._transition_target_from_gt_segments(
+                gt_segments,
+                masks,
+                sigma=self.transition_target_sigma,
+                truncate_radius=self.transition_target_radius,
+            )
+            boundary_target = transition_target
             boundary_utility_proxy_target = None
         else:
-            start_target, end_target, context_target = endpoint_targets
-            boundary_target = start_target + end_target
-            boundary_utility_proxy_target = 0.45 * start_target + 0.45 * end_target + 0.10 * context_target
-            proxy_mass = boundary_utility_proxy_target.sum(dim=1, keepdim=True)
-            boundary_utility_proxy_target = torch.where(
-                proxy_mass > 0,
-                boundary_utility_proxy_target / proxy_mass.clamp_min(torch.finfo(proxy_mass.dtype).eps),
-                boundary_utility_proxy_target,
-            )
+            endpoint_targets = self._endpoint_targets_from_gt_segments(gt_segments, masks)
+            if endpoint_targets is None:
+                start_target = end_target = context_target = boundary_target = None
+                boundary_utility_proxy_target = None
+            else:
+                start_target, end_target, context_target = endpoint_targets
+                boundary_target = start_target + end_target
+                boundary_utility_proxy_target = 0.45 * start_target + 0.45 * end_target + 0.10 * context_target
+                proxy_mass = boundary_utility_proxy_target.sum(dim=1, keepdim=True)
+                boundary_utility_proxy_target = torch.where(
+                    proxy_mass > 0,
+                    boundary_utility_proxy_target / proxy_mass.clamp_min(torch.finfo(proxy_mass.dtype).eps),
+                    boundary_utility_proxy_target,
+                )
         schedule_state = self._loss_schedule_state()
         outputs = self._forward_select(inputs, masks, metas, budget=budget, schedule_state=schedule_state)
         outputs["selector_outputs"]["loss_weight_schedule"] = schedule_state
@@ -502,12 +565,16 @@ class DucaOnlineFrameSelector(nn.Module):
             "uses_gt_labels": gt_labels is not None,
             "label_scope": "train_only",
             "uses_labels_at_inference": False,
-            "target_kinds": [
-                "coarse_actionness",
-                "start_endpoint",
-                "end_endpoint",
-                "boundary_context",
-            ]
+            "target_kinds": (
+                ["coarse_actionness", "transition_boundary"]
+                if self.selector_variant == "transition_only"
+                else [
+                    "coarse_actionness",
+                    "start_endpoint",
+                    "end_endpoint",
+                    "boundary_context",
+                ]
+            )
             if gt_segments is not None
             else [],
         }
@@ -515,9 +582,15 @@ class DucaOnlineFrameSelector(nn.Module):
             outputs["selector_outputs"]["action_target"] = action_target
         if boundary_target is not None:
             outputs["selector_outputs"]["boundary_target"] = boundary_target
-            outputs["selector_outputs"]["start_target"] = start_target
-            outputs["selector_outputs"]["end_target"] = end_target
-            outputs["selector_outputs"]["context_target"] = context_target
+            if self.selector_variant == "transition_only":
+                outputs["selector_outputs"]["transition_target"] = transition_target
+                outputs["selector_outputs"]["transition_target_kind"] = (
+                    "equal_mass_fixed_sigma_truncated_start_end_gaussians"
+                )
+            else:
+                outputs["selector_outputs"]["start_target"] = start_target
+                outputs["selector_outputs"]["end_target"] = end_target
+                outputs["selector_outputs"]["context_target"] = context_target
         if boundary_utility_proxy_target is not None:
             outputs["selector_outputs"]["boundary_utility_proxy_target"] = boundary_utility_proxy_target
             outputs["selector_outputs"]["boundary_utility_proxy_target_kind"] = (
@@ -532,12 +605,17 @@ class DucaOnlineFrameSelector(nn.Module):
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
             boundary_target=boundary_target,
-            start_target=start_target,
-            end_target=end_target,
-            context_target=context_target,
+            start_target=start_target if self.selector_variant == "direct_boundary" else None,
+            end_target=end_target if self.selector_variant == "direct_boundary" else None,
+            context_target=context_target if self.selector_variant == "direct_boundary" else None,
             action_target=action_target,
+            transition_target=transition_target,
             boundary_utility_proxy_target=boundary_utility_proxy_target,
-            max_unselected_hole=self.max_gap_loss_max_unselected_hole,
+            transition_boundary_radius=self.transition_boundary_radius,
+            transition_distribution_temperature=self.transition_distribution_temperature,
+            max_unselected_hole=(
+                self.max_gap_loss_max_unselected_hole if self.soft_max_gap_loss_enabled else 0
+            ),
             max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
             loss_weights=schedule_state["weights"],
         )
@@ -572,7 +650,7 @@ class DucaOnlineFrameSelector(nn.Module):
         out["shape"] = str(out.get("shape", out.get("curve", "linear"))).lower()
         if out["shape"] not in {"linear", "cosine"}:
             raise ValueError("loss_weight_schedule.shape must be linear or cosine")
-        entries: dict[str, tuple[float, float]] = {}
+        entries: dict[str, dict[str, Any]] = {}
         reserved = {"type", "warmup_steps", "transition_steps", "ramp_steps", "shape", "curve", "enabled"}
         for key, value in out.items():
             if key in reserved:
@@ -580,7 +658,20 @@ class DucaOnlineFrameSelector(nn.Module):
             if isinstance(value, Mapping):
                 if "start" not in value or "end" not in value:
                     raise ValueError(f"loss_weight_schedule.{key} must define start and end")
-                entries[str(key)] = (float(value["start"]), float(value["end"]))
+                entry_warmup = int(value.get("warmup_steps", out["warmup_steps"]))
+                entry_transition = int(value.get("transition_steps", out["transition_steps"]))
+                entry_shape = str(value.get("shape", out["shape"])).lower()
+                if entry_warmup < 0 or entry_transition < 0:
+                    raise ValueError(f"loss_weight_schedule.{key} step counts must be non-negative")
+                if entry_shape not in {"linear", "cosine"}:
+                    raise ValueError(f"loss_weight_schedule.{key}.shape must be linear or cosine")
+                entries[str(key)] = {
+                    "start": float(value["start"]),
+                    "end": float(value["end"]),
+                    "warmup_steps": entry_warmup,
+                    "transition_steps": entry_transition,
+                    "shape": entry_shape,
+                }
         out["entries"] = entries
         return out
 
@@ -598,9 +689,31 @@ class DucaOnlineFrameSelector(nn.Module):
                 "detector_gradient_weight": 1.0,
             }
         progress = self._loss_schedule_progress(step)
-        for key, (start, end) in self.loss_weight_schedule["entries"].items():
-            weights[key] = float(start + (end - start) * progress)
-        if progress <= 0.0:
+        entry_progress = {}
+        for key, entry in self.loss_weight_schedule["entries"].items():
+            item_progress = self._interpolation_progress(
+                step,
+                warmup=int(entry["warmup_steps"]),
+                transition=int(entry["transition_steps"]),
+                shape=str(entry["shape"]),
+            )
+            weights[key] = float(entry["start"] + (entry["end"] - entry["start"]) * item_progress)
+            entry_progress[key] = float(item_progress)
+        if self.selector_variant == "transition_only":
+            policy_alpha = float(weights.get("policy_alpha", 1.0))
+            detector_gradient = float(weights.get("detector_gradient", 0.0))
+            detector_end = float(
+                self.loss_weight_schedule["entries"].get("detector_gradient", {}).get("end", detector_gradient)
+            )
+            if policy_alpha <= 0.0:
+                phase = "uniform_policy_coarse_transition_learning"
+            elif policy_alpha < 1.0:
+                phase = "continuous_policy_homotopy"
+            elif detector_gradient < detector_end:
+                phase = "protected_detector_bridge_homotopy"
+            else:
+                phase = "joint_transition_detection"
+        elif progress <= 0.0:
             phase = "coarse_actionness_warmup"
         elif progress >= 1.0:
             phase = "joint_detection_selection"
@@ -616,26 +729,36 @@ class DucaOnlineFrameSelector(nn.Module):
             "progress": float(progress),
             "phase": phase,
             "weights": weights,
+            "entry_progress": entry_progress,
             "detector_gradient_weight": float(weights.get("detector_gradient", weights.get("detector", 1.0))),
         }
 
     def _loss_schedule_progress(self, step: int) -> float:
         if self.loss_weight_schedule is None:
             return 1.0
-        warmup = int(self.loss_weight_schedule["warmup_steps"])
-        transition = int(self.loss_weight_schedule["transition_steps"])
+        return self._interpolation_progress(
+            step,
+            warmup=int(self.loss_weight_schedule["warmup_steps"]),
+            transition=int(self.loss_weight_schedule["transition_steps"]),
+            shape=str(self.loss_weight_schedule.get("shape", "linear")),
+        )
+
+    @staticmethod
+    def _interpolation_progress(step: int, *, warmup: int, transition: int, shape: str) -> float:
         if step <= warmup:
             raw = 0.0
         elif transition <= 0:
             raw = 1.0
         else:
             raw = min(1.0, max(0.0, float(step - warmup) / float(transition)))
-        if self.loss_weight_schedule.get("shape") == "cosine":
+        if shape == "cosine":
             pi = torch.acos(torch.zeros((), dtype=torch.float64)).item() * 2.0
             raw = 0.5 - 0.5 * torch.cos(torch.tensor(raw * pi, dtype=torch.float64)).item()
         return float(raw)
 
     def _use_stable_structured_selection(self, schedule_state: Optional[Mapping[str, Any]]) -> bool:
+        if self.selector_variant == "transition_only":
+            return False
         if self.acquisition_policy != "global_structured_topk" or not self.training:
             return False
         if not isinstance(schedule_state, Mapping) or not bool(schedule_state.get("enabled", False)):
@@ -780,6 +903,51 @@ class DucaOnlineFrameSelector(nn.Module):
         )
 
     @staticmethod
+    def _transition_target_from_gt_segments(
+        gt_segments,
+        masks: torch.Tensor,
+        *,
+        sigma: float,
+        truncate_radius: int,
+    ) -> Optional[torch.Tensor]:
+        if gt_segments is None:
+            return None
+        if masks.ndim != 2:
+            raise ValueError("DUCA transition target generation expects dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match batch size for transition targets")
+        sigma = float(sigma)
+        truncate_radius = int(truncate_radius)
+        if sigma <= 0.0 or truncate_radius < 0:
+            raise ValueError("transition target sigma/radius are invalid")
+        device = masks.device
+        centers = torch.arange(temporal_len, device=device, dtype=torch.float32)
+        valid = masks.to(device=device, dtype=torch.bool)
+        target = torch.zeros(batch, temporal_len, device=device, dtype=torch.float32)
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=torch.float32)
+            seg = seg.to(device=device, dtype=torch.float32).reshape(-1, 2)
+            if seg.numel() == 0:
+                continue
+            endpoints = torch.stack(
+                (torch.minimum(seg[:, 0], seg[:, 1]), torch.maximum(seg[:, 0], seg[:, 1])),
+                dim=1,
+            ).reshape(-1)
+            row_valid = valid[batch_idx].to(dtype=torch.float32)
+            endpoint_mass = 1.0 / float(endpoints.numel())
+            for endpoint in endpoints:
+                distance = centers - endpoint
+                kernel = torch.exp(-0.5 * (distance / sigma).square())
+                kernel = kernel * (distance.abs() <= float(truncate_radius)).to(kernel.dtype) * row_valid
+                kernel_mass = kernel.sum()
+                if float(kernel_mass.detach().item()) > 0.0:
+                    target[batch_idx] += endpoint_mass * kernel / kernel_mass
+        return target.masked_fill(~valid, 0.0)
+
+    @staticmethod
     def _boundary_target_from_gt_segments(
         gt_segments,
         masks: torch.Tensor,
@@ -836,9 +1004,27 @@ class DucaOnlineFrameSelector(nn.Module):
         sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
         total_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         descriptor_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
-        descriptors = _time_descriptors_btc(inputs)
+        if self.selector_variant == "transition_only":
+            descriptors = torch.zeros(
+                int(masks.shape[0]),
+                int(masks.shape[1]),
+                self.in_channels,
+                device=inputs.device,
+                dtype=torch.float32,
+            )
+        else:
+            descriptors = _time_descriptors_btc(inputs)
         descriptor_ms = _elapsed_ms(descriptor_start, inputs, enabled=sync_enabled)
         descriptor_profile = self._descriptor_compute_profile(inputs, descriptors)
+        if self.selector_variant == "transition_only":
+            descriptor_profile = {
+                "operation": "omitted_raw_rgb_descriptor_for_transition_only",
+                "input_shape": [int(item) for item in inputs.shape],
+                "output_shape": [int(item) for item in descriptors.shape],
+                "estimated_macs": 0,
+                "estimated_flops": 0,
+                "uses_input_values": False,
+            }
         if descriptors.shape[-1] != self.in_channels:
             raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
         masks = masks.to(device=inputs.device, dtype=torch.bool)
@@ -856,6 +1042,7 @@ class DucaOnlineFrameSelector(nn.Module):
         actionness_logits = None
         p_action = None
         coarse_hidden_features = None
+        coarse_hidden_kind = None
         if external_actionness is not None:
             actionness_logits = external_actionness.get("actionness_logits")
             p_action = external_actionness.get("p_action")
@@ -867,7 +1054,13 @@ class DucaOnlineFrameSelector(nn.Module):
                 coarse_hidden_features = online_actionness.get("coarse_hidden_features")
                 if coarse_hidden_features is None:
                     coarse_hidden_features = online_actionness.get("hidden_features")
+                coarse_hidden_kind = online_actionness.get("hidden_kind")
         stable_selection = self._use_stable_structured_selection(schedule_state)
+        policy_mix_alpha = self.inference_policy_alpha
+        if self.training and self.selector_variant == "transition_only" and isinstance(schedule_state, Mapping):
+            schedule_weights = schedule_state.get("weights", {})
+            if isinstance(schedule_weights, Mapping):
+                policy_mix_alpha = float(schedule_weights.get("policy_alpha", schedule_state.get("progress", 1.0)))
         grid, scores = self.adapter.acquire(
             descriptors,
             budget=budget,
@@ -875,8 +1068,10 @@ class DucaOnlineFrameSelector(nn.Module):
             actionness_logits=actionness_logits,
             p_action=p_action,
             coarse_hidden_features=coarse_hidden_features,
+            coarse_hidden_kind=coarse_hidden_kind,
             compute_profile_context=profile_context,
             stable_selection=stable_selection,
+            policy_mix_alpha=policy_mix_alpha,
         )
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
@@ -975,6 +1170,8 @@ class DucaOnlineFrameSelector(nn.Module):
                 compute_profile,
                 dict(online_actionness.get("compute_profile", {})),
             )
+            if self.selector_variant == "transition_only":
+                compute_profile["pre_backbone_model"] = "OfficialASFormer+TransitionUtilityScorer"
         self._add_detector_gradient_bridge_profile(
             compute_profile,
             dense_inputs=inputs,
@@ -1015,6 +1212,9 @@ class DucaOnlineFrameSelector(nn.Module):
             "uses_coarse_hidden_features": bool(scores.get("uses_coarse_hidden_features", False)),
             "max_unselected_hole": self.max_unselected_hole,
             "selection_path": scores.get("selection_path", "legacy_center_radius"),
+            "selector_variant": self.selector_variant,
+            "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
+            "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),
         }
         if isinstance(schedule_state, Mapping):
             self.last_forward_summary["loss_weight_schedule"] = dict(schedule_state)

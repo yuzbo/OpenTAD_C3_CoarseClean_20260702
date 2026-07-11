@@ -2,12 +2,64 @@ import torch
 from .layer_decay_optimizer import build_vit_optimizer
 
 
+def assert_optimizer_exact_coverage(model, optimizer):
+    """Assert that optimizer groups exactly cover the model's trainable parameters."""
+    model_params = {
+        id(param): (name, param) for name, param in model.named_parameters()
+    }
+    optimizer_locations = {}
+
+    for group_index, group in enumerate(optimizer.param_groups):
+        for param_index, param in enumerate(group["params"]):
+            optimizer_locations.setdefault(id(param), []).append(
+                f"group {group_index} param {param_index}"
+            )
+
+    missing = [
+        name
+        for param_id, (name, param) in model_params.items()
+        if param.requires_grad and param_id not in optimizer_locations
+    ]
+    frozen = [
+        name
+        for param_id, (name, param) in model_params.items()
+        if not param.requires_grad and param_id in optimizer_locations
+    ]
+    stale = [
+        ", ".join(locations)
+        for param_id, locations in optimizer_locations.items()
+        if param_id not in model_params
+    ]
+    duplicate = [
+        f"{model_params[param_id][0] if param_id in model_params else '<stale>'} "
+        f"({', '.join(locations)})"
+        for param_id, locations in optimizer_locations.items()
+        if len(locations) != 1
+    ]
+
+    problems = []
+    if missing:
+        problems.append(f"missing={missing}")
+    if frozen:
+        problems.append(f"frozen={frozen}")
+    if stale:
+        problems.append(f"stale={stale}")
+    if duplicate:
+        problems.append(f"duplicate={duplicate}")
+    if problems:
+        raise AssertionError(
+            "Optimizer parameter coverage is not exact: " + "; ".join(problems)
+        )
+
+
 def build_optimizer(cfg, model, logger):
     optimizer_type = cfg["type"]
     cfg.pop("type")
 
     if optimizer_type == "LayerDecayAdamW":
-        return build_vit_optimizer(cfg, model, logger)
+        optimizer = build_vit_optimizer(cfg, model, logger)
+        assert_optimizer_exact_coverage(model.module, optimizer)
+        return optimizer
 
     # set the backbone's optim_groups: SHOULD ONLY CONTAIN BACKBONE PARAMS
     if hasattr(model.module, "backbone"):  # if backbone exists
@@ -38,7 +90,8 @@ def build_optimizer(cfg, model, logger):
             # exclude the backbone
             if name.startswith("backbone"):
                 continue
-            detector_params.append(param)
+            if param.requires_grad:
+                detector_params.append(param)
         det_optim_groups = [dict(params=detector_params)]
 
     # merge the optim_groups
@@ -53,6 +106,7 @@ def build_optimizer(cfg, model, logger):
     else:
         raise f"Optimizer {optimizer_type} is not supported so far."
 
+    assert_optimizer_exact_coverage(model.module, optimizer)
     return optimizer
 
 
@@ -85,6 +139,8 @@ def get_backbone_optim_groups(cfg, model, logger):
     name_list = []
     # split the backbone parameters into different groups
     for name, param in model.module.backbone.named_parameters():
+        if not param.requires_grad:
+            continue
         # loop the exclude_name_list
         is_exclude = False
         if len(exclude_name_list) > 0:
@@ -102,6 +158,9 @@ def get_backbone_optim_groups(cfg, model, logger):
                     name_list.append(name)
                     is_custom = True
                     break
+
+        if is_exclude and not is_custom:
+            param.requires_grad_(False)
 
         # if is_custom, we have already appended the param to the custom_params_list
         # if is _exclude, we do not need to append the param to the rest_params_list

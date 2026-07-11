@@ -13,6 +13,15 @@ import torch.nn.functional as F
 
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
 from .structured_selection import global_structured_topk
+from .transition_only import (
+    ASFORMER_ENCODER_HIDDEN_KIND,
+    DucaTransitionUtilityScorer,
+    balanced_binary_actionness_loss,
+    continuous_policy_logits,
+    local_boundary_coverage_loss,
+    transition_distribution_loss,
+    transition_utility_paths,
+)
 
 
 TensorLikeBudget = Union[int, torch.Tensor]
@@ -762,6 +771,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         temporal_len = int(logits.shape[1])
         tokens = batch * temporal_len
         spatial = int(self.spatial_size)
+        estimate_breakdown: Dict[str, int] = {}
         if self.probe_model == "mobilenetv3":
             per_frame_macs = int(56_500_000 * (spatial / 224.0) ** 2)
             macs = tokens * per_frame_macs
@@ -776,7 +786,23 @@ class C3CoarseProbeActionnessSource(nn.Module):
             family = f"TemporalTCN/{self.tcn_variant}"
         elif self.probe_model == "official-action-seg":
             hidden = max(16, self.tcn_hidden_dim)
-            macs = int(tokens * hidden * hidden * 10 + batch * temporal_len * temporal_len * hidden * 4)
+            first_spatial = (spatial + 1) // 2
+            second_spatial = (first_spatial + 1) // 2
+            stem_conv1_macs = tokens * first_spatial * first_spatial * hidden * 3 * 3 * 3
+            stem_conv2_macs = tokens * second_spatial * second_spatial * hidden * hidden * 3 * 3
+            temporal_layers = max(1, int(getattr(self.probe, "num_layers", 1)))
+            temporal_linear_macs = tokens * hidden * hidden * 10 * temporal_layers
+            sliding_window = min(64, temporal_len)
+            temporal_attention_macs = (
+                batch * temporal_len * sliding_window * hidden * 4 * temporal_layers * 2
+            )
+            estimate_breakdown = {
+                "spatial_stem_conv1_macs": int(stem_conv1_macs),
+                "spatial_stem_conv2_macs": int(stem_conv2_macs),
+                "official_asformer_linear_macs_approx": int(temporal_linear_macs),
+                "official_asformer_sliding_attention_macs_approx": int(temporal_attention_macs),
+            }
+            macs = int(sum(estimate_breakdown.values()))
             family = f"OfficialActionSeg/{self._provenance_override.get('official_action_seg_backend')}"
         else:
             macs = int(tokens * max(params["total"], 1))
@@ -796,6 +822,8 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "online_backbone_flops_included": True,
             "estimated_macs": int(macs),
             "estimated_flops": int(2 * macs),
+            "estimate_breakdown": estimate_breakdown,
+            "estimate_semantics": "architecture_analytic_estimate_not_operator_profiler_measurement",
             "parameters": params,
             "latency_ms": {"coarse_probe_ms": latency_ms},
             "input_shape": [int(v) for v in inputs.shape],
@@ -840,6 +868,10 @@ class C3CoarseProbeActionnessSource(nn.Module):
         else:
             probe_output = call_probe()
         hidden = None
+        hidden_kind = None
+        official_source_sha256 = None
+        official_source_normalized_lf_sha256 = None
+        official_source_file = None
         if isinstance(probe_output, Mapping):
             logits = probe_output.get("logits")
             hidden = (
@@ -849,6 +881,12 @@ class C3CoarseProbeActionnessSource(nn.Module):
             )
             if logits is None:
                 raise ValueError("C3 coarse probe output mapping must contain logits")
+            hidden_kind = probe_output.get("hidden_kind")
+            official_source_sha256 = probe_output.get("official_source_sha256")
+            official_source_normalized_lf_sha256 = probe_output.get(
+                "official_source_normalized_lf_sha256"
+            )
+            official_source_file = probe_output.get("official_source_file")
         else:
             logits = probe_output
         if hidden is None and self.return_hidden_features and self.require_hidden_features:
@@ -883,7 +921,22 @@ class C3CoarseProbeActionnessSource(nn.Module):
         if hidden is not None:
             output["coarse_hidden_features"] = hidden
             output["hidden_features"] = hidden
+            output["hidden_kind"] = hidden_kind
+            output["official_source_sha256"] = official_source_sha256
+            output["official_source_normalized_lf_sha256"] = official_source_normalized_lf_sha256
+            output["official_source_file"] = official_source_file
             profile["hidden_output_shape"] = [int(v) for v in hidden.shape]
+            profile["hidden_kind"] = hidden_kind
+            profile["official_source_sha256"] = official_source_sha256
+            profile["official_source_normalized_lf_sha256"] = official_source_normalized_lf_sha256
+            output["provenance"].update(
+                {
+                    "hidden_kind": hidden_kind,
+                    "official_source_sha256": official_source_sha256,
+                    "official_source_normalized_lf_sha256": official_source_normalized_lf_sha256,
+                    "official_source_file": official_source_file,
+                }
+            )
         return output
 
 
@@ -911,6 +964,7 @@ class DucaAcquisitionAdapter(nn.Module):
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
+        selector_variant: str = "direct_boundary",
         coarse_hidden_dim: Optional[int] = None,
         require_coarse_hidden_features: bool = False,
         max_unselected_hole: Optional[int] = None,
@@ -969,6 +1023,9 @@ class DucaAcquisitionAdapter(nn.Module):
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
+        self.selector_variant = str(selector_variant)
+        if self.selector_variant not in {"direct_boundary", "transition_only"}:
+            raise ValueError("selector_variant must be direct_boundary or transition_only")
         self.coarse_hidden_dim = 0 if coarse_hidden_dim in (None, 0) else int(coarse_hidden_dim)
         if self.coarse_hidden_dim < 0:
             raise ValueError("coarse_hidden_dim must be non-negative")
@@ -985,7 +1042,31 @@ class DucaAcquisitionAdapter(nn.Module):
         self.last_compute_profile: Dict[str, Any] = {}
         self.actionness_source = actionness_source or ZeroShotActionnessSource(feature_dim=feature_dim, mode="motion")
         self.feature_dim = None if feature_dim is None else int(feature_dim)
-        if self.feature_dim is None:
+        self.transition_scorer = None
+        if self.selector_variant == "transition_only":
+            if self.dynamic_budget:
+                raise ValueError("transition_only is intentionally fixed-budget until its fixed policy is validated")
+            if self.acquisition_policy != "global_structured_topk":
+                raise ValueError("transition_only requires global_structured_topk")
+            if self.max_unselected_hole is None:
+                raise ValueError("transition_only requires an explicit max_unselected_hole")
+            if self.coarse_hidden_dim <= 0:
+                raise ValueError("transition_only requires official ASFormer encoder hidden features")
+            if int(hidden_dim) <= 0:
+                raise ValueError("transition_only requires a positive scorer hidden dimension")
+            self.encoder = None
+            self.center_head = None
+            self.radius_head = None
+            self.start_head = None
+            self.end_head = None
+            self.context_head = None
+            self.utility_head = None
+            self.transition_scorer = DucaTransitionUtilityScorer(
+                hidden_dim=self.coarse_hidden_dim,
+                scorer_hidden_dim=int(hidden_dim),
+            )
+            selector_feature_dim = int(self.transition_scorer.input_dim)
+        elif self.feature_dim is None:
             self.encoder = None
             self.center_head = None
             self.radius_head = None
@@ -1115,6 +1196,23 @@ class DucaAcquisitionAdapter(nn.Module):
             "trainable": int(params["trainable"] - actionness_params["trainable"]),
         }
         if self.encoder is None:
+            if self.transition_scorer is not None:
+                hidden = int(self.transition_scorer.scorer_hidden_dim)
+                in_dim = int(self.transition_scorer.input_dim)
+                macs = tokens * (in_dim * hidden + hidden)
+                flops = 2 * macs + tokens * (6 * in_dim + 8 * hidden + 16)
+                return {
+                    "head": "DucaTransitionUtilityScorer",
+                    "selector_variant": self.selector_variant,
+                    "hidden_dim": hidden,
+                    "input_dim": in_dim,
+                    "coarse_hidden_dim": int(self.coarse_hidden_dim),
+                    "uses_absolute_hidden_features": False,
+                    "uses_raw_rgb_descriptors": False,
+                    "estimated_macs": int(macs),
+                    "estimated_flops": int(flops),
+                    "parameters": selector_params,
+                }
             flops = tokens * 24
             return {
                 "head": "analytic_score_no_mlp",
@@ -1195,8 +1293,16 @@ class DucaAcquisitionAdapter(nn.Module):
             temporal_len=temporal_len,
         )
         descriptor = dict(descriptor_profile or {"estimated_macs": 0, "estimated_flops": 0})
-        soft_coverage_macs = batch_size * temporal_len * temporal_len
-        soft_coverage_flops = soft_coverage_macs * 8
+        if self.acquisition_policy == "global_structured_topk":
+            max_hole = temporal_len if self.max_unselected_hole is None else int(self.max_unselected_hole)
+            dp_states = batch_size * temporal_len * min(self.budget, temporal_len) * (max_hole + 1)
+            soft_coverage_macs = dp_states * (3 if self.training else 1)
+            soft_coverage_flops = soft_coverage_macs * 8
+            structured_complexity = "O(B*T*K*(G+1)) exact-K/max-gap dynamic program"
+        else:
+            soft_coverage_macs = batch_size * temporal_len * temporal_len
+            soft_coverage_flops = soft_coverage_macs * 8
+            structured_complexity = "O(B*T^2) center-radius soft coverage"
         gather_flops = batch_size * min(self.budget, temporal_len) * feature_dim
         components = {
             "descriptor": descriptor,
@@ -1206,7 +1312,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "soft_coverage": {
                 "estimated_macs": int(soft_coverage_macs),
                 "estimated_flops": int(soft_coverage_flops),
-                "complexity": "O(B*T^2)",
+                "complexity": structured_complexity,
             },
             "hard_decode": {
                 "estimated_macs": 0,
@@ -1233,6 +1339,8 @@ class DucaAcquisitionAdapter(nn.Module):
             "budget_max": int(self.budget),
             "estimated_macs": int(total_macs),
             "estimated_flops": int(total_flops),
+            "estimated_flops_are_lower_bound": False,
+            "complete_memory_accounting": False,
             "parameters": param_counts,
             "actionness": actionness,
             "components": components,
@@ -1249,6 +1357,7 @@ class DucaAcquisitionAdapter(nn.Module):
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
+        coarse_hidden_kind: Optional[str] = None,
     ) -> Dict[str, Any]:
         if dense_observations.ndim != 3:
             raise ValueError(f"dense_observations must be [B,T,C], got {tuple(dense_observations.shape)}")
@@ -1286,7 +1395,30 @@ class DucaAcquisitionAdapter(nn.Module):
                 dense_observations.shape[1],
                 int(self.coarse_hidden_dim),
             )
-        if self.encoder is None:
+        transition_paths = None
+        if self.selector_variant == "transition_only":
+            if coarse_hidden_kind != ASFORMER_ENCODER_HIDDEN_KIND:
+                raise ValueError(
+                    "transition_only requires hidden_kind="
+                    f"{ASFORMER_ENCODER_HIDDEN_KIND!r}, got {coarse_hidden_kind!r}"
+                )
+            if coarse_hidden is None or self.transition_scorer is None:
+                raise RuntimeError("transition_only requires a shared transition scorer and coarse hidden state")
+            transition_paths = transition_utility_paths(
+                self.transition_scorer,
+                source["logits"],
+                coarse_hidden,
+                valid,
+                compute_auxiliary=self.training,
+            )
+            center_scores = transition_paths["policy_scores"]
+            selection_features = transition_paths["transition_descriptors"]
+            radius = center_scores.new_zeros(center_scores.shape)
+            start_logits = center_scores.new_zeros(center_scores.shape)
+            end_logits = center_scores.new_zeros(center_scores.shape)
+            context_logits = center_scores.new_zeros(center_scores.shape)
+            utility_scores = center_scores
+        elif self.encoder is None:
             delta = source["delta_p_action"].to(dense_observations.device, dense_observations.dtype)
             eps = torch.finfo(delta.dtype).eps
             start_prob = delta.clamp(0.0, 1.0).clamp(eps, 1.0 - eps)
@@ -1337,7 +1469,7 @@ class DucaAcquisitionAdapter(nn.Module):
             )
         center_scores = center_scores.masked_fill(~valid, _neg(center_scores.dtype))
         radius = radius.masked_fill(~valid, 0.0).clamp(0.0, float(self.max_radius))
-        return {
+        output = {
             "center_scores": center_scores,
             "scores": center_scores,
             "radius": radius,
@@ -1357,9 +1489,23 @@ class DucaAcquisitionAdapter(nn.Module):
             "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
             "coarse_hidden_features": None if coarse_hidden is None else coarse_hidden.masked_fill(~valid[:, :, None], 0.0),
             "uses_coarse_hidden_features": bool(has_coarse_hidden_features),
+            "coarse_hidden_kind": coarse_hidden_kind,
+            "selector_variant": self.selector_variant,
             "valid_mask": valid,
             "provenance": source["provenance"],
         }
+        if transition_paths is not None:
+            output.update(
+                {
+                    "transition_descriptors": transition_paths["transition_descriptors"],
+                    "transition_auxiliary_scores": transition_paths["auxiliary_scores"],
+                    "transition_policy_scores": transition_paths["policy_scores"],
+                    "uses_absolute_hidden_features": False,
+                    "uses_raw_rgb_descriptors": False,
+                    "legacy_direct_heads_enabled": False,
+                }
+            )
+        return output
 
     def _decode_global_structured(
         self,
@@ -1368,6 +1514,7 @@ class DucaAcquisitionAdapter(nn.Module):
         budgets: torch.Tensor,
         *,
         stable_selection: bool,
+        policy_mix_alpha: float,
     ) -> Dict[str, Any]:
         batch, temporal_len = center_scores.shape
         max_slots = int(self.budget)
@@ -1377,6 +1524,7 @@ class DucaAcquisitionAdapter(nn.Module):
         soft_rows = []
         slot_rows = []
         effective_rows = []
+        policy_rows = []
         for batch_idx in range(batch):
             valid_positions = torch.nonzero(valid_mask[batch_idx], as_tuple=False).flatten()
             valid_count = int(valid_positions.numel())
@@ -1386,7 +1534,14 @@ class DucaAcquisitionAdapter(nn.Module):
             effective_k = min(int(budgets[batch_idx].item()), valid_count)
             max_hole = valid_count if self.max_unselected_hole is None else int(self.max_unselected_hole)
             policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
-            if stable_selection:
+            if self.selector_variant == "transition_only":
+                policy_scores = continuous_policy_logits(
+                    policy_scores,
+                    torch.ones_like(policy_scores, dtype=torch.bool),
+                    k=effective_k,
+                    alpha=float(policy_mix_alpha),
+                )
+            elif stable_selection:
                 learned_scores = policy_scores
                 if effective_k == 0:
                     reference_scores = policy_scores.detach().new_zeros((1, valid_count))
@@ -1400,6 +1555,9 @@ class DucaAcquisitionAdapter(nn.Module):
                     )
                     reference_scores = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values[None, :]
                 policy_scores = reference_scores + learned_scores * 0.0
+            policy_row = center_scores.new_zeros(temporal_len)
+            policy_row[:valid_count] = policy_scores[0]
+            policy_rows.append(policy_row)
             structured = global_structured_topk(
                 policy_scores,
                 k=effective_k,
@@ -1437,8 +1595,18 @@ class DucaAcquisitionAdapter(nn.Module):
             "fill_strategy": ["global_structured_map" for _ in range(batch)],
             "max_gap_repair": [{"enabled": False, "encoded_in_policy": True} for _ in range(batch)],
             "selection_path": (
-                "stable_structured_reference" if stable_selection else "learned_global_structured"
+                "transition_uniform_reference"
+                if self.selector_variant == "transition_only" and float(policy_mix_alpha) <= 0.0
+                else "transition_learned"
+                if self.selector_variant == "transition_only" and float(policy_mix_alpha) >= 1.0
+                else "transition_continuous_homotopy"
+                if self.selector_variant == "transition_only"
+                else "stable_structured_reference"
+                if stable_selection
+                else "learned_global_structured"
             ),
+            "decode_policy_logits": torch.stack(policy_rows, dim=0),
+            "policy_mix_alpha": float(policy_mix_alpha),
         }
 
     def acquire(
@@ -1449,8 +1617,10 @@ class DucaAcquisitionAdapter(nn.Module):
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
+        coarse_hidden_kind: Optional[str] = None,
         compute_profile_context: Optional[Mapping[str, Any]] = None,
         stable_selection: bool = False,
+        policy_mix_alpha: float = 1.0,
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
         profile_enabled = bool(self.profile_runtime)
         sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
@@ -1462,6 +1632,7 @@ class DucaAcquisitionAdapter(nn.Module):
             actionness_logits=actionness_logits,
             p_action=p_action,
             coarse_hidden_features=coarse_hidden_features,
+            coarse_hidden_kind=coarse_hidden_kind,
         )
         score_ms = _elapsed_ms(score_start, dense_observations, enabled=sync_enabled)
         budget_decision: Optional[DynamicBudgetDecision] = None
@@ -1501,6 +1672,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 scores["valid_mask"],
                 budgets,
                 stable_selection=bool(stable_selection),
+                policy_mix_alpha=float(policy_mix_alpha),
             )
         else:
             decoded = budgeted_center_radius_decode(
@@ -1613,6 +1785,8 @@ class DucaAcquisitionAdapter(nn.Module):
                 "soft_coverage": soft_coverage,
                 "structured_soft_slot_assignment": decoded.get("soft_slot_assignment"),
                 "selection_path": decoded.get("selection_path", "legacy_center_radius"),
+                "decode_policy_logits": decoded.get("decode_policy_logits"),
+                "policy_mix_alpha": float(decoded.get("policy_mix_alpha", policy_mix_alpha)),
                 "decode_metadata": grid.metadata,
                 "budget_decision": budget_decision,
                 "dynamic_budget": bool(self.dynamic_budget),
@@ -1640,6 +1814,7 @@ class DucaAcquisitionAdapter(nn.Module):
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
+        coarse_hidden_kind: Optional[str] = None,
         return_audit: bool = False,
     ) -> Dict[str, Any]:
         grid, scores = self.acquire(
@@ -1649,6 +1824,7 @@ class DucaAcquisitionAdapter(nn.Module):
             actionness_logits=actionness_logits,
             p_action=p_action,
             coarse_hidden_features=coarse_hidden_features,
+            coarse_hidden_kind=coarse_hidden_kind,
         )
         gathered = gather_selected_observations(dense_observations, grid.selected_positions, grid.selected_mask)
         st_weights = torch.gather(scores["selected_mask_st"], 1, grid.selected_positions.clamp_min(0))
@@ -2307,6 +2483,7 @@ def duca_losses(
     end_target: Optional[torch.Tensor] = None,
     context_target: Optional[torch.Tensor] = None,
     action_target: Optional[torch.Tensor] = None,
+    transition_target: Optional[torch.Tensor] = None,
     detector_loss: Optional[torch.Tensor] = None,
     utility_gain: Optional[torch.Tensor] = None,
     utility_risk: Optional[torch.Tensor] = None,
@@ -2319,6 +2496,8 @@ def duca_losses(
     max_unselected_hole: Optional[int] = None,
     max_gap_loss_min_window_mass: float = 1.0,
     max_gap_loss_source: str = "soft_coverage",
+    transition_boundary_radius: int = 4,
+    transition_distribution_temperature: float = 0.7,
     loss_weights: Optional[Mapping[str, float]] = None,
 ) -> Dict[str, torch.Tensor]:
     """DUCA acquisition regularizers plus optional train-only utility loss."""
@@ -2329,6 +2508,8 @@ def duca_losses(
     end_logits = None
     context_logits = None
     utility_scores = None
+    transition_auxiliary_scores = None
+    selector_variant = "direct_boundary"
     if isinstance(scores, Mapping):
         output = scores
         center_scores = output["center_scores"] if "center_scores" in output else output["scores"]
@@ -2349,6 +2530,8 @@ def duca_losses(
         end_logits = output.get("end_logits")
         context_logits = output.get("context_logits")
         utility_scores = output.get("utility_scores")
+        transition_auxiliary_scores = output.get("transition_auxiliary_scores")
+        selector_variant = str(output.get("selector_variant", "direct_boundary"))
         detector_utility_target = (
             detector_utility_target
             if detector_utility_target is not None
@@ -2388,6 +2571,8 @@ def duca_losses(
         "lagrangian_budget": 1.0,
         "marginal_monotonic": 0.01,
         "hard_budget_cap": 1.0,
+        "transition": 0.0,
+        "transition_boundary": 0.0,
     }
     if loss_weights is not None:
         weights.update({key: float(value) for key, value in loss_weights.items()})
@@ -2479,6 +2664,32 @@ def duca_losses(
         )
     else:
         losses["boundary_context_distribution_loss"] = zero
+    if transition_target is not None:
+        if transition_auxiliary_scores is None:
+            raise ValueError("transition_auxiliary_scores are required when transition_target is provided")
+        losses["transition_distribution_loss"] = (
+            transition_distribution_loss(
+                transition_auxiliary_scores.to(center_scores.dtype),
+                transition_target,
+                valid,
+                temperature=float(transition_distribution_temperature),
+            )
+            * weights["transition"]
+        )
+        if not isinstance(scores, Mapping) or scores.get("soft_coverage") is None:
+            raise ValueError("transition boundary coverage requires structured soft_coverage")
+        losses["transition_boundary_coverage_loss"] = (
+            local_boundary_coverage_loss(
+                scores["soft_coverage"],
+                transition_target,
+                valid,
+                radius=int(transition_boundary_radius),
+            )
+            * weights["transition_boundary"]
+        )
+    else:
+        losses["transition_distribution_loss"] = zero
+        losses["transition_boundary_coverage_loss"] = zero
     if boundary_target is not None:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")
@@ -2497,9 +2708,15 @@ def duca_losses(
             if logits.shape != center_scores.shape:
                 raise ValueError("actionness_logits must match scores when action_target is provided")
             logits = logits.masked_fill(~valid, 0.0)
-            bce = F.binary_cross_entropy_with_logits(logits, action, reduction="none").masked_fill(~valid, 0.0)
-            denom = valid.to(center_scores.dtype).sum(dim=1).clamp_min(1.0)
-            losses["actionness_bce_loss"] = ((bce.sum(dim=1) / denom).mean()) * weights["actionness"]
+            if selector_variant == "transition_only":
+                actionness_loss, positive_weight = balanced_binary_actionness_loss(logits, action, valid)
+                losses["actionness_bce_loss"] = actionness_loss * weights["actionness"]
+                if isinstance(scores, dict):
+                    scores["actionness_positive_weight"] = positive_weight
+            else:
+                bce = F.binary_cross_entropy_with_logits(logits, action, reduction="none").masked_fill(~valid, 0.0)
+                denom = valid.to(center_scores.dtype).sum(dim=1).clamp_min(1.0)
+                losses["actionness_bce_loss"] = ((bce.sum(dim=1) / denom).mean()) * weights["actionness"]
         else:
             losses["actionness_bce_loss"] = zero
         local = F.max_pool1d(selected[:, None, :].clamp(0.0, 1.0), kernel_size=9, stride=1, padding=4).squeeze(1)

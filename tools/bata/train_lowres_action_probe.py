@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
@@ -1817,6 +1818,12 @@ class C3TemporalTCNActionProbe:
 
 
 def _official_repos_root() -> Path:
+    configured = os.environ.get("C3_OFFICIAL_ACTION_SEG_REPOS")
+    if configured:
+        root = Path(configured).expanduser().resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(f"C3_OFFICIAL_ACTION_SEG_REPOS is not a directory: {root}")
+        return root
     here = Path(__file__).resolve()
     candidates = []
     for parent in here.parents:
@@ -2062,6 +2069,7 @@ class C3OfficialActionSegmentationProbe:
             "repo_root": str(repo_root),
             "repo_path": "",
             "compatibility_shim": None,
+            "source_sha256": None,
         }
 
         temporal_dim = max(16, int(hidden_dim))
@@ -2132,6 +2140,25 @@ class C3OfficialActionSegmentationProbe:
             )
             self.official_source.update(repo_path=str(repo_root / "video-mamba-suite"), compatibility_shim=None)
         self.module.official_temporal = self.official_temporal
+        source_paths = {
+            "official_ms_tcn2": repo_root / "MS-TCN2" / "model.py",
+            "official_asformer": repo_root / "ASFormer" / "model.py",
+            "official_fact": repo_root / "CVPR2024-FACT" / "models" / "blocks.py",
+            "official_video_mamba_asformer": repo_root
+            / "video-mamba-suite"
+            / "video-mamba-suite"
+            / "temporal-action-segmentation"
+            / "model.py",
+        }
+        source_path = source_paths[self.backend]
+        if not source_path.is_file():
+            raise FileNotFoundError(f"official action-seg source is missing: {source_path}")
+        source_bytes = source_path.read_bytes()
+        self.official_source["source_file"] = str(source_path)
+        self.official_source["source_sha256"] = hashlib.sha256(source_bytes).hexdigest()
+        self.official_source["source_normalized_lf_sha256"] = hashlib.sha256(
+            source_bytes.replace(b"\r\n", b"\n")
+        ).hexdigest()
 
     def _sync_official_runtime_tensors(self, device: Any) -> None:
         for submodule in self.official_temporal.modules():
@@ -2191,9 +2218,25 @@ class C3OfficialActionSegmentationProbe:
             logits = outputs[-1, :, 1, :] - outputs[-1, :, 0, :]
         elif self.backend == "official_asformer":
             rows = []
-            for idx in range(int(batch)):
-                outputs = self.official_temporal(features[idx : idx + 1], mask[idx : idx + 1, None, :].float())
-                rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
+            encoder_hidden_rows = []
+            hook = None
+            if return_hidden:
+                def capture_encoder_hidden(_module, _inputs, output):
+                    if not isinstance(output, tuple) or len(output) != 2:
+                        raise RuntimeError("official ASFormer encoder must return (logits, hidden)")
+                    encoder_hidden_rows.append(output[1])
+
+                hook = self.official_temporal.encoder.register_forward_hook(capture_encoder_hidden)
+            try:
+                for idx in range(int(batch)):
+                    outputs = self.official_temporal(
+                        features[idx : idx + 1],
+                        mask[idx : idx + 1, None, :].float(),
+                    )
+                    rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
+            finally:
+                if hook is not None:
+                    hook.remove()
             logits = torch.stack(rows, dim=0)
         elif self.backend == "official_fact":
             rows = []
@@ -2212,8 +2255,25 @@ class C3OfficialActionSegmentationProbe:
         logits = logits.masked_fill(~mask, 0.0)
         if not return_hidden:
             return logits
-        hidden = features.transpose(1, 2).contiguous().masked_fill(~mask[:, :, None], 0.0)
-        return {"logits": logits, "hidden": hidden}
+        if self.backend == "official_asformer":
+            if len(encoder_hidden_rows) != int(batch):
+                raise RuntimeError(
+                    "official ASFormer encoder hidden capture count does not match the batch"
+                )
+            hidden = torch.cat(encoder_hidden_rows, dim=0).transpose(1, 2).contiguous()
+            hidden_kind = "official_asformer_encoder_hidden"
+        else:
+            hidden = features.transpose(1, 2).contiguous()
+            hidden_kind = "pre_temporal_spatial_stem_hidden"
+        hidden = hidden.masked_fill(~mask[:, :, None], 0.0)
+        return {
+            "logits": logits,
+            "hidden": hidden,
+            "hidden_kind": hidden_kind,
+            "official_source_sha256": self.official_source["source_sha256"],
+            "official_source_normalized_lf_sha256": self.official_source["source_normalized_lf_sha256"],
+            "official_source_file": self.official_source["source_file"],
+        }
 
     def train(self):
         self.module.train()

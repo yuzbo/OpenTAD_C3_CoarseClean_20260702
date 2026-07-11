@@ -341,14 +341,38 @@ class ActionFormer(SingleStageDetector):
             len(param_dict.keys() - union_params) == 0
         ), "parameters %s were not separated into either decay/no_decay set!" % (str(param_dict.keys() - union_params),)
 
-        # create the pytorch optimizer object
+        selector = getattr(self, "frame_selector", None)
+        transition_only = getattr(selector, "selector_variant", None) == "transition_only"
+
+        def parameter_lr(name):
+            if not transition_only:
+                return float(cfg["lr"])
+            scorer_prefix = "frame_selector.adapter.transition_scorer."
+            coarse_prefix = "frame_selector.raw_actionness_source.probe_module."
+            if name.startswith(scorer_prefix):
+                return float(selector.transition_scorer_lr)
+            if name.startswith(coarse_prefix):
+                temporal_marker = ".official_temporal."
+                tail = name.split(temporal_marker, 1)[1] if temporal_marker in name else ""
+                parts = tail.split(".")
+                is_encoder_action_head = tail.startswith("encoder.conv_out.")
+                is_decoder_action_head = (
+                    len(parts) >= 4 and parts[0] == "decoders" and parts[2] == "conv_out"
+                )
+                if is_encoder_action_head or is_decoder_action_head:
+                    return float(selector.action_head_lr)
+                return float(selector.coarse_trunk_lr)
+            return float(cfg["lr"])
+
+        grouped = {}
+        for names, weight_decay in ((decay, float(cfg["weight_decay"])), (no_decay, 0.0)):
+            for name in sorted(names):
+                lr = parameter_lr(name)
+                grouped.setdefault((lr, weight_decay), []).append(param_dict[name])
         optim_groups = [
-            {
-                "params": [param_dict[pn] for pn in sorted(list(decay))],
-                "weight_decay": cfg["weight_decay"],
-                "lr": cfg["lr"],
-            },
-            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0, "lr": cfg["lr"]},
+            {"params": params, "weight_decay": weight_decay, "lr": lr}
+            for (lr, weight_decay), params in sorted(grouped.items())
+            if params
         ]
         return optim_groups
 
