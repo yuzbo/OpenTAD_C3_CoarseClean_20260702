@@ -32,3 +32,8 @@ append_only: true
   `2551DC68F2FE94A204BAF722E8FC60143FD0D77B6024979F32EBC65BE4F69912`。完整吸收十项
   amendments，并额外冻结 split digest 字节协议、Gate-3 coverage margin 与 Gate-4
   seed-level mAP bootstrap。状态为 `written_spec_pending_spec_only_review`；尚未授权实现。
+- 2026-07-12：空白上下文独立 agent 首轮 spec-only review 发现唯一 P1：Gate-4 detector-regret
+  bootstrap 未定义 official-video sample unit。按 exact replacement 修复为单文件 commit
+  `e4422f5`，870 行、47,546 bytes，SHA-256
+  `87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`；复审最终返回
+  `APPROVE_SPEC_FOR_PLAN`。状态升级为 `spec_approved`，只解锁 writing-plans，尚未实现。

@@ -33,9 +33,9 @@ DUCA 当前形态：全窗口低成本 trainable C3/official-ASFormer coarse pro
 - 正式 fixed-384 Job `1154971` 使用 `70aa069`，不是 `a5e1774`。
 - dynamic MUST 暂不作为主贡献；X3D/SlowFast 只作为 frozen-prior diagnostic。
 - ChronoTransport `92029ea` formal P3 science gate 保持失败，Stage C/P5 未解锁。一次
-  `CT-P3R-3S` bounded appeal 已冻结 r2 spec commit `d825520`、SHA-256
-  `2551DC68F2FE94A204BAF722E8FC60143FD0D77B6024979F32EBC65BE4F69912`，当前为
-  `written_spec_pending_spec_only_review`；这不是实现或新实验成功证据。
+  `CT-P3R-3S` bounded appeal 已冻结并通过 spec-only review：commit `e4422f5`、SHA-256
+  `87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`，状态仅为
+  `spec_approved`；implementation、tests 与新实验仍为 false。
 - 暂不实现 physical-grid；selected-axis 几何风险保持公开，等待决定性对照。
 - 不再增加 selector head/loss，先完成强基线、成本和 hard/soft 对齐。
 

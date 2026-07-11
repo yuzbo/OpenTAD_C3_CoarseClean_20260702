@@ -46,6 +46,8 @@ updated: 2026-07-12
   `07A5B4B519E64A39D7F84CE862F0E56117BFF2DB62206B6AE24BDD66768B19FE`。
 - `sources/2026-07-12-chronotransport-r1-pro-github-review-absorption.md`：本地复算、
   上游核验、非完全同意项与 r2 决策记录。
+- `sources/2026-07-12-chronotransport-r2-spec-only-independent-agent-review.md`：空白上下文
+  独立 agent 的两轮 spec-only 复核；最终批准 commit `e4422f5`。
 
 评审建议不是实验事实。wiki 中只有带 run root、Job ID、日志或 result artifact 的内容
 才可标记为实验事实。

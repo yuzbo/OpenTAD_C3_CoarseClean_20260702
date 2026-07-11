@@ -2,7 +2,7 @@
 type: idea
 node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
-stage: written_spec_pending_spec_only_review
+stage: spec_approved
 outcome: bounded_appeal_pending
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
@@ -34,10 +34,10 @@ transport 可能不优于 HOLD；cache 状态与校准；真实 kernel cost。
 
 ## 下一次允许采取的动作
 
-修订规格已冻结为 commit `d825520`，exact-byte SHA-256 为
-`2551DC68F2FE94A204BAF722E8FC60143FD0D77B6024979F32EBC65BE4F69912`。只有 spec-only reviewer 返回
-`APPROVE_SPEC_FOR_PLAN` 后才能编写 implementation plan；实现完成后还必须先通过
-pre-Gate1 registration 和 Gate 1，才可按 stop chain 继续 Gate 2--4。
+修订规格最终冻结为 commit `e4422f5`，exact-byte SHA-256 为
+`87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`；空白上下文
+spec-only reviewer 已返回 `APPROVE_SPEC_FOR_PLAN`。当前只解锁 implementation plan；实现
+完成后仍必须先通过 pre-Gate1 registration 与 Gate 1，才可按 stop chain 继续 Gate 2--4。
 
 ## Connections
 
