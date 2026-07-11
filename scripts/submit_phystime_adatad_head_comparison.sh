@@ -58,7 +58,6 @@ write_header() {
     echo "#SBATCH --error=${LOG_ROOT}/${name}_%j.err"
     echo 'set -euo pipefail'
     printf 'cd %q\n' "${WORK_DIR}"
-    echo "export CUDA_VISIBLE_DEVICES=1"
     printf 'export PHYSTIME_BASE=%q\n' "${BASE}"
     printf 'export PHYSTIME_WORK_DIR=%q\n' "${WORK_DIR}"
     printf 'export OPENTAD_THUMOS14_ANNOTATION=%q\n' "${OPENTAD_THUMOS14_ANNOTATION}"

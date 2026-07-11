@@ -19,10 +19,14 @@ PHYSTIME_REAL_GATE_JSON="${PHYSTIME_REAL_GATE_JSON:?PHYSTIME_REAL_GATE_JSON is r
 PHYSTIME_VIDEOMAE_CHECKPOINT="${PHYSTIME_VIDEOMAE_CHECKPOINT:?PHYSTIME_VIDEOMAE_CHECKPOINT is required}"
 SEED="${PHYSTIME_SEED:-42}"
 
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not assign a visible GPU"
+else
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+  [[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "non-Slurm debug is restricted to physical GPU1"
+  fail "formal training must run inside Slurm"
+fi
 export CUDA_VISIBLE_DEVICES
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "CUDA_VISIBLE_DEVICES must be physical GPU1"
-[[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal training must run inside Slurm"
 
 : "${OPENTAD_THUMOS14_ANNOTATION:?OPENTAD_THUMOS14_ANNOTATION is required}"
 : "${OPENTAD_THUMOS14_CLASS_MAP:?OPENTAD_THUMOS14_CLASS_MAP is required}"
@@ -128,10 +132,11 @@ env | grep -E '^(PHYSTIME_|OPENTAD_THUMOS14_|CUDA_VISIBLE_DEVICES=)' | sort > "$
 printf '%s\n' "${COMMIT}" > "${RUN_DIR}/commit.txt"
 
 GPU_MEMORY_LOG="${RUN_DIR}/gpu_memory.tsv"
+GPU_MONITOR_ID="${CUDA_VISIBLE_DEVICES%%,*}"
 printf 'unix_time\tmemory_used_mb\n' > "${GPU_MEMORY_LOG}"
 monitor_gpu() {
   while true; do
-    value="$(nvidia-smi --id=1 --query-gpu=memory.used --format=csv,noheader,nounits | head -n 1 | tr -d ' ')"
+    value="$(nvidia-smi --id="${GPU_MONITOR_ID}" --query-gpu=memory.used --format=csv,noheader,nounits | head -n 1 | tr -d ' ')"
     [[ "${value}" =~ ^[0-9]+$ ]] || value=0
     printf '%s\t%s\n' "$(date +%s)" "${value}" >> "${GPU_MEMORY_LOG}"
     sleep 5

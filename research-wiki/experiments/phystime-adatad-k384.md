@@ -41,6 +41,8 @@ added: 2026-07-11T00:00:00+08:00
 
 首次部署 gate `1158528` 在进入 Python 前因计算节点非登录 shell 缺少 `module` 命令失败，三个依赖训练均未启动并取消。该事件分类为 infrastructure failure；launcher 已改为可选 module 初始化并通过回归测试，仍需在新 commit 重跑真实 gate。
 
+第二次 gate `1158546` 已通过 matched config validator，但 submission 强制写入物理 GPU1，覆盖了 Slurm 分配的设备 mask，因而在模型构建前得到 `CUDA is not available`；三个依赖训练仍未启动并取消。launcher 已改为 Slurm 内尊重调度器 mask、仅非 Slurm 调试限制物理 GPU1，并通过专项测试。
+
 ## Current verdict
 
 尚无真实实验结果，不能支持任何效果 claim。`tested` 仅表示软件合同通过 focused tests；真实 gate 通过后才能进入 `experiment_running`，三头完成后必须由 result-to-claim 更新。

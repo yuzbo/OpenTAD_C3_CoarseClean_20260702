@@ -6,11 +6,14 @@ fail() {
   exit 1
 }
 
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not assign a visible GPU"
+else
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+  [[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "non-Slurm gate debug is restricted to physical GPU1"
+  [[ "${ALLOW_NON_SLURM_PHYSTIME_GATE:-0}" == "1" ]] || fail "the real raw-video gate must run inside Slurm"
+fi
 export CUDA_VISIBLE_DEVICES
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "CUDA_VISIBLE_DEVICES must be physical GPU1"
-[[ -n "${SLURM_JOB_ID:-}" || "${ALLOW_NON_SLURM_PHYSTIME_GATE:-0}" == "1" ]] || \
-  fail "the real raw-video gate must run inside Slurm"
 
 BASE="${PHYSTIME_BASE:-/data/run01/sczc063/yuzibo}"
 WORK_DIR="${PHYSTIME_WORK_DIR:-$(pwd)}"

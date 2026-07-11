@@ -8,6 +8,8 @@ SUBMIT = ROOT / "scripts" / "submit_phystime_adatad_head_comparison.sh"
 
 def test_training_launcher_is_raw_video_gate_locked_and_auditable():
     text = TRAIN.read_text(encoding="utf-8")
+    assert 'if [[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert '[[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]' in text
     assert '[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]]' in text
     assert "SLURM_JOB_ID" in text
     assert "command -v module" in text
@@ -28,6 +30,9 @@ def test_training_launcher_is_raw_video_gate_locked_and_auditable():
     assert "FEATURE" in text and "PATH" in text
     assert "LoadFeats" not in text
     assert "--not_eval" not in text
+
+    submit_text = SUBMIT.read_text(encoding="utf-8")
+    assert "export CUDA_VISIBLE_DEVICES=1" not in submit_text
 
 
 def test_submission_is_gate_dependent_and_has_exactly_three_heads():

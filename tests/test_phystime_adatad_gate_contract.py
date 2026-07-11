@@ -135,6 +135,8 @@ def test_gate_report_validation_is_fail_closed():
 def test_gate_launcher_requires_gpu1_raw_paths_and_checkpoint():
     text = GATE_LAUNCHER.read_text(encoding="utf-8")
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
+    assert 'if [[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert '[[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]' in text
     assert '[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]]' in text
     assert "OPENTAD_THUMOS14_ANNOTATION" in text
     assert "OPENTAD_THUMOS14_CLASS_MAP" in text
