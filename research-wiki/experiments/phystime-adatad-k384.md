@@ -45,6 +45,8 @@ added: 2026-07-11T00:00:00+08:00
 
 第三次 gate `1158556` 已通过 CUDA、真实 THUMOS decode 和 same raw-frame checksum，但增强后输入 checksum 不同。根因是 `mmaction.ImgAug` 使用独立 imgaug RNG，原 `_seed_everything` 未重置它；模型仍未构建，依赖训练未启动并取消。gate 现统一重置 Python、NumPy、Torch、imgaug 与 OpenCV RNG，并新增确定性回归测试。
 
+第四次 gate `1158576` 进一步证明分叉只发生在同一进程首个配置的 ColorJitter：ImgAug 首次构造会额外消耗 NumPy 状态。gate 现先预热增强库再重新 seed。真实逐 transform 诊断 `1158614` 已确认三头在 decode、crop、ImgAug、ColorJitter 和最终 FormatShape 后的像素 hash 全部一致；这只关闭数据确定性缺口，仍不是 detector gate 或效果证据。
+
 ## Current verdict
 
 尚无真实实验结果，不能支持任何效果 claim。`tested` 仅表示软件合同通过 focused tests；真实 gate 通过后才能进入 `experiment_running`，三头完成后必须由 result-to-claim 更新。

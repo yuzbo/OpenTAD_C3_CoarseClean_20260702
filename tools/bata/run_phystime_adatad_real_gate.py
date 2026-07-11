@@ -37,6 +37,7 @@ GATE_CONFIGS = {
 SCHEMA_VERSION = "phystime_adatad_real_gate_v1"
 TARGET_LEN = 384
 LOGICAL_WINDOW = 768
+_AUGMENTATION_LIBRARIES_WARMED = False
 
 
 def _require(condition, message):
@@ -44,7 +45,7 @@ def _require(condition, message):
         raise RuntimeError(message)
 
 
-def _seed_everything(seed):
+def _seed_core(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -56,6 +57,19 @@ def _seed_everything(seed):
         imgaug.seed(seed)
     except ImportError:
         pass
+
+
+def _seed_everything(seed):
+    global _AUGMENTATION_LIBRARIES_WARMED
+
+    _seed_core(seed)
+    if not _AUGMENTATION_LIBRARIES_WARMED:
+        from mmaction.datasets.transforms import ColorJitter, ImgAug
+
+        ImgAug(transforms="default")
+        ColorJitter()
+        _AUGMENTATION_LIBRARIES_WARMED = True
+        _seed_core(seed)
     try:
         import cv2
 

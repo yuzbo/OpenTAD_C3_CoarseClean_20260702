@@ -148,6 +148,22 @@ def test_gate_seed_resets_imgaug_random_state():
     assert np.array_equal(first, second)
 
 
+def test_gate_seed_neutralizes_first_imgaug_constructor_side_effect():
+    from mmaction.datasets.transforms import ColorJitter, ImgAug
+
+    module = _load_gate_module()
+    module._AUGMENTATION_LIBRARIES_WARMED = False
+
+    module._seed_everything(42)
+    ImgAug(transforms="default")
+    first_order = ColorJitter().fn_idx.copy()
+    module._seed_everything(42)
+    ImgAug(transforms="default")
+    second_order = ColorJitter().fn_idx.copy()
+
+    assert np.array_equal(first_order, second_order)
+
+
 def test_gate_launcher_requires_gpu1_raw_paths_and_checkpoint():
     text = GATE_LAUNCHER.read_text(encoding="utf-8")
     assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
