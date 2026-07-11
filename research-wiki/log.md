@@ -51,3 +51,6 @@ append_only: true
 - 2026-07-12: Added and remotely tested Gate-1/Gate-2 pure adjudication (4/4) and Stage-C
   object-identity/loss-specific AMP primitives (4/4). These are synthetic implementation checks;
   no formal data was opened and no Gate result exists.
+- 2026-07-12: Added registration/claim-chain primitives, Gate-1 CLI, r2 config overlays and a launcher
+  requiring exact GPU1 plus Slurm allocation. Remote registration tests 4/4 and `bash -n` passed. The
+  current SSH session has no active allocation, so no formal GPU experiment was started.

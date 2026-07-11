@@ -17,6 +17,12 @@ from .protocol import (
     validate_stage_b_exposures,
     window_digest,
 )
+from .registration import (
+    REGISTRATION_SCHEMA,
+    build_pre_gate1_registration,
+    claim_flags,
+    validate_pre_gate1_registration,
+)
 from .risk import ScheduleQuantileRiskPredictor
 from .runtime import ChronoTransportRuntime
 from .scheduler import (
@@ -46,6 +52,7 @@ __all__ = [
     "R2_NON_DENSE_CANDIDATES",
     "R2_PROTOCOL_ID",
     "R2_SEEDS",
+    "REGISTRATION_SCHEMA",
     "RiskConstrainedScheduler",
     "ScheduleCandidate",
     "ScheduleLibrary",
@@ -72,4 +79,7 @@ __all__ = [
     "gate2_matched_transport",
     "build_stage_c_parameter_groups",
     "loss_specific_amp_step",
+    "build_pre_gate1_registration",
+    "claim_flags",
+    "validate_pre_gate1_registration",
 ]
