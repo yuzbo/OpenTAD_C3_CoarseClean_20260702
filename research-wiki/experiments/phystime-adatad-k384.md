@@ -67,6 +67,7 @@ AMP gate `1158668` 在 `bd27544` 完成并通过，但它只覆盖单个样本�
 - Remote regression suite: `102 passed`. Final real gate `1159491` passed three AMP optimizer steps, evaluator construction, optimizer coverage, same-frame/input checks, and finite gradients/parameters.
 - Final stability gate `1159492` completed two full epochs with no AMP skips: epoch 0 end loss 1.5824; epoch 1 end loss 1.1674. `STABILITY_GATE_COMPLETE` exists.
 - Formal matched jobs `1159493/1159494/1159495` are running from run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_3ac93a1_k384_final_20260712_023243_+0800`. No mAP exists yet; status is `experiment_running`, not `empirically_supported`.
+- All three formal jobs passed epoch 1 step 50 with finite loss: selected-axis 0.9929, physical-grid 1.0115, and PhysTime 1.1880. This is stability evidence only, not an accuracy comparison.
 
 ## Connections
 

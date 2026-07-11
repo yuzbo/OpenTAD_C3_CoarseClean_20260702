@@ -79,9 +79,9 @@ Run root: `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad
 | --- | ---: | --- | --- | --- | ---: | ---: |
 | three-step AMP + evaluator gate | `1159491` | `3ac93a1` | passed | evaluator constructed from runtime absolute annotation; all three heads completed 3 optimizer steps with finite gradients and parameters | NA | NA |
 | PhysTime two-epoch stability gate | `1159492` | `3ac93a1` | passed | epoch 0 end loss 1.5824; epoch 1 end loss 1.1674; zero AMP skips; `STABILITY_GATE_COMPLETE` present | NA | NA |
-| selected-axis | `1159493` | `3ac93a1` | running | formal matched full train | NA | NA |
-| physical-grid | `1159494` | `3ac93a1` | running | formal matched full train | NA | NA |
-| PhysTime | `1159495` | `3ac93a1` | running | formal matched full train | NA | NA |
+| selected-axis | `1159493` | `3ac93a1` | running | epoch 1 step 50 loss 0.9929; finite | NA | NA |
+| physical-grid | `1159494` | `3ac93a1` | running | epoch 1 step 50 loss 1.0115; finite | NA | NA |
+| PhysTime | `1159495` | `3ac93a1` | running | epoch 1 step 50 loss 1.1880; finite; no AMP skip | NA | NA |
 
 Failure localization retained for audit: commit `52b5756` gate `1159481` passed, but stability job `1159482` failed closed. Diagnostic job `1159489` found the first event at epoch 0 iter 47: finite forward losses and 11 Inf entries in `rpn_head.cls_head.weight` gradient, no NaN. Final protocol lowers AMP initial scale from 65536 to 1024 and bounds recoverable scaler skips; remote regression suite is `102 passed`.
 

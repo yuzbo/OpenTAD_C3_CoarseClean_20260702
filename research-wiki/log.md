@@ -24,3 +24,4 @@
 - 2026-07-12：`0bbf0e9` matched jobs `1158719/1158720/1158721` 全部 FAILED。selected-axis/physical-grid 训练至 epoch 41 后首次验证因 evaluator GT annotation 相对路径不存在而退出；PhysTime 从 epoch 1 step 99 起持续全 NaN，并叠加相同验证路径错误。三头均无有效 mAP，实验状态改为 `experiment_failed`，禁止使用 checkpoint 填表。
 - 2026-07-12：`52b5756` 修复 evaluator 路由与物理时间 FP32 数值路径；gate `1159481` 通过，但 stability gate `1159482` 在正式作业启动前 fail-closed。诊断作业 `1159489` 将问题定位到 epoch 0 iter 47 的 `rpn_head.cls_head.weight`：forward loss 有限，11 个 scaled gradient 为 Inf，无 NaN。
 - 2026-07-12：最终 commit `3ac93a1` 将 AMP 初始 scale 设为 1024，限制可恢复 Inf 跳步，关闭单 GPU FP16 DDP compression，并保留 NaN、参数污染与跳步超限硬失败。远端 `102 passed`；gate `1159491` 与两 epoch stability gate `1159492` 均通过且零跳步。formal jobs `1159493/1159494/1159495` 正在运行，mAP pending。
+- 2026-07-12：formal jobs `1159493/1159494/1159495` 均越过 epoch 1 step 50，loss 分别为 0.9929、1.0115、1.1880，全部有限；这只提升训练稳定性证据，mAP 与方法 claim 仍 pending。
