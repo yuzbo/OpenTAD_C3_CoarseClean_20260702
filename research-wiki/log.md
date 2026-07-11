@@ -37,3 +37,7 @@ append_only: true
   `e4422f5`，870 行、47,546 bytes，SHA-256
   `87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`；复审最终返回
   `APPROVE_SPEC_FOR_PLAN`。状态升级为 `spec_approved`，只解锁 writing-plans，尚未实现。
+- 2026-07-12: Created the executable CT-P3R-3S-r2 implementation plan after the independent
+  `APPROVE_SPEC_FOR_PLAN` verdict. The plan preserves remote-only behavioral verification,
+  implementation/registration commit separation, and the Gate-1-first hard stop chain. Status is
+  `implementation_planned`; no new behavior is yet claimed implemented or tested by this entry.
