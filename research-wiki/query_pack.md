@@ -6,12 +6,12 @@
 
 唯一主线是 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768 时间位置，用相同、确定性、无学习、无 GT 的策略选 K=384，`DecordDecode` 和 VideoMAE-S 只消费选中帧。在完全相同 backbone、checkpoint、增强、schedule、seed、NMS 和 selected indices 下比较：selected-axis ActionFormer、physical-grid ActionFormer、`PhysTimeMeasureProjection + PhysTimeHead`。长期目标是一个独立离线 TAD detector，输入任意不规则观测及真实时间戳/支持区间，直接在秒坐标上分类和定位。
 
-当前事实：PhysTime-TAD 2.0 的 feature-geometry 核心代码已实现；PhysTime-AdaTAD 1.0 只有规格和 implementation plan，raw-video transform、三配置、real gate 和正式训练尚未实现。不得声称已经部署或已有 mAP。
+当前事实：PhysTime-TAD 2.0 的 feature-geometry 核心代码已实现。PhysTime-AdaTAD 1.0 已在代码提交 `549bb81` 完成 raw-video transform、三份 matched K384 配置、same-index validator、one-step 梯度证明、真实 gate 工具及 gate-dependent 三头启动器；远端 focused suite 为 `45 passed`。真实 THUMOS CUDA gate 尚未运行，正式训练尚未释放，不得声称已经部署或已有 mAP。
 
 ## Top gaps
 
-1. `gap:G9`：raw-video 集成代码缺口。
-2. `gap:G4`：三头 matched K384 公平比较尚未建立。
+1. `gap:G9`：raw-video 集成代码已测试，但真实 THUMOS CUDA gate 尚未通过。
+2. `gap:G4`：三头 matched K384 合同已建立，full-run 结果尚缺。
 3. `gap:G3`：需区分 mTAN、TE-TAD、FrameDrop/TRC、LiquidTAD；continuous time 本身不新。
 4. `gap:G5`：缺 mAP@0.6/0.7、boundary error、短动作证据。
 5. `gap:G7`：缺 raw decode 到 NMS 的全栈成本账本。

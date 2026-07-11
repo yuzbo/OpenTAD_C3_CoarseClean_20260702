@@ -59,17 +59,16 @@
 - `PhysTime-TAD 2.0` 的物理时间几何、support-integrated measure projection、PhysTimeHead、registered detector、feature-token transforms 和 focused gates。
 - feature-token 路线的软件契约可作为算子测试资产。
 - PhysTime-AdaTAD 1.0 的完整设计规格和逐任务实现计划已经冻结。
+- PhysTime-AdaTAD 1.0 的 raw-frame 秒几何、三份 matched K384 配置、same-index validator、one-step 梯度证明、真实 gate 工具和 gate-dependent 三头正式启动器已在 `549bb81` 实现；远端 focused suite 为 `45 passed`。
 
-尚未实现或尚未形成论文证据：
+尚未形成真实实验或论文证据：
 
-- raw-video `BuildPhysTimeRawFrameGeometry` 正式数据通路；
-- 三个 matched K=384 AdaTAD 配置；
-- real THUMOS one-step gate；
-- 三头正式训练部署；
+- real THUMOS raw-video CUDA one-step gate 尚未运行；
+- 三头正式训练尚未由 gate 释放；
 - 任何 PhysTime-AdaTAD mAP 结果；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-TAD 2.0 feature-geometry code 已实现；PhysTime-AdaTAD 1.0 raw-video integration 已规格化、尚待实现。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 raw-video matched pipeline 已实现并通过 focused tests；真实 CUDA gate 与 full-run 仍 pending。**
 
 ## 5. 明确非目标
 

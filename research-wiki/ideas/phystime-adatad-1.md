@@ -5,11 +5,11 @@ title: "PhysTime-AdaTAD 1.0 raw-video head isolation"
 stage: active
 outcome: pending
 thesis: "在相同 K384 不规则 raw-frame observations 和 official AdaTAD backbone 下，仅比较 selected-axis、physical-grid 与 PhysTime head。"
-risks: "raw integration 尚未实现；GT 秒转换和 support provenance 易错；physical-grid baseline 可能已经足够。"
+risks: "raw integration 已测试但真实 CUDA gate 尚未通过；physical-grid baseline 可能已经足够；full-run 成本与高-IoU收益未知。"
 based_on: ["paper:zhang2022_actionformer", "paper:liu2024_adatad", "paper:kim2024_te_tad"]
 target_gaps: ["gap:G1", "gap:G4", "gap:G5", "gap:G7", "gap:G9"]
 added: 2026-07-11T00:00:00+08:00
-updated: 2026-07-11T00:00:00+08:00
+updated: 2026-07-11T15:21:00+08:00
 ---
 
 # PhysTime-AdaTAD 1.0
@@ -29,7 +29,7 @@ updated: 2026-07-11T00:00:00+08:00
 
 ## 当前实现状态
 
-设计与计划已提交；raw transform、configs、validator、one-step raw CUDA gate、launchers 和 full runs 尚未落地。状态必须保持 pending。
+代码提交 `549bb81` 已完成 raw transform、三配置、validator、合成 one-step 梯度证明、真实 gate 工具和 gate-dependent launchers；远端 focused suite `45 passed`。这只把状态提升到 `tested`：真实 THUMOS CUDA gate、正式训练和 mAP 均仍 pending，idea outcome 继续保持 pending。
 
 ## 成功/降级规则
 
