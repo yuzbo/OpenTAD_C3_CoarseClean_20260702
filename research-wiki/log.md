@@ -54,3 +54,6 @@ append_only: true
 - 2026-07-12: Added registration/claim-chain primitives, Gate-1 CLI, r2 config overlays and a launcher
   requiring exact GPU1 plus Slurm allocation. Remote registration tests 4/4 and `bash -n` passed. The
   current SSH session has no active allocation, so no formal GPU experiment was started.
+- 2026-07-12: Remote combined verification passed 110/110 in 84.58s. An independent implementation
+  audit was then requested before freezing implementation commit I or registration R. Known incomplete
+  surfaces remain explicitly unregistered and no formal Gate has run.

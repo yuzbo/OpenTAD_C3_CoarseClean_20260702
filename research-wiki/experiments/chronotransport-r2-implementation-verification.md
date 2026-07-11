@@ -46,6 +46,13 @@ Remote scheduling audit found no active allocation in the SSH session (`CUDA_VIS
 no `SLURM_JOB_ID`). Formal GPU1 execution is therefore not yet authorized; login-node training remains
 forbidden.
 
+## Combined regression
+
+Remote combined static/focused verification passed: 110 tests in 84.58 seconds, including every new
+r2 test, existing ChronoTransport core/integration/formal-Stage-B/repository contracts, and the two
+required C3 focused suites. This confirms the currently implemented surfaces only; it does not fill the
+known missing Gate-3/Gate-4 adjudicators, overflow retry, full formal runners, or create registration R.
+
 ## Connections
 
 由 `research-wiki/graph/edges.jsonl` 维护。
