@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-11
+updated: 2026-07-12
 max_chars: 8000
 ---
 
@@ -32,7 +32,9 @@ DUCA 当前形态：全窗口低成本 trainable C3/official-ASFormer coarse pro
   对应 full-train，只有成本 smoke。
 - 正式 fixed-384 Job `1154971` 使用 `70aa069`，不是 `a5e1774`。
 - dynamic MUST 暂不作为主贡献；X3D/SlowFast 只作为 frozen-prior diagnostic。
-- ChronoTransport `92029ea` formal P3 science gate 已失败，Stage C/P5 未解锁；该路线暂停，不是比 DUCA 更成熟的替代方案。
+- ChronoTransport `92029ea` formal P3 science gate 保持失败，Stage C/P5 未解锁。一次
+  `CT-P3R-3S` bounded appeal 正处于 `spec_revision_in_progress`：`02199f8` 不可执行，
+  必须先完成 r2 spec SHA 与 spec-only approval；这不是新实验成功证据。
 - 暂不实现 physical-grid；selected-axis 几何风险保持公开，等待决定性对照。
 - 不再增加 selector head/loss，先完成强基线、成本和 hard/soft 对齐。
 

@@ -20,3 +20,10 @@ append_only: true
   ChronoTransport r1 规格、实现表面、原 Pro 记录、两轮独立复核与本地源码审计，明确排除
   数据、checkpoint、GPU 日志和新行为结果。审查仍止于 `REVISE_SPEC_BEFORE_PLAN`，不得借
   GitHub 同步越过到实现、profiling、Gate 1、新 seed 或 Stage C。
+- 2026-07-12：完整归档 GitHub-visible Pro 终审，附件 SHA-256
+  `07A5B4B519E64A39D7F84CE862F0E56117BFF2DB62206B6AE24BDD66768B19FE`，裁决
+  `REVISE_SPEC_BEFORE_PLAN` / `GO_TO_SPEC_REVISION_ONLY`。本地独立复算确认 exposure、
+  conformal rank、coverage 下界和 Stage-C 525/candidate；官方上游确认 GT-aware
+  `random_trunc`、edge padding 与 all-time adapter。不同意原样照抄三处未闭合文本：split
+  digest 字节协议、Gate-3 coverage margin 和 Gate-4 seed-level mAP bootstrap 必须在 r2
+  中精确定义。当前状态为 `spec_revision_in_progress`，尚未实现或部署。

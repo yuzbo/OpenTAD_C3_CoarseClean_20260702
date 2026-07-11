@@ -91,3 +91,18 @@ ResearchClaw 审查指出总成本、hard/soft utility 与 selected-axis geometr
 主科学问题保持“任务感知时序去冗余并保护高 tIoU”。当前先完成 DUCA fixed-384 的
 决定性证据；MUST、physical-grid、X3D 主方法和更多 loss 暂停。ChronoTransport 与
 PhysTime 是并行新假设，必须独立记账，不能用来改写 DUCA 结果。
+
+## 13. ChronoTransport 唯一 bounded appeal
+
+历史 commit `92029ea` 的 Stage-B/P3 保持负结论，Stage C/P5 从未解锁。该负结果只否定
+旧 cell-sum risk、row-level statistics 与当时训练协议，不足以判死所有 feature transport。
+
+用户只批准一次 `CT-P3R-3S` 上诉。`02199f8` r1 已修复 pre-adapter cache、all-row TIA、
+age 47/cap 8 与 requested/executed cost，但 GitHub-visible Pro 终审仍裁决
+`REVISE_SPEC_BEFORE_PLAN`。当前选择是 r2：一视频一 hash-frozen window、block-rotated
+exposure、window-level simultaneous calibration、loss-specific Stage-C autograd、AMP retry
+rollback、clustered Gate 4 与 pre-Gate1 immutable registration。
+
+r2 不引入新 seed、训练步数、head、loss、candidate library、quantile、epsilon 或结果后
+调参自由度。只有 spec-only review 输出 `APPROVE_SPEC_FOR_PLAN` 后才可实现；任一 Gate
+FAIL 后永久降级 frozen baseline。即使 Gate 1--4 全 PASS，deploy/paper 仍为 false。

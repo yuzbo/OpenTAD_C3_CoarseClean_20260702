@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # 来源注册表
@@ -40,6 +40,12 @@ updated: 2026-07-11
 - `2026-07-10-88e50b1-duca-final-method-audit-review-absorption.md`
 - `2026-07-10-70aa069-researchclaw-duca-divergent-audit-absorption.md`
 - `2026-07-10-duca-official-adatad-structural-audit.md`
+- `sources/2026-07-12-chronotransport-r1-pro-github-review-response.md`：基于公开固定
+  commit `1f5f7254a390f183121e6c4b7cebcebd2f2954d1` 的完整 1,924 行 Pro 规格终审；
+  外部附件 SHA-256
+  `07A5B4B519E64A39D7F84CE862F0E56117BFF2DB62206B6AE24BDD66768B19FE`。
+- `sources/2026-07-12-chronotransport-r1-pro-github-review-absorption.md`：本地复算、
+  上游核验、非完全同意项与 r2 决策记录。
 
 评审建议不是实验事实。wiki 中只有带 run root、Job ID、日志或 result artifact 的内容
 才可标记为实验事实。

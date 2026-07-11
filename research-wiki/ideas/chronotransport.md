@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
-stage: paused_after_failed_p3
-outcome: negative_gate
+stage: spec_revision_in_progress
+outcome: bounded_appeal_pending
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
 ---
@@ -24,7 +24,9 @@ Stage-A、paired replay 和正式 Stage-B fit/calibration/evaluation 已落地�
 
 ## 当前选择或否定理由
 
-暂停，不作为当前主线。它证明 conditional-compute 工程闭环可运行，但没有证明 risk-certified transport 的科学有效性，也不能混用 DUCA 结果改写 claim。
+历史 P3 保持负结论，Stage C/P5 仍未解锁。用户批准一次有界上诉，但 GitHub-visible
+Pro 复核裁决 `REVISE_SPEC_BEFORE_PLAN`：必须先完成 r2 规格、精确 SHA 与 spec-only
+复核，不能把书面修订误写成已经实现或实验支持。
 
 ## 风险与失败模式
 
@@ -32,7 +34,9 @@ transport 可能不优于 HOLD；cache 状态与校准；真实 kernel cost。
 
 ## 下一次允许采取的动作
 
-只有重新定义风险聚合尺度、重新预注册并通过 P3，才允许启动 Stage C、多 seed 与 P5。
+唯一合法下一步是写入冻结的 r2 修订规格。只有 spec-only reviewer 返回
+`APPROVE_SPEC_FOR_PLAN` 后才能编写 implementation plan；实现完成后还必须先通过
+pre-Gate1 registration 和 Gate 1，才可按 stop chain 继续 Gate 2--4。
 
 ## Connections
 

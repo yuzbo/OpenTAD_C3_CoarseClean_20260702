@@ -7,7 +7,7 @@ verdict: negative
 confidence: high
 commit: "92029ea"
 jobs: "formal seed-3407 fit/calibration/evaluation artifacts recorded in method log"
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # ChronoTransport Formal Stage-B Gate
@@ -25,6 +25,9 @@ updated: 2026-07-11
 ## Limitations
 
 单种子负 gate 不能证明所有 feature-transport 思路无效；它只否定当前风险聚合、目标尺度和训练规格。
+
+2026-07-12 的 r1/r2 书面复核不是新实验，不覆盖本页历史结果。当前只允许一次固定
+`CT-P3R-3S` bounded appeal；其新实现、registration 与 Gate 尚未运行。
 
 ## Provenance
 

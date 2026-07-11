@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # 禁止重走清单
@@ -51,3 +51,23 @@ updated: 2026-07-11
 22. 决定性实验未完成前，不宣布 DUCA 成功；同样也不宣布其必然失败。
 23. 每次部署前必须记录 commit、配置、checkpoint、数据、Job ID 和 run root。
 24. 新结果必须先更新 experiment/claim 节点，再改论文叙事。
+
+## ChronoTransport bounded appeal
+
+25. 不得执行 `02199f8`；它已被 GitHub-visible Pro 复核裁决为
+    `REVISE_SPEC_BEFORE_PLAN`。
+26. 不得把 200 个 video IDs 直接当 200 个 windows；Gate 1--3 必须使用一视频一
+    label-free hash-frozen window，Gate 4 才使用 official full-video/sliding-window
+    population。
+27. 不得使用 `(update+offset)%16` 与 offsets 0/4/8；必须使用冻结的 `+5*b`
+    block rotation 和完整 exposure-matrix hash。
+28. 不得保留 oracle-minimum 对 shuffled assignment 的 hard Gate；它近乎由定义保证。
+29. Stage-C loss ownership 必须由 object-identity sets 与独立 `autograd.grad` 实现，
+    不能用 total-loss backward、name substring 或 detach adapter 输出来冒充。
+30. AMP retry 必须恢复除 GradScaler backoff 外的全部 forward-mutated state；匹配的是
+    successful batch/LR/EMA exposure，不是两个 arms 的 overflow vector。
+31. Gate 3 的 selected coverage 不是 selected-conditional conformal guarantee；不得把
+    frozen-window guarantee 转移到 Gate 4 official population。
+32. formal profile/replay 前必须完成 immutable registration commit；任何 repair、fallback、
+    identity mismatch 或 retry violation 都是 `INVALID_IMPLEMENTATION`，不是 science FAIL。
+33. 即使 Gate 1--4 全 PASS，`deploy=false`、`paper=false` 仍保持冻结。
