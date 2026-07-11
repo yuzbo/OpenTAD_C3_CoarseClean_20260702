@@ -2,6 +2,7 @@ import copy
 import importlib.util
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
@@ -41,6 +42,7 @@ def _valid_report():
         "decoded_frame_count": 384,
         "backbone_feature_length": 384,
         "selected_index_checksum_match": True,
+        "decoded_input_checksum_match": True,
         "adapter_gradient_nonzero": True,
         "projection_gradient_nonzero": True,
         "classification_gradient_nonzero": True,
@@ -130,6 +132,20 @@ def test_gate_report_validation_is_fail_closed():
     broken["variants"]["physical_grid"]["backbone_feature_length"] = 768
     with pytest.raises(RuntimeError, match="physical_grid.backbone_feature_length"):
         module.validate_gate_report(broken)
+
+
+def test_gate_seed_resets_imgaug_random_state():
+    import imgaug.augmenters as iaa
+
+    module = _load_gate_module()
+    image = np.full((16, 16, 3), 127, dtype=np.uint8)
+
+    module._seed_everything(42)
+    first = iaa.Sequential([iaa.Add((-50, 50)), iaa.Fliplr(0.5)]).augment_image(image)
+    module._seed_everything(42)
+    second = iaa.Sequential([iaa.Add((-50, 50)), iaa.Fliplr(0.5)]).augment_image(image)
+
+    assert np.array_equal(first, second)
 
 
 def test_gate_launcher_requires_gpu1_raw_paths_and_checkpoint():

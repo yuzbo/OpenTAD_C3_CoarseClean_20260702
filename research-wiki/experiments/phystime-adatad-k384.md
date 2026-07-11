@@ -43,6 +43,8 @@ added: 2026-07-11T00:00:00+08:00
 
 第二次 gate `1158546` 已通过 matched config validator，但 submission 强制写入物理 GPU1，覆盖了 Slurm 分配的设备 mask，因而在模型构建前得到 `CUDA is not available`；三个依赖训练仍未启动并取消。launcher 已改为 Slurm 内尊重调度器 mask、仅非 Slurm 调试限制物理 GPU1，并通过专项测试。
 
+第三次 gate `1158556` 已通过 CUDA、真实 THUMOS decode 和 same raw-frame checksum，但增强后输入 checksum 不同。根因是 `mmaction.ImgAug` 使用独立 imgaug RNG，原 `_seed_everything` 未重置它；模型仍未构建，依赖训练未启动并取消。gate 现统一重置 Python、NumPy、Torch、imgaug 与 OpenCV RNG，并新增确定性回归测试。
+
 ## Current verdict
 
 尚无真实实验结果，不能支持任何效果 claim。`tested` 仅表示软件合同通过 focused tests；真实 gate 通过后才能进入 `experiment_running`，三头完成后必须由 result-to-claim 更新。

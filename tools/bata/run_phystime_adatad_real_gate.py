@@ -50,6 +50,18 @@ def _seed_everything(seed):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    try:
+        import imgaug
+
+        imgaug.seed(seed)
+    except ImportError:
+        pass
+    try:
+        import cv2
+
+        cv2.setRNGSeed(seed)
+    except ImportError:
+        pass
 
 
 def _sha256_bytes(payload):
@@ -296,6 +308,7 @@ def validate_gate_report(report):
         "decoded_frame_count": TARGET_LEN,
         "backbone_feature_length": TARGET_LEN,
         "selected_index_checksum_match": True,
+        "decoded_input_checksum_match": True,
         "adapter_gradient_nonzero": True,
         "projection_gradient_nonzero": True,
         "classification_gradient_nonzero": True,
@@ -363,7 +376,10 @@ def run_gate(checkpoint, device, seed=42, sample_index=-1):
     _require(len(set(sample_indices.values())) == 1, "three configs resolved different training samples")
     _require(len(set(video_names.values())) == 1, "three configs decoded different videos")
     _require(len(set(selected_checksums.values())) == 1, "three configs selected different raw frame indices")
-    _require(len(set(input_checksums.values())) == 1, "three configs produced different decoded/augmented tensors")
+    _require(
+        len(set(input_checksums.values())) == 1,
+        f"three configs produced different decoded/augmented tensors: {input_checksums}",
+    )
     phystime_meta = samples["phystime"]["metas"]
     _require(
         np.array_equal(
