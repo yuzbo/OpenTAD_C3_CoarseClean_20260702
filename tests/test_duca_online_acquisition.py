@@ -21,6 +21,7 @@ from opentad.models.duca import (  # noqa: E402
     hard_topk_st,
     make_audit_record,
     temporal_max_gap_hole_loss,
+    validate_actionness_provenance,
 )
 
 
@@ -84,6 +85,26 @@ def test_zero_shot_actionness_fallback_has_no_thumos_label_provenance() -> None:
     assert output["provenance"]["uses_teacher"] is False
     assert "labels" not in output
     assert "gt_segments" not in output
+
+
+def test_task_adapted_actionness_discloses_training_labels_but_is_clean_at_inference() -> None:
+    provenance = {
+        "thumos_trained": True,
+        "uses_labels": True,
+        "uses_teacher": False,
+        "uses_gt": True,
+        "uses_prediction_cache": False,
+        "trained_with_thumos_labels": True,
+        "trained_with_gt_segments": True,
+        "training_supervision_scope": "train_only",
+        "uses_labels_at_inference": False,
+        "uses_gt_at_inference": False,
+        "uses_teacher_at_inference": False,
+        "uses_prediction_cache_at_inference": False,
+        "calibration_split": "train_only",
+    }
+
+    validate_actionness_provenance(provenance, context="task-adapted test source")
 
 
 def test_actionness_source_exposes_state_transition_features() -> None:

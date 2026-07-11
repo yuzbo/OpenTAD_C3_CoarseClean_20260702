@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
 from mmengine.config import Config
-from tools.bata.validate_duca_transition_only_p0_variant import validate_variant
+from tools.bata import validate_duca_transition_only_p0_variant as p0_validator
+
+
+validate_variant = p0_validator.validate_variant
 
 
 ROOT = "configs/adatad/thumos/"
@@ -11,6 +18,7 @@ PATHS = {
     "transition_beta0": ROOT + "duca_transition_only_fixed384_no_detector_bridge_official_adatad_backend_full_train.py",
     "transition_beta025": ROOT + "duca_transition_only_fixed384_official_adatad_backend_full_train.py",
 }
+LAUNCHER = Path("scripts/run_duca_transition_only_p0_variant_gpu1.sh")
 
 
 def _plain(value):
@@ -71,3 +79,80 @@ def test_p0_variant_validator_accepts_every_declared_variant() -> None:
         assert summary["variant"] == variant
         assert summary["budget"] == 384
         assert summary["paper_claim_allowed"] is False
+
+
+def test_p0_core_gate_requires_ok_and_matching_commit(tmp_path: Path) -> None:
+    commit = "a" * 40
+    config_sha = "b" * 64
+    source_sha = "c" * 64
+    checkpoint_sha = "d" * 64
+    gate_json = tmp_path / "core_gate.json"
+    gate_json.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "formal_proof_ok": True,
+                "git_commit": commit,
+                "reference_config_sha256": config_sha,
+                "official_asformer_source_sha256": source_sha,
+                "checkpoint_sha256": checkpoint_sha,
+                "dense_window_size": 768,
+                "selected_count": 384,
+                "model_type": "ActionFormer",
+                "detector_head_type": "ActionFormerHead",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = p0_validator.validate_core_gate(
+        gate_json,
+        expected_commit=commit,
+        expected_config_sha256=config_sha,
+        expected_source_sha256=source_sha,
+        expected_checkpoint_sha256=checkpoint_sha,
+    )
+
+    assert summary == {"ok": True, "git_commit": commit, "path": str(gate_json)}
+
+
+def test_p0_core_gate_rejects_failed_or_stale_evidence(tmp_path: Path) -> None:
+    commit = "a" * 40
+    gate_json = tmp_path / "core_gate.json"
+    gate_json.write_text(json.dumps({"ok": False, "git_commit": commit}), encoding="utf-8")
+    with pytest.raises(AssertionError, match="ok=true"):
+        p0_validator.validate_core_gate(
+            gate_json,
+            expected_commit=commit,
+            expected_config_sha256="b" * 64,
+            expected_source_sha256="c" * 64,
+            expected_checkpoint_sha256="d" * 64,
+        )
+
+    gate_json.write_text(json.dumps({"ok": True, "git_commit": "b" * 40}), encoding="utf-8")
+    with pytest.raises(AssertionError, match="git_commit"):
+        p0_validator.validate_core_gate(
+            gate_json,
+            expected_commit=commit,
+            expected_config_sha256="b" * 64,
+            expected_source_sha256="c" * 64,
+            expected_checkpoint_sha256="d" * 64,
+        )
+
+
+def test_p0_launcher_uses_commit_bound_core_gate_and_auditable_manifest() -> None:
+    text = LAUNCHER.read_text(encoding="utf-8")
+
+    assert "DUCA_CORE_GATE_PASSED" not in text
+    assert 'DUCA_CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"' in text
+    assert 'DUCA_EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"' in text
+    assert '--core-gate-json "${DUCA_CORE_GATE_JSON}"' in text
+    assert '--expected-commit "${DUCA_EXPECTED_COMMIT}"' in text
+    assert '--expected-config-sha256 "${REFERENCE_CONFIG_SHA256}"' in text
+    assert '--expected-source-sha256 "${SOURCE_SHA256}"' in text
+    assert '--expected-checkpoint-sha256 "${CHECKPOINT_SHA256}"' in text
+    assert "P0 full train must run inside Slurm" in text
+    assert "git status --porcelain --untracked-files=normal" in text
+    assert text.index("git status --porcelain --untracked-files=normal") < text.index('cat > "${RUN_DIR}/manifest.json"')
+    for field in ("config_sha256", "source_sha256", "checkpoint_sha256"):
+        assert f'"{field}"' in text

@@ -5,9 +5,10 @@
 This is an offline TAD pre-backbone candidate. It is not Online TAD, not a
 streaming method, and not paper-ready until the P0 evidence gates pass.
 
-The existing `a5e1774` direct-boundary implementation remains a frozen matched
-baseline. Dynamic MUST and additional spatial backbones are out of scope for
-this decision.
+The existing `a5e1774` direct-boundary architecture remains a frozen-definition
+matched baseline: its architecture/hidden semantics are preserved, but its
+weights are retrained under the matched 132-epoch protocol. Dynamic MUST and
+additional spatial backbones are out of scope for this decision.
 
 ## Forward Path
 
@@ -54,11 +55,24 @@ checkpoint handoff and no modulo-step policy switching.
 
 The 13200 value is an expected horizon from 132 epochs and 100 batches per
 epoch. The actual successful optimizer-step counter is authoritative under AMP.
+Formal mAP validation begins at epoch 47, after policy alpha has reached one;
+final inference also uses alpha one. Early mixed-policy mAP is not reported as
+the learned selector's performance.
+
+## Supervision Provenance
+
+The task-adapted coarse probe is trained with THUMOS14 action/background labels
+and GT segment-derived transition targets. This training history is recorded as
+`trained_with_thumos_labels=true` and `trained_with_gt_segments=true`. At
+validation/test inference it consumes no labels, GT segments, teacher outputs,
+prediction cache, or ledger state; those inference-use fields are explicitly
+false. The method must not be described as train-free or THUMOS-free.
 
 ## P0 Matrix
 
 - Exact-uniform fixed-384 in the same structured feasible family.
-- Frozen direct-boundary `a5e1774` architecture retrained for the matched horizon.
+- Definition-frozen direct-boundary `a5e1774` architecture retrained for the
+  matched horizon, validation timing, and component learning rates.
 - Transition-only fixed-384 with beta 0.
 - Transition-only fixed-384 with protected beta ramp to 0.25.
 
@@ -77,3 +91,9 @@ optimizer horizon, and evaluation protocol.
   on the same hardware.
 - A second detector backend is attempted only after fixed-384 clears the primary
   gate.
+- Before any P0 full run, a clean-commit CUDA gate must build the unmodified
+  VideoMAE Adapter/AdaTAD model, execute the real 768-to-384 selector path at
+  160x160, backpropagate only ActionFormerHead classification plus regression
+  losses, and verify non-zero transition-scorer/backbone-adapter/head gradients
+  with zero coarse-probe leakage. The gate JSON is bound to commit, config,
+  official ASFormer source, and checkpoint hashes.

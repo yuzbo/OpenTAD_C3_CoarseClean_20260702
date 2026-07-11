@@ -44,6 +44,12 @@ the default baseline.
    and focused full-model one-step tests.
 9. Run local compile/unit checks, remote Torch tests and precheck, then commit,
    push, and deploy a matched fixed-384 experiment only after all gates pass.
+10. Keep legacy spatial-stem hidden as the default official-ASFormer wrapper
+    output; only transition-only explicitly opts into encoder hidden.
+11. Apply optimizer-driven parameter freezing before DDP construction and make
+    direct/transition P0 coarse-component learning rates identical.
+12. Bind P0 launchers to a clean-commit formal GPU gate artifact and exact input
+    hashes; an environment boolean is not gate evidence.
 
 ## Evidence Gates
 
@@ -57,3 +63,6 @@ the default baseline.
 - Official detector one-step train/test passes and every required trainable
   selector parameter appears in exactly one optimizer group.
 - No full run is submitted from a failed precheck.
+- The formal GPU gate uses the real VideoMAE Adapter, T=768, K=384, 160x160 raw
+  input and real `cls_loss + reg_loss`; the scaled mean-backbone proof is only a
+  fast interface regression.

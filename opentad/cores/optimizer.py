@@ -2,6 +2,25 @@ import torch
 from .layer_decay_optimizer import build_vit_optimizer
 
 
+def prepare_optimizer_parameter_freezing(cfg, model, logger):
+    """Apply optimizer-driven freezing before DDP registers model parameters."""
+    if cfg.get("type") == "LayerDecayAdamW":
+        return
+    module = model.module if hasattr(model, "module") else model
+    backbone = getattr(module, "backbone", None)
+    backbone_cfg = cfg.get("backbone")
+    if backbone is None or backbone_cfg is None or getattr(backbone, "freeze_backbone", False):
+        return
+    custom_names = [entry["name"] for entry in backbone_cfg.get("custom", [])]
+    exclude_names = list(backbone_cfg.get("exclude", []))
+    for name, param in backbone.named_parameters():
+        is_custom = any(custom_name in name for custom_name in custom_names)
+        is_excluded = any(exclude_name in name for exclude_name in exclude_names)
+        if is_excluded and not is_custom and param.requires_grad:
+            param.requires_grad = False
+            logger.info(f"Freeze backbone parameter before DDP: {name}")
+
+
 def assert_optimizer_exact_coverage(model, optimizer):
     """Assert that optimizer groups exactly cover the model's trainable parameters."""
     model_params = {
@@ -159,8 +178,11 @@ def get_backbone_optim_groups(cfg, model, logger):
                     is_custom = True
                     break
 
-        if is_exclude and not is_custom:
-            param.requires_grad_(False)
+        if is_exclude and not is_custom and param.requires_grad:
+            raise RuntimeError(
+                f"backbone parameter {name!r} must be frozen before DDP; "
+                "call prepare_optimizer_parameter_freezing before wrapping the model"
+            )
 
         # if is_custom, we have already appended the param to the custom_params_list
         # if is _exclude, we do not need to append the param to the rest_params_list

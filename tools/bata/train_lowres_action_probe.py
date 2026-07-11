@@ -2051,6 +2051,7 @@ class C3OfficialActionSegmentationProbe:
         hidden_dim: int = 96,
         num_layers: int = 2,
         dropout: float = 0.10,
+        hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
     ) -> None:
         if backend not in SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS:
             raise ValueError(f"unsupported official action segmentation backend: {backend}")
@@ -2063,6 +2064,18 @@ class C3OfficialActionSegmentationProbe:
         self.spatial_size = int(spatial_size)
         self.hidden_dim = int(hidden_dim)
         self.num_layers = int(num_layers)
+        self.hidden_output_kind = str(hidden_output_kind)
+        supported_hidden_kinds = {
+            "pre_temporal_spatial_stem_hidden",
+            "official_asformer_encoder_hidden",
+        }
+        if self.hidden_output_kind not in supported_hidden_kinds:
+            raise ValueError(
+                "hidden_output_kind must be pre_temporal_spatial_stem_hidden or "
+                "official_asformer_encoder_hidden"
+            )
+        if self.hidden_output_kind == "official_asformer_encoder_hidden" and self.backend != "official_asformer":
+            raise ValueError("official_asformer_encoder_hidden requires backend='official_asformer'")
         repo_root = _official_repos_root()
         self.official_source = {
             "backend": self.backend,
@@ -2220,7 +2233,7 @@ class C3OfficialActionSegmentationProbe:
             rows = []
             encoder_hidden_rows = []
             hook = None
-            if return_hidden:
+            if return_hidden and self.hidden_output_kind == "official_asformer_encoder_hidden":
                 def capture_encoder_hidden(_module, _inputs, output):
                     if not isinstance(output, tuple) or len(output) != 2:
                         raise RuntimeError("official ASFormer encoder must return (logits, hidden)")
@@ -2255,7 +2268,7 @@ class C3OfficialActionSegmentationProbe:
         logits = logits.masked_fill(~mask, 0.0)
         if not return_hidden:
             return logits
-        if self.backend == "official_asformer":
+        if self.backend == "official_asformer" and self.hidden_output_kind == "official_asformer_encoder_hidden":
             if len(encoder_hidden_rows) != int(batch):
                 raise RuntimeError(
                     "official ASFormer encoder hidden capture count does not match the batch"

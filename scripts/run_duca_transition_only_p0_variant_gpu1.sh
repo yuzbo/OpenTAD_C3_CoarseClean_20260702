@@ -22,7 +22,7 @@ BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 VALIDATOR="tools/bata/validate_duca_transition_only_p0_variant.py"
 FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE:-0}"
-DUCA_CORE_GATE_PASSED="${DUCA_CORE_GATE_PASSED:-0}"
+DUCA_CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
 SEED="${SEED:-0}"
 RUN_ID="${RUN_ID:-0}"
 MASTER_PORT="${MASTER_PORT:-30471}"
@@ -42,12 +42,23 @@ export DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH=100
 export DUCA_LOSS_SCHEDULE_TOTAL_STEPS=13200
 export DUCA_PROFILE_RUNTIME="${DUCA_PROFILE_RUNTIME:-0}"
 
-[[ "${DUCA_CORE_GATE_PASSED}" == "1" ]] || fail "DUCA_CORE_GATE_PASSED=1 is required"
 [[ "${FULLTRAIN_CANDIDATE}" == "1" ]] || fail "FULLTRAIN_CANDIDATE=1 is required"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "P0 full train must run inside Slurm"
 [[ -x "${PYTHON}" ]] || fail "Python environment missing: ${PYTHON}"
 [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain missing: ${ADATAD_PRETRAIN_PATH}"
-[[ -f "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py" ]] || fail "official ASFormer source missing"
+SOURCE_PATH="${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py"
+REFERENCE_CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py"
+[[ -f "${SOURCE_PATH}" ]] || fail "official ASFormer source missing"
+[[ -f "${REFERENCE_CONFIG}" ]] || fail "transition-only reference config missing"
+[[ -n "${DUCA_CORE_GATE_JSON}" ]] || fail "DUCA_CORE_GATE_JSON is required"
+[[ -f "${DUCA_CORE_GATE_JSON}" ]] || fail "DUCA core gate JSON missing: ${DUCA_CORE_GATE_JSON}"
+
+CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current git HEAD"
+DUCA_EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
+[[ "${DUCA_EXPECTED_COMMIT}" == "${CURRENT_HEAD}" ]] \
+  || fail "DUCA_EXPECTED_COMMIT must match current HEAD ${CURRENT_HEAD}"
+GIT_STATUS="$(git status --porcelain --untracked-files=normal)" || fail "cannot inspect git tree"
+[[ -z "${GIT_STATUS}" ]] || fail "formal P0 full train requires a clean git tree"
 
 module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
@@ -55,21 +66,44 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 [[ "${CUDA_VISIBLE_DEVICES}" == "0" || "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "invalid Slurm GPU mapping"
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 
-"${PYTHON}" "${VALIDATOR}" --variant "${VARIANT}" --config "${CONFIG}" --output-json "${RUN_DIR}/variant_validation.json"
+REFERENCE_CONFIG_SHA256="$(sha256sum "${REFERENCE_CONFIG}" | awk '{print $1}')"
+SOURCE_SHA256="$(sha256sum "${SOURCE_PATH}" | awk '{print $1}')"
+CHECKPOINT_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
+
+"${PYTHON}" "${VALIDATOR}" \
+  --variant "${VARIANT}" \
+  --config "${CONFIG}" \
+  --core-gate-json "${DUCA_CORE_GATE_JSON}" \
+  --expected-commit "${DUCA_EXPECTED_COMMIT}" \
+  --expected-config-sha256 "${REFERENCE_CONFIG_SHA256}" \
+  --expected-source-sha256 "${SOURCE_SHA256}" \
+  --expected-checkpoint-sha256 "${CHECKPOINT_SHA256}" \
+  --output-json "${RUN_DIR}/variant_validation.json"
 "${PYTHON}" -m pytest tests/test_duca_transition_only_p0_matrix.py -q
+
+CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
+CORE_GATE_SHA256="$(sha256sum "${DUCA_CORE_GATE_JSON}" | awk '{print $1}')"
 
 cat > "${RUN_DIR}/manifest.json" <<EOF
 {
-  "git_commit": "$(git rev-parse HEAD 2>/dev/null || echo nogit)",
+  "git_commit": "${CURRENT_HEAD}",
   "variant": "${VARIANT}",
   "config": "${CONFIG}",
+  "config_sha256": "${CONFIG_SHA256}",
+  "source": "${SOURCE_PATH}",
+  "source_sha256": "${SOURCE_SHA256}",
+  "checkpoint": "${ADATAD_PRETRAIN_PATH}",
+  "checkpoint_sha256": "${CHECKPOINT_SHA256}",
+  "core_gate_json": "${DUCA_CORE_GATE_JSON}",
+  "core_gate_json_sha256": "${CORE_GATE_SHA256}",
+  "core_gate_git_commit": "${DUCA_EXPECTED_COMMIT}",
   "seed": ${SEED},
   "task": "offline_temporal_action_detection",
   "budget": 384,
   "dense_window_size": 768,
   "expected_optimizer_steps": 13200,
   "slurm_job_id": "${SLURM_JOB_ID}",
-  "core_gate_dependency_asserted": true
+  "core_gate_dependency": "slurm_afterok"
 }
 EOF
 

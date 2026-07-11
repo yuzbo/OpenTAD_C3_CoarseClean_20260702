@@ -16,6 +16,8 @@ CONFIG="${CONFIG:-configs/adatad/thumos/duca_transition_only_fixed384_official_a
 VALIDATOR="${VALIDATOR:-tools/bata/validate_duca_transition_only_fixed384_official_adatad_backend.py}"
 PROOF="${PROOF:-tools/bata/run_duca_transition_only_official_adatad_one_step_grad_proof.py}"
 COST_PROFILER="${COST_PROFILER:-tools/bata/profile_duca_transition_only_cost.py}"
+FORMAL_GATE="${FORMAL_GATE:-tools/bata/run_duca_transition_only_formal_full_model_gate.py}"
+DUCA_RUN_FORMAL_FULL_MODEL_GATE="${DUCA_RUN_FORMAL_FULL_MODEL_GATE:-0}"
 RUN_TAG="${RUN_TAG:-duca_transition_only_fixed384_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
@@ -55,8 +57,16 @@ fi
 [[ -f "${VALIDATOR}" ]] || fail "validator missing: ${VALIDATOR}"
 [[ -f "${PROOF}" ]] || fail "one-step proof missing: ${PROOF}"
 [[ -f "${COST_PROFILER}" ]] || fail "cost profiler missing: ${COST_PROFILER}"
+[[ -f "${FORMAL_GATE}" ]] || fail "formal full-model gate missing: ${FORMAL_GATE}"
 [[ -f "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py" ]] \
   || fail "official ASFormer source missing under ${C3_OFFICIAL_ACTION_SEG_REPOS}"
+SOURCE_PATH="${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py"
+CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current git HEAD"
+if [[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" || "${PRECHECK_ONLY}" != "1" ]]; then
+  GIT_STATUS="$(git status --porcelain --untracked-files=normal)" || fail "cannot inspect git tree"
+  [[ -z "${GIT_STATUS}" ]] || fail "formal gate/full train requires a clean git tree"
+  [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain missing: ${ADATAD_PRETRAIN_PATH}"
+fi
 
 module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
@@ -77,6 +87,7 @@ bash -n "${BASH_SOURCE[0]}"
   "${VALIDATOR}" \
   "${PROOF}" \
   "${COST_PROFILER}" \
+  "${FORMAL_GATE}" \
   opentad/models/duca/transition_only.py \
   opentad/models/duca/acquisition.py \
   opentad/models/selectors/duca_online_frame_selector.py \
@@ -113,6 +124,15 @@ fi
   --repeats 2 \
   --output "${RUN_DIR}/cost_profile_smoke.json"
 
+if [[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" ]]; then
+  "${PYTHON}" "${FORMAL_GATE}" \
+    --config "${CONFIG}" \
+    --checkpoint "${ADATAD_PRETRAIN_PATH}" \
+    --official-repos-root "${C3_OFFICIAL_ACTION_SEG_REPOS}" \
+    --device cuda \
+    --output-json "${RUN_DIR}/formal_full_model_gate.json"
+fi
+
 if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   echo "[DUCA_TRANSITION_ONLY] PRECHECK_ONLY complete"
   exit 0
@@ -121,11 +141,25 @@ fi
 [[ "${FULLTRAIN_CANDIDATE}" == "1" ]] || fail "FULLTRAIN_CANDIDATE=1 is required beyond precheck"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal full train must run inside Slurm"
 [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain missing: ${ADATAD_PRETRAIN_PATH}"
+[[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" ]] || fail "formal full train requires DUCA_RUN_FORMAL_FULL_MODEL_GATE=1"
+[[ -f "${RUN_DIR}/formal_full_model_gate.json" ]] || fail "formal full-model gate artifact is missing"
+
+CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
+SOURCE_SHA256="$(sha256sum "${SOURCE_PATH}" | awk '{print $1}')"
+CHECKPOINT_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
+FORMAL_GATE_SHA256="$(sha256sum "${RUN_DIR}/formal_full_model_gate.json" | awk '{print $1}')"
 
 cat > "${RUN_DIR}/manifest.json" <<EOF
 {
-  "git_commit": "$(git rev-parse HEAD 2>/dev/null || echo nogit)",
+  "git_commit": "${CURRENT_HEAD}",
   "config": "${CONFIG}",
+  "config_sha256": "${CONFIG_SHA256}",
+  "source": "${SOURCE_PATH}",
+  "source_sha256": "${SOURCE_SHA256}",
+  "checkpoint": "${ADATAD_PRETRAIN_PATH}",
+  "checkpoint_sha256": "${CHECKPOINT_SHA256}",
+  "formal_gate_json": "${RUN_DIR}/formal_full_model_gate.json",
+  "formal_gate_json_sha256": "${FORMAL_GATE_SHA256}",
   "task": "offline_temporal_action_detection",
   "selector_variant": "transition_only",
   "budget": 384,

@@ -12,11 +12,11 @@ import torch.nn as nn
 from opentad.models.detectors.actionformer import ActionFormer
 
 
-def _module_with_transition_selector() -> ActionFormer:
+def _module_with_transition_selector(selector_variant: str = "transition_only") -> ActionFormer:
     model = ActionFormer.__new__(ActionFormer)
     nn.Module.__init__(model)
     selector = nn.Module()
-    selector.selector_variant = "transition_only"
+    selector.selector_variant = selector_variant
     selector.coarse_trunk_lr = 2.5e-5
     selector.action_head_lr = 5.0e-5
     selector.transition_scorer_lr = 1.0e-4
@@ -52,3 +52,13 @@ def test_transition_only_optimizer_uses_audited_component_learning_rates() -> No
     assert lr_by_param[id(named["frame_selector.raw_actionness_source.probe_module.official_temporal.decoders.0.conv_out.weight"])] == pytest.approx(5.0e-5)
     assert lr_by_param[id(named["frame_selector.adapter.transition_scorer.1.weight"])] == pytest.approx(1.0e-4)
     assert lr_by_param[id(named["rpn_head.weight"])] == pytest.approx(1.0e-4)
+
+
+def test_direct_boundary_p0_uses_the_same_coarse_component_learning_rates() -> None:
+    model = _module_with_transition_selector(selector_variant="direct_boundary")
+    groups = model.get_optim_groups({"lr": 1.0e-4, "weight_decay": 0.05})
+    lr_by_param = {id(param): float(group["lr"]) for group in groups for param in group["params"]}
+    named = dict(model.named_parameters())
+
+    assert lr_by_param[id(named["frame_selector.raw_actionness_source.probe_module.spatial_stem.weight"])] == pytest.approx(2.5e-5)
+    assert lr_by_param[id(named["frame_selector.raw_actionness_source.probe_module.official_temporal.encoder.conv_out.weight"])] == pytest.approx(5.0e-5)

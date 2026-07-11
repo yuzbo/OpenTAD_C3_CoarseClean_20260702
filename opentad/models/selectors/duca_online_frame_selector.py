@@ -444,6 +444,9 @@ class DucaOnlineFrameSelector(nn.Module):
                         raise ValueError("transition_only requires the official ASFormer backend")
                     if bool(cfg.get("frozen", False)) or cfg.get("trainable") is False:
                         raise ValueError("transition_only requires a trainable shared ASFormer probe")
+                    cfg.setdefault("hidden_output_kind", "official_asformer_encoder_hidden")
+                    if cfg["hidden_output_kind"] != "official_asformer_encoder_hidden":
+                        raise ValueError("transition_only requires official ASFormer encoder hidden output")
                 inferred_hidden_dim = int(
                     cfg.get("coarse_hidden_dim")
                     or cfg.get("tcn_hidden_dim")

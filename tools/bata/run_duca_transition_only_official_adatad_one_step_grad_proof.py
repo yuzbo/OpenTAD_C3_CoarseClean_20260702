@@ -235,7 +235,16 @@ def run_proof(
         gt_segments=gt_segments,
         gt_labels=gt_labels,
     )
-    detector_route["inputs"].square().mean().backward()
+    detector_losses = model(
+        inputs,
+        masks,
+        metas,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+        return_loss=True,
+    )
+    detector_only_loss = detector_losses["cls_loss"] + detector_losses["reg_loss"]
+    detector_only_loss.backward()
     detector_route_gradients = {
         "coarse_probe": _grad_sum(selector.raw_actionness_source),
         "transition_scorer": _grad_sum(selector.adapter.transition_scorer),
@@ -284,6 +293,8 @@ def run_proof(
         "transition_gradients": transition_gradients,
         "coverage_gradients": coverage_gradients,
         "detector_route_gradients": detector_route_gradients,
+        "detector_route_loss_keys": ["cls_loss", "reg_loss"],
+        "detector_route_loss": float(detector_only_loss.detach().cpu().item()),
         "optimizer_exact_coverage": True,
         "component_learning_rates": {key: sorted(values) for key, values in component_lrs.items()},
         "optimizer_step_ran": True,

@@ -73,6 +73,7 @@ def _make_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         hidden_dim=16,
         num_layers=1,
         dropout=0.0,
+        hidden_output_kind=ASFORMER_ENCODER_HIDDEN_KIND,
     )
     return probe, source_path
 

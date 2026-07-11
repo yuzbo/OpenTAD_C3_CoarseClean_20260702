@@ -345,11 +345,9 @@ class ActionFormer(SingleStageDetector):
         transition_only = getattr(selector, "selector_variant", None) == "transition_only"
 
         def parameter_lr(name):
-            if not transition_only:
-                return float(cfg["lr"])
             scorer_prefix = "frame_selector.adapter.transition_scorer."
             coarse_prefix = "frame_selector.raw_actionness_source.probe_module."
-            if name.startswith(scorer_prefix):
+            if transition_only and name.startswith(scorer_prefix):
                 return float(selector.transition_scorer_lr)
             if name.startswith(coarse_prefix):
                 temporal_marker = ".official_temporal."

@@ -95,8 +95,25 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
     _require(source.official_action_seg_backend == "official_asformer", "coarse temporal module must be official ASFormer")
     _require(source.trainable is True and source.frozen is False, "shared ASFormer must be trainable")
     _require(source.return_hidden_features is True and source.require_hidden_features is True, "true encoder hidden is mandatory")
-    for key in ("uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
-        _require(source.get(key) is False, f"inference source provenance must set {key}=False")
+    _require(
+        source.hidden_output_kind == "official_asformer_encoder_hidden",
+        "transition-only must explicitly opt into official ASFormer encoder hidden",
+    )
+    _require(source.thumos_trained is True, "task-adapted probe must disclose THUMOS training")
+    _require(source.uses_labels is True, "task-adapted probe must disclose label supervision")
+    _require(source.uses_gt is True, "task-adapted probe must disclose GT-segment supervision")
+    _require(source.uses_teacher is False, "task-adapted probe must not use a teacher")
+    _require(source.uses_prediction_cache is False, "task-adapted probe must not use prediction cache")
+    _require(source.trained_with_thumos_labels is True, "THUMOS label training history must be explicit")
+    _require(source.trained_with_gt_segments is True, "GT boundary training history must be explicit")
+    _require(source.training_supervision_scope == "train_only", "supervision must be train-only")
+    for key in (
+        "uses_labels_at_inference",
+        "uses_gt_at_inference",
+        "uses_teacher_at_inference",
+        "uses_prediction_cache_at_inference",
+    ):
+        _require(source.get(key) is False, f"inference provenance must set {key}=False")
     _require(contract.coarse_hidden_kind == "official_asformer_encoder_hidden", "hidden semantics are not locked")
     _require(contract.ranking_uses_absolute_hidden is False, "absolute hidden ranking is forbidden")
     _require(contract.ranking_uses_raw_rgb_mean is False, "RGB-mean ranking is forbidden")
@@ -127,6 +144,11 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
     _require(int(cfg.duca_schedule_steps_per_epoch) == 100, "expected steps per epoch must be 100")
     _require(int(cfg.duca_loss_schedule_total_steps) == 13200, "expected schedule horizon must be 13200")
     _require(int(cfg.workflow.end_epoch) == 132, "workflow must run 132 epochs")
+    _require(int(cfg.workflow.val_start_epoch) >= 47, "mAP validation must start after policy alpha reaches one")
+    _require(
+        int(cfg.workflow.val_eval_interval_anchor_epoch) >= int(cfg.workflow.val_start_epoch),
+        "validation anchor must not precede val_start_epoch",
+    )
     _require(int(cfg.scheduler.max_epoch) == 132, "cosine scheduler horizon must match workflow")
     _require("max_train_iters" not in cfg.workflow, "epoch runner must not claim an exact successful-step stop")
     _require(int(cfg.window_size) == 384 and int(cfg.chunk_num) == 24, "detector physical input must be 384 frames")
@@ -161,6 +183,10 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
         "official_head_config_match": True,
         "coarse_probe": str(source.official_action_seg_backend),
         "coarse_hidden_kind": str(contract.coarse_hidden_kind),
+        "trained_with_thumos_labels": bool(source.trained_with_thumos_labels),
+        "trained_with_gt_segments": bool(source.trained_with_gt_segments),
+        "uses_labels_at_inference": False,
+        "uses_gt_at_inference": False,
         "policy_uniform_steps": int(schedule.policy_alpha.warmup_steps),
         "policy_homotopy_steps": int(schedule.policy_alpha.transition_steps),
         "detector_bridge_delay_steps": int(schedule.detector_gradient.warmup_steps),
@@ -169,6 +195,7 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
         "expected_total_steps": int(cfg.duca_loss_schedule_total_steps),
         "workflow_epochs": int(cfg.workflow.end_epoch),
         "scheduler_epochs": int(cfg.scheduler.max_epoch),
+        "val_start_epoch": int(cfg.workflow.val_start_epoch),
         "official_asformer_source": source_summary,
         "paper_claim_allowed": False,
     }

@@ -15,7 +15,14 @@ from torch.cuda.amp import GradScaler
 from mmengine.config import Config, DictAction
 from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
-from opentad.cores import train_one_epoch, val_one_epoch, eval_one_epoch, build_optimizer, build_scheduler
+from opentad.cores import (
+    train_one_epoch,
+    val_one_epoch,
+    eval_one_epoch,
+    build_optimizer,
+    prepare_optimizer_parameter_freezing,
+    build_scheduler,
+)
 from opentad.utils import (
     set_seed,
     update_workdir,
@@ -111,6 +118,10 @@ def main():
 
     # build model
     model = build_detector(cfg.model)
+
+    # Optimizer exclusions change requires_grad and must be applied before DDP
+    # captures its parameter set.
+    prepare_optimizer_parameter_freezing(cfg.optimizer, model, logger)
 
     # DDP
     use_static_graph = getattr(cfg.solver, "static_graph", False)

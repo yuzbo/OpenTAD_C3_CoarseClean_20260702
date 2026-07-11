@@ -29,6 +29,33 @@ def _plain(value: Any) -> Any:
     return value
 
 
+def validate_core_gate(
+    path: str | Path,
+    *,
+    expected_commit: str,
+    expected_config_sha256: str,
+    expected_source_sha256: str,
+    expected_checkpoint_sha256: str,
+) -> dict[str, Any]:
+    gate_path = Path(path)
+    _require(gate_path.is_file(), f"DUCA core gate JSON missing: {gate_path}")
+    payload = json.loads(gate_path.read_text(encoding="utf-8"))
+    _require(isinstance(payload, dict), "DUCA core gate JSON must contain an object")
+    _require(payload.get("ok") is True, "DUCA core gate JSON must declare ok=true")
+    gate_commit = payload.get("git_commit")
+    _require(isinstance(gate_commit, str) and gate_commit, "DUCA core gate JSON missing git_commit")
+    _require(gate_commit == str(expected_commit), "DUCA core gate git_commit does not match expected commit")
+    _require(payload.get("formal_proof_ok") is True, "DUCA core gate missing formal_proof_ok=true")
+    _require(payload.get("reference_config_sha256") == expected_config_sha256, "DUCA core gate config SHA256 mismatch")
+    _require(payload.get("official_asformer_source_sha256") == expected_source_sha256, "DUCA core gate source SHA256 mismatch")
+    _require(payload.get("checkpoint_sha256") == expected_checkpoint_sha256, "DUCA core gate checkpoint SHA256 mismatch")
+    _require(int(payload.get("dense_window_size", -1)) == 768, "DUCA core gate did not test T=768")
+    _require(int(payload.get("selected_count", -1)) == 384, "DUCA core gate did not test exact K=384")
+    _require(payload.get("model_type") == "ActionFormer", "DUCA core gate did not test ActionFormer")
+    _require(payload.get("detector_head_type") == "ActionFormerHead", "DUCA core gate did not test ActionFormerHead")
+    return {"ok": True, "git_commit": gate_commit, "path": str(gate_path)}
+
+
 def validate_variant(variant: str, config_path: str | None = None) -> dict[str, Any]:
     variant = str(variant)
     _require(variant in CONFIGS, f"unknown P0 variant {variant!r}")
@@ -47,6 +74,19 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
     _require(int(cfg.model.projection.max_seq_len) == 384, "projection length is not 384")
     _require(int(cfg.workflow.end_epoch) == 132, "workflow must run 132 epochs")
     _require(int(cfg.scheduler.max_epoch) == 132, "scheduler must run 132 epochs")
+    for key in ("val_start_epoch", "val_eval_interval", "val_eval_interval_anchor_epoch"):
+        _require(int(cfg.workflow[key]) == int(reference.workflow[key]), f"workflow {key} mismatch")
+    component_lrs = {
+        "coarse_trunk": float(selector.get("coarse_trunk_lr", 2.5e-5)),
+        "action_head": float(selector.get("action_head_lr", 5.0e-5)),
+        "transition_scorer": float(selector.get("transition_scorer_lr", 1.0e-4)),
+    }
+    reference_lrs = {
+        "coarse_trunk": float(reference.model.frame_selector.coarse_trunk_lr),
+        "action_head": float(reference.model.frame_selector.action_head_lr),
+        "transition_scorer": float(reference.model.frame_selector.transition_scorer_lr),
+    }
+    _require(component_lrs == reference_lrs, "effective selector component LR protocol mismatch")
 
     details: dict[str, Any] = {}
     if variant == "uniform":
@@ -58,6 +98,13 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
     elif variant == "direct":
         _require(selector.get("selector_variant", "direct_boundary") == "direct_boundary", "direct baseline changed architecture")
         _require(int(cfg.duca_loss_schedule_total_steps) == 13200, "direct baseline horizon mismatch")
+        source = selector.actionness_source_cfg
+        _require(
+            source.get("hidden_output_kind") == "pre_temporal_spatial_stem_hidden",
+            "direct baseline must preserve legacy spatial-stem hidden",
+        )
+        _require(source.get("trained_with_thumos_labels") is True, "direct baseline training provenance is incomplete")
+        _require(source.get("trained_with_gt_segments") is True, "direct baseline GT provenance is incomplete")
         details["selection"] = "a5_direct_boundary"
     elif variant == "transition_beta0":
         _require(selector.selector_variant == "transition_only", "beta0 must use transition-only selector")
@@ -84,6 +131,7 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
         "scheduler_epochs": 132,
         "detector": "ActionFormer/ActionFormerHead",
         "paper_claim_allowed": False,
+        "component_learning_rates": component_lrs,
         **details,
     }
 
@@ -92,10 +140,33 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", choices=sorted(CONFIGS), required=True)
     parser.add_argument("--config")
+    parser.add_argument("--core-gate-json")
+    parser.add_argument("--expected-commit")
+    parser.add_argument("--expected-config-sha256")
+    parser.add_argument("--expected-source-sha256")
+    parser.add_argument("--expected-checkpoint-sha256")
     parser.add_argument("--output-json")
     args = parser.parse_args(argv)
     try:
         summary = validate_variant(args.variant, args.config)
+        gate_args = (
+            args.core_gate_json,
+            args.expected_commit,
+            args.expected_config_sha256,
+            args.expected_source_sha256,
+            args.expected_checkpoint_sha256,
+        )
+        if any(gate_args):
+            _require(bool(args.core_gate_json), "--core-gate-json is required with --expected-commit")
+            _require(bool(args.expected_commit), "--expected-commit is required with --core-gate-json")
+            _require(all(gate_args), "all core-gate expected hashes are required")
+            summary["core_gate"] = validate_core_gate(
+                args.core_gate_json,
+                expected_commit=args.expected_commit,
+                expected_config_sha256=args.expected_config_sha256,
+                expected_source_sha256=args.expected_source_sha256,
+                expected_checkpoint_sha256=args.expected_checkpoint_sha256,
+            )
     except Exception as exc:
         summary = {"ok": False, "variant": args.variant, "error_type": exc.__class__.__name__, "error": str(exc)}
         code = 1

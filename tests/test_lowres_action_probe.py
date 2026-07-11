@@ -1,4 +1,5 @@
 import json
+import inspect
 import importlib.util
 import sys
 import types
@@ -758,6 +759,16 @@ def test_parse_args_supports_official_action_segmentation_backends():
 
     with pytest.raises(SystemExit):
         probe.parse_args(["--probe-model", "official-action-seg", "--official-action-seg-backends", "asformer_lite"])
+
+
+def test_official_asformer_hidden_output_defaults_to_legacy_spatial_stem() -> None:
+    probe = load_probe_module()
+
+    parameter = inspect.signature(probe.C3OfficialActionSegmentationProbe).parameters[
+        "hidden_output_kind"
+    ]
+
+    assert parameter.default == "pre_temporal_spatial_stem_hidden"
 
 
 def test_official_action_seg_probe_forwards_binary_logits_with_source_metadata():

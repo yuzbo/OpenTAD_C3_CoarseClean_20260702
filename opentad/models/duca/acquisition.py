@@ -54,11 +54,16 @@ FORBIDDEN_DECISION_KEYS = {
     "ledger_path",
 }
 
-_PROVENANCE_FALSE_KEYS = (
+_PROVENANCE_REQUIRED_KEYS = (
     "thumos_trained",
     "uses_labels",
     "uses_teacher",
     "uses_gt",
+    "uses_prediction_cache",
+)
+
+_PROVENANCE_ALWAYS_FALSE_KEYS = (
+    "uses_teacher",
     "uses_prediction_cache",
 )
 
@@ -107,10 +112,27 @@ def validate_actionness_provenance(
     """Fail closed unless an actionness source is explicitly deployable."""
     if not isinstance(provenance, Mapping):
         raise ValueError(f"{context} must be a mapping")
-    missing = [key for key in _PROVENANCE_FALSE_KEYS if key not in provenance]
+    missing = [key for key in _PROVENANCE_REQUIRED_KEYS if key not in provenance]
     if missing:
         raise ValueError(f"{context} missing explicit fields: {', '.join(missing)}")
-    unsafe = [key for key in _PROVENANCE_FALSE_KEYS if provenance.get(key) is not False]
+    unsafe = [key for key in _PROVENANCE_ALWAYS_FALSE_KEYS if provenance.get(key) is not False]
+    supervised_fields = {
+        "thumos_trained": ("trained_with_thumos_labels", "uses_labels_at_inference"),
+        "uses_labels": ("trained_with_thumos_labels", "uses_labels_at_inference"),
+        "uses_gt": ("trained_with_gt_segments", "uses_gt_at_inference"),
+    }
+    for key, (disclosure_key, inference_key) in supervised_fields.items():
+        value = provenance.get(key)
+        if value is False:
+            continue
+        disclosed_train_only = (
+            value is True
+            and provenance.get(disclosure_key) is True
+            and provenance.get(inference_key) is False
+            and provenance.get("training_supervision_scope") == "train_only"
+        )
+        if not disclosed_train_only:
+            unsafe.append(key)
     if unsafe:
         raise ValueError(
             f"{context} is not deployable/no-target-label clean: "
@@ -627,8 +649,13 @@ class C3CoarseProbeActionnessSource(nn.Module):
         uses_teacher: bool = False,
         uses_gt: bool = False,
         uses_prediction_cache: bool = False,
+        trained_with_thumos_labels: bool = False,
+        trained_with_gt_segments: bool = False,
+        training_dataset: Optional[str] = None,
+        training_supervision_scope: Optional[str] = None,
         return_hidden_features: bool = True,
         require_hidden_features: bool = True,
+        hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
         **_: Any,
     ) -> None:
         super().__init__()
@@ -669,13 +696,19 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "uses_teacher": bool(uses_teacher),
             "uses_gt": bool(uses_gt),
             "uses_prediction_cache": bool(uses_prediction_cache),
+            "trained_with_thumos_labels": bool(trained_with_thumos_labels),
+            "trained_with_gt_segments": bool(trained_with_gt_segments),
+            "training_dataset": training_dataset,
+            "training_supervision_scope": training_supervision_scope,
             "uses_labels_at_inference": False,
             "uses_gt_at_inference": False,
             "uses_teacher_at_inference": False,
+            "uses_prediction_cache_at_inference": False,
             "joint_trainable": not self.frozen,
             "checkpoint_is_initialization": bool(self.checkpoint_path),
             "returns_hidden_features": self.return_hidden_features,
             "requires_hidden_features": self.require_hidden_features,
+            "hidden_output_kind": str(hidden_output_kind),
         }
 
         probe_mod = self._probe_module()
@@ -700,6 +733,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 hidden_dim=self.tcn_hidden_dim,
                 num_layers=int(official_num_layers),
                 dropout=self.dropout,
+                hidden_output_kind=str(hidden_output_kind),
             )
         elif self.probe_model == "matrix-zoo":
             self.probe = probe_mod.C3MatrixZooActionProbe(
