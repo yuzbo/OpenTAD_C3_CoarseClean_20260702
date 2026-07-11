@@ -168,6 +168,8 @@ def run_formal_gate(
     gt_labels = [torch.tensor([1], dtype=torch.long, device=device)]
 
     optimizer.zero_grad(set_to_none=True)
+    scaler = torch.cuda.amp.GradScaler(enabled=True)
+    scale_before_backward = float(scaler.get_scale())
     with torch.autocast(device_type="cuda", dtype=torch.float16):
         selector_outputs = selector.forward_train(
             inputs=inputs,
@@ -180,7 +182,8 @@ def run_formal_gate(
         _require("cls_loss" in detector_losses, "real ActionFormerHead cls_loss is missing")
         _require("reg_loss" in detector_losses, "real ActionFormerHead reg_loss is missing")
         detector_only_loss = detector_losses["cls_loss"] + detector_losses["reg_loss"]
-    detector_only_loss.backward()
+    scaler.scale(detector_only_loss).backward()
+    scaler.unscale_(optimizer)
 
     grid = selector_outputs["selector_outputs"]["grid"]
     positions = grid.selected_positions[0]
@@ -221,6 +224,8 @@ def run_formal_gate(
         "detector_only_gradients": gradients,
         "optimizer_exact_coverage": True,
         "amp": True,
+        "grad_scaler_enabled": True,
+        "grad_scale": scale_before_backward,
         "optimizer_step_ran": False,
         "cuda_peak_memory_bytes": int(torch.cuda.max_memory_allocated()),
     }
