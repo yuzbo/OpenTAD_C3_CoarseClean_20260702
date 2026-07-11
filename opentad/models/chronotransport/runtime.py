@@ -19,6 +19,7 @@ from .risk import ScheduleQuantileRiskPredictor
 from .scheduler import MeasuredCostTable, RiskConstrainedScheduler, ScheduleLibrary
 from .transport import TemporalTransportAdapter
 from .cost_lookup import ScheduleCostLookup
+from .protocol import canonical_sha256
 
 
 class ChronoTransportRuntime(nn.Module):
@@ -26,9 +27,9 @@ class ChronoTransportRuntime(nn.Module):
 
     Heavy attention/MLP is gathered and executed only for RECOMPUTE chunks.
     Existing AdaTAD adapters remain a dense innovation path: they see a dense
-    surrogate tensor, but only RECOMPUTE rows accept adapter outputs. HOLD is
-    therefore bitwise stable, while TRANSPORT is produced by a low-rank module
-    from the *latest* cache state.
+    surrogate tensor and write back every row in the original block order.
+    RECOMPUTE and TRANSPORT rows remain live for the current row while cached
+    history is detached; HOLD consumes the detached latest state.
 
     The all-RECOMPUTE path calls the original block forward exactly and is the
     numerical-compatibility anchor. Dynamic learned scheduling fails closed to
@@ -48,7 +49,9 @@ class ChronoTransportRuntime(nn.Module):
         transport_bottleneck_dims: int = 64,
         risk_quantile: float = 0.9,
         risk_epsilon: float = 1.0,
-        max_cache_age: int = 8,
+        max_cache_age: int | None = None,
+        hard_cache_validity_age: int = 47,
+        transport_age_embedding_cap: int = 8,
         forced_schedule: str | None = None,
         forced_actions: Tensor | None = None,
         cache_detach: bool = True,
@@ -68,7 +71,14 @@ class ChronoTransportRuntime(nn.Module):
         self.chunks_per_window = int(chunks_per_window)
         self.enabled = bool(enabled)
         self.signal_dims = int(signal_dims)
-        self.max_cache_age = int(max_cache_age)
+        # ``max_cache_age`` is retained only as a compatibility override for
+        # legacy configs.  New r2 configs must use the two explicit fields.
+        if max_cache_age is not None:
+            hard_cache_validity_age = int(max_cache_age)
+            transport_age_embedding_cap = int(max_cache_age)
+        self.hard_cache_validity_age = int(hard_cache_validity_age)
+        self.transport_age_embedding_cap = int(transport_age_embedding_cap)
+        self.max_cache_age = self.hard_cache_validity_age
         self.forced_schedule = forced_schedule
         self.cache_detach = bool(cache_detach)
         self.profile_sync_cuda = bool(profile_sync_cuda)
@@ -81,8 +91,10 @@ class ChronoTransportRuntime(nn.Module):
         self.layer_groups = normalize_layer_groups(self.depth, layer_groups)
         if self.embed_dims <= 0 or self.chunks_per_window <= 0 or self.signal_dims <= 0:
             raise ValueError("runtime dimensions must be positive")
-        if self.max_cache_age <= 0:
-            raise ValueError("max_cache_age must be positive")
+        if self.hard_cache_validity_age <= 0:
+            raise ValueError("hard_cache_validity_age must be positive")
+        if self.transport_age_embedding_cap <= 0:
+            raise ValueError("transport_age_embedding_cap must be positive")
         if forced_schedule is not None and forced_actions is not None:
             raise ValueError("forced_schedule and forced_actions are mutually exclusive")
         self.register_buffer(
@@ -96,7 +108,7 @@ class ChronoTransportRuntime(nn.Module):
                 TemporalTransportAdapter(
                     embed_dims=self.embed_dims,
                     bottleneck_dims=int(transport_bottleneck_dims),
-                    max_age=self.max_cache_age,
+                    max_age=self.transport_age_embedding_cap,
                 )
                 for _ in self.layer_groups
             ]
@@ -107,10 +119,16 @@ class ChronoTransportRuntime(nn.Module):
             hidden_dims=int(risk_hidden_dims),
             quantile=float(risk_quantile),
         )
-        self.schedule_library = ScheduleLibrary.default(
-            num_chunks=self.chunks_per_window,
-            layer_groups=self.layer_groups,
-        )
+        if self.chunks_per_window == 48 and len(self.layer_groups) == 3:
+            self.schedule_library = ScheduleLibrary.r2(
+                num_chunks=self.chunks_per_window,
+                layer_groups=self.layer_groups,
+            )
+        else:
+            self.schedule_library = ScheduleLibrary.default(
+                num_chunks=self.chunks_per_window,
+                layer_groups=self.layer_groups,
+            )
 
         # Proxy costs only make forced baseline/debug execution possible. They
         # never unlock the learned deployment scheduler.
@@ -133,7 +151,7 @@ class ChronoTransportRuntime(nn.Module):
             schedule_library=self.schedule_library,
             cost_table=self.cost_table,
             epsilon=float(risk_epsilon),
-            max_cache_age=self.max_cache_age,
+            max_cache_age=self.hard_cache_validity_age,
             schedule_cost_lookup=(
                 None
                 if nonlinear_cost_entries is None
@@ -213,7 +231,7 @@ class ChronoTransportRuntime(nn.Module):
         self,
         batch_size: int,
         device: torch.device,
-    ) -> tuple[ChronoSchedule, int, bool] | None:
+    ) -> tuple[ChronoSchedule, int, bool, Tensor] | None:
         if self.forced_actions.numel() > 0:
             actions = broadcast_schedule(
                 self.forced_actions,
@@ -221,21 +239,25 @@ class ChronoTransportRuntime(nn.Module):
                 num_chunks=self.chunks_per_window,
                 num_groups=len(self.layer_groups),
             ).to(device=device)
+            requested_actions = actions.clone()
             actions, repairs, first_forced = self._repair_schedule(actions)
             return (
                 ChronoSchedule(actions=actions, layer_groups=self.layer_groups, name="forced_actions"),
                 repairs,
                 first_forced,
+                requested_actions,
             )
         if self.forced_schedule is None:
             return None
         candidate = self.schedule_library.find(self.forced_schedule)
         actions = candidate.actions.to(device=device).unsqueeze(0).expand(batch_size, -1, -1).clone()
+        requested_actions = actions.clone()
         actions, repairs, first_forced = self._repair_schedule(actions)
         return (
             ChronoSchedule(actions=actions, layer_groups=self.layer_groups, name=candidate.name),
             repairs,
             first_forced,
+            requested_actions,
         )
 
     def _repair_schedule(self, actions: Tensor) -> tuple[Tensor, int, bool]:
@@ -262,7 +284,7 @@ class ChronoTransportRuntime(nn.Module):
                         age = 0
                     else:
                         age += 1
-                        if age > self.max_cache_age:
+                        if age > self.hard_cache_validity_age:
                             actions[batch_index, chunk_index, group_index] = int(ChronoAction.RECOMPUTE)
                             repairs += 1
                             age = 0
@@ -395,7 +417,7 @@ class ChronoTransportRuntime(nn.Module):
                             latest = latest.detach()
                         continue
 
-                    if anchor is None or latest is None or age >= self.max_cache_age:
+                    if anchor is None or latest is None or age >= self.hard_cache_validity_age:
                         # Runtime fail closed protects direct calls even after the
                         # schema-level repair pass.
                         with profiler.stage("recompute"):
@@ -461,10 +483,10 @@ class ChronoTransportRuntime(nn.Module):
                         adapted = cp.checkpoint(adapter_forward, provisional, use_reentrant=False)
                     else:
                         adapted = adapter_forward(provisional)
-                # The adapter still computes dense temporal context, but exact
-                # HOLD/TRANSPORT states are not silently overwritten by it.
-                output = provisional.clone()
-                output[effective_flat_mask] = adapted[effective_flat_mask]
+                # AdaTAD's temporal adapter is part of every original block,
+                # not part of the action-controlled heavy attention/MLP path.
+                # Its output therefore replaces all rows.
+                output = adapted
                 counters["adapter_dense_forward_count"] += 1
             else:
                 output = provisional
@@ -561,8 +583,9 @@ class ChronoTransportRuntime(nn.Module):
 
         schedule_repair_count = 0
         first_chunk_forced = False
+        requested_actions: Tensor
         if forced is not None:
-            schedule, schedule_repair_count, first_chunk_forced = forced
+            schedule, schedule_repair_count, first_chunk_forced, requested_actions = forced
             selected_names = tuple([schedule.name] * batch_size)
             fail_closed = torch.zeros(batch_size, dtype=torch.bool, device=x.device)
             upper_risk = torch.zeros(batch_size, dtype=x.dtype, device=x.device)
@@ -572,6 +595,7 @@ class ChronoTransportRuntime(nn.Module):
                 with profiler.stage("scheduler"):
                     signals = self._signals(state)
             selection = self.scheduler.select(signals)
+            requested_actions = selection.schedule.actions.clone()
             actions, repairs, first_chunk_forced = self._repair_schedule(selection.schedule.actions)
             schedule_repair_count += repairs
             schedule = ChronoSchedule(
@@ -603,6 +627,7 @@ class ChronoTransportRuntime(nn.Module):
                     1 for block in blocks if bool(getattr(block, "use_adapter", False))
                 ),
                 "schedule_repair_count": schedule_repair_count,
+                "adapter_writeback": "all_rows",
                 "first_chunk_forced_recompute": first_chunk_forced,
                 "runtime_fail_closed_repairs": 0,
                 "dense_output_shape_preserved": True,
@@ -633,7 +658,6 @@ class ChronoTransportRuntime(nn.Module):
                 counters=counters,
             )
 
-        requested_actions = actions.clone()
         out = state.reshape_as(x)
         whole_window_dense_fallback = False
         if not torch.isfinite(out).all():
@@ -657,11 +681,25 @@ class ChronoTransportRuntime(nn.Module):
         )
         self.latest_schedule = executed_schedule
         action_counts = executed_schedule.action_counts()
-        requested_action_counts = ChronoSchedule(
-            actions=requested_actions,
-            layer_groups=self.layer_groups,
-            name=schedule.name,
-        ).action_counts()
+        requested_action_counts = {
+            action.name.lower(): int((requested_actions == int(action)).sum().item())
+            for action in ChronoAction
+        }
+        requested_action_sha256 = canonical_sha256(requested_actions.detach().cpu().to(torch.long).tolist())
+        executed_action_sha256 = canonical_sha256(actions.detach().cpu().to(torch.long).tolist())
+        executed_estimated_cost = self.cost_table.estimate(actions)
+        evidence_valid = (
+            int(schedule_repair_count) == 0
+            and int(counters["runtime_fail_closed_repairs"]) == 0
+            and not whole_window_dense_fallback
+        )
+        invalid_reason = None
+        if int(schedule_repair_count) > 0:
+            invalid_reason = "schedule_repair"
+        elif int(counters["runtime_fail_closed_repairs"]) > 0:
+            invalid_reason = "runtime_repair"
+        elif whole_window_dense_fallback:
+            invalid_reason = "whole_window_dense_fallback"
         profiler.record_actions(**action_counts)
         self.latest_summary = {
             "schema_version": "chronotransport_runtime_v1",
@@ -675,6 +713,7 @@ class ChronoTransportRuntime(nn.Module):
             "first_chunk_forced_recompute": bool(first_chunk_forced),
             "dense_output_shape_preserved": tuple(out.shape) == tuple(x.shape),
             "adapter_path_dense": True,
+            "adapter_writeback": "all_rows",
             "heavy_attention_mlp_gathered": True,
             "cache_reset_per_window": True,
             "transport_uses_latest_cache": True,
@@ -686,9 +725,15 @@ class ChronoTransportRuntime(nn.Module):
             **geometry,
             "upper_risk": upper_risk.detach().cpu().tolist(),
             "estimated_cost": estimated_cost.detach().cpu().tolist(),
+            "requested_estimated_cost": estimated_cost.detach().cpu().tolist(),
+            "executed_estimated_cost": executed_estimated_cost.detach().cpu().tolist(),
             "fail_closed": fail_closed.detach().cpu().tolist(),
             "action_counts": action_counts,
             "requested_action_counts": requested_action_counts,
+            "requested_action_sha256": requested_action_sha256,
+            "executed_action_sha256": executed_action_sha256,
+            "evidence_valid": evidence_valid,
+            "invalid_implementation_reason": invalid_reason,
             "profile": profiler.summary(fill_missing=True),
         }
         self.latest_output = out

@@ -50,4 +50,8 @@ focused checks 分别为 7/7 和 36/36；这只是实现证据，不是 Gate 或
 implementation plan commit 为 `18cc1c0`；下一项是 runtime live-tensor、all-row adapter 与
 requested/executed contract。完整实现和 pre-Gate1 registration 之前不得运行或声称 Gate 1。
 
+runtime 与唯一 window-risk head 随后达到局部 `tested`：runtime/integration focused suite
+35/35，risk/core focused suite 30/30。当前下一项转为 paired replay、正式 Stage B 与 Gate
+adjudication；仍未注册、未运行任何新 Gate。
+
 由 `research-wiki/graph/edges.jsonl` 维护。

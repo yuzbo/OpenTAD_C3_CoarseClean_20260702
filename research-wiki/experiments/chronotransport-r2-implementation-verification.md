@@ -18,12 +18,17 @@ updated: 2026-07-12
   remote `tests/test_chronotransport_r2_protocol.py`, 7 passed.
 - Frozen r2 candidate library, motion/random exact-count controls, dual-age cache contract, and legacy
   core cache regression: remote focused suite, 36 passed.
+- Runtime all-row adapter writeback, current-row live gradient, detached historical cache,
+  requested/executed action separation, forced-dense/integration regressions: remote focused suite,
+  35 passed.
+- Fixed window-level D=23 mean/max quantile head, true-age feature, dense external safety semantics,
+  and core scheduler regressions: remote focused suite, 30 passed.
 
 ## Evidence boundary
 
-These are behavioral implementation checks, not Gate 1--4 results. Runtime semantics, risk head,
-formal Stage B/C, full-stack timing, registration, and formal GPU1 deployment are not yet verified by
-this record. No scientific claim is unlocked.
+These are behavioral implementation checks, not Gate 1--4 results. Formal Stage B/C, full-stack
+timing, registration, and formal GPU1 deployment are not yet verified by this record. No scientific
+claim is unlocked.
 
 ## Remote provenance
 

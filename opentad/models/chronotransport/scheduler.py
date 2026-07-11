@@ -424,6 +424,11 @@ class RiskConstrainedScheduler(nn.Module):
 
         candidates = self.schedule_library.stacked_actions(device=signals.device)
         candidate_risk = self.predictor(signals, candidates)
+        # Dense is a safety action outside r2 head fit/calibration/ranking and
+        # therefore has exact zero risk in the scheduler.
+        dense_index = self.schedule_library.names.index("dense")
+        candidate_risk = candidate_risk.clone()
+        candidate_risk[:, dense_index] = 0.0
         candidate_cost_1d = self._candidate_cost(candidates, batch_size)
         candidate_cost = candidate_cost_1d.unsqueeze(0).expand(batch_size, -1)
         age_feasible = self._age_feasible(candidates).unsqueeze(0).expand(batch_size, -1)
@@ -431,6 +436,7 @@ class RiskConstrainedScheduler(nn.Module):
         finite_signals = torch.isfinite(signals).reshape(batch_size, -1).all(dim=1)
         finite_risk = torch.isfinite(candidate_risk)
         feasible = finite_risk & age_feasible & (candidate_risk <= self.epsilon)
+        feasible[:, dense_index] = False
 
         if ood_mask is None:
             ood_mask = torch.zeros(batch_size, dtype=torch.bool, device=signals.device)

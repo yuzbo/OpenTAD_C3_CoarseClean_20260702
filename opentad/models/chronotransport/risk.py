@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
 
 from .actions import ChronoAction
@@ -14,7 +13,7 @@ class ScheduleQuantileRiskPredictor(nn.Module):
 
     Signals have shape ``[B, C, G, F]``. Candidate actions may use shape
     ``[K, C, G]`` or ``[B, K, C, G]``. The model returns one non-negative
-    aggregate risk per window and candidate.
+    window-level risk per candidate after fixed mean/max pooling.
     """
 
     def __init__(
@@ -34,14 +33,24 @@ class ScheduleQuantileRiskPredictor(nn.Module):
             raise ValueError("risk predictor dimensions must be positive")
         if not 0.0 < self.quantile < 1.0:
             raise ValueError("quantile must lie in (0, 1)")
+        if int(action_embed_dims) != 8:
+            raise ValueError("r2 action and group embedding dimensions are fixed at 8")
 
-        self.action_embedding = nn.Embedding(len(ChronoAction), int(action_embed_dims))
-        self.group_embedding = nn.Embedding(self.num_groups, int(action_embed_dims))
-        input_dims = self.signal_dims + 2 * int(action_embed_dims) + 1
-        self.cell_mlp = nn.Sequential(
-            nn.Linear(input_dims, self.hidden_dims),
+        self.action_embedding = nn.Embedding(len(ChronoAction), 8)
+        self.group_embedding = nn.Embedding(self.num_groups, 8)
+        self.cell_input_dims = self.signal_dims + 8 + 8 + 1
+        self.cell_encoder = nn.Sequential(
+            nn.Linear(self.cell_input_dims, self.hidden_dims),
+            nn.GELU(),
+            nn.Linear(self.hidden_dims, self.hidden_dims),
+            nn.GELU(),
+        )
+        self.window_head = nn.Sequential(
+            nn.LayerNorm(2 * self.hidden_dims),
+            nn.Linear(2 * self.hidden_dims, self.hidden_dims),
             nn.GELU(),
             nn.Linear(self.hidden_dims, 1),
+            nn.Softplus(),
         )
         self.register_buffer("calibration_offset", torch.tensor(0.0), persistent=True)
         self.register_buffer("_debug_action_risk", torch.empty(0), persistent=False)
@@ -105,6 +114,11 @@ class ScheduleQuantileRiskPredictor(nn.Module):
             age[..., chunk_index, :] = running
         return age.unsqueeze(-1)
 
+    @staticmethod
+    def normalized_candidate_age(actions: Tensor) -> Tensor:
+        age = ScheduleQuantileRiskPredictor.candidate_age(actions)
+        return age / (1.0 + age)
+
     def _normalize_actions(self, signals: Tensor, actions: Tensor) -> Tensor:
         batch_size, num_chunks, num_groups, _ = signals.shape
         if actions.ndim == 3:
@@ -132,16 +146,20 @@ class ScheduleQuantileRiskPredictor(nn.Module):
 
         if self._debug_action_risk.numel() == len(ChronoAction):
             per_cell = self._debug_action_risk.to(device=signals.device, dtype=signals.dtype)[actions]
+            aggregate = per_cell.mean(dim=(-1, -2)) + per_cell.amax(dim=(-1, -2))
         else:
             expanded_signals = signals.unsqueeze(1).expand(-1, candidates, -1, -1, -1)
             action_embed = self.action_embedding(actions)
             group_ids = torch.arange(num_groups, device=signals.device)
             group_embed = self.group_embedding(group_ids).view(1, 1, 1, num_groups, -1)
             group_embed = group_embed.expand(batch_size, candidates, num_chunks, -1, -1)
-            age = self.candidate_age(actions).to(device=signals.device, dtype=signals.dtype)
-            normalized_age = age / (1.0 + age)
+            normalized_age = self.normalized_candidate_age(actions).to(
+                device=signals.device, dtype=signals.dtype
+            )
             features = torch.cat((expanded_signals, action_embed, group_embed, normalized_age), dim=-1)
-            per_cell = F.softplus(self.cell_mlp(features).squeeze(-1))
+            hidden = self.cell_encoder(features)
+            mean_pool = hidden.mean(dim=(-3, -2))
+            max_pool = hidden.amax(dim=(-3, -2))
+            aggregate = self.window_head(torch.cat((mean_pool, max_pool), dim=-1)).squeeze(-1)
 
-        aggregate = per_cell.sum(dim=(-1, -2))
         return aggregate + self.calibration_offset.to(dtype=aggregate.dtype)

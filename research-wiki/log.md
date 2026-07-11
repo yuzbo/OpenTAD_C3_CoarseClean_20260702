@@ -44,3 +44,7 @@ append_only: true
 - 2026-07-12: ChronoTransport r2 implementation batch 1 reached partial `tested` status on the remote
   CPU environment: protocol tests 7/7 and candidate/control/cache plus legacy-core tests 36/36. This
   does not unlock a Gate or scientific claim; runtime and later protocol surfaces remain in progress.
+- 2026-07-12: ChronoTransport r2 runtime and window-risk implementation reached partial `tested`:
+  runtime/integration 35/35 and risk/core 30/30 on the remote CPU environment. The implementation now
+  uses all-row AdaTAD adapter writeback, detached historical cache with live current rows, distinct
+  requested/executed ledgers, and the fixed D=23 mean/max window head. No Gate has run.
