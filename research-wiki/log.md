@@ -48,3 +48,6 @@ append_only: true
   runtime/integration 35/35 and risk/core 30/30 on the remote CPU environment. The implementation now
   uses all-row AdaTAD adapter writeback, detached historical cache with live current rows, distinct
   requested/executed ledgers, and the fixed D=23 mean/max window head. No Gate has run.
+- 2026-07-12: Added and remotely tested Gate-1/Gate-2 pure adjudication (4/4) and Stage-C
+  object-identity/loss-specific AMP primitives (4/4). These are synthetic implementation checks;
+  no formal data was opened and no Gate result exists.

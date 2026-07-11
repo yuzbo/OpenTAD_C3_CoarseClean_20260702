@@ -23,6 +23,10 @@ updated: 2026-07-12
   35 passed.
 - Fixed window-level D=23 mean/max quantile head, true-age feature, dense external safety semantics,
   and core scheduler regressions: remote focused suite, 30 passed.
+- Gate 1 equal-cost oracle-headroom and Gate 2 matched TRANSPORT/HOLD pure adjudicators: remote
+  synthetic focused suite, 4 passed.
+- Stage-C object-identity ownership and loss-specific AMP gradient assignment: remote focused suite,
+  4 passed. Overflow retry and the formal 4,200-update runner remain pending.
 
 ## Evidence boundary
 

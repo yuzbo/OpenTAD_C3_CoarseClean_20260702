@@ -1,4 +1,5 @@
 from .actions import ChronoAction, ChronoSchedule, LayerGroup, normalize_layer_groups
+from .adjudication import gate1_oracle_headroom, gate2_matched_transport
 from .cache import CacheEntry, ChronoCacheBank
 from .controls import InvalidImplementationError, motion_topk_actions, random_exact_count_actions
 from .losses import nonnegative_detector_regret, pinball_loss, transport_consistency_loss
@@ -27,6 +28,7 @@ from .scheduler import (
     SchedulerSelection,
     motion_threshold_actions,
 )
+from .stage_c import StageCParameterGroups, build_stage_c_parameter_groups, loss_specific_amp_step
 from .transport import TemporalTransportAdapter
 
 __all__ = [
@@ -49,6 +51,7 @@ __all__ = [
     "ScheduleLibrary",
     "ScheduleQuantileRiskPredictor",
     "SchedulerSelection",
+    "StageCParameterGroups",
     "TemporalTransportAdapter",
     "nonnegative_detector_regret",
     "normalize_layer_groups",
@@ -65,4 +68,8 @@ __all__ = [
     "stage_c_exposure_matrix",
     "validate_stage_b_exposures",
     "window_digest",
+    "gate1_oracle_headroom",
+    "gate2_matched_transport",
+    "build_stage_c_parameter_groups",
+    "loss_specific_amp_step",
 ]
