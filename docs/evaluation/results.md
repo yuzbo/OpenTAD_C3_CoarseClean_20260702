@@ -1,5 +1,5 @@
 ---
-updated: 2026-07-10
+updated: 2026-07-11
 status: active
 scope: PhysTime-TAD 实验结果的唯一数字来源
 out-of-scope: 方法设计、未完成实验的推测性结论
@@ -22,6 +22,8 @@ out-of-scope: 方法设计、未完成实验的推测性结论
 | PhysTime-AdaTAD raw-video gate 第四次提交 | `c448f1f` | determinism gate failed | Slurm `1158576` 显示 physical-grid/PhysTime 输入一致，而进程内首个构建的 selected-axis 只在 ColorJitter 后分叉；逐 transform 诊断 `1158591` 定位为首次 ImgAug 构造消耗 NumPy 状态。模型未构建，依赖 `1158577/1158578/1158579` 未启动并取消 |
 | 三头真实 pipeline 增强确定性诊断 | post-`c448f1f` fix | passed | Slurm `1158614`：三头在 DecordDecode、RandomResizedCrop、ImgAug、ColorJitter、FormatShape 后的像素 SHA256 均逐级相同；这是数据合同证据，不是 mAP 证据 |
 | PhysTime-AdaTAD raw-video FP32 gate | `d31e99c` | passed | Slurm `1158636`，`gate_pass=true`；真实 THUMOS MP4、K=384/768、same frame/input checksum、三头 optimizer coverage、adapter 梯度及 PhysTime projection/classification/regression/endpoint 梯度均通过。后续 gate 已升级为 AMP |
+| PhysTime-AdaTAD raw-video AMP gate | `bd27544` | passed | Slurm `1158668`，`gate_pass=true`；三头 `amp_enabled=true`，其余 raw-video、same-index/input、optimizer 与梯度合同全部通过，正式三头依赖已释放 |
+| PhysTime-AdaTAD masked-attention 修复后 AMP gate | `0bbf0e9` | passed | Slurm `1158718`，`gate_pass=true`；三头 finite loss/prediction、optimizer coverage 与必需梯度全部通过。远端 PhysTime focused suite `68 passed` |
 
 ### Raw-video gate `1158636` 原始指标
 
@@ -33,15 +35,39 @@ out-of-scope: 方法设计、未完成实验的推测性结论
 
 selected-axis 的一次性 14.16 s 包含首个 CUDA/CuDNN warm-up，不可当作稳态延时比较；正式成本结论等待 full-run 账本。
 
+### AMP gate `1158668` 原始指标
+
+| Head | cost | train forward+backward (ms) | inference (ms) | peak CUDA memory (MB) | AMP | required gradients |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| selected-axis | 0.265547 | 10364.46 | 32.64 | 1058.75 | on | nonzero |
+| physical-grid | 0.266705 | 354.10 | 40.02 | 1062.05 | on | nonzero |
+| PhysTime | 0.550022 | 963.10 | 42.93 | 904.36 | on | adapter/projection/cls/reg/endpoint nonzero |
+
 ## Raw-video K384 Formal Track
 
 统一 run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_d31e99c_k384_20260711_161413_+0800`。
 
 | Head | Job | Commit | 状态 | 当前证据 | Avg-mAP | mAP@0.7 |
 | --- | ---: | --- | --- | --- | ---: | ---: |
-| selected-axis | `1158637` | `d31e99c` | running / diagnostic | 已进入 epoch 0；修复后套件必须同 commit 重跑，故本作业不进入最终 matched table | NA | NA |
+| selected-axis | `1158637` | `d31e99c` | cancelled / diagnostic | 已进入 epoch 0 后主动取消；修复后套件必须同 commit 重跑，故本作业不进入最终 matched table | NA | NA |
 | physical-grid | `1158638` | `d31e99c` | infrastructure failed | epoch 0 首步后 torchrun rendezvous broken pipe；无方法失败证据 | NA | NA |
 | PhysTime | `1158639` | `d31e99c` | implementation failed | epoch 0 首批触发 autocast 不允许 probability BCE；已按等价 event-logit BCE 修复 | NA | NA |
+
+第二套 matched run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_bd27544_k384_20260711_162907_+0800`。
+
+| Head | Job | Commit | 最终状态 | Avg-mAP | mAP@0.7 |
+| --- | ---: | --- | --- | ---: | ---: |
+| selected-axis | `1158669` | `bd27544` | cancelled / diagnostic；新 commit 需 matched 重跑 | NA | NA |
+| physical-grid | `1158670` | `bd27544` | cancelled / diagnostic；新 commit 需 matched 重跑 | NA | NA |
+| PhysTime | `1158671` | `bd27544` | implementation failed；epoch 0 第 50 步三项 loss 全 NaN，根因为未覆盖 logits 在 AMP masked softmax 中形成 `inf * 0` | NA | NA |
+
+当前 matched run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_0bbf0e9_k384_20260711_164800_+0800`。
+
+| Head | Job | Commit | 状态（2026-07-11 16:58 +08:00） | epoch 0 step 50 loss | Avg-mAP | mAP@0.7 |
+| --- | ---: | --- | --- | ---: | ---: | ---: |
+| selected-axis | `1158719` | `0bbf0e9` | running，epoch 1 | 1.7127 | NA | NA |
+| physical-grid | `1158720` | `0bbf0e9` | running，epoch 1 | 1.7261 | NA | NA |
+| PhysTime | `1158721` | `0bbf0e9` | running，epoch 1；已越过旧 NaN 暴露点 | 1.9106 | NA | NA |
 
 ## Matched Pilot
 

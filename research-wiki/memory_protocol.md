@@ -5,11 +5,12 @@
 必须依次读取：
 
 1. `research-wiki/query_pack.md`
-2. `research-wiki/current_direction.md`
-3. `research-wiki/decision_register.md`
-4. `research-wiki/lessons.md`
-5. 与任务相关的 `research-wiki/routes/*-complete-record.md`
-6. 与任务相关的 idea/experiment 页面
+2. `research-wiki/anti_repetition.md`
+3. `research-wiki/current_direction.md`
+4. `research-wiki/decision_register.md`
+5. `research-wiki/lessons.md`
+6. 与任务相关的 `research-wiki/routes/*-complete-record.md`
+7. 与任务相关的 idea/experiment 页面
 
 若用户最新明确决策与 Wiki 冲突，以用户最新决策为准，但必须同步新增决策记录，不能静默覆盖历史。
 

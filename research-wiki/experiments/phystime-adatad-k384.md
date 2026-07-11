@@ -32,11 +32,11 @@ added: 2026-07-11T00:00:00+08:00
 
 ## Software gate status
 
-- implementation commit：`d31e99c` 后续 AMP 修复待提交；
-- raw geometry、matched configs、validator、one-step gradient、gate contract 与 deployment contract：最新远端 focused suite `49 passed`；
+- implementation/experiment commit：`0bbf0e9`；
+- raw geometry、matched configs、validator、one-step gradient、gate contract、masked-attention 数值回归与 deployment contract：最新远端 focused suite `68 passed`；
 - matched validator：`contract_pass=true`；
-- real THUMOS CUDA gate：`1158636` passed，但为 FP32；最新 gate 已改为 AMP，待重跑；
-- formal jobs：`1158637` running diagnostic；`1158638` infrastructure failed；`1158639` 暴露 AMP BCE 实现错误并已修复；
+- real THUMOS CUDA AMP gate：`1158718` passed；
+- formal jobs：`1158719/1158720/1158721` 已在同一 commit 完成 epoch 0 并进入 epoch 1；
 - mAP：NA。
 
 首次部署 gate `1158528` 在进入 Python 前因计算节点非登录 shell 缺少 `module` 命令失败，三个依赖训练均未启动并取消。该事件分类为 infrastructure failure；launcher 已改为可选 module 初始化并通过回归测试，仍需在新 commit 重跑真实 gate。
@@ -49,9 +49,13 @@ added: 2026-07-11T00:00:00+08:00
 
 第五次 gate `1158636` 已完成三头真实 raw-video decode、forward、backward 与 inference，梯度和 optimizer coverage 全部通过；但它使用 FP32，随后 formal PhysTime `1158639` 在 epoch 0 暴露 endpoint probability BCE 不兼容 AMP。现已保持积分事件概率语义，用 event-logit `BCEWithLogits` 等价改写，并把 gate 升级为 AMP。physical-grid `1158638` 是 torchrun rendezvous 基础设施失败；selected-axis `1158637` 仍仅作旧 commit 诊断。
 
+AMP gate `1158668` 在 `bd27544` 完成并通过，但它只覆盖单个样本。formal PhysTime `1158671` 在 epoch 0 第 50 步出现分类、回归和端点 loss 全 NaN；根因是 support-measure attention 只用 covered logits 求 row max，却对全部 logits 求指数，未覆盖极大 logit 在 AMP 下产生 `inf * 0`。`0bbf0e9` 先将未覆盖 logits 置为 `-inf` 再指数，并新增极值回归测试。
+
+修复后 AMP gate `1158718` 已通过，same raw-frame/input、optimizer coverage、adapter 与各 detector branch 梯度合同继续满足。formal jobs `1158719/1158720/1158721` 已在同 commit 完成 epoch 0 并进入 epoch 1；全部已记录 leaf loss 有限，当前没有 mAP。
+
 ## Current verdict
 
-尚无 mAP 结果，不能支持任何效果 claim。状态提升为 `experiment_running` 只表示真实 gate 曾通过且 formal 作业实际启动；最新 AMP 修复 commit 的三头 matched full run 仍须重新提交，完成后由 result-to-claim 更新。
+尚无 mAP 结果，不能支持任何效果 claim。状态 `experiment_running` 只表示真实 gate 通过、formal 作业实际启动且已越过当前已知 NaN 点；完成后由 result-to-claim 更新。
 
 ## Connections
 

@@ -6,19 +6,20 @@
 
 ## 必读入口
 
-1. [当前唯一方向](current_direction.md)：现在究竟要实现什么，哪些内容尚未实现。
-2. [决策台账](decision_register.md)：每次路线选择、否定理由和恢复条件。
-3. [经验与禁区](lessons.md)：已经用代码、实验或评审代价换来的教训。
-4. [讨论时间线](timeline.md)：C3、GAS-VT、DUCA、PIVOT/ChronoTransport 到 PhysTime 的演进。
-5. [Idea 总目录](idea_catalog.md)：所有主要 idea、两轮 23+24 个发散候选及其去留。
-6. [实验台账](experiment_register.md)：已完成、取消、诊断、待部署实验的统一分类。
-7. [证据来源](source_map.md)：原始附件、评审记录、代码提交与文献来源。
-8. [压缩上下文](query_pack.md)：供新 agent 或新一轮 ideation 首先读取的 8000 字以内摘要。
-9. [记忆维护协议](memory_protocol.md)：怎样保证 Wiki 不再次失效。
-10. [三条路线完整档案](routes/index.md)：DUCA、ChronoTransport、PhysTime 的讨论、代码、实验和裁决。
-11. [讨论覆盖矩阵](discussion_coverage.md)：逐主题说明内容归档位置与原始来源。
-12. [原始讨论归档](sources/README.md)：主任务用户原文与跨代理近期记录。
-13. [跨 Worktree 库存](worktree_inventory.md)：所有历史 checkout、分支 HEAD 与证据边界。
+1. [压缩上下文](query_pack.md)：供新 agent 或新一轮工作首先读取的 8000 字以内摘要。
+2. [反重复契约](anti_repetition.md)：禁止回退路线、证据混级和已知数值错误。
+3. [当前唯一方向](current_direction.md)：现在究竟要实现什么，哪些内容尚未实现。
+4. [决策台账](decision_register.md)：每次路线选择、否定理由和恢复条件。
+5. [经验与禁区](lessons.md)：已经用代码、实验或评审代价换来的教训。
+6. [讨论时间线](timeline.md)：C3、GAS-VT、DUCA、PIVOT/ChronoTransport 到 PhysTime 的演进。
+7. [Idea 总目录](idea_catalog.md)：所有主要 idea、两轮 23+24 个发散候选及其去留。
+8. [实验台账](experiment_register.md)：已完成、取消、诊断、待部署实验的统一分类。
+9. [证据来源](source_map.md)：原始附件、评审记录、代码提交与文献来源。
+10. [记忆维护协议](memory_protocol.md)：怎样保证 Wiki 不再次失效。
+11. [三条路线完整档案](routes/index.md)：DUCA、ChronoTransport、PhysTime 的讨论、代码、实验和裁决。
+12. [讨论覆盖矩阵](discussion_coverage.md)：逐主题说明内容归档位置与原始来源。
+13. [原始讨论归档](sources/README.md)：主任务用户原文与跨代理近期记录。
+14. [跨 Worktree 库存](worktree_inventory.md)：所有历史 checkout、分支 HEAD 与证据边界。
 
 ## 当前实体
 

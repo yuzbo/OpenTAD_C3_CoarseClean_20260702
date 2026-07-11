@@ -59,16 +59,16 @@
 - `PhysTime-TAD 2.0` 的物理时间几何、support-integrated measure projection、PhysTimeHead、registered detector、feature-token transforms 和 focused gates。
 - feature-token 路线的软件契约可作为算子测试资产。
 - PhysTime-AdaTAD 1.0 的完整设计规格和逐任务实现计划已经冻结。
-- PhysTime-AdaTAD 1.0 的 raw-frame 秒几何、三份 matched K384 配置、same-index/同增强 validator、one-step 梯度证明、真实 gate 工具和 gate-dependent 三头正式启动器已实现；AMP-safe endpoint loss 修复后的远端 focused suite 为 `49 passed`。
+- PhysTime-AdaTAD 1.0 的 raw-frame 秒几何、三份 matched K384 配置、same-index/同增强 validator、one-step 梯度证明、真实 AMP gate 和 gate-dependent 三头启动器已实现。`0bbf0e9` 修复 support-measure attention 对未覆盖极大 logit 的 `inf * 0` 数值路径；远端 focused suite 为 `68 passed`。
 
 尚未形成真实实验或论文证据：
 
-- FP32 real gate `1158636` 已通过；与正式训练同构的 AMP gate 尚待最新 commit 重跑；
-- 第一套 formal 作业已启动但 physical-grid 遇到 rendezvous 基础设施错误、PhysTime 暴露并已修复 AMP BCE 错误；最新同 commit 三头尚待重排；
+- 最新真实 THUMOS AMP gate `1158718` 已通过；
+- 同 commit formal jobs `1158719/1158720/1158721` 已完成 epoch 0、进入 epoch 1，所有已记录 leaf loss 有限；
 - 任何 PhysTime-AdaTAD mAP 结果；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-AdaTAD 1.0 raw-video matched pipeline 已实现，FP32 真实 gate 已通过；最新 AMP gate 与同 commit full-run 正在重排，尚无 mAP。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 raw-video matched pipeline 与真实 AMP gate 已通过；`0bbf0e9` 同 commit 三头 full-run 正在训练，尚无 mAP。**
 
 ## 5. 明确非目标
 
