@@ -16,3 +16,7 @@ append_only: true
 - 2026-07-11：wiki lint 通过：16 ideas、7 experiments、10 claims、47 edges、
   0 orphan nodes、0 curated broken links；query pack 2825 chars。
 - 2026-07-11：纠正 ChronoTransport 过期状态：`92029ea` formal Stage-B P3 science gate 为负，Stage C/P5 未解锁；新增独立 negative experiment 节点，路线暂停。
+- 2026-07-12：为无法读取本地工作区的 Pro reviewer 建立 GitHub 固定提交审查入口；仅同步
+  ChronoTransport r1 规格、实现表面、原 Pro 记录、两轮独立复核与本地源码审计，明确排除
+  数据、checkpoint、GPU 日志和新行为结果。审查仍止于 `REVISE_SPEC_BEFORE_PLAN`，不得借
+  GitHub 同步越过到实现、profiling、Gate 1、新 seed 或 Stage C。
