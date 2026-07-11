@@ -100,6 +100,39 @@ def test_uncovered_query_returns_finite_zero_and_invalid_mask():
     assert diagnostics["attention_weights"].abs().sum().item() == 0.0
 
 
+def test_uncovered_extreme_logit_cannot_create_inf_times_zero_nan():
+    attention = SupportIntegratedMeasureAttention(
+        in_channels=1,
+        out_channels=1,
+        attention_channels=1,
+        content_logits=True,
+        relative_time_logits=False,
+    )
+    _set_scalar_identity(attention)
+    with torch.no_grad():
+        attention.query_embedding.net[0].weight.zero_()
+        attention.query_embedding.net[0].bias.fill_(1.0)
+        attention.query_embedding.net[2].weight.zero_()
+        attention.query_embedding.net[2].bias.fill_(1.0)
+        attention.key_proj.weight.fill_(1.0)
+        attention.key_proj.bias.zero_()
+
+    observations = torch.tensor([[[2.0], [1000.0]]], requires_grad=True)
+    output, query_mask, diagnostics = attention(
+        observations,
+        _geometry([0.5, 1.5], [[0.0, 1.0], [1.0, 2.0]]),
+        _query([[0.0, 1.0]]),
+    )
+    output.sum().backward()
+
+    assert query_mask.all()
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(diagnostics["attention_weights"]).all()
+    assert diagnostics["attention_weights"][0, 0, 1].item() == 0.0
+    assert observations.grad is not None
+    assert torch.isfinite(observations.grad).all()
+
+
 def test_measure_attention_has_finite_observation_and_parameter_gradients():
     attention = SupportIntegratedMeasureAttention(2, 4, attention_channels=4)
     observations = torch.randn(1, 2, 2, requires_grad=True)

@@ -135,7 +135,7 @@ class SupportIntegratedMeasureAttention(nn.Module):
         masked_logits = logits.masked_fill(~covered, float("-inf"))
         row_max = masked_logits.max(dim=-1, keepdim=True).values
         row_max = torch.where(torch.isfinite(row_max), row_max, torch.zeros_like(row_max))
-        unnormalized = torch.exp(logits - row_max) * mass
+        unnormalized = torch.exp(masked_logits - row_max) * mass
         denominator = unnormalized.sum(dim=-1, keepdim=True)
         weights = unnormalized / denominator.clamp_min(self.eps)
         weights = self.dropout(weights)
