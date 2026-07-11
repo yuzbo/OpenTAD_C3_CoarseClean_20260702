@@ -16,7 +16,7 @@
 - Invalid edge types: 0
 - Duplicate edges: 0
 - Broken local Markdown links: 0
-- `query_pack.md`: 3660 characters，低于 8000 上限
+- `query_pack.md`: 3659 characters，低于 8000 上限
 - `git diff --check`: passed
 
 ## Completeness Audit
@@ -30,7 +30,7 @@
 
 ## Intentional Warnings
 
-1. `exp:phystime-adatad-k384` 是 `experiment_running`，仍无 mAP，不能产生 supports/invalidates claim edge。
+1. `exp:phystime-adatad-k384` 是 `experiment_failed`，无有效 mAP，不能产生 supports/invalidates claim edge。
 2. 当前没有 claim nodes；必须在正式 result-to-claim/proof audit 后创建。
 3. 14 份外部附件通过路径与 SHA256 索引；尚未全部复制进仓库，清理附件目录前必须迁移受控归档。
 4. 原始讨论导出只能证明讨论历史，不能代替 commit、测试或实验 artifact。

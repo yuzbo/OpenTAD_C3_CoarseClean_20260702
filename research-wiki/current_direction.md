@@ -64,11 +64,11 @@
 尚未形成真实实验或论文证据：
 
 - 最新真实 THUMOS AMP gate `1158718` 已通过；
-- 同 commit formal jobs `1158719/1158720/1158721` 已完成 epoch 0、进入 epoch 1，所有已记录 leaf loss 有限；
+- formal jobs `1158719/1158720/1158721` 均已失败：三头共享 evaluator annotation 相对路径错误，PhysTime 另从 epoch 1 end 起持续全 NaN；
 - 任何 PhysTime-AdaTAD mAP 结果；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-AdaTAD 1.0 raw-video matched pipeline 与真实 AMP gate 已通过；`0bbf0e9` 同 commit 三头 full-run 正在训练，尚无 mAP。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 的 raw-video 软件合同和单步 AMP gate 已通过，但 `0bbf0e9` 三头 full-run 无效，尚无 mAP；必须修复 evaluator 路径并重新解决累计训练 NaN 后再跑。**
 
 ## 5. 明确非目标
 

@@ -63,11 +63,13 @@ selected-axis 的一次性 14.16 s 包含首个 CUDA/CuDNN warm-up，不可当�
 
 当前 matched run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_0bbf0e9_k384_20260711_164800_+0800`。
 
-| Head | Job | Commit | 状态（2026-07-11 16:58 +08:00） | epoch 0 step 50 loss | Avg-mAP | mAP@0.7 |
-| --- | ---: | --- | --- | ---: | ---: | ---: |
-| selected-axis | `1158719` | `0bbf0e9` | running，epoch 1 | 1.7127 | NA | NA |
-| physical-grid | `1158720` | `0bbf0e9` | running，epoch 1 | 1.7261 | NA | NA |
-| PhysTime | `1158721` | `0bbf0e9` | running，epoch 1；已越过旧 NaN 暴露点 | 1.9106 | NA | NA |
+| Head | Job | Commit | 最终状态（2026-07-12 01:28 +08:00） | 末次训练诊断 | Avg-mAP | mAP@0.7 |
+| --- | ---: | --- | --- | --- | ---: | ---: |
+| selected-axis | `1158719` | `0bbf0e9` | failed；epoch 41 后首次正式验证找不到 GT annotation | epoch 41 end loss 0.4684；checkpoint `epoch_41.pth` | NA | NA |
+| physical-grid | `1158720` | `0bbf0e9` | failed；epoch 41 后首次正式验证找不到 GT annotation | epoch 41 end loss 0.5285；checkpoint `epoch_41.pth` | NA | NA |
+| PhysTime | `1158721` | `0bbf0e9` | failed；epoch 1 end 起持续全 NaN，epoch 41 验证另遇 GT annotation 路径错误 | epoch 41 end loss NaN；checkpoint 不构成有效结果 | NA | NA |
+
+三头验证均因 `evaluation.ground_truth_filename` 仍指向相对路径 `data/thumos-14/annotations/thumos_14_anno.json` 而 `FileNotFoundError`。这是共享部署配置错误。PhysTime 还有独立且更严重的训练稳定性错误：首次记录的全 NaN 位于 epoch 1 step 99，此后分类、回归、端点和总 loss 持续为 NaN；因此修复标注路径后也不能直接把该 checkpoint 用作正式结果。
 
 ## Matched Pilot
 

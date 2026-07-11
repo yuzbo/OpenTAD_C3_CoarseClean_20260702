@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:phystime-adatad-k384
 title: "PhysTime-AdaTAD matched raw-video K384 head comparison"
 idea: idea:phystime-adatad-1
-status: experiment_running
-verdict: pending
-confidence: low
-metrics: "No result yet."
+status: experiment_failed
+verdict: invalid_run
+confidence: high
+metrics: "No valid mAP; shared evaluation path failure and PhysTime sustained NaN."
 provenance: "docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md"
 added: 2026-07-11T00:00:00+08:00
 ---
@@ -36,7 +36,7 @@ added: 2026-07-11T00:00:00+08:00
 - raw geometry、matched configs、validator、one-step gradient、gate contract、masked-attention 数值回归与 deployment contract：最新远端 focused suite `68 passed`；
 - matched validator：`contract_pass=true`；
 - real THUMOS CUDA AMP gate：`1158718` passed；
-- formal jobs：`1158719/1158720/1158721` 已在同一 commit 完成 epoch 0 并进入 epoch 1；
+- formal jobs：`1158719/1158720/1158721` 均以 exit code 1 终止；
 - mAP：NA。
 
 首次部署 gate `1158528` 在进入 Python 前因计算节点非登录 shell 缺少 `module` 命令失败，三个依赖训练均未启动并取消。该事件分类为 infrastructure failure；launcher 已改为可选 module 初始化并通过回归测试，仍需在新 commit 重跑真实 gate。
@@ -53,9 +53,11 @@ AMP gate `1158668` 在 `bd27544` 完成并通过，但它只覆盖单个样本�
 
 修复后 AMP gate `1158718` 已通过，same raw-frame/input、optimizer coverage、adapter 与各 detector branch 梯度合同继续满足。formal jobs `1158719/1158720/1158721` 已在同 commit 完成 epoch 0 并进入 epoch 1；全部已记录 leaf loss 有限，当前没有 mAP。
 
+后续终态推翻了上述“已越过已知 NaN 点”的局部判断。selected-axis 与 physical-grid 均训练到 epoch 41 且 loss 有限，但首次正式验证因 `evaluation.ground_truth_filename` 使用不存在的相对路径而失败。PhysTime 从 epoch 1 step 99 起分类、回归、端点和总 loss 持续全 NaN，仍继续写出 checkpoint，随后同样在 epoch 41 验证路径处退出。三项作业均无有效 mAP，所有 checkpoint 只能作故障诊断。
+
 ## Current verdict
 
-尚无 mAP 结果，不能支持任何效果 claim。状态 `experiment_running` 只表示真实 gate 通过、formal 作业实际启动且已越过当前已知 NaN 点；完成后由 result-to-claim 更新。
+本次 matched run 无效，不能支持任何效果 claim。重新运行前必须同时关闭两个独立缺口：把 evaluator annotation 解析绑定到已验证的真实绝对路径，并定位 PhysTime 在累计优化后产生非有限参数/激活/梯度的首个 step。新的 gate 还必须覆盖多 optimizer step 与真实 evaluator 构建，单样本 one-step 不再足够。
 
 ## Connections
 

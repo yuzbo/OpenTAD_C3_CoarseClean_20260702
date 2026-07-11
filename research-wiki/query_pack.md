@@ -6,7 +6,7 @@
 
 唯一主线是 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768 时间位置，用相同、确定性、无学习、无 GT 的策略选 K=384，`DecordDecode` 和 VideoMAE-S 只消费选中帧。在完全相同 backbone、checkpoint、增强、schedule、seed、NMS 和 selected indices 下比较：selected-axis ActionFormer、physical-grid ActionFormer、`PhysTimeMeasureProjection + PhysTimeHead`。长期目标是一个独立离线 TAD detector，输入任意不规则观测及真实时间戳/支持区间，直接在秒坐标上分类和定位。
 
-当前事实：PhysTime-AdaTAD 1.0 的当前实验 commit 为 `0bbf0e9`。`bd27544` 的单样本 AMP gate 虽通过，但 formal 暴露未覆盖 logits 在 masked attention 中形成 `inf * 0` 的 NaN；现已按 mask-before-exp 修复并加入极值回归。真实 THUMOS AMP gate `1158718` 已通过三头 raw decode/forward/backward/inference、same-index/input、optimizer coverage 与全梯度合同；同 commit formal jobs `1158719/1158720/1158721` 已完成 epoch 0、进入 epoch 1，已记录 leaf loss 均有限。当前状态是 `experiment_running`，尚无 mAP，不得声称效果、鲁棒性或论文主张已成立。
+当前事实：PhysTime-AdaTAD 1.0 的最近实验 commit 为 `0bbf0e9`。真实 THUMOS AMP gate `1158718` 虽通过三头单步合同，但 formal jobs `1158719/1158720/1158721` 均失败。selected-axis 与 physical-grid 训练至 epoch 41 后因 evaluator GT annotation 仍使用不存在的相对路径而退出；PhysTime 还从 epoch 1 step 99 起持续 cls/reg/endpoint/total loss 全 NaN，checkpoint 无效。当前状态是 `experiment_failed`，mAP 为 NA。重跑前必须修正 evaluator 路径、定位累计优化 NaN，并把 multi-step finite check 与 evaluator construction 纳入 gate。
 
 ## Top gaps
 

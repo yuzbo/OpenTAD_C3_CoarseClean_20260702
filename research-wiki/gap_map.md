@@ -20,9 +20,11 @@ mTAN 已做 irregular continuous-time attention；TE-TAD 已用 actual timeline 
 
 ## gap:G4 - raw-video AdaTAD 的公平三头隔离
 
-状态：已实现并通过 AMP gate，matched full run 进行中。
+状态：matched pipeline 与单步 AMP gate 已实现，但首轮 full run 无效。
 
 需要三个 config 在相同 raw videos、selected indices、VideoMAE-S adapter、checkpoint、schedule、seed 和 NMS 下，只改变时间几何/检测头。
+
+`0bbf0e9` 三头均在 epoch 41 首次验证时因 evaluator annotation 相对路径错误退出；PhysTime 另从 epoch 1 end 起持续全 NaN。修复后必须同 commit 重跑三头，当前无可比较 mAP。
 
 ## gap:G5 - 高 tIoU 与短动作证据
 
@@ -50,9 +52,9 @@ THUMOS14 单数据集可能奖励特定 action density 和 sampling prior。主�
 
 ## gap:G9 - 当前代码与最终 raw-video 目标之间的实现缺口
 
-状态：代码缺口已关闭，实验结果待完成。
+状态：主体代码已落地，但部署与累计训练稳定性缺口重新打开。
 
-`BuildPhysTimeRawFrameGeometry`、matched K384 configs、same-index/同增强 validator、raw-video AMP gate、formal launcher 和结果记录均已落地；当前不再是实现 gap，剩余风险转入 G4/G5/G7 的实验结果与成本证据。
+`BuildPhysTimeRawFrameGeometry`、matched K384 configs、same-index/同增强 validator、raw-video AMP gate、formal launcher 和结果记录均已落地；仍需把 evaluator 真实路径解析和 multi-step finite fail-closed 纳入部署 gate，并解决 PhysTime 长程优化 NaN。
 
 ## gap:G10 - 论文主张审计
 
