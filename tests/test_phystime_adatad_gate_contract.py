@@ -23,6 +23,7 @@ def _load_gate_module():
 
 
 def _valid_report():
+    gradient = {"all_finite": True}
     variant = {
         "decoded_frame_count": 384,
         "valid_observation_count": 384,
@@ -34,9 +35,14 @@ def _valid_report():
         "finite_loss": True,
         "finite_predictions": True,
         "optimizer_coverage": True,
+        "optimizer_step_count": 3,
+        "all_gradients_finite": True,
+        "finite_parameters_after_steps": True,
+        "adapter_gradient": dict(gradient),
+        "detector_gradient": dict(gradient),
     }
     return {
-        "schema_version": "phystime_adatad_real_gate_v1",
+        "schema_version": "phystime_adatad_real_gate_v2",
         "gate_pass": True,
         "input_source": "raw_thumos_mp4",
         "logical_window": 768,
@@ -51,6 +57,7 @@ def _valid_report():
         "endpoint_gradient_nonzero": True,
         "prediction_time_unit": "seconds",
         "uses_preextracted_features": False,
+        "evaluator_constructed": True,
         "variants": {
             "selected_axis": dict(variant),
             "physical_grid": dict(variant),
@@ -60,6 +67,10 @@ def _valid_report():
                 "classification_gradient_nonzero": True,
                 "regression_gradient_nonzero": True,
                 "endpoint_gradient_nonzero": True,
+                "projection_gradient": dict(gradient),
+                "classification_gradient": dict(gradient),
+                "regression_gradient": dict(gradient),
+                "endpoint_gradient": dict(gradient),
             },
         },
     }
@@ -76,8 +87,10 @@ def test_gate_requires_raw_video_and_all_three_configs():
     assert "build_dataset" in source
     assert "build_detector" in source
     assert "build_optimizer" in source
+    assert "build_evaluator" in source
+    assert "GradScaler" in source
     assert "DecordDecode" in source
-    assert "losses[\"cost\"].backward()" in source
+    assert "scaler.scale(losses[\"cost\"]).backward()" in source
     assert "forward_test" in source
     assert "LoadFeats" in source
 
@@ -123,6 +136,7 @@ def test_gate_report_validation_is_fail_closed():
         "classification_gradient_nonzero",
         "regression_gradient_nonzero",
         "endpoint_gradient_nonzero",
+        "evaluator_constructed",
     ):
         broken = copy.deepcopy(report)
         broken[key] = False
@@ -132,6 +146,11 @@ def test_gate_report_validation_is_fail_closed():
     broken = copy.deepcopy(report)
     broken["variants"]["physical_grid"]["backbone_feature_length"] = 768
     with pytest.raises(RuntimeError, match="physical_grid.backbone_feature_length"):
+        module.validate_gate_report(broken)
+
+    broken = copy.deepcopy(report)
+    broken["variants"]["phystime"]["all_gradients_finite"] = False
+    with pytest.raises(RuntimeError, match="phystime.all_gradients_finite"):
         module.validate_gate_report(broken)
 
 

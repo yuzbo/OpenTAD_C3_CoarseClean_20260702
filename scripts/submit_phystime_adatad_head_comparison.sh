@@ -72,6 +72,12 @@ write_header() {
   } > "${path}"
 }
 
+variants=(
+  'selected_axis|configs/adatad/thumos/selected_axis_adatad_sparse_k384.py'
+  'physical_grid|configs/adatad/thumos/physical_grid_adatad_sparse_k384.py'
+  'phystime|configs/adatad/thumos/phystime_adatad_sparse_k384.py'
+)
+
 gate_sbatch="${SBATCH_ROOT}/real_gate.sbatch"
 write_header "${gate_sbatch}" phystime_raw_gate "${PHYSTIME_GATE_TIME:-02:00:00}"
 {
@@ -84,11 +90,21 @@ gate_job="$(submit "${gate_sbatch}")"
 printf 'variant\tjob_id\tdependency\tconfig\tlogical_window\tdecoded_frames\tseed\tstatus\n' > "${RUN_ROOT}/jobs.tsv"
 printf 'real_gate\t%s\tnone\treal_raw_video_gate\t768\t384\t42\tsubmitted\n' "${gate_job}" >> "${RUN_ROOT}/jobs.tsv"
 
-variants=(
-  'selected_axis|configs/adatad/thumos/selected_axis_adatad_sparse_k384.py'
-  'physical_grid|configs/adatad/thumos/physical_grid_adatad_sparse_k384.py'
-  'phystime|configs/adatad/thumos/phystime_adatad_sparse_k384.py'
-)
+stability_config="${variants[2]#*|}"
+stability_sbatch="${SBATCH_ROOT}/phystime_stability.sbatch"
+stability_run_dir="${RUN_ROOT}/phystime_stability_gate"
+write_header "${stability_sbatch}" phystime_stability "${PHYSTIME_STABILITY_TIME:-02:00:00}"
+{
+  printf 'export PHYSTIME_CONFIG=%q\n' "${stability_config}"
+  printf 'export PHYSTIME_RUN_DIR=%q\n' "${stability_run_dir}"
+  printf 'export PHYSTIME_REAL_GATE_JSON=%q\n' "${GATE_JSON}"
+  echo "export PHYSTIME_SEED='42'"
+  echo "export PHYSTIME_STABILITY_GATE='1'"
+  echo 'bash scripts/run_phystime_adatad_full_train_gpu1.sh'
+} >> "${stability_sbatch}"
+stability_job="$(submit --dependency="afterok:${gate_job}" "${stability_sbatch}")"
+printf 'phystime_stability\t%s\tafterok:%s\t%s\t768\t384\t42\tsubmitted\n' \
+  "${stability_job}" "${gate_job}" "${stability_config}" >> "${RUN_ROOT}/jobs.tsv"
 
 declare -A formal_jobs
 for spec in "${variants[@]}"; do
@@ -103,22 +119,24 @@ for spec in "${variants[@]}"; do
     echo "export PHYSTIME_SEED='42'"
     echo 'bash scripts/run_phystime_adatad_full_train_gpu1.sh'
   } >> "${sbatch_path}"
-  job_id="$(submit --dependency="afterok:${gate_job}" "${sbatch_path}")"
+  job_id="$(submit --dependency="afterok:${stability_job}" "${sbatch_path}")"
   formal_jobs["${variant}"]="${job_id}"
   printf '%s\t%s\tafterok:%s\t%s\t768\t384\t42\tsubmitted\n' \
-    "${variant}" "${job_id}" "${gate_job}" "${config}" >> "${RUN_ROOT}/jobs.tsv"
+    "${variant}" "${job_id}" "${stability_job}" "${config}" >> "${RUN_ROOT}/jobs.tsv"
 done
 
 CHECKPOINT_SHA256="$(sha256sum "${PHYSTIME_VIDEOMAE_CHECKPOINT}" | awk '{print $1}')"
 ANNOTATION_SHA256="$(sha256sum "${OPENTAD_THUMOS14_ANNOTATION}" | awk '{print $1}')"
 cat > "${RUN_ROOT}/deployment_summary.json" <<EOF
 {
-  "schema_version": "phystime_adatad_deployment_v1",
+  "schema_version": "phystime_adatad_deployment_v2",
   "track": "raw_video_k384_matched_head_comparison",
   "commit": "${COMMIT}",
   "run_root": "${RUN_ROOT}",
   "gate_job": "${gate_job}",
   "gate_json": "${GATE_JSON}",
+  "stability_job": "${stability_job}",
+  "stability_epochs": 2,
   "formal_job_count": 3,
   "formal_jobs": {
     "selected_axis": "${formal_jobs[selected_axis]}",
@@ -137,4 +155,5 @@ EOF
 
 echo "[PhysTime-AdaTAD submit] RUN_ROOT=${RUN_ROOT}"
 echo "[PhysTime-AdaTAD submit] GATE_JOB=${gate_job}"
+echo "[PhysTime-AdaTAD submit] STABILITY_JOB=${stability_job}"
 cat "${RUN_ROOT}/jobs.tsv"

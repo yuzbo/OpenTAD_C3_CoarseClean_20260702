@@ -118,6 +118,17 @@ dataset = dict(
     ),
 )
 
+# The inherited dataset base resolves its own default annotation variable.
+# Override the evaluator explicitly so runtime data roots remain end-to-end consistent.
+evaluation = dict(ground_truth_filename=annotation_path)
+
+solver = dict(
+    fail_on_non_finite_grad=True,
+    # Formal Phase 1 is single-GPU; FP16 DDP bucket compression has no
+    # communication benefit and can overflow already-scaled AMP gradients.
+    fp16_compress=False,
+)
+
 model = dict(
     backbone=dict(
         backbone=dict(total_frames=window_size * scale_factor),

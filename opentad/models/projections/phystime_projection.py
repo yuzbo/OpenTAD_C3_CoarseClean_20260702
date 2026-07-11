@@ -193,26 +193,34 @@ class PhysTimeMeasureProjection(nn.Module):
             raise ValueError("PhysTimeMeasureProjection expects features with shape [B, C, K]")
         if x.shape[1] != self.in_channels or masks.shape != (x.shape[0], x.shape[2]):
             raise ValueError("PhysTime projection input feature and mask shapes are inconsistent")
-        geometry = geometry_from_metas(metas, masks, dtype=x.dtype, device=x.device)
-        query_pyramid = build_physical_query_pyramid(
-            geometry["duration_sec"],
-            geometry["domain_start_sec"],
-            geometry["domain_end_sec"],
-            base_spacing_sec=self.base_spacing_sec,
-            num_levels=self.num_levels,
-        )
+        # Absolute seconds can exceed 1,000 on THUMOS. FP16 cannot preserve
+        # sub-frame support widths at that magnitude and content logits can
+        # overflow, so the complete physical measure path stays in FP32.
+        with torch.cuda.amp.autocast(enabled=False):
+            geometry = geometry_from_metas(
+                metas, masks, dtype=torch.float32, device=x.device
+            )
+            query_pyramid = build_physical_query_pyramid(
+                geometry["duration_sec"],
+                geometry["domain_start_sec"],
+                geometry["domain_end_sec"],
+                base_spacing_sec=self.base_spacing_sec,
+                num_levels=self.num_levels,
+            )
 
-        observations = x.transpose(1, 2)
-        features = []
-        level_masks = []
-        level_geometry = []
-        for attention, query_geometry in zip(self.level_attentions, query_pyramid):
-            level_feature, level_mask, diagnostics = attention(observations, geometry, query_geometry)
-            features.append(level_feature.transpose(1, 2))
-            level_masks.append(level_mask)
-            level_info = dict(query_geometry)
-            level_info["domain_valid_mask"] = query_geometry["valid_mask"]
-            level_info["valid_mask"] = level_mask
-            level_info["coverage_sec"] = diagnostics["coverage_sec"]
-            level_geometry.append(level_info)
+            observations = x.float().transpose(1, 2)
+            features = []
+            level_masks = []
+            level_geometry = []
+            for attention, query_geometry in zip(self.level_attentions, query_pyramid):
+                level_feature, level_mask, diagnostics = attention(
+                    observations, geometry, query_geometry
+                )
+                features.append(level_feature.transpose(1, 2))
+                level_masks.append(level_mask)
+                level_info = dict(query_geometry)
+                level_info["domain_valid_mask"] = query_geometry["valid_mask"]
+                level_info["valid_mask"] = level_mask
+                level_info["coverage_sec"] = diagnostics["coverage_sec"]
+                level_geometry.append(level_info)
         return tuple(features), tuple(level_masks), tuple(level_geometry)

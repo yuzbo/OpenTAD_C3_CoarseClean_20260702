@@ -192,6 +192,7 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
+            fail_on_non_finite_grad=cfg.solver.get("fail_on_non_finite_grad", False),
         )
 
         # save checkpoint

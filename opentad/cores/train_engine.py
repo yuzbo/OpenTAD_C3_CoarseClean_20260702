@@ -16,6 +16,7 @@ def train_one_epoch(
     logging_interval=200,
     scaler=None,
     max_train_iters=None,
+    fail_on_non_finite_grad=False,
 ):
     """Training the model for one epoch"""
 
@@ -44,6 +45,11 @@ def train_one_epoch(
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             losses = model(**data_dict, return_loss=True)
 
+        if fail_on_non_finite_grad and not torch.isfinite(losses["cost"]).all():
+            raise FloatingPointError(
+                f"non-finite training cost at epoch={curr_epoch} iter={iter_idx}"
+            )
+
         # compute the gradients
         if use_amp:
             scaler.scale(losses["cost"]).backward()
@@ -54,7 +60,17 @@ def train_one_epoch(
         if clip_grad_l2norm > 0.0:
             if use_amp:
                 scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+            optimized_parameters = [
+                parameter
+                for group in optimizer.param_groups
+                for parameter in group["params"]
+                if parameter.grad is not None
+            ]
+            torch.nn.utils.clip_grad_norm_(
+                optimized_parameters,
+                clip_grad_l2norm,
+                error_if_nonfinite=bool(fail_on_non_finite_grad),
+            )
 
         # update parameters
         optimizer_step_ran = True
@@ -67,6 +83,17 @@ def train_one_epoch(
             optimizer_step_ran = scaler.get_scale() >= scale_before_step
         else:
             optimizer.step()
+
+        if fail_on_non_finite_grad:
+            finite_parameters = all(
+                torch.isfinite(parameter).all()
+                for group in optimizer.param_groups
+                for parameter in group["params"]
+            )
+            if not finite_parameters:
+                raise FloatingPointError(
+                    f"optimizer produced non-finite parameters at epoch={curr_epoch} iter={iter_idx}"
+                )
 
         if optimizer_step_ran:
             _call_after_optimizer_step(model)

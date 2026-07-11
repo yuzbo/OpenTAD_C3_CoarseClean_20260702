@@ -122,7 +122,9 @@ class PhysTimeHead(nn.Module):
             cls_feature = self._tower_forward(self.cls_tower, feature, mask)
             reg_feature = self._tower_forward(self.reg_tower, feature, mask)
             cls_logits.append(self.cls_head(cls_feature))
-            regression = F.softplus(self.scales[level](self.reg_head(reg_feature))).transpose(1, 2)
+            regression = F.softplus(
+                self.scales[level](self.reg_head(reg_feature)).float()
+            ).transpose(1, 2)
             endpoint = self.endpoint_head(reg_feature).transpose(1, 2)
             regression_distances.append(regression)
             endpoint_logits.append(endpoint)
@@ -222,13 +224,16 @@ class PhysTimeHead(nn.Module):
         cls_loss = self.cls_loss(cls_logits[valid_mask], smoothed_target[valid_mask], reduction="sum") / normalizer
 
         if positive_mask.any():
-            predicted_segments = raw["proposals_sec"][positive_mask]
-            target_points = torch.cat(raw["points"], dim=1)
-            target_segments = self.decode_segments(
-                (target_points,),
-                (reg_target,),
-            )[positive_mask]
-            reg_loss = self.reg_loss(predicted_segments, target_segments, reduction="sum") / normalizer
+            with torch.cuda.amp.autocast(enabled=False):
+                predicted_segments = raw["proposals_sec"][positive_mask].float()
+                target_points = torch.cat(raw["points"], dim=1).float()
+                target_segments = self.decode_segments(
+                    (target_points,),
+                    (reg_target.float(),),
+                )[positive_mask]
+                reg_loss = self.reg_loss(
+                    predicted_segments, target_segments, reduction="sum"
+                ) / normalizer.float()
         else:
             reg_loss = raw["proposals_sec"].sum() * 0.0
 

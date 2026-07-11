@@ -9,6 +9,7 @@ import logging
 import random
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 from pathlib import Path
@@ -17,6 +18,7 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 from mmengine.config import Config
+from torch.cuda.amp import GradScaler
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +28,7 @@ if str(ROOT) not in sys.path:
 from opentad.cores import build_optimizer
 from opentad.datasets import build_dataset
 from opentad.datasets.builder import collate
+from opentad.evaluations import build_evaluator
 from opentad.models import build_detector
 
 
@@ -34,9 +37,10 @@ GATE_CONFIGS = {
     "physical_grid": ROOT / "configs/adatad/thumos/physical_grid_adatad_sparse_k384.py",
     "phystime": ROOT / "configs/adatad/thumos/phystime_adatad_sparse_k384.py",
 }
-SCHEMA_VERSION = "phystime_adatad_real_gate_v1"
+SCHEMA_VERSION = "phystime_adatad_real_gate_v2"
 TARGET_LEN = 384
 LOGICAL_WINDOW = 768
+OPTIMIZER_STEPS = 3
 _AUGMENTATION_LIBRARIES_WARMED = False
 
 
@@ -122,6 +126,28 @@ def _validate_raw_config(cfg, variant):
         _require(types.count("LoadFrames") == 1, f"{variant}/{split} must contain one LoadFrames transform")
 
 
+def _validate_evaluators(configs):
+    ground_truth_paths = {
+        str(Path(cfg.evaluation.ground_truth_filename).resolve())
+        for cfg in configs.values()
+    }
+    _require(len(ground_truth_paths) == 1, "matched configs must use one evaluator ground truth")
+    ground_truth = Path(next(iter(ground_truth_paths)))
+    _require(ground_truth.is_file(), f"evaluator ground truth not found: {ground_truth}")
+    with tempfile.TemporaryDirectory(prefix="phystime_evaluator_gate_") as temp_dir:
+        prediction = Path(temp_dir) / "empty_predictions.json"
+        prediction.write_text('{"results": {}}\n', encoding="utf-8")
+        for variant, cfg in configs.items():
+            evaluator_cfg = dict(cfg.evaluation)
+            evaluator_cfg["prediction_filename"] = str(prediction)
+            evaluator = build_evaluator(evaluator_cfg)
+            _require(
+                evaluator.ground_truth is not None,
+                f"{variant} evaluator did not load ground truth",
+            )
+    return str(ground_truth)
+
+
 def _choose_full_length_sample(dataset, requested_index):
     if requested_index >= 0:
         _require(requested_index < len(dataset), "requested sample index is outside the training dataset")
@@ -184,7 +210,16 @@ def _gradient_stats(named_parameters, predicate):
         "nonzero_gradient_count": len(nonzero),
         "gradient_l1": float(sum(parameter.grad.detach().abs().sum().item() for _, parameter in nonzero)),
         "nonzero": bool(nonzero),
+        "all_finite": len(finite) == len(matched),
     }
+
+
+def _optimized_parameters(optimizer):
+    return [parameter for group in optimizer.param_groups for parameter in group["params"]]
+
+
+def _all_finite_parameters(parameters):
+    return all(bool(torch.isfinite(parameter).all().item()) for parameter in parameters)
 
 
 def _optimizer_coverage(cfg, model):
@@ -227,18 +262,65 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
     torch.cuda.synchronize(device)
     train_started = time.perf_counter()
     use_amp = bool(cfg.solver.get("amp", False))
-    with torch.cuda.amp.autocast(enabled=use_amp):
-        losses = model(
-            inputs=batch["inputs"],
-            masks=batch["masks"],
-            metas=batch["metas"],
-            gt_segments=batch["gt_segments"],
-            gt_labels=batch["gt_labels"],
-            return_loss=True,
+    scaler = GradScaler(enabled=use_amp)
+    optimized_parameters = _optimized_parameters(optimizer)
+    step_losses = []
+    all_gradients_finite = True
+    finite_parameters_after_steps = True
+    for step_index in range(OPTIMIZER_STEPS):
+        optimizer.zero_grad(set_to_none=True)
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            losses = model(
+                inputs=batch["inputs"],
+                masks=batch["masks"],
+                metas=batch["metas"],
+                gt_segments=batch["gt_segments"],
+                gt_labels=batch["gt_labels"],
+                return_loss=True,
+            )
+        _require(
+            "cost" in losses and torch.is_tensor(losses["cost"]),
+            f"{variant} must return losses['cost']",
         )
-    _require("cost" in losses and torch.is_tensor(losses["cost"]), f"{variant} must return losses['cost']")
-    _require(_finite_tree(losses), f"{variant} produced non-finite training losses")
-    losses["cost"].backward()
+        _require(
+            _finite_tree(losses),
+            f"{variant} produced non-finite training losses at optimizer step {step_index}",
+        )
+        scaler.scale(losses["cost"]).backward()
+        scaler.unscale_(optimizer)
+        step_gradients_finite = all(
+            parameter.grad is None
+            or bool(torch.isfinite(parameter.grad).all().item())
+            for parameter in optimized_parameters
+        )
+        all_gradients_finite = all_gradients_finite and step_gradients_finite
+        _require(
+            step_gradients_finite,
+            f"{variant} produced non-finite gradients at optimizer step {step_index}",
+        )
+        torch.nn.utils.clip_grad_norm_(
+            [parameter for parameter in optimized_parameters if parameter.grad is not None],
+            float(cfg.solver.clip_grad_norm),
+            error_if_nonfinite=True,
+        )
+        scale_before_step = scaler.get_scale()
+        scaler.step(optimizer)
+        scaler.update()
+        _require(
+            scaler.get_scale() >= scale_before_step,
+            f"{variant} GradScaler skipped optimizer step {step_index}",
+        )
+        step_parameters_finite = _all_finite_parameters(optimized_parameters)
+        finite_parameters_after_steps = (
+            finite_parameters_after_steps and step_parameters_finite
+        )
+        _require(
+            step_parameters_finite,
+            f"{variant} optimizer produced non-finite parameters at step {step_index}",
+        )
+        step_losses.append(
+            {key: float(value.detach().cpu().item()) for key, value in losses.items()}
+        )
     torch.cuda.synchronize(device)
     train_ms = (time.perf_counter() - train_started) * 1000.0
 
@@ -289,11 +371,15 @@ def _run_variant(variant, cfg, sample, checkpoint, device, seed):
         "amp_enabled": use_amp,
         "finite_loss": _finite_tree(losses),
         "finite_predictions": _finite_tree(predictions),
+        "optimizer_step_count": OPTIMIZER_STEPS,
+        "all_gradients_finite": all_gradients_finite,
+        "finite_parameters_after_steps": finite_parameters_after_steps,
         "optimizer_coverage": optimizer_report["covered"],
         "optimizer": optimizer_report,
         "adapter_gradient": adapter,
         "detector_gradient": detector,
         "losses": {key: float(value.detach().cpu().item()) for key, value in losses.items()},
+        "optimizer_step_losses": step_losses,
         "train_forward_backward_ms": train_ms,
         "inference_ms": infer_ms,
         "peak_cuda_memory_mb": float(torch.cuda.max_memory_allocated(device) / (1024.0**2)),
@@ -334,6 +420,7 @@ def validate_gate_report(report):
         "endpoint_gradient_nonzero": True,
         "prediction_time_unit": "seconds",
         "uses_preextracted_features": False,
+        "evaluator_constructed": True,
     }
     for key, expected in exact.items():
         _require(report.get(key) == expected, f"gate report requires {key}={expected!r}")
@@ -350,9 +437,17 @@ def validate_gate_report(report):
             "amp_enabled": True,
             "finite_loss": True,
             "finite_predictions": True,
+            "optimizer_step_count": OPTIMIZER_STEPS,
+            "all_gradients_finite": True,
+            "finite_parameters_after_steps": True,
             "optimizer_coverage": True,
         }.items():
             _require(result.get(key) == expected, f"{variant}.{key} must be {expected!r}")
+        for gradient_key in ("adapter_gradient", "detector_gradient"):
+            _require(
+                result.get(gradient_key, {}).get("all_finite") is True,
+                f"{variant}.{gradient_key}.all_finite must be true",
+            )
     for key in (
         "projection_gradient_nonzero",
         "classification_gradient_nonzero",
@@ -360,6 +455,16 @@ def validate_gate_report(report):
         "endpoint_gradient_nonzero",
     ):
         _require(variants["phystime"].get(key) is True, f"phystime.{key} must be true")
+    for gradient_key in (
+        "projection_gradient",
+        "classification_gradient",
+        "regression_gradient",
+        "endpoint_gradient",
+    ):
+        _require(
+            variants["phystime"].get(gradient_key, {}).get("all_finite") is True,
+            f"phystime.{gradient_key}.all_finite must be true",
+        )
     return True
 
 
@@ -372,6 +477,7 @@ def run_gate(checkpoint, device, seed=42, sample_index=-1):
     configs = {name: Config.fromfile(str(path)) for name, path in GATE_CONFIGS.items()}
     for name, cfg in configs.items():
         _validate_raw_config(cfg, name)
+    evaluation_ground_truth = _validate_evaluators(configs)
 
     samples = {}
     sample_indices = {}
@@ -441,6 +547,8 @@ def run_gate(checkpoint, device, seed=42, sample_index=-1):
         "endpoint_gradient_nonzero": phystime["endpoint_gradient_nonzero"],
         "prediction_time_unit": str(phystime_meta.get("prediction_time_unit")),
         "uses_preextracted_features": False,
+        "evaluator_constructed": True,
+        "evaluation_ground_truth_filename": evaluation_ground_truth,
         "seed": int(seed),
         "checkpoint": str(checkpoint),
         "checkpoint_sha256": _sha256_file(checkpoint),

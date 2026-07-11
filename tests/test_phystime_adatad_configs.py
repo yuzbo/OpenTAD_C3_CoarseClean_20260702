@@ -69,6 +69,19 @@ def test_sparse_configs_share_backbone_data_and_training_contracts():
     assert {canonical(cfg.post_processing) for cfg in cfgs.values()}.__len__() == 1
 
 
+def test_sparse_configs_route_evaluation_to_the_runtime_annotation(monkeypatch, tmp_path):
+    annotation = tmp_path / "runtime_thumos_annotations.json"
+    monkeypatch.setenv("OPENTAD_THUMOS14_ANNOTATION", str(annotation))
+
+    cfgs = {name: Config.fromfile(path) for name, path in CONFIGS.items()}
+
+    assert {
+        Path(cfg.evaluation.ground_truth_filename) for cfg in cfgs.values()
+    } == {annotation}
+    assert all(cfg.solver.fail_on_non_finite_grad is True for cfg in cfgs.values())
+    assert all(cfg.solver.fp16_compress is False for cfg in cfgs.values())
+
+
 def test_phystime_changes_only_geometry_projection_and_head():
     cfgs = {name: Config.fromfile(path) for name, path in CONFIGS.items()}
 

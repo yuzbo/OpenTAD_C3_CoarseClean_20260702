@@ -181,6 +181,41 @@ def test_projection_builds_every_level_directly_from_original_observations():
         assert attention.value_proj.weight.grad.abs().sum().item() > 0
 
 
+def test_projection_keeps_long_video_geometry_and_attention_in_float32():
+    projection = PhysTimeMeasureProjection(
+        in_channels=2,
+        out_channels=4,
+        attention_channels=4,
+        base_spacing_sec=0.5,
+        num_levels=2,
+    )
+    inputs = torch.randn(1, 2, 3, dtype=torch.float16, requires_grad=True)
+    masks = torch.tensor([[True, True, True]])
+    metas = [
+        {
+            "phystime_timestamps_sec": [1399.25, 1399.75, 1400.25],
+            "phystime_support_intervals_sec": [
+                [1399.20, 1399.30],
+                [1399.70, 1399.80],
+                [1400.20, 1400.30],
+            ],
+            "phystime_duration_sec": 1409.434,
+            "phystime_domain_start_sec": 1399.0,
+            "phystime_domain_end_sec": 1400.5,
+            "phystime_support_provenance": "synthetic_explicit_support",
+        }
+    ]
+
+    features, level_masks, level_geometry = projection(inputs, masks, metas)
+    sum(feature.sum() for feature in features).backward()
+
+    assert all(feature.dtype == torch.float32 for feature in features)
+    assert all(geometry["centers_sec"].dtype == torch.float32 for geometry in level_geometry)
+    assert all(mask.any() for mask in level_masks)
+    assert inputs.grad is not None
+    assert torch.isfinite(inputs.grad).all()
+
+
 def test_point_gaussian_baseline_does_not_use_support_interval_mass():
     attention = SupportIntegratedMeasureAttention(
         in_channels=1,

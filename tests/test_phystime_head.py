@@ -6,6 +6,14 @@ torch = pytest.importorskip("torch")
 from opentad.models.dense_heads.phystime_head import PhysTimeHead
 
 
+class _Float32RegressionLoss(torch.nn.Module):
+    def forward(self, predicted, target, reduction="none"):
+        assert predicted.dtype == torch.float32
+        assert target.dtype == torch.float32
+        loss = (predicted - target).abs().sum(dim=-1)
+        return loss.sum() if reduction == "sum" else loss
+
+
 def _head():
     return PhysTimeHead(
         num_classes=2,
@@ -131,6 +139,32 @@ def test_all_prediction_branches_receive_gradients():
         assert branch.weight.grad is not None
         assert torch.isfinite(branch.weight.grad).all()
         assert branch.weight.grad.abs().sum().item() > 0
+
+
+def test_regression_loss_receives_float32_physical_segments():
+    head = _head().train()
+    head.reg_loss = _Float32RegressionLoss()
+    geometry = _level_geometry()
+    points = head.build_physical_points(geometry)
+    raw = {
+        "cls_logits": (torch.zeros(1, 2, 2),),
+        "proposals_sec": torch.tensor(
+            [[[0.5, 2.0], [2.0, 3.5]]], dtype=torch.float16
+        ),
+        "points": points,
+        "endpoint_logits": (torch.zeros(1, 2, 2),),
+        "cell_widths_sec": geometry[0]["widths_sec"],
+    }
+
+    losses = head._losses(
+        raw,
+        (geometry[0]["valid_mask"],),
+        geometry,
+        gt_segments=[torch.tensor([[0.5, 3.5]])],
+        gt_labels=[torch.tensor([1])],
+    )
+
+    assert all(torch.isfinite(loss) for loss in losses.values())
 
 
 def test_forward_test_returns_only_valid_absolute_seconds_predictions():

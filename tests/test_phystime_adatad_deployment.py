@@ -49,11 +49,12 @@ def test_submission_is_gate_dependent_and_has_exactly_three_heads():
         assert text.count(config) == 1
     assert 'variants=(' in text
     assert 'gate_job="$(submit' in text
-    assert 'afterok:${gate_job}' in text
-    assert 'submit --dependency="afterok:${gate_job}"' in text
+    assert 'stability_job="$(submit --dependency="afterok:${gate_job}"' in text
+    assert 'submit --dependency="afterok:${stability_job}"' in text
     assert "run_phystime_adatad_gate_gpu1.sh" in text
     assert "run_phystime_adatad_full_train_gpu1.sh" in text
     assert '"formal_job_count": 3' in text
+    assert '"stability_job": "${stability_job}"' in text
     assert '"logical_window": 768' in text
     assert '"decoded_frame_budget": 384' in text
     assert '"phase2_status": "held"' in text

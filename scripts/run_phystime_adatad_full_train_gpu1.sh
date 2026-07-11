@@ -18,6 +18,9 @@ RUN_DIR="${PHYSTIME_RUN_DIR:?PHYSTIME_RUN_DIR is required}"
 PHYSTIME_REAL_GATE_JSON="${PHYSTIME_REAL_GATE_JSON:?PHYSTIME_REAL_GATE_JSON is required}"
 PHYSTIME_VIDEOMAE_CHECKPOINT="${PHYSTIME_VIDEOMAE_CHECKPOINT:?PHYSTIME_VIDEOMAE_CHECKPOINT is required}"
 SEED="${PHYSTIME_SEED:-42}"
+STABILITY_GATE="${PHYSTIME_STABILITY_GATE:-0}"
+[[ "${STABILITY_GATE}" == "0" || "${STABILITY_GATE}" == "1" ]] || \
+  fail "PHYSTIME_STABILITY_GATE must be 0 or 1"
 
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
   [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not assign a visible GPU"
@@ -111,7 +114,7 @@ if any(feature_loader in types for types in pipeline_types.values()):
 if any("mmaction.DecordDecode" not in types for types in pipeline_types.values()):
     raise SystemExit("formal raw-video config is missing DecordDecode")
 manifest = {
-    "schema_version": "phystime_adatad_formal_run_v1",
+    "schema_version": "phystime_adatad_formal_run_v2",
     "commit": commit,
     "config": str(Path(config_path).resolve()),
     "resolved_config_sha256": hashlib.sha256(payload).hexdigest(),
@@ -122,6 +125,7 @@ manifest = {
     "decoded_frame_budget": 384,
     "input_source": "raw_thumos_mp4",
     "pipeline_types": pipeline_types,
+    "stability_gate": bool(int(__import__("os").environ.get("PHYSTIME_STABILITY_GATE", "0"))),
 }
 Path(run_dir, "run_manifest.json").write_text(
     json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -155,13 +159,23 @@ trap cleanup_monitor EXIT
 
 START_TIME="$(date +%s)"
 set +e
+CFG_OPTIONS=(
+  "model.backbone.custom.pretrain=${PHYSTIME_VIDEOMAE_CHECKPOINT}"
+  "work_dir=${RUN_DIR}/work_dir"
+)
+if [[ "${STABILITY_GATE}" == "1" ]]; then
+  CFG_OPTIONS+=(
+    "workflow.end_epoch=2"
+    "workflow.disable_checkpoint=True"
+    "workflow.val_start_epoch=2"
+    "workflow.val_eval_interval=-1"
+  )
+fi
 "${TORCHRUN}" --nnodes=1 --nproc_per_node=1 --node_rank=0 \
   --master_addr=127.0.0.1 --master_port="${MASTER_PORT}" \
   tools/train.py "${CONFIG}" \
   --seed "${SEED}" --id 0 \
-  --cfg-options \
-  "model.backbone.custom.pretrain=${PHYSTIME_VIDEOMAE_CHECKPOINT}" \
-  "work_dir=${RUN_DIR}/work_dir" \
+  --cfg-options "${CFG_OPTIONS[@]}" \
   2>&1 | tee "${RUN_DIR}/train.out"
 TRAIN_STATUS="${PIPESTATUS[0]}"
 set -e
@@ -188,5 +202,9 @@ Path(run_dir, "runtime_summary.json").write_text(
 PY
 
 [[ "${TRAIN_STATUS}" == "0" ]] || fail "training failed with exit code ${TRAIN_STATUS}"
-touch "${RUN_DIR}/TRAINING_COMPLETE"
+if [[ "${STABILITY_GATE}" == "1" ]]; then
+  touch "${RUN_DIR}/STABILITY_GATE_COMPLETE"
+else
+  touch "${RUN_DIR}/TRAINING_COMPLETE"
+fi
 echo "[PhysTime-AdaTAD train] complete config=$(basename "${CONFIG}") run_dir=${RUN_DIR}"
