@@ -115,7 +115,9 @@ def test_exclude_requires_pre_ddp_freeze_and_preserves_custom_override() -> None
     with pytest.raises(RuntimeError, match="must be frozen before DDP"):
         optimizer_module.get_backbone_optim_groups(cfg, model, logger)
 
-    optimizer_module.prepare_optimizer_parameter_freezing(cfg, model, logger)
+    optimizer_module.prepare_optimizer_parameter_freezing(
+        {"type": "AdamW", "backbone": cfg}, model, logger
+    )
     groups = optimizer_module.get_backbone_optim_groups(cfg, model, logger)
     grouped_param_ids = {id(param) for group in groups for param in group["params"]}
 
