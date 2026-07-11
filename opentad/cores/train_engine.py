@@ -111,13 +111,18 @@ def train_one_epoch(
         else:
             losses["cost"].backward()
 
-        optimized_parameters = [
-            parameter
-            for group in optimizer.param_groups
-            for parameter in group["params"]
-            if parameter.grad is not None
-        ]
         inspect_gradients = use_amp or fail_on_non_finite_grad
+        needs_optimizer_parameters = inspect_gradients or clip_grad_l2norm > 0.0
+        optimized_parameters = (
+            [
+                parameter
+                for group in optimizer.param_groups
+                for parameter in group["params"]
+                if parameter.grad is not None
+            ]
+            if needs_optimizer_parameters
+            else []
+        )
         if use_amp and (clip_grad_l2norm > 0.0 or fail_on_non_finite_grad):
             scaler.unscale_(optimizer)
         gradients_finite = True
