@@ -64,6 +64,7 @@ class Collect:
             "phystime_domain_end_sec",
             "phystime_support_provenance",
             "phystime_selected_feature_indices",
+            "phystime_selected_raw_frame_indices",
             "phystime_window_start_feature_idx",
             "phystime_window_valid_feature_count",
             "phystime_sampling_strategy",

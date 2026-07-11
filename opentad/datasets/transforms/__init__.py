@@ -7,6 +7,7 @@ from .phystime import (
     BuildSelectedAxisFeatureBaseline,
     SampleIrregularFeatureObservations,
 )
+from .phystime_raw import BuildPhysTimeRawFrameGeometry
 
 __all__ = [
     "LoadFeats",
@@ -26,4 +27,5 @@ __all__ = [
     "SampleIrregularFeatureObservations",
     "BuildPairedPhysTimeFeatureViews",
     "BuildSelectedAxisFeatureBaseline",
+    "BuildPhysTimeRawFrameGeometry",
 ]
