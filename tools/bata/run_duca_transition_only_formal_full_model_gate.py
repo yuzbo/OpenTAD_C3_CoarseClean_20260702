@@ -26,6 +26,8 @@ from opentad.cores.optimizer import (
     prepare_optimizer_parameter_freezing,
 )
 from opentad.models import build_detector
+from opentad.models.duca.structured_selection import global_structured_topk
+from opentad.models.duca.transition_only import continuous_policy_logits
 
 
 CONFIG_DEFAULT = (
@@ -81,6 +83,45 @@ def _max_hole(positions: torch.Tensor, temporal_len: int) -> int:
     return max(holes)
 
 
+def _verify_exact_uniform_reference(
+    *,
+    temporal_len: int,
+    budget: int,
+    max_unselected_hole: int,
+    device: str,
+) -> dict[str, Any]:
+    learned_scores = torch.zeros((1, temporal_len), dtype=torch.float32, device=device)
+    valid_mask = torch.ones_like(learned_scores, dtype=torch.bool)
+    reference_logits = continuous_policy_logits(
+        learned_scores,
+        valid_mask,
+        k=budget,
+        alpha=0.0,
+    )
+    selection = global_structured_topk(
+        reference_logits,
+        k=budget,
+        max_unselected_hole=max_unselected_hole,
+        training=False,
+    )
+    actual = selection.selected_positions[0]
+    expected = torch.linspace(
+        0,
+        temporal_len - 1,
+        steps=budget,
+        device=device,
+        dtype=torch.float32,
+    ).round().to(dtype=torch.long)
+    max_rank_error = int((actual - expected).abs().max().item()) if budget else 0
+    exact = bool(torch.equal(actual, expected))
+    _require(exact, "uniform reference does not decode to exact round-linspace positions")
+    return {
+        "uniform_reference_definition": "round_linspace_endpoints",
+        "uniform_reference_exact": exact,
+        "uniform_reference_max_rank_error": max_rank_error,
+    }
+
+
 def _real_detector_losses(model, selector_outputs: dict[str, Any]) -> dict[str, torch.Tensor]:
     _require(model.token_compressor is None, "formal AdaTAD gate does not expect a token compressor")
     _require(model.pc_ot_mras_reader is None, "formal AdaTAD gate does not expect a PC-OT reader")
@@ -131,6 +172,12 @@ def run_formal_gate(
     _require(budget == 384, "formal detector input must be K=384")
     _require(int(cfg.model.backbone.backbone.total_frames) == budget, "VideoMAE total_frames must be 384")
     _require(int(cfg.model.projection.max_seq_len) == budget, "projection max_seq_len must be 384")
+    uniform_reference = _verify_exact_uniform_reference(
+        temporal_len=dense_window_size,
+        budget=budget,
+        max_unselected_hole=int(cfg.model.frame_selector.max_unselected_hole),
+        device=device,
+    )
 
     model_cfg = copy.deepcopy(cfg.model)
     model_cfg.backbone.custom.pretrain = str(checkpoint)
@@ -228,6 +275,7 @@ def run_formal_gate(
         "grad_scale": scale_before_backward,
         "optimizer_step_ran": False,
         "cuda_peak_memory_bytes": int(torch.cuda.max_memory_allocated()),
+        **uniform_reference,
     }
 
 

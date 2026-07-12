@@ -20,6 +20,7 @@ from opentad.models.duca.transition_only import (
     local_boundary_coverage_loss,
     transition_utility_paths,
 )
+from opentad.models.duca.structured_selection import global_structured_topk
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
 
 
@@ -114,6 +115,23 @@ def test_continuous_policy_homotopy_has_exact_endpoints_and_smooth_midpoint() ->
     assert torch.allclose(midpoint, 0.5 * (reference + final), atol=1e-6)
     assert torch.isfinite(reference).all()
     assert torch.isfinite(final).all()
+
+
+@pytest.mark.parametrize(("temporal_len", "budget"), [(768, 384), (401, 384), (17, 8)])
+def test_uniform_homotopy_endpoint_matches_exact_round_linspace(temporal_len: int, budget: int) -> None:
+    learned = torch.randn(1, temporal_len, dtype=torch.float32)
+    valid = torch.ones_like(learned, dtype=torch.bool)
+
+    reference = continuous_policy_logits(learned, valid, k=budget, alpha=0.0)
+    selection = global_structured_topk(
+        reference,
+        k=budget,
+        max_unselected_hole=15,
+        training=False,
+    )
+    expected = torch.linspace(0, temporal_len - 1, steps=budget).round().long()
+
+    assert torch.equal(selection.selected_positions[0].cpu(), expected)
 
 
 def test_transition_schedule_separates_policy_and_detector_bridge_ramps() -> None:

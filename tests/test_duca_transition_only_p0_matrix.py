@@ -100,6 +100,9 @@ def test_p0_core_gate_requires_ok_and_matching_commit(tmp_path: Path) -> None:
                 "selected_count": 384,
                 "model_type": "ActionFormer",
                 "detector_head_type": "ActionFormerHead",
+                "uniform_reference_definition": "round_linspace_endpoints",
+                "uniform_reference_exact": True,
+                "uniform_reference_max_rank_error": 0,
             }
         ),
         encoding="utf-8",
@@ -113,7 +116,12 @@ def test_p0_core_gate_requires_ok_and_matching_commit(tmp_path: Path) -> None:
         expected_checkpoint_sha256=checkpoint_sha,
     )
 
-    assert summary == {"ok": True, "git_commit": commit, "path": str(gate_json)}
+    assert summary == {
+        "ok": True,
+        "git_commit": commit,
+        "path": str(gate_json),
+        "uniform_reference_exact": True,
+    }
 
 
 def test_p0_core_gate_rejects_failed_or_stale_evidence(tmp_path: Path) -> None:
@@ -139,6 +147,39 @@ def test_p0_core_gate_rejects_failed_or_stale_evidence(tmp_path: Path) -> None:
             expected_checkpoint_sha256="d" * 64,
         )
 
+
+def test_p0_core_gate_rejects_unverified_uniform_reference(tmp_path: Path) -> None:
+    commit = "a" * 40
+    gate_json = tmp_path / "core_gate.json"
+    gate_json.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "formal_proof_ok": True,
+                "git_commit": commit,
+                "reference_config_sha256": "b" * 64,
+                "official_asformer_source_sha256": "c" * 64,
+                "checkpoint_sha256": "d" * 64,
+                "dense_window_size": 768,
+                "selected_count": 384,
+                "model_type": "ActionFormer",
+                "detector_head_type": "ActionFormerHead",
+                "uniform_reference_definition": "midpoint_distance",
+                "uniform_reference_exact": False,
+                "uniform_reference_max_rank_error": 180,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match="uniform reference"):
+        p0_validator.validate_core_gate(
+            gate_json,
+            expected_commit=commit,
+            expected_config_sha256="b" * 64,
+            expected_source_sha256="c" * 64,
+            expected_checkpoint_sha256="d" * 64,
+        )
 
 def test_p0_launcher_uses_commit_bound_core_gate_and_auditable_manifest() -> None:
     text = LAUNCHER.read_text(encoding="utf-8")

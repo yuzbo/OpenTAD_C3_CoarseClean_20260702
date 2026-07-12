@@ -94,6 +94,8 @@ def test_formal_gpu_gate_keeps_real_videomae_and_768_to_384_geometry() -> None:
     assert "selected_count" in text
     assert "detector_only_loss" in text
     assert "backbone_adapter" in text
+    assert "_verify_exact_uniform_reference" in text
+    assert '"uniform_reference_exact"' in text
     assert "torch.cuda.amp.GradScaler" in text
     assert "scaler.unscale_(optimizer)" in text
 

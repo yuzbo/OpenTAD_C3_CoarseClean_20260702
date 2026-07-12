@@ -181,15 +181,19 @@ def _uniform_reference_scores(
         effective_k = min(max(int(k), 0), valid_count)
         if effective_k <= 0:
             continue
-        positions = torch.arange(valid_count, device=scores.device, dtype=scores.dtype)
-        targets = (
-            (torch.arange(effective_k, device=scores.device, dtype=scores.dtype) + 0.5)
-            * float(valid_count)
-            / float(effective_k)
-            - 0.5
-        )
+        positions = torch.arange(valid_count, device=scores.device, dtype=torch.float32)
+        if effective_k == 1:
+            targets = positions.new_zeros((1,))
+        else:
+            targets = torch.linspace(
+                0.0,
+                float(valid_count - 1),
+                steps=effective_k,
+                device=scores.device,
+                dtype=torch.float32,
+            ).round()
         values = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values
-        reference[batch_idx, valid_positions] = values
+        reference[batch_idx, valid_positions] = values.to(dtype=scores.dtype)
     return reference
 
 

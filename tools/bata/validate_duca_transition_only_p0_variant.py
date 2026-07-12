@@ -53,7 +53,24 @@ def validate_core_gate(
     _require(int(payload.get("selected_count", -1)) == 384, "DUCA core gate did not test exact K=384")
     _require(payload.get("model_type") == "ActionFormer", "DUCA core gate did not test ActionFormer")
     _require(payload.get("detector_head_type") == "ActionFormerHead", "DUCA core gate did not test ActionFormerHead")
-    return {"ok": True, "git_commit": gate_commit, "path": str(gate_path)}
+    _require(
+        payload.get("uniform_reference_definition") == "round_linspace_endpoints",
+        "DUCA core gate uniform reference definition is not exact endpoint linspace",
+    )
+    _require(
+        payload.get("uniform_reference_exact") is True,
+        "DUCA core gate uniform reference was not verified exactly",
+    )
+    _require(
+        int(payload.get("uniform_reference_max_rank_error", -1)) == 0,
+        "DUCA core gate uniform reference has nonzero rank-aligned position error",
+    )
+    return {
+        "ok": True,
+        "git_commit": gate_commit,
+        "path": str(gate_path),
+        "uniform_reference_exact": True,
+    }
 
 
 def validate_variant(variant: str, config_path: str | None = None) -> dict[str, Any]:
