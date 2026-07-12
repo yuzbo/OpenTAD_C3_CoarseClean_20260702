@@ -60,3 +60,7 @@ append_only: true
 - 2026-07-12: Independent zero-context implementation audit returned
   `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` with seven registration-blocking gaps. I/R and formal
   deployment remain locked; the passing 110-test suite is partial implementation evidence only.
+- 2026-07-12: Added a GitHub-only Pro audit/discussion prompt pinned to implementation snapshot
+  `4b07020acb2611c3f085488d2f678f3be037f1be`. The prompt requires independent re-audit of all seven
+  blockers, official-upstream verification, complete patch proposals, and stops before any experiment,
+  registration, remote action, commit, or PR.
