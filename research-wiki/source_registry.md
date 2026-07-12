@@ -50,7 +50,9 @@ updated: 2026-07-12
   独立 agent 的两轮 spec-only 复核；最终批准 commit `e4422f5`。
 - `docs/methods/2026-07-12-chronotransport-r2-pro-github-code-audit-prompt.md`：面向无法读取
   本地文件的 Pro reviewer 的 GitHub-only 完整代码审核 prompt；固定审核代码快照
-  `4b07020acb2611c3f085488d2f678f3be037f1be`，禁止执行实验或生成 registration。
+  `4b07020acb2611c3f085488d2f678f3be037f1be`；prompt 首次发布 commit `6079135`，draft PR
+  `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/pull/1`；禁止执行实验或生成
+  registration。
 
 评审建议不是实验事实。wiki 中只有带 run root、Job ID、日志或 result artifact 的内容
 才可标记为实验事实。

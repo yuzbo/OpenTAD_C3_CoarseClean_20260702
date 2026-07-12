@@ -64,3 +64,6 @@ append_only: true
   `4b07020acb2611c3f085488d2f678f3be037f1be`. The prompt requires independent re-audit of all seven
   blockers, official-upstream verification, complete patch proposals, and stops before any experiment,
   registration, remote action, commit, or PR.
+- 2026-07-12: Published the GitHub-only Pro prompt in commit `6079135` and opened draft PR #1:
+  `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/pull/1`. The review target remains the
+  immutable pre-prompt code snapshot `4b07020acb2611c3f085488d2f678f3be037f1be`.
