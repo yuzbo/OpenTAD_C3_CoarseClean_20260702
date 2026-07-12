@@ -8,9 +8,11 @@
 | `docs/superpowers/specs/2026-07-10-phystime-tad-2-design.md` | PhysTime-TAD 2.0 support-integrated 最终算子合同 |
 | `docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md` | 当前 raw-video AdaTAD 三头比较合同 |
 | `docs/superpowers/plans/2026-07-10-phystime-tad-2.md` | feature-geometry 实现任务与 gate |
-| `docs/superpowers/plans/2026-07-11-phystime-adatad-1.md` | 当前尚待执行的 raw-video 实现计划 |
+| `docs/superpowers/plans/2026-07-11-phystime-adatad-1.md` | raw-video 实现计划与已执行任务锚点 |
 | `docs/methods/phystime_tad_contract.md` | 秒坐标、support provenance、no-leak runtime contract |
 | `docs/evaluation/results.md` | 实验数字与 gate 状态唯一来源 |
+| `docs/evaluation/phystime-performance-drop-diagnosis.md` | PhysTime 1.0 负结果的因果诊断与下一版 gate |
+| `docs/evaluation/EXPERIMENT_AUDIT.md` | 独立只读实验完整性审计与整改状态 |
 | `docs/evaluation/phystime-tad-track.md` | 已取消 feature-token track 的历史部署协议 |
 
 ## 2. DUCA/C3 评审与吸收记录
@@ -79,6 +81,7 @@
 | `517785d` | PhysTime-AdaTAD implementation plan 锚点 |
 | `2b7f83f` | 当前 PhysTime 分支首版 persistent Wiki |
 | `92029ea` | ChronoTransport formal Stage-B 闭环与 P3 负 gate |
+| `3ac93a1` | PhysTime-AdaTAD 最终稳定 matched full-run 实现 |
 
 ### 额外分支来源
 

@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:phystime-adatad-k384
 title: "PhysTime-AdaTAD matched raw-video K384 head comparison"
 idea: idea:phystime-adatad-1
-status: experiment_running
-verdict: pending
+status: empirically_supported
+verdict: negative_for_phystime_adatad_1
 confidence: high
-metrics: "Final 3ac93a1 matched run is active; gates passed; mAP pending."
+metrics: "Final 3ac93a1 matched run completed; PhysTime 1.0 underperforms both sparse controls. Raw numbers live only in docs/evaluation/results.md."
 provenance: "docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md"
 added: 2026-07-11T00:00:00+08:00
 ---
@@ -66,8 +66,10 @@ AMP gate `1158668` 在 `bd27544` 完成并通过，但它只覆盖单个样本�
 - Final commit `3ac93a1` uses AMP initial scale 1024, disables useless single-GPU FP16 DDP compression, skips clipping on recoverable scaled-Inf gradients, and fails on NaN, parameter pollution, more than 4 consecutive skips, or more than 8 skips per epoch.
 - Remote regression suite: `102 passed`. Final real gate `1159491` passed three AMP optimizer steps, evaluator construction, optimizer coverage, same-frame/input checks, and finite gradients/parameters.
 - Final stability gate `1159492` completed two full epochs with no AMP skips: epoch 0 end loss 1.5824; epoch 1 end loss 1.1674. `STABILITY_GATE_COMPLETE` exists.
-- Formal matched jobs `1159493/1159494/1159495` are running from run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_3ac93a1_k384_final_20260712_023243_+0800`. No mAP exists yet; status is `experiment_running`, not `empirically_supported`.
-- All three formal jobs passed epoch 1 step 50 with finite loss: selected-axis 0.9929, physical-grid 1.0115, and PhysTime 1.1880. This is stability evidence only, not an accuracy comparison.
+- Formal matched jobs `1159493/1159494/1159495` completed from run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_3ac93a1_k384_final_20260712_023243_+0800`. Best-checkpoint replay jobs `1159819/1159820/1159821` reproduced the official metrics exactly.
+- The current implementation is a negative result: PhysTime 1.0 loses to both sparse controls and the dense anchor. It is not paper-ready.
+- Performance-drop diagnostics rule out evaluator and training-collapse explanations. They identify architecture/capacity confounding, absolute-time query dominance, coarse attention collapse, candidate-density mismatch, short-action supervision thinning, and target-assignment mismatch.
+- Because the comparison changes more than coordinate representation, the general physical-time hypothesis remains unresolved. Raw numbers and artifact paths live only in `docs/evaluation/results.md`; the causal interpretation is in `docs/evaluation/phystime-performance-drop-diagnosis.md`.
 
 ## Connections
 

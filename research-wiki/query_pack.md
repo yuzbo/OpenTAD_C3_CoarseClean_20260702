@@ -1,20 +1,20 @@
 # Research Wiki Query Pack
 
-更新时间：2026-07-11。长度必须保持在 8000 字符以内。
+更新时间：2026-07-12。长度必须保持在 8000 字符以内。
 
 ## 当前方向
 
 唯一主线是 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768 时间位置，用相同、确定性、无学习、无 GT 的策略选 K=384，`DecordDecode` 和 VideoMAE-S 只消费选中帧。在完全相同 backbone、checkpoint、增强、schedule、seed、NMS 和 selected indices 下比较：selected-axis ActionFormer、physical-grid ActionFormer、`PhysTimeMeasureProjection + PhysTimeHead`。长期目标是一个独立离线 TAD detector，输入任意不规则观测及真实时间戳/支持区间，直接在秒坐标上分类和定位。
 
-当前事实：最终修复 commit 为 `3ac93a1`。evaluator 已绑定 runtime annotation 绝对路径；物理几何、measure attention 与秒坐标 DIoU 使用 FP32；AMP 初始 scale 为 1024，并对恢复性 Inf 跳步与真正 NaN/超限分别处理。真实 gate `1159491` 和两完整 epoch 稳定性 gate `1159492` 均通过且无 AMP skip。formal jobs `1159493/1159494/1159495` 正在同 commit 运行，mAP 仍为 NA；当前只能称 `experiment_running`，不能称 `empirically_supported`。
+当前事实：最终修复 commit 为 `3ac93a1`。真实 gate、两 epoch 稳定性 gate 和 formal jobs `1159493/1159494/1159495` 均已完成；最佳 checkpoint 的只读复算也逐项一致。当前 PhysTime 1.0 没有胜过 selected-axis 或 physical-grid，且低于 dense anchor。性能下降不是 NaN、evaluator、重复坐标换算或 checkpoint 读取错误。诊断已定位到四个主要混杂：PhysTime 检测栈容量与上下文显著更小、原始绝对秒数主导 query、粗层 attention 有效聚合坍缩、候选密度与短动作监督不足。状态是“负结果已验证、根因已诊断、当前实现非 paper-ready”，不是“物理时间路线已被否定”。原始数字只见 `docs/evaluation/results.md`。
 
 ## Top gaps
 
-1. `gap:G9`：raw-video 集成代码已测试，但真实 THUMOS CUDA gate 尚未通过。
-2. `gap:G4`：三头 matched K384 合同已建立，full-run 结果尚缺。
+1. `gap:G4`：三头 full run 已完成，但不是坐标表示的等容量隔离；必须先构建 capacity/context-matched physical-time control。
+2. `gap:G5`：边界与短动作诊断已完成；修复后的因果消融尚缺。
 3. `gap:G3`：需区分 mTAN、TE-TAD、FrameDrop/TRC、LiquidTAD；continuous time 本身不新。
-4. `gap:G5`：缺 mAP@0.6/0.7、boundary error、短动作证据。
-5. `gap:G7`：缺 raw decode 到 NMS 的全栈成本账本。
+4. `gap:G7`：缺 raw decode 到 NMS 的全栈成本账本。
+5. 泛化缺口：仍只有 THUMOS14 单协议、单种子证据。
 
 ## 失败/降级路线，禁止遗忘
 
@@ -29,6 +29,7 @@
 - CoDeR 依赖 codec/硬件；ACTAL 是 streaming 新任务；均偏离离线 TAD。
 - PhysTime-TAL 1.0 的 normalized time、support width、固定 M、hazard 和双视图一致性定义不严，被 PhysTime-TAD 2.0 取代。
 - I3D feature-token PhysTime jobs 已取消；只保留算子测试，不是 raw-video 论文证据。
+- PhysTime-AdaTAD 1.0 的首个 full run 是高价值负结果：不要通过继续训练、增加 endpoint 权重或单独调 NMS 掩盖结构混杂；必须先做等容量、同上下文的因果对照。
 
 ## 活跃机制链
 
@@ -58,5 +59,6 @@
 3. support-integrated operator 是否明显胜 timestamp embedding、interpolation 和 mTAN-like projection？
 4. K=384 raw-video 节省在完整 decode/VideoMAE/head latency 中是否真实？
 5. 第二数据集和 held-out sampling family 是否复现？
+6. 在相同 ActionFormer 上下文与候选密度下，只改变物理时间表示后是否仍有收益？
 
 完整历史细节必须读取 `research-wiki/routes/`，不能只凭本 query pack 恢复 DUCA 或 ChronoTransport。

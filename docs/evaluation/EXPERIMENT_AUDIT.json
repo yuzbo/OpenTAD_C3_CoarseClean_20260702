@@ -1,0 +1,20 @@
+{
+  "date": "2026-07-12",
+  "auditor": "gpt-5.5-xhigh-independent-read-only",
+  "overall_verdict_at_audit_time": "fail",
+  "integrity_status_after_remediation": "warn",
+  "checks": {
+    "gt_provenance": {"status": "pass", "eval_type": "real_gt"},
+    "score_normalization": {"status": "pass_warn", "official_map_self_normalized": false},
+    "result_existence": {"status": "remediated", "original_status": "fail"},
+    "diagnostic_execution": {"status": "remediated", "original_status": "warn"},
+    "scope": {"status": "warn", "datasets": 1, "seeds": 1},
+    "matched_contract": {"status": "pass_warn", "architecture_confounded": true}
+  },
+  "claims": [
+    {"id": "single_run_thumos_comparison", "impact": "supported"},
+    {"id": "phystime_adatad_1_superiority", "impact": "unsupported"},
+    {"id": "physical_time_general_value", "impact": "unresolved"},
+    {"id": "paper_ready_generality", "impact": "unsupported"}
+  ]
+}

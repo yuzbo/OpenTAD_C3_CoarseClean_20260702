@@ -20,11 +20,12 @@
 | DR-014 | PhysTime-TAL 1.0 不直接实现为论文最终版 | 已锁定 | continuous embedding、reference query、双视图一致性都已有强邻居；support width、固定 M、hazard 语义和真实缺失定义不严谨 | 被 PhysTime-TAD 2.0 support-integrated measure operator 取代 |
 | DR-015 | 秒是规范时间坐标 | 已锁定 | 归一化时间会丢失物理尺度；selected rank 会改变距离语义；秒坐标可稳定 assignment、decode、NMS、跨 FPS | 允许 `round(t*fps)` 导出原帧号，不允许映射到 selected rank |
 | DR-016 | feature-token PhysTime pilot 取消 | 已锁定 | 下载 I3D 特征并训练只能验证 feature geometry，不能证明原始帧稀疏计算和真实 AdaTAD 端到端有效性 | 代码仅保留算子与单元测试；不得作为主实验数字 |
-| DR-017 | PhysTime-AdaTAD 1.0 先做 head isolation | 当前执行 | 相同无学习、无 GT 的不规则采样只比较检测头，能把收益归因给物理时间几何，避免又把 selector 混进来 | Phase 1 完成后再考虑 learned selector 或 sampling robustness |
+| DR-017 | PhysTime-AdaTAD 1.0 先做 head isolation | 已完成/负结果 | 相同无学习、无 GT 的不规则采样排除了 selector 混杂；后验审计发现三头仍改变 projection、上下文与容量，不能完全归因给物理时间几何 | 由 DR-022 取代；1.0 冻结为负基线 |
 | DR-018 | primary comparison 不加 paired consistency | 当前执行 | consistency 会给 PhysTime 额外监督，破坏三头公平性；先证明 architecture 本身 | 仅 Phase 2 作为消融/鲁棒训练扩展 |
 | DR-019 | 所有老 commit/job 均按证据类别管理 | 已锁定 | 不同 commit、config、预训练和修复状态的 mAP 不可混为论文主证据 | 只有同 commit、同 selected indices、同 schedule 的 matched runs 可进主表 |
 | DR-020 | 全栈成本必须计入 | 已锁定 | selected count 或 backbone FLOPs 会遗漏 decode、preprocess、scout、H2D、padding、cache/ledger generation | 报告 p50/p95 latency、显存、吞吐、decode 与 backbone 分解 |
 | DR-021 | 全量历史回顾必须扫描全部 local worktree、local branch、remote branch 与未合入 commit | 已锁定 | 第一版 Wiki 只看当前 PhysTime HEAD，因而曾把 ChronoTransport 的真实实现和 DUCA `a5e1774` 审计分支漏掉；单一 checkout 不能代表项目完整历史 | 每次宣称“全面纳入”前，必须记录 `git worktree list`、`git branch -a --contains`、关键 dangling/divergent commit 与 source hash；无法访问的来源必须显式列为 coverage gap |
+| DR-022 | 下一版先做 capacity/context/candidate-matched physical-time control | 当前执行 | PhysTime 1.0 同时缩小检测栈、删除 ActionFormer 时序上下文、降低候选密度并使用未归一化 absolute-second query；首轮负结果不能隔离 physical time | 保留同等级 temporal stack 和候选数，只改坐标/不规则时间算子；通过因果 gate 后才做 endpoint、support、multi-seed 与跨数据集扩展 |
 
 ## 不得静默推翻
 

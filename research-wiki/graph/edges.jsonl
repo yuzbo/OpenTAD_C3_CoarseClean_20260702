@@ -29,6 +29,8 @@
 {"from":"idea:phystime-adatad-1","to":"paper:zhang2022_actionformer","type":"inspired_by","evidence":"Selected-axis and physical-grid detection baselines."}
 {"from":"idea:phystime-adatad-1","to":"paper:liu2024_adatad","type":"inspired_by","evidence":"Official raw-video VideoMAE adapter backbone."}
 {"from":"idea:phystime-adatad-1","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Actual timeline coordinate comparison."}
+{"from":"idea:phystime-adatad-1","to":"exp:phystime-adatad-k384","type":"tested_by","evidence":"Final 3ac93a1 matched K384 full run completed with a negative verdict for the current implementation."}
+{"from":"exp:phystime-adatad-k384","to":"exp:phystime-performance-drop-diagnosis","type":"diagnosed_by","evidence":"Geometry, assignment, checkpoint attention, capacity and full-prediction decomposition explain the observed drop."}
 {"from":"idea:no-free-frames","to":"gap:G7","type":"addresses_gap","evidence":"Full-stack compute accounting."}
 {"from":"idea:chronotransport-dcrt","to":"gap:G7","type":"addresses_gap","evidence":"Targets repeated feature recomputation with measured full-stack risk-cost decisions."}
 {"from":"idea:chronotransport-dcrt","to":"exp:chronotransport-engineering-track","type":"tested_by","evidence":"Stage-A, paired replay and formal Stage-B implementation on local commit 92029ea."}

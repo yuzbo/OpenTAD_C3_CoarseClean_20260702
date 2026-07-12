@@ -20,6 +20,14 @@
 - 单 GPU 不启用 FP16 DDP bucket compression；它没有通信收益，还会放大 scaled-gradient 溢出风险。PhysTime matched 协议固定 `amp_init_scale=1024`。
 - 正式 gate 必须实际构建 evaluator 并验证 annotation/class-map 解析；训练配置能读数据不等于 evaluator 的独立相对路径可用。
 
+## PhysTime 性能诊断教训
+
+- 不把当前三头称为“仅检测头/仅坐标表示隔离”：PhysTime 同时删除了 ActionFormer temporal projection、跨 query 上下文并显著缩小可训练容量。
+- 不把 raw absolute seconds 直接当 content embedding；秒坐标用于几何、assignment、decode 和 evaluation，表征输入必须做窗口/域归一化并单独审计尺度贡献。
+- 不以“query 覆盖若干观测”证明 support integration 有效；必须同时报告 effective observation count、content/relative logit span 和层级坍缩。
+- 不用延长训练、调 NMS 或增大 endpoint loss 处理短动作崩溃；先匹配候选密度、target assignment、容量和时序上下文。
+- 不把 PhysTime 1.0 的负结果外推为 physical-time TAD 无效；当前实验首先证明的是实现与对照存在架构混杂。
+
 ## 当前唯一主线
 
 `PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768，确定性、无学习、无 GT 的相同 K=384 不规则采样，比较 selected-axis、physical-grid 与 PhysTime 三头。当前实验 commit 与作业以 `query_pack.md`、`experiments/phystime-adatad-k384.md` 和 `docs/evaluation/results.md` 为准。

@@ -79,11 +79,95 @@ Run root: `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad
 | --- | ---: | --- | --- | --- | ---: | ---: |
 | three-step AMP + evaluator gate | `1159491` | `3ac93a1` | passed | evaluator constructed from runtime absolute annotation; all three heads completed 3 optimizer steps with finite gradients and parameters | NA | NA |
 | PhysTime two-epoch stability gate | `1159492` | `3ac93a1` | passed | epoch 0 end loss 1.5824; epoch 1 end loss 1.1674; zero AMP skips; `STABILITY_GATE_COMPLETE` present | NA | NA |
-| selected-axis | `1159493` | `3ac93a1` | running | epoch 1 step 50 loss 0.9929; finite | NA | NA |
-| physical-grid | `1159494` | `3ac93a1` | running | epoch 1 step 50 loss 1.0115; finite | NA | NA |
-| PhysTime | `1159495` | `3ac93a1` | running | epoch 1 step 50 loss 1.1880; finite; no AMP skip | NA | NA |
+| selected-axis | `1159493` | `3ac93a1` | completed | best epoch 59；无 NaN/OOM/AMP skip | 63.61 | 41.87 |
+| physical-grid | `1159494` | `3ac93a1` | completed | best epoch 57；无 NaN/OOM/AMP skip | 59.14 | 32.34 |
+| PhysTime | `1159495` | `3ac93a1` | completed | best epoch 59；无 NaN/OOM/AMP skip | 57.21 | 34.96 |
 
 Failure localization retained for audit: commit `52b5756` gate `1159481` passed, but stability job `1159482` failed closed. Diagnostic job `1159489` found the first event at epoch 0 iter 47: finite forward losses and 11 Inf entries in `rpn_head.cls_head.weight` gradient, no NaN. Final protocol lowers AMP initial scale from 65536 to 1024 and bounds recoverable scaler skips; remote regression suite is `102 passed`.
+
+### Final best-checkpoint raw mAP
+
+同协议复算作业 `1159819/1159820/1159821` 均以 exit code 0 完成，并逐项复现正式最佳 checkpoint。结果文件位于 final run root 的 `diagnostics/checkpoint_full_eval_20260712/`。
+
+| Head | Best epoch | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| selected-axis | 59 | 79.87 | 74.15 | 66.12 | 56.02 | 41.87 | 63.61 |
+| physical-grid | 57 | 77.09 | 71.80 | 63.74 | 50.74 | 32.34 | 59.14 |
+| PhysTime | 59 | 72.70 | 68.38 | 60.94 | 49.06 | 34.96 | 57.21 |
+
+同一仓库的 dense AdaTAD 复现锚点为 Avg-mAP 68.29；它不是本次同采样三头隔离的一部分，只用于说明 K384 accuracy-cost 缺口。
+
+### Capacity and supervision audit
+
+| Head | Total params | Trainable adapter + detector | Detector params | Temporal projection params |
+| --- | ---: | ---: | ---: | ---: |
+| selected-axis | 49,582,504 | 27,702,568 | 26,695,708 | 23,505,920 |
+| physical-grid | 49,582,504 | 27,702,568 | 26,695,708 | 23,505,920 |
+| PhysTime | 29,242,288 | 7,362,352 | 6,355,492 | 3,168,774 |
+
+因此当前三头实验不是只改变坐标表示的等容量 head isolation：PhysTime 的可训练 adapter+detector 参数仅为 ActionFormer 两个对照的 26.58%，且删除了 ActionFormer 的跨时间 Transformer 投影栈。
+
+| Geometry / assignment diagnostic | selected-axis | physical-grid | PhysTime |
+| --- | ---: | ---: | ---: |
+| test mean valid candidates/window | 748.86 | 748.86 | 397.52 |
+| train Monte Carlo mean valid candidates/window | 710.34 | 710.34 | 343.78 |
+| train mean eligible locations/GT | 3.450 | 3.482 | 3.015 |
+| train `<1 s` mean eligible locations/GT | 2.379 | 2.316 | 1.348 |
+| train equal-duration multi-GT conflict share | 6.75% | 6.94% | 7.44% |
+
+PhysTime/test 与 selected-axis/test 的候选数比为 0.5308；训练 Monte Carlo 比值为 0.4840。当前 PhysTime target assignment 在多 GT 同最短距离位置只保留一个标签，而 ActionFormer 对照保留同长度标签集合。
+
+### Learned query and attention audit
+
+Epoch-59 EMA checkpoint 的 query embedding 审计显示，原始绝对 `center_sec` 对 query pre-activation 的贡献占比从细到粗层为 95.31%、94.93%、94.65%、93.53%、92.41%、90.53%。绝对秒数项主导了归一化位置、宽度和 Fourier 时间特征。
+
+真实 THUMOS checkpoint attention 诊断作业 `1159823` 使用 8 个等距测试窗口：
+
+| Level | Median covered observations | Mean effective observations | Effective/covered | Mean content-logit span | Mean relative-time span |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| L0 | 2 | 1.54 | 0.830 | 0.624 | 0.197 |
+| L1 | 4 | 2.00 | 0.690 | 1.891 | 0.462 |
+| L2 | 8 | 3.52 | 0.592 | 2.956 | 0.634 |
+| L3 | 15 | 2.08 | 0.166 | 16.577 | 0.506 |
+| L4 | 28 | 1.80 | 0.067 | 59.316 | 0.408 |
+| L5 | 56 | 2.07 | 0.039 | 66.975 | 0.199 |
+
+粗层 query 虽覆盖大量观测，但有效聚合约两个观测；content logits 的尺度远大于 relative-time logits。
+
+### Full prediction decomposition
+
+预测分解 artifact：`diagnostics/phystime_prediction_decomposition.json`，schema `phystime_prediction_diagnostic_v1`，真实 THUMOS `validation` GT 共 3325 instances。该分析使用每个最佳 checkpoint 的完整 post-NMS prediction JSON，不做自归一化。
+
+| Head | All class-agnostic R@0.7 | All class-aware R@0.7 | Top-100 class-agnostic R@0.7 | Top-100 class-aware R@0.7 | `<1 s` class-aware R@0.5 | `<1 s` class-aware R@0.7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| selected-axis | 93.20 | 89.95 | 71.58 | 69.89 | 81.42 | 50.00 |
+| physical-grid | 90.29 | 85.20 | 62.77 | 60.45 | 79.20 | 50.88 |
+| PhysTime | 85.59 | 79.70 | 67.28 | 61.32 | 50.00 | 7.08 |
+
+| Head | matched GT at IoU>=0.7 | start MAE (s) | end MAE (s) | normalized mean boundary error |
+| --- | ---: | ---: | ---: | ---: |
+| selected-axis | 2991 | 0.325 | 0.318 | 0.0752 |
+| physical-grid | 2833 | 0.402 | 0.406 | 0.0905 |
+| PhysTime | 2650 | 0.361 | 0.333 | 0.0799 |
+
+这些数字区分了“命中后的边界精度”和“能否覆盖/排序到正确候选”：PhysTime 在已命中的高 IoU 样本上优于 physical-grid、接近 selected-axis，但总候选覆盖、类别排序和短动作召回明显更弱。
+
+### Evidence verdict
+
+- `PhysTime-AdaTAD 1.0` 当前实现没有胜过任一 sparse baseline，也没有达到 dense anchor，主假设为负。
+- 该结果不能推出“physical-time detection 无效”，因为当前 PhysTime 同时更换了坐标表示、投影结构、时序上下文和模型容量。
+- 证据范围仅为 THUMOS14 单协议、单种子 matched run；尚未达到 `paper_ready`。
+
+### Diagnostic artifact hashes
+
+下列 artifact 均位于 final run root 的 `diagnostics/`，SHA256 用于后续审计锁定：
+
+| Artifact | Schema | SHA256 |
+| --- | --- | --- |
+| `phystime_attention_checkpoint_diagnostic.json` | `phystime_attention_checkpoint_diagnostic_v1` | `ae39e0158382332696cae7c269d26495e35d749dcd8aeb2a4d00b943a194d504` |
+| `phystime_test_geometry_checkpoint_diagnostic.json` | `phystime_performance_geometry_diagnostic_v1` | `937433e72c4c2294f5f8b0df0f980ad744c649bf4b101bc4ecf465a6b0edb616` |
+| `phystime_train_geometry_drop_diagnostic.json` | `phystime_performance_geometry_diagnostic_v1` | `70032400eb08fb17629e670b4141c8070328c64dd814b492cb09765556044b67` |
+| `phystime_prediction_decomposition.json` | `phystime_prediction_diagnostic_v1` | `2e3a8a3a613036a9a6130656f2aee07ab49cd4f99d0145d0e6751731d4ac64bb` |
 
 ## Matched Pilot
 

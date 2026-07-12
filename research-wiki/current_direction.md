@@ -1,6 +1,6 @@
 # 当前唯一方向与最终目标
 
-更新时间：2026-07-11
+更新时间：2026-07-12
 
 ## 1. 最终研究目标
 
@@ -25,18 +25,18 @@
 - 真实样本完成 CUDA decode、forward、`losses["cost"].backward()` 和 inference。
 - 记录 adapter、projection、classification、regression、endpoint 梯度及真实显存/延时。
 
-### Phase 1：K=384 头部隔离比较
+### Phase 1：K=384 首版三头比较（已完成，负结果）
 
 1. **Selected-axis AdaTAD**：原始 ActionFormerHead，把不规则观测压成 0..K-1；仅作为错误几何基线。
 2. **Physical-grid ActionFormer AdaTAD**：复用已有 original-position assignment；是最强低改动基线。
 3. **PhysTime-AdaTAD**：官方 VideoMAE-S adapter + `PhysTimeMeasureProjection` + `PhysTimeHead`，GT、query、回归、NMS 和输出都在秒坐标。
 4. **Dense AdaTAD 768**：只作精度与计算参考，不属于三头公平比较。
 
-三个稀疏系统只允许改变时间几何与检测头；必须共享数据、采样索引、backbone、预训练、空间增强、训练周期、优化器、seed、NMS 和评测。
+三个稀疏系统共享数据、采样索引、backbone、预训练、空间增强、训练周期、优化器、seed、NMS 和评测。完成后的审计发现，PhysTime 还同时改变了 temporal projection、跨 query 上下文和可训练容量，因此 Phase 1 不能作为纯坐标表示隔离。
 
 ### Phase 2：结果门控后扩展
 
-只有 Phase 1 稳定且 PhysTime 至少有竞争力时，才运行：
+Phase 1 已稳定完成但 PhysTime 1.0 不具竞争力，因此以下扩展继续锁定：
 
 - K=192/384/768；
 - uniform、random、bursty、contiguous-gap；
@@ -54,21 +54,22 @@
 
 ## 4. 当前实现事实
 
-已实现并验证到代码层：
+已实现并验证到 full-run：
 
 - `PhysTime-TAD 2.0` 的物理时间几何、support-integrated measure projection、PhysTimeHead、registered detector、feature-token transforms 和 focused gates。
 - feature-token 路线的软件契约可作为算子测试资产。
-- PhysTime-AdaTAD 1.0 的完整设计规格和逐任务实现计划已经冻结。
-- PhysTime-AdaTAD 1.0 的 raw-frame 秒几何、三份 matched K384 配置、same-index/同增强 validator、one-step 梯度证明、真实 AMP gate 和 gate-dependent 三头启动器已实现。`0bbf0e9` 修复 support-measure attention 对未覆盖极大 logit 的 `inf * 0` 数值路径；远端 focused suite 为 `68 passed`。
+- PhysTime-AdaTAD 1.0 的 raw-frame 秒几何、三份 K384 配置、same-index/同增强 validator、真实 AMP gate、两 epoch stability gate 和三头 full run 均已完成。
+- 最终稳定实现为 `3ac93a1`；最佳 checkpoint 的只读重放逐项复现正式结果。
+- PhysTime 1.0 未胜 selected-axis 或 physical-grid，也未达到 dense anchor；当前实现结论为负。
+- 性能诊断已经排除训练崩溃、evaluator、重复坐标换算和缺失 test windows，并确认容量/上下文混杂、absolute-second query 主导、粗层 attention 坍缩、候选密度与短动作监督不足。
 
-尚未形成真实实验或论文证据：
+尚未形成的论文证据：
 
-- 最新真实 THUMOS AMP gate `1158718` 已通过；
-- formal jobs `1158719/1158720/1158721` 均已失败：三头共享 evaluator annotation 相对路径错误，PhysTime 另从 epoch 1 end 起持续全 NaN；
-- 任何 PhysTime-AdaTAD mAP 结果；
+- capacity/context/candidate-matched 的 physical-time 因果对照；
+- 修复后的一因素消融与多 seed；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-AdaTAD 1.0 的 raw-video 软件合同和单步 AMP gate 已通过，但 `0bbf0e9` 三头 full-run 无效，尚无 mAP；必须修复 evaluator 路径并重新解决累计训练 NaN 后再跑。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已完成稳定 full run，但当前实现为负结果且比较存在架构/容量混杂；冻结为负基线。下一版必须先做等容量、同上下文、同候选数的 physical-time 因果对照，不得直接扩展论文主表。**
 
 ## 5. 明确非目标
 

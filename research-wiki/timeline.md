@@ -76,8 +76,14 @@
 - 冻结 PhysTime-AdaTAD 1.0：同一无学习、无 GT 不规则 K=384 采样，只比较 selected-axis、physical-grid 和 PhysTime 三种头。
 - 明确秒坐标可以映射回原视频帧号用于展示，但不能映射到 selected-rank 轴。
 
-## 2026-07-11：当前状态
+## 2026-07-11：raw-video 实现阶段
 
 - `PhysTime-TAD 2.0` feature-geometry 核心已实现。
-- `PhysTime-AdaTAD 1.0` raw-video 集成已有规格与 implementation plan，尚未完成代码与正式实验。
-- 当前唯一下一步：实现并通过 real THUMOS K=384 三头 matched gate，不再扩新方向。
+- `PhysTime-AdaTAD 1.0` raw-video 集成形成规格与 implementation plan，随后进入真实 gate 与正式训练。
+
+## 2026-07-12：首个 full run 与性能下降诊断
+
+- 经过 evaluator、masked attention 和 AMP 稳定性修复，`3ac93a1` 真实 gate、两 epoch stability gate 和三头 K384 full run 全部完成。
+- 最佳 checkpoint 只读重放复现正式 mAP；PhysTime 1.0 未胜 selected-axis 或 physical-grid，首个方法结果为负。
+- 诊断排除 evaluator、训练崩溃、重复秒转换和缺失 test windows；确认当前比较同时改变容量/上下文，且存在 absolute-second query 主导、粗层 attention 坍缩、候选密度和短动作监督不足。
+- PhysTime 1.0 冻结为负基线。下一步不扩多 seed/第二数据集，先构建 capacity/context/candidate-matched physical-time 因果对照。

@@ -25,3 +25,6 @@
 - 2026-07-12：`52b5756` 修复 evaluator 路由与物理时间 FP32 数值路径；gate `1159481` 通过，但 stability gate `1159482` 在正式作业启动前 fail-closed。诊断作业 `1159489` 将问题定位到 epoch 0 iter 47 的 `rpn_head.cls_head.weight`：forward loss 有限，11 个 scaled gradient 为 Inf，无 NaN。
 - 2026-07-12：最终 commit `3ac93a1` 将 AMP 初始 scale 设为 1024，限制可恢复 Inf 跳步，关闭单 GPU FP16 DDP compression，并保留 NaN、参数污染与跳步超限硬失败。远端 `102 passed`；gate `1159491` 与两 epoch stability gate `1159492` 均通过且零跳步。formal jobs `1159493/1159494/1159495` 正在运行，mAP pending。
 - 2026-07-12：formal jobs `1159493/1159494/1159495` 均越过 epoch 1 step 50，loss 分别为 0.9929、1.0115、1.1880，全部有限；这只提升训练稳定性证据，mAP 与方法 claim 仍 pending。
+- 2026-07-12：`3ac93a1` 三头正式训练全部完成；最佳 checkpoint 复算 `1159819/1159820/1159821` 逐项复现官方结果。PhysTime 1.0 未胜两个 sparse controls，状态改为“负结果已验证”，不是 paper-ready。
+- 2026-07-12：完成性能下降诊断：排除训练崩溃、evaluator、重复坐标换算与缺失 test window；确认比较存在容量/上下文混杂，并发现 absolute-second query 主导、粗层 attention 坍缩、候选密度和短动作监督不足、单标签 assignment 差异。完整数字只写入 `docs/evaluation/results.md`。
+- 2026-07-12：独立 GPT-5.5 xhigh 完整性审计确认 real GT 与 raw mAP 路径有效；发现本地 registry 曾滞后于远端完成状态。结果表与 Wiki 已整改，剩余风险为单数据集单种子和非等容量比较。

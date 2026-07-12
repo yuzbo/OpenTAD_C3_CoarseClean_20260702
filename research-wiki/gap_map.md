@@ -52,12 +52,12 @@ THUMOS14 单数据集可能奖励特定 action density 和 sampling prior。主�
 
 ## gap:G9 - 当前代码与最终 raw-video 目标之间的实现缺口
 
-状态：主体代码已落地，但部署与累计训练稳定性缺口重新打开。
+状态：已关闭。
 
-`BuildPhysTimeRawFrameGeometry`、matched K384 configs、same-index/同增强 validator、raw-video AMP gate、formal launcher 和结果记录均已落地；仍需把 evaluator 真实路径解析和 multi-step finite fail-closed 纳入部署 gate，并解决 PhysTime 长程优化 NaN。
+`BuildPhysTimeRawFrameGeometry`、K384 configs、same-index/同增强 validator、raw-video AMP gate、multi-step stability gate、formal launcher、evaluator 绝对路径和 full-run 结果均已落地。后续性能问题归入新的结构/因果对照缺口，不再误记为部署稳定性缺口。
 
 ## gap:G10 - 论文主张审计
 
-状态：无 claim 节点。
+状态：无正向 claim 节点；已有负结果与诊断裁决。
 
-在 `exp:phystime-adatad-k384` 完成并经过 result-to-claim 之前，不创建或传播“优于不规则采样基线”“更鲁棒”“保持计算节省”等已证实主张。
+`exp:phystime-adatad-k384` 已完成但不支持“优于不规则采样基线”“更鲁棒”或“保持计算节省”等正向主张。只有等容量因果对照、多 seed、高 IoU、成本和第二数据集证据闭环后，才能重新创建正向 claim。
