@@ -179,17 +179,20 @@ z_alpha = (1-alpha) * normalize(z_uniform) + alpha * normalize(z_learned)
 
 ## 5. 当前实验事实，严格区分诊断与正式证据
 
-旧 `8bfc0e5` 四个作业仍在运行，但整个矩阵已被协议失效：
+旧 `8bfc0e5` 四个作业已全部完成且 exit code 为 0，但整个矩阵已被协议失效：
 
 | 旧 Job | 名称 | best Avg-mAP | 当前解释 |
 |---:|---|---:|---|
-| 1159414 | invalid alpha0 control | 55.50 | 不是 uniform，只是 DP tie-break diagnostic |
-| 1159415 | direct-a5 | 56.34 | 不受 uniform 函数直接影响，但不再构成完整 matched matrix |
-| 1159416 | transition beta=0 | 63.98 | learned-policy diagnostic，错误 homotopy 起点 |
+| 1159414 | invalid alpha0 control | 55.67 | 不是 uniform，只是 DP tie-break diagnostic |
+| 1159415 | direct-a5 | 57.71 | 不受 uniform 函数直接影响，但不再构成完整 matched matrix |
+| 1159416 | transition beta=0 | 64.34 | learned-policy diagnostic，错误 homotopy 起点 |
 | 1159417 | transition beta=0.25 | 63.55 | learned-policy/bridge diagnostic，错误 homotopy 起点 |
 
-最新 beta=0 IoU-wise mAP 为 `79.73/74.59/66.74/56.40/42.44`；beta=0.25 为
-`79.34/74.48/65.97/55.09/42.12`。这些数字不得用于“优于 uniform”或“detector gradient 有效”的论文结论。
+beta=0 最佳 checkpoint 的 IoU-wise mAP 为 `79.92/75.18/67.83/56.81/41.97`；
+beta=0.25 最佳 checkpoint 为 `79.17/74.37/66.17/55.75/42.28`。beta=0.25
+低 0.79 Avg-mAP，其 best-checkpoint @0.7 只高 0.31，final @0.7 反而低 0.52。
+所有作业均完成 17 次评估，stderr 为空且无 Traceback/OOM/runtime non-finite skip。
+这些数字不得用于“优于 uniform”或“detector gradient 有效”的论文结论。
 
 历史上“uniform 约 65”有真实日志来源，但不是当前同协议结果：
 
