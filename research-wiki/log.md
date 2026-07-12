@@ -28,3 +28,4 @@
 - 2026-07-12：`3ac93a1` 三头正式训练全部完成；最佳 checkpoint 复算 `1159819/1159820/1159821` 逐项复现官方结果。PhysTime 1.0 未胜两个 sparse controls，状态改为“负结果已验证”，不是 paper-ready。
 - 2026-07-12：完成性能下降诊断：排除训练崩溃、evaluator、重复坐标换算与缺失 test window；确认比较存在容量/上下文混杂，并发现 absolute-second query 主导、粗层 attention 坍缩、候选密度和短动作监督不足、单标签 assignment 差异。完整数字只写入 `docs/evaluation/results.md`。
 - 2026-07-12：独立 GPT-5.5 xhigh 完整性审计确认 real GT 与 raw mAP 路径有效；发现本地 registry 曾滞后于远端完成状态。结果表与 Wiki 已整改，剩余风险为单数据集单种子和非等容量比较。
+- 2026-07-12：形成基于 GitHub 分支 `codex/phystime-performance-diagnosis-20260712`、正式实现 `3ac93a1` 与诊断提交 `d900c7c` 的 Pro 严厉审核 prompt；要求逐文件裁决根因，并交付等容量/同上下文/同候选数的最终模型、核心代码和因果实验 gate，禁止回退 selector 或用调参掩盖结构混杂。

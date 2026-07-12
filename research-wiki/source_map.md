@@ -13,6 +13,7 @@
 | `docs/evaluation/results.md` | 实验数字与 gate 状态唯一来源 |
 | `docs/evaluation/phystime-performance-drop-diagnosis.md` | PhysTime 1.0 负结果的因果诊断与下一版 gate |
 | `docs/evaluation/EXPERIMENT_AUDIT.md` | 独立只读实验完整性审计与整改状态 |
+| `docs/methods/reviews/2026-07-12-phystime-performance-drop-pro-audit-prompt.md` | 基于 `3ac93a1`/`d900c7c` 的最终 PhysTime Pro 代码审计、架构重设计与实验裁决 prompt |
 | `docs/evaluation/phystime-tad-track.md` | 已取消 feature-token track 的历史部署协议 |
 
 ## 2. DUCA/C3 评审与吸收记录
