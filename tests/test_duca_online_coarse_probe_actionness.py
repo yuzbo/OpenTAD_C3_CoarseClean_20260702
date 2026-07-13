@@ -30,6 +30,7 @@ def _selector(
         dense_window_size=8,
         selector_hidden_channels=8,
         selector_variant=selector_variant,
+        acquisition_policy=("global_structured_topk" if selector_variant == "transition_only" else "center_radius"),
         detector_gradient_mode="st_sparse_gather_soft_context",
         profile_runtime=True,
         actionness_source_cfg={
