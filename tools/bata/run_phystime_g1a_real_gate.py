@@ -641,12 +641,27 @@ def _load_train_samples(cfg, seed, requested_index, count=OPTIMIZER_STEPS):
     return dataset, indices, samples, checksums
 
 
+def _selected_index_checksum_g1a(meta):
+    values = np.asarray(meta.get("selected_raw_frame_indices", []), dtype=np.int64).reshape(-1)
+    _require(0 < values.size <= 384, f"G1a selected raw-frame count is invalid: {values.size}")
+    _require(np.all(np.diff(values) > 0), "G1a selected raw frame indices must be strictly increasing")
+    header = f"int64|{values.size}|".encode("ascii")
+    return hashlib.sha256(header + values.tobytes()).hexdigest(), values
+
+
 def _batch_selected_index_sha256(batch):
     digests = []
     for meta in batch["metas"]:
-        digest, _ = _selected_index_checksum(meta)
-        digests.append(digest)
+        digest, values = _selected_index_checksum_g1a(meta)
+        digests.append(f"{values.size}:{digest}")
     return hashlib.sha256("|".join(digests).encode("ascii")).hexdigest()
+
+
+def _batch_selected_index_lengths(batch):
+    return [
+        int(_selected_index_checksum_g1a(meta)[1].size)
+        for meta in batch["metas"]
+    ]
 
 
 def _batch_target_sha256(batch):
@@ -1332,6 +1347,22 @@ def validate_gate_report(report):
         _require_sha256(report.get(key), f"G1a {key}")
     for key in ("selected_index_sha256", "decoded_input_sha256", "target_sha256"):
         _require_sha256_sequence(report.get(key), f"G1a {key}", OPTIMIZER_STEPS)
+    selected_index_lengths = report.get("selected_index_lengths")
+    _require(
+        isinstance(selected_index_lengths, list)
+        and len(selected_index_lengths) == OPTIMIZER_STEPS
+        and all(
+            isinstance(batch_lengths, list)
+            and batch_lengths
+            and all(0 < int(value) <= 384 for value in batch_lengths)
+            for batch_lengths in selected_index_lengths
+        ),
+        "G1a selected-index lengths are invalid",
+    )
+    _require(
+        0 < int(report.get("tail_selected_index_length", 0)) <= 384,
+        "G1a tail selected-index length is invalid",
+    )
     _require(
         _is_hex_digest(report.get("git_commit"), {40, 64}),
         "G1a commit must be a full Git object id",
@@ -1739,21 +1770,23 @@ def run_gate(
     tail_samples = {}
     tail_indices = {}
     selected_checksums = {}
+    selected_lengths = {}
     input_checksums = {}
     target_checksums = {}
     video_names = {}
     tail_video_names = {}
     tail_input_checksums = {}
     tail_selected_checksums = {}
+    tail_selected_lengths = {}
     tail_datasets = {}
     for name, cfg in configs.items():
         _, batches, loader_length, loader_contract = _load_production_train_batches(
             cfg, seed=seed
         )
         tail_dataset, tail_index, tail_sample = _load_tail_sample(cfg, seed)
-        tail_selected = torch.as_tensor(
-            tail_sample["metas"]["selected_raw_frame_indices"], dtype=torch.int64
-        ).numpy()
+        tail_selected_digest, tail_selected = _selected_index_checksum_g1a(
+            tail_sample["metas"]
+        )
         train_batches[name] = batches
         train_loader_lengths[name] = loader_length
         train_loader_contracts[name] = loader_contract
@@ -1763,7 +1796,11 @@ def run_gate(
         selected_checksums[name] = [
             _batch_selected_index_sha256(batch) for batch in batches
         ]
-        tail_selected_checksums[name] = hashlib.sha256(tail_selected.tobytes()).hexdigest()
+        selected_lengths[name] = [
+            _batch_selected_index_lengths(batch) for batch in batches
+        ]
+        tail_selected_checksums[name] = tail_selected_digest
+        tail_selected_lengths[name] = int(tail_selected.size)
         input_checksums[name] = [_tensor_sha256(batch["inputs"]) for batch in batches]
         target_checksums[name] = [_batch_target_sha256(batch) for batch in batches]
         tail_input_checksums[name] = _tensor_sha256(tail_sample["inputs"])
@@ -1794,6 +1831,16 @@ def run_gate(
         "G1a arms selected different raw frames",
     )
     _require(
+        len(
+            {
+                tuple(tuple(batch_lengths) for batch_lengths in value)
+                for value in selected_lengths.values()
+            }
+        )
+        == 1,
+        "G1a arms selected different raw-frame counts",
+    )
+    _require(
         len({tuple(value) for value in input_checksums.values()}) == 1,
         "G1a arms produced different augmented RGB tensors",
     )
@@ -1804,6 +1851,7 @@ def run_gate(
     _require(len(set(tail_indices.values())) == 1, "G1a arms resolved different tail windows")
     _require(len(set(tail_video_names.values())) == 1, "G1a arms decoded different tail videos")
     _require(len(set(tail_selected_checksums.values())) == 1, "G1a arms selected different tail frames")
+    _require(len(set(tail_selected_lengths.values())) == 1, "G1a arms selected different tail frame counts")
     _require(len(set(tail_input_checksums.values())) == 1, "G1a arms produced different tail RGB tensors")
 
     variants = {}
@@ -1867,6 +1915,7 @@ def run_gate(
             result.get("amp_contract_verified") is True for result in variants.values()
         ),
         "selected_index_sha256": next(iter(selected_checksums.values())),
+        "selected_index_lengths": next(iter(selected_lengths.values())),
         "decoded_input_sha256": next(iter(input_checksums.values())),
         "target_sha256": next(iter(target_checksums.values())),
         "production_train_batch_count": OPTIMIZER_STEPS,
@@ -1874,6 +1923,7 @@ def run_gate(
         "tail_sample_index": next(iter(tail_indices.values())),
         "tail_sample_video": next(iter(tail_video_names.values())),
         "tail_selected_index_sha256": next(iter(tail_selected_checksums.values())),
+        "tail_selected_index_length": next(iter(tail_selected_lengths.values())),
         "tail_decoded_input_sha256": next(iter(tail_input_checksums.values())),
         "evaluation_ground_truth_filename": evaluation_ground_truth,
         "timebase_audit": timebase_audit,
