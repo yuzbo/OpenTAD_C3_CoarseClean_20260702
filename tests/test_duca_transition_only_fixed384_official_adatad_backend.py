@@ -100,6 +100,11 @@ def test_formal_gpu_gate_keeps_real_videomae_and_768_to_384_geometry() -> None:
     assert "scaler.unscale_(optimizer)" in text
 
 
+def test_vit_adapter_checkpoint_is_non_reentrant_for_dynamic_ddp() -> None:
+    source = Path("opentad/models/backbones/vit_adapter.py").read_text(encoding="utf-8")
+    assert "cp.checkpoint(_inner_forward, x, use_reentrant=False)" in source
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Linux remote runs Torch/official-ASFormer proof")
 def test_transition_only_official_actionformer_one_step_gradient_contract() -> None:
     if os.environ.get("DUCA_RUN_OFFICIAL_PROOF_TEST", "0") != "1":
