@@ -7,7 +7,7 @@ verdict: ongoing
 confidence: high
 commit: "pending-batch-commit"
 jobs: "remote CPU focused pytest in workdirs/chronotransport_r2/repo"
-updated: 2026-07-12
+updated: 2026-07-13
 ---
 
 # ChronoTransport r2 Implementation Verification
@@ -59,6 +59,22 @@ A fresh no-conversation-context agent returned `REVISE_IMPLEMENTATION_BEFORE_REG
 registration-blocking gaps remain: Gate 3/4, executable r2 Stage B/C/matched dense, overflow retry, B*
 and exact cost feasibility, full-stack profiling/provenance, strict derived registration validation,
 and a registration-bound fixed Gate-1 input chain. I/R and formal deployment remain locked.
+
+## External Pro GitHub audit
+
+A GitHub-only Pro review of immutable snapshot `4b07020acb2611c3f085488d2f678f3be037f1be`
+independently affirmed all seven blockers and found two additional P0 defects in surfaces that the
+project-reported suite had treated as covered:
+
+1. The r2 config overlay targets `model.backbone.chronotransport` instead of the actual inner
+   `model.backbone.backbone.chronotransport` runtime.
+2. The conformal helper flattens `window×candidate` residuals instead of taking a per-window maximum
+   before rank 28 over the 30 calibration windows.
+
+It also records incomplete formal manifest, per-window Spearman, Stage-C exposure/resume, exact-cost
+ledger, and measured-stage profiler contracts. This audit is repository evidence, not an experiment or
+independent test rerun. Verdict remains `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`; registration
+readiness is `NOT_READY`, and the formal execution chain remains locked.
 
 ## Connections
 

@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-12
+updated: 2026-07-13
 ---
 
 # 禁止重走清单
@@ -71,3 +71,19 @@ updated: 2026-07-12
 32. formal profile/replay 前必须完成 immutable registration commit；任何 repair、fallback、
     identity mismatch 或 retry violation 都是 `INVALID_IMPLEMENTATION`，不是 science FAIL。
 33. 即使 Gate 1--4 全 PASS，`deploy=false`、`paper=false` 仍保持冻结。
+34. r2 resolved config 必须只在 inner
+    `model.backbone.backbone.chronotransport` 生效；wrapper-level overlay 或 inner legacy age
+    残留都不得生成 profile/Gate artifact。
+35. Gate-3 simultaneous conformal 不得展平 `window×candidate`；必须先对每个窗口的 16 个
+    candidates 取 residual 最大值，再对 30 个 window maxima 取 rank 28。
+36. legacy six-schedule/old-split runner、pooled Spearman、row bootstrap 和 GT-aware
+    `random_trunc` 不得从 r2 formal launcher 可达。
+37. 不得把 `sandbox:/mnt/data/...` 的外部 patch proposal 当作本地可用、已应用或已测试；
+    其明确状态是 unavailable + `NOT_EXECUTED_BY_REVIEWER`。
+38. profiler 不得用 `count=0,p50=0,p95=0` 占位通过完整性检查；formal cost 必须来自直接
+    测量的 invocation-level `total_ms`，且 exact requested cost 与 executed diagnostic cost
+    分开记录。
+39. 项目报告的 110 tests 只证明已覆盖的 primitive/subset；不得据此声称 formal manifest、
+    Stage B/C、Gate 3/4、transactional retry、registration 或 science 已闭环。
+40. 第二次独立审查返回 `APPROVE_IMPLEMENTATION_FOR_REGISTRATION` 前，不得创建 I/R 或打开
+    formal profile/replay/evaluation 数据。

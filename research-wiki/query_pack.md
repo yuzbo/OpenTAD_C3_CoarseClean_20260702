@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-12
+updated: 2026-07-13
 max_chars: 8000
 ---
 
@@ -35,7 +35,11 @@ DUCA 当前形态：全窗口低成本 trainable C3/official-ASFormer coarse pro
 - ChronoTransport `92029ea` formal P3 science gate 保持失败，Stage C/P5 未解锁。一次
   `CT-P3R-3S` bounded appeal 已冻结并通过 spec-only review：commit `e4422f5`、SHA-256
   `87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`，状态仅为
-  `spec_approved`；implementation、tests 与新实验仍为 false。
+  `spec_approved`。
+- r2 当前只有局部实现和项目报告的 110-test subset；固定快照 `4b07020` 的外部 Pro 源码
+  审计维持 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`：七项既有 blocker 全部成立，并新增
+  config overlay 错层与 Gate-3 `30×16` conformal 展平两个 P0。registration 为 `NOT_READY`；
+  禁止 I/R、formal profile、Gate 1、新 Stage-B seeds、Stage C/Gate 4；没有 r2 实验事实。
 - 暂不实现 physical-grid；selected-axis 几何风险保持公开，等待决定性对照。
 - 不再增加 selector head/loss，先完成强基线、成本和 hard/soft 对齐。
 

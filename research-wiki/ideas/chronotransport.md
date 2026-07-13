@@ -4,8 +4,11 @@ node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
 stage: spec_approved
 outcome: bounded_appeal_pending
+implementation_status: partial_tested_registration_blocked
+registration_status: NOT_READY
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
+updated: 2026-07-13
 ---
 
 # ChronoTransport 动态特征刷新
@@ -57,5 +60,17 @@ adjudication；仍未注册、未运行任何新 Gate。
 独立 implementation audit 裁决 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。110 个远端测试
 通过只覆盖已实现子集，不能抵消 Gate 3/4、正式 Stage B/C/matched dense、overflow retry、
 B* 与 exact cost、full-stack profiler 及严格 registration input-chain 仍缺失。禁止冻结 I/R。
+
+外部 Pro 随后对固定 GitHub 快照 `4b07020acb2611c3f085488d2f678f3be037f1be` 复核，维持
+`REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`，同意上述七项 blocker，并新增两个 P0：r2 config
+overlay 写在 wrapper 层而非 inner ViT runtime；Gate-3 conformal 错把 `30×16` candidate rows
+展平，正确单位应是 30 个 window maxima 后取 rank 28。完整 manifest、per-window Spearman、
+Stage-C exposure/resume ledger、requested/executed exact cost 和 profiler zero-placeholder 也需
+fail closed。Route B 继续保留，但 I/R、profile、Gate 1、新 Stage-B seed、Stage C 和 Gate 4
+全部锁定，直到修复后第二次独立审查返回 `APPROVE_IMPLEMENTATION_FOR_REGISTRATION`。
+
+精确状态：科学规格 `designed/approved`；实现和测试均为 `partial`；`experiment_running=false`；
+r2 `empirically_supported=false`；`paper_ready=false`；`deploy=false`。审计不产生实验事实，
+也不推翻历史 `92029ea` 的负结果。
 
 由 `research-wiki/graph/edges.jsonl` 维护。

@@ -67,3 +67,10 @@ append_only: true
 - 2026-07-12: Published the GitHub-only Pro prompt in commit `6079135` and opened draft PR #1:
   `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/pull/1`. The review target remains the
   immutable pre-prompt code snapshot `4b07020acb2611c3f085488d2f678f3be037f1be`.
+- 2026-07-13: Fully archived and absorbed the 1,429-line external Pro GitHub code audit, original
+  attachment SHA-256 `1B3A02373366A95654C00A5FE76F451F800D16A877B2688BB460674B25849142`.
+  Verdict remains `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`: all seven independent-audit blockers
+  are affirmed, with two new P0s for the wrong r2 config nesting and candidate-row pseudoreplication in
+  Gate-3 conformal. Route B is retained; I/R, formal profile, Gate 1, new Stage-B seeds, Stage C, and
+  Gate 4 remain locked. The review is source evidence, not a test rerun or experiment; its sandbox patch
+  proposal is unavailable and explicitly not executed.

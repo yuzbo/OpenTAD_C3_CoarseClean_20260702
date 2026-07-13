@@ -26,6 +26,8 @@
 {"from":"idea:chronotransport","to":"exp:parallel-routes","type":"tested_by","evidence":"ChronoTransport gates and deployments.","updated":"2026-07-11"}
 {"from":"idea:chronotransport","to":"exp:chronotransport-formal-stage-b","type":"tested_by","evidence":"Formal seed-3407 Stage-B fit/calibration/evaluation at 92029ea.","updated":"2026-07-11"}
 {"from":"exp:chronotransport-formal-stage-b","to":"idea:chronotransport","type":"invalidates","evidence":"Current P3 risk ranking/scale and stable feature-transport gates failed; engineering feasibility remains.","updated":"2026-07-11"}
+{"from":"source:chronotransport-r2-pro-github-code-audit-response","to":"idea:chronotransport","type":"audits","evidence":"GitHub-only Pro source audit at 4b07020: REVISE_IMPLEMENTATION_BEFORE_REGISTRATION; affirms seven blockers and adds config nesting plus window-level conformal P0s.","updated":"2026-07-13"}
+{"from":"source:chronotransport-r2-pro-github-code-audit-response","to":"exp:chronotransport-r2-implementation-verification","type":"audits","evidence":"The project-reported 110 tests cover only a partial subset and do not establish registration readiness or any r2 Gate result.","updated":"2026-07-13"}
 {"from":"idea:chronotransport","to":"gap:G4","type":"addresses_gap","evidence":"Reduces internal heavy-subpath computation.","updated":"2026-07-11"}
 {"from":"idea:phystime","to":"exp:parallel-routes","type":"tested_by","evidence":"PhysTime data and gate deployments.","updated":"2026-07-11"}
 {"from":"idea:phystime","to":"gap:G3","type":"addresses_gap","evidence":"Preserves explicit physical-time geometry.","updated":"2026-07-11"}

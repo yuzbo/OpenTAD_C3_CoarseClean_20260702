@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-12
+updated: 2026-07-13
 ---
 
 # 来源注册表
@@ -53,6 +53,13 @@ updated: 2026-07-12
   `4b07020acb2611c3f085488d2f678f3be037f1be`；prompt 首次发布 commit `6079135`，draft PR
   `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/pull/1`；禁止执行实验或生成
   registration。
+- `sources/2026-07-13-chronotransport-r2-pro-github-code-audit-response.md`：外部 Pro 对固定
+  GitHub 快照 `4b07020acb2611c3f085488d2f678f3be037f1be` 的 1,429 行完整源码审计原文；原附件
+  SHA-256 `1B3A02373366A95654C00A5FE76F451F800D16A877B2688BB460674B25849142`。
+- `sources/2026-07-13-chronotransport-r2-pro-github-code-audit-absorption.md`：接受
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`、七项既有 blocker、config nesting 与
+  conformal statistical unit 两项新增 P0，以及分级 P1--P3 和 Route-B 修复顺序；明确该审计
+  不是实验、110 tests 未独立复跑、sandbox patch proposal 不可访问且未执行。
 
 评审建议不是实验事实。wiki 中只有带 run root、Job ID、日志或 result artifact 的内容
 才可标记为实验事实。
@@ -71,3 +78,5 @@ updated: 2026-07-12
 `a885a659...`、`391f061f...`、`c2008dfb...`、`c8a36eba...`、
 `1fc36774...`、`d8b9f9fc...`。其中最后一份 ResearchClaw 审查已原样归档，
 SHA256 为 `E4344DAED297F02E23CE355A4B0BBA1845F2C05393820CE04843374AAB6A59AC`。
+本轮新增附件 `bf3c8b10-951f-4765-87d5-53c6ba02b7dd` 已完整归档；其原文件身份见上方
+ChronoTransport r2 Pro 审计条目。
