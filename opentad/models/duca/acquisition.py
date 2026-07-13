@@ -2798,9 +2798,8 @@ def duca_losses(
                 raise ValueError("effective_budget must satisfy 0 < K <= valid_count")
             configured_max_hole = scores.get("max_unselected_hole")
             effective_max_hole = valid_count if configured_max_hole is None else int(configured_max_hole)
-            if not bool(
-                transition_target[batch_idx].to(device=valid.device).masked_fill(~valid[batch_idx], 0.0).gt(0).any().item()
-            ):
+            target_row = transition_target[batch_idx].to(device=valid.device)
+            if not bool(target_row.masked_fill(~valid[batch_idx], 0.0).gt(0).any().item()):
                 continue
             coverage_rows.append(
                 local_boundary_coverage_loss(
