@@ -10,6 +10,8 @@ Current active queue: `1161495` failed before pilot because `_selected_index_che
 
 Gate `1161500` has now passed (`COMPLETED 0:0`, `gate_pass=true`). Pilots `1161501` selected-axis and `1161502` physical-metric are `RUNNING`; status is `experiment_running`, not `empirically_supported`. mAP remains NA until pilot artifacts complete.
 
+Latest checkpoint-fix update: pilots `1161501/1161502` failed after epoch 2 because `/data` was full and `torch.save` failed while writing per-epoch checkpoints. This is an artifact-storage failure, not evidence of model NaN or evaluator failure. Commit `623a376700c5781a3a54e3c6622ceb2ebc5ffc8e` changes G1a pilot checkpointing to final-only, preserving the required final `epoch_5.pth`. Remote clean snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_623a376_20260713_checkpointfix` passed focused checks (`40 passed`) and was requeued at run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_623a376_ckptfix_20260713_225354_+0800`: `1162048` gate, `1162049` selected-axis afterok, `1162050` physical-metric afterok. First check: gate `RUNNING`, pilots `PENDING`. No completed pilot mAP yet.
+
 # Research Wiki Query Pack
 
 当前 G1a 部署状态（2026-07-13）：独立 Max 复审已经在 `a4b7f1db0424966c9f9c5d4304a7619be59661db` 达到零 P0/P1，并允许 clean snapshot 与真实 gate。远端 gate contract `35 passed`、PhysTime/C3 physical-grid focused `248 passed`；真实 gate `1161500` 已 `COMPLETED 0:0` 且 `gate_pass=true`。`1161501` selected-axis 与 `1161502` physical-metric 6-epoch pilot 正在运行；当前状态是 `experiment_running`，不是 `empirically_supported`，没有新 mAP。完整审查见 `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md`。
