@@ -245,7 +245,10 @@ def _structured_log_partition(
     neg_inf = work.new_tensor(-1.0e9)
 
     def safe_logsumexp(values: torch.Tensor, dim: int) -> torch.Tensor:
-        return torch.logsumexp(values, dim=dim)
+        maximum = values.amax(dim=dim, keepdim=True)
+        shifted = (values - maximum).clamp(min=-80.0, max=0.0)
+        reduced = maximum + shifted.exp().sum(dim=dim, keepdim=True).clamp_min(1.0e-30).log()
+        return reduced.squeeze(dim)
 
     alpha = work.new_full((batch, k + 1, max_hole + 1), neg_inf.item())
     alpha[:, 0, 0] = 0.0
