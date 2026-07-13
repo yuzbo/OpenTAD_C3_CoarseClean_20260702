@@ -255,6 +255,21 @@ def test_local_boundary_mass_coverage_has_bounded_finite_long_window_gradients()
     assert logits.grad.abs().max() < 1.0
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
+def test_local_boundary_mass_coverage_stays_fp32_under_autocast_and_scaled_backward() -> None:
+    logits = torch.randn(1, 768, device="cuda", dtype=torch.float16, requires_grad=True)
+    occupancy = torch.softmax(logits.float(), dim=1).to(dtype=logits.dtype) * 384.0
+    boundary = torch.zeros(1, 768, device="cuda")
+    boundary[0, [100, 390, 700]] = 1.0
+    valid = torch.ones(1, 768, device="cuda", dtype=torch.bool)
+
+    with torch.cuda.amp.autocast(dtype=torch.float16):
+        loss = local_boundary_mass_coverage_loss(occupancy, boundary, valid, radius=4)
+    assert loss.dtype == torch.float32
+    (loss * 65536.0).backward()
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+
+
 def test_local_boundary_coverage_is_exact_under_structured_dependence() -> None:
     boundary = torch.zeros(1, 3)
     boundary[0, 1] = 1.0

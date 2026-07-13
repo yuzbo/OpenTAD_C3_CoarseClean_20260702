@@ -302,7 +302,7 @@ def local_boundary_coverage_loss(
         if not per_batch:
             return policy_logits.sum() * 0.0
         loss = torch.stack(per_batch).mean()
-    return loss.to(dtype=policy_logits.dtype)
+    return loss
 
 
 def local_boundary_mass_coverage_loss(
@@ -336,7 +336,7 @@ def local_boundary_mass_coverage_loss(
         rows.append((weights * torch.exp(-neighborhood_mass)).sum() / weights.sum().clamp_min(1e-8))
     if not rows:
         return soft_occupancy.sum() * 0.0
-    return torch.stack(rows).mean().to(dtype=soft_occupancy.dtype)
+    return torch.stack(rows).mean()
 
 
 __all__ = [
