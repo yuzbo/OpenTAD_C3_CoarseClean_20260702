@@ -240,21 +240,20 @@ def _structured_log_partition(
         allowed = selection_allowed.to(device=logits.device, dtype=torch.bool)
         if allowed.shape != logits.shape:
             raise ValueError("selection_allowed must align with logits")
-    def safe_logsumexp(values: torch.Tensor, dim: int) -> torch.Tensor:
-        reachable = torch.isfinite(values).any(dim=dim)
-        safe_values = torch.where(reachable.unsqueeze(dim), values, torch.zeros_like(values))
-        reduced = torch.logsumexp(safe_values, dim=dim)
-        return torch.where(reachable, reduced, reduced.new_full((), float("-inf")))
+    neg_inf = work.new_tensor(-1.0e9)
 
-    alpha = work.new_full((batch, k + 1, max_hole + 1), float("-inf"))
+    def safe_logsumexp(values: torch.Tensor, dim: int) -> torch.Tensor:
+        return torch.logsumexp(values, dim=dim)
+
+    alpha = work.new_full((batch, k + 1, max_hole + 1), neg_inf.item())
     alpha[:, 0, 0] = 0.0
     for time_idx in range(temporal_len):
         if k > 0:
             selected = safe_logsumexp(alpha[:, :k, :], dim=2) + work[:, time_idx, None]
-            selected = selected.masked_fill(~allowed[:, time_idx, None], float("-inf"))
-            select_zero = torch.cat((work.new_full((batch, 1), float("-inf")), selected), dim=1)
+            selected = selected.masked_fill(~allowed[:, time_idx, None], neg_inf.item())
+            select_zero = torch.cat((work.new_full((batch, 1), neg_inf.item()), selected), dim=1)
         else:
-            select_zero = work.new_full((batch, 1), float("-inf"))
+            select_zero = work.new_full((batch, 1), neg_inf.item())
         skipped = alpha[:, :, :max_hole] if max_hole > 0 else alpha[:, :, :0]
         alpha = torch.cat((select_zero[:, :, None], skipped), dim=2)
     return safe_logsumexp(alpha[:, k, :], dim=1)
@@ -295,7 +294,7 @@ def structured_local_coverage_probability(
         )
         log_miss = (log_z_miss - log_z).clamp(max=0.0)
         probability = -torch.expm1(log_miss)
-        impossible_miss = ~torch.isfinite(log_z_miss)
+        impossible_miss = log_z_miss <= -5.0e8
         probabilities.append(torch.where(impossible_miss, torch.ones_like(probability), probability))
     if not probabilities:
         return policy_logits.new_zeros((policy_logits.shape[0], 0))
