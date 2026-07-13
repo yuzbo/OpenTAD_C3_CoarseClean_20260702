@@ -9,6 +9,7 @@ Status: `queued_for_gate`, not `experiment_running`.
 - Jobs: `1161476` real gate, `1161477` selected-axis pilot afterok, `1161478` physical-metric pilot afterok.
 - Submission check: gate was `PENDING (Priority)` and pilots were `PENDING (Dependency)`. No gate artifact and no mAP yet.
 - Follow-up: gate `1161476` failed before training/pilot because the gate still conflated K384 decoded slots with 384 valid observations per real production training window. This is a gate-contract bug, not a method result. Fix status: implemented and remote focused tests passed (`30 passed` gate contract, `243 passed` PhysTime/C3 physical-grid), awaiting renewed Max green before requeue.
+- Final requeue after renewed Max green: commit `56c7e98e54ba83eb32b84dbdbeb74c3b5698eca2`, clean snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_56c7e98_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_56c7e98_gatepilot_20260713_194728_+0800`. Jobs: `1161486` gate, `1161487` selected-axis afterok, `1161488` physical-metric afterok. First check: gate `PENDING (Priority)`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
 
 ---
 type: experiment
