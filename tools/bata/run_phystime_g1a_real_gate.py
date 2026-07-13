@@ -11,6 +11,7 @@ import time
 import traceback
 from pathlib import Path
 
+import numpy as np
 import torch
 from mmengine.config import Config
 from torch.cuda.amp import GradScaler

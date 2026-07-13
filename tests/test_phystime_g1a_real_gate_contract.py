@@ -47,6 +47,20 @@ def test_decoded_temporal_length_uses_time_axis_for_six_dimensional_batches():
     assert int(batch.shape[2]) == 3
 
 
+def test_g1a_selected_index_checksum_accepts_variable_valid_lengths():
+    digest, values = gate_module._selected_index_checksum_g1a(
+        {"selected_raw_frame_indices": list(range(269))}
+    )
+
+    assert len(digest) == 64
+    assert values.size == 269
+
+    with pytest.raises(RuntimeError):
+        gate_module._selected_index_checksum_g1a(
+            {"selected_raw_frame_indices": [0, 2, 2]}
+        )
+
+
 def _step_reports():
     reports = []
     for step in range(3):
