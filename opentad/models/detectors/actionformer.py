@@ -307,7 +307,11 @@ class ActionFormer(SingleStageDetector):
 
         modules = tuple(self.modules())
         module_training = {module: module.training for module in modules}
-        buffer_state = {name: value.detach().clone() for name, value in self.named_buffers()}
+        buffer_state = {
+            name: value.detach().clone()
+            for name, value in self.named_buffers()
+            if not name.startswith("frame_selector.")
+        }
         cpu_rng = torch.random.get_rng_state()
         cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
         normalizer = self.rpn_head.loss_normalizer.detach().clone()
