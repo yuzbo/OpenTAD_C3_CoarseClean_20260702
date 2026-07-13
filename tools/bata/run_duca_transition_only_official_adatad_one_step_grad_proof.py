@@ -71,7 +71,9 @@ def _scaled_selector_cfg(cfg: Config, *, temporal_len: int, budget: int, hidden_
         "actionness": {"start": 1.0, "end": 1.0},
         "transition": {"start": 0.5, "end": 0.5},
         "transition_boundary": {"start": 0.25, "end": 0.25},
-        "detector_gradient": {"start": 0.25, "end": 0.25},
+        # The direct ST detector bridge was removed. Detector-derived selector
+        # supervision is exercised separately by hard counterfactual utility.
+        "detector_gradient": {"start": 0.0, "end": 0.0},
         "policy_alpha": {"start": 1.0, "end": 1.0},
     }
     return selector

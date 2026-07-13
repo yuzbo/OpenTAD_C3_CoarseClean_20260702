@@ -127,6 +127,6 @@ def test_transition_only_official_actionformer_one_step_gradient_contract() -> N
     assert summary["optimizer_exact_coverage"] is True
     assert summary["train_forward"] is True
     assert summary["test_forward"] is True
-    assert summary["detector_route_gradients"]["transition_scorer"] > 0.0
+    assert summary["detector_route_gradients"]["transition_scorer"] == pytest.approx(0.0)
     assert summary["detector_route_gradients"]["coarse_probe"] == pytest.approx(0.0)
     assert summary["detector_route_loss_keys"] == ["cls_loss", "reg_loss"]
