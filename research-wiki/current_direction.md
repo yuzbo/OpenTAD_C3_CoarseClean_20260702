@@ -1,5 +1,7 @@
 # 当前唯一方向与最终目标
 
+2026-07-13 部署门槛更新：G1a 当前仅为 `tested`。独立 Max 审查第二轮的 4 个 P1 已修复，相关远端回归 `240 passed`；第三轮未达到零 P0/P1 前不得部署 real gate，gate 未通过前不得启动 matched pilot。
+
 更新时间：2026-07-13
 
 ## 1. 最终研究目标
@@ -43,7 +45,7 @@
 5. 只在 matched temporal-metric control 通过后，引入有显式 mass base path、bounded correction 和 physical query encoder 的 `idea:sm-ptaf`。
 6. `SM-PTAF` 当前状态仅为 `designed`；外部回复中的公式与代码片段不是实现证据，也不能把 tubelet 的 multi-atom anchor 直接表述为可加 feature measure。
 
-当前 G1a native-J192 matched control 已达到 `tested`：远端新旧回归至少 `116 passed`，并修复了物理中心污染候选 mask、test evaluator 数据集错配、弱数据指纹、不可重算 artifact 与 VideoMAE 尾部 padding 泄漏。正式 dataset 消费 411 个 THUMOS14 视频；test 根目录另有 2 个未引用视频，已作为 inventory 显式登记。gate `1161304` 因旧审计范围失败；范围修复 commit `e598bd7` 的 gate `1161353` 随后在 0 维 LongTensor state 摘要的 byte-view 兼容性处失败，两轮依赖 pilot 均未启动。标量摘要修复和回归已加入，等待新 commit/snapshot 重排。原始 AdaTAD interpolation 不被永久禁止；它只能在 G1b 作为双臂共享、单独归因的 query-grid lift，不能重新解释为 K 个观测。
+当前 G1a native-J192 matched control 已达到 `tested`：远端新旧回归 `142 passed`，并修复了物理中心污染候选 mask、test evaluator 数据集错配、弱数据指纹、不可重算 artifact 与 VideoMAE 尾部 padding 泄漏。正式 dataset 消费 411 个 THUMOS14 视频；test 根目录另有 2 个未引用视频，已作为 inventory 显式登记。gate `1161304` 因旧审计范围失败，`1161353` 因标量 state byte-view 失败；`1161378` 在 selected-axis 首个真实样本因旧 gate 逐样本强制回归参数梯度非零而 fail-closed，三轮依赖 pilot 均未启动。该现象只与 ReLU dead zone 一致，旧 artifact 不足以证明根因。v3 gate 已改用正式 batch=2 DataLoader、warmup scheduler、EMA 和生产更新顺序，并记录 pre-ReLU/assignment/梯度/LR/optimizer state、trainable-only hash 与参数 delta；首轮独立审查的 4 个 P1/3 个 P2 已修复，正在复审。复审和新 clean gate 前不得部署 pilot。原始 AdaTAD interpolation 不被永久禁止；它只能在 G1b 作为双臂共享、单独归因的 query-grid lift，不能重新解释为 K 个观测。
 
 ### Phase 2：结果门控后扩展
 
@@ -75,7 +77,7 @@
 - 性能诊断已经排除训练崩溃、evaluator、重复坐标换算和缺失 test windows，并确认容量/上下文混杂、absolute-second query 主导、粗层 attention 坍缩、候选密度与短动作监督不足。
 - 2026-07-13 Pro 审查给出 `HOLD AND REBUILD`，进一步确认 native tubelet feature-support provenance、候选/assignment 同构和 query-mask 语义是 P0；推荐 `SM-PTAF` 作为 designed candidate，但尚无实现或实验。
 - 同日独立核验认同停止 1.0 和 P0 重建，但不接受“SM-PTAF 已是唯一最终模型”：tubelet 内两帧已被非线性融合，multi-atom 只能先作为 set-valued anchor；J192 到 Q384 也是必须单独归因的新算子。
-- G1a 已实现 K/J/Q 分离、canonical FPS/窗口秒域、逐层严格 padding isolation、结构性 lineage、原生 J192 official ActionFormer 路径、三步真实 gate、全量 timebase 审计和可重算 6 epoch artifact 合同；远端回归 `116 passed`。尚无正式 gate 或 mAP。
+- G1a 已实现 K/J/Q 分离、canonical FPS/窗口秒域、逐层严格 padding isolation、结构性 lineage、原生 J192 official ActionFormer 路径、生产 engine 三步真实 gate、全量 timebase 审计和可重算 6 epoch artifact 合同；远端回归 `142 passed`。v3 gate 正在第二轮独立复审，尚无通过的正式 gate 或 mAP。
 
 尚未形成的论文证据：
 

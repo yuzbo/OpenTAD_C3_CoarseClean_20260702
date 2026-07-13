@@ -171,9 +171,10 @@ def test_physical_grid_train_targets_assign_on_dense_physical_gt_not_selected_ax
 
     assert physical_masks[0].tolist() == [[True, True, True, True, False]]
     assert torch.allclose(physical_points[0][0, :, 0], torch.tensor([0.0, 3.0, 4.0, 10.0, 12.0]))
+    assert physical_points[0][0, 3, 3].item() == pytest.approx(5.0)
     assert torch.equal(gt_cls[0].sum(dim=1) > 0, torch.tensor([False, False, False, True, False]))
     assert gt_cls[0][3, 1].item() == 1.0
-    assert torch.allclose(gt_reg[0][3], torch.tensor([0.125, 0.125]))
+    assert torch.allclose(gt_reg[0][3], torch.tensor([0.1, 0.1]))
     assert meta["irregular_native_axis"] is True
     assert meta["physical_grid_actionformer"] is True
     assert meta["physical_grid_dense_valid_len"] == 12.0

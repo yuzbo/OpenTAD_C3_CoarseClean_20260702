@@ -23,22 +23,39 @@ def build_dataset(cfg, default_args=None):
     return dataset
 
 
-def build_dataloader(dataset, batch_size, rank, world_size, shuffle=False, drop_last=False, **kwargs):
+def build_dataloader(
+    dataset,
+    batch_size,
+    rank,
+    world_size,
+    shuffle=False,
+    drop_last=False,
+    seed=None,
+    **kwargs,
+):
+    sampler_seed = 0 if seed is None else int(seed)
     sampler = torch.utils.data.distributed.DistributedSampler(
         dataset,
         num_replicas=world_size,
         rank=rank,
         shuffle=shuffle,
         drop_last=drop_last,
+        seed=sampler_seed,
     )
 
     assert batch_size % world_size == 0, f"batch size {batch_size} should be divided by world size {world_size}"
+    generator = kwargs.pop("generator", None)
+    if generator is None and seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(sampler_seed + int(rank))
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size // world_size,
         collate_fn=collate,
         pin_memory=True,
         sampler=sampler,
+        drop_last=drop_last,
+        generator=generator,
         **kwargs,
     )
     return dataloader

@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import importlib.util
 import json
 import math
@@ -10,6 +11,8 @@ from pathlib import Path
 import pytest
 
 import tools.bata.validate_phystime_g1a_pilot_artifacts as validator
+from mmengine.config import Config
+from tools.bata.run_phystime_g1a_real_gate import _canonical_sha256
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,17 +97,84 @@ def pilot_artifacts(tmp_path, monkeypatch):
         ")\n",
         encoding="utf-8",
     )
+    config_sha256 = _canonical_sha256(
+        Config.fromfile(config_path, lazy_import=False).to_dict()
+    )
+    gate_path = run_dir / "real_gate.json"
+    contract_path = run_dir / "contract.json"
+    static_g0_path = run_dir / "static_g0.json"
+    bound_config_sha256 = {
+        "selected_axis": config_sha256,
+        "physical_metric": "e" * 64,
+    }
+    _write_json(
+        contract_path,
+        {
+            "schema_version": "phystime_g1a_track_contract_v3",
+            "contract_pass": True,
+            "git_commit": "a" * 40,
+            "git_tree": "b" * 40,
+            "config_sha256": bound_config_sha256,
+        },
+    )
+    _write_json(
+        static_g0_path,
+        {
+            "schema_version": "phystime_g0_native_geometry_static_precheck_v2",
+            "static_precheck_pass": True,
+            "gate_pass": False,
+            "git_commit": "a" * 40,
+            "git_tree": "b" * 40,
+            "config_sha256": bound_config_sha256,
+        },
+    )
+    pretrained_checkpoint_path = run_dir / "videomae_pretrain.pth"
+    pretrained_checkpoint_path.write_bytes(b"fake-videomae-pretrain")
+    pretrained_checkpoint_sha256 = hashlib.sha256(
+        pretrained_checkpoint_path.read_bytes()
+    ).hexdigest()
+    checkpoint_path = work_dir / "checkpoint" / "epoch_5.pth"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_bytes(VALID_CHECKPOINT_BYTES)
+    contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+    static_g0_sha256 = hashlib.sha256(static_g0_path.read_bytes()).hexdigest()
+    dataset_manifest_sha256 = "d" * 64
+    gate_payload = {
+        "schema_version": "phystime_g1a_real_gate_v3",
+        "gate_pass": True,
+        "git_commit": "a" * 40,
+        "git_tree": "b" * 40,
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "evaluation_ground_truth_filename": str(ground_truth_path),
+        "checkpoint_sha256": pretrained_checkpoint_sha256,
+        "contract_sha256": contract_sha256,
+        "static_g0_sha256": static_g0_sha256,
+        "variants": {
+            "selected_axis": {"canonical_config_sha256": config_sha256},
+            "physical_metric": {"canonical_config_sha256": "e" * 64},
+        },
+    }
+    _write_json(gate_path, gate_payload)
     manifest = {
-        "schema_version": "phystime_g1a_pilot_manifest_v2",
+        "schema_version": "phystime_g1a_pilot_manifest_v3",
         "pilot_epochs": 6,
         "warmup_epochs": 5,
         "started_at_unix": 0.0,
-        "commit": "abc",
-        "git_tree": "tree",
+        "commit": "a" * 40,
+        "git_tree": "b" * 40,
+        "runtime_root": str(run_dir),
+        "variant": "selected_axis",
         "config": str(config_path),
-        "config_sha256": "config",
-        "dataset_manifest_sha256": "dataset",
-        "gate_sha256": "gate",
+        "config_sha256": config_sha256,
+        "checkpoint": str(pretrained_checkpoint_path),
+        "checkpoint_sha256": pretrained_checkpoint_sha256,
+        "gate": str(gate_path),
+        "gate_sha256": hashlib.sha256(gate_path.read_bytes()).hexdigest(),
+        "contract": str(contract_path),
+        "contract_sha256": contract_sha256,
+        "static_g0": str(static_g0_path),
+        "static_g0_sha256": static_g0_sha256,
+        "dataset_manifest_sha256": dataset_manifest_sha256,
         "ground_truth_filename": str(run_dir / "manifest_must_not_choose_gt.json"),
         "metrics": {key: 0.0 for key in REQUIRED_METRICS},
     }
@@ -121,15 +191,13 @@ def pilot_artifacts(tmp_path, monkeypatch):
     checkpoint = {
         "epoch": 5,
         "state_dict": {"backbone.weight": _FakeTensor([1.0, -1.0])},
+        "state_dict_ema": {"backbone.weight": _FakeTensor([1.0, -1.0])},
         "optimizer": {
             "state": {0: {"step": 6, "exp_avg": _FakeTensor([0.0])}},
             "param_groups": [{"lr": 1.0e-4, "params": [0]}],
         },
-        "scheduler": {"last_epoch": 5, "_last_lr": [1.0e-4]},
+        "scheduler": {"last_epoch": 6, "_last_lr": [1.0e-4]},
     }
-    checkpoint_path = work_dir / "checkpoint" / "epoch_5.pth"
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint_path.write_bytes(VALID_CHECKPOINT_BYTES)
     fake_torch = _FakeTorch(checkpoint)
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
@@ -144,6 +212,32 @@ def pilot_artifacts(tmp_path, monkeypatch):
         return _Evaluator()
 
     monkeypatch.setattr(validator, "build_evaluator", fake_build_evaluator, raising=False)
+    gate_validation_calls = []
+
+    def fake_validate_gate_report(payload):
+        gate_validation_calls.append(payload)
+        return True
+
+    monkeypatch.setattr(
+        validator, "validate_gate_report", fake_validate_gate_report, raising=False
+    )
+    monkeypatch.setattr(
+        validator,
+        "build_dataset_manifest",
+        lambda cfg, ground_truth: ({"database": "bound"}, dataset_manifest_sha256),
+        raising=False,
+    )
+
+    def fake_git_output(command, cwd=None, text=None):
+        if command[-2:] == ["status", "--porcelain"]:
+            return ""
+        if command[-1] == "HEAD":
+            return "a" * 40 + "\n"
+        if command[-1] == "HEAD^{tree}":
+            return "b" * 40 + "\n"
+        raise AssertionError(command)
+
+    monkeypatch.setattr(validator.subprocess, "check_output", fake_git_output)
     return types.SimpleNamespace(
         run_dir=run_dir,
         work_dir=work_dir,
@@ -153,8 +247,14 @@ def pilot_artifacts(tmp_path, monkeypatch):
         predictions=predictions,
         checkpoint=checkpoint,
         checkpoint_path=checkpoint_path,
+        pretrained_checkpoint_path=pretrained_checkpoint_path,
+        gate_path=gate_path,
+        gate_payload=gate_payload,
+        contract_path=contract_path,
+        static_g0_path=static_g0_path,
         fake_torch=fake_torch,
         evaluator_calls=evaluator_calls,
+        gate_validation_calls=gate_validation_calls,
     )
 
 
@@ -169,7 +269,18 @@ def test_pilot_artifact_validator_accepts_recomputed_formal_artifacts(pilot_arti
     assert completion["artifacts"]["checkpoint"]["sha256"]
     assert output.is_file()
     assert pilot_artifacts.fake_torch.load_calls == [(pilot_artifacts.checkpoint_path, "cpu")]
+    assert completion["manifest_bindings"]["checkpoint"] == str(
+        pilot_artifacts.pretrained_checkpoint_path
+    )
+    assert completion["artifacts"]["checkpoint"]["path"] == str(
+        pilot_artifacts.checkpoint_path
+    )
+    assert (
+        completion["manifest_bindings"]["checkpoint"]
+        != completion["artifacts"]["checkpoint"]["path"]
+    )
     assert len(pilot_artifacts.evaluator_calls) == 1
+    assert pilot_artifacts.gate_validation_calls == [pilot_artifacts.gate_payload]
     evaluator_cfg = pilot_artifacts.evaluator_calls[0]
     assert evaluator_cfg["ground_truth_filename"] == str(pilot_artifacts.ground_truth_path)
     assert evaluator_cfg["prediction_filename"] == {"results": pilot_artifacts.predictions["results"]}
@@ -196,11 +307,115 @@ def test_pilot_artifact_validator_rejects_arbitrary_checkpoint_bytes(pilot_artif
         validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
 
 
+@pytest.mark.parametrize(
+    "mutation, message",
+    [
+        (lambda artifacts: artifacts.config_path.write_text("evaluation = dict()\n"), "config"),
+        (lambda artifacts: artifacts.gate_path.write_text("{}\n"), "gate"),
+        (
+            lambda artifacts: artifacts.manifest.update(dataset_manifest_sha256="f" * 64),
+            "dataset",
+        ),
+        (lambda artifacts: artifacts.manifest.update(commit="c" * 40), "commit"),
+    ],
+)
+def test_pilot_artifact_validator_recomputes_all_manifest_bindings(
+    pilot_artifacts, mutation, message
+):
+    mutation(pilot_artifacts)
+    _write_json(pilot_artifacts.run_dir / "run_manifest.json", pilot_artifacts.manifest)
+
+    with pytest.raises(RuntimeError, match=message):
+        validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
+
+
+def test_pilot_artifact_validator_recomputes_dataset_manifest(pilot_artifacts, monkeypatch):
+    monkeypatch.setattr(
+        validator,
+        "build_dataset_manifest",
+        lambda cfg, ground_truth: ({"database": "changed"}, "f" * 64),
+    )
+
+    with pytest.raises(RuntimeError, match="dataset"):
+        validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
+
+
+def test_pilot_artifact_validator_rejects_a_dirty_runtime_tree(pilot_artifacts, monkeypatch):
+    def dirty_git_output(command, cwd=None, text=None):
+        if command[-2:] == ["status", "--porcelain"]:
+            return " M tools/train.py\n"
+        if command[-1] == "HEAD":
+            return "a" * 40 + "\n"
+        if command[-1] == "HEAD^{tree}":
+            return "b" * 40 + "\n"
+        raise AssertionError(command)
+
+    monkeypatch.setattr(validator.subprocess, "check_output", dirty_git_output)
+
+    with pytest.raises(RuntimeError, match="not clean"):
+        validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
+
+
+@pytest.mark.parametrize(
+    "path_attribute,digest_key,mutate,expected_message",
+    [
+        (
+            "contract_path",
+            "contract_sha256",
+            lambda payload: payload.update(contract_pass=False),
+            "static contract",
+        ),
+        (
+            "static_g0_path",
+            "static_g0_sha256",
+            lambda payload: payload.update(gate_pass=True),
+            "static G0",
+        ),
+    ],
+)
+def test_pilot_artifact_validator_parses_bound_artifacts_after_hash_rebinding(
+    pilot_artifacts, path_attribute, digest_key, mutate, expected_message
+):
+    artifact_path = getattr(pilot_artifacts, path_attribute)
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    mutate(payload)
+    _write_json(artifact_path, payload)
+    rebound_digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+
+    pilot_artifacts.gate_payload[digest_key] = rebound_digest
+    _write_json(pilot_artifacts.gate_path, pilot_artifacts.gate_payload)
+    pilot_artifacts.manifest[digest_key] = rebound_digest
+    pilot_artifacts.manifest["gate_sha256"] = hashlib.sha256(
+        pilot_artifacts.gate_path.read_bytes()
+    ).hexdigest()
+    _write_json(pilot_artifacts.run_dir / "run_manifest.json", pilot_artifacts.manifest)
+
+    with pytest.raises(RuntimeError, match=expected_message):
+        validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
+
+
 @pytest.mark.parametrize("bad_epoch", [None, 4, 6])
 def test_pilot_artifact_validator_rejects_wrong_checkpoint_epoch(pilot_artifacts, bad_epoch):
     pilot_artifacts.checkpoint["epoch"] = bad_epoch
 
     with pytest.raises(RuntimeError, match="epoch"):
+        validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
+
+
+@pytest.mark.parametrize(
+    "mutation, message",
+    [
+        (lambda checkpoint: checkpoint.pop("state_dict_ema"), "EMA"),
+        (lambda checkpoint: checkpoint["optimizer"]["state"].update({1: {"step": 5}}), "optimizer"),
+        (lambda checkpoint: checkpoint["scheduler"].update(last_epoch=5), "scheduler"),
+    ],
+)
+def test_pilot_artifact_validator_requires_ema_and_consistent_optimizer_scheduler(
+    pilot_artifacts, mutation, message
+):
+    mutation(pilot_artifacts.checkpoint)
+
+    with pytest.raises(RuntimeError, match=message):
         validator.validate_pilot_artifacts(pilot_artifacts.run_dir)
 
 

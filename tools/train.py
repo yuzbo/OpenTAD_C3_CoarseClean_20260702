@@ -86,6 +86,7 @@ def main():
         world_size=args.world_size,
         shuffle=True,
         drop_last=True,
+        seed=args.seed,
         **cfg.solver.train,
     )
 
@@ -96,6 +97,7 @@ def main():
         world_size=args.world_size,
         shuffle=False,
         drop_last=False,
+        seed=args.seed,
         **cfg.solver.val,
     )
 
@@ -106,6 +108,7 @@ def main():
         world_size=args.world_size,
         shuffle=False,
         drop_last=False,
+        seed=args.seed,
         **cfg.solver.test,
     )
 

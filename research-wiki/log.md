@@ -1,5 +1,8 @@
 # Research Wiki Log
 
+- 2026-07-13：第三轮 Max 审查等待期间自查发现 manifest 中的 VideoMAE pretrained checkpoint 与 pilot `epoch_5.pth` 被测试夹具错误合并；已拆分二者并删除错误路径相等约束，completion 仍独立验证 epoch checkpoint 的 EMA/optimizer/scheduler。focused tests 保持 `65 passed`，必须以最新 diff 重新复审。
+- 2026-07-13：独立 Max code review 第二轮发现 assignment 伪计数、optimizer state 覆盖、DataLoader `drop_last`、pilot artifact 传递信任等 4 个 P1，并补充固定参数集合、GPU batch 生命周期和显式 seed 风险。现已按测试先行修复；远端 gate/artifact `65 passed`，PhysTime/shared physical-grid `240 passed`。第三轮复审前禁止部署，状态保持 `tested`。
+
 本文件只追加，不回写历史。
 
 - 2026-07-11：初始化 research-wiki。
@@ -41,3 +44,5 @@
 - 2026-07-13：G1a 预部署收口完成。真实 gate 改用 test split 尾样本和 test evaluator；数据指纹升级为逐文件完整 SHA256/Merkle；checkpoint/metrics 验收升级为真实反序列化与 evaluator 独立重算；VideoMAE/TIA 在 patch、attention、残差、MLP、卷积和 norm 全路径实施严格 padding isolation。全量 411 个 THUMOS14 MP4 的 decoder/annotation timebase 审计确认最大相对 FPS 偏差约 1.12%、帧数偏差为 0，配置容差固定为 1.25%/0.01%。远端新旧回归 `116 passed`；证据仍仅为 `tested`，正式 clean snapshot gate、pilot 和 mAP pending。
 - 2026-07-13：首个 G1a clean snapshot `8e2b832` 已部署；gate `1161304` 在模型执行前正确失败，依赖 pilot `1161305/1161306` 未启动并取消。根因是 test 根目录 213 个 MP4 中有 2 个不在 annotation/正式 data_list，旧全量审计错误把目录集合等同于 evaluator 集合。修复后审计范围严格来自 `build_dataset(...).data_list`，消费 200 train+211 test；两个未引用文件显式登记并由目录 Merkle 绑定，被消费文件缺失仍硬失败。真实目录范围 precheck 与远端 `116 passed` 完成，等待新 commit/snapshot 重排。
 - 2026-07-13：范围修复 commit `e598bd7` 的 gate `1161353` 越过 timebase 审计后，在模型初始 state 摘要处因 0 维 LongTensor 直接 byte-view 失败；pilot `1161354/1161355` 未启动并取消。已改为 `reshape(-1).view(torch.uint8)` 并加入标量 buffer 摘要回归；证据仍为工程修复，尚无 pilot mAP。
+- 2026-07-13：标量摘要修复 commit `d193417` 的 gate `1161378` 越过全量数据、checkpoint、evaluator 与模型构建，在 selected-axis 首个真实样本因旧逐样本 `regression_gradient` 非零合同 fail-closed；pilot `1161379/1161380` 未启动并取消。根因是三步 gate 错把 ActionFormer ReLU 回归头的单样本零参数梯度当成断路。补丁现要求每步正 assignment、正 `reg_loss`、全部有限，adapter/projection/classification 每步非零，regression 三步内至少一次非零，并保存逐步 assignment/梯度证据；远端完整回归 `118 passed`，正在接受独立最高强度逐行审查，状态保持 `tested`。
+- 2026-07-13：对上一条“ReLU 根因”作证据纠正：旧 `1161378` artifact 没有 assignment、`reg_loss` 或 pre-ReLU 激活，故只能说现象与 dead zone 一致，不能说已证明。独立 max 审查发现 gate validator 可被顶层字段伪造、buffer 可冒充参数更新、batch/scheduler 不是生产轨迹、`scale` 漏检及 schema/artifact 防御缺口。v3 修复改用正式 batch=2 DataLoader、warmup scheduler、EMA 和生产更新顺序，记录并重算逐步 assignment/pre-ReLU/梯度/LR/optimizer state，以 trainable-only hash+delta 证明更新，并重算 pilot 全部绑定；远端回归 `142 passed`，同一代理第二轮复审中，状态仍为 `tested`。

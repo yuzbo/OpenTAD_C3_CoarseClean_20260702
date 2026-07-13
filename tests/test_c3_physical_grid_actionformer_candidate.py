@@ -314,7 +314,10 @@ def test_prepare_targets_batched_physical_points_use_per_sample_centers_without_
 
 
 def test_physical_grid_training_assignment_uses_physical_dense_centers():
-    head = _make_head(physical_grid_actionformer=dict(enabled=True, required=True, strict=True))
+    head = _make_head(
+        physical_grid_actionformer=dict(enabled=True, required=True, strict=True),
+        assignment_debug=dict(enabled=True),
+    )
     feat_list, mask_list = _features_and_mask()
     metas = [_dense_axis_meta()]
 
@@ -334,6 +337,55 @@ def test_physical_grid_training_assignment_uses_physical_dense_centers():
     assert debug["physical_grid_actionformer_center_max"] == 5.0
     assert debug["physical_grid_actionformer_axis_delta_reference"] == "selected_slot_ordinal"
     assert debug["physical_grid_actionformer_axis_delta_max"] == 3.0
+    assert debug["assignment_num_positive"] == 1
+    assert debug["assignment_positive_per_sample"] == [1]
+    assert debug["assignment_valid_point_count"] == 3
+    assert debug["assignment_regression_raw_count"] == 2
+    assert debug["assignment_regression_raw_positive_count"] == 0
+
+
+def test_assignment_debug_is_refreshed_across_batch_training_and_inference():
+    head = _make_head(
+        physical_grid_actionformer=dict(enabled=True, required=True, strict=True),
+        assignment_debug=dict(enabled=True),
+    )
+    feat_list = [torch.zeros(2, 2, 4)]
+    mask_list = [torch.tensor([[True, True, True, False], [True, True, True, False]])]
+    metas = [_dense_axis_meta(video_name="a"), _dense_axis_meta(video_name="b")]
+
+    head.forward_train(
+        feat_list,
+        mask_list,
+        gt_segments=[
+            torch.tensor([[1.5, 2.5]], dtype=torch.float32),
+            torch.tensor([[4.5, 5.5]], dtype=torch.float32),
+        ],
+        gt_labels=[torch.tensor([1], dtype=torch.long), torch.tensor([0], dtype=torch.long)],
+        metas=metas,
+    )
+    first = head.collect_debug_state()
+    assert first["assignment_positive_per_sample"] == [1, 1]
+    assert first["assignment_num_positive"] == 2
+
+    head.forward_train(
+        feat_list,
+        mask_list,
+        gt_segments=[
+            torch.empty((0, 2), dtype=torch.float32),
+            torch.empty((0, 2), dtype=torch.float32),
+        ],
+        gt_labels=[torch.empty((0,), dtype=torch.long), torch.empty((0,), dtype=torch.long)],
+        metas=metas,
+    )
+    second = head.collect_debug_state()
+    assert second["assignment_positive_per_sample"] == [0, 0]
+    assert second["assignment_num_positive"] == 0
+    assert second["assignment_regression_raw_count"] == 0
+
+    head.forward_test(feat_list, mask_list, metas=metas)
+    inference = head.collect_debug_state()
+    assert "assignment_num_positive" not in inference
+    assert "assignment_regression_raw_count" not in inference
 
 
 def test_prebackbone_selector_dense_axis_meta_feeds_physical_grid_train_path():

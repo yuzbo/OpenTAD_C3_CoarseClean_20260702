@@ -20,12 +20,15 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from opentad.datasets import build_dataset
+from opentad.datasets import build_dataloader, build_dataset
 from opentad.datasets.builder import collate
 from opentad.datasets.transforms.phystime_raw import validate_raw_video_timebase
+from opentad.cores import build_scheduler
+from opentad.cores.train_engine import _call_after_optimizer_step
 from opentad.cores.test_engine import apply_sliding_window_nms
 from opentad.evaluations import build_evaluator
 from opentad.models import build_detector
+from opentad.utils import ModelEma
 from tools.bata.audit_phystime_g0_native_geometry import parameter_schema, run_audit
 from tools.bata.audit_phystime_g0_native_geometry import SCHEMA_VERSION as G0_SCHEMA_VERSION
 from tools.bata.run_phystime_adatad_real_gate import (
@@ -34,7 +37,6 @@ from tools.bata.run_phystime_adatad_real_gate import (
     _finite_tree,
     _gradient_stats,
     _load_real_sample,
-    _move_batch,
     _optimized_parameters,
     _optimizer_coverage,
     _require,
@@ -51,8 +53,14 @@ GATE_CONFIGS = {
     "selected_axis": ROOT / "configs/adatad/thumos/phystime_g1a_selected_axis_native_j192.py",
     "physical_metric": ROOT / "configs/adatad/thumos/phystime_g1a_physical_metric_native_j192.py",
 }
-SCHEMA_VERSION = "phystime_g1a_real_gate_v2"
+SCHEMA_VERSION = "phystime_g1a_real_gate_v3"
 OPTIMIZER_STEPS = 3
+GRADIENT_NAMES = (
+    "adapter_gradient",
+    "projection_gradient",
+    "classification_gradient",
+    "regression_gradient",
+)
 
 
 def _is_hex_digest(value, lengths):
@@ -89,6 +97,134 @@ def _state_dict_sha256(model):
     return digest.hexdigest()
 
 
+def _trainable_parameter_sha256(model):
+    digest = hashlib.sha256()
+    for name, parameter in sorted(model.named_parameters()):
+        if not parameter.requires_grad:
+            continue
+        tensor = parameter.detach().cpu().contiguous()
+        digest.update(name.encode("utf-8"))
+        digest.update(str(tensor.dtype).encode("utf-8"))
+        digest.update(str(tuple(tensor.shape)).encode("utf-8"))
+        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _optimizer_parameter_items(model, optimizer):
+    names = {id(parameter): name for name, parameter in model.named_parameters()}
+    items = []
+    seen = set()
+    for group in optimizer.param_groups:
+        for parameter in group["params"]:
+            parameter_id = id(parameter)
+            _require(
+                parameter_id in names,
+                "optimizer contains a parameter that is not owned by the model",
+            )
+            _require(
+                parameter_id not in seen,
+                f"optimizer contains duplicate parameter {names[parameter_id]}",
+            )
+            seen.add(parameter_id)
+            items.append((names[parameter_id], parameter))
+    _require(items, "optimizer contains no model parameters")
+    return sorted(items, key=lambda item: item[0])
+
+
+def _optimizer_parameter_sha256(model, optimizer):
+    digest = hashlib.sha256()
+    for name, parameter in _optimizer_parameter_items(model, optimizer):
+        tensor = parameter.detach().cpu().contiguous()
+        digest.update(name.encode("utf-8"))
+        digest.update(str(tensor.dtype).encode("utf-8"))
+        digest.update(str(tuple(tensor.shape)).encode("utf-8"))
+        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _optimizer_parameter_contract(model, optimizer):
+    names = [name for name, _ in _optimizer_parameter_items(model, optimizer)]
+    return {
+        "optimizer_expected_parameter_count": len(names),
+        "optimizer_parameter_names_sha256": hashlib.sha256(
+            json.dumps(names, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _gradient_family_for_parameter(parameter_name):
+    if parameter_name.startswith("backbone.") and "adapter" in parameter_name.lower():
+        return "adapter_gradient"
+    if parameter_name.startswith("projection."):
+        return "projection_gradient"
+    if parameter_name.startswith(("rpn_head.cls_convs.", "rpn_head.cls_head.")):
+        return "classification_gradient"
+    if parameter_name.startswith(
+        ("rpn_head.reg_convs.", "rpn_head.reg_head.", "rpn_head.scale.")
+    ):
+        return "regression_gradient"
+    return None
+
+
+def _snapshot_optimized_parameters(model, optimizer):
+    optimized_ids = {
+        id(parameter) for group in optimizer.param_groups for parameter in group["params"]
+    }
+    return {
+        name: parameter.detach().cpu().clone()
+        for name, parameter in model.named_parameters()
+        if id(parameter) in optimized_ids
+    }
+
+
+def _parameter_delta_report(model, snapshot):
+    deltas = []
+    changed_names = []
+    for name, parameter in model.named_parameters():
+        if name not in snapshot:
+            continue
+        delta = (parameter.detach().cpu().float() - snapshot[name].float()).abs()
+        delta_l1 = float(delta.sum().item())
+        delta_max = float(delta.max().item()) if delta.numel() else 0.0
+        deltas.append((delta_l1, delta_max))
+        if delta_l1 > 0.0:
+            changed_names.append(name)
+    return {
+        "trainable_parameter_delta_l1": float(sum(value[0] for value in deltas)),
+        "trainable_parameter_delta_max": float(max((value[1] for value in deltas), default=0.0)),
+        "changed_trainable_parameter_count": len(changed_names),
+        "changed_trainable_parameter_names_sha256": hashlib.sha256(
+            json.dumps(sorted(changed_names), separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _optimizer_state_step_report(optimizer, model):
+    parameter_names = {id(parameter): name for name, parameter in model.named_parameters()}
+    steps = []
+    state_parameter_names = []
+    for parameter, state in optimizer.state.items():
+        if "step" not in state:
+            continue
+        _require(
+            id(parameter) in parameter_names,
+            "optimizer state contains a parameter that is not owned by the model",
+        )
+        step = state["step"]
+        steps.append(int(step.item()) if torch.is_tensor(step) else int(step))
+        state_parameter_names.append(parameter_names[id(parameter)])
+    return {
+        "optimizer_state_parameter_count": len(steps),
+        "optimizer_state_min_step": min(steps) if steps else 0,
+        "optimizer_state_max_step": max(steps) if steps else 0,
+        "optimizer_state_parameter_names_sha256": hashlib.sha256(
+            json.dumps(sorted(state_parameter_names), separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest(),
+    }
+
+
 def _optimizer_schema(optimizer, model):
     names = {id(parameter): name for name, parameter in model.named_parameters()}
     groups = []
@@ -104,6 +240,117 @@ def _optimizer_schema(optimizer, model):
         )
     payload = json.dumps(groups, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {"sha256": hashlib.sha256(payload).hexdigest(), "groups": groups}
+
+
+def _validate_gradient_stats(report, label):
+    _require(isinstance(report, dict), f"{label} must be a mapping")
+    parameter_count = int(report.get("parameter_count", -1))
+    finite_count = int(report.get("finite_gradient_count", -1))
+    nonzero_count = int(report.get("nonzero_gradient_count", -1))
+    gradient_l1 = float(report.get("gradient_l1", float("nan")))
+    _require(parameter_count > 0, f"{label} has no covered parameters")
+    _require(0 <= finite_count <= parameter_count, f"{label} finite count is invalid")
+    _require(0 <= nonzero_count <= finite_count, f"{label} non-zero count is invalid")
+    _require(math.isfinite(gradient_l1) and gradient_l1 >= 0.0, f"{label} L1 is invalid")
+    _require(
+        report.get("all_finite") is (finite_count == parameter_count),
+        f"{label} all_finite contradicts its counts",
+    )
+    _require(
+        report.get("nonzero") is (nonzero_count > 0),
+        f"{label} nonzero contradicts its counts",
+    )
+    _require(
+        (gradient_l1 > 0.0) is (nonzero_count > 0),
+        f"{label} L1 contradicts its non-zero count",
+    )
+
+
+def _validate_assignment_debug(debug, batch_size, label):
+    _require(isinstance(debug, dict), f"{label} must be a mapping")
+    positive_count = int(debug.get("assignment_num_positive", -1))
+    per_sample = debug.get("assignment_positive_per_sample")
+    valid_count = int(debug.get("assignment_valid_point_count", -1))
+    gt_count = int(debug.get("assignment_gt_count", -1))
+    positive_fraction = float(debug.get("assignment_positive_fraction", float("nan")))
+    raw_count = int(debug.get("assignment_regression_raw_count", -1))
+    raw_positive_count = int(
+        debug.get("assignment_regression_raw_positive_count", -1)
+    )
+    active_location_count = int(
+        debug.get("assignment_regression_active_location_count", -1)
+    )
+    _require(positive_count > 0, f"{label} has no positive assignments")
+    _require(
+        isinstance(per_sample, list) and len(per_sample) == int(batch_size),
+        f"{label} per-sample assignment count does not match the production batch",
+    )
+    _require(
+        all(isinstance(value, int) and value >= 0 for value in per_sample),
+        f"{label} per-sample assignment counts are invalid",
+    )
+    _require(sum(per_sample) == positive_count, f"{label} assignment counts disagree")
+    _require(
+        valid_count == int(batch_size) * 378,
+        f"{label} valid-point count does not match the native Q=378 batch contract",
+    )
+    _require(valid_count >= positive_count, f"{label} valid-point count is invalid")
+    _require(gt_count > 0, f"{label} GT count is invalid")
+    _require(
+        math.isfinite(positive_fraction)
+        and math.isclose(
+            positive_fraction,
+            positive_count / max(valid_count, 1),
+            rel_tol=1.0e-9,
+            abs_tol=1.0e-12,
+        ),
+        f"{label} assignment fraction is inconsistent",
+    )
+    _require(raw_count == positive_count * 2, f"{label} raw regression count is invalid")
+    _require(
+        0 <= raw_positive_count <= raw_count,
+        f"{label} raw positive regression count is invalid",
+    )
+    _require(
+        0 <= active_location_count <= positive_count,
+        f"{label} active regression location count is invalid",
+    )
+    _require(
+        active_location_count <= raw_positive_count <= 2 * active_location_count,
+        f"{label} raw activation counts disagree",
+    )
+
+
+def _aggregate_gradient_step_reports(step_gradients):
+    _require(
+        isinstance(step_gradients, list) and len(step_gradients) == OPTIMIZER_STEPS,
+        "G1a gradient aggregation requires exactly three step reports",
+    )
+    aggregated = {}
+    for gradient_name in GRADIENT_NAMES:
+        reports = [step[gradient_name] for step in step_gradients]
+        for step_index, report in enumerate(reports):
+            _validate_gradient_stats(report, f"step {step_index} {gradient_name}")
+        parameter_counts = {int(report["parameter_count"]) for report in reports}
+        _require(
+            len(parameter_counts) == 1 and next(iter(parameter_counts)) > 0,
+            f"{gradient_name} parameter coverage changed across steps",
+        )
+        aggregated[gradient_name] = {
+            "parameter_count": next(iter(parameter_counts)),
+            "all_finite": all(report.get("all_finite") is True for report in reports),
+            "nonzero": any(report.get("nonzero") is True for report in reports),
+            "nonzero_step_count": sum(
+                report.get("nonzero") is True for report in reports
+            ),
+            "gradient_l1_across_steps": float(
+                sum(float(report.get("gradient_l1", 0.0)) for report in reports)
+            ),
+            "per_step_nonzero": [
+                report.get("nonzero") is True for report in reports
+            ],
+        }
+    return aggregated
 
 
 def _directory_inventory(path):
@@ -381,6 +628,86 @@ def _load_train_samples(cfg, seed, requested_index, count=OPTIMIZER_STEPS):
     return dataset, indices, samples, checksums
 
 
+def _batch_selected_index_sha256(batch):
+    digests = []
+    for meta in batch["metas"]:
+        digest, _ = _selected_index_checksum(meta)
+        digests.append(digest)
+    return hashlib.sha256("|".join(digests).encode("ascii")).hexdigest()
+
+
+def _batch_target_sha256(batch):
+    digest = hashlib.sha256()
+    for segments, labels in zip(batch["gt_segments"], batch["gt_labels"]):
+        digest.update(_tensor_sha256(segments).encode("ascii"))
+        digest.update(_tensor_sha256(labels).encode("ascii"))
+    return digest.hexdigest()
+
+
+def _copy_batch_to_device(batch, device):
+    moved = dict(batch)
+    for key in ("inputs", "masks", "paired_inputs", "paired_masks"):
+        value = batch.get(key)
+        if torch.is_tensor(value):
+            moved[key] = value.to(device, non_blocking=False)
+    for key in ("gt_segments", "gt_labels"):
+        if key in batch:
+            moved[key] = [value.to(device) for value in batch[key]]
+    if "metas" in batch:
+        moved["metas"] = [dict(meta) for meta in batch["metas"]]
+    return moved
+
+
+def _load_production_train_batches(cfg, seed, count=OPTIMIZER_STEPS):
+    _seed_everything(seed)
+    dataset = build_dataset(cfg.dataset.train)
+    loader = build_dataloader(
+        dataset,
+        rank=0,
+        world_size=1,
+        shuffle=True,
+        drop_last=True,
+        seed=seed,
+        **dict(cfg.solver.train),
+    )
+    loader.sampler.set_epoch(0)
+    loader_contract = {
+        "production_train_dataloader": True,
+        "production_train_batch_size": int(loader.batch_size),
+        "production_train_drop_last": bool(loader.drop_last),
+        "production_train_shuffle": bool(loader.sampler.shuffle),
+    }
+    _require(
+        loader_contract
+        == {
+            "production_train_dataloader": True,
+            "production_train_batch_size": int(cfg.solver.train.batch_size),
+            "production_train_drop_last": True,
+            "production_train_shuffle": True,
+        },
+        "G1a production DataLoader does not match the formal batch contract",
+    )
+    batches = []
+    for batch in loader:
+        expected_batch_size = int(cfg.solver.train.batch_size)
+        _require(
+            int(batch["inputs"].shape[0]) == expected_batch_size,
+            "G1a gate did not receive the formal per-GPU training batch size",
+        )
+        _require(
+            all(int(mask.sum().item()) == 384 for mask in batch["masks"]),
+            "G1a production gate requires K=384 valid observations per training sample",
+        )
+        batches.append(batch)
+        if len(batches) == int(count):
+            break
+    _require(
+        len(batches) == int(count),
+        f"G1a production loader could not materialize {count} full training batches",
+    )
+    return dataset, batches, len(loader), loader_contract
+
+
 def _result_segment_count(results):
     count = 0
     for detections in results.values():
@@ -449,7 +776,9 @@ def _run_single_video_production_eval(model, dataset, video_name, cfg, class_map
 def _run_variant(
     name,
     cfg,
-    samples,
+    train_batches,
+    train_loader_length,
+    train_loader_contract,
     tail_sample,
     tail_dataset,
     tail_video_name,
@@ -463,11 +792,23 @@ def _run_variant(
     cfg.model.backbone.custom.pretrain = str(checkpoint)
     _seed_everything(seed)
     model = build_detector(cfg.model).to(device).train()
+    _require(bool(cfg.solver.get("ema", False)) is True, f"{name} formal training requires EMA")
+    model_ema = ModelEma(model)
     schema = parameter_schema(model)
     initial_state_sha256 = _state_dict_sha256(model)
     optimizer, optimizer_report = _optimizer_coverage(cfg, model)
     optimizer_schema = _optimizer_schema(optimizer, model)
+    optimizer_parameter_contract = _optimizer_parameter_contract(model, optimizer)
+    initial_optimizer_parameter_sha256 = _optimizer_parameter_sha256(model, optimizer)
+    optimizer_base_lrs = [float(group["lr"]) for group in optimizer.param_groups]
+    _require(
+        optimizer_base_lrs and all(value > 0.0 for value in optimizer_base_lrs),
+        f"{name} optimizer base learning rates must be positive before scheduler construction",
+    )
+    scheduler, _ = build_scheduler(cfg.scheduler, optimizer, int(train_loader_length))
+    scheduler_initial_lrs = [float(value) for value in scheduler.get_last_lr()]
     optimized_parameters = _optimized_parameters(optimizer)
+    optimized_parameter_snapshot = _snapshot_optimized_parameters(model, optimizer)
     backbone_lengths = []
 
     def capture_backbone_length(_module, _inputs, output):
@@ -477,8 +818,13 @@ def _run_variant(
     hook = model.backbone.register_forward_hook(capture_backbone_length)
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
-    scaler = GradScaler(enabled=True, init_scale=amp_contract["init_scale"])
+    scaler = GradScaler(
+        enabled=True,
+        init_scale=amp_contract["init_scale"],
+        growth_interval=int(cfg.solver.get("amp_growth_interval", 2000)),
+    )
     step_reports = []
+    gradient_step_reports = []
     optimizer_steps_completed = 0
     last_losses = None
     gradient_reports = None
@@ -486,21 +832,22 @@ def _run_variant(
 
     torch.cuda.synchronize(device)
     started = time.perf_counter()
-    for step_index, sample in enumerate(samples):
-        batch = _move_batch(collate([sample]), device)
+    for step_index, cpu_batch in enumerate(train_batches):
+        batch = _copy_batch_to_device(cpu_batch, device)
         meta = batch["metas"][0]
         if first_meta is None:
             first_meta = dict(meta)
         _require(
-            meta.get("phystime_window_crop_uses_gt") is True,
+            all(item.get("phystime_window_crop_uses_gt") is True for item in batch["metas"]),
             f"{name} train-window crop provenance must disclose standard GT-aware random_trunc",
         )
         _require(
-            meta.get("phystime_subsample_uses_gt") is False,
+            all(item.get("phystime_subsample_uses_gt") is False for item in batch["metas"]),
             f"{name} within-window irregular subsampling must be GT-independent",
         )
-        optimizer.zero_grad(set_to_none=True)
-        with torch.cuda.amp.autocast(enabled=True):
+        optimizer.zero_grad()
+        learning_rates_before = [float(group["lr"]) for group in optimizer.param_groups]
+        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
             losses = model(
                 inputs=batch["inputs"],
                 masks=batch["masks"],
@@ -521,59 +868,180 @@ def _run_variant(
         )
         named_parameters = list(model.named_parameters())
         gradient_reports = {
-            "adapter_gradient": _gradient_stats(
+            gradient_name: _gradient_stats(
                 named_parameters,
-                lambda parameter_name, parameter: parameter.requires_grad
-                and parameter_name.startswith("backbone.")
-                and "adapter" in parameter_name.lower(),
-            ),
-            "projection_gradient": _gradient_stats(
-                named_parameters,
-                lambda parameter_name, parameter: parameter.requires_grad
-                and parameter_name.startswith("projection."),
-            ),
-            "classification_gradient": _gradient_stats(
-                named_parameters,
-                lambda parameter_name, parameter: parameter.requires_grad
-                and parameter_name.startswith(("rpn_head.cls_convs.", "rpn_head.cls_head.")),
-            ),
-            "regression_gradient": _gradient_stats(
-                named_parameters,
-                lambda parameter_name, parameter: parameter.requires_grad
-                and parameter_name.startswith(("rpn_head.reg_convs.", "rpn_head.reg_head.")),
-            ),
+                lambda parameter_name, parameter, expected=gradient_name: parameter.requires_grad
+                and _gradient_family_for_parameter(parameter_name) == expected,
+            )
+            for gradient_name in GRADIENT_NAMES
         }
+        assignment_debug = model.rpn_head.collect_debug_state()
+        assignment_num_positive = int(
+            assignment_debug.get("assignment_num_positive", 0)
+        )
+        _require(
+            assignment_num_positive > 0,
+            f"{name} step {step_index} produced no positive assignments",
+        )
+        _require(
+            float(losses["reg_loss"].detach().cpu().item()) > 0.0,
+            f"{name} step {step_index} regression loss is zero despite positive assignments",
+        )
+        _validate_assignment_debug(
+            assignment_debug,
+            batch_size=int(cfg.solver.train.batch_size),
+            label=f"{name} step {step_index} assignment",
+        )
         for gradient_name, gradient in gradient_reports.items():
+            _validate_gradient_stats(gradient, f"{name} step {step_index} {gradient_name}")
             _require(gradient["all_finite"] is True, f"{name}.{gradient_name} is non-finite")
-            _require(gradient["nonzero"] is True, f"{name}.{gradient_name} is zero")
-        torch.nn.utils.clip_grad_norm_(
+            if gradient_name != "regression_gradient":
+                _require(
+                    gradient["nonzero"] is True,
+                    f"{name} step {step_index} {gradient_name} is zero",
+                )
+        gradient_step_reports.append(gradient_reports)
+        step_diagnostic = {
+            "step": step_index,
+            "assignment_num_positive": assignment_num_positive,
+            "assignment_valid_point_count": int(
+                assignment_debug.get("assignment_valid_point_count", 0)
+            ),
+            "regression_gradient_nonzero": gradient_reports[
+                "regression_gradient"
+            ]["nonzero"],
+            "regression_active_location_count": int(
+                assignment_debug["assignment_regression_active_location_count"]
+            ),
+            "losses": {
+                key: float(value.detach().cpu().item())
+                for key, value in losses.items()
+            },
+        }
+        print(
+            f"[PhysTime G1a gate] {name} step diagnostic "
+            f"{json.dumps(step_diagnostic, sort_keys=True)}",
+            flush=True,
+        )
+        clip_grad_norm = float(torch.nn.utils.clip_grad_norm_(
             [parameter for parameter in optimized_parameters if parameter.grad is not None],
             float(cfg.solver.clip_grad_norm),
             error_if_nonfinite=True,
-        )
+        ).item())
+        _require(math.isfinite(clip_grad_norm) and clip_grad_norm > 0.0, f"{name} clip norm is invalid")
         scale_before = float(scaler.get_scale())
         scaler.step(optimizer)
         scaler.update()
         scale_after = float(scaler.get_scale())
         _require(scale_after >= scale_before, f"{name} AMP skipped optimizer step {step_index}")
         _require(_all_finite_parameters(optimized_parameters), f"{name} produced non-finite parameters")
+        _call_after_optimizer_step(model)
+        scheduler.step()
+        model_ema.update(model)
+        learning_rates_after = [float(group["lr"]) for group in optimizer.param_groups]
+        optimizer_step_state = _optimizer_state_step_report(optimizer, model)
+        expected_optimizer_step = step_index + 1
+        _require(
+            optimizer_step_state["optimizer_state_parameter_count"]
+            == optimizer_parameter_contract["optimizer_expected_parameter_count"]
+            and optimizer_step_state["optimizer_state_min_step"]
+            == expected_optimizer_step
+            and optimizer_step_state["optimizer_state_max_step"]
+            == expected_optimizer_step
+            and optimizer_step_state["optimizer_state_parameter_names_sha256"]
+            == optimizer_parameter_contract["optimizer_parameter_names_sha256"],
+            f"{name} optimizer state is incomplete after step {step_index}",
+        )
         optimizer_steps_completed += 1
-        last_losses = losses
+        last_losses = {
+            key: float(value.detach().cpu().item()) for key, value in losses.items()
+        }
         step_reports.append(
             {
                 "step": step_index,
                 "losses": {key: float(value.detach().cpu().item()) for key, value in losses.items()},
+                "assignment_debug": {
+                    key: assignment_debug[key]
+                    for key in (
+                        "assignment_num_positive",
+                        "assignment_positive_per_sample",
+                        "assignment_valid_point_count",
+                        "assignment_gt_count",
+                        "assignment_positive_fraction",
+                        "assignment_regression_raw_count",
+                        "assignment_regression_raw_positive_count",
+                        "assignment_regression_active_location_count",
+                    )
+                },
+                "gradients": gradient_reports,
+                "learning_rates_before": learning_rates_before,
+                "learning_rates_after": learning_rates_after,
+                "clip_grad_norm": clip_grad_norm,
+                "scheduler_last_epoch_after": int(scheduler.last_epoch),
+                "optimizer_state_parameter_count_after": optimizer_step_state[
+                    "optimizer_state_parameter_count"
+                ],
+                "optimizer_state_min_step_after": optimizer_step_state[
+                    "optimizer_state_min_step"
+                ],
+                "optimizer_state_max_step_after": optimizer_step_state[
+                    "optimizer_state_max_step"
+                ],
+                "optimizer_state_parameter_names_sha256_after": optimizer_step_state[
+                    "optimizer_state_parameter_names_sha256"
+                ],
+                "ema_updated": True,
                 "amp_scale_before": scale_before,
                 "amp_scale_after": scale_after,
             }
         )
-        del batch
+        del losses, batch
     torch.cuda.synchronize(device)
     train_ms = (time.perf_counter() - started) * 1000.0
     _require(optimizer_steps_completed == OPTIMIZER_STEPS, f"{name} did not complete three optimizer steps")
+    gradient_reports = _aggregate_gradient_step_reports(gradient_step_reports)
+    for gradient_name, gradient in gradient_reports.items():
+        _require(
+            gradient["all_finite"] is True,
+            f"{name}.{gradient_name} was non-finite across the three-step gate",
+        )
+        _require(
+            gradient["nonzero"] is True,
+            f"{name}.{gradient_name} stayed zero across all three gate steps",
+        )
     final_state_sha256 = _state_dict_sha256(model)
-    parameter_state_changed = final_state_sha256 != initial_state_sha256
-    _require(parameter_state_changed, f"{name} optimizer steps did not change model state")
+    final_optimizer_parameter_sha256 = _optimizer_parameter_sha256(model, optimizer)
+    parameter_state_changed = (
+        final_optimizer_parameter_sha256 != initial_optimizer_parameter_sha256
+    )
+    parameter_delta = _parameter_delta_report(model, optimized_parameter_snapshot)
+    optimizer_state = _optimizer_state_step_report(optimizer, model)
+    _require(parameter_state_changed, f"{name} optimizer steps did not change optimized parameters")
+    _require(
+        parameter_delta["trainable_parameter_delta_l1"] > 0.0
+        and parameter_delta["changed_trainable_parameter_count"] > 0,
+        f"{name} has no measured trainable-parameter delta",
+    )
+    _require(
+        optimizer_state["optimizer_state_parameter_count"]
+        == optimizer_parameter_contract["optimizer_expected_parameter_count"]
+        and optimizer_state["optimizer_state_min_step"] == OPTIMIZER_STEPS
+        and optimizer_state["optimizer_state_max_step"] == OPTIMIZER_STEPS,
+        f"{name} optimizer state did not record all three production updates",
+    )
+    _require(
+        optimizer_state["optimizer_state_parameter_names_sha256"]
+        == optimizer_parameter_contract["optimizer_parameter_names_sha256"],
+        f"{name} optimizer state does not cover the fixed optimizer parameter set",
+    )
+    scheduler_positive_lr_observed = any(
+        value > 0.0
+        for step_report in step_reports
+        for value in (
+            step_report["learning_rates_before"] + step_report["learning_rates_after"]
+        )
+    )
+    _require(scheduler_positive_lr_observed, f"{name} scheduler never exposed a positive learning rate")
 
     native_audit = model.collect_native_temporal_geometry_audit()
     _require(native_audit.get("raw_observation_count") == 384, f"{name} K audit failed")
@@ -595,7 +1063,7 @@ def _run_variant(
     )
 
     model.eval()
-    inference_batch = _move_batch(collate([samples[0]]), device)
+    inference_batch = _copy_batch_to_device(train_batches[0], device)
     cfg.post_processing.sliding_window = False
     torch.cuda.synchronize(device)
     infer_started = time.perf_counter()
@@ -686,8 +1154,8 @@ def _run_variant(
     hook.remove()
 
     report = {
-        "decoded_frame_count": int(samples[0]["inputs"].shape[2]),
-        "raw_valid_count": int(samples[0]["masks"].sum().item()),
+        "decoded_frame_count": int(train_batches[0]["inputs"][0].shape[2]),
+        "raw_valid_count": int(train_batches[0]["masks"][0].sum().item()),
         "backbone_feature_length": int(backbone_lengths[0]),
         "inference_backbone_feature_length": inference_backbone_feature_length,
         "finite_loss": _finite_tree(last_losses),
@@ -697,6 +1165,18 @@ def _run_variant(
         "optimizer_steps_requested": OPTIMIZER_STEPS,
         "optimizer_steps_completed": optimizer_steps_completed,
         "parameter_state_changed": parameter_state_changed,
+        "initial_optimizer_parameter_sha256": initial_optimizer_parameter_sha256,
+        "final_optimizer_parameter_sha256": final_optimizer_parameter_sha256,
+        **parameter_delta,
+        **optimizer_parameter_contract,
+        **optimizer_state,
+        **train_loader_contract,
+        "production_scheduler": True,
+        "scheduler_class": scheduler.__class__.__name__,
+        "scheduler_initial_lrs": scheduler_initial_lrs,
+        "scheduler_positive_lr_observed": scheduler_positive_lr_observed,
+        "model_ema_enabled": True,
+        "model_ema_updates": optimizer_steps_completed,
         "amp_contract_verified": True,
         "amp_contract": amp_contract,
         **gradient_reports,
@@ -725,10 +1205,11 @@ def _run_variant(
         "initial_state_sha256": initial_state_sha256,
         "final_state_sha256": final_state_sha256,
         "optimizer_schema": optimizer_schema,
+        "optimizer_base_lrs": optimizer_base_lrs,
         "canonical_config_sha256": canonical_config_sha256,
         "runtime_config_sha256": _canonical_sha256(cfg.to_dict()),
     }
-    del optimizer, model, inference_batch, tail_batch
+    del optimizer, scheduler, model_ema, model, inference_batch, tail_batch
     gc.collect()
     torch.cuda.empty_cache()
     return report
@@ -744,9 +1225,37 @@ def validate_gate_report(report):
     _require(report.get("selected_index_checksum_match") is True, "G1a selected indices differ")
     _require(report.get("decoded_input_checksum_match") is True, "G1a decoded inputs differ")
     _require(report.get("target_checksum_match") is True, "G1a supervision targets differ")
-    _require(report.get("parameter_schema_match") is True, "G1a parameter schemas differ")
-    _require(report.get("initial_state_match") is True, "G1a initial model states differ")
-    _require(report.get("optimizer_schema_match") is True, "G1a optimizer schemas differ")
+    variants = report.get("variants", {})
+    _require(set(variants) == set(GATE_CONFIGS), "G1a gate must contain both arms")
+    selected_variant = variants["selected_axis"]
+    physical_variant = variants["physical_metric"]
+    recomputed_parameter_schema_match = (
+        selected_variant.get("parameter_schema", {}).get("schema")
+        == physical_variant.get("parameter_schema", {}).get("schema")
+    )
+    recomputed_initial_state_match = (
+        selected_variant.get("initial_state_sha256")
+        == physical_variant.get("initial_state_sha256")
+    )
+    recomputed_optimizer_schema_match = (
+        selected_variant.get("optimizer_schema")
+        == physical_variant.get("optimizer_schema")
+    )
+    _require(
+        report.get("parameter_schema_match") is True
+        and recomputed_parameter_schema_match,
+        "G1a parameter schemas differ",
+    )
+    _require(
+        report.get("initial_state_match") is True
+        and recomputed_initial_state_match,
+        "G1a initial model states differ",
+    )
+    _require(
+        report.get("optimizer_schema_match") is True
+        and recomputed_optimizer_schema_match,
+        "G1a optimizer schemas differ",
+    )
     _require(report.get("tree_clean") is True, "G1a gate is not bound to a clean tree")
     _require(report.get("real_g0_pass") is True, "G1a real-data G0 gate did not pass")
     _require(report.get("optimizer_steps") == OPTIMIZER_STEPS, "G1a optimizer-step count mismatch")
@@ -799,8 +1308,6 @@ def validate_gate_report(report):
         _is_hex_digest(report.get("git_tree"), {40, 64}),
         "G1a tree must be a full Git object id",
     )
-    variants = report.get("variants", {})
-    _require(set(variants) == set(GATE_CONFIGS), "G1a gate must contain both arms")
     for name, result in variants.items():
         for key, expected in {
             "decoded_frame_count": 384,
@@ -813,6 +1320,15 @@ def validate_gate_report(report):
             "optimizer_steps_requested": OPTIMIZER_STEPS,
             "optimizer_steps_completed": OPTIMIZER_STEPS,
             "parameter_state_changed": True,
+            "production_train_dataloader": True,
+            "production_train_batch_size": 2,
+            "production_train_drop_last": True,
+            "production_train_shuffle": True,
+            "production_scheduler": True,
+            "scheduler_class": "LinearWarmupCosineAnnealingLR",
+            "scheduler_positive_lr_observed": True,
+            "model_ema_enabled": True,
+            "model_ema_updates": OPTIMIZER_STEPS,
             "amp_contract_verified": True,
             "train_window_crop_uses_gt": True,
             "train_subsample_uses_gt": False,
@@ -820,15 +1336,76 @@ def validate_gate_report(report):
             "tail_subsample_uses_gt": False,
         }.items():
             _require(result.get(key) == expected, f"{name}.{key} must be {expected!r}")
-        for gradient_name in (
-            "adapter_gradient",
-            "projection_gradient",
-            "classification_gradient",
-            "regression_gradient",
-        ):
-            gradient = result.get(gradient_name, {})
-            _require(gradient.get("all_finite") is True, f"{name}.{gradient_name} must be finite")
-            _require(gradient.get("nonzero") is True, f"{name}.{gradient_name} must be non-zero")
+        _require_sha256(
+            result.get("initial_optimizer_parameter_sha256"),
+            f"{name} initial optimizer parameters",
+        )
+        _require_sha256(
+            result.get("final_optimizer_parameter_sha256"),
+            f"{name} final optimizer parameters",
+        )
+        _require(
+            result["initial_optimizer_parameter_sha256"]
+            != result["final_optimizer_parameter_sha256"],
+            f"{name} optimizer parameter digest did not change",
+        )
+        _require(
+            math.isfinite(float(result.get("trainable_parameter_delta_l1", float("nan"))))
+            and float(result["trainable_parameter_delta_l1"]) > 0.0,
+            f"{name} trainable parameter L1 delta is invalid",
+        )
+        _require(
+            math.isfinite(float(result.get("trainable_parameter_delta_max", float("nan"))))
+            and float(result["trainable_parameter_delta_max"]) > 0.0,
+            f"{name} trainable parameter max delta is invalid",
+        )
+        _require(
+            int(result.get("changed_trainable_parameter_count", 0)) > 0,
+            f"{name} changed no trainable parameters",
+        )
+        if "changed_trainable_parameter_names_sha256" in result:
+            _require_sha256(
+                result["changed_trainable_parameter_names_sha256"],
+                f"{name} changed trainable parameter names",
+            )
+        expected_optimizer_parameter_count = int(
+            result.get("optimizer_expected_parameter_count", 0)
+        )
+        _require(
+            expected_optimizer_parameter_count > 0,
+            f"{name} optimizer expected-parameter count is invalid",
+        )
+        _require_sha256(
+            result.get("optimizer_parameter_names_sha256"),
+            f"{name} optimizer parameter names",
+        )
+        _require_sha256(
+            result.get("optimizer_state_parameter_names_sha256"),
+            f"{name} optimizer state parameter names",
+        )
+        _require(
+            int(result.get("optimizer_state_parameter_count", 0))
+            == expected_optimizer_parameter_count
+            and int(result.get("optimizer_state_min_step", 0)) == OPTIMIZER_STEPS
+            and int(result.get("optimizer_state_max_step", 0)) == OPTIMIZER_STEPS
+            and result["optimizer_state_parameter_names_sha256"]
+            == result["optimizer_parameter_names_sha256"],
+            f"{name} optimizer state does not prove complete three-step updates",
+        )
+        optimizer_base_lrs = result.get("optimizer_base_lrs")
+        scheduler_initial_lrs = result.get("scheduler_initial_lrs")
+        _require(
+            isinstance(optimizer_base_lrs, list)
+            and optimizer_base_lrs
+            and all(math.isfinite(float(value)) and float(value) > 0.0 for value in optimizer_base_lrs),
+            f"{name} optimizer base learning rates are invalid",
+        )
+        _require(
+            isinstance(scheduler_initial_lrs, list)
+            and len(scheduler_initial_lrs) == len(optimizer_base_lrs)
+            and all(math.isfinite(float(value)) and float(value) >= 0.0 for value in scheduler_initial_lrs),
+            f"{name} scheduler initial learning rates are invalid",
+        )
         step_reports = result.get("optimizer_step_reports")
         _require(
             isinstance(step_reports, list) and len(step_reports) == OPTIMIZER_STEPS,
@@ -842,6 +1419,75 @@ def validate_gate_report(report):
                 all(math.isfinite(float(value)) for value in losses.values()),
                 f"{name} step {step_index} losses are non-finite",
             )
+            assignment_debug = step_report.get("assignment_debug", {})
+            _validate_assignment_debug(
+                assignment_debug,
+                batch_size=int(result["production_train_batch_size"]),
+                label=f"{name} step {step_index} assignment",
+            )
+            _require(
+                float(losses.get("reg_loss", 0.0)) > 0.0,
+                f"{name} step {step_index} has no regression supervision",
+            )
+            step_gradients = step_report.get("gradients", {})
+            _require(
+                set(step_gradients) == set(GRADIENT_NAMES),
+                f"{name} step {step_index} gradient diagnostics are incomplete",
+            )
+            for gradient_name, gradient in step_gradients.items():
+                _validate_gradient_stats(
+                    gradient, f"{name} step {step_index} {gradient_name}"
+                )
+                _require(
+                    gradient.get("all_finite") is True,
+                    f"{name} step {step_index} {gradient_name} is non-finite",
+                )
+                if gradient_name != "regression_gradient":
+                    _require(
+                        gradient.get("nonzero") is True,
+                        f"{name} step {step_index} {gradient_name} is zero",
+                    )
+            learning_rates_before = step_report.get("learning_rates_before")
+            learning_rates_after = step_report.get("learning_rates_after")
+            _require(
+                isinstance(learning_rates_before, list)
+                and isinstance(learning_rates_after, list)
+                and len(learning_rates_before) == len(optimizer_base_lrs)
+                and len(learning_rates_after) == len(optimizer_base_lrs)
+                and all(
+                    math.isfinite(float(value)) and float(value) >= 0.0
+                    for value in learning_rates_before + learning_rates_after
+                ),
+                f"{name} step {step_index} scheduler learning rates are invalid",
+            )
+            clip_grad_norm = float(step_report.get("clip_grad_norm", float("nan")))
+            _require(
+                math.isfinite(clip_grad_norm) and clip_grad_norm > 0.0,
+                f"{name} step {step_index} clip norm is invalid",
+            )
+            _require(
+                int(step_report.get("scheduler_last_epoch_after", -1)) == step_index + 1,
+                f"{name} step {step_index} scheduler order is invalid",
+            )
+            _require(
+                int(step_report.get("optimizer_state_parameter_count_after", 0))
+                == expected_optimizer_parameter_count
+                and int(step_report.get("optimizer_state_min_step_after", 0))
+                == step_index + 1
+                and int(step_report.get("optimizer_state_max_step_after", 0))
+                == step_index + 1
+                and step_report.get("optimizer_state_parameter_names_sha256_after")
+                == result["optimizer_parameter_names_sha256"],
+                f"{name} step {step_index} optimizer state coverage is invalid",
+            )
+            _require(
+                int(step_report.get("optimizer_state_max_step_after", 0)) == step_index + 1,
+                f"{name} step {step_index} optimizer state is invalid",
+            )
+            _require(
+                step_report.get("ema_updated") is True,
+                f"{name} step {step_index} did not update EMA",
+            )
             scale_before = float(step_report.get("amp_scale_before", float("nan")))
             scale_after = float(step_report.get("amp_scale_after", float("nan")))
             _require(
@@ -851,6 +1497,45 @@ def validate_gate_report(report):
                 and scale_after >= scale_before,
                 f"{name} step {step_index} AMP scale proves a skipped or invalid update",
             )
+        recomputed_gradients = _aggregate_gradient_step_reports(
+            [step["gradients"] for step in step_reports]
+        )
+        for gradient_name, recomputed in recomputed_gradients.items():
+            recorded = result.get(gradient_name, {})
+            for key in (
+                "parameter_count",
+                "all_finite",
+                "nonzero",
+                "nonzero_step_count",
+                "per_step_nonzero",
+            ):
+                _require(
+                    recorded.get(key) == recomputed[key],
+                    f"{name}.{gradient_name}.{key} disagrees with step evidence",
+                )
+            _require(
+                math.isclose(
+                    float(recorded.get("gradient_l1_across_steps", float("nan"))),
+                    recomputed["gradient_l1_across_steps"],
+                    rel_tol=1.0e-9,
+                    abs_tol=1.0e-12,
+                ),
+                f"{name}.{gradient_name} L1 disagrees with step evidence",
+            )
+            _require(
+                recomputed["all_finite"] is True and recomputed["nonzero"] is True,
+                f"{name}.{gradient_name} lacks aggregate finite non-zero evidence",
+            )
+        scheduler_positive_lr_observed = any(
+            float(value) > 0.0
+            for step in step_reports
+            for value in step["learning_rates_before"] + step["learning_rates_after"]
+        )
+        _require(
+            scheduler_positive_lr_observed
+            and result.get("scheduler_positive_lr_observed") is True,
+            f"{name} scheduler never exposed a positive learning rate",
+        )
         _require_sha256(result.get("initial_state_sha256"), f"{name} initial state")
         _require_sha256(result.get("final_state_sha256"), f"{name} final state")
         _require(
@@ -994,9 +1679,14 @@ def run_gate(
     )
     evaluation_ground_truth = _validate_evaluators(configs)
     timebase_audit = audit_dataset_timebases(configs["selected_axis"], evaluation_ground_truth)
-    samples = {}
+    _require(
+        int(sample_index) == -1,
+        "formal G1a gate uses the production shuffled DataLoader and forbids sample-index overrides",
+    )
+    train_batches = {}
+    train_loader_lengths = {}
+    train_loader_contracts = {}
     tail_samples = {}
-    sample_indices = {}
     tail_indices = {}
     selected_checksums = {}
     input_checksums = {}
@@ -1005,31 +1695,50 @@ def run_gate(
     tail_video_names = {}
     tail_input_checksums = {}
     tail_selected_checksums = {}
-    datasets = {}
     tail_datasets = {}
     for name, cfg in configs.items():
-        dataset, resolved_indices, train_samples, checksums = _load_train_samples(
-            cfg, seed=seed, requested_index=sample_index
+        _, batches, loader_length, loader_contract = _load_production_train_batches(
+            cfg, seed=seed
         )
         tail_dataset, tail_index, tail_sample = _load_tail_sample(cfg, seed)
         tail_selected = torch.as_tensor(
             tail_sample["metas"]["selected_raw_frame_indices"], dtype=torch.int64
         ).numpy()
-        samples[name] = train_samples
+        train_batches[name] = batches
+        train_loader_lengths[name] = loader_length
+        train_loader_contracts[name] = loader_contract
         tail_samples[name] = tail_sample
-        datasets[name] = dataset
         tail_datasets[name] = tail_dataset
-        sample_indices[name] = resolved_indices
         tail_indices[name] = tail_index
-        selected_checksums[name] = checksums
+        selected_checksums[name] = [
+            _batch_selected_index_sha256(batch) for batch in batches
+        ]
         tail_selected_checksums[name] = hashlib.sha256(tail_selected.tobytes()).hexdigest()
-        input_checksums[name] = [_tensor_sha256(sample["inputs"]) for sample in train_samples]
-        target_checksums[name] = [_target_sha256(sample) for sample in train_samples]
+        input_checksums[name] = [_tensor_sha256(batch["inputs"]) for batch in batches]
+        target_checksums[name] = [_batch_target_sha256(batch) for batch in batches]
         tail_input_checksums[name] = _tensor_sha256(tail_sample["inputs"])
-        video_names[name] = [str(sample["metas"]["video_name"]) for sample in train_samples]
+        video_names[name] = [
+            [str(meta["video_name"]) for meta in batch["metas"]] for batch in batches
+        ]
         tail_video_names[name] = str(tail_sample["metas"]["video_name"])
-    _require(len({tuple(value) for value in sample_indices.values()}) == 1, "G1a arms resolved different samples")
-    _require(len({tuple(value) for value in video_names.values()}) == 1, "G1a arms decoded different videos")
+    _require(
+        len(set(train_loader_lengths.values())) == 1,
+        "G1a arms constructed different production DataLoader lengths",
+    )
+    _require(
+        len(
+            {
+                json.dumps(value, sort_keys=True, separators=(",", ":"))
+                for value in train_loader_contracts.values()
+            }
+        )
+        == 1,
+        "G1a arms constructed different production DataLoader contracts",
+    )
+    _require(
+        len({tuple(tuple(batch) for batch in value) for value in video_names.values()}) == 1,
+        "G1a arms decoded different production batches",
+    )
     _require(
         len({tuple(value) for value in selected_checksums.values()}) == 1,
         "G1a arms selected different raw frames",
@@ -1053,7 +1762,9 @@ def run_gate(
         variants[name] = _run_variant(
             name,
             configs[name],
-            samples[name],
+            train_batches[name],
+            train_loader_lengths[name],
+            train_loader_contracts[name],
             tail_samples[name],
             tail_datasets[name],
             tail_video_names[name],
@@ -1108,7 +1819,7 @@ def run_gate(
         "selected_index_sha256": next(iter(selected_checksums.values())),
         "decoded_input_sha256": next(iter(input_checksums.values())),
         "target_sha256": next(iter(target_checksums.values())),
-        "sample_indices": next(iter(sample_indices.values())),
+        "production_train_batch_count": OPTIMIZER_STEPS,
         "sample_videos": next(iter(video_names.values())),
         "tail_sample_index": next(iter(tail_indices.values())),
         "tail_sample_video": next(iter(tail_video_names.values())),

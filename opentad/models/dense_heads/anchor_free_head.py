@@ -331,6 +331,10 @@ class AnchorFreeHead(nn.Module):
     def collect_debug_state(self):
         return dict(self._physical_grid_debug)
 
+    def _reset_debug_state(self):
+        if self.assignment_debug_enabled or self.physical_grid_enabled:
+            self._physical_grid_debug = {}
+
     def _init_layers(self):
         """Initialize layers of the head."""
         self._init_cls_convs()
@@ -382,8 +386,10 @@ class AnchorFreeHead(nn.Module):
             nn.init.constant_(self.cls_head.bias, bias_value)
 
     def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, metas=None, **kwargs):
+        self._reset_debug_state()
         cls_pred = []
         reg_pred = []
+        reg_raw_pred = []
 
         for l, (feat, mask) in enumerate(zip(feat_list, mask_list)):
             cls_feat = feat
@@ -394,17 +400,28 @@ class AnchorFreeHead(nn.Module):
                 reg_feat, mask = self.reg_convs[i](reg_feat, mask)
 
             cls_pred.append(self.cls_head(cls_feat))
-            reg_pred.append(F.relu(self.scale[l](self.reg_head(reg_feat))))
+            raw_regression = self.scale[l](self.reg_head(reg_feat))
+            reg_raw_pred.append(raw_regression)
+            reg_pred.append(F.relu(raw_regression))
 
         points = self.prior_generator(feat_list)
         points, mask_list = self._build_physical_points_and_masks(
             points, mask_list, metas=metas, train_mode=True
         )
 
-        losses = self.losses(cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels)
+        losses = self.losses(
+            cls_pred,
+            reg_pred,
+            mask_list,
+            points,
+            gt_segments,
+            gt_labels,
+            reg_raw_pred=reg_raw_pred,
+        )
         return losses
 
     def forward_test(self, feat_list, mask_list, metas=None, **kwargs):
+        self._reset_debug_state()
         cls_pred = []
         reg_pred = []
 
@@ -458,7 +475,16 @@ class AnchorFreeHead(nn.Module):
             new_scores.append(score[mask])  # [T,num_classes]
         return new_proposals, new_scores
 
-    def losses(self, cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels):
+    def losses(
+        self,
+        cls_pred,
+        reg_pred,
+        mask_list,
+        points,
+        gt_segments,
+        gt_labels,
+        reg_raw_pred=None,
+    ):
         gt_cls, gt_reg = self.prepare_targets(points, gt_segments, gt_labels)
 
         # positive mask
@@ -466,6 +492,34 @@ class AnchorFreeHead(nn.Module):
         valid_mask = torch.cat(mask_list, dim=1)
         pos_mask = torch.logical_and((gt_cls.sum(-1) > 0), valid_mask)
         num_pos = pos_mask.sum().item()
+        if self.assignment_debug_enabled:
+            valid_count = int(valid_mask.sum().item())
+            raw_regression = None
+            if reg_raw_pred is not None:
+                raw_regression = torch.cat(reg_raw_pred, dim=-1).permute(0, 2, 1)[pos_mask]
+            raw_count = 0 if raw_regression is None else int(raw_regression.numel())
+            raw_positive_count = (
+                0
+                if raw_regression is None
+                else int((raw_regression > 0).sum().item())
+            )
+            active_location_count = (
+                0
+                if raw_regression is None or raw_regression.numel() == 0
+                else int((raw_regression > 0).any(dim=-1).sum().item())
+            )
+            self._physical_grid_debug.update(
+                assignment_num_positive=int(num_pos),
+                assignment_positive_per_sample=[
+                    int(sample_mask.sum().item()) for sample_mask in pos_mask
+                ],
+                assignment_valid_point_count=valid_count,
+                assignment_gt_count=int(sum(len(segments) for segments in gt_segments)),
+                assignment_positive_fraction=float(num_pos / max(valid_count, 1)),
+                assignment_regression_raw_count=raw_count,
+                assignment_regression_raw_positive_count=raw_positive_count,
+                assignment_regression_active_location_count=active_location_count,
+            )
 
         # maintain an EMA of foreground to stabilize the loss normalizer
         # useful for small mini-batch training

@@ -1,5 +1,9 @@
 # Anti-Repetition Contract
 
+- 不得把 focused tests 或独立审查前两轮修复称为部署完成。G1a 必须先取得第三轮零 P0/P1，再绑定 clean commit/tree；真实 gate 未通过时不得提交 pilot，pilot 未产生原始 mAP 时不得写方法 claim。
+- gate 的 optimizer 证据必须绑定固定参数名称集合，并逐步满足 state count 完整、min=max=当前 step；不得用最大 step、动态 `requires_grad` hash 或 buffer 变化替代真实参数更新。
+- production `drop_last` 必须来自实际 DataLoader 属性；CPU batch 不得被 gate 原地搬到 GPU 并跨步骤持有；正式训练与 gate 必须显式绑定同源 sampler/generator seed。
+
 开始方法修改、实验部署、论文改写或外部讨论前，必须先读本文件与 `query_pack.md`。
 
 ## 禁止回退
@@ -43,6 +47,7 @@
 - FPS 容差不能凭经验拍定或默认为零；先全量审计 decoder FPS、annotation duration 与 frame count，再把保守阈值写入 train/test 同一合同，并由正式 gate 重算。
 - 全量 timebase 审计的范围必须来自正式 dataset `data_list`，不能直接把数据根目录每个 MP4 都假设为 evaluator 样本；目录中的未引用文件必须显式披露并纳入完整 inventory 哈希，被 dataset 消费但缺失的文件则必须 fail-closed。
 - 模型 state-dict 摘要必须覆盖 0 维标量 buffer；不同元素大小的 dtype byte-view 前先 reshape 为一维，不能假设所有参数/缓冲区至少一维。
+- 多步真实 gate 不能伪装成“每个单样本所有参数族梯度都必须非零”。ActionFormer 回归头末端 ReLU 可在某个有效样本上让参数梯度为零，即使该步有正 assignment 和正回归损失；正确合同是每步正 assignment、正回归监督与全部有限，关键通路逐步非零，而回归参数族必须在固定三步聚合中至少一次非零。不能删除回归梯度证明，也不能仅凭正 loss 判定梯度已连通。
 
 ## 当前唯一主线
 

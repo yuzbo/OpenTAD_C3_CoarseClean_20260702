@@ -15,7 +15,7 @@ DEFAULT_CONFIGS = {
     "selected_axis": ROOT / "configs/adatad/thumos/phystime_g1a_selected_axis_native_j192.py",
     "physical_metric": ROOT / "configs/adatad/thumos/phystime_g1a_physical_metric_native_j192.py",
 }
-SCHEMA_VERSION = "phystime_g1a_track_contract_v2"
+SCHEMA_VERSION = "phystime_g1a_track_contract_v3"
 
 
 def _require(condition, message):
@@ -158,6 +158,30 @@ def validate_track(config_paths=DEFAULT_CONFIGS, *, output=None):
     _require(bool(solver.get("fail_on_non_finite_grad", False)) is True, "G1a must fail on non-finite gradients")
     _require(int(solver.get("max_consecutive_amp_skips", -1)) == 4, "G1a consecutive AMP skip budget changed")
     _require(int(solver.get("max_total_amp_skips_per_epoch", -1)) == 8, "G1a epoch AMP skip budget changed")
+    _require(int(solver.train.batch_size) == 2, "G1a production train batch size must be two")
+    _require(int(solver.train.num_workers) == 2, "G1a production train worker count must be two")
+    _require(bool(solver.get("ema", False)) is True, "G1a production engine requires EMA")
+    optimizer_cfg = physical.optimizer
+    _require(
+        float(optimizer_cfg.get("lr", 0.0)) > 0.0,
+        "G1a detector optimizer learning rate must be positive",
+    )
+    adapter_groups = [
+        group
+        for group in optimizer_cfg.backbone.get("custom", [])
+        if str(group.get("name")) == "adapter"
+    ]
+    _require(len(adapter_groups) == 1, "G1a optimizer must contain exactly one adapter group")
+    _require(
+        float(adapter_groups[0].get("lr", 0.0)) > 0.0,
+        "G1a adapter learning rate must be positive",
+    )
+    scheduler_cfg = physical.scheduler
+    _require(
+        str(scheduler_cfg.get("type")) == "LinearWarmupCosineAnnealingLR",
+        "G1a production scheduler must be LinearWarmupCosineAnnealingLR",
+    )
+    _require(int(scheduler_cfg.get("warmup_epoch", -1)) == 5, "G1a scheduler warmup must be five epochs")
 
     grid = physical.model.rpn_head.physical_grid_actionformer
     _require(grid.enabled is True and grid.required is True and grid.strict is True, "G1a seconds grid is not strict")
@@ -218,6 +242,15 @@ def validate_track(config_paths=DEFAULT_CONFIGS, *, output=None):
             "fail_on_non_finite_grad": True,
             "max_consecutive_skips": 4,
             "max_total_skips_per_epoch": 8,
+        },
+        "production_engine_contract": {
+            "train_batch_size": 2,
+            "train_num_workers": 2,
+            "ema": True,
+            "scheduler": "LinearWarmupCosineAnnealingLR",
+            "warmup_epoch": 5,
+            "optimizer_lr": float(optimizer_cfg.lr),
+            "adapter_lr": float(adapter_groups[0]["lr"]),
         },
         "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "git_tree": subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip(),

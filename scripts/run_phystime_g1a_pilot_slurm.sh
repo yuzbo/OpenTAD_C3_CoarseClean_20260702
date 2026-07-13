@@ -112,6 +112,7 @@ from tools.bata.run_phystime_g1a_real_gate import _canonical_sha256
 config_path, checkpoint, gate_path, contract_path, static_g0_path, run_dir, commit, tree, epochs = sys.argv[1:]
 cfg = Config.fromfile(config_path, lazy_import=False)
 canonical_config_sha256 = _canonical_sha256(cfg.to_dict())
+variant = "selected_axis" if "selected_axis" in Path(config_path).name else "physical_metric"
 cfg.model.backbone.custom.pretrain = str(Path(checkpoint).resolve())
 cfg.work_dir = str(Path(run_dir, "work_dir").resolve())
 cfg.workflow.end_epoch = int(epochs)
@@ -123,16 +124,21 @@ post_types = [step["type"] for step in cfg.model.backbone.custom.post_processing
 if "Interpolate" in post_types:
     raise SystemExit("G1a pilot forbids J192-to-K384 interpolation")
 manifest = {
-    "schema_version": "phystime_g1a_pilot_manifest_v2",
+    "schema_version": "phystime_g1a_pilot_manifest_v3",
     "commit": commit,
     "git_tree": tree,
+    "runtime_root": str(Path.cwd().resolve()),
+    "variant": variant,
     "started_at_unix": time.time(),
     "config": str(Path(config_path).resolve()),
     "config_sha256": canonical_config_sha256,
     "checkpoint": str(Path(checkpoint).resolve()),
     "checkpoint_sha256": hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
+    "gate": str(Path(gate_path).resolve()),
     "gate_sha256": hashlib.sha256(Path(gate_path).read_bytes()).hexdigest(),
+    "contract": str(Path(contract_path).resolve()),
     "contract_sha256": hashlib.sha256(Path(contract_path).read_bytes()).hexdigest(),
+    "static_g0": str(Path(static_g0_path).resolve()),
     "static_g0_sha256": hashlib.sha256(Path(static_g0_path).read_bytes()).hexdigest(),
     "K_raw_observations": 384,
     "J_native_tubelet_tokens": 192,

@@ -4,7 +4,7 @@ node_id: exp:phystime-g1a-native-j192
 title: "PhysTime G1a native-J192 matched temporal-metric control"
 idea: idea:phystime-tad-2
 status: tested
-verdict: pending_fixed_snapshot_real_gate_and_pilot
+verdict: pending_independent_review_then_fixed_snapshot_real_gate_and_pilot
 confidence: pending
 metrics: "No mAP yet. Any later raw values must be recorded only in docs/evaluation/results.md."
 provenance: "docs/superpowers/specs/2026-07-13-phystime-p0-rebuild-design.md"
@@ -12,6 +12,10 @@ added: 2026-07-13T00:00:00+08:00
 ---
 
 # PhysTime G1a Native J192
+
+## 2026-07-13 独立部署审查状态
+
+当前仍为 `tested`，不是 `experiment_running`。第二轮 Max 审查的 4 个 P1 已修复：严格 assignment 数量关系、固定 optimizer 参数集合与逐步 state 覆盖、真实 DataLoader `drop_last`、pilot 对 Git/config/data/contract/G0/checkpoint 的独立重算。远端 gate/artifact tests 为 `65 passed`，PhysTime/shared physical-grid tests 为 `240 passed`。第三轮零 P0/P1 是 clean snapshot 与 real gate 的必要前置条件；尚无新 pilot 或 mAP。
 
 ## Question
 
@@ -41,7 +45,7 @@ added: 2026-07-13T00:00:00+08:00
 
 ## Evidence Level
 
-当前为 `tested`：本地编译与 diff 检查通过；本机 PyTorch 受既知 `c10.dll` 初始化故障阻断，模型测试转移到远端 Linux/Torch 临时树执行。新旧 PhysTime/C3、padding isolation、timebase、gate、artifact 与部署回归合计 `116 passed`。这仍不是正式实验：代码尚未形成最终 clean commit/fixed snapshot，真实 THUMOS CUDA gate、六 epoch pilot 与 mAP 尚未完成，因此不能声称 `experiment_running`、`empirically_supported` 或有效。
+当前为 `tested`：本地编译、diff 与 launcher shell 检查通过；本机 PyTorch 受既知 `c10.dll` 初始化故障阻断，模型测试转移到远端 Linux/Torch 临时树执行。新旧 PhysTime/C3、padding isolation、timebase、gate、artifact 与部署回归合计 `142 passed`。首轮独立最高强度逐行审查发现 4 个 P1 与 3 个 P2，修复后正在由同一代理复审；代码尚未形成最终 clean commit/fixed snapshot，真实 THUMOS CUDA gate、六 epoch pilot 与 mAP 尚未完成，因此不能声称 `experiment_running`、`empirically_supported` 或有效。
 
 ## Formal Deployment Attempts
 
@@ -49,6 +53,7 @@ added: 2026-07-13T00:00:00+08:00
 - 修复后 timebase 范围由正式 `build_dataset(...).data_list` 决定：实际审计 200 个 train 与 211 个 test 视频；`video_test_0000270`、`video_test_0001292` 作为未引用 inventory 显式登记并继续受完整目录 Merkle 指纹约束。任何被 dataset 消费但目录缺失的视频仍立即失败。
 - 修复后的真实目录范围 precheck 与远端 `116 passed` 已完成；新的 clean snapshot real gate 与 pilots 待重新提交。当前状态仍为 `tested`，不能把失败 gate 或 pending dependency 写成实验结果。
 - 范围修复 commit `e598bd7` 的第二次 gate `1161353` 已越过 timebase 范围，但在首个模型状态摘要处暴露远端 PyTorch 对 0 维 LongTensor 不允许跨元素大小 `view(torch.uint8)` 的兼容性错误；依赖 pilot `1161354/1161355` 未启动并取消。摘要现改为先展平再按字节 view，并加入 scalar integer buffer 回归测试；这仍是工程 gate 失败，不是方法结果。
+- 标量摘要修复 commit `d193417` 的第三次 gate `1161378` 越过数据、checkpoint、evaluator 与模型构建，在 selected-axis 的第一个真实训练样本上因 `regression_gradient=0` fail-closed；依赖 pilot `1161379/1161380` 未启动并取消。该现象与 ActionFormer 末端 ReLU dead zone 一致，但旧失败 artifact 没有记录正 assignment、正 `reg_loss` 或 pre-ReLU 激活，因此不能把机制可能性写成已证明根因。v3 gate 现使用正式 batch=2 DataLoader、warmup scheduler、EMA 和生产更新顺序；每步保存 assignment、pre-ReLU 激活、所有梯度、LR、clip、optimizer state，三步内要求回归参数至少一次非零，并用 trainable-only hash 与数值 delta 证明真实参数更新。独立 validator 会从逐步证据重算合同。该修改已通过远端 `142 passed`，仍须独立复审和新 clean gate 才能部署 pilot。
 
 ## Connections
 
