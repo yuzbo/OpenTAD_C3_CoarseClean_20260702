@@ -296,6 +296,10 @@ def run_formal_gate(
 
     # Run the same aggregate loss used by the training loop, then prove that AMP
     # executes an optimizer update instead of silently skipping it.
+    # The detector-only diagnostic above already called unscale_ on its scaler;
+    # a real training step must start with a fresh scaler state machine.
+    scaler = torch.cuda.amp.GradScaler(enabled=True)
+    scale_before_backward = float(scaler.get_scale())
     optimizer.zero_grad(set_to_none=True)
     normalizer_before = model.rpn_head.loss_normalizer.detach().clone()
     with torch.autocast(device_type="cuda", dtype=torch.float16):
