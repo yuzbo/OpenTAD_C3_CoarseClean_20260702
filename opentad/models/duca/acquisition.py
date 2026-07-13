@@ -20,6 +20,7 @@ from .transition_only import (
     balanced_binary_actionness_loss,
     continuous_policy_logits,
     local_boundary_coverage_loss,
+    local_boundary_mass_coverage_loss,
     transition_distribution_loss,
     transition_utility_paths,
 )
@@ -2804,43 +2805,18 @@ def duca_losses(
         )
         if not isinstance(scores, Mapping):
             raise ValueError("transition boundary coverage requires structured decoder outputs")
-        policy_logits = scores.get("decode_policy_logits")
-        effective_budget = scores.get("effective_budget")
-        structured_temperature = scores.get("structured_temperature")
-        if policy_logits is None or effective_budget is None or structured_temperature is None:
-            raise ValueError(
-                "transition boundary coverage requires decode_policy_logits, effective_budget, "
-                "and structured_temperature"
+        soft_occupancy = scores.get("soft_coverage")
+        if soft_occupancy is None or soft_occupancy.shape != center_scores.shape:
+            raise ValueError("transition boundary coverage requires aligned structured soft_coverage")
+        losses["transition_boundary_coverage_loss"] = (
+            local_boundary_mass_coverage_loss(
+                soft_occupancy,
+                transition_target,
+                valid,
+                radius=int(transition_boundary_radius),
             )
-        if policy_logits.shape != center_scores.shape:
-            raise ValueError("decode_policy_logits must match scores [B,T]")
-        effective_budget = torch.as_tensor(effective_budget, device=center_scores.device, dtype=torch.long).reshape(-1)
-        if effective_budget.numel() != center_scores.shape[0]:
-            raise ValueError("effective_budget must contain one K per sample")
-        coverage_rows = []
-        for batch_idx in range(center_scores.shape[0]):
-            valid_count = int(valid[batch_idx].sum().item())
-            effective_k = int(effective_budget[batch_idx].item())
-            if effective_k <= 0 or effective_k > valid_count:
-                raise ValueError("effective_budget must satisfy 0 < K <= valid_count")
-            configured_max_hole = scores.get("max_unselected_hole")
-            effective_max_hole = valid_count if configured_max_hole is None else int(configured_max_hole)
-            target_row = transition_target[batch_idx].to(device=valid.device)
-            if not bool(target_row.masked_fill(~valid[batch_idx], 0.0).gt(0).any().item()):
-                continue
-            coverage_rows.append(
-                local_boundary_coverage_loss(
-                    policy_logits[batch_idx : batch_idx + 1],
-                    transition_target[batch_idx : batch_idx + 1],
-                    valid[batch_idx : batch_idx + 1],
-                    radius=int(transition_boundary_radius),
-                    k=effective_k,
-                    max_unselected_hole=effective_max_hole,
-                    temperature=float(structured_temperature),
-                )
-            )
-        exact_coverage = torch.stack(coverage_rows).mean() if coverage_rows else policy_logits.sum() * 0.0
-        losses["transition_boundary_coverage_loss"] = exact_coverage * weights["transition_boundary"]
+            * weights["transition_boundary"]
+        )
     else:
         losses["transition_distribution_loss"] = zero
         losses["transition_boundary_coverage_loss"] = zero

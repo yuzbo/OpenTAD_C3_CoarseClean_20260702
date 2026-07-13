@@ -19,6 +19,7 @@ from opentad.models.duca.transition_only import (
     calibrated_actionness_probability,
     continuous_policy_logits,
     local_boundary_coverage_loss,
+    local_boundary_mass_coverage_loss,
     transition_utility_paths,
 )
 from opentad.models.duca.structured_selection import global_structured_topk
@@ -237,6 +238,21 @@ def test_local_boundary_coverage_rewards_mass_inside_boundary_neighborhood() -> 
     assert near_loss < far_loss
     assert torch.isfinite(near_loss)
     assert torch.isfinite(far_loss)
+
+
+def test_local_boundary_mass_coverage_has_bounded_finite_long_window_gradients() -> None:
+    logits = torch.randn(1, 768, requires_grad=True)
+    occupancy = torch.softmax(logits, dim=1) * 384.0
+    boundary = torch.zeros(1, 768)
+    boundary[0, [100, 390, 700]] = 1.0
+    valid = torch.ones(1, 768, dtype=torch.bool)
+
+    loss = local_boundary_mass_coverage_loss(occupancy, boundary, valid, radius=4)
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+    assert logits.grad.abs().max() < 1.0
 
 
 def test_local_boundary_coverage_is_exact_under_structured_dependence() -> None:

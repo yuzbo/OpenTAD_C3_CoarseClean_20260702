@@ -305,6 +305,40 @@ def local_boundary_coverage_loss(
     return loss.to(dtype=policy_logits.dtype)
 
 
+def local_boundary_mass_coverage_loss(
+    soft_occupancy: torch.Tensor,
+    boundary_target: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    radius: int,
+) -> torch.Tensor:
+    """Penalize missing expected structured-selection mass near GT boundaries."""
+
+    if soft_occupancy.shape != boundary_target.shape:
+        raise ValueError("soft_occupancy and boundary_target must have identical [B,T] shape")
+    valid = valid_mask.to(device=soft_occupancy.device, dtype=torch.bool)
+    if valid.shape != soft_occupancy.shape:
+        raise ValueError("valid_mask must align with soft_occupancy")
+    radius = int(radius)
+    if radius < 0:
+        raise ValueError("boundary coverage radius must be non-negative")
+    occupancy = soft_occupancy.float().masked_fill(~valid, 0.0)
+    target = boundary_target.to(device=occupancy.device, dtype=occupancy.dtype).masked_fill(~valid, 0.0)
+    rows = []
+    for batch_idx in range(occupancy.shape[0]):
+        boundary_positions = torch.nonzero(target[batch_idx] > 0.0, as_tuple=False).flatten()
+        if boundary_positions.numel() == 0:
+            continue
+        positions = torch.arange(occupancy.shape[1], device=occupancy.device)
+        neighborhoods = (positions[None, :] - boundary_positions[:, None]).abs() <= radius
+        neighborhood_mass = (occupancy[batch_idx][None, :] * neighborhoods).sum(dim=1)
+        weights = target[batch_idx, boundary_positions]
+        rows.append((weights * torch.exp(-neighborhood_mass)).sum() / weights.sum().clamp_min(1e-8))
+    if not rows:
+        return soft_occupancy.sum() * 0.0
+    return torch.stack(rows).mean().to(dtype=soft_occupancy.dtype)
+
+
 __all__ = [
     "ASFORMER_ENCODER_HIDDEN_KIND",
     "DucaTransitionUtilityScorer",
@@ -313,6 +347,7 @@ __all__ = [
     "calibrated_actionness_probability",
     "continuous_policy_logits",
     "local_boundary_coverage_loss",
+    "local_boundary_mass_coverage_loss",
     "transition_distribution_loss",
     "transition_utility_paths",
 ]

@@ -3,7 +3,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from opentad.models.duca.acquisition import duca_losses
-from opentad.models.duca.transition_only import local_boundary_coverage_loss
+from opentad.models.duca.transition_only import local_boundary_mass_coverage_loss
 
 
 def _scores(policy_logits, valid, budgets, *, max_hole, temperature):
@@ -17,12 +17,11 @@ def _scores(policy_logits, valid, budgets, *, max_hole, temperature):
         "effective_budget": torch.tensor(budgets, device=policy_logits.device),
         "max_unselected_hole": max_hole,
         "structured_temperature": temperature,
-        # This must never be consumed by the exact coverage loss.
-        "soft_coverage": torch.full_like(policy_logits, float("nan")),
+        "soft_coverage": torch.sigmoid(policy_logits),
     }
 
 
-def test_duca_losses_uses_exact_policy_with_per_sample_k_and_padding():
+def test_duca_losses_uses_structured_soft_mass_with_padding():
     policy = torch.tensor(
         [[0.2, -0.1, 0.6, 0.4, -0.3], [0.8, -0.2, 0.1, 99.0, 99.0]],
         dtype=torch.float64,
@@ -40,18 +39,9 @@ def test_duca_losses_uses_exact_policy_with_per_sample_k_and_padding():
         transition_boundary_radius=0,
         loss_weights={"transition_boundary": 1.0},
     )
-    expected = torch.stack(
-        [
-            local_boundary_coverage_loss(
-                policy[0:1], target[0:1], valid[0:1], radius=0, k=2,
-                max_unselected_hole=5, temperature=temperature,
-            ),
-            local_boundary_coverage_loss(
-                policy[1:2], target[1:2], valid[1:2], radius=0, k=1,
-                max_unselected_hole=3, temperature=temperature,
-            ),
-        ]
-    ).mean()
+    expected = local_boundary_mass_coverage_loss(
+        torch.sigmoid(policy), target, valid, radius=0
+    )
     actual = losses["transition_boundary_coverage_loss"]
     assert torch.isfinite(actual)
     assert torch.allclose(actual, expected, atol=1e-10, rtol=1e-10)
@@ -63,11 +53,11 @@ def test_duca_losses_uses_exact_policy_with_per_sample_k_and_padding():
     assert torch.equal(policy.grad[1, 3:], torch.zeros_like(policy.grad[1, 3:]))
 
 
-def test_duca_losses_fails_closed_without_structured_decode_contract():
+def test_duca_losses_fails_closed_without_structured_soft_coverage():
     policy = torch.zeros(1, 4)
     valid = torch.ones_like(policy, dtype=torch.bool)
     target = torch.tensor([[0.0, 1.0, 0.0, 0.0]])
     scores = _scores(policy, valid, [2], max_hole=2, temperature=0.7)
-    del scores["decode_policy_logits"]
-    with pytest.raises(ValueError, match="decode_policy_logits"):
+    del scores["soft_coverage"]
+    with pytest.raises(ValueError, match="soft_coverage"):
         duca_losses(scores, budget=2, transition_target=target)
