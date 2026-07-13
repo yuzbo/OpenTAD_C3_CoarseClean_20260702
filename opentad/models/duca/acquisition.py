@@ -2879,7 +2879,7 @@ def duca_losses(
     else:
         losses["actionness_bce_loss"] = zero
         losses["action_local_hole_loss"] = zero
-    if max_unselected_hole not in (None, 0):
+    if max_unselected_hole not in (None, 0) and weights["max_gap_hole"] != 0.0:
         if isinstance(scores, Mapping) and str(max_gap_loss_source) == "soft_coverage" and scores.get("soft_coverage") is not None:
             gap_mass = scores["soft_coverage"]
         else:
@@ -2895,11 +2895,19 @@ def duca_losses(
         )
     else:
         losses["temporal_max_gap_hole_loss"] = zero
-    losses["redundancy_loss"] = (selected[:, 1:] * selected[:, :-1]).mean() * weights["redundancy"]
-    if radius is not None:
+    if weights["redundancy"] != 0.0:
+        losses["redundancy_loss"] = (
+            selected[:, 1:] * selected[:, :-1]
+        ).mean() * weights["redundancy"]
+    else:
+        losses["redundancy_loss"] = zero
+    if radius is not None and weights["radius"] != 0.0:
         losses["radius_cost_loss"] = radius.to(center_scores.dtype).masked_fill(~valid, 0.0).mean() * weights["radius"]
     else:
         losses["radius_cost_loss"] = zero
+    if weights["entropy"] == 0.0:
+        losses["entropy_anti_collapse_loss"] = zero
+        return losses
     if p_action is not None:
         prob = p_action.to(center_scores.dtype).clamp(1e-6, 1.0 - 1e-6)
         entropy = _binary_entropy(prob).masked_fill(~valid, 0.0)
