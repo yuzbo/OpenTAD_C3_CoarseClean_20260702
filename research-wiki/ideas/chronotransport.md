@@ -25,6 +25,22 @@ exposed trust in the registry-provided source index vector and strict canonical/
 focused suite passed 27/27 remotely in 53.81 seconds, and the broader protocol/control/legacy-runner
 matrix passed 55/55 in 91.90 seconds. This slice is `tested`, but registration and every formal Gate
 remain blocked.
+Two independent reviewers then returned `APPROVE_PROTOCOL_SLICE` and
+`APPROVE_PROTOCOL_QUALITY`; the bounded repair was committed and pushed as `33378af`. This is an
+intermediate implementation commit, not immutable implementation `I` or registration `R`.
+
+The first Gate-1 cost/profile draft then passed 36/36 remote focused checks and got the B*/20% formula
+right, but two independent reviewers rejected its evidence boundary. The rejected draft could accept
+registration-external factories/provenance and arbitrary 30+30 record IDs, did not freeze the exact
+23-profile candidate/order contract, and retained coercive scalar/safety-override paths. The selected
+repair is deep registration binding and strict artifacts; weakening registration or trusting caller
+hashes is explicitly rejected.
+
+The remote deployment audit also rejected the earlier launcher assumption that
+`CUDA_VISIBLE_DEVICES=1` proves physical GPU1. With Slurm task/cgroup isolation, the physical index is
+carried by `SLURM_STEP_GPUS`/`SLURM_JOB_GPUS` and a single assigned device is remapped to local ordinal
+0. The selected contract is physical ID `1` plus local `CUDA_VISIBLE_DEVICES=0`; no currently running
+allocation is reusable. Reserving two GPUs merely to expose local ordinal 1 is rejected as wasteful.
 
 The first bounded repair batch corrected the r2 Stage-B/Stage-C resolved-config path so the overlay
 only reaches `model.backbone.backbone.chronotransport`; added window-level Gate-3 conformal logic

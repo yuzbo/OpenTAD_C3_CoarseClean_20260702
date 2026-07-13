@@ -5,7 +5,7 @@ title: "ChronoTransport r2 implementation verification"
 idea: idea:chronotransport
 verdict: ongoing
 confidence: high
-commit: "pending-batch-commit"
+commit: "33378af"
 jobs: "remote CPU focused pytest in workdirs/chronotransport_r2/repo"
 updated: 2026-07-13
 ---
@@ -27,6 +27,17 @@ updated: 2026-07-13
   create registration `I/R`, or unlock any formal Gate.
 
 ## Verified scope
+
+### Gate-1 cost/profile slice under revision
+
+The first exact-cost/full-stack implementation draft passed a remote focused/adjudication/core matrix
+of 36/36 in 37.88 seconds, correctly deriving `B*` from direct `periodic4_transport` total-ms p50 and
+enforcing the 20% dense-saving hard condition. Independent specification and code-quality reviews both
+returned `REVISE_GATE1_SLICE`: arbitrary factories/provenance and arbitrary 30+30 record IDs were not
+bound to registration; the exact 23-item profile set/order was not frozen; strict scalar schemas and
+the safety-override invalidation were incomplete. This draft is `implemented_under_revision`, not an
+approved profiler, formal cost artifact, or Gate-1 result. Deep registration-bound repair is in
+progress.
 
 - Protocol canonicalization, label-free split/window helpers, Stage-B exposure and Stage-C exposure:
   remote `tests/test_chronotransport_r2_protocol.py`, 7 passed.
@@ -53,12 +64,16 @@ claim is unlocked.
 ## Remote provenance
 
 Environment: `/data/run01/sczc063/yuzibo/conda_envs/opentad`; isolated verification workdir:
-`/data/run01/sczc063/yuzibo/workdirs/chronotransport_r2/repo`. The final implementation commit will
-replace `pending-batch-commit` after the source batch is committed.
+`/data/run01/sczc063/yuzibo/workdirs/chronotransport_r2/repo`. The bounded protocol repair commit is
+`33378af`; it is not the final implementation commit `I`.
 
-Remote scheduling audit found no active allocation in the SSH session (`CUDA_VISIBLE_DEVICES` unset,
-no `SLURM_JOB_ID`). Formal GPU1 execution is therefore not yet authorized; login-node training remains
-forbidden.
+Remote scheduling audit found no reusable physical-GPU1 allocation. On protected job `1137541`,
+Slurm reported physical `GRES IDX:4` and the in-step read-only probe reported
+`SLURM_STEP_GPUS=4`, `CUDA_VISIBLE_DEVICES=0`, confirming task/cgroup ordinal remapping. The old
+launcher invariant `CUDA_VISIBLE_DEVICES=1` is therefore invalid under a single-GPU protected step.
+The corrected guard must require physical `SLURM_STEP_GPUS` (or `SLURM_JOB_GPUS`) exactly `1`,
+`SLURM_GPUS_ON_NODE=1`, and remapped local `CUDA_VISIBLE_DEVICES=0`; no current allocation satisfies
+that contract. Formal GPU1 execution remains unauthorized and login-node training remains forbidden.
 
 ## Combined regression
 
@@ -68,6 +83,11 @@ required C3 focused suites. This confirms the currently implemented surfaces onl
 known missing Gate-3/Gate-4 adjudicators, overflow retry, full formal runners, or create registration R.
 
 ## Independent audit
+
+Two independent follow-up reviewers approved the bounded protocol repair as
+`APPROVE_PROTOCOL_SLICE` and `APPROVE_PROTOCOL_QUALITY` after reproducing and closing strict-type,
+path, source-vector, canonical-byte, and rehashed-identity fail-open cases. The approved slice was
+committed and pushed as `33378af`. These approvals are not approval of full r2 registration or Gates.
 
 A fresh no-conversation-context agent returned `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`. Seven
 registration-blocking gaps remain: Gate 3/4, executable r2 Stage B/C/matched dense, overflow retry, B*

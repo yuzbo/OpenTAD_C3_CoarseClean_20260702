@@ -111,3 +111,19 @@ append_only: true
   rejection, strict scalar types, media-path freezing, hashed control/library identities, Stage-B/C
   exposure validation, and the legacy formal-runner hard lock. Registration, formal profile, Gates,
   and experiments remain blocked.
+- 2026-07-13: Two independent follow-up reviewers returned `APPROVE_PROTOCOL_SLICE` and
+  `APPROVE_PROTOCOL_QUALITY` after reproducing the repaired strict identity and canonical-path
+  counterexamples. The bounded protocol/manifest repair was committed and pushed as `33378af`.
+  This is an intermediate implementation commit, not the final implementation commit `I`; immutable
+  registration `R`, profiling, all Gates, and scientific claims remain locked.
+- 2026-07-13: The first Gate-1 exact-cost/full-stack draft passed 36/36 remote focused/adjudication/core
+  checks in 37.88 seconds and correctly implemented direct P4-TRANSPORT B* plus the 20% hard threshold.
+  Independent spec and quality reviews nevertheless returned `REVISE_GATE1_SLICE`: registration,
+  manifest split, exact 23-item profile order, invocation IDs, factory/provenance, strict scalar types,
+  and safety-override invalidation were not fully bound. The draft is retained as
+  `implemented_under_revision`; no profile, B*, Gate-1 experiment fact, registration, or claim exists.
+- 2026-07-13: A read-only Slurm audit proved that the old GPU guard confuses physical IDs with
+  cgroup-remapped CUDA ordinals. Protected job `1137541` had physical `GRES IDX:4`, while its step
+  exposed `SLURM_STEP_GPUS=4` and local `CUDA_VISIBLE_DEVICES=0`. The revised single-GPU contract is
+  physical `SLURM_STEP_GPUS`/`SLURM_JOB_GPUS == 1`, `SLURM_GPUS_ON_NODE == 1`, and local
+  `CUDA_VISIBLE_DEVICES == 0`. No current allocation is eligible; no training was started.
