@@ -89,6 +89,14 @@ def test_p0_variant_validator_accepts_every_declared_variant() -> None:
         assert summary["paper_claim_allowed"] is False
 
 
+def test_direct_control_rejects_invalid_environment_before_silent_override(monkeypatch) -> None:
+    monkeypatch.setenv("DUCA_SELECTOR_ACTIONNESS_WEIGHT", "9.0")
+    monkeypatch.setenv("DUCA_STRUCTURED_TEMPERATURE", "9.0")
+    monkeypatch.setenv("DUCA_LOSS_BOUNDARY_END", "9.0")
+    with pytest.raises(ValueError, match="small auxiliary term"):
+        Config.fromfile(PATHS["direct"])
+
+
 def test_p0_core_gate_requires_ok_and_matching_commit(tmp_path: Path) -> None:
     commit = "a" * 40
     config_sha = "b" * 64
@@ -200,6 +208,8 @@ def test_p0_launcher_uses_commit_bound_core_gate_and_auditable_manifest() -> Non
     assert '--expected-config-sha256 "${REFERENCE_CONFIG_SHA256}"' in text
     assert '--expected-source-sha256 "${SOURCE_SHA256}"' in text
     assert '--expected-checkpoint-sha256 "${CHECKPOINT_SHA256}"' in text
+    assert 'RUNTIME_SUITE_MANIFEST="${RUN_DIR}/runtime_suite_manifest.json"' in text
+    assert "runtime {label} hash drift" in text
     assert "P0 full train must run inside Slurm" in text
     assert "git status --porcelain --untracked-files=normal" in text
     assert text.index("git status --porcelain --untracked-files=normal") < text.index('cat > "${RUN_DIR}/manifest.json"')

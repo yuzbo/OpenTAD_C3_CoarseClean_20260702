@@ -88,6 +88,33 @@ CHECKPOINT_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
   --output-json "${RUN_DIR}/variant_validation.json"
 "${PYTHON}" -m pytest tests/test_duca_transition_only_p0_matrix.py -q
 
+RUNTIME_SUITE_MANIFEST="${RUN_DIR}/runtime_suite_manifest.json"
+"${PYTHON}" -m tools.bata.validate_duca_transition_only_p0_suite \
+  --repo-root "${REPO_ROOT}" \
+  --seed "${SEED}" \
+  --expected-commit "${DUCA_EXPECTED_COMMIT}" \
+  --require-clean \
+  --core-gate-json "${DUCA_CORE_GATE_JSON}" \
+  --output-json "${RUNTIME_SUITE_MANIFEST}" >/dev/null
+"${PYTHON}" - "${RUNTIME_SUITE_MANIFEST}" "${VARIANT}" \
+  "${DUCA_RESOLVED_CONFIG_SHA256}" "${DUCA_VARIANT_CONTRACT_SHA256}" \
+  "${DUCA_SHARED_PROTOCOL_SHA256}" <<'PY'
+import json
+import sys
+
+manifest_path, variant_name, expected_resolved, expected_contract, expected_shared = sys.argv[1:]
+payload = json.load(open(manifest_path, encoding="utf-8"))
+variant = next(item for item in payload["variants"] if item["name"] == variant_name)
+checks = {
+    "resolved config": (variant["resolved_config_sha256"], expected_resolved),
+    "variant contract": (variant["variant_contract_sha256"], expected_contract),
+    "shared protocol": (payload["shared_protocol_sha256"], expected_shared),
+}
+for label, (actual, expected) in checks.items():
+    if actual != expected:
+        raise SystemExit(f"runtime {label} hash drift: expected {expected}, got {actual}")
+PY
+
 CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
 CORE_GATE_SHA256="$(sha256sum "${DUCA_CORE_GATE_JSON}" | awk '{print $1}')"
 

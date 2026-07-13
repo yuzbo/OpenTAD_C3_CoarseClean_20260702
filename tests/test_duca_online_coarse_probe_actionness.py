@@ -222,8 +222,16 @@ def test_all_short_counterfactual_batch_keeps_static_loss_graph() -> None:
         gt_segments=[torch.tensor([[0.0, 2.0]])],
         gt_labels=[torch.tensor([1])],
     )
-    loss = out["losses"]["counterfactual_utility_distillation_loss"]
-    assert out["counterfactual_request"] is None
+    request = out["counterfactual_request"]
+    assert request is not None
+    assert not request["candidate_valid"].any()
+    loss = selector.counterfactual_distillation_loss(
+        out["selector_outputs"],
+        request["candidate_positions"],
+        request["replaced_slots"],
+        torch.zeros_like(request["candidate_valid"], dtype=torch.float32),
+        request["candidate_valid"],
+    )
     assert loss.dtype == torch.float32
     assert loss.item() == pytest.approx(0.0)
     loss.backward()

@@ -411,6 +411,8 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("counterfactual_utility_temperature must be positive")
         if self.counterfactual_max_candidates <= 0:
             raise ValueError("counterfactual_max_candidates must be positive")
+        if self.require_counterfactual_utility_teacher and self.counterfactual_utility_distillation_weight <= 0.0:
+            raise ValueError("required counterfactual utility teacher needs a positive distillation weight")
         self.selected_positions_coordinate = str(coordinate_space)
         self.detector_output_coordinate_space = str(detector_output_coordinate_space)
         self.coordinate_space = self.detector_output_coordinate_space
@@ -677,6 +679,8 @@ class DucaOnlineFrameSelector(nn.Module):
             max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
             loss_weights=schedule_state["weights"],
         )
+        if self.require_counterfactual_utility_teacher and teacher_utility is not None:
+            raise RuntimeError("integrated counterfactual teacher forbids externally supplied teacher_utility")
         if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is not None:
             selector_losses["counterfactual_utility_distillation_loss"] = (
                     counterfactual_utility_distillation_loss(
@@ -701,14 +705,6 @@ class DucaOnlineFrameSelector(nn.Module):
                 max_candidates=self.counterfactual_max_candidates,
                 max_unselected_hole=self.max_unselected_hole,
             )
-            if not bool(counterfactual_request["candidate_valid"].any().item()):
-                counterfactual_request = None
-                valid_scores = outputs["selector_outputs"]["center_scores"].masked_select(
-                    outputs["selector_outputs"]["valid_mask"].bool()
-                )
-                selector_losses["counterfactual_utility_distillation_loss"] = (
-                    valid_scores.float().sum() * (0.0 * self.counterfactual_utility_distillation_weight)
-                )
         self._record_pending_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
@@ -725,8 +721,6 @@ class DucaOnlineFrameSelector(nn.Module):
         self, selector_outputs, candidate_positions, replaced_slots, candidate_utility, candidate_valid
     ):
         valid = candidate_valid.bool()
-        if not valid.any():
-            return selector_outputs["center_scores"].float().sum() * 0.0
         pair_scores = counterfactual_pair_scores(
             selector_outputs["center_scores"], candidate_positions, replaced_slots,
             selector_outputs["grid"].selected_positions, valid,

@@ -60,6 +60,24 @@ def _variant_contract(cfg: Config) -> dict[str, Any]:
         "require_counterfactual_utility_teacher": bool(
             selector.get("require_counterfactual_utility_teacher", False)
         ),
+        "structured_temperature": float(selector.structured_temperature),
+        "scoring_weights": {
+            key: float(selector.get(key))
+            for key in (
+                "actionness_weight", "transition_weight", "uncertainty_weight",
+                "utility_weight", "boundary_weight",
+            )
+        },
+        "loss_weights": _plain(selector.loss_weights),
+        "loss_weight_schedule": _plain(selector.loss_weight_schedule),
+        "actionness_source_contract": {
+            key: _plain(selector.actionness_source_cfg.get(key))
+            for key in (
+                "source_name", "probe_model", "tcn_variant", "spatial_size",
+                "tcn_hidden_dim", "checkpoint_path", "require_checkpoint",
+                "frozen", "trainable", "official_action_seg_backend",
+            )
+        },
     }
 
 

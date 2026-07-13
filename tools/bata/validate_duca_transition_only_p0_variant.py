@@ -133,6 +133,32 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
         )
         _require(source.get("trained_with_thumos_labels") is True, "direct baseline training provenance is incomplete")
         _require(source.get("trained_with_gt_segments") is True, "direct baseline GT provenance is incomplete")
+        expected_direct = {
+            "structured_temperature": 0.7,
+            "actionness_weight": 0.05,
+            "transition_weight": 1.0,
+            "uncertainty_weight": 0.25,
+            "utility_weight": 0.50,
+            "boundary_weight": 1.0,
+            "coarse_hidden_dim": 96,
+            "max_unselected_hole": 15,
+        }
+        for key, expected in expected_direct.items():
+            _require(selector.get(key) == expected, f"direct a5 contract drift: {key}")
+        expected_source = {
+            "source_name": "online_c3_official_asformer_coarse_actionness",
+            "probe_model": "official-action-seg",
+            "tcn_variant": "official_asformer",
+            "spatial_size": 64,
+            "tcn_hidden_dim": 96,
+            "checkpoint_path": "",
+            "require_checkpoint": False,
+            "frozen": False,
+            "trainable": True,
+            "official_action_seg_backend": "official_asformer",
+        }
+        for key, expected in expected_source.items():
+            _require(source.get(key) == expected, f"direct a5 source contract drift: {key}")
         details["selection"] = "a5_direct_boundary"
     elif variant == "transition_beta0":
         _require(selector.selector_variant == "transition_only", "beta0 must use transition-only selector")

@@ -139,17 +139,17 @@ def counterfactual_utility_distillation_loss(
         raise ValueError("temperature must be positive")
     valid = valid_mask.bool()
     active = valid.any(dim=1)
-    if not active.any():
-        return policy_scores.float().sum() * 0.0
     student = policy_scores.float()
     teacher = teacher_utility.detach().to(device=policy_scores.device, dtype=torch.float32)
     if not torch.isfinite(teacher[valid]).all():
         raise ValueError("valid counterfactual utilities must be finite")
     neg = torch.finfo(student.dtype).min
-    student_logits = (student[active] / temperature).masked_fill(~valid[active], neg)
-    teacher_logits = (teacher[active] / temperature).masked_fill(~valid[active], neg)
+    student_logits = (student / temperature).masked_fill(~valid, neg)
+    teacher_logits = (teacher / temperature).masked_fill(~valid, neg)
     target = torch.softmax(teacher_logits, dim=-1)
-    return -(target * torch.log_softmax(student_logits, dim=-1)).sum(dim=-1).mean()
+    per_item = -(target * torch.log_softmax(student_logits, dim=-1)).sum(dim=-1)
+    active_weight = active.to(per_item.dtype)
+    return (per_item * active_weight).sum() / active_weight.sum().clamp_min(1.0)
 
 
 def counterfactual_pair_scores(

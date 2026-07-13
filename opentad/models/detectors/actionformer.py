@@ -158,6 +158,13 @@ class ActionFormer(SingleStageDetector):
             if self.frame_selector is not None and not skip_frame_selector
             else None
         )
+        if (
+            self.frame_selector is not None
+            and not skip_frame_selector
+            and self.frame_selector.require_counterfactual_utility_teacher
+            and request is None
+        ):
+            raise RuntimeError("required integrated counterfactual teacher request is missing")
         counterfactual_loss = None
         if request is not None:
             if raw_selector_context is None:

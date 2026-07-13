@@ -48,10 +48,12 @@ binary output layers, `1e-4` for the transition scorer and detector modules, and
 All modules exist in one model and one optimizer from step zero. There is no
 checkpoint handoff and no modulo-step policy switching.
 
-- Steps 0-660: exact-uniform reference policy, beta 0.
-- Steps 660-4620: cosine policy alpha from 0 to 1, beta 0.
-- Steps 4620-7920: learned policy, cosine beta from 0 to 0.25.
-- Steps 7920-13200: learned policy, beta 0.25.
+- Steps 0-660: exact-uniform reference policy; direct detector bridge is 0.
+- Steps 660-4620: cosine policy alpha from 0 to 1; direct detector bridge remains 0.
+- The counterfactual arm uses detached hard one-swap utility distillation with
+  `lambda_cf=0.25`; this is not a detector-gradient beta.
+- Steps 4620-13200: learned policy remains active with the same detached
+  counterfactual distillation weight.
 
 The 13200 value is an expected horizon from 132 epochs and 100 batches per
 epoch. The actual successful optimizer-step counter is authoritative under AMP.
@@ -73,8 +75,9 @@ false. The method must not be described as train-free or THUMOS-free.
 - Exact-uniform fixed-384 in the same structured feasible family.
 - Definition-frozen direct-boundary `a5e1774` architecture retrained for the
   matched horizon, validation timing, and component learning rates.
-- Transition-only fixed-384 with beta 0.
-- Transition-only fixed-384 with protected beta ramp to 0.25.
+- Transition-only fixed-384 without counterfactual distillation.
+- Transition-only fixed-384 with detached counterfactual distillation
+  (`lambda_cf=0.25`, direct detector-gradient bridge 0).
 
 All four use the same data, detector head, physical detector input length,
 optimizer horizon, and evaluation protocol.

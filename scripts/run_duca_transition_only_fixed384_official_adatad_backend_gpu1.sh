@@ -95,6 +95,7 @@ bash -n "${BASH_SOURCE[0]}"
 "${PYTHON}" "${VALIDATOR}" --config "${CONFIG}" --output-json "${RUN_DIR}/contract_validation.json"
 "${PYTHON}" -m pytest \
   tests/test_duca_transition_only.py \
+  tests/test_duca_counterfactual_utility.py \
   tests/test_duca_online_coarse_probe_actionness.py \
   tests/test_duca_official_asformer_hidden.py \
   tests/test_duca_optimizer_exact_coverage.py \
