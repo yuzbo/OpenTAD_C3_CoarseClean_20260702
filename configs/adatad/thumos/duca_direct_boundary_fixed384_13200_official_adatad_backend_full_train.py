@@ -24,6 +24,7 @@ duca_online_main_contract = dict(
 
 model = dict(
     frame_selector=dict(
+        selector_variant="direct_boundary",
         coarse_trunk_lr=2.5e-5,
         action_head_lr=5.0e-5,
         transition_scorer_lr=1.0e-4,

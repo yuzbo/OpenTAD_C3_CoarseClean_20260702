@@ -60,7 +60,7 @@ def test_p0_matrix_changes_only_the_intended_selector_mechanism() -> None:
     assert uniform.model.frame_selector.counterfactual_utility_distillation_weight == 0.0
     assert uniform.model.frame_selector.require_counterfactual_utility_teacher is False
 
-    assert direct.model.frame_selector.get("selector_variant", "direct_boundary") == "direct_boundary"
+    assert direct.model.frame_selector.selector_variant == "direct_boundary"
     assert direct.duca_loss_schedule_total_steps == 13200
     assert direct.duca_schedule_steps_per_epoch == 100
 

@@ -57,7 +57,11 @@ def test_suite_gate_emits_four_arm_matched_manifest(tmp_path: Path) -> None:
     assert protocol["detector_head"]["type"] == "ActionFormerHead"
     assert protocol["solver"]["ema"] is True
     assert protocol["evaluation"]["type"] == "mAP"
-    assert payload["post_run_contract"]["successful_optimizer_updates"] == 13200
+    assert payload["post_run_contract"]["uniform"]["successful_optimizer_updates"] == 13200
+    for variant in payload["variants"]:
+        assert len(variant["resolved_config_sha256"]) == 64
+        assert len(variant["variant_contract_sha256"]) == 64
+        assert variant["variant_contract"]["selector_variant"] in {"direct_boundary", "transition_only"}
 
 
 def test_suite_gate_rejects_any_shared_protocol_drift(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -136,6 +140,9 @@ def test_prepare_script_is_generation_only_and_fail_closed() -> None:
     assert "printf 'variant\\tseed" in text
     assert 'bash -n "${job_file}"' in text
     assert "export CUDA_VISIBLE_DEVICES=1" in text
+    assert "DUCA_RESOLVED_CONFIG_SHA256" in text
+    assert "DUCA_VARIANT_CONTRACT_SHA256" in text
+    assert "DUCA_SHARED_PROTOCOL_SHA256" in text
     for variant in suite.VARIANT_ORDER:
         assert variant in text
 
@@ -170,12 +177,72 @@ def test_gpu1_launcher_is_strict() -> None:
 
 def test_post_run_contract_checks_updates_lr_ema_and_evaluator(tmp_path: Path) -> None:
     protocol_hash = "a" * 64
-    payload = {"ok": True, "variant": "uniform", **suite._post_run_contract(protocol_hash)}
+    bindings = {
+        "git_commit": "b" * 40,
+        "seed": 0,
+        "config_sha256": "c" * 64,
+        "resolved_config_sha256": "d" * 64,
+        "variant_contract_sha256": "e" * 64,
+        "core_gate_sha256": "f" * 64,
+    }
+    run_manifest = tmp_path / "run_manifest.json"
+    run_manifest.write_text(json.dumps({
+        "variant": "uniform", "git_commit": bindings["git_commit"], "seed": 0,
+        "config_sha256": bindings["config_sha256"],
+        "resolved_config_sha256": bindings["resolved_config_sha256"],
+        "variant_contract_sha256": bindings["variant_contract_sha256"],
+        "core_gate_json_sha256": bindings["core_gate_sha256"],
+        "shared_protocol_sha256": protocol_hash,
+    }), encoding="utf-8")
+    payload = {
+        "ok": True, "variant": "uniform", **suite._post_run_contract(protocol_hash, bindings),
+        "run_manifest_path": str(run_manifest), "run_manifest_sha256": suite._sha256(run_manifest),
+    }
     evidence = tmp_path / "post_run.json"
     evidence.write_text(json.dumps(payload), encoding="utf-8")
-    result = suite.validate_post_run_evidence(evidence, variant="uniform", protocol_sha256=protocol_hash)
+    result = suite.validate_post_run_evidence(
+        evidence, variant="uniform", protocol_sha256=protocol_hash, bindings=bindings
+    )
     assert result["validated"] is True
     payload["successful_optimizer_updates"] -= 1
     evidence.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(AssertionError, match="successful_optimizer_updates"):
-        suite.validate_post_run_evidence(evidence, variant="uniform", protocol_sha256=protocol_hash)
+        suite.validate_post_run_evidence(
+            evidence, variant="uniform", protocol_sha256=protocol_hash, bindings=bindings
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["git_commit", "config_sha256", "resolved_config_sha256", "variant_contract_sha256", "core_gate_sha256"],
+)
+def test_post_run_contract_rejects_stale_provenance(tmp_path: Path, field: str) -> None:
+    protocol_hash = "a" * 64
+    bindings = {
+        "git_commit": "b" * 40,
+        "seed": 0,
+        "config_sha256": "c" * 64,
+        "resolved_config_sha256": "d" * 64,
+        "variant_contract_sha256": "e" * 64,
+        "core_gate_sha256": "f" * 64,
+    }
+    run_manifest = tmp_path / "run_manifest.json"
+    run_manifest.write_text(json.dumps({
+        "variant": "uniform", "git_commit": bindings["git_commit"], "seed": 0,
+        "config_sha256": bindings["config_sha256"],
+        "resolved_config_sha256": bindings["resolved_config_sha256"],
+        "variant_contract_sha256": bindings["variant_contract_sha256"],
+        "core_gate_json_sha256": bindings["core_gate_sha256"],
+        "shared_protocol_sha256": protocol_hash,
+    }), encoding="utf-8")
+    payload = {
+        "ok": True, "variant": "uniform", **suite._post_run_contract(protocol_hash, bindings),
+        "run_manifest_path": str(run_manifest), "run_manifest_sha256": suite._sha256(run_manifest),
+    }
+    payload[field] = "0" * len(str(payload[field]))
+    evidence = tmp_path / "post_run.json"
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(AssertionError, match=field):
+        suite.validate_post_run_evidence(
+            evidence, variant="uniform", protocol_sha256=protocol_hash, bindings=bindings
+        )

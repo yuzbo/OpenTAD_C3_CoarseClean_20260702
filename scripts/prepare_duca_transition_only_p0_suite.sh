@@ -37,6 +37,10 @@ variants=(uniform direct transition_beta0 transition_counterfactual)
 ports=(30511 30512 30513 30514)
 for index in "${!variants[@]}"; do
   variant="${variants[$index]}"
+  readarray -t binding < <("${PYTHON}" -c "import json; p=json.load(open('${MANIFEST}', encoding='utf-8')); v=next(x for x in p['variants'] if x['name']=='${variant}'); print(v['resolved_config_sha256']); print(v['variant_contract_sha256']); print(p['shared_protocol_sha256'])")
+  resolved_config_sha256="${binding[0]}"
+  variant_contract_sha256="${binding[1]}"
+  shared_protocol_sha256="${binding[2]}"
   job_file="${RUN_ROOT}/jobs/${variant}.sbatch"
   cat > "${job_file}" <<EOF
 #!/usr/bin/env bash
@@ -52,6 +56,9 @@ cd '${REPO_ROOT}'
 export DUCA_P0_VARIANT='${variant}'
 export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
 export DUCA_CORE_GATE_JSON='${CORE_GATE_JSON}'
+export DUCA_RESOLVED_CONFIG_SHA256='${resolved_config_sha256}'
+export DUCA_VARIANT_CONTRACT_SHA256='${variant_contract_sha256}'
+export DUCA_SHARED_PROTOCOL_SHA256='${shared_protocol_sha256}'
 export FULLTRAIN_CANDIDATE=1
 export SEED='${SEED}'
 export RUN_ID='${index}'

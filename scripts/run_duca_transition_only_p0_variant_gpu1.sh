@@ -23,6 +23,9 @@ PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 VALIDATOR="tools/bata/validate_duca_transition_only_p0_variant.py"
 FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE:-0}"
 DUCA_CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
+DUCA_RESOLVED_CONFIG_SHA256="${DUCA_RESOLVED_CONFIG_SHA256:-}"
+DUCA_VARIANT_CONTRACT_SHA256="${DUCA_VARIANT_CONTRACT_SHA256:-}"
+DUCA_SHARED_PROTOCOL_SHA256="${DUCA_SHARED_PROTOCOL_SHA256:-}"
 SEED="${SEED:-0}"
 RUN_ID="${RUN_ID:-0}"
 MASTER_PORT="${MASTER_PORT:-30471}"
@@ -52,6 +55,9 @@ REFERENCE_CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_a
 [[ -f "${REFERENCE_CONFIG}" ]] || fail "transition-only reference config missing"
 [[ -n "${DUCA_CORE_GATE_JSON}" ]] || fail "DUCA_CORE_GATE_JSON is required"
 [[ -f "${DUCA_CORE_GATE_JSON}" ]] || fail "DUCA core gate JSON missing: ${DUCA_CORE_GATE_JSON}"
+[[ "${DUCA_RESOLVED_CONFIG_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "resolved config SHA256 is required"
+[[ "${DUCA_VARIANT_CONTRACT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "variant contract SHA256 is required"
+[[ "${DUCA_SHARED_PROTOCOL_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "shared protocol SHA256 is required"
 
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current git HEAD"
 DUCA_EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
@@ -90,6 +96,9 @@ cat > "${RUN_DIR}/manifest.json" <<EOF
   "variant": "${VARIANT}",
   "config": "${CONFIG}",
   "config_sha256": "${CONFIG_SHA256}",
+  "resolved_config_sha256": "${DUCA_RESOLVED_CONFIG_SHA256}",
+  "variant_contract_sha256": "${DUCA_VARIANT_CONTRACT_SHA256}",
+  "shared_protocol_sha256": "${DUCA_SHARED_PROTOCOL_SHA256}",
   "source": "${SOURCE_PATH}",
   "source_sha256": "${SOURCE_SHA256}",
   "checkpoint": "${ADATAD_PRETRAIN_PATH}",

@@ -3,6 +3,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from opentad.models.duca.acquisition import duca_losses
+from opentad.models.duca.structured_selection import global_structured_topk
 from opentad.models.duca.transition_only import local_boundary_mass_coverage_loss
 
 
@@ -61,3 +62,28 @@ def test_duca_losses_fails_closed_without_structured_soft_coverage():
     del scores["soft_coverage"]
     with pytest.raises(ValueError, match="soft_coverage"):
         duca_losses(scores, budget=2, transition_target=target)
+
+
+def test_boundary_mass_loss_backpropagates_through_structured_dp_occupancy():
+    policy = torch.randn(1, 32, requires_grad=True)
+    structured = global_structured_topk(
+        policy, k=16, max_unselected_hole=15, temperature=0.7, training=True
+    )
+    valid = torch.ones_like(policy, dtype=torch.bool)
+    target = torch.zeros_like(policy)
+    target[0, [8, 24]] = 1.0
+    scores = _scores(policy, valid, [16], max_hole=15, temperature=0.7)
+    scores["soft_coverage"] = structured.soft_occupancy
+
+    loss = duca_losses(
+        scores,
+        budget=16,
+        transition_target=target,
+        transition_boundary_radius=2,
+        loss_weights={"transition_boundary": 1.0},
+    )["transition_boundary_coverage_loss"]
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert policy.grad is not None and torch.isfinite(policy.grad).all()
+    assert policy.grad.abs().sum() > 0

@@ -115,7 +115,7 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
         _require(not bool(selector.require_counterfactual_utility_teacher), "uniform must not build a counterfactual teacher")
         details["selection"] = "exact_uniform_reference"
     elif variant == "direct":
-        _require(selector.get("selector_variant", "direct_boundary") == "direct_boundary", "direct baseline changed architecture")
+        _require(selector.get("selector_variant") == "direct_boundary", "direct baseline must explicitly declare its architecture")
         _require(int(cfg.duca_loss_schedule_total_steps) == 13200, "direct baseline horizon mismatch")
         source = selector.actionness_source_cfg
         _require(

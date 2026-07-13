@@ -39,6 +39,30 @@ def _sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _canonical_sha256(value: Any) -> str:
+    payload = json.dumps(_plain(value), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _variant_contract(cfg: Config) -> dict[str, Any]:
+    selector = cfg.model.frame_selector
+    policy_alpha = selector.loss_weight_schedule.get("policy_alpha")
+    return {
+        "selector_variant": str(selector.selector_variant),
+        "acquisition_policy": str(selector.acquisition_policy),
+        "inference_policy_alpha": float(selector.get("inference_policy_alpha", 1.0)),
+        "train_policy_alpha_end": (
+            None if policy_alpha is None else float(policy_alpha.end)
+        ),
+        "counterfactual_utility_distillation_weight": float(
+            selector.get("counterfactual_utility_distillation_weight", 0.0)
+        ),
+        "require_counterfactual_utility_teacher": bool(
+            selector.get("require_counterfactual_utility_teacher", False)
+        ),
+    }
+
+
 def _git(repo_root: Path, *args: str) -> str:
     return subprocess.check_output(
         ["git", *args], cwd=repo_root, text=True, encoding="utf-8"
@@ -78,7 +102,7 @@ def _shared_protocol(cfg: Config) -> dict[str, Any]:
     }
 
 
-def _post_run_contract(protocol_sha256: str) -> dict[str, Any]:
+def _post_run_contract(protocol_sha256: str, bindings: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": "duca_p0_post_run_evidence_v1",
         "shared_protocol_sha256": protocol_sha256,
@@ -88,6 +112,7 @@ def _post_run_contract(protocol_sha256: str) -> dict[str, Any]:
         "evaluator_identity": "mAP:validation:0.3,0.4,0.5,0.6,0.7",
         "checkpoint_criterion": "same_workflow_best_or_final_declared",
         "non_finite_collapse": False,
+        **bindings,
     }
 
 
@@ -142,15 +167,36 @@ def _validate_formal_optimizer_step(gate_payload: dict[str, Any]) -> None:
     )
 
 
-def validate_post_run_evidence(path: str | Path, *, variant: str, protocol_sha256: str) -> dict[str, Any]:
+def validate_post_run_evidence(
+    path: str | Path, *, variant: str, protocol_sha256: str, bindings: dict[str, Any]
+) -> dict[str, Any]:
     evidence_path = Path(path).resolve()
     _require(evidence_path.is_file(), f"{variant}: post-run evidence missing: {evidence_path}")
     payload = json.loads(evidence_path.read_text(encoding="utf-8"))
-    expected = _post_run_contract(protocol_sha256)
+    expected = _post_run_contract(protocol_sha256, bindings)
     _require(payload.get("ok") is True, f"{variant}: post-run evidence must declare ok=true")
     _require(payload.get("variant") == variant, f"{variant}: post-run variant mismatch")
     for key, value in expected.items():
         _require(payload.get(key) == value, f"{variant}: post-run {key} mismatch")
+    run_manifest_path = Path(str(payload.get("run_manifest_path", ""))).resolve()
+    _require(run_manifest_path.is_file(), f"{variant}: run manifest is missing")
+    _require(payload.get("run_manifest_sha256") == _sha256(run_manifest_path), f"{variant}: run manifest hash mismatch")
+    run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    manifest_fields = {
+        "git_commit": "git_commit",
+        "config_sha256": "config_sha256",
+        "resolved_config_sha256": "resolved_config_sha256",
+        "variant_contract_sha256": "variant_contract_sha256",
+        "core_gate_sha256": "core_gate_json_sha256",
+        "shared_protocol_sha256": "shared_protocol_sha256",
+        "seed": "seed",
+    }
+    for evidence_key, manifest_key in manifest_fields.items():
+        _require(
+            run_manifest.get(manifest_key) == expected[evidence_key],
+            f"{variant}: run manifest {manifest_key} mismatch",
+        )
+    _require(run_manifest.get("variant") == variant, f"{variant}: run manifest variant mismatch")
     return {"path": str(evidence_path), "sha256": _sha256(evidence_path), "validated": True}
 
 
@@ -197,28 +243,51 @@ def validate_suite(
     reference = configs[REFERENCE_VARIANT]
     reference_protocol = _shared_protocol(reference)
     variants: list[dict[str, Any]] = []
+    variant_bindings: dict[str, dict[str, Any]] = {}
     for name in VARIANT_ORDER:
         path = root / CONFIGS[name]
         summary = validate_variant(name, str(path))
         protocol = _shared_protocol(configs[name])
         _require(protocol == reference_protocol, f"{name}: shared protocol differs from reference")
+        variant_contract = _variant_contract(configs[name])
+        resolved_config_sha256 = _canonical_sha256(configs[name].to_dict())
+        variant_contract_sha256 = _canonical_sha256(variant_contract)
+        variant_bindings[name] = {
+            "git_commit": commit,
+            "seed": int(seed),
+            "config_sha256": _sha256(path),
+            "resolved_config_sha256": resolved_config_sha256,
+            "variant_contract_sha256": variant_contract_sha256,
+            "core_gate_sha256": core_gate["sha256"],
+        }
         variants.append(
             {
                 "name": name,
                 "config": CONFIGS[name].replace("\\", "/"),
                 "config_sha256": _sha256(path),
+                "resolved_config_sha256": resolved_config_sha256,
+                "variant_contract": variant_contract,
+                "variant_contract_sha256": variant_contract_sha256,
                 "variant_validation": summary,
             }
         )
 
     protocol_payload = json.dumps(reference_protocol, sort_keys=True, separators=(",", ":"))
     protocol_sha256 = hashlib.sha256(protocol_payload.encode("utf-8")).hexdigest()
-    post_run_contract = _post_run_contract(protocol_sha256)
+    post_run_contract = {
+        name: _post_run_contract(protocol_sha256, variant_bindings[name])
+        for name in VARIANT_ORDER
+    }
     validated_post_runs: dict[str, Any] = {}
     if post_run_evidence is not None:
         _require(set(post_run_evidence) == set(VARIANT_ORDER), "post-run evidence must cover exactly four variants")
         validated_post_runs = {
-            name: validate_post_run_evidence(post_run_evidence[name], variant=name, protocol_sha256=protocol_sha256)
+            name: validate_post_run_evidence(
+                post_run_evidence[name],
+                variant=name,
+                protocol_sha256=protocol_sha256,
+                bindings=variant_bindings[name],
+            )
             for name in VARIANT_ORDER
         }
     return {
