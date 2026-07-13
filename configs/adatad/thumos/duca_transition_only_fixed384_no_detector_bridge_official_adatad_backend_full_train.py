@@ -13,6 +13,8 @@ duca_transition_only_contract = dict(
 
 model = dict(
     frame_selector=dict(
+        counterfactual_utility_distillation_weight=0.0,
+        require_counterfactual_utility_teacher=False,
         loss_weight_schedule=dict(
             detector_gradient=dict(
                 _delete_=True,

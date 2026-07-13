@@ -111,6 +111,8 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
         _require(float(selector.inference_policy_alpha) == 0.0, "uniform eval alpha must be zero")
         _require(float(selector.loss_weight_schedule.policy_alpha.end) == 0.0, "uniform train alpha must be zero")
         _require(float(selector.loss_weight_schedule.detector_gradient.end) == 0.0, "uniform beta must be zero")
+        _require(float(selector.counterfactual_utility_distillation_weight) == 0.0, "uniform must disable counterfactual distillation")
+        _require(not bool(selector.require_counterfactual_utility_teacher), "uniform must not build a counterfactual teacher")
         details["selection"] = "exact_uniform_reference"
     elif variant == "direct":
         _require(selector.get("selector_variant", "direct_boundary") == "direct_boundary", "direct baseline changed architecture")
@@ -127,6 +129,8 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
         _require(selector.selector_variant == "transition_only", "beta0 must use transition-only selector")
         _require(float(selector.loss_weight_schedule.policy_alpha.end) == 1.0, "beta0 must learn selection")
         _require(float(selector.loss_weight_schedule.detector_gradient.end) == 0.0, "beta0 bridge is not disabled")
+        _require(float(selector.counterfactual_utility_distillation_weight) == 0.0, "beta0 must disable counterfactual distillation")
+        _require(not bool(selector.require_counterfactual_utility_teacher), "beta0 must not build a counterfactual teacher")
         details["selection"] = "transition_only"
         details["detector_bridge_beta"] = 0.0
     else:

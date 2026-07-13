@@ -276,7 +276,9 @@ def local_boundary_coverage_loss(
     if radius < 0:
         raise ValueError("boundary coverage radius must be non-negative")
     with torch.cuda.amp.autocast(enabled=False):
-        logits = policy_logits.float()
+        # This train-only auxiliary subtracts long-horizon log partitions.
+        # Keep it in FP64 so AMP scaling cannot destabilize their gradients.
+        logits = policy_logits.double()
         target = boundary_target.to(device=logits.device, dtype=logits.dtype).masked_fill(~valid, 0.0)
         per_batch = []
         for batch_idx in range(logits.shape[0]):
