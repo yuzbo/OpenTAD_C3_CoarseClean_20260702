@@ -246,6 +246,10 @@ def validate_suite(
         reference_protocol["solver"].get("static_graph") is False,
         "P0 suite requires static_graph=false because counterfactual feasibility varies by batch",
     )
+    _require(
+        reference_protocol["solver"].get("find_unused_parameters") is False,
+        "P0 suite requires find_unused_parameters=false with reentrant backbone checkpointing",
+    )
     variants: list[dict[str, Any]] = []
     variant_bindings: dict[str, dict[str, Any]] = {}
     for name in VARIANT_ORDER:

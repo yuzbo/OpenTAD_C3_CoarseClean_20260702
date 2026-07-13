@@ -125,12 +125,13 @@ def main():
 
     # DDP
     use_static_graph = getattr(cfg.solver, "static_graph", False)
+    find_unused_parameters = getattr(cfg.solver, "find_unused_parameters", not use_static_graph)
     model = model.to(args.local_rank)
     model = DistributedDataParallel(
         model,
         device_ids=[args.local_rank],
         output_device=args.local_rank,
-        find_unused_parameters=False if use_static_graph else True,
+        find_unused_parameters=find_unused_parameters,
         static_graph=use_static_graph,  # default is False, should be true when use activation checkpointing in E2E
     )
     logger.info(f"Using DDP with total {args.world_size} GPUS...")

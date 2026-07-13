@@ -678,9 +678,7 @@ class Block(BaseModule):
             return x
 
         if self.with_cp and x.requires_grad:
-            # Non-reentrant checkpointing is compatible with DDP graphs whose
-            # used-parameter set can vary between batches.
-            x = cp.checkpoint(_inner_forward, x, use_reentrant=False)
+            x = cp.checkpoint(_inner_forward, x)
         else:
             x = _inner_forward(x)
         return x

@@ -57,7 +57,7 @@ model = dict(
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=duca_end_epoch)
 
 # Match the transition arms' dynamic-graph DDP execution contract.
-solver = dict(static_graph=False)
+solver = dict(static_graph=False, find_unused_parameters=False)
 
 workflow = dict(
     logging_interval=50,
