@@ -153,6 +153,22 @@ class ActionFormer(SingleStageDetector):
             if self.selector_train_only:
                 inputs = inputs.detach()
 
+        request = (
+            selector_outputs.get("counterfactual_request")
+            if self.frame_selector is not None and not skip_frame_selector
+            else None
+        )
+        counterfactual_loss = None
+        if request is not None:
+            if raw_selector_context is None:
+                raise RuntimeError("counterfactual teacher requires the pre-selector training context")
+            # Evaluate and restore every train-only hard alternative before the
+            # main detector graph is built. Restoring mutable training buffers
+            # after that graph exists would invalidate autograd version checks.
+            counterfactual_loss = self._duca_counterfactual_teacher_loss(
+                raw_selector_context, selector_outputs["selector_outputs"], request, **kwargs
+            )
+
         if self.with_backbone:
             x = self.backbone(inputs)
         else:
@@ -216,16 +232,10 @@ class ActionFormer(SingleStageDetector):
             source_name="pc_ot_mras_reader_losses",
         )
 
-        request = selector_outputs.get("counterfactual_request") if self.frame_selector is not None and not skip_frame_selector else None
-        if request is not None:
-            if raw_selector_context is None:
-                raise RuntimeError("counterfactual teacher requires the pre-selector training context")
-            cf_loss = self._duca_counterfactual_teacher_loss(
-                raw_selector_context, selector_outputs["selector_outputs"], request, **kwargs
-            )
+        if counterfactual_loss is not None:
             if "counterfactual_utility_distillation_loss" in losses:
                 raise ValueError("counterfactual distillation loss key collision")
-            losses["counterfactual_utility_distillation_loss"] = cf_loss
+            losses["counterfactual_utility_distillation_loss"] = counterfactual_loss
 
         if counterfactual_eval:
             return losses
