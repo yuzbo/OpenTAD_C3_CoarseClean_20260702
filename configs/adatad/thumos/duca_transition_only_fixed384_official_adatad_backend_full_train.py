@@ -265,6 +265,10 @@ model = dict(
 
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=duca_end_epoch)
 
+# Short windows can have no feasible counterfactual swap while longer windows do.
+# Keep the four matched arms on the same dynamic-graph DDP protocol.
+solver = dict(static_graph=False)
+
 workflow = dict(
     logging_interval=50,
     checkpoint_interval=5,

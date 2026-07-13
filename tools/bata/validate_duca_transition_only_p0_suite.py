@@ -242,6 +242,10 @@ def validate_suite(
     configs = {name: Config.fromfile(str(root / CONFIGS[name])) for name in VARIANT_ORDER}
     reference = configs[REFERENCE_VARIANT]
     reference_protocol = _shared_protocol(reference)
+    _require(
+        reference_protocol["solver"].get("static_graph") is False,
+        "P0 suite requires static_graph=false because counterfactual feasibility varies by batch",
+    )
     variants: list[dict[str, Any]] = []
     variant_bindings: dict[str, dict[str, Any]] = {}
     for name in VARIANT_ORDER:
