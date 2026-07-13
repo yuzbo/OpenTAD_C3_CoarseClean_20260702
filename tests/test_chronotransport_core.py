@@ -186,13 +186,71 @@ def test_losses_are_finite_and_pinball_has_expected_value() -> None:
 
 
 def test_profiler_emits_all_required_cost_fields() -> None:
+    expected_stage_fields = {
+        "data_decode",
+        "preprocess",
+        "h2d",
+        "innovation",
+        "scheduler",
+        "recompute",
+        "transport",
+        "cache_movement",
+        "dense_adatad_adapter",
+        "neck_head",
+        "postprocess",
+    }
+    assert set(REQUIRED_STAGE_FIELDS) == expected_stage_fields
     profiler = ChronoProfiler(sync_cuda=False)
     with profiler.stage("innovation"):
         _ = sum(range(10))
     profiler.record("scheduler", 0.1)
     summary = profiler.summary(fill_missing=True)
-    assert set(REQUIRED_STAGE_FIELDS).issubset(summary["latency_ms"])
+    assert summary["schema_version"] == "chronotransport_profile_v2"
+    assert expected_stage_fields.issubset(summary["latency_ms"])
     assert summary["latency_ms"]["innovation"]["count"] == 1
+    assert summary["latency_ms"]["data_decode"]["p50"] is None
+    assert summary["latency_ms"]["data_decode"]["p95"] is None
+    with pytest.raises(ValueError, match="direct samples"):
+        ChronoProfiler.validate_summary(summary)
+
+
+def test_formal_profiler_requires_direct_total_and_every_stage_sample() -> None:
+    expected_stage_fields = {
+        "data_decode",
+        "preprocess",
+        "h2d",
+        "innovation",
+        "scheduler",
+        "recompute",
+        "transport",
+        "cache_movement",
+        "dense_adatad_adapter",
+        "neck_head",
+        "postprocess",
+    }
+    profiler = ChronoProfiler(sync_cuda=False)
+    for name in expected_stage_fields:
+        profiler.record(name, 1.0)
+    without_total = profiler.summary(fill_missing=True)
+    with pytest.raises(ValueError, match="total_ms"):
+        ChronoProfiler.validate_summary(without_total)
+
+    profiler.record("total_ms", 11.0)
+    complete = profiler.summary(fill_missing=True)
+    ChronoProfiler.validate_summary(complete)
+    assert complete["latency_ms"]["total_ms"]["count"] == 1
+    assert complete["latency_ms"]["total_ms"]["p50"] == pytest.approx(11.0)
+
+    legacy = dict(complete)
+    legacy["schema_version"] = "chronotransport_profile_v1"
+    with pytest.raises(ValueError, match="schema"):
+        ChronoProfiler.validate_summary(legacy)
+
+
+def test_profiler_rejects_nonfinite_samples() -> None:
+    profiler = ChronoProfiler(sync_cuda=False)
+    with pytest.raises(ValueError, match="finite"):
+        profiler.record("total_ms", float("nan"))
 
 
 def test_inference_surfaces_do_not_accept_gt_or_teacher_inputs() -> None:
@@ -299,6 +357,9 @@ def test_runtime_mixed_schedule_preserves_dense_shape_and_reduces_heavy_rows() -
     assert runtime.latest_summary["transport_rows"] > 0
     assert runtime.latest_summary["dense_output_shape_preserved"] is True
     assert runtime.latest_summary["adapter_dense_forward_count"] == len(blocks)
+    latency = runtime.latest_summary["profile"]["latency_ms"]
+    assert latency["dense_adatad_adapter"]["count"] == len(blocks)
+    assert latency["innovation"]["count"] == 0
 
 
 def test_runtime_opt_in_captures_only_compact_signals_and_ephemeral_output() -> None:

@@ -4,12 +4,42 @@ node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
 stage: spec_approved
 outcome: bounded_appeal_pending
-implementation_status: partial_tested_registration_blocked
+implementation_status: partial_repair_in_progress_registration_blocked
 registration_status: NOT_READY
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
 updated: 2026-07-13
 ---
+
+## r2 foundation repair batch (2026-07-13)
+
+The first bounded repair batch corrected the r2 Stage-B/Stage-C resolved-config path so the overlay
+only reaches `model.backbone.backbone.chronotransport`; added window-level Gate-3 conformal logic
+that reduces each complete `30 x 16` residual matrix to 30 window maxima before rank 28; kept the
+fit-only per-schedule 140-target rank-127 statistic as a separate API; and made formal profiler
+validation require direct samples for every required stage plus `total_ms`. Missing placeholders now
+carry `p50/p95=None` and cannot validate as measurements. The remote config regression completed a
+valid RED-to-GREEN cycle (1 failed, then 1 passed). The Torch-focused risk/profiler suite was launched
+remotely: the four risk checks and two profiler checks passed, while one profiler test failed only
+because its expected error-message regex did not match the fail-closed missing-`total_ms` error. The
+message was aligned afterward, but no retry result is claimed. Therefore the risk/profiler production
+changes remain `implemented` rather than newly `tested`. This batch does not complete r2, unlock
+registration, or create experiment facts.
+
+Independent follow-up review tightened this foundation slice before re-verification: r2 now uses
+dedicated no-coverage-override helpers with fixed ranks 28 and 127, while the legacy generic conformal
+API remains backward compatible;
+the resolved r2 overlay explicitly neutralizes inherited legacy `max_cache_age` with `None` while the
+two r2 age fields carry the executable contract; profiler accounting now
+separates `innovation` from `dense_adatad_adapter`, requiring direct samples for both in a formal
+summary under the explicit `chronotransport_profile_v2` schema. Tests enumerate the specification stage
+set rather than deriving expectations from the production constant. The repaired focused remote matrix
+then passed 13/13 in 37.12 seconds; after the compatibility/schema follow-up the same focused matrix
+again passed 13/13 in 37.30 seconds. Formal per-invocation aggregation and peak-memory reset remain later full-stack
+profiler work and are not claimed by this slice.
+The complete remote ChronoTransport regression surface then passed 128/128 in 199.80 seconds after
+the scratch checkout was populated with its required `scripts/` and `docs/` files. This foundation
+slice is remotely tested, but it does not upgrade the overall r2 status or unlock registration.
 
 # ChronoTransport 动态特征刷新
 

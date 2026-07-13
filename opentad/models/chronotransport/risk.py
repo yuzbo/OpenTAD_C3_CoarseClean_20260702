@@ -77,6 +77,8 @@ class ScheduleQuantileRiskPredictor(nn.Module):
         *,
         coverage: float = 0.9,
     ) -> Tensor:
+        """Backward-compatible finite-sample conformal residual quantile."""
+
         if prediction.shape != target.shape:
             raise ValueError("prediction and target must have identical shape")
         coverage = float(coverage)
@@ -85,9 +87,39 @@ class ScheduleQuantileRiskPredictor(nn.Module):
         residual = (target - prediction).flatten().clamp_min(0.0)
         if residual.numel() == 0:
             raise ValueError("calibration residual set must be non-empty")
-        # Finite-sample split-conformal quantile.
-        rank = min(residual.numel(), int(math.ceil((residual.numel() + 1) * coverage)))
+        rank = min(
+            int(residual.numel()),
+            int(math.ceil((int(residual.numel()) + 1) * coverage)),
+        )
         return residual.kthvalue(rank).values
+
+    @staticmethod
+    def r2_simultaneous_conformal_offset(
+        prediction: Tensor,
+        target: Tensor,
+    ) -> Tensor:
+        """Frozen r2 Gate-3 offset: 30 window maxima, order statistic 28."""
+
+        if prediction.shape != target.shape:
+            raise ValueError("prediction and target must have identical shape")
+        if prediction.ndim != 2 or tuple(prediction.shape) != (30, 16):
+            raise ValueError(
+                "Gate-3 conformal calibration requires 30 calibration windows and 16 candidates"
+            )
+        if not torch.isfinite(prediction).all() or not torch.isfinite(target).all():
+            raise ValueError("calibration prediction and target must be finite")
+        window_residual = (target - prediction).clamp_min(0.0).amax(dim=1)
+        return window_residual.kthvalue(28).values
+
+    @staticmethod
+    def r2_fit_schedule_constant(targets: Tensor) -> Tensor:
+        """Return the fit-only constant for one schedule from all 140 windows."""
+
+        if targets.ndim != 1 or int(targets.numel()) != 140:
+            raise ValueError("schedule constant requires exactly 140 fit-window targets")
+        if not torch.isfinite(targets).all():
+            raise ValueError("fit-window targets must be finite")
+        return targets.kthvalue(127).values
 
 
     @staticmethod

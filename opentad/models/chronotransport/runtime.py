@@ -478,7 +478,7 @@ class ChronoTransportRuntime(nn.Module):
                 def adapter_forward(value: Tensor) -> Tensor:
                     return block.adapter(value, h, w)
 
-                with profiler.stage("innovation"):
+                with profiler.stage("dense_adatad_adapter"):
                     if bool(getattr(block, "with_cp", False)) and provisional.requires_grad:
                         adapted = cp.checkpoint(adapter_forward, provisional, use_reentrant=False)
                     else:
@@ -523,7 +523,7 @@ class ChronoTransportRuntime(nn.Module):
         profiler = ChronoProfiler(sync_cuda=self.profile_sync_cuda)
         signals = None
         if self.capture_replay_signals:
-            with profiler.stage("scheduler"):
+            with profiler.stage("innovation"):
                 signals = self._signals(state).detach()
             self.latest_signals = signals
         counters = {
@@ -592,9 +592,10 @@ class ChronoTransportRuntime(nn.Module):
             estimated_cost = self.cost_table.estimate(schedule.actions)
         else:
             if signals is None:
-                with profiler.stage("scheduler"):
+                with profiler.stage("innovation"):
                     signals = self._signals(state)
-            selection = self.scheduler.select(signals)
+            with profiler.stage("scheduler"):
+                selection = self.scheduler.select(signals)
             requested_actions = selection.schedule.actions.clone()
             actions, repairs, first_chunk_forced = self._repair_schedule(selection.schedule.actions)
             schedule_repair_count += repairs

@@ -46,9 +46,61 @@ def test_window_head_gradients_reach_signals_and_both_embeddings():
     assert predictor.group_embedding.weight.grad is not None
 
 
-def test_conformal_ranks_are_exact_for_gate3_sizes():
-    for size, expected_rank in ((30, 28), (140, 127)):
-        prediction = torch.zeros(size)
-        target = torch.arange(1, size + 1, dtype=torch.float32)
-        value = ScheduleQuantileRiskPredictor.conformal_offset(prediction, target, coverage=0.9)
-        assert value.item() == expected_rank
+def test_gate3_conformal_uses_window_maxima_then_rank_28_of_30():
+    prediction = torch.zeros(30, 16)
+    target = torch.zeros(30, 16)
+    target[:, 0] = torch.arange(1, 31, dtype=torch.float32)
+    window_maxima = (target - prediction).clamp_min(0.0).amax(dim=1)
+    assert window_maxima.unique().numel() == 30
+
+    value = ScheduleQuantileRiskPredictor.r2_simultaneous_conformal_offset(
+        prediction, target
+    )
+
+    assert value.item() == 28.0
+
+
+def test_gate3_conformal_fails_closed_on_wrong_shape_or_nonfinite_values():
+    prediction = torch.zeros(30, 16)
+    target = torch.ones(30, 16)
+    for bad_prediction, bad_target in (
+        (prediction[:29], target[:29]),
+        (prediction[:, :15], target[:, :15]),
+        (prediction.flatten(), target.flatten()),
+    ):
+        with pytest.raises(ValueError, match="30 calibration windows.*16 candidates"):
+            ScheduleQuantileRiskPredictor.r2_simultaneous_conformal_offset(
+                bad_prediction, bad_target
+            )
+
+    target[3, 7] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        ScheduleQuantileRiskPredictor.r2_simultaneous_conformal_offset(
+            prediction, target
+        )
+
+
+def test_fit_only_schedule_constant_uses_rank_127_of_140():
+    targets = torch.arange(1, 141, dtype=torch.float32)
+    value = ScheduleQuantileRiskPredictor.r2_fit_schedule_constant(targets)
+    assert value.item() == 127.0
+
+
+def test_generic_conformal_api_remains_backward_compatible():
+    prediction = torch.zeros(4)
+    target = torch.arange(1, 5, dtype=torch.float32)
+    value = ScheduleQuantileRiskPredictor.conformal_offset(
+        prediction, target, coverage=0.8
+    )
+    assert value.item() == 4.0
+
+
+def test_fit_only_schedule_constant_fails_closed_on_shape_or_nonfinite_values():
+    with pytest.raises(ValueError, match="140 fit-window targets"):
+        ScheduleQuantileRiskPredictor.r2_fit_schedule_constant(torch.ones(139))
+    with pytest.raises(ValueError, match="140 fit-window targets"):
+        ScheduleQuantileRiskPredictor.r2_fit_schedule_constant(torch.ones(140, 1))
+    targets = torch.ones(140)
+    targets[0] = float("inf")
+    with pytest.raises(ValueError, match="finite"):
+        ScheduleQuantileRiskPredictor.r2_fit_schedule_constant(targets)

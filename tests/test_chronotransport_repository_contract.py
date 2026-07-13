@@ -7,6 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/adatad/thumos/c3_chronotransport_adatad_videomae_s_768x1_160_stage_a.py"
+R2_STAGE_CONFIGS = (
+    ROOT / "configs/adatad/thumos/c3_chronotransport_r2_stage_b.py",
+    ROOT / "configs/adatad/thumos/c3_chronotransport_r2_stage_c.py",
+)
 
 
 def _clean_chronotransport_env(monkeypatch) -> None:
@@ -38,6 +42,22 @@ def test_stage_a_config_loads_with_repository_mmengine_config_parser(monkeypatch
     cfg = Config.fromfile(str(CONFIG))
     assert cfg.window_size == 768
     assert cfg.chronotransport_contract.internal_tubelet_points == 384
+
+
+def test_r2_overlays_only_update_inner_videomae_runtime(monkeypatch) -> None:
+    _clean_chronotransport_env(monkeypatch)
+    from mmengine.config import Config
+
+    for path in R2_STAGE_CONFIGS:
+        cfg = Config.fromfile(str(path))
+        assert "chronotransport" not in cfg.model.backbone
+        runtime = cfg.model.backbone.backbone.chronotransport
+        assert runtime.max_cache_age is None
+        assert runtime.hard_cache_validity_age == 47
+        assert runtime.transport_age_embedding_cap == 8
+        assert runtime.signal_dims == 6
+        assert runtime.risk_hidden_dims == 64
+        assert runtime.risk_quantile == 0.9
 
 
 def test_default_config_is_forced_dense_and_all_claims_are_locked(monkeypatch) -> None:

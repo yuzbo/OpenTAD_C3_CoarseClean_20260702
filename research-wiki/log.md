@@ -74,3 +74,32 @@ append_only: true
   Gate-3 conformal. Route B is retained; I/R, formal profile, Gate 1, new Stage-B seeds, Stage C, and
   Gate 4 remain locked. The review is source evidence, not a test rerun or experiment; its sandbox patch
   proposal is unavailable and explicitly not executed.
+- 2026-07-13: Began the bounded ChronoTransport r2 implementation repair. Corrected the Stage-B/C
+  config overlay to the inner VideoMAE runtime, separated Gate-3 `30 x 16 -> 30 maxima -> rank 28`
+  conformal calibration from the fit-only 140-target rank-127 constant, and made formal profile
+  validation reject missing/zero-sample required stages or `total_ms`. The config regression completed
+  remote TDD RED (1 failed) then GREEN (1 passed). The first remote Torch-focused run returned 6 passed
+  and 1 failed; the sole failure was an expected-error regex mismatch after the validator correctly
+  rejected missing `total_ms`. Its message was aligned, but no retry result is claimed. Risk/profiler
+  changes are therefore only `implemented`, not newly `tested`. Overall r2 remains partial and
+  registration blocked; no formal profile, Gate, training, or experiment was started.
+- 2026-07-13: Applied the independent foundation-slice revision without widening scope. Locked both
+  r2 quantile helpers to exact ranks 28/127, strengthened the Gate-3 test to use 30
+  distinct window maxima, neutralized inherited legacy `max_cache_age` to `None` in the resolved r2
+  overlay so it carries neither age meaning, and
+  split dynamic-runtime timing into independent `innovation` and `dense_adatad_adapter` stages. Formal profile
+  tests now enumerate the required stage names explicitly. The final repaired focused remote run passed
+  13/13 in 37.12 seconds. This marks only the foundation slice as remotely tested; whole-r2
+  implementation, registration, profiling, Gates, and experiments remain blocked.
+- 2026-07-13: Code-quality review found that the first strict implementation had narrowed the legacy
+  generic conformal API and changed profile semantics without a schema bump. Added dedicated frozen-r2
+  order-statistic helpers, restored the generic API, and introduced `chronotransport_profile_v2` with
+  exact schema validation. Full-stack per-invocation aggregation, device-bound peak-memory reset, and
+  dense-path instrumentation remain explicitly unimplemented in the later profiler batch. The new
+  compatibility/schema tests observed a remote RED (2/2 failed as expected) before production changes;
+  the repaired focused matrix then passed 13/13 in 37.30 seconds.
+- 2026-07-13: Foundation regression closure: the complete remote `tests/test_chronotransport*.py`
+  surface passed 128/128 in 199.80 seconds. An earlier 120-pass/8-fail attempt was invalid as a full
+  regression verdict because the temporary scratch tree omitted required `scripts/` and `docs/` files;
+  after copying those unchanged repository surfaces, all eight file-presence failures disappeared.
+  Independent spec and code-quality reviewers both approved only this foundation slice.

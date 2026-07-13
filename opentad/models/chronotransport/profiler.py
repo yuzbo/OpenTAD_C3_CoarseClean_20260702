@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,14 +20,16 @@ REQUIRED_STAGE_FIELDS = (
     "recompute",
     "transport",
     "cache_movement",
+    "dense_adatad_adapter",
     "neck_head",
     "postprocess",
 )
+PROFILE_SCHEMA_VERSION = "chronotransport_profile_v2"
 
 
-def _percentile(values: list[float], quantile: float) -> float:
+def _percentile(values: list[float], quantile: float) -> float | None:
     if not values:
-        return 0.0
+        return None
     ordered = sorted(float(value) for value in values)
     if len(ordered) == 1:
         return ordered[0]
@@ -60,8 +63,8 @@ class ChronoProfiler:
 
     def record(self, name: str, latency_ms: float) -> None:
         value = float(latency_ms)
-        if value < 0.0:
-            raise ValueError("latency must be non-negative")
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError("latency must be finite and non-negative")
         self._latency_ms[str(name)].append(value)
 
     def record_actions(self, **counts: int) -> None:
@@ -84,14 +87,14 @@ class ChronoProfiler:
             latency[name] = {
                 "count": len(values),
                 "total": float(sum(values)),
-                "p50": float(_percentile(values, 0.50)),
-                "p95": float(_percentile(values, 0.95)),
+                "p50": _percentile(values, 0.50),
+                "p95": _percentile(values, 0.95),
             }
         peak_gpu = None
         if torch.cuda.is_available():
             peak_gpu = int(torch.cuda.max_memory_allocated())
         return {
-            "schema_version": "chronotransport_profile_v1",
+            "schema_version": PROFILE_SCHEMA_VERSION,
             "latency_ms": latency,
             "action_counts": dict(self._action_counts),
             "peak_gpu_memory_bytes": peak_gpu,
@@ -100,9 +103,27 @@ class ChronoProfiler:
 
     @staticmethod
     def validate_summary(summary: Mapping[str, object]) -> None:
+        if summary.get("schema_version") != PROFILE_SCHEMA_VERSION:
+            raise ValueError(
+                f"profile summary schema must equal {PROFILE_SCHEMA_VERSION}"
+            )
         latency = summary.get("latency_ms")
         if not isinstance(latency, Mapping):
             raise ValueError("profile summary must contain latency_ms mapping")
-        missing = [name for name in REQUIRED_STAGE_FIELDS if name not in latency]
+        required = (*REQUIRED_STAGE_FIELDS, "total_ms")
+        missing = [name for name in required if name not in latency]
         if missing:
-            raise ValueError(f"profile summary missing required fields: {missing}")
+            raise ValueError(f"profile summary missing required direct samples: {missing}")
+        for name in required:
+            measurement = latency[name]
+            if not isinstance(measurement, Mapping):
+                raise ValueError(f"profile field {name} must contain direct samples")
+            count = measurement.get("count")
+            if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+                raise ValueError(f"profile field {name} must contain direct samples")
+            for statistic in ("total", "p50", "p95"):
+                value = measurement.get(statistic)
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    raise ValueError(f"profile field {name}.{statistic} must be measured")
+                if not math.isfinite(float(value)) or float(value) < 0.0:
+                    raise ValueError(f"profile field {name}.{statistic} must be finite/non-negative")
