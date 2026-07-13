@@ -32,9 +32,14 @@ def _step_reports():
 def _timebase_audit():
     return {
         "audit_pass": True,
+        "audit_scope": "dataset_consumed_videos_only",
         "video_count": 2,
+        "missing_consumed_video_count": 0,
         "frame_count_mismatch_count": 0,
         "records_sha256": SHA_A,
+        "audited_video_names_sha256": SHA_C,
+        "unreferenced_records_sha256": SHA_B,
+        "split_counts": {"train": 1, "test": 1},
     }
 
 
@@ -179,6 +184,9 @@ def test_g1a_real_gate_contract_fails_closed_on_provenance_or_seconds_mismatch()
         lambda report: report.update(target_checksum_match=False),
         lambda report: report.update(real_g0_pass=False),
         lambda report: report["timebase_audit"].update(audit_pass=False),
+        lambda report: report["timebase_audit"].update(
+            missing_consumed_video_count=1
+        ),
         lambda report: report["variants"]["selected_axis"].update(parameter_state_changed=False),
         lambda report: report["variants"]["selected_axis"].update(optimizer_step_reports=[]),
         lambda report: report["variants"]["selected_axis"]["optimizer_step_reports"][1].update(
@@ -219,6 +227,7 @@ def test_full_dataset_timebase_audit_uses_the_same_fail_closed_contract(tmp_path
     test_dir.mkdir()
     (train_dir / "video_validation_1.mp4").write_bytes(b"train")
     (test_dir / "video_test_1.mp4").write_bytes(b"test")
+    (test_dir / "video_test_unused.mp4").write_bytes(b"unused")
     annotation = tmp_path / "annotation.json"
     annotation.write_text(
         json.dumps(
@@ -244,14 +253,27 @@ def test_full_dataset_timebase_audit_uses_the_same_fail_closed_contract(tmp_path
         )
     )
 
+    consumed_video_names = {
+        "train": {"video_validation_1"},
+        "test": {"video_test_1"},
+    }
     report = audit_dataset_timebases(
         cfg,
         annotation,
         decoder_probe=lambda path: (20.0, 400 if "validation" in path.name else 200),
+        dataset_video_names=consumed_video_names,
     )
 
     assert report["audit_pass"] is True
+    assert report["audit_scope"] == "dataset_consumed_videos_only"
     assert report["video_count"] == 2
+    assert report["directory_file_counts"] == {"train": 1, "test": 2}
+    assert report["unreferenced_file_counts"] == {"train": 0, "test": 1}
+    assert report["unreferenced_video_names"] == {
+        "train": [],
+        "test": ["video_test_unused"],
+    }
+    assert report["missing_consumed_video_count"] == 0
     assert report["frame_count_mismatch_count"] == 0
     assert report["records_sha256"]
 
@@ -260,4 +282,5 @@ def test_full_dataset_timebase_audit_uses_the_same_fail_closed_contract(tmp_path
             cfg,
             annotation,
             decoder_probe=lambda path: (25.0, 400 if "validation" in path.name else 200),
+            dataset_video_names=consumed_video_names,
         )

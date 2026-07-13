@@ -20,7 +20,7 @@ mTAN 已做 irregular continuous-time attention；TE-TAD 已用 actual timeline 
 
 ## gap:G4 - raw-video AdaTAD 的公平三头隔离
 
-状态：首轮 matched full run 已完成但不是公平的 coordinate isolation；P0/G1a rebuild 已实现并通过远端 `116 passed`，正式真实数据 gate 与 pilot 尚未运行。
+状态：首轮 matched full run 已完成但不是公平的 coordinate isolation；P0/G1a rebuild 已实现并通过远端 `116 passed`。首个正式 gate `1161304` 在模型前因 timebase 审计错误包含两个未引用 test 文件而 fail-closed，依赖 pilot 未启动；范围修复已通过真实目录 precheck 与同一回归，新的正式 gate/pilot 待重排。
 
 最终 `3ac93a1` 三头已稳定完成并复算，但 PhysTime 同时更换 projection、跨 query context、容量、候选和 assignment。下一步必须在相同 raw videos、selected indices、VideoMAE-S adapter、checkpoint、schedule、seed、NMS、projection capacity、candidate topology、assignment 与 head 下比较 selected-time 与 physical-time metric。`K=384`、native `J=192`、基础网格 `Q0` 和多尺度总候选 `QΣ` 必须分离：先做 `Q0=J=192 / QΣ=378` 无 lift 对照，再共享中性 `Q0=384 / QΣ=756` lift，最后才加入 support-measure operator。
 

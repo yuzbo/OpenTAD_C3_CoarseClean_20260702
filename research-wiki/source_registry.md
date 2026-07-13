@@ -10,6 +10,7 @@
 | SRC-PT-004 | 远端原始作业 | run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_adatad_3ac93a1_k384_final_20260712_023243_+0800` | jobs `1159491..1159495` 与复算 `1159819..1159821` 状态核验 |
 | SRC-PT-005 | 正式代码 | commit `3ac93a12c299012db64513567d5bdedf0c6d5f71` | raw-video K384 三头实现 |
 | SRC-PT-006 | 预部署工程验证 | remote scratch `/data/run01/sczc063/yuzibo/projects/scratch/phystime_g1a_green_20260713` | G1a focused/new-old regression `116 passed`；411-video timebase audit；不是正式实验或 mAP 来源 |
+| SRC-PT-007 | 失败 gate 原始作业 | run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_8e2b832_pilot_20260713_161418_+0800` | gate `1161304` 因两个未引用 test MP4 缺 annotation 而 fail-closed；pilots `1161305/1161306` 未启动并取消；仅作审计范围修复证据 |
 | SRC-LIT-001 | 论文 | `https://arxiv.org/abs/2101.10318` | mTAN，不规则时间 attention 先例 |
 | SRC-LIT-002 | 论文 | `https://openaccess.thecvf.com/content/CVPR2024/html/Kim_TE-TAD_Towards_Full_End-to-End_Temporal_Action_Detection_via_Time-Aligned_Coordinate_CVPR_2024_paper.html` | actual-time TAD 坐标先例 |
 | SRC-LIT-003 | 论文 | `https://openaccess.thecvf.com/content/CVPR2022/html/Wang_RCL_Recurrent_Continuous_Localization_for_Temporal_Action_Detection_CVPR_2022_paper.html` | 连续锚表示先例 |

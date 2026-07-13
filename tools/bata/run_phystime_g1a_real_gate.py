@@ -188,7 +188,12 @@ def _timebase_tolerances(cfg):
     return observed[0]
 
 
-def audit_dataset_timebases(cfg, evaluation_ground_truth, decoder_probe=None):
+def audit_dataset_timebases(
+    cfg,
+    evaluation_ground_truth,
+    decoder_probe=None,
+    dataset_video_names=None,
+):
     annotation_path = Path(evaluation_ground_truth).resolve()
     database = json.loads(annotation_path.read_text(encoding="utf-8")).get("database")
     _require(isinstance(database, dict) and database, "timebase audit annotation database is empty")
@@ -202,6 +207,9 @@ def audit_dataset_timebases(cfg, evaluation_ground_truth, decoder_probe=None):
     tolerances = _timebase_tolerances(cfg)
     records = []
     split_counts = {}
+    directory_file_counts = {}
+    unreferenced_video_names = {}
+    missing_consumed_video_names = {}
     for split in ("train", "test"):
         dataset_split = getattr(cfg.dataset, split, None)
         if dataset_split is None:
@@ -212,8 +220,36 @@ def audit_dataset_timebases(cfg, evaluation_ground_truth, decoder_probe=None):
             key=lambda path: path.as_posix(),
         )
         _require(paths, f"timebase audit found no MP4 videos in {root}")
-        split_counts[split] = len(paths)
+        path_by_name = {}
         for path in paths:
+            _require(
+                path.stem not in path_by_name,
+                f"timebase audit found duplicate video stem {path.stem}",
+            )
+            path_by_name[path.stem] = path
+        if dataset_video_names is None:
+            consumed_names = {
+                str(row[0]) for row in build_dataset(dataset_split).data_list
+            }
+        else:
+            _require(
+                split in dataset_video_names,
+                f"timebase audit lacks an explicit consumed-video set for {split}",
+            )
+            consumed_names = {str(value) for value in dataset_video_names[split]}
+        _require(consumed_names, f"timebase audit dataset consumes no videos for {split}")
+        missing = sorted(consumed_names - set(path_by_name))
+        unreferenced = sorted(set(path_by_name) - consumed_names)
+        missing_consumed_video_names[split] = missing
+        unreferenced_video_names[split] = unreferenced
+        directory_file_counts[split] = len(path_by_name)
+        _require(
+            not missing,
+            f"timebase audit is missing consumed {split} videos: {missing[:5]}",
+        )
+        audited_paths = [path_by_name[name] for name in sorted(consumed_names)]
+        split_counts[split] = len(audited_paths)
+        for path in audited_paths:
             video_name = path.stem
             info = database.get(video_name)
             _require(isinstance(info, dict), f"timebase audit lacks annotation for {video_name}")
@@ -246,8 +282,29 @@ def audit_dataset_timebases(cfg, evaluation_ground_truth, decoder_probe=None):
     return {
         "schema_version": "phystime_g1a_full_dataset_timebase_v1",
         "audit_pass": True,
+        "audit_scope": "dataset_consumed_videos_only",
         "video_count": len(records),
         "split_counts": split_counts,
+        "directory_file_counts": directory_file_counts,
+        "unreferenced_file_counts": {
+            split: len(names) for split, names in unreferenced_video_names.items()
+        },
+        "unreferenced_video_names": unreferenced_video_names,
+        "unreferenced_records_sha256": _canonical_sha256(unreferenced_video_names),
+        "missing_consumed_video_count": sum(
+            len(names) for names in missing_consumed_video_names.values()
+        ),
+        "missing_consumed_video_names": missing_consumed_video_names,
+        "audited_video_names_sha256": _canonical_sha256(
+            {
+                split: [
+                    record["video_name"]
+                    for record in records
+                    if record["split"] == split
+                ]
+                for split in ("train", "test")
+            }
+        ),
         "tolerances": tolerances,
         "max_fps_relative_error": max(record["fps_relative_error"] for record in records),
         "max_duration_relative_error": max(
@@ -696,8 +753,29 @@ def validate_gate_report(report):
     _require(report.get("amp_contract_verified") is True, "G1a AMP contract was not verified")
     timebase_audit = report.get("timebase_audit", {})
     _require(timebase_audit.get("audit_pass") is True, "G1a full-dataset timebase audit failed")
+    _require(
+        timebase_audit.get("audit_scope") == "dataset_consumed_videos_only",
+        "G1a timebase audit used the wrong video scope",
+    )
     _require(int(timebase_audit.get("video_count", 0)) > 0, "G1a timebase audit is empty")
+    _require(
+        int(timebase_audit.get("video_count", 0))
+        == sum(int(value) for value in timebase_audit.get("split_counts", {}).values()),
+        "G1a timebase split counts do not match the audited total",
+    )
+    _require(
+        timebase_audit.get("missing_consumed_video_count") == 0,
+        "G1a timebase audit is missing dataset-consumed videos",
+    )
     _require_sha256(timebase_audit.get("records_sha256"), "G1a timebase records")
+    _require_sha256(
+        timebase_audit.get("audited_video_names_sha256"),
+        "G1a audited timebase video names",
+    )
+    _require_sha256(
+        timebase_audit.get("unreferenced_records_sha256"),
+        "G1a unreferenced timebase records",
+    )
     _require(
         timebase_audit.get("frame_count_mismatch_count") == 0,
         "G1a annotation/decoder frame counts differ",
