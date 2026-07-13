@@ -45,6 +45,8 @@ def test_p0_matrix_is_matched_on_detector_data_geometry_and_training_horizon() -
         assert int(cfg.model.projection.max_seq_len) == 384, name
         assert int(cfg.workflow.end_epoch) == 132, name
         assert int(cfg.scheduler.max_epoch) == 132, name
+        assert cfg.model.frame_selector.actionness_source_cfg.calibration_split == "none", name
+        assert cfg.model.frame_selector.actionness_source_cfg.get("calibration_artifact") in (None, ""), name
 
 
 def test_p0_matrix_changes_only_the_intended_selector_mechanism() -> None:

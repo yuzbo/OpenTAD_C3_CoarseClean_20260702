@@ -701,6 +701,8 @@ class DucaOnlineFrameSelector(nn.Module):
                 max_candidates=self.counterfactual_max_candidates,
                 max_unselected_hole=self.max_unselected_hole,
             )
+            if not bool(counterfactual_request["candidate_valid"].any().item()):
+                counterfactual_request = None
         self._record_pending_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
@@ -717,8 +719,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self, selector_outputs, candidate_positions, replaced_slots, candidate_utility, candidate_valid
     ):
         valid = candidate_valid.bool()
-        if not valid.any(dim=1).all():
-            raise RuntimeError("counterfactual teacher must provide a candidate for every sample")
+        if not valid.any():
+            return selector_outputs["center_scores"].float().sum() * 0.0
         pair_scores = counterfactual_pair_scores(
             selector_outputs["center_scores"], candidate_positions, replaced_slots,
             selector_outputs["grid"].selected_positions, valid,
@@ -727,12 +729,17 @@ class DucaOnlineFrameSelector(nn.Module):
             pair_scores, candidate_utility.detach(), valid,
             temperature=self.counterfactual_utility_temperature,
         ) * self.counterfactual_utility_distillation_weight
-        gradient_alignment = gradient_utility_alignment(
-            pair_scores,
-            loss,
-            candidate_utility.detach(),
-            valid,
-        )
+        try:
+            gradient_alignment = gradient_utility_alignment(
+                pair_scores,
+                loss,
+                candidate_utility.detach(),
+                valid,
+            )
+            alignment_available = True
+        except ValueError:
+            gradient_alignment = {"spearman": 0.0, "sign_agreement": 0.0}
+            alignment_available = False
         with torch.no_grad():
             student_pair = pair_scores[valid].float()
             utility = candidate_utility.detach()[valid].float()
@@ -756,6 +763,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
                 "alignment_kind": "independent_selector_score_add_minus_remove_vs_detector_swap_gain",
                 "distillation_gradient_alignment": gradient_alignment,
+                "distillation_gradient_alignment_available": alignment_available,
             }
         return loss
 

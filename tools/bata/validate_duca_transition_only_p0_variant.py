@@ -104,6 +104,15 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
         "transition_scorer": float(reference.model.frame_selector.transition_scorer_lr),
     }
     _require(component_lrs == reference_lrs, "effective selector component LR protocol mismatch")
+    actionness_source = selector.actionness_source_cfg
+    _require(
+        actionness_source.get("calibration_split", "none") == "none",
+        "P0 variants must not declare train-only calibration without a bound artifact",
+    )
+    _require(
+        actionness_source.get("calibration_artifact") in (None, ""),
+        "P0 variants must not consume an unmatched calibration artifact",
+    )
 
     details: dict[str, Any] = {}
     if variant == "uniform":
@@ -117,7 +126,7 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
     elif variant == "direct":
         _require(selector.get("selector_variant") == "direct_boundary", "direct baseline must explicitly declare its architecture")
         _require(int(cfg.duca_loss_schedule_total_steps) == 13200, "direct baseline horizon mismatch")
-        source = selector.actionness_source_cfg
+        source = actionness_source
         _require(
             source.get("hidden_output_kind") == "pre_temporal_spatial_stem_hidden",
             "direct baseline must preserve legacy spatial-stem hidden",

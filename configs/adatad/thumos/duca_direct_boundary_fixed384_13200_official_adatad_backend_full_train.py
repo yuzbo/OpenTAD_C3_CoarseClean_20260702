@@ -47,7 +47,9 @@ model = dict(
             uses_gt_at_inference=False,
             uses_teacher_at_inference=False,
             uses_prediction_cache_at_inference=False,
-            calibration_split="train_only",
+            calibration_split="none",
+            calibration_artifact=None,
+            calibration_artifact_sha256=None,
         ),
     ),
 )

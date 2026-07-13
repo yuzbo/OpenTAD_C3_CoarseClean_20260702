@@ -330,6 +330,8 @@ class ActionFormer(SingleStageDetector):
             self.rpn_head.duca_set_frozen_loss_normalizer(normalizer)
             with torch.no_grad():
                 for b in range(baseline_positions.shape[0]):
+                    if not bool(candidate_valid[b].any().item()):
+                        continue
                     restore_teacher_state()
                     baseline_loss = evaluate_one(b, baseline_positions[b])
                     for m in range(selections.shape[1]):

@@ -26,10 +26,15 @@ def build_finite_hard_one_swap_candidates(
     candidate_valid = torch.zeros((batch, max_candidates), dtype=torch.bool, device=selected_positions.device)
     for b in range(batch):
         base = selected_positions[b]
-        base = base[base >= 0]
-        if base.numel() != selected_positions.shape[1] or torch.unique(base).numel() != base.numel():
-            raise ValueError("baseline selection must be exact-K, unique and non-negative")
         valid_length = int(valid_mask[b].sum().item())
+        base = base[(base >= 0) & (base < valid_length)]
+        base = torch.unique(base, sorted=True)
+        if valid_length < selected_positions.shape[1]:
+            if base.numel() != valid_length:
+                raise ValueError("short-window baseline must contain every valid position exactly once")
+            continue
+        if base.numel() != selected_positions.shape[1]:
+            raise ValueError("baseline selection must be exact-K, unique and non-negative")
         selected_set = set(int(x) for x in base.tolist())
         additions = [
             int(x) for x in torch.argsort(policy_scores[b], descending=True).tolist()
@@ -56,8 +61,6 @@ def build_finite_hard_one_swap_candidates(
                 break
             if out_index == max_candidates:
                 break
-        if out_index == 0:
-            raise RuntimeError("no feasible hard one-swap counterfactual candidate")
     return {
         "candidate_selections": candidates,
         "candidate_positions": candidate_positions,
@@ -135,15 +138,16 @@ def counterfactual_utility_distillation_loss(
     if temperature <= 0.0:
         raise ValueError("temperature must be positive")
     valid = valid_mask.bool()
-    if not valid.any(dim=1).all():
-        raise ValueError("every sample must contain at least one valid counterfactual candidate")
+    active = valid.any(dim=1)
+    if not active.any():
+        return policy_scores.float().sum() * 0.0
     student = policy_scores.float()
     teacher = teacher_utility.detach().to(device=policy_scores.device, dtype=torch.float32)
     if not torch.isfinite(teacher[valid]).all():
         raise ValueError("valid counterfactual utilities must be finite")
     neg = torch.finfo(student.dtype).min
-    student_logits = (student / temperature).masked_fill(~valid, neg)
-    teacher_logits = (teacher / temperature).masked_fill(~valid, neg)
+    student_logits = (student[active] / temperature).masked_fill(~valid[active], neg)
+    teacher_logits = (teacher[active] / temperature).masked_fill(~valid[active], neg)
     target = torch.softmax(teacher_logits, dim=-1)
     return -(target * torch.log_softmax(student_logits, dim=-1)).sum(dim=-1).mean()
 
@@ -167,7 +171,7 @@ def counterfactual_pair_scores(
     safe_slot = replaced_slots.clamp(min=0)
     if torch.any(safe_add[valid] >= policy_scores.shape[1]) or torch.any(safe_slot[valid] >= baseline_positions.shape[1]):
         raise ValueError("counterfactual add position or remove slot is out of range")
-    remove_positions = torch.gather(baseline_positions, 1, safe_slot)
+    remove_positions = torch.gather(baseline_positions.clamp_min(0), 1, safe_slot)
     add_scores = torch.gather(policy_scores, 1, safe_add)
     remove_scores = torch.gather(policy_scores, 1, remove_positions)
     return (add_scores - remove_scores).masked_fill(~valid, 0.0)

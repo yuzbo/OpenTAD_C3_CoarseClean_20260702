@@ -34,6 +34,37 @@ def test_finite_candidates_are_exact_k_unique_bounded_and_max_gap_feasible() -> 
         assert int((sentinels[1:] - sentinels[:-1] - 1).max()) <= 2
 
 
+def test_short_window_with_all_valid_frames_selected_has_no_swap_candidate() -> None:
+    selected = torch.tensor([[0, 1, 2, -1]])
+    scores = torch.tensor([[3.0, 2.0, 1.0, -9.0, -9.0]])
+    valid = torch.tensor([[1, 1, 1, 0, 0]], dtype=torch.bool)
+
+    result = build_finite_hard_one_swap_candidates(
+        selected, scores, valid, max_candidates=3, max_unselected_hole=2
+    )
+
+    assert not result["candidate_valid"].any()
+    zero = counterfactual_utility_distillation_loss(
+        torch.zeros(1, 3, requires_grad=True),
+        torch.zeros(1, 3),
+        torch.zeros(1, 3, dtype=torch.bool),
+    )
+    assert zero.dtype == torch.float32
+    assert zero.item() == 0.0
+
+
+def test_mixed_batch_distills_only_samples_with_feasible_swaps() -> None:
+    scores = torch.zeros(2, 3, requires_grad=True)
+    teacher = torch.tensor([[0.0, 0.0, 0.0], [2.0, -1.0, 0.0]])
+    valid = torch.tensor([[0, 0, 0], [1, 1, 0]], dtype=torch.bool)
+
+    loss = counterfactual_utility_distillation_loss(scores, teacher, valid)
+    loss.backward()
+
+    assert torch.equal(scores.grad[0], torch.zeros_like(scores.grad[0]))
+    assert scores.grad[1, 0] < 0
+
+
 def test_zero_forward_bridge_fails_nonlinear_hard_swap_alignment_gate() -> None:
     logits = torch.tensor([[[2.0, 0.0, -1.0]]], requires_grad=True)
     # The local surrogate is attracted toward -2 although its hard squared
