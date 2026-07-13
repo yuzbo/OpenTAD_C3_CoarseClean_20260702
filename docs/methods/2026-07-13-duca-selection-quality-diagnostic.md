@@ -101,18 +101,24 @@ positions to alter boundary metrics materially.
 
 | Anchor | Auditable meaning | Not established |
 |---|---|---|
-| user-reported oracle about 78 Avg-mAP | possible privileged-information upper bound | no same-protocol raw artifact has been located in this audit |
+| N16R4 direct GT-boundary oracle, Job `1001959`, 76.67 | verified privileged-information upper bound; raw Slurm/stdout was recovered after this selector audit | uses train/val/test GT boundaries and a historical Adapter/ActionFormer protocol, not the current DUCA protocol |
+| historical direct GT-boundary oracle, 77.62 | partial historical anchor; complete vector is recorded as 84.42 / 82.41 / 79.69 / 74.67 / 66.91 | original AutoDL stdout was not re-read in the 2026-07-13 provenance pass |
 | Job `1150842`, 65.696 | historical grid-aware exact-uniform reference | not same commit/training protocol as current DUCA |
 | Job `1150701`, 64.352 | historical native-stride exact-uniform reference | not same detector geometry as all current variants |
 | Job `1159416`, 64.34 | legacy learned beta=0 diagnostic | homotopy start was invalid; no matched uniform conclusion |
 | Job `1159417`, 63.55 | legacy learned beta=0.25 diagnostic | detector-gradient benefit; it trails beta=0 by 0.79 |
 | historical separated lattice, 63.18 | older separated-training reference | not a matched joint-training comparison |
 
-Any explanation of "oracle 78, uniform 65, learned 63" must first recover the
-oracle artifact and normalize commit, split, K/effective-K, detector geometry,
-training exposure, checkpoint selection, and whether privileged GT/teacher
-signals are available at inference. Until then, the gaps are hypotheses rather
-than a valid causal decomposition.
+The N16R4 raw artifact was recovered after this selector audit. Job `1001959`
+completed with exit code 0 and final Avg-mAP 76.67; its complete
+mAP@0.3/0.4/0.5/0.6/0.7 vector is 83.63 / 81.54 / 78.92 / 73.42 / 65.83.
+The sampler used `oracle_boundary_subsample`, K=384 from T=768, radius 2, and
+train/validation/test GT segments. This verifies the mechanism-level statement
+that direct GT-boundary allocation has a roughly 76--77 Avg-mAP upper bound in
+the historical Adapter/ActionFormer protocol. It does not make the oracle,
+uniform, and learned numbers comparable. Commit, split, detector geometry,
+training exposure, checkpoint policy, evaluator, and inference-visible signals
+still need normalization before any causal gap decomposition.
 
 ## Reproduction
 

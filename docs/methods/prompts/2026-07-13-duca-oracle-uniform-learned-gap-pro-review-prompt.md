@@ -68,7 +68,9 @@
 
 | 结果锚点 | 数值 | 当前证据等级 |
 |---|---:|---|
-| 用户报告的 oracle | 约 78 Avg-mAP | 本轮尚未定位同协议原始 artifact；必须追查，否则只能标记 unverified upper-bound anchor |
+| N16R4 direct GT-boundary oracle，Job `1001959` | 76.67 Avg-mAP；83.63 / 81.54 / 78.92 / 73.42 / 65.83 | `VERIFIED` 原始 Slurm/stdout；使用 train/val/test GT，只有诊断意义 |
+| 历史 direct GT-boundary oracle | 77.62 Avg-mAP；84.42 / 82.41 / 79.69 / 74.67 / 66.91 | `PARTIAL`：有配置、路径和二级记录；本轮未重读 AutoDL 原始日志 |
+| 35407 same-config screen repro | 77.18 Avg-mAP；84.01 / 81.84 / 79.25 / 74.47 / 66.33 | `PARTIAL`：完整结果和日志路径有记录，但本轮未重读原始 stdout |
 | 历史 grid-aware exact-uniform，Job `1150842` | 65.696 | 有日志来源，但不是当前 same-commit/same-training protocol |
 | 历史 native-stride exact-uniform，Job `1150701` | 64.352 | 有日志来源，但 detector geometry 与当前矩阵不完全相同 |
 | learned transition beta=0，Job `1159416` | 64.34 | 旧 `8bfc0e5` homotopy 起点失效，只是 learned-policy diagnostic |
@@ -77,13 +79,44 @@
 
 旧提交 `8bfc0e5` 的 alpha=0 uniform reference 在 `T=768,K=384` 时产生全相同 logits，Viterbi tie-break 路径并非 exact uniform。因此 Job `1159414` 的 55.67 绝对不能作为均匀采样基线，Jobs `1159416/1159417` 也没有执行预期的连续 uniform-to-learned homotopy。`0ea4e15` 修复了该问题，但尚没有替代 full train 结果。
 
-第一项任务不是解释，而是审计：
+### 3.1 Oracle provenance certificate
 
-1. 在仓库、报告和引用路径中寻找 oracle≈78 的原始定义与来源。
-2. 查清它究竟是 Avg-mAP、mAP@0.3、dense detector、GT-boundary selector、teacher utility、GT actionness、post-hoc best-of-candidates，还是其他指标。
-3. 查清 oracle 是否使用 validation/test GT、dense detector loss、teacher features 或 raw predictions作决策。
-4. 核对 oracle、uniform、learned 的数据 split、K/effective-K、输入分辨率、detector、坐标轴、训练步数、LR schedule、checkpoint selection 和评估脚本。
-5. 如果找不到原始 artifact，必须写“oracle 78 未验证”，禁止替它编造机制或把差距量化成严格结论。
+该 Oracle 已不再是来源未知的口头数字。任务 `019ef424-0707-7370-8d0e-1406b3f4194b` 先检索历史记录，本轮随后独立登录 N16R4 复核了原始 Slurm 账目和 stdout：
+
+```text
+sacct:
+1001959|oracle_bnd_repro|COMPLETED|0:0|07:05:31|2026-06-04T14:46:23|2026-06-04T21:51:54
+
+raw stdout:
+/data/home/sczc063/run/yuzibo/OpenTAD_Back_check/logs/oracle_boundary_adapter_repro_20260604_1001959.out
+
+final evaluation at 2026-06-04 21:51:51:
+Average-mAP: 76.67
+mAP@0.3/0.4/0.5/0.6/0.7: 83.63 / 81.54 / 78.92 / 73.42 / 65.83
+Training Over
+```
+
+远端配置与启动入口：
+
+```text
+/data/home/sczc063/run/yuzibo/OpenTAD_Back_check/configs/adatad/thumos/input_oracle_boundary_dense_50pct_adapter_n16r4_repro_20260604.py
+/data/home/sczc063/run/yuzibo/OpenTAD_Back_check/configs/adatad/thumos/input_oracle_boundary_dense_50pct_adapter.py
+/data/home/sczc063/run/yuzibo/OpenTAD_Back_check/logs/run_oracle_boundary_adapter_repro_n16r4_20260604.sbatch
+```
+
+真实协议是：THUMOS14，dense window `T=768`，固定选择 `K=384`，`keep_ratio=0.5`，`oracle_boundary_radius=2`，`method="oracle_boundary_subsample"`；loader 在 train、validation 和 test 都直接读取 `gt_segments` 并围绕真实起止边界选择局部帧。后端继承 `VisionTransformerAdapter + ActionFormer`，60 epochs，validation 从 epoch 40 开始、每 2 epochs 一次，checkpoint 写入关闭。因此没有可引用的最终 checkpoint 或 seed 重复统计。
+
+历史值 `77.62` 的记录路径为 `/root/autodl-tmp/OpenTAD_Back_check/logs/input_oracle_boundary_dense_50pct_adapter.log`，同配置 35407 screen 复现日志为 `/root/autodl-tmp/OpenTAD_Back_check/logs/input_oracle_boundary_dense_50pct_adapter_repro_20260524_0108.log`。本轮未直接重读这两个 AutoDL 日志，所以精确的 `77.62` 和 `77.18` 仍为 `PARTIAL`；但 N16R4 的原始 `76.67` 足以把“direct GT-boundary oracle 约 77”升级为 `VERIFIED reproducible mechanism-level diagnostic`。
+
+这个 Oracle **不是** teacher-utility、dense-detector-loss、post-hoc candidate search 或 deployable selector。它使用 validation/test GT 作选帧决策，只能进入 Pro 分析和论文 appendix 的 privileged-information upper-bound 行；绝不能进入可部署方法主表。
+
+第一项审计任务现在改为：
+
+1. 接受“GT-boundary 信息在该历史 Adapter/ActionFormer 协议下可产生约 76--77 Avg-mAP”这一机制级事实。
+2. 不得把精确历史值 `77.62` 伪装成本轮已重读的 raw-log 事实。
+3. 核对 oracle、uniform、learned 的 split、K/effective-K、输入分辨率、detector、坐标轴、训练步数、LR schedule、checkpoint policy 和 evaluator；当前证据不支持三者严格匹配。
+4. 判断约 11--13 点的表面差距中，多少只是 privileged GT、Adapter/DUCA backend、训练协议和时间几何差异，多少才可能是 deploy-visible selector 可学习的 headroom。
+5. 禁止写“learned 比 oracle 严格低 13--14 点且完全由 selector 学习失败造成”；这不是有效的同协议因果结论。
 
 只有协议完全匹配时，才允许使用：
 
@@ -148,12 +181,12 @@ Learned 相对 exact uniform：
 
 请区分至少四种完全不同的 oracle：
 
-1. GT boundary/actionness oracle；
+1. GT boundary/actionness oracle；当前 76.67 已确认属于这一类，并在 validation/test 使用 GT；
 2. dense detector-loss/teacher-utility oracle；
 3. best-of-candidate counterfactual oracle；
 4. 同可见输入下可学习 Bayes oracle。
 
-判断约 78 属于哪一种。若使用 GT 或 dense downstream output，它只证明“有信息时可以选好”，不证明当前低成本粗分类输入能够预测该选择。请判断 oracle gap 是真正可学习 headroom，还是 privileged-information gap。
+不得再把约 78 当成类别未知。请判断已验证的 GT-boundary oracle gap 中，哪些只是 privileged-information gap，哪些能由当前低成本粗分类器的 deploy-visible 状态证据近似；它只证明“若知道真实边界就可以选好”，不证明当前输入能够预测真实边界。
 
 ### Q2. Uniform 为什么异常强？
 
@@ -183,7 +216,7 @@ Learned 相对 exact uniform：
 11. standalone 与 joint 的 optimizer steps、LR schedule、checkpoint criterion 和数据暴露不匹配；
 12. official ASFormer hidden feature是否真的被 scorer 有效利用，还是最终主要依赖 noisy p_action 曲线；
 13. selector 优化的是 boundary proxy，而 oracle 优化的是 detector utility，目标本身不一致；
-14. oracle 78 可能根本不是同一 metric/protocol。
+14. oracle、uniform 与 learned 已确认不是可直接做严格差分的同一完整协议；请定位最小 matched control，而不是继续争论历史数字。
 
 ### Q4. 当前梯度桥到底有没有学习正确的 hard decision utility？
 
@@ -283,7 +316,7 @@ Learned 相对 exact uniform：
 4. hard one-swap detector utility alignment；
 5. matched standalone-vs-joint coarse quality；
 6. selected-axis vs original-time-aware detector geometry；
-7. oracle 78 的同协议复现或证伪；
+7. 在当前 same-commit geometry 下加入严格标注为 diagnostic-only 的 matched GT-boundary oracle control，分离历史 backend/protocol 差异；
 8. trained-checkpoint full-stack accuracy-cost结果。
 
 在 fixed-384 未超过 same-commit uniform 或没有形成更优 accuracy-cost Pareto 前，不允许开放 dynamic MUST、多 detector泛化、X3D/SlowFast或大规模消融。
@@ -307,6 +340,6 @@ Learned 相对 exact uniform：
 
 最后必须用一句非常直接的话回答：
 
-> 在现有证据下，oracle≈78、uniform≈65、learned≈63 最可能说明的是“可学习方法尚未利用 oracle headroom”，还是“oracle headroom本身不可由 deploy-visible输入学习”，抑或“这三个数字根本不可比较”？
+> 在现有证据下，已验证的 GT-boundary oracle=76.67、历史 uniform≈65、失效协议下 learned≈63，最可能说明的是“可学习方法尚未利用 oracle headroom”，还是“oracle headroom大部分不可由 deploy-visible输入学习”，抑或“这三个数字目前不能作严格数值比较”？
 
 不允许回答“都有可能”。必须给出当前最可信裁决，并说明哪一个最小实验可以推翻它。
