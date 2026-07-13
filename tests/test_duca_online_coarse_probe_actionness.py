@@ -238,6 +238,46 @@ def test_all_short_counterfactual_batch_keeps_static_loss_graph() -> None:
     assert any(param.grad is not None for param in selector.adapter.transition_scorer.parameters())
 
 
+def _autograd_signature(value: torch.Tensor) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    stack = [value.grad_fn]
+    seen = set()
+    while stack:
+        node = stack.pop()
+        if node is None or id(node) in seen:
+            continue
+        seen.add(id(node))
+        name = node.__class__.__name__
+        counts[name] = counts.get(name, 0) + 1
+        stack.extend(parent for parent, _ in node.next_functions if parent is not None)
+    return counts
+
+
+def test_structured_surrogate_graph_is_invariant_for_normal_and_all_short_masks() -> None:
+    signatures = []
+    for mask in (
+        torch.ones((1, 8), dtype=torch.bool),
+        torch.tensor([[1, 1, 1, 0, 0, 0, 0, 0]], dtype=torch.bool),
+    ):
+        selector = _selector(selector_variant="transition_only")
+        selector.train()
+        out = selector.forward_train(
+            inputs=torch.randn(1, 1, 3, 8, 16, 16),
+            masks=mask,
+            metas=[{"video_name": "graph-contract"}],
+            gt_segments=[torch.tensor([[0.0, 2.0]])],
+            gt_labels=[torch.tensor([1])],
+        )
+        state = out["selector_outputs"]
+        surrogate = (
+            state["selected_mask_st"].sum()
+            + state["soft_coverage"].sum()
+            + state["structured_soft_slot_assignment"].sum()
+        )
+        signatures.append(_autograd_signature(surrogate))
+    assert signatures[0] == signatures[1]
+
+
 def test_online_selector_pads_physical_slots_for_short_valid_window() -> None:
     selector = _selector()
     inputs = torch.randn(1, 1, 3, 8, 16, 16)

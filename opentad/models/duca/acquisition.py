@@ -1646,7 +1646,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 raise ValueError("global_structured_topk requires a contiguous valid prefix")
             effective_k = min(int(budgets[batch_idx].item()), valid_count)
             max_hole = valid_count if self.max_unselected_hole is None else int(self.max_unselected_hole)
-            policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
+            policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count].detach()
             if self.selector_variant == "transition_only":
                 policy_scores = continuous_policy_logits(
                     policy_scores,
@@ -1665,27 +1665,71 @@ class DucaAcquisitionAdapter(nn.Module):
             policy_row = center_scores.new_zeros(temporal_len)
             policy_row[:valid_count] = policy_scores[0]
             policy_rows.append(policy_row)
-            structured = global_structured_topk(
+            hard_structured = global_structured_topk(
                 policy_scores,
                 k=effective_k,
                 max_unselected_hole=max_hole,
                 temperature=self.structured_temperature,
-                training=self.training,
+                training=False,
             )
             row = torch.full((max_slots,), -1, dtype=torch.long, device=center_scores.device)
-            row[:effective_k] = structured.selected_positions[0]
+            row[:effective_k] = hard_structured.selected_positions[0]
             position_rows.append(row)
             dense_mask = torch.zeros(temporal_len, dtype=torch.bool, device=center_scores.device)
-            dense_mask[:valid_count] = structured.hard_occupancy[0].bool()
+            dense_mask[:valid_count] = hard_structured.hard_occupancy[0].bool()
             dense_masks.append(dense_mask)
-            selection_st = center_scores.new_zeros(temporal_len)
-            selection_st[:valid_count] = structured.selection_st[0]
+            if self.training:
+                # Keep the differentiable graph invariant across normal and
+                # all-short batches. Invalid suffix positions are detached
+                # finite structural states; only the hard decode uses the
+                # data-dependent valid_count/effective_k contract above.
+                valid_row = valid_mask[batch_idx : batch_idx + 1]
+                dummy = center_scores.new_full((1, temporal_len), -80.0)
+                surrogate_scores = torch.where(
+                    valid_row,
+                    center_scores[batch_idx : batch_idx + 1].float(),
+                    dummy,
+                )
+                surrogate_valid = torch.ones_like(valid_row)
+                if self.selector_variant == "transition_only":
+                    surrogate_policy = continuous_policy_logits(
+                        surrogate_scores,
+                        surrogate_valid,
+                        k=max_slots,
+                        alpha=float(policy_mix_alpha),
+                    )
+                elif stable_selection:
+                    reference_scores = exact_uniform_reference_scores(
+                        surrogate_scores,
+                        surrogate_valid,
+                        max_slots,
+                    )
+                    surrogate_policy = reference_scores + surrogate_scores * 0.0
+                else:
+                    surrogate_policy = surrogate_scores
+                surrogate = global_structured_topk(
+                    surrogate_policy,
+                    k=max_slots,
+                    max_unselected_hole=(
+                        temporal_len if self.max_unselected_hole is None else int(self.max_unselected_hole)
+                    ),
+                    temperature=self.structured_temperature,
+                    training=True,
+                )
+                soft = surrogate.soft_occupancy[0] * valid_row[0].to(surrogate.soft_occupancy.dtype)
+                hard_dense = dense_mask.to(dtype=soft.dtype)
+                selection_st = hard_dense + soft - soft.detach()
+                slots = surrogate.soft_slot_assignment[0] * valid_row[0][None, :].to(
+                    surrogate.soft_slot_assignment.dtype
+                )
+            else:
+                soft = dense_mask.to(dtype=center_scores.dtype)
+                selection_st = soft
+                slots = center_scores.new_zeros((max_slots, temporal_len))
+                if effective_k > 0:
+                    slots[:effective_k].scatter_(1, row[:effective_k, None], 1.0)
             selection_st_rows.append(selection_st)
-            soft = center_scores.new_zeros(temporal_len)
-            soft[:valid_count] = structured.soft_occupancy[0]
             soft_rows.append(soft)
-            slots = center_scores.new_zeros((max_slots, temporal_len))
-            slots[:effective_k, :valid_count] = structured.soft_slot_assignment[0]
             slot_rows.append(slots)
             effective_rows.append(effective_k)
         effective = torch.tensor(effective_rows, dtype=torch.long, device=center_scores.device)
