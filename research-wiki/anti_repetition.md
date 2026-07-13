@@ -29,9 +29,18 @@
 - 不把 PhysTime 1.0 的负结果外推为 physical-time TAD 无效；当前实验首先证明的是实现与对照存在架构混杂。
 - 不在 PhysTime 1.0 上继续调 endpoint、NMS、训练长度或单独 attention weight；该实现已经冻结为负基线。
 - 不再把原生 192 tubelet feature 插值为 384 后与 384 raw supports 一一绑定，并把长度相等称为 feature provenance。
+- 不把一个已融合两帧的 tubelet token 当成两个可独立相加的 feature values；multi-atom 首先只是 set-valued anchor provenance。
+- 不在同一个“coordinate-only”实验里同时引入 `J192 -> Q384` lift、候选恢复和 support-mass operator；`K`、`J`、`Q` 必须分别审计。
 - 不把 zero-coverage query 直接删除，也不把 gap token/跨 query 推断描述成已观测 feature 或 dense imputation。
 - 不把 `SM-PTAF` 的外部公式、伪代码或 patch map 写成 `implemented`、`tested` 或已有 mAP。
 - 不用参数总数接近替代容量公平；projection 深度、跨 query context、candidate topology、assignment 与训练更新必须同时对齐。
+- 不把“原始 AdaTAD 使用 interpolation”误解为 G1a 也必须立即恢复 interpolation。插值可作为两臂共享的中性 query-grid lift，但必须单独归因，且永远不能把插值位置计作新增原始观测。
+- 物理点写入和候选 mask 必须使用不同张量：rank/slot center 在写入物理中心前必须 clone。禁止把已被物理秒坐标原地改写的 view 与 selected count 比较，否则会静默删除合法候选并伪造性能下降。
+- static precheck、真实 CUDA gate 与 pilot 完成是三种不同证据；只有 commit/tree/config/data/checkpoint 哈希一致、真实三步更新和正式 evaluator 通过，才允许启动依赖 pilot。
+- 不能只在 VideoMAE 输入前把重复 padding 像素置零：无效 token 还会经 attention K/V、残差、MLP、TIA 卷积和 norm 回流污染有效 token；严格隔离必须逐层传播 mask，并以 padding 反事实和无效输入零梯度验证。
+- gate 的推理尾样本和 evaluator 必须来自真实 test split；使用 validation/train 样本即使能跑 NMS 也不能证明测试闭环。
+- 数据集 provenance 不能只哈希文件名与大小；必须使用完整文件内容摘要。checkpoint 不能只检查文件存在或字节非空；必须真实反序列化并从 manifest 独立重算 evaluator。
+- FPS 容差不能凭经验拍定或默认为零；先全量审计 decoder FPS、annotation duration 与 frame count，再把保守阈值写入 train/test 同一合同，并由正式 gate 重算。
 
 ## 当前唯一主线
 

@@ -20,6 +20,7 @@
 12. [讨论覆盖矩阵](discussion_coverage.md)：逐主题说明内容归档位置与原始来源。
 13. [原始讨论归档](sources/README.md)：主任务用户原文与跨代理近期记录。
 14. [跨 Worktree 库存](worktree_inventory.md)：所有历史 checkout、分支 HEAD 与证据边界。
+15. [原始来源登记](source_registry.md)：本轮审查、正式结果、远端作业、代码与外部文献锚点。
 
 ## 当前实体
 
@@ -60,6 +61,7 @@
 - `exp:phystime-feature-track`
 - `exp:phystime-adatad-k384`
 - `exp:phystime-performance-drop-diagnosis`
+- `exp:phystime-g1a-native-j192`
 
 ### Papers
 
@@ -69,6 +71,7 @@
 - `paper:zeng2024_temporal_robustness`
 - `paper:shukla2021_mtan`
 - `paper:sun2026_liquidtad`
+- `paper:wang2022_rcl`
 
 ### Claims
 
@@ -76,4 +79,4 @@
 
 ## 当前状态一句话
 
-PhysTime-AdaTAD 1.0 的 K384 三头 full run 已完成并冻结为负基线。当前唯一执行阶段是 `HOLD AND REBUILD`：native tubelet feature-support provenance + capacity/context/candidate/assignment-matched coordinate-only control；`SM-PTAF` 只是 designed candidate。长期目标仍是直接处理任意不规则视频观测、在真实物理时间上分类和定位的独立离线 TAD 检测器。
+PhysTime-AdaTAD 1.0 的 K384 三头 full run 已完成并冻结为负基线。当前唯一执行阶段是 `HOLD AND REBUILD`：native tubelet feature-support provenance + 分离 K/J/Q0/QΣ 的 matched temporal-metric controls；`SM-PTAF` 只是 designed candidate。长期目标仍是直接处理任意不规则视频观测、在真实物理时间上分类和定位的独立离线 TAD 检测器。

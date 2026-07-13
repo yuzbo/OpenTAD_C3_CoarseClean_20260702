@@ -17,7 +17,7 @@
 {"from":"idea:cfpa-structured-policy","to":"exp:duca-repaired-final","type":"tested_by","evidence":"Structured exact-K/max-gap software gates."}
 {"from":"exp:duca-repaired-final","to":"idea:cfpa-structured-policy","type":"supports","evidence":"Supports engineering correctness of the structured policy, not detector effectiveness."}
 {"from":"idea:phystime-tad-2","to":"exp:phystime-feature-track","type":"tested_by","evidence":"Feature-token track tested software geometry before cancellation."}
-{"from":"idea:phystime-adatad-1","to":"exp:phystime-adatad-k384","type":"tested_by","evidence":"Frozen primary raw-video matched-head experiment definition."}
+{"from":"idea:phystime-adatad-1","to":"exp:phystime-adatad-k384","type":"tested_by","evidence":"Frozen primary raw-video matched-head experiment; final 3ac93a1 K384 full run completed with a negative verdict for the current implementation."}
 {"from":"idea:phystime-tal-1","to":"paper:shukla2021_mtan","type":"inspired_by","evidence":"Continuous-time embeddings and attention for irregular observations."}
 {"from":"idea:phystime-tal-1","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Actual timeline coordinates in TAD."}
 {"from":"idea:phystime-tal-1","to":"paper:zeng2024_temporal_robustness","type":"inspired_by","evidence":"Missing-frame localization robustness and consistency training."}
@@ -29,7 +29,6 @@
 {"from":"idea:phystime-adatad-1","to":"paper:zhang2022_actionformer","type":"inspired_by","evidence":"Selected-axis and physical-grid detection baselines."}
 {"from":"idea:phystime-adatad-1","to":"paper:liu2024_adatad","type":"inspired_by","evidence":"Official raw-video VideoMAE adapter backbone."}
 {"from":"idea:phystime-adatad-1","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"Actual timeline coordinate comparison."}
-{"from":"idea:phystime-adatad-1","to":"exp:phystime-adatad-k384","type":"tested_by","evidence":"Final 3ac93a1 matched K384 full run completed with a negative verdict for the current implementation."}
 {"from":"exp:phystime-adatad-k384","to":"exp:phystime-performance-drop-diagnosis","type":"diagnosed_by","evidence":"Geometry, assignment, checkpoint attention, capacity and full-prediction decomposition explain the observed drop."}
 {"from":"idea:no-free-frames","to":"gap:G7","type":"addresses_gap","evidence":"Full-stack compute accounting."}
 {"from":"idea:chronotransport-dcrt","to":"gap:G7","type":"addresses_gap","evidence":"Targets repeated feature recomputation with measured full-stack risk-cost decisions."}
@@ -64,3 +63,6 @@
 {"from":"idea:sm-ptaf","to":"paper:liu2024_adatad","type":"inspired_by","evidence":"Uses the official raw-video VideoMAE/TIA backbone while restricting the claim to the detector interface."}
 {"from":"idea:sm-ptaf","to":"paper:shukla2021_mtan","type":"inspired_by","evidence":"mTAN is the nearest irregular-time attention baseline and defines the regridding novelty risk."}
 {"from":"idea:sm-ptaf","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"TE-TAD occupies actual-timeline coordinates, so seconds alone cannot be claimed as novel."}
+{"from":"paper:wang2022_rcl","to":"gap:G3","type":"addresses_gap","evidence":"RCL already learns a continuous anchoring representation conditioned on video embeddings and temporal coordinates, narrowing novelty beyond continuous proposals."}
+{"from":"idea:sm-ptaf","to":"paper:wang2022_rcl","type":"inspired_by","evidence":"RCL defines the continuous-anchor baseline; SM-PTAF must contribute explicit irregular observation-support provenance rather than continuous coordinates alone."}
+{"from":"idea:phystime-tad-2","to":"exp:phystime-g1a-native-j192","type":"tested_by","evidence":"G1a tests the matched physical-coordinate prerequisite only; it does not test the support-measure operator or SM-PTAF."}

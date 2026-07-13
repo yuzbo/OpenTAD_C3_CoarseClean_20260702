@@ -44,6 +44,20 @@ class AnchorFreeHead(nn.Module):
         self.physical_grid_required = bool(self.physical_grid_cfg.get("required", self.physical_grid_enabled))
         self.physical_grid_strict = bool(self.physical_grid_cfg.get("strict", True))
         self.physical_grid_eps = float(self.physical_grid_cfg.get("eps", 1.0e-6))
+        self.physical_grid_positions_key = self.physical_grid_cfg.get("positions_key")
+        selected_count_keys = self.physical_grid_cfg.get(
+            "selected_count_keys", ("selected_valid_len", "irregular_selected_count")
+        )
+        if not isinstance(selected_count_keys, (list, tuple)) or not selected_count_keys:
+            raise ValueError("physical-grid selected_count_keys must be a non-empty list/tuple")
+        self.physical_grid_selected_count_keys = tuple(str(key) for key in selected_count_keys)
+        self.physical_grid_dense_valid_len_key = str(
+            self.physical_grid_cfg.get("dense_valid_len_key", "irregular_dense_valid_len")
+        )
+        self.physical_grid_axis_start_key = self.physical_grid_cfg.get("axis_start_key")
+        self.physical_grid_axis_end_key = self.physical_grid_cfg.get("axis_end_key")
+        if (self.physical_grid_axis_start_key is None) != (self.physical_grid_axis_end_key is None):
+            raise ValueError("physical-grid axis_start_key and axis_end_key must be configured together")
         self._physical_grid_debug = {}
 
         self.loss_weight = loss_weight
@@ -79,7 +93,7 @@ class AnchorFreeHead(nn.Module):
 
     def _physical_selected_count_from_meta(self, meta, positions):
         count_sources = []
-        for key in ("selected_valid_len", "irregular_selected_count"):
+        for key in self.physical_grid_selected_count_keys:
             if key in meta and meta[key] is not None:
                 count_sources.append((key, int(round(float(meta[key])))))
         if not count_sources:
@@ -102,13 +116,19 @@ class AnchorFreeHead(nn.Module):
         return selected_count
 
     def _physical_positions_from_meta(self, meta, device, dtype):
-        positions = meta.get("irregular_selected_positions", None)
-        if positions is None:
-            positions = meta.get("selected_dense_indices", None)
+        if self.physical_grid_positions_key is not None:
+            positions = meta.get(self.physical_grid_positions_key)
+        else:
+            positions = meta.get("irregular_selected_positions", None)
+            if positions is None:
+                positions = meta.get("selected_dense_indices", None)
         if positions is None:
             if self.physical_grid_required:
-                raise ValueError("physical-grid ActionFormer requires irregular_selected_positions or selected_dense_indices.")
-            return None, None
+                required_key = self.physical_grid_positions_key or (
+                    "irregular_selected_positions or selected_dense_indices"
+                )
+                raise ValueError(f"physical-grid ActionFormer requires {required_key}.")
+            return None, None, None
 
         positions = torch.as_tensor(positions, device=device, dtype=dtype).reshape(-1)
         selected_count = self._physical_selected_count_from_meta(meta, positions)
@@ -116,19 +136,59 @@ class AnchorFreeHead(nn.Module):
         if positions.numel() == 0:
             if self.physical_grid_required:
                 raise ValueError("physical-grid ActionFormer requires at least one selected physical position.")
-            return None, None
+            return None, None, None
+        if not torch.isfinite(positions).all():
+            raise ValueError("physical-grid ActionFormer positions must be finite")
+        if positions.numel() > 1 and not torch.all(positions[1:] > positions[:-1]):
+            raise ValueError("physical-grid ActionFormer positions must be strictly increasing")
 
-        dense_valid_len = meta.get("irregular_dense_valid_len", meta.get("irregular_selected_valid_len", None))
+        if self.physical_grid_axis_end_key is not None:
+            if self.physical_grid_axis_start_key not in meta or self.physical_grid_axis_end_key not in meta:
+                raise ValueError(
+                    "physical-grid ActionFormer requires explicit physical domain start/end metadata"
+                )
+            domain_start = float(meta[self.physical_grid_axis_start_key])
+            domain_end = float(meta[self.physical_grid_axis_end_key])
+            if not math.isfinite(domain_start) or not math.isfinite(domain_end):
+                raise ValueError("physical-grid ActionFormer domain bounds must be finite")
+            if domain_end - domain_start <= self.physical_grid_eps:
+                raise ValueError("physical-grid ActionFormer domain must have positive extent")
+            if (
+                float(positions[0].item()) < domain_start - self.physical_grid_eps
+                or float(positions[-1].item()) > domain_end + self.physical_grid_eps
+            ):
+                raise ValueError("physical-grid ActionFormer positions lie outside the explicit physical domain")
+            return positions, domain_start, domain_end
+
+        dense_valid_len = meta.get(
+            self.physical_grid_dense_valid_len_key,
+            meta.get("irregular_selected_valid_len", None),
+        )
         if dense_valid_len is None:
             dense_valid_len = float(positions[-1].item()) + 1.0
         dense_valid_len = max(float(dense_valid_len), float(positions[-1].item()) + 1.0)
-        return positions, dense_valid_len
+        return positions, 0.0, dense_valid_len
 
-    def _selected_axis_to_physical_axis(self, coords, positions, dense_valid_len):
-        xp = torch.arange(positions.numel(), dtype=coords.dtype, device=coords.device)
-        xp = torch.cat([xp, xp.new_tensor([float(positions.numel())])], dim=0)
-        fp = torch.cat([positions, positions.new_tensor([float(dense_valid_len)])], dim=0)
-        flat = coords.reshape(-1).clamp(min=0.0, max=float(positions.numel()))
+    def _selected_axis_to_physical_axis(self, coords, positions, domain_start, domain_end):
+        count = int(positions.numel())
+        rank_centers = torch.arange(count, dtype=coords.dtype, device=coords.device)
+        xp = torch.cat(
+            [
+                rank_centers.new_tensor([-0.5]),
+                rank_centers,
+                rank_centers.new_tensor([float(count) - 0.5]),
+            ],
+            dim=0,
+        )
+        fp = torch.cat(
+            [
+                positions.new_tensor([float(domain_start)]),
+                positions,
+                positions.new_tensor([float(domain_end)]),
+            ],
+            dim=0,
+        )
+        flat = coords.reshape(-1).clamp(min=-0.5, max=float(count) - 0.5)
         right_idx = torch.searchsorted(xp, flat, right=True).clamp(min=1, max=xp.numel() - 1)
         left_idx = right_idx - 1
         x0 = xp[left_idx]
@@ -156,6 +216,8 @@ class AnchorFreeHead(nn.Module):
         physical_masks = [mask.clone().bool() for mask in mask_list]
         debug_centers = []
         debug_axis_delta = []
+        debug_domain_starts = []
+        debug_domain_ends = []
         valid_points_total = 0
         debug_selected_count = 0
         debug_dense_valid_len = 0.0
@@ -166,31 +228,49 @@ class AnchorFreeHead(nn.Module):
 
             base_device = points[0].device
             base_dtype = points[0].dtype
-            positions, dense_valid_len = self._physical_positions_from_meta(meta, base_device, base_dtype)
+            positions, domain_start, domain_end = self._physical_positions_from_meta(
+                meta, base_device, base_dtype
+            )
             if positions is None:
                 return points, mask_list
 
             selected_count = int(positions.numel())
+            domain_duration = float(domain_end - domain_start)
             debug_selected_count += selected_count
-            debug_dense_valid_len = max(debug_dense_valid_len, float(dense_valid_len))
+            debug_dense_valid_len = max(debug_dense_valid_len, domain_duration)
+            debug_domain_starts.append(float(domain_start))
+            debug_domain_ends.append(float(domain_end))
             meta["irregular_native_axis"] = True
             meta["physical_grid_actionformer"] = True
             meta["physical_grid_selected_count"] = selected_count
-            meta["physical_grid_dense_valid_len"] = float(dense_valid_len)
+            meta["physical_grid_dense_valid_len"] = domain_duration
+            meta["physical_grid_domain_start"] = float(domain_start)
+            meta["physical_grid_domain_end"] = float(domain_end)
+            if self.physical_grid_axis_start_key is not None:
+                meta["physical_grid_axis_start"] = float(meta[self.physical_grid_axis_start_key])
+                meta["physical_grid_axis_end"] = float(meta[self.physical_grid_axis_end_key])
 
             for level_idx, base_point in enumerate(points):
                 point = base_point.clone()
-                selected_center = point[:, 0].to(dtype=base_dtype, device=base_device)
+                selected_center = point[:, 0].to(dtype=base_dtype, device=base_device).clone()
                 slot_ordinal = torch.arange(point.shape[0], dtype=base_dtype, device=base_device)
                 nominal_stride = point[:, 3].to(dtype=base_dtype, device=base_device).clamp(min=self.physical_grid_eps)
-                physical_center = self._selected_axis_to_physical_axis(selected_center, positions, dense_valid_len)
-                physical_prev = self._selected_axis_to_physical_axis(
-                    (selected_center - nominal_stride).clamp(min=0.0), positions, dense_valid_len
+                physical_center = self._selected_axis_to_physical_axis(
+                    selected_center, positions, domain_start, domain_end
                 )
-                physical_next = self._selected_axis_to_physical_axis(
-                    selected_center + nominal_stride, positions, dense_valid_len
+                physical_left = self._selected_axis_to_physical_axis(
+                    selected_center - 0.5 * nominal_stride,
+                    positions,
+                    domain_start,
+                    domain_end,
                 )
-                physical_stride = ((physical_next - physical_prev) * 0.5).clamp(min=self.physical_grid_eps)
+                physical_right = self._selected_axis_to_physical_axis(
+                    selected_center + 0.5 * nominal_stride,
+                    positions,
+                    domain_start,
+                    domain_end,
+                )
+                physical_stride = (physical_right - physical_left).clamp(min=self.physical_grid_eps)
                 range_scale = physical_stride / nominal_stride
                 point[:, 0] = physical_center
                 point[:, 1] = point[:, 1] * range_scale
@@ -198,8 +278,7 @@ class AnchorFreeHead(nn.Module):
                 point[:, 3] = physical_stride
                 physical_points[level_idx].append(point)
 
-                slot_index = torch.arange(point.shape[0], device=base_device)
-                level_valid = slot_index < int(selected_count)
+                level_valid = selected_center < float(selected_count)
                 physical_masks[level_idx][batch_idx] = physical_masks[level_idx][batch_idx] & level_valid
                 kept = physical_masks[level_idx][batch_idx]
                 if kept.any():
@@ -220,8 +299,14 @@ class AnchorFreeHead(nn.Module):
                 "physical_grid_actionformer_center_min": float(centers.min().item()),
                 "physical_grid_actionformer_center_max": float(centers.max().item()),
                 "physical_grid_actionformer_axis_delta_reference": "selected_slot_ordinal",
+                "physical_grid_actionformer_positions_key": self.physical_grid_positions_key
+                or "irregular_selected_positions|selected_dense_indices",
+                "physical_grid_actionformer_axis_start_key": self.physical_grid_axis_start_key,
+                "physical_grid_actionformer_axis_end_key": self.physical_grid_axis_end_key,
                 "physical_grid_actionformer_axis_delta_mean": float(axis_delta.mean().item()),
                 "physical_grid_actionformer_axis_delta_max": float(axis_delta.max().item()),
+                "physical_grid_actionformer_domain_start_min": min(debug_domain_starts),
+                "physical_grid_actionformer_domain_end_max": max(debug_domain_ends),
             }
         else:
             self._physical_grid_debug = {
@@ -229,6 +314,19 @@ class AnchorFreeHead(nn.Module):
                 "physical_grid_actionformer_valid_points": 0,
             }
         return physical_points, physical_masks
+
+    def _clamp_physical_proposals_to_domain(self, proposals, metas):
+        if not self.physical_grid_enabled:
+            return proposals
+        if metas is None or len(metas) != len(proposals):
+            raise ValueError("physical-grid proposal clamping requires one metadata entry per sample")
+        for proposal, meta in zip(proposals, metas):
+            domain_start = float(meta["physical_grid_domain_start"])
+            domain_end = float(meta["physical_grid_domain_end"])
+            if proposal.numel() > 0:
+                proposal[:, 0].clamp_(min=domain_start, max=domain_end)
+                proposal[:, 1].clamp_(min=domain_start, max=domain_end)
+        return proposals
 
     def collect_debug_state(self):
         return dict(self._physical_grid_debug)
@@ -328,6 +426,7 @@ class AnchorFreeHead(nn.Module):
 
         # get refined proposals and scores
         proposals, scores = self.get_valid_proposals_scores(points, reg_pred, cls_pred, mask_list)  # list [T,2]
+        proposals = self._clamp_physical_proposals_to_domain(proposals, metas)
         return proposals, scores
 
     def get_refined_proposals(self, points, reg_pred):

@@ -48,6 +48,10 @@ class BackboneWrapper(nn.Module):
 
         # 5. freeze_backbone: whether to freeze the backbone, default is False
         self.freeze_backbone = getattr(custom_cfg, "freeze_backbone", False)
+        self.strict_temporal_padding_mask = bool(
+            getattr(custom_cfg, "strict_temporal_padding_mask", False)
+        )
+        self.latest_temporal_padding_mask_summary = None
 
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
@@ -78,6 +82,12 @@ class BackboneWrapper(nn.Module):
             data_samples=None,
             training=False,  # for blending, which is not used in openTAD
         )
+        original_batches = int(frames.shape[0])
+        raw_masks = None
+        if self.strict_temporal_padding_mask:
+            if masks is None or masks.ndim != 2 or int(masks.shape[0]) != original_batches:
+                raise ValueError("strict temporal padding isolation requires raw masks with shape [B,K]")
+            raw_masks = masks.to(device=frames.device, dtype=torch.bool)
 
         # pre_processing_pipeline:
         if self.pre_processing_pipeline is not None:
@@ -86,6 +96,25 @@ class BackboneWrapper(nn.Module):
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
+        backbone_temporal_mask = None
+        if self.strict_temporal_padding_mask:
+            if self.use_temporal_checkpointing:
+                raise ValueError("strict temporal padding isolation does not support wrapper checkpoint chunking")
+            temporal_length = int(frames.shape[2])
+            if batches % original_batches:
+                raise ValueError("pre-processing changed the batch axis incompatibly with temporal masking")
+            temporal_chunks = batches // original_batches
+            if int(raw_masks.shape[1]) != temporal_chunks * temporal_length:
+                raise ValueError("raw mask length does not match pre-processed temporal chunks")
+            backbone_temporal_mask = raw_masks.reshape(
+                original_batches, temporal_chunks, temporal_length
+            ).reshape(batches, temporal_length)
+            backbone_temporal_mask = (
+                backbone_temporal_mask[:, None, :]
+                .expand(batches, num_segs, temporal_length)
+                .reshape(batches * num_segs, temporal_length)
+            )
+            frames = frames * backbone_temporal_mask[:, None, :, None, None].to(dtype=frames.dtype)
 
         # go through the video backbone
         if self.freeze_backbone:  # freeze everything even in training
@@ -97,7 +126,9 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_dim,
                     )
                 else:
-                    features = self.model.backbone(frames)
+                    features = self.model.backbone(
+                        frames, temporal_mask=backbone_temporal_mask
+                    ) if self.strict_temporal_padding_mask else self.model.backbone(frames)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
@@ -107,7 +138,9 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_dim,
                 )
             else:
-                features = self.model.backbone(frames)
+                features = self.model.backbone(
+                    frames, temporal_mask=backbone_temporal_mask
+                ) if self.strict_temporal_padding_mask else self.model.backbone(frames)
 
         # unflatten and pool the features
         if isinstance(features, (tuple, list)):
@@ -117,7 +150,34 @@ class BackboneWrapper(nn.Module):
 
         # apply mask
         if masks is not None and features.dim() == 3:
-            features = features * masks.unsqueeze(1).detach().float()
+            if self.strict_temporal_padding_mask:
+                feature_length = int(features.shape[-1])
+                raw_length = int(raw_masks.shape[-1])
+                if raw_length % feature_length:
+                    raise ValueError("strict temporal padding mask cannot be reduced to backbone feature length")
+                output_masks = raw_masks.reshape(
+                    raw_masks.shape[0], feature_length, raw_length // feature_length
+                ).any(dim=-1)
+                features = features * output_masks.unsqueeze(1).to(dtype=features.dtype)
+                model_summary = getattr(
+                    self.model.backbone, "latest_temporal_padding_mask_summary", None
+                )
+                if not isinstance(model_summary, dict) or model_summary.get(
+                    "strict_isolation_verified"
+                ) is not True:
+                    raise RuntimeError("video backbone did not verify strict temporal padding isolation")
+                self.latest_temporal_padding_mask_summary = {
+                    **model_summary,
+                    "wrapper_enabled": True,
+                    "output_invalid_features_zeroed": True,
+                    "output_valid_counts": [int(row.sum().item()) for row in output_masks],
+                }
+            else:
+                features = features * masks.unsqueeze(1).detach().float()
+                self.latest_temporal_padding_mask_summary = {
+                    "enabled": False,
+                    "strict_isolation_verified": False,
+                }
 
         # make sure detector has the float32 input
         features = features.to(torch.float32)

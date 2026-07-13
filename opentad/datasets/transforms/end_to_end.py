@@ -749,6 +749,10 @@ class LoadFrames:
 
             frame_idxs = dense_window[keep_positions]
             self._set_irregular_axis_meta(results, keep_positions, valid_len)
+            results["irregular_sampling_strategy"] = "random_fixed_subsample"
+            results["irregular_sampling_scope"] = "within_accepted_window"
+            results["irregular_window_crop_uses_gt"] = self.method_base == "random_trunc"
+            results["irregular_subsample_uses_gt"] = False
 
             if gt_segments is not None and gt_labels is not None:
                 if self.remap_gt_to_selected_axis:

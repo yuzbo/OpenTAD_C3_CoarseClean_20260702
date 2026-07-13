@@ -4,14 +4,15 @@
 
 ## 当前方向
 
-长期唯一主线仍是独立离线 physical-time TAD detector。`PhysTime-AdaTAD 1.0` 的 THUMOS14 raw-RGB/K384 三头 full run 已完成并冻结为负基线。当前执行阶段是 `HOLD AND REBUILD`：先建立 native tubelet feature-support provenance，以及 capacity/context/candidate/assignment-matched 的 selected-coordinate 与 physical-coordinate ActionFormer controls；随后才决定是否实现 `idea:sm-ptaf`。K 可决定 matched candidate cardinality，但候选坐标、GT、回归、decode、NMS 与评测始终使用秒，不能回到 selected rank。
+长期唯一主线仍是独立离线 physical-time TAD detector。`PhysTime-AdaTAD 1.0` 的 THUMOS14 raw-RGB/K384 三头 full run 已完成并冻结为负基线。当前执行阶段是 `HOLD AND REBUILD`：先建立 native tubelet feature-support provenance，以及 capacity/context/candidate/assignment-matched 的 selected-time 与 physical-time controls；随后才决定是否实现 `idea:sm-ptaf`。独立核验要求分开 `K=384` raw observations、`J=192` native tubelet tokens、基础候选网格 `Q0` 与多尺度总候选 `QΣ`：G1a 使用 `Q0=J=192`、官方六层金字塔 `QΣ=378`，不做 J192→Q0=384 lift；G1b 才给双侧共享 `Q0=384` 中性 lift，最后才允许 mass residual。候选坐标、GT、回归、decode、NMS 与评测始终使用秒，不能回到 selected rank。
 
 当前事实：最终修复 commit 为 `3ac93a1`，诊断锚点为 `d900c7c`。真实 gate、稳定性 gate、三头 full run 与最佳 checkpoint 复算均已完成。性能下降不是 NaN、evaluator、重复坐标换算或 checkpoint 读取错误。诊断与 2026-07-13 Pro 审查共同定位：原生 tubelet 轴被插值后错误绑定 raw-frame supports、检测容量/上下文不公平、raw absolute seconds 主导 query、粗层 attention 有效聚合坍缩、候选/短动作监督不足、assignment 不同构。`SM-PTAF` 只有 `designed` 状态，回复中的代码不是实现。原始数字只见 `docs/evaluation/results.md`。
+G1a native-J192 matched control 已实现并通过远端新旧相关回归 `116 passed`：Q0=192、QΣ=378，不做 J192→Q0=384 lift；两臂共享官方 ActionFormer 模型，只改变统一秒轴张量。扩展回归修复了 physical center 原地写入污染 rank-domain candidate mask、从而静默删除合法候选的关键错误，并加入逐层 VideoMAE/TIA padding isolation、真实 test evaluator、完整内容数据指纹、可反序列化 checkpoint 与 evaluator 独立重算。411 个 THUMOS14 MP4 的预部署 timebase 审计显示最大相对 FPS 偏差约 1.12%、帧数偏差为 0；正式 gate 会全量复核。当前证据级别为 `tested`；最终 clean commit/fixed snapshot、真实 THUMOS 三步 AMP gate 与 6 epoch pilots 均未完成。原始 AdaTAD interpolation 只允许在后续 G1b 作为两臂共享的中性 query lift，不能计作新增观测。
 
 ## Top gaps
 
 1. `gap:G4`：三头 full run 已完成，但不是坐标表示的等容量隔离；必须先构建 capacity/context/candidate/assignment-matched control。
-2. `gap:G2`：算子级 support 已有，但 native VideoMAE tubelet feature 与多原子 support 的 provenance 尚未关闭，禁止继续使用 `192 -> 384` 长度相等冒充语义对齐。
+2. `gap:G2`：算子级 support 已有，但 native VideoMAE tubelet feature 与多原子 support 的 provenance 尚未关闭，禁止继续使用 `192 -> 384` 长度相等冒充语义对齐。一个 tubelet 已融合两帧，multi-atom 只能先称 set-valued anchor，不能自动声称 feature measure 可加。
 3. `gap:G5`：边界与短动作诊断已完成；修复后的 coordinate-only、mass residual、bounded content 与 assignment 因果消融尚缺。
 4. `gap:G3`：需区分 mTAN、TE-TAD、FrameDrop/TRC、LiquidTAD；continuous time 本身不新。
 5. `gap:G7`：缺 raw decode 到 NMS 的全栈成本账本；泛化仍只有 THUMOS14 单协议、单种子证据。
@@ -49,7 +50,7 @@
 
 ## 近邻文献簇
 
-- 不规则时间：mTAN 证明 continuous-time embedding+attention 已存在。
+- 不规则时间：mTAN 证明 continuous-time embedding+attention 已存在；RCL 已做连续锚表示。
 - TAD 实际时间：TE-TAD 已用 actual timeline coordinate 和长度相关 query。
 - 缺帧鲁棒性：Temporal Robustness Benchmark 表明退化主要来自 localization，并提出 FrameDrop/TRC。
 - 连续动力学 TAD：LiquidTAD 已用 parallel liquid-inspired temporal relaxation，不能宽泛声称首个 continuous-time TAD。
@@ -63,6 +64,6 @@
 4. K=384 raw-video 节省在完整 decode/VideoMAE/head latency 中是否真实？
 5. 第二数据集和 held-out sampling family 是否复现？
 6. 在相同 ActionFormer 上下文与候选密度下，只改变物理时间表示后是否仍有收益？
-7. 在 TIA 已发生 selected-rank mixing 的前提下，native tubelet atom provenance 能否形成足够可防守的 detector-level claim？
+7. 在 tubelet Conv3d 与 TIA 已发生 selected-rank mixing 的前提下，multi-atom anchor 是否足够；还是必须使用 frame-separable tokenizer/physical-gap-conditioned stem？
 
 完整历史细节必须读取 `research-wiki/routes/`，不能只凭本 query pack 恢复 DUCA 或 ChronoTransport。

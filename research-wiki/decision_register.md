@@ -29,6 +29,7 @@
 | DR-023 | 接受 2026-07-13 Pro 的 `HOLD AND REBUILD`，冻结 PhysTime 1.0 | 已锁定 | 外部逐文件审查与本地诊断一致指出 feature-support provenance、容量/上下文、候选、assignment 和尺度混杂；继续局部调参不能关闭归因问题 | 1.0 只作负基线；任何恢复必须提出能同时关闭上述 P0 的新证据 |
 | DR-024 | `SM-PTAF` 只登记为 designed candidate，不是已实现最终方法 | 当前设计 | 唯一推荐的核心是 native tubelet multi-atom provenance + measure-preserving no-interpolation set-to-physical-query lift；capacity-matched AF 是先行 control，mass residual 是候选算子 | 先通过 G0 provenance 与 G1 coordinate-only control，再决定实现和 pilot；回复代码片段不能替代仓库实现、测试或 mAP |
 | DR-025 | K 可以决定 matched candidate cardinality，但不能定义物理坐标 | 已锁定 | 旧“query count 与 K 完全无关”会令候选数和 detector capacity 不公平；反向把 rank 当坐标又会破坏 PhysTime 初心 | 候选 center/width/stride、GT、decode、NMS 仍全部是秒；validator 必须分别审计 K、native token J 与 query Q |
+| DR-026 | Pro 总裁决分级接受，SM-PTAF 不直接升级为唯一最终模型 | 当前执行 | 独立核验确认 1.0 负结果、provenance/容量/候选/assignment 问题和 `HOLD AND REBUILD`；但 tubelet 已融合跨 gap 帧，且删除 J192 插值后恢复 Q384 必然新增 lift，不能再称纯 coordinate-only | 先完成 G0 lineage/Jacobian；再做 G1a `Q=J` matched temporal-metric、G1b 双侧共享 Q384 中性 lift；只有 survivor 才进入 mass residual，endpoint 最后消融 |
 
 ## 不得静默推翻
 

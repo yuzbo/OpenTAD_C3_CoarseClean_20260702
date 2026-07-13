@@ -32,3 +32,10 @@
 - 2026-07-13：逐字归档 1539 行 PhysTime 性能 Pro 回复，附件与仓库归档 SHA256 均为 `651C4CA673073D7E4C05746138C82EBBE2E6174C459516FB40B3EFDCA47305AB`；审查裁决为 `HOLD AND REBUILD`。
 - 2026-07-13：吸收 native tubelet feature-support provenance、capacity/context/candidate/assignment parity、gap-query 与训练态 mass-path 等新约束；新增 `idea:sm-ptaf`，严格标记为 `designed`。PhysTime 1.0 继续冻结为负基线，下一步先做 provenance 与 coordinate-only P0 gates，不创建虚假的实验或结果状态。
 - 2026-07-13：重建 Wiki index/query pack/lint；共 38 个实体、10 个 gaps、66 条关系，0 孤立、0 失效引用、0 重复节点/边，query pack 4430 字符。
+- 2026-07-13：独立复核远端最终作业与最佳 checkpoint 复算，`1159491..1159495`、`1159819..1159821` 均为 `COMPLETED 0:0`；正式快照关键合同测试 `69 passed`。确认结果可信、PhysTime 1.0 失败、physical-time 假设未被裁决。
+- 2026-07-13：分级接受 Pro 审查而非照单全收：锁定 `HOLD AND REBUILD`，但 SM-PTAF 保持 `designed`。新增 tubelet 跨 gap 非线性融合风险，并把下一步拆成 G0 provenance、G1a `Q=J` temporal-metric、G1b 双侧共享 Q384 中性 lift、G2 mass residual。
+- 2026-07-13：登记 RCL 为连续锚 TAD 近邻，进一步限制新颖性主张；建立 `source_registry.md` 记录本轮原始审查、正式结果、远端作业、代码和文献来源。
+- 2026-07-13：独立核验后的 Wiki 完整性检查：39 个实体、10 个 gaps、67 条关系，0 孤立实体、0 失效引用、0 重复关系，query pack 4684 字符。
+- 2026-07-13：实现 PhysTime G1a native-J192 matched control：分离 K384/J192/Q0=192/QΣ=378，补齐全部 patch 输入槽与 padding-repeat provenance、显式秒域起止边界、官方 ActionFormer 梯度/完整后处理 gate，以及 static-contract→G0→real-gate→pilot 哈希链。当前状态仅 `implemented`；远端 PyTorch、真实 THUMOS gate 与 pilot 尚未完成。
+- 2026-07-13：G1a 扩展诊断与回归完成。远端 Linux/Torch 新旧相关 suite `100 passed`；修复 `AnchorFreeHead` 的 `dense_valid_len` 残留 NameError，以及 `selected_center` view 被物理中心原地写入污染、从而错误裁剪合法候选的关键 bug。部署合同升级为 commit/tree/config/data/checkpoint 全链绑定、双臂三步 AMP、正式单视频滑窗 NMS/evaluator 和严格 6 epoch artifact 验收。G1a 状态提升为 `tested`，正式 fixed-snapshot gate/pilot 与 mAP 仍 pending。
+- 2026-07-13：G1a 预部署收口完成。真实 gate 改用 test split 尾样本和 test evaluator；数据指纹升级为逐文件完整 SHA256/Merkle；checkpoint/metrics 验收升级为真实反序列化与 evaluator 独立重算；VideoMAE/TIA 在 patch、attention、残差、MLP、卷积和 norm 全路径实施严格 padding isolation。全量 411 个 THUMOS14 MP4 的 decoder/annotation timebase 审计确认最大相对 FPS 偏差约 1.12%、帧数偏差为 0，配置容差固定为 1.25%/0.01%。远端新旧回归 `116 passed`；证据仍仅为 `tested`，正式 clean snapshot gate、pilot 和 mAP pending。

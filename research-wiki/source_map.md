@@ -14,6 +14,8 @@
 | `docs/evaluation/phystime-performance-drop-diagnosis.md` | PhysTime 1.0 负结果的因果诊断与下一版 gate |
 | `docs/evaluation/EXPERIMENT_AUDIT.md` | 独立只读实验完整性审计与整改状态 |
 | `docs/methods/reviews/2026-07-12-phystime-performance-drop-pro-audit-prompt.md` | 基于 `3ac93a1`/`d900c7c` 的最终 PhysTime Pro 代码审计、架构重设计与实验裁决 prompt |
+| `docs/methods/2026-07-13-phystime-performance-drop-pro-audit-absorption.md` | 1539 行 Pro 回复的状态、代码风险与执行顺序吸收 |
+| `docs/methods/2026-07-13-phystime-pro-audit-independent-verification.md` | 对 Pro 裁决、远端结果、代码事实和 SM-PTAF 路线的独立分级核验 |
 | `docs/evaluation/phystime-tad-track.md` | 已取消 feature-token track 的历史部署协议 |
 
 ## 2. DUCA/C3 评审与吸收记录
@@ -106,7 +108,8 @@
 - TE-TAD: `https://openaccess.thecvf.com/content/CVPR2024/html/Kim_TE-TAD_Towards_Full_End-to-End_Temporal_Action_Detection_via_Time-Aligned_Coordinate_CVPR_2024_paper.html`
 - AdaTAD: `https://openaccess.thecvf.com/content/CVPR2024/html/Liu_End-to-End_Temporal_Action_Detection_with_1B_Parameters_Across_1000_Frames_CVPR_2024_paper.html`
 - LiquidTAD: `https://arxiv.org/abs/2604.18274`
+- RCL: `https://openaccess.thecvf.com/content/CVPR2022/html/Wang_RCL_Recurrent_Continuous_Localization_for_Temporal_Action_Detection_CVPR_2022_paper.html`
 
 ## 6. 覆盖声明
 
-本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 三头 full run、性能诊断和 SM-PTAF 设计审查。三份 `routes/*-complete-record.md` 进一步记录跨分支实现与实验谱系。本次 1539 行 Pro 回复已逐字归档；吸收记录只提炼状态、风险、停止条件和下一步，不替代原文。
+本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 三头 full run、性能诊断和 SM-PTAF 设计审查。三份 `routes/*-complete-record.md` 进一步记录跨分支实现与实验谱系。本次 1539 行 Pro 回复已逐字归档，并完成独立结果/代码/路线核验；吸收记录只提炼状态、风险、停止条件和下一步，不替代原文。

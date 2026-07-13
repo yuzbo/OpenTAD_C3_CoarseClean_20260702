@@ -19,7 +19,7 @@
 ### Phase 0：PhysTime 1.0 真实门控（已完成）
 
 - 从 THUMOS14 原始 RGB 视频出发。
-- 在逻辑 768 位置窗口中，用相同、确定性、无学习、无 GT 的策略选择 K=384。
+- 训练时先沿用标准 AdaTAD 的 GT-aware `random_trunc` 接受逻辑 768 位置窗口；随后仅在该已接受窗口内部，用相同、确定性、无学习、无 GT 的 `random_fixed_subsample` 选择 K=384。验证/测试的滑窗和窗内子采样均不使用 GT。
 - `DecordDecode` 只解码这 384 个位置，未选帧不进入 VideoMAE。
 - 三个头必须获得逐样本完全相同的 selected-index checksum。
 - 真实样本完成 CUDA decode、forward、`losses["cost"].backward()` 和 inference。
@@ -38,9 +38,12 @@
 
 1. 冻结三个 `3ac93a1` 正式配置、checkpoint 与结果，不在旧 PhysTime 1.0 上继续调参。
 2. 删除主路线中原生 tubelet feature 被插值后再绑定 raw-frame support 的语义捷径，建立 native tubelet multi-atom provenance gate。
-3. 构建 capacity/context/candidate/assignment-matched 的 selected-coordinate 与 physical-coordinate ActionFormer controls。
-4. 只在 coordinate-only control 通过后，引入有显式 mass base path、bounded correction 和 physical query encoder 的 `idea:sm-ptaf`。
-5. `SM-PTAF` 当前状态仅为 `designed`；外部回复中的公式与代码片段不是实现证据。
+3. 将 `K=384` raw observations、`J=192` native tubelet tokens、基础候选网格 `Q0` 与多尺度总候选 `QΣ` 分开登记；不得把 `J192 -> Q0=384` lift 混入所谓 coordinate-only gate。
+4. 先做 `Q0=J=192`、官方六层金字塔总候选 `QΣ=378` 的 matched temporal-metric control；selected/physical 两侧使用相同容量、上下文、候选、assignment 和更新。若需要恢复 `Q0=384`，必须先给两侧加入完全相同的中性 query lift，并单独审计对应的 `QΣ=756`。
+5. 只在 matched temporal-metric control 通过后，引入有显式 mass base path、bounded correction 和 physical query encoder 的 `idea:sm-ptaf`。
+6. `SM-PTAF` 当前状态仅为 `designed`；外部回复中的公式与代码片段不是实现证据，也不能把 tubelet 的 multi-atom anchor 直接表述为可加 feature measure。
+
+当前 G1a native-J192 matched control 已达到 `tested`：远端新旧回归 `116 passed`，并修复了物理中心原地写入污染候选 mask、test evaluator 数据集错配、弱数据指纹、不可重算 artifact 与 VideoMAE 尾部 padding 泄漏风险。对 411 个 THUMOS14 视频的预部署审计确认 decoder/annotation 最大相对 FPS 偏差约 1.12%、帧数完全一致；正式 gate 仍会全量重算。正式 clean commit、固定远端快照、真实三步 AMP gate 和 6 epoch pilots 仍未完成。原始 AdaTAD 的 interpolation 不被永久禁止；它只能在 G1b 作为两臂共享、单独归因的 query-grid lift，不能重新解释为 K 个观测。
 
 ### Phase 2：结果门控后扩展
 
@@ -71,6 +74,8 @@
 - PhysTime 1.0 未胜 selected-axis 或 physical-grid，也未达到 dense anchor；当前实现结论为负。
 - 性能诊断已经排除训练崩溃、evaluator、重复坐标换算和缺失 test windows，并确认容量/上下文混杂、absolute-second query 主导、粗层 attention 坍缩、候选密度与短动作监督不足。
 - 2026-07-13 Pro 审查给出 `HOLD AND REBUILD`，进一步确认 native tubelet feature-support provenance、候选/assignment 同构和 query-mask 语义是 P0；推荐 `SM-PTAF` 作为 designed candidate，但尚无实现或实验。
+- 同日独立核验认同停止 1.0 和 P0 重建，但不接受“SM-PTAF 已是唯一最终模型”：tubelet 内两帧已被非线性融合，multi-atom 只能先作为 set-valued anchor；J192 到 Q384 也是必须单独归因的新算子。
+- G1a 已实现 K/J/Q 分离、canonical FPS/窗口秒域、逐层严格 padding isolation、结构性 lineage、原生 J192 official ActionFormer 路径、三步真实 gate、全量 timebase 审计和可重算 6 epoch artifact 合同；远端回归 `116 passed`。尚无正式 gate 或 mAP。
 
 尚未形成的论文证据：
 

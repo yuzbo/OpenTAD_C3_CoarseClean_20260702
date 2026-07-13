@@ -219,6 +219,21 @@ def test_physical_grid_opt_in_decodes_on_dense_positions_and_masks_padded_tail()
     assert metas[0]["physical_grid_actionformer"] is True
 
 
+def test_physical_grid_decode_clamps_regression_to_the_current_window_domain():
+    head = _make_head(physical_grid_actionformer=dict(enabled=True, required=True, strict=True))
+    feat_list, mask_list = _features_and_mask()
+    metas = [_irregular_meta()]
+    with torch.no_grad():
+        head.reg_head.bias.fill_(100.0)
+
+    proposals, _scores = head.forward_test(feat_list, mask_list, metas=metas)
+
+    assert all(bool(torch.all(sample[:, 0] >= 0.0)) for sample in proposals)
+    assert all(bool(torch.all(sample[:, 1] <= 10.0)) for sample in proposals)
+    assert metas[0]["physical_grid_domain_start"] == pytest.approx(0.0)
+    assert metas[0]["physical_grid_domain_end"] == pytest.approx(10.0)
+
+
 def test_physical_grid_default_keeps_selected_axis_with_same_metadata():
     head = _make_head()
     feat_list, mask_list = _features_and_mask()
@@ -473,11 +488,12 @@ def test_c3_physical_grid_static_source_contracts_when_torch_is_unavailable():
     assert "selected_dense_indices" in head
     assert "selected_valid_len" in head
     assert "def _physical_selected_count_from_meta" in head
-    assert 'for key in ("selected_valid_len", "irregular_selected_count")' in head
+    assert "self.physical_grid_selected_count_keys" in head
+    assert "for key in self.physical_grid_selected_count_keys" in head
     assert "selected_count = self._physical_selected_count_from_meta(meta, positions)" in head
     assert "physical_grid_selected_count" in head
-    assert "slot_index = torch.arange(point.shape[0], device=base_device)" in head
-    assert "level_valid = slot_index < int(selected_count)" in head
+    assert "slot_ordinal = torch.arange(point.shape[0]" in head
+    assert "level_valid = selected_center < float(selected_count)" in head
     assert "level_valid = physical_center <" not in head
     assert '"physical_grid_actionformer_axis_delta_reference": "selected_slot_ordinal"' in head
     assert "debug_axis_delta.append((kept_centers - selected_center[kept]).abs().detach())" not in head

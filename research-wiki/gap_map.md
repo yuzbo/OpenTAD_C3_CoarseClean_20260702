@@ -8,9 +8,9 @@ selected-axis Conv/attention/pyramid 把相邻 token 当等间隔，输出 remap
 
 ## gap:G2 - 观测支持区间与缺失质量没有严格定义
 
-状态：算子级 support 几何与 raw-video full run 已完成，但 native feature-support provenance 尚未关闭。
+状态：算子级 support 几何与 raw-video full run 已完成；native patch 输入 atom provenance、逐层严格 padding isolation 与结构性 receptive-field 上界已实现并通过回归，但更一般的不规则间隔扰动/Jacobian 经验审计尚未关闭。
 
-相邻时间戳的 Voronoi 宽度会跨 gap 膨胀支持并虚构观测。PhysTime-TAD 2.0 已使用可审计原始 support cell、midpoint clipping 和 overlap mass；新的 P0 是原生 VideoMAE tubelet token 必须绑定 multi-atom supports，禁止 `192 -> 384` 插值后按长度硬配 raw supports，并需审计 TIA rank mixing。
+相邻时间戳的 Voronoi 宽度会跨 gap 膨胀支持并虚构观测。PhysTime-TAD 2.0 已使用可审计原始 support cell、midpoint clipping 和 overlap mass；新的 P0 是原生 VideoMAE tubelet token 必须绑定 multi-atom supports，禁止 `192 -> 384` 插值后按长度硬配 raw supports，并需审计 TIA rank mixing。还必须处理更深一层问题：一个 tubelet token 已非线性融合两帧，两个 atoms 只能证明 set-valued anchor，不能自动证明 feature value 对两个 support 可加。
 
 ## gap:G3 - 新颖性与近邻方法碰撞
 
@@ -20,9 +20,11 @@ mTAN 已做 irregular continuous-time attention；TE-TAD 已用 actual timeline 
 
 ## gap:G4 - raw-video AdaTAD 的公平三头隔离
 
-状态：首轮 matched full run 已完成但不是公平的 coordinate isolation；P0 rebuild 仅为 designed。
+状态：首轮 matched full run 已完成但不是公平的 coordinate isolation；P0/G1a rebuild 已实现并通过远端 `116 passed`，正式真实数据 gate 与 pilot 尚未运行。
 
-最终 `3ac93a1` 三头已稳定完成并复算，但 PhysTime 同时更换 projection、跨 query context、容量、候选和 assignment。下一步必须在相同 raw videos、selected indices、VideoMAE-S adapter、checkpoint、schedule、seed、NMS、projection capacity、candidate topology、assignment 与 head 下，只切换 selected-coordinate 和 physical-coordinate；通过后再加入 support-measure operator。
+最终 `3ac93a1` 三头已稳定完成并复算，但 PhysTime 同时更换 projection、跨 query context、容量、候选和 assignment。下一步必须在相同 raw videos、selected indices、VideoMAE-S adapter、checkpoint、schedule、seed、NMS、projection capacity、candidate topology、assignment 与 head 下比较 selected-time 与 physical-time metric。`K=384`、native `J=192`、基础网格 `Q0` 和多尺度总候选 `QΣ` 必须分离：先做 `Q0=J=192 / QΣ=378` 无 lift 对照，再共享中性 `Q0=384 / QΣ=756` lift，最后才加入 support-measure operator。
+
+2026-07-13 扩展回归修复了一个会直接减少 physical arm 合法候选的 view-alias bug，并关闭 test evaluator split、完整内容 provenance、artifact 重算、全量 timebase 与 padding 反事实门控；因此旧实现结果不得用于裁决 G1a。当前 G1a 只达到 `tested`，没有正式 mAP。
 
 ## gap:G5 - 高 tIoU 与短动作证据
 

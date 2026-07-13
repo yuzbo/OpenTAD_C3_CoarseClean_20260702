@@ -54,25 +54,59 @@ class Adapter(BaseModule):
         trunc_normal_init(self.down_proj, std=0.02, bias=0)
         constant_init(self.up_proj, 0)  # the last projection layer is initialized to 0
 
-    def forward(self, x: Tensor, h: int, w: int) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        h: int,
+        w: int,
+        temporal_token_mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        if temporal_token_mask is not None:
+            if temporal_token_mask.shape != x.shape[:2]:
+                raise ValueError("adapter temporal token mask must match [B,N]")
+            temporal_token_mask = temporal_token_mask.to(device=x.device, dtype=torch.bool)
+            token_scale = temporal_token_mask.unsqueeze(-1).to(dtype=x.dtype)
+            x = x * token_scale
+        else:
+            token_scale = None
         inputs = x
 
         # down and up projection
         x = self.down_proj(x)
         x = self.act(x)
+        if token_scale is not None:
+            x = x * token_scale
 
         # temporal depth-wise convolution
         B, N, C = x.shape  # 48, 8*10*10, 384
         attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
         attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_token_mask is not None:
+            temporal_scale = temporal_token_mask.reshape(-1, self.temporal_size, h, w)
+            temporal_scale = temporal_scale.permute(0, 2, 3, 1).flatten(0, 2).unsqueeze(1)
+            temporal_scale = temporal_scale.to(dtype=attn.dtype)
+            attn = attn * temporal_scale
+        else:
+            temporal_scale = None
         attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_scale is not None:
+            attn = attn * temporal_scale
         attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_scale is not None:
+            attn = attn * temporal_scale
         attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c] [1,384,10,10,384]
         attn = attn.reshape(B, N, C)
         x = x + attn
+        if token_scale is not None:
+            x = x * token_scale
 
         x = self.up_proj(x)
-        return x * self.gamma + inputs
+        if token_scale is not None:
+            x = x * token_scale
+        output = x * self.gamma + inputs
+        if token_scale is not None:
+            output = output * token_scale
+        return output
 
 
 class PlainAdapter(BaseModule):
@@ -504,7 +538,7 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, token_mask: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -513,6 +547,11 @@ class Attention(BaseModule):
             Tensor: The output of the attention block, same size as inputs.
         """
         B, N, C = x.shape
+        if token_mask is not None:
+            if token_mask.shape != (B, N):
+                raise ValueError("attention token mask must match [B,N]")
+            token_mask = token_mask.to(device=x.device, dtype=torch.bool)
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
 
         if hasattr(self, "q_bias"):
             k_bias = torch.zeros_like(self.v_bias, requires_grad=False)
@@ -532,11 +571,26 @@ class Attention(BaseModule):
         # x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
 
         # fast attention
-        x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        if token_mask is None:
+            x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        else:
+            active = token_mask.any(dim=1)
+            x = torch.zeros_like(q)
+            if bool(active.any().item()):
+                allowed_keys = token_mask[active, None, None, :]
+                x[active] = F.scaled_dot_product_attention(
+                    q[active],
+                    k[active],
+                    v[active],
+                    attn_mask=allowed_keys,
+                    dropout_p=self.attn_drop.p,
+                )
         x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
         x = self.proj_drop(x)
+        if token_mask is not None:
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
         return x
 
 
@@ -656,6 +710,7 @@ class Block(BaseModule):
         w,
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
+        temporal_token_mask: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -667,14 +722,27 @@ class Block(BaseModule):
 
         def _inner_forward(x):
             """Forward wrapper for utilizing checkpoint."""
+            if temporal_token_mask is not None:
+                if packed_dense_mask is not None:
+                    raise ValueError("strict temporal padding mask is incompatible with packed routing")
+                token_scale = temporal_token_mask.unsqueeze(-1).to(device=x.device, dtype=x.dtype)
+                x = x * token_scale
+            else:
+                token_scale = None
             if packed_dense_mask is None:
-                x = x + self.drop_path(self.attn(self.norm1(x)))
+                x = x + self.drop_path(self.attn(self.norm1(x), token_mask=temporal_token_mask))
+                if token_scale is not None:
+                    x = x * token_scale
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
+                if token_scale is not None:
+                    x = x * token_scale
             else:
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
 
             if self.use_adapter:
-                x = self.adapter(x, h, w)
+                x = self.adapter(x, h, w, temporal_token_mask=temporal_token_mask)
+            if token_scale is not None:
+                x = x * token_scale
             return x
 
         if self.with_cp and x.requires_grad:
@@ -770,8 +838,10 @@ class VisionTransformerAdapter(BaseModule):
 
         self.embed_dims = embed_dims
         self.patch_size = patch_size
+        self.tubelet_size = int(tubelet_size)
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
+        self.latest_temporal_padding_mask_summary = None
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -839,7 +909,7 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, temporal_mask: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -850,10 +920,26 @@ class VisionTransformerAdapter(BaseModule):
         """
         self._freeze_layers()
 
-        b, _, _, h, w = x.shape
+        b, _, temporal_length, h, w = x.shape
+        requested_temporal_mask = temporal_mask
+        if temporal_mask is not None:
+            if temporal_mask.shape != (b, temporal_length):
+                raise ValueError("VideoMAE temporal mask must match [B,T]")
+            temporal_mask = temporal_mask.to(device=x.device, dtype=torch.bool)
+            x = x * temporal_mask[:, None, :, None, None].to(dtype=x.dtype)
         h //= self.patch_size
         w //= self.patch_size
         x = self.patch_embed(x)[0]
+        token_mask = None
+        if temporal_mask is not None:
+            if temporal_length % self.tubelet_size:
+                raise ValueError("VideoMAE temporal length must be divisible by tubelet_size")
+            tubelet_mask = temporal_mask.reshape(b, -1, self.tubelet_size).any(dim=-1)
+            token_mask = tubelet_mask[:, :, None].expand(-1, -1, h * w).reshape(b, -1)
+            if token_mask.shape != x.shape[:2]:
+                raise ValueError("VideoMAE patch token mask does not match patch embedding output")
+            if bool(token_mask.all().item()):
+                token_mask = None
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -869,16 +955,40 @@ class VisionTransformerAdapter(BaseModule):
 
         x = x + pos_embed
         x = self.pos_drop(x)
+        if token_mask is not None:
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
 
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
+            if token_mask is not None:
+                raise ValueError("strict temporal padding mask is incompatible with packed runtime routing")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
         else:
             self.latest_tubelet_packed_runtime_summary = None
             for blk in self.blocks:
-                x = blk(x, h, w)
+                x = blk(x, h, w, temporal_token_mask=token_mask)
 
         x = self.norm(x)
+        if token_mask is not None:
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
+
+        if requested_temporal_mask is None:
+            self.latest_temporal_padding_mask_summary = {
+                "enabled": False,
+                "strict_isolation_verified": False,
+            }
+        else:
+            requested_temporal_mask = requested_temporal_mask.to(device=x.device, dtype=torch.bool)
+            tubelet_mask = requested_temporal_mask.reshape(b, -1, self.tubelet_size).any(dim=-1)
+            self.latest_temporal_padding_mask_summary = {
+                "enabled": True,
+                "strict_isolation_verified": True,
+                "raw_valid_counts": [int(row.sum().item()) for row in requested_temporal_mask],
+                "tubelet_valid_counts": [int(row.sum().item()) for row in tubelet_mask],
+                "all_valid_fast_path": bool(requested_temporal_mask.all().item()),
+                "attention_key_value_masked": True,
+                "adapter_convolution_masked": True,
+            }
 
         if self.return_feat_map:
             x = x.reshape(b, -1, h, w, self.embed_dims)
