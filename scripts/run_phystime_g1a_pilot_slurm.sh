@@ -118,7 +118,7 @@ cfg.work_dir = str(Path(run_dir, "work_dir").resolve())
 cfg.workflow.end_epoch = int(epochs)
 cfg.workflow.val_start_epoch = 1
 cfg.workflow.val_eval_interval = 1
-cfg.workflow.checkpoint_interval = 1
+cfg.workflow.checkpoint_interval = int(epochs)
 cfg.post_processing.save_dict = True
 post_types = [step["type"] for step in cfg.model.backbone.custom.post_processing_pipeline]
 if "Interpolate" in post_types:
@@ -149,6 +149,7 @@ manifest = {
         "dataset_manifest_sha256"
     ],
     "pilot_epochs": int(epochs),
+    "checkpoint_interval": int(cfg.workflow.checkpoint_interval),
     "warmup_epochs": int(cfg.scheduler.warmup_epoch),
     "post_warmup_epoch_present": int(epochs) > int(cfg.scheduler.warmup_epoch),
     "sampling": "deterministic_random_fixed_subsample",
@@ -169,7 +170,7 @@ set +e
     "workflow.end_epoch=${PILOT_EPOCHS}" \
     "workflow.val_start_epoch=1" \
     "workflow.val_eval_interval=1" \
-    "workflow.checkpoint_interval=1" \
+    "workflow.checkpoint_interval=${PILOT_EPOCHS}" \
     "post_processing.save_dict=True" \
   2>&1 | tee "${RUN_DIR}/train.out"
 STATUS="${PIPESTATUS[0]}"

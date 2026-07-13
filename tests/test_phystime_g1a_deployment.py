@@ -31,6 +31,9 @@ def test_g1a_launchers_are_slurm_fail_closed_and_gate_pilots():
     assert "Interpolate" in pilot
     assert "G1a pilot forbids J192-to-K384 interpolation" in pilot
     assert 'PHYSTIME_G1A_PILOT_EPOCHS:-6' in pilot
+    assert "cfg.workflow.checkpoint_interval = int(epochs)" in pilot
+    assert "workflow.checkpoint_interval=${PILOT_EPOCHS}" in pilot
+    assert "workflow.checkpoint_interval=1" not in pilot
     assert "post_processing.save_dict=True" in pilot
     assert "evaluation_metrics.json" in artifact_validator
     assert "result_detection.json" in artifact_validator
