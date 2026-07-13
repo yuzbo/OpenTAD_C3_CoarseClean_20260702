@@ -372,12 +372,14 @@ class AnchorFreeHead(nn.Module):
         # useful for small mini-batch training
         frozen_normalizer = getattr(self, "_duca_frozen_loss_normalizer", None)
         if frozen_normalizer is not None:
-            loss_normalizer = frozen_normalizer
+            loss_normalizer = frozen_normalizer.detach().clone()
         elif self.training:
             self.loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + (
                 1 - self.loss_normalizer_momentum
             ) * max(num_pos, 1)
-            loss_normalizer = self.loss_normalizer
+            # The counterfactual teacher restores module buffers before the main
+            # backward. Keep the graph independent of that mutable state.
+            loss_normalizer = self.loss_normalizer.detach().clone()
         else:
             loss_normalizer = max(num_pos, 1)
 
