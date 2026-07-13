@@ -271,6 +271,7 @@ def _validate_assignment_debug(debug, batch_size, label):
     positive_count = int(debug.get("assignment_num_positive", -1))
     per_sample = debug.get("assignment_positive_per_sample")
     valid_count = int(debug.get("assignment_valid_point_count", -1))
+    valid_per_sample = debug.get("assignment_valid_point_per_sample")
     gt_count = int(debug.get("assignment_gt_count", -1))
     positive_fraction = float(debug.get("assignment_positive_fraction", float("nan")))
     raw_count = int(debug.get("assignment_regression_raw_count", -1))
@@ -291,8 +292,20 @@ def _validate_assignment_debug(debug, batch_size, label):
     )
     _require(sum(per_sample) == positive_count, f"{label} assignment counts disagree")
     _require(
-        valid_count == int(batch_size) * 378,
-        f"{label} valid-point count does not match the native Q=378 batch contract",
+        isinstance(valid_per_sample, list) and len(valid_per_sample) == int(batch_size),
+        f"{label} per-sample valid-point count does not match the production batch",
+    )
+    _require(
+        all(isinstance(value, int) and 0 < value <= 378 for value in valid_per_sample),
+        f"{label} per-sample valid-point counts are invalid",
+    )
+    _require(
+        sum(valid_per_sample) == valid_count,
+        f"{label} valid-point counts disagree",
+    )
+    _require(
+        all(pos <= valid for pos, valid in zip(per_sample, valid_per_sample)),
+        f"{label} positives exceed valid points for at least one sample",
     )
     _require(valid_count >= positive_count, f"{label} valid-point count is invalid")
     _require(gt_count > 0, f"{label} GT count is invalid")
@@ -658,6 +671,14 @@ def _copy_batch_to_device(batch, device):
     return moved
 
 
+def _decoded_temporal_length(inputs):
+    _require(
+        hasattr(inputs, "shape") and len(inputs.shape) >= 3,
+        "G1a decoded inputs must expose a temporal dimension",
+    )
+    return int(inputs.shape[-3])
+
+
 def _load_production_train_batches(cfg, seed, count=OPTIMIZER_STEPS):
     _seed_everything(seed)
     dataset = build_dataset(cfg.dataset.train)
@@ -688,6 +709,7 @@ def _load_production_train_batches(cfg, seed, count=OPTIMIZER_STEPS):
         "G1a production DataLoader does not match the formal batch contract",
     )
     batches = []
+    production_raw_valid_counts = []
     for batch in loader:
         expected_batch_size = int(cfg.solver.train.batch_size)
         _require(
@@ -695,9 +717,15 @@ def _load_production_train_batches(cfg, seed, count=OPTIMIZER_STEPS):
             "G1a gate did not receive the formal per-GPU training batch size",
         )
         _require(
-            all(int(mask.sum().item()) == 384 for mask in batch["masks"]),
-            "G1a production gate requires K=384 valid observations per training sample",
+            _decoded_temporal_length(batch["inputs"]) == 384,
+            "G1a production gate requires K=384 decoded slots per training sample",
         )
+        batch_raw_valid_counts = [int(mask.sum().item()) for mask in batch["masks"]]
+        _require(
+            all(0 < count <= 384 for count in batch_raw_valid_counts),
+            "G1a production gate received invalid raw observation masks",
+        )
+        production_raw_valid_counts.extend(batch_raw_valid_counts)
         batches.append(batch)
         if len(batches) == int(count):
             break
@@ -705,6 +733,9 @@ def _load_production_train_batches(cfg, seed, count=OPTIMIZER_STEPS):
         len(batches) == int(count),
         f"G1a production loader could not materialize {count} full training batches",
     )
+    loader_contract["production_train_raw_valid_counts"] = production_raw_valid_counts
+    loader_contract["production_train_min_raw_valid_count"] = min(production_raw_valid_counts)
+    loader_contract["production_train_max_raw_valid_count"] = max(production_raw_valid_counts)
     return dataset, batches, len(loader), loader_contract
 
 
@@ -966,6 +997,7 @@ def _run_variant(
                         "assignment_num_positive",
                         "assignment_positive_per_sample",
                         "assignment_valid_point_count",
+                        "assignment_valid_point_per_sample",
                         "assignment_gt_count",
                         "assignment_positive_fraction",
                         "assignment_regression_raw_count",
@@ -1154,7 +1186,7 @@ def _run_variant(
     hook.remove()
 
     report = {
-        "decoded_frame_count": int(train_batches[0]["inputs"][0].shape[2]),
+        "decoded_frame_count": _decoded_temporal_length(train_batches[0]["inputs"]),
         "raw_valid_count": int(train_batches[0]["masks"][0].sum().item()),
         "backbone_feature_length": int(backbone_lengths[0]),
         "inference_backbone_feature_length": inference_backbone_feature_length,
@@ -1311,7 +1343,6 @@ def validate_gate_report(report):
     for name, result in variants.items():
         for key, expected in {
             "decoded_frame_count": 384,
-            "raw_valid_count": 384,
             "backbone_feature_length": 192,
             "inference_backbone_feature_length": 192,
             "finite_loss": True,
@@ -1336,6 +1367,25 @@ def validate_gate_report(report):
             "tail_subsample_uses_gt": False,
         }.items():
             _require(result.get(key) == expected, f"{name}.{key} must be {expected!r}")
+        _require(
+            0 < int(result.get("raw_valid_count", 0)) <= 384,
+            f"{name} raw valid count is outside the K384 slot range",
+        )
+        production_raw_valid_counts = result.get("production_train_raw_valid_counts")
+        _require(
+            isinstance(production_raw_valid_counts, list)
+            and len(production_raw_valid_counts)
+            == OPTIMIZER_STEPS * int(result["production_train_batch_size"])
+            and all(0 < int(value) <= 384 for value in production_raw_valid_counts),
+            f"{name} production raw-valid count audit is invalid",
+        )
+        _require(
+            int(result.get("production_train_min_raw_valid_count", 0))
+            == min(int(value) for value in production_raw_valid_counts)
+            and int(result.get("production_train_max_raw_valid_count", 0))
+            == max(int(value) for value in production_raw_valid_counts),
+            f"{name} production raw-valid count summary is inconsistent",
+        )
         _require_sha256(
             result.get("initial_optimizer_parameter_sha256"),
             f"{name} initial optimizer parameters",

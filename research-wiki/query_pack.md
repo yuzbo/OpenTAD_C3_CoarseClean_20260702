@@ -1,3 +1,7 @@
+# Current status override, 2026-07-13
+
+PhysTime G1a native-J192 matched track is now `queued_for_gate`: independent Max review returned `GREEN_FOR_CLEAN_SNAPSHOT_AND_REAL_GATE`; commit `d1747d6657e185495b4db9eb491fd135d4b90360` was pushed; clean snapshot is `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_d1747d6_20260713_gate`; run root is `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_d1747d6_gatepilot_20260713_192727_+0800`; jobs are `1161476` real gate, `1161477` selected-axis pilot afterok, and `1161478` physical-metric pilot afterok. At the first queue check, gate was `PENDING (Priority)` and pilots were `PENDING (Dependency)`. No gate pass, no pilot mAP, no empirical claim yet.
+
 # Research Wiki Query Pack
 
 当前 G1a 部署状态（2026-07-13）：独立 Max 复审已完成两轮，第二轮 4 个 P1 已按测试先行修复；gate/artifact `65 passed`，PhysTime/shared physical-grid `240 passed`。第三轮必须达到零 P0/P1 后才允许创建 clean snapshot 和运行 real gate；目前仍是 `tested`，不是 `experiment_running`，没有新 mAP。完整审查见 `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md`。

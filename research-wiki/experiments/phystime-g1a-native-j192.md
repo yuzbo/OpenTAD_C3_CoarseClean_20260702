@@ -1,3 +1,15 @@
+# 2026-07-13 d1747d6 queued gate status
+
+Status: `queued_for_gate`, not `experiment_running`.
+
+- Independent Max verdict: `GREEN_FOR_CLEAN_SNAPSHOT_AND_REAL_GATE`, P0/P1 none.
+- Clean snapshot: `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_d1747d6_20260713_gate`.
+- Commit/tree: `d1747d6657e185495b4db9eb491fd135d4b90360` / `2651bd30eda5b0e0960518da4060ccfc628b7a58`.
+- Run root: `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_d1747d6_gatepilot_20260713_192727_+0800`.
+- Jobs: `1161476` real gate, `1161477` selected-axis pilot afterok, `1161478` physical-metric pilot afterok.
+- Submission check: gate was `PENDING (Priority)` and pilots were `PENDING (Dependency)`. No gate artifact and no mAP yet.
+- Follow-up: gate `1161476` failed before training/pilot because the gate still conflated K384 decoded slots with 384 valid observations per real production training window. This is a gate-contract bug, not a method result. Fix status: implemented and remote focused tests passed (`30 passed` gate contract, `243 passed` PhysTime/C3 physical-grid), awaiting renewed Max green before requeue.
+
 ---
 type: experiment
 node_id: exp:phystime-g1a-native-j192

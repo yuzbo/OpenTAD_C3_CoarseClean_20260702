@@ -36,6 +36,17 @@ def test_state_dict_hash_supports_scalar_integer_buffers():
     assert before != after
 
 
+def test_decoded_temporal_length_uses_time_axis_for_six_dimensional_batches():
+    import torch
+
+    batch = torch.empty(2, 1, 3, 384, 2, 2)
+    sample = torch.empty(1, 3, 384, 2, 2)
+
+    assert gate_module._decoded_temporal_length(batch) == 384
+    assert gate_module._decoded_temporal_length(sample) == 384
+    assert int(batch.shape[2]) == 3
+
+
 def _step_reports():
     reports = []
     for step in range(3):
@@ -65,9 +76,10 @@ def _step_reports():
             "assignment_debug": {
                 "assignment_num_positive": 3,
                 "assignment_positive_per_sample": [2, 1],
-                "assignment_valid_point_count": 756,
+                "assignment_valid_point_count": 700,
+                "assignment_valid_point_per_sample": [378, 322],
                 "assignment_gt_count": 2,
-                "assignment_positive_fraction": 3.0 / 756.0,
+                "assignment_positive_fraction": 3.0 / 700.0,
                 "assignment_regression_raw_count": 6,
                 "assignment_regression_raw_positive_count": 2 if step else 0,
                 "assignment_regression_active_location_count": 1 if step else 0,
@@ -255,7 +267,7 @@ def _variant():
     )
     return {
         "decoded_frame_count": 384,
-        "raw_valid_count": 384,
+        "raw_valid_count": 320,
         "backbone_feature_length": 192,
         "inference_backbone_feature_length": 192,
         "finite_loss": True,
@@ -284,6 +296,9 @@ def _variant():
         "production_train_batch_size": 2,
         "production_train_drop_last": True,
         "production_train_shuffle": True,
+        "production_train_raw_valid_counts": [384, 320, 255, 384, 192, 384],
+        "production_train_min_raw_valid_count": 192,
+        "production_train_max_raw_valid_count": 384,
         "production_scheduler": True,
         "scheduler_class": "LinearWarmupCosineAnnealingLR",
         "scheduler_positive_lr_observed": True,
@@ -476,6 +491,13 @@ def test_g1a_real_gate_contract_fails_closed_on_provenance_or_seconds_mismatch()
         lambda report: report["variants"]["selected_axis"].update(
             production_train_batch_size=1
         ),
+        lambda report: report["variants"]["selected_axis"].update(raw_valid_count=0),
+        lambda report: report["variants"]["selected_axis"].update(
+            production_train_raw_valid_counts=[384, 0, 255, 384, 192, 384]
+        ),
+        lambda report: report["variants"]["selected_axis"].update(
+            production_train_min_raw_valid_count=1
+        ),
         lambda report: report["variants"]["selected_axis"].update(
             production_scheduler=False
         ),
@@ -593,6 +615,9 @@ def test_gate_validator_recomputes_cross_arm_schema_matches(mutator):
         lambda debug: debug.update(assignment_regression_raw_count=5),
         lambda debug: debug.update(assignment_regression_raw_positive_count=7),
         lambda debug: debug.update(assignment_valid_point_count=3, assignment_positive_fraction=1.0),
+        lambda debug: debug.update(assignment_valid_point_per_sample=[378]),
+        lambda debug: debug.update(assignment_valid_point_per_sample=[378, 0]),
+        lambda debug: debug.update(assignment_valid_point_per_sample=[1, 1]),
         lambda debug: debug.update(assignment_gt_count=0),
         lambda debug: debug.update(
             assignment_regression_raw_positive_count=6,

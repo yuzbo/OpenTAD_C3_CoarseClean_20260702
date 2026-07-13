@@ -219,6 +219,7 @@ class AnchorFreeHead(nn.Module):
         debug_domain_starts = []
         debug_domain_ends = []
         valid_points_total = 0
+        valid_points_per_sample = [0 for _ in metas]
         debug_selected_count = 0
         debug_dense_valid_len = 0.0
 
@@ -285,7 +286,9 @@ class AnchorFreeHead(nn.Module):
                     kept_centers = physical_center[kept]
                     debug_centers.append(kept_centers.detach())
                     debug_axis_delta.append((kept_centers - slot_ordinal[kept]).abs().detach())
-                    valid_points_total += int(kept.sum().item())
+                    level_valid_count = int(kept.sum().item())
+                    valid_points_total += level_valid_count
+                    valid_points_per_sample[batch_idx] += level_valid_count
 
         physical_points = [torch.stack(level_points, dim=0) for level_points in physical_points]
         if debug_centers:
@@ -294,6 +297,7 @@ class AnchorFreeHead(nn.Module):
             self._physical_grid_debug = {
                 "physical_grid_actionformer_enabled": True,
                 "physical_grid_actionformer_valid_points": int(valid_points_total),
+                "physical_grid_actionformer_valid_points_per_sample": valid_points_per_sample,
                 "physical_grid_actionformer_selected_count": int(debug_selected_count),
                 "physical_grid_actionformer_dense_valid_len_max": float(debug_dense_valid_len),
                 "physical_grid_actionformer_center_min": float(centers.min().item()),
@@ -312,6 +316,7 @@ class AnchorFreeHead(nn.Module):
             self._physical_grid_debug = {
                 "physical_grid_actionformer_enabled": True,
                 "physical_grid_actionformer_valid_points": 0,
+                "physical_grid_actionformer_valid_points_per_sample": valid_points_per_sample,
             }
         return physical_points, physical_masks
 
@@ -514,6 +519,9 @@ class AnchorFreeHead(nn.Module):
                     int(sample_mask.sum().item()) for sample_mask in pos_mask
                 ],
                 assignment_valid_point_count=valid_count,
+                assignment_valid_point_per_sample=[
+                    int(sample_mask.sum().item()) for sample_mask in valid_mask
+                ],
                 assignment_gt_count=int(sum(len(segments) for segments in gt_segments)),
                 assignment_positive_fraction=float(num_pos / max(valid_count, 1)),
                 assignment_regression_raw_count=raw_count,
