@@ -318,7 +318,8 @@ def run_formal_gate(
         "training forward did not update the ActionFormerHead EMA loss normalizer",
     )
 
-    scaler.scale(step_loss).backward()
+    with torch.autograd.detect_anomaly(check_nan=True):
+        scaler.scale(step_loss).backward()
     scaler.unscale_(optimizer)
     named_trainable_gradients = [
         (name, parameter.grad)
