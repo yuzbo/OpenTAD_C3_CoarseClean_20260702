@@ -48,6 +48,15 @@ DEFAULT_SCHEDULES = (
 )
 
 
+class LegacyFormalRouteDisabledError(RuntimeError):
+    """The leaky six-schedule v1 runner must never produce r2 evidence."""
+
+
+_LEGACY_DISABLED_MESSAGE = (
+    "legacy formal Stage-B runner is superseded by CT-P3R-3S-r2 and is technically unreachable"
+)
+
+
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -142,6 +151,11 @@ def _evaluate(
 
 
 def run(args) -> dict[str, object]:
+    raise LegacyFormalRouteDisabledError(_LEGACY_DISABLED_MESSAGE)
+    # The retained implementation below is historical compatibility source
+    # only. Keeping it behind an unconditional exception prevents old launch
+    # scripts, arbitrary schedules, GT-aware random_trunc, or old split logic
+    # from producing artifacts that could be mistaken for r2 evidence.
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
         raise RuntimeError("formal Stage B requires exactly one visible CUDA device")
     if int(args.epochs) <= 0:
@@ -303,7 +317,7 @@ def parse_args(argv=None):
 
 
 def main() -> None:
-    run(parse_args())
+    raise LegacyFormalRouteDisabledError(_LEGACY_DISABLED_MESSAGE)
 
 
 if __name__ == "__main__":

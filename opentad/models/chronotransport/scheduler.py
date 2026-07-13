@@ -108,12 +108,21 @@ class ScheduleLibrary:
                     "action_sha256": canonical_sha256(action_matrix),
                 }
             )
+        is_frozen_r2 = self.canonical_names == R2_NON_DENSE_NAMES + ("dense",)
         body: dict[str, object] = {
-            "schema": "chronotransport-r2-library-v1",
+            "schema": (
+                "chronotransport-r2-library-v2"
+                if is_frozen_r2
+                else "chronotransport-r2-library-v1"
+            ),
             "num_chunks": self.num_chunks,
             "num_groups": self.num_groups,
             "candidates": candidates,
         }
+        if is_frozen_r2:
+            body["layer_groups"] = [
+                [int(group.start), int(group.end)] for group in self.layer_groups
+            ]
         body["library_sha256"] = canonical_sha256(body)
         return body
 
@@ -137,10 +146,24 @@ class ScheduleLibrary:
         num_chunks: int = 48,
         layer_groups: tuple[LayerGroup, ...],
     ) -> "ScheduleLibrary":
-        if int(num_chunks) != 48:
+        if type(num_chunks) is not int or num_chunks != 48:
             raise ValueError("r2 schedule library requires exactly 48 clips")
         if len(layer_groups) != 3:
             raise ValueError("r2 schedule library requires exactly three layer groups")
+        if (
+            any(
+                not isinstance(group, LayerGroup)
+                or type(group.start) is not int
+                or type(group.end) is not int
+                for group in layer_groups
+            )
+            or tuple((group.start, group.end) for group in layer_groups) != (
+            (0, 4),
+            (4, 8),
+            (8, 12),
+            )
+        ):
+            raise ValueError("r2 schedule library requires exact layer groups [0:4]/[4:8]/[8:12]")
 
         def periodic(period: int, fallback: ChronoAction) -> Tensor:
             actions = torch.full((48, 3), int(fallback), dtype=torch.long)
@@ -247,6 +270,91 @@ class ScheduleLibrary:
                 ]
             )
         return cls(candidates, layer_groups=layer_groups)
+
+
+def validate_r2_library_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    """Deeply validate the frozen 16+1 r2 candidate-library artifact."""
+
+    if not isinstance(payload, Mapping):
+        raise TypeError("r2 library payload must be a mapping")
+    expected_root_keys = {
+        "schema",
+        "num_chunks",
+        "num_groups",
+        "layer_groups",
+        "candidates",
+        "library_sha256",
+    }
+    if set(payload) != expected_root_keys:
+        raise ValueError("r2 library fields mismatch")
+    if payload["schema"] != "chronotransport-r2-library-v2":
+        raise ValueError("r2 library schema mismatch")
+    if (
+        type(payload["num_chunks"]) is not int
+        or type(payload["num_groups"]) is not int
+        or payload["num_chunks"] != 48
+        or payload["num_groups"] != 3
+    ):
+        raise ValueError("r2 library action shape must be exactly 48 x 3")
+    layer_groups = payload["layer_groups"]
+    if (
+        not isinstance(layer_groups, list)
+        or any(
+            not isinstance(group, list)
+            or len(group) != 2
+            or any(type(endpoint) is not int for endpoint in group)
+            for group in layer_groups
+        )
+        or layer_groups != [[0, 4], [4, 8], [8, 12]]
+    ):
+        raise ValueError("r2 library layer-group identity mismatch")
+    candidates = payload["candidates"]
+    if not isinstance(candidates, list) or len(candidates) != 17:
+        raise ValueError("r2 library must contain exactly 16 non-dense actions plus dense")
+    expected_library = ScheduleLibrary.r2(
+        layer_groups=(LayerGroup(0, 4), LayerGroup(4, 8), LayerGroup(8, 12)),
+    ).canonical_payload()
+    expected_candidates = expected_library["candidates"]
+    expected_names = R2_NON_DENSE_NAMES + ("dense",)
+    actual_names = tuple(
+        candidate.get("name") if isinstance(candidate, Mapping) else None
+        for candidate in candidates
+    )
+    if actual_names != expected_names:
+        raise ValueError("r2 library candidate order/name mismatch")
+    for index, (candidate, expected) in enumerate(zip(candidates, expected_candidates)):
+        if not isinstance(candidate, Mapping):
+            raise TypeError(f"r2 library candidate {index} must be a mapping")
+        if set(candidate) != {"name", "actions", "hard_valid", "action_sha256"}:
+            raise ValueError(f"r2 library candidate {index} fields mismatch")
+        actions = candidate["actions"]
+        if not isinstance(actions, list) or len(actions) != 48:
+            raise ValueError(f"r2 candidate {candidate['name']} action matrix must have 48 rows")
+        for row in actions:
+            if not isinstance(row, list) or len(row) != 3:
+                raise ValueError(f"r2 candidate {candidate['name']} action rows must have 3 groups")
+            if any(
+                isinstance(action, bool)
+                or not isinstance(action, int)
+                or action not in (0, 1, 2)
+                for action in row
+            ):
+                raise ValueError(f"r2 candidate {candidate['name']} contains an invalid action")
+        if actions[0] != [int(ChronoAction.RECOMPUTE)] * 3:
+            raise ValueError(f"r2 candidate {candidate['name']} action row zero must recompute")
+        if actions != expected["actions"]:
+            raise ValueError(f"r2 candidate {candidate['name']} action matrix mismatch")
+        if candidate["hard_valid"] is not True:
+            raise ValueError(f"r2 candidate {candidate['name']} must be hard-valid")
+        if candidate["action_sha256"] != canonical_sha256(actions):
+            raise ValueError(f"r2 candidate {candidate['name']} action hash mismatch")
+    unsigned = dict(payload)
+    library_sha256 = unsigned.pop("library_sha256")
+    if library_sha256 != canonical_sha256(unsigned):
+        raise ValueError("r2 library hash mismatch")
+    if dict(payload) != expected_library:
+        raise ValueError("r2 library payload differs from the frozen canonical library")
+    return dict(payload)
 
 
 @dataclass(frozen=True)

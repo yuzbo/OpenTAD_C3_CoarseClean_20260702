@@ -12,6 +12,20 @@ updated: 2026-07-13
 
 # ChronoTransport r2 Implementation Verification
 
+## Verified manifest/protocol repair slice
+
+- Exact 200-video label-free manifest/deep re-derivation, canonical raw-byte and sidecar validation,
+  duplicate-key rejection, Stage-B hash-bound exposure artifact, Stage-C balance/cursor validation,
+  frozen control/library identities, and the legacy formal-runner hard lock are remotely `tested`.
+- The TDD chain recorded the expected missing-symbol RED (1 collection error, 35.37 seconds), then a
+  source-vector integrity RED where a registry-provided sampled index could be trusted, followed by
+  strict-type/canonical-byte negative checks. After repair, the focused remote manifest/protocol suite
+  passed 27/27 in 53.81 seconds.
+- The remote protocol/control/legacy-runner compatibility matrix passed 55/55 in 91.90 seconds. Local
+  `py_compile` and `git diff --check` also passed; these local checks are static evidence only.
+- This tested slice does not change the overall `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` verdict,
+  create registration `I/R`, or unlock any formal Gate.
+
 ## Verified scope
 
 - Protocol canonicalization, label-free split/window helpers, Stage-B exposure and Stage-C exposure:

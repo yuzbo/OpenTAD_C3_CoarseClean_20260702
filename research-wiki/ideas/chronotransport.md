@@ -13,6 +13,19 @@ updated: 2026-07-13
 
 ## r2 foundation repair batch (2026-07-13)
 
+### Manifest/protocol implementation slice
+
+The approved r2 label-free protocol slice now has remotely tested implementations for the exact
+200-video/200-window manifest and deep re-derivation validator, canonical exact-byte serialization,
+hash-bound Stage-B exposure artifact, complete Stage-C exposure/cursor validation, frozen control
+algorithm identities, and deep canonical-library validation. A canonical atomic manifest builder was
+added, and the legacy six-schedule formal Stage-B `run`/`main` route is unconditionally disabled.
+The tests-first remote RED was the expected missing `r2_control_algorithm_identity` import; later REDs
+exposed trust in the registry-provided source index vector and strict canonical/type gaps. The repaired
+focused suite passed 27/27 remotely in 53.81 seconds, and the broader protocol/control/legacy-runner
+matrix passed 55/55 in 91.90 seconds. This slice is `tested`, but registration and every formal Gate
+remain blocked.
+
 The first bounded repair batch corrected the r2 Stage-B/Stage-C resolved-config path so the overlay
 only reaches `model.backbone.backbone.chronotransport`; added window-level Gate-3 conformal logic
 that reduces each complete `30 x 16` residual matrix to 30 window maxima before rank 28; kept the

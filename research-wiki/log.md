@@ -103,3 +103,11 @@ append_only: true
   regression verdict because the temporary scratch tree omitted required `scripts/` and `docs/` files;
   after copying those unchanged repository surfaces, all eight file-presence failures disappeared.
   Independent spec and code-quality reviewers both approved only this foundation slice.
+- 2026-07-13: Completed remote TDD closure for the r2 manifest/protocol repair slice. The initial
+  missing-symbol RED was followed by a source-vector integrity RED and strict canonical/type negative
+  checks. The final focused manifest/protocol suite passed 27/27 in 53.81 seconds; the broader
+  protocol/control/legacy-runner compatibility matrix passed 55/55 in 91.90 seconds. The tested scope
+  now includes exact source-vector re-derivation, canonical raw bytes and SHA sidecar, duplicate-key
+  rejection, strict scalar types, media-path freezing, hashed control/library identities, Stage-B/C
+  exposure validation, and the legacy formal-runner hard lock. Registration, formal profile, Gates,
+  and experiments remain blocked.

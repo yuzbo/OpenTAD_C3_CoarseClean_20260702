@@ -299,7 +299,7 @@ def test_formal_gpu1_launcher_is_guarded_and_keeps_claims_locked() -> None:
     assert "CHRONOTRANSPORT_RISK_READY=1" not in launcher
 
 
-def test_formal_stage_b_runner_is_directly_executable() -> None:
+def test_legacy_formal_stage_b_runner_is_technically_locked() -> None:
     result = subprocess.run(
         [
             sys.executable,
@@ -311,6 +311,5 @@ def test_formal_stage_b_runner_is_directly_executable() -> None:
         text=True,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
-    assert "--seed" in result.stdout
-    assert "--epochs" in result.stdout
+    assert result.returncode != 0
+    assert "superseded by CT-P3R-3S-r2" in result.stderr
