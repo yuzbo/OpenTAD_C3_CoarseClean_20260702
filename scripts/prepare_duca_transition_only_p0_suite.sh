@@ -48,7 +48,7 @@ for index in "${!variants[@]}"; do
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --output=${RUN_ROOT}/logs/${variant}-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/${variant}-%j.err
 set -euo pipefail
@@ -63,7 +63,6 @@ export FULLTRAIN_CANDIDATE=1
 export SEED='${SEED}'
 export RUN_ID='${index}'
 export MASTER_PORT='${ports[$index]}'
-export CUDA_VISIBLE_DEVICES=1
 export RUN_DIR='${RUN_ROOT}/logs/${variant}'
 export WORK_DIR='${RUN_ROOT}/work_dirs/${variant}'
 bash scripts/run_duca_transition_only_p0_variant_gpu1.sh

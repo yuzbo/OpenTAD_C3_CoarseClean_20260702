@@ -139,7 +139,8 @@ def test_prepare_script_is_generation_only_and_fail_closed() -> None:
     assert "-m tools.bata.validate_duca_transition_only_p0_suite" in text
     assert "printf 'variant\\tseed" in text
     assert 'bash -n "${job_file}"' in text
-    assert "export CUDA_VISIBLE_DEVICES=1" in text
+    assert "export CUDA_VISIBLE_DEVICES=1" not in text
+    assert "#SBATCH --cpus-per-task=4" in text
     assert "DUCA_RESOLVED_CONFIG_SHA256" in text
     assert "DUCA_VARIANT_CONTRACT_SHA256" in text
     assert "DUCA_SHARED_PROTOCOL_SHA256" in text
@@ -170,8 +171,9 @@ def test_suite_gate_rejects_incomplete_optimizer_step_contract(
 
 def test_gpu1_launcher_is_strict() -> None:
     text = (ROOT / "scripts/run_duca_transition_only_p0_variant_gpu1.sh").read_text(encoding="utf-8")
-    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
-    assert '[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]]' in text
+    assert '[[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]' in text
+    assert "torch.cuda.device_count()" in text
+    assert '[[ "${VISIBLE_GPU_COUNT}" == "1" ]]' in text
     assert '== "0"' not in text
 
 
