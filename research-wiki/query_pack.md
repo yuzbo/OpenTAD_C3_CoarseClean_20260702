@@ -6,6 +6,8 @@ Update: `1161476` failed before pilot because the gate conflated K384 decoded sl
 
 Latest update: `1161486` then failed before pilot because selected-index checksum still required exactly 384 indices, while a real short production window had 269. G1a now uses variable-valid selected-index checksum and records `selected_index_lengths`. Active queue is commit `49fa13c15bb0e4e58428af52598f031e77a69ec2`, snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_49fa13c_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_49fa13c_gatepilot_20260713_200044_+0800`, jobs `1161495` gate, `1161496` selected-axis afterok, `1161497` physical-metric afterok. First check: gate `RUNNING`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
 
+Current active queue: `1161495` failed before pilot because `_selected_index_checksum_g1a` missed `import numpy as np`; fix commit `a4b7f1db0424966c9f9c5d4304a7619be59661db` is deployed from snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_a4b7f1d_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_a4b7f1d_gatepilot_20260713_200922_+0800`, jobs `1161500` gate, `1161501` selected-axis afterok, `1161502` physical-metric afterok. First check: gate `PENDING (Priority)`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
+
 # Research Wiki Query Pack
 
 当前 G1a 部署状态（2026-07-13）：独立 Max 复审已完成两轮，第二轮 4 个 P1 已按测试先行修复；gate/artifact `65 passed`，PhysTime/shared physical-grid `240 passed`。第三轮必须达到零 P0/P1 后才允许创建 clean snapshot 和运行 real gate；目前仍是 `tested`，不是 `experiment_running`，没有新 mAP。完整审查见 `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md`。
