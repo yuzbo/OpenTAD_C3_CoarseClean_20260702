@@ -86,6 +86,7 @@ def test_frozen_temperature_bias_is_the_unique_probability_and_transition_source
     assert torch.allclose(scores["entropy"], expected_entropy)
     assert torch.allclose(scores["uncertainty"], expected_uncertainty)
     assert torch.allclose(scores["calibrated_actionness_logits"], torch.logit(expected))
+    assert torch.allclose(scores["actionness_logits"], scores["raw_actionness_logits"])
     assert scores["provenance"]["calibration_temperature"] == 2.0
     assert scores["provenance"]["calibration_bias"] == 0.7
     assert scores["online_actionness_provenance"] == scores["provenance"]

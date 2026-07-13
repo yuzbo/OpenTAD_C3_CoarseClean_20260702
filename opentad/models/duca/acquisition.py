@@ -1586,7 +1586,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "abs_delta_p_action": source["abs_delta_p_action"],
             "uncertainty_peak": source["uncertainty_peak"],
             "transition_score": transition_score.masked_fill(~valid, 0.0),
-            "actionness_logits": source["logits"],
+            "actionness_logits": source["logits"] if actionness_logits is None else actionness_logits,
             "raw_actionness_logits": actionness_logits,
             "calibrated_actionness_logits": source["logits"],
             "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
