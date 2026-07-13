@@ -297,9 +297,10 @@ def structured_local_coverage_probability(
             temperature=temperature,
             selection_allowed=~events[:, event_idx],
         )
-        log_miss = (log_z_miss - log_z).clamp(max=0.0)
-        probability = -torch.expm1(log_miss)
         impossible_miss = log_z_miss <= -5.0e8
+        safe_log_z_miss = torch.where(impossible_miss, log_z.detach(), log_z_miss)
+        log_miss = (safe_log_z_miss - log_z).clamp(max=0.0)
+        probability = -torch.expm1(log_miss)
         probabilities.append(torch.where(impossible_miss, torch.ones_like(probability), probability))
     if not probabilities:
         return policy_logits.new_zeros((policy_logits.shape[0], 0))
