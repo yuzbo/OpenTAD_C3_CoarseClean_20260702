@@ -2064,7 +2064,7 @@ def temporal_max_gap_hole_loss(
         raise ValueError(f"selection_mass must be [B,T], got {tuple(selection_mass.shape)}")
     max_hole = int(max_unselected_hole)
     if max_hole <= 0:
-        return selection_mass.new_zeros(())
+        return selection_mass.float().new_zeros(())
     valid = _as_valid_mask(selection_mass, valid_mask)
     mass = selection_mass.to(dtype=torch.float32).clamp_min(0.0).masked_fill(~valid, 0.0)
     valid_float = valid.to(dtype=mass.dtype)
@@ -2082,8 +2082,8 @@ def temporal_max_gap_hole_loss(
         if bool(full.any().item()):
             penalties.append(F.relu(float(min_window_mass) - window_mass[full]).pow(2))
     if not penalties:
-        return selection_mass.new_zeros(())
-    return torch.cat([item.reshape(-1) for item in penalties], dim=0).mean().to(dtype=selection_mass.dtype)
+        return selection_mass.float().new_zeros(())
+    return torch.cat([item.reshape(-1) for item in penalties], dim=0).mean()
 
 
 def _unselected_hole_runs(selected: set[int], valid_positions: List[int]) -> List[Tuple[int, int, int]]:
@@ -2587,14 +2587,15 @@ def _target_distribution_loss(
     if logits.shape != target.shape or logits.shape != valid_mask.shape:
         raise ValueError("distribution logits, target, and valid_mask must have identical [B,T] shapes")
     valid = valid_mask.to(device=logits.device, dtype=torch.bool)
-    target = target.to(device=logits.device, dtype=logits.dtype).clamp_min(0.0).masked_fill(~valid, 0.0)
-    eps = torch.finfo(logits.dtype).eps
+    work = logits.float()
+    target = target.to(device=logits.device, dtype=torch.float32).clamp_min(0.0).masked_fill(~valid, 0.0)
+    eps = torch.finfo(work.dtype).eps
     target_mass = target.sum(dim=1)
     active = target_mass > eps
     if not bool(active.any().item()):
-        return logits.new_zeros(())
+        return work.new_zeros(())
     target_dist = target / target_mass.clamp_min(eps)[:, None]
-    masked_logits = logits.masked_fill(~valid, _neg(logits.dtype))
+    masked_logits = work.masked_fill(~valid, _neg(work.dtype))
     log_probs = F.log_softmax(masked_logits, dim=1)
     return -(target_dist * log_probs).sum(dim=1)[active].mean()
 
@@ -2706,7 +2707,7 @@ def duca_losses(
     budgets = _budget_tensor(budget, center_scores.shape[0], center_scores.device).to(center_scores.dtype)
     selected = selected_mask_st.masked_fill(~valid, 0.0)
     losses: Dict[str, torch.Tensor] = {}
-    zero = center_scores.new_zeros(())
+    zero = center_scores.float().new_zeros(())
     if detector_loss is not None:
         losses["detector_loss"] = detector_loss * weights["detector"]
     else:
@@ -2823,9 +2824,10 @@ def duca_losses(
     if boundary_target is not None:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")
-        target = boundary_target.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
+        target = boundary_target.to(center_scores.device, torch.float32).masked_fill(~valid, 0.0)
+        selected_for_boundary = selected.float()
         denom = target.sum(dim=1).clamp_min(1.0)
-        uncovered = (target * (1.0 - selected.clamp(0.0, 1.0))).sum(dim=1) / denom
+        uncovered = (target * (1.0 - selected_for_boundary.clamp(0.0, 1.0))).sum(dim=1) / denom
         losses["boundary_coverage_loss"] = uncovered.mean() * weights["boundary"]
     else:
         losses["boundary_coverage_loss"] = zero
@@ -2844,8 +2846,10 @@ def duca_losses(
                 if isinstance(scores, dict):
                     scores["actionness_positive_weight"] = positive_weight
             else:
-                bce = F.binary_cross_entropy_with_logits(logits, action, reduction="none").masked_fill(~valid, 0.0)
-                denom = valid.to(center_scores.dtype).sum(dim=1).clamp_min(1.0)
+                bce = F.binary_cross_entropy_with_logits(
+                    logits.float(), action.float(), reduction="none"
+                ).masked_fill(~valid, 0.0)
+                denom = valid.to(torch.float32).sum(dim=1).clamp_min(1.0)
                 losses["actionness_bce_loss"] = ((bce.sum(dim=1) / denom).mean()) * weights["actionness"]
         else:
             losses["actionness_bce_loss"] = zero

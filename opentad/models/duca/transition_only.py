@@ -26,7 +26,8 @@ def balanced_binary_actionness_loss(
     valid = valid_mask.to(device=logits.device, dtype=torch.bool)
     if valid.shape != logits.shape:
         raise ValueError("valid_mask must align with actionness logits")
-    target = target.to(device=logits.device, dtype=logits.dtype).clamp(0.0, 1.0)
+    work = logits.float()
+    target = target.to(device=logits.device, dtype=torch.float32).clamp(0.0, 1.0)
     positive_prior = float(positive_prior)
     max_positive_weight = float(max_positive_weight)
     if not math.isfinite(positive_prior) or not 0.0 < positive_prior < 1.0:
@@ -34,14 +35,14 @@ def balanced_binary_actionness_loss(
     if not math.isfinite(max_positive_weight) or max_positive_weight < 1.0:
         raise ValueError("max_positive_weight must be finite and at least one")
     prior_odds = (1.0 - positive_prior) / positive_prior
-    positive_weight = logits.new_tensor(min(max(prior_odds, 1.0), max_positive_weight))
+    positive_weight = work.new_tensor(min(max(prior_odds, 1.0), max_positive_weight))
     per_element = F.binary_cross_entropy_with_logits(
-        logits,
+        work,
         target,
         reduction="none",
         pos_weight=positive_weight,
     ).masked_fill(~valid, 0.0)
-    denominator = valid.to(dtype=logits.dtype).sum().clamp_min(1.0)
+    denominator = valid.to(dtype=torch.float32).sum().clamp_min(1.0)
     return per_element.sum() / denominator, positive_weight
 
 
@@ -243,15 +244,16 @@ def transition_distribution_loss(
     temperature = float(temperature)
     if not math.isfinite(temperature) or temperature <= 0.0:
         raise ValueError("transition distribution temperature must be finite and positive")
-    target = transition_target.to(device=transition_scores.device, dtype=transition_scores.dtype)
+    work = transition_scores.float()
+    target = transition_target.to(device=transition_scores.device, dtype=torch.float32)
     target = target.masked_fill(~valid, 0.0)
     mass = target.sum(dim=1, keepdim=True)
     normalized = torch.where(mass > 0.0, target / mass.clamp_min(1e-8), target)
-    logits = (transition_scores / temperature).masked_fill(~valid, -1.0e4)
+    logits = (work / temperature).masked_fill(~valid, -1.0e4)
     per_batch = -(normalized * F.log_softmax(logits, dim=1)).sum(dim=1)
     active = mass.squeeze(1) > 0.0
     if not bool(active.any().item()):
-        return transition_scores.sum() * 0.0
+        return work.sum() * 0.0
     return per_batch[active].mean()
 
 

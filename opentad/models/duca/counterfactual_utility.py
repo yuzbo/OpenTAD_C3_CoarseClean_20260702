@@ -137,11 +137,12 @@ def counterfactual_utility_distillation_loss(
     valid = valid_mask.bool()
     if not valid.any(dim=1).all():
         raise ValueError("every sample must contain at least one valid counterfactual candidate")
-    teacher = teacher_utility.detach().to(device=policy_scores.device, dtype=policy_scores.dtype)
+    student = policy_scores.float()
+    teacher = teacher_utility.detach().to(device=policy_scores.device, dtype=torch.float32)
     if not torch.isfinite(teacher[valid]).all():
         raise ValueError("valid counterfactual utilities must be finite")
-    neg = torch.finfo(policy_scores.dtype).min
-    student_logits = (policy_scores / temperature).masked_fill(~valid, neg)
+    neg = torch.finfo(student.dtype).min
+    student_logits = (student / temperature).masked_fill(~valid, neg)
     teacher_logits = (teacher / temperature).masked_fill(~valid, neg)
     target = torch.softmax(teacher_logits, dim=-1)
     return -(target * torch.log_softmax(student_logits, dim=-1)).sum(dim=-1).mean()
