@@ -8,9 +8,11 @@ Latest update: `1161486` then failed before pilot because selected-index checksu
 
 Current active queue: `1161495` failed before pilot because `_selected_index_checksum_g1a` missed `import numpy as np`; fix commit `a4b7f1db0424966c9f9c5d4304a7619be59661db` is deployed from snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_a4b7f1d_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_a4b7f1d_gatepilot_20260713_200922_+0800`, jobs `1161500` gate, `1161501` selected-axis afterok, `1161502` physical-metric afterok. First check: gate `PENDING (Priority)`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
 
+Gate `1161500` has now passed (`COMPLETED 0:0`, `gate_pass=true`). Pilots `1161501` selected-axis and `1161502` physical-metric are `RUNNING`; status is `experiment_running`, not `empirically_supported`. mAP remains NA until pilot artifacts complete.
+
 # Research Wiki Query Pack
 
-当前 G1a 部署状态（2026-07-13）：独立 Max 复审已完成两轮，第二轮 4 个 P1 已按测试先行修复；gate/artifact `65 passed`，PhysTime/shared physical-grid `240 passed`。第三轮必须达到零 P0/P1 后才允许创建 clean snapshot 和运行 real gate；目前仍是 `tested`，不是 `experiment_running`，没有新 mAP。完整审查见 `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md`。
+当前 G1a 部署状态（2026-07-13）：独立 Max 复审已经在 `a4b7f1db0424966c9f9c5d4304a7619be59661db` 达到零 P0/P1，并允许 clean snapshot 与真实 gate。远端 gate contract `35 passed`、PhysTime/C3 physical-grid focused `248 passed`；真实 gate `1161500` 已 `COMPLETED 0:0` 且 `gate_pass=true`。`1161501` selected-axis 与 `1161502` physical-metric 6-epoch pilot 正在运行；当前状态是 `experiment_running`，不是 `empirically_supported`，没有新 mAP。完整审查见 `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md`。
 
 更新时间：2026-07-13。长度必须保持在 8000 字符以内。
 
@@ -19,7 +21,7 @@ Current active queue: `1161495` failed before pilot because `_selected_index_che
 长期唯一主线仍是独立离线 physical-time TAD detector。`PhysTime-AdaTAD 1.0` 的 THUMOS14 raw-RGB/K384 三头 full run 已完成并冻结为负基线。当前执行阶段是 `HOLD AND REBUILD`：先建立 native tubelet feature-support provenance，以及 capacity/context/candidate/assignment-matched 的 selected-time 与 physical-time controls；随后才决定是否实现 `idea:sm-ptaf`。独立核验要求分开 `K=384` raw observations、`J=192` native tubelet tokens、基础候选网格 `Q0` 与多尺度总候选 `QΣ`：G1a 使用 `Q0=J=192`、官方六层金字塔 `QΣ=378`，不做 J192→Q0=384 lift；G1b 才给双侧共享 `Q0=384` 中性 lift，最后才允许 mass residual。候选坐标、GT、回归、decode、NMS 与评测始终使用秒，不能回到 selected rank。
 
 当前事实：最终修复 commit 为 `3ac93a1`，诊断锚点为 `d900c7c`。真实 gate、稳定性 gate、三头 full run 与最佳 checkpoint 复算均已完成。性能下降不是 NaN、evaluator、重复坐标换算或 checkpoint 读取错误。诊断与 2026-07-13 Pro 审查共同定位：原生 tubelet 轴被插值后错误绑定 raw-frame supports、检测容量/上下文不公平、raw absolute seconds 主导 query、粗层 attention 有效聚合坍缩、候选/短动作监督不足、assignment 不同构。`SM-PTAF` 只有 `designed` 状态，回复中的代码不是实现。原始数字只见 `docs/evaluation/results.md`。
-G1a native-J192 matched control 已实现并通过远端新旧相关回归 `142 passed`：Q0=192、QΣ=378，不做 J192→Q0=384 lift；双臂共享官方 ActionFormer，仅改变统一秒轴。已修复 candidate mask 污染，并加入逐层 padding isolation、真实 test evaluator、完整内容指纹、checkpoint 反序列化与 evaluator 重算。正式 dataset 消费 411 个视频，test 根目录额外 2 个未引用 MP4 被显式登记。gate `1161304` 因旧审计范围失败，`1161353` 因 scalar state byte-view 失败；`1161378` 又在 selected-axis 首个样本因旧逐步回归梯度合同 fail-closed，三轮 pilot 均未启动。旧 artifact 不足以证明 ReLU 根因；v3 gate 现使用正式 batch=2 DataLoader、warmup scheduler、EMA 与生产更新顺序，并记录 assignment/pre-ReLU/梯度/LR/optimizer state 和真实参数 delta，独立 validator 从逐步证据重算。首轮独立审查的 4 个 P1/3 个 P2 已修复，正在复审；证据保持 `tested`。AdaTAD interpolation 只允许在 G1b 作为双臂共享中性 lift，不能计作新增观测。
+G1a native-J192 matched control 已实现并通过远端新旧相关回归：Q0=192、QΣ=378，不做 J192→Q0=384 lift；双臂共享官方 ActionFormer，仅改变统一秒轴。已修复 candidate mask 污染，并加入逐层 padding isolation、真实 test evaluator、完整内容指纹、checkpoint 反序列化与 evaluator 重算。正式 dataset 消费 411 个视频，test 根目录额外 2 个未引用 MP4 被显式登记。旧 gate `1161304`、`1161353`、`1161378`、`1161476`、`1161486`、`1161495` 都是 gate/artifact 合同错误或覆盖缺口，不能作为 pilot 结果。当前 v3 gate 使用正式 batch=2 DataLoader、warmup scheduler、EMA 与生产更新顺序，并记录 assignment/pre-ReLU/梯度/LR/optimizer state 和真实参数 delta，独立 validator 从逐步证据重算；`1161500` 已通过，依赖 pilot 已启动。AdaTAD interpolation 只允许在 G1b 作为双臂共享中性 lift，不能计作新增观测。
 
 ## Top gaps
 
