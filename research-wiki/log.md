@@ -29,3 +29,6 @@
 - 2026-07-12：完成性能下降诊断：排除训练崩溃、evaluator、重复坐标换算与缺失 test window；确认比较存在容量/上下文混杂，并发现 absolute-second query 主导、粗层 attention 坍缩、候选密度和短动作监督不足、单标签 assignment 差异。完整数字只写入 `docs/evaluation/results.md`。
 - 2026-07-12：独立 GPT-5.5 xhigh 完整性审计确认 real GT 与 raw mAP 路径有效；发现本地 registry 曾滞后于远端完成状态。结果表与 Wiki 已整改，剩余风险为单数据集单种子和非等容量比较。
 - 2026-07-12：形成基于 GitHub 分支 `codex/phystime-performance-diagnosis-20260712`、正式实现 `3ac93a1` 与诊断提交 `d900c7c` 的 Pro 严厉审核 prompt；要求逐文件裁决根因，并交付等容量/同上下文/同候选数的最终模型、核心代码和因果实验 gate，禁止回退 selector 或用调参掩盖结构混杂。
+- 2026-07-13：逐字归档 1539 行 PhysTime 性能 Pro 回复，附件与仓库归档 SHA256 均为 `651C4CA673073D7E4C05746138C82EBBE2E6174C459516FB40B3EFDCA47305AB`；审查裁决为 `HOLD AND REBUILD`。
+- 2026-07-13：吸收 native tubelet feature-support provenance、capacity/context/candidate/assignment parity、gap-query 与训练态 mass-path 等新约束；新增 `idea:sm-ptaf`，严格标记为 `designed`。PhysTime 1.0 继续冻结为负基线，下一步先做 provenance 与 coordinate-only P0 gates，不创建虚假的实验或结果状态。
+- 2026-07-13：重建 Wiki index/query pack/lint；共 38 个实体、10 个 gaps、66 条关系，0 孤立、0 失效引用、0 重复节点/边，query pack 4430 字符。

@@ -6,7 +6,7 @@
 | --- | --- |
 | `docs/superpowers/specs/2026-07-10-phystime-tal-design.md` | PhysTime-TAL 1.0 原始设计与停止条件 |
 | `docs/superpowers/specs/2026-07-10-phystime-tad-2-design.md` | PhysTime-TAD 2.0 support-integrated 最终算子合同 |
-| `docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md` | 当前 raw-video AdaTAD 三头比较合同 |
+| `docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md` | 已完成的 raw-video AdaTAD 1.0 三头比较预注册合同 |
 | `docs/superpowers/plans/2026-07-10-phystime-tad-2.md` | feature-geometry 实现任务与 gate |
 | `docs/superpowers/plans/2026-07-11-phystime-adatad-1.md` | raw-video 实现计划与已执行任务锚点 |
 | `docs/methods/phystime_tad_contract.md` | 秒坐标、support provenance、no-leak runtime contract |
@@ -46,7 +46,7 @@
 
 ## 3. 本轮回顾的原始附件
 
-附件没有复制进仓库；使用绝对路径和 SHA256 固定来源。若附件目录未来被清理，应先把该原文迁入受控归档并保持 hash。
+历史附件主要使用绝对路径和 SHA256 固定来源。2026-07-13 的 PhysTime 性能 Pro 回复已逐字复制到受控 `docs/methods/reviews/` 归档并验证同 hash；其余附件若目录未来被清理，应先迁入受控归档并保持 hash。
 
 | 附件 ID | SHA256 | 讨论主题 / 已吸收内容 |
 | --- | --- | --- |
@@ -64,6 +64,7 @@
 | `c8a36eba-32f9-4524-9214-2c19bd3a7c0c` | `00107AC0E451A60DD66BCC623E04C4DF879554F24AFA53B99160FCE42E516966` | loss 重复、boundary proxy 非 boundary-first、hard/soft 错配、CFPA 修复 |
 | `1fc36774-3c6e-461c-a5a0-d719ac99ecb5` | `9F87B12F4DE594C2E542973F20D22DF6F7D95AE3F5E7776BB38D8A8565D390B7` | PIVOT、23 个候选、ChronoTransport/CoDeR/ACTAL/PhysTime/No-Free-Frames |
 | `e8d42e0b-ab00-43d4-8cbe-7d57f323f95a` | `A30B6D5547CD6891A4CA3A36C19651E0172ACF40B8D28F6904BD5EDE9E1CF302` | PhysTime 1.0 新颖性批判、support measure 2.0 与三类实验协议 |
+| `4efbcdfc-7b11-46fd-a863-da1d992a110f` | `651C4CA673073D7E4C05746138C82EBBE2E6174C459516FB40B3EFDCA47305AB` | PhysTime 1.0 性能下降逐文件 Pro 审查；`HOLD AND REBUILD`、native tubelet provenance、capacity-matched controls 与 SM-PTAF designed route |
 
 附件根路径格式：
 
@@ -83,6 +84,8 @@
 | `2b7f83f` | 当前 PhysTime 分支首版 persistent Wiki |
 | `92029ea` | ChronoTransport formal Stage-B 闭环与 P3 负 gate |
 | `3ac93a1` | PhysTime-AdaTAD 最终稳定 matched full-run 实现 |
+| `d900c7c` | PhysTime 性能下降诊断、预测分解、结果审计与 Wiki 裁决 |
+| `f734aa4` | 触发本次 Pro 审查的固定 GitHub prompt |
 
 ### 额外分支来源
 
@@ -106,4 +109,4 @@
 
 ## 6. 覆盖声明
 
-本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 头隔离和秒/帧坐标讨论。三份 `routes/*-complete-record.md` 进一步记录了跨分支实现与实验谱系。原始附件中的长代码建议没有逐行复制，但其方法决策、风险、停止条件、代码落点和可复用机制均已纳入。
+本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 三头 full run、性能诊断和 SM-PTAF 设计审查。三份 `routes/*-complete-record.md` 进一步记录跨分支实现与实验谱系。本次 1539 行 Pro 回复已逐字归档；吸收记录只提炼状态、风险、停止条件和下一步，不替代原文。

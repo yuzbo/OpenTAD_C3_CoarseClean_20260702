@@ -1,6 +1,6 @@
 # 当前唯一方向与最终目标
 
-更新时间：2026-07-12
+更新时间：2026-07-13
 
 ## 1. 最终研究目标
 
@@ -12,11 +12,11 @@
 
 ## 2. 当前唯一执行主线
 
-当前先实现 `idea:phystime-adatad-1`，用最小而严格的实验回答一个问题：
+`idea:phystime-adatad-1` 已完成稳定 full run 并冻结为负基线。当前执行阶段是它之后的 **HOLD AND REBUILD**：先用最小而严格的 capacity-matched control 回答一个问题：
 
-> 在完全相同的不规则原始帧观测和完全相同的官方 AdaTAD/VideoMAE-S backbone 下，显式物理时间检测是否优于把不规则观测当成连续 selected-rank 序列？
+> 在完全相同的不规则原始帧观测、官方 AdaTAD/VideoMAE-S backbone、检测容量、跨 query 上下文、候选拓扑、assignment 和训练更新下，只改变 selected-coordinate 与 physical-coordinate，结果是否仍有稳定差异？
 
-### Phase 0：真实门控
+### Phase 0：PhysTime 1.0 真实门控（已完成）
 
 - 从 THUMOS14 原始 RGB 视频出发。
 - 在逻辑 768 位置窗口中，用相同、确定性、无学习、无 GT 的策略选择 K=384。
@@ -34,9 +34,17 @@
 
 三个稀疏系统共享数据、采样索引、backbone、预训练、空间增强、训练周期、优化器、seed、NMS 和评测。完成后的审计发现，PhysTime 还同时改变了 temporal projection、跨 query 上下文和可训练容量，因此 Phase 1 不能作为纯坐标表示隔离。
 
+### Phase 1.5：P0 重建（当前唯一执行阶段）
+
+1. 冻结三个 `3ac93a1` 正式配置、checkpoint 与结果，不在旧 PhysTime 1.0 上继续调参。
+2. 删除主路线中原生 tubelet feature 被插值后再绑定 raw-frame support 的语义捷径，建立 native tubelet multi-atom provenance gate。
+3. 构建 capacity/context/candidate/assignment-matched 的 selected-coordinate 与 physical-coordinate ActionFormer controls。
+4. 只在 coordinate-only control 通过后，引入有显式 mass base path、bounded correction 和 physical query encoder 的 `idea:sm-ptaf`。
+5. `SM-PTAF` 当前状态仅为 `designed`；外部回复中的公式与代码片段不是实现证据。
+
 ### Phase 2：结果门控后扩展
 
-Phase 1 已稳定完成但 PhysTime 1.0 不具竞争力，因此以下扩展继续锁定：
+在 Phase 1.5 的机制 gate 与单 seed survivor 出现前，以下扩展继续锁定：
 
 - K=192/384/768；
 - uniform、random、bursty、contiguous-gap；
@@ -62,6 +70,7 @@ Phase 1 已稳定完成但 PhysTime 1.0 不具竞争力，因此以下扩展继�
 - 最终稳定实现为 `3ac93a1`；最佳 checkpoint 的只读重放逐项复现正式结果。
 - PhysTime 1.0 未胜 selected-axis 或 physical-grid，也未达到 dense anchor；当前实现结论为负。
 - 性能诊断已经排除训练崩溃、evaluator、重复坐标换算和缺失 test windows，并确认容量/上下文混杂、absolute-second query 主导、粗层 attention 坍缩、候选密度与短动作监督不足。
+- 2026-07-13 Pro 审查给出 `HOLD AND REBUILD`，进一步确认 native tubelet feature-support provenance、候选/assignment 同构和 query-mask 语义是 P0；推荐 `SM-PTAF` 作为 designed candidate，但尚无实现或实验。
 
 尚未形成的论文证据：
 
@@ -69,7 +78,7 @@ Phase 1 已稳定完成但 PhysTime 1.0 不具竞争力，因此以下扩展继�
 - 修复后的一因素消融与多 seed；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已完成稳定 full run，但当前实现为负结果且比较存在架构/容量混杂；冻结为负基线。下一版必须先做等容量、同上下文、同候选数的 physical-time 因果对照，不得直接扩展论文主表。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已完成稳定 full run，但当前实现为负结果且比较存在 feature provenance、架构/容量、候选与 assignment 混杂；冻结为负基线。下一版先完成 coordinate-only control 和 native provenance gate，SM-PTAF 仍为 designed candidate，不得直接扩展论文主表。**
 
 ## 5. 明确非目标
 

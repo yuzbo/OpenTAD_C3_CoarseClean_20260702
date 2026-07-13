@@ -9,3 +9,5 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 
+# Preserve the attachment's CRLF checkout bytes and recorded SHA256.
+docs/methods/reviews/2026-07-13-phystime-performance-drop-pro-audit-response-raw.md text eol=crlf

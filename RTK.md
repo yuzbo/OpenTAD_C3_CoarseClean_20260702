@@ -4,7 +4,7 @@
 
 最终目标是一个独立的离线 PhysTime-TAD 检测器：接收任意不规则视频观测、真实时间戳和可审计支持区间，在物理时间轴上直接完成动作分类与起止边界定位，并在缺帧、非均匀密度和不同 FPS 下保护高-IoU 定位。
 
-当前阶段只实现 PhysTime-AdaTAD 1.0 的 matched raw-video K384 head comparison。完整定义见：
+PhysTime-AdaTAD 1.0 的 matched raw-video K384 comparison 已完成并得到负结果。当前阶段执行 P0 重建：先做等容量、同上下文、同候选、同 assignment 的 coordinate-only control，再以 gate 结果决定是否实现 SM-PTAF。完整定义见：
 
 - `research-wiki/current_direction.md`
 - `docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md`
@@ -20,7 +20,7 @@ C3/PAction/GAS-VT/DUCA/MUST/CFPA/X3D/SlowFast 是历史 baseline、诊断或工�
 - GT 与预测不得映射到 selected-rank；
 - `round(time_sec * fps)` 可用于原视频帧号导出；
 - support interval 不得跨 sparse gap 扩张；
-- query grid 由物理时长/spacing 定义，不由 K 或 rank stride 定义；
+- query 的坐标、宽度、回归几何由物理时间定义；matched comparison 中允许 K 决定逐层 candidate cardinality 以对齐对照，但 rank index 不得定义坐标或 stride；
 - predictions in seconds 只允许 duration clamp，不经过 snippet-axis inverse remap。
 
 ## Primary Comparison Contract
@@ -30,7 +30,8 @@ C3/PAction/GAS-VT/DUCA/MUST/CFPA/X3D/SlowFast 是历史 baseline、诊断或工�
 - sampling: deterministic, no learning, no GT；
 - same selected indices across three heads；
 - same official VideoMAE-S/AdaTAD backbone and optimizer；
-- selected-axis、physical-grid、PhysTime 三头只改变时间几何与检测 head；
+- PhysTime 1.0 三头结果只能作为负基线，不能再称为只改变时间几何/检测 head 的公平隔离；
+- P0 rebuild 必须对齐 projection capacity、跨 query context、candidate topology、assignment、head 与训练更新，再逐项改变 coordinate 或 support-measure operator；
 - no selector, actionness, teacher, ledger, dynamic budget or paired consistency in Phase 1。
 
 ## Evidence and Storage

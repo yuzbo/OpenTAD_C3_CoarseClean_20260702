@@ -1,6 +1,6 @@
 # Research Wiki Index
 
-更新时间：2026-07-11
+更新时间：2026-07-13
 
 这不是论文草稿，而是本项目的长期研究记忆。所有后续方法修改、实验部署和论文主张，必须先读取本页指向的当前方向、决策和失败记录。
 
@@ -44,7 +44,8 @@
 - `idea:no-free-frames`：全栈效率审计协议。
 - `idea:phystime-tal-1`：第一版连续/物理时间 TAD 规格。
 - `idea:phystime-tad-2`：support-integrated physical-time detector。
-- `idea:phystime-adatad-1`：当前 raw-video AdaTAD 头部隔离主线。
+- `idea:phystime-adatad-1`：已完成的 raw-video AdaTAD 三头负基线。
+- `idea:sm-ptaf`：native tubelet support-measure physical-time ActionFormer 重建候选，当前仅 `designed`。
 
 ### Experiments
 
@@ -58,6 +59,7 @@
 - `exp:chronotransport-engineering-track`
 - `exp:phystime-feature-track`
 - `exp:phystime-adatad-k384`
+- `exp:phystime-performance-drop-diagnosis`
 
 ### Papers
 
@@ -74,4 +76,4 @@
 
 ## 当前状态一句话
 
-当前唯一可执行主线是 `PhysTime-AdaTAD 1.0`：在相同、无学习、无 GT 的不规则 K=384 原始帧观测和相同官方 AdaTAD/VideoMAE-S backbone 下，只比较 selected-axis、physical-grid ActionFormer 与 PhysTime 物理时间检测头；长期目标是一个能直接处理任意不规则视频观测、在真实物理时间上分类和定位的独立离线 TAD 检测器。
+PhysTime-AdaTAD 1.0 的 K384 三头 full run 已完成并冻结为负基线。当前唯一执行阶段是 `HOLD AND REBUILD`：native tubelet feature-support provenance + capacity/context/candidate/assignment-matched coordinate-only control；`SM-PTAF` 只是 designed candidate。长期目标仍是直接处理任意不规则视频观测、在真实物理时间上分类和定位的独立离线 TAD 检测器。

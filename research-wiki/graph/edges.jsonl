@@ -55,3 +55,12 @@
 {"from":"paper:kim2024_te_tad","to":"gap:G1","type":"addresses_gap","evidence":"Time-aligned TAD coordinate expression."}
 {"from":"paper:zeng2024_temporal_robustness","to":"gap:G6","type":"addresses_gap","evidence":"Temporal corruption benchmark and robust training."}
 {"from":"paper:sun2026_liquidtad","to":"gap:G3","type":"addresses_gap","evidence":"Occupies broad continuous-dynamics TAD novelty space."}
+{"from":"idea:sm-ptaf","to":"gap:G1","type":"addresses_gap","evidence":"Replaces selected-rank detector geometry with capacity-matched physical query coordinates and relative-time operators."}
+{"from":"idea:sm-ptaf","to":"gap:G2","type":"addresses_gap","evidence":"Binds native VideoMAE tubelet tokens to non-expanding multi-atom raw supports and removes feature interpolation."}
+{"from":"idea:sm-ptaf","to":"gap:G3","type":"addresses_gap","evidence":"Narrows novelty to no-imputation support-measure set-to-interval detection rather than generic continuous time."}
+{"from":"idea:sm-ptaf","to":"gap:G4","type":"addresses_gap","evidence":"Requires capacity, context, candidate and assignment parity before evaluating the support-measure operator."}
+{"from":"idea:sm-ptaf","to":"gap:G5","type":"addresses_gap","evidence":"Restores candidate parity and explicitly gates short-action and high-tIoU behavior."}
+{"from":"idea:sm-ptaf","to":"paper:zhang2022_actionformer","type":"inspired_by","evidence":"Reuses the ActionFormer candidate topology, temporal context and anchor-free assignment as matched controls."}
+{"from":"idea:sm-ptaf","to":"paper:liu2024_adatad","type":"inspired_by","evidence":"Uses the official raw-video VideoMAE/TIA backbone while restricting the claim to the detector interface."}
+{"from":"idea:sm-ptaf","to":"paper:shukla2021_mtan","type":"inspired_by","evidence":"mTAN is the nearest irregular-time attention baseline and defines the regridding novelty risk."}
+{"from":"idea:sm-ptaf","to":"paper:kim2024_te_tad","type":"inspired_by","evidence":"TE-TAD occupies actual-timeline coordinates, so seconds alone cannot be claimed as novel."}

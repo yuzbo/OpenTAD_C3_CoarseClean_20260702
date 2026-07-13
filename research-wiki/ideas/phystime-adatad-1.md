@@ -9,7 +9,7 @@ risks: "当前三头同时改变容量、时序上下文和坐标表示，不能
 based_on: ["paper:zhang2022_actionformer", "paper:liu2024_adatad", "paper:kim2024_te_tad"]
 target_gaps: ["gap:G1", "gap:G4", "gap:G5", "gap:G7", "gap:G9"]
 added: 2026-07-11T00:00:00+08:00
-updated: 2026-07-12T14:20:00+08:00
+updated: 2026-07-13T00:00:00+08:00
 ---
 
 # PhysTime-AdaTAD 1.0
@@ -37,6 +37,12 @@ updated: 2026-07-12T14:20:00+08:00
 - 下一版必须先做 capacity/context/candidate-matched control，只改变物理时间表示。
 - 在因果对照通过前不启动第二数据集、三种子或论文主表扩展。
 - 数字与 artifact 路径只见 `docs/evaluation/results.md`；解释见 `docs/evaluation/phystime-performance-drop-diagnosis.md`。
+
+## 2026-07-13 external review decision
+
+Pro 逐文件审查给出 `HOLD AND REBUILD`，并补充一个新的 P0：原生 VideoMAE tubelet feature 被插值后与 raw-frame supports 一一绑定，没有建立 feature provenance。审查同时确认候选 mask、ActionFormer tied-shortest multi-label assignment、训练态 mass dropout 和 “K 子采样无 GT”表述需要收紧。
+
+该回复不改变本 idea 的负结果状态，也不把后继 `idea:sm-ptaf` 提升为已实现；只把下一步从泛化的“等容量修复”固定为 provenance gate、coordinate-only control 和 support-measure operator 三层因果顺序。
 
 ## 成功/降级规则
 

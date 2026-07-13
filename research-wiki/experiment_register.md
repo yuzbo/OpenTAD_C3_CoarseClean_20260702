@@ -25,3 +25,5 @@
 5. `claim evidence`：matched full run + 多 seed/置信区间 + 高-IoU/成本/泛化审计。
 
 当前没有达到第 5 级的 PhysTime 实验。
+
+下一阶段的 provenance gate、capacity-matched coordinate-only control 和 SM-PTAF pilot 仍处于 `designed`，尚未生成 experiment node、commit、job 或结果。只有代码与预注册合同落地后才创建新的 `exp:*`，避免把外部方案误记为已部署实验。

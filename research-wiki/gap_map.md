@@ -8,9 +8,9 @@ selected-axis Conv/attention/pyramid 把相邻 token 当等间隔，输出 remap
 
 ## gap:G2 - 观测支持区间与缺失质量没有严格定义
 
-状态：算子与 raw-video AMP gate 已完成，full-run 证据进行中。
+状态：算子级 support 几何与 raw-video full run 已完成，但 native feature-support provenance 尚未关闭。
 
-相邻时间戳的 Voronoi 宽度会跨 gap 膨胀支持并虚构观测。PhysTime-TAD 2.0 使用可审计原始 support cell、midpoint clipping 和 overlap mass，但还需 raw-frame pipeline gate。
+相邻时间戳的 Voronoi 宽度会跨 gap 膨胀支持并虚构观测。PhysTime-TAD 2.0 已使用可审计原始 support cell、midpoint clipping 和 overlap mass；新的 P0 是原生 VideoMAE tubelet token 必须绑定 multi-atom supports，禁止 `192 -> 384` 插值后按长度硬配 raw supports，并需审计 TIA rank mixing。
 
 ## gap:G3 - 新颖性与近邻方法碰撞
 
@@ -20,17 +20,15 @@ mTAN 已做 irregular continuous-time attention；TE-TAD 已用 actual timeline 
 
 ## gap:G4 - raw-video AdaTAD 的公平三头隔离
 
-状态：matched pipeline 与单步 AMP gate 已实现，但首轮 full run 无效。
+状态：首轮 matched full run 已完成但不是公平的 coordinate isolation；P0 rebuild 仅为 designed。
 
-需要三个 config 在相同 raw videos、selected indices、VideoMAE-S adapter、checkpoint、schedule、seed 和 NMS 下，只改变时间几何/检测头。
-
-`0bbf0e9` 三头均在 epoch 41 首次验证时因 evaluator annotation 相对路径错误退出；PhysTime 另从 epoch 1 end 起持续全 NaN。修复后必须同 commit 重跑三头，当前无可比较 mAP。
+最终 `3ac93a1` 三头已稳定完成并复算，但 PhysTime 同时更换 projection、跨 query context、容量、候选和 assignment。下一步必须在相同 raw videos、selected indices、VideoMAE-S adapter、checkpoint、schedule、seed、NMS、projection capacity、candidate topology、assignment 与 head 下，只切换 selected-coordinate 和 physical-coordinate；通过后再加入 support-measure operator。
 
 ## gap:G5 - 高 tIoU 与短动作证据
 
-状态：未开始。
+状态：首轮诊断已完成，修复后的因果实验未开始。
 
-主结果必须包含 mAP@0.6/0.7、boundary error、短动作分组和最差采样模式。只提高 Avg-mAP 不足以支持物理时间定位主张。
+首轮预测分解已确认短动作、高 tIoU、覆盖与排序是主要弱点，且 matched-boundary error 只能解释“命中后质量”。下一版仍必须包含 mAP@0.6/0.7、短动作分组、top-k recall、conditional boundary error 与最差采样模式；只提高 Avg-mAP 不足以支持物理时间定位主张。
 
 ## gap:G6 - robustness 不是简单 augmentation 收益
 

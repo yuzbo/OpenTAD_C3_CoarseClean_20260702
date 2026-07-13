@@ -17,7 +17,8 @@
 | `idea:chronotransport-dcrt` | time x layer recompute/transport/reuse | 用户否决 | 接近 MoD/feature reuse，系统面和归因风险高 |
 | `idea:phystime-tal-1` | continuous-time irregular TAD | 被 2.0 取代 | support/time/hazard/consistency 定义不够严格且撞近邻 |
 | `idea:phystime-tad-2` | support-integrated physical-time detector | 长期目标 | 独立 detector，直接解决不规则时间几何 |
-| `idea:phystime-adatad-1` | raw-video matched head isolation | 当前唯一主线 | 最小公平实验，直接验证物理时间头价值 |
+| `idea:phystime-adatad-1` | raw-video matched head isolation | 已完成/负基线 | full run 已完成，但容量、候选、assignment 与 feature provenance 混杂 |
+| `idea:sm-ptaf` | native tubelet support-measure set-to-physical-query detector | designed rebuild candidate | 先关闭 provenance 与公平性 P0；尚未实现或测试 |
 
 ## B. 2026-07-10 发散产生的 23 个候选
 

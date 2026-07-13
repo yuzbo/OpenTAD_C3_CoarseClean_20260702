@@ -50,10 +50,16 @@
 
 1. support interval 必须来自可审计原始单元，不能跨缺失区扩张。
 2. 重叠 support 只能按 midpoint clip 消除双计数，不能扩展填洞。
-3. query 数由物理时长与 spacing 决定，不能由 K 或 selected-rank stride 决定。
+3. query 坐标、宽度与回归 stride 必须由物理时间定义；为 matched candidate parity，query 数可以由 K 决定，但不能把 query index 或 selected-rank 当作时间单位。
 4. GT、预测、NMS 统一用秒；允许导出原视频帧号，不允许导出 selected-rank 边界。
 5. primary head comparison 使用同一无学习采样，避免把 selector 收益混进 PhysTime head 收益。
 6. feature-token 代码是算子资产，不是 raw-video 论文证据。
+7. **长度相等不是 feature provenance。** 原生 192 tubelet tokens 插值到 384 后，不能直接与 384 raw supports 一一绑定；必须保留 tubelet multi-atom anchors，并单独诊断 TIA/ViT 的 rank mixing。
+8. **无观测覆盖不等于无合法候选。** coverage mask 和 domain/candidate mask 必须分离；gap query 可以利用上下文做检测，但必须显式标注其无直接 observation evidence。
+9. **测度保底路径不能被 dropout 或 learned logits 覆盖。** mass average 与 content correction 分路，dropout 只作用于 correction，训练态也要验证 mass-preservation。
+10. **参数量配平不是容量公平的充分条件。** projection 深度、local window、跨 query context、候选拓扑、assignment、更新数和参数量必须共同匹配。
+11. **“K 子采样无 GT”不等于训练窗口生成无 GT。** annotation-aware crop 与 crop 内 fixed subsample 必须分别审计和表述。
+12. **外部实现草图不是仓库状态。** 公式、伪代码、patch map 只能把 idea 提升到 `designed`，不能提升到 `implemented` 或 `tested`。
 
 ## G. 启动新工作前的五问
 

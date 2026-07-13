@@ -80,13 +80,15 @@
 | 已实现/未实现清单 | PhysTime §9 | current tree/commit | 完整 |
 | Phase 0/1/2 实验 | PhysTime §10 | plan | 完整 |
 | 成功/降级/停止条件 | PhysTime §11 | spec/review | 完整 |
+| K384 三头 full run 与性能下降根因 | PhysTime §16 + `experiments/phystime-performance-drop-diagnosis.md` | `3ac93a1`、`d900c7c`、results/audit | 完整 |
+| Pro `HOLD AND REBUILD`、native provenance 与 SM-PTAF | PhysTime §17 + `ideas/sm-ptaf.md` | 4efbcdfc 附件逐字归档 | 完整 |
 | 与 DUCA/Chrono 的关系 | PhysTime §12-13 | final synthesis | 完整 |
 | 禁止重复与唯一下一步 | PhysTime §14-15 | decisions | 完整 |
 
 ## 刻意去重或单一来源保留的内容
 
 1. 主任务用户侧原文已经逐条归档；重复的“检查远端实验”所对应的瞬时输出没有在路线档案中重复展开，其 job 与状态转折按实验谱系归档。
-2. 原始回复中的大段建议代码没有再次复制到路线档案；代码意图、缺陷、commit 和最终实现 API 已归档，可获得原文保留在 `sources/` 或由 SHA/path 固定。
+2. 原始回复中的大段建议代码不复制到路线档案；代码意图、缺陷、commit 和实现状态已归档。本次 PhysTime Pro 回复因直接定义下一候选架构，已逐字保存在 `docs/methods/reviews/2026-07-13-phystime-performance-drop-pro-audit-response-raw.md`，路线档案只作状态化吸收。
 3. 实验 mAP 曲线和数值不进入 Wiki，继续服从 `docs/evaluation/results.md` 单一数字来源原则。
 
 这三项是刻意的去重与单一来源设计，不是讨论遗漏。

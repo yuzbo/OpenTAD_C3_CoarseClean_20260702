@@ -27,7 +27,12 @@
 - 不以“query 覆盖若干观测”证明 support integration 有效；必须同时报告 effective observation count、content/relative logit span 和层级坍缩。
 - 不用延长训练、调 NMS 或增大 endpoint loss 处理短动作崩溃；先匹配候选密度、target assignment、容量和时序上下文。
 - 不把 PhysTime 1.0 的负结果外推为 physical-time TAD 无效；当前实验首先证明的是实现与对照存在架构混杂。
+- 不在 PhysTime 1.0 上继续调 endpoint、NMS、训练长度或单独 attention weight；该实现已经冻结为负基线。
+- 不再把原生 192 tubelet feature 插值为 384 后与 384 raw supports 一一绑定，并把长度相等称为 feature provenance。
+- 不把 zero-coverage query 直接删除，也不把 gap token/跨 query 推断描述成已观测 feature 或 dense imputation。
+- 不把 `SM-PTAF` 的外部公式、伪代码或 patch map 写成 `implemented`、`tested` 或已有 mAP。
+- 不用参数总数接近替代容量公平；projection 深度、跨 query context、candidate topology、assignment 与训练更新必须同时对齐。
 
 ## 当前唯一主线
 
-`PhysTime-AdaTAD 1.0`：THUMOS14 raw RGB，逻辑 768，确定性、无学习、无 GT 的相同 K=384 不规则采样，比较 selected-axis、physical-grid 与 PhysTime 三头。当前实验 commit 与作业以 `query_pack.md`、`experiments/phystime-adatad-k384.md` 和 `docs/evaluation/results.md` 为准。
+PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验已经完成并冻结。当前唯一执行阶段是 P0 rebuild：native tubelet provenance + capacity/context/candidate/assignment-matched coordinate-only control；`SM-PTAF` 仍为 designed candidate。当前状态以 `query_pack.md`、`current_direction.md`、`experiments/phystime-adatad-k384.md` 和 `docs/evaluation/results.md` 为准。

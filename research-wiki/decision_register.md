@@ -26,6 +26,9 @@
 | DR-020 | 全栈成本必须计入 | 已锁定 | selected count 或 backbone FLOPs 会遗漏 decode、preprocess、scout、H2D、padding、cache/ledger generation | 报告 p50/p95 latency、显存、吞吐、decode 与 backbone 分解 |
 | DR-021 | 全量历史回顾必须扫描全部 local worktree、local branch、remote branch 与未合入 commit | 已锁定 | 第一版 Wiki 只看当前 PhysTime HEAD，因而曾把 ChronoTransport 的真实实现和 DUCA `a5e1774` 审计分支漏掉；单一 checkout 不能代表项目完整历史 | 每次宣称“全面纳入”前，必须记录 `git worktree list`、`git branch -a --contains`、关键 dangling/divergent commit 与 source hash；无法访问的来源必须显式列为 coverage gap |
 | DR-022 | 下一版先做 capacity/context/candidate-matched physical-time control | 当前执行 | PhysTime 1.0 同时缩小检测栈、删除 ActionFormer 时序上下文、降低候选密度并使用未归一化 absolute-second query；首轮负结果不能隔离 physical time | 保留同等级 temporal stack 和候选数，只改坐标/不规则时间算子；通过因果 gate 后才做 endpoint、support、multi-seed 与跨数据集扩展 |
+| DR-023 | 接受 2026-07-13 Pro 的 `HOLD AND REBUILD`，冻结 PhysTime 1.0 | 已锁定 | 外部逐文件审查与本地诊断一致指出 feature-support provenance、容量/上下文、候选、assignment 和尺度混杂；继续局部调参不能关闭归因问题 | 1.0 只作负基线；任何恢复必须提出能同时关闭上述 P0 的新证据 |
+| DR-024 | `SM-PTAF` 只登记为 designed candidate，不是已实现最终方法 | 当前设计 | 唯一推荐的核心是 native tubelet multi-atom provenance + measure-preserving no-interpolation set-to-physical-query lift；capacity-matched AF 是先行 control，mass residual 是候选算子 | 先通过 G0 provenance 与 G1 coordinate-only control，再决定实现和 pilot；回复代码片段不能替代仓库实现、测试或 mAP |
+| DR-025 | K 可以决定 matched candidate cardinality，但不能定义物理坐标 | 已锁定 | 旧“query count 与 K 完全无关”会令候选数和 detector capacity 不公平；反向把 rank 当坐标又会破坏 PhysTime 初心 | 候选 center/width/stride、GT、decode、NMS 仍全部是秒；validator 必须分别审计 K、native token J 与 query Q |
 
 ## 不得静默推翻
 

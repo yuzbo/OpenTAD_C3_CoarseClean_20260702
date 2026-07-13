@@ -19,16 +19,16 @@
 
 ## Current Objective
 
-当前唯一执行目标是 `PhysTime-AdaTAD 1.0`：
+当前唯一执行目标是 PhysTime 1.0 负基线后的 **P0 重建**：先完成 capacity/context/candidate/assignment-matched 的 selected-coordinate 与 physical-coordinate control，再决定是否实现 `SM-PTAF`：
 
 - 从 THUMOS14 原始 RGB 视频出发；
 - 在逻辑 768 位置窗口中采用相同、确定性、无学习、无 GT 的 K=384 不规则采样；
 - `DecordDecode` 和 official VideoMAE-S adapter 只处理选中的 K 帧；
-- 在完全相同观测、backbone、checkpoint、schedule、seed 和 evaluation 下比较 selected-axis ActionFormer、physical-grid ActionFormer 和 PhysTime head；
+- 在完全相同观测、backbone、checkpoint、schedule、seed 和 evaluation 下保持 ActionFormer 等级容量、上下文、候选与监督同构，只改变坐标或 support-measure operator；
 - PhysTime 的 GT、query、预测、NMS 和评测使用 absolute seconds；
 - 可以将秒坐标转换为原视频帧号，不得映射到 selected-rank 轴。
 
-当前 PhysTime-TAD 2.0 feature-geometry 核心已经实现；raw-video PhysTime-AdaTAD 1.0 尚处于规格/计划阶段。不得提前声称已完成部署或已有 mAP。
+PhysTime-TAD 2.0 feature-geometry 核心和 raw-video PhysTime-AdaTAD 1.0 matched full run 均已完成；1.0 结果为负且存在容量、候选、assignment 与 feature-provenance 混杂，已经冻结为 negative baseline。capacity-matched control 与 `SM-PTAF` 当前均只有 `designed` 状态，尚未实现、训练或产生 mAP，不得越级声称完成。
 
 ## Scope
 

@@ -1,6 +1,6 @@
 # PhysTime 完整讨论、方法演化、实现与实验档案
 
-更新时间：2026-07-11
+更新时间：2026-07-13
 
 ## 0. 结论先行
 
@@ -8,7 +8,8 @@ PhysTime 有三个必须分开的层次：
 
 1. **PhysTime-TAL 1.0**：第一版连续/物理时间设计，已被严厉评审否定为论文最终规格。
 2. **PhysTime-TAD 2.0**：support-integrated measure detector，核心 feature-geometry 代码已实现并通过 focused gates。
-3. **PhysTime-AdaTAD 1.0**：当前 raw-video official AdaTAD 集成目标，只有规格和 implementation plan，尚未实现、未部署、无 mAP。
+3. **PhysTime-AdaTAD 1.0**：raw-video official AdaTAD 三头 full run 已完成，当前实现为负结果并冻结；后验诊断发现 feature provenance、容量、候选与 assignment 混杂。
+4. **SM-PTAF**：2026-07-13 Pro 审查提出的 designed rebuild candidate，尚未实现、部署或产生 mAP。
 
 任何未来报告必须先声明自己属于哪一层，禁止把 2.0 feature 代码写成 1.0 raw-video 主实验已经完成。
 
@@ -134,7 +135,7 @@ mass 在指数外，保证 constant-kernel 下拆分同一 support 不改变总�
 
 ### 4.4 Physical query pyramid
 
-每层 cell width 为 `base_spacing_sec * 2^l`，对齐全局 0 秒原点，并裁剪到当前 domain。query count 由物理时长/spacing 决定，与 K 无关。每层直接从原始 observations 投影，禁止先做 selected-rank stride-2 pyramid。
+原始 2.0 规格令每层 cell width 为 `base_spacing_sec * 2^l`，对齐全局 0 秒原点，并裁剪到当前 domain；query count 由物理时长/spacing 决定，与 K 无关，每层直接从原始 observations 投影。2026-07-13 的公平性裁决只对 matched comparison 修正 candidate cardinality：允许 K 决定候选数，但坐标、宽度和回归 stride 仍由秒定义，禁止 selected-rank stride-2 几何。
 
 ### 4.5 PhysTime head
 
@@ -250,6 +251,8 @@ assignment、regression、decode、NMS、evaluation 均使用 seconds。
 
 ## 7. PhysTime-AdaTAD 1.0 当前方案
 
+本节保留 2026-07-11 的预注册方案。实际实现、full-run 结果和后验审查由第 9、10、16、17 节覆盖；不能再用本节的未来时态判断当前状态。
+
 ### 7.1 唯一研究问题
 
 > 在完全相同的不规则 raw-frame observations 和相同 official AdaTAD/VideoMAE-S backbone 下，显式 physical-time detection 是否优于 ordinary selected-rank sequence？
@@ -349,36 +352,35 @@ time_sec = frame_index / fps
 
 - 设计规格：commit `9266ebc`；
 - implementation plan：commit `517785d`；
-- 现有 PhysTime-TAD 2.0 modules 可复用；
-- feature-track 取消状态已写入权威结果文档。
+- raw geometry、K384 三配置、same-index validator、真实 AMP/evaluator gate 与两 epoch stability gate；
+- 最终稳定正式实现：commit `3ac93a1`；
+- selected-axis、physical-grid 和 PhysTime 三头 full run；
+- 最佳 checkpoint 只读重放与正式结果一致；
+- 性能下降诊断与实验完整性审计：commit `d900c7c`。
 
 ### 尚未完成
 
-- `opentad/datasets/transforms/phystime_raw.py`；
-- `phystime_adatad_sparse_k384.py`；
-- `physical_grid_adatad_sparse_k384.py`；
-- `selected_axis_adatad_sparse_k384.py`；
-- same-observation validator；
-- synthetic raw one-step adapter gradient test；
-- real THUMOS raw CUDA gate；
-- gate-dependent three-job launcher；
-- full training、mAP、latency。
+- native tubelet feature 与 raw support atoms 的 provenance gate；
+- capacity/context/candidate/assignment-matched coordinate-only controls；
+- `SM-PTAF` 仓库实现与 focused tests；
+- 修复后的单因素 pilot、三 seeds、第二数据集和 sampling-family matrix；
+- raw decode 到 NMS 的完整成本账本与可访问 artifact bundle。
 
-当前不能说“已经实现 PhysTime-AdaTAD 1.0”。
+当前必须说：PhysTime-AdaTAD 1.0 已实现并完成实验，但结果为负且比较存在结构混杂；SM-PTAF 只有 `designed` 状态。
 
 ## 10. 实验阶段
 
 ### Phase 0
 
-unit/registry/CUDA synthetic/real raw-video gate。
+1.0 的 unit/registry/CUDA synthetic/real raw-video gate 已完成。下一版 Phase 0 是 native feature provenance、candidate parity、assignment parity、translation 与 optimizer contracts。
 
 ### Phase 1
 
-三头 matched K384 comparison。
+首版三头 matched K384 comparison 已完成并冻结为负基线。当前 Phase 1.5 先做 capacity-matched selected-coordinate 与 physical-coordinate control，再决定是否加入 support-measure lift。
 
 ### Phase 2
 
-仅在 Phase 1 稳定且有竞争力后解锁：
+仅在 Phase 1.5 机制合同与单 seed survivor 通过后解锁：
 
 - K192/384/768；
 - random、uniform、bursty、contiguous-gap；
@@ -431,8 +433,34 @@ PhysTime 解决 detector 时间几何；ChronoTransport 解决 heavy feature rec
 - 不得只和 selected-axis 比而跳过 physical-grid；
 - 不得只报 Avg-mAP；
 - 不得省略 full-stack cost；
-- 不得提前声称 PhysTime-AdaTAD 已实现。
+- 不得把 PhysTime 1.0 的负结果外推为 physical-time TAD 无效；
+- 不得把 SM-PTAF 公式或代码草图称为已实现；
+- 不得继续用 `192 -> 384` feature interpolation 冒充 raw support provenance。
 
 ## 15. 当前唯一下一步
 
-按 `docs/superpowers/plans/2026-07-11-phystime-adatad-1.md` 完成 raw geometry、三 configs、same-index validator、gradient proof、real gate 和三头 deployment。完成前不扩展新方向。
+执行 `HOLD AND REBUILD` 的 P0 顺序：
+
+1. native tubelet multi-atom feature-support provenance；
+2. capacity/context/candidate/assignment-matched coordinate-only control；
+3. raw absolute center off、candidate parity、tied multi-label assignment；
+4. mass residual 与 bounded/off content correction；
+5. survivor 通过后再实现完整 SM-PTAF pilot。
+
+在这些 gate 前不启动第二数据集、多 seed 或昂贵 full matrix。
+
+## 16. 2026-07-12 性能下降诊断
+
+正式结果排除了训练崩溃、重复秒转换、缺失测试窗口、错误 evaluator 和 checkpoint 读取错误。诊断确认：PhysTime 1.0 的 detector capacity/context 显著弱于 ActionFormer controls，absolute seconds 主导 query，粗层 attention 有效聚合坍缩，候选与短动作监督不足，assignment 也不同构。正确高-IoU 匹配后的边界质量并非全面失败，主要问题更接近覆盖与排序。
+
+因此 1.0 是高价值负基线，但不能裁决 physical-time-native detector 假设。
+
+## 17. 2026-07-13 Pro 审查与 SM-PTAF
+
+完整原文：`docs/methods/reviews/2026-07-13-phystime-performance-drop-pro-audit-response-raw.md`。
+
+吸收记录：`docs/methods/2026-07-13-phystime-performance-drop-pro-audit-absorption.md`。
+
+Pro 给出 `HOLD AND REBUILD`，并把最严重的新问题定位为：原生 192 tubelet feature 被插值到 384 后与 384 raw-frame supports 一一绑定，没有建立 feature provenance。推荐候选 `SM-PTAF` 使用 native tubelet multi-atom supports、measure-preserving mass residual、bounded correction、ActionFormer 等级 physical query encoder、候选/容量/assignment parity。
+
+本 Wiki 的吸收边界是：接受问题裁决与因果顺序；把 SM-PTAF 登记为 `designed`；不把外部 PyTorch 片段当作已实现；先完成 coordinate-only control，再判断该候选是否值得 full train。
