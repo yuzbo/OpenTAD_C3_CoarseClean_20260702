@@ -703,9 +703,11 @@ class DucaOnlineFrameSelector(nn.Module):
             )
             if not bool(counterfactual_request["candidate_valid"].any().item()):
                 counterfactual_request = None
+                valid_scores = outputs["selector_outputs"]["center_scores"].masked_select(
+                    outputs["selector_outputs"]["valid_mask"].bool()
+                )
                 selector_losses["counterfactual_utility_distillation_loss"] = (
-                    outputs["selector_outputs"]["center_scores"].float().sum()
-                    * (0.0 * self.counterfactual_utility_distillation_weight)
+                    valid_scores.float().sum() * (0.0 * self.counterfactual_utility_distillation_weight)
                 )
         self._record_pending_loss_schedule_step()
         return {
