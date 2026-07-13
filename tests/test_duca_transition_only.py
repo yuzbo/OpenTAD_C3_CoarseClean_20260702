@@ -257,8 +257,10 @@ def test_local_boundary_mass_coverage_has_bounded_finite_long_window_gradients()
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
 def test_local_boundary_mass_coverage_stays_fp32_under_autocast_and_scaled_backward() -> None:
-    logits = torch.randn(1, 768, device="cuda", dtype=torch.float16, requires_grad=True)
-    occupancy = torch.softmax(logits.float(), dim=1).to(dtype=logits.dtype) * 384.0
+    # GradScaler scales FP32 model parameters; using an FP16 leaf here makes any
+    # nonzero gradient near scale 65536 overflow while being cast into the leaf.
+    logits = torch.randn(1, 768, device="cuda", dtype=torch.float32, requires_grad=True)
+    occupancy = torch.softmax(logits, dim=1) * 384.0
     boundary = torch.zeros(1, 768, device="cuda")
     boundary[0, [100, 390, 700]] = 1.0
     valid = torch.ones(1, 768, device="cuda", dtype=torch.bool)
