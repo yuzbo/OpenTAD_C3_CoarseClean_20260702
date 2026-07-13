@@ -152,6 +152,8 @@ def _soft_forward_backward(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     batch, temporal_len = logits.shape
     work = logits.float() / float(temperature)
+    work = work - work.detach().amax(dim=1, keepdim=True)
+    work = work.clamp(min=-80.0, max=0.0)
     # A finite sentinel avoids undefined gradients from logaddexp(-inf, -inf)
     # while remaining far outside any attainable path score.
     neg_inf = torch.tensor(-1.0e9, device=work.device, dtype=work.dtype)
