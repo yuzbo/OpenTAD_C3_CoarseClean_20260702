@@ -23,6 +23,8 @@ def test_ceiling_uses_held_out_deploy_visible_features_and_writes_outputs(tmp_pa
     assert result["video_overlap_count"] == 0
     assert result["leakage_contract"]["gt_used_as_model_input"] is False
     assert result["diagnostic_role"].endswith("not_ceiling_not_oracle")
+    assert result["probability_semantics"] == "unweighted_logistic_posterior_fit_on_train_only_labels"
+    assert "ece" in result["metrics"]
     assert (tmp_path / "out" / "coarse_boundary_probe.json").is_file()
     assert (tmp_path / "out" / "coarse_boundary_probe_per_sample.csv").is_file()
 

@@ -62,8 +62,8 @@ GIT_STATUS="$(git status --porcelain --untracked-files=normal)" || fail "cannot 
 
 module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-[[ "${CUDA_VISIBLE_DEVICES}" == "0" || "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "invalid Slurm GPU mapping"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "GPU1 launcher requires CUDA_VISIBLE_DEVICES=1"
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 
 REFERENCE_CONFIG_SHA256="$(sha256sum "${REFERENCE_CONFIG}" | awk '{print $1}')"

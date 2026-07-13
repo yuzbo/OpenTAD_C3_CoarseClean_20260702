@@ -1434,17 +1434,40 @@ class DucaAcquisitionAdapter(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
+        actionness_provenance: Optional[Mapping[str, Any]] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
         coarse_hidden_kind: Optional[str] = None,
     ) -> Dict[str, Any]:
         if dense_observations.ndim != 3:
             raise ValueError(f"dense_observations must be [B,T,C], got {tuple(dense_observations.shape)}")
+        if actionness_provenance is not None:
+            validate_actionness_provenance(
+                actionness_provenance,
+                context="DUCA adapter actionness provenance",
+            )
+            if actionness_logits is not None and p_action is not None:
+                temperature = actionness_provenance.get("calibration_temperature")
+                bias = actionness_provenance.get("calibration_bias")
+                if temperature is not None or bias is not None:
+                    temperature = float(1.0 if temperature is None else temperature)
+                    bias = float(0.0 if bias is None else bias)
+                    if not math.isfinite(temperature) or temperature <= 0.0 or not math.isfinite(bias):
+                        raise ValueError("actionness provenance contains invalid calibration parameters")
+                    valid_for_check = _as_valid_mask(actionness_logits, valid_mask)
+                    expected = torch.sigmoid((actionness_logits.float() + bias) / temperature)
+                    supplied = p_action.to(device=expected.device, dtype=expected.dtype)
+                    if supplied.shape != expected.shape or not torch.allclose(
+                        supplied[valid_for_check], expected[valid_for_check], rtol=1e-5, atol=1e-6
+                    ):
+                        raise ValueError("p_action does not match the calibration declared by its provenance")
         source = self.actionness_source(
             dense_observations,
             logits=actionness_logits,
             valid_mask=valid_mask,
             p_action=p_action,
         )
+        if actionness_provenance is not None:
+            source["provenance"] = dict(actionness_provenance)
         valid = source["valid_mask"]
         transition_score = source.get("transition_score", source["uncertainty"])
         transition_score = transition_score.to(dense_observations.device, dense_observations.dtype).masked_fill(~valid, 0.0)
@@ -1564,6 +1587,8 @@ class DucaAcquisitionAdapter(nn.Module):
             "uncertainty_peak": source["uncertainty_peak"],
             "transition_score": transition_score.masked_fill(~valid, 0.0),
             "actionness_logits": source["logits"],
+            "raw_actionness_logits": actionness_logits,
+            "calibrated_actionness_logits": source["logits"],
             "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
             "coarse_hidden_features": None if coarse_hidden is None else coarse_hidden.masked_fill(~valid[:, :, None], 0.0),
             "uses_coarse_hidden_features": bool(has_coarse_hidden_features),
@@ -1688,6 +1713,7 @@ class DucaAcquisitionAdapter(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         actionness_logits: Optional[torch.Tensor] = None,
         p_action: Optional[torch.Tensor] = None,
+        actionness_provenance: Optional[Mapping[str, Any]] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
         coarse_hidden_kind: Optional[str] = None,
         compute_profile_context: Optional[Mapping[str, Any]] = None,
@@ -1703,6 +1729,7 @@ class DucaAcquisitionAdapter(nn.Module):
             valid_mask=valid_mask,
             actionness_logits=actionness_logits,
             p_action=p_action,
+            actionness_provenance=actionness_provenance,
             coarse_hidden_features=coarse_hidden_features,
             coarse_hidden_kind=coarse_hidden_kind,
         )

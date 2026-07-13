@@ -75,6 +75,36 @@ def _named_grad_sum(module: torch.nn.Module, predicate: Callable[[str], bool]) -
     )
 
 
+def _finite_scalar(value: torch.Tensor) -> float:
+    scalar = float(value.detach().float().cpu().item())
+    _require(torch.isfinite(value.detach()).all().item(), "encountered a non-finite scalar")
+    return scalar
+
+
+def _representative_parameters(model: torch.nn.Module) -> dict[str, torch.nn.Parameter]:
+    groups = {
+        "selector": lambda name: name.startswith("frame_selector."),
+        "backbone": lambda name: name.startswith("backbone."),
+        "detector_head": lambda name: name.startswith("rpn_head."),
+    }
+    named = list(model.named_parameters())
+    selected: dict[str, torch.nn.Parameter] = {}
+    for group, predicate in groups.items():
+        candidates = [
+            parameter
+            for name, parameter in named
+            if predicate(name)
+            and parameter.requires_grad
+            and parameter.grad is not None
+            and bool(torch.isfinite(parameter.grad).all().item())
+            and float(parameter.grad.detach().abs().sum().item()) > 0.0
+        ]
+        if candidates:
+            selected[group] = candidates[0]
+    _require(selected, "no finite non-zero trainable gradient was available for optimizer-step proof")
+    return selected
+
+
 def _max_hole(positions: torch.Tensor, temporal_len: int) -> int:
     values = [int(value) for value in positions.detach().cpu().tolist()]
     holes = [values[0]]
@@ -257,6 +287,59 @@ def run_formal_gate(
     _require(float(alignment.get("sign_agreement", 0.0)) > 0.0, "counterfactual sign alignment failed")
     _require(float(alignment.get("spearman", -1.0)) > 0.0, "counterfactual Spearman alignment failed")
 
+    # Run the same aggregate loss used by the training loop, then prove that AMP
+    # executes an optimizer update instead of silently skipping it.
+    optimizer.zero_grad(set_to_none=True)
+    normalizer_before = model.rpn_head.loss_normalizer.detach().clone()
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        step_losses = model(
+            inputs, masks, metas, gt_segments=gt_segments, gt_labels=gt_labels, return_loss=True
+        )
+        _require("cost" in step_losses, "formal training aggregate loss 'cost' is missing")
+        step_loss = step_losses["cost"]
+    step_loss_value = _finite_scalar(step_loss)
+    _require(step_loss_value >= 0.0, "formal training aggregate loss is negative")
+    normalizer_after_forward = model.rpn_head.loss_normalizer.detach().clone()
+    _require(torch.isfinite(normalizer_after_forward).all().item(), "loss normalizer became non-finite")
+    _require(float(normalizer_after_forward.item()) > 0.0, "loss normalizer became non-positive")
+    _require(
+        not torch.equal(normalizer_before, normalizer_after_forward),
+        "training forward did not update the ActionFormerHead EMA loss normalizer",
+    )
+
+    scaler.scale(step_loss).backward()
+    scaler.unscale_(optimizer)
+    trainable_gradients = [
+        parameter.grad
+        for parameter in model.parameters()
+        if parameter.requires_grad and parameter.grad is not None
+    ]
+    _require(trainable_gradients, "formal optimizer step has no gradients")
+    _require(
+        all(bool(torch.isfinite(gradient).all().item()) for gradient in trainable_gradients),
+        "formal optimizer step has non-finite gradients",
+    )
+    representatives = _representative_parameters(model)
+    parameters_before_step = {
+        name: parameter.detach().clone() for name, parameter in representatives.items()
+    }
+    scale_before_step = float(scaler.get_scale())
+    scaler.step(optimizer)
+    scaler.update()
+    scale_after_step = float(scaler.get_scale())
+    parameter_changes = {
+        name: float((parameter.detach() - parameters_before_step[name]).abs().max().item())
+        for name, parameter in representatives.items()
+    }
+    changed_groups = [name for name, delta in parameter_changes.items() if delta > 0.0]
+    _require(changed_groups, "optimizer.step produced no trainable parameter change")
+    _require(scale_after_step > 0.0, "GradScaler entered an invalid state")
+    normalizer_after_step = model.rpn_head.loss_normalizer.detach().clone()
+    _require(
+        torch.equal(normalizer_after_forward, normalizer_after_step),
+        "optimizer.step unexpectedly modified the non-parameter loss normalizer",
+    )
+
     return {
         "ok": True,
         "formal_proof_ok": True,
@@ -283,7 +366,25 @@ def run_formal_gate(
         "amp": True,
         "grad_scaler_enabled": True,
         "grad_scale": scale_before_backward,
-        "optimizer_step_ran": False,
+        "optimizer_step_ran": True,
+        "optimizer_parameter_change_verified": True,
+        "optimizer_changed_parameter_groups": changed_groups,
+        "optimizer_parameter_max_abs_change": parameter_changes,
+        "optimizer_step_loss": step_loss_value,
+        "optimizer_step_loss_finite": True,
+        "optimizer_step_gradients_finite": True,
+        "grad_scale_before_step": scale_before_step,
+        "grad_scale_after_step": scale_after_step,
+        "loss_normalizer_contract": {
+            "state_kind": "ActionFormerHead.loss_normalizer_ema_buffer",
+            "finite": True,
+            "positive": True,
+            "updated_by_training_forward": True,
+            "unchanged_by_optimizer_step": True,
+            "before_forward": float(normalizer_before.float().cpu().item()),
+            "after_forward": float(normalizer_after_forward.float().cpu().item()),
+            "after_optimizer_step": float(normalizer_after_step.float().cpu().item()),
+        },
         "cuda_peak_memory_bytes": int(torch.cuda.max_memory_allocated()),
         **uniform_reference,
     }

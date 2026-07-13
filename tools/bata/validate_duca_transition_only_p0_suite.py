@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -90,6 +91,57 @@ def _post_run_contract(protocol_sha256: str) -> dict[str, Any]:
     }
 
 
+def _validate_formal_optimizer_step(gate_payload: dict[str, Any]) -> None:
+    _require(gate_payload.get("optimizer_step_ran") is True, "formal core gate did not run optimizer.step")
+    _require(
+        gate_payload.get("optimizer_parameter_change_verified") is True,
+        "formal core gate did not verify a trainable parameter change",
+    )
+    changed_groups = gate_payload.get("optimizer_changed_parameter_groups")
+    _require(isinstance(changed_groups, list) and bool(changed_groups), "formal core gate changed no parameter group")
+    _require("detector_head" in changed_groups, "formal core gate did not update the detector head")
+    changes = gate_payload.get("optimizer_parameter_max_abs_change")
+    _require(isinstance(changes, dict), "formal optimizer parameter-change evidence is missing")
+    for group in changed_groups:
+        delta = changes.get(group)
+        _require(
+            isinstance(delta, (int, float)) and math.isfinite(delta) and delta > 0.0,
+            f"formal optimizer parameter change is invalid for {group}",
+        )
+    _require(gate_payload.get("optimizer_step_loss_finite") is True, "formal optimizer-step loss is non-finite")
+    _require(
+        gate_payload.get("optimizer_step_gradients_finite") is True,
+        "formal optimizer-step gradients are non-finite",
+    )
+    loss = gate_payload.get("optimizer_step_loss")
+    _require(
+        isinstance(loss, (int, float)) and math.isfinite(loss) and loss >= 0.0,
+        "formal optimizer-step loss is invalid",
+    )
+    normalizer = gate_payload.get("loss_normalizer_contract")
+    _require(isinstance(normalizer, dict), "formal loss-normalizer contract is missing")
+    for key in ("finite", "positive", "updated_by_training_forward", "unchanged_by_optimizer_step"):
+        _require(normalizer.get(key) is True, f"formal loss-normalizer contract failed: {key}")
+    _require(
+        normalizer.get("state_kind") == "ActionFormerHead.loss_normalizer_ema_buffer",
+        "formal loss-normalizer state kind is invalid",
+    )
+    for key in ("before_forward", "after_forward", "after_optimizer_step"):
+        value = normalizer.get(key)
+        _require(
+            isinstance(value, (int, float)) and math.isfinite(value) and value > 0.0,
+            f"formal loss-normalizer value is invalid: {key}",
+        )
+    _require(
+        normalizer["before_forward"] != normalizer["after_forward"],
+        "formal loss-normalizer did not change during training forward",
+    )
+    _require(
+        normalizer["after_forward"] == normalizer["after_optimizer_step"],
+        "formal loss-normalizer changed during optimizer.step",
+    )
+
+
 def validate_post_run_evidence(path: str | Path, *, variant: str, protocol_sha256: str) -> dict[str, Any]:
     evidence_path = Path(path).resolve()
     _require(evidence_path.is_file(), f"{variant}: post-run evidence missing: {evidence_path}")
@@ -128,6 +180,7 @@ def validate_suite(
         gate_payload = json.loads(gate_path.read_text(encoding="utf-8"))
         _require(gate_payload.get("ok") is True, "formal core gate must declare ok=true")
         _require(gate_payload.get("formal_proof_ok") is True, "formal core gate proof did not pass")
+        _validate_formal_optimizer_step(gate_payload)
         _require(gate_payload.get("git_commit") == commit, "formal core gate commit is stale")
         _require(
             gate_payload.get("uniform_reference_definition") == "round_linspace_endpoints",

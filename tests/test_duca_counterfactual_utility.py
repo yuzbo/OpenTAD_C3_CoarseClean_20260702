@@ -11,6 +11,7 @@ import torch
 
 from opentad.models.duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
+    counterfactual_pair_scores,
     counterfactual_utility_distillation_loss,
     detached_hard_one_swap_utilities,
     gradient_utility_alignment,
@@ -75,3 +76,32 @@ def test_counterfactual_distillation_improves_teacher_ranking_and_detaches_teach
     assert scores.grad[0, 3] < 0
     assert scores.grad[0, 2] > 0
     assert teacher.grad is None
+
+
+def test_pair_score_is_add_minus_removed_and_updates_both_positions() -> None:
+    scores = torch.tensor([[1.0, 0.0, 3.0, 2.0]], requires_grad=True)
+    baseline = torch.tensor([[0, 2]])
+    additions = torch.tensor([[1, 3]])
+    removed_slots = torch.tensor([[0, 1]])
+    valid = torch.ones_like(additions, dtype=torch.bool)
+    pair = counterfactual_pair_scores(scores, additions, removed_slots, baseline, valid)
+    assert torch.equal(pair.detach(), torch.tensor([[-1.0, -1.0]]))
+    teacher = torch.tensor([[2.0, -2.0]])
+    loss = counterfactual_utility_distillation_loss(pair, teacher, valid)
+    loss.backward()
+    assert scores.grad[0, 1] < 0
+    assert scores.grad[0, 0] > 0
+    assert scores.grad[0, 3] > 0
+    assert scores.grad[0, 2] < 0
+
+
+def test_pair_score_ranking_is_independent_of_teacher_construction() -> None:
+    scores = torch.tensor([[4.0, 1.0, 0.0, 3.0]])
+    baseline = torch.tensor([[0, 2]])
+    additions = torch.tensor([[1, 3]])
+    removed_slots = torch.tensor([[0, 1]])
+    valid = torch.ones_like(additions, dtype=torch.bool)
+    pair = counterfactual_pair_scores(scores, additions, removed_slots, baseline, valid)
+    detector_gain = torch.tensor([[-3.0, 2.0]])
+    assert pair[0, 1] > pair[0, 0]
+    assert detector_gain[0, 1] > detector_gain[0, 0]

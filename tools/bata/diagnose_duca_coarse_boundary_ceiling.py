@@ -41,8 +41,6 @@ def _fit_logistic(features: Sequence[Sequence[float]], labels: Sequence[int], st
     scales = [math.sqrt(sum((row[col] - means[col]) ** 2 for row in features) / len(features)) or 1.0 for col in range(width)]
     weights = [0.0] * width
     bias = 0.0
-    positives = max(1, sum(labels))
-    positive_weight = (len(labels) - positives) / positives
     for _ in range(int(steps)):
         grad = [0.0] * width
         grad_bias = 0.0
@@ -50,8 +48,7 @@ def _fit_logistic(features: Sequence[Sequence[float]], labels: Sequence[int], st
             normalized = [(value - means[col]) / scales[col] for col, value in enumerate(row)]
             logit = bias + sum(weight * value for weight, value in zip(weights, normalized))
             probability = 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, logit))))
-            factor = positive_weight if label else 1.0
-            error = factor * (probability - label)
+            error = probability - label
             grad_bias += error
             for col, value in enumerate(normalized):
                 grad[col] += error * value
@@ -103,6 +100,7 @@ def run(train_jsonl: str | Path, eval_jsonl: str | Path, output_dir: str | Path,
         "eval_video_count": len(eval_videos),
         "video_overlap_count": 0,
         "metrics": binary_metrics(pooled_y, pooled_scores),
+        "probability_semantics": "unweighted_logistic_posterior_fit_on_train_only_labels",
         "provenance": {"train_sha256": sha256(train_jsonl), "eval_sha256": sha256(eval_jsonl)},
         "leakage_contract": {"gt_used_for_training_label_only": True, "gt_used_as_model_input": False, "eval_gt_used_for_selection": False},
     }

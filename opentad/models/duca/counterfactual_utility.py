@@ -147,6 +147,31 @@ def counterfactual_utility_distillation_loss(
     return -(target * torch.log_softmax(student_logits, dim=-1)).sum(dim=-1).mean()
 
 
+def counterfactual_pair_scores(
+    policy_scores: torch.Tensor,
+    candidate_positions: torch.Tensor,
+    replaced_slots: torch.Tensor,
+    baseline_positions: torch.Tensor,
+    candidate_valid: torch.Tensor,
+) -> torch.Tensor:
+    """Return deploy-time score(add) - score(remove) for each hard swap."""
+    if policy_scores.ndim != 2 or baseline_positions.ndim != 2:
+        raise ValueError("policy_scores and baseline_positions must be rank two")
+    if candidate_positions.shape != replaced_slots.shape or candidate_positions.shape != candidate_valid.shape:
+        raise ValueError("counterfactual candidate tensors must share [B,M] shape")
+    if policy_scores.shape[0] != candidate_positions.shape[0] or baseline_positions.shape[0] != policy_scores.shape[0]:
+        raise ValueError("counterfactual tensors must share the batch dimension")
+    valid = candidate_valid.bool()
+    safe_add = candidate_positions.clamp(min=0)
+    safe_slot = replaced_slots.clamp(min=0)
+    if torch.any(safe_add[valid] >= policy_scores.shape[1]) or torch.any(safe_slot[valid] >= baseline_positions.shape[1]):
+        raise ValueError("counterfactual add position or remove slot is out of range")
+    remove_positions = torch.gather(baseline_positions, 1, safe_slot)
+    add_scores = torch.gather(policy_scores, 1, safe_add)
+    remove_scores = torch.gather(policy_scores, 1, remove_positions)
+    return (add_scores - remove_scores).masked_fill(~valid, 0.0)
+
+
 def gradient_utility_alignment(
     policy_logits: torch.Tensor,
     loss: torch.Tensor,

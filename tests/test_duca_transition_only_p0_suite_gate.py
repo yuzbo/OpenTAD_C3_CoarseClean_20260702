@@ -22,7 +22,22 @@ def _gate(tmp_path: Path) -> Path:
     gate.write_text(json.dumps({"ok": True, "formal_proof_ok": True,
         "git_commit": suite._git(ROOT, "rev-parse", "HEAD"),
         "uniform_reference_definition": "round_linspace_endpoints",
-        "uniform_reference_exact": True}), encoding="utf-8")
+        "uniform_reference_exact": True,
+        "optimizer_step_ran": True,
+        "optimizer_parameter_change_verified": True,
+        "optimizer_changed_parameter_groups": ["detector_head"],
+        "optimizer_parameter_max_abs_change": {"detector_head": 1e-5},
+        "optimizer_step_loss": 1.0,
+        "optimizer_step_loss_finite": True,
+        "optimizer_step_gradients_finite": True,
+        "loss_normalizer_contract": {
+            "state_kind": "ActionFormerHead.loss_normalizer_ema_buffer",
+            "finite": True, "positive": True,
+            "updated_by_training_forward": True,
+            "unchanged_by_optimizer_step": True,
+            "before_forward": 100.0, "after_forward": 91.0,
+            "after_optimizer_step": 91.0,
+        }}), encoding="utf-8")
     return gate
 
 
@@ -80,6 +95,21 @@ def test_suite_gate_binds_formal_gate_to_current_commit(tmp_path: Path) -> None:
                 "git_commit": commit,
                 "uniform_reference_definition": "round_linspace_endpoints",
                 "uniform_reference_exact": True,
+                "optimizer_step_ran": True,
+                "optimizer_parameter_change_verified": True,
+                "optimizer_changed_parameter_groups": ["detector_head"],
+                "optimizer_parameter_max_abs_change": {"detector_head": 1e-5},
+                "optimizer_step_loss": 1.0,
+                "optimizer_step_loss_finite": True,
+                "optimizer_step_gradients_finite": True,
+                "loss_normalizer_contract": {
+                    "state_kind": "ActionFormerHead.loss_normalizer_ema_buffer",
+                    "finite": True, "positive": True,
+                    "updated_by_training_forward": True,
+                    "unchanged_by_optimizer_step": True,
+                    "before_forward": 100.0, "after_forward": 91.0,
+                    "after_optimizer_step": 91.0,
+                },
             }
         ),
         encoding="utf-8",
@@ -105,8 +135,37 @@ def test_prepare_script_is_generation_only_and_fail_closed() -> None:
     assert "-m tools.bata.validate_duca_transition_only_p0_suite" in text
     assert "printf 'variant\\tseed" in text
     assert 'bash -n "${job_file}"' in text
+    assert "export CUDA_VISIBLE_DEVICES=1" in text
     for variant in suite.VARIANT_ORDER:
         assert variant in text
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("optimizer_step_ran", False, "did not run optimizer.step"),
+        ("optimizer_parameter_change_verified", False, "trainable parameter change"),
+        ("optimizer_changed_parameter_groups", [], "changed no parameter group"),
+        ("optimizer_step_loss_finite", False, "loss is non-finite"),
+        ("optimizer_step_gradients_finite", False, "gradients are non-finite"),
+    ],
+)
+def test_suite_gate_rejects_incomplete_optimizer_step_contract(
+    tmp_path: Path, field: str, value: object, message: str
+) -> None:
+    gate = _gate(tmp_path)
+    payload = json.loads(gate.read_text(encoding="utf-8"))
+    payload[field] = value
+    gate.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(AssertionError, match=message):
+        suite.validate_suite(repo_root=ROOT, core_gate_json=gate)
+
+
+def test_gpu1_launcher_is_strict() -> None:
+    text = (ROOT / "scripts/run_duca_transition_only_p0_variant_gpu1.sh").read_text(encoding="utf-8")
+    assert 'CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
+    assert '[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]]' in text
+    assert '== "0"' not in text
 
 
 def test_post_run_contract_checks_updates_lr_ema_and_evaluator(tmp_path: Path) -> None:

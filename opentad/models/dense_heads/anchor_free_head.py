@@ -370,7 +370,10 @@ class AnchorFreeHead(nn.Module):
 
         # maintain an EMA of foreground to stabilize the loss normalizer
         # useful for small mini-batch training
-        if self.training:
+        frozen_normalizer = getattr(self, "_duca_frozen_loss_normalizer", None)
+        if frozen_normalizer is not None:
+            loss_normalizer = frozen_normalizer
+        elif self.training:
             self.loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + (
                 1 - self.loss_normalizer_momentum
             ) * max(num_pos, 1)
@@ -408,6 +411,17 @@ class AnchorFreeHead(nn.Module):
             loss_weight = cls_loss.detach() / max(reg_loss.item(), 0.01)
 
         return {"cls_loss": cls_loss, "reg_loss": reg_loss * loss_weight}
+
+    def duca_set_frozen_loss_normalizer(self, value):
+        """Use a read-only training normalizer for counterfactual objectives."""
+        if value is None:
+            if hasattr(self, "_duca_frozen_loss_normalizer"):
+                del self._duca_frozen_loss_normalizer
+            return
+        value = torch.as_tensor(value, device=self.loss_normalizer.device, dtype=self.loss_normalizer.dtype)
+        if value.numel() != 1 or not torch.isfinite(value) or value.item() <= 0:
+            raise ValueError("frozen loss normalizer must be one finite positive scalar")
+        self._duca_frozen_loss_normalizer = value.detach().clone()
 
     @torch.no_grad()
     def prepare_targets(self, points, gt_segments, gt_labels):

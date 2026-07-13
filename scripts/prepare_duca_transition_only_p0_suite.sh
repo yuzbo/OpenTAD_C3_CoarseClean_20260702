@@ -56,6 +56,7 @@ export FULLTRAIN_CANDIDATE=1
 export SEED='${SEED}'
 export RUN_ID='${index}'
 export MASTER_PORT='${ports[$index]}'
+export CUDA_VISIBLE_DEVICES=1
 export RUN_DIR='${RUN_ROOT}/logs/${variant}'
 export WORK_DIR='${RUN_ROOT}/work_dirs/${variant}'
 bash scripts/run_duca_transition_only_p0_variant_gpu1.sh

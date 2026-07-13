@@ -74,13 +74,35 @@ def test_frozen_temperature_bias_is_the_unique_probability_and_transition_source
     masks = torch.ones(1, 8, dtype=torch.bool)
 
     scores = selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "v"}])["selector_outputs"]
-    expected = torch.sigmoid((scores["actionness_logits"] + 0.7) / 2.0)
+    expected = torch.sigmoid((scores["raw_actionness_logits"] + 0.7) / 2.0)
     expected_delta = torch.zeros_like(expected)
     expected_delta[:, 1:] = expected[:, 1:] - expected[:, :-1]
 
     assert torch.allclose(scores["p_action"], expected)
     assert torch.allclose(scores["delta_p_action"], expected_delta)
     assert torch.allclose(scores["abs_delta_p_action"], expected_delta.abs())
+    expected_entropy = -(expected * expected.log() + (1.0 - expected) * (1.0 - expected).log())
+    expected_uncertainty = 1.0 - (2.0 * expected - 1.0).abs()
+    assert torch.allclose(scores["entropy"], expected_entropy)
+    assert torch.allclose(scores["uncertainty"], expected_uncertainty)
+    assert torch.allclose(scores["calibrated_actionness_logits"], torch.logit(expected))
+    assert scores["provenance"]["calibration_temperature"] == 2.0
+    assert scores["provenance"]["calibration_bias"] == 0.7
+    assert scores["online_actionness_provenance"] == scores["provenance"]
+
+
+def test_adapter_rejects_probability_inconsistent_with_declared_calibration() -> None:
+    selector = _selector(calibration_temperature=2.0, calibration_bias=0.7)
+    provenance = selector.raw_actionness_source._provenance()
+    logits = torch.zeros(1, 8)
+    with pytest.raises(ValueError, match="does not match the calibration"):
+        selector.adapter.forward_scores(
+            torch.zeros(1, 8, 3),
+            valid_mask=torch.ones(1, 8, dtype=torch.bool),
+            actionness_logits=logits,
+            p_action=torch.full_like(logits, 0.5),
+            actionness_provenance=provenance,
+        )
 
 
 def test_online_c3_official_asformer_probe_produces_actionness_profile() -> None:

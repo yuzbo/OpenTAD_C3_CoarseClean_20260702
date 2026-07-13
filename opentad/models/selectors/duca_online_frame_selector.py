@@ -10,6 +10,7 @@ from ..builder import SELECTORS
 from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
+    counterfactual_pair_scores,
     counterfactual_utility_distillation_loss,
 )
 from ..duca.acquisition import (
@@ -711,39 +712,34 @@ class DucaOnlineFrameSelector(nn.Module):
             "counterfactual_request": counterfactual_request,
         }
 
-    def counterfactual_distillation_loss(self, selector_outputs, candidate_positions, candidate_utility, candidate_valid):
-        teacher = torch.zeros_like(selector_outputs["center_scores"])
-        valid = torch.zeros_like(selector_outputs["valid_mask"], dtype=torch.bool)
-        for b in range(candidate_positions.shape[0]):
-            rows = candidate_valid[b]
-            pos = candidate_positions[b, rows]
-            teacher[b, pos] = candidate_utility[b, rows].detach()
-            valid[b, pos] = True
+    def counterfactual_distillation_loss(
+        self, selector_outputs, candidate_positions, replaced_slots, candidate_utility, candidate_valid
+    ):
+        valid = candidate_valid.bool()
         if not valid.any(dim=1).all():
             raise RuntimeError("counterfactual teacher must provide a candidate for every sample")
+        pair_scores = counterfactual_pair_scores(
+            selector_outputs["center_scores"], candidate_positions, replaced_slots,
+            selector_outputs["grid"].selected_positions, valid,
+        )
         loss = counterfactual_utility_distillation_loss(
-            selector_outputs["center_scores"], teacher, valid,
+            pair_scores, candidate_utility.detach(), valid,
             temperature=self.counterfactual_utility_temperature,
         ) * self.counterfactual_utility_distillation_weight
         with torch.no_grad():
-            student = torch.softmax(
-                selector_outputs["center_scores"].masked_fill(~valid, torch.finfo(teacher.dtype).min)
-                / self.counterfactual_utility_temperature, dim=-1
-            )
-            target = torch.softmax(
-                teacher.masked_fill(~valid, torch.finfo(teacher.dtype).min)
-                / self.counterfactual_utility_temperature, dim=-1
-            )
-            descent = (target - student)[valid].float()
-            utility = teacher[valid].float()
-            descent_rank = torch.argsort(torch.argsort(descent)).float()
+            student_pair = pair_scores[valid].float()
+            utility = candidate_utility.detach()[valid].float()
+            student_rank = torch.argsort(torch.argsort(student_pair)).float()
             utility_rank = torch.argsort(torch.argsort(utility)).float()
-            centered_d = descent_rank - descent_rank.mean()
+            centered_d = student_rank - student_rank.mean()
             centered_u = utility_rank - utility_rank.mean()
             denom = centered_d.norm() * centered_u.norm()
             spearman = float((centered_d @ centered_u / denom.clamp_min(1e-12)).item())
-            nonzero = utility != 0
-            sign = float(((descent[nonzero] * utility[nonzero]) > 0).float().mean().item()) if nonzero.any() else 1.0
+            informative = (student_pair != 0) & (utility != 0)
+            sign = (
+                float(((student_pair[informative] * utility[informative]) > 0).float().mean().item())
+                if informative.any() else 0.0
+            )
             self.last_counterfactual_summary = {
                 "teacher_kind": "detached_hard_one_swap_official_actionformer_cls_plus_reg",
                 "candidate_count": int(candidate_valid.sum().item()),
@@ -751,6 +747,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 "sign_agreement": sign,
                 "spearman": spearman,
                 "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
+                "alignment_kind": "independent_selector_score_add_minus_remove_vs_detector_swap_gain",
             }
         return loss
 
@@ -1165,15 +1162,19 @@ class DucaOnlineFrameSelector(nn.Module):
         }
         actionness_logits = None
         p_action = None
+        actionness_provenance = None
         coarse_hidden_features = None
         coarse_hidden_kind = None
         if external_actionness is not None:
             actionness_logits = external_actionness.get("actionness_logits")
             p_action = external_actionness.get("p_action")
+            actionness_provenance = external_actionness["provenance"]
         elif online_actionness is not None:
             actionness_logits = online_actionness.get("logits")
             if actionness_logits is None:
                 actionness_logits = online_actionness.get("actionness_logits")
+            p_action = online_actionness.get("p_action")
+            actionness_provenance = online_actionness["provenance"]
             if self.use_coarse_hidden_features:
                 coarse_hidden_features = online_actionness.get("coarse_hidden_features")
                 if coarse_hidden_features is None:
@@ -1191,6 +1192,7 @@ class DucaOnlineFrameSelector(nn.Module):
             valid_mask=masks,
             actionness_logits=actionness_logits,
             p_action=p_action,
+            actionness_provenance=actionness_provenance,
             coarse_hidden_features=coarse_hidden_features,
             coarse_hidden_kind=coarse_hidden_kind,
             compute_profile_context=profile_context,
@@ -1199,12 +1201,10 @@ class DucaOnlineFrameSelector(nn.Module):
         )
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
-            scores["provenance"] = external_actionness["provenance"]
             scores["external_actionness_provenance"] = external_actionness["provenance"]
             scores["external_actionness_source"] = external_actionness["source_name"]
             actionness_source_name = external_actionness["source_name"]
         elif online_actionness is not None:
-            scores["provenance"] = online_actionness["provenance"]
             scores["online_actionness_provenance"] = online_actionness["provenance"]
             scores["online_actionness_source"] = online_actionness["source_name"]
             actionness_source_name = online_actionness["source_name"]

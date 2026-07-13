@@ -295,23 +295,43 @@ class ActionFormer(SingleStageDetector):
             )
             return self._duca_detector_objective(candidate_losses)
 
-        module_training = {module: module.training for module in self.modules()}
+        modules = tuple(self.modules())
+        module_training = {module: module.training for module in modules}
+        buffer_state = {name: value.detach().clone() for name, value in self.named_buffers()}
+        cpu_rng = torch.random.get_rng_state()
+        cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        normalizer = self.rpn_head.loss_normalizer.detach().clone()
+
+        def restore_teacher_state():
+            current_buffers = dict(self.named_buffers())
+            for name, value in buffer_state.items():
+                current_buffers[name].copy_(value)
+            torch.random.set_rng_state(cpu_rng)
+            if cuda_rng is not None:
+                torch.cuda.set_rng_state_all(cuda_rng)
+
         try:
-            for module in module_training:
-                module.training = False
+            if not self.training or not self.rpn_head.training:
+                raise RuntimeError("counterfactual teacher must use the official training objective")
+            self.rpn_head.duca_set_frozen_loss_normalizer(normalizer)
             with torch.no_grad():
                 for b in range(baseline_positions.shape[0]):
+                    restore_teacher_state()
                     baseline_loss = evaluate_one(b, baseline_positions[b])
                     for m in range(selections.shape[1]):
                         if candidate_valid[b, m]:
+                            restore_teacher_state()
                             utilities[b, m] = baseline_loss - evaluate_one(b, selections[b, m])
         finally:
+            self.rpn_head.duca_set_frozen_loss_normalizer(None)
+            restore_teacher_state()
             for module, training in module_training.items():
                 module.training = training
         if not torch.isfinite(utilities[candidate_valid]).all():
             raise RuntimeError("counterfactual utility teacher produced non-finite gain")
         return self.frame_selector.counterfactual_distillation_loss(
-            selector_state, request["candidate_positions"], utilities.detach(), candidate_valid
+            selector_state, request["candidate_positions"], request["replaced_slots"],
+            utilities.detach(), candidate_valid
         )
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
