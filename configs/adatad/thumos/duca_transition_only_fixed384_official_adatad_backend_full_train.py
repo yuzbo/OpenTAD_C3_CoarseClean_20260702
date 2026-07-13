@@ -265,9 +265,9 @@ model = dict(
 
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=duca_end_epoch)
 
-# Short windows can have no feasible counterfactual swap while longer windows do.
-# Keep the four matched arms on the same dynamic-graph DDP protocol.
-solver = dict(static_graph=False, find_unused_parameters=False)
+# The no-candidate path emits a scorer-connected zero counterfactual loss, so
+# every batch preserves a static DDP graph while retaining reentrant checkpointing.
+solver = dict(static_graph=True, find_unused_parameters=False)
 
 workflow = dict(
     logging_interval=50,

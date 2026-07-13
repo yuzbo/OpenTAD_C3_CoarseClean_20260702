@@ -243,8 +243,8 @@ def validate_suite(
     reference = configs[REFERENCE_VARIANT]
     reference_protocol = _shared_protocol(reference)
     _require(
-        reference_protocol["solver"].get("static_graph") is False,
-        "P0 suite requires static_graph=false because counterfactual feasibility varies by batch",
+        reference_protocol["solver"].get("static_graph") is True,
+        "P0 suite requires static_graph=true with a scorer-connected no-candidate loss",
     )
     _require(
         reference_protocol["solver"].get("find_unused_parameters") is False,

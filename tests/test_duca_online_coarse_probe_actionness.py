@@ -197,6 +197,26 @@ def test_online_selector_accepts_uint8_window_tensor_from_full_train_loader() ->
     assert out["inputs"].is_floating_point()
 
 
+def test_all_short_counterfactual_batch_keeps_static_loss_graph() -> None:
+    selector = _selector()
+    selector.counterfactual_utility_distillation_weight = 0.25
+    inputs = torch.randn(1, 1, 3, 8, 16, 16)
+    masks = torch.tensor([[1, 1, 1, 0, 0, 0, 0, 0]], dtype=torch.bool)
+    out = selector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=[{"video_name": "short"}],
+        gt_segments=[torch.tensor([[0.0, 2.0]])],
+        gt_labels=[torch.tensor([1])],
+    )
+    loss = out["losses"]["counterfactual_utility_distillation_loss"]
+    assert out["counterfactual_request"] is None
+    assert loss.dtype == torch.float32
+    assert loss.item() == pytest.approx(0.0)
+    loss.backward()
+    assert any(param.grad is not None for param in selector.adapter.transition_scorer.parameters())
+
+
 def test_online_selector_pads_physical_slots_for_short_valid_window() -> None:
     selector = _selector()
     inputs = torch.randn(1, 1, 3, 8, 16, 16)
