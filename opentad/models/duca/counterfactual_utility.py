@@ -155,6 +155,10 @@ def gradient_utility_alignment(
 ) -> Dict[str, float]:
     """Gate whether a surrogate descent direction agrees with hard-swap utility."""
     gradient = torch.autograd.grad(loss, policy_logits, retain_graph=True)[0]
+    while gradient.ndim > hard_swap_utility.ndim and gradient.shape[1] == 1:
+        gradient = gradient.squeeze(1)
+    if gradient.shape != hard_swap_utility.shape or gradient.shape != valid_mask.shape:
+        raise ValueError("gradient, hard-swap utility and valid mask must align")
     descent = -gradient.detach()[valid_mask.bool()].float()
     utility = hard_swap_utility.detach()[valid_mask.bool()].float()
     if descent.numel() < 2 or torch.all(descent == descent[0]) or torch.all(utility == utility[0]):
