@@ -248,16 +248,7 @@ def _structured_log_partition(
         reachable = values > -5.0e8
         has_reachable = reachable.any(dim=dim, keepdim=True)
         masked_values = torch.where(reachable, values, values.new_full((), -1.0e30))
-        maximum = masked_values.amax(dim=dim, keepdim=True)
-        shifted = torch.where(
-            reachable,
-            (values - maximum).clamp(min=-80.0, max=0.0),
-            torch.zeros_like(values),
-        )
-        mass = torch.where(reachable, shifted.exp(), torch.zeros_like(shifted)).sum(
-            dim=dim, keepdim=True
-        )
-        reduced = maximum + mass.clamp_min(1.0e-30).log()
+        reduced = torch.logsumexp(masked_values, dim=dim, keepdim=True)
         return torch.where(has_reachable, reduced, neg_inf).squeeze(dim)
 
     alpha = work.new_full((batch, k + 1, max_hole + 1), neg_inf.item())
