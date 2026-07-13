@@ -21,7 +21,7 @@ def _selector(
     frozen: bool = False,
     calibration_temperature: float = 1.0,
     calibration_bias: float = 0.0,
-    selector_variant: str = "actionness",
+    selector_variant: str = "direct_boundary",
 ) -> DucaOnlineFrameSelector:
     return DucaOnlineFrameSelector(
         in_channels=3,
