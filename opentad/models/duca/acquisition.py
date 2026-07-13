@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
-from .structured_selection import global_structured_topk
+from .structured_selection import exact_uniform_reference_scores, global_structured_topk
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaTransitionUtilityScorer,
@@ -1577,17 +1577,11 @@ class DucaAcquisitionAdapter(nn.Module):
                 )
             elif stable_selection:
                 learned_scores = policy_scores
-                if effective_k == 0:
-                    reference_scores = policy_scores.detach().new_zeros((1, valid_count))
-                else:
-                    positions = torch.arange(valid_count, device=center_scores.device, dtype=center_scores.dtype)
-                    targets = (
-                        (torch.arange(effective_k, device=center_scores.device, dtype=center_scores.dtype) + 0.5)
-                        * float(valid_count)
-                        / float(effective_k)
-                        - 0.5
-                    )
-                    reference_scores = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values[None, :]
+                reference_scores = exact_uniform_reference_scores(
+                    policy_scores,
+                    torch.ones_like(policy_scores, dtype=torch.bool),
+                    effective_k,
+                )
                 policy_scores = reference_scores + learned_scores * 0.0
             policy_row = center_scores.new_zeros(temporal_len)
             policy_row[:valid_count] = policy_scores[0]
@@ -1861,9 +1855,35 @@ class DucaAcquisitionAdapter(nn.Module):
             coarse_hidden_kind=coarse_hidden_kind,
         )
         gathered = gather_selected_observations(dense_observations, grid.selected_positions, grid.selected_mask)
-        st_weights = torch.gather(scores["selected_mask_st"], 1, grid.selected_positions.clamp_min(0))
-        view_shape = (st_weights.shape[0], st_weights.shape[1]) + (1,) * (gathered["observations"].ndim - 2)
-        detector_input = gathered["observations"] * st_weights.view(view_shape).to(gathered["observations"].dtype)
+        structured_assignment = scores.get("structured_soft_slot_assignment")
+        if structured_assignment is not None:
+            if dense_observations.ndim < 3:
+                raise ValueError("structured detector bridge expects dense observations shaped [B,T,...]")
+            expected = (
+                int(dense_observations.shape[0]),
+                int(grid.selected_positions.shape[1]),
+                int(dense_observations.shape[1]),
+            )
+            if tuple(structured_assignment.shape) != expected:
+                raise ValueError(
+                    "structured detector bridge assignment must match [B,K,T]: "
+                    f"expected {expected}, got {tuple(structured_assignment.shape)}"
+                )
+            flat_dense = dense_observations.reshape(dense_observations.shape[0], dense_observations.shape[1], -1)
+            soft_gathered = torch.einsum(
+                "bkt,btd->bkd",
+                structured_assignment.to(device=flat_dense.device, dtype=flat_dense.dtype),
+                flat_dense,
+            ).reshape_as(gathered["observations"])
+            slot_mask = grid.selected_positions >= 0
+            slot = slot_mask.to(device=soft_gathered.device, dtype=soft_gathered.dtype)
+            slot = slot.reshape(slot.shape + (1,) * (soft_gathered.ndim - 2))
+            detector_input = gathered["observations"] + (soft_gathered - soft_gathered.detach()) * slot
+            st_weights = slot_mask.to(device=dense_observations.device, dtype=dense_observations.dtype)
+        else:
+            st_weights = torch.gather(scores["selected_mask_st"], 1, grid.selected_positions.clamp_min(0))
+            view_shape = (st_weights.shape[0], st_weights.shape[1]) + (1,) * (gathered["observations"].ndim - 2)
+            detector_input = gathered["observations"] * st_weights.view(view_shape).to(gathered["observations"].dtype)
         out: Dict[str, Any] = {
             "grid": grid,
             "sparse_grid": grid,

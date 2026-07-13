@@ -20,6 +20,55 @@ class StructuredSelectionOutput:
     selection_scope: str = "full_window_non_streaming"
 
 
+def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.Tensor:
+    """Return the canonical rounded-endpoint exact-uniform positions."""
+
+    temporal_len = int(temporal_len)
+    k = int(k)
+    if temporal_len < 0 or k < 0 or k > temporal_len:
+        raise ValueError("exact-uniform requires 0 <= k <= temporal_len")
+    if k == 0:
+        return torch.empty((0,), device=device, dtype=torch.long)
+    if k == 1:
+        return torch.zeros((1,), device=device, dtype=torch.long)
+    return torch.linspace(
+        0,
+        temporal_len - 1,
+        steps=k,
+        device=device,
+        dtype=torch.float64,
+    ).round().long()
+
+
+def exact_uniform_reference_scores(
+    scores: torch.Tensor,
+    valid_mask: torch.Tensor,
+    k: int,
+) -> torch.Tensor:
+    """Score valid positions by distance to the canonical exact-uniform anchors."""
+
+    if not torch.is_tensor(scores) or scores.ndim != 2 or not scores.is_floating_point():
+        raise ValueError("scores must be a floating-point [B,T] tensor")
+    valid = valid_mask.to(device=scores.device, dtype=torch.bool)
+    if valid.shape != scores.shape:
+        raise ValueError("valid_mask must align with scores")
+    reference = scores.new_zeros(scores.shape)
+    for batch_idx in range(int(scores.shape[0])):
+        valid_positions = torch.nonzero(valid[batch_idx], as_tuple=False).flatten()
+        effective_k = min(max(int(k), 0), int(valid_positions.numel()))
+        if effective_k == 0:
+            continue
+        anchors = exact_uniform_positions(
+            int(valid_positions.numel()),
+            effective_k,
+            device=scores.device,
+        )
+        ranks = torch.arange(valid_positions.numel(), device=scores.device)
+        distance = (ranks[:, None] - anchors[None, :]).abs().min(dim=1).values
+        reference[batch_idx, valid_positions] = -distance.to(dtype=scores.dtype)
+    return reference
+
+
 def _validate_contract(logits: torch.Tensor, k: int, max_hole: int, temperature: float) -> tuple[int, int, float]:
     if not torch.is_tensor(logits) or logits.ndim != 2:
         raise ValueError("policy logits must be a [B,T] tensor")
@@ -216,4 +265,9 @@ def global_structured_topk(
     )
 
 
-__all__ = ["StructuredSelectionOutput", "global_structured_topk"]
+__all__ = [
+    "StructuredSelectionOutput",
+    "exact_uniform_positions",
+    "exact_uniform_reference_scores",
+    "global_structured_topk",
+]

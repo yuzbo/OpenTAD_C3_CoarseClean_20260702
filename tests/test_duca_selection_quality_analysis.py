@@ -48,6 +48,64 @@ def test_exporter_finds_repository_from_config_tree_not_deployment_script(tmp_pa
     assert exporter._find_git_root(config_dir) == repo
 
 
+def test_exporter_records_existing_decoder_repair_metadata() -> None:
+    class FakeTensor:
+        def __init__(self, value):
+            self.value = value
+
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def long(self):
+            return self
+
+        def float(self):
+            return self
+
+        def sum(self):
+            def flatten(value):
+                return sum((flatten(item) for item in value), 0) if isinstance(value, list) else value
+            return FakeTensor(flatten(self.value))
+
+        def item(self):
+            return self.value
+
+        def tolist(self):
+            return self.value
+
+        def __getitem__(self, index):
+            return FakeTensor(self.value[index])
+
+    class Grid:
+        selected_positions = FakeTensor([[0, 2, 5, 7]])
+        metadata = {"max_gap_repair": [{"enabled": True, "repair_count": 2, "feasible": True, "satisfied": True}]}
+
+    output = {
+        "selector_outputs": {
+            "grid": Grid(),
+            "p_action": FakeTensor([[0.0] * 8]),
+            "actionness_logits": FakeTensor([[0.0] * 8]),
+            "transition_policy_scores": FakeTensor([[0.0] * 8]),
+            "transition_score": FakeTensor([[0.0] * 8]),
+            "abs_delta_p_action": FakeTensor([[0.0] * 8]),
+            "uncertainty": FakeTensor([[0.0] * 8]),
+        }
+    }
+    records = exporter._records_from_batch(
+        selector_output=output,
+        masks=FakeTensor([[1] * 8]),
+        gt_segments=[[[2.0, 6.0]]],
+        metas=[{"video_name": "v"}],
+        source={},
+        seen_count=0,
+    )
+    assert records[0]["decode_diagnostics"]["repair_count"] == 2
+    assert records[0]["decode_diagnostics"]["repair_enabled"] is True
+
+
 def test_binary_metrics_cover_discrimination_calibration_and_prevalence() -> None:
     metrics = quality.binary_metrics(
         labels=[0, 0, 1, 1],

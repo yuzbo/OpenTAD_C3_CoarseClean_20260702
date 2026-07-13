@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .structured_selection import exact_uniform_reference_scores
+
 
 ASFORMER_ENCODER_HIDDEN_KIND = "official_asformer_encoder_hidden"
 
@@ -16,6 +18,7 @@ def balanced_binary_actionness_loss(
     target: torch.Tensor,
     valid_mask: torch.Tensor,
     *,
+    positive_prior: float = 0.5,
     max_positive_weight: float = 8.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if logits.shape != target.shape:
@@ -24,10 +27,14 @@ def balanced_binary_actionness_loss(
     if valid.shape != logits.shape:
         raise ValueError("valid_mask must align with actionness logits")
     target = target.to(device=logits.device, dtype=logits.dtype).clamp(0.0, 1.0)
-    positive = (target * valid.to(dtype=target.dtype)).sum()
-    negative = ((1.0 - target) * valid.to(dtype=target.dtype)).sum()
-    ratio = torch.where(positive > 0.0, negative / positive.clamp_min(1.0), negative.new_ones(()))
-    positive_weight = ratio.clamp(1.0, float(max_positive_weight)).detach()
+    positive_prior = float(positive_prior)
+    max_positive_weight = float(max_positive_weight)
+    if not math.isfinite(positive_prior) or not 0.0 < positive_prior < 1.0:
+        raise ValueError("positive_prior must be a fixed finite value in (0,1)")
+    if not math.isfinite(max_positive_weight) or max_positive_weight < 1.0:
+        raise ValueError("max_positive_weight must be finite and at least one")
+    prior_odds = (1.0 - positive_prior) / positive_prior
+    positive_weight = logits.new_tensor(min(max(prior_odds, 1.0), max_positive_weight))
     per_element = F.binary_cross_entropy_with_logits(
         logits,
         target,
@@ -36,6 +43,23 @@ def balanced_binary_actionness_loss(
     ).masked_fill(~valid, 0.0)
     denominator = valid.to(dtype=logits.dtype).sum().clamp_min(1.0)
     return per_element.sum() / denominator, positive_weight
+
+
+def calibrated_actionness_probability(
+    logits: torch.Tensor,
+    *,
+    temperature: float = 1.0,
+    bias: float = 0.0,
+) -> torch.Tensor:
+    """Map logits to probabilities with frozen train-only calibration parameters."""
+
+    temperature = float(temperature)
+    bias = float(bias)
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("calibration temperature must be finite and positive")
+    if not math.isfinite(bias):
+        raise ValueError("calibration bias must be finite")
+    return torch.sigmoid((logits.float() + bias) / temperature).to(dtype=logits.dtype)
 
 
 def _validate_temporal_inputs(
@@ -59,13 +83,20 @@ def build_transition_descriptors(
     actionness_logits: torch.Tensor,
     hidden: torch.Tensor,
     valid_mask: torch.Tensor,
+    *,
+    calibration_temperature: float = 1.0,
+    calibration_bias: float = 0.0,
 ) -> torch.Tensor:
     """Build relational temporal evidence without exposing absolute hidden states."""
 
     valid = _validate_temporal_inputs(actionness_logits, hidden, valid_mask)
     logits = actionness_logits.float()
     state = hidden.float()
-    probability = torch.sigmoid(logits)
+    probability = calibrated_actionness_probability(
+        logits,
+        temperature=calibration_temperature,
+        bias=calibration_bias,
+    )
     eps = torch.finfo(probability.dtype).eps
     entropy = -(
         probability.clamp(eps, 1.0 - eps) * torch.log(probability.clamp(eps, 1.0 - eps))
@@ -136,11 +167,19 @@ def transition_utility_paths(
     valid_mask: torch.Tensor,
     *,
     compute_auxiliary: bool = True,
+    calibration_temperature: float = 1.0,
+    calibration_bias: float = 0.0,
 ) -> Dict[str, torch.Tensor | str]:
     """Create equal-valued routes with intentionally different gradient ownership."""
 
     valid = _validate_temporal_inputs(actionness_logits, hidden, valid_mask)
-    descriptors = build_transition_descriptors(actionness_logits.detach(), hidden, valid)
+    descriptors = build_transition_descriptors(
+        actionness_logits.detach(),
+        hidden,
+        valid,
+        calibration_temperature=calibration_temperature,
+        calibration_bias=calibration_bias,
+    )
     policy_scores = scorer(descriptors.detach()).masked_fill(~valid, 0.0)
     auxiliary_scores = (
         scorer(descriptors).masked_fill(~valid, 0.0)
@@ -168,35 +207,6 @@ def _normalize_valid_scores(scores: torch.Tensor, valid_mask: torch.Tensor) -> t
     return normalized.masked_fill(~valid, 0.0)
 
 
-def _uniform_reference_scores(
-    scores: torch.Tensor,
-    valid_mask: torch.Tensor,
-    k: int,
-) -> torch.Tensor:
-    valid = valid_mask.to(device=scores.device, dtype=torch.bool)
-    reference = scores.new_zeros(scores.shape)
-    for batch_idx in range(int(scores.shape[0])):
-        valid_positions = torch.nonzero(valid[batch_idx], as_tuple=False).flatten()
-        valid_count = int(valid_positions.numel())
-        effective_k = min(max(int(k), 0), valid_count)
-        if effective_k <= 0:
-            continue
-        positions = torch.arange(valid_count, device=scores.device, dtype=torch.float32)
-        if effective_k == 1:
-            targets = positions.new_zeros((1,))
-        else:
-            targets = torch.linspace(
-                0.0,
-                float(valid_count - 1),
-                steps=effective_k,
-                device=scores.device,
-                dtype=torch.float32,
-            ).round()
-        values = -(positions[:, None] - targets[None, :]).abs().min(dim=1).values
-        reference[batch_idx, valid_positions] = values.to(dtype=scores.dtype)
-    return reference
-
-
 def continuous_policy_logits(
     learned_scores: torch.Tensor,
     valid_mask: torch.Tensor,
@@ -215,7 +225,7 @@ def continuous_policy_logits(
     if not math.isfinite(alpha) or not 0.0 <= alpha <= 1.0:
         raise ValueError("policy alpha must lie in [0,1]")
     learned = _normalize_valid_scores(learned_scores, valid)
-    reference = _normalize_valid_scores(_uniform_reference_scores(learned_scores, valid, int(k)), valid)
+    reference = _normalize_valid_scores(exact_uniform_reference_scores(learned_scores, valid, int(k)), valid)
     mixed = (1.0 - alpha) * reference + alpha * learned
     return mixed.masked_fill(~valid, 0.0)
 
@@ -262,12 +272,15 @@ def local_boundary_coverage_loss(
         raise ValueError("boundary coverage radius must be non-negative")
     with torch.cuda.amp.autocast(enabled=False):
         occupancy = soft_occupancy.float().clamp(0.0, 1.0).masked_fill(~valid, 0.0)
+        eps = torch.finfo(occupancy.dtype).eps
+        log_miss = torch.log1p(-occupancy.clamp_max(1.0 - eps))
         kernel = occupancy.new_ones((1, 1, 2 * radius + 1))
-        local_mass = F.conv1d(occupancy[:, None, :], kernel, padding=radius).squeeze(1).clamp_min(1e-8)
+        local_log_miss = F.conv1d(log_miss[:, None, :], kernel, padding=radius).squeeze(1)
+        local_coverage = (-torch.expm1(local_log_miss)).clamp(min=eps, max=1.0)
         target = boundary_target.to(device=occupancy.device, dtype=occupancy.dtype).masked_fill(~valid, 0.0)
         target_mass = target.sum(dim=1, keepdim=True)
         normalized = torch.where(target_mass > 0.0, target / target_mass.clamp_min(1e-8), target)
-        per_batch = -(normalized * torch.log(local_mass)).sum(dim=1)
+        per_batch = -(normalized * torch.log(local_coverage)).sum(dim=1)
         active = target_mass.squeeze(1) > 0.0
         if not bool(active.any().item()):
             return soft_occupancy.sum() * 0.0
@@ -280,6 +293,7 @@ __all__ = [
     "DucaTransitionUtilityScorer",
     "balanced_binary_actionness_loss",
     "build_transition_descriptors",
+    "calibrated_actionness_probability",
     "continuous_policy_logits",
     "local_boundary_coverage_loss",
     "transition_distribution_loss",

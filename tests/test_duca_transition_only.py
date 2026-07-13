@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 
 import pytest
@@ -16,6 +17,7 @@ from opentad.models.duca.transition_only import (
     DucaTransitionUtilityScorer,
     balanced_binary_actionness_loss,
     build_transition_descriptors,
+    calibrated_actionness_probability,
     continuous_policy_logits,
     local_boundary_coverage_loss,
     transition_utility_paths,
@@ -59,6 +61,46 @@ def test_balanced_actionness_loss_clips_positive_weight() -> None:
     assert loss.item() > 0.0
     loss.backward()
     assert _grad_sum(logits) > 0.0
+
+
+def test_actionness_weight_uses_fixed_prior_not_batch_prevalence() -> None:
+    logits = torch.zeros(2, 10)
+    valid = torch.ones_like(logits, dtype=torch.bool)
+    sparse = torch.tensor([[1.0] + [0.0] * 9, [1.0] + [0.0] * 9])
+    dense = torch.tensor([[1.0] * 5 + [0.0] * 5, [1.0] * 5 + [0.0] * 5])
+
+    _, sparse_weight = balanced_binary_actionness_loss(logits, sparse, valid, positive_prior=0.2)
+    _, dense_weight = balanced_binary_actionness_loss(logits, dense, valid, positive_prior=0.2)
+
+    assert sparse_weight.item() == pytest.approx(4.0)
+    assert dense_weight.item() == pytest.approx(4.0)
+
+
+def test_actionness_probability_supports_frozen_temperature_bias_calibration() -> None:
+    logits = torch.tensor([-2.0, 0.0, 2.0], requires_grad=True)
+    probability = calibrated_actionness_probability(logits, temperature=2.0, bias=1.0)
+
+    assert torch.allclose(probability, torch.sigmoid((logits + 1.0) / 2.0))
+    assert bool(((probability >= 0.0) & (probability <= 1.0)).all())
+    probability.sum().backward()
+    assert _grad_sum(logits) > 0.0
+
+
+def test_transition_entropy_uses_the_frozen_actionness_calibration() -> None:
+    logits = torch.tensor([[0.0, 1.0, -1.0]])
+    hidden = torch.tensor([[[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]])
+    valid = torch.ones_like(logits, dtype=torch.bool)
+
+    uncalibrated = build_transition_descriptors(logits, hidden, valid)
+    calibrated = build_transition_descriptors(
+        logits,
+        hidden,
+        valid,
+        calibration_temperature=2.0,
+        calibration_bias=1.0,
+    )
+
+    assert not torch.equal(uncalibrated[:, 1:, 2:4], calibrated[:, 1:, 2:4])
 
 
 def test_transition_target_uses_fixed_truncated_equal_mass_endpoint_gaussians() -> None:
@@ -192,6 +234,22 @@ def test_local_boundary_coverage_rewards_mass_inside_boundary_neighborhood() -> 
     assert near_loss < far_loss
     assert torch.isfinite(near_loss)
     assert torch.isfinite(far_loss)
+
+
+def test_local_boundary_coverage_is_a_nonnegative_union_probability_loss() -> None:
+    boundary = torch.zeros(1, 7)
+    boundary[0, 3] = 1.0
+    valid = torch.ones_like(boundary, dtype=torch.bool)
+    occupancy = torch.zeros(1, 7, requires_grad=True)
+    occupancy.data[0, 2:5] = 0.9
+
+    loss = local_boundary_coverage_loss(occupancy, boundary, valid, radius=1)
+
+    expected_coverage = 1.0 - (1.0 - 0.9) ** 3
+    assert loss.item() == pytest.approx(-math.log(expected_coverage), rel=1e-5)
+    assert loss.item() >= 0.0
+    loss.backward()
+    assert _grad_sum(occupancy) > 0.0
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")

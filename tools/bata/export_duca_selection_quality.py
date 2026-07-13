@@ -107,12 +107,14 @@ def _records_from_batch(
     if grid is None or not hasattr(grid, "selected_positions"):
         raise ValueError("selector_outputs is missing SparseTemporalGrid")
     selected_rows = grid.selected_positions.detach().cpu().long()
+    repair_rows = grid.metadata.get("max_gap_repair", []) if isinstance(grid.metadata, Mapping) else []
     records: list[dict[str, Any]] = []
     for idx, meta in enumerate(metas):
         valid_len = int(masks[idx].detach().long().sum().cpu().item())
         selected = [int(item) for item in selected_rows[idx].tolist() if 0 <= int(item) < valid_len]
         gt = _to_list(gt_segments[idx]) if idx < len(gt_segments) else []
         sample_id = _sample_id(meta, seen_count + idx)
+        repair = repair_rows[idx] if idx < len(repair_rows) and isinstance(repair_rows[idx], Mapping) else {}
         records.append(
             {
                 "schema_version": RECORD_SCHEMA_VERSION,
@@ -132,6 +134,14 @@ def _records_from_batch(
                 "abs_delta_p_action": _strict_float_row(scores.get("abs_delta_p_action"), idx, valid_len),
                 "uncertainty": _strict_float_row(scores.get("uncertainty"), idx, valid_len),
                 "selected_positions": selected,
+                "decode_diagnostics": {
+                    "repair_count": int(repair.get("repair_count", 0)),
+                    "repair_enabled": bool(repair.get("enabled", False)),
+                    "repair_feasible": bool(repair.get("feasible", True)),
+                    "repair_satisfied": bool(repair.get("satisfied", True)),
+                    "max_hole_before": repair.get("max_hole_before"),
+                    "max_hole_after": repair.get("max_hole_after"),
+                },
                 "selection_path": str(scores.get("selection_path", "unknown")),
                 "policy_mix_alpha": float(scores.get("policy_mix_alpha", 1.0)),
                 "source": dict(source),

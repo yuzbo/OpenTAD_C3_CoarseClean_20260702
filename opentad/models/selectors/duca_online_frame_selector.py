@@ -195,6 +195,37 @@ def _add_structured_zero_forward_gradient_path(
 ) -> torch.Tensor:
     if soft_slot_assignment.ndim != 3:
         raise ValueError("structured soft_slot_assignment must be [B,K,T]")
+    temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
+    if temporal_dim is None:
+        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
+    expected = (int(hard_selected.shape[0]), int(slot_mask.shape[1]), int(dense_inputs.shape[temporal_dim]))
+    if tuple(soft_slot_assignment.shape) != expected:
+        raise ValueError(
+            "structured soft_slot_assignment shape must match [batch, selected slots, dense time]: "
+            f"expected {expected}, got {tuple(soft_slot_assignment.shape)}"
+        )
+    if slot_mask.shape != soft_slot_assignment.shape[:2]:
+        raise ValueError("slot_mask must match structured soft_slot_assignment [B,K]")
+    if not torch.isfinite(soft_slot_assignment).all():
+        raise ValueError("structured soft_slot_assignment must be finite")
+    if torch.any(soft_slot_assignment < 0):
+        raise ValueError("structured soft_slot_assignment must be non-negative")
+    slot_mass = soft_slot_assignment.sum(dim=-1)
+    active = slot_mask.to(device=slot_mass.device, dtype=torch.bool)
+    if active.any() and not torch.allclose(
+        slot_mass[active],
+        torch.ones_like(slot_mass[active]),
+        atol=1.0e-4,
+        rtol=1.0e-4,
+    ):
+        raise ValueError("every active structured slot assignment must sum to one")
+    if (~active).any() and not torch.allclose(
+        slot_mass[~active],
+        torch.zeros_like(slot_mass[~active]),
+        atol=1.0e-6,
+        rtol=0.0,
+    ):
+        raise ValueError("inactive structured slot assignments must have zero mass")
     bridge = float(bridge_weight)
     if bridge <= 0.0:
         return hard_selected
@@ -210,8 +241,6 @@ def _add_structured_zero_forward_gradient_path(
     elif context_inputs.ndim == 6:
         soft = torch.einsum("bncthw,bkt->bnckhw", context_inputs, weights)
         slot = slot_mask[:, None, None, :, None, None]
-    else:
-        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
     return hard_base + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
 
 

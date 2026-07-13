@@ -10,7 +10,11 @@ if os.name == "nt":
 
 import torch
 
-from opentad.models.duca.structured_selection import global_structured_topk
+from opentad.models.duca.structured_selection import (
+    exact_uniform_positions,
+    exact_uniform_reference_scores,
+    global_structured_topk,
+)
 
 
 def _max_hole(indices: tuple[int, ...], temporal_len: int) -> int:
@@ -21,6 +25,25 @@ def _max_hole(indices: tuple[int, ...], temporal_len: int) -> int:
         *(right - left - 1 for left, right in zip(indices, indices[1:])),
         temporal_len - indices[-1] - 1,
     )
+
+
+@pytest.mark.parametrize(("temporal_len", "budget"), [(768, 384), (17, 8), (8, 4), (1, 1)])
+def test_exact_uniform_helper_is_the_rounded_endpoint_contract(temporal_len: int, budget: int) -> None:
+    positions = exact_uniform_positions(temporal_len, budget)
+    expected = torch.linspace(0, temporal_len - 1, steps=budget).round().long()
+
+    assert torch.equal(positions.cpu(), expected)
+    assert positions.unique().numel() == budget
+
+
+def test_exact_uniform_reference_uses_valid_rank_then_maps_to_physical_positions() -> None:
+    scores = torch.zeros(1, 8)
+    valid = torch.tensor([[False, True, True, False, True, True, True, False]])
+    reference = exact_uniform_reference_scores(scores, valid, k=3)
+
+    assert torch.equal(reference[0, torch.tensor([1, 4, 6])], torch.zeros(3))
+    assert torch.equal(reference[0, torch.tensor([2, 5])], -torch.ones(2))
+    assert torch.equal(reference.masked_select(~valid), torch.zeros(3))
 
 
 def test_structured_hard_map_matches_bruteforce_optimum() -> None:
