@@ -8,6 +8,10 @@ import torch.nn as nn
 
 from ..builder import SELECTORS
 from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
+from ..duca.counterfactual_utility import (
+    build_finite_hard_one_swap_candidates,
+    counterfactual_utility_distillation_loss,
+)
 from ..duca.acquisition import (
     _assert_no_forbidden_payload,
     _elapsed_ms,
@@ -193,6 +197,12 @@ def _add_structured_zero_forward_gradient_path(
     slot_mask: torch.Tensor,
     bridge_weight: float,
 ) -> torch.Tensor:
+    """Legacy local surrogate; forbidden as detector-utility evidence.
+
+    Its hard forward is exact, but its gradient need not agree with the loss
+    change from an actual discrete one-swap selection. Formal transition-only
+    configs must use detached hard counterfactual utility distillation instead.
+    """
     if soft_slot_assignment.ndim != 3:
         raise ValueError("structured soft_slot_assignment must be [B,K,T]")
     temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
@@ -288,6 +298,10 @@ class DucaOnlineFrameSelector(nn.Module):
         transition_distribution_temperature: float = 0.7,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
+        counterfactual_utility_distillation_weight: float = 0.0,
+        counterfactual_utility_temperature: float = 1.0,
+        counterfactual_max_candidates: int = 4,
+        require_counterfactual_utility_teacher: bool = False,
         coordinate_space: str = SELECTED_AXIS,
         detector_output_coordinate_space: str = SELECTED_AXIS,
         selected_positions_unit: str = "original_time_index",
@@ -385,6 +399,16 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.transition_target_radius < 0 or self.transition_boundary_radius < 0:
             raise ValueError("transition target/coverage radii must be non-negative")
         self.detector_gradient_mode = str(detector_gradient_mode)
+        self.counterfactual_utility_distillation_weight = float(counterfactual_utility_distillation_weight)
+        self.counterfactual_utility_temperature = float(counterfactual_utility_temperature)
+        self.counterfactual_max_candidates = int(counterfactual_max_candidates)
+        self.require_counterfactual_utility_teacher = bool(require_counterfactual_utility_teacher)
+        if self.counterfactual_utility_distillation_weight < 0.0:
+            raise ValueError("counterfactual_utility_distillation_weight must be non-negative")
+        if self.counterfactual_utility_temperature <= 0.0:
+            raise ValueError("counterfactual_utility_temperature must be positive")
+        if self.counterfactual_max_candidates <= 0:
+            raise ValueError("counterfactual_max_candidates must be positive")
         self.selected_positions_coordinate = str(coordinate_space)
         self.detector_output_coordinate_space = str(detector_output_coordinate_space)
         self.coordinate_space = self.detector_output_coordinate_space
@@ -651,6 +675,30 @@ class DucaOnlineFrameSelector(nn.Module):
             max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
             loss_weights=schedule_state["weights"],
         )
+        if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is not None:
+            selector_losses["counterfactual_utility_distillation_loss"] = (
+                    counterfactual_utility_distillation_loss(
+                        outputs["selector_outputs"]["center_scores"],
+                        teacher_utility,
+                        outputs["selector_outputs"]["valid_mask"],
+                        temperature=self.counterfactual_utility_temperature,
+                    )
+                    * self.counterfactual_utility_distillation_weight
+                )
+            outputs["selector_outputs"]["counterfactual_teacher_kind"] = (
+                    "train_only_detached_hard_one_swap_detector_loss_reduction"
+                )
+            outputs["selector_outputs"]["counterfactual_direct_detector_gradient"] = False
+        counterfactual_request = None
+        if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is None:
+            positions = outputs["selector_outputs"]["grid"].selected_positions
+            counterfactual_request = build_finite_hard_one_swap_candidates(
+                positions,
+                outputs["selector_outputs"]["center_scores"],
+                outputs["selector_outputs"]["valid_mask"],
+                max_candidates=self.counterfactual_max_candidates,
+                max_unselected_hole=self.max_unselected_hole,
+            )
         self._record_pending_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
@@ -660,7 +708,23 @@ class DucaOnlineFrameSelector(nn.Module):
             "gt_labels": gt_labels,
             "losses": selector_losses,
             "selector_outputs": outputs["selector_outputs"],
+            "counterfactual_request": counterfactual_request,
         }
+
+    def counterfactual_distillation_loss(self, selector_outputs, candidate_positions, candidate_utility, candidate_valid):
+        teacher = torch.zeros_like(selector_outputs["center_scores"])
+        valid = torch.zeros_like(selector_outputs["valid_mask"], dtype=torch.bool)
+        for b in range(candidate_positions.shape[0]):
+            rows = candidate_valid[b]
+            pos = candidate_positions[b, rows]
+            teacher[b, pos] = candidate_utility[b, rows].detach()
+            valid[b, pos] = True
+        if not valid.any(dim=1).all():
+            raise RuntimeError("counterfactual teacher must provide a candidate for every sample")
+        return counterfactual_utility_distillation_loss(
+            selector_outputs["center_scores"], teacher, valid,
+            temperature=self.counterfactual_utility_temperature,
+        ) * self.counterfactual_utility_distillation_weight
 
     @staticmethod
     def _normalize_loss_weight_schedule(config: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:

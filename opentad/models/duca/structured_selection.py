@@ -21,7 +21,7 @@ class StructuredSelectionOutput:
 
 
 def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.Tensor:
-    """Return the canonical rounded-endpoint exact-uniform positions."""
+    """Return rounded-endpoint anchors with explicit round-half-to-even semantics."""
 
     temporal_len = int(temporal_len)
     k = int(k)
@@ -31,13 +31,15 @@ def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.
         return torch.empty((0,), device=device, dtype=torch.long)
     if k == 1:
         return torch.zeros((1,), device=device, dtype=torch.long)
-    return torch.linspace(
-        0,
-        temporal_len - 1,
-        steps=k,
-        device=device,
-        dtype=torch.float64,
-    ).round().long()
+    denominator = k - 1
+    anchors = []
+    for index in range(k):
+        numerator = index * (temporal_len - 1)
+        quotient, remainder = divmod(numerator, denominator)
+        if 2 * remainder > denominator or (2 * remainder == denominator and quotient % 2 == 1):
+            quotient += 1
+        anchors.append(quotient)
+    return torch.tensor(anchors, device=device, dtype=torch.long)
 
 
 def exact_uniform_reference_scores(
@@ -220,6 +222,86 @@ def _soft_forward_backward(
     return occupancy.to(dtype=logits.dtype), slots.to(dtype=logits.dtype), log_partition
 
 
+def _structured_log_partition(
+    logits: torch.Tensor,
+    *,
+    k: int,
+    max_hole: int,
+    temperature: float,
+    selection_allowed: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Return log Z for exact-K/max-hole paths, optionally forbidding selections."""
+
+    batch, temporal_len = logits.shape
+    work = logits.float() / float(temperature)
+    if selection_allowed is None:
+        allowed = torch.ones_like(logits, dtype=torch.bool)
+    else:
+        allowed = selection_allowed.to(device=logits.device, dtype=torch.bool)
+        if allowed.shape != logits.shape:
+            raise ValueError("selection_allowed must align with logits")
+    def safe_logsumexp(values: torch.Tensor, dim: int) -> torch.Tensor:
+        reachable = torch.isfinite(values).any(dim=dim)
+        safe_values = torch.where(reachable.unsqueeze(dim), values, torch.zeros_like(values))
+        reduced = torch.logsumexp(safe_values, dim=dim)
+        return torch.where(reachable, reduced, reduced.new_full((), float("-inf")))
+
+    alpha = work.new_full((batch, k + 1, max_hole + 1), float("-inf"))
+    alpha[:, 0, 0] = 0.0
+    for time_idx in range(temporal_len):
+        if k > 0:
+            selected = safe_logsumexp(alpha[:, :k, :], dim=2) + work[:, time_idx, None]
+            selected = selected.masked_fill(~allowed[:, time_idx, None], float("-inf"))
+            select_zero = torch.cat((work.new_full((batch, 1), float("-inf")), selected), dim=1)
+        else:
+            select_zero = work.new_full((batch, 1), float("-inf"))
+        skipped = alpha[:, :, :max_hole] if max_hole > 0 else alpha[:, :, :0]
+        alpha = torch.cat((select_zero[:, :, None], skipped), dim=2)
+    return safe_logsumexp(alpha[:, k, :], dim=1)
+
+
+def structured_local_coverage_probability(
+    policy_logits: torch.Tensor,
+    event_mask: torch.Tensor,
+    *,
+    k: int,
+    max_unselected_hole: int,
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    """Exact probability that a structured path selects inside each event mask.
+
+    ``event_mask`` is ``[B,N,T]``. The result is ``[B,N]`` and is computed as
+    ``1 - Z(no selection in event) / Z`` under the same exact-K/max-hole path
+    distribution used by :func:`global_structured_topk`.
+    """
+
+    k, max_hole, temperature = _validate_contract(
+        policy_logits, k, max_unselected_hole, temperature
+    )
+    events = event_mask.to(device=policy_logits.device, dtype=torch.bool)
+    if events.ndim != 3 or events.shape[0] != policy_logits.shape[0] or events.shape[2] != policy_logits.shape[1]:
+        raise ValueError("event_mask must be [B,N,T] and align with policy_logits")
+    log_z = _structured_log_partition(
+        policy_logits, k=k, max_hole=max_hole, temperature=temperature
+    )
+    probabilities = []
+    for event_idx in range(events.shape[1]):
+        log_z_miss = _structured_log_partition(
+            policy_logits,
+            k=k,
+            max_hole=max_hole,
+            temperature=temperature,
+            selection_allowed=~events[:, event_idx],
+        )
+        log_miss = (log_z_miss - log_z).clamp(max=0.0)
+        probability = -torch.expm1(log_miss)
+        impossible_miss = ~torch.isfinite(log_z_miss)
+        probabilities.append(torch.where(impossible_miss, torch.ones_like(probability), probability))
+    if not probabilities:
+        return policy_logits.new_zeros((policy_logits.shape[0], 0))
+    return torch.stack(probabilities, dim=1).to(dtype=policy_logits.dtype).clamp(0.0, 1.0)
+
+
 def global_structured_topk(
     policy_logits: torch.Tensor,
     *,
@@ -270,4 +352,5 @@ __all__ = [
     "exact_uniform_positions",
     "exact_uniform_reference_scores",
     "global_structured_topk",
+    "structured_local_coverage_probability",
 ]

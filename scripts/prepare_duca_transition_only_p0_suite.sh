@@ -25,7 +25,7 @@ CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
 
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs"
 MANIFEST="${RUN_ROOT}/suite_manifest.json"
-"${PYTHON}" tools/bata/validate_duca_transition_only_p0_suite.py \
+"${PYTHON}" -m tools.bata.validate_duca_transition_only_p0_suite \
   --repo-root "${REPO_ROOT}" \
   --seed "${SEED}" \
   --expected-commit "${EXPECTED_COMMIT}" \
@@ -33,7 +33,7 @@ MANIFEST="${RUN_ROOT}/suite_manifest.json"
   --core-gate-json "${CORE_GATE_JSON}" \
   --output-json "${MANIFEST}"
 
-variants=(uniform direct transition_beta0 transition_beta025)
+variants=(uniform direct transition_beta0 transition_counterfactual)
 ports=(30511 30512 30513 30514)
 for index in "${!variants[@]}"; do
   variant="${variants[$index]}"
@@ -63,13 +63,16 @@ EOF
   chmod 0755 "${job_file}"
 done
 
-cat > "${RUN_ROOT}/jobs.tsv" <<EOF
-variant\tseed\tcommit\tsbatch_file\tstatus
-uniform\t${SEED}\t${EXPECTED_COMMIT}\t${RUN_ROOT}/jobs/uniform.sbatch\tPREPARED_NOT_SUBMITTED
-direct\t${SEED}\t${EXPECTED_COMMIT}\t${RUN_ROOT}/jobs/direct.sbatch\tPREPARED_NOT_SUBMITTED
-transition_beta0\t${SEED}\t${EXPECTED_COMMIT}\t${RUN_ROOT}/jobs/transition_beta0.sbatch\tPREPARED_NOT_SUBMITTED
-transition_beta025\t${SEED}\t${EXPECTED_COMMIT}\t${RUN_ROOT}/jobs/transition_beta025.sbatch\tPREPARED_NOT_SUBMITTED
-EOF
+printf 'variant\tseed\tcommit\tsbatch_file\tstatus\n' > "${RUN_ROOT}/jobs.tsv"
+for variant in "${variants[@]}"; do
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "${variant}" "${SEED}" "${EXPECTED_COMMIT}" \
+    "${RUN_ROOT}/jobs/${variant}.sbatch" "PREPARED_NOT_SUBMITTED" >> "${RUN_ROOT}/jobs.tsv"
+done
+
+for job_file in "${RUN_ROOT}"/jobs/*.sbatch; do
+  bash -n "${job_file}" || fail "generated job file has invalid syntax: ${job_file}"
+done
 
 echo "[DUCA_P0_PREPARE] prepared four matched jobs under ${RUN_ROOT}"
 echo "[DUCA_P0_PREPARE] no Slurm jobs were submitted"

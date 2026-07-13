@@ -16,7 +16,7 @@ PATHS = {
     "uniform": ROOT + "duca_exact_uniform_fixed384_official_adatad_backend_full_train.py",
     "direct": ROOT + "duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py",
     "transition_beta0": ROOT + "duca_transition_only_fixed384_no_detector_bridge_official_adatad_backend_full_train.py",
-    "transition_beta025": ROOT + "duca_transition_only_fixed384_official_adatad_backend_full_train.py",
+    "transition_counterfactual": ROOT + "duca_transition_only_fixed384_official_adatad_backend_full_train.py",
 }
 LAUNCHER = Path("scripts/run_duca_transition_only_p0_variant_gpu1.sh")
 
@@ -31,7 +31,7 @@ def _plain(value):
 
 def test_p0_matrix_is_matched_on_detector_data_geometry_and_training_horizon() -> None:
     configs = {name: Config.fromfile(path) for name, path in PATHS.items()}
-    reference = configs["transition_beta025"]
+    reference = configs["transition_counterfactual"]
 
     for name, cfg in configs.items():
         assert cfg.model.type == "ActionFormer", name
@@ -51,7 +51,7 @@ def test_p0_matrix_changes_only_the_intended_selector_mechanism() -> None:
     uniform = Config.fromfile(PATHS["uniform"])
     direct = Config.fromfile(PATHS["direct"])
     beta0 = Config.fromfile(PATHS["transition_beta0"])
-    beta025 = Config.fromfile(PATHS["transition_beta025"])
+    beta025 = Config.fromfile(PATHS["transition_counterfactual"])
 
     assert uniform.model.frame_selector.selector_variant == "transition_only"
     assert uniform.model.frame_selector.inference_policy_alpha == 0.0
@@ -68,7 +68,9 @@ def test_p0_matrix_changes_only_the_intended_selector_mechanism() -> None:
 
     assert beta025.model.frame_selector.selector_variant == "transition_only"
     assert beta025.model.frame_selector.loss_weight_schedule.policy_alpha.end == 1.0
-    assert beta025.model.frame_selector.loss_weight_schedule.detector_gradient.end == 0.25
+    assert beta025.model.frame_selector.loss_weight_schedule.detector_gradient.end == 0.0
+    assert beta025.model.frame_selector.counterfactual_utility_distillation_weight > 0.0
+    assert beta025.model.frame_selector.require_counterfactual_utility_teacher is True
     assert beta025.model.frame_selector.soft_max_gap_loss_enabled is False
 
 

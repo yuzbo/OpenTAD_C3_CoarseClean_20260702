@@ -14,6 +14,11 @@ from .acquisition import (
     temporal_max_gap_hole_loss,
     validate_actionness_provenance,
 )
+from .counterfactual_utility import (
+    counterfactual_utility_distillation_loss,
+    detached_hard_one_swap_utilities,
+    gradient_utility_alignment,
+)
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
 from .structured_selection import StructuredSelectionOutput, global_structured_topk
 from .transition_only import (
@@ -43,6 +48,9 @@ __all__ = [
     "duca_forward_test",
     "duca_forward_train",
     "duca_losses",
+    "counterfactual_utility_distillation_loss",
+    "detached_hard_one_swap_utilities",
+    "gradient_utility_alignment",
     "gather_selected_observations",
     "hard_topk_st",
     "global_structured_topk",

@@ -14,6 +14,7 @@ from opentad.models.duca.structured_selection import (
     exact_uniform_positions,
     exact_uniform_reference_scores,
     global_structured_topk,
+    structured_local_coverage_probability,
 )
 
 
@@ -44,6 +45,87 @@ def test_exact_uniform_reference_uses_valid_rank_then_maps_to_physical_positions
     assert torch.equal(reference[0, torch.tensor([1, 4, 6])], torch.zeros(3))
     assert torch.equal(reference[0, torch.tensor([2, 5])], -torch.ones(2))
     assert torch.equal(reference.masked_select(~valid), torch.zeros(3))
+
+
+@pytest.mark.parametrize("temporal_len", range(1, 33))
+def test_exact_uniform_routes_share_one_rounding_contract(temporal_len: int) -> None:
+    scores = torch.zeros(1, temporal_len)
+    valid = torch.ones_like(scores, dtype=torch.bool)
+    for budget in range(1, temporal_len + 1):
+        positions = exact_uniform_positions(temporal_len, budget)
+        reference = exact_uniform_reference_scores(scores, valid, budget)
+        assert torch.equal(torch.nonzero(reference[0] == 0, as_tuple=False).flatten(), positions)
+        assert positions.unique().numel() == budget
+
+
+def test_structured_local_coverage_matches_bruteforce_path_distribution() -> None:
+    logits = torch.tensor([[0.2, -0.4, 1.1, 0.7, -0.3]], dtype=torch.float64, requires_grad=True)
+    k, max_hole, temperature = 2, 2, 0.8
+    events = torch.tensor([[[False, True, True, False, False], [False, False, False, False, True]]])
+    actual = structured_local_coverage_probability(
+        logits,
+        events,
+        k=k,
+        max_unselected_hole=max_hole,
+        temperature=temperature,
+    )
+    feasible = [
+        choice
+        for choice in combinations(range(logits.shape[1]), k)
+        if _max_hole(choice, logits.shape[1]) <= max_hole
+    ]
+    weights = torch.stack([torch.exp(logits[0, list(choice)].sum() / temperature) for choice in feasible])
+    expected = []
+    for event in events[0]:
+        covered = torch.tensor(
+            [any(bool(event[idx]) for idx in choice) for choice in feasible],
+            dtype=weights.dtype,
+        )
+        expected.append((weights * covered).sum() / weights.sum())
+    assert torch.allclose(actual[0], torch.stack(expected), atol=1e-6, rtol=1e-6)
+    actual.sum().backward()
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+
+
+def test_structured_local_coverage_respects_exact_k_dependence() -> None:
+    logits = torch.zeros(1, 3)
+    whole_window = torch.ones(1, 1, 3, dtype=torch.bool)
+    probability = structured_local_coverage_probability(
+        logits, whole_window, k=1, max_unselected_hole=2
+    )
+    assert probability.item() == pytest.approx(1.0)
+
+
+def test_structured_local_coverage_exhausts_small_state_spaces() -> None:
+    for temporal_len in range(1, 7):
+        logits = torch.linspace(-0.5, 0.7, temporal_len, dtype=torch.float64)[None, :]
+        for k in range(temporal_len + 1):
+            for max_hole in range(temporal_len + 1):
+                feasible = [
+                    choice
+                    for choice in combinations(range(temporal_len), k)
+                    if _max_hole(choice, temporal_len) <= max_hole
+                ]
+                if not feasible:
+                    continue
+                events = torch.eye(temporal_len, dtype=torch.bool)[None, :, :]
+                actual = structured_local_coverage_probability(
+                    logits,
+                    events,
+                    k=k,
+                    max_unselected_hole=max_hole,
+                    temperature=0.9,
+                )[0]
+                weights = torch.stack(
+                    [torch.exp(logits[0, list(choice)].sum() / 0.9) for choice in feasible]
+                )
+                expected = torch.stack(
+                    [
+                        (weights * torch.tensor([idx in choice for choice in feasible])).sum() / weights.sum()
+                        for idx in range(temporal_len)
+                    ]
+                ).to(dtype=logits.dtype)
+                assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-6)
 
 
 def test_structured_hard_map_matches_bruteforce_optimum() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import json
 import math
 import os
 import time
@@ -643,7 +644,11 @@ class C3CoarseProbeActionnessSource(nn.Module):
         matrix_pretrained: bool = True,
         matrix_freeze_backbone: bool = True,
         train_split_supervised: bool = True,
-        calibration_split: Optional[str] = "train_only",
+        calibration_split: Optional[str] = "none",
+        calibration_temperature: float = 1.0,
+        calibration_bias: float = 0.0,
+        calibration_artifact: Optional[str] = None,
+        calibration_artifact_sha256: Optional[str] = None,
         thumos_trained: bool = False,
         uses_labels: bool = False,
         uses_teacher: bool = False,
@@ -669,7 +674,35 @@ class C3CoarseProbeActionnessSource(nn.Module):
         self.dropout = float(dropout)
         self.source_name = str(source_name or self._default_source_name())
         self.train_split_supervised = bool(train_split_supervised)
-        self.calibration_split = calibration_split
+        self.calibration_split = str(calibration_split or "none")
+        self.calibration_temperature = float(calibration_temperature)
+        self.calibration_bias = float(calibration_bias)
+        self.calibration_artifact = self._resolve_path(calibration_artifact)
+        if not math.isfinite(self.calibration_temperature) or self.calibration_temperature <= 0.0:
+            raise ValueError("calibration_temperature must be finite and positive")
+        if not math.isfinite(self.calibration_bias):
+            raise ValueError("calibration_bias must be finite")
+        if self.calibration_split == "train_only":
+            if not self.calibration_artifact or not os.path.isfile(self.calibration_artifact):
+                raise ValueError("train_only actionness calibration requires a real calibration_artifact")
+            actual_hash = self._checkpoint_hash(self.calibration_artifact)
+            if not calibration_artifact_sha256 or actual_hash != str(calibration_artifact_sha256):
+                raise ValueError("calibration_artifact_sha256 is required and must match the artifact")
+            with open(self.calibration_artifact, "r", encoding="utf-8") as handle:
+                calibration_payload = json.load(handle)
+            if calibration_payload.get("fit_split") not in {"train", "training", "train_only"}:
+                raise ValueError("calibration_artifact must declare a train-only fit_split")
+            artifact_temperature = float(calibration_payload.get("temperature", float("nan")))
+            artifact_bias = float(calibration_payload.get("bias", float("nan")))
+            if not math.isclose(artifact_temperature, self.calibration_temperature, rel_tol=0.0, abs_tol=1e-12):
+                raise ValueError("calibration_temperature does not match calibration_artifact")
+            if not math.isclose(artifact_bias, self.calibration_bias, rel_tol=0.0, abs_tol=1e-12):
+                raise ValueError("calibration_bias does not match calibration_artifact")
+        elif self.calibration_split != "none":
+            raise ValueError("calibration_split must be 'none' or 'train_only'")
+        self.calibration_artifact_sha256 = (
+            self._checkpoint_hash(self.calibration_artifact) if self.calibration_artifact else None
+        )
         self.return_hidden_features = bool(return_hidden_features)
         self.require_hidden_features = bool(require_hidden_features)
         if self.require_checkpoint and not self.checkpoint_path:
@@ -691,6 +724,15 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "checkpoint_hash": self.checkpoint_hash,
             "train_split_supervised": self.train_split_supervised,
             "calibration_split": self.calibration_split,
+            "calibration_temperature": self.calibration_temperature,
+            "calibration_bias": self.calibration_bias,
+            "calibration_artifact": self.calibration_artifact,
+            "calibration_artifact_sha256": self.calibration_artifact_sha256,
+            "probability_semantics": (
+                "train_only_temperature_bias_calibrated_posterior"
+                if self.calibration_split == "train_only"
+                else "uncalibrated_sigmoid_score"
+            ),
             "thumos_trained": bool(thumos_trained),
             "uses_labels": bool(uses_labels),
             "uses_teacher": bool(uses_teacher),
@@ -933,13 +975,15 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 raise ValueError("C3 coarse hidden features must align with logits [B,T]")
             hidden = hidden.float().to(device=inputs.device).masked_fill(~valid[:, :, None], 0.0)
         latency_ms = float((time.perf_counter() - start) * 1000.0)
-        p_action = torch.sigmoid(logits).masked_fill(~valid, 0.0)
+        calibrated_logits = (logits + self.calibration_bias) / self.calibration_temperature
+        p_action = torch.sigmoid(calibrated_logits).masked_fill(~valid, 0.0)
         transition = _actionness_transition_payload(p_action, valid)
         profile = self._estimate_probe_profile(inputs, logits, latency_ms)
         output = {
             "p_action": transition["p_action"],
             "logits": logits,
             "actionness_logits": logits,
+            "calibrated_actionness_logits": calibrated_logits.masked_fill(~valid, _neg(torch.float32)),
             "uncertainty": transition["uncertainty"],
             "entropy": transition["entropy"],
             "delta_p_action": transition["delta_p_action"],
@@ -1822,6 +1866,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 "requested_budget": budgets,
                 "effective_budget": effective_budget,
                 "max_unselected_hole": self.max_unselected_hole,
+                "structured_temperature": self.structured_temperature,
                 "budget_metrics": {
                     "budget_mean": float(grid.selected_count.float().mean().detach().cpu().item()),
                     "budget_max": int(self.budget),
@@ -2730,17 +2775,46 @@ def duca_losses(
             )
             * weights["transition"]
         )
-        if not isinstance(scores, Mapping) or scores.get("soft_coverage") is None:
-            raise ValueError("transition boundary coverage requires structured soft_coverage")
-        losses["transition_boundary_coverage_loss"] = (
-            local_boundary_coverage_loss(
-                scores["soft_coverage"],
-                transition_target,
-                valid,
-                radius=int(transition_boundary_radius),
+        if not isinstance(scores, Mapping):
+            raise ValueError("transition boundary coverage requires structured decoder outputs")
+        policy_logits = scores.get("decode_policy_logits")
+        effective_budget = scores.get("effective_budget")
+        structured_temperature = scores.get("structured_temperature")
+        if policy_logits is None or effective_budget is None or structured_temperature is None:
+            raise ValueError(
+                "transition boundary coverage requires decode_policy_logits, effective_budget, "
+                "and structured_temperature"
             )
-            * weights["transition_boundary"]
-        )
+        if policy_logits.shape != center_scores.shape:
+            raise ValueError("decode_policy_logits must match scores [B,T]")
+        effective_budget = torch.as_tensor(effective_budget, device=center_scores.device, dtype=torch.long).reshape(-1)
+        if effective_budget.numel() != center_scores.shape[0]:
+            raise ValueError("effective_budget must contain one K per sample")
+        coverage_rows = []
+        for batch_idx in range(center_scores.shape[0]):
+            valid_count = int(valid[batch_idx].sum().item())
+            effective_k = int(effective_budget[batch_idx].item())
+            if effective_k <= 0 or effective_k > valid_count:
+                raise ValueError("effective_budget must satisfy 0 < K <= valid_count")
+            configured_max_hole = scores.get("max_unselected_hole")
+            effective_max_hole = valid_count if configured_max_hole is None else int(configured_max_hole)
+            if not bool(
+                transition_target[batch_idx].to(device=valid.device).masked_fill(~valid[batch_idx], 0.0).gt(0).any().item()
+            ):
+                continue
+            coverage_rows.append(
+                local_boundary_coverage_loss(
+                    policy_logits[batch_idx : batch_idx + 1],
+                    transition_target[batch_idx : batch_idx + 1],
+                    valid[batch_idx : batch_idx + 1],
+                    radius=int(transition_boundary_radius),
+                    k=effective_k,
+                    max_unselected_hole=effective_max_hole,
+                    temperature=float(structured_temperature),
+                )
+            )
+        exact_coverage = torch.stack(coverage_rows).mean() if coverage_rows else policy_logits.sum() * 0.0
+        losses["transition_boundary_coverage_loss"] = exact_coverage * weights["transition_boundary"]
     else:
         losses["transition_distribution_loss"] = zero
         losses["transition_boundary_coverage_loss"] = zero

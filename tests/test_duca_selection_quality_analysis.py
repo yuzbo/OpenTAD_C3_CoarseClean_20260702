@@ -19,6 +19,7 @@ def _record(sample_id: str, learned_positions: list[int]) -> dict:
         "gt_segments": [[2.0, 6.0]],
         "p_action": [0.05, 0.10, 0.80, 0.90, 0.85, 0.75, 0.10, 0.05],
         "transition_policy_scores": [0.0, 0.2, 1.0, 0.1, 0.1, 0.2, 0.9, 0.0],
+        "abs_delta_p_action": [0.0, 0.05, 0.70, 0.10, 0.05, 0.10, 0.65, 0.05],
         "raw_transition_scores": [0.0, 0.1, 0.8, 0.2, 0.2, 0.1, 0.7, 0.0],
         "selected_positions": learned_positions,
     }
@@ -157,11 +158,14 @@ def test_sample_analysis_separates_coarse_transition_and_selection_quality() -> 
 
     assert row["coarse"]["auroc"] == pytest.approx(1.0)
     assert row["transition"]["r0"]["policy"]["auprc"] == pytest.approx(1.0)
+    assert row["transition"]["r0"]["pure_abs_delta_p_action"]["auprc"] == pytest.approx(1.0)
+    assert row["transition"]["r0"]["raw_actionness_transition"]["auprc"] == pytest.approx(1.0)
     assert row["selection"]["learned"]["selected_count"] == 4
     assert row["selection"]["uniform"]["selected_positions"] == [0, 2, 5, 7]
     assert row["selection"]["learned"]["boundary_recall"]["r0"] == pytest.approx(1.0)
     assert row["selection"]["learned"]["max_unselected_hole"] == 3
     assert row["selection"]["utility_topk_diagnostic"]["boundary_recall"]["r0"] == pytest.approx(1.0)
+    assert row["selection"]["pure_delta_topk_diagnostic"]["selected_positions"] != row["selection"]["raw_transition_topk_diagnostic"]["selected_positions"]
 
 
 def test_representative_samples_are_best_median_and_worst_without_manual_choice() -> None:
@@ -203,6 +207,7 @@ def test_analyze_jsonl_writes_machine_readable_outputs_and_vector_figure(tmp_pat
     )
 
     assert summary["sample_count"] == 2
+    assert "pure_abs_delta_p_action" in summary["transition"]["r0"]
     assert (tmp_path / "out" / "selection_quality_summary.json").is_file()
     assert (tmp_path / "out" / "selection_quality_per_sample.csv").is_file()
     assert (tmp_path / "out" / "selection_quality_overview.pdf").is_file()

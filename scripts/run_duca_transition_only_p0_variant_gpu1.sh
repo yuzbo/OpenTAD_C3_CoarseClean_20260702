@@ -14,8 +14,8 @@ case "${VARIANT}" in
   uniform) CONFIG="configs/adatad/thumos/duca_exact_uniform_fixed384_official_adatad_backend_full_train.py" ;;
   direct) CONFIG="configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py" ;;
   transition_beta0) CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_no_detector_bridge_official_adatad_backend_full_train.py" ;;
-  transition_beta025) CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py" ;;
-  *) fail "DUCA_P0_VARIANT must be uniform, direct, transition_beta0, or transition_beta025" ;;
+  transition_counterfactual) CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py" ;;
+  *) fail "DUCA_P0_VARIANT must be uniform, direct, transition_beta0, or transition_counterfactual" ;;
 esac
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"

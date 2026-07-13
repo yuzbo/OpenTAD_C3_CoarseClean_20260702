@@ -95,8 +95,8 @@ def run(train_jsonl: str | Path, eval_jsonl: str | Path, output_dir: str | Path,
         metrics = binary_metrics(labels, scores)
         csv_rows.append({"sample_id": row.get("sample_id"), **{key: metrics[key] for key in ("auroc", "auprc", "ece", "prevalence")}})
     summary = {
-        "schema_version": "duca_deploy_visible_coarse_boundary_ceiling_v1",
-        "diagnostic_role": "held_out_deploy_visible_boundary_probe_lower_bound_not_oracle",
+        "schema_version": "duca_deploy_visible_boundary_probe_v2",
+        "diagnostic_role": "held_out_deploy_visible_linear_probe_not_ceiling_not_oracle",
         "boundary_radius": int(radius),
         "feature_keys": list(FEATURE_KEYS),
         "train_video_count": len(train_videos),
@@ -107,13 +107,13 @@ def run(train_jsonl: str | Path, eval_jsonl: str | Path, output_dir: str | Path,
         "leakage_contract": {"gt_used_for_training_label_only": True, "gt_used_as_model_input": False, "eval_gt_used_for_selection": False},
     }
     out = Path(output_dir)
-    write_json(out / "coarse_boundary_ceiling.json", summary)
-    write_csv(out / "coarse_boundary_ceiling_per_sample.csv", csv_rows)
+    write_json(out / "coarse_boundary_probe.json", summary)
+    write_csv(out / "coarse_boundary_probe_per_sample.csv", csv_rows)
     return summary
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Held-out deploy-visible coarse boundary probe ceiling.")
+    parser = argparse.ArgumentParser(description="Held-out deploy-visible linear boundary probe; not a ceiling.")
     parser.add_argument("--train-jsonl", required=True)
     parser.add_argument("--eval-jsonl", required=True)
     parser.add_argument("--output-dir", required=True)

@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .structured_selection import exact_uniform_reference_scores
+from .structured_selection import exact_uniform_reference_scores, structured_local_coverage_probability
 
 
 ASFORMER_ENCODER_HIDDEN_KIND = "official_asformer_encoder_hidden"
@@ -256,36 +256,51 @@ def transition_distribution_loss(
 
 
 def local_boundary_coverage_loss(
-    soft_occupancy: torch.Tensor,
+    policy_logits: torch.Tensor,
     boundary_target: torch.Tensor,
     valid_mask: torch.Tensor,
     *,
     radius: int,
+    k: int,
+    max_unselected_hole: int,
+    temperature: float = 1.0,
 ) -> torch.Tensor:
-    if soft_occupancy.shape != boundary_target.shape:
-        raise ValueError("soft_occupancy and boundary_target must have identical [B,T] shape")
-    valid = valid_mask.to(device=soft_occupancy.device, dtype=torch.bool)
-    if valid.shape != soft_occupancy.shape:
+    """Negative log exact structured probability of covering GT boundaries."""
+
+    if policy_logits.shape != boundary_target.shape:
+        raise ValueError("policy_logits and boundary_target must have identical [B,T] shape")
+    valid = valid_mask.to(device=policy_logits.device, dtype=torch.bool)
+    if valid.shape != policy_logits.shape:
         raise ValueError("valid_mask must align with soft_occupancy")
     radius = int(radius)
     if radius < 0:
         raise ValueError("boundary coverage radius must be non-negative")
     with torch.cuda.amp.autocast(enabled=False):
-        occupancy = soft_occupancy.float().clamp(0.0, 1.0).masked_fill(~valid, 0.0)
-        eps = torch.finfo(occupancy.dtype).eps
-        log_miss = torch.log1p(-occupancy.clamp_max(1.0 - eps))
-        kernel = occupancy.new_ones((1, 1, 2 * radius + 1))
-        local_log_miss = F.conv1d(log_miss[:, None, :], kernel, padding=radius).squeeze(1)
-        local_coverage = (-torch.expm1(local_log_miss)).clamp(min=eps, max=1.0)
-        target = boundary_target.to(device=occupancy.device, dtype=occupancy.dtype).masked_fill(~valid, 0.0)
-        target_mass = target.sum(dim=1, keepdim=True)
-        normalized = torch.where(target_mass > 0.0, target / target_mass.clamp_min(1e-8), target)
-        per_batch = -(normalized * torch.log(local_coverage)).sum(dim=1)
-        active = target_mass.squeeze(1) > 0.0
-        if not bool(active.any().item()):
-            return soft_occupancy.sum() * 0.0
-        loss = per_batch[active].mean()
-    return loss.to(dtype=soft_occupancy.dtype)
+        logits = policy_logits.float()
+        target = boundary_target.to(device=logits.device, dtype=logits.dtype).masked_fill(~valid, 0.0)
+        per_batch = []
+        for batch_idx in range(logits.shape[0]):
+            valid_positions = torch.nonzero(valid[batch_idx], as_tuple=False).flatten()
+            target_row = target[batch_idx, valid_positions]
+            boundary_ranks = torch.nonzero(target_row > 0.0, as_tuple=False).flatten()
+            if boundary_ranks.numel() == 0:
+                continue
+            row_logits = logits[batch_idx, valid_positions][None, :]
+            ranks = torch.arange(valid_positions.numel(), device=logits.device)
+            events = (ranks[None, :] - boundary_ranks[:, None]).abs() <= radius
+            probabilities = structured_local_coverage_probability(
+                row_logits,
+                events[None, :, :],
+                k=min(int(k), int(valid_positions.numel())),
+                max_unselected_hole=int(max_unselected_hole),
+                temperature=float(temperature),
+            )[0].clamp_min(torch.finfo(logits.dtype).eps)
+            weights = target_row[boundary_ranks]
+            per_batch.append(-(weights * torch.log(probabilities)).sum() / weights.sum().clamp_min(1e-8))
+        if not per_batch:
+            return policy_logits.sum() * 0.0
+        loss = torch.stack(per_batch).mean()
+    return loss.to(dtype=policy_logits.dtype)
 
 
 __all__ = [

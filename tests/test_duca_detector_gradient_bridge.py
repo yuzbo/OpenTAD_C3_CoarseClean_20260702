@@ -25,7 +25,7 @@ def _grad_sum(module: nn.Module) -> float:
     )
 
 
-def test_structured_bridge_is_exact_hard_forward_and_utility_aligned() -> None:
+def test_structured_bridge_is_exact_hard_forward_but_only_has_local_surrogate_gradient() -> None:
     logits = torch.tensor([[[2.0, 0.0, -1.0]]], requires_grad=True)
     assignment = torch.softmax(logits, dim=-1)
     dense = torch.tensor([[[0.0, 1.0, 4.0]]])
@@ -44,6 +44,9 @@ def test_structured_bridge_is_exact_hard_forward_and_utility_aligned() -> None:
     assert logits.grad is not None
     assert logits.grad[0, 0, 2] < 0
     assert logits.grad[0, 0, 0] > 0
+    # This linear toy assertion is not evidence of alignment with discrete
+    # ActionFormer cls+reg one-swap utility. The nonlinear alignment gate lives
+    # in test_duca_counterfactual_utility.py and rejects this bridge.
 
 
 @pytest.mark.parametrize(

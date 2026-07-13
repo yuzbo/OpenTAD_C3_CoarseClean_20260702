@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 
+SHA256_KEYS = (
+    "config_sha256",
+    "checkpoint_sha256",
+    "data_sha256",
+    "geometry_sha256",
+    "gt_sha256",
+)
+
+
 def sha256(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
@@ -73,3 +82,29 @@ def validate_selection(valid_len: int, budget: int, max_hole: int, positions: Se
     if max_unselected_hole(valid_len, selected) > int(max_hole):
         return False, "max_hole"
     return True, "ok"
+
+
+def require_finite(value: Any, name: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be finite")
+    return number
+
+
+def validate_provenance(value: Any, *, context: str) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{context}: provenance object is required")
+    commit = value.get("git_commit")
+    if not isinstance(commit, str) or len(commit) != 40:
+        raise ValueError(f"{context}: provenance git_commit must be a full commit")
+    result = {"git_commit": commit}
+    for key in SHA256_KEYS:
+        digest = value.get(key)
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest.lower()):
+            raise ValueError(f"{context}: provenance {key} must be SHA-256")
+        result[key] = digest.lower()
+    evaluator = value.get("evaluator_identity")
+    if not isinstance(evaluator, str) or not evaluator:
+        raise ValueError(f"{context}: provenance evaluator_identity is required")
+    result["evaluator_identity"] = evaluator
+    return result

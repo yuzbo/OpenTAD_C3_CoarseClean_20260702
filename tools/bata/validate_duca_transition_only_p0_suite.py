@@ -12,8 +12,9 @@ from mmengine.config import Config
 from tools.bata.validate_duca_transition_only_p0_variant import CONFIGS, validate_variant
 
 
-REFERENCE_VARIANT = "transition_beta025"
-VARIANT_ORDER = ("uniform", "direct", "transition_beta0", "transition_beta025")
+REFERENCE_VARIANT = "transition_counterfactual"
+VARIANT_ORDER = ("uniform", "direct", "transition_beta0", "transition_counterfactual")
+EXPECTED_OPTIMIZER_UPDATES = 13200
 
 
 def _require(condition: bool, message: str) -> None:
@@ -47,11 +48,18 @@ def _shared_protocol(cfg: Config) -> dict[str, Any]:
     selector = cfg.model.frame_selector
     return {
         "detector_type": cfg.model.type,
+        "backbone": _plain(cfg.model.backbone),
+        "projection": _plain(cfg.model.projection),
+        "neck": _plain(cfg.model.neck),
         "detector_head": _plain(cfg.model.rpn_head),
         "dataset": _plain(cfg.dataset),
+        "solver": _plain(cfg.solver),
         "optimizer": _plain(cfg.optimizer),
         "scheduler": _plain(cfg.scheduler),
         "workflow": _plain(cfg.workflow),
+        "evaluation": _plain(cfg.evaluation),
+        "inference": _plain(cfg.inference),
+        "post_processing": _plain(cfg.post_processing),
         "dense_window_size": int(cfg.dense_window_size),
         "budget": int(cfg.window_size),
         "backbone_frames": int(cfg.model.backbone.backbone.total_frames),
@@ -65,8 +73,33 @@ def _shared_protocol(cfg: Config) -> dict[str, Any]:
             "action_head": float(selector.get("action_head_lr", 5.0e-5)),
             "transition_scorer": float(selector.get("transition_scorer_lr", 1.0e-4)),
         },
-        "expected_optimizer_steps": 13200,
+        "expected_optimizer_steps": EXPECTED_OPTIMIZER_UPDATES,
     }
+
+
+def _post_run_contract(protocol_sha256: str) -> dict[str, Any]:
+    return {
+        "schema_version": "duca_p0_post_run_evidence_v1",
+        "shared_protocol_sha256": protocol_sha256,
+        "successful_optimizer_updates": EXPECTED_OPTIMIZER_UPDATES,
+        "lr_scheduler_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
+        "ema_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
+        "evaluator_identity": "mAP:validation:0.3,0.4,0.5,0.6,0.7",
+        "checkpoint_criterion": "same_workflow_best_or_final_declared",
+        "non_finite_collapse": False,
+    }
+
+
+def validate_post_run_evidence(path: str | Path, *, variant: str, protocol_sha256: str) -> dict[str, Any]:
+    evidence_path = Path(path).resolve()
+    _require(evidence_path.is_file(), f"{variant}: post-run evidence missing: {evidence_path}")
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    expected = _post_run_contract(protocol_sha256)
+    _require(payload.get("ok") is True, f"{variant}: post-run evidence must declare ok=true")
+    _require(payload.get("variant") == variant, f"{variant}: post-run variant mismatch")
+    for key, value in expected.items():
+        _require(payload.get(key) == value, f"{variant}: post-run {key} mismatch")
+    return {"path": str(evidence_path), "sha256": _sha256(evidence_path), "validated": True}
 
 
 def validate_suite(
@@ -76,6 +109,7 @@ def validate_suite(
     expected_commit: str | None = None,
     require_clean: bool = False,
     core_gate_json: str | Path | None = None,
+    post_run_evidence: dict[str, str | Path] | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     _require(seed >= 0, "seed must be non-negative")
@@ -86,7 +120,8 @@ def validate_suite(
     if require_clean:
         _require(not dirty, "formal P0 suite preparation requires a clean git tree")
 
-    core_gate: dict[str, Any] | None = None
+    _require(core_gate_json is not None, "formal core gate is required")
+    core_gate: dict[str, Any]
     if core_gate_json is not None:
         gate_path = Path(core_gate_json).resolve()
         _require(gate_path.is_file(), f"formal core gate is missing: {gate_path}")
@@ -125,6 +160,14 @@ def validate_suite(
 
     protocol_payload = json.dumps(reference_protocol, sort_keys=True, separators=(",", ":"))
     protocol_sha256 = hashlib.sha256(protocol_payload.encode("utf-8")).hexdigest()
+    post_run_contract = _post_run_contract(protocol_sha256)
+    validated_post_runs: dict[str, Any] = {}
+    if post_run_evidence is not None:
+        _require(set(post_run_evidence) == set(VARIANT_ORDER), "post-run evidence must cover exactly four variants")
+        validated_post_runs = {
+            name: validate_post_run_evidence(post_run_evidence[name], variant=name, protocol_sha256=protocol_sha256)
+            for name in VARIANT_ORDER
+        }
     return {
         "ok": True,
         "status": "deployable_not_submitted",
@@ -136,6 +179,8 @@ def validate_suite(
         "shared_protocol_sha256": protocol_sha256,
         "variants": variants,
         "formal_core_gate": core_gate,
+        "post_run_contract": post_run_contract,
+        "validated_post_runs": validated_post_runs,
         "submission_performed": False,
     }
 
@@ -147,15 +192,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-commit")
     parser.add_argument("--require-clean", action="store_true")
     parser.add_argument("--core-gate-json")
+    parser.add_argument(
+        "--post-run-evidence", action="append", default=[], metavar="VARIANT=JSON",
+        help="repeat for all four variants to validate completed-run evidence",
+    )
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
     try:
+        evidence: dict[str, str] | None = None
+        if args.post_run_evidence:
+            evidence = {}
+            for item in args.post_run_evidence:
+                name, separator, path = item.partition("=")
+                _require(bool(separator and name and path), "--post-run-evidence must be VARIANT=JSON")
+                _require(name not in evidence, f"duplicate post-run evidence for {name}")
+                evidence[name] = path
         payload = validate_suite(
             repo_root=args.repo_root,
             seed=args.seed,
             expected_commit=args.expected_commit,
             require_clean=args.require_clean,
             core_gate_json=args.core_gate_json,
+            post_run_evidence=evidence,
         )
         code = 0
     except Exception as exc:

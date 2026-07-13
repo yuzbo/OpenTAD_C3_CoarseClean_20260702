@@ -12,7 +12,7 @@ CONFIGS = {
     "uniform": "configs/adatad/thumos/duca_exact_uniform_fixed384_official_adatad_backend_full_train.py",
     "direct": "configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py",
     "transition_beta0": "configs/adatad/thumos/duca_transition_only_fixed384_no_detector_bridge_official_adatad_backend_full_train.py",
-    "transition_beta025": "configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py",
+    "transition_counterfactual": "configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py",
 }
 
 
@@ -78,7 +78,7 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
     _require(variant in CONFIGS, f"unknown P0 variant {variant!r}")
     path = str(config_path or CONFIGS[variant])
     cfg = Config.fromfile(path)
-    reference = Config.fromfile(CONFIGS["transition_beta025"])
+    reference = Config.fromfile(CONFIGS["transition_counterfactual"])
     selector = cfg.model.frame_selector
 
     _require(cfg.model.type == "ActionFormer", "detector must remain ActionFormer")
@@ -132,9 +132,13 @@ def validate_variant(variant: str, config_path: str | None = None) -> dict[str, 
     else:
         _require(selector.selector_variant == "transition_only", "main candidate must use transition-only selector")
         _require(float(selector.loss_weight_schedule.policy_alpha.end) == 1.0, "main candidate must learn selection")
-        _require(float(selector.loss_weight_schedule.detector_gradient.end) == 0.25, "main beta endpoint must be 0.25")
+        _require(float(selector.loss_weight_schedule.detector_gradient.end) == 0.0, "direct detector bridge must remain disabled")
+        _require(float(selector.counterfactual_utility_distillation_weight) > 0.0, "counterfactual distillation must be enabled")
+        _require(bool(selector.require_counterfactual_utility_teacher), "counterfactual teacher must fail closed")
+        _require(int(selector.counterfactual_max_candidates) > 0, "counterfactual candidate bound is missing")
         details["selection"] = "transition_only"
-        details["detector_bridge_beta"] = 0.25
+        details["detector_bridge_beta"] = 0.0
+        details["detector_utility_learning"] = "detached_hard_counterfactual_distillation"
 
     return {
         "ok": True,

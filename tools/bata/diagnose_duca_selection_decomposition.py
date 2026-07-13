@@ -62,7 +62,7 @@ def decompose_record(row: Mapping[str, Any]) -> dict[str, Any]:
     methods = {
         "exact_uniform": analyzed["selection"]["uniform"]["selected_positions"],
         "learned": analyzed["selection"]["learned"]["selected_positions"],
-        "gt_oracle_evaluation_only": gt_oracle_positions(row),
+        "gt_informed_heuristic_evaluation_only": gt_oracle_positions(row),
     }
     repair = row.get("decode_diagnostics", {})
     out: dict[str, Any] = {"sample_id": row["sample_id"], "video_id": analyzed["video_id"], "methods": {}}
@@ -90,7 +90,7 @@ def _flat(row: Mapping[str, Any], method: str) -> dict[str, Any]:
 
 def run(records_jsonl: str | Path, output_dir: str | Path) -> dict[str, Any]:
     analyzed = [decompose_record(row) for row in read_jsonl(records_jsonl)]
-    methods = ("exact_uniform", "learned", "gt_oracle_evaluation_only")
+    methods = ("exact_uniform", "learned", "gt_informed_heuristic_evaluation_only")
     csv_rows = [_flat(row, method) for row in analyzed for method in methods]
     aggregate: dict[str, Any] = {}
     for method in methods:
@@ -108,7 +108,7 @@ def run(records_jsonl: str | Path, output_dir: str | Path) -> dict[str, Any]:
         "coarse_macro": coarse,
         "selection_macro": aggregate,
         "input_sha256": sha256(records_jsonl),
-        "contract": {"gt_oracle_evaluation_only": True, "gt_oracle_deployable": False, "matched_valid_len_and_k": True},
+        "contract": {"gt_informed_heuristic_evaluation_only": True, "is_optimized_oracle": False, "deployable": False, "matched_valid_len_and_k": True},
     }
     out = Path(output_dir)
     write_json(out / "selection_quality_decomposition.json", summary)
@@ -117,7 +117,7 @@ def run(records_jsonl: str | Path, output_dir: str | Path) -> dict[str, Any]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Exact-uniform/learned/GT-oracle selection-quality decomposition.")
+    parser = argparse.ArgumentParser(description="Exact-uniform/learned/GT-informed heuristic decomposition.")
     parser.add_argument("--records-jsonl", required=True)
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args(argv)

@@ -124,9 +124,13 @@ class ActionFormer(SingleStageDetector):
         return self
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
+        skip_frame_selector = bool(kwargs.pop("_duca_skip_frame_selector", False))
+        counterfactual_eval = bool(kwargs.pop("_duca_counterfactual_eval", False))
         losses = dict()
         selector_loss_keys = set()
-        if self.frame_selector is not None:
+        raw_selector_context = None
+        if self.frame_selector is not None and not skip_frame_selector:
+            raw_selector_context = (inputs, masks, metas, gt_segments, gt_labels)
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
                 masks=masks,
@@ -212,6 +216,20 @@ class ActionFormer(SingleStageDetector):
             source_name="pc_ot_mras_reader_losses",
         )
 
+        request = selector_outputs.get("counterfactual_request") if self.frame_selector is not None and not skip_frame_selector else None
+        if request is not None:
+            if raw_selector_context is None:
+                raise RuntimeError("counterfactual teacher requires the pre-selector training context")
+            cf_loss = self._duca_counterfactual_teacher_loss(
+                raw_selector_context, selector_outputs["selector_outputs"], request, **kwargs
+            )
+            if "counterfactual_utility_distillation_loss" in losses:
+                raise ValueError("counterfactual distillation loss key collision")
+            losses["counterfactual_utility_distillation_loss"] = cf_loss
+
+        if counterfactual_eval:
+            return losses
+
         # only key has loss will be record
         if self.selector_train_only:
             selector_cost_terms = [
@@ -223,6 +241,78 @@ class ActionFormer(SingleStageDetector):
         else:
             losses["cost"] = sum(_value for _key, _value in losses.items())
         return losses
+
+    @staticmethod
+    def _duca_gather_raw(inputs, positions):
+        if inputs.ndim not in (3, 5, 6):
+            raise ValueError("DUCA counterfactual gather requires [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]")
+        time_dim = 2 if inputs.ndim in (3, 5) else 3
+        view = [positions.shape[0]] + [1] * (inputs.ndim - 1)
+        view[time_dim] = positions.shape[1]
+        expand = list(inputs.shape)
+        expand[time_dim] = positions.shape[1]
+        index = positions.view(view).expand(expand)
+        return torch.gather(inputs, time_dim, index)
+
+    @staticmethod
+    def _duca_detector_objective(losses):
+        terms = [
+            value for key, value in losses.items()
+            if key != "cost" and key.endswith("loss") and ("cls" in key or "reg" in key)
+        ]
+        if not terms:
+            raise RuntimeError("official ActionFormer counterfactual pass produced no cls/reg loss")
+        objective = sum(terms)
+        if objective.ndim != 0 or not torch.isfinite(objective):
+            raise RuntimeError("counterfactual cls+reg objective must be a finite scalar")
+        return objective
+
+    def _duca_counterfactual_teacher_loss(self, raw_context, selector_state, request, **kwargs):
+        raw_inputs, raw_masks, raw_metas, raw_segments, raw_labels = raw_context
+        selections = request["candidate_selections"]
+        candidate_valid = request["candidate_valid"]
+        baseline_positions = selector_state["grid"].selected_positions
+        utilities = selector_state["center_scores"].new_zeros(candidate_valid.shape)
+
+        if raw_metas is None or raw_segments is None or raw_labels is None:
+            raise RuntimeError("counterfactual teacher requires train-only metas, segments and labels")
+
+        def evaluate_one(batch_index, positions):
+            positions = positions.reshape(1, -1).to(device=raw_inputs.device)
+            selected_inputs = self._duca_gather_raw(raw_inputs[batch_index : batch_index + 1], positions)
+            selected_masks = torch.ones_like(positions, dtype=torch.bool)
+            meta = dict(raw_metas[batch_index])
+            pos_list = [int(x) for x in positions[0].detach().cpu().tolist()]
+            meta["selected_axis_to_true_time_dense_index"] = pos_list
+            meta["truetime_dense_len"] = int(raw_masks.shape[-1])
+            meta["truetime_dense_valid_len"] = int(raw_masks[batch_index].sum().item())
+            remapped_segments, remapped_labels, remapped_metas = self.frame_selector._remap_train_targets_to_selected_axis(
+                [raw_segments[batch_index]], [raw_labels[batch_index]], [meta]
+            )
+            candidate_losses = self.forward_train(
+                selected_inputs, selected_masks, remapped_metas, remapped_segments, remapped_labels,
+                _duca_skip_frame_selector=True, _duca_counterfactual_eval=True, **kwargs
+            )
+            return self._duca_detector_objective(candidate_losses)
+
+        module_training = {module: module.training for module in self.modules()}
+        try:
+            for module in module_training:
+                module.training = False
+            with torch.no_grad():
+                for b in range(baseline_positions.shape[0]):
+                    baseline_loss = evaluate_one(b, baseline_positions[b])
+                    for m in range(selections.shape[1]):
+                        if candidate_valid[b, m]:
+                            utilities[b, m] = baseline_loss - evaluate_one(b, selections[b, m])
+        finally:
+            for module, training in module_training.items():
+                module.training = training
+        if not torch.isfinite(utilities[candidate_valid]).all():
+            raise RuntimeError("counterfactual utility teacher produced non-finite gain")
+        return self.frame_selector.counterfactual_distillation_loss(
+            selector_state, request["candidate_positions"], utilities.detach(), candidate_valid
+        )
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)

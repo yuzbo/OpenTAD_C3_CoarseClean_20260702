@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import os
 
 import pytest
@@ -223,46 +222,51 @@ def test_local_boundary_coverage_rewards_mass_inside_boundary_neighborhood() -> 
     boundary = torch.zeros(1, 9)
     boundary[0, 4] = 1.0
     valid = torch.ones(1, 9, dtype=torch.bool)
-    near = torch.zeros(1, 9)
-    near[0, 3:6] = torch.tensor([0.2, 0.6, 0.2])
-    far = torch.zeros(1, 9)
-    far[0, :3] = torch.tensor([0.2, 0.6, 0.2])
+    near = torch.full((1, 9), -2.0)
+    near[0, 3:6] = torch.tensor([1.0, 3.0, 1.0])
+    far = torch.full((1, 9), -2.0)
+    far[0, :3] = torch.tensor([1.0, 3.0, 1.0])
 
-    near_loss = local_boundary_coverage_loss(near, boundary, valid, radius=1)
-    far_loss = local_boundary_coverage_loss(far, boundary, valid, radius=1)
+    near_loss = local_boundary_coverage_loss(
+        near, boundary, valid, radius=1, k=3, max_unselected_hole=8
+    )
+    far_loss = local_boundary_coverage_loss(
+        far, boundary, valid, radius=1, k=3, max_unselected_hole=8
+    )
 
     assert near_loss < far_loss
     assert torch.isfinite(near_loss)
     assert torch.isfinite(far_loss)
 
 
-def test_local_boundary_coverage_is_a_nonnegative_union_probability_loss() -> None:
-    boundary = torch.zeros(1, 7)
-    boundary[0, 3] = 1.0
+def test_local_boundary_coverage_is_exact_under_structured_dependence() -> None:
+    boundary = torch.zeros(1, 3)
+    boundary[0, 1] = 1.0
     valid = torch.ones_like(boundary, dtype=torch.bool)
-    occupancy = torch.zeros(1, 7, requires_grad=True)
-    occupancy.data[0, 2:5] = 0.9
+    logits = torch.zeros(1, 3, requires_grad=True)
 
-    loss = local_boundary_coverage_loss(occupancy, boundary, valid, radius=1)
+    loss = local_boundary_coverage_loss(
+        logits, boundary, valid, radius=1, k=1, max_unselected_hole=2
+    )
 
-    expected_coverage = 1.0 - (1.0 - 0.9) ** 3
-    assert loss.item() == pytest.approx(-math.log(expected_coverage), rel=2e-5, abs=2e-8)
+    assert loss.item() == pytest.approx(0.0, abs=2e-7)
     assert loss.item() >= 0.0
     loss.backward()
-    assert _grad_sum(occupancy) > 0.0
+    assert torch.isfinite(logits.grad).all()
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
 def test_local_boundary_coverage_is_finite_for_padded_windows_under_fp16_autocast() -> None:
-    soft = torch.zeros(1, 768, device="cuda", dtype=torch.float16)
-    soft[:, :453] = 0.85
+    soft = torch.zeros(1, 453, device="cuda", dtype=torch.float16, requires_grad=True)
     target = torch.zeros(1, 768, device="cuda", dtype=torch.float32)
     target[:, 390] = 1.0
-    valid = torch.zeros(1, 768, device="cuda", dtype=torch.bool)
-    valid[:, :453] = True
+    target = target[:, :453]
+    valid = torch.ones(1, 453, device="cuda", dtype=torch.bool)
 
     with torch.cuda.amp.autocast(dtype=torch.float16):
-        loss = local_boundary_coverage_loss(soft, target, valid, radius=4)
+        loss = local_boundary_coverage_loss(
+            soft, target, valid, radius=4, k=226, max_unselected_hole=15, temperature=0.7
+        )
 
     assert torch.isfinite(loss)
 

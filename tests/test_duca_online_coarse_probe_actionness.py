@@ -13,9 +13,10 @@ except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard
     pytest.skip(f"torch is unavailable in this environment: {exc}", allow_module_level=True)
 
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+from opentad.models.duca.acquisition import C3CoarseProbeActionnessSource
 
 
-def _selector(*, frozen: bool = False) -> DucaOnlineFrameSelector:
+def _selector(*, frozen: bool = False, calibration_temperature: float = 1.0, calibration_bias: float = 0.0) -> DucaOnlineFrameSelector:
     return DucaOnlineFrameSelector(
         in_channels=3,
         budget=4,
@@ -41,6 +42,8 @@ def _selector(*, frozen: bool = False) -> DucaOnlineFrameSelector:
             "uses_gt": False,
             "uses_prediction_cache": False,
             "calibration_split": "none",
+            "calibration_temperature": calibration_temperature,
+            "calibration_bias": calibration_bias,
         },
         loss_weights={
             "teacher": 0.0,
@@ -52,6 +55,32 @@ def _selector(*, frozen: bool = False) -> DucaOnlineFrameSelector:
             "budget": 0.0,
         },
     )
+
+
+def test_train_only_calibration_without_fit_artifact_fails_closed() -> None:
+    with pytest.raises(ValueError, match="real calibration_artifact"):
+        C3CoarseProbeActionnessSource(
+            probe_model="official-action-seg",
+            spatial_size=16,
+            tcn_hidden_dim=16,
+            official_num_layers=1,
+            calibration_split="train_only",
+        )
+
+
+def test_frozen_temperature_bias_is_the_unique_probability_and_transition_source() -> None:
+    selector = _selector(calibration_temperature=2.0, calibration_bias=0.7)
+    inputs = torch.randn(1, 3, 8, 16, 16)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+
+    scores = selector.forward_test(inputs=inputs, masks=masks, metas=[{"video_name": "v"}])["selector_outputs"]
+    expected = torch.sigmoid((scores["actionness_logits"] + 0.7) / 2.0)
+    expected_delta = torch.zeros_like(expected)
+    expected_delta[:, 1:] = expected[:, 1:] - expected[:, :-1]
+
+    assert torch.allclose(scores["p_action"], expected)
+    assert torch.allclose(scores["delta_p_action"], expected_delta)
+    assert torch.allclose(scores["abs_delta_p_action"], expected_delta.abs())
 
 
 def test_online_c3_official_asformer_probe_produces_actionness_profile() -> None:

@@ -10,14 +10,15 @@ from statistics import mean, median
 from typing import Any, Iterable, Mapping, Sequence
 
 
-RECORD_SCHEMA_VERSION = "duca_selection_quality_record_v1"
-SUMMARY_SCHEMA_VERSION = "duca_selection_quality_summary_v1"
+RECORD_SCHEMA_VERSION = "duca_selection_quality_record_v2"
+SUMMARY_SCHEMA_VERSION = "duca_selection_quality_summary_v2"
 RADII = (0, 1, 2, 4, 8)
 SELECTION_METHODS = (
     "learned",
     "uniform",
     "stratified_random",
     "utility_topk_diagnostic",
+    "pure_delta_topk_diagnostic",
     "raw_transition_topk_diagnostic",
 )
 
@@ -335,6 +336,7 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
     p_action = _score_vector(record, "p_action", valid_len)
     policy_scores = _score_vector(record, "transition_policy_scores", valid_len)
     raw_scores = _score_vector(record, "raw_transition_scores", valid_len)
+    pure_delta_scores = _score_vector(record, "abs_delta_p_action", valid_len)
     selected = [int(item) for item in record.get("selected_positions", []) if int(item) >= 0]
     if len(selected) != budget:
         raise ValueError(f"{sample_id}: selected_count={len(selected)} does not match budget={budget}")
@@ -343,6 +345,7 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
         "uniform": exact_uniform_positions(valid_len, budget),
         "stratified_random": stratified_random_positions(valid_len, budget, seed=random_seed + sum(map(ord, sample_id))),
         "utility_topk_diagnostic": _topk_positions(policy_scores, budget),
+        "pure_delta_topk_diagnostic": _topk_positions(pure_delta_scores, budget),
         "raw_transition_topk_diagnostic": _topk_positions(raw_scores, budget),
     }
     selection = {
@@ -359,6 +362,7 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
         labels = _boundary_labels(valid_len, boundaries, radius)
         transition[f"r{radius}"] = {
             "policy": binary_metrics(labels, policy_scores, calibrated=False),
+            "pure_abs_delta_p_action": binary_metrics(labels, pure_delta_scores, calibrated=False),
             "raw_actionness_transition": binary_metrics(labels, raw_scores, calibrated=False),
         }
     learned_distance = selection["learned"]["mean_endpoint_distance"]
@@ -378,6 +382,7 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
         "action_labels": action_labels,
         "p_action": p_action,
         "transition_policy_scores": policy_scores,
+        "abs_delta_p_action": pure_delta_scores,
         "raw_transition_scores": raw_scores,
         "gt_segments": [[start, end] for start, end in segments],
         "coarse": binary_metrics(action_labels, p_action),
@@ -469,6 +474,10 @@ def _flatten_sample_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "coarse_ece": row["coarse"]["ece"],
         "transition_policy_auprc_r0": row["transition"]["r0"]["policy"]["auprc"],
         "transition_policy_auprc_r4": row["transition"]["r4"]["policy"]["auprc"],
+        "transition_pure_delta_auprc_r0": row["transition"]["r0"]["pure_abs_delta_p_action"]["auprc"],
+        "transition_pure_delta_auprc_r4": row["transition"]["r4"]["pure_abs_delta_p_action"]["auprc"],
+        "transition_compound_auprc_r0": row["transition"]["r0"]["raw_actionness_transition"]["auprc"],
+        "transition_compound_auprc_r4": row["transition"]["r4"]["raw_actionness_transition"]["auprc"],
         "selection_gain_vs_uniform": row["selection_gain_vs_uniform"],
     }
     for method in ("learned", "uniform", "stratified_random"):
@@ -538,9 +547,11 @@ def _plot_outputs(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any],
     ax = axes[1, 0]
     radii = list(RADII)
     policy = [summary["transition"][f"r{radius}"]["policy"]["auprc"] for radius in radii]
+    pure_delta = [summary["transition"][f"r{radius}"]["pure_abs_delta_p_action"]["auprc"] for radius in radii]
     raw = [summary["transition"][f"r{radius}"]["raw_actionness_transition"]["auprc"] for radius in radii]
     ax.plot(radii, policy, marker="o", label="learned transition utility", color="#E45756")
-    ax.plot(radii, raw, marker="s", label="raw actionness change", color="#72B7B2")
+    ax.plot(radii, pure_delta, marker="^", label="pure |delta p(action)|", color="#4C78A8")
+    ax.plot(radii, raw, marker="s", label="compound transition proxy", color="#72B7B2")
     ax.set(xlabel="GT boundary radius", ylabel="AUPRC", xticks=radii, ylim=(0, 1))
     ax.legend(frameon=False)
     ax.text(-0.14, 1.05, "C", transform=ax.transAxes, fontweight="bold")
@@ -630,9 +641,11 @@ def analyze_jsonl(
     for radius in RADII:
         labels = [label for row in rows for label in _boundary_labels(row["valid_len"], _boundaries(row["valid_len"], [tuple(seg) for seg in row["gt_segments"]]), radius)]
         policy = [score for row in rows for score in row["transition_policy_scores"]]
+        pure_delta = [score for row in rows for score in row["abs_delta_p_action"]]
         raw = [score for row in rows for score in row["raw_transition_scores"]]
         summary["transition"][f"r{radius}"] = {
             "policy": binary_metrics(labels, policy, calibrated=False),
+            "pure_abs_delta_p_action": binary_metrics(labels, pure_delta, calibrated=False),
             "raw_actionness_transition": binary_metrics(labels, raw, calibrated=False),
             "macro_policy_auprc": _bootstrap_ci(
                 [row["transition"][f"r{radius}"]["policy"]["auprc"] for row in rows],

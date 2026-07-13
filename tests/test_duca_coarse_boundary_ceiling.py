@@ -22,8 +22,9 @@ def test_ceiling_uses_held_out_deploy_visible_features_and_writes_outputs(tmp_pa
     result = ceiling.run(train, evaluate, tmp_path / "out", radius=1, steps=3)
     assert result["video_overlap_count"] == 0
     assert result["leakage_contract"]["gt_used_as_model_input"] is False
-    assert (tmp_path / "out" / "coarse_boundary_ceiling.json").is_file()
-    assert (tmp_path / "out" / "coarse_boundary_ceiling_per_sample.csv").is_file()
+    assert result["diagnostic_role"].endswith("not_ceiling_not_oracle")
+    assert (tmp_path / "out" / "coarse_boundary_probe.json").is_file()
+    assert (tmp_path / "out" / "coarse_boundary_probe_per_sample.csv").is_file()
 
 
 def test_ceiling_rejects_video_overlap(tmp_path: Path) -> None:
