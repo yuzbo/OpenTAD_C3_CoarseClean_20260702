@@ -145,6 +145,28 @@ def test_detector_path_can_backprop_into_online_coarse_probe() -> None:
     assert sum(grads) > 0.0
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
+def test_official_asformer_probe_stays_fp32_under_outer_autocast() -> None:
+    selector = _selector().cuda()
+    inputs = torch.randn(1, 3, 8, 16, 16, device="cuda")
+    masks = torch.ones(1, 8, dtype=torch.bool, device="cuda")
+
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        outputs = selector.raw_actionness_source(inputs, valid_mask=masks)
+        loss = outputs["actionness_logits"].float().square().mean()
+
+    assert outputs["actionness_logits"].dtype == torch.float32
+    assert outputs["coarse_hidden_features"].dtype == torch.float32
+    (loss * 65536.0).backward()
+    gradients = [
+        parameter.grad
+        for parameter in selector.raw_actionness_source.parameters()
+        if parameter.requires_grad and parameter.grad is not None
+    ]
+    assert gradients
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
 def test_frozen_coarse_probe_stays_in_eval_when_parent_enters_train_mode() -> None:
     selector = _selector(frozen=True)
 

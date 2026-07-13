@@ -932,12 +932,21 @@ class C3CoarseProbeActionnessSource(nn.Module):
         if hasattr(probe_inputs, "to"):
             probe_inputs = probe_inputs.to(device=inputs.device)
         def call_probe() -> Any:
-            try:
-                return self.probe(probe_inputs, valid, return_hidden=self.return_hidden_features)
-            except TypeError:
-                if self.return_hidden_features and self.require_hidden_features:
-                    raise
-                return self.probe(probe_inputs, valid)
+            def invoke() -> Any:
+                try:
+                    return self.probe(probe_inputs, valid, return_hidden=self.return_hidden_features)
+                except TypeError:
+                    if self.return_hidden_features and self.require_hidden_features:
+                        raise
+                    return self.probe(probe_inputs, valid)
+
+            if self.probe_model == "official-action-seg":
+                # ASFormer temporal conv gradients can overflow under the outer
+                # FP16 autocast and initial GradScaler scale. Keep this small
+                # coarse path differentiable but numerically stable in FP32.
+                with torch.autocast(device_type=inputs.device.type, enabled=False):
+                    return invoke()
+            return invoke()
 
         if self.frozen:
             with torch.no_grad():
