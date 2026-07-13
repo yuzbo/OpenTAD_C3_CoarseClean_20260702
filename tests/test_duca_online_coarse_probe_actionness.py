@@ -33,6 +33,8 @@ def _selector(
         acquisition_policy=(
             "global_structured_topk" if selector_variant == "transition_only" else "legacy_center_radius"
         ),
+        max_unselected_hole=(3 if selector_variant == "transition_only" else None),
+        forbid_external_actionness=(selector_variant == "transition_only"),
         detector_gradient_mode="st_sparse_gather_soft_context",
         profile_runtime=True,
         actionness_source_cfg={
