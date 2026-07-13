@@ -12,6 +12,7 @@ from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
     counterfactual_pair_scores,
     counterfactual_utility_distillation_loss,
+    gradient_utility_alignment,
 )
 from ..duca.acquisition import (
     _assert_no_forbidden_payload,
@@ -726,6 +727,12 @@ class DucaOnlineFrameSelector(nn.Module):
             pair_scores, candidate_utility.detach(), valid,
             temperature=self.counterfactual_utility_temperature,
         ) * self.counterfactual_utility_distillation_weight
+        gradient_alignment = gradient_utility_alignment(
+            pair_scores,
+            loss,
+            candidate_utility.detach(),
+            valid,
+        )
         with torch.no_grad():
             student_pair = pair_scores[valid].float()
             utility = candidate_utility.detach()[valid].float()
@@ -748,6 +755,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 "spearman": spearman,
                 "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
                 "alignment_kind": "independent_selector_score_add_minus_remove_vs_detector_swap_gain",
+                "distillation_gradient_alignment": gradient_alignment,
             }
         return loss
 

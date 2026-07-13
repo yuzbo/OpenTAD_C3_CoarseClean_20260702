@@ -284,8 +284,15 @@ def run_formal_gate(
     _require(gradients["detector_head"] > 0.0, "real detector losses did not train ActionFormerHead")
     alignment = dict(getattr(selector, "last_counterfactual_summary", {}))
     _require(alignment.get("finite") is True, "counterfactual utility is non-finite")
-    _require(float(alignment.get("sign_agreement", 0.0)) > 0.0, "counterfactual sign alignment failed")
-    _require(float(alignment.get("spearman", -1.0)) > 0.0, "counterfactual Spearman alignment failed")
+    gradient_alignment = dict(alignment.get("distillation_gradient_alignment", {}))
+    _require(
+        float(gradient_alignment.get("sign_agreement", 0.0)) > 0.5,
+        "counterfactual distillation descent direction has invalid sign alignment",
+    )
+    _require(
+        float(gradient_alignment.get("spearman", -1.0)) > 0.0,
+        "counterfactual distillation descent direction has invalid rank alignment",
+    )
 
     # Run the same aggregate loss used by the training loop, then prove that AMP
     # executes an optimizer update instead of silently skipping it.
