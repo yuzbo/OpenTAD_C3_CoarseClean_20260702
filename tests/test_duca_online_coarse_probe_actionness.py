@@ -16,13 +16,20 @@ from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameS
 from opentad.models.duca.acquisition import C3CoarseProbeActionnessSource
 
 
-def _selector(*, frozen: bool = False, calibration_temperature: float = 1.0, calibration_bias: float = 0.0) -> DucaOnlineFrameSelector:
+def _selector(
+    *,
+    frozen: bool = False,
+    calibration_temperature: float = 1.0,
+    calibration_bias: float = 0.0,
+    selector_variant: str = "actionness",
+) -> DucaOnlineFrameSelector:
     return DucaOnlineFrameSelector(
         in_channels=3,
         budget=4,
         max_radius=2,
         dense_window_size=8,
         selector_hidden_channels=8,
+        selector_variant=selector_variant,
         detector_gradient_mode="st_sparse_gather_soft_context",
         profile_runtime=True,
         actionness_source_cfg={
@@ -198,7 +205,7 @@ def test_online_selector_accepts_uint8_window_tensor_from_full_train_loader() ->
 
 
 def test_all_short_counterfactual_batch_keeps_static_loss_graph() -> None:
-    selector = _selector()
+    selector = _selector(selector_variant="transition_only")
     selector.counterfactual_utility_distillation_weight = 0.25
     inputs = torch.randn(1, 1, 3, 8, 16, 16)
     masks = torch.tensor([[1, 1, 1, 0, 0, 0, 0, 0]], dtype=torch.bool)
