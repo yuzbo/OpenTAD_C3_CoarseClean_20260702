@@ -721,10 +721,38 @@ class DucaOnlineFrameSelector(nn.Module):
             valid[b, pos] = True
         if not valid.any(dim=1).all():
             raise RuntimeError("counterfactual teacher must provide a candidate for every sample")
-        return counterfactual_utility_distillation_loss(
+        loss = counterfactual_utility_distillation_loss(
             selector_outputs["center_scores"], teacher, valid,
             temperature=self.counterfactual_utility_temperature,
         ) * self.counterfactual_utility_distillation_weight
+        with torch.no_grad():
+            student = torch.softmax(
+                selector_outputs["center_scores"].masked_fill(~valid, torch.finfo(teacher.dtype).min)
+                / self.counterfactual_utility_temperature, dim=-1
+            )
+            target = torch.softmax(
+                teacher.masked_fill(~valid, torch.finfo(teacher.dtype).min)
+                / self.counterfactual_utility_temperature, dim=-1
+            )
+            descent = (target - student)[valid].float()
+            utility = teacher[valid].float()
+            descent_rank = torch.argsort(torch.argsort(descent)).float()
+            utility_rank = torch.argsort(torch.argsort(utility)).float()
+            centered_d = descent_rank - descent_rank.mean()
+            centered_u = utility_rank - utility_rank.mean()
+            denom = centered_d.norm() * centered_u.norm()
+            spearman = float((centered_d @ centered_u / denom.clamp_min(1e-12)).item())
+            nonzero = utility != 0
+            sign = float(((descent[nonzero] * utility[nonzero]) > 0).float().mean().item()) if nonzero.any() else 1.0
+            self.last_counterfactual_summary = {
+                "teacher_kind": "detached_hard_one_swap_official_actionformer_cls_plus_reg",
+                "candidate_count": int(candidate_valid.sum().item()),
+                "direct_detector_gradient": False,
+                "sign_agreement": sign,
+                "spearman": spearman,
+                "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
+            }
+        return loss
 
     @staticmethod
     def _normalize_loss_weight_schedule(config: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:
@@ -1182,6 +1210,7 @@ class DucaOnlineFrameSelector(nn.Module):
             actionness_source_name = online_actionness["source_name"]
         validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
         positions = grid.selected_positions.to(device=inputs.device)
+        self._last_selected_positions = positions.detach()
         slot_mask = positions >= 0
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_gathered = _gather_time(inputs, positions, slot_mask)

@@ -249,7 +249,7 @@ def run_proof(
         "coarse_probe": _grad_sum(selector.raw_actionness_source),
         "transition_scorer": _grad_sum(selector.adapter.transition_scorer),
     }
-    _require(float(detector_route_gradients["transition_scorer"] or 0.0) > 0.0, "detector route did not train scorer")
+    _require(float(detector_route_gradients["transition_scorer"] or 0.0) == 0.0, "removed direct bridge leaked into scorer")
     _require(float(detector_route_gradients["coarse_probe"] or 0.0) == 0.0, "detector route leaked into coarse probe")
 
     grid = detector_route["selector_outputs"]["grid"]

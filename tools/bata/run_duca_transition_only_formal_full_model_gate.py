@@ -218,22 +218,26 @@ def run_formal_gate(
     scaler = torch.cuda.amp.GradScaler(enabled=True)
     scale_before_backward = float(scaler.get_scale())
     with torch.autocast(device_type="cuda", dtype=torch.float16):
-        selector_outputs = selector.forward_train(
-            inputs=inputs,
-            masks=masks,
-            metas=metas,
-            gt_segments=gt_segments,
-            gt_labels=gt_labels,
+        detector_losses = model(
+            inputs, masks, metas, gt_segments=gt_segments, gt_labels=gt_labels, return_loss=True
         )
-        detector_losses = _real_detector_losses(model, selector_outputs)
         _require("cls_loss" in detector_losses, "real ActionFormerHead cls_loss is missing")
         _require("reg_loss" in detector_losses, "real ActionFormerHead reg_loss is missing")
         detector_only_loss = detector_losses["cls_loss"] + detector_losses["reg_loss"]
+        counterfactual_loss = detector_losses["counterfactual_utility_distillation_loss"]
+    scaler.scale(counterfactual_loss).backward(retain_graph=True)
+
+    counterfactual_gradients = {
+        "coarse_probe": _grad_sum(selector.raw_actionness_source),
+        "transition_scorer": _grad_sum(selector.adapter.transition_scorer),
+    }
+    _require(counterfactual_gradients["transition_scorer"] > 0.0, "counterfactual teacher did not train scorer")
+    _require(counterfactual_gradients["coarse_probe"] == 0.0, "counterfactual teacher leaked into coarse probe")
+    optimizer.zero_grad(set_to_none=True)
     scaler.scale(detector_only_loss).backward()
     scaler.unscale_(optimizer)
 
-    grid = selector_outputs["selector_outputs"]["grid"]
-    positions = grid.selected_positions[0]
+    positions = selector._last_selected_positions[0]
     selected_count = int(positions.numel())
     max_hole = _max_hole(positions, dense_window_size)
     gradients = {
@@ -244,10 +248,14 @@ def run_formal_gate(
     }
     _require(selected_count == budget, "selector did not emit exact K=384")
     _require(max_hole <= int(selector.max_unselected_hole), "selector violated the max-gap contract")
-    _require(gradients["transition_scorer"] > 0.0, "real detector losses did not train transition scorer")
+    _require(gradients["transition_scorer"] == 0.0, "detector loss leaked through removed direct bridge")
     _require(gradients["coarse_probe"] == 0.0, "real detector losses leaked into protected coarse probe")
     _require(gradients["backbone_adapter"] > 0.0, "real detector losses did not train VideoMAE adapters")
     _require(gradients["detector_head"] > 0.0, "real detector losses did not train ActionFormerHead")
+    alignment = dict(getattr(selector, "last_counterfactual_summary", {}))
+    _require(alignment.get("finite") is True, "counterfactual utility is non-finite")
+    _require(float(alignment.get("sign_agreement", 0.0)) > 0.0, "counterfactual sign alignment failed")
+    _require(float(alignment.get("spearman", -1.0)) > 0.0, "counterfactual Spearman alignment failed")
 
     return {
         "ok": True,
@@ -269,6 +277,8 @@ def run_formal_gate(
         "detector_only_loss_keys": ["cls_loss", "reg_loss"],
         "detector_only_loss": float(detector_only_loss.detach().float().cpu().item()),
         "detector_only_gradients": gradients,
+        "counterfactual_gradients": counterfactual_gradients,
+        "counterfactual_alignment": alignment,
         "optimizer_exact_coverage": True,
         "amp": True,
         "grad_scaler_enabled": True,
