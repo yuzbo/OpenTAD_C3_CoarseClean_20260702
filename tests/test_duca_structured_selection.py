@@ -96,6 +96,25 @@ def test_structured_local_coverage_respects_exact_k_dependence() -> None:
     assert probability.item() == pytest.approx(1.0)
 
 
+def test_structured_local_coverage_impossible_miss_has_finite_zero_gradient() -> None:
+    logits = torch.randn(2, 32, dtype=torch.float32, requires_grad=True)
+    unavoidable_event = torch.ones(2, 1, 32, dtype=torch.bool)
+
+    probability = structured_local_coverage_probability(
+        logits,
+        unavoidable_event,
+        k=16,
+        max_unselected_hole=15,
+        temperature=0.7,
+    )
+
+    assert torch.equal(probability, torch.ones_like(probability))
+    probability.sum().backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert torch.equal(logits.grad, torch.zeros_like(logits.grad))
+
+
 def test_structured_local_coverage_exhausts_small_state_spaces() -> None:
     for temporal_len in range(1, 7):
         logits = torch.linspace(-0.5, 0.7, temporal_len, dtype=torch.float64)[None, :]
