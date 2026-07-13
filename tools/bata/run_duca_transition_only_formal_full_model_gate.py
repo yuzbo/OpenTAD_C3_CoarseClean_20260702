@@ -301,6 +301,7 @@ def run_formal_gate(
     scaler = torch.cuda.amp.GradScaler(enabled=True)
     scale_before_backward = float(scaler.get_scale())
     optimizer.zero_grad(set_to_none=True)
+    torch.autograd.set_detect_anomaly(True, check_nan=True)
     normalizer_before = model.rpn_head.loss_normalizer.detach().clone()
     with torch.autocast(device_type="cuda", dtype=torch.float16):
         step_losses = model(
