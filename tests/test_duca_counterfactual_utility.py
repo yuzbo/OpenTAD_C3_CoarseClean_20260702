@@ -35,7 +35,9 @@ def test_finite_candidates_are_exact_k_unique_bounded_and_max_gap_feasible() -> 
 
 def test_zero_forward_bridge_fails_nonlinear_hard_swap_alignment_gate() -> None:
     logits = torch.tensor([[[2.0, 0.0, -1.0]]], requires_grad=True)
-    dense = torch.tensor([[[1.0, 2.0, 4.0]]])
+    # The local surrogate is attracted toward -2 although its hard squared
+    # detector loss is worse than the selected value 1.
+    dense = torch.tensor([[[1.0, -2.0, 4.0]]])
     hard = dense[:, :, :1]
     assignment = torch.softmax(logits, dim=-1)
     bridged = _add_structured_zero_forward_gradient_path(
