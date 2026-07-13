@@ -6,6 +6,7 @@ import pytest
 from tools.bata.run_phystime_g1a_real_gate import (
     SCHEMA_VERSION,
     _directory_inventory,
+    _state_dict_sha256,
     audit_dataset_timebases,
     validate_gate_report,
 )
@@ -15,6 +16,19 @@ SHA_A = "a" * 64
 SHA_B = "b" * 64
 SHA_C = "c" * 64
 GIT_SHA = "d" * 40
+
+
+def test_state_dict_hash_supports_scalar_integer_buffers():
+    import torch
+
+    module = torch.nn.Module()
+    module.register_buffer("step", torch.tensor(1, dtype=torch.long))
+    before = _state_dict_sha256(module)
+    module.step.add_(1)
+    after = _state_dict_sha256(module)
+
+    assert len(before) == 64
+    assert before != after
 
 
 def _step_reports():

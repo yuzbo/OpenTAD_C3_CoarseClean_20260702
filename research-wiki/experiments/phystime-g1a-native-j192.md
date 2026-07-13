@@ -48,6 +48,7 @@ added: 2026-07-13T00:00:00+08:00
 - 首个 clean snapshot commit `8e2b832` 的 gate `1161304` 正确 fail-closed，依赖 pilot `1161305/1161306` 未启动并已取消。失败发生在模型前：test 目录有 213 个 MP4，但 annotation 与正式 OpenTAD test `data_list` 只消费 211 个；原 gate 错把两个未引用文件也要求具有 annotation timebase。
 - 修复后 timebase 范围由正式 `build_dataset(...).data_list` 决定：实际审计 200 个 train 与 211 个 test 视频；`video_test_0000270`、`video_test_0001292` 作为未引用 inventory 显式登记并继续受完整目录 Merkle 指纹约束。任何被 dataset 消费但目录缺失的视频仍立即失败。
 - 修复后的真实目录范围 precheck 与远端 `116 passed` 已完成；新的 clean snapshot real gate 与 pilots 待重新提交。当前状态仍为 `tested`，不能把失败 gate 或 pending dependency 写成实验结果。
+- 范围修复 commit `e598bd7` 的第二次 gate `1161353` 已越过 timebase 范围，但在首个模型状态摘要处暴露远端 PyTorch 对 0 维 LongTensor 不允许跨元素大小 `view(torch.uint8)` 的兼容性错误；依赖 pilot `1161354/1161355` 未启动并取消。摘要现改为先展平再按字节 view，并加入 scalar integer buffer 回归测试；这仍是工程 gate 失败，不是方法结果。
 
 ## Connections
 

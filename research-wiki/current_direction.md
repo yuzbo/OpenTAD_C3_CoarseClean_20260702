@@ -43,7 +43,7 @@
 5. 只在 matched temporal-metric control 通过后，引入有显式 mass base path、bounded correction 和 physical query encoder 的 `idea:sm-ptaf`。
 6. `SM-PTAF` 当前状态仅为 `designed`；外部回复中的公式与代码片段不是实现证据，也不能把 tubelet 的 multi-atom anchor 直接表述为可加 feature measure。
 
-当前 G1a native-J192 matched control 已达到 `tested`：远端新旧回归 `116 passed`，并修复了物理中心原地写入污染候选 mask、test evaluator 数据集错配、弱数据指纹、不可重算 artifact 与 VideoMAE 尾部 padding 泄漏风险。对正式 dataset 消费的 411 个 THUMOS14 视频的预部署审计确认 decoder/annotation 最大相对 FPS 偏差约 1.12%、帧数完全一致；test 目录另有 2 个未被 annotation/data_list 消费的视频，已作为 inventory 显式登记。首个 clean gate `1161304` 因旧审计错误扫描这两个文件而 fail-closed，依赖 pilot 未启动；范围修复后远端仍为 `116 passed`，等待新快照重排。原始 AdaTAD 的 interpolation 不被永久禁止；它只能在 G1b 作为两臂共享、单独归因的 query-grid lift，不能重新解释为 K 个观测。
+当前 G1a native-J192 matched control 已达到 `tested`：远端新旧回归至少 `116 passed`，并修复了物理中心污染候选 mask、test evaluator 数据集错配、弱数据指纹、不可重算 artifact 与 VideoMAE 尾部 padding 泄漏。正式 dataset 消费 411 个 THUMOS14 视频；test 根目录另有 2 个未引用视频，已作为 inventory 显式登记。gate `1161304` 因旧审计范围失败；范围修复 commit `e598bd7` 的 gate `1161353` 随后在 0 维 LongTensor state 摘要的 byte-view 兼容性处失败，两轮依赖 pilot 均未启动。标量摘要修复和回归已加入，等待新 commit/snapshot 重排。原始 AdaTAD interpolation 不被永久禁止；它只能在 G1b 作为双臂共享、单独归因的 query-grid lift，不能重新解释为 K 个观测。
 
 ### Phase 2：结果门控后扩展
 

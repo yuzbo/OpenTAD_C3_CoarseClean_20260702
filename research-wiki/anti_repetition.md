@@ -42,6 +42,7 @@
 - 数据集 provenance 不能只哈希文件名与大小；必须使用完整文件内容摘要。checkpoint 不能只检查文件存在或字节非空；必须真实反序列化并从 manifest 独立重算 evaluator。
 - FPS 容差不能凭经验拍定或默认为零；先全量审计 decoder FPS、annotation duration 与 frame count，再把保守阈值写入 train/test 同一合同，并由正式 gate 重算。
 - 全量 timebase 审计的范围必须来自正式 dataset `data_list`，不能直接把数据根目录每个 MP4 都假设为 evaluator 样本；目录中的未引用文件必须显式披露并纳入完整 inventory 哈希，被 dataset 消费但缺失的文件则必须 fail-closed。
+- 模型 state-dict 摘要必须覆盖 0 维标量 buffer；不同元素大小的 dtype byte-view 前先 reshape 为一维，不能假设所有参数/缓冲区至少一维。
 
 ## 当前唯一主线
 

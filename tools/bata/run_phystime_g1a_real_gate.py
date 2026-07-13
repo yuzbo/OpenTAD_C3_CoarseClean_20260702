@@ -85,7 +85,7 @@ def _state_dict_sha256(model):
         digest.update(name.encode("utf-8"))
         digest.update(str(tensor.dtype).encode("utf-8"))
         digest.update(str(tuple(tensor.shape)).encode("utf-8"))
-        digest.update(tensor.view(torch.uint8).numpy().tobytes())
+        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
     return digest.hexdigest()
 
 
