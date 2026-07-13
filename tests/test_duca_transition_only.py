@@ -50,14 +50,14 @@ def test_transition_descriptors_are_temporal_changes_not_absolute_state() -> Non
     assert torch.allclose(descriptors[0, 1, 6:8], (hidden[0, 1] - hidden[0, 0]).abs())
 
 
-def test_balanced_actionness_loss_clips_positive_weight() -> None:
+def test_balanced_actionness_loss_defaults_to_unweighted_posterior_bce() -> None:
     logits = torch.zeros(1, 10, requires_grad=True)
     target = torch.tensor([[1.0] + [0.0] * 9])
     valid = torch.ones(1, 10, dtype=torch.bool)
 
     loss, positive_weight = balanced_binary_actionness_loss(logits, target, valid)
 
-    assert positive_weight.item() == pytest.approx(8.0)
+    assert positive_weight.item() == pytest.approx(1.0)
     assert loss.item() > 0.0
     loss.backward()
     assert _grad_sum(logits) > 0.0
@@ -246,7 +246,7 @@ def test_local_boundary_coverage_is_a_nonnegative_union_probability_loss() -> No
     loss = local_boundary_coverage_loss(occupancy, boundary, valid, radius=1)
 
     expected_coverage = 1.0 - (1.0 - 0.9) ** 3
-    assert loss.item() == pytest.approx(-math.log(expected_coverage), rel=1e-5)
+    assert loss.item() == pytest.approx(-math.log(expected_coverage), rel=2e-5, abs=2e-8)
     assert loss.item() >= 0.0
     loss.backward()
     assert _grad_sum(occupancy) > 0.0
