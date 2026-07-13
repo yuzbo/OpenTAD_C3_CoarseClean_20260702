@@ -320,15 +320,20 @@ def run_formal_gate(
 
     scaler.scale(step_loss).backward()
     scaler.unscale_(optimizer)
-    trainable_gradients = [
-        parameter.grad
-        for parameter in model.parameters()
+    named_trainable_gradients = [
+        (name, parameter.grad)
+        for name, parameter in model.named_parameters()
         if parameter.requires_grad and parameter.grad is not None
     ]
+    trainable_gradients = [gradient for _, gradient in named_trainable_gradients]
     _require(trainable_gradients, "formal optimizer step has no gradients")
+    nonfinite_gradient_names = [
+        name for name, gradient in named_trainable_gradients
+        if not bool(torch.isfinite(gradient).all().item())
+    ]
     _require(
-        all(bool(torch.isfinite(gradient).all().item()) for gradient in trainable_gradients),
-        "formal optimizer step has non-finite gradients",
+        not nonfinite_gradient_names,
+        "formal optimizer step has non-finite gradients: " + ", ".join(nonfinite_gradient_names[:20]),
     )
     representatives = _representative_parameters(model)
     parameters_before_step = {
