@@ -86,6 +86,12 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   These attempts restore RNG/model-buffer state and replay the same batch; they
   do not advance scheduler/EMA. Exhausting eight retries, losing successful
   update parity, or a non-finite raw loss remains fail-closed.
+- Status at `2026-07-15T23:03+08:00`: all nine jobs remain `RUNNING`.
+  Dense160 seeds have started epoch 2; dense224/256 seeds have started epoch 1.
+  Latest logged losses are `1.0760-1.1135`, down from the epoch-0 range of
+  approximately `1.43-1.50`. Each run has 2-3 recovered AMP retry attempts;
+  there is no Traceback, OOM, non-finite loss, deterministic warning, or FAIL.
+  Validation intentionally remains unopened until epoch 40.
 
 ## Decision Boundary
 

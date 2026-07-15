@@ -56,3 +56,6 @@ append_only: true
   同批次 RNG/model buffers 并重放，成功前不推进 scheduler/EMA；单次 `AMP skipped batch`
   日志不是丢失 optimizer update。八次重试耗尽、raw loss 非有限或 successful-update parity
   不满足才判失败，并在 checkpoint/evidence 中记录全部 attempts。
+- 2026-07-15 23:03+08:00：`1165669-1165677` 全部 RUNNING；dense160 已进入 epoch 2，
+  dense224/256 已进入 epoch 1。最新 loss `1.0760-1.1135`，各臂 2-3 次 AMP attempt 已恢复；
+  Traceback/OOM/non-finite/determinism/FAIL 计数均为 0。epoch 40 前无 validation mAP 是预注册行为。
