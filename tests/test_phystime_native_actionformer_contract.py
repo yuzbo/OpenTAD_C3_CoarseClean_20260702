@@ -136,7 +136,10 @@ def test_align_native_tubelet_geometry_rewrites_projection_metadata_to_j_axis():
     assert token_masks.tolist() == [[True, True]]
     assert geometry["timestamps_sec"].shape == (1, 2)
     assert geometry["timestamps_sec"][0].tolist() == pytest.approx([1.0, 2.5])
-    assert geometry["support_intervals_sec"][0].tolist() == pytest.approx([[0.0, 2.0], [2.0, 3.0]])
+    assert torch.allclose(
+        geometry["support_intervals_sec"][0],
+        torch.tensor([[0.0, 2.0], [2.0, 3.0]]),
+    )
     assert metas[0]["phystime_raw_timestamps_sec"] == pytest.approx([0.5, 1.5, 2.5])
 
 
