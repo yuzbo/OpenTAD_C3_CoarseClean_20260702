@@ -74,33 +74,15 @@ $BASE/raw/Validation Data/validation
 $BASE/raw/Test Data/TH14_test_set_mp4
 ```
 
-## 常用命令
+## GPU 任务
 
-GPU1 跑 temporal-TCN 粗分类探针：
-
-```bash
-cd /data/run01/sczc063/yuzibo/OpenTAD_C3_CoarseClean_20260702
-CUDA_VISIBLE_DEVICES=1 bash scripts/run_c3_tcn_coarse_probe_gpu1_20260701.sh
-```
-
-GPU1 跑官方动作分割模型粗分类探针：
+正式 GPU 任务统一交给 Slurm 分配，不固定物理索引，也不覆盖 Slurm 提供的
+`CUDA_VISIBLE_DEVICES`。单卡作业只在进程内使用逻辑设备 `cuda:0`，例如：
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 bash scripts/run_c3_official_action_seg_probe_gpu1_20260702.sh
+sbatch --partition=gpu --gres=gpu:1 \
+  --wrap='bash scripts/run_spatial_zoom_s1_precheck_slurm.sh'
 ```
 
-把 probe checkpoint 导出为 deployable value-transport ledger：
-
-```bash
-CUDA_VISIBLE_DEVICES=1 PROBE_CHECKPOINT=/path/to/probe_reader.pth \
-  EXPORT_SPLIT=val bash scripts/run_c3_lowres_probe_ledger_export_gpu1_20260702.sh
-```
-
-AdaTAD full-train 前置检查：
-
-```bash
-PRECHECK_ONLY=1 bash scripts/run_c3_asformer_delta_ledger_adatad_full_train_gpu1.sh
-```
-
-C3 主线优化默认使用物理 GPU1。GPU0 保留给发散创新实验，除非用户在同一轮明确覆盖。
-
+仓库中名称带 `gpu0`/`gpu1` 的脚本与相关命令属于历史实验协议，仅保留用于审计；
+再次运行前必须迁移为正常 Slurm 映射并重新通过对应门禁。
