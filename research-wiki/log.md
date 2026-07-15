@@ -52,3 +52,7 @@ append_only: true
 - 2026-07-15：正式 3x3 S1 matrix 已排队：`1165669-1165671`=dense160，
   `1165672-1165674`=dense224，`1165675-1165677`=dense256，各对应 seeds
   3407/3408/3409。状态提升到 `experiment_running`，sealed test/cost/GO-KILL 尚未完成。
+- 2026-07-15：九任务均开始 epoch 0，初始 loss 有限。若 GradScaler overflow，S1 会恢复
+  同批次 RNG/model buffers 并重放，成功前不推进 scheduler/EMA；单次 `AMP skipped batch`
+  日志不是丢失 optimizer update。八次重试耗尽、raw loss 非有限或 successful-update parity
+  不满足才判失败，并在 checkpoint/evidence 中记录全部 attempts。

@@ -82,6 +82,10 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   3407/3408/3409. They are queued/running under normal one-GPU Slurm allocation
   without a physical-GPU override. Sealed test, cost profile, final analysis,
   and GO/KILL remain incomplete.
+- Early epoch-0 logs contain finite losses and isolated AMP-overflow attempts.
+  These attempts restore RNG/model-buffer state and replay the same batch; they
+  do not advance scheduler/EMA. Exhausting eight retries, losing successful
+  update parity, or a non-finite raw loss remains fail-closed.
 
 ## Decision Boundary
 

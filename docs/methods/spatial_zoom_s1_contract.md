@@ -52,7 +52,10 @@ rule remain identical.
    allocation, one process, deterministic execution, a fresh canonical workdir, no
    resume, and no CLI config override.
 5. Train all resolutions with seeds `3407/3408/3409`, frozen fit/gate splits,
-   and equal successful optimizer updates. A skipped AMP update fails the run.
+   and equal successful optimizer updates. An AMP-overflow attempt restores the
+   same batch RNG/model-buffer state and retries without advancing the
+   scheduler or EMA; failure to obtain one successful update within eight
+   retries fails the run.
 6. Save raw gate predictions for every eligible checkpoint, then use the
    checkpoint selector to recompute `(mAP@0.6 + mAP@0.7) / 2` from those
    predictions. The maximum wins and exact ties use the earliest epoch.
