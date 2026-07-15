@@ -43,6 +43,7 @@ mkdir -p "${RUN_ROOT}/probes" "${RUN_ROOT}/work_dirs" "${RUN_ROOT}/logs"
 SHARED_PROTOCOL_SHA256="$(${PYTHON} -c "import json; print(json.load(open('${RUN_ROOT}/formal_protocol.json'))['shared_protocol_sha256'])")"
 PILOT_NONCE="${SLURM_JOB_ID}-${CURRENT_HEAD}-$(date +%s%N)"
 CANONICAL_ENV_FILE="${RUN_ROOT}/canonical_env.tsv"
+REFERENCE_CONFIG="${REPO_ROOT}/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py"
 duca_p0_canonical_env_payload > "${CANONICAL_ENV_FILE}"
 cat > "${RUN_ROOT}/manifest.json" <<EOF
 {
@@ -58,6 +59,8 @@ cat > "${RUN_ROOT}/manifest.json" <<EOF
   "checkpoint_sha256": "$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')",
   "official_asformer_source": "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py",
   "official_asformer_source_sha256": "$(sha256sum "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py" | awk '{print $1}')",
+  "reference_config_path": "${REFERENCE_CONFIG}",
+  "reference_config_sha256": "$(sha256sum "${REFERENCE_CONFIG}" | awk '{print $1}')",
   "canonical_env_path": "${CANONICAL_ENV_FILE}",
   "canonical_env_sha256": "$(sha256sum "${CANONICAL_ENV_FILE}" | awk '{print $1}')",
   "task": "offline_temporal_action_detection",

@@ -23,6 +23,9 @@ def _gate(tmp_path: Path) -> Path:
         "git_commit": suite._git(ROOT, "rev-parse", "HEAD"),
         "uniform_reference_definition": "round_linspace_endpoints",
         "uniform_reference_exact": True,
+        "checkpoint_sha256": "1" * 64,
+        "official_asformer_source_sha256": "2" * 64,
+        "reference_config_sha256": "3" * 64,
         "optimizer_step_ran": True,
         "optimizer_parameter_change_verified": True,
         "optimizer_changed_parameter_groups": ["detector_head"],
@@ -113,6 +116,11 @@ def test_suite_gate_rejects_handwritten_aggregate_without_raw_pilot_evidence(tmp
                 "git_commit": core_only["git_commit"],
                 "shared_protocol_sha256": core_only["shared_protocol_sha256"],
                 "core_gate_json_sha256": suite._sha256(gate),
+                "checkpoint_sha256": core_only["formal_core_gate"]["checkpoint_sha256"],
+                "official_asformer_source_sha256": core_only["formal_core_gate"][
+                    "official_asformer_source_sha256"
+                ],
+                "reference_config_sha256": core_only["formal_core_gate"]["reference_config_sha256"],
                 "variants": [
                     {"variant": name, "successful_optimizer_steps": 10}
                     for name in suite.VARIANT_ORDER
@@ -141,6 +149,9 @@ def test_suite_gate_binds_formal_gate_to_current_commit(tmp_path: Path) -> None:
                 "git_commit": commit,
                 "uniform_reference_definition": "round_linspace_endpoints",
                 "uniform_reference_exact": True,
+                "checkpoint_sha256": "1" * 64,
+                "official_asformer_source_sha256": "2" * 64,
+                "reference_config_sha256": "3" * 64,
                 "optimizer_step_ran": True,
                 "optimizer_parameter_change_verified": True,
                 "optimizer_changed_parameter_groups": ["detector_head"],

@@ -117,6 +117,11 @@ def test_formal_pilot_artifact_reopens_and_revalidates_raw_evidence(
     checkpoint.write_bytes(b"checkpoint")
     source.write_text("official", encoding="utf-8")
     canonical_env.write_text("KEY=VALUE\n", encoding="utf-8")
+    root = Path.cwd().resolve()
+    reference_config = (
+        root
+        / "configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py"
+    ).resolve()
     manifest_path = run_root / "manifest.json"
     manifest = {
         "schema_version": "duca_p0_ddp_pilot_run_v1",
@@ -132,13 +137,14 @@ def test_formal_pilot_artifact_reopens_and_revalidates_raw_evidence(
         "official_asformer_source_sha256": pilot._sha256(source),
         "canonical_env_path": str(canonical_env.resolve()),
         "canonical_env_sha256": pilot._sha256(canonical_env),
+        "reference_config_path": str(reference_config),
+        "reference_config_sha256": pilot._sha256(reference_config),
     }
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     manifest_sha = pilot._sha256(manifest_path)
     monkeypatch.setattr(pilot, "_resolved_pilot_config_sha256", lambda context: "d" * 64)
 
     variants = []
-    root = Path.cwd().resolve()
     for variant in VARIANT_ORDER:
         config_path = (root / PILOT_CONFIGS[variant]).resolve()
         probe_path = (probes / f"{variant}.training_probe.json").resolve()
@@ -202,6 +208,9 @@ def test_formal_pilot_artifact_reopens_and_revalidates_raw_evidence(
                 "pilot_nonce": manifest["pilot_nonce"],
                 "shared_protocol_sha256": manifest["shared_protocol_sha256"],
                 "core_gate_json_sha256": manifest["core_gate_json_sha256"],
+                "checkpoint_sha256": manifest["checkpoint_sha256"],
+                "official_asformer_source_sha256": manifest["official_asformer_source_sha256"],
+                "reference_config_sha256": manifest["reference_config_sha256"],
                 "run_manifest_path": str(manifest_path.resolve()),
                 "run_manifest_sha256": manifest_sha,
                 "variants": variants,
@@ -215,6 +224,9 @@ def test_formal_pilot_artifact_reopens_and_revalidates_raw_evidence(
         expected_commit=manifest["git_commit"],
         expected_protocol_sha256=manifest["shared_protocol_sha256"],
         expected_core_gate_sha256=manifest["core_gate_json_sha256"],
+        expected_checkpoint_sha256=manifest["checkpoint_sha256"],
+        expected_official_asformer_source_sha256=manifest["official_asformer_source_sha256"],
+        expected_reference_config_sha256=manifest["reference_config_sha256"],
     )
     assert verified["seed"] == 0
     assert [item["variant"] for item in verified["variants"]] == list(VARIANT_ORDER)
@@ -230,4 +242,7 @@ def test_formal_pilot_artifact_reopens_and_revalidates_raw_evidence(
             expected_commit=manifest["git_commit"],
             expected_protocol_sha256=manifest["shared_protocol_sha256"],
             expected_core_gate_sha256=manifest["core_gate_json_sha256"],
+            expected_checkpoint_sha256=manifest["checkpoint_sha256"],
+            expected_official_asformer_source_sha256=manifest["official_asformer_source_sha256"],
+            expected_reference_config_sha256=manifest["reference_config_sha256"],
         )

@@ -255,10 +255,23 @@ def validate_suite(
             "formal core gate did not use endpoint linspace uniform reference",
         )
         _require(gate_payload.get("uniform_reference_exact") is True, "formal core gate did not verify exact uniform")
+        for hash_key in (
+            "checkpoint_sha256",
+            "official_asformer_source_sha256",
+            "reference_config_sha256",
+        ):
+            value = gate_payload.get(hash_key)
+            _require(
+                isinstance(value, str) and len(value) == 64,
+                f"formal core gate is missing {hash_key}",
+            )
         core_gate = {
             "path": str(gate_path),
             "sha256": _sha256(gate_path),
             "git_commit": gate_payload["git_commit"],
+            "checkpoint_sha256": gate_payload["checkpoint_sha256"],
+            "official_asformer_source_sha256": gate_payload["official_asformer_source_sha256"],
+            "reference_config_sha256": gate_payload["reference_config_sha256"],
         }
 
     configs = {name: Config.fromfile(str(root / CONFIGS[name])) for name in VARIANT_ORDER}
@@ -322,6 +335,9 @@ def validate_suite(
             expected_commit=commit,
             expected_protocol_sha256=protocol_sha256,
             expected_core_gate_sha256=core_gate["sha256"],
+            expected_checkpoint_sha256=core_gate["checkpoint_sha256"],
+            expected_official_asformer_source_sha256=core_gate["official_asformer_source_sha256"],
+            expected_reference_config_sha256=core_gate["reference_config_sha256"],
         )
         _require(ddp_pilot["seed"] == int(seed), "DDP pilot seed differs from formal suite")
         for bindings in variant_bindings.values():

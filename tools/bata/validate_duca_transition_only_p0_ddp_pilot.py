@@ -90,6 +90,7 @@ def _validate_run_manifest_files(manifest: dict[str, Any]) -> None:
         ("checkpoint_path", "checkpoint_sha256", "AdaTAD checkpoint"),
         ("official_asformer_source", "official_asformer_source_sha256", "official ASFormer source"),
         ("canonical_env_path", "canonical_env_sha256", "canonical environment"),
+        ("reference_config_path", "reference_config_sha256", "formal reference config"),
     ):
         path = Path(str(manifest.get(path_key, ""))).resolve()
         _require(path.is_file(), f"{label} is missing: {path}")
@@ -240,6 +241,9 @@ def validate_pilot_artifact(
     expected_commit: str,
     expected_protocol_sha256: str,
     expected_core_gate_sha256: str,
+    expected_checkpoint_sha256: str,
+    expected_official_asformer_source_sha256: str,
+    expected_reference_config_sha256: str,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     artifact_path, artifact = _load_json(path, "DDP pilot artifact")
@@ -254,12 +258,30 @@ def validate_pilot_artifact(
         artifact.get("core_gate_json_sha256") == expected_core_gate_sha256,
         "DDP pilot core-gate binding is stale",
     )
+    _require(artifact.get("checkpoint_sha256") == expected_checkpoint_sha256, "DDP pilot checkpoint binding is stale")
+    _require(
+        artifact.get("official_asformer_source_sha256") == expected_official_asformer_source_sha256,
+        "DDP pilot ASFormer source binding is stale",
+    )
+    _require(
+        artifact.get("reference_config_sha256") == expected_reference_config_sha256,
+        "DDP pilot reference config binding is stale",
+    )
     manifest_path, manifest = _load_json(artifact.get("run_manifest_path", ""), "DDP pilot run manifest")
     _require(artifact.get("run_manifest_sha256") == _sha256(manifest_path), "DDP pilot run-manifest hash mismatch")
     _require(manifest.get("schema_version") == "duca_p0_ddp_pilot_run_v1", "DDP pilot run-manifest schema mismatch")
     _require(manifest.get("git_commit") == expected_commit, "DDP pilot run-manifest commit mismatch")
     _require(manifest.get("shared_protocol_sha256") == expected_protocol_sha256, "DDP pilot run-manifest protocol mismatch")
     _require(manifest.get("core_gate_json_sha256") == expected_core_gate_sha256, "DDP pilot run-manifest core gate mismatch")
+    _require(manifest.get("checkpoint_sha256") == expected_checkpoint_sha256, "DDP pilot checkpoint differs from core gate")
+    _require(
+        manifest.get("official_asformer_source_sha256") == expected_official_asformer_source_sha256,
+        "DDP pilot ASFormer source differs from core gate",
+    )
+    _require(
+        manifest.get("reference_config_sha256") == expected_reference_config_sha256,
+        "DDP pilot reference config differs from core gate",
+    )
     _require(str(manifest.get("slurm_job_id", "")).isdigit(), "DDP pilot lacks a Slurm job identity")
     _require(bool(manifest.get("pilot_nonce")), "DDP pilot nonce is missing")
     _validate_run_manifest_files(manifest)
@@ -278,6 +300,14 @@ def validate_pilot_artifact(
         _require(item.get("pilot_config_sha256") == _sha256(config_path), f"{variant}: pilot config hash mismatch")
         probe_path, probe = _load_json(item.get("probe_json", ""), f"{variant} training probe")
         context_path, context = _load_json(item.get("context_json", ""), f"{variant} pilot context")
+        _require(
+            Path(str(context.get("source_config_path", ""))).resolve() == config_path,
+            f"{variant}: raw probe did not use the canonical pilot config",
+        )
+        _require(
+            context.get("source_config_sha256") == item.get("pilot_config_sha256"),
+            f"{variant}: raw probe pilot config hash mismatch",
+        )
         _require(probe_path.parent == run_root / "probes", f"{variant}: probe escaped the run root")
         _require(context_path.parent == run_root / "probes", f"{variant}: context escaped the run root")
         _require(item.get("probe_json_sha256") == _sha256(probe_path), f"{variant}: probe hash mismatch")
@@ -347,6 +377,16 @@ def validate_pilot_suite(
         manifest.get("shared_protocol_sha256") == formal_suite["shared_protocol_sha256"],
         "run manifest shared-protocol hash mismatch",
     )
+    formal_gate = formal_suite["formal_core_gate"]
+    _require(manifest.get("checkpoint_sha256") == formal_gate["checkpoint_sha256"], "pilot checkpoint differs from core gate")
+    _require(
+        manifest.get("official_asformer_source_sha256") == formal_gate["official_asformer_source_sha256"],
+        "pilot ASFormer source differs from core gate",
+    )
+    _require(
+        manifest.get("reference_config_sha256") == formal_gate["reference_config_sha256"],
+        "pilot reference config differs from core gate",
+    )
     variants = []
     for variant in VARIANT_ORDER:
         pilot_config_path = root / PILOT_CONFIGS[variant]
@@ -397,6 +437,9 @@ def validate_pilot_suite(
         "shared_protocol_sha256": formal_suite["shared_protocol_sha256"],
         "core_gate_json": str(gate_path),
         "core_gate_json_sha256": _sha256(gate_path),
+        "checkpoint_sha256": manifest["checkpoint_sha256"],
+        "official_asformer_source_sha256": manifest["official_asformer_source_sha256"],
+        "reference_config_sha256": manifest["reference_config_sha256"],
         "run_manifest_path": str(manifest_path),
         "run_manifest_sha256": _sha256(manifest_path),
         "expected_steps_per_variant": EXPECTED_STEPS,
@@ -435,6 +478,9 @@ def main() -> None:
         expected_commit=payload["git_commit"],
         expected_protocol_sha256=payload["shared_protocol_sha256"],
         expected_core_gate_sha256=payload["core_gate_json_sha256"],
+        expected_checkpoint_sha256=payload["checkpoint_sha256"],
+        expected_official_asformer_source_sha256=payload["official_asformer_source_sha256"],
+        expected_reference_config_sha256=payload["reference_config_sha256"],
     )
     print(json.dumps(payload, indent=2, sort_keys=True))
 
