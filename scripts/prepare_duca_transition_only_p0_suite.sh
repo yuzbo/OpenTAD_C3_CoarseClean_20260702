@@ -12,6 +12,17 @@ cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 SEED="${SEED:-0}"
+export YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
+export C3_OFFICIAL_ACTION_SEG_REPOS="${C3_OFFICIAL_ACTION_SEG_REPOS:-${BASE}/projects/external_official_action_segmentation_repos_20260702}"
+export DUCA_ONLINE_BUDGET=384
+export DUCA_OFFICIAL_ADATAD_BUDGET=384
+export DUCA_ONLINE_DENSE_WINDOW_SIZE=768
+export DUCA_VALIDATOR_MAX_BUDGET=384
+export DUCA_BUDGET_CURVE_MODE=0
+export DUCA_OFFICIAL_ADATAD_END_EPOCH=132
+export DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH=100
+export DUCA_LOSS_SCHEDULE_TOTAL_STEPS=13200
+export DUCA_PROFILE_RUNTIME=0
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current HEAD"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
 RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_p0_matched_${CURRENT_HEAD:0:7}_seed${SEED}}"

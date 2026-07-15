@@ -19,6 +19,7 @@ PATHS = {
     "transition_counterfactual": ROOT + "duca_transition_only_fixed384_official_adatad_backend_full_train.py",
 }
 LAUNCHER = Path("scripts/run_duca_transition_only_p0_variant_gpu1.sh")
+PREPARER = Path("scripts/prepare_duca_transition_only_p0_suite.sh")
 
 
 def _plain(value):
@@ -215,3 +216,23 @@ def test_p0_launcher_uses_commit_bound_core_gate_and_auditable_manifest() -> Non
     assert text.index("git status --porcelain --untracked-files=normal") < text.index('cat > "${RUN_DIR}/manifest.json"')
     for field in ("config_sha256", "source_sha256", "checkpoint_sha256"):
         assert f'"{field}"' in text
+
+
+def test_p0_preparer_and_runtime_share_canonical_config_environment() -> None:
+    prepare = PREPARER.read_text(encoding="utf-8")
+    runtime = LAUNCHER.read_text(encoding="utf-8")
+    for name in (
+        "YUZIBO_ROOT",
+        "C3_OFFICIAL_ACTION_SEG_REPOS",
+        "DUCA_ONLINE_BUDGET",
+        "DUCA_OFFICIAL_ADATAD_BUDGET",
+        "DUCA_ONLINE_DENSE_WINDOW_SIZE",
+        "DUCA_VALIDATOR_MAX_BUDGET",
+        "DUCA_BUDGET_CURVE_MODE",
+        "DUCA_OFFICIAL_ADATAD_END_EPOCH",
+        "DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH",
+        "DUCA_LOSS_SCHEDULE_TOTAL_STEPS",
+        "DUCA_PROFILE_RUNTIME",
+    ):
+        assert f"export {name}" in prepare
+        assert f"export {name}" in runtime
