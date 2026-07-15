@@ -25,7 +25,7 @@ from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
 )
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
     require_clean_git_checkout,
-    require_gpu1_allocation,
+    require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
 )
@@ -44,7 +44,7 @@ def run_profile_preflight(
     binding = validate_bound_s1_training_config(cfg, seed=int(seed))
     if not binding["formal_precheck_verified"]:
         raise RuntimeError("S1 profile preflight requires a full-precheck binding")
-    require_gpu1_allocation()
+    physical_gpu_id = require_slurm_single_gpu_allocation()
     require_clean_git_checkout(expected_commit=binding["code_commit"])
 
     import torch
@@ -54,7 +54,7 @@ def run_profile_preflight(
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
     hardware_fingerprint = canonical_sha256(
-        _hardware_identity(torch, device, physical_gpu_id="1")
+        _hardware_identity(torch, device, physical_gpu_id=physical_gpu_id)
     )
     software_fingerprint = canonical_sha256(_software_identity(torch))
 

@@ -80,12 +80,12 @@ def main():
             S1_CHECKPOINT_SIDECAR_SCHEMA,
             build_s1_checkpoint_metadata,
             require_clean_git_checkout,
-            require_gpu1_allocation,
+            require_slurm_single_gpu_allocation,
             validate_bound_s1_training_config,
         )
 
         s1_checkpoint_sidecar_schema = S1_CHECKPOINT_SIDECAR_SCHEMA
-        require_gpu1_allocation()
+        require_slurm_single_gpu_allocation()
         s1_binding = validate_bound_s1_training_config(cfg, seed=args.seed)
         if not s1_binding["formal_precheck_verified"]:
             raise RuntimeError(
@@ -110,9 +110,7 @@ def main():
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
     if s1_binding is not None and args.world_size != 1:
-        raise RuntimeError(
-            "formal S1 training is frozen to one process on physical GPU1"
-        )
+        raise RuntimeError("formal S1 training is frozen to one Slurm GPU process")
     print(
         f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
     )

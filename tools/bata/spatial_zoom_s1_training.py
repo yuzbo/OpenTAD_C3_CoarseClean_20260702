@@ -412,12 +412,31 @@ def validate_s1_checkpoint_sidecar(
     return sidecar
 
 
-def require_gpu1_allocation() -> None:
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").replace(" ", "")
-    if visible != "1":
-        raise RuntimeError("formal S1 execution requires CUDA_VISIBLE_DEVICES=1")
+def require_slurm_single_gpu_allocation() -> str:
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("formal S1 execution requires an allocated Slurm job")
+    visible = [
+        value.strip()
+        for value in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+        if value.strip()
+    ]
+    if len(visible) != 1:
+        raise RuntimeError(
+            "formal S1 execution requires exactly one Slurm-visible CUDA device"
+        )
+    gpu_count = os.environ.get("SLURM_GPUS_ON_NODE", "").strip()
+    if gpu_count and gpu_count != "1":
+        raise RuntimeError("formal S1 execution requires a one-GPU Slurm allocation")
+    physical_ids = [
+        value.strip()
+        for value in os.environ.get("SLURM_JOB_GPUS", "").split(",")
+        if value.strip()
+    ]
+    if len(physical_ids) != 1:
+        raise RuntimeError(
+            "formal S1 execution requires one auditable SLURM_JOB_GPUS identity"
+        )
+    return physical_ids[0]
 
 
 __all__ = [
@@ -432,7 +451,7 @@ __all__ = [
     "checkpoint_sidecar_path",
     "current_git_commit",
     "eligible_s1_eval_epochs",
-    "require_gpu1_allocation",
+    "require_slurm_single_gpu_allocation",
     "require_clean_git_checkout",
     "resolve_s1_formal_experiment_identity",
     "validate_bound_s1_training_config",

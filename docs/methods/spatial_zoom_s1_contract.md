@@ -29,23 +29,25 @@ rule remain identical.
 - Test-open certificate: `tools/bata/build_spatial_zoom_s1_test_open_certificate.py`
 - Evidence binder: `tools/bata/build_spatial_zoom_s1_run_descriptor.py`
 - Result gate: `tools/bata/analyze_spatial_zoom_s1_results.py`
-- GPU1 launchers: `scripts/run_spatial_zoom_s1_precheck_gpu1.sh`,
-  `scripts/run_spatial_zoom_s1_train_gpu1.sh`, and
-  `scripts/run_spatial_zoom_s1_test_profile_gpu1.sh`
+- Slurm launchers: `scripts/run_spatial_zoom_s1_precheck_slurm.sh`,
+  `scripts/run_spatial_zoom_s1_train_slurm.sh`, and
+  `scripts/run_spatial_zoom_s1_test_profile_slurm.sh`
 - Tests: `tests/test_spatial_zoom_s1_infrastructure.py`
 
 ## Required Order
 
 1. Freeze the manifest before observing candidate results.
 2. Run the strict config validator.
-3. Run `--mode full` on GPU1 for all resolutions. The self-hashed certificate
+3. Run `--mode full` in a normal one-GPU Slurm allocation for all resolutions.
+   Preserve Slurm's `CUDA_VISIBLE_DEVICES` mapping and use logical `cuda:0`.
+   The self-hashed certificate
    must match a preregistered pretrained-checkpoint SHA, prove exact loading of
    every non-adapter VideoMAE core parameter, prove the exact interpolation
    call sequence, detector shape, CUDA memory, clean Git commit, and exact
    3-config matrix. Static/clip mode does not unlock training.
 4. Materialize each training config from the manifest and full-precheck
-   certificate. Formal training requires a clean checkout, physical GPU1,
-   Slurm, one process, deterministic execution, a fresh canonical workdir, no
+   certificate. Formal training requires a clean checkout, a one-GPU Slurm
+   allocation, one process, deterministic execution, a fresh canonical workdir, no
    resume, and no CLI config override.
 5. Train all resolutions with seeds `3407/3408/3409`, frozen fit/gate splits,
    and equal successful optimizer updates. A skipped AMP update fails the run.

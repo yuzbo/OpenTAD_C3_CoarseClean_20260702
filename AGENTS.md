@@ -39,7 +39,7 @@ module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 ```
 
-C3 主线优化默认使用物理 GPU1；GPU1 子启动器必须在 `CUDA_VISIBLE_DEVICES=1` 时才继续。不要在登录节点直接训练。
+远端 GPU 任务必须由 Slurm 分配。不得固定物理 GPU 索引，也不得覆盖 Slurm 提供的 `CUDA_VISIBLE_DEVICES`；单卡任务在进程内使用 `cuda:0`。不要在登录节点直接训练。
 
 ## Verification
 

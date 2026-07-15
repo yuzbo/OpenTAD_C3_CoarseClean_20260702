@@ -13,17 +13,20 @@ MODE="${SPATIAL_ZOOM_S1_PRECHECK_MODE:-full}"
 DEVICE="${SPATIAL_ZOOM_S1_DEVICE:-cuda:0}"
 EXPECTED_PRETRAIN_SHA256="${SPATIAL_ZOOM_S1_PRETRAIN_SHA256:-}"
 FROZEN_PRETRAIN_SHA256="4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-export CUDA_VISIBLE_DEVICES PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE=1
 
 case "${OUT_ROOT}" in
   /data/run01/sczc063/yuzibo|/data/run01/sczc063/yuzibo/*) ;;
   *) fail "output must stay under /data/run01/sczc063/yuzibo" ;;
 esac
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "CUDA_VISIBLE_DEVICES must be exactly 1 (physical GPU1)"
 [[ "${MODE}" == "static" || "${MODE}" == "clip" || "${MODE}" == "full" ]] || fail "unknown precheck mode ${MODE}"
-if [[ "${MODE}" != "static" && -z "${SLURM_JOB_ID:-}" ]]; then
-  fail "clip/full CUDA precheck requires a Slurm allocation"
+if [[ "${MODE}" != "static" ]]; then
+  [[ -n "${SLURM_JOB_ID:-}" ]] || fail "clip/full CUDA precheck requires a Slurm allocation"
+  [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
+    fail "clip/full CUDA precheck requires exactly one Slurm-visible GPU"
+  [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
+  [[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
+    fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
 fi
 if [[ "${MODE}" == "full" && ! "${EXPECTED_PRETRAIN_SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
   fail "full precheck requires preregistered SPATIAL_ZOOM_S1_PRETRAIN_SHA256"

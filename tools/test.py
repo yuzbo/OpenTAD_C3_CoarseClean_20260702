@@ -87,13 +87,13 @@ def main():
         from tools.bata.spatial_zoom_s1_contract import canonical_sha256
         from tools.bata.spatial_zoom_s1_evidence import S1_TEST_OPEN_MARKER_SCHEMA
         from tools.bata.spatial_zoom_s1_training import (
-            require_gpu1_allocation,
             require_clean_git_checkout,
+            require_slurm_single_gpu_allocation,
             validate_bound_s1_training_config,
             validate_s1_checkpoint_sidecar,
         )
 
-        require_gpu1_allocation()
+        require_slurm_single_gpu_allocation()
         s1_bound_cfg = Config.fromfile(args.config)
         if args.cfg_options is not None:
             s1_bound_cfg.merge_from_dict(args.cfg_options)
@@ -135,7 +135,7 @@ def main():
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
     if s1_binding is not None and args.world_size != 1:
-        raise RuntimeError("formal S1 test is frozen to one process on physical GPU1")
+        raise RuntimeError("formal S1 test is frozen to one Slurm GPU process")
     print(
         f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
     )

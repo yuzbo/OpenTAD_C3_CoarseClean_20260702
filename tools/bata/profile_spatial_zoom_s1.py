@@ -45,7 +45,7 @@ from tools.bata.spatial_zoom_s1_evidence import (  # noqa: E402
 )
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
     require_clean_git_checkout,
-    require_gpu1_allocation,
+    require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
 )
@@ -553,7 +553,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     )
     matrix = validate_config_matrix()
     cfg = Config.fromfile(str(args.config))
-    require_gpu1_allocation()
+    physical_gpu_id = require_slurm_single_gpu_allocation()
     binding = validate_bound_s1_training_config(cfg, seed=int(args.seed))
     if not binding["formal_precheck_verified"]:
         raise RuntimeError(
@@ -570,11 +570,11 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(f"formal S1 profile output prefix must be {canonical_prefix}")
     device = torch.device(args.device)
     if str(device) != "cuda:0":
+        raise ValueError("formal S1 profiler requires the Slurm-local cuda:0 device")
+    if str(args.power_gpu_id) != physical_gpu_id:
         raise ValueError(
-            "formal S1 profiler requires cuda:0 inside CUDA_VISIBLE_DEVICES=1"
+            "formal S1 power sampling must target the allocated SLURM_JOB_GPUS identity"
         )
-    if str(args.power_gpu_id) != "1":
-        raise ValueError("formal S1 power sampling must target physical GPU1")
     torch.cuda.set_device(device)
     set_seed(int(args.seed))
     hardware_identity = _hardware_identity(
@@ -939,7 +939,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--use-ema", action="store_true")
     parser.add_argument("--sample-power", action="store_true")
-    parser.add_argument("--power-gpu-id", default="1")
+    parser.add_argument("--power-gpu-id", default="")
     parser.add_argument("--power-interval-ms", type=int, default=20)
     parser.add_argument("--compare-baseline", type=Path)
     return parser

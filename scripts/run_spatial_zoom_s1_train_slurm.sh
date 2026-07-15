@@ -14,8 +14,7 @@ ANNOTATION="${SPATIAL_ZOOM_S1_ANNOTATION:?set SPATIAL_ZOOM_S1_ANNOTATION}"
 PRECHECK="${SPATIAL_ZOOM_S1_PRECHECK:?set SPATIAL_ZOOM_S1_PRECHECK}"
 RESOLUTION="${SPATIAL_ZOOM_S1_RESOLUTION:?set SPATIAL_ZOOM_S1_RESOLUTION}"
 SEED="${SPATIAL_ZOOM_S1_SEED:?set SPATIAL_ZOOM_S1_SEED}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-export CUDA_VISIBLE_DEVICES PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE=1
 
 case "${RUN_ROOT}" in
   /data/run01/sczc063/yuzibo|/data/run01/sczc063/yuzibo/*) ;;
@@ -29,8 +28,12 @@ case "${SEED}" in
   3407|3408|3409) ;;
   *) fail "seed must be one of 3407/3408/3409" ;;
 esac
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "CUDA_VISIBLE_DEVICES must be physical GPU1"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal S1 training requires a Slurm allocation"
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
+  fail "formal S1 training requires exactly one Slurm-visible GPU"
+[[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
+[[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
+  fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
 [[ -f "${MANIFEST}" ]] || fail "manifest does not exist: ${MANIFEST}"
 [[ -f "${ANNOTATION}" ]] || fail "annotation does not exist: ${ANNOTATION}"
 [[ -f "${PRECHECK}" ]] || fail "full precheck certificate does not exist: ${PRECHECK}"

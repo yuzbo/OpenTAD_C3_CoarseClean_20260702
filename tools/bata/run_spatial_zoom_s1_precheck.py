@@ -4,6 +4,7 @@ import argparse
 import copy
 import importlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -26,7 +27,7 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     sha256_file,
 )
 
-S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v3"
+S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v4"
 
 
 def _register_opentad_runtime_modules() -> None:
@@ -436,10 +437,11 @@ def run_precheck(
     from tools.bata.spatial_zoom_s1_training import current_git_commit
 
     code_commit = current_git_commit()
+    slurm_allocation = None
     if mode == "full":
         from tools.bata.spatial_zoom_s1_training import (
             require_clean_git_checkout,
-            require_gpu1_allocation,
+            require_slurm_single_gpu_allocation,
         )
 
         expected_paths = {
@@ -452,14 +454,21 @@ def run_precheck(
             )
         if str(device) != "cuda:0" or not amp:
             raise ValueError(
-                "formal S1 full precheck requires cuda:0 inside GPU1 allocation with AMP"
+                "formal S1 full precheck requires cuda:0 inside a single-GPU Slurm allocation with AMP"
             )
         expected_pretrained_sha256 = str(expected_pretrained_sha256 or "").lower()
         if expected_pretrained_sha256 != S1_PRETRAINED_CHECKPOINT_SHA256:
             raise ValueError(
                 "formal S1 full precheck expected pretrained SHA-256 must equal the frozen contract"
             )
-        require_gpu1_allocation()
+        physical_gpu_id = require_slurm_single_gpu_allocation()
+        slurm_allocation = {
+            "job_id": os.environ["SLURM_JOB_ID"],
+            "physical_gpu_id": physical_gpu_id,
+            "cuda_visible_devices": os.environ["CUDA_VISIBLE_DEVICES"],
+            "gpus_on_node": os.environ.get("SLURM_GPUS_ON_NODE"),
+            "logical_device": "cuda:0",
+        }
         require_clean_git_checkout(expected_commit=code_commit)
     rows = []
     for path in config_paths:
@@ -488,6 +497,7 @@ def run_precheck(
         "expected_pretrained_checkpoint_sha256": expected_pretrained_sha256
         if mode == "full"
         else None,
+        "slurm_allocation": slurm_allocation,
         "rows": rows,
         "formal_training_ready": mode == "full" and len(rows) == 3,
         "paper_result": False,
@@ -602,6 +612,19 @@ def validate_precheck_certificate(
         or checked.get("formal_training_ready") is not True
     ):
         raise ValueError("S1 full precheck execution contract mismatch")
+    if require_full:
+        allocation = checked.get("slurm_allocation")
+        if (
+            not isinstance(allocation, dict)
+            or not allocation.get("job_id")
+            or not allocation.get("physical_gpu_id")
+            or "," in str(allocation.get("physical_gpu_id"))
+            or not allocation.get("cuda_visible_devices")
+            or "," in str(allocation.get("cuda_visible_devices"))
+            or str(allocation.get("gpus_on_node")) != "1"
+            or allocation.get("logical_device") != "cuda:0"
+        ):
+            raise ValueError("S1 full precheck Slurm allocation evidence is invalid")
     return checked
 
 

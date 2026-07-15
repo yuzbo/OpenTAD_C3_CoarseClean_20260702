@@ -67,6 +67,7 @@ from tools.bata.spatial_zoom_s1_training import (
     build_s1_experiment_identity,
     build_s1_checkpoint_metadata,
     checkpoint_sidecar_path,
+    require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
 )
@@ -217,6 +218,18 @@ def test_formal_precheck_registers_model_pipeline_transforms(monkeypatch) -> Non
     )
     _register_opentad_runtime_modules()
     assert imported == ["opentad.datasets", "opentad.models.backbones"]
+
+
+def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setenv("SLURM_GPUS_ON_NODE", "1")
+    monkeypatch.setenv("SLURM_JOB_GPUS", "6")
+    assert require_slurm_single_gpu_allocation() == "6"
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    with pytest.raises(RuntimeError, match="exactly one Slurm-visible"):
+        require_slurm_single_gpu_allocation()
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:

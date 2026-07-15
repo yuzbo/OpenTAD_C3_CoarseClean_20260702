@@ -14,8 +14,7 @@ ANNOTATION="${SPATIAL_ZOOM_S1_ANNOTATION:?set SPATIAL_ZOOM_S1_ANNOTATION}"
 TEST_OPEN="${SPATIAL_ZOOM_S1_TEST_OPEN:?set SPATIAL_ZOOM_S1_TEST_OPEN}"
 RESOLUTION="${SPATIAL_ZOOM_S1_RESOLUTION:?set SPATIAL_ZOOM_S1_RESOLUTION}"
 SEED="${SPATIAL_ZOOM_S1_SEED:?set SPATIAL_ZOOM_S1_SEED}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-export CUDA_VISIBLE_DEVICES PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE=1
 
 case "${RUN_ROOT}" in
   /data/run01/sczc063/yuzibo|/data/run01/sczc063/yuzibo/*) ;;
@@ -29,8 +28,12 @@ case "${SEED}" in
   3407|3408|3409) ;;
   *) fail "seed must be one of 3407/3408/3409" ;;
 esac
-[[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] || fail "CUDA_VISIBLE_DEVICES must be physical GPU1"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal S1 test/profile requires a Slurm allocation"
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
+  fail "formal S1 test/profile requires exactly one Slurm-visible GPU"
+[[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
+[[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
+  fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
 
 WORK_DIR="${RUN_ROOT}/dense${RESOLUTION}/seed${SEED}"
 BOUND_CONFIG="${RUN_ROOT}/control/dense${RESOLUTION}_seed${SEED}.py"
@@ -86,7 +89,7 @@ torchrun --standalone --nproc_per_node=1 tools/bata/profile_spatial_zoom_s1.py \
   --amp \
   --use-ema \
   --sample-power \
-  --power-gpu-id 1 \
+  --power-gpu-id "${SLURM_JOB_GPUS}" \
   --power-interval-ms 20
 
 PROFILE="${PROFILE_PREFIX}.summary.json"

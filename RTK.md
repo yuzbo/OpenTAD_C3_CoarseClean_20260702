@@ -23,7 +23,7 @@
 - `opentad/` OpenTAD 主库与当前 C3 接入代码；
 - `configs/` 中当前 C3 路线所需配置与最小 base config；
 - `tools/bata/` 中当前 coarse probe、model matrix、ledger conversion、validator；
-- `scripts/` 中当前 N16R4 GPU1 启动器/ watcher；
+- `scripts/` 中当前 N16R4 Slurm GPU 启动器/ watcher；
 - focused `tests/`；
 - `research-wiki/` 当前研究记忆；
 - `README.md`、`AGENTS.md`、本 `RTK.md`。
@@ -38,7 +38,8 @@
 - 不允许 validation/test teacher leakage。
 - 不允许 hidden raw-prediction cache shortcut。
 - ledger 若用于 deployable selection，必须记录 no-GT/no-teacher/no-oracle/no-raw-prediction/no-checkpoint flags。
-- C3 主线优化默认使用物理 GPU1；GPU0 保留给发散创新实验，除非用户同轮明确覆盖。
+- GPU 任务必须使用 Slurm 正常分配的设备；不得固定物理索引或覆盖 Slurm 的 `CUDA_VISIBLE_DEVICES`。单卡任务在进程内使用 `cuda:0`。
+- 历史文件名中残留的 `gpu0`/`gpu1` 只代表旧协议，不得直接复用；再次运行前必须改成正常 Slurm 映射并重新门禁。
 - 不在 N16R4 登录节点直接训练；正式训练使用 Slurm 或已授权保护分配。
 - 发起 Pro 讨论时，默认共享本机 Chrome `--remote-debugging-port=9223` 实例；Chrome 只开一个，例如 `chrome.exe --remote-debugging-port=9223 --user-data-dir=<shared-profile>`。共享端口的核心是共享 DevTools 入口，但不共享同时控制权。
 - 共享 Chrome 9223 时必须加全局调度锁，默认锁文件为当前仓库 `.codex/chrome-9223.lock`；同一时间只允许一个 agent 操作页面。
