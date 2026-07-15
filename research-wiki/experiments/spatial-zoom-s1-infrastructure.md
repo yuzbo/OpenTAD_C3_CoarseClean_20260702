@@ -139,6 +139,12 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   determinism warning, exhausted retry, parity failure, checkpoint write error,
   or abnormal exit. Checkpoint/sidecar/evidence/selection counts remain zero as
   required before epoch 41, and `/data` retains 217 GiB free.
+- Status at `2026-07-16T06:58+08:00`: all cells remain `RUNNING`; dense160 has
+  reached epoch 37, dense224 epoch 31, and dense256 epochs 27-28. Latest finite
+  losses span `0.4248-0.5028`. Retry counts and maximum retry depth are unchanged
+  at 2-4 and `2/8`, respectively. No hard-failure signature is present. The
+  pre-gate checkpoint/sidecar/evidence/selection counts remain zero, as frozen
+  by protocol, and free storage remains 217 GiB.
 
 ## Decision Boundary
 

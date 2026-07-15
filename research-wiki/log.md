@@ -93,3 +93,7 @@ append_only: true
   counts are 2-4 with maximum same-batch retry `2/8`, followed by continued
   progress. Pre-gate checkpoint/evidence counts correctly remain zero and
   storage remains 217 GiB free. No hard-failure signature was found.
+- 2026-07-16 06:58+08:00: formal S1 replacement remains healthy at epochs
+  27-37. Latest finite losses are `0.4248-0.5028`; AMP retry counts/depth did
+  not increase. No checkpoint or gate evidence exists before its frozen epoch,
+  no hard failure was found, and `/data` still reports 217 GiB free.
