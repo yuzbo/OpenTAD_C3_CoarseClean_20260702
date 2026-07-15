@@ -217,3 +217,6 @@ updated: 2026-07-13
     contract and logical `cuda:0` without overriding scheduler visibility.
 94. Before a valid I/R, GPU checks must remain synthetic/test-only. Do not touch the official evaluation
     population or create reusable Gate-4 evidence under the label of a “small precheck.”
+95. A spec-only descendant is not an implementation repair. After `537f692`, reviewers must first judge
+    the exact A1--A4 spec diff, then independently prove production compliance; neither the historical
+    `b854adb` verdict nor the new specification may be auto-transferred into a current code verdict.

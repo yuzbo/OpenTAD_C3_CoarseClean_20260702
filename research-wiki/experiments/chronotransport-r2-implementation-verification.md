@@ -558,6 +558,20 @@ CUDA or Slurm; this record likewise started no experiment. Status remains
 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`, A1--A4 `proposed_unapproved`, registration `NOT_READY`, and
 all formal Gate/Stage-C execution absent.
 
+## 2026-07-15 A1--A4 spec-only successor and fresh Pro input
+
+The user subsequently authorized the exact A1--A4 decisions. Commit
+`537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37` changed only the governing specification; its SHA-256 is
+`E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`. This supersedes only the
+historical `proposed_unapproved` protocol-authority blocker. It does not implement A1--A4, repair the
+production workflows, approve registration, or alter the prior `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`
+status.
+
+The refreshed GitHub-only Pro input has SHA-256
+`9DDCABC19E6B38874EA97F5E4702C247D2DF8F485CE273E08E4A6515EBFEC3D0`. It requires a fresh immutable
+descendant snapshot, a separate spec-diff verdict, and a full production implementation verdict. No tests,
+CUDA/Slurm execution, training, formal Gate, or scientific result were produced while preparing it.
+
 ## Connections
 
 由 `research-wiki/graph/edges.jsonl` 维护。

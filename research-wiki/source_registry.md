@@ -86,11 +86,12 @@ ChronoTransport r2 Pro 审计条目。
   这是代码审计来源，不是 Gate 或实验结果。
 - docs/methods/2026-07-15-chronotransport-r2-current-github-pro-line-review-prompt.md：
   面向下一次 GitHub-only Pro 全量逐行审计的 fail-closed prompt。它要求先把远端分支解析为
-  新的 immutable SHA；若仍为 797a2df、缺最新实现文件或 spec hash 不符则停止。该文件只是
-  待提交的审查输入，不是 reviewer response、代码批准、Gate 结果或实验事实。2026-07-15
-  latest-current SHA-256 为
-  `1D0E7FC160FFB1E30375BF2EC3BF9E44381EA3BAB1D8BB5DD8EA2249E3D93BF5`；早先
-  `F693E0DC...C1B9DF` 已被首次 snapshot-gate response 的必读绑定与 fresh-resolve 禁复用规则取代。
+  `537f692` 的严格后代；若仍为 `b854adb`/更旧提交、缺最新文件或当前 spec hash 不符则停止。
+  它强制先裁 A1--A4 spec diff，再逐行审 production、registration、Stage C、Gate 4 与 Slurm
+  identity，并要求 implementation-grade RED tests/diffs。该文件只是审查输入，不是 reviewer
+  response、代码批准、Gate 结果或实验事实。2026-07-15 latest-current SHA-256 为
+  `9DDCABC19E6B38874EA97F5E4702C247D2DF8F485CE273E08E4A6515EBFEC3D0`；旧
+  `1D0E7FC1...3BF5` 已被当前 A1--A4 规范和 `b854adb` 审计吸收要求取代。
 - `sources/2026-07-15-chronotransport-r2-predeployment-integrity-audit.md`：当前 dirty bytes 的
   独立只读 pre-deployment 审计；裁决为 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`，记录
   registration/reachability、Stage-C/matched-dense、Gate4 与 Slurm 规格冲突。不是 test rerun、

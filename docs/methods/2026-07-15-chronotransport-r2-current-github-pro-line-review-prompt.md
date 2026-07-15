@@ -3,12 +3,17 @@
 用途：在最新 ChronoTransport r2 实现已经发布到 GitHub 分支后，原样提交给
 GPT-5 Pro / GPT-5.5 Pro / Oracle Pro。
 
-重要前置事实：本 prompt 编写时，GitHub 公开分支
-codex/chronotransport-r2-implementation 仍指向
-797a2df8d00560c8f7a7f66c13e95bb5b0d836ee，而本地工作树包含大量尚未发布的最新实现。
-这一远端 HEAD 已在 2026-07-15T21:07:55+08:00 用 fresh `git ls-remote` 再次确认。
-因此下面正文自带 fail-closed 快照门：若 Pro 解析到的远端 HEAD 仍是 797a2df，或缺少
-列出的最新文件，必须停止并返回 GITHUB_SNAPSHOT_INCOMPLETE，不得拿旧代码推断新实现。
+重要前置事实：GitHub-visible review-only snapshot `b854adb4f4c9235580b5e58c3f3255db6e9adbc0`
+已经接受过一次 Pro 全仓审计并得到 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。此后新增：
+
+- `60ee691d148d90ebc5b06ff854fa7a5f4aaf5fec`：逐字归档并吸收该 Pro 审计；
+- `537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37`：只修改规范的 A1--A4 spec-only commit；
+- 新规范 SHA-256：`E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`。
+
+本 prompt 将随新的 review-only descendant snapshot 一起发布。下面正文自带 fail-closed
+快照门：若 Pro 解析到的远端 HEAD 不是 `537f692` 的严格后代、仍停在 `b854adb`/更旧提交、
+规范 hash 不符或缺少必读文件，必须停止并返回 `GITHUB_SNAPSHOT_INCOMPLETE`。不得把上一次
+审计对 `b854adb` 的结论自动迁移到新 SHA。
 
 以下分隔线后的正文可原样复制。
 
@@ -78,10 +83,10 @@ codex/chronotransport-r2-implementation
 1. 从 GitHub 解析该分支当前完整 40 位 HEAD；
 2. 将其记为 REVIEW_SHA，之后全程只使用 REVIEW_SHA permalink；
 3. 确认 REVIEW_SHA 是
-   797a2df8d00560c8f7a7f66c13e95bb5b0d836ee 的后代且不等于该旧提交；
+   537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37 的后代且不等于该 spec-only commit；
 4. 确认下面列出的最新 production/test/tool 文件全部存在于 REVIEW_SHA；
 5. 确认规范文件在 REVIEW_SHA 的 SHA-256 精确等于
-   87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8；
+   E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6；
 6. 报告分支解析时间、REVIEW_SHA、父提交、tree SHA 和可见性。
 
 至少必须存在：
@@ -108,10 +113,14 @@ codex/chronotransport-r2-implementation
 - tests/test_chronotransport_r2_registration.py
 - tests/test_chronotransport_r2_stage_b.py
 - tests/test_chronotransport_r2_stage_c.py
+- tests/test_chronotransport_pipeline.py
+- tests/test_chronotransport_vit_adapter_integration.py
 - EXPERIMENT_AUDIT.md
 - EXPERIMENT_AUDIT.json
 - research-wiki/sources/2026-07-15-chronotransport-r2-predeployment-integrity-audit.md
 - research-wiki/sources/2026-07-15-chronotransport-r2-github-pro-snapshot-gate-response.md
+- research-wiki/sources/2026-07-15-chronotransport-r2-pro-review-b854adb-verbatim.txt
+- research-wiki/sources/2026-07-15-chronotransport-r2-pro-review-b854adb-absorption.md
 - docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md
 
 任一条件失败，立即只返回：
@@ -121,8 +130,9 @@ GITHUB_SNAPSHOT_INCOMPLETE
 并列出解析到的 SHA、缺失文件或 hash mismatch。不要继续审查，不要用 797a2df 或本 prompt
 中的状态叙述代替最新源代码。
 
-先前一次调用已因远端仍是 797a2df 而返回 `GITHUB_SNAPSHOT_INCOMPLETE`，没有读取任何代码。
-你必须在本次调用中 fresh resolve 分支；不得复用先前 SHA、比较结果或 incomplete 结论。
+历史第一次调用因远端仍是 `797a2df` 而返回 `GITHUB_SNAPSHOT_INCOMPLETE`；第二次调用审计了
+`b854adb` 并返回 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。你必须在本次调用中 fresh
+resolve 分支；不得复用 `797a2df`、`b854adb`、旧 compare 结果或旧 implementation verdict。
 
 # 2. 权威规格与证据边界
 
@@ -130,19 +140,24 @@ GITHUB_SNAPSHOT_INCOMPLETE
 
 docs/superpowers/specs/2026-07-12-chronotransport-ct-p3r-3s-r2-design.md
 
-规范批准 commit：
+当前 A1--A4 spec-only commit：
 
-e4422f5
+537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37
 
-规范 SHA-256：
+当前规范 SHA-256：
 
-87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8
+E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6
+
+前置冻结规范 commit/hash：
+
+- `e4422f5`；
+- `87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`。
 
 实现计划：
 
 docs/superpowers/plans/2026-07-12-chronotransport-ct-p3r-3s-r2-implementation.md
 
-未批准的最小修订提案：
+A1--A4 最小修订的历史提案：
 
 docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md
 
@@ -150,8 +165,12 @@ docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.m
 
 30371FFC17B02DF615FF0D772B93BADF30CF0A3AB84E36325CBF5A71EFD8469F
 
-该提案只有 `proposed_unapproved` 状态。不得把 A1--A4 当成规范事实；只能审查它是否足以
-消除 random seed、Slurm device、`loss_normalizer` 与 paired Stage-C forward 歧义。
+用户已授权按该提案的 exact A1--A4 decisions 推进，`537f692` 将它们合并进当前规范；提案
+frontmatter 保留历史 `proposed_unapproved`，不能取代当前规范。你必须先做一次纯文本
+`e4422f5 → 537f692` spec-diff review：确认 A1--A4 被精确合并、没有内部矛盾、没有改变其他
+seed/split/threshold/candidate/budget/update/bootstrap/population/stop-chain。分别输出
+`APPROVE_SPEC_FOR_PLAN` 或 `REVISE_SPEC_BEFORE_PLAN`。即使 spec 通过，也只解锁实现审查，不批准
+当前代码、I/R、PRECHECK 或实验。
 
 历史正式负结果：
 
@@ -189,7 +208,10 @@ docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.m
 4. research-wiki/sources/2026-07-13-chronotransport-r2-pro-github-code-audit-response.md
 5. research-wiki/sources/2026-07-13-chronotransport-r2-pro-github-code-audit-absorption.md
 6. docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md
-7. OSS_AUDIT.md，仅当它真实存在于 REVIEW_SHA 时读取；否则标记 NOT_IN_SNAPSHOT。
+7. research-wiki/sources/2026-07-15-chronotransport-r2-pro-review-b854adb-verbatim.txt
+8. research-wiki/sources/2026-07-15-chronotransport-r2-pro-review-b854adb-absorption.md
+9. `e4422f5 → 537f692` 的单文件 spec diff；
+10. OSS_AUDIT.md，仅当它真实存在于 REVIEW_SHA 时读取；否则标记 NOT_IN_SNAPSHOT。
 
 旧审查只能作为待复核的问题列表，不能作为当前代码缺陷或当前修复成功的事实。
 
@@ -236,6 +258,27 @@ docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.m
 以下只是 PROJECT_REPORTED_FACT，不是对当前快照的预判。逐项给出 VERIFIED、PARTLY_VERIFIED、
 REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
 
+## 4.0 新规范与 `b854adb` Pro 审计
+
+- 上一次 Pro 对 `b854adb` 的 snapshot gate 为 PASS，整体 verdict 为
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`；reviewer 没有运行 tests/CUDA/Slurm；
+- 它报告 Stage-C/matched-dense/Gate-4 formal workflow 缺失，当前 Stage-C canonical Tensor hook
+  与 ActionFormer loss dict/`loss_normalizer` 合同不相容，registration 漏掉两份本次修改的
+  integration tests，A1--A4 未批准，measured-cost provenance 与 Slurm identity 未闭环；
+- `60ee691` 只归档/吸收审计，`537f692` 只修改规范；这不等于上述代码问题已经修复。你必须从
+  当前 REVIEW_SHA 重新验证，不能因旧 finding 存在而直接复述，也不能因新 spec 存在而假定实现
+  已符合；
+- 当前规范 A1 固定 unsuffixed `random_p2/p4/p8` 的唯一 control seed 为 3407；
+- A2 改为 Slurm 分配 single GPU、不改 visibility、进程只用 `cuda:0` 并绑定 allocation/GPU UUID；
+- A3 允许且只允许 train-mode `rpn_head.loss_normalizer` 每 successful arm update 规范推进一次，
+  dense-reference 临时 mutation 必须先恢复，CT/matched trace 必须相同；
+- A4 要求每 attempt 恰好一次 no-grad dense model forward、恢复 paired state/RNG、恰好一次
+  differentiable counterfactual model forward，从同一 official head logits/targets 暴露 length-two
+  per-window task-loss vector，并生成 detached regret targets 与恰好一次 risk forward。
+
+先审查新规范自身是否一致，再审查实现是否逐项满足。若 spec 有歧义，标 `SPEC_BLOCKER`；若
+spec 清楚而代码未实现，标 `MISSING_OR_NONCOMPLIANT_IMPLEMENTATION`，不得混为一类。
+
 ## 4.1 Gate 1
 
 - Green2 曾因 arbitrary backend/callable、fixture/formal 可重标记、caller detector/batch/raw
@@ -244,8 +287,9 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
   schema 结构隔离；
 - 项目报告 Green3 远端 25 focused、169 passed/1 expected xfail、30 Gates2/3 compatibility；
 - Green3 仍处于 independent review，不是 Gate-1 PASS；
-- unsuffixed random_p2/p4/p8 的 control seed 在批准规范中存在歧义，当前代码应 fail closed，
-  不能自行把推荐 seed 3407 当成已批准事实；
+- predecessor spec 中 unsuffixed random_p2/p4/p8 的 control seed 曾有歧义；当前 A1 规范已固定
+  为 3407。当前代码必须精确生成、注册和复算该 identity；若仍保持“缺 seed 即永久 lock”或接受
+  caller seed，均是不符合当前规范，而不是继续存在的 spec ambiguity；
 - 后续 precheck RED 证明 registration、output root 和 Gate1 fixed-artifact 的父目录 symlink 可被
   pre-validation `resolve()` 洗白；项目声称当前已改为逐级 lexical `lstat`，并独立重建
   registered `R/shared/gate1` 后再接受 resolver 输出；
@@ -329,7 +373,10 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
   Stage-C hook 要求顶层 differentiable Tensor；真实 train-mode head 会更新
   `loss_normalizer`，而当前 success audit 要求全部 registered buffers 不变；toy loss container
   也未证明同一 batch-two forward 产生两个逐窗口 regret targets；
-- protected physical-GPU1 CUDA GradScaler/autocast 行为与每次全模型 hash/clone 的真实开销未测；
+- 当前 A3/A4 已把允许的 normalizer 成功态变化、dense-reference state restore、一次 dense + 一次
+  counterfactual model forward、length-two official per-window loss 与 regret target 唯一化；必须
+  审查生产代码是否真实接通，而不是让 toy fixture 自报；
+- Slurm-assigned single-device CUDA GradScaler/autocast 行为与每次全模型 hash/clone 的真实开销未测；
 - 4200-update Stage-C CT runner、matched-dense runner、完整 resume/EMA/LR/exposure artifact 和
   post-Stage-C recalibration 是否存在，必须从 REVIEW_SHA 重新判断。
 
@@ -359,10 +406,11 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
 - 任何 profile/replay 前必须先冻结 identity；不能从看过结果后再补 registration；
 - 后续远端刷新发现同一账号有多项与 ChronoTransport 无关的 DUCA Slurm jobs；不得复用、修改
   或干扰。没有已登记的 ChronoTransport allocation/job；
-- 单 GPU Slurm cgroup 会把物理卡重映射为 local cuda:0，不能只检查
-  CUDA_VISIBLE_DEVICES=1；
-- 当前 governing repository rule 禁止固定物理 GPU index 或覆盖 Slurm visibility，与冻结 spec
-  的 physical-GPU1/CVD=1 冲突；A1--A4 proposal 尚未获用户批准或 spec-only review；
+- 当前 A2 要求 single-GPU Slurm allocation/step、launcher 不修改 scheduler visibility、进程只用
+  local `cuda:0`，同时记录 Slurm physical identity/GPU UUID；旧 physical-GPU1/CVD=1 launcher、
+  validator、registration field 或 claim flag 若仍可达，均为 noncompliant implementation；
+- A1--A4 已进入 `537f692` 当前规范，但本次 reviewer 仍须先独立给 spec-diff verdict；规范通过
+  不会自动修复 registration、launcher、Stage-C 或 provenance；
 - 没有正式 ChronoTransport job、Gate 结果或论文数字。
 
 # 5. 第一优先级：逐行审计 registration 是否可能铸造假证据
@@ -388,7 +436,11 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
 10. test-only schema 是否无法被重标记、重哈希或经 validator 转换成 formal schema；
 11. 两个并发进程是否绝不可能同时通过 precheck 并覆盖正式产物；
 12. registration source-vector 的最终修复是否真的包含
-    tests/test_chronotransport_r2_gate1_hardening.py 及 Gates2/3 的四个最终文件。
+    tests/test_chronotransport_r2_gate1_hardening.py、Gates2/3 的四个最终文件、
+    tests/test_chronotransport_pipeline.py 与 tests/test_chronotransport_vit_adapter_integration.py；
+13. 是否存在一份逐文件、显式、可审计的 source-classification manifest，能解释每个
+    tests/test_chronotransport*.py 为什么属于 REQUIRED、TEST_ONLY_NON_FORMAL 或 OUT_OF_SCOPE；不得用
+    宽泛文件名前缀自动扩大 registration，也不得让未分类测试静默逃逸。
 
 对每个 fail-open 路径给出最小攻击脚本和 RED test。
 
@@ -414,7 +466,9 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
 - bootstrap 每 replicate 重新选择 strongest/evaluation-best comparator；
 - random/motion action bytes 从冻结算法、window identity、deploy-visible signals 和批准 seed
   重建；
-- random seed 歧义必须被明确判为 SPEC_BLOCKER 或由已提交 spec amendment 解决，不能猜；
+- unsuffixed random_p2/p4/p8 必须只接受当前规范固定的 control_seed=3407，并把该值绑定到
+  candidate bytes、registration、replay 与 recomputation identity；缺失、不同值、caller override、
+  隐式 RNG 或继续永久 lock 都是实现不合规，不再是可猜测的 spec ambiguity；
 - formal result/terminal 是 exclusive-lock + fsync + atomic no-clobber；
 - 每个 public adjudication/unlock API 都无法从 caller rows 铸造 formal PASS。
 
@@ -480,6 +534,14 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
 ## 9.1 真实 forward 与 loss provenance
 
 - 唯一 production ChronoTransportRuntime/source identity；
+- 每个 attempted paired update 恰好执行一次 no-grad dense **model** forward；随后恢复 dense-reference
+  临时改变的 module/buffer/Python tensor/RNG 状态，再恰好执行一次 differentiable counterfactual
+  **model** forward；只调用 head、复用旧 logits、额外第三次 model forward 或把 toy hook 当生产桥接均不合规；
+- dense 与 counterfactual 必须从同一 official ActionFormer head logits/targets 暴露精确 shape `[2]`
+  的 per-window task-loss vector；不得只用 batch-aggregate scalar、loss dict 求和后复制、外部伪造
+  Tensor 或 detached proxy；
+- 两个 detached regret targets 必须只由上述 paired official task losses 派生；risk predictor 在每个
+  attempt 恰好一次 differentiable forward，且不得读取 GT、teacher、raw-prediction cache 或 replay ledger；
 - LD、LF、LR 来自同一个 materialized batch、同一个真实 runtime forward graph/outputs；
 - runtime executed action tensor 由真实 scheduler/forced control 产生，caller expected payload
   无权证明执行；
@@ -508,7 +570,12 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
   ledger、profiler 和 head loss_normalizer；
 - ordered path→object/type、module/parameter/buffer alias graph 与 parent registration order；
 - .data 写入、equal-value storage rebind、isomorphic block swap、alias split 都能检测；
-- overflow 只保留 GradScaler backoff，其他状态恢复；
+- frozen head parameters 必须保持冻结，但 rpn_head 保持规范要求的 train mode；
+- `rpn_head.loss_normalizer` 是唯一被规范允许成功持久化的 detector buffer：dense-reference forward 的
+  临时推进必须在 counterfactual 前恢复；每个 successful CT/matched arm update 恰好规范推进一次，
+  overflow/INVALID 不得推进，CT 与 matched-dense 的 successful trace 必须逐步相等；其他 detector
+  parameter/buffer/Python tensor 仍须 bytewise/identity-safe frozen；
+- overflow 只保留 GradScaler backoff，其他状态（包括 dense-reference normalizer 临时 mutation）恢复；
 - 不对未改变 Parameters 无条件 load_state_dict，从而破坏 version counter/non-leaf graph；
 - success path 也审计 buffer/Python/frozen bytes，不能只审 overflow；
 - 同一 materialized batch 最多初次加三次 retry，第四次 INVALID；
@@ -525,7 +592,9 @@ REFUTED 或 CANNOT_VERIFY，并附 REVIEW_SHA permalink 与最小复现。
 - canonical 8400 exposure/seed、525/candidate；
 - post-Stage-C calibration 与 Gate-3 rerun；
 - Stage-C launcher、validator、registration source coverage；
-- 真实 CUDA AMP/autocast/GradScaler precheck；
+- Slurm 分配的 single-device 上真正 CUDA AMP/autocast/GradScaler precheck：launcher 不得覆盖
+  CUDA_VISIBLE_DEVICES，进程只使用 logical `cuda:0`，artifact 同时绑定 Slurm allocation/step、
+  scheduler-visible device identity 与 GPU UUID；
 - O(frozen-model-bytes) 每 attempt hash/clone 的实测开销与是否会吞掉节省。
 
 若只存在 primitive 或 synthetic tests，必须判 MISSING_EXECUTABLE_WORKFLOW。
@@ -676,7 +745,8 @@ coverage。任何相关文件未读，整体 verdict 不能是 APPROVE。
 - missing executable surface；
 - weak/false-positive test；
 - unverified risk；
-- spec ambiguity；
+- spec ambiguity（只能指 `e4422f5 → 537f692` diff 审完后仍真实存在的歧义，不能拿旧 A1--A4
+  状态替代当前代码不合规）；
 - project report contradicted by code。
 
 # 16. 具体实现输出合同
@@ -733,6 +803,14 @@ PATCH_BLOCKED_BY_MISSING_FACT
 
 # 18. 强制裁决
 
+先单独给出 `e4422f5 → 537f692` 的 A1--A4 spec-diff verdict，只能选择：
+
+- APPROVE_SPEC_FOR_PLAN；
+- REVISE_SPEC_BEFORE_PLAN。
+
+`APPROVE_SPEC_FOR_PLAN` 只说明当前规范可作为实现合同；它不批准 implementation、registration、
+PRECHECK 或实验。若 spec verdict 为 REVISE，仍须尽可能完成只读代码审计，但整体不得 APPROVE。
+
 先分别给出以下 slice verdict：
 
 - runtime/cache/adapter；
@@ -760,9 +838,10 @@ PATCH_BLOCKED_BY_MISSING_FACT
 - REVISE_IMPLEMENTATION_BEFORE_REGISTRATION；
 - REJECT_AND_FREEZE。
 
-APPROVE 的必要条件包括：相关文件全读、无 P0/P1、所有 mandatory executable surfaces 存在、
-registration exact set 闭合、spec ambiguity 已由正式 amendment 解决、CPU/必要 CUDA 行为证据
-边界清楚。测试多、代码长或“看起来防御性强”都不是批准理由。
+APPROVE 的必要条件包括：spec-diff verdict 为 `APPROVE_SPEC_FOR_PLAN`、相关文件全读、无 P0/P1、
+所有 mandatory executable surfaces 存在、registration exact set 与显式 source classification 闭合、
+A1--A4 在生产实现与 RED tests 中逐项满足、CPU/必要 CUDA 行为证据边界清楚。测试多、代码长或
+“看起来防御性强”都不是批准理由。
 
 # 19. 强制输出顺序
 
@@ -770,29 +849,30 @@ registration exact set 闭合、spec ambiguity 已由正式 amendment 解决、C
 
 1. Executive Verdict，不超过 300 字；
 2. GitHub Snapshot/Visibility Certificate；
-3. Evidence Taxonomy Table；
-4. Line-by-Line Coverage Certificate；
-5. Current Phenomena Recheck；
-6. End-to-End Implementation and Trust-Boundary Map；
-7. Spec Section-by-Section Compliance Matrix；
-8. Registration/Evidence-Minting Audit；
-9. Gate1 Audit；
-10. Stage-B Audit；
-11. Gates2/3 Statistical and Formal Audit；
-12. Stage-C Forward/Gradient/Transaction Audit；
-13. Runtime/AdaTAD/VideoMAE Upstream Matrix；
-14. Gate4 Metric/Cost/Bootstrap Audit；
-15. P0→P3 Findings；
-16. Adversarial Counterexamples and RED Tests；
-17. Slice Verdicts；
-18. Overall Route Verdict；
-19. Minimal Mandatory Patch Architecture；
-20. Complete Unified Diffs or PATCH_BLOCKED_BY_MISSING_FACT；
-21. TDD/CPU/CUDA/Slurm Verification Matrix；
-22. Registration Readiness Checklist；
-23. Dependency-Ordered Next-Step Plan；
-24. Result-to-Claim Matrix；
-25. Permanent Kill Criteria。
+3. A1--A4 Spec-Diff Verdict；
+4. Evidence Taxonomy Table；
+5. Line-by-Line Coverage Certificate；
+6. Current Phenomena Recheck；
+7. End-to-End Implementation and Trust-Boundary Map；
+8. Spec Section-by-Section Compliance Matrix；
+9. Registration/Evidence-Minting Audit；
+10. Gate1 Audit；
+11. Stage-B Audit；
+12. Gates2/3 Statistical and Formal Audit；
+13. Stage-C Forward/Gradient/Transaction Audit；
+14. Runtime/AdaTAD/VideoMAE Upstream Matrix；
+15. Gate4 Metric/Cost/Bootstrap Audit；
+16. P0→P3 Findings；
+17. Adversarial Counterexamples and RED Tests；
+18. Slice Verdicts；
+19. Overall Route Verdict；
+20. Minimal Mandatory Patch Architecture；
+21. Complete Unified Diffs or PATCH_BLOCKED_BY_MISSING_FACT；
+22. TDD/CPU/CUDA/Slurm Verification Matrix；
+23. Registration Readiness Checklist；
+24. Dependency-Ordered Next-Step Plan；
+25. Result-to-Claim Matrix；
+26. Permanent Kill Criteria。
 
 # 20. 最终纪律
 

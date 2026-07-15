@@ -32,7 +32,12 @@ max_chars: 8000
 - Pro 的具体补丁不全部照搬：不能用裸 `tests/test_chronotransport*.py` glob 定义 formal vector；
   当前 glob 命中 21 个文件、registration 仅含 14 个，除两份已确认遗漏外还有五份旧/通用表面。
   应采用显式 formal/legacy/nonformal 分类并拒绝未分类新文件。其 Stage-C evidence dataclass 只是
-  A3/A4 批准前的设计草案；未来 launcher 也不得沿用固定 physical-GPU1 语义。
+  `b854adb` 时 A3/A4 尚未唯一化的设计草案；未来 launcher 也不得沿用固定 physical-GPU1 语义。
+- 用户随后授权 exact A1--A4；spec-only commit
+  `537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37` 已把它们写入当前规范，规范 SHA-256 为
+  `E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`。状态是
+  `designed/pending_external_spec_diff_review`，不是 implemented、registered 或 tested。下一次 Pro
+  必须先裁 `e4422f5 → 537f692`，再按当前生产代码逐行复核；规范提交不会自动修复旧 blocker。
 
 ## 项目方向
 
@@ -100,20 +105,17 @@ DUCA 当前形态：全窗口低成本 trainable C3/official-ASFormer coarse pro
   `APPROVE_STAGEB_PATH_LOCK_HARDENING`；批准仅覆盖该 bounded integrity slice。
   registration 为 `NOT_READY`；禁止 I/R、formal Gate 1、新 Stage-B seeds、Stage C/Gate 4；
   没有 r2 实验事实。
-- Gate-1 unsuffixed `random_p{2,4,8}` 的 digest seed 在批准规格中遗漏。推荐最小修订为固定
-  3407、保持六 comparator schema；在用户批准/spec-only review 前代码必须缺 seed fail closed。
+- 当前 A1 已将 Gate-1 unsuffixed `random_p{2,4,8}` 的唯一 control seed 固定为 3407，并要求绑定
+  candidate/registration/replay/recomputation identity；当前代码尚未因该 spec-only commit 自动更新。
 - 2026-07-15 后续远端刷新发现当前用户有多项与 ChronoTransport 无关的 DUCA Slurm jobs；
   不得复用或干扰。没有已登记的 ChronoTransport allocation/job，也未启动 ChronoTransport
   训练。
-- 当前 governing remote rule 禁止固定物理 GPU index 或覆盖 Slurm 的
-  `CUDA_VISIBLE_DEVICES`，与已批准 r2 的 physical-GPU1/CVD=1 文本冲突；在最小规格修订和
-  spec-only review 前不得启动 formal Slurm job。
-- 已形成未批准的 A1--A4 最小修订提案：
-  `docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md`，SHA-256
-  `30371FFC17B02DF615FF0D772B93BADF30CF0A3AB84E36325CBF5A71EFD8469F`。提案推荐 random seed
-  3407、Slurm 分配单设备并使用逻辑 `cuda:0`、matched train-mode `loss_normalizer` trace，及
-  Stage C 一次 no-grad dense 加一次 differentiable counterfactual forward；状态仅为
-  `proposed_unapproved`，没有改变任何 execution lock。
+- 当前 A2 已把 remote contract 改为 Slurm 分配单 GPU、launcher 不覆盖 scheduler visibility、
+  进程只用逻辑 `cuda:0` 并登记 allocation/GPU UUID；旧 physical-GPU1/CVD=1 实现路径若仍可达即
+  不合规。A3/A4 同时固定 successful `loss_normalizer` trace 与一次 dense-reference 加一次
+  differentiable counterfactual model forward 的 official per-window regret 合同。历史提案文件
+  仍保留 `proposed_unapproved` frontmatter 作为来源记录，当前权威文本是 `537f692` 规范；所有
+  execution lock、I/R、PRECHECK 和 formal Slurm job 仍保持关闭，等待 Pro 规范差异与实现严审。
 - Gate-4 caller-raw-dict formal minting 已 RED-first 封死：当前 `formal=True` 在统计前拒绝，
   `formal=False` 只生成 `chronotransport-r2-gate4-test-only-v1`。远端 focused 为 `1 passed`，
   forged-payload-with-recomputed-hash targeted 为 `1 passed in 105.28s`，完整 Gate-4 synthetic

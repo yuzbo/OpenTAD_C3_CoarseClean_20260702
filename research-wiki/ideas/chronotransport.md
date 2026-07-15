@@ -206,3 +206,17 @@ review-only immutable snapshot 已通过外部快照门，但总体仍为
 Pro 提议的 Stage-C evidence dataclass 仅作为需求清单吸收，必须等 A3/A4 唯一化 official loss、
 per-window regret、forward order 与 `loss_normalizer` 后才可冻结。未来 launcher 也必须服从 Slurm
 分配单设备和逻辑 `cuda:0`，不能沿用 physical-GPU1/CVD=1 语义。
+
+## A1--A4 规范冻结与下一轮 Pro 严审（2026-07-15）
+
+用户已授权 exact A1--A4，spec-only commit `537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37`
+把它们写入权威规范；新规范 SHA-256 为
+`E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`。状态只从
+`discussed` 迁移到 `designed/pending_external_spec_diff_review`，没有迁移到 `implemented` 或
+`tested`。当前生产代码仍须逐项证明 A1 seed、A2 Slurm identity、A3 normalizer transaction 与
+A4 paired official loss/regret forward；此前缺失 workflow/source/provenance blocker 也没有因规范
+提交消失。
+
+下一轮 GitHub-only Pro prompt 固定要求：fresh resolve `537f692` 的严格后代；先给独立
+`APPROVE_SPEC_FOR_PLAN`/`REVISE_SPEC_BEFORE_PLAN`，再给 implementation verdict、RED tests 与完整
+实现建议。该 prompt 是只读审计输入，不创建 I/R、PRECHECK、Job、Gate 或论文数字。

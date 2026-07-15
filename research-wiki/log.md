@@ -437,3 +437,11 @@ append_only: true
   integration tests are presently confirmed omissions, so a frozen classification manifest is required.
   The proposed Stage-C evidence interface remains a design sketch pending A3/A4. No implementation code,
   I/R, test run, CUDA/Slurm job, Gate or scientific result was produced.
+- 2026-07-15: After the user authorized exact A1--A4, froze them in spec-only commit `537f692`, and kept
+  all execution locks closed, refreshed the GitHub-only Pro full line-review prompt for a new immutable
+  descendant snapshot. The prompt now requires a separate `e4422f5 → 537f692` spec-diff verdict, explicit
+  classification of every ChronoTransport test, real ActionFormer paired-forward/`loss_normalizer`
+  transaction review, Slurm-assigned logical `cuda:0` identity, implementation-grade RED tests and complete
+  patches. Prompt SHA-256 is `9DDCABC19E6B38874EA97F5E4702C247D2DF8F485CE273E08E4A6515EBFEC3D0`.
+  This is review-only documentation: no implementation, I/R, PRECHECK, test rerun, Job, Gate or experiment
+  result was created.
