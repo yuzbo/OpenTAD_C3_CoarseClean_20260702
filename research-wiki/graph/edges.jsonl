@@ -47,3 +47,5 @@
 {"from":"idea:duca-offline-full-window","to":"claim:C7","type":"supports","evidence":"Defines system-cost claim; formal profile pending.","updated":"2026-07-11"}
 {"from":"idea:duca-offline-full-window","to":"claim:C8","type":"supports","evidence":"Defines plugin-generalization claim; AdaTAD-only evidence.","updated":"2026-07-11"}
 {"from":"idea:physical-grid","to":"claim:C10","type":"invalidates","evidence":"Presence of optional detector extensions prevents unmodified-official wording.","updated":"2026-07-11"}
+{"from":"idea:spatial-zoom-offline-tad","to":"exp:spatial-zoom-s1-infrastructure","type":"tested_by","evidence":"S1 first tests matched dense spatial-resolution headroom before any ROI policy is authorized.","updated":"2026-07-15"}
+{"from":"idea:spatial-zoom-offline-tad","to":"gap:G4","type":"addresses_gap","evidence":"The route targets expensive spatial redundancy while preserving the dense temporal axis.","updated":"2026-07-15"}

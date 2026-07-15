@@ -112,6 +112,22 @@ def _normalize_spatial_fields(cfg: Config) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_official_interpolation_equivalence(cfg: Config) -> dict[str, Any]:
+    normalized = _normalize_spatial_fields(cfg)
+    pipeline = normalized["model"]["backbone"]["custom"][
+        "post_processing_pipeline"
+    ]
+    transforms = [row for row in pipeline if row.get("type") == "Interpolate"]
+    _require(len(transforms) == 1, "S1 requires one temporal interpolation transform")
+    transform = transforms[0]
+    _require(transform.get("mode", "linear") == "linear", "S1 interpolation mode changed")
+    _require(int(transform["size"]) == 768, "S1 interpolation target changed")
+    transform["mode"] = "linear"
+    transform["deterministic"] = "<DETERMINISTIC_EQUIVALENT>"
+    transform["expected_input_size"] = "<TEMPORAL_INPUT_POINTS>"
+    return normalized
+
+
 def _first_diff(left: Any, right: Any, path: str = "cfg") -> str | None:
     if type(left) is not type(right):
         return f"{path}: type {type(left).__name__} != {type(right).__name__}"
@@ -154,7 +170,7 @@ def validate_config_matrix(
         cfg = loaded[resolution]
         contract = cfg.spatial_zoom_s1_contract
         _require(
-            contract.schema_version == "spatial_zoom_s1_config_v1",
+            contract.schema_version == "spatial_zoom_s1_config_v2",
             "unexpected S1 config schema",
         )
         _require(
@@ -170,6 +186,15 @@ def validate_config_matrix(
             int(contract.detector_time_grid) == 768, "S1 detector time grid changed"
         )
         _require(int(contract.tubelet_points) == 384, "S1 tubelet grid changed")
+        _require(
+            contract.temporal_interpolation
+            == "linear_align_corners_false_2x_deterministic_v1",
+            "S1 deterministic temporal interpolation contract changed",
+        )
+        _require(
+            int(contract.temporal_interpolation_input_points) == 384,
+            "S1 temporal interpolation input grid changed",
+        )
         _require(
             list(contract.training_seeds) == list(S1_TRAINING_SEEDS),
             "S1 training seeds changed",
@@ -215,6 +240,26 @@ def validate_config_matrix(
         _require(
             int(cfg.model.projection.max_seq_len) == 768, "S1 projection grid changed"
         )
+        temporal_interpolators = [
+            row
+            for row in cfg.model.backbone.custom.post_processing_pipeline
+            if row.type == "Interpolate"
+        ]
+        _require(
+            len(temporal_interpolators) == 1,
+            "S1 requires exactly one temporal interpolation transform",
+        )
+        temporal_interpolator = temporal_interpolators[0]
+        _require(
+            temporal_interpolator.get("deterministic", False) is True,
+            "S1 temporal interpolation must use the deterministic implementation",
+        )
+        _require(
+            int(temporal_interpolator.expected_input_size) == 384
+            and int(temporal_interpolator.size) == 768
+            and temporal_interpolator.mode == "linear",
+            "S1 deterministic interpolation shape or mode changed",
+        )
         _require(
             cfg.inference.load_from_raw_predictions is False,
             "S1 raw prediction loading is forbidden",
@@ -233,8 +278,13 @@ def validate_config_matrix(
             "resolved_config_sha256": canonical_sha256(_plain(cfg)),
         }
     baseline = normalized[160]
-    official_dense160 = _normalize_spatial_fields(_load(OFFICIAL_DENSE160_CONFIG))
-    official_diff = _first_diff(official_dense160, baseline)
+    official_dense160 = _normalize_official_interpolation_equivalence(
+        _load(OFFICIAL_DENSE160_CONFIG)
+    )
+    s1_dense160_for_official = _normalize_official_interpolation_equivalence(
+        loaded[160]
+    )
+    official_diff = _first_diff(official_dense160, s1_dense160_for_official)
     _require(
         official_diff is None,
         "S1 dense160 differs from the official-derived local baseline: "
@@ -263,6 +313,7 @@ def validate_config_matrix(
         "official_dense160_matched": True,
         "temporal_protocol_matched": True,
         "model_optimizer_evaluator_matched": True,
+        "deterministic_temporal_interpolation": True,
         "protocol_fingerprint": canonical_sha256(baseline),
         "configs": rows,
     }

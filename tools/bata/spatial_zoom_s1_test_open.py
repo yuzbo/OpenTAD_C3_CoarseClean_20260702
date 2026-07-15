@@ -10,6 +10,7 @@ from mmengine.config import Config
 from tools.bata.spatial_zoom_s1_contract import (
     S1_RESOLUTIONS,
     S1_TRAINING_SEEDS,
+    atomic_publish_json,
     canonical_sha256,
     sha256_file,
     validate_s1_manifest,
@@ -19,8 +20,8 @@ from tools.bata.spatial_zoom_s1_training import (
     validate_bound_s1_training_config,
 )
 
-S1_TEST_OPEN_SCHEMA = "spatial_zoom_s1_test_open_certificate_v5"
-S1_GLOBAL_TEST_OPEN_MARKER_SCHEMA = "spatial_zoom_s1_global_test_open_marker_v2"
+S1_TEST_OPEN_SCHEMA = "spatial_zoom_s1_test_open_certificate_v6"
+S1_GLOBAL_TEST_OPEN_MARKER_SCHEMA = "spatial_zoom_s1_global_test_open_marker_v3"
 _PRECHECK_IDENTITY_KEYS = (
     "precheck_file_sha256",
     "precheck_sha256",
@@ -72,6 +73,12 @@ def canonical_s1_study_root() -> Path:
 def create_global_test_open_marker(
     certificate: Mapping[str, Any],
 ) -> tuple[Path, dict[str, Any]]:
+    certificate = json.loads(json.dumps(dict(certificate)))
+    certificate_hash = certificate.get("certificate_sha256")
+    unsigned_certificate = dict(certificate)
+    unsigned_certificate.pop("certificate_sha256", None)
+    if not certificate_hash or canonical_sha256(unsigned_certificate) != certificate_hash:
+        raise ValueError("S1 test-open certificate self-hash mismatch")
     study_root = canonical_s1_study_root()
     if Path(certificate["canonical_study_root"]).resolve() != study_root:
         raise ValueError("S1 test-open certificate changed the canonical study root")
@@ -90,12 +97,10 @@ def create_global_test_open_marker(
         "precheck_sha256": certificate["precheck_sha256"],
         "pretrained_checkpoint_sha256": certificate["pretrained_checkpoint_sha256"],
         "certificate_sha256": certificate["certificate_sha256"],
+        "certificate": certificate,
     }
     marker["marker_sha256"] = canonical_sha256(marker)
-    marker_path.parent.mkdir(parents=True, exist_ok=True)
-    with marker_path.open("x", encoding="utf-8") as handle:
-        json.dump(marker, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_publish_json(marker_path, marker)
     return marker_path, marker
 
 
@@ -125,11 +130,93 @@ def validate_global_test_open_marker(
         "precheck_sha256": certificate["precheck_sha256"],
         "pretrained_checkpoint_sha256": certificate["pretrained_checkpoint_sha256"],
         "certificate_sha256": certificate["certificate_sha256"],
+        "certificate": json.loads(json.dumps(dict(certificate))),
     }
     for key, value in expected.items():
         if marker.get(key) != value:
             raise ValueError(f"S1 global test-open marker {key} mismatch")
     return marker
+
+
+def recover_global_test_open_certificate(
+    *,
+    output_path: str | Path,
+    manifest_path: str | Path,
+    annotation_path: str | Path,
+    selection_paths: Sequence[str | Path],
+) -> dict[str, Any] | None:
+    """Recover the exact certificate if the global commit published first."""
+
+    marker_path = (
+        canonical_s1_study_root() / "test_open" / "test_open_issued.json"
+    ).resolve()
+    if not marker_path.is_file():
+        return None
+    raw_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    certificate = raw_marker.get("certificate")
+    if not isinstance(certificate, dict):
+        raise ValueError("S1 global marker has no recoverable certificate")
+    validate_global_test_open_marker(certificate)
+    if Path(certificate["manifest_path"]).resolve() != Path(manifest_path).resolve():
+        raise ValueError("recovery manifest differs from the issued S1 certificate")
+    if Path(certificate["annotation_path"]).resolve() != Path(annotation_path).resolve():
+        raise ValueError("recovery annotation differs from the issued S1 certificate")
+    expected_selections = {
+        str(Path(value).resolve()) for value in selection_paths
+    }
+    issued_selections = {
+        str(Path(row["selection_path"]).resolve())
+        for row in certificate["selection_matrix"]
+    }
+    if expected_selections != issued_selections:
+        raise ValueError("recovery selections differ from the issued S1 certificate")
+    manifest_path = Path(manifest_path).resolve()
+    annotation_path = Path(annotation_path).resolve()
+    manifest = validate_s1_manifest(
+        json.loads(manifest_path.read_text(encoding="utf-8")),
+        annotation_path=annotation_path,
+    )
+    if manifest["manifest_sha256"] != certificate.get("manifest_sha256"):
+        raise ValueError("current manifest differs from the issued S1 certificate")
+    if sha256_file(annotation_path) != certificate.get("annotation_sha256"):
+        raise ValueError("current annotation differs from the issued S1 certificate")
+    issued_rows = {
+        str(Path(row["selection_path"]).resolve()): row
+        for row in certificate["selection_matrix"]
+    }
+    for selection_path_text in sorted(expected_selections):
+        row = issued_rows[selection_path_text]
+        selection_path = Path(selection_path_text)
+        if (
+            not selection_path.is_file()
+            or sha256_file(selection_path) != row.get("selection_file_sha256")
+        ):
+            raise ValueError(
+                "current selection differs from the issued S1 certificate"
+            )
+        checkpoint_path = Path(row["checkpoint_path"])
+        if (
+            not checkpoint_path.is_file()
+            or sha256_file(checkpoint_path) != row.get("checkpoint_sha256")
+        ):
+            raise ValueError(
+                "current checkpoint differs from the issued S1 certificate"
+            )
+    output_path = Path(output_path).resolve()
+    expected_output = (
+        Path(certificate["canonical_experiment_root"])
+        / "test_open"
+        / "test_open_certificate.json"
+    ).resolve()
+    if output_path != expected_output:
+        raise ValueError(f"S1 test-open certificate path must be canonical: {expected_output}")
+    if output_path.is_file():
+        observed = json.loads(output_path.read_text(encoding="utf-8"))
+        if observed != certificate:
+            raise ValueError("existing S1 certificate differs from the committed marker")
+    else:
+        atomic_publish_json(output_path, certificate)
+    return certificate
 
 
 def build_test_open_certificate(
@@ -372,6 +459,7 @@ __all__ = [
     "build_test_open_certificate",
     "canonical_s1_study_root",
     "create_global_test_open_marker",
+    "recover_global_test_open_certificate",
     "validate_global_test_open_marker",
     "validate_test_open_certificate",
 ]

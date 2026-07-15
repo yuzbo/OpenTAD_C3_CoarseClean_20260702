@@ -15,6 +15,7 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     S1_CHECKPOINT_RULE,
     S1_PROFILE_ORDER_SEED,
     S1_TRAINING_SEEDS,
+    atomic_publish_json,
     build_s1_profile_order,
     canonical_sha256,
     sha256_file,
@@ -255,10 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 1
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("x", encoding="utf-8") as handle:
-        json.dump(descriptor, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_publish_json(args.output, descriptor)
     print(json.dumps({"status": "PASS", "output": str(args.output)}, indent=2))
     return 0
 

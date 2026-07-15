@@ -51,7 +51,10 @@ python -m py_compile \
   tools/bata/spatial_zoom_s1_cost.py \
   tools/bata/profile_spatial_zoom_s1.py \
   tools/bata/analyze_spatial_zoom_s1_results.py
-python -m pytest -p no:cacheprovider tests/test_spatial_zoom_s1_infrastructure.py -q
+python -m pytest -p no:cacheprovider \
+  tests/test_spatial_zoom_s1_infrastructure.py \
+  tests/test_train_engine_max_train_iters.py \
+  -q
 python tools/bata/validate_spatial_zoom_s1.py \
   --output "${OUT_ROOT}/config_matrix.json"
 

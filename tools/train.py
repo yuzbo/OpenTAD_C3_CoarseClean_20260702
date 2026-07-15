@@ -119,7 +119,11 @@ def main():
     torch.cuda.set_device(args.local_rank)
 
     # set random seed, create work_dir, and save config
-    set_seed(args.seed, args.disable_deterministic)
+    set_seed(
+        args.seed,
+        args.disable_deterministic,
+        deterministic_warn_only=s1_binding is None,
+    )
     if s1_binding is None:
         cfg = update_workdir(cfg, args.id, args.world_size)
     elif args.id != 0:

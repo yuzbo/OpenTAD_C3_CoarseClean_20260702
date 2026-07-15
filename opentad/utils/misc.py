@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 
 
-def set_seed(seed, disable_deterministic=False):
+def set_seed(seed, disable_deterministic=False, *, deterministic_warn_only=True):
     """Set randon seed for pytorch and numpy"""
     random.seed(seed)
     np.random.seed(seed)
@@ -19,7 +19,9 @@ def set_seed(seed, disable_deterministic=False):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.use_deterministic_algorithms(
+            True, warn_only=bool(deterministic_warn_only)
+        )
 
 
 def update_workdir(cfg, exp_id, gpu_num):

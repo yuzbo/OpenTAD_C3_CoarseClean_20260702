@@ -20,6 +20,7 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     S1_BOOTSTRAP_SEED,
     S1_CHECKPOINT_RULE,
     S1_PROFILE_ORDER_SEED,
+    atomic_publish_json,
     S1_RESOLUTIONS,
     S1_TRAINING_SEEDS,
     build_s1_profile_order,
@@ -30,7 +31,7 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
 
 Segment = tuple[float, float]
 Prediction = tuple[float, float, float]
-S1_FORMAL_REPORT_SCHEMA = "spatial_zoom_s1_formal_result_report_v1"
+S1_FORMAL_REPORT_SCHEMA = "spatial_zoom_s1_formal_result_report_v2"
 
 
 @dataclass(frozen=True)
@@ -187,10 +188,26 @@ def _class_ap(
     video_sample: Sequence[str],
     tiou_thresholds: Sequence[float],
     duration_bounds: tuple[float, float] | None,
+    video_weights: Mapping[str, float] | None = None,
 ) -> np.ndarray | None:
     gt_by_cluster: dict[int, list[Segment]] = {}
-    predictions: list[tuple[float, int, Segment]] = []
+    predictions: list[tuple[float, int, Segment, float]] = []
+    cluster_weights: dict[int, float] = {}
+    if video_weights is not None:
+        sampled_ids = tuple(map(str, video_sample))
+        if len(sampled_ids) != len(set(sampled_ids)):
+            raise ValueError(
+                "Bayesian video weighting requires one unique cluster per video"
+            )
+        if set(sampled_ids) != set(map(str, video_weights)):
+            raise ValueError(
+                "Bayesian video weights must match the complete sampled video set"
+            )
     for cluster_id, video_id in enumerate(video_sample):
+        weight = 1.0 if video_weights is None else float(video_weights[str(video_id)])
+        if not math.isfinite(weight) or weight <= 0.0:
+            raise ValueError("Bayesian cluster weights must be finite and positive")
+        cluster_weights[cluster_id] = weight
         gt_segments = [
             (float(start), float(end))
             for start, end in gt_by_video.get(str(video_id), ())
@@ -198,8 +215,13 @@ def _class_ap(
         ]
         gt_by_cluster[cluster_id] = gt_segments
         for score, start, end in pred_by_video.get(str(video_id), ()):
-            predictions.append((float(score), cluster_id, (float(start), float(end))))
-    npos = sum(len(segments) for segments in gt_by_cluster.values())
+            predictions.append(
+                (float(score), cluster_id, (float(start), float(end)), weight)
+            )
+    npos = sum(
+        cluster_weights[cluster_id] * len(segments)
+        for cluster_id, segments in gt_by_cluster.items()
+    )
     if npos == 0:
         return None
     if predictions:
@@ -212,10 +234,10 @@ def _class_ap(
         cluster_id: np.zeros((len(thresholds), len(segments)), dtype=np.bool_)
         for cluster_id, segments in gt_by_cluster.items()
     }
-    for prediction_index, (_, cluster_id, segment) in enumerate(predictions):
+    for prediction_index, (_, cluster_id, segment, weight) in enumerate(predictions):
         gt_segments = gt_by_cluster[cluster_id]
         if not gt_segments:
-            false_positive[:, prediction_index] = 1.0
+            false_positive[:, prediction_index] = weight
             continue
         overlaps = _segment_iou(segment, gt_segments)
         order = np.argsort(overlaps)[::-1]
@@ -226,11 +248,11 @@ def _class_ap(
                     break
                 if not locks[cluster_id][threshold_index, gt_index]:
                     locks[cluster_id][threshold_index, gt_index] = True
-                    true_positive[threshold_index, prediction_index] = 1.0
+                    true_positive[threshold_index, prediction_index] = weight
                     matched = True
                     break
             if not matched:
-                false_positive[threshold_index, prediction_index] = 1.0
+                false_positive[threshold_index, prediction_index] = weight
     ap = np.zeros(len(thresholds), dtype=np.float64)
     for threshold_index in range(len(thresholds)):
         tp = np.cumsum(true_positive[threshold_index])
@@ -248,6 +270,7 @@ def _map_vector(
     tiou_thresholds: Sequence[float],
     duration_bounds: tuple[float, float] | None = None,
     required_labels: Sequence[str] | None = None,
+    video_weights: Mapping[str, float] | None = None,
 ) -> np.ndarray:
     class_ap = []
     labels = tuple(sorted(corpus.gt) if required_labels is None else required_labels)
@@ -258,6 +281,7 @@ def _map_vector(
             video_sample=video_sample,
             tiou_thresholds=tiou_thresholds,
             duration_bounds=duration_bounds,
+            video_weights=video_weights,
         )
         if result is None:
             raise ValueError(
@@ -460,6 +484,7 @@ def _bootstrap_metric_vector(
     video_sample: Sequence[str],
     tiou_thresholds: Sequence[float],
     duration_quartiles: Sequence[float],
+    video_weights: Mapping[str, float],
 ) -> dict[str, float]:
     """Recompute only the preregistered bootstrap metrics from raw detections."""
     thresholds = tuple(float(value) for value in tiou_thresholds)
@@ -469,6 +494,7 @@ def _bootstrap_metric_vector(
         video_sample=video_sample,
         tiou_thresholds=thresholds,
         required_labels=overall_labels,
+        video_weights=video_weights,
     )
     high_indices = [
         index for index, threshold in enumerate(thresholds) if threshold >= 0.6
@@ -485,6 +511,7 @@ def _bootstrap_metric_vector(
             tiou_thresholds=(0.7,),
             duration_bounds=short_bounds,
             required_labels=short_labels,
+            video_weights=video_weights,
         )[0]
     )
     vector = {
@@ -501,50 +528,22 @@ def _bootstrap_metric_vector(
     return vector
 
 
-def _sample_has_all_classes(
-    corpus: DetectionCorpus,
-    sample: Sequence[str],
-    *,
-    duration_bounds: tuple[float, float] | None = None,
-) -> bool:
-    selected = set(map(str, sample))
-    required = _duration_supported_labels(corpus, duration_bounds)
-    return all(
-        any(
-            video_id in selected
-            and any(
-                _in_duration_group(float(end) - float(start), duration_bounds)
-                for start, end in segments
-            )
-            for video_id, segments in corpus.gt[label].items()
-        )
-        for label in required
-    )
-
-
-def _paired_samples(
+def _paired_bayesian_weights(
     corpus: DetectionCorpus,
     *,
     replicates: int,
     seed: int,
-    duration_quartiles: Sequence[float],
-) -> list[tuple[str, ...]]:
+) -> np.ndarray:
+    if int(replicates) <= 1:
+        raise ValueError("S1 Bayesian bootstrap requires at least two replicates")
     rng = np.random.default_rng(int(seed))
-    ids = np.asarray(corpus.video_ids, dtype=object)
-    samples = []
-    attempts = 0
-    max_attempts = max(1000, int(replicates) * 100)
-    while len(samples) < int(replicates) and attempts < max_attempts:
-        attempts += 1
-        sample = tuple(map(str, rng.choice(ids, size=len(ids), replace=True).tolist()))
-        short_bounds = (0.0, float(duration_quartiles[0]))
-        if _sample_has_all_classes(corpus, sample) and _sample_has_all_classes(
-            corpus, sample, duration_bounds=short_bounds
-        ):
-            samples.append(sample)
-    if len(samples) != int(replicates):
-        raise RuntimeError("unable to draw class-supported S1 video bootstrap samples")
-    return samples
+    weights = rng.exponential(
+        scale=1.0, size=(int(replicates), len(corpus.video_ids))
+    )
+    weights /= np.mean(weights, axis=1, keepdims=True)
+    if not np.isfinite(weights).all() or np.any(weights <= 0.0):
+        raise RuntimeError("S1 Bayesian bootstrap generated invalid video weights")
+    return weights
 
 
 def _mean_metrics(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -778,25 +777,30 @@ def aggregate_s1_runs(
     }
     for seed_index, seed in enumerate(seeds):
         baseline_corpus = by_key[(160, seed)]
-        samples = _paired_samples(
+        weight_matrix = _paired_bayesian_weights(
             baseline_corpus,
             replicates=int(bootstrap_replicates),
             seed=int(bootstrap_seed) + seed_index,
-            duration_quartiles=duration_quartiles,
         )
-        for sample in samples:
+        for weights in weight_matrix:
+            video_weights = {
+                video_id: float(weight)
+                for video_id, weight in zip(baseline_corpus.video_ids, weights)
+            }
             baseline_vector = _bootstrap_metric_vector(
                 baseline_corpus,
-                video_sample=sample,
+                video_sample=baseline_corpus.video_ids,
                 tiou_thresholds=thresholds,
                 duration_quartiles=duration_quartiles,
+                video_weights=video_weights,
             )
             for resolution in (224, 256):
                 candidate_vector = _bootstrap_metric_vector(
                     by_key[(resolution, seed)],
-                    video_sample=sample,
+                    video_sample=baseline_corpus.video_ids,
                     tiou_thresholds=thresholds,
                     duration_quartiles=duration_quartiles,
+                    video_weights=video_weights,
                 )
                 for name in metric_names:
                     boot_deltas[resolution][seed][name].append(
@@ -979,7 +983,7 @@ def aggregate_s1_runs(
         else:
             selected_resolution = min(eligible_resolutions)
     return {
-        "schema_version": "spatial_zoom_s1_result_gate_v2",
+        "schema_version": "spatial_zoom_s1_result_gate_v3",
         "status": "GO" if route_go else "KILL",
         "baseline_dense160": _mean_metrics([observed[(160, seed)] for seed in seeds]),
         "baseline_dense160_per_seed": {
@@ -997,14 +1001,20 @@ def aggregate_s1_runs(
             "formal_cost_used": bool(cost_summary),
         },
         "bootstrap": {
-            "unit": "video_cluster",
+            "unit": "paired_bayesian_video_cluster",
             "paired": True,
             "recomputes_full_class_ap": True,
+            "positive_video_weights": True,
+            "support_rejection": False,
             "replicates": int(bootstrap_replicates),
             "seed": int(bootstrap_seed),
             "hierarchical_pooling": (
-                "resample training seeds with replacement, then paired video clusters "
-                "within each sampled seed"
+                "resample training seeds with replacement, then draw one paired "
+                "Bayesian video-weight replicate within each sampled seed"
+            ),
+            "inferential_target": (
+                "Bayesian bootstrap over the empirical video-cluster distribution "
+                "with fixed class support and weighted AP"
             ),
         },
         "simultaneous_max_t": {
@@ -1455,10 +1465,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError(f"formal S1 report path must be canonical: {expected_output}")
     if args.output.exists():
         raise FileExistsError("refusing to overwrite an S1 GO/KILL report")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("x", encoding="utf-8") as handle:
-        json.dump(report, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_publish_json(args.output, report)
     print(
         json.dumps({"status": report["status"], "output": str(args.output)}, indent=2)
     )

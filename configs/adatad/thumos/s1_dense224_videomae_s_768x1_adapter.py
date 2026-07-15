@@ -1,4 +1,4 @@
-_base_ = ["./e2e_thumos_videomae_s_768x1_160_adapter.py"]
+_base_ = ["./s1_dense160_videomae_s_768x1_adapter.py"]
 
 window_size = 768
 scale_factor = 1
@@ -78,13 +78,15 @@ dataset = dict(
 )
 
 spatial_zoom_s1_contract = dict(
-    schema_version="spatial_zoom_s1_config_v1",
+    schema_version="spatial_zoom_s1_config_v2",
     gate="S1_spatial_resolution_headroom",
     runtime_resolution=224,
     train_short_side=255,
     temporal_window=768,
     detector_time_grid=768,
     tubelet_points=384,
+    temporal_interpolation="linear_align_corners_false_2x_deterministic_v1",
+    temporal_interpolation_input_points=384,
     fit_gate_manifest_required=True,
     official_test_sealed_until_protocol_freeze=True,
     checkpoint_selection_rule="max_gate_high_tiou_headroom_earliest_epoch_tie",

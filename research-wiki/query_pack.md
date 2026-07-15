@@ -1,10 +1,29 @@
 ---
 type: query_pack
-updated: 2026-07-11
+updated: 2026-07-15
 max_chars: 8000
 ---
 
-# DUCA Query Pack
+# Research Query Pack
+
+## 当前唯一活动任务：Spatial Zoom
+
+当前执行线是离线 TAD 的空间去冗余，不是 DUCA，也不是时序选帧。时间轴、768 点
+detector grid、VideoMAE-S、AdaTAD adapter、ActionFormer projection/head 和评估协议
+保持不变。先用 `Dense-160/224/256 x seeds 3407/3408/3409` 回答一个前置问题：提高
+空间分辨率是否能稳定改善 mAP@0.6/0.7、短动作与边界定位，并且代价是否可被后续稀疏
+ROI 计算回收。
+
+S1 只是 falsification gate，不包含 scout、ROI、crop policy、teacher、fusion 或新 detector。
+只有 S1 在严格确定性、matched protocol、paired Bayesian video-cluster bootstrap 和真实
+full-stack cost 下给出 GO，才允许进入 S2 oracle ROI/crop sufficiency。S2 再通过后才设计
+learned low-resolution scout、连续 ROI tube、局部高分辨率重计算和全局/局部融合。
+
+旧 `35204f5` 3x3 任务因 CUDA 线性上采样 backward 的 nondeterminism warning 而失效并
+取消；其 checkpoint 仅作诊断，不能恢复或进入正式表。当前替换实现采用 exact-2x
+deterministic interpolation、strict deterministic formal entrypoints、真实 full-model
+backward precheck、无 class-support rejection 的 Bayesian cluster bootstrap 和原子证据提交。
+尚无有效 S1 最终 mAP、成本表、GO/KILL 或 Zoom 方法结果。
 
 ## 项目方向
 

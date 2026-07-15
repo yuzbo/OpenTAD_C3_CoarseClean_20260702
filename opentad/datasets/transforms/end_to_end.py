@@ -740,18 +740,78 @@ class LoadFrames:
 
 @PIPELINES.register_module()
 class Interpolate:
-    def __init__(self, keys, size=128, mode="linear"):
+    def __init__(
+        self,
+        keys,
+        size=128,
+        mode="linear",
+        deterministic=False,
+        expected_input_size=None,
+    ):
         self.keys = keys
         self.size = size
         self.mode = mode
+        self.deterministic = bool(deterministic)
+        self.expected_input_size = (
+            None if expected_input_size is None else int(expected_input_size)
+        )
+        if self.deterministic:
+            if self.mode != "linear":
+                raise ValueError(
+                    "deterministic temporal interpolation only supports linear mode"
+                )
+            if not isinstance(self.size, int) or self.size <= 0:
+                raise ValueError(
+                    "deterministic temporal interpolation requires one positive output size"
+                )
+            if self.expected_input_size is None or self.expected_input_size <= 0:
+                raise ValueError(
+                    "deterministic temporal interpolation requires expected_input_size"
+                )
+            if self.size != 2 * self.expected_input_size:
+                raise ValueError(
+                    "the audited deterministic implementation is restricted to exact 2x upsampling"
+                )
+
+    @staticmethod
+    def _linear_2x(value):
+        """Match linear align_corners=False 2x upsampling without CUDA atomics."""
+
+        if value.ndim != 3:
+            raise ValueError(
+                "deterministic temporal interpolation expects a [N,C,T] tensor"
+            )
+        if value.shape[-1] < 1:
+            raise ValueError("cannot interpolate an empty temporal axis")
+        if value.shape[-1] == 1:
+            return torch.cat((value, value), dim=-1)
+        left = value[..., :-1]
+        right = value[..., 1:]
+        quarter = value.new_tensor(0.25)
+        three_quarters = value.new_tensor(0.75)
+        between = torch.stack(
+            (
+                three_quarters * left + quarter * right,
+                quarter * left + three_quarters * right,
+            ),
+            dim=-1,
+        ).flatten(start_dim=-2)
+        return torch.cat((value[..., :1], between, value[..., -1:]), dim=-1)
 
     def __call__(self, results):
         for key in self.keys:
-            if results[key].shape[2:] != self.size:
+            value = results[key]
+            if value.shape[-1] == self.size:
+                continue
+            if self.deterministic:
+                if value.shape[-1] != self.expected_input_size:
+                    raise ValueError(
+                        "deterministic temporal interpolation input length changed: "
+                        f"observed={value.shape[-1]}, expected={self.expected_input_size}"
+                    )
+                results[key] = self._linear_2x(value)
+            else:
                 results[key] = F.interpolate(
-                    results[key],
-                    size=self.size,
-                    mode=self.mode,
-                    align_corners=False,
+                    value, size=self.size, mode=self.mode, align_corners=False
                 )
         return results

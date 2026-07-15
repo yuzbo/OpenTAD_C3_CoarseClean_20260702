@@ -23,6 +23,8 @@ if str(ROOT) not in sys.path:
 
 from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     S1_PROFILE_ORDER_SEED,
+    atomic_publish_json,
+    atomic_publish_text,
     build_s1_profile_order,
     canonical_sha256,
     sha256_file,
@@ -50,7 +52,7 @@ from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
     validate_s1_checkpoint_sidecar,
 )
 
-S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v3"
+S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v4"
 
 
 def _canonical_hash(value: Any) -> str:
@@ -68,10 +70,7 @@ def create_profile_attempt_marker(
         **dict(payload),
     }
     marker["marker_sha256"] = canonical_sha256(marker)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("x", encoding="utf-8") as handle:
-        json.dump(marker, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_publish_json(path, marker)
     return marker
 
 
@@ -576,7 +575,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "formal S1 power sampling must target the allocated SLURM_JOB_GPUS identity"
         )
     torch.cuda.set_device(device)
-    set_seed(int(args.seed))
+    set_seed(int(args.seed), deterministic_warn_only=False)
     hardware_identity = _hardware_identity(
         torch, device, physical_gpu_id=str(args.power_gpu_id)
     )
@@ -961,22 +960,21 @@ def main(argv: list[str] | None = None) -> int:
                 f"refusing to overwrite formal S1 profile artifacts: {existing}"
             )
         report = profile(args)
-        write_profile_summary(report, summary_path)
         samples_path.parent.mkdir(parents=True, exist_ok=True)
-        with samples_path.open("x", encoding="utf-8") as handle:
-            handle.write(
-                "".join(
-                    json.dumps(row, sort_keys=True) + "\n"
-                    for row in report["raw_samples"]
-                )
-            )
-        with power_path.open("x", encoding="utf-8") as handle:
-            handle.write(
-                "".join(
-                    json.dumps(row, sort_keys=True) + "\n"
-                    for row in report["raw_power_samples"]
-                )
-            )
+        atomic_publish_text(
+            samples_path,
+            "".join(
+                json.dumps(row, sort_keys=True) + "\n"
+                for row in report["raw_samples"]
+            ),
+        )
+        atomic_publish_text(
+            power_path,
+            "".join(
+                json.dumps(row, sort_keys=True) + "\n"
+                for row in report["raw_power_samples"]
+            ),
+        )
         if sha256_file(power_path) != report["power_trace_file_sha256"]:
             raise RuntimeError(
                 "S1 written power trace does not match the profile summary"
@@ -989,10 +987,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.compare_baseline:
             baseline = json.loads(args.compare_baseline.read_text(encoding="utf-8"))
             comparison = compare_resolution_profiles(baseline, report)
-            with comparison_path.open("x", encoding="utf-8") as handle:
-                json.dump(comparison, handle, indent=2, sort_keys=True)
-                handle.write("\n")
+            atomic_publish_json(comparison_path, comparison)
             outputs["comparison"] = str(comparison_path)
+        # The summary is the transaction commit record and is published last.
+        write_profile_summary(report, summary_path)
     except Exception as exc:
         print(
             json.dumps(

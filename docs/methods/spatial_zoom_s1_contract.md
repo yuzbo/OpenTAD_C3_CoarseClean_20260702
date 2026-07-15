@@ -44,7 +44,9 @@ rule remain identical.
    must match a preregistered pretrained-checkpoint SHA, prove exact loading of
    every non-adapter VideoMAE core parameter, prove the exact interpolation
    call sequence, detector shape, CUDA memory, clean Git commit, and exact
-   3-config matrix. Static/clip mode does not unlock training.
+   3-config matrix. It must also execute one real AMP training loss and strict
+   deterministic backward for every resolution. Static/clip mode does not
+   unlock training.
 4. Materialize each training config from the manifest and full-precheck
    certificate. Formal training requires a clean checkout, a one-GPU Slurm
    allocation, one process, deterministic execution, a fresh canonical workdir, no
@@ -63,26 +65,43 @@ rule remain identical.
    the official single-rank
    DDP result aggregation/NMS path, the complete test loader, batch size 1,
    zero workers, 50 warmups, a persistent 20 ms power sampler with raw trace,
-   and one canonical output prefix.
+   and one canonical output prefix. Cost claims are limited to same-node,
+   same-GPU, warm serial per-window latency and gross GPU energy; they do not
+   represent cold-start, whole-video latency, incremental energy, or CPU and
+   storage energy.
 9. Bind checkpoint, prediction, marker, certificate, manifest, config, profile,
    Git commit, precheck, and internal/file hashes into one
    descriptor per resolution and seed.
-10. Recompute full class AP under paired video-cluster and training-seed
-    bootstrap. Require parity with the official THUMOS evaluator, apply a
-    one-sided simultaneous max-T lower bound across 224 and 256, report
-    boundary error, and use measured full-stack cost in resolution freezing.
+10. Recompute full class AP under a paired Bayesian video-cluster bootstrap
+    with fixed class support and hierarchical training-seed resampling. Require
+    parity with the official THUMOS evaluator, apply a one-sided simultaneous
+    max-T lower bound across 224 and 256, report boundary error, and use
+    measured full-stack cost in resolution freezing.
 
 ## Current Verification
 
-- Resolved-config validator: passed locally.
-- Required focused tests: `46 passed`; S1 tests: `26 passed`.
-- Static geometry precheck: passed for 160/224/256.
-- Local real clip: blocked by the known Windows `c10.dll` failure.
-- Formal CUDA full-window precheck and S1 training: not run.
-
-Repeated independent Max reviews first returned `FAIL_BEFORE_REMOTE_TRAINING`
-and exposed protocol/provenance bypasses. After remediation, the same
-`gpt-5.6-sol`/`max` reviewer returned `PASS_BEFORE_REMOTE_TRAINING` with no
-P0/P1/P2 finding.
-Thus the S1 infrastructure is locally `tested`; the route remains `designed`.
-No S1 GO, empirical support, or paper claim is allowed.
+- The previous `35204f5` matrix is protocol-invalid diagnostic evidence. All
+  nine cells emitted CUDA `upsample_linear1d_backward_out_cuda`
+  nondeterminism warnings under warning-only enforcement and were cancelled
+  before completion. They cannot be resumed into the formal table.
+- The replacement configs use an analytical exact-2x temporal interpolation
+  that is forward/backward equivalent to `linear, align_corners=False` while
+  avoiding the nondeterministic CUDA backward kernel. Formal train, test,
+  profile, and full precheck entrypoints request strict deterministic
+  algorithms.
+- The result analysis uses 10,000 positive paired Bayesian video-cluster
+  weights without class-support rejection. Test-open recovery and immutable
+  evidence files use atomic publication; the global marker embeds the exact
+  recoverable certificate.
+- Local syntax checks pass. The combined S1/train-iteration suite reports
+  `40 passed, 1 skipped`, and the required C3 regression reports `20 passed`.
+  The skipped
+  interpolation parity test requires the Linux Torch runtime and is mandatory
+  in the Slurm precheck.
+- The resolved matrix validator passes for 160/224/256 with protocol
+  fingerprint
+  `3dc356baec2d69b8f13fc2096f0df00b5e9e387935bb80bd2a73d3a25037eb0c`.
+- A replacement exact-commit CUDA full-window/backward precheck and fresh 3x3
+  training matrix have not yet completed. Therefore S1 remains `tested` only
+  at the local infrastructure level. No S1 GO, crop-model success, empirical
+  support, or paper claim is allowed.

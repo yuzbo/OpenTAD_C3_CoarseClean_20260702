@@ -14,6 +14,9 @@ import tools.bata.spatial_zoom_s1_test_open as s1_test_open
 
 from tools.bata.analyze_spatial_zoom_s1_results import (
     DetectionCorpus,
+    _class_ap,
+    _map_vector,
+    _paired_bayesian_weights,
     _simultaneous_max_t_lower_bounds,
     aggregate_s1_runs,
     assert_official_evaluator_parity,
@@ -75,6 +78,7 @@ from tools.bata.spatial_zoom_s1_test_open import (
     _shared_experiment_identity,
     _shared_precheck_identity,
     create_global_test_open_marker,
+    recover_global_test_open_certificate,
     validate_global_test_open_marker,
 )
 from tools.bata.validate_spatial_zoom_s1 import (
@@ -277,7 +281,19 @@ def test_manifest_is_deterministic_disjoint_hashed_and_loader_ready(
     assert fit.isdisjoint(gate)
     assert (fit | gate).isdisjoint(test)
     assert checked["seeds"]["training"] == [3407, 3408, 3409]
-    assert checked["bootstrap"]["replicates"] == 10_000
+    assert checked["bootstrap"] == {
+        "unit": "paired_bayesian_video_cluster",
+        "paired": True,
+        "replicates": 10_000,
+        "recompute_full_class_ap": True,
+        "positive_video_weights": True,
+        "support_rejection": False,
+        "inferential_target": (
+            "Bayesian bootstrap over the empirical video-cluster distribution "
+            "with fixed class support and weighted AP"
+        ),
+        "simultaneous_correction": "max_t_for_224_and_256",
+    }
     assert checked["duration_quartiles_seconds"]["q1"] > 0.0
     assert checked["manifest_sha256"]
     assert checked["pretrained_checkpoint"] == {
@@ -289,6 +305,12 @@ def test_manifest_is_deterministic_disjoint_hashed_and_loader_ready(
         ),
     }
     assert checked["split_hashes"]["fit"] != checked["split_hashes"]["gate"]
+    forged_bootstrap = copy.deepcopy(first)
+    forged_bootstrap["bootstrap"]["support_rejection"] = True
+    forged_bootstrap.pop("manifest_sha256")
+    forged_bootstrap["manifest_sha256"] = canonical_sha256(forged_bootstrap)
+    with pytest.raises(ValueError, match="Bayesian bootstrap protocol"):
+        validate_s1_manifest(forged_bootstrap)
     with pytest.raises(ValueError, match="frozen"):
         build_s1_manifest(annotation, gate_ratio=0.25)
     with pytest.raises(ValueError, match="frozen"):
@@ -391,21 +413,64 @@ def test_formal_experiment_namespace_is_unique_and_test_open_is_global(
         "canonical_experiment_root": str(local_root),
     }
     assert _shared_experiment_identity([shared_binding] * 9) == shared_binding
+    selection_paths = [tmp_path / f"selection-{index}.json" for index in range(9)]
+    checkpoint_paths = [tmp_path / f"checkpoint-{index}.pth" for index in range(9)]
+    manifest_path = tmp_path / "manifest.json"
+    annotation_path = _write_annotation(tmp_path)
+    manifest = build_s1_manifest(annotation_path)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    selection_rows = []
+    for index, (selection_path, checkpoint_path) in enumerate(
+        zip(selection_paths, checkpoint_paths)
+    ):
+        selection_path.write_text(
+            json.dumps({"resolution": index, "seed": index}), encoding="utf-8"
+        )
+        checkpoint_path.write_bytes(f"checkpoint-{index}".encode("ascii"))
+        selection_rows.append(
+            {
+                "selection_path": str(selection_path),
+                "selection_file_sha256": sha256_file(selection_path),
+                "checkpoint_path": str(checkpoint_path),
+                "checkpoint_sha256": sha256_file(checkpoint_path),
+            }
+        )
     certificate = {
         **shared_binding,
         "canonical_study_root": str(study_root),
         "global_test_open_marker_path": str(
             study_root / "test_open" / "test_open_issued.json"
         ),
-        "manifest_sha256": "a" * 64,
+        "manifest_sha256": manifest["manifest_sha256"],
+        "annotation_sha256": manifest["annotation_sha256"],
         "code_commit": "b" * 40,
         "precheck_file_sha256": sha256_file(precheck_a),
         "precheck_sha256": "e" * 64,
         "pretrained_checkpoint_sha256": S1_PRETRAINED_CHECKPOINT_SHA256,
-        "certificate_sha256": "f" * 64,
+        "manifest_path": str(manifest_path),
+        "annotation_path": str(annotation_path),
+        "selection_matrix": selection_rows,
     }
+    certificate["certificate_sha256"] = canonical_sha256(certificate)
     marker_path, marker = create_global_test_open_marker(certificate)
     assert validate_global_test_open_marker(certificate) == marker
+    recovered_output = local_root / "test_open" / "test_open_certificate.json"
+    recovered = recover_global_test_open_certificate(
+        output_path=recovered_output,
+        manifest_path=manifest_path,
+        annotation_path=annotation_path,
+        selection_paths=selection_paths,
+    )
+    assert recovered == certificate
+    assert json.loads(recovered_output.read_text(encoding="utf-8")) == certificate
+    selection_paths[0].write_text("tampered", encoding="utf-8")
+    with pytest.raises(ValueError, match="current selection differs"):
+        recover_global_test_open_certificate(
+            output_path=recovered_output,
+            manifest_path=manifest_path,
+            annotation_path=annotation_path,
+            selection_paths=selection_paths,
+        )
     with pytest.raises(FileExistsError):
         create_global_test_open_marker(certificate)
     rerun_certificate = {
@@ -413,11 +478,14 @@ def test_formal_experiment_namespace_is_unique_and_test_open_is_global(
         "experiment_namespace": changed["experiment_namespace"],
         "canonical_experiment_root": changed["canonical_experiment_root"],
         "precheck_file_sha256": sha256_file(precheck_b),
-        "certificate_sha256": "0" * 64,
     }
+    rerun_certificate.pop("certificate_sha256", None)
+    rerun_certificate["certificate_sha256"] = canonical_sha256(rerun_certificate)
     with pytest.raises(FileExistsError):
         create_global_test_open_marker(rerun_certificate)
     changed_root = {**rerun_certificate, "canonical_study_root": str(tmp_path / "x")}
+    changed_root.pop("certificate_sha256", None)
+    changed_root["certificate_sha256"] = canonical_sha256(changed_root)
     with pytest.raises(ValueError, match="canonical study root"):
         create_global_test_open_marker(changed_root)
     assert marker_path.is_file()
@@ -525,6 +593,10 @@ def test_manifest_writer_emits_block_lists_with_expected_complements(
     assert gate_blocked == set(manifest["splits"]["fit"])
     saved = json.loads(paths["manifest"].read_text(encoding="utf-8"))
     assert saved["manifest_sha256"] == manifest["manifest_sha256"]
+    assert write_s1_manifest_bundle(manifest, tmp_path / "bundle") == paths
+    paths["fit_block_list"].write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="manifest artifact differs"):
+        write_s1_manifest_bundle(manifest, tmp_path / "bundle")
 
 
 def test_s1_source_config_is_not_trainable_until_manifest_bound(tmp_path: Path) -> None:
@@ -940,9 +1012,10 @@ def test_s1_aggregator_uses_paired_video_bootstrap_and_applies_gate_rules() -> N
     )
 
     assert report["status"] == "GO"
-    assert report["bootstrap"]["unit"] == "video_cluster"
+    assert report["bootstrap"]["unit"] == "paired_bayesian_video_cluster"
     assert report["bootstrap"]["paired"] is True
     assert report["bootstrap"]["recomputes_full_class_ap"] is True
+    assert report["bootstrap"]["support_rejection"] is False
     assert report["resolutions"]["224"]["gate"]["all_conditions"] is True
     assert report["simultaneous_max_t"]["metric"] == "high_tiou_headroom"
     assert report["baseline_dense160"]["boundary_error"]["matched_gt_mean"] > 0
@@ -952,6 +1025,131 @@ def test_s1_aggregator_uses_paired_video_bootstrap_and_applies_gate_rules() -> N
         ]
         == 0.0
     )
+
+
+def test_bayesian_video_weights_preserve_all_one_ap_and_integer_multiplicity() -> None:
+    corpus = DetectionCorpus(
+        gt={"A": {"v1": [(0.0, 1.0)], "v2": [(0.0, 1.0)]}},
+        predictions={
+            "A": {
+                "v1": [(0.9, 0.0, 1.0)],
+                "v2": [(0.8, 0.0, 2.0), (0.7, 0.0, 1.0)],
+            }
+        },
+        video_ids=("v1", "v2"),
+    )
+    unweighted = _map_vector(
+        corpus,
+        video_sample=corpus.video_ids,
+        tiou_thresholds=(0.7,),
+    )
+    all_one = _map_vector(
+        corpus,
+        video_sample=corpus.video_ids,
+        tiou_thresholds=(0.7,),
+        video_weights={"v1": 1.0, "v2": 1.0},
+    )
+    integer_weighted = _class_ap(
+        gt_by_video=corpus.gt["A"],
+        pred_by_video=corpus.predictions["A"],
+        video_sample=corpus.video_ids,
+        tiou_thresholds=(0.7,),
+        duration_bounds=None,
+        video_weights={"v1": 2.0, "v2": 1.0},
+    )
+    explicit_clusters = _class_ap(
+        gt_by_video=corpus.gt["A"],
+        pred_by_video=corpus.predictions["A"],
+        video_sample=("v1", "v1", "v2"),
+        tiou_thresholds=(0.7,),
+        duration_bounds=None,
+    )
+    assert all_one == pytest.approx(unweighted)
+    assert integer_weighted == pytest.approx(explicit_clusters)
+
+
+def test_bayesian_bootstrap_keeps_rare_class_support_without_rejection() -> None:
+    corpus = DetectionCorpus(
+        gt={
+            "common": {"v1": [(0.0, 2.0)], "v2": [(0.0, 2.0)]},
+            "rare": {"v3": [(0.0, 0.5)]},
+        },
+        predictions={
+            "common": {
+                "v1": [(0.9, 0.0, 2.0)],
+                "v2": [(0.8, 0.0, 2.0)],
+            },
+            "rare": {"v3": [(0.7, 0.0, 0.5)]},
+        },
+        video_ids=("v1", "v2", "v3"),
+    )
+    weights = _paired_bayesian_weights(corpus, replicates=10_000, seed=3407001)
+    assert weights.shape == (10_000, 3)
+    assert np.isfinite(weights).all()
+    assert np.all(weights > 0.0)
+    for row in weights[:32]:
+        metric = _map_vector(
+            corpus,
+            video_sample=corpus.video_ids,
+            tiou_thresholds=(0.7,),
+            video_weights={
+                video_id: float(weight)
+                for video_id, weight in zip(corpus.video_ids, row)
+            },
+        )
+        assert np.isfinite(metric).all()
+
+
+def test_deterministic_temporal_interpolation_matches_linear_forward_and_backward() -> None:
+    if sys.platform == "win32":
+        pytest.skip("the project Torch DLL runtime is unavailable on this Windows host")
+    try:
+        import torch
+        import torch.nn.functional as functional
+        from opentad.datasets.transforms.end_to_end import Interpolate
+    except OSError as exc:
+        pytest.skip(f"local Torch runtime unavailable: {exc}")
+
+    reference_input = torch.randn(2, 3, 384, dtype=torch.float64, requires_grad=True)
+    deterministic_input = reference_input.detach().clone().requires_grad_(True)
+    reference = functional.interpolate(
+        reference_input, size=768, mode="linear", align_corners=False
+    )
+    deterministic = Interpolate._linear_2x(deterministic_input)
+    assert torch.allclose(reference, deterministic, atol=1e-12, rtol=1e-12)
+    gradient = torch.randn_like(reference)
+    reference.backward(gradient)
+    deterministic.backward(gradient)
+    assert torch.allclose(
+        reference_input.grad,
+        deterministic_input.grad,
+        atol=1e-12,
+        rtol=1e-12,
+    )
+
+
+def test_formal_s1_entrypoints_request_strict_determinism() -> None:
+    train_source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
+    test_source = (ROOT / "tools" / "test.py").read_text(encoding="utf-8")
+    profile_source = (
+        ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py"
+    ).read_text(encoding="utf-8")
+    assert "deterministic_warn_only=s1_binding is None" in train_source
+    assert "deterministic_warn_only=s1_binding is None" in test_source
+    assert "set_seed(int(args.seed), deterministic_warn_only=False)" in profile_source
+
+
+def test_full_precheck_preserves_prediction_shape_evidence_before_release() -> None:
+    source = (
+        ROOT / "tools" / "bata" / "run_spatial_zoom_s1_precheck.py"
+    ).read_text(encoding="utf-8")
+    capture = source.index("prediction_container_length = len(predictions)")
+    release = source.index("del predictions", capture)
+    publish = source.index(
+        '"prediction_container_length": prediction_container_length', release
+    )
+    assert capture < release < publish
+    assert "len(predictions)" not in source[release:publish]
 
 
 def test_simultaneous_max_t_uses_the_upper_bootstrap_pivot_for_lower_bounds() -> None:

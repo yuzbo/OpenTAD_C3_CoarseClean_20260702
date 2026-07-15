@@ -27,7 +27,7 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     sha256_file,
 )
 
-S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v4"
+S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v5"
 
 
 def _register_opentad_runtime_modules() -> None:
@@ -79,6 +79,10 @@ def build_precheck_spec(config_path: str | Path) -> dict[str, Any]:
             embed_dims,
             int(contract.detector_time_grid),
         ],
+        "temporal_interpolation": str(contract.temporal_interpolation),
+        "temporal_interpolation_input_points": int(
+            contract.temporal_interpolation_input_points
+        ),
         "full_window_input_shape": [
             1,
             1,
@@ -402,12 +406,93 @@ def _run_full_detector(
         raise AssertionError(
             "S1 full detector forward_test returned an unexpected structure"
         )
+    prediction_container_length = len(predictions)
     _validate_interpolation_calls(spec, interpolation_calls)
     expected_call = bool(interpolation_calls)
+    del predictions
+
+    model.train()
+    model.zero_grad(set_to_none=True)
+    gt_segments = [
+        torch.tensor([[128.0, 320.0]], device=device, dtype=torch.float32)
+    ]
+    gt_labels = [torch.tensor([0], device=device, dtype=torch.long)]
+    with torch.autocast(
+        device_type=device.type,
+        dtype=torch.float16,
+        enabled=bool(amp and device.type == "cuda"),
+    ):
+        losses = model.forward_train(
+            inputs,
+            masks,
+            metas,
+            gt_segments=gt_segments,
+            gt_labels=gt_labels,
+        )
+        train_cost = losses["cost"]
+    if not bool(torch.isfinite(train_cost).item()):
+        raise FloatingPointError("S1 full precheck produced a non-finite train cost")
+    train_cost.backward()
+    required_gradient_components = ("backbone", "projection", "rpn_head")
+    gradient_coverage: dict[str, dict[str, Any]] = {}
+    missing_gradient_parameters = []
+    finite_gradient_tensors = 0
+    nonzero_gradient_tensors = 0
+    trainable_parameter_tensors = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+        trainable_parameter_tensors += 1
+        component = name.split(".", 1)[0]
+        row = gradient_coverage.setdefault(
+            component,
+            {
+                "trainable_parameter_tensors": 0,
+                "gradient_tensors": 0,
+                "nonzero_gradient_tensors": 0,
+                "all_present_gradients_finite": True,
+            },
+        )
+        row["trainable_parameter_tensors"] += 1
+        if parameter.grad is None:
+            missing_gradient_parameters.append(name)
+            continue
+        row["gradient_tensors"] += 1
+        if not bool(torch.isfinite(parameter.grad).all().item()):
+            row["all_present_gradients_finite"] = False
+            raise FloatingPointError(
+                f"S1 full precheck produced a non-finite gradient for {name}"
+            )
+        finite_gradient_tensors += 1
+        if bool(torch.count_nonzero(parameter.grad).item()):
+            row["nonzero_gradient_tensors"] += 1
+            nonzero_gradient_tensors += 1
+    if missing_gradient_parameters:
+        raise RuntimeError(
+            "S1 full precheck left trainable parameters outside the detector "
+            f"backward graph: count={len(missing_gradient_parameters)}, "
+            f"examples={missing_gradient_parameters[:8]}"
+        )
+    for component in required_gradient_components:
+        row = gradient_coverage.get(component)
+        if not row or int(row["trainable_parameter_tensors"]) <= 0:
+            raise RuntimeError(
+                f"S1 full precheck found no trainable {component} parameters"
+            )
+        if row["gradient_tensors"] != row["trainable_parameter_tensors"]:
+            raise RuntimeError(
+                f"S1 full precheck has incomplete {component} gradient coverage"
+            )
+        if int(row["nonzero_gradient_tensors"]) <= 0:
+            raise RuntimeError(
+                f"S1 full precheck produced no nonzero {component} gradient"
+            )
+    if finite_gradient_tensors != trainable_parameter_tensors:
+        raise RuntimeError("S1 full precheck gradient coverage is incomplete")
     result = {
         "mode": "real_full_detector_window",
         **captured,
-        "prediction_container_length": len(predictions),
+        "prediction_container_length": prediction_container_length,
         "position_interpolation_observed": expected_call,
         "interpolation_target_calls": interpolation_calls,
         "pretrained_checkpoint": str(pretrain_path.resolve()),
@@ -417,9 +502,21 @@ def _run_full_detector(
         "latency_ms_diagnostic_only": elapsed_ms,
         "random_initialization": False,
         "paper_cost_claim_allowed": False,
+        "strict_deterministic_algorithms": bool(
+            torch.are_deterministic_algorithms_enabled()
+        ),
+        "strict_deterministic_warn_only": bool(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "deterministic_backward_passed": True,
+        "train_cost": float(train_cost.detach().float().cpu().item()),
+        "trainable_parameter_tensors": int(trainable_parameter_tensors),
+        "finite_gradient_tensors": int(finite_gradient_tensors),
+        "nonzero_gradient_tensors": int(nonzero_gradient_tensors),
+        "gradient_coverage": gradient_coverage,
         **_memory_snapshot(torch, device),
     }
-    del predictions, inputs, masks, model
+    del losses, train_cost, gt_segments, gt_labels, inputs, masks, model
     if device.type == "cuda":
         torch.cuda.empty_cache()
     return result
@@ -470,6 +567,9 @@ def run_precheck(
             "logical_device": "cuda:0",
         }
         require_clean_git_checkout(expected_commit=code_commit)
+        from opentad.utils import set_seed
+
+        set_seed(3407001, deterministic_warn_only=False)
     rows = []
     for path in config_paths:
         spec = build_precheck_spec(path)
@@ -501,6 +601,14 @@ def run_precheck(
         "rows": rows,
         "formal_training_ready": mode == "full" and len(rows) == 3,
         "paper_result": False,
+        "strict_deterministic_algorithms": bool(
+            mode == "full"
+            and __import__("torch").are_deterministic_algorithms_enabled()
+        ),
+        "strict_deterministic_warn_only": bool(
+            mode == "full"
+            and __import__("torch").is_deterministic_algorithms_warn_only_enabled()
+        ),
     }
     report["precheck_sha256"] = canonical_sha256(report)
     return report
@@ -578,6 +686,46 @@ def validate_precheck_certificate(
                 raise ValueError(
                     "S1 precheck positional interpolation call sequence mismatch"
                 )
+            if runtime.get("strict_deterministic_algorithms") is not True:
+                raise ValueError(
+                    "formal S1 precheck did not enable strict deterministic algorithms"
+                )
+            if runtime.get("strict_deterministic_warn_only") is not False:
+                raise ValueError(
+                    "formal S1 precheck left deterministic algorithms in warn-only mode"
+                )
+            if runtime.get("deterministic_backward_passed") is not True:
+                raise ValueError(
+                    "formal S1 precheck did not pass a real detector backward"
+                )
+            trainable_parameter_tensors = int(
+                runtime.get("trainable_parameter_tensors", 0)
+            )
+            if (
+                trainable_parameter_tensors <= 0
+                or int(runtime.get("finite_gradient_tensors", 0))
+                != trainable_parameter_tensors
+                or int(runtime.get("nonzero_gradient_tensors", 0)) <= 0
+            ):
+                raise ValueError(
+                    "formal S1 precheck has incomplete detector-gradient evidence"
+                )
+            coverage = runtime.get("gradient_coverage")
+            if not isinstance(coverage, dict):
+                raise ValueError("formal S1 precheck has no gradient coverage map")
+            for component in ("backbone", "projection", "rpn_head"):
+                component_row = coverage.get(component)
+                if (
+                    not isinstance(component_row, dict)
+                    or int(component_row.get("trainable_parameter_tensors", 0)) <= 0
+                    or component_row.get("gradient_tensors")
+                    != component_row.get("trainable_parameter_tensors")
+                    or int(component_row.get("nonzero_gradient_tensors", 0)) <= 0
+                    or component_row.get("all_present_gradients_finite") is not True
+                ):
+                    raise ValueError(
+                        f"formal S1 precheck has invalid {component} gradient coverage"
+                    )
             if not runtime.get("pretrained_checkpoint_loaded") or runtime.get(
                 "random_initialization"
             ):
@@ -613,6 +761,14 @@ def validate_precheck_certificate(
     ):
         raise ValueError("S1 full precheck execution contract mismatch")
     if require_full:
+        if checked.get("strict_deterministic_algorithms") is not True:
+            raise ValueError(
+                "formal S1 precheck certificate is not strict deterministic"
+            )
+        if checked.get("strict_deterministic_warn_only") is not False:
+            raise ValueError(
+                "formal S1 precheck certificate is deterministic warn-only"
+            )
         allocation = checked.get("slurm_allocation")
         if (
             not isinstance(allocation, dict)

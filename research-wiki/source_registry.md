@@ -44,6 +44,11 @@ updated: 2026-07-11
 评审建议不是实验事实。wiki 中只有带 run root、Job ID、日志或 result artifact 的内容
 才可标记为实验事实。
 
+- 2026-07-15 Spatial Zoom S1/DUCA exact-commit Pro audit：本地附件
+  `C:/Users/skywalker/.codex/attachments/69a2a56a-019c-43d1-9063-a2333ce34faa/pasted-text.txt`。
+  当前路线只吸收其中 S1 的 strict determinism、Bayesian cluster bootstrap、事务证据和
+  cost claim boundary；DUCA findings 不属于 Spatial Zoom 实验事实。
+
 ## 远端实验来源
 
 - DUCA 70aa fixed-384 Job：`1154971`

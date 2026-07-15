@@ -1,9 +1,22 @@
 ---
 type: anti_repetition
-updated: 2026-07-11
+updated: 2026-07-15
 ---
 
 # 禁止重走清单
+
+## Spatial Zoom 当前边界
+
+1. 不得把 S1 称为 Zoom/crop 模型。S1 只有 matched dense spatial-resolution matrix。
+2. 不得在 S1 GO 前实现 learned ROI policy，或用 oracle ROI 结果倒推修改 S1 gate。
+3. 不得把 DUCA、时序选帧、dynamic budget、max-gap 或 X3D/SlowFast prior 混入当前任务。
+4. 不得恢复 `35204f5` 的 warning-bearing partial checkpoints 作为正式结果；替换矩阵必须从
+   新 exact commit、新 precheck 和新 canonical experiment namespace 全量重跑。
+5. 不得把 precheck、pilot、checkpoint 数量或中间 epoch 当作 S1 性能结果。
+6. S1 的正式统计不得拒绝缺少稀有类的 bootstrap replicate；使用正权重 paired Bayesian
+   video-cluster bootstrap，并保持 baseline/candidate 同 replicate 配对。
+7. 成本只允许表述为同节点同 GPU 的 warm serial per-window latency 与 gross GPU energy，
+   不得冒充 cold-start、whole-video p95、incremental energy 或完整系统能耗。
 
 ## 任务与叙事
 

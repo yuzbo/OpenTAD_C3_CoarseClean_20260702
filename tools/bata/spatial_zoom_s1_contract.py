@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import uuid
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -18,7 +20,7 @@ S1_BOOTSTRAP_SEED = 3407001
 S1_PROFILE_ORDER_SEED = 3407002
 S1_BOOTSTRAP_REPLICATES = 10_000
 S1_CHECKPOINT_RULE = "max_gate_high_tiou_headroom_earliest_epoch_tie"
-S1_MANIFEST_SCHEMA = "spatial_zoom_s1_manifest_v3"
+S1_MANIFEST_SCHEMA = "spatial_zoom_s1_manifest_v4"
 S1_PRETRAINED_CHECKPOINT_FILENAME = (
     "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth"
 )
@@ -40,6 +42,30 @@ def canonical_sha256(value: Any) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def atomic_publish_text(path: str | Path, text: str) -> Path:
+    """Publish one complete immutable file without exposing partial contents."""
+
+    path = Path(path).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return path
+
+
+def atomic_publish_json(path: str | Path, value: Mapping[str, Any]) -> Path:
+    return atomic_publish_text(
+        path,
+        json.dumps(dict(value), indent=2, sort_keys=True) + "\n",
+    )
 
 
 def stable_id_hash(values: Iterable[str]) -> str:
@@ -317,11 +343,16 @@ def build_s1_manifest(
         },
         "profile_matrix_order": build_s1_profile_order(),
         "bootstrap": {
-            "unit": "video_cluster",
+            "unit": "paired_bayesian_video_cluster",
             "paired": True,
             "replicates": S1_BOOTSTRAP_REPLICATES,
             "recompute_full_class_ap": True,
-            "require_nonempty_class_support": True,
+            "positive_video_weights": True,
+            "support_rejection": False,
+            "inferential_target": (
+                "Bayesian bootstrap over the empirical video-cluster "
+                "distribution with fixed class support and weighted AP"
+            ),
             "simultaneous_correction": "max_t_for_224_and_256",
         },
         "checkpoint_selection_rule": S1_CHECKPOINT_RULE,
@@ -390,8 +421,23 @@ def validate_s1_manifest(
         or checked.get("gate_ratio") != S1_GATE_RATIO
     ):
         raise ValueError("S1 manifest split parameters changed")
-    if checked.get("bootstrap", {}).get("replicates") != S1_BOOTSTRAP_REPLICATES:
-        raise ValueError("S1 bootstrap replicate count must remain frozen")
+    expected_bootstrap = {
+        "unit": "paired_bayesian_video_cluster",
+        "paired": True,
+        "replicates": S1_BOOTSTRAP_REPLICATES,
+        "recompute_full_class_ap": True,
+        "positive_video_weights": True,
+        "support_rejection": False,
+        "inferential_target": (
+            "Bayesian bootstrap over the empirical video-cluster distribution "
+            "with fixed class support and weighted AP"
+        ),
+        "simultaneous_correction": "max_t_for_224_and_256",
+    }
+    if checked.get("bootstrap") != expected_bootstrap:
+        raise ValueError("S1 Bayesian bootstrap protocol must remain frozen")
+    if checked.get("seeds", {}).get("bootstrap") != S1_BOOTSTRAP_SEED:
+        raise ValueError("S1 bootstrap seed must remain frozen")
     if checked.get("checkpoint_selection_rule") != S1_CHECKPOINT_RULE:
         raise ValueError("S1 checkpoint selection rule changed")
     if annotation_path is not None:
@@ -466,22 +512,24 @@ def write_s1_manifest_bundle(
     manifest_path = output_dir / "spatial_zoom_s1_manifest.json"
     fit_block_path = output_dir / "fit_block_list.txt"
     gate_block_path = output_dir / "gate_block_list.txt"
-    existing = [
-        str(path)
-        for path in (manifest_path, fit_block_path, gate_block_path)
-        if path.exists()
-    ]
-    if existing:
-        raise FileExistsError(
-            f"refusing to overwrite frozen S1 manifest artifacts: {existing}"
-        )
-    with manifest_path.open("x", encoding="utf-8") as handle:
-        json.dump(checked, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    with fit_block_path.open("x", encoding="utf-8") as handle:
-        handle.write("".join(f"{item}\n" for item in checked["splits"]["gate"]))
-    with gate_block_path.open("x", encoding="utf-8") as handle:
-        handle.write("".join(f"{item}\n" for item in checked["splits"]["fit"]))
+    manifest_payload = json.dumps(checked, indent=2, sort_keys=True) + "\n"
+    fit_payload = "".join(f"{item}\n" for item in checked["splits"]["gate"])
+    gate_payload = "".join(f"{item}\n" for item in checked["splits"]["fit"])
+    for path, payload in (
+        (fit_block_path, fit_payload),
+        (gate_block_path, gate_payload),
+    ):
+        if path.exists():
+            if path.read_text(encoding="utf-8") != payload:
+                raise ValueError(f"existing S1 manifest artifact differs: {path}")
+        else:
+            atomic_publish_text(path, payload)
+    # The manifest is the bundle commit record and is published last.
+    if manifest_path.exists():
+        if manifest_path.read_text(encoding="utf-8") != manifest_payload:
+            raise ValueError("existing S1 manifest differs from the frozen protocol")
+    else:
+        atomic_publish_text(manifest_path, manifest_payload)
     return {
         "manifest": manifest_path,
         "fit_block_list": fit_block_path,
@@ -498,6 +546,8 @@ __all__ = [
     "S1_PROFILE_ORDER_SEED",
     "S1_RESOLUTIONS",
     "S1_TRAINING_SEEDS",
+    "atomic_publish_json",
+    "atomic_publish_text",
     "build_s1_manifest",
     "build_s1_profile_order",
     "canonical_sha256",

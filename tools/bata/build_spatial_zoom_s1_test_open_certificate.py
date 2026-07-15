@@ -12,7 +12,9 @@ if str(ROOT) not in sys.path:
 from tools.bata.spatial_zoom_s1_test_open import (
     build_test_open_certificate,
     create_global_test_open_marker,
+    recover_global_test_open_certificate,
 )
+from tools.bata.spatial_zoom_s1_contract import atomic_publish_json
 from tools.bata.spatial_zoom_s1_training import require_clean_git_checkout
 
 
@@ -26,6 +28,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        recovered = recover_global_test_open_certificate(
+            output_path=args.output,
+            manifest_path=args.manifest,
+            annotation_path=args.annotation,
+            selection_paths=args.selection,
+        )
+        if recovered is not None:
+            require_clean_git_checkout(expected_commit=recovered["code_commit"])
+            print(
+                json.dumps(
+                    {
+                        "status": "PASS",
+                        "output": str(args.output),
+                        "recovered_from_global_commit": True,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
         if args.output.exists():
             raise FileExistsError("refusing to overwrite an S1 test-open certificate")
         certificate = build_test_open_certificate(
@@ -43,11 +64,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError(
                 f"S1 test-open certificate path must be canonical: {expected_output}"
             )
-        args.output.parent.mkdir(parents=True, exist_ok=True)
         create_global_test_open_marker(certificate)
-        with args.output.open("x", encoding="utf-8") as handle:
-            json.dump(certificate, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+        atomic_publish_json(args.output, certificate)
     except Exception as exc:
         print(
             json.dumps(

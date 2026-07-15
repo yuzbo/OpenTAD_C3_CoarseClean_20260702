@@ -6,7 +6,12 @@ from typing import Any, Mapping
 
 from mmengine.config import Config
 
-from tools.bata.spatial_zoom_s1_contract import canonical_sha256, sha256_file
+from tools.bata.spatial_zoom_s1_contract import (
+    atomic_publish_json,
+    atomic_publish_text,
+    canonical_sha256,
+    sha256_file,
+)
 from tools.bata.spatial_zoom_s1_training import (
     S1_CHECKPOINT_METADATA_SCHEMA,
     checkpoint_sidecar_path,
@@ -128,12 +133,16 @@ def write_s1_gate_evidence(
     output_dir.mkdir(parents=True, exist_ok=True)
     prediction_path = output_dir / f"epoch_{epoch}.result_detection.json"
     evidence_path = output_dir / f"epoch_{epoch}.evidence.json"
-    if prediction_path.exists() or evidence_path.exists():
+    if evidence_path.exists():
         raise FileExistsError("refusing to overwrite frozen S1 gate evidence")
-    prediction_path.write_text(
-        json.dumps({"results": dict(result_dict)}, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    prediction_payload = json.dumps(
+        {"results": dict(result_dict)}, sort_keys=True
+    ) + "\n"
+    if prediction_path.exists():
+        if prediction_path.read_text(encoding="utf-8") != prediction_payload:
+            raise ValueError("existing S1 gate prediction is not recoverable")
+    else:
+        atomic_publish_text(prediction_path, prediction_payload)
     state_key = "state_dict_ema" if bool(cfg.solver.get("ema", False)) else "state_dict"
     evidence: dict[str, Any] = {
         "schema_version": S1_GATE_EVIDENCE_SCHEMA,
@@ -166,9 +175,7 @@ def write_s1_gate_evidence(
         "paper_claim_allowed": False,
     }
     evidence["evidence_sha256"] = canonical_sha256(evidence)
-    evidence_path.write_text(
-        json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    atomic_publish_json(evidence_path, evidence)
     return evidence_path
 
 
@@ -286,12 +293,16 @@ def write_s1_test_evidence(
     output_dir.mkdir(parents=True, exist_ok=True)
     prediction_path = output_dir / "result_detection.json"
     evidence_path = output_dir / "test.evidence.json"
-    if prediction_path.exists() or evidence_path.exists():
+    if evidence_path.exists():
         raise FileExistsError("refusing to overwrite sealed S1 test evidence")
-    prediction_path.write_text(
-        json.dumps({"results": dict(result_dict)}, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    prediction_payload = json.dumps(
+        {"results": dict(result_dict)}, sort_keys=True
+    ) + "\n"
+    if prediction_path.exists():
+        if prediction_path.read_text(encoding="utf-8") != prediction_payload:
+            raise ValueError("existing S1 test prediction is not recoverable")
+    else:
+        atomic_publish_text(prediction_path, prediction_payload)
     metadata = sidecar["experiment_metadata"]
     validate_s1_checkpoint_metadata_for_binding(
         metadata, binding=binding, epoch=int(epoch), cfg=bound_cfg
@@ -333,9 +344,7 @@ def write_s1_test_evidence(
         "paper_claim_allowed": False,
     }
     evidence["evidence_sha256"] = canonical_sha256(evidence)
-    evidence_path.write_text(
-        json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    atomic_publish_json(evidence_path, evidence)
     return evidence_path
 
 

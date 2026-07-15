@@ -84,7 +84,10 @@ def main():
                 "formal S1 test forbids cfg overrides, alternate ids, partial inference, and no-eval mode"
             )
         from tools.bata.spatial_zoom_s1_test_open import validate_test_open_certificate
-        from tools.bata.spatial_zoom_s1_contract import canonical_sha256
+        from tools.bata.spatial_zoom_s1_contract import (
+            atomic_publish_json,
+            canonical_sha256,
+        )
         from tools.bata.spatial_zoom_s1_evidence import S1_TEST_OPEN_MARKER_SCHEMA
         from tools.bata.spatial_zoom_s1_training import (
             require_clean_git_checkout,
@@ -143,7 +146,7 @@ def main():
     torch.cuda.set_device(args.local_rank)
 
     # set random seed, create work_dir
-    set_seed(args.seed)
+    set_seed(args.seed, deterministic_warn_only=s1_binding is None)
     cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
     if s1_binding is not None:
         marker_path = os.path.join(cfg.work_dir, "test_open_started.json")
@@ -166,9 +169,7 @@ def main():
                 "test_open_certificate_sha256": certificate["certificate_sha256"],
             }
             marker["marker_sha256"] = canonical_sha256(marker)
-            with open(marker_path, "x", encoding="utf-8") as handle:
-                json.dump(marker, handle, indent=2, sort_keys=True)
-                handle.write("\n")
+            atomic_publish_json(marker_path, marker)
             cfg.spatial_zoom_s1_test_binding.open_marker_path = os.path.abspath(
                 marker_path
             )

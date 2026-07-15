@@ -9,11 +9,12 @@ from typing import Any, Mapping, Sequence
 from tools.bata.spatial_zoom_s1_contract import (
     S1_PROFILE_ORDER_SEED,
     S1_TRAINING_SEEDS,
+    atomic_publish_json,
     canonical_sha256,
 )
 
 S1_PROFILE_PROTOCOL = "spatial_zoom_s1_offline_full_stack_v5"
-S1_PROFILE_SCHEMA = "spatial_zoom_s1_profile_v5"
+S1_PROFILE_SCHEMA = "spatial_zoom_s1_profile_v6"
 TOP_LEVEL_STAGES = (
     "input_pipeline_serial_ms",
     "h2d_ms",
@@ -384,6 +385,16 @@ def build_profile_summary(
             "end_to_end_serial_ms": "continuous window wall plus amortized official final result aggregation",
             "heavy_backbone_ms": "nested inside backbone_wrapper_ms",
         },
+        "measurement_scope": {
+            "latency": "warm serial per-window gross wall time after 50 warmup windows",
+            "energy": "warm serial gross GPU energy per measured window including amortized final aggregation",
+            "not_measured": [
+                "cold-start latency",
+                "whole-video latency distribution",
+                "incremental deployment energy",
+                "CPU or storage energy",
+            ],
+        },
         "claims": {
             "trained_checkpoint_only": True,
             "offline_tad": True,
@@ -414,6 +425,7 @@ def validate_profile_summary(profile: Mapping[str, Any]) -> dict[str, Any]:
         "stages",
         "resources",
         "stage_semantics",
+        "measurement_scope",
         "claims",
         "raw_samples",
         "power_sampling",
@@ -518,10 +530,7 @@ def write_profile_summary(report: Mapping[str, Any], output_path: str | Path) ->
     output_path = Path(output_path)
     if output_path.exists():
         raise FileExistsError("refusing to overwrite a formal S1 profile summary")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("x", encoding="utf-8") as handle:
-        json.dump(checked, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_publish_json(output_path, checked)
     return output_path
 
 
