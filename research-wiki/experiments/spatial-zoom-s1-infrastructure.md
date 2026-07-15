@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
-stage: tested
-outcome: first_remote_gate_failed_on_audited_unused_classification_norm_fix_pending
+stage: experiment_running
+outcome: strict_cuda_gate_passed_formal_3x3_training_queued
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-15
@@ -67,13 +67,25 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   separately counts gradient-required tensors, and fails if either allowlisted
   parameter is unexpectedly used or any additional trainable parameter is
   disconnected. Local S1/train-iteration tests are now `43 passed, 1 skipped`.
-- Replacement exact-commit CUDA gate, 3x3 training, sealed test, cost profile,
-  final analysis, and GO/KILL remain incomplete. No formal training job has been
-  queued from the failed gate.
+- Fix commit `47842427eb373fb1f440b1661971a6a231a95f67` closes the exact
+  expected-unused contract and component/global count conservation. Independent
+  `gpt-5.6-sol/max` review returned `PASS_FOR_REMOTE_GATE`; its count-closure P2
+  was fixed and re-reviewed as `P2_CLOSED`.
+- Exact snapshot `opentad_spatial_zoom_s1_4784242_20260715_ghfast` and Slurm
+  Job `1165667` passed the full CUDA gate. For every resolution, 339 tensors are
+  trainable, the exact two `fc_norm` tensors are audited unused, all remaining
+  337 gradients are finite, and backbone/projection/rpn_head have nonzero grads.
+- Fresh suite root is
+  `spatial_zoom_s1_4784242_20260715_2245`; canonical experiment namespace is
+  `695803b687bf52197847e8b7fbf3d802c968d13070c660138f524ed31548f3a7`.
+- Formal 3x3 jobs are `1165669-1165677` for dense160/224/256 and seeds
+  3407/3408/3409. They are queued/running under normal one-GPU Slurm allocation
+  without a physical-GPU override. Sealed test, cost profile, final analysis,
+  and GO/KILL remain incomplete.
 
 ## Decision Boundary
 
-`tested` here describes local infrastructure only. The route is not
+`experiment_running` describes the formal 3x3 matrix, not a positive result. The route is not
 `empirically_supported` or `paper_ready`. S1 KILL permanently blocks S2. S1 GO
 only authorizes an oracle ROI/crop sufficiency experiment; it does not prove a
 learned zoom method.

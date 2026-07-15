@@ -109,7 +109,9 @@ rule remain identical.
   names to be absent from the backward graph, reports trainable and
   gradient-required counts separately, closes all component counts against the
   global totals, and rejects any missing or additional disconnected parameter.
-  A replacement exact-commit CUDA precheck and fresh
-  3x3 training matrix have not yet completed. Therefore S1 remains `tested`
-  only at the infrastructure level. No S1 GO, crop-model success, empirical
-  support, or paper claim is allowed.
+  Replacement commit `47842427eb373fb1f440b1661971a6a231a95f67` passed
+  CUDA gate Job `1165667`: all three resolutions have 339 trainable tensors,
+  the exact two audited-unused tensors, 337 finite gradients, and nonzero
+  backbone/projection/head gradients. Formal jobs `1165669-1165677` now run the
+  fresh 3x3 matrix. S1 is only `experiment_running`; no S1 GO, crop-model
+  success, empirical support, or paper claim is allowed.

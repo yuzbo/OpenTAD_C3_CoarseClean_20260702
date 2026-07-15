@@ -10,14 +10,15 @@ max_chars: 8000
 
 - 当前唯一执行线仍是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
   ROI、scout、crop policy 或 fusion。
-- `64e71dd` 的 Linux 测试为 `41 passed`。正式 CUDA Job `1165648` 完成真实
-  pretrained VideoMAE + AdaTAD 全模型 AMP forward/backward 后，仅因
-  `backbone.model.backbone.fc_norm.{weight,bias}` 无梯度而 fail-closed。
-- 源码核验表明这两个参数属于分类预训练的 mean-pooling norm；S1 配置均为
-  `return_feat_map=True`，在进入 `fc_norm` 前返回 dense TAD 特征。该失败不是模型断图，
-  也不是性能证据。
-- 修复只允许这两个精确全名缺梯度，并要求缺梯度集合与白名单完全相等；任何新增断图仍
-  必须失败。替换 CUDA gate 通过前不得排正式 3x3 训练。
+- `64e71dd` / Job `1165648` 的首次门禁只因分类预训练 `fc_norm` 被 dense feature-map
+  路径绕过而 fail-closed；它不是模型断图或性能证据。
+- 修复提交 `47842427eb373fb1f440b1661971a6a231a95f67` 只允许两个精确
+  `fc_norm.{weight,bias}` 全名缺梯度，并闭合 component/global counts。独立 max 审计为
+  `PASS_FOR_REMOTE_GATE`，其 P2 已复核为 `P2_CLOSED`。
+- 新 CUDA gate Job `1165667` 已 PASS：160/224/256 均为 339 个 trainable tensors，
+  2 个审计未用、337 个 finite gradients，backbone/projection/head 均有非零梯度。
+- 正式 3x3 训练 Job `1165669-1165677` 已排队，状态为 `experiment_running`；当前仍无
+  sealed-test mAP、成本结果或 S1 GO/KILL，禁止进入 S2。
 
 ## 当前唯一活动任务：Spatial Zoom
 

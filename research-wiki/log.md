@@ -43,3 +43,12 @@ append_only: true
   其唯一 P2 是 component 与 global gradient counts 未闭合。提交前已增加所有 component 的
   trainable/required/unused/finite/nonzero 守恒验证及 under-report 反例测试。该门禁结论仍不
   等价于 S1 empirical GO。
+- 2026-07-15：修复提交 `47842427eb373fb1f440b1661971a6a231a95f67` 已推送。
+  新 exact snapshot `opentad_spatial_zoom_s1_4784242_20260715_ghfast`、suite
+  `spatial_zoom_s1_4784242_20260715_2245` 和 manifest 均重新创建，未修改或复用旧快照。
+- 2026-07-15：CUDA gate Job `1165667` COMPLETED 0:0 / PASS。三分辨率均为 339 个
+  trainable、337 个 gradient-required/finite tensors；缺梯度集合精确等于两个 `fc_norm`，
+  strict deterministic warn-only=false，formal_training_ready=true。
+- 2026-07-15：正式 3x3 S1 matrix 已排队：`1165669-1165671`=dense160，
+  `1165672-1165674`=dense224，`1165675-1165677`=dense256，各对应 seeds
+  3407/3408/3409。状态提升到 `experiment_running`，sealed test/cost/GO-KILL 尚未完成。

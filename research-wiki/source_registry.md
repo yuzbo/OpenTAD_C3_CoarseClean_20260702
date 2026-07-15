@@ -26,6 +26,8 @@ updated: 2026-07-15
   `E:/DeskTop/TAD/OpenTAD_SpatialZoom_S1_AuditFix_20260715`
 - Spatial Zoom S1 branch：`codex/spatial-zoom-s1-audit-fix-20260715`
 - 首轮审计提交：`64e71ddc633f9c63f9dea1c5c60c49dc00441ebf`
+- 当前 Spatial Zoom S1 formal code commit：
+  `47842427eb373fb1f440b1661971a6a231a95f67`
 
 ## 关键评审与吸收记录
 
@@ -66,6 +68,14 @@ updated: 2026-07-15
 - Spatial Zoom S1 packaging-only failure：Job `1165647`；不属于模型证据。
 - Spatial Zoom S1 first full CUDA gate：Job `1165648`；Linux tests `41 passed`，全模型
   backward 到达后因预期未用的分类 `fc_norm` 两个参数触发过严门禁。无训练结果。
+- Spatial Zoom S1 replacement exact snapshot：
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_4784242_20260715_ghfast`
+- Spatial Zoom S1 replacement suite：
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/spatial_zoom_s1_4784242_20260715_2245`
+- Spatial Zoom S1 CUDA gate：Job `1165667`，COMPLETED 0:0，precheck v6 PASS。
+- Spatial Zoom S1 formal 3x3 jobs：`1165669-1165677`；远端 `jobs.tsv` 位于 replacement
+  suite 根目录。canonical namespace：
+  `695803b687bf52197847e8b7fbf3d802c968d13070c660138f524ed31548f3a7`。
 
 ## 外部附件
 
