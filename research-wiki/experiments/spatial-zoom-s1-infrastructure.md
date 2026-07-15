@@ -92,6 +92,12 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   approximately `1.43-1.50`. Each run has 2-3 recovered AMP retry attempts;
   there is no Traceback, OOM, non-finite loss, deterministic warning, or FAIL.
   Validation intentionally remains unopened until epoch 40.
+- Automation `spatial-zoom-s1-experiment-monitor` is active every two hours.
+  It is an idempotent state machine: training health monitoring, selection
+  validation, one global sealed-test opening, official test and trained-model
+  cost profiling, frozen GO/KILL diagnosis, GitHub evidence update, and only
+  then a verified Pro-tier post-result audit. It must stop after the final Pro
+  report so test jobs, evidence publication, and reviewer calls cannot repeat.
 
 ## Decision Boundary
 

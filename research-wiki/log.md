@@ -59,3 +59,9 @@ append_only: true
 - 2026-07-15 23:03+08:00：`1165669-1165677` 全部 RUNNING；dense160 已进入 epoch 2，
   dense224/256 已进入 epoch 1。最新 loss `1.0760-1.1135`，各臂 2-3 次 AMP attempt 已恢复；
   Traceback/OOM/non-finite/determinism/FAIL 计数均为 0。epoch 40 前无 validation mAP 是预注册行为。
+- 2026-07-15 23:08+08:00: updated the two-hour Spatial Zoom S1 heartbeat
+  into an idempotent end-to-end state machine: monitor the formal 3x3 matrix,
+  validate checkpoint selection, open the sealed test once, run official test
+  and trained-checkpoint cost profiling, issue the frozen GO/KILL diagnosis,
+  publish only auditable summaries to GitHub, then invoke a verified Pro-tier
+  code/protocol/result review and deactivate the automation.
