@@ -22,7 +22,12 @@ def _selector(
     calibration_temperature: float = 1.0,
     calibration_bias: float = 0.0,
     selector_variant: str = "direct_boundary",
+    acquisition_policy: str | None = None,
+    detector_gradient_mode: str = "st_sparse_gather_soft_context",
 ) -> DucaOnlineFrameSelector:
+    uses_structured_policy = (
+        selector_variant == "transition_only" or acquisition_policy == "global_structured_topk"
+    )
     return DucaOnlineFrameSelector(
         in_channels=3,
         budget=4,
@@ -31,12 +36,14 @@ def _selector(
         selector_hidden_channels=8,
         selector_variant=selector_variant,
         acquisition_policy=(
-            "global_structured_topk" if selector_variant == "transition_only" else "legacy_center_radius"
+            acquisition_policy
+            if acquisition_policy is not None
+            else "global_structured_topk" if selector_variant == "transition_only" else "legacy_center_radius"
         ),
-        max_unselected_hole=(3 if selector_variant == "transition_only" else None),
-        hard_max_gap_repair=(selector_variant != "transition_only"),
+        max_unselected_hole=(3 if uses_structured_policy else None),
+        hard_max_gap_repair=not uses_structured_policy,
         forbid_external_actionness=(selector_variant == "transition_only"),
-        detector_gradient_mode="st_sparse_gather_soft_context",
+        detector_gradient_mode=detector_gradient_mode,
         profile_runtime=True,
         actionness_source_cfg={
             "type": "C3CoarseProbeActionnessSource",
@@ -279,7 +286,11 @@ def test_structured_surrogate_graph_is_invariant_for_normal_and_all_short_masks(
 
 
 def test_direct_all_short_structured_slots_keep_active_mass_contract() -> None:
-    selector = _selector(selector_variant="direct_boundary")
+    selector = _selector(
+        selector_variant="direct_boundary",
+        acquisition_policy="global_structured_topk",
+        detector_gradient_mode="structured_zero_forward",
+    )
     selector.train()
     out = selector.forward_train(
         inputs=torch.randn(1, 1, 3, 8, 16, 16),
