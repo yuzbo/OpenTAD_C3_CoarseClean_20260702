@@ -31,6 +31,7 @@ def eval_one_epoch(
     world_size=0,
     not_eval=False,
     max_batches=None,
+    epoch=None,
 ):
     """Inference and Evaluation the model"""
 
@@ -51,7 +52,9 @@ def eval_one_epoch(
         external_cls = test_loader.dataset.class_map
 
     # whether the testing dataset is sliding window
-    cfg.post_processing.sliding_window = isinstance(test_loader.dataset, SlidingWindowDataset)
+    cfg.post_processing.sliding_window = isinstance(
+        test_loader.dataset, SlidingWindowDataset
+    )
 
     # model forward
     model.eval()
@@ -85,6 +88,33 @@ def eval_one_epoch(
 
     if rank == 0:
         result_eval = dict(results=result_dict)
+        evaluated_video_ids = sorted(
+            {str(row[0]) for row in test_loader.dataset.data_list}
+        )
+        if "spatial_zoom_s1_test_binding" in cfg:
+            if epoch is None or max_batches is not None:
+                raise ValueError("formal S1 test evidence requires complete inference")
+            from tools.bata.spatial_zoom_s1_evidence import write_s1_test_evidence
+
+            write_s1_test_evidence(
+                result_dict=result_dict,
+                evaluated_video_ids=evaluated_video_ids,
+                cfg=cfg,
+                epoch=int(epoch),
+            )
+        elif "spatial_zoom_s1_runtime_binding" in cfg:
+            if epoch is None or max_batches is not None:
+                raise ValueError(
+                    "formal S1 gate evidence requires a complete epoch evaluation"
+                )
+            from tools.bata.spatial_zoom_s1_evidence import write_s1_gate_evidence
+
+            write_s1_gate_evidence(
+                result_dict=result_dict,
+                evaluated_video_ids=evaluated_video_ids,
+                cfg=cfg,
+                epoch=int(epoch),
+            )
         if cfg.post_processing.save_dict:
             result_path = os.path.join(cfg.work_dir, "result_detection.json")
             with open(result_path, "w") as out:
@@ -92,7 +122,9 @@ def eval_one_epoch(
 
         if not not_eval:
             # build evaluator
-            evaluator = build_evaluator(dict(prediction_filename=result_eval, **cfg.evaluation))
+            evaluator = build_evaluator(
+                dict(prediction_filename=result_eval, **cfg.evaluation)
+            )
             # evaluate and output
             logger.info("Evaluation starts...")
             metrics_dict = evaluator.evaluate()
@@ -125,7 +157,9 @@ def gather_ddp_results(world_size, result_dict, post_cfg):
                 labels.append(class_idx.index(data["label"]))
             labels = torch.Tensor(labels)
 
-            segments, scores, labels = batched_nms(segments, scores, labels, **post_cfg.nms)
+            segments, scores, labels = batched_nms(
+                segments, scores, labels, **post_cfg.nms
+            )
 
             results_per_video = []
             for segment, label, score in zip(segments, labels, scores):

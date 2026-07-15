@@ -16,6 +16,7 @@ def train_one_epoch(
     logging_interval=200,
     scaler=None,
     max_train_iters=None,
+    fail_on_skipped_update=False,
 ):
     """Training the model for one epoch"""
 
@@ -30,6 +31,7 @@ def train_one_epoch(
     use_amp = False if scaler is None else True
 
     model.train()
+    successful_updates = 0
     for iter_idx, data_dict in enumerate(train_loader):
         optimizer.zero_grad()
 
@@ -58,10 +60,19 @@ def train_one_epoch(
 
         # update parameters
         if use_amp:
+            scale_before = float(scaler.get_scale())
             scaler.step(optimizer)
             scaler.update()
+            update_succeeded = float(scaler.get_scale()) >= scale_before
         else:
             optimizer.step()
+            update_succeeded = True
+
+        if fail_on_skipped_update and not update_succeeded:
+            raise FloatingPointError(
+                "S1 AMP skipped an optimizer update; equal-successful-update contract failed"
+            )
+        successful_updates += int(update_succeeded)
 
         # update scheduler
         scheduler.step()
@@ -78,19 +89,33 @@ def train_one_epoch(
             losses_tracker[key].update(value.item())
 
         # printing each logging_interval
-        if ((iter_idx != 0) and (iter_idx % logging_interval) == 0) or ((iter_idx + 1) == num_iters):
+        if ((iter_idx != 0) and (iter_idx % logging_interval) == 0) or (
+            (iter_idx + 1) == num_iters
+        ):
             # print to terminal
-            block1 = "[Train]: [{:03d}][{:05d}/{:05d}]".format(curr_epoch, iter_idx, num_iters - 1)
+            block1 = "[Train]: [{:03d}][{:05d}/{:05d}]".format(
+                curr_epoch, iter_idx, num_iters - 1
+            )
             block2 = "Loss={:.4f}".format(losses_tracker["cost"].avg)
-            block3 = ["{:s}={:.4f}".format(key, value.avg) for key, value in losses_tracker.items() if key != "cost"]
+            block3 = [
+                "{:s}={:.4f}".format(key, value.avg)
+                for key, value in losses_tracker.items()
+                if key != "cost"
+            ]
             block4 = "lr_det={:.1e}".format(curr_det_lr)
             if curr_backbone_lr is not None:
                 block4 = "lr_backbone={:.1e}".format(curr_backbone_lr) + "  " + block4
-            block5 = "mem={:.0f}MB".format(torch.cuda.max_memory_allocated() / 1024.0 / 1024.0)
+            block5 = "mem={:.0f}MB".format(
+                torch.cuda.max_memory_allocated() / 1024.0 / 1024.0
+            )
             logger.info("  ".join([block1, block2, "  ".join(block3), block4, block5]))
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
-            logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
+            logger.info(
+                "[Train]: max_train_iters=%d reached; ending smoke epoch early",
+                max_train_iters,
+            )
             break
+    return successful_updates
 
 
 def val_one_epoch(
@@ -128,7 +153,11 @@ def val_one_epoch(
     # print to terminal
     block1 = "[Val]: [{:03d}]".format(curr_epoch)
     block2 = "Loss={:.4f}".format(losses_tracker["cost"].avg)
-    block3 = ["{:s}={:.4f}".format(key, value.avg) for key, value in losses_tracker.items() if key != "cost"]
+    block3 = [
+        "{:s}={:.4f}".format(key, value.avg)
+        for key, value in losses_tracker.items()
+        if key != "cost"
+    ]
     logger.info("  ".join([block1, block2, "  ".join(block3)]))
 
     # load back the normal model dict
