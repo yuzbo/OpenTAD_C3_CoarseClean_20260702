@@ -533,6 +533,31 @@ SHAs `5BDC1862...5577C4` and `C92FED39...3A262D7`. Independent exact-byte review
 the false boolean-evidence path: immutable registered cost-profile identity, the 4,200-update runner,
 matched-dense workflow and A3/A4 contracts remain missing.
 
+## 2026-07-15 GitHub Pro review of immutable review-only snapshot
+
+The branch snapshot `b854adb4f4c9235580b5e58c3f3255db6e9adbc0` passed the external snapshot gate but
+received the overall verdict `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`. The review independently
+confirmed the absent Stage-C/matched-dense/Gate-4 production chain, mismatch between the Stage-C canonical
+Tensor hook and the real ActionFormer loss dictionary, train-mode `loss_normalizer` specification conflict,
+unapproved A1--A4, incomplete registration source vector, Slurm device conflict and lack of immutable
+measured-cost provenance. It preserved the bounded Gate-4 test-only adjudicator approval and did not claim
+a P0 in its read surface.
+
+Local read-only fact checking confirmed that the four named workflow paths are absent, that
+`ActionFormer.forward_train` returns a dictionary, that `AnchorFreeHead.losses` mutates
+`loss_normalizer` in training, and that the two changed integration tests are absent from
+`REQUIRED_REGISTRATION_SOURCE_PATHS`. The reviewer’s broad automatic glob suggestion was narrowed:
+`tests/test_chronotransport*.py` discovers 21 files while the vector includes 14, leaving five additional
+old/general files besides the two confirmed omissions. Formal completeness must therefore use an explicit
+classification manifest rather than filename prefix alone. Its proposed Stage-C evidence interface and
+launcher path remain unapproved design suggestions.
+
+The verbatim source and detailed disposition are archived at SHA-256
+`1A7B9D5AEA47302AC7BCB29DB9EF54DAD97CF3D45DF1536691CB9B536EC4C376`. The reviewer did not run tests,
+CUDA or Slurm; this record likewise started no experiment. Status remains
+`REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`, A1--A4 `proposed_unapproved`, registration `NOT_READY`, and
+all formal Gate/Stage-C execution absent.
+
 ## Connections
 
 由 `research-wiki/graph/edges.jsonl` 维护。

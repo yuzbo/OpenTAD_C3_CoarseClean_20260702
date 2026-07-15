@@ -203,3 +203,17 @@ updated: 2026-07-13
 89. `GITHUB_SNAPSHOT_INCOMPLETE` only proves that the external reviewer obeyed the snapshot gate. When
     the branch is still the forbidden old SHA, missing-file/spec-hash/code checks are `NOT_EVALUATED`;
     never cite that response as an implementation verdict or silently audit the old snapshot instead.
+90. An external review verdict and its proposed patch are different evidence classes. Accepting
+    `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` does not authorize copying an interface, launcher name or
+    discovery rule that is not uniquely implied by the approved specification.
+91. Do not define the formal registration test vector with a raw filename glob. Every ChronoTransport test
+    must be explicitly classified; newly discovered unclassified tests fail closed, while only approved
+    `formal_r2_source` tests enter the immutable exact-source vector.
+92. A proposed Stage-C evidence dataclass is not an executable contract. Official loss-dictionary
+    reduction, per-window regret, dense/counterfactual forward count and order, and `loss_normalizer`
+    transitions must follow approved A3/A4 before any production runner is implemented.
+93. Do not preserve `_gpu1.sh`, `CUDA_VISIBLE_DEVICES=1` or physical-index semantics merely because old
+    spec text or an audit names that path. Future launchers must use the approved Slurm-assigned-device
+    contract and logical `cuda:0` without overriding scheduler visibility.
+94. Before a valid I/R, GPU checks must remain synthetic/test-only. Do not touch the official evaluation
+    population or create reusable Gate-4 evidence under the label of a “small precheck.”

@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-13
+updated: 2026-07-15
 max_chars: 8000
 ---
 
@@ -24,6 +24,15 @@ max_chars: 8000
   `797a2df8d00560c8f7a7f66c13e95bb5b0d836ee`，与被禁止的旧快照 identical。reviewer 按第一门
   停止，未读取代码、未检查文件/spec hash，也未给实现裁决。下一次 Pro 审查必须等用户明确授权
   发布新的 immutable review snapshot；该 snapshot 不能冒充 I 或 R。
+- 用户授权的 review-only snapshot `b854adb4f4c9235580b5e58c3f3255db6e9adbc0` 随后通过 GitHub
+  快照门，但 Pro 完整审计仍裁决 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。总体裁决与停止
+  条件已吸收：Stage-C/matched-dense/Gate-4 正式链缺失，真实 ActionFormer loss/normalizer 合同未
+  接通，A1--A4 未批准，registration 漏掉两份本次修改的 integration tests，measured-cost provenance
+  与 Slurm 合同仍未闭环。没有测试复跑、I/R、formal Gate、训练或论文数字。
+- Pro 的具体补丁不全部照搬：不能用裸 `tests/test_chronotransport*.py` glob 定义 formal vector；
+  当前 glob 命中 21 个文件、registration 仅含 14 个，除两份已确认遗漏外还有五份旧/通用表面。
+  应采用显式 formal/legacy/nonformal 分类并拒绝未分类新文件。其 Stage-C evidence dataclass 只是
+  A3/A4 批准前的设计草案；未来 launcher 也不得沿用固定 physical-GPU1 语义。
 
 ## 项目方向
 

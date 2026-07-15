@@ -106,3 +106,14 @@ rollback、clustered Gate 4 与 pre-Gate1 immutable registration。
 r2 不引入新 seed、训练步数、head、loss、candidate library、quantile、epsilon 或结果后
 调参自由度。只有 spec-only review 输出 `APPROVE_SPEC_FOR_PLAN` 后才可实现；任一 Gate
 FAIL 后永久降级 frozen baseline。即使 Gate 1--4 全 PASS，deploy/paper 仍为 false。
+
+## 14. `b854adb` Pro 审计后的实现决策
+
+接受外部 Pro 的总体 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`：不生成 I/R，不启动任何
+formal stage。先批准并冻结 A1--A4，再接真实 ActionFormer Stage-C 合同，随后补 candidate 与
+matched-dense runner、Gate-4 producer、完整 registration vector，最后才重新做 implementation
+approval。
+
+不接受把 reviewer 的示例补丁当成新规格。测试完整性采用显式分类 manifest，而不是裸 glob；
+Stage-C dataclass 只保留为待 A3/A4 约束的接口草案；launcher 不沿用 physical-GPU1 命名/映射。
+这是一项实现治理决策，不是科学路线 PASS/FAIL，也不改变历史负结果。

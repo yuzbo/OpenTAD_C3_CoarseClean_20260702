@@ -193,3 +193,16 @@ RED-first 修复，并经 `APPROVE_STAGEC_MEASURED_COST_FLAG_LOCK` 独立限定�
 显式 `_TEST_MEASURED_COST`，只用于验证正常 formal runtime 后的篡改拒绝，不能冒充正式 profile。
 真实路线仍须绑定 profile artifact hash、硬件/环境、producer、requested/executed cost 与 I/R；
 因此状态只是 bounded primitive lock，不是 Stage-C workflow、registration 或实验完成。
+
+## `b854adb` GitHub Pro 审计吸收（2026-07-15）
+
+review-only immutable snapshot 已通过外部快照门，但总体仍为
+`REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。该结论被接受：当前缺真实 ActionFormer Stage-C
+桥、4,200 successful-update candidate/matched-dense workflow、repository-owned Gate-4 producer、
+完整 source vector、A1--A4 与 profile provenance。路线没有被科学判死，也没有新 Gate 结果。
+
+具体实现建议不盲从。registration 应立即承认两份已确认 integration-test omission，但完整性检查
+必须基于显式 formal/legacy/nonformal 分类，不能让裸 `test_chronotransport*.py` glob 自动决定 R。
+Pro 提议的 Stage-C evidence dataclass 仅作为需求清单吸收，必须等 A3/A4 唯一化 official loss、
+per-window regret、forward order 与 `loss_normalizer` 后才可冻结。未来 launcher 也必须服从 Slurm
+分配单设备和逻辑 `cuda:0`，不能沿用 physical-GPU1/CVD=1 语义。

@@ -1,0 +1,1430 @@
+# 1. Executive Verdict
+
+快照门通过，但整体裁决为 **`REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`**。固定 SHA 不是 implementation commit `I`，更不能据此创建 registration commit `R`。阻断项包括：A1–A4 仍未批准；Stage-C、matched-dense、Gate-4 正式工作流缺失；Stage-C primitive 与真实 ActionFormer 训练合同不相容；registration source vector 未闭合。当前没有 r2 科学 Gate 失败，因此尚不裁决 `REJECT_AND_FREEZE`，但必须禁止 formal precheck、Gate 1 和 GPU 实验。
+
+# 2. GitHub Snapshot / Visibility Certificate
+
+| 项目               | 审计结果                                                                                                             |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 仓库               | `yuzbo/OpenTAD_C3_CoarseClean_20260702`                                                                          |
+| 审查分支             | `codex/chronotransport-r2-implementation`                                                                        |
+| Fresh resolve 时间 | `2026-07-15T13:38:46Z` 审计窗口                                                                                      |
+| `REVIEW_SHA`     | `b854adb4f4c9235580b5e58c3f3255db6e9adbc0`                                                                       |
+| 旧快照              | `797a2df8d00560c8f7a7f66c13e95bb5b0d836ee`                                                                       |
+| 后代关系             | GitHub compare 返回 `ahead_by=1`、`behind_by=0`，merge base 为旧快照；因此新 SHA 是其后代且不相等                                    |
+| 可见性              | `public`                                                                                                         |
+| 提交角色             | 提交消息明确写明这是 review-only snapshot，不是实现提交 `I`、不是注册提交 `R`，也不批准 A1–A4 或 formal experiment。                            |
+| Prompt 最低文件门     | 已确认全部存在；因此没有触发 `GITHUB_SNAPSHOT_INCOMPLETE`                                                                      |
+| 规范 Git blob      | `0f54c9392f512c29f7ef59eb0afda61fe8dfa5f2`                                                                       |
+| 规范 SHA-256       | 我实际下载固定 SHA 下的规范字节并运行 `sha256sum`，得到 `87fa305ccafc3a29176c3971f593489f86edd23a4c02c1bfbdae4144fcf34cf8`；与注册常量一致。 |
+| 规范大小             | 47,546 bytes，870 行                                                                                               |
+| 父提交完整向量          | `CANNOT_VERIFY_WITH_AVAILABLE_CONNECTOR`。能够证明一提交 ahead 与 merge base，但 connector 未暴露完整 parent array               |
+| tree SHA         | `CANNOT_VERIFY_WITH_AVAILABLE_CONNECTOR`。不得根据 commit SHA 或 compare 结果补造                                          |
+
+**快照门结论：`PASS`。** 后续所有代码判断只针对：
+
+```text
+b854adb4f4c9235580b5e58c3f3255db6e9adbc0
+```
+
+# 3. Evidence Taxonomy Table
+
+| 证据类别                     | 本报告中的含义                 | 本轮实例                                                                      |
+| ------------------------ | ----------------------- | ------------------------------------------------------------------------- |
+| `REPOSITORY_FACT`        | 固定 SHA 源码直接证明           | formal random-control lock、Stage-C hook、registration source set、缺失 runner |
+| `REVIEWER_EXECUTED_FACT` | 我实际执行并观察到结果             | fresh compare；规范 SHA-256；固定 SHA 文件获取；四个正式表面的 404                          |
+| `PROJECT_REPORTED_FACT`  | wiki、审计报告或提交说明声称，但本轮未复现 | “71 passed, 1 skipped”“APPROVE_GATES23_RECOVERY”等                         |
+| `INFERENCE_OR_PROPOSAL`  | 由代码合同推导的可达性、科学风险或补丁设计   | 真实 ActionFormer forward 无法满足当前 Stage-C 顶层 Tensor 合同                       |
+
+本轮**没有**执行：
+
+* Python 测试；
+* CUDA/GradScaler 测试；
+* Slurm precheck；
+* profiling；
+* 训练、校准或正式评估。
+
+因此，项目报告的任何 pytest 数量、CUDA 结果、Job ID 或性能结果都没有升级为 `REVIEWER_EXECUTED_FACT`。
+
+# 4. Line-by-Line Coverage Certificate
+
+## 4.1 完整或足以覆盖关键 public path 的文件
+
+| 文件                                                      |    Blob SHA |                    行数/读取范围 | 关键表面                                     | 覆盖裁决                 |
+| ------------------------------------------------------- | ----------: | -------------------------: | ---------------------------------------- | -------------------- |
+| `AGENTS.md`                                             | `66c8d041…` |                    66 / 全文 | 仓库边界、GPU1、ChronoTransport route          | FULL                 |
+| `RTK.md`                                                | `6f160651…` |                   114 / 全文 | no-leak、Slurm、成本协议                       | FULL                 |
+| r2 design spec                                          | `0f54c939…` |            870 / 全文并核验字节哈希 | 规范 SSOT                                  | FULL                 |
+| implementation plan                                     | `5ccfb428…` |                   255 / 全文 | 任务与缺失 runner                             | FULL                 |
+| `registration.py`                                       | `dca15a14…` |           约 1309 / 分段到 EOF | I/R、source set、random lock               | FULL                 |
+| `runtime.py`                                            | `4111cffa…` |            约 773 / 分段到 EOF | heavy routing、adapter、requested/executed | FULL                 |
+| `full_stack_profiler.py`                                | `20410b78…` |              811 / 分段到 EOF | direct invocation profile                | FULL                 |
+| `adjudication.py`                                       | `9fde0a96…` |                   读取 1–EOF | Gate-1 统计、formal/fixture schema          | FULL FOR GATE-1 PATH |
+| `gate1_unlock.py`                                       | `0a560dbe…` |                   204 / 全文 | unlock 铸造与复算                             | FULL                 |
+| `stage_c.py`                                            | `5ee89bc6…` |                   读取 1–EOF | forward、gradient、transaction             | FULL                 |
+| `gate4.py`                                              | `0e065ec5…` |                   825 / 全文 | pure adjudicator、caller evidence lock    | FULL                 |
+| `validate_chronotransport_r2_precheck.py`               | `90eae2ce…` |                   287 / 全文 | symlink、canonical path、precheck          | FULL                 |
+| `run_chronotransport_r2_gates23.py`                     | `423b1e6e…` |                   422 / 全文 | exclusive writer、partial recovery        | FULL                 |
+| `chronotransport_r2_gates23_replay_factory.py`          | `4c4c22b4…` |                   378 / 全文 | repository-owned replay                  | FULL                 |
+| `tests/test_chronotransport_pipeline.py`                | `3217be9c…` |                   170 / 全文 | replay/training integration              | FULL                 |
+| `tests/test_chronotransport_vit_adapter_integration.py` | `aa667151…` |                   151 / 全文 | real ViT adapter integration             | FULL                 |
+| `gate1` / `Stage-B` factories and CLIs                  |          多个 | public execution path 与锁表面 | formal producer boundaries               | SUBSTANTIAL          |
+
+## 4.2 关键范围完整、但文件其他部分未逐行覆盖
+
+| 文件/组                                       | 已读范围                                               | 未覆盖影响                                                |
+| ------------------------------------------ | -------------------------------------------------- | ---------------------------------------------------- |
+| `vit_adapter.py`                           | 开头、ChronoTransport constructor、forward、freeze path | 中间无关 R28/R30 路径未全读；不妨碍定位 ChronoTransport 接入          |
+| `formal_stage_b.py`                        | public contracts、核心 trainer/marker path            | 全部异常分支未逐行穷尽                                          |
+| `gates23.py`                               | schema/public API/部分统计与终端路径                        | 1996 行未逐行全部展开，因此 Gates2/3 不可获 `APPROVE_FROZEN_SLICE` |
+| `tests/test_chronotransport_r2_stage_c.py` | toy model、formal fixtures、关键 hardening cases       | 2166 行未逐行逐断言核对                                       |
+| Gate-1、Stage-B、Gates2/3、registration tests | 关键 RED/hardening sections                          | 项目报告的全部测试覆盖率不能独立确认                                   |
+
+## 4.3 未完整读取或仅作依赖追踪的表面
+
+以下表面没有获得足以支持 `APPROVE` 的逐行证书：
+
+* `actions.py`、`cache.py`、`controls.py`、`cost_lookup.py`、`losses.py`、`profiler.py`、`protocol.py`、`replay.py`、`risk.py`、`scheduler.py`、`training.py`、`transport.py`；
+* 所有 ChronoTransport configs 的逐字段闭包；
+* 所有 launcher；
+* 全部 required-source dataset/evaluator 间接依赖；
+* 全部 wiki/history 文件；
+* 官方上游三个仓库的逐 commit tree 对比。
+
+这意味着：**本报告的证据足以确认 registration-blocking P1，但不足以把 runtime、Stage-B 或 Gates2/3 整体批准为冻结实现。** 这符合 prompt 的约束：未读表面禁止 `APPROVE`，但不妨碍根据已确认阻断项作 `REVISE`。
+
+## 4.4 固定 SHA 中不存在的正式表面
+
+我对以下路径执行固定 SHA 文件获取，均返回 404：
+
+```text
+tools/bata/train_chronotransport_r2_stage_c.py
+tools/bata/train_chronotransport_r2_matched_dense.py
+tools/bata/run_chronotransport_r2_gate4.py
+scripts/run_chronotransport_r2_stage_c_gpu1.sh
+```
+
+计划本身也把 Stage-C/matched-dense runners、Gate-4 runner 及其 launchers 列为尚未完成的后续任务。
+
+# 5. Current Phenomena Recheck
+
+| 项目报告现象                                   | 当前裁决               | 固定 SHA 证据                                                                                                            |
+| ---------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Gate-1 formal/fixture 已结构隔离              | `VERIFIED`         | 两套 schema 与字段集合不同；formal replay builder 不接收 caller rows，而调用 repository-owned replay。                                 |
+| Gate-1 Green3 测试数量                       | `CANNOT_VERIFY`    | 本轮未执行测试                                                                                                              |
+| random seed 歧义应 fail closed              | `VERIFIED`         | formal random lock 对任何 `random_p*` 或 `control_seed` 直接拒绝。                                                            |
+| precheck parent-symlink 洗白已修             | `PARTLY_VERIFIED`  | 当前使用逐级 lexical `lstat`，并重新构造 R-derived output root；未执行攻击测试。                                                          |
+| Stage-B 已有真实 formal runner               | `VERIFIED`         | runner/factory 存在，但被 Gate-1/A1/A2 锁住；无正式执行产物                                                                         |
+| Stage-B 91 passed 等数字                    | `CANNOT_VERIFY`    | 项目报告，未复现                                                                                                             |
+| Gates2/3 recovery/no-clobber 已实现         | `PARTLY_VERIFIED`  | exact replay/report recovery、terminal lock、O_EXCL writer path 存在；完整统计与测试未复现。                                         |
+| Stage-C Green5 阻止 storage/alias/state 攻击 | `PARTLY_VERIFIED`  | primitive 中存在强 storage/value/topology/state 审计；但未运行其测试                                                               |
+| Stage-C 已可接真实 OpenTAD detector           | `REFUTED`          | 当前 hook 要求顶层 forward 返回一个 differentiable Tensor；真实 ActionFormer training forward 返回 loss dict，并更新 `loss_normalizer`。 |
+| Stage-C measured-cost bool lock          | `VERIFIED_BOUNDED` | formal summary 要求精确 measured-cost evidence，但没有 runner 绑定不可变 profile identity                                         |
+| Gate-4 caller-owned evidence 不能铸造 formal | `VERIFIED_BOUNDED` | public mapping adjudicator 拒绝 formal caller evidence；可用结果明确是 test-only。                                              |
+| Gate-4 formal workflow 存在                | `REFUTED`          | formal runner/producer 不存在                                                                                           |
+| registration 当前 NOT_READY                | `VERIFIED`         | 当前提交自述不是 I/R；source vector 未闭合；formal random lock 无法通过；正式后半链缺失。                                                      |
+| 存在 r2 正式实验结果                             | `REFUTED`          | 没有注册 I/R、正式 Gate 报告、Stage-C checkpoint chain、Gate-4 result 或 Job ID                                                  |
+
+# 6. End-to-End Implementation and Trust-Boundary Map
+
+```text
+approved spec e4422f5
+        |
+        v
+implementation bytes
+        |
+        |  [BLOCKED: A1–A4 unapproved; source vector incomplete]
+        v
+clean detached implementation commit I
+        |
+        |  single-parent, one-file-only registration diff
+        v
+registration-only commit R
+        |
+        |  [BLOCKED: random_p* formal lock]
+        v
+PRECHECK_ONLY
+        |
+        +--> repository-owned full-stack profile
+        |
+        +--> repository-owned Gate-1 paired replay
+        |
+        v
+Gate-1 report + exact unlock
+        |
+        +-- FAIL --> permanent r2 freeze
+        |
+        v
+formal Stage B, seeds 3407/3408/3409
+        |
+        v
+Gates 2/3 replay + report + unlock
+        |
+        +-- FAIL --> permanent r2 freeze
+        |
+        v
+Stage-C CT runner                  [MISSING]
+matched-dense runner               [MISSING]
+4,200-success ledgers              [MISSING]
+post-Stage-C recalibration         [MISSING]
+        |
+        v
+repository-owned Gate-4 producer   [MISSING]
+formal Gate-4 runner               [MISSING]
+        |
+        +-- FAIL --> permanent r2 freeze
+        |
+        v
+bounded metric/latency claims
+deploy=false, paper=false
+```
+
+## 主要信任边界
+
+| 边界                                                          | 当前状态                             |
+| ----------------------------------------------------------- | -------------------------------- |
+| caller fixture → formal schema                              | Gate-1/Gate-4 已显式隔离              |
+| in-memory registration → R:path exact bytes                 | validator 强绑定                    |
+| I → R                                                       | 要求 R 单亲、I..R 只新增 registration    |
+| requested action → executed action                          | runtime 分别记录 hash、计数和成本          |
+| repair/fallback → successful evidence                       | runtime 将 `evidence_valid=false` |
+| test-only Gate-4 → formal Gate-4                            | 已阻止重标记；formal producer尚不存在       |
+| Stage-C toy attempt →真实 detector attempt                    | 当前未跨越                            |
+| Gate3 frozen-window calibration → Gate4 official population | 规范上不得转移；formal workflow缺失        |
+
+# 7. Spec Section-by-Section Compliance Matrix
+
+| 规范部分                                           | 当前实现                                       | 裁决                 |
+| ---------------------------------------------- | ------------------------------------------ | ------------------ |
+| 768 外部 grid、48×16-frame clips、384 tubelet grid | backbone/runtime geometry 与规范一致            | `COMPLIANT_STATIC` |
+| 12 blocks → `[0:4]/[4:8]/[8:12]`               | runtime 支持固定连续 layer groups                | `COMPLIANT_STATIC` |
+| 动作仅控制 heavy attention/MLP                      | `_heavy_forward` 只运行 attn+MLP              | `COMPLIANT_STATIC` |
+| Adapter 对所有 rows 执行                            | adapter 接收完整 provisional tensor并替换全部 rows  | `COMPLIANT_STATIC` |
+| TRANSPORT 从 latest 链式递推                        | runtime 使用 `latest` 作为 transport source    | `COMPLIANT_STATIC` |
+| 跨 clip cache detach，当前 row 保持 live             | 实现意图与主要路径一致，但未完整运行 autograd integration    | `PARTLY_VERIFIED`  |
+| requested/executed action 与 cost 分离            | 两套 hash、计数、cost 均存在                        | `COMPLIANT_STATIC` |
+| repair/fallback 不得作为有效证据                       | `evidence_valid` 仅在零 repair/零 fallback 时成立 | `COMPLIANT_STATIC` |
+| random controls                                | 规范 seed 语义仍有歧义；代码正确 fail closed            | `SPEC_BLOCKED`     |
+| Gate-1 真实 profile/replay                       | primitives 存在，无 formal artifact            | `NOT_EXECUTED`     |
+| Stage-B 140 successful updates × 3 seeds       | runner/core 存在；正式链未解锁                      | `NOT_EXECUTED`     |
+| Gates2/3 30/30 与正式 calibration                 | workflow 大部存在；无 report/unlock              | `NOT_EXECUTED`     |
+| Stage-C 4200 successful updates                | primitive 存在，真实 forward 合同不闭合，runner缺失     | `NONCOMPLIANT`     |
+| matched-dense                                  | runner缺失                                   | `MISSING`          |
+| Gate-4 official full-video workflow            | pure adjudicator存在，producer/runner缺失       | `MISSING`          |
+| registration exact implementation vector       | source set 漏相关 tests，并无法列入尚不存在的正式表面        | `NONCOMPLIANT`     |
+| physical GPU1 / Slurm                          | 仓库规则与 Slurm local `cuda:0` 语义冲突尚未由批准规范解决   | `SPEC_BLOCKED`     |
+| deploy/paper claims                            | 当前代码与审计均保持关闭                               | `COMPLIANT`        |
+
+规范明确要求动作只控制 heavy 子路径、全行 adapter、latest transport 与 cache detach 语义。
+
+# 8. Registration / Evidence-Minting Audit
+
+## 8.1 已实现且较强的锁
+
+`validate_registration_commit_shape` 静态要求：
+
+1. `R` 的 parent vector 必须精确为 `[R, I]`；
+2. `I..R` 只能有一项 `A <registration path>`；
+3. registration 在 `I` 中必须不存在；
+4. `R:path` 必须是 regular Git blob；
+5. Git blob、当前文件与 canonical registration bytes 必须逐字节相等。
+
+formal repository context 还要求：
+
+* clean detached HEAD；
+* `HEAD=R`；
+* implementation tree 与 registration 中登记 tree 一致；
+* required source 的当前 bytes、`I:path` Git blob 和登记 SHA-256 三方一致；
+* approved spec 是 `I` 的祖先；
+* manifest、checkpoint receipt、200 media bytes 深验证。
+
+这些锁能够阻止：
+
+* in-memory registration 与 R blob 不同；
+* merge `R`；
+* I..R 混入第二个文件；
+* symlink/non-regular registration blob；
+* dirty worktree 或 symbolic branch HEAD。
+
+## 8.2 P1：exact source vector 未闭合
+
+当前固定 source vector 终于包含：
+
+* `tests/test_chronotransport_r2_gate1_hardening.py`；
+* Gates2/3 module、factory、runner、test 四个表面。
+
+但它没有包含两个实际参与 ChronoTransport 行为验证、且在当前提交中被修改的测试：
+
+```text
+tests/test_chronotransport_pipeline.py
+tests/test_chronotransport_vit_adapter_integration.py
+```
+
+source vector 截止于 `tests/test_chronotransport_r2_stage_c.py`。
+
+前者直接覆盖 replay、Stage-B/C 参数配置、cost lookup 等行为。 后者是真实 `VisionTransformerAdapter` 与 ChronoTransport 的集成、forced-dense parity、checkpoint guard 与 autograd 测试。
+
+因此攻击成立：
+
+```text
+1. 冻结 I/R；
+2. 修改或删除上述未登记测试；
+3. registration source hash 不变；
+4. formal registration validator 仍无法察觉。
+```
+
+这不直接伪造模型字节，但它反驳“registration 精确绑定完整实现与最终 hardening test vector”的主张。
+
+## 8.3 Formal registration 当前必然失败
+
+source vector 同时要求 23-candidate profiler，其中包含 `random_p2/p4/p8`。
+
+而 formal context 在接触 Git 状态前调用：
+
+```python
+validate_formal_random_control_lock(registration)
+```
+
+只要 profiler plan 中存在任何 `random_p*`，即使完全没有 seed 字段，也抛出：
+
+```text
+formal random control plan is unapproved
+```
+
+这是**正确的 fail-closed 行为**，但它意味着当前 snapshot 不可能生成一个可用于 formal Gate-1 的 `R`。
+
+## 8.4 Evidence minting 总结
+
+| 问题                                                 | 裁决                    |
+| -------------------------------------------------- | --------------------- |
+| 能否用 caller-authored Gate-1 rows 直接铸造 formal replay | 否                     |
+| 能否把 fixture schema 重命名/重哈希为 formal                 | 当前 validators 阻止      |
+| 能否用 caller mappings 铸造 formal Gate-4               | 否                     |
+| 当前能否生成 formal registration 并通过 context             | 否，random-control lock |
+| 当前 registration 是否绑定完整 formal end-to-end source    | 否                     |
+| 当前是否存在任何 formal report/unlock/terminal             | 否                     |
+
+# 9. Gate 1 Audit
+
+## 9.1 Candidate 与 profiler plan
+
+registration validator 要求：
+
+* 精确 23-candidate order；
+* 精确 200 manifested invocation IDs；
+* invocation order hash；
+* `warmup_count=50`；
+* `sample_count=200`；
+* 唯一 repository-owned profile factory；
+* 固定 OpenTAD backend identity；
+* 每个 invocation 的 requested action hash；
+* static candidate action hash 不得变化。
+
+这比依赖 CLI 约定强，因为 source、backend identity、action vector 都进入 registration。
+
+## 9.2 Formal 与 fixture 隔离
+
+Gate-1 formal 与 test fixture 使用不同：
+
+* schema；
+* key names；
+* artifact hash field；
+* replay row representation。
+
+formal replay builder 不接受 `rows` 参数，而调用 `run_registered_gate1_paired_replay`。
+
+formal validator重新验证：
+
+* manifest split/order；
+* fixed candidate order；
+* dense/candidate losses；
+* reverse-order probe；
+* checkpoint/config/backend SHA；
+* per-invocation action provenance；
+* serialized detector regret。
+
+## 9.3 Oracle statistic
+
+Gate-1 statistic 的当前代码：
+
+* calibration split 选择 frozen static；
+* evaluation replicate 内重新选择 evaluation-best static；
+* 每个 bootstrap replicate 内重新寻找 strongest comparator；
+* joint oracle 与 strongest comparator 做 paired difference；
+* denominator≤`1e-12` 时不把 relative improvement 当作成立；
+* 20% saving 使用 Decimal 精确算术。
+
+这说明当前实现所检验的是：
+
+> 固定候选库在相同成本预算下是否存在 window-level oracle headroom。
+
+它**不证明** deploy-visible input dependence，也不证明 learned scheduler。
+
+## 9.4 Gate-1 当前裁决
+
+```text
+CODE PRIMITIVES: substantially present
+FORMAL RANDOM CONTROL IDENTITY: blocked
+FORMAL PROFILE: absent
+FORMAL PAIRED REPLAY: absent
+B*: absent
+GATE-1 REPORT: absent
+UNLOCK: absent
+SCIENTIFIC RESULT: absent
+```
+
+因此：`REVISE_SLICE`。
+
+# 10. Stage-B Audit
+
+## 10.1 已存在的正式表面
+
+当前 SHA 包含：
+
+* `formal_stage_b.py`；
+* repository-owned OpenTAD Stage-B factory；
+* `train_chronotransport_r2_stage_b.py`；
+* phase marker、checkpoint、ledger/baseline publication primitives；
+* Stage-B tests。
+
+formal Gate-1 unlock 的 validator 要求 artifact 可从 embedded input 精确重算，而且只有 `status=PASS`、`oracle_headroom is True` 才能被 Stage B 接受。
+
+## 10.2 当前不可执行原因
+
+Stage B 的正式可达性依赖：
+
+```text
+approved A1/A2
+  -> valid formal R
+  -> PRECHECK
+  -> Gate-1 profile/replay
+  -> Gate-1 PASS unlock
+  -> Stage B
+```
+
+其中前三个 formal 身份条件当前没有满足。因此即使 Stage-B core 是可训练的，也不能把它描述为“formal Stage B ready”。
+
+## 10.3 未被本轮独立证明的项目主张
+
+以下保持 `PROJECT_REPORTED_FACT`：
+
+* 精确 140 successful updates；
+* retry 不推进 exposure；
+* 三 seeds 各自完整 checkpoint/ledger；
+* 91 passed；
+* symlink/inode replacement 的全部攻击均已绿；
+* CUDA one-update smoke。
+
+## 10.4 Stage-B 裁决
+
+```text
+Core implementation: PARTLY_VERIFIED
+Formal input chain: BLOCKED
+Formal run artifacts: NONE
+Scientific result: NONE
+Verdict: REVISE_SLICE
+```
+
+# 11. Gates 2/3 Statistical and Formal Audit
+
+## 11.1 Workflow 强项
+
+runner 使用：
+
+* canonical R-derived output root；
+* symlink-component rejection；
+* exclusive `run.lock`；
+* atomic hard-link no-clobber publication；
+* terminal 已存在即永久拒绝重开；
+* partial replay/report 仅在逐字节等于重新计算结果时允许恢复；
+* Gate-1 PASS unlock 深验证；
+* Gates2/3 四个 source 独立检查已登记且 bytes 匹配。
+
+replay factory：
+
+* 使用 repository-owned Stage-B model context；
+* 固定 calibration/evaluation manifest；
+* 固定 seeds `3407/3408/3409`；
+* 每候选调用 sealed replay；
+* 要求 zero repair、zero fallback、requested=executed；
+* 同一 window 的候选共享 materialized batch 与 augmentation hash；
+* 从 Stage-B phase marker 加载 EMA checkpoint。
+
+## 11.2 Conformal ranks
+
+对 (\tau=0.9)：
+
+[
+k_{\text{cal},30}=\lceil(30+1)\times0.9\rceil=28
+]
+
+[
+k_{\text{fit},140}=\lceil(140+1)\times0.9\rceil=127
+]
+
+因此 rank 28/30 与 127/140 数学上正确。
+
+## 11.3 保证边界
+
+即使 Gate3 最终获得所需 coverage，也只能解释为：
+
+```text
+frozen manifested window population
+× frozen candidate library
+× frozen checkpoints
+× frozen simultaneous marginal procedure
+```
+
+不能推出：
+
+* selected-conditional coverage；
+* official full-video Gate-4 coverage；
+* 未见视频、未见成本表或新硬件上的 coverage；
+* deployment reliability。
+
+### Selected empirical coverage 反例
+
+假设模型只在预测风险最低的 10% 窗口选择非 dense，而这些恰好是容易窗口。所选子集经验 coverage 可以达到 100%，同时剩余 90% 的困难窗口完全没有保证。它不是 selected-conditional conformal guarantee。
+
+### Global-seed cluster bootstrap 反例
+
+三个 seed 的真实 cluster effects 为：
+
+```text
+seed 3407: -1.0
+seed 3408: +0.6
+seed 3409: +0.6
+```
+
+均值仅 `+0.0667`。正确做法按 global seed cluster 重采样，bootstrap 下界会包含负值。若对每个窗口独立重抽 seed，30 个窗口会错误地把 seed-level 不确定性平均掉，使 CI 人为收窄并可能产生 false PASS。
+
+## 11.4 Gates2/3 裁决
+
+完整 `gates23.py` 统计面未全部逐行审完，本轮也未执行其 tests。因此：
+
+```text
+Formal runner/replay boundary: substantially sound
+Statistics implementation: CANNOT_VERIFY completely
+Formal report/unlock: absent
+Slice verdict: CANNOT_VERIFY
+```
+
+# 12. Stage-C Forward / Gradient / Transaction Audit
+
+## 12.1 Primitive 的强约束
+
+当前 Stage-C audit wrapper 强制每次 attempt：
+
+* 顶层 model forward 恰好一次；
+* runtime forward 恰好一次；
+* risk predictor forward 恰好一次；
+* model forward 必须返回一个 requires-grad Tensor；
+* runtime 必须在顶层 model forward 内发生；
+* runtime actions 必须等于 expected registered actions；
+* risk predictor 输入必须是 runtime 发布的 exact signals/actions；
+* detector output、feature output、signals 的 storage、metadata、value、alias 均保持一致。
+
+transaction/state audit 还覆盖：
+
+* parameters；
+* registered buffers；
+* ordinary Python Tensor state；
+* module topology；
+* optimizers；
+* scaler；
+* RNG；
+* exposure cursor；
+* ledger cursor；
+* retry/overflow rollback。
+
+这些是强防御性 primitive，不能因为后续 reachability 失败而否认其已有价值。
+
+## 12.2 P1：真实 ActionFormer forward 合同不匹配
+
+Stage-C model hook 明确拒绝非 Tensor output：
+
+```python
+if not isinstance(output, Tensor) or not output.requires_grad:
+    raise StageCInvalidImplementationError(
+        "Stage C model forward must publish one differentiable canonical detector Tensor"
+    )
+```
+
+真实 OpenTAD detector training path 是：
+
+```text
+BaseDetector.forward(return_loss=True)
+  -> ActionFormer.forward_train
+  -> head.forward_train
+  -> dict(loss_cls, loss_reg, cost, ...)
+```
+
+并不是一个 Tensor。`ActionFormer.forward_train` 最终返回 loss mapping。
+
+最短失败轨迹：
+
+```text
+attempt()
+  -> model(inputs, masks, metas, gt_segments, gt_labels, return_loss=True)
+  -> output = dict[str, Tensor]
+  -> model_forward_hook
+  -> StageCInvalidImplementationError
+```
+
+这不是性能问题，而是 formal Stage-C execution surface 当前不可达。
+
+## 12.3 P1：`loss_normalizer` 与 success-state invariant 冲突
+
+`AnchorFreeHead` 注册：
+
+```python
+self.register_buffer("loss_normalizer", ...)
+```
+
+训练 forward 会根据正样本数更新或重新赋值该 buffer。
+
+Stage-C 成功路径则要求非授权 registered buffers 的 storage、version 和 value 均不变。因此，即使增加一个 wrapper 把 loss dict 规约成 Tensor，真实 train-mode head 仍可能在成功 attempt 中触发：
+
+```text
+StageCInvalidImplementationError:
+registered buffer changed on successful update
+```
+
+是否：
+
+* 允许 `loss_normalizer` 按官方顺序更新；
+* 冻结它；
+* 由 matched paired forwards 只提交一次；
+* 对两个逐窗口 branch 使用什么顺序；
+
+正是未批准 A3/A4 要解决的规范事实。不能由实现代码自行选择。
+
+## 12.4 现有 tests 不能证明真实 reachability
+
+Stage-C tests 主要构造 toy model，其 `forward()` 直接返回 Tensor，并由 toy runtime 手工发布 required evidence。
+
+这能够测试 transaction primitive，却不能证明：
+
+* 真实 `ActionFormer.forward_train`；
+* 真实 `loss_normalizer`；
+* 同一 batch-two paired detector forwards；
+* 两个逐窗口 regret targets；
+* 真实 AMP/GradScaler；
+* 4200 successful updates；
+* EMA/LR/resume；
+* matched-dense parity。
+
+## 12.5 缺失 workflow
+
+以下正式表面不存在：
+
+```text
+train_chronotransport_r2_stage_c.py
+train_chronotransport_r2_matched_dense.py
+Stage-C formal configs
+matched-dense formal config
+Stage-C runner tests
+Stage-C launchers
+post-Stage-C recalibration workflow
+```
+
+## 12.6 Stage-C 裁决
+
+| Slice                           | Verdict                  |
+| ------------------------------- | ------------------------ |
+| Transaction/hardening primitive | `REVISE_SLICE`，不是 reject |
+| Real detector forward adapter   | `MISSING`                |
+| A3/A4 semantics                 | `SPEC_BLOCKED`           |
+| 4200-update CT workflow         | `MISSING`                |
+| matched-dense workflow          | `MISSING`                |
+| CUDA evidence                   | `CANNOT_VERIFY`          |
+
+# 13. Runtime / AdaTAD / VideoMAE Upstream Matrix
+
+| 组件                          | 当前 r2 行为                                                     | 分类                      | 审计判断                        |
+| --------------------------- | ------------------------------------------------------------ | ----------------------- | --------------------------- |
+| Patch embedding             | 始终 dense 执行                                                  | `SAME/UNCONTROLLED`     | 与规范一致                       |
+| VideoMAE attn+MLP           | 按 clip×layer-group gather RECOMPUTE rows                     | `STRUCTURALLY_MODIFIED` | ChronoTransport 核心          |
+| HOLD                        | 使用 detached latest pre-adapter cache                         | `CUSTOM`                | 主要路径与规范一致                   |
+| TRANSPORT                   | `T_g(latest, current, age)`，从 latest 递推                      | `CUSTOM`                | 与规范一致                       |
+| AdaTAD adapter              | 对完整 provisional tensor执行，输出写回全部 rows                         | `WRAPPED_BUT_DENSE`     | 与规范一致                       |
+| Post-backbone interpolation | 未受 action 控制                                                 | `SAME_BY_DESIGN`        | 未独立与上游逐字节比较                 |
+| Projection/head/NMS         | 规范要求保持官方语义                                                   | `SAME_BY_DESIGN`        | 未完成三上游 commit 的逐 tree 对比    |
+| Risk head/scheduler         | ChronoTransport custom                                       | `CUSTOM`                | 未完整逐行批准                     |
+| Cost lookup                 | measured/nonlinear cost 未满足时 learned route dense fail closed | `CUSTOM`                | 正确方向                        |
+| Cache window scope          | 每次 runtime forward 新建 rolling state                          | `CUSTOM`                | 未见跨 window persistent cache |
+| Requested/executed evidence | 独立 hash、count、cost                                           | `CUSTOM_AUDIT`          | 正确                          |
+
+runtime 确实只把 heavy attn+MLP 放入 `_heavy_forward`；adapter 接收完整 dense surrogate 并替换全部 rows。
+
+没有 measured cost、risk readiness、checkpoint 或 nonlinear cost lookup 时，learned route fail closed 至 dense。
+
+repair 或 fallback 后，runtime 分别记录 requested/executed hash 和成本，并将 `evidence_valid` 置假。
+
+`VisionTransformerAdapter` 在 patch embedding/position encoding 后调用 ChronoTransport runtime，并把原始 block list 交给 runtime；forced dense 路径仍直接走原始 block forward。
+
+**上游差异限制：**规范固定了 OpenTAD、AdaTAD、VideoMAE commit 身份，但本轮没有分别拉取三个官方 upstream tree，因此不能声称完成官方逐行 provenance comparison。规范中冻结的 commit ID 本身可验证。
+
+# 14. Gate-4 Metric / Cost / Bootstrap Audit
+
+## 14.1 Pure adjudicator
+
+当前 `gate4.py`：
+
+* 导入并调用仓库官方 mAP evaluator，而不是自行实现 AP；
+* 把 metric、regret、latency、saving 分开；
+* caller mappings 只能产生 test-only schema；
+* 显式拒绝 `formal=True`；
+* test-only report 写明 `formal_evidence=false`；
+* deploy/paper claims 保持 false。
+
+相关固定链接：
+
+* [Gate-4 official evaluator import与调用](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/chronotransport/gate4.py#L1-L20)
+* [caller formal evidence rejection](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/chronotransport/gate4.py#L640-L675)
+
+源码也直接说明 repository-owned formal evidence producer 当前不存在。
+
+因此，先前“caller 设置 `formal=True` 铸造同一正式 report”的路径已被当前候选阻止。
+
+## 14.2 Formal Gate-4 workflow
+
+缺失项包括：
+
+* repository-owned official-video population loader；
+* post-Stage-C CT/matched-dense checkpoint identity；
+* official prediction/GT producer；
+* live full-stack timing producer；
+* immutable cost-profile binding；
+* Gate-4 formal schema；
+* formal runner；
+* launcher；
+* exclusive output/terminal workflow；
+* registration source entries；
+* runner tests。
+
+因此不能核验：
+
+* official video → matched block → seed latency hierarchy；
+* official video → seed metric/regret hierarchy；
+* timing repetition是否完全排除在metric bootstrap外；
+* 真实 shortest-Q1；
+* 三 seed 均不越界；
+* learned p50 是否不慢于 calibration-frozen best static；
+* 10-Hz long-block energy。
+
+## 14.3 Gate-4 裁决
+
+```text
+Pure test-only adjudicator: APPROVE_FROZEN_SLICE
+Formal evidence workflow: MISSING
+Formal Gate-4 result: NONE
+Metric/latency claim: LOCKED
+```
+
+# 15. P0 → P3 Findings
+
+## P0
+
+**在已读表面中未确认 P0。** 由于仍有未完整读取的 production/test/config 表面，不能把这句话外推为“仓库无 P0”。
+
+---
+
+## P1-1：Stage-C、matched-dense 与 Gate-4 正式执行链缺失
+
+**Permalink**
+
+* [Implementation plan L151–216](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/docs/superpowers/plans/2026-07-12-chronotransport-ct-p3r-3s-r2-implementation.md#L151-L216)
+
+**REPOSITORY_FACT**
+
+计划要求创建的 CT Stage-C runner、matched-dense runner、Gate-4 runner 和 launchers 在固定 SHA 中不存在。
+
+**违反规范**
+
+* 4200 successful Stage-C updates；
+* matched-dense 对照；
+* post-Stage-C recalibration；
+* official full-video Gate-4；
+* end-to-end stop-chain。
+
+**最短 failure trace**
+
+```bash
+python tools/bata/train_chronotransport_r2_stage_c.py ...
+# python: can't open file ... No such file or directory
+```
+
+**影响**
+
+无法产出：
+
+* Stage-C checkpoint；
+* matched-dense checkpoint；
+* successful-update ledger；
+* Gate-4 formal input；
+* final report/terminal。
+
+**最小 patch 边界**
+
+新增上述 runners/configs/launchers/tests，并由 registration exact source set 绑定。
+
+**RED test**
+
+```text
+test_all_mandatory_formal_surfaces_exist_and_are_registered
+```
+
+精确断言：
+
+```python
+assert path.is_file()
+assert relative_path in REQUIRED_REGISTRATION_SOURCE_PATHS
+```
+
+**是否改变科学规范**
+
+runner 本身是既定实现；但其 Stage-C paired-forward 语义依赖 A3/A4，不能先实现后补规范。
+
+---
+
+## P1-2：Stage-C primitive 与真实 ActionFormer training forward 不相容
+
+**Permalinks**
+
+* [Stage-C model hook L1032–1079](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/chronotransport/stage_c.py#L1032-L1079)
+* [ActionFormer training path](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/detectors/actionformer.py#L128-L215)
+* [AnchorFreeHead normalizer update](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/dense_heads/anchor_free_head.py#L364-L382)
+
+**REPOSITORY_FACT**
+
+Stage-C 要求顶层 forward 返回 differentiable Tensor；真实 detector 返回 loss dict。真实 head 同时更新 registered `loss_normalizer`，而 success audit 要求 buffer 不变。
+
+**失败轨迹**
+
+```text
+ActionFormer.forward_train -> dict
+model_forward_hook -> reject non-Tensor
+```
+
+或：
+
+```text
+wrapper -> scalar Tensor
+head forward -> loss_normalizer mutation
+success state audit -> reject
+```
+
+**影响**
+
+当前 primitive 无法证明真实 detector Stage-C update 可成功；toy tests 是弱替代。
+
+**最小 patch 边界**
+
+需要 repository-owned real-detector adapter，并由批准 A3/A4 决定：
+
+* canonical detector Tensor；
+* loss mapping reduction；
+* normalizer update order；
+* paired two-window forwards；
+* detector target ownership。
+
+**RED test**
+
+```text
+test_stage_c_real_actionformer_forward_and_loss_normalizer_contract
+```
+
+精确断言：
+
+```python
+result = run_one_formal_stage_c_update(real_actionformer, real_batch_two)
+assert result.status == "SUCCESS"
+assert successful_updates == 1
+assert official_loss_normalizer_semantics_match_approved_A3
+assert two_distinct_per_window_regret_targets_were_observed
+```
+
+**是否改变科学规范**
+
+必须先批准 A3/A4；当前不能自行 patch。
+
+---
+
+## P1-3：A1–A4 未批准，formal random controls 必然被锁死
+
+**Permalinks**
+
+* [Formal random lock](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/chronotransport/registration.py#L1167-L1191)
+* [未批准 amendment proposal](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md#L1-L120)
+
+**REPOSITORY_FACT**
+
+formal context 遇到 `random_p2/p4/p8` 必然抛错。
+
+**影响**
+
+不能创建可执行的 R；不能 PRECHECK；不能 profile；不能 Gate 1。
+
+**最小 patch**
+
+不是删除锁，也不是默认为 seed 3407，而是：
+
+1. 规范-only 批准 A1–A4；
+2. 新 spec commit；
+3. independent spec-only review；
+4. 更新 approved spec commit/hash；
+5. 再实现 exact seed/device/normalizer/paired-forward 语义。
+
+**RED test**
+
+```text
+test_old_approved_spec_cannot_unlock_random_controls
+test_new_approved_spec_binds_exact_random_seed_semantics
+```
+
+**规范变化**
+
+是，必须走正式 amendment。
+
+---
+
+## P1-4：registration source vector 漏绑定两个真实集成测试
+
+**Permalinks**
+
+* [Current source vector](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/opentad/models/chronotransport/registration.py#L54-L126)
+* [Pipeline integration test](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/tests/test_chronotransport_pipeline.py)
+* [ViT adapter integration test](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/b854adb4f4c9235580b5e58c3f3255db6e9adbc0/tests/test_chronotransport_vit_adapter_integration.py)
+
+**REPOSITORY_FACT**
+
+两个测试不在 `REQUIRED_REGISTRATION_SOURCE_PATHS`。
+
+**攻击**
+
+注册后更改其断言，不影响 registration source hash。
+
+**影响**
+
+所谓“完整 implementation/hardening vector”不成立。
+
+**RED test**
+
+```text
+test_registration_source_vector_covers_every_chronotransport_test_file
+```
+
+**最小 patch**
+
+见第 20 节。
+
+**规范变化**
+
+否，是既定 source-binding 合同的实现修复。
+
+---
+
+## P1-5：当前提交明确不是 I 或 R
+
+**Permalink**
+
+* [Commit b854adb](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/b854adb4f4c9235580b5e58c3f3255db6e9adbc0)
+
+**REPOSITORY_FACT**
+
+commit message 明确否认其为 I/R，也否认 formal unlock。
+
+**影响**
+
+不能把当前 SHA 当作：
+
+* clean implementation；
+* registered protocol；
+* experiment origin；
+* paper evidence。
+
+**RED test**
+
+不适用；这是版本角色事实。
+
+---
+
+## P2-1：Slurm GPU identity 仍有规范冲突
+
+仓库规则一方面要求 physical GPU1 / `CUDA_VISIBLE_DEVICES=1`。 另一方面，Slurm 单 GPU cgroup 通常把被分配的物理卡映射为进程内 `cuda:0`。未批准 A2 正是为了冻结：
+
+* 谁验证物理设备；
+* 谁设置 visibility；
+* runner 内应该检查 local index 还是 UUID；
+* 是否允许 launcher 覆盖 Slurm visibility。
+
+**影响**
+
+错误实现可能在正确 Slurm allocation 内拒绝任务，或在错误物理卡上误通过。
+
+**RED test**
+
+```text
+test_slurm_cgroup_gpu_uuid_matches_registered_physical_gpu
+```
+
+不得只断言：
+
+```python
+os.environ["CUDA_VISIBLE_DEVICES"] == "1"
+```
+
+---
+
+## P2-2：Stage-C measured-cost 不是不可变 profile provenance
+
+当前 primitive 能拒绝 `cost_is_measured=False`，但因为没有 formal Stage-C runner，它没有绑定：
+
+* profile artifact SHA；
+* hardware/environment SHA；
+* requested/executed action-cost row；
+* producer identity；
+* registration R；
+* Stage-C ledger。
+
+这是“缺少 workflow provenance”，不是说现有 bool lock 无效。
+
+---
+
+## P2-3：现有 Stage-C tests 对真实 detector 是 false-positive coverage
+
+toy Tensor-returning model 可绿，不代表 real ActionFormer dict-returning model 可达。它属于：
+
+```text
+weak/false-positive test coverage
+```
+
+不是 transaction primitive 本身的假实现。
+
+# 16. Adversarial Counterexamples and RED Tests
+
+|  # | 攻击                                                      | 当前结果                                                    | RED / 结论                                   |
+| -: | ------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------ |
+|  1 | fixture 改 schema/hash 后喂 formal validator               | `BLOCKED`                                               | formal/fixture exact key sets 不同           |
+|  2 | import private issuer，用 caller detector/batch 铸造 Gate-1 | `BLOCKED_STATIC`                                        | formal builder 调 repository-owned replay   |
+|  3 | caller 自报 regret/action/transport                       | `BLOCKED_STATIC`                                        | formal replay重新推导与验证                       |
+|  4 | in-memory registration 与 R blob 不同                      | `BLOCKED`                                               | exact bytes check                          |
+|  5 | registration Git blob 为 symlink                         | `BLOCKED`                                               | mode只允许 regular blob                       |
+|  6 | R 为 merge commit或 I..R 多文件                              | `BLOCKED`                                               | parent vector与diff exact check             |
+|  7 | registration/output parent symlink                      | `BLOCKED_STATIC`                                        | lexical lstat；未执行测试                        |
+|  8 | 两个 writer 覆盖 Gate2/3 report                             | `BLOCKED_STATIC`                                        | O_EXCL lock + no-clobber                   |
+|  9 | result 与 terminal 同路径                                   | `BLOCKED`                                               | canonical distinct filenames               |
+| 10 | first candidate独担media verification I/O                 | `CANNOT_VERIFY`                                         | 需真实 profiler instrumentation RED           |
+| 11 | random seed缺失默认3407                                     | `BLOCKED`                                               | 整个 formal random plan被拒绝                   |
+| 12 | repair后仍用requested cost                                 | `BLOCKED`                                               | executed cost重算，evidence invalid           |
+| 13 | dense fallback超预算仍记成功                                   | `BLOCKED`                                               | fallback使 `evidence_valid=false`           |
+| 14 | Stage-B marker COMPLETE但ledger/baseline缺失               | `PARTLY_VERIFIED`                                       | 需执行 publication/recovery tests             |
+| 15 | Gates2/3 使用伪checkpoint或任意ledger                         | `BLOCKED_STATIC`                                        | phase marker/checkpoint/replay factory绑定   |
+| 16 | Stage-C dummy forward + detached losses                 | `BLOCKED_BY_PRIMITIVE`                                  | source-gradient proof                      |
+| 17 | runtime action 与 expected payload不同                     | `BLOCKED`                                               | exact action comparison                    |
+| 18 | `.data` 修改 frozen parameter/buffer/signals              | `BLOCKED_BY_PRIMITIVE`                                  | value/version/storage audit                |
+| 19 | equal-value storage rebind或alias split                  | `BLOCKED_BY_PRIMITIVE`                                  | storage cdata/data_ptr/nbytes/offset audit |
+| 20 | depth-12 block swap/container alias split               | `BLOCKED_BY_PRIMITIVE`                                  | module topology audit                      |
+| 21 | success path污染 Python/buffer state                      | `BLOCKED`，但真实 `loss_normalizer` 也会因此失败                  | 新 real-detector RED 必须加入                   |
+| 22 | overflow restore破坏Parameter version/non-leaf graph      | `CANNOT_VERIFY_CUDA`                                    | protected CUDA test 未运行                    |
+| 23 | 自写 AP equal-score 与官方不同                                 | `FIXED_STATIC`                                          | pure Gate-4 调官方 evaluator                  |
+| 24 | timing repetitions混入metric bootstrap                    | `FORMAL_WORKFLOW_MISSING`                               | 无 producer，不能最终判定                          |
+| 25 | registration漏最终 hardening test                          | `CONFIRMED_FEASIBLE`                                    | P1-4                                       |
+| 26 | checkpoint路径经parent symlink                             | `PARTLY_VERIFIED`                                       | lexical path helper存在，未执行攻击                |
+| 27 | pre-lock后替换checkpoint inode                             | `PARTLY_VERIFIED`                                       | 需真实 race/TOCTOU test                       |
+| 28 | 已存在ledger/baseline bytes不同时静默接受                         | Gates2/3 `BLOCKED_STATIC`；Stage-B `CANNOT_VERIFY_FULLY` | exact publication recovery test            |
+| 29 | marker存在但baseline缺失时自动重建                                | `CANNOT_VERIFY_FULLY`                                   | 必须断言 terminal/phase完成后任何依赖缺失均永久失败          |
+
+最重要的新 RED 集合应是：
+
+```text
+test_stage_c_real_actionformer_forward_and_normalizer_contract
+test_stage_c_real_batch_two_emits_two_distinct_regret_targets
+test_registration_source_vector_covers_every_chronotransport_test_file
+test_all_formal_workflow_sources_exist_and_are_registered
+test_gate4_formal_producer_accepts_no_caller_raw_mapping
+test_slurm_gpu_uuid_binding_does_not_assume_local_index_equals_physical_index
+```
+
+# 17. Slice Verdicts
+
+| Slice                                    | 强制裁决                   |
+| ---------------------------------------- | ---------------------- |
+| runtime/cache/adapter                    | `CANNOT_VERIFY`        |
+| registration/source vector               | `REVISE_SLICE`         |
+| Gate1 profile/replay/adjudication/unlock | `REVISE_SLICE`         |
+| formal Stage B                           | `REVISE_SLICE`         |
+| Gates2/3                                 | `CANNOT_VERIFY`        |
+| Stage-C primitive                        | `REVISE_SLICE`         |
+| Stage-C/matched-dense workflow           | `REVISE_SLICE`         |
+| Gate4 pure adjudicator                   | `APPROVE_FROZEN_SLICE` |
+| Gate4 formal workflow                    | `REVISE_SLICE`         |
+| launchers/Slurm/GPU identity             | `REVISE_SLICE`         |
+| end-to-end stop chain                    | `REVISE_SLICE`         |
+
+`runtime/cache/adapter` 没有被判 REJECT：已读主路径相当合理。之所以不能 APPROVE，是因为 actions/cache/transport/risk/scheduler 全表面与 CUDA行为没有完成逐行及运行证书。
+
+# 18. Overall Route Verdict
+
+```text
+REVISE_IMPLEMENTATION_BEFORE_REGISTRATION
+```
+
+明确回答：
+
+* 当前 snapshot **不能**成为 implementation commit `I`；
+* 当前 snapshot **不能**派生 registration-only commit `R`；
+* 当前 **不允许** `PRECHECK_ONLY=1`；
+* 当前 **不允许** formal Gate 1；
+* 当前 **不允许**启动任何 ChronoTransport r2 scientific GPU job；
+* 当前没有 r2 科学 Gate FAIL，因此尚不执行永久路线冻结；
+* 当前也没有任何依据改变冻结的 head、loss、candidate library、budget、threshold 或 seeds。
+
+# 19. Minimal Mandatory Patch Architecture
+
+```text
+A1–A4 approved spec-only amendment
+        |
+        v
+real ActionFormer Stage-C contract
+        |
+        +--> canonical detector task scalar
+        +--> official loss_normalizer semantics
+        +--> exact paired batch-two forward order
+        +--> two per-window regret targets
+        |
+        v
+Stage-C CT runner + matched-dense runner
+        |
+        +--> 4200-success ledgers
+        +--> resume/EMA/LR/scaler identity
+        +--> post-C recalibration
+        |
+        v
+repository-owned Gate-4 evidence producer
+        |
+        +--> official full-video population
+        +--> raw predictions/GT provenance
+        +--> live timing and profile identity
+        |
+        v
+registration source-vector closure
+        |
+        +--> all production/config/tool/launcher/test sources
+        +--> automatic source-coverage RED
+        |
+        v
+CPU + real CUDA + Slurm pre-registration verification
+        |
+        v
+I
+        |
+        v
+single-parent registration-only R
+```
+
+不得反过来先创建 I/R，再根据实验结果补这些表面。
+
+# 20. Complete Unified Diffs or `PATCH_BLOCKED_BY_MISSING_FACT`
+
+## 20.1 可立即确认的最小 source-vector patch
+
+以下 diff 修复两个**已确认**遗漏；它不是完整 registration-ready patch，因为尚不存在的 runners/launchers 仍需后续加入。
+
+```diff
+diff --git a/opentad/models/chronotransport/registration.py b/opentad/models/chronotransport/registration.py
+--- a/opentad/models/chronotransport/registration.py
++++ b/opentad/models/chronotransport/registration.py
+@@ -121,6 +121,8 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
+     "tests/test_chronotransport_r2_runtime.py",
+     "tests/test_chronotransport_r2_stage_b.py",
+     "tests/test_chronotransport_r2_stage_c.py",
++    "tests/test_chronotransport_pipeline.py",
++    "tests/test_chronotransport_vit_adapter_integration.py",
+ )
+```
+
+对应 RED/GREEN regression：
+
+```diff
+diff --git a/tests/test_chronotransport_r2_registration.py b/tests/test_chronotransport_r2_registration.py
+--- a/tests/test_chronotransport_r2_registration.py
++++ b/tests/test_chronotransport_r2_registration.py
+@@
++def test_registration_source_vector_covers_every_chronotransport_test_file() -> None:
++    from pathlib import Path
++
++    from opentad.models.chronotransport.registration import (
++        REQUIRED_REGISTRATION_SOURCE_PATHS,
++    )
++
++    repository_root = Path(__file__).resolve().parents[1]
++    discovered = {
++        path.relative_to(repository_root).as_posix()
++        for path in (repository_root / "tests").glob("test_chronotransport*.py")
++        if path.is_file() and not path.is_symlink()
++    }
++    registered = set(REQUIRED_REGISTRATION_SOURCE_PATHS)
++    missing = sorted(discovered - registered)
++
++    assert not missing, (
++        "Every tracked ChronoTransport behavior/integration test must be "
++        f"hash-bound by registration; missing={missing}"
++    )
+```
+
+该测试会揭示是否还有未枚举遗漏，避免再次靠人工修一个文件名。
+
+## 20.2 Stage-C production patch
+
+```text
+PATCH_BLOCKED_BY_MISSING_FACT
+```
+
+缺失的规范事实：
+
+1. A3：真实 `loss_normalizer` 是否允许更新、更新次数与顺序；
+2. A4：batch-two 中 dense/counterfactual 的精确 forward 次序；
+3. canonical detector Tensor 是：
+
+   * loss sum；
+   * loss vector；
+   * pre-normalization logits；
+   * 还是 repository-owned loss container 输出；
+4. 两个逐窗口 regret targets 如何从官方 detector losses 拆分；
+5. paired forwards 是否共享或恢复 RNG、augmentation、normalizer state；
+6. successful attempt 后哪些 buffers 被允许改变。
+
+在这些事实批准前，任何具体 wrapper 都可能静默改变官方 loss 语义。
+
+必须冻结的接口合同是：
+
+```python
+@dataclass(frozen=True)
+class FormalStageCDetectorEvidence:
+    canonical_detector_tensor: torch.Tensor
+    per_window_task_losses: tuple[torch.Tensor, torch.Tensor]
+    dense_task_losses: tuple[torch.Tensor, torch.Tensor]
+    candidate_task_losses: tuple[torch.Tensor, torch.Tensor]
+    loss_normalizer_before: torch.Tensor
+    loss_normalizer_after: torch.Tensor
+    forward_order: tuple[str, ...]
+    materialized_batch_sha256: str
+    augmentation_sha256: str
+```
+
+并要求：
+
+```text
+- 只能由 repository-owned real detector adapter 创建；
+- caller 不得提交上述 values；
+- 所有 tensor 必须来自同一次 audited attempt；
+- forward order 必须由批准 A4 精确规定；
+- normalizer transition 必须由批准 A3 精确验证。
+```
+
+## 20.3 Formal Stage-C/matched-dense runners
+
+```text
+PATCH_BLOCKED_BY_MISSING_FACT
+```
+
+在 A3/A4 未批准及真实 detector adapter 未完成前，不能生成完整 runner 而不发明训练协议。
+
+## 20.4 Gate-4 formal producer
+
+```text
+PATCH_BLOCKED_BY_MISSING_FACT
+```
+
+完整接口至少必须：
+
+```python
+def run_registered_gate4_evidence_producer(
+    *,
+    registration_path: Path,
+    registration_commit: str,
+    stage_c_terminal_path: Path,
+    matched_dense_terminal_path: Path,
+    post_stage_c_gate3_unlock_path: Path,
+) -> FormalGate4Evidence:
+    ...
+```
+
+约束：
+
+* 不接受 caller predictions、GT mappings、timing rows 或 metric rows；
+* 由 runner 自行加载 R-bound checkpoints；
+* 自行从 frozen official population 构建 dataloader；
+* 自行调用官方 inference/postprocess/evaluator；
+* 自行执行 live timing；
+* 绑定完整 environment/profile/source/checkpoint SHA；
+* atomic no-clobber publication；
+* terminal 只能从已发布 report 重建。
+
+# 21. TDD / CPU / CUDA / Slurm Verification Matrix
+
+| 层级                       | 命令/测试                                                     | 本轮状态                       | 是否科学 Gate               |
+| ------------------------ | --------------------------------------------------------- | -------------------------- | ----------------------- |
+| Snapshot                 | GitHub compare、fixed-file fetch、SHA-256                   | `EXECUTED`                 | 否                       |
+| Static existence         | 四个 missing workflow 路径                                    | `EXECUTED: 404`            | 否                       |
+| Python syntax            | `python -m py_compile ...`                                | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Registration CPU         | `pytest tests/test_chronotransport_r2_registration.py -q` | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Gate1 CPU                | hardening/profile tests                                   | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Stage-B CPU              | Stage-B + publication/recovery tests                      | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Gates2/3 CPU             | gates23 + recovery tests                                  | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Stage-C primitive CPU    | full Stage-C file                                         | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Real ActionFormer CPU    | 新 real-detector RED                                       | `MISSING/NOT_EXECUTED`     | 否                       |
+| CUDA autocast            | real VideoMAE/AdaTAD/ActionFormer one-update              | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| CUDA GradScaler overflow | version/storage/optimizer/scaler rollback                 | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| CUDA performance         | hash/clone/audit overhead                                 | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Slurm precheck           | UUID/cgroup/allocation identity                           | `NOT_EXECUTED_BY_REVIEWER` | 否                       |
+| Full-stack profile       | 50 warmup + 200 invocations × candidates                  | `NOT_EXECUTED_BY_REVIEWER` | Gate-1 input，不是 Gate 本身 |
+| Gate 1                   | formal registered adjudication                            | `LOCKED`                   | 是                       |
+| Stage B                  | 3-seed formal                                             | `LOCKED`                   | 科学链阶段                   |
+| Gates2/3                 | formal                                                    | `LOCKED`                   | 是                       |
+| Stage C                  | formal 4200-success                                       | `MISSING`                  | 科学链阶段                   |
+| Gate 4                   | official full-video                                       | `MISSING`                  | 是                       |
+
+推荐但本轮未执行的 CPU 命令：
+
+```bash
+python -m py_compile \
+  opentad/models/chronotransport/*.py \
+  tools/bata/chronotransport_r2_*.py \
+  tools/bata/*chronotransport*r2*.py
+
+python -m pytest \
+  tests/test_chronotransport_r2_registration.py \
+  tests/test_chronotransport_r2_gate1_cost_profile.py \
+  tests/test_chronotransport_r2_gate1_hardening.py \
+  tests/test_chronotransport_r2_stage_b.py \
+  tests/test_chronotransport_r2_gates23.py \
+  tests/test_chronotransport_r2_stage_c.py \
+  tests/test_chronotransport_r2_gate4.py \
+  tests/test_chronotransport_pipeline.py \
+  tests/test_chronotransport_vit_adapter_integration.py \
+  -q
+```
+
+这些检查即使全绿，也仍然不是 Gate PASS。
+
+# 22. Registration Readiness Checklist
+
+| 条件                                                 | 状态 |
+| -------------------------------------------------- | -- |
+| Fresh fixed SHA                                    | ✅  |
+| 旧快照后代且非旧 SHA                                       | ✅  |
+| Prompt 最低文件门                                       | ✅  |
+| Spec exact SHA-256                                 | ✅  |
+| A1 random seed 规范获批                                | ❌  |
+| A2 Slurm/GPU identity 规范获批                         | ❌  |
+| A3 loss-normalizer 规范获批                            | ❌  |
+| A4 paired Stage-C forward 规范获批                     | ❌  |
+| Real ActionFormer Stage-C integration              | ❌  |
+| 4200-update CT runner                              | ❌  |
+| matched-dense runner                               | ❌  |
+| post-C recalibration                               | ❌  |
+| Gate-4 formal producer                             | ❌  |
+| Gate-4 formal runner                               | ❌  |
+| 全部 formal launchers                                | ❌  |
+| registration source-vector 闭合                      | ❌  |
+| 自动 source coverage RED                             | ❌  |
+| CPU full regression 由 reviewer/independent party复现 | ❌  |
+| protected CUDA real-forward test                   | ❌  |
+| Slurm UUID/cgroup test                             | ❌  |
+| clean implementation commit I                      | ❌  |
+| single-parent registration-only R                  | ❌  |
+| PRECHECK_ONLY                                      | 禁止 |
+| formal Gate 1                                      | 禁止 |
+
+# 23. Dependency-Ordered Next-Step Plan
+
+| 步骤                               | 输入                   | 修改表面                            | RED                                 | GREEN                                  | 独立审查边界                           | 输出/停止条件                   |
+| -------------------------------- | -------------------- | ------------------------------- | ----------------------------------- | -------------------------------------- | -------------------------------- | ------------------------- |
+| 0. 批准 A1–A4                      | `b854adb` + proposal | spec、plan、wiki only             | old spec仍触发random lock              | spec hash/semantic review              | spec-only reviewer               | 新批准 spec commit；未批准则停止    |
+| 1. Real Stage-C contract         | 新批准 spec             | `stage_c.py`、real adapter、tests | real ActionFormer dict/normalizer失败 | CPU real-detector + CUDA one-update    | code + training-semantics review | 无法保持官方 loss 则停止           |
+| 2. Stage-C/matched-dense runners | 步骤1 green            | runners/configs/ledgers/resume  | 4200、EMA、LR、resume RED              | one-update CUDA + deterministic resume | experiment protocol review       | 完整 runner surface         |
+| 3. Gate-4 producer               | 步骤2                  | producer/runner/launcher/tests  | caller mapping、population drift RED | synthetic + small GPU precheck         | metric/provenance review         | formal producer；否则停止      |
+| 4. Registration closure          | 全部代码表面               | source set、auto-discovery tests | 漏一个 source 即 RED                    | exact source regression                | registration-only review         | 完整 implementation tree    |
+| 5. Pre-registration verification | clean candidate tree | 不改科学代码                          | CPU/CUDA/Slurm matrix               | 全绿                                     | independent implementation audit | 允许创建 I                    |
+| 6. 创建 I/R                        | verified tree        | I；随后仅新增 registration            | I..R 多文件必须 RED                      | detached context validation            | independent registration audit   | clean I 与 single-parent R |
+| 7. Stop-chain execution          | R                    | 不改 frozen bytes                 | PRECHECK/Gate sequence              | Gate 1→B→2/3→C→4                       | 每一 Gate 独立 adjudication          | 任一 Gate FAIL 永久冻结         |
+
+## 对十个问题的明确回答
+
+1. **当前 snapshot 能否成为 I？**
+   不能。
+
+2. **最小 mandatory patch set？**
+   批准 A1–A4；完成 real Stage-C contract；CT/matched-dense runners；Gate-4 producer/runner；source-vector closure；GPU/Slurm identity；完整 tests/launchers。
+
+3. **哪些 slice 可保持冻结？**
+   Gate-4 pure test-only adjudicator可冻结。registration 的 I/R byte-shape、Gate-1 formal/fixture separation、precheck lexical path helper可作为局部 invariant 保留，但不能升级为完整 slice APPROVE。
+
+4. **何时允许创建 I？**
+   全部 mandatory surfaces 存在、A1–A4获批、source set闭合、CPU/必要CUDA/Slurm行为全绿并通过独立实现审查后。
+
+5. **何时允许创建 R？**
+   I 已 clean、pushed/immutable，且 R 只新增唯一 canonical registration artifact 时。
+
+6. **何时允许 PRECHECK_ONLY？**
+   R 已存在并通过 detached formal registration validation 后。
+
+7. **何时允许 formal Gate 1？**
+   PRECHECK成功，formal random-control identity经批准规范解除锁，所有 profile/replay source与environment已登记后。
+
+8. **Gate 1 FAIL 后怎么办？**
+   永久冻结 r2；不换 head、loss、seed、library、budget、threshold，不再“修到通过”。
+
+9. **Gate 1 PASS 后顺序？**
+   Stage B三种子 → Gates2/3 → Stage C与matched-dense → post-C calibration → Gate4。
+
+10. **哪些 CUDA/性能检查不属于科学 Gate？**
+    dense parity、backward connectivity、GradScaler overflow/rollback、resume determinism、GPU UUID/cgroup、audit overhead、one-update smoke、small profiling precheck。
+
+# 24. Result-to-Claim Matrix
+
+| 可用证据                    | 当前支持的 claim                             | 当前不支持的 claim                                 |
+| ----------------------- | --------------------------------------- | -------------------------------------------- |
+| runtime 源码              | heavy path routing与dense adapter的静态实现意图 | 实测加速、mAP保护                                   |
+| registration validators | I/R exact-byte invariant设计              | 当前已有合法 I/R                                   |
+| Gate-1 pure code        | oracle-headroom statistic定义             | Gate-1 PASS、input dependence                 |
+| Stage-B code            | formal trainer surface部分存在              | 140-update三种子结果                              |
+| Gates2/3 code           | formal replay/locking机制部分存在             | coverage/ranking Gate PASS                   |
+| Stage-C primitive       | bounded transaction/hardening invariant | 真实 ActionFormer可训练、4200 updates              |
+| Gate-4 pure code        | test-only official-metric adjudication  | official full-video Gate-4 PASS              |
+| EXPERIMENT_AUDIT files  | 项目知道当前未 ready                           | 不构成外部独立复现                                    |
+| 当前 fixed SHA            | review snapshot                         | implementation I、registration R              |
+| 任何项目测试数                 | project-reported engineering evidence   | 科学结果                                         |
+| 当前全部证据                  | `deploy=false`, `paper=false`           | paper-ready、deployable、empirically supported |
+
+**当前不存在任何可写进论文结果表的 ChronoTransport r2 数字。**
+
+# 25. Permanent Kill Criteria
+
+以下任一条件发生，应永久冻结该次 r2 有界上诉，不得通过更换冻结变量续命：
+
+1. Gate 1 任一 hard condition FAIL；
+2. Gate 2 FAIL；
+3. Gate 3 coverage/ranking/support 任一 hard condition FAIL；
+4. Gate 4 任一 hard condition FAIL；
+5. formal execution 出现 schedule repair；
+6. NaN fallback 或 whole-window dense fallback 被纳入成功 evidence；
+7. requested 与 executed action/cost 不一致；
+8. profile hardware、precision、batch、source或environment 与 R 不一致；
+9. 任何 GT、teacher、dense reference、raw prediction cache 或 counterfactual ledger进入 scheduler；
+10. Stage-B 不是精确 140 successful updates/seed；
+11. Stage-C 不是精确 4200 successful updates，或 exposure/retry cursor 不一致；
+12. checkpoint、EMA、LR、optimizer、scaler或resume identity无法复算；
+13. matched-dense 不是冻结协议下真正匹配对照；
+14. Gate3 frozen-window guarantee 被偷换为 Gate4 official-population guarantee；
+15. Gate4 timing repetition被当成独立metric样本；
+16. candidate row、overlapping window或seed被伪装成独立video；
+17. registration source-vector遗漏 formal producer、runner、launcher、validator或hardening test；
+18. I/R 不是 clean immutable single-parent chain；
+19. 在看到任何 Gate 数据后修改 seed、head、loss、candidate library、budget、threshold、bootstrap unit或population；
+20. 真实 ActionFormer loss semantics无法同时满足批准的 A3/A4 与 Stage-C transaction合同。
+
+科学 Gate FAIL 后允许保留代码作为 frozen engineering baseline 或负结果资产，但不得再声称它仍是一次尚未裁决的 r2 科学候选。

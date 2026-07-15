@@ -108,3 +108,12 @@ ChronoTransport r2 Pro 审计条目。
   `AF4E4FA612671F426D7E9316434F60B48A14A26EE034D5DDDB65FF489D691DDE`。裁决仅为
   `GITHUB_SNAPSHOT_INCOMPLETE`：远端分支仍等于禁止使用的 `797a2df`，因此 reviewer 在第一门
   停止，未检查缺失文件、spec hash 或任何代码。它证明 prompt fail-closed，不是实现审查结果。
+- `sources/2026-07-15-chronotransport-r2-pro-review-b854adb-verbatim.txt`：用户提供的 GitHub-only
+  Pro 完整审计逐字归档，共 73,605 bytes / 1,430 lines；原附件与归档 SHA-256 均为
+  `1A7B9D5AEA47302AC7BCB29DB9EF54DAD97CF3D45DF1536691CB9B536EC4C376`。审计对象是 review-only
+  SHA `b854adb4f4c9235580b5e58c3f3255db6e9adbc0`，总体裁决
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。reviewer 未复跑 tests/CUDA/Slurm，覆盖证书也不
+  声称逐行读完全部仓库，因此它不是实验事实或 implementation approval。
+- `sources/2026-07-15-chronotransport-r2-pro-review-b854adb-absorption.md`：对上述 Pro 审计的逐项
+  事实核对、采纳矩阵与保留意见。总体裁决、主要 P1/P2 blocker 和修复依赖顺序被接受；裸 test
+  glob、未冻结 Stage-C dataclass、`_gpu1.sh` 命名及 pre-I/R official-population precheck 不原样采用。

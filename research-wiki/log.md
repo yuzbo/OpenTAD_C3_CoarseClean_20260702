@@ -428,3 +428,12 @@ append_only: true
   newly published branch. Current prompt SHA-256 is
   `1D0E7FC160FFB1E30375BF2EC3BF9E44381EA3BAB1D8BB5DD8EA2249E3D93BF5`; this edit remains review-only
   and does not unlock A1--A4, registration or experiments.
+- 2026-07-15: Absorbed the user-supplied 1,430-line GitHub Pro audit of immutable review-only SHA
+  `b854adb4f4c9235580b5e58c3f3255db6e9adbc0`. The verbatim archive is 73,605 bytes and matches the
+  attachment at SHA-256 `1A7B9D5A...C4C376`. Its overall
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` verdict and the missing formal workflows, real
+  ActionFormer Stage-C contract, A1--A4, source-vector, Slurm and measured-cost-provenance blockers are
+  accepted. The suggested raw test glob is not accepted verbatim: 21 files match but only two changed
+  integration tests are presently confirmed omissions, so a frozen classification manifest is required.
+  The proposed Stage-C evidence interface remains a design sketch pending A3/A4. No implementation code,
+  I/R, test run, CUDA/Slurm job, Gate or scientific result was produced.
