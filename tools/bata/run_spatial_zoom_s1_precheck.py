@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import importlib
 import json
 import sys
 import time
@@ -26,6 +27,13 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
 )
 
 S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v3"
+
+
+def _register_opentad_runtime_modules() -> None:
+    """Mirror the registry imports performed by the official train entrypoint."""
+
+    importlib.import_module("opentad.datasets")
+    importlib.import_module("opentad.models.backbones")
 
 
 def build_precheck_spec(config_path: str | Path) -> dict[str, Any]:
@@ -230,7 +238,7 @@ def _run_clip(
     import torch.nn.functional as functional
     from mmaction.registry import MODELS
 
-    import opentad.models.backbones  # noqa: F401
+    _register_opentad_runtime_modules()
 
     cfg = Config.fromfile(str(config_path))
     spec = build_precheck_spec(config_path)
@@ -304,6 +312,7 @@ def _run_full_detector(
     import torch
     import torch.nn.functional as functional
 
+    _register_opentad_runtime_modules()
     from opentad.models import build_detector
 
     cfg = Config.fromfile(str(config_path))
@@ -656,6 +665,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 __all__ = [
+    "_register_opentad_runtime_modules",
     "_validate_interpolation_calls",
     "_validate_pretrained_load_audit",
     "build_precheck_spec",

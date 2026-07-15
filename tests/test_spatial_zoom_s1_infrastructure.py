@@ -43,6 +43,7 @@ from tools.bata.spatial_zoom_s1_cost import (
     compare_resolution_profiles,
 )
 from tools.bata.run_spatial_zoom_s1_precheck import (
+    _register_opentad_runtime_modules,
     _validate_interpolation_calls,
     _validate_pretrained_load_audit,
     build_precheck_spec,
@@ -206,6 +207,16 @@ def test_formal_precheck_rejects_partial_matrix_and_non_cuda_execution() -> None
             amp=True,
             expected_pretrained_sha256="0" * 64,
         )
+
+
+def test_formal_precheck_registers_model_pipeline_transforms(monkeypatch) -> None:
+    imported = []
+    monkeypatch.setattr(
+        "tools.bata.run_spatial_zoom_s1_precheck.importlib.import_module",
+        imported.append,
+    )
+    _register_opentad_runtime_modules()
+    assert imported == ["opentad.datasets", "opentad.models.backbones"]
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:
