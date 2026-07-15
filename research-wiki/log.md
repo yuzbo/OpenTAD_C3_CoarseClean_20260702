@@ -88,3 +88,8 @@ append_only: true
   to canonical namespace `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`.
   All nine received normal Slurm GPUs without physical-index override. No
   resume, test opening, profiling, or performance interpretation occurred.
+- 2026-07-16 04:57+08:00: all nine storage-safe S1 cells remain healthy and
+  running at epochs 11-15. Latest finite losses are `0.5830-0.7153`; retry
+  counts are 2-4 with maximum same-batch retry `2/8`, followed by continued
+  progress. Pre-gate checkpoint/evidence counts correctly remain zero and
+  storage remains 217 GiB free. No hard-failure signature was found.

@@ -131,6 +131,14 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   Jobs `1165775-1165783` are the only formal replacement cells and all start at
   epoch 0. Initial logs show only recoverable first AMP retries; no performance
   evidence exists before gate-only selection and the single sealed test open.
+- Status at `2026-07-16T04:57+08:00`: all nine replacement jobs remain
+  `RUNNING`. Dense160 has reached epochs 14-15, dense224 epoch 12, and dense256
+  epoch 11. Latest finite logged losses span `0.5830-0.7153`. Per-cell AMP
+  retry counts are 2-4 and the maximum same-batch retry is `2/8`; every affected
+  cell subsequently advanced. There is no Traceback, OOM, non-finite raw loss,
+  determinism warning, exhausted retry, parity failure, checkpoint write error,
+  or abnormal exit. Checkpoint/sidecar/evidence/selection counts remain zero as
+  required before epoch 41, and `/data` retains 217 GiB free.
 
 ## Decision Boundary
 
