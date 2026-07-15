@@ -1,4 +1,6 @@
 import inspect
+from contextlib import nullcontext
+
 import torch
 import torch.nn as nn
 from collections.abc import Mapping
@@ -284,6 +286,20 @@ class ActionFormer(SingleStageDetector):
             raise RuntimeError("counterfactual cls+reg objective must be a finite scalar")
         return objective
 
+    @staticmethod
+    def _duca_counterfactual_teacher_autocast(inputs):
+        if inputs.is_cuda and torch.is_autocast_enabled():
+            # The teacher is the first consumer of the detector parameters in
+            # this forward. Caching its no-grad FP16 casts would make the main
+            # detector reuse detached weights under the outer autocast context.
+            return torch.autocast(
+                device_type="cuda",
+                dtype=torch.get_autocast_gpu_dtype(),
+                enabled=True,
+                cache_enabled=False,
+            )
+        return nullcontext()
+
     def _duca_counterfactual_teacher_loss(self, raw_context, selector_state, request, **kwargs):
         raw_inputs, raw_masks, raw_metas, raw_segments, raw_labels = raw_context
         selections = request["candidate_selections"]
@@ -335,7 +351,7 @@ class ActionFormer(SingleStageDetector):
             if not self.training or not self.rpn_head.training:
                 raise RuntimeError("counterfactual teacher must use the official training objective")
             self.rpn_head.duca_set_frozen_loss_normalizer(normalizer)
-            with torch.no_grad():
+            with torch.no_grad(), self._duca_counterfactual_teacher_autocast(raw_inputs):
                 for b in range(baseline_positions.shape[0]):
                     if not bool(candidate_valid[b].any().item()):
                         continue

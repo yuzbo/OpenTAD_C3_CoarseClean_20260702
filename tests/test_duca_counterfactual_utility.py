@@ -9,6 +9,7 @@ if os.name == "nt":
 
 import torch
 
+from opentad.models.detectors.actionformer import ActionFormer
 from opentad.models.duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
     counterfactual_pair_scores,
@@ -17,6 +18,22 @@ from opentad.models.duca.counterfactual_utility import (
     gradient_utility_alignment,
 )
 from opentad.models.selectors.duca_online_frame_selector import _add_structured_zero_forward_gradient_path
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
+def test_counterfactual_teacher_does_not_poison_outer_autocast_parameter_cache() -> None:
+    layer = torch.nn.Linear(4, 4).cuda()
+    inputs = torch.randn(2, 4, device="cuda")
+
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        with torch.no_grad(), ActionFormer._duca_counterfactual_teacher_autocast(inputs):
+            layer(inputs)
+        main_loss = layer(inputs).square().mean()
+    main_loss.backward()
+
+    assert layer.weight.grad is not None
+    assert torch.isfinite(layer.weight.grad).all()
+    assert float(layer.weight.grad.abs().sum().item()) > 0.0
 
 
 def test_finite_candidates_are_exact_k_unique_bounded_and_max_gap_feasible() -> None:

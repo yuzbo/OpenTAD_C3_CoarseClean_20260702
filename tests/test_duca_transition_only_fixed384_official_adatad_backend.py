@@ -100,6 +100,18 @@ def test_formal_gpu_gate_keeps_real_videomae_and_768_to_384_geometry() -> None:
     assert "scaler.unscale_(optimizer)" in text
 
 
+def test_counterfactual_teacher_disables_no_grad_autocast_weight_cache() -> None:
+    text = ACTIONFORMER_SOURCE.read_text(encoding="utf-8")
+    helper = text.split("def _duca_counterfactual_teacher_autocast", 1)[1].split(
+        "def _duca_counterfactual_teacher_loss", 1
+    )[0]
+
+    assert "torch.is_autocast_enabled()" in helper
+    assert "cache_enabled=False" in helper
+    assert "torch.get_autocast_gpu_dtype()" in helper
+    assert "self._duca_counterfactual_teacher_autocast(raw_inputs)" in text
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Linux remote runs Torch/official-ASFormer proof")
 def test_transition_only_official_actionformer_one_step_gradient_contract() -> None:
     if os.environ.get("DUCA_RUN_OFFICIAL_PROOF_TEST", "0") != "1":
