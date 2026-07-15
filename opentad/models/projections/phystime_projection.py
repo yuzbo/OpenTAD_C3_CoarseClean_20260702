@@ -56,6 +56,8 @@ class SupportIntegratedMeasureAttention(nn.Module):
         observation_measure="support_overlap",
         point_radius_cells=4.0,
         dropout=0.0,
+        keep_uncovered_queries=False,
+        use_null_evidence=True,
         eps=1.0e-8,
     ):
         super().__init__()
@@ -66,6 +68,8 @@ class SupportIntegratedMeasureAttention(nn.Module):
         self.relative_time_logits = bool(relative_time_logits)
         self.observation_measure = str(observation_measure)
         self.point_radius_cells = float(point_radius_cells)
+        self.keep_uncovered_queries = bool(keep_uncovered_queries)
+        self.use_null_evidence = bool(use_null_evidence)
         self.eps = float(eps)
         if self.observation_measure not in {"support_overlap", "point_gaussian"}:
             raise ValueError(f"unsupported observation_measure: {self.observation_measure}")
@@ -74,6 +78,10 @@ class SupportIntegratedMeasureAttention(nn.Module):
 
         self.value_proj = nn.Linear(self.in_channels, self.out_channels)
         self.output_proj = nn.Linear(self.out_channels, self.out_channels)
+        if self.keep_uncovered_queries and self.use_null_evidence:
+            self.null_evidence = nn.Parameter(torch.zeros(self.out_channels))
+        else:
+            self.register_parameter("null_evidence", None)
         self.dropout = nn.Dropout(float(dropout))
         if self.content_logits:
             self.query_embedding = PhysicalQueryEmbedding(self.attention_channels)
@@ -146,12 +154,17 @@ class SupportIntegratedMeasureAttention(nn.Module):
             coverage = mass.sum(dim=-1)
         else:
             coverage = (mass.sum(dim=-1) > self.eps).to(mass.dtype) * query_widths
-        output_mask = query_mask & (coverage > self.eps)
+        covered_mask = query_mask & (coverage > self.eps)
+        output_mask = query_mask if self.keep_uncovered_queries else covered_mask
+        if self.null_evidence is not None:
+            null = self.null_evidence.to(dtype=output.dtype, device=output.device)
+            output = torch.where(covered_mask[..., None], output, null.view(1, 1, -1))
         output = output * output_mask[..., None].to(output.dtype)
         diagnostics = {
             "attention_weights": weights,
             "overlap_mass": mass,
             "coverage_sec": coverage,
+            "covered_mask": covered_mask,
         }
         return output, output_mask, diagnostics
 
@@ -168,12 +181,16 @@ class PhysTimeMeasureProjection(nn.Module):
         observation_measure="support_overlap",
         point_radius_cells=4.0,
         dropout=0.0,
+        keep_uncovered_queries=False,
+        use_null_evidence=True,
     ):
         super().__init__()
         self.in_channels = int(in_channels)
         self.out_channels = int(out_channels)
         self.base_spacing_sec = float(base_spacing_sec)
         self.num_levels = int(num_levels)
+        self.keep_uncovered_queries = bool(keep_uncovered_queries)
+        self.use_null_evidence = bool(use_null_evidence)
         self.level_attentions = nn.ModuleList(
             [
                 SupportIntegratedMeasureAttention(
@@ -183,6 +200,8 @@ class PhysTimeMeasureProjection(nn.Module):
                     observation_measure=observation_measure,
                     point_radius_cells=point_radius_cells,
                     dropout=dropout,
+                    keep_uncovered_queries=self.keep_uncovered_queries,
+                    use_null_evidence=self.use_null_evidence,
                 )
                 for _ in range(self.num_levels)
             ]

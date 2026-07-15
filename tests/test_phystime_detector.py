@@ -22,7 +22,7 @@ def _model():
                 num_levels=2,
             ),
             rpn_head=dict(
-                type="PhysTimeHead",
+                type="SupportDecoupledPhysicalQueryHead",
                 num_classes=2,
                 in_channels=8,
                 feat_channels=8,

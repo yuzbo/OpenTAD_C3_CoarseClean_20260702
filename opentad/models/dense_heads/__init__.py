@@ -12,6 +12,7 @@ from .dyn_head import TDynHead
 from .native_irregular_area_head_p2 import NativeIrregularAreaHeadP2
 from .duca_online_precheck_head import DucaOnlinePrecheckHead
 from .phystime_head import PhysTimeHead
+from .support_decoupled_physical_query_head import SupportDecoupledPhysicalQueryHead
 
 __all__ = [
     "AnchorGenerator",
@@ -31,4 +32,5 @@ __all__ = [
     "NativeIrregularAreaHeadP2",
     "DucaOnlinePrecheckHead",
     "PhysTimeHead",
+    "SupportDecoupledPhysicalQueryHead",
 ]

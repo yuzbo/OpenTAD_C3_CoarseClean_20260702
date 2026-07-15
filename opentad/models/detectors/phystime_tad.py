@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from collections.abc import Mapping
 
 from ..bricks import Scale
 from ..builder import DETECTORS
 from .single_stage import SingleStageDetector
+from ..utils.native_temporal_geometry import align_native_tubelet_geometry
 
 
 @DETECTORS.register_module()
@@ -17,9 +19,61 @@ class PhysTimeTAD(SingleStageDetector):
         rpn_head,
         backbone=None,
         discretization_loss_weight=0.1,
+        native_temporal_geometry=None,
     ):
         super().__init__(backbone=backbone, projection=projection, rpn_head=rpn_head)
         self.discretization_loss_weight = float(discretization_loss_weight)
+        self.native_temporal_geometry = self._normalize_native_temporal_geometry(native_temporal_geometry)
+        self._last_native_temporal_geometry_audit = None
+
+    @staticmethod
+    def _normalize_native_temporal_geometry(config):
+        if config is None:
+            return None
+        if not isinstance(config, Mapping):
+            raise ValueError("native_temporal_geometry must be a mapping")
+        config = dict(config)
+        enabled = bool(config.pop("enabled", True))
+        if not enabled:
+            return None
+        allowed = {
+            "tubelet_size",
+            "expected_raw_count",
+            "expected_token_count",
+            "expected_transformer_depth",
+            "expected_adapter_indices",
+            "expected_adapter_kernel_size",
+            "expected_adapter_dilation",
+        }
+        unknown = sorted(set(config) - allowed)
+        if unknown:
+            raise ValueError(f"unknown native_temporal_geometry keys: {unknown}")
+        normalized = {}
+        for key in allowed:
+            normalized[key] = config.get(key)
+        return normalized
+
+    def _align_native_temporal_geometry(self, features, masks, metas):
+        if self.native_temporal_geometry is None:
+            self._last_native_temporal_geometry_audit = None
+            return features, masks, metas
+        features, masks, metas, audit = align_native_tubelet_geometry(
+            features, masks, metas, **self.native_temporal_geometry
+        )
+        padding_audit = getattr(self.backbone, "latest_temporal_padding_mask_summary", None)
+        if not isinstance(padding_audit, dict) or padding_audit.get("strict_isolation_verified") is not True:
+            raise RuntimeError(
+                "native PhysTimeTAD requires strict padding isolation inside the video backbone"
+            )
+        audit["backbone_temporal_padding_isolation"] = dict(padding_audit)
+        audit["valid_tokens_depend_on_padding_after_isolation"] = False
+        self._last_native_temporal_geometry_audit = audit
+        return features, masks, metas
+
+    def collect_native_temporal_geometry_audit(self):
+        if self._last_native_temporal_geometry_audit is None:
+            return {}
+        return dict(self._last_native_temporal_geometry_audit)
 
     @staticmethod
     def _has_forbidden_metadata(meta):
@@ -81,6 +135,7 @@ class PhysTimeTAD(SingleStageDetector):
     def _forward_train_view(self, inputs, masks, metas, gt_segments, gt_labels):
         self._validate_metas(metas, training=True)
         observations = self._extract_observations(inputs, masks)
+        observations, masks, metas = self._align_native_temporal_geometry(observations, masks, metas)
         feat_list, mask_list, geometry_list = self.projection(observations, masks, metas)
         losses, raw = self.rpn_head.forward_train(
             feat_list,
@@ -166,6 +221,7 @@ class PhysTimeTAD(SingleStageDetector):
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._validate_metas(metas, training=False)
         observations = self._extract_observations(inputs, masks)
+        observations, masks, metas = self._align_native_temporal_geometry(observations, masks, metas)
         feat_list, mask_list, geometry_list = self.projection(observations, masks, metas)
         predictions = self.rpn_head.forward_test(feat_list, mask_list, geometry_list)
         self._last_forward_test_metas = metas

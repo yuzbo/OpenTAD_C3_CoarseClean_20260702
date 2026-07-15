@@ -15,6 +15,8 @@ CONFIGS = {
     "physical": ROOT / "configs/adatad/thumos/physical_grid_adatad_sparse_k384.py",
     "phystime": ROOT / "configs/adatad/thumos/phystime_adatad_sparse_k384.py",
 }
+SDPQ_FEATURE = ROOT / "configs/adatad/thumos/phystime_sdpq_i3d_feature_gate0b.py"
+SDPQ_NATIVE = ROOT / "configs/adatad/thumos/phystime_g1b_sdpq_pool_native_j192.py"
 
 
 def load_frame_step(cfg, split):
@@ -23,6 +25,10 @@ def load_frame_step(cfg, split):
 
 def pipeline_types(cfg, split):
     return [step["type"] for step in cfg.dataset[split].pipeline]
+
+
+def _pipeline_step(cfg, split, step_type):
+    return next(step for step in cfg.dataset[split].pipeline if step["type"] == step_type)
 
 
 def checksum(values):
@@ -141,3 +147,28 @@ def test_track_validator_emits_one_shared_sampling_contract(tmp_path):
     assert len(payload["sampling_contract_sha256"]) == 64
     assert len(set(payload["resolved_config_sha256"].values())) == 3
     assert output.is_file()
+
+
+def test_sdpq_configs_use_support_decoupled_head_and_native_g1b_has_no_interpolation():
+    feature_cfg = Config.fromfile(SDPQ_FEATURE, lazy_import=False)
+    native_cfg = Config.fromfile(SDPQ_NATIVE, lazy_import=False)
+
+    for cfg in (feature_cfg, native_cfg):
+        assert cfg.model.type == "PhysTimeTAD"
+        assert cfg.model.projection.type == "PhysTimeMeasureProjection"
+        assert cfg.model.projection.keep_uncovered_queries is True
+        assert cfg.model.projection.use_null_evidence is True
+        assert cfg.model.rpn_head.type == "SupportDecoupledPhysicalQueryHead"
+        assert cfg.model.rpn_head.center_sample_radius == 2.0
+
+    assert native_cfg.raw_observation_count == 384
+    assert native_cfg.native_token_count == 192
+    assert native_cfg.model.native_temporal_geometry.expected_raw_count == 384
+    assert native_cfg.model.native_temporal_geometry.expected_token_count == 192
+    post_types = [step["type"] for step in native_cfg.model.backbone.custom.post_processing_pipeline]
+    assert post_types == ["Reduce", "Rearrange"]
+    assert "Interpolate" not in post_types
+    for split in ("train", "val", "test"):
+        assert _pipeline_step(native_cfg, split, "BuildPhysTimeNativeTubeletGeometry")[
+            "coordinate_mode"
+        ] == "physical_time_seconds"
