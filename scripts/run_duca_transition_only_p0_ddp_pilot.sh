@@ -79,8 +79,6 @@ configs=(
   configs/adatad/thumos/duca_transition_only_fixed384_beta0_p0_ddp_pilot.py
   configs/adatad/thumos/duca_transition_only_fixed384_counterfactual_p0_ddp_pilot.py
 )
-ports=(30621 30622 30623 30624)
-
 for index in "${!variants[@]}"; do
   variant="${variants[$index]}"
   config="${configs[$index]}"
@@ -112,7 +110,9 @@ EOF
   echo "[DUCA_P0_DDP_PILOT] starting ${variant}"
   "${PYTHON}" -m torch.distributed.run \
     --nproc_per_node=1 \
-    --master_port="${ports[$index]}" \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint=localhost:0 \
+    --rdzv_id="duca-p0-${SLURM_JOB_ID}-${variant}-pilot" \
     tools/train.py \
     "${config}" \
     --id "${index}" \

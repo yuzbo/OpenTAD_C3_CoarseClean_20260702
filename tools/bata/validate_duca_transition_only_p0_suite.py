@@ -10,6 +10,10 @@ from typing import Any
 
 from mmengine.config import Config
 
+from tools.bata.duca_p0_evaluation import (
+    evaluation_config_sha256,
+    normalize_evaluation_config,
+)
 from tools.bata.validate_duca_transition_only_p0_variant import CONFIGS, validate_variant
 
 
@@ -120,21 +124,50 @@ def _shared_protocol(cfg: Config) -> dict[str, Any]:
     }
 
 
+def _reference_data_artifacts(cfg: Config) -> dict[str, Any]:
+    annotation = Path(cfg.evaluation.ground_truth_filename).expanduser().resolve()
+    class_map = Path(cfg.dataset.test.class_map).expanduser().resolve()
+    _require(annotation.is_file(), f"evaluation annotation is missing: {annotation}")
+    _require(class_map.is_file(), f"evaluation class map is missing: {class_map}")
+    return {
+        "evaluation_annotation_path": str(annotation),
+        "evaluation_annotation_sha256": _sha256(annotation),
+        "evaluation_class_map_path": str(class_map),
+        "evaluation_class_map_sha256": _sha256(class_map),
+        "evaluation_config": normalize_evaluation_config(cfg.evaluation),
+        "evaluation_config_sha256": evaluation_config_sha256(cfg.evaluation),
+    }
+
+
 def _post_run_contract(protocol_sha256: str, bindings: dict[str, Any]) -> dict[str, Any]:
     return {
-        "schema_version": "duca_p0_post_run_evidence_v1",
+        "schema_version": "duca_p0_post_run_evidence_v3",
         "shared_protocol_sha256": protocol_sha256,
         "successful_optimizer_updates": EXPECTED_OPTIMIZER_UPDATES,
         "lr_scheduler_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
         "ema_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
-        "evaluator_identity": "mAP:validation:0.3,0.4,0.5,0.6,0.7",
-        "checkpoint_criterion": "same_workflow_best_or_final_declared",
+        "selector_schedule_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
+        "checkpoint_criterion": "terminal_epoch_131_state_dict_ema",
+        "checkpoint_epoch": 131,
+        "checkpoint_state_key": "state_dict_ema",
         "non_finite_collapse": False,
         **bindings,
     }
 
 
 def _validate_formal_optimizer_step(gate_payload: dict[str, Any]) -> None:
+    direction_gate = gate_payload.get("counterfactual_positive_direction_gate")
+    _require(
+        isinstance(direction_gate, dict) and direction_gate.get("passed") is True,
+        "formal core gate did not prove positive counterfactual direction",
+    )
+    integer_ema = gate_payload.get("integer_ema_buffer_contract")
+    _require(
+        isinstance(integer_ema, dict)
+        and integer_ema.get("verified") is True
+        and int(integer_ema.get("observed_schedule_step", -1)) == EXPECTED_OPTIMIZER_UPDATES,
+        "formal core gate did not verify exact integer EMA buffer copying",
+    )
     _require(gate_payload.get("optimizer_step_ran") is True, "formal core gate did not run optimizer.step")
     _require(
         gate_payload.get("optimizer_parameter_change_verified") is True,
@@ -196,10 +229,31 @@ def validate_post_run_evidence(
     _require(payload.get("variant") == variant, f"{variant}: post-run variant mismatch")
     for key, value in expected.items():
         _require(payload.get(key) == value, f"{variant}: post-run {key} mismatch")
+    artifact_hash = payload.get("artifact_chain_sha256")
+    unsigned = dict(payload)
+    unsigned.pop("artifact_chain_sha256", None)
+    _require(
+        artifact_hash == _canonical_sha256(unsigned),
+        f"{variant}: post-run artifact-chain hash mismatch",
+    )
     run_manifest_path = Path(str(payload.get("run_manifest_path", ""))).resolve()
     _require(run_manifest_path.is_file(), f"{variant}: run manifest is missing")
     _require(payload.get("run_manifest_sha256") == _sha256(run_manifest_path), f"{variant}: run manifest hash mismatch")
     run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    from tools.bata.finalize_duca_transition_only_p0_run import finalize_run
+
+    regenerated = finalize_run(
+        variant=variant,
+        run_manifest_path=run_manifest_path,
+        training_audit_path=payload.get("training_audit_path", ""),
+        checkpoint_path=payload.get("checkpoint_path", ""),
+        checkpoint_sidecar_path=payload.get("checkpoint_sidecar_path", ""),
+        evaluation_path=payload.get("terminal_evaluation_path", ""),
+    )
+    _require(regenerated == payload, f"{variant}: post-run evidence is not reproducible")
+    evaluator = payload.get("evaluator")
+    _require(isinstance(evaluator, dict), f"{variant}: evaluator identity missing")
+    _require(evaluator.get("class_name") == "mAP", f"{variant}: evaluator is not OpenTAD mAP")
     manifest_fields = {
         "git_commit": "git_commit",
         "config_sha256": "config_sha256",
@@ -208,6 +262,7 @@ def validate_post_run_evidence(
         "core_gate_sha256": "core_gate_json_sha256",
         "shared_protocol_sha256": "shared_protocol_sha256",
         "seed": "seed",
+        "evaluation_config_sha256": "evaluation_config_sha256",
     }
     if "ddp_pilot_sha256" in expected:
         manifest_fields["ddp_pilot_sha256"] = "ddp_pilot_json_sha256"
@@ -259,6 +314,9 @@ def validate_suite(
             "checkpoint_sha256",
             "official_asformer_source_sha256",
             "reference_config_sha256",
+            "evaluation_annotation_sha256",
+            "evaluation_class_map_sha256",
+            "evaluation_config_sha256",
         ):
             value = gate_payload.get(hash_key)
             _require(
@@ -272,10 +330,29 @@ def validate_suite(
             "checkpoint_sha256": gate_payload["checkpoint_sha256"],
             "official_asformer_source_sha256": gate_payload["official_asformer_source_sha256"],
             "reference_config_sha256": gate_payload["reference_config_sha256"],
+            "evaluation_annotation_sha256": gate_payload["evaluation_annotation_sha256"],
+            "evaluation_class_map_sha256": gate_payload["evaluation_class_map_sha256"],
+            "evaluation_config_sha256": gate_payload["evaluation_config_sha256"],
         }
 
     configs = {name: Config.fromfile(str(root / CONFIGS[name])) for name in VARIANT_ORDER}
     reference = configs[REFERENCE_VARIANT]
+    reference_data_artifacts = _reference_data_artifacts(reference)
+    _require(
+        reference_data_artifacts["evaluation_annotation_sha256"]
+        == core_gate["evaluation_annotation_sha256"],
+        "formal core gate annotation identity differs from the suite config",
+    )
+    _require(
+        reference_data_artifacts["evaluation_class_map_sha256"]
+        == core_gate["evaluation_class_map_sha256"],
+        "formal core gate class-map identity differs from the suite config",
+    )
+    _require(
+        reference_data_artifacts["evaluation_config_sha256"]
+        == core_gate["evaluation_config_sha256"],
+        "formal core gate evaluation config differs from the suite config",
+    )
     reference_protocol = _shared_protocol(reference)
     _require(
         reference_protocol["backbone"]["backbone"].get("with_cp") is False,
@@ -306,6 +383,15 @@ def validate_suite(
             "resolved_config_sha256": resolved_config_sha256,
             "variant_contract_sha256": variant_contract_sha256,
             "core_gate_sha256": core_gate["sha256"],
+            "evaluation_annotation_sha256": reference_data_artifacts[
+                "evaluation_annotation_sha256"
+            ],
+            "evaluation_class_map_sha256": reference_data_artifacts[
+                "evaluation_class_map_sha256"
+            ],
+            "evaluation_config_sha256": reference_data_artifacts[
+                "evaluation_config_sha256"
+            ],
         }
         variants.append(
             {
@@ -374,6 +460,7 @@ def validate_suite(
         "variants": variants,
         "formal_core_gate": core_gate,
         "formal_ddp_pilot": ddp_pilot,
+        "reference_data_artifacts": reference_data_artifacts,
         "post_run_contract": post_run_contract,
         "validated_post_runs": validated_post_runs,
         "submission_performed": False,

@@ -12,6 +12,7 @@ model = dict(
 )
 
 workflow = dict(
+    formal_successful_update_contract=False,
     logging_interval=1,
     checkpoint_interval=5,
     val_loss_interval=-1,
@@ -19,6 +20,7 @@ workflow = dict(
     val_start_epoch=9999,
     end_epoch=1,
     max_train_iters=10,
+    force_amp_overflow_attempts=1,
     disable_checkpoint=True,
     require_training_probe_context=True,
     training_probe_json=os.environ.get(

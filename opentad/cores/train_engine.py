@@ -1,7 +1,80 @@
 import copy
+import random
+
+import numpy as np
 import torch
 import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
+
+
+def _capture_model_buffers(model):
+    return {
+        name: buffer.detach().clone()
+        for name, buffer in model.named_buffers()
+        if buffer is not None
+    }
+
+
+def _capture_rng_state():
+    return {
+        "python": random.getstate(),
+        "numpy": copy.deepcopy(np.random.get_state()),
+        "torch_cpu": torch.get_rng_state(),
+        "torch_cuda": torch.cuda.get_rng_state_all(),
+    }
+
+
+def _restore_rng_state(snapshot):
+    random.setstate(snapshot["python"])
+    np.random.set_state(snapshot["numpy"])
+    torch.set_rng_state(snapshot["torch_cpu"])
+    torch.cuda.set_rng_state_all(snapshot["torch_cuda"])
+
+
+def _restore_model_buffers(model, snapshot):
+    current = {
+        name: buffer for name, buffer in model.named_buffers() if buffer is not None
+    }
+    if set(current) != set(snapshot):
+        raise RuntimeError("model buffer registry changed during an AMP replay")
+    with torch.no_grad():
+        for name, saved in snapshot.items():
+            current[name].copy_(saved)
+
+
+def _capture_custom_replay_state(model):
+    snapshots = {}
+    named_modules = getattr(model, "named_modules", None)
+    if not callable(named_modules):
+        return snapshots
+    for name, module in named_modules():
+        capture = getattr(module, "capture_amp_replay_state", None)
+        if callable(capture):
+            snapshots[name] = capture()
+    return snapshots
+
+
+def _restore_custom_replay_state(model, snapshots):
+    if not snapshots:
+        return
+    modules = dict(model.named_modules())
+    if not set(snapshots).issubset(modules):
+        missing = sorted(set(snapshots) - set(modules))
+        raise RuntimeError(f"model module registry changed during an AMP replay: {missing}")
+    for name, snapshot in snapshots.items():
+        restore = getattr(modules[name], "restore_amp_replay_state", None)
+        if not callable(restore):
+            raise RuntimeError(f"AMP replay state provider lost its restore hook: {name}")
+        restore(snapshot)
+
+
+def _inject_nonfinite_gradient(model):
+    for parameter in model.parameters():
+        if parameter.grad is None or parameter.grad.numel() == 0:
+            continue
+        parameter.grad.detach().reshape(-1)[0] = float("inf")
+        return
+    raise RuntimeError("forced AMP overflow could not find a populated gradient")
 
 
 def train_one_epoch(
@@ -17,6 +90,11 @@ def train_one_epoch(
     scaler=None,
     max_train_iters=None,
     collect_training_probe=False,
+    max_amp_retries_per_batch=0,
+    fail_on_amp_replay_exhaustion=False,
+    require_finite_loss=False,
+    force_amp_overflow_attempts=0,
+    update_audit=None,
 ):
     """Training the model for one epoch"""
 
@@ -28,63 +106,146 @@ def train_one_epoch(
         if max_train_iters <= 0:
             raise ValueError("max_train_iters must be positive when provided")
         num_iters = min(num_iters, max_train_iters)
+    max_amp_retries_per_batch = int(max_amp_retries_per_batch)
+    if max_amp_retries_per_batch < 0:
+        raise ValueError("max_amp_retries_per_batch must be non-negative")
+    if max_amp_retries_per_batch > 0 and scaler is None:
+        raise ValueError("AMP replay requires a GradScaler")
+    if fail_on_amp_replay_exhaustion and max_amp_retries_per_batch <= 0:
+        raise ValueError("fail_on_amp_replay_exhaustion requires a positive replay limit")
+    force_amp_overflow_attempts = int(force_amp_overflow_attempts)
+    if force_amp_overflow_attempts < 0:
+        raise ValueError("force_amp_overflow_attempts must be non-negative")
+    if force_amp_overflow_attempts > 0 and (scaler is None or update_audit is None):
+        raise ValueError("forced AMP overflow requires a GradScaler and update audit")
+    if update_audit is not None:
+        for key in (
+            "attempted_batches",
+            "optimizer_attempts",
+            "successful_optimizer_updates",
+            "amp_skipped_attempts",
+            "replayed_batches",
+            "replay_exhaustions",
+            "scheduler_updates",
+            "ema_updates",
+            "duca_schedule_updates",
+            "forced_amp_overflow_attempts",
+        ):
+            update_audit.setdefault(key, 0)
+        update_audit.setdefault("max_amp_retries_observed", 0)
     use_amp = False if scaler is None else True
     probe_state = _new_training_probe_state(model) if collect_training_probe else None
 
     model.train()
     for iter_idx, data_dict in enumerate(train_loader):
-        optimizer.zero_grad()
-
         # current learning rate
         curr_backbone_lr = None
-        if hasattr(model.module, "backbone"):  # if backbone exists
-            if model.module.backbone.freeze_backbone == False:  # not frozen
+        root_model = getattr(model, "module", model)
+        if hasattr(root_model, "backbone"):  # if backbone exists
+            if root_model.backbone.freeze_backbone == False:  # not frozen
                 curr_backbone_lr = scheduler.get_last_lr()[0]
         curr_det_lr = scheduler.get_last_lr()[-1]
 
-        # forward pass
-        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
-            losses = model(**data_dict, return_loss=True)
+        retry_count = 0
+        rng_state = None
+        model_buffer_state = None
+        custom_replay_state = None
+        if max_amp_retries_per_batch > 0:
+            rng_state = _capture_rng_state()
+            model_buffer_state = _capture_model_buffers(model)
+            custom_replay_state = _capture_custom_replay_state(model)
+        if update_audit is not None:
+            update_audit["attempted_batches"] += 1
 
-        # compute the gradients
-        if use_amp:
-            scaler.scale(losses["cost"]).backward()
-        else:
-            losses["cost"].backward()
+        while True:
+            if retry_count > 0:
+                _restore_rng_state(rng_state)
+            optimizer.zero_grad()
 
-        # gradient clipping (to stabilize training if necessary)
-        if clip_grad_l2norm > 0.0:
+            with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
+                losses = model(**data_dict, return_loss=True)
+            if require_finite_loss and not bool(torch.isfinite(losses["cost"]).all().item()):
+                raise FloatingPointError("formal training produced a non-finite loss before AMP scaling")
+
             if use_amp:
-                scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+                scaler.scale(losses["cost"]).backward()
+            else:
+                losses["cost"].backward()
 
-        if probe_state is not None:
-            _record_training_probe_backward(probe_state, model, losses["cost"])
+            if (
+                update_audit is not None
+                and update_audit["forced_amp_overflow_attempts"]
+                < force_amp_overflow_attempts
+            ):
+                _inject_nonfinite_gradient(model)
+                update_audit["forced_amp_overflow_attempts"] += 1
 
-        # update parameters
-        optimizer_step_ran = True
-        if use_amp:
-            scale_before_step = scaler.get_scale()
-            scaler.step(optimizer)
-            scaler.update()
-            # GradScaler silently skips optimizer.step() on non-finite grads and
-            # lowers the scale. DUCA schedule/dual hooks must track real updates.
-            optimizer_step_ran = scaler.get_scale() >= scale_before_step
-        else:
-            optimizer.step()
+            if clip_grad_l2norm > 0.0:
+                if use_amp:
+                    scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+
+            if probe_state is not None:
+                _record_training_probe_backward(probe_state, model, losses["cost"])
+            if update_audit is not None:
+                update_audit["optimizer_attempts"] += 1
+
+            optimizer_step_ran = True
+            if use_amp:
+                scale_before_step = float(scaler.get_scale())
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer_step_ran = float(scaler.get_scale()) >= scale_before_step
+            else:
+                optimizer.step()
+
+            if probe_state is not None:
+                _record_training_probe_step(probe_state, model, optimizer_step_ran)
+            if optimizer_step_ran:
+                break
+
+            if update_audit is not None:
+                update_audit["amp_skipped_attempts"] += 1
+            if model_buffer_state is not None:
+                _restore_model_buffers(model, model_buffer_state)
+            if custom_replay_state is not None:
+                _restore_custom_replay_state(model, custom_replay_state)
+            retry_count += 1
+            if update_audit is not None:
+                update_audit["max_amp_retries_observed"] = max(
+                    update_audit["max_amp_retries_observed"], retry_count
+                )
+            if retry_count > max_amp_retries_per_batch:
+                if update_audit is not None:
+                    update_audit["replay_exhaustions"] += 1
+                if fail_on_amp_replay_exhaustion:
+                    raise FloatingPointError(
+                        "formal AMP replay could not produce a successful optimizer update "
+                        f"after {max_amp_retries_per_batch} retries"
+                    )
+                break
+            logger.info(
+                "[Train]: AMP skipped batch %d; replay %d/%d with scale %.1f",
+                iter_idx,
+                retry_count,
+                max_amp_retries_per_batch,
+                float(scaler.get_scale()),
+            )
+
+        if retry_count > 0 and update_audit is not None:
+            update_audit["replayed_batches"] += 1
 
         if optimizer_step_ran:
-            _call_after_optimizer_step(model)
-
-            # update scheduler
+            schedule_summary = _call_after_optimizer_step(model)
             scheduler.step()
-
-            # update ema
             if model_ema is not None:
                 model_ema.update(model)
-
-        if probe_state is not None:
-            _record_training_probe_step(probe_state, model, optimizer_step_ran)
+            if update_audit is not None:
+                update_audit["successful_optimizer_updates"] += 1
+                update_audit["scheduler_updates"] += 1
+                update_audit["ema_updates"] += int(model_ema is not None)
+                if isinstance(schedule_summary, dict) and schedule_summary.get("updated") is True:
+                    update_audit["duca_schedule_updates"] += 1
 
         # track all losses
         losses = reduce_loss(losses)  # only for log
@@ -174,7 +335,9 @@ def _record_training_probe_step(state, model, optimizer_step_ran):
         state["successful_optimizer_steps"] += 1
     else:
         state["skipped_optimizer_steps"] += 1
-    state["selector_steps"].append(_selector_probe_snapshot(model))
+    snapshot = _selector_probe_snapshot(model)
+    snapshot["optimizer_step_ran"] = bool(optimizer_step_ran)
+    state["selector_steps"].append(snapshot)
 
 
 def _selector_probe_snapshot(model):
@@ -249,6 +412,10 @@ def _call_after_optimizer_step(model):
     targets = []
     if module is not None:
         targets.append(module)
+    root = module if module is not None else model
+    frame_selector = getattr(root, "frame_selector", None)
+    if frame_selector is not None:
+        targets.append(frame_selector)
     targets.append(model)
     seen = set()
     for target in targets:
@@ -258,8 +425,8 @@ def _call_after_optimizer_step(model):
         seen.add(target_id)
         hook = getattr(target, "after_optimizer_step", None)
         if callable(hook):
-            hook()
-            return
+            return hook()
+    return None
 
 
 def _format_frame_selector_diagnostics(model):

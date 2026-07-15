@@ -1,3 +1,4 @@
+import copy
 import json
 import hashlib
 import os
@@ -42,6 +43,20 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from opentad.utils.train_schedule import should_eval_epoch
+from tools.bata.duca_p0_training import (
+    DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA,
+    atomic_write_json,
+    build_checkpoint_metadata,
+    build_runtime_bindings,
+    build_training_audit,
+    capture_global_rng_state,
+    formal_training_contract,
+    new_update_audit,
+    restore_training_state,
+    restore_global_rng_state,
+    selector_schedule_step,
+    validate_update_state,
+)
 
 
 def _sha256(path):
@@ -125,9 +140,29 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
+    source_config_sha256 = _sha256(args.config)
+    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
+    duca_formal_contract = formal_training_contract(cfg)
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/train.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    duca_git_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
+    ).strip()
+    if duca_formal_contract is not None:
+        expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
+        if expected_commit != duca_git_commit:
+            raise RuntimeError("formal DUCA checkout differs from DUCA_EXPECTED_COMMIT")
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=path,
+            text=True,
+            encoding="utf-8",
+        ).strip()
+        if status:
+            raise RuntimeError("formal DUCA training requires a clean exact-commit checkout")
+        if args.disable_deterministic or args.not_eval:
+            raise ValueError("formal DUCA training requires deterministic execution")
     training_probe_bindings = _build_training_probe_bindings(cfg, args)
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
@@ -136,6 +171,8 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
+    if duca_formal_contract is not None and args.world_size != 1:
+        raise RuntimeError("formal DUCA P0 is frozen to one Slurm GPU process")
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
@@ -143,6 +180,21 @@ def main():
     # set random seed, create work_dir, and save config
     set_seed(args.seed, args.disable_deterministic)
     cfg = update_workdir(cfg, args.id, args.world_size)
+    duca_runtime_bindings = None
+    if duca_formal_contract is not None:
+        duca_runtime_bindings = build_runtime_bindings(
+            git_commit=duca_git_commit,
+            variant=os.environ.get("DUCA_P0_VARIANT", ""),
+            seed=args.seed,
+            slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+            source_config_path=args.config,
+            source_config_sha256=source_config_sha256,
+            resolved_config_sha256=source_resolved_config_sha256,
+            runtime_config_sha256=_canonical_sha256(cfg.to_dict()),
+            evaluation_annotation_path=cfg.evaluation.ground_truth_filename,
+            evaluation_class_map_path=cfg.dataset.test.class_map,
+            evaluation_config=cfg.evaluation,
+        )
     if args.rank == 0:
         create_folder(cfg.work_dir)
         save_config(args.config, cfg.work_dir)
@@ -182,6 +234,15 @@ def main():
         drop_last=False,
         **cfg.solver.test,
     )
+    if duca_formal_contract is not None:
+        expected_batches = int(
+            duca_formal_contract["expected_train_batches_per_epoch"]
+        )
+        if len(train_loader) != expected_batches:
+            raise RuntimeError(
+                f"formal DUCA loader has {len(train_loader)} batches, "
+                f"expected {expected_batches}"
+            )
 
     # build model
     model = build_detector(cfg.model)
@@ -229,19 +290,42 @@ def main():
         scaler = GradScaler()
     else:
         scaler = None
+    if duca_formal_contract is not None and (not use_amp or model_ema is None):
+        raise RuntimeError("formal DUCA requires both AMP and model EMA")
 
     # build optimizer and scheduler
-    optimizer = build_optimizer(cfg.optimizer, model, logger)
-    scheduler, max_epoch = build_scheduler(cfg.scheduler, optimizer, len(train_loader))
+    optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
+    scheduler, max_epoch = build_scheduler(
+        copy.deepcopy(cfg.scheduler), optimizer, len(train_loader)
+    )
 
     # override the max_epoch
     max_epoch = cfg.workflow.get("end_epoch", max_epoch)
 
-    # resume: reset epoch, optimizer, scheduler, and EMA
+    max_amp_retries_per_batch = int(
+        cfg.workflow.get("max_amp_retries_per_batch", 0)
+    )
+    fail_on_amp_replay_exhaustion = bool(
+        cfg.workflow.get("fail_on_amp_replay_exhaustion", False)
+    )
+    require_finite_train_loss = bool(
+        cfg.workflow.get("require_finite_train_loss", False)
+    )
+    collect_update_audit = bool(
+        duca_formal_contract is not None
+        or max_amp_retries_per_batch > 0
+        or cfg.workflow.get("training_probe_json", None)
+    )
+    update_audit = new_update_audit() if collect_update_audit else None
+    epoch_records = []
+
+    # resume: reset epoch, optimizer, scheduler, EMA, scaler, and formal audit
     if args.resume != None:
         logger.info("Resume training from: {}".format(args.resume))
-        device = f"cuda:{args.local_rank}"
-        checkpoint = torch.load(args.resume, map_location=device)
+        # Keep serialized RNG tensors on CPU. Model and optimizer state loading
+        # moves tensors to their parameter devices, while torch.set_rng_state
+        # requires a CPU ByteTensor.
+        checkpoint = torch.load(args.resume, map_location="cpu")
         resume_epoch = checkpoint["epoch"]
         logger.info("Resume epoch is {}".format(resume_epoch))
         model.load_state_dict(checkpoint["state_dict"])
@@ -249,6 +333,29 @@ def main():
         scheduler.load_state_dict(checkpoint["scheduler"])
         if model_ema != None:
             model_ema.module.load_state_dict(checkpoint["state_dict_ema"])
+        if scaler is not None and "grad_scaler" in checkpoint:
+            scaler.load_state_dict(checkpoint["grad_scaler"])
+        elif duca_formal_contract is not None:
+            raise RuntimeError("formal DUCA resume checkpoint lacks GradScaler state")
+        if duca_formal_contract is not None:
+            update_audit, epoch_records = restore_training_state(
+                checkpoint,
+                contract=duca_formal_contract,
+                bindings=duca_runtime_bindings,
+            )
+            validate_update_state(
+                contract=duca_formal_contract,
+                epoch=resume_epoch,
+                train_batches_per_epoch=len(train_loader),
+                update_audit=update_audit,
+                scheduler_last_epoch=scheduler.last_epoch,
+                selector_step=selector_schedule_step(model),
+                uses_ema=model_ema is not None,
+            )
+            rng_state = checkpoint.get("rng_state")
+            if not isinstance(rng_state, dict):
+                raise RuntimeError("formal DUCA resume checkpoint lacks global RNG state")
+            restore_global_rng_state(rng_state)
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
@@ -262,6 +369,9 @@ def main():
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
     for epoch in range(resume_epoch + 1, max_epoch):
         train_loader.sampler.set_epoch(epoch)
+        audit_before_epoch = (
+            dict(update_audit) if update_audit is not None else None
+        )
 
         # train for one epoch
         training_probe_json = cfg.workflow.get("training_probe_json", None)
@@ -278,7 +388,66 @@ def main():
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
             collect_training_probe=bool(training_probe_json),
+            max_amp_retries_per_batch=max_amp_retries_per_batch,
+            fail_on_amp_replay_exhaustion=fail_on_amp_replay_exhaustion,
+            require_finite_loss=require_finite_train_loss,
+            force_amp_overflow_attempts=int(
+                cfg.workflow.get("force_amp_overflow_attempts", 0)
+            ),
+            update_audit=update_audit,
         )
+        training_audit = None
+        if duca_formal_contract is not None:
+            validate_update_state(
+                contract=duca_formal_contract,
+                epoch=epoch,
+                train_batches_per_epoch=len(train_loader),
+                update_audit=update_audit,
+                scheduler_last_epoch=scheduler.last_epoch,
+                selector_step=selector_schedule_step(model),
+                uses_ema=model_ema is not None,
+            )
+            delta = {
+                key: int(update_audit[key]) - int(audit_before_epoch[key])
+                for key in update_audit
+            }
+            expected_batches = int(
+                duca_formal_contract["expected_train_batches_per_epoch"]
+            )
+            if delta["attempted_batches"] != expected_batches:
+                raise RuntimeError("formal DUCA epoch did not consume exactly 100 batches")
+            if delta["successful_optimizer_updates"] != expected_batches:
+                raise RuntimeError("formal DUCA epoch did not execute exactly 100 updates")
+            epoch_records.append(
+                {
+                    "epoch": int(epoch),
+                    "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                    "counter_delta": delta,
+                    "scheduler_last_epoch": int(scheduler.last_epoch),
+                    "selector_schedule_step": int(selector_schedule_step(model)),
+                    "grad_scaler_scale": (
+                        None if scaler is None else float(scaler.get_scale())
+                    ),
+                }
+            )
+            training_audit = build_training_audit(
+                contract=duca_formal_contract,
+                bindings=duca_runtime_bindings,
+                epoch=epoch,
+                train_batches_per_epoch=len(train_loader),
+                update_audit=update_audit,
+                epoch_records=epoch_records,
+                scheduler_last_epoch=scheduler.last_epoch,
+                selector_step=selector_schedule_step(model),
+                scaler_scale=None if scaler is None else scaler.get_scale(),
+                uses_ema=model_ema is not None,
+                complete=epoch == max_epoch - 1,
+            )
+            if args.rank == 0:
+                atomic_write_json(
+                    os.path.join(cfg.work_dir, "duca_p0_training_audit.json"),
+                    training_audit,
+                )
         if training_probe_json and args.rank == 0:
             training_probe.update(
                 {
@@ -288,6 +457,9 @@ def main():
                     "static_graph": bool(use_static_graph),
                     "find_unused_parameters": bool(find_unused_parameters),
                     "bindings": training_probe_bindings,
+                    "update_audit": None
+                    if update_audit is None
+                    else dict(update_audit),
                 }
             )
             probe_path = os.path.abspath(os.path.expanduser(str(training_probe_json)))
@@ -308,7 +480,31 @@ def main():
             (epoch == max_epoch - 1) or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
         ):
             if args.rank == 0:
-                save_checkpoint(model, model_ema, optimizer, scheduler, epoch, work_dir=cfg.work_dir)
+                checkpoint_metadata = (
+                    None
+                    if training_audit is None
+                    else build_checkpoint_metadata(training_audit)
+                )
+                save_checkpoint(
+                    model,
+                    model_ema,
+                    optimizer,
+                    scheduler,
+                    epoch,
+                    work_dir=cfg.work_dir,
+                    scaler=scaler,
+                    rng_state=(
+                        None
+                        if duca_formal_contract is None
+                        else capture_global_rng_state()
+                    ),
+                    experiment_metadata=checkpoint_metadata,
+                    experiment_sidecar_schema=(
+                        None
+                        if checkpoint_metadata is None
+                        else DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
+                    ),
+                )
 
         # val for one epoch
         if epoch >= val_start_epoch:
@@ -327,7 +523,11 @@ def main():
                 if val_loss < val_loss_best:
                     logger.info(f"New best epoch {epoch}")
                     val_loss_best = val_loss
-                    if not disable_checkpoint and args.rank == 0:
+                    if (
+                        duca_formal_contract is None
+                        and not disable_checkpoint
+                        and args.rank == 0
+                    ):
                         save_best_checkpoint(model, model_ema, epoch, work_dir=cfg.work_dir)
 
         # eval for one epoch

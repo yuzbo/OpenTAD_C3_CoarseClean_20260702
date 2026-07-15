@@ -21,6 +21,8 @@ if str(ROOT) not in sys.path:
 import torch
 from mmengine.config import Config
 
+from tools.bata.duca_p0_evaluation import evaluation_config_sha256
+
 from opentad.cores.optimizer import (
     assert_optimizer_exact_coverage,
     build_optimizer,
@@ -29,6 +31,7 @@ from opentad.cores.optimizer import (
 from opentad.models import build_detector
 from opentad.models.duca.structured_selection import global_structured_topk
 from opentad.models.duca.transition_only import continuous_policy_logits
+from opentad.utils import ModelEma
 
 
 CONFIG_DEFAULT = (
@@ -114,6 +117,22 @@ def _max_hole(positions: torch.Tensor, temporal_len: int) -> int:
     return max(holes)
 
 
+def _verify_integer_ema_buffer_copy() -> dict[str, Any]:
+    class TinySchedule(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor(1.0))
+            self.register_buffer("schedule_step", torch.zeros((), dtype=torch.long))
+
+    model = TinySchedule()
+    ema = ModelEma(model, decay=0.999)
+    model.schedule_step.fill_(13200)
+    ema.update(model)
+    observed = int(ema.module.schedule_step.item())
+    _require(observed == 13200, "ModelEma did not copy the integer selector schedule exactly")
+    return {"verified": True, "observed_schedule_step": observed}
+
+
 def _verify_exact_uniform_reference(
     *,
     temporal_len: int,
@@ -196,6 +215,10 @@ def run_formal_gate(
     os.environ["C3_OFFICIAL_ACTION_SEG_REPOS"] = str(Path(official_repos_root).expanduser().resolve())
 
     cfg = Config.fromfile(str(config_file))
+    annotation_path = Path(cfg.evaluation.ground_truth_filename).expanduser().resolve()
+    class_map_path = Path(cfg.dataset.test.class_map).expanduser().resolve()
+    _require(annotation_path.is_file(), f"evaluation annotation is missing: {annotation_path}")
+    _require(class_map_path.is_file(), f"evaluation class map is missing: {class_map_path}")
     dense_window_size = int(cfg.dense_window_size)
     budget = int(cfg.window_size)
     spatial_size = 160
@@ -215,6 +238,7 @@ def run_formal_gate(
         max_unselected_hole=int(cfg.model.frame_selector.max_unselected_hole),
         device=device,
     )
+    integer_ema_contract = _verify_integer_ema_buffer_copy()
 
     model_cfg = copy.deepcopy(cfg.model)
     model_cfg.backbone.custom.pretrain = str(checkpoint)
@@ -299,6 +323,14 @@ def run_formal_gate(
         ),
         "counterfactual distillation gradient diagnostics are non-finite",
     )
+    _require(
+        float(gradient_alignment["spearman"]) > 0.0,
+        "counterfactual surrogate descent is not positively rank-aligned with detector utility",
+    )
+    _require(
+        float(gradient_alignment["sign_agreement"]) >= 0.5,
+        "counterfactual surrogate descent has insufficient detector-utility sign agreement",
+    )
 
     # Run the same aggregate loss used by the training loop, then prove that AMP
     # executes an optimizer update instead of silently skipping it.
@@ -370,6 +402,11 @@ def run_formal_gate(
         "git_commit": _git_commit(),
         "config_path": str(config_file),
         "reference_config_sha256": _sha256(config_file),
+        "evaluation_annotation_path": str(annotation_path),
+        "evaluation_annotation_sha256": _sha256(annotation_path),
+        "evaluation_class_map_path": str(class_map_path),
+        "evaluation_class_map_sha256": _sha256(class_map_path),
+        "evaluation_config_sha256": evaluation_config_sha256(cfg.evaluation),
         "official_asformer_source_path": str(source),
         "official_asformer_source_sha256": _sha256(source),
         "checkpoint_path": str(checkpoint),
@@ -386,6 +423,11 @@ def run_formal_gate(
         "detector_only_gradients": gradients,
         "counterfactual_gradients": counterfactual_gradients,
         "counterfactual_alignment": alignment,
+        "counterfactual_positive_direction_gate": {
+            "passed": True,
+            "minimum_sign_agreement": 0.5,
+            "minimum_spearman_exclusive": 0.0,
+        },
         "optimizer_exact_coverage": True,
         "amp": True,
         "grad_scaler_enabled": True,
@@ -409,6 +451,7 @@ def run_formal_gate(
             "after_forward": float(normalizer_after_forward.float().cpu().item()),
             "after_optimizer_step": float(normalizer_after_step.float().cpu().item()),
         },
+        "integer_ema_buffer_contract": integer_ema_contract,
         "cuda_peak_memory_bytes": int(torch.cuda.max_memory_allocated()),
         **uniform_reference,
     }

@@ -21,7 +21,6 @@ DUCA_RUN_FORMAL_FULL_MODEL_GATE="${DUCA_RUN_FORMAL_FULL_MODEL_GATE:-0}"
 RUN_TAG="${RUN_TAG:-duca_transition_only_fixed384_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
-MASTER_PORT="${MASTER_PORT:-30371}"
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 export C3_OFFICIAL_ACTION_SEG_REPOS="${C3_OFFICIAL_ACTION_SEG_REPOS:-${BASE}/projects/external_official_action_segmentation_repos_20260702}"
@@ -42,14 +41,9 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${BASE}/tmp/xdg_config}"
 
 mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" logs
 
-if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
-  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-  [[ "${CUDA_VISIBLE_DEVICES}" == "0" || "${CUDA_VISIBLE_DEVICES}" == "1" ]] \
-    || fail "expected one Slurm-bound logical GPU, got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
-else
-  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
-  [[ "${CUDA_VISIBLE_DEVICES}" == "1" ]] \
-    || fail "outside Slurm this launcher is restricted to physical GPU1"
+if [[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" || "${PRECHECK_ONLY}" != "1" ]]; then
+  [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal CUDA work must run inside Slurm"
+  [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose an allocated GPU"
 fi
 
 [[ -x "${PYTHON}" ]] || fail "Python environment missing: ${PYTHON}"
@@ -141,46 +135,4 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
 fi
 
 [[ "${FULLTRAIN_CANDIDATE}" == "1" ]] || fail "FULLTRAIN_CANDIDATE=1 is required beyond precheck"
-[[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal full train must run inside Slurm"
-[[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain missing: ${ADATAD_PRETRAIN_PATH}"
-[[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" ]] || fail "formal full train requires DUCA_RUN_FORMAL_FULL_MODEL_GATE=1"
-[[ -f "${RUN_DIR}/formal_full_model_gate.json" ]] || fail "formal full-model gate artifact is missing"
-
-CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
-SOURCE_SHA256="$(sha256sum "${SOURCE_PATH}" | awk '{print $1}')"
-CHECKPOINT_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
-FORMAL_GATE_SHA256="$(sha256sum "${RUN_DIR}/formal_full_model_gate.json" | awk '{print $1}')"
-
-cat > "${RUN_DIR}/manifest.json" <<EOF
-{
-  "git_commit": "${CURRENT_HEAD}",
-  "config": "${CONFIG}",
-  "config_sha256": "${CONFIG_SHA256}",
-  "source": "${SOURCE_PATH}",
-  "source_sha256": "${SOURCE_SHA256}",
-  "checkpoint": "${ADATAD_PRETRAIN_PATH}",
-  "checkpoint_sha256": "${CHECKPOINT_SHA256}",
-  "formal_gate_json": "${RUN_DIR}/formal_full_model_gate.json",
-  "formal_gate_json_sha256": "${FORMAL_GATE_SHA256}",
-  "task": "offline_temporal_action_detection",
-  "selector_variant": "transition_only",
-  "budget": 384,
-  "dense_window_size": 768,
-  "max_unselected_hole": 15,
-  "expected_steps_per_epoch": 100,
-  "expected_total_steps": 13200,
-  "workflow_epochs": 132,
-  "slurm_job_id": "${SLURM_JOB_ID}",
-  "seed": ${SEED}
-}
-EOF
-
-"${PYTHON}" -m torch.distributed.run \
-  --nproc_per_node=1 \
-  --master_port="${MASTER_PORT}" \
-  tools/train.py \
-  "${CONFIG}" \
-  --id "${RUN_ID}" \
-  --seed "${SEED}" \
-  --cfg-options "work_dir=${WORK_DIR}" "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
-  2>&1 | tee "${RUN_DIR}/train.out"
+fail "single-route full training is retired; use prepare/submit_duca_transition_only_p0_suite.sh"

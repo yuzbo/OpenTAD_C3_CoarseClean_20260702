@@ -41,7 +41,12 @@ MANIFEST="${RUN_ROOT}/suite_manifest.json"
   --output-json "${MANIFEST}"
 
 variants=(uniform direct transition_beta0 transition_counterfactual)
-ports=(30511 30512 30513 30514)
+readarray -t data_binding < <("${PYTHON}" -c "import json; p=json.load(open('${MANIFEST}', encoding='utf-8'))['reference_data_artifacts']; print(p['evaluation_annotation_path']); print(p['evaluation_annotation_sha256']); print(p['evaluation_class_map_path']); print(p['evaluation_class_map_sha256']); print(p['evaluation_config_sha256'])")
+evaluation_annotation_path="${data_binding[0]}"
+evaluation_annotation_sha256="${data_binding[1]}"
+evaluation_class_map_path="${data_binding[2]}"
+evaluation_class_map_sha256="${data_binding[3]}"
+evaluation_config_sha256="${data_binding[4]}"
 for index in "${!variants[@]}"; do
   variant="${variants[$index]}"
   readarray -t binding < <("${PYTHON}" -c "import json; p=json.load(open('${MANIFEST}', encoding='utf-8')); v=next(x for x in p['variants'] if x['name']=='${variant}'); print(v['resolved_config_sha256']); print(v['variant_contract_sha256']); print(p['shared_protocol_sha256'])")
@@ -72,10 +77,14 @@ export DUCA_CANONICAL_ENV_SHA256='${CANONICAL_ENV_SHA256}'
 export DUCA_RESOLVED_CONFIG_SHA256='${resolved_config_sha256}'
 export DUCA_VARIANT_CONTRACT_SHA256='${variant_contract_sha256}'
 export DUCA_SHARED_PROTOCOL_SHA256='${shared_protocol_sha256}'
+export DUCA_EVALUATION_ANNOTATION_PATH='${evaluation_annotation_path}'
+export DUCA_EVALUATION_ANNOTATION_SHA256='${evaluation_annotation_sha256}'
+export DUCA_EVALUATION_CLASS_MAP_PATH='${evaluation_class_map_path}'
+export DUCA_EVALUATION_CLASS_MAP_SHA256='${evaluation_class_map_sha256}'
+export DUCA_EVALUATION_CONFIG_SHA256='${evaluation_config_sha256}'
 export FULLTRAIN_CANDIDATE=1
 export SEED='${SEED}'
 export RUN_ID='${index}'
-export MASTER_PORT='${ports[$index]}'
 export RUN_DIR='${RUN_ROOT}/logs/${variant}'
 export WORK_DIR='${RUN_ROOT}/work_dirs/${variant}'
 bash scripts/run_duca_transition_only_p0_variant_gpu1.sh

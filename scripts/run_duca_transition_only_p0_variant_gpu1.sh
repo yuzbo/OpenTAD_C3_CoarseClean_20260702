@@ -29,9 +29,13 @@ DUCA_VARIANT_CONTRACT_SHA256="${DUCA_VARIANT_CONTRACT_SHA256:-}"
 DUCA_SHARED_PROTOCOL_SHA256="${DUCA_SHARED_PROTOCOL_SHA256:-}"
 DUCA_CANONICAL_ENV_FILE="${DUCA_CANONICAL_ENV_FILE:-}"
 DUCA_CANONICAL_ENV_SHA256="${DUCA_CANONICAL_ENV_SHA256:-}"
+DUCA_EVALUATION_ANNOTATION_PATH="${DUCA_EVALUATION_ANNOTATION_PATH:-}"
+DUCA_EVALUATION_ANNOTATION_SHA256="${DUCA_EVALUATION_ANNOTATION_SHA256:-}"
+DUCA_EVALUATION_CLASS_MAP_PATH="${DUCA_EVALUATION_CLASS_MAP_PATH:-}"
+DUCA_EVALUATION_CLASS_MAP_SHA256="${DUCA_EVALUATION_CLASS_MAP_SHA256:-}"
+DUCA_EVALUATION_CONFIG_SHA256="${DUCA_EVALUATION_CONFIG_SHA256:-}"
 SEED="${SEED:-0}"
 RUN_ID="${RUN_ID:-0}"
-MASTER_PORT="${MASTER_PORT:-30471}"
 RUN_TAG="${RUN_TAG:-duca_p0_${VARIANT}_seed${SEED}_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_DIR="${RUN_DIR:-logs/${RUN_TAG}}"
 WORK_DIR="${WORK_DIR:-exps/thumos/adatad/duca_p0/${VARIANT}/seed${SEED}/${RUN_TAG}}"
@@ -52,6 +56,11 @@ REFERENCE_CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_a
 [[ "${DUCA_SHARED_PROTOCOL_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "shared protocol SHA256 is required"
 [[ -f "${DUCA_CANONICAL_ENV_FILE}" ]] || fail "canonical environment file is required"
 [[ "${DUCA_CANONICAL_ENV_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "canonical environment SHA256 is required"
+[[ -f "${DUCA_EVALUATION_ANNOTATION_PATH}" ]] || fail "evaluation annotation file is required"
+[[ "${DUCA_EVALUATION_ANNOTATION_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "evaluation annotation SHA256 is required"
+[[ -f "${DUCA_EVALUATION_CLASS_MAP_PATH}" ]] || fail "evaluation class-map file is required"
+[[ "${DUCA_EVALUATION_CLASS_MAP_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "evaluation class-map SHA256 is required"
+[[ "${DUCA_EVALUATION_CONFIG_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "evaluation config SHA256 is required"
 
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current git HEAD"
 DUCA_EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
@@ -126,6 +135,13 @@ CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
 CORE_GATE_SHA256="$(sha256sum "${DUCA_CORE_GATE_JSON}" | awk '{print $1}')"
 DDP_PILOT_SHA256="$(sha256sum "${DUCA_DDP_PILOT_JSON}" | awk '{print $1}')"
 
+export DUCA_P0_VARIANT DUCA_EXPECTED_COMMIT DUCA_CORE_GATE_JSON DUCA_DDP_PILOT_JSON
+export DUCA_RESOLVED_CONFIG_SHA256 DUCA_VARIANT_CONTRACT_SHA256 DUCA_SHARED_PROTOCOL_SHA256
+export DUCA_CANONICAL_ENV_FILE DUCA_CANONICAL_ENV_SHA256
+export DUCA_EVALUATION_ANNOTATION_PATH DUCA_EVALUATION_ANNOTATION_SHA256
+export DUCA_EVALUATION_CLASS_MAP_PATH DUCA_EVALUATION_CLASS_MAP_SHA256
+export DUCA_EVALUATION_CONFIG_SHA256
+
 cat > "${RUN_DIR}/manifest.json" <<EOF
 {
   "git_commit": "${CURRENT_HEAD}",
@@ -137,6 +153,11 @@ cat > "${RUN_DIR}/manifest.json" <<EOF
   "shared_protocol_sha256": "${DUCA_SHARED_PROTOCOL_SHA256}",
   "canonical_env_file": "${DUCA_CANONICAL_ENV_FILE}",
   "canonical_env_sha256": "${DUCA_CANONICAL_ENV_SHA256}",
+  "evaluation_annotation_path": "${DUCA_EVALUATION_ANNOTATION_PATH}",
+  "evaluation_annotation_sha256": "${DUCA_EVALUATION_ANNOTATION_SHA256}",
+  "evaluation_class_map_path": "${DUCA_EVALUATION_CLASS_MAP_PATH}",
+  "evaluation_class_map_sha256": "${DUCA_EVALUATION_CLASS_MAP_SHA256}",
+  "evaluation_config_sha256": "${DUCA_EVALUATION_CONFIG_SHA256}",
   "source": "${SOURCE_PATH}",
   "source_sha256": "${SOURCE_SHA256}",
   "checkpoint": "${ADATAD_PRETRAIN_PATH}",
@@ -152,16 +173,57 @@ cat > "${RUN_DIR}/manifest.json" <<EOF
   "dense_window_size": 768,
   "expected_optimizer_steps": 13200,
   "slurm_job_id": "${SLURM_JOB_ID}",
-  "core_gate_dependency": "slurm_afterok"
+  "core_gate_dependency": "precompleted_hash_bound_artifact"
 }
 EOF
 
 "${PYTHON}" -m torch.distributed.run \
   --nproc_per_node=1 \
-  --master_port="${MASTER_PORT}" \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=localhost:0 \
+  --rdzv_id="duca-p0-${SLURM_JOB_ID}-${VARIANT}-train" \
   tools/train.py \
   "${CONFIG}" \
   --id "${RUN_ID}" \
   --seed "${SEED}" \
   --cfg-options "work_dir=${WORK_DIR}" "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
   2>&1 | tee "${RUN_DIR}/train.out"
+
+ACTUAL_WORK_DIR="${WORK_DIR}/gpu1_id${RUN_ID}"
+TRAINING_AUDIT="${ACTUAL_WORK_DIR}/duca_p0_training_audit.json"
+TERMINAL_CHECKPOINT="${ACTUAL_WORK_DIR}/checkpoint/epoch_131.pth"
+CHECKPOINT_SIDECAR="${TERMINAL_CHECKPOINT}.metadata.json"
+TERMINAL_EVAL_ROOT="${RUN_DIR}/terminal_eval"
+TERMINAL_EVAL_JSON="${RUN_DIR}/terminal_evaluation.json"
+POST_RUN_EVIDENCE="${RUN_DIR}/post_run_evidence.json"
+[[ -f "${TRAINING_AUDIT}" ]] || fail "terminal training audit is missing"
+[[ -f "${TERMINAL_CHECKPOINT}" ]] || fail "terminal epoch-131 checkpoint is missing"
+[[ -f "${CHECKPOINT_SIDECAR}" ]] || fail "terminal checkpoint sidecar is missing"
+
+"${PYTHON}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=localhost:0 \
+  --rdzv_id="duca-p0-${SLURM_JOB_ID}-${VARIANT}-terminal-eval" \
+  tools/test.py \
+  "${CONFIG}" \
+  --checkpoint "${TERMINAL_CHECKPOINT}" \
+  --checkpoint-state-key state_dict_ema \
+  --expected-checkpoint-epoch 131 \
+  --metrics-json "${TERMINAL_EVAL_JSON}" \
+  --id 0 \
+  --seed "${SEED}" \
+  --cfg-options "work_dir=${TERMINAL_EVAL_ROOT}" \
+    "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+    "post_processing.save_dict=True" \
+    "inference.load_from_raw_predictions=False" \
+  2>&1 | tee "${RUN_DIR}/terminal_eval.out"
+
+"${PYTHON}" -m tools.bata.finalize_duca_transition_only_p0_run \
+  --variant "${VARIANT}" \
+  --run-manifest "${RUN_DIR}/manifest.json" \
+  --training-audit "${TRAINING_AUDIT}" \
+  --checkpoint "${TERMINAL_CHECKPOINT}" \
+  --checkpoint-sidecar "${CHECKPOINT_SIDECAR}" \
+  --evaluation-json "${TERMINAL_EVAL_JSON}" \
+  --output-json "${POST_RUN_EVIDENCE}"

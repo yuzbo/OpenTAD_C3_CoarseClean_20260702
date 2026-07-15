@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
 from typing import Any, Optional
 
@@ -468,6 +469,7 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("DUCA online selector requires no_ledger_decision=True")
         if self.detector_output_coordinate_space == SELECTED_AXIS and not self.remap_gt_to_selected_axis:
             raise ValueError("selected-axis detector output requires remap_gt_to_selected_axis=True")
+
         if self.forbid_external_actionness and (
             self.external_actionness_meta_key
             or self.external_actionness_logits_meta_key
@@ -575,6 +577,75 @@ class DucaOnlineFrameSelector(nn.Module):
             profile_runtime=self.profile_runtime,
             profile_sync_cuda=self.profile_sync_cuda,
         )
+
+    def capture_amp_replay_state(self) -> dict[str, Any]:
+        """Capture non-buffer forward state that must not leak across a replay."""
+        pending_dual = self._pending_dynamic_budget_dual_mean
+        adapter = getattr(self, "adapter", None)
+        return {
+            "last_forward_summary": copy.deepcopy(self.last_forward_summary),
+            "last_dual_update_summary": copy.deepcopy(self.last_dual_update_summary),
+            "last_loss_schedule_update_summary": copy.deepcopy(
+                self.last_loss_schedule_update_summary
+            ),
+            "last_counterfactual_summary": copy.deepcopy(
+                getattr(self, "last_counterfactual_summary", None)
+            ),
+            "last_selected_positions": copy.deepcopy(
+                getattr(self, "_last_selected_positions", None)
+            ),
+            "pending_loss_schedule_advance": bool(
+                self._pending_loss_schedule_advance
+            ),
+            "pending_dynamic_budget_dual_mean": (
+                None if pending_dual is None else pending_dual.detach().clone()
+            ),
+            "pending_dynamic_budget_dual_summary": copy.deepcopy(
+                self._pending_dynamic_budget_dual_summary
+            ),
+            "adapter_last_compute_profile": copy.deepcopy(
+                getattr(adapter, "last_compute_profile", None)
+            ),
+        }
+
+    def restore_amp_replay_state(self, snapshot: Mapping[str, Any]) -> None:
+        self.last_forward_summary = copy.deepcopy(snapshot["last_forward_summary"])
+        self.last_dual_update_summary = copy.deepcopy(
+            snapshot["last_dual_update_summary"]
+        )
+        self.last_loss_schedule_update_summary = copy.deepcopy(
+            snapshot["last_loss_schedule_update_summary"]
+        )
+        self._restore_optional_replay_attribute(
+            "last_counterfactual_summary",
+            snapshot.get("last_counterfactual_summary"),
+        )
+        self._restore_optional_replay_attribute(
+            "_last_selected_positions",
+            snapshot.get("last_selected_positions"),
+        )
+        self._pending_loss_schedule_advance = bool(
+            snapshot["pending_loss_schedule_advance"]
+        )
+        pending_dual = snapshot.get("pending_dynamic_budget_dual_mean")
+        self._pending_dynamic_budget_dual_mean = (
+            None if pending_dual is None else pending_dual.detach().clone()
+        )
+        self._pending_dynamic_budget_dual_summary = copy.deepcopy(
+            snapshot.get("pending_dynamic_budget_dual_summary")
+        )
+        adapter = getattr(self, "adapter", None)
+        if adapter is not None:
+            adapter.last_compute_profile = copy.deepcopy(
+                snapshot.get("adapter_last_compute_profile")
+            )
+
+    def _restore_optional_replay_attribute(self, name: str, value: Any) -> None:
+        if value is None:
+            if hasattr(self, name):
+                delattr(self, name)
+            return
+        setattr(self, name, copy.deepcopy(value))
 
     def forward_train(
         self,

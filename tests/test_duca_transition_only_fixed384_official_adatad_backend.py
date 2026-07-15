@@ -71,14 +71,14 @@ def test_direct_and_transition_p0_variants_share_coarse_component_lr_routing() -
     assert "if name.startswith(coarse_prefix):" in parameter_lr
 
 
-def test_transition_only_formal_launcher_requires_clean_tree_and_hashes_inputs() -> None:
+def test_transition_only_formal_launcher_is_gate_only_and_retires_unbound_training() -> None:
     text = LAUNCHER.read_text(encoding="utf-8")
 
     assert "git status --porcelain --untracked-files=normal" in text
-    assert text.index("git status --porcelain --untracked-files=normal") < text.index('cat > "${RUN_DIR}/manifest.json"')
-    assert "sha256sum" in text
-    for field in ("git_commit", "config_sha256", "source_sha256", "checkpoint_sha256"):
-        assert f'"{field}"' in text
+    assert "single-route full training is retired" in text
+    assert "prepare/submit_duca_transition_only_p0_suite.sh" in text
+    assert "--master_port" not in text
+    assert "export CUDA_VISIBLE_DEVICES" not in text
     assert "run_duca_transition_only_formal_full_model_gate.py" in text
     assert 'DUCA_RUN_FORMAL_FULL_MODEL_GATE="${DUCA_RUN_FORMAL_FULL_MODEL_GATE:-0}"' in text
     assert 'formal_full_model_gate.json' in text

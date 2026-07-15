@@ -15,6 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(autouse=True)
 def _isolate_suite_gate_from_concurrently_changing_variant_contract(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(suite, "validate_variant", lambda name, path: {"ok": True, "variant": name, "config_path": path})
+    monkeypatch.setattr(
+        suite,
+        "_reference_data_artifacts",
+        lambda cfg: {
+            "evaluation_annotation_path": "annotation.json",
+            "evaluation_annotation_sha256": "4" * 64,
+            "evaluation_class_map_path": "category_idx.txt",
+            "evaluation_class_map_sha256": "5" * 64,
+            "evaluation_config": {"type": "mAP"},
+            "evaluation_config_sha256": "6" * 64,
+        },
+    )
 
 
 def _gate(tmp_path: Path) -> Path:
@@ -26,6 +38,9 @@ def _gate(tmp_path: Path) -> Path:
         "checkpoint_sha256": "1" * 64,
         "official_asformer_source_sha256": "2" * 64,
         "reference_config_sha256": "3" * 64,
+        "evaluation_annotation_sha256": "4" * 64,
+        "evaluation_class_map_sha256": "5" * 64,
+        "evaluation_config_sha256": "6" * 64,
         "optimizer_step_ran": True,
         "optimizer_parameter_change_verified": True,
         "optimizer_changed_parameter_groups": ["detector_head"],
@@ -33,6 +48,8 @@ def _gate(tmp_path: Path) -> Path:
         "optimizer_step_loss": 1.0,
         "optimizer_step_loss_finite": True,
         "optimizer_step_gradients_finite": True,
+        "counterfactual_positive_direction_gate": {"passed": True},
+        "integer_ema_buffer_contract": {"verified": True, "observed_schedule_step": 13200},
         "loss_normalizer_contract": {
             "state_kind": "ActionFormerHead.loss_normalizer_ema_buffer",
             "finite": True, "positive": True,
@@ -152,6 +169,9 @@ def test_suite_gate_binds_formal_gate_to_current_commit(tmp_path: Path) -> None:
                 "checkpoint_sha256": "1" * 64,
                 "official_asformer_source_sha256": "2" * 64,
                 "reference_config_sha256": "3" * 64,
+                "evaluation_annotation_sha256": "4" * 64,
+                "evaluation_class_map_sha256": "5" * 64,
+                "evaluation_config_sha256": "6" * 64,
                 "optimizer_step_ran": True,
                 "optimizer_parameter_change_verified": True,
                 "optimizer_changed_parameter_groups": ["detector_head"],
@@ -159,6 +179,8 @@ def test_suite_gate_binds_formal_gate_to_current_commit(tmp_path: Path) -> None:
                 "optimizer_step_loss": 1.0,
                 "optimizer_step_loss_finite": True,
                 "optimizer_step_gradients_finite": True,
+                "counterfactual_positive_direction_gate": {"passed": True},
+                "integer_ema_buffer_contract": {"verified": True, "observed_schedule_step": 13200},
                 "loss_normalizer_contract": {
                     "state_kind": "ActionFormerHead.loss_normalizer_ema_buffer",
                     "finite": True, "positive": True,
@@ -232,6 +254,29 @@ def test_gpu1_launcher_is_strict() -> None:
     assert '== "0"' not in text
 
 
+def test_suite_submitter_is_idempotent_and_accepts_federated_job_ids() -> None:
+    text = (ROOT / "scripts/submit_duca_transition_only_p0_suite.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "flock -n 9" in text
+    assert ".intent.json" in text
+    assert ".receipt.json" in text
+    assert "ambiguous prior" in text
+    assert 'job_id="${raw%%;*}"' in text
+    assert 'job_ref != f"{job_id};{cluster}"' in text
+    assert "formal arm receipt belongs to a different Slurm cluster" in text
+    assert 'sbatch_args+=(--clusters="${target_cluster}")' in text
+    assert 'sbatch_args+=(--dependency="${dependency_arg}")' in text
+
+
+def test_variant_manifest_describes_precompleted_gate_binding() -> None:
+    text = (ROOT / "scripts/run_duca_transition_only_p0_variant_gpu1.sh").read_text(
+        encoding="utf-8"
+    )
+    assert '"core_gate_dependency": "precompleted_hash_bound_artifact"' in text
+    assert '"core_gate_dependency": "slurm_afterok"' not in text
+
+
 def test_post_run_contract_checks_updates_lr_ema_and_evaluator(tmp_path: Path) -> None:
     protocol_hash = "a" * 64
     bindings = {
@@ -255,12 +300,19 @@ def test_post_run_contract_checks_updates_lr_ema_and_evaluator(tmp_path: Path) -
         "ok": True, "variant": "uniform", **suite._post_run_contract(protocol_hash, bindings),
         "run_manifest_path": str(run_manifest), "run_manifest_sha256": suite._sha256(run_manifest),
     }
+    assert payload["successful_optimizer_updates"] == 13200
+    assert payload["lr_scheduler_successful_update_exposure"] == 13200
+    assert payload["ema_successful_update_exposure"] == 13200
+    assert payload["selector_schedule_successful_update_exposure"] == 13200
+    assert payload["checkpoint_criterion"] == "terminal_epoch_131_state_dict_ema"
+    assert payload["checkpoint_epoch"] == 131
+    assert payload["checkpoint_state_key"] == "state_dict_ema"
     evidence = tmp_path / "post_run.json"
     evidence.write_text(json.dumps(payload), encoding="utf-8")
-    result = suite.validate_post_run_evidence(
-        evidence, variant="uniform", protocol_sha256=protocol_hash, bindings=bindings
-    )
-    assert result["validated"] is True
+    with pytest.raises(AssertionError, match="artifact-chain"):
+        suite.validate_post_run_evidence(
+            evidence, variant="uniform", protocol_sha256=protocol_hash, bindings=bindings
+        )
     payload["successful_optimizer_updates"] -= 1
     evidence.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(AssertionError, match="successful_optimizer_updates"):

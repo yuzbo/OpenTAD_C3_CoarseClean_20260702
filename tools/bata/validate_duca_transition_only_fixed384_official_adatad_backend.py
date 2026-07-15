@@ -148,11 +148,17 @@ def validate_config(config_path: str = CONFIG_DEFAULT) -> dict[str, Any]:
     _require(int(cfg.duca_schedule_steps_per_epoch) == 100, "expected steps per epoch must be 100")
     _require(int(cfg.duca_loss_schedule_total_steps) == 13200, "expected schedule horizon must be 13200")
     _require(int(cfg.workflow.end_epoch) == 132, "workflow must run 132 epochs")
-    _require(int(cfg.workflow.val_start_epoch) >= 47, "mAP validation must start after policy alpha reaches one")
     _require(
-        int(cfg.workflow.val_eval_interval_anchor_epoch) >= int(cfg.workflow.val_start_epoch),
-        "validation anchor must not precede val_start_epoch",
+        int(cfg.workflow.val_eval_interval) < 0,
+        "formal workflow must forbid intermediate test-set evaluation",
     )
+    _require(int(cfg.workflow.val_start_epoch) > int(cfg.workflow.end_epoch), "formal workflow must defer evaluation to terminal finalization")
+    _require(bool(cfg.workflow.formal_successful_update_contract), "formal successful-update contract is missing")
+    _require(int(cfg.workflow.expected_train_batches_per_epoch) == 100, "formal loader batch count is not frozen")
+    _require(int(cfg.workflow.expected_successful_optimizer_updates) == 13200, "formal successful-update count is not frozen")
+    _require(int(cfg.workflow.checkpoint_interval) == 5, "checkpoint interval must remain five epochs")
+    _require(int(cfg.workflow.primary_checkpoint_epoch) == 131, "terminal primary checkpoint epoch is wrong")
+    _require(cfg.workflow.primary_checkpoint_state_key == "state_dict_ema", "terminal primary state is not EMA")
     _require(int(cfg.scheduler.max_epoch) == 132, "cosine scheduler horizon must match workflow")
     _require("max_train_iters" not in cfg.workflow, "epoch runner must not claim an exact successful-step stop")
     _require(int(cfg.window_size) == 384 and int(cfg.chunk_num) == 24, "detector physical input must be 384 frames")

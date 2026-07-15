@@ -100,6 +100,8 @@ def _validate_run_manifest_files(manifest: dict[str, Any]) -> None:
 def _budget_vectors(payload: dict[str, Any]) -> list[list[int]]:
     vectors = []
     for step in payload.get("selector_steps", []):
+        if not bool(step.get("optimizer_step_ran", False)):
+            continue
         values = step.get("effective_budget") if isinstance(step, dict) else None
         _require(isinstance(values, list) and values, "pilot step is missing effective_budget")
         vector = [int(value) for value in values]
@@ -111,12 +113,14 @@ def _budget_vectors(payload: dict[str, Any]) -> list[list[int]]:
 def validate_probe(payload: dict[str, Any], variant: str) -> dict[str, Any]:
     _require(variant in VARIANT_ORDER, f"unknown pilot variant: {variant}")
     _require(payload.get("schema_version") == "duca_training_probe_v1", f"{variant}: bad schema")
-    for key in (
-        "attempted_steps", "successful_optimizer_steps", "finite_loss_steps",
-        "finite_gradient_steps",
-    ):
-        _require(int(payload.get(key, -1)) == EXPECTED_STEPS, f"{variant}: {key} != {EXPECTED_STEPS}")
-    _require(int(payload.get("skipped_optimizer_steps", -1)) == 0, f"{variant}: optimizer step skipped")
+    attempted = int(payload.get("attempted_steps", -1))
+    successful = int(payload.get("successful_optimizer_steps", -1))
+    skipped = int(payload.get("skipped_optimizer_steps", -1))
+    _require(successful == EXPECTED_STEPS, f"{variant}: successful updates != {EXPECTED_STEPS}")
+    _require(attempted >= successful, f"{variant}: attempted steps are inconsistent")
+    _require(skipped == attempted - successful, f"{variant}: AMP skip accounting is inconsistent")
+    _require(int(payload.get("finite_loss_steps", -1)) == attempted, f"{variant}: non-finite loss")
+    _require(int(payload.get("finite_gradient_steps", -1)) >= successful, f"{variant}: too few finite-gradient attempts")
     _require(payload.get("static_graph") is False, f"{variant}: static_graph must be false")
     _require(payload.get("find_unused_parameters") is True, f"{variant}: unused discovery must be enabled")
     _require(int(payload.get("world_size", 0)) == 1, f"{variant}: pilot must match one-GPU jobs")
@@ -135,8 +139,22 @@ def validate_probe(payload: dict[str, Any], variant: str) -> dict[str, Any]:
     _require(not never_seen, f"{variant}: trainable parameters never received gradient")
     _require(bool(payload.get("gradient_seen")), f"{variant}: no parameter received gradient")
 
-    steps = payload.get("selector_steps")
-    _require(isinstance(steps, list) and len(steps) == EXPECTED_STEPS, f"{variant}: selector trace is incomplete")
+    all_steps = payload.get("selector_steps")
+    _require(isinstance(all_steps, list) and len(all_steps) == attempted, f"{variant}: selector trace is incomplete")
+    steps = [step for step in all_steps if bool(step.get("optimizer_step_ran", False))]
+    _require(len(steps) == EXPECTED_STEPS, f"{variant}: successful selector trace is incomplete")
+    audit = payload.get("update_audit")
+    _require(isinstance(audit, dict), f"{variant}: successful-update audit is missing")
+    _require(int(audit.get("attempted_batches", -1)) == EXPECTED_STEPS, f"{variant}: batch count mismatch")
+    _require(int(audit.get("successful_optimizer_updates", -1)) == EXPECTED_STEPS, f"{variant}: audit update count mismatch")
+    _require(int(audit.get("optimizer_attempts", -1)) == attempted, f"{variant}: audit attempt count mismatch")
+    _require(int(audit.get("amp_skipped_attempts", -1)) == skipped, f"{variant}: audit skip count mismatch")
+    _require(int(audit.get("replay_exhaustions", -1)) == 0, f"{variant}: AMP replay exhausted")
+    _require(int(audit.get("scheduler_updates", -1)) == EXPECTED_STEPS, f"{variant}: scheduler exposure mismatch")
+    _require(int(audit.get("ema_updates", -1)) == EXPECTED_STEPS, f"{variant}: EMA exposure mismatch")
+    _require(int(audit.get("duca_schedule_updates", -1)) == EXPECTED_STEPS, f"{variant}: selector schedule exposure mismatch")
+    _require(int(audit.get("forced_amp_overflow_attempts", -1)) == 1, f"{variant}: forced AMP overflow was not exercised exactly once")
+    _require(skipped >= 1, f"{variant}: forced AMP overflow did not skip an optimizer attempt")
     vectors = _budget_vectors(payload)
     has_full = any(all(value == 384 for value in vector) for vector in vectors)
     has_mixed = any(min(vector) < 384 and max(vector) == 384 for vector in vectors)
@@ -167,8 +185,9 @@ def validate_probe(payload: dict[str, Any], variant: str) -> dict[str, Any]:
     _require(math.isfinite(max_memory) and max_memory > 0.0, f"{variant}: CUDA memory evidence is invalid")
     return {
         "variant": variant,
-        "attempted_steps": EXPECTED_STEPS,
+        "attempted_steps": attempted,
         "successful_optimizer_steps": EXPECTED_STEPS,
+        "amp_skipped_attempts": skipped,
         "parameter_group_coverage": coverage,
         "gradient_never_seen": payload.get("gradient_never_seen", []),
         "budget_coverage": {

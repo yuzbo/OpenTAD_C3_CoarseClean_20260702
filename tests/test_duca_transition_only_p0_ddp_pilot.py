@@ -35,6 +35,7 @@ def _probe(variant: str) -> dict:
             "requested_budget": [384, 384],
             "detector_gradient_weight": 0.0 if index < 3 else 0.5,
             "policy_mix_alpha": 0.0 if index < 3 else 0.75,
+            "optimizer_step_ran": True,
         }
         if variant == "transition_counterfactual":
             step["counterfactual"] = {
@@ -43,12 +44,17 @@ def _probe(variant: str) -> dict:
                 "teacher_kind": "detached_hard_one_swap_official_actionformer_cls_plus_reg",
             }
         steps.append(step)
+    failed_step = dict(steps[0])
+    failed_step["optimizer_step_ran"] = False
+    if "counterfactual" in failed_step:
+        failed_step["counterfactual"] = dict(failed_step["counterfactual"])
+    steps.insert(0, failed_step)
     return {
         "schema_version": "duca_training_probe_v1",
-        "attempted_steps": EXPECTED_STEPS,
+        "attempted_steps": EXPECTED_STEPS + 1,
         "successful_optimizer_steps": EXPECTED_STEPS,
-        "skipped_optimizer_steps": 0,
-        "finite_loss_steps": EXPECTED_STEPS,
+        "skipped_optimizer_steps": 1,
+        "finite_loss_steps": EXPECTED_STEPS + 1,
         "finite_gradient_steps": EXPECTED_STEPS,
         "static_graph": False,
         "find_unused_parameters": True,
@@ -60,6 +66,19 @@ def _probe(variant: str) -> dict:
         "gradient_never_seen": [],
         "gradient_seen": ["module.backbone.adapter.weight"],
         "selector_steps": steps,
+        "update_audit": {
+            "attempted_batches": EXPECTED_STEPS,
+            "optimizer_attempts": EXPECTED_STEPS + 1,
+            "successful_optimizer_updates": EXPECTED_STEPS,
+            "amp_skipped_attempts": 1,
+            "replayed_batches": 1,
+            "replay_exhaustions": 0,
+            "scheduler_updates": EXPECTED_STEPS,
+            "ema_updates": EXPECTED_STEPS,
+            "duca_schedule_updates": EXPECTED_STEPS,
+            "forced_amp_overflow_attempts": 1,
+            "max_amp_retries_observed": 1,
+        },
         "max_cuda_memory_mb": 8471.0,
     }
 

@@ -1,4 +1,7 @@
 import os
+import json
+import hashlib
+import subprocess
 import sys
 
 sys.dont_write_bytecode = True
@@ -20,6 +23,12 @@ from opentad.utils.training_guard import (
     assert_detector_training_allowed,
     assert_safe_cfg_options_for_gated_config,
 )
+from tools.bata.duca_p0_training import atomic_write_json, sha256_file
+from tools.bata.duca_p0_evaluation import (
+    evaluation_config_sha256,
+    normalize_evaluation_config,
+    official_evaluator_identity,
+)
 
 
 def parse_args():
@@ -30,6 +39,13 @@ def parse_args():
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
+    parser.add_argument("--metrics-json", default=None)
+    parser.add_argument("--expected-checkpoint-epoch", type=int, default=None)
+    parser.add_argument(
+        "--checkpoint-state-key",
+        choices=("auto", "state_dict", "state_dict_ema"),
+        default="auto",
+    )
     args = parser.parse_args()
     return args
 
@@ -83,6 +99,9 @@ def main():
     model = DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank)
     logger.info(f"Using DDP with total {args.world_size} GPUS...")
 
+    checkpoint_path = None
+    checkpoint_epoch = None
+    checkpoint_state_key = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
@@ -95,15 +114,29 @@ def main():
         logger.info("Loading checkpoint from: {}".format(checkpoint_path))
         device = f"cuda:{args.rank % torch.cuda.device_count()}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
+        checkpoint_epoch = int(checkpoint["epoch"])
+        logger.info("Checkpoint is epoch {}.".format(checkpoint_epoch))
+        if (
+            args.expected_checkpoint_epoch is not None
+            and checkpoint_epoch != args.expected_checkpoint_epoch
+        ):
+            raise RuntimeError(
+                f"checkpoint epoch {checkpoint_epoch} differs from expected "
+                f"{args.expected_checkpoint_epoch}"
+            )
 
         # Model EMA
         use_ema = getattr(cfg.solver, "ema", False)
-        if use_ema:
-            model.load_state_dict(checkpoint["state_dict_ema"])
+        checkpoint_state_key = args.checkpoint_state_key
+        if checkpoint_state_key == "auto":
+            checkpoint_state_key = "state_dict_ema" if use_ema else "state_dict"
+        if checkpoint_state_key not in checkpoint:
+            raise RuntimeError(
+                f"checkpoint does not contain requested state {checkpoint_state_key}"
+            )
+        model.load_state_dict(checkpoint[checkpoint_state_key])
+        if checkpoint_state_key == "state_dict_ema":
             logger.info("Using Model EMA...")
-        else:
-            model.load_state_dict(checkpoint["state_dict"])
 
     # AMP: automatic mixed precision
     use_amp = getattr(cfg.solver, "amp", False)
@@ -112,7 +145,7 @@ def main():
 
     # test the detector
     logger.info("Testing Starts...\n")
-    eval_one_epoch(
+    evaluation_summary = eval_one_epoch(
         test_loader,
         model,
         cfg,
@@ -123,7 +156,73 @@ def main():
         world_size=args.world_size,
         not_eval=args.not_eval,
     )
+    if args.rank == 0 and args.metrics_json:
+        if checkpoint_path is None or checkpoint_state_key is None:
+            raise RuntimeError("structured metric evidence requires a checkpoint")
+        if not isinstance(evaluation_summary, dict):
+            raise RuntimeError("evaluation did not return a structured summary")
+        result_path = evaluation_summary.get("result_path")
+        if not result_path or not os.path.isfile(result_path):
+            raise RuntimeError("structured metric evidence requires saved predictions")
+        evaluation_config = normalize_evaluation_config(cfg.evaluation)
+        evaluator_identity = official_evaluator_identity()
+        if evaluation_summary.get("evaluator") != evaluator_identity:
+            raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
+        payload = {
+            "schema_version": "duca_p0_terminal_evaluation_v3",
+            "git_commit": subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=path, text=True
+            ).strip(),
+            "task": "offline_temporal_action_detection",
+            "config_path": os.path.abspath(args.config),
+            "config_sha256": sha256_file(args.config),
+            "checkpoint_path": os.path.abspath(checkpoint_path),
+            "checkpoint_sha256": sha256_file(checkpoint_path),
+            "checkpoint_epoch": checkpoint_epoch,
+            "checkpoint_state_key": checkpoint_state_key,
+            "prediction_path": os.path.abspath(result_path),
+            "prediction_sha256": sha256_file(result_path),
+            "metrics": _jsonable(evaluation_summary.get("metrics")),
+            "result_count": int(evaluation_summary.get("result_count", 0)),
+            "video_count": int(evaluation_summary.get("video_count", 0)),
+            "evaluator": evaluator_identity,
+            "evaluation_config": evaluation_config,
+            "evaluation_config_sha256": evaluation_config_sha256(
+                evaluation_config
+            ),
+            "evaluation_annotation_path": os.path.abspath(
+                os.path.expanduser(str(cfg.evaluation.ground_truth_filename))
+            ),
+            "evaluation_annotation_sha256": sha256_file(
+                cfg.evaluation.ground_truth_filename
+            ),
+            "evaluation_class_map_path": os.path.abspath(
+                os.path.expanduser(str(cfg.dataset.test.class_map))
+            ),
+            "evaluation_class_map_sha256": sha256_file(
+                cfg.dataset.test.class_map
+            ),
+        }
+        payload["evaluation_sha256"] = _canonical_sha256(payload)
+        atomic_write_json(args.metrics_json, payload)
     logger.info("Testing Over...\n")
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
+def _canonical_sha256(value):
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 if __name__ == "__main__":
