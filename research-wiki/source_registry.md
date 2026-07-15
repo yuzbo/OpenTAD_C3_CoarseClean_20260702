@@ -27,7 +27,7 @@ updated: 2026-07-16
 - Spatial Zoom S1 branch：`codex/spatial-zoom-s1-audit-fix-20260715`
 - 首轮审计提交：`64e71ddc633f9c63f9dea1c5c60c49dc00441ebf`
 - 当前 Spatial Zoom S1 formal code commit：
-  `47842427eb373fb1f440b1661971a6a231a95f67`
+  `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83`
 
 ## 关键评审与吸收记录
 
@@ -82,6 +82,16 @@ updated: 2026-07-16
   `b5237253eaa8d196957da47d5ebd2c07ae6537596b6e53e1e4348286c88d58d9`，
   内部 receipt SHA-256
   `8c9eb6dbbfaec12a38eb6444a9594eb8286e4256cb01496ee6413510a6bed017`。
+- Spatial Zoom S1 storage-safe snapshot：
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_0421a8d_20260716_ghfast`。
+- Spatial Zoom S1 storage-safe suite：
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/spatial_zoom_s1_0421a8d_20260716_0324`；
+  deployment summary 文件 SHA-256
+  `2219a4a52611d0940ee58210e98510d720720a83baf9f477e9d15a72d6a8255e`。
+- Spatial Zoom S1 replacement CUDA gate：Job `1165774`，COMPLETED 0:0，precheck
+  internal SHA `3d30ea5489b2ac7f07785dff94ed057ac420aebdd8762ab6df6c76a2ffb003ea`。
+- Spatial Zoom S1 fresh formal 3x3 jobs：`1165775-1165783`；canonical namespace
+  `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`。
 
 ## 外部附件
 

@@ -23,6 +23,10 @@ max_chars: 8000
   loss 保持有限，根因是 `PytorchStreamWriter file write failed`，不是模型性能证据。
   合同禁止 resume，因此该矩阵失效。修复只允许持久化 10 个 gate-eligible checkpoints，
   清理失败写入的 `.tmp`，并在启动前要求 96 GiB 可用空间；必须新门禁、从 epoch 0 重跑。
+- 存储修复 commit `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83` 已通过 CUDA gate
+  Job `1165774`：远端 `47 passed`，三分辨率梯度合同闭合。新 canonical namespace
+  `bf71376e...` 中的 3x3 Jobs `1165775-1165783` 已全部从 epoch 0 运行；无 resume，
+  无物理 GPU 覆盖。当前仍无 sealed-test 结果或 S1 GO/KILL。
 
 ## 当前唯一活动任务：Spatial Zoom
 

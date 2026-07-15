@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: formal_3x3_storage_failed_replacement_fix_validating
+outcome: storage_safe_replacement_3x3_running
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-16
@@ -118,6 +118,19 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `b5237253eaa8d196957da47d5ebd2c07ae6537596b6e53e1e4348286c88d58d9`;
   free capacity increased to 217 GiB. These artifacts cannot be resumed or used
   for model selection, test opening, profiling, or performance claims.
+- Storage-safe commit `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83`
+  passed focused local checks (`66 passed, 1 skipped`) and exact snapshot
+  `opentad_spatial_zoom_s1_0421a8d_20260716_ghfast` is clean. CUDA gate Job
+  `1165774` completed 0:0 with `47` Linux tests, deterministic full-model AMP
+  backward, 337 finite required gradients at every resolution, and the exact
+  two audited-unused `fc_norm` tensors.
+- Fresh suite `spatial_zoom_s1_0421a8d_20260716_0324` binds precheck internal
+  SHA `3d30ea5489b2ac7f07785dff94ed057ac420aebdd8762ab6df6c76a2ffb003ea`
+  to canonical namespace
+  `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`.
+  Jobs `1165775-1165783` are the only formal replacement cells and all start at
+  epoch 0. Initial logs show only recoverable first AMP retries; no performance
+  evidence exists before gate-only selection and the single sealed test open.
 
 ## Decision Boundary
 

@@ -80,3 +80,11 @@ append_only: true
   temporaries (134,217,728 bytes). Preserved all sidecars and diagnostics;
   receipt file SHA is `b5237253eaa8d196957da47d5ebd2c07ae6537596b6e53e1e4348286c88d58d9`.
   `/data` free capacity rose to 217 GiB before the fresh replacement gate.
+- 2026-07-16 03:29+08:00: storage-safe commit
+  `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83` passed CUDA gate Job `1165774`
+  (0:0, 47 Linux tests, three-resolution deterministic full-model backward).
+  Precheck internal SHA is `3d30ea5489b2ac7f07785dff94ed057ac420aebdd8762ab6df6c76a2ffb003ea`.
+- 2026-07-16 03:31+08:00: submitted fresh epoch-0 3x3 Jobs `1165775-1165783`
+  to canonical namespace `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`.
+  All nine received normal Slurm GPUs without physical-index override. No
+  resume, test opening, profiling, or performance interpretation occurred.

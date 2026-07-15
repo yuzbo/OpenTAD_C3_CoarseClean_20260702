@@ -100,8 +100,8 @@ rule remain identical.
   weights without class-support rejection. Test-open recovery and immutable
   evidence files use atomic publication; the global marker embeds the exact
   recoverable certificate.
-- Local syntax checks pass. The combined S1/train-iteration suite reports
-  `43 passed, 1 skipped`, and the required C3 regression reports `20 passed`.
+- Local syntax checks pass. The combined focused suite reports
+  `66 passed, 1 skipped`, including the required C3 regression.
   The skipped
   interpolation parity test requires the Linux Torch runtime and is mandatory
   in the Slurm precheck.
@@ -119,6 +119,13 @@ rule remain identical.
   Replacement commit `47842427eb373fb1f440b1661971a6a231a95f67` passed
   CUDA gate Job `1165667`: all three resolutions have 339 trainable tensors,
   the exact two audited-unused tensors, 337 finite gradients, and nonzero
-  backbone/projection/head gradients. Formal jobs `1165669-1165677` now run the
-  fresh 3x3 matrix. S1 is only `experiment_running`; no S1 GO, crop-model
-  success, empirical support, or paper claim is allowed.
+  backbone/projection/head gradients. Formal jobs `1165669-1165677` were later
+  invalidated by shared-storage exhaustion and cannot be resumed or reported.
+- Storage-safe commit `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83`
+  persists only gate-eligible checkpoints, rolls back failed checkpoint
+  transactions, and enforces the 96 GiB preflight. CUDA gate Job `1165774`
+  passed with `47` Linux tests and the same full-model gradient contract. Fresh
+  jobs `1165775-1165783` run the epoch-0 3x3 replacement in canonical namespace
+  `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`.
+  S1 is only `experiment_running`; no S1 GO, crop-model success, empirical
+  support, or paper claim is allowed.
