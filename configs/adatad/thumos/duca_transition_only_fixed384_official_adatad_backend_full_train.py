@@ -247,7 +247,13 @@ model = dict(
         ),
     ),
     backbone=dict(
-        backbone=dict(total_frames=window_size * scale_factor),
+        backbone=dict(
+            total_frames=window_size * scale_factor,
+            # DUCA changes the active acquisition graph across real batches.
+            # Reentrant activation checkpointing is incompatible with the
+            # required dynamic-DDP unused-parameter discovery on Torch 2.0.1.
+            with_cp=False,
+        ),
         custom=dict(
             pre_processing_pipeline=[
                 dict(type="Rearrange", keys=["frames"], ops="b n c (t1 t) h w -> (b t1) n c t h w", t1=chunk_num),
@@ -265,9 +271,10 @@ model = dict(
 
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=duca_end_epoch)
 
-# The no-candidate path emits a scorer-connected zero counterfactual loss, so
-# every batch preserves a static DDP graph while retaining reentrant checkpointing.
-solver = dict(static_graph=True, find_unused_parameters=False)
+# Real THUMOS batches exercise different selector/counterfactual branches and
+# therefore do not have a static parameter-use graph. This shared protocol was
+# verified with consecutive mixed/full/short-window optimizer steps.
+solver = dict(static_graph=False, find_unused_parameters=True)
 
 workflow = dict(
     logging_interval=50,

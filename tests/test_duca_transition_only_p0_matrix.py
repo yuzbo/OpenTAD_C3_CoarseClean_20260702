@@ -46,9 +46,12 @@ def test_p0_matrix_is_matched_on_detector_data_geometry_and_training_horizon() -
         assert int(cfg.window_size) == 384, name
         assert int(cfg.dense_window_size) == 768, name
         assert int(cfg.model.backbone.backbone.total_frames) == 384, name
+        assert cfg.model.backbone.backbone.with_cp is False, name
         assert int(cfg.model.projection.max_seq_len) == 384, name
         assert int(cfg.workflow.end_epoch) == 132, name
         assert int(cfg.scheduler.max_epoch) == 132, name
+        assert cfg.solver.static_graph is False, name
+        assert cfg.solver.find_unused_parameters is True, name
         assert cfg.model.frame_selector.actionness_source_cfg.calibration_split == "none", name
         assert cfg.model.frame_selector.actionness_source_cfg.get("calibration_artifact") in (None, ""), name
 

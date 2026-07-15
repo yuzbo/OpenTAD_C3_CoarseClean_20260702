@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -132,9 +133,14 @@ def main():
         device_ids=[args.local_rank],
         output_device=args.local_rank,
         find_unused_parameters=find_unused_parameters,
-        static_graph=use_static_graph,  # default is False, should be true when use activation checkpointing in E2E
+        static_graph=use_static_graph,
     )
-    logger.info(f"Using DDP with total {args.world_size} GPUS...")
+    logger.info(
+        "Using DDP with total %d GPUS (static_graph=%s, find_unused_parameters=%s)...",
+        args.world_size,
+        use_static_graph,
+        find_unused_parameters,
+    )
 
     # FP16 compression
     use_fp16_compress = getattr(cfg.solver, "fp16_compress", False)
@@ -192,7 +198,8 @@ def main():
         train_loader.sampler.set_epoch(epoch)
 
         # train for one epoch
-        train_one_epoch(
+        training_probe_json = cfg.workflow.get("training_probe_json", None)
+        training_probe = train_one_epoch(
             train_loader,
             model,
             optimizer,
@@ -204,7 +211,30 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
+            collect_training_probe=bool(training_probe_json),
         )
+        if training_probe_json and args.rank == 0:
+            training_probe.update(
+                {
+                    "epoch": int(epoch),
+                    "config": str(args.config),
+                    "world_size": int(args.world_size),
+                    "static_graph": bool(use_static_graph),
+                    "find_unused_parameters": bool(find_unused_parameters),
+                }
+            )
+            probe_path = os.path.abspath(os.path.expanduser(str(training_probe_json)))
+            os.makedirs(os.path.dirname(probe_path), exist_ok=True)
+            temporary_path = probe_path + ".tmp"
+            try:
+                with open(temporary_path, "w", encoding="utf-8") as handle:
+                    json.dump(training_probe, handle, indent=2, sort_keys=True)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary_path, probe_path)
+            finally:
+                if os.path.exists(temporary_path):
+                    os.remove(temporary_path)
 
         # save checkpoint
         if not disable_checkpoint and (

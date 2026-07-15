@@ -225,6 +225,8 @@ def validate_suite(
     expected_commit: str | None = None,
     require_clean: bool = False,
     core_gate_json: str | Path | None = None,
+    ddp_pilot_json: str | Path | None = None,
+    require_ddp_pilot: bool = False,
     post_run_evidence: dict[str, str | Path] | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
@@ -261,12 +263,16 @@ def validate_suite(
     reference = configs[REFERENCE_VARIANT]
     reference_protocol = _shared_protocol(reference)
     _require(
-        reference_protocol["solver"].get("static_graph") is True,
-        "P0 suite requires static_graph=true with a scorer-connected no-candidate loss",
+        reference_protocol["backbone"]["backbone"].get("with_cp") is False,
+        "P0 suite requires activation checkpointing to be disabled for dynamic DDP",
     )
     _require(
-        reference_protocol["solver"].get("find_unused_parameters") is False,
-        "P0 suite requires find_unused_parameters=false with reentrant backbone checkpointing",
+        reference_protocol["solver"].get("static_graph") is False,
+        "P0 suite requires static_graph=false for batch-dependent parameter use",
+    )
+    _require(
+        reference_protocol["solver"].get("find_unused_parameters") is True,
+        "P0 suite requires find_unused_parameters=true for batch-dependent parameter use",
     )
     variants: list[dict[str, Any]] = []
     variant_bindings: dict[str, dict[str, Any]] = {}
@@ -300,6 +306,42 @@ def validate_suite(
 
     protocol_payload = json.dumps(reference_protocol, sort_keys=True, separators=(",", ":"))
     protocol_sha256 = hashlib.sha256(protocol_payload.encode("utf-8")).hexdigest()
+    ddp_pilot = None
+    if require_ddp_pilot:
+        _require(ddp_pilot_json is not None, "formal P0 suite requires a DDP pilot artifact")
+    if ddp_pilot_json is not None:
+        pilot_path = Path(ddp_pilot_json).resolve()
+        _require(pilot_path.is_file(), f"DDP pilot artifact is missing: {pilot_path}")
+        pilot_payload = json.loads(pilot_path.read_text(encoding="utf-8"))
+        _require(pilot_payload.get("ok") is True, "DDP pilot must declare ok=true")
+        _require(
+            pilot_payload.get("schema_version") == "duca_p0_ddp_pilot_suite_v1",
+            "DDP pilot schema mismatch",
+        )
+        _require(pilot_payload.get("git_commit") == commit, "DDP pilot commit is stale")
+        _require(
+            pilot_payload.get("shared_protocol_sha256") == protocol_sha256,
+            "DDP pilot shared protocol is stale",
+        )
+        _require(
+            pilot_payload.get("core_gate_json_sha256") == core_gate["sha256"],
+            "DDP pilot core-gate binding is stale",
+        )
+        pilot_variants = pilot_payload.get("variants")
+        _require(isinstance(pilot_variants, list), "DDP pilot variant evidence is missing")
+        _require(
+            [item.get("variant") for item in pilot_variants] == list(VARIANT_ORDER),
+            "DDP pilot did not cover the exact four-arm order",
+        )
+        _require(
+            all(int(item.get("successful_optimizer_steps", 0)) == 10 for item in pilot_variants),
+            "DDP pilot did not complete ten optimizer steps per arm",
+        )
+        ddp_pilot = {
+            "path": str(pilot_path),
+            "sha256": _sha256(pilot_path),
+            "git_commit": commit,
+        }
     post_run_contract = {
         name: _post_run_contract(protocol_sha256, variant_bindings[name])
         for name in VARIANT_ORDER
@@ -327,6 +369,7 @@ def validate_suite(
         "shared_protocol_sha256": protocol_sha256,
         "variants": variants,
         "formal_core_gate": core_gate,
+        "formal_ddp_pilot": ddp_pilot,
         "post_run_contract": post_run_contract,
         "validated_post_runs": validated_post_runs,
         "submission_performed": False,
@@ -340,6 +383,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-commit")
     parser.add_argument("--require-clean", action="store_true")
     parser.add_argument("--core-gate-json")
+    parser.add_argument("--ddp-pilot-json")
+    parser.add_argument("--require-ddp-pilot", action="store_true")
     parser.add_argument(
         "--post-run-evidence", action="append", default=[], metavar="VARIANT=JSON",
         help="repeat for all four variants to validate completed-run evidence",
@@ -361,6 +406,8 @@ def main(argv: list[str] | None = None) -> int:
             expected_commit=args.expected_commit,
             require_clean=args.require_clean,
             core_gate_json=args.core_gate_json,
+            ddp_pilot_json=args.ddp_pilot_json,
+            require_ddp_pilot=args.require_ddp_pilot,
             post_run_evidence=evidence,
         )
         code = 0

@@ -23,6 +23,9 @@ duca_online_main_contract = dict(
 
 
 model = dict(
+    backbone=dict(
+        backbone=dict(with_cp=False),
+    ),
     frame_selector=dict(
         selector_variant="direct_boundary",
         structured_temperature=0.7,
@@ -92,8 +95,8 @@ model = dict(
 
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=duca_end_epoch)
 
-# Match the transition arms' static DDP execution contract.
-solver = dict(static_graph=True, find_unused_parameters=False)
+# Match the transition arms' batch-dependent parameter-use contract.
+solver = dict(static_graph=False, find_unused_parameters=True)
 
 workflow = dict(
     logging_interval=50,

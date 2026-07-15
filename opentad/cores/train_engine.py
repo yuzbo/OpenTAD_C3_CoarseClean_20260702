@@ -16,6 +16,7 @@ def train_one_epoch(
     logging_interval=200,
     scaler=None,
     max_train_iters=None,
+    collect_training_probe=False,
 ):
     """Training the model for one epoch"""
 
@@ -28,6 +29,7 @@ def train_one_epoch(
             raise ValueError("max_train_iters must be positive when provided")
         num_iters = min(num_iters, max_train_iters)
     use_amp = False if scaler is None else True
+    probe_state = _new_training_probe_state(model) if collect_training_probe else None
 
     model.train()
     for iter_idx, data_dict in enumerate(train_loader):
@@ -56,6 +58,9 @@ def train_one_epoch(
                 scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
 
+        if probe_state is not None:
+            _record_training_probe_backward(probe_state, model, losses["cost"])
+
         # update parameters
         optimizer_step_ran = True
         if use_amp:
@@ -77,6 +82,9 @@ def train_one_epoch(
             # update ema
             if model_ema is not None:
                 model_ema.update(model)
+
+        if probe_state is not None:
+            _record_training_probe_step(probe_state, model, optimizer_step_ran)
 
         # track all losses
         losses = reduce_loss(losses)  # only for log
@@ -103,6 +111,130 @@ def train_one_epoch(
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
             logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
             break
+    if probe_state is not None:
+        return _finalize_training_probe(probe_state)
+    return None
+
+
+def _parameter_probe_group(name):
+    normalized = name.removeprefix("module.")
+    if normalized.startswith("backbone."):
+        return "backbone"
+    if normalized.startswith("frame_selector.actionness_source"):
+        return "coarse_probe"
+    if normalized.startswith("frame_selector."):
+        return "selector"
+    if normalized.startswith("rpn_head."):
+        return "detector_head"
+    return "other"
+
+
+def _new_training_probe_state(model):
+    trainable = {
+        name for name, parameter in model.named_parameters() if parameter.requires_grad
+    }
+    return {
+        "attempted_steps": 0,
+        "successful_optimizer_steps": 0,
+        "skipped_optimizer_steps": 0,
+        "finite_loss_steps": 0,
+        "finite_gradient_steps": 0,
+        "trainable_parameter_names": trainable,
+        "gradient_seen_names": set(),
+        "selector_steps": [],
+    }
+
+
+def _record_training_probe_backward(state, model, cost):
+    state["attempted_steps"] += 1
+    if bool(torch.isfinite(cost.detach()).all().item()):
+        state["finite_loss_steps"] += 1
+    grad_names = []
+    gradients_finite = True
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad or parameter.grad is None:
+            continue
+        grad_names.append(name)
+        if not bool(torch.isfinite(parameter.grad.detach()).all().item()):
+            gradients_finite = False
+    state["gradient_seen_names"].update(grad_names)
+    if gradients_finite:
+        state["finite_gradient_steps"] += 1
+
+
+def _record_training_probe_step(state, model, optimizer_step_ran):
+    if optimizer_step_ran:
+        state["successful_optimizer_steps"] += 1
+    else:
+        state["skipped_optimizer_steps"] += 1
+    state["selector_steps"].append(_selector_probe_snapshot(model))
+
+
+def _selector_probe_snapshot(model):
+    module = getattr(model, "module", model)
+    selector = getattr(module, "frame_selector", None)
+    summary = getattr(selector, "last_forward_summary", None)
+    snapshot = {}
+    if isinstance(summary, dict):
+        for key in (
+            "requested_budget", "effective_budget", "detector_gradient_weight",
+            "policy_mix_alpha", "selection_path", "selector_variant",
+        ):
+            if key in summary:
+                snapshot[key] = _probe_jsonable(summary[key])
+        schedule = summary.get("loss_weight_schedule")
+        if isinstance(schedule, dict):
+            snapshot["loss_weight_schedule"] = {
+                key: _probe_jsonable(schedule[key])
+                for key in ("step", "phase", "progress", "detector_gradient_weight", "weights")
+                if key in schedule
+            }
+    counterfactual = getattr(selector, "last_counterfactual_summary", None)
+    if isinstance(counterfactual, dict):
+        snapshot["counterfactual"] = {
+            key: _probe_jsonable(counterfactual[key])
+            for key in ("candidate_count", "finite", "teacher_kind")
+            if key in counterfactual
+        }
+    return snapshot
+
+
+def _probe_jsonable(value):
+    if torch.is_tensor(value):
+        detached = value.detach().cpu()
+        return detached.item() if detached.numel() == 1 else detached.tolist()
+    if isinstance(value, dict):
+        return {str(key): _probe_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_probe_jsonable(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _finalize_training_probe(state):
+    trainable = state["trainable_parameter_names"]
+    seen = state["gradient_seen_names"]
+    group_counts = {}
+    for name in sorted(trainable):
+        group = _parameter_probe_group(name)
+        counts = group_counts.setdefault(group, {"trainable": 0, "gradient_seen": 0})
+        counts["trainable"] += 1
+        if name in seen:
+            counts["gradient_seen"] += 1
+    return {
+        "schema_version": "duca_training_probe_v1",
+        "attempted_steps": int(state["attempted_steps"]),
+        "successful_optimizer_steps": int(state["successful_optimizer_steps"]),
+        "skipped_optimizer_steps": int(state["skipped_optimizer_steps"]),
+        "finite_loss_steps": int(state["finite_loss_steps"]),
+        "finite_gradient_steps": int(state["finite_gradient_steps"]),
+        "parameter_group_coverage": group_counts,
+        "gradient_never_seen": sorted(trainable - seen),
+        "gradient_seen": sorted(seen),
+        "selector_steps": state["selector_steps"],
+        "max_cuda_memory_mb": float(torch.cuda.max_memory_allocated() / 1024.0 / 1024.0),
+    }
 
 
 def _call_after_optimizer_step(model):

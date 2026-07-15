@@ -23,6 +23,7 @@ source "${REPO_ROOT}/scripts/duca_transition_only_p0_canonical_env.sh"
 VALIDATOR="tools/bata/validate_duca_transition_only_p0_variant.py"
 FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE:-0}"
 DUCA_CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
+DUCA_DDP_PILOT_JSON="${DUCA_DDP_PILOT_JSON:-}"
 DUCA_RESOLVED_CONFIG_SHA256="${DUCA_RESOLVED_CONFIG_SHA256:-}"
 DUCA_VARIANT_CONTRACT_SHA256="${DUCA_VARIANT_CONTRACT_SHA256:-}"
 DUCA_SHARED_PROTOCOL_SHA256="${DUCA_SHARED_PROTOCOL_SHA256:-}"
@@ -44,6 +45,8 @@ REFERENCE_CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_a
 [[ -f "${REFERENCE_CONFIG}" ]] || fail "transition-only reference config missing"
 [[ -n "${DUCA_CORE_GATE_JSON}" ]] || fail "DUCA_CORE_GATE_JSON is required"
 [[ -f "${DUCA_CORE_GATE_JSON}" ]] || fail "DUCA core gate JSON missing: ${DUCA_CORE_GATE_JSON}"
+[[ -n "${DUCA_DDP_PILOT_JSON}" ]] || fail "DUCA_DDP_PILOT_JSON is required"
+[[ -f "${DUCA_DDP_PILOT_JSON}" ]] || fail "DUCA DDP pilot JSON missing: ${DUCA_DDP_PILOT_JSON}"
 [[ "${DUCA_RESOLVED_CONFIG_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "resolved config SHA256 is required"
 [[ "${DUCA_VARIANT_CONTRACT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "variant contract SHA256 is required"
 [[ "${DUCA_SHARED_PROTOCOL_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "shared protocol SHA256 is required"
@@ -97,6 +100,8 @@ RUNTIME_SUITE_MANIFEST="${RUN_DIR}/runtime_suite_manifest.json"
   --expected-commit "${DUCA_EXPECTED_COMMIT}" \
   --require-clean \
   --core-gate-json "${DUCA_CORE_GATE_JSON}" \
+  --ddp-pilot-json "${DUCA_DDP_PILOT_JSON}" \
+  --require-ddp-pilot \
   --output-json "${RUNTIME_SUITE_MANIFEST}" >/dev/null
 "${PYTHON}" - "${RUNTIME_SUITE_MANIFEST}" "${VARIANT}" \
   "${DUCA_RESOLVED_CONFIG_SHA256}" "${DUCA_VARIANT_CONTRACT_SHA256}" \
@@ -119,6 +124,7 @@ PY
 
 CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
 CORE_GATE_SHA256="$(sha256sum "${DUCA_CORE_GATE_JSON}" | awk '{print $1}')"
+DDP_PILOT_SHA256="$(sha256sum "${DUCA_DDP_PILOT_JSON}" | awk '{print $1}')"
 
 cat > "${RUN_DIR}/manifest.json" <<EOF
 {
@@ -138,6 +144,8 @@ cat > "${RUN_DIR}/manifest.json" <<EOF
   "core_gate_json": "${DUCA_CORE_GATE_JSON}",
   "core_gate_json_sha256": "${CORE_GATE_SHA256}",
   "core_gate_git_commit": "${DUCA_EXPECTED_COMMIT}",
+  "ddp_pilot_json": "${DUCA_DDP_PILOT_JSON}",
+  "ddp_pilot_json_sha256": "${DDP_PILOT_SHA256}",
   "seed": ${SEED},
   "task": "offline_temporal_action_detection",
   "budget": 384,

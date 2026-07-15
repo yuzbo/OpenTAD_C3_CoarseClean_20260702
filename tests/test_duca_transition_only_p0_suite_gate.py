@@ -56,8 +56,9 @@ def test_suite_gate_emits_four_arm_matched_manifest(tmp_path: Path) -> None:
     assert protocol["detector_type"] == "ActionFormer"
     assert protocol["detector_head"]["type"] == "ActionFormerHead"
     assert protocol["solver"]["ema"] is True
-    assert protocol["solver"]["static_graph"] is True
-    assert protocol["solver"]["find_unused_parameters"] is False
+    assert protocol["backbone"]["backbone"]["with_cp"] is False
+    assert protocol["solver"]["static_graph"] is False
+    assert protocol["solver"]["find_unused_parameters"] is True
     assert protocol["evaluation"]["type"] == "mAP"
     assert payload["post_run_contract"]["uniform"]["successful_optimizer_updates"] == 13200
     for variant in payload["variants"]:

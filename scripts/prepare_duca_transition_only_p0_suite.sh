@@ -16,10 +16,12 @@ CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
 RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_p0_matched_${CURRENT_HEAD:0:7}_seed${SEED}}"
 CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
+DDP_PILOT_JSON="${DUCA_DDP_PILOT_JSON:-}"
 
 [[ -x "${PYTHON}" ]] || fail "Python environment missing: ${PYTHON}"
 [[ "${CURRENT_HEAD}" == "${EXPECTED_COMMIT}" ]] || fail "HEAD differs from DUCA_EXPECTED_COMMIT"
 [[ -n "${CORE_GATE_JSON}" && -f "${CORE_GATE_JSON}" ]] || fail "DUCA_CORE_GATE_JSON must name an existing formal gate"
+[[ -n "${DDP_PILOT_JSON}" && -f "${DDP_PILOT_JSON}" ]] || fail "DUCA_DDP_PILOT_JSON must name an existing four-arm pilot"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "formal suite preparation requires a clean git tree"
 [[ ! -e "${RUN_ROOT}" ]] || fail "RUN_ROOT already exists: ${RUN_ROOT}"
 
@@ -34,6 +36,8 @@ MANIFEST="${RUN_ROOT}/suite_manifest.json"
   --expected-commit "${EXPECTED_COMMIT}" \
   --require-clean \
   --core-gate-json "${CORE_GATE_JSON}" \
+  --ddp-pilot-json "${DDP_PILOT_JSON}" \
+  --require-ddp-pilot \
   --output-json "${MANIFEST}"
 
 variants=(uniform direct transition_beta0 transition_counterfactual)
@@ -62,6 +66,7 @@ export ADATAD_PRETRAIN_PATH='${ADATAD_PRETRAIN_PATH}'
 export DUCA_P0_VARIANT='${variant}'
 export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
 export DUCA_CORE_GATE_JSON='${CORE_GATE_JSON}'
+export DUCA_DDP_PILOT_JSON='${DDP_PILOT_JSON}'
 export DUCA_CANONICAL_ENV_FILE='${CANONICAL_ENV_FILE}'
 export DUCA_CANONICAL_ENV_SHA256='${CANONICAL_ENV_SHA256}'
 export DUCA_RESOLVED_CONFIG_SHA256='${resolved_config_sha256}'
