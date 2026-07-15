@@ -19,32 +19,21 @@ case "${VARIANT}" in
 esac
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
-PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
+source "${REPO_ROOT}/scripts/duca_transition_only_p0_canonical_env.sh"
 VALIDATOR="tools/bata/validate_duca_transition_only_p0_variant.py"
 FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE:-0}"
 DUCA_CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
 DUCA_RESOLVED_CONFIG_SHA256="${DUCA_RESOLVED_CONFIG_SHA256:-}"
 DUCA_VARIANT_CONTRACT_SHA256="${DUCA_VARIANT_CONTRACT_SHA256:-}"
 DUCA_SHARED_PROTOCOL_SHA256="${DUCA_SHARED_PROTOCOL_SHA256:-}"
+DUCA_CANONICAL_ENV_FILE="${DUCA_CANONICAL_ENV_FILE:-}"
+DUCA_CANONICAL_ENV_SHA256="${DUCA_CANONICAL_ENV_SHA256:-}"
 SEED="${SEED:-0}"
 RUN_ID="${RUN_ID:-0}"
 MASTER_PORT="${MASTER_PORT:-30471}"
 RUN_TAG="${RUN_TAG:-duca_p0_${VARIANT}_seed${SEED}_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_DIR="${RUN_DIR:-logs/${RUN_TAG}}"
 WORK_DIR="${WORK_DIR:-exps/thumos/adatad/duca_p0/${VARIANT}/seed${SEED}/${RUN_TAG}}"
-ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
-export C3_OFFICIAL_ACTION_SEG_REPOS="${C3_OFFICIAL_ACTION_SEG_REPOS:-${BASE}/projects/external_official_action_segmentation_repos_20260702}"
-export YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
-export DUCA_ONLINE_BUDGET=384
-export DUCA_OFFICIAL_ADATAD_BUDGET=384
-export DUCA_ONLINE_DENSE_WINDOW_SIZE=768
-export DUCA_VALIDATOR_MAX_BUDGET=384
-export DUCA_BUDGET_CURVE_MODE=0
-export DUCA_OFFICIAL_ADATAD_END_EPOCH=132
-export DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH=100
-export DUCA_LOSS_SCHEDULE_TOTAL_STEPS=13200
-export DUCA_PROFILE_RUNTIME="${DUCA_PROFILE_RUNTIME:-0}"
-
 [[ "${FULLTRAIN_CANDIDATE}" == "1" ]] || fail "FULLTRAIN_CANDIDATE=1 is required"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "P0 full train must run inside Slurm"
 [[ -x "${PYTHON}" ]] || fail "Python environment missing: ${PYTHON}"
@@ -58,6 +47,8 @@ REFERENCE_CONFIG="configs/adatad/thumos/duca_transition_only_fixed384_official_a
 [[ "${DUCA_RESOLVED_CONFIG_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "resolved config SHA256 is required"
 [[ "${DUCA_VARIANT_CONTRACT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "variant contract SHA256 is required"
 [[ "${DUCA_SHARED_PROTOCOL_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "shared protocol SHA256 is required"
+[[ -f "${DUCA_CANONICAL_ENV_FILE}" ]] || fail "canonical environment file is required"
+[[ "${DUCA_CANONICAL_ENV_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "canonical environment SHA256 is required"
 
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current git HEAD"
 DUCA_EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
@@ -72,6 +63,17 @@ module load miniforge3/24.11 >/dev/null 2>&1 || true
 VISIBLE_GPU_COUNT="$(${PYTHON} -c 'import torch; print(torch.cuda.device_count())')"
 [[ "${VISIBLE_GPU_COUNT}" == "1" ]] || fail "P0 job requires exactly one Slurm-visible GPU; got ${VISIBLE_GPU_COUNT}"
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
+
+RUNTIME_CANONICAL_ENV="${RUN_DIR}/canonical_env.tsv"
+duca_p0_canonical_env_payload > "${RUNTIME_CANONICAL_ENV}"
+RUNTIME_CANONICAL_ENV_SHA256="$(sha256sum "${RUNTIME_CANONICAL_ENV}" | awk '{print $1}')"
+PREPARED_CANONICAL_ENV_SHA256="$(sha256sum "${DUCA_CANONICAL_ENV_FILE}" | awk '{print $1}')"
+[[ "${RUNTIME_CANONICAL_ENV_SHA256}" == "${DUCA_CANONICAL_ENV_SHA256}" ]] \
+  || fail "runtime canonical environment hash drift"
+[[ "${PREPARED_CANONICAL_ENV_SHA256}" == "${DUCA_CANONICAL_ENV_SHA256}" ]] \
+  || fail "prepared canonical environment hash drift"
+cmp -s "${DUCA_CANONICAL_ENV_FILE}" "${RUNTIME_CANONICAL_ENV}" \
+  || fail "runtime canonical environment differs from preparation"
 
 REFERENCE_CONFIG_SHA256="$(sha256sum "${REFERENCE_CONFIG}" | awk '{print $1}')"
 SOURCE_SHA256="$(sha256sum "${SOURCE_PATH}" | awk '{print $1}')"
@@ -127,6 +129,8 @@ cat > "${RUN_DIR}/manifest.json" <<EOF
   "resolved_config_sha256": "${DUCA_RESOLVED_CONFIG_SHA256}",
   "variant_contract_sha256": "${DUCA_VARIANT_CONTRACT_SHA256}",
   "shared_protocol_sha256": "${DUCA_SHARED_PROTOCOL_SHA256}",
+  "canonical_env_file": "${DUCA_CANONICAL_ENV_FILE}",
+  "canonical_env_sha256": "${DUCA_CANONICAL_ENV_SHA256}",
   "source": "${SOURCE_PATH}",
   "source_sha256": "${SOURCE_SHA256}",
   "checkpoint": "${ADATAD_PRETRAIN_PATH}",

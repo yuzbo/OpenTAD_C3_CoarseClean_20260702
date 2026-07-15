@@ -10,19 +10,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
-PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
+source "${REPO_ROOT}/scripts/duca_transition_only_p0_canonical_env.sh"
 SEED="${SEED:-0}"
-export YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
-export C3_OFFICIAL_ACTION_SEG_REPOS="${C3_OFFICIAL_ACTION_SEG_REPOS:-${BASE}/projects/external_official_action_segmentation_repos_20260702}"
-export DUCA_ONLINE_BUDGET=384
-export DUCA_OFFICIAL_ADATAD_BUDGET=384
-export DUCA_ONLINE_DENSE_WINDOW_SIZE=768
-export DUCA_VALIDATOR_MAX_BUDGET=384
-export DUCA_BUDGET_CURVE_MODE=0
-export DUCA_OFFICIAL_ADATAD_END_EPOCH=132
-export DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH=100
-export DUCA_LOSS_SCHEDULE_TOTAL_STEPS=13200
-export DUCA_PROFILE_RUNTIME=0
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current HEAD"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
 RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_p0_matched_${CURRENT_HEAD:0:7}_seed${SEED}}"
@@ -35,6 +24,9 @@ CORE_GATE_JSON="${DUCA_CORE_GATE_JSON:-}"
 [[ ! -e "${RUN_ROOT}" ]] || fail "RUN_ROOT already exists: ${RUN_ROOT}"
 
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs"
+CANONICAL_ENV_FILE="${RUN_ROOT}/canonical_env.tsv"
+duca_p0_canonical_env_payload > "${CANONICAL_ENV_FILE}"
+CANONICAL_ENV_SHA256="$(sha256sum "${CANONICAL_ENV_FILE}" | awk '{print $1}')"
 MANIFEST="${RUN_ROOT}/suite_manifest.json"
 "${PYTHON}" -m tools.bata.validate_duca_transition_only_p0_suite \
   --repo-root "${REPO_ROOT}" \
@@ -64,9 +56,14 @@ for index in "${!variants[@]}"; do
 #SBATCH --error=${RUN_ROOT}/logs/${variant}-%j.err
 set -euo pipefail
 cd '${REPO_ROOT}'
+export BASE='${BASE}'
+export PYTHON='${PYTHON}'
+export ADATAD_PRETRAIN_PATH='${ADATAD_PRETRAIN_PATH}'
 export DUCA_P0_VARIANT='${variant}'
 export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
 export DUCA_CORE_GATE_JSON='${CORE_GATE_JSON}'
+export DUCA_CANONICAL_ENV_FILE='${CANONICAL_ENV_FILE}'
+export DUCA_CANONICAL_ENV_SHA256='${CANONICAL_ENV_SHA256}'
 export DUCA_RESOLVED_CONFIG_SHA256='${resolved_config_sha256}'
 export DUCA_VARIANT_CONTRACT_SHA256='${variant_contract_sha256}'
 export DUCA_SHARED_PROTOCOL_SHA256='${shared_protocol_sha256}'

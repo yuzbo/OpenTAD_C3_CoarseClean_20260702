@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,8 @@ PATHS = {
 }
 LAUNCHER = Path("scripts/run_duca_transition_only_p0_variant_gpu1.sh")
 PREPARER = Path("scripts/prepare_duca_transition_only_p0_suite.sh")
+CANONICAL_ENV = Path("scripts/duca_transition_only_p0_canonical_env.sh")
+BASE_CONFIG = Path("configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py")
 
 
 def _plain(value):
@@ -221,18 +224,35 @@ def test_p0_launcher_uses_commit_bound_core_gate_and_auditable_manifest() -> Non
 def test_p0_preparer_and_runtime_share_canonical_config_environment() -> None:
     prepare = PREPARER.read_text(encoding="utf-8")
     runtime = LAUNCHER.read_text(encoding="utf-8")
-    for name in (
-        "YUZIBO_ROOT",
-        "C3_OFFICIAL_ACTION_SEG_REPOS",
-        "DUCA_ONLINE_BUDGET",
-        "DUCA_OFFICIAL_ADATAD_BUDGET",
-        "DUCA_ONLINE_DENSE_WINDOW_SIZE",
-        "DUCA_VALIDATOR_MAX_BUDGET",
-        "DUCA_BUDGET_CURVE_MODE",
-        "DUCA_OFFICIAL_ADATAD_END_EPOCH",
-        "DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH",
-        "DUCA_LOSS_SCHEDULE_TOTAL_STEPS",
-        "DUCA_PROFILE_RUNTIME",
+    helper = CANONICAL_ENV.read_text(encoding="utf-8")
+    source_line = 'source "${REPO_ROOT}/scripts/duca_transition_only_p0_canonical_env.sh"'
+    assert source_line in prepare
+    assert source_line in runtime
+    assert 'export DUCA_PROFILE_RUNTIME=0' in helper
+    assert 'export DUCA_PROFILE_SYNC_CUDA=1' in helper
+    assert 'export DUCA_ONLINE_BUDGET=384' in helper
+    assert 'export DUCA_ONLINE_DENSE_WINDOW_SIZE=768' in helper
+    assert 'export DUCA_OFFICIAL_ADATAD_END_EPOCH=132' in helper
+    assert 'export DUCA_LOSS_SCHEDULE_TOTAL_STEPS=13200' in helper
+    assert 'DUCA_PROFILE_RUNTIME="${DUCA_PROFILE_RUNTIME:-0}"' not in runtime
+
+    key_block = helper.split("DUCA_P0_CANONICAL_ENV_KEYS=(", 1)[1].split(")", 1)[0]
+    canonical_keys = set(re.findall(r"^\s+([A-Z][A-Z0-9_]*)\s*$", key_block, re.MULTILINE))
+    config_text = BASE_CONFIG.read_text(encoding="utf-8")
+    config_env_keys = set(
+        re.findall(
+            r'(?:_env_(?:int|float|bool)|os\.environ\.get)\(\s*"([A-Z][A-Z0-9_]*)"',
+            config_text,
+        )
+    )
+    assert config_env_keys <= canonical_keys
+    assert {"C3_OFFICIAL_ACTION_SEG_REPOS", "ADATAD_PRETRAIN_PATH", "PYTHON"} <= canonical_keys
+
+    for binding in (
+        "DUCA_CANONICAL_ENV_FILE",
+        "DUCA_CANONICAL_ENV_SHA256",
+        "RUNTIME_CANONICAL_ENV_SHA256",
+        "PREPARED_CANONICAL_ENV_SHA256",
     ):
-        assert f"export {name}" in prepare
-        assert f"export {name}" in runtime
+        assert binding in runtime or binding in prepare
+    assert 'cmp -s "${DUCA_CANONICAL_ENV_FILE}" "${RUNTIME_CANONICAL_ENV}"' in runtime
