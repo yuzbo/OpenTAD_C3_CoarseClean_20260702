@@ -1,17 +1,23 @@
-# ChronoTransport CT-P3R-3S-r2 书面修订候选规格
+# ChronoTransport CT-P3R-3S-r2 A1--A4 合并修订候选规格
 
-日期：2026-07-12
+日期：2026-07-15
 
 协议编号：`CT-P3R-3S-r2`
 
-决策状态：`REVISE_SPEC_BEFORE_PLAN`。只有本文件通过一次不读取实验结果的 spec-only
-diff review，且 reviewer 输出 `APPROVE_SPEC_FOR_PLAN`，才允许进入 implementation plan。
+决策状态：`PENDING_A1_A4_SPEC_ONLY_REVIEW`。用户已授权按 2026-07-15 最小协议修订提案中的
+A1--A4 exact decisions 完整推进；只有本文件通过一次不读取实验结果的 spec-only diff review，
+且 reviewer 输出 `APPROVE_SPEC_FOR_PLAN`，才允许继续实现、registration 或实验。
 
 实现状态：`designed`，不是 `implemented`、`tested`、`experiment_running` 或
 `empirically_supported`
 
 替代关系：本文件 supersede `02199f8` 的 r1 规格与 commit `b74101d` 中的 bounded-rescue
 规格；两份旧文件只保留为历史记录，均不可执行。
+
+本轮修订范围严格限于四个先前不可唯一执行的问题：Gate-1 unsuffixed random-control seed、
+Slurm 单设备语义、Stage-C train-mode `loss_normalizer` 成功态语义，以及 Stage-C paired
+dense/counterfactual forward 与逐窗口 regret。其余 threshold、seed set、split、candidate、
+budget、update count、bootstrap unit、population 与 stop condition 均不变。
 
 ## 1. 裁决、证据边界与目标
 
@@ -289,12 +295,16 @@ hash 与整体 library SHA-256。训练、profile、checkpoint 和 evaluation �
   `K_p`。clip 0 必须 RECOMPUTE；在 clips 1--47 中按 cosine change descending 选择
   `K_p-1` 个 positions RECOMPUTE，其余 HOLD。finite ties 按较小 clip index 优先；finite
   constant-motion window 合法并使用同一 tie rule。该 control 不拟合 calibration threshold；
-- `random_p{2,4,8}`：所有字段使用无前导零 decimal ASCII，window ID 使用 UTF-8 NFC。
+- `random_p{2,4,8}`：三个 unsuffixed controls 的 `control_seed` 全部固定为整数 `3407`；三个
+  Stage-B training seeds 不产生额外 random comparator identities。所有字段使用无前导零
+  decimal ASCII，window ID 使用 UTF-8 NFC。
   对 clip `c` 定义
   `SHA256(b"CT-P3R-3S-r2-random-v1\0" + window_id_utf8 + b"\0" + seed_ascii +
           b"\0" + group_ascii + b"\0" + period_ascii + b"\0" + clip_ascii)`。
   clip 0 强制 RECOMPUTE；clips 1--47 按 raw 32-byte digest ascending 排序，选择 `K_p-1`
-  个 positions RECOMPUTE，其余 HOLD；
+  个 positions RECOMPUTE，其余 HOLD。这里的 `seed_ascii` 必须精确为 ASCII `3407`；
+  registration 必须绑定该整数、每个 generated action hash 与 factory config，缺失或不同值为
+  `INVALID_IMPLEMENTATION`；
 - `uncalibrated_risk`：同一 trained head，offset 强制 0；
 - `oracle`：只存在于 evaluation-only adjudicator，不进入 checkpoint 或 scheduler。
 
@@ -362,9 +372,19 @@ updates=140。基础设施中断可从原子 checkpoint 恢复，但不得额外
 
 ### 8.1 full-stack total samples
 
-成本 profile 在物理 GPU1、batch size 1、AMP FP16 下执行。每个 schedule warm-up 50 次，
-随后至少记录 200 个完整窗口。每次 sample 的 `total_ms` 从 data/decode 开始前计时，到
-postprocess 完成后结束；计时边界前后 CUDA synchronize。
+成本 profile 在 Slurm 分配的单个 CUDA-visible device、batch size 1、AMP FP16 下执行。launcher
+不得设置、替换、追加或以其他方式修改 Slurm 提供的 `CUDA_VISIBLE_DEVICES`；进程必须断言恰好
+一个 CUDA-visible device，并只使用逻辑 `cuda:0`。每个 schedule warm-up 50 次，随后至少记录
+200 个完整窗口。每次 sample 的 `total_ms` 从 data/decode 开始前计时，到 postprocess 完成后
+结束；计时边界前后 CUDA synchronize。
+
+precheck 必须记录未修改的 `CUDA_VISIBLE_DEVICES`、`SLURM_JOB_ID`、`SLURM_STEP_ID`、
+`SLURM_JOB_GPUS`、`SLURM_STEP_GPUS`、`SLURM_GPUS_ON_NODE`、GPU model 与 GPU UUID。registration
+冻结 required GPU model 以及 driver/CUDA/PyTorch/cuDNN/precision contract；每个 formal artifact
+绑定 observed GPU UUID 与 Slurm allocation identity。model/software mismatch 为
+`INVALID_ENVIRONMENT`。同一个 Gate-1 profile 的全部 candidates 必须使用同一 allocated device；
+同一个 Gate-4 matched timing block 的 D/C/S arms 也必须使用同一 allocated device，不得混合 GPU
+model 进行成本比较。
 
 full-stack p50/p95 必须直接从 `total_ms` samples 计算，禁止相加 stage p50/p95。每次
 invocation 同时记录以下 diagnostic durations：decode、preprocess、H2D、innovation、
@@ -606,6 +626,14 @@ matched-dense control 使用相同 dense checkpoint 起点、seed、fit-window o
 augmentation、60-epoch workflow、common adapter LR/WD、detector task loss 与 successful common
 updates；forced dense，仅训练 A，不训练 T/R。matched dense 保存相同 shadow candidate ledger。
 
+detector/head parameters 保持 frozen，但 `AnchorFreeHead` 为 detector task loss 保持 train mode。
+`rpn_head.loss_normalizer` 是唯一允许在成功 Stage-C update 中变化的 detector buffer：CT 与
+matched-dense arms 的初值必须 bitwise equal；每个 overflow attempt 后必须 bitwise 恢复；每个
+successful arm update 按未修改的 OpenTAD 公式恰好推进一次；因为两个 arms 共享 ordered
+GT/masks/materialized batches，所以每个 successful update 后的值必须相同。该 buffer 必须进入
+checkpoint、resume validation 与 matched-arm trace hash。其他 frozen detector buffers 必须保持
+不变，除非未来另有批准修订；任一 trace divergence 为 `INVALID_IMPLEMENTATION`。
+
 ### 13.2 Stage-C per-window candidate exposure
 
 令 successful update `u in [0,4199]`，batch canonical position `r in {0,1}`，window-exposure
@@ -627,7 +655,29 @@ parameters。
 且不在 optimizer；`risk_predictor` 与 `scheduler.predictor` alias 只以 canonical object 进入
 R 一次。禁止 generic name-substring optimizer grouping。
 
-### 13.4 Loss-specific AMP gradient algorithm
+### 13.4 Paired forward、逐窗口 regret 与 loss-specific AMP gradient algorithm
+
+每个 attempt 对同一个 ordered materialized batch of two windows 必须：
+
+1. snapshot pre-attempt RNG 与全部 mutable state；
+2. 在 `torch.no_grad()` 下执行一次 forced-dense reference model forward，并保存两个 window 的
+   detector task-loss vector 与 dense features；
+3. 保留 detached dense outputs，但将 dense reference forward 单独造成的全部 mutable-state
+   变化（包括 `loss_normalizer`）恢复到 pre-attempt snapshot，并恢复 paired-forward stochastic
+   equivalence 所需的 RNG state；因此只有后续 counterfactual forward 的规范 buffer 变化可在
+   successful attempt 中保留；
+4. 使用两个 registered candidate actions 执行恰好一次 differentiable counterfactual model
+   forward；
+5. 从该 counterfactual forward 的两个 task losses 按 unchanged batch reduction 得到 `LD`；
+6. 对 batch position `r` 定义
+   `target_r=max(L_counterfactual_window_r-L_dense_window_r,0)`，对 A/T detach 两个 target；
+   `LR` 必须使用同一个 counterfactual runtime 的 signals/actions 产生的两个 predictor rows；
+7. `LF` 从 counterfactual 与 dense features 得到，并遵守本节后续 gradient ownership。
+
+真实 detector 必须从上述同一 head logits 与 targets 暴露 exact length-two per-window task-loss
+vector。禁止第二次 counterfactual head pass、replay ledger、scheduler 中的 GT、caller-supplied
+regret target 或 caller-supplied canonical loss。audit hooks 必须证明一次 dense reference model
+pass、一次 counterfactual model pass，以及恰好一次 counterfactual risk-predictor pass。
 
 同一 counterfactual forward 产生 LD detector task loss、LF feature consistency loss 与 LR
 pinball risk loss。LR 的 deploy-visible signals 与 regret target 对 A/T detach；scheduler argmin
@@ -670,6 +720,9 @@ snapshot state；retry 同一 materialized batch。
 CT `latest_*`、cache/action history、profiler buffers、Python lists/counters、optimizer、scheduler
 与 EMA。只有模型外 append-only retry audit log 可保留。初始 attempt 后最多 3 次 retry；第 4
 个 overflow attempt 仍失败时标记 `INVALID_IMPLEMENTATION`，不是 science FAIL。
+
+成功 attempt 必须允许且只允许第 13.1 节枚举的 `loss_normalizer` 规范推进；success-state audit
+必须验证该变化与 matched arm trace，而不能把所有 detector buffer 变化一概拒绝。
 
 两个 arms 可有不同 overflow histories，不采用 lockstep mutual skip。matched exposure 必须满足：
 successful batch hashes 完全相同且顺序相同；各 4200 common-adapter updates；common-A LR trace
@@ -809,13 +862,14 @@ claim flags 初始全部 false：
 - `mechanism`；
 - `calibrated_risk_on_frozen_window_protocol`；
 - `metric_adatad_thumos14_official_full_video`；
-- `latency_gpu1_fixed_stack`；
+- `latency_slurm_single_gpu_fixed_stack`；
 - `deploy`；
 - `paper`。
 
 Gate 1 PASS 只允许 `oracle_headroom=true`；Gate 2 PASS 只允许 `mechanism=true`；Gate 3
 PASS 只允许 `calibrated_risk_on_frozen_window_protocol=true`；Gate 4 全 PASS 后只允许
-`metric_adatad_thumos14_official_full_video=true` 与 `latency_gpu1_fixed_stack=true`。
+`metric_adatad_thumos14_official_full_video=true` 与
+`latency_slurm_single_gpu_fixed_stack=true`。
 
 即使 Gate 1--4 全 PASS，`deploy=false`、`paper=false`。deploy 至少还需要 official
 full-video population 上独立 calibration/safety protocol、与 bounded appeal 不共享
@@ -832,8 +886,9 @@ compute control、通用 TAD deployment 或 detector-agnostic generalization。
   CUDA 行为、replay、training、calibration、profiling 与 detector evaluation 全部在远端。
 - 写入根限定 `/data/run01/sczc063/yuzibo`；环境固定 CUDA 11.8、miniforge 24.11、
   `/data/run01/sczc063/yuzibo/conda_envs/opentad`。
-- 只允许物理 GPU1；`CUDA_VISIBLE_DEVICES` 必须精确为 `1`，且位于 Slurm allocation/step
-  或已授权 protected allocation，禁止登录节点直接训练。
+- 每个 GPU action 只允许在 Slurm 分配的 single-GPU allocation/step 内执行；launcher 不得修改
+  Slurm 提供的 `CUDA_VISIBLE_DEVICES`，进程断言恰好一个 visible device 并只使用 `cuda:0`；
+  禁止登录节点直接训练。
 - 每个 launcher 必须先通过 `PRECHECK_ONLY=1`，验证 source/spec/config/checkpoint/split/
   library/cost hashes、clean implementation state、单可见 GPU、输出根与 unlock chain。
 - run root 固定为
@@ -860,9 +915,9 @@ deploy-visible pooled signals、cost、pooled targets、regret、feature MSE、r
 后续状态定义：
 
 - `implemented`：focused tests、validators、Gate 1--4 adjudicators、Stage B/C、matched
-  control、profiler 与 GPU1 launchers 全部落地；不代表科学 PASS；
+  control、profiler 与 Slurm single-device launchers 全部落地；不代表科学 PASS；
 - `tested`：远端 precheck 与受控 CUDA integration 通过；不代表主实验结论；
-- `experiment_running`：formal hash-bound GPU1 job 已登记 Job ID/run root；
+- `experiment_running`：formal hash-bound Slurm single-GPU job 已登记 Job ID/run root；
 - `empirically_supported`：Gate 1--4 全 PASS，原始 reports 与 claims 已写回 wiki；
 - 任一 Gate FAIL：`negative_gate/frozen_baseline`；禁止删结果、改 Gate、补 seed、换预算或
   再次上诉。
