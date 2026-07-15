@@ -27,7 +27,7 @@ from tools.bata.validate_spatial_zoom_s1 import (  # noqa: E402
 )
 
 S1_TRAINING_BINDING_SCHEMA = "spatial_zoom_s1_training_binding_v4"
-S1_CHECKPOINT_METADATA_SCHEMA = "spatial_zoom_s1_checkpoint_metadata_v4"
+S1_CHECKPOINT_METADATA_SCHEMA = "spatial_zoom_s1_checkpoint_metadata_v5"
 S1_CHECKPOINT_SIDECAR_SCHEMA = "spatial_zoom_s1_checkpoint_sidecar_v3"
 S1_EXPERIMENT_NAMESPACE_SCHEMA = "spatial_zoom_s1_experiment_namespace_v1"
 S1_CANONICAL_EXPERIMENTS_ROOT = (
@@ -333,6 +333,9 @@ def build_s1_checkpoint_metadata(
     epoch: int,
     successful_updates: int,
     train_batches_per_epoch: int,
+    amp_skipped_attempts: int = 0,
+    max_amp_retries_per_batch: int = 8,
+    max_amp_retries_observed: int = 0,
 ) -> dict[str, Any]:
     binding = validate_bound_s1_training_config(cfg, seed=int(seed))
     expected_updates = (int(epoch) + 1) * int(train_batches_per_epoch)
@@ -341,6 +344,16 @@ def build_s1_checkpoint_metadata(
             f"S1 checkpoint epoch {epoch} has {successful_updates} successful "
             f"updates, expected {expected_updates}"
         )
+    amp_skipped_attempts = int(amp_skipped_attempts)
+    max_amp_retries_per_batch = int(max_amp_retries_per_batch)
+    max_amp_retries_observed = int(max_amp_retries_observed)
+    if (
+        amp_skipped_attempts < 0
+        or max_amp_retries_per_batch < 0
+        or max_amp_retries_observed < 0
+        or max_amp_retries_observed > max_amp_retries_per_batch
+    ):
+        raise ValueError("S1 AMP retry audit is inconsistent")
     metadata = {
         "schema_version": S1_CHECKPOINT_METADATA_SCHEMA,
         "resolution": int(binding["resolution"]),
@@ -348,6 +361,10 @@ def build_s1_checkpoint_metadata(
         "epoch": int(epoch),
         "successful_updates": int(successful_updates),
         "train_batches_per_epoch": int(train_batches_per_epoch),
+        "optimizer_attempts": int(successful_updates) + amp_skipped_attempts,
+        "amp_skipped_attempts": amp_skipped_attempts,
+        "max_amp_retries_per_batch": max_amp_retries_per_batch,
+        "max_amp_retries_observed": max_amp_retries_observed,
         "bound_config_sha256": canonical_sha256(cfg.to_dict()),
         "source_config_sha256": binding["source_config_sha256"],
         "code_commit": binding["code_commit"],

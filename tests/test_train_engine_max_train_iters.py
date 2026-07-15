@@ -113,12 +113,44 @@ class _ToyScheduler:
         self.steps += 1
 
 
+class _ToyScaler:
+    def __init__(self, skipped_attempts=1):
+        self.remaining_skips = int(skipped_attempts)
+        self.current_scale = 65536.0
+        self.last_step_skipped = False
+
+    def scale(self, loss):
+        return loss
+
+    def unscale_(self, optimizer):
+        return optimizer
+
+    def get_scale(self):
+        return self.current_scale
+
+    def step(self, optimizer):
+        self.last_step_skipped = self.remaining_skips > 0
+        if self.last_step_skipped:
+            self.remaining_skips -= 1
+        else:
+            optimizer.step()
+
+    def update(self):
+        if self.last_step_skipped:
+            self.current_scale /= 2.0
+
+
 def _load_train_engine_with_fake_runtime(monkeypatch):
     fake_torch = types.SimpleNamespace(
         float16="float16",
+        get_rng_state=lambda: "cpu-rng",
+        set_rng_state=lambda _state: None,
+        isfinite=lambda _value: types.SimpleNamespace(all=lambda: True),
         cuda=types.SimpleNamespace(
             amp=types.SimpleNamespace(autocast=_Autocast),
             max_memory_allocated=lambda: 0,
+            get_rng_state_all=lambda: ["cuda-rng"],
+            set_rng_state_all=lambda _states: None,
         ),
         nn=types.SimpleNamespace(
             utils=types.SimpleNamespace(clip_grad_norm_=lambda *args, **kwargs: None),
@@ -175,8 +207,70 @@ def test_train_one_epoch_stops_after_max_train_iters(monkeypatch):
     assert any("max_train_iters=2 reached" in message for message in logger.messages)
 
 
+def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model = _ToyModel()
+    optimizer = _ToyOptimizer()
+    scheduler = _ToyScheduler()
+    logger = _Logger()
+    scaler = _ToyScaler(skipped_attempts=1)
+    audit = {}
+
+    updates = train_engine.train_one_epoch(
+        _ToyLoader(length=2),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=0,
+        logger=logger,
+        logging_interval=1,
+        scaler=scaler,
+        fail_on_skipped_update=True,
+        max_amp_retries_per_batch=4,
+        update_audit=audit,
+    )
+
+    assert updates == 2
+    assert model.forward_calls == 3
+    assert model.backward_calls == 3
+    assert optimizer.zero_grad_calls == 3
+    assert optimizer.steps == 2
+    assert scheduler.steps == 2
+    assert audit == {
+        "optimizer_attempts": 3,
+        "amp_skipped_attempts": 1,
+        "max_amp_retries_observed": 1,
+    }
+    assert any("retry 1/4" in message for message in logger.messages)
+
+
+def test_train_one_epoch_fails_when_amp_retry_limit_is_exhausted(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model = _ToyModel()
+    optimizer = _ToyOptimizer()
+    scheduler = _ToyScheduler()
+
+    with pytest.raises(FloatingPointError, match="could not produce"):
+        train_engine.train_one_epoch(
+            _ToyLoader(length=1),
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=0,
+            logger=_Logger(),
+            scaler=_ToyScaler(skipped_attempts=3),
+            fail_on_skipped_update=True,
+            max_amp_retries_per_batch=1,
+        )
+
+    assert optimizer.steps == 0
+    assert scheduler.steps == 0
+
+
 @pytest.mark.parametrize("max_train_iters", [0, -1])
-def test_train_one_epoch_rejects_non_positive_max_train_iters(monkeypatch, max_train_iters):
+def test_train_one_epoch_rejects_non_positive_max_train_iters(
+    monkeypatch, max_train_iters
+):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
     model = _ToyModel()
     optimizer = _ToyOptimizer()

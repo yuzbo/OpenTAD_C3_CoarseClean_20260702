@@ -50,6 +50,18 @@ def validate_s1_checkpoint_metadata_for_binding(
     expected_updates = (int(epoch) + 1) * int(metadata["train_batches_per_epoch"])
     if int(metadata["successful_updates"]) != expected_updates:
         raise ValueError("S1 checkpoint does not satisfy equal successful updates")
+    skipped = int(metadata.get("amp_skipped_attempts", -1))
+    retry_limit = int(metadata.get("max_amp_retries_per_batch", -1))
+    max_observed = int(metadata.get("max_amp_retries_observed", -1))
+    optimizer_attempts = int(metadata.get("optimizer_attempts", -1))
+    if (
+        skipped < 0
+        or retry_limit != 8
+        or max_observed < 0
+        or max_observed > retry_limit
+        or optimizer_attempts != expected_updates + skipped
+    ):
+        raise ValueError("S1 checkpoint AMP retry audit is inconsistent")
 
 
 def _validate_test_open_marker(

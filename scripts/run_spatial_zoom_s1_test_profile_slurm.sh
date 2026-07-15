@@ -34,6 +34,11 @@ esac
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
 [[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
   fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
+SLURM_JOB_NUMBER="${SLURM_JOB_ID%%_*}"
+[[ "${SLURM_JOB_NUMBER}" =~ ^[0-9]+$ ]] || fail "SLURM_JOB_ID must begin with digits"
+# Reserve a three-port slot so adjacent Slurm jobs cannot collide.
+TEST_MASTER_PORT="$((10000 + (10#${SLURM_JOB_NUMBER} % 15000) * 3))"
+PROFILE_MASTER_PORT="$((TEST_MASTER_PORT + 1))"
 
 WORK_DIR="${RUN_ROOT}/dense${RESOLUTION}/seed${SEED}"
 BOUND_CONFIG="${RUN_ROOT}/control/dense${RESOLUTION}_seed${SEED}.py"
@@ -61,7 +66,8 @@ python tools/bata/preflight_spatial_zoom_s1_profile.py \
   --checkpoint "${CHECKPOINT}" \
   --test-open-certificate "${TEST_OPEN}"
 
-torchrun --standalone --nproc_per_node=1 \
+torchrun --nnodes=1 --nproc_per_node=1 \
+  --master_addr=127.0.0.1 --master_port="${TEST_MASTER_PORT}" \
   tools/test.py "${BOUND_CONFIG}" \
   --checkpoint "${CHECKPOINT}" \
   --seed "${SEED}" \
@@ -71,7 +77,9 @@ torchrun --standalone --nproc_per_node=1 \
 TEST_EVIDENCE="${WORK_DIR}/gpu1_id0/test_evidence/test.evidence.json"
 [[ -f "${TEST_EVIDENCE}" ]] || fail "sealed test evidence was not produced"
 PROFILE_PREFIX="${WORK_DIR}/profile/dense${RESOLUTION}_seed${SEED}"
-torchrun --standalone --nproc_per_node=1 tools/bata/profile_spatial_zoom_s1.py \
+torchrun --nnodes=1 --nproc_per_node=1 \
+  --master_addr=127.0.0.1 --master_port="${PROFILE_MASTER_PORT}" \
+  tools/bata/profile_spatial_zoom_s1.py \
   "${BOUND_CONFIG}" \
   --checkpoint "${CHECKPOINT}" \
   --manifest "${MANIFEST}" \

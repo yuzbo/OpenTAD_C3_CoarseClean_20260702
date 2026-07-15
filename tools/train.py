@@ -251,6 +251,12 @@ def main():
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
     successful_updates = 0
+    update_audit = {
+        "optimizer_attempts": 0,
+        "amp_skipped_attempts": 0,
+        "max_amp_retries_observed": 0,
+    }
+    s1_amp_retry_limit = 8 if s1_binding is not None else 0
     for epoch in range(resume_epoch + 1, max_epoch):
         train_loader.sampler.set_epoch(epoch)
 
@@ -268,6 +274,8 @@ def main():
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
             fail_on_skipped_update=s1_binding is not None,
+            max_amp_retries_per_batch=s1_amp_retry_limit,
+            update_audit=update_audit if s1_binding is not None else None,
         )
 
         # save checkpoint
@@ -284,6 +292,11 @@ def main():
                         epoch=epoch,
                         successful_updates=successful_updates,
                         train_batches_per_epoch=len(train_loader),
+                        amp_skipped_attempts=update_audit["amp_skipped_attempts"],
+                        max_amp_retries_per_batch=s1_amp_retry_limit,
+                        max_amp_retries_observed=update_audit[
+                            "max_amp_retries_observed"
+                        ],
                     )
                 save_checkpoint(
                     model,

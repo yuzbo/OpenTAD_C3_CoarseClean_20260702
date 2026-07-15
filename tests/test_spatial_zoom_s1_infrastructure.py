@@ -232,6 +232,18 @@ def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:
         require_slurm_single_gpu_allocation()
 
 
+def test_s1_slurm_launchers_use_job_scoped_static_rendezvous() -> None:
+    for filename in (
+        "run_spatial_zoom_s1_train_slurm.sh",
+        "run_spatial_zoom_s1_test_profile_slurm.sh",
+    ):
+        text = (ROOT / "scripts" / filename).read_text(encoding="utf-8")
+        assert "--standalone" not in text
+        assert "SLURM_JOB_NUMBER" in text
+        assert "--master_addr=127.0.0.1" in text
+        assert "--master_port=" in text
+
+
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:
     configs = {
         resolution: Config.fromfile(str(ROOT / path))
@@ -565,8 +577,15 @@ def test_checkpoint_metadata_rejects_a_rehashed_wrong_pretrained_identity(
         epoch=0,
         successful_updates=1,
         train_batches_per_epoch=1,
+        amp_skipped_attempts=2,
+        max_amp_retries_per_batch=8,
+        max_amp_retries_observed=1,
     )
     assert metadata["schema_version"] == S1_CHECKPOINT_METADATA_SCHEMA
+    assert metadata["optimizer_attempts"] == 3
+    assert metadata["amp_skipped_attempts"] == 2
+    assert metadata["max_amp_retries_per_batch"] == 8
+    assert metadata["max_amp_retries_observed"] == 1
     forged = copy.deepcopy(metadata)
     forged["pretrained_checkpoint_sha256"] = "0" * 64
     forged.pop("metadata_sha256")
