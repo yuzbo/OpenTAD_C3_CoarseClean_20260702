@@ -44,7 +44,8 @@ def _gate(tmp_path: Path) -> Path:
 def test_suite_gate_emits_four_arm_matched_manifest(tmp_path: Path) -> None:
     payload = suite.validate_suite(repo_root=ROOT, seed=17, core_gate_json=_gate(tmp_path))
     assert payload["ok"] is True
-    assert payload["status"] == "deployable_not_submitted"
+    assert payload["status"] == "core_gate_only_not_deployable"
+    assert payload["formal_ddp_pilot"] is None
     assert payload["submission_performed"] is False
     assert payload["seed"] == 17
     assert [item["name"] for item in payload["variants"]] == list(suite.VARIANT_ORDER)
@@ -89,6 +90,56 @@ def test_suite_gate_rejects_wrong_commit() -> None:
 def test_suite_gate_requires_formal_core_gate() -> None:
     with pytest.raises(AssertionError, match="formal core gate is required"):
         suite.validate_suite(repo_root=ROOT)
+
+
+def test_suite_gate_requires_ddp_pilot_when_formal_deployment_is_requested(tmp_path: Path) -> None:
+    with pytest.raises(AssertionError, match="requires a DDP pilot"):
+        suite.validate_suite(
+            repo_root=ROOT,
+            core_gate_json=_gate(tmp_path),
+            require_ddp_pilot=True,
+        )
+
+
+def test_suite_gate_accepts_only_commit_protocol_and_core_bound_ddp_pilot(tmp_path: Path) -> None:
+    gate = _gate(tmp_path)
+    core_only = suite.validate_suite(repo_root=ROOT, core_gate_json=gate)
+    pilot = tmp_path / "ddp_pilot.json"
+    pilot.write_text(
+        json.dumps(
+            {
+                "schema_version": "duca_p0_ddp_pilot_suite_v1",
+                "ok": True,
+                "git_commit": core_only["git_commit"],
+                "shared_protocol_sha256": core_only["shared_protocol_sha256"],
+                "core_gate_json_sha256": suite._sha256(gate),
+                "variants": [
+                    {"variant": name, "successful_optimizer_steps": 10}
+                    for name in suite.VARIANT_ORDER
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = suite.validate_suite(
+        repo_root=ROOT,
+        core_gate_json=gate,
+        ddp_pilot_json=pilot,
+        require_ddp_pilot=True,
+    )
+    assert payload["status"] == "deployable_not_submitted"
+    assert payload["formal_ddp_pilot"]["sha256"] == suite._sha256(pilot)
+
+    stale = json.loads(pilot.read_text(encoding="utf-8"))
+    stale["shared_protocol_sha256"] = "0" * 64
+    pilot.write_text(json.dumps(stale), encoding="utf-8")
+    with pytest.raises(AssertionError, match="shared protocol is stale"):
+        suite.validate_suite(
+            repo_root=ROOT,
+            core_gate_json=gate,
+            ddp_pilot_json=pilot,
+            require_ddp_pilot=True,
+        )
 
 
 def test_suite_gate_binds_formal_gate_to_current_commit(tmp_path: Path) -> None:
@@ -138,6 +189,8 @@ def test_prepare_script_is_generation_only_and_fail_closed() -> None:
     assert "PREPARED_NOT_SUBMITTED" in text
     assert "--require-clean" in text
     assert "DUCA_CORE_GATE_JSON must name an existing formal gate" in text
+    assert "DUCA_DDP_PILOT_JSON must name an existing four-arm pilot" in text
+    assert "--require-ddp-pilot" in text
     assert "DUCA_EXPECTED_COMMIT" in text
     assert "-m tools.bata.validate_duca_transition_only_p0_suite" in text
     assert "printf 'variant\\tseed" in text

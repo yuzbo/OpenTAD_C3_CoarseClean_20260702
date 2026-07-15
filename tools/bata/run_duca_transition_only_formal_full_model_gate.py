@@ -202,6 +202,12 @@ def run_formal_gate(
     _require(dense_window_size == 768, "formal selector input must be T=768")
     _require(budget == 384, "formal detector input must be K=384")
     _require(int(cfg.model.backbone.backbone.total_frames) == budget, "VideoMAE total_frames must be 384")
+    _require(cfg.model.backbone.backbone.with_cp is False, "activation checkpointing must be disabled")
+    _require(cfg.solver.static_graph is False, "formal protocol must use dynamic DDP")
+    _require(
+        cfg.solver.find_unused_parameters is True,
+        "formal protocol must discover batch-dependent unused parameters",
+    )
     _require(int(cfg.model.projection.max_seq_len) == budget, "projection max_seq_len must be 384")
     uniform_reference = _verify_exact_uniform_reference(
         temporal_len=dense_window_size,

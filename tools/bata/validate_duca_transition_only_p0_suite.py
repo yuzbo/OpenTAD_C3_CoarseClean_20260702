@@ -360,7 +360,11 @@ def validate_suite(
         }
     return {
         "ok": True,
-        "status": "deployable_not_submitted",
+        "status": (
+            "deployable_not_submitted"
+            if ddp_pilot is not None
+            else "core_gate_only_not_deployable"
+        ),
         "git_commit": commit,
         "git_tree_clean": not bool(dirty),
         "seed": int(seed),
