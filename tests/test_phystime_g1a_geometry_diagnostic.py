@@ -70,6 +70,9 @@ def test_g1a_window_reports_assignment_delta_between_axes():
         report["physical_time_seconds"]["assignment"]["positive_location_count"]
         >= report["uniform_rank_seconds"]["assignment"]["positive_location_count"]
     )
+    assert "physical_time_rank_assignment" in report
+    assert report["physical_time_rank_assignment"]["candidate_count"] == 3
+    assert report["physical_time_rank_assignment"]["assignment"]["physical_inside_required"] is True
 
 
 def test_aggregate_g1a_reports_keeps_high_level_assignment_fields():
@@ -94,4 +97,5 @@ def test_aggregate_g1a_reports_keeps_high_level_assignment_fields():
     assert summary["gt_count"] == 1
     assert "uniform_rank_seconds" in summary
     assert "physical_time_seconds" in summary
+    assert "physical_time_rank_assignment" in summary
     assert summary["uniform_rank_seconds"]["assignment"]["gt_count"] == 1

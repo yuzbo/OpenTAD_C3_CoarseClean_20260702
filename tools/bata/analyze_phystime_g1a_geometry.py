@@ -124,6 +124,84 @@ def _levels_on_seconds_axis(base_levels, *, axis_positions, domain_start, domain
     return mapped
 
 
+def _hybrid_physical_regression_rank_assignment_report(
+    *,
+    physical_points,
+    assignment_points,
+    valid_mask,
+    gt_segments,
+    center_sample_radius,
+):
+    from tools.bata.analyze_phystime_performance_drop import _as_float_array
+
+    physical_points = _as_float_array(physical_points, columns=4)
+    assignment_points = _as_float_array(assignment_points, columns=4)
+    valid_mask = np.asarray(valid_mask, dtype=bool).reshape(-1)
+    segments = _as_float_array(gt_segments, columns=2)
+    if physical_points.shape != assignment_points.shape:
+        raise ValueError("hybrid assignment diagnostic requires matching point shapes")
+    if physical_points.shape[0] != valid_mask.size:
+        raise ValueError("hybrid assignment diagnostic point/mask mismatch")
+    if segments.size == 0:
+        return {
+            "gt_count": 0,
+            "positive_location_count": 0,
+            "gt_without_eligible_location_count": 0,
+            "eligible_location_count_per_gt": [],
+            "assigned_location_count_per_gt": [],
+            "multi_min_gt_location_count": 0,
+            "max_min_gt_multiplicity": 0,
+            "physical_inside_required": True,
+        }
+
+    physical_centers = physical_points[:, 0, None]
+    assignment_centers = assignment_points[:, 0, None]
+    physical_left = physical_centers - segments[None, :, 0]
+    physical_right = segments[None, :, 1] - physical_centers
+    physical_inside = np.minimum(physical_left, physical_right) > 0
+
+    assignment_left = assignment_centers - segments[None, :, 0]
+    assignment_right = segments[None, :, 1] - assignment_centers
+    assignment_distances = np.stack((assignment_left, assignment_right), axis=-1)
+    segment_centers = 0.5 * (segments[:, 0] + segments[:, 1])
+    radius = assignment_points[:, 3, None] * float(center_sample_radius)
+    center_left = assignment_centers - np.maximum(
+        segment_centers[None, :] - radius, segments[None, :, 0]
+    )
+    center_right = np.minimum(
+        segment_centers[None, :] + radius, segments[None, :, 1]
+    ) - assignment_centers
+    center_inside = np.minimum(center_left, center_right) > 0
+    max_distance = assignment_distances.max(axis=-1)
+    in_range = (
+        (max_distance >= assignment_points[:, 1, None])
+        & (max_distance <= assignment_points[:, 2, None])
+    )
+    eligible = physical_inside & center_inside & in_range & valid_mask[:, None]
+
+    lengths = np.broadcast_to(segments[:, 1] - segments[:, 0], eligible.shape).copy()
+    lengths[~eligible] = np.inf
+    min_lengths = lengths.min(axis=1)
+    chosen = lengths.argmin(axis=1)
+    positive = np.isfinite(min_lengths) & valid_mask
+    min_mask = (lengths <= (min_lengths[:, None] + 1.0e-3)) & np.isfinite(lengths)
+    min_multiplicity = min_mask.sum(axis=1)
+    assigned = np.zeros(segments.shape[0], dtype=np.int64)
+    if positive.any():
+        assigned += np.bincount(chosen[positive], minlength=segments.shape[0])
+    eligible_per_gt = eligible.sum(axis=0).astype(np.int64)
+    return {
+        "gt_count": int(segments.shape[0]),
+        "positive_location_count": int(positive.sum()),
+        "gt_without_eligible_location_count": int((eligible_per_gt == 0).sum()),
+        "eligible_location_count_per_gt": eligible_per_gt.tolist(),
+        "assigned_location_count_per_gt": assigned.tolist(),
+        "multi_min_gt_location_count": int(((min_multiplicity > 1) & positive).sum()),
+        "max_min_gt_multiplicity": int(min_multiplicity.max()) if min_multiplicity.size else 0,
+        "physical_inside_required": True,
+    }
+
+
 def summarize_g1a_window(
     *,
     dense_valid_len,
@@ -158,6 +236,9 @@ def summarize_g1a_window(
         level["valid_mask"] = np.arange(level["centers"].size) < valid_count
 
     reports = {}
+    levels_by_name = {}
+    points_by_name = {}
+    masks_by_name = {}
     for name in ("uniform_rank_seconds", "physical_time_seconds"):
         levels = _levels_on_seconds_axis(
             base_levels,
@@ -166,6 +247,9 @@ def summarize_g1a_window(
             domain_end=axis["domain_end"],
         )
         points, mask = concatenate_point_levels(levels)
+        levels_by_name[name] = levels
+        points_by_name[name] = points
+        masks_by_name[name] = mask
         reports[name] = {
             "candidate_count": int(mask.sum()),
             "stride_sec": _distribution(points[mask, 3]),
@@ -177,6 +261,18 @@ def summarize_g1a_window(
                 center_sample_radius=center_sample_radius,
             ),
         }
+    reports["physical_time_rank_assignment"] = {
+        "candidate_count": int(masks_by_name["physical_time_seconds"].sum()),
+        "stride_sec": reports["physical_time_seconds"]["stride_sec"],
+        "range_upper_sec": reports["physical_time_seconds"]["range_upper_sec"],
+        "assignment": _hybrid_physical_regression_rank_assignment_report(
+            physical_points=points_by_name["physical_time_seconds"],
+            assignment_points=points_by_name["uniform_rank_seconds"],
+            valid_mask=masks_by_name["physical_time_seconds"],
+            gt_segments=gt_segments_sec,
+            center_sample_radius=center_sample_radius,
+        ),
+    }
 
     delta = axis["physical_time_seconds"] - axis["uniform_rank_seconds"]
     return {
@@ -186,6 +282,7 @@ def summarize_g1a_window(
         "axis_abs_delta_sec": _distribution(np.abs(delta)),
         "uniform_rank_seconds": reports["uniform_rank_seconds"],
         "physical_time_seconds": reports["physical_time_seconds"],
+        "physical_time_rank_assignment": reports["physical_time_rank_assignment"],
         "gt_durations_sec": (
             np.asarray(gt_segments_sec, dtype=np.float64).reshape(-1, 2)[:, 1]
             - np.asarray(gt_segments_sec, dtype=np.float64).reshape(-1, 2)[:, 0]
@@ -199,7 +296,7 @@ def aggregate_g1a_reports(reports):
     reports = list(reports)
     if not reports:
         raise ValueError("G1a diagnostics require at least one report")
-    methods = ("uniform_rank_seconds", "physical_time_seconds")
+    methods = ("uniform_rank_seconds", "physical_time_seconds", "physical_time_rank_assignment")
     summary = {
         "window_count": len(reports),
         "gt_count": int(sum(len(report["gt_durations_sec"]) for report in reports)),

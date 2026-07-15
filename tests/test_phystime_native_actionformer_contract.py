@@ -6,8 +6,10 @@ from opentad.models.utils.native_temporal_geometry import align_native_tubelet_g
 
 
 class _PhysicalGridHarness:
+    _physical_selected_count_from_meta_with_keys = AnchorFreeHead._physical_selected_count_from_meta_with_keys
     _physical_selected_count_from_meta = AnchorFreeHead._physical_selected_count_from_meta
     _physical_positions_from_meta = AnchorFreeHead._physical_positions_from_meta
+    _physical_assignment_positions_from_meta = AnchorFreeHead._physical_assignment_positions_from_meta
     _selected_axis_to_physical_axis = AnchorFreeHead._selected_axis_to_physical_axis
 
     physical_grid_positions_key = "phystime_g1a_axis_positions_sec"
@@ -17,6 +19,8 @@ class _PhysicalGridHarness:
     physical_grid_axis_end_key = "phystime_g1a_axis_end_sec"
     physical_grid_eps = 1.0e-6
     physical_grid_required = True
+    physical_grid_assignment_positions_key = "phystime_uniform_rank_timestamps_sec"
+    physical_grid_assignment_count_keys = ("phystime_native_valid_count",)
 
 
 def make_metas(valid_counts=(4, 3)):
@@ -227,3 +231,85 @@ def test_seconds_grid_rejects_invalid_explicit_domain(updates, match):
         _PhysicalGridHarness()._physical_positions_from_meta(
             meta, torch.device("cpu"), torch.float32
         )
+
+
+def test_assignment_positions_can_be_distinct_from_physical_decode_positions():
+    meta = {
+        "phystime_g1a_axis_positions_sec": [0.1, 1.5, 4.8],
+        "phystime_uniform_rank_timestamps_sec": [0.8, 2.4, 4.0],
+        "phystime_native_valid_count": 3,
+        "phystime_g1a_axis_start_sec": 0.0,
+        "phystime_g1a_axis_end_sec": 5.0,
+    }
+
+    positions = _PhysicalGridHarness()._physical_assignment_positions_from_meta(
+        meta, torch.device("cpu"), torch.float32
+    )
+
+    assert positions.tolist() == pytest.approx([0.8, 2.4, 4.0])
+
+
+def test_rank_assignment_never_creates_positive_for_physical_center_outside_gt():
+    head = object.__new__(AnchorFreeHead)
+    head.num_classes = 2
+    head.center_sample = "radius"
+    head.center_sample_radius = 1.5
+    head.filter_similar_gt = True
+
+    physical_points = [
+        torch.tensor(
+            [
+                [0.1, 0.0, 10.0, 0.2],
+                [4.8, 0.0, 10.0, 0.2],
+            ],
+            dtype=torch.float32,
+        )
+    ]
+    assignment_points = [
+        torch.tensor(
+            [
+                [1.5, 0.0, 10.0, 1.0],
+                [3.5, 0.0, 10.0, 1.0],
+            ],
+            dtype=torch.float32,
+        )
+    ]
+    gt_segments = [torch.tensor([[1.4, 1.6]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+
+    gt_cls, gt_reg = head.prepare_targets(
+        physical_points,
+        gt_segments,
+        gt_labels,
+        assignment_points=assignment_points,
+    )
+
+    assert gt_cls[0].sum().item() == pytest.approx(0.0)
+    assert gt_reg[0].shape == (2, 2)
+
+
+def test_rank_assignment_can_restore_center_sampling_when_physical_center_is_inside_gt():
+    head = object.__new__(AnchorFreeHead)
+    head.num_classes = 2
+    head.center_sample = "radius"
+    head.center_sample_radius = 0.1
+    head.filter_similar_gt = True
+
+    physical_points = [torch.tensor([[1.52, 0.0, 10.0, 0.05]], dtype=torch.float32)]
+    gt_segments = [torch.tensor([[1.4, 1.8]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([1], dtype=torch.long)]
+    physical_only_cls, _physical_only_reg = head.prepare_targets(
+        physical_points,
+        gt_segments,
+        gt_labels,
+    )
+    rank_assignment_cls, rank_assignment_reg = head.prepare_targets(
+        physical_points,
+        gt_segments,
+        gt_labels,
+        assignment_points=[torch.tensor([[1.6, 0.0, 10.0, 2.0]], dtype=torch.float32)],
+    )
+
+    assert physical_only_cls[0].sum().item() == pytest.approx(0.0)
+    assert rank_assignment_cls[0].sum().item() == pytest.approx(1.0)
+    assert rank_assignment_reg[0].reshape(-1).tolist() == pytest.approx([2.4, 5.6], rel=1e-4)

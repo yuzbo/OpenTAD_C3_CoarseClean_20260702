@@ -58,6 +58,14 @@ class AnchorFreeHead(nn.Module):
         self.physical_grid_axis_end_key = self.physical_grid_cfg.get("axis_end_key")
         if (self.physical_grid_axis_start_key is None) != (self.physical_grid_axis_end_key is None):
             raise ValueError("physical-grid axis_start_key and axis_end_key must be configured together")
+        self.physical_grid_assignment_positions_key = self.physical_grid_cfg.get("assignment_positions_key")
+        assignment_count_keys = self.physical_grid_cfg.get("assignment_count_keys", selected_count_keys)
+        if not isinstance(assignment_count_keys, (list, tuple)) or not assignment_count_keys:
+            raise ValueError("physical-grid assignment_count_keys must be a non-empty list/tuple")
+        self.physical_grid_assignment_count_keys = tuple(str(key) for key in assignment_count_keys)
+        self.physical_grid_assignment_mode = (
+            "separate_axis" if self.physical_grid_assignment_positions_key is not None else "physical_axis"
+        )
         self._physical_grid_debug = {}
 
         self.loss_weight = loss_weight
@@ -91,9 +99,9 @@ class AnchorFreeHead(nn.Module):
         if self._physical_grid_forbidden_gt_remap(meta):
             raise ValueError("physical-grid ActionFormer requires dense-axis GT; selected-axis GT remap is forbidden.")
 
-    def _physical_selected_count_from_meta(self, meta, positions):
+    def _physical_selected_count_from_meta_with_keys(self, meta, positions, count_keys):
         count_sources = []
-        for key in self.physical_grid_selected_count_keys:
+        for key in count_keys:
             if key in meta and meta[key] is not None:
                 count_sources.append((key, int(round(float(meta[key])))))
         if not count_sources:
@@ -114,6 +122,11 @@ class AnchorFreeHead(nn.Module):
                 f"selected_count={selected_count}, positions={int(positions.numel())}."
             )
         return selected_count
+
+    def _physical_selected_count_from_meta(self, meta, positions):
+        return self._physical_selected_count_from_meta_with_keys(
+            meta, positions, self.physical_grid_selected_count_keys
+        )
 
     def _physical_positions_from_meta(self, meta, device, dtype):
         if self.physical_grid_positions_key is not None:
@@ -169,6 +182,42 @@ class AnchorFreeHead(nn.Module):
         dense_valid_len = max(float(dense_valid_len), float(positions[-1].item()) + 1.0)
         return positions, 0.0, dense_valid_len
 
+    def _physical_assignment_positions_from_meta(self, meta, device, dtype):
+        if self.physical_grid_assignment_positions_key is None:
+            return None
+        if self.physical_grid_assignment_positions_key not in meta:
+            raise ValueError(
+                "physical-grid ActionFormer requires assignment positions key "
+                f"{self.physical_grid_assignment_positions_key}."
+            )
+
+        positions = torch.as_tensor(
+            meta[self.physical_grid_assignment_positions_key], device=device, dtype=dtype
+        ).reshape(-1)
+        selected_count = self._physical_selected_count_from_meta_with_keys(
+            meta, positions, self.physical_grid_assignment_count_keys
+        )
+        positions = positions[:selected_count]
+        if positions.numel() == 0:
+            raise ValueError("physical-grid ActionFormer assignment positions must be non-empty.")
+        if not torch.isfinite(positions).all():
+            raise ValueError("physical-grid ActionFormer assignment positions must be finite")
+        if positions.numel() > 1 and not torch.all(positions[1:] > positions[:-1]):
+            raise ValueError("physical-grid ActionFormer assignment positions must be strictly increasing")
+
+        if self.physical_grid_axis_end_key is not None:
+            domain_start = float(meta[self.physical_grid_axis_start_key])
+            domain_end = float(meta[self.physical_grid_axis_end_key])
+        else:
+            domain_start = 0.0
+            domain_end = float(meta.get(self.physical_grid_dense_valid_len_key, positions[-1].item() + 1.0))
+        if (
+            float(positions[0].item()) < domain_start - self.physical_grid_eps
+            or float(positions[-1].item()) > domain_end + self.physical_grid_eps
+        ):
+            raise ValueError("physical-grid ActionFormer assignment positions lie outside the physical domain")
+        return positions
+
     def _selected_axis_to_physical_axis(self, coords, positions, domain_start, domain_end):
         count = int(positions.numel())
         rank_centers = torch.arange(count, dtype=coords.dtype, device=coords.device)
@@ -198,12 +247,23 @@ class AnchorFreeHead(nn.Module):
         weight = (flat - x0) / (x1 - x0).clamp(min=self.physical_grid_eps)
         return (y0 + weight * (y1 - y0)).reshape(coords.shape)
 
-    def _build_physical_points_and_masks(self, points, mask_list, metas=None, train_mode=False):
+    def _build_physical_points_and_masks(
+        self,
+        points,
+        mask_list,
+        metas=None,
+        train_mode=False,
+        return_assignment_points=False,
+    ):
         if not self.physical_grid_enabled:
+            if return_assignment_points:
+                return points, mask_list, None
             return points, mask_list
         if metas is None:
             if self.physical_grid_required:
                 raise ValueError("physical-grid ActionFormer requires metas.")
+            if return_assignment_points:
+                return points, mask_list, None
             return points, mask_list
 
         batch_size = mask_list[0].shape[0]
@@ -213,6 +273,7 @@ class AnchorFreeHead(nn.Module):
             )
 
         physical_points = [[] for _ in points]
+        assignment_points = [[] for _ in points] if return_assignment_points else None
         physical_masks = [mask.clone().bool() for mask in mask_list]
         debug_centers = []
         debug_axis_delta = []
@@ -233,9 +294,17 @@ class AnchorFreeHead(nn.Module):
                 meta, base_device, base_dtype
             )
             if positions is None:
+                if return_assignment_points:
+                    return points, mask_list, None
                 return points, mask_list
+            assignment_positions = self._physical_assignment_positions_from_meta(meta, base_device, base_dtype)
 
             selected_count = int(positions.numel())
+            if assignment_positions is not None and int(assignment_positions.numel()) != selected_count:
+                raise ValueError(
+                    "physical-grid ActionFormer assignment positions must match selected physical count: "
+                    f"assignment={int(assignment_positions.numel())}, physical={selected_count}."
+                )
             domain_duration = float(domain_end - domain_start)
             debug_selected_count += selected_count
             debug_dense_valid_len = max(debug_dense_valid_len, domain_duration)
@@ -279,6 +348,36 @@ class AnchorFreeHead(nn.Module):
                 point[:, 3] = physical_stride
                 physical_points[level_idx].append(point)
 
+                if assignment_points is not None:
+                    if assignment_positions is None:
+                        assignment_points[level_idx].append(point.clone())
+                    else:
+                        assignment_point = base_point.clone()
+                        assignment_center = self._selected_axis_to_physical_axis(
+                            selected_center, assignment_positions, domain_start, domain_end
+                        )
+                        assignment_left = self._selected_axis_to_physical_axis(
+                            selected_center - 0.5 * nominal_stride,
+                            assignment_positions,
+                            domain_start,
+                            domain_end,
+                        )
+                        assignment_right = self._selected_axis_to_physical_axis(
+                            selected_center + 0.5 * nominal_stride,
+                            assignment_positions,
+                            domain_start,
+                            domain_end,
+                        )
+                        assignment_stride = (assignment_right - assignment_left).clamp(
+                            min=self.physical_grid_eps
+                        )
+                        assignment_range_scale = assignment_stride / nominal_stride
+                        assignment_point[:, 0] = assignment_center
+                        assignment_point[:, 1] = assignment_point[:, 1] * assignment_range_scale
+                        assignment_point[:, 2] = assignment_point[:, 2] * assignment_range_scale
+                        assignment_point[:, 3] = assignment_stride
+                        assignment_points[level_idx].append(assignment_point)
+
                 level_valid = selected_center < float(selected_count)
                 physical_masks[level_idx][batch_idx] = physical_masks[level_idx][batch_idx] & level_valid
                 kept = physical_masks[level_idx][batch_idx]
@@ -291,6 +390,8 @@ class AnchorFreeHead(nn.Module):
                     valid_points_per_sample[batch_idx] += level_valid_count
 
         physical_points = [torch.stack(level_points, dim=0) for level_points in physical_points]
+        if assignment_points is not None:
+            assignment_points = [torch.stack(level_points, dim=0) for level_points in assignment_points]
         if debug_centers:
             centers = torch.cat(debug_centers)
             axis_delta = torch.cat(debug_axis_delta)
@@ -307,6 +408,8 @@ class AnchorFreeHead(nn.Module):
                 or "irregular_selected_positions|selected_dense_indices",
                 "physical_grid_actionformer_axis_start_key": self.physical_grid_axis_start_key,
                 "physical_grid_actionformer_axis_end_key": self.physical_grid_axis_end_key,
+                "physical_grid_actionformer_assignment_mode": self.physical_grid_assignment_mode,
+                "physical_grid_actionformer_assignment_positions_key": self.physical_grid_assignment_positions_key,
                 "physical_grid_actionformer_axis_delta_mean": float(axis_delta.mean().item()),
                 "physical_grid_actionformer_axis_delta_max": float(axis_delta.max().item()),
                 "physical_grid_actionformer_domain_start_min": min(debug_domain_starts),
@@ -317,7 +420,11 @@ class AnchorFreeHead(nn.Module):
                 "physical_grid_actionformer_enabled": True,
                 "physical_grid_actionformer_valid_points": 0,
                 "physical_grid_actionformer_valid_points_per_sample": valid_points_per_sample,
+                "physical_grid_actionformer_assignment_mode": self.physical_grid_assignment_mode,
+                "physical_grid_actionformer_assignment_positions_key": self.physical_grid_assignment_positions_key,
             }
+        if return_assignment_points:
+            return physical_points, physical_masks, assignment_points
         return physical_points, physical_masks
 
     def _clamp_physical_proposals_to_domain(self, proposals, metas):
@@ -410,8 +517,8 @@ class AnchorFreeHead(nn.Module):
             reg_pred.append(F.relu(raw_regression))
 
         points = self.prior_generator(feat_list)
-        points, mask_list = self._build_physical_points_and_masks(
-            points, mask_list, metas=metas, train_mode=True
+        points, mask_list, assignment_points = self._build_physical_points_and_masks(
+            points, mask_list, metas=metas, train_mode=True, return_assignment_points=True
         )
 
         losses = self.losses(
@@ -422,6 +529,7 @@ class AnchorFreeHead(nn.Module):
             gt_segments,
             gt_labels,
             reg_raw_pred=reg_raw_pred,
+            assignment_points=assignment_points,
         )
         return losses
 
@@ -489,8 +597,14 @@ class AnchorFreeHead(nn.Module):
         gt_segments,
         gt_labels,
         reg_raw_pred=None,
+        assignment_points=None,
     ):
-        gt_cls, gt_reg = self.prepare_targets(points, gt_segments, gt_labels)
+        gt_cls, gt_reg = self.prepare_targets(
+            points,
+            gt_segments,
+            gt_labels,
+            assignment_points=assignment_points,
+        )
 
         # positive mask
         gt_cls = torch.stack(gt_cls)
@@ -527,6 +641,8 @@ class AnchorFreeHead(nn.Module):
                 assignment_regression_raw_count=raw_count,
                 assignment_regression_raw_positive_count=raw_positive_count,
                 assignment_regression_active_location_count=active_location_count,
+                assignment_axis_mode=self.physical_grid_assignment_mode,
+                assignment_positions_key=self.physical_grid_assignment_positions_key,
             )
 
         # maintain an EMA of foreground to stabilize the loss normalizer
@@ -571,13 +687,26 @@ class AnchorFreeHead(nn.Module):
         return {"cls_loss": cls_loss, "reg_loss": reg_loss * loss_weight}
 
     @torch.no_grad()
-    def prepare_targets(self, points, gt_segments, gt_labels):
+    def prepare_targets(self, points, gt_segments, gt_labels, assignment_points=None):
         concat_points = torch.cat(points, dim=1) if points[0].dim() == 3 else torch.cat(points, dim=0)
+        if assignment_points is None:
+            concat_assignment_points = concat_points
+        else:
+            concat_assignment_points = (
+                torch.cat(assignment_points, dim=1)
+                if assignment_points[0].dim() == 3
+                else torch.cat(assignment_points, dim=0)
+            )
+            if concat_assignment_points.shape != concat_points.shape:
+                raise ValueError("assignment points must have the same shape as regression points")
         batched_points = concat_points.dim() == 3
         gt_cls, gt_reg = [], []
 
         for batch_idx, (gt_segment, gt_label) in enumerate(zip(gt_segments, gt_labels)):
             point = concat_points[batch_idx] if batched_points else concat_points
+            assignment_point = (
+                concat_assignment_points[batch_idx] if batched_points else concat_assignment_points
+            )
             num_pts = point.shape[0]
             num_gts = gt_segment.shape[0]
 
@@ -597,34 +726,43 @@ class AnchorFreeHead(nn.Module):
             left = point[:, 0, None] - gt_segs[:, :, 0]
             right = gt_segs[:, :, 1] - point[:, 0, None]
             reg_targets = torch.stack((left, right), dim=-1)
+            physical_inside_gt_seg_mask = reg_targets.min(-1)[0] > 0
+
+            assignment_left = assignment_point[:, 0, None] - gt_segs[:, :, 0]
+            assignment_right = gt_segs[:, :, 1] - assignment_point[:, 0, None]
+            assignment_reg_targets = torch.stack((assignment_left, assignment_right), dim=-1)
 
             if self.center_sample == "radius":
                 # center of all segments F T x N
                 center_pts = 0.5 * (gt_segs[:, :, 0] + gt_segs[:, :, 1])
                 # center sampling based on stride radius
                 # compute the new boundaries:
-                # point[:, 3] stores the stride
-                t_mins = center_pts - point[:, 3, None] * self.center_sample_radius
-                t_maxs = center_pts + point[:, 3, None] * self.center_sample_radius
+                # assignment_point[:, 3] stores the assignment-axis stride
+                t_mins = center_pts - assignment_point[:, 3, None] * self.center_sample_radius
+                t_maxs = center_pts + assignment_point[:, 3, None] * self.center_sample_radius
                 # prevent t_mins / maxs from over-running the action boundary
                 # left: torch.maximum(t_mins, gt_segs[:, :, 0])
                 # right: torch.minimum(t_maxs, gt_segs[:, :, 1])
                 # F T x N (distance to the new boundary)
-                cb_dist_left = point[:, 0, None] - torch.maximum(t_mins, gt_segs[:, :, 0])
-                cb_dist_right = torch.minimum(t_maxs, gt_segs[:, :, 1]) - point[:, 0, None]
+                cb_dist_left = assignment_point[:, 0, None] - torch.maximum(t_mins, gt_segs[:, :, 0])
+                cb_dist_right = torch.minimum(t_maxs, gt_segs[:, :, 1]) - assignment_point[:, 0, None]
                 # F T x N x 2
                 center_seg = torch.stack((cb_dist_left, cb_dist_right), -1)
                 # F T x N
-                inside_gt_seg_mask = center_seg.min(-1)[0] > 0
+                inside_gt_seg_mask = torch.logical_and(
+                    center_seg.min(-1)[0] > 0,
+                    physical_inside_gt_seg_mask,
+                )
             else:
                 # inside an gt action
-                inside_gt_seg_mask = reg_targets.min(-1)[0] > 0
+                inside_gt_seg_mask = physical_inside_gt_seg_mask
 
             # limit the regression range for each location
-            max_regress_distance = reg_targets.max(-1)[0]
+            max_regress_distance = assignment_reg_targets.max(-1)[0]
             # F T x N
             inside_regress_range = torch.logical_and(
-                (max_regress_distance >= point[:, 1, None]), (max_regress_distance <= point[:, 2, None])
+                (max_regress_distance >= assignment_point[:, 1, None]),
+                (max_regress_distance <= assignment_point[:, 2, None]),
             )
 
             # if there are still more than one actions for one moment

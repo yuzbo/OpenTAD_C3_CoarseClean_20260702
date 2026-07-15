@@ -5,12 +5,14 @@ from mmengine.config import Config
 
 torch = pytest.importorskip("torch")
 
+import opentad.datasets.transforms  # noqa: F401
 from opentad.models import build_detector
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SELECTED = ROOT / "configs/adatad/thumos/phystime_g1a_selected_axis_native_j192.py"
 PHYSICAL = ROOT / "configs/adatad/thumos/phystime_g1a_physical_metric_native_j192.py"
+RANK_ASSIGN = ROOT / "configs/adatad/thumos/phystime_g1a_physical_metric_rank_assign_native_j192.py"
 
 
 def _pipeline_step(cfg, split, step_type):
@@ -81,6 +83,24 @@ def test_g1a_configs_change_only_the_common_seconds_axis_tensor():
         assert _pipeline_step(cfg, "test", "BuildPhysTimeRawFrameGeometry")[
             "convert_gt_to_seconds"
         ] is False
+
+
+def test_g1a_rank_assignment_config_keeps_physical_decode_axis():
+    cfg = Config.fromfile(RANK_ASSIGN, lazy_import=False)
+    physical_cfg = Config.fromfile(PHYSICAL, lazy_import=False)
+
+    for split in ("train", "val", "test"):
+        assert _pipeline_step(cfg, split, "BuildPhysTimeNativeTubeletGeometry")[
+            "coordinate_mode"
+        ] == "physical_time_seconds"
+
+    grid = cfg.model.rpn_head.physical_grid_actionformer
+    assert grid.positions_key == "phystime_g1a_axis_positions_sec"
+    assert grid.assignment_positions_key == "phystime_uniform_rank_timestamps_sec"
+    assert grid.assignment_count_keys == ["phystime_native_valid_count"]
+    assert cfg.work_dir.endswith("phystime_g1a_physical_metric_rank_assign_native_j192")
+    assert cfg.model.backbone == physical_cfg.model.backbone
+    assert cfg.model.projection == physical_cfg.model.projection
 
 
 def test_g1a_models_have_identical_parameter_schema_and_native_query_capacity():
