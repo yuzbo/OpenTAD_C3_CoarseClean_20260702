@@ -65,3 +65,18 @@ append_only: true
   and trained-checkpoint cost profiling, issue the frozen GO/KILL diagnosis,
   publish only auditable summaries to GitHub, then invoke a verified Pro-tier
   code/protocol/result review and deactivate the automation.
+- 2026-07-16 02:55+08:00: all formal jobs `1165669-1165677` failed closed while
+  atomically writing checkpoints because the shared `/data` filesystem had only
+  about 13 MiB free. Losses remained finite; this is infrastructure failure,
+  not S1 performance evidence. Resume is forbidden, so the matrix is invalid.
+- 2026-07-16 03:02+08:00: verified the 130 GiB canonical root with exactly 222
+  checkpoints belongs to invalid commit `35204f58`. Removed only those forbidden
+  `.pth` weights, preserved all 222 sidecars and diagnostics, and wrote purge
+  receipt `59f1d9d3499eb3cd105478672805f9a19c15a73c8a747b1249bc7c2372ad9ecf`.
+  Began a replacement fix that saves only gate-eligible checkpoints, cleans
+  failed atomic temporaries, and enforces a 96 GiB free-space preflight.
+- 2026-07-16 03:18+08:00: hash-validated and reclaimed the no-resume
+  `47842427` failed matrix: 151 weights (94,195,092,514 bytes) plus nine
+  temporaries (134,217,728 bytes). Preserved all sidecars and diagnostics;
+  receipt file SHA is `b5237253eaa8d196957da47d5ebd2c07ae6537596b6e53e1e4348286c88d58d9`.
+  `/data` free capacity rose to 217 GiB before the fresh replacement gate.

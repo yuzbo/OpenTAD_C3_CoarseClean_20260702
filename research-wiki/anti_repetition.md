@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-15
+updated: 2026-07-16
 ---
 
 # 禁止重走清单
@@ -20,6 +20,8 @@ updated: 2026-07-15
 8. VideoMAE `return_feat_map=True` 会绕过分类出口 `fc_norm`；formal gradient gate 只能
    精确允许 `backbone.model.backbone.fc_norm.{weight,bias}` 两个参数无梯度。不得用前缀、
    正则或宽泛白名单掩盖新的断图。
+9. S1 只持久化预注册的 gate-eligible checkpoints；不得保存不会参与选择的 pre-gate
+   周期权重耗尽共享存储。任何存储故障后的矩阵不得 resume，必须新 commit、门禁和 namespace。
 
 ## 任务与叙事
 

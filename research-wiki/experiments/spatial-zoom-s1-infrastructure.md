@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: strict_cuda_gate_passed_formal_3x3_training_queued
+outcome: formal_3x3_storage_failed_replacement_fix_validating
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
-updated: 2026-07-15
+updated: 2026-07-16
 ---
 
 # Spatial Zoom S1 Infrastructure Verification
@@ -98,6 +98,26 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   cost profiling, frozen GO/KILL diagnosis, GitHub evidence update, and only
   then a verified Pro-tier post-result audit. It must stop after the final Pro
   report so test jobs, evidence publication, and reviewer calls cannot repeat.
+- Jobs `1165669-1165677` all failed during atomic checkpoint publication when
+  the shared `/data` filesystem reached 100% usage. Every root cause is
+  `PytorchStreamWriter file write failed`; losses remained finite and there is
+  no performance conclusion. The no-resume contract invalidates this matrix.
+  The replacement implementation persists only the ten frozen gate-eligible
+  checkpoints per cell, removes partial temporary files on every write failure,
+  and requires 96 GiB free at launch. A new commit, full CUDA gate, canonical
+  namespace, and epoch-0 3x3 rerun are required before S1 can continue.
+- The 222 forbidden checkpoint weights from invalid commit `35204f58` were
+  removed after their sidecar identities were aggregated and preserved. The
+  purge receipt SHA is
+  `59f1d9d3499eb3cd105478672805f9a19c15a73c8a747b1249bc7c2372ad9ecf`;
+  138,485,542,803 bytes were released without deleting sidecars or diagnostics.
+- The storage-failed `47842427` matrix was independently hash-validated before
+  removing 151 unusable weights (94,195,092,514 bytes) and nine temporary files
+  (134,217,728 bytes). All 151 sidecars, configs, logs, and diagnostics remain.
+  The purge receipt file SHA is
+  `b5237253eaa8d196957da47d5ebd2c07ae6537596b6e53e1e4348286c88d58d9`;
+  free capacity increased to 217 GiB. These artifacts cannot be resumed or used
+  for model selection, test opening, profiling, or performance claims.
 
 ## Decision Boundary
 

@@ -67,20 +67,27 @@ def save_checkpoint(
             raise FileExistsError(
                 f"refusing to overwrite frozen S1 checkpoint artifacts: {existing}"
             )
-        torch.save(save_states, checkpoint_tmp)
-        sidecar = {
-            "schema_version": experiment_sidecar_schema,
-            "checkpoint_path": os.path.abspath(checkpoint_path),
-            "checkpoint_sha256": _sha256_file(checkpoint_tmp),
-            "experiment_metadata": dict(experiment_metadata),
-        }
-        sidecar["sidecar_sha256"] = _canonical_sha256(sidecar)
+        checkpoint_published = False
         try:
+            torch.save(save_states, checkpoint_tmp)
+            sidecar = {
+                "schema_version": experiment_sidecar_schema,
+                "checkpoint_path": os.path.abspath(checkpoint_path),
+                "checkpoint_sha256": _sha256_file(checkpoint_tmp),
+                "experiment_metadata": dict(experiment_metadata),
+            }
+            sidecar["sidecar_sha256"] = _canonical_sha256(sidecar)
             with open(sidecar_tmp, "x", encoding="utf-8") as handle:
                 json.dump(sidecar, handle, indent=2, sort_keys=True)
                 handle.write("\n")
             os.replace(checkpoint_tmp, checkpoint_path)
+            checkpoint_published = True
             os.replace(sidecar_tmp, sidecar_path)
+        except Exception:
+            if checkpoint_published and not os.path.exists(sidecar_path):
+                if os.path.exists(checkpoint_path):
+                    os.remove(checkpoint_path)
+            raise
         finally:
             for path in (checkpoint_tmp, sidecar_tmp):
                 if os.path.exists(path):

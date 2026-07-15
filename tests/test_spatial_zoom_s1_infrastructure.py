@@ -67,6 +67,7 @@ from tools.bata.select_spatial_zoom_s1_checkpoint import (
     validate_checkpoint_selection,
 )
 from tools.bata.spatial_zoom_s1_training import (
+    S1_MIN_FREE_STORAGE_BYTES,
     S1_CHECKPOINT_METADATA_SCHEMA,
     S1_CHECKPOINT_SIDECAR_SCHEMA,
     bind_s1_training_config,
@@ -74,6 +75,7 @@ from tools.bata.spatial_zoom_s1_training import (
     build_s1_checkpoint_metadata,
     checkpoint_sidecar_path,
     require_slurm_single_gpu_allocation,
+    should_save_s1_checkpoint,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
 )
@@ -906,6 +908,112 @@ def test_real_checkpoint_writer_uses_current_s1_sidecar_schema(
         expected_metadata=metadata,
     )
     assert sidecar["schema_version"] == S1_CHECKPOINT_SIDECAR_SCHEMA
+
+
+def test_failed_atomic_checkpoint_write_removes_partial_temp_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_after_partial_write(_payload, path) -> None:
+        Path(path).write_bytes(b"partial")
+        raise RuntimeError("simulated storage failure")
+
+    fake_torch = SimpleNamespace(save=fail_after_partial_write)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    spec = importlib.util.spec_from_file_location(
+        "s1_checkpoint_failure_writer_under_test",
+        ROOT / "opentad" / "utils" / "checkpoint.py",
+    )
+    assert spec is not None and spec.loader is not None
+    checkpoint_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checkpoint_module)
+    stateful = SimpleNamespace(state_dict=lambda: {"value": 1})
+
+    with pytest.raises(RuntimeError, match="simulated storage failure"):
+        checkpoint_module.save_checkpoint(
+            stateful,
+            None,
+            stateful,
+            stateful,
+            41,
+            work_dir=str(tmp_path),
+            experiment_metadata={"epoch": 41},
+            experiment_sidecar_schema=S1_CHECKPOINT_SIDECAR_SCHEMA,
+        )
+
+    checkpoint_dir = tmp_path / "checkpoint"
+    assert not (checkpoint_dir / "epoch_41.pth").exists()
+    assert not (checkpoint_dir / "epoch_41.pth.tmp").exists()
+    assert not (checkpoint_dir / "epoch_41.pth.metadata.json").exists()
+    assert not (checkpoint_dir / "epoch_41.pth.metadata.json.tmp").exists()
+
+
+def test_failed_sidecar_publish_rolls_back_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_torch = SimpleNamespace(
+        save=lambda _payload, path: Path(path).write_bytes(b"checkpoint")
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    spec = importlib.util.spec_from_file_location(
+        "s1_checkpoint_publish_failure_writer_under_test",
+        ROOT / "opentad" / "utils" / "checkpoint.py",
+    )
+    assert spec is not None and spec.loader is not None
+    checkpoint_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checkpoint_module)
+    real_replace = checkpoint_module.os.replace
+    replace_calls = 0
+
+    def fail_second_replace(source, destination) -> None:
+        nonlocal replace_calls
+        replace_calls += 1
+        if replace_calls == 2:
+            raise OSError("simulated sidecar publication failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(checkpoint_module.os, "replace", fail_second_replace)
+    stateful = SimpleNamespace(state_dict=lambda: {"value": 1})
+
+    with pytest.raises(OSError, match="sidecar publication failure"):
+        checkpoint_module.save_checkpoint(
+            stateful,
+            None,
+            stateful,
+            stateful,
+            41,
+            work_dir=str(tmp_path),
+            experiment_metadata={"epoch": 41},
+            experiment_sidecar_schema=S1_CHECKPOINT_SIDECAR_SCHEMA,
+        )
+
+    checkpoint_dir = tmp_path / "checkpoint"
+    assert not (checkpoint_dir / "epoch_41.pth").exists()
+    assert not (checkpoint_dir / "epoch_41.pth.tmp").exists()
+    assert not (checkpoint_dir / "epoch_41.pth.metadata.json").exists()
+    assert not (checkpoint_dir / "epoch_41.pth.metadata.json.tmp").exists()
+
+
+def test_formal_s1_persists_only_gate_eligible_checkpoints() -> None:
+    binding = {"eligible_checkpoint_epochs": list(range(41, 60, 2))}
+    assert not should_save_s1_checkpoint(epoch=39, binding=binding)
+    assert should_save_s1_checkpoint(epoch=41, binding=binding)
+    assert should_save_s1_checkpoint(epoch=59, binding=binding)
+    assert not should_save_s1_checkpoint(epoch=58, binding=binding)
+    with pytest.raises(ValueError, match="non-empty and unique"):
+        should_save_s1_checkpoint(
+            epoch=41, binding={"eligible_checkpoint_epochs": [41, 41]}
+        )
+
+    train_source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
+    assert "should_save_s1_checkpoint(" in train_source
+    launcher = (
+        ROOT / "scripts" / "run_spatial_zoom_s1_train_slurm.sh"
+    ).read_text(encoding="utf-8")
+    assert S1_MIN_FREE_STORAGE_BYTES == 96 * 1024**3
+    assert "S1_MIN_FREE_STORAGE_BYTES" in launcher
+    assert 'df -Pk "${STORAGE_PROBE_PATH}"' in launcher
 
 
 def test_checkpoint_selection_recomputes_gate_metric_and_uses_earliest_tie(

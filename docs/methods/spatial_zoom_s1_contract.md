@@ -56,7 +56,11 @@ rule remain identical.
    same batch RNG/model-buffer state and retries without advancing the
    scheduler or EMA; failure to obtain one successful update within eight
    retries fails the run.
-6. Save raw gate predictions for every eligible checkpoint, then use the
+6. Persist checkpoints only at the frozen gate-eligible epochs. Pre-gate
+   periodic checkpoints cannot participate in selection and must not consume
+   formal-matrix storage. The launcher requires at least 96 GiB free before a
+   cell starts, and a failed atomic checkpoint transaction must remove temporary
+   or partially published artifacts. Save raw gate predictions for every eligible checkpoint, then use the
    checkpoint selector to recompute `(mAP@0.6 + mAP@0.7) / 2` from those
    predictions. The maximum wins and exact ties use the earliest epoch.
 7. Validate all nine selections before issuing one test-open certificate. All

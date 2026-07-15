@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-15
+updated: 2026-07-16
 ---
 
 # 来源注册表
@@ -76,6 +76,12 @@ updated: 2026-07-15
 - Spatial Zoom S1 formal 3x3 jobs：`1165669-1165677`；远端 `jobs.tsv` 位于 replacement
   suite 根目录。canonical namespace：
   `695803b687bf52197847e8b7fbf3d802c968d13070c660138f524ed31548f3a7`。
+- Spatial Zoom S1 storage-invalid matrix：Jobs `1165669-1165677` 全部因共享存储耗尽
+  fail-closed；失败 canonical root 保留日志、配置与 151 个 sidecar。无效权重回收收据：
+  `invalid_storage_failure_purge_receipt.json`，文件 SHA-256
+  `b5237253eaa8d196957da47d5ebd2c07ae6537596b6e53e1e4348286c88d58d9`，
+  内部 receipt SHA-256
+  `8c9eb6dbbfaec12a38eb6444a9594eb8286e4256cb01496ee6413510a6bed017`。
 
 ## 外部附件
 

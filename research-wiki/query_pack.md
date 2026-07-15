@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-15
+updated: 2026-07-16
 max_chars: 8000
 ---
 
@@ -17,8 +17,12 @@ max_chars: 8000
   `PASS_FOR_REMOTE_GATE`，其 P2 已复核为 `P2_CLOSED`。
 - 新 CUDA gate Job `1165667` 已 PASS：160/224/256 均为 339 个 trainable tensors，
   2 个审计未用、337 个 finite gradients，backbone/projection/head 均有非零梯度。
-- 正式 3x3 训练 Job `1165669-1165677` 已排队，状态为 `experiment_running`；当前仍无
+- 正式 3x3 训练 Job `1165669-1165677` 已因共享存储耗尽整体失效；当前仍无
   sealed-test mAP、成本结果或 S1 GO/KILL，禁止进入 S2。
+- `1165669-1165677` 在首次 gate checkpoint 写入前因共享 `/data` 空间耗尽全部失败；
+  loss 保持有限，根因是 `PytorchStreamWriter file write failed`，不是模型性能证据。
+  合同禁止 resume，因此该矩阵失效。修复只允许持久化 10 个 gate-eligible checkpoints，
+  清理失败写入的 `.tmp`，并在启动前要求 96 GiB 可用空间；必须新门禁、从 epoch 0 重跑。
 
 ## 当前唯一活动任务：Spatial Zoom
 

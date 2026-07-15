@@ -30,6 +30,7 @@ S1_TRAINING_BINDING_SCHEMA = "spatial_zoom_s1_training_binding_v4"
 S1_CHECKPOINT_METADATA_SCHEMA = "spatial_zoom_s1_checkpoint_metadata_v5"
 S1_CHECKPOINT_SIDECAR_SCHEMA = "spatial_zoom_s1_checkpoint_sidecar_v3"
 S1_EXPERIMENT_NAMESPACE_SCHEMA = "spatial_zoom_s1_experiment_namespace_v1"
+S1_MIN_FREE_STORAGE_BYTES = 96 * 1024**3
 S1_CANONICAL_EXPERIMENTS_ROOT = (
     "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/"
     "spatial_zoom_s1_canonical"
@@ -166,6 +167,15 @@ def eligible_s1_eval_epochs(workflow: Mapping[str, Any]) -> tuple[int, ...]:
     if not eligible:
         raise ValueError("S1 workflow has no eligible gate checkpoints")
     return tuple(eligible)
+
+
+def should_save_s1_checkpoint(
+    *, epoch: int, binding: Mapping[str, Any]
+) -> bool:
+    eligible = tuple(int(value) for value in binding["eligible_checkpoint_epochs"])
+    if not eligible or eligible != tuple(sorted(set(eligible))):
+        raise ValueError("S1 eligible checkpoint epochs must be non-empty and unique")
+    return int(epoch) in eligible
 
 
 def _source_config_path_for_resolution(resolution: int) -> Path:
@@ -468,6 +478,8 @@ __all__ = [
     "checkpoint_sidecar_path",
     "current_git_commit",
     "eligible_s1_eval_epochs",
+    "should_save_s1_checkpoint",
+    "S1_MIN_FREE_STORAGE_BYTES",
     "require_slurm_single_gpu_allocation",
     "require_clean_git_checkout",
     "resolve_s1_formal_experiment_identity",

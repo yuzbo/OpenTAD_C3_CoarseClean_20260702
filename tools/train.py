@@ -82,6 +82,7 @@ def main():
             build_s1_checkpoint_metadata,
             require_clean_git_checkout,
             require_slurm_single_gpu_allocation,
+            should_save_s1_checkpoint,
             validate_bound_s1_training_config,
         )
 
@@ -286,10 +287,14 @@ def main():
         )
 
         # save checkpoint
-        if not disable_checkpoint and (
-            (epoch == max_epoch - 1)
-            or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
-        ):
+        should_save_checkpoint = (epoch == max_epoch - 1) or (
+            (epoch + 1) % cfg.workflow.checkpoint_interval == 0
+        )
+        if s1_binding is not None:
+            should_save_checkpoint = should_save_s1_checkpoint(
+                epoch=epoch, binding=s1_binding
+            )
+        if not disable_checkpoint and should_save_checkpoint:
             if args.rank == 0:
                 checkpoint_metadata = None
                 if s1_binding is not None:

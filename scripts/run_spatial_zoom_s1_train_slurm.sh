@@ -54,6 +54,16 @@ EXPECTED_RUN_ROOT="$(python tools/bata/resolve_spatial_zoom_s1_experiment.py \
 [[ "${RUN_ROOT}" == "${EXPECTED_RUN_ROOT}" ]] || \
   fail "SPATIAL_ZOOM_S1_RUN_ROOT must equal ${EXPECTED_RUN_ROOT}"
 
+MIN_FREE_BYTES="$(python -c \
+  'from tools.bata.spatial_zoom_s1_training import S1_MIN_FREE_STORAGE_BYTES; print(S1_MIN_FREE_STORAGE_BYTES)')"
+MIN_FREE_KIB="$((MIN_FREE_BYTES / 1024))"
+STORAGE_PROBE_PATH="$(dirname "${RUN_ROOT}")"
+AVAILABLE_KIB="$(df -Pk "${STORAGE_PROBE_PATH}" | awk 'NR == 2 {print $4}')"
+[[ "${AVAILABLE_KIB}" =~ ^[0-9]+$ ]] || \
+  fail "could not determine free storage under ${STORAGE_PROBE_PATH}"
+(( AVAILABLE_KIB >= MIN_FREE_KIB )) || \
+  fail "formal S1 requires at least 96 GiB free; found $((AVAILABLE_KIB / 1024 / 1024)) GiB"
+
 SOURCE_CONFIG="${ROOT}/configs/adatad/thumos/s1_dense${RESOLUTION}_videomae_s_768x1_adapter.py"
 CONTROL_DIR="${RUN_ROOT}/control"
 WORK_DIR="${RUN_ROOT}/dense${RESOLUTION}/seed${SEED}"
