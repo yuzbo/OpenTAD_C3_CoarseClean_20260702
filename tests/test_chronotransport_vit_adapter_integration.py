@@ -130,3 +130,20 @@ def test_packed_tubelet_route_and_chronotransport_are_mutually_exclusive() -> No
             tubelet_packed_runtime_route=packed,
             chronotransport=_runtime_cfg(forced_schedule="dense"),
         )
+
+
+def test_checkpointed_dense_path_supports_stage_c_autograd_grad() -> None:
+    kwargs = _tiny_kwargs()
+    kwargs["with_cp"] = True
+    model = VisionTransformerAdapter(**kwargs).train()
+    frames = torch.randn(2, 3, 4, 16, 16, requires_grad=True)
+    output = model(frames)
+    adapter_parameters = tuple(
+        parameter
+        for block in model.blocks
+        if block.use_adapter
+        for parameter in block.adapter.parameters()
+    )
+    gradients = torch.autograd.grad(output.square().mean(), adapter_parameters)
+    assert len(gradients) == len(adapter_parameters)
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)

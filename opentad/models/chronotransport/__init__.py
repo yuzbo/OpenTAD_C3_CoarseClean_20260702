@@ -1,9 +1,29 @@
 from .actions import ChronoAction, ChronoSchedule, LayerGroup, normalize_layer_groups
-from .adjudication import gate1_oracle_headroom, gate2_matched_transport
+from .adjudication import (
+    GATE1_RECORD_CANDIDATE_ORDER,
+    build_gate1_paired_replay_artifact,
+    build_gate1_record_artifact,
+    gate1_oracle_headroom,
+    gate1_oracle_headroom_from_profile,
+    gate2_matched_transport,
+    validate_gate1_paired_replay_artifact,
+    validate_gate1_record_artifact,
+)
 from .cache import CacheEntry, ChronoCacheBank
 from .controls import InvalidImplementationError, motion_topk_actions, random_exact_count_actions
 from .losses import nonnegative_detector_regret, pinball_loss, transport_consistency_loss
 from .profiler import ChronoProfiler, REQUIRED_STAGE_FIELDS
+from .full_stack_profiler import (
+    PROFILE_ARTIFACT_SCHEMA,
+    build_full_stack_profile_artifact,
+    registered_candidate_provenance,
+    validate_full_stack_profile_artifact,
+)
+from .gate1_unlock import (
+    GATE1_UNLOCK_SCHEMA,
+    build_gate1_unlock_artifact,
+    validate_gate1_unlock_artifact,
+)
 from .protocol import (
     R2_NON_DENSE_CANDIDATES,
     R2_PROTOCOL_ID,
@@ -18,9 +38,15 @@ from .protocol import (
     window_digest,
 )
 from .registration import (
+    CHECKPOINT_RECEIPT_SCHEMA,
+    EXPECTED_PROFILE_CANDIDATE_ORDER,
     REGISTRATION_SCHEMA,
+    REGISTERED_PROFILE_FACTORY_IDENTITY,
+    REQUIRED_REGISTRATION_SOURCE_PATHS,
     build_pre_gate1_registration,
+    build_pre_gate1_registration_from_context,
     claim_flags,
+    validate_checkpoint_registry_receipt,
     validate_pre_gate1_registration,
 )
 from .risk import ScheduleQuantileRiskPredictor
@@ -44,6 +70,11 @@ __all__ = [
     "ChronoProfiler",
     "ChronoSchedule",
     "ChronoTransportRuntime",
+    "CHECKPOINT_RECEIPT_SCHEMA",
+    "EXPECTED_PROFILE_CANDIDATE_ORDER",
+    "GATE1_RECORD_CANDIDATE_ORDER",
+    "GATE1_UNLOCK_SCHEMA",
+    "PROFILE_ARTIFACT_SCHEMA",
     "LayerGroup",
     "InvalidImplementationError",
     "MeasuredCostTable",
@@ -53,6 +84,8 @@ __all__ = [
     "R2_PROTOCOL_ID",
     "R2_SEEDS",
     "REGISTRATION_SCHEMA",
+    "REGISTERED_PROFILE_FACTORY_IDENTITY",
+    "REQUIRED_REGISTRATION_SOURCE_PATHS",
     "RiskConstrainedScheduler",
     "ScheduleCandidate",
     "ScheduleLibrary",
@@ -76,10 +109,22 @@ __all__ = [
     "validate_stage_b_exposures",
     "window_digest",
     "gate1_oracle_headroom",
+    "gate1_oracle_headroom_from_profile",
+    "build_gate1_unlock_artifact",
+    "validate_gate1_unlock_artifact",
+    "build_gate1_record_artifact",
+    "build_gate1_paired_replay_artifact",
+    "validate_gate1_record_artifact",
+    "validate_gate1_paired_replay_artifact",
     "gate2_matched_transport",
     "build_stage_c_parameter_groups",
     "loss_specific_amp_step",
     "build_pre_gate1_registration",
+    "build_pre_gate1_registration_from_context",
     "claim_flags",
+    "validate_checkpoint_registry_receipt",
     "validate_pre_gate1_registration",
+    "build_full_stack_profile_artifact",
+    "registered_candidate_provenance",
+    "validate_full_stack_profile_artifact",
 ]

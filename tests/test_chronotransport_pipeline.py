@@ -30,14 +30,38 @@ class ChronoTransportRuntime(nn.Module):
         self.forced_schedule = None
         self.transport = nn.Linear(2, 2)
         self.risk_predictor = nn.Linear(2, 1)
+        self.scheduler = nn.Module()
+        self.scheduler.predictor = self.risk_predictor
+
+
+class _AdapterBlock(nn.Module):
+    def __init__(self, enabled: bool) -> None:
+        super().__init__()
+        self.use_adapter = bool(enabled)
+        if enabled:
+            self.adapter = nn.Linear(2, 2)
+
+
+class _Backbone(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.blocks = nn.ModuleList([_AdapterBlock(True), _AdapterBlock(False)])
+        self.chronotransport = ChronoTransportRuntime()
 
 
 class FakeDetector(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.chronotransport = ChronoTransportRuntime()
-        self.adapter = nn.Linear(2, 2)
+        self.backbone = _Backbone()
         self.heavy = nn.Linear(2, 2)
+
+    @property
+    def chronotransport(self):
+        return self.backbone.chronotransport
+
+    @property
+    def adapter(self):
+        return self.backbone.blocks[0].adapter
 
     def forward(self, inputs, **kwargs):
         del kwargs
@@ -73,7 +97,7 @@ def test_stage_b_and_c_trainable_parameter_contracts() -> None:
     stage_b = configure_stage_b(model)
     assert stage_b and all("chronotransport" in name for name in stage_b)
     stage_c = configure_stage_c(model)
-    assert any(name.startswith("adapter") for name in stage_c)
+    assert any(".adapter." in name for name in stage_c)
     assert all("heavy" not in name for name in stage_c)
 
 

@@ -87,3 +87,119 @@ updated: 2026-07-13
     Stage B/C、Gate 3/4、transactional retry、registration 或 science 已闭环。
 40. 第二次独立审查返回 `APPROVE_IMPLEMENTATION_FOR_REGISTRATION` 前，不得创建 I/R 或打开
     formal profile/replay/evaluation 数据。
+41. 不得把 payload/schema 校验冒充 formal repository-context 校验；正式 CLI 必须验证 clean
+    detached `R`、`R^=I`、R-only registration diff 与当前 source bytes/hash。
+42. Stage-B training checkpoint 写成不等于整个 Stage-B phase 完成；没有同时绑定 checkpoint、
+    ledger、140x16 rank-127 baseline 与 predictor identity 的原子 completion marker 时，
+    calibration/evaluation 必须拒绝。
+43. AMP overflow 回滚不得对未改变的 Parameters 无条件 `load_state_dict`；即使 tensor bytes
+    相同也会改变 version counter，并可能使恢复的 non-leaf graph 无法再次求导。
+44. 不得信任 caller 自报的 base LR、`transport_executed`、action identity 或 success callback；
+    必须从真实 scheduler、actual action tensor 与被注册状态对象的 pre/post delta 推导。
+45. Stage-C production ownership 不得保留隐式 legacy topology fallback；旧测试 fixture 必须升级
+    或使用与正式入口隔离的 test-only helper。
+46. `persistent=False` buffers 仍是 forward-mutated state；不能因不在 `state_dict()` 中而漏掉
+    retry snapshot/restore。
+47. Gate-1 control 不得只登记 action hash；motion/random 的 actual action bytes 必须由冻结算法、
+    deploy-visible signal/window identity/seed 重新生成并逐窗口复核。
+48. Slurm 单 GPU cgroup 会把物理 GPU 映射为 local ordinal 0；不得再用
+    `CUDA_VISIBLE_DEVICES=1` 证明物理 GPU1，必须同时验证 Slurm physical GPU ID 与 local visibility。
+49. formal profile 的生产 API 不得接收 caller-supplied backend；toy backend 只能存在于 test-only
+    helper，正式 artifact 必须绑定固定仓库 backend 的源码身份。
+50. Gate-1 regret 不得作为 caller 字段进入 record builder；必须由同一 materialized batch/RNG 的
+    dense 与 candidate detector loss 在固定 paired runner 内部计算。
+51. 200 个媒体文件的 registry/hash 校验必须在所有 candidate warmup/timer 之前完成；不得让第一
+    candidate 独自承担校验 I/O 并污染 B* 成本比较。
+52. Stage-B 不得接受简化的 PASS JSON；unlock 必须是 Gate-1 adjudicator 生成并由共享 exact
+    schema 复验的完整证据 artifact。
+53. registration R 必须是 I 的唯一单亲后继，且 I..R 精确只新增 registration 文件；检查第一父
+    和 path name 不足以证明 R-only。
+54. Stage-C success 不仅要检查各对象局部 `+1/+2`，还必须检查 scheduler/EMA/sampler/cursor/
+    exposure/ledger 的共同起点与完整 trace coherence。
+55. Formal profile/replay validator 不得从 raw test rows 重建并接受正式 schema；test-only artifact
+    必须使用不相交 schema，不能生成 Gate evidence。
+56. 即使返回 typed runner result，只要 detector、data batches、motion source 或 runtime action
+    identity 仍由 caller 提供，就不能称 repository-owned evidence。
+57. 每个可生成 formal Gate report/unlock 的 API 都必须独立验证 clean detached `R` 和全部未决
+    protocol locks；仅在 launcher 检查不够。
+58. Stage-C loss 必须绑定真实 forward 后从唯一 canonical runtime 读回的 executed action tensor；
+    caller 提供 expected action payload 不构成执行证据。
+63. Gate-4 纯函数能从 raw dict 重算统计并不等于 formal evidence；正式入口还必须绑定 frozen
+    invocation/order、calibration-frozen static、checkpoint/cache/metric provenance、clean detached
+    `R` 与独立 full-stack profiler。不得把 synthetic 12/12 称为 Gate-4 实验通过。
+64. Stage-C 的“真实 forward 发生过”不足以证明 loss 来自它；LD/LF/LR 必须以可审计方式绑定
+    同一个 runtime forward graph/outputs，不能用 dummy forward 加外部直连 loss 通过。
+65. frozen parameter 不能只检查 object/metadata/version；`.data` 写入可能不增加 version，必须
+    用 bitwise bytes/hash 或同等强度的不可变性证据覆盖 heavy/head/其他 frozen 参数。
+66. runtime summary 的安全字段缺失不是 `false`；正式 Stage-C evidence 必须 exact-key/type/value
+    fail closed，并绑定 production `ChronoTransportRuntime`/source identity，duck typing 不足。
+67. 测试通过后只要 production 或 test 文件 SHA 又变化，旧 GREEN 立即失效；本地 py_compile
+    不能替代最终 exact bytes 的远端行为复跑。
+68. Python 的下划线、module-private token 或 issuer 不是安全边界；只要外部可 import/call 并注入
+    detector、batch、raw rows，就不能用于铸造 formal evidence。
+69. 每个 public formal report/unlock/mint API 必须自行验证 clean detached `R`、random lock，并把
+    in-memory registration 绑定到 `R:path` 的 exact canonical bytes 与 regular Git blob mode；
+    不能依赖某个 launcher 先检查。
+70. 三 seed hierarchical bootstrap 必须按规格把 seed 作为全局 cluster draw；不能在每个 sampled
+    window/video 内重新抽 seed，否则会制造伪独立、收窄 CI，甚至翻转 PASS/FAIL。
+71. formal result/terminal 的“不存在检查 + `os.replace`/`mv`”不是并发安全；必须有独占 run lock
+    与原子 no-clobber，两个同时通过 precheck 的进程不能互相覆盖正式证据。
+72. Gate-4 bootstrap mAP 必须调用仓库官方 OpenTAD evaluator 重建；自写 AP 即使公式近似相同，
+    equal-score 排序等细节仍会改变结果，不能作为 official metric evidence。
+73. Stage-C detector forward 后必须冻结 deploy-visible `latest_signals` 的对象与逻辑字节直到
+    risk forward消费；仅验证risk读取“当前属性”会允许中途替换或`.data`改写伪signals。
+74. success path与overflow path都必须检查所有registered buffers的identity/metadata/逻辑字节；
+    只在overflow比较buffer会让success中的`.data`静默污染永久保留。
+75. Stage-C loss provenance不能只保存forward output的Tensor引用；引用本身可被`.data`改值而继续
+    通过VJP。必须同时冻结forward-boundary的metadata与逻辑值，并在LD/LF/LR审计前重新核对。
+76. test-only 与 formal 不得共享可重标记的 candidate/row representation 和通用 artifact rebuild；
+    只把顶层 schema 改名不足以隔离。正式 builder 必须从固定执行会话直接产生不可由 fixture
+    builder 复用的证据结构，validator 不能充当 raw-row-to-formal 转换器。
+77. formal source validator 自己要求的文件必须全部进入 immutable registration required-source
+    set；运行时再声明额外路径而 registration exact-set 又拒绝 extra，会形成永远不可执行的协议。
+78. 只拒绝 leaf symlink 不够；formal input/output 的每个已有父路径组件都必须拒绝 symlink，且
+    result/terminal 必须独占锁 + 原子 no-clobber，不能用 existence-check 后 `os.replace`。
+79. Stage-C 的普通 Python Tensor 属性也属于可变模型状态；仅保存对象引用、version、shape、
+    stride和值无法发现等值 storage rebind。success audit 与 overflow rollback 都必须绑定并恢复
+    storage identity/offset/size/layout，否则 view/alias 关系可被静默拆开。
+80. registration 的“全部正式 source/test/config/launcher”包含最终 hardening tests；不能只登记
+    production 与功能测试而漏掉独立冻结所依据的边界测试，否则 exact source set 无法代表被批准
+    的完整实现向量。
+81. formal factory 不得读取已被 canonical registration 替代的 flat digest alias；manifest、
+    exposure、checkpoint 等输入必须从 validated nested artifact 取 identity，并有真实入口回归。
+82. Stage-C success buffer audit 不能一边要求 train-mode detector 语义、一边禁止
+    `loss_normalizer` 的规范成功更新；module mode、允许的成功态 buffer 变化及 matched-dense 对齐
+    必须先在规格中唯一化，不能由 runner 静默选择。
+83. 当前 governing Slurm 规则禁止固定物理 GPU index/覆盖 scheduler visibility；不得继续执行旧
+    `CUDA_VISIBLE_DEVICES=1` launcher 或把 local ordinal 当 physical identity。协议文字与 claims
+    必须先修订、独立复核，再生成 I/R。
+84. formal output/lock path 不得先 `.resolve()` 再检查 symlink；这会把指向合法 canonical root 的
+    alias 洗白。必须对 lexical components 逐级 `lstat`，final lock 使用 `O_NOFOLLOW`，cleanup 只可
+    删除与已打开 descriptor 的 device/inode 相同的 lock，不能删除同名替换文件。
+59. Transactional topology 必须绑定有序 `path -> object/type` 与完整 alias graph；无序 Parameter
+    identity set 无法发现同构 ViT blocks 被交换。
+60. core primitives 通过不等于完整实现；formal Gates-2/3、Stage-C/matched-dense runners、Gate-4、
+    launchers 及 validators/tests 全部存在前，不得标记 `implemented`。
+61. Gate-4 mAP bootstrap 必须对每个 resampled seed 在同一 official-video multiset 上从 raw
+    predictions/GT 重建；不得跨 seed 合并 predictions 或 NMS，也不得接受预汇总 mAP 代替。
+62. timing repetitions 只能进入 latency block bootstrap；metric 与 detector-regret 每个 unique
+    official invocation 只计一次，不能把重复计时伪装成额外统计样本。
+85. A formal precheck must not canonicalize caller paths with `resolve()` before rejecting aliases.
+    Validate every existing lexical component with `lstat`, require mandatory files without a
+    missing-tail exception, and reconstruct the registered R-derived output independently before
+    comparing any convenience resolver result.
+86. No-clobber alone is not interruption recovery. A multi-artifact formal phase may reuse an existing
+    object only after exact-byte recomputation and regular-inode verification; checkpoint bytes used for
+    hashing and deserialization must come from the same `O_NOFOLLOW` descriptor. Validate state again
+    inside the writer lock, and reject publication states that cannot arise from the registered order.
+87. A pure Gate-4 statistic function over caller-supplied timing/metric/regret mappings is test-only,
+    even when it recomputes official AP semantics. It must emit an explicitly test-only schema and must
+    refuse `formal=True` until a repository-owned producer binds official population/order, checkpoints,
+    post-Stage-C Gate-3 unlock, frozen static identity, live profiling and clean detached registration R.
+88. `cost_is_measured=True` is a necessary runtime invariant, not cost provenance. Formal Stage C must
+    reject proxy-cost summaries, but registration/runner still has to bind the exact profile artifact,
+    environment, producer identity and requested/executed cost bytes; a test-only cost table cannot satisfy
+    that obligation.
+89. `GITHUB_SNAPSHOT_INCOMPLETE` only proves that the external reviewer obeyed the snapshot gate. When
+    the branch is still the forbidden old SHA, missing-file/spec-hash/code checks are `NOT_EVALUATED`;
+    never cite that response as an implementation verdict or silently audit the old snapshot instead.

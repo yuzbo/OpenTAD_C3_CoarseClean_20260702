@@ -80,6 +80,7 @@ class ChronoTransportRuntime(nn.Module):
         self.transport_age_embedding_cap = int(transport_age_embedding_cap)
         self.max_cache_age = self.hard_cache_validity_age
         self.forced_schedule = forced_schedule
+        self.forced_action_name = "forced_actions"
         self.cache_detach = bool(cache_detach)
         self.profile_sync_cuda = bool(profile_sync_cuda)
         self.allow_unmeasured_cost_for_debug = bool(allow_unmeasured_cost_for_debug)
@@ -172,6 +173,33 @@ class ChronoTransportRuntime(nn.Module):
 
         self.checkpoint_loaded = bool(loaded)
 
+    def set_registered_forced_actions(
+        self,
+        actions: Tensor,
+        *,
+        candidate_name: str,
+    ) -> None:
+        """Bind exact pre-registered action bytes to their candidate identity."""
+
+        if not isinstance(candidate_name, str) or not candidate_name or "\x00" in candidate_name:
+            raise ValueError("registered forced-action candidate_name must be non-empty and NUL-free")
+        normalized = torch.as_tensor(actions, dtype=torch.long, device=self.forced_actions.device)
+        if tuple(normalized.shape) != (
+            self.chunks_per_window,
+            len(self.layer_groups),
+        ):
+            raise ValueError("registered forced actions must have exact [chunks,groups] shape")
+        # Constructing the schedule validates integer action values and the
+        # mandatory first-chunk RECOMPUTE rule before any profiled inference.
+        ChronoSchedule(
+            actions=normalized.unsqueeze(0),
+            layer_groups=self.layer_groups,
+            name=candidate_name,
+        )
+        self.forced_actions = normalized.detach().clone()
+        self.forced_schedule = None
+        self.forced_action_name = candidate_name
+
     @staticmethod
     def _dense_forward(x: Tensor, blocks: Sequence[nn.Module], h: int, w: int) -> Tensor:
         out = x
@@ -242,7 +270,11 @@ class ChronoTransportRuntime(nn.Module):
             requested_actions = actions.clone()
             actions, repairs, first_forced = self._repair_schedule(actions)
             return (
-                ChronoSchedule(actions=actions, layer_groups=self.layer_groups, name="forced_actions"),
+                ChronoSchedule(
+                    actions=actions,
+                    layer_groups=self.layer_groups,
+                    name=self.forced_action_name,
+                ),
                 repairs,
                 first_forced,
                 requested_actions,

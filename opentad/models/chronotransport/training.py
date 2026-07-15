@@ -103,14 +103,15 @@ def validate_stage_b_state_changes(
 
 
 def configure_stage_c(model: nn.Module) -> tuple[str, ...]:
-    return _set_trainable(
-        model,
-        lambda name: (
-            ("adapter" in name and "chronotransport" not in name)
-            or "chronotransport.transport" in name
-            or "chronotransport.risk_predictor" in name
-        ),
-    )
+    """Compatibility entry point backed by the strict r2 object registry.
+
+    Generic parameter-name substring grouping is intentionally disabled.
+    """
+
+    from .stage_c import build_stage_c_parameter_groups
+
+    groups = build_stage_c_parameter_groups(model)
+    return groups.parameter_names
 
 
 def validate_split_partition(

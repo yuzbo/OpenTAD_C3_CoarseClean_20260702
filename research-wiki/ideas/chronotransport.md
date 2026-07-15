@@ -42,6 +42,24 @@ carried by `SLURM_STEP_GPUS`/`SLURM_JOB_GPUS` and a single assigned device is re
 0. The selected contract is physical ID `1` plus local `CUDA_VISIBLE_DEVICES=0`; no currently running
 allocation is reusable. Reserving two GPUs merely to expose local ordinal 1 is rejected as wasteful.
 
+The repaired Gate-1 implementation now uses deep registration v2, exact 23x200 profiling and exact
+manifest-bound record artifacts; remote focused and complete ChronoTransport matrices passed 24/24
+and 203 passed/1 CUDA-only skip, respectively. Separately, Stage-C ownership/AMP rollback reached
+15 passed/1 protected-CUDA skip plus 27/27 compatibility checks. Both slices remain pending independent
+approval and do not unlock profiling, a Gate, Stage C, or a claim. The Stage-C review subsequently
+returned `BLOCK_STAGEC_SLICE`: omitted adapters, wrong optimizer hyperparameters, infinite aggregate
+norm, hidden Python state and caller-asserted action identity all had reproducible fail-open paths. The
+primitive is being repaired; the matched-dense 4,200-update runner remains a separate unimplemented
+surface.
+
+Formal Stage B separately reached remote 20/20 focused and 71/71 compatibility verification with
+exact 140-success/retry/resume semantics, but independent review rejected its formal boundary: an
+arbitrary factory could bypass real OpenTAD construction, the dense checkpoint was not strict-loaded,
+paired replay/order checks were self-reported, and fit-only 140x16 rank-127 baseline generation was
+missing. Gate 1 was likewise rejected until its registration reads and verifies real Git/filesystem,
+manifest, checkpoint and paired-replay evidence instead of accepting self-described hashes. Both
+slices are under repair; no formal experiment is unlocked.
+
 The first bounded repair batch corrected the r2 Stage-B/Stage-C resolved-config path so the overlay
 only reaches `model.backbone.backbone.chronotransport`; added window-level Gate-3 conformal logic
 that reduces each complete `30 x 16` residual matrix to 30 window maxima before rank 28; kept the
@@ -133,3 +151,45 @@ r2 `empirically_supported=false`；`paper_ready=false`；`deploy=false`。审计
 也不推翻历史 `92029ea` 的负结果。
 
 由 `research-wiki/graph/edges.jsonl` 维护。
+
+## r2 当前实现裁决补记（2026-07-13）
+
+当前路线没有被科学判死刑，但实现仍未取得注册资格。Gate-1 oracle-headroom 的科学问题尚未
+真正运行；现在被阻止的是证据链和事务语义，而不是实验结果。已选择继续修复真实 OpenTAD
+full-stack backend、formal repository context、Stage-B phase completion 与 Stage-C transactional
+retry，不接受用 toy callback、caller hash、payload-only validation 或测试通过数替代。
+
+Gate-1 `random_p{2,4,8}` 存在规格缺口：算法 digest 含 seed，但 unsuffixed comparator schema
+没有写明用 3407/3408/3409 中哪一个。推荐最小修订为固定 3407，以保持六 comparator schema、
+与 split root seed/已有 control test 一致，并避免把 3 seeds 作为 multiple-comparator search；
+在用户批准和 spec-only 复核前，正式代码保持缺 seed 即 fail closed。
+
+精确状态：protocol slice `tested+approved`；Gate-1 backend/registration `implemented_under_repair`；
+formal Stage B 与 Stage-C primitive 均为 `tested_then_rejected_under_repair`；
+`experiment_running=false`、`empirically_supported=false`、`paper_ready=false`、`deploy=false`。
+
+## r2 最小协议修订提案（2026-07-15，未批准）
+
+`docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md` 把四个不可唯一
+执行的问题写成 A1--A4：unsuffixed random controls 固定 seed 3407；改为 Slurm 分配单 GPU、
+不覆盖 visibility、进程使用 `cuda:0`；train-mode `loss_normalizer` 仅在成功更新推进并要求两
+arms 精确同轨；Stage C 明确一次 no-grad dense reference 加一次 differentiable counterfactual
+forward，并从同一 batch-two head 结果产生逐窗口 regret target。状态仅为 `discussed/proposed`，
+SHA-256 为 `30371FFC17B02DF615FF0D772B93BADF30CF0A3AB84E36325CBF5A71EFD8469F`；它没有修改冻结 spec，
+也未解锁 runner、I/R 或 formal job。
+
+## Gate-4 证据边界补记（2026-07-15）
+
+纯统计 adjudicator 已降为显式 test-only：caller-owned timing/metric/regret mappings 不再能够用
+`formal=True` 铸造 Gate-4 schema。正式路线仍必须另行实现 repository-owned official-population
+producer、Stage-C/post-Gate3/checkpoint/static/profiler/R 绑定和原子 terminal。当前状态只是
+经 `APPROVE_GATE4_CALLER_EVIDENCE_LOCK_FINAL` 独立复核的 bounded 完整性修复，不是 Gate-4
+implementation completion，也没有产生 formal evidence 或实验结果。
+
+## Stage-C 测量成本证据补记（2026-07-15）
+
+formal Stage-C 不能把 proxy cost 的 `cost_is_measured=False` 当成可接受的布尔字段；该路径已
+RED-first 修复，并经 `APPROVE_STAGEC_MEASURED_COST_FLAG_LOCK` 独立限定复核。测试夹具现在使用
+显式 `_TEST_MEASURED_COST`，只用于验证正常 formal runtime 后的篡改拒绝，不能冒充正式 profile。
+真实路线仍须绑定 profile artifact hash、硬件/环境、producer、requested/executed cost 与 I/R；
+因此状态只是 bounded primitive lock，不是 Stage-C workflow、registration 或实验完成。

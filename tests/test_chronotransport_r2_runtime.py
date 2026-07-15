@@ -105,3 +105,23 @@ def test_r2_default_age_allows_hold_only_through_clip_47():
     assert runtime.latest_summary["action_counts"]["hold"] == 47
     assert runtime.hard_cache_validity_age == 47
     assert runtime.transport_age_embedding_cap == 8
+
+
+def test_registered_forced_actions_preserve_exact_candidate_name_and_bytes():
+    runtime = ChronoTransportRuntime(
+        embed_dims=2,
+        depth=1,
+        chunks_per_window=48,
+        layer_groups=[(0, 1)],
+        signal_dims=3,
+    )
+    actions = torch.full((48, 1), int(ChronoAction.HOLD), dtype=torch.long)
+    actions[0] = int(ChronoAction.RECOMPUTE)
+    runtime.set_registered_forced_actions(
+        actions,
+        candidate_name="motion_topk_p8",
+    )
+    runtime(torch.zeros(48, 1, 2), nn.ModuleList([_Block(None)]), h=1, w=1)
+    assert runtime.latest_schedule.name == "motion_topk_p8"
+    assert torch.equal(runtime.latest_schedule.actions[0].cpu(), actions)
+    assert runtime.latest_summary["schedule_repair_count"] == 0

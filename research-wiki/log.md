@@ -127,3 +127,304 @@ append_only: true
   exposed `SLURM_STEP_GPUS=4` and local `CUDA_VISIBLE_DEVICES=0`. The revised single-GPU contract is
   physical `SLURM_STEP_GPUS`/`SLURM_JOB_GPUS == 1`, `SLURM_GPUS_ON_NODE == 1`, and local
   `CUDA_VISIBLE_DEVICES == 0`. No current allocation is eligible; no training was started.
+- 2026-07-13: The registration-bound Gate-1 repair froze exact 23x200 profiling, manifest-bound 30/30
+  record artifacts, strict requested/executed ledgers, registered factory/environment provenance, and
+  fixed 5000/20260711 adjudication. Remote focused verification passed 24/24 in 58.26 seconds and the
+  complete ChronoTransport regression passed 203 tests with one protected-CUDA-only skip in 315.68
+  seconds. Independent review returned `REVISE_GATE1_SLICE` because factory/Git/source identities,
+  real manifest/checkpoint bytes, paired-replay regret provenance, launcher prechecks and exact 20%
+  arithmetic were not closed. Status is `tested_then_rejected_under_repair`; no Gate result exists.
+- 2026-07-13: Stage-C object-identity ownership and AMP overflow rollback reached remote focused
+  15 passed/1 protected-CUDA skip and compatibility 27/27. The implementation restores registered
+  mutable state while retaining GradScaler backoff and append-only retry audit, and fails after the
+  fourth overflow attempt. Independent review then reproduced omitted-adapter, optimizer-hyperparameter,
+  infinite-norm, hidden-Python-state, and caller-asserted-action fail-open cases and returned
+  `BLOCK_STAGEC_SLICE`. Status is `tested_then_rejected_under_repair`; Stage C remains locked.
+- 2026-07-13: Formal Stage B reached remote focused 20/20 in 117.87 seconds and compatibility 71/71 in
+  199.51 seconds. The implementation covers exact three-seed/140-success exposure, exception-safe paired
+  replay, fixed T+R optimization, strict nonfinite/AMP invalidation, and atomic resume/ledger hashes.
+  Independent review returned `REVISE_STAGEB_SLICE_BEFORE_APPROVAL`: arbitrary factory execution,
+  missing checkpoint strict-load, self-reported replay/order evidence and absent fit-only 140x16
+  baseline remained. Status is `tested_then_rejected_under_repair`; no CUDA smoke, training run,
+  calibration, or Gate evidence is claimed.
+- 2026-07-13: Gate-1 deep-registration repair reached development focused 34/34 in 170.48 seconds, but
+  self-audit kept the slice blocked because the production OpenTAD backend was missing and control
+  action bytes were not regenerated from real inputs. A backend RED-to-GREEN sub-slice later passed
+  6/6 and the external checkpoint-receipt contract passed 1/1. Real GPU invocation and the unresolved
+  unsuffixed random-control seed remain pending; no Gate result exists.
+- 2026-07-13: The second Stage-B formal repair passed frozen focused 32/32 and compatibility 71/71.
+  Independent review still returned `REVISE_STAGEB_FORMAL_SLICE`: formal CLI omitted current I/R/source
+  context validation, and training checkpoint completion preceded the separately written 140x16
+  baseline without an atomic phase-completion marker. The implementation is under repair; no seed was
+  trained.
+- 2026-07-13: Stage-C repair reached focused 19 passed/1 protected-CUDA skip and compatibility
+  59 passed/1 skip. A fresh independent review returned `REVISE_STAGEC_PRIMITIVE_SLICE` after reproducing
+  wrong scheduler base-LR acceptance, no-op success callbacks, caller-hidden TRANSPORT execution,
+  non-leaf autograd version breakage after rollback and an implicit legacy ownership fallback. Task 9,
+  CUDA smoke and Stage C training remain locked.
+- 2026-07-13: The only visible remote GPU job remained 1137541 on physical GPU4; no protected physical
+  GPU1 allocation was available. No login-node training, formal profiler or experiment was started.
+- 2026-07-13: At the user's request, a fresh maximum-strength independent agent completed a line-by-line
+  Gate-1/registration/profile audit and returned `REVISE_GATE1_IMPLEMENTATION_SLICE`. Passing focused
+  tests did not close production backend injection, caller-provided regret, media-timing bias,
+  single-parent R/spec/output/cost identity, or the unresolved random/GPU rules. Independent Stage-B
+  and Stage-C reviews also remained `REVISE`. The prioritized file-level audit was frozen in
+  `OSS_AUDIT.md`; deployment remains locked and no experiment was started.
+- 2026-07-13: A subsequent exact-SHA review returned `REVISE_GATE1_FROZEN`. Test-only raw
+  profile/replay rows could still reach formal schemas, direct adjudication/unlock APIs bypassed formal
+  repository/random-lock context, physical-GPU precheck was fail-open, Git blob/mode binding was
+  incomplete, and result/terminal paths could collide. Gate-1 entered another TDD repair; no profile or
+  Gate artifact exists.
+- 2026-07-13: Stage-B was repaired to bind exact fit windows and registered action hashes, cross-check
+  independent EMA against every EMA alias, use one logical predictor hash, and confine all outputs to
+  the canonical R/seed root. Five adversarial tests passed and the full remote file passed 46/46 in
+  130.27 seconds. Exact-SHA independent review returned `APPROVE_STAGEB_FROZEN`; this is an approved
+  implementation slice, not a training run, and the GPU mapping spec blocker still forbids deployment.
+- 2026-07-13: Stage-C reached remote 41 passed/1 protected-CUDA skip and compatibility 83 passed/1 skip,
+  including a real depth-12 CPU overflow-retry fixture, but exact-SHA independent review returned
+  `REVISE_STAGEC_FROZEN`: action identity was caller supplied and topology checks missed isomorphic block
+  swaps/shared-container alias splits. Repair resumed; physical-GPU1 CUDA remains pending.
+- 2026-07-13: A direct plan-to-files audit confirmed that formal Gates-2/3, Stage-C/matched-dense,
+  Gate-4 and the full launcher/test surfaces are absent. Overall status remains
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`; I/R and experiment deployment remain forbidden.
+- 2026-07-13: Gate-4 pure adjudication began with a remote missing-module RED, then passed 11/11 in
+  40.60 seconds in isolated scratch `/data/run01/sczc063/yuzibo/ct_gate4_red_20260713_c45e2a`.
+  The tested slice uses matched six-order timing blocks, official-video/seed bootstrap, per-seed raw
+  prediction mAP rebuilding without cross-seed NMS, fit-Q1, CT-static regret, cost margin and diagnostic
+  p95/memory/long-block energy/stage reports. It is `tested_under_review`; formal CLI, registered source
+  coverage, Stage-C inputs and Gate-4 experiment evidence remain absent.
+- 2026-07-13: Gate-4 pure adjudication added a raw-evidence report validator and passed 12/12 remotely
+  in 40.47 seconds. This closes report-tamper detection only; registered profiling provenance and formal
+  execution are still absent. Stage-C second repair reproduced five failures, then passed 5/5 targeted,
+  46 passed/1 protected-CUDA skip focused, and 88 passed/1 skip compatibility. Its exact-SHA frozen
+  files are under a new independent audit; no Stage-C training, I/R, or experiment was started.
+- 2026-07-13: Refreshed Slurm allocation evidence: running jobs 1161501/1161502/1137541 expose physical
+  GPU6/GPU4/GPU4 respectively. No physical GPU1 allocation exists, and none was reused for
+  ChronoTransport. Formal CUDA smoke and deployment remain blocked without login-node execution.
+- 2026-07-13: The new independent Stage-C exact-SHA audit reproduced two more P1 fail-open cases despite
+  the 88-test repair run: dummy runtime evidence plus losses disconnected from its graph was accepted,
+  and `.data` silently changed frozen heavy parameter bytes without a version bump. Both returned
+  `SUCCESS`. Stage C reverted to `tested_then_rejected_under_repair`; Task 9 and deployment remain locked.
+- 2026-07-13: The final independent verdict was `REVISE_STAGEC_FROZEN`. A third P1 accepted runtime
+  summaries that omitted forced-dense/fallback/evidence-valid fields and used a duck-typed runtime.
+  The reviewer also preserved the protected-CUDA skip and P2 gaps for success Python state, formal
+  scaler/autocast, direct dependency hashes, and runner-owned canonical-window binding. A third TDD
+  repair was assigned; it may not self-approve or deploy.
+- 2026-07-13: Stage-C third-repair RED reproduced all 16 targeted failures remotely in 53.38 seconds,
+  including separate toy and real-ViT detached-loss SUCCESS paths. Frozen scratch is
+  `/data/run01/sczc063/yuzibo/ct_stagec_red3_20260713_4da91b`; GREEN implementation began afterward.
+- 2026-07-13: Stage-C third-repair final bytes passed 56 focused, 134 eight-file compatibility and 34
+  manifest/protocol tests remotely, with the single protected-GPU1 CUDA GradScaler/autocast skip retained.
+  Exact files are frozen under `/data/run01/sczc063/yuzibo/ct_stagec_green3_20260713`; status is only
+  `tested_under_review`. Frozen-byte hashing closes `.data` mutation but introduces O(frozen bytes)
+  per-attempt overhead that must be measured on the protected GPU.
+- 2026-07-13: That Stage-C GREEN was invalidated before independent review because extending autocast
+  evidence to the audited risk forward changed `stage_c.py`. The updated exact bytes entered a full
+  rerun; prior pass counts are retained as history but cannot certify the current SHA.
+- 2026-07-13: Updated Stage-C SHA `36eb6148...a138` passed the exact eight-file compatibility matrix at
+  134 passed/1 protected-CUDA skip in 107.55 seconds. The slice is `tested_under_review`; no independent
+  approval or physical-GPU1 AMP evidence exists yet.
+- 2026-07-13: Independent Stage-C GREEN3 review then found two more P1 candidates: post-forward
+  `latest_signals` could be replaced or `.data`-modified before the risk forward, and successful updates
+  did not enforce registered-buffer byte equality. Stage C reverted to
+  `tested_then_rejected_under_review`; remote reproductions were requested in a fresh scratch.
+- 2026-07-13: Gate-1 hardening self-verification reached 51 focused pass/1 strict-xfail, 11 profile/
+  adjudication pass and 49 replay/core/pipeline pass. It remains `tested_under_review`, with random seed,
+  GPU mapping and final source expansion intentionally blocked. Gates-2/3 initially reached 10 remote
+  passes, but the module/test bytes changed afterward; the old result was rejected and an exact final-byte
+  remote rerun was required before freezing or independent review.
+- 2026-07-13: Gates-2/3 final bytes (`f7f8340` module, `c213013` CLI, `0e804d8` test) were copied to a
+  fresh remote scratch, rehashed, and passed 10/10 in 43.32 seconds. The slice entered a separate
+  independent audit; no report/unlock or formal execution was created.
+- 2026-07-13: Independent exact-SHA review rejected both newly green-looking slices. Gate 1 retained
+  contextless direct unlock, importable issuer/raw-runner formal minting, and missing binding between the
+  in-memory registration and the exact regular `R` blob. Gates-2/3 lacked independent formal context
+  guards and strong phase provenance; a remote adversarial example showed its seed bootstrap could PASS
+  with CI `[0.0467,0.4867]` where global seed-cluster resampling gives `[-1.2,1.0]` and FAIL. Both await
+  complete final verdicts before another repair; no formal artifacts or jobs were created.
+- 2026-07-13: Gates-2/3 final verdict `REVISE_GATES23_FROZEN` added P0s for caller-written formal replay,
+  text-checkpoint/arbitrary-ledger phase acceptance, and context-free public formal APIs; P1s covered the
+  seed-cluster CI reversal, unbound registration commit, and a stale Gate-1 unlock call signature. A new
+  RED-first repair was assigned; it may not self-approve.
+- 2026-07-13: Gate-1 hardened final verdict `REVISE_GATE1_HARDENED` reported no P0 but four P1 classes:
+  contextless public formal APIs, externally reusable formal construction helpers, missing exact binding
+  from the in-memory registration to the regular `R` blob, and overwrite-capable result/terminal TOCTOU.
+  A different agent received the RED-first repair; random/GPU locks remain unchanged.
+- 2026-07-13: Gate-4 evaluator parity RED found local AP=1.0 versus official OpenTAD AP=0.5 for equal
+  scores. The adjudicator was switched to the official evaluator; the new test passed and the full exact
+  slice passed 13/13 remotely in 232.34 seconds. This remains a pure adjudicator, not formal Gate 4.
+- 2026-07-13: Gate-1 Green2 produced an exact 15-file SHA-256 vector and passed the repair agent's remote
+  focused suite at 57 passed/1 strict xfail plus 8 profile/adjudication compatibility tests. A fresh
+  independent reviewer matched all 15 local bytes before starting review. Integration inspection found
+  the frozen Stage-B CLI still uses the old Gate-1 unlock validator signature; this is a separate
+  deployment blocker requiring RED-first repair and Stage-B re-freeze, not permission to weaken Gate 1.
+- 2026-07-13: Independent Stage-C Green3 probes in
+  `/data/run01/sczc063/yuzibo/tmp/audits/stagec_green3_independent_repro_20260713_a` reproduced three
+  false `SUCCESS` outcomes: replacing `latest_signals`, mutating its logical bytes via `.data`, and
+  mutating a registered model buffer via `.data`. Each changed logical values by max delta 7.0.
+  Two further probes changed detector/feature forward outputs via `.data` and still passed VJP provenance.
+  Green3 is `REVISE_STAGEC_GREEN3`; a five-case RED-first Green4 repair was assigned to a different agent.
+- 2026-07-13: Gates-2/3 round2 synchronized final Gate-1 context plus a canonical 17-file dependency
+  vector (`04e5572b...43cf`). Exact remote results were 16/16 focused and 61 passed/1 strict xfail Gate-1
+  compatibility. Four exact SHA files entered an independent review as `tested_under_review`; no report,
+  unlock, registration, or experiment was created.
+- 2026-07-15: A fresh zero-context review matched Gate1 Green2 15/15 SHA and returned
+  `REVISE_GATE1_GREEN2`: arbitrary-backend/callable profile construction and caller detector/batch replay
+  can cross shared fixture/formal rebuild paths into formally accepted schema. R/current-byte and
+  no-clobber checks passed but do not establish evidence origin. Gate1 entered another RED-first repair.
+- 2026-07-15: Stage-B old Gate1 validator integration was reproduced RED-first, then repaired to pass
+  exact repository root/current R/registration relpath. Remote Stage-B suite passed 47/47 in 132.98s in
+  `/data/run01/sczc063/yuzibo/tmp/audits/stageb_gate1_context_red_20260715_a`; core SHA stayed frozen.
+  A separate exact-SHA review returned `APPROVE_STAGEB_CONTEXT_REPAIR`.
+- 2026-07-15: Read-only Slurm refresh returned no active jobs for `sczc063`; no protected physical-GPU1
+  allocation exists to reuse. No ChronoTransport job was launched.
+- 2026-07-15: Independent exact-byte Gates2/3 review reran 16/16 remotely but returned
+  `REVISE_GATES23_ROUND2`: its four formal files are absent from the registration source set; terminal
+  creation lacks full context/recomputation; two concurrent writers overwrite; and parent-directory
+  symlinks pass. Correct fixed replay, Stage-B 140-row validation and global seed bootstrap were retained.
+- 2026-07-15: Stage-C Green4 expanded the mutation boundary to 12 RED cases, then passed 12/12 targeted
+  and 143 passed/1 protected-CUDA skip in the exact eight-file remote matrix. Candidate SHA are
+  `e00f3730...fa6f` and `eaa047ba...abce` in
+  `/data/run01/sczc063/yuzibo/tmp/audits/r2_stagec_green4_20260715_a`; a different agent began the
+  mandatory exact-SHA review. Status remains `tested_under_independent_review`.
+- 2026-07-15: The independent Green4 review returned `REVISE_STAGEC_GREEN4`: Tensor-valued ordinary
+  Python module state still omitted storage identity, permitting equal-value storage rebind on success
+  or overflow. Explicit forward evidence and registered buffers passed review; Green5 is required.
+- 2026-07-15: Gate1 Green3 removed callable/backend and raw-row formal construction paths, separated
+  fixture/formal row schemas, and passed 25 focused plus 169/1xfail broad remote tests and 30 Gates23
+  compatibility tests. Exact bytes are `tested_under_independent_review`, not self-approved.
+- 2026-07-15: Gates23 round3 repaired report-derived terminal semantics, exclusive lock/no-clobber and
+  component-wise symlink rejection. Remote results were 21/21 focused and 30/30 corrected Gate1
+  compatibility. Registration-vector integration and independent approval remain pending.
+- 2026-07-15: Gates23 round3 received independent `APPROVE_GATES23_ROUND3_CODE` after exact 21/21 and an
+  orchestration probe. Initial registration integration passed its suites but was independently rejected
+  because `test_chronotransport_r2_gate1_hardening.py` remained outside the immutable exact source set;
+  one final RED-first vector repair began.
+- 2026-07-15: Stage-C Green5 reproduced two ordinary Python Tensor storage/alias failures, then passed
+  targeted2, aggregate targeted14, and a 198-pass 12-file remote superset. Exact SHA `d994cefd...3fbe` /
+  `6b9c113f...c837` entered a fresh independent review; physical-GPU1 CUDA/overhead evidence remains open.
+- 2026-07-15: Generated
+  docs/methods/2026-07-15-chronotransport-r2-current-github-pro-line-review-prompt.md for a future
+  GitHub-only Pro line-by-line audit. The public branch was still 797a2df while newer implementation
+  bytes remained local, so the prompt fails closed unless GitHub exposes a newer immutable descendant
+  containing the complete current source/test surfaces and the approved spec hash. No Pro review,
+  registration I/R, formal Gate, Slurm job, experiment result, or claim transition occurred.
+- 2026-07-15: A new independent pre-deployment integrity audit returned
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`. It proved the exact registration vector omitted current
+  Gate hardening/Gate4 files and all future runners, the random-control spec lock makes formal Gate1
+  intentionally unreachable, the Stage-B factory read obsolete flat registration fields, real
+  train-mode ActionFormer `loss_normalizer` conflicts with Stage-C success buffer immutability, and
+  matched-dense/Gate4 formal runners are absent. The current governing Slurm rule also conflicts with
+  the old physical-GPU1/CVD=1 contract. A nested-schema Stage-B regression/fix and current Gate source
+  registration repair were started and passed local static compilation only. No I/R, Gate artifact,
+  Job, result, or claim transition occurred.
+- 2026-07-15: The first post-audit repair slice passed seven targeted remote CPU tests in 57.28 seconds
+  under `/data/run01/sczc063/yuzibo/tmp/audits/ct_r2_integrity_fix_20260715_a`. Coverage is limited to
+  nested Stage-B registration identity, split provenance, no-clobber publication and the exclusive
+  Stage-B writer lock. This is focused implementation evidence, not full-suite approval, I/R, a formal
+  Stage-B run, Gate evidence or a scientific result.
+- 2026-07-15: The complete affected Stage-B and registration suites passed in the same isolated remote
+  worktree: `89 passed, 1 xfailed in 310.86s`, with no failures. The repaired surfaces remain
+  implementation-only evidence; frozen-protocol amendments, Stage-C/matched-dense/Gate-4 runners,
+  complete registration, I/R and all formal jobs remain locked.
+- 2026-07-15: A follow-on Gate-1-hardening/Gates-2/3/Gate-4-adjudicator compatibility matrix passed
+  `43/43` remotely in 295.25 seconds. No formal Gate was invoked and no Gate-4 producer exists yet;
+  the result only rules out regressions across those present test surfaces.
+- 2026-07-15: A later Slurm refresh superseded the earlier empty-queue observation: multiple unrelated
+  DUCA jobs owned by the same account were active or pending. None was a registered ChronoTransport
+  allocation, and no job was reused, modified, cancelled or launched for ChronoTransport.
+- 2026-07-15: Gates-2/3 half-publication recovery was implemented RED-first: existing replay/report is
+  reusable only after exact recomputation produces identical canonical bytes; terminal, mismatched or
+  non-regular artifacts remain fail closed. Remote targeted GREEN was 1/1 and the combined
+  Gates-2/3+registration result was `59 passed, 1 xfailed` in 206.70 seconds. Exact bytes entered
+  independent review; no Gate artifact or claim transition occurred.
+- 2026-07-15: Drafted an explicitly unapproved minimal r2 protocol amendment proposal (SHA-256
+  `30371FFC...8469F`) covering A1 fixed random seed 3407, A2 Slurm-assigned logical `cuda:0`, A3 matched
+  train-mode `loss_normalizer` success/rollback traces, and A4 paired dense-reference/counterfactual
+  per-window regret production. The frozen spec was not edited; status is `discussed/proposed`, and
+  registration/formal execution remain locked pending explicit user approval plus spec-only review.
+- 2026-07-15: Independent exact-byte review returned `APPROVE_GATES23_RECOVERY`, matching runner SHA
+  `4CED5459...616885` and test SHA `10D13457...65AFB9`. It confirmed `_run_locked` integration,
+  canonical-byte-only reuse, terminal refusal, regular-file/symlink enforcement, hard-link no-clobber
+  and exclusive writer locking. This promotes only the bounded repair to code-approved; overall r2
+  registration remains `NOT_READY` and no experiment/claim state changed.
+- 2026-07-15: Refreshed the GitHub-only Pro line-review prompt after the Stage-B/registration and
+  Gates2/3 recovery repairs. Current prompt SHA-256 is
+  `241B3A2EE8BFF2B9983E82C3F5BF7B5DFB600F124457D00423B0E1A388138DDD`; its snapshot guard still
+  stops on public HEAD 797a2df or missing current files. This is review input only, not a Pro response.
+- 2026-07-15: Stage-B formal path/lock RED reproduced two bypasses: a symlink parent was accepted for
+  the writer lock, and pre-validation `.resolve()` laundered a canonical R/seed symlink alias. The
+  bounded lexical-lstat/O_NOFOLLOW/inode-safe cleanup repair passed targeted 5/5 and the full affected
+  Stage-B+registration matrix `91 passed, 1 xfailed` in 291.82 seconds. Exact bytes entered independent
+  review; no formal training or claim transition occurred.
+- 2026-07-15: Independent exact-byte review returned `APPROVE_STAGEB_PATH_LOCK_HARDENING`, matching
+  runner SHA `64B4A5AA...053B3D` and test SHA `1E7BB883...094CA`. It confirmed lexical component
+  checks before resolution, real-loader missing-input refusal, O_EXCL/O_NOFOLLOW, inode-safe lock
+  cleanup, hard-link no-clobber and unchanged formal R/Gate1 context. Only this bounded slice is
+  code-approved; overall registration and every formal job remain locked.
+- 2026-07-15: Refreshed the fail-closed GitHub Pro line-review prompt with the independently approved
+  Stage-B path/lock slice. Current prompt SHA-256 is
+  `B6D21D6073C9DDB3B6352D6DE8C92C893E0112DCFC6E832D80207928AAE335B0`; public GitHub snapshot
+  guard and all no-result/no-approval statements remain unchanged.
+- 2026-07-15: Gate-1 precheck parent-symlink RED was closed with lexical component checks and an
+  independent R-derived output reconstruction. Remote evidence was focused 1/1, complete
+  registration/precheck `38 passed, 1 xfailed`, and Gate-1 hardening/cost `25 passed`. Independent
+  exact-byte review returned `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for precheck SHA
+  `0BE0EA8B...F76808` and test SHA `55916FBD...C10BA`. Only this bounded implementation slice changed
+  to code-approved; formal Gate 1, I/R, all training and all claims remain locked.
+- 2026-07-15: Stage-B partial-publication RED reproduced exact-existing completion/ledger refusal and
+  added dangling periodic/final ledger plus final-pair recovery. The first 98/1xfail candidate was
+  independently rejected for a phase dense-path alias and post-precheck pathname load. Replacement
+  bytes added inside-lock regular-file state checks and O_NOFOLLOW/lstat/fstat inode-bound reads. Final
+  evidence: targeted 5/5, Stage-B+registration 98 passed/1 xfailed, Gate compatibility 44/44, and
+  `APPROVE_STAGEB_PARTIAL_PUBLICATION_RECOVERY` for SHAs `50F4469D...F4F84`,
+  `47342FFE...A7670`, `9BB46DE2...E378D`. No formal job or result was produced.
+- 2026-07-15: Refreshed the fail-closed GitHub Pro full line-review prompt with current Gate1 precheck
+  and Stage-B partial-publication phenomena, the rejected intermediate candidate, final exact SHAs,
+  missing Stage-C/Gate4 workflows, and unapproved A1--A4. Current prompt SHA-256 is
+  `31E95F058603C3610608B8304F20DADE03EE76A1A64F9D2256936FE2D3FB3C1E`; public GitHub still must
+  resolve beyond 797a2df with all current files or the reviewer must return `GITHUB_SNAPSHOT_INCOMPLETE`.
+- 2026-07-15: Read-only `squeue` refresh found 13 running/pending jobs, all named DUCA/P0/S1 rather
+  than ChronoTransport. No CT job was submitted or adopted; those unrelated jobs remain out of scope
+  and untouched. Formal CT execution is still locked by A1--A4 and missing executable workflows.
+- 2026-07-15: Gate-4 caller-raw-dict formal minting was reproduced RED-first, then locked before raw
+  evidence parsing. Non-formal results now use the explicit test-only schema. Remote evidence was
+  focused `1 passed`, forged-recomputed-hash targeted `1 passed in 105.28s`, full Gate-4 `13 passed in
+  242.40s`, and registration-source focused `1 passed`; exact SHAs are `A581D713...B1A75F` /
+  `5C0FFAF3...AB4506E`. Independent review returned
+  `APPROVE_GATE4_CALLER_EVIDENCE_LOCK_FINAL`. This bounded approval created no official evidence
+  producer, formal report, Gate result, registration or experiment.
+- 2026-07-15: Refreshed the GitHub-only Pro prompt with the Gate-4 caller-evidence RED, explicit
+  test-only replacement schema, remote regression counts and candidate hashes. Prompt SHA-256 is now
+  `CE7E008B...59024`; the public GitHub snapshot guard remains unchanged and no Pro review occurred.
+- 2026-07-15: Stage-C formal measured-cost evidence was hardened RED-first. The old validator accepted
+  `cost_is_measured=False`; exact-true enforcement then exposed proxy-cost test fixtures and produced an
+  intentionally retained intermediate full result of `39 failed, 32 passed, 1 skipped`. After binding an
+  explicit test-only measured-cost table, remote focused passed `1/1` and full Stage-C passed `71 passed,
+  1 skipped in 76.60s`. Exact SHAs are `5BDC1862...5577C4` / `C92FED39...3A262D7`; independent review
+  returned `APPROVE_STAGEC_MEASURED_COST_FLAG_LOCK`. This does not provide immutable profile provenance,
+  a formal runner, A3/A4, registration, training or a scientific result.
+- 2026-07-15: Materialized `EXPERIMENT_AUDIT.md/.json` and the required forensic trace under
+  `.aris/traces/experiment-audit/2026-07-15_run01/`. The readiness verdict is `FAIL` because the formal
+  evidence chain and official scope are absent; no fabricated result was detected and no formal result
+  exists. Separate read-only Codex reviewers were used, but cross-model-family independence cannot be
+  attested. The GitHub-only Pro prompt was refreshed with the final Gate4 and Stage-C bounded reviews,
+  current audit files and no-assumption instructions; final prompt SHA-256 is
+  `F693E0DCD748BFA9AB93CB39A56EC0F18A5810AEC45543BF22A821F962C1B9DF`. A fresh `git ls-remote` at
+  2026-07-15T21:07:55+08:00 confirmed that public GitHub still points at stale `797a2df`, so the prompt
+  must return `GITHUB_SNAPSHOT_INCOMPLETE` until latest bytes are published.
+- 2026-07-15: The persistent CT r2 execution goal was marked `blocked` after the same protocol-authority
+  condition recurred across more than three goal turns. All amendment-neutral integrity work is exhausted;
+  A1--A4 remain `proposed_unapproved`, so spec-only freeze/review, runners, I/R, PRECHECK and every formal
+  Slurm stage remain forbidden. This is an authorization/specification block, not a Gate failure or route
+  kill, and it produced no experiment result.
+- 2026-07-15: The user supplied the first GitHub-only Pro response. It returned
+  `GITHUB_SNAPSHOT_INCOMPLETE` after resolving `codex/chronotransport-r2-implementation` to the forbidden
+  old SHA `797a2df...d836ee` with `ahead_by=0` and `behind_by=0`. Missing files, spec SHA and code were
+  explicitly `NOT_EVALUATED_AFTER_FIRST_GATE_FAILURE`; therefore no implementation verdict exists. The
+  verbatim response was archived as source SHA `AF4E4FA6...D691DDE`. No code, Gate or goal state changed.
+- 2026-07-15: Refreshed the GitHub-only Pro prompt to require the archived first snapshot-gate response
+  and to prohibit reuse of its old SHA/incomplete verdict. The next reviewer must fresh-resolve the
+  newly published branch. Current prompt SHA-256 is
+  `1D0E7FC160FFB1E30375BF2EC3BF9E44381EA3BAB1D8BB5DD8EA2249E3D93BF5`; this edit remains review-only
+  and does not unlock A1--A4, registration or experiments.

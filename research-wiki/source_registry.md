@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-13
+updated: 2026-07-15
 ---
 
 # 来源注册表
@@ -80,3 +80,31 @@ updated: 2026-07-13
 SHA256 为 `E4344DAED297F02E23CE355A4B0BBA1845F2C05393820CE04843374AAB6A59AC`。
 本轮新增附件 `bf3c8b10-951f-4765-87d5-53c6ba02b7dd` 已完整归档；其原文件身份见上方
 ChronoTransport r2 Pro 审计条目。
+
+- `sources/2026-07-13-chronotransport-r2-independent-frozen-audit-cycle.md`：当前 exact-SHA
+  Gate-1/Stage-B/Stage-C 独立复审、修复证据、仍缺实施表面与两个规格 blocker 的完整记录。
+  这是代码审计来源，不是 Gate 或实验结果。
+- docs/methods/2026-07-15-chronotransport-r2-current-github-pro-line-review-prompt.md：
+  面向下一次 GitHub-only Pro 全量逐行审计的 fail-closed prompt。它要求先把远端分支解析为
+  新的 immutable SHA；若仍为 797a2df、缺最新实现文件或 spec hash 不符则停止。该文件只是
+  待提交的审查输入，不是 reviewer response、代码批准、Gate 结果或实验事实。2026-07-15
+  latest-current SHA-256 为
+  `1D0E7FC160FFB1E30375BF2EC3BF9E44381EA3BAB1D8BB5DD8EA2249E3D93BF5`；早先
+  `F693E0DC...C1B9DF` 已被首次 snapshot-gate response 的必读绑定与 fresh-resolve 禁复用规则取代。
+- `sources/2026-07-15-chronotransport-r2-predeployment-integrity-audit.md`：当前 dirty bytes 的
+  独立只读 pre-deployment 审计；裁决为 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`，记录
+  registration/reachability、Stage-C/matched-dense、Gate4 与 Slurm 规格冲突。不是 test rerun、
+  Gate 或实验结果。
+- `../EXPERIMENT_AUDIT.md` / `../EXPERIMENT_AUDIT.json`：2026-07-15 experiment-audit 技能的
+  人工/机器可读 readiness 报告，SHA-256 分别为
+  `EC576F6EA370C3DBF3A44B284D435FD286559F20909E6A754A660CA3FE79D742` 与
+  `8C96408455D75924F057BA97B3A11D6A6BC1DB14B13E8BE2BC2A9B497F46B40D`。总体 `FAIL` 表示正式
+  证据链不可执行，不表示发现了伪造结果；当前确实没有正式结果。
+- `../.aris/traces/experiment-audit/2026-07-15_run01/`：上述独立 reviewer request/response 与
+  metadata 的 forensic trace。reviewers 为分离的只读 Codex agents，未重跑测试、未编辑、未启动
+  Job；无法证明不同模型家族，仍须使用 GitHub-only Pro prompt 做外部复核。
+- `sources/2026-07-15-chronotransport-r2-github-pro-snapshot-gate-response.md`：用户提供的首次
+  GitHub-only Pro 返回，SHA-256
+  `AF4E4FA612671F426D7E9316434F60B48A14A26EE034D5DDDB65FF489D691DDE`。裁决仅为
+  `GITHUB_SNAPSHOT_INCOMPLETE`：远端分支仍等于禁止使用的 `797a2df`，因此 reviewer 在第一门
+  停止，未检查缺失文件、spec hash 或任何代码。它证明 prompt fail-closed，不是实现审查结果。

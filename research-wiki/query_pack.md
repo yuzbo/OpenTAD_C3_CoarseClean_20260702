@@ -6,6 +6,25 @@ max_chars: 8000
 
 # DUCA Query Pack
 
+## 2026-07-15 ChronoTransport integrity delta
+
+- Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
+  registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
+  verdict `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for exact SHAs `0BE0EA8B...F76808` and
+  `55916FBD...C10BA`.
+- This did not run Gate 1, create I/R, approve A1--A4, launch training, or generate scientific
+  evidence. Registration remains `NOT_READY`.
+- Stage-B partial-publication recovery is also `tested_and_bounded_code_approved` after one independently
+  rejected candidate: final exact SHAs `50F4469D...F4F84`, `47342FFE...A7670`, `9BB46DE2...E378D`;
+  final remote matrices 98 passed/1 protected xfail and 44/44; verdict
+  `APPROVE_STAGEB_PARTIAL_PUBLICATION_RECOVERY`. This is implementation evidence only.
+- Latest read-only Slurm refresh found only unrelated DUCA/P0/S1 jobs; no ChronoTransport job exists
+  to monitor or reuse, and none was launched.
+- 首次 GitHub-only Pro 调用正确返回 `GITHUB_SNAPSHOT_INCOMPLETE`：公开分支解析为
+  `797a2df8d00560c8f7a7f66c13e95bb5b0d836ee`，与被禁止的旧快照 identical。reviewer 按第一门
+  停止，未读取代码、未检查文件/spec hash，也未给实现裁决。下一次 Pro 审查必须等用户明确授权
+  发布新的 immutable review snapshot；该 snapshot 不能冒充 I 或 R。
+
 ## 项目方向
 
 任务是离线 TAD 的高效时序计算，不是流式/因果 Online TAD。最终目标是任务感知
@@ -36,10 +55,69 @@ DUCA 当前形态：全窗口低成本 trainable C3/official-ASFormer coarse pro
   `CT-P3R-3S` bounded appeal 已冻结并通过 spec-only review：commit `e4422f5`、SHA-256
   `87FA305CCAFC3A29176C3971F593489F86EDD23A4C02C1BFBDAE4144FCF34CF8`，状态仅为
   `spec_approved`。
-- r2 当前只有局部实现和项目报告的 110-test subset；固定快照 `4b07020` 的外部 Pro 源码
-  审计维持 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`：七项既有 blocker 全部成立，并新增
-  config overlay 错层与 Gate-3 `30×16` conformal 展平两个 P0。registration 为 `NOT_READY`；
-  禁止 I/R、formal profile、Gate 1、新 Stage-B seeds、Stage C/Gate 4；没有 r2 实验事实。
+- r2 protocol slice 已独立批准并提交为 `33378af`，但完整实现仍是
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。formal Stage B 获 `APPROVE_STAGEB_FROZEN`；Gate 1
+  对上一冻结版返回 `REVISE_GATE1_FROZEN`，正在修复 test/formal 隔离、R/random lock、Git blob
+  与 marker 合同。Stage C 第二轮修复虽远端通过 88 tests/1 protected-CUDA skip，但新独立
+  审计又复现 detached dummy-forward loss 与 `.data` frozen-heavy mutation 两个 P1，状态退回
+  `tested_then_rejected_under_repair`；第三轮候选曾远端 56 focused +134 compatibility +34 protocol
+  全绿（另1 protected-CUDA skip）；risk-forward autocast 加固后的最终SHA虽重跑134/1skip，独立
+  审计仍发现 latest_signals 可被替换/`.data`改写及success buffer字节未约束两个P1，退回
+  `tested_then_rejected_under_repair`；三个远端真实成功步复现均错误返回 `SUCCESS`，逻辑值差异
+  max=7.0。Green4 虽远端12/12、兼容143/1skip，独立审核仍发现普通Python Tensor属性未绑定
+  storage identity，返回 `REVISE_STAGEC_GREEN4`。Green5 已RED复现并远端targeted14/14、12-file
+  superset 198/1skip，正在独立复核。
+  Gate-4 纯裁决器切换官方 evaluator
+  后远端 13/13，
+  但 formal profiler/CLI/launcher、Stage-C/matched-dense runners 与完整 provenance 仍未闭环。
+  Gate-1 Green3 已隔离fixture/formal结构并移除caller backend/raw replay路径，远端focused 25、广域
+  169/1xfail、Gates23兼容30/30，状态仅 `tested_under_independent_review`。Stage-B context repair
+  远端47/47并获独立批准。Gates2/3 round3 已修复terminal、no-clobber和逐级symlink，远端21/21
+  与Gate1兼容30/30并获独立 code approval。首轮registration加入4个Gates23路径后仍漏掉Gate1
+  hardening test，被独立退回；最终source-vector修复中，没有 Gate report/unlock。
+  Gate-4 的equal-score RED为自写AP 1.0 vs 官方0.5；当前仍只属pure adjudicator，formal
+  profiler/provenance未完成。
+  2026-07-15 pre-deployment 独立审计进一步确认：Stage-B factory/CLI 读取过期 flat
+  registration 字段，真实 train-mode ActionFormer `loss_normalizer` 与当前 Stage-C success
+  buffer 不变式冲突，顶层 Tensor/per-window regret 合同未接入真实 detector，matched-dense 与
+  Gate4 formal runners 缺失，registration source vector 不完整。Stage-B nested-schema、
+  no-clobber/writer-lock 与当前 Gate source-vector 修复已在远端隔离 worktree 通过
+  `89 passed, 1 xfailed` 完整受影响套件，并通过 `43/43` Gate 兼容性矩阵；这些只属于
+  implementation regression evidence。
+  Gates2/3 partial-publication recovery 另通过 `59 passed, 1 xfailed`，并获独立
+  `APPROVE_GATES23_RECOVERY`；该批准只覆盖 exact-byte resume/no-clobber 小切片。
+  Stage-B formal path/lock 又 RED 复现 symlink-parent 与 pre-validation `.resolve()` alias
+  laundering；修复后 targeted 5/5、Stage-B+registration `91 passed, 1 xfailed`，并获独立
+  `APPROVE_STAGEB_PATH_LOCK_HARDENING`；批准仅覆盖该 bounded integrity slice。
+  registration 为 `NOT_READY`；禁止 I/R、formal Gate 1、新 Stage-B seeds、Stage C/Gate 4；
+  没有 r2 实验事实。
+- Gate-1 unsuffixed `random_p{2,4,8}` 的 digest seed 在批准规格中遗漏。推荐最小修订为固定
+  3407、保持六 comparator schema；在用户批准/spec-only review 前代码必须缺 seed fail closed。
+- 2026-07-15 后续远端刷新发现当前用户有多项与 ChronoTransport 无关的 DUCA Slurm jobs；
+  不得复用或干扰。没有已登记的 ChronoTransport allocation/job，也未启动 ChronoTransport
+  训练。
+- 当前 governing remote rule 禁止固定物理 GPU index 或覆盖 Slurm 的
+  `CUDA_VISIBLE_DEVICES`，与已批准 r2 的 physical-GPU1/CVD=1 文本冲突；在最小规格修订和
+  spec-only review 前不得启动 formal Slurm job。
+- 已形成未批准的 A1--A4 最小修订提案：
+  `docs/methods/2026-07-15-chronotransport-r2-minimal-protocol-amendment-proposal.md`，SHA-256
+  `30371FFC17B02DF615FF0D772B93BADF30CF0A3AB84E36325CBF5A71EFD8469F`。提案推荐 random seed
+  3407、Slurm 分配单设备并使用逻辑 `cuda:0`、matched train-mode `loss_normalizer` trace，及
+  Stage C 一次 no-grad dense 加一次 differentiable counterfactual forward；状态仅为
+  `proposed_unapproved`，没有改变任何 execution lock。
+- Gate-4 caller-raw-dict formal minting 已 RED-first 封死：当前 `formal=True` 在统计前拒绝，
+  `formal=False` 只生成 `chronotransport-r2-gate4-test-only-v1`。远端 focused 为 `1 passed`，
+  forged-payload-with-recomputed-hash targeted 为 `1 passed in 105.28s`，完整 Gate-4 synthetic
+  回归为 `13 passed in 242.40s`，registration source-vector focused 为 `1 passed`。独立 exact-byte
+  review 返回 `APPROVE_GATE4_CALLER_EVIDENCE_LOCK_FINAL`；该批准只覆盖 test-only/formal 边界，
+  不是 Gate-4 producer、Gate 结果或正式证据，Stage C/matched-dense/Gate-4 workflow 仍缺失。
+- Stage-C formal summary 的 `cost_is_measured` 已从“只要求 bool 类型”收紧为必须逐值 `True`。
+  RED 先复现 `False` 未被拒绝；首次全回归因旧夹具仍用 proxy cost 出现 `39 failed, 32 passed,
+  1 skipped`，随后夹具显式绑定 test-only measured-cost table。最终远端 focused 为 `1 passed,
+  71 deselected`，全文件为 `71 passed, 1 skipped in 76.60s`；exact SHA 为 stage-c
+  `5BDC1862...5577C4` / test `C92FED39...3A262D7`。独立复核返回
+  `APPROVE_STAGEC_MEASURED_COST_FLAG_LOCK`。该批准只锁定布尔证据，不等于 immutable registered
+  cost-profile provenance；后者仍须由缺失的正式 runner/registration 绑定。
 - 暂不实现 physical-grid；selected-axis 几何风险保持公开，等待决定性对照。
 - 不再增加 selector head/loss，先完成强基线、成本和 hard/soft 对齐。
 

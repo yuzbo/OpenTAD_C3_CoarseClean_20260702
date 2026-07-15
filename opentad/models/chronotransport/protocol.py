@@ -912,6 +912,33 @@ def stage_c_exposure_matrix() -> dict[int, tuple[dict[str, int], ...]]:
     }
 
 
+def stage_c_batch_exposures(
+    seed: int, successful_update: int
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Return the two canonical r2 exposures for one successful Stage-C update."""
+
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed not in R2_SEEDS:
+        raise ValueError("Stage C seed must be one of the three frozen r2 seeds")
+    if (
+        isinstance(successful_update, bool)
+        or not isinstance(successful_update, int)
+        or not 0 <= successful_update < 4200
+    ):
+        raise ValueError("Stage C successful update must be an integer in [0, 4199]")
+    rows = []
+    for batch_position in range(2):
+        exposure = 2 * successful_update + batch_position
+        rows.append(
+            {
+                "successful_update": successful_update,
+                "batch_position": batch_position,
+                "window_exposure_ordinal": exposure,
+                "candidate": _candidate(seed, exposure),
+            }
+        )
+    return rows[0], rows[1]
+
+
 def validate_stage_c_exposures(
     matrix: Mapping[int | str, Sequence[Mapping[str, int]]],
     *,
