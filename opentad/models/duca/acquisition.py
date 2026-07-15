@@ -1716,12 +1716,21 @@ class DucaAcquisitionAdapter(nn.Module):
                     temperature=self.structured_temperature,
                     training=True,
                 )
-                soft = surrogate.soft_occupancy[0] * valid_row[0].to(surrogate.soft_occupancy.dtype)
-                hard_dense = dense_mask.to(dtype=soft.dtype)
-                selection_st = hard_dense + soft - soft.detach()
                 slots = surrogate.soft_slot_assignment[0] * valid_row[0][None, :].to(
                     surrogate.soft_slot_assignment.dtype
                 )
+                active_slots = (
+                    torch.arange(max_slots, device=slots.device) < effective_k
+                )[:, None]
+                slot_mass = slots.sum(dim=1, keepdim=True)
+                slots = torch.where(
+                    active_slots,
+                    slots / slot_mass.clamp_min(torch.finfo(slots.dtype).tiny),
+                    torch.zeros_like(slots),
+                )
+                soft = slots.sum(dim=0)
+                hard_dense = dense_mask.to(dtype=soft.dtype)
+                selection_st = hard_dense + soft - soft.detach()
             else:
                 soft = dense_mask.to(dtype=center_scores.dtype)
                 selection_st = soft

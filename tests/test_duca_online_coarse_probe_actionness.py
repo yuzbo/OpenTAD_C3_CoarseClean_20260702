@@ -278,6 +278,22 @@ def test_structured_surrogate_graph_is_invariant_for_normal_and_all_short_masks(
     assert signatures[0] == signatures[1]
 
 
+def test_direct_all_short_structured_slots_keep_active_mass_contract() -> None:
+    selector = _selector(selector_variant="direct_boundary")
+    selector.train()
+    out = selector.forward_train(
+        inputs=torch.randn(1, 1, 3, 8, 16, 16),
+        masks=torch.tensor([[1, 1, 1, 0, 0, 0, 0, 0]], dtype=torch.bool),
+        metas=[{"video_name": "direct-short"}],
+        gt_segments=[torch.tensor([[0.0, 2.0]])],
+        gt_labels=[torch.tensor([1])],
+    )
+    slots = out["selector_outputs"]["structured_soft_slot_assignment"]
+    mass = slots.sum(dim=-1)
+    assert torch.allclose(mass[:, :3], torch.ones_like(mass[:, :3]), atol=1.0e-5)
+    assert torch.equal(mass[:, 3:], torch.zeros_like(mass[:, 3:]))
+
+
 def test_online_selector_pads_physical_slots_for_short_valid_window() -> None:
     selector = _selector()
     inputs = torch.randn(1, 1, 3, 8, 16, 16)
