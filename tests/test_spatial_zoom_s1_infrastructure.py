@@ -557,6 +557,59 @@ def test_s1_source_config_is_not_trainable_until_manifest_bound(tmp_path: Path) 
         validate_bound_s1_training_config(tampered, seed=3407)
 
 
+def test_s1_runtime_components_receive_copies_of_the_bound_config(
+    tmp_path: Path,
+) -> None:
+    annotation = _write_annotation(tmp_path)
+    manifest = build_s1_manifest(annotation)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    bound = bind_s1_training_config(
+        source_config_path=ROOT / CONFIG_PATHS[160],
+        manifest_path=manifest_path,
+        annotation_path=annotation,
+        seed=3407,
+        work_dir=tmp_path / "run",
+    )
+    binding = validate_bound_s1_training_config(bound, seed=3407)
+
+    optimizer_cfg = copy.deepcopy(bound.optimizer)
+    scheduler_cfg = copy.deepcopy(bound.scheduler)
+    optimizer_cfg.pop("type")
+    scheduler_cfg.pop("type")
+    scheduler_cfg.warmup_epoch *= 80
+    inference_cfg = copy.deepcopy(bound.inference)
+    post_processing_cfg = copy.deepcopy(bound.post_processing)
+    inference_cfg["folder"] = str(tmp_path / "outputs")
+    post_processing_cfg.sliding_window = True
+    validate_bound_s1_training_config(bound, seed=3407)
+
+    metadata = build_s1_checkpoint_metadata(
+        bound,
+        seed=3407,
+        epoch=0,
+        successful_updates=1,
+        train_batches_per_epoch=1,
+    )
+    assert metadata["bound_config_sha256"] == canonical_sha256(bound.to_dict())
+    assert metadata["manifest_sha256"] == binding["manifest_sha256"]
+
+    train_source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
+    assert "build_optimizer(copy.deepcopy(cfg.optimizer)" in train_source
+    assert "copy.deepcopy(cfg.scheduler), optimizer" in train_source
+    assert "build_s1_checkpoint_metadata(\n                        cfg," in train_source
+    test_engine_source = (
+        ROOT / "opentad" / "cores" / "test_engine.py"
+    ).read_text(encoding="utf-8")
+    assert "inference_cfg = copy.deepcopy(cfg.inference)" in test_engine_source
+    assert (
+        "post_processing_cfg = copy.deepcopy(cfg.post_processing)"
+        in test_engine_source
+    )
+    assert 'cfg.inference["folder"] =' not in test_engine_source
+    assert "cfg.post_processing.sliding_window =" not in test_engine_source
+
+
 def test_checkpoint_metadata_rejects_a_rehashed_wrong_pretrained_identity(
     tmp_path: Path,
 ) -> None:

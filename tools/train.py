@@ -1,3 +1,4 @@
+import copy
 import os
 import sys
 
@@ -221,8 +222,10 @@ def main():
         scaler = None
 
     # build optimizer and scheduler
-    optimizer = build_optimizer(cfg.optimizer, model, logger)
-    scheduler, max_epoch = build_scheduler(cfg.scheduler, optimizer, len(train_loader))
+    optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
+    scheduler, max_epoch = build_scheduler(
+        copy.deepcopy(cfg.scheduler), optimizer, len(train_loader)
+    )
 
     # override the max_epoch
     max_epoch = cfg.workflow.get("end_epoch", max_epoch)

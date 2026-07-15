@@ -40,19 +40,21 @@ def eval_one_epoch(
         current_dict = copy.deepcopy(model.state_dict())
         model.load_state_dict(model_ema.module.state_dict())
 
-    cfg.inference["folder"] = os.path.join(cfg.work_dir, "outputs")
-    if cfg.inference.save_raw_prediction:
-        create_folder(cfg.inference["folder"])
+    inference_cfg = copy.deepcopy(cfg.inference)
+    post_processing_cfg = copy.deepcopy(cfg.post_processing)
+    inference_cfg["folder"] = os.path.join(cfg.work_dir, "outputs")
+    if inference_cfg.save_raw_prediction:
+        create_folder(inference_cfg["folder"])
 
     # external classifier
-    if "external_cls" in cfg.post_processing:
-        if cfg.post_processing.external_cls != None:
-            external_cls = build_classifier(cfg.post_processing.external_cls)
+    if "external_cls" in post_processing_cfg:
+        if post_processing_cfg.external_cls != None:
+            external_cls = build_classifier(post_processing_cfg.external_cls)
     else:
         external_cls = test_loader.dataset.class_map
 
     # whether the testing dataset is sliding window
-    cfg.post_processing.sliding_window = isinstance(
+    post_processing_cfg.sliding_window = isinstance(
         test_loader.dataset, SlidingWindowDataset
     )
 
@@ -68,8 +70,8 @@ def eval_one_epoch(
                 results = model(
                     **data_dict,
                     return_loss=False,
-                    infer_cfg=cfg.inference,
-                    post_cfg=cfg.post_processing,
+                    infer_cfg=inference_cfg,
+                    post_cfg=post_processing_cfg,
                     ext_cls=external_cls,
                 )
 
@@ -80,7 +82,7 @@ def eval_one_epoch(
             else:
                 result_dict[k] = v
 
-    result_dict = gather_ddp_results(world_size, result_dict, cfg.post_processing)
+    result_dict = gather_ddp_results(world_size, result_dict, post_processing_cfg)
 
     # load back the normal model dict
     if model_ema != None:
@@ -115,7 +117,7 @@ def eval_one_epoch(
                 cfg=cfg,
                 epoch=int(epoch),
             )
-        if cfg.post_processing.save_dict:
+        if post_processing_cfg.save_dict:
             result_path = os.path.join(cfg.work_dir, "result_detection.json")
             with open(result_path, "w") as out:
                 json.dump(result_eval, out)
