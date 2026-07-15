@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from opentad.models.dense_heads.anchor_free_head import AnchorFreeHead
+from opentad.models.utils.phystime_geometry import geometry_from_metas
 from opentad.models.utils.native_temporal_geometry import align_native_tubelet_geometry
 
 
@@ -54,6 +55,26 @@ def make_metas(valid_counts=(4, 3)):
                 ],
                 "phystime_patch_embed_compute_atom_mask": [[True, True], [True, True]],
                 "phystime_patch_embed_padding_repeat_count": 4 - valid_count,
+                "phystime_timestamps_sec": [float(i) + 0.5 for i in range(valid_count)],
+                "phystime_support_intervals_sec": [
+                    [float(i), float(i) + 1.0] for i in range(valid_count)
+                ],
+                "phystime_duration_sec": 4.0,
+                "phystime_domain_start_sec": 0.0,
+                "phystime_domain_end_sec": 4.0,
+                "phystime_native_token_timestamps_sec": [
+                    float(
+                        sum(float(i) + 0.5 for i in range(2 * token, min(2 * token + 2, valid_count)))
+                    )
+                    / float(max(min(2 * token + 2, valid_count) - 2 * token, 1))
+                    for token in range(native_valid)
+                ],
+                "phystime_patch_embed_support_envelopes_sec": [
+                    [float(2 * token), float(min(2 * token + 2, valid_count))]
+                    if 2 * token < valid_count
+                    else [float(valid_count - 1), float(valid_count)]
+                    for token in range(2)
+                ],
                 "phystime_g1a_axis_positions_sec": list(range(native_valid)),
                 "selected_dense_indices": list(range(valid_count)),
                 "phystime_subsample_uses_gt": False,
@@ -90,6 +111,33 @@ def test_align_native_tubelet_geometry_reduces_raw_mask_without_interpolating_fe
     assert audit["base_candidate_valid_counts"] == [2, 2]
     assert audit["candidate_mask_policy"] == "semantic_anchor_prefix"
     assert metas[0]["phystime_native_token_count"] == 2
+    assert metas[0]["phystime_support_provenance"] == "native_patch_embed_input_envelopes"
+    assert len(metas[0]["phystime_timestamps_sec"]) == 2
+
+
+def test_align_native_tubelet_geometry_rewrites_projection_metadata_to_j_axis():
+    features = torch.randn(1, 8, 2)
+    raw_masks = torch.tensor([[1, 1, 1, 0]], dtype=torch.bool)
+
+    _aligned, token_masks, metas, _audit = align_native_tubelet_geometry(
+        features,
+        raw_masks,
+        make_metas((3,))[:1],
+        tubelet_size=2,
+        expected_raw_count=4,
+        expected_token_count=2,
+        expected_transformer_depth=2,
+        expected_adapter_indices=[0, 1],
+        expected_adapter_kernel_size=3,
+        expected_adapter_dilation=1,
+    )
+    geometry = geometry_from_metas(metas, token_masks, dtype=torch.float32, device=torch.device("cpu"))
+
+    assert token_masks.tolist() == [[True, True]]
+    assert geometry["timestamps_sec"].shape == (1, 2)
+    assert geometry["timestamps_sec"][0].tolist() == pytest.approx([1.0, 2.5])
+    assert geometry["support_intervals_sec"][0].tolist() == pytest.approx([[0.0, 2.0], [2.0, 3.0]])
+    assert metas[0]["phystime_raw_timestamps_sec"] == pytest.approx([0.5, 1.5, 2.5])
 
 
 def test_align_native_tubelet_geometry_zeros_invalid_backbone_tokens_before_temporal_convolution():

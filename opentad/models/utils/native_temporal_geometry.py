@@ -1,3 +1,5 @@
+import copy
+
 import torch
 
 
@@ -54,6 +56,7 @@ def align_native_tubelet_geometry(
     semantic_anchor_masks = raw_masks.reshape(raw_masks.shape[0], token_count, tubelet_size).any(dim=-1)
     raw_valid_counts = []
     native_valid_counts = []
+    aligned_metas = []
     for sample_idx, meta in enumerate(metas):
         if not isinstance(meta, dict):
             raise ValueError("native temporal metadata entries must be dictionaries")
@@ -133,6 +136,25 @@ def align_native_tubelet_geometry(
         raw_positions = meta.get("selected_dense_indices")
         if raw_positions is None or len(raw_positions) != raw_valid:
             raise ValueError("K raw selected positions must remain separate from J native token positions")
+        native_timestamps = meta.get("phystime_native_token_timestamps_sec")
+        native_supports = meta.get("phystime_patch_embed_support_envelopes_sec")
+        if native_timestamps is None or len(native_timestamps) != native_valid:
+            raise ValueError("native temporal token timestamps must match the valid native token count")
+        if native_supports is None or len(native_supports) != token_count:
+            raise ValueError("native temporal patch-input support envelopes must cover every J token")
+
+        aligned_meta = copy.deepcopy(meta)
+        aligned_meta["phystime_raw_timestamps_sec"] = list(meta.get("phystime_timestamps_sec", ()))
+        aligned_meta["phystime_raw_support_intervals_sec"] = list(
+            meta.get("phystime_support_intervals_sec", ())
+        )
+        aligned_meta["phystime_timestamps_sec"] = list(native_timestamps[:native_valid])
+        aligned_meta["phystime_support_intervals_sec"] = [
+            list(item) for item in native_supports[:native_valid]
+        ]
+        aligned_meta["phystime_support_provenance"] = "native_patch_embed_input_envelopes"
+        aligned_meta["phystime_support_exact_for_final_feature"] = False
+        aligned_metas.append(aligned_meta)
         raw_valid_counts.append(raw_valid)
         native_valid_counts.append(native_valid)
 
@@ -162,4 +184,4 @@ def align_native_tubelet_geometry(
         ],
         "lineage_evidence_level": "exact_patch_inputs_plus_structural_receptive_field_upper_bound",
     }
-    return aligned_features, candidate_masks, metas, audit
+    return aligned_features, candidate_masks, aligned_metas, audit

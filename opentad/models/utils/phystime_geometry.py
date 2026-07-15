@@ -6,6 +6,7 @@ import torch
 _AUDITED_SUPPORT_PROVENANCE = {
     "original_feature_ownership_cells",
     "original_raw_dense_cells",
+    "native_patch_embed_input_envelopes",
     "contiguous_decoded_clips",
     "synthetic_explicit_support",
 }
