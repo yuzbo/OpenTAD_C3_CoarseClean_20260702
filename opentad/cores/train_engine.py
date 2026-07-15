@@ -120,10 +120,17 @@ def _parameter_probe_group(name):
     normalized = name.removeprefix("module.")
     if normalized.startswith("backbone."):
         return "backbone"
-    if normalized.startswith("frame_selector.actionness_source"):
+    if normalized.startswith((
+        "frame_selector.raw_actionness_source.",
+        "frame_selector.actionness_source.",
+    )):
         return "coarse_probe"
     if normalized.startswith("frame_selector."):
         return "selector"
+    if normalized.startswith("projection."):
+        return "projection"
+    if normalized.startswith("neck."):
+        return "neck"
     if normalized.startswith("rpn_head."):
         return "detector_head"
     return "other"
@@ -158,7 +165,7 @@ def _record_training_probe_backward(state, model, cost):
         if not bool(torch.isfinite(parameter.grad.detach()).all().item()):
             gradients_finite = False
     state["gradient_seen_names"].update(grad_names)
-    if gradients_finite:
+    if grad_names and gradients_finite:
         state["finite_gradient_steps"] += 1
 
 

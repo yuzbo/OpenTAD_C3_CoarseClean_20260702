@@ -20,6 +20,7 @@ workflow = dict(
     end_epoch=1,
     max_train_iters=10,
     disable_checkpoint=True,
+    require_training_probe_context=True,
     training_probe_json=os.environ.get(
         "DUCA_TRAINING_PROBE_JSON", "logs/duca_transition_beta0_p0_ddp_pilot.json"
     ),

@@ -209,6 +209,8 @@ def validate_post_run_evidence(
         "shared_protocol_sha256": "shared_protocol_sha256",
         "seed": "seed",
     }
+    if "ddp_pilot_sha256" in expected:
+        manifest_fields["ddp_pilot_sha256"] = "ddp_pilot_json_sha256"
     for evidence_key, manifest_key in manifest_fields.items():
         _require(
             run_manifest.get(manifest_key) == expected[evidence_key],
@@ -310,38 +312,20 @@ def validate_suite(
     if require_ddp_pilot:
         _require(ddp_pilot_json is not None, "formal P0 suite requires a DDP pilot artifact")
     if ddp_pilot_json is not None:
-        pilot_path = Path(ddp_pilot_json).resolve()
-        _require(pilot_path.is_file(), f"DDP pilot artifact is missing: {pilot_path}")
-        pilot_payload = json.loads(pilot_path.read_text(encoding="utf-8"))
-        _require(pilot_payload.get("ok") is True, "DDP pilot must declare ok=true")
-        _require(
-            pilot_payload.get("schema_version") == "duca_p0_ddp_pilot_suite_v1",
-            "DDP pilot schema mismatch",
+        from tools.bata.validate_duca_transition_only_p0_ddp_pilot import (
+            validate_pilot_artifact,
         )
-        _require(pilot_payload.get("git_commit") == commit, "DDP pilot commit is stale")
-        _require(
-            pilot_payload.get("shared_protocol_sha256") == protocol_sha256,
-            "DDP pilot shared protocol is stale",
+
+        ddp_pilot = validate_pilot_artifact(
+            ddp_pilot_json,
+            repo_root=root,
+            expected_commit=commit,
+            expected_protocol_sha256=protocol_sha256,
+            expected_core_gate_sha256=core_gate["sha256"],
         )
-        _require(
-            pilot_payload.get("core_gate_json_sha256") == core_gate["sha256"],
-            "DDP pilot core-gate binding is stale",
-        )
-        pilot_variants = pilot_payload.get("variants")
-        _require(isinstance(pilot_variants, list), "DDP pilot variant evidence is missing")
-        _require(
-            [item.get("variant") for item in pilot_variants] == list(VARIANT_ORDER),
-            "DDP pilot did not cover the exact four-arm order",
-        )
-        _require(
-            all(int(item.get("successful_optimizer_steps", 0)) == 10 for item in pilot_variants),
-            "DDP pilot did not complete ten optimizer steps per arm",
-        )
-        ddp_pilot = {
-            "path": str(pilot_path),
-            "sha256": _sha256(pilot_path),
-            "git_commit": commit,
-        }
+        _require(ddp_pilot["seed"] == int(seed), "DDP pilot seed differs from formal suite")
+        for bindings in variant_bindings.values():
+            bindings["ddp_pilot_sha256"] = ddp_pilot["sha256"]
     post_run_contract = {
         name: _post_run_contract(protocol_sha256, variant_bindings[name])
         for name in VARIANT_ORDER

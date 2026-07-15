@@ -1,5 +1,7 @@
 import json
+import hashlib
 import os
+import subprocess
 import sys
 
 sys.dont_write_bytecode = True
@@ -42,6 +44,69 @@ from opentad.utils.training_guard import (
 from opentad.utils.train_schedule import should_eval_epoch
 
 
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_sha256(value):
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_training_probe_bindings(cfg, args):
+    probe_json = cfg.workflow.get("training_probe_json", None)
+    if not probe_json:
+        return None
+    require_context = bool(cfg.workflow.get("require_training_probe_context", False))
+    context_path = os.environ.get("DUCA_TRAINING_PROBE_CONTEXT_JSON", "")
+    if require_context and not context_path:
+        raise RuntimeError("formal training probe requires DUCA_TRAINING_PROBE_CONTEXT_JSON")
+    context = None
+    context_sha256 = None
+    if context_path:
+        context_path = os.path.abspath(os.path.expanduser(context_path))
+        if not os.path.isfile(context_path):
+            raise RuntimeError(f"training probe context is missing: {context_path}")
+        with open(context_path, "r", encoding="utf-8") as handle:
+            context = json.load(handle)
+        context_sha256 = _sha256(context_path)
+
+    config_path = os.path.abspath(os.path.expanduser(args.config))
+    git_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
+    ).strip()
+    bindings = {
+        "git_commit": git_commit,
+        "seed": int(args.seed),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "source_config_path": config_path,
+        "source_config_sha256": _sha256(config_path),
+        "resolved_config_sha256": _canonical_sha256(cfg.to_dict()),
+        "training_probe_json": os.path.abspath(os.path.expanduser(str(probe_json))),
+        "context_json": context_path or None,
+        "context_json_sha256": context_sha256,
+        "context": context,
+    }
+    if require_context:
+        expected = {
+            "git_commit": bindings["git_commit"],
+            "seed": bindings["seed"],
+            "slurm_job_id": bindings["slurm_job_id"],
+            "source_config_sha256": bindings["source_config_sha256"],
+            "training_probe_json": bindings["training_probe_json"],
+        }
+        for key, value in expected.items():
+            if context.get(key) != value:
+                raise RuntimeError(
+                    f"training probe context {key} mismatch: expected {value!r}, got {context.get(key)!r}"
+                )
+    return bindings
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
@@ -63,6 +128,7 @@ def main():
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/train.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    training_probe_bindings = _build_training_probe_bindings(cfg, args)
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
 
@@ -221,6 +287,7 @@ def main():
                     "world_size": int(args.world_size),
                     "static_graph": bool(use_static_graph),
                     "find_unused_parameters": bool(find_unused_parameters),
+                    "bindings": training_probe_bindings,
                 }
             )
             probe_path = os.path.abspath(os.path.expanduser(str(training_probe_json)))

@@ -101,7 +101,7 @@ def test_suite_gate_requires_ddp_pilot_when_formal_deployment_is_requested(tmp_p
         )
 
 
-def test_suite_gate_accepts_only_commit_protocol_and_core_bound_ddp_pilot(tmp_path: Path) -> None:
+def test_suite_gate_rejects_handwritten_aggregate_without_raw_pilot_evidence(tmp_path: Path) -> None:
     gate = _gate(tmp_path)
     core_only = suite.validate_suite(repo_root=ROOT, core_gate_json=gate)
     pilot = tmp_path / "ddp_pilot.json"
@@ -121,19 +121,7 @@ def test_suite_gate_accepts_only_commit_protocol_and_core_bound_ddp_pilot(tmp_pa
         ),
         encoding="utf-8",
     )
-    payload = suite.validate_suite(
-        repo_root=ROOT,
-        core_gate_json=gate,
-        ddp_pilot_json=pilot,
-        require_ddp_pilot=True,
-    )
-    assert payload["status"] == "deployable_not_submitted"
-    assert payload["formal_ddp_pilot"]["sha256"] == suite._sha256(pilot)
-
-    stale = json.loads(pilot.read_text(encoding="utf-8"))
-    stale["shared_protocol_sha256"] = "0" * 64
-    pilot.write_text(json.dumps(stale), encoding="utf-8")
-    with pytest.raises(AssertionError, match="shared protocol is stale"):
+    with pytest.raises(AssertionError, match="run manifest"):
         suite.validate_suite(
             repo_root=ROOT,
             core_gate_json=gate,

@@ -32,13 +32,34 @@ VISIBLE_GPU_COUNT="$(${PYTHON} -c 'import torch; print(torch.cuda.device_count()
 [[ "${VISIBLE_GPU_COUNT}" == "1" ]] || fail "pilot requires exactly one Slurm-visible GPU"
 
 mkdir -p "${RUN_ROOT}/probes" "${RUN_ROOT}/work_dirs" "${RUN_ROOT}/logs"
+"${PYTHON}" -m tools.bata.validate_duca_transition_only_p0_suite \
+  --repo-root "${REPO_ROOT}" \
+  --seed "${SEED}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --require-clean \
+  --core-gate-json "${CORE_GATE_JSON}" \
+  --output-json "${RUN_ROOT}/formal_protocol.json" \
+  > "${RUN_ROOT}/formal_protocol.out"
+SHARED_PROTOCOL_SHA256="$(${PYTHON} -c "import json; print(json.load(open('${RUN_ROOT}/formal_protocol.json'))['shared_protocol_sha256'])")"
+PILOT_NONCE="${SLURM_JOB_ID}-${CURRENT_HEAD}-$(date +%s%N)"
+CANONICAL_ENV_FILE="${RUN_ROOT}/canonical_env.tsv"
+duca_p0_canonical_env_payload > "${CANONICAL_ENV_FILE}"
 cat > "${RUN_ROOT}/manifest.json" <<EOF
 {
+  "schema_version": "duca_p0_ddp_pilot_run_v1",
   "git_commit": "${CURRENT_HEAD}",
   "core_gate_json": "${CORE_GATE_JSON}",
   "core_gate_json_sha256": "$(sha256sum "${CORE_GATE_JSON}" | awk '{print $1}')",
+  "shared_protocol_sha256": "${SHARED_PROTOCOL_SHA256}",
+  "pilot_nonce": "${PILOT_NONCE}",
   "seed": ${SEED},
   "slurm_job_id": "${SLURM_JOB_ID}",
+  "checkpoint_path": "${ADATAD_PRETRAIN_PATH}",
+  "checkpoint_sha256": "$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')",
+  "official_asformer_source": "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py",
+  "official_asformer_source_sha256": "$(sha256sum "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py" | awk '{print $1}')",
+  "canonical_env_path": "${CANONICAL_ENV_FILE}",
+  "canonical_env_sha256": "$(sha256sum "${CANONICAL_ENV_FILE}" | awk '{print $1}')",
   "task": "offline_temporal_action_detection",
   "pilot_steps_per_variant": 10,
   "activation_checkpointing": false,
@@ -46,6 +67,7 @@ cat > "${RUN_ROOT}/manifest.json" <<EOF
   "find_unused_parameters": true
 }
 EOF
+RUN_MANIFEST_SHA256="$(sha256sum "${RUN_ROOT}/manifest.json" | awk '{print $1}')"
 
 variants=(uniform direct transition_beta0 transition_counterfactual)
 configs=(
@@ -60,7 +82,30 @@ for index in "${!variants[@]}"; do
   variant="${variants[$index]}"
   config="${configs[$index]}"
   probe_json="${RUN_ROOT}/probes/${variant}.training_probe.json"
+  context_json="${RUN_ROOT}/probes/${variant}.context.json"
   export DUCA_TRAINING_PROBE_JSON="${probe_json}"
+  cat > "${context_json}" <<EOF
+{
+  "schema_version": "duca_p0_ddp_pilot_context_v1",
+  "git_commit": "${CURRENT_HEAD}",
+  "variant": "${variant}",
+  "seed": ${SEED},
+  "slurm_job_id": "${SLURM_JOB_ID}",
+  "pilot_nonce": "${PILOT_NONCE}",
+  "source_config_path": "${REPO_ROOT}/${config}",
+  "source_config_sha256": "$(sha256sum "${config}" | awk '{print $1}')",
+  "training_probe_json": "${probe_json}",
+  "context_json": "${context_json}",
+  "work_dir": "${RUN_ROOT}/work_dirs/${variant}",
+  "checkpoint_path": "${ADATAD_PRETRAIN_PATH}",
+  "checkpoint_sha256": "$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')",
+  "core_gate_json_sha256": "$(sha256sum "${CORE_GATE_JSON}" | awk '{print $1}')",
+  "shared_protocol_sha256": "${SHARED_PROTOCOL_SHA256}",
+  "run_manifest_path": "${RUN_ROOT}/manifest.json",
+  "run_manifest_sha256": "${RUN_MANIFEST_SHA256}"
+}
+EOF
+  export DUCA_TRAINING_PROBE_CONTEXT_JSON="${context_json}"
   echo "[DUCA_P0_DDP_PILOT] starting ${variant}"
   "${PYTHON}" -m torch.distributed.run \
     --nproc_per_node=1 \

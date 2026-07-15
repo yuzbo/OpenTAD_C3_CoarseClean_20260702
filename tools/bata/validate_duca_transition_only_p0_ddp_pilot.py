@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,57 @@ def _git(root: Path, *args: str) -> str:
     ).strip()
 
 
+def _canonical_sha256(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _load_json(path: str | Path, label: str) -> tuple[Path, dict[str, Any]]:
+    resolved = Path(path).resolve()
+    _require(resolved.is_file(), f"{label} is missing: {resolved}")
+    payload = json.loads(resolved.read_text(encoding="utf-8"))
+    _require(isinstance(payload, dict), f"{label} must contain a JSON object")
+    return resolved, payload
+
+
+def _resolved_pilot_config_sha256(context: dict[str, Any]) -> str:
+    probe_path = str(context["training_probe_json"])
+    context_path = str(context["context_json"])
+    previous_probe = os.environ.get("DUCA_TRAINING_PROBE_JSON")
+    previous_context = os.environ.get("DUCA_TRAINING_PROBE_CONTEXT_JSON")
+    os.environ["DUCA_TRAINING_PROBE_JSON"] = probe_path
+    os.environ["DUCA_TRAINING_PROBE_CONTEXT_JSON"] = context_path
+    try:
+        config = Config.fromfile(str(context["source_config_path"]))
+        config.merge_from_dict(
+            {
+                "work_dir": str(context["work_dir"]),
+                "model.backbone.custom.pretrain": str(context["checkpoint_path"]),
+            }
+        )
+        return _canonical_sha256(config.to_dict())
+    finally:
+        if previous_probe is None:
+            os.environ.pop("DUCA_TRAINING_PROBE_JSON", None)
+        else:
+            os.environ["DUCA_TRAINING_PROBE_JSON"] = previous_probe
+        if previous_context is None:
+            os.environ.pop("DUCA_TRAINING_PROBE_CONTEXT_JSON", None)
+        else:
+            os.environ["DUCA_TRAINING_PROBE_CONTEXT_JSON"] = previous_context
+
+
+def _validate_run_manifest_files(manifest: dict[str, Any]) -> None:
+    for path_key, hash_key, label in (
+        ("checkpoint_path", "checkpoint_sha256", "AdaTAD checkpoint"),
+        ("official_asformer_source", "official_asformer_source_sha256", "official ASFormer source"),
+        ("canonical_env_path", "canonical_env_sha256", "canonical environment"),
+    ):
+        path = Path(str(manifest.get(path_key, ""))).resolve()
+        _require(path.is_file(), f"{label} is missing: {path}")
+        _require(manifest.get(hash_key) == _sha256(path), f"{label} hash mismatch")
+
+
 def _budget_vectors(payload: dict[str, Any]) -> list[list[int]]:
     vectors = []
     for step in payload.get("selector_steps", []):
@@ -70,11 +122,17 @@ def validate_probe(payload: dict[str, Any], variant: str) -> dict[str, Any]:
 
     coverage = payload.get("parameter_group_coverage")
     _require(isinstance(coverage, dict), f"{variant}: parameter coverage is missing")
-    for group in ("backbone", "coarse_probe", "selector", "detector_head"):
+    for group in ("backbone", "coarse_probe", "selector", "projection", "detector_head"):
         counts = coverage.get(group)
         _require(isinstance(counts, dict), f"{variant}: missing {group} parameter group")
-        _require(int(counts.get("trainable", 0)) > 0, f"{variant}: {group} has no trainable parameter")
-        _require(int(counts.get("gradient_seen", 0)) > 0, f"{variant}: {group} never received gradient")
+        trainable = int(counts.get("trainable", 0))
+        gradient_seen = int(counts.get("gradient_seen", 0))
+        _require(trainable > 0, f"{variant}: {group} has no trainable parameter")
+        _require(gradient_seen == trainable, f"{variant}: {group} has trainable parameters never receiving gradient")
+    never_seen = payload.get("gradient_never_seen")
+    _require(isinstance(never_seen, list), f"{variant}: gradient_never_seen is missing")
+    _require(not never_seen, f"{variant}: trainable parameters never received gradient")
+    _require(bool(payload.get("gradient_seen")), f"{variant}: no parameter received gradient")
 
     steps = payload.get("selector_steps")
     _require(isinstance(steps, list) and len(steps) == EXPECTED_STEPS, f"{variant}: selector trace is incomplete")
@@ -122,6 +180,136 @@ def validate_probe(payload: dict[str, Any], variant: str) -> dict[str, Any]:
     }
 
 
+def _validate_probe_bindings(
+    payload: dict[str, Any],
+    *,
+    variant: str,
+    probe_path: Path,
+    context_path: Path,
+    context: dict[str, Any],
+    manifest_path: Path,
+    manifest: dict[str, Any],
+) -> None:
+    _require(context.get("schema_version") == "duca_p0_ddp_pilot_context_v1", f"{variant}: bad context schema")
+    expected_context = {
+        "git_commit": manifest["git_commit"],
+        "variant": variant,
+        "seed": int(manifest["seed"]),
+        "slurm_job_id": str(manifest["slurm_job_id"]),
+        "pilot_nonce": manifest["pilot_nonce"],
+        "training_probe_json": str(probe_path),
+        "context_json": str(context_path),
+        "checkpoint_path": manifest["checkpoint_path"],
+        "checkpoint_sha256": manifest["checkpoint_sha256"],
+        "core_gate_json_sha256": manifest["core_gate_json_sha256"],
+        "shared_protocol_sha256": manifest["shared_protocol_sha256"],
+        "run_manifest_path": str(manifest_path),
+        "run_manifest_sha256": _sha256(manifest_path),
+    }
+    for key, expected in expected_context.items():
+        _require(context.get(key) == expected, f"{variant}: context {key} mismatch")
+    source_config = Path(str(context.get("source_config_path", ""))).resolve()
+    _require(source_config.is_file(), f"{variant}: source config is missing")
+    _require(context.get("source_config_sha256") == _sha256(source_config), f"{variant}: source config hash mismatch")
+
+    bindings = payload.get("bindings")
+    _require(isinstance(bindings, dict), f"{variant}: probe bindings are missing")
+    expected_bindings = {
+        "git_commit": manifest["git_commit"],
+        "seed": int(manifest["seed"]),
+        "slurm_job_id": str(manifest["slurm_job_id"]),
+        "source_config_path": str(source_config),
+        "source_config_sha256": context["source_config_sha256"],
+        "training_probe_json": str(probe_path),
+        "context_json": str(context_path),
+        "context_json_sha256": _sha256(context_path),
+        "context": context,
+    }
+    for key, expected in expected_bindings.items():
+        _require(bindings.get(key) == expected, f"{variant}: probe binding {key} mismatch")
+    _require(
+        bindings.get("resolved_config_sha256") == _resolved_pilot_config_sha256(context),
+        f"{variant}: resolved pilot config hash mismatch",
+    )
+
+
+def validate_pilot_artifact(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    expected_commit: str,
+    expected_protocol_sha256: str,
+    expected_core_gate_sha256: str,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    artifact_path, artifact = _load_json(path, "DDP pilot artifact")
+    _require(artifact.get("schema_version") == "duca_p0_ddp_pilot_suite_v1", "DDP pilot schema mismatch")
+    _require(artifact.get("ok") is True, "DDP pilot must declare ok=true")
+    _require(artifact.get("git_commit") == expected_commit, "DDP pilot commit is stale")
+    _require(
+        artifact.get("shared_protocol_sha256") == expected_protocol_sha256,
+        "DDP pilot shared protocol is stale",
+    )
+    _require(
+        artifact.get("core_gate_json_sha256") == expected_core_gate_sha256,
+        "DDP pilot core-gate binding is stale",
+    )
+    manifest_path, manifest = _load_json(artifact.get("run_manifest_path", ""), "DDP pilot run manifest")
+    _require(artifact.get("run_manifest_sha256") == _sha256(manifest_path), "DDP pilot run-manifest hash mismatch")
+    _require(manifest.get("schema_version") == "duca_p0_ddp_pilot_run_v1", "DDP pilot run-manifest schema mismatch")
+    _require(manifest.get("git_commit") == expected_commit, "DDP pilot run-manifest commit mismatch")
+    _require(manifest.get("shared_protocol_sha256") == expected_protocol_sha256, "DDP pilot run-manifest protocol mismatch")
+    _require(manifest.get("core_gate_json_sha256") == expected_core_gate_sha256, "DDP pilot run-manifest core gate mismatch")
+    _require(str(manifest.get("slurm_job_id", "")).isdigit(), "DDP pilot lacks a Slurm job identity")
+    _require(bool(manifest.get("pilot_nonce")), "DDP pilot nonce is missing")
+    _validate_run_manifest_files(manifest)
+    _require(int(artifact.get("seed", -1)) == int(manifest.get("seed", -2)), "DDP pilot seed mismatch")
+    _require(artifact.get("slurm_job_id") == manifest.get("slurm_job_id"), "DDP pilot Slurm identity mismatch")
+    _require(artifact.get("pilot_nonce") == manifest.get("pilot_nonce"), "DDP pilot nonce mismatch")
+
+    variants = artifact.get("variants")
+    _require(isinstance(variants, list), "DDP pilot variant evidence is missing")
+    _require([item.get("variant") for item in variants] == list(VARIANT_ORDER), "DDP pilot arm order mismatch")
+    validated = []
+    run_root = manifest_path.parent
+    for item, variant in zip(variants, VARIANT_ORDER):
+        config_path = (root / PILOT_CONFIGS[variant]).resolve()
+        _require(item.get("pilot_config") == PILOT_CONFIGS[variant], f"{variant}: pilot config path mismatch")
+        _require(item.get("pilot_config_sha256") == _sha256(config_path), f"{variant}: pilot config hash mismatch")
+        probe_path, probe = _load_json(item.get("probe_json", ""), f"{variant} training probe")
+        context_path, context = _load_json(item.get("context_json", ""), f"{variant} pilot context")
+        _require(probe_path.parent == run_root / "probes", f"{variant}: probe escaped the run root")
+        _require(context_path.parent == run_root / "probes", f"{variant}: context escaped the run root")
+        _require(item.get("probe_json_sha256") == _sha256(probe_path), f"{variant}: probe hash mismatch")
+        _require(item.get("context_json_sha256") == _sha256(context_path), f"{variant}: context hash mismatch")
+        summary = validate_probe(probe, variant)
+        _validate_probe_bindings(
+            probe,
+            variant=variant,
+            probe_path=probe_path,
+            context_path=context_path,
+            context=context,
+            manifest_path=manifest_path,
+            manifest=manifest,
+        )
+        _require(
+            item.get("validated_probe_summary_sha256") == _canonical_sha256(summary),
+            f"{variant}: validated probe summary mismatch",
+        )
+        validated.append(summary)
+    return {
+        "path": str(artifact_path),
+        "sha256": _sha256(artifact_path),
+        "git_commit": expected_commit,
+        "seed": int(manifest["seed"]),
+        "slurm_job_id": str(manifest["slurm_job_id"]),
+        "pilot_nonce": manifest["pilot_nonce"],
+        "run_manifest_path": str(manifest_path),
+        "run_manifest_sha256": _sha256(manifest_path),
+        "variants": validated,
+    }
+
+
 def validate_pilot_suite(
     *,
     repo_root: str | Path,
@@ -138,12 +326,26 @@ def validate_pilot_suite(
     if require_clean:
         _require(not _git(root, "status", "--porcelain", "--untracked-files=normal"), "pilot tree is dirty")
 
+    manifest_path, manifest = _load_json(probes.parent / "manifest.json", "DDP pilot run manifest")
+    _require(manifest.get("schema_version") == "duca_p0_ddp_pilot_run_v1", "bad DDP pilot run-manifest schema")
+    _require(manifest.get("git_commit") == commit, "DDP pilot run-manifest commit is stale")
+    _require(str(manifest.get("slurm_job_id", "")).isdigit(), "DDP pilot lacks a Slurm job identity")
+    seed = int(manifest.get("seed", -1))
+    _require(seed >= 0, "DDP pilot seed is invalid")
+    gate_path = Path(core_gate_json).resolve()
+    _require(manifest.get("core_gate_json_sha256") == _sha256(gate_path), "run manifest core-gate hash mismatch")
+    _validate_run_manifest_files(manifest)
+
     formal_suite = validate_suite(
         repo_root=root,
-        seed=0,
+        seed=seed,
         expected_commit=commit,
         require_clean=require_clean,
         core_gate_json=core_gate_json,
+    )
+    _require(
+        manifest.get("shared_protocol_sha256") == formal_suite["shared_protocol_sha256"],
+        "run manifest shared-protocol hash mismatch",
     )
     variants = []
     for variant in VARIANT_ORDER:
@@ -155,27 +357,48 @@ def validate_pilot_suite(
         _require(int(config.workflow.max_train_iters) == EXPECTED_STEPS, f"{variant}: pilot step count drift")
         _require(config.workflow.disable_checkpoint is True, f"{variant}: pilot must not write model checkpoints")
         probe_path = probes / f"{variant}.training_probe.json"
+        context_path = probes / f"{variant}.context.json"
         _require(probe_path.is_file(), f"{variant}: training probe is missing: {probe_path}")
+        _require(context_path.is_file(), f"{variant}: pilot context is missing: {context_path}")
         payload = json.loads(probe_path.read_text(encoding="utf-8"))
+        context = json.loads(context_path.read_text(encoding="utf-8"))
         summary = validate_probe(payload, variant)
+        _validate_probe_bindings(
+            payload,
+            variant=variant,
+            probe_path=probe_path,
+            context_path=context_path,
+            context=context,
+            manifest_path=manifest_path,
+            manifest=manifest,
+        )
         summary.update(
             {
                 "pilot_config": PILOT_CONFIGS[variant],
                 "pilot_config_sha256": _sha256(pilot_config_path),
                 "probe_json": str(probe_path),
                 "probe_json_sha256": _sha256(probe_path),
+                "context_json": str(context_path),
+                "context_json_sha256": _sha256(context_path),
+                "validated_probe_summary_sha256": _canonical_sha256(
+                    validate_probe(payload, variant)
+                ),
             }
         )
         variants.append(summary)
 
-    gate_path = Path(core_gate_json).resolve()
     return {
         "schema_version": "duca_p0_ddp_pilot_suite_v1",
         "ok": True,
         "git_commit": commit,
+        "seed": seed,
+        "slurm_job_id": str(manifest["slurm_job_id"]),
+        "pilot_nonce": manifest["pilot_nonce"],
         "shared_protocol_sha256": formal_suite["shared_protocol_sha256"],
         "core_gate_json": str(gate_path),
         "core_gate_json_sha256": _sha256(gate_path),
+        "run_manifest_path": str(manifest_path),
+        "run_manifest_sha256": _sha256(manifest_path),
         "expected_steps_per_variant": EXPECTED_STEPS,
         "variants": variants,
     }
@@ -206,6 +429,13 @@ def main() -> None:
     temporary = output.with_suffix(output.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     temporary.replace(output)
+    validate_pilot_artifact(
+        output,
+        repo_root=args.repo_root,
+        expected_commit=payload["git_commit"],
+        expected_protocol_sha256=payload["shared_protocol_sha256"],
+        expected_core_gate_sha256=payload["core_gate_json_sha256"],
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
