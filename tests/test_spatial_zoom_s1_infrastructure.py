@@ -232,16 +232,17 @@ def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:
         require_slurm_single_gpu_allocation()
 
 
-def test_s1_slurm_launchers_use_job_scoped_static_rendezvous() -> None:
+def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     for filename in (
         "run_spatial_zoom_s1_train_slurm.sh",
         "run_spatial_zoom_s1_test_profile_slurm.sh",
     ):
         text = (ROOT / "scripts" / filename).read_text(encoding="utf-8")
         assert "--standalone" not in text
-        assert "SLURM_JOB_NUMBER" in text
-        assert "--master_addr=127.0.0.1" in text
-        assert "--master_port=" in text
+        assert "--master_port=" not in text
+        assert "--rdzv_backend=c10d" in text
+        assert "--rdzv_endpoint=127.0.0.1:0" in text
+        assert "${SLURM_JOB_ID}" in text
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:

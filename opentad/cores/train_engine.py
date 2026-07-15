@@ -4,6 +4,24 @@ import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
 
 
+def _capture_model_buffers(model):
+    return {
+        name: buffer.detach().clone()
+        for name, buffer in model.named_buffers()
+        if buffer is not None
+    }
+
+
+def _restore_model_buffers(model, snapshot):
+    current = {
+        name: buffer for name, buffer in model.named_buffers() if buffer is not None
+    }
+    if set(current) != set(snapshot):
+        raise RuntimeError("model buffer registry changed during an AMP retry")
+    for name, saved in snapshot.items():
+        current[name].copy_(saved)
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -54,9 +72,11 @@ def train_one_epoch(
         retry_count = 0
         cpu_rng_state = None
         cuda_rng_states = None
+        model_buffer_state = None
         if max_amp_retries_per_batch > 0:
             cpu_rng_state = torch.get_rng_state()
             cuda_rng_states = torch.cuda.get_rng_state_all()
+            model_buffer_state = _capture_model_buffers(model)
 
         while True:
             if retry_count > 0:
@@ -101,6 +121,8 @@ def train_one_epoch(
                 break
             if update_audit is not None:
                 update_audit["amp_skipped_attempts"] += 1
+            if model_buffer_state is not None:
+                _restore_model_buffers(model, model_buffer_state)
             retry_count += 1
             if update_audit is not None:
                 update_audit["max_amp_retries_observed"] = max(

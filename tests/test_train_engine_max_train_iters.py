@@ -51,6 +51,21 @@ class _Loss:
         return self.value
 
 
+class _Buffer:
+    def __init__(self, value=0):
+        self.value = int(value)
+
+    def detach(self):
+        return self
+
+    def clone(self):
+        return _Buffer(self.value)
+
+    def copy_(self, other):
+        self.value = int(other.value)
+        return self
+
+
 class _Logger:
     def __init__(self):
         self.messages = []
@@ -74,11 +89,13 @@ class _ToyLoader:
 
 
 class _ToyModel:
-    def __init__(self):
+    def __init__(self, mutate_buffer=False):
         self.module = types.SimpleNamespace()
         self.train_calls = 0
         self.forward_calls = 0
         self.backward_calls = 0
+        self.mutate_buffer = bool(mutate_buffer)
+        self.loss_normalizer = _Buffer(0)
 
     def train(self):
         self.train_calls += 1
@@ -86,8 +103,13 @@ class _ToyModel:
     def __call__(self, x, return_loss=False):
         assert return_loss is True
         self.forward_calls += 1
+        if self.mutate_buffer:
+            self.loss_normalizer.value += 1
         cost = _Loss(x, self)
         return {"cost": cost, "aux_loss": _Loss(x * 0.5, self)}
+
+    def named_buffers(self):
+        return [("loss_normalizer", self.loss_normalizer)]
 
 
 class _ToyOptimizer:
@@ -209,7 +231,7 @@ def test_train_one_epoch_stops_after_max_train_iters(monkeypatch):
 
 def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatch):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _ToyModel()
+    model = _ToyModel(mutate_buffer=True)
     optimizer = _ToyOptimizer()
     scheduler = _ToyScheduler()
     logger = _Logger()
@@ -236,6 +258,7 @@ def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatc
     assert optimizer.zero_grad_calls == 3
     assert optimizer.steps == 2
     assert scheduler.steps == 2
+    assert model.loss_normalizer.value == 2
     assert audit == {
         "optimizer_attempts": 3,
         "amp_skipped_attempts": 1,
@@ -246,7 +269,7 @@ def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatc
 
 def test_train_one_epoch_fails_when_amp_retry_limit_is_exhausted(monkeypatch):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _ToyModel()
+    model = _ToyModel(mutate_buffer=True)
     optimizer = _ToyOptimizer()
     scheduler = _ToyScheduler()
 
@@ -265,6 +288,29 @@ def test_train_one_epoch_fails_when_amp_retry_limit_is_exhausted(monkeypatch):
 
     assert optimizer.steps == 0
     assert scheduler.steps == 0
+    assert model.loss_normalizer.value == 0
+
+
+def test_train_one_epoch_preserves_legacy_zero_retry_behavior(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model = _ToyModel(mutate_buffer=True)
+    optimizer = _ToyOptimizer()
+    scheduler = _ToyScheduler()
+
+    train_engine.train_one_epoch(
+        train_loader=_ToyLoader(1),
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        curr_epoch=0,
+        logger=_Logger(),
+        scaler=_ToyScaler(skipped_attempts=1),
+        max_amp_retries_per_batch=0,
+    )
+
+    assert optimizer.steps == 0
+    assert scheduler.steps == 1
+    assert model.loss_normalizer.value == 1
 
 
 @pytest.mark.parametrize("max_train_iters", [0, -1])

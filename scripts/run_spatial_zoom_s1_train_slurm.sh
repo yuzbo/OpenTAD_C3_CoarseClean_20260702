@@ -34,10 +34,6 @@ esac
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
 [[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
   fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
-SLURM_JOB_NUMBER="${SLURM_JOB_ID%%_*}"
-[[ "${SLURM_JOB_NUMBER}" =~ ^[0-9]+$ ]] || fail "SLURM_JOB_ID must begin with digits"
-# Reserve a three-port slot per concurrent job; test/profile use the next slot member.
-MASTER_PORT="$((10000 + (10#${SLURM_JOB_NUMBER} % 15000) * 3))"
 [[ -f "${MANIFEST}" ]] || fail "manifest does not exist: ${MANIFEST}"
 [[ -f "${ANNOTATION}" ]] || fail "annotation does not exist: ${ANNOTATION}"
 [[ -f "${PRECHECK}" ]] || fail "full precheck certificate does not exist: ${PRECHECK}"
@@ -78,7 +74,8 @@ python tools/bata/build_spatial_zoom_s1_training_config.py \
   --output "${BOUND_CONFIG}"
 
 torchrun --nnodes=1 --nproc_per_node=1 \
-  --master_addr=127.0.0.1 --master_port="${MASTER_PORT}" \
+  --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
+  --rdzv_id="s1-train-${SLURM_JOB_ID}" \
   tools/train.py "${BOUND_CONFIG}" --seed "${SEED}" --id 0
 
 shopt -s nullglob
