@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Callable, Dict
 
 import torch
@@ -132,7 +133,15 @@ def counterfactual_utility_distillation_loss(
     *,
     temperature: float = 1.0,
 ) -> torch.Tensor:
-    """Distill detached hard-swap utilities into deploy-time policy scores."""
+    """Distill signed hard-swap utility relative to a fixed no-op baseline.
+
+    The extra class has detector utility zero and selector score delta zero, so
+    the optimum preserves whether a swap is better or worse than retaining the
+    current hard selection. This categorical helper does not guarantee each
+    candidate's local descent direction when swaps share selected positions;
+    the integrated hard-swap path uses ``signed_one_swap_proximal_loss`` for
+    that stronger score-space contract.
+    """
     if policy_scores.shape != teacher_utility.shape or policy_scores.shape != valid_mask.shape:
         raise ValueError("policy_scores, teacher_utility and valid_mask must have identical [B,T] shapes")
     if temperature <= 0.0:
@@ -143,6 +152,17 @@ def counterfactual_utility_distillation_loss(
     teacher = teacher_utility.detach().to(device=policy_scores.device, dtype=torch.float32)
     if not torch.isfinite(teacher[valid]).all():
         raise ValueError("valid counterfactual utilities must be finite")
+
+    batch = int(student.shape[0])
+    student = torch.cat((student.new_zeros((batch, 1)), student), dim=1)
+    teacher = torch.cat((teacher.new_zeros((batch, 1)), teacher), dim=1)
+    valid = torch.cat(
+        (
+            torch.ones((batch, 1), dtype=torch.bool, device=valid.device),
+            valid,
+        ),
+        dim=1,
+    )
     neg = torch.finfo(student.dtype).min
     student_logits = (student / temperature).masked_fill(~valid, neg)
     teacher_logits = (teacher / temperature).masked_fill(~valid, neg)
@@ -167,14 +187,273 @@ def counterfactual_pair_scores(
     if policy_scores.shape[0] != candidate_positions.shape[0] or baseline_positions.shape[0] != policy_scores.shape[0]:
         raise ValueError("counterfactual tensors must share the batch dimension")
     valid = candidate_valid.bool()
+    if torch.any(candidate_positions[valid] < 0) or torch.any(replaced_slots[valid] < 0):
+        raise ValueError("valid counterfactual add positions and remove slots must be non-negative")
     safe_add = candidate_positions.clamp(min=0)
     safe_slot = replaced_slots.clamp(min=0)
     if torch.any(safe_add[valid] >= policy_scores.shape[1]) or torch.any(safe_slot[valid] >= baseline_positions.shape[1]):
         raise ValueError("counterfactual add position or remove slot is out of range")
-    remove_positions = torch.gather(baseline_positions.clamp_min(0), 1, safe_slot)
+    remove_positions = torch.gather(baseline_positions, 1, safe_slot)
+    if torch.any(remove_positions[valid] < 0):
+        raise ValueError("valid counterfactual swaps must remove a selected position")
+    remove_positions = remove_positions.clamp_min(0)
     add_scores = torch.gather(policy_scores, 1, safe_add)
     remove_scores = torch.gather(policy_scores, 1, remove_positions)
     return (add_scores - remove_scores).masked_fill(~valid, 0.0)
+
+
+def build_swap_incidence_matrix(
+    policy_scores: torch.Tensor,
+    candidate_positions: torch.Tensor,
+    replaced_slots: torch.Tensor,
+    baseline_positions: torch.Tensor,
+    candidate_valid: torch.Tensor,
+) -> torch.Tensor:
+    """Build rows whose dot product with scores is score(add)-score(remove)."""
+    if policy_scores.ndim != 2 or baseline_positions.ndim != 2:
+        raise ValueError("policy_scores and baseline_positions must be rank two")
+    if candidate_positions.shape != replaced_slots.shape or candidate_positions.shape != candidate_valid.shape:
+        raise ValueError("counterfactual candidate tensors must share [B,M] shape")
+    if policy_scores.shape[0] != candidate_positions.shape[0] or baseline_positions.shape[0] != policy_scores.shape[0]:
+        raise ValueError("counterfactual tensors must share the batch dimension")
+    valid = candidate_valid.bool()
+    if torch.any(candidate_positions[valid] < 0) or torch.any(replaced_slots[valid] < 0):
+        raise ValueError("valid counterfactual add positions and remove slots must be non-negative")
+    safe_add = candidate_positions.clamp_min(0)
+    safe_slot = replaced_slots.clamp_min(0)
+    if torch.any(safe_add[valid] >= policy_scores.shape[1]) or torch.any(safe_slot[valid] >= baseline_positions.shape[1]):
+        raise ValueError("counterfactual add position or remove slot is out of range")
+    remove_positions = torch.gather(baseline_positions, 1, safe_slot)
+    if torch.any(remove_positions[valid] < 0):
+        raise ValueError("valid counterfactual swaps must remove a selected position")
+    remove_positions = remove_positions.clamp_min(0)
+    if torch.any(safe_add[valid] == remove_positions[valid]):
+        raise ValueError("a counterfactual swap cannot add and remove the same position")
+
+    incidence = policy_scores.new_zeros(
+        (policy_scores.shape[0], candidate_positions.shape[1], policy_scores.shape[1]),
+        dtype=torch.float32,
+    )
+    for batch_index in range(int(policy_scores.shape[0])):
+        for candidate_index in range(int(candidate_positions.shape[1])):
+            if not bool(valid[batch_index, candidate_index]):
+                continue
+            add = int(safe_add[batch_index, candidate_index].item())
+            remove = int(remove_positions[batch_index, candidate_index].item())
+            incidence[batch_index, candidate_index, add] = 1.0
+            incidence[batch_index, candidate_index, remove] = -1.0
+    return incidence
+
+
+def _normalized_signed_swap_utility(
+    teacher_utility: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    temperature: float,
+) -> torch.Tensor:
+    if temperature <= 0.0:
+        raise ValueError("temperature must be positive")
+    valid = valid_mask.bool()
+    teacher = teacher_utility.detach().float()
+    if not torch.isfinite(teacher[valid]).all():
+        raise ValueError("valid counterfactual utilities must be finite")
+    count = valid.sum(dim=1, keepdim=True).clamp_min(1).to(dtype=teacher.dtype)
+    mean_abs = teacher.abs().masked_fill(~valid, 0.0).sum(dim=1, keepdim=True) / count
+    scale = (mean_abs * float(temperature)).clamp_min(torch.finfo(teacher.dtype).eps)
+    normalized = torch.tanh(teacher / scale)
+    return normalized.masked_fill(~valid, 0.0)
+
+
+def signed_one_swap_proximal_loss(
+    policy_scores: torch.Tensor,
+    swap_incidence: torch.Tensor,
+    teacher_utility: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    temperature: float = 1.0,
+    step_size: float = 1.0,
+) -> torch.Tensor:
+    """Create a score-space update whose swap direction matches signed utility.
+
+    Candidate swaps can share a removed frame, so independently regressing their
+    pair scores creates conflicting center-score gradients. Whitening by the
+    small swap Gram matrix makes the first-order change of every valid pair
+    score proportional to its detached, normalized detector utility.
+    """
+    if policy_scores.ndim != 2 or swap_incidence.ndim != 3:
+        raise ValueError("policy_scores and swap_incidence must be [B,T] and [B,M,T]")
+    if swap_incidence.shape[0] != policy_scores.shape[0] or swap_incidence.shape[2] != policy_scores.shape[1]:
+        raise ValueError("swap incidence must share policy score batch and time dimensions")
+    if teacher_utility.shape != valid_mask.shape or teacher_utility.shape != swap_incidence.shape[:2]:
+        raise ValueError("teacher utility and valid mask must match swap incidence [B,M]")
+    if step_size <= 0.0:
+        raise ValueError("step_size must be positive")
+
+    valid = valid_mask.bool()
+    autocast_context = (
+        torch.autocast(device_type=policy_scores.device.type, enabled=False)
+        if policy_scores.device.type in {"cpu", "cuda"}
+        else nullcontext()
+    )
+    with autocast_context:
+        normalized_utility = _normalized_signed_swap_utility(
+            teacher_utility,
+            valid,
+            temperature=temperature,
+        )
+        pair_scores = torch.einsum("bmt,bt->bm", swap_incidence.float(), policy_scores.float())
+        per_sample = []
+        for batch_index in range(int(policy_scores.shape[0])):
+            active = valid[batch_index]
+            if not bool(active.any()):
+                continue
+            incidence = swap_incidence[batch_index, active].float()
+            utility = normalized_utility[batch_index, active]
+            gram = incidence @ incidence.transpose(0, 1)
+            if int(torch.linalg.matrix_rank(gram).item()) != int(gram.shape[0]):
+                raise ValueError("valid swap incidence Gram matrix must be full rank")
+            whitened_utility = torch.linalg.solve(gram, utility[:, None]).squeeze(1)
+            current = pair_scores[batch_index, active]
+            target = current.detach() + float(step_size) * whitened_utility
+            per_sample.append(0.5 * (current - target).square().mean())
+    if not per_sample:
+        finite_scores = torch.where(
+            torch.isfinite(policy_scores),
+            policy_scores,
+            torch.zeros_like(policy_scores),
+        )
+        return (finite_scores * 0.0).sum()
+    return torch.stack(per_sample).mean()
+
+
+def _average_tie_ranks(values: torch.Tensor) -> torch.Tensor:
+    values = values.flatten().float()
+    order = torch.argsort(values)
+    sorted_values = values[order]
+    ranks = values.new_empty(values.shape)
+    start = 0
+    while start < int(values.numel()):
+        end = start + 1
+        while end < int(values.numel()) and bool(sorted_values[end] == sorted_values[start]):
+            end += 1
+        ranks[order[start:end]] = 0.5 * float(start + end - 1)
+        start = end
+    return ranks
+
+
+def score_space_utility_alignment(
+    policy_scores: torch.Tensor,
+    loss: torch.Tensor,
+    swap_incidence: torch.Tensor,
+    hard_swap_utility: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    temperature: float,
+) -> Dict[str, object]:
+    """Audit the actual pair-score change induced through shared center scores."""
+    if swap_incidence.shape[:2] != hard_swap_utility.shape or hard_swap_utility.shape != valid_mask.shape:
+        raise ValueError("swap incidence, utility and valid mask must align")
+    gradient = torch.autograd.grad(loss, policy_scores, retain_graph=True)[0].detach().float()
+    normalized_utility = _normalized_signed_swap_utility(
+        hard_swap_utility,
+        valid_mask,
+        temperature=temperature,
+    )
+    valid = valid_mask.bool()
+    normalized_directions = []
+    normalized_targets = []
+    raw_directions = []
+    condition_numbers = []
+    per_sample_alignment = []
+    for batch_index in range(int(policy_scores.shape[0])):
+        active = valid[batch_index]
+        if not bool(active.any()):
+            continue
+        audit_autocast_context = (
+            torch.autocast(device_type=policy_scores.device.type, enabled=False)
+            if policy_scores.device.type in {"cpu", "cuda"}
+            else nullcontext()
+        )
+        with audit_autocast_context:
+            incidence = swap_incidence[batch_index, active].float()
+            direction = incidence @ (-gradient[batch_index])
+            target = normalized_utility[batch_index, active].float()
+            gram = incidence @ incidence.transpose(0, 1)
+            condition_number = float(torch.linalg.cond(gram).item())
+        condition_numbers.append(condition_number)
+        raw_directions.append(direction)
+        sample_nonzero = hard_swap_utility[batch_index, active].detach().float() != 0
+        sample_sign = (
+            float(
+                (
+                    direction[sample_nonzero]
+                    * hard_swap_utility[batch_index, active].detach().float()[sample_nonzero]
+                    > 0
+                )
+                .float()
+                .mean()
+                .item()
+            )
+            if bool(sample_nonzero.any())
+            else 1.0
+        )
+        if float(target.abs().max().item()) > 0.0:
+            normalized_direction = direction / direction.abs().max().clamp_min(1.0e-12)
+            normalized_target = target / target.abs().max().clamp_min(1.0e-12)
+            normalized_directions.append(normalized_direction)
+            normalized_targets.append(normalized_target)
+            direction_ranks = _average_tie_ranks(normalized_direction)
+            target_ranks = _average_tie_ranks(normalized_target)
+            centered_direction = direction_ranks - direction_ranks.mean()
+            centered_target = target_ranks - target_ranks.mean()
+            denominator = centered_direction.norm() * centered_target.norm()
+            sample_spearman = (
+                float(((centered_direction @ centered_target) / denominator).item())
+                if float(denominator.item()) > 0.0
+                else 1.0
+            )
+            sample_error = float((normalized_direction - normalized_target).abs().max().item())
+        else:
+            sample_spearman = 1.0
+            sample_error = 0.0
+        per_sample_alignment.append(
+            {
+                "batch_index": batch_index,
+                "candidate_count": int(active.sum().item()),
+                "spearman": sample_spearman,
+                "sign_agreement": sample_sign,
+                "normalized_direction_max_abs_error": sample_error,
+                "swap_gram_condition_number": condition_number,
+            }
+        )
+    if not raw_directions:
+        raise ValueError("score-space alignment requires at least one valid swap")
+
+    direction = torch.cat(raw_directions)
+    utility = hard_swap_utility.detach()[valid].float()
+    nonzero = utility != 0
+    sign = (
+        ((direction[nonzero] * utility[nonzero]) > 0).float().mean()
+        if bool(nonzero.any()) else direction.new_tensor(1.0)
+    )
+    spearman = min(item["spearman"] for item in per_sample_alignment)
+    max_error = 0.0
+    if normalized_directions:
+        max_error = max(
+            float((observed - expected).abs().max().item())
+            for observed, expected in zip(normalized_directions, normalized_targets)
+        )
+    return {
+        "spearman": float(spearman),
+        "sign_agreement": float(sign.item()),
+        "normalized_direction_max_abs_error": max_error,
+        "score_space_direction_values": [float(value) for value in direction.cpu().tolist()],
+        "normalized_utility_values": [
+            float(value) for value in normalized_utility[valid].detach().cpu().tolist()
+        ],
+        "swap_gram_condition_numbers": condition_numbers,
+        "per_sample_alignment": per_sample_alignment,
+    }
 
 
 def gradient_utility_alignment(

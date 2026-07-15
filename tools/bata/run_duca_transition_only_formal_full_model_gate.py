@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import os
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import torch
+import numpy as np
 from mmengine.config import Config
 
 from tools.bata.duca_p0_evaluation import evaluation_config_sha256
@@ -39,10 +41,27 @@ CONFIG_DEFAULT = (
     "duca_transition_only_fixed384_official_adatad_backend_full_train.py"
 )
 
+AUDITED_IMPLEMENTATION_PATHS = (
+    "opentad/models/detectors/actionformer.py",
+    "opentad/models/duca/acquisition.py",
+    "opentad/models/duca/counterfactual_utility.py",
+    "opentad/models/duca/structured_selection.py",
+    "opentad/models/duca/transition_only.py",
+    "opentad/models/selectors/duca_online_frame_selector.py",
+    "configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py",
+    "tools/bata/run_duca_transition_only_formal_full_model_gate.py",
+)
 
-def _require(condition: bool, message: str) -> None:
+
+class FormalGateFailure(RuntimeError):
+    def __init__(self, message: str, *, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(f"formal DUCA full-model gate failed: {message}")
+        self.evidence = evidence
+
+
+def _require(condition: bool, message: str, *, evidence: dict[str, Any] | None = None) -> None:
     if not condition:
-        raise RuntimeError(f"formal DUCA full-model gate failed: {message}")
+        raise FormalGateFailure(message, evidence=evidence)
 
 
 def _sha256(path: str | Path) -> str:
@@ -57,6 +76,19 @@ def _git_commit() -> str:
     return subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
+
+
+def _git_status_porcelain() -> str:
+    return subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+    ).strip()
+
+
+def _implementation_hashes() -> dict[str, str]:
+    return {path: _sha256(ROOT / path) for path in AUDITED_IMPLEMENTATION_PATHS}
 
 
 def _grad_sum(module: torch.nn.Module) -> float:
@@ -105,7 +137,11 @@ def _representative_parameters(model: torch.nn.Module) -> dict[str, torch.nn.Par
         ]
         if candidates:
             selected[group] = candidates[0]
-    _require(selected, "no finite non-zero trainable gradient was available for optimizer-step proof")
+    missing = sorted(set(groups).difference(selected))
+    _require(
+        not missing,
+        "missing finite non-zero gradients for optimizer-step proof groups: " + ", ".join(missing),
+    )
     return selected
 
 
@@ -204,6 +240,15 @@ def run_formal_gate(
     official_repos_root: str,
     device: str = "cuda",
 ) -> dict[str, Any]:
+    gate_seed = 20260711
+    git_commit = _git_commit()
+    git_status = _git_status_porcelain()
+    _require(
+        not git_status,
+        "the formal full-model gate requires a clean exact-commit checkout",
+        evidence={"git_commit": git_commit, "git_status_porcelain": git_status.splitlines()},
+    )
+    implementation_hashes = _implementation_hashes()
     _require(device.startswith("cuda"), "the formal full-model gate requires CUDA")
     _require(torch.cuda.is_available(), "CUDA is unavailable")
     checkpoint = Path(checkpoint_path).expanduser().resolve()
@@ -219,6 +264,10 @@ def run_formal_gate(
     class_map_path = Path(cfg.dataset.test.class_map).expanduser().resolve()
     _require(annotation_path.is_file(), f"evaluation annotation is missing: {annotation_path}")
     _require(class_map_path.is_file(), f"evaluation class map is missing: {class_map_path}")
+    random.seed(gate_seed)
+    np.random.seed(gate_seed)
+    torch.manual_seed(gate_seed)
+    torch.cuda.manual_seed_all(gate_seed)
     dense_window_size = int(cfg.dense_window_size)
     budget = int(cfg.window_size)
     spatial_size = 160
@@ -262,7 +311,6 @@ def run_formal_gate(
     selector = model.frame_selector
     selector._loss_weight_schedule_step.fill_(7920)
 
-    torch.manual_seed(20260711)
     inputs = torch.randint(
         0,
         256,
@@ -314,7 +362,34 @@ def run_formal_gate(
     _require(gradients["backbone_adapter"] > 0.0, "real detector losses did not train VideoMAE adapters")
     _require(gradients["detector_head"] > 0.0, "real detector losses did not train ActionFormerHead")
     alignment = dict(getattr(selector, "last_counterfactual_summary", {}))
-    _require(alignment.get("finite") is True, "counterfactual utility is non-finite")
+    alignment_evidence = {"counterfactual_alignment": alignment, "gate_seed": gate_seed}
+    _require(
+        int(alignment.get("candidate_count", 0)) > 0,
+        "counterfactual teacher produced no valid hard swap",
+        evidence=alignment_evidence,
+    )
+    _require(
+        alignment.get("distillation_loss_kind") == "swap_gram_whitened_signed_proximal",
+        "formal counterfactual objective is not the signed score-space proximal loss",
+        evidence=alignment_evidence,
+    )
+    _require(
+        float(alignment.get("no_op_teacher_utility", float("nan"))) == 0.0
+        and float(alignment.get("no_op_student_score_delta", float("nan"))) == 0.0,
+        "counterfactual no-op reference is not fixed at zero",
+        evidence=alignment_evidence,
+    )
+    _require(
+        alignment.get("finite") is True,
+        "counterfactual utility is non-finite",
+        evidence=alignment_evidence,
+    )
+    _require(
+        math.isfinite(float(alignment.get("utility_consistency_max_abs_error", float("nan"))))
+        and float(alignment["utility_consistency_max_abs_error"]) <= 1.0e-6,
+        "counterfactual utility does not equal baseline detector loss minus swap loss",
+        evidence=alignment_evidence,
+    )
     gradient_alignment = dict(alignment.get("distillation_gradient_alignment", {}))
     _require(
         all(
@@ -322,14 +397,31 @@ def run_formal_gate(
             for key in ("sign_agreement", "spearman")
         ),
         "counterfactual distillation gradient diagnostics are non-finite",
+        evidence=alignment_evidence,
     )
     _require(
         float(gradient_alignment["spearman"]) > 0.0,
         "counterfactual surrogate descent is not positively rank-aligned with detector utility",
+        evidence=alignment_evidence,
     )
     _require(
-        float(gradient_alignment["sign_agreement"]) >= 0.5,
-        "counterfactual surrogate descent has insufficient detector-utility sign agreement",
+        float(gradient_alignment["sign_agreement"]) >= 1.0 - 1.0e-6,
+        "counterfactual score-space descent is not sign-aligned with every detector utility",
+        evidence=alignment_evidence,
+    )
+    _require(
+        float(gradient_alignment.get("normalized_direction_max_abs_error", float("inf"))) <= 1.0e-5,
+        "counterfactual score-space direction does not reproduce normalized detector utility",
+        evidence=alignment_evidence,
+    )
+    condition_numbers = [
+        float(value) for value in gradient_alignment.get("swap_gram_condition_numbers", [])
+    ]
+    _require(
+        condition_numbers
+        and all(math.isfinite(value) and value <= 5.0 + 1.0e-5 for value in condition_numbers),
+        "counterfactual swap Gram matrix is missing or ill-conditioned",
+        evidence=alignment_evidence,
     )
 
     # Run the same aggregate loss used by the training loop, then prove that AMP
@@ -388,7 +480,11 @@ def run_formal_gate(
         for name, parameter in representatives.items()
     }
     changed_groups = [name for name, delta in parameter_changes.items() if delta > 0.0]
-    _require(changed_groups, "optimizer.step produced no trainable parameter change")
+    unchanged_groups = sorted(set(representatives).difference(changed_groups))
+    _require(
+        not unchanged_groups,
+        "optimizer.step did not change required groups: " + ", ".join(unchanged_groups),
+    )
     _require(scale_after_step > 0.0, "GradScaler entered an invalid state")
     normalizer_after_step = model.rpn_head.loss_normalizer.detach().clone()
     _require(
@@ -399,7 +495,12 @@ def run_formal_gate(
     return {
         "ok": True,
         "formal_proof_ok": True,
-        "git_commit": _git_commit(),
+        "gate_seed": gate_seed,
+        "git_commit": git_commit,
+        "git_tree_clean": True,
+        "audited_implementation_sha256": implementation_hashes,
+        "input_provenance": "deterministic_synthetic_contract_probe",
+        "real_dataset_loader_executed": False,
         "config_path": str(config_file),
         "reference_config_sha256": _sha256(config_file),
         "evaluation_annotation_path": str(annotation_path),
@@ -425,8 +526,10 @@ def run_formal_gate(
         "counterfactual_alignment": alignment,
         "counterfactual_positive_direction_gate": {
             "passed": True,
-            "minimum_sign_agreement": 0.5,
+            "minimum_sign_agreement": 1.0,
             "minimum_spearman_exclusive": 0.0,
+            "maximum_normalized_direction_abs_error": 1.0e-5,
+            "maximum_swap_gram_condition_number": 5.0 + 1.0e-5,
         },
         "optimizer_exact_coverage": True,
         "amp": True,
@@ -474,6 +577,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     except Exception as exc:
         summary = {"ok": False, "error_type": exc.__class__.__name__, "error": str(exc)}
+        evidence = getattr(exc, "evidence", None)
+        if evidence is not None:
+            summary["failure_evidence"] = evidence
         code = 1
     else:
         code = 0

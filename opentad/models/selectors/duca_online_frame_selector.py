@@ -11,9 +11,11 @@ from ..builder import SELECTORS
 from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
+    build_swap_incidence_matrix,
     counterfactual_pair_scores,
     counterfactual_utility_distillation_loss,
-    gradient_utility_alignment,
+    score_space_utility_alignment,
+    signed_one_swap_proximal_loss,
 )
 from ..duca.acquisition import (
     _assert_no_forbidden_payload,
@@ -789,23 +791,48 @@ class DucaOnlineFrameSelector(nn.Module):
         }
 
     def counterfactual_distillation_loss(
-        self, selector_outputs, candidate_positions, replaced_slots, candidate_utility, candidate_valid
+        self,
+        selector_outputs,
+        candidate_positions,
+        replaced_slots,
+        candidate_utility,
+        candidate_valid,
+        *,
+        baseline_detector_loss=None,
+        candidate_detector_loss=None,
     ):
         valid = candidate_valid.bool()
+        center_scores = selector_outputs["center_scores"]
+        baseline_positions = selector_outputs["grid"].selected_positions
         pair_scores = counterfactual_pair_scores(
-            selector_outputs["center_scores"], candidate_positions, replaced_slots,
-            selector_outputs["grid"].selected_positions, valid,
+            center_scores,
+            candidate_positions,
+            replaced_slots,
+            baseline_positions,
+            valid,
         )
-        loss = counterfactual_utility_distillation_loss(
-            pair_scores, candidate_utility.detach(), valid,
+        swap_incidence = build_swap_incidence_matrix(
+            center_scores,
+            candidate_positions,
+            replaced_slots,
+            baseline_positions,
+            valid,
+        )
+        loss = signed_one_swap_proximal_loss(
+            center_scores,
+            swap_incidence,
+            candidate_utility.detach(),
+            valid,
             temperature=self.counterfactual_utility_temperature,
         ) * self.counterfactual_utility_distillation_weight
         try:
-            gradient_alignment = gradient_utility_alignment(
-                pair_scores,
+            gradient_alignment = score_space_utility_alignment(
+                center_scores,
                 loss,
+                swap_incidence,
                 candidate_utility.detach(),
                 valid,
+                temperature=self.counterfactual_utility_temperature,
             )
             alignment_available = True
         except ValueError:
@@ -814,17 +841,47 @@ class DucaOnlineFrameSelector(nn.Module):
         with torch.no_grad():
             student_pair = pair_scores[valid].float()
             utility = candidate_utility.detach()[valid].float()
-            student_rank = torch.argsort(torch.argsort(student_pair)).float()
-            utility_rank = torch.argsort(torch.argsort(utility)).float()
-            centered_d = student_rank - student_rank.mean()
-            centered_u = utility_rank - utility_rank.mean()
-            denom = centered_d.norm() * centered_u.norm()
-            spearman = float((centered_d @ centered_u / denom.clamp_min(1e-12)).item())
+            if (
+                student_pair.numel() >= 2
+                and not bool(torch.all(student_pair == student_pair[0]))
+                and not bool(torch.all(utility == utility[0]))
+            ):
+                student_rank = torch.argsort(torch.argsort(student_pair)).float()
+                utility_rank = torch.argsort(torch.argsort(utility)).float()
+                centered_d = student_rank - student_rank.mean()
+                centered_u = utility_rank - utility_rank.mean()
+                denom = centered_d.norm() * centered_u.norm()
+                spearman = float((centered_d @ centered_u / denom.clamp_min(1e-12)).item())
+            else:
+                spearman = 0.0
             informative = (student_pair != 0) & (utility != 0)
             sign = (
                 float(((student_pair[informative] * utility[informative]) > 0).float().mean().item())
                 if informative.any() else 0.0
             )
+            safe_slots = replaced_slots.clamp_min(0)
+            removed_positions = torch.gather(baseline_positions.clamp_min(0), 1, safe_slots)
+            utility_consistency_max_abs_error = None
+            baseline_values = []
+            candidate_loss_values = []
+            if baseline_detector_loss is not None and candidate_detector_loss is not None:
+                baseline_tensor = baseline_detector_loss.detach().float()
+                candidate_loss_tensor = candidate_detector_loss.detach().float()
+                if bool(valid.any()):
+                    expected_utility = baseline_tensor[:, None] - candidate_loss_tensor
+                    utility_consistency_max_abs_error = float(
+                        (expected_utility[valid] - candidate_utility.detach().float()[valid]).abs().max().item()
+                    )
+                    baseline_values = [
+                        float(baseline_tensor[batch_index].item())
+                        for batch_index in range(int(baseline_tensor.shape[0]))
+                        for _ in range(int(valid[batch_index].sum().item()))
+                    ]
+                    candidate_loss_values = [
+                        float(value) for value in candidate_loss_tensor[valid].cpu().tolist()
+                    ]
+                else:
+                    utility_consistency_max_abs_error = 0.0
             self.last_counterfactual_summary = {
                 "teacher_kind": "detached_hard_one_swap_official_actionformer_cls_plus_reg",
                 "candidate_count": int(candidate_valid.sum().item()),
@@ -832,7 +889,21 @@ class DucaOnlineFrameSelector(nn.Module):
                 "sign_agreement": sign,
                 "spearman": spearman,
                 "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
-                "alignment_kind": "independent_selector_score_add_minus_remove_vs_detector_swap_gain",
+                "distillation_loss_kind": "swap_gram_whitened_signed_proximal",
+                "no_op_teacher_utility": 0.0,
+                "no_op_student_score_delta": 0.0,
+                "no_op_role": "fixed_score_delta_reference_not_competition_class",
+                "candidate_utility_positive_count": int((utility > 0).sum().item()),
+                "candidate_utility_negative_count": int((utility < 0).sum().item()),
+                "candidate_utility_zero_count": int((utility == 0).sum().item()),
+                "candidate_utility_values": [float(value) for value in utility.cpu().tolist()],
+                "student_pair_score_values": [float(value) for value in student_pair.cpu().tolist()],
+                "candidate_add_positions": [int(value) for value in candidate_positions[valid].cpu().tolist()],
+                "candidate_remove_positions": [int(value) for value in removed_positions[valid].cpu().tolist()],
+                "baseline_detector_loss_values": baseline_values,
+                "candidate_detector_loss_values": candidate_loss_values,
+                "utility_consistency_max_abs_error": utility_consistency_max_abs_error,
+                "alignment_kind": "score_space_pair_direction_vs_signed_detector_swap_gain",
                 "distillation_gradient_alignment": gradient_alignment,
                 "distillation_gradient_alignment_available": alignment_available,
             }

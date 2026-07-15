@@ -239,9 +239,21 @@ def test_all_short_counterfactual_batch_keeps_static_loss_graph() -> None:
         request["replaced_slots"],
         torch.zeros_like(request["candidate_valid"], dtype=torch.float32),
         request["candidate_valid"],
+        baseline_detector_loss=torch.full((1,), float("nan")),
+        candidate_detector_loss=torch.full_like(
+            request["candidate_valid"],
+            float("nan"),
+            dtype=torch.float32,
+        ),
     )
     assert loss.dtype == torch.float32
     assert loss.item() == pytest.approx(0.0)
+    summary = selector.last_counterfactual_summary
+    assert summary["utility_consistency_max_abs_error"] == 0.0
+    assert summary["candidate_count"] == 0
+    assert summary["spearman"] == 0.0
+    assert summary["sign_agreement"] == 0.0
+    assert summary["finite"] is True
     loss.backward()
     assert any(param.grad is not None for param in selector.adapter.transition_scorer.parameters())
 

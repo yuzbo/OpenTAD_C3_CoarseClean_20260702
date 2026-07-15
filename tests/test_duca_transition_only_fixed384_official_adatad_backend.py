@@ -98,6 +98,11 @@ def test_formal_gpu_gate_keeps_real_videomae_and_768_to_384_geometry() -> None:
     assert '"uniform_reference_exact"' in text
     assert "torch.cuda.amp.GradScaler" in text
     assert "scaler.unscale_(optimizer)" in text
+    assert 'git", "status", "--porcelain"' in text
+    assert '"git_tree_clean": True' in text
+    assert '"audited_implementation_sha256": implementation_hashes' in text
+    assert '"input_provenance": "deterministic_synthetic_contract_probe"' in text
+    assert '"real_dataset_loader_executed": False' in text
 
 
 def test_counterfactual_teacher_disables_no_grad_autocast_weight_cache() -> None:

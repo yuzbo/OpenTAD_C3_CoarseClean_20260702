@@ -1,6 +1,8 @@
 import inspect
+import random
 from contextlib import nullcontext
 
+import numpy as np
 import torch
 import torch.nn as nn
 from collections.abc import Mapping
@@ -305,7 +307,20 @@ class ActionFormer(SingleStageDetector):
         selections = request["candidate_selections"]
         candidate_valid = request["candidate_valid"]
         baseline_positions = selector_state["grid"].selected_positions
-        utilities = selector_state["center_scores"].new_zeros(candidate_valid.shape)
+        utilities = selector_state["center_scores"].new_zeros(
+            candidate_valid.shape,
+            dtype=torch.float32,
+        )
+        baseline_detector_loss = selector_state["center_scores"].new_full(
+            (candidate_valid.shape[0],),
+            float("nan"),
+            dtype=torch.float32,
+        )
+        candidate_detector_loss = selector_state["center_scores"].new_full(
+            candidate_valid.shape,
+            float("nan"),
+            dtype=torch.float32,
+        )
 
         if raw_metas is None or raw_segments is None or raw_labels is None:
             raise RuntimeError("counterfactual teacher requires train-only metas, segments and labels")
@@ -337,6 +352,8 @@ class ActionFormer(SingleStageDetector):
         }
         cpu_rng = torch.random.get_rng_state()
         cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        python_rng = random.getstate()
+        numpy_rng = np.random.get_state()
         normalizer = self.rpn_head.loss_normalizer.detach().clone()
 
         def restore_teacher_state():
@@ -346,6 +363,8 @@ class ActionFormer(SingleStageDetector):
             torch.random.set_rng_state(cpu_rng)
             if cuda_rng is not None:
                 torch.cuda.set_rng_state_all(cuda_rng)
+            random.setstate(python_rng)
+            np.random.set_state(numpy_rng)
 
         try:
             if not self.training or not self.rpn_head.training:
@@ -357,10 +376,13 @@ class ActionFormer(SingleStageDetector):
                         continue
                     restore_teacher_state()
                     baseline_loss = evaluate_one(b, baseline_positions[b])
+                    baseline_detector_loss[b] = baseline_loss
                     for m in range(selections.shape[1]):
                         if candidate_valid[b, m]:
                             restore_teacher_state()
-                            utilities[b, m] = baseline_loss - evaluate_one(b, selections[b, m])
+                            candidate_loss = evaluate_one(b, selections[b, m])
+                            candidate_detector_loss[b, m] = candidate_loss
+                            utilities[b, m] = baseline_loss - candidate_loss
         finally:
             self.rpn_head.duca_set_frozen_loss_normalizer(None)
             restore_teacher_state()
@@ -368,9 +390,16 @@ class ActionFormer(SingleStageDetector):
                 module.training = training
         if not torch.isfinite(utilities[candidate_valid]).all():
             raise RuntimeError("counterfactual utility teacher produced non-finite gain")
+        active_batches = candidate_valid.any(dim=1)
+        if not torch.isfinite(baseline_detector_loss[active_batches]).all():
+            raise RuntimeError("counterfactual utility teacher produced non-finite baseline loss")
+        if not torch.isfinite(candidate_detector_loss[candidate_valid]).all():
+            raise RuntimeError("counterfactual utility teacher produced non-finite candidate loss")
         return self.frame_selector.counterfactual_distillation_loss(
             selector_state, request["candidate_positions"], request["replaced_slots"],
-            utilities.detach(), candidate_valid
+            utilities.detach(), candidate_valid,
+            baseline_detector_loss=baseline_detector_loss.detach(),
+            candidate_detector_loss=candidate_detector_loss.detach(),
         )
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
