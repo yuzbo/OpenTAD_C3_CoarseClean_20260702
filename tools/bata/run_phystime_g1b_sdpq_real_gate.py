@@ -229,6 +229,15 @@ def run_gate(config, checkpoint, device, expected_commit=None, expected_tree=Non
         "regression": _gradient_stats(named_parameters, lambda name, p: name.startswith("rpn_head.reg_head.") and p.requires_grad),
         "endpoint": _gradient_stats(named_parameters, lambda name, p: name.startswith("rpn_head.endpoint_head.") and p.requires_grad),
     }
+    null_evidence_parameters = [
+        (name, parameter)
+        for name, parameter in named_parameters
+        if name.endswith("null_evidence") and parameter.requires_grad
+    ]
+    null_evidence_parameter_finite = bool(
+        null_evidence_parameters
+        and all(torch.isfinite(parameter.detach()).all().item() for _, parameter in null_evidence_parameters)
+    )
     assignment_rows = head_debug.get("target_assignment", [])
     gt_without = sum(int(row.get("gt_without_assigned_query", 0)) for row in assignment_rows)
     short_without = sum(int(row.get("short_gt_without_assigned_query", 0)) for row in assignment_rows)
@@ -253,6 +262,7 @@ def run_gate(config, checkpoint, device, expected_commit=None, expected_tree=Non
         "proposal_count": int(proposals[0].shape[0]),
         "score_shape": list(scores[0].shape),
         "gradients": gradients,
+        "null_evidence_parameter_finite": null_evidence_parameter_finite,
         "native_geometry_audit": native_audit,
         "head_debug": head_debug,
         "gt_without_assigned_query": int(gt_without),
@@ -270,7 +280,7 @@ def run_gate(config, checkpoint, device, expected_commit=None, expected_tree=Non
         and gt_without == 0
         and short_without == 0
         and report["gradients"]["null_evidence"]["parameter_count"] > 0
-        and report["gradients"]["null_evidence"]["all_finite"]
+        and report["null_evidence_parameter_finite"]
         and all(report["gradients"][key]["nonzero"] for key in required_nonzero_gradients)
         and all(report["gradients"][key]["all_finite"] for key in required_nonzero_gradients)
     )
