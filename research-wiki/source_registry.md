@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-11
+updated: 2026-07-15
 ---
 
 # 来源注册表
@@ -22,6 +22,10 @@ updated: 2026-07-11
 - DUCA branch：`codex/gas-vt-stage23-detector-aware-20260706`
 - 当前审计 commit：`a5e1774b9941312569ca645341da1abad339db61`
 - 当前正式训练 commit：`70aa069b895322c2307ffbb13dfdef9fac0d1305`
+- Spatial Zoom S1 worktree：
+  `E:/DeskTop/TAD/OpenTAD_SpatialZoom_S1_AuditFix_20260715`
+- Spatial Zoom S1 branch：`codex/spatial-zoom-s1-audit-fix-20260715`
+- 首轮审计提交：`64e71ddc633f9c63f9dea1c5c60c49dc00441ebf`
 
 ## 关键评审与吸收记录
 
@@ -55,6 +59,13 @@ updated: 2026-07-11
 - Run root：`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_70aa069_final_20260710_1544`
 - a5e cost smoke Job：`1156079`
 - Cost smoke root：`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_cost_profile_smoke_20260710_1652`
+- Spatial Zoom S1 exact snapshot：
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_64e71dd_20260715_ghfast`
+- Spatial Zoom S1 suite：
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/spatial_zoom_s1_64e71dd_20260715_221121`
+- Spatial Zoom S1 packaging-only failure：Job `1165647`；不属于模型证据。
+- Spatial Zoom S1 first full CUDA gate：Job `1165648`；Linux tests `41 passed`，全模型
+  backward 到达后因预期未用的分类 `fc_norm` 两个参数触发过严门禁。无训练结果。
 
 ## 外部附件
 

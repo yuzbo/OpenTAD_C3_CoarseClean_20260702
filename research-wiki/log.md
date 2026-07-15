@@ -30,3 +30,16 @@ append_only: true
   限定。本地 S1/train-iteration tests 为 `40 passed, 1 skipped`，required C3 regression 为
   `20 passed`；
   远端 replacement CUDA gate 与 3x3 matrix 尚未产生结果。
+- 2026-07-15：提交 `64e71dd` 后创建 exact remote snapshot
+  `opentad_spatial_zoom_s1_64e71dd_20260715_ghfast`。Job `1165648` 的 Linux 测试
+  `41 passed`，真实 pretrained VideoMAE + AdaTAD AMP forward/backward 成功执行，但门禁因
+  `backbone.model.backbone.fc_norm.{weight,bias}` 两个参数无梯度而 fail-closed。源码证明
+  它们仅属于 `return_feat_map=False` 的分类池化出口，S1 dense TAD 路径在此前返回。
+- 2026-07-15：将 formal precheck 升级为 v6：只允许上述两个精确参数缺梯度，要求观察集合
+  与冻结白名单完全相等，并分别统计 trainable 与 gradient-required tensors；新增少项、额外
+  断图和 component coverage 漂移测试。本地为 `43 passed, 1 skipped`。替换 CUDA gate 通过
+  前保持 3x3 正式训练未排队。
+- 2026-07-15：独立 `gpt-5.6-sol/max` 只读审计给出 `PASS_FOR_REMOTE_GATE`，无 P0/P1；
+  其唯一 P2 是 component 与 global gradient counts 未闭合。提交前已增加所有 component 的
+  trainable/required/unused/finite/nonzero 守恒验证及 under-report 反例测试。该门禁结论仍不
+  等价于 S1 empirical GO。

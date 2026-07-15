@@ -94,14 +94,22 @@ rule remain identical.
   evidence files use atomic publication; the global marker embeds the exact
   recoverable certificate.
 - Local syntax checks pass. The combined S1/train-iteration suite reports
-  `40 passed, 1 skipped`, and the required C3 regression reports `20 passed`.
+  `43 passed, 1 skipped`, and the required C3 regression reports `20 passed`.
   The skipped
   interpolation parity test requires the Linux Torch runtime and is mandatory
   in the Slurm precheck.
 - The resolved matrix validator passes for 160/224/256 with protocol
   fingerprint
   `3dc356baec2d69b8f13fc2096f0df00b5e9e387935bb80bd2a73d3a25037eb0c`.
-- A replacement exact-commit CUDA full-window/backward precheck and fresh 3x3
-  training matrix have not yet completed. Therefore S1 remains `tested` only
-  at the local infrastructure level. No S1 GO, crop-model success, empirical
+- The `64e71dd` exact snapshot passed `41` Linux tests. Slurm Job `1165648`
+  reached a real pretrained full-model AMP backward and failed only because
+  VideoMAE's classification-pooling `fc_norm.{weight,bias}` remain trainable but
+  are bypassed by the configured `return_feat_map=True` TAD feature path.
+- Precheck v6 therefore permits exactly those two fully qualified parameter
+  names to be absent from the backward graph, reports trainable and
+  gradient-required counts separately, closes all component counts against the
+  global totals, and rejects any missing or additional disconnected parameter.
+  A replacement exact-commit CUDA precheck and fresh
+  3x3 training matrix have not yet completed. Therefore S1 remains `tested`
+  only at the infrastructure level. No S1 GO, crop-model success, empirical
   support, or paper claim is allowed.

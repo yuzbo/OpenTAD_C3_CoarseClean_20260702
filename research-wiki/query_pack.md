@@ -6,6 +6,19 @@ max_chars: 8000
 
 # Research Query Pack
 
+## Spatial Zoom S1 最新门禁状态（2026-07-15）
+
+- 当前唯一执行线仍是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
+  ROI、scout、crop policy 或 fusion。
+- `64e71dd` 的 Linux 测试为 `41 passed`。正式 CUDA Job `1165648` 完成真实
+  pretrained VideoMAE + AdaTAD 全模型 AMP forward/backward 后，仅因
+  `backbone.model.backbone.fc_norm.{weight,bias}` 无梯度而 fail-closed。
+- 源码核验表明这两个参数属于分类预训练的 mean-pooling norm；S1 配置均为
+  `return_feat_map=True`，在进入 `fc_norm` 前返回 dense TAD 特征。该失败不是模型断图，
+  也不是性能证据。
+- 修复只允许这两个精确全名缺梯度，并要求缺梯度集合与白名单完全相等；任何新增断图仍
+  必须失败。替换 CUDA gate 通过前不得排正式 3x3 训练。
+
 ## 当前唯一活动任务：Spatial Zoom
 
 当前执行线是离线 TAD 的空间去冗余，不是 DUCA，也不是时序选帧。时间轴、768 点

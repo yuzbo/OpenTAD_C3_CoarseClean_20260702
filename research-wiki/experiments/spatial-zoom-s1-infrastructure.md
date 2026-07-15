@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: tested
-outcome: replacement_protocol_implemented_remote_gate_pending
+outcome: first_remote_gate_failed_on_audited_unused_classification_norm_fix_pending
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-15
@@ -47,15 +47,29 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
 ## Current Verification
 
 - Syntax checks: passed.
-- Combined S1/train-iteration tests: `40 passed, 1 skipped` locally. The
+- Combined S1/train-iteration tests: `43 passed, 1 skipped` locally. The
   skipped Torch parity check is mandatory on the Linux CUDA precheck node.
 - Required C3 regression: `20 passed`.
 - Config matrix: PASS; only spatial resolution differs; detector feature
   contract remains `[B,384,768]`.
 - Current protocol fingerprint:
   `3dc356baec2d69b8f13fc2096f0df00b5e9e387935bb80bd2a73d3a25037eb0c`.
-- Replacement exact-commit CUDA gate, pilot, 3x3 training, sealed test, cost
-  profile, final analysis, and GO/KILL: not yet completed.
+- Exact snapshot `opentad_spatial_zoom_s1_64e71dd_20260715_ghfast` passed all
+  `41` Linux tests and reached a real pretrained full-model AMP backward in
+  Slurm Job `1165648`. It then failed closed because the two trainable
+  `backbone.model.backbone.fc_norm.{weight,bias}` tensors had no gradient.
+- Source audit confirms these are classification-pretraining mean-pooling norm
+  parameters. Every S1 config sets `return_feat_map=True`, so the official-derived
+  VideoMAE path returns a dense feature map before `fc_norm`; backbone adapters,
+  projection, and detection head did receive gradients. This is a gate-contract
+  issue, not detector failure and not performance evidence.
+- The replacement contract uses an exact two-name expected-unused allowlist,
+  separately counts gradient-required tensors, and fails if either allowlisted
+  parameter is unexpectedly used or any additional trainable parameter is
+  disconnected. Local S1/train-iteration tests are now `43 passed, 1 skipped`.
+- Replacement exact-commit CUDA gate, 3x3 training, sealed test, cost profile,
+  final analysis, and GO/KILL remain incomplete. No formal training job has been
+  queued from the failed gate.
 
 ## Decision Boundary
 

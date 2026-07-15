@@ -46,7 +46,10 @@ from tools.bata.spatial_zoom_s1_cost import (
     compare_resolution_profiles,
 )
 from tools.bata.run_spatial_zoom_s1_precheck import (
+    S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS,
     _register_opentad_runtime_modules,
+    _validate_expected_unused_trainable_parameters,
+    _validate_gradient_coverage_evidence,
     _validate_interpolation_calls,
     _validate_pretrained_load_audit,
     build_precheck_spec,
@@ -222,6 +225,119 @@ def test_formal_precheck_registers_model_pipeline_transforms(monkeypatch) -> Non
     )
     _register_opentad_runtime_modules()
     assert imported == ["opentad.datasets", "opentad.models.backbones"]
+
+
+def _valid_gradient_coverage_evidence() -> dict:
+    expected = sorted(S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS)
+    return {
+        "trainable_parameter_tensors": 12,
+        "gradient_required_parameter_tensors": 10,
+        "expected_unused_trainable_parameters": expected,
+        "observed_missing_gradient_parameters": expected,
+        "finite_gradient_tensors": 10,
+        "nonzero_gradient_tensors": 6,
+        "gradient_coverage": {
+            "backbone": {
+                "trainable_parameter_tensors": 6,
+                "gradient_required_parameter_tensors": 4,
+                "expected_unused_trainable_parameter_tensors": 2,
+                "gradient_tensors": 4,
+                "nonzero_gradient_tensors": 2,
+                "all_present_gradients_finite": True,
+            },
+            "projection": {
+                "trainable_parameter_tensors": 3,
+                "gradient_required_parameter_tensors": 3,
+                "expected_unused_trainable_parameter_tensors": 0,
+                "gradient_tensors": 3,
+                "nonzero_gradient_tensors": 2,
+                "all_present_gradients_finite": True,
+            },
+            "rpn_head": {
+                "trainable_parameter_tensors": 3,
+                "gradient_required_parameter_tensors": 3,
+                "expected_unused_trainable_parameter_tensors": 0,
+                "gradient_tensors": 3,
+                "nonzero_gradient_tensors": 2,
+                "all_present_gradients_finite": True,
+            },
+        },
+    }
+
+
+def test_full_precheck_only_allows_exact_videomae_fc_norm_bypass() -> None:
+    expected = sorted(S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS)
+    assert expected == [
+        "backbone.model.backbone.fc_norm.bias",
+        "backbone.model.backbone.fc_norm.weight",
+    ]
+    assert _validate_expected_unused_trainable_parameters(expected) == expected
+    with pytest.raises(RuntimeError, match="missing_expected"):
+        _validate_expected_unused_trainable_parameters(expected[:1])
+    with pytest.raises(RuntimeError, match="unexpected"):
+        _validate_expected_unused_trainable_parameters(
+            expected + ["backbone.unexpected.weight"]
+        )
+
+
+def test_full_precheck_gradient_evidence_fails_closed_on_contract_drift() -> None:
+    evidence = _valid_gradient_coverage_evidence()
+    _validate_gradient_coverage_evidence(evidence)
+
+    missing_allowlisted = copy.deepcopy(evidence)
+    missing_allowlisted["observed_missing_gradient_parameters"] = [
+        S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS[0]
+    ]
+    with pytest.raises(ValueError, match="incomplete detector-gradient evidence"):
+        _validate_gradient_coverage_evidence(missing_allowlisted)
+
+    unknown_disconnect = copy.deepcopy(evidence)
+    unknown_disconnect["observed_missing_gradient_parameters"].append(
+        "projection.unexpected.weight"
+    )
+    with pytest.raises(ValueError, match="incomplete detector-gradient evidence"):
+        _validate_gradient_coverage_evidence(unknown_disconnect)
+
+    forged_allowlist = copy.deepcopy(evidence)
+    forged_allowlist["expected_unused_trainable_parameters"].append(
+        "projection.unexpected.weight"
+    )
+    with pytest.raises(ValueError, match="incomplete detector-gradient evidence"):
+        _validate_gradient_coverage_evidence(forged_allowlist)
+
+    incomplete_backbone = copy.deepcopy(evidence)
+    incomplete_backbone["gradient_coverage"]["backbone"]["gradient_tensors"] = 3
+    with pytest.raises(ValueError, match="invalid backbone gradient coverage"):
+        _validate_gradient_coverage_evidence(incomplete_backbone)
+
+    forged_component_count = copy.deepcopy(evidence)
+    forged_component_count["gradient_coverage"]["backbone"][
+        "expected_unused_trainable_parameter_tensors"
+    ] = 3
+    with pytest.raises(ValueError, match="invalid backbone gradient coverage"):
+        _validate_gradient_coverage_evidence(forged_component_count)
+
+    underreported_component = copy.deepcopy(evidence)
+    for key in (
+        "trainable_parameter_tensors",
+        "gradient_required_parameter_tensors",
+        "gradient_tensors",
+    ):
+        underreported_component["gradient_coverage"]["backbone"][key] -= 1
+    with pytest.raises(ValueError, match="component gradient totals"):
+        _validate_gradient_coverage_evidence(underreported_component)
+
+
+def test_videomae_fc_norm_is_bypassed_only_for_dense_tad_feature_maps() -> None:
+    source = (ROOT / "opentad" / "models" / "backbones" / "vit_adapter.py").read_text(
+        encoding="utf-8"
+    )
+    dense_return = source.index("if self.return_feat_map:")
+    classification_norm = source.index("if self.fc_norm is not None:", dense_return)
+    assert dense_return < classification_norm
+    for resolution in S1_RESOLUTIONS:
+        cfg = Config.fromfile(str(ROOT / CONFIG_PATHS[resolution]))
+        assert cfg.model.backbone.backbone.return_feat_map is True
 
 
 def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:

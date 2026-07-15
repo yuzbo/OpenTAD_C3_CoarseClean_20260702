@@ -27,7 +27,124 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     sha256_file,
 )
 
-S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v5"
+S1_PRECHECK_SCHEMA = "spatial_zoom_s1_precheck_v6"
+
+# VideoMAE's classification-pooling norm is constructed by the official-derived
+# backbone but is bypassed when AdaTAD requests the dense feature map. Keep this
+# allowlist exact so any new disconnected trainable parameter still fails closed.
+S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS = (
+    "backbone.model.backbone.fc_norm.bias",
+    "backbone.model.backbone.fc_norm.weight",
+)
+
+
+def _validate_expected_unused_trainable_parameters(
+    missing_gradient_parameters: list[str] | tuple[str, ...],
+) -> list[str]:
+    observed = sorted(str(name) for name in missing_gradient_parameters)
+    expected = sorted(S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS)
+    if observed != expected:
+        missing_expected = sorted(set(expected) - set(observed))
+        unexpected = sorted(set(observed) - set(expected))
+        raise RuntimeError(
+            "S1 full precheck trainable parameters outside the detector backward "
+            "graph do not exactly match the audited VideoMAE feature-map bypass: "
+            f"missing_expected={missing_expected}, unexpected={unexpected}, "
+            f"observed={observed}"
+        )
+    return expected
+
+
+def _validate_gradient_coverage_evidence(runtime: dict[str, Any]) -> None:
+    trainable_parameter_tensors = int(runtime.get("trainable_parameter_tensors", 0))
+    gradient_required_parameter_tensors = int(
+        runtime.get("gradient_required_parameter_tensors", 0)
+    )
+    expected_unused = sorted(runtime.get("expected_unused_trainable_parameters", []))
+    observed_missing = sorted(runtime.get("observed_missing_gradient_parameters", []))
+    frozen_expected_unused = sorted(S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS)
+    if (
+        trainable_parameter_tensors <= 0
+        or expected_unused != frozen_expected_unused
+        or observed_missing != frozen_expected_unused
+        or gradient_required_parameter_tensors
+        != trainable_parameter_tensors - len(frozen_expected_unused)
+        or int(runtime.get("finite_gradient_tensors", 0))
+        != gradient_required_parameter_tensors
+        or int(runtime.get("nonzero_gradient_tensors", 0)) <= 0
+    ):
+        raise ValueError("formal S1 precheck has incomplete detector-gradient evidence")
+    coverage = runtime.get("gradient_coverage")
+    if not isinstance(coverage, dict):
+        raise ValueError("formal S1 precheck has no gradient coverage map")
+    component_totals = {
+        "trainable_parameter_tensors": 0,
+        "gradient_required_parameter_tensors": 0,
+        "expected_unused_trainable_parameter_tensors": 0,
+        "gradient_tensors": 0,
+        "nonzero_gradient_tensors": 0,
+    }
+    for component, component_row in coverage.items():
+        if not isinstance(component_row, dict):
+            raise ValueError(
+                f"formal S1 precheck has invalid {component} gradient coverage"
+            )
+        values = {
+            key: int(component_row.get(key, -1)) for key in component_totals
+        }
+        if (
+            any(value < 0 for value in values.values())
+            or values["trainable_parameter_tensors"]
+            != values["gradient_required_parameter_tensors"]
+            + values["expected_unused_trainable_parameter_tensors"]
+            or values["gradient_tensors"]
+            != values["gradient_required_parameter_tensors"]
+            or values["nonzero_gradient_tensors"] > values["gradient_tensors"]
+            or component_row.get("all_present_gradients_finite") is not True
+        ):
+            raise ValueError(
+                f"formal S1 precheck has invalid {component} gradient coverage"
+            )
+        for key, value in values.items():
+            component_totals[key] += value
+    expected_component_totals = {
+        "trainable_parameter_tensors": trainable_parameter_tensors,
+        "gradient_required_parameter_tensors": gradient_required_parameter_tensors,
+        "expected_unused_trainable_parameter_tensors": len(
+            frozen_expected_unused
+        ),
+        "gradient_tensors": int(runtime.get("finite_gradient_tensors", 0)),
+        "nonzero_gradient_tensors": int(runtime.get("nonzero_gradient_tensors", 0)),
+    }
+    if component_totals != expected_component_totals:
+        raise ValueError(
+            "formal S1 precheck component gradient totals do not match global evidence"
+        )
+    expected_unused_by_component: dict[str, int] = {}
+    for name in frozen_expected_unused:
+        component = name.split(".", 1)[0]
+        expected_unused_by_component[component] = (
+            expected_unused_by_component.get(component, 0) + 1
+        )
+    for component in ("backbone", "projection", "rpn_head"):
+        component_row = coverage.get(component)
+        expected_unused_count = expected_unused_by_component.get(component, 0)
+        if (
+            not isinstance(component_row, dict)
+            or int(component_row.get("trainable_parameter_tensors", 0)) <= 0
+            or int(component_row.get("expected_unused_trainable_parameter_tensors", -1))
+            != expected_unused_count
+            or int(component_row.get("gradient_required_parameter_tensors", 0))
+            != int(component_row.get("trainable_parameter_tensors", 0))
+            - expected_unused_count
+            or component_row.get("gradient_tensors")
+            != component_row.get("gradient_required_parameter_tensors")
+            or int(component_row.get("nonzero_gradient_tensors", 0)) <= 0
+            or component_row.get("all_present_gradients_finite") is not True
+        ):
+            raise ValueError(
+                f"formal S1 precheck has invalid {component} gradient coverage"
+            )
 
 
 def _register_opentad_runtime_modules() -> None:
@@ -439,6 +556,7 @@ def _run_full_detector(
     finite_gradient_tensors = 0
     nonzero_gradient_tensors = 0
     trainable_parameter_tensors = 0
+    expected_unused_names = set(S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS)
     for name, parameter in model.named_parameters():
         if not parameter.requires_grad:
             continue
@@ -448,12 +566,18 @@ def _run_full_detector(
             component,
             {
                 "trainable_parameter_tensors": 0,
+                "gradient_required_parameter_tensors": 0,
+                "expected_unused_trainable_parameter_tensors": 0,
                 "gradient_tensors": 0,
                 "nonzero_gradient_tensors": 0,
                 "all_present_gradients_finite": True,
             },
         )
         row["trainable_parameter_tensors"] += 1
+        if name in expected_unused_names:
+            row["expected_unused_trainable_parameter_tensors"] += 1
+        else:
+            row["gradient_required_parameter_tensors"] += 1
         if parameter.grad is None:
             missing_gradient_parameters.append(name)
             continue
@@ -467,19 +591,23 @@ def _run_full_detector(
         if bool(torch.count_nonzero(parameter.grad).item()):
             row["nonzero_gradient_tensors"] += 1
             nonzero_gradient_tensors += 1
-    if missing_gradient_parameters:
-        raise RuntimeError(
-            "S1 full precheck left trainable parameters outside the detector "
-            f"backward graph: count={len(missing_gradient_parameters)}, "
-            f"examples={missing_gradient_parameters[:8]}"
-        )
+    observed_expected_unused = _validate_expected_unused_trainable_parameters(
+        missing_gradient_parameters
+    )
+    gradient_required_parameter_tensors = trainable_parameter_tensors - len(
+        observed_expected_unused
+    )
     for component in required_gradient_components:
         row = gradient_coverage.get(component)
         if not row or int(row["trainable_parameter_tensors"]) <= 0:
             raise RuntimeError(
                 f"S1 full precheck found no trainable {component} parameters"
             )
-        if row["gradient_tensors"] != row["trainable_parameter_tensors"]:
+        if int(row["gradient_required_parameter_tensors"]) <= 0:
+            raise RuntimeError(
+                f"S1 full precheck found no gradient-required {component} parameters"
+            )
+        if row["gradient_tensors"] != row["gradient_required_parameter_tensors"]:
             raise RuntimeError(
                 f"S1 full precheck has incomplete {component} gradient coverage"
             )
@@ -487,7 +615,7 @@ def _run_full_detector(
             raise RuntimeError(
                 f"S1 full precheck produced no nonzero {component} gradient"
             )
-    if finite_gradient_tensors != trainable_parameter_tensors:
+    if finite_gradient_tensors != gradient_required_parameter_tensors:
         raise RuntimeError("S1 full precheck gradient coverage is incomplete")
     result = {
         "mode": "real_full_detector_window",
@@ -511,6 +639,9 @@ def _run_full_detector(
         "deterministic_backward_passed": True,
         "train_cost": float(train_cost.detach().float().cpu().item()),
         "trainable_parameter_tensors": int(trainable_parameter_tensors),
+        "gradient_required_parameter_tensors": int(gradient_required_parameter_tensors),
+        "expected_unused_trainable_parameters": observed_expected_unused,
+        "observed_missing_gradient_parameters": sorted(missing_gradient_parameters),
         "finite_gradient_tensors": int(finite_gradient_tensors),
         "nonzero_gradient_tensors": int(nonzero_gradient_tensors),
         "gradient_coverage": gradient_coverage,
@@ -698,34 +829,7 @@ def validate_precheck_certificate(
                 raise ValueError(
                     "formal S1 precheck did not pass a real detector backward"
                 )
-            trainable_parameter_tensors = int(
-                runtime.get("trainable_parameter_tensors", 0)
-            )
-            if (
-                trainable_parameter_tensors <= 0
-                or int(runtime.get("finite_gradient_tensors", 0))
-                != trainable_parameter_tensors
-                or int(runtime.get("nonzero_gradient_tensors", 0)) <= 0
-            ):
-                raise ValueError(
-                    "formal S1 precheck has incomplete detector-gradient evidence"
-                )
-            coverage = runtime.get("gradient_coverage")
-            if not isinstance(coverage, dict):
-                raise ValueError("formal S1 precheck has no gradient coverage map")
-            for component in ("backbone", "projection", "rpn_head"):
-                component_row = coverage.get(component)
-                if (
-                    not isinstance(component_row, dict)
-                    or int(component_row.get("trainable_parameter_tensors", 0)) <= 0
-                    or component_row.get("gradient_tensors")
-                    != component_row.get("trainable_parameter_tensors")
-                    or int(component_row.get("nonzero_gradient_tensors", 0)) <= 0
-                    or component_row.get("all_present_gradients_finite") is not True
-                ):
-                    raise ValueError(
-                        f"formal S1 precheck has invalid {component} gradient coverage"
-                    )
+            _validate_gradient_coverage_evidence(runtime)
             if not runtime.get("pretrained_checkpoint_loaded") or runtime.get(
                 "random_initialization"
             ):
@@ -844,7 +948,10 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 __all__ = [
+    "S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS",
     "_register_opentad_runtime_modules",
+    "_validate_expected_unused_trainable_parameters",
+    "_validate_gradient_coverage_evidence",
     "_validate_interpolation_calls",
     "_validate_pretrained_load_audit",
     "build_precheck_spec",

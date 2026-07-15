@@ -17,6 +17,9 @@ updated: 2026-07-15
    video-cluster bootstrap，并保持 baseline/candidate 同 replicate 配对。
 7. 成本只允许表述为同节点同 GPU 的 warm serial per-window latency 与 gross GPU energy，
    不得冒充 cold-start、whole-video p95、incremental energy 或完整系统能耗。
+8. VideoMAE `return_feat_map=True` 会绕过分类出口 `fc_norm`；formal gradient gate 只能
+   精确允许 `backbone.model.backbone.fc_norm.{weight,bias}` 两个参数无梯度。不得用前缀、
+   正则或宽泛白名单掩盖新的断图。
 
 ## 任务与叙事
 
