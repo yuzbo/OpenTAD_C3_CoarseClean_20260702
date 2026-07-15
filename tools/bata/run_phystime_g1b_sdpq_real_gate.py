@@ -253,7 +253,9 @@ def run_gate(config, checkpoint, device, expected_commit=None, expected_tree=Non
         "K_raw_observations": 384,
         "J_native_tubelet_tokens": int(native_audit.get("native_token_count", -1)),
         "feature_interpolation": native_audit.get("feature_interpolation"),
-        "query_tensor_count": int(native_audit.get("query_tensor_count", -1)),
+        "query_tensor_count": int(
+            head_debug.get("valid_query_count", native_audit.get("base_candidate_tensor_count", -1))
+        ),
         "prediction_time_unit": batch["metas"][0].get("prediction_time_unit"),
         "optimizer": optimizer_report,
         "optimizer_step_count": 1,
