@@ -31,10 +31,12 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
         center_sample_radius=2.0,
         cls_prior_prob=0.01,
         endpoint_loss_weight=0.25,
+        offset_loss_weight=0.25,
         label_smoothing=0.0,
         max_abs_delta_center=8.0,
         min_log_width=-6.0,
         max_log_width=6.0,
+        width_reference_multiplier=2.0,
         diagnostics=True,
     ):
         super().__init__()
@@ -45,10 +47,12 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
         self.regression_ranges_sec = tuple(tuple(float(value) for value in item) for item in regression_ranges_sec)
         self.center_sample_radius = float(center_sample_radius)
         self.endpoint_loss_weight = float(endpoint_loss_weight)
+        self.offset_loss_weight = float(offset_loss_weight)
         self.label_smoothing = float(label_smoothing)
         self.max_abs_delta_center = float(max_abs_delta_center)
         self.min_log_width = float(min_log_width)
         self.max_log_width = float(max_log_width)
+        self.width_reference_multiplier = float(width_reference_multiplier)
         self.diagnostics_enabled = bool(diagnostics)
         self.loss_normalizer_momentum = float(loss_normalizer_momentum)
         self.register_buffer("loss_normalizer", torch.tensor(float(loss_normalizer)))
@@ -103,23 +107,25 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
         points = []
         for geometry, regression_range in zip(level_geometry, self.regression_ranges_sec):
             centers = geometry["centers_sec"]
-            widths = geometry["widths_sec"].clamp_min(1.0e-8)
+            center_scale = geometry["widths_sec"].clamp_min(1.0e-8)
+            width_reference = (center_scale * self.width_reference_multiplier).clamp_min(1.0e-8)
             lower = torch.full_like(centers, regression_range[0])
             upper = torch.full_like(centers, regression_range[1])
-            points.append(torch.stack((centers, lower, upper, widths), dim=-1))
+            points.append(torch.stack((centers, lower, upper, center_scale, width_reference), dim=-1))
         return tuple(points)
 
     def decode_segments(self, points, center_width_offsets):
         all_points = torch.cat(points, dim=1)
         offsets = torch.cat(center_width_offsets, dim=1)
         query_center = all_points[..., 0]
-        query_scale = all_points[..., 3].clamp_min(1.0e-8)
+        center_scale = all_points[..., 3].clamp_min(1.0e-8)
+        width_reference = all_points[..., 4].clamp_min(1.0e-8)
         delta_center = offsets[..., 0].clamp(
             min=-self.max_abs_delta_center, max=self.max_abs_delta_center
         )
         log_width = offsets[..., 1].clamp(min=self.min_log_width, max=self.max_log_width)
-        center = query_center + query_scale * delta_center
-        width = query_scale * torch.exp(log_width)
+        center = query_center + center_scale * delta_center
+        width = width_reference * torch.exp(log_width)
         start = center - 0.5 * width
         end = center + 0.5 * width
         return torch.stack((torch.minimum(start, end), torch.maximum(start, end)), dim=-1)
@@ -172,6 +178,14 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
         all_points = torch.cat(points, dim=1)
         all_intervals = torch.cat([item["intervals_sec"] for item in level_geometry], dim=1)
         valid_mask = torch.cat([item["valid_mask"] for item in level_geometry], dim=1)
+        assignment_mask = torch.cat(
+            [item.get("assignment_mask", item["valid_mask"]) for item in level_geometry], dim=1
+        )
+        coverage_sec = torch.cat(
+            [item.get("coverage_sec", torch.zeros_like(item["valid_mask"], dtype=all_points.dtype)) for item in level_geometry],
+            dim=1,
+        )
+        cell_widths = torch.cat([item["widths_sec"] for item in level_geometry], dim=1).clamp_min(1.0e-8)
         level_ids = []
         for level, point in enumerate(points):
             level_ids.append(torch.full(point.shape[:2], level, device=point.device, dtype=torch.long))
@@ -185,8 +199,10 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
         for batch_idx, (segments, labels) in enumerate(zip(gt_segments, gt_labels)):
             point = all_points[batch_idx]
             valid = valid_mask[batch_idx]
+            assignable = assignment_mask[batch_idx]
             levels = level_ids[batch_idx]
             intervals = all_intervals[batch_idx]
+            coverage_ratio = (coverage_sec[batch_idx] / cell_widths[batch_idx]).clamp(0, 1)
             num_points = point.shape[0]
             cls_target = point.new_zeros((num_points, self.num_classes))
             offset_target = point.new_zeros((num_points, 2))
@@ -207,9 +223,10 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
             gt_center = 0.5 * (segments[:, 0] + segments[:, 1])
             gt_width = (segments[:, 1] - segments[:, 0]).clamp_min(1.0e-8)
             query_center = point[:, 0]
-            query_scale = point[:, 3].clamp_min(1.0e-8)
-            delta_center = (gt_center[None, :] - query_center[:, None]) / query_scale[:, None]
-            delta_log_width = torch.log(gt_width[None, :] / query_scale[:, None])
+            center_scale = point[:, 3].clamp_min(1.0e-8)
+            width_reference = point[:, 4].clamp_min(1.0e-8)
+            delta_center = (gt_center[None, :] - query_center[:, None]) / center_scale[:, None]
+            delta_log_width = torch.log(gt_width[None, :] / width_reference[:, None])
             normalized_cost = delta_center.abs() + delta_log_width.abs()
 
             level_range_ok = torch.zeros((num_points, segments.shape[0]), dtype=torch.bool, device=point.device)
@@ -224,24 +241,37 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
                 # representability.
                 level_range_ok[:, ~any_level] = True
 
-            valid_candidates = valid[:, None] & level_range_ok
+            valid_candidates = assignable[:, None] & level_range_ok
             local_candidates = valid_candidates & (delta_center.abs() <= self.center_sample_radius)
             positive_candidates = local_candidates.clone()
             reserved_count = 0
+            reservation_collision_count = 0
             gt_assigned = torch.zeros((segments.shape[0],), dtype=torch.bool, device=point.device)
-            for gt_idx in range(segments.shape[0]):
-                candidates = torch.nonzero(valid_candidates[:, gt_idx], as_tuple=False).flatten()
+            reserved_owner = torch.full((num_points,), -1, dtype=torch.long, device=point.device)
+            candidate_counts = valid_candidates.sum(dim=0)
+            gt_order = torch.argsort(candidate_counts)
+            for gt_idx in gt_order.tolist():
+                candidates = torch.nonzero(
+                    valid_candidates[:, gt_idx] & (reserved_owner < 0),
+                    as_tuple=False,
+                ).flatten()
                 if candidates.numel() == 0:
+                    if bool(valid_candidates[:, gt_idx].any().item()):
+                        reservation_collision_count += 1
                     continue
                 chosen = candidates[normalized_cost[candidates, gt_idx].argmin()]
                 positive_candidates[chosen, gt_idx] = True
+                reserved_owner[chosen] = int(gt_idx)
                 gt_assigned[gt_idx] = True
                 reserved_count += 1
 
             candidate_cost = normalized_cost.masked_fill(~positive_candidates, float("inf"))
             min_cost, min_gt = candidate_cost.min(dim=1)
             positive = torch.isfinite(min_cost)
+            reserved_positive = reserved_owner >= 0
+            positive = positive | reserved_positive
             if positive.any():
+                min_gt = torch.where(reserved_positive, reserved_owner.clamp_min(0), min_gt)
                 assigned_gt[positive] = min_gt[positive]
                 cls_target[positive, labels[min_gt[positive]].long()] = 1.0
                 offset_target[positive, 0] = delta_center[positive, min_gt[positive]].clamp(
@@ -271,9 +301,12 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
                     "gt_count": int(segments.shape[0]),
                     "assigned_query_count": int(positive.sum().item()),
                     "reserved_match_count": int(reserved_count),
+                    "reservation_collision_count": int(reservation_collision_count),
                     "gt_without_assigned_query": int((~assigned_by_gt).sum().item()),
                     "short_gt_count": int(short_gt.sum().item()),
                     "short_gt_without_assigned_query": int((short_gt & (~assigned_by_gt)).sum().item()),
+                    "positive_uncovered_count": int((positive & (coverage_ratio <= 0)).sum().item()),
+                    "positive_low_coverage_count": int((positive & (coverage_ratio < 1.0e-6)).sum().item()),
                 }
             )
             cls_targets.append(cls_target)
@@ -317,6 +350,15 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
                 ) / normalizer.float()
         else:
             reg_loss = raw["proposals_sec"].sum() * 0.0
+        predicted_offsets = torch.cat(raw["center_width_offsets"], dim=1)
+        if positive_mask.any():
+            offset_loss = F.smooth_l1_loss(
+                predicted_offsets[positive_mask].float(),
+                offset_target[positive_mask].float(),
+                reduction="sum",
+            ) / normalizer.float()
+        else:
+            offset_loss = predicted_offsets.sum() * 0.0
 
         with torch.cuda.amp.autocast(enabled=False):
             endpoint_event_logits = self.integrated_event_logit(
@@ -335,6 +377,8 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
                 valid_query_count=int(valid_mask.sum().item()),
                 positive_query_count=num_positive,
                 covered_query_count=int(((coverage > 0) & valid_mask).sum().item()),
+                positive_uncovered_count=int(((coverage <= 0) & positive_mask).sum().item()),
+                positive_low_coverage_count=int((((coverage / width).clamp(0, 1) < 1.0e-6) & positive_mask).sum().item()),
                 mean_support_observability=float(((coverage / width).clamp(0, 1)[valid_mask]).mean().item())
                 if valid_mask.any()
                 else 0.0,
@@ -342,6 +386,7 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
         return {
             "cls_loss": cls_loss,
             "reg_loss": reg_loss,
+            "offset_loss": offset_loss * self.offset_loss_weight,
             "endpoint_loss": endpoint_loss * self.endpoint_loss_weight,
         }
 

@@ -108,20 +108,42 @@ set -e
 touch "${RUN_DIR}/PILOT_TRAINING_COMPLETE"
 "${PYTHON}" - "${RUN_DIR}" <<'PY'
 import json
-import re
+import math
 import sys
 from pathlib import Path
 
 run_dir = Path(sys.argv[1])
-text = (run_dir / "train.out").read_text(encoding="utf-8", errors="replace")
-avg = [float(value) for value in re.findall(r"average_mAP:?\s*([0-9.]+)", text)]
+metrics_files = list(run_dir.glob("work_dir/**/evaluation_metrics.json"))
+checkpoint_files = list(run_dir.glob("work_dir/**/checkpoint/epoch_5.pth"))
+if len(metrics_files) != 1:
+    raise SystemExit(f"expected exactly one evaluation_metrics.json, got {metrics_files}")
+if len(checkpoint_files) != 1:
+    raise SystemExit(f"expected exactly one final epoch_5.pth, got {checkpoint_files}")
+metrics_path = metrics_files[0]
+checkpoint_path = checkpoint_files[0]
+metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+required = ["average_mAP", "mAP@0.3", "mAP@0.4", "mAP@0.5", "mAP@0.6", "mAP@0.7"]
+missing = [key for key in required if key not in metrics]
+if missing:
+    raise SystemExit(f"evaluation metrics missing required keys: {missing}")
+values = {key: float(metrics[key]) for key in required}
+if not all(math.isfinite(value) for value in values.values()):
+    raise SystemExit("evaluation metrics contain non-finite values")
+evaluation_epoch = int(metrics.get("evaluation_epoch", -1))
+if evaluation_epoch != 5:
+    raise SystemExit(f"expected final evaluation_epoch=5, got {evaluation_epoch}")
 payload = {
     "schema_version": "phystime_g1b_sdpq_pilot_complete_v1",
     "validation_pass": True,
     "run_dir": str(run_dir),
     "training_complete": True,
-    "observed_average_mAP": avg,
-    "best_average_mAP": max(avg) if avg else None,
+    "metrics": values,
+    "observed_average_mAP": [values["average_mAP"]],
+    "best_average_mAP": values["average_mAP"],
+    "evaluation_epoch": evaluation_epoch,
+    "metrics_path": str(metrics_path.resolve()),
+    "checkpoint_path": str(checkpoint_path.resolve()),
+    "checkpoint_size_bytes": checkpoint_path.stat().st_size,
 }
 (run_dir / "PILOT_COMPLETE.json").write_text(
     json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"

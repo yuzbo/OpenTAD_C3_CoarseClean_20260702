@@ -58,6 +58,8 @@ class SupportIntegratedMeasureAttention(nn.Module):
         dropout=0.0,
         keep_uncovered_queries=False,
         use_null_evidence=True,
+        support_context_scale=1.0,
+        min_assignment_coverage=0.0,
         eps=1.0e-8,
     ):
         super().__init__()
@@ -70,14 +72,30 @@ class SupportIntegratedMeasureAttention(nn.Module):
         self.point_radius_cells = float(point_radius_cells)
         self.keep_uncovered_queries = bool(keep_uncovered_queries)
         self.use_null_evidence = bool(use_null_evidence)
+        self.support_context_scale = float(support_context_scale)
+        self.min_assignment_coverage = float(min_assignment_coverage)
         self.eps = float(eps)
         if self.observation_measure not in {"support_overlap", "point_gaussian"}:
             raise ValueError(f"unsupported observation_measure: {self.observation_measure}")
         if self.point_radius_cells <= 0:
             raise ValueError("point_radius_cells must be positive")
+        if self.support_context_scale <= 0:
+            raise ValueError("support_context_scale must be positive")
+        if self.min_assignment_coverage < 0:
+            raise ValueError("min_assignment_coverage must be non-negative")
 
         self.value_proj = nn.Linear(self.in_channels, self.out_channels)
         self.output_proj = nn.Linear(self.out_channels, self.out_channels)
+        self.query_value_embedding = PhysicalQueryEmbedding(self.out_channels)
+        self.coverage_embedding = nn.Sequential(
+            nn.Linear(2, self.out_channels),
+            nn.GELU(),
+            nn.Linear(self.out_channels, self.out_channels),
+        )
+        nn.init.zeros_(self.query_value_embedding.net[-1].weight)
+        nn.init.zeros_(self.query_value_embedding.net[-1].bias)
+        nn.init.zeros_(self.coverage_embedding[-1].weight)
+        nn.init.zeros_(self.coverage_embedding[-1].bias)
         if self.keep_uncovered_queries and self.use_null_evidence:
             self.null_evidence = nn.Parameter(torch.zeros(self.out_channels))
         else:
@@ -107,10 +125,18 @@ class SupportIntegratedMeasureAttention(nn.Module):
         if observations.shape[:2] != timestamps.shape or observations.shape[-1] != self.in_channels:
             raise ValueError("observation features and physical geometry have incompatible shapes")
 
+        context_widths = (query_widths * self.support_context_scale).clamp_min(self.eps)
+        context_intervals = torch.stack(
+            (
+                query_centers - 0.5 * context_widths,
+                query_centers + 0.5 * context_widths,
+            ),
+            dim=-1,
+        )
         if self.observation_measure == "support_overlap":
-            mass = support_overlap_mass(ownership, query_intervals, observation_mask)
+            mass = support_overlap_mass(ownership, context_intervals, observation_mask)
         else:
-            safe_width = query_widths[:, :, None].clamp_min(self.eps)
+            safe_width = context_widths[:, :, None].clamp_min(self.eps)
             normalized_distance = (timestamps[:, None, :] - query_centers[:, :, None]).abs() / safe_width
             mass = torch.exp(-0.5 * normalized_distance.square())
             mass = mass * (normalized_distance <= self.point_radius_cells).to(mass.dtype)
@@ -159,12 +185,23 @@ class SupportIntegratedMeasureAttention(nn.Module):
         if self.null_evidence is not None:
             null = self.null_evidence.to(dtype=output.dtype, device=output.device)
             output = torch.where(covered_mask[..., None], output, null.view(1, 1, -1))
+        coverage_ratio = (coverage / query_widths.clamp_min(self.eps)).clamp(0.0, 1.0)
+        query_value = self.query_value_embedding(query_centers, query_widths, duration).to(dtype=output.dtype)
+        coverage_feature = self.coverage_embedding(
+            torch.stack((coverage_ratio, torch.log1p(coverage_ratio)), dim=-1).to(dtype=output.dtype)
+        )
+        output = output + query_value + coverage_feature
         output = output * output_mask[..., None].to(output.dtype)
+        assignment_mask = query_mask & (coverage_ratio >= self.min_assignment_coverage)
         diagnostics = {
             "attention_weights": weights,
             "overlap_mass": mass,
             "coverage_sec": coverage,
             "covered_mask": covered_mask,
+            "coverage_ratio": coverage_ratio,
+            "domain_valid_mask": query_mask,
+            "evidence_mask": covered_mask,
+            "assignment_mask": assignment_mask,
         }
         return output, output_mask, diagnostics
 
@@ -183,6 +220,8 @@ class PhysTimeMeasureProjection(nn.Module):
         dropout=0.0,
         keep_uncovered_queries=False,
         use_null_evidence=True,
+        support_context_scale=1.0,
+        min_assignment_coverage=0.0,
     ):
         super().__init__()
         self.in_channels = int(in_channels)
@@ -191,6 +230,8 @@ class PhysTimeMeasureProjection(nn.Module):
         self.num_levels = int(num_levels)
         self.keep_uncovered_queries = bool(keep_uncovered_queries)
         self.use_null_evidence = bool(use_null_evidence)
+        self.support_context_scale = float(support_context_scale)
+        self.min_assignment_coverage = float(min_assignment_coverage)
         self.level_attentions = nn.ModuleList(
             [
                 SupportIntegratedMeasureAttention(
@@ -202,6 +243,8 @@ class PhysTimeMeasureProjection(nn.Module):
                     dropout=dropout,
                     keep_uncovered_queries=self.keep_uncovered_queries,
                     use_null_evidence=self.use_null_evidence,
+                    support_context_scale=self.support_context_scale,
+                    min_assignment_coverage=self.min_assignment_coverage,
                 )
                 for _ in range(self.num_levels)
             ]
@@ -239,7 +282,10 @@ class PhysTimeMeasureProjection(nn.Module):
                 level_masks.append(level_mask)
                 level_info = dict(query_geometry)
                 level_info["domain_valid_mask"] = query_geometry["valid_mask"]
+                level_info["evidence_mask"] = diagnostics["evidence_mask"]
+                level_info["assignment_mask"] = diagnostics["assignment_mask"]
                 level_info["valid_mask"] = level_mask
                 level_info["coverage_sec"] = diagnostics["coverage_sec"]
+                level_info["coverage_ratio"] = diagnostics["coverage_ratio"]
                 level_geometry.append(level_info)
         return tuple(features), tuple(level_masks), tuple(level_geometry)

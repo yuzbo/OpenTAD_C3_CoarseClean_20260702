@@ -4,6 +4,7 @@
 
 | ID | 类型 | 来源 | 本轮用途 |
 | --- | --- | --- | --- |
+| SRC-PT-011 | G1b SDPQ P0 repair | commit to be created after this repair; remote test copy `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1b_sdpq_p0fix_test_20260716_004648` | Evidence/assignment mask separation, zero-init query/coverage residuals, explicit offset loss, structured pilot artifact validation; remote focused tests `21 passed in 52.60s`; not a real gate or mAP source |
 | SRC-PT-010 | 独立 Max 代码审查 | `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md` | 两轮逐行审查、P1/P2 修复、测试证据与部署门槛 |
 | SRC-PT-001 | 外部审查原文 | `docs/methods/reviews/2026-07-13-phystime-performance-drop-pro-audit-response-raw.md`，SHA256 `651C4CA673073D7E4C05746138C82EBBE2E6174C459516FB40B3EFDCA47305AB` | `HOLD AND REBUILD`、SM-PTAF 与 P0 gates |
 | SRC-PT-002 | 正式结果 | `docs/evaluation/results.md` | 三头 best-checkpoint mAP、容量、候选与预测分解 |

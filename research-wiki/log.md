@@ -1,5 +1,15 @@
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 
+# 2026-07-16 PhysTime G1b SDPQ P0 repair
+
+- Absorbed the `REVISE-BEFORE-FULL-TRAIN` review for commit `372fcbf58d1b2eb895b724f6f040458bde4d636e`. The decision is accepted as a blocking pre-full-train verdict: G1b SDPQ is runnable and gate-passed, but its previous pilot delta over G1a was too small and the implementation lacked clean evidence/assignment separation.
+- Implemented the first P0 repair in the PhysTime worktree, not the DUCA/Spatial-Zoom tree: `domain_valid_mask`, `evidence_mask`, and `assignment_mask` are now distinct; projection records `coverage_ratio`; uncovered queries can remain valid candidates but are blocked from positive assignment when evidence is absent.
+- Added query-geometry and coverage residual paths to `PhysTimeMeasureProjection` with zero-initialized final layers so the initial pooling contract is preserved while allowing query/support geometry to become learnable after training.
+- Reworked SDPQ target/loss logic: center scale and width reference are separated, explicit center/log-width offset loss is added, assignment uses `assignment_mask`, and diagnostics now include positive-uncovered / low-coverage counts plus reservation collision counts.
+- Hardened `run_phystime_g1b_sdpq_pilot_slurm.sh`: `PILOT_COMPLETE.json` is now built from structured `evaluation_metrics.json` and final `epoch_5.pth`, with finite metric checks and final-epoch validation instead of fragile train-log regex.
+- Verification status: local `py_compile` passed; local pytest is still blocked by the known Windows Torch `c10.dll` loader issue. Remote clean-copy focused verification passed: `21 passed in 52.60s` on `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1b_sdpq_p0fix_test_20260716_004648`.
+- Current status after this entry is `implemented + remote-focused-tested`; real THUMOS gate, new pilot mAP, same-commit controls, and full train are still pending. No empirical claim is unlocked by this repair alone.
+
 - Independent Max reviewer returned `GREEN_FOR_CLEAN_SNAPSHOT_AND_REAL_GATE` after the two P1 fixes: per-step optimizer-state parameter-name hash validation, and cross-arm recomputation of parameter/initial-state/optimizer-schema matches from `variants`.
 - Commit `d1747d6657e185495b4db9eb491fd135d4b90360` was pushed to `codex/phystime-performance-diagnosis-20260712`; clean remote snapshot is `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_d1747d6_20260713_gate`, tree `2651bd30eda5b0e0960518da4060ccfc628b7a58`.
 - Formal Slurm queue was submitted: `1161476` real gate, `1161477` selected-axis 6-epoch pilot afterok, `1161478` physical-metric 6-epoch pilot afterok. Current status at submission check: gate `PENDING (Priority)`, pilots `PENDING (Dependency)`. This is `queued_for_gate`, not yet `experiment_running`, and there is still no new mAP.
