@@ -1679,56 +1679,52 @@ class DucaAcquisitionAdapter(nn.Module):
             dense_mask[:valid_count] = hard_structured.hard_occupancy[0].bool()
             dense_masks.append(dense_mask)
             if self.training:
-                # Keep the differentiable graph invariant across normal and
-                # all-short batches. Invalid suffix positions are detached
-                # finite structural states; only the hard decode uses the
-                # data-dependent valid_count/effective_k contract above.
-                valid_row = valid_mask[batch_idx : batch_idx + 1]
-                dummy = center_scores.new_full((1, temporal_len), -80.0)
-                surrogate_scores = torch.where(
-                    valid_row,
-                    center_scores[batch_idx : batch_idx + 1].float(),
-                    dummy,
-                )
-                surrogate_valid = torch.ones_like(valid_row)
+                # The relaxed path must describe the same feasible family as
+                # the hard path. Run it on the real valid prefix/effective K,
+                # then pad inactive batch slots with exact zeros.
+                if valid_count == 0:
+                    soft = center_scores[batch_idx].float() * 0.0
+                    slots = soft[None, :].expand(max_slots, -1) * 0.0
+                    hard_dense = dense_mask.to(dtype=soft.dtype)
+                    selection_st = hard_dense + soft - soft.detach()
+                    selection_st_rows.append(selection_st)
+                    soft_rows.append(soft)
+                    slot_rows.append(slots)
+                    effective_rows.append(effective_k)
+                    continue
+                surrogate_scores = center_scores[batch_idx : batch_idx + 1, :valid_count].float()
+                surrogate_valid = torch.ones_like(surrogate_scores, dtype=torch.bool)
                 if self.selector_variant == "transition_only":
                     surrogate_policy = continuous_policy_logits(
                         surrogate_scores,
                         surrogate_valid,
-                        k=max_slots,
+                        k=effective_k,
                         alpha=float(policy_mix_alpha),
                     )
                 elif stable_selection:
                     reference_scores = exact_uniform_reference_scores(
                         surrogate_scores,
                         surrogate_valid,
-                        max_slots,
+                        effective_k,
                     )
                     surrogate_policy = reference_scores + surrogate_scores * 0.0
                 else:
                     surrogate_policy = surrogate_scores
                 surrogate = global_structured_topk(
                     surrogate_policy,
-                    k=max_slots,
-                    max_unselected_hole=(
-                        temporal_len if self.max_unselected_hole is None else int(self.max_unselected_hole)
-                    ),
+                    k=effective_k,
+                    max_unselected_hole=max_hole,
                     temperature=self.structured_temperature,
                     training=True,
                 )
-                slots = surrogate.soft_slot_assignment[0] * valid_row[0][None, :].to(
-                    surrogate.soft_slot_assignment.dtype
+                slots = F.pad(
+                    surrogate.soft_slot_assignment[0],
+                    (0, temporal_len - valid_count, 0, max_slots - effective_k),
                 )
-                active_slots = (
-                    torch.arange(max_slots, device=slots.device) < effective_k
-                )[:, None]
-                slot_mass = slots.sum(dim=1, keepdim=True)
-                slots = torch.where(
-                    active_slots,
-                    slots / slot_mass.clamp_min(torch.finfo(slots.dtype).tiny),
-                    torch.zeros_like(slots),
+                soft = F.pad(
+                    surrogate.soft_occupancy[0],
+                    (0, temporal_len - valid_count),
                 )
-                soft = slots.sum(dim=0)
                 hard_dense = dense_mask.to(dtype=soft.dtype)
                 selection_st = hard_dense + soft - soft.detach()
             else:

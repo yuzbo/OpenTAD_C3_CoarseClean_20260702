@@ -14,6 +14,7 @@ except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard
 
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
 from opentad.models.duca.acquisition import C3CoarseProbeActionnessSource
+from opentad.models.duca.structured_selection import global_structured_topk
 
 
 def _selector(
@@ -245,44 +246,46 @@ def test_all_short_counterfactual_batch_keeps_static_loss_graph() -> None:
     assert any(param.grad is not None for param in selector.adapter.transition_scorer.parameters())
 
 
-def _autograd_signature(value: torch.Tensor) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    stack = [value.grad_fn]
-    seen = set()
-    while stack:
-        node = stack.pop()
-        if node is None or id(node) in seen:
-            continue
-        seen.add(id(node))
-        name = node.__class__.__name__
-        counts[name] = counts.get(name, 0) + 1
-        stack.extend(parent for parent, _ in node.next_functions if parent is not None)
-    return counts
+@pytest.mark.parametrize("selector_variant", ["direct_boundary", "transition_only"])
+def test_structured_surrogate_matches_each_mixed_length_hard_feasible_family(selector_variant: str) -> None:
+    selector = _selector(
+        selector_variant=selector_variant,
+        acquisition_policy="global_structured_topk",
+        detector_gradient_mode="structured_zero_forward",
+    )
+    selector.train()
+    out = selector.forward_train(
+        inputs=torch.randn(2, 1, 3, 8, 16, 16),
+        masks=torch.tensor(
+            [
+                [1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 0, 0, 0, 0, 0],
+            ],
+            dtype=torch.bool,
+        ),
+        metas=[{"video_name": "full"}, {"video_name": "short"}],
+        gt_segments=[torch.tensor([[1.0, 6.0]]), torch.tensor([[0.0, 2.0]])],
+        gt_labels=[torch.tensor([1]), torch.tensor([1])],
+    )
+    state = out["selector_outputs"]
+    slots = state["structured_soft_slot_assignment"]
+    mass = slots.sum(dim=-1)
 
+    assert torch.allclose(mass[0], torch.ones_like(mass[0]), atol=1.0e-5)
+    assert torch.allclose(mass[1, :3], torch.ones_like(mass[1, :3]), atol=1.0e-5)
+    assert torch.equal(mass[1, 3:], torch.zeros_like(mass[1, 3:]))
+    assert torch.equal(slots[1, :, 3:], torch.zeros_like(slots[1, :, 3:]))
 
-def test_structured_surrogate_graph_is_invariant_for_normal_and_all_short_masks() -> None:
-    signatures = []
-    for mask in (
-        torch.ones((1, 8), dtype=torch.bool),
-        torch.tensor([[1, 1, 1, 0, 0, 0, 0, 0]], dtype=torch.bool),
-    ):
-        selector = _selector(selector_variant="transition_only")
-        selector.train()
-        out = selector.forward_train(
-            inputs=torch.randn(1, 1, 3, 8, 16, 16),
-            masks=mask,
-            metas=[{"video_name": "graph-contract"}],
-            gt_segments=[torch.tensor([[0.0, 2.0]])],
-            gt_labels=[torch.tensor([1])],
-        )
-        state = out["selector_outputs"]
-        surrogate = (
-            state["selected_mask_st"].sum()
-            + state["soft_coverage"].sum()
-            + state["structured_soft_slot_assignment"].sum()
-        )
-        signatures.append(_autograd_signature(surrogate))
-    assert signatures[0] == signatures[1]
+    expected = global_structured_topk(
+        state["decode_policy_logits"][1:2, :3],
+        k=3,
+        max_unselected_hole=3,
+        temperature=0.7,
+        training=True,
+    )
+    assert torch.allclose(slots[1, :3, :3], expected.soft_slot_assignment[0], atol=1.0e-6)
+    assert torch.allclose(state["soft_coverage"][1, :3], expected.soft_occupancy[0], atol=1.0e-6)
+    assert torch.equal(state["soft_coverage"][1, 3:], torch.zeros_like(state["soft_coverage"][1, 3:]))
 
 
 def test_direct_all_short_structured_slots_keep_active_mass_contract() -> None:
