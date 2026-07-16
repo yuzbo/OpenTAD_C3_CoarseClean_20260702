@@ -172,3 +172,13 @@ append_only: true
   `10c0182...`; `official_test_read=true` and `paper_claim_allowed=false`.
   Its profile and the remaining eight cells are pending, so no GO/KILL or
   resolution selection is permitted.
+- 2026-07-17 01:12+08:00: Job `1167257` failed `1:0` in the first profile's
+  post-measurement validator with `formal S1 profile window identities must be
+  unique`; no later cell started and no profile summary/sample/power artifact
+  was published. Exact dataset replay found 792 official loader exposures but
+  791 physical identities: `video_test_0001431:7680` is emitted twice by the
+  inherited divisible-tail sliding-window behavior. The official workload
+  includes both rows, so the uniqueness assertion, not the model or sealed
+  test, is wrong. The started marker is retained and silent retry is forbidden
+  pending an audited exposure-identity/recovery protocol. No GO/KILL or cost
+  conclusion was issued.

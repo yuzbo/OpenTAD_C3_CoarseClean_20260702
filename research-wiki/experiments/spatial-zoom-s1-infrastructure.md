@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: selector_policy_fix_replacement_3x3_queued
+outcome: profile_identity_validation_failed_recovery_pending
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
-updated: 2026-07-16
+updated: 2026-07-17
 ---
 
 # Spatial Zoom S1 Infrastructure Verification
@@ -324,6 +324,26 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   present. This single-cell raw result must not be used to choose a resolution
   or issue S1 GO/KILL before the frozen 3x3 test/profile matrix and paired
   analysis close.
+- Status at `2026-07-17T01:12+08:00`: Job `1167257` ended `FAILED 1:0` after
+  `01:55:03`, inside the first cell's cost-summary validation. No second
+  official test started. Dense256/seed3408 retains its valid sealed-test
+  evidence and immutable profile-attempt marker, but no profile summary,
+  samples, power trace, or run descriptor was published. The exact error is
+  `formal S1 profile window identities must be unique`. A read-only replay of
+  the inherited test-window construction found 792 loader exposures and 791
+  physical `(video,start)` identities. The only duplicate is
+  `video_test_0001431:7680`, emitted twice with the same `[1920,2688)` snippet
+  interval because `snippet_num=2688` is exactly divisible by the 384-point
+  window stride and the official tail-window branch repeats the preceding
+  full window. The official test path consumes this duplicate; removing it
+  would change the evaluated workload. Therefore the profiler's physical-
+  identity uniqueness assertion is the defect. This is not a training,
+  prediction, mAP, OOM, non-finite, or storage failure. The failed marker must
+  not be deleted and the Job must not be silently rerun. An audited recovery
+  must distinguish deterministic loader exposure identity from physical
+  window identity, preserve all 792 exposures, and record the failed attempt
+  before any new profile campaign is authorized. No cost claim, resolution
+  selection, S1 GO/KILL, S2, or Pro review is authorized.
 
 ## Decision Boundary
 

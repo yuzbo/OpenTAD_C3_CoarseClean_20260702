@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-16
+updated: 2026-07-17
 max_chars: 8000
 ---
 
@@ -45,9 +45,18 @@ max_chars: 8000
   serial same-allocation remediation Job `1167257` is running with an audited
   selector adapter. Its first frozen-order cell, dense256/seed3408, has raw
   official-test Avg-mAP `67.09` and mAP@0.3-0.7
-  `82.14/77.76/70.36/59.53/45.67`; its profile and the other eight cells are
-  pending. Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain
-  pending; the state is still `experiment_running`.
+  `82.14/77.76/70.36/59.53/45.67`. Job `1167257` later failed in the first
+  cost-summary validation, after measurement but before publishing any profile
+  summary/sample/power artifact. The official loader has 792 exposures but
+  only 791 physical `(video,start)` identities: `video_test_0001431:7680` is
+  intentionally enumerated twice by the inherited sliding-window tail logic.
+  The profiler's uniqueness assertion was therefore incompatible with the
+  official loader. This is a cost-evidence infrastructure failure, not a model
+  or sealed-test failure. The immutable started marker remains; no deletion,
+  silent retry, resolution decision, or GO/KILL is permitted until an audited
+  recovery protocol preserves the duplicate exposure and full provenance.
+  Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
+  the state is still `experiment_running`.
 
 ## 当前唯一活动任务：Spatial Zoom
 

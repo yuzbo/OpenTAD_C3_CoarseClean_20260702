@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-16
+updated: 2026-07-17
 ---
 
 # 来源注册表
@@ -134,6 +134,15 @@ updated: 2026-07-16
   `d4b6df44b0be9c9f735ef233dd39a9b28ad487ebfd6d530383285d9de7269194`.
   Raw official-test Avg-mAP is `67.09`; this is one incomplete matrix cell and
   not a resolution decision or GO/KILL result.
+- Job `1167257` terminal profile-failure evidence:
+  `spatial_zoom_s1_18139b9_20260716_1120/logs/test_profile_matrix_r1-1167257.{out,err}`.
+  The canonical failed-attempt marker is
+  `dense256/seed3408/profile/dense256_seed3408.started.json`; no corresponding
+  summary/samples/power/descriptor was published. A read-only reconstruction
+  from the frozen manifest and THUMOS annotation produced 792 official loader
+  exposures, 791 physical identities, and one exact duplicate,
+  `video_test_0001431:7680`. This evidence is registered as an infrastructure
+  failure and does not supersede the sealed-test result.
 
 ## 外部附件
 
