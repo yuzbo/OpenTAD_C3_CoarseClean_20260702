@@ -13,10 +13,10 @@ experiment_running: false
 
 | ID | Dependency | Purpose | Status | Immutable evidence |
 |---|---|---|---|---|
-| W0 | approved spec | current plan and source classification | TESTED | plan `4dcc98d`; classification SHA-256 `7FBD6FC4...72445D`; exact 47-file inventory / 21 tests |
+| W0 | approved spec | current plan and source classification | TESTED | plan `4dcc98d`; classification SHA-256 `3BAA129A...7CF03`; exact 48-file inventory / 22 tests |
 | W1 | W0 | A1 registration/random controls | TESTED | remote cumulative 43 prior passes + 9 repaired contract passes + 36 control/manifest passes |
-| W2 | W1 | A2 Slurm/environment identity | IN_PROGRESS | no formal GPU check before valid I/R |
-| W3 | W2 | filesystem/source/import integrity | LOCKED | none |
+| W2 | W1 | A2 Slurm/environment identity | TESTED | clean `c585ae5`: 78 passed + `bash -n`; Stage-B/G2-3 81 passed then repaired fixture 1/1 |
+| W3 | W2 | filesystem/source/import integrity | IN_PROGRESS | descriptor/import/entrypoint audit; no formal GPU check before valid I/R |
 | W4 | W3 | real ActionFormer per-window loss | LOCKED | none |
 | W5 | W4 | Stage-C A3/A4 transaction | LOCKED | none |
 | W6 | W5 | formal Stage-C/matched/Gate-4 workflows | LOCKED | none |
@@ -37,7 +37,7 @@ experiment_running: false
 - No implementation I, registration R, PRECHECK, ChronoTransport Job ID, Gate artifact or experiment result
   exists at tracker creation.
 - The 2026-07-16 read-only Slurm check showed unrelated DUCA/S1 jobs only; none is reused or modified.
-- W0 explicitly classifies all 47 tracked ChronoTransport test/tool/script paths. Eighteen of the 21 tests
+- W0 explicitly classifies all 48 tracked ChronoTransport test/tool/script paths. Nineteen of the 22 tests
   and all current r2 producers/validators are `REQUIRED`; three legacy tests are
   `TEST_ONLY_NON_FORMAL`; legacy entrypoints are `OUT_OF_SCOPE`. Any unclassified addition or source-vector
   drift now fails closed.
@@ -45,6 +45,14 @@ experiment_running: false
   recomputes every random action hash from the actual registered window order and rejects missing, string or
   alternate seeds. The first remote run exposed and retained a real generator RED (43 passed, 1 xfailed,
   1 failed); the corrected key contracts then passed 9/9 and the control/manifest matrix passed 36/36.
+- W2 separates the registration-time required model/software contract from producer-observed allocation
+  identity. The formal observer records raw Slurm visibility/allocation fields, maps the current CUDA PID to
+  one full GPU UUID, requires exactly one torch-visible device and logical `cuda:0`, and rejects model,
+  driver, CUDA, PyTorch, cuDNN, precision, allocation-hash or MIG mismatches. Gate-1 profile/replay/result,
+  precheck and Stage-B provenance bind the observed identity; the launcher no longer assigns
+  `CUDA_VISIBLE_DEVICES`, and the latency claim no longer names physical GPU1. Clean remote CPU contracts at
+  `c585ae5` passed 78/78 plus `bash -n`; the Stage-B/Gates-2/3 group passed 81 before one stale mock failure,
+  then its exact repair passed 1/1. No CUDA action was taken; live allocation validation remains E0.
 - These are implementation tests only. Registration is still `NOT_READY`; no I/R, PRECHECK, GPU producer,
   Gate, training run or scientific result exists.
 

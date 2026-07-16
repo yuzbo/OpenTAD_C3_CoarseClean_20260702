@@ -27,6 +27,22 @@ run retained a useful failure because the context builder changed invocation IDs
 passed 36/36. This upgrades W0/W1 only to `tested`; A2--A4/workflows remain open, registration is
 `NOT_READY`, and no experiment or claim is created.
 
+## W2/A2 implementation delta (2026-07-16)
+
+Registration now freezes only the required GPU model and driver/CUDA/PyTorch/cuDNN/AMP/batch contract;
+it no longer pretends to know a future allocation UUID. Every current formal GPU producer re-observes the
+live Slurm environment, records the raw visibility/allocation strings, proves one torch-visible device and
+logical `cuda:0`, maps the current PID to one full GPU UUID through `nvidia-smi`, and hashes both allocation
+and full observed identity. MIG and any model/software/hash mismatch fail closed as
+`INVALID_ENVIRONMENT`.
+
+The generic Slurm launcher never assigns `CUDA_VISIBLE_DEVICES`; Gate-1 profile, paired replay, derived
+result/unlock, precheck and Stage-B checkpoint/ledger provenance carry the observed identity, and the claim
+key no longer names physical GPU1. Remote CPU contract evidence on clean `c585ae5` is 78/78 plus shell
+syntax; Stage-B/Gates-2/3 produced 81 passes and one stale mock failure, followed by a targeted 1/1 repair.
+This upgrades W2 only to `tested`; no Slurm GPU action or PRECHECK occurred, W3--W7 remain open,
+registration is `NOT_READY`, and there is still no formal experiment result.
+
 ## r2 foundation repair batch (2026-07-13)
 
 ### Manifest/protocol implementation slice

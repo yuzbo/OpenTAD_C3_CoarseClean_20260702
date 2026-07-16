@@ -469,3 +469,13 @@ append_only: true
   exposed a valid stale-template-hash RED (`43 passed, 1 xfailed, 1 failed`); after repair the affected
   contracts passed 9/9 and the control/manifest matrix passed 36/36. W2/A2 is now in progress. No I/R,
   PRECHECK, Slurm experiment, Gate result, training or scientific claim was produced.
+- 2026-07-16: Completed the W2/A2 code contract through clean commit `c585ae5`. Registration now freezes a
+  required model/software identity without a fabricated UUID; live producers record raw
+  `CUDA_VISIBLE_DEVICES`/Slurm allocation fields, map the current CUDA PID to one full GPU UUID, enforce one
+  visible device and logical `cuda:0`, and bind allocation/observed hashes into Gate-1 profile/replay/result,
+  precheck and Stage-B evidence. The r2 launcher was renamed to the Slurm-single-GPU surface and never
+  assigns scheduler visibility; the physical-GPU1 latency claim was removed. Initial remote contract runs
+  retained three stale-fixture failures (78 pass/2 fail, then 81 pass/1 fail); all three were repaired and
+  targeted 2/2 plus 1/1 passed. Final clean Gate-1/A2 regression was 78/78 with launcher `bash -n`. These are
+  remote CPU implementation tests only: no Slurm GPU action, PRECHECK, I/R, Gate, training or science result
+  occurred. W3 is now in progress and registration remains `NOT_READY`.

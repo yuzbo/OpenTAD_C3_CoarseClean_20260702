@@ -239,3 +239,7 @@ updated: 2026-07-16
 101. When a registration context builder replaces the manifest invocation order, it must regenerate every
     seed-3407 random requested-action hash and its order digest from those exact window IDs. Reusing template
     hashes from another manifest is an invalid implementation even if candidate names and counts match.
+102. Registration must not freeze a future GPU UUID or confuse a Slurm physical identifier with local
+    ordinal zero. Freeze required model/software only; each producer must bind the current process PID to a
+    full observed UUID plus raw allocation fields, while `cuda:0` remains only the process-local execution
+    address. A hash-only artifact without recoverable allocation bytes is insufficient.
