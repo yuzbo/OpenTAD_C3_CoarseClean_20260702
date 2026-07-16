@@ -1,5 +1,11 @@
 # Anti-Repetition Contract
 
+## 2026-07-16 PhysTime GT/window boundary guardrail
+
+- 不再允许 `BuildPhysTimeRawFrameGeometry` 因 GT segment 落在 end-exclusive window 外一点点而在训练中随机抛错。必须先定位 `video_name`、dense crop window、selected raw frame window、秒坐标 domain，再执行可审计的 clamp/filter。
+- clamp/filter 只能发生在 train-time GT 转秒坐标之后：segment 与 `[domain_start_sec, domain_end_sec]` 相交则 clamp 到窗口内；clamp 后长度不大于 eps 的 segment 必须过滤；`gt_labels` 必须同步过滤。
+- 每次修复都必须写入 `phystime_gt_boundary_audit`，至少包含原始/保留/过滤/裁剪数量、越界幅度、filtered/clamped indices、视频名和窗口元数据。不能把这类问题伪装成数据加载偶发错误，也不能静默吞掉。
+
 - 不得把 focused tests 或独立审查前两轮修复称为部署完成。G1a 必须先取得第三轮零 P0/P1，再绑定 clean commit/tree；真实 gate 未通过时不得提交 pilot，pilot 未产生原始 mAP 时不得写方法 claim。
 - gate 的 optimizer 证据必须绑定固定参数名称集合，并逐步满足 state count 完整、min=max=当前 step；不得用最大 step、动态 `requires_grad` hash 或 buffer 变化替代真实参数更新。
 - production `drop_last` 必须来自实际 DataLoader 属性；CPU batch 不得被 gate 原地搬到 GPU 并跨步骤持有；正式训练与 gate 必须显式绑定同源 sampler/generator seed。

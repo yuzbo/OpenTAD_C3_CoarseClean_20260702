@@ -73,6 +73,8 @@ class Collect:
             "phystime_sampling_scope",
             "phystime_window_crop_uses_gt",
             "phystime_subsample_uses_gt",
+            "phystime_gt_boundary_audit",
+            "phystime_gt_boundary_repair_applied",
             "irregular_window_crop_uses_gt",
             "irregular_subsample_uses_gt",
             "irregular_sampling_strategy",

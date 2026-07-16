@@ -13,6 +13,7 @@ def make_sample(with_gt=True):
         "selected_dense_indices": np.array([0, 2, 8, 10], dtype=np.float32),
         "masks": torch.ones(4, dtype=torch.bool),
         "snippet_stride": 4,
+        "video_name": "video_test",
         "fps": 20.0,
         "avg_fps": 20.0,
         "total_frames": 400,
@@ -28,6 +29,7 @@ def make_sample(with_gt=True):
     }
     if with_gt:
         sample["gt_segments"] = np.array([[1.0, 6.0]], dtype=np.float32)
+        sample["gt_labels"] = np.array([0], dtype=np.int64)
     return sample
 
 
@@ -42,6 +44,46 @@ def test_raw_geometry_uses_original_video_time_and_dense_cell_support():
     assert out["gt_time_unit"] == "seconds"
     assert out["phystime_support_provenance"] == "original_raw_dense_cells"
     assert out["phystime_sampling_uses_gt"] is False
+    assert out["phystime_gt_boundary_repair_applied"] is False
+    assert out["phystime_gt_boundary_audit"]["kept_count"] == 1
+
+
+def test_raw_geometry_clamps_end_exclusive_gt_boundary_and_audits_repair():
+    sample = make_sample()
+    sample["gt_segments"] = np.array([[1.0, 12.0]], dtype=np.float32)
+    sample["gt_labels"] = np.array([7], dtype=np.int64)
+
+    out = BuildPhysTimeRawFrameGeometry(convert_gt_to_seconds=True)(sample)
+
+    assert torch.allclose(out["gt_segments"], torch.tensor([[5.2, 7.2]]))
+    assert np.asarray(out["gt_labels"]).tolist() == [7]
+    assert out["phystime_gt_boundary_repair_applied"] is True
+    audit = out["phystime_gt_boundary_audit"]
+    assert audit["original_count"] == 1
+    assert audit["video_name"] == "video_test"
+    assert audit["dense_origin_frame"] == pytest.approx(100.0)
+    assert audit["kept_count"] == 1
+    assert audit["filtered_count"] == 0
+    assert audit["clamped_count"] == 1
+    assert audit["clamped_indices"] == [0]
+    assert audit["max_end_overflow_sec"] == pytest.approx(0.2)
+
+
+def test_raw_geometry_filters_gt_outside_window_and_keeps_labels_aligned():
+    sample = make_sample()
+    sample["gt_segments"] = np.array([[1.0, 6.0], [12.0, 13.0]], dtype=np.float32)
+    sample["gt_labels"] = np.array([3, 9], dtype=np.int64)
+
+    out = BuildPhysTimeRawFrameGeometry(convert_gt_to_seconds=True)(sample)
+
+    assert torch.allclose(out["gt_segments"], torch.tensor([[5.2, 6.2]]))
+    assert np.asarray(out["gt_labels"]).tolist() == [3]
+    audit = out["phystime_gt_boundary_audit"]
+    assert audit["original_count"] == 2
+    assert audit["kept_count"] == 1
+    assert audit["filtered_count"] == 1
+    assert audit["filtered_indices"] == [1]
+    assert out["phystime_gt_boundary_repair_applied"] is True
 
 
 def test_raw_geometry_forbids_selected_axis_ground_truth():

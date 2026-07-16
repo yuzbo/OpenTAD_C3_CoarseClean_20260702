@@ -110,6 +110,14 @@ def _structural_token_dependency_ranges(
     return np.stack((starts, ends), axis=-1)
 
 
+def _as_serializable_number_list(values):
+    return [float(item) for item in np.asarray(values, dtype=np.float64).reshape(-1).tolist()]
+
+
+def _as_serializable_index_list(values):
+    return [int(item) for item in np.asarray(values, dtype=np.int64).reshape(-1).tolist()]
+
+
 @PIPELINES.register_module()
 class BuildPhysTimeRawFrameGeometry:
     """Build physical-time ownership cells from selected original RGB frames."""
@@ -222,11 +230,97 @@ class BuildPhysTimeRawFrameGeometry:
             eps = max(1.0e-5, stride / fps * 1.0e-4)
             if not torch.isfinite(gt_seconds).all():
                 raise ValueError("PhysTime ground truth seconds must be finite")
-            if bool((gt_seconds[:, 0] < domain_start - eps).any()) or bool(
-                (gt_seconds[:, 1] > domain_end + eps).any()
-            ):
-                raise ValueError("PhysTime ground truth lies outside the end-exclusive window domain")
-            results["gt_segments"] = gt_seconds
+            if gt_seconds.ndim != 2 or gt_seconds.shape[-1] != 2:
+                raise ValueError("PhysTime ground truth segments must have shape [N, 2]")
+            if "gt_labels" not in results:
+                raise ValueError("PhysTime ground truth labels are required when segments are present")
+
+            gt_seconds_np = gt_seconds.detach().cpu().numpy().astype(np.float64, copy=False)
+            original_count = int(gt_seconds_np.shape[0])
+            if original_count > 0:
+                clipped = gt_seconds_np.copy()
+                clipped[:, 0] = np.maximum(clipped[:, 0], float(domain_start))
+                clipped[:, 1] = np.minimum(clipped[:, 1], float(domain_end))
+                repaired_duration = clipped[:, 1] - clipped[:, 0]
+                valid_gt = repaired_duration > eps
+                start_underflow = np.maximum(float(domain_start) - gt_seconds_np[:, 0], 0.0)
+                end_overflow = np.maximum(gt_seconds_np[:, 1] - float(domain_end), 0.0)
+                boundary_violation = np.maximum(start_underflow, end_overflow)
+                clamped = (start_underflow > eps) | (end_overflow > eps)
+                filtered = ~valid_gt
+                kept_indices = np.nonzero(valid_gt)[0]
+
+                labels = results["gt_labels"]
+                if torch.is_tensor(labels):
+                    labels = labels[torch.as_tensor(kept_indices, dtype=torch.long, device=labels.device)]
+                else:
+                    labels = np.asarray(labels)[kept_indices]
+                results["gt_labels"] = labels
+                results["gt_segments"] = torch.as_tensor(
+                    clipped[valid_gt], dtype=torch.float32, device=gt_seconds.device
+                )
+                kept_count = int(valid_gt.sum())
+                phystime_gt_boundary_audit = dict(
+                    schema_version="phystime_gt_boundary_repair_v1",
+                    policy="clamp_to_window_domain_filter_empty_after_clamp",
+                    video_name=str(results.get("video_name", "")),
+                    dense_origin_frame=float(dense_origin_frame),
+                    dense_valid_len=int(dense_valid_len),
+                    selected_dense_start=float(selected_dense[0]),
+                    selected_dense_end=float(selected_dense[valid_count - 1]),
+                    selected_raw_start_frame=float(selected_frames[0]),
+                    selected_raw_end_frame=float(selected_frames[valid_count - 1]),
+                    domain_start_sec=float(domain_start),
+                    domain_end_sec=float(domain_end),
+                    eps_sec=float(eps),
+                    original_count=original_count,
+                    kept_count=kept_count,
+                    filtered_count=int(filtered.sum()),
+                    clamped_count=int((clamped & valid_gt).sum()),
+                    max_start_underflow_sec=float(start_underflow.max(initial=0.0)),
+                    max_end_overflow_sec=float(end_overflow.max(initial=0.0)),
+                    max_boundary_violation_sec=float(boundary_violation.max(initial=0.0)),
+                    min_repaired_duration_sec=float(np.min(repaired_duration[valid_gt]))
+                    if kept_count > 0
+                    else 0.0,
+                    filtered_indices=_as_serializable_index_list(np.nonzero(filtered)[0]),
+                    clamped_indices=_as_serializable_index_list(np.nonzero(clamped & valid_gt)[0]),
+                    original_start_sec=_as_serializable_number_list(gt_seconds_np[:, 0]),
+                    original_end_sec=_as_serializable_number_list(gt_seconds_np[:, 1]),
+                )
+            else:
+                results["gt_segments"] = gt_seconds
+                phystime_gt_boundary_audit = dict(
+                    schema_version="phystime_gt_boundary_repair_v1",
+                    policy="clamp_to_window_domain_filter_empty_after_clamp",
+                    video_name=str(results.get("video_name", "")),
+                    dense_origin_frame=float(dense_origin_frame),
+                    dense_valid_len=int(dense_valid_len),
+                    selected_dense_start=float(selected_dense[0]),
+                    selected_dense_end=float(selected_dense[valid_count - 1]),
+                    selected_raw_start_frame=float(selected_frames[0]),
+                    selected_raw_end_frame=float(selected_frames[valid_count - 1]),
+                    domain_start_sec=float(domain_start),
+                    domain_end_sec=float(domain_end),
+                    eps_sec=float(eps),
+                    original_count=0,
+                    kept_count=0,
+                    filtered_count=0,
+                    clamped_count=0,
+                    max_start_underflow_sec=0.0,
+                    max_end_overflow_sec=0.0,
+                    max_boundary_violation_sec=0.0,
+                    min_repaired_duration_sec=0.0,
+                    filtered_indices=[],
+                    clamped_indices=[],
+                    original_start_sec=[],
+                    original_end_sec=[],
+                )
+            results["phystime_gt_boundary_audit"] = phystime_gt_boundary_audit
+            results["phystime_gt_boundary_repair_applied"] = bool(
+                phystime_gt_boundary_audit["filtered_count"] > 0
+                or phystime_gt_boundary_audit["clamped_count"] > 0
+            )
             results["gt_time_unit"] = "seconds"
 
         results.update(
