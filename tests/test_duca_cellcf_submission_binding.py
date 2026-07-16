@@ -98,7 +98,17 @@ def test_cost_and_completion_are_mandatory_after_successful_aggregate() -> None:
 
 
 def test_slurm_jobs_use_generic_allocations_without_physical_gpu_override() -> None:
-    assert "#SBATCH --gres=gpu:1" in PREPARE
+    template_bounds = (
+        ('cat > "${job_file}" <<EOF', '\nEOF\n  chmod 0755 "${job_file}"'),
+        ('cat > "${aggregate_job}" <<EOF', '\nEOF\nchmod 0755 "${aggregate_job}"'),
+        ('cat > "${cost_job}" <<EOF', '\nEOF\nchmod 0755 "${cost_job}"'),
+        ('cat > "${completion_job}" <<EOF', '\nEOF\nchmod 0755 "${completion_job}"'),
+    )
+    for start_marker, end_marker in template_bounds:
+        start = PREPARE.index(start_marker)
+        end = PREPARE.index(end_marker, start)
+        assert PREPARE[start:end].count("#SBATCH --gres=gpu:1") == 1
+
     assert "CUDA_VISIBLE_DEVICES=" not in PREPARE
     assert '"--clusters=${target_cluster}"' in SUBMIT
     assert "--gres=gpu:1" not in SUBMIT

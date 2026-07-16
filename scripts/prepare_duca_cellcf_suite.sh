@@ -146,6 +146,7 @@ cat > "${aggregate_job}" <<EOF
 #SBATCH --clusters=${TARGET_CLUSTER}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --output=${RUN_ROOT}/logs/aggregate-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/aggregate-%j.err
@@ -253,6 +254,7 @@ cat > "${completion_job}" <<EOF
 #SBATCH --clusters=${TARGET_CLUSTER}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --output=${RUN_ROOT}/logs/completion-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/completion-%j.err
