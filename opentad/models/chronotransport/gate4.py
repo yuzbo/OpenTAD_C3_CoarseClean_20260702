@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
-import pandas as pd
-
-from opentad.evaluations.mAP import compute_average_precision_detection
 
 from .protocol import canonical_sha256
 
 
 SEEDS = (3407, 3408, 3409)
 ARMS = ("dense", "chronotransport", "static")
+_LOCAL_ORDER_CACHE_LIMIT = 64
 ARM_ORDERS = (
     ("dense", "chronotransport", "static"),
     ("chronotransport", "static", "dense"),
@@ -205,10 +205,11 @@ def _timing_statistics(by_seed, *, bootstrap_samples: int, bootstrap_seed: int):
             - row["arms"]["chronotransport"]["stage_ms"]["heavy_ms"]
             for row in rows
         ]
+        overhead = []
         margins = []
         for row, saving in zip(rows, heavy):
             ct = row["arms"]["chronotransport"]
-            overhead = sum(
+            row_overhead = sum(
                 ct["stage_ms"][field]
                 for field in (
                     "innovation_ms",
@@ -217,12 +218,14 @@ def _timing_statistics(by_seed, *, bootstrap_samples: int, bootstrap_seed: int):
                     "cache_movement_ms",
                 )
             )
-            margins.append(0.40 * saving - overhead)
+            overhead.append(row_overhead)
+            margins.append(0.40 * saving - row_overhead)
         return {
             "p50": p50,
             "latency_saving": (p50["dense"] - p50["chronotransport"]) / p50["dense"],
             "ct_minus_static_ms": p50["chronotransport"] - p50["static"],
             "median_heavy_saving_ms": _p50(heavy),
+            "median_overhead_ms": _p50(overhead),
             "median_margin_ms": _p50(margins),
         }
 
@@ -393,6 +396,132 @@ def _normalize_metrics(value: Mapping[str, Any], *, expected_videos: Sequence[st
     return quartiles, gt_rows, normalized_predictions
 
 
+def _rows_by_source(rows) -> dict[str, list[tuple[Any, ...]]]:
+    indexed: dict[str, list[tuple[Any, ...]]] = defaultdict(list)
+    for row in rows:
+        indexed[row[0]].append(row)
+    return dict(indexed)
+
+
+def _official_ap_numpy(
+    ground_truth: Sequence[tuple[str, float, float]],
+    predictions: Sequence[tuple[str, float, float, float]],
+    *,
+    tiou_threshold: float,
+) -> float:
+    """Mirror OpenTAD's official AP implementation without Pandas allocation.
+
+    Input order, NumPy ``argsort()[::-1]`` tie behavior, per-video locking,
+    and interpolated precision/recall are intentionally identical to
+    ``compute_average_precision_detection`` for one tIoU threshold.
+    """
+
+    npos = float(len(ground_truth))
+    if npos <= 0.0:
+        raise ValueError("Gate-4 metric bootstrap has no ground truth")
+    gt_indices: dict[str, list[int]] = defaultdict(list)
+    for index, row in enumerate(ground_truth):
+        gt_indices[row[0]].append(index)
+    gt_segments = np.asarray(
+        [[row[1], row[2]] for row in ground_truth], dtype=np.float64
+    )
+    scores = np.asarray([row[3] for row in predictions], dtype=np.float64)
+    order = scores.argsort()[::-1]
+    lock_gt = np.full(len(ground_truth), -1, dtype=np.int64)
+    true_positive = np.zeros(len(predictions), dtype=np.float64)
+    threshold = float(tiou_threshold)
+    for rank, prediction_index in enumerate(order):
+        prediction = predictions[int(prediction_index)]
+        indices = gt_indices.get(prediction[0])
+        if not indices:
+            continue
+        candidates = gt_segments[np.asarray(indices, dtype=np.int64)]
+        target = np.asarray([prediction[1], prediction[2]], dtype=np.float64)
+        intersection = (
+            np.minimum(target[1], candidates[:, 1])
+            - np.maximum(target[0], candidates[:, 0])
+        ).clip(0.0)
+        union = (
+            (candidates[:, 1] - candidates[:, 0])
+            + (target[1] - target[0])
+            - intersection
+        )
+        tiou = intersection.astype(float) / union.clip(1e-8)
+        for local_index in tiou.argsort()[::-1]:
+            if tiou[local_index] < threshold:
+                break
+            ground_truth_index = indices[int(local_index)]
+            if lock_gt[ground_truth_index] >= 0:
+                continue
+            true_positive[rank] = 1.0
+            lock_gt[ground_truth_index] = rank
+            break
+    return _ap_from_ranked_tp(true_positive, npos=npos)
+
+
+def _ap_from_ranked_tp(true_positive: np.ndarray, *, npos: float) -> float:
+    """Compute official interpolated AP from score-ranked TP assignments."""
+
+    ranked = np.asarray(true_positive, dtype=np.float64)
+    if ranked.ndim != 1 or np.any((ranked != 0.0) & (ranked != 1.0)):
+        raise ValueError("ranked true-positive assignments must be a binary vector")
+    if not math.isfinite(float(npos)) or float(npos) <= 0.0:
+        raise ValueError("Gate-4 metric bootstrap has no ground truth")
+    cumulative_tp = np.cumsum(ranked).astype(float)
+    cumulative_fp = np.cumsum(1.0 - ranked).astype(float)
+    recall = cumulative_tp / npos
+    precision = cumulative_tp / (cumulative_tp + cumulative_fp)
+    padded_precision = np.hstack([[0.0], precision, [0.0]])
+    padded_recall = np.hstack([[0.0], recall, [1.0]])
+    for index in range(len(padded_precision) - 1)[::-1]:
+        padded_precision[index] = max(
+            padded_precision[index], padded_precision[index + 1]
+        )
+    changed = np.where(padded_recall[1:] != padded_recall[:-1])[0] + 1
+    return float(
+        np.sum(
+            (padded_recall[changed] - padded_recall[changed - 1])
+            * padded_precision[changed]
+        )
+    )
+
+
+def _map_at_indexed(
+    gt_by_source: Mapping[str, Sequence[tuple[Any, ...]]],
+    predictions_by_source: Mapping[str, Sequence[tuple[Any, ...]]],
+    sampled_videos: Sequence[str],
+    *,
+    tiou_threshold: float = 0.7,
+    q1_threshold: float | None = None,
+    duration_lower: float | None = None,
+    synthetic_prefix: str = "boot",
+) -> float:
+    synthetic_gt: dict[str, list[tuple[str, float, float]]] = defaultdict(list)
+    synthetic_pred: dict[str, list[tuple[str, float, float, float]]] = defaultdict(list)
+    for position, source in enumerate(sampled_videos):
+        synthetic = f"{synthetic_prefix}/{position}/{source}"
+        for row in gt_by_source.get(source, ()):
+            duration = row[3] - row[2]
+            if (duration_lower is None or duration > duration_lower) and (
+                q1_threshold is None or duration <= q1_threshold
+            ):
+                synthetic_gt[row[1]].append((synthetic, row[2], row[3]))
+        for row in predictions_by_source.get(source, ()):
+            synthetic_pred[row[1]].append((synthetic, row[2], row[3], row[4]))
+    labels = sorted(synthetic_gt)
+    if not labels:
+        raise ValueError("Gate-4 metric bootstrap has no ground truth")
+    aps = [
+        _official_ap_numpy(
+            synthetic_gt[label],
+            synthetic_pred.get(label, ()),
+            tiou_threshold=tiou_threshold,
+        )
+        for label in labels
+    ]
+    return float(np.mean(aps))
+
+
 def _map_at(
     gt_rows,
     prediction_rows,
@@ -402,57 +531,413 @@ def _map_at(
     q1_threshold: float | None = None,
     duration_lower: float | None = None,
 ) -> float:
-    gt_by_source = defaultdict(list)
-    pred_by_source = defaultdict(list)
-    for row in gt_rows:
-        duration = row[3] - row[2]
-        if (duration_lower is None or duration > duration_lower) and (
-            q1_threshold is None or duration <= q1_threshold
+    return _map_at_indexed(
+        _rows_by_source(gt_rows),
+        _rows_by_source(prediction_rows),
+        sampled_videos,
+        tiou_threshold=tiou_threshold,
+        q1_threshold=q1_threshold,
+        duration_lower=duration_lower,
+    )
+
+
+def _local_match_plan(
+    ground_truth: Sequence[tuple[float, float]],
+    predictions: Sequence[tuple[float, float, float]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Precompute one source-video/class IoU matrix and candidate order."""
+
+    if not predictions or not ground_truth:
+        return (
+            np.empty((len(predictions), len(ground_truth)), dtype=np.float64),
+            np.empty((len(predictions), len(ground_truth)), dtype=np.int64),
+        )
+    gt_segments = np.asarray(ground_truth, dtype=np.float64)
+    prediction_segments = np.asarray(
+        [[row[0], row[1]] for row in predictions], dtype=np.float64
+    )
+    intersection = (
+        np.minimum(prediction_segments[:, None, 1], gt_segments[None, :, 1])
+        - np.maximum(prediction_segments[:, None, 0], gt_segments[None, :, 0])
+    ).clip(0.0)
+    union = (
+        (gt_segments[None, :, 1] - gt_segments[None, :, 0])
+        + (prediction_segments[:, None, 1] - prediction_segments[:, None, 0])
+        - intersection
+    )
+    tiou = intersection.astype(float) / union.clip(1e-8)
+    return tiou, tiou.argsort(axis=1)[:, ::-1]
+
+
+def _local_tp_flags(
+    ground_truth: Sequence[tuple[float, float]],
+    predictions: Sequence[tuple[float, float, float]],
+    *,
+    tiou_threshold: float,
+    prediction_order: Sequence[int] | np.ndarray | None = None,
+    match_plan: tuple[np.ndarray, np.ndarray] | None = None,
+) -> np.ndarray:
+    """Cache TP assignments when one synthetic video has a fixed score order.
+
+    Detection matching locks are video-local.  When distinct predictions from
+    the same source video and class have unique scores, resampling that video
+    only creates independent copies with the same local assignments.  The
+    global score order is still reconstructed for every bootstrap replicate.
+    """
+
+    flags = np.zeros(len(predictions), dtype=np.float64)
+    if not predictions or not ground_truth:
+        return flags
+    scores = np.asarray([row[2] for row in predictions], dtype=np.float64)
+    if prediction_order is None:
+        order = scores.argsort()[::-1]
+    else:
+        order = np.asarray(prediction_order, dtype=np.int64)
+        if (
+            order.ndim != 1
+            or order.size != len(predictions)
+            or set(order.tolist()) != set(range(len(predictions)))
         ):
-            gt_by_source[row[0]].append(row)
-    for row in prediction_rows:
-        pred_by_source[row[0]].append(row)
-    synthetic_gt, synthetic_pred = [], []
-    for position, source in enumerate(sampled_videos):
-        synthetic = f"boot/{position}/{source}"
-        synthetic_gt.extend((synthetic, *row[1:]) for row in gt_by_source[source])
-        synthetic_pred.extend((synthetic, *row[1:]) for row in pred_by_source[source])
-    labels = sorted({row[1] for row in synthetic_gt})
-    if not labels:
-        raise ValueError("Gate-4 metric bootstrap has no ground truth")
-    aps = []
+            raise ValueError("local prediction order must be a complete permutation")
+    lock_gt = np.full(len(ground_truth), -1, dtype=np.int64)
+    threshold = float(tiou_threshold)
+    tiou, candidate_order = (
+        _local_match_plan(ground_truth, predictions)
+        if match_plan is None
+        else match_plan
+    )
+    if tiou.shape != (len(predictions), len(ground_truth)) or candidate_order.shape != tiou.shape:
+        raise ValueError("local matching plan shape mismatch")
+    for rank, prediction_index in enumerate(order):
+        prediction_index = int(prediction_index)
+        for ground_truth_index in candidate_order[prediction_index]:
+            ground_truth_index = int(ground_truth_index)
+            if tiou[prediction_index, ground_truth_index] < threshold:
+                break
+            if lock_gt[ground_truth_index] >= 0:
+                continue
+            flags[prediction_index] = 1.0
+            lock_gt[ground_truth_index] = rank
+            break
+    return flags
+
+
+def _prepare_bootstrap_map_cache(
+    gt_by_source: Mapping[str, Sequence[tuple[Any, ...]]],
+    predictions_by_source: Mapping[str, Sequence[tuple[Any, ...]]],
+    videos: Sequence[str],
+    *,
+    tiou_threshold: float,
+    q1_threshold: float,
+) -> dict[str, Any]:
+    """Precompute only video-local matching work for exact mAP bootstraps.
+
+    The cache never averages per-video AP and never turns videos or predictions
+    into pseudo-independent samples.  Each replicate still rebuilds the full
+    resampled prediction score vector, applies NumPy's official argsort tie
+    behavior, and recomputes class AP. Same-video/class score ties are handled
+    by replaying only that synthetic video's cached IoU matching plan in the
+    exact relative order induced by the replicate-wide NumPy argsort.
+    """
+
+    labels = sorted(
+        {
+            row[1]
+            for source in videos
+            for row in gt_by_source.get(source, ())
+        }
+    )
+    classes: dict[str, dict[str, Any]] = {}
     for label in labels:
-        class_gt = [row for row in synthetic_gt if row[1] == label]
-        class_pred = [row for row in synthetic_pred if row[1] == label]
-        official_gt = pd.DataFrame(
-            [
-                {"video-id": row[0], "t-start": row[2], "t-end": row[3]}
-                for row in class_gt
-            ],
-            columns=("video-id", "t-start", "t-end"),
-        )
-        official_predictions = pd.DataFrame(
-            [
-                {
-                    "video-id": row[0],
-                    "t-start": row[2],
-                    "t-end": row[3],
-                    "score": row[4],
-                }
-                for row in class_pred
-            ],
-            columns=("video-id", "t-start", "t-end", "score"),
-        )
-        aps.append(
-            float(
-                compute_average_precision_detection(
-                    official_gt,
-                    official_predictions,
-                    tiou_thresholds=np.asarray([tiou_threshold], dtype=np.float64),
-                )[0]
+        ground_truth_full = {}
+        ground_truth_q1 = {}
+        prediction_rows = {}
+        scores = {}
+        full_flags = {}
+        q1_flags = {}
+        has_local_score_ties = {}
+        full_match_plans = {}
+        q1_match_plans = {}
+        full_order_cache = {}
+        q1_order_cache = {}
+        for source in videos:
+            full = tuple(
+                (float(row[2]), float(row[3]))
+                for row in gt_by_source.get(source, ())
+                if row[1] == label
             )
+            q1 = tuple(
+                segment
+                for segment in full
+                if segment[1] - segment[0] <= float(q1_threshold)
+            )
+            source_predictions = tuple(
+                (float(row[2]), float(row[3]), float(row[4]))
+                for row in predictions_by_source.get(source, ())
+                if row[1] == label
+            )
+            source_scores = np.asarray(
+                [row[2] for row in source_predictions], dtype=np.float64
+            )
+            source_has_ties = source_scores.size != np.unique(source_scores).size
+            ground_truth_full[source] = full
+            ground_truth_q1[source] = q1
+            prediction_rows[source] = source_predictions
+            scores[source] = source_scores
+            full_plan = _local_match_plan(full, source_predictions)
+            q1_plan = full_plan if q1 == full else _local_match_plan(q1, source_predictions)
+            source_order = source_scores.argsort()[::-1]
+            source_full_flags = _local_tp_flags(
+                full,
+                source_predictions,
+                tiou_threshold=tiou_threshold,
+                prediction_order=source_order,
+                match_plan=full_plan,
+            )
+            full_flags[source] = source_full_flags
+            q1_flags[source] = (
+                source_full_flags
+                if q1 == full
+                else _local_tp_flags(
+                    q1,
+                    source_predictions,
+                    tiou_threshold=tiou_threshold,
+                    prediction_order=source_order,
+                    match_plan=q1_plan,
+                )
+            )
+            order_key = tuple(int(value) for value in source_order)
+            has_local_score_ties[source] = bool(source_has_ties)
+            full_match_plans[source] = full_plan
+            q1_match_plans[source] = q1_plan
+            full_order_cache[source] = {order_key: source_full_flags}
+            q1_order_cache[source] = {order_key: q1_flags[source]}
+        classes[label] = {
+            "ground_truth_full": ground_truth_full,
+            "ground_truth_q1": ground_truth_q1,
+            "predictions": prediction_rows,
+            "scores": scores,
+            "full_flags": full_flags,
+            "q1_flags": q1_flags,
+            "has_local_score_ties": has_local_score_ties,
+            "full_match_plans": full_match_plans,
+            "q1_match_plans": q1_match_plans,
+            "full_order_cache": full_order_cache,
+            "q1_order_cache": q1_order_cache,
+        }
+    return {
+        "labels": labels,
+        "classes": classes,
+        "tiou_threshold": float(tiou_threshold),
+    }
+
+
+def _concatenate_sampled_arrays(
+    arrays: Mapping[str, np.ndarray], sampled_videos: Sequence[str]
+) -> np.ndarray:
+    parts = [arrays[source] for source in sampled_videos if arrays[source].size]
+    if not parts:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate(parts)
+
+
+def _bootstrap_map_pair(
+    cache: Mapping[str, Any],
+    sampled_videos: Sequence[str],
+    *,
+    synthetic_prefix: str,
+) -> tuple[float, float]:
+    """Recompute full and shortest-Q1 mAP for one exact video multiset."""
+
+    full_aps, q1_aps = [], []
+    threshold = float(cache["tiou_threshold"])
+    for label in cache["labels"]:
+        payload = cache["classes"][label]
+        full_npos = sum(
+            len(payload["ground_truth_full"][source]) for source in sampled_videos
         )
-    return float(np.mean(aps))
+        q1_npos = sum(
+            len(payload["ground_truth_q1"][source]) for source in sampled_videos
+        )
+        if full_npos <= 0:
+            continue
+        sampled_scores = _concatenate_sampled_arrays(payload["scores"], sampled_videos)
+        order = sampled_scores.argsort()[::-1]
+        full_flags = _concatenate_sampled_arrays(payload["full_flags"], sampled_videos)
+        q1_flags = _concatenate_sampled_arrays(payload["q1_flags"], sampled_videos)
+
+        # NumPy's default quicksort is intentionally unstable for equal scores.
+        # Reconstruct its complete global rank first, then derive the exact
+        # relative order inside only those synthetic video copies whose local
+        # scores tie and whose GT locks can therefore be order-sensitive.
+        if any(payload["has_local_score_ties"].values()):
+            global_rank = np.empty(order.size, dtype=np.int64)
+            global_rank[order] = np.arange(order.size, dtype=np.int64)
+            cursor = 0
+            for source in sampled_videos:
+                count = int(payload["scores"][source].size)
+                end = cursor + count
+                if count and payload["has_local_score_ties"][source]:
+                    local_order = global_rank[cursor:end].argsort()
+                    order_key = tuple(int(value) for value in local_order)
+                    if payload["ground_truth_full"][source]:
+                        source_flags = payload["full_order_cache"][source].get(order_key)
+                        if source_flags is None:
+                            source_flags = _local_tp_flags(
+                                payload["ground_truth_full"][source],
+                                payload["predictions"][source],
+                                tiou_threshold=threshold,
+                                prediction_order=local_order,
+                                match_plan=payload["full_match_plans"][source],
+                            )
+                            if (
+                                len(payload["full_order_cache"][source])
+                                < _LOCAL_ORDER_CACHE_LIMIT
+                            ):
+                                payload["full_order_cache"][source][order_key] = source_flags
+                        full_flags[cursor:end] = source_flags
+                    if payload["ground_truth_q1"][source]:
+                        source_flags = payload["q1_order_cache"][source].get(order_key)
+                        if source_flags is None:
+                            source_flags = _local_tp_flags(
+                                payload["ground_truth_q1"][source],
+                                payload["predictions"][source],
+                                tiou_threshold=threshold,
+                                prediction_order=local_order,
+                                match_plan=payload["q1_match_plans"][source],
+                            )
+                            if (
+                                len(payload["q1_order_cache"][source])
+                                < _LOCAL_ORDER_CACHE_LIMIT
+                            ):
+                                payload["q1_order_cache"][source][order_key] = source_flags
+                        q1_flags[cursor:end] = source_flags
+                cursor = end
+            if cursor != order.size:
+                raise RuntimeError("Gate-4 sampled prediction layout is inconsistent")
+
+        full_aps.append(
+            _ap_from_ranked_tp(full_flags[order], npos=float(full_npos))
+        )
+        if q1_npos > 0:
+            q1_aps.append(_ap_from_ranked_tp(q1_flags[order], npos=float(q1_npos)))
+    if not full_aps or not q1_aps:
+        raise ValueError("Gate-4 metric bootstrap has no ground truth")
+    return float(np.mean(full_aps)), float(np.mean(q1_aps))
+
+
+def _cached_map_at_indexed(
+    gt_by_source: Mapping[str, Sequence[tuple[Any, ...]]],
+    predictions_by_source: Mapping[str, Sequence[tuple[Any, ...]]],
+    sampled_videos: Sequence[str],
+    *,
+    tiou_threshold: float,
+    synthetic_prefix: str,
+) -> float:
+    """Evaluate one complete population with the exact bootstrap cache path."""
+
+    cache = _prepare_bootstrap_map_cache(
+        gt_by_source,
+        predictions_by_source,
+        sampled_videos,
+        tiou_threshold=tiou_threshold,
+        q1_threshold=math.inf,
+    )
+    full, duplicate_full = _bootstrap_map_pair(
+        cache, sampled_videos, synthetic_prefix=synthetic_prefix
+    )
+    if full != duplicate_full:
+        raise RuntimeError("unfiltered Gate-4 cache produced inconsistent mAP")
+    return full
+
+
+def _metric_bootstrap_distributions(
+    bootstrap_caches: Mapping[int, Mapping[str, Mapping[str, Any]]],
+    videos: Sequence[str],
+    *,
+    bootstrap_samples: int,
+    bootstrap_seed: int,
+) -> tuple[list[float], list[float]]:
+    """Evaluate the frozen video/seed bootstrap plan without changing its RNG.
+
+    Independent ``seed x arm`` vectors may run concurrently when Slurm grants
+    more than one CPU to the task.  Each worker reads immutable caches, and the
+    replicate statistics are assembled in the original seed-draw order.
+    """
+
+    rng = random.Random(int(bootstrap_seed) ^ 0x7C31)
+    plan = []
+    for bootstrap_index in range(bootstrap_samples):
+        sampled_videos = tuple(rng.choice(videos) for _ in videos)
+        sampled_seeds = tuple(rng.choice(SEEDS) for _ in SEEDS)
+        first_position = {
+            seed: sampled_seeds.index(seed) for seed in dict.fromkeys(sampled_seeds)
+        }
+        plan.append(
+            (bootstrap_index, sampled_videos, sampled_seeds, first_position)
+        )
+
+    def evaluate_seed_arm(pair: tuple[int, str]):
+        seed, arm = pair
+        values = {}
+        for bootstrap_index, sampled_videos, _sampled_seeds, first_position in plan:
+            if seed not in first_position:
+                continue
+            values[bootstrap_index] = _bootstrap_map_pair(
+                bootstrap_caches[seed][arm],
+                sampled_videos,
+                synthetic_prefix=(
+                    f"boot/{bootstrap_index}/{first_position[seed]}"
+                ),
+            )
+        return pair, values
+
+    pairs = [
+        (seed, arm)
+        for seed in SEEDS
+        for arm in ("dense", "chronotransport")
+    ]
+    try:
+        slurm_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", "1"))
+    except ValueError:
+        slurm_cpus = 1
+    worker_count = max(1, min(len(pairs), slurm_cpus))
+    if worker_count == 1:
+        evaluated = [evaluate_seed_arm(pair) for pair in pairs]
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            evaluated = list(executor.map(evaluate_seed_arm, pairs))
+    values_by_pair = dict(evaluated)
+
+    drops, q1_drops = [], []
+    for bootstrap_index, _sampled_videos, sampled_seeds, _first_position in plan:
+        dense = np.mean(
+            [
+                values_by_pair[(seed, "dense")][bootstrap_index][0]
+                for seed in sampled_seeds
+            ]
+        )
+        ct = np.mean(
+            [
+                values_by_pair[(seed, "chronotransport")][bootstrap_index][0]
+                for seed in sampled_seeds
+            ]
+        )
+        dense_q1 = np.mean(
+            [
+                values_by_pair[(seed, "dense")][bootstrap_index][1]
+                for seed in sampled_seeds
+            ]
+        )
+        ct_q1 = np.mean(
+            [
+                values_by_pair[(seed, "chronotransport")][bootstrap_index][1]
+                for seed in sampled_seeds
+            ]
+        )
+        drops.append(100.0 * float(dense - ct))
+        q1_drops.append(100.0 * float(dense_q1 - ct_q1))
+    return drops, q1_drops
 
 
 def _metric_statistics(
@@ -465,13 +950,40 @@ def _metric_statistics(
     bootstrap_seed: int,
 ):
     q1 = quartiles[0]
+    gt_by_source = _rows_by_source(gt_rows)
+    prediction_indexes = {
+        seed: {
+            arm: _rows_by_source(predictions[seed][arm])
+            for arm in ARMS
+        }
+        for seed in SEEDS
+    }
+    bootstrap_caches = {
+        seed: {
+            arm: _prepare_bootstrap_map_cache(
+                gt_by_source,
+                prediction_indexes[seed][arm],
+                videos,
+                tiou_threshold=0.7,
+                q1_threshold=q1,
+            )
+            for arm in ("dense", "chronotransport")
+        }
+        for seed in SEEDS
+    }
+
     per_seed = {}
     for seed in SEEDS:
-        dense = _map_at(gt_rows, predictions[seed]["dense"], videos)
-        ct = _map_at(gt_rows, predictions[seed]["chronotransport"], videos)
-        dense_q1 = _map_at(gt_rows, predictions[seed]["dense"], videos, q1_threshold=q1)
-        ct_q1 = _map_at(
-            gt_rows, predictions[seed]["chronotransport"], videos, q1_threshold=q1
+        prefix = f"point/{seed}"
+        dense, dense_q1 = _bootstrap_map_pair(
+            bootstrap_caches[seed]["dense"],
+            videos,
+            synthetic_prefix=prefix,
+        )
+        ct, ct_q1 = _bootstrap_map_pair(
+            bootstrap_caches[seed]["chronotransport"],
+            videos,
+            synthetic_prefix=prefix,
         )
         per_seed[str(seed)] = {
             "dense_map07": dense,
@@ -483,44 +995,12 @@ def _metric_statistics(
         }
     point_drop = float(np.mean([row["map07_drop_points"] for row in per_seed.values()]))
     point_q1 = float(np.mean([row["short_q1_drop_points"] for row in per_seed.values()]))
-    rng = random.Random(int(bootstrap_seed) ^ 0x7C31)
-    drops, q1_drops = [], []
-    for _ in range(bootstrap_samples):
-        sampled_videos = [rng.choice(videos) for _ in videos]
-        sampled_seeds = [rng.choice(SEEDS) for _ in SEEDS]
-        dense = np.mean(
-            [_map_at(gt_rows, predictions[seed]["dense"], sampled_videos) for seed in sampled_seeds]
-        )
-        ct = np.mean(
-            [
-                _map_at(gt_rows, predictions[seed]["chronotransport"], sampled_videos)
-                for seed in sampled_seeds
-            ]
-        )
-        dense_q1 = np.mean(
-            [
-                _map_at(
-                    gt_rows,
-                    predictions[seed]["dense"],
-                    sampled_videos,
-                    q1_threshold=q1,
-                )
-                for seed in sampled_seeds
-            ]
-        )
-        ct_q1 = np.mean(
-            [
-                _map_at(
-                    gt_rows,
-                    predictions[seed]["chronotransport"],
-                    sampled_videos,
-                    q1_threshold=q1,
-                )
-                for seed in sampled_seeds
-            ]
-        )
-        drops.append(100.0 * float(dense - ct))
-        q1_drops.append(100.0 * float(dense_q1 - ct_q1))
+    drops, q1_drops = _metric_bootstrap_distributions(
+        bootstrap_caches,
+        videos,
+        bootstrap_samples=bootstrap_samples,
+        bootstrap_seed=bootstrap_seed,
+    )
     map_by_tiou = {}
     average_map = {}
     duration_quartile_map07 = {}
@@ -536,11 +1016,12 @@ def _metric_statistics(
             by_threshold[f"{threshold:.1f}"] = float(
                 np.mean(
                     [
-                        _map_at(
-                            gt_rows,
-                            predictions[seed][arm],
+                        _cached_map_at_indexed(
+                            gt_by_source,
+                            prediction_indexes[seed][arm],
                             videos,
                             tiou_threshold=threshold,
+                            synthetic_prefix=f"diagnostic/{arm}/{threshold}/{seed}",
                         )
                         for seed in SEEDS
                     ]
@@ -550,15 +1031,23 @@ def _metric_statistics(
         average_map[arm] = float(np.mean(list(by_threshold.values())))
         quartile_values = []
         for lower, upper in bounds:
+            filtered_gt_by_source = {
+                source: [
+                    row
+                    for row in rows
+                    if (lower is None or row[3] - row[2] > lower)
+                    and (upper is None or row[3] - row[2] <= upper)
+                ]
+                for source, rows in gt_by_source.items()
+            }
             try:
                 values = [
-                    _map_at(
-                        gt_rows,
-                        predictions[seed][arm],
+                    _cached_map_at_indexed(
+                        filtered_gt_by_source,
+                        prediction_indexes[seed][arm],
                         videos,
                         tiou_threshold=0.7,
-                        q1_threshold=upper,
-                        duration_lower=lower,
+                        synthetic_prefix=f"duration/{arm}/{lower}/{upper}/{seed}",
                     )
                     for seed in SEEDS
                 ]
@@ -646,40 +1135,29 @@ def _regret_statistics(by_key, videos, *, bootstrap_samples: int, bootstrap_seed
     return point, per_seed, (_percentile(boot, 2.5), _percentile(boot, 97.5))
 
 
-def adjudicate_gate4(
+def _adjudicate_gate4_statistics(
     *,
     timing_rows: Sequence[Mapping[str, Any]],
     metric_evidence: Mapping[str, Any],
     regret_rows: Sequence[Mapping[str, Any]],
-    bootstrap_samples: int = 5000,
-    bootstrap_seed: int = 20260711,
-    formal: bool = True,
+    bootstrap_samples: int,
+    bootstrap_seed: int,
+    report_schema: str,
+    evidence_scope: str,
+    formal_evidence: bool,
 ) -> dict[str, Any]:
-    """Exercise Gate-4 statistics on unregistered, test-only raw evidence.
+    """Compute Gate-4 statistics after the caller has established evidence scope."""
 
-    A real Gate-4 artifact must be minted by a repository-owned evidence
-    producer that binds the official invocation population, model/checkpoint
-    identities, post-Stage-C Gate-3 unlock, clean detached registration R, and
-    immutable timing/metric/regret artifacts.  That production workflow does
-    not exist yet, so ``formal=True`` intentionally fails closed instead of
-    allowing caller-supplied mappings to impersonate formal evidence.
-    """
-
-    if type(formal) is not bool:
-        raise TypeError("Gate-4 formal flag must be boolean")
     bootstrap_samples = _integer(bootstrap_samples, "Gate-4 bootstrap samples")
     bootstrap_seed = _integer(bootstrap_seed, "Gate-4 bootstrap seed")
-    if formal and bootstrap_samples != 5000:
-        raise ValueError("formal Gate 4 requires exactly 5000 bootstrap samples")
-    if formal and bootstrap_seed != 20260711:
-        raise ValueError("formal Gate 4 requires bootstrap seed 20260711")
-    if formal:
-        raise RuntimeError(
-            "formal Gate 4 requires a registered evidence producer; "
-            "caller-supplied raw mappings are test-only"
-        )
     if bootstrap_samples <= 0:
         raise ValueError("Gate-4 bootstrap samples must be positive")
+    if not isinstance(report_schema, str) or not report_schema:
+        raise ValueError("Gate-4 report schema must be non-empty")
+    if not isinstance(evidence_scope, str) or not evidence_scope:
+        raise ValueError("Gate-4 evidence scope must be non-empty")
+    if type(formal_evidence) is not bool:
+        raise TypeError("Gate-4 formal evidence flag must be boolean")
 
     timing = _normalize_timing(timing_rows)
     timing_stats = _timing_statistics(
@@ -736,10 +1214,10 @@ def adjudicate_gate4(
         "every_seed_within_thresholds": every_seed,
     }
     result = {
-        "schema": "chronotransport-r2-gate4-test-only-v1",
+        "schema": report_schema,
         "protocol": "CT-P3R-3S-r2",
-        "evidence_scope": "test_only_unregistered_raw_mappings",
-        "formal_evidence": False,
+        "evidence_scope": evidence_scope,
+        "formal_evidence": formal_evidence,
         "status": "PASS" if all(hard.values()) else "FAIL",
         "mechanism": bool(all(hard.values())),
         "bootstrap": {"samples": bootstrap_samples, "seed": bootstrap_seed},
@@ -773,6 +1251,7 @@ def adjudicate_gate4(
             "median_heavy_saving_ms": timing_stats["point"][
                 "median_heavy_saving_ms"
             ],
+            "median_overhead_ms": timing_stats["point"]["median_overhead_ms"],
             "median_margin_ms": timing_stats["point"]["median_margin_ms"],
             "median_margin_lcb95_ms": timing_stats["margin_lcb95_ms"],
         },
@@ -796,6 +1275,47 @@ def adjudicate_gate4(
     }
     result["artifact_sha256"] = canonical_sha256(result)
     return result
+
+
+def adjudicate_gate4(
+    *,
+    timing_rows: Sequence[Mapping[str, Any]],
+    metric_evidence: Mapping[str, Any],
+    regret_rows: Sequence[Mapping[str, Any]],
+    bootstrap_samples: int = 5000,
+    bootstrap_seed: int = 20260711,
+    formal: bool = True,
+) -> dict[str, Any]:
+    """Exercise Gate-4 statistics on unregistered, test-only raw evidence.
+
+    Caller-supplied mappings can never impersonate formal evidence.  The
+    repository-owned formal wrapper validates immutable evidence files and
+    invokes the private statistics core only after all provenance checks pass.
+    """
+
+    if type(formal) is not bool:
+        raise TypeError("Gate-4 formal flag must be boolean")
+    bootstrap_samples = _integer(bootstrap_samples, "Gate-4 bootstrap samples")
+    bootstrap_seed = _integer(bootstrap_seed, "Gate-4 bootstrap seed")
+    if formal and bootstrap_samples != 5000:
+        raise ValueError("formal Gate 4 requires exactly 5000 bootstrap samples")
+    if formal and bootstrap_seed != 20260711:
+        raise ValueError("formal Gate 4 requires bootstrap seed 20260711")
+    if formal:
+        raise RuntimeError(
+            "formal Gate 4 requires a registered evidence producer; "
+            "caller-supplied raw mappings are test-only"
+        )
+    return _adjudicate_gate4_statistics(
+        timing_rows=timing_rows,
+        metric_evidence=metric_evidence,
+        regret_rows=regret_rows,
+        bootstrap_samples=bootstrap_samples,
+        bootstrap_seed=bootstrap_seed,
+        report_schema="chronotransport-r2-gate4-test-only-v1",
+        evidence_scope="test_only_unregistered_raw_mappings",
+        formal_evidence=False,
+    )
 
 
 def validate_gate4_report(

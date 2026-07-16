@@ -280,7 +280,7 @@ def _post_gate3_report(
             "stage_c_complete": True,
             "post_stage_c_gate3_pass": passed,
             "metric_adatad_thumos14_official_full_video": False,
-            "latency_slurm_single_device_fixed_stack": False,
+            "latency_slurm_single_gpu_fixed_stack": False,
             "deploy": False,
             "paper": False,
         },

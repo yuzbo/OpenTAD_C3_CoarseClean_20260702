@@ -4,6 +4,7 @@
     "scripts/run_chronotransport_adatad_gpu1.sh": "OUT_OF_SCOPE",
     "scripts/run_chronotransport_paired_replay_gpu1.sh": "OUT_OF_SCOPE",
     "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh": "REQUIRED",
+    "scripts/run_chronotransport_r2_gate4_slurm_single_gpu.sh": "REQUIRED",
     "scripts/run_chronotransport_r2_post_stage_c_gate3_slurm_single_gpu.sh": "REQUIRED",
     "scripts/run_chronotransport_r2_stage_c_slurm_single_gpu.sh": "REQUIRED",
     "scripts/run_chronotransport_stage_b_formal_gpu1.sh": "OUT_OF_SCOPE",
@@ -17,6 +18,7 @@
     "tests/test_chronotransport_r2_adjudication.py": "REQUIRED",
     "tests/test_chronotransport_r2_environment.py": "REQUIRED",
     "tests/test_chronotransport_r2_filesystem.py": "REQUIRED",
+    "tests/test_chronotransport_r2_formal_gate4.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate1_cost_profile.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate1_hardening.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate4.py": "REQUIRED",
@@ -38,6 +40,7 @@
     "tools/bata/check_chronotransport_checkpoint.py": "OUT_OF_SCOPE",
     "tools/bata/chronotransport_opentad_factory.py": "OUT_OF_SCOPE",
     "tools/bata/chronotransport_r2_gate1_replay_factory.py": "REQUIRED",
+    "tools/bata/chronotransport_r2_gate4_factory.py": "REQUIRED",
     "tools/bata/chronotransport_r2_gates23_replay_factory.py": "REQUIRED",
     "tools/bata/chronotransport_r2_opentad_profile_backend.py": "REQUIRED",
     "tools/bata/chronotransport_r2_post_stage_c_factory.py": "REQUIRED",
@@ -49,6 +52,7 @@
     "tools/bata/register_chronotransport_r2.py": "REQUIRED",
     "tools/bata/run_chronotransport_paired_replay.py": "OUT_OF_SCOPE",
     "tools/bata/run_chronotransport_r2_gate1.py": "REQUIRED",
+    "tools/bata/run_chronotransport_r2_gate4.py": "REQUIRED",
     "tools/bata/run_chronotransport_r2_gates23.py": "REQUIRED",
     "tools/bata/run_chronotransport_r2_post_stage_c_gate3.py": "REQUIRED",
     "tools/bata/run_chronotransport_stage_b_formal.py": "OUT_OF_SCOPE",
@@ -60,6 +64,7 @@
     "tools/bata/validate_chronotransport_dense_gate.py": "OUT_OF_SCOPE",
     "tools/bata/validate_chronotransport_r2_post_stage_c_gate3.py": "REQUIRED",
     "tools/bata/validate_chronotransport_r2_precheck.py": "REQUIRED",
-    "tools/bata/validate_chronotransport_r2_stage_c.py": "REQUIRED"
+    "tools/bata/validate_chronotransport_r2_stage_c.py": "REQUIRED",
+    "tools/bata/validate_chronotransport_r2_gate4.py": "REQUIRED"
   }
 }

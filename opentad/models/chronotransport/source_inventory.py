@@ -66,6 +66,7 @@ FORMAL_OPENTAD_PYTHON_SOURCE_PATHS = (
     "opentad/models/chronotransport/cost_lookup.py",
     "opentad/models/chronotransport/environment.py",
     "opentad/models/chronotransport/filesystem.py",
+    "opentad/models/chronotransport/formal_gate4.py",
     "opentad/models/chronotransport/formal_stage_b.py",
     "opentad/models/chronotransport/formal_stage_c.py",
     "opentad/models/chronotransport/full_stack_profiler.py",

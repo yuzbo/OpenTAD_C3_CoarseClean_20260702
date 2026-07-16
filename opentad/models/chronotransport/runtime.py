@@ -83,6 +83,8 @@ class ChronoTransportRuntime(nn.Module):
         self.forced_action_name = "forced_actions"
         self.cache_detach = bool(cache_detach)
         self.profile_sync_cuda = bool(profile_sync_cuda)
+        self.profile_deferred_cuda_events = False
+        self._pending_profile: ChronoProfiler | None = None
         self.allow_unmeasured_cost_for_debug = bool(allow_unmeasured_cost_for_debug)
         self.risk_ready = bool(risk_ready)
         self.require_checkpoint_for_dynamic = bool(require_checkpoint_for_dynamic)
@@ -265,6 +267,66 @@ class ChronoTransportRuntime(nn.Module):
         self.forced_actions = normalized.detach().clone()
         self.forced_schedule = None
         self.forced_action_name = candidate_name
+
+    def clear_registered_forced_actions(self) -> None:
+        """Return to calibrated learned scheduling without retaining an arm override."""
+
+        if self._pending_profile is not None:
+            raise RuntimeError(
+                "cannot change Gate4 scheduling mode before deferred profiling is finalized"
+            )
+
+        self.forced_actions = torch.empty(
+            0,
+            dtype=torch.long,
+            device=self.forced_actions.device,
+        )
+        self.forced_schedule = None
+        self.forced_action_name = "forced_actions"
+        self.latest_schedule = None
+        self.latest_summary = None
+        self.latest_signals = None
+        self.latest_output = None
+
+    def _profile_summary(self, profiler: ChronoProfiler) -> dict[str, object]:
+        if not self.profile_deferred_cuda_events:
+            return profiler.summary(fill_missing=True)
+        if self._pending_profile is not None:
+            raise RuntimeError(
+                "a prior deferred Gate4 profile was not finalized at its outer boundary"
+            )
+        self._pending_profile = profiler
+        return {
+            "deferred_cuda_events": True,
+            "finalized": False,
+        }
+
+    def finalize_deferred_profile(self, *, outer_cuda_synchronized: bool) -> dict[str, object]:
+        """Resolve Gate4 stage events only after the full model boundary sync."""
+
+        if type(outer_cuda_synchronized) is not bool:
+            raise TypeError("outer CUDA synchronization evidence must be boolean")
+        profiler = self._pending_profile
+        if profiler is None:
+            profile = (
+                self.latest_summary.get("profile")
+                if isinstance(self.latest_summary, Mapping)
+                else None
+            )
+            if not isinstance(profile, Mapping):
+                raise RuntimeError("runtime has no deferred profile to finalize")
+            return dict(profile)
+        if not outer_cuda_synchronized and profiler.has_pending_cuda_events:
+            raise RuntimeError(
+                "deferred Gate4 profiling requires the outer invocation CUDA sync"
+            )
+        profiler.flush_deferred_cuda_events(synchronize=False)
+        profile = profiler.summary(fill_missing=True)
+        if not isinstance(self.latest_summary, dict):
+            raise RuntimeError("runtime summary disappeared before profile finalization")
+        self.latest_summary["profile"] = profile
+        self._pending_profile = None
+        return profile
 
     @staticmethod
     def _dense_forward(x: Tensor, blocks: Sequence[nn.Module], h: int, w: int) -> Tensor:
@@ -465,7 +527,7 @@ class ChronoTransportRuntime(nn.Module):
             "cache_reset_per_window": True,
             "external_dense_grid_preserved_by_post_interpolation": True,
             **dict(geometry),
-            "profile": profiler.summary(fill_missing=True),
+            "profile": self._profile_summary(profiler),
         }
         return out
 
@@ -596,6 +658,10 @@ class ChronoTransportRuntime(nn.Module):
         return state
 
     def forward(self, x: Tensor, blocks: Sequence[nn.Module], h: int, w: int) -> Tensor:
+        if self._pending_profile is not None:
+            raise RuntimeError(
+                "deferred Gate4 profile must be finalized before the next forward"
+            )
         self.latest_signals = None
         self.latest_output = None
         if x.ndim != 3:
@@ -622,7 +688,10 @@ class ChronoTransportRuntime(nn.Module):
 
         batch_size = int(x.shape[0]) // self.chunks_per_window
         state = x.reshape(batch_size, self.chunks_per_window, int(x.shape[1]), int(x.shape[2]))
-        profiler = ChronoProfiler(sync_cuda=self.profile_sync_cuda)
+        profiler = ChronoProfiler(
+            sync_cuda=self.profile_sync_cuda,
+            deferred_cuda_events=self.profile_deferred_cuda_events,
+        )
         signals = None
         if self.capture_replay_signals:
             with profiler.stage("innovation"):
@@ -748,7 +817,7 @@ class ChronoTransportRuntime(nn.Module):
                 "upper_risk": upper_risk.detach().cpu().tolist(),
                 "estimated_cost": estimated_cost.detach().cpu().tolist(),
                 "fail_closed": fail_closed.detach().cpu().tolist(),
-                "profile": profiler.summary(fill_missing=True),
+                "profile": self._profile_summary(profiler),
             }
             return out
 
@@ -845,7 +914,7 @@ class ChronoTransportRuntime(nn.Module):
             "executed_action_sha256": executed_action_sha256,
             "evidence_valid": evidence_valid,
             "invalid_implementation_reason": invalid_reason,
-            "profile": profiler.summary(fill_missing=True),
+            "profile": self._profile_summary(profiler),
         }
         self.latest_output = out
         return out

@@ -41,11 +41,46 @@ def _percentile(values: list[float], quantile: float) -> float | None:
 
 
 class ChronoProfiler:
-    def __init__(self, *, sync_cuda: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        sync_cuda: bool = True,
+        deferred_cuda_events: bool = False,
+    ) -> None:
         self.sync_cuda = bool(sync_cuda)
+        self.deferred_cuda_events = bool(deferred_cuda_events)
+        if self.sync_cuda and self.deferred_cuda_events:
+            raise ValueError("profiler sync and deferred CUDA modes are mutually exclusive")
         self._latency_ms: dict[str, list[float]] = defaultdict(list)
+        self._cuda_events: list[tuple[str, torch.cuda.Event, torch.cuda.Event]] = []
         self._action_counts: dict[str, int] = defaultdict(int)
         self._metadata: dict[str, object] = {}
+
+    @property
+    def has_pending_cuda_events(self) -> bool:
+        """Whether deferred CUDA measurements still need an outer-boundary flush."""
+
+        return bool(self._cuda_events)
+
+    def flush_deferred_cuda_events(self, *, synchronize: bool) -> None:
+        """Materialize deferred CUDA durations after the caller's timing sync.
+
+        Formal full-stack timing synchronizes once at the outer invocation
+        boundary.  Requiring that caller to flush with ``synchronize=False``
+        keeps diagnostic stage timing from inserting a hidden mid-forward
+        synchronization into the primary latency sample.
+        """
+
+        if type(synchronize) is not bool:
+            raise TypeError("deferred CUDA synchronize flag must be boolean")
+        if not self._cuda_events:
+            return
+        if synchronize:
+            self._cuda_events[-1][2].synchronize()
+        events = self._cuda_events
+        self._cuda_events = []
+        for name, start, end in events:
+            self.record(name, float(start.elapsed_time(end)))
 
     def _sync(self) -> None:
         if self.sync_cuda and torch.cuda.is_available():
@@ -53,6 +88,16 @@ class ChronoProfiler:
 
     @contextmanager
     def stage(self, name: str) -> Iterator[None]:
+        if self.deferred_cuda_events and torch.cuda.is_available():
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            start_event.record()
+            try:
+                yield
+            finally:
+                end_event.record()
+                self._cuda_events.append((str(name), start_event, end_event))
+            return
         self._sync()
         start = perf_counter()
         try:
@@ -77,7 +122,21 @@ class ChronoProfiler:
     def update_metadata(self, **metadata: object) -> None:
         self._metadata.update(metadata)
 
-    def summary(self, *, fill_missing: bool = True) -> dict[str, object]:
+    def summary(
+        self,
+        *,
+        fill_missing: bool = True,
+        flush_deferred: bool = True,
+        synchronize_deferred: bool = True,
+    ) -> dict[str, object]:
+        if type(flush_deferred) is not bool or type(synchronize_deferred) is not bool:
+            raise TypeError("profiler deferred-summary flags must be boolean")
+        if flush_deferred:
+            self.flush_deferred_cuda_events(synchronize=synchronize_deferred)
+        elif self._cuda_events:
+            raise RuntimeError(
+                "deferred CUDA events must be flushed at the outer timing boundary"
+            )
         names = set(self._latency_ms)
         if fill_missing:
             names.update(REQUIRED_STAGE_FIELDS)

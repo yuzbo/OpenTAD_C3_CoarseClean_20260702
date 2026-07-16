@@ -9,6 +9,8 @@ import pytest
 from opentad.evaluations.mAP import compute_average_precision_detection
 from opentad.models.chronotransport.gate4 import (
     _map_at,
+    _normalize_timing,
+    _timing_statistics,
     adjudicate_gate4,
     validate_gate4_report,
 )
@@ -212,6 +214,7 @@ def test_gate4_passes_all_six_hard_conditions_and_keeps_claims_locked():
     assert result["metrics"]["map07_drop_ucb95_points"] <= 1.5
     assert result["metrics"]["short_q1_drop_ucb95_points"] <= 1.5
     assert result["cost_decomposition"]["median_heavy_saving_ms"] > 0
+    assert result["cost_decomposition"]["median_overhead_ms"] == 1.0
     assert result["cost_decomposition"]["median_margin_lcb95_ms"] > 0
     assert result["latency"]["ct_minus_static_ucb95_ms"] <= 0
     assert result["regret"]["ct_over_static_improvement_ci95"][0] > 0
@@ -234,6 +237,27 @@ def test_gate4_passes_all_six_hard_conditions_and_keeps_claims_locked():
     assert "heavy_ms" in result["diagnostics"]["median_stage_ms"]["chronotransport"]
     assert result["deploy_claim_allowed"] is False
     assert result["paper_claim_allowed"] is False
+
+
+def test_gate4_overhead_preserves_matched_invocation_margin_semantics():
+    rows = _timing_rows()
+    heavy_patterns = ((1.0, 1.0), (100.0, 2.0), (101.0, 100.0))
+    for row in rows:
+        dense_heavy, ct_heavy = heavy_patterns[row["invocation_order_index"] % 3]
+        row["arms"]["dense"]["stage_ms"]["heavy_ms"] = dense_heavy
+        row["arms"]["chronotransport"]["stage_ms"]["heavy_ms"] = ct_heavy
+        stages = row["arms"]["chronotransport"]["stage_ms"]
+        stages["innovation_ms"] = 10.0
+        stages["scheduler_ms"] = 0.0
+        stages["transport_ms"] = 0.0
+        stages["cache_movement_ms"] = 0.0
+
+    statistics = _timing_statistics(
+        _normalize_timing(rows), bootstrap_samples=2, bootstrap_seed=20260711
+    )
+    assert statistics["point"]["median_heavy_saving_ms"] == 1.0
+    assert statistics["point"]["median_overhead_ms"] == 10.0
+    assert statistics["point"]["median_margin_ms"] == pytest.approx(-9.6)
 
 
 def test_gate4_population_recomputes_exact_invocations_and_timing_padding():
@@ -319,10 +343,30 @@ def test_gate4_per_seed_fail_closed_prevents_pooled_success():
     for row in rows:
         if row["seed"] == 3409:
             row["arms"]["chronotransport"]["total_ms"] = 9.0
-    result = _run(timing_rows=rows)
+    result = _run(timing_rows=rows, bootstrap_samples=2)
     assert result["status"] == "FAIL"
     assert result["hard_conditions"]["every_seed_within_thresholds"] is False
     assert result["per_seed"]["3409"]["latency_saving"] < 0.15
+
+
+def test_gate4_single_seed_margin_reversal_fails_the_registered_seed_condition():
+    rows = _timing_rows()
+    for row in rows:
+        if row["seed"] == 3409:
+            row["arms"]["chronotransport"]["stage_ms"]["heavy_ms"] = 20.0
+    result = _run(timing_rows=rows, bootstrap_samples=2)
+    assert result["per_seed"]["3409"]["median_margin_ms"] < 0.0
+    assert result["hard_conditions"]["every_seed_within_thresholds"] is False
+
+
+def test_gate4_single_seed_static_reversal_fails_the_registered_seed_condition():
+    rows = _timing_rows()
+    for row in rows:
+        if row["seed"] == 3409:
+            row["arms"]["static"]["total_ms"] = 6.0
+    result = _run(timing_rows=rows, bootstrap_samples=2)
+    assert result["per_seed"]["3409"]["ct_minus_static_ms"] > 0.0
+    assert result["hard_conditions"]["every_seed_within_thresholds"] is False
 
 
 def test_gate4_metric_bootstrap_rebuilds_each_seed_without_cross_seed_nms():
@@ -333,6 +377,14 @@ def test_gate4_metric_bootstrap_rebuilds_each_seed_without_cross_seed_nms():
     result = _run(metric_evidence=metrics)
     assert result["per_seed"]["3409"]["map07_drop_points"] > 1.5
     assert result["hard_conditions"]["every_seed_within_thresholds"] is False
+
+
+def test_gate4_metric_bootstrap_parallelism_is_result_invariant(monkeypatch):
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "1")
+    serial = _run(bootstrap_samples=20)
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "6")
+    parallel = _run(bootstrap_samples=20)
+    assert parallel == serial
 
 
 def test_gate4_formal_mode_fixes_bootstrap_count_and_seed():

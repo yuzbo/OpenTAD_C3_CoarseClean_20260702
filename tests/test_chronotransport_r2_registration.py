@@ -571,7 +571,7 @@ def test_source_classification_is_exhaustive_and_exactly_matches_required_vector
         required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
     )
     tests = [path for path in validated["files"] if path.startswith("tests/")]
-    assert len(tests) == 24
+    assert len(tests) == 25
 
 
 def test_source_classification_rejects_omission_addition_and_vector_drift():
@@ -716,6 +716,8 @@ def test_claims_follow_gate_chain_and_never_unlock_deploy_or_paper():
     flags = claim_flags(gate1=True, gate2=True, gate3=True, gate4=True)
     assert flags["oracle_headroom"] and flags["mechanism"]
     assert flags["metric_adatad_thumos14_official_full_video"]
+    assert flags["latency_slurm_single_gpu_fixed_stack"]
+    assert "latency_slurm_single_device_fixed_stack" not in flags
     assert flags["deploy"] is False and flags["paper"] is False
     with pytest.raises(ValueError, match="Gate 2"):
         claim_flags(gate2=True)
