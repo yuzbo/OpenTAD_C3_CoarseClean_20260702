@@ -86,7 +86,7 @@ write_header "${pilot_sbatch}" pt_g1b_sdpq_pilot "${PHYSTIME_G1B_PILOT_TIME:-12:
 {
   printf 'export PHYSTIME_G1B_GATE_OUTPUT=%q\n' "${GATE_JSON}"
   printf 'export PHYSTIME_G1B_RUN_DIR=%q\n' "${pilot_run_dir}"
-  printf 'export PHYSTIME_G1B_PILOT_EPOCHS=%q\n' "${PHYSTIME_G1B_PILOT_EPOCHS:-6}"
+  printf 'export PHYSTIME_G1B_PILOT_EPOCHS=%q\n' "${PHYSTIME_G1B_PILOT_EPOCHS:-20}"
   echo "export PHYSTIME_SEED='42'"
   echo 'bash scripts/run_phystime_g1b_sdpq_pilot_slurm.sh'
 } >> "${pilot_sbatch}"
@@ -94,7 +94,7 @@ pilot_job="$(submit --dependency="afterok:${gate_job}" "${pilot_sbatch}")"
 
 printf 'variant\tjob_id\tdependency\tconfig\tK\tJ\thead\tstatus\n' > "${RUN_ROOT}/jobs.tsv"
 printf 'g1b_sdpq_gate\t%s\tnone\tphystime_g1b_sdpq_pool_native_j192.py\t384\t192\tSDPQ\tsubmitted\n' "${gate_job}" >> "${RUN_ROOT}/jobs.tsv"
-printf 'g1b_sdpq_pilot\t%s\tafterok:%s\tphystime_g1b_sdpq_pool_native_j192.py\t384\t192\tSDPQ\tsubmitted\n' "${pilot_job}" "${gate_job}" >> "${RUN_ROOT}/jobs.tsv"
+printf 'g1b_sdpq_pilot\t%s\tafterok:%s\tphystime_g1b_sdpq_pool_native_j192.py\t384\t192\tSDPQ_%s_epoch\tsubmitted\n' "${pilot_job}" "${gate_job}" "${PHYSTIME_G1B_PILOT_EPOCHS:-20}" >> "${RUN_ROOT}/jobs.tsv"
 
 cat > "${RUN_ROOT}/deployment_summary.json" <<EOF
 {
@@ -110,6 +110,8 @@ cat > "${RUN_ROOT}/deployment_summary.json" <<EOF
   "J_native_tubelet_tokens": 192,
   "feature_interpolation": false,
   "head": "SupportDecoupledPhysicalQueryHead",
+  "pilot_epochs": ${PHYSTIME_G1B_PILOT_EPOCHS:-20},
+  "checkpoint_save_mode": "lightweight",
   "full_train_status": "held_until_gate_and_pilot"
 }
 EOF

@@ -208,7 +208,20 @@ def main():
             (epoch == max_epoch - 1) or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
         ):
             if args.rank == 0:
-                save_checkpoint(model, model_ema, optimizer, scheduler, epoch, work_dir=cfg.work_dir)
+                checkpoint_mode = cfg.workflow.get("checkpoint_save_mode", "full")
+                if checkpoint_mode not in {"full", "lightweight"}:
+                    raise ValueError(f"Unsupported checkpoint_save_mode: {checkpoint_mode}")
+                save_checkpoint(
+                    model,
+                    model_ema,
+                    optimizer,
+                    scheduler,
+                    epoch,
+                    work_dir=cfg.work_dir,
+                    include_optimizer=checkpoint_mode == "full",
+                    include_scheduler=checkpoint_mode == "full",
+                    include_ema=cfg.workflow.get("checkpoint_include_ema", True),
+                )
 
         # val for one epoch
         if epoch >= val_start_epoch:
