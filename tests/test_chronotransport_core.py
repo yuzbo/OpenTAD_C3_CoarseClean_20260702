@@ -174,6 +174,56 @@ def test_scheduler_fails_closed_on_nonfinite_signal_ood_or_no_feasible_candidate
     assert result.fail_closed.tolist() == [True]
 
 
+def test_scheduler_uses_immutable_registered_direct_candidate_costs() -> None:
+    groups = normalize_layer_groups(depth=2, groups=[(0, 1), (1, 2)])
+    library = ScheduleLibrary.default(num_chunks=4, layer_groups=groups)
+    predictor = ScheduleQuantileRiskPredictor(
+        signal_dims=2,
+        num_groups=2,
+        hidden_dims=4,
+        quantile=0.9,
+    )
+    predictor.set_debug_action_risk(recompute=0.0, transport=0.0, hold=0.0)
+    scheduler = RiskConstrainedScheduler(
+        predictor,
+        library,
+        MeasuredCostTable(
+            recompute=(99.0, 99.0),
+            transport=(99.0, 99.0),
+            hold=(99.0, 99.0),
+        ),
+        epsilon=1.0,
+        max_cache_age=4,
+    )
+    direct_costs = {name: float(index + 10) for index, name in enumerate(library.names)}
+    cheapest = library.names[-1]
+    direct_costs[cheapest] = 0.5
+    profile_sha256 = "a" * 64
+    scheduler.install_registered_candidate_costs(
+        direct_costs,
+        profile_sha256=profile_sha256,
+    )
+
+    result = scheduler.select(torch.zeros(1, 4, 2, 2))
+    assert result.selected_names == (cheapest,)
+    assert result.estimated_cost.tolist() == pytest.approx([0.5])
+    assert scheduler.registered_cost_profile_sha256 == profile_sha256
+
+    scheduler.install_registered_candidate_costs(
+        dict(direct_costs),
+        profile_sha256=profile_sha256,
+    )
+    changed = dict(direct_costs)
+    changed[cheapest] = 0.25
+    with pytest.raises(RuntimeError, match="immutable"):
+        scheduler.install_registered_candidate_costs(
+            changed,
+            profile_sha256=profile_sha256,
+        )
+    with pytest.raises(ValueError, match="batch_size=1"):
+        scheduler.select(torch.zeros(2, 4, 2, 2))
+
+
 def test_losses_are_finite_and_pinball_has_expected_value() -> None:
     prediction = torch.tensor([0.0, 2.0])
     target = torch.tensor([1.0, 1.0])

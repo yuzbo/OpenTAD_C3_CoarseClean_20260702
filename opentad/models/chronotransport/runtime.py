@@ -173,6 +173,57 @@ class ChronoTransportRuntime(nn.Module):
 
         self.checkpoint_loaded = bool(loaded)
 
+    def install_registered_candidate_costs(
+        self,
+        costs: Mapping[str, float],
+        *,
+        profile_sha256: str,
+    ) -> None:
+        """Bind direct Gate-1 p50 measurements to the frozen schedule library.
+
+        The per-cell table retained by the runtime is useful for debug and
+        profiling diagnostics, but it is not evidence for a nonlinear schedule
+        cost.  Formal scheduling and Stage-C risk targets therefore use only
+        these direct, registered candidate measurements.
+        """
+
+        self.scheduler.install_registered_candidate_costs(
+            costs,
+            profile_sha256=profile_sha256,
+        )
+        self.cost_is_measured = True
+        self.nonlinear_cost_ready = True
+
+    def _estimate_registered_schedule_cost(self, actions: Tensor) -> Tensor:
+        registered = self.scheduler.registered_candidate_cost_p50
+        if registered is None:
+            return self.cost_table.estimate(actions)
+        if actions.ndim != 3 or tuple(actions.shape[1:]) != (
+            self.chunks_per_window,
+            len(self.layer_groups),
+        ):
+            raise ValueError("schedule actions must have exact [B,chunks,groups] shape")
+
+        library_actions = torch.stack(
+            [candidate.actions for candidate in self.schedule_library.candidates],
+            dim=0,
+        ).to(device=actions.device, dtype=actions.dtype)
+        matches = (
+            actions.unsqueeze(1) == library_actions.unsqueeze(0)
+        ).flatten(start_dim=2).all(dim=2)
+        match_counts = matches.sum(dim=1)
+        if not bool(torch.all(match_counts == 1).item()):
+            raise RuntimeError(
+                "registered full-stack costs cannot price an unregistered or "
+                "ambiguous schedule"
+            )
+        costs = torch.tensor(
+            [registered[name] for name in self.schedule_library.names],
+            dtype=torch.float32,
+            device=actions.device,
+        )
+        return costs[matches.to(torch.long).argmax(dim=1)]
+
     def set_registered_forced_actions(
         self,
         actions: Tensor,
@@ -389,6 +440,7 @@ class ChronoTransportRuntime(nn.Module):
             "dense_output_shape_preserved": True,
             "cost_is_measured": self.cost_is_measured,
             "nonlinear_cost_ready": self.nonlinear_cost_ready,
+            "registered_cost_profile_sha256": self.scheduler.registered_cost_profile_sha256,
             "risk_ready": self.risk_ready,
             "checkpoint_loaded": self.checkpoint_loaded,
             "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,
@@ -621,7 +673,7 @@ class ChronoTransportRuntime(nn.Module):
             selected_names = tuple([schedule.name] * batch_size)
             fail_closed = torch.zeros(batch_size, dtype=torch.bool, device=x.device)
             upper_risk = torch.zeros(batch_size, dtype=x.dtype, device=x.device)
-            estimated_cost = self.cost_table.estimate(schedule.actions)
+            estimated_cost = self._estimate_registered_schedule_cost(schedule.actions)
         else:
             if signals is None:
                 with profiler.stage("innovation"):
@@ -665,6 +717,7 @@ class ChronoTransportRuntime(nn.Module):
                 "runtime_fail_closed_repairs": 0,
                 "dense_output_shape_preserved": True,
                 "cost_is_measured": self.cost_is_measured,
+                "registered_cost_profile_sha256": self.scheduler.registered_cost_profile_sha256,
                 "risk_ready": self.risk_ready,
                 "checkpoint_loaded": self.checkpoint_loaded,
                 "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,
@@ -720,7 +773,7 @@ class ChronoTransportRuntime(nn.Module):
         }
         requested_action_sha256 = canonical_sha256(requested_actions.detach().cpu().to(torch.long).tolist())
         executed_action_sha256 = canonical_sha256(actions.detach().cpu().to(torch.long).tolist())
-        executed_estimated_cost = self.cost_table.estimate(actions)
+        executed_estimated_cost = self._estimate_registered_schedule_cost(actions)
         evidence_valid = (
             int(schedule_repair_count) == 0
             and int(counters["runtime_fail_closed_repairs"]) == 0
@@ -751,6 +804,7 @@ class ChronoTransportRuntime(nn.Module):
             "cache_reset_per_window": True,
             "transport_uses_latest_cache": True,
             "cost_is_measured": self.cost_is_measured,
+            "registered_cost_profile_sha256": self.scheduler.registered_cost_profile_sha256,
             "risk_ready": self.risk_ready,
             "checkpoint_loaded": self.checkpoint_loaded,
             "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,

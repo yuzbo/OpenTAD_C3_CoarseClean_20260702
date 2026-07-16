@@ -125,3 +125,30 @@ def test_registered_forced_actions_preserve_exact_candidate_name_and_bytes():
     assert runtime.latest_schedule.name == "motion_topk_p8"
     assert torch.equal(runtime.latest_schedule.actions[0].cpu(), actions)
     assert runtime.latest_summary["schedule_repair_count"] == 0
+
+
+def test_registered_direct_candidate_cost_drives_forced_runtime_summary():
+    runtime = _runtime(None)
+    candidate = runtime.schedule_library.candidates[1]
+    runtime.set_registered_forced_actions(
+        candidate.actions,
+        candidate_name=candidate.name,
+    )
+    costs = {
+        name: float(index + 1)
+        for index, name in enumerate(runtime.schedule_library.names)
+    }
+    costs[candidate.name] = 123.25
+    profile_sha256 = "b" * 64
+    runtime.install_registered_candidate_costs(
+        costs,
+        profile_sha256=profile_sha256,
+    )
+
+    runtime(torch.zeros(4, 1, 2), nn.ModuleList([_Block(None)]), h=1, w=1)
+    summary = runtime.latest_summary
+    assert summary["estimated_cost"] == [123.25]
+    assert summary["requested_estimated_cost"] == [123.25]
+    assert summary["executed_estimated_cost"] == [123.25]
+    assert summary["cost_is_measured"] is True
+    assert summary["registered_cost_profile_sha256"] == profile_sha256

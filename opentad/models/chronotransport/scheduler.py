@@ -476,6 +476,8 @@ class RiskConstrainedScheduler(nn.Module):
         self.cost_hardware = str(cost_hardware)
         self.cost_precision = str(cost_precision)
         self.cost_statistic = str(cost_statistic)
+        self.registered_candidate_cost_p50: dict[str, float] | None = None
+        self.registered_cost_profile_sha256: str | None = None
         if self.epsilon < 0.0:
             raise ValueError("epsilon must be non-negative")
         if self.max_cache_age <= 0:
@@ -488,7 +490,58 @@ class RiskConstrainedScheduler(nn.Module):
             if self.cost_statistic not in {"p50", "p95"}:
                 raise ValueError("cost statistic must be p50 or p95")
 
+    def install_registered_candidate_costs(
+        self,
+        costs: Mapping[str, float],
+        *,
+        profile_sha256: str,
+    ) -> None:
+        """Install exact direct profile p50s for the frozen schedule library."""
+
+        expected = set(self.schedule_library.names)
+        if not isinstance(costs, Mapping) or set(costs) != expected:
+            raise ValueError(
+                "registered candidate costs must exactly cover the schedule library"
+            )
+        normalized = {}
+        for name in self.schedule_library.names:
+            value = costs[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError("registered candidate p50 costs must be numeric")
+            number = float(value)
+            if not math.isfinite(number) or number <= 0.0:
+                raise ValueError("registered candidate p50 costs must be positive")
+            normalized[name] = number
+        if (
+            not isinstance(profile_sha256, str)
+            or len(profile_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in profile_sha256)
+        ):
+            raise ValueError("registered cost profile requires lowercase SHA-256")
+        if self.registered_candidate_cost_p50 is not None:
+            if (
+                self.registered_candidate_cost_p50 != normalized
+                or self.registered_cost_profile_sha256 != profile_sha256
+            ):
+                raise RuntimeError("registered candidate costs are immutable once bound")
+            return
+        self.registered_candidate_cost_p50 = normalized
+        self.registered_cost_profile_sha256 = profile_sha256
+
     def _candidate_cost(self, candidates: Tensor, batch_size: int) -> Tensor:
+        if self.registered_candidate_cost_p50 is not None:
+            if batch_size != 1:
+                raise ValueError(
+                    "registered full-stack candidate costs require inference batch_size=1"
+                )
+            return torch.tensor(
+                [
+                    self.registered_candidate_cost_p50[name]
+                    for name in self.schedule_library.names
+                ],
+                dtype=torch.float32,
+                device=candidates.device,
+            )
         if self.schedule_cost_lookup is None:
             return self.cost_table.estimate(candidates)
         costs = []
