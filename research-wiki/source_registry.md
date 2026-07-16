@@ -172,6 +172,27 @@ updated: 2026-07-17
   `data/thumos-14/annotations/thumos_14_anno.json`, and Slurm accounting of
   about 249.5 GB disk read. These are infrastructure-failure sources only and
   do not authorize a test/profile result or replacement matrix.
+- Failed recovery campaign `10105b8b590cd7fc`: certificate internal SHA
+  `0f02a64b3150e97a8a172de75af756b677922085ae21ca8b4f48a2e654b7bdf0`.
+  Gate Job `1167504` failed `127:0` before Python because the launcher used
+  `python` before activating the OpenTAD environment. Submission receipt SHA
+  is `80c230fec76d57e35b2e7f0cc89461729dc1646dd65c10f71af92a3ceca6c057`.
+  The empty stdout and 78-byte stderr are infrastructure-failure evidence only.
+- Failed recovery campaign `e647d6feff89cfd7`: certificate internal SHA
+  `b76fa4afb9917452928612a9eeba38daa7152212eaf5efc63c9cd0a53fb766fc`.
+  Gate Job `1167507` failed `2:0` before preflight because direct `sbatch`
+  relocated `BASH_SOURCE` to `/var/spool/slurmd`. Submission receipt SHA is
+  `8960f38ed31dfa3c8796824d4b48c9d805ec60a9a587579e340fe907c3660804`.
+  No test/profile evidence was opened.
+- Active recovery campaign `bc9bacf31bae3749`: profile commit
+  `04f8c28c85f333ea9b992c1e5bc4fade06f2fe06`, certificate internal SHA
+  `77caf621f2c453fc90a627189727dde590a586134d1279be2f95b8b836e7d093`.
+  No-open Gate Job `1167512` completed `0:0`; gate receipt SHA is
+  `820a9721688f5de68fed9c48b6275058967f7eef93d1a9b7f4a883150ef345fa`.
+  The one authorized serial matrix is Job `1167516`; submission receipt SHA is
+  `273bb5269d68a0e8f90b936e61a4a4d6a176af89882f2fa7e7b0117cb5c3883e`.
+  These sources establish deployment provenance only until all nine descriptors
+  and the frozen analysis close.
 
 ## 外部附件
 

@@ -427,6 +427,21 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   remains failed infrastructure and cannot authorize a matrix. A new clean
   commit, certificate, and no-open GPU gate are required; S1 stays
   `experiment_running` with no GO/KILL, S2, or Pro review.
+- Recovery-matrix status at `2026-07-17T05:32+08:00`: commit
+  `04f8c28c85f333ea9b992c1e5bc4fade06f2fe06` passed the remote focused suite
+  (`67 passed`) and issued campaign `bc9bacf31bae3749`, certificate SHA
+  `77caf621f2c453fc90a627189727dde590a586134d1279be2f95b8b836e7d093`.
+  Its explicit-root no-open Gate `1167512` completed `0:0` in `17:09` on
+  Slurm-assigned `g0024`. Raw gate output reports 211 videos, 792 loader
+  exposures, 791 physical windows, exact duplicate topology, matching
+  hardware/software fingerprints, and validated reuse of dense256/seed3408's
+  existing test evidence; it published no profile or descriptor. Gate receipt
+  SHA is `820a9721...`. Exactly one serial same-allocation recovery matrix,
+  Job `1167516`, was then submitted in the frozen nine-cell order with no
+  physical GPU override; matrix receipt SHA is `273bb526...`. It is currently
+  `RUNNING` on `g0024`. This authorizes only completion of the sealed test and
+  trained-checkpoint profile matrix. S1 remains `experiment_running`; cost
+  analysis, paired statistics, GO/KILL, S2, and Pro review remain blocked.
 
 ## Decision Boundary
 

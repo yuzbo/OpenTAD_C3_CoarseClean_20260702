@@ -74,7 +74,13 @@ max_chars: 8000
   `/var/spool/slurmd`, so the launcher derived the wrong code root. No test or
   profile opened. Both gate and matrix launchers now require an explicit
   profile-source root and verify its certificate-bound commit and clean Git
-  state. Another commit/certificate/gate is required; no matrix Job exists.
+  state. Commit `04f8c28` passed `67` remote tests; campaign
+  `bc9bacf31bae3749` issued certificate SHA `77caf621...`. No-open Gate
+  `1167512` completed `0:0` with 211 videos, 792 loader exposures, 791 physical
+  windows, exact duplicate topology, hardware/software fingerprints, and
+  validated reuse of the only existing test evidence. Exactly one serial
+  same-allocation recovery matrix, Job `1167516`, is now running in frozen 3x3
+  order. No profile descriptor or final result exists yet.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

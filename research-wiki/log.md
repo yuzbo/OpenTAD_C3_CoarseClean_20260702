@@ -226,3 +226,12 @@ append_only: true
   an explicit profile-source root and verify its certificate-bound commit and
   clean Git state. The failed campaign is preserved; another clean
   commit/certificate/gate is required before the matrix.
+- 2026-07-17 05:32+08:00: `04f8c28` passed 67 remote tests and campaign
+  `bc9bacf31bae3749` issued certificate SHA `77caf621...`. No-open Gate
+  `1167512` completed `0:0` in `17:09`, validating 211 videos, 792 loader
+  exposures, 791 physical windows, the exact duplicate topology, fingerprints,
+  and reuse of the existing first-cell test evidence without publishing a
+  profile. Submitted exactly one serial frozen-order recovery matrix,
+  Job `1167516`, on one Slurm-assigned GPU. Gate/matrix receipt SHAs are
+  `820a9721...` and `273bb526...`. Final matrix evidence and S1 GO/KILL remain
+  pending; Pro and S2 remain blocked.
