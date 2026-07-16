@@ -561,7 +561,7 @@ def _hash_value(hasher: Any, value: Any) -> None:
     elif isinstance(value, Tensor):
         tensor = value.detach().cpu().contiguous()
         metadata = f"{tensor.dtype}|{tuple(tensor.shape)}".encode("ascii")
-        raw = tensor.view(torch.uint8).numpy().tobytes()
+        raw = tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
         hasher.update(b"T" + struct.pack(">Q", len(metadata)) + metadata)
         hasher.update(struct.pack(">Q", len(raw)) + raw)
     elif isinstance(value, np.ndarray):
@@ -1598,11 +1598,12 @@ def _parameter_logical_sha256(parameter: nn.Parameter) -> str:
     )
     digest.update(repr(metadata).encode("utf-8"))
     digest.update(b"\0")
-    logical_bytes = (
-        parameter.detach()
-        .contiguous()
-        .view(torch.uint8)
-        .cpu()
+        logical_bytes = (
+            parameter.detach()
+            .contiguous()
+            .reshape(-1)
+            .view(torch.uint8)
+            .cpu()
         .numpy()
         .tobytes(order="C")
     )
