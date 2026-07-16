@@ -27,6 +27,12 @@ max_chars: 8000
   Job `1165774`：远端 `47 passed`，三分辨率梯度合同闭合。新 canonical namespace
   `bf71376e...` 中的 3x3 Jobs `1165775-1165783` 已全部从 epoch 0 运行；无 resume，
   无物理 GPU 覆盖。当前仍无 sealed-test 结果或 S1 GO/KILL。
+- At 2026-07-16 11:00, the 160/224 cells completed all model updates and gate
+  artifacts but failed only in the post-training selector. Root cause: the S1
+  analyzer rejected finite zero-length proposals that the official evaluator
+  retains as false positives. Fix `cbc63d0` passes official parity and focused
+  tests. The failed Job states cannot open sealed test; the 256 cells are still
+  finishing, and a new commit-bound gate/epoch-0 namespace is required.
 
 ## 当前唯一活动任务：Spatial Zoom
 

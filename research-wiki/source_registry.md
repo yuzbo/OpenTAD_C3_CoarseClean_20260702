@@ -28,6 +28,9 @@ updated: 2026-07-16
 - 首轮审计提交：`64e71ddc633f9c63f9dea1c5c60c49dc00441ebf`
 - 当前 Spatial Zoom S1 formal code commit：
   `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83`
+- Spatial Zoom S1 official-evaluator policy fix:
+  `cbc63d07` (`DetectionCorpus` retains finite zero-length predictions and
+  rejects reversed/non-finite rows; focused tests `41 passed, 1 skipped`).
 
 ## 关键评审与吸收记录
 
@@ -92,6 +95,10 @@ updated: 2026-07-16
   internal SHA `3d30ea5489b2ac7f07785dff94ed057ac420aebdd8762ab6df6c76a2ffb003ea`。
 - Spatial Zoom S1 fresh formal 3x3 jobs：`1165775-1165783`；canonical namespace
   `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`。
+- Spatial Zoom S1 selector-failure evidence: Jobs `1165775-1165780` reached
+  epoch 59 and complete gate artifacts, then exited `1:0` because the old
+  analyzer rejected official finite `[-0.0, 0.0]` proposals. The raw suite and
+  namespace above are the source; no sealed test was opened.
 
 ## 外部附件
 

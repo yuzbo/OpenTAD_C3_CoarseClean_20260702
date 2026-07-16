@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: storage_safe_replacement_3x3_running
+outcome: selector_policy_bug_fix_pending_replacement_gate
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-16
@@ -161,6 +161,31 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   raw loss, determinism warning, exhausted retry, parity failure,
   `PytorchStreamWriter`, FAIL, or abnormal Slurm state is present. Free storage
   remains approximately 195 GiB.
+- Status at `2026-07-16T11:00+08:00`: dense160 Jobs `1165775-1165777` and
+  dense224 Jobs `1165778-1165780` reached epoch 59 with all ten checkpoints,
+  sidecars, gate predictions, and 4,800 successful updates, but exited `1:0`
+  during post-training checkpoint selection. The common error is
+  `prediction contains a non-finite or invalid segment`; no training loss,
+  checkpoint, evidence, or Slurm GPU failure occurred. Dense256 Jobs
+  `1165781-1165783` remain running and must be allowed to terminate normally.
+- Raw inspection found no NaN, Inf, or reversed interval. The rejected rows are
+  finite zero-length `[-0.0, 0.0]` proposals created by the official-derived
+  clipping path: 75-319 rows among 80,000 predictions per completed gate file.
+  OpenTAD's official evaluator retains them as zero-IoU false positives, while
+  the S1 `DetectionCorpus` incorrectly required `end > start`. Deleting these
+  rows would inflate AP and is forbidden. An in-memory policy probe that allows
+  equality while retaining every prediction passed exact per-class official
+  evaluator parity. For dense160/seed3407 epoch 59 it recomputed gate-only
+  Avg-mAP `64.7391`, mAP@0.6 `58.0680`, and mAP@0.7 `46.1726`.
+- Fix commit `cbc63d07` changes only the S1 analysis validation to allow
+  `end == start`, still rejects reversed/non-finite predictions, and adds an
+  official-parity regression (`41 passed, 1 skipped`; C3 regression `20
+  passed`). The approximately 15% metrics printed during training used the
+  complete development-subset GT against the 40-video gate predictions and
+  are monitoring artifacts, not selection metrics. Under the frozen contract,
+  failed terminal Job states do not authorize selection, sealed test, profile,
+  GO/KILL, or reuse as the formal matrix; a fresh commit-bound CUDA gate and
+  epoch-0 namespace are required.
 
 ## Decision Boundary
 

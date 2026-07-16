@@ -22,6 +22,11 @@ updated: 2026-07-16
    正则或宽泛白名单掩盖新的断图。
 9. S1 只持久化预注册的 gate-eligible checkpoints；不得保存不会参与选择的 pre-gate
    周期权重耗尽共享存储。任何存储故障后的矩阵不得 resume，必须新 commit、门禁和 namespace。
+10. S1 selector must follow the official evaluator's prediction-domain policy:
+    finite zero-length proposals remain zero-IoU false positives. Do not reject
+    or delete them, because either action diverges from or inflates official AP.
+    The in-training evaluator log is not a gate score when its GT population is
+    broader than the frozen gate prediction population.
 
 ## 任务与叙事
 

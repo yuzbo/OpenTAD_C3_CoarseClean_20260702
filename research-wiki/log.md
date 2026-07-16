@@ -104,3 +104,11 @@ append_only: true
   and are not sealed-test evidence. Update/attempt parity, commit binding, and
   `official_test_opened=false` hold; hard-failure scans are clean and `/data`
   retains about 195 GiB free.
+- 2026-07-16 11:00+08:00: Jobs `1165775-1165780` completed all 4,800 model
+  updates and ten gate artifacts but failed only in post-training selection.
+  Every rejected row was a finite zero-length proposal, which official OpenTAD
+  retains as a zero-IoU false positive. An exact official-parity probe passed;
+  dense160/3407 epoch59 recomputed gate Avg-mAP 64.7391 and mAP@0.6/0.7
+  58.0680/46.1726. Fix `cbc63d0` passed 41 focused tests plus 20 C3 regression
+  tests. No selection, sealed test, profile, or GO/KILL was allowed; dense256
+  remains running and the strict contract requires a new formal namespace.
