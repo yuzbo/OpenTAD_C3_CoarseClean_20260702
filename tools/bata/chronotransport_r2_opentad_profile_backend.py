@@ -12,7 +12,6 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import io
-import json
 import os
 from pathlib import Path
 from time import perf_counter
@@ -20,7 +19,6 @@ from typing import Any, Mapping
 
 import numpy as np
 import torch
-from mmengine.config import Config
 from mmengine.dataset import Compose
 
 import opentad.datasets  # noqa: F401 - register OpenTAD and mmaction transforms
@@ -33,6 +31,13 @@ from opentad.models.chronotransport.controls import (
 )
 from opentad.models.chronotransport.environment import (
     observe_formal_slurm_environment,
+)
+from opentad.models.chronotransport.filesystem import (
+    BoundRegularFile,
+    load_bound_json,
+    load_registered_python_config,
+    open_bound_directory,
+    read_bound_bytes,
 )
 from opentad.models.chronotransport.profiler import REQUIRED_STAGE_FIELDS
 from opentad.models.chronotransport.protocol import (
@@ -50,7 +55,7 @@ from opentad.models.chronotransport.registration import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 R2_PROFILE_CONFIG_RELATIVE = (
     "configs/adatad/thumos/c3_chronotransport_r2_stage_b.py"
 )
@@ -72,54 +77,43 @@ _CONFIG_OVERRIDE_ENV = {
 
 
 def _file_sha256(path: Path) -> tuple[int, str]:
-    digest = hashlib.sha256()
-    size = 0
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            size += len(block)
-            digest.update(block)
-    return size, digest.hexdigest()
+    _, payload, digest = read_bound_bytes(path, label=f"profile source {path}")
+    return len(payload), digest
 
 
 def preverify_registered_media(
     registration: Mapping[str, object],
     windows: object,
-) -> dict[str, Path]:
+) -> dict[str, BoundRegularFile]:
     """Hash every registered media object before any warmup or timed call."""
 
     if not isinstance(windows, list) or len(windows) != 200:
         raise RuntimeError("formal profile requires exactly 200 media windows")
-    root = Path(registration["data"]["root_path"]).resolve()
-    verified: dict[str, Path] = {}
-    for window in windows:
-        if not isinstance(window, Mapping):
-            raise TypeError("registered media window must be a mapping")
-        window_id = window.get("window_id")
-        if not isinstance(window_id, str) or not window_id or window_id in verified:
-            raise RuntimeError("registered media window IDs must be unique strings")
-        media_path = (root / str(window.get("media_path", ""))).resolve()
-        try:
-            media_path.relative_to(root)
-        except ValueError as exc:
-            raise RuntimeError("registered media path escapes data root") from exc
-        if not media_path.is_file():
-            raise RuntimeError("registered media file does not exist")
-        if _file_sha256(media_path)[1] != window.get("media_sha256"):
-            raise RuntimeError("registered media bytes differ from manifest")
-        verified[window_id] = media_path
-    return verified
-
-
-def _load_json(path: Path) -> object:
-    def reject_duplicates(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
+    verified: dict[str, BoundRegularFile] = {}
+    try:
+        with open_bound_directory(
+            registration["data"]["root_path"], label="profile media root"
+        ) as root:
+            for window in windows:
+                if not isinstance(window, Mapping):
+                    raise TypeError("registered media window must be a mapping")
+                window_id = window.get("window_id")
+                if not isinstance(window_id, str) or not window_id or window_id in verified:
+                    raise RuntimeError("registered media window IDs must be unique strings")
+                media = root.open_regular(
+                    str(window.get("media_path", "")),
+                    label=f"registered profile media {window_id}",
+                )
+                _, digest = media.size_and_sha256()
+                if digest != window.get("media_sha256"):
+                    media.close()
+                    raise RuntimeError("registered media bytes differ from manifest")
+                verified[window_id] = media
+        return verified
+    except Exception:
+        for media in verified.values():
+            media.close()
+        raise
 
 
 def _strip_ddp_prefix(state: Mapping[str, object]) -> dict[str, object]:
@@ -146,10 +140,9 @@ def audit_load_dense_checkpoint(
     if isinstance(checkpoint_source, bytes):
         stable_bytes = checkpoint_source
     else:
-        path = Path(checkpoint_source)
-        if not path.is_file():
-            raise RuntimeError("registered dense checkpoint does not exist")
-        stable_bytes = path.read_bytes()
+        _, stable_bytes, _ = read_bound_bytes(
+            checkpoint_source, label="dense checkpoint audit input"
+        )
     stable_sha256 = hashlib.sha256(stable_bytes).hexdigest()
     if expected_bytes is not None and len(stable_bytes) != expected_bytes:
         raise RuntimeError("dense checkpoint stable bytes size differs from registration")
@@ -325,10 +318,13 @@ class OpenTADRegisteredProfileBackend:
             )
         if R2_PROFILE_CONFIG_RELATIVE not in REQUIRED_REGISTRATION_SOURCE_PATHS:
             raise RuntimeError("fixed profile config is absent from required registration sources")
-        actual_sources = {
-            relative: _file_sha256(ROOT / relative)[1]
-            for relative in REQUIRED_REGISTRATION_SOURCE_PATHS
-        }
+        with open_bound_directory(ROOT, label="profile repository root") as source_root:
+            actual_sources = {
+                relative: source_root.read_bytes(
+                    relative, label=f"registered profile source {relative}"
+                )[1]
+                for relative in REQUIRED_REGISTRATION_SOURCE_PATHS
+            }
         if actual_sources != self.registration["source_files"]:
             raise RuntimeError("formal profile source bytes differ from registration")
 
@@ -337,7 +333,11 @@ class OpenTADRegisteredProfileBackend:
             self.registration,
             self.manifest["windows"],
         )
-        self.cfg = Config.fromfile(str(R2_PROFILE_CONFIG))
+        self.cfg, self.config_source_identity = load_registered_python_config(
+            repository_root=ROOT,
+            config_relative=R2_PROFILE_CONFIG_RELATIVE,
+            registered_sources=self.registration["source_files"],
+        )
         self.cfg.model.backbone.custom.pretrain = None
         runtime_cfg = self.cfg.model.backbone.backbone.chronotransport
         allow_legacy_checkpoint = bool(runtime_cfg.allow_legacy_checkpoint)
@@ -361,20 +361,31 @@ class OpenTADRegisteredProfileBackend:
         self._build_pipelines()
         self.latest_action_provenance: dict[str, object] | None = None
 
+    def close(self) -> None:
+        media = getattr(self, "_verified_media", {})
+        for bound in media.values():
+            bound.close()
+        self._verified_media = {}
+
+    def __del__(self) -> None:  # pragma: no cover - process-exit safeguard
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def _load_external_inputs(self) -> None:
         manifest_identity = self.registration["window_manifest"]
-        manifest_path = Path(manifest_identity["source_path"])
-        registry_path = Path(manifest_identity["registry_path"])
-        config_path = Path(manifest_identity["config_identity_path"])
-        for path in (manifest_path, registry_path, config_path):
-            if not path.is_file():
-                raise RuntimeError(f"registered profile input does not exist: {path}")
-        raw_manifest = manifest_path.read_bytes()
-        if hashlib.sha256(raw_manifest).hexdigest() != manifest_identity["exact_bytes_sha256"]:
+        _, manifest, raw_manifest, manifest_digest = load_bound_json(
+            manifest_identity["source_path"], label="profile window manifest"
+        )
+        _, registry, _, _ = load_bound_json(
+            manifest_identity["registry_path"], label="profile media registry"
+        )
+        _, config, _, _ = load_bound_json(
+            manifest_identity["config_identity_path"], label="profile config identity"
+        )
+        if manifest_digest != manifest_identity["exact_bytes_sha256"]:
             raise RuntimeError("manifest exact bytes differ from registration")
-        manifest = _load_json(manifest_path)
-        registry = _load_json(registry_path)
-        config = _load_json(config_path)
         if raw_manifest != manifest_exact_bytes(manifest):
             raise RuntimeError("registered manifest file is not exact canonical bytes")
         rebuilt = validate_r2_manifest(manifest, registry=registry, config_identity=config)
@@ -384,18 +395,19 @@ class OpenTADRegisteredProfileBackend:
         self.windows = {row["window_id"]: row for row in rebuilt["windows"]}
 
         checkpoint = self.registration["dense_checkpoint"]
-        self._checkpoint_bytes = Path(checkpoint["content_addressed_path"]).read_bytes()
+        _, self._checkpoint_bytes, digest = read_bound_bytes(
+            checkpoint["content_addressed_path"], label="profile dense checkpoint"
+        )
         size = len(self._checkpoint_bytes)
-        digest = hashlib.sha256(self._checkpoint_bytes).hexdigest()
         if size != checkpoint["bytes"] or digest != checkpoint["sha256"]:
             raise RuntimeError("dense checkpoint bytes differ from registration")
         receipt = checkpoint["registry_receipt"]
-        receipt_path = Path(receipt["source_path"])
-        raw_receipt = receipt_path.read_bytes()
-        receipt_artifact = _load_json(receipt_path)
+        _, receipt_artifact, raw_receipt, receipt_digest = load_bound_json(
+            receipt["source_path"], label="profile checkpoint receipt"
+        )
         if (
             raw_receipt != canonical_json_bytes(receipt_artifact) + b"\n"
-            or hashlib.sha256(raw_receipt).hexdigest() != receipt["exact_bytes_sha256"]
+            or receipt_digest != receipt["exact_bytes_sha256"]
             or receipt_artifact != receipt["artifact"]
         ):
             raise RuntimeError("checkpoint receipt bytes differ from registration")
@@ -451,14 +463,16 @@ class OpenTADRegisteredProfileBackend:
             self._sync()
         return result, (perf_counter() - start) * 1000.0
 
-    def _verify_media(self, window: Mapping[str, Any]) -> Path:
+    def _verify_media(self, window: Mapping[str, Any]) -> BoundRegularFile:
         try:
             return self._verified_media[window["window_id"]]
         except KeyError as exc:
             raise RuntimeError("media window was not preverified") from exc
 
     def _base_results(self, window: Mapping[str, Any]) -> dict[str, object]:
-        media_path = self._verify_media(window)
+        media = self._verify_media(window)
+        media.assert_stable()
+        media_path = Path(media.path)
         if media_path.suffix.lower() != ".mp4":
             raise RuntimeError("fixed OpenTAD profile requires registered mp4 media")
         if media_path.stem != window["video_id"]:
@@ -470,6 +484,7 @@ class OpenTADRegisteredProfileBackend:
         return {
             "video_name": media_path.stem,
             "data_path": str(media_path.parent),
+            "descriptor_filename": media.proc_path,
             "window_size": 768,
             "feature_start_idx": int(window["window_start"]),
             "feature_end_idx": int(window["window_start"] + valid_count - 1),
@@ -484,10 +499,13 @@ class OpenTADRegisteredProfileBackend:
     def _decode_and_preprocess(
         self, window: Mapping[str, Any]
     ) -> tuple[dict[str, Any], float, float]:
+        media = self._verify_media(window)
+        media.assert_stable()
         decoded, decode_ms = self._timed(
             lambda: self.decode_pipeline(self._base_results(window)),
             sync_cuda=False,
         )
+        media.assert_stable()
         if int(decoded.get("total_frames", -1)) != int(window["source_total_frames"]):
             raise RuntimeError("decoded source frame count differs from registered media metadata")
         observed_fps = float(decoded.get("avg_fps", float("nan")))
@@ -692,32 +710,28 @@ class OpenTADRegisteredGate1ReplayBackend(OpenTADRegisteredProfileBackend):
         super().__init__(registration)
         annotation_path = Path(str(self.cfg.dataset.val.ann_file))
         if not annotation_path.is_absolute():
-            annotation_path = (ROOT / annotation_path).resolve()
-        if (
-            not annotation_path.is_file()
-            or _file_sha256(annotation_path)[1]
-            != self.registration["data"]["annotation_sha256"]
-        ):
+            annotation_path = ROOT / annotation_path
+        annotation_path, annotation, _, annotation_sha256 = load_bound_json(
+            annotation_path, label="registered Gate 1 annotation"
+        )
+        if annotation_sha256 != self.registration["data"]["annotation_sha256"]:
             raise RuntimeError("fixed Gate 1 annotation bytes differ from registration")
-        annotation = _load_json(annotation_path)
         if not isinstance(annotation, Mapping) or not isinstance(
             annotation.get("database"), Mapping
         ):
             raise RuntimeError("fixed Gate 1 annotation database is invalid")
         self._annotation_database = annotation["database"]
-
-        class_map_path = Path(str(self.cfg.dataset.val.class_map))
-        if not class_map_path.is_absolute():
-            class_map_path = (ROOT / class_map_path).resolve()
-        if not class_map_path.is_file():
-            raise RuntimeError("fixed Gate 1 class map does not exist")
-        self._class_map = [
-            line.strip()
-            for line in class_map_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        self._class_map = sorted(
+            {
+                str(item["label"])
+                for info in self._annotation_database.values()
+                if isinstance(info, Mapping)
+                for item in info.get("annotations", ())
+                if isinstance(item, Mapping) and item.get("label") != "Ambiguous"
+            }
+        )
         if not self._class_map:
-            raise RuntimeError("fixed Gate 1 class map is empty")
+            raise RuntimeError("registered Gate 1 annotation has no action classes")
 
     def _window_ground_truth(
         self, window: Mapping[str, Any]

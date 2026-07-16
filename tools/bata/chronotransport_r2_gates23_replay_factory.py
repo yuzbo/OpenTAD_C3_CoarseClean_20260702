@@ -3,30 +3,34 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import math
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-import numpy as np
 import torch
 from mmengine.config import Config
 
-from opentad.datasets import build_dataset
-from opentad.datasets.base.sliding_dataset import compute_gt_completeness
+from opentad.models.chronotransport.filesystem import (
+    audit_formal_python_runtime,
+    load_bound_torch,
+    load_registered_python_config,
+)
 from opentad.models.chronotransport.protocol import canonical_sha256
 from opentad.models.chronotransport.scheduler import R2_NON_DENSE_NAMES
 from opentad.utils import set_seed
 from tools.bata.chronotransport_r2_stage_b_factory import (
     ManifestFitBatchSequence,
     R2_STAGE_B_CONFIG,
+    R2_STAGE_B_CONFIG_RELATIVE,
+    RegisteredManifestFitDataset,
     _runtime,
     build_repository_stage_b_components,
     sealed_stage_b_replay,
 )
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 _DETERMINISTIC_EVAL_SEED = 20260711
 _NO_LEAK = {
     "gt_used_for_scheduler": False,
@@ -82,56 +86,19 @@ def _deterministic_split_dataset(
     cfg: Config,
     manifest: Mapping[str, Any],
     split: str,
+    registration: Mapping[str, Any],
 ) -> tuple[Any, list[dict[str, Any]]]:
     if split not in ("calibration", "evaluation"):
         raise ValueError("formal Gate2/3 replay split must be calibration or evaluation")
-    dataset_cfg = deepcopy(cfg.dataset.val)
-    dataset_cfg.ioa_thresh = 0.0
-    dataset_cfg.window_size = 768
-    pipeline = deepcopy(cfg.dataset.val.pipeline)
-    for transform in pipeline:
-        if str(transform.get("type")) == "LoadFrames":
-            for key in ("trunc_len", "trunc_thresh", "crop_ratio"):
-                transform.pop(key, None)
-            transform["method"] = "sliding_window"
-    dataset_cfg.pipeline = pipeline
-    dataset = build_dataset(dataset_cfg)
-    source_by_video = {}
-    for row in dataset.data_list:
-        source_by_video.setdefault(str(row[0]), row)
     manifested = {str(row["window_id"]): dict(row) for row in manifest["windows"]}
     windows = [manifested[window] for window in manifest["splits"][split]]
-    ordered_rows = []
-    for window in windows:
-        video_id = str(window["video_id"])
-        if video_id not in source_by_video:
-            raise ValueError(
-                f"manifest video is absent from the OpenTAD dataset: {video_id}"
-            )
-        _, video_info, full_anno, _ = source_by_video[video_id]
-        valid_mask = window["valid_mask"]
-        valid_count = sum(value is True for value in valid_mask)
-        if (
-            valid_count <= 0
-            or valid_mask != [True] * valid_count + [False] * (768 - valid_count)
-        ):
-            raise ValueError("manifest valid mask must be one true prefix then padding")
-        sampled = np.asarray(window["sampled_frame_indices"], dtype=np.int64)
-        centers = sampled[:valid_count]
-        if centers.size == 0 or np.any(np.diff(centers) <= 0):
-            raise ValueError("manifest sampled frame indices must be strictly increasing")
-        annotation = deepcopy(full_anno)
-        if annotation and len(annotation.get("gt_segments", ())) > 0:
-            completeness, truncated = compute_gt_completeness(
-                annotation["gt_segments"], np.asarray([centers[0], centers[-1]])
-            )
-            keep = completeness > 0.75
-            annotation = {
-                "gt_segments": truncated[keep].astype(np.float32),
-                "gt_labels": annotation["gt_labels"][keep].astype(np.int32),
-            }
-        ordered_rows.append([video_id, video_info, annotation, centers])
-    dataset.data_list = ordered_rows
+    dataset = RegisteredManifestFitDataset(
+        cfg,
+        manifest,
+        registration,
+        split=split,
+        augment=False,
+    )
     return dataset, windows
 
 
@@ -276,12 +243,21 @@ def build_registered_gates23_replay_artifact(
         name: str(library[name]["action_sha256"]) for name in R2_NON_DENSE_NAMES
     }
     rows: list[dict[str, Any]] = []
-    config_path = _require_regular_input(
-        R2_STAGE_B_CONFIG, label="formal Gate2/3 Stage-B config"
+    _require_regular_input(R2_STAGE_B_CONFIG, label="formal Gate2/3 Stage-B config")
+    cfg, _ = load_registered_python_config(
+        repository_root=ROOT,
+        config_relative=R2_STAGE_B_CONFIG_RELATIVE,
+        registered_sources=registration["source_files"],
     )
-    cfg = Config.fromfile(str(config_path))
+    audit_formal_python_runtime(
+        repository_root=repository_root,
+        registered_sources=registration["source_files"],
+        entrypoint_relative="tools/bata/run_chronotransport_r2_gates23.py",
+    )
     for split_index, split in enumerate(("calibration", "evaluation")):
-        dataset, windows = _deterministic_split_dataset(cfg, manifest, split)
+        dataset, windows = _deterministic_split_dataset(
+            cfg, manifest, split, registration
+        )
         for seed in (3407, 3408, 3409):
             context = contexts[str(seed)]
             marker_path = Path(phase_marker_paths[seed])
@@ -292,7 +268,10 @@ def build_registered_gates23_replay_artifact(
                 marker["trained_checkpoint"]["path"],
                 label=f"formal Gate2/3 Stage-B checkpoint {seed}",
             )
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            _, checkpoint, _, _ = load_bound_torch(
+                checkpoint_path,
+                label=f"formal Gate2/3 Stage-B checkpoint {seed}",
+            )
             context.model.load_state_dict(checkpoint["state_dict_ema"], strict=True)
             context.model.eval()
             runtime = _runtime(context.model)

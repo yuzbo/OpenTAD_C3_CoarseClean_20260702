@@ -9,11 +9,10 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -22,19 +21,16 @@ from opentad.models.chronotransport.protocol import (
     manifest_exact_bytes,
     validate_r2_manifest,
 )
+from opentad.models.chronotransport.filesystem import (
+    load_bound_json,
+    publish_bytes_exclusive,
+    read_bound_bytes,
+)
 
 
 def _load_json(path: Path) -> Any:
-    def reject_duplicate_keys(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle, object_pairs_hook=reject_duplicate_keys)
+    _, value, _, _ = load_bound_json(path, label=f"manifest input {path}")
+    return value
 
 
 def load_manifest_file(
@@ -45,17 +41,18 @@ def load_manifest_file(
 ) -> dict[str, Any]:
     """Load a formal manifest only when its raw bytes are exactly canonical."""
 
-    manifest_path = Path(manifest_path)
-    raw = manifest_path.read_bytes()
-    manifest = _load_json(manifest_path)
+    manifest_path, manifest, raw, exact_digest = load_bound_json(
+        manifest_path, label="formal manifest"
+    )
     if not isinstance(manifest, dict):
         raise TypeError("manifest file root must be a JSON object")
     if raw != manifest_exact_bytes(manifest):
         raise ValueError("manifest file is not encoded as exact canonical bytes")
-    exact_digest = hashlib.sha256(raw).hexdigest()
     sidecar_path = manifest_path.with_suffix(manifest_path.suffix + ".sha256")
     try:
-        sidecar_bytes = sidecar_path.read_bytes()
+        _, sidecar_bytes, _ = read_bound_bytes(
+            sidecar_path, label="manifest SHA-256 sidecar"
+        )
     except FileNotFoundError as exc:
         raise ValueError("manifest SHA-256 sidecar is missing") from exc
     if sidecar_bytes != (exact_digest + "\n").encode("ascii"):
@@ -70,25 +67,7 @@ def load_manifest_file(
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            dir=path.parent,
-            delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    publish_bytes_exclusive(path, payload, label=f"manifest publication {path}")
 
 
 def build_manifest_file(
@@ -108,9 +87,11 @@ def build_manifest_file(
     sidecar_path = output_path.with_suffix(output_path.suffix + ".sha256")
     _atomic_write(output_path, exact_bytes)
     _atomic_write(sidecar_path, (exact_bytes_sha256 + "\n").encode("ascii"))
-    persisted = _load_json(output_path)
+    _, persisted, persisted_bytes, _ = load_bound_json(
+        output_path, label="persisted manifest"
+    )
     validate_r2_manifest(persisted, registry=registry, config_identity=config_identity)
-    if output_path.read_bytes() != exact_bytes:
+    if persisted_bytes != exact_bytes:
         raise RuntimeError("persisted manifest bytes differ from canonical exact bytes")
     return {
         "schema": "chronotransport-r2-manifest-build-report-v1",

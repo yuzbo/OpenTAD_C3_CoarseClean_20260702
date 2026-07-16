@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import subprocess
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
@@ -21,6 +20,16 @@ from .controls import (
     validate_r2_control_algorithm_identity,
 )
 from .environment import validate_required_environment
+from .filesystem import (
+    BoundDirectory,
+    decode_json_bytes,
+    ensure_bound_directory,
+    load_bound_json,
+    open_bound_directory,
+    open_bound_regular_file,
+    publish_bytes_exclusive,
+    read_bound_bytes,
+)
 from .protocol import (
     R2_PROTOCOL_ID,
     build_stage_b_exposure_artifact,
@@ -88,6 +97,7 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "opentad/models/chronotransport/controls.py",
     "opentad/models/chronotransport/cost_lookup.py",
     "opentad/models/chronotransport/environment.py",
+    "opentad/models/chronotransport/filesystem.py",
     "opentad/models/chronotransport/formal_stage_b.py",
     "opentad/models/chronotransport/full_stack_profiler.py",
     "opentad/models/chronotransport/gate1_unlock.py",
@@ -130,6 +140,7 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "tests/test_chronotransport_r2_actions_cache.py",
     "tests/test_chronotransport_r2_adjudication.py",
     "tests/test_chronotransport_r2_environment.py",
+    "tests/test_chronotransport_r2_filesystem.py",
     "tests/test_chronotransport_r2_gate1_cost_profile.py",
     "tests/test_chronotransport_r2_gate1_hardening.py",
     "tests/test_chronotransport_r2_gate4.py",
@@ -323,13 +334,12 @@ def validate_checkpoint_registry_receipt(
     for field, value in expected.items():
         if validated[field] != value:
             raise ValueError(f"checkpoint registry receipt {field} mismatch")
-    provider_path = Path(provider_receipt_path)
-    if not provider_path.is_file():
-        raise ValueError("external checkpoint provider receipt does not exist")
-    provider_bytes = provider_path.read_bytes()
+    _, provider_bytes, provider_digest = read_bound_bytes(
+        provider_receipt_path,
+        label="external checkpoint provider receipt",
+    )
     if not provider_bytes:
         raise ValueError("external checkpoint provider receipt must not be empty")
-    provider_digest = hashlib.sha256(provider_bytes).hexdigest()
     if validated["provider_receipt_sha256"] != provider_digest:
         raise ValueError("external checkpoint provider receipt hash mismatch")
     return validated
@@ -730,28 +740,13 @@ def _validate_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _sha256_file(path: Path) -> tuple[int, str]:
-    hasher = hashlib.sha256()
-    size = 0
-    with path.open("rb") as handle:
-        while True:
-            block = handle.read(1024 * 1024)
-            if not block:
-                break
-            size += len(block)
-            hasher.update(block)
-    return size, hasher.hexdigest()
+    with open_bound_regular_file(path, label=f"registered input {path}") as bound:
+        return bound.size_and_sha256()
 
 
 def _load_json_file(path: Path) -> object:
-    def reject_duplicates(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
+    _, value, _, _ = load_bound_json(path, label=f"registered JSON input {path}")
+    return value
 
 
 def validate_source_classification_manifest(
@@ -852,17 +847,14 @@ def _git_blob_bytes(root: Path, revision: str, relative: str) -> bytes:
 
 def _validate_registered_source_file(
     *,
-    root: Path,
+    root: BoundDirectory,
     revision: str,
     relative: str,
     registered_sha256: str,
 ) -> None:
     """Bind one required source to regular worktree and exact Git-blob bytes."""
 
-    path = root / relative
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"required registration source must be a regular file: {relative}")
-    tree_row = _git(root, "ls-tree", revision, "--", relative)
+    tree_row = _git(Path(root.proc_path), "ls-tree", revision, "--", relative)
     if "\t" not in tree_row:
         raise ValueError(f"required registration source is not tracked: {relative}")
     identity, tracked_path = tree_row.split("\t", 1)
@@ -876,10 +868,13 @@ def _validate_registered_source_file(
         raise ValueError(
             f"required registration source Git mode must be a regular blob: {relative}"
         )
-    current = path.read_bytes()
-    if _git_blob_bytes(root, revision, relative) != current:
+    with root.open_regular(
+        relative, label=f"required registration source {relative}"
+    ) as bound:
+        current, current_sha256 = bound.bytes_and_sha256()
+    if _git_blob_bytes(Path(root.proc_path), revision, relative) != current:
         raise ValueError(f"required source differs from implementation Git blob: {relative}")
-    if hashlib.sha256(current).hexdigest() != registered_sha256:
+    if current_sha256 != registered_sha256:
         raise ValueError(f"required source bytes differ from registration: {relative}")
 
 
@@ -893,7 +888,29 @@ def validate_registration_commit_shape(
 ) -> None:
     """Bind exact canonical registration bytes to a regular file at ``R:path``."""
 
-    root = Path(repository_root).resolve()
+    with open_bound_directory(
+        repository_root, label="registration repository root"
+    ) as bound_root:
+        _validate_registration_commit_shape_bound(
+            root=bound_root,
+            registration_commit=registration_commit,
+            implementation_commit=implementation_commit,
+            registration_relpath=registration_relpath,
+            registration_bytes=registration_bytes,
+        )
+
+
+def _validate_registration_commit_shape_bound(
+    *,
+    root: BoundDirectory,
+    registration_commit: str,
+    implementation_commit: str,
+    registration_relpath: str,
+    registration_bytes: bytes,
+) -> None:
+    """Implementation of commit-shape validation rooted at one directory fd."""
+
+    git_root = Path(root.proc_path)
     _require_commit(registration_commit, "registration commit R")
     _require_commit(implementation_commit, "implementation commit I")
     if not isinstance(registration_relpath, str) or not registration_relpath:
@@ -909,16 +926,17 @@ def validate_registration_commit_shape(
     if not isinstance(registration_bytes, bytes):
         raise TypeError("registration bytes must be exact bytes")
 
-    registration_path = root / registration_relpath
-    if registration_path.is_symlink() or not registration_path.is_file():
-        raise ValueError("current registration artifact must be a regular non-symlink file")
+    with root.open_regular(
+        registration_relpath, label="current registration artifact"
+    ) as registration_file:
+        current_registration_bytes = registration_file.read_bytes()
 
-    parent_line = _git(root, "rev-list", "--parents", "-n", "1", registration_commit)
+    parent_line = _git(git_root, "rev-list", "--parents", "-n", "1", registration_commit)
     if parent_line.split() != [registration_commit, implementation_commit]:
         raise ValueError("registration commit R must have exactly one parent I")
     expected_status = f"A\t{registration_relpath}"
     changed = _git(
-        root,
+        git_root,
         "diff",
         "--name-status",
         "--no-renames",
@@ -928,13 +946,13 @@ def validate_registration_commit_shape(
     if changed != [expected_status]:
         raise ValueError("I..R must be exactly one added registration artifact")
     absent = subprocess.run(
-        ["git", "-C", str(root), "cat-file", "-e", f"{implementation_commit}:{registration_relpath}"],
+        ["git", "-C", str(git_root), "cat-file", "-e", f"{implementation_commit}:{registration_relpath}"],
         check=False,
         capture_output=True,
     )
     if absent.returncode == 0:
         raise ValueError("registration artifact must be absent from implementation commit I")
-    tree_row = _git(root, "ls-tree", registration_commit, "--", registration_relpath)
+    tree_row = _git(git_root, "ls-tree", registration_commit, "--", registration_relpath)
     if "\t" not in tree_row:
         raise ValueError("registration artifact is absent from registration commit R")
     identity, tracked_path = tree_row.split("\t", 1)
@@ -946,10 +964,10 @@ def validate_registration_commit_shape(
         or tracked_path != registration_relpath
     ):
         raise ValueError("registration artifact Git mode must be a regular blob")
-    blob = _git_blob_bytes(root, registration_commit, registration_relpath)
+    blob = _git_blob_bytes(git_root, registration_commit, registration_relpath)
     if blob != registration_bytes:
         raise ValueError("registration commit blob bytes differ from canonical exact bytes")
-    if registration_path.read_bytes() != registration_bytes:
+    if current_registration_bytes != registration_bytes:
         raise ValueError("current registration artifact differs from canonical exact bytes")
 
 
@@ -961,25 +979,43 @@ def _validate_repository_context(
     registration_commit: str | None,
     registration_relpath: str | None,
 ) -> None:
+    with open_bound_directory(
+        repository_root, label="registration repository root"
+    ) as bound_root:
+        _validate_repository_context_bound(
+            registration,
+            root=bound_root,
+            context_mode=context_mode,
+            registration_commit=registration_commit,
+            registration_relpath=registration_relpath,
+        )
+
+
+def _validate_repository_context_bound(
+    registration: Mapping[str, Any],
+    *,
+    root: BoundDirectory,
+    context_mode: str,
+    registration_commit: str | None,
+    registration_relpath: str | None,
+) -> None:
     if context_mode == "formal":
         validate_formal_random_control_lock(registration)
-    root = Path(repository_root).resolve()
-    if not root.is_dir():
-        raise ValueError("registration repository root does not exist")
-    if _git(root, "status", "--porcelain"):
+    git_root = Path(root.proc_path)
+    if _git(git_root, "status", "--porcelain"):
         raise ValueError("registration repository context must be clean")
     symbolic = subprocess.run(
-        ["git", "-C", str(root), "symbolic-ref", "-q", "HEAD"],
+        ["git", "-C", str(git_root), "symbolic-ref", "-q", "HEAD"],
         check=False,
         capture_output=True,
         text=True,
     )
     if symbolic.returncode == 0:
         raise ValueError("registration repository context must use detached HEAD")
-    head = _git(root, "rev-parse", "HEAD")
+    head = _git(git_root, "rev-parse", "HEAD")
     implementation = registration["implementation_commit"]
     registered_tree = registration["registration_parent"]["tree"]
-    if _git(root, "rev-parse", f"{implementation}^{{tree}}") != registered_tree:
+    if _git(git_root, "rev-parse", f"{implementation}^{{tree}}") != registered_tree:
         raise ValueError("actual implementation tree differs from registration")
     if context_mode == "generation":
         if registration_commit is not None or head != implementation:
@@ -991,18 +1027,8 @@ def _validate_repository_context(
             raise ValueError("formal registration validation requires HEAD=R")
         if not isinstance(registration_relpath, str) or not registration_relpath:
             raise ValueError("formal registration validation requires registration relative path")
-        raw_registration_path = root / registration_relpath
-        if raw_registration_path.is_symlink():
-            raise ValueError("current registration artifact must not be a symlink")
-        registration_path = raw_registration_path.resolve()
-        try:
-            registration_path.relative_to(root)
-        except ValueError as exc:
-            raise ValueError("registration path escapes repository root") from exc
-        if not registration_path.is_file():
-            raise ValueError("current registration artifact does not exist")
-        validate_registration_commit_shape(
-            repository_root=root,
+        _validate_registration_commit_shape_bound(
+            root=root,
             registration_commit=registration_commit,
             implementation_commit=implementation,
             registration_relpath=registration_relpath,
@@ -1025,19 +1051,28 @@ def _validate_repository_context(
         actual_sources[relative] = registered_sha
     if actual_sources != registration["source_files"]:
         raise ValueError("required source file bytes differ from registration")
-    classification = _load_json_file(root / SOURCE_CLASSIFICATION_PATH)
+    classification_bytes, _ = root.read_bytes(
+        SOURCE_CLASSIFICATION_PATH,
+        label="source classification manifest",
+    )
+    classification = decode_json_bytes(
+        classification_bytes, label="source classification manifest"
+    )
     validate_source_classification_manifest(
         classification,
-        tracked_paths=_tracked_source_classification_paths(root, implementation),
+        tracked_paths=_tracked_source_classification_paths(git_root, implementation),
         required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
     )
-    spec_path = root / REQUIRED_REGISTRATION_SOURCE_PATHS[0]
-    if _sha256_file(spec_path)[1] != APPROVED_SPEC_SHA256:
+    spec_relative = REQUIRED_REGISTRATION_SOURCE_PATHS[0]
+    spec_bytes, spec_sha256 = root.read_bytes(
+        spec_relative, label="approved ChronoTransport specification"
+    )
+    if spec_sha256 != APPROVED_SPEC_SHA256:
         raise ValueError("spec file bytes differ from registration")
-    if _git_blob_bytes(root, APPROVED_SPEC_COMMIT, REQUIRED_REGISTRATION_SOURCE_PATHS[0]) != spec_path.read_bytes():
+    if _git_blob_bytes(git_root, APPROVED_SPEC_COMMIT, spec_relative) != spec_bytes:
         raise ValueError("approved spec Git blob differs from current exact bytes")
     ancestry = subprocess.run(
-        ["git", "-C", str(root), "merge-base", "--is-ancestor", APPROVED_SPEC_COMMIT, implementation],
+        ["git", "-C", str(git_root), "merge-base", "--is-ancestor", APPROVED_SPEC_COMMIT, implementation],
         check=False,
         capture_output=True,
     )
@@ -1045,18 +1080,18 @@ def _validate_repository_context(
         raise ValueError("approved spec commit must be an ancestor of implementation I")
 
     manifest_identity = registration["window_manifest"]
-    manifest_path = Path(manifest_identity["source_path"])
-    registry_path = Path(manifest_identity["registry_path"])
-    config_path = Path(manifest_identity["config_identity_path"])
-    if not manifest_path.is_file() or not registry_path.is_file() or not config_path.is_file():
-        raise ValueError("manifest/registry/config identity files must exist")
-    raw_manifest = manifest_path.read_bytes()
-    manifest = _load_json_file(manifest_path)
-    registry = _load_json_file(registry_path)
-    config = _load_json_file(config_path)
+    _, manifest, raw_manifest, manifest_digest = load_bound_json(
+        manifest_identity["source_path"], label="registered window manifest"
+    )
+    _, registry, _, _ = load_bound_json(
+        manifest_identity["registry_path"], label="registered media registry"
+    )
+    _, config, _, _ = load_bound_json(
+        manifest_identity["config_identity_path"], label="registered config identity"
+    )
     if raw_manifest != manifest_exact_bytes(manifest):
         raise ValueError("manifest artifact bytes are not exact canonical bytes")
-    if hashlib.sha256(raw_manifest).hexdigest() != manifest_identity["exact_bytes_sha256"]:
+    if manifest_digest != manifest_identity["exact_bytes_sha256"]:
         raise ValueError("manifest artifact exact bytes hash differs from registration")
     rebuilt_manifest = validate_r2_manifest(
         manifest, registry=registry, config_identity=config
@@ -1064,47 +1099,49 @@ def _validate_repository_context(
     if rebuilt_manifest != manifest_identity["artifact"]:
         raise ValueError("manifest artifact differs from registered payload")
 
-    checkpoint_path = Path(registration["dense_checkpoint"]["content_addressed_path"])
-    if not checkpoint_path.is_file():
-        raise ValueError("registered dense checkpoint content path does not exist")
-    checkpoint_size, checkpoint_sha = _sha256_file(checkpoint_path)
+    with open_bound_regular_file(
+        registration["dense_checkpoint"]["content_addressed_path"],
+        label="registered dense checkpoint",
+    ) as checkpoint_file:
+        checkpoint_size, checkpoint_sha = checkpoint_file.size_and_sha256()
     if (
         checkpoint_size != registration["dense_checkpoint"]["bytes"]
         or checkpoint_sha != registration["dense_checkpoint"]["sha256"]
     ):
         raise ValueError("dense checkpoint bytes/hash differ from registration")
     receipt_identity = registration["dense_checkpoint"]["registry_receipt"]
-    receipt_path = Path(receipt_identity["source_path"])
-    provider_receipt_path = Path(receipt_identity["provider_receipt_path"])
-    if not receipt_path.is_file():
-        raise ValueError("registered checkpoint receipt artifact does not exist")
-    raw_receipt = receipt_path.read_bytes()
-    receipt_artifact = _load_json_file(receipt_path)
+    _, receipt_artifact, raw_receipt, receipt_digest = load_bound_json(
+        receipt_identity["source_path"], label="registered checkpoint receipt"
+    )
     if raw_receipt != canonical_json_bytes(receipt_artifact) + b"\n":
         raise ValueError("checkpoint receipt artifact bytes are not exact canonical bytes")
-    if hashlib.sha256(raw_receipt).hexdigest() != receipt_identity["exact_bytes_sha256"]:
+    if receipt_digest != receipt_identity["exact_bytes_sha256"]:
         raise ValueError("checkpoint receipt exact bytes differ from registration")
     if receipt_artifact != receipt_identity["artifact"]:
         raise ValueError("checkpoint receipt artifact differs from registration")
     validate_checkpoint_registry_receipt(
         receipt_artifact,
-        provider_receipt_path=provider_receipt_path,
+        provider_receipt_path=receipt_identity["provider_receipt_path"],
         registry_id=registration["dense_checkpoint"]["registry_id"],
         authenticated_uri=registration["dense_checkpoint"]["authenticated_uri"],
         content_sha256=checkpoint_sha,
         content_bytes=checkpoint_size,
     )
 
-    data_root = Path(registration["data"]["root_path"])
     media_hashes = registration["data"]["media_sha256"]
-    for window in manifest["windows"]:
-        media_path = (data_root / window["media_path"]).resolve()
-        try:
-            media_path.relative_to(data_root.resolve())
-        except ValueError as exc:
-            raise ValueError("manifest media path escapes registered data root") from exc
-        if not media_path.is_file() or _sha256_file(media_path)[1] != media_hashes[window["video_id"]]:
-            raise ValueError(f"registered media bytes/hash mismatch: {window['video_id']}")
+    with open_bound_directory(
+        registration["data"]["root_path"], label="registered media root"
+    ) as data_root:
+        for window in manifest["windows"]:
+            with data_root.open_regular(
+                window["media_path"],
+                label=f"registered media {window['video_id']}",
+            ) as media:
+                _, media_sha256 = media.size_and_sha256()
+            if media_sha256 != media_hashes[window["video_id"]]:
+                raise ValueError(
+                    f"registered media bytes/hash mismatch: {window['video_id']}"
+                )
 
 
 def build_pre_gate1_registration_from_context(
@@ -1124,79 +1161,119 @@ def build_pre_gate1_registration_from_context(
 ) -> dict[str, Any]:
     """Derive every mutable filesystem/Git identity before registration R exists."""
 
-    root = Path(repository_root).resolve()
-    if _git(root, "status", "--porcelain"):
+    with open_bound_directory(
+        repository_root, label="registration generation repository root"
+    ) as bound_root:
+        return _build_pre_gate1_registration_from_bound_context(
+            identity_template,
+            root=bound_root,
+            manifest_path=manifest_path,
+            registry_path=registry_path,
+            config_identity_path=config_identity_path,
+            checkpoint_source=checkpoint_source,
+            checkpoint_registry_id=checkpoint_registry_id,
+            checkpoint_authenticated_uri=checkpoint_authenticated_uri,
+            checkpoint_receipt_path=checkpoint_receipt_path,
+            checkpoint_provider_receipt_path=checkpoint_provider_receipt_path,
+            content_store_root=content_store_root,
+            data_root=data_root,
+        )
+
+
+def _build_pre_gate1_registration_from_bound_context(
+    identity_template: Mapping[str, Any],
+    *,
+    root: BoundDirectory,
+    manifest_path: str | Path,
+    registry_path: str | Path,
+    config_identity_path: str | Path,
+    checkpoint_source: str | Path,
+    checkpoint_registry_id: str,
+    checkpoint_authenticated_uri: str,
+    checkpoint_receipt_path: str | Path,
+    checkpoint_provider_receipt_path: str | Path,
+    content_store_root: str | Path,
+    data_root: str | Path,
+) -> dict[str, Any]:
+    """Generate registration while retaining the detached worktree directory fd."""
+
+    git_root = Path(root.proc_path)
+    if _git(git_root, "status", "--porcelain"):
         raise ValueError("registration generation requires a clean repository")
     symbolic = subprocess.run(
-        ["git", "-C", str(root), "symbolic-ref", "-q", "HEAD"],
+        ["git", "-C", str(git_root), "symbolic-ref", "-q", "HEAD"],
         check=False,
         capture_output=True,
         text=True,
     )
     if symbolic.returncode == 0:
         raise ValueError("registration generation requires detached HEAD")
-    implementation = _git(root, "rev-parse", "HEAD")
-    tree = _git(root, "rev-parse", "HEAD^{tree}")
+    implementation = _git(git_root, "rev-parse", "HEAD")
+    tree = _git(git_root, "rev-parse", "HEAD^{tree}")
     body = copy.deepcopy(dict(identity_template))
     body["implementation_commit"] = implementation
     body["registration_parent"] = {"commit": implementation, "tree": tree}
-    body["source_files"] = {
-        relative: _sha256_file(root / relative)[1]
-        for relative in REQUIRED_REGISTRATION_SOURCE_PATHS
-    }
+    source_files: dict[str, str] = {}
+    for relative in REQUIRED_REGISTRATION_SOURCE_PATHS:
+        _, digest = root.read_bytes(
+            relative, label=f"registration generation source {relative}"
+        )
+        source_files[relative] = digest
+    body["source_files"] = source_files
     spec_relative = REQUIRED_REGISTRATION_SOURCE_PATHS[0]
     body["spec"] = {
         "commit": APPROVED_SPEC_COMMIT,
         "sha256": APPROVED_SPEC_SHA256,
     }
 
-    manifest_path = Path(manifest_path).resolve()
-    registry_path = Path(registry_path).resolve()
-    config_identity_path = Path(config_identity_path).resolve()
-    raw_manifest = manifest_path.read_bytes()
-    manifest = _load_json_file(manifest_path)
-    registry = _load_json_file(registry_path)
-    config = _load_json_file(config_identity_path)
+    manifest_path, manifest, raw_manifest, manifest_digest = load_bound_json(
+        manifest_path, label="registration generation window manifest"
+    )
+    registry_path, registry, _, _ = load_bound_json(
+        registry_path, label="registration generation media registry"
+    )
+    config_identity_path, config, _, _ = load_bound_json(
+        config_identity_path, label="registration generation config identity"
+    )
     if raw_manifest != manifest_exact_bytes(manifest):
         raise ValueError("manifest input must use exact canonical bytes")
     manifest = validate_r2_manifest(manifest, registry=registry, config_identity=config)
     body["window_manifest"] = {
         "artifact": manifest,
-        "exact_bytes_sha256": hashlib.sha256(raw_manifest).hexdigest(),
+        "exact_bytes_sha256": manifest_digest,
         "source_path": str(manifest_path),
         "registry_path": str(registry_path),
         "config_identity_path": str(config_identity_path),
     }
+    with open_bound_directory(data_root, label="registration data root") as bound_data_root:
+        data_root_path = bound_data_root.path
     body["data"] = {
         "root_identity": registry["data_sha256"],
-        "root_path": str(Path(data_root).resolve()),
+        "root_path": data_root_path,
         "annotation_sha256": registry["annotation_sha256"],
         "media_sha256": {
             record["video_id"]: record["media_sha256"] for record in registry["records"]
         },
     }
 
-    checkpoint_source = Path(checkpoint_source).resolve()
-    if not checkpoint_source.is_file():
-        raise ValueError("dense checkpoint source does not exist")
-    checkpoint_size, checkpoint_sha = _sha256_file(checkpoint_source)
-    store = Path(content_store_root).resolve()
-    destination = (store / "sha256" / checkpoint_sha).resolve()
-    try:
-        destination.relative_to(store)
-    except ValueError as exc:
-        raise ValueError("checkpoint content-addressed destination escapes controlled store") from exc
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        if _sha256_file(destination) != (checkpoint_size, checkpoint_sha):
-            raise ValueError("existing content-addressed checkpoint has incorrect bytes")
-    else:
-        temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
-        shutil.copyfile(checkpoint_source, temporary)
-        if _sha256_file(temporary) != (checkpoint_size, checkpoint_sha):
-            temporary.unlink(missing_ok=True)
-            raise RuntimeError("copied checkpoint verification failed")
-        os.replace(temporary, destination)
+    checkpoint_source, checkpoint_payload, checkpoint_sha = read_bound_bytes(
+        checkpoint_source, label="registration dense checkpoint source"
+    )
+    checkpoint_size = len(checkpoint_payload)
+    ensured_store = ensure_bound_directory(
+        content_store_root, label="registration content store"
+    )
+    with open_bound_directory(
+        ensured_store, label="registration content store"
+    ) as bound_store:
+        store = Path(bound_store.path)
+    destination = store / "sha256" / checkpoint_sha
+    publish_bytes_exclusive(
+        destination,
+        checkpoint_payload,
+        label="content-addressed dense checkpoint",
+        allow_existing_exact=True,
+    )
     body["dense_checkpoint"] = {
         "sha256": checkpoint_sha,
         "bytes": checkpoint_size,
@@ -1205,12 +1282,19 @@ def build_pre_gate1_registration_from_context(
         "content_addressed_path": str(destination),
         "registry_receipt": {},
     }
-    checkpoint_receipt_path = Path(checkpoint_receipt_path).resolve()
-    checkpoint_provider_receipt_path = Path(checkpoint_provider_receipt_path).resolve()
-    if not checkpoint_receipt_path.is_file():
-        raise ValueError("checkpoint registry receipt artifact does not exist")
-    raw_receipt = checkpoint_receipt_path.read_bytes()
-    receipt_artifact = _load_json_file(checkpoint_receipt_path)
+    (
+        checkpoint_receipt_path,
+        receipt_artifact,
+        raw_receipt,
+        receipt_digest,
+    ) = load_bound_json(
+        checkpoint_receipt_path,
+        label="registration checkpoint registry receipt",
+    )
+    checkpoint_provider_receipt_path, _, _ = read_bound_bytes(
+        checkpoint_provider_receipt_path,
+        label="registration checkpoint provider receipt",
+    )
     if raw_receipt != canonical_json_bytes(receipt_artifact) + b"\n":
         raise ValueError("checkpoint registry receipt must use exact canonical bytes")
     receipt_artifact = validate_checkpoint_registry_receipt(
@@ -1223,7 +1307,7 @@ def build_pre_gate1_registration_from_context(
     )
     body["dense_checkpoint"]["registry_receipt"] = {
         "artifact": receipt_artifact,
-        "exact_bytes_sha256": hashlib.sha256(raw_receipt).hexdigest(),
+        "exact_bytes_sha256": receipt_digest,
         "source_path": str(checkpoint_receipt_path),
         "provider_receipt_path": str(checkpoint_provider_receipt_path),
     }
@@ -1260,9 +1344,9 @@ def build_pre_gate1_registration_from_context(
         plan["requested_action_order_sha256"] = canonical_sha256(hashes)
     body["profiler"]["model_config_sha256"] = manifest["config_identity"]["config_sha256"]
     registration = build_pre_gate1_registration(body)
-    _validate_repository_context(
+    _validate_repository_context_bound(
         registration,
-        repository_root=root,
+        root=root,
         context_mode="generation",
         registration_commit=None,
         registration_relpath=None,
@@ -1329,12 +1413,11 @@ def resolve_gate1_output_root(
         raise ValueError("registration output_root fields mismatch")
     if output["template"] != "{base}/{registration_commit}/shared/gate1":
         raise ValueError("registration output_root template mismatch")
-    base = Path(_require_nonempty_string(output["base"], "output_root.base")).resolve()
-    derived = (base / registration_commit / "shared" / "gate1").resolve()
-    try:
-        derived.relative_to(base)
-    except ValueError as exc:
-        raise ValueError("derived Gate 1 output root escapes registered base") from exc
+    base_text = _require_nonempty_string(output["base"], "output_root.base")
+    if base_text != FORMAL_OUTPUT_BASE or not base_text.startswith("/"):
+        raise ValueError("registered Gate 1 output base is not the frozen absolute path")
+    base = Path(base_text)
+    derived = base / registration_commit / "shared" / "gate1"
     return derived
 
 

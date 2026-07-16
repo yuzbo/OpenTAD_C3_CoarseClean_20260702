@@ -6,9 +6,8 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -16,7 +15,13 @@ from opentad.models.chronotransport.gate1_unlock import (
     build_gate1_unlock_artifact,
     build_gate1_unlock_artifact_for_test_only,
 )
+from opentad.models.chronotransport.filesystem import (
+    audit_formal_python_runtime,
+    load_bound_json,
+    publish_bytes_exclusive,
+)
 from opentad.models.chronotransport.protocol import canonical_json_bytes
+from opentad.models.chronotransport.registration import validate_pre_gate1_registration
 
 
 def run_gate1_payload(
@@ -40,40 +45,14 @@ def run_gate1_payload_for_test_only(
 
 
 def _load_json(path: Path) -> object:
-    def reject_duplicates(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
+    _, value, _, _ = load_bound_json(path, label="Gate 1 adjudication input")
+    return value
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
     """Publish complete bytes exactly once; never replace formal evidence."""
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(temporary, path)
-        try:
-            directory_fd = os.open(path.parent, os.O_RDONLY)
-        except OSError:
-            directory_fd = None
-        if directory_fd is not None:
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    publish_bytes_exclusive(path, data, label="Gate 1 adjudication output")
 
 
 def main() -> None:
@@ -85,6 +64,20 @@ def main() -> None:
     parser.add_argument("--registration-relpath", required=True)
     args = parser.parse_args()
     payload = _load_json(args.input)
+    if not isinstance(payload, dict) or not isinstance(payload.get("registration"), dict):
+        raise ValueError("formal Gate 1 input must embed the registration")
+    registered = validate_pre_gate1_registration(
+        payload["registration"],
+        repository_root=args.repository_root,
+        context_mode="formal",
+        registration_commit=args.registration_commit,
+        registration_relpath=args.registration_relpath,
+    )
+    audit_formal_python_runtime(
+        repository_root=args.repository_root,
+        registered_sources=registered["source_files"],
+        entrypoint_relative="tools/bata/run_chronotransport_r2_gate1.py",
+    )
     result = run_gate1_payload(
         payload,
         args.repository_root,

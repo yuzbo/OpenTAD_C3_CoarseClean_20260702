@@ -179,6 +179,9 @@ class RegisteredOpenTADProfileSession:
         body["profile_sha256"] = canonical_sha256(body)
         return body
 
+    def close(self) -> None:
+        self._backend.close()
+
 
 def build_registered_profile_session(
     registration: Mapping[str, object],

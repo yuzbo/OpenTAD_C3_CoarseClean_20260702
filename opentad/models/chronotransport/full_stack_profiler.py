@@ -673,8 +673,18 @@ def build_full_stack_profile_artifact(
         registration_relpath=registration_relpath,
     )
     from tools.bata.chronotransport_r2_profile_factory import build_registered_profile_session
+    from .filesystem import audit_formal_python_runtime
 
-    artifact = build_registered_profile_session(validated).run_fixed_profile()
+    session = build_registered_profile_session(validated)
+    audit_formal_python_runtime(
+        repository_root=repository_root,
+        registered_sources=validated["source_files"],
+        entrypoint_relative="tools/bata/profile_chronotransport_r2_full_stack.py",
+    )
+    try:
+        artifact = session.run_fixed_profile()
+    finally:
+        session.close()
     return _validate_serialized_full_stack_profile_artifact(
         artifact, registration=validated
     )

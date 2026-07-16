@@ -11,11 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import random
 import re
-import stat
 from statistics import median
 from typing import Any, Mapping, Sequence
 
@@ -23,6 +21,12 @@ from .formal_stage_b import (
     _STAGE_B_CHECKPOINT_KEYS,
     _validate_fit_schedule_constant_artifact,
     validate_r2_stage_b_phase_completion_marker,
+)
+from .filesystem import (
+    load_bound_torch,
+    open_bound_regular_file,
+    read_bound_bytes,
+    secure_lexical_path,
 )
 from .protocol import R2_PROTOCOL_ID, R2_SEEDS, canonical_json_bytes, canonical_sha256
 from .registration import FORMAL_OUTPUT_BASE, validate_pre_gate1_registration
@@ -187,33 +191,13 @@ def _decode_json(raw: bytes, *, label: str) -> Any:
 def _path_without_symlink_components(
     path: Path | str, *, label: str, allow_missing: bool = False
 ) -> Path:
-    """Return an absolute lexical path after lstat-checking every existing component."""
-
-    absolute = Path(os.path.abspath(os.fspath(path)))
-    current = Path(absolute.anchor)
-    for part in absolute.parts[1:]:
-        current /= part
-        try:
-            metadata = os.lstat(current)
-        except FileNotFoundError:
-            if allow_missing:
-                break
-            raise FileNotFoundError(current) from None
-        if stat.S_ISLNK(metadata.st_mode):
-            raise ValueError(f"{label} contains a symlink component: {current}")
-    return absolute
+    return secure_lexical_path(path, label=label, allow_missing=allow_missing)
 
 
 def load_exact_canonical_json(path: Path | str, *, label: str) -> dict[str, Any]:
     """Load exact canonical JSON plus one LF, rejecting duplicate keys."""
 
-    path = _path_without_symlink_components(path, label=label)
-    metadata = os.lstat(path)
-    if not stat.S_ISREG(metadata.st_mode):
-        raise ValueError(f"{label} must be a regular file")
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    raw = path.read_bytes()
+    path, raw, _ = read_bound_bytes(path, label=label)
     value = _decode_json(raw, label=label)
     if not isinstance(value, dict):
         raise ValueError(f"{label} root must be a JSON object")
@@ -223,18 +207,14 @@ def load_exact_canonical_json(path: Path | str, *, label: str) -> dict[str, Any]
 
 
 def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    with open_bound_regular_file(path, label=f"Gate2/3 hash input {path}") as bound:
+        return bound.size_and_sha256()[1]
 
 
 def _require_regular_input(path: Path | str, *, label: str) -> Path:
     absolute = _path_without_symlink_components(path, label=label)
-    metadata = os.lstat(absolute)
-    if not stat.S_ISREG(metadata.st_mode):
-        raise ValueError(f"{label} must be a regular file")
+    with open_bound_regular_file(absolute, label=label):
+        pass
     return absolute
 
 
@@ -324,11 +304,7 @@ def _validate_formal_gate_context(
 
 
 def _load_exact_jsonl(path: Path, *, label: str) -> tuple[list[dict[str, Any]], bytes]:
-    if path.is_symlink():
-        raise ValueError(f"{label} must be a regular file, not a symlink")
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    raw = path.read_bytes()
+    _, raw, _ = read_bound_bytes(path, label=label)
     if not raw or not raw.endswith(b"\n"):
         raise ValueError(f"{label} must be non-empty and LF terminated")
     rows: list[dict[str, Any]] = []
@@ -876,10 +852,14 @@ def _validate_stage_b_phase_markers_full(
         )
         if checkpoint_path.parent != seed_root:
             raise ValueError("Stage-B checkpoint is outside canonical R/seed or missing")
+        with open_bound_regular_file(
+            checkpoint_path, label=f"Stage-B checkpoint size {seed}"
+        ) as checkpoint_file:
+            checkpoint_size = checkpoint_file.identity.size
         if (
             type(checkpoint_binding["bytes"]) is not int
             or checkpoint_binding["bytes"] <= 0
-            or checkpoint_path.stat().st_size != checkpoint_binding["bytes"]
+            or checkpoint_size != checkpoint_binding["bytes"]
             or _file_sha256(checkpoint_path) != checkpoint_binding["exact_bytes_sha256"]
         ):
             raise ValueError("Stage-B checkpoint exact bytes differ from phase marker")
@@ -889,12 +869,9 @@ def _validate_stage_b_phase_markers_full(
             "predictor_canonical_sha256",
         ):
             _require_sha256(checkpoint_binding[field], f"Stage-B checkpoint {field}")
-        try:
-            import torch
-
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        except Exception as error:
-            raise ValueError("Stage-B trained checkpoint is not loadable") from error
+        _, checkpoint, _, _ = load_bound_torch(
+            checkpoint_path, label=f"Stage-B trained checkpoint {seed}"
+        )
         if not isinstance(checkpoint, Mapping) or set(checkpoint) != _STAGE_B_CHECKPOINT_KEYS:
             raise ValueError("Stage-B trained checkpoint fields do not match the frozen key set")
         if registered_provenance is None:

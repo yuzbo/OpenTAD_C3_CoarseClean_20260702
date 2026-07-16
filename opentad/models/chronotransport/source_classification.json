@@ -13,6 +13,7 @@
     "tests/test_chronotransport_r2_actions_cache.py": "REQUIRED",
     "tests/test_chronotransport_r2_adjudication.py": "REQUIRED",
     "tests/test_chronotransport_r2_environment.py": "REQUIRED",
+    "tests/test_chronotransport_r2_filesystem.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate1_cost_profile.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate1_hardening.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate4.py": "REQUIRED",

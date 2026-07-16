@@ -10,8 +10,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import re
-import stat
-import tempfile
 from typing import Any, Callable
 
 import numpy as np
@@ -22,6 +20,14 @@ from .environment import (
     OBSERVED_PROVENANCE_FIELDS,
     REQUIRED_ENVIRONMENT_SCHEMA,
     observed_environment_from_provenance,
+)
+from .filesystem import (
+    load_bound_torch,
+    open_bound_regular_file,
+    path_exists_no_follow,
+    publish_bytes_exclusive,
+    read_bound_bytes,
+    secure_lexical_path,
 )
 from .losses import R2StageBLosses, compose_r2_stage_b_loss
 from .protocol import validate_stage_b_exposure_artifact
@@ -214,7 +220,9 @@ def save_calibrated_stage_b_checkpoint(
         raise ValueError("calibration offset must be finite and non-negative")
     if str(p3_gate_status) not in {"PASS", "FAIL"}:
         raise ValueError("P3 gate status must be PASS or FAIL")
-    checkpoint = torch.load(source, map_location="cpu")
+    _, checkpoint, _, _ = load_bound_torch(
+        source, label="calibrated Stage-B source checkpoint"
+    )
     for state_key in ("state_dict", "state_dict_ema"):
         state = checkpoint.get(state_key)
         if not isinstance(state, Mapping):
@@ -249,8 +257,13 @@ def save_calibrated_stage_b_checkpoint(
         paper_claim_allowed=False,
     )
     checkpoint["meta"] = meta
-    output.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(checkpoint, output)
+    buffer = io.BytesIO()
+    torch.save(checkpoint, buffer)
+    publish_bytes_exclusive(
+        output,
+        buffer.getvalue(),
+        label="calibrated Stage-B checkpoint",
+    )
 
 
 def _average_ranks(values: Sequence[float]) -> list[float]:
@@ -535,11 +548,8 @@ def _validate_candidate_action_sha256_by_name(
 
 
 def _file_sha256(path: Path | str) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    with open_bound_regular_file(path, label=f"Stage-B hash input {path}") as bound:
+        return bound.size_and_sha256()[1]
 
 
 def _tensor_exact_bytes(value: Tensor) -> bytes:
@@ -1065,174 +1075,43 @@ def _ema_state_dict(
 def _path_without_symlink_components(
     path: Path | str, *, label: str, allow_missing: bool = False
 ) -> Path:
-    """Return an absolute lexical path after checking every existing component."""
-
-    absolute = Path(os.path.abspath(os.fspath(path)))
-    current = Path(absolute.anchor)
-    for part in absolute.parts[1:]:
-        current /= part
-        try:
-            metadata = os.lstat(current)
-        except FileNotFoundError:
-            if allow_missing:
-                break
-            raise FileNotFoundError(current) from None
-        if stat.S_ISLNK(metadata.st_mode):
-            raise ValueError(f"{label} contains a symlink component: {current}")
-    return absolute
+    return secure_lexical_path(path, label=label, allow_missing=allow_missing)
 
 
 def _read_regular_file_bytes(path: Path | str, *, label: str) -> tuple[Path, bytes]:
     """Read one exact regular inode without following a symlink or replacement."""
 
-    exact = _path_without_symlink_components(path, label=label)
-    before = os.lstat(exact)
-    if not stat.S_ISREG(before.st_mode):
-        raise ValueError(f"{label} must be a regular non-symlink file")
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(exact, flags)
-    try:
-        opened = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or opened.st_dev != before.st_dev
-            or opened.st_ino != before.st_ino
-        ):
-            raise RuntimeError(f"{label} changed identity while being read")
-        with os.fdopen(descriptor, "rb", closefd=False) as stream:
-            payload = stream.read()
-        after = os.lstat(exact)
-        if after.st_dev != opened.st_dev or after.st_ino != opened.st_ino:
-            raise RuntimeError(f"{label} changed identity while being read")
-    finally:
-        os.close(descriptor)
+    exact, payload, _ = read_bound_bytes(path, label=label)
     return exact, payload
 
 
 def _load_torch_regular_file(
     path: Path | str, *, label: str
 ) -> tuple[Path, Any, bytes]:
-    exact, payload = _read_regular_file_bytes(path, label=label)
-    try:
-        checkpoint = torch.load(io.BytesIO(payload), map_location="cpu")
-    except Exception as error:
-        raise ValueError(f"{label} is not a valid torch checkpoint") from error
+    exact, checkpoint, payload, _ = load_bound_torch(path, label=label)
     return exact, checkpoint, payload
 
 
 def _atomic_torch_save(payload: Mapping[str, Any], output: Path) -> None:
-    output = _path_without_symlink_components(
-        output, label="Stage-B checkpoint path", allow_missing=True
+    buffer = io.BytesIO()
+    torch.save(dict(payload), buffer)
+    publish_bytes_exclusive(
+        output,
+        buffer.getvalue(),
+        label="Stage-B checkpoint",
     )
-    parent = _path_without_symlink_components(
-        output.parent, label="Stage-B checkpoint parent", allow_missing=True
-    )
-    parent.mkdir(parents=True, exist_ok=True)
-    parent = _path_without_symlink_components(
-        parent, label="Stage-B checkpoint parent"
-    )
-    output = _path_without_symlink_components(
-        output, label="Stage-B checkpoint path", allow_missing=True
-    )
-    handle, temporary = tempfile.mkstemp(
-        prefix=f".{output.name}.", suffix=".tmp", dir=parent
-    )
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            torch.save(dict(payload), stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(temporary, output)
-        _fsync_directory(parent)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-def _reuse_exact_regular_file(path: Path, payload: bytes, *, label: str) -> bool:
-    """Accept an interrupted publication only when the existing inode is exact."""
-
-    try:
-        before = os.lstat(path)
-    except FileNotFoundError:
-        return False
-    if not stat.S_ISREG(before.st_mode):
-        raise ValueError(f"{label} must be a regular non-symlink file")
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(path, flags)
-    except FileNotFoundError:
-        return False
-    try:
-        opened = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or opened.st_dev != before.st_dev
-            or opened.st_ino != before.st_ino
-        ):
-            raise RuntimeError(f"{label} changed identity while being verified")
-        with os.fdopen(descriptor, "rb", closefd=False) as stream:
-            existing = stream.read()
-        after = os.lstat(path)
-        if after.st_dev != opened.st_dev or after.st_ino != opened.st_ino:
-            raise RuntimeError(f"{label} changed identity while being verified")
-    finally:
-        os.close(descriptor)
-    if existing != payload:
-        raise FileExistsError(f"{label} already exists with different bytes: {path}")
-    return True
 
 
 def _atomic_write_ledger(rows: Sequence[Mapping[str, Any]], output: Path) -> str:
     payload = b"".join(_canonical_json_bytes(row) + b"\n" for row in rows)
     digest = hashlib.sha256(payload).hexdigest()
-    output = _path_without_symlink_components(
-        output, label="Stage-B ledger path", allow_missing=True
+    publish_bytes_exclusive(
+        output,
+        payload,
+        label="Stage-B ledger",
+        allow_existing_exact=True,
     )
-    parent = _path_without_symlink_components(
-        output.parent, label="Stage-B ledger parent", allow_missing=True
-    )
-    parent.mkdir(parents=True, exist_ok=True)
-    parent = _path_without_symlink_components(parent, label="Stage-B ledger parent")
-    output = _path_without_symlink_components(
-        output, label="Stage-B ledger path", allow_missing=True
-    )
-    if _reuse_exact_regular_file(output, payload, label="Stage-B ledger"):
-        return digest
-    handle, temporary = tempfile.mkstemp(
-        prefix=f".{output.name}.", suffix=".tmp", dir=parent
-    )
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        try:
-            os.link(temporary, output)
-        except FileExistsError as error:
-            if not _reuse_exact_regular_file(output, payload, label="Stage-B ledger"):
-                raise error
-        else:
-            _fsync_directory(parent)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
     return digest
-
-
-def _fsync_directory(path: Path) -> None:
-    try:
-        directory_fd = os.open(path, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
 
 
 def _checkpoint_payload(
@@ -1672,8 +1551,10 @@ def run_r2_stage_b_training(
     dense_checkpoint_path = _path_without_symlink_components(
         dense_checkpoint_path, label="Stage-B dense checkpoint"
     )
-    if not stat.S_ISREG(os.lstat(dense_checkpoint_path).st_mode):
-        raise ValueError("Stage-B dense checkpoint must be a regular file")
+    with open_bound_regular_file(
+        dense_checkpoint_path, label="Stage-B dense checkpoint"
+    ):
+        pass
     expected_dense_sha = _require_sha256(
         dense_checkpoint_sha256, field="dense checkpoint SHA-256"
     )
@@ -1726,8 +1607,9 @@ def run_r2_stage_b_training(
     ledger_rows: list[dict[str, Any]] = []
 
     if resume_from is not None:
-        resume_path = Path(resume_from)
-        checkpoint = torch.load(resume_path, map_location="cpu")
+        resume_path, checkpoint, _, _ = load_bound_torch(
+            resume_from, label="r2 Stage-B resume checkpoint"
+        )
         if not isinstance(checkpoint, Mapping):
             raise ValueError("r2 Stage-B resume checkpoint must be a mapping")
         meta = _validate_resume_metadata(
@@ -1759,12 +1641,13 @@ def run_r2_stage_b_training(
         if actual_ledger_sha != meta["ledger_sha256"]:
             raise ValueError("r2 Stage-B resume ledger digest mismatch")
         external_ledger = resume_path.with_suffix(".jsonl")
-        if not external_ledger.is_file():
-            raise ValueError("r2 Stage-B resume external ledger is missing")
         expected_external = b"".join(
             _canonical_json_bytes(row) + b"\n" for row in ledger_rows
         )
-        if external_ledger.read_bytes() != expected_external:
+        _, external_bytes, _ = read_bound_bytes(
+            external_ledger, label="r2 Stage-B resume external ledger"
+        )
+        if external_bytes != expected_external:
             raise ValueError("r2 Stage-B resume external ledger differs from checkpoint prefix")
         state = StageBUpdateState(
             seed=seed,
@@ -2349,8 +2232,10 @@ def _phase_completion_payload(
     dense_checkpoint_path = _path_without_symlink_components(
         dense_checkpoint_path, label="phase marker dense checkpoint"
     )
-    if not stat.S_ISREG(os.lstat(dense_checkpoint_path).st_mode):
-        raise ValueError("phase marker dense checkpoint must be a regular file")
+    with open_bound_regular_file(
+        dense_checkpoint_path, label="phase marker dense checkpoint"
+    ):
+        pass
     dense_checkpoint_sha256 = _require_sha256(
         dense_checkpoint_sha256, field="phase marker dense checkpoint SHA-256"
     )
@@ -2373,8 +2258,6 @@ def _phase_completion_payload(
     fit_baseline_path = _path_without_symlink_components(
         fit_baseline_path, label="phase marker fit-only baseline"
     )
-    if not stat.S_ISREG(os.lstat(checkpoint_path).st_mode):
-        raise ValueError("phase marker trained checkpoint must be a regular file")
     checkpoint_path, checkpoint, checkpoint_payload = _load_torch_regular_file(
         checkpoint_path, label="Stage-B trained checkpoint"
     )

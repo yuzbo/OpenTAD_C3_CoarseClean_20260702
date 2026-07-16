@@ -8,15 +8,18 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 from typing import Mapping
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from opentad.models.chronotransport.full_stack_profiler import (
     build_full_stack_profile_artifact,
+)
+from opentad.models.chronotransport.filesystem import (
+    load_bound_json,
+    publish_bytes_exclusive,
 )
 from opentad.models.chronotransport.protocol import canonical_json_bytes, canonical_sha256
 from opentad.models.chronotransport.registration import (
@@ -63,40 +66,14 @@ def profile_request(
 
 
 def _load_json(path: Path) -> object:
-    def reject_duplicates(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
+    _, value, _, _ = load_bound_json(path, label="full-stack profile request")
+    return value
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
     """Publish complete bytes exactly once without replacing an existing artifact."""
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(temporary, path)
-        try:
-            directory_fd = os.open(path.parent, os.O_RDONLY)
-        except OSError:
-            directory_fd = None
-        if directory_fd is not None:
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    publish_bytes_exclusive(path, data, label="full-stack profile output")
 
 
 def main() -> None:

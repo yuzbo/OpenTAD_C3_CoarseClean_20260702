@@ -4,33 +4,28 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from opentad.models.chronotransport.protocol import canonical_json_bytes
+from opentad.models.chronotransport.filesystem import (
+    audit_formal_python_runtime,
+    load_bound_json,
+    publish_bytes_exclusive,
+)
 from opentad.models.chronotransport.registration import (
     build_pre_gate1_registration_from_context,
 )
 
 
 def _load_template(path: Path) -> dict[str, object]:
-    def reject(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject)
+    _, value, _, _ = load_bound_json(path, label="registration identity template")
     if not isinstance(value, dict):
         raise TypeError("registration identity template must be an object")
     return value
@@ -39,32 +34,7 @@ def _load_template(path: Path) -> dict[str, object]:
 def _atomic_write(path: Path, payload: bytes) -> None:
     """Publish canonical registration bytes exactly once."""
 
-    for component in (path, *path.parents):
-        if component.is_symlink():
-            raise ValueError("registration output path must not traverse a symlink")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for component in (path, *path.parents):
-        if component.is_symlink():
-            raise ValueError("registration output path must not traverse a symlink")
-    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(temporary, path)
-        try:
-            directory_fd = os.open(path.parent, os.O_RDONLY)
-        except OSError:
-            directory_fd = None
-        if directory_fd is not None:
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    publish_bytes_exclusive(path, payload, label="canonical registration output")
 
 
 def main() -> None:
@@ -96,6 +66,11 @@ def main() -> None:
         checkpoint_provider_receipt_path=args.checkpoint_provider_receipt,
         content_store_root=args.content_store_root,
         data_root=args.data_root,
+    )
+    audit_formal_python_runtime(
+        repository_root=args.repository_root,
+        registered_sources=registration["source_files"],
+        entrypoint_relative="tools/bata/register_chronotransport_r2.py",
     )
     _atomic_write(args.output, canonical_json_bytes(registration) + b"\n")
     print(registration["registration_sha256"])

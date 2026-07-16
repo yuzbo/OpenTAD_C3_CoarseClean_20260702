@@ -7,12 +7,10 @@ import argparse
 import json
 import os
 from pathlib import Path
-import stat
 import sys
-from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -22,6 +20,12 @@ from opentad.models.chronotransport.environment import (
 )
 from opentad.models.chronotransport.full_stack_profiler import (
     validate_full_stack_profile_artifact,
+)
+from opentad.models.chronotransport.filesystem import (
+    audit_formal_python_runtime,
+    load_bound_json,
+    path_exists_no_follow,
+    secure_lexical_path,
 )
 from opentad.models.chronotransport.protocol import canonical_json_bytes, canonical_sha256
 from opentad.models.chronotransport.registration import (
@@ -38,43 +42,16 @@ GATE1_TERMINAL_FILENAME = "gate1_terminal.json"
 def _path_without_symlink_components(
     path: str | Path, *, label: str, allow_missing: bool = False
 ) -> Path:
-    """Return an absolute lexical path after checking every existing component."""
-
-    absolute = Path(os.path.abspath(os.fspath(path)))
-    current = Path(absolute.anchor)
-    for part in absolute.parts[1:]:
-        current /= part
-        try:
-            metadata = os.lstat(current)
-        except FileNotFoundError:
-            if allow_missing:
-                break
-            raise FileNotFoundError(current) from None
-        if stat.S_ISLNK(metadata.st_mode):
-            raise ValueError(f"{label} contains a symlink component: {current}")
-    return absolute
-
-
-def _load_json_no_duplicates(path: Path) -> Any:
-    def reject(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject)
+    return secure_lexical_path(path, label=label, allow_missing=allow_missing)
 
 
 def load_exact_registration(path: str | Path) -> dict[str, object]:
-    path = _path_without_symlink_components(path, label="registration artifact")
-    if not stat.S_ISREG(os.lstat(path).st_mode):
-        raise ValueError("registration file must be a regular non-symlink file")
-    registration = _load_json_no_duplicates(path)
+    path, registration, raw, _ = load_bound_json(
+        path, label="registration artifact"
+    )
     if not isinstance(registration, dict):
         raise TypeError("registration file root must be an object")
-    if path.read_bytes() != canonical_json_bytes(registration) + b"\n":
+    if raw != canonical_json_bytes(registration) + b"\n":
         raise ValueError("registration file bytes are not exact canonical bytes")
     return registration
 
@@ -87,11 +64,8 @@ def _validate_gate1_input_payload(
     registration_commit: str,
     registration_relpath: str,
 ) -> dict[str, object]:
-    path = _path_without_symlink_components(path, label="Gate 1 input")
-    if not stat.S_ISREG(os.lstat(path).st_mode):
-        raise ValueError("Gate 1 input must be a regular exact artifact")
-    payload = _load_json_no_duplicates(path)
-    if path.read_bytes() != canonical_json_bytes(payload) + b"\n":
+    path, payload, raw, _ = load_bound_json(path, label="Gate 1 input")
+    if raw != canonical_json_bytes(payload) + b"\n":
         raise ValueError("Gate 1 input file bytes are not exact canonical bytes")
     if not isinstance(payload, dict) or set(payload) != {
         "schema",
@@ -163,6 +137,12 @@ def _validate_precheck(
         registration_commit=registration_commit,
         registration_relpath=registration_relpath,
     )
+    if observe_environment:
+        audit_formal_python_runtime(
+            repository_root=repository_root,
+            registered_sources=validated["source_files"],
+            entrypoint_relative="tools/bata/validate_chronotransport_r2_precheck.py",
+        )
     output = _path_without_symlink_components(
         output_root, label="Gate 1 output root", allow_missing=True
     )
@@ -232,7 +212,9 @@ def _validate_precheck(
         if canonical_paths["input"] == registration_path:
             raise ValueError("Gate 1 input and registration artifacts must be distinct")
         for name in ("result", "terminal"):
-            if canonical_paths[name].exists():
+            if path_exists_no_follow(
+                canonical_paths[name], label=f"Gate 1 {name}"
+            ):
                 raise ValueError(
                     f"Gate 1 {name} already exists; formal Gate 1 has no resume mode"
                 )

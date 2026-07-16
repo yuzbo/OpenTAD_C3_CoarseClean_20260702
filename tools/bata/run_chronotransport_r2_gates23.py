@@ -5,19 +5,16 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-import hashlib
 import json
 import os
 from pathlib import Path
 import signal
-import stat
 import subprocess
 import sys
-import tempfile
 from typing import Any, Mapping
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -29,6 +26,13 @@ from opentad.models.chronotransport.gates23 import (
     run_registered_gates23_replay,
     validate_gates23_report,
     validate_stage_b_phase_markers_static,
+)
+from opentad.models.chronotransport.filesystem import (
+    exclusive_file_lock,
+    open_bound_directory,
+    open_bound_regular_file,
+    path_exists_no_follow,
+    publish_bytes_exclusive,
 )
 from opentad.models.chronotransport.protocol import canonical_json_bytes
 from opentad.models.chronotransport.registration import (
@@ -50,72 +54,32 @@ class FormalStopped(RuntimeError):
 
 
 def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    with open_bound_regular_file(path, label=f"Gate2/3 hash input {path}") as bound:
+        return bound.size_and_sha256()[1]
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
     """Publish one immutable artifact atomically and fail if the name exists."""
 
-    path = _path_without_symlink_components(
-        path, label="formal Gate2/3 publication path", allow_missing=True
-    )
-    parent = _path_without_symlink_components(
-        path.parent, label="formal Gate2/3 publication parent", allow_missing=True
-    )
-    parent.mkdir(parents=True, exist_ok=True)
-    parent = _path_without_symlink_components(
-        parent, label="formal Gate2/3 publication parent"
-    )
-    handle, temporary = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=parent
-    )
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(temporary, path)
-        directory = os.open(parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-def _read_exact_regular_bytes(path: Path, *, label: str) -> bytes:
-    exact = _path_without_symlink_components(path, label=label)
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(exact, flags)
-    try:
-        identity = os.fstat(descriptor)
-        if not stat.S_ISREG(identity.st_mode):
-            raise ValueError(f"existing {label} is not a regular file")
-        with os.fdopen(descriptor, "rb", closefd=False) as stream:
-            return stream.read()
-    finally:
-        os.close(descriptor)
+    publish_bytes_exclusive(path, payload, label="formal Gate2/3 publication")
 
 
 def _publish_or_validate_exact(path: Path, payload: bytes, *, label: str) -> bool:
     """Publish once, or resume only from exactly recomputed immutable bytes."""
 
+    existed = path_exists_no_follow(path, label=label)
     try:
-        _atomic_write(path, payload)
-    except FileExistsError:
-        existing = _read_exact_regular_bytes(path, label=label)
-        if existing != payload:
-            raise ValueError(f"existing {label} bytes differ from exact recomputation")
-        return False
-    return True
+        publish_bytes_exclusive(
+            path,
+            payload,
+            label=label,
+            allow_existing_exact=True,
+        )
+    except FileExistsError as error:
+        raise ValueError(
+            f"existing {label} bytes differ from exact recomputation"
+        ) from error
+    return not existed
 
 
 def _validate_recoverable_publication_state(outputs: Mapping[str, Path]) -> None:
@@ -124,7 +88,7 @@ def _validate_recoverable_publication_state(outputs: Mapping[str, Path]) -> None
     terminal = _path_without_symlink_components(
         outputs["terminal"], label="formal Gate2/3 terminal", allow_missing=True
     )
-    if terminal.exists():
+    if path_exists_no_follow(terminal, label="formal Gate2/3 terminal"):
         raise FileExistsError(
             "formal Gate2/3 terminal already exists for this immutable R"
         )
@@ -134,44 +98,24 @@ def _validate_recoverable_publication_state(outputs: Mapping[str, Path]) -> None
             label=f"formal Gate2/3 {name}",
             allow_missing=True,
         )
-        if artifact.exists() and not artifact.is_file():
-            raise ValueError(f"existing formal Gate2/3 {name} is not a regular file")
+        if path_exists_no_follow(artifact, label=f"formal Gate2/3 {name}"):
+            with open_bound_regular_file(
+                artifact, label=f"formal Gate2/3 {name}"
+            ):
+                pass
 
 
 @contextmanager
 def _exclusive_run_lock(root: Path):
     """Hold the sole formal writer lock for one immutable registration R."""
 
-    root = _path_without_symlink_components(
-        root, label="formal Gate2/3 run root", allow_missing=True
-    )
-    root.mkdir(parents=True, exist_ok=True)
-    root = _path_without_symlink_components(root, label="formal Gate2/3 run root")
-    lock_path = _path_without_symlink_components(
-        root / "run.lock", label="formal Gate2/3 run lock", allow_missing=True
-    )
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(lock_path, flags, 0o600)
-    identity = os.fstat(descriptor)
-    try:
-        payload = f"pid={os.getpid()}\n".encode("ascii")
-        os.write(descriptor, payload)
-        os.fsync(descriptor)
+    lock_path = root / "run.lock"
+    with exclusive_file_lock(
+        lock_path,
+        label="formal Gate2/3 run lock",
+        payload=f"pid={os.getpid()}\n".encode("ascii"),
+    ):
         yield lock_path
-    finally:
-        os.close(descriptor)
-        try:
-            current = os.lstat(lock_path)
-        except FileNotFoundError:
-            current = None
-        if (
-            current is not None
-            and current.st_dev == identity.st_dev
-            and current.st_ino == identity.st_ino
-        ):
-            os.unlink(lock_path)
 
 
 def _git_head(root: Path) -> str:
@@ -213,14 +157,14 @@ def _assert_gates23_sources_registered(
             raise ValueError(
                 f"Gate2/3 source is absent from registration R: {relative}"
             )
-        root = _path_without_symlink_components(
+        with open_bound_directory(
             repository_root, label="formal Gate2/3 repository root"
-        )
-        path = root / relative
-        path = _path_without_symlink_components(
-            path, label=f"registered Gate2/3 source {relative}"
-        )
-        if not path.is_file() or _file_sha256(path) != sources[relative]:
+        ) as root:
+            with root.open_regular(
+                relative, label=f"registered Gate2/3 source {relative}"
+            ) as source:
+                source_sha256 = source.size_and_sha256()[1]
+        if source_sha256 != sources[relative]:
             raise ValueError(
                 f"Gate2/3 source bytes differ from registration R: {relative}"
             )
