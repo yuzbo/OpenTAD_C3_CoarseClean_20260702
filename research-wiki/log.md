@@ -521,3 +521,11 @@ append_only: true
   `92a18be` snapshot response (`990E84F1...151FD1`) and its absorption (`EB7A5767...078B1`) so the next
   reviewer must distinguish prior tool failure from a code verdict. Publication remains docs-only and does
   not create I/R, PRECHECK or experiment evidence.
+- 2026-07-16: The user reported that the unified Pro prompt exceeded the model's thinking duration and approved
+  a two-discussion dependency split. The supplied 24,456-byte attachment has SHA-256 `243B5AA3...01FAB1` but
+  differs from the 24,050-byte repository prompt only by CRLF/LF normalization, so it was not registered as a
+  new substantive source. Part 1 (13,141 bytes, `D4685862...17972C`) now seals snapshot/A1/A2/registration/
+  Gates-1--3 into `PART1_AUDIT_PACKET`; Part 2 (14,084 bytes, `52A9C3A2...19835`) requires the verbatim output
+  at the same SHA, audits Stage C/Gate 4/Slurm and alone issues the overall verdict. The former monolith is a
+  1,631-byte index (`1BBD516A...104DD`). This is docs-only review orchestration; no code, I/R, PRECHECK, job,
+  Gate or experiment was created.

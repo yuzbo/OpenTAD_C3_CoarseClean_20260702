@@ -273,3 +273,8 @@ updated: 2026-07-16
     may pass only with frozen SHA, exact parent probes, strict compare to every anchor, complete post-floor
     path diff and SHA-pinned content reads for every mandatory file. Missing ancestry/content remains blocking;
     project-reported tree/timestamps and moving-branch reads never substitute for independent evidence.
+112. Do not force a Pro reviewer to repeat the entire repository and final synthesis in one oversized turn.
+    Split at a dependency boundary: Part 1 seals snapshot/registration/Gates-1--3 into a complete handoff
+    packet; Part 2 binds the same SHA, consumes the verbatim packet, audits Stage C/Gate 4 and carries every
+    blocker into the sole overall verdict. A summary-only handoff, changed SHA or silently dropped finding
+    invalidates the two-part review rather than saving context.

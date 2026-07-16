@@ -139,8 +139,16 @@ ChronoTransport r2 Pro 审计条目。
   snapshot-only 返回的证据边界与工具能力缺口记录；用户已批准以 SHA/parents/ancestry/exact
   diff/逐文件 content-addressed checks 构成严格等价 fallback，并要求发布新 docs-only snapshot。
 - `../docs/methods/2026-07-16-chronotransport-r2-final-github-pro-implementation-review-prompt.md`：
-  当前 GitHub-only Pro 全实现审计合同，406 lines / 24,050 bytes，SHA-256
-  `7F67EAB17A9A4280CE27431DA0DB5A3B6B219AEE4EC7A075D4AE7FD75D6866C8`。Route A 优先完整 Git
-  Data commit object；只有 reviewer 明确证明字段不可得时，Route B 才以 frozen SHA、exact parent
-  probes、四锚点 ancestry、complete post-floor diff 和 SHA-pinned mandatory contents 继续。它只是一份
-  review input，不是 implementation approval、registration、Gate 或实验结果。
+  两次 Pro 讨论的 40-line 使用索引，1,631 bytes，SHA-256
+  `1BBD516A1F758031635933B403677FD67E9C8456671760BCCCE1C7F381C104DD`。原 406-line 单体 prompt
+  因超过 Pro one-turn thinking duration 而停止作为直接输入；索引本身不是第三份审计 prompt。
+- `../docs/methods/2026-07-16-chronotransport-r2-github-pro-audit-part-1-foundation.md`：第一轮
+  GitHub-only Pro prompt，267 lines / 13,141 bytes，SHA-256
+  `D468586282C59AA182E09955C82456EC9E54ED3DF2974A851A298AFB4917972C`。覆盖 snapshot、规范、
+  A1/A2、registration/source/filesystem、Gate 1、Stage B 与 Gates 2/3；只输出 Part-1 verdict 和
+  `PART1_AUDIT_PACKET`，不得给整体 registration verdict。
+- `../docs/methods/2026-07-16-chronotransport-r2-github-pro-audit-part-2-final.md`：第二轮
+  GitHub-only Pro prompt，272 lines / 14,084 bytes，SHA-256
+  `52A9C3A2422F0E186485F9C932821D37205F36EA45352083245A81887D519835`。必须绑定同一 SHA 并附上
+  Part-1 完整原文，覆盖 Stage C/matched、post-Stage-C Gate 3、Gate 4、Slurm 与联合覆盖，且独占
+  `APPROVE_IMPLEMENTATION_FOR_REGISTRATION` / `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` 总裁决。

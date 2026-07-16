@@ -31,6 +31,11 @@ max_chars: 8000
   strict fallback only after frozen SHA, exact `^1/^2`, four-anchor ancestry, complete post-floor docs-only diff
   and SHA-pinned mandatory-file reads all pass. This is a reviewer-tool compatibility repair, not a reduction
   in code/content integrity and not an implementation verdict.
+- The resulting unified prompt exceeded the Pro model's one-turn thinking duration. It is superseded as a
+  direct input by two same-SHA prompts: Part 1 covers snapshot/A1/A2/registration/Gate1/StageB/Gates2-3 and
+  emits a complete handoff packet; Part 2 requires that verbatim output, covers StageC/post-Gate3/Gate4/Slurm,
+  closes the union coverage ledger and alone issues the overall verdict. Missing packet, changed SHA or dropped
+  Part-1 blocker fails closed. No implementation or experiment status changes.
 - Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
   registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
   verdict `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for exact SHAs `0BE0EA8B...F76808` and
