@@ -482,7 +482,7 @@ def test_source_classification_is_exhaustive_and_exactly_matches_required_vector
         required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
     )
     tests = [path for path in validated["files"] if path.startswith("tests/")]
-    assert len(tests) == 21
+    assert len(tests) == 22
 
 
 def test_source_classification_rejects_omission_addition_and_vector_drift():
@@ -656,6 +656,30 @@ def test_context_registration_derives_clean_detached_git_manifest_checkpoint_and
         ["git", "-C", str(repo), "checkout", "-q", "--detach", "FETCH_HEAD"],
         check=True,
     )
+    classification = json.loads(
+        (ROOT / SOURCE_CLASSIFICATION_PATH).read_text(encoding="utf-8")
+    )["files"]
+    stale_classified = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "ls-files",
+            "tests/test_chronotransport*.py",
+            "tools/bata/*chronotransport*.py",
+            "scripts/*chronotransport*.sh",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    for relative in stale_classified:
+        if relative not in classification:
+            (repo / relative).unlink()
+    for relative in classification:
+        destination = repo / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
     for relative in REQUIRED_REGISTRATION_SOURCE_PATHS:
         destination = repo / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
