@@ -381,8 +381,15 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     )
     assert "SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT" in post
     assert "SPATIAL_ZOOM_S1_PROFILE_RECOVERY" in post
+    assert "SPATIAL_ZOOM_S1_PREFLIGHT_ONLY" in post
     assert "reuse validated test evidence" in post
     assert 'cd "${TRAINING_ROOT}"' in post
+    assert 'PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"' in post
+    assert '"${ROOT}/tools/bata/profile_spatial_zoom_s1.py"' in post
+    preflight_exit = post.index("PREFLIGHT PASS")
+    test_open = post.index('tools/test.py "${BOUND_CONFIG}"')
+    profile_open = post.index('"${ROOT}/tools/bata/profile_spatial_zoom_s1.py"')
+    assert preflight_exit < test_open < profile_open
     matrix = (
         ROOT / "scripts" / "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
     ).read_text(encoding="utf-8")

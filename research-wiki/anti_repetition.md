@@ -32,6 +32,11 @@ updated: 2026-07-17
     repository from the recorded audited config path, verify its exact Git HEAD
     and config matrix, and validate the original precheck there. Never copy or
     rewrite bound configs merely to make a repair snapshot accept them.
+12. A clean repair clone does not own the training snapshot's ignored `data/`
+    mount. Repair entrypoints that instantiate the official dataset must run
+    with the historical clean training snapshot as the working directory while
+    importing the certificate-bound repair code explicitly. Do not add hidden
+    symlinks or Git excludes to make relative dataset paths appear available.
 
 ## 任务与叙事
 

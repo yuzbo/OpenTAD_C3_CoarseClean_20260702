@@ -201,3 +201,12 @@ append_only: true
   precheck identity are all revalidated. Dirty/wrong-commit/wrong-path cases
   fail closed; local S1+C3 tests are `66 passed, 1 skipped`. Deployment remains
   pending a final clean snapshot, certificate and Slurm preflight.
+- 2026-07-17 04:42+08:00: `abd1eff` passed 67 remote tests and produced recovery
+  campaign `bb56f9d0283b12c0` (certificate SHA `1a0bc133...`). Gate `1167497`
+  failed before Python because `/etc/profile` was sourced under `set -u`.
+  Gate `1167500` preserved this fix and audited all nine large checkpoints, but
+  the real preflight failed because the repair clone lacked the training
+  snapshot's ignored relative `data/` mount. Neither Job opened a test/profile.
+  Updated the formal launcher to execute repair code from the clean training
+  working directory and added a no-open `PREFLIGHT_ONLY` mode. Local regression
+  is `66 passed, 1 skipped`; a new certificate/gate is required.

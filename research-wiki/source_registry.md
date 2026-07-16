@@ -163,6 +163,15 @@ updated: 2026-07-17
   precheck reconstruction after the first clean replay failed before issuing a
   certificate. Local verification at `2026-07-17T04:05+08:00` is `66 passed,
   1 skipped`; no recovery Job or result is attributed to these commits yet.
+- Failed recovery campaign `bb56f9d0283b12c0`: certificate path under canonical
+  `d95a36db.../profile_campaigns/bb56f9d0283b12c0`, internal SHA
+  `1a0bc133d5006f31409ce9ea86a8ee70cc1e275ceef205d21aa7c9cb3334004f`.
+  Gate Job `1167497` preserved script SHA `1d437d42...` and error-log SHA
+  `3453a029...`; failure preceded Python/CUDA. Gate Job `1167500` preserved
+  script SHA `9ff999a0...`, temporary failure JSON reporting missing relative
+  `data/thumos-14/annotations/thumos_14_anno.json`, and Slurm accounting of
+  about 249.5 GB disk read. These are infrastructure-failure sources only and
+  do not authorize a test/profile result or replacement matrix.
 
 ## 外部附件
 

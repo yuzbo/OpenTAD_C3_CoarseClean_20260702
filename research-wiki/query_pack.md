@@ -10,13 +10,8 @@ max_chars: 8000
 
 - 当前唯一执行线仍是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
   ROI、scout、crop policy 或 fusion。
-- `64e71dd` / Job `1165648` 的首次门禁只因分类预训练 `fc_norm` 被 dense feature-map
-  路径绕过而 fail-closed；它不是模型断图或性能证据。
-- 修复提交 `47842427eb373fb1f440b1661971a6a231a95f67` 只允许两个精确
-  `fc_norm.{weight,bias}` 全名缺梯度，并闭合 component/global counts。独立 max 审计为
-  `PASS_FOR_REMOTE_GATE`，其 P2 已复核为 `P2_CLOSED`。
-- 新 CUDA gate Job `1165667` 已 PASS：160/224/256 均为 339 个 trainable tensors，
-  2 个审计未用、337 个 finite gradients，backbone/projection/head 均有非零梯度。
+- `64e71dd` 首次门禁只因 dense feature-map 绕过分类 `fc_norm` 而关闭；`4784242` 仅
+  白名单两个精确参数，随后 CUDA gate `1165667` 证明其余 337 个张量梯度有限且连通。
 - 正式 3x3 训练 Job `1165669-1165677` 已因共享存储耗尽整体失效；当前仍无
   sealed-test mAP、成本结果或 S1 GO/KILL，禁止进入 S2。
 - `1165669-1165677` 在首次 gate checkpoint 写入前因共享 `/data` 空间耗尽全部失败；
@@ -62,7 +57,12 @@ max_chars: 8000
   Provenance fix `341cf97` instead derives and validates the recorded clean
   `18139b9` repository, its exact commit and all three configs; dirty, wrong-HEAD
   and wrong-path sources are rejected. Local S1+C3 verification is `66 passed,
-  1 skipped`. No recovery certificate/GPU gate/replacement Job exists yet.
+  1 skipped`. Campaign `bb56f9d0283b12c0` was issued, but Gate `1167497`
+  failed before Python (`set -u`) and `1167500` failed after binding audit when
+  the repair clone lacked the training snapshot's relative `data/` mount; no
+  test/profile opened. The launcher now runs repair code from the clean training
+  cwd with explicit `PYTHONPATH` and a no-open `PREFLIGHT_ONLY` mode. A new
+  commit/certificate/gate is required; no replacement matrix Job exists.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

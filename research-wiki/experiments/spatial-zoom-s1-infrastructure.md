@@ -378,6 +378,26 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   Local S1+C3 verification is `66 passed, 1 skipped`. This remains tested
   recovery infrastructure only; a final clean repair snapshot, immutable
   recovery certificate, Slurm preflight and replacement post Job are pending.
+- Recovery-gate status at `2026-07-17T04:42+08:00`: final repair snapshot
+  `abd1effac5376a7cf13d1111193f22992ec66d25` passed remote focused tests
+  (`67 passed`) and issued campaign `bb56f9d0283b12c0`, recovery certificate
+  SHA `1a0bc133d5006f31409ce9ea86a8ee70cc1e275ceef205d21aa7c9cb3334004f`.
+  Gate Job `1167497` failed in one second before Python/CUDA because its batch
+  script enabled `set -u` before sourcing `/etc/profile`; that script and log
+  are preserved. Gate Job `1167500` then ran for `18:55`, read about 249.5 GB,
+  and successfully traversed the nine historical bindings/checkpoint hashes.
+  Its real first-cell preflight failed with `FileNotFoundError` for
+  `data/thumos-14/annotations/thumos_14_anno.json`: the clean repair clone does
+  not contain the ignored data mount owned by the clean training snapshot.
+  It did not open a test or profile and published only a failed temporary JSON.
+  Adding a hidden symlink would violate clean-checkout provenance, so the
+  launcher now runs repair Python from the historical training working
+  directory with explicit repair-root `PYTHONPATH`. A new
+  `SPATIAL_ZOOM_S1_PREFLIGHT_ONLY=1` path exits after validating existing test
+  evidence and topology, before any new test/profile. Local S1+C3 regression is
+  `66 passed, 1 skipped`. Because this changes the certified launcher, the
+  `bb56...` campaign is retained as failed infrastructure and cannot authorize
+  the matrix; a new commit, certificate and GPU gate are required.
 
 ## Decision Boundary
 
