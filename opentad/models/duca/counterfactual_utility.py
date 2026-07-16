@@ -70,6 +70,90 @@ def build_finite_hard_one_swap_candidates(
     }
 
 
+def build_local_cell_hard_flip_candidates(
+    selected_positions: torch.Tensor,
+    policy_scores: torch.Tensor,
+    valid_mask: torch.Tensor,
+    cell_starts: torch.Tensor,
+    cell_ends: torch.Tensor,
+    detector_grid_positions: torch.Tensor | None = None,
+    *,
+    max_candidates: int,
+) -> Dict[str, torch.Tensor]:
+    """Build at most one within-cell hard flip for each distinct local cell."""
+
+    if selected_positions.ndim != 2 or policy_scores.ndim != 2 or valid_mask.shape != policy_scores.shape:
+        raise ValueError("invalid local-cell counterfactual tensor shapes")
+    if cell_starts.shape != selected_positions.shape or cell_ends.shape != selected_positions.shape:
+        raise ValueError("local-cell bounds must align with selected positions [B,K]")
+    if detector_grid_positions is None:
+        detector_grid_positions = selected_positions
+    if detector_grid_positions.shape != selected_positions.shape:
+        raise ValueError("detector_grid_positions must align with selected positions [B,K]")
+    if max_candidates <= 0:
+        raise ValueError("max_candidates must be positive")
+    batch = int(policy_scores.shape[0])
+    candidates = selected_positions[:, None, :].repeat(1, max_candidates, 1)
+    candidate_positions = selected_positions.new_full((batch, max_candidates), -1)
+    replaced_slots = selected_positions.new_full((batch, max_candidates), -1)
+    candidate_cells = selected_positions.new_full((batch, max_candidates), -1)
+    candidate_valid = torch.zeros((batch, max_candidates), dtype=torch.bool, device=selected_positions.device)
+    candidate_score_delta = policy_scores.new_zeros((batch, max_candidates))
+
+    for batch_index in range(batch):
+        valid_positions = torch.nonzero(valid_mask[batch_index], as_tuple=False).flatten()
+        expected = torch.arange(valid_positions.numel(), device=valid_positions.device, dtype=valid_positions.dtype)
+        if not torch.equal(valid_positions, expected):
+            raise ValueError("local-cell counterfactuals require a contiguous valid prefix")
+        proposals = []
+        for slot_index in range(int(selected_positions.shape[1])):
+            remove = int(selected_positions[batch_index, slot_index].item())
+            start = int(cell_starts[batch_index, slot_index].item())
+            end = int(cell_ends[batch_index, slot_index].item())
+            if remove < 0:
+                if start >= 0 or end >= 0:
+                    raise ValueError("inactive local-cell slots must use -1 bounds")
+                continue
+            if not (0 <= start <= remove < end <= int(valid_positions.numel())):
+                raise ValueError("selected position must lie inside its valid local cell")
+            if end - start <= 1:
+                continue
+            local_positions = torch.arange(start, end, device=selected_positions.device)
+            alternatives = local_positions[local_positions != remove]
+            alternative_scores = policy_scores[batch_index, alternatives].detach()
+            best_local = int(torch.argmax(alternative_scores).item())
+            add = int(alternatives[best_local].item())
+            score_delta = float(
+                (policy_scores[batch_index, add] - policy_scores[batch_index, remove]).detach().float().item()
+            )
+            proposals.append((score_delta, slot_index, add))
+
+        # Prefer the closest hard competitors; cell index is the deterministic tie-break.
+        proposals.sort(key=lambda item: (-item[0], item[1]))
+        for candidate_index, (score_delta, slot_index, add) in enumerate(proposals[:max_candidates]):
+            proposal = selected_positions[batch_index].clone()
+            proposal[slot_index] = add
+            if bool(torch.any(proposal[1:] < proposal[:-1]).item()):
+                raise RuntimeError("within-cell flips must preserve temporal slot order")
+            candidates[batch_index, candidate_index] = proposal
+            candidate_positions[batch_index, candidate_index] = add
+            replaced_slots[batch_index, candidate_index] = slot_index
+            candidate_cells[batch_index, candidate_index] = slot_index
+            candidate_valid[batch_index, candidate_index] = True
+            candidate_score_delta[batch_index, candidate_index] = score_delta
+
+    return {
+        "candidate_selections": candidates,
+        "candidate_positions": candidate_positions,
+        "replaced_slots": replaced_slots,
+        "candidate_cell_indices": candidate_cells,
+        "candidate_valid": candidate_valid,
+        "candidate_score_delta_at_request": candidate_score_delta,
+        "detector_grid_positions": detector_grid_positions.detach().clone(),
+        "candidate_policy": "distinct_cells_best_within_cell_hard_flip",
+    }
+
+
 def detached_hard_one_swap_utilities(
     selected_positions: torch.Tensor,
     candidate_positions: torch.Tensor,
@@ -324,6 +408,58 @@ def signed_one_swap_proximal_loss(
         )
         return (finite_scores * 0.0).sum()
     return torch.stack(per_sample).mean()
+
+
+def local_cell_signed_logistic_loss(
+    policy_scores: torch.Tensor,
+    candidate_positions: torch.Tensor,
+    replaced_slots: torch.Tensor,
+    baseline_positions: torch.Tensor,
+    teacher_utility: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    """Match each independent within-cell score difference to signed utility.
+
+    Candidate rows are required to modify distinct cells. Utility magnitude is
+    used only as a bounded detached weight; its sign determines whether the
+    add-minus-remove score should increase or decrease.
+    """
+
+    if teacher_utility.shape != valid_mask.shape:
+        raise ValueError("teacher_utility and valid_mask must share [B,M] shape")
+    if temperature <= 0.0:
+        raise ValueError("temperature must be positive")
+    valid = valid_mask.bool()
+    utility = teacher_utility.detach().float()
+    if not torch.isfinite(utility[valid]).all():
+        raise ValueError("valid local-cell utilities must be finite")
+    for batch_index in range(int(valid.shape[0])):
+        active_slots = replaced_slots[batch_index, valid[batch_index]]
+        if active_slots.numel() != torch.unique(active_slots).numel():
+            raise ValueError("local-cell utility candidates must modify distinct cells")
+
+    pair_scores = counterfactual_pair_scores(
+        policy_scores,
+        candidate_positions,
+        replaced_slots,
+        baseline_positions,
+        valid,
+    ).float()
+    active_count = valid.sum(dim=1, keepdim=True).clamp_min(1).to(dtype=utility.dtype)
+    mean_abs = utility.abs().masked_fill(~valid, 0.0).sum(dim=1, keepdim=True) / active_count
+    scale = mean_abs.clamp_min(torch.finfo(utility.dtype).eps)
+    weight = torch.tanh(utility.abs() / scale).masked_fill(~valid, 0.0)
+    label = utility.sign()
+    per_candidate = weight * F.softplus(-label * pair_scores / float(temperature))
+    denominator = weight.sum(dim=1)
+    active = denominator > 0.0
+    if not bool(active.any().item()):
+        finite_scores = torch.where(torch.isfinite(policy_scores), policy_scores, torch.zeros_like(policy_scores))
+        return (finite_scores * 0.0).sum()
+    per_sample = per_candidate.sum(dim=1) / denominator.clamp_min(torch.finfo(weight.dtype).eps)
+    return per_sample[active].mean()
 
 
 def _average_tie_ranks(values: torch.Tensor) -> torch.Tensor:

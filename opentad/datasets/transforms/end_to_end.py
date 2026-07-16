@@ -524,6 +524,26 @@ class LoadFrames:
         positions = [int(np.clip(pos, 0, valid_len - 1)) for pos in positions]
         return np.asarray(sorted(dict.fromkeys(positions)), dtype=np.int64)
 
+    def _canonical_exact_uniform_positions(self, valid_len, target_frame_num):
+        valid_len = int(valid_len)
+        target_frame_num = min(int(target_frame_num), valid_len)
+        if valid_len <= 0 or target_frame_num <= 0:
+            return np.zeros((0,), dtype=np.int64)
+        if target_frame_num == 1:
+            return np.zeros((1,), dtype=np.int64)
+        denominator = target_frame_num - 1
+        positions = []
+        for index in range(target_frame_num):
+            numerator = index * (valid_len - 1)
+            quotient, remainder = divmod(numerator, denominator)
+            if 2 * remainder > denominator or (2 * remainder == denominator and quotient % 2 == 1):
+                quotient += 1
+            positions.append(quotient)
+        result = np.asarray(positions, dtype=np.int64)
+        if np.unique(result).size != target_frame_num:
+            raise RuntimeError("canonical exact-uniform positions must be unique")
+        return result
+
     def _value_transport_ledger(self):
         if self._bata_value_transport_ledger is None:
             self._bata_value_transport_ledger = load_value_transport_selection_ledger(
@@ -693,7 +713,7 @@ class LoadFrames:
             else:
                 masks = torch.ones(window_size).bool()
 
-        elif self.method == "random_fixed_subsample":
+        elif self.method in {"random_fixed_subsample", "exact_uniform_fixed_subsample"}:
             assert results["snippet_stride"] >= self.scale_factor, "snippet_stride should be larger than scale_factor"
             assert (
                 results["snippet_stride"] % self.scale_factor == 0
@@ -739,11 +759,16 @@ class LoadFrames:
             if valid_len <= 0:
                 raise RuntimeError("random_fixed_subsample received an empty dense window")
 
-            sample_key = (
-                f"{results.get('video_name', 'unknown')}|random_fixed|"
-                f"{int(dense_window[0])}|{int(dense_window[-1])}|{valid_len}|{frame_num}"
-            )
-            keep_positions = self._select_random_fixed_positions(valid_len, frame_num, sample_key)
+            if self.method == "exact_uniform_fixed_subsample":
+                keep_positions = self._canonical_exact_uniform_positions(valid_len, frame_num)
+                results["fixed_subsample_policy"] = "canonical_round_endpoint_exact_uniform"
+            else:
+                sample_key = (
+                    f"{results.get('video_name', 'unknown')}|random_fixed|"
+                    f"{int(dense_window[0])}|{int(dense_window[-1])}|{valid_len}|{frame_num}"
+                )
+                keep_positions = self._select_random_fixed_positions(valid_len, frame_num, sample_key)
+                results["fixed_subsample_policy"] = "deterministic_sample_key_random"
             if keep_positions.size == 0:
                 keep_positions = np.array([0], dtype=np.int64)
 

@@ -139,7 +139,7 @@ def build_transition_descriptors(
 class DucaTransitionUtilityScorer(nn.Module):
     """One shared utility head for auxiliary transition and policy routes."""
 
-    def __init__(self, hidden_dim: int, scorer_hidden_dim: int) -> None:
+    def __init__(self, hidden_dim: int, scorer_hidden_dim: int, *, zero_init_output: bool = False) -> None:
         super().__init__()
         hidden_dim = int(hidden_dim)
         scorer_hidden_dim = int(scorer_hidden_dim)
@@ -148,12 +148,16 @@ class DucaTransitionUtilityScorer(nn.Module):
         self.hidden_dim = hidden_dim
         self.input_dim = 2 * hidden_dim + 5
         self.scorer_hidden_dim = scorer_hidden_dim
+        self.zero_init_output = bool(zero_init_output)
         self.net = nn.Sequential(
             nn.LayerNorm(self.input_dim),
             nn.Linear(self.input_dim, scorer_hidden_dim),
             nn.GELU(),
             nn.Linear(scorer_hidden_dim, 1),
         )
+        if self.zero_init_output:
+            nn.init.zeros_(self.net[-1].weight)
+            nn.init.zeros_(self.net[-1].bias)
 
     def forward(self, descriptors: torch.Tensor) -> torch.Tensor:
         if descriptors.ndim != 3 or int(descriptors.shape[-1]) != self.input_dim:

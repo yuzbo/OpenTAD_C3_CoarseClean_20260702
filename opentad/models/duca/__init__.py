@@ -15,15 +15,23 @@ from .acquisition import (
     validate_actionness_provenance,
 )
 from .counterfactual_utility import (
+    build_local_cell_hard_flip_candidates,
     build_swap_incidence_matrix,
     counterfactual_utility_distillation_loss,
     detached_hard_one_swap_utilities,
     gradient_utility_alignment,
+    local_cell_signed_logistic_loss,
     score_space_utility_alignment,
     signed_one_swap_proximal_loss,
 )
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
-from .structured_selection import StructuredSelectionOutput, global_structured_topk
+from .structured_selection import (
+    LocalCellSelectionOutput,
+    StructuredSelectionOutput,
+    exact_uniform_cell_bounds,
+    global_structured_topk,
+    local_cell_deformation,
+)
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaTransitionUtilityScorer,
@@ -43,6 +51,7 @@ __all__ = [
     "PrefixMarginalUtilityBudgetController",
     "SparseTemporalGrid",
     "StructuredSelectionOutput",
+    "LocalCellSelectionOutput",
     "ASFORMER_ENCODER_HIDDEN_KIND",
     "DucaTransitionUtilityScorer",
     "balanced_binary_actionness_loss",
@@ -51,15 +60,19 @@ __all__ = [
     "duca_forward_test",
     "duca_forward_train",
     "duca_losses",
+    "build_local_cell_hard_flip_candidates",
     "build_swap_incidence_matrix",
     "counterfactual_utility_distillation_loss",
     "detached_hard_one_swap_utilities",
     "gradient_utility_alignment",
+    "local_cell_signed_logistic_loss",
     "score_space_utility_alignment",
     "signed_one_swap_proximal_loss",
     "gather_selected_observations",
     "hard_topk_st",
     "global_structured_topk",
+    "exact_uniform_cell_bounds",
+    "local_cell_deformation",
     "build_transition_descriptors",
     "continuous_policy_logits",
     "local_boundary_coverage_loss",

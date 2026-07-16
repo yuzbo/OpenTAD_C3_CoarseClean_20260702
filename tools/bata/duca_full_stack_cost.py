@@ -347,7 +347,6 @@ def _require_comparable(baseline: Mapping[str, Any], candidate: Mapping[str, Any
         "host_fingerprint",
         "software_fingerprint",
         "config_commit",
-        "dataset_fingerprint",
         "inference_fingerprint",
         "detector_stack_fingerprint",
         "batch_size",
@@ -364,6 +363,14 @@ def _require_comparable(baseline: Mapping[str, Any], candidate: Mapping[str, Any
             raise ValueError(
                 f"cost profiles have incompatible {key}: "
                 f"baseline={baseline.get(key)!r}, candidate={candidate.get(key)!r}"
+            )
+    if baseline.get("dataset_fingerprint") != candidate.get("dataset_fingerprint"):
+        baseline_source = baseline.get("source_dataset_fingerprint")
+        candidate_source = candidate.get("source_dataset_fingerprint")
+        if not baseline_source or baseline_source != candidate_source:
+            raise ValueError(
+                "cost profiles use different dataset pipelines without a shared "
+                "source_dataset_fingerprint"
             )
 
 

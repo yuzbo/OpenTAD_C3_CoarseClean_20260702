@@ -141,6 +141,23 @@ def test_compare_profiles_enforces_protocol_and_hardware_and_reports_cost_gates(
         compare_profile_summaries(baseline, dirty)
 
 
+def test_compare_profiles_allows_different_sampling_pipelines_for_same_source_dataset() -> None:
+    baseline_meta = _metadata("bare-uniform384")
+    candidate_meta = _metadata("cellcf384")
+    baseline_meta["dataset_fingerprint"] = "canonical-predecode-384"
+    candidate_meta["dataset_fingerprint"] = "decode-768-then-cellcf"
+    baseline_meta["source_dataset_fingerprint"] = "thumos14-test-source"
+    candidate_meta["source_dataset_fingerprint"] = "thumos14-test-source"
+    baseline = build_profile_summary([_sample(1.0)], metadata=baseline_meta)
+    candidate = build_profile_summary([_sample(1.1)], metadata=candidate_meta)
+
+    assert compare_profile_summaries(baseline, candidate)["comparable"] is True
+
+    candidate["source_dataset_fingerprint"] = "different-source"
+    with pytest.raises(ValueError, match="source_dataset_fingerprint"):
+        compare_profile_summaries(baseline, candidate)
+
+
 def test_cost_matrix_writes_raw_comparisons_and_gate_table(tmp_path) -> None:
     baseline = build_profile_summary([_sample(2.0, selected_count=768)], metadata=_metadata("dense768"))
     fixed384 = build_profile_summary([_sample(1.0)], metadata=_metadata("duca-fixed384"))

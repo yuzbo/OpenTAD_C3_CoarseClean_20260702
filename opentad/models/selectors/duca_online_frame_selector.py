@@ -11,9 +11,11 @@ from ..builder import SELECTORS
 from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
+    build_local_cell_hard_flip_candidates,
     build_swap_incidence_matrix,
     counterfactual_pair_scores,
     counterfactual_utility_distillation_loss,
+    local_cell_signed_logistic_loss,
     score_space_utility_alignment,
     signed_one_swap_proximal_loss,
 )
@@ -261,7 +263,7 @@ def _add_structured_zero_forward_gradient_path(
 
 @SELECTORS.register_module()
 class DucaOnlineFrameSelector(nn.Module):
-    """Registry-buildable online DUCA selector for OpenTAD frame_selector hooks."""
+    """Registry-buildable full-window DUCA selector for offline TAD."""
 
     def __init__(
         self,
@@ -276,6 +278,7 @@ class DucaOnlineFrameSelector(nn.Module):
         max_radius: int = 16,
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
+        local_cell_force_exact_uniform: bool = False,
         inference_policy_alpha: float = 1.0,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
@@ -306,6 +309,7 @@ class DucaOnlineFrameSelector(nn.Module):
         counterfactual_utility_distillation_weight: float = 0.0,
         counterfactual_utility_temperature: float = 1.0,
         counterfactual_max_candidates: int = 4,
+        counterfactual_objective: str = "global_gram_proximal",
         require_counterfactual_utility_teacher: bool = False,
         coordinate_space: str = SELECTED_AXIS,
         detector_output_coordinate_space: str = SELECTED_AXIS,
@@ -357,6 +361,7 @@ class DucaOnlineFrameSelector(nn.Module):
         self.max_radius = int(max_radius)
         self.acquisition_policy = str(acquisition_policy)
         self.structured_temperature = float(structured_temperature)
+        self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
         self.inference_policy_alpha = float(inference_policy_alpha)
         if not 0.0 <= self.inference_policy_alpha <= 1.0:
             raise ValueError("inference_policy_alpha must lie in [0,1]")
@@ -407,6 +412,7 @@ class DucaOnlineFrameSelector(nn.Module):
         self.counterfactual_utility_distillation_weight = float(counterfactual_utility_distillation_weight)
         self.counterfactual_utility_temperature = float(counterfactual_utility_temperature)
         self.counterfactual_max_candidates = int(counterfactual_max_candidates)
+        self.counterfactual_objective = str(counterfactual_objective)
         self.require_counterfactual_utility_teacher = bool(require_counterfactual_utility_teacher)
         if self.counterfactual_utility_distillation_weight < 0.0:
             raise ValueError("counterfactual_utility_distillation_weight must be non-negative")
@@ -414,6 +420,10 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("counterfactual_utility_temperature must be positive")
         if self.counterfactual_max_candidates <= 0:
             raise ValueError("counterfactual_max_candidates must be positive")
+        if self.counterfactual_objective not in {"global_gram_proximal", "local_cell_signed_logistic"}:
+            raise ValueError(
+                "counterfactual_objective must be global_gram_proximal or local_cell_signed_logistic"
+            )
         if self.require_counterfactual_utility_teacher and self.counterfactual_utility_distillation_weight <= 0.0:
             raise ValueError("required counterfactual utility teacher needs a positive distillation weight")
         self.selected_positions_coordinate = str(coordinate_space)
@@ -448,13 +458,14 @@ class DucaOnlineFrameSelector(nn.Module):
         self._pending_dynamic_budget_dual_mean: Optional[torch.Tensor] = None
         self._pending_dynamic_budget_dual_summary: Optional[dict[str, Any]] = None
         if self.detector_gradient_mode not in {
+            "none",
             "st_sparse_gather",
             "st_sparse_gather_soft_context",
             "soft_to_hard_resample",
             "structured_zero_forward",
         }:
             raise ValueError(
-                "detector_gradient_mode must be st_sparse_gather, "
+                "detector_gradient_mode must be none, st_sparse_gather, "
                 "st_sparse_gather_soft_context, soft_to_hard_resample, or structured_zero_forward"
             )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
@@ -481,14 +492,19 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.selector_variant == "transition_only":
             if self.budget_mode != "fixed":
                 raise ValueError("transition_only currently supports only a fixed exact budget")
-            if self.acquisition_policy != "global_structured_topk":
-                raise ValueError("transition_only requires global_structured_topk")
-            if self.max_unselected_hole is None:
-                raise ValueError("transition_only requires max_unselected_hole")
+            if self.acquisition_policy not in {"global_structured_topk", "local_cell_deformation"}:
+                raise ValueError("transition_only requires a structured exact-budget acquisition policy")
+            if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
+                raise ValueError("global transition_only requires max_unselected_hole")
             if not self.use_coarse_hidden_features:
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if not self.forbid_external_actionness:
                 raise ValueError("transition_only requires an in-graph coarse probe, not external actionness")
+        if self.counterfactual_objective == "local_cell_signed_logistic":
+            if self.acquisition_policy != "local_cell_deformation":
+                raise ValueError("local-cell counterfactual utility requires local_cell_deformation")
+            if self.local_cell_force_exact_uniform and self.counterfactual_utility_distillation_weight > 0.0:
+                raise ValueError("the exact-uniform control must not request counterfactual utility")
 
         actionness_source = None
         self.raw_actionness_source = None
@@ -559,6 +575,7 @@ class DucaOnlineFrameSelector(nn.Module):
             max_radius=self.max_radius,
             acquisition_policy=self.acquisition_policy,
             structured_temperature=self.structured_temperature,
+            local_cell_force_exact_uniform=self.local_cell_force_exact_uniform,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -596,6 +613,9 @@ class DucaOnlineFrameSelector(nn.Module):
             "last_selected_positions": copy.deepcopy(
                 getattr(self, "_last_selected_positions", None)
             ),
+            "last_detector_grid_positions": copy.deepcopy(
+                getattr(self, "_last_detector_grid_positions", None)
+            ),
             "pending_loss_schedule_advance": bool(
                 self._pending_loss_schedule_advance
             ),
@@ -625,6 +645,10 @@ class DucaOnlineFrameSelector(nn.Module):
         self._restore_optional_replay_attribute(
             "_last_selected_positions",
             snapshot.get("last_selected_positions"),
+        )
+        self._restore_optional_replay_attribute(
+            "_last_detector_grid_positions",
+            snapshot.get("last_detector_grid_positions"),
         )
         self._pending_loss_schedule_advance = bool(
             snapshot["pending_loss_schedule_advance"]
@@ -755,6 +779,8 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.require_counterfactual_utility_teacher and teacher_utility is not None:
             raise RuntimeError("integrated counterfactual teacher forbids externally supplied teacher_utility")
         if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is not None:
+            if self.counterfactual_objective == "local_cell_signed_logistic":
+                raise RuntimeError("local-cell utility requires the integrated hard-flip detector teacher")
             selector_losses["counterfactual_utility_distillation_loss"] = (
                     counterfactual_utility_distillation_loss(
                         outputs["selector_outputs"]["center_scores"],
@@ -771,13 +797,28 @@ class DucaOnlineFrameSelector(nn.Module):
         counterfactual_request = None
         if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is None:
             positions = outputs["selector_outputs"]["grid"].selected_positions
-            counterfactual_request = build_finite_hard_one_swap_candidates(
-                positions,
-                outputs["selector_outputs"]["center_scores"],
-                outputs["selector_outputs"]["valid_mask"],
-                max_candidates=self.counterfactual_max_candidates,
-                max_unselected_hole=self.max_unselected_hole,
-            )
+            if self.counterfactual_objective == "local_cell_signed_logistic":
+                cell_starts = outputs["selector_outputs"].get("local_cell_starts")
+                cell_ends = outputs["selector_outputs"].get("local_cell_ends")
+                if cell_starts is None or cell_ends is None:
+                    raise RuntimeError("local-cell counterfactual teacher requires decoded cell bounds")
+                counterfactual_request = build_local_cell_hard_flip_candidates(
+                    positions,
+                    outputs["selector_outputs"]["center_scores"],
+                    outputs["selector_outputs"]["valid_mask"],
+                    cell_starts,
+                    cell_ends,
+                    outputs["selector_outputs"].get("detector_grid_positions"),
+                    max_candidates=self.counterfactual_max_candidates,
+                )
+            else:
+                counterfactual_request = build_finite_hard_one_swap_candidates(
+                    positions,
+                    outputs["selector_outputs"]["center_scores"],
+                    outputs["selector_outputs"]["valid_mask"],
+                    max_candidates=self.counterfactual_max_candidates,
+                    max_unselected_hole=self.max_unselected_hole,
+                )
         self._record_pending_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
@@ -811,33 +852,52 @@ class DucaOnlineFrameSelector(nn.Module):
             baseline_positions,
             valid,
         )
-        swap_incidence = build_swap_incidence_matrix(
-            center_scores,
-            candidate_positions,
-            replaced_slots,
-            baseline_positions,
-            valid,
-        )
-        loss = signed_one_swap_proximal_loss(
-            center_scores,
-            swap_incidence,
-            candidate_utility.detach(),
-            valid,
-            temperature=self.counterfactual_utility_temperature,
-        ) * self.counterfactual_utility_distillation_weight
-        try:
-            gradient_alignment = score_space_utility_alignment(
+        if self.counterfactual_objective == "local_cell_signed_logistic":
+            loss = local_cell_signed_logistic_loss(
                 center_scores,
-                loss,
+                candidate_positions,
+                replaced_slots,
+                baseline_positions,
+                candidate_utility.detach(),
+                valid,
+                temperature=self.counterfactual_utility_temperature,
+            ) * self.counterfactual_utility_distillation_weight
+            distillation_loss_kind = "distinct_local_cell_weighted_signed_logistic"
+            gradient_alignment = {
+                "status": "not_computed_in_training_forward",
+                "spearman": 0.0,
+                "sign_agreement": 0.0,
+            }
+            alignment_available = False
+        else:
+            swap_incidence = build_swap_incidence_matrix(
+                center_scores,
+                candidate_positions,
+                replaced_slots,
+                baseline_positions,
+                valid,
+            )
+            loss = signed_one_swap_proximal_loss(
+                center_scores,
                 swap_incidence,
                 candidate_utility.detach(),
                 valid,
                 temperature=self.counterfactual_utility_temperature,
-            )
-            alignment_available = True
-        except ValueError:
-            gradient_alignment = {"spearman": 0.0, "sign_agreement": 0.0}
-            alignment_available = False
+            ) * self.counterfactual_utility_distillation_weight
+            distillation_loss_kind = "swap_gram_whitened_signed_proximal"
+            try:
+                gradient_alignment = score_space_utility_alignment(
+                    center_scores,
+                    loss,
+                    swap_incidence,
+                    candidate_utility.detach(),
+                    valid,
+                    temperature=self.counterfactual_utility_temperature,
+                )
+                alignment_available = True
+            except ValueError:
+                gradient_alignment = {"spearman": 0.0, "sign_agreement": 0.0}
+                alignment_available = False
         with torch.no_grad():
             student_pair = pair_scores[valid].float()
             utility = candidate_utility.detach()[valid].float()
@@ -855,6 +915,9 @@ class DucaOnlineFrameSelector(nn.Module):
             else:
                 spearman = 0.0
             informative = (student_pair != 0) & (utility != 0)
+            distinct_utility = bool(
+                utility.numel() >= 2 and torch.unique(utility).numel() >= 2
+            )
             sign = (
                 float(((student_pair[informative] * utility[informative]) > 0).float().mean().item())
                 if informative.any() else 0.0
@@ -883,13 +946,17 @@ class DucaOnlineFrameSelector(nn.Module):
                 else:
                     utility_consistency_max_abs_error = 0.0
             self.last_counterfactual_summary = {
-                "teacher_kind": "detached_hard_one_swap_official_actionformer_cls_plus_reg",
+                "teacher_kind": (
+                    "detached_distinct_local_cell_hard_flip_official_actionformer_cls_plus_reg"
+                    if self.counterfactual_objective == "local_cell_signed_logistic"
+                    else "detached_hard_one_swap_official_actionformer_cls_plus_reg"
+                ),
                 "candidate_count": int(candidate_valid.sum().item()),
                 "direct_detector_gradient": False,
                 "sign_agreement": sign,
                 "spearman": spearman,
                 "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
-                "distillation_loss_kind": "swap_gram_whitened_signed_proximal",
+                "distillation_loss_kind": distillation_loss_kind,
                 "no_op_teacher_utility": 0.0,
                 "no_op_student_score_delta": 0.0,
                 "no_op_role": "fixed_score_delta_reference_not_competition_class",
@@ -900,12 +967,14 @@ class DucaOnlineFrameSelector(nn.Module):
                 "student_pair_score_values": [float(value) for value in student_pair.cpu().tolist()],
                 "candidate_add_positions": [int(value) for value in candidate_positions[valid].cpu().tolist()],
                 "candidate_remove_positions": [int(value) for value in removed_positions[valid].cpu().tolist()],
+                "candidate_cell_indices": [int(value) for value in replaced_slots[valid].cpu().tolist()],
                 "baseline_detector_loss_values": baseline_values,
                 "candidate_detector_loss_values": candidate_loss_values,
                 "utility_consistency_max_abs_error": utility_consistency_max_abs_error,
                 "alignment_kind": "score_space_pair_direction_vs_signed_detector_swap_gain",
                 "distillation_gradient_alignment": gradient_alignment,
-                "distillation_gradient_alignment_available": alignment_available,
+                "distillation_gradient_alignment_available": bool(alignment_available and distinct_utility),
+                "utility_alignment_informative": distinct_utility,
             }
         return loss
 
@@ -1368,7 +1437,16 @@ class DucaOnlineFrameSelector(nn.Module):
             actionness_source_name = online_actionness["source_name"]
         validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
         positions = grid.selected_positions.to(device=inputs.device)
+        detector_grid_positions = scores.get("detector_grid_positions")
+        if detector_grid_positions is None:
+            detector_grid_positions = positions
+        detector_grid_positions = detector_grid_positions.to(device=inputs.device, dtype=torch.long)
+        if detector_grid_positions.shape != positions.shape:
+            raise ValueError("detector_grid_positions must align with acquisition positions")
+        if not torch.equal(detector_grid_positions >= 0, positions >= 0):
+            raise ValueError("detector-grid and acquisition slot masks must be identical")
         self._last_selected_positions = positions.detach()
+        self._last_detector_grid_positions = detector_grid_positions.detach()
         slot_mask = positions >= 0
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_gathered = _gather_time(inputs, positions, slot_mask)
@@ -1402,7 +1480,7 @@ class DucaOnlineFrameSelector(nn.Module):
         elif self.detector_gradient_mode == "structured_zero_forward":
             assignment = scores.get("structured_soft_slot_assignment")
             if assignment is None:
-                raise ValueError("structured_zero_forward requires global_structured_topk slot marginals")
+                raise ValueError("structured_zero_forward requires structured slot marginals")
             hard_selected = _add_structured_zero_forward_gradient_path(
                 hard_selected,
                 inputs,
@@ -1412,7 +1490,7 @@ class DucaOnlineFrameSelector(nn.Module):
             )
         bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
         hard_slot_weights = slot_mask.to(dtype=scores["center_scores"].dtype)
-        if self.detector_gradient_mode == "structured_zero_forward":
+        if self.detector_gradient_mode in {"none", "structured_zero_forward"}:
             st_weights = hard_slot_weights
         else:
             st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
@@ -1507,6 +1585,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "metas": self._write_metas(
                 metas,
                 grid,
+                detector_grid_positions=detector_grid_positions,
                 actionness_source_name=actionness_source_name,
                 compute_profile=compute_profile,
             ),
@@ -1875,6 +1954,7 @@ class DucaOnlineFrameSelector(nn.Module):
         metas,
         grid,
         *,
+        detector_grid_positions: Optional[torch.Tensor] = None,
         actionness_source_name: str,
         compute_profile: Optional[Mapping[str, Any]] = None,
     ) -> list[dict[str, Any]]:
@@ -1886,20 +1966,33 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("metas length must match batch size")
             out = [dict(meta) for meta in metas]
         positions_cpu = grid.selected_positions.detach().cpu().long()
+        if detector_grid_positions is None:
+            detector_grid_positions = grid.selected_positions
+        if detector_grid_positions.shape != grid.selected_positions.shape:
+            raise ValueError("detector_grid_positions must align with acquisition positions")
+        detector_positions_cpu = detector_grid_positions.detach().cpu().long()
         valid_lens = grid.valid_len.detach().cpu().long()
         requested_budget = grid.requested_budget.detach().cpu().long()
         effective_budget = grid.effective_budget.detach().cpu().long()
         for idx, meta in enumerate(out):
             positions = [int(item) for item in positions_cpu[idx].tolist() if int(item) >= 0]
+            detector_positions = [
+                int(item) for item in detector_positions_cpu[idx].tolist() if int(item) >= 0
+            ]
+            if len(detector_positions) != len(positions):
+                raise ValueError("detector-grid and acquisition positions must have the same active K")
             dense_valid_len = int(valid_lens[idx].item())
             remap = {
                 "source": SELECTED_AXIS,
                 "target": TRUE_TIME_AXIS,
-                "selected_to_original": {int(axis): int(pos) for axis, pos in enumerate(positions)},
-                "original_to_selected": {int(pos): int(axis) for axis, pos in enumerate(positions)},
-                "selected_axis_to_true_time_dense_index": positions,
+                "selected_to_original": {int(axis): int(pos) for axis, pos in enumerate(detector_positions)},
+                "original_to_selected": {int(pos): int(axis) for axis, pos in enumerate(detector_positions)},
+                "selected_axis_to_true_time_dense_index": detector_positions,
+                "acquisition_positions": positions,
             }
             meta["duca_online_selected_positions"] = positions
+            meta["duca_acquisition_positions"] = positions
+            meta["duca_detector_grid_positions"] = detector_positions
             meta["duca_online_selected_positions_unit"] = self.selected_positions_unit
             meta["duca_online_selected_mask"] = [True] * len(positions)
             meta["duca_online_budget"] = int(grid.budget)
@@ -1918,8 +2011,8 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_online_coordinate"] = grid.coordinate
             meta["detector_output_coordinate_space"] = self.detector_output_coordinate_space
             meta["detector_prediction_inverse_map_required"] = self.detector_output_coordinate_space == SELECTED_AXIS
-            meta["selected_axis_to_true_time_dense_index"] = positions
-            meta["truetime_selected_positions"] = positions
+            meta["selected_axis_to_true_time_dense_index"] = detector_positions
+            meta["truetime_selected_positions"] = detector_positions
             meta["truetime_dense_len"] = int(grid.original_length)
             meta["truetime_dense_valid_len"] = dense_valid_len
             meta["irregular_selected_positions"] = positions

@@ -24,6 +24,7 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
+from tools.bata import duca_cellcf_training
 from tools.bata.duca_p0_evaluation import (
     evaluation_config_sha256,
     normalize_evaluation_config,
@@ -55,6 +56,12 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
+    cellcf_formal = str(cfg.workflow.get("formal_protocol", "")) == "duca_cellcf_v1"
+    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
+    if cellcf_formal:
+        duca_cellcf_training.assert_safe_cfg_options(
+            cfg, args.cfg_options, entrypoint="tools/test.py"
+        )
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
@@ -65,6 +72,23 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
+    if cellcf_formal:
+        expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
+        observed_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
+        ).strip()
+        if expected_commit != observed_commit:
+            raise RuntimeError("formal CellCF evaluation checkout differs from DUCA_EXPECTED_COMMIT")
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=path,
+            text=True,
+            encoding="utf-8",
+        ).strip()
+        if status:
+            raise RuntimeError("formal CellCF evaluation requires a clean exact-commit checkout")
+        if args.world_size != 1 or args.not_eval:
+            raise RuntimeError("formal CellCF evaluation requires one process and official mAP evaluation")
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
@@ -72,6 +96,11 @@ def main():
     # set random seed, create work_dir
     set_seed(args.seed)
     cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
+    runtime_config_sha256 = _canonical_sha256(cfg.to_dict())
+    if cellcf_formal:
+        expected_runtime = os.environ.get("DUCA_CELLCF_EVAL_RUNTIME_CONFIG_SHA256")
+        if expected_runtime != runtime_config_sha256:
+            raise RuntimeError("formal CellCF evaluation effective config differs from the frozen launch")
     if args.rank == 0:
         create_folder(cfg.work_dir)
 
@@ -168,14 +197,21 @@ def main():
         evaluator_identity = official_evaluator_identity()
         if evaluation_summary.get("evaluator") != evaluator_identity:
             raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
+        evaluation_schema = (
+            "duca_cellcf_terminal_evaluation_v1"
+            if str(cfg.workflow.get("formal_protocol", "")) == "duca_cellcf_v1"
+            else "duca_p0_terminal_evaluation_v3"
+        )
         payload = {
-            "schema_version": "duca_p0_terminal_evaluation_v3",
+            "schema_version": evaluation_schema,
             "git_commit": subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], cwd=path, text=True
             ).strip(),
             "task": "offline_temporal_action_detection",
             "config_path": os.path.abspath(args.config),
             "config_sha256": sha256_file(args.config),
+            "resolved_config_sha256": source_resolved_config_sha256,
+            "runtime_config_sha256": runtime_config_sha256,
             "checkpoint_path": os.path.abspath(checkpoint_path),
             "checkpoint_sha256": sha256_file(checkpoint_path),
             "checkpoint_epoch": checkpoint_epoch,

@@ -133,6 +133,10 @@ def train_one_epoch(
         ):
             update_audit.setdefault(key, 0)
         update_audit.setdefault("max_amp_retries_observed", 0)
+        if collect_training_probe:
+            update_audit.setdefault("replay_state_restorations", 0)
+            update_audit.setdefault("attempt_batch_indices", [])
+            update_audit.setdefault("amp_scale_history", [])
     use_amp = False if scaler is None else True
     probe_state = _new_training_probe_state(model) if collect_training_probe else None
 
@@ -187,7 +191,10 @@ def train_one_epoch(
 
             if probe_state is not None:
                 _record_training_probe_backward(probe_state, model, losses["cost"])
-            if update_audit is not None:
+            if update_audit is not None and "attempt_batch_indices" in update_audit:
+                update_audit["optimizer_attempts"] += 1
+                update_audit["attempt_batch_indices"].append(int(iter_idx))
+            elif update_audit is not None:
                 update_audit["optimizer_attempts"] += 1
 
             optimizer_step_ran = True
@@ -195,7 +202,18 @@ def train_one_epoch(
                 scale_before_step = float(scaler.get_scale())
                 scaler.step(optimizer)
                 scaler.update()
-                optimizer_step_ran = float(scaler.get_scale()) >= scale_before_step
+                scale_after_step = float(scaler.get_scale())
+                optimizer_step_ran = scale_after_step >= scale_before_step
+                if update_audit is not None and "amp_scale_history" in update_audit:
+                    update_audit["amp_scale_history"].append(
+                        {
+                            "batch_index": int(iter_idx),
+                            "retry_index": int(retry_count),
+                            "before": scale_before_step,
+                            "after": scale_after_step,
+                            "optimizer_step_ran": bool(optimizer_step_ran),
+                        }
+                    )
             else:
                 optimizer.step()
 
@@ -210,6 +228,8 @@ def train_one_epoch(
                 _restore_model_buffers(model, model_buffer_state)
             if custom_replay_state is not None:
                 _restore_custom_replay_state(model, custom_replay_state)
+            if update_audit is not None and "replay_state_restorations" in update_audit:
+                update_audit["replay_state_restorations"] += 1
             retry_count += 1
             if update_audit is not None:
                 update_audit["max_amp_retries_observed"] = max(
@@ -363,7 +383,15 @@ def _selector_probe_snapshot(model):
     if isinstance(counterfactual, dict):
         snapshot["counterfactual"] = {
             key: _probe_jsonable(counterfactual[key])
-            for key in ("candidate_count", "finite", "teacher_kind")
+            for key in (
+                "candidate_count",
+                "finite",
+                "teacher_kind",
+                "distillation_loss_kind",
+                "candidate_utility_values",
+                "candidate_cell_indices",
+                "utility_alignment_informative",
+            )
             if key in counterfactual
         }
     return snapshot

@@ -13,7 +13,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
-from .structured_selection import exact_uniform_reference_scores, global_structured_topk
+from .structured_selection import (
+    exact_uniform_reference_scores,
+    global_structured_topk,
+    local_cell_deformation,
+)
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaTransitionUtilityScorer,
@@ -1047,6 +1051,7 @@ class DucaAcquisitionAdapter(nn.Module):
         max_radius: int = 16,
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
+        local_cell_force_exact_uniform: bool = False,
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
@@ -1088,9 +1093,17 @@ class DucaAcquisitionAdapter(nn.Module):
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
         self.acquisition_policy = str(acquisition_policy)
-        if self.acquisition_policy not in {"legacy_center_radius", "global_structured_topk"}:
-            raise ValueError("acquisition_policy must be legacy_center_radius or global_structured_topk")
+        if self.acquisition_policy not in {
+            "legacy_center_radius",
+            "global_structured_topk",
+            "local_cell_deformation",
+        }:
+            raise ValueError(
+                "acquisition_policy must be legacy_center_radius, global_structured_topk, "
+                "or local_cell_deformation"
+            )
         self.structured_temperature = float(structured_temperature)
+        self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
         if not math.isfinite(self.structured_temperature) or self.structured_temperature <= 0.0:
             raise ValueError("structured_temperature must be finite and positive")
         if self.budget <= 0:
@@ -1122,8 +1135,8 @@ class DucaAcquisitionAdapter(nn.Module):
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
         self.hard_max_gap_repair = bool(hard_max_gap_repair)
-        if self.acquisition_policy == "global_structured_topk" and self.hard_max_gap_repair:
-            raise ValueError("global_structured_topk encodes max-gap in the policy and forbids hard repair")
+        if self.acquisition_policy in {"global_structured_topk", "local_cell_deformation"} and self.hard_max_gap_repair:
+            raise ValueError("structured acquisition policies encode coverage and forbid hard repair")
         self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
         self.profile_runtime = bool(profile_runtime)
         self.profile_sync_cuda = bool(profile_sync_cuda)
@@ -1134,10 +1147,10 @@ class DucaAcquisitionAdapter(nn.Module):
         if self.selector_variant == "transition_only":
             if self.dynamic_budget:
                 raise ValueError("transition_only is intentionally fixed-budget until its fixed policy is validated")
-            if self.acquisition_policy != "global_structured_topk":
-                raise ValueError("transition_only requires global_structured_topk")
-            if self.max_unselected_hole is None:
-                raise ValueError("transition_only requires an explicit max_unselected_hole")
+            if self.acquisition_policy not in {"global_structured_topk", "local_cell_deformation"}:
+                raise ValueError("transition_only requires a structured exact-budget acquisition policy")
+            if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
+                raise ValueError("global transition_only requires an explicit max_unselected_hole")
             if self.coarse_hidden_dim <= 0:
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if int(hidden_dim) <= 0:
@@ -1152,6 +1165,7 @@ class DucaAcquisitionAdapter(nn.Module):
             self.transition_scorer = DucaTransitionUtilityScorer(
                 hidden_dim=self.coarse_hidden_dim,
                 scorer_hidden_dim=int(hidden_dim),
+                zero_init_output=self.acquisition_policy == "local_cell_deformation",
             )
             selector_feature_dim = int(self.transition_scorer.input_dim)
         elif self.feature_dim is None:
@@ -1387,6 +1401,10 @@ class DucaAcquisitionAdapter(nn.Module):
             soft_coverage_macs = dp_states * (3 if self.training else 1)
             soft_coverage_flops = soft_coverage_macs * 8
             structured_complexity = "O(B*T*K*(G+1)) exact-K/max-gap dynamic program"
+        elif self.acquisition_policy == "local_cell_deformation":
+            soft_coverage_macs = batch_size * temporal_len
+            soft_coverage_flops = soft_coverage_macs * 8
+            structured_complexity = "O(B*T) one-categorical-choice-per-exact-uniform-cell"
         else:
             soft_coverage_macs = batch_size * temporal_len * temporal_len
             soft_coverage_flops = soft_coverage_macs * 8
@@ -1765,6 +1783,108 @@ class DucaAcquisitionAdapter(nn.Module):
             "policy_mix_alpha": float(policy_mix_alpha),
         }
 
+    def _decode_local_cell(
+        self,
+        center_scores: torch.Tensor,
+        valid_mask: torch.Tensor,
+        budgets: torch.Tensor,
+        *,
+        stable_selection: bool,
+    ) -> Dict[str, Any]:
+        batch, temporal_len = center_scores.shape
+        max_slots = int(self.budget)
+        position_rows = []
+        dense_masks = []
+        selection_st_rows = []
+        soft_rows = []
+        slot_rows = []
+        effective_rows = []
+        policy_rows = []
+        anchor_rows = []
+        cell_start_rows = []
+        cell_end_rows = []
+        max_hole_rows = []
+        force_uniform = bool(stable_selection or self.local_cell_force_exact_uniform)
+        for batch_idx in range(batch):
+            valid_positions = torch.nonzero(valid_mask[batch_idx], as_tuple=False).flatten()
+            valid_count = int(valid_positions.numel())
+            if valid_count <= 0:
+                raise ValueError("local_cell_deformation requires at least one valid observation")
+            expected = torch.arange(valid_count, device=valid_positions.device, dtype=valid_positions.dtype)
+            if not torch.equal(valid_positions, expected):
+                raise ValueError("local_cell_deformation requires a contiguous valid prefix")
+            effective_k = min(int(budgets[batch_idx].item()), valid_count)
+            policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
+            decoded = local_cell_deformation(
+                policy_scores,
+                k=effective_k,
+                temperature=self.structured_temperature,
+                training=self.training,
+                force_exact_uniform=force_uniform,
+            )
+            if self.max_unselected_hole is not None and decoded.max_unselected_hole > self.max_unselected_hole:
+                raise ValueError(
+                    "local-cell coverage is infeasible under configured max_unselected_hole: "
+                    f"required={decoded.max_unselected_hole}, configured={self.max_unselected_hole}"
+                )
+
+            row = torch.full((max_slots,), -1, dtype=torch.long, device=center_scores.device)
+            row[:effective_k] = decoded.selected_positions[0]
+            position_rows.append(row)
+            dense_mask = torch.zeros(temporal_len, dtype=torch.bool, device=center_scores.device)
+            dense_mask[:valid_count] = decoded.hard_occupancy[0].bool()
+            dense_masks.append(dense_mask)
+            selection_st_rows.append(F.pad(decoded.selection_st[0], (0, temporal_len - valid_count)))
+            soft_rows.append(F.pad(decoded.soft_occupancy[0], (0, temporal_len - valid_count)))
+            slot_rows.append(
+                F.pad(
+                    decoded.soft_slot_assignment[0],
+                    (0, temporal_len - valid_count, 0, max_slots - effective_k),
+                )
+            )
+            policy_row = center_scores.new_zeros(temporal_len)
+            policy_row[:valid_count] = policy_scores[0]
+            policy_rows.append(policy_row)
+            for values, rows in (
+                (decoded.anchor_positions, anchor_rows),
+                (decoded.cell_starts, cell_start_rows),
+                (decoded.cell_ends, cell_end_rows),
+            ):
+                padded = torch.full((max_slots,), -1, dtype=torch.long, device=center_scores.device)
+                padded[:effective_k] = values
+                rows.append(padded)
+            effective_rows.append(effective_k)
+            max_hole_rows.append(int(decoded.max_unselected_hole))
+
+        effective = torch.tensor(effective_rows, dtype=torch.long, device=center_scores.device)
+        return {
+            "selected_positions": torch.stack(position_rows, dim=0),
+            "selected_mask": torch.stack(dense_masks, dim=0),
+            "selection_st": torch.stack(selection_st_rows, dim=0),
+            "soft_coverage": torch.stack(soft_rows, dim=0),
+            "soft_slot_assignment": torch.stack(slot_rows, dim=0),
+            "effective_budget": effective,
+            "detector_input_length": effective.clone(),
+            "selected_centers": [[] for _ in range(batch)],
+            "selected_radius": [[] for _ in range(batch)],
+            "fill_strategy": ["one_frame_per_exact_uniform_cell" for _ in range(batch)],
+            "max_gap_repair": [
+                {
+                    "enabled": False,
+                    "encoded_in_policy": True,
+                    "theoretical_max_unselected_hole": max_hole_rows[index],
+                }
+                for index in range(batch)
+            ],
+            "selection_path": "local_cell_exact_uniform" if force_uniform else "local_cell_transition_deformation",
+            "decode_policy_logits": torch.stack(policy_rows, dim=0),
+            "policy_mix_alpha": 0.0 if force_uniform else 1.0,
+            "local_cell_anchor_positions": torch.stack(anchor_rows, dim=0),
+            "local_cell_starts": torch.stack(cell_start_rows, dim=0),
+            "local_cell_ends": torch.stack(cell_end_rows, dim=0),
+            "local_cell_max_unselected_hole": max_hole_rows,
+        }
+
     def acquire(
         self,
         dense_observations: torch.Tensor,
@@ -1832,6 +1952,13 @@ class DucaAcquisitionAdapter(nn.Module):
                 stable_selection=bool(stable_selection),
                 policy_mix_alpha=float(policy_mix_alpha),
             )
+        elif self.acquisition_policy == "local_cell_deformation":
+            decoded = self._decode_local_cell(
+                scores["center_scores"],
+                scores["valid_mask"],
+                budgets,
+                stable_selection=bool(stable_selection),
+            )
         else:
             decoded = budgeted_center_radius_decode(
                 center_scores=scores["center_scores"],
@@ -1898,13 +2025,29 @@ class DucaAcquisitionAdapter(nn.Module):
                 "max_unselected_hole": self.max_unselected_hole,
                 "hard_max_gap_repair": bool(self.hard_max_gap_repair),
                 "max_gap_repair": decoded.get("max_gap_repair", []),
+                "local_cell_anchor_positions": (
+                    None
+                    if decoded.get("local_cell_anchor_positions") is None
+                    else decoded["local_cell_anchor_positions"].detach().cpu().tolist()
+                ),
+                "local_cell_starts": (
+                    None
+                    if decoded.get("local_cell_starts") is None
+                    else decoded["local_cell_starts"].detach().cpu().tolist()
+                ),
+                "local_cell_ends": (
+                    None
+                    if decoded.get("local_cell_ends") is None
+                    else decoded["local_cell_ends"].detach().cpu().tolist()
+                ),
+                "local_cell_max_unselected_hole": decoded.get("local_cell_max_unselected_hole"),
                 "cost_ledger": cost_ledger,
             },
         ).validate()
         if torch.any(grid.selected_count > int(self.budget)):
             raise RuntimeError("DUCA dynamic acquisition selected more observations than the hard cap")
         soft_coverage_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
-        if self.acquisition_policy == "global_structured_topk":
+        if self.acquisition_policy in {"global_structured_topk", "local_cell_deformation"}:
             soft_coverage = decoded["soft_coverage"]
             selection_st = decoded["selection_st"]
         else:
@@ -1945,6 +2088,14 @@ class DucaAcquisitionAdapter(nn.Module):
                 "selection_path": decoded.get("selection_path", "legacy_center_radius"),
                 "decode_policy_logits": decoded.get("decode_policy_logits"),
                 "policy_mix_alpha": float(decoded.get("policy_mix_alpha", policy_mix_alpha)),
+                "local_cell_anchor_positions": decoded.get("local_cell_anchor_positions"),
+                "local_cell_starts": decoded.get("local_cell_starts"),
+                "local_cell_ends": decoded.get("local_cell_ends"),
+                "local_cell_max_unselected_hole": decoded.get("local_cell_max_unselected_hole"),
+                "detector_grid_positions": decoded.get(
+                    "local_cell_anchor_positions",
+                    decoded["selected_positions"],
+                ),
                 "decode_metadata": grid.metadata,
                 "budget_decision": budget_decision,
                 "dynamic_budget": bool(self.dynamic_budget),

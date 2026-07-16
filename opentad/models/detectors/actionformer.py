@@ -272,8 +272,12 @@ class ActionFormer(SingleStageDetector):
         view[time_dim] = positions.shape[1]
         expand = list(inputs.shape)
         expand[time_dim] = positions.shape[1]
-        index = positions.view(view).expand(expand)
-        return torch.gather(inputs, time_dim, index)
+        slot_mask = positions >= 0
+        index = positions.clamp_min(0).view(view).expand(expand)
+        gathered = torch.gather(inputs, time_dim, index)
+        mask_view = [positions.shape[0]] + [1] * (inputs.ndim - 1)
+        mask_view[time_dim] = positions.shape[1]
+        return gathered * slot_mask.view(mask_view).to(dtype=gathered.dtype)
 
     @staticmethod
     def _duca_detector_objective(losses):
@@ -307,6 +311,9 @@ class ActionFormer(SingleStageDetector):
         selections = request["candidate_selections"]
         candidate_valid = request["candidate_valid"]
         baseline_positions = selector_state["grid"].selected_positions
+        detector_grid_positions = request.get("detector_grid_positions", baseline_positions)
+        if detector_grid_positions.shape != baseline_positions.shape:
+            raise RuntimeError("counterfactual detector grid must align with acquisition positions")
         utilities = selector_state["center_scores"].new_zeros(
             candidate_valid.shape,
             dtype=torch.float32,
@@ -325,13 +332,22 @@ class ActionFormer(SingleStageDetector):
         if raw_metas is None or raw_segments is None or raw_labels is None:
             raise RuntimeError("counterfactual teacher requires train-only metas, segments and labels")
 
-        def evaluate_one(batch_index, positions):
+        def evaluate_one(batch_index, positions, detector_positions):
             positions = positions.reshape(1, -1).to(device=raw_inputs.device)
+            detector_positions = detector_positions.reshape(1, -1).to(device=raw_inputs.device)
             selected_inputs = self._duca_gather_raw(raw_inputs[batch_index : batch_index + 1], positions)
-            selected_masks = torch.ones_like(positions, dtype=torch.bool)
+            selected_masks = positions >= 0
             meta = dict(raw_metas[batch_index])
-            pos_list = [int(x) for x in positions[0].detach().cpu().tolist()]
-            meta["selected_axis_to_true_time_dense_index"] = pos_list
+            active = selected_masks[0]
+            detector_pos_list = [
+                int(x)
+                for x in detector_positions[0, active].detach().cpu().tolist()
+            ]
+            meta["selected_axis_to_true_time_dense_index"] = detector_pos_list
+            meta["duca_acquisition_positions"] = [
+                int(x) for x in positions[0, active].detach().cpu().tolist()
+            ]
+            meta["duca_detector_grid_positions"] = detector_pos_list
             meta["truetime_dense_len"] = int(raw_masks.shape[-1])
             meta["truetime_dense_valid_len"] = int(raw_masks[batch_index].sum().item())
             remapped_segments, remapped_labels, remapped_metas = self.frame_selector._remap_train_targets_to_selected_axis(
@@ -375,12 +391,16 @@ class ActionFormer(SingleStageDetector):
                     if not bool(candidate_valid[b].any().item()):
                         continue
                     restore_teacher_state()
-                    baseline_loss = evaluate_one(b, baseline_positions[b])
+                    baseline_loss = evaluate_one(b, baseline_positions[b], detector_grid_positions[b])
                     baseline_detector_loss[b] = baseline_loss
                     for m in range(selections.shape[1]):
                         if candidate_valid[b, m]:
                             restore_teacher_state()
-                            candidate_loss = evaluate_one(b, selections[b, m])
+                            candidate_loss = evaluate_one(
+                                b,
+                                selections[b, m],
+                                detector_grid_positions[b],
+                            )
                             candidate_detector_loss[b, m] = candidate_loss
                             utilities[b, m] = baseline_loss - candidate_loss
         finally:

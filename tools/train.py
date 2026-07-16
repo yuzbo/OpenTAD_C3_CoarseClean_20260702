@@ -43,20 +43,7 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from opentad.utils.train_schedule import should_eval_epoch
-from tools.bata.duca_p0_training import (
-    DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA,
-    atomic_write_json,
-    build_checkpoint_metadata,
-    build_runtime_bindings,
-    build_training_audit,
-    capture_global_rng_state,
-    formal_training_contract,
-    new_update_audit,
-    restore_training_state,
-    restore_global_rng_state,
-    selector_schedule_step,
-    validate_update_state,
-)
+from tools.bata import duca_cellcf_training, duca_p0_training
 
 
 def _sha256(path):
@@ -140,12 +127,23 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
+    duca_training = (
+        duca_cellcf_training
+        if str(cfg.workflow.get("formal_protocol", "")) == "duca_cellcf_v1"
+        else duca_p0_training
+    )
     source_config_sha256 = _sha256(args.config)
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
-    duca_formal_contract = formal_training_contract(cfg)
+    duca_formal_contract = duca_training.formal_training_contract(cfg)
+    if duca_training is duca_cellcf_training:
+        duca_cellcf_training.assert_safe_cfg_options(
+            cfg, args.cfg_options, entrypoint="tools/train.py"
+        )
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/train.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    if duca_training is duca_cellcf_training:
+        duca_formal_contract = duca_cellcf_training.formal_training_contract(cfg)
     duca_git_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
     ).strip()
@@ -182,7 +180,7 @@ def main():
     cfg = update_workdir(cfg, args.id, args.world_size)
     duca_runtime_bindings = None
     if duca_formal_contract is not None:
-        duca_runtime_bindings = build_runtime_bindings(
+        runtime_binding_kwargs = dict(
             git_commit=duca_git_commit,
             variant=os.environ.get("DUCA_P0_VARIANT", ""),
             seed=args.seed,
@@ -195,6 +193,9 @@ def main():
             evaluation_class_map_path=cfg.dataset.test.class_map,
             evaluation_config=cfg.evaluation,
         )
+        if duca_training is duca_cellcf_training:
+            runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain
+        duca_runtime_bindings = duca_training.build_runtime_bindings(**runtime_binding_kwargs)
     if args.rank == 0:
         create_folder(cfg.work_dir)
         save_config(args.config, cfg.work_dir)
@@ -316,7 +317,7 @@ def main():
         or max_amp_retries_per_batch > 0
         or cfg.workflow.get("training_probe_json", None)
     )
-    update_audit = new_update_audit() if collect_update_audit else None
+    update_audit = duca_training.new_update_audit() if collect_update_audit else None
     epoch_records = []
 
     # resume: reset epoch, optimizer, scheduler, EMA, scaler, and formal audit
@@ -338,24 +339,24 @@ def main():
         elif duca_formal_contract is not None:
             raise RuntimeError("formal DUCA resume checkpoint lacks GradScaler state")
         if duca_formal_contract is not None:
-            update_audit, epoch_records = restore_training_state(
+            update_audit, epoch_records = duca_training.restore_training_state(
                 checkpoint,
                 contract=duca_formal_contract,
                 bindings=duca_runtime_bindings,
             )
-            validate_update_state(
+            duca_training.validate_update_state(
                 contract=duca_formal_contract,
                 epoch=resume_epoch,
                 train_batches_per_epoch=len(train_loader),
                 update_audit=update_audit,
                 scheduler_last_epoch=scheduler.last_epoch,
-                selector_step=selector_schedule_step(model),
+                selector_step=duca_training.selector_schedule_step(model),
                 uses_ema=model_ema is not None,
             )
             rng_state = checkpoint.get("rng_state")
             if not isinstance(rng_state, dict):
                 raise RuntimeError("formal DUCA resume checkpoint lacks global RNG state")
-            restore_global_rng_state(rng_state)
+            duca_training.restore_global_rng_state(rng_state)
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
@@ -398,13 +399,13 @@ def main():
         )
         training_audit = None
         if duca_formal_contract is not None:
-            validate_update_state(
+            duca_training.validate_update_state(
                 contract=duca_formal_contract,
                 epoch=epoch,
                 train_batches_per_epoch=len(train_loader),
                 update_audit=update_audit,
                 scheduler_last_epoch=scheduler.last_epoch,
-                selector_step=selector_schedule_step(model),
+                selector_step=duca_training.selector_schedule_step(model),
                 uses_ema=model_ema is not None,
             )
             delta = {
@@ -424,13 +425,13 @@ def main():
                     "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                     "counter_delta": delta,
                     "scheduler_last_epoch": int(scheduler.last_epoch),
-                    "selector_schedule_step": int(selector_schedule_step(model)),
+                    "selector_schedule_step": int(duca_training.selector_schedule_step(model)),
                     "grad_scaler_scale": (
                         None if scaler is None else float(scaler.get_scale())
                     ),
                 }
             )
-            training_audit = build_training_audit(
+            training_audit = duca_training.build_training_audit(
                 contract=duca_formal_contract,
                 bindings=duca_runtime_bindings,
                 epoch=epoch,
@@ -438,14 +439,21 @@ def main():
                 update_audit=update_audit,
                 epoch_records=epoch_records,
                 scheduler_last_epoch=scheduler.last_epoch,
-                selector_step=selector_schedule_step(model),
+                selector_step=duca_training.selector_schedule_step(model),
                 scaler_scale=None if scaler is None else scaler.get_scale(),
                 uses_ema=model_ema is not None,
                 complete=epoch == max_epoch - 1,
             )
             if args.rank == 0:
-                atomic_write_json(
-                    os.path.join(cfg.work_dir, "duca_p0_training_audit.json"),
+                duca_training.atomic_write_json(
+                    os.path.join(
+                        cfg.work_dir,
+                        getattr(
+                            duca_training,
+                            "DUCA_TRAINING_AUDIT_FILENAME",
+                            "duca_p0_training_audit.json",
+                        ),
+                    ),
                     training_audit,
                 )
         if training_probe_json and args.rank == 0:
@@ -483,7 +491,7 @@ def main():
                 checkpoint_metadata = (
                     None
                     if training_audit is None
-                    else build_checkpoint_metadata(training_audit)
+                    else duca_training.build_checkpoint_metadata(training_audit)
                 )
                 save_checkpoint(
                     model,
@@ -496,13 +504,13 @@ def main():
                     rng_state=(
                         None
                         if duca_formal_contract is None
-                        else capture_global_rng_state()
+                        else duca_training.capture_global_rng_state()
                     ),
                     experiment_metadata=checkpoint_metadata,
                     experiment_sidecar_schema=(
                         None
                         if checkpoint_metadata is None
-                        else DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
+                        else duca_training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
                     ),
                 )
 

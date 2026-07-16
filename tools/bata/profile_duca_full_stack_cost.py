@@ -490,12 +490,30 @@ def _selected_count(model: Any, inputs: Any) -> float:
     return float(inputs.shape[2])
 
 
-def _load_checkpoint(model: Any, path: str, *, use_ema: bool, torch_module: Any) -> dict[str, Any]:
+def _load_checkpoint(
+    model: Any,
+    path: str,
+    *,
+    use_ema: bool,
+    torch_module: Any,
+    drop_prefixes: Sequence[str] = (),
+) -> dict[str, Any]:
     checkpoint = torch_module.load(path, map_location="cpu")
     key = "state_dict_ema" if use_ema else "state_dict"
     if key not in checkpoint:
         raise ValueError(f"checkpoint {path} is missing {key}")
     state = strip_ddp_prefix(checkpoint[key])
+    dropped = sorted(
+        name
+        for name in state
+        if any(str(name).startswith(prefix) for prefix in drop_prefixes)
+    )
+    if drop_prefixes:
+        state = {
+            name: value
+            for name, value in state.items()
+            if not any(str(name).startswith(prefix) for prefix in drop_prefixes)
+        }
     incompatible = model.load_state_dict(state, strict=True)
     if incompatible.missing_keys or incompatible.unexpected_keys:
         raise RuntimeError(
@@ -505,6 +523,8 @@ def _load_checkpoint(model: Any, path: str, *, use_ema: bool, torch_module: Any)
         "checkpoint_path": str(Path(path).resolve()),
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_sha256": _sha256_file(path),
+        "checkpoint_dropped_prefixes": list(drop_prefixes),
+        "checkpoint_dropped_key_count": len(dropped),
     }
 
 
@@ -575,7 +595,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "checkpoint_sha256": None,
     }
     if args.checkpoint:
-        checkpoint_meta = _load_checkpoint(model, args.checkpoint, use_ema=args.use_ema, torch_module=torch)
+        cost_contract = cfg.get("duca_cellcf_cost_contract", {})
+        drop_prefixes = (
+            ("frame_selector.",)
+            if cost_contract and cost_contract.get("builds_selector") is False
+            else ()
+        )
+        checkpoint_meta = _load_checkpoint(
+            model,
+            args.checkpoint,
+            use_ema=args.use_ema,
+            torch_module=torch,
+            drop_prefixes=drop_prefixes,
+        )
 
     modules, zero_stages = discover_profile_modules(model)
     external_cls = getattr(dataset, "class_map", None)
@@ -680,6 +712,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sample["gpu_energy_j"] = float(energy["energy_j"])
                 sample["average_gpu_power_w"] = float(energy["average_power_w"])
 
+    source_dataset = _stable_payload(cfg.dataset.test)
+    if isinstance(source_dataset, dict):
+        source_dataset.pop("pipeline", None)
     metadata = {
         "method": args.method_name,
         "protocol": OFFLINE_FULL_WINDOW_PROTOCOL,
@@ -689,6 +724,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "config_commit": args.config_commit or _git_commit(repo_root),
         "config_fingerprint": _payload_fingerprint(cfg),
         "dataset_fingerprint": _payload_fingerprint(cfg.dataset.test),
+        "source_dataset_fingerprint": _payload_fingerprint(source_dataset),
         "inference_fingerprint": _payload_fingerprint(
             {"inference": cfg.inference, "post_processing": cfg.post_processing}
         ),

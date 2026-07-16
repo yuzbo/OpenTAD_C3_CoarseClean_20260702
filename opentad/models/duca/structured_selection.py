@@ -20,6 +20,24 @@ class StructuredSelectionOutput:
     selection_scope: str = "full_window_non_streaming"
 
 
+@dataclass(frozen=True)
+class LocalCellSelectionOutput:
+    hard_occupancy: torch.Tensor
+    soft_occupancy: torch.Tensor
+    soft_slot_assignment: torch.Tensor
+    selection_st: torch.Tensor
+    selected_positions: torch.Tensor
+    log_partition: torch.Tensor
+    anchor_positions: torch.Tensor
+    cell_starts: torch.Tensor
+    cell_ends: torch.Tensor
+    k: int
+    max_unselected_hole: int
+    temperature: float
+    force_exact_uniform: bool
+    selection_scope: str = "full_window_non_streaming_local_cells"
+
+
 def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.Tensor:
     """Return rounded-endpoint anchors with explicit round-half-to-even semantics."""
 
@@ -69,6 +87,143 @@ def exact_uniform_reference_scores(
         distance = (ranks[:, None] - anchors[None, :]).abs().min(dim=1).values
         reference[batch_idx, valid_positions] = -distance.to(dtype=scores.dtype)
     return reference
+
+
+def exact_uniform_cell_bounds(
+    temporal_len: int,
+    k: int,
+    *,
+    device=None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Partition a window into nearest-anchor cells with deterministic midpoint ties.
+
+    Every exact-uniform anchor owns one non-empty contiguous cell. A temporal
+    midpoint equidistant from adjacent anchors is assigned to the earlier cell.
+    """
+
+    temporal_len = int(temporal_len)
+    k = int(k)
+    anchors = exact_uniform_positions(temporal_len, k, device=device)
+    if k == 0:
+        empty = torch.empty((0,), device=device, dtype=torch.long)
+        return anchors, empty, empty
+    starts = torch.zeros((k,), device=device, dtype=torch.long)
+    ends = torch.full((k,), temporal_len, device=device, dtype=torch.long)
+    if k > 1:
+        starts[1:] = torch.div(anchors[:-1] + anchors[1:], 2, rounding_mode="floor") + 1
+        ends[:-1] = starts[1:]
+    if torch.any(starts >= ends):
+        raise RuntimeError("exact-uniform cells must be non-empty")
+    if torch.any(anchors < starts) or torch.any(anchors >= ends):
+        raise RuntimeError("each exact-uniform anchor must lie inside its cell")
+    return anchors, starts, ends
+
+
+def _max_unselected_hole(positions: torch.Tensor, temporal_len: int) -> int:
+    if positions.numel() == 0:
+        return int(temporal_len)
+    sentinels = torch.cat(
+        (
+            positions.new_tensor([-1]),
+            positions,
+            positions.new_tensor([int(temporal_len)]),
+        )
+    )
+    return int((sentinels[1:] - sentinels[:-1] - 1).max().item())
+
+
+def _local_cell_max_hole(starts: torch.Tensor, ends: torch.Tensor, temporal_len: int) -> int:
+    if starts.numel() == 0:
+        return int(temporal_len)
+    candidates = [int(ends[0].item()) - 1, int(temporal_len) - int(starts[-1].item()) - 1]
+    for cell_index in range(int(starts.numel()) - 1):
+        candidates.append(int(ends[cell_index + 1].item()) - int(starts[cell_index].item()) - 2)
+    return max(candidates)
+
+
+def local_cell_deformation(
+    policy_logits: torch.Tensor,
+    *,
+    k: int,
+    temperature: float = 1.0,
+    training: bool = False,
+    force_exact_uniform: bool = False,
+) -> LocalCellSelectionOutput:
+    """Select exactly one frame per exact-uniform cell.
+
+    The hard and relaxed paths share the same product-of-categorical policy.
+    Hard ties explicitly choose the cell's exact-uniform anchor, making a
+    zero-initialized policy identical to exact uniform sampling.
+    """
+
+    if not torch.is_tensor(policy_logits) or policy_logits.ndim != 2:
+        raise ValueError("policy_logits must be a [B,T] tensor")
+    if not policy_logits.is_floating_point() or not bool(torch.isfinite(policy_logits).all().item()):
+        raise ValueError("policy_logits must contain finite floating-point values")
+    temporal_len = int(policy_logits.shape[1])
+    k = int(k)
+    temperature = float(temperature)
+    if k < 0 or k > temporal_len:
+        raise ValueError("k must lie in [0,T]")
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature must be finite and positive")
+
+    anchors, starts, ends = exact_uniform_cell_bounds(temporal_len, k, device=policy_logits.device)
+    batch = int(policy_logits.shape[0])
+    hard = policy_logits.new_zeros((batch, temporal_len))
+    slots = policy_logits.new_zeros((batch, k, temporal_len))
+    selected = torch.empty((batch, k), device=policy_logits.device, dtype=torch.long)
+    log_partition = policy_logits.new_zeros((batch,), dtype=torch.float32)
+
+    for cell_index in range(k):
+        start = int(starts[cell_index].item())
+        end = int(ends[cell_index].item())
+        anchor = int(anchors[cell_index].item())
+        cell_scores = policy_logits[:, start:end]
+        if force_exact_uniform:
+            hard_position = torch.full((batch,), anchor, device=policy_logits.device, dtype=torch.long)
+        else:
+            detached = cell_scores.detach()
+            max_value = detached.max(dim=1).values
+            tied = detached == max_value[:, None]
+            absolute_positions = torch.arange(start, end, device=policy_logits.device)
+            anchor_distance = (absolute_positions - anchor).abs()[None, :].expand(batch, -1)
+            invalid_distance = torch.full_like(anchor_distance, temporal_len + 1)
+            closest_tied = torch.where(tied, anchor_distance, invalid_distance).argmin(dim=1)
+            hard_position = closest_tied + start
+        selected[:, cell_index] = hard_position
+        hard.scatter_(1, hard_position[:, None], 1.0)
+
+        if training and not force_exact_uniform:
+            cell_logits = cell_scores.float() / temperature
+            cell_weights = torch.softmax(cell_logits, dim=1).to(dtype=policy_logits.dtype)
+            slots[:, cell_index, start:end] = cell_weights
+            log_partition = log_partition + torch.logsumexp(cell_logits, dim=1)
+        else:
+            slots[:, cell_index].scatter_(1, hard_position[:, None], 1.0)
+
+    soft = slots.sum(dim=1)
+    selection_st = hard + soft - soft.detach() if training and not force_exact_uniform else hard
+    theoretical_max_hole = _local_cell_max_hole(starts, ends, temporal_len)
+    if k > 0:
+        observed = max(_max_unselected_hole(selected[row], temporal_len) for row in range(batch))
+        if observed > theoretical_max_hole:
+            raise RuntimeError("local-cell selection violated its maximum-hole contract")
+    return LocalCellSelectionOutput(
+        hard_occupancy=hard,
+        soft_occupancy=soft,
+        soft_slot_assignment=slots,
+        selection_st=selection_st,
+        selected_positions=selected,
+        log_partition=log_partition,
+        anchor_positions=anchors,
+        cell_starts=starts,
+        cell_ends=ends,
+        k=k,
+        max_unselected_hole=theoretical_max_hole,
+        temperature=temperature,
+        force_exact_uniform=bool(force_exact_uniform),
+    )
 
 
 def _validate_contract(logits: torch.Tensor, k: int, max_hole: int, temperature: float) -> tuple[int, int, float]:
@@ -354,9 +509,12 @@ def global_structured_topk(
 
 
 __all__ = [
+    "LocalCellSelectionOutput",
     "StructuredSelectionOutput",
+    "exact_uniform_cell_bounds",
     "exact_uniform_positions",
     "exact_uniform_reference_scores",
     "global_structured_topk",
+    "local_cell_deformation",
     "structured_local_coverage_probability",
 ]
