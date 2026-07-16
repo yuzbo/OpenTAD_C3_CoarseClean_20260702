@@ -4,6 +4,7 @@ import types
 
 import pytest
 import torch
+from mmengine.config import ConfigDict
 
 from opentad.models import build_detector
 from opentad.models.detectors.actionformer import ActionFormerPerWindowTrainOutput
@@ -42,7 +43,7 @@ def _real_tiny_actionformer():
                 center_sample="radius",
                 center_sample_radius=1.5,
                 label_smoothing=0.0,
-                loss=dict(
+                loss=ConfigDict(
                     cls_loss=dict(type="FocalLoss"),
                     reg_loss=dict(type="DIOULoss"),
                 ),

@@ -1358,8 +1358,8 @@ def test_stage_b_cli_finalizes_and_reuses_an_exact_existing_training_pair(
             _required_environment()
         ),
     )
-    monkeypatch.setattr(
-        stage_b_cli,
+    monkeypatch.setitem(
+        stage_b_cli._run_locked.__globals__,
         "audit_formal_python_runtime",
         lambda **kwargs: {"status": "TEST_ONLY"},
     )
@@ -1475,9 +1475,10 @@ def test_stage_b_formal_writer_lock_rejects_symlink_parent_and_preserves_replace
             pass
 
     lock = real_parent / "run.lock"
-    with stage_b_cli._exclusive_run_lock(lock):
-        lock.unlink()
-        lock.write_text("replacement\n", encoding="ascii")
+    with pytest.raises(RuntimeError, match="changed identity"):
+        with stage_b_cli._exclusive_run_lock(lock):
+            lock.unlink()
+            lock.write_text("replacement\n", encoding="ascii")
     assert lock.read_text(encoding="ascii") == "replacement\n"
 
 
