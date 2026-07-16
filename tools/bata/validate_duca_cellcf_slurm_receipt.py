@@ -98,6 +98,26 @@ def _submit_line_dependency(value: str) -> str:
     return _normalize_dependency(dependencies[0] if dependencies else "")
 
 
+def _submit_line_comment(value: str) -> str:
+    tokens = shlex.split(value)
+    comments: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--comment":
+            if index + 1 >= len(tokens):
+                raise ValueError("Slurm submit line has an incomplete comment option")
+            comments.append(tokens[index + 1])
+            index += 2
+            continue
+        if token.startswith("--comment="):
+            comments.append(token.partition("=")[2])
+        index += 1
+    if len(comments) > 1:
+        raise ValueError("Slurm submit line has multiple comment options")
+    return comments[0].strip() if comments else ""
+
+
 def _afterok_job_ids(value: str) -> frozenset[int]:
     normalized = _normalize_dependency(value)
     if not normalized:
@@ -300,8 +320,17 @@ def validate_slurm_receipt(
         row for row in _rows(accounting_output, fields=8) if row[0] == str(job_id)
     ]
     if len(accounting_rows) == 1:
+        accounting_comment = accounting_rows[0][3].strip()
+        submit_line_comment = _submit_line_comment(accounting_rows[0][5])
+        if accounting_comment and accounting_comment != token:
+            raise ValueError("Slurm job comment does not match the submission token")
+        if submit_line_comment and submit_line_comment != token:
+            raise ValueError(
+                "Slurm submit-line comment does not match the submission token"
+            )
+        effective_comment = accounting_comment or submit_line_comment
         state = _validate_identity(
-            accounting_rows[0][:5],
+            accounting_rows[0][:3] + [effective_comment, accounting_rows[0][4]],
             job_id=job_id,
             job_name=job_name,
             token=token,

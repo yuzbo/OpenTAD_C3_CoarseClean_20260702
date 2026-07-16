@@ -77,6 +77,111 @@ def test_completed_receipt_reopens_exact_accounting_identity() -> None:
     assert result["state"] == "COMPLETED"
 
 
+def test_accounting_receipt_uses_submit_line_when_comment_column_is_blank() -> None:
+    result = validate_slurm_receipt(
+        job_id=123,
+        job_name="cellcf-transition_beta0-s0-abcdef0",
+        token="cellcf-token",
+        cluster="n16r4",
+        runner=_runner(
+            squeue=(
+                "123|cellcf-transition_beta0-s0-abcdef0|PENDING|"
+                "cellcf-token|(null)\n"
+            ),
+            sacct=(
+                "123|cellcf-transition_beta0-s0-abcdef0|PENDING||n16r4|"
+                "sbatch --parsable --comment=cellcf-token job.sbatch|"
+                "Unknown|Unknown\n"
+            ),
+        ),
+    )
+    assert result["source"] == "sacct"
+    assert result["state"] == "PENDING"
+
+
+def test_completed_blank_accounting_comment_reopens_from_submit_line() -> None:
+    result = validate_slurm_receipt(
+        job_id=123,
+        job_name="cellcf-transition_beta0-s0-abcdef0",
+        token="cellcf-token",
+        cluster="n16r4",
+        runner=_runner(
+            sacct=(
+                "123|cellcf-transition_beta0-s0-abcdef0|COMPLETED||n16r4|"
+                "sbatch --comment cellcf-token job.sbatch|"
+                "2026-07-16T10:00:00|2026-07-16T11:00:00\n"
+            ),
+            squeue_returncode=1,
+            squeue_stderr="squeue: error: Invalid job id specified\n",
+        ),
+    )
+    assert result["source"] == "sacct"
+    assert result["state"] == "COMPLETED"
+
+
+@pytest.mark.parametrize(
+    "submit_line",
+    [
+        "sbatch --parsable job.sbatch",
+        "sbatch --parsable --comment=wrong-token job.sbatch",
+        (
+            "sbatch --comment=cellcf-token --comment=cellcf-token "
+            "job.sbatch"
+        ),
+    ],
+)
+def test_blank_accounting_comment_requires_one_exact_submit_line_comment(
+    submit_line: str,
+) -> None:
+    with pytest.raises(ValueError, match="comment"):
+        validate_slurm_receipt(
+            job_id=123,
+            job_name="cellcf-transition_beta0-s0-abcdef0",
+            token="cellcf-token",
+            cluster="n16r4",
+            runner=_runner(
+                sacct=(
+                    "123|cellcf-transition_beta0-s0-abcdef0|PENDING||n16r4|"
+                    f"{submit_line}|Unknown|Unknown\n"
+                )
+            ),
+        )
+
+
+def test_nonblank_accounting_comment_conflict_is_not_hidden_by_submit_line() -> None:
+    with pytest.raises(ValueError, match="comment"):
+        validate_slurm_receipt(
+            job_id=123,
+            job_name="cellcf-transition_beta0-s0-abcdef0",
+            token="cellcf-token",
+            cluster="n16r4",
+            runner=_runner(
+                sacct=(
+                    "123|cellcf-transition_beta0-s0-abcdef0|PENDING|wrong-token|"
+                    "n16r4|sbatch --comment=cellcf-token job.sbatch|"
+                    "Unknown|Unknown\n"
+                )
+            ),
+        )
+
+
+def test_submit_line_comment_conflict_is_not_hidden_by_accounting_comment() -> None:
+    with pytest.raises(ValueError, match="submit-line comment"):
+        validate_slurm_receipt(
+            job_id=123,
+            job_name="cellcf-transition_beta0-s0-abcdef0",
+            token="cellcf-token",
+            cluster="n16r4",
+            runner=_runner(
+                sacct=(
+                    "123|cellcf-transition_beta0-s0-abcdef0|PENDING|cellcf-token|"
+                    "n16r4|sbatch --comment=wrong-token job.sbatch|"
+                    "Unknown|Unknown\n"
+                )
+            ),
+        )
+
+
 def test_unrelated_squeue_failure_remains_fail_closed() -> None:
     calls: list[str] = []
     with pytest.raises(RuntimeError, match="Slurm query failed"):
