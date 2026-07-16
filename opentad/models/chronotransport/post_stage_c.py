@@ -201,6 +201,18 @@ def build_post_stage_c_replay_artifact_for_test_only(
     )
 
 
+def build_post_stage_c_replay_artifact(
+    rows: Sequence[Mapping[str, Any]], **identity: Any
+) -> dict[str, Any]:
+    """Build the formal replay from repository-produced post-Stage-C rows."""
+
+    return _build_replay(
+        rows,
+        schema=POST_STAGE_C_REPLAY_SCHEMA,
+        **identity,
+    )
+
+
 def validate_post_stage_c_replay_artifact(
     artifact: Mapping[str, Any], *, fixture: bool = False
 ) -> dict[str, Any]:
@@ -293,6 +305,24 @@ def adjudicate_post_stage_c_gate3_for_test_only(
     )
 
 
+def adjudicate_post_stage_c_gate3(
+    replay: Mapping[str, Any],
+    *,
+    candidate_cost_p50: Mapping[str, Any],
+    budget: float,
+    fit_baseline_constants_by_seed: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Re-adjudicate Gate 3 from the exact formal post-Stage-C replay."""
+
+    validated = validate_post_stage_c_replay_artifact(replay, fixture=False)
+    return _post_gate3_report(
+        validated,
+        candidate_cost_p50=candidate_cost_p50,
+        budget=budget,
+        fit_baseline_constants_by_seed=fit_baseline_constants_by_seed,
+    )
+
+
 def validate_post_stage_c_gate3_report(
     report: Mapping[str, Any],
     *,
@@ -352,13 +382,101 @@ def validate_post_stage_c_gate3_unlock(
     return expected
 
 
+def build_post_stage_c_gate3_terminal(
+    *,
+    report: Mapping[str, Any],
+    replay: Mapping[str, Any],
+    replay_path: str,
+    replay_file_sha256: str,
+    report_path: str,
+    report_file_sha256: str,
+    unlock: Mapping[str, Any] | None,
+    unlock_path: str | None,
+    unlock_file_sha256: str | None,
+) -> dict[str, Any]:
+    if replay.get("schema") != POST_STAGE_C_REPLAY_SCHEMA:
+        raise ValueError("post-Stage-C Gate3 terminal requires a formal replay")
+    replay_unsigned = dict(replay)
+    replay_sha256 = replay_unsigned.pop("artifact_sha256", None)
+    if replay_sha256 != canonical_sha256(replay_unsigned):
+        raise ValueError("post-Stage-C Gate3 replay artifact SHA-256 mismatch")
+    if report.get("schema") != POST_STAGE_C_GATE3_REPORT_SCHEMA:
+        raise ValueError("post-Stage-C Gate3 terminal requires a formal report")
+    report_unsigned = dict(report)
+    report_sha256 = report_unsigned.pop("artifact_sha256", None)
+    if report_sha256 != canonical_sha256(report_unsigned):
+        raise ValueError("post-Stage-C Gate3 report artifact SHA-256 mismatch")
+    if (
+        report.get("status") not in {"PASS", "FAIL"}
+        or report.get("post_stage_c_replay_sha256") != replay_sha256
+        or report.get("registration_sha256") != replay.get("registration_sha256")
+        or report.get("registration_commit") != replay.get("registration_commit")
+        or report.get("claim_flags", {}).get("post_stage_c_gate3_pass")
+        is not (report.get("status") == "PASS")
+    ):
+        raise ValueError("post-Stage-C Gate3 report/replay terminal binding mismatch")
+    passed = report.get("status") == "PASS"
+    if passed:
+        if unlock is None:
+            raise ValueError("PASS post-Stage-C Gate3 terminal requires unlock")
+        validate_post_stage_c_gate3_unlock(
+            unlock,
+            report=report,
+            replay=replay,
+        )
+        if unlock_path is None or unlock_file_sha256 is None:
+            raise ValueError("PASS post-Stage-C Gate3 terminal requires unlock file")
+    elif unlock is not None or unlock_path is not None or unlock_file_sha256 is not None:
+        raise ValueError("FAIL post-Stage-C Gate3 terminal must not publish unlock")
+    file_hashes = [
+        (replay_file_sha256, "replay"),
+        (report_file_sha256, "report"),
+    ]
+    if passed:
+        file_hashes.append((unlock_file_sha256, "unlock"))
+    for value, label in file_hashes:
+        _sha(value, f"post-Stage-C terminal {label} file")
+    terminal = {
+        "schema": POST_STAGE_C_GATE3_TERMINAL_SCHEMA,
+        "protocol": R2_PROTOCOL_ID,
+        "status": "SUCCESS" if passed else "FAIL",
+        "registration_sha256": report["registration_sha256"],
+        "registration_commit": report["registration_commit"],
+        "replay": {
+            "path": str(replay_path),
+            "file_sha256": replay_file_sha256,
+            "artifact_sha256": replay_sha256,
+        },
+        "report": {
+            "path": str(report_path),
+            "file_sha256": report_file_sha256,
+            "artifact_sha256": report_sha256,
+        },
+        "unlock": (
+            None
+            if not passed
+            else {
+                "path": str(unlock_path),
+                "file_sha256": unlock_file_sha256,
+                "artifact_sha256": unlock["artifact_sha256"],
+            }
+        ),
+        "claim_flags": dict(report["claim_flags"]),
+    }
+    terminal["artifact_sha256"] = canonical_sha256(terminal)
+    return terminal
+
+
 __all__ = [
     "POST_STAGE_C_GATE3_REPORT_SCHEMA",
     "POST_STAGE_C_GATE3_TERMINAL_SCHEMA",
     "POST_STAGE_C_GATE3_UNLOCK_SCHEMA",
     "POST_STAGE_C_REPLAY_SCHEMA",
+    "adjudicate_post_stage_c_gate3",
     "adjudicate_post_stage_c_gate3_for_test_only",
+    "build_post_stage_c_replay_artifact",
     "build_post_stage_c_gate3_unlock",
+    "build_post_stage_c_gate3_terminal",
     "build_post_stage_c_replay_artifact_for_test_only",
     "validate_post_stage_c_gate3_report",
     "validate_post_stage_c_gate3_unlock",

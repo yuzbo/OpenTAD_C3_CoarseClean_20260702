@@ -37,7 +37,9 @@ from opentad.models.chronotransport.formal_stage_b import (
 )
 from opentad.models.chronotransport.protocol import canonical_json_bytes, canonical_sha256
 from opentad.models.chronotransport.post_stage_c import (
+    POST_STAGE_C_REPLAY_SCHEMA,
     adjudicate_post_stage_c_gate3_for_test_only,
+    build_post_stage_c_gate3_terminal,
     build_post_stage_c_gate3_unlock,
     build_post_stage_c_replay_artifact_for_test_only,
     validate_post_stage_c_gate3_report,
@@ -232,6 +234,44 @@ def test_post_stage_c_recalibration_requires_new_exact_gate3_unlock():
             tampered,
             report=report,
             replay=replay,
+        )
+
+    formal_replay = copy.deepcopy(replay)
+    formal_replay["schema"] = POST_STAGE_C_REPLAY_SCHEMA
+    formal_replay.pop("artifact_sha256")
+    formal_replay["artifact_sha256"] = canonical_sha256(formal_replay)
+    formal_report = copy.deepcopy(report)
+    formal_report["post_stage_c_replay_sha256"] = formal_replay["artifact_sha256"]
+    formal_report.pop("artifact_sha256")
+    formal_report["artifact_sha256"] = canonical_sha256(formal_report)
+    formal_unlock = build_post_stage_c_gate3_unlock(formal_report, formal_replay)
+    terminal = build_post_stage_c_gate3_terminal(
+        report=formal_report,
+        replay=formal_replay,
+        replay_path="/formal/post_stage_c_replay.json",
+        replay_file_sha256=_sha("post-stage-c-replay-file"),
+        report_path="/formal/post_stage_c_gate3_report.json",
+        report_file_sha256=_sha("post-stage-c-report-file"),
+        unlock=formal_unlock,
+        unlock_path="/formal/post_stage_c_gate3_unlock.json",
+        unlock_file_sha256=_sha("post-stage-c-unlock-file"),
+    )
+    assert terminal["status"] == "SUCCESS"
+    assert terminal["unlock"]["artifact_sha256"] == formal_unlock["artifact_sha256"]
+
+    corrupted_replay = copy.deepcopy(formal_replay)
+    corrupted_replay["rows"][0]["q_hat"][0] += 0.01
+    with pytest.raises(ValueError, match="replay artifact SHA-256"):
+        build_post_stage_c_gate3_terminal(
+            report=formal_report,
+            replay=corrupted_replay,
+            replay_path="/formal/post_stage_c_replay.json",
+            replay_file_sha256=_sha("post-stage-c-replay-file"),
+            report_path="/formal/post_stage_c_gate3_report.json",
+            report_file_sha256=_sha("post-stage-c-report-file"),
+            unlock=formal_unlock,
+            unlock_path="/formal/post_stage_c_gate3_unlock.json",
+            unlock_file_sha256=_sha("post-stage-c-unlock-file"),
         )
 
 

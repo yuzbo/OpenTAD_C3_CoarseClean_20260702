@@ -160,6 +160,7 @@ class ManifestStageCBatchMaterializer:
 
 @dataclass
 class RepositoryStageCComponents:
+    cfg: Any
     ct_model: torch.nn.Module
     matched_model: torch.nn.Module
     materialize_batch: ManifestStageCBatchMaterializer
@@ -296,6 +297,7 @@ def build_repository_stage_c_components(
     # stream.  The formal stream starts here and is checkpointed after each epoch.
     set_seed(seed)
     return RepositoryStageCComponents(
+        cfg=cfg,
         ct_model=ct_model,
         matched_model=matched_model,
         materialize_batch=materializer,
