@@ -36,6 +36,14 @@ from opentad.models.chronotransport.formal_stage_b import (
     build_fit_schedule_constant_artifact,
 )
 from opentad.models.chronotransport.protocol import canonical_json_bytes, canonical_sha256
+from opentad.models.chronotransport.post_stage_c import (
+    adjudicate_post_stage_c_gate3_for_test_only,
+    build_post_stage_c_gate3_unlock,
+    build_post_stage_c_replay_artifact_for_test_only,
+    validate_post_stage_c_gate3_report,
+    validate_post_stage_c_gate3_unlock,
+    validate_post_stage_c_replay_artifact,
+)
 from opentad.models.chronotransport.scheduler import R2_NON_DENSE_NAMES
 from tools.bata.run_chronotransport_r2_gates23 import (
     GATES23_REGISTERED_SOURCE_PATHS,
@@ -153,6 +161,78 @@ def _fixture_inputs():
         for seed in R2_SEEDS
     }
     return artifact, costs, baselines
+
+
+def test_post_stage_c_recalibration_requires_new_exact_gate3_unlock():
+    original, costs, baselines = _fixture_inputs()
+    bindings = {
+        str(seed): {
+            "completion_artifact_sha256": _sha(f"stage-c-terminal:{seed}"),
+            "checkpoint_file_sha256": _sha(f"stage-c-checkpoint:{seed}"),
+            "checkpoint_provenance_sha256": _sha(f"stage-c-provenance:{seed}"),
+            "predictor_canonical_sha256": _sha(f"stage-c-predictor:{seed}"),
+            "fit_baseline_payload_sha256": original["phase_bindings"][str(seed)][
+                "fit_baseline_payload_sha256"
+            ],
+        }
+        for seed in R2_SEEDS
+    }
+    rows = []
+    for raw in original["rows"]:
+        row = {key: copy.deepcopy(value) for key, value in raw.items() if key != "row_sha256"}
+        binding = bindings[str(row["seed"])]
+        row["trained_checkpoint_sha256"] = binding["checkpoint_file_sha256"]
+        row["predictor_canonical_sha256"] = binding[
+            "predictor_canonical_sha256"
+        ]
+        rows.append(row)
+    replay = build_post_stage_c_replay_artifact_for_test_only(
+        rows,
+        registration_sha256=original["registration_sha256"],
+        registration_commit=original["registration_commit"],
+        gate1_unlock_artifact_sha256=original[
+            "gate1_unlock_artifact_sha256"
+        ],
+        pre_stage_c_gates23_report_sha256=_sha("pre-stage-c-gate3"),
+        manifest_sha256=original["manifest_sha256"],
+        library_sha256=original["library_sha256"],
+        split_window_ids=original["split_window_ids"],
+        video_id_by_window=original["video_id_by_window"],
+        candidate_action_sha256_by_name=original[
+            "candidate_action_sha256_by_name"
+        ],
+        stage_c_bindings=bindings,
+    )
+    validate_post_stage_c_replay_artifact(replay, fixture=True)
+    report = adjudicate_post_stage_c_gate3_for_test_only(
+        replay,
+        candidate_cost_p50=costs,
+        budget=costs["periodic4_transport"],
+        fit_baseline_constants_by_seed=baselines,
+    )
+    assert report["status"] == "PASS"
+    validate_post_stage_c_gate3_report(
+        report,
+        replay=replay,
+        candidate_cost_p50=costs,
+        budget=costs["periodic4_transport"],
+        fit_baseline_constants_by_seed=baselines,
+        fixture=True,
+    )
+    unlock = build_post_stage_c_gate3_unlock(report, replay)
+    validate_post_stage_c_gate3_unlock(unlock, report=report, replay=replay)
+    assert unlock["q_conf_by_seed"] == report["gate3"]["calibration"][
+        "q_conf_by_seed"
+    ]
+
+    tampered = copy.deepcopy(unlock)
+    tampered["q_conf_by_seed"][str(R2_SEEDS[0])] += 0.01
+    with pytest.raises(ValueError, match="unlock"):
+        validate_post_stage_c_gate3_unlock(
+            tampered,
+            report=report,
+            replay=replay,
+        )
 
 
 def test_exact_json_loader_rejects_duplicate_keys_and_noncanonical_bytes(tmp_path: Path):
