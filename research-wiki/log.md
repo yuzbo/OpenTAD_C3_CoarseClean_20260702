@@ -445,3 +445,14 @@ append_only: true
   patches. Prompt SHA-256 is `9DDCABC19E6B38874EA97F5E4702C247D2DF8F485CE273E08E4A6515EBFEC3D0`.
   This is review-only documentation: no implementation, I/R, PRECHECK, test rerun, Job, Gate or experiment
   result was created.
+- 2026-07-16: Archived and absorbed the user-supplied 2,019-line GitHub Pro review of immutable review-only
+  SHA `1b6366d0acb712e8096c2cceb0f05e66b16d30d4`. The verbatim archive exactly matches the 86,871-byte
+  attachment at SHA-256 `C61F9353...F1BC08`. The A1--A4 diff received `APPROVE_SPEC_FOR_PLAN`, so its
+  specification status is now `spec_approved`; the implementation remains
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`, registration `NOT_READY`. Core A1/A2/Stage-C/workflow/source
+  blockers were accepted after local source checks. Concrete patches were only partially adopted as design
+  input: A2 needs producer-observed artifact identity and repo-wide migration; Stage-C loss/interface fields
+  must come from registered ActionFormer semantics; all 21 matching tests need explicit classification;
+  unauthorized/provenance-invalid runs are `INVALID_IMPLEMENTATION`, not automatic science FAIL. The stale
+  `e4422f5`/GPU1 implementation plan is now explicitly forbidden unchanged. No production code, test run,
+  CUDA/Slurm action, I/R, PRECHECK, Gate, training or scientific result was created.

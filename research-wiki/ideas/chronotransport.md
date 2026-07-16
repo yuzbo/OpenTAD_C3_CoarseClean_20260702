@@ -3,12 +3,12 @@ type: idea
 node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
 stage: spec_approved
-outcome: bounded_appeal_pending
-implementation_status: partial_repair_in_progress_registration_blocked
+outcome: bounded_appeal_pending_implementation_repair
+implementation_status: revise_implementation_before_registration
 registration_status: NOT_READY
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
-updated: 2026-07-13
+updated: 2026-07-16
 ---
 
 ## r2 foundation repair batch (2026-07-13)
@@ -220,3 +220,21 @@ A4 paired official loss/regret forward；此前缺失 workflow/source/provenance
 下一轮 GitHub-only Pro prompt 固定要求：fresh resolve `537f692` 的严格后代；先给独立
 `APPROVE_SPEC_FOR_PLAN`/`REVISE_SPEC_BEFORE_PLAN`，再给 implementation verdict、RED tests 与完整
 实现建议。该 prompt 是只读审计输入，不创建 I/R、PRECHECK、Job、Gate 或论文数字。
+
+## `1b6366d` GitHub Pro 规范批准与实现裁决（2026-07-16）
+
+第二次 GitHub-only Pro 审计通过完整快照门并返回两层裁决：A1--A4 为
+`APPROVE_SPEC_FOR_PLAN`，当前实现为 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。因此 idea 的规范
+层级现为 `spec_approved`；实现仍未到 `implemented`，registration 保持 `NOT_READY`。没有 tests、
+CUDA/Slurm、training、profiling、Gate 或论文结果由本轮审计产生。
+
+完全接受其主要实现 blocker：旧 spec/random lock 使 A1 不可达；GPU1 pin 使 A2 不可达；现有
+Stage-C 单 forward/Tensor 与成功 buffer 不变合同不能接真实 ActionFormer/A3/A4；正式 Stage-C、
+matched-dense、Gate-4 workflows 和完整 source classification 缺失。Gate-4 pure adjudicator 的
+bounded approval 仍只属于 test-only 切片。
+
+具体补丁只作为设计输入。A2 必须覆盖 profiler、Stage-B、backend、claims 和全部 formal
+launchers，并现场重观测 Slurm/GPU/software state；Stage-C loss namespace 与 feature boundary 必须从
+registered config/head 推导；21 个 matching tests 逐一分类；非法 job/provenance 首先判 run
+`INVALID_IMPLEMENTATION`，不能自动充当 science FAIL。旧 implementation plan 仍绑定
+`e4422f5`/GPU1，已禁止原样执行，恢复实现前必须先替换计划。

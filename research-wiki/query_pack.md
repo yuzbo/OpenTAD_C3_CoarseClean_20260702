@@ -1,12 +1,12 @@
 ---
 type: query_pack
-updated: 2026-07-15
+updated: 2026-07-16
 max_chars: 8000
 ---
 
 # DUCA Query Pack
 
-## 2026-07-15 ChronoTransport integrity delta
+## 2026-07-16 ChronoTransport integrity delta
 
 - Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
   registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
@@ -33,11 +33,26 @@ max_chars: 8000
   当前 glob 命中 21 个文件、registration 仅含 14 个，除两份已确认遗漏外还有五份旧/通用表面。
   应采用显式 formal/legacy/nonformal 分类并拒绝未分类新文件。其 Stage-C evidence dataclass 只是
   `b854adb` 时 A3/A4 尚未唯一化的设计草案；未来 launcher 也不得沿用固定 physical-GPU1 语义。
-- 用户随后授权 exact A1--A4；spec-only commit
-  `537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37` 已把它们写入当前规范，规范 SHA-256 为
-  `E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`。状态是
-  `designed/pending_external_spec_diff_review`，不是 implemented、registered 或 tested。下一次 Pro
-  必须先裁 `e4422f5 → 537f692`，再按当前生产代码逐行复核；规范提交不会自动修复旧 blocker。
+- 第二次 GitHub-only Pro 已完整审核 review-only SHA
+  `1b6366d0acb712e8096c2cceb0f05e66b16d30d4`，确认 tree `3fc64c7...5462`、唯一 parent
+  `537f692...1d37` 与当前 spec SHA
+  `E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`。A1--A4 得到
+  `APPROVE_SPEC_FOR_PLAN`，故规范状态迁移为 `spec_approved`；整体实现仍为
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`，registration `NOT_READY`。reviewer 未执行 tests、
+  CUDA、Slurm、训练、profiling 或 evaluation；没有正式实验事实。
+- 当前 P0 均经源码复核：registration 仍绑定旧 `e4422f5`/旧 hash 且 random lock 使 A1 不可达；
+  Gate-1 launcher/backend 仍固定 GPU1，A2 不可达；Stage-C 的单 Tensor/单 forward/成功 buffer
+  不变合同与真实 ActionFormer dict、`loss_normalizer` 及 A3/A4 冲突；Stage-C、matched-dense、
+  Gate-4 formal workflows 缺失。禁止 I/R、PRECHECK 和正式 Job。
+- 不完全照搬 reviewer 补丁：A2 还缺现场重观测的 Slurm/GPU/software artifact schema，不能信任
+  caller 环境变量；Stage-C dataclass/loss 字段集不是规范冻结接口；21 个 matching tests 必须逐一
+  formal/legacy/nonformal 分类；无合法 I/R 或 provenance 缺陷先使 run
+  `INVALID_IMPLEMENTATION`，不自动等同 science route kill。
+- reviewer bounded patch 还未覆盖 full-stack profiler CLI、Stage-B CLI、Gate-1 profile backend、
+  Gates-2/3 `latency_gpu1_fixed_stack` claim 与旧 implementation plan。该计划仍绑定旧 spec/GPU1，
+  已标记 stale，禁止原样执行。先替换计划，再依次闭合 A1/source classification、A2、filesystem/
+  runtime identity、真实 per-window ActionFormer API、Stage-C transaction 与完整 workflows，最后重新
+  exact-byte implementation review。
 
 ## 项目方向
 
@@ -115,7 +130,8 @@ DUCA 当前形态：全窗口低成本 trainable C3/official-ASFormer coarse pro
   不合规。A3/A4 同时固定 successful `loss_normalizer` trace 与一次 dense-reference 加一次
   differentiable counterfactual model forward 的 official per-window regret 合同。历史提案文件
   仍保留 `proposed_unapproved` frontmatter 作为来源记录，当前权威文本是 `537f692` 规范；所有
-  execution lock、I/R、PRECHECK 和 formal Slurm job 仍保持关闭，等待 Pro 规范差异与实现严审。
+  execution lock、I/R、PRECHECK 和 formal Slurm job 仍保持关闭，因为 Pro 已批准规范但拒绝当前
+  实现进入 registration；须完成修复并通过新的 exact-byte implementation review。
 - Gate-4 caller-raw-dict formal minting 已 RED-first 封死：当前 `formal=True` 在统计前拒绝，
   `formal=False` 只生成 `chronotransport-r2-gate4-test-only-v1`。远端 focused 为 `1 passed`，
   forged-payload-with-recomputed-hash targeted 为 `1 passed in 105.28s`，完整 Gate-4 synthetic

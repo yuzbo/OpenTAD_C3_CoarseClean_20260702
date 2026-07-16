@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-13
+updated: 2026-07-16
 ---
 
 # 禁止重走清单
@@ -220,3 +220,19 @@ updated: 2026-07-13
 95. A spec-only descendant is not an implementation repair. After `537f692`, reviewers must first judge
     the exact A1--A4 spec diff, then independently prove production compliance; neither the historical
     `b854adb` verdict nor the new specification may be auto-transferred into a current code verdict.
+96. Do not execute the historical ChronoTransport implementation plan unchanged. It still binds
+    `e4422f5`, physical GPU1, `CUDA_VISIBLE_DEVICES=1` and `_gpu1.sh`; replace it with an
+    `APPROVE_SPEC_FOR_PLAN`-aware plan before implementation resumes.
+97. Do not treat copied `CHRONOTRANSPORT_OBSERVED_*`, caller JSON or inherited environment variables as
+    Slurm/GPU evidence. Every formal producer must re-observe scheduler, OS, torch/NVML device UUID and
+    software state, then bind those bytes to the artifact under the writer lock.
+98. An unauthorized formal job or broken provenance makes that run `INVALID_IMPLEMENTATION`; stop,
+    quarantine, repair, re-review and rerun. Do not automatically rewrite it as a scientific Gate FAIL or
+    permanent route kill unless the frozen protocol was intentionally/post-hoc changed, contamination is
+    unrecoverable, or a formal science Gate actually fails.
+99. Do not freeze a reviewer-proposed Stage-C dataclass, exact loss-key set or detector feature field as
+    authority. Derive the per-window vector, aggregate identity equation and legal auxiliary-loss namespace
+    from the registered ActionFormer config/head while preserving A3/A4 forward and normalizer semantics.
+100. Same-descriptor hashing/loading of data is necessary but does not by itself prove Python executed the
+    same source bytes. Formal source integrity must also bind detached worktree, import resolution, loaded
+    module origins/bytes and entrypoint identity to the registered source vector.

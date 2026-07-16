@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-15
+updated: 2026-07-16
 ---
 
 # 来源注册表
@@ -118,3 +118,14 @@ ChronoTransport r2 Pro 审计条目。
 - `sources/2026-07-15-chronotransport-r2-pro-review-b854adb-absorption.md`：对上述 Pro 审计的逐项
   事实核对、采纳矩阵与保留意见。总体裁决、主要 P1/P2 blocker 和修复依赖顺序被接受；裸 test
   glob、未冻结 Stage-C dataclass、`_gpu1.sh` 命名及 pre-I/R official-population precheck 不原样采用。
+- `sources/2026-07-16-chronotransport-r2-pro-review-1b6366d-verbatim.txt`：用户提供的第二次
+  GitHub-only Pro 完整审计逐字归档，共 86,871 bytes / 2,019 lines；原附件与归档 SHA-256 均为
+  `C61F93531885040A3593DB7552E23B67B34DEC3D55095D71FCE5B6D2A1F1BC08`。审计对象是 review-only
+  SHA `1b6366d0acb712e8096c2cceb0f05e66b16d30d4`，tree
+  `3fc64c72cf26b77f041d059f51385f29e5e85462`，唯一 parent `537f692...1d37`。它返回
+  `APPROVE_SPEC_FOR_PLAN` 与 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`，未执行 tests、CUDA、
+  Slurm、训练、profiling 或 evaluation。
+- `sources/2026-07-16-chronotransport-r2-pro-review-1b6366d-absorption.md`：对该审计的完整采纳与
+  保留记录。接受规范批准、总体实现裁决、四项核心 P0、source/path/workflow blocker；不原样采用
+  不完整 A2 patch、未冻结 Stage-C dataclass/loss namespace、自动测试分类及过宽的永久 kill 语义，
+  并补记 profiler/Stage-B/Gates23/stale-plan 等未覆盖实施面。

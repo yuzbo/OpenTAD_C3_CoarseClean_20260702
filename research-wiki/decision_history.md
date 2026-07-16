@@ -1,6 +1,6 @@
 ---
 type: decision_history
-updated: 2026-07-11
+updated: 2026-07-16
 ---
 
 # 路线演化与选择理由
@@ -117,3 +117,19 @@ approval。
 不接受把 reviewer 的示例补丁当成新规格。测试完整性采用显式分类 manifest，而不是裸 glob；
 Stage-C dataclass 只保留为待 A3/A4 约束的接口草案；launcher 不沿用 physical-GPU1 命名/映射。
 这是一项实现治理决策，不是科学路线 PASS/FAIL，也不改变历史负结果。
+
+## 15. `1b6366d` Pro 规范批准后的实施决策
+
+接受 `APPROVE_SPEC_FOR_PLAN`，把 A1--A4 从 pending external review 迁移为 `spec_approved`；同时
+接受 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`，继续禁止 I/R、PRECHECK 和正式 Job。批准规范
+不等于批准现有实现，历史 `92029ea` 负结果和当前无 r2 science result 的事实均不改变。
+
+不逐字复制 Pro patch：A2 必须现场重观测并绑定 Slurm/GPU/software identity，且做全仓迁移；
+Stage-C per-window API 必须从 registered ActionFormer config/head 推导而不是固定示例 dataclass；
+21 个 tests 必须逐一分类；source-byte 验证还要与实际 Python import/entrypoint 对齐。无 I/R 作业或
+provenance 缺陷先判该 run `INVALID_IMPLEMENTATION`，只有正式 Gate FAIL、故意事后改协议或不可恢复
+污染才触发对应永久路线冻结。
+
+实施顺序改为：先替换仍绑定 `e4422f5`/GPU1 的 stale plan，再闭合 A1/source classification、A2、
+filesystem/runtime identity、真实 ActionFormer per-window loss、Stage-C A3/A4 transaction、完整
+Stage-C/matched/Gate-4 workflows，最后做 exact-byte implementation review。只有全部通过才考虑 I/R。

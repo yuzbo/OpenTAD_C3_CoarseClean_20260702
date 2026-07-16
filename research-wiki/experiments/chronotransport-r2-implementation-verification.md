@@ -3,11 +3,12 @@ type: experiment
 node_id: exp:chronotransport-r2-implementation-verification
 title: "ChronoTransport r2 implementation verification"
 idea: idea:chronotransport
-verdict: ongoing
+verdict: revise_implementation_before_registration
 confidence: high
 commit: "33378af"
+review_snapshot: "1b6366d0acb712e8096c2cceb0f05e66b16d30d4"
 jobs: "remote CPU focused pytest in workdirs/chronotransport_r2/repo"
-updated: 2026-07-13
+updated: 2026-07-16
 ---
 
 # ChronoTransport r2 Implementation Verification
@@ -571,6 +572,41 @@ The refreshed GitHub-only Pro input has SHA-256
 `9DDCABC19E6B38874EA97F5E4702C247D2DF8F485CE273E08E4A6515EBFEC3D0`. It requires a fresh immutable
 descendant snapshot, a separate spec-diff verdict, and a full production implementation verdict. No tests,
 CUDA/Slurm execution, training, formal Gate, or scientific result were produced while preparing it.
+
+## 2026-07-16 complete Pro review at `1b6366d`
+
+The external reviewer verified review-only SHA
+`1b6366d0acb712e8096c2cceb0f05e66b16d30d4`, tree
+`3fc64c72cf26b77f041d059f51385f29e5e85462`, its single parent `537f692...1d37`, and the current
+spec hash. The A1--A4 diff received `APPROVE_SPEC_FOR_PLAN`; the implementation received
+`REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`. The reviewer executed no tests, CUDA, Slurm, training,
+profiling or evaluation, so this changes specification-review status only and creates no experiment fact.
+
+Current-source checking confirmed the core P0s. `registration.py` still binds `e4422f5` and the old spec
+hash, while its formal random lock rejects both random candidates and any `control_seed`. The Gate-1 shell
+and backend still require physical GPU1/CVD=1. The Stage-C audit hook requires exactly one top-level model
+forward returning a differentiable Tensor and rejects all successful buffer changes, whereas real
+`ActionFormer.forward_train` returns a loss dictionary and `AnchorFreeHead.losses` advances
+`loss_normalizer` in train mode. The five expected Stage-C/matched/Gate-4 workflow paths remain absent.
+
+The review's implementation sketches are not frozen interfaces. The A2 patch lacks the allocation/step/
+device artifact schema and does not cover the full-stack profiler CLI, Stage-B CLI, profile backend,
+Gates-2/3 claim key or stale implementation plan. Its Stage-C dataclass fixes a loss-key set and detector
+feature field not specified by A3/A4. Its source-classification example saw 19 tests; the checkout contains
+21, including `test_chronotransport_opentad_replay.py` and `test_chronotransport_stage_a_smoke.py`, and all
+must be individually classified before any source vector is frozen.
+
+The permanent-kill list is narrowed at implementation violations: an unauthorized job or provenance
+failure invalidates and quarantines that run, requiring repair/re-review/rerun; it does not by itself prove a
+science Gate failure. Formal Gate failure, deliberate post-hoc protocol changes or unrecoverable
+contamination retain their frozen-route semantics.
+
+The verbatim review is archived as 86,871 bytes / 2,019 lines with SHA-256
+`C61F93531885040A3593DB7552E23B67B34DEC3D55095D71FCE5B6D2A1F1BC08`; its detailed disposition is
+in the paired absorption record. Status is A1--A4 `spec_approved`, implementation
+`REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`, registration `NOT_READY`, and
+`experiment_running=false`. No implementation code or experiment was changed or launched during
+absorption.
 
 ## Connections
 
