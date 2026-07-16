@@ -118,3 +118,9 @@ append_only: true
   physical-GPU override. An `afterany` dependency on old diagnostic Jobs
   `1165781-1165783` prevents old/new overlap. No sealed test, profile, or
   GO/KILL was opened.
+- 2026-07-16 13:02+08:00: old Jobs `1165781-1165783` ended `FAILED 1:0`,
+  completing invalidation of the `0421a8d9` matrix. Formal Jobs
+  `1166361-1166369` released and run at epochs 7-11 with finite losses
+  `0.6482-0.7552`; maximum same-batch AMP retry is `2/8`, followed by progress.
+  No hard failure is present, pre-gate artifact counts remain zero, and storage
+  has about 164 GiB free. No performance conclusion or test opening occurred.

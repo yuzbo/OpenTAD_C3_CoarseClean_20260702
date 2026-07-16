@@ -199,6 +199,16 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   dependency prevents overlap with the final three old diagnostic cells; it
   does not alter the training protocol. No selection, sealed test, profile, or
   S1 GO/KILL is currently authorized.
+- Status at `2026-07-16T13:02+08:00`: old diagnostic Jobs
+  `1165781-1165783` also terminated `FAILED 1:0`, so the entire `0421a8d9`
+  matrix remains protocol-invalid. The dependency released all nine formal
+  Jobs `1166361-1166369`, which are now `RUNNING`: dense160 has entered epoch
+  11, dense224 epoch 9, and dense256 epochs 7-8. Latest finite losses span
+  `0.6482-0.7552`; isolated same-batch AMP retries are at most `2/8` and all
+  affected cells continued. There is no Traceback, OOM, non-finite raw loss,
+  determinism warning, retry exhaustion, parity failure, checkpoint write
+  error, or FAIL. Checkpoint/sidecar/evidence/selection/tmp counts are all zero
+  as required before epoch 41, and `/data` retains about 164 GiB free.
 
 ## Decision Boundary
 

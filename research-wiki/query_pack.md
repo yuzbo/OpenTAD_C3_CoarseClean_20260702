@@ -34,10 +34,11 @@ max_chars: 8000
   tests. The failed Job states cannot open sealed test; the 256 cells are still
   finishing, and a new commit-bound gate/epoch-0 namespace is required.
 - Replacement commit `18139b9` passed full CUDA gate Job `1166358`. Fresh
-  epoch-0 3x3 Jobs `1166361-1166369` are queued in canonical namespace
-  `d95a36db...` with no resume or physical-GPU override. They wait on an
-  `afterany` dependency for old diagnostic Jobs `1165781-1165783`, preventing
-  old/new write overlap. No sealed test, cost result, or S1 GO/KILL exists.
+  epoch-0 3x3 Jobs `1166361-1166369` now run in canonical namespace
+  `d95a36db...` with no resume or physical-GPU override. Old diagnostic Jobs
+  `1165781-1165783` terminated FAILED and are not evidence. At 13:02 the new
+  cells are at epochs 7-11 with finite losses and no hard-failure signature;
+  no sealed test, cost result, or S1 GO/KILL exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 
