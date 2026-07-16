@@ -8,6 +8,9 @@ max_chars: 8000
 
 ## 2026-07-16 ChronoTransport integrity delta
 
+- 用户已授权按 approved A1--A4 完整实现并在合法 I/R 后执行 stop-chain。当前仅 W0
+  replacement-plan/source-inventory 为 `IN_PROGRESS`；W1--W7 与 E0--E5 均保持 `LOCKED`，
+  registration `NOT_READY`，没有 ChronoTransport Job 或实验结果。
 - Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
   registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
   verdict `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for exact SHAs `0BE0EA8B...F76808` and

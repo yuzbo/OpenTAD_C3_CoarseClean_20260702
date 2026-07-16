@@ -1,5 +1,10 @@
 # ChronoTransport CT-P3R-3S-r2 Implementation Plan
 
+> **SUPERSEDED — DO NOT EXECUTE.** This plan binds the obsolete `e4422f5` specification and
+> physical-GPU1/CUDA_VISIBLE_DEVICES=1 semantics. It was superseded on 2026-07-16 by
+> `docs/superpowers/plans/2026-07-16-chronotransport-r2-approved-implementation.md` after the
+> A1--A4 specification received `APPROVE_SPEC_FOR_PLAN`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the independently approved CT-P3R-3S-r2 protocol, verify every behavioral contract on the remote server, freeze immutable registration commit `R`, and deploy the first physical-GPU1 experiment only as far as the hard gate chain permits.

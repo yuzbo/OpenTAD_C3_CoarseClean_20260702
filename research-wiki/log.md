@@ -456,3 +456,8 @@ append_only: true
   unauthorized/provenance-invalid runs are `INVALID_IMPLEMENTATION`, not automatic science FAIL. The stale
   `e4422f5`/GPU1 implementation plan is now explicitly forbidden unchanged. No production code, test run,
   CUDA/Slurm action, I/R, PRECHECK, Gate, training or scientific result was created.
+- 2026-07-16: The user authorized full ChronoTransport r2 implementation and stop-chain execution. Replaced
+  the stale `e4422f5`/physical-GPU1 plan with an A1--A4-approved dependency plan and created a locked
+  execution tracker. A read-only N16R4 check found available public GPU capacity but only unrelated DUCA/S1
+  jobs for this account; none was reused, modified or cancelled. Status is implementation repair
+  `IN_PROGRESS`, registration `NOT_READY`, all E0--E5 stages `LOCKED`, and no experiment was launched.

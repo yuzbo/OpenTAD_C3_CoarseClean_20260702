@@ -238,3 +238,8 @@ launchers，并现场重观测 Slurm/GPU/software state；Stage-C loss namespace
 registered config/head 推导；21 个 matching tests 逐一分类；非法 job/provenance 首先判 run
 `INVALID_IMPLEMENTATION`，不能自动充当 science FAIL。旧 implementation plan 仍绑定
 `e4422f5`/GPU1，已禁止原样执行，恢复实现前必须先替换计划。
+
+用户随后授权完整实现与条件式正式实验。当前已创建 A1--A4-aware replacement plan 和 locked
+stop-chain tracker；这只把实现修复状态改为 `IN_PROGRESS`，没有升级为 `implemented` 或 `tested`。
+registration 仍为 `NOT_READY`，E0--E5 全部锁定；远端只读检查发现的 DUCA/S1 jobs 与本路线无关，
+不复用、不修改。
