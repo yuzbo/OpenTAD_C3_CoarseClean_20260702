@@ -235,3 +235,15 @@ append_only: true
   Job `1167516`, on one Slurm-assigned GPU. Gate/matrix receipt SHAs are
   `820a9721...` and `273bb526...`. Final matrix evidence and S1 GO/KILL remain
   pending; Pro and S2 remain blocked.
+- 2026-07-17 07:39+08:00: serial recovery Job `1167516` failed `1:0` in the
+  first dense256/seed3408 profile after running all 792 loader exposures. The
+  formal cost validator rejected a sparse power trace; no profile summary,
+  timing samples, raw power trace, or descriptor was published, and the next
+  eight cells did not start. Preserved stdout/stderr/audit/marker file SHAs are
+  `5d777a11.../22661dd3.../41079027.../eeac13f9...`. The one prior sealed-test
+  result remains unchanged and was not reopened. Added a test-blind Slurm GPU
+  cadence diagnostic comparing the inherited persistent `nvidia-smi` sampler
+  against native NVML under matched CUDA load, with the existing 20 ms target
+  and 100 ms limit unchanged. Local S1 verification is `49 passed, 1 skipped`;
+  remote diagnostic evidence is pending, so no reprofile, GO/KILL, S2, or Pro
+  review is authorized.

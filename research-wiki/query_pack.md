@@ -6,81 +6,35 @@ max_chars: 8000
 
 # Research Query Pack
 
-## Spatial Zoom S1 最新门禁状态（2026-07-15）
+## Spatial Zoom S1 最新门禁状态（2026-07-17）
 
 - 当前唯一执行线仍是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
   ROI、scout、crop policy 或 fusion。
-- `64e71dd` 首次门禁只因 dense feature-map 绕过分类 `fc_norm` 而关闭；`4784242` 仅
-  白名单两个精确参数，随后 CUDA gate `1165667` 证明其余 337 个张量梯度有限且连通。
-- 正式 3x3 训练 Job `1165669-1165677` 已因共享存储耗尽整体失效；当前仍无
-  sealed-test mAP、成本结果或 S1 GO/KILL，禁止进入 S2。
-- `1165669-1165677` 在首次 gate checkpoint 写入前因共享 `/data` 空间耗尽全部失败；
-  loss 保持有限，根因是 `PytorchStreamWriter file write failed`，不是模型性能证据。
-  合同禁止 resume，因此该矩阵失效。修复只允许持久化 10 个 gate-eligible checkpoints，
-  清理失败写入的 `.tmp`，并在启动前要求 96 GiB 可用空间；必须新门禁、从 epoch 0 重跑。
-- 存储修复 commit `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83` 已通过 CUDA gate
-  Job `1165774`：远端 `47 passed`，三分辨率梯度合同闭合。新 canonical namespace
-  `bf71376e...` 中的 3x3 Jobs `1165775-1165783` 已全部从 epoch 0 运行；无 resume，
-  无物理 GPU 覆盖。当前仍无 sealed-test 结果或 S1 GO/KILL。
-- At 2026-07-16 11:00, the 160/224 cells completed all model updates and gate
-  artifacts but failed only in the post-training selector. Root cause: the S1
-  analyzer rejected finite zero-length proposals that the official evaluator
-  retains as false positives. Fix `cbc63d0` passes official parity and focused
-  tests. The failed Job states cannot open sealed test; the 256 cells are still
-  finishing, and a new commit-bound gate/epoch-0 namespace is required.
+- 旧矩阵依次暴露了 dense-path `fc_norm` 断图、共享存储耗尽和错误拒绝官方 finite
+  zero-length proposal 三类基础设施问题；都已保留为 fail-closed 记忆，禁止 resume、
+  test 或性能引用。修复后 only gate-eligible checkpoint、96 GiB 启动门槛、官方 evaluator
+  parity 和完整梯度合同均已测试。
 - Replacement commit `18139b9` passed CUDA gate Job `1166358`; all fresh 3x3
   Jobs `1166361-1166369` completed `0:0` with valid ten-candidate gate-only
   selections. Gate Avg-mAP by resolution/seeds is
   `160: 64.739/64.842/63.078`, `224: 65.695/63.205/63.783`, and
   `256: 65.185/63.316/64.256`. These are selection scores, not test results.
-  One sealed-test certificate was issued (internal SHA `8627866a...`). Initial
-  post Job `1167230` failed before any test read because the profiler confused
-  Slurm's host physical GPU ID with cgroup-local `nvidia-smi` index `0`.
-  Diagnostics `1167232/1167238` and full preflight `1167239` closed the cause;
-  serial same-allocation remediation Job `1167257` is running with an audited
-  selector adapter. Its first frozen-order cell, dense256/seed3408, has raw
-  official-test Avg-mAP `67.09` and mAP@0.3-0.7
-  `82.14/77.76/70.36/59.53/45.67`. Job `1167257` later failed in the first
-  cost-summary validation, after measurement but before publishing any profile
-  summary/sample/power artifact. The official loader has 792 exposures but
-  only 791 physical `(video,start)` identities: `video_test_0001431:7680` is
-  intentionally enumerated twice by the inherited sliding-window tail logic.
-  The profiler's uniqueness assertion was therefore incompatible with the
-  official loader. This is a cost-evidence infrastructure failure, not a model
-  or sealed-test failure. The immutable started marker remains; no deletion,
-  silent retry, resolution decision, or GO/KILL is permitted. A local recovery
-  implementation now preserves all exposures using ordinal-bound exposure IDs,
-  retains physical IDs separately, reuses only fully validated test evidence,
-  and binds a new campaign to a post-processing-only Git diff. Commit `20b84d2`
-  exposed one additional fail-closed blocker: bound training configs and their
-  precheck certificates were incorrectly rebuilt against the repair checkout.
-  Provenance fix `341cf97` instead derives and validates the recorded clean
-  `18139b9` repository, its exact commit and all three configs; dirty, wrong-HEAD
-  and wrong-path sources are rejected. Local S1+C3 verification is `66 passed,
-  1 skipped`. Campaign `bb56f9d0283b12c0` was issued, but Gate `1167497`
-  failed before Python (`set -u`) and `1167500` failed after binding audit when
-  the repair clone lacked the training snapshot's relative `data/` mount; no
-  test/profile opened. Commit `2d988b2` runs repair code from the clean training
-  cwd with explicit `PYTHONPATH` and adds a no-open `PREFLIGHT_ONLY` mode; its
-  remote focused suite passed `67` tests. Campaign `10105b8b590cd7fc` issued
-  certificate SHA `0f02a64b...`, but Gate `1167504` failed in one second before
-  Python because the launcher parsed that certificate before activating the
-  OpenTAD environment. The failure log and self-hashed submission receipt are
-  preserved, and no test/profile opened. A minimal ordering fix now activates
-  the environment before the first Python call and is regression-tested.
-  Commit `04111ad` passed `67` remote tests and campaign `e647d6feff89cfd7`
-  issued certificate SHA `b76fa4af...`; Gate `1167507` then failed before
-  preflight because direct `sbatch` execution relocates `BASH_SOURCE` to
-  `/var/spool/slurmd`, so the launcher derived the wrong code root. No test or
-  profile opened. Both gate and matrix launchers now require an explicit
-  profile-source root and verify its certificate-bound commit and clean Git
-  state. Commit `04f8c28` passed `67` remote tests; campaign
-  `bc9bacf31bae3749` issued certificate SHA `77caf621...`. No-open Gate
-  `1167512` completed `0:0` with 211 videos, 792 loader exposures, 791 physical
-  windows, exact duplicate topology, hardware/software fingerprints, and
-  validated reuse of the only existing test evidence. Exactly one serial
-  same-allocation recovery matrix, Job `1167516`, is now running in frozen 3x3
-  order. No profile descriptor or final result exists yet.
+  One sealed-test certificate was issued (internal SHA `8627866a...`). The first
+  frozen cell dense256/seed3408 has raw official-test Avg-mAP `67.09` and
+  mAP@0.3-0.7 `82.14/77.76/70.36/59.53/45.67`; this single cell cannot select a
+  resolution. Post-processing failures then exposed Slurm physical/local GPU
+  identity mismatch and one official duplicate loader exposure (792 exposures,
+  791 physical windows). Audited recovery preserves the existing test evidence,
+  ordinal exposure IDs, exact historical code/config/checkpoint provenance and
+  immutable failed campaigns. No-open Gate `1167512` passed those contracts.
+  Its serial recovery Job `1167516` failed in the first profile
+  after all 792 exposures ran: the raw power trace violated the unchanged
+  100 ms maximum-gap audit. No summary/sample/power/descriptor was published
+  and no later cell started. This is cost-evidence infrastructure failure, not
+  model/mAP evidence. A no-test-data Slurm diagnostic now compares the original
+  persistent `nvidia-smi` pipe with native NVML under matched CUDA load and
+  records actual cadence; local S1 tests are `49 passed, 1 skipped`, while the
+  remote cadence result and any backend switch remain pending.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

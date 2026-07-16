@@ -73,6 +73,7 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (
     profile_campaign_prefix,
     validate_profile_recovery_certificate,
 )
+from tools.bata.spatial_zoom_s1_power import summarize_power_cadence
 from tools.bata.select_spatial_zoom_s1_checkpoint import (
     select_s1_checkpoint,
     validate_checkpoint_selection,
@@ -1963,6 +1964,48 @@ def test_formal_profile_accepts_all_exposures_with_one_physical_duplicate() -> N
     )
     assert report["sample_count"] == 200
     assert report["physical_window_count"] == 199
+
+
+def test_power_cadence_diagnostic_preserves_the_formal_gap_threshold() -> None:
+    regular = summarize_power_cadence(
+        [(0.00, 200.0), (0.02, 201.0), (0.04, 202.0)],
+        target_interval_ms=20,
+    )
+    assert regular["formal_cadence_pass"] is True
+    assert regular["max_gap_limit_ms"] == 100.0
+    assert regular["sample_count"] == 3
+
+    sparse = summarize_power_cadence(
+        [(0.00, 200.0), (0.12, 201.0), (0.14, 202.0)],
+        target_interval_ms=20,
+    )
+    assert sparse["formal_cadence_pass"] is False
+    assert sparse["max_gap_ms"] == pytest.approx(120.0)
+
+
+def test_power_cadence_diagnostic_rejects_nonmonotonic_or_nonfinite_samples() -> None:
+    nonmonotonic = summarize_power_cadence(
+        [(1.0, 200.0), (1.0, 201.0)], target_interval_ms=20
+    )
+    assert nonmonotonic["strictly_increasing"] is False
+    assert nonmonotonic["formal_cadence_pass"] is False
+
+    nonfinite = summarize_power_cadence(
+        [(1.0, 200.0), (1.02, float("nan"))], target_interval_ms=20
+    )
+    assert nonfinite["finite_nonnegative"] is False
+    assert nonfinite["formal_cadence_pass"] is False
+
+
+def test_power_sampler_diagnostic_is_slurm_local_and_test_blind() -> None:
+    source = (
+        ROOT / "scripts" / "run_spatial_zoom_s1_power_sampler_diag_slurm.sh"
+    ).read_text(encoding="utf-8")
+    assert "SLURM_GPUS_ON_NODE" in source
+    assert "--logical-gpu-id 0" in source
+    assert "CUDA_VISIBLE_DEVICES=" not in source
+    assert "annotation" not in source.lower()
+    assert "test_evidence" not in source.lower()
 
 
 def test_full_stack_profile_requires_trained_checkpoint_and_matched_protocol() -> None:

@@ -442,6 +442,31 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `RUNNING` on `g0024`. This authorizes only completion of the sealed test and
   trained-checkpoint profile matrix. S1 remains `experiment_running`; cost
   analysis, paired statistics, GO/KILL, S2, and Pro review remain blocked.
+- Power-evidence failure status at `2026-07-17T07:39+08:00`: recovery matrix
+  Job `1167516` ended `FAILED 1:0` after `01:17:22` on `g0024`, during the
+  first frozen cell dense256/seed3408. The full 792-exposure model profile ran,
+  but `build_profile_summary` failed with `formal S1 power trace is too sparse
+  for auditable energy integration`. The immutable v5 attempt marker remains;
+  no profile summary, latency samples, raw power trace, or descriptor was
+  published, and no later cell started. Existing dense256/seed3408 sealed-test
+  evidence remains valid and was reused rather than reopened. The failure-log
+  SHAs are `5d777a11...` (stdout) and `22661dd3...` (stderr); the
+  `nvidia-smi` audit SHA is `41079027...`; the marker file SHA is
+  `eeac13f9...` with internal marker SHA `cf74a5f2...`. Static inspection found
+  that the formal validator permits at most a 100 ms gap while the implementation
+  assumes `nvidia-smi --loop-ms=20` yields timestampable 20 ms pipe records;
+  because raw samples were intentionally not committed after validation failed,
+  the old attempt cannot distinguish one buffered record from gaps over 100 ms.
+  This is a cost-evidence infrastructure failure, not model/mAP evidence.
+- A test-blind power-cadence diagnostic is now implemented locally. It uses one
+  Slurm-local `cuda:0` allocation, reads no annotation/test/checkpoint, applies
+  the same ten-second CUDA load to the original persistent `nvidia-smi` sampler
+  and an in-process native-NVML candidate, and atomically records every observed
+  timestamp plus min/median/p95/max gaps. It keeps the frozen 20 ms target and
+  100 ms audit limit unchanged. Local S1 focused verification is `49 passed, 1
+  skipped`; remote GPU cadence evidence is still pending. No formal profile
+  backend switch or replacement matrix is authorized until that diagnostic
+  proves a backend satisfies the unchanged threshold.
 
 ## Decision Boundary
 

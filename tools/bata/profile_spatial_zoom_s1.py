@@ -8,10 +8,8 @@ import json
 import math
 import os
 import platform
-import re
 import subprocess
 import sys
-import threading
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -42,6 +40,9 @@ from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     load_profile_recovery_certificate,
     profile_campaign_prefix,
+)
+from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
+    NvidiaSmiPowerSampler as PowerSampler,
 )
 from tools.bata.validate_spatial_zoom_s1 import validate_config_matrix  # noqa: E402
 from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
@@ -290,78 +291,6 @@ class CudaMethodEvent:
     def close(self) -> None:
         setattr(self.target, self.method_name, self.original)
         self.reset()
-
-
-class PowerSampler:
-    def __init__(self, *, gpu_id: str, interval_ms: int) -> None:
-        self.gpu_id = str(gpu_id)
-        self.interval_s = max(0.005, int(interval_ms) / 1000.0)
-        self.samples: list[tuple[float, float]] = []
-        self._stop = threading.Event()
-        self._ready = threading.Event()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._process: subprocess.Popen[str] | None = None
-        self._error: str | None = None
-
-    def _loop(self) -> None:
-        try:
-            self._process = subprocess.Popen(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=power.draw",
-                    "--format=csv,noheader,nounits",
-                    "-i",
-                    self.gpu_id,
-                    f"--loop-ms={int(round(self.interval_s * 1000.0))}",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
-            assert self._process.stdout is not None
-            for line in self._process.stdout:
-                if self._stop.is_set():
-                    break
-                match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", line)
-                if match:
-                    self.samples.append((time.perf_counter(), float(match.group(0))))
-                    self._ready.set()
-            if not self._stop.is_set():
-                stderr = ""
-                if self._process.stderr is not None:
-                    stderr = self._process.stderr.read().strip()
-                self._error = (
-                    f"persistent nvidia-smi power sampler exited early: {stderr}"
-                )
-        except Exception as exc:  # pragma: no cover - exercised on formal CUDA hosts
-            self._error = f"{type(exc).__name__}: {exc}"
-        finally:
-            self._ready.set()
-
-    def start(self) -> None:
-        self._thread.start()
-        if not self._ready.wait(timeout=10.0):
-            self.stop()
-            raise RuntimeError("nvidia-smi power sampler did not produce a sample")
-        if self._error or not self.samples:
-            error = (
-                self._error or "nvidia-smi power sampler produced no numeric samples"
-            )
-            self.stop()
-            raise RuntimeError(error)
-
-    def stop(self) -> None:
-        self._stop.set()
-        if self._process is not None and self._process.poll() is None:
-            self._process.terminate()
-        if self._thread.is_alive():
-            self._thread.join(timeout=5.0)
-        if self._process is not None and self._process.poll() is None:
-            self._process.kill()
-            self._process.wait(timeout=5.0)
-        if self._error:
-            raise RuntimeError(self._error)
 
 
 def _interpolate_power(samples: list[tuple[float, float]], timestamp: float) -> float:

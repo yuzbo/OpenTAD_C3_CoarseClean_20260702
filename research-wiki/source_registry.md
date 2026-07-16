@@ -184,15 +184,22 @@ updated: 2026-07-17
   relocated `BASH_SOURCE` to `/var/spool/slurmd`. Submission receipt SHA is
   `8960f38ed31dfa3c8796824d4b48c9d805ec60a9a587579e340fe907c3660804`.
   No test/profile evidence was opened.
-- Active recovery campaign `bc9bacf31bae3749`: profile commit
+- Failed recovery campaign `bc9bacf31bae3749`: profile commit
   `04f8c28c85f333ea9b992c1e5bc4fade06f2fe06`, certificate internal SHA
   `77caf621f2c453fc90a627189727dde590a586134d1279be2f95b8b836e7d093`.
   No-open Gate Job `1167512` completed `0:0`; gate receipt SHA is
   `820a9721688f5de68fed9c48b6275058967f7eef93d1a9b7f4a883150ef345fa`.
-  The one authorized serial matrix is Job `1167516`; submission receipt SHA is
+  The one authorized serial matrix was Job `1167516`; submission receipt SHA is
   `273bb5269d68a0e8f90b936e61a4a4d6a176af89882f2fa7e7b0117cb5c3883e`.
-  These sources establish deployment provenance only until all nine descriptors
-  and the frozen analysis close.
+  It failed in the first profile with a sparse-power-trace validator error.
+  Matrix stdout/stderr/audit SHAs are
+  `5d777a117d987eabf58aaa382c01a766008ceaabf6e0717ced3cb7622821f907`,
+  `22661dd3357514ec7772ce03d9d1e9ebb2000a27278050eb00e316f1660c4ee7`,
+  and `41079027f71bd5cfff9eca90a02331703ea6fc2a3ade2c81efa4abae1f9fb852`.
+  The failed-attempt marker file SHA is
+  `eeac13f9e4fa18c7d59b26972b5188dd50f3da8df6466a06968c776baf5c5edc`.
+  No valid profile artifact or descriptor exists; these sources establish an
+  infrastructure failure only.
 
 ## 外部附件
 
