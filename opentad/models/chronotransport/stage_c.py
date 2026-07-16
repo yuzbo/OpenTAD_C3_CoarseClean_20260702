@@ -1598,12 +1598,12 @@ def _parameter_logical_sha256(parameter: nn.Parameter) -> str:
     )
     digest.update(repr(metadata).encode("utf-8"))
     digest.update(b"\0")
-        logical_bytes = (
-            parameter.detach()
-            .contiguous()
-            .reshape(-1)
-            .view(torch.uint8)
-            .cpu()
+    logical_bytes = (
+        parameter.detach()
+        .contiguous()
+        .reshape(-1)
+        .view(torch.uint8)
+        .cpu()
         .numpy()
         .tobytes(order="C")
     )
