@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import nullcontext
 import hashlib
 import math
 import random
@@ -14,7 +15,7 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 
-from .actions import LayerGroup
+from .actions import ChronoAction, LayerGroup
 from .protocol import canonical_sha256, stage_c_batch_exposures
 from .runtime import ChronoTransportRuntime
 from .scheduler import R2_NON_DENSE_NAMES, ScheduleLibrary
@@ -1670,6 +1671,8 @@ def _assert_success_parameter_transition(
     snapshots: Sequence[_ParameterSnapshot],
     model: nn.Module,
     groups: StageCParameterGroups,
+    *,
+    allow_unchanged: frozenset[int] = frozenset(),
 ) -> None:
     """Allow optimizer changes only for A/T/R while freezing full-model topology."""
 
@@ -1710,6 +1713,12 @@ def _assert_success_parameter_transition(
                 )
             continue
         if int(parameter._version) <= snapshot.version:
+            if (
+                id(parameter) in allow_unchanged
+                and snapshot.value is not None
+                and torch.equal(parameter.detach(), snapshot.value)
+            ):
+                continue
             raise StageCInvalidImplementationError(
                 f"trainable A/T/R Parameter did not receive the optimizer step: {snapshot.name}"
             )
@@ -1813,6 +1822,133 @@ def _buffer_state_equal(
             ):
                 return False
     return True
+
+
+def _buffer_full_path(module_path: str, name: str) -> str:
+    return f"{module_path + '.' if module_path else ''}{name}"
+
+
+def _transactional_restore_module_buffers(
+    model: nn.Module,
+    state: Mapping[str, Mapping[str, _BufferSnapshot]],
+) -> None:
+    """Restore logical buffer bytes while preserving registered objects/storage.
+
+    PyTorch Tensor version counters cannot be decremented.  A3 therefore binds
+    rollback to object identity, storage metadata, dtype/layout/shape and exact
+    logical value, then allows the monotonically increasing internal version.
+    """
+
+    modules = dict(model.named_modules())
+    if set(modules) != set(state):
+        raise StageCInvalidImplementationError(
+            "model module topology changed during Stage-C buffer rollback"
+        )
+    with torch.no_grad():
+        for path, module in modules.items():
+            snapshots = state[path]
+            if set(module._buffers) != set(snapshots):
+                raise StageCInvalidImplementationError(
+                    f"buffer registration changed during Stage-C rollback: {path or '<root>'}"
+                )
+            for name, snapshot in snapshots.items():
+                current = module._buffers[name]
+                if snapshot.reference is None:
+                    if current is not None:
+                        raise StageCInvalidImplementationError(
+                            f"None buffer changed during Stage-C rollback: {_buffer_full_path(path, name)}"
+                        )
+                    continue
+                if current is not snapshot.reference:
+                    raise StageCInvalidImplementationError(
+                        f"buffer identity changed during Stage-C rollback: {_buffer_full_path(path, name)}"
+                    )
+                storage = current.untyped_storage()
+                metadata = (
+                    current.layout,
+                    current.dtype,
+                    current.device,
+                    tuple(current.shape),
+                    tuple(current.stride()),
+                    int(current.storage_offset()),
+                    int(storage._cdata),
+                    int(storage.data_ptr()),
+                    int(storage.nbytes()),
+                    bool(current.requires_grad),
+                    name not in module._non_persistent_buffers_set,
+                )
+                expected = (
+                    snapshot.layout,
+                    snapshot.dtype,
+                    snapshot.device,
+                    snapshot.shape,
+                    snapshot.stride,
+                    snapshot.storage_offset,
+                    snapshot.storage_cdata,
+                    snapshot.storage_data_ptr,
+                    snapshot.storage_nbytes,
+                    snapshot.requires_grad,
+                    snapshot.persistent,
+                )
+                if metadata != expected:
+                    raise StageCInvalidImplementationError(
+                        f"buffer metadata changed during Stage-C rollback: {_buffer_full_path(path, name)}"
+                    )
+                if not torch.equal(current.detach(), snapshot.value):
+                    current.copy_(snapshot.value)
+
+
+def _buffer_logical_state_equal(
+    expected: Mapping[str, Mapping[str, _BufferSnapshot]],
+    model: nn.Module,
+    *,
+    allowed_value_changes: frozenset[str] = frozenset(),
+) -> bool:
+    current = _module_buffer_state(model)
+    if set(expected) != set(current):
+        return False
+    for path, buffers in expected.items():
+        if set(buffers) != set(current[path]):
+            return False
+        for name, snapshot in buffers.items():
+            actual = current[path][name]
+            full_path = _buffer_full_path(path, name)
+            if snapshot.reference is not actual.reference or snapshot.persistent != actual.persistent:
+                return False
+            if snapshot.reference is None:
+                continue
+            if (
+                snapshot.dtype != actual.dtype
+                or snapshot.layout != actual.layout
+                or snapshot.device != actual.device
+                or snapshot.shape != actual.shape
+                or snapshot.stride != actual.stride
+                or snapshot.storage_offset != actual.storage_offset
+                or snapshot.storage_cdata != actual.storage_cdata
+                or snapshot.storage_data_ptr != actual.storage_data_ptr
+                or snapshot.storage_nbytes != actual.storage_nbytes
+                or snapshot.requires_grad != actual.requires_grad
+            ):
+                return False
+            if full_path not in allowed_value_changes and not torch.equal(
+                snapshot.value, actual.value
+            ):
+                return False
+    return True
+
+
+def _canonical_loss_normalizer(model: nn.Module) -> tuple[str, Tensor]:
+    matches = []
+    for path, module in model.named_modules():
+        if path.endswith("rpn_head") and "loss_normalizer" in module._buffers:
+            value = module._buffers["loss_normalizer"]
+            if isinstance(value, Tensor):
+                matches.append((_buffer_full_path(path, "loss_normalizer"), value))
+    if len(matches) != 1 or matches[0][1].numel() != 1:
+        raise StageCInvalidImplementationError(
+            "formal Stage C requires exactly one scalar rpn_head.loss_normalizer buffer"
+        )
+    return matches[0]
 
 
 _MODULE_INTERNAL_ATTRIBUTES = (frozenset(nn.Module().__dict__) - {"training"}) | {
@@ -2422,7 +2558,310 @@ def _advance_success_state(
         raise StageCInvalidImplementationError("shadow ledger must append exactly one successful batch row")
 
 
-def run_stage_c_amp_with_retry(
+_STAGE_C_BATCH_FORWARD_FIELDS = frozenset(
+    {"inputs", "masks", "metas", "gt_segments", "gt_labels"}
+)
+_STAGE_C_BATCH_METADATA_FIELDS = frozenset(
+    {
+        "video_id",
+        "window_id",
+        "manifest_window_sha256",
+        "manifest_sampled_frame_indices_sha256",
+        "augmentation_sha256",
+        "sample_id",
+        "split",
+    }
+)
+
+
+@dataclass(frozen=True)
+class _StageCPairedForwardEvidence:
+    losses: StageCAttemptLosses
+    runtime: _StageCRuntimeEvidence
+    dense_task_loss: Tensor
+    counterfactual_task_loss: Tensor
+    normalizer_before: Tensor
+    normalizer_after_dense: Tensor
+    normalizer_after_counterfactual: Tensor
+    model_forward_count: int
+    runtime_forward_count: int
+    risk_forward_count: int
+
+
+def _stage_c_forward_kwargs(materialized_batch: Any) -> dict[str, Any]:
+    if not isinstance(materialized_batch, Mapping):
+        raise TypeError("formal Stage-C materialized batch must be a mapping")
+    missing = sorted(_STAGE_C_BATCH_FORWARD_FIELDS - set(materialized_batch))
+    unknown = sorted(
+        set(materialized_batch)
+        - _STAGE_C_BATCH_FORWARD_FIELDS
+        - _STAGE_C_BATCH_METADATA_FIELDS
+    )
+    if missing or unknown:
+        raise ValueError(
+            f"formal Stage-C batch fields mismatch: missing={missing}, unknown={unknown}"
+        )
+    return {
+        key: materialized_batch[key] for key in _STAGE_C_BATCH_FORWARD_FIELDS
+    } | {
+        "return_loss": True,
+        "chronotransport_per_window_output": True,
+    }
+
+
+def _run_stage_c_paired_actionformer_forward(
+    *,
+    materialized_batch: Any,
+    model: nn.Module,
+    runtime: nn.Module,
+    expected_actions: Tensor,
+    buffer_state: Mapping[str, Mapping[str, _BufferSnapshot]],
+    python_state: Mapping[str, Mapping[str, Any]],
+    rng_state: _RNGSnapshot,
+    topology_state: _ModelTopologySnapshot,
+    require_cuda_autocast: bool,
+) -> _StageCPairedForwardEvidence:
+    from ..detectors.actionformer import ActionFormerPerWindowTrainOutput
+
+    forward_kwargs = _stage_c_forward_kwargs(materialized_batch)
+    batch_size = int(forward_kwargs["inputs"].shape[0])
+    if batch_size != 2:
+        raise StageCInvalidImplementationError(
+            "formal Stage C requires exact global batch size two"
+        )
+    normalizer_path, normalizer = _canonical_loss_normalizer(model)
+    normalizer_before = normalizer.detach().clone()
+    state: dict[str, Any] = {
+        "model_forwards": 0,
+        "runtime_forwards": 0,
+        "risk_forwards": 0,
+        "risk_inputs": None,
+    }
+
+    def model_pre_hook(module: nn.Module, inputs: tuple[Any, ...]) -> None:
+        del module, inputs
+        index = int(state["model_forwards"])
+        if index >= 2:
+            raise StageCInvalidImplementationError(
+                "Stage-C attempt executed more than two top-level model forwards"
+            )
+        expected_grad = index == 1
+        if torch.is_grad_enabled() != expected_grad:
+            raise StageCInvalidImplementationError(
+                "Stage-C dense/CF model grad modes differ from A4"
+            )
+        if require_cuda_autocast and not torch.is_autocast_enabled():
+            raise StageCInvalidImplementationError(
+                "formal CUDA Stage C requires autocast for both model forwards"
+            )
+        state["model_forwards"] = index + 1
+
+    def model_forward_hook(
+        module: nn.Module, inputs: tuple[Any, ...], output: Any
+    ) -> None:
+        del module, inputs
+        if not isinstance(output, ActionFormerPerWindowTrainOutput):
+            raise StageCInvalidImplementationError(
+                "Stage-C model forward must return ActionFormer per-window evidence"
+            )
+
+    def runtime_pre_hook(module: nn.Module, inputs: tuple[Any, ...]) -> None:
+        del module, inputs
+        if int(state["runtime_forwards"]) >= int(state["model_forwards"]):
+            raise StageCInvalidImplementationError(
+                "canonical runtime escaped its audited model forward"
+            )
+        state["runtime_forwards"] = int(state["runtime_forwards"]) + 1
+
+    def risk_pre_hook(module: nn.Module, inputs: tuple[Any, ...]) -> None:
+        del module
+        if (
+            int(state["model_forwards"]) != 2
+            or int(state["runtime_forwards"]) != 2
+            or int(state["risk_forwards"]) != 0
+            or len(inputs) < 2
+        ):
+            raise StageCInvalidImplementationError(
+                "Stage-C risk predictor must run exactly once after the CF model"
+            )
+        if require_cuda_autocast and not torch.is_autocast_enabled():
+            raise StageCInvalidImplementationError(
+                "formal CUDA Stage C requires autocast for the risk forward"
+            )
+        state["risk_forwards"] = 1
+        state["risk_inputs"] = inputs[:2]
+
+    handles = (
+        model.register_forward_pre_hook(model_pre_hook),
+        model.register_forward_hook(model_forward_hook),
+        runtime.register_forward_pre_hook(runtime_pre_hook),
+        runtime.risk_predictor.register_forward_pre_hook(risk_pre_hook),
+    )
+    try:
+        with torch.no_grad():
+            runtime.forced_actions.copy_(
+                torch.full_like(expected_actions, int(ChronoAction.RECOMPUTE))
+            )
+            runtime.forced_action_name = "stage_c_dense_reference"
+            runtime.latest_schedule = None
+            runtime.latest_summary = None
+            runtime.latest_output = None
+            runtime.latest_signals = None
+            with (
+                torch.cuda.amp.autocast()
+                if require_cuda_autocast
+                else nullcontext()
+            ):
+                dense_output = model(**forward_kwargs)
+        if not isinstance(dense_output, ActionFormerPerWindowTrainOutput):
+            raise StageCInvalidImplementationError(
+                "dense reference lacks ActionFormer per-window evidence"
+            )
+        dense_task_loss = dense_output.per_window_task_loss.detach().clone()
+        dense_features = dense_output.detector_features.detach().clone()
+        normalizer_after_dense = normalizer.detach().clone()
+
+        _assert_model_topology(topology_state, model, where="after dense reference")
+        _transactional_restore_module_buffers(model, buffer_state)
+        _restore_module_python_state(model, python_state)
+        _restore_rng(rng_state)
+        if not _buffer_logical_state_equal(buffer_state, model):
+            raise StageCInvalidImplementationError(
+                "dense-reference buffers were not logically restored before CF"
+            )
+        if not torch.equal(normalizer.detach(), normalizer_before):
+            raise StageCInvalidImplementationError(
+                "dense-reference loss_normalizer was not restored before CF"
+            )
+
+        with (
+            torch.cuda.amp.autocast()
+            if require_cuda_autocast
+            else nullcontext()
+        ):
+            counterfactual_output = model(**forward_kwargs)
+            if not isinstance(
+                counterfactual_output, ActionFormerPerWindowTrainOutput
+            ):
+                raise StageCInvalidImplementationError(
+                    "counterfactual lacks ActionFormer per-window evidence"
+                )
+            schedule = runtime.latest_schedule
+            summary = runtime.latest_summary
+            signals = runtime.latest_signals
+            executed_actions = getattr(schedule, "actions", None)
+            if (
+                not isinstance(executed_actions, Tensor)
+                or not isinstance(summary, Mapping)
+                or not isinstance(signals, Tensor)
+            ):
+                raise StageCInvalidImplementationError(
+                    "counterfactual runtime evidence is incomplete"
+                )
+            if not torch.equal(
+                executed_actions.detach().to(torch.long),
+                expected_actions.detach().to(torch.long),
+            ):
+                raise StageCInvalidImplementationError(
+                    "counterfactual executed actions differ from frozen exposure"
+                )
+            risk_prediction = runtime.risk_predictor(
+                signals.detach(), executed_actions.detach().unsqueeze(1)
+            ).squeeze(1)
+            target = (
+                counterfactual_output.per_window_task_loss.detach()
+                - dense_task_loss
+            ).clamp_min(0.0)
+            if tuple(risk_prediction.shape) != (2,) or tuple(target.shape) != (2,):
+                raise StageCInvalidImplementationError(
+                    "Stage-C risk prediction/target must each have shape [2]"
+                )
+            quantile = float(runtime.risk_predictor.quantile)
+            residual = target - risk_prediction
+            risk_loss = torch.maximum(
+                quantile * residual, (quantile - 1.0) * residual
+            ).mean()
+            feature_delta = (
+                counterfactual_output.detector_features.float()
+                - dense_features.float()
+            )
+            feature_loss = feature_delta.square().mean()
+            losses = StageCAttemptLosses(
+                detector_loss=counterfactual_output.loss_dict["cost"],
+                feature_loss=feature_loss,
+                risk_loss=risk_loss,
+            )
+        normalizer_after_counterfactual = normalizer.detach().clone()
+    finally:
+        for handle in handles:
+            handle.remove()
+
+    if (
+        int(state["model_forwards"]) != 2
+        or int(state["runtime_forwards"]) != 2
+        or int(state["risk_forwards"]) != 1
+    ):
+        raise StageCInvalidImplementationError(
+            "A4 requires exactly two model/runtime forwards and one risk forward"
+        )
+    risk_inputs = state["risk_inputs"]
+    if not isinstance(risk_inputs, tuple) or len(risk_inputs) < 2:
+        raise StageCInvalidImplementationError(
+            "risk predictor did not expose the audited signals/actions inputs"
+        )
+    # ``detach()`` creates a view object, so identity cannot be compared.  The
+    # pre-hook instead freezes the exact call arguments and verifies their
+    # values against the local CF evidence below.
+    if not torch.equal(risk_inputs[0], signals.detach()):
+        raise StageCInvalidImplementationError(
+            "risk predictor signals differ from the CF runtime signals"
+        )
+    if not torch.equal(
+        risk_inputs[1], executed_actions.detach().unsqueeze(1)
+    ):
+        raise StageCInvalidImplementationError(
+            "risk predictor actions differ from the CF runtime actions"
+        )
+    if not torch.equal(normalizer_after_dense, normalizer_after_counterfactual):
+        raise StageCInvalidImplementationError(
+            "dense and CF loss_normalizer formulas diverged on the same batch"
+        )
+    detector_boundary = _snapshot_tensor_boundary(
+        "counterfactual per-window task loss",
+        counterfactual_output.per_window_task_loss,
+    )
+    feature_boundary = _snapshot_tensor_boundary(
+        "counterfactual detector features",
+        counterfactual_output.detector_features,
+    )
+    signals_boundary = _snapshot_tensor_boundary(
+        "counterfactual runtime signals", signals
+    )
+    runtime_evidence = _StageCRuntimeEvidence(
+        actions=executed_actions.detach().clone(),
+        summary=copy.deepcopy(dict(summary)),
+        detector_output=counterfactual_output.per_window_task_loss,
+        detector_boundary=detector_boundary,
+        feature_output=counterfactual_output.detector_features,
+        feature_boundary=feature_boundary,
+        signals_boundary=signals_boundary,
+        risk_output=risk_prediction,
+    )
+    return _StageCPairedForwardEvidence(
+        losses=losses,
+        runtime=runtime_evidence,
+        dense_task_loss=dense_task_loss,
+        counterfactual_task_loss=counterfactual_output.per_window_task_loss,
+        normalizer_before=normalizer_before,
+        normalizer_after_dense=normalizer_after_dense,
+        normalizer_after_counterfactual=normalizer_after_counterfactual,
+        model_forward_count=2,
+        runtime_forward_count=2,
+        risk_forward_count=1,
+    )
+
+
+def run_stage_c_amp_with_retry_for_test_only(
     *,
     materialized_batch: Any,
     attempt: Callable[[], StageCAttemptLosses],
@@ -2670,6 +3109,296 @@ def run_stage_c_amp_with_retry(
         if attempt_index == 3:
             raise StageCInvalidImplementationError(
                 "four overflow attempts exhausted the fixed initial-plus-three-retry budget"
+            )
+
+    raise AssertionError("unreachable")
+
+
+def run_stage_c_amp_with_retry(
+    *,
+    materialized_batch: Any,
+    model: nn.Module,
+    groups: StageCParameterGroups,
+    optimizer: torch.optim.Optimizer,
+    scaler: Any,
+    lr_scheduler: Any,
+    seed: int,
+    rollback_objects: Mapping[str, Any] | None = None,
+    retry_audit: MutableSequence[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Execute one callback-free A3/A4 ActionFormer Stage-C transaction."""
+
+    stage_c_batch_exposures(seed, 0)
+    objects = dict(rollback_objects or {})
+    missing_objects = sorted(_REQUIRED_ROLLBACK_OBJECTS - set(objects))
+    if missing_objects:
+        raise ValueError(
+            f"Stage C rollback_objects missing required state surfaces: {missing_objects}"
+        )
+    if objects.get("scheduler") is not lr_scheduler:
+        raise ValueError("rollback_objects must contain the same scheduler object")
+    validate_stage_c_optimizer(groups, optimizer, lr_scheduler=lr_scheduler)
+    selected_devices = {parameter.device for parameter in groups.all}
+    if len(selected_devices) != 1:
+        raise StageCInvalidImplementationError(
+            "formal Stage C requires all A/T/R Parameters on one device"
+        )
+    require_cuda_autocast = next(iter(selected_devices)).type == "cuda"
+    if require_cuda_autocast and (
+        type(scaler) is not torch.cuda.amp.GradScaler
+        or not bool(scaler.is_enabled())
+    ):
+        raise StageCInvalidImplementationError(
+            "formal CUDA Stage C requires the exact enabled torch.cuda.amp.GradScaler"
+        )
+    runtime_path, runtime = _canonical_stage_c_runtime(model, groups)
+    normalizer_path, normalizer = _canonical_loss_normalizer(model)
+    forbidden = {id(model), id(optimizer), id(scaler)}
+    if any(id(value) in forbidden for value in objects.values()):
+        raise ValueError(
+            "model, optimizer, and GradScaler cannot be rollback_objects"
+        )
+    if len({id(value) for value in objects.values()}) != len(objects):
+        raise ValueError("rollback_objects must not contain object aliases")
+    successful_update = _validate_global_success_state(
+        objects=objects, lr_scheduler=lr_scheduler, seed=seed
+    )
+    if successful_update >= 4200:
+        raise StageCInvalidImplementationError(
+            "Stage C cannot advance beyond 4200 successful updates"
+        )
+    expected_actions = _install_stage_c_action_batch(
+        runtime, seed=seed, successful_update=successful_update
+    )
+
+    audit = retry_audit if retry_audit is not None else []
+    if any(id(value) == id(audit) for value in objects.values()):
+        raise ValueError("append-only retry_audit cannot be a rollback object")
+    batch_hash = hash_materialized_batch(materialized_batch)
+    rng_snapshot = _snapshot_rng()
+    topology_state = _model_topology_state(model)
+    parameter_state = _model_parameter_state(model, groups)
+    model_buffer_state = _module_buffer_state(model)
+    model_python_state = _module_python_state(model)
+    success_python_state = _module_python_state(
+        model,
+        ignored_by_path=_approved_success_python_attributes(runtime_path),
+    )
+    optimizer_state = _clone_state_dict(optimizer.state_dict())
+    object_states = {
+        name: _snapshot_object(value) for name, value in objects.items()
+    }
+
+    for attempt_index in range(4):
+        _assert_model_topology(
+            topology_state, model, where=f"before A4 attempt {attempt_index + 1}"
+        )
+        paired = _run_stage_c_paired_actionformer_forward(
+            materialized_batch=materialized_batch,
+            model=model,
+            runtime=runtime,
+            expected_actions=expected_actions,
+            buffer_state=model_buffer_state,
+            python_state=model_python_state,
+            rng_state=rng_snapshot,
+            topology_state=topology_state,
+            require_cuda_autocast=require_cuda_autocast,
+        )
+        _assert_model_topology(
+            topology_state,
+            model,
+            where=f"during A4 attempt {attempt_index + 1}",
+        )
+        _assert_control_objects_at_common_start(
+            objects=objects, snapshots=object_states
+        )
+        _assert_parameters_unchanged(parameter_state, model)
+        executed_actions = paired.runtime.actions
+        transport_executed = _transport_executed(executed_actions)
+        exposures, action_batch_sha256 = _validate_stage_c_attempt_actions(
+            seed=seed,
+            successful_update=successful_update,
+            action_payload=executed_actions,
+        )
+        if hash_materialized_batch(materialized_batch) != batch_hash:
+            raise StageCInvalidImplementationError(
+                "materialized batch changed during Stage-C attempt"
+            )
+        _validate_formal_runtime_summary(
+            paired.runtime.summary,
+            runtime=runtime,
+            actions=executed_actions,
+        )
+        _assert_attempt_loss_provenance(paired.losses, paired.runtime, groups)
+
+        step_audit = loss_specific_amp_step(
+            detector_loss=paired.losses.detector_loss,
+            feature_loss=paired.losses.feature_loss,
+            risk_loss=paired.losses.risk_loss,
+            groups=groups,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            scaler=scaler,
+            action_payload=executed_actions,
+        )
+        overflow = bool(step_audit["overflow"])
+        audit_row = {
+            "attempt": attempt_index + 1,
+            "retry": attempt_index,
+            "batch_hash": batch_hash,
+            "seed": seed,
+            "successful_update": successful_update,
+            "action_batch_sha256": action_batch_sha256,
+            "exposures": [dict(row) for row in exposures],
+            "scale": step_audit["scale"],
+            "post_scale": step_audit["post_scale"],
+            "overflow": overflow,
+            "transport_executed": transport_executed,
+            "transport_grad_finite": step_audit["transport_grad_finite"],
+            "transport_grad_norm": step_audit["transport_grad_norm"],
+            "model_forward_count": paired.model_forward_count,
+            "runtime_forward_count": paired.runtime_forward_count,
+            "risk_forward_count": paired.risk_forward_count,
+            "loss_normalizer_before": float(paired.normalizer_before.item()),
+            "loss_normalizer_after_dense_temporary": float(
+                paired.normalizer_after_dense.item()
+            ),
+            "loss_normalizer_after_counterfactual": float(
+                paired.normalizer_after_counterfactual.item()
+            ),
+        }
+        audit.append(audit_row)
+
+        if not overflow:
+            _assert_control_objects_at_common_start(
+                objects=objects, snapshots=object_states
+            )
+            if not torch.equal(
+                normalizer.detach(), paired.normalizer_after_counterfactual
+            ):
+                raise StageCInvalidImplementationError(
+                    "successful Stage-C normalizer differs from the one CF update"
+                )
+            if not _buffer_logical_state_equal(
+                model_buffer_state,
+                model,
+                allowed_value_changes=frozenset({normalizer_path}),
+            ):
+                raise StageCInvalidImplementationError(
+                    "a buffer other than rpn_head.loss_normalizer changed on success"
+                )
+            allow_unchanged = (
+                frozenset(map(id, groups.transport))
+                if not transport_executed
+                else frozenset()
+            )
+            _assert_success_parameter_transition(
+                parameter_state,
+                model,
+                groups,
+                allow_unchanged=allow_unchanged,
+            )
+            _assert_success_python_state(
+                success_python_state, model, runtime_path=runtime_path
+            )
+            _advance_success_state(
+                objects=objects,
+                model=model,
+                lr_scheduler=lr_scheduler,
+                seed=seed,
+                batch_hash=batch_hash,
+                action_batch_sha256=action_batch_sha256,
+                exposures=exposures,
+            )
+            if not _buffer_logical_state_equal(
+                model_buffer_state,
+                model,
+                allowed_value_changes=frozenset({normalizer_path}),
+            ):
+                raise StageCInvalidImplementationError(
+                    "successful state advance mutated an unapproved model buffer"
+                )
+            _assert_success_python_state(
+                success_python_state, model, runtime_path=runtime_path
+            )
+            _assert_tensor_boundary(
+                paired.runtime.signals_boundary, runtime.latest_signals
+            )
+            _assert_tensor_boundary(
+                paired.runtime.detector_boundary,
+                paired.runtime.detector_output,
+            )
+            _assert_tensor_boundary(
+                paired.runtime.feature_boundary,
+                paired.runtime.feature_output,
+            )
+            validate_stage_c_optimizer(
+                groups, optimizer, lr_scheduler=lr_scheduler
+            )
+            _validate_global_success_state(
+                objects=objects, lr_scheduler=lr_scheduler, seed=seed
+            )
+            optimizer.zero_grad(set_to_none=True)
+            return {
+                "status": "SUCCESS",
+                "batch_hash": batch_hash,
+                "seed": seed,
+                "successful_update": successful_update,
+                "action_batch_sha256": action_batch_sha256,
+                "exposures": [dict(row) for row in exposures],
+                "attempts": attempt_index + 1,
+                "retries": attempt_index,
+                "gradient_audit": step_audit,
+                "a3_a4_audit": audit_row,
+            }
+
+        if not _state_equal(optimizer_state, optimizer.state_dict()):
+            raise StageCInvalidImplementationError(
+                "GradScaler overflow changed optimizer parameters or state"
+            )
+        optimizer.zero_grad(set_to_none=True)
+        _transactional_restore_module_buffers(model, model_buffer_state)
+        _restore_module_python_state(model, model_python_state)
+        optimizer.load_state_dict(copy.deepcopy(optimizer_state))
+        for name, value in objects.items():
+            _restore_object(value, object_states[name])
+        _restore_rng(rng_snapshot)
+
+        _assert_model_topology(
+            topology_state, model, where="after A3 overflow rollback"
+        )
+        _assert_parameters_unchanged(parameter_state, model)
+        if not _buffer_logical_state_equal(model_buffer_state, model):
+            raise StageCInvalidImplementationError(
+                "model buffers were not logically restored after overflow"
+            )
+        restored_python_state = _module_python_state(model)
+        if not _state_equal(model_python_state, restored_python_state):
+            mismatch = _first_state_mismatch(
+                model_python_state, restored_python_state
+            )
+            raise StageCInvalidImplementationError(
+                f"model Python state was not restored after overflow: {mismatch}"
+            )
+        if not _state_equal(optimizer_state, optimizer.state_dict()):
+            raise StageCInvalidImplementationError(
+                "optimizer state was not restored after overflow"
+            )
+        for name, value in objects.items():
+            restored = _snapshot_object(value)
+            if restored[0] != object_states[name][0] or not _state_equal(
+                object_states[name][1], restored[1]
+            ):
+                raise StageCInvalidImplementationError(
+                    f"rollback object {name} was not restored after overflow"
+                )
+        if not _rng_equal(rng_snapshot, _snapshot_rng()):
+            raise StageCInvalidImplementationError(
+                "RNG state was not restored after overflow"
+            )
+        if attempt_index == 3:
+            raise StageCInvalidImplementationError(
+                "four overflow attempts exhausted the fixed retry budget"
             )
 
     raise AssertionError("unreachable")

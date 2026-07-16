@@ -429,9 +429,10 @@ class AnchorFreeHead(nn.Module):
         # maintain an EMA of foreground to stabilize the loss normalizer
         # useful for small mini-batch training
         if self.training:
-            self.loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + (
+            updated_loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + (
                 1 - self.loss_normalizer_momentum
             ) * max(num_pos, 1)
+            self.loss_normalizer.copy_(updated_loss_normalizer)
             loss_normalizer = self.loss_normalizer
         else:
             loss_normalizer = max(num_pos, 1)

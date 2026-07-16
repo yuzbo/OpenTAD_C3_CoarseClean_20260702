@@ -6,11 +6,13 @@ import warnings
 import numpy as np
 import pytest
 import torch
+from mmengine.config import ConfigDict
 from torch import nn
 
 from opentad.models.backbones.vit_adapter import VisionTransformerAdapter
 from opentad.cores.scheduler import LinearWarmupCosineAnnealingLR
 from opentad.utils.ema import ModelEma
+from opentad.models import build_detector
 from opentad.models.chronotransport.training import configure_stage_c
 from opentad.models.chronotransport.runtime import ChronoTransportRuntime
 import opentad.models.chronotransport.stage_c as stage_c_module
@@ -25,6 +27,7 @@ from opentad.models.chronotransport.stage_c import (
     hash_materialized_batch,
     loss_specific_amp_step,
     run_stage_c_amp_with_retry,
+    run_stage_c_amp_with_retry_for_test_only,
     stage_c_action_hash,
     validate_transport_gradient_ledger,
     validate_stage_c_optimizer,
@@ -853,7 +856,7 @@ def _run_formal_vit_stage_c_smoke(device, scaler):
             risk_loss=risk_loss,
         )
 
-    result = run_stage_c_amp_with_retry(
+    result = run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames_sha": "formal-videomae-stage-c-smoke"},
         attempt=attempt,
         model=model,
@@ -881,7 +884,7 @@ def test_retry_requires_all_state_surfaces_and_success_advancers():
     incomplete = dict(objects)
     del incomplete["profiler"]
     with pytest.raises(ValueError, match="profiler"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -946,7 +949,7 @@ def test_amp_overflow_restores_full_attempt_state_and_replays_same_rng_batch_act
         objects["profiler"].value += 1
         return _formal_bound_losses_after_forward(model, detector_output)
 
-    result = run_stage_c_amp_with_retry(
+    result = run_stage_c_amp_with_retry_for_test_only(
         materialized_batch=materialized,
         attempt=attempt,
         model=model,
@@ -992,7 +995,7 @@ def test_amp_overflow_restores_full_attempt_state_and_replays_same_rng_batch_act
 
 def test_two_consecutive_batches_restore_state_dict_plus_python_and_nonleaf_latest_output():
     model, groups, optimizer, scaler, objects = _retry_fixture(set())
-    run_stage_c_amp_with_retry(
+    run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames": torch.ones(2, 2), "batch": 0},
         attempt=lambda: _finite_attempt(model, groups),
         model=model,
@@ -1028,7 +1031,7 @@ def test_two_consecutive_batches_restore_state_dict_plus_python_and_nonleaf_late
         objects["diagnostics"].latest_output = groups.adapters[0].sum() * 4.0
         return _finite_attempt(model, groups)
 
-    result = run_stage_c_amp_with_retry(
+    result = run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames": torch.ones(2, 2), "batch": 1},
         attempt=second_attempt,
         model=model,
@@ -1066,7 +1069,7 @@ def test_inplace_python_tensor_version_mutation_is_invalid_instead_of_fake_resto
         return _finite_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="in-place Python Tensor"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=attempt,
             model=model,
@@ -1091,7 +1094,7 @@ def test_inplace_buffer_version_mutation_with_retained_graph_is_invalid():
         return _finite_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="buffer.*version"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=attempt,
             model=model,
@@ -1113,7 +1116,7 @@ def test_overflow_rejects_any_parameter_value_or_version_mutation_including_froz
         return _finite_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="Parameter.*mutation"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=attempt,
             model=model,
@@ -1144,7 +1147,7 @@ def test_success_transition_rejects_noop_or_multi_update_ema(mode):
     model, groups, optimizer, scaler, objects = _retry_fixture(set())
     objects["ema"] = _EMAState(mode=mode)
     with pytest.raises(StageCInvalidImplementationError, match="EMA.*exactly once"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1162,7 +1165,7 @@ def test_success_transition_rejects_wrong_scheduler_object_binding():
     other_optimizer = build_stage_c_optimizer(groups)
     other_scheduler = _build_lr_scheduler(other_optimizer)
     with pytest.raises(ValueError, match="same scheduler object"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1179,7 +1182,7 @@ def test_global_success_state_coherence_and_existing_ledger_are_fail_closed():
     model, groups, optimizer, scaler, objects = _retry_fixture(set())
     objects["successful_cursor"].value = 1
     with pytest.raises(StageCInvalidImplementationError, match="global success-state coherence"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1192,7 +1195,7 @@ def test_global_success_state_coherence_and_existing_ledger_are_fail_closed():
         )
 
     model, groups, optimizer, scaler, objects = _retry_fixture(set())
-    run_stage_c_amp_with_retry(
+    run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames": torch.ones(2, 2), "batch": 0},
         attempt=lambda: _finite_attempt(model, groups),
         model=model,
@@ -1205,7 +1208,7 @@ def test_global_success_state_coherence_and_existing_ledger_are_fail_closed():
     )
     objects["shadow_ledger"][0]["successful_update"] = 9
     with pytest.raises(StageCInvalidImplementationError, match="shadow ledger continuity"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1232,7 +1235,7 @@ def test_nonfinite_gradient_overflow_still_steps_updates_backoff_and_retries():
             model, detector_output, detector_multiplier=multiplier
         )
 
-    result = run_stage_c_amp_with_retry(
+    result = run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames": torch.ones(2, 2)},
         attempt=attempt,
         model=model,
@@ -1265,7 +1268,7 @@ def test_retry_fails_closed_if_action_changes_or_overflow_updates_optimizer():
         return _finite_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="canonical Stage-C action batch"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=changed_action_attempt,
             model=model,
@@ -1284,7 +1287,7 @@ def test_retry_fails_closed_if_action_changes_or_overflow_updates_optimizer():
         return _finite_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="Parameter.*mutation|changed optimizer"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=bad_step_attempt,
             model=model,
@@ -1314,7 +1317,7 @@ def test_fourth_overflow_is_invalid_and_preserves_only_scaler_and_append_only_au
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="four overflow attempts"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2), "augmentation": "fixed"},
             attempt=attempt,
             model=model,
@@ -1351,7 +1354,7 @@ def test_matched_arms_retry_independently_while_preserving_successful_batch_orde
         def attempt(model=model, groups=groups):
             return _formal_toy_bound_attempt(model, groups)
 
-        results[arm] = run_stage_c_amp_with_retry(
+        results[arm] = run_stage_c_amp_with_retry_for_test_only(
             materialized_batch=materialized,
             attempt=attempt,
             model=model,
@@ -1395,7 +1398,7 @@ def test_success_rejects_caller_pre_advanced_global_state():
         return _finite_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="common starting state|premature"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=attempt,
             model=model,
@@ -1419,7 +1422,7 @@ def test_success_rejects_frozen_parameter_mutation_after_optimizer_step():
             return result
 
     with pytest.raises(StageCInvalidImplementationError, match="frozen Parameter|success.*Parameter"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1445,7 +1448,7 @@ def test_batch_two_actions_cannot_self_authenticate_wrong_protocol_exposures():
         )
 
     with pytest.raises(TypeError, match="expected_action_hash"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1462,7 +1465,7 @@ def test_batch_two_actions_cannot_self_authenticate_wrong_protocol_exposures():
 @pytest.mark.parametrize("seed", [3407, 3408, 3409])
 def test_batch_two_protocol_exposures_and_full_ledger_are_canonical(seed):
     model, groups, optimizer, scaler, objects = _retry_fixture(set())
-    result = run_stage_c_amp_with_retry(
+    result = run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames": torch.ones(2, 2), "seed": seed},
         attempt=lambda: _finite_attempt(model, groups),
         model=model,
@@ -1510,7 +1513,7 @@ def test_real_cuda_gradscaler_overflow_retry_smoke():
 def test_stage_c_rejects_attempt_without_canonical_runtime_forward_evidence():
     model, groups, optimizer, scaler, objects = _retry_fixture(set())
     with pytest.raises(StageCInvalidImplementationError, match="runtime|forward|executed"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _losses_only(groups),
             model=model,
@@ -1540,7 +1543,7 @@ def test_stage_c_rejects_dense_forward_hidden_by_forged_canonical_action_payload
         return _losses_only(groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="actual action|runtime|executed"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=forged_attempt,
             model=model,
@@ -1586,7 +1589,7 @@ def test_stage_c_rejects_depth12_block_order_swap_on_success_and_overflow(
     objects["shadow_ledger"] = []
 
     with pytest.raises(StageCInvalidImplementationError, match="topology|module|alias|order"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": torch.ones(2, 2)},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1613,7 +1616,7 @@ def test_overflow_rollback_preserves_shared_mutable_python_attribute_alias():
         calls.append(1)
         return _finite_attempt(model, groups)
 
-    result = run_stage_c_amp_with_retry(
+    result = run_stage_c_amp_with_retry_for_test_only(
         materialized_batch={"frames": torch.ones(2, 2)},
         attempt=attempt,
         model=model,
@@ -1637,7 +1640,7 @@ def test_formal_toy_rejects_dummy_audited_forward_with_disconnected_direct_losse
         return _direct_losses_only(groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="loss|forward|provenance|bound"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "formal-toy-dummy-forward"},
             attempt=dummy_attempt,
             model=model,
@@ -1659,7 +1662,7 @@ def test_real_vit_rejects_dummy_audited_forward_with_disconnected_direct_losses(
         return _direct_losses_only(groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="loss|forward|provenance|bound"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames_sha": "real-vit-dummy-forward"},
             attempt=dummy_attempt,
             model=model,
@@ -1690,7 +1693,7 @@ def test_stage_c_rejects_frozen_parameter_data_byte_mutation_on_success_and_over
         return _formal_toy_bound_attempt(model, groups)
 
     with pytest.raises(StageCInvalidImplementationError, match="frozen Parameter|bytes|hash"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "frozen-data-mutation"},
             attempt=mutated_attempt,
             model=model,
@@ -1729,7 +1732,7 @@ def test_stage_c_runtime_summary_schema_is_exact_and_fail_closed(mode, field, va
     handle = runtime.register_forward_hook(corrupt_summary)
     try:
         with pytest.raises(StageCInvalidImplementationError, match="summary|evidence|field|schema"):
-            run_stage_c_amp_with_retry(
+            run_stage_c_amp_with_retry_for_test_only(
                 materialized_batch={"frames": f"summary-{mode}-{field}"},
                 attempt=lambda: _formal_toy_bound_attempt(model, groups),
                 model=model,
@@ -1747,7 +1750,7 @@ def test_stage_c_runtime_summary_schema_is_exact_and_fail_closed(mode, field, va
 def test_stage_c_rejects_duck_typed_runtime_as_formal_execution_evidence():
     model, groups, optimizer, scaler, objects = _duck_retry_fixture(set())
     with pytest.raises(StageCInvalidImplementationError, match="production|runtime|source|class"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "duck-runtime"},
             attempt=lambda: _finite_attempt(model, groups),
             model=model,
@@ -1769,7 +1772,7 @@ def test_stage_c_success_rejects_unapproved_model_python_state_mutation():
         return losses
 
     with pytest.raises(StageCInvalidImplementationError, match="Python state|success"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "python-success-mutation"},
             attempt=mutated_attempt,
             model=model,
@@ -1795,7 +1798,7 @@ def test_stage_c_rejects_latest_signals_reference_replacement_before_risk_forwar
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="signals|boundary|identity"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "latest-signals-reference-replacement"},
             attempt=replaced_attempt,
             model=model,
@@ -1822,7 +1825,7 @@ def test_stage_c_rejects_latest_signals_data_mutation_before_risk_forward():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="signals|boundary|bytes|value"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "latest-signals-data-mutation"},
             attempt=mutated_attempt,
             model=model,
@@ -1849,7 +1852,7 @@ def test_stage_c_success_rejects_registered_buffer_data_mutation():
         return losses
 
     with pytest.raises(StageCInvalidImplementationError, match="buffer|bytes|value"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "registered-buffer-data-mutation"},
             attempt=mutated_attempt,
             model=model,
@@ -1875,7 +1878,7 @@ def test_stage_c_rejects_detector_output_data_mutation_after_forward():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="detector|boundary|bytes|value"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "detector-output-data-mutation"},
             attempt=mutated_attempt,
             model=model,
@@ -1902,7 +1905,7 @@ def test_stage_c_rejects_feature_output_data_mutation_after_forward():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="feature|boundary|bytes|value"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "feature-output-data-mutation"},
             attempt=mutated_attempt,
             model=model,
@@ -1928,7 +1931,7 @@ def test_stage_c_rejects_feature_output_reference_replacement_after_forward():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="feature|boundary|identity"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "feature-output-reference-replacement"},
             attempt=replaced_attempt,
             model=model,
@@ -1954,7 +1957,7 @@ def test_stage_c_rejects_latest_signals_equal_value_storage_replacement():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="signals|boundary|storage"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "latest-signals-storage-replacement"},
             attempt=replaced_attempt,
             model=model,
@@ -1978,7 +1981,7 @@ def test_stage_c_rejects_detector_output_equal_value_storage_replacement():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="detector|boundary|storage"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "detector-output-storage-replacement"},
             attempt=replaced_attempt,
             model=model,
@@ -2004,7 +2007,7 @@ def test_stage_c_rejects_feature_output_equal_value_storage_replacement():
         return _formal_bound_losses_after_forward(model, detector_output)
 
     with pytest.raises(StageCInvalidImplementationError, match="feature|boundary|storage"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "feature-output-storage-replacement"},
             attempt=replaced_attempt,
             model=model,
@@ -2029,7 +2032,7 @@ def test_stage_c_success_rejects_registered_buffer_equal_value_storage_replaceme
         return losses
 
     with pytest.raises(StageCInvalidImplementationError, match="buffer|storage"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "registered-buffer-storage-replacement"},
             attempt=replaced_attempt,
             model=model,
@@ -2052,7 +2055,7 @@ def test_stage_c_success_rejects_buffer_mutation_from_success_state_advancer():
 
     objects["ema"] = _BufferMutatingEMA()
     with pytest.raises(StageCInvalidImplementationError, match="buffer|bytes|value"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "success-advancer-buffer-mutation"},
             attempt=lambda: _formal_toy_bound_attempt(model, groups),
             model=model,
@@ -2075,7 +2078,7 @@ def test_stage_c_success_rejects_training_mode_mutation_from_success_state_advan
 
     objects["ema"] = _TrainingMutatingEMA()
     with pytest.raises(StageCInvalidImplementationError, match="Python state|training|success"):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "success-advancer-training-mutation"},
             attempt=lambda: _formal_toy_bound_attempt(model, groups),
             model=model,
@@ -2112,7 +2115,7 @@ def test_stage_c_success_rejects_ordinary_python_tensor_equal_value_storage_rebi
         StageCInvalidImplementationError,
         match="Python state|storage|alias|success",
     ):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "python-tensor-success-storage-rebind"},
             attempt=rebound_attempt,
             model=model,
@@ -2152,7 +2155,7 @@ def test_stage_c_overflow_rejects_ordinary_python_tensor_storage_rebind_instead_
         StageCInvalidImplementationError,
         match="Python Tensor|storage|alias|rollback",
     ):
-        run_stage_c_amp_with_retry(
+        run_stage_c_amp_with_retry_for_test_only(
             materialized_batch={"frames": "python-tensor-overflow-storage-rebind"},
             attempt=rebound_attempt,
             model=model,
@@ -2164,3 +2167,178 @@ def test_stage_c_overflow_rejects_ordinary_python_tensor_storage_rebind_instead_
             seed=3407,
         )
     assert len(calls) == 1
+
+
+class _FormalActionFormerChronoBackbone(nn.Module):
+    """Small real-runtime backbone for callback-free A3/A4 integration tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.blocks = nn.ModuleList(
+            [
+                _FormalToyBlock(index in (3, 5, 7, 11))
+                for index in range(12)
+            ]
+        )
+        self.chronotransport = ChronoTransportRuntime(
+            embed_dims=2,
+            depth=12,
+            chunks_per_window=48,
+            layer_groups=((0, 4), (4, 8), (8, 12)),
+            signal_dims=6,
+            risk_hidden_dims=4,
+            transport_bottleneck_dims=2,
+            risk_quantile=0.9,
+            hard_cache_validity_age=47,
+            transport_age_embedding_cap=8,
+            cache_detach=True,
+            profile_sync_cuda=False,
+            measured_cost=_TEST_MEASURED_COST,
+            risk_ready=False,
+            require_checkpoint_for_dynamic=False,
+        )
+
+    def forward(self, inputs):
+        if tuple(inputs.shape) != (2, 2, 48):
+            raise ValueError("formal tiny backbone requires [2,2,48]")
+        flattened = inputs.transpose(1, 2).reshape(96, 1, 2)
+        output = self.chronotransport(flattened, self.blocks, 1, 1)
+        return output.reshape(2, 48, 2).transpose(1, 2).contiguous()
+
+
+def _formal_actionformer_stage_c_fixture(overflow_attempts):
+    model = build_detector(
+        dict(
+            type="ActionFormer",
+            projection=dict(
+                type="Conv1DTransformerProj",
+                in_channels=2,
+                out_channels=2,
+                arch=(1, 0, 1),
+                conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
+                norm_cfg=dict(type="LN"),
+                attn_cfg=dict(n_head=1, n_mha_win_size=1),
+                path_pdrop=0.0,
+                use_abs_pe=False,
+                max_seq_len=48,
+            ),
+            rpn_head=dict(
+                type="ActionFormerHead",
+                num_classes=2,
+                in_channels=2,
+                feat_channels=2,
+                num_convs=1,
+                cls_prior_prob=0.01,
+                prior_generator=dict(
+                    type="PointGenerator",
+                    strides=[1, 2],
+                    regression_range=[(0, 8), (8, 10000)],
+                ),
+                loss_normalizer=10,
+                loss_normalizer_momentum=0.9,
+                center_sample="radius",
+                center_sample_radius=1.5,
+                label_smoothing=0.0,
+                loss=ConfigDict(
+                    cls_loss=dict(type="FocalLoss"),
+                    reg_loss=dict(type="DIOULoss"),
+                ),
+            ),
+        )
+    )
+    model.backbone = _FormalActionFormerChronoBackbone()
+    model.train()
+    groups = build_stage_c_parameter_groups(model)
+    optimizer = build_stage_c_optimizer(groups)
+    scheduler = _build_lr_scheduler(optimizer)
+    objects = {
+        "ema": _EMAState(),
+        "scheduler": scheduler,
+        "diagnostics": StageCStateSurface(),
+        "profiler": StageCStateSurface(),
+        "sampler": StageCStateSurface(),
+        "successful_cursor": StageCStateSurface(),
+        "exposure_cursor": StageCStateSurface(),
+        "shadow_ledger": [],
+    }
+    materialized_batch = {
+        "inputs": torch.linspace(-1.0, 1.0, 2 * 2 * 48).reshape(2, 2, 48),
+        "masks": torch.ones(2, 48, dtype=torch.bool),
+        "metas": [
+            {"window_id": "stage-c-000"},
+            {"window_id": "stage-c-001"},
+        ],
+        "gt_segments": [
+            torch.tensor([[2.0, 11.0], [19.0, 27.0]]),
+            torch.tensor([[8.0, 16.0], [31.0, 45.0]]),
+        ],
+        "gt_labels": [torch.tensor([0, 1]), torch.tensor([1, 0])],
+        "window_id": ["stage-c-000", "stage-c-001"],
+        "augmentation_sha256": "0" * 64,
+        "split": "train",
+    }
+    return (
+        model,
+        groups,
+        optimizer,
+        _OverflowFakeScaler(overflow_attempts),
+        objects,
+        materialized_batch,
+    )
+
+
+@pytest.mark.parametrize(
+    ("overflow_attempts", "expected_attempts"),
+    [(set(), 1), ({0}, 2)],
+)
+def test_callback_free_stage_c_executes_exact_paired_actionformer_transaction(
+    overflow_attempts, expected_attempts
+):
+    torch.manual_seed(3407)
+    model, groups, optimizer, scaler, objects, batch = (
+        _formal_actionformer_stage_c_fixture(overflow_attempts)
+    )
+    normalizer = model.rpn_head.loss_normalizer
+    normalizer_identity = id(normalizer)
+    normalizer_storage = int(normalizer.untyped_storage()._cdata)
+    normalizer_before = normalizer.detach().clone()
+    retry_audit = []
+
+    result = run_stage_c_amp_with_retry(
+        materialized_batch=batch,
+        model=model,
+        groups=groups,
+        optimizer=optimizer,
+        scaler=scaler,
+        lr_scheduler=objects["scheduler"],
+        rollback_objects=objects,
+        retry_audit=retry_audit,
+        seed=3407,
+    )
+
+    assert result["status"] == "SUCCESS"
+    assert result["attempts"] == expected_attempts
+    assert result["retries"] == expected_attempts - 1
+    assert len(retry_audit) == expected_attempts
+    assert [row["overflow"] for row in retry_audit] == (
+        [False] if expected_attempts == 1 else [True, False]
+    )
+    assert all(row["model_forward_count"] == 2 for row in retry_audit)
+    assert all(row["runtime_forward_count"] == 2 for row in retry_audit)
+    assert all(row["risk_forward_count"] == 1 for row in retry_audit)
+    assert all(
+        row["loss_normalizer_after_dense_temporary"]
+        == row["loss_normalizer_after_counterfactual"]
+        for row in retry_audit
+    )
+    assert id(model.rpn_head.loss_normalizer) == normalizer_identity
+    assert (
+        int(model.rpn_head.loss_normalizer.untyped_storage()._cdata)
+        == normalizer_storage
+    )
+    assert not torch.equal(model.rpn_head.loss_normalizer, normalizer_before)
+    assert objects["ema"].stage_c_update_count == 1
+    assert objects["scheduler"].last_epoch == 1
+    assert objects["successful_cursor"].value == 1
+    assert objects["exposure_cursor"].value == 2
+    assert len(objects["shadow_ledger"]) == 1
