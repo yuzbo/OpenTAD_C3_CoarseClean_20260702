@@ -1688,7 +1688,7 @@ def _gate23_report(
             "mechanism": gate2["status"] == "PASS",
             "calibrated_risk_on_frozen_window_protocol": gate3["status"] == "PASS",
             "metric_adatad_thumos14_official_full_video": False,
-            "latency_gpu1_fixed_stack": False,
+            "latency_slurm_single_device_fixed_stack": False,
             "deploy": False,
             "paper": False,
         },

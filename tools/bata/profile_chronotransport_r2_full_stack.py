@@ -7,12 +7,9 @@ import argparse
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 from typing import Mapping
-
-import torch
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -39,50 +36,6 @@ def validate_profile_request(payload: Mapping[str, object]) -> dict[str, object]
     return validate_pre_gate1_registration(payload["registration"])
 
 
-def _query_gpu_identity() -> tuple[str, str]:
-    completed = subprocess.run(
-        [
-            "nvidia-smi",
-            "--query-gpu=uuid,driver_version",
-            "--format=csv,noheader,nounits",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    rows = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    if len(rows) != 1 or "," not in rows[0]:
-        raise RuntimeError("formal profiler requires one observable GPU UUID/driver row")
-    uuid, driver = (item.strip() for item in rows[0].split(",", 1))
-    if not uuid or not driver:
-        raise RuntimeError("formal profiler GPU UUID/driver cannot be empty")
-    return uuid, driver
-
-
-def _observed_environment() -> dict[str, object]:
-    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
-        raise RuntimeError("formal full-stack profiling requires exactly one visible CUDA device")
-    if os.environ.get("CUDA_VISIBLE_DEVICES") != "1":
-        raise RuntimeError("formal full-stack profiling requires physical GPU1 visibility")
-    if not os.environ.get("SLURM_JOB_ID") or not os.environ.get("SLURM_STEP_ID"):
-        raise RuntimeError("formal full-stack profiling requires a Slurm allocation and step")
-    gpu_uuid, driver = _query_gpu_identity()
-    environment: dict[str, object] = {
-        "gpu_model": torch.cuda.get_device_name(0),
-        "gpu_uuid": gpu_uuid,
-        "driver": driver,
-        "cuda": torch.version.cuda,
-        "pytorch": torch.__version__,
-        "cudnn": str(torch.backends.cudnn.version()),
-        "precision": "amp_fp16",
-        "batch_size": 1,
-    }
-    if any(not isinstance(environment[field], str) or not environment[field] for field in environment if field != "batch_size"):
-        raise RuntimeError("formal profiler observed an incomplete environment identity")
-    environment["environment_sha256"] = canonical_sha256(environment)
-    return environment
-
-
 def profile_request(
     payload: Mapping[str, object],
     repository_root: str | Path,
@@ -97,9 +50,6 @@ def profile_request(
         registration_relpath=registration_relpath,
     )
     validate_formal_random_control_lock(registration)
-    observed = _observed_environment()
-    if observed != registration["environment"]:
-        raise RuntimeError("observed profile environment differs from pre-Gate1 registration")
     for plan in registration["profiler"]["candidate_plan"]:
         factory_config = dict(plan["factory_config"])
         if canonical_sha256(factory_config) != plan["factory_config_sha256"]:

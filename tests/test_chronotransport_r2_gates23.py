@@ -461,7 +461,7 @@ def test_full_gate3_passes_support_coverage_ranking_and_pinball_contracts():
         "mechanism": True,
         "calibrated_risk_on_frozen_window_protocol": True,
         "metric_adatad_thumos14_official_full_video": False,
-        "latency_gpu1_fixed_stack": False,
+        "latency_slurm_single_device_fixed_stack": False,
         "deploy": False,
         "paper": False,
     }

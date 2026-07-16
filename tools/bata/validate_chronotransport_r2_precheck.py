@@ -17,6 +17,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from opentad.models.chronotransport.adjudication import validate_gate1_record_artifact
+from opentad.models.chronotransport.environment import (
+    observe_formal_slurm_environment,
+)
 from opentad.models.chronotransport.full_stack_profiler import (
     validate_full_stack_profile_artifact,
 )
@@ -130,7 +133,7 @@ def _validate_gate1_input_payload(
     }
 
 
-def validate_precheck(
+def _validate_precheck(
     *,
     registration_path: str | Path,
     repository_root: str | Path,
@@ -140,6 +143,7 @@ def validate_precheck(
     gate1_output_path: str | Path | None = None,
     terminal_marker_path: str | Path | None = None,
     allowed_output_root: str | Path = "/data/run01/sczc063/yuzibo",
+    observe_environment: bool,
 ) -> dict[str, object]:
     registration_path = _path_without_symlink_components(
         registration_path, label="registration artifact"
@@ -233,13 +237,21 @@ def validate_precheck(
                     f"Gate 1 {name} already exists; formal Gate 1 has no resume mode"
                 )
     report = {
-        "schema": "chronotransport-r2-precheck-report-v1",
+        "schema": (
+            "chronotransport-r2-precheck-report-v2"
+            if observe_environment
+            else "chronotransport-r2-precheck-report-test-fixture-v1"
+        ),
         "registration_sha256": validated["registration_sha256"],
         "implementation_commit": validated["implementation_commit"],
         "registration_commit": registration_commit,
         "resolved_output_root": str(output),
         "status": "PRECHECK_OK",
     }
+    if observe_environment:
+        report["observed_environment"] = observe_formal_slurm_environment(
+            validated["environment"]
+        )
     if canonical_paths:
         report.update(
             _validate_gate1_input_payload(
@@ -251,6 +263,58 @@ def validate_precheck(
             )
         )
     return report
+
+
+def validate_precheck(
+    *,
+    registration_path: str | Path,
+    repository_root: str | Path,
+    registration_commit: str,
+    output_root: str | Path,
+    gate1_input_path: str | Path | None = None,
+    gate1_output_path: str | Path | None = None,
+    terminal_marker_path: str | Path | None = None,
+    allowed_output_root: str | Path = "/data/run01/sczc063/yuzibo",
+) -> dict[str, object]:
+    """Validate static inputs and record the live Slurm allocation identity."""
+
+    return _validate_precheck(
+        registration_path=registration_path,
+        repository_root=repository_root,
+        registration_commit=registration_commit,
+        output_root=output_root,
+        gate1_input_path=gate1_input_path,
+        gate1_output_path=gate1_output_path,
+        terminal_marker_path=terminal_marker_path,
+        allowed_output_root=allowed_output_root,
+        observe_environment=True,
+    )
+
+
+def validate_precheck_for_test_only(
+    *,
+    registration_path: str | Path,
+    repository_root: str | Path,
+    registration_commit: str,
+    output_root: str | Path,
+    gate1_input_path: str | Path | None = None,
+    gate1_output_path: str | Path | None = None,
+    terminal_marker_path: str | Path | None = None,
+    allowed_output_root: str | Path = "/data/run01/sczc063/yuzibo",
+) -> dict[str, object]:
+    """Run filesystem/registration checks without claiming a formal GPU precheck."""
+
+    return _validate_precheck(
+        registration_path=registration_path,
+        repository_root=repository_root,
+        registration_commit=registration_commit,
+        output_root=output_root,
+        gate1_input_path=gate1_input_path,
+        gate1_output_path=gate1_output_path,
+        terminal_marker_path=terminal_marker_path,
+        allowed_output_root=allowed_output_root,
+        observe_environment=False,
+    )
 
 
 def main() -> None:

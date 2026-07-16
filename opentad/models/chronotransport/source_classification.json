@@ -3,7 +3,7 @@
   "files": {
     "scripts/run_chronotransport_adatad_gpu1.sh": "OUT_OF_SCOPE",
     "scripts/run_chronotransport_paired_replay_gpu1.sh": "OUT_OF_SCOPE",
-    "scripts/run_chronotransport_r2_gate1_gpu1.sh": "REQUIRED",
+    "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh": "REQUIRED",
     "scripts/run_chronotransport_stage_b_formal_gpu1.sh": "OUT_OF_SCOPE",
     "scripts/run_chronotransport_stage_b_gpu1.sh": "OUT_OF_SCOPE",
     "scripts/verify_chronotransport_n16r4.sh": "OUT_OF_SCOPE",
@@ -12,6 +12,7 @@
     "tests/test_chronotransport_pipeline.py": "REQUIRED",
     "tests/test_chronotransport_r2_actions_cache.py": "REQUIRED",
     "tests/test_chronotransport_r2_adjudication.py": "REQUIRED",
+    "tests/test_chronotransport_r2_environment.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate1_cost_profile.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate1_hardening.py": "REQUIRED",
     "tests/test_chronotransport_r2_gate4.py": "REQUIRED",

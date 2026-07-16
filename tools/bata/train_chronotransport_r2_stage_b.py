@@ -31,6 +31,10 @@ from opentad.models.chronotransport.formal_stage_b import (
     run_r2_stage_b_training,
     validate_r2_stage_b_phase_completion_marker,
 )
+from opentad.models.chronotransport.environment import (
+    observe_formal_slurm_environment,
+    observed_environment_to_provenance,
+)
 from opentad.models.chronotransport.gate1_unlock import validate_gate1_unlock_artifact
 from opentad.models.chronotransport.protocol import canonical_json_bytes, canonical_sha256
 from opentad.models.chronotransport.registration import (
@@ -267,13 +271,8 @@ def _validate_unlock(
     )
 
 
-def _formal_guard() -> None:
-    if not os.environ.get("SLURM_JOB_ID", "").strip():
-        raise RuntimeError("formal Stage B must run inside a protected Slurm allocation")
-    if os.environ.get("CUDA_VISIBLE_DEVICES", "").strip() != "1":
-        raise RuntimeError("formal Stage B is hard-bound to physical GPU1")
-    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
-        raise RuntimeError("formal Stage B requires exactly one visible CUDA device")
+def _formal_guard(required_environment: Mapping[str, Any]) -> dict[str, Any]:
+    return observe_formal_slurm_environment(required_environment)
 
 
 def _git_head(root: Path) -> str:
@@ -398,7 +397,12 @@ def _registered_provenance(
     unlock: Mapping[str, Any],
     unlock_path: Path,
     registration_commit: str,
+    observed_environment: Mapping[str, Any],
 ) -> dict[str, Any]:
+    observed = observed_environment_to_provenance(
+        observed_environment,
+        required_environment=registration["environment"],
+    )
     return {
         "registration_sha256": registration["registration_sha256"],
         "registration_commit": registration_commit,
@@ -412,6 +416,7 @@ def _registered_provenance(
         ),
         "action_library_sha256": registration["candidate_library"]["library_sha256"],
         "environment_sha256": registration["environment"]["environment_sha256"],
+        **observed,
         "cost_plan_sha256": canonical_sha256(registration["profiler"]),
         "gate1_unlock_payload_sha256": canonical_sha256(unlock),
         "gate1_unlock_file_sha256": _file_sha256(unlock_path),
@@ -447,7 +452,7 @@ def _run_locked(
     registration_relpath: str,
     outputs: Mapping[str, Path],
 ) -> dict[str, Any]:
-    _formal_guard()
+    observed_environment = _formal_guard(registration["environment"])
     unlock = _validate_unlock(
         _load_json(args.gate1_unlock),
         registration=registration,
@@ -483,7 +488,11 @@ def _run_locked(
         registration_relpath=registration_relpath,
     )
     registered_provenance = _registered_provenance(
-        registration, unlock, args.gate1_unlock, registration_commit
+        registration,
+        unlock,
+        args.gate1_unlock,
+        registration_commit,
+        observed_environment,
     )
     checkpoint_exists = _regular_file_exists(
         outputs["output"], label="formal Stage-B trained checkpoint"

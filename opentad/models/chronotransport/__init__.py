@@ -16,7 +16,6 @@ from .profiler import ChronoProfiler, REQUIRED_STAGE_FIELDS
 from .full_stack_profiler import (
     PROFILE_ARTIFACT_SCHEMA,
     build_full_stack_profile_artifact,
-    registered_candidate_provenance,
     validate_full_stack_profile_artifact,
 )
 from .gate1_unlock import (
@@ -125,6 +124,5 @@ __all__ = [
     "validate_checkpoint_registry_receipt",
     "validate_pre_gate1_registration",
     "build_full_stack_profile_artifact",
-    "registered_candidate_provenance",
     "validate_full_stack_profile_artifact",
 ]

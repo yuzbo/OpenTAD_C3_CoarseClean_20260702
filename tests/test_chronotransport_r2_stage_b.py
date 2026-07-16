@@ -14,6 +14,11 @@ import torch
 from torch import nn
 import opentad.models.chronotransport.formal_stage_b as formal_stage_b_module
 
+from opentad.models.chronotransport.environment import (
+    REQUIRED_ENVIRONMENT_SCHEMA,
+    build_test_only_observed_environment,
+    observed_environment_to_provenance,
+)
 from opentad.models.chronotransport.formal_stage_b import (
     _atomic_torch_save,
     _atomic_write_ledger,
@@ -372,7 +377,26 @@ def _candidate_action_hashes(value: str = SHA_C):
     return {name: value for name in R2_NON_DENSE_NAMES}
 
 
+def _required_environment():
+    required_environment = {
+        "schema": REQUIRED_ENVIRONMENT_SCHEMA,
+        "gpu_model": "NVIDIA A100-SXM4-80GB",
+        "driver": "535.54",
+        "cuda": "11.8",
+        "pytorch": "2.0.1",
+        "cudnn": "8902",
+        "precision": "amp_fp16",
+        "batch_size": 1,
+    }
+    required_environment["environment_sha256"] = canonical_sha256(
+        required_environment
+    )
+    return required_environment
+
+
 def _registered_provenance():
+    required_environment = _required_environment()
+    observed = build_test_only_observed_environment(required_environment)
     return {
         "registration_sha256": SHA_A,
         "registration_commit": "4" * 40,
@@ -383,7 +407,10 @@ def _registered_provenance():
         "upstream_commits_sha256": "d" * 64,
         "split_hashes_sha256": "e" * 64,
         "action_library_sha256": "f" * 64,
-        "environment_sha256": "0" * 64,
+        "environment_sha256": required_environment["environment_sha256"],
+        **observed_environment_to_provenance(
+            observed, required_environment=required_environment
+        ),
         "cost_plan_sha256": "1" * 64,
         "gate1_unlock_payload_sha256": "2" * 64,
         "gate1_unlock_file_sha256": "3" * 64,
@@ -1185,7 +1212,7 @@ def test_stage_b_cli_hashes_nested_manifest_split_identity(tmp_path: Path) -> No
         "upstream_commits": {"OpenTAD": "3" * 40},
         "window_manifest": {"artifact": {"split_hashes": split_hashes}},
         "candidate_library": {"library_sha256": SHA_C},
-        "environment": {"environment_sha256": SHA_A},
+        "environment": _required_environment(),
         "profiler": {"profile": "fixed"},
     }
     provenance = stage_b_cli._registered_provenance(
@@ -1193,6 +1220,7 @@ def test_stage_b_cli_hashes_nested_manifest_split_identity(tmp_path: Path) -> No
         {"status": "PASS"},
         unlock_path,
         "4" * 40,
+        build_test_only_observed_environment(_required_environment()),
     )
     assert provenance["split_hashes_sha256"] == canonical_sha256(split_hashes)
 
@@ -1322,7 +1350,13 @@ def test_stage_b_cli_finalizes_and_reuses_an_exact_existing_training_pair(
         checkpoint_frequency=1,
     )
 
-    monkeypatch.setattr(stage_b_cli, "_formal_guard", lambda: None)
+    monkeypatch.setattr(
+        stage_b_cli,
+        "_formal_guard",
+        lambda *args, **kwargs: build_test_only_observed_environment(
+            _required_environment()
+        ),
+    )
     monkeypatch.setattr(
         stage_b_cli,
         "_load_json",

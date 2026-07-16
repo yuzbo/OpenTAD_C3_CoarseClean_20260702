@@ -31,14 +31,12 @@ TERMINAL_MARKER="$EXPECTED_RUN_ROOT/gate1_terminal.json"
 [[ "$(git rev-parse HEAD)" == "$CHRONOTRANSPORT_REGISTRATION_COMMIT" ]] || {
   echo "HEAD must equal registration commit R" >&2; exit 21;
 }
-[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]] || { echo "CUDA_VISIBLE_DEVICES must equal 1" >&2; exit 22; }
 [[ -n "${SLURM_JOB_ID:-}" && -n "${SLURM_STEP_ID:-}" ]] || {
   echo "formal Gate 1 requires a Slurm allocation and step" >&2; exit 23;
 }
-PHYSICAL_GPU_IDS="${SLURM_STEP_GPUS:-${SLURM_JOB_GPUS:-}}"
-[[ "$PHYSICAL_GPU_IDS" == "1" ]] || {
-  echo "formal Gate 1 requires one protected physical GPU1 allocation" >&2; exit 28;
-}
+# Slurm owns CUDA visibility.  This launcher deliberately never assigns,
+# exports, rewrites, appends to, or normalizes CUDA_VISIBLE_DEVICES.  The
+# repository precheck observes its raw value and proves one logical cuda:0.
 
 RUN_LOCK="$EXPECTED_RUN_ROOT/.gate1.run.lock"
 LOCK_HELD=0
@@ -59,6 +57,7 @@ python -m py_compile \
   opentad/models/chronotransport/protocol.py \
   opentad/models/chronotransport/adjudication.py \
   opentad/models/chronotransport/controls.py \
+  opentad/models/chronotransport/environment.py \
   opentad/models/chronotransport/full_stack_profiler.py \
   opentad/models/chronotransport/registration.py \
   opentad/models/chronotransport/runtime.py \
@@ -92,7 +91,7 @@ RUN_STARTED=0
 write_terminal_marker() {
   local state="$1"
   case "$state" in
-    SUCCESS|FAIL|STOPPED|INVALID_IMPLEMENTATION) ;;
+    SUCCESS|FAIL|STOPPED|INVALID_ENVIRONMENT|INVALID_IMPLEMENTATION) ;;
     *) echo "invalid terminal state" >&2; return 97 ;;
   esac
   local output_sha256=""

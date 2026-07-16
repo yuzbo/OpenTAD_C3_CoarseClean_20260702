@@ -20,6 +20,7 @@ from .controls import (
     random_exact_count_actions,
     validate_r2_control_algorithm_identity,
 )
+from .environment import validate_required_environment
 from .protocol import (
     R2_PROTOCOL_ID,
     build_stage_b_exposure_artifact,
@@ -32,7 +33,7 @@ from .protocol import (
 from .scheduler import R2_NON_DENSE_NAMES, validate_r2_library_payload
 
 
-REGISTRATION_SCHEMA = "chronotransport-r2-pre-gate1-registration-v3"
+REGISTRATION_SCHEMA = "chronotransport-r2-pre-gate1-registration-v4"
 PROFILE_PLAN_SCHEMA = "chronotransport-r2-profiler-plan-v1"
 CHECKPOINT_RECEIPT_SCHEMA = "chronotransport-r2-checkpoint-registry-receipt-v2"
 CHECKPOINT_RECEIPT_PROVIDER_IDENTITY = "paracloud-registry"
@@ -86,6 +87,7 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "opentad/models/chronotransport/cache.py",
     "opentad/models/chronotransport/controls.py",
     "opentad/models/chronotransport/cost_lookup.py",
+    "opentad/models/chronotransport/environment.py",
     "opentad/models/chronotransport/formal_stage_b.py",
     "opentad/models/chronotransport/full_stack_profiler.py",
     "opentad/models/chronotransport/gate1_unlock.py",
@@ -122,11 +124,12 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "tools/bata/chronotransport_r2_stage_b_factory.py",
     "tools/bata/train_chronotransport_r2_stage_b.py",
     "tools/bata/validate_chronotransport_r2_precheck.py",
-    "scripts/run_chronotransport_r2_gate1_gpu1.sh",
+    "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh",
     "tests/test_chronotransport_core.py",
     "tests/test_chronotransport_pipeline.py",
     "tests/test_chronotransport_r2_actions_cache.py",
     "tests/test_chronotransport_r2_adjudication.py",
+    "tests/test_chronotransport_r2_environment.py",
     "tests/test_chronotransport_r2_gate1_cost_profile.py",
     "tests/test_chronotransport_r2_gate1_hardening.py",
     "tests/test_chronotransport_r2_gate4.py",
@@ -186,17 +189,6 @@ _UTC_TIMESTAMP = re.compile(
     r"^(?:19|20)\d\d-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T"
     r"(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\dZ$"
 )
-_ENVIRONMENT_FIELDS = {
-    "gpu_model",
-    "gpu_uuid",
-    "driver",
-    "cuda",
-    "pytorch",
-    "cudnn",
-    "precision",
-    "batch_size",
-    "environment_sha256",
-}
 _CANDIDATE_PLAN_FIELDS = {
     "candidate_name",
     "candidate_identity_sha256",
@@ -386,19 +378,7 @@ def _audit_no_results(value: Any, path: str = "registration") -> None:
 def _validate_environment(environment: Any) -> dict[str, Any]:
     if not isinstance(environment, Mapping):
         raise TypeError("registration environment must be a mapping")
-    _require_exact_fields(environment, _ENVIRONMENT_FIELDS, "environment")
-    for field in _ENVIRONMENT_FIELDS - {"batch_size", "environment_sha256"}:
-        _require_nonempty_string(environment[field], f"environment.{field}")
-    if environment["precision"] != "amp_fp16":
-        raise ValueError("formal profile environment precision must be amp_fp16")
-    if _require_int(environment["batch_size"], "environment.batch_size") != 1:
-        raise ValueError("formal profile environment batch_size must equal 1")
-    supplied = _require_sha(environment["environment_sha256"], "environment.environment_sha256")
-    unsigned = dict(environment)
-    unsigned.pop("environment_sha256")
-    if supplied != canonical_sha256(unsigned):
-        raise ValueError("environment fingerprint mismatch")
-    return dict(environment)
+    return validate_required_environment(environment)
 
 
 def _validate_window_manifest(value: Any) -> tuple[dict[str, Any], list[str]]:
@@ -1449,7 +1429,7 @@ def claim_flags(
         "mechanism": gate2,
         "calibrated_risk_on_frozen_window_protocol": gate3,
         "metric_adatad_thumos14_official_full_video": gate4,
-        "latency_gpu1_fixed_stack": gate4,
+        "latency_slurm_single_device_fixed_stack": gate4,
         "deploy": False,
         "paper": False,
     }

@@ -389,7 +389,9 @@ def test_gate1_output_create_is_atomic_no_clobber_across_processes(tmp_path):
 
 
 def test_launcher_uses_exclusive_lock_and_no_clobber_terminal_link():
-    text = Path("scripts/run_chronotransport_r2_gate1_gpu1.sh").read_text(
+    text = Path(
+        "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh"
+    ).read_text(
         encoding="utf-8"
     )
     assert "RUN_LOCK" in text

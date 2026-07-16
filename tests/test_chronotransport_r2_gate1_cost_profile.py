@@ -25,7 +25,7 @@ from opentad.models.chronotransport.full_stack_profiler import (
     build_full_stack_profile_artifact,
     build_full_stack_profile_artifact_for_test_only,
     build_full_stack_profile_from_invocations_for_test_only,
-    registered_candidate_provenance,
+    registered_candidate_provenance_for_test_only,
     validate_full_stack_profile_artifact,
     validate_full_stack_profile_artifact_for_test_only,
 )
@@ -231,7 +231,9 @@ def _records(registration: dict, split: str, joint_gain: float) -> dict:
 
 def test_cost_lookup_key_requires_exact_formal_provenance_without_casting():
     registration = _registration()
-    provenance = registered_candidate_provenance(registration, "periodic4_transport")
+    provenance = registered_candidate_provenance_for_test_only(
+        registration, "periodic4_transport"
+    )
     key = CostLookupKey.from_provenance(provenance)
     key.validate_formal()
     assert key.environment_sha256 == registration["environment"]["environment_sha256"]
@@ -321,7 +323,7 @@ def test_full_stack_profile_is_exactly_registration_bound_and_rejects_placeholde
     assert profile["fixture_sample_count"] == 200
     assert profile["fixture_total_ms"]["p50"] == pytest.approx(7.0)
     assert profile["fixture_diagnostic_ms"]["data_decode"]["p50"] > 1000
-    assert profile["fixture_provenance"] == registered_candidate_provenance(
+    assert profile["fixture_provenance"] == registered_candidate_provenance_for_test_only(
         registration, "periodic4_transport"
     )
 

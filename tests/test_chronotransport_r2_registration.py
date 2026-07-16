@@ -13,6 +13,7 @@ from opentad.models.chronotransport.controls import (
     r2_control_algorithm_identity,
     random_exact_count_actions,
 )
+from opentad.models.chronotransport.environment import REQUIRED_ENVIRONMENT_SCHEMA
 from opentad.models.chronotransport.protocol import (
     build_r2_manifest,
     build_stage_b_exposure_artifact,
@@ -39,7 +40,9 @@ from opentad.models.chronotransport.registration import (
 from opentad.models.chronotransport.scheduler import ScheduleLibrary
 from test_chronotransport_r2_manifest_protocol import _config_identity, _registry
 import tools.bata.register_chronotransport_r2 as registration_cli
-from tools.bata.validate_chronotransport_r2_precheck import validate_precheck
+from tools.bata.validate_chronotransport_r2_precheck import (
+    validate_precheck_for_test_only as validate_precheck,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,8 +138,8 @@ def _identity():
     splits = manifest["splits"]
     invocation_ids = [*splits["fit"], *splits["calibration"], *splits["evaluation"]]
     environment = {
+        "schema": REQUIRED_ENVIRONMENT_SCHEMA,
         "gpu_model": "NVIDIA A100-SXM4-80GB",
-        "gpu_uuid": "GPU-registered",
         "driver": "535.54",
         "cuda": "11.8",
         "pytorch": "2.1.0",
@@ -568,7 +571,7 @@ def test_registration_rejects_profiler_manifest_and_scalar_counterexamples(mutat
         ),
         (
             lambda x: x["profiler"].update(
-                expected_environment={**x["environment"], "gpu_uuid": "GPU-fake"}
+                expected_environment={**x["environment"], "driver": "535.fake"}
             ),
             "environment",
         ),
@@ -808,9 +811,12 @@ def test_context_registration_derives_clean_detached_git_manifest_checkpoint_and
         )
 
 
-def test_gpu1_launcher_contains_registration_and_slurm_hard_guards():
-    text = open("scripts/run_chronotransport_r2_gate1_gpu1.sh", encoding="utf-8").read()
-    assert 'CUDA_VISIBLE_DEVICES:-}" == "1"' in text
+def test_slurm_single_gpu_launcher_contains_registration_and_environment_guards():
+    text = open(
+        "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh", encoding="utf-8"
+    ).read()
+    assert "CUDA_VISIBLE_DEVICES=" not in text
+    assert "export CUDA_VISIBLE_DEVICES" not in text
     assert "CHRONOTRANSPORT_REGISTRATION_COMMIT" in text
     assert "SLURM_JOB_ID" in text and "SLURM_STEP_ID" in text
     assert "PRECHECK_ONLY" in text
@@ -819,13 +825,21 @@ def test_gpu1_launcher_contains_registration_and_slurm_hard_guards():
     assert "module load cuda/11.8" in text
     assert "conda_envs/opentad/bin/activate" in text
     assert "gate1_terminal.json" in text and "GATE1_${state}" in text
-    assert "SLURM_STEP_GPUS" in text and "SLURM_JOB_GPUS" in text
+    assert "environment.py" in text
     assert text.index("SLURM_JOB_ID") < text.index('if [[ "${PRECHECK_ONLY:-0}"')
 
 
 def test_launcher_has_atomic_exact_terminal_state_traps():
-    text = open("scripts/run_chronotransport_r2_gate1_gpu1.sh", encoding="utf-8").read()
-    for state in ("SUCCESS", "FAIL", "STOPPED", "INVALID_IMPLEMENTATION"):
+    text = open(
+        "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh", encoding="utf-8"
+    ).read()
+    for state in (
+        "SUCCESS",
+        "FAIL",
+        "STOPPED",
+        "INVALID_ENVIRONMENT",
+        "INVALID_IMPLEMENTATION",
+    ):
         assert state in text
     assert "trap" in text and "EXIT" in text and "INT" in text and "TERM" in text
     assert "chronotransport-r2-gate1-terminal-v1" in text
@@ -856,7 +870,7 @@ def test_precheck_requires_fixed_distinct_fresh_gate1_filenames(tmp_path, monkey
     monkeypatch.setattr(precheck, "resolve_gate1_output_root", lambda registration, commit: output)
     monkeypatch.setattr(precheck, "_validate_gate1_input_payload", lambda *args, **kwargs: {})
 
-    report = precheck.validate_precheck(
+    report = precheck.validate_precheck_for_test_only(
         registration_path=registration,
         repository_root=tmp_path,
         registration_commit="c" * 40,
@@ -869,7 +883,7 @@ def test_precheck_requires_fixed_distinct_fresh_gate1_filenames(tmp_path, monkey
     assert report["status"] == "PRECHECK_OK"
 
     with pytest.raises(ValueError, match="canonical"):
-        precheck.validate_precheck(
+        precheck.validate_precheck_for_test_only(
             registration_path=registration,
             repository_root=tmp_path,
             registration_commit="c" * 40,
@@ -881,7 +895,7 @@ def test_precheck_requires_fixed_distinct_fresh_gate1_filenames(tmp_path, monkey
         )
     (output / "gate1_result.json").write_text("stale", encoding="utf-8")
     with pytest.raises(ValueError, match="already exists"):
-        precheck.validate_precheck(
+        precheck.validate_precheck_for_test_only(
             registration_path=registration,
             repository_root=tmp_path,
             registration_commit="c" * 40,
@@ -939,7 +953,7 @@ def test_precheck_rejects_parent_symlink_aliases_for_registration_output_and_art
     )
 
     with pytest.raises(ValueError, match="symlink"):
-        precheck.validate_precheck(
+        precheck.validate_precheck_for_test_only(
             registration_path=registration_alias_parent / "registration.json",
             repository_root=tmp_path,
             registration_commit=registration_commit,
@@ -948,7 +962,7 @@ def test_precheck_rejects_parent_symlink_aliases_for_registration_output_and_art
         )
 
     with pytest.raises(ValueError, match="symlink"):
-        precheck.validate_precheck(
+        precheck.validate_precheck_for_test_only(
             registration_path=registration,
             repository_root=tmp_path,
             registration_commit=registration_commit,
@@ -959,7 +973,7 @@ def test_precheck_rejects_parent_symlink_aliases_for_registration_output_and_art
     gate1_input = output / "gate1_input.json"
     gate1_input.write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError, match="symlink"):
-        precheck.validate_precheck(
+        precheck.validate_precheck_for_test_only(
             registration_path=registration,
             repository_root=tmp_path,
             registration_commit=registration_commit,
@@ -1014,13 +1028,16 @@ def test_registered_source_helper_rejects_symlink(tmp_path):
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="GPU1 guard currently precedes PRECHECK_ONLY; changing it requires a spec amendment",
-)
-def test_precheck_only_gpu_mapping_order_requires_spec_amendment():
-    text = open("scripts/run_chronotransport_r2_gate1_gpu1.sh", encoding="utf-8").read()
-    assert text.index("PRECHECK_ONLY") < text.index("CUDA_VISIBLE_DEVICES")
+def test_launcher_never_pins_a_physical_gpu_index():
+    text = open(
+        "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh", encoding="utf-8"
+    ).read()
+    assert "physical GPU1" not in text
+    assert not any(
+        "CUDA_VISIBLE_DEVICES" in line and '== "1"' in line
+        for line in text.splitlines()
+    )
+    assert "CUDA_VISIBLE_DEVICES=" not in text
 
 
 def test_checkpoint_registry_receipt_is_external_exact_and_content_bound(tmp_path):

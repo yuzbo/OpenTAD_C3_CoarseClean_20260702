@@ -15,7 +15,6 @@ import io
 import json
 import os
 from pathlib import Path
-import subprocess
 from time import perf_counter
 from typing import Any, Mapping
 
@@ -31,6 +30,9 @@ from opentad.models.chronotransport.actions import ChronoSchedule, LayerGroup
 from opentad.models.chronotransport.controls import (
     motion_topk_actions,
     random_exact_count_actions,
+)
+from opentad.models.chronotransport.environment import (
+    observe_formal_slurm_environment,
 )
 from opentad.models.chronotransport.profiler import REQUIRED_STAGE_FIELDS
 from opentad.models.chronotransport.protocol import (
@@ -77,37 +79,6 @@ def _file_sha256(path: Path) -> tuple[int, str]:
             size += len(block)
             digest.update(block)
     return size, digest.hexdigest()
-
-
-def observed_registered_environment() -> dict[str, object]:
-    """Read the actual one-GPU execution identity used by profile and replay."""
-
-    completed = subprocess.run(
-        [
-            "nvidia-smi",
-            "--query-gpu=uuid,driver_version",
-            "--format=csv,noheader,nounits",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    rows = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    if len(rows) != 1 or "," not in rows[0]:
-        raise RuntimeError("formal backend requires one observable GPU UUID/driver row")
-    gpu_uuid, driver = (item.strip() for item in rows[0].split(",", 1))
-    environment: dict[str, object] = {
-        "gpu_model": torch.cuda.get_device_name(0),
-        "gpu_uuid": gpu_uuid,
-        "driver": driver,
-        "cuda": torch.version.cuda,
-        "pytorch": torch.__version__,
-        "cudnn": str(torch.backends.cudnn.version()),
-        "precision": "amp_fp16",
-        "batch_size": 1,
-    }
-    environment["environment_sha256"] = canonical_sha256(environment)
-    return environment
 
 
 def preverify_registered_media(
@@ -343,12 +314,9 @@ class OpenTADRegisteredProfileBackend:
 
     def __init__(self, registration: Mapping[str, object]) -> None:
         self.registration = validate_pre_gate1_registration(registration)
-        if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
-            raise RuntimeError("registered OpenTAD profile backend requires one visible CUDA GPU")
-        if os.environ.get("CUDA_VISIBLE_DEVICES") != "1":
-            raise RuntimeError("registered OpenTAD profile backend requires physical GPU1")
-        if observed_registered_environment() != self.registration["environment"]:
-            raise RuntimeError("observed backend environment differs from registration")
+        self.observed_environment = observe_formal_slurm_environment(
+            self.registration["environment"]
+        )
         config_overrides = sorted(name for name in _CONFIG_OVERRIDE_ENV if name in os.environ)
         if config_overrides:
             raise RuntimeError(

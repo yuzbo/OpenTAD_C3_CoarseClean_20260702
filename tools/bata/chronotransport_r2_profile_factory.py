@@ -118,7 +118,9 @@ class RegisteredOpenTADProfileSession:
             rows.append(row)
 
         provenance = _registered_candidate_provenance_from_validated(
-            self._registration, candidate_name
+            self._registration,
+            candidate_name,
+            observed_environment=self._backend.observed_environment,
         )
         total_values = [float(row["total_ms"]) for row in rows]
         body: dict[str, object] = {

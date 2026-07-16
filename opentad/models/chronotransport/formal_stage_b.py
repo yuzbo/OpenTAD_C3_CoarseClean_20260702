@@ -18,6 +18,11 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 
+from .environment import (
+    OBSERVED_PROVENANCE_FIELDS,
+    REQUIRED_ENVIRONMENT_SCHEMA,
+    observed_environment_from_provenance,
+)
 from .losses import R2StageBLosses, compose_r2_stage_b_loss
 from .protocol import validate_stage_b_exposure_artifact
 from .replay import validate_compact_record
@@ -415,7 +420,7 @@ _REGISTERED_PROVENANCE_KEYS = {
     "gate1_unlock_payload_sha256",
     "gate1_unlock_file_sha256",
     "gate1_status",
-}
+} | set(OBSERVED_PROVENANCE_FIELDS)
 _STAGE_B_COUNTER_KEYS = {
     "attempted_optimizer_updates",
     "successful_optimizer_updates",
@@ -585,22 +590,48 @@ def _canonical_json_sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_json_bytes(value)).hexdigest()
 
 
-def _validate_registered_provenance(value: Mapping[str, Any]) -> dict[str, str]:
+def _validate_registered_provenance(value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping) or set(value) != _REGISTERED_PROVENANCE_KEYS:
         raise ValueError("Stage-B registered provenance fields mismatch")
-    normalized = {key: str(item) for key, item in value.items()}
-    for field in _REGISTERED_PROVENANCE_KEYS - {
-        "spec_commit",
-        "implementation_commit",
-        "registration_commit",
-        "gate1_status",
-    }:
-        _require_sha256(normalized[field], field=f"registered provenance {field}")
+    normalized = dict(value)
+    for field in (
+        "registration_sha256",
+        "spec_sha256",
+        "source_files_sha256",
+        "upstream_commits_sha256",
+        "split_hashes_sha256",
+        "action_library_sha256",
+        "environment_sha256",
+        "cost_plan_sha256",
+        "gate1_unlock_payload_sha256",
+        "gate1_unlock_file_sha256",
+        "required_environment_sha256",
+        "allocation_identity_sha256",
+        "observed_environment_sha256",
+    ):
+        _require_sha256(str(normalized[field]), field=f"registered provenance {field}")
     for field in ("spec_commit", "implementation_commit", "registration_commit"):
-        if not _FULL_COMMIT.fullmatch(normalized[field]):
+        if not isinstance(normalized[field], str) or not _FULL_COMMIT.fullmatch(
+            normalized[field]
+        ):
             raise ValueError(f"registered provenance {field} must be a full commit")
     if normalized["gate1_status"] != "PASS":
         raise ValueError("registered provenance requires Gate-1 PASS unlock")
+    required_environment = {
+        "schema": REQUIRED_ENVIRONMENT_SCHEMA,
+        "gpu_model": normalized["gpu_model"],
+        "driver": normalized["driver"],
+        "cuda": normalized["cuda"],
+        "pytorch": normalized["pytorch"],
+        "cudnn": normalized["cudnn"],
+        "precision": normalized["precision"],
+        "batch_size": normalized["batch_size"],
+        "environment_sha256": normalized["environment_sha256"],
+    }
+    observed_environment_from_provenance(
+        normalized,
+        required_environment=required_environment,
+    )
     return normalized
 
 

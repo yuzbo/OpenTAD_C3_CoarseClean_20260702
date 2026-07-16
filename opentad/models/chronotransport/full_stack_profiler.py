@@ -6,6 +6,12 @@ import math
 from typing import Mapping, Sequence
 
 from .cost_lookup import CostLookupKey, ScheduleCostLookup, validate_execution_cost_ledger_entry
+from .environment import (
+    OBSERVED_PROVENANCE_FIELDS,
+    build_test_only_observed_environment,
+    observed_environment_from_provenance,
+    observed_environment_to_provenance,
+)
 from .profiler import REQUIRED_STAGE_FIELDS
 from .protocol import canonical_sha256
 from .registration import (
@@ -17,23 +23,15 @@ from .registration import (
 )
 
 
-PROFILE_ARTIFACT_SCHEMA = "chronotransport-r2-full-stack-profile-formal-v3"
+PROFILE_ARTIFACT_SCHEMA = "chronotransport-r2-full-stack-profile-formal-v4"
 PROFILE_FIXTURE_ARTIFACT_SCHEMA = (
     "chronotransport-r2-full-stack-profile-test-fixture-v2"
 )
-_FORMAL_CANDIDATE_SCHEMA = "chronotransport-r2-candidate-full-stack-profile-v2"
+_FORMAL_CANDIDATE_SCHEMA = "chronotransport-r2-candidate-full-stack-profile-v3"
 _FIXTURE_CANDIDATE_SCHEMA = (
     "chronotransport-r2-candidate-full-stack-profile-test-fixture-v2"
 )
 _PROVENANCE_FIELDS = {
-    "gpu_model",
-    "gpu_uuid",
-    "driver",
-    "cuda",
-    "pytorch",
-    "cudnn",
-    "precision",
-    "batch_size",
     "environment_sha256",
     "source_commit",
     "spec_sha256",
@@ -51,7 +49,7 @@ _PROVENANCE_FIELDS = {
     "requested_action_sha256",
     "executed_action_sha256",
     "selected_rows_per_group",
-}
+} | set(OBSERVED_PROVENANCE_FIELDS)
 _INVOCATION_FIELDS = {
     "invocation_index",
     "invocation_id",
@@ -184,32 +182,38 @@ def _candidate_plan(registration: Mapping[str, object], name: str) -> Mapping[st
     raise ValueError(f"registered profile candidate is missing: {name}")
 
 
-def registered_candidate_provenance(
+def registered_candidate_provenance_for_test_only(
     registration: Mapping[str, object], candidate_name: str
 ) -> dict[str, object]:
-    """Derive formal provenance; callers cannot provide or override any field."""
+    """Derive deterministic non-formal provenance for isolated test fixtures."""
 
     validated = validate_pre_gate1_registration(registration)
-    return _registered_candidate_provenance_from_validated(validated, candidate_name)
+    return _registered_candidate_provenance_from_validated(
+        validated,
+        candidate_name,
+        observed_environment=build_test_only_observed_environment(
+            validated["environment"]
+        ),
+    )
 
 
 def _registered_candidate_provenance_from_validated(
-    validated: Mapping[str, object], candidate_name: str
+    validated: Mapping[str, object],
+    candidate_name: str,
+    *,
+    observed_environment: Mapping[str, object],
 ) -> dict[str, object]:
     if not isinstance(candidate_name, str) or candidate_name not in EXPECTED_PROFILE_CANDIDATE_ORDER:
         raise ValueError("candidate_name is not in the frozen 23-candidate profile order")
     plan = _candidate_plan(validated, candidate_name)
     environment = validated["environment"]
+    observed = observed_environment_to_provenance(
+        observed_environment,
+        required_environment=environment,
+    )
     action_order_sha = plan["requested_action_order_sha256"]
     provenance: dict[str, object] = {
-        "gpu_model": environment["gpu_model"],
-        "gpu_uuid": environment["gpu_uuid"],
-        "driver": environment["driver"],
-        "cuda": environment["cuda"],
-        "pytorch": environment["pytorch"],
-        "cudnn": environment["cudnn"],
-        "precision": environment["precision"],
-        "batch_size": environment["batch_size"],
+        **observed,
         "environment_sha256": environment["environment_sha256"],
         "source_commit": validated["implementation_commit"],
         "spec_sha256": validated["spec"]["sha256"],
@@ -301,8 +305,29 @@ def _candidate_measurements(
     candidate_name: str,
     warmup_count: object,
     invocations: object,
+    serialized_provenance: object | None = None,
+    test_only: bool = False,
 ) -> tuple[dict[str, object], list[dict[str, object]], dict[str, object]]:
-    provenance = _registered_candidate_provenance_from_validated(validated, candidate_name)
+    if test_only:
+        if serialized_provenance is not None:
+            raise ValueError("test-only provenance is repository-derived")
+        observed_environment = build_test_only_observed_environment(
+            validated["environment"]
+        )
+    else:
+        if not isinstance(serialized_provenance, Mapping):
+            raise ValueError("formal candidate lacks observed allocation provenance")
+        observed_environment = observed_environment_from_provenance(
+            serialized_provenance,
+            required_environment=validated["environment"],
+        )
+    provenance = _registered_candidate_provenance_from_validated(
+        validated,
+        candidate_name,
+        observed_environment=observed_environment,
+    )
+    if serialized_provenance is not None and provenance != dict(serialized_provenance):
+        raise ValueError("formal candidate provenance differs from registered live identity")
     if type(warmup_count) is not int or warmup_count != 50:
         raise ValueError("formal full-stack profile requires exactly 50 warm-up invocations")
     if not isinstance(invocations, (list, tuple)) or len(invocations) != 200:
@@ -358,6 +383,7 @@ def _formal_candidate_from_serialized(
         candidate_name=candidate_name,
         warmup_count=candidate.get("warmup_count"),
         invocations=candidate.get("invocations"),
+        serialized_provenance=candidate.get("provenance"),
     )
     action_hashes = summary.pop("action_hashes")
     invocation_ids = summary.pop("invocation_ids")
@@ -437,6 +463,7 @@ def _build_fixture_candidate(
         candidate_name=candidate_name,
         warmup_count=warmup_count,
         invocations=invocations,
+        test_only=True,
     )
     action_hashes = summary.pop("action_hashes")
     invocation_ids = summary.pop("invocation_ids")
