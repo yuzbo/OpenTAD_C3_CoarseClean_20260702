@@ -37,8 +37,10 @@ _ALLOWED_EXACT_PATHS = {
     "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
     "tools/bata/preflight_spatial_zoom_s1_profile.py",
     "tools/bata/profile_spatial_zoom_s1.py",
+    "tools/bata/run_spatial_zoom_s1_precheck.py",
     "tools/bata/spatial_zoom_s1_cost.py",
     "tools/bata/spatial_zoom_s1_profile_recovery.py",
+    "tools/bata/spatial_zoom_s1_training.py",
 }
 _ALLOWED_PREFIXES = ("research-wiki/",)
 _REQUIRED_REPAIR_PATHS = {
@@ -49,8 +51,10 @@ _REQUIRED_REPAIR_PATHS = {
     "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
     "tools/bata/preflight_spatial_zoom_s1_profile.py",
     "tools/bata/profile_spatial_zoom_s1.py",
+    "tools/bata/run_spatial_zoom_s1_precheck.py",
     "tools/bata/spatial_zoom_s1_cost.py",
     "tools/bata/spatial_zoom_s1_profile_recovery.py",
+    "tools/bata/spatial_zoom_s1_training.py",
 }
 
 

@@ -66,10 +66,11 @@ def build_s1_experiment_identity(
     }
 
 
-def current_git_commit() -> str:
+def current_git_commit(repository_root: str | Path = ROOT) -> str:
+    repository_root = Path(repository_root).resolve()
     completed = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
+        cwd=repository_root,
         capture_output=True,
         text=True,
         check=False,
@@ -82,6 +83,46 @@ def current_git_commit() -> str:
     ):
         raise RuntimeError("formal S1 requires a concrete Git commit")
     return commit
+
+
+def _same_path(left: str | Path, right: str | Path) -> bool:
+    return os.path.normcase(str(Path(left).resolve())) == os.path.normcase(
+        str(Path(right).resolve())
+    )
+
+
+def _require_bound_source_repository(
+    repository_root: str | Path,
+    *,
+    expected_commit: str,
+    require_clean: bool,
+) -> None:
+    repository_root = Path(repository_root).resolve()
+    completed = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=repository_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0 or not _same_path(
+        completed.stdout.strip(), repository_root
+    ):
+        raise RuntimeError("S1 bound source path is not an exact Git repository root")
+    if current_git_commit(repository_root) != str(expected_commit).lower():
+        raise RuntimeError(
+            "S1 bound source repository differs from the recorded commit"
+        )
+    if require_clean:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=repository_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0 or completed.stdout.strip():
+            raise RuntimeError("S1 historical source repository must remain clean")
 
 
 def resolve_s1_formal_experiment_identity(
@@ -178,14 +219,46 @@ def should_save_s1_checkpoint(
     return int(epoch) in eligible
 
 
-def _source_config_path_for_resolution(resolution: int) -> Path:
+def _source_config_path_for_resolution(
+    resolution: int, *, repository_root: str | Path = ROOT
+) -> Path:
     try:
-        return (ROOT / CONFIG_PATHS[int(resolution)]).resolve()
+        return (
+            Path(repository_root).resolve() / CONFIG_PATHS[int(resolution)]
+        ).resolve()
     except KeyError as exc:
         raise ValueError(f"unsupported S1 resolution {resolution}") from exc
 
 
-def bind_s1_training_config(
+def _repository_root_for_source_config(
+    source_config_path: str | Path, *, resolution: int
+) -> Path:
+    source_config_path = Path(source_config_path).resolve()
+    try:
+        relative_path = Path(CONFIG_PATHS[int(resolution)])
+    except KeyError as exc:
+        raise ValueError(f"unsupported S1 resolution {resolution}") from exc
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        raise ValueError("S1 audited config path must be repository-relative")
+    repository_root = source_config_path
+    for _ in relative_path.parts:
+        repository_root = repository_root.parent
+    if not _same_path(repository_root / relative_path, source_config_path):
+        raise ValueError("S1 binding source is not an audited config path")
+    return repository_root.resolve()
+
+
+def _validate_config_matrix_at(repository_root: str | Path) -> dict[str, Any]:
+    repository_root = Path(repository_root).resolve()
+    return validate_config_matrix(
+        {
+            int(resolution): repository_root / relative_path
+            for resolution, relative_path in CONFIG_PATHS.items()
+        }
+    )
+
+
+def _bind_s1_training_config(
     *,
     source_config_path: str | Path,
     manifest_path: str | Path,
@@ -193,9 +266,14 @@ def bind_s1_training_config(
     seed: int,
     work_dir: str | Path,
     precheck_path: str | Path | None = None,
+    repository_root: str | Path,
+    code_commit: str,
 ) -> Config:
-    matrix = validate_config_matrix()
-    code_commit = current_git_commit()
+    repository_root = Path(repository_root).resolve()
+    matrix = _validate_config_matrix_at(repository_root)
+    code_commit = str(code_commit).lower()
+    if current_git_commit(repository_root) != code_commit:
+        raise RuntimeError("S1 source repository differs from the requested commit")
     source_config_path = Path(source_config_path).resolve()
     manifest_path = Path(manifest_path).resolve()
     annotation_path = Path(annotation_path).resolve()
@@ -204,7 +282,9 @@ def bind_s1_training_config(
         raise ValueError("S1 training seed is outside the frozen schema")
     source = Config.fromfile(str(source_config_path))
     resolution = int(source.spatial_zoom_s1_contract.runtime_resolution)
-    if source_config_path != _source_config_path_for_resolution(resolution):
+    if source_config_path != _source_config_path_for_resolution(
+        resolution, repository_root=repository_root
+    ):
         raise ValueError("S1 training must bind one of the audited source configs")
     if source.spatial_zoom_s1_contract.get("runtime_bound", False):
         raise ValueError("S1 source config must be unbound")
@@ -225,6 +305,8 @@ def bind_s1_training_config(
         precheck = validate_precheck_certificate(
             json.loads(resolved_precheck_path.read_text(encoding="utf-8")),
             require_full=True,
+            repository_root=repository_root,
+            expected_code_commit=code_commit,
         )
         if (
             precheck["expected_pretrained_checkpoint_sha256"]
@@ -310,6 +392,27 @@ def bind_s1_training_config(
     return cfg
 
 
+def bind_s1_training_config(
+    *,
+    source_config_path: str | Path,
+    manifest_path: str | Path,
+    annotation_path: str | Path,
+    seed: int,
+    work_dir: str | Path,
+    precheck_path: str | Path | None = None,
+) -> Config:
+    return _bind_s1_training_config(
+        source_config_path=source_config_path,
+        manifest_path=manifest_path,
+        annotation_path=annotation_path,
+        seed=seed,
+        work_dir=work_dir,
+        precheck_path=precheck_path,
+        repository_root=ROOT,
+        code_commit=current_git_commit(),
+    )
+
+
 def validate_bound_s1_training_config(cfg: Config, *, seed: int) -> dict[str, Any]:
     if "spatial_zoom_s1_contract" not in cfg:
         raise ValueError("not an S1 config")
@@ -323,13 +426,30 @@ def validate_bound_s1_training_config(cfg: Config, *, seed: int) -> dict[str, An
         raise ValueError("unsupported S1 training binding schema")
     if not bool(cfg.spatial_zoom_s1_contract.get("runtime_bound", False)):
         raise ValueError("S1 config is not runtime-bound")
-    expected = bind_s1_training_config(
+    try:
+        resolution = int(binding["resolution"])
+        source_config_path = Path(binding["source_config_path"]).resolve()
+        code_commit = str(binding["code_commit"]).lower()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("S1 binding has invalid source provenance") from exc
+    repository_root = _repository_root_for_source_config(
+        source_config_path, resolution=resolution
+    )
+    historical_repository = not _same_path(repository_root, ROOT)
+    _require_bound_source_repository(
+        repository_root,
+        expected_commit=code_commit,
+        require_clean=historical_repository,
+    )
+    expected = _bind_s1_training_config(
         source_config_path=binding["source_config_path"],
         manifest_path=binding["manifest_path"],
         annotation_path=binding["annotation_path"],
         seed=int(seed),
         work_dir=binding["work_dir"],
         precheck_path=binding.get("precheck_path"),
+        repository_root=repository_root,
+        code_commit=code_commit,
     )
     if canonical_sha256(cfg.to_dict()) != canonical_sha256(expected.to_dict()):
         raise ValueError("S1 materialized config was modified after manifest binding")

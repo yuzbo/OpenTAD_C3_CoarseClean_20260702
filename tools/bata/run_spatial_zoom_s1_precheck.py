@@ -746,21 +746,37 @@ def run_precheck(
 
 
 def validate_precheck_certificate(
-    certificate: dict[str, Any], *, require_full: bool = True
+    certificate: dict[str, Any],
+    *,
+    require_full: bool = True,
+    repository_root: str | Path = ROOT,
+    expected_code_commit: str | None = None,
 ) -> dict[str, Any]:
     from tools.bata.spatial_zoom_s1_training import current_git_commit
 
+    repository_root = Path(repository_root).resolve()
+    repository_commit = current_git_commit(repository_root)
+    if (
+        expected_code_commit is not None
+        and repository_commit != str(expected_code_commit).lower()
+    ):
+        raise ValueError("S1 precheck source repository commit mismatch")
     checked = json.loads(json.dumps(dict(certificate)))
     certificate_hash = checked.pop("precheck_sha256", None)
     if not certificate_hash or canonical_sha256(checked) != certificate_hash:
         raise ValueError("S1 precheck certificate self-hash mismatch")
     checked["precheck_sha256"] = certificate_hash
-    matrix = validate_config_matrix()
+    matrix = validate_config_matrix(
+        {
+            resolution: repository_root / CONFIG_PATHS[resolution]
+            for resolution in (160, 224, 256)
+        }
+    )
     expected = {
         "schema_version": S1_PRECHECK_SCHEMA,
         "status": "PASS",
         "config_matrix_protocol_fingerprint": matrix["protocol_fingerprint"],
-        "code_commit": current_git_commit(),
+        "code_commit": repository_commit,
         "paper_result": False,
     }
     for key, value in expected.items():
@@ -778,7 +794,7 @@ def validate_precheck_certificate(
     if not isinstance(rows, list) or len(rows) != 3:
         raise ValueError("S1 precheck certificate requires all three resolutions")
     expected_specs = {
-        resolution: build_precheck_spec(ROOT / CONFIG_PATHS[resolution])
+        resolution: build_precheck_spec(repository_root / CONFIG_PATHS[resolution])
         for resolution in (160, 224, 256)
     }
     actual_resolutions = []

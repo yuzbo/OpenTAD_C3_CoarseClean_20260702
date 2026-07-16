@@ -4,6 +4,8 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -682,8 +684,10 @@ def test_profile_recovery_certificate_preserves_failed_attempt_and_scope(
         "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
         "tools/bata/preflight_spatial_zoom_s1_profile.py",
         "tools/bata/profile_spatial_zoom_s1.py",
+        "tools/bata/run_spatial_zoom_s1_precheck.py",
         "tools/bata/spatial_zoom_s1_cost.py",
         "tools/bata/spatial_zoom_s1_profile_recovery.py",
+        "tools/bata/spatial_zoom_s1_training.py",
     )
     basis = {
         "schema_version": S1_PROFILE_RECOVERY_SCHEMA,
@@ -876,6 +880,101 @@ def test_s1_source_config_is_not_trainable_until_manifest_bound(tmp_path: Path) 
     tampered.dataset.test.subset_name = "validation"
     with pytest.raises(ValueError, match="modified after manifest binding"):
         validate_bound_s1_training_config(tampered, seed=3407)
+
+
+def _make_historical_s1_config_repository(tmp_path: Path) -> tuple[Path, str]:
+    repository = (tmp_path / "historical-source").resolve()
+    shutil.copytree(ROOT / "configs", repository / "configs")
+    commands = (
+        ("git", "init", "--quiet"),
+        ("git", "config", "user.email", "s1-test@example.invalid"),
+        ("git", "config", "user.name", "S1 Test"),
+        ("git", "add", "configs"),
+        ("git", "commit", "--quiet", "-m", "historical S1 configs"),
+    )
+    for command in commands:
+        subprocess.run(command, cwd=repository, check=True)
+    commit = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return repository, commit
+
+
+def test_precheck_certificate_can_be_rebuilt_from_its_historical_repository(
+    tmp_path: Path,
+) -> None:
+    paths = [ROOT / CONFIG_PATHS[value] for value in S1_RESOLUTIONS]
+    certificate = run_precheck(paths, mode="static", device="cpu", amp=False)
+    repository, commit = _make_historical_s1_config_repository(tmp_path)
+    historical = copy.deepcopy(certificate)
+    historical["code_commit"] = commit
+    for row in historical["rows"]:
+        resolution = int(row["spec"]["resolution"])
+        row["spec"]["config"] = str(
+            (repository / CONFIG_PATHS[resolution]).resolve()
+        )
+    historical.pop("precheck_sha256")
+    historical["precheck_sha256"] = canonical_sha256(historical)
+    checked = validate_precheck_certificate(
+        historical,
+        require_full=False,
+        repository_root=repository,
+        expected_code_commit=commit,
+    )
+    assert checked["code_commit"] == commit
+    with pytest.raises(ValueError, match="repository commit mismatch"):
+        validate_precheck_certificate(
+            historical,
+            require_full=False,
+            repository_root=repository,
+            expected_code_commit="0" * 40,
+        )
+
+
+def test_bound_config_accepts_only_clean_commit_exact_historical_source(
+    tmp_path: Path,
+) -> None:
+    annotation = _write_annotation(tmp_path)
+    manifest = build_s1_manifest(annotation)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    bound = bind_s1_training_config(
+        source_config_path=ROOT / CONFIG_PATHS[160],
+        manifest_path=manifest_path,
+        annotation_path=annotation,
+        seed=3407,
+        work_dir=tmp_path / "run",
+    )
+    repository, commit = _make_historical_s1_config_repository(tmp_path)
+    historical = copy.deepcopy(bound)
+    historical.spatial_zoom_s1_runtime_binding.source_config_path = str(
+        (repository / CONFIG_PATHS[160]).resolve()
+    )
+    historical.spatial_zoom_s1_runtime_binding.code_commit = commit
+    checked = validate_bound_s1_training_config(historical, seed=3407)
+    assert checked["code_commit"] == commit
+
+    dirty_path = repository / "dirty.txt"
+    dirty_path.write_text("untracked\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="must remain clean"):
+        validate_bound_s1_training_config(historical, seed=3407)
+    dirty_path.unlink()
+
+    wrong_commit = copy.deepcopy(historical)
+    wrong_commit.spatial_zoom_s1_runtime_binding.code_commit = "0" * 40
+    with pytest.raises(RuntimeError, match="recorded commit"):
+        validate_bound_s1_training_config(wrong_commit, seed=3407)
+
+    wrong_source = copy.deepcopy(historical)
+    wrong_source.spatial_zoom_s1_runtime_binding.source_config_path = str(
+        repository / "configs" / "not-the-audited-config.py"
+    )
+    with pytest.raises(ValueError, match="audited config path"):
+        validate_bound_s1_training_config(wrong_source, seed=3407)
 
 
 def test_s1_runtime_components_receive_copies_of_the_bound_config(
