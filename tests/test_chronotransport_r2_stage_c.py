@@ -24,9 +24,12 @@ from opentad.models.chronotransport.stage_c import (
     StageCTrackedEMA,
     build_stage_c_optimizer,
     build_stage_c_parameter_groups,
+    build_matched_dense_optimizer,
+    build_matched_dense_parameter_group,
     hash_materialized_batch,
     loss_specific_amp_step,
     run_stage_c_amp_with_retry,
+    run_matched_dense_amp_with_retry,
     run_stage_c_amp_with_retry_for_test_only,
     stage_c_action_hash,
     validate_transport_gradient_ledger,
@@ -2287,6 +2290,33 @@ def _formal_actionformer_stage_c_fixture(overflow_attempts):
     )
 
 
+def _formal_actionformer_matched_fixture(overflow_attempts):
+    model, _groups, _optimizer, _scaler, _objects, batch = (
+        _formal_actionformer_stage_c_fixture(set())
+    )
+    group = build_matched_dense_parameter_group(model)
+    optimizer = build_matched_dense_optimizer(group)
+    scheduler = _build_lr_scheduler(optimizer)
+    objects = {
+        "ema": _EMAState(),
+        "scheduler": scheduler,
+        "diagnostics": StageCStateSurface(),
+        "profiler": StageCStateSurface(),
+        "sampler": StageCStateSurface(),
+        "successful_cursor": StageCStateSurface(),
+        "exposure_cursor": StageCStateSurface(),
+        "shadow_ledger": [],
+    }
+    return (
+        model,
+        group,
+        optimizer,
+        _OverflowFakeScaler(overflow_attempts),
+        objects,
+        batch,
+    )
+
+
 @pytest.mark.parametrize(
     ("overflow_attempts", "expected_attempts"),
     [(set(), 1), ({0}, 2)],
@@ -2342,3 +2372,93 @@ def test_callback_free_stage_c_executes_exact_paired_actionformer_transaction(
     assert objects["successful_cursor"].value == 1
     assert objects["exposure_cursor"].value == 2
     assert len(objects["shadow_ledger"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("overflow_attempts", "expected_attempts"),
+    [(set(), 1), ({0}, 2)],
+)
+def test_matched_dense_executes_one_dense_forward_and_one_common_a_update(
+    overflow_attempts, expected_attempts
+):
+    torch.manual_seed(3407)
+    model, group, optimizer, scaler, objects, batch = (
+        _formal_actionformer_matched_fixture(overflow_attempts)
+    )
+    audit = []
+    result = run_matched_dense_amp_with_retry(
+        materialized_batch=batch,
+        model=model,
+        group=group,
+        optimizer=optimizer,
+        scaler=scaler,
+        lr_scheduler=objects["scheduler"],
+        rollback_objects=objects,
+        retry_audit=audit,
+        seed=3407,
+    )
+    assert result["status"] == "SUCCESS"
+    assert result["attempts"] == expected_attempts
+    assert len(audit) == expected_attempts
+    assert [row["overflow"] for row in audit] == (
+        [False] if expected_attempts == 1 else [True, False]
+    )
+    assert all(row["model_forward_count"] == 1 for row in audit)
+    assert all(row["runtime_forward_count"] == 1 for row in audit)
+    assert all(row["risk_forward_count"] == 0 for row in audit)
+    assert objects["successful_cursor"].value == 1
+    assert objects["exposure_cursor"].value == 2
+    assert objects["ema"].stage_c_update_count == 1
+    assert objects["scheduler"].last_epoch == 1
+    assert len(objects["shadow_ledger"]) == 1
+
+
+def test_ct_and_matched_dense_share_batch_exposure_lr_and_normalizer_trace():
+    torch.manual_seed(3407)
+    ct_model, ct_groups, ct_optimizer, ct_scaler, ct_objects, ct_batch = (
+        _formal_actionformer_stage_c_fixture(set())
+    )
+    torch.manual_seed(3407)
+    dense_model, dense_group, dense_optimizer, dense_scaler, dense_objects, dense_batch = (
+        _formal_actionformer_matched_fixture(set())
+    )
+    assert hash_materialized_batch(ct_batch) == hash_materialized_batch(dense_batch)
+    torch.testing.assert_close(
+        ct_model.rpn_head.loss_normalizer,
+        dense_model.rpn_head.loss_normalizer,
+        rtol=0.0,
+        atol=0.0,
+    )
+    ct = run_stage_c_amp_with_retry(
+        materialized_batch=ct_batch,
+        model=ct_model,
+        groups=ct_groups,
+        optimizer=ct_optimizer,
+        scaler=ct_scaler,
+        lr_scheduler=ct_objects["scheduler"],
+        rollback_objects=ct_objects,
+        seed=3407,
+    )
+    dense = run_matched_dense_amp_with_retry(
+        materialized_batch=dense_batch,
+        model=dense_model,
+        group=dense_group,
+        optimizer=dense_optimizer,
+        scaler=dense_scaler,
+        lr_scheduler=dense_objects["scheduler"],
+        rollback_objects=dense_objects,
+        seed=3407,
+    )
+    assert ct["batch_hash"] == dense["batch_hash"]
+    assert ct["action_batch_sha256"] == dense["action_batch_sha256"]
+    assert ct["exposures"] == dense["exposures"]
+    assert ct_objects["shadow_ledger"] == dense_objects["shadow_ledger"]
+    assert ct_objects["scheduler"].get_last_lr()[0] == pytest.approx(
+        dense_objects["scheduler"].get_last_lr()[0]
+    )
+    torch.testing.assert_close(
+        ct_model.rpn_head.loss_normalizer,
+        dense_model.rpn_head.loss_normalizer,
+        rtol=0.0,
+        atol=0.0,
+    )

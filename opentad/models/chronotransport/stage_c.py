@@ -122,6 +122,19 @@ class StageCParameterGroups:
         return tuple(sorted((*self.adapters, *self.transport, *self.risk), key=id))
 
 
+@dataclass(frozen=True)
+class MatchedDenseParameterGroup:
+    """The exact common-A ownership surface for the matched-dense arm."""
+
+    adapters: tuple[nn.Parameter, ...]
+    adapter_paths: tuple[str, ...]
+    parameter_names: tuple[str, ...]
+
+    @property
+    def all(self) -> tuple[nn.Parameter, ...]:
+        return tuple(sorted(self.adapters, key=id))
+
+
 def _named_modules_with_aliases(model: nn.Module) -> list[tuple[str, nn.Module]]:
     try:
         return list(model.named_modules(remove_duplicate=False))
@@ -243,6 +256,32 @@ def build_stage_c_parameter_groups(model: nn.Module) -> StageCParameterGroups:
     return groups
 
 
+def build_matched_dense_parameter_group(
+    model: nn.Module,
+) -> MatchedDenseParameterGroup:
+    """Derive A from the same topology as CT, then freeze every non-A object."""
+
+    stage_c = build_stage_c_parameter_groups(model)
+    selected = set(map(id, stage_c.adapters))
+    for parameter in model.parameters():
+        parameter.requires_grad = id(parameter) in selected
+    if {id(parameter) for parameter in model.parameters() if parameter.requires_grad} != selected:
+        raise StageCInvalidImplementationError(
+            "matched-dense requires_grad union does not equal common A ownership"
+        )
+    aliases: dict[int, list[str]] = {}
+    for name, parameter in _named_parameters_with_aliases(model):
+        aliases.setdefault(id(parameter), []).append(name)
+    return MatchedDenseParameterGroup(
+        adapters=stage_c.adapters,
+        adapter_paths=stage_c.adapter_paths,
+        parameter_names=tuple(
+            sorted(aliases[id(parameter)])[0]
+            for parameter in sorted(stage_c.adapters, key=id)
+        ),
+    )
+
+
 def _validate_stage_c_optimizer_groups(
     groups: StageCParameterGroups, optimizer: torch.optim.Optimizer
 ) -> int:
@@ -317,6 +356,76 @@ def build_stage_c_optimizer(groups: StageCParameterGroups) -> torch.optim.AdamW:
         ]
     )
     _validate_stage_c_optimizer_groups(groups, optimizer)
+    return optimizer
+
+
+def validate_matched_dense_optimizer(
+    group: MatchedDenseParameterGroup,
+    optimizer: torch.optim.Optimizer,
+    *,
+    lr_scheduler: Any,
+) -> int:
+    """Bind the matched arm to one common-A AdamW group and the same LR trace."""
+
+    if len(optimizer.param_groups) != 1:
+        raise ValueError("matched-dense optimizer requires exactly one A group")
+    actual = optimizer.param_groups[0]
+    if (
+        actual.get("stage_c_group") != "A"
+        or tuple(map(id, actual["params"])) != tuple(map(id, group.adapters))
+        or float(actual.get("stage_c_base_lr", float("nan"))) != 2e-4
+        or float(actual.get("weight_decay", float("nan"))) != 0.05
+    ):
+        raise ValueError("matched-dense optimizer does not exactly own common A")
+    current_lr = float(actual["lr"])
+    if not math.isfinite(current_lr) or current_lr < 0.0:
+        raise ValueError("matched-dense current LR must be finite and non-negative")
+    if list(map(id, actual["params"])) != list(
+        dict.fromkeys(map(id, actual["params"]))
+    ):
+        raise ValueError("matched-dense optimizer contains duplicate A parameters")
+
+    from opentad.cores.scheduler import LinearWarmupCosineAnnealingLR
+
+    if not isinstance(lr_scheduler, LinearWarmupCosineAnnealingLR):
+        raise ValueError("matched-dense requires OpenTAD LinearWarmupCosineAnnealingLR")
+    if lr_scheduler.optimizer is not optimizer:
+        raise ValueError("matched-dense scheduler must reference its exact optimizer")
+    if [float(value) for value in lr_scheduler.base_lrs] != [2e-4]:
+        raise ValueError("matched-dense scheduler base LR must equal common-A LR")
+    if float(actual.get("initial_lr", float("nan"))) != 2e-4:
+        raise ValueError("matched-dense optimizer initial_lr must equal common-A LR")
+    if (
+        int(lr_scheduler.warmup_epoch) != 350
+        or int(lr_scheduler.max_epoch) != 7000
+        or float(lr_scheduler.warmup_start_lr) != 0.0
+        or float(lr_scheduler.eta_min) != 1e-8
+    ):
+        raise ValueError("matched-dense scheduler hyperparameters differ from Stage C")
+    if [float(value) for value in lr_scheduler.get_last_lr()] != [current_lr]:
+        raise ValueError("matched-dense optimizer and scheduler current LR differ")
+    expected_lr = float(lr_scheduler._get_closed_form_lr()[0])
+    if not math.isclose(current_lr, expected_lr, rel_tol=1e-12, abs_tol=1e-15):
+        raise ValueError("matched-dense current LR differs from the closed-form trace")
+    return len(group.adapters)
+
+
+def build_matched_dense_optimizer(
+    group: MatchedDenseParameterGroup,
+) -> torch.optim.AdamW:
+    optimizer = torch.optim.AdamW(
+        [
+            {
+                "stage_c_group": "A",
+                "stage_c_base_lr": 2e-4,
+                "params": group.adapters,
+                "lr": 2e-4,
+                "weight_decay": 0.05,
+            }
+        ]
+    )
+    if len(optimizer.param_groups) != 1:
+        raise AssertionError("matched-dense optimizer construction failed")
     return optimizer
 
 
@@ -513,6 +622,90 @@ def loss_specific_amp_step(
     }
 
 
+def matched_dense_amp_step(
+    *,
+    detector_loss: Tensor,
+    group: MatchedDenseParameterGroup,
+    optimizer: torch.optim.Optimizer,
+    lr_scheduler: Any,
+    scaler: Any,
+) -> dict[str, object]:
+    """Perform the matched arm's sole common-A detector update."""
+
+    validate_matched_dense_optimizer(group, optimizer, lr_scheduler=lr_scheduler)
+    optimizer.zero_grad(set_to_none=True)
+    initial_scale = float(scaler.get_scale())
+    if not math.isfinite(initial_scale) or initial_scale <= 0.0:
+        raise StageCInvalidImplementationError(
+            "matched-dense GradScaler scale must be finite and positive"
+        )
+    loss_finite = (
+        detector_loss.numel() == 1
+        and bool(torch.isfinite(detector_loss.detach()).all().item())
+    )
+    scaled = scaler.scale(detector_loss)
+    if float(scaler.get_scale()) != initial_scale:
+        raise StageCInvalidImplementationError(
+            "matched-dense GradScaler changed within its sole scale call"
+        )
+    gradients = torch.autograd.grad(
+        scaled,
+        group.adapters,
+        retain_graph=False,
+        allow_unused=True,
+    )
+    for parameter, gradient in zip(group.adapters, gradients):
+        parameter.grad = _gradient_sum(gradient, None, parameter)
+    scaler.unscale_(optimizer)
+    finite, nonzero, preclip_norm = _grad_audit(group.adapters)
+    postclip_norm = float("nan")
+    postclip_finite = False
+    if finite:
+        if not loss_finite:
+            optimizer.zero_grad(set_to_none=True)
+            raise StageCInvalidImplementationError(
+                "matched-dense non-finite loss with finite gradients is invalid"
+            )
+        if not nonzero:
+            raise RuntimeError(
+                "matched-dense aggregate adapter detector gradient must be nonzero"
+            )
+        clip_coefficient = min(1.0, 1.0 / (preclip_norm + 1e-6))
+        for parameter in group.adapters:
+            if parameter.grad is not None:
+                parameter.grad.mul_(clip_coefficient)
+        postclip_finite = _all_gradients_finite(group.adapters)
+        postclip_norm = _global_grad_norm_float64(group.adapters)
+        if (
+            not postclip_finite
+            or not math.isfinite(postclip_norm)
+            or postclip_norm > 1.0 + 1e-6
+        ):
+            raise StageCInvalidImplementationError(
+                "matched-dense fixed global clip norm 1.0 was violated"
+            )
+    scaler.step(optimizer)
+    scaler.update()
+    post_scale = float(scaler.get_scale())
+    overflow = post_scale < initial_scale
+    if (not finite or not loss_finite) and not overflow:
+        raise StageCInvalidImplementationError(
+            "matched-dense non-finite loss/gradients escaped GradScaler overflow"
+        )
+    return {
+        "scale": initial_scale,
+        "post_scale": post_scale,
+        "overflow": overflow,
+        "loss_finite": loss_finite,
+        "adapter_detector_grad_finite": finite,
+        "adapter_detector_grad_nonzero": nonzero,
+        "adapter_grad_norm": preclip_norm,
+        "preclip_global_grad_norm_float64": preclip_norm,
+        "postclip_global_grad_norm_float64": postclip_norm,
+        "postclip_gradients_finite": postclip_finite,
+    }
+
+
 def validate_transport_gradient_ledger(
     rows: Sequence[Mapping[str, Any]], *, expected_transport_exposures: int
 ) -> dict[str, float | int]:
@@ -702,6 +895,35 @@ def _canonical_stage_c_runtime(
     ):
         raise StageCInvalidImplementationError(
             "canonical ChronoTransport runtime lacks the formal action evidence capability"
+        )
+    return runtime_path, runtime
+
+
+def _canonical_matched_dense_runtime(
+    model: nn.Module, group: MatchedDenseParameterGroup
+) -> tuple[str, ChronoTransportRuntime]:
+    matches = [
+        (path, module)
+        for path, module in _named_modules_with_aliases(model)
+        if type(module) is _FORMAL_CHRONOTRANSPORT_RUNTIME
+        and type(module).forward is _FORMAL_CHRONOTRANSPORT_FORWARD
+        and "forward" not in module.__dict__
+    ]
+    if len(matches) != 1:
+        raise StageCInvalidImplementationError(
+            "matched-dense requires one production ChronoTransportRuntime"
+        )
+    runtime_path, runtime = matches[0]
+    if not runtime_path.endswith("chronotransport"):
+        raise StageCInvalidImplementationError(
+            "matched-dense runtime path is not canonical"
+        )
+    selected = set(map(id, group.adapters))
+    if not selected or {
+        id(parameter) for parameter in model.parameters() if parameter.requires_grad
+    } != selected:
+        raise StageCInvalidImplementationError(
+            "matched-dense trainable parameters differ from common A"
         )
     return runtime_path, runtime
 
@@ -1531,7 +1753,8 @@ def _module_buffer_state(model: nn.Module) -> dict[str, dict[str, _BufferSnapsho
 
 
 def _model_parameter_state(
-    model: nn.Module, groups: StageCParameterGroups
+    model: nn.Module,
+    groups: StageCParameterGroups | MatchedDenseParameterGroup,
 ) -> tuple[_ParameterSnapshot, ...]:
     """Clone only A/T/R bytes; cover frozen heavy Parameters by exact metadata."""
 
@@ -1671,7 +1894,7 @@ def _assert_parameters_unchanged(snapshots: Sequence[_ParameterSnapshot], model:
 def _assert_success_parameter_transition(
     snapshots: Sequence[_ParameterSnapshot],
     model: nn.Module,
-    groups: StageCParameterGroups,
+    groups: StageCParameterGroups | MatchedDenseParameterGroup,
     *,
     allow_unchanged: frozenset[int] = frozenset(),
 ) -> None:
@@ -2589,6 +2812,18 @@ class _StageCPairedForwardEvidence:
     risk_forward_count: int
 
 
+@dataclass(frozen=True)
+class _MatchedDenseForwardEvidence:
+    detector_loss: Tensor
+    per_window_task_loss: Tensor
+    detector_boundary: _TensorBoundarySnapshot
+    normalizer_before: Tensor
+    normalizer_after: Tensor
+    model_forward_count: int
+    runtime_forward_count: int
+    risk_forward_count: int
+
+
 def _stage_c_forward_kwargs(materialized_batch: Any) -> dict[str, Any]:
     if not isinstance(materialized_batch, Mapping):
         raise TypeError("formal Stage-C materialized batch must be a mapping")
@@ -2859,6 +3094,116 @@ def _run_stage_c_paired_actionformer_forward(
         model_forward_count=2,
         runtime_forward_count=2,
         risk_forward_count=1,
+    )
+
+
+def _run_matched_dense_actionformer_forward(
+    *,
+    materialized_batch: Any,
+    model: nn.Module,
+    runtime: nn.Module,
+    require_cuda_autocast: bool,
+) -> _MatchedDenseForwardEvidence:
+    from ..detectors.actionformer import ActionFormerPerWindowTrainOutput
+
+    forward_kwargs = _stage_c_forward_kwargs(materialized_batch)
+    if int(forward_kwargs["inputs"].shape[0]) != 2:
+        raise StageCInvalidImplementationError(
+            "matched-dense requires exact global batch size two"
+        )
+    _, normalizer = _canonical_loss_normalizer(model)
+    normalizer_before = normalizer.detach().clone()
+    state = {"model": 0, "runtime": 0, "risk": 0}
+
+    def model_pre_hook(module: nn.Module, inputs: tuple[Any, ...]) -> None:
+        del module, inputs
+        if state["model"] != 0 or not torch.is_grad_enabled():
+            raise StageCInvalidImplementationError(
+                "matched-dense requires exactly one differentiable model forward"
+            )
+        if require_cuda_autocast and not torch.is_autocast_enabled():
+            raise StageCInvalidImplementationError(
+                "formal CUDA matched-dense requires autocast"
+            )
+        state["model"] = 1
+
+    def model_forward_hook(
+        module: nn.Module, inputs: tuple[Any, ...], output: Any
+    ) -> None:
+        del module, inputs
+        if not isinstance(output, ActionFormerPerWindowTrainOutput):
+            raise StageCInvalidImplementationError(
+                "matched-dense model must publish ActionFormer per-window evidence"
+            )
+
+    def runtime_pre_hook(module: nn.Module, inputs: tuple[Any, ...]) -> None:
+        del module, inputs
+        if state["model"] != 1 or state["runtime"] != 0:
+            raise StageCInvalidImplementationError(
+                "matched-dense canonical runtime forward count is invalid"
+            )
+        state["runtime"] = 1
+
+    def risk_pre_hook(module: nn.Module, inputs: tuple[Any, ...]) -> None:
+        del module, inputs
+        state["risk"] += 1
+        raise StageCInvalidImplementationError(
+            "matched-dense must not execute the risk predictor"
+        )
+
+    handles = (
+        model.register_forward_pre_hook(model_pre_hook),
+        model.register_forward_hook(model_forward_hook),
+        runtime.register_forward_pre_hook(runtime_pre_hook),
+        runtime.risk_predictor.register_forward_pre_hook(risk_pre_hook),
+    )
+    try:
+        with (
+            torch.cuda.amp.autocast()
+            if require_cuda_autocast
+            else nullcontext()
+        ):
+            output = model(**forward_kwargs)
+    finally:
+        for handle in handles:
+            handle.remove()
+    if not isinstance(output, ActionFormerPerWindowTrainOutput):
+        raise StageCInvalidImplementationError(
+            "matched-dense forward lacks ActionFormer evidence"
+        )
+    if state != {"model": 1, "runtime": 1, "risk": 0}:
+        raise StageCInvalidImplementationError(
+            "matched-dense requires one model/runtime forward and zero risk forwards"
+        )
+    schedule = runtime.latest_schedule
+    summary = runtime.latest_summary
+    actions = getattr(schedule, "actions", None)
+    if (
+        not isinstance(actions, Tensor)
+        or tuple(actions.shape) != (2, 48, 3)
+        or bool(torch.any(actions != int(ChronoAction.RECOMPUTE)).item())
+        or not isinstance(summary, Mapping)
+        or summary.get("forced_dense_exact_path") is not True
+        or summary.get("schedule_repair_count") != 0
+        or summary.get("runtime_fail_closed_repairs") != 0
+        or summary.get("cache_reset_per_window") is not True
+        or summary.get("dense_output_shape_preserved") is not True
+    ):
+        raise StageCInvalidImplementationError(
+            "matched-dense runtime did not execute the exact forced-dense path"
+        )
+    boundary = _snapshot_tensor_boundary(
+        "matched-dense per-window task loss", output.per_window_task_loss
+    )
+    return _MatchedDenseForwardEvidence(
+        detector_loss=output.loss_dict["cost"],
+        per_window_task_loss=output.per_window_task_loss,
+        detector_boundary=boundary,
+        normalizer_before=normalizer_before,
+        normalizer_after=normalizer.detach().clone(),
+        model_forward_count=1,
+        runtime_forward_count=1,
+        risk_forward_count=0,
     )
 
 
@@ -3400,6 +3745,274 @@ def run_stage_c_amp_with_retry(
         if attempt_index == 3:
             raise StageCInvalidImplementationError(
                 "four overflow attempts exhausted the fixed retry budget"
+            )
+
+    raise AssertionError("unreachable")
+
+
+def run_matched_dense_amp_with_retry(
+    *,
+    materialized_batch: Any,
+    model: nn.Module,
+    group: MatchedDenseParameterGroup,
+    optimizer: torch.optim.Optimizer,
+    scaler: Any,
+    lr_scheduler: Any,
+    seed: int,
+    rollback_objects: Mapping[str, Any] | None = None,
+    retry_audit: MutableSequence[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Execute one forced-dense common-A transaction with shadow exposure."""
+
+    stage_c_batch_exposures(seed, 0)
+    objects = dict(rollback_objects or {})
+    missing_objects = sorted(_REQUIRED_ROLLBACK_OBJECTS - set(objects))
+    if missing_objects:
+        raise ValueError(
+            "matched-dense rollback_objects missing required state surfaces: "
+            f"{missing_objects}"
+        )
+    if objects.get("scheduler") is not lr_scheduler:
+        raise ValueError(
+            "matched-dense rollback_objects must contain the same scheduler"
+        )
+    validate_matched_dense_optimizer(group, optimizer, lr_scheduler=lr_scheduler)
+    selected_devices = {parameter.device for parameter in group.all}
+    if len(selected_devices) != 1:
+        raise StageCInvalidImplementationError(
+            "matched-dense requires all common-A Parameters on one device"
+        )
+    require_cuda_autocast = next(iter(selected_devices)).type == "cuda"
+    if require_cuda_autocast and (
+        type(scaler) is not torch.cuda.amp.GradScaler
+        or not bool(scaler.is_enabled())
+    ):
+        raise StageCInvalidImplementationError(
+            "formal CUDA matched-dense requires the exact enabled GradScaler"
+        )
+    runtime_path, runtime = _canonical_matched_dense_runtime(model, group)
+    normalizer_path, normalizer = _canonical_loss_normalizer(model)
+    forbidden = {id(model), id(optimizer), id(scaler)}
+    if any(id(value) in forbidden for value in objects.values()):
+        raise ValueError(
+            "model, optimizer, and GradScaler cannot be matched rollback objects"
+        )
+    if len({id(value) for value in objects.values()}) != len(objects):
+        raise ValueError("matched-dense rollback_objects contain aliases")
+    successful_update = _validate_global_success_state(
+        objects=objects, lr_scheduler=lr_scheduler, seed=seed
+    )
+    if successful_update >= 4200:
+        raise StageCInvalidImplementationError(
+            "matched-dense cannot advance beyond 4200 successful updates"
+        )
+    shadow_actions = _canonical_stage_c_action_batch(
+        seed=seed,
+        successful_update=successful_update,
+        device=runtime.forced_actions.device,
+    )
+    runtime.forced_actions = torch.zeros_like(shadow_actions, dtype=torch.long)
+    runtime.forced_schedule = None
+    runtime.forced_action_name = (
+        f"matched_dense_seed_{seed}_successful_update_{successful_update}"
+    )
+    runtime.capture_replay_signals = False
+    runtime.latest_schedule = None
+    runtime.latest_summary = None
+    runtime.latest_output = None
+    runtime.latest_signals = None
+
+    audit = retry_audit if retry_audit is not None else []
+    if any(id(value) == id(audit) for value in objects.values()):
+        raise ValueError("matched retry_audit cannot be a rollback object")
+    batch_hash = hash_materialized_batch(materialized_batch)
+    exposures, action_batch_sha256 = _validate_stage_c_attempt_actions(
+        seed=seed,
+        successful_update=successful_update,
+        action_payload=shadow_actions,
+    )
+    rng_snapshot = _snapshot_rng()
+    topology_state = _model_topology_state(model)
+    parameter_state = _model_parameter_state(model, group)
+    model_buffer_state = _module_buffer_state(model)
+    model_python_state = _module_python_state(model)
+    success_python_state = _module_python_state(
+        model,
+        ignored_by_path=_approved_success_python_attributes(runtime_path),
+    )
+    optimizer_state = _clone_state_dict(optimizer.state_dict())
+    object_states = {
+        name: _snapshot_object(value) for name, value in objects.items()
+    }
+
+    for attempt_index in range(4):
+        _assert_model_topology(
+            topology_state,
+            model,
+            where=f"before matched attempt {attempt_index + 1}",
+        )
+        evidence = _run_matched_dense_actionformer_forward(
+            materialized_batch=materialized_batch,
+            model=model,
+            runtime=runtime,
+            require_cuda_autocast=require_cuda_autocast,
+        )
+        _assert_model_topology(
+            topology_state,
+            model,
+            where=f"during matched attempt {attempt_index + 1}",
+        )
+        _assert_control_objects_at_common_start(
+            objects=objects, snapshots=object_states
+        )
+        _assert_parameters_unchanged(parameter_state, model)
+        if hash_materialized_batch(materialized_batch) != batch_hash:
+            raise StageCInvalidImplementationError(
+                "matched-dense materialized batch changed during an attempt"
+            )
+        _assert_tensor_boundary(
+            evidence.detector_boundary, evidence.per_window_task_loss
+        )
+        _assert_loss_source_provenance(
+            name="matched-dense detector",
+            loss=evidence.detector_loss,
+            source=evidence.per_window_task_loss,
+            parameters=group.adapters,
+        )
+        step_audit = matched_dense_amp_step(
+            detector_loss=evidence.detector_loss,
+            group=group,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            scaler=scaler,
+        )
+        overflow = bool(step_audit["overflow"])
+        audit_row = {
+            "attempt": attempt_index + 1,
+            "retry": attempt_index,
+            "batch_hash": batch_hash,
+            "seed": seed,
+            "successful_update": successful_update,
+            "action_batch_sha256": action_batch_sha256,
+            "exposures": [dict(row) for row in exposures],
+            "scale": step_audit["scale"],
+            "post_scale": step_audit["post_scale"],
+            "overflow": overflow,
+            "model_forward_count": evidence.model_forward_count,
+            "runtime_forward_count": evidence.runtime_forward_count,
+            "risk_forward_count": evidence.risk_forward_count,
+            "loss_normalizer_before": float(evidence.normalizer_before.item()),
+            "loss_normalizer_after": float(evidence.normalizer_after.item()),
+        }
+        audit.append(audit_row)
+
+        if not overflow:
+            _assert_control_objects_at_common_start(
+                objects=objects, snapshots=object_states
+            )
+            if not torch.equal(normalizer.detach(), evidence.normalizer_after):
+                raise StageCInvalidImplementationError(
+                    "matched-dense successful normalizer differs from its forward"
+                )
+            if not _buffer_logical_state_equal(
+                model_buffer_state,
+                model,
+                allowed_value_changes=frozenset({normalizer_path}),
+            ):
+                raise StageCInvalidImplementationError(
+                    "matched-dense changed an unapproved model buffer"
+                )
+            _assert_success_parameter_transition(
+                parameter_state, model, group
+            )
+            _assert_success_python_state(
+                success_python_state, model, runtime_path=runtime_path
+            )
+            _advance_success_state(
+                objects=objects,
+                model=model,
+                lr_scheduler=lr_scheduler,
+                seed=seed,
+                batch_hash=batch_hash,
+                action_batch_sha256=action_batch_sha256,
+                exposures=exposures,
+            )
+            if not _buffer_logical_state_equal(
+                model_buffer_state,
+                model,
+                allowed_value_changes=frozenset({normalizer_path}),
+            ):
+                raise StageCInvalidImplementationError(
+                    "matched-dense success advance changed an unapproved buffer"
+                )
+            _assert_success_python_state(
+                success_python_state, model, runtime_path=runtime_path
+            )
+            _assert_tensor_boundary(
+                evidence.detector_boundary, evidence.per_window_task_loss
+            )
+            validate_matched_dense_optimizer(
+                group, optimizer, lr_scheduler=lr_scheduler
+            )
+            _validate_global_success_state(
+                objects=objects, lr_scheduler=lr_scheduler, seed=seed
+            )
+            optimizer.zero_grad(set_to_none=True)
+            return {
+                "status": "SUCCESS",
+                "batch_hash": batch_hash,
+                "seed": seed,
+                "successful_update": successful_update,
+                "action_batch_sha256": action_batch_sha256,
+                "exposures": [dict(row) for row in exposures],
+                "attempts": attempt_index + 1,
+                "retries": attempt_index,
+                "gradient_audit": step_audit,
+                "matched_audit": audit_row,
+            }
+
+        if not _state_equal(optimizer_state, optimizer.state_dict()):
+            raise StageCInvalidImplementationError(
+                "matched-dense overflow changed optimizer state"
+            )
+        optimizer.zero_grad(set_to_none=True)
+        _transactional_restore_module_buffers(model, model_buffer_state)
+        _restore_module_python_state(model, model_python_state)
+        optimizer.load_state_dict(copy.deepcopy(optimizer_state))
+        for name, value in objects.items():
+            _restore_object(value, object_states[name])
+        _restore_rng(rng_snapshot)
+        _assert_model_topology(
+            topology_state, model, where="after matched overflow rollback"
+        )
+        _assert_parameters_unchanged(parameter_state, model)
+        if not _buffer_logical_state_equal(model_buffer_state, model):
+            raise StageCInvalidImplementationError(
+                "matched-dense buffers were not restored after overflow"
+            )
+        if not _state_equal(model_python_state, _module_python_state(model)):
+            raise StageCInvalidImplementationError(
+                "matched-dense Python state was not restored after overflow"
+            )
+        if not _state_equal(optimizer_state, optimizer.state_dict()):
+            raise StageCInvalidImplementationError(
+                "matched-dense optimizer was not restored after overflow"
+            )
+        for name, value in objects.items():
+            restored = _snapshot_object(value)
+            if restored[0] != object_states[name][0] or not _state_equal(
+                object_states[name][1], restored[1]
+            ):
+                raise StageCInvalidImplementationError(
+                    f"matched-dense rollback object {name} was not restored"
+                )
+        if not _rng_equal(rng_snapshot, _snapshot_rng()):
+            raise StageCInvalidImplementationError(
+                "matched-dense RNG was not restored after overflow"
+            )
+        if attempt_index == 3:
+            raise StageCInvalidImplementationError(
+                "matched-dense exhausted the fixed four-attempt budget"
             )
 
     raise AssertionError("unreachable")
