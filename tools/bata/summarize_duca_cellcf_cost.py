@@ -2,9 +2,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
+import sys
 from pathlib import Path
 from typing import Any, Mapping
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.bata.profile_duca_full_stack_cost import (
+    CELLCF_TERMINAL_EPOCH,
+    CELLCF_TERMINAL_STATE_KEY,
+    _canonical_sha256,
+    _sha256_file,
+    load_cellcf_cost_binding,
+)
 
 
 SCHEMA = "duca_cellcf_cost_pair_v1"
@@ -21,6 +35,7 @@ def _load(path: str | Path) -> dict[str, Any]:
     payload = json.loads(resolved.read_text(encoding="utf-8"))
     _require(isinstance(payload, dict), f"cost profile is not an object: {resolved}")
     payload["_path"] = str(resolved)
+    payload["_sha256"] = _sha256_file(resolved)
     return payload
 
 
@@ -31,7 +46,68 @@ def _stage(report: Mapping[str, Any], name: str, statistic: str = "p50") -> floa
         raise ValueError(f"profile is missing stages.{name}.{statistic}") from exc
 
 
-def _validate_group(reports: list[dict[str, Any]], method: str) -> None:
+def _validate_profile_binding(
+    report: Mapping[str, Any],
+    binding: Mapping[str, Any],
+    *,
+    method: str,
+) -> None:
+    path = report.get("_path")
+    _require(report.get("cellcf_cost_binding") == binding, f"{path} differs from the frozen CellCF cost binding")
+    _require(
+        report.get("cellcf_cost_binding_sha256") == _canonical_sha256(binding),
+        f"{path} has an invalid CellCF cost-binding hash",
+    )
+    expected = {
+        "config_commit": binding["git_commit"],
+        "checkpoint_path": binding["checkpoint_path"],
+        "checkpoint_sha256": binding["checkpoint_sha256"],
+        "checkpoint_epoch": CELLCF_TERMINAL_EPOCH,
+        "checkpoint_state_key": CELLCF_TERMINAL_STATE_KEY,
+        "weight_source": "cellcf_trained_terminal_state_dict_ema",
+        "dense_full_stack_savings_claimed": False,
+    }
+    for key, value in expected.items():
+        _require(report.get(key) == value, f"{path} differs from the CellCF cost binding on {key}")
+    _require(report.get("uses_ema") is True, f"{path} did not load state_dict_ema")
+    _require(report.get("random_init") is False, f"{path} used random initialization")
+
+    profile_config_sha = str(report.get("profile_config_sha256") or "")
+    profile_resolved_sha = str(report.get("profile_resolved_config_sha256") or "")
+    _require(re.fullmatch(r"[0-9a-f]{64}", profile_config_sha) is not None, f"{path} has no profile config SHA256")
+    _require(
+        re.fullmatch(r"[0-9a-f]{64}", profile_resolved_sha) is not None,
+        f"{path} has no resolved profile config SHA256",
+    )
+    if method == "cellcf-fixed384":
+        _require(report.get("frontend_variant") == "cellcf", f"{path} is not the CellCF frontend")
+        _require(profile_config_sha == binding["config_sha256"], f"{path} source config differs from CellCF training")
+        _require(
+            profile_resolved_sha == binding["resolved_config_sha256"],
+            f"{path} resolved config differs from CellCF training",
+        )
+        _require(report.get("checkpoint_dropped_prefixes") == [], f"{path} dropped trained CellCF weights")
+        _require(int(report.get("checkpoint_dropped_key_count", -1)) == 0, f"{path} dropped checkpoint keys")
+    else:
+        _require(
+            report.get("frontend_variant") == "bare_exact_uniform_lower_bound",
+            f"{path} is not the bare exact-uniform frontend lower-bound",
+        )
+        _require(
+            report.get("checkpoint_dropped_prefixes") == ["frame_selector."],
+            f"{path} did not remove exactly the CellCF frontend weights",
+        )
+        _require(
+            int(report.get("checkpoint_dropped_key_count", 0)) > 0,
+            f"{path} did not remove CellCF frontend checkpoint keys",
+        )
+
+
+def _validate_group(
+    reports: list[dict[str, Any]],
+    method: str,
+    binding: Mapping[str, Any],
+) -> None:
     _require(len(reports) >= 3, f"{method} requires at least three fresh-process repeats")
     reference = reports[0]
     for report in reports:
@@ -39,6 +115,7 @@ def _validate_group(reports: list[dict[str, Any]], method: str) -> None:
         _require(int(report.get("sample_count", 0)) >= 500, f"{method} requires at least 500 real windows per repeat")
         _require(report.get("tracked_tree_clean") is True, f"{method} profile used a dirty tree")
         _require(report.get("random_init") is False and report.get("uses_ema") is True, f"{method} must use terminal EMA weights")
+        _validate_profile_binding(report, binding, method=method)
         for key in (
             "protocol",
             "hardware_fingerprint",
@@ -51,16 +128,30 @@ def _validate_group(reports: list[dict[str, Any]], method: str) -> None:
             "batch_size",
             "loader_workers",
             "amp",
+            "checkpoint_path",
             "checkpoint_sha256",
+            "checkpoint_epoch",
+            "checkpoint_state_key",
+            "cellcf_cost_binding_sha256",
         ):
             _require(report.get(key) == reference.get(key), f"{method} repeat drifted on {key}")
 
 
-def summarize(cellcf_paths: list[str], bare_paths: list[str]) -> dict[str, Any]:
+def summarize(
+    cellcf_paths: list[str],
+    bare_paths: list[str],
+    *,
+    post_run_evidence_path: str | Path,
+    post_run_evidence_sha256: str,
+) -> dict[str, Any]:
+    binding = load_cellcf_cost_binding(
+        post_run_evidence_path,
+        post_run_evidence_sha256,
+    )
     cellcf = [_load(path) for path in cellcf_paths]
     bare = [_load(path) for path in bare_paths]
-    _validate_group(cellcf, "cellcf-fixed384")
-    _validate_group(bare, "bare-uniform384")
+    _validate_group(cellcf, "cellcf-fixed384", binding)
+    _validate_group(bare, "bare-uniform384", binding)
     for key in (
         "protocol",
         "hardware_fingerprint",
@@ -73,7 +164,11 @@ def summarize(cellcf_paths: list[str], bare_paths: list[str]) -> dict[str, Any]:
         "batch_size",
         "loader_workers",
         "amp",
+        "checkpoint_path",
         "checkpoint_sha256",
+        "checkpoint_epoch",
+        "checkpoint_state_key",
+        "cellcf_cost_binding_sha256",
     ):
         _require(cellcf[0].get(key) == bare[0].get(key), f"paired profiles differ on {key}")
     _require(all(_stage(report, "frame_selector_total_ms") > 0.0 for report in cellcf), "CellCF selector was not measured")
@@ -88,13 +183,28 @@ def summarize(cellcf_paths: list[str], bare_paths: list[str]) -> dict[str, Any]:
     bare_e2e = run_medians(bare, "end_to_end_serial_ms")
     cellcf_median = statistics.median(cellcf_e2e)
     bare_median = statistics.median(bare_e2e)
-    return {
+    _require(bare_median > 0.0, "bare exact-uniform end-to-end latency must be positive")
+    payload = {
         "schema": SCHEMA,
         "ok": True,
+        "status": "complete",
+        "pass": True,
         "task": "offline_temporal_action_detection",
-        "config_commit": cellcf[0]["config_commit"],
+        "git_commit": binding["git_commit"],
+        "config_commit": binding["git_commit"],
+        "seed": binding["seed"],
+        "variant": binding["variant"],
+        "config_sha256": binding["config_sha256"],
+        "resolved_config_sha256": binding["resolved_config_sha256"],
+        "runtime_config_sha256": binding["runtime_config_sha256"],
+        "evaluation_runtime_config_sha256": binding["evaluation_runtime_config_sha256"],
         "hardware_fingerprint": cellcf[0]["hardware_fingerprint"],
-        "checkpoint_sha256": cellcf[0]["checkpoint_sha256"],
+        "checkpoint_path": binding["checkpoint_path"],
+        "checkpoint_sha256": binding["checkpoint_sha256"],
+        "checkpoint_epoch": CELLCF_TERMINAL_EPOCH,
+        "checkpoint_state_key": CELLCF_TERMINAL_STATE_KEY,
+        "cellcf_cost_binding": binding,
+        "cellcf_cost_binding_sha256": _canonical_sha256(binding),
         "repeats_per_method": min(len(cellcf), len(bare)),
         "samples_per_repeat": min(
             min(int(report["sample_count"]) for report in cellcf),
@@ -115,24 +225,59 @@ def summarize(cellcf_paths: list[str], bare_paths: list[str]) -> dict[str, Any]:
             "fraction_of_bare_uniform": (cellcf_median - bare_median) / bare_median,
             "cellcf_to_bare_ratio": cellcf_median / bare_median,
         },
-        "claim_scope": "frontend_overhead_only_not_dense_compute_saving",
+        "comparison_contract": {
+            "weights": "same_cellcf_trained_terminal_state_dict_ema",
+            "candidate_frontend": "cellcf",
+            "reference_frontend": "bare_exact_uniform_lower_bound",
+            "downstream_detector_weights_matched": True,
+            "dense_full_stack_baseline_included": False,
+            "dense_full_stack_savings_claimed": False,
+        },
+        "claim_scope": "cellcf_frontend_vs_bare_exact_uniform_lower_bound_only",
+        "dense_full_stack_savings_claimed": False,
         "dense_baseline_still_required": True,
         "cellcf_profile_paths": [report["_path"] for report in cellcf],
         "bare_uniform_profile_paths": [report["_path"] for report in bare],
+        "profile_artifacts": {
+            "cellcf": [
+                {"path": report["_path"], "sha256": report["_sha256"]}
+                for report in cellcf
+            ],
+            "bare_uniform": [
+                {"path": report["_path"], "sha256": report["_sha256"]}
+                for report in bare
+            ],
+        },
     }
+    payload["evidence_sha256"] = _canonical_sha256(payload)
+    return payload
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cellcf", action="append", required=True)
     parser.add_argument("--bare-uniform", action="append", required=True)
+    parser.add_argument("--post-run-evidence", required=True)
+    parser.add_argument("--post-run-evidence-sha256", required=True)
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
     try:
-        payload = summarize(args.cellcf, args.bare_uniform)
+        payload = summarize(
+            args.cellcf,
+            args.bare_uniform,
+            post_run_evidence_path=args.post_run_evidence,
+            post_run_evidence_sha256=args.post_run_evidence_sha256,
+        )
         code = 0
     except Exception as exc:
-        payload = {"schema": SCHEMA, "ok": False, "error_type": type(exc).__name__, "error": str(exc)}
+        payload = {
+            "schema": SCHEMA,
+            "ok": False,
+            "status": "incomplete",
+            "pass": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
         code = 1
     output = json.dumps(payload, indent=2, sort_keys=True)
     print(output)

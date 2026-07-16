@@ -29,6 +29,13 @@ from tools.bata.duca_full_stack_cost import (
 )
 
 
+CELLCF_COST_METHODS = frozenset({"cellcf-fixed384", "bare-uniform384"})
+CELLCF_POST_RUN_SCHEMA = "duca_cellcf_post_run_evidence_v1"
+CELLCF_COST_BINDING_SCHEMA = "duca_cellcf_cost_binding_v1"
+CELLCF_TERMINAL_EPOCH = 131
+CELLCF_TERMINAL_STATE_KEY = "state_dict_ema"
+
+
 class ProfileArgs(argparse.Namespace):
     def validate(self) -> None:
         if not self.allow_random_init and not self.checkpoint:
@@ -43,6 +50,15 @@ class ProfileArgs(argparse.Namespace):
             raise ValueError("--batch-size must be positive")
         if self.power_interval_ms <= 0:
             raise ValueError("--power-interval-ms must be positive")
+        has_post_run_path = bool(str(self.post_run_evidence or "").strip())
+        has_post_run_sha = bool(str(self.post_run_evidence_sha256 or "").strip())
+        if has_post_run_path != has_post_run_sha:
+            raise ValueError("--post-run-evidence and --post-run-evidence-sha256 are required together")
+        if self.method_name in CELLCF_COST_METHODS:
+            if not has_post_run_path:
+                raise ValueError("formal CellCF cost profiles require hash-bound post-run evidence")
+            if self.allow_random_init or not self.use_ema:
+                raise ValueError("formal CellCF cost profiles require CellCF-trained EMA weights")
 
 
 class ProfileArgumentParser(argparse.ArgumentParser):
@@ -71,6 +87,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--power-gpu-id", default=None, help="physical nvidia-smi GPU index or UUID")
     parser.add_argument("--gpu-index", dest="power_gpu_id", help=argparse.SUPPRESS)
     parser.add_argument("--compare-baseline-summary", default="")
+    parser.add_argument("--post-run-evidence", default="", help="CellCF post_run_evidence.json")
+    parser.add_argument("--post-run-evidence-sha256", default="", help="frozen SHA256 of post-run evidence")
     return parser
 
 
@@ -324,6 +342,135 @@ def _sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _require_sha256(value: Any, label: str) -> str:
+    text = str(value or "")
+    if re.fullmatch(r"[0-9a-f]{64}", text) is None:
+        raise ValueError(f"{label} must be a lowercase SHA256")
+    return text
+
+
+def load_cellcf_cost_binding(
+    post_run_evidence_path: str | Path,
+    post_run_evidence_sha256: str,
+    *,
+    expected_checkpoint_path: str | Path | None = None,
+    expected_commit: str | None = None,
+) -> dict[str, Any]:
+    evidence_path = Path(post_run_evidence_path).expanduser().resolve()
+    if not evidence_path.is_file():
+        raise ValueError(f"CellCF post-run evidence is missing: {evidence_path}")
+    expected_evidence_sha = _require_sha256(
+        post_run_evidence_sha256,
+        "CellCF post-run evidence SHA256",
+    )
+    observed_evidence_sha = _sha256_file(evidence_path)
+    if observed_evidence_sha != expected_evidence_sha:
+        raise ValueError("CellCF post-run evidence SHA256 mismatch")
+
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("CellCF post-run evidence must be a JSON object")
+    if payload.get("schema") != CELLCF_POST_RUN_SCHEMA or payload.get("ok") is not True:
+        raise ValueError("CellCF post-run evidence has an incompatible schema/status")
+    artifact_chain_sha = _require_sha256(
+        payload.get("artifact_chain_sha256"),
+        "CellCF post-run artifact-chain SHA256",
+    )
+    unsigned = dict(payload)
+    unsigned.pop("artifact_chain_sha256", None)
+    if artifact_chain_sha != _canonical_sha256(unsigned):
+        raise ValueError("CellCF post-run artifact-chain SHA256 mismatch")
+
+    commit = str(payload.get("git_commit") or "")
+    if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise ValueError("CellCF post-run evidence has an invalid git commit")
+    if expected_commit is not None and commit != str(expected_commit):
+        raise ValueError("CellCF post-run evidence is bound to another commit")
+    if payload.get("variant") != "cellcf":
+        raise ValueError("cost evidence must use the trained CellCF variant")
+    seed = payload.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError("CellCF post-run evidence has an invalid seed")
+
+    config_hashes = {}
+    for key in (
+        "config_sha256",
+        "resolved_config_sha256",
+        "runtime_config_sha256",
+        "evaluation_runtime_config_sha256",
+    ):
+        config_hashes[key] = _require_sha256(payload.get(key), f"CellCF post-run {key}")
+
+    if int(payload.get("successful_optimizer_updates", -1)) != 13200:
+        raise ValueError("CellCF post-run evidence is not terminal at 13200 updates")
+    if int(payload.get("checkpoint_epoch", -1)) != CELLCF_TERMINAL_EPOCH:
+        raise ValueError("CellCF post-run evidence does not bind terminal epoch_131")
+    if payload.get("checkpoint_state_key") != CELLCF_TERMINAL_STATE_KEY:
+        raise ValueError("CellCF post-run evidence does not bind state_dict_ema")
+
+    checkpoint_path = Path(str(payload.get("checkpoint_path") or "")).expanduser().resolve()
+    if checkpoint_path.name != "epoch_131.pth":
+        raise ValueError("CellCF post-run evidence does not name the exact epoch_131 checkpoint")
+    if not checkpoint_path.is_file():
+        raise ValueError(f"CellCF terminal checkpoint is missing: {checkpoint_path}")
+    if expected_checkpoint_path is not None:
+        requested_checkpoint = Path(expected_checkpoint_path).expanduser().resolve()
+        if requested_checkpoint != checkpoint_path:
+            raise ValueError("profile checkpoint path differs from CellCF post-run evidence")
+    checkpoint_sha = _require_sha256(
+        payload.get("checkpoint_sha256"),
+        "CellCF terminal checkpoint SHA256",
+    )
+    if _sha256_file(checkpoint_path) != checkpoint_sha:
+        raise ValueError("CellCF terminal checkpoint SHA256 differs from post-run evidence")
+    checkpoint_contract = payload.get("checkpoint_payload_contract")
+    if not isinstance(checkpoint_contract, Mapping):
+        raise ValueError("CellCF post-run evidence is missing the reopened checkpoint contract")
+    if checkpoint_contract.get("payload_reopened") is not True:
+        raise ValueError("CellCF terminal checkpoint was not reopened during finalization")
+    if int(checkpoint_contract.get("epoch", -1)) != CELLCF_TERMINAL_EPOCH:
+        raise ValueError("CellCF reopened checkpoint contract is not terminal epoch_131")
+
+    return {
+        "schema": CELLCF_COST_BINDING_SCHEMA,
+        "post_run_evidence_path": str(evidence_path),
+        "post_run_evidence_sha256": observed_evidence_sha,
+        "post_run_artifact_chain_sha256": artifact_chain_sha,
+        "git_commit": commit,
+        "seed": int(seed),
+        "variant": "cellcf",
+        **config_hashes,
+        "checkpoint_path": str(checkpoint_path),
+        "checkpoint_sha256": checkpoint_sha,
+        "checkpoint_epoch": CELLCF_TERMINAL_EPOCH,
+        "checkpoint_state_key": CELLCF_TERMINAL_STATE_KEY,
+    }
+
+
+def validate_loaded_checkpoint_binding(
+    checkpoint_metadata: Mapping[str, Any],
+    binding: Mapping[str, Any],
+) -> None:
+    loaded_path = Path(str(checkpoint_metadata.get("checkpoint_path") or "")).resolve()
+    bound_path = Path(str(binding.get("checkpoint_path") or "")).resolve()
+    if loaded_path != bound_path:
+        raise ValueError("loaded checkpoint path differs from the CellCF cost binding")
+    for key in ("checkpoint_sha256", "checkpoint_epoch", "checkpoint_state_key"):
+        if checkpoint_metadata.get(key) != binding.get(key):
+            raise ValueError(f"loaded checkpoint differs from the CellCF cost binding on {key}")
+
+
 def _stable_payload(value: Any) -> Any:
     if hasattr(value, "to_dict"):
         value = value.to_dict()
@@ -522,6 +669,7 @@ def _load_checkpoint(
     return {
         "checkpoint_path": str(Path(path).resolve()),
         "checkpoint_epoch": checkpoint.get("epoch"),
+        "checkpoint_state_key": key,
         "checkpoint_sha256": _sha256_file(path),
         "checkpoint_dropped_prefixes": list(drop_prefixes),
         "checkpoint_dropped_key_count": len(dropped),
@@ -566,8 +714,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     tracked_tree_clean = _tracked_tree_is_clean(repo_root)
     if not args.allow_random_init and not tracked_tree_clean:
         raise RuntimeError("paper cost profiling requires a clean tracked git tree")
+    actual_commit = _git_commit(repo_root)
+    cellcf_cost_binding = None
+    if args.post_run_evidence:
+        if args.config_commit and args.config_commit != actual_commit:
+            raise ValueError("--config-commit differs from the checked-out commit")
+        cellcf_cost_binding = load_cellcf_cost_binding(
+            args.post_run_evidence,
+            args.post_run_evidence_sha256,
+            expected_checkpoint_path=args.checkpoint,
+            expected_commit=actual_commit,
+        )
     config_path = Path(args.config).expanduser().resolve()
     cfg = Config.fromfile(str(config_path))
+    profile_config_sha256 = _sha256_file(config_path)
+    profile_resolved_config_sha256 = _payload_fingerprint(cfg)
+    if cellcf_cost_binding is not None and args.method_name == "cellcf-fixed384":
+        if profile_config_sha256 != cellcf_cost_binding["config_sha256"]:
+            raise ValueError("CellCF profile source config differs from post-run evidence")
+        if profile_resolved_config_sha256 != cellcf_cost_binding["resolved_config_sha256"]:
+            raise ValueError("CellCF profile resolved config differs from post-run evidence")
     if args.backbone_pretrain:
         cfg.model.backbone.custom.pretrain = str(Path(args.backbone_pretrain).expanduser().resolve())
     device = torch.device(args.device)
@@ -592,6 +758,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     checkpoint_meta: dict[str, Any] = {
         "checkpoint_path": None,
         "checkpoint_epoch": None,
+        "checkpoint_state_key": None,
         "checkpoint_sha256": None,
     }
     if args.checkpoint:
@@ -608,6 +775,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             torch_module=torch,
             drop_prefixes=drop_prefixes,
         )
+        if cellcf_cost_binding is not None:
+            validate_loaded_checkpoint_binding(checkpoint_meta, cellcf_cost_binding)
 
     modules, zero_stages = discover_profile_modules(model)
     external_cls = getattr(dataset, "class_map", None)
@@ -721,7 +890,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "hardware_fingerprint": _hardware_fingerprint(torch, device, gpu_uuid=power_gpu_id),
         "host_fingerprint": _host_fingerprint(),
         "software_fingerprint": _software_fingerprint(torch),
-        "config_commit": args.config_commit or _git_commit(repo_root),
+        "config_commit": actual_commit if cellcf_cost_binding is not None else (args.config_commit or actual_commit),
+        "profile_config_sha256": profile_config_sha256,
+        "profile_resolved_config_sha256": profile_resolved_config_sha256,
         "config_fingerprint": _payload_fingerprint(cfg),
         "dataset_fingerprint": _payload_fingerprint(cfg.dataset.test),
         "source_dataset_fingerprint": _payload_fingerprint(source_dataset),
@@ -743,6 +914,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "power_gpu_id": power_gpu_id if args.sample_power else None,
         **checkpoint_meta,
     }
+    if cellcf_cost_binding is not None:
+        metadata.update(
+            {
+                "cellcf_cost_binding": cellcf_cost_binding,
+                "cellcf_cost_binding_sha256": _canonical_sha256(cellcf_cost_binding),
+                "weight_source": "cellcf_trained_terminal_state_dict_ema",
+                "frontend_variant": (
+                    "cellcf" if args.method_name == "cellcf-fixed384" else "bare_exact_uniform_lower_bound"
+                ),
+                "dense_full_stack_savings_claimed": False,
+            }
+        )
     report = build_profile_summary(samples, metadata=metadata)
     paths = write_profile_artifacts(report, args.output_prefix)
     raw_path = Path(args.output_prefix).with_suffix(".samples.jsonl")
