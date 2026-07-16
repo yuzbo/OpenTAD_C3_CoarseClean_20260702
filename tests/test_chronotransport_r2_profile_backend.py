@@ -31,6 +31,7 @@ def test_production_profile_entrypoints_have_no_backend_injection_surface():
 
 def test_all_media_are_preverified_once_and_lookup_never_rehashes(tmp_path, monkeypatch):
     from tools.bata import chronotransport_r2_opentad_profile_backend as backend_module
+    from opentad.models.chronotransport.filesystem import BoundRegularFile
 
     windows = []
     for index in range(200):
@@ -45,26 +46,30 @@ def test_all_media_are_preverified_once_and_lookup_never_rehashes(tmp_path, monk
             }
         )
     registration = {"data": {"root_path": str(tmp_path)}}
-    original = backend_module._file_sha256
+    original = BoundRegularFile.size_and_sha256
     calls = []
 
-    def counted(path):
-        calls.append(path)
-        return original(path)
+    def counted(bound):
+        calls.append(bound.path)
+        return original(bound)
 
-    monkeypatch.setattr(backend_module, "_file_sha256", counted)
+    monkeypatch.setattr(BoundRegularFile, "size_and_sha256", counted)
     verified = backend_module.preverify_registered_media(registration, windows)
-    assert len(verified) == 200
-    assert len(calls) == 200
+    try:
+        assert len(verified) == 200
+        assert len(calls) == 200
 
-    backend = backend_module.OpenTADRegisteredProfileBackend.__new__(
-        backend_module.OpenTADRegisteredProfileBackend
-    )
-    backend.registration = registration
-    backend._verified_media = verified
-    for window in reversed(windows):
-        assert backend._verify_media(window) == verified[window["window_id"]]
-    assert len(calls) == 200
+        backend = backend_module.OpenTADRegisteredProfileBackend.__new__(
+            backend_module.OpenTADRegisteredProfileBackend
+        )
+        backend.registration = registration
+        backend._verified_media = verified
+        for window in reversed(windows):
+            assert backend._verify_media(window) == verified[window["window_id"]]
+        assert len(calls) == 200
+    finally:
+        for bound in verified.values():
+            bound.close()
 
 
 def test_repo_owned_opentad_profile_backend_module_is_present_and_fixed():

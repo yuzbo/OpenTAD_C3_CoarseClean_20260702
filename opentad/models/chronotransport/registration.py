@@ -811,7 +811,9 @@ def validate_source_classification_manifest(
     return {"schema": value["schema"], "files": classified}
 
 
-def _tracked_source_classification_paths(root: Path, revision: str) -> list[str]:
+def _tracked_source_classification_paths(
+    root: BoundDirectory | Path, revision: str
+) -> list[str]:
     tree_paths = _git(root, "ls-tree", "-r", "--name-only", revision).splitlines()
     return [
         path
@@ -820,13 +822,32 @@ def _tracked_source_classification_paths(root: Path, revision: str) -> list[str]
     ]
 
 
-def _git(root: Path, *arguments: str, check: bool = True) -> str:
-    completed = subprocess.run(
-        ["git", "-C", str(root), *arguments],
+def _run_git(
+    root: BoundDirectory | Path,
+    *arguments: str,
+    text: bool,
+) -> subprocess.CompletedProcess:
+    """Run Git against a retained repository fd when one is available."""
+
+    if isinstance(root, BoundDirectory):
+        directory = root.proc_path
+        descriptor_arguments = {"pass_fds": (root.descriptor,)}
+    else:
+        directory = str(root)
+        descriptor_arguments = {}
+    return subprocess.run(
+        ["git", "-C", directory, *arguments],
         check=False,
         capture_output=True,
-        text=True,
+        text=text,
+        **descriptor_arguments,
     )
+
+
+def _git(
+    root: BoundDirectory | Path, *arguments: str, check: bool = True
+) -> str:
+    completed = _run_git(root, *arguments, text=True)
     if check and completed.returncode != 0:
         raise ValueError(
             f"git context command failed: {' '.join(arguments)}: {completed.stderr.strip()}"
@@ -834,12 +855,10 @@ def _git(root: Path, *arguments: str, check: bool = True) -> str:
     return completed.stdout.strip()
 
 
-def _git_blob_bytes(root: Path, revision: str, relative: str) -> bytes:
-    completed = subprocess.run(
-        ["git", "-C", str(root), "show", f"{revision}:{relative}"],
-        check=False,
-        capture_output=True,
-    )
+def _git_blob_bytes(
+    root: BoundDirectory | Path, revision: str, relative: str
+) -> bytes:
+    completed = _run_git(root, "show", f"{revision}:{relative}", text=False)
     if completed.returncode != 0:
         raise ValueError("registered Git blob does not exist")
     return completed.stdout
@@ -847,14 +866,23 @@ def _git_blob_bytes(root: Path, revision: str, relative: str) -> bytes:
 
 def _validate_registered_source_file(
     *,
-    root: BoundDirectory,
+    root: BoundDirectory | str | Path,
     revision: str,
     relative: str,
     registered_sha256: str,
 ) -> None:
     """Bind one required source to regular worktree and exact Git-blob bytes."""
 
-    tree_row = _git(Path(root.proc_path), "ls-tree", revision, "--", relative)
+    if not isinstance(root, BoundDirectory):
+        with open_bound_directory(root, label="registered source repository") as bound:
+            return _validate_registered_source_file(
+                root=bound,
+                revision=revision,
+                relative=relative,
+                registered_sha256=registered_sha256,
+            )
+
+    tree_row = _git(root, "ls-tree", revision, "--", relative)
     if "\t" not in tree_row:
         raise ValueError(f"required registration source is not tracked: {relative}")
     identity, tracked_path = tree_row.split("\t", 1)
@@ -868,11 +896,16 @@ def _validate_registered_source_file(
         raise ValueError(
             f"required registration source Git mode must be a regular blob: {relative}"
         )
-    with root.open_regular(
-        relative, label=f"required registration source {relative}"
-    ) as bound:
-        current, current_sha256 = bound.bytes_and_sha256()
-    if _git_blob_bytes(Path(root.proc_path), revision, relative) != current:
+    try:
+        with root.open_regular(
+            relative, label=f"required registration source {relative}"
+        ) as bound:
+            current, current_sha256 = bound.bytes_and_sha256()
+    except OSError as error:
+        raise ValueError(
+            f"required registration source must be a regular non-symlink file: {relative}"
+        ) from error
+    if _git_blob_bytes(root, revision, relative) != current:
         raise ValueError(f"required source differs from implementation Git blob: {relative}")
     if current_sha256 != registered_sha256:
         raise ValueError(f"required source bytes differ from registration: {relative}")
@@ -910,7 +943,7 @@ def _validate_registration_commit_shape_bound(
 ) -> None:
     """Implementation of commit-shape validation rooted at one directory fd."""
 
-    git_root = Path(root.proc_path)
+    git_root = root
     _require_commit(registration_commit, "registration commit R")
     _require_commit(implementation_commit, "implementation commit I")
     if not isinstance(registration_relpath, str) or not registration_relpath:
@@ -945,10 +978,12 @@ def _validate_registration_commit_shape_bound(
     ).splitlines()
     if changed != [expected_status]:
         raise ValueError("I..R must be exactly one added registration artifact")
-    absent = subprocess.run(
-        ["git", "-C", str(git_root), "cat-file", "-e", f"{implementation_commit}:{registration_relpath}"],
-        check=False,
-        capture_output=True,
+    absent = _run_git(
+        git_root,
+        "cat-file",
+        "-e",
+        f"{implementation_commit}:{registration_relpath}",
+        text=False,
     )
     if absent.returncode == 0:
         raise ValueError("registration artifact must be absent from implementation commit I")
@@ -1001,15 +1036,10 @@ def _validate_repository_context_bound(
 ) -> None:
     if context_mode == "formal":
         validate_formal_random_control_lock(registration)
-    git_root = Path(root.proc_path)
+    git_root = root
     if _git(git_root, "status", "--porcelain"):
         raise ValueError("registration repository context must be clean")
-    symbolic = subprocess.run(
-        ["git", "-C", str(git_root), "symbolic-ref", "-q", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    symbolic = _run_git(git_root, "symbolic-ref", "-q", "HEAD", text=True)
     if symbolic.returncode == 0:
         raise ValueError("registration repository context must use detached HEAD")
     head = _git(git_root, "rev-parse", "HEAD")
@@ -1071,10 +1101,13 @@ def _validate_repository_context_bound(
         raise ValueError("spec file bytes differ from registration")
     if _git_blob_bytes(git_root, APPROVED_SPEC_COMMIT, spec_relative) != spec_bytes:
         raise ValueError("approved spec Git blob differs from current exact bytes")
-    ancestry = subprocess.run(
-        ["git", "-C", str(git_root), "merge-base", "--is-ancestor", APPROVED_SPEC_COMMIT, implementation],
-        check=False,
-        capture_output=True,
+    ancestry = _run_git(
+        git_root,
+        "merge-base",
+        "--is-ancestor",
+        APPROVED_SPEC_COMMIT,
+        implementation,
+        text=False,
     )
     if ancestry.returncode != 0:
         raise ValueError("approved spec commit must be an ancestor of implementation I")
@@ -1197,15 +1230,10 @@ def _build_pre_gate1_registration_from_bound_context(
 ) -> dict[str, Any]:
     """Generate registration while retaining the detached worktree directory fd."""
 
-    git_root = Path(root.proc_path)
+    git_root = root
     if _git(git_root, "status", "--porcelain"):
         raise ValueError("registration generation requires a clean repository")
-    symbolic = subprocess.run(
-        ["git", "-C", str(git_root), "symbolic-ref", "-q", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    symbolic = _run_git(git_root, "symbolic-ref", "-q", "HEAD", text=True)
     if symbolic.returncode == 0:
         raise ValueError("registration generation requires detached HEAD")
     implementation = _git(git_root, "rev-parse", "HEAD")

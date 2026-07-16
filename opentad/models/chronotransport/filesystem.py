@@ -606,6 +606,19 @@ def secure_lexical_path(
                 if allow_missing:
                     return Path(exact)
                 raise
+            except NotADirectoryError as error:
+                try:
+                    metadata = os.stat(
+                        component, dir_fd=directory, follow_symlinks=False
+                    )
+                except OSError:
+                    metadata = None
+                detail = (
+                    "symlink parent"
+                    if metadata is not None and stat.S_ISLNK(metadata.st_mode)
+                    else "non-directory or replaced parent"
+                )
+                raise ValueError(f"{label} contains a {detail}: {component}") from error
             os.close(directory)
             directory = child
     finally:
@@ -733,7 +746,10 @@ def exclusive_file_lock(
         view = memoryview(payload)
         cursor = 0
         while cursor < len(view):
-            cursor += os.write(descriptor, view[cursor:])
+            written = os.write(descriptor, view[cursor:])
+            if written <= 0:
+                raise RuntimeError(f"{label} lock payload write made no progress")
+            cursor += written
         os.fsync(descriptor)
         os.fsync(directory)
         yield Path(exact)
