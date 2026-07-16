@@ -21,6 +21,16 @@ max_chars: 8000
   `NOT_READY`, E0--E5 remain `LOCKED`, and no ChronoTransport Job, Gate result, training result or
   paper-usable number exists. Local pytest is not evidence because the Windows PyTorch import fails with
   `WinError 1114`.
+- The first Pro call against review snapshot `92a18bec2f5f247446083a8eb50fe889f367c23e` returned only
+  `GITHUB_SNAPSHOT_INCOMPLETE`. It independently established `^1=6c3606c`, no `^2`, ahead 1/behind 0 and
+  the exact eight-path docs-only post-floor diff, but its normalized GitHub interface did not expose tree SHA
+  or separate Git-object timestamps required by the prompt. No spec hash, code, test or registration verdict
+  was evaluated. This is a snapshot-contract/tool mismatch, not implementation approval or rejection; W7
+  remains open and all experiment stages remain locked.
+- The user approved a replacement snapshot gate that keeps the full Git Data object preferred but permits a
+  strict fallback only after frozen SHA, exact `^1/^2`, four-anchor ancestry, complete post-floor docs-only diff
+  and SHA-pinned mandatory-file reads all pass. This is a reviewer-tool compatibility repair, not a reduction
+  in code/content integrity and not an implementation verdict.
 - Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
   registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
   verdict `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for exact SHAs `0BE0EA8B...F76808` and

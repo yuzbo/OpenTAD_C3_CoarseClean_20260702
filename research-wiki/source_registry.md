@@ -129,3 +129,18 @@ ChronoTransport r2 Pro 审计条目。
   保留记录。接受规范批准、总体实现裁决、四项核心 P0、source/path/workflow blocker；不原样采用
   不完整 A2 patch、未冻结 Stage-C dataclass/loss namespace、自动测试分类及过宽的永久 kill 语义，
   并补记 profiler/Stage-B/Gates23/stale-plan 等未覆盖实施面。
+- `sources/2026-07-16-chronotransport-r2-github-pro-snapshot-gate-92a18be.md`：用户提供的第三次
+  GitHub-only Pro snapshot-gate 返回，75 lines / 2,194 bytes，SHA-256
+  `990E84F1D09116257D684090163BACB3F579ACA7290BADCB4D9FC6CFDA151FD1`。它 fresh-resolved
+  `92a18be`，独立验证了 `^1=6c3606c`、无 `^2`、ahead 1/behind 0 与 exact eight-path docs-only
+  diff，但因 reviewer 接口不暴露 tree SHA 和分离的 author/committer timestamps 而按 prompt 返回
+  `GITHUB_SNAPSHOT_INCOMPLETE`。未进入代码或 registration 裁决。
+- `sources/2026-07-16-chronotransport-r2-github-pro-snapshot-gate-92a18be-absorption.md`：对上述
+  snapshot-only 返回的证据边界与工具能力缺口记录；用户已批准以 SHA/parents/ancestry/exact
+  diff/逐文件 content-addressed checks 构成严格等价 fallback，并要求发布新 docs-only snapshot。
+- `../docs/methods/2026-07-16-chronotransport-r2-final-github-pro-implementation-review-prompt.md`：
+  当前 GitHub-only Pro 全实现审计合同，406 lines / 24,050 bytes，SHA-256
+  `7F67EAB17A9A4280CE27431DA0DB5A3B6B219AEE4EC7A075D4AE7FD75D6866C8`。Route A 优先完整 Git
+  Data commit object；只有 reviewer 明确证明字段不可得时，Route B 才以 frozen SHA、exact parent
+  probes、四锚点 ancestry、complete post-floor diff 和 SHA-pinned mandatory contents 继续。它只是一份
+  review input，不是 implementation approval、registration、Gate 或实验结果。

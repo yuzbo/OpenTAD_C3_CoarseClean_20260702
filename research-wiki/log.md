@@ -503,3 +503,21 @@ append_only: true
   `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` verdict. Prompt SHA-256 is
   `663757DE188A3EB62E50FD9A0E00AE7D9768206E072475D9BA76EAEDE1647ABF`. The prompt is review-only and
   cannot create I/R, unlock CUDA/Slurm PRECHECK or start an experiment.
+- 2026-07-16: Archived the user-supplied Pro snapshot-gate response for exact review SHA `92a18be` at
+  SHA-256 `990E84F1...151FD1`. The reviewer independently proved the implementation-floor first parent, absence
+  of a second parent, ahead 1/behind 0 and the exact eight-path docs-only diff, but its GitHub interface did not
+  expose tree SHA or separate Git-object timestamps. It therefore correctly obeyed the then-current prompt and
+  returned only `GITHUB_SNAPSHOT_INCOMPLETE`; no spec, code, test or registration verdict exists. Proposed
+  remediation is a strict content-addressed fallback certificate, not relaxation to project-reported metadata.
+  No I/R, PRECHECK, Slurm job or experiment was created.
+- 2026-07-16: The user approved the strict equivalent-certificate repair. The replacement prompt keeps the
+  complete Git Data commit object as Route A and allows Route B only after the reviewer proves interface field
+  unavailability and independently verifies frozen SHA, exact first/second-parent probes, strict ancestry to
+  all four anchors, the complete implementation-floor docs-only diff and every mandatory file through a
+  SHA-pinned read. Tree/timestamps remain untrusted when unavailable. This is a docs-only review-transport
+  change; implementation approval, I/R, PRECHECK and E0--E5 remain absent/locked.
+- 2026-07-16: Finalized the approved replacement Pro prompt at 406 lines / 24,050 bytes, SHA-256
+  `7F67EAB17A9A4280CE27431DA0DB5A3B6B219AEE4EC7A075D4AE7FD75D6866C8`. It also pins the verbatim
+  `92a18be` snapshot response (`990E84F1...151FD1`) and its absorption (`EB7A5767...078B1`) so the next
+  reviewer must distinguish prior tool failure from a code verdict. Publication remains docs-only and does
+  not create I/R, PRECHECK or experiment evidence.

@@ -22,7 +22,7 @@
 它不是在问方法是否有效。当前不存在正式 Gate、训练或论文数字；禁止把单元测试、合成数据或
 项目自报现象解释为科学结论。
 
-## 2. 快照门：任何一项无法独立验证就立即停止
+## 2. 快照门：完整对象优先，严格等价证书作为受限 fallback
 
 仓库与分支：
 
@@ -31,26 +31,56 @@
 - approved-spec ancestor: `537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37`
 - previous reviewed snapshot: `1b6366d0acb712e8096c2cceb0f05e66b16d30d4`
 - implementation floor: `6c3606cc5161d415909a42741b3bc402278bf332`
+- previous metadata-blocked review snapshot: `92a18bec2f5f247446083a8eb50fe889f367c23e`
 
 必须 fresh-resolve 分支 HEAD 为 `REVIEW_SHA`，随后所有文件、diff、blame、tree、raw URL 和引用
-只能固定到该 SHA；不得继续读取可移动 branch URL。必须独立取得并报告完整 Git commit object：
+只能固定到该 SHA；不得继续读取可移动 branch URL。`REVIEW_SHA` 必须是上述四个 anchors 的严格
+后代且不等于任一个。
+
+### Route A：完整 Git Data commit object（优先）
+
+如果接口暴露完整 Git Data commit object，必须独立取得并报告：
 
 - `REVIEW_SHA`；
 - commit message、author/committer timestamp；
 - 完整 `parents[]` vector；
 - exact tree SHA；
-- GitHub compare 证据，证明 `REVIEW_SHA` 是上述三个 commit 的严格后代且不等于任一个；
+- GitHub compare 证据，证明 `REVIEW_SHA` 是上述四个 commit 的严格后代；
 - `git diff 6c3606c...REVIEW_SHA` 的 exact path list，确认 implementation floor 后只包含审计/研究
   记忆文档，不偷偷改动 production、test、config、launcher 或 registration 逻辑。
 
-不得以 `ahead_by` 单独替代 parent vector/tree SHA，不得从项目文本抄写这些字段。如果 GitHub
-接口、权限或工具不能独立取得任一字段，或者 ancestry/path 条件失败，唯一允许的输出是：
+Route A 中任何字段实际存在但值不匹配时，不能转入 fallback，必须 fail closed。
+
+### Route B：接口不暴露完整对象时的严格等价证书
+
+仅当 reviewer 明确报告其可用 GitHub 接口不暴露 `tree.sha`、完整 `parents[]` 或分离的 Git-object
+timestamps 时，才允许 Route B。不得因为字段值不一致、请求失败、权限不明或偷懒而使用 fallback。
+Route B 必须独立完成全部条件：
+
+1. fresh-resolve 移动分支一次并冻结 exact `REVIEW_SHA`；此后禁止读取 branch ref；
+2. 分别 compare `537f692`、`1b6366d`、`6c3606c`、`92a18be` 到 `REVIEW_SHA`，每项都必须是
+   `status=ahead`、`behind_by=0`、`ahead_by>0`，且 merge base 等于对应 anchor；
+3. revision probes 必须证明 `REVIEW_SHA^1 = 92a18bec2f5f247446083a8eb50fe889f367c23e`，而
+   `REVIEW_SHA^2` 不存在；不得由 `ahead_by` 推断 parent；
+4. 独立枚举 `6c3606c...REVIEW_SHA` 的完整 changed-path list。每个 post-floor path 必须只属于
+   `docs/methods/` 或 `research-wiki/` 的审计/研究记忆文档；任一 production、test、config、launcher、
+   registration、Git submodule/LFS pointer 或其他路径变化都 fail closed；
+5. 后续每个 mandatory file 必须通过显式传入 `ref=REVIEW_SHA` 或等价 SHA-pinned endpoint 读取。
+   在 line-coverage ledger 中记录 path、固定 ref、读取是否成功和内容校验方式；所有本文给出 expected
+   SHA-256 的文件仍必须计算并精确匹配。若 endpoint 暴露 blob/object SHA，一并报告；若不暴露，
+   只要内容确由 SHA-pinned endpoint 返回且被完整审计，该字段缺失本身不阻断；
+6. 明确把不可得的 tree SHA/双时间戳标为
+   `UNAVAILABLE_NONBLOCKING_AFTER_EQUIVALENT_CERTIFICATE`，不得抄录项目文档中的值或自行推导。
+
+Route B 是内容寻址的独立证书，不是信任项目自报 metadata。缺少上述任一条件、任一后续读取退回
+移动 branch、或任一 exact content/hash 不一致时，唯一允许的输出是：
 
 ```text
 GITHUB_SNAPSHOT_INCOMPLETE
 ```
 
-并列出已解析 SHA、已验证项、第一项失败条件；此时不得进入代码裁决。
+并列出已解析 SHA、尝试的 route、已验证项与第一项失败条件；此时不得进入代码裁决。Route A 或
+Route B 完整通过后必须继续规范与代码审计，不得仅因 tree SHA/双时间戳接口不可得再次停止。
 
 ## 3. 规范与历史证据门
 
@@ -63,6 +93,12 @@ GITHUB_SNAPSHOT_INCOMPLETE
 - expected SHA-256:
   `C61F93531885040A3593DB7552E23B67B34DEC3D55095D71FCE5B6D2A1F1BC08`
 - `research-wiki/sources/2026-07-16-chronotransport-r2-pro-review-1b6366d-absorption.md`
+- `research-wiki/sources/2026-07-16-chronotransport-r2-github-pro-snapshot-gate-92a18be.md`
+- expected SHA-256:
+  `990E84F1D09116257D684090163BACB3F579ACA7290BADCB4D9FC6CFDA151FD1`
+- `research-wiki/sources/2026-07-16-chronotransport-r2-github-pro-snapshot-gate-92a18be-absorption.md`
+- expected SHA-256:
+  `EB7A5767C7274C5F22F3625FC993853C44D39E0F20B9E12C71A4C9222EE078B1`
 
 上一轮 Pro 已对 exact A1--A4 返回 `APPROVE_SPEC_FOR_PLAN`，但对旧实现返回
 `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`。你必须确认规范字节未变，并把上一轮未闭环 finding
@@ -329,7 +365,8 @@ assert 是否只验证 self-consistent hash、fixture builder 是否与 formal b
 
 ## 13. 强制输出顺序
 
-1. `Snapshot Certificate`：SHA、parents、tree、ancestry、implementation-floor diff path list；
+1. `Snapshot Certificate`：使用 Route A 或 B、SHA、可得的 parents/tree、全部 ancestry、
+   implementation-floor diff path list、SHA-pinned content ledger；
 2. `Evidence Classification`：repository/executed/reported/inference；
 3. `Previous Pro Finding Closure Matrix`；
 4. `Line-Coverage Ledger`；

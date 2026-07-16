@@ -20,7 +20,7 @@ experiment_running: false
 | W4 | W3 | real ActionFormer per-window loss | TESTED | same-head batch-two aggregate identity and negative contracts |
 | W5 | W4 | Stage-C A3/A4 transaction | TESTED | paired CT/matched transaction, retry, state, normalizer and checkpoint contracts |
 | W6 | W5 | formal Stage-C/matched/Gate-4 workflows | TESTED | 4,200-success runners, post-Gate3 and official Gate4 producer/finalizer contracts |
-| W7 | W6 | remote verification, I and R | IN_PROGRESS | exact CPU 441/1 + C3 20/20; independent exact-byte Pro and R-bound CUDA checks pending |
+| W7 | W6 | remote verification, I and R | IN_PROGRESS | exact CPU 441/1 + C3 20/20; `92a18be` review stopped at metadata-only snapshot gate; equivalent-certificate re-review and R-bound CUDA checks pending |
 | E0 | valid R | Slurm PRECHECK | LOCKED | none |
 | E1 | E0 | Gate 1 | LOCKED | none |
 | E2 | Gate 1 PASS | Stage B, three seeds | LOCKED | none |
@@ -59,6 +59,10 @@ experiment_running: false
   candidate by SHA-256. The protected CUDA skip remains a W7 task after review and valid I/R.
 - These are implementation tests only. Registration is still `NOT_READY`; no I/R, PRECHECK, GPU producer,
   Gate, training run or scientific result exists. E0--E5 remain locked in strict stop-chain order.
+- The first Pro call against `92a18be` independently established its single-parent, strict post-floor ancestry
+  and docs-only diff but returned `GITHUB_SNAPSHOT_INCOMPLETE` because the reviewer interface lacked tree SHA
+  and split Git-object timestamps required by the prompt. The user approved a strict equivalent-certificate
+  fallback; this changes only the review transport contract and does not approve implementation or unlock E0.
 
 ## Status semantics
 

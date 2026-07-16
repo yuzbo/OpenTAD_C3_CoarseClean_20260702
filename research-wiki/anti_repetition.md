@@ -268,3 +268,8 @@ updated: 2026-07-16
 110. Remote regression evidence is transferable to a local review candidate only after every changed/new
     implementation file is compared by exact SHA-256. A passing test in a merely similar remote checkout is
     not evidence for the candidate later pushed to GitHub.
+111. A GitHub snapshot gate should prefer the complete Git Data commit object, but it must not permanently
+    block on non-semantic metadata that the reviewer's interface provably does not expose. A strict fallback
+    may pass only with frozen SHA, exact parent probes, strict compare to every anchor, complete post-floor
+    path diff and SHA-pinned content reads for every mandatory file. Missing ancestry/content remains blocking;
+    project-reported tree/timestamps and moving-branch reads never substitute for independent evidence.
