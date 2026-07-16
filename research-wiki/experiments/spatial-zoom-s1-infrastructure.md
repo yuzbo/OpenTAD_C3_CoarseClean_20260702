@@ -398,6 +398,20 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `66 passed, 1 skipped`. Because this changes the certified launcher, the
   `bb56...` campaign is retained as failed infrastructure and cannot authorize
   the matrix; a new commit, certificate and GPU gate are required.
+- Recovery-gate status at `2026-07-17T04:50+08:00`: commit `2d988b2` passed the
+  full local S1+C3 regression (`66 passed, 1 skipped`) and remote focused suite
+  (`67 passed`). Recovery campaign `10105b8b590cd7fc` issued certificate SHA
+  `0f02a64b3150e97a8a172de75af756b677922085ae21ca8b4f48a2e654b7bdf0`.
+  Its no-open Gate Job `1167504` failed `127:0` in one second, before any Python
+  preflight, CUDA work, test read, or profile marker, because the formal test
+  launcher used `python` to parse the certificate before sourcing the OpenTAD
+  environment. The campaign retains the Slurm logs and self-hashed submission
+  receipt (`80c230fe...`). The launcher now activates CUDA/Miniforge/OpenTAD
+  before its first Python call, with a static ordering regression test. Because
+  this changes a certificate-bound launcher, campaign `10105...` cannot
+  authorize the matrix; another clean commit, recovery certificate, and GPU
+  gate are required. S1 remains `experiment_running`, with no cost matrix,
+  GO/KILL, S2, or Pro review.
 
 ## Decision Boundary
 

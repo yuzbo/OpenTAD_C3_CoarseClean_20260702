@@ -60,9 +60,15 @@ max_chars: 8000
   1 skipped`. Campaign `bb56f9d0283b12c0` was issued, but Gate `1167497`
   failed before Python (`set -u`) and `1167500` failed after binding audit when
   the repair clone lacked the training snapshot's relative `data/` mount; no
-  test/profile opened. The launcher now runs repair code from the clean training
-  cwd with explicit `PYTHONPATH` and a no-open `PREFLIGHT_ONLY` mode. A new
-  commit/certificate/gate is required; no replacement matrix Job exists.
+  test/profile opened. Commit `2d988b2` runs repair code from the clean training
+  cwd with explicit `PYTHONPATH` and adds a no-open `PREFLIGHT_ONLY` mode; its
+  remote focused suite passed `67` tests. Campaign `10105b8b590cd7fc` issued
+  certificate SHA `0f02a64b...`, but Gate `1167504` failed in one second before
+  Python because the launcher parsed that certificate before activating the
+  OpenTAD environment. The failure log and self-hashed submission receipt are
+  preserved, and no test/profile opened. A minimal ordering fix now activates
+  the environment before the first Python call and is regression-tested; a new
+  commit/certificate/gate is still required. No replacement matrix Job exists.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

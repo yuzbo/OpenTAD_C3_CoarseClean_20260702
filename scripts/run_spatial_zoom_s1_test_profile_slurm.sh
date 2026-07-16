@@ -50,6 +50,13 @@ for path in "${MANIFEST}" "${ANNOTATION}" "${TEST_OPEN}" "${PROFILE_RECOVERY}" "
 done
 [[ -d "${TRAINING_ROOT}/.git" || -f "${TRAINING_ROOT}/.git" ]] || \
   fail "training source root is not a Git checkout: ${TRAINING_ROOT}"
+if command -v module >/dev/null 2>&1; then
+  module load cuda/11.8
+  module load miniforge3/24.11
+fi
+# shellcheck disable=SC1091
+source "${BASE}/conda_envs/opentad/bin/activate"
+
 TRAINING_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["training_code_commit"])' "${PROFILE_RECOVERY}")"
 [[ "$(git -C "${TRAINING_ROOT}" rev-parse HEAD)" == "${TRAINING_COMMIT}" ]] || \
   fail "training source root differs from the certificate-bound commit"
@@ -57,12 +64,6 @@ TRAINING_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1],
   fail "training source root must be clean"
 
 cd "${ROOT}"
-if command -v module >/dev/null 2>&1; then
-  module load cuda/11.8
-  module load miniforge3/24.11
-fi
-# shellcheck disable=SC1091
-source "${BASE}/conda_envs/opentad/bin/activate"
 
 CHECKPOINT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["selected"]["checkpoint_path"])' "${SELECTION}")"
 [[ -f "${CHECKPOINT}" ]] || fail "selected checkpoint does not exist: ${CHECKPOINT}"

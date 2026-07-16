@@ -386,6 +386,11 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     assert 'cd "${TRAINING_ROOT}"' in post
     assert 'PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"' in post
     assert '"${ROOT}/tools/bata/profile_spatial_zoom_s1.py"' in post
+    environment_activation = post.index(
+        'source "${BASE}/conda_envs/opentad/bin/activate"'
+    )
+    first_python = post.index("python")
+    assert environment_activation < first_python
     preflight_exit = post.index("PREFLIGHT PASS")
     test_open = post.index('tools/test.py "${BOUND_CONFIG}"')
     profile_open = post.index('"${ROOT}/tools/bata/profile_spatial_zoom_s1.py"')

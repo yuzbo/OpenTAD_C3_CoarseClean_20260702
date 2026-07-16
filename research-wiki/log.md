@@ -210,3 +210,11 @@ append_only: true
   Updated the formal launcher to execute repair code from the clean training
   working directory and added a no-open `PREFLIGHT_ONLY` mode. Local regression
   is `66 passed, 1 skipped`; a new certificate/gate is required.
+- 2026-07-17 04:50+08:00: `2d988b2` passed 67 remote focused tests and issued
+  recovery campaign `10105b8b590cd7fc` (certificate SHA `0f02a64b...`). Its
+  no-open Gate `1167504` failed `127:0` in one second because the launcher used
+  `python` before activating the OpenTAD environment. No Python preflight,
+  test, or profile opened. The failed campaign retains its logs and self-hashed
+  submission receipt (`80c230fe...`). Reordered environment activation before
+  the first Python call and added a regression assertion; this launcher change
+  requires one more clean commit/certificate/gate before any recovery matrix.
