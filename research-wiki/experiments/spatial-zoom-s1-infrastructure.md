@@ -232,6 +232,21 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   only the post-training selector may compute the frozen-corpus gate score.
   `jobs.tsv` and the frozen deployment-summary SHA remain unchanged, and the
   shared filesystem reports 25% aggregate use with no new write error.
+- Status at `2026-07-16T19:10+08:00`: dense160 Jobs `1166361-1166363` are
+  `COMPLETED 0:0`. Each seed has exactly ten allowed checkpoints, metadata
+  sidecars, gate-evidence records, and prediction files; each selector passed
+  and selected epoch 59 after 4,800 successful updates. Selected gate Avg-mAP
+  values are `64.739055`, `64.842109`, and `63.078053` for seeds
+  3407/3408/3409. Their mAP@0.6/0.7 pairs are
+  `58.068004/46.172643`, `58.669883/45.247624`, and
+  `56.636446/46.260109`. All three selection records retain
+  `official_test_read=false` and `paper_claim_allowed=false`. Dense224 remains
+  `RUNNING` at epochs 58-59 with nine complete candidate artifact sets per
+  seed; dense256 remains `RUNNING` at epochs 52-53 with six complete sets per
+  seed, plus one newly written checkpoint awaiting its matching evaluation in
+  seed 3408. Retry totals remain 3-4 with maximum same-batch depth `2/8`; the
+  hard-failure scan and temporary-file count remain zero. No sealed test or
+  profile is authorized until all nine cells complete and validate.
 
 ## Decision Boundary
 

@@ -135,3 +135,9 @@ append_only: true
   41-51 checkpoint/evidence artifacts are appearing without selection. The
   approximately 15% training-monitor values remain explicitly excluded as a
   mismatched-corpus artifact rather than a gate score. No test was opened.
+- 2026-07-16 19:10+08:00: dense160 Jobs `1166361-1166363` completed `0:0`
+  with ten checkpoint/sidecar/evidence/prediction sets and valid selector
+  records. All selected epoch 59 after 4,800 successful updates; gate Avg-mAP
+  is `64.739055/64.842109/63.078053` for seeds 3407/3408/3409. Dense224 is at
+  epochs 58-59 and dense256 at 52-53. The hard-failure and temporary-file scans
+  remain empty. `official_test_read` remains false and no test/profile opened.
