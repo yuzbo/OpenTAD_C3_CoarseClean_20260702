@@ -136,6 +136,42 @@ def test_real_actionformer_dense_reference_uses_the_same_structured_api():
     )
 
 
+def test_structured_vector_preserves_the_unmodified_actionformer_reduction():
+    torch.manual_seed(3407)
+    aggregate_model = _real_tiny_actionformer().train()
+    vector_model = _real_tiny_actionformer().train()
+    vector_model.load_state_dict(aggregate_model.state_dict(), strict=True)
+    batch = _batch()
+
+    aggregate = aggregate_model(
+        inputs=batch[0],
+        masks=batch[1],
+        metas=batch[2],
+        gt_segments=batch[3],
+        gt_labels=batch[4],
+        return_loss=True,
+    )
+    vector = vector_model(
+        inputs=batch[0],
+        masks=batch[1],
+        metas=batch[2],
+        gt_segments=batch[3],
+        gt_labels=batch[4],
+        return_loss=True,
+        chronotransport_per_window_output=True,
+    )
+
+    tolerance = 8 * torch.finfo(vector.loss_dict["cost"].dtype).eps
+    for key in ("cls_loss", "reg_loss", "cost"):
+        torch.testing.assert_close(
+            vector.loss_dict[key], aggregate[key], rtol=tolerance, atol=0.0
+        )
+    assert torch.equal(
+        vector_model.rpn_head.loss_normalizer,
+        aggregate_model.rpn_head.loss_normalizer,
+    )
+
+
 def test_per_window_actionformer_rejects_any_caller_loss_or_target_surface():
     model = _real_tiny_actionformer().train()
     batch = _batch()
