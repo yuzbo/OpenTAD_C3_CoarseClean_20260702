@@ -982,6 +982,7 @@ _FORMAL_RUNTIME_SUMMARY_KEYS = frozenset(
         "cache_reset_per_window",
         "transport_uses_latest_cache",
         "cost_is_measured",
+        "registered_cost_profile_sha256",
         "risk_ready",
         "checkpoint_loaded",
         "require_checkpoint_for_dynamic",
@@ -1068,6 +1069,24 @@ def _validate_formal_runtime_summary(
     ):
         raise StageCInvalidImplementationError(
             "formal runtime summary identity/fallback evidence is invalid"
+        )
+    profile_sha256 = summary["registered_cost_profile_sha256"]
+    if (
+        profile_sha256 != runtime.scheduler.registered_cost_profile_sha256
+        or (
+            profile_sha256 is not None
+            and (
+                not isinstance(profile_sha256, str)
+                or len(profile_sha256) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in profile_sha256
+                )
+            )
+        )
+    ):
+        raise StageCInvalidImplementationError(
+            "formal runtime summary registered cost provenance is invalid"
         )
     integer_fields = (
         "recompute_rows",

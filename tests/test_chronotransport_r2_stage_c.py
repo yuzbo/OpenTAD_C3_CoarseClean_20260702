@@ -17,6 +17,12 @@ from opentad.models.chronotransport.training import configure_stage_c
 from opentad.models.chronotransport.runtime import ChronoTransportRuntime
 import opentad.models.chronotransport.stage_c as stage_c_module
 from opentad.models.chronotransport.protocol import stage_c_batch_exposures
+from opentad.models.chronotransport.formal_stage_c import (
+    build_paired_stage_c_state,
+    load_paired_stage_c_checkpoint,
+    run_paired_stage_c_training,
+    validate_paired_stage_c_checkpoint,
+)
 from opentad.models.chronotransport.stage_c import (
     StageCAttemptLosses,
     StageCInvalidImplementationError,
@@ -2462,3 +2468,88 @@ def test_ct_and_matched_dense_share_batch_exposure_lr_and_normalizer_trace():
         rtol=0.0,
         atol=0.0,
     )
+
+
+def test_paired_stage_c_workflow_checkpoints_and_resumes_real_actionformer():
+    torch.manual_seed(4407)
+    ct_model, _groups, _optimizer, _scaler, _objects, batch = (
+        _formal_actionformer_stage_c_fixture(set())
+    )
+    torch.manual_seed(4407)
+    matched_model, _group, _optimizer, _scaler, _objects, matched_batch = (
+        _formal_actionformer_matched_fixture(set())
+    )
+    assert hash_materialized_batch(batch) == hash_materialized_batch(matched_batch)
+    state = build_paired_stage_c_state(ct_model, matched_model)
+    checkpoints = []
+    provenance = {"registration_sha256": "a" * 64, "registration_commit": "b" * 40}
+
+    result = run_paired_stage_c_training(
+        state,
+        materialize_batch=lambda update: batch,
+        fit_window_ids=("stage-c-000", "stage-c-001"),
+        seed=3407,
+        provenance=provenance,
+        formal=False,
+        total_successful_updates=1,
+        checkpoint_frequency=1,
+        checkpoint_sink=lambda cursor, checkpoint: checkpoints.append(
+            (cursor, copy.deepcopy(checkpoint))
+        ),
+    )
+    checkpoint = result["checkpoint"]
+    assert result["successful_updates"] == 1
+    assert result["window_exposures"] == 2
+    assert sum(result["candidate_counts"].values()) == 2
+    assert checkpoints[0][0] == 1
+    validate_paired_stage_c_checkpoint(
+        checkpoint,
+        expected_seed=3407,
+        expected_fit_window_ids=("stage-c-000", "stage-c-001"),
+        expected_provenance=provenance,
+        formal=False,
+        require_complete=True,
+        expected_total_successful_updates=1,
+    )
+    assert checkpoint["ct"]["controls"]["shadow_ledger"] == checkpoint[
+        "matched_dense"
+    ]["controls"]["shadow_ledger"]
+    assert torch.equal(
+        checkpoint["ct"]["normalizer"], checkpoint["matched_dense"]["normalizer"]
+    )
+
+    torch.manual_seed(4407)
+    resumed_ct, _groups, _optimizer, _scaler, _objects, _batch = (
+        _formal_actionformer_stage_c_fixture(set())
+    )
+    torch.manual_seed(4407)
+    resumed_matched, _group, _optimizer, _scaler, _objects, _batch = (
+        _formal_actionformer_matched_fixture(set())
+    )
+    resumed = build_paired_stage_c_state(resumed_ct, resumed_matched)
+    load_paired_stage_c_checkpoint(
+        resumed,
+        checkpoint,
+        expected_seed=3407,
+        expected_fit_window_ids=("stage-c-000", "stage-c-001"),
+        expected_provenance=provenance,
+        formal=False,
+        expected_total_successful_updates=1,
+    )
+    assert resumed.successful_updates == 1
+    assert resumed.trace == state.trace
+
+    tampered = copy.deepcopy(checkpoint)
+    tampered["matched_dense"]["controls"]["shadow_ledger"][0]["batch_hash"] = (
+        "f" * 64
+    )
+    with pytest.raises(ValueError, match="shadow ledgers"):
+        validate_paired_stage_c_checkpoint(
+            tampered,
+            expected_seed=3407,
+            expected_fit_window_ids=("stage-c-000", "stage-c-001"),
+            expected_provenance=provenance,
+            formal=False,
+            require_complete=True,
+            expected_total_successful_updates=1,
+        )
