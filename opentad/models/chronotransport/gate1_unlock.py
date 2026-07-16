@@ -16,8 +16,8 @@ from .registration import (
 )
 
 
-GATE1_INPUT_SCHEMA = "chronotransport-r2-gate1-input-v2"
-GATE1_UNLOCK_SCHEMA = "chronotransport-r2-gate1-unlock-v1"
+GATE1_INPUT_SCHEMA = "chronotransport-r2-gate1-input-v3"
+GATE1_UNLOCK_SCHEMA = "chronotransport-r2-gate1-unlock-v2"
 GATE1_UNLOCK_FIXTURE_SCHEMA = "chronotransport-r2-gate1-unlock-test-fixture-v1"
 _INPUT_FIELDS = {
     "schema",

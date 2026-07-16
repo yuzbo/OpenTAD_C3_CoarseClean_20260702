@@ -101,7 +101,7 @@ def _validate_gate1_input_payload(
         "full_stack_profile",
     }:
         raise ValueError("Gate 1 input artifact fields mismatch")
-    if payload["schema"] != "chronotransport-r2-gate1-input-v2":
+    if payload["schema"] != "chronotransport-r2-gate1-input-v3":
         raise ValueError("unsupported Gate 1 input schema")
     if payload["registration"] != registration:
         raise ValueError("Gate 1 input does not embed the exact formal registration")

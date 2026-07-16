@@ -448,7 +448,7 @@ def test_gate1_unlock_is_exact_recomputable_and_stage_b_rejects_forgery():
 
     registration = _registration()
     payload = {
-        "schema": "chronotransport-r2-gate1-input-v2",
+        "schema": "chronotransport-r2-gate1-input-v3",
         "registration": registration,
         "calibration": _records(registration, "calibration", 0.2),
         "evaluation": _records(registration, "evaluation", 0.2),
@@ -553,7 +553,7 @@ def test_formal_clis_reject_caller_supplied_factory_provenance_and_raw_gate_reco
     with pytest.raises((TypeError, ValueError), match="artifact"):
         run_gate1_payload_for_test_only(
             {
-                "schema": "chronotransport-r2-gate1-input-v2",
+                "schema": "chronotransport-r2-gate1-input-v3",
                 "registration": registration,
                 "calibration": {"raw": "mapping"},
                 "evaluation": {"raw": "mapping"},

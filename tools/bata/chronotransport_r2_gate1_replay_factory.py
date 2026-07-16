@@ -213,6 +213,7 @@ class RegisteredGate1ReplaySession:
         body: dict[str, object] = {
             "schema": GATE1_PAIRED_REPLAY_SCHEMA,
             "registration_sha256": self._registration["registration_sha256"],
+            "observed_environment": dict(self._backend.observed_environment),
             "split": split,
             "window_ids": list(expected_ids),
             "window_order_sha256": canonical_sha256(expected_ids),

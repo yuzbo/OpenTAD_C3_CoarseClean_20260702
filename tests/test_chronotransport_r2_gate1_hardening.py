@@ -281,6 +281,81 @@ def test_replay_and_record_fixtures_cannot_be_retagged_as_formal(monkeypatch):
             **context,
         )
 
+
+def test_formal_replay_binds_exact_observed_allocation_identity(monkeypatch):
+    import opentad.models.chronotransport.adjudication as adjudication
+    from opentad.models.chronotransport.environment import (
+        build_test_only_observed_environment,
+    )
+    from opentad.models.chronotransport.protocol import canonical_sha256
+    from test_chronotransport_r2_gate1_cost_profile import _records, _registration
+
+    registration = _registration()
+    record_fixture = _records(registration, "calibration", 0.2)
+    replay_fixture = record_fixture["fixture_paired_replay"]
+    rows = [
+        {
+            "window_id": row["fixture_window_id"],
+            **row["fixture_source"],
+            "detector_regret": row["fixture_derived_detector_regret"],
+        }
+        for row in replay_fixture["fixture_rows"]
+    ]
+    expected_ids = registration["window_manifest"]["artifact"]["splits"][
+        "calibration"
+    ]
+    artifact = {
+        "schema": adjudication.GATE1_PAIRED_REPLAY_SCHEMA,
+        "registration_sha256": registration["registration_sha256"],
+        "observed_environment": build_test_only_observed_environment(
+            registration["environment"]
+        ),
+        "split": "calibration",
+        "window_ids": list(expected_ids),
+        "window_order_sha256": canonical_sha256(expected_ids),
+        "candidate_names": list(adjudication.GATE1_PAIRED_CANDIDATE_ORDER),
+        "candidate_order_sha256": canonical_sha256(
+            adjudication.GATE1_PAIRED_CANDIDATE_ORDER
+        ),
+        "order_probe_candidate_names": list(
+            reversed(adjudication.GATE1_PAIRED_CANDIDATE_ORDER)
+        ),
+        "order_probe_candidate_order_sha256": canonical_sha256(
+            tuple(reversed(adjudication.GATE1_PAIRED_CANDIDATE_ORDER))
+        ),
+        "rows": rows,
+    }
+    artifact["artifact_sha256"] = canonical_sha256(artifact)
+    monkeypatch.setattr(
+        adjudication,
+        "validate_formal_gate1_context",
+        lambda registration, **kwargs: registration,
+    )
+    context = {
+        "repository_root": "/repo",
+        "registration_commit": "a" * 40,
+        "registration_relpath": "artifacts/registration.json",
+    }
+    assert adjudication.validate_gate1_paired_replay_artifact(
+        artifact,
+        registration=registration,
+        expected_split="calibration",
+        **context,
+    ) == artifact
+
+    damaged = copy.deepcopy(artifact)
+    damaged["observed_environment"]["slurm_step_id"] = "different"
+    damaged["artifact_sha256"] = canonical_sha256(
+        {key: value for key, value in damaged.items() if key != "artifact_sha256"}
+    )
+    with pytest.raises(RuntimeError, match="allocation identity"):
+        adjudication.validate_gate1_paired_replay_artifact(
+            damaged,
+            registration=registration,
+            expected_split="calibration",
+            **context,
+        )
+
     forged_record = _retag_and_rehash(
         record_fixture,
         schema=adjudication.GATE1_RECORD_SCHEMA,

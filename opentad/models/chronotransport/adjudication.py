@@ -12,6 +12,7 @@ from .full_stack_profiler import (
     validate_full_stack_profile_artifact,
     validate_full_stack_profile_artifact_for_test_only,
 )
+from .environment import validate_observed_environment
 from .protocol import canonical_sha256
 from .registration import (
     EXPECTED_PROFILE_CANDIDATE_ORDER,
@@ -44,15 +45,16 @@ GATE1_CONTROL_NAMES = (
 )
 GATE1_RECORD_CANDIDATE_ORDER = GATE1_HOLD_NAMES + GATE1_CONTROL_NAMES
 GATE1_PAIRED_CANDIDATE_ORDER = EXPECTED_PROFILE_CANDIDATE_ORDER
-GATE1_RECORD_SCHEMA = "chronotransport-r2-gate1-record-artifact-formal-v2"
+GATE1_RECORD_SCHEMA = "chronotransport-r2-gate1-record-artifact-formal-v3"
 GATE1_RECORD_FIXTURE_SCHEMA = "chronotransport-r2-gate1-record-test-fixture-v2"
-GATE1_PAIRED_REPLAY_SCHEMA = "chronotransport-r2-gate1-paired-replay-formal-v2"
+GATE1_PAIRED_REPLAY_SCHEMA = "chronotransport-r2-gate1-paired-replay-formal-v3"
 GATE1_PAIRED_REPLAY_FIXTURE_SCHEMA = (
     "chronotransport-r2-gate1-paired-replay-test-fixture-v2"
 )
 _FORMAL_REPLAY_FIELDS = {
     "schema",
     "registration_sha256",
+    "observed_environment",
     "split",
     "window_ids",
     "window_order_sha256",
@@ -394,7 +396,11 @@ def _gate1_oracle_headroom_from_profile_validated(
     )
     result.update(
         {
-            "schema": "chronotransport-r2-gate1-v2",
+            "schema": (
+                "chronotransport-r2-gate1-v2"
+                if fixture
+                else "chronotransport-r2-gate1-formal-v3"
+            ),
             "budget_source": "measured_p50:periodic4_transport",
             "full_stack_profile_sha256": full_stack_profile[
                 "fixture_profile_sha256" if fixture else "profile_sha256"
@@ -411,6 +417,18 @@ def _gate1_oracle_headroom_from_profile_validated(
             "candidate_cost_p50": costs,
         }
     )
+    if not fixture:
+        result["formal_environment_identity"] = {
+            "profile_observed_environment_sha256": full_stack_profile[
+                "common_identity"
+            ]["observed_environment_sha256"],
+            "calibration_observed_environment_sha256": calibration_artifact[
+                "paired_replay"
+            ]["observed_environment"]["observed_environment_sha256"],
+            "evaluation_observed_environment_sha256": evaluation_artifact[
+                "paired_replay"
+            ]["observed_environment"]["observed_environment_sha256"],
+        }
     return result
 
 
@@ -691,6 +709,10 @@ def _formal_replay_common_from_serialized(
         raise ValueError("formal Gate 1 paired replay artifact fields mismatch")
     if artifact.get("split") != expected_split:
         raise ValueError("formal Gate 1 paired replay split mismatch")
+    observed_environment = validate_observed_environment(
+        artifact.get("observed_environment", {}),
+        required_environment=registration["environment"],
+    )
     expected_ids = registration["window_manifest"]["artifact"]["splits"][expected_split]
     rows = artifact.get("rows")
     if not isinstance(rows, list) or len(rows) != len(expected_ids):
@@ -712,6 +734,7 @@ def _formal_replay_common_from_serialized(
         rebuilt_rows.append(rebuilt)
     return {
         "registration_sha256": registration["registration_sha256"],
+        "observed_environment": observed_environment,
         "split": expected_split,
         "window_ids": list(expected_ids),
         "window_order_sha256": canonical_sha256(expected_ids),
