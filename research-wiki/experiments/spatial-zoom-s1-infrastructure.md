@@ -145,6 +145,22 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   at 2-4 and `2/8`, respectively. No hard-failure signature is present. The
   pre-gate checkpoint/sidecar/evidence/selection counts remain zero, as frozen
   by protocol, and free storage remains 217 GiB.
+- Status at `2026-07-16T09:05+08:00`: all nine jobs remain `RUNNING`; dense160
+  has reached epochs 54-55, dense224 epoch 47, and dense256 epoch 43. Latest
+  finite losses span `0.3745-0.4506`. Every cell has 3 recovered AMP attempts
+  except dense256/seed3409 with 4; maximum same-batch retry remains `2/8`.
+  Checkpoint and sidecar counts are both 37, all checkpoint epochs are members
+  of the frozen set `41,43,...,59`, no temporary checkpoint exists, and no
+  selection file has been created. Thirty-four gate-evidence records are fully
+  published; the three-count lag is explained by currently running evaluations
+  immediately after atomic checkpoint publication. Completed 40-video gate
+  evaluations currently span `14.85-15.15` Avg-mAP. These are gate-only
+  checkpoint-selection diagnostics, not sealed-test results or GO/KILL evidence.
+  Sidecars bind commit `0421a8d9`, satisfy successful-update/optimizer-attempt
+  parity, and retain `official_test_opened=false`. No Traceback, OOM, non-finite
+  raw loss, determinism warning, exhausted retry, parity failure,
+  `PytorchStreamWriter`, FAIL, or abnormal Slurm state is present. Free storage
+  remains approximately 195 GiB.
 
 ## Decision Boundary
 
