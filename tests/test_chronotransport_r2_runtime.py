@@ -152,3 +152,51 @@ def test_registered_direct_candidate_cost_drives_forced_runtime_summary():
     assert summary["executed_estimated_cost"] == [123.25]
     assert summary["cost_is_measured"] is True
     assert summary["registered_cost_profile_sha256"] == profile_sha256
+
+
+def test_registered_post_stage_c_calibration_matches_runtime_risk_and_budget_gate():
+    runtime = _runtime(
+        None,
+        risk_ready=True,
+        require_checkpoint_for_dynamic=True,
+    )
+    runtime.set_checkpoint_loaded(True)
+    non_dense = [name for name in runtime.schedule_library.names if name != "dense"]
+    selected = non_dense[0]
+    costs = {name: 2.0 for name in runtime.schedule_library.names}
+    costs[selected] = 0.5
+    costs["dense"] = 3.0
+    runtime.install_registered_candidate_costs(costs, profile_sha256="c" * 64)
+    runtime.install_registered_gate3_calibration(
+        q_conf=0.25,
+        budget=0.5,
+        calibration_sha256="d" * 64,
+    )
+
+    def zero_risk(signals, candidates):
+        return torch.zeros(
+            (int(signals.shape[0]), int(candidates.shape[0])),
+            device=signals.device,
+            dtype=signals.dtype,
+        )
+
+    runtime.scheduler.predictor.forward = zero_risk
+    runtime(torch.zeros(4, 1, 2), nn.ModuleList([_Block(None)]), h=1, w=1)
+    summary = runtime.latest_summary
+    assert summary["selected_schedule_names"] == [selected]
+    assert summary["upper_risk"] == [0.25]
+    assert summary["estimated_cost"] == [0.5]
+    assert summary["registered_q_conf"] == 0.25
+    assert summary["registered_budget"] == 0.5
+    assert summary["registered_gate3_calibration_sha256"] == "d" * 64
+
+    try:
+        runtime.install_registered_gate3_calibration(
+            q_conf=0.5,
+            budget=0.5,
+            calibration_sha256="d" * 64,
+        )
+    except RuntimeError as error:
+        assert "immutable" in str(error)
+    else:
+        raise AssertionError("registered Gate3 calibration mutation was accepted")

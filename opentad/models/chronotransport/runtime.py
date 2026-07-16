@@ -194,6 +194,21 @@ class ChronoTransportRuntime(nn.Module):
         self.cost_is_measured = True
         self.nonlinear_cost_ready = True
 
+    def install_registered_gate3_calibration(
+        self,
+        *,
+        q_conf: float,
+        budget: float,
+        calibration_sha256: str,
+    ) -> None:
+        """Bind the exact post-Stage-C Gate-3 offset used by deployment selection."""
+
+        self.scheduler.install_registered_gate3_calibration(
+            q_conf=q_conf,
+            budget=budget,
+            calibration_sha256=calibration_sha256,
+        )
+
     def _estimate_registered_schedule_cost(self, actions: Tensor) -> Tensor:
         registered = self.scheduler.registered_candidate_cost_p50
         if registered is None:
@@ -441,6 +456,9 @@ class ChronoTransportRuntime(nn.Module):
             "cost_is_measured": self.cost_is_measured,
             "nonlinear_cost_ready": self.nonlinear_cost_ready,
             "registered_cost_profile_sha256": self.scheduler.registered_cost_profile_sha256,
+            "registered_gate3_calibration_sha256": self.scheduler.registered_calibration_sha256,
+            "registered_q_conf": self.scheduler.registered_q_conf,
+            "registered_budget": self.scheduler.registered_budget,
             "risk_ready": self.risk_ready,
             "checkpoint_loaded": self.checkpoint_loaded,
             "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,
@@ -718,6 +736,9 @@ class ChronoTransportRuntime(nn.Module):
                 "dense_output_shape_preserved": True,
                 "cost_is_measured": self.cost_is_measured,
                 "registered_cost_profile_sha256": self.scheduler.registered_cost_profile_sha256,
+                "registered_gate3_calibration_sha256": self.scheduler.registered_calibration_sha256,
+                "registered_q_conf": self.scheduler.registered_q_conf,
+                "registered_budget": self.scheduler.registered_budget,
                 "risk_ready": self.risk_ready,
                 "checkpoint_loaded": self.checkpoint_loaded,
                 "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,
@@ -805,6 +826,9 @@ class ChronoTransportRuntime(nn.Module):
             "transport_uses_latest_cache": True,
             "cost_is_measured": self.cost_is_measured,
             "registered_cost_profile_sha256": self.scheduler.registered_cost_profile_sha256,
+            "registered_gate3_calibration_sha256": self.scheduler.registered_calibration_sha256,
+            "registered_q_conf": self.scheduler.registered_q_conf,
+            "registered_budget": self.scheduler.registered_budget,
             "risk_ready": self.risk_ready,
             "checkpoint_loaded": self.checkpoint_loaded,
             "require_checkpoint_for_dynamic": self.require_checkpoint_for_dynamic,

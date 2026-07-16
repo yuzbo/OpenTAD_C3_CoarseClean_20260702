@@ -983,6 +983,9 @@ _FORMAL_RUNTIME_SUMMARY_KEYS = frozenset(
         "transport_uses_latest_cache",
         "cost_is_measured",
         "registered_cost_profile_sha256",
+        "registered_gate3_calibration_sha256",
+        "registered_q_conf",
+        "registered_budget",
         "risk_ready",
         "checkpoint_loaded",
         "require_checkpoint_for_dynamic",
@@ -1087,6 +1090,17 @@ def _validate_formal_runtime_summary(
     ):
         raise StageCInvalidImplementationError(
             "formal runtime summary registered cost provenance is invalid"
+        )
+    if any(
+        summary[name] is not None
+        for name in (
+            "registered_gate3_calibration_sha256",
+            "registered_q_conf",
+            "registered_budget",
+        )
+    ):
+        raise StageCInvalidImplementationError(
+            "Stage C must run before post-Stage-C Gate3 calibration is installed"
         )
     integer_fields = (
         "recompute_rows",

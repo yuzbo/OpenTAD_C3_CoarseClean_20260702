@@ -478,6 +478,9 @@ class RiskConstrainedScheduler(nn.Module):
         self.cost_statistic = str(cost_statistic)
         self.registered_candidate_cost_p50: dict[str, float] | None = None
         self.registered_cost_profile_sha256: str | None = None
+        self.registered_q_conf: float | None = None
+        self.registered_budget: float | None = None
+        self.registered_calibration_sha256: str | None = None
         if self.epsilon < 0.0:
             raise ValueError("epsilon must be non-negative")
         if self.max_cache_age <= 0:
@@ -527,6 +530,49 @@ class RiskConstrainedScheduler(nn.Module):
             return
         self.registered_candidate_cost_p50 = normalized
         self.registered_cost_profile_sha256 = profile_sha256
+
+    def install_registered_gate3_calibration(
+        self,
+        *,
+        q_conf: float,
+        budget: float,
+        calibration_sha256: str,
+    ) -> None:
+        """Install the immutable post-Stage-C conformal offset and Gate-1 B*."""
+
+        values = {"q_conf": q_conf, "budget": budget}
+        normalized = {}
+        for name, value in values.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"registered Gate3 {name} must be numeric")
+            number = float(value)
+            if not math.isfinite(number) or number < 0.0:
+                raise ValueError(f"registered Gate3 {name} must be finite/non-negative")
+            normalized[name] = number
+        if normalized["budget"] <= 0.0:
+            raise ValueError("registered Gate3 budget must be positive")
+        if (
+            not isinstance(calibration_sha256, str)
+            or len(calibration_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in calibration_sha256
+            )
+        ):
+            raise ValueError("registered Gate3 calibration requires lowercase SHA-256")
+        if self.registered_candidate_cost_p50 is None:
+            raise RuntimeError("registered Gate3 calibration requires candidate costs first")
+        if self.registered_q_conf is not None:
+            if (
+                self.registered_q_conf != normalized["q_conf"]
+                or self.registered_budget != normalized["budget"]
+                or self.registered_calibration_sha256 != calibration_sha256
+            ):
+                raise RuntimeError("registered Gate3 calibration is immutable once bound")
+            return
+        self.registered_q_conf = normalized["q_conf"]
+        self.registered_budget = normalized["budget"]
+        self.registered_calibration_sha256 = calibration_sha256
 
     def _candidate_cost(self, candidates: Tensor, batch_size: int) -> Tensor:
         if self.registered_candidate_cost_p50 is not None:
@@ -590,13 +636,18 @@ class RiskConstrainedScheduler(nn.Module):
         dense_index = self.schedule_library.names.index("dense")
         candidate_risk = candidate_risk.clone()
         candidate_risk[:, dense_index] = 0.0
+        q_conf = 0.0 if self.registered_q_conf is None else self.registered_q_conf
+        candidate_upper_risk = candidate_risk + float(q_conf)
+        candidate_upper_risk[:, dense_index] = 0.0
         candidate_cost_1d = self._candidate_cost(candidates, batch_size)
         candidate_cost = candidate_cost_1d.unsqueeze(0).expand(batch_size, -1)
         age_feasible = self._age_feasible(candidates).unsqueeze(0).expand(batch_size, -1)
 
         finite_signals = torch.isfinite(signals).reshape(batch_size, -1).all(dim=1)
-        finite_risk = torch.isfinite(candidate_risk)
-        feasible = finite_risk & age_feasible & (candidate_risk <= self.epsilon)
+        finite_risk = torch.isfinite(candidate_upper_risk)
+        feasible = finite_risk & age_feasible & (candidate_upper_risk <= self.epsilon)
+        if self.registered_budget is not None:
+            feasible &= candidate_cost <= float(self.registered_budget)
         feasible[:, dense_index] = False
 
         if ood_mask is None:
@@ -621,11 +672,16 @@ class RiskConstrainedScheduler(nn.Module):
             actions=selected_actions,
             layer_groups=self.schedule_library.layer_groups,
             name="per_window_library_selection",
-            metadata={"epsilon": self.epsilon},
+            metadata={
+                "epsilon": self.epsilon,
+                "q_conf": float(q_conf),
+                "budget": self.registered_budget,
+                "calibration_sha256": self.registered_calibration_sha256,
+            },
         )
         names = tuple(self.schedule_library.names[int(index)] for index in selected_index.tolist())
         batch_indices = torch.arange(batch_size, device=signals.device)
-        upper_risk = candidate_risk[batch_indices, selected_index]
+        upper_risk = candidate_upper_risk[batch_indices, selected_index]
         estimated_cost = candidate_cost[batch_indices, selected_index]
         return SchedulerSelection(
             schedule=schedule,
@@ -633,6 +689,6 @@ class RiskConstrainedScheduler(nn.Module):
             upper_risk=upper_risk,
             estimated_cost=estimated_cost,
             fail_closed=fail_closed,
-            candidate_upper_risk=candidate_risk,
+            candidate_upper_risk=candidate_upper_risk,
             candidate_cost=candidate_cost,
         )
