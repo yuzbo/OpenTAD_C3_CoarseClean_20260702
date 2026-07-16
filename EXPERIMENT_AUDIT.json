@@ -1,0 +1,55 @@
+{
+  "date": "2026-07-15",
+  "auditor": "independent-read-only-codex-reviewer-agents",
+  "overall_verdict": "fail",
+  "integrity_status": "fail",
+  "verdict_scope": "registration_and_formal_execution_readiness",
+  "fabricated_result_detected": false,
+  "formal_result_exists": false,
+  "checks": {
+    "gt_provenance": {
+      "status": "fail",
+      "details": "No formal Gate-4 producer binds official GT/predictions/population to registration R; caller mappings are correctly test-only."
+    },
+    "score_normalization": {
+      "status": "warn",
+      "details": "No self-normalized metric was found, but cost_is_measured=True is not immutable registered cost-profile provenance."
+    },
+    "result_existence": {
+      "status": "pass",
+      "details": "No phantom result claim was found; no formal ChronoTransport result exists."
+    },
+    "dead_code": {
+      "status": "fail",
+      "details": "Formal Stage-C, matched-dense and Gate-4 runners/launchers/validator/tests are absent."
+    },
+    "scope": {
+      "status": "fail",
+      "details": "Only focused implementation tests and synthetic/test-only adjudication exist; no formal scientific stage has run."
+    },
+    "eval_type": "synthetic_proxy_test_only"
+  },
+  "bounded_approvals": [
+    "APPROVE_GATE4_CALLER_EVIDENCE_LOCK_FINAL",
+    "APPROVE_STAGEC_MEASURED_COST_FLAG_LOCK"
+  ],
+  "claims": [
+    {
+      "id": "core_speed_accuracy_claim",
+      "impact": "unsupported"
+    },
+    {
+      "id": "gate4_caller_evidence_isolation",
+      "impact": "supported_bounded_code_invariant_only"
+    },
+    {
+      "id": "stagec_measured_cost_flag",
+      "impact": "supported_bounded_code_invariant_only"
+    },
+    {
+      "id": "paper_ready_or_deployable",
+      "impact": "unsupported"
+    }
+  ],
+  "reviewer_independence_limitation": "Separate Codex agents were used; a different model family cannot be attested by the orchestrator."
+}

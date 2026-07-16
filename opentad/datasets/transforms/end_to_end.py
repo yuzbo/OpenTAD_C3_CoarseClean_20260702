@@ -32,10 +32,20 @@ class PrepareVideoInfo:
 
     def __call__(self, results):
         results["modality"] = self.modality
-        results["filename"] = os.path.join(
-            results["data_path"],
-            self.prefix + results["video_name"] + "." + self.format,
-        )
+        descriptor_filename = results.pop("descriptor_filename", None)
+        if descriptor_filename is not None:
+            if (
+                not isinstance(descriptor_filename, str)
+                or not descriptor_filename.startswith("/proc/self/fd/")
+                or not descriptor_filename.rsplit("/", 1)[-1].isdigit()
+            ):
+                raise ValueError("descriptor_filename must be a retained /proc/self/fd handle")
+            results["filename"] = descriptor_filename
+        else:
+            results["filename"] = os.path.join(
+                results["data_path"],
+                self.prefix + results["video_name"] + "." + self.format,
+            )
         return results
 
 

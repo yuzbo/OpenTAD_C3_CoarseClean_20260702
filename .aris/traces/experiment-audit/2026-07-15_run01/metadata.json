@@ -1,0 +1,13 @@
+{
+  "skill": "experiment-audit",
+  "date": "2026-07-15",
+  "run": 1,
+  "trace_policy": "full",
+  "executor": "/root",
+  "reviewers": [
+    "/root/stagec_reachability_review",
+    "/root/gate4_lock_review"
+  ],
+  "reviewer_actions": "read_only_no_tests_no_edits_no_jobs",
+  "independence_limitation": "The orchestrator cannot attest a different model family."
+}

@@ -29,6 +29,12 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=None,
+        help="optional positive inference-batch limit for smoke tests",
+    )
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
     args = parser.parse_args()
     return args
@@ -122,6 +128,7 @@ def main():
         use_amp=use_amp,
         world_size=args.world_size,
         not_eval=args.not_eval,
+        max_batches=args.max_batches,
     )
     logger.info("Testing Over...\n")
 

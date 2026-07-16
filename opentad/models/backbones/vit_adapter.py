@@ -15,6 +15,8 @@ from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
+from ..chronotransport import ChronoTransportRuntime
+
 
 class Adapter(BaseModule):
     def __init__(
@@ -678,7 +680,7 @@ class Block(BaseModule):
             return x
 
         if self.with_cp and x.requires_grad:
-            x = cp.checkpoint(_inner_forward, x)
+            x = cp.checkpoint(_inner_forward, x, use_reentrant=False)
         else:
             x = _inner_forward(x)
         return x
@@ -756,6 +758,7 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        chronotransport: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -772,6 +775,9 @@ class VisionTransformerAdapter(BaseModule):
         self.patch_size = patch_size
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
+        self.latest_chronotransport_summary = None
+        self.chronotransport_checkpoint_loaded = False
+        self.chronotransport_allow_legacy_checkpoint = False
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -798,6 +804,38 @@ class VisionTransformerAdapter(BaseModule):
         self.tubelet_packed_runtime_route = None
         if tubelet_packed_runtime_route is not None:
             self.tubelet_packed_runtime_route = PackedTubeletRuntimeRoute(**dict(tubelet_packed_runtime_route))
+
+        self.chronotransport = None
+        if chronotransport is not None:
+            chronotransport_cfg = dict(chronotransport)
+            self.chronotransport_allow_legacy_checkpoint = bool(
+                chronotransport_cfg.pop("allow_legacy_checkpoint", False)
+            )
+            if int(total_frames) % int(num_frames) != 0:
+                raise ValueError("ChronoTransport requires total_frames divisible by num_frames")
+            expected = {
+                "embed_dims": int(embed_dims),
+                "depth": int(depth),
+                "chunks_per_window": int(total_frames) // int(num_frames),
+            }
+            for key, value in expected.items():
+                configured = chronotransport_cfg.pop(key, value)
+                if int(configured) != int(value):
+                    raise ValueError(f"ChronoTransport {key} must equal backbone value {value}")
+            self.chronotransport = ChronoTransportRuntime(**expected, **chronotransport_cfg)
+            self.register_load_state_dict_post_hook(self._chronotransport_load_state_dict_post_hook)
+
+        packed_enabled = bool(
+            self.tubelet_packed_runtime_route is not None
+            and self.tubelet_packed_runtime_route.enabled
+        )
+        chronotransport_enabled = bool(
+            self.chronotransport is not None and self.chronotransport.enabled
+        )
+        if packed_enabled and chronotransport_enabled:
+            raise ValueError(
+                "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
+            )
 
         # stochastic depth decay rule
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
@@ -833,11 +871,39 @@ class VisionTransformerAdapter(BaseModule):
 
         self.return_feat_map = return_feat_map
 
-        # count the number of parameters in the backbone
-        num_vit_param = sum(p.numel() for name, p in self.named_parameters() if "adapter" not in name)
-        num_adapter_param = sum(p.numel() for name, p in self.named_parameters() if "adapter" in name)
-        ratio = num_adapter_param / num_vit_param * 100
-        print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
+        num_vit_param = sum(
+            p.numel()
+            for name, p in self.named_parameters()
+            if "adapter" not in name and not name.startswith("chronotransport.")
+        )
+        num_adapter_param = sum(
+            p.numel()
+            for name, p in self.named_parameters()
+            if "adapter" in name and not name.startswith("chronotransport.")
+        )
+        num_chronotransport_param = sum(
+            p.numel() for name, p in self.named_parameters() if name.startswith("chronotransport.")
+        )
+        ratio = num_adapter_param / max(1, num_vit_param) * 100
+        print(
+            "ViT's param: {}, Adapter's params: {}, ChronoTransport params: {}, adapter ratio: {:2.1f}%".format(
+                num_vit_param, num_adapter_param, num_chronotransport_param, ratio
+            )
+        )
+
+    def _chronotransport_load_state_dict_post_hook(self, module, incompatible_keys) -> None:
+        del module
+        if self.chronotransport is None:
+            return
+        missing = [
+            key for key in list(incompatible_keys.missing_keys) if "chronotransport." in key
+        ]
+        loaded = not missing
+        self.chronotransport_checkpoint_loaded = loaded
+        self.chronotransport.set_checkpoint_loaded(loaded)
+        if missing and self.chronotransport_allow_legacy_checkpoint:
+            for key in missing:
+                incompatible_keys.missing_keys.remove(key)
 
     def forward(self, x: Tensor) -> Tensor:
         """Defines the computation performed at every call.
@@ -870,11 +936,31 @@ class VisionTransformerAdapter(BaseModule):
         x = x + pos_embed
         x = self.pos_drop(x)
 
-        if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
+        packed_enabled = bool(
+            self.tubelet_packed_runtime_route is not None
+            and self.tubelet_packed_runtime_route.enabled
+        )
+        chronotransport_enabled = bool(
+            self.chronotransport is not None and self.chronotransport.enabled
+        )
+        if packed_enabled and chronotransport_enabled:
+            raise RuntimeError(
+                "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
+            )
+        if chronotransport_enabled:
+            x = self.chronotransport(x, self.blocks, h, w)
+            summary = dict(self.chronotransport.latest_summary or {})
+            summary["checkpoint_loaded"] = self.chronotransport_checkpoint_loaded
+            summary["legacy_checkpoint_allowed"] = self.chronotransport_allow_legacy_checkpoint
+            self.latest_chronotransport_summary = summary
+            self.latest_tubelet_packed_runtime_summary = None
+        elif packed_enabled:
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
+            self.latest_chronotransport_summary = None
         else:
             self.latest_tubelet_packed_runtime_summary = None
+            self.latest_chronotransport_summary = None
             for blk in self.blocks:
                 x = blk(x, h, w)
 
