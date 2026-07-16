@@ -278,3 +278,8 @@ updated: 2026-07-16
     packet; Part 2 binds the same SHA, consumes the verbatim packet, audits Stage C/Gate 4 and carries every
     blocker into the sole overall verdict. A summary-only handoff, changed SHA or silently dropped finding
     invalidates the two-part review rather than saving context.
+113. A bare `GITHUB_SNAPSHOT_INCOMPLETE` marker is fail-closed but operationally non-diagnostic. Every future
+    snapshot failure must report resolved/caller SHA, attempted route, verified conditions and the first failed
+    condition without entering code audit. Caller expected SHA may be absent if the reviewer freezes exactly one
+    fresh resolution and proves ancestry/docs-only scope; exhaustive mandatory-file reading belongs after the
+    snapshot route, not inside a pre-gate that can consume the whole review budget.

@@ -139,16 +139,23 @@ ChronoTransport r2 Pro 审计条目。
   snapshot-only 返回的证据边界与工具能力缺口记录；用户已批准以 SHA/parents/ancestry/exact
   diff/逐文件 content-addressed checks 构成严格等价 fallback，并要求发布新 docs-only snapshot。
 - `../docs/methods/2026-07-16-chronotransport-r2-final-github-pro-implementation-review-prompt.md`：
-  两次 Pro 讨论的 40-line 使用索引，1,631 bytes，SHA-256
-  `1BBD516A1F758031635933B403677FD67E9C8456671760BCCCE1C7F381C104DD`。原 406-line 单体 prompt
+  两次 Pro 讨论的 42-line 使用索引，1,810 bytes，SHA-256
+  `AB977C91D3DC6C7F111B5C9CE7E97B2777B97DD668FB30C625BBF442B8CFD8F5`。原 406-line 单体 prompt
   因超过 Pro one-turn thinking duration 而停止作为直接输入；索引本身不是第三份审计 prompt。
 - `../docs/methods/2026-07-16-chronotransport-r2-github-pro-audit-part-1-foundation.md`：第一轮
-  GitHub-only Pro prompt，267 lines / 13,141 bytes，SHA-256
-  `D468586282C59AA182E09955C82456EC9E54ED3DF2974A851A298AFB4917972C`。覆盖 snapshot、规范、
+  GitHub-only Pro prompt，281 lines / 14,041 bytes，SHA-256
+  `9C7F0F361CBCF787D941FB044FC80B411A03173B9F9339DE155062ECD0381162`。覆盖 snapshot、规范、
   A1/A2、registration/source/filesystem、Gate 1、Stage B 与 Gates 2/3；只输出 Part-1 verdict 和
-  `PART1_AUDIT_PACKET`，不得给整体 registration verdict。
+  `PART1_AUDIT_PACKET`，不得给整体 registration verdict；snapshot failure 必须输出诊断字段。
 - `../docs/methods/2026-07-16-chronotransport-r2-github-pro-audit-part-2-final.md`：第二轮
-  GitHub-only Pro prompt，272 lines / 14,084 bytes，SHA-256
-  `52A9C3A2422F0E186485F9C932821D37205F36EA45352083245A81887D519835`。必须绑定同一 SHA 并附上
+  GitHub-only Pro prompt，287 lines / 14,908 bytes，SHA-256
+  `ABC35C3B26B224157C5BF79D9F0785D5C70A7B14A9BF4BC5996067113BF096DD`。必须绑定同一 SHA 并附上
   Part-1 完整原文，覆盖 Stage C/matched、post-Stage-C Gate 3、Gate 4、Slurm 与联合覆盖，且独占
   `APPROVE_IMPLEMENTATION_FOR_REGISTRATION` / `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` 总裁决。
+- `sources/2026-07-16-chronotransport-r2-pro-part1-bare-snapshot-incomplete.txt`：用户提供的第一次
+  split Part-1 Pro 返回逐字归档，仅一行 / 27 bytes，SHA-256
+  `CF0F24EBD795A6ACC7E7481DE97043653652276D56E137C2951E3FB5D8CA1542`。没有 resolved SHA、Route、
+  verified condition 或 failure reason，故不是 snapshot diagnosis 或 implementation verdict。
+- `sources/2026-07-16-chronotransport-r2-pro-part1-bare-snapshot-incomplete-absorption.md`：上述 bare
+  marker 的证据边界与 prompt repair，26 lines / 1,565 bytes，SHA-256
+  `26896DBEC242A3F4A2468C5A0CB92B6DE9C25A72723A255DADF679CB162A75B7`。

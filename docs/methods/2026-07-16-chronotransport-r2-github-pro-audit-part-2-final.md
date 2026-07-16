@@ -2,7 +2,7 @@
 
 这是两次连续 Pro 讨论的第二份 prompt。调用者必须同时提供：
 
-1. `EXPECTED_REVIEW_SHA=<40-hex>`；
+1. 可选但推荐的 `EXPECTED_REVIEW_SHA=<40-hex>`；
 2. 第一次讨论的**完整原文输出**，包括 `PART1_AUDIT_PACKET`，不得只给摘要。
 
 本轮独立复核同一 immutable SHA 的后半实现，并把第一次的 findings 与本轮结果合并为唯一整体
@@ -15,38 +15,53 @@ Repository：`https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702`
 
 Branch：`codex/chronotransport-r2-implementation`
 
-Anchors：implementation floor `6c3606cc5161d415909a42741b3bc402278bf332`；two-part-prompt parent
-`702c67b4e38e80d307722a275a00b47f89cbfbf8`。
+Anchors：implementation floor `6c3606cc5161d415909a42741b3bc402278bf332`；equivalent-certificate
+snapshot `702c67b4e38e80d307722a275a00b47f89cbfbf8`；prior two-part-prompt snapshot / required direct
+parent `049923bbbaf6f664e985b4fb1cc96a2c06cdc810`。
 
 First validate the attached Part-1 output：
 
 - it contains exactly one complete `PART1_AUDIT_PACKET` and a permitted Part-1 verdict；
-- packet `review_sha` equals `EXPECTED_REVIEW_SHA`；
+- if caller supplied `EXPECTED_REVIEW_SHA`, packet `review_sha` equals it；otherwise packet `review_sha` is
+  the mandatory expected identity for this session；
 - `snapshot_pass=true` and spec SHA equals
   `E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`；
 - it is not `GITHUB_SNAPSHOT_INCOMPLETE` and does not omit its coverage/finding ledgers.
 
-If missing or inconsistent, output only：
+If missing or inconsistent, output the compact diagnostic and stop：
 
 ```text
 PART2_INPUT_INCOMPLETE
+packet_review_sha: <40-hex>|UNAVAILABLE
+caller_expected_sha: <40-hex>|NOT_SUPPLIED
+first_failed_condition: <one concrete condition>
+END_PART2_INPUT_DIAGNOSTIC
 ```
 
-Then independently fresh-resolve the branch once. It must equal both `EXPECTED_REVIEW_SHA` and the packet SHA.
-All subsequent reads must be SHA-pinned. Independently prove：
+Then independently fresh-resolve the branch once. It must equal the packet SHA and, if supplied, caller expected
+SHA. All subsequent reads must be SHA-pinned. Independently prove：
 
-- strict compare from `6c3606c` and `702c67b` to `REVIEW_SHA` with `behind_by=0` and exact merge bases；
-- `REVIEW_SHA^1=702c67b4e38e80d307722a275a00b47f89cbfbf8` and no `REVIEW_SHA^2`；
+- strict compare from `6c3606c`, `702c67b` and `049923b` to `REVIEW_SHA` with `behind_by=0` and exact
+  merge bases；
+- `REVIEW_SHA^1=049923bbbaf6f664e985b4fb1cc96a2c06cdc810` and no `REVIEW_SHA^2`；
 - the complete `6c3606c...REVIEW_SHA` path list contains only audit/research documents under
   `docs/methods/` or `research-wiki/` after the implementation floor；
 - every Part-2 mandatory file is retrieved through `ref=REVIEW_SHA` or equivalent immutable endpoint.
 
 Full Git Data object is preferred. If tree/timestamps are not exposed, label them
 `UNAVAILABLE_NONBLOCKING_AFTER_EQUIVALENT_CERTIFICATE`; do not copy project-reported values. Any SHA,
-parent, ancestry, path or content mismatch requires only：
+parent, ancestry, path or frozen authority-content mismatch requires this diagnostic and stop；never return
+only the bare marker：
 
 ```text
 GITHUB_SNAPSHOT_INCOMPLETE
+resolved_sha: <40-hex>|UNAVAILABLE
+packet_review_sha: <40-hex>|UNAVAILABLE
+caller_expected_sha: <40-hex>|NOT_SUPPLIED
+snapshot_route_attempted: A|B|NONE
+first_failed_condition: <one concrete condition>
+failure_class: ACTUAL_MISMATCH|INTERFACE_UNAVAILABLE|CALLER_INPUT_INVALID
+END_GITHUB_SNAPSHOT_DIAGNOSTIC
 ```
 
 ## 2. Carryover discipline and evidence classes

@@ -3,8 +3,10 @@
 这是两次连续 Pro 讨论的第一份 prompt。只审本文件规定的前半证据链；不要在本轮审 Stage C/Gate 4
 细节，也不要给整体 implementation verdict。你的完整输出将原样附给第二次讨论。
 
-调用者必须在消息中给出 `EXPECTED_REVIEW_SHA=<40-hex>`。全程只读：不得修改仓库、创建 commit/PR、
-启动 CUDA/Slurm、训练、Gate、profiling 或产生可被误认作实验结果的 artifact。
+调用者可在消息中给出 `EXPECTED_REVIEW_SHA=<40-hex>`（推荐）。若未提供，reviewer 必须只
+fresh-resolve 分支一次，将该 40-hex 立即冻结为 `REVIEW_SHA`，并在证书与 packet 中标明
+`caller_expected_sha=NOT_SUPPLIED`。全程只读：不得修改仓库、创建 commit/PR、启动 CUDA/Slurm、
+训练、Gate、profiling 或产生可被误认作实验结果的 artifact。
 
 ## 1. 本轮目标与允许的结论
 
@@ -43,10 +45,13 @@ Anchors：
 - previous reviewed spec snapshot：`1b6366d0acb712e8096c2cceb0f05e66b16d30d4`
 - implementation floor：`6c3606cc5161d415909a42741b3bc402278bf332`
 - metadata-blocked snapshot：`92a18bec2f5f247446083a8eb50fe889f367c23e`
-- two-part-prompt parent：`702c67b4e38e80d307722a275a00b47f89cbfbf8`
+- equivalent-certificate snapshot：`702c67b4e38e80d307722a275a00b47f89cbfbf8`
+- prior two-part-prompt snapshot / required direct parent：
+  `049923bbbaf6f664e985b4fb1cc96a2c06cdc810`
 
-Fresh-resolve branch HEAD once. It must equal `EXPECTED_REVIEW_SHA` and be a strict descendant of every
-anchor. Thereafter every compare/file/raw read must explicitly use that SHA; never return to the moving branch.
+Fresh-resolve branch HEAD once. If caller supplied `EXPECTED_REVIEW_SHA`, it must match; otherwise the resolved
+SHA becomes the frozen review identity. It must be a strict descendant of every anchor. Thereafter every
+compare/file/raw read must explicitly use that SHA; never return to the moving branch.
 
 Preferred Route A：obtain full Git Data commit object and report SHA, message, author/committer timestamps,
 complete parents and tree SHA, plus compares to all anchors.
@@ -55,19 +60,27 @@ Route B is allowed only if the reviewer explicitly proves its GitHub interface d
 Then all of the following are mandatory:
 
 - compare every anchor to `REVIEW_SHA`: `status=ahead`, `behind_by=0`, `ahead_by>0`, exact merge base；
-- prove `REVIEW_SHA^1=702c67b4e38e80d307722a275a00b47f89cbfbf8` and `REVIEW_SHA^2` absent；
+- prove `REVIEW_SHA^1=049923bbbaf6f664e985b4fb1cc96a2c06cdc810` and `REVIEW_SHA^2` absent；
 - enumerate the complete `6c3606c...REVIEW_SHA` changed-path list；
 - every post-floor path must be an audit/research document under `docs/methods/` or `research-wiki/`；
-- read every mandatory file through `ref=REVIEW_SHA` or an equivalent SHA-pinned endpoint and record the
-  content check in the coverage ledger；
+- bind every later mandatory-file read to `ref=REVIEW_SHA` or an equivalent SHA-pinned endpoint. Full file
+  reading belongs to §§3–8 and must not be completed before declaring the snapshot route；
 - unavailable tree/timestamps must be labeled
   `UNAVAILABLE_NONBLOCKING_AFTER_EQUIVALENT_CERTIFICATE`, never copied from project prose.
 
-An actual mismatch cannot use Route B. Any missing ancestry, non-doc post-floor path, moving-ref read or content
-mismatch requires the sole output below and immediate stop:
+An actual mismatch cannot use Route B. Missing ancestry, non-doc post-floor path, moving-ref read, or failure to
+obtain the frozen prompt/spec authority bytes requires the compact diagnostic below and immediate stop. Do not
+return a bare marker without the diagnostic fields：
 
 ```text
 GITHUB_SNAPSHOT_INCOMPLETE
+resolved_sha: <40-hex>|UNAVAILABLE
+caller_expected_sha: <40-hex>|NOT_SUPPLIED
+snapshot_route_attempted: A|B|NONE
+verified_conditions: [short item, ...]
+first_failed_condition: <one concrete condition>
+failure_class: ACTUAL_MISMATCH|INTERFACE_UNAVAILABLE|CALLER_INPUT_INVALID
+END_GITHUB_SNAPSHOT_DIAGNOSTIC
 ```
 
 If Route A or B passes, continue; unavailable tree/timestamps alone must not stop the audit.
@@ -244,6 +257,7 @@ Output in this order：
 ```text
 PART1_AUDIT_PACKET
 review_sha: <40-hex>
+caller_expected_sha: <40-hex>|NOT_SUPPLIED
 snapshot_route: A|B
 snapshot_pass: true|false
 spec_sha256: <64-hex>

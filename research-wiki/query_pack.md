@@ -36,6 +36,11 @@ max_chars: 8000
   emits a complete handoff packet; Part 2 requires that verbatim output, covers StageC/post-Gate3/Gate4/Slurm,
   closes the union coverage ledger and alone issues the overall verdict. Missing packet, changed SHA or dropped
   Part-1 blocker fails closed. No implementation or experiment status changes.
+- The first split Part-1 call returned a bare `GITHUB_SNAPSHOT_INCOMPLETE` with no SHA/route/failure detail;
+  therefore it is only a marker, not a diagnosis or implementation verdict. Maintainer-side GitHub APIs still
+  resolved `049923b` with the expected parent/tree/blob, but those observations cannot replace reviewer evidence.
+  Part 1/2 now require compact failure diagnostics, accept a missing caller SHA only via one-time frozen fresh
+  resolution, and perform exhaustive mandatory-file reads after—not inside—the snapshot pre-gate.
 - Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
   registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
   verdict `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for exact SHAs `0BE0EA8B...F76808` and

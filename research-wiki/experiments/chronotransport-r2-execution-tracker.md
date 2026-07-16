@@ -20,7 +20,7 @@ experiment_running: false
 | W4 | W3 | real ActionFormer per-window loss | TESTED | same-head batch-two aggregate identity and negative contracts |
 | W5 | W4 | Stage-C A3/A4 transaction | TESTED | paired CT/matched transaction, retry, state, normalizer and checkpoint contracts |
 | W6 | W5 | formal Stage-C/matched/Gate-4 workflows | TESTED | 4,200-success runners, post-Gate3 and official Gate4 producer/finalizer contracts |
-| W7 | W6 | remote verification, I and R | IN_PROGRESS | exact CPU 441/1 + C3 20/20; full Pro prompt exceeded one-turn thinking time and is split into same-SHA Part 1/Part 2; re-review and R-bound CUDA checks pending |
+| W7 | W6 | remote verification, I and R | IN_PROGRESS | exact CPU 441/1 + C3 20/20; first split Part-1 call returned a bare non-diagnostic snapshot marker; diagnostic same-SHA re-review and R-bound CUDA checks pending |
 | E0 | valid R | Slurm PRECHECK | LOCKED | none |
 | E1 | E0 | Gate 1 | LOCKED | none |
 | E2 | Gate 1 PASS | Stage B, three seeds | LOCKED | none |
@@ -67,6 +67,11 @@ experiment_running: false
   dependency split: Part 1 audits snapshot/registration/Gates 1--3 and emits a complete `PART1_AUDIT_PACKET`;
   Part 2 must bind the same SHA, consume the verbatim output, audit Stage C/Gate 4/Slurm and issue the sole
   overall verdict. This is review orchestration only; W7 remains `IN_PROGRESS` and E0--E5 remain locked.
+- The first Part-1 attempt returned only `GITHUB_SNAPSHOT_INCOMPLETE`, exactly as the then-current failure branch
+  required. It reported no SHA, Route or failed condition, so no cause or implementation verdict can be inferred.
+  A maintainer-side GitHub check still saw the expected `049923b` object, but that is not reviewer evidence. The
+  repaired prompt now requires a compact failure certificate, allows one-time SHA freeze when caller SHA is
+  omitted, and defers full file reading until after snapshot certification. Part 2 remains forbidden.
 
 ## Status semantics
 

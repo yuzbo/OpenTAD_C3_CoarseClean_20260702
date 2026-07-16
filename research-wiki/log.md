@@ -529,3 +529,10 @@ append_only: true
   at the same SHA, audits Stage C/Gate 4/Slurm and alone issues the overall verdict. The former monolith is a
   1,631-byte index (`1BBD516A...104DD`). This is docs-only review orchestration; no code, I/R, PRECHECK, job,
   Gate or experiment was created.
+- 2026-07-16: The first split Part-1 response was the exact 27-byte line
+  `GITHUB_SNAPSHOT_INCOMPLETE` (`CF0F24EB...A1542`) with no resolved SHA, attempted Route or failure reason.
+  It is archived and absorbed as non-diagnostic snapshot-only evidence. A separate maintainer GitHub check still
+  observed `049923b`, parent `702c67b`, tree `7d7cbc2f...8fe30` and the expected Part-1 blob, but these facts are
+  not substituted as reviewer evidence. The prompt defect was repaired: failures now emit compact diagnostics;
+  caller SHA is optional under a one-time frozen resolution; exhaustive file reads occur after snapshot routing.
+  Part 2, I/R, PRECHECK and all experiments remain locked.

@@ -10,23 +10,25 @@
 
 ### 第一次讨论
 
-只提交 Part 1，并在调用消息中写入：
+只提交 Part 1。建议在调用消息中写入：
 
 ```text
 EXPECTED_REVIEW_SHA=<fresh GitHub snapshot SHA>
 ```
 
-保存 Pro 的完整原文输出，尤其是 `PART1_AUDIT_PACKET`。Part 1 不允许给整体 registration verdict。
+若不提供该字段，Part 1 会 fresh-resolve 一次并冻结 SHA，而不是仅因缺少 caller 字段停止。保存 Pro
+的完整原文输出，尤其是 `PART1_AUDIT_PACKET`。Part 1 不允许给整体 registration verdict。
 
 ### 第二次讨论
 
-提交 Part 2，同时附上第一次讨论的**完整原文输出**，并再次写入相同的：
+提交 Part 2，同时附上第一次讨论的**完整原文输出**。建议再次写入相同的：
 
 ```text
 EXPECTED_REVIEW_SHA=<the same SHA used in Part 1>
 ```
 
-Part 2 会独立复核同一 SHA，继承 Part-1 blockers，完成 Stage C/Gate 4/Slurm 审计并给唯一整体裁决。
+若不提供，Part 2 必须使用 packet 的 `review_sha`。它会独立复核同一 SHA，继承 Part-1 blockers，
+完成 Stage C/Gate 4/Slurm 审计并给唯一整体裁决。
 
 ## 不变边界
 
