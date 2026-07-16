@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import inspect
 import torch
 import torch.nn as nn
@@ -6,6 +7,7 @@ from collections.abc import Mapping
 from ..builder import DETECTORS, build_selector, build_token_compressor
 from .single_stage import SingleStageDetector
 from ..bricks import Scale, AffineDropPath
+from ..dense_heads.anchor_free_head import AnchorFreePerWindowLossOutput
 
 
 _PC_OT_MRAS_READER_OUTPUTS_META_KEY = "pc_ot_mras_reader_outputs"
@@ -15,6 +17,35 @@ _PC_OT_MRAS_VALUE_TARGET_KEYS = (
     "teacher_value_targets",
     "pc_ot_mras_value_manifest",
 )
+
+
+@dataclass(frozen=True)
+class ActionFormerPerWindowTrainOutput:
+    """Formal same-forward ActionFormer task-loss and feature boundary."""
+
+    loss_dict: Mapping[str, torch.Tensor]
+    per_window_task_loss: torch.Tensor
+    detector_features: torch.Tensor
+
+    def validate(self, *, expected_batch: int, require_grad: bool) -> None:
+        if set(self.loss_dict) != {"cls_loss", "reg_loss", "cost"}:
+            raise ValueError("official ActionFormer loss dict fields mismatch")
+        if tuple(self.per_window_task_loss.shape) != (expected_batch,):
+            raise ValueError("per-window task loss must have exact batch-vector shape")
+        if require_grad and not self.per_window_task_loss.requires_grad:
+            raise ValueError("counterfactual per-window task loss must be differentiable")
+        if torch.is_complex(self.per_window_task_loss) or not bool(
+            torch.isfinite(self.per_window_task_loss).all().item()
+        ):
+            raise ValueError("per-window task loss must be finite and real")
+        if not isinstance(self.detector_features, torch.Tensor):
+            raise TypeError("detector_features must be a Tensor")
+        if self.detector_features.ndim < 2 or int(self.detector_features.shape[0]) != expected_batch:
+            raise ValueError("detector_features must preserve the ordered batch axis")
+        if not torch.equal(
+            self.loss_dict["cost"], self.per_window_task_loss.sum()
+        ):
+            raise ValueError("ActionFormer cost must exactly equal the per-window reduction")
 
 
 @DETECTORS.register_module()
@@ -124,6 +155,25 @@ class ActionFormer(SingleStageDetector):
         return self
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
+        per_window_output = kwargs.pop(
+            "chronotransport_per_window_output", False
+        )
+        if not isinstance(per_window_output, bool):
+            raise TypeError("chronotransport_per_window_output must be bool")
+        if per_window_output and kwargs:
+            raise TypeError(
+                "formal per-window ActionFormer forbids caller-supplied loss inputs: "
+                f"{sorted(kwargs)}"
+            )
+        if per_window_output and (
+            self.frame_selector is not None
+            or self.token_compressor is not None
+            or self.pc_ot_mras_reader is not None
+            or self.selector_train_only
+        ):
+            raise RuntimeError(
+                "formal per-window ActionFormer output forbids auxiliary train-loss routes"
+            )
         losses = dict()
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_train(
@@ -146,6 +196,7 @@ class ActionFormer(SingleStageDetector):
             x = self.backbone(inputs)
         else:
             x = inputs
+        detector_features = x
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -191,8 +242,30 @@ class ActionFormer(SingleStageDetector):
             metas=metas,
             gt_segments=gt_segments,
             gt_labels=gt_labels,
+            return_per_window_task_loss=per_window_output,
             **kwargs,
         )
+        if per_window_output:
+            if not isinstance(loc_losses, AnchorFreePerWindowLossOutput):
+                raise TypeError(
+                    "formal per-window ActionFormer requires AnchorFree head evidence"
+                )
+            if losses or reader_extra_losses:
+                raise RuntimeError(
+                    "formal per-window ActionFormer encountered an auxiliary loss"
+                )
+            loss_dict = dict(loc_losses.loss_dict)
+            loss_dict["cost"] = loc_losses.per_window_task_loss.sum()
+            output = ActionFormerPerWindowTrainOutput(
+                loss_dict=loss_dict,
+                per_window_task_loss=loc_losses.per_window_task_loss,
+                detector_features=detector_features,
+            )
+            output.validate(
+                expected_batch=int(inputs.shape[0]),
+                require_grad=torch.is_grad_enabled(),
+            )
+            return output
         losses.update(loc_losses)
         self._merge_pc_ot_mras_extra_losses(
             losses,

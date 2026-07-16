@@ -509,7 +509,7 @@ def test_source_classification_is_exhaustive_and_exactly_matches_required_vector
         required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
     )
     tests = [path for path in validated["files"] if path.startswith("tests/")]
-    assert len(tests) == 23
+    assert len(tests) == 24
 
 
 def test_source_classification_rejects_omission_addition_and_vector_drift():

@@ -106,6 +106,7 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "tests/test_chronotransport_core.py",
     "tests/test_chronotransport_pipeline.py",
     "tests/test_chronotransport_r2_actions_cache.py",
+    "tests/test_chronotransport_r2_actionformer_per_window.py",
     "tests/test_chronotransport_r2_adjudication.py",
     "tests/test_chronotransport_r2_environment.py",
     "tests/test_chronotransport_r2_filesystem.py",

@@ -11,6 +11,7 @@
     "tests/test_chronotransport_opentad_replay.py": "TEST_ONLY_NON_FORMAL",
     "tests/test_chronotransport_pipeline.py": "REQUIRED",
     "tests/test_chronotransport_r2_actions_cache.py": "REQUIRED",
+    "tests/test_chronotransport_r2_actionformer_per_window.py": "REQUIRED",
     "tests/test_chronotransport_r2_adjudication.py": "REQUIRED",
     "tests/test_chronotransport_r2_environment.py": "REQUIRED",
     "tests/test_chronotransport_r2_filesystem.py": "REQUIRED",

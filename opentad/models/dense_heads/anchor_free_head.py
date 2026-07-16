@@ -1,10 +1,41 @@
+from dataclasses import dataclass
 import math
+from typing import Mapping
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
 from ..builder import HEADS, build_prior_generator, build_loss
 from ..bricks import ConvModule, Scale
+
+
+@dataclass(frozen=True)
+class AnchorFreePerWindowLossOutput:
+    """One head pass decomposed by batch row without changing its targets."""
+
+    loss_dict: Mapping[str, torch.Tensor]
+    per_window_task_loss: torch.Tensor
+
+    def validate(self, *, expected_batch: int, require_grad: bool) -> None:
+        if set(self.loss_dict) != {"cls_loss", "reg_loss"}:
+            raise ValueError("per-window AnchorFree loss fields mismatch")
+        if tuple(self.per_window_task_loss.shape) != (expected_batch,):
+            raise ValueError("per-window task loss must have exact batch-vector shape")
+        if require_grad and not self.per_window_task_loss.requires_grad:
+            raise ValueError("counterfactual per-window task loss must be differentiable")
+        if torch.is_complex(self.per_window_task_loss) or not bool(
+            torch.isfinite(self.per_window_task_loss).all().item()
+        ):
+            raise ValueError("per-window task loss must be finite and real")
+        aggregate = self.loss_dict["cls_loss"] + self.loss_dict["reg_loss"]
+        if not torch.allclose(
+            aggregate,
+            self.per_window_task_loss.sum(),
+            rtol=8 * torch.finfo(aggregate.dtype).eps,
+            atol=0.0,
+        ):
+            raise ValueError("per-window task losses do not preserve the head reduction")
 
 
 @HEADS.register_module()
@@ -283,7 +314,16 @@ class AnchorFreeHead(nn.Module):
             bias_value = -(math.log((1 - self.cls_prior_prob) / self.cls_prior_prob))
             nn.init.constant_(self.cls_head.bias, bias_value)
 
-    def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, metas=None, **kwargs):
+    def forward_train(
+        self,
+        feat_list,
+        mask_list,
+        gt_segments,
+        gt_labels,
+        metas=None,
+        return_per_window_task_loss=False,
+        **kwargs,
+    ):
         cls_pred = []
         reg_pred = []
 
@@ -303,7 +343,15 @@ class AnchorFreeHead(nn.Module):
             points, mask_list, metas=metas, train_mode=True
         )
 
-        losses = self.losses(cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels)
+        losses = self.losses(
+            cls_pred,
+            reg_pred,
+            mask_list,
+            points,
+            gt_segments,
+            gt_labels,
+            return_per_window_task_loss=bool(return_per_window_task_loss),
+        )
         return losses
 
     def forward_test(self, feat_list, mask_list, metas=None, **kwargs):
@@ -359,7 +407,17 @@ class AnchorFreeHead(nn.Module):
             new_scores.append(score[mask])  # [T,num_classes]
         return new_proposals, new_scores
 
-    def losses(self, cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels):
+    def losses(
+        self,
+        cls_pred,
+        reg_pred,
+        mask_list,
+        points,
+        gt_segments,
+        gt_labels,
+        *,
+        return_per_window_task_loss=False,
+    ):
         gt_cls, gt_reg = self.prepare_targets(points, gt_segments, gt_labels)
 
         # positive mask
@@ -378,28 +436,60 @@ class AnchorFreeHead(nn.Module):
         else:
             loss_normalizer = max(num_pos, 1)
 
-        # 1. classification loss
-        cls_pred = [x.permute(0, 2, 1) for x in cls_pred]
-        cls_pred = torch.cat(cls_pred, dim=1)[valid_mask]
-        gt_target = gt_cls[valid_mask]
+        # 1. classification loss.  The formal batch-vector path indexes the
+        # same logits and targets once per batch row; it never reruns the head.
+        cls_pred = torch.cat([x.permute(0, 2, 1) for x in cls_pred], dim=1)
+        gt_target = gt_cls.clone()
 
         # optional label smoothing
         gt_target *= 1 - self.label_smoothing
         gt_target += self.label_smoothing / (self.num_classes + 1)
 
-        cls_loss = self.cls_loss(cls_pred, gt_target, reduction="sum")
-        cls_loss /= loss_normalizer
+        if return_per_window_task_loss:
+            per_window_cls_loss = torch.stack(
+                [
+                    self.cls_loss(
+                        cls_pred[index][valid_mask[index]],
+                        gt_target[index][valid_mask[index]],
+                        reduction="sum",
+                    )
+                    / loss_normalizer
+                    for index in range(int(cls_pred.shape[0]))
+                ]
+            )
+            cls_loss = per_window_cls_loss.sum()
+        else:
+            cls_loss = self.cls_loss(
+                cls_pred[valid_mask], gt_target[valid_mask], reduction="sum"
+            )
+            cls_loss /= loss_normalizer
 
         # 2. regression using IoU/GIoU/DIOU loss (defined on positive samples)
         split_size = [reg.shape[-1] for reg in reg_pred]
         gt_reg = torch.stack(gt_reg).permute(0, 2, 1).split(split_size, dim=-1)  # [B,2,T]
-        pred_segments = self.get_refined_proposals(points, reg_pred)[pos_mask]
-        gt_segments = self.get_refined_proposals(points, gt_reg)[pos_mask]
-        if num_pos == 0:
-            reg_loss = pred_segments.sum() * 0
+        pred_segments = self.get_refined_proposals(points, reg_pred)
+        target_segments = self.get_refined_proposals(points, gt_reg)
+        if return_per_window_task_loss:
+            per_window_reg_loss = []
+            for index in range(int(pred_segments.shape[0])):
+                selected_prediction = pred_segments[index][pos_mask[index]]
+                selected_target = target_segments[index][pos_mask[index]]
+                if int(pos_mask[index].sum().item()) == 0:
+                    row_loss = selected_prediction.sum() * 0
+                else:
+                    row_loss = self.reg_loss(
+                        selected_prediction, selected_target, reduction="sum"
+                    )
+                per_window_reg_loss.append(row_loss / loss_normalizer)
+            per_window_reg_loss = torch.stack(per_window_reg_loss)
+            reg_loss = per_window_reg_loss.sum()
+        elif num_pos == 0:
+            reg_loss = pred_segments[pos_mask].sum() * 0
         else:
             # giou loss defined on positive samples
-            reg_loss = self.reg_loss(pred_segments, gt_segments, reduction="sum")
+            reg_loss = self.reg_loss(
+                pred_segments[pos_mask], target_segments[pos_mask], reduction="sum"
+            )
             reg_loss /= loss_normalizer
 
         if self.loss_weight > 0:
@@ -407,7 +497,22 @@ class AnchorFreeHead(nn.Module):
         else:
             loss_weight = cls_loss.detach() / max(reg_loss.item(), 0.01)
 
-        return {"cls_loss": cls_loss, "reg_loss": reg_loss * loss_weight}
+        weighted_reg_loss = reg_loss * loss_weight
+        loss_dict = {"cls_loss": cls_loss, "reg_loss": weighted_reg_loss}
+        if not return_per_window_task_loss:
+            return loss_dict
+
+        output = AnchorFreePerWindowLossOutput(
+            loss_dict=loss_dict,
+            per_window_task_loss=(
+                per_window_cls_loss + per_window_reg_loss * loss_weight
+            ),
+        )
+        output.validate(
+            expected_batch=int(valid_mask.shape[0]),
+            require_grad=torch.is_grad_enabled(),
+        )
+        return output
 
     @torch.no_grad()
     def prepare_targets(self, points, gt_segments, gt_labels):
