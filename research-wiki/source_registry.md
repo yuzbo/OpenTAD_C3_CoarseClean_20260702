@@ -27,7 +27,7 @@ updated: 2026-07-16
 - Spatial Zoom S1 branch：`codex/spatial-zoom-s1-audit-fix-20260715`
 - 首轮审计提交：`64e71ddc633f9c63f9dea1c5c60c49dc00441ebf`
 - 当前 Spatial Zoom S1 formal code commit：
-  `0421a8d9f6982a6d4ec1fb590cd108581fa2bb83`
+  `18139b930bef6ee234f6220a6adc898eb9c23c0c`
 - Spatial Zoom S1 official-evaluator policy fix:
   `cbc63d07` (`DetectionCorpus` retains finite zero-length predictions and
   rejects reversed/non-finite rows; focused tests `41 passed, 1 skipped`).
@@ -99,6 +99,16 @@ updated: 2026-07-16
   epoch 59 and complete gate artifacts, then exited `1:0` because the old
   analyzer rejected official finite `[-0.0, 0.0]` proposals. The raw suite and
   namespace above are the source; no sealed test was opened.
+- Spatial Zoom S1 evaluator-policy replacement snapshot:
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_18139b9_20260716_ghfast`.
+- Replacement suite:
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/spatial_zoom_s1_18139b9_20260716_1120`;
+  deployment summary file SHA-256
+  `32f693fb391e2fa9777d6263e683210cac28a58ba30688009b60525e398529b0`.
+- Full CUDA gate Job `1166358`: `COMPLETED 0:0`; precheck internal SHA
+  `4275cadaf28cc78d548fe220dcfc3496cd3150b668074c560da791958e0838f1`.
+- Fresh formal 3x3 Jobs `1166361-1166369`; canonical namespace
+  `d95a36db4bc70aa2ac9d15e5fb5be82174a8a3488c5150c71d2ad4c10c7234a7`.
 
 ## 外部附件
 

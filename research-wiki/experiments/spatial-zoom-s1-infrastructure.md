@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: selector_policy_bug_fix_pending_replacement_gate
+outcome: selector_policy_fix_replacement_3x3_queued
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-16
@@ -186,6 +186,19 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   failed terminal Job states do not authorize selection, sealed test, profile,
   GO/KILL, or reuse as the formal matrix; a fresh commit-bound CUDA gate and
   epoch-0 namespace are required.
+- Formal replacement commit `18139b930bef6ee234f6220a6adc898eb9c23c0c`
+  includes the evaluator-policy fix and its research-memory audit. Exact
+  snapshot `opentad_spatial_zoom_s1_18139b9_20260716_ghfast` passed full CUDA
+  gate Job `1166358` (`COMPLETED 0:0`) with precheck internal SHA
+  `4275cadaf28cc78d548fe220dcfc3496cd3150b668074c560da791958e0838f1`.
+  The new canonical namespace is
+  `d95a36db4bc70aa2ac9d15e5fb5be82174a8a3488c5150c71d2ad4c10c7234a7`.
+- Fresh epoch-0 Jobs `1166361-1166369` cover dense160/224/256 and seeds
+  3407/3408/3409. They use normal one-GPU Slurm allocation, no resume, and no
+  physical-GPU override. An `afterany:1165781:1165782:1165783` scheduling
+  dependency prevents overlap with the final three old diagnostic cells; it
+  does not alter the training protocol. No selection, sealed test, profile, or
+  S1 GO/KILL is currently authorized.
 
 ## Decision Boundary
 

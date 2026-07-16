@@ -112,3 +112,9 @@ append_only: true
   58.0680/46.1726. Fix `cbc63d0` passed 41 focused tests plus 20 C3 regression
   tests. No selection, sealed test, profile, or GO/KILL was allowed; dense256
   remains running and the strict contract requires a new formal namespace.
+- 2026-07-16 11:25+08:00: formal replacement commit `18139b9` passed full
+  CUDA gate Job `1166358` (`0:0`). Submitted fresh epoch-0 3x3 Jobs
+  `1166361-1166369` to canonical namespace `d95a36db...`, without resume or
+  physical-GPU override. An `afterany` dependency on old diagnostic Jobs
+  `1165781-1165783` prevents old/new overlap. No sealed test, profile, or
+  GO/KILL was opened.
