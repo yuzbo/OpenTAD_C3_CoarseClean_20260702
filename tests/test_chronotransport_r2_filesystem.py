@@ -138,6 +138,34 @@ def test_registered_config_loader_uses_exact_inherited_bytes(tmp_path: Path) -> 
     assert loaded == registered
 
 
+def test_registered_r2_config_is_semantically_identical_to_mmengine_loader() -> None:
+    from mmengine.config import Config
+
+    root = Path(__file__).resolve().parents[1]
+    relative = "configs/adatad/thumos/c3_chronotransport_r2_stage_b.py"
+    expected_closure = (
+        "configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py",
+        "configs/_base_/models/actionformer.py",
+        "configs/adatad/thumos/c3_chronotransport_adatad_videomae_s_768x1_160_stage_a.py",
+        "configs/adatad/thumos/c3_chronotransport_adatad_videomae_s_768x1_160_stage_b.py",
+        relative,
+        "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py",
+    )
+    registered = {
+        path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+        for path in expected_closure
+    }
+    exact, loaded = load_registered_python_config(
+        repository_root=root,
+        config_relative=relative,
+        registered_sources=registered,
+    )
+    reference = Config.fromfile(root / relative)
+
+    assert set(loaded) == set(expected_closure)
+    assert exact.to_dict() == reference.to_dict()
+
+
 def test_runtime_audit_binds_entrypoint_module_origin_and_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
