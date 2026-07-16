@@ -2234,7 +2234,7 @@ def _formal_actionformer_stage_c_fixture(overflow_attempts):
                     strides=[1, 2],
                     regression_range=[(0, 8), (8, 10000)],
                 ),
-                loss_normalizer=10,
+                loss_normalizer=100,
                 loss_normalizer_momentum=0.9,
                 center_sample="radius",
                 center_sample_radius=1.5,
