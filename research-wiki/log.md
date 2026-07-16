@@ -148,3 +148,21 @@ append_only: true
   with eight candidate sets per seed. Hard-failure/tmp scans remain empty;
   all completed selections keep `official_test_read=false`, and no test or
   profile has opened.
+- 2026-07-16 21:28+08:00: all formal Jobs `1166361-1166369` completed `0:0`
+  with ten frozen candidate sets and a valid gate-only selection per cell.
+  Dense256 seeds selected epochs 51/57/51 with gate Avg-mAP
+  `65.184669/63.316455/64.255928`. Exactly one global test-open certificate
+  was published (file SHA `a6d1bf97...`, internal SHA `8627866a...`). Two
+  duplicate long-running builder processes were terminated; only the oldest
+  process published the canonical certificate and global marker.
+- 2026-07-16 21:35-21:53+08:00: explicit 62.2 GB post-job submission was
+  scheduler-rejected before a Job ID, then Job `1167230` failed closed before
+  test read because host `SLURM_JOB_GPUS` was not the cgroup-local
+  `nvidia-smi` selector. Diagnostic Jobs `1167232/1167238` established the
+  physical-to-local mapping; full real-certificate/checkpoint preflight Job
+  `1167239` passed with no test artifact or profile marker. Adapter SHA is
+  `2693cac2...`; it does not change CUDA visibility or model code.
+- 2026-07-16 21:53+08:00: submitted serial same-allocation official
+  test/trained-checkpoint profile remediation Job `1167257` in the frozen
+  nine-cell order. Receipt is `post_test_profile_resubmission_r1.json`.
+  Official results, cost analysis, Pro review, and S1 GO/KILL remain pending.

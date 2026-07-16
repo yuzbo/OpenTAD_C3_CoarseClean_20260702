@@ -33,16 +33,18 @@ max_chars: 8000
   retains as false positives. Fix `cbc63d0` passes official parity and focused
   tests. The failed Job states cannot open sealed test; the 256 cells are still
   finishing, and a new commit-bound gate/epoch-0 namespace is required.
-- Replacement commit `18139b9` passed full CUDA gate Job `1166358`. Fresh
-  epoch-0 3x3 Jobs `1166361-1166369` now run in canonical namespace
-  `d95a36db...` with no resume or physical-GPU override. Old diagnostic Jobs
-  `1165781-1165783` terminated FAILED and are not evidence. At 17:09 the new
-  dense160 and dense224 seeds completed cleanly with valid ten-candidate
-  gate-only selections. Their gate Avg-mAP values are
-  `64.739/64.842/63.078` and `65.695/63.205/63.783`, respectively. Dense256
-  remains healthy at epochs 56-57 with eight candidate sets per seed. All six
-  completed records retain `official_test_read=false`; no sealed test, cost
-  result, or S1 GO/KILL exists.
+- Replacement commit `18139b9` passed CUDA gate Job `1166358`; all fresh 3x3
+  Jobs `1166361-1166369` completed `0:0` with valid ten-candidate gate-only
+  selections. Gate Avg-mAP by resolution/seeds is
+  `160: 64.739/64.842/63.078`, `224: 65.695/63.205/63.783`, and
+  `256: 65.185/63.316/64.256`. These are selection scores, not test results.
+  One sealed-test certificate was issued (internal SHA `8627866a...`). Initial
+  post Job `1167230` failed before any test read because the profiler confused
+  Slurm's host physical GPU ID with cgroup-local `nvidia-smi` index `0`.
+  Diagnostics `1167232/1167238` and full preflight `1167239` closed the cause;
+  serial same-allocation remediation Job `1167257` is queued with an audited
+  selector adapter. Official test, cost matrix, statistics, Pro review, and S1
+  GO/KILL remain pending; the state is still `experiment_running`.
 
 ## 当前唯一活动任务：Spatial Zoom
 

@@ -258,6 +258,57 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   with eight complete candidate sets per seed. The hard-failure and temporary
   file scans remain empty, the deployment-summary SHA remains frozen, and no
   sealed-test certificate or profile result exists.
+- Status at `2026-07-16T21:28+08:00`: all nine formal Jobs
+  `1166361-1166369` completed `0:0`. Every cell has exactly ten frozen
+  checkpoint/sidecar/gate-evidence/prediction sets, a valid gate-only
+  `checkpoint_selection.json`, closed successful-update exposure, and no hard
+  failure or temporary checkpoint. The complete selected gate results are:
+
+  | resolution | seed | epoch | Avg-mAP | @0.3 | @0.4 | @0.5 | @0.6 | @0.7 |
+  |---:|---:|---:|---:|---:|---:|---:|---:|---:|
+  | 160 | 3407 | 59 | 64.739055 | 79.497449 | 73.172632 | 66.784546 | 58.068004 | 46.172643 |
+  | 160 | 3408 | 59 | 64.842109 | 79.585664 | 73.841392 | 66.865981 | 58.669883 | 45.247624 |
+  | 160 | 3409 | 59 | 63.078053 | 77.731175 | 70.467999 | 64.294536 | 56.636446 | 46.260109 |
+  | 224 | 3407 | 57 | 65.695322 | 80.917640 | 72.782082 | 66.478416 | 59.705184 | 48.593286 |
+  | 224 | 3408 | 47 | 63.205058 | 78.116034 | 72.844057 | 63.664751 | 56.315001 | 45.085447 |
+  | 224 | 3409 | 49 | 63.783346 | 78.745612 | 72.042296 | 65.124614 | 56.947290 | 46.056919 |
+  | 256 | 3407 | 51 | 65.184669 | 80.253653 | 74.011853 | 67.580054 | 59.267475 | 44.810311 |
+  | 256 | 3408 | 57 | 63.316455 | 78.964777 | 71.383421 | 63.814347 | 56.706985 | 45.712747 |
+  | 256 | 3409 | 51 | 64.255928 | 78.063761 | 72.910590 | 67.195584 | 57.436628 | 45.673079 |
+
+  These are development gate scores used only for checkpoint selection. They
+  are not official sealed-test scores and do not authorize S1 GO/KILL.
+- After all nine selections validated, exactly one global sealed-test opening
+  was published. The certificate file SHA-256 is
+  `a6d1bf973e3b55c20e30c8e99521a0317219e579df90c5bf61564d3f436a3c57`,
+  its internal certificate SHA-256 is
+  `8627866a3dfed48a7ddab8df9cb6276d5710e4530c7d8089f929470b0f42f040`,
+  and the global marker file SHA-256 is
+  `9cf603afa1f2794e2f3b84958eb6a23e9acffaf73d4b89767e8caafbae9bb646`.
+  A long checkpoint-hash operation outlived two client calls and briefly left
+  three builder processes; the two duplicates were terminated before they
+  could publish, and the oldest process alone produced the one canonical
+  certificate/marker pair. No official test evidence had been read at that
+  point.
+- Initial post-processing Job `1167230` failed closed in nine seconds before
+  any test read or profile marker. Root-cause Job `1167232` showed that the
+  Slurm cgroup exposes the allocated GPU to `nvidia-smi` as local index `0`,
+  while the profiler passed the host physical ID from `SLURM_JOB_GPUS`.
+  Read-only adapter diagnostic Job `1167238` passed both the frozen eight-field
+  identity query and 20 ms power sampling. Full first-cell preflight Job
+  `1167239` then passed against the real manifest, certificate, checkpoint, and
+  clean `18139b9` snapshot, without creating a test artifact or profile marker.
+  The adapter SHA-256 is
+  `2693cac2aaa7572045f9c69321e57944f3a09d8e5bb68227724cb83f2047888e`;
+  it only maps the Slurm physical ID to the cgroup-local selector and does not
+  override `CUDA_VISIBLE_DEVICES`, select a physical GPU, or modify model code.
+- Remediation Job `1167257` is queued under one Slurm allocation and will run
+  all nine official tests and trained-checkpoint profiles serially in the
+  frozen order. This construction fixes node, physical GPU, software, and
+  profile order across the 3x3 cost matrix. Its immutable submission receipt is
+  `post_test_profile_resubmission_r1.json`. Official test/profile results,
+  final statistics, Pro review, and the unique S1 GO/KILL decision remain
+  pending; `paper_claim_allowed` remains false.
 
 ## Decision Boundary
 

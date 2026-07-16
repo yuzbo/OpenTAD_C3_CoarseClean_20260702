@@ -109,6 +109,24 @@ updated: 2026-07-16
   `4275cadaf28cc78d548fe220dcfc3496cd3150b668074c560da791958e0838f1`.
 - Fresh formal 3x3 Jobs `1166361-1166369`; canonical namespace
   `d95a36db4bc70aa2ac9d15e5fb5be82174a8a3488c5150c71d2ad4c10c7234a7`.
+- Jobs `1166361-1166369` all completed `0:0`; each canonical cell contains ten
+  frozen checkpoint/sidecar/gate-evidence/prediction sets and one validated
+  gate-only selection. Raw selected metrics are recorded in
+  `experiments/spatial-zoom-s1-infrastructure.md` and remain non-test evidence.
+- Single S1 test-open certificate:
+  `d95a36db4bc70aa2ac9d15e5fb5be82174a8a3488c5150c71d2ad4c10c7234a7/test_open/test_open_certificate.json`;
+  file SHA-256 `a6d1bf973e3b55c20e30c8e99521a0317219e579df90c5bf61564d3f436a3c57`,
+  internal SHA-256 `8627866a3dfed48a7ddab8df9cb6276d5710e4530c7d8089f929470b0f42f040`.
+  Global marker file SHA-256:
+  `9cf603afa1f2794e2f3b84958eb6a23e9acffaf73d4b89767e8caafbae9bb646`.
+- Post-processing Job `1167230` failed before test read/profile start because
+  host `SLURM_JOB_GPUS` was not a valid cgroup-local `nvidia-smi` index.
+  Root-cause/adapter/preflight Jobs are `1167232/1167238/1167239`; the strict
+  adapter SHA-256 is
+  `2693cac2aaa7572045f9c69321e57944f3a09d8e5bb68227724cb83f2047888e`.
+  Remediation Job `1167257` runs the frozen 3x3 test/profile order in one
+  allocation. Source receipt:
+  `spatial_zoom_s1_18139b9_20260716_1120/post_test_profile_resubmission_r1.json`.
 
 ## 外部附件
 
