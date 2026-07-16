@@ -37,7 +37,7 @@ mkdir -p "${RECEIPT_DIR}"
 exec 9>"${RECEIPT_DIR}/submit.lock"
 flock -n 9 || fail "another submission process holds the suite lock"
 
-readarray -t suite_binding < <("${PYTHON}" - \
+if ! suite_binding_output="$("${PYTHON}" - \
   "${PREPARED_SUBMISSION}" "${PREPARED_SUBMISSION_SHA_FILE}" \
   "${RUN_ROOT}" "${MANIFEST}" <<'PY'
 import hashlib
@@ -145,7 +145,12 @@ print(cluster)
 print(manifest_sha)
 print(actual_prepared_sha)
 PY
-)
+)"; then
+  fail "prepared suite binding validation failed"
+fi
+readarray -t suite_binding <<< "${suite_binding_output}"
+[[ "${#suite_binding[@]}" == "7" ]] || fail \
+  "prepared suite binding must contain exactly seven fields"
 EXPECTED_COMMIT="${suite_binding[0]}"
 SEED="${suite_binding[1]}"
 GATE_JSON="${suite_binding[2]}"
@@ -195,12 +200,12 @@ normalize_job_binding() {
   local expected_cluster="$2"
   raw="${raw//$'\r'/}"
   raw="${raw%%$'\n'*}"
+  [[ "${raw}" == *";"* ]] || fail \
+    "sbatch response does not preserve jobid;cluster identity: ${raw}"
   local job_id="${raw%%;*}"
-  [[ "${job_id}" =~ ^[0-9]+$ ]] || fail "unexpected sbatch response: ${raw}"
-  local cluster="${expected_cluster}"
-  if [[ "${raw}" == *";"* ]]; then
-    cluster="${raw#*;}"
-  fi
+  [[ "${job_id}" =~ ^[1-9][0-9]*$ ]] || fail \
+    "sbatch response has no canonical positive job id: ${raw}"
+  local cluster="${raw#*;}"
   [[ "${cluster}" =~ ^[A-Za-z0-9._-]+$ ]] || fail \
     "cannot bind Slurm cluster identity from: ${raw}"
   [[ "${cluster}" == "${expected_cluster}" ]] || fail \
@@ -289,6 +294,11 @@ try:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temporary, target)
+    directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 finally:
     if os.path.exists(temporary):
         os.unlink(temporary)
@@ -381,7 +391,7 @@ if not isinstance(raw, str) or not raw.strip():
     raise SystemExit("receipt has no raw sbatch response")
 raw_first = raw.replace("\r", "").splitlines()[0]
 raw_job_id, separator, raw_cluster = raw_first.partition(";")
-if raw_job_id != str(job_id) or (separator and raw_cluster != cluster):
+if raw_job_id != str(job_id) or separator != ";" or raw_cluster != cluster:
     raise SystemExit("receipt raw sbatch response does not match its job binding")
 print(f"{job_id}\t{job_ref}\t{cluster}")
 PY
@@ -404,13 +414,24 @@ submit_once() {
   if [[ -f "${receipt}" ]]; then
     [[ -f "${intent}" ]] || fail "${job_key} receipt exists without its bound intent"
     local existing_binding existing_job_id existing_job_ref existing_cluster
-    existing_binding="$(read_receipt_binding "${intent}" "${receipt}" "${job_key}" "${job_name}" \
-      "${job_file}" "${job_file_sha256}" "${dependency_role}" "${dependency}" \
-      "${target_cluster}" "${token}")"
+    if ! existing_binding="$(read_receipt_binding "${intent}" "${receipt}" \
+      "${job_key}" "${job_name}" "${job_file}" "${job_file_sha256}" \
+      "${dependency_role}" "${dependency}" "${target_cluster}" "${token}")"; then
+      fail "${job_key} receipt binding validation failed"
+    fi
     IFS=$'\t' read -r existing_job_id existing_job_ref existing_cluster <<< "${existing_binding}"
-    "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
+    [[ "${existing_job_id}" =~ ^[1-9][0-9]*$ ]] || fail \
+      "${job_key} receipt returned an invalid job id"
+    [[ "${existing_job_ref}" == "${existing_job_id};${target_cluster}" ]] || fail \
+      "${job_key} receipt returned an invalid job reference"
+    [[ "${existing_cluster}" == "${target_cluster}" ]] || fail \
+      "${job_key} receipt returned an invalid cluster"
+    if ! "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
       --job-id "${existing_job_id}" --job-name "${job_name}" \
-      --comment "${token}" --cluster "${existing_cluster}" >/dev/null
+      --comment "${token}" --cluster "${existing_cluster}" \
+      --dependency "${dependency}" >/dev/null; then
+      fail "${job_key} existing Slurm receipt could not be reopened"
+    fi
     printf '%s\t%s\t%s\n' "${existing_job_id}" "${existing_job_ref}" "${existing_cluster}"
     return
   fi
@@ -423,11 +444,17 @@ submit_once() {
     "prepared submission binding changed before ${job_key} submission"
   [[ "$(sha256_file "${job_file}")" == "${job_file_sha256}" ]] || fail \
     "prepared ${job_key} sbatch changed before submission"
-  write_submission_json "${intent}" "INTENT_RECORDED" "${job_key}" "${job_name}" \
+  if ! write_submission_json "${intent}" "INTENT_RECORDED" "${job_key}" "${job_name}" \
     "${job_file}" "${job_file_sha256}" "${dependency_role}" "${dependency}" \
-    "${target_cluster}" "${token}"
+    "${target_cluster}" "${token}"; then
+    fail "failed to persist ${job_key} submission intent"
+  fi
   local intent_sha256
-  intent_sha256="$(sha256_file "${intent}")"
+  if ! intent_sha256="$(sha256_file "${intent}")"; then
+    fail "failed to hash persisted ${job_key} submission intent"
+  fi
+  [[ "${intent_sha256}" =~ ^[0-9a-f]{64}$ ]] || fail \
+    "persisted ${job_key} submission intent has an invalid hash"
   local sbatch_args=(
     --parsable
     "--clusters=${target_cluster}"
@@ -438,16 +465,51 @@ submit_once() {
     sbatch_args+=("--dependency=${dependency}")
   fi
   local raw_response binding job_id job_ref cluster
-  raw_response="$(sbatch "${sbatch_args[@]}" "${job_file}")"
-  binding="$(normalize_job_binding "${raw_response}" "${target_cluster}")"
+  if ! raw_response="$(sbatch "${sbatch_args[@]}" "${job_file}")"; then
+    fail "sbatch failed for ${job_key}; reconcile the recorded intent before retrying"
+  fi
+  if ! binding="$(normalize_job_binding "${raw_response}" "${target_cluster}")"; then
+    fail "sbatch returned no valid job binding for ${job_key}; reconcile the recorded intent before retrying"
+  fi
   IFS=$'\t' read -r job_id job_ref cluster <<< "${binding}"
-  write_submission_json "${receipt}" "SUBMITTED" "${job_key}" "${job_name}" \
+  [[ "${job_id}" =~ ^[1-9][0-9]*$ ]] || fail \
+    "${job_key} parsed an invalid job id"
+  [[ "${job_ref}" == "${job_id};${target_cluster}" ]] || fail \
+    "${job_key} parsed an invalid job reference"
+  [[ "${cluster}" == "${target_cluster}" ]] || fail \
+    "${job_key} parsed an invalid cluster"
+  if ! "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
+    --job-id "${job_id}" --job-name "${job_name}" \
+    --comment "${token}" --cluster "${cluster}" \
+    --dependency "${dependency}" >/dev/null; then
+    fail "new ${job_key} Slurm binding could not be verified"
+  fi
+  if ! write_submission_json "${receipt}" "SUBMITTED" "${job_key}" "${job_name}" \
     "${job_file}" "${job_file_sha256}" "${dependency_role}" "${dependency}" \
     "${cluster}" "${token}" "${raw_response}" "${job_id}" "${job_ref}" \
-    "${intent_sha256}"
-  "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
-    --job-id "${job_id}" --job-name "${job_name}" \
-    --comment "${token}" --cluster "${cluster}" >/dev/null
+    "${intent_sha256}"; then
+    fail "failed to persist ${job_key} submission receipt"
+  fi
+  local persisted_binding persisted_job_id persisted_job_ref persisted_cluster
+  if ! persisted_binding="$(read_receipt_binding "${intent}" "${receipt}" \
+    "${job_key}" "${job_name}" "${job_file}" "${job_file_sha256}" \
+    "${dependency_role}" "${dependency}" "${target_cluster}" "${token}")"; then
+    fail "new ${job_key} submission receipt could not be reopened"
+  fi
+  IFS=$'\t' read -r persisted_job_id persisted_job_ref persisted_cluster <<< \
+    "${persisted_binding}"
+  [[ "${persisted_job_id}" == "${job_id}" ]] || fail \
+    "new ${job_key} receipt changed its job id"
+  [[ "${persisted_job_ref}" == "${job_ref}" ]] || fail \
+    "new ${job_key} receipt changed its job reference"
+  [[ "${persisted_cluster}" == "${cluster}" ]] || fail \
+    "new ${job_key} receipt changed its cluster"
+  if ! "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
+    --job-id "${persisted_job_id}" --job-name "${job_name}" \
+    --comment "${token}" --cluster "${persisted_cluster}" \
+    --dependency "${dependency}" >/dev/null; then
+    fail "new ${job_key} Slurm receipt could not be reopened"
+  fi
   printf '%s\t%s\t%s\n' "${job_id}" "${job_ref}" "${cluster}"
 }
 
@@ -477,12 +539,19 @@ variants=(uniform transition_beta0 cellcf)
 arm_ids=()
 arm_refs=()
 for variant in "${variants[@]}"; do
-  readarray -t prepared_job < <(read_prepared_job "${variant}" "none")
+  if ! prepared_job_output="$(read_prepared_job "${variant}" "none")"; then
+    fail "failed to load prepared ${variant} job binding"
+  fi
+  readarray -t prepared_job <<< "${prepared_job_output}"
+  [[ "${#prepared_job[@]}" == "4" ]] || fail \
+    "prepared ${variant} job binding must contain exactly four fields"
   job_name="${prepared_job[0]}"
   job_file="${prepared_job[1]}"
   job_file_sha256="${prepared_job[2]}"
-  binding="$(submit_once "${variant}" "${job_name}" "${job_file}" \
-    "${job_file_sha256}" "none" "" "${TARGET_CLUSTER}")"
+  if ! binding="$(submit_once "${variant}" "${job_name}" "${job_file}" \
+    "${job_file_sha256}" "none" "" "${TARGET_CLUSTER}")"; then
+    fail "formal ${variant} submission did not produce a valid Slurm binding"
+  fi
   IFS=$'\t' read -r job_id job_ref cluster <<< "${binding}"
   arm_ids+=("${job_id}")
   arm_refs+=("${job_ref}")
@@ -491,37 +560,62 @@ for variant in "${variants[@]}"; do
 done
 
 arm_dependency="afterok:$(IFS=:; echo "${arm_ids[*]}")"
-readarray -t prepared_job < <(read_prepared_job "aggregate" "afterok_three_arms")
+if ! prepared_job_output="$(read_prepared_job "aggregate" "afterok_three_arms")"; then
+  fail "failed to load prepared aggregate job binding"
+fi
+readarray -t prepared_job <<< "${prepared_job_output}"
+[[ "${#prepared_job[@]}" == "4" ]] || fail \
+  "prepared aggregate job binding must contain exactly four fields"
 aggregate_name="${prepared_job[0]}"
 aggregate_job="${prepared_job[1]}"
 aggregate_sha256="${prepared_job[2]}"
-aggregate_binding="$(submit_once "aggregate" "${aggregate_name}" "${aggregate_job}" \
-  "${aggregate_sha256}" "afterok_three_arms" "${arm_dependency}" "${TARGET_CLUSTER}")"
+if ! aggregate_binding="$(submit_once "aggregate" "${aggregate_name}" \
+  "${aggregate_job}" "${aggregate_sha256}" "afterok_three_arms" \
+  "${arm_dependency}" "${TARGET_CLUSTER}")"; then
+  fail "formal aggregate submission did not produce a valid Slurm binding"
+fi
 IFS=$'\t' read -r aggregate_id aggregate_ref aggregate_cluster <<< "${aggregate_binding}"
 record_binding "aggregate" "${aggregate_name}" "${aggregate_job}" "${aggregate_sha256}" \
   "${arm_dependency}" "${aggregate_id}" "${aggregate_ref}" "${aggregate_cluster}" \
   "DEPENDENCY_SUBMITTED"
 
 cost_dependency="afterok:${aggregate_id}"
-readarray -t prepared_job < <(read_prepared_job "cost" "afterok_aggregate")
+if ! prepared_job_output="$(read_prepared_job "cost" "afterok_aggregate")"; then
+  fail "failed to load prepared cost job binding"
+fi
+readarray -t prepared_job <<< "${prepared_job_output}"
+[[ "${#prepared_job[@]}" == "4" ]] || fail \
+  "prepared cost job binding must contain exactly four fields"
 cost_name="${prepared_job[0]}"
 cost_job="${prepared_job[1]}"
 cost_sha256="${prepared_job[2]}"
-cost_binding="$(submit_once "cost" "${cost_name}" "${cost_job}" \
-  "${cost_sha256}" "afterok_aggregate" "${cost_dependency}" "${TARGET_CLUSTER}")"
+if ! cost_binding="$(submit_once "cost" "${cost_name}" "${cost_job}" \
+  "${cost_sha256}" "afterok_aggregate" "${cost_dependency}" \
+  "${TARGET_CLUSTER}")"; then
+  fail "formal cost submission did not produce a valid Slurm binding"
+fi
 IFS=$'\t' read -r cost_id cost_ref cost_cluster <<< "${cost_binding}"
 record_binding "cost" "${cost_name}" "${cost_job}" "${cost_sha256}" \
   "${cost_dependency}" "${cost_id}" "${cost_ref}" "${cost_cluster}" \
   "DEPENDENCY_SUBMITTED"
 
 completion_dependency="afterok:${aggregate_id}:${cost_id}"
-readarray -t prepared_job < <(read_prepared_job "completion" "afterok_aggregate_and_cost")
+if ! prepared_job_output="$(read_prepared_job "completion" \
+  "afterok_aggregate_and_cost")"; then
+  fail "failed to load prepared completion job binding"
+fi
+readarray -t prepared_job <<< "${prepared_job_output}"
+[[ "${#prepared_job[@]}" == "4" ]] || fail \
+  "prepared completion job binding must contain exactly four fields"
 completion_name="${prepared_job[0]}"
 completion_job="${prepared_job[1]}"
 completion_sha256="${prepared_job[2]}"
-completion_binding="$(submit_once "completion" "${completion_name}" "${completion_job}" \
-  "${completion_sha256}" "afterok_aggregate_and_cost" "${completion_dependency}" \
-  "${TARGET_CLUSTER}")"
+if ! completion_binding="$(submit_once "completion" "${completion_name}" \
+  "${completion_job}" "${completion_sha256}" \
+  "afterok_aggregate_and_cost" "${completion_dependency}" \
+  "${TARGET_CLUSTER}")"; then
+  fail "formal completion submission did not produce a valid Slurm binding"
+fi
 IFS=$'\t' read -r completion_id completion_ref completion_cluster <<< "${completion_binding}"
 record_binding "completion" "${completion_name}" "${completion_job}" "${completion_sha256}" \
   "${completion_dependency}" "${completion_id}" "${completion_ref}" \
