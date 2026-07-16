@@ -30,6 +30,10 @@ from .filesystem import (
     publish_bytes_exclusive,
     read_bound_bytes,
 )
+from .gate4_population import (
+    gate4_population_exact_bytes,
+    validate_gate4_population_artifact,
+)
 from .protocol import (
     R2_PROTOCOL_ID,
     build_stage_b_exposure_artifact,
@@ -43,7 +47,7 @@ from .scheduler import R2_NON_DENSE_NAMES, validate_r2_library_payload
 from .source_inventory import FORMAL_OPENTAD_PYTHON_SOURCE_PATHS
 
 
-REGISTRATION_SCHEMA = "chronotransport-r2-pre-gate1-registration-v4"
+REGISTRATION_SCHEMA = "chronotransport-r2-pre-gate1-registration-v5"
 PROFILE_PLAN_SCHEMA = "chronotransport-r2-profiler-plan-v1"
 CHECKPOINT_RECEIPT_SCHEMA = "chronotransport-r2-checkpoint-registry-receipt-v2"
 CHECKPOINT_RECEIPT_PROVIDER_IDENTITY = "paracloud-registry"
@@ -89,20 +93,30 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py",
     "configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py",
     "configs/_base_/models/actionformer.py",
+    "tools/bata/build_chronotransport_r2_gate4_population.py",
     "tools/bata/build_chronotransport_r2_manifest.py",
-    "tools/bata/chronotransport_r2_opentad_profile_backend.py",
     "tools/bata/chronotransport_r2_gate1_replay_factory.py",
     "tools/bata/chronotransport_r2_gates23_replay_factory.py",
+    "tools/bata/chronotransport_r2_opentad_profile_backend.py",
+    "tools/bata/chronotransport_r2_post_stage_c_factory.py",
     "tools/bata/chronotransport_r2_profile_factory.py",
+    "tools/bata/chronotransport_r2_stage_b_factory.py",
+    "tools/bata/chronotransport_r2_stage_c_factory.py",
+    "tools/bata/paction_budget_contract.py",
     "tools/bata/profile_chronotransport_r2_full_stack.py",
     "tools/bata/register_chronotransport_r2.py",
     "tools/bata/run_chronotransport_r2_gate1.py",
     "tools/bata/run_chronotransport_r2_gates23.py",
-    "tools/bata/chronotransport_r2_stage_b_factory.py",
-    "tools/bata/paction_budget_contract.py",
+    "tools/bata/run_chronotransport_r2_post_stage_c_gate3.py",
+    "tools/bata/train_chronotransport_r2_matched_dense.py",
     "tools/bata/train_chronotransport_r2_stage_b.py",
+    "tools/bata/train_chronotransport_r2_stage_c.py",
+    "tools/bata/validate_chronotransport_r2_post_stage_c_gate3.py",
     "tools/bata/validate_chronotransport_r2_precheck.py",
+    "tools/bata/validate_chronotransport_r2_stage_c.py",
     "scripts/run_chronotransport_r2_gate1_slurm_single_gpu.sh",
+    "scripts/run_chronotransport_r2_post_stage_c_gate3_slurm_single_gpu.sh",
+    "scripts/run_chronotransport_r2_stage_c_slurm_single_gpu.sh",
     "tests/test_chronotransport_core.py",
     "tests/test_chronotransport_pipeline.py",
     "tests/test_chronotransport_r2_actions_cache.py",
@@ -144,6 +158,7 @@ REQUIRED_FIELDS = (
     "dense_checkpoint",
     "data",
     "window_manifest",
+    "gate4_population",
     "candidate_library",
     "exposures",
     "controls",
@@ -386,6 +401,22 @@ def _validate_window_manifest(value: Any) -> tuple[dict[str, Any], list[str]]:
         for window_id in artifact["splits"][split]
     ]
     return {**dict(value), "artifact": artifact}, ordered
+
+
+def _validate_gate4_population_identity(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TypeError("gate4_population must be a mapping")
+    _require_exact_fields(
+        value,
+        {"artifact", "exact_bytes_sha256", "source_path"},
+        "gate4_population",
+    )
+    artifact = validate_gate4_population_artifact(value["artifact"])
+    exact_digest = hashlib.sha256(gate4_population_exact_bytes(artifact)).hexdigest()
+    if value["exact_bytes_sha256"] != exact_digest:
+        raise ValueError("Gate4 population exact bytes SHA-256 mismatch")
+    _require_nonempty_string(value["source_path"], "gate4_population.source_path")
+    return {**dict(value), "artifact": artifact}
 
 
 def _validate_sha_mapping(value: Any, label: str, *, commit: bool = False) -> dict[str, str]:
@@ -650,6 +681,17 @@ def _validate_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
     }
     if manifest_media != dict(data["media_sha256"]):
         raise ValueError("manifest media hashes differ from registered data")
+    gate4_population = _validate_gate4_population_identity(identity["gate4_population"])
+    gate4_artifact = gate4_population["artifact"]
+    if gate4_artifact["fit_manifest_sha256"] != manifest_artifact["manifest_sha256"]:
+        raise ValueError("Gate4 population fit manifest differs from registered manifest")
+    if gate4_artifact["annotation"]["sha256"] != data["annotation_sha256"]:
+        raise ValueError("Gate4 population annotation differs from registered data")
+    for relative, digest in gate4_artifact["config_sources_sha256"].items():
+        if source_files.get(relative) != digest:
+            raise ValueError(
+                f"Gate4 population config source differs from registration: {relative}"
+            )
     library = validate_r2_library_payload(identity["candidate_library"])
     controls = validate_r2_control_algorithm_identity(identity["controls"])
 
@@ -705,6 +747,7 @@ def _validate_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
 
     validated = dict(identity)
     validated["window_manifest"] = manifest
+    validated["gate4_population"] = gate4_population
     return validated
 
 
@@ -1101,6 +1144,41 @@ def _validate_repository_context_bound(
     if rebuilt_manifest != manifest_identity["artifact"]:
         raise ValueError("manifest artifact differs from registered payload")
 
+    gate4_identity = registration["gate4_population"]
+    _, gate4_population, raw_gate4_population, gate4_population_digest = load_bound_json(
+        gate4_identity["source_path"], label="registered Gate4 population"
+    )
+    gate4_population = validate_gate4_population_artifact(gate4_population)
+    if raw_gate4_population != gate4_population_exact_bytes(gate4_population):
+        raise ValueError("Gate4 population artifact bytes are not exact canonical bytes")
+    if gate4_population_digest != gate4_identity["exact_bytes_sha256"]:
+        raise ValueError("Gate4 population exact bytes hash differs from registration")
+    if gate4_population != gate4_identity["artifact"]:
+        raise ValueError("Gate4 population artifact differs from registered payload")
+    for field in ("annotation", "class_map"):
+        _, _, digest = read_bound_bytes(
+            gate4_population[field]["path"],
+            label=f"registered Gate4 {field}",
+        )
+        if digest != gate4_population[field]["sha256"]:
+            raise ValueError(f"registered Gate4 {field} bytes/hash mismatch")
+    with open_bound_directory(
+        gate4_population["data_root"], label="registered Gate4 media root"
+    ) as gate4_media_root:
+        for video in gate4_population["videos"]:
+            with gate4_media_root.open_regular(
+                video["media_path"],
+                label=f"registered Gate4 media {video['official_video_id']}",
+            ) as media_file:
+                media_size, media_digest = media_file.size_and_sha256()
+            if (
+                media_size != video["media_bytes"]
+                or media_digest != video["media_sha256"]
+            ):
+                raise ValueError(
+                    f"registered Gate4 media bytes/hash mismatch: {video['official_video_id']}"
+                )
+
     with open_bound_regular_file(
         registration["dense_checkpoint"]["content_addressed_path"],
         label="registered dense checkpoint",
@@ -1151,6 +1229,7 @@ def build_pre_gate1_registration_from_context(
     *,
     repository_root: str | Path,
     manifest_path: str | Path,
+    gate4_population_path: str | Path,
     registry_path: str | Path,
     config_identity_path: str | Path,
     checkpoint_source: str | Path,
@@ -1170,6 +1249,7 @@ def build_pre_gate1_registration_from_context(
             identity_template,
             root=bound_root,
             manifest_path=manifest_path,
+            gate4_population_path=gate4_population_path,
             registry_path=registry_path,
             config_identity_path=config_identity_path,
             checkpoint_source=checkpoint_source,
@@ -1187,6 +1267,7 @@ def _build_pre_gate1_registration_from_bound_context(
     *,
     root: BoundDirectory,
     manifest_path: str | Path,
+    gate4_population_path: str | Path,
     registry_path: str | Path,
     config_identity_path: str | Path,
     checkpoint_source: str | Path,
@@ -1241,6 +1322,22 @@ def _build_pre_gate1_registration_from_bound_context(
         "source_path": str(manifest_path),
         "registry_path": str(registry_path),
         "config_identity_path": str(config_identity_path),
+    }
+    (
+        gate4_population_path,
+        gate4_population,
+        raw_gate4_population,
+        gate4_population_digest,
+    ) = load_bound_json(
+        gate4_population_path, label="registration generation Gate4 population"
+    )
+    gate4_population = validate_gate4_population_artifact(gate4_population)
+    if raw_gate4_population != gate4_population_exact_bytes(gate4_population):
+        raise ValueError("Gate4 population input must use exact canonical bytes")
+    body["gate4_population"] = {
+        "artifact": gate4_population,
+        "exact_bytes_sha256": gate4_population_digest,
+        "source_path": str(gate4_population_path),
     }
     with open_bound_directory(data_root, label="registration data root") as bound_data_root:
         data_root_path = bound_data_root.path

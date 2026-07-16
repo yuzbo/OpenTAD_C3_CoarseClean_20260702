@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--identity-template", type=Path, required=True)
     parser.add_argument("--repository-root", type=Path, default=ROOT)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--gate4-population", type=Path, required=True)
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--config-identity", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -57,6 +58,7 @@ def main() -> None:
         _load_template(args.identity_template),
         repository_root=args.repository_root,
         manifest_path=args.manifest,
+        gate4_population_path=args.gate4_population,
         registry_path=args.registry,
         config_identity_path=args.config_identity,
         checkpoint_source=args.checkpoint,

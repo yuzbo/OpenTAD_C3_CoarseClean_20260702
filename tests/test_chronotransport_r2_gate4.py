@@ -12,6 +12,11 @@ from opentad.models.chronotransport.gate4 import (
     adjudicate_gate4,
     validate_gate4_report,
 )
+from opentad.models.chronotransport.gate4_population import (
+    build_gate4_population_artifact,
+    gate4_population_exact_bytes,
+    validate_gate4_population_artifact,
+)
 from opentad.models.chronotransport.protocol import canonical_sha256
 
 
@@ -106,6 +111,7 @@ def _metric_evidence():
             ]
     return {
         "schema": "chronotransport-r2-gate4-metric-evidence-v1",
+        "official_video_ids": [f"video-{video:02d}" for video in range(20)],
         "fit_duration_quartile_thresholds": [1.5, 2.5, 3.5],
         "ground_truth": ground_truth,
         "predictions": predictions,
@@ -128,6 +134,58 @@ def _regret_rows():
                     }
                 )
     return rows
+
+
+def _gate4_population():
+    videos = [
+        {
+            "official_video_id": f"video-{index:02d}",
+            "media_path": f"video-{index:02d}.mp4",
+            "media_bytes": 1000 + index,
+            "media_sha256": canonical_sha256(["media", index]),
+            "frame": 16_000,
+            "duration": 100.0,
+        }
+        for index in range(20)
+    ]
+    contract = {
+        "dataset_type": "ThumosSlidingDataset",
+        "subset": "validation",
+        "test_mode": True,
+        "feature_stride": 4,
+        "sample_stride": 1,
+        "offset_frames": 0,
+        "window_size": 768,
+        "window_overlap_ratio": 0.5,
+        "scale_factor": 1,
+        "test_pipeline_sha256": canonical_sha256("test-pipeline"),
+        "regret_pipeline_sha256": canonical_sha256("regret-pipeline"),
+        "inference_sha256": canonical_sha256("inference"),
+        "post_processing_sha256": canonical_sha256("post-processing"),
+        "evaluation_sha256": canonical_sha256("evaluation"),
+    }
+    return build_gate4_population_artifact(
+        config_sources_sha256={
+            "configs/adatad/thumos/c3_chronotransport_r2_stage_c.py": canonical_sha256(
+                "config"
+            )
+        },
+        annotation={"path": "/registered/thumos.json", "sha256": canonical_sha256("ann")},
+        class_map={"path": "/registered/classes.txt", "sha256": canonical_sha256("classes")},
+        data_root="/registered/thumos/videos",
+        dataset_contract=contract,
+        videos=videos,
+        ground_truth=[
+            {
+                "official_video_id": row["official_video_id"],
+                "label": "action",
+                "segment": [1.0, 2.0],
+            }
+            for row in videos[:-1]
+        ],
+        fit_manifest_sha256=canonical_sha256("fit-manifest"),
+        fit_duration_quartile_thresholds=[1.5, 2.5, 3.5],
+    )
 
 
 def _run(**kwargs):
@@ -176,6 +234,37 @@ def test_gate4_passes_all_six_hard_conditions_and_keeps_claims_locked():
     assert "heavy_ms" in result["diagnostics"]["median_stage_ms"]["chronotransport"]
     assert result["deploy_claim_allowed"] is False
     assert result["paper_claim_allowed"] is False
+
+
+def test_gate4_population_recomputes_exact_invocations_and_timing_padding():
+    population = _gate4_population()
+    assert validate_gate4_population_artifact(population) == population
+    assert population["official_video_ids"] == [
+        f"video-{index:02d}" for index in range(20)
+    ]
+    assert population["unique_invocation_count"] == 200
+    assert population["timing_block_count"] == 204
+    assert population["timing_block_count"] % 6 == 0
+    assert [row["invocation_order_index"] for row in population["timing_blocks"]] == list(
+        range(204)
+    )
+    assert population["timing_blocks"][0]["arm_order"] == list(ORDERS[0])
+    assert population["timing_blocks"][5]["arm_order"] == list(ORDERS[5])
+    assert gate4_population_exact_bytes(population).endswith(b"\n")
+
+
+def test_gate4_population_rejects_media_or_invocation_tamper():
+    population = _gate4_population()
+    population["videos"][0]["frame"] += 4
+    with pytest.raises(ValueError, match="recomputation"):
+        validate_gate4_population_artifact(population)
+
+
+def test_gate4_metric_population_may_include_video_without_ground_truth():
+    metrics = _metric_evidence()
+    metrics["ground_truth"] = metrics["ground_truth"][:-1]
+    result = _run(metric_evidence=metrics)
+    assert result["metrics"]["official_video_count"] == 20
 
 
 def test_gate4_timing_repetitions_never_become_metric_or_regret_samples():

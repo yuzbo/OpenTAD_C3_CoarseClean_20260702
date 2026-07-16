@@ -306,6 +306,7 @@ def _segment(value: Any, label: str) -> tuple[float, float]:
 def _normalize_metrics(value: Mapping[str, Any], *, expected_videos: Sequence[str]):
     expected = {
         "schema",
+        "official_video_ids",
         "fit_duration_quartile_thresholds",
         "ground_truth",
         "predictions",
@@ -323,6 +324,17 @@ def _normalize_metrics(value: Mapping[str, Any], *, expected_videos: Sequence[st
     )
     if not quartiles[0] < quartiles[1] < quartiles[2]:
         raise ValueError("Gate-4 fit duration quartiles must be strictly increasing")
+    official_video_ids = value["official_video_ids"]
+    if (
+        not isinstance(official_video_ids, list)
+        or official_video_ids != list(expected_videos)
+        or len(official_video_ids) != len(set(official_video_ids))
+        or any(
+            not isinstance(video, str) or not video or video != video.strip()
+            for video in official_video_ids
+        )
+    ):
+        raise ValueError("Gate-4 metric official video population mismatch")
     gt_rows = []
     seen_gt = set()
     for index, raw in enumerate(value["ground_truth"]):
@@ -341,9 +353,9 @@ def _normalize_metrics(value: Mapping[str, Any], *, expected_videos: Sequence[st
             raise ValueError("Gate-4 ground truth contains a duplicate instance")
         seen_gt.add(row)
         gt_rows.append(row)
-    videos = sorted({row[0] for row in gt_rows})
-    if videos != list(expected_videos):
-        raise ValueError("Gate-4 metric ground truth differs from official timing videos")
+    videos = list(official_video_ids)
+    if not gt_rows or any(row[0] not in set(videos) for row in gt_rows):
+        raise ValueError("Gate-4 metric ground truth lies outside official population")
     labels = {row[1] for row in gt_rows}
     predictions = value["predictions"]
     if not isinstance(predictions, Mapping) or set(predictions) != {str(seed) for seed in SEEDS}:

@@ -14,6 +14,10 @@ from opentad.models.chronotransport.controls import (
     random_exact_count_actions,
 )
 from opentad.models.chronotransport.environment import REQUIRED_ENVIRONMENT_SCHEMA
+from opentad.models.chronotransport.gate4_population import (
+    build_gate4_population_artifact,
+    gate4_population_exact_bytes,
+)
 from opentad.models.chronotransport.protocol import (
     build_r2_manifest,
     build_stage_b_exposure_artifact,
@@ -207,6 +211,60 @@ def _identity():
         "expected_environment": environment,
         "model_config_sha256": manifest["config_identity"]["config_sha256"],
     }
+    source_files = {
+        path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+        for path in REQUIRED_REGISTRATION_SOURCE_PATHS
+    }
+    gate4_population = build_gate4_population_artifact(
+        config_sources_sha256={
+            "configs/adatad/thumos/c3_chronotransport_r2_stage_c.py": source_files[
+                "configs/adatad/thumos/c3_chronotransport_r2_stage_c.py"
+            ]
+        },
+        annotation={
+            "path": "/registered/thumos.json",
+            "sha256": registry["annotation_sha256"],
+        },
+        class_map={"path": "/registered/classes.txt", "sha256": _sha("classes")},
+        data_root="/registered/thumos/validation",
+        dataset_contract={
+            "dataset_type": "ThumosSlidingDataset",
+            "subset": "validation",
+            "test_mode": True,
+            "feature_stride": 4,
+            "sample_stride": 1,
+            "offset_frames": 0,
+            "window_size": 768,
+            "window_overlap_ratio": 0.5,
+            "scale_factor": 1,
+            "test_pipeline_sha256": _sha("test-pipeline"),
+            "regret_pipeline_sha256": _sha("regret-pipeline"),
+            "inference_sha256": _sha("inference"),
+            "post_processing_sha256": _sha("post-processing"),
+            "evaluation_sha256": _sha("evaluation"),
+        },
+        videos=[
+            {
+                "official_video_id": f"validation-{index:02d}",
+                "media_path": f"validation-{index:02d}.mp4",
+                "media_bytes": index + 1,
+                "media_sha256": _sha(f"validation-media-{index}"),
+                "frame": 16_000,
+                "duration": 100.0,
+            }
+            for index in range(20)
+        ],
+        ground_truth=[
+            {
+                "official_video_id": f"validation-{index:02d}",
+                "label": "action",
+                "segment": [1.0, 2.0],
+            }
+            for index in range(20)
+        ],
+        fit_manifest_sha256=manifest["manifest_sha256"],
+        fit_duration_quartile_thresholds=[1.5, 2.5, 3.5],
+    )
     return {
         "protocol_id": "CT-P3R-3S-r2",
         "spec": {"commit": APPROVED_SPEC_COMMIT, "sha256": APPROVED_SPEC_SHA256},
@@ -215,10 +273,7 @@ def _identity():
             "commit": _sha("implementation")[:40],
             "tree": _sha("tree")[:40],
         },
-        "source_files": {
-            path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
-            for path in REQUIRED_REGISTRATION_SOURCE_PATHS
-        },
+        "source_files": source_files,
         "upstream_commits": {"opentad": _sha("upstream")[:40]},
         "dense_checkpoint": {
             "sha256": _sha("checkpoint"),
@@ -248,6 +303,13 @@ def _identity():
             "source_path": "/data/run01/sczc063/yuzibo/chronotransport_inputs/r2_manifest.json",
             "registry_path": "/data/run01/sczc063/yuzibo/chronotransport_inputs/r2_registry.json",
             "config_identity_path": "/data/run01/sczc063/yuzibo/chronotransport_inputs/r2_config.json",
+        },
+        "gate4_population": {
+            "artifact": gate4_population,
+            "exact_bytes_sha256": hashlib.sha256(
+                gate4_population_exact_bytes(gate4_population)
+            ).hexdigest(),
+            "source_path": "/data/run01/sczc063/yuzibo/chronotransport_inputs/gate4_population.json",
         },
         "candidate_library": library,
         "exposures": {
@@ -716,6 +778,11 @@ def test_context_registration_derives_clean_detached_git_manifest_checkpoint_and
 
     data_root = tmp_path / "data"
     registry = _registry()
+    gate4_annotation = tmp_path / "gate4-annotation.json"
+    gate4_annotation.write_bytes(b"registered-gate4-annotation")
+    registry["annotation_sha256"] = hashlib.sha256(
+        gate4_annotation.read_bytes()
+    ).hexdigest()
     for index, record in enumerate(registry["records"]):
         media = data_root / record["media_path"]
         media.parent.mkdir(parents=True, exist_ok=True)
@@ -729,6 +796,55 @@ def test_context_registration_derives_clean_detached_git_manifest_checkpoint_and
     config_path.write_text(json.dumps(config), encoding="utf-8")
     manifest = build_r2_manifest(registry, config)
     manifest_path.write_bytes(manifest_exact_bytes(manifest))
+    gate4_class_map = tmp_path / "gate4-classes.txt"
+    gate4_class_map.write_text("action\n", encoding="utf-8")
+    gate4_data_root = tmp_path / "gate4-media"
+    gate4_videos = []
+    for index in range(20):
+        media_path = f"validation-{index:02d}.mp4"
+        media = gate4_data_root / media_path
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(f"validation-media-{index}".encode())
+        gate4_videos.append(
+            {
+                "official_video_id": f"validation-{index:02d}",
+                "media_path": media_path,
+                "media_bytes": len(media.read_bytes()),
+                "media_sha256": hashlib.sha256(media.read_bytes()).hexdigest(),
+                "frame": 16_000,
+                "duration": 100.0,
+            }
+        )
+    gate4_population = build_gate4_population_artifact(
+        config_sources_sha256={
+            "configs/adatad/thumos/c3_chronotransport_r2_stage_c.py": hashlib.sha256(
+                (repo / "configs/adatad/thumos/c3_chronotransport_r2_stage_c.py").read_bytes()
+            ).hexdigest()
+        },
+        annotation={
+            "path": str(gate4_annotation),
+            "sha256": registry["annotation_sha256"],
+        },
+        class_map={
+            "path": str(gate4_class_map),
+            "sha256": hashlib.sha256(gate4_class_map.read_bytes()).hexdigest(),
+        },
+        data_root=str(gate4_data_root),
+        dataset_contract=_identity()["gate4_population"]["artifact"]["dataset_contract"],
+        videos=gate4_videos,
+        ground_truth=[
+            {
+                "official_video_id": row["official_video_id"],
+                "label": "action",
+                "segment": [1.0, 2.0],
+            }
+            for row in gate4_videos
+        ],
+        fit_manifest_sha256=manifest["manifest_sha256"],
+        fit_duration_quartile_thresholds=[1.5, 2.5, 3.5],
+    )
+    gate4_population_path = tmp_path / "gate4-population.json"
+    gate4_population_path.write_bytes(gate4_population_exact_bytes(gate4_population))
     checkpoint = tmp_path / "epoch_57.pth"
     checkpoint.write_bytes(b"registered-dense-checkpoint")
     provider_receipt = tmp_path / "provider.receipt"
@@ -768,6 +884,7 @@ def test_context_registration_derives_clean_detached_git_manifest_checkpoint_and
         identity,
         repository_root=repo,
         manifest_path=manifest_path,
+        gate4_population_path=gate4_population_path,
         registry_path=registry_path,
         config_identity_path=config_path,
         checkpoint_source=checkpoint,

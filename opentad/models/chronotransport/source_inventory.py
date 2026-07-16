@@ -67,11 +67,14 @@ FORMAL_OPENTAD_PYTHON_SOURCE_PATHS = (
     "opentad/models/chronotransport/environment.py",
     "opentad/models/chronotransport/filesystem.py",
     "opentad/models/chronotransport/formal_stage_b.py",
+    "opentad/models/chronotransport/formal_stage_c.py",
     "opentad/models/chronotransport/full_stack_profiler.py",
     "opentad/models/chronotransport/gate1_unlock.py",
     "opentad/models/chronotransport/gate4.py",
+    "opentad/models/chronotransport/gate4_population.py",
     "opentad/models/chronotransport/gates23.py",
     "opentad/models/chronotransport/losses.py",
+    "opentad/models/chronotransport/post_stage_c.py",
     "opentad/models/chronotransport/profiler.py",
     "opentad/models/chronotransport/protocol.py",
     "opentad/models/chronotransport/registration.py",
@@ -213,4 +216,3 @@ FORMAL_OPENTAD_PYTHON_SOURCE_PATHS = (
 
 
 __all__ = ["FORMAL_OPENTAD_PYTHON_SOURCE_PATHS"]
-
