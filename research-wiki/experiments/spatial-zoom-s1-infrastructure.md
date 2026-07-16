@@ -247,6 +247,17 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   seed 3408. Retry totals remain 3-4 with maximum same-batch depth `2/8`; the
   hard-failure scan and temporary-file count remain zero. No sealed test or
   profile is authorized until all nine cells complete and validate.
+- Status at `2026-07-16T19:45+08:00`: dense224 Jobs `1166364-1166366` also
+  completed `0:0`, each with exactly ten checkpoint/metadata/evidence/
+  prediction sets and a valid selector record. Seeds 3407/3408/3409 selected
+  epochs 57/47/49 with gate Avg-mAP `65.695322/63.205058/63.783346`; their
+  mAP@0.6/0.7 pairs are `59.705184/48.593286`,
+  `56.315001/45.085447`, and `56.947290/46.056919`. All six completed
+  dense160/dense224 selections retain `official_test_read=false` and
+  `paper_claim_allowed=false`. Dense256 remains `RUNNING` at epochs 56-57
+  with eight complete candidate sets per seed. The hard-failure and temporary
+  file scans remain empty, the deployment-summary SHA remains frozen, and no
+  sealed-test certificate or profile result exists.
 
 ## Decision Boundary
 

@@ -37,11 +37,12 @@ max_chars: 8000
   epoch-0 3x3 Jobs `1166361-1166369` now run in canonical namespace
   `d95a36db...` with no resume or physical-GPU override. Old diagnostic Jobs
   `1165781-1165783` terminated FAILED and are not evidence. At 17:09 the new
-  dense160 seeds completed cleanly and selected epoch 59 from ten gate-only
-  candidates, with gate Avg-mAP `64.739/64.842/63.078`. Dense224 is at epochs
-  58-59 and dense256 at 52-53, with finite losses and no hard-failure
-  signature. All dense160 records retain `official_test_read=false`; no sealed
-  test, cost result, or S1 GO/KILL exists.
+  dense160 and dense224 seeds completed cleanly with valid ten-candidate
+  gate-only selections. Their gate Avg-mAP values are
+  `64.739/64.842/63.078` and `65.695/63.205/63.783`, respectively. Dense256
+  remains healthy at epochs 56-57 with eight candidate sets per seed. All six
+  completed records retain `official_test_read=false`; no sealed test, cost
+  result, or S1 GO/KILL exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 

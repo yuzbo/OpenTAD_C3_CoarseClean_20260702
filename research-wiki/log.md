@@ -141,3 +141,10 @@ append_only: true
   is `64.739055/64.842109/63.078053` for seeds 3407/3408/3409. Dense224 is at
   epochs 58-59 and dense256 at 52-53. The hard-failure and temporary-file scans
   remain empty. `official_test_read` remains false and no test/profile opened.
+- 2026-07-16 19:45+08:00: dense224 Jobs `1166364-1166366` completed `0:0`
+  with ten complete candidate artifact sets and valid selectors. Seeds
+  3407/3408/3409 selected epochs 57/47/49 with gate Avg-mAP
+  `65.695322/63.205058/63.783346`. Dense256 remains healthy at epochs 56-57
+  with eight candidate sets per seed. Hard-failure/tmp scans remain empty;
+  all completed selections keep `official_test_read=false`, and no test or
+  profile has opened.
