@@ -34,12 +34,12 @@ def test_component_open_rejects_parent_and_leaf_symlinks(tmp_path: Path) -> None
     leaf_link = real / "leaf-link.bin"
     leaf_link.symlink_to(source)
 
-    with pytest.raises(OSError):
+    with pytest.raises(ValueError, match="symlink"):
         open_bound_regular_file(
             parent_link / source.name,
             label="parent symlink probe",
         )
-    with pytest.raises(OSError):
+    with pytest.raises(ValueError, match="symlink"):
         open_bound_regular_file(leaf_link, label="leaf symlink probe")
 
 
@@ -107,7 +107,7 @@ def test_publication_is_no_clobber_and_parent_descriptor_bound(tmp_path: Path) -
     actual.mkdir()
     linked_parent = tmp_path / "linked-parent"
     linked_parent.symlink_to(actual, target_is_directory=True)
-    with pytest.raises(OSError):
+    with pytest.raises(ValueError, match="symlink"):
         publish_bytes_exclusive(
             linked_parent / "artifact.json",
             b"forbidden\n",

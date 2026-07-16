@@ -19,6 +19,7 @@ import ast
 import copy
 from contextlib import contextmanager
 from dataclasses import dataclass
+import errno
 import hashlib
 import io
 import json
@@ -93,6 +94,42 @@ def _file_flags() -> int:
     return os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
 
 
+def _open_directory_component(parent: int, component: str, *, label: str) -> int:
+    try:
+        return os.open(component, _directory_flags(), dir_fd=parent)
+    except FileNotFoundError:
+        raise
+    except OSError as error:
+        try:
+            metadata = os.stat(component, dir_fd=parent, follow_symlinks=False)
+        except OSError:
+            metadata = None
+        if metadata is not None and stat.S_ISLNK(metadata.st_mode):
+            raise ValueError(f"{label} contains a symlink component: {component}") from error
+        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError(
+                f"{label} contains a non-directory or replaced component: {component}"
+            ) from error
+        raise
+
+
+def _open_regular_component(parent: int, leaf: str, *, label: str) -> int:
+    try:
+        return os.open(leaf, _file_flags(), dir_fd=parent)
+    except FileNotFoundError:
+        raise
+    except OSError as error:
+        try:
+            metadata = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+        except OSError:
+            metadata = None
+        if metadata is not None and stat.S_ISLNK(metadata.st_mode):
+            raise ValueError(f"{label} must not be a symlink") from error
+        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError(f"{label} must be a regular non-symlink file") from error
+        raise
+
+
 def _open_directory_absolute(path: str, *, label: str, create: bool = False) -> int:
     """Open an absolute directory by walking every component from ``/``."""
 
@@ -102,13 +139,17 @@ def _open_directory_absolute(path: str, *, label: str, create: bool = False) -> 
         components = () if exact == "/" else exact.split("/")[1:]
         for component in components:
             try:
-                child = os.open(component, _directory_flags(), dir_fd=descriptor)
+                child = _open_directory_component(
+                    descriptor, component, label=label
+                )
             except FileNotFoundError:
                 if not create:
                     raise
                 os.mkdir(component, mode=0o700, dir_fd=descriptor)
                 os.fsync(descriptor)
-                child = os.open(component, _directory_flags(), dir_fd=descriptor)
+                child = _open_directory_component(
+                    descriptor, component, label=label
+                )
             metadata = os.fstat(child)
             if not stat.S_ISDIR(metadata.st_mode):
                 os.close(child)
@@ -297,10 +338,14 @@ class BoundDirectory:
         directory = os.dup(self.descriptor)
         try:
             for component in parts[:-1]:
-                child = os.open(component, _directory_flags(), dir_fd=directory)
+                child = _open_directory_component(
+                    directory, component, label=label
+                )
                 os.close(directory)
                 directory = child
-            descriptor = os.open(parts[-1], _file_flags(), dir_fd=directory)
+            descriptor = _open_regular_component(
+                directory, parts[-1], label=label
+            )
         finally:
             os.close(directory)
         return BoundRegularFile(
@@ -359,7 +404,7 @@ def open_bound_regular_file(
     parent = parent or "/"
     directory = _open_directory_absolute(parent, label=f"{label} parent")
     try:
-        descriptor = os.open(leaf, _file_flags(), dir_fd=directory)
+        descriptor = _open_regular_component(directory, leaf, label=label)
     finally:
         os.close(directory)
     return BoundRegularFile(path=exact, descriptor=descriptor, label=label)
@@ -431,7 +476,7 @@ def load_bound_torch(
         buffer.seek(0)
         value = torch.load(buffer, map_location="cpu")
     except Exception as error:
-        raise ValueError(f"{label} is not a valid torch artifact") from error
+        raise ValueError(f"{label} is not a valid/loadable torch artifact") from error
     return exact, value, payload, digest
 
 
@@ -650,7 +695,7 @@ def path_exists_no_follow(
 
 
 def _read_existing_at(directory: int, leaf: str, *, label: str) -> bytes:
-    descriptor = os.open(leaf, _file_flags(), dir_fd=directory)
+    descriptor = _open_regular_component(directory, leaf, label=label)
     bound = BoundRegularFile(path=leaf, descriptor=descriptor, label=label)
     try:
         return bound.read_bytes()

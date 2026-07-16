@@ -1360,6 +1360,11 @@ def test_stage_b_cli_finalizes_and_reuses_an_exact_existing_training_pair(
     )
     monkeypatch.setattr(
         stage_b_cli,
+        "audit_formal_python_runtime",
+        lambda **kwargs: {"status": "TEST_ONLY"},
+    )
+    monkeypatch.setattr(
+        stage_b_cli,
         "_load_json",
         lambda path: exposure if Path(path) == args.exposure_artifact else {"status": "PASS"},
     )
