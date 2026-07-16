@@ -1331,6 +1331,7 @@ def test_stage_b_cli_finalizes_and_reuses_an_exact_existing_training_pair(
             "sha256": hashlib.sha256(dense_checkpoint.read_bytes()).hexdigest(),
             "bytes": dense_checkpoint.stat().st_size,
         },
+        "environment": _required_environment(),
     }
     outputs = {
         "output": Path(training["checkpoint_path"]),
