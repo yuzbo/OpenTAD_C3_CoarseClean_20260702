@@ -193,3 +193,11 @@ append_only: true
   Local focused tests report `44 passed, 1 skipped`. Deployment remains blocked
   until this implementation is committed, pushed, reconstructed as a clean
   remote snapshot, and passes its formal CUDA preflight.
+- 2026-07-17 04:05+08:00: a clean `20b84d2` remote replay failed closed before
+  certificate construction because historical bound configs/precheck were
+  still validated against the repair checkout. No GPU task or new artifact was
+  created. Commit `341cf97` adds exact historical-repository reconstruction:
+  recorded source path, Git root, HEAD, clean status, full config matrix and
+  precheck identity are all revalidated. Dirty/wrong-commit/wrong-path cases
+  fail closed; local S1+C3 tests are `66 passed, 1 skipped`. Deployment remains
+  pending a final clean snapshot, certificate and Slurm preflight.

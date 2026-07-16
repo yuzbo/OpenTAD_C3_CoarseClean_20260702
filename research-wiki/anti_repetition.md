@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-16
+updated: 2026-07-17
 ---
 
 # 禁止重走清单
@@ -27,6 +27,11 @@ updated: 2026-07-16
     or delete them, because either action diverges from or inflates official AP.
     The in-training evaluator log is not a gate score when its GT population is
     broader than the frozen gate prediction population.
+11. Post-processing repair code must not reconstruct a historical bound config
+    against its own current `ROOT` or commit. It must derive the original clean
+    repository from the recorded audited config path, verify its exact Git HEAD
+    and config matrix, and validate the original precheck there. Never copy or
+    rewrite bound configs merely to make a repair snapshot accept them.
 
 ## 任务与叙事
 

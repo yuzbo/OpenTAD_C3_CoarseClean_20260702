@@ -156,6 +156,13 @@ updated: 2026-07-17
   `10c0182d6fae42f37dec108988f22fbfd732725fc270426121ff2608837261e9`.
   These inputs authorize only certificate construction after a clean audited
   repair commit; they do not themselves authorize another Job.
+- S1 profile-recovery implementation commits: `20b84d210a994e08960bd7f7d542474cf2432603`
+  adds exposure/physical-window identity separation and immutable campaign
+  infrastructure; `341cf979458d5ea7d0e1c951f0e40cf7a36f738a` adds exact clean
+  historical training-repository and
+  precheck reconstruction after the first clean replay failed before issuing a
+  certificate. Local verification at `2026-07-17T04:05+08:00` is `66 passed,
+  1 skipped`; no recovery Job or result is attributed to these commits yet.
 
 ## 外部附件
 

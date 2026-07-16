@@ -363,6 +363,21 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   This is `tested` recovery infrastructure, not a recovered cost matrix: no
   recovery certificate, CUDA gate, replacement post Job, GO/KILL, S2, or Pro
   review has yet been issued.
+- Provenance-recovery status at `2026-07-17T04:05+08:00`: clean remote replay of
+  the first recovery implementation (`20b84d2`) correctly failed before
+  certificate creation because the generic bound-config validator rebuilt the
+  historical `18139b9` training binding and full precheck against the repair
+  checkout. No test/profile artifact or Job was created. Commit `341cf97`
+  separates these identities without weakening the training entrypoint:
+  normal binding still uses the current repository, while cross-snapshot
+  validation derives the repository root from the recorded audited config,
+  requires its exact Git HEAD and clean status, validates the complete
+  160/224/256 config matrix there, and rebuilds the original precheck there.
+  Tests explicitly accept an exact clean historical repository and reject a
+  dirty repository, wrong commit, wrong source path, and precheck commit drift.
+  Local S1+C3 verification is `66 passed, 1 skipped`. This remains tested
+  recovery infrastructure only; a final clean repair snapshot, immutable
+  recovery certificate, Slurm preflight and replacement post Job are pending.
 
 ## Decision Boundary
 

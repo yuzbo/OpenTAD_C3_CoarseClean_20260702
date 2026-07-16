@@ -56,8 +56,13 @@ max_chars: 8000
   silent retry, resolution decision, or GO/KILL is permitted. A local recovery
   implementation now preserves all exposures using ordinal-bound exposure IDs,
   retains physical IDs separately, reuses only fully validated test evidence,
-  and binds a new campaign to a post-processing-only Git diff; focused tests
-  pass, but no recovery certificate/GPU gate/replacement Job exists yet.
+  and binds a new campaign to a post-processing-only Git diff. Commit `20b84d2`
+  exposed one additional fail-closed blocker: bound training configs and their
+  precheck certificates were incorrectly rebuilt against the repair checkout.
+  Provenance fix `341cf97` instead derives and validates the recorded clean
+  `18139b9` repository, its exact commit and all three configs; dirty, wrong-HEAD
+  and wrong-path sources are rejected. Local S1+C3 verification is `66 passed,
+  1 skipped`. No recovery certificate/GPU gate/replacement Job exists yet.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 
