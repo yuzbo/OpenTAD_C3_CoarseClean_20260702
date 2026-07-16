@@ -38,6 +38,9 @@ from opentad.models.chronotransport.registration import (
     validate_pre_gate1_registration,
 )
 from opentad.models.chronotransport.scheduler import ScheduleLibrary
+from opentad.models.chronotransport.source_inventory import (
+    FORMAL_OPENTAD_PYTHON_SOURCE_PATHS,
+)
 from test_chronotransport_r2_manifest_protocol import _config_identity, _registry
 import tools.bata.register_chronotransport_r2 as registration_cli
 from tools.bata.validate_chronotransport_r2_precheck import (
@@ -300,6 +303,30 @@ def test_all_current_gate_sources_are_inside_the_exact_registration_surface():
     )
     with pytest.raises(ValueError, match="complete required surface"):
         build_pre_gate1_registration(extra)
+
+
+def test_formal_opentad_python_inventory_equals_the_tracked_application_surface():
+    tracked = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "ls-files",
+            "--",
+            "opentad/*.py",
+            "opentad/**/*.py",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert tuple(sorted(tracked)) == FORMAL_OPENTAD_PYTHON_SOURCE_PATHS
+    assert set(FORMAL_OPENTAD_PYTHON_SOURCE_PATHS) <= set(
+        REQUIRED_REGISTRATION_SOURCE_PATHS
+    )
+    assert len(REQUIRED_REGISTRATION_SOURCE_PATHS) == len(
+        set(REQUIRED_REGISTRATION_SOURCE_PATHS)
+    )
 
 
 def test_registration_accepts_only_the_approved_spec_commit_and_exact_bytes():
