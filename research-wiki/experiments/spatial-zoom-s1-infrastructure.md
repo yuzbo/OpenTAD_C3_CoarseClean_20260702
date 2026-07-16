@@ -218,6 +218,20 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   expected header plus nine cells, the deployment-summary SHA remains
   `32f693fb391e2fa9777d6263e683210cac28a58ba30688009b60525e398529b0`,
   and `/data` retains about 164 GiB free.
+- Status at `2026-07-16T17:09+08:00`: all nine formal Jobs remain `RUNNING`.
+  Dense160 has entered epoch 52, dense224 epoch 45, and dense256 epoch 41.
+  Latest finite losses span `0.3440-0.4326`; per-cell AMP retry totals remain
+  2-4 with maximum same-batch depth `2/8`, and every affected cell continued.
+  The hard-failure scan remains empty. Dense160 has six allowed checkpoints,
+  metadata files, gate-evidence records, and prediction files per seed for
+  epochs 41-51. Dense224 has reached epochs 41-45, with a transient checkpoint
+  versus evidence count difference while epoch-45 evaluation is running;
+  dense256 has only just entered epoch 41. No selection file exists. The
+  approximately 15% values printed by the training monitor use the known
+  full-development-GT/40-video-prediction mismatch and are not gate scores;
+  only the post-training selector may compute the frozen-corpus gate score.
+  `jobs.tsv` and the frozen deployment-summary SHA remain unchanged, and the
+  shared filesystem reports 25% aggregate use with no new write error.
 
 ## Decision Boundary
 

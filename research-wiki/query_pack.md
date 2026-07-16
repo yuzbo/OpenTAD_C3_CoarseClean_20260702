@@ -36,9 +36,12 @@ max_chars: 8000
 - Replacement commit `18139b9` passed full CUDA gate Job `1166358`. Fresh
   epoch-0 3x3 Jobs `1166361-1166369` now run in canonical namespace
   `d95a36db...` with no resume or physical-GPU override. Old diagnostic Jobs
-  `1165781-1165783` terminated FAILED and are not evidence. At 15:08 the new
-  cells are at epochs 24-34 with finite losses and no hard-failure signature;
-  no sealed test, cost result, or S1 GO/KILL exists.
+  `1165781-1165783` terminated FAILED and are not evidence. At 17:09 the new
+  cells are at epochs 41-52 with finite losses and no hard-failure signature;
+  allowed gate checkpoints are appearing, but selection has not run. The
+  training monitor's approximately 15% output is a known mismatched-corpus
+  artifact, not a valid gate score. No sealed test, cost result, or S1 GO/KILL
+  exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 

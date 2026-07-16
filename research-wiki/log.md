@@ -129,3 +129,9 @@ append_only: true
   maximum depth `2/8`, followed by progress. The hard-failure scan and all
   pre-gate artifact counts remain empty, receipts retain their frozen hashes,
   and `/data` still has about 164 GiB free.
+- 2026-07-16 17:09+08:00: all nine formal S1 cells remain `RUNNING` at epochs
+  41-52 with finite losses `0.3440-0.4326`. AMP retries remain isolated at 2-4
+  per cell and at most `2/8`; the hard-failure scan is empty. Allowed epoch
+  41-51 checkpoint/evidence artifacts are appearing without selection. The
+  approximately 15% training-monitor values remain explicitly excluded as a
+  mismatched-corpus artifact rather than a gate score. No test was opened.
