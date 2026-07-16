@@ -209,6 +209,15 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   determinism warning, retry exhaustion, parity failure, checkpoint write
   error, or FAIL. Checkpoint/sidecar/evidence/selection/tmp counts are all zero
   as required before epoch 41, and `/data` retains about 164 GiB free.
+- Status at `2026-07-16T15:08+08:00`: all nine formal Jobs remain `RUNNING`.
+  Dense160 has entered epoch 34, dense224 epoch 28, and dense256 epochs 24-25.
+  Latest finite losses span `0.4371-0.5452`; per-cell AMP retry totals are 2-4
+  and maximum same-batch depth remains `2/8`, followed by continued progress.
+  The hard-failure scan is empty. Checkpoint, sidecar, evidence, selection, and
+  temporary-file counts remain zero before epoch 41. `jobs.tsv` contains the
+  expected header plus nine cells, the deployment-summary SHA remains
+  `32f693fb391e2fa9777d6263e683210cac28a58ba30688009b60525e398529b0`,
+  and `/data` retains about 164 GiB free.
 
 ## Decision Boundary
 

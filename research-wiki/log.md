@@ -124,3 +124,8 @@ append_only: true
   `0.6482-0.7552`; maximum same-batch AMP retry is `2/8`, followed by progress.
   No hard failure is present, pre-gate artifact counts remain zero, and storage
   has about 164 GiB free. No performance conclusion or test opening occurred.
+- 2026-07-16 15:08+08:00: all formal S1 cells remain healthy at epochs 24-34.
+  Latest finite losses are `0.4371-0.5452`; AMP retry totals are 2-4 with
+  maximum depth `2/8`, followed by progress. The hard-failure scan and all
+  pre-gate artifact counts remain empty, receipts retain their frozen hashes,
+  and `/data` still has about 164 GiB free.
