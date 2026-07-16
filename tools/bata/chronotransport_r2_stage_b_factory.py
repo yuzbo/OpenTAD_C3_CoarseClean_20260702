@@ -30,13 +30,28 @@ from opentad.models.chronotransport.registration import validate_pre_gate1_regis
 from opentad.models.chronotransport.scheduler import R2_NON_DENSE_NAMES
 from opentad.utils import set_seed
 from tools.bata.build_chronotransport_r2_manifest import load_manifest_file
-from tools.bata.chronotransport_opentad_factory import move_batch_to_device
 
 
 ROOT = Path(__file__).resolve().parents[2]
 R2_STAGE_B_CONFIG = (
     ROOT / "configs/adatad/thumos/c3_chronotransport_r2_stage_b.py"
 )
+
+
+def move_batch_to_device(value: Any, device: torch.device) -> Any:
+    """Move a nested formal batch without importing the superseded v1 factory."""
+
+    if isinstance(value, torch.Tensor):
+        return value.to(device=device, non_blocking=True)
+    if isinstance(value, Mapping):
+        return {
+            key: move_batch_to_device(item, device) for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [move_batch_to_device(item, device) for item in value]
+    if isinstance(value, tuple):
+        return tuple(move_batch_to_device(item, device) for item in value)
+    return value
 
 
 def _file_sha256(path: Path) -> str:

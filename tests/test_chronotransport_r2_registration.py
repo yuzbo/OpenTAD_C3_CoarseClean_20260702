@@ -9,7 +9,10 @@ import subprocess
 import pytest
 
 from opentad.models.chronotransport.actions import LayerGroup
-from opentad.models.chronotransport.controls import r2_control_algorithm_identity
+from opentad.models.chronotransport.controls import (
+    r2_control_algorithm_identity,
+    random_exact_count_actions,
+)
 from opentad.models.chronotransport.protocol import (
     build_r2_manifest,
     build_stage_b_exposure_artifact,
@@ -26,9 +29,11 @@ from opentad.models.chronotransport.registration import (
     REGISTERED_PROFILE_BACKEND_IDENTITY,
     REGISTERED_PROFILE_BACKEND_SOURCE,
     REQUIRED_REGISTRATION_SOURCE_PATHS,
+    SOURCE_CLASSIFICATION_PATH,
     build_pre_gate1_registration,
     build_pre_gate1_registration_from_context,
     claim_flags,
+    validate_source_classification_manifest,
     validate_pre_gate1_registration,
 )
 from opentad.models.chronotransport.scheduler import ScheduleLibrary
@@ -82,19 +87,39 @@ def _checkpoint_receipt_identity(
     }
 
 
-def _control_actions(name: str, invocation_index: int) -> list[list[int]]:
+def _control_actions(
+    name: str,
+    invocation_index: int,
+    *,
+    invocation_ids: list[str] | None = None,
+) -> list[list[int]]:
     period = int(name.rsplit("p", 1)[1])
+    if name.startswith("random_p"):
+        if invocation_ids is None:
+            raise ValueError("random control helper requires invocation IDs")
+        return random_exact_count_actions(
+            invocation_ids[invocation_index],
+            seed=3407,
+            num_groups=3,
+            period=period,
+        ).tolist()
     actions = [[2, 2, 2] for _ in range(48)]
     for clip in range(0, 48, period):
         actions[clip] = [0, 0, 0]
     return actions
 
 
-def _requested_actions(identity: dict, name: str, invocation_index: int) -> list[list[int]]:
+def _requested_actions(
+    identity: dict,
+    name: str,
+    invocation_index: int,
+    *,
+    invocation_ids: list[str],
+) -> list[list[int]]:
     for candidate in identity["candidate_library"]["candidates"]:
         if candidate["name"] == name:
             return candidate["actions"]
-    return _control_actions(name, invocation_index)
+    return _control_actions(name, invocation_index, invocation_ids=invocation_ids)
 
 
 def _identity():
@@ -129,7 +154,10 @@ def _identity():
             algorithm = "motion_topk" if name.startswith("motion_topk") else "random"
             identity_sha = controls[algorithm]["sha256"]
             hashes = [
-                canonical_sha256(_control_actions(name, index)) for index in range(200)
+                canonical_sha256(
+                    _control_actions(name, index, invocation_ids=invocation_ids)
+                )
+                for index in range(200)
             ]
         factory_config = {
             "candidate_name": name,
@@ -139,8 +167,13 @@ def _identity():
                 (ROOT / REGISTERED_PROFILE_BACKEND_SOURCE).read_bytes()
             ).hexdigest(),
         }
+        if name.startswith("random_p"):
+            factory_config["control_seed"] = 3407
         first_actions = _requested_actions(
-            {"candidate_library": library}, name, 0
+            {"candidate_library": library},
+            name,
+            0,
+            invocation_ids=invocation_ids,
         )
         candidate_plan.append(
             {
@@ -365,22 +398,121 @@ def test_registration_commit_shape_requires_one_parent_unique_add_and_exact_blob
         )
 
 
-@pytest.mark.parametrize("seed", [None, 3407, 3408, 3409])
-def test_formal_random_control_plan_is_locked_for_every_seed(seed):
+def test_formal_random_control_plan_accepts_only_exact_integer_seed_3407():
     from opentad.models.chronotransport.registration import (
         validate_formal_random_control_lock,
     )
 
     registration = build_pre_gate1_registration(_identity())
-    if seed is not None:
+    validate_formal_random_control_lock(registration)
+
+    for seed in (None, "3407", 3408, 3409):
+        damaged = copy.deepcopy(registration)
         random_plan = next(
             plan
-            for plan in registration["profiler"]["candidate_plan"]
+            for plan in damaged["profiler"]["candidate_plan"]
             if plan["candidate_name"] == "random_p4"
         )
+        if seed is None:
+            random_plan["factory_config"].pop("control_seed")
+        else:
+            random_plan["factory_config"]["control_seed"] = seed
+        with pytest.raises(ValueError, match="control_seed.*3407"):
+            validate_formal_random_control_lock(damaged)
+
+
+@pytest.mark.parametrize("seed", [None, "3407", 3408, 3409])
+def test_registration_identity_rejects_missing_or_alternate_random_seed(seed):
+    identity = _identity()
+    random_plan = next(
+        plan
+        for plan in identity["profiler"]["candidate_plan"]
+        if plan["candidate_name"] == "random_p4"
+    )
+    if seed is None:
+        random_plan["factory_config"].pop("control_seed")
+    else:
         random_plan["factory_config"]["control_seed"] = seed
-    with pytest.raises(ValueError, match="unapproved"):
-        validate_formal_random_control_lock(registration)
+    random_plan["factory_config_sha256"] = canonical_sha256(
+        random_plan["factory_config"]
+    )
+    with pytest.raises(ValueError, match="factory config"):
+        build_pre_gate1_registration(identity)
+
+
+def test_registration_identity_recomputes_and_rejects_random_action_hashes():
+    identity = _identity()
+    random_plan = next(
+        plan
+        for plan in identity["profiler"]["candidate_plan"]
+        if plan["candidate_name"] == "random_p4"
+    )
+    random_plan["requested_action_sha256_by_invocation"][17] = _sha(
+        "caller-substituted-random-action"
+    )
+    random_plan["requested_action_order_sha256"] = canonical_sha256(
+        random_plan["requested_action_sha256_by_invocation"]
+    )
+    with pytest.raises(ValueError, match="generated action hashes"):
+        build_pre_gate1_registration(identity)
+
+
+def test_source_classification_is_exhaustive_and_exactly_matches_required_vector():
+    manifest = json.loads((ROOT / SOURCE_CLASSIFICATION_PATH).read_text(encoding="utf-8"))
+    tracked = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "ls-files",
+            "tests/test_chronotransport*.py",
+            "tools/bata/*chronotransport*.py",
+            "scripts/*chronotransport*.sh",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    validated = validate_source_classification_manifest(
+        manifest,
+        tracked_paths=tracked,
+        required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
+    )
+    tests = [path for path in validated["files"] if path.startswith("tests/")]
+    assert len(tests) == 21
+
+
+def test_source_classification_rejects_omission_addition_and_vector_drift():
+    manifest = json.loads((ROOT / SOURCE_CLASSIFICATION_PATH).read_text(encoding="utf-8"))
+    tracked = list(manifest["files"])
+
+    omitted = copy.deepcopy(manifest)
+    omitted["files"].pop("tests/test_chronotransport_pipeline.py")
+    with pytest.raises(ValueError, match="exact tracked inventory"):
+        validate_source_classification_manifest(
+            omitted,
+            tracked_paths=tracked,
+            required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
+        )
+
+    with pytest.raises(ValueError, match="exact tracked inventory"):
+        validate_source_classification_manifest(
+            manifest,
+            tracked_paths=[*tracked, "tests/test_chronotransport_new_escape.py"],
+            required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
+        )
+
+    missing_required = tuple(
+        path
+        for path in REQUIRED_REGISTRATION_SOURCE_PATHS
+        if path != "tests/test_chronotransport_pipeline.py"
+    )
+    with pytest.raises(ValueError, match="REQUIRED classification.*source vector"):
+        validate_source_classification_manifest(
+            manifest,
+            tracked_paths=tracked,
+            required_source_paths=missing_required,
+        )
 
 
 @pytest.mark.parametrize(
@@ -591,11 +723,6 @@ def test_context_registration_derives_clean_detached_git_manifest_checkpoint_and
         checkpoint_provider_receipt_path=provider_receipt,
         content_store_root=tmp_path / "content-store",
         data_root=data_root,
-    )
-    monkeypatch.setattr(
-        registration_module,
-        "validate_formal_random_control_lock",
-        lambda registration: None,
     )
     assert validate_pre_gate1_registration(
         registration,

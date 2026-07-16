@@ -236,3 +236,6 @@ updated: 2026-07-16
 100. Same-descriptor hashing/loading of data is necessary but does not by itself prove Python executed the
     same source bytes. Formal source integrity must also bind detached worktree, import resolution, loaded
     module origins/bytes and entrypoint identity to the registered source vector.
+101. When a registration context builder replaces the manifest invocation order, it must regenerate every
+    seed-3407 random requested-action hash and its order digest from those exact window IDs. Reusing template
+    hashes from another manifest is an invalid implementation even if candidate names and counts match.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+from fnmatch import fnmatchcase
 import hashlib
 import json
 import os
@@ -14,7 +15,11 @@ import subprocess
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
-from .controls import validate_r2_control_algorithm_identity
+from .controls import (
+    R2_RANDOM_CONTROL_SEED,
+    random_exact_count_actions,
+    validate_r2_control_algorithm_identity,
+)
 from .protocol import (
     R2_PROTOCOL_ID,
     build_stage_b_exposure_artifact,
@@ -33,8 +38,8 @@ CHECKPOINT_RECEIPT_SCHEMA = "chronotransport-r2-checkpoint-registry-receipt-v2"
 CHECKPOINT_RECEIPT_PROVIDER_IDENTITY = "paracloud-registry"
 CHECKPOINT_RECEIPT_TOOL_IDENTITY = "paracloud-registry-client/v1"
 CHECKPOINT_RECEIPT_PRINCIPAL = "sczc063@BSCC-N16R4"
-APPROVED_SPEC_COMMIT = "e4422f53c3af5a09e81e030d054b9646c4c14c09"
-APPROVED_SPEC_SHA256 = "87fa305ccafc3a29176c3971f593489f86edd23a4c02c1bfbdae4144fcf34cf8"
+APPROVED_SPEC_COMMIT = "537f692189cf0c5a6ee7d40ad8c4ed1032bf1d37"
+APPROVED_SPEC_SHA256 = "e79dfaab8f9b0093e96cbd6b46bef4ecf8d6433009e2dcb922ad0f4c473b27a6"
 FORMAL_OUTPUT_BASE = (
     "/data/run01/sczc063/yuzibo/chronotransport_runs/ct_p3r_3s_r2"
 )
@@ -49,8 +54,21 @@ REGISTERED_PROFILE_BACKEND_IDENTITY = (
 REGISTERED_PROFILE_BACKEND_SOURCE = (
     "tools/bata/chronotransport_r2_opentad_profile_backend.py"
 )
+SOURCE_CLASSIFICATION_PATH = (
+    "opentad/models/chronotransport/source_classification.json"
+)
+SOURCE_CLASSIFICATION_SCHEMA = "chronotransport-r2-source-classification-v1"
+SOURCE_CLASSIFICATION_CLASSES = frozenset(
+    {"REQUIRED", "TEST_ONLY_NON_FORMAL", "OUT_OF_SCOPE"}
+)
+SOURCE_CLASSIFICATION_GLOBS = (
+    "tests/test_chronotransport*.py",
+    "tools/bata/*chronotransport*.py",
+    "scripts/*chronotransport*.sh",
+)
 REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "docs/superpowers/specs/2026-07-12-chronotransport-ct-p3r-3s-r2-design.md",
+    SOURCE_CLASSIFICATION_PATH,
     "opentad/datasets/builder.py",
     "opentad/datasets/thumos.py",
     "opentad/datasets/base/sliding_dataset.py",
@@ -97,16 +115,16 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "tools/bata/chronotransport_r2_gate1_replay_factory.py",
     "tools/bata/chronotransport_r2_gates23_replay_factory.py",
     "tools/bata/chronotransport_r2_profile_factory.py",
-    "tools/bata/chronotransport_opentad_factory.py",
     "tools/bata/profile_chronotransport_r2_full_stack.py",
     "tools/bata/register_chronotransport_r2.py",
     "tools/bata/run_chronotransport_r2_gate1.py",
     "tools/bata/run_chronotransport_r2_gates23.py",
-    "tools/bata/run_chronotransport_stage_b_formal.py",
     "tools/bata/chronotransport_r2_stage_b_factory.py",
     "tools/bata/train_chronotransport_r2_stage_b.py",
     "tools/bata/validate_chronotransport_r2_precheck.py",
     "scripts/run_chronotransport_r2_gate1_gpu1.sh",
+    "tests/test_chronotransport_core.py",
+    "tests/test_chronotransport_pipeline.py",
     "tests/test_chronotransport_r2_actions_cache.py",
     "tests/test_chronotransport_r2_adjudication.py",
     "tests/test_chronotransport_r2_gate1_cost_profile.py",
@@ -121,6 +139,8 @@ REQUIRED_REGISTRATION_SOURCE_PATHS = (
     "tests/test_chronotransport_r2_runtime.py",
     "tests/test_chronotransport_r2_stage_b.py",
     "tests/test_chronotransport_r2_stage_c.py",
+    "tests/test_chronotransport_repository_contract.py",
+    "tests/test_chronotransport_vit_adapter_integration.py",
 )
 PROFILE_CONTROL_NAMES = (
     "motion_topk_p2",
@@ -511,6 +531,8 @@ def _validate_profiler_plan(
                 "profiler.backend_source_sha256",
             ),
         }
+        if name.startswith("random_p"):
+            expected_factory_config["control_seed"] = R2_RANDOM_CONTROL_SEED
         if plan["factory_config"] != expected_factory_config:
             raise ValueError(
                 f"profiler factory config must bind the fixed backend for {name}"
@@ -524,6 +546,23 @@ def _validate_profiler_plan(
             _require_sha(digest, f"profiler requested action hash for {name}")
         if name in library_rows and any(digest != expected_identity for digest in action_hashes):
             raise ValueError(f"static candidate requested action hash mismatch for {name}")
+        if name.startswith("random_p"):
+            period = int(name.rsplit("p", 1)[1])
+            expected_random_hashes = [
+                canonical_sha256(
+                    random_exact_count_actions(
+                        window_id,
+                        seed=R2_RANDOM_CONTROL_SEED,
+                        num_groups=3,
+                        period=period,
+                    ).tolist()
+                )
+                for window_id in invocation_ids
+            ]
+            if action_hashes != expected_random_hashes:
+                raise ValueError(
+                    f"random control generated action hashes mismatch for {name}"
+                )
         if plan["requested_action_order_sha256"] != canonical_sha256(action_hashes):
             raise ValueError(f"profiler requested action order hash mismatch for {name}")
         selected_rows = plan["selected_rows_per_group"]
@@ -735,6 +774,77 @@ def _load_json_file(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
 
 
+def validate_source_classification_manifest(
+    value: Any,
+    *,
+    tracked_paths: Sequence[str],
+    required_source_paths: Sequence[str],
+) -> dict[str, Any]:
+    """Require an explicit class for every tracked ChronoTransport test/entrypoint."""
+
+    if not isinstance(value, Mapping):
+        raise TypeError("source classification manifest must be a mapping")
+    _require_exact_fields(value, {"schema", "files"}, "source classification manifest")
+    if value["schema"] != SOURCE_CLASSIFICATION_SCHEMA:
+        raise ValueError("unsupported source classification schema")
+    files = value["files"]
+    if not isinstance(files, Mapping) or not files:
+        raise ValueError("source classification files must be a non-empty mapping")
+
+    classified: dict[str, str] = {}
+    for path, classification in files.items():
+        if not isinstance(path, str) or not path:
+            raise TypeError("source classification path must be a non-empty string")
+        pure = PurePosixPath(path)
+        if (
+            pure.is_absolute()
+            or "\\" in path
+            or any(part in ("", ".", "..") for part in pure.parts)
+            or pure.as_posix() != path
+        ):
+            raise ValueError("source classification paths must be canonical repository paths")
+        if classification not in SOURCE_CLASSIFICATION_CLASSES:
+            raise ValueError(f"unsupported source classification for {path}")
+        if classification == "TEST_ONLY_NON_FORMAL" and not path.startswith("tests/"):
+            raise ValueError("TEST_ONLY_NON_FORMAL is restricted to test files")
+        classified[path] = classification
+
+    tracked = list(tracked_paths)
+    if any(not isinstance(path, str) or not path for path in tracked):
+        raise TypeError("tracked source classification paths must be non-empty strings")
+    if len(tracked) != len(set(tracked)):
+        raise ValueError("tracked source classification inventory contains duplicates")
+    if set(classified) != set(tracked):
+        raise ValueError("source classification must equal the exact tracked inventory")
+
+    required = set(required_source_paths)
+    if SOURCE_CLASSIFICATION_PATH not in required:
+        raise ValueError("source classification artifact must be in the source vector")
+    required_classified = {
+        path for path, classification in classified.items() if classification == "REQUIRED"
+    }
+    vector_classified = required.intersection(classified)
+    if required_classified != vector_classified:
+        raise ValueError("REQUIRED classification must exactly equal the source vector")
+    nonformal_in_vector = {
+        path
+        for path, classification in classified.items()
+        if classification != "REQUIRED" and path in required
+    }
+    if nonformal_in_vector:
+        raise ValueError("non-formal classified paths must remain outside the source vector")
+    return {"schema": value["schema"], "files": classified}
+
+
+def _tracked_source_classification_paths(root: Path, revision: str) -> list[str]:
+    tree_paths = _git(root, "ls-tree", "-r", "--name-only", revision).splitlines()
+    return [
+        path
+        for path in tree_paths
+        if any(fnmatchcase(path, pattern) for pattern in SOURCE_CLASSIFICATION_GLOBS)
+    ]
+
+
 def _git(root: Path, *arguments: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", "-C", str(root), *arguments],
@@ -935,6 +1045,12 @@ def _validate_repository_context(
         actual_sources[relative] = registered_sha
     if actual_sources != registration["source_files"]:
         raise ValueError("required source file bytes differ from registration")
+    classification = _load_json_file(root / SOURCE_CLASSIFICATION_PATH)
+    validate_source_classification_manifest(
+        classification,
+        tracked_paths=_tracked_source_classification_paths(root, implementation),
+        required_source_paths=REQUIRED_REGISTRATION_SOURCE_PATHS,
+    )
     spec_path = root / REQUIRED_REGISTRATION_SOURCE_PATHS[0]
     if _sha256_file(spec_path)[1] != APPROVED_SPEC_SHA256:
         raise ValueError("spec file bytes differ from registration")
@@ -1143,6 +1259,25 @@ def build_pre_gate1_registration_from_context(
     body["profiler"]["invocation_order_sha256"] = canonical_sha256(
         body["profiler"]["invocation_ids"]
     )
+    validate_formal_random_control_lock(body)
+    for plan in body["profiler"]["candidate_plan"]:
+        name = plan["candidate_name"]
+        if not name.startswith("random_p"):
+            continue
+        period = int(name.rsplit("p", 1)[1])
+        hashes = [
+            canonical_sha256(
+                random_exact_count_actions(
+                    window_id,
+                    seed=R2_RANDOM_CONTROL_SEED,
+                    num_groups=3,
+                    period=period,
+                ).tolist()
+            )
+            for window_id in body["profiler"]["invocation_ids"]
+        ]
+        plan["requested_action_sha256_by_invocation"] = hashes
+        plan["requested_action_order_sha256"] = canonical_sha256(hashes)
     body["profiler"]["model_config_sha256"] = manifest["config_identity"]["config_sha256"]
     registration = build_pre_gate1_registration(body)
     _validate_repository_context(
@@ -1165,28 +1300,41 @@ def build_pre_gate1_registration(identity: Mapping[str, Any]) -> dict[str, Any]:
 def validate_formal_random_control_lock(
     registration: Mapping[str, Any],
 ) -> None:
-    """Fail closed until a spec amendment approves formal random control seeds."""
+    """Accept only the three unsuffixed random controls frozen to integer 3407."""
 
     profiler = registration.get("profiler") if isinstance(registration, Mapping) else None
     plans = profiler.get("candidate_plan") if isinstance(profiler, Mapping) else None
     if not isinstance(plans, list):
         raise ValueError("formal random-control lock requires a profiler candidate plan")
-    has_seed = any(
-        isinstance(plan, Mapping)
-        and isinstance(plan.get("factory_config"), Mapping)
-        and "control_seed" in plan["factory_config"]
+    expected_names = {"random_p2", "random_p4", "random_p8"}
+    random_plans = {
+        str(plan.get("candidate_name")): plan
         for plan in plans
-    )
-    has_random = any(
-        isinstance(plan, Mapping)
+        if isinstance(plan, Mapping)
         and str(plan.get("candidate_name", "")).startswith("random_p")
-        for plan in plans
-    )
-    if has_seed or has_random:
-        raise ValueError(
-            "formal random control plan is unapproved; control_seed 3407/3408/3409 "
-            "and every other seed remain locked pending a spec amendment"
+    }
+    if set(random_plans) != expected_names:
+        raise ValueError("formal random controls must equal random_p2/p4/p8")
+    for name, plan in random_plans.items():
+        factory_config = plan.get("factory_config")
+        seed = (
+            factory_config.get("control_seed")
+            if isinstance(factory_config, Mapping)
+            else None
         )
+        if isinstance(seed, bool) or type(seed) is not int or seed != R2_RANDOM_CONTROL_SEED:
+            raise ValueError(f"formal random control {name} control_seed must equal integer 3407")
+    for plan in plans:
+        if not isinstance(plan, Mapping):
+            raise TypeError("formal profiler candidate plans must be mappings")
+        name = str(plan.get("candidate_name", ""))
+        factory_config = plan.get("factory_config")
+        if (
+            name not in expected_names
+            and isinstance(factory_config, Mapping)
+            and "control_seed" in factory_config
+        ):
+            raise ValueError("control_seed is forbidden outside random_p2/p4/p8")
 
 
 def resolve_gate1_output_root(

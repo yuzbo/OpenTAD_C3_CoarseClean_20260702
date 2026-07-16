@@ -8,6 +8,14 @@ max_chars: 8000
 
 ## 2026-07-16 ChronoTransport integrity delta
 
+- Superseding the initial W0-only status below: W0 source classification and W1/A1 are now remotely
+  `TESTED`. The frozen manifest explicitly classifies 47 tracked tests/tools/scripts, including all 21
+  matching tests, and registration rejects omissions, unclassified additions and required-vector drift.
+  A1 now binds spec `537f692`, exact integer `control_seed=3407`, and regenerated per-window random action
+  hashes. A real first-run generator RED was fixed; cumulative evidence is 43 prior passes plus 9 repaired
+  contract passes and 36 control/manifest passes. W2 is `IN_PROGRESS`; registration remains `NOT_READY`,
+  E0--E5 remain locked, and no ChronoTransport job or scientific result exists.
+
 - 用户已授权按 approved A1--A4 完整实现并在合法 I/R 后执行 stop-chain。当前仅 W0
   replacement-plan/source-inventory 为 `IN_PROGRESS`；W1--W7 与 E0--E5 均保持 `LOCKED`，
   registration `NOT_READY`，没有 ChronoTransport Job 或实验结果。

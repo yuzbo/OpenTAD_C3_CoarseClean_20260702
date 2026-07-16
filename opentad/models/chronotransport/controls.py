@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 
 from .actions import ChronoAction
-from .protocol import R2_PROTOCOL_ID, R2_SEEDS, canonical_json_bytes, canonical_sha256
+from .protocol import R2_PROTOCOL_ID, canonical_json_bytes, canonical_sha256
 
 
 class InvalidImplementationError(RuntimeError):
@@ -17,6 +17,7 @@ class InvalidImplementationError(RuntimeError):
 
 
 _RANDOM_PREFIX = b"CT-P3R-3S-r2-random-v1\0"
+R2_RANDOM_CONTROL_SEED = 3407
 
 
 def _hashed_algorithm(payload: dict[str, object]) -> dict[str, object]:
@@ -56,6 +57,7 @@ def r2_control_algorithm_identity() -> dict[str, object]:
             "field_encoding": "NFC_UTF8_window_id_and_no-leading-zero_decimal_ASCII_integers",
             "field_order": ["window_id", "seed", "group", "period", "clip"],
             "field_separator_hex": "00",
+            "control_seed": R2_RANDOM_CONTROL_SEED,
             "tie_break": "ascending_clip_index",
             "recompute_count": "exact_periodic_comparator_count_per_group",
         }
@@ -142,8 +144,14 @@ def random_exact_count_actions(
     if not window_id or "\x00" in window_id:
         raise ValueError("window_id must be non-empty and contain no NUL")
     window_bytes = unicodedata.normalize("NFC", window_id).encode("utf-8")
-    if isinstance(seed, bool) or not isinstance(seed, int) or seed not in R2_SEEDS:
-        raise ValueError(f"seed must be one of {R2_SEEDS}")
+    if (
+        isinstance(seed, bool)
+        or not isinstance(seed, int)
+        or seed != R2_RANDOM_CONTROL_SEED
+    ):
+        raise ValueError(
+            "seed must equal the frozen r2 random control seed 3407"
+        )
     seed_bytes = str(seed).encode("ascii")
     if isinstance(num_groups, bool) or not isinstance(num_groups, int) or num_groups != 3:
         raise ValueError("num_groups must equal the frozen r2 value 3")

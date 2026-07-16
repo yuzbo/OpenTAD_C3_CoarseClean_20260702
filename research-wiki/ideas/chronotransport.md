@@ -4,12 +4,28 @@ node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
 stage: spec_approved
 outcome: bounded_appeal_pending_implementation_repair
-implementation_status: revise_implementation_before_registration
+implementation_status: partial_repair_tested_registration_not_ready
 registration_status: NOT_READY
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
 updated: 2026-07-16
 ---
+
+## W0/W1 implementation delta (2026-07-16)
+
+The source boundary is now explicit rather than glob-defined: one frozen JSON classifies all 47 tracked
+ChronoTransport tests/tools/scripts, including all 21 matching tests, and registration requires exact
+agreement between `REQUIRED` classifications and its immutable source vector. Three legacy tests remain
+test-only and legacy entrypoints remain out of scope. Missing classifications, new unclassified paths and
+vector drift fail closed.
+
+A1 is now implemented against approved spec commit `537f692`: the registration authority/hash is current;
+`random_p2/p4/p8` accept only integer seed 3407; the context builder regenerates every requested random
+action hash from the actual 200-window order; backend replay recomputes the same bytes. The first remote
+run retained a useful failure because the context builder changed invocation IDs without rebinding hashes
+(`43 passed, 1 xfailed, 1 failed`). After repair, nine key contracts passed and the control/manifest matrix
+passed 36/36. This upgrades W0/W1 only to `tested`; A2--A4/workflows remain open, registration is
+`NOT_READY`, and no experiment or claim is created.
 
 ## r2 foundation repair batch (2026-07-13)
 

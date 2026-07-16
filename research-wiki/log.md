@@ -461,3 +461,11 @@ append_only: true
   execution tracker. A read-only N16R4 check found available public GPU capacity but only unrelated DUCA/S1
   jobs for this account; none was reused, modified or cancelled. Status is implementation repair
   `IN_PROGRESS`, registration `NOT_READY`, all E0--E5 stages `LOCKED`, and no experiment was launched.
+- 2026-07-16: Completed and remotely tested implementation packages W0 and W1/A1. A frozen classification
+  manifest now covers all 47 tracked ChronoTransport tests/tools/scripts and all 21 matching tests; exact
+  `REQUIRED`/source-vector agreement rejects omissions and unclassified additions. Registration authority
+  now binds approved spec `537f692` and exact hash, while `random_p2/p4/p8` require integer seed 3407 and
+  context generation/replay independently recompute all per-window action hashes. The first remote run
+  exposed a valid stale-template-hash RED (`43 passed, 1 xfailed, 1 failed`); after repair the affected
+  contracts passed 9/9 and the control/manifest matrix passed 36/36. W2/A2 is now in progress. No I/R,
+  PRECHECK, Slurm experiment, Gate result, training or scientific claim was produced.

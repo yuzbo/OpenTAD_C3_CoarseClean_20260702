@@ -5,7 +5,10 @@ import inspect
 import pytest
 import torch
 
-from opentad.models.chronotransport.controls import motion_topk_actions
+from opentad.models.chronotransport.controls import (
+    motion_topk_actions,
+    random_exact_count_actions,
+)
 from opentad.models.chronotransport.protocol import canonical_sha256
 
 
@@ -222,17 +225,38 @@ def test_motion_control_uses_deploy_visible_signal_and_rejects_fake_signal():
         )
 
 
-def test_random_control_fails_closed_until_seed_is_frozen_in_factory_config():
+def test_random_control_requires_and_rebuilds_exact_seed_3407_actions():
     from tools.bata.chronotransport_r2_opentad_profile_backend import (
         resolve_registered_action_payload,
     )
 
-    registration = _control_registration(
-        "random_p4", [[0, 0, 0]] + [[2, 2, 2] for _ in range(47)]
-    )
+    expected = random_exact_count_actions(
+        "window-0", seed=3407, num_groups=3, period=4
+    ).tolist()
+    registration = _control_registration("random_p4", expected)
     with pytest.raises(RuntimeError, match="control_seed.*frozen"):
         resolve_registered_action_payload(
             registration,
             window_id="window-0",
             candidate_name="random_p4",
         )
+
+    registration["profiler"]["candidate_plan"][0]["factory_config"][
+        "control_seed"
+    ] = 3407
+    assert resolve_registered_action_payload(
+        registration,
+        window_id="window-0",
+        candidate_name="random_p4",
+    ) == expected
+
+    for seed in ("3407", 3408, 3409):
+        registration["profiler"]["candidate_plan"][0]["factory_config"][
+            "control_seed"
+        ] = seed
+        with pytest.raises((TypeError, ValueError), match="seed.*3407"):
+            resolve_registered_action_payload(
+                registration,
+                window_id="window-0",
+                candidate_name="random_p4",
+            )

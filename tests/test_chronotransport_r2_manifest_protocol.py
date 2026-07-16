@@ -1,7 +1,6 @@
 import copy
 import hashlib
 import json
-from types import SimpleNamespace
 
 import pytest
 import torch
@@ -29,10 +28,6 @@ from opentad.models.chronotransport.protocol import (
 from opentad.models.chronotransport.scheduler import (
     ScheduleLibrary,
     validate_r2_library_payload,
-)
-from tools.bata.run_chronotransport_stage_b_formal import (
-    LegacyFormalRouteDisabledError,
-    run as run_legacy_formal_stage_b,
 )
 from tools.bata.build_chronotransport_r2_manifest import (
     build_manifest_file,
@@ -371,11 +366,6 @@ def test_formal_controls_reject_type_coercion_and_noncanonical_identity():
         random_exact_count_actions("window", seed=3407, num_groups=3.9, period=2)
     with pytest.raises(ValueError, match="window_id"):
         random_exact_count_actions("bad\x00id", seed=3407, num_groups=3, period=2)
-
-
-def test_legacy_six_schedule_formal_route_is_technically_unreachable():
-    with pytest.raises(LegacyFormalRouteDisabledError, match="superseded by CT-P3R-3S-r2"):
-        run_legacy_formal_stage_b(SimpleNamespace())
 
 
 def test_manifest_cli_writer_is_atomic_canonical_and_emits_exact_byte_hash(tmp_path):
