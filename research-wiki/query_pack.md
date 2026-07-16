@@ -42,9 +42,12 @@ max_chars: 8000
   post Job `1167230` failed before any test read because the profiler confused
   Slurm's host physical GPU ID with cgroup-local `nvidia-smi` index `0`.
   Diagnostics `1167232/1167238` and full preflight `1167239` closed the cause;
-  serial same-allocation remediation Job `1167257` is queued with an audited
-  selector adapter. Official test, cost matrix, statistics, Pro review, and S1
-  GO/KILL remain pending; the state is still `experiment_running`.
+  serial same-allocation remediation Job `1167257` is running with an audited
+  selector adapter. Its first frozen-order cell, dense256/seed3408, has raw
+  official-test Avg-mAP `67.09` and mAP@0.3-0.7
+  `82.14/77.76/70.36/59.53/45.67`; its profile and the other eight cells are
+  pending. Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain
+  pending; the state is still `experiment_running`.
 
 ## 当前唯一活动任务：Spatial Zoom
 

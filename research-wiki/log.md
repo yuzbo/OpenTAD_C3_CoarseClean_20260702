@@ -166,3 +166,9 @@ append_only: true
   test/trained-checkpoint profile remediation Job `1167257` in the frozen
   nine-cell order. Receipt is `post_test_profile_resubmission_r1.json`.
   Official results, cost analysis, Pro review, and S1 GO/KILL remain pending.
+- 2026-07-16 22:55+08:00: Job `1167257` remains healthy and completed the
+  first frozen-order official test, dense256/seed3408: Avg-mAP `67.09`, with
+  mAP@0.3-0.7 `82.14/77.76/70.36/59.53/45.67`. Canonical evidence file SHA is
+  `10c0182...`; `official_test_read=true` and `paper_claim_allowed=false`.
+  Its profile and the remaining eight cells are pending, so no GO/KILL or
+  resolution selection is permitted.

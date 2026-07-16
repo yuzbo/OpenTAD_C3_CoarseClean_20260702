@@ -309,6 +309,21 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `post_test_profile_resubmission_r1.json`. Official test/profile results,
   final statistics, Pro review, and the unique S1 GO/KILL decision remain
   pending; `paper_claim_allowed` remains false.
+- Status at `2026-07-16T22:55+08:00`: remediation Job `1167257` is `RUNNING`
+  on one Slurm-assigned RTX 4090 allocation. Frozen-order cell zero,
+  dense256/seed3408 at selected epoch 57, completed its official 211-video
+  sealed test with raw Avg-mAP `67.09` and mAP@0.3/0.4/0.5/0.6/0.7
+  `82.14/77.76/70.36/59.53/45.67`. Its canonical test-evidence file SHA-256
+  is `10c0182d6fae42f37dec108988f22fbfd732725fc270426121ff2608837261e9`;
+  prediction SHA-256 is
+  `d4b6df44b0be9c9f735ef233dd39a9b28ad487ebfd6d530383285d9de7269194`.
+  The evidence has `official_test_read=true` and
+  `paper_claim_allowed=false`. The cell's trained-checkpoint profile is still
+  running: the matrix currently has one test-evidence file and zero profile
+  markers, summaries, or run descriptors. No hard-failure signature is
+  present. This single-cell raw result must not be used to choose a resolution
+  or issue S1 GO/KILL before the frozen 3x3 test/profile matrix and paired
+  analysis close.
 
 ## Decision Boundary
 

@@ -127,6 +127,13 @@ updated: 2026-07-16
   Remediation Job `1167257` runs the frozen 3x3 test/profile order in one
   allocation. Source receipt:
   `spatial_zoom_s1_18139b9_20260716_1120/post_test_profile_resubmission_r1.json`.
+- First sealed-test evidence from Job `1167257`: dense256/seed3408,
+  `dense256/seed3408/gpu1_id0/test_evidence/test.evidence.json`, file SHA-256
+  `10c0182d6fae42f37dec108988f22fbfd732725fc270426121ff2608837261e9`;
+  prediction SHA-256
+  `d4b6df44b0be9c9f735ef233dd39a9b28ad487ebfd6d530383285d9de7269194`.
+  Raw official-test Avg-mAP is `67.09`; this is one incomplete matrix cell and
+  not a resolution decision or GO/KILL result.
 
 ## 外部附件
 
