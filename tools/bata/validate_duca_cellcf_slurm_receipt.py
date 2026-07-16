@@ -258,6 +258,29 @@ def _afterok_job_ids(value: str) -> frozenset[int]:
     return job_ids
 
 
+def _live_afterok_job_ids(value: str) -> frozenset[int]:
+    normalized = _normalize_dependency(value)
+    if not normalized:
+        return frozenset()
+    if "," not in normalized and "(" not in normalized:
+        return _afterok_job_ids(normalized)
+
+    rendered = normalized.split(",")
+    job_ids: list[int] = []
+    for item in rendered:
+        match = re.fullmatch(
+            r"afterok:([1-9][0-9]*)\(unfulfilled\)",
+            item,
+        )
+        if match is None:
+            raise ValueError(f"invalid live Slurm dependency: {normalized}")
+        job_ids.append(int(match.group(1)))
+    unique_ids = frozenset(job_ids)
+    if len(unique_ids) != len(job_ids):
+        raise ValueError(f"duplicate live Slurm dependency: {normalized}")
+    return unique_ids
+
+
 def _timestamp(value: str, *, label: str) -> datetime:
     normalized = value.strip()
     if normalized.lower() in {"", "unknown", "none", "n/a"}:
@@ -446,7 +469,7 @@ def validate_slurm_receipt(
             raise ValueError("Slurm live dependency is invalid")
         live_dependency = _normalize_dependency(raw_live_dependency)
         if live_dependency:
-            live_dependency_ids = _afterok_job_ids(live_dependency)
+            live_dependency_ids = _live_afterok_job_ids(live_dependency)
             if not live_dependency_ids.issubset(expected_dependency_ids):
                 raise ValueError(
                     "Slurm live dependency mismatch: "
@@ -532,7 +555,10 @@ def validate_slurm_receipt(
         return payload
     if accounting_rows:
         raise ValueError("receipt job is ambiguous in Slurm accounting")
-    if live_state is not None and live_dependency == expected_dependency:
+    if (
+        live_state is not None
+        and live_dependency_ids == expected_dependency_ids
+    ):
         if expected_dependency_ids and live_state != "PENDING":
             raise ValueError(
                 "dependent Slurm target has started without accounting proof"

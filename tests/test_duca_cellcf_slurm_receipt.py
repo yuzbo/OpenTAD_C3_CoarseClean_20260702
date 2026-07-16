@@ -483,6 +483,119 @@ def test_live_pending_receipt_requires_exact_dependency() -> None:
     assert result["dependency"] == dependency
 
 
+def test_live_pending_accepts_slurm_unfulfilled_dependency_rendering() -> None:
+    name = "cellcf-aggregate-s0-abcdef0"
+    dependency = "afterok:1:2:3"
+    live_dependency = (
+        "afterok:1(unfulfilled),afterok:2(unfulfilled),"
+        "afterok:3(unfulfilled)"
+    )
+    result = _validate(
+        job_id=123,
+        job_name=name,
+        token=TOKEN,
+        cluster=CLUSTER,
+        dependency=dependency,
+        runner=_runner(
+            squeue=_live(job_name=name, dependency=live_dependency),
+        ),
+    )
+    assert result["source"] == "squeue"
+    assert result["dependency"] == dependency
+
+
+def test_accounting_reopens_annotated_live_dependency_from_canonical_submit_line() -> None:
+    name = "cellcf-aggregate-s0-abcdef0"
+    dependency = "afterok:1:2:3"
+    result = _validate(
+        job_id=123,
+        job_name=name,
+        token=TOKEN,
+        cluster=CLUSTER,
+        dependency=dependency,
+        require_scheduler_script=True,
+        runner=_runner(
+            squeue=_live(
+                job_name=name,
+                dependency=(
+                    "afterok:1(unfulfilled),afterok:2(unfulfilled),"
+                    "afterok:3(unfulfilled)"
+                ),
+            ),
+            sacct=_accounting(job_name=name, dependency=dependency),
+        ),
+    )
+    assert result["source"] == "sacct"
+    assert result["dependency"] == dependency
+    assert result["scheduler_script_verified"] is True
+
+
+def test_live_pending_accepts_single_unfulfilled_dependency_rendering() -> None:
+    name = "cellcf-cost-s0-abcdef0"
+    dependency = "afterok:7"
+    result = _validate(
+        job_id=123,
+        job_name=name,
+        token=TOKEN,
+        cluster=CLUSTER,
+        dependency=dependency,
+        runner=_runner(
+            squeue=_live(
+                job_name=name,
+                dependency="afterok:7(unfulfilled)",
+            ),
+        ),
+    )
+    assert result["source"] == "squeue"
+    assert result["dependency"] == dependency
+
+
+def test_live_dependency_subset_requires_accounting_predecessor_proof() -> None:
+    name = "cellcf-aggregate-s0-abcdef0"
+    with pytest.raises(ValueError, match="Slurm dependency mismatch"):
+        _validate(
+            job_id=123,
+            job_name=name,
+            token=TOKEN,
+            cluster=CLUSTER,
+            dependency="afterok:1:2:3",
+            runner=_runner(
+                squeue=_live(
+                    job_name=name,
+                    dependency=(
+                        "afterok:2(unfulfilled),afterok:3(unfulfilled)"
+                    ),
+                ),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "live_dependency",
+    [
+        "afterok:1(fulfilled),afterok:2(unfulfilled)",
+        "afterok:1(unfulfilled),afterok:1(unfulfilled)",
+        "afterany:1(unfulfilled)",
+        "afterok:1(unfulfilled),afterok:2(unfulfilled) trailing",
+    ],
+)
+def test_live_dependency_rendering_remains_fail_closed(
+    live_dependency: str,
+) -> None:
+    name = "cellcf-aggregate-s0-abcdef0"
+    with pytest.raises(ValueError, match="live Slurm dependency"):
+        _validate(
+            job_id=123,
+            job_name=name,
+            token=TOKEN,
+            cluster=CLUSTER,
+            dependency="afterok:1:2",
+            runner=_runner(
+                squeue=_live(job_name=name, dependency=live_dependency),
+            ),
+        )
+
+
 def test_running_receipt_reopens_dependency_from_canonical_submit_line() -> None:
     name = "cellcf-aggregate-s0-abcdef0"
     dependency = "afterok:1:2:3"
@@ -521,7 +634,12 @@ def test_live_remaining_dependency_may_be_a_subset_of_original_afterok() -> None
         cluster=CLUSTER,
         dependency=dependency,
         runner=_runner(
-            squeue=_live(job_name=name, dependency="afterok:2:3"),
+            squeue=_live(
+                job_name=name,
+                dependency=(
+                    "afterok:2(unfulfilled),afterok:3(unfulfilled)"
+                ),
+            ),
             sacct=_accounting(job_name=name, dependency=dependency),
             predecessors=(
                 "1|COMPLETED|0:0|2026-07-16T11:00:00|"
@@ -591,7 +709,10 @@ def test_started_target_cannot_retain_unmet_dependencies() -> None:
                 squeue=_live(
                     job_name=name,
                     state="RUNNING",
-                    dependency=dependency,
+                    dependency=(
+                        "afterok:1(unfulfilled),afterok:2(unfulfilled),"
+                        "afterok:3(unfulfilled)"
+                    ),
                 )
             ),
         )
