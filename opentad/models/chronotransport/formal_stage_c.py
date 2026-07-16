@@ -550,6 +550,7 @@ def build_paired_stage_c_checkpoint(
             objects=state.matched_objects,
         ),
         "paired_trace": copy.deepcopy(state.trace),
+        "paired_trace_sha256": canonical_sha256(state.trace),
         "ct_retry_audit": copy.deepcopy(state.ct_retry_audit),
         "matched_retry_audit": copy.deepcopy(state.matched_retry_audit),
         "candidate_counts": counts,
@@ -581,6 +582,7 @@ _CHECKPOINT_KEYS = {
     "ct",
     "matched_dense",
     "paired_trace",
+    "paired_trace_sha256",
     "ct_retry_audit",
     "matched_retry_audit",
     "candidate_counts",
@@ -649,7 +651,11 @@ def validate_paired_stage_c_checkpoint(
     ):
         raise ValueError("Stage-C paired checkpoint provenance mismatch")
     trace = checkpoint["paired_trace"]
-    if not isinstance(trace, list) or len(trace) != cursor:
+    if (
+        not isinstance(trace, list)
+        or len(trace) != cursor
+        or checkpoint["paired_trace_sha256"] != canonical_sha256(trace)
+    ):
         raise ValueError("Stage-C paired checkpoint trace length mismatch")
     if checkpoint["candidate_counts"] != _candidate_counts(trace):
         raise ValueError("Stage-C paired checkpoint candidate counts mismatch")

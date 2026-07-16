@@ -1,6 +1,7 @@
 import copy
 from contextlib import nullcontext
 import random
+from types import SimpleNamespace
 import warnings
 
 import numpy as np
@@ -41,6 +42,9 @@ from opentad.models.chronotransport.stage_c import (
     validate_transport_gradient_ledger,
     validate_stage_c_optimizer,
 )
+import tools.bata.chronotransport_r2_stage_c_factory as stage_c_factory
+import tools.bata.train_chronotransport_r2_matched_dense as matched_cli
+import tools.bata.train_chronotransport_r2_stage_c as stage_c_cli
 
 
 _TEST_MEASURED_COST = {
@@ -2553,3 +2557,95 @@ def test_paired_stage_c_workflow_checkpoints_and_resumes_real_actionformer():
             require_complete=True,
             expected_total_successful_updates=1,
         )
+
+
+def test_stage_c_materializer_reuses_canonical_pairs_each_epoch(monkeypatch):
+    class Dataset:
+        def __getitem__(self, index):
+            return {"index": index}
+
+        def close(self):
+            pass
+
+    windows = [
+        {
+            "video_id": f"video-{index // 2}",
+            "window_id": f"window-{index:03d}",
+            "window_sha256": f"{index:064x}",
+            "sampled_frame_indices": [index, index + 1],
+        }
+        for index in range(140)
+    ]
+
+    def fake_collate(samples):
+        indices = [sample["index"] for sample in samples]
+        return {
+            "inputs": torch.tensor(indices, dtype=torch.float32).reshape(2, 1, 1),
+            "masks": torch.ones(2, 1, dtype=torch.bool),
+            "metas": [{"index": index} for index in indices],
+            "gt_segments": [torch.empty(0, 2), torch.empty(0, 2)],
+            "gt_labels": [torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)],
+        }
+
+    monkeypatch.setattr(stage_c_factory, "collate", fake_collate)
+    materializer = stage_c_factory.ManifestStageCBatchMaterializer(
+        Dataset(), windows, torch.device("cpu")
+    )
+    assert materializer(0)["window_id"] == ["window-000", "window-001"]
+    assert materializer(69)["window_id"] == ["window-138", "window-139"]
+    assert materializer(70)["window_id"] == ["window-000", "window-001"]
+    with pytest.raises(ValueError, match="outside"):
+        materializer(4200)
+
+
+def test_stage_c_cli_precheck_is_side_effect_free(monkeypatch):
+    class Components:
+        fit_window_ids = tuple(f"window-{index}" for index in range(140))
+        cost_profile_sha256 = "c" * 64
+
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    components = Components()
+    monkeypatch.setattr(
+        stage_c_cli,
+        "_prepare",
+        lambda args, entrypoint_relative: (
+            {"registration_sha256": "a" * 64},
+            "b" * 40,
+            {},
+            components,
+            {},
+            object(),
+        ),
+    )
+    monkeypatch.setattr(
+        stage_c_cli,
+        "exclusive_file_lock",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("precheck must not create a lock")
+        ),
+    )
+    result = stage_c_cli.run(SimpleNamespace(precheck_only=True, seed=3407))
+    assert result["status"] == "PRECHECK_OK"
+    assert result["side_effect_free"] is True
+    assert components.closed is True
+
+
+def test_matched_dense_cli_cannot_escape_the_paired_engine(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        matched_cli,
+        "run_paired",
+        lambda args, entrypoint_relative: calls.append(
+            (args, entrypoint_relative)
+        ) or {"status": "PAIRED"},
+    )
+    args = object()
+    assert matched_cli.run(args) == {"status": "PAIRED"}
+    assert calls == [
+        (args, "tools/bata/train_chronotransport_r2_matched_dense.py")
+    ]
