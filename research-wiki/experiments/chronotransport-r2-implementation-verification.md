@@ -5,13 +5,36 @@ title: "ChronoTransport r2 implementation verification"
 idea: idea:chronotransport
 verdict: revise_implementation_before_registration
 confidence: high
-commit: "33378af"
+commit: "6c3606cc5161d415909a42741b3bc402278bf332"
 review_snapshot: "1b6366d0acb712e8096c2cceb0f05e66b16d30d4"
 jobs: "remote CPU focused pytest in workdirs/chronotransport_r2/repo"
 updated: 2026-07-16
 ---
 
 # ChronoTransport r2 Implementation Verification
+
+## W3--W6 complete candidate verification (2026-07-16)
+
+- Candidate `6c3606cc5161d415909a42741b3bc402278bf332` is explicitly review-only and is not I or R.
+- W3 binds lexical no-follow inputs, same-descriptor bytes, imported-module origins and formal
+  entrypoints. Gate-4 media is checked before and immediately after decode using the retained descriptor.
+- W4 exposes real ActionFormer/AnchorFreeHead batch-two per-window task losses from the same logits,
+  targets, normalizer and aggregate reduction.
+- W5/W6 implement paired CT/matched-dense 4,200-success workflows, exact resume/checkpoint ledgers,
+  post-Stage-C Gate 3 and formal official-population Gate 4 with immutable seed shards and finalizer.
+- Gate 4 includes decode/preprocess/H2D/model/postprocess/full-video NMS, deferred CUDA events without a
+  hidden mid-forward sync, official NumPy quicksort tie semantics, official-video/seed bootstraps,
+  matched-invocation margin, all five registered per-seed thresholds and long-block 10-Hz NVML energy.
+- All 18 changed/new implementation files were SHA-256-identical between the local candidate and remote
+  verification checkout. Targeted Gate-4 regression was `32 passed in 53.56s`; final complete
+  ChronoTransport CPU regression was `441 passed, 1 skipped, 2 warnings in 968.62s`. Remote py-compile and
+  four-launcher `bash -n` exited zero; required C3 compatibility was `20 passed in 20.42s`.
+- The one skip is the protected CUDA-only surface. Local pytest is not cited because local PyTorch DLL
+  initialization fails with `WinError 1114`; local py-compile and `git diff --check` passed.
+
+Overall verdict intentionally remains `revise_implementation_before_registration` until a fresh
+GitHub-only exact-byte reviewer returns `APPROVE_IMPLEMENTATION_FOR_REGISTRATION`. Registration is
+`NOT_READY`; no PRECHECK, Slurm GPU job, Gate, training or scientific result exists.
 
 ## Verified manifest/protocol repair slice
 

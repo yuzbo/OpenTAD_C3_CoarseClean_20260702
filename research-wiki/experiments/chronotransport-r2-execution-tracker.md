@@ -4,7 +4,7 @@ node_id: exp:chronotransport-r2-stop-chain
 idea: idea:chronotransport
 protocol: CT-P3R-3S-r2
 updated: 2026-07-16
-implementation_status: repair_in_progress
+implementation_status: implemented_and_cpu_tested_pending_exact_byte_review
 registration_status: NOT_READY
 experiment_running: false
 ---
@@ -13,14 +13,14 @@ experiment_running: false
 
 | ID | Dependency | Purpose | Status | Immutable evidence |
 |---|---|---|---|---|
-| W0 | approved spec | current plan and source classification | TESTED | plan `4dcc98d`; classification SHA-256 `3BAA129A...7CF03`; exact 48-file inventory / 22 tests |
+| W0 | approved spec | current plan and source classification | TESTED | classification SHA-256 `2713C84D...08D2F`; exact 65-path inventory / 25 matching tests |
 | W1 | W0 | A1 registration/random controls | TESTED | remote cumulative 43 prior passes + 9 repaired contract passes + 36 control/manifest passes |
 | W2 | W1 | A2 Slurm/environment identity | TESTED | clean `c585ae5`: 78 passed + `bash -n`; Stage-B/G2-3 81 passed then repaired fixture 1/1 |
-| W3 | W2 | filesystem/source/import integrity | IN_PROGRESS | descriptor/import/entrypoint audit; no formal GPU check before valid I/R |
-| W4 | W3 | real ActionFormer per-window loss | LOCKED | none |
-| W5 | W4 | Stage-C A3/A4 transaction | LOCKED | none |
-| W6 | W5 | formal Stage-C/matched/Gate-4 workflows | LOCKED | none |
-| W7 | W6 | remote verification, I and R | LOCKED | none |
+| W3 | W2 | filesystem/source/import integrity | TESTED | same-descriptor/import/entrypoint/TOCTOU contracts in candidate `6c3606c` |
+| W4 | W3 | real ActionFormer per-window loss | TESTED | same-head batch-two aggregate identity and negative contracts |
+| W5 | W4 | Stage-C A3/A4 transaction | TESTED | paired CT/matched transaction, retry, state, normalizer and checkpoint contracts |
+| W6 | W5 | formal Stage-C/matched/Gate-4 workflows | TESTED | 4,200-success runners, post-Gate3 and official Gate4 producer/finalizer contracts |
+| W7 | W6 | remote verification, I and R | IN_PROGRESS | exact CPU 441/1 + C3 20/20; independent exact-byte Pro and R-bound CUDA checks pending |
 | E0 | valid R | Slurm PRECHECK | LOCKED | none |
 | E1 | E0 | Gate 1 | LOCKED | none |
 | E2 | Gate 1 PASS | Stage B, three seeds | LOCKED | none |
@@ -34,11 +34,11 @@ experiment_running: false
   `E79DFAAB8F9B0093E96CBD6B46BEF4ECF8D6433009E2DCB922AD0F4C473B27A6`.
 - Spec review: `APPROVE_SPEC_FOR_PLAN`.
 - Implementation review: `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`.
-- No implementation I, registration R, PRECHECK, ChronoTransport Job ID, Gate artifact or experiment result
-  exists at tracker creation.
+- No implementation I, registration R, PRECHECK, ChronoTransport Job ID, Gate artifact or experiment
+  result exists. Candidate `6c3606cc5161d415909a42741b3bc402278bf332` is review-only.
 - The 2026-07-16 read-only Slurm check showed unrelated DUCA/S1 jobs only; none is reused or modified.
-- W0 explicitly classifies all 48 tracked ChronoTransport test/tool/script paths. Nineteen of the 22 tests
-  and all current r2 producers/validators are `REQUIRED`; three legacy tests are
+- W0 explicitly classifies all 65 tracked ChronoTransport test/tool/script paths. Twenty-two of the 25
+  matching tests and all current r2 producers/validators are `REQUIRED`; three legacy tests are
   `TEST_ONLY_NON_FORMAL`; legacy entrypoints are `OUT_OF_SCOPE`. Any unclassified addition or source-vector
   drift now fails closed.
 - W1 binds the approved `537f692` spec, freezes all unsuffixed random controls to integer seed 3407,
@@ -53,8 +53,12 @@ experiment_running: false
   `CUDA_VISIBLE_DEVICES`, and the latency claim no longer names physical GPU1. Clean remote CPU contracts at
   `c585ae5` passed 78/78 plus `bash -n`; the Stage-B/Gates-2/3 group passed 81 before one stale mock failure,
   then its exact repair passed 1/1. No CUDA action was taken; live allocation validation remains E0.
+- W3--W6 are now present in production entrypoints and validators. The final exact remote CPU matrix was
+  `441 passed, 1 skipped, 2 warnings in 968.62s`; targeted Gate4 was 32/32, remote py-compile and four r2
+  launchers passed syntax, and C3 compatibility was 20/20. Eighteen changed/new files matched the local
+  candidate by SHA-256. The protected CUDA skip remains a W7 task after review and valid I/R.
 - These are implementation tests only. Registration is still `NOT_READY`; no I/R, PRECHECK, GPU producer,
-  Gate, training run or scientific result exists.
+  Gate, training run or scientific result exists. E0--E5 remain locked in strict stop-chain order.
 
 ## Status semantics
 

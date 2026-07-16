@@ -479,3 +479,27 @@ append_only: true
   targeted 2/2 plus 1/1 passed. Final clean Gate-1/A2 regression was 78/78 with launcher `bash -n`. These are
   remote CPU implementation tests only: no Slurm GPU action, PRECHECK, I/R, Gate, training or science result
   occurred. W3 is now in progress and registration remains `NOT_READY`.
+- 2026-07-16: Rechecked the user attachment at
+  `attachments/90705a73-361e-4a4d-88eb-052abdebeef0/pasted-text.txt`. It is byte-identical to the existing
+  86,871-byte verbatim archive of the `1b6366d` Pro review, SHA-256
+  `C61F93531885040A3593DB7552E23B67B34DEC3D55095D71FCE5B6D2A1F1BC08`. It is recorded as a duplicate
+  presentation of the same source, not a second independent audit; no duplicate archive or graph source was
+  created, and the accepted `APPROVE_SPEC_FOR_PLAN` / `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION`
+  disposition is unchanged.
+- 2026-07-16: Completed the non-I/R W3--W6 implementation candidate at
+  `6c3606cc5161d415909a42741b3bc402278bf332`. During final cross-check, a transient Gate-4 implementation
+  drift had replaced registered per-invocation margin and per-seed hard conditions with arm-level p50
+  arithmetic; it was caught against the approved specification, restored, and covered by reversal tests.
+  Eighteen changed/new files were SHA-256-identical in the remote CPU checkout. Targeted Gate 4 passed 32/32;
+  the exact complete ChronoTransport suite passed `441 passed, 1 skipped, 2 warnings in 968.62s`; remote
+  py-compile, four r2 launcher syntax checks and C3 compatibility 20/20 passed. The skip is the protected
+  CUDA-only contract. These are implementation tests, not scientific results: exact-byte independent Pro
+  review, implementation I, registration-only R and R-bound CUDA/Slurm PRECHECK remain absent, so E0--E5
+  stay locked and no experiment was launched.
+- 2026-07-16: Published a replacement GitHub-only Pro implementation-audit contract for a fresh immutable
+  descendant of `6c3606c`. It requires a complete commit parent vector/tree certificate, exact spec/review
+  hashes, exhaustive classification-driven line coverage, previous-finding closure, concrete P0/P1 RED tests
+  and patches, and a binary `APPROVE_IMPLEMENTATION_FOR_REGISTRATION` versus
+  `REVISE_IMPLEMENTATION_BEFORE_REGISTRATION` verdict. Prompt SHA-256 is
+  `663757DE188A3EB62E50FD9A0E00AE7D9768206E072475D9BA76EAEDE1647ABF`. The prompt is review-only and
+  cannot create I/R, unlock CUDA/Slurm PRECHECK or start an experiment.

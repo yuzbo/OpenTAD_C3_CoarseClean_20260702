@@ -8,22 +8,19 @@ max_chars: 8000
 
 ## 2026-07-16 ChronoTransport integrity delta
 
-- Superseding the initial W0-only status below: W0 source classification, W1/A1 and W2/A2 are now remotely
-  `TESTED` as implementation contracts. The frozen manifest explicitly classifies 48 tracked
-  tests/tools/scripts, including all 22
-  matching tests, and registration rejects omissions, unclassified additions and required-vector drift.
-  A1 now binds spec `537f692`, exact integer `control_seed=3407`, and regenerated per-window random action
-  hashes. A real first-run generator RED was fixed; cumulative evidence is 43 prior passes plus 9 repaired
-  contract passes and 36 control/manifest passes. A2 now separates required model/software from live
-  UUID/allocation identity, records raw Slurm fields, enforces one visible device/logical `cuda:0`, removes
-  physical-GPU1 pinning, and binds profile/replay/result/precheck/Stage-B artifacts. Clean `c585ae5` remote
-  CPU evidence is 78/78 plus `bash -n`; Stage-B/Gates-2/3 was 81 passes plus one stale-fixture failure and a
-  1/1 repair. W3 is `IN_PROGRESS`; registration remains `NOT_READY`,
-  E0--E5 remain locked, and no ChronoTransport job or scientific result exists.
-
-- 用户已授权按 approved A1--A4 完整实现并在合法 I/R 后执行 stop-chain。当前仅 W0
-  replacement-plan/source-inventory 为 `IN_PROGRESS`；W1--W7 与 E0--E5 均保持 `LOCKED`，
-  registration `NOT_READY`，没有 ChronoTransport Job 或实验结果。
+- Superseding every older ChronoTransport implementation-status bullet below: non-I/R candidate
+  `6c3606cc5161d415909a42741b3bc402278bf332` implements W0--W6, including A1/A2, descriptor/import
+  integrity, real ActionFormer per-window loss, paired 4,200-update CT/matched-dense Stage C,
+  post-Stage-C Gate 3 and repository-owned official-population Gate 4. The explicit classification covers
+  65 tracked test/tool/script paths: 49 `REQUIRED`, 13 `OUT_OF_SCOPE`, three
+  `TEST_ONLY_NON_FORMAL`; all 25 matching tests are classified and 22 enter the required vector. Eighteen
+  changed/new files were SHA-256-identical between local and remote verification trees. The final remote
+  CPU matrix passed `441 passed, 1 skipped, 2 warnings in 968.62s`; r2 launcher syntax, remote py-compile
+  and the required C3 compatibility pair (`20 passed`) also passed. This is implementation evidence only.
+  W7 exact-byte independent Pro review and R-bound CUDA/Slurm precheck remain open; registration is
+  `NOT_READY`, E0--E5 remain `LOCKED`, and no ChronoTransport Job, Gate result, training result or
+  paper-usable number exists. Local pytest is not evidence because the Windows PyTorch import fails with
+  `WinError 1114`.
 - Gate-1 precheck path hardening is `tested_and_bounded_code_approved`: focused 1/1,
   registration/precheck 38 passed/1 protected xfail, Gate-1 hardening/cost 25/25, and independent
   verdict `APPROVE_GATE1_PRECHECK_PATH_HARDENING` for exact SHAs `0BE0EA8B...F76808` and

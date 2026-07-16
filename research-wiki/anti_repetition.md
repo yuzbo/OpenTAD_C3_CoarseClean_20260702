@@ -243,3 +243,28 @@ updated: 2026-07-16
     ordinal zero. Freeze required model/software only; each producer must bind the current process PID to a
     full observed UUID plus raw allocation fields, while `cuda:0` remains only the process-local execution
     address. A hash-only artifact without recoverable allocation bytes is insufficient.
+103. A batch-one ActionFormer action tensor may be normalized from `[1, T, L]` to `[T, L]` only after the
+    producer proves the leading dimension is exactly one. Generic squeezing can silently alter action
+    identity and invalidate the registered requested/executed-action hashes.
+104. Deferred CUDA-event stage timing must be flushed only after the registered outer invocation boundary
+    synchronization. A helper that synchronizes mid-forward changes the measured schedule and can manufacture
+    a false transport overhead or speedup even when its arithmetic is correct.
+105. Gate-4 energy evidence is a 10-Hz NVML trace over a long, complete official-population timed block.
+    Record requested/observed cadence and median/max sampling gaps; never relabel a sparse or
+    single-inference estimate as block energy, and never use energy to replace a primary Gate condition.
+106. The official AP mirror must preserve the repository evaluator's exact equal-score ordering, including
+    NumPy `argsort()[::-1]` quicksort behavior. Stable sorting, pre-aggregated per-video AP, or an approximate
+    evaluator can flip a bootstrap replicate and is not official metric evidence.
+107. Gate-4 margin is defined per matched invocation as
+    `margin_i = 0.40 * (dense_heavy_i - selected_heavy_i) - overhead_i`. Do not replace it with a difference
+    of arm-level p50s. The registered per-seed margin and CT-versus-static conditions remain hard conditions;
+    pooled success cannot hide a reversing seed.
+108. Formal precheck and producer must call the same config-override lock and compare the same canonical
+    bytes. Duplicated parsers or one-sided validation permit a checked configuration to differ from the one
+    actually executed.
+109. Media provenance must be checked through the retained no-follow descriptor both before decode and
+    immediately after decode. A path-only recheck can miss a swap during decoding and cannot prove that the
+    measured invocation consumed the registered bytes.
+110. Remote regression evidence is transferable to a local review candidate only after every changed/new
+    implementation file is compared by exact SHA-256. A passing test in a merely similar remote checkout is
+    not evidence for the candidate later pushed to GitHub.

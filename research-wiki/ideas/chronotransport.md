@@ -3,8 +3,8 @@ type: idea
 node_id: idea:chronotransport
 title: "ChronoTransport 动态特征刷新"
 stage: spec_approved
-outcome: bounded_appeal_pending_implementation_repair
-implementation_status: partial_repair_tested_registration_not_ready
+outcome: bounded_appeal_implementation_candidate_pending_review
+implementation_status: implemented_and_cpu_tested_pending_exact_byte_review
 registration_status: NOT_READY
 tags: ["feature-refresh", "transport", "parallel-route"]
 added: 2026-07-11
@@ -121,6 +121,21 @@ the scratch checkout was populated with its required `scripts/` and `docs/` file
 slice is remotely tested, but it does not upgrade the overall r2 status or unlock registration.
 
 # ChronoTransport 动态特征刷新
+
+## W3--W6 implementation candidate (2026-07-16)
+
+Non-I/R commit `6c3606cc5161d415909a42741b3bc402278bf332` closes the planned executable
+surfaces for filesystem/source/import identity, real ActionFormer batch-two per-window task loss,
+transactional paired Stage C and matched dense, post-Stage-C Gate 3, and repository-owned Gate 4.
+Gate 4 binds the official full-video population, matched D/C/S timing, deferred CUDA stage events,
+official equal-score AP semantics, unique-invocation metric/regret evidence, long-block 10-Hz NVML
+energy and the exact matched-invocation/per-seed hard conditions.
+
+The exact remote CPU candidate passed 441 tests with one protected CUDA skip; the r2 shell launchers,
+remote py-compile and 20 C3 compatibility tests also passed. This moves W3--W6 to `tested` as code
+contracts, not to scientific support. W7 remains `IN_PROGRESS`: the exact pushed bytes still require an
+independent Pro implementation verdict, and valid I/R plus R-bound CUDA/Slurm precheck do not yet exist.
+No formal job, Gate report, training, calibration, profiling result, mAP or latency claim was created.
 
 ## One-line thesis
 
