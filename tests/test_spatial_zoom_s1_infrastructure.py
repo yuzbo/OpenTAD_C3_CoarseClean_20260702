@@ -1188,6 +1188,79 @@ def test_result_evaluator_recomputes_ap_duration_and_boundary_metrics() -> None:
     assert shifted["boundary_error"]["start_mae_seconds"] > 0.0
 
 
+def test_result_evaluator_matches_official_zero_length_prediction_policy(
+    tmp_path: Path,
+) -> None:
+    annotation_path = tmp_path / "annotation.json"
+    prediction_path = tmp_path / "prediction.json"
+    annotation_path.write_text(
+        json.dumps(
+            {
+                "database": {
+                    "v1": {
+                        "subset": "training",
+                        "annotations": [{"label": "A", "segment": [0.0, 1.0]}],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    prediction_path.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "v1": [
+                        {"label": "A", "segment": [-0.0, 0.0], "score": 0.9},
+                        {"label": "A", "segment": [0.0, 1.0], "score": 0.8},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    corpus = DetectionCorpus.from_files(
+        ground_truth_path=annotation_path,
+        prediction_path=prediction_path,
+        subset="training",
+        video_ids=("v1",),
+    )
+    assert_official_evaluator_parity(corpus, tiou_thresholds=(0.5,))
+    map_at = _map_vector(
+        corpus,
+        video_sample=corpus.video_ids,
+        tiou_thresholds=(0.5,),
+        required_labels=("A",),
+    )
+    assert map_at[0] == pytest.approx(50.0)
+
+    for invalid_segment in ((1.0, 0.0), (0.0, float("nan"))):
+        prediction_path.write_text(
+            json.dumps(
+                {
+                    "results": {
+                        "v1": [
+                            {
+                                "label": "A",
+                                "segment": list(invalid_segment),
+                                "score": 0.9,
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="non-finite or invalid segment"):
+            DetectionCorpus.from_files(
+                ground_truth_path=annotation_path,
+                prediction_path=prediction_path,
+                subset="training",
+                video_ids=("v1",),
+            )
+
+
 def test_short_duration_ap_keeps_long_false_positives() -> None:
     corpus = DetectionCorpus(
         gt={

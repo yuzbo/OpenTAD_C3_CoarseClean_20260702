@@ -64,9 +64,10 @@ class DetectionCorpus:
                 raise ValueError("predictions contain a video outside the corpus")
             for rows in by_video.values():
                 for score, start, end in rows:
+                    # OpenTAD keeps zero-length proposals as zero-IoU false positives.
                     if not all(
                         math.isfinite(float(value)) for value in (score, start, end)
-                    ) or float(end) <= float(start):
+                    ) or float(end) < float(start):
                         raise ValueError(
                             "predictions contain a non-finite or invalid row"
                         )
@@ -139,7 +140,7 @@ class DetectionCorpus:
                 score = float(row.get("score", 0.0))
                 if (
                     not all(math.isfinite(value) for value in (start, end, score))
-                    or end <= start
+                    or end < start
                 ):
                     raise ValueError(
                         "prediction contains a non-finite or invalid segment"
