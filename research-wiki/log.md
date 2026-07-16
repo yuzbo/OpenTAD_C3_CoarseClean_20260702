@@ -218,3 +218,11 @@ append_only: true
   submission receipt (`80c230fe...`). Reordered environment activation before
   the first Python call and added a regression assertion; this launcher change
   requires one more clean commit/certificate/gate before any recovery matrix.
+- 2026-07-17 05:03+08:00: clean snapshot `04111ad` passed 67 remote tests and
+  issued campaign `e647d6feff89cfd7` (certificate SHA `b76fa4af...`). Gate
+  `1167507` failed in three seconds before preflight because direct `sbatch`
+  relocates `BASH_SOURCE` under `/var/spool/slurmd`, producing a false profile
+  code root. No test/profile opened. Updated both formal launchers to require
+  an explicit profile-source root and verify its certificate-bound commit and
+  clean Git state. The failed campaign is preserved; another clean
+  commit/certificate/gate is required before the matrix.

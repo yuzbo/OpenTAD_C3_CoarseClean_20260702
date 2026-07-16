@@ -6,7 +6,7 @@ fail() {
   exit 2
 }
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT}"
 TRAINING_ROOT="${SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 RUN_ROOT="${SPATIAL_ZOOM_S1_RUN_ROOT:?set SPATIAL_ZOOM_S1_RUN_ROOT}"
@@ -50,6 +50,8 @@ for path in "${MANIFEST}" "${ANNOTATION}" "${TEST_OPEN}" "${PROFILE_RECOVERY}" "
 done
 [[ -d "${TRAINING_ROOT}/.git" || -f "${TRAINING_ROOT}/.git" ]] || \
   fail "training source root is not a Git checkout: ${TRAINING_ROOT}"
+[[ -d "${ROOT}/.git" || -f "${ROOT}/.git" ]] || \
+  fail "profile source root is not a Git checkout: ${ROOT}"
 if command -v module >/dev/null 2>&1; then
   module load cuda/11.8
   module load miniforge3/24.11
@@ -58,6 +60,11 @@ fi
 source "${BASE}/conda_envs/opentad/bin/activate"
 
 TRAINING_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["training_code_commit"])' "${PROFILE_RECOVERY}")"
+PROFILE_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["profile_code_commit"])' "${PROFILE_RECOVERY}")"
+[[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${PROFILE_COMMIT}" ]] || \
+  fail "profile source root differs from the certificate-bound commit"
+[[ -z "$(git -C "${ROOT}" status --porcelain --untracked-files=all)" ]] || \
+  fail "profile source root must be clean"
 [[ "$(git -C "${TRAINING_ROOT}" rev-parse HEAD)" == "${TRAINING_COMMIT}" ]] || \
   fail "training source root differs from the certificate-bound commit"
 [[ -z "$(git -C "${TRAINING_ROOT}" status --porcelain --untracked-files=all)" ]] || \

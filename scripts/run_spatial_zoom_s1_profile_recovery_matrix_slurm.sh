@@ -6,7 +6,7 @@ fail() {
   exit 2
 }
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 PROFILE_RECOVERY="${SPATIAL_ZOOM_S1_PROFILE_RECOVERY:?set SPATIAL_ZOOM_S1_PROFILE_RECOVERY}"
 
@@ -19,6 +19,14 @@ if command -v module >/dev/null 2>&1; then
 fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
+
+PROFILE_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["profile_code_commit"])' "${PROFILE_RECOVERY}")"
+[[ -d "${ROOT}/.git" || -f "${ROOT}/.git" ]] || \
+  fail "profile source root is not a Git checkout: ${ROOT}"
+[[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${PROFILE_COMMIT}" ]] || \
+  fail "profile source root differs from the certificate-bound commit"
+[[ -z "$(git -C "${ROOT}" status --porcelain --untracked-files=all)" ]] || \
+  fail "profile source root must be clean"
 
 EXPECTED_ORDER="$(
   cd "${ROOT}"

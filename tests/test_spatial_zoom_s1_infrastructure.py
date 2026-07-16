@@ -380,6 +380,7 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
         encoding="utf-8"
     )
     assert "SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT" in post
+    assert "SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT" in post
     assert "SPATIAL_ZOOM_S1_PROFILE_RECOVERY" in post
     assert "SPATIAL_ZOOM_S1_PREFLIGHT_ONLY" in post
     assert "reuse validated test evidence" in post
@@ -398,6 +399,8 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     matrix = (
         ROOT / "scripts" / "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
     ).read_text(encoding="utf-8")
+    assert "SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT" in matrix
+    assert "profile source root differs from the certificate-bound commit" in matrix
     assert "256:3408 224:3409" in matrix
     assert "build_s1_profile_order" in matrix
     assert "CUDA_VISIBLE_DEVICES=" not in matrix

@@ -412,6 +412,21 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   authorize the matrix; another clean commit, recovery certificate, and GPU
   gate are required. S1 remains `experiment_running`, with no cost matrix,
   GO/KILL, S2, or Pro review.
+- Recovery-gate status at `2026-07-17T05:03+08:00`: clean snapshot `04111ad`
+  passed the remote focused suite (`67 passed`) and produced campaign
+  `e647d6feff89cfd7`, certificate SHA
+  `b76fa4afb9917452928612a9eeba38daa7152212eaf5efc63c9cd0a53fb766fc`.
+  Gate `1167507` activated the OpenTAD environment correctly but failed `2:0`
+  after three seconds, still before the Python preflight or any sealed-test or
+  profile access. Direct `sbatch` copies its script to `/var/spool/slurmd`, so
+  `BASH_SOURCE` incorrectly resolved the profile code root to the spool
+  directory. This would also affect the recovery-matrix launcher. Rather than
+  hide it in an unbound wrapper, both formal launchers now require an explicit
+  `SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT` and validate that checkout against the
+  certificate's `profile_code_commit` and clean Git state. Campaign `e647...`
+  remains failed infrastructure and cannot authorize a matrix. A new clean
+  commit, certificate, and no-open GPU gate are required; S1 stays
+  `experiment_running` with no GO/KILL, S2, or Pro review.
 
 ## Decision Boundary
 

@@ -67,8 +67,14 @@ max_chars: 8000
   Python because the launcher parsed that certificate before activating the
   OpenTAD environment. The failure log and self-hashed submission receipt are
   preserved, and no test/profile opened. A minimal ordering fix now activates
-  the environment before the first Python call and is regression-tested; a new
-  commit/certificate/gate is still required. No replacement matrix Job exists.
+  the environment before the first Python call and is regression-tested.
+  Commit `04111ad` passed `67` remote tests and campaign `e647d6feff89cfd7`
+  issued certificate SHA `b76fa4af...`; Gate `1167507` then failed before
+  preflight because direct `sbatch` execution relocates `BASH_SOURCE` to
+  `/var/spool/slurmd`, so the launcher derived the wrong code root. No test or
+  profile opened. Both gate and matrix launchers now require an explicit
+  profile-source root and verify its certificate-bound commit and clean Git
+  state. Another commit/certificate/gate is required; no matrix Job exists.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 
