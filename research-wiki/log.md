@@ -182,3 +182,14 @@ append_only: true
   test, is wrong. The started marker is retained and silent retry is forbidden
   pending an audited exposure-identity/recovery protocol. No GO/KILL or cost
   conclusion was issued.
+- 2026-07-17 03:40+08:00: implemented an immutable post-profile recovery
+  campaign without changing model/config/checkpoint/test semantics. Physical
+  window identity may repeat; loader exposure identity is unique and
+  ordinal-bound. The recovery certificate preserves and hashes the old failed
+  marker/log, enforces the exact 792/791/one-duplicate topology, permits only a
+  fixed post-processing Git path allowlist, and separates frozen training code
+  from repair code. The matrix launcher reuses the one validated test evidence
+  and executes the remaining cells once in frozen order on one allocation.
+  Local focused tests report `44 passed, 1 skipped`. Deployment remains blocked
+  until this implementation is committed, pushed, reconstructed as a clean
+  remote snapshot, and passes its formal CUDA preflight.

@@ -44,6 +44,7 @@ from tools.bata.spatial_zoom_s1_cost import (
     S1_PROFILE_PROTOCOL,
     build_profile_summary,
     compare_resolution_profiles,
+    make_profile_exposure_id,
 )
 from tools.bata.run_spatial_zoom_s1_precheck import (
     S1_EXPECTED_UNUSED_TRAINABLE_PARAMETERS,
@@ -57,10 +58,18 @@ from tools.bata.run_spatial_zoom_s1_precheck import (
     validate_precheck_certificate,
 )
 from tools.bata.profile_spatial_zoom_s1 import (
+    _dataset_exposure_topology,
     _sample_identity,
     create_profile_attempt_marker,
     validate_profile_attempt_marker,
     validate_profile_order_ready,
+)
+from tools.bata.spatial_zoom_s1_profile_recovery import (
+    S1_PROFILE_FAILURE_SIGNATURE,
+    S1_PROFILE_RECOVERY_REASON,
+    S1_PROFILE_RECOVERY_SCHEMA,
+    profile_campaign_prefix,
+    validate_profile_recovery_certificate,
 )
 from tools.bata.select_spatial_zoom_s1_checkpoint import (
     select_s1_checkpoint,
@@ -365,6 +374,19 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
         assert "--rdzv_backend=c10d" in text
         assert "--rdzv_endpoint=127.0.0.1:0" in text
         assert "${SLURM_JOB_ID}" in text
+    post = (ROOT / "scripts" / "run_spatial_zoom_s1_test_profile_slurm.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT" in post
+    assert "SPATIAL_ZOOM_S1_PROFILE_RECOVERY" in post
+    assert "reuse validated test evidence" in post
+    assert 'cd "${TRAINING_ROOT}"' in post
+    matrix = (
+        ROOT / "scripts" / "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
+    ).read_text(encoding="utf-8")
+    assert "256:3408 224:3409" in matrix
+    assert "build_s1_profile_order" in matrix
+    assert "CUDA_VISIBLE_DEVICES=" not in matrix
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:
@@ -620,6 +642,106 @@ def test_profile_attempt_marker_is_atomic_and_self_hashed(tmp_path: Path) -> Non
         create_profile_attempt_marker(path, {"resolution": 160, "seed": 3407})
 
 
+def test_profile_recovery_certificate_preserves_failed_attempt_and_scope(
+    tmp_path: Path,
+) -> None:
+    canonical_root = (tmp_path / "canonical").resolve()
+    binding = {
+        "code_commit": "a" * 40,
+        "experiment_namespace": "s1-experiment",
+        "canonical_experiment_root": str(canonical_root),
+        "manifest_sha256": "b" * 64,
+        "protocol_fingerprint": "c" * 64,
+        "precheck_file_sha256": "d" * 64,
+        "precheck_sha256": "e" * 64,
+        "pretrained_checkpoint_sha256": "f" * 64,
+    }
+    marker_path = tmp_path / "failed.started.json"
+    marker = {
+        "schema_version": "spatial_zoom_s1_profile_attempt_v4",
+        "resolution": int(build_s1_profile_order()[0]["resolution"]),
+        "seed": int(build_s1_profile_order()[0]["seed"]),
+        "code_commit": binding["code_commit"],
+        "experiment_namespace": binding["experiment_namespace"],
+        "canonical_experiment_root": binding["canonical_experiment_root"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "precheck_file_sha256": binding["precheck_file_sha256"],
+        "precheck_sha256": binding["precheck_sha256"],
+        "profile_order_ordinal": 0,
+        "test_open_certificate_sha256": "1" * 64,
+    }
+    marker["marker_sha256"] = canonical_sha256(marker)
+    marker_path.write_text(json.dumps(marker, indent=2, sort_keys=True) + "\n")
+    failure_log = tmp_path / "slurm.err"
+    failure_log.write_text(S1_PROFILE_FAILURE_SIGNATURE + "\n", encoding="utf-8")
+    changed_paths = (
+        "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
+        "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
+        "tests/test_spatial_zoom_s1_infrastructure.py",
+        "tools/bata/analyze_spatial_zoom_s1_results.py",
+        "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
+        "tools/bata/preflight_spatial_zoom_s1_profile.py",
+        "tools/bata/profile_spatial_zoom_s1.py",
+        "tools/bata/spatial_zoom_s1_cost.py",
+        "tools/bata/spatial_zoom_s1_profile_recovery.py",
+    )
+    basis = {
+        "schema_version": S1_PROFILE_RECOVERY_SCHEMA,
+        "reason": S1_PROFILE_RECOVERY_REASON,
+        "failure_signature": S1_PROFILE_FAILURE_SIGNATURE,
+        "failed_job_id": "1167257",
+        "training_code_commit": binding["code_commit"],
+        "profile_code_commit": "2" * 40,
+        "experiment_namespace": binding["experiment_namespace"],
+        "canonical_experiment_root": binding["canonical_experiment_root"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "protocol_fingerprint": binding["protocol_fingerprint"],
+        "precheck_file_sha256": binding["precheck_file_sha256"],
+        "precheck_sha256": binding["precheck_sha256"],
+        "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
+        "test_open_certificate_sha256": marker["test_open_certificate_sha256"],
+        "superseded_marker_path": str(marker_path.resolve()),
+        "superseded_marker_file_sha256": sha256_file(marker_path),
+        "superseded_marker_sha256": marker["marker_sha256"],
+        "failure_log_path": str(failure_log.resolve()),
+        "failure_log_sha256": sha256_file(failure_log),
+        "expected_loader_exposure_count": 792,
+        "expected_physical_window_count": 791,
+        "expected_duplicate_physical_window_ids": ["video_test_0001431:7680"],
+        "changed_files": [
+            {"status": "M", "path": path, "file_sha256": "3" * 64}
+            for path in changed_paths
+        ],
+        "repair_scope": "profile_identity_and_postprocessing_only",
+        "preserve_all_loader_exposures": True,
+        "preserve_superseded_attempt": True,
+        "reuse_valid_test_evidence": True,
+    }
+    campaign_id = canonical_sha256(basis)[:16]
+    certificate = {
+        **basis,
+        "campaign_id": campaign_id,
+        "campaign_root": str(canonical_root / "profile_campaigns" / campaign_id),
+    }
+    certificate["certificate_sha256"] = canonical_sha256(certificate)
+    checked = validate_profile_recovery_certificate(
+        certificate, binding=binding, verify_checkout=False
+    )
+    prefix = profile_campaign_prefix(checked, resolution=160, seed=3407)
+    assert checked["preserve_superseded_attempt"] is True
+    assert prefix.name == "dense160_seed3407"
+    assert marker_path.is_file()
+
+    forged = copy.deepcopy(certificate)
+    forged["expected_physical_window_count"] = 790
+    forged.pop("certificate_sha256")
+    forged["certificate_sha256"] = canonical_sha256(forged)
+    with pytest.raises(ValueError, match="campaign identity|exposure topology"):
+        validate_profile_recovery_certificate(
+            forged, binding=binding, verify_checkout=False
+        )
+
+
 def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
     tmp_path: Path,
 ) -> None:
@@ -634,6 +756,13 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
         "precheck_sha256": "b" * 64,
     }
     first, second = order[:2]
+    campaign_root = tmp_path / "canonical" / "profile_campaigns" / "campaign"
+    recovery_kwargs = {
+        "campaign_root": campaign_root,
+        "profile_code_commit": "c" * 40,
+        "profile_recovery_certificate_sha256": "d" * 64,
+        "profile_recovery_campaign_id": "campaign",
+    }
     observed, order_sha = validate_profile_order_ready(
         manifest=manifest,
         binding=binding,
@@ -641,15 +770,15 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
         seed=int(first["seed"]),
         hardware_fingerprint="hardware",
         software_fingerprint="software",
+        **recovery_kwargs,
     )
     assert observed == first
     assert order_sha == canonical_sha256(order)
 
     future_prefix = (
-        Path(binding["canonical_experiment_root"])
+        campaign_root
         / f"dense{second['resolution']}"
         / f"seed{second['seed']}"
-        / "profile"
         / f"dense{second['resolution']}_seed{second['seed']}"
     )
     future_marker = future_prefix.with_suffix(".started.json")
@@ -663,6 +792,7 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
             seed=int(first["seed"]),
             hardware_fingerprint="hardware",
             software_fingerprint="software",
+            **recovery_kwargs,
         )
     future_marker.unlink()
     with pytest.raises(RuntimeError, match="requires completed cell ordinal 0"):
@@ -673,12 +803,12 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
             seed=int(second["seed"]),
             hardware_fingerprint="hardware",
             software_fingerprint="software",
+            **recovery_kwargs,
         )
     current_prefix = (
-        Path(binding["canonical_experiment_root"])
+        campaign_root
         / f"dense{first['resolution']}"
         / f"seed{first['seed']}"
-        / "profile"
         / f"dense{first['resolution']}_seed{first['seed']}"
     )
     current_marker = current_prefix.with_suffix(".started.json")
@@ -692,6 +822,7 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
             seed=int(first["seed"]),
             hardware_fingerprint=None,
             software_fingerprint=None,
+            **recovery_kwargs,
         )
 
 
@@ -788,13 +919,12 @@ def test_s1_runtime_components_receive_copies_of_the_bound_config(
     assert "build_optimizer(copy.deepcopy(cfg.optimizer)" in train_source
     assert "copy.deepcopy(cfg.scheduler), optimizer" in train_source
     assert "build_s1_checkpoint_metadata(\n                        cfg," in train_source
-    test_engine_source = (
-        ROOT / "opentad" / "cores" / "test_engine.py"
-    ).read_text(encoding="utf-8")
+    test_engine_source = (ROOT / "opentad" / "cores" / "test_engine.py").read_text(
+        encoding="utf-8"
+    )
     assert "inference_cfg = copy.deepcopy(cfg.inference)" in test_engine_source
     assert (
-        "post_processing_cfg = copy.deepcopy(cfg.post_processing)"
-        in test_engine_source
+        "post_processing_cfg = copy.deepcopy(cfg.post_processing)" in test_engine_source
     )
     assert 'cfg.inference["folder"] =' not in test_engine_source
     assert "cfg.post_processing.sliding_window =" not in test_engine_source
@@ -1008,9 +1138,9 @@ def test_formal_s1_persists_only_gate_eligible_checkpoints() -> None:
 
     train_source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
     assert "should_save_s1_checkpoint(" in train_source
-    launcher = (
-        ROOT / "scripts" / "run_spatial_zoom_s1_train_slurm.sh"
-    ).read_text(encoding="utf-8")
+    launcher = (ROOT / "scripts" / "run_spatial_zoom_s1_train_slurm.sh").read_text(
+        encoding="utf-8"
+    )
     assert S1_MIN_FREE_STORAGE_BYTES == 96 * 1024**3
     assert "S1_MIN_FREE_STORAGE_BYTES" in launcher
     assert 'df -Pk "${STORAGE_PROBE_PATH}"' in launcher
@@ -1397,7 +1527,9 @@ def test_bayesian_bootstrap_keeps_rare_class_support_without_rejection() -> None
         assert np.isfinite(metric).all()
 
 
-def test_deterministic_temporal_interpolation_matches_linear_forward_and_backward() -> None:
+def test_deterministic_temporal_interpolation_matches_linear_forward_and_backward() -> (
+    None
+):
     if sys.platform == "win32":
         pytest.skip("the project Torch DLL runtime is unavailable on this Windows host")
     try:
@@ -1428,18 +1560,18 @@ def test_deterministic_temporal_interpolation_matches_linear_forward_and_backwar
 def test_formal_s1_entrypoints_request_strict_determinism() -> None:
     train_source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
     test_source = (ROOT / "tools" / "test.py").read_text(encoding="utf-8")
-    profile_source = (
-        ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py"
-    ).read_text(encoding="utf-8")
+    profile_source = (ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py").read_text(
+        encoding="utf-8"
+    )
     assert "deterministic_warn_only=s1_binding is None" in train_source
     assert "deterministic_warn_only=s1_binding is None" in test_source
     assert "set_seed(int(args.seed), deterministic_warn_only=False)" in profile_source
 
 
 def test_full_precheck_preserves_prediction_shape_evidence_before_release() -> None:
-    source = (
-        ROOT / "tools" / "bata" / "run_spatial_zoom_s1_precheck.py"
-    ).read_text(encoding="utf-8")
+    source = (ROOT / "tools" / "bata" / "run_spatial_zoom_s1_precheck.py").read_text(
+        encoding="utf-8"
+    )
     capture = source.index("prediction_container_length = len(predictions)")
     release = source.index("del predictions", capture)
     publish = source.index(
@@ -1522,6 +1654,11 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         for row in profile_order
         if int(row["resolution"]) == int(resolution) and int(row["seed"]) == int(seed)
     )
+    physical_manifest = ["video-0:0", "video-1:0"]
+    exposure_manifest = [
+        make_profile_exposure_id(physical_id, ordinal)
+        for ordinal, physical_id in enumerate(physical_manifest)
+    ]
     return {
         "method": f"dense{resolution}",
         "resolution": resolution,
@@ -1547,7 +1684,12 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "formal_profile": False,
         "split": "test",
         "seed": seed,
-        "sample_manifest_sha256": canonical_sha256(["video-0:0", "video-1:0"]),
+        "sample_manifest_sha256": canonical_sha256(exposure_manifest),
+        "physical_window_manifest_sha256": canonical_sha256(physical_manifest),
+        "loader_exposure_count": 2,
+        "physical_window_count": 2,
+        "duplicate_physical_window_exposure_count": 0,
+        "max_physical_window_multiplicity": 1,
         "test_open_certificate_sha256": "test-open",
         "test_evidence_sha256": "test-evidence",
         "test_open_marker_sha256": "test-marker",
@@ -1565,10 +1707,16 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "profile_order_seed": S1_PROFILE_ORDER_SEED,
         "profile_order_sha256": canonical_sha256(profile_order),
         "profile_order_ordinal": int(profile_order_entry["ordinal"]),
+        "profile_code_commit": "f" * 40,
+        "profile_recovery_certificate_path": "/s1/canonical/recovery.json",
+        "profile_recovery_certificate_file_sha256": "recovery-file",
+        "profile_recovery_certificate_sha256": "recovery-internal",
+        "profile_recovery_campaign_id": "campaign",
     }
 
 
 def _profile_sample(scale: float, index: int) -> dict:
+    physical_window_id = f"video-{index}:0"
     return {
         "input_pipeline_serial_ms": 20.0 * scale,
         "h2d_ms": 5.0 * scale,
@@ -1583,11 +1731,124 @@ def _profile_sample(scale: float, index: int) -> dict:
         "final_video_nms_ms": 2.0 * scale,
         "end_to_end_serial_ms": 142.0 * scale,
         "video_id": f"video-{index}",
-        "window_id": f"video-{index}:0",
+        "physical_window_id": physical_window_id,
+        "loader_ordinal": index,
+        "window_id": make_profile_exposure_id(physical_window_id, index),
         "peak_gpu_allocated_mb": 4096.0 * scale,
         "peak_gpu_reserved_mb": 5120.0 * scale,
         "gpu_energy_j": 30.0 * scale,
     }
+
+
+def test_profile_identity_keeps_duplicate_physical_windows_as_unique_exposures() -> (
+    None
+):
+    batch = {"metas": [{"video_name": "video", "window_start_frame": 7680}]}
+    first = _sample_identity(batch, 0)
+    second = _sample_identity(batch, 1)
+    assert first["physical_window_id"] == second["physical_window_id"]
+    assert first["window_id"] != second["window_id"]
+
+    dataset = SimpleNamespace(
+        data_list=[
+            ["video", {}, {}, np.asarray([7680, 7684])],
+            ["video", {}, {}, np.asarray([7680, 7684])],
+        ]
+    )
+    topology = _dataset_exposure_topology(dataset)
+    assert topology == {
+        "physical_manifest": ["video:7680", "video:7680"],
+        "loader_exposure_count": 2,
+        "physical_window_count": 1,
+        "duplicate_physical_window_exposure_count": 1,
+        "max_physical_window_multiplicity": 2,
+        "duplicate_physical_window_ids": ["video:7680"],
+    }
+
+    samples = [_profile_sample(1.0, 0), _profile_sample(1.1, 1)]
+    samples[1].update(
+        {
+            "video_id": samples[0]["video_id"],
+            "physical_window_id": samples[0]["physical_window_id"],
+            "window_id": make_profile_exposure_id(samples[0]["physical_window_id"], 1),
+        }
+    )
+    metadata = _profile_metadata(160)
+    physical_manifest = [sample["physical_window_id"] for sample in samples]
+    metadata.update(
+        {
+            "sample_manifest_sha256": canonical_sha256(
+                [sample["window_id"] for sample in samples]
+            ),
+            "physical_window_manifest_sha256": canonical_sha256(physical_manifest),
+            "physical_window_count": 1,
+            "duplicate_physical_window_exposure_count": 1,
+            "max_physical_window_multiplicity": 2,
+            "video_count": 1,
+        }
+    )
+    report = build_profile_summary(samples, metadata=metadata)
+    assert report["sample_count"] == 2
+    assert report["physical_window_count"] == 1
+
+
+def test_formal_profile_accepts_all_exposures_with_one_physical_duplicate() -> None:
+    samples = [_profile_sample(1.0, index) for index in range(200)]
+    samples[-1].update(
+        {
+            "video_id": samples[0]["video_id"],
+            "physical_window_id": samples[0]["physical_window_id"],
+            "window_id": make_profile_exposure_id(
+                samples[0]["physical_window_id"], 199
+            ),
+        }
+    )
+    metadata = _profile_metadata(160)
+    metadata.update(
+        {
+            "formal_profile": True,
+            "warmup_samples": 50,
+            "config_commit": "c" * 40,
+            "profile_code_commit": "e" * 40,
+            "video_count": 199,
+            "sample_manifest_sha256": canonical_sha256(
+                [sample["window_id"] for sample in samples]
+            ),
+            "physical_window_manifest_sha256": canonical_sha256(
+                [sample["physical_window_id"] for sample in samples]
+            ),
+            "loader_exposure_count": 200,
+            "physical_window_count": 199,
+            "duplicate_physical_window_exposure_count": 1,
+            "max_physical_window_multiplicity": 2,
+        }
+    )
+    for key in (
+        "protocol_fingerprint",
+        "manifest_sha256",
+        "checkpoint_sha256",
+        "pretrained_checkpoint_sha256",
+        "test_open_certificate_sha256",
+        "test_evidence_sha256",
+        "test_open_marker_sha256",
+        "precheck_file_sha256",
+        "precheck_sha256",
+        "profile_attempt_marker_file_sha256",
+        "profile_attempt_marker_sha256",
+        "profile_recovery_certificate_file_sha256",
+        "profile_recovery_certificate_sha256",
+    ):
+        metadata[key] = "d" * 64
+    report = build_profile_summary(
+        samples,
+        metadata=metadata,
+        power_trace=[
+            {"timestamp_ms": 0.0, "power_w": 200.0},
+            {"timestamp_ms": 20.0, "power_w": 201.0},
+        ],
+    )
+    assert report["sample_count"] == 200
+    assert report["physical_window_count"] == 199
 
 
 def test_full_stack_profile_requires_trained_checkpoint_and_matched_protocol() -> None:
@@ -1652,6 +1913,13 @@ def test_formal_profile_rejects_sparse_power_trace_and_missing_window_identity()
             "sample_manifest_sha256": canonical_sha256(
                 [sample["window_id"] for sample in samples]
             ),
+            "physical_window_manifest_sha256": canonical_sha256(
+                [sample["physical_window_id"] for sample in samples]
+            ),
+            "loader_exposure_count": 200,
+            "physical_window_count": 200,
+            "duplicate_physical_window_exposure_count": 0,
+            "max_physical_window_multiplicity": 1,
         }
     )
     for key in (
@@ -1666,6 +1934,8 @@ def test_formal_profile_rejects_sparse_power_trace_and_missing_window_identity()
         "precheck_sha256",
         "profile_attempt_marker_file_sha256",
         "profile_attempt_marker_sha256",
+        "profile_recovery_certificate_file_sha256",
+        "profile_recovery_certificate_sha256",
     ):
         metadata[key] = "d" * 64
     with pytest.raises(ValueError, match="too sparse"):

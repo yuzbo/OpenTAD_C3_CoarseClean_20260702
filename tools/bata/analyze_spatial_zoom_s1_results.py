@@ -28,10 +28,13 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     sha256_file,
     validate_s1_manifest,
 )
+from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
+    load_profile_recovery_certificate,
+)
 
 Segment = tuple[float, float]
 Prediction = tuple[float, float, float]
-S1_FORMAL_REPORT_SCHEMA = "spatial_zoom_s1_formal_result_report_v2"
+S1_FORMAL_REPORT_SCHEMA = "spatial_zoom_s1_formal_result_report_v3"
 
 
 @dataclass(frozen=True)
@@ -538,9 +541,7 @@ def _paired_bayesian_weights(
     if int(replicates) <= 1:
         raise ValueError("S1 Bayesian bootstrap requires at least two replicates")
     rng = np.random.default_rng(int(seed))
-    weights = rng.exponential(
-        scale=1.0, size=(int(replicates), len(corpus.video_ids))
-    )
+    weights = rng.exponential(scale=1.0, size=(int(replicates), len(corpus.video_ids)))
     weights /= np.mean(weights, axis=1, keepdims=True)
     if not np.isfinite(weights).all() or np.any(weights <= 0.0):
         raise RuntimeError("S1 Bayesian bootstrap generated invalid video weights")
@@ -665,6 +666,11 @@ def _assert_global_profile_matrix_comparability(
         "split",
         "sample_count",
         "sample_manifest_sha256",
+        "physical_window_manifest_sha256",
+        "loader_exposure_count",
+        "physical_window_count",
+        "duplicate_physical_window_exposure_count",
+        "max_physical_window_multiplicity",
         "test_open_certificate_sha256",
         "precheck_file_sha256",
         "precheck_sha256",
@@ -675,6 +681,11 @@ def _assert_global_profile_matrix_comparability(
         "result_finalizer",
         "profile_order_seed",
         "profile_order_sha256",
+        "profile_code_commit",
+        "profile_recovery_certificate_path",
+        "profile_recovery_certificate_file_sha256",
+        "profile_recovery_certificate_sha256",
+        "profile_recovery_campaign_id",
     )
     for key in globally_fixed:
         values = {
@@ -1115,11 +1126,16 @@ def _load_run_descriptor(
         "profile_summary_path",
         "profile_summary_sha256",
         "profile_summary_internal_sha256",
+        "profile_samples_path",
+        "profile_samples_sha256",
+        "profile_power_path",
+        "profile_power_sha256",
         "ground_truth_path",
         "ground_truth_sha256",
         "config_path",
         "resolved_config_sha256",
         "code_commit",
+        "profile_code_commit",
         "experiment_namespace",
         "canonical_experiment_root",
         "precheck_file_sha256",
@@ -1131,11 +1147,15 @@ def _load_run_descriptor(
         "profile_order_seed",
         "profile_order_sha256",
         "profile_order_ordinal",
+        "profile_recovery_certificate_path",
+        "profile_recovery_certificate_file_sha256",
+        "profile_recovery_certificate_sha256",
+        "profile_recovery_campaign_id",
     )
     missing = [key for key in required if key not in descriptor]
     if missing:
         raise ValueError(f"S1 run descriptor {path} is missing {missing}")
-    if descriptor["schema_version"] != "spatial_zoom_s1_run_v4":
+    if descriptor["schema_version"] != "spatial_zoom_s1_run_v5":
         raise ValueError("unsupported S1 run descriptor schema")
     if descriptor["manifest_sha256"] != manifest["manifest_sha256"]:
         raise ValueError("S1 run descriptor uses a different manifest")
@@ -1149,9 +1169,15 @@ def _load_run_descriptor(
         ("test_open_marker_path", "test_open_marker_file_sha256"),
         ("prediction_path", "prediction_sha256"),
         ("profile_summary_path", "profile_summary_sha256"),
+        ("profile_samples_path", "profile_samples_sha256"),
+        ("profile_power_path", "profile_power_sha256"),
         (
             "profile_attempt_marker_path",
             "profile_attempt_marker_file_sha256",
+        ),
+        (
+            "profile_recovery_certificate_path",
+            "profile_recovery_certificate_file_sha256",
         ),
         ("ground_truth_path", "ground_truth_sha256"),
     )
@@ -1182,6 +1208,19 @@ def _load_run_descriptor(
         raise RuntimeError("formal S1 analysis requires the bound full precheck")
     if descriptor["code_commit"] != binding["code_commit"]:
         raise ValueError("S1 run descriptor Git commit mismatch")
+    recovery = load_profile_recovery_certificate(
+        descriptor["profile_recovery_certificate_path"],
+        binding=binding,
+        verify_checkout=True,
+    )
+    recovery_expected = {
+        "profile_code_commit": recovery["profile_code_commit"],
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
+    }
+    for key, value in recovery_expected.items():
+        if descriptor.get(key) != value:
+            raise ValueError(f"S1 run descriptor {key} mismatch")
     profile_order = build_s1_profile_order()
     profile_order_entry = next(
         row
@@ -1253,6 +1292,11 @@ def _load_run_descriptor(
         raise ValueError("S1 descriptor profile schema mismatch")
     if profile["profile_sha256"] != descriptor["profile_summary_internal_sha256"]:
         raise ValueError("S1 profile internal identity mismatch")
+    if (
+        profile["sample_trace_file_sha256"] != descriptor["profile_samples_sha256"]
+        or profile["power_trace_file_sha256"] != descriptor["profile_power_sha256"]
+    ):
+        raise ValueError("S1 descriptor profile trace identity mismatch")
     profile_expected = {
         "resolution": int(descriptor["resolution"]),
         "seed": int(descriptor["seed"]),
@@ -1265,6 +1309,7 @@ def _load_run_descriptor(
         "test_evidence_sha256": descriptor["test_evidence_sha256"],
         "test_open_marker_sha256": descriptor["test_open_marker_sha256"],
         "config_commit": binding["code_commit"],
+        "profile_code_commit": recovery["profile_code_commit"],
         "experiment_namespace": binding["experiment_namespace"],
         "canonical_experiment_root": binding["canonical_experiment_root"],
         "precheck_file_sha256": binding["precheck_file_sha256"],
@@ -1277,6 +1322,14 @@ def _load_run_descriptor(
             "profile_attempt_marker_file_sha256"
         ],
         "profile_attempt_marker_sha256": descriptor["profile_attempt_marker_sha256"],
+        "profile_recovery_certificate_path": str(
+            Path(descriptor["profile_recovery_certificate_path"]).resolve()
+        ),
+        "profile_recovery_certificate_file_sha256": descriptor[
+            "profile_recovery_certificate_file_sha256"
+        ],
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
         **expected_profile_order,
         "trained_checkpoint": True,
     }
@@ -1291,6 +1344,7 @@ def _load_run_descriptor(
         "seed": int(descriptor["seed"]),
         "bound_config_sha256": descriptor["resolved_config_sha256"],
         "code_commit": binding["code_commit"],
+        "profile_code_commit": recovery["profile_code_commit"],
         "experiment_namespace": binding["experiment_namespace"],
         "canonical_experiment_root": binding["canonical_experiment_root"],
         "protocol_fingerprint": binding["protocol_fingerprint"],
@@ -1307,6 +1361,14 @@ def _load_run_descriptor(
         "canonical_output_prefix": str(
             profile_path.with_name(profile_path.name[: -len(".summary.json")])
         ),
+        "profile_recovery_certificate_path": str(
+            Path(descriptor["profile_recovery_certificate_path"]).resolve()
+        ),
+        "profile_recovery_certificate_file_sha256": descriptor[
+            "profile_recovery_certificate_file_sha256"
+        ],
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
     }
     for key, expected in marker_expected.items():
         if profile_attempt_marker.get(key) != expected:
@@ -1350,10 +1412,12 @@ def build_formal_s1_result_report(
         )
         for path in resolved_descriptors
     ]
-    from tools.bata.spatial_zoom_s1_training import require_clean_git_checkout
-
     code_commit = _single_run_value(runs, "code_commit")
-    require_clean_git_checkout(expected_commit=code_commit)
+    profile_code_commit = _single_run_value(runs, "profile_code_commit")
+    if profile_code_commit == code_commit:
+        raise ValueError("S1 recovery analysis did not separate training/profile code")
+    _single_run_value(runs, "profile_recovery_certificate_sha256")
+    _single_run_value(runs, "profile_recovery_campaign_id")
     quartiles = manifest["duration_quartiles_seconds"]
     core_report = aggregate_s1_runs(
         runs,
@@ -1380,6 +1444,13 @@ def build_formal_s1_result_report(
         "ground_truth_path": str(ground_truth_path),
         "ground_truth_sha256": sha256_file(ground_truth_path),
         "code_commit": code_commit,
+        "profile_code_commit": profile_code_commit,
+        "profile_recovery_certificate_sha256": _single_run_value(
+            runs, "profile_recovery_certificate_sha256"
+        ),
+        "profile_recovery_campaign_id": _single_run_value(
+            runs, "profile_recovery_campaign_id"
+        ),
         "experiment_namespace": _single_run_value(runs, "experiment_namespace"),
         "canonical_experiment_root": _single_run_value(
             runs, "canonical_experiment_root"

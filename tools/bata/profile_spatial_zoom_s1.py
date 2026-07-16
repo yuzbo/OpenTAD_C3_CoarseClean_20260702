@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -34,8 +35,13 @@ from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
     S1_PROFILE_PROTOCOL,
     build_profile_summary,
     compare_resolution_profiles,
+    make_profile_exposure_id,
     validate_profile_summary,
     write_profile_summary,
+)
+from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
+    load_profile_recovery_certificate,
+    profile_campaign_prefix,
 )
 from tools.bata.validate_spatial_zoom_s1 import validate_config_matrix  # noqa: E402
 from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
@@ -46,13 +52,12 @@ from tools.bata.spatial_zoom_s1_evidence import (  # noqa: E402
     validate_s1_test_evidence,
 )
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
-    require_clean_git_checkout,
     require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
 )
 
-S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v4"
+S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v5"
 
 
 def _canonical_hash(value: Any) -> str:
@@ -94,6 +99,10 @@ def validate_profile_order_ready(
     seed: int,
     hardware_fingerprint: str | None,
     software_fingerprint: str | None,
+    campaign_root: str | Path,
+    profile_code_commit: str,
+    profile_recovery_certificate_sha256: str,
+    profile_recovery_campaign_id: str,
 ) -> tuple[dict[str, int], str]:
     order = build_s1_profile_order()
     if manifest.get("profile_matrix_order") != order:
@@ -106,13 +115,12 @@ def validate_profile_order_ready(
     if len(matches) != 1:
         raise ValueError("S1 profile cell has no unique frozen schedule ordinal")
     current = matches[0]
-    canonical_root = Path(binding["canonical_experiment_root"])
+    campaign_root = Path(campaign_root).resolve()
     for row in order:
         prefix = (
-            canonical_root
+            campaign_root
             / f"dense{int(row['resolution'])}"
             / f"seed{int(row['seed'])}"
-            / "profile"
             / f"dense{int(row['resolution'])}_seed{int(row['seed'])}"
         )
         marker_path = prefix.with_suffix(".started.json")
@@ -140,6 +148,11 @@ def validate_profile_order_ready(
                 "precheck_file_sha256": binding["precheck_file_sha256"],
                 "precheck_sha256": binding["precheck_sha256"],
                 "profile_order_ordinal": ordinal,
+                "profile_code_commit": str(profile_code_commit),
+                "profile_recovery_certificate_sha256": str(
+                    profile_recovery_certificate_sha256
+                ),
+                "profile_recovery_campaign_id": str(profile_recovery_campaign_id),
             }
             if hardware_fingerprint is not None:
                 expected["hardware_fingerprint"] = hardware_fingerprint
@@ -153,6 +166,10 @@ def validate_profile_order_ready(
             if sha256_file(power_path) != prior["power_trace_file_sha256"]:
                 raise ValueError(
                     f"completed S1 profile ordinal {ordinal} power trace mismatch"
+                )
+            if sha256_file(samples_path) != prior["sample_trace_file_sha256"]:
+                raise ValueError(
+                    f"completed S1 profile ordinal {ordinal} sample trace mismatch"
                 )
         elif ordinal == int(current["ordinal"]) and (
             marker_path.exists()
@@ -498,7 +515,7 @@ def _dataset_video_ids(dataset: Any) -> set[str]:
     return {str(row[0]) for row in dataset.data_list}
 
 
-def _sample_identity(cpu_batch: Mapping[str, Any], ordinal: int) -> tuple[str, str]:
+def _sample_identity(cpu_batch: Mapping[str, Any], ordinal: int) -> dict[str, Any]:
     metas = cpu_batch.get("metas")
     if not isinstance(metas, list) or len(metas) != 1:
         raise ValueError("formal S1 profile requires batch-one metadata")
@@ -509,8 +526,35 @@ def _sample_identity(cpu_batch: Mapping[str, Any], ordinal: int) -> tuple[str, s
         raise ValueError(
             f"formal S1 profile window {ordinal} has no physical start-frame identity"
         )
-    window_id = f"{video_id}:{int(start)}"
-    return video_id, window_id
+    physical_window_id = f"{video_id}:{int(start)}"
+    return {
+        "video_id": video_id,
+        "physical_window_id": physical_window_id,
+        "loader_ordinal": int(ordinal),
+        "window_id": make_profile_exposure_id(physical_window_id, int(ordinal)),
+    }
+
+
+def _dataset_exposure_topology(dataset: Any) -> dict[str, Any]:
+    physical_manifest = []
+    for ordinal, row in enumerate(dataset.data_list):
+        if not isinstance(row, (list, tuple)) or len(row) < 4:
+            raise ValueError(f"formal S1 dataset exposure {ordinal} is malformed")
+        centers = row[3]
+        if len(centers) == 0:
+            raise ValueError(f"formal S1 dataset exposure {ordinal} is empty")
+        physical_manifest.append(f"{str(row[0])}:{int(centers[0])}")
+    counts = Counter(physical_manifest)
+    duplicates = sorted(key for key, count in counts.items() if count > 1)
+    return {
+        "physical_manifest": physical_manifest,
+        "loader_exposure_count": len(physical_manifest),
+        "physical_window_count": len(counts),
+        "duplicate_physical_window_exposure_count": len(physical_manifest)
+        - len(counts),
+        "max_physical_window_multiplicity": max(counts.values()),
+        "duplicate_physical_window_ids": duplicates,
+    }
 
 
 def profile(args: argparse.Namespace) -> dict[str, Any]:
@@ -558,13 +602,18 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError(
             "formal S1 profile requires the bound full precheck certificate"
         )
-    require_clean_git_checkout(expected_commit=binding["code_commit"])
+    if not args.profile_recovery_certificate:
+        raise ValueError("formal S1 profile requires a recovery campaign certificate")
+    recovery_path = Path(args.profile_recovery_certificate).resolve()
+    recovery = load_profile_recovery_certificate(
+        recovery_path,
+        binding=binding,
+        verify_checkout=True,
+    )
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
-    canonical_prefix = (
-        Path(binding["work_dir"])
-        / "profile"
-        / f"dense{resolution}_seed{int(args.seed)}"
-    ).resolve()
+    canonical_prefix = profile_campaign_prefix(
+        recovery, resolution=resolution, seed=int(args.seed)
+    )
     if Path(args.output_prefix).resolve() != canonical_prefix:
         raise ValueError(f"formal S1 profile output prefix must be {canonical_prefix}")
     device = torch.device(args.device)
@@ -622,6 +671,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         seed=int(args.seed),
         hardware_fingerprint=hardware_fingerprint,
         software_fingerprint=software_fingerprint,
+        campaign_root=recovery["campaign_root"],
+        profile_code_commit=recovery["profile_code_commit"],
+        profile_recovery_certificate_sha256=recovery["certificate_sha256"],
+        profile_recovery_campaign_id=recovery["campaign_id"],
     )
     marker_path = canonical_prefix.with_suffix(".started.json").resolve()
     marker = create_profile_attempt_marker(
@@ -631,6 +684,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "seed": int(args.seed),
             "bound_config_sha256": canonical_sha256(cfg.to_dict()),
             "code_commit": binding["code_commit"],
+            "profile_code_commit": recovery["profile_code_commit"],
             "experiment_namespace": binding["experiment_namespace"],
             "canonical_experiment_root": binding["canonical_experiment_root"],
             "protocol_fingerprint": matrix["protocol_fingerprint"],
@@ -647,6 +701,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "profile_order_sha256": profile_order_sha256,
             "profile_order_ordinal": int(profile_order_cell["ordinal"]),
             "canonical_output_prefix": str(canonical_prefix),
+            "profile_recovery_certificate_path": str(recovery_path),
+            "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+            "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+            "profile_recovery_campaign_id": recovery["campaign_id"],
         },
     )
     dataset_cfg.subset_name = manifest["annotation_subsets"]["sealed_test"]
@@ -655,6 +713,17 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     dataset = build_dataset(dataset_cfg)
     if _dataset_video_ids(dataset) != expected_ids:
         raise ValueError("profile dataset does not match the frozen S1 manifest split")
+    exposure_topology = _dataset_exposure_topology(dataset)
+    expected_topology = {
+        "loader_exposure_count": recovery["expected_loader_exposure_count"],
+        "physical_window_count": recovery["expected_physical_window_count"],
+        "duplicate_physical_window_ids": recovery[
+            "expected_duplicate_physical_window_ids"
+        ],
+    }
+    for key, expected in expected_topology.items():
+        if exposure_topology[key] != expected:
+            raise ValueError(f"formal S1 recovery measured unexpected {key}")
     loader = build_dataloader(
         dataset,
         rank=0,
@@ -665,6 +734,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         num_workers=0,
     )
     measured_windows = len(loader)
+    if measured_windows != exposure_topology["loader_exposure_count"]:
+        raise ValueError("formal S1 loader length differs from its exposure topology")
     if measured_windows < 200:
         raise ValueError(
             "formal S1 profile requires at least 200 complete test windows"
@@ -771,7 +842,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             continuous_started = time.perf_counter()
             start_energy = continuous_started
             cpu_batch, input_ms = _measure_wall_ms(next_batch, synchronize=synchronize)
-            video_id, window_id = _sample_identity(cpu_batch, ordinal)
+            identity = _sample_identity(cpu_batch, ordinal)
+            if (
+                identity["physical_window_id"]
+                != exposure_topology["physical_manifest"][ordinal]
+            ):
+                raise ValueError(
+                    "formal S1 runtime loader order differs from the frozen topology"
+                )
             torch.cuda.reset_peak_memory_stats(device)
             gpu_batch, h2d_ms = _measure_wall_ms(
                 lambda: _move_to_device(cpu_batch, device), synchronize=synchronize
@@ -803,8 +881,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 "decode_to_window_output_wall_ms": continuous_ms,
                 "final_video_nms_ms": 0.0,
                 "end_to_end_serial_ms": continuous_ms,
-                "video_id": video_id,
-                "window_id": window_id,
+                **identity,
                 "peak_gpu_allocated_mb": torch.cuda.max_memory_allocated(device)
                 / (1024**2),
                 "peak_gpu_reserved_mb": torch.cuda.max_memory_reserved(device)
@@ -869,6 +946,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     else:
         power_trace = []
     sample_manifest = [sample["window_id"] for sample in samples]
+    physical_manifest = [sample["physical_window_id"] for sample in samples]
     metadata = {
         "method": f"dense{resolution}",
         "resolution": resolution,
@@ -880,6 +958,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "software_identity": software_identity,
         "software_fingerprint": software_fingerprint,
         "config_commit": binding["code_commit"],
+        "profile_code_commit": recovery["profile_code_commit"],
         "experiment_namespace": binding["experiment_namespace"],
         "canonical_experiment_root": binding["canonical_experiment_root"],
         "checkpoint_sha256": sha256_file(checkpoint_path),
@@ -899,6 +978,15 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_state_key": state_key,
         "formal_profile": True,
         "sample_manifest_sha256": canonical_sha256(sample_manifest),
+        "physical_window_manifest_sha256": canonical_sha256(physical_manifest),
+        "loader_exposure_count": exposure_topology["loader_exposure_count"],
+        "physical_window_count": exposure_topology["physical_window_count"],
+        "duplicate_physical_window_exposure_count": exposure_topology[
+            "duplicate_physical_window_exposure_count"
+        ],
+        "max_physical_window_multiplicity": exposure_topology[
+            "max_physical_window_multiplicity"
+        ],
         "test_open_certificate_sha256": certificate["certificate_sha256"],
         "test_evidence_sha256": test_evidence["evidence_sha256"],
         "test_open_marker_sha256": test_evidence["test_open_marker_sha256"],
@@ -913,6 +1001,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "profile_order_seed": S1_PROFILE_ORDER_SEED,
         "profile_order_sha256": profile_order_sha256,
         "profile_order_ordinal": int(profile_order_cell["ordinal"]),
+        "profile_recovery_certificate_path": str(recovery_path),
+        "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
     }
     return build_profile_summary(samples, metadata=metadata, power_trace=power_trace)
 
@@ -928,6 +1020,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--split", choices=("test",), required=True)
     parser.add_argument("--test-open-certificate", type=Path, required=True)
     parser.add_argument("--test-evidence", type=Path, required=True)
+    parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
     parser.add_argument("--output-prefix", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, required=True)
@@ -964,8 +1057,7 @@ def main(argv: list[str] | None = None) -> int:
         atomic_publish_text(
             samples_path,
             "".join(
-                json.dumps(row, sort_keys=True) + "\n"
-                for row in report["raw_samples"]
+                json.dumps(row, sort_keys=True) + "\n" for row in report["raw_samples"]
             ),
         )
         atomic_publish_text(
@@ -975,6 +1067,10 @@ def main(argv: list[str] | None = None) -> int:
                 for row in report["raw_power_samples"]
             ),
         )
+        if sha256_file(samples_path) != report["sample_trace_file_sha256"]:
+            raise RuntimeError(
+                "S1 written sample trace does not match the profile summary"
+            )
         if sha256_file(power_path) != report["power_trace_file_sha256"]:
             raise RuntimeError(
                 "S1 written power trace does not match the profile summary"

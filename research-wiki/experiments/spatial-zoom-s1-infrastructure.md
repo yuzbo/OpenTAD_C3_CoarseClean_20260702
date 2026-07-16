@@ -344,6 +344,25 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   window identity, preserve all 792 exposures, and record the failed attempt
   before any new profile campaign is authorized. No cost claim, resolution
   selection, S1 GO/KILL, S2, or Pro review is authorized.
+- Recovery implementation status at `2026-07-17T03:40+08:00`: the profiler
+  now gives every dataloader exposure a unique ordinal-bound ID while retaining
+  the repeated physical `(video,start)` ID separately. Formal validation keeps
+  all 792 exposures, requires the measured 791-physical-window topology and
+  exact duplicate `video_test_0001431:7680`, and records both manifest hashes,
+  duplicate count, and maximum multiplicity. The old v4 marker remains
+  immutable. A new self-hashed recovery certificate binds Job `1167257`, its
+  failure log and marker hashes, training commit `18139b9`, a clean
+  post-processing-only repair commit, and an independent campaign namespace.
+  Its Git-diff allowlist rejects any `opentad/`, config, model, data, or
+  checkpoint change. Official tests continue to execute from the clean
+  `18139b9` snapshot; profile/descriptor/analysis execute from the certified
+  repair snapshot. Existing dense256/seed3408 test evidence is validated and
+  reused, never reopened; the remaining tests run once in frozen profile order
+  under one Slurm allocation. Local focused verification is `44 passed, 1
+  skipped`, including a formal 200-exposure duplicate-physical-window test.
+  This is `tested` recovery infrastructure, not a recovered cost matrix: no
+  recovery certificate, CUDA gate, replacement post Job, GO/KILL, S2, or Pro
+  review has yet been issued.
 
 ## Decision Boundary
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -13,8 +14,8 @@ from tools.bata.spatial_zoom_s1_contract import (
     canonical_sha256,
 )
 
-S1_PROFILE_PROTOCOL = "spatial_zoom_s1_offline_full_stack_v5"
-S1_PROFILE_SCHEMA = "spatial_zoom_s1_profile_v6"
+S1_PROFILE_PROTOCOL = "spatial_zoom_s1_offline_full_stack_v6"
+S1_PROFILE_SCHEMA = "spatial_zoom_s1_profile_v7"
 TOP_LEVEL_STAGES = (
     "input_pipeline_serial_ms",
     "h2d_ms",
@@ -33,6 +34,13 @@ MODEL_STAGES = (
     "head_ms",
 )
 NESTED_STAGES = MODEL_STAGES + ("heavy_backbone_ms",)
+
+
+def make_profile_exposure_id(physical_window_id: str, ordinal: int) -> str:
+    physical_window_id = str(physical_window_id).strip()
+    if not physical_window_id or int(ordinal) < 0:
+        raise ValueError("S1 profile exposure identity is invalid")
+    return f"{physical_window_id}#exposure={int(ordinal):06d}"
 
 
 def _finite_nonnegative(value: Any, name: str) -> float:
@@ -146,6 +154,11 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "split",
         "seed",
         "sample_manifest_sha256",
+        "physical_window_manifest_sha256",
+        "loader_exposure_count",
+        "physical_window_count",
+        "duplicate_physical_window_exposure_count",
+        "max_physical_window_multiplicity",
         "test_open_certificate_sha256",
         "test_evidence_sha256",
         "test_open_marker_sha256",
@@ -163,6 +176,11 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "profile_order_seed",
         "profile_order_sha256",
         "profile_order_ordinal",
+        "profile_code_commit",
+        "profile_recovery_certificate_path",
+        "profile_recovery_certificate_file_sha256",
+        "profile_recovery_certificate_sha256",
+        "profile_recovery_campaign_id",
     )
     missing = [key for key in required if key not in checked]
     if missing:
@@ -199,10 +217,14 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "checkpoint_sha256",
         "pretrained_checkpoint_sha256",
         "sample_manifest_sha256",
+        "physical_window_manifest_sha256",
         "test_open_certificate_sha256",
         "power_gpu_id",
         "profile_attempt_marker_path",
         "profile_order_sha256",
+        "profile_code_commit",
+        "profile_recovery_certificate_path",
+        "profile_recovery_campaign_id",
     ):
         if not str(checked[key]).strip():
             raise ValueError(f"S1 profile metadata requires {key}")
@@ -247,6 +269,7 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             "software_fingerprint",
             "checkpoint_sha256",
             "sample_manifest_sha256",
+            "physical_window_manifest_sha256",
             "test_open_certificate_sha256",
             "test_evidence_sha256",
             "test_open_marker_sha256",
@@ -256,6 +279,8 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             "profile_attempt_marker_file_sha256",
             "profile_attempt_marker_sha256",
             "profile_order_sha256",
+            "profile_recovery_certificate_file_sha256",
+            "profile_recovery_certificate_sha256",
         )
         if any(
             len(str(checked[key])) != 64
@@ -271,6 +296,22 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             character not in "0123456789abcdef" for character in commit
         ):
             raise ValueError("formal S1 profile requires a concrete Git commit")
+        profile_commit = str(checked["profile_code_commit"]).lower()
+        if len(profile_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in profile_commit
+        ):
+            raise ValueError("formal S1 profile requires a recovery Git commit")
+        exposure_count = int(checked["loader_exposure_count"])
+        physical_count = int(checked["physical_window_count"])
+        duplicate_count = int(checked["duplicate_physical_window_exposure_count"])
+        max_multiplicity = int(checked["max_physical_window_multiplicity"])
+        if (
+            exposure_count < 200
+            or physical_count <= 0
+            or duplicate_count != exposure_count - physical_count
+            or max_multiplicity < 1
+        ):
+            raise ValueError("formal S1 profile exposure topology is invalid")
     return checked
 
 
@@ -325,14 +366,25 @@ def build_profile_summary(
             )
         row["video_id"] = str(sample.get("video_id", ""))
         row["window_id"] = str(sample.get("window_id", ""))
-        if not row["video_id"] or not row["window_id"]:
-            raise ValueError("S1 profile samples require video/window identities")
+        row["physical_window_id"] = str(sample.get("physical_window_id", ""))
+        try:
+            row["loader_ordinal"] = int(sample.get("loader_ordinal"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("S1 profile samples require loader ordinals") from exc
+        if not row["video_id"] or not row["window_id"] or not row["physical_window_id"]:
+            raise ValueError(
+                "S1 profile samples require video/exposure/physical identities"
+            )
+        if row["loader_ordinal"] != index or row[
+            "window_id"
+        ] != make_profile_exposure_id(row["physical_window_id"], index):
+            raise ValueError("S1 profile exposure identity is not loader-order exact")
         normalized.append(row)
     if bool(checked_metadata["formal_profile"]):
         if len(normalized) < 200:
             raise ValueError("formal S1 profile requires at least 200 measured windows")
         if len({row["window_id"] for row in normalized}) != len(normalized):
-            raise ValueError("formal S1 profile window identities must be unique")
+            raise ValueError("formal S1 profile exposure identities must be unique")
         if any(row["gpu_energy_j"] is None for row in normalized):
             raise ValueError(
                 "formal S1 profile requires energy for every measured window"
@@ -344,10 +396,27 @@ def build_profile_summary(
                 "formal S1 profile video identities do not match video_count"
             )
     sample_manifest = [row["window_id"] for row in normalized]
+    physical_manifest = [row["physical_window_id"] for row in normalized]
+    physical_counts = Counter(physical_manifest)
     if canonical_sha256(sample_manifest) != checked_metadata["sample_manifest_sha256"]:
         raise ValueError(
             "S1 profile sample manifest hash does not match measured windows"
         )
+    if (
+        canonical_sha256(physical_manifest)
+        != checked_metadata["physical_window_manifest_sha256"]
+    ):
+        raise ValueError("S1 profile physical-window manifest hash mismatch")
+    expected_topology = {
+        "loader_exposure_count": len(normalized),
+        "physical_window_count": len(physical_counts),
+        "duplicate_physical_window_exposure_count": len(normalized)
+        - len(physical_counts),
+        "max_physical_window_multiplicity": max(physical_counts.values()),
+    }
+    for key, value in expected_topology.items():
+        if int(checked_metadata[key]) != int(value):
+            raise ValueError(f"S1 profile measured {key} differs from metadata")
     stage_names = sorted(
         key
         for key, value in normalized[0].items()
@@ -358,6 +427,11 @@ def build_profile_summary(
         interval_ms=int(checked_metadata["power_interval_ms"] or 0),
         formal=bool(checked_metadata["formal_profile"]),
     )
+    raw_samples = [dict(sample) for sample in samples]
+    sample_jsonl = "".join(
+        json.dumps(row, sort_keys=True) + "\n" for row in raw_samples
+    ).encode("utf-8")
+    sample_trace_file_sha256 = hashlib.sha256(sample_jsonl).hexdigest()
     report = {
         "schema_version": S1_PROFILE_SCHEMA,
         **checked_metadata,
@@ -402,7 +476,8 @@ def build_profile_summary(
             "flops_not_substituted_for_latency": True,
             "official_test_result_path_reused": True,
         },
-        "raw_samples": [dict(sample) for sample in samples],
+        "raw_samples": raw_samples,
+        "sample_trace_file_sha256": sample_trace_file_sha256,
         "power_sampling": power_summary,
         "raw_power_samples": normalized_power,
         "power_trace_file_sha256": power_trace_file_sha256,
@@ -428,6 +503,7 @@ def validate_profile_summary(profile: Mapping[str, Any]) -> dict[str, Any]:
         "measurement_scope",
         "claims",
         "raw_samples",
+        "sample_trace_file_sha256",
         "power_sampling",
         "raw_power_samples",
         "power_trace_file_sha256",
@@ -488,6 +564,16 @@ def compare_resolution_profiles(
         "result_finalizer",
         "profile_order_seed",
         "profile_order_sha256",
+        "profile_code_commit",
+        "profile_recovery_certificate_path",
+        "profile_recovery_certificate_file_sha256",
+        "profile_recovery_certificate_sha256",
+        "profile_recovery_campaign_id",
+        "physical_window_manifest_sha256",
+        "loader_exposure_count",
+        "physical_window_count",
+        "duplicate_physical_window_exposure_count",
+        "max_physical_window_multiplicity",
     ):
         if baseline.get(key) != candidate.get(key):
             raise ValueError(f"S1 profiles have incompatible {key}")
@@ -539,6 +625,7 @@ __all__ = [
     "S1_PROFILE_SCHEMA",
     "build_profile_summary",
     "compare_resolution_profiles",
+    "make_profile_exposure_id",
     "validate_profile_summary",
     "write_profile_summary",
 ]

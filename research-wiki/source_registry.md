@@ -143,6 +143,19 @@ updated: 2026-07-17
   exposures, 791 physical identities, and one exact duplicate,
   `video_test_0001431:7680`. This evidence is registered as an infrastructure
   failure and does not supersede the sealed-test result.
+- Exact immutable recovery inputs rechecked at `2026-07-17T03:34+08:00`:
+  `test_profile_matrix_r1-1167257.out` SHA-256
+  `6f8c0b6bb61cd0dbcf9abde51fdda0b43d79755771de99ba2f6cbe9d3bb37ec9`;
+  `.err` SHA-256
+  `d8b631c4feef73829184a5fb175cb7a8689d76683d348de09247d5dece33cf70`;
+  failed v4 marker file SHA-256
+  `093e58c015f93d62512851d9aec36d95c8da5b86283328c1df5eb7af3beac32a`
+  and internal marker SHA-256
+  `ef3ba7f6443b9e54a20c4eaef798caf0b7a7b9e72c97f6e263d421104db17ab4`.
+  The validated dense256/seed3408 test-evidence file remains SHA-256
+  `10c0182d6fae42f37dec108988f22fbfd732725fc270426121ff2608837261e9`.
+  These inputs authorize only certificate construction after a clean audited
+  repair commit; they do not themselves authorize another Job.
 
 ## 外部附件
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -12,9 +13,17 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.bata.profile_spatial_zoom_s1 import (  # noqa: E402
+    _dataset_exposure_topology,
+    _dataset_video_ids,
     _hardware_identity,
     _software_identity,
     validate_profile_order_ready,
+)
+from tools.bata.spatial_zoom_s1_evidence import (  # noqa: E402
+    validate_s1_test_evidence,
+)
+from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
+    load_profile_recovery_certificate,
 )
 from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     canonical_sha256,
@@ -24,7 +33,6 @@ from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
     validate_test_open_certificate,
 )
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
-    require_clean_git_checkout,
     require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
@@ -39,13 +47,20 @@ def run_profile_preflight(
     annotation_path: str | Path,
     checkpoint_path: str | Path,
     certificate_path: str | Path,
+    profile_recovery_certificate_path: str | Path,
+    test_evidence_path: str | Path,
 ) -> dict[str, object]:
     cfg = Config.fromfile(str(Path(config_path).resolve()))
     binding = validate_bound_s1_training_config(cfg, seed=int(seed))
     if not binding["formal_precheck_verified"]:
         raise RuntimeError("S1 profile preflight requires a full-precheck binding")
     physical_gpu_id = require_slurm_single_gpu_allocation()
-    require_clean_git_checkout(expected_commit=binding["code_commit"])
+    recovery_path = Path(profile_recovery_certificate_path).resolve()
+    recovery = load_profile_recovery_certificate(
+        recovery_path,
+        binding=binding,
+        verify_checkout=True,
+    )
 
     import torch
 
@@ -78,6 +93,56 @@ def run_profile_preflight(
         seed=int(seed),
         checkpoint_path=checkpoint_path,
     )
+    test_evidence_path = Path(test_evidence_path).resolve()
+    canonical_test_evidence = (
+        Path(binding["work_dir"]) / "gpu1_id0" / "test_evidence" / "test.evidence.json"
+    ).resolve()
+    if test_evidence_path != canonical_test_evidence:
+        raise ValueError("S1 profile preflight test-evidence path is non-canonical")
+    reuse_test_evidence = test_evidence_path.is_file()
+    if reuse_test_evidence:
+        evidence = validate_s1_test_evidence(
+            json.loads(test_evidence_path.read_text(encoding="utf-8")),
+            cfg=cfg,
+            seed=int(seed),
+        )
+        if (
+            Path(evidence["checkpoint_path"]).resolve() != checkpoint_path
+            or evidence["test_open_certificate_sha256"]
+            != certificate["certificate_sha256"]
+        ):
+            raise ValueError("reused S1 test evidence differs from the frozen cell")
+    else:
+        test_root = canonical_test_evidence.parents[1]
+        partial_paths = (
+            test_root / "test_open_started.json",
+            canonical_test_evidence.parent / "result_detection.json",
+        )
+        if any(path.exists() for path in partial_paths):
+            raise RuntimeError(
+                "S1 sealed test was opened without complete evidence; refusing a rerun"
+            )
+
+    from opentad.datasets import build_dataset
+
+    dataset_cfg = copy.deepcopy(cfg.dataset.test)
+    dataset_cfg.test_mode = True
+    dataset_cfg.subset_name = manifest["annotation_subsets"]["sealed_test"]
+    dataset_cfg.block_list = None
+    dataset = build_dataset(dataset_cfg)
+    if _dataset_video_ids(dataset) != set(manifest["splits"]["test"]):
+        raise ValueError("S1 profile preflight dataset split mismatch")
+    topology = _dataset_exposure_topology(dataset)
+    topology_expected = {
+        "loader_exposure_count": recovery["expected_loader_exposure_count"],
+        "physical_window_count": recovery["expected_physical_window_count"],
+        "duplicate_physical_window_ids": recovery[
+            "expected_duplicate_physical_window_ids"
+        ],
+    }
+    for key, expected in topology_expected.items():
+        if topology[key] != expected:
+            raise ValueError(f"S1 profile preflight measured unexpected {key}")
     resolution = int(binding["resolution"])
     cell, order_sha256 = validate_profile_order_ready(
         manifest=manifest,
@@ -86,6 +151,10 @@ def run_profile_preflight(
         seed=int(seed),
         hardware_fingerprint=hardware_fingerprint,
         software_fingerprint=software_fingerprint,
+        campaign_root=recovery["campaign_root"],
+        profile_code_commit=recovery["profile_code_commit"],
+        profile_recovery_certificate_sha256=recovery["certificate_sha256"],
+        profile_recovery_campaign_id=recovery["campaign_id"],
     )
     return {
         "status": "PASS",
@@ -97,6 +166,11 @@ def run_profile_preflight(
         "software_fingerprint": software_fingerprint,
         "experiment_namespace": binding["experiment_namespace"],
         "test_open_certificate_sha256": certificate["certificate_sha256"],
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
+        "reuse_test_evidence": reuse_test_evidence,
+        "loader_exposure_count": topology["loader_exposure_count"],
+        "physical_window_count": topology["physical_window_count"],
     }
 
 
@@ -110,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--annotation", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--test-open-certificate", type=Path, required=True)
+    parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
+    parser.add_argument("--test-evidence", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         result = run_profile_preflight(
@@ -119,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
             annotation_path=args.annotation,
             checkpoint_path=args.checkpoint,
             certificate_path=args.test_open_certificate,
+            profile_recovery_certificate_path=args.profile_recovery_certificate,
+            test_evidence_path=args.test_evidence,
         )
     except Exception as exc:
         print(

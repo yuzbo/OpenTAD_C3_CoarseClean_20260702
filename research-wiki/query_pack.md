@@ -53,8 +53,11 @@ max_chars: 8000
   The profiler's uniqueness assertion was therefore incompatible with the
   official loader. This is a cost-evidence infrastructure failure, not a model
   or sealed-test failure. The immutable started marker remains; no deletion,
-  silent retry, resolution decision, or GO/KILL is permitted until an audited
-  recovery protocol preserves the duplicate exposure and full provenance.
+  silent retry, resolution decision, or GO/KILL is permitted. A local recovery
+  implementation now preserves all exposures using ordinal-bound exposure IDs,
+  retains physical IDs separately, reuses only fully validated test evidence,
+  and binds a new campaign to a post-processing-only Git diff; focused tests
+  pass, but no recovery certificate/GPU gate/replacement Job exists yet.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

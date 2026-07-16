@@ -31,12 +31,15 @@ from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
 from tools.bata.profile_spatial_zoom_s1 import (  # noqa: E402
     validate_profile_attempt_marker,
 )
+from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
+    load_profile_recovery_certificate,
+    profile_campaign_prefix,
+)
 from tools.bata.select_spatial_zoom_s1_checkpoint import (  # noqa: E402
     validate_checkpoint_selection,
 )
 from tools.bata.validate_spatial_zoom_s1 import validate_config_matrix  # noqa: E402
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
-    require_clean_git_checkout,
     validate_bound_s1_training_config,
 )
 
@@ -47,7 +50,26 @@ def build_descriptor(args: argparse.Namespace) -> dict:
     binding = validate_bound_s1_training_config(cfg, seed=int(args.seed))
     if not binding["formal_precheck_verified"]:
         raise RuntimeError("formal S1 descriptor requires the bound full precheck")
+    recovery_path = args.profile_recovery_certificate.resolve()
+    recovery = load_profile_recovery_certificate(
+        recovery_path,
+        binding=binding,
+        verify_checkout=True,
+    )
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
+    canonical_profile_prefix = profile_campaign_prefix(
+        recovery, resolution=resolution, seed=int(args.seed)
+    )
+    expected_profile_path = canonical_profile_prefix.with_suffix(".summary.json")
+    if args.profile.resolve() != expected_profile_path:
+        raise ValueError("S1 descriptor profile is outside the recovery campaign")
+    expected_descriptor_path = (
+        Path(recovery["campaign_root"])
+        / "descriptors"
+        / f"dense{resolution}_seed{int(args.seed)}.run.json"
+    ).resolve()
+    if args.output.resolve() != expected_descriptor_path:
+        raise ValueError("S1 run descriptor output is outside the recovery campaign")
     profile_order = build_s1_profile_order()
     profile_order_entry = next(
         row
@@ -93,6 +115,14 @@ def build_descriptor(args: argparse.Namespace) -> dict:
     )
     if profile.get("schema_version") != S1_PROFILE_SCHEMA:
         raise ValueError("S1 run descriptor requires an S1 full-stack profile")
+    profile_samples_path = canonical_profile_prefix.with_suffix(".samples.jsonl")
+    profile_power_path = canonical_profile_prefix.with_suffix(".power.jsonl")
+    for artifact_path, expected_hash in (
+        (profile_samples_path, profile["sample_trace_file_sha256"]),
+        (profile_power_path, profile["power_trace_file_sha256"]),
+    ):
+        if not artifact_path.is_file() or sha256_file(artifact_path) != expected_hash:
+            raise ValueError(f"S1 profile trace mismatch: {artifact_path}")
     marker_path = Path(profile["profile_attempt_marker_path"]).resolve()
     if not marker_path.is_file():
         raise FileNotFoundError(marker_path)
@@ -113,6 +143,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "seed": int(args.seed),
         "bound_config_sha256": canonical_sha256(cfg.to_dict()),
         "code_commit": binding["code_commit"],
+        "profile_code_commit": recovery["profile_code_commit"],
         "experiment_namespace": binding["experiment_namespace"],
         "canonical_experiment_root": binding["canonical_experiment_root"],
         "protocol_fingerprint": matrix["protocol_fingerprint"],
@@ -129,6 +160,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_order_sha256": profile_order_sha256,
         "profile_order_ordinal": int(profile_order_entry["ordinal"]),
         "canonical_output_prefix": str(canonical_output_prefix),
+        "profile_recovery_certificate_path": str(recovery_path),
+        "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
     }
     for key, expected in expected_marker.items():
         if marker.get(key) != expected:
@@ -146,6 +181,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "test_evidence_sha256": test_evidence["evidence_sha256"],
         "test_open_marker_sha256": test_evidence["test_open_marker_sha256"],
         "config_commit": binding["code_commit"],
+        "profile_code_commit": recovery["profile_code_commit"],
         "experiment_namespace": binding["experiment_namespace"],
         "canonical_experiment_root": binding["canonical_experiment_root"],
         "precheck_file_sha256": binding["precheck_file_sha256"],
@@ -157,6 +193,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_order_seed": S1_PROFILE_ORDER_SEED,
         "profile_order_sha256": profile_order_sha256,
         "profile_order_ordinal": int(profile_order_entry["ordinal"]),
+        "profile_recovery_certificate_path": str(recovery_path),
+        "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
     }
     for key, expected in expected_profile.items():
         if profile.get(key) != expected:
@@ -174,12 +214,13 @@ def build_descriptor(args: argparse.Namespace) -> dict:
             f"S1 prediction artifact contains videos outside sealed test: {unexpected}"
         )
     descriptor = {
-        "schema_version": "spatial_zoom_s1_run_v4",
+        "schema_version": "spatial_zoom_s1_run_v5",
         "resolution": resolution,
         "seed": int(args.seed),
         "config_path": str(args.config.resolve()),
         "resolved_config_sha256": canonical_sha256(cfg.to_dict()),
         "code_commit": binding["code_commit"],
+        "profile_code_commit": recovery["profile_code_commit"],
         "experiment_namespace": binding["experiment_namespace"],
         "canonical_experiment_root": binding["canonical_experiment_root"],
         "precheck_file_sha256": binding["precheck_file_sha256"],
@@ -188,6 +229,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_order_seed": S1_PROFILE_ORDER_SEED,
         "profile_order_sha256": profile_order_sha256,
         "profile_order_ordinal": int(profile_order_entry["ordinal"]),
+        "profile_recovery_certificate_path": str(recovery_path),
+        "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
         "protocol_fingerprint": matrix["protocol_fingerprint"],
         "manifest_path": str(args.manifest.resolve()),
         "manifest_sha256": manifest["manifest_sha256"],
@@ -214,6 +259,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_summary_path": str(args.profile.resolve()),
         "profile_summary_sha256": sha256_file(args.profile),
         "profile_summary_internal_sha256": profile["profile_sha256"],
+        "profile_samples_path": str(profile_samples_path),
+        "profile_samples_sha256": sha256_file(profile_samples_path),
+        "profile_power_path": str(profile_power_path),
+        "profile_power_sha256": sha256_file(profile_power_path),
         "profile_attempt_marker_path": str(marker_path),
         "profile_attempt_marker_file_sha256": marker_file_sha,
         "profile_attempt_marker_sha256": marker["marker_sha256"],
@@ -241,13 +290,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint-selection", type=Path, required=True)
     parser.add_argument("--test-evidence", type=Path, required=True)
     parser.add_argument("--profile", type=Path, required=True)
+    parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.output.exists():
             raise FileExistsError("refusing to overwrite an S1 run descriptor")
         descriptor = build_descriptor(args)
-        require_clean_git_checkout(expected_commit=descriptor["code_commit"])
     except Exception as exc:
         print(
             json.dumps(
