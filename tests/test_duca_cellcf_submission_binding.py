@@ -44,6 +44,7 @@ def test_submitter_rejects_stale_receipts_and_closes_the_crash_window() -> None:
     assert "validate_duca_cellcf_slurm_receipt" in SUBMIT
     assert 'command -v sacct' in SUBMIT
     assert 'command -v squeue' in SUBMIT
+    assert 'command -v scontrol' in SUBMIT
     assert "duca_cellcf_slurm_submission_v2" in SUBMIT
 
     for field in (
@@ -69,6 +70,9 @@ def test_submitter_rejects_stale_receipts_and_closes_the_crash_window() -> None:
     assert "parsed an invalid job id" in SUBMIT
     assert "prepared suite binding must contain exactly seven fields" in SUBMIT
     assert '--dependency "${dependency}"' in SUBMIT
+    assert SUBMIT.count('--job-file "${job_file}"') == 3
+    assert SUBMIT.count('--job-file-sha256 "${job_file_sha256}"') == 3
+    assert SUBMIT.count("--require-scheduler-script") == 1
     assert "os.fsync(directory_fd)" in SUBMIT
 
 

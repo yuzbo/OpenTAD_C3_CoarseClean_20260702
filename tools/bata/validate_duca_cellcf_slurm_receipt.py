@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 import os
+from pathlib import Path
 import re
-import shlex
 import subprocess
 from typing import Any, Callable, Sequence
 
@@ -23,6 +24,16 @@ ACTIVE_OR_SUCCESS_STATES = {
     "SIGNALING",
     "STAGE_OUT",
     "SUSPENDED",
+}
+
+SUBMISSION_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,256}")
+JOB_NAME_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,128}")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+PENDING_LIKE_STATES = {
+    "PENDING",
+    "REQUEUED",
+    "REQUEUE_FED",
+    "REQUEUE_HOLD",
 }
 
 
@@ -52,7 +63,37 @@ def _run(
     return str(result.stdout or "")
 
 
-def _rows(output: str, *, fields: int) -> list[list[str]]:
+def _run_bytes(
+    command: list[str],
+    *,
+    runner: Callable[..., Any] = subprocess.run,
+) -> bytes:
+    result = runner(
+        command,
+        text=False,
+        capture_output=True,
+        check=False,
+    )
+    stdout = result.stdout or b""
+    stderr = result.stderr or b""
+    if isinstance(stdout, str):
+        stdout = stdout.encode("utf-8")
+    if isinstance(stderr, str):
+        stderr = stderr.encode("utf-8")
+    if int(result.returncode) != 0:
+        detail = stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"Slurm query failed ({' '.join(command)}): {detail}"
+        )
+    return bytes(stdout)
+
+
+def _rows(
+    output: str,
+    *,
+    fields: int,
+    strip_fields: bool = True,
+) -> list[list[str]]:
     parsed = []
     for raw in output.replace("\r", "").splitlines():
         if not raw.strip():
@@ -60,7 +101,11 @@ def _rows(output: str, *, fields: int) -> list[list[str]]:
         values = raw.split("|")
         if len(values) != fields:
             raise ValueError(f"unexpected Slurm row: {raw!r}")
-        parsed.append([value.strip() for value in values])
+        parsed.append(
+            [value.strip() for value in values]
+            if strip_fields
+            else values
+        )
     return parsed
 
 
@@ -78,44 +123,123 @@ def _normalize_dependency(value: str) -> str:
     return normalized
 
 
-def _submit_line_dependency(value: str) -> str:
-    tokens = shlex.split(value)
-    dependencies: list[str] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--dependency":
-            if index + 1 >= len(tokens):
-                raise ValueError("Slurm submit line has an incomplete dependency option")
-            dependencies.append(tokens[index + 1])
-            index += 2
-            continue
-        if token.startswith("--dependency="):
-            dependencies.append(token.partition("=")[2])
-        index += 1
-    if len(dependencies) > 1:
-        raise ValueError("Slurm submit line has multiple dependency options")
-    return _normalize_dependency(dependencies[0] if dependencies else "")
+def _canonical_submit_line(
+    *,
+    cluster: str,
+    job_name: str,
+    token: str,
+    dependency: str,
+    job_file: Path,
+) -> str:
+    tokens = [
+        "sbatch",
+        "--parsable",
+        f"--clusters={cluster}",
+        f"--job-name={job_name}",
+        f"--comment={token}",
+    ]
+    if dependency:
+        tokens.append(f"--dependency={dependency}")
+    tokens.append(str(job_file))
+    return " ".join(tokens)
 
 
-def _submit_line_comment(value: str) -> str:
-    tokens = shlex.split(value)
-    comments: list[str] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--comment":
-            if index + 1 >= len(tokens):
-                raise ValueError("Slurm submit line has an incomplete comment option")
-            comments.append(tokens[index + 1])
-            index += 2
-            continue
-        if token.startswith("--comment="):
-            comments.append(token.partition("=")[2])
-        index += 1
-    if len(comments) > 1:
-        raise ValueError("Slurm submit line has multiple comment options")
-    return comments[0].strip() if comments else ""
+def _validate_submit_line(value: str, *, expected_line: str) -> None:
+    if value != expected_line:
+        raise ValueError("Slurm submit line does not match the canonical submission")
+
+
+def _verify_scheduler_batch_script(
+    *,
+    job_id: int,
+    cluster: str,
+    expected_sha256: str,
+    runner: Callable[..., Any],
+) -> None:
+    content = _run_bytes(
+        [
+            "scontrol",
+            f"--clusters={cluster}",
+            "write",
+            "batch_script",
+            str(job_id),
+            "-",
+        ],
+        runner=runner,
+    )
+    observed_sha256 = hashlib.sha256(content).hexdigest()
+    if observed_sha256 != expected_sha256:
+        raise ValueError(
+            "Slurm stored batch script does not match the prepared script hash"
+        )
+
+
+def _squeue_payload(output: str, *, cluster: str) -> dict[str, Any] | None:
+    normalized = output.replace("\r", "")
+    if not normalized.strip():
+        return None
+    json_start = normalized.find("{")
+    if json_start < 0:
+        raise ValueError("Slurm squeue JSON payload is missing")
+    prefix = normalized[:json_start]
+    prefix_lines = [line.strip() for line in prefix.splitlines() if line.strip()]
+    if any(line != f"CLUSTER: {cluster}" for line in prefix_lines):
+        raise ValueError("Slurm squeue JSON has an unexpected prefix")
+    try:
+        payload = json.loads(normalized[json_start:])
+    except json.JSONDecodeError as exc:
+        raise ValueError("Slurm squeue JSON payload is invalid") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Slurm squeue JSON payload must be an object")
+    errors = payload.get("errors", [])
+    if not isinstance(errors, list) or errors:
+        raise ValueError("Slurm squeue JSON reports an error")
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, list):
+        raise ValueError("Slurm squeue JSON jobs field is invalid")
+    if not jobs:
+        return None
+    if len(jobs) != 1 or not isinstance(jobs[0], dict):
+        raise ValueError("receipt resolved to multiple live Slurm jobs")
+    return jobs[0]
+
+
+def _live_state(value: Any) -> str:
+    if not isinstance(value, list) or not value or any(
+        not isinstance(item, str) for item in value
+    ):
+        raise ValueError("Slurm live job state is ambiguous")
+    states = [_state(item) for item in value]
+    non_pending = [item for item in states if item not in PENDING_LIKE_STATES]
+    return non_pending[0] if non_pending else "PENDING"
+
+
+def _validate_live_identity(
+    job: dict[str, Any],
+    *,
+    job_id: int,
+    job_name: str,
+    token: str,
+    cluster: str,
+    job_file: Path,
+) -> str:
+    if job.get("job_id") != job_id:
+        raise ValueError(
+            f"Slurm job id mismatch: expected {job_id}, got {job.get('job_id')}"
+        )
+    if job.get("name") != job_name:
+        raise ValueError(
+            f"Slurm job name mismatch: expected {job_name}, got {job.get('name')}"
+        )
+    if job.get("comment") != token:
+        raise ValueError("Slurm job comment does not match the submission token")
+    if job.get("cluster") != cluster:
+        raise ValueError(
+            f"Slurm cluster mismatch: expected {cluster}, got {job.get('cluster')}"
+        )
+    if job.get("command") != str(job_file):
+        raise ValueError("Slurm live command does not match the bound job file")
+    return _live_state(job.get("job_state"))
 
 
 def _afterok_job_ids(value: str) -> frozenset[int]:
@@ -244,45 +368,83 @@ def validate_slurm_receipt(
     job_name: str,
     token: str,
     cluster: str,
+    job_file: str | os.PathLike[str],
+    job_file_sha256: str,
     dependency: str = "",
+    require_scheduler_script: bool = False,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     if job_id <= 0:
         raise ValueError("job_id must be positive")
+    if SUBMISSION_TOKEN_PATTERN.fullmatch(token) is None:
+        raise ValueError("invalid Slurm submission token")
+    if JOB_NAME_PATTERN.fullmatch(job_name) is None:
+        raise ValueError("invalid Slurm job name")
     if re.fullmatch(r"[A-Za-z0-9._-]+", cluster) is None:
         raise ValueError("invalid Slurm cluster identity")
+    if SHA256_PATTERN.fullmatch(job_file_sha256) is None:
+        raise ValueError("invalid bound Slurm job file hash")
+    raw_job_file = Path(job_file).expanduser()
+    if not raw_job_file.is_absolute():
+        raise ValueError("job_file must be an absolute path")
+    try:
+        resolved_job_file = raw_job_file.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("bound Slurm job file does not exist") from exc
+    if not resolved_job_file.is_file():
+        raise ValueError("bound Slurm job file is not a regular file")
+    resolved_job_file_text = str(resolved_job_file)
+    if os.name == "posix" and re.fullmatch(
+        r"/[A-Za-z0-9._/-]+",
+        resolved_job_file_text,
+    ) is None:
+        raise ValueError("bound Slurm job file path is not scheduler-safe")
+    observed_job_file_sha256 = hashlib.sha256(
+        resolved_job_file.read_bytes()
+    ).hexdigest()
+    if observed_job_file_sha256 != job_file_sha256:
+        raise ValueError("bound Slurm job file hash mismatch")
     expected_dependency = _normalize_dependency(dependency)
     expected_dependency_ids = _afterok_job_ids(expected_dependency)
+    expected_submit_line = _canonical_submit_line(
+        cluster=cluster,
+        job_name=job_name,
+        token=token,
+        dependency=expected_dependency,
+        job_file=resolved_job_file,
+    )
 
     live_output = _run(
         [
             "squeue",
             "--clusters",
             cluster,
-            "--noheader",
             "--jobs",
             str(job_id),
-            "--format",
-            "%i|%128j|%T|%256k|%E",
+            "--json",
         ],
         runner=runner,
         allow_missing_job=True,
     )
-    live_rows = _rows(live_output, fields=5)
+    live_job = _squeue_payload(live_output, cluster=cluster)
     live_state: str | None = None
     live_dependency: str | None = None
     live_dependency_ids = frozenset()
-    if live_rows:
-        if len(live_rows) != 1:
-            raise ValueError("receipt resolved to multiple live Slurm jobs")
-        live_state = _validate_identity(
-            live_rows[0][:4] + [cluster],
+    if live_job is not None:
+        live_state = _validate_live_identity(
+            live_job,
             job_id=job_id,
             job_name=job_name,
             token=token,
             cluster=cluster,
+            job_file=resolved_job_file,
         )
-        live_dependency = _normalize_dependency(live_rows[0][4])
+        raw_live_dependency = live_job.get("dependency", "")
+        if raw_live_dependency is None:
+            raw_live_dependency = ""
+        if not isinstance(raw_live_dependency, str):
+            raise ValueError("Slurm live dependency is invalid")
+        live_dependency = _normalize_dependency(raw_live_dependency)
         if live_dependency:
             live_dependency_ids = _afterok_job_ids(live_dependency)
             if not live_dependency_ids.issubset(expected_dependency_ids):
@@ -310,39 +472,32 @@ def validate_slurm_receipt(
             "--format",
             (
                 "JobIDRaw,JobName%128,State,Comment%256,Cluster,"
-                "SubmitLine%1024,Start,End"
+                "SubmitLine,Start,End"
             ),
         ],
         runner=runner,
         env_overrides={"SLURM_TIME_FORMAT": "standard"},
     )
     accounting_rows = [
-        row for row in _rows(accounting_output, fields=8) if row[0] == str(job_id)
+        row
+        for row in _rows(accounting_output, fields=8, strip_fields=False)
+        if row[0] == str(job_id)
     ]
     if len(accounting_rows) == 1:
-        accounting_comment = accounting_rows[0][3].strip()
-        submit_line_comment = _submit_line_comment(accounting_rows[0][5])
+        accounting_comment = accounting_rows[0][3]
         if accounting_comment and accounting_comment != token:
             raise ValueError("Slurm job comment does not match the submission token")
-        if submit_line_comment and submit_line_comment != token:
-            raise ValueError(
-                "Slurm submit-line comment does not match the submission token"
-            )
-        effective_comment = accounting_comment or submit_line_comment
+        _validate_submit_line(
+            accounting_rows[0][5],
+            expected_line=expected_submit_line,
+        )
         state = _validate_identity(
-            accounting_rows[0][:3] + [effective_comment, accounting_rows[0][4]],
+            accounting_rows[0][:3] + [token, accounting_rows[0][4]],
             job_id=job_id,
             job_name=job_name,
             token=token,
             cluster=cluster,
         )
-        accounting_dependency = _submit_line_dependency(accounting_rows[0][5])
-        if accounting_dependency != expected_dependency:
-            raise ValueError(
-                "Slurm dependency mismatch: "
-                f"expected {expected_dependency or '(none)'}, "
-                f"got {accounting_dependency or '(none)'}"
-            )
         _validate_satisfied_afterok_predecessors(
             expected_ids=expected_dependency_ids,
             remaining_ids=live_dependency_ids,
@@ -354,7 +509,7 @@ def validate_slurm_receipt(
             cluster=cluster,
             runner=runner,
         )
-        return {
+        payload = {
             "ok": True,
             "source": "sacct",
             "job_id": job_id,
@@ -362,8 +517,19 @@ def validate_slurm_receipt(
             "state": state,
             "comment": token,
             "cluster": cluster,
+            "job_file": resolved_job_file_text,
+            "job_file_sha256": job_file_sha256,
             "dependency": expected_dependency or None,
         }
+        if require_scheduler_script:
+            _verify_scheduler_batch_script(
+                job_id=job_id,
+                cluster=cluster,
+                expected_sha256=job_file_sha256,
+                runner=runner,
+            )
+            payload["scheduler_script_verified"] = True
+        return payload
     if accounting_rows:
         raise ValueError("receipt job is ambiguous in Slurm accounting")
     if live_state is not None and live_dependency == expected_dependency:
@@ -371,7 +537,7 @@ def validate_slurm_receipt(
             raise ValueError(
                 "dependent Slurm target has started without accounting proof"
             )
-        return {
+        payload = {
             "ok": True,
             "source": "squeue",
             "job_id": job_id,
@@ -379,8 +545,19 @@ def validate_slurm_receipt(
             "state": live_state,
             "comment": token,
             "cluster": cluster,
+            "job_file": resolved_job_file_text,
+            "job_file_sha256": job_file_sha256,
             "dependency": expected_dependency or None,
         }
+        if require_scheduler_script:
+            _verify_scheduler_batch_script(
+                job_id=job_id,
+                cluster=cluster,
+                expected_sha256=job_file_sha256,
+                runner=runner,
+            )
+            payload["scheduler_script_verified"] = True
+        return payload
     if live_state is not None:
         raise ValueError(
             "Slurm dependency mismatch: "
@@ -396,14 +573,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--job-name", required=True)
     parser.add_argument("--comment", required=True)
     parser.add_argument("--cluster", required=True)
+    parser.add_argument("--job-file", required=True)
+    parser.add_argument("--job-file-sha256", required=True)
     parser.add_argument("--dependency", default="")
+    parser.add_argument("--require-scheduler-script", action="store_true")
     args = parser.parse_args(argv)
     payload = validate_slurm_receipt(
         job_id=args.job_id,
         job_name=args.job_name,
         token=args.comment,
         cluster=args.cluster,
+        job_file=args.job_file,
+        job_file_sha256=args.job_file_sha256,
         dependency=args.dependency,
+        require_scheduler_script=args.require_scheduler_script,
     )
     print(json.dumps(payload, sort_keys=True))
     return 0

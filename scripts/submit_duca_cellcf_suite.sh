@@ -31,6 +31,7 @@ command -v flock >/dev/null 2>&1 || fail "flock is unavailable"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is unavailable"
 command -v sacct >/dev/null 2>&1 || fail "sacct is unavailable"
 command -v squeue >/dev/null 2>&1 || fail "squeue is unavailable"
+command -v scontrol >/dev/null 2>&1 || fail "scontrol is unavailable"
 
 RECEIPT_DIR="${RUN_ROOT}/submission_receipts"
 mkdir -p "${RECEIPT_DIR}"
@@ -429,6 +430,8 @@ submit_once() {
     if ! "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
       --job-id "${existing_job_id}" --job-name "${job_name}" \
       --comment "${token}" --cluster "${existing_cluster}" \
+      --job-file "${job_file}" \
+      --job-file-sha256 "${job_file_sha256}" \
       --dependency "${dependency}" >/dev/null; then
       fail "${job_key} existing Slurm receipt could not be reopened"
     fi
@@ -481,6 +484,9 @@ submit_once() {
   if ! "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
     --job-id "${job_id}" --job-name "${job_name}" \
     --comment "${token}" --cluster "${cluster}" \
+    --job-file "${job_file}" \
+    --job-file-sha256 "${job_file_sha256}" \
+    --require-scheduler-script \
     --dependency "${dependency}" >/dev/null; then
     fail "new ${job_key} Slurm binding could not be verified"
   fi
@@ -507,6 +513,8 @@ submit_once() {
   if ! "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
     --job-id "${persisted_job_id}" --job-name "${job_name}" \
     --comment "${token}" --cluster "${persisted_cluster}" \
+    --job-file "${job_file}" \
+    --job-file-sha256 "${job_file_sha256}" \
     --dependency "${dependency}" >/dev/null; then
     fail "new ${job_key} Slurm receipt could not be reopened"
   fi
