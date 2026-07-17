@@ -46,6 +46,8 @@ from tools.bata.spatial_zoom_s1_sidecar_gate import (  # noqa: E402
     validate_sidecar_gate_runtime_identity,
 )
 from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
+    S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
+    S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
     validate_nvml_sidecar_attempt,
 )
 from tools.bata.select_spatial_zoom_s1_checkpoint import (  # noqa: E402
@@ -196,8 +198,22 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         power_attempt["attempt_sha256"] != profile["power_attempt_sha256"]
         or power_attempt["trace_file_sha256"]
         != profile["power_attempt_trace_file_sha256"]
+        or power_attempt.get("schema_version")
+        != S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
+        or power_attempt.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or power_attempt.get("trace_io_inside_sampling_loop") is not False
+        or profile.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or profile.get("trace_io_inside_sampling_loop") is not False
+        or sidecar_gate.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or sidecar_gate.get("trace_io_inside_sampling_loop") is not False
+        or recovery.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or recovery.get("trace_io_inside_sampling_loop") is not False
     ):
-        raise ValueError("S1 sidecar attempt report identity mismatch")
+        raise ValueError("S1 buffered sidecar trace-publication identity mismatch")
     validate_sidecar_gate_runtime_identity(
         sidecar_gate,
         hardware_identity=profile["hardware_identity"],
@@ -252,6 +268,8 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_recovery_campaign_id": recovery["campaign_id"],
         "gate_only": False,
         "power_sampler_backend": recovery["power_sampler_backend"],
+        "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
         "allocated_cpu_ids": profile["allocated_cpu_ids"],
         "detector_cpu_ids": profile["detector_cpu_ids"],
         "sidecar_cpu_id": profile["sidecar_cpu_id"],
@@ -315,6 +333,8 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
         "power_sampler_backend": recovery["power_sampler_backend"],
+        "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_evidence_file_sha256": sha256_file(
             sidecar_gate_path(recovery)
@@ -421,6 +441,8 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_power_attempt_trace_sha256": sha256_file(
             profile_power_attempt_trace_path
         ),
+        "profile_trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        "profile_trace_io_inside_sampling_loop": False,
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_evidence_file_sha256": sha256_file(
             sidecar_gate_path(recovery)

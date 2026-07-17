@@ -39,7 +39,8 @@ from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
     write_profile_summary,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
-    S1_SIDECAR_RECOVERY_REASON,
+    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+    S1_BUFFERED_TRACE_PUBLICATION_MODE,
     load_profile_recovery_certificate,
     profile_campaign_prefix,
 )
@@ -728,8 +729,13 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         binding=binding,
         verify_checkout=True,
     )
-    if recovery.get("reason") != S1_SIDECAR_RECOVERY_REASON:
-        raise ValueError("formal S1 profile requires the v3 sidecar recovery")
+    if (
+        recovery.get("reason") != S1_BUFFERED_SIDECAR_RECOVERY_REASON
+        or recovery.get("trace_publication_mode")
+        != S1_BUFFERED_TRACE_PUBLICATION_MODE
+        or recovery.get("trace_io_inside_sampling_loop") is not False
+    ):
+        raise ValueError("formal S1 profile requires the exact v4 buffered recovery")
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
     gate_mode = bool(args.sidecar_gate)
     if gate_mode:
@@ -764,7 +770,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         or sidecar_cpu_id in detector_cpu_ids
         or set(detector_cpu_ids) | {sidecar_cpu_id} != set(allocated_cpu_ids)
     ):
-        raise ValueError("formal S1 profile CPU partition violates the v3 recovery")
+        raise ValueError("formal S1 profile CPU partition violates the v4 recovery")
     if (
         int(os.environ.get("SLURM_CPUS_PER_TASK", -1))
         != int(recovery["allocated_cpu_count"])
@@ -928,6 +934,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "profile_recovery_campaign_id": recovery["campaign_id"],
             "gate_only": gate_mode,
             "power_sampler_backend": recovery["power_sampler_backend"],
+            "trace_publication_mode": recovery.get("trace_publication_mode"),
+            "trace_io_inside_sampling_loop": recovery.get(
+                "trace_io_inside_sampling_loop"
+            ),
             "allocated_cpu_ids": list(allocated_cpu_ids),
             "detector_cpu_ids": list(detector_cpu_ids),
             "sidecar_cpu_id": sidecar_cpu_id,
@@ -1245,6 +1255,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "power_sampling_enabled": bool(args.sample_power),
         "power_sampler_backend": (
             power_sampler.backend if power_sampler is not None else None
+        ),
+        "trace_publication_mode": recovery.get("trace_publication_mode"),
+        "trace_io_inside_sampling_loop": recovery.get(
+            "trace_io_inside_sampling_loop"
         ),
         "split": args.split,
         "seed": int(args.seed),

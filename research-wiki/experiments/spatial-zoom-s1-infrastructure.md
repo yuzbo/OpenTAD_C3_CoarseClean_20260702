@@ -634,6 +634,34 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   State is `experiment_running`; no cell descriptor, pooled result, GO/KILL,
   S2 authorization, or Pro review may be claimed until the exact-nine
   completion receipt and final analyzer pass.
+- Job `1168823` subsequently failed `2:0` after `02:33:27` in only the first
+  formal dense256/seed3408 cell. The sidecar process exited `0`, preserved
+  `112107` samples over `2246899.873` ms, and reported median/P95/max cadence
+  `20.000005/20.023177/146.048168` ms. Exactly three gaps exceeded the frozen
+  `100` ms limit (`134.560`, `142.812`, `146.048` ms). The immutable FAIL
+  attempt internal SHA is `6e2a9004...`; raw trace SHA is `ca602030...`.
+  Fail-closed behavior was correct: no formal summary, sample table, paper
+  power trace, descriptor, completion receipt, or later cell exists.
+  Inspection found no OOM, UUID mismatch, CPU-affinity drift, child crash, or
+  model failure. The measured loop still performed a line-buffered JSONL write
+  every 20 ms, so rare write/scheduling stalls remained inside the cadence
+  measurement.
+- The current v4 repair preserves every model, checkpoint, sealed-test hash,
+  matrix order, resource class, and the `20/100` ms thresholds. It buffers raw
+  sidecar records in memory with GC disabled during sampling and atomically
+  publishes the JSONL trace after stop. A recursive certificate binds the v3
+  parent, Job `1168823`, its v7 marker/log, FAIL attempt pair, parent-failure,
+  matrix-start receipt, Slurm job/step/GPU UUID, and explicit trace mode.
+  The validator additionally requires
+  `0 < start <= trace_first == ready_first <= trace_last <= finish`. Formal
+  profiles and new no-open Gates accept v4 only; v3 remains read-only parent
+  evidence. Local combined S1/matrix/train-engine/C3 regression is
+  `102 passed, 5 skipped`. Independent review pass one returned HOLD with three
+  P1 lifecycle/evidence findings; pass two returned HOLD for one remaining
+  trace-lifecycle P1; pass three found no P0/P1 and returned `DEPLOY` without
+  modifying files. State is `tested_local`, not deployed: a clean commit, exact
+  remote replay, a fresh immutable v4 campaign, and a new no-open Gate remain
+  required before one replacement matrix.
 
 ## Decision Boundary
 

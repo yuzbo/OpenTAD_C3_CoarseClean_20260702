@@ -371,3 +371,24 @@ append_only: true
   `100` ms limit. After self-hash/artifact validation and an idempotency check,
   submitted exactly one frozen-order serial matrix as Job `1168823`; it is
   `experiment_running`. No final S1 evidence or GO/KILL exists yet.
+- 2026-07-17: matrix Job `1168823` failed closed in its first
+  dense256/seed3408 profile. The child exited normally and preserved `112107`
+  samples, but three cadence gaps exceeded the unchanged `100` ms limit
+  (maximum `146.048` ms). No descriptor or later cell was published. Kept the
+  v3 campaign immutable and implemented a v4 evidence chain plus an in-memory
+  sidecar trace buffer with post-stop atomic JSONL publication; no cadence,
+  model, test, resource, or statistical threshold changed. Profiler/Gate now
+  expose the trace mode. Combined local verification is
+  `101 passed, 5 skipped`; status is `tested_local`. No new campaign, Gate,
+  matrix, GO/KILL, S2, or Pro review has been created.
+- 2026-07-17: completed a three-pass independent max-level audit of the local
+  v4 repair. Pass one returned HOLD with three P1 gaps in official matrix-start
+  validation, healthy-child cadence isolation, and parent/current code plus
+  trace-mode binding. Pass two returned HOLD for one remaining raw-trace
+  lifecycle gap. Fixed all four findings, including the exact relation
+  `0 < start <= trace_first == ready_first <= trace_last <= finish`. Added
+  rehashed wrong-ready-first and finish-before-last negatives. The exact
+  combined suite is `102 passed, 5 skipped`; target negatives, `py_compile`,
+  and `git diff --check` pass. Pass three found no P0/P1 and
+  returned `DEPLOY` without changing files. State remains `tested_local`; no
+  campaign, Gate, matrix, GO/KILL, S2, or Pro was created.

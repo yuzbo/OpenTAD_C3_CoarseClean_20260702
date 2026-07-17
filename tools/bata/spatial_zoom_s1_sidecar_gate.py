@@ -11,20 +11,28 @@ from tools.bata.spatial_zoom_s1_contract import (
 )
 from tools.bata.spatial_zoom_s1_cost import validate_profile_summary
 from tools.bata.spatial_zoom_s1_power import (
+    S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
+    S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+    S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
     S1_POWER_SIDECAR_BACKEND,
     validate_nvml_sidecar_attempt,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (
+    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
     S1_SIDECAR_RECOVERY_REASON,
 )
 
 
 S1_SIDECAR_GATE_SCHEMA = "spatial_zoom_s1_power_sidecar_gate_v1"
+_SIDECAR_RECOVERY_REASONS = {
+    S1_SIDECAR_RECOVERY_REASON,
+    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+}
 
 
 def sidecar_gate_path(recovery: Mapping[str, Any]) -> Path:
-    if recovery.get("reason") != S1_SIDECAR_RECOVERY_REASON:
-        raise ValueError("S1 sidecar Gate requires a v3 recovery certificate")
+    if recovery.get("reason") not in _SIDECAR_RECOVERY_REASONS:
+        raise ValueError("S1 sidecar Gate requires a v3/v4 recovery certificate")
     return (
         Path(recovery["campaign_root"])
         / str(recovery["sidecar_gate_relative_path"])
@@ -107,8 +115,8 @@ def build_sidecar_gate_evidence(
 ) -> dict[str, Any]:
     """Build compact evidence for a full-path, no-new-test-open cadence Gate."""
 
-    if recovery.get("reason") != S1_SIDECAR_RECOVERY_REASON:
-        raise ValueError("S1 sidecar Gate requires a v3 recovery certificate")
+    if recovery.get("reason") not in _SIDECAR_RECOVERY_REASONS:
+        raise ValueError("S1 sidecar Gate requires a v3/v4 recovery certificate")
     if not str(slurm_job_id).isdigit():
         raise ValueError("S1 sidecar Gate requires a numeric Slurm job id")
     profile = validate_profile_summary(profile_report)
@@ -134,6 +142,14 @@ def build_sidecar_gate_evidence(
         expected_uuid=gate_gpu_uuid,
         require_pass=True,
     )
+    buffered_recovery = (
+        recovery.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
+    )
+    expected_attempt_schema = (
+        S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
+        if buffered_recovery
+        else S1_POWER_SIDECAR_ATTEMPT_SCHEMA
+    )
     marker = _load_self_hashed_marker(marker_path)
     test_evidence_file_sha256_after = sha256_file(test_evidence_path)
     if test_evidence_file_sha256_after != str(test_evidence_file_sha256_before):
@@ -149,6 +165,17 @@ def build_sidecar_gate_evidence(
         != int(recovery["expected_physical_window_count"])
         or profile.get("result_finalizer")
         != "opentad.cores.test_engine.gather_ddp_results"
+        or (
+            buffered_recovery
+            and (
+                profile.get("trace_publication_mode")
+                != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+                or profile.get("trace_io_inside_sampling_loop") is not False
+                or marker.get("trace_publication_mode")
+                != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+                or marker.get("trace_io_inside_sampling_loop") is not False
+            )
+        )
     ):
         raise ValueError("S1 sidecar Gate did not execute the representative full path")
     if (
@@ -167,6 +194,15 @@ def build_sidecar_gate_evidence(
         | {attempt.get("sidecar_cpu_id")}
         != set(attempt.get("allocated_cpu_ids", ()))
         or attempt.get("trace_file_sha256") != sha256_file(attempt_trace_path)
+        or attempt.get("schema_version") != expected_attempt_schema
+        or (
+            buffered_recovery
+            and (
+                attempt.get("trace_publication_mode")
+                != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+                or attempt.get("trace_io_inside_sampling_loop") is not False
+            )
+        )
     ):
         raise ValueError("S1 sidecar Gate cadence or CPU isolation failed")
     canonical_prefix = sidecar_gate_profile_prefix(recovery)
@@ -221,6 +257,10 @@ def build_sidecar_gate_evidence(
         "sidecar_attempt_trace_path": str(attempt_trace_path),
         "sidecar_attempt_trace_sha256": sha256_file(attempt_trace_path),
         "power_sampler_backend": S1_POWER_SIDECAR_BACKEND,
+        "trace_publication_mode": recovery.get("trace_publication_mode"),
+        "trace_io_inside_sampling_loop": recovery.get(
+            "trace_io_inside_sampling_loop"
+        ),
         "power_cadence": attempt["cadence"],
         "allocated_cpu_ids": attempt["allocated_cpu_ids"],
         "detector_cpu_ids": attempt["detector_cpu_ids"],
@@ -255,6 +295,10 @@ def validate_sidecar_gate_evidence(
         "resolution": 256,
         "seed": 3408,
         "power_sampler_backend": S1_POWER_SIDECAR_BACKEND,
+        "trace_publication_mode": recovery.get("trace_publication_mode"),
+        "trace_io_inside_sampling_loop": recovery.get(
+            "trace_io_inside_sampling_loop"
+        ),
         "gpu_scope": "gate_uuid_bound_matrix_hardware_class_matched",
         "loader_exposure_count": int(recovery["expected_loader_exposure_count"]),
         "physical_window_count": int(recovery["expected_physical_window_count"]),
@@ -308,10 +352,24 @@ def validate_sidecar_gate_evidence(
             expected_uuid=checked["gate_gpu_uuid"],
             require_pass=True,
         )
+        expected_attempt_schema = (
+            S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
+            if recovery.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
+            else S1_POWER_SIDECAR_ATTEMPT_SCHEMA
+        )
         if (
             attempt["attempt_sha256"] != checked["sidecar_attempt_sha256"]
             or attempt["trace_file_sha256"]
             != checked["sidecar_attempt_trace_sha256"]
+            or attempt.get("schema_version") != expected_attempt_schema
+            or (
+                recovery.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
+                and (
+                    attempt.get("trace_publication_mode")
+                    != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+                    or attempt.get("trace_io_inside_sampling_loop") is not False
+                )
+            )
         ):
             raise ValueError("S1 sidecar Gate attempt identity mismatch")
     return checked

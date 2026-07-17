@@ -230,6 +230,27 @@ rule remain identical.
   `792` loader exposures and `791` physical windows completed, the existing
   test evidence hash stayed unchanged, and the out-of-process sidecar recorded
   `110699` samples with median/P95/max gaps
-  `20.000/20.022/63.098` ms. The sole frozen-order matrix Job `1168823` is now
-  `experiment_running`. No matrix result, cost result, GO/KILL, S2, or Pro
-  review exists yet.
+  `20.000/20.022/63.098` ms. This Gate authorized the sole frozen-order matrix
+  Job `1168823`; that campaign is now the immutable failure described below.
+- Matrix Job `1168823` later failed closed in its first formal
+  dense256/seed3408 profile. Its out-of-process sampler exited normally and
+  preserved `112107` raw samples, but three observed intervals exceeded the
+  frozen `100` ms limit; median/P95/max were
+  `20.000005/20.023177/146.048168` ms. No profile summary, samples, paper power
+  trace, descriptor, completion receipt, or later cell was published. The
+  v3 campaign remains immutable and cannot be resumed. The current v4 repair
+  keeps the `20/100` ms thresholds and 4+1 CPU partition unchanged, removes
+  filesystem I/O from the sampling loop, buffers sequence-numbered JSONL in
+  sidecar memory, and atomically publishes it only after sampling stops. The
+  v4 certificate recursively binds the failed marker, raw attempt pair,
+  parent-failure evidence, matrix-start receipt, Job/step/GPU identity, and
+  the old v3 certificate. It also proves
+  `0 < start <= trace_first == ready_first <= trace_last <= finish`; formal
+  profiles and new Gates accept only this v4 trace mode, while v3 remains
+  readable only to validate immutable parent evidence. Local
+  S1/matrix/train-engine/C3 verification is `102 passed, 5 skipped`. A
+  three-pass independent review returned HOLD for three initial P1s, HOLD for
+  one remaining trace-lifecycle P1, and finally DEPLOY with no P0/P1. State
+  remains `tested_local`: a clean commit, exact remote Linux/CUDA replay, a new
+  immutable v4 campaign, and another full no-open Gate are mandatory before
+  one replacement matrix.

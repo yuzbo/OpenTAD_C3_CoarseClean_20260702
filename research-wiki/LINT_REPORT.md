@@ -16,7 +16,7 @@ status: pass_with_source_warnings
 - Missing graph node references: 0.
 - Orphan idea/experiment/claim nodes: 0.
 - Broken curated relative links: 0.
-- `query_pack.md`: 7989 characters, below the 8000-character limit.
+- `query_pack.md`: 7569 characters, below the 8000-character limit.
 - The installed ARIS helper exposes no `lint` command. A read-only structural
   validator parsed all 51 JSONL edges, checked every edge endpoint against the
   current node set, and enforced the query-pack budget; all checks passed.
@@ -32,9 +32,11 @@ status: pass_with_source_warnings
 
 - 实现代理和论文代理目前归档最近 30 轮；完整 task 仍由 Codex thread ID 保留。
 - 旧实验的未经匹配 mAP 数字没有强行固化，避免把历史观察升级为论文证据。
-- Spatial Zoom S1 passed clean remote replay and its no-open Gate. The sole
-  serial matrix Job `1168823` is `experiment_running`; its exact-nine
-  completion receipt and final analyzer remain incomplete.
+- Spatial Zoom S1 passed its prior no-open Gate, but serial matrix Job
+  `1168823` failed closed in the first cell on the frozen cadence audit. The
+  v4 trace-publication repair is `tested_local` and independently reviewed as
+  `DEPLOY` with no P0/P1; exact remote replay and a replacement Gate/matrix do
+  not yet exist.
 - The final paired S1 result, GO/KILL, post-result Pro review, and any S2
   authorization do not exist.
 - ChronoTransport formal P3 已记录为 negative gate；Stage C/P5 不再列作自动待运行任务，除非先有 superseding 设计与重新预注册。

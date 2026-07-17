@@ -286,6 +286,28 @@ updated: 2026-07-17
   `7b5683e059f5680ae76fadf210fb384d5132cfd98b3361951723f89f704db694`.
   These establish deployment and Gate validity only; final matrix evidence is
   pending.
+- Formal v3 matrix failure, Job `1168823`, 2026-07-17. Slurm accounting:
+  `FAILED 2:0`, elapsed `02:33:27`, inner-step MaxRSS `72084384K`.
+  Immutable first-cell attempt:
+  `profile_campaigns/e3fccb9b12a5d24d/dense256/seed3408/`
+  `dense256_seed3408.power_attempt.json`, internal SHA
+  `6e2a9004f07ce30d04612692a20e22ece548195b8c6e1520c45655b71a9ebc4a`;
+  raw trace SHA
+  `ca60203051d5a44cae957cf77e8620f1d34124a5d7cef7750c9292caf6c033c0`.
+  It contains `112107` samples and median/P95/max gaps
+  `20.000005/20.023177/146.048168` ms; three gaps exceed `100` ms. The
+  campaign contains no descriptor or completion receipt.
+- Independent v4 implementation audit, agent
+  `019f6ee1-aa1a-7912-a33b-904bec6f883a`, 2026-07-17. Pass one returned HOLD
+  with three P1 findings: official matrix-start validation, healthy-child
+  cadence isolation, and parent/current code plus trace-mode binding. Pass two
+  returned HOLD for one remaining raw-trace lifecycle P1. After repair, pass
+  three independently ran the exact combined suite (`102 passed, 5 skipped`),
+  rehashed negative cases,
+  `py_compile`, and `git diff --check`; it found no P0/P1 and returned
+  `DEPLOY`. The reviewer made no file changes. This is code-review evidence
+  only; clean commit, remote Linux/CUDA replay, v4 campaign, and no-open Gate
+  remain pending.
 
 ## 外部附件
 

@@ -154,6 +154,8 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "amp",
         "power_sampling_enabled",
         "power_sampler_backend",
+        "trace_publication_mode",
+        "trace_io_inside_sampling_loop",
         "formal_profile",
         "split",
         "seed",
@@ -286,6 +288,14 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("formal S1 profile requires AMP and power sampling")
         if checked["power_sampler_backend"] != "nvml-sidecar-process-v1":
             raise ValueError("formal S1 profile requires the isolated NVML sidecar")
+        if (
+            checked["trace_publication_mode"]
+            != "post_sampling_atomic_jsonl_v1"
+            or checked["trace_io_inside_sampling_loop"] is not False
+        ):
+            raise ValueError(
+                "formal S1 profile requires post-sampling atomic trace publication"
+            )
         cadence = checked["power_attempt_cadence"]
         if (
             not isinstance(cadence, Mapping)
@@ -619,6 +629,8 @@ def compare_resolution_profiles(
         "amp",
         "power_sampling_enabled",
         "power_sampler_backend",
+        "trace_publication_mode",
+        "trace_io_inside_sampling_loop",
         "sample_count",
         "formal_profile",
         "split",

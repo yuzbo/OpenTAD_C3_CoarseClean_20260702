@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import ctypes
 import ctypes.util
+import gc
 import hashlib
+import io
 import json
 import math
 import os
@@ -36,6 +38,15 @@ from tools.bata.spatial_zoom_s1_contract import (
 S1_POWER_DIAGNOSTIC_SCHEMA = "spatial_zoom_s1_power_sampler_diagnostic_v1"
 S1_POWER_SIDECAR_BACKEND = "nvml-sidecar-process-v1"
 S1_POWER_SIDECAR_ATTEMPT_SCHEMA = "spatial_zoom_s1_power_sidecar_attempt_v1"
+S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA = (
+    "spatial_zoom_s1_power_sidecar_attempt_v2"
+)
+S1_POWER_SIDECAR_RESULT_SCHEMA = "spatial_zoom_s1_power_sidecar_result_v1"
+S1_POWER_BUFFERED_SIDECAR_RESULT_SCHEMA = (
+    "spatial_zoom_s1_power_sidecar_result_v2"
+)
+S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE = "post_sampling_atomic_jsonl_v1"
+S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX = "formal S1 sidecar cadence failed:"
 S1_POWER_PARENT_FAILURE_SCHEMA = "spatial_zoom_s1_profile_parent_failure_v1"
 
 
@@ -422,6 +433,7 @@ def validate_nvml_sidecar_attempt(
     *,
     expected_uuid: str | None = None,
     require_pass: bool = True,
+    require_process_integrity: bool = False,
 ) -> dict[str, Any]:
     """Validate the self-hashed report and its exact immutable raw trace."""
 
@@ -431,16 +443,29 @@ def validate_nvml_sidecar_attempt(
         raise FileNotFoundError("S1 sidecar attempt report/trace pair is incomplete")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     report_hash = report.pop("attempt_sha256", None)
+    attempt_schema = report.get("schema_version")
+    buffered_attempt = attempt_schema == S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
     if (
         not report_hash
         or canonical_sha256(report) != report_hash
-        or report.get("schema_version") != S1_POWER_SIDECAR_ATTEMPT_SCHEMA
+        or attempt_schema
+        not in {
+            S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+            S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
+        }
         or report.get("backend") != S1_POWER_SIDECAR_BACKEND
     ):
         raise ValueError("S1 sidecar attempt report identity mismatch")
     report["attempt_sha256"] = report_hash
     trace_payload = trace_path.read_bytes()
     samples = _load_sidecar_trace(trace_payload)
+    trace_lines = trace_payload.splitlines()
+    trace_first_monotonic_ns = int(
+        json.loads(trace_lines[0].decode("utf-8"))["monotonic_ns"]
+    )
+    trace_last_monotonic_ns = int(
+        json.loads(trace_lines[-1].decode("utf-8"))["monotonic_ns"]
+    )
     cadence = summarize_power_cadence(
         samples, target_interval_ms=int(report.get("interval_ms", -1))
     )
@@ -460,6 +485,14 @@ def validate_nvml_sidecar_attempt(
         or clock.get("clock") != "time.monotonic_ns"
         or clock.get("monotonic") is not True
         or clock.get("adjustable") is not False
+        or (
+            buffered_attempt
+            and (
+                report.get("trace_publication_mode")
+                != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+                or report.get("trace_io_inside_sampling_loop") is not False
+            )
+        )
     ):
         raise ValueError("S1 sidecar attempt trace, cadence, clock, or CPU mismatch")
     attempt_uuid = str(report.get("expected_uuid", ""))
@@ -468,7 +501,7 @@ def validate_nvml_sidecar_attempt(
         or (expected_uuid is not None and attempt_uuid != str(expected_uuid))
     ):
         raise ValueError("S1 sidecar attempt GPU UUID mismatch")
-    if require_pass:
+    if require_pass or require_process_integrity:
         pid_record = report.get("pid_record") or {}
         ready_record = report.get("ready_record") or {}
         result_record = report.get("result_record") or {}
@@ -478,29 +511,112 @@ def validate_nvml_sidecar_attempt(
             value = checked.pop(key, None)
             return bool(value and canonical_sha256(checked) == value)
 
+        process_pid = int(report.get("process_pid", -1))
+        process_parent_pid = int(pid_record.get("parent_pid", -1))
+        expected_result_schema = (
+            S1_POWER_BUFFERED_SIDECAR_RESULT_SCHEMA
+            if buffered_attempt
+            else S1_POWER_SIDECAR_RESULT_SCHEMA
+        )
         if (
-            report.get("status") != "PASS"
-            or int(report.get("process_exit_code", -1)) != 0
-            or cadence.get("formal_cadence_pass") is not True
-            or float(cadence.get("max_gap_ms", math.inf)) > 100.0
+            int(report.get("process_exit_code", -1)) != 0
+            or process_pid <= 1
+            or process_parent_pid <= 1
             or not embedded_hash_valid(pid_record, "pid_sha256")
             or not embedded_hash_valid(ready_record, "ready_sha256")
             or not embedded_hash_valid(result_record, "result_sha256")
+            or pid_record.get("schema_version")
+            != "spatial_zoom_s1_power_sidecar_pid_v1"
+            or int(pid_record.get("pid", -1)) != process_pid
             or pid_record.get("expected_uuid") != attempt_uuid
+            or int(pid_record.get("sidecar_cpu_id", -1)) != sidecar_cpu
             or tuple(pid_record.get("actual_cpu_affinity", ())) != (sidecar_cpu,)
+            or tuple(sorted(map(int, pid_record.get("allocated_cpu_ids", ()))))
+            != allocated
+            or ready_record.get("schema_version")
+            != "spatial_zoom_s1_power_sidecar_ready_v1"
+            or int(ready_record.get("pid", -1)) != process_pid
+            or int(ready_record.get("parent_pid", -1)) != process_parent_pid
             or ready_record.get("expected_uuid") != attempt_uuid
             or ready_record.get("actual_uuid") != attempt_uuid
+            or int(ready_record.get("sidecar_cpu_id", -1)) != sidecar_cpu
             or tuple(ready_record.get("actual_cpu_affinity", ()))
             != (sidecar_cpu,)
+            or tuple(sorted(map(int, ready_record.get("allocated_cpu_ids", ()))))
+            != allocated
+            or int(ready_record.get("interval_ms", -1)) != 20
+            or result_record.get("schema_version") != expected_result_schema
+            or int(result_record.get("pid", -1)) != process_pid
+            or int(result_record.get("parent_pid", -1)) != process_parent_pid
             or result_record.get("status") != "PASS"
+            or result_record.get("error") is not None
             or result_record.get("expected_uuid") != attempt_uuid
             or result_record.get("actual_uuid") != attempt_uuid
+            or int(result_record.get("sidecar_cpu_id", -1)) != sidecar_cpu
             or tuple(result_record.get("actual_cpu_affinity", ()))
             != (sidecar_cpu,)
+            or tuple(sorted(map(int, result_record.get("allocated_cpu_ids", ()))))
+            != allocated
+            or int(result_record.get("interval_ms", -1)) != 20
             or int(result_record.get("sample_count", -1)) != len(samples)
             or result_record.get("trace_sha256") != _sha256_bytes(trace_payload)
+            or int(result_record.get("started_monotonic_ns", -1)) <= 0
+            or int(result_record.get("started_monotonic_ns", -1))
+            > trace_first_monotonic_ns
+            or int(ready_record.get("first_sample_monotonic_ns", -1))
+            != trace_first_monotonic_ns
+            or trace_last_monotonic_ns
+            > int(result_record.get("finished_monotonic_ns", -1))
+            or (
+                buffered_attempt
+                and (
+                    result_record.get("trace_publication_mode")
+                    != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+                    or result_record.get("trace_io_inside_sampling_loop") is not False
+                )
+            )
         ):
-            raise ValueError("S1 sidecar PASS attempt process identity mismatch")
+            raise ValueError("S1 sidecar attempt process identity mismatch")
+    if require_pass and (
+        report.get("status") != "PASS"
+        or report.get("error") is not None
+        or cadence.get("formal_cadence_pass") is not True
+        or float(cadence.get("max_gap_ms", math.inf)) > 100.0
+    ):
+        raise ValueError("S1 sidecar PASS attempt cadence or status mismatch")
+    return report
+
+
+def validate_nvml_sidecar_cadence_failure(
+    report_path: str | Path,
+    trace_path: str | Path,
+    *,
+    expected_uuid: str,
+) -> dict[str, Any]:
+    """Prove that a healthy sidecar failed for cadence, and cadence alone."""
+
+    report = validate_nvml_sidecar_attempt(
+        report_path,
+        trace_path,
+        expected_uuid=expected_uuid,
+        require_pass=False,
+        require_process_integrity=True,
+    )
+    cadence = report["cadence"]
+    expected_error = (
+        f"{S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX} "
+        f"max_gap_ms={cadence['max_gap_ms']}"
+    )
+    if (
+        report.get("status") != "FAIL"
+        or report.get("error") != expected_error
+        or cadence.get("formal_cadence_pass") is not False
+        or float(cadence.get("max_gap_limit_ms", -1.0)) != 100.0
+        or float(cadence.get("max_gap_ms", -1.0)) <= 100.0
+    ):
+        raise ValueError(
+            "S1 sidecar attempt does not prove an isolated cadence failure"
+        )
     return report
 
 
@@ -650,14 +766,18 @@ def run_nvml_sidecar(
         interval_ns = int(interval_ms) * 1_000_000
         deadline_ns = time.monotonic_ns()
         previous_observed_ns = -1
-        with trace_path.open("x", encoding="utf-8", buffering=1, newline="\n") as trace:
+        trace_buffer = io.BytesIO()
+        gc_was_enabled = gc.isenabled()
+        if gc_was_enabled:
+            gc.disable()
+        try:
             while not stop_requested:
                 power = nvml.power_w(handle)
                 observed_ns = time.monotonic_ns()
                 while observed_ns <= previous_observed_ns:
                     observed_ns = time.monotonic_ns()
                 previous_observed_ns = observed_ns
-                trace.write(
+                trace_buffer.write(
                     json.dumps(
                         {
                             "sequence": sample_count,
@@ -665,8 +785,8 @@ def run_nvml_sidecar(
                             "power_w": power,
                         },
                         sort_keys=True,
-                    )
-                    + "\n"
+                    ).encode("utf-8")
+                    + b"\n"
                 )
                 sample_count += 1
                 if sample_count == 1:
@@ -692,10 +812,22 @@ def run_nvml_sidecar(
                     missed = (observed_ns - deadline_ns) // interval_ns + 1
                     deadline_ns += missed * interval_ns
                 time.sleep(max(0.0, (deadline_ns - time.monotonic_ns()) / 1e9))
-            trace.flush()
-            os.fsync(trace.fileno())
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+        _atomic_publish_bytes(trace_path, trace_buffer.getvalue())
     except Exception as exc:  # pragma: no cover - exercised on a formal GPU host
         error = f"{type(exc).__name__}: {exc}"
+        if "trace_buffer" in locals() and trace_buffer.tell() > 0:
+            try:
+                _atomic_publish_bytes(trace_path, trace_buffer.getvalue())
+            except FileExistsError:
+                pass
+            except Exception as publish_exc:
+                error = (
+                    f"{error}; trace_publish={type(publish_exc).__name__}: "
+                    f"{publish_exc}"
+                )
     finally:
         if nvml is not None:
             try:
@@ -705,7 +837,7 @@ def run_nvml_sidecar(
                     error = f"{type(exc).__name__}: {exc}"
 
     result = {
-        "schema_version": "spatial_zoom_s1_power_sidecar_result_v1",
+        "schema_version": S1_POWER_BUFFERED_SIDECAR_RESULT_SCHEMA,
         "status": "PASS" if error is None else "FAIL",
         "error": error,
         "pid": os.getpid(),
@@ -721,6 +853,8 @@ def run_nvml_sidecar(
         "started_monotonic_ns": started_ns,
         "finished_monotonic_ns": time.monotonic_ns(),
         "trace_sha256": sha256_file(trace_path) if trace_path.is_file() else None,
+        "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
     }
     result["result_sha256"] = canonical_sha256(result)
     atomic_publish_json(result_path, result)
@@ -983,7 +1117,7 @@ class NvmlSidecarPowerSampler:
                 errors.append("NVML sidecar result does not match the raw trace")
         if not cadence["formal_cadence_pass"]:
             errors.append(
-                "formal S1 sidecar cadence failed: "
+                f"{S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX} "
                 f"max_gap_ms={cadence['max_gap_ms']}"
             )
         stdout_payload = (
@@ -993,7 +1127,7 @@ class NvmlSidecarPowerSampler:
             self._stderr_path.read_bytes() if self._stderr_path.is_file() else b""
         )
         report = {
-            "schema_version": S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+            "schema_version": S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
             "backend": self.backend,
             "status": "FAIL" if errors else "PASS",
             "error": "; ".join(filter(None, errors)) or None,
@@ -1014,6 +1148,8 @@ class NvmlSidecarPowerSampler:
             "trace_file_sha256": _sha256_bytes(trace_payload),
             "stdout_sha256": _sha256_bytes(stdout_payload),
             "stderr_sha256": _sha256_bytes(stderr_payload),
+            "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+            "trace_io_inside_sampling_loop": False,
         }
         report["attempt_sha256"] = canonical_sha256(report)
         atomic_publish_json(self.attempt_report_path, report)
@@ -1072,7 +1208,10 @@ def salvage_nvml_sidecar_attempt(
             not existing_hash
             or canonical_sha256(existing_attempt) != existing_hash
             or existing_attempt.get("schema_version")
-            != S1_POWER_SIDECAR_ATTEMPT_SCHEMA
+            not in {
+                S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+                S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
+            }
         ):
             raise ValueError("existing S1 sidecar attempt report is corrupt")
         existing_attempt["attempt_sha256"] = existing_hash
@@ -1146,7 +1285,7 @@ def salvage_nvml_sidecar_attempt(
     stderr_payload = stderr_path.read_bytes() if stderr_path.is_file() else b""
     if existing_attempt is None:
         existing_attempt = {
-            "schema_version": S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+            "schema_version": S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
             "backend": S1_POWER_SIDECAR_BACKEND,
             "status": "FAIL",
             "error": "; ".join(errors),
@@ -1166,6 +1305,8 @@ def salvage_nvml_sidecar_attempt(
             "trace_file_sha256": _sha256_bytes(trace_payload),
             "stdout_sha256": _sha256_bytes(stdout_payload),
             "stderr_sha256": _sha256_bytes(stderr_payload),
+            "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+            "trace_io_inside_sampling_loop": False,
         }
         existing_attempt["attempt_sha256"] = canonical_sha256(existing_attempt)
         atomic_publish_json(attempt_report_path, existing_attempt)
@@ -1426,6 +1567,27 @@ def cli(argv: list[str] | None = None) -> int:
     if arguments and arguments[0] == "salvage":
         return salvage_main(arguments[1:])
     return main(arguments)
+
+
+__all__ = [
+    "S1_POWER_DIAGNOSTIC_SCHEMA",
+    "S1_POWER_SIDECAR_BACKEND",
+    "S1_POWER_SIDECAR_ATTEMPT_SCHEMA",
+    "S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA",
+    "S1_POWER_SIDECAR_RESULT_SCHEMA",
+    "S1_POWER_BUFFERED_SIDECAR_RESULT_SCHEMA",
+    "S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE",
+    "S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX",
+    "S1_POWER_PARENT_FAILURE_SCHEMA",
+    "NvmlPowerSampler",
+    "NvmlSidecarPowerSampler",
+    "NvidiaSmiPowerSampler",
+    "run_nvml_sidecar",
+    "salvage_nvml_sidecar_attempt",
+    "summarize_power_cadence",
+    "validate_nvml_sidecar_attempt",
+    "validate_nvml_sidecar_cadence_failure",
+]
 
 
 if __name__ == "__main__":

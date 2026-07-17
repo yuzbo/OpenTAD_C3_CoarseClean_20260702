@@ -1152,6 +1152,8 @@ def _load_run_descriptor(
         "profile_power_attempt_sha256",
         "profile_power_attempt_trace_path",
         "profile_power_attempt_trace_sha256",
+        "profile_trace_publication_mode",
+        "profile_trace_io_inside_sampling_loop",
         "sidecar_gate_evidence_path",
         "sidecar_gate_evidence_file_sha256",
         "sidecar_gate_sha256",
@@ -1254,7 +1256,11 @@ def _load_run_descriptor(
         sidecar_gate_path,
         validate_sidecar_gate_runtime_identity,
     )
-    from tools.bata.spatial_zoom_s1_power import validate_nvml_sidecar_attempt
+    from tools.bata.spatial_zoom_s1_power import (
+        S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
+        S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        validate_nvml_sidecar_attempt,
+    )
 
     binding = validate_bound_s1_training_config(cfg, seed=int(descriptor["seed"]))
     if not binding["formal_precheck_verified"]:
@@ -1441,8 +1447,25 @@ def _load_run_descriptor(
         or power_attempt["attempt_sha256"] != profile["power_attempt_sha256"]
         or power_attempt["trace_file_sha256"]
         != descriptor["profile_power_attempt_trace_sha256"]
+        or power_attempt.get("schema_version")
+        != S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
+        or power_attempt.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or power_attempt.get("trace_io_inside_sampling_loop") is not False
+        or descriptor.get("profile_trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or descriptor.get("profile_trace_io_inside_sampling_loop") is not False
+        or profile.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or profile.get("trace_io_inside_sampling_loop") is not False
+        or sidecar_gate.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or sidecar_gate.get("trace_io_inside_sampling_loop") is not False
+        or recovery.get("trace_publication_mode")
+        != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        or recovery.get("trace_io_inside_sampling_loop") is not False
     ):
-        raise ValueError("S1 profile sidecar-attempt identity mismatch")
+        raise ValueError("S1 buffered sidecar trace-publication identity mismatch")
     validate_sidecar_gate_runtime_identity(
         sidecar_gate,
         hardware_identity=profile["hardware_identity"],
@@ -1482,6 +1505,8 @@ def _load_run_descriptor(
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
         "power_sampler_backend": recovery["power_sampler_backend"],
+        "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_evidence_file_sha256": descriptor[
             "sidecar_gate_evidence_file_sha256"
@@ -1538,6 +1563,8 @@ def _load_run_descriptor(
         "profile_recovery_campaign_id": recovery["campaign_id"],
         "gate_only": False,
         "power_sampler_backend": recovery["power_sampler_backend"],
+        "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
         "allocated_cpu_ids": profile["allocated_cpu_ids"],
         "detector_cpu_ids": profile["detector_cpu_ids"],
         "sidecar_cpu_id": profile["sidecar_cpu_id"],

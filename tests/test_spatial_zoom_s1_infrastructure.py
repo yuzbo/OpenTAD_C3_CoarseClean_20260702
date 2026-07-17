@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from mmengine.config import Config
 import tools.bata.spatial_zoom_s1_power as s1_power
+import tools.bata.spatial_zoom_s1_profile_recovery as s1_profile_recovery
 import tools.bata.spatial_zoom_s1_test_open as s1_test_open
 
 from tools.bata.analyze_spatial_zoom_s1_results import (
@@ -73,6 +74,10 @@ from tools.bata.profile_spatial_zoom_s1 import (
     validate_profile_order_ready,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (
+    S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE,
+    S1_BUFFERED_SIDECAR_PROFILE_RECOVERY_SCHEMA,
+    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+    S1_BUFFERED_TRACE_PUBLICATION_MODE,
     S1_CHAINED_PROFILE_RECOVERY_SCHEMA,
     S1_CHAINED_RECOVERY_REASON,
     S1_PROFILE_FAILURE_SIGNATURE,
@@ -85,8 +90,13 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (
     validate_profile_recovery_certificate,
 )
 from tools.bata.spatial_zoom_s1_power import (
+    S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA,
+    S1_POWER_BUFFERED_SIDECAR_RESULT_SCHEMA,
+    S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+    S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX,
     S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
     S1_POWER_SIDECAR_BACKEND,
+    S1_POWER_SIDECAR_RESULT_SCHEMA,
     NvmlPowerSampler,
     NvmlSidecarPowerSampler,
     _load_sidecar_trace,
@@ -94,6 +104,7 @@ from tools.bata.spatial_zoom_s1_power import (
     salvage_nvml_sidecar_attempt,
     summarize_power_cadence,
     validate_nvml_sidecar_attempt,
+    validate_nvml_sidecar_cadence_failure,
 )
 from tools.bata.spatial_zoom_s1_sidecar_gate import (
     build_sidecar_gate_evidence,
@@ -1045,6 +1056,7 @@ def test_profile_recovery_certificate_preserves_failed_attempt_and_scope(
 
 def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     canonical_root = (tmp_path / "canonical").resolve()
     binding = {
@@ -1351,6 +1363,272 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
             tampered_cpu, binding=binding, verify_checkout=False
         )
 
+    sidecar_path = tmp_path / "sidecar.json"
+    sidecar_path.write_text(
+        json.dumps(sidecar, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    failed_prefix = (
+        Path(sidecar["campaign_root"])
+        / "dense256"
+        / "seed3408"
+        / "dense256_seed3408"
+    )
+    attempt_report_path, attempt_trace_path, attempt = _write_valid_sidecar_attempt(
+        failed_prefix,
+        expected_uuid="GPU-S1",
+        timestamps_ns=(
+            1_000_000_000,
+            1_020_000_000,
+            1_170_000_000,
+            1_190_000_000,
+        ),
+        cadence_failure=True,
+    )
+    parent_failure_path = Path(
+        f"{failed_prefix}.power_parent_failure.json"
+    )
+    parent_failure = {
+        "schema_version": "spatial_zoom_s1_profile_parent_failure_v1",
+        "status": "FAIL",
+        "paper_claim_allowed": False,
+        "power_attempt_sha256": attempt["attempt_sha256"],
+        "power_attempt_report_file_sha256": sha256_file(attempt_report_path),
+        "power_attempt_trace_file_sha256": sha256_file(attempt_trace_path),
+    }
+    parent_failure["parent_failure_sha256"] = canonical_sha256(parent_failure)
+    parent_failure_path.write_text(
+        json.dumps(parent_failure, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    matrix_start_path = tmp_path / "matrix.started.json"
+    matrix_start = {
+        "slurm_job_id": "1168823",
+        "slurm_step_id": "0",
+        "step_gpu_uuid": "GPU-S1",
+        "profile_code_commit": sidecar["profile_code_commit"],
+        "profile_recovery_certificate_sha256": sidecar[
+            "certificate_sha256"
+        ],
+        "profile_recovery_campaign_id": sidecar["campaign_id"],
+        "frozen_order": build_s1_profile_order(),
+    }
+    matrix_start["matrix_sha256"] = canonical_sha256(matrix_start)
+    matrix_start_path.write_text(
+        json.dumps(matrix_start, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    buffered_marker_path = tmp_path / "buffered.started.json"
+    buffered_marker = {
+        **original_marker,
+        "schema_version": "spatial_zoom_s1_profile_attempt_v7",
+        "profile_code_commit": sidecar["profile_code_commit"],
+        "profile_recovery_certificate_sha256": sidecar[
+            "certificate_sha256"
+        ],
+        "profile_recovery_campaign_id": sidecar["campaign_id"],
+        "test_evidence_sha256": legacy_test_evidence["evidence_sha256"],
+        "canonical_output_prefix": str(failed_prefix.resolve()),
+        "power_sampler_backend": "nvml-sidecar-process-v1",
+        "gate_only": False,
+        "slurm_job_id": "1168823",
+        "slurm_step_id": "0",
+        "step_gpu_uuid": "GPU-S1",
+        "matrix_start_receipt_path": str(matrix_start_path.resolve()),
+        "matrix_start_receipt_file_sha256": sha256_file(matrix_start_path),
+        "matrix_sha256": matrix_start["matrix_sha256"],
+    }
+    buffered_marker.pop("marker_sha256")
+    buffered_marker["marker_sha256"] = canonical_sha256(buffered_marker)
+    buffered_marker_path.write_text(
+        json.dumps(buffered_marker, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    buffered_log = tmp_path / "buffered.log"
+    buffered_log.write_text(
+        S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE + "\n",
+        encoding="utf-8",
+    )
+    parent_delta = [
+        {
+            "status": "M",
+            "path": "tools/bata/spatial_zoom_s1_power.py",
+            "file_sha256": "2" * 64,
+        }
+    ]
+    monkeypatch.setattr(
+        s1_profile_recovery,
+        "_changed_files_between_commits",
+        lambda *_args, **_kwargs: copy.deepcopy(parent_delta),
+    )
+    monkeypatch.setattr(
+        s1_profile_recovery,
+        "_git_file_sha256",
+        lambda commit, _path: (
+            "1" * 64 if commit == sidecar["profile_code_commit"] else "2" * 64
+        ),
+    )
+    matrix_validation_calls = []
+
+    def validate_matrix(path, *, parent_recovery_path):
+        matrix_validation_calls.append(
+            (Path(path).resolve(), Path(parent_recovery_path).resolve())
+        )
+        checked = json.loads(Path(path).read_text(encoding="utf-8"))
+        return checked
+
+    monkeypatch.setattr(
+        s1_profile_recovery,
+        "_validate_v3_matrix_start_receipt",
+        validate_matrix,
+    )
+    buffered_basis = {
+        **parent_basis,
+        "schema_version": S1_BUFFERED_SIDECAR_PROFILE_RECOVERY_SCHEMA,
+        "reason": S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+        "profile_code_commit": "9" * 40,
+        "legacy_unbound_test_resolution": int(first["resolution"]),
+        "legacy_unbound_test_seed": int(first["seed"]),
+        "legacy_unbound_test_evidence_path": str(
+            legacy_test_evidence_path.resolve()
+        ),
+        "legacy_unbound_test_evidence_file_sha256": sha256_file(
+            legacy_test_evidence_path
+        ),
+        "legacy_unbound_test_evidence_sha256": legacy_test_evidence[
+            "evidence_sha256"
+        ],
+        "changed_files": [
+            {"status": "M", "path": path, "file_sha256": "a" * 64}
+            for path in sidecar_paths
+        ],
+        "parent_to_current_changed_files": parent_delta,
+        "parent_sampling_implementation_sha256": "1" * 64,
+        "sampling_implementation_sha256": "2" * 64,
+        "repair_scope": "buffered_sidecar_trace_publication_only",
+        "preserve_recovery_chain": True,
+        "superseded_recovery_certificate_path": str(sidecar_path.resolve()),
+        "superseded_recovery_certificate_file_sha256": sha256_file(
+            sidecar_path
+        ),
+        "superseded_recovery_certificate_sha256": sidecar[
+            "certificate_sha256"
+        ],
+        "superseded_recovery_campaign_id": sidecar["campaign_id"],
+        "superseded_recovery_profile_code_commit": sidecar[
+            "profile_code_commit"
+        ],
+        "buffered_sidecar_failure_signature": (
+            S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE
+        ),
+        "buffered_sidecar_failed_job_id": "1168823",
+        "buffered_sidecar_failed_slurm_step_id": "0",
+        "buffered_sidecar_failed_gpu_uuid": "GPU-S1",
+        "buffered_sidecar_failure_marker_path": str(
+            buffered_marker_path.resolve()
+        ),
+        "buffered_sidecar_failure_marker_file_sha256": sha256_file(
+            buffered_marker_path
+        ),
+        "buffered_sidecar_failure_marker_sha256": buffered_marker[
+            "marker_sha256"
+        ],
+        "buffered_sidecar_failure_log_path": str(buffered_log.resolve()),
+        "buffered_sidecar_failure_log_sha256": sha256_file(buffered_log),
+        "buffered_sidecar_attempt_report_path": str(
+            attempt_report_path.resolve()
+        ),
+        "buffered_sidecar_attempt_report_file_sha256": sha256_file(
+            attempt_report_path
+        ),
+        "buffered_sidecar_attempt_sha256": attempt["attempt_sha256"],
+        "buffered_sidecar_attempt_trace_path": str(
+            attempt_trace_path.resolve()
+        ),
+        "buffered_sidecar_attempt_trace_file_sha256": sha256_file(
+            attempt_trace_path
+        ),
+        "buffered_sidecar_parent_failure_path": str(
+            parent_failure_path.resolve()
+        ),
+        "buffered_sidecar_parent_failure_file_sha256": sha256_file(
+            parent_failure_path
+        ),
+        "buffered_sidecar_parent_failure_sha256": parent_failure[
+            "parent_failure_sha256"
+        ],
+        "buffered_sidecar_matrix_start_path": str(
+            matrix_start_path.resolve()
+        ),
+        "buffered_sidecar_matrix_start_file_sha256": sha256_file(
+            matrix_start_path
+        ),
+        "buffered_sidecar_matrix_sha256": matrix_start["matrix_sha256"],
+        "power_sampler_backend": "nvml-sidecar-process-v1",
+        "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
+        "power_target_interval_ms": 20,
+        "power_max_gap_limit_ms": 100.0,
+        "allocated_cpu_count": 5,
+        "detector_cpu_count": 4,
+        "sidecar_cpu_count": 1,
+        "requires_long_no_open_gate": True,
+        "sidecar_gate_relative_path": "sidecar_gate.json",
+    }
+    buffered_id = canonical_sha256(buffered_basis)[:16]
+    buffered = {
+        **buffered_basis,
+        "campaign_id": buffered_id,
+        "campaign_root": str(
+            canonical_root / "profile_campaigns" / buffered_id
+        ),
+    }
+    buffered["certificate_sha256"] = canonical_sha256(buffered)
+    buffered_checked = validate_profile_recovery_certificate(
+        buffered, binding=binding, verify_checkout=False
+    )
+    assert buffered_checked["buffered_sidecar_failed_job_id"] == "1168823"
+    assert buffered_checked["trace_io_inside_sampling_loop"] is False
+    assert matrix_validation_calls == [
+        (matrix_start_path.resolve(), sidecar_path.resolve())
+    ]
+
+    no_sampling_change = copy.deepcopy(buffered)
+    for key in ("certificate_sha256", "campaign_id", "campaign_root"):
+        no_sampling_change.pop(key)
+    no_sampling_change["sampling_implementation_sha256"] = (
+        no_sampling_change["parent_sampling_implementation_sha256"]
+    )
+    no_sampling_change_id = canonical_sha256(no_sampling_change)[:16]
+    no_sampling_change["campaign_id"] = no_sampling_change_id
+    no_sampling_change["campaign_root"] = str(
+        canonical_root / "profile_campaigns" / no_sampling_change_id
+    )
+    no_sampling_change["certificate_sha256"] = canonical_sha256(no_sampling_change)
+    with pytest.raises(ValueError, match="sampling implementation binding"):
+        validate_profile_recovery_certificate(
+            no_sampling_change,
+            binding=binding,
+            verify_checkout=False,
+        )
+
+    tampered_trace_mode = copy.deepcopy(buffered)
+    tampered_trace_mode["trace_io_inside_sampling_loop"] = True
+    for key in ("certificate_sha256", "campaign_id", "campaign_root"):
+        tampered_trace_mode.pop(key)
+    tampered_trace_id = canonical_sha256(tampered_trace_mode)[:16]
+    tampered_trace_mode["campaign_id"] = tampered_trace_id
+    tampered_trace_mode["campaign_root"] = str(
+        canonical_root / "profile_campaigns" / tampered_trace_id
+    )
+    tampered_trace_mode["certificate_sha256"] = canonical_sha256(
+        tampered_trace_mode
+    )
+    with pytest.raises(ValueError, match="buffered-sidecar recovery contract"):
+        validate_profile_recovery_certificate(
+            tampered_trace_mode, binding=binding, verify_checkout=False
+        )
+
     wrong_schema = copy.deepcopy(chain)
     wrong_schema["schema_version"] = S1_PROFILE_RECOVERY_SCHEMA
     wrong_schema.pop("certificate_sha256")
@@ -1374,6 +1652,44 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         validate_profile_recovery_certificate(
             wrong_backend, binding=binding, verify_checkout=False
         )
+
+
+def test_profile_recovery_dispatches_v3_parent_to_buffered_builder(
+    tmp_path: Path, monkeypatch
+) -> None:
+    parent_path = tmp_path / "v3.json"
+    parent_path.write_text(
+        json.dumps({"reason": S1_SIDECAR_RECOVERY_REASON}) + "\n",
+        encoding="utf-8",
+    )
+    sentinel = (tmp_path / "v4.json", {"reason": "buffered"})
+    captured = {}
+
+    def fake_builder(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        s1_profile_recovery,
+        "build_buffered_sidecar_profile_recovery_certificate",
+        fake_builder,
+    )
+    result = s1_profile_recovery.build_profile_recovery_certificate(
+        binding={"code_commit": "a" * 40},
+        failed_marker_path=tmp_path / "failed.started.json",
+        failure_log_path=tmp_path / "failed.log",
+        failed_job_id="1168823",
+        expected_exposure_count=792,
+        expected_physical_window_count=791,
+        expected_duplicate_physical_window_ids=("duplicate",),
+        superseded_recovery_certificate_path=parent_path,
+        power_diagnostic_path=None,
+    )
+    assert result == sentinel
+    assert captured["superseded_recovery_certificate_path"] == (
+        parent_path.resolve()
+    )
+    assert captured["failed_job_id"] == "1168823"
 
 
 def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
@@ -2481,6 +2797,8 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "amp": True,
         "power_sampling_enabled": True,
         "power_sampler_backend": "nvml-sidecar-process-v1",
+        "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
         "formal_profile": False,
         "split": "test",
         "seed": seed,
@@ -2548,22 +2866,29 @@ def _write_valid_sidecar_attempt(
     prefix: Path,
     *,
     expected_uuid: str = "GPU-S1",
+    buffered: bool = False,
+    timestamps_ns: tuple[int, ...] | None = None,
+    cadence_failure: bool = False,
 ) -> tuple[Path, Path, dict]:
     trace_path = Path(f"{prefix}.power_attempt.jsonl")
     report_path = Path(f"{prefix}.power_attempt.json")
     trace_path.parent.mkdir(parents=True, exist_ok=True)
+    if timestamps_ns is None:
+        timestamps_ns = tuple(
+            1_000_000_000 + index * 20_000_000 for index in range(4)
+        )
     trace_path.write_text(
         "".join(
             json.dumps(
                 {
                     "sequence": index,
-                    "monotonic_ns": 1_000_000_000 + index * 20_000_000,
+                    "monotonic_ns": timestamp_ns,
                     "power_w": 120.0 + index,
                 },
                 sort_keys=True,
             )
             + "\n"
-            for index in range(4)
+            for index, timestamp_ns in enumerate(timestamps_ns)
         ),
         encoding="utf-8",
     )
@@ -2596,11 +2921,15 @@ def _write_valid_sidecar_attempt(
         "allocated_cpu_ids": [0, 1, 2, 3, 4],
         "interval_ms": 20,
         "clock_identity": clock,
-        "first_sample_monotonic_ns": 1_000_000_000,
+        "first_sample_monotonic_ns": int(timestamps_ns[0]),
     }
     ready_record["ready_sha256"] = canonical_sha256(ready_record)
     result_record = {
-        "schema_version": "spatial_zoom_s1_power_sidecar_result_v1",
+        "schema_version": (
+            S1_POWER_BUFFERED_SIDECAR_RESULT_SCHEMA
+            if buffered
+            else S1_POWER_SIDECAR_RESULT_SCHEMA
+        ),
         "status": "PASS",
         "error": None,
         "pid": 1234,
@@ -2612,17 +2941,28 @@ def _write_valid_sidecar_attempt(
         "allocated_cpu_ids": [0, 1, 2, 3, 4],
         "interval_ms": 20,
         "clock_identity": clock,
-        "sample_count": 4,
-        "started_monotonic_ns": 999_000_000,
-        "finished_monotonic_ns": 1_061_000_000,
+        "sample_count": len(timestamps_ns),
+        "started_monotonic_ns": max(1, int(timestamps_ns[0]) - 1_000_000),
+        "finished_monotonic_ns": int(timestamps_ns[-1]) + 1_000_000,
         "trace_sha256": sha256_file(trace_path),
     }
+    if buffered:
+        result_record.update(
+            {
+                "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+                "trace_io_inside_sampling_loop": False,
+            }
+        )
     result_record["result_sha256"] = canonical_sha256(result_record)
     cadence = summarize_power_cadence(
         _load_sidecar_trace(trace_path.read_bytes()), target_interval_ms=20
     )
     report = {
-        "schema_version": S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+        "schema_version": (
+            S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
+            if buffered
+            else S1_POWER_SIDECAR_ATTEMPT_SCHEMA
+        ),
         "backend": S1_POWER_SIDECAR_BACKEND,
         "status": "PASS",
         "error": None,
@@ -2644,6 +2984,19 @@ def _write_valid_sidecar_attempt(
         "stdout_sha256": "0" * 64,
         "stderr_sha256": "0" * 64,
     }
+    if cadence_failure:
+        report["status"] = "FAIL"
+        report["error"] = (
+            f"{S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX} "
+            f"max_gap_ms={cadence['max_gap_ms']}"
+        )
+    if buffered:
+        report.update(
+            {
+                "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+                "trace_io_inside_sampling_loop": False,
+            }
+        )
     report["attempt_sha256"] = canonical_sha256(report)
     report_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
@@ -2919,6 +3272,11 @@ def test_sidecar_core_publishes_ordered_monotonic_trace(
     tmp_path: Path, monkeypatch
 ) -> None:
     affinity = {0, 1, 2, 3, 4}
+    scratch = tmp_path / "sidecar"
+    trace = scratch / "power.jsonl"
+    ready = scratch / "ready.json"
+    result = scratch / "result.json"
+    sample_calls = 0
 
     class FakeNvml:
         def initialize(self) -> None:
@@ -2933,7 +3291,10 @@ def test_sidecar_core_publishes_ordered_monotonic_trace(
             return "GPU-allocated"
 
         def power_w(self, handle: str) -> float:
+            nonlocal sample_calls
             assert handle == "handle"
+            assert not trace.exists()
+            sample_calls += 1
             return 125.0
 
         def shutdown(self) -> None:
@@ -2948,10 +3309,6 @@ def test_sidecar_core_publishes_ordered_monotonic_trace(
     monkeypatch.setattr(
         s1_power.os, "sched_getaffinity", lambda _pid: set(affinity), raising=False
     )
-    scratch = tmp_path / "sidecar"
-    trace = scratch / "power.jsonl"
-    ready = scratch / "ready.json"
-    result = scratch / "result.json"
     assert (
         run_nvml_sidecar(
             expected_uuid="GPU-allocated",
@@ -2966,6 +3323,7 @@ def test_sidecar_core_publishes_ordered_monotonic_trace(
         == 0
     )
     samples = _load_sidecar_trace(trace.read_bytes())
+    assert sample_calls == 3
     assert len(samples) == 3
     assert all(power == 125.0 for _, power in samples)
     result_record = json.loads(result.read_text(encoding="utf-8"))
@@ -3275,6 +3633,97 @@ def test_sidecar_attempt_validator_rejects_swapped_raw_trace(tmp_path: Path) -> 
         assert "expected_uuid=profile[\"hardware_identity\"]" in source
 
 
+def test_buffered_sidecar_cadence_failure_requires_healthy_process(
+    tmp_path: Path,
+) -> None:
+    timestamps = (
+        1_000_000_000,
+        1_020_000_000,
+        1_170_000_000,
+        1_190_000_000,
+    )
+    report_path, trace_path, report = _write_valid_sidecar_attempt(
+        tmp_path / "cadence-only",
+        expected_uuid="GPU-S1",
+        buffered=True,
+        timestamps_ns=timestamps,
+        cadence_failure=True,
+    )
+    checked = validate_nvml_sidecar_cadence_failure(
+        report_path,
+        trace_path,
+        expected_uuid="GPU-S1",
+    )
+    assert checked["cadence"]["max_gap_ms"] == pytest.approx(150.0)
+
+    def publish_tampered(path: Path, payload: dict) -> None:
+        payload.pop("attempt_sha256", None)
+        payload["attempt_sha256"] = canonical_sha256(payload)
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    for name, mutate in (
+        (
+            "exit-137",
+            lambda payload: payload.update({"process_exit_code": 137}),
+        ),
+        (
+            "wrong-ready-uuid",
+            lambda payload: payload["ready_record"].update(
+                {"actual_uuid": "GPU-WRONG"}
+            ),
+        ),
+        (
+            "missing-result",
+            lambda payload: payload.update({"result_record": None}),
+        ),
+        (
+            "wrong-ready-first-sample",
+            lambda payload: payload["ready_record"].update(
+                {"first_sample_monotonic_ns": timestamps[0] + 1}
+            ),
+        ),
+        (
+            "finished-before-last-sample",
+            lambda payload: payload["result_record"].update(
+                {"finished_monotonic_ns": timestamps[-1] - 1}
+            ),
+        ),
+    ):
+        tampered_path = tmp_path / f"{name}.json"
+        tampered = copy.deepcopy(report)
+        mutate(tampered)
+        for record_key, hash_key in (
+            ("pid_record", "pid_sha256"),
+            ("ready_record", "ready_sha256"),
+            ("result_record", "result_sha256"),
+        ):
+            record = tampered.get(record_key)
+            if isinstance(record, dict):
+                record.pop(hash_key, None)
+                record[hash_key] = canonical_sha256(record)
+        publish_tampered(tampered_path, tampered)
+        with pytest.raises(ValueError, match="process identity"):
+            validate_nvml_sidecar_cadence_failure(
+                tampered_path,
+                trace_path,
+                expected_uuid="GPU-S1",
+            )
+
+    extra_error_path = tmp_path / "extra-error.json"
+    extra_error = copy.deepcopy(report)
+    extra_error["error"] += "; unrelated failure"
+    publish_tampered(extra_error_path, extra_error)
+    with pytest.raises(ValueError, match="isolated cadence"):
+        validate_nvml_sidecar_cadence_failure(
+            extra_error_path,
+            trace_path,
+            expected_uuid="GPU-S1",
+        )
+
+
 @pytest.mark.skipif(
     platform.system() != "Linux",
     reason="real sidecar subprocess lifecycle requires Linux CPU affinity",
@@ -3288,134 +3737,30 @@ def test_sidecar_sampler_real_subprocess_lifecycle(tmp_path: Path) -> None:
     fake_sidecar = tmp_path / "fake_sidecar.py"
     fake_sidecar.write_text(
         textwrap.dedent(
-            """
-            import argparse
-            import hashlib
-            import json
-            import os
-            from pathlib import Path
-            import signal
-            import time
+            f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
 
-            def canonical(value):
-                payload = json.dumps(
-                    value,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=True,
-                )
-                return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            from tools.bata import spatial_zoom_s1_power as power
 
-            def file_hash(path):
-                return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            class FakeNvml:
+                def initialize(self):
+                    pass
 
-            def publish(path, value):
-                path = Path(path)
-                temporary = path.with_name(path.name + ".tmp")
-                temporary.write_text(
-                    json.dumps(value, indent=2, sort_keys=True) + "\\n",
-                    encoding="utf-8",
-                )
-                os.replace(temporary, path)
+                def handle_by_uuid(self, expected_uuid):
+                    return expected_uuid
 
-            def clock():
-                info = time.get_clock_info("monotonic")
-                return {
-                    "clock": "time.monotonic_ns",
-                    "implementation": info.implementation,
-                    "monotonic": bool(info.monotonic),
-                    "adjustable": bool(info.adjustable),
-                    "resolution_seconds": float(info.resolution),
-                }
+                def uuid(self, handle):
+                    return handle
 
-            parser = argparse.ArgumentParser()
-            parser.add_argument("mode")
-            parser.add_argument("--expected-uuid", required=True)
-            parser.add_argument("--interval-ms", type=int, required=True)
-            parser.add_argument("--trace", type=Path, required=True)
-            parser.add_argument("--ready", type=Path, required=True)
-            parser.add_argument("--result", type=Path, required=True)
-            parser.add_argument("--sidecar-cpu-id", type=int, required=True)
-            parser.add_argument("--allocated-cpus", required=True)
-            args = parser.parse_args()
-            allocated = [int(value) for value in args.allocated_cpus.split(",")]
-            os.sched_setaffinity(0, {args.sidecar_cpu_id})
-            affinity = sorted(os.sched_getaffinity(0))
-            pid_record = {
-                "schema_version": "spatial_zoom_s1_power_sidecar_pid_v1",
-                "pid": os.getpid(),
-                "parent_pid": os.getppid(),
-                "expected_uuid": args.expected_uuid,
-                "sidecar_cpu_id": args.sidecar_cpu_id,
-                "actual_cpu_affinity": affinity,
-                "allocated_cpu_ids": allocated,
-                "clock_identity": clock(),
-            }
-            pid_record["pid_sha256"] = canonical(pid_record)
-            publish(args.trace.parent / "pid.json", pid_record)
-            stop = False
+                def power_w(self, _handle):
+                    return 125.0
 
-            def request_stop(_signum, _frame):
-                global stop
-                stop = True
+                def shutdown(self):
+                    pass
 
-            signal.signal(signal.SIGTERM, request_stop)
-            started = time.monotonic_ns()
-            sequence = 0
-            with args.trace.open("x", encoding="utf-8", buffering=1) as handle:
-                while not stop:
-                    observed = time.monotonic_ns()
-                    handle.write(
-                        json.dumps(
-                            {
-                                "sequence": sequence,
-                                "monotonic_ns": observed,
-                                "power_w": 125.0,
-                            },
-                            sort_keys=True,
-                        )
-                        + "\\n"
-                    )
-                    if sequence == 0:
-                        ready = {
-                            "schema_version": "spatial_zoom_s1_power_sidecar_ready_v1",
-                            "pid": os.getpid(),
-                            "parent_pid": os.getppid(),
-                            "expected_uuid": args.expected_uuid,
-                            "actual_uuid": args.expected_uuid,
-                            "sidecar_cpu_id": args.sidecar_cpu_id,
-                            "actual_cpu_affinity": affinity,
-                            "allocated_cpu_ids": allocated,
-                            "interval_ms": args.interval_ms,
-                            "clock_identity": clock(),
-                            "first_sample_monotonic_ns": observed,
-                        }
-                        ready["ready_sha256"] = canonical(ready)
-                        publish(args.ready, ready)
-                    sequence += 1
-                    time.sleep(args.interval_ms / 1000.0)
-                handle.flush()
-                os.fsync(handle.fileno())
-            result = {
-                "schema_version": "spatial_zoom_s1_power_sidecar_result_v1",
-                "status": "PASS",
-                "error": None,
-                "pid": os.getpid(),
-                "parent_pid": os.getppid(),
-                "expected_uuid": args.expected_uuid,
-                "actual_uuid": args.expected_uuid,
-                "sidecar_cpu_id": args.sidecar_cpu_id,
-                "actual_cpu_affinity": affinity,
-                "allocated_cpu_ids": allocated,
-                "interval_ms": args.interval_ms,
-                "clock_identity": clock(),
-                "sample_count": sequence,
-                "started_monotonic_ns": started,
-                "finished_monotonic_ns": time.monotonic_ns(),
-                "trace_sha256": file_hash(args.trace),
-            }
-            result["result_sha256"] = canonical(result)
-            publish(args.result, result)
+            power._Nvml = FakeNvml
+            raise SystemExit(power.cli())
             """
         ).lstrip(),
         encoding="utf-8",
@@ -3437,6 +3782,7 @@ def test_sidecar_sampler_real_subprocess_lifecycle(tmp_path: Path) -> None:
         )
         sampler.start()
         time.sleep(0.12)
+        assert not sampler._trace_path.exists()
         sampler.stop()
         assert sampler._process is not None
         assert sampler._process.poll() == 0
@@ -3448,6 +3794,11 @@ def test_sidecar_sampler_real_subprocess_lifecycle(tmp_path: Path) -> None:
         )
         assert checked["status"] == "PASS"
         assert checked["cadence"]["formal_cadence_pass"] is True
+        assert (
+            checked["trace_publication_mode"]
+            == S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+        )
+        assert checked["trace_io_inside_sampling_loop"] is False
     finally:
         if sampler is not None and sampler._process is not None:
             if sampler._process.poll() is None:
@@ -3521,12 +3872,16 @@ def test_sidecar_sampler_process_failure_leaves_no_orphan(
         os.sched_setaffinity(0, set(original_affinity))
 
 
+@pytest.mark.parametrize(
+    "recovery_reason",
+    (S1_SIDECAR_RECOVERY_REASON, S1_BUFFERED_SIDECAR_RECOVERY_REASON),
+)
 def test_long_sidecar_gate_is_compact_test_reuse_evidence(
-    tmp_path: Path,
+    tmp_path: Path, recovery_reason: str
 ) -> None:
     campaign_root = (tmp_path / "campaign").resolve()
     recovery = {
-        "reason": S1_SIDECAR_RECOVERY_REASON,
+        "reason": recovery_reason,
         "campaign_root": str(campaign_root),
         "sidecar_gate_relative_path": "sidecar_gate.json",
         "profile_code_commit": "a" * 40,
@@ -3539,6 +3894,13 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
         "allocated_cpu_count": 5,
         "detector_cpu_count": 4,
     }
+    if recovery_reason == S1_BUFFERED_SIDECAR_RECOVERY_REASON:
+        recovery.update(
+            {
+                "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
+                "trace_io_inside_sampling_loop": False,
+            }
+        )
     metadata = _profile_metadata(256, 3408)
     profile = build_profile_summary(
         [_profile_sample(1.0, 0), _profile_sample(1.1, 1)],
@@ -3552,6 +3914,13 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
         "schema_version": "spatial_zoom_s1_profile_attempt_v6",
         "gate_only": True,
     }
+    if recovery_reason == S1_BUFFERED_SIDECAR_RECOVERY_REASON:
+        marker.update(
+            {
+                "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
+                "trace_io_inside_sampling_loop": False,
+            }
+        )
     marker["marker_sha256"] = canonical_sha256(marker)
     marker_path.write_text(
         json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -3559,6 +3928,7 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
     attempt_report_path, attempt_trace, _ = _write_valid_sidecar_attempt(
         prefix,
         expected_uuid="GPU-S1",
+        buffered=recovery_reason == S1_BUFFERED_SIDECAR_RECOVERY_REASON,
     )
     test_evidence_path = tmp_path / "test.evidence.json"
     test_evidence_path.write_text('{"sealed": true}\n', encoding="utf-8")
@@ -3576,6 +3946,12 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
     assert path == sidecar_gate_path(recovery)
     checked = load_sidecar_gate_evidence(path, recovery=recovery)
     assert checked["status"] == "PASS"
+    assert checked["trace_publication_mode"] == recovery.get(
+        "trace_publication_mode"
+    )
+    assert checked["trace_io_inside_sampling_loop"] == recovery.get(
+        "trace_io_inside_sampling_loop"
+    )
     assert checked["published_formal_profile"] is False
     assert not prefix.with_suffix(".summary.json").exists()
     assert checked["hardware_class"] == sidecar_gate_hardware_class(

@@ -102,6 +102,32 @@ Any sample gap above 100 ms, child crash, timeout, UUID mismatch, affinity
 drift, missing raw trace, or hash mismatch fails closed. A matrix launcher must
 validate the successful Gate result before its first cell.
 
+## Buffered Trace Amendment
+
+The first formal v3 matrix, Job `1168823`, falsified the assumption that CPU
+isolation alone was sufficient. Its first cell preserved `112107` samples and
+failed on three gaps above `100` ms (maximum `146.048` ms), while the child
+process itself exited normally. No formal profile or descriptor was
+published. The failed campaign and start receipt are immutable.
+
+The v4 repair does not move the cadence threshold. It removes line-buffered
+filesystem writes from the measured loop: the sidecar records each
+sequence-numbered sample in an in-memory byte buffer with cyclic garbage
+collection disabled, then atomically publishes the complete JSONL trace after
+SIGTERM ends sampling. The ready and PID records remain available while the
+child is live. A normal stop must publish trace and result before the parent
+finalizes the attempt; a crash or timeout remains a FAIL and enters the
+existing salvage path. The v4 recovery certificate binds the v3 parent,
+Job `1168823`, its v7 marker, failure log, FAIL attempt report/raw trace,
+parent-failure record, matrix-start receipt, Slurm step and GPU UUID. Formal
+markers, Gate evidence, and profile metadata explicitly record
+`post_sampling_atomic_jsonl_v1` and `trace_io_inside_sampling_loop=false`.
+The validator binds the process lifecycle to the exact raw trace with
+`0 < start <= trace_first == ready_first <= trace_last <= finish`; rehashed
+records with a shifted ready timestamp or a finish before the final sample are
+rejected. Formal profiles and new no-open Gates accept only v4. Historical v3
+is read only for recursive validation of the failed parent campaign.
+
 ## Formal Matrix
 
 After the Gate passes, exactly one Slurm allocation runs the frozen nine cells
@@ -141,6 +167,10 @@ Focused tests cover:
 - matrix rejection without matching Gate hardware/software class evidence;
 - atomic rejection of concurrent or repeated matrix launchers;
 - recursive recovery binding of Job 1167538;
+- recursive v4 binding of Job 1168823 and its failed matrix-start receipt;
+- no trace-file publication during the sampling loop and atomic publication
+  after normal stop;
+- rejection of rehashed ready/trace-first and finish/trace-last mismatches;
 - rejection of old in-process backend profiles;
 - existing S1 and C3 regression contracts.
 

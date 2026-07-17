@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import subprocess
@@ -24,22 +25,34 @@ from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
     current_git_commit,
     validate_bound_s1_training_config,
 )
+from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
+    S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
+    S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX,
+    validate_nvml_sidecar_cadence_failure,
+)
 
 S1_PROFILE_RECOVERY_SCHEMA = "spatial_zoom_s1_profile_recovery_v1"
 S1_CHAINED_PROFILE_RECOVERY_SCHEMA = "spatial_zoom_s1_profile_recovery_v2"
 S1_SIDECAR_PROFILE_RECOVERY_SCHEMA = "spatial_zoom_s1_profile_recovery_v3"
+S1_BUFFERED_SIDECAR_PROFILE_RECOVERY_SCHEMA = (
+    "spatial_zoom_s1_profile_recovery_v4"
+)
 S1_SUPERSEDED_PROFILE_MARKER_SCHEMA = "spatial_zoom_s1_profile_attempt_v4"
 S1_PROFILE_RECOVERY_REASON = "duplicate_physical_window_identity"
 S1_PROFILE_FAILURE_SIGNATURE = "formal S1 profile window identities must be unique"
 S1_CHAINED_PROFILE_MARKER_SCHEMA = "spatial_zoom_s1_profile_attempt_v5"
 S1_SIDECAR_PROFILE_MARKER_SCHEMA = "spatial_zoom_s1_profile_attempt_v6"
+S1_BUFFERED_SIDECAR_PROFILE_MARKER_SCHEMA = "spatial_zoom_s1_profile_attempt_v7"
 S1_CHAINED_RECOVERY_REASON = "duplicate_window_and_power_sampler_cadence"
 S1_SIDECAR_RECOVERY_REASON = "out_of_process_power_sidecar"
+S1_BUFFERED_SIDECAR_RECOVERY_REASON = "buffered_out_of_process_power_sidecar"
 S1_POWER_FAILURE_SIGNATURE = (
     "formal S1 power trace is too sparse for auditable energy integration"
 )
 S1_POWER_DIAGNOSTIC_SCHEMA = "spatial_zoom_s1_power_sampler_diagnostic_v1"
 S1_SIDECAR_POWER_BACKEND = "nvml-sidecar-process-v1"
+S1_BUFFERED_TRACE_PUBLICATION_MODE = S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
+S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE = S1_POWER_SIDECAR_CADENCE_FAILURE_PREFIX
 
 _ALLOWED_EXACT_PATHS = {
     "docs/methods/spatial_zoom_s1_contract.md",
@@ -86,6 +99,7 @@ _REQUIRED_REPAIR_PATHS_SIDECAR = _REQUIRED_REPAIR_PATHS_CHAINED | {
     "tools/bata/spatial_zoom_s1_matrix.py",
     "tools/bata/spatial_zoom_s1_sidecar_gate.py",
 }
+_REQUIRED_REPAIR_PATHS_BUFFERED_SIDECAR = _REQUIRED_REPAIR_PATHS_SIDECAR
 
 
 def _run_git(*args: str) -> str:
@@ -101,16 +115,29 @@ def _run_git(*args: str) -> str:
     return completed.stdout
 
 
-def require_clean_profile_checkout(*, expected_commit: str) -> None:
-    if current_git_commit() != str(expected_commit).lower():
-        raise RuntimeError("S1 profile checkout differs from the recovery commit")
-    if _run_git("status", "--porcelain", "--untracked-files=all").strip():
-        raise RuntimeError("formal S1 profile recovery requires a clean checkout")
+def _run_git_bytes(*args: str) -> bytes:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            completed.stderr.decode("utf-8", errors="replace").strip()
+            or "Git command failed"
+        )
+    return completed.stdout
 
 
-def _changed_files(
+def _git_file_sha256(commit: str, path: str) -> str:
+    payload = _run_git_bytes("show", f"{str(commit).lower()}:{Path(path).as_posix()}")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _changed_files_between_commits(
     base_commit: str,
-    profile_commit: str,
+    target_commit: str,
     *,
     required_paths: set[str],
 ) -> list[dict[str, str]]:
@@ -118,7 +145,7 @@ def _changed_files(
         "diff",
         "--name-status",
         "--find-renames=100%",
-        f"{base_commit}..{profile_commit}",
+        f"{base_commit}..{target_commit}",
     ).splitlines()
     changed: list[dict[str, str]] = []
     for line in lines:
@@ -137,14 +164,11 @@ def _changed_files(
             raise ValueError(
                 f"S1 profile recovery changed an unauthorized path: {normalized}"
             )
-        file_path = ROOT / normalized
-        if not file_path.is_file():
-            raise FileNotFoundError(file_path)
         changed.append(
             {
                 "status": status,
                 "path": normalized,
-                "file_sha256": sha256_file(file_path),
+                "file_sha256": _git_file_sha256(target_commit, normalized),
             }
         )
     changed_paths = {row["path"] for row in changed}
@@ -153,7 +177,43 @@ def _changed_files(
         raise ValueError(
             f"S1 profile recovery is missing audited repair paths: {missing}"
         )
-    return changed
+    return sorted(changed, key=lambda row: row["path"])
+
+
+def require_clean_profile_checkout(*, expected_commit: str) -> None:
+    if current_git_commit() != str(expected_commit).lower():
+        raise RuntimeError("S1 profile checkout differs from the recovery commit")
+    if _run_git("status", "--porcelain", "--untracked-files=all").strip():
+        raise RuntimeError("formal S1 profile recovery requires a clean checkout")
+
+
+def _changed_files(
+    base_commit: str,
+    profile_commit: str,
+    *,
+    required_paths: set[str],
+) -> list[dict[str, str]]:
+    return _changed_files_between_commits(
+        base_commit,
+        profile_commit,
+        required_paths=required_paths,
+    )
+
+
+def _validate_v3_matrix_start_receipt(
+    matrix_start_path: str | Path,
+    *,
+    parent_recovery_path: str | Path,
+) -> dict[str, Any]:
+    from tools.bata.spatial_zoom_s1_matrix import (
+        validate_profile_matrix_start_receipt,
+    )
+
+    return validate_profile_matrix_start_receipt(
+        Path(matrix_start_path).resolve(),
+        recovery=Path(parent_recovery_path).resolve(),
+        verify_runtime=False,
+    )
 
 
 def _validate_superseded_marker(
@@ -440,6 +500,337 @@ def build_sidecar_profile_recovery_certificate(
     return output_path, certificate
 
 
+def build_buffered_sidecar_profile_recovery_certificate(
+    *,
+    binding: Mapping[str, Any],
+    failed_marker_path: str | Path,
+    failure_log_path: str | Path,
+    failed_job_id: str,
+    expected_exposure_count: int,
+    expected_physical_window_count: int,
+    expected_duplicate_physical_window_ids: Sequence[str],
+    superseded_recovery_certificate_path: str | Path,
+) -> tuple[Path, dict[str, Any]]:
+    """Create the v4 recovery that removes trace I/O from the sampling loop."""
+
+    profile_commit = current_git_commit()
+    require_clean_profile_checkout(expected_commit=profile_commit)
+    training_commit = str(binding["code_commit"]).lower()
+    changed_files = _changed_files(
+        training_commit,
+        profile_commit,
+        required_paths=_REQUIRED_REPAIR_PATHS_BUFFERED_SIDECAR,
+    )
+    parent_path = Path(superseded_recovery_certificate_path).resolve()
+    failed_marker_path = Path(failed_marker_path).resolve()
+    failure_log_path = Path(failure_log_path).resolve()
+    for path in (parent_path, failed_marker_path, failure_log_path):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    parent = validate_profile_recovery_certificate(
+        json.loads(parent_path.read_text(encoding="utf-8")),
+        binding=binding,
+        verify_checkout=False,
+    )
+    if parent.get("reason") != S1_SIDECAR_RECOVERY_REASON:
+        raise ValueError("S1 buffered-sidecar recovery requires the v3 parent")
+    parent_to_current_changed_files = _changed_files_between_commits(
+        parent["profile_code_commit"],
+        profile_commit,
+        required_paths={"tools/bata/spatial_zoom_s1_power.py"},
+    )
+    parent_sampling_implementation_sha256 = _git_file_sha256(
+        parent["profile_code_commit"],
+        "tools/bata/spatial_zoom_s1_power.py",
+    )
+    sampling_implementation_sha256 = _git_file_sha256(
+        profile_commit,
+        "tools/bata/spatial_zoom_s1_power.py",
+    )
+    if (
+        parent_sampling_implementation_sha256
+        == sampling_implementation_sha256
+    ):
+        raise ValueError(
+            "S1 buffered-sidecar recovery did not change the sampling implementation"
+        )
+    failed_marker = _validate_superseded_marker(
+        failed_marker_path,
+        expected_schema=S1_BUFFERED_SIDECAR_PROFILE_MARKER_SCHEMA,
+    )
+    failure_text = failure_log_path.read_text(
+        encoding="utf-8", errors="replace"
+    )
+    if S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE not in failure_text:
+        raise ValueError("S1 buffered-sidecar recovery log lacks cadence failure")
+    if not str(failed_job_id).isdigit():
+        raise ValueError(
+            "S1 buffered-sidecar recovery requires a numeric failed Slurm job id"
+        )
+
+    first_profile_cell = build_s1_profile_order()[0]
+    expected_first_work_dir = _legacy_unbound_test_evidence_path(
+        binding
+    ).parents[2]
+    if Path(binding["work_dir"]).resolve() != expected_first_work_dir:
+        raise ValueError(
+            "S1 buffered-sidecar recovery must be issued from the frozen first cell"
+        )
+    marker_expected = {
+        "resolution": int(first_profile_cell["resolution"]),
+        "seed": int(first_profile_cell["seed"]),
+        "code_commit": training_commit,
+        "profile_code_commit": parent["profile_code_commit"],
+        "experiment_namespace": binding["experiment_namespace"],
+        "canonical_experiment_root": binding["canonical_experiment_root"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "precheck_file_sha256": binding["precheck_file_sha256"],
+        "precheck_sha256": binding["precheck_sha256"],
+        "profile_order_ordinal": 0,
+        "test_open_certificate_sha256": parent["test_open_certificate_sha256"],
+        "profile_recovery_certificate_sha256": parent["certificate_sha256"],
+        "profile_recovery_campaign_id": parent["campaign_id"],
+        "power_sampler_backend": S1_SIDECAR_POWER_BACKEND,
+        "slurm_job_id": str(failed_job_id),
+    }
+    for key, expected in marker_expected.items():
+        if failed_marker.get(key) != expected:
+            raise ValueError(f"S1 buffered-sidecar marker {key} mismatch")
+    if failed_marker.get("gate_only") is not False:
+        raise ValueError("S1 buffered-sidecar recovery requires a formal attempt")
+
+    legacy_test_evidence_path = _legacy_unbound_test_evidence_path(binding)
+    if not legacy_test_evidence_path.is_file():
+        raise FileNotFoundError(legacy_test_evidence_path)
+    legacy_test_evidence = json.loads(
+        legacy_test_evidence_path.read_text(encoding="utf-8")
+    )
+    legacy_test_evidence_sha256 = legacy_test_evidence.pop(
+        "evidence_sha256", None
+    )
+    if (
+        not legacy_test_evidence_sha256
+        or canonical_sha256(legacy_test_evidence)
+        != legacy_test_evidence_sha256
+        or failed_marker.get("test_evidence_sha256")
+        != legacy_test_evidence_sha256
+        or parent.get("legacy_unbound_test_evidence_sha256")
+        != legacy_test_evidence_sha256
+    ):
+        raise ValueError("S1 buffered-sidecar legacy test evidence mismatch")
+
+    canonical_prefix = Path(failed_marker["canonical_output_prefix"]).resolve()
+    expected_prefix = profile_campaign_prefix(
+        parent,
+        resolution=int(first_profile_cell["resolution"]),
+        seed=int(first_profile_cell["seed"]),
+    )
+    if canonical_prefix != expected_prefix:
+        raise ValueError("S1 buffered-sidecar failure prefix mismatch")
+    attempt_report_path = Path(f"{canonical_prefix}.power_attempt.json")
+    attempt_trace_path = Path(f"{canonical_prefix}.power_attempt.jsonl")
+    parent_failure_path = Path(f"{canonical_prefix}.power_parent_failure.json")
+    for path in (attempt_report_path, attempt_trace_path, parent_failure_path):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    attempt = validate_nvml_sidecar_cadence_failure(
+        attempt_report_path,
+        attempt_trace_path,
+        expected_uuid=str(failed_marker["step_gpu_uuid"]),
+    )
+    if (
+        attempt.get("backend") != S1_SIDECAR_POWER_BACKEND
+        or float(attempt.get("cadence", {}).get("max_gap_limit_ms", -1.0))
+        != float(parent["power_max_gap_limit_ms"])
+    ):
+        raise ValueError("S1 buffered-sidecar attempt does not prove cadence failure")
+
+    parent_failure = json.loads(
+        parent_failure_path.read_text(encoding="utf-8")
+    )
+    parent_failure_hash = parent_failure.pop("parent_failure_sha256", None)
+    if (
+        not parent_failure_hash
+        or canonical_sha256(parent_failure) != parent_failure_hash
+        or parent_failure.get("schema_version")
+        != "spatial_zoom_s1_profile_parent_failure_v1"
+        or parent_failure.get("status") != "FAIL"
+        or parent_failure.get("paper_claim_allowed") is not False
+        or parent_failure.get("power_attempt_sha256")
+        != attempt["attempt_sha256"]
+        or parent_failure.get("power_attempt_report_file_sha256")
+        != sha256_file(attempt_report_path)
+        or parent_failure.get("power_attempt_trace_file_sha256")
+        != sha256_file(attempt_trace_path)
+    ):
+        raise ValueError("S1 buffered-sidecar parent-failure evidence mismatch")
+    parent_failure["parent_failure_sha256"] = parent_failure_hash
+
+    matrix_start_path = Path(
+        failed_marker["matrix_start_receipt_path"]
+    ).resolve()
+    if (
+        not matrix_start_path.is_file()
+        or sha256_file(matrix_start_path)
+        != failed_marker.get("matrix_start_receipt_file_sha256")
+    ):
+        raise ValueError("S1 buffered-sidecar matrix-start file mismatch")
+    matrix_start = _validate_v3_matrix_start_receipt(
+        matrix_start_path,
+        parent_recovery_path=parent_path,
+    )
+    matrix_hash = matrix_start["matrix_sha256"]
+    if (
+        matrix_hash != failed_marker.get("matrix_sha256")
+        or matrix_start.get("slurm_job_id") != str(failed_job_id)
+        or matrix_start.get("slurm_step_id")
+        != failed_marker.get("slurm_step_id")
+        or matrix_start.get("step_gpu_uuid")
+        != failed_marker.get("step_gpu_uuid")
+        or matrix_start.get("profile_code_commit") != parent["profile_code_commit"]
+        or matrix_start.get("profile_recovery_certificate_sha256")
+        != parent["certificate_sha256"]
+        or matrix_start.get("profile_recovery_campaign_id")
+        != parent["campaign_id"]
+        or matrix_start.get("frozen_order") != build_s1_profile_order()
+    ):
+        raise ValueError("S1 buffered-sidecar matrix-start identity mismatch")
+
+    exposure_count = int(expected_exposure_count)
+    physical_count = int(expected_physical_window_count)
+    duplicates = sorted(set(map(str, expected_duplicate_physical_window_ids)))
+    if (
+        exposure_count != int(parent["expected_loader_exposure_count"])
+        or physical_count != int(parent["expected_physical_window_count"])
+        or duplicates != parent["expected_duplicate_physical_window_ids"]
+        or exposure_count - physical_count != len(duplicates)
+        or not duplicates
+    ):
+        raise ValueError(
+            "S1 buffered-sidecar recovery changed the frozen exposure topology"
+        )
+
+    basis = {
+        "schema_version": S1_BUFFERED_SIDECAR_PROFILE_RECOVERY_SCHEMA,
+        "reason": S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+        "failure_signature": parent["failure_signature"],
+        "failed_job_id": parent["failed_job_id"],
+        "training_code_commit": training_commit,
+        "profile_code_commit": profile_commit,
+        "experiment_namespace": binding["experiment_namespace"],
+        "canonical_experiment_root": binding["canonical_experiment_root"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "protocol_fingerprint": binding["protocol_fingerprint"],
+        "precheck_file_sha256": binding["precheck_file_sha256"],
+        "precheck_sha256": binding["precheck_sha256"],
+        "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
+        "test_open_certificate_sha256": parent["test_open_certificate_sha256"],
+        "legacy_unbound_test_resolution": int(first_profile_cell["resolution"]),
+        "legacy_unbound_test_seed": int(first_profile_cell["seed"]),
+        "legacy_unbound_test_evidence_path": str(legacy_test_evidence_path),
+        "legacy_unbound_test_evidence_file_sha256": sha256_file(
+            legacy_test_evidence_path
+        ),
+        "legacy_unbound_test_evidence_sha256": legacy_test_evidence_sha256,
+        "superseded_marker_path": parent["superseded_marker_path"],
+        "superseded_marker_file_sha256": parent[
+            "superseded_marker_file_sha256"
+        ],
+        "superseded_marker_sha256": parent["superseded_marker_sha256"],
+        "failure_log_path": parent["failure_log_path"],
+        "failure_log_sha256": parent["failure_log_sha256"],
+        "expected_loader_exposure_count": exposure_count,
+        "expected_physical_window_count": physical_count,
+        "expected_duplicate_physical_window_ids": duplicates,
+        "changed_files": changed_files,
+        "parent_to_current_changed_files": parent_to_current_changed_files,
+        "parent_sampling_implementation_sha256": (
+            parent_sampling_implementation_sha256
+        ),
+        "sampling_implementation_sha256": sampling_implementation_sha256,
+        "repair_scope": "buffered_sidecar_trace_publication_only",
+        "preserve_all_loader_exposures": True,
+        "preserve_superseded_attempt": True,
+        "reuse_valid_test_evidence": True,
+        "preserve_recovery_chain": True,
+        "superseded_recovery_certificate_path": str(parent_path),
+        "superseded_recovery_certificate_file_sha256": sha256_file(parent_path),
+        "superseded_recovery_certificate_sha256": parent["certificate_sha256"],
+        "superseded_recovery_campaign_id": parent["campaign_id"],
+        "superseded_recovery_profile_code_commit": parent[
+            "profile_code_commit"
+        ],
+        "buffered_sidecar_failure_signature": (
+            S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE
+        ),
+        "buffered_sidecar_failed_job_id": str(failed_job_id),
+        "buffered_sidecar_failed_slurm_step_id": failed_marker[
+            "slurm_step_id"
+        ],
+        "buffered_sidecar_failed_gpu_uuid": failed_marker["step_gpu_uuid"],
+        "buffered_sidecar_failure_marker_path": str(failed_marker_path),
+        "buffered_sidecar_failure_marker_file_sha256": sha256_file(
+            failed_marker_path
+        ),
+        "buffered_sidecar_failure_marker_sha256": failed_marker[
+            "marker_sha256"
+        ],
+        "buffered_sidecar_failure_log_path": str(failure_log_path),
+        "buffered_sidecar_failure_log_sha256": sha256_file(failure_log_path),
+        "buffered_sidecar_attempt_report_path": str(attempt_report_path),
+        "buffered_sidecar_attempt_report_file_sha256": sha256_file(
+            attempt_report_path
+        ),
+        "buffered_sidecar_attempt_sha256": attempt["attempt_sha256"],
+        "buffered_sidecar_attempt_trace_path": str(attempt_trace_path),
+        "buffered_sidecar_attempt_trace_file_sha256": sha256_file(
+            attempt_trace_path
+        ),
+        "buffered_sidecar_parent_failure_path": str(parent_failure_path),
+        "buffered_sidecar_parent_failure_file_sha256": sha256_file(
+            parent_failure_path
+        ),
+        "buffered_sidecar_parent_failure_sha256": parent_failure_hash,
+        "buffered_sidecar_matrix_start_path": str(matrix_start_path),
+        "buffered_sidecar_matrix_start_file_sha256": sha256_file(
+            matrix_start_path
+        ),
+        "buffered_sidecar_matrix_sha256": matrix_hash,
+        "power_sampler_backend": S1_SIDECAR_POWER_BACKEND,
+        "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
+        "trace_io_inside_sampling_loop": False,
+        "power_target_interval_ms": 20,
+        "power_max_gap_limit_ms": 100.0,
+        "allocated_cpu_count": 5,
+        "detector_cpu_count": 4,
+        "sidecar_cpu_count": 1,
+        "requires_long_no_open_gate": True,
+        "sidecar_gate_relative_path": "sidecar_gate.json",
+    }
+    campaign_id = canonical_sha256(basis)[:16]
+    campaign_root = (
+        Path(binding["canonical_experiment_root"])
+        / "profile_campaigns"
+        / campaign_id
+    ).resolve()
+    certificate = {
+        **basis,
+        "campaign_id": campaign_id,
+        "campaign_root": str(campaign_root),
+    }
+    certificate["certificate_sha256"] = canonical_sha256(certificate)
+    output_path = _certificate_output_path(certificate)
+    if output_path.exists():
+        existing = json.loads(output_path.read_text(encoding="utf-8"))
+        if existing != certificate:
+            raise FileExistsError(
+                "S1 buffered-sidecar recovery campaign identity collision"
+            )
+    else:
+        atomic_publish_json(output_path, certificate)
+    return output_path, certificate
+
+
 def build_profile_recovery_certificate(
     *,
     binding: Mapping[str, Any],
@@ -456,7 +847,18 @@ def build_profile_recovery_certificate(
         superseded_recovery_certificate_path is not None
         and power_diagnostic_path is None
     ):
-        return build_sidecar_profile_recovery_certificate(
+        parent_path = Path(superseded_recovery_certificate_path).resolve()
+        if not parent_path.is_file():
+            raise FileNotFoundError(parent_path)
+        parent_reason = json.loads(
+            parent_path.read_text(encoding="utf-8")
+        ).get("reason")
+        builder = (
+            build_buffered_sidecar_profile_recovery_certificate
+            if parent_reason == S1_SIDECAR_RECOVERY_REASON
+            else build_sidecar_profile_recovery_certificate
+        )
+        return builder(
             binding=binding,
             failed_marker_path=failed_marker_path,
             failure_log_path=failure_log_path,
@@ -466,9 +868,7 @@ def build_profile_recovery_certificate(
             expected_duplicate_physical_window_ids=(
                 expected_duplicate_physical_window_ids
             ),
-            superseded_recovery_certificate_path=(
-                superseded_recovery_certificate_path
-            ),
+            superseded_recovery_certificate_path=parent_path,
         )
     profile_commit = current_git_commit()
     require_clean_profile_checkout(expected_commit=profile_commit)
@@ -685,20 +1085,29 @@ def validate_profile_recovery_certificate(
     checked["certificate_sha256"] = certificate_hash
     chained = checked.get("reason") == S1_CHAINED_RECOVERY_REASON
     sidecar = checked.get("reason") == S1_SIDECAR_RECOVERY_REASON
-    has_parent = chained or sidecar
+    buffered_sidecar = (
+        checked.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
+    )
+    sidecar_family = sidecar or buffered_sidecar
+    has_parent = chained or sidecar_family
     if checked.get("reason") not in {
         S1_PROFILE_RECOVERY_REASON,
         S1_CHAINED_RECOVERY_REASON,
         S1_SIDECAR_RECOVERY_REASON,
+        S1_BUFFERED_SIDECAR_RECOVERY_REASON,
     }:
         raise ValueError("unsupported S1 profile recovery reason")
     expected_schema = (
-        S1_SIDECAR_PROFILE_RECOVERY_SCHEMA
-        if sidecar
+        S1_BUFFERED_SIDECAR_PROFILE_RECOVERY_SCHEMA
+        if buffered_sidecar
         else (
-            S1_CHAINED_PROFILE_RECOVERY_SCHEMA
-            if chained
-            else S1_PROFILE_RECOVERY_SCHEMA
+            S1_SIDECAR_PROFILE_RECOVERY_SCHEMA
+            if sidecar
+            else (
+                S1_CHAINED_PROFILE_RECOVERY_SCHEMA
+                if chained
+                else S1_PROFILE_RECOVERY_SCHEMA
+            )
         )
     )
     if checked.get("schema_version") != expected_schema:
@@ -714,19 +1123,23 @@ def validate_profile_recovery_certificate(
         "precheck_sha256": binding["precheck_sha256"],
         "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
         "repair_scope": (
-            "out_of_process_power_sidecar_and_failure_evidence_only"
-            if sidecar
+            "buffered_sidecar_trace_publication_only"
+            if buffered_sidecar
             else (
-                "profile_identity_power_sampling_and_postprocessing_only"
-                if chained
-                else "profile_identity_and_postprocessing_only"
+                "out_of_process_power_sidecar_and_failure_evidence_only"
+                if sidecar
+                else (
+                    "profile_identity_power_sampling_and_postprocessing_only"
+                    if chained
+                    else "profile_identity_and_postprocessing_only"
+                )
             )
         ),
         "preserve_all_loader_exposures": True,
         "preserve_superseded_attempt": True,
         "reuse_valid_test_evidence": True,
     }
-    if sidecar:
+    if sidecar_family:
         first_profile_cell = build_s1_profile_order()[0]
         legacy_test_evidence_path = _legacy_unbound_test_evidence_path(binding)
         expected.update(
@@ -770,7 +1183,7 @@ def validate_profile_recovery_certificate(
     ):
         if not path.is_file() or sha256_file(path) != checked[key]:
             raise ValueError(f"S1 profile recovery artifact mismatch: {path}")
-    if sidecar:
+    if sidecar_family:
         legacy_test_evidence_path = Path(
             checked["legacy_unbound_test_evidence_path"]
         ).resolve()
@@ -970,6 +1383,236 @@ def validate_profile_recovery_certificate(
             or checked.get("sidecar_gate_relative_path") != "sidecar_gate.json"
         ):
             raise ValueError("S1 sidecar recovery contract mismatch")
+    elif buffered_sidecar:
+        parent_path = Path(
+            checked["superseded_recovery_certificate_path"]
+        ).resolve()
+        buffered_marker_path = Path(
+            checked["buffered_sidecar_failure_marker_path"]
+        ).resolve()
+        buffered_log_path = Path(
+            checked["buffered_sidecar_failure_log_path"]
+        ).resolve()
+        attempt_report_path = Path(
+            checked["buffered_sidecar_attempt_report_path"]
+        ).resolve()
+        attempt_trace_path = Path(
+            checked["buffered_sidecar_attempt_trace_path"]
+        ).resolve()
+        parent_failure_path = Path(
+            checked["buffered_sidecar_parent_failure_path"]
+        ).resolve()
+        matrix_start_path = Path(
+            checked["buffered_sidecar_matrix_start_path"]
+        ).resolve()
+        for path, key in (
+            (parent_path, "superseded_recovery_certificate_file_sha256"),
+            (
+                buffered_marker_path,
+                "buffered_sidecar_failure_marker_file_sha256",
+            ),
+            (buffered_log_path, "buffered_sidecar_failure_log_sha256"),
+            (
+                attempt_report_path,
+                "buffered_sidecar_attempt_report_file_sha256",
+            ),
+            (
+                attempt_trace_path,
+                "buffered_sidecar_attempt_trace_file_sha256",
+            ),
+            (
+                parent_failure_path,
+                "buffered_sidecar_parent_failure_file_sha256",
+            ),
+            (
+                matrix_start_path,
+                "buffered_sidecar_matrix_start_file_sha256",
+            ),
+        ):
+            if not path.is_file() or sha256_file(path) != checked.get(key):
+                raise ValueError(
+                    f"S1 buffered-sidecar recovery artifact mismatch: {path}"
+                )
+        parent = validate_profile_recovery_certificate(
+            json.loads(parent_path.read_text(encoding="utf-8")),
+            binding=binding,
+            verify_checkout=False,
+        )
+        if (
+            parent.get("reason") != S1_SIDECAR_RECOVERY_REASON
+            or parent["certificate_sha256"]
+            != checked.get("superseded_recovery_certificate_sha256")
+            or parent["campaign_id"]
+            != checked.get("superseded_recovery_campaign_id")
+            or parent["profile_code_commit"]
+            != checked.get("superseded_recovery_profile_code_commit")
+        ):
+            raise ValueError("S1 buffered-sidecar recovery parent identity mismatch")
+        parent_to_current_changed_files = _changed_files_between_commits(
+            parent["profile_code_commit"],
+            checked["profile_code_commit"],
+            required_paths={"tools/bata/spatial_zoom_s1_power.py"},
+        )
+        parent_sampling_implementation_sha256 = _git_file_sha256(
+            parent["profile_code_commit"],
+            "tools/bata/spatial_zoom_s1_power.py",
+        )
+        sampling_implementation_sha256 = _git_file_sha256(
+            checked["profile_code_commit"],
+            "tools/bata/spatial_zoom_s1_power.py",
+        )
+        if (
+            checked.get("parent_to_current_changed_files")
+            != parent_to_current_changed_files
+            or checked.get("parent_sampling_implementation_sha256")
+            != parent_sampling_implementation_sha256
+            or checked.get("sampling_implementation_sha256")
+            != sampling_implementation_sha256
+            or parent_sampling_implementation_sha256
+            == sampling_implementation_sha256
+        ):
+            raise ValueError(
+                "S1 buffered-sidecar sampling implementation binding mismatch"
+            )
+
+        buffered_marker = _validate_superseded_marker(
+            buffered_marker_path,
+            expected_schema=S1_BUFFERED_SIDECAR_PROFILE_MARKER_SCHEMA,
+        )
+        current_marker_expected = {
+            "resolution": int(first_profile_cell["resolution"]),
+            "seed": int(first_profile_cell["seed"]),
+            "code_commit": str(binding["code_commit"]).lower(),
+            "profile_code_commit": parent["profile_code_commit"],
+            "experiment_namespace": binding["experiment_namespace"],
+            "canonical_experiment_root": binding["canonical_experiment_root"],
+            "manifest_sha256": binding["manifest_sha256"],
+            "precheck_file_sha256": binding["precheck_file_sha256"],
+            "precheck_sha256": binding["precheck_sha256"],
+            "profile_order_ordinal": 0,
+            "test_open_certificate_sha256": checked[
+                "test_open_certificate_sha256"
+            ],
+            "profile_recovery_certificate_sha256": parent[
+                "certificate_sha256"
+            ],
+            "profile_recovery_campaign_id": parent["campaign_id"],
+            "power_sampler_backend": S1_SIDECAR_POWER_BACKEND,
+            "gate_only": False,
+            "slurm_job_id": checked["buffered_sidecar_failed_job_id"],
+            "slurm_step_id": checked[
+                "buffered_sidecar_failed_slurm_step_id"
+            ],
+            "step_gpu_uuid": checked["buffered_sidecar_failed_gpu_uuid"],
+        }
+        for key, value in current_marker_expected.items():
+            if buffered_marker.get(key) != value:
+                raise ValueError(f"S1 buffered-sidecar marker {key} mismatch")
+        if (
+            buffered_marker["marker_sha256"]
+            != checked.get("buffered_sidecar_failure_marker_sha256")
+            or S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE
+            not in buffered_log_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+            or checked.get("buffered_sidecar_failure_signature")
+            != S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE
+            or str(
+                checked.get("buffered_sidecar_failed_job_id", "")
+            ).isdigit()
+            is False
+        ):
+            raise ValueError(
+                "S1 buffered-sidecar failure marker/log identity mismatch"
+            )
+
+        attempt = validate_nvml_sidecar_cadence_failure(
+            attempt_report_path,
+            attempt_trace_path,
+            expected_uuid=str(buffered_marker["step_gpu_uuid"]),
+        )
+        if (
+            attempt.get("attempt_sha256")
+            != checked.get("buffered_sidecar_attempt_sha256")
+            or attempt.get("backend") != S1_SIDECAR_POWER_BACKEND
+            or float(attempt.get("cadence", {}).get("max_gap_limit_ms", -1.0))
+            != float(parent["power_max_gap_limit_ms"])
+        ):
+            raise ValueError(
+                "S1 buffered-sidecar attempt does not prove cadence failure"
+            )
+
+        parent_failure = json.loads(
+            parent_failure_path.read_text(encoding="utf-8")
+        )
+        parent_failure_hash = parent_failure.pop(
+            "parent_failure_sha256", None
+        )
+        if (
+            not parent_failure_hash
+            or canonical_sha256(parent_failure) != parent_failure_hash
+            or parent_failure_hash
+            != checked.get("buffered_sidecar_parent_failure_sha256")
+            or parent_failure.get("schema_version")
+            != "spatial_zoom_s1_profile_parent_failure_v1"
+            or parent_failure.get("status") != "FAIL"
+            or parent_failure.get("paper_claim_allowed") is not False
+            or parent_failure.get("power_attempt_sha256")
+            != attempt["attempt_sha256"]
+            or parent_failure.get("power_attempt_report_file_sha256")
+            != sha256_file(attempt_report_path)
+            or parent_failure.get("power_attempt_trace_file_sha256")
+            != sha256_file(attempt_trace_path)
+        ):
+            raise ValueError(
+                "S1 buffered-sidecar parent-failure evidence mismatch"
+            )
+
+        matrix_start = _validate_v3_matrix_start_receipt(
+            matrix_start_path,
+            parent_recovery_path=parent_path,
+        )
+        matrix_hash = matrix_start["matrix_sha256"]
+        if (
+            matrix_hash != checked.get("buffered_sidecar_matrix_sha256")
+            or matrix_hash != buffered_marker.get("matrix_sha256")
+            or matrix_start.get("slurm_job_id")
+            != str(checked["buffered_sidecar_failed_job_id"])
+            or matrix_start.get("slurm_step_id")
+            != checked.get("buffered_sidecar_failed_slurm_step_id")
+            or matrix_start.get("step_gpu_uuid")
+            != checked.get("buffered_sidecar_failed_gpu_uuid")
+            or matrix_start.get("profile_code_commit")
+            != parent["profile_code_commit"]
+            or matrix_start.get("profile_recovery_certificate_sha256")
+            != parent["certificate_sha256"]
+            or matrix_start.get("profile_recovery_campaign_id")
+            != parent["campaign_id"]
+            or matrix_start.get("frozen_order") != build_s1_profile_order()
+            or buffered_marker.get("matrix_start_receipt_path")
+            != str(matrix_start_path)
+            or buffered_marker.get("matrix_start_receipt_file_sha256")
+            != sha256_file(matrix_start_path)
+        ):
+            raise ValueError(
+                "S1 buffered-sidecar matrix-start identity mismatch"
+            )
+
+        if (
+            checked.get("power_sampler_backend")
+            != S1_SIDECAR_POWER_BACKEND
+            or checked.get("trace_publication_mode")
+            != S1_BUFFERED_TRACE_PUBLICATION_MODE
+            or checked.get("trace_io_inside_sampling_loop") is not False
+            or int(checked.get("power_target_interval_ms", -1)) != 20
+            or float(checked.get("power_max_gap_limit_ms", -1.0)) != 100.0
+            or int(checked.get("allocated_cpu_count", -1)) != 5
+            or int(checked.get("detector_cpu_count", -1)) != 4
+            or int(checked.get("sidecar_cpu_count", -1)) != 1
+            or checked.get("requires_long_no_open_gate") is not True
+            or checked.get("sidecar_gate_relative_path") != "sidecar_gate.json"
+        ):
+            raise ValueError("S1 buffered-sidecar recovery contract mismatch")
 
     exposure_count = int(checked.get("expected_loader_exposure_count", -1))
     physical_count = int(checked.get("expected_physical_window_count", -1))
@@ -1003,12 +1646,16 @@ def validate_profile_recovery_certificate(
             )
         changed_paths.add(path)
     required_paths = (
-        _REQUIRED_REPAIR_PATHS_SIDECAR
-        if sidecar
+        _REQUIRED_REPAIR_PATHS_BUFFERED_SIDECAR
+        if buffered_sidecar
         else (
-            _REQUIRED_REPAIR_PATHS_CHAINED
-            if chained
-            else _REQUIRED_REPAIR_PATHS_V1
+            _REQUIRED_REPAIR_PATHS_SIDECAR
+            if sidecar
+            else (
+                _REQUIRED_REPAIR_PATHS_CHAINED
+                if chained
+                else _REQUIRED_REPAIR_PATHS_V1
+            )
         )
     )
     if not required_paths.issubset(changed_paths):
@@ -1115,12 +1762,17 @@ __all__ = [
     "S1_PROFILE_RECOVERY_SCHEMA",
     "S1_CHAINED_PROFILE_RECOVERY_SCHEMA",
     "S1_SIDECAR_PROFILE_RECOVERY_SCHEMA",
+    "S1_BUFFERED_SIDECAR_PROFILE_RECOVERY_SCHEMA",
     "S1_CHAINED_RECOVERY_REASON",
     "S1_SIDECAR_RECOVERY_REASON",
+    "S1_BUFFERED_SIDECAR_RECOVERY_REASON",
     "S1_POWER_FAILURE_SIGNATURE",
     "S1_SIDECAR_POWER_BACKEND",
+    "S1_BUFFERED_TRACE_PUBLICATION_MODE",
+    "S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE",
     "build_profile_recovery_certificate",
     "build_sidecar_profile_recovery_certificate",
+    "build_buffered_sidecar_profile_recovery_certificate",
     "load_profile_recovery_certificate",
     "profile_campaign_prefix",
     "require_clean_profile_checkout",

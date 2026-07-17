@@ -49,23 +49,17 @@ max_chars: 8000
   reopened. Slurm reported `63687456K` MaxRSS under a `62200M` allocation.
   Static audit identified a protocol mismatch: the formal sampler was a Python
   `threading.Thread` inside the memory-heavy detector/profile process. The
-  current branch now implements an out-of-process UUID-bound native-NVML
-  sidecar, dedicated 4+1 CPU partition, node-local raw trace, immutable attempt
-  and parent-failure evidence, recursive v3 recovery, and a full 792-exposure
-  no-open Gate. The first HOLD audit's five sidecar lifecycle gaps were fixed;
-  `35c7c5f` passed `85` Linux tests. N16R4 diagnostics prove an outer two-GPU
-  reservation can host one exact `1 GPU/5 CPU/96000M` step; measured work
-  remains single-GPU. Resource-step commit `84a7144` then received a second
-  HOLD with no P0 and four P1 gaps. The repair moves checks before the lock,
-  closes cgroup/job/step/CUDA UUID identity, seals all artifacts into one
-  start and exact-nine completion receipt, and dry-runs all cells before
-  test access. New test evidence binds that receipt; only certificate-frozen
-  dense256/seed3408 may remain unbound. Regression is
-  Re-audit returned `DEPLOY`; clean commit `5bfdc36` passed `104` remote tests.
-  Gate `1168608` reused unchanged test
-  evidence and passed 792/791 exposures with 110699 sidecar samples and
-  median/P95/max gaps `20.000/20.022/63.098` ms. Sole serial matrix
-  `1168823` is running; Pro and GO/KILL remain blocked.
+  branch implements an out-of-process UUID-bound native-NVML sidecar, dedicated
+  4+1 CPU partition, immutable attempts and recursive v3 recovery. Prior HOLD
+  audits fixed sidecar lifecycle, pre-lock, cgroup/job/step/CUDA identity and
+  matrix-binding gaps. `5bfdc36` passed `104` remote tests. Gate `1168608`
+  passed 792/791 exposures (max gap `63.098` ms).
+  Matrix `1168823` failed closed in its first cell: 112107 samples, max gap
+  `146.048` ms, three gaps above 100 ms, and no descriptor/later cell. Local
+  v4 removes sampling-loop trace I/O, binds exact trace lifecycle and all parent
+  evidence, and passed `102 passed, 5 skipped`. Three-pass independent review
+  ended `DEPLOY` with no P0/P1. It remains `tested_local`; no new campaign,
+  Gate, matrix, Pro or GO/KILL exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 
