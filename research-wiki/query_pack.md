@@ -52,13 +52,19 @@ max_chars: 8000
   current branch now implements an out-of-process UUID-bound native-NVML
   sidecar, dedicated 4+1 CPU partition, node-local raw trace, immutable attempt
   and parent-failure evidence, recursive v3 recovery, and a full 792-exposure
-  no-open Gate. An independent HOLD audit found five P1 evidence/lifecycle
-  gaps; all are fixed; `35c7c5f` passed `85` Linux tests. N16R4 diagnostics
-  prove an outer two-GPU reservation can host an exact `1 GPU/5 CPU/96000M`
-  step. Launchers bind its GPU/cgroup; measured work is single-GPU.
-  `experiment_running`: a new commit/certificate and
-  792-exposure
-  20/100 ms Gate must pass before one matrix; Pro and GO/KILL remain pending.
+  no-open Gate. The first HOLD audit's five sidecar lifecycle gaps were fixed;
+  `35c7c5f` passed `85` Linux tests. N16R4 diagnostics prove an outer two-GPU
+  reservation can host one exact `1 GPU/5 CPU/96000M` step; measured work
+  remains single-GPU. Resource-step commit `84a7144` then received a second
+  HOLD with no P0 and four P1 gaps. The repair moves checks before the lock,
+  closes cgroup/job/step/CUDA UUID identity, seals all artifacts into one
+  start and exact-nine completion receipt, and dry-runs all cells before
+  test access. New test evidence binds that receipt; only certificate-frozen
+  dense256/seed3408 may remain unbound. Regression is
+  `99 passed, 5 skipped`; independent re-audit found no P0/P1 and returned
+  `DEPLOY`. Status is `tested_local`: clean commit, remote tests, new
+  certificate and full 792-exposure 20/100 ms Gate must pass before one
+  matrix. Pro and GO/KILL remain pending.
 
 ## 当前唯一活动任务：Spatial Zoom
 

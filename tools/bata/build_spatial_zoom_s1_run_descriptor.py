@@ -35,6 +35,11 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     load_profile_recovery_certificate,
     profile_campaign_prefix,
 )
+from tools.bata.spatial_zoom_s1_matrix import (  # noqa: E402
+    canonical_test_matrix_binding_path,
+    validate_profile_matrix_start_receipt,
+    validate_test_matrix_binding,
+)
 from tools.bata.spatial_zoom_s1_sidecar_gate import (  # noqa: E402
     load_sidecar_gate_evidence,
     sidecar_gate_path,
@@ -125,6 +130,38 @@ def build_descriptor(args: argparse.Namespace) -> dict:
     profile = validate_profile_summary(
         json.loads(args.profile.read_text(encoding="utf-8"))
     )
+    matrix_start = validate_profile_matrix_start_receipt(
+        args.matrix_start_receipt,
+        recovery=recovery,
+    )
+    legacy_unbound_test_evidence = (
+        resolution == int(recovery["legacy_unbound_test_resolution"])
+        and int(args.seed) == int(recovery["legacy_unbound_test_seed"])
+        and args.test_evidence.resolve()
+        == Path(recovery["legacy_unbound_test_evidence_path"]).resolve()
+        and sha256_file(args.test_evidence)
+        == recovery["legacy_unbound_test_evidence_file_sha256"]
+        and test_evidence["evidence_sha256"]
+        == recovery["legacy_unbound_test_evidence_sha256"]
+    )
+    test_matrix_binding_path = canonical_test_matrix_binding_path(
+        args.test_evidence
+    )
+    if legacy_unbound_test_evidence:
+        if test_matrix_binding_path.exists():
+            raise RuntimeError(
+                "legacy S1 test evidence unexpectedly has a matrix binding"
+            )
+        test_matrix_binding = None
+    else:
+        test_matrix_binding = validate_test_matrix_binding(
+            test_matrix_binding_path,
+            test_evidence_path=args.test_evidence,
+            start_receipt_path=args.matrix_start_receipt,
+            recovery=recovery,
+            resolution=resolution,
+            seed=int(args.seed),
+        )
     if profile.get("schema_version") != S1_PROFILE_SCHEMA:
         raise ValueError("S1 run descriptor requires an S1 full-stack profile")
     profile_samples_path = canonical_profile_prefix.with_suffix(".samples.jsonl")
@@ -194,6 +231,12 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "checkpoint_sha256": checkpoint_sha,
         "test_open_certificate_sha256": test_evidence["test_open_certificate_sha256"],
         "test_evidence_sha256": test_evidence["evidence_sha256"],
+        "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
+        "test_matrix_binding_sha256": (
+            None
+            if test_matrix_binding is None
+            else test_matrix_binding["binding_sha256"]
+        ),
         "precheck_file_sha256": binding["precheck_file_sha256"],
         "precheck_sha256": binding["precheck_sha256"],
         "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
@@ -214,6 +257,14 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "sidecar_cpu_id": profile["sidecar_cpu_id"],
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
+        "matrix_start_receipt_path": str(args.matrix_start_receipt.resolve()),
+        "matrix_start_receipt_file_sha256": sha256_file(
+            args.matrix_start_receipt
+        ),
+        "matrix_sha256": matrix_start["matrix_sha256"],
+        "slurm_job_id": matrix_start["slurm_job_id"],
+        "slurm_step_id": matrix_start["slurm_step_id"],
+        "step_gpu_uuid": matrix_start["step_gpu_uuid"],
     }
     for key, expected in expected_marker.items():
         if marker.get(key) != expected:
@@ -229,6 +280,22 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "trained_checkpoint": True,
         "test_open_certificate_sha256": test_evidence["test_open_certificate_sha256"],
         "test_evidence_sha256": test_evidence["evidence_sha256"],
+        "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
+        "test_matrix_binding_path": (
+            None
+            if test_matrix_binding is None
+            else str(test_matrix_binding_path)
+        ),
+        "test_matrix_binding_file_sha256": (
+            None
+            if test_matrix_binding is None
+            else sha256_file(test_matrix_binding_path)
+        ),
+        "test_matrix_binding_sha256": (
+            None
+            if test_matrix_binding is None
+            else test_matrix_binding["binding_sha256"]
+        ),
         "test_open_marker_sha256": test_evidence["test_open_marker_sha256"],
         "config_commit": binding["code_commit"],
         "profile_code_commit": recovery["profile_code_commit"],
@@ -253,6 +320,14 @@ def build_descriptor(args: argparse.Namespace) -> dict:
             sidecar_gate_path(recovery)
         ),
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
+        "matrix_start_receipt_path": str(args.matrix_start_receipt.resolve()),
+        "matrix_start_receipt_file_sha256": sha256_file(
+            args.matrix_start_receipt
+        ),
+        "matrix_sha256": matrix_start["matrix_sha256"],
+        "slurm_job_id": matrix_start["slurm_job_id"],
+        "slurm_step_id": matrix_start["slurm_step_id"],
+        "step_gpu_uuid": matrix_start["step_gpu_uuid"],
     }
     for key, expected in expected_profile.items():
         if profile.get(key) != expected:
@@ -270,7 +345,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
             f"S1 prediction artifact contains videos outside sealed test: {unexpected}"
         )
     descriptor = {
-        "schema_version": "spatial_zoom_s1_run_v6",
+        "schema_version": "spatial_zoom_s1_run_v8",
         "resolution": resolution,
         "seed": int(args.seed),
         "config_path": str(args.config.resolve()),
@@ -302,6 +377,22 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "test_evidence_path": str(args.test_evidence.resolve()),
         "test_evidence_file_sha256": sha256_file(args.test_evidence),
         "test_evidence_sha256": test_evidence["evidence_sha256"],
+        "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
+        "test_matrix_binding_path": (
+            None
+            if test_matrix_binding is None
+            else str(test_matrix_binding_path)
+        ),
+        "test_matrix_binding_file_sha256": (
+            None
+            if test_matrix_binding is None
+            else sha256_file(test_matrix_binding_path)
+        ),
+        "test_matrix_binding_sha256": (
+            None
+            if test_matrix_binding is None
+            else test_matrix_binding["binding_sha256"]
+        ),
         "test_open_certificate_path": test_evidence["test_open_certificate_path"],
         "test_open_certificate_file_sha256": test_evidence[
             "test_open_certificate_file_sha256"
@@ -338,6 +429,14 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_attempt_marker_path": str(marker_path),
         "profile_attempt_marker_file_sha256": marker_file_sha,
         "profile_attempt_marker_sha256": marker["marker_sha256"],
+        "matrix_start_receipt_path": str(args.matrix_start_receipt.resolve()),
+        "matrix_start_receipt_file_sha256": sha256_file(
+            args.matrix_start_receipt
+        ),
+        "matrix_sha256": matrix_start["matrix_sha256"],
+        "slurm_job_id": matrix_start["slurm_job_id"],
+        "slurm_step_id": matrix_start["slurm_step_id"],
+        "step_gpu_uuid": matrix_start["step_gpu_uuid"],
         "ground_truth_path": str(args.annotation.resolve()),
         "ground_truth_sha256": sha256_file(args.annotation),
         "evaluation_split": manifest["annotation_subsets"]["sealed_test"],
@@ -363,6 +462,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--test-evidence", type=Path, required=True)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
+    parser.add_argument("--matrix-start-receipt", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:

@@ -13,12 +13,16 @@ from tools.bata.spatial_zoom_s1_contract import (
 from tools.bata.spatial_zoom_s1_matrix import (
     S1_PROFILE_MATRIX_COMPLETION_SCHEMA,
     S1_PROFILE_MATRIX_START_SCHEMA,
+    S1_TEST_MATRIX_BINDING_SCHEMA,
     build_profile_matrix_completion_receipt,
     build_profile_matrix_start_receipt,
+    build_test_matrix_binding,
     canonical_matrix_completion_path,
     canonical_matrix_start_path,
+    canonical_test_matrix_binding_path,
     validate_profile_matrix_completion_receipt,
     validate_profile_matrix_start_receipt,
+    validate_test_matrix_binding,
 )
 from tools.bata.spatial_zoom_s1_sidecar_gate import (
     sidecar_gate_hardware_class,
@@ -70,13 +74,16 @@ def matrix_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
             "slurm_job_gpus": "1,2",
             "slurm_step_gpus": "1",
             "cpus_per_task": 5,
-            "mem_per_node_mb": 96000,
             "effective_step_memory_limit_mb": 96000,
             "outer_job_mem_per_node_mb": 124400,
             "scoped_gpu_id": "1",
             "step_gpu_id": "1",
             "step_gpu_uuid": "GPU-S1-MATRIX",
             "cuda_visible_devices": "0",
+            "allocated_cpu_ids": [0, 1, 2, 3, 4],
+            "detector_cpu_ids": [0, 1, 2, 3],
+            "sidecar_cpu_id": 4,
+            "detector_process_affinity": [0, 1, 2, 3],
         },
     }
     recovery = {
@@ -195,7 +202,7 @@ def _write_descriptor(
     path = (
         fixture["campaign_root"]
         / "descriptors"
-        / f"dense{row['resolution']}_seed{row['seed']}{suffix}.json"
+        / f"dense{row['resolution']}_seed{row['seed']}{suffix}.run.json"
     )
     atomic_publish_json(path, descriptor)
     return path.resolve()
@@ -266,6 +273,57 @@ def test_start_and_completion_receipts_round_trip(matrix_fixture: dict) -> None:
     )
 
 
+def test_test_evidence_binding_round_trip_and_tamper(
+    matrix_fixture: dict,
+) -> None:
+    fixture = matrix_fixture
+    first = fixture["order"][0]
+    evidence_path = fixture["campaign_root"] / "test" / "test.evidence.json"
+    evidence = {
+        "schema_version": "spatial_zoom_s1_test_evidence_v4",
+        "resolution": first["resolution"],
+        "seed": first["seed"],
+    }
+    evidence["evidence_sha256"] = canonical_sha256(evidence)
+    atomic_publish_json(evidence_path, evidence)
+    binding = build_test_matrix_binding(
+        test_evidence_path=evidence_path,
+        start_receipt_path=fixture["start_path"],
+        recovery=fixture["recovery"],
+        resolution=first["resolution"],
+        seed=first["seed"],
+    )
+    assert binding["schema_version"] == S1_TEST_MATRIX_BINDING_SCHEMA
+    binding_path = canonical_test_matrix_binding_path(evidence_path)
+    atomic_publish_json(binding_path, binding)
+    assert (
+        validate_test_matrix_binding(
+            binding_path,
+            test_evidence_path=evidence_path,
+            start_receipt_path=fixture["start_path"],
+            recovery=fixture["recovery"],
+            resolution=first["resolution"],
+            seed=first["seed"],
+        )
+        == binding
+    )
+
+    tampered = copy.deepcopy(binding)
+    tampered["matrix_sha256"] = "9" * 64
+    tampered = _rehash(tampered, "binding_sha256")
+    binding_path.unlink()
+    atomic_publish_json(binding_path, tampered)
+    with pytest.raises(ValueError, match="does not match current evidence"):
+        validate_test_matrix_binding(
+            binding_path,
+            test_evidence_path=evidence_path,
+            start_receipt_path=fixture["start_path"],
+            recovery=fixture["recovery"],
+            resolution=first["resolution"],
+            seed=first["seed"],
+        )
+
+
 def test_start_rejects_step_gpu_outside_job_allocation(
     matrix_fixture: dict,
 ) -> None:
@@ -286,6 +344,37 @@ def test_start_rejects_step_gpu_outside_job_allocation(
             profile_code_commit=fixture["profile_commit"],
             frozen_order=fixture["order"],
             env=forged_env,
+        )
+
+
+def test_start_rejects_missing_step_and_invalid_cpu_partition(
+    matrix_fixture: dict,
+) -> None:
+    fixture = matrix_fixture
+    missing_step_env = dict(fixture["env"])
+    missing_step_env.pop("SLURM_STEP_ID")
+    with pytest.raises(ValueError, match="SLURM_STEP_ID"):
+        build_profile_matrix_start_receipt(
+            recovery=fixture["recovery"],
+            sidecar_gate=fixture["gate"],
+            hardware_identity=fixture["hardware"],
+            software_fingerprint=fixture["software_fingerprint"],
+            profile_code_commit=fixture["profile_commit"],
+            frozen_order=fixture["order"],
+            env=missing_step_env,
+        )
+
+    bad_cpu_hardware = copy.deepcopy(fixture["hardware"])
+    bad_cpu_hardware["slurm_resources"]["detector_process_affinity"] = [0, 1, 2]
+    with pytest.raises(ValueError, match=r"4\+1 CPU partition"):
+        build_profile_matrix_start_receipt(
+            recovery=fixture["recovery"],
+            sidecar_gate=fixture["gate"],
+            hardware_identity=bad_cpu_hardware,
+            software_fingerprint=fixture["software_fingerprint"],
+            profile_code_commit=fixture["profile_commit"],
+            frozen_order=fixture["order"],
+            env=fixture["env"],
         )
 
 
@@ -380,17 +469,19 @@ def test_completion_rejects_missing_and_duplicate_descriptors(
             descriptor_paths=duplicate_paths,
         )
 
-    duplicate_cell_path = _write_descriptor(
+    noncanonical_cell_path = _write_descriptor(
         fixture,
         fixture["order"][0],
         suffix="_duplicate-cell",
     )
-    duplicate_cells = fixture["descriptor_paths"][:-1] + [duplicate_cell_path]
-    with pytest.raises(ValueError, match="duplicate descriptor cells"):
+    noncanonical_cells = fixture["descriptor_paths"][:-1] + [
+        noncanonical_cell_path
+    ]
+    with pytest.raises(ValueError, match="canonical campaign path"):
         build_profile_matrix_completion_receipt(
             start_receipt_path=fixture["start_path"],
             recovery=fixture["recovery"],
-            descriptor_paths=duplicate_cells,
+            descriptor_paths=noncanonical_cells,
         )
 
 

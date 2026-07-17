@@ -1,6 +1,6 @@
 ---
 type: lint_report
-updated: 2026-07-11
+updated: 2026-07-17
 status: pass_with_source_warnings
 ---
 
@@ -9,14 +9,17 @@ status: pass_with_source_warnings
 ## Summary
 
 - Curated Markdown files: structurally valid.
-- Ideas: 16.
-- Experiments: 8.
-- Claims: 10.
-- Graph edges: 49 valid JSONL rows.
+- Ideas: 17.
+- Experiments: 9.
+- Claims: 11.
+- Graph edges: 51 valid JSONL rows.
 - Missing graph node references: 0.
 - Orphan idea/experiment/claim nodes: 0.
 - Broken curated relative links: 0.
-- `query_pack.md`: 2919 characters, below the 8000-character limit.
+- `query_pack.md`: 7933 characters, below the 8000-character limit.
+- The installed ARIS helper exposes no `lint` command. A read-only structural
+  validator parsed all 51 JSONL edges, checked every edge endpoint against the
+  current node set, and enforced the query-pack budget; all checks passed.
 
 ## Source-record warnings
 
@@ -29,7 +32,9 @@ status: pass_with_source_warnings
 
 - 实现代理和论文代理目前归档最近 30 轮；完整 task 仍由 Codex thread ID 保留。
 - 旧实验的未经匹配 mAP 数字没有强行固化，避免把历史观察升级为论文证据。
-- `70aa069` fixed-384 仍在运行，完成后必须更新 experiment 与 claim 节点。
-- formal trained-checkpoint cost matrix、matched baseline、finite-difference 和 geometry
-  audit 仍未完成。
+- Spatial Zoom S1 remains `tested_local`; the clean remote replay, new v3
+  recovery certificate, full 792-exposure no-open Gate, and exact-one serial
+  cost matrix remain incomplete.
+- The final paired S1 result, GO/KILL, post-result Pro review, and any S2
+  authorization do not exist.
 - ChronoTransport formal P3 已记录为 negative gate；Stage C/P5 不再列作自动待运行任务，除非先有 superseding 设计与重新预注册。

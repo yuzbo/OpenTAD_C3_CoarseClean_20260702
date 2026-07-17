@@ -16,6 +16,7 @@ from tools.bata.spatial_zoom_s1_contract import (
 
 S1_PROFILE_MATRIX_START_SCHEMA = "spatial_zoom_s1_profile_matrix_start_v1"
 S1_PROFILE_MATRIX_COMPLETION_SCHEMA = "spatial_zoom_s1_profile_matrix_completion_v1"
+S1_TEST_MATRIX_BINDING_SCHEMA = "spatial_zoom_s1_test_matrix_binding_v1"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
@@ -80,6 +81,24 @@ _DESCRIPTOR_MATRIX_FIELDS = {
     "step_gpu_uuid",
 }
 
+_TEST_MATRIX_BINDING_FIELDS = {
+    "schema_version",
+    "test_matrix_binding_path",
+    "test_evidence_path",
+    "test_evidence_file_sha256",
+    "test_evidence_sha256",
+    "resolution",
+    "seed",
+    "profile_order_ordinal",
+    "matrix_start_receipt_path",
+    "matrix_start_receipt_file_sha256",
+    "matrix_sha256",
+    "slurm_job_id",
+    "slurm_step_id",
+    "step_gpu_uuid",
+    "binding_sha256",
+}
+
 
 def _json_clone(value: Mapping[str, Any], *, label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
@@ -133,9 +152,27 @@ def _require_positive_int(value: Any, *, label: str) -> int:
 
 
 def _require_nonempty(value: Any, *, label: str) -> str:
+    if value is None:
+        raise ValueError(f"{label} must be non-empty")
     checked = str(value).strip()
     if not checked:
         raise ValueError(f"{label} must be non-empty")
+    return checked
+
+
+def _require_cpu_ids(value: Any, *, label: str) -> tuple[int, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ValueError(f"{label} must be a sequence of CPU ids")
+    try:
+        checked = tuple(int(cpu_id) for cpu_id in value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must contain integer CPU ids") from exc
+    if (
+        not checked
+        or any(cpu_id < 0 for cpu_id in checked)
+        or len(set(checked)) != len(checked)
+    ):
+        raise ValueError(f"{label} must contain unique non-negative CPU ids")
     return checked
 
 
@@ -280,11 +317,13 @@ def _hardware_runtime_snapshot(
     effective_memory_limit_mb: int | None = None,
 ) -> dict[str, Any]:
     hardware = _json_clone(hardware_identity, label="S1 hardware identity")
-    runtime_env = {str(key): str(value) for key, value in env.items()}
+    runtime_env = {str(key): value for key, value in env.items()}
     job_id = _require_nonempty(runtime_env.get("SLURM_JOB_ID"), label="SLURM_JOB_ID")
     if not job_id.isdigit():
         raise ValueError("SLURM_JOB_ID must be numeric")
     step_id = _require_nonempty(runtime_env.get("SLURM_STEP_ID"), label="SLURM_STEP_ID")
+    if not step_id.isdigit():
+        raise ValueError("SLURM_STEP_ID must identify the numeric inner srun step")
     job_gpus = _parse_gpu_list(
         runtime_env.get("SLURM_JOB_GPUS"), label="SLURM_JOB_GPUS"
     )
@@ -304,8 +343,15 @@ def _hardware_runtime_snapshot(
     cpus_per_task = _require_positive_int(
         runtime_env.get("SLURM_CPUS_PER_TASK"), label="SLURM_CPUS_PER_TASK"
     )
-    outer_memory = _require_positive_int(
-        runtime_env.get("SLURM_MEM_PER_NODE"), label="SLURM_MEM_PER_NODE"
+    if cpus_per_task != 5:
+        raise ValueError("S1 matrix requires exactly five Slurm step CPUs")
+    raw_outer_memory = runtime_env.get("SLURM_MEM_PER_NODE")
+    outer_memory = (
+        None
+        if raw_outer_memory is None or not str(raw_outer_memory).strip()
+        else _require_positive_int(
+            raw_outer_memory, label="SLURM_MEM_PER_NODE"
+        )
     )
 
     slurm = hardware.get("slurm_resources")
@@ -355,23 +401,30 @@ def _hardware_runtime_snapshot(
     )
     if hardware_effective_memory != effective_memory:
         raise ValueError("S1 hardware effective memory differs from step cgroup")
-    hardware_outer_memory = _require_positive_int(
-        slurm.get("outer_job_mem_per_node_mb"),
-        label="hardware outer_job_mem_per_node_mb",
+    if effective_memory < 90000:
+        raise ValueError("S1 matrix requires at least 90000 MB of step cgroup memory")
+    raw_hardware_outer_memory = slurm.get("outer_job_mem_per_node_mb")
+    hardware_outer_memory = (
+        None
+        if raw_hardware_outer_memory is None
+        else _require_positive_int(
+            raw_hardware_outer_memory,
+            label="hardware outer_job_mem_per_node_mb",
+        )
     )
     if hardware_outer_memory != outer_memory:
         raise ValueError("S1 hardware outer memory differs from Slurm job")
 
-    gpu_id_candidates = [
-        hardware.get("scoped_gpu_id"),
-        hardware.get("physical_gpu_id"),
-        slurm.get("scoped_gpu_id"),
-        slurm.get("step_gpu_id"),
-    ]
-    gpu_id_candidates = [str(value) for value in gpu_id_candidates if value is not None]
-    if not gpu_id_candidates or any(
-        value != scoped_gpu_id for value in gpu_id_candidates
-    ):
+    gpu_id_candidates = {
+        label: _require_nonempty(value, label=label)
+        for label, value in (
+            ("hardware scoped_gpu_id", hardware.get("scoped_gpu_id")),
+            ("hardware physical_gpu_id", hardware.get("physical_gpu_id")),
+            ("hardware Slurm scoped_gpu_id", slurm.get("scoped_gpu_id")),
+            ("hardware Slurm step_gpu_id", slurm.get("step_gpu_id")),
+        )
+    }
+    if any(value != scoped_gpu_id for value in gpu_id_candidates.values()):
         raise ValueError("S1 hardware step GPU id differs from Slurm step")
 
     step_gpu_uuid = _require_nonempty(
@@ -379,24 +432,51 @@ def _hardware_runtime_snapshot(
     )
     if not step_gpu_uuid.startswith("GPU-"):
         raise ValueError("S1 hardware NVIDIA GPU UUID is invalid")
-    uuid_candidates = [
-        hardware.get("step_gpu_uuid"),
-        hardware.get("cuda_visible_device_uuid"),
-        slurm.get("step_gpu_uuid"),
-    ]
-    if any(
-        str(value) != step_gpu_uuid for value in uuid_candidates if value is not None
-    ):
+    uuid_candidates = {
+        label: _require_nonempty(value, label=label)
+        for label, value in (
+            ("hardware step_gpu_uuid", hardware.get("step_gpu_uuid")),
+            (
+                "hardware cuda_visible_device_uuid",
+                hardware.get("cuda_visible_device_uuid"),
+            ),
+            ("hardware Slurm step_gpu_uuid", slurm.get("step_gpu_uuid")),
+        )
+    }
+    if any(value != step_gpu_uuid for value in uuid_candidates.values()):
         raise ValueError("S1 hardware GPU UUID fields disagree")
     hardware_cvd = _require_nonempty(
         slurm.get("cuda_visible_devices"),
         label="hardware cuda_visible_devices",
     )
-    top_level_cvd = hardware.get("cuda_visible_devices")
-    if hardware_cvd != cuda_visible_devices or (
-        top_level_cvd is not None and str(top_level_cvd) != cuda_visible_devices
-    ):
+    top_level_cvd = _require_nonempty(
+        hardware.get("cuda_visible_devices"),
+        label="hardware top-level cuda_visible_devices",
+    )
+    if hardware_cvd != cuda_visible_devices or top_level_cvd != cuda_visible_devices:
         raise ValueError("S1 hardware CUDA visibility differs from Slurm step")
+
+    allocated_cpu_ids = _require_cpu_ids(
+        slurm.get("allocated_cpu_ids"), label="hardware allocated_cpu_ids"
+    )
+    detector_cpu_ids = _require_cpu_ids(
+        slurm.get("detector_cpu_ids"), label="hardware detector_cpu_ids"
+    )
+    detector_process_affinity = _require_cpu_ids(
+        slurm.get("detector_process_affinity"),
+        label="hardware detector_process_affinity",
+    )
+    sidecar_cpu_id = int(slurm.get("sidecar_cpu_id", -1))
+    if (
+        len(allocated_cpu_ids) != 5
+        or len(detector_cpu_ids) != 4
+        or detector_process_affinity != tuple(sorted(detector_cpu_ids))
+        or not set(detector_cpu_ids).issubset(allocated_cpu_ids)
+        or sidecar_cpu_id not in allocated_cpu_ids
+        or sidecar_cpu_id in detector_cpu_ids
+        or set(allocated_cpu_ids) != set(detector_cpu_ids) | {sidecar_cpu_id}
+    ):
+        raise ValueError("S1 hardware does not preserve the audited 4+1 CPU partition")
 
     return {
         "slurm_job_id": job_id,
@@ -413,15 +493,17 @@ def _hardware_runtime_snapshot(
 
 
 def _receipt_env(receipt: Mapping[str, Any]) -> dict[str, str]:
-    return {
+    env = {
         "SLURM_JOB_ID": str(receipt["slurm_job_id"]),
         "SLURM_STEP_ID": str(receipt["slurm_step_id"]),
         "SLURM_JOB_GPUS": str(receipt["slurm_job_gpus"]),
         "SLURM_STEP_GPUS": str(receipt["slurm_step_gpus"]),
         "CUDA_VISIBLE_DEVICES": str(receipt["cuda_visible_devices"]),
         "SLURM_CPUS_PER_TASK": str(receipt["slurm_cpus_per_task"]),
-        "SLURM_MEM_PER_NODE": str(receipt["outer_job_mem_per_node_mb"]),
     }
+    if receipt["outer_job_mem_per_node_mb"] is not None:
+        env["SLURM_MEM_PER_NODE"] = str(receipt["outer_job_mem_per_node_mb"])
+    return env
 
 
 def _validate_gate_runtime(
@@ -459,6 +541,107 @@ def canonical_matrix_completion_path(
         raw.get("campaign_root"), label="recovery campaign_root"
     )
     return (Path(campaign_root) / "matrix.lock" / "matrix.completed.json").resolve()
+
+
+def canonical_test_matrix_binding_path(
+    test_evidence_path: str | os.PathLike[str],
+) -> Path:
+    evidence_path = Path(test_evidence_path).resolve()
+    return (evidence_path.parent / "test.evidence.matrix_binding.json").resolve()
+
+
+def build_test_matrix_binding(
+    *,
+    test_evidence_path: str | os.PathLike[str],
+    start_receipt_path: str | os.PathLike[str],
+    recovery: Mapping[str, Any] | str | os.PathLike[str],
+    resolution: int,
+    seed: int,
+) -> dict[str, Any]:
+    checked_recovery, _ = _validated_recovery(recovery)
+    start_path = Path(start_receipt_path).resolve()
+    if start_path != canonical_matrix_start_path(checked_recovery):
+        raise ValueError("S1 test matrix binding received a non-canonical start receipt")
+    start = validate_profile_matrix_start_receipt(
+        start_path, recovery=checked_recovery
+    )
+    evidence_path = Path(test_evidence_path).resolve()
+    evidence = _read_json_mapping(evidence_path, label="S1 test evidence")
+    _require_canonical_json(evidence_path, evidence, label="S1 test evidence")
+    evidence = _validate_self_hash(
+        evidence,
+        hash_key="evidence_sha256",
+        label="S1 test evidence",
+    )
+    matches = [
+        row
+        for row in start["frozen_order"]
+        if int(row["resolution"]) == int(resolution)
+        and int(row["seed"]) == int(seed)
+    ]
+    if len(matches) != 1:
+        raise ValueError("S1 test matrix binding cell is outside the frozen order")
+    cell = matches[0]
+    binding = {
+        "schema_version": S1_TEST_MATRIX_BINDING_SCHEMA,
+        "test_matrix_binding_path": str(
+            canonical_test_matrix_binding_path(evidence_path)
+        ),
+        "test_evidence_path": str(evidence_path),
+        "test_evidence_file_sha256": sha256_file(evidence_path),
+        "test_evidence_sha256": evidence["evidence_sha256"],
+        "resolution": int(resolution),
+        "seed": int(seed),
+        "profile_order_ordinal": int(cell["ordinal"]),
+        "matrix_start_receipt_path": str(start_path),
+        "matrix_start_receipt_file_sha256": sha256_file(start_path),
+        "matrix_sha256": start["matrix_sha256"],
+        "slurm_job_id": start["slurm_job_id"],
+        "slurm_step_id": start["slurm_step_id"],
+        "step_gpu_uuid": start["step_gpu_uuid"],
+    }
+    binding["binding_sha256"] = canonical_sha256(binding)
+    return binding
+
+
+def validate_test_matrix_binding(
+    binding_or_path: Mapping[str, Any] | str | os.PathLike[str],
+    *,
+    test_evidence_path: str | os.PathLike[str],
+    start_receipt_path: str | os.PathLike[str],
+    recovery: Mapping[str, Any] | str | os.PathLike[str],
+    resolution: int,
+    seed: int,
+) -> dict[str, Any]:
+    binding, binding_path = _raw_mapping(
+        binding_or_path, label="S1 test matrix binding"
+    )
+    binding = _validate_self_hash(
+        binding,
+        hash_key="binding_sha256",
+        label="S1 test matrix binding",
+    )
+    if set(binding) != _TEST_MATRIX_BINDING_FIELDS:
+        raise ValueError("S1 test matrix binding fields differ from its schema")
+    expected_path = canonical_test_matrix_binding_path(test_evidence_path)
+    if Path(binding["test_matrix_binding_path"]).resolve() != expected_path or (
+        binding_path is not None and binding_path != expected_path
+    ):
+        raise ValueError("S1 test matrix binding is outside its canonical path")
+    if binding_path is not None:
+        _require_canonical_json(
+            binding_path, binding, label="S1 test matrix binding"
+        )
+    expected = build_test_matrix_binding(
+        test_evidence_path=test_evidence_path,
+        start_receipt_path=start_receipt_path,
+        recovery=recovery,
+        resolution=resolution,
+        seed=seed,
+    )
+    if binding != expected:
+        raise ValueError("S1 test matrix binding does not match current evidence")
+    return binding
 
 
 def build_profile_matrix_start_receipt(
@@ -676,6 +859,14 @@ def _validated_descriptor(
         seed = int(descriptor["seed"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("S1 descriptor cell identity is invalid") from exc
+    campaign_root = start_path.parent.parent
+    expected_path = (
+        campaign_root
+        / "descriptors"
+        / f"dense{resolution}_seed{seed}.run.json"
+    ).resolve()
+    if path != expected_path:
+        raise ValueError("S1 descriptor is outside its canonical campaign path")
     record = {
         "profile_order_ordinal": ordinal,
         "resolution": resolution,
@@ -846,10 +1037,14 @@ def validate_profile_matrix_completion_receipt(
 __all__ = [
     "S1_PROFILE_MATRIX_COMPLETION_SCHEMA",
     "S1_PROFILE_MATRIX_START_SCHEMA",
+    "S1_TEST_MATRIX_BINDING_SCHEMA",
     "build_profile_matrix_completion_receipt",
     "build_profile_matrix_start_receipt",
+    "build_test_matrix_binding",
     "canonical_matrix_completion_path",
     "canonical_matrix_start_path",
+    "canonical_test_matrix_binding_path",
     "validate_profile_matrix_completion_receipt",
     "validate_profile_matrix_start_receipt",
+    "validate_test_matrix_binding",
 ]

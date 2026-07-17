@@ -6,6 +6,19 @@ fail() {
   exit 2
 }
 
+has_sidecar_runtime_evidence() {
+  local scratch_dir="$1"
+  local path
+  for path in \
+    "${scratch_dir}/pid.json" \
+    "${scratch_dir}/ready.json" \
+    "${scratch_dir}/power.jsonl" \
+    "${scratch_dir}/result.json"; do
+    [[ -e "${path}" ]] && return 0
+  done
+  return 1
+}
+
 ROOT="${SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT}"
 TRAINING_ROOT="${SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
@@ -48,6 +61,11 @@ if command -v module >/dev/null 2>&1; then
 fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
+
+(
+  cd "${ROOT}"
+  python -c 'from tools.bata.spatial_zoom_s1_training import require_slurm_memory_limit_mb, require_slurm_single_gpu_allocation; require_slurm_single_gpu_allocation(); print(require_slurm_memory_limit_mb(minimum_mb=90000))'
+)
 
 ALLOCATED_CPUS="$(python -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0)))))')"
 IFS=',' read -r -a CPU_ARRAY <<< "${ALLOCATED_CPUS}"
@@ -125,15 +143,23 @@ if ! (
       --detector-cpus "${DETECTOR_CPUS}" \
       --sidecar-cpu "${SIDECAR_CPU}"
 ); then
-  python "${ROOT}/tools/bata/spatial_zoom_s1_power.py" salvage \
-    --scratch-dir "${GATE_SCRATCH_DIR}" \
-    --attempt-prefix "${GATE_PREFIX}" \
-    --expected-uuid "${POWER_UUID}" \
-    --interval-ms 20 \
-    --sidecar-cpu-id "${SIDECAR_CPU}" \
-    --detector-cpus "${DETECTOR_CPUS}" \
-    --allocated-cpus "${ALLOCATED_CPUS}" || true
-  fail "long sidecar Gate failed after sealing its attempt"
+  if has_sidecar_runtime_evidence "${GATE_SCRATCH_DIR}"; then
+    if python "${ROOT}/tools/bata/spatial_zoom_s1_power.py" salvage \
+      --scratch-dir "${GATE_SCRATCH_DIR}" \
+      --attempt-prefix "${GATE_PREFIX}" \
+      --expected-uuid "${POWER_UUID}" \
+      --interval-ms 20 \
+      --sidecar-cpu-id "${SIDECAR_CPU}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --allocated-cpus "${ALLOCATED_CPUS}"; then
+      fail "long sidecar Gate failed after sealing its sidecar attempt"
+    fi
+    fail "long sidecar Gate failed and sidecar salvage also failed"
+  fi
+  if [[ -e "${GATE_PREFIX}.started.json" ]]; then
+    fail "long sidecar Gate consumed its namespace before sidecar startup"
+  fi
+  fail "long sidecar Gate failed before the sidecar published attempt evidence"
 fi
 
 [[ -f "${GATE_EVIDENCE}" ]] || fail "Gate evidence was not published"

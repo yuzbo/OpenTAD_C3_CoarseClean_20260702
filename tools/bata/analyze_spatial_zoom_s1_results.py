@@ -31,10 +31,16 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     load_profile_recovery_certificate,
 )
+from tools.bata.spatial_zoom_s1_matrix import (  # noqa: E402
+    canonical_test_matrix_binding_path,
+    validate_profile_matrix_completion_receipt,
+    validate_profile_matrix_start_receipt,
+    validate_test_matrix_binding,
+)
 
 Segment = tuple[float, float]
 Prediction = tuple[float, float, float]
-S1_FORMAL_REPORT_SCHEMA = "spatial_zoom_s1_formal_result_report_v3"
+S1_FORMAL_REPORT_SCHEMA = "spatial_zoom_s1_formal_result_report_v4"
 
 
 @dataclass(frozen=True)
@@ -687,6 +693,12 @@ def _assert_global_profile_matrix_comparability(
         "profile_recovery_certificate_file_sha256",
         "profile_recovery_certificate_sha256",
         "profile_recovery_campaign_id",
+        "matrix_start_receipt_path",
+        "matrix_start_receipt_file_sha256",
+        "matrix_sha256",
+        "slurm_job_id",
+        "slurm_step_id",
+        "step_gpu_uuid",
     )
     for key in globally_fixed:
         values = {
@@ -1116,6 +1128,10 @@ def _load_run_descriptor(
         "test_evidence_path",
         "test_evidence_file_sha256",
         "test_evidence_sha256",
+        "legacy_unbound_test_evidence",
+        "test_matrix_binding_path",
+        "test_matrix_binding_file_sha256",
+        "test_matrix_binding_sha256",
         "test_open_certificate_path",
         "test_open_certificate_file_sha256",
         "test_open_certificate_sha256",
@@ -1160,11 +1176,17 @@ def _load_run_descriptor(
         "profile_recovery_certificate_file_sha256",
         "profile_recovery_certificate_sha256",
         "profile_recovery_campaign_id",
+        "matrix_start_receipt_path",
+        "matrix_start_receipt_file_sha256",
+        "matrix_sha256",
+        "slurm_job_id",
+        "slurm_step_id",
+        "step_gpu_uuid",
     )
     missing = [key for key in required if key not in descriptor]
     if missing:
         raise ValueError(f"S1 run descriptor {path} is missing {missing}")
-    if descriptor["schema_version"] != "spatial_zoom_s1_run_v6":
+    if descriptor["schema_version"] != "spatial_zoom_s1_run_v8":
         raise ValueError("unsupported S1 run descriptor schema")
     if descriptor["manifest_sha256"] != manifest["manifest_sha256"]:
         raise ValueError("S1 run descriptor uses a different manifest")
@@ -1199,6 +1221,10 @@ def _load_run_descriptor(
         (
             "profile_recovery_certificate_path",
             "profile_recovery_certificate_file_sha256",
+        ),
+        (
+            "matrix_start_receipt_path",
+            "matrix_start_receipt_file_sha256",
         ),
         ("ground_truth_path", "ground_truth_sha256"),
     )
@@ -1240,6 +1266,71 @@ def _load_run_descriptor(
         binding=binding,
         verify_checkout=True,
     )
+    matrix_start = validate_profile_matrix_start_receipt(
+        descriptor["matrix_start_receipt_path"],
+        recovery=recovery,
+    )
+    for key in (
+        "matrix_sha256",
+        "slurm_job_id",
+        "slurm_step_id",
+        "step_gpu_uuid",
+    ):
+        if descriptor.get(key) != matrix_start.get(key):
+            raise ValueError(f"S1 run descriptor {key} matrix binding mismatch")
+    legacy_unbound_test_evidence = bool(
+        descriptor["legacy_unbound_test_evidence"]
+    )
+    expected_legacy = (
+        int(descriptor["resolution"])
+        == int(recovery["legacy_unbound_test_resolution"])
+        and int(descriptor["seed"]) == int(recovery["legacy_unbound_test_seed"])
+        and Path(descriptor["test_evidence_path"]).resolve()
+        == Path(recovery["legacy_unbound_test_evidence_path"]).resolve()
+        and descriptor["test_evidence_file_sha256"]
+        == recovery["legacy_unbound_test_evidence_file_sha256"]
+        and descriptor["test_evidence_sha256"]
+        == recovery["legacy_unbound_test_evidence_sha256"]
+    )
+    if legacy_unbound_test_evidence != expected_legacy:
+        raise ValueError("S1 descriptor legacy test-evidence exception mismatch")
+    if legacy_unbound_test_evidence:
+        if any(
+            descriptor[key] is not None
+            for key in (
+                "test_matrix_binding_path",
+                "test_matrix_binding_file_sha256",
+                "test_matrix_binding_sha256",
+            )
+        ):
+            raise ValueError("legacy S1 test evidence cannot claim a matrix binding")
+        if canonical_test_matrix_binding_path(
+            descriptor["test_evidence_path"]
+        ).exists():
+            raise ValueError("legacy S1 test-evidence binding path must remain absent")
+    else:
+        test_matrix_binding_path = Path(
+            descriptor["test_matrix_binding_path"]
+        ).resolve()
+        if (
+            not test_matrix_binding_path.is_file()
+            or sha256_file(test_matrix_binding_path)
+            != descriptor["test_matrix_binding_file_sha256"]
+        ):
+            raise ValueError("S1 descriptor test matrix-binding artifact mismatch")
+        test_matrix_binding = validate_test_matrix_binding(
+            test_matrix_binding_path,
+            test_evidence_path=descriptor["test_evidence_path"],
+            start_receipt_path=descriptor["matrix_start_receipt_path"],
+            recovery=recovery,
+            resolution=int(descriptor["resolution"]),
+            seed=int(descriptor["seed"]),
+        )
+        if (
+            test_matrix_binding["binding_sha256"]
+            != descriptor["test_matrix_binding_sha256"]
+        ):
+            raise ValueError("S1 descriptor test matrix-binding hash mismatch")
     sidecar_gate = load_sidecar_gate_evidence(
         descriptor["sidecar_gate_evidence_path"],
         recovery=recovery,
@@ -1396,6 +1487,16 @@ def _load_run_descriptor(
             "sidecar_gate_evidence_file_sha256"
         ],
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
+        "matrix_start_receipt_path": str(
+            Path(descriptor["matrix_start_receipt_path"]).resolve()
+        ),
+        "matrix_start_receipt_file_sha256": descriptor[
+            "matrix_start_receipt_file_sha256"
+        ],
+        "matrix_sha256": matrix_start["matrix_sha256"],
+        "slurm_job_id": matrix_start["slurm_job_id"],
+        "slurm_step_id": matrix_start["slurm_step_id"],
+        "step_gpu_uuid": matrix_start["step_gpu_uuid"],
         **expected_profile_order,
         "trained_checkpoint": True,
     }
@@ -1442,6 +1543,16 @@ def _load_run_descriptor(
         "sidecar_cpu_id": profile["sidecar_cpu_id"],
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
+        "matrix_start_receipt_path": str(
+            Path(descriptor["matrix_start_receipt_path"]).resolve()
+        ),
+        "matrix_start_receipt_file_sha256": descriptor[
+            "matrix_start_receipt_file_sha256"
+        ],
+        "matrix_sha256": matrix_start["matrix_sha256"],
+        "slurm_job_id": matrix_start["slurm_job_id"],
+        "slurm_step_id": matrix_start["slurm_step_id"],
+        "step_gpu_uuid": matrix_start["step_gpu_uuid"],
     }
     for key, expected in marker_expected.items():
         if profile_attempt_marker.get(key) != expected:
@@ -1471,6 +1582,7 @@ def build_formal_s1_result_report(
     manifest_path: str | Path,
     ground_truth_path: str | Path,
     descriptor_paths: Sequence[str | Path],
+    matrix_completion_receipt_path: str | Path,
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path).resolve()
     ground_truth_path = Path(ground_truth_path).resolve()
@@ -1485,6 +1597,24 @@ def build_formal_s1_result_report(
         )
         for path in resolved_descriptors
     ]
+    from tools.bata.spatial_zoom_s1_training import (
+        validate_bound_s1_training_config,
+    )
+
+    first_cfg = Config.fromfile(runs[0]["config_path"])
+    first_binding = validate_bound_s1_training_config(
+        first_cfg, seed=int(runs[0]["seed"])
+    )
+    recovery = load_profile_recovery_certificate(
+        runs[0]["profile_recovery_certificate_path"],
+        binding=first_binding,
+        verify_checkout=True,
+    )
+    matrix_completion = validate_profile_matrix_completion_receipt(
+        matrix_completion_receipt_path,
+        recovery=recovery,
+        descriptor_paths=resolved_descriptors,
+    )
     code_commit = _single_run_value(runs, "code_commit")
     profile_code_commit = _single_run_value(runs, "profile_code_commit")
     if profile_code_commit == code_commit:
@@ -1539,6 +1669,17 @@ def build_formal_s1_result_report(
         ),
         "profile_order_seed": _single_run_value(runs, "profile_order_seed"),
         "profile_order_sha256": _single_run_value(runs, "profile_order_sha256"),
+        "matrix_completion_receipt_path": str(
+            Path(matrix_completion_receipt_path).resolve()
+        ),
+        "matrix_completion_receipt_file_sha256": sha256_file(
+            matrix_completion_receipt_path
+        ),
+        "matrix_completion_sha256": matrix_completion["completion_sha256"],
+        "matrix_start_sha256": matrix_completion["matrix_sha256"],
+        "matrix_slurm_job_id": matrix_completion["slurm_job_id"],
+        "matrix_slurm_step_id": matrix_completion["slurm_step_id"],
+        "matrix_step_gpu_uuid": matrix_completion["step_gpu_uuid"],
         "source_descriptor_matrix_sha256": canonical_sha256(
             sorted(sources, key=lambda row: (row["resolution"], row["seed"]))
         ),
@@ -1556,12 +1697,14 @@ def validate_formal_s1_result_report(
     manifest_path: str | Path,
     ground_truth_path: str | Path,
     descriptor_paths: Sequence[str | Path],
+    matrix_completion_receipt_path: str | Path,
 ) -> dict[str, Any]:
     checked = validate_s1_result_report_envelope(report)
     expected = build_formal_s1_result_report(
         manifest_path=manifest_path,
         ground_truth_path=ground_truth_path,
         descriptor_paths=descriptor_paths,
+        matrix_completion_receipt_path=matrix_completion_receipt_path,
     )
     return validate_s1_result_report_envelope(checked, expected_report=expected)
 
@@ -1573,6 +1716,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--ground-truth", type=Path, required=True)
     parser.add_argument("--run", type=Path, action="append", required=True)
+    parser.add_argument("--matrix-completion-receipt", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--validate-report", type=Path)
     args = parser.parse_args(argv)
@@ -1584,6 +1728,7 @@ def main(argv: list[str] | None = None) -> int:
             manifest_path=args.manifest,
             ground_truth_path=args.ground_truth,
             descriptor_paths=args.run,
+            matrix_completion_receipt_path=args.matrix_completion_receipt,
         )
         print(
             json.dumps(
@@ -1600,6 +1745,7 @@ def main(argv: list[str] | None = None) -> int:
         manifest_path=args.manifest,
         ground_truth_path=args.ground_truth,
         descriptor_paths=args.run,
+        matrix_completion_receipt_path=args.matrix_completion_receipt,
     )
     expected_output = (
         Path(report["global_identity"]["canonical_experiment_root"])

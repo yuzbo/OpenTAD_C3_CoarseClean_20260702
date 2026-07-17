@@ -337,3 +337,27 @@ append_only: true
   GPU is recorded as idle scheduling overhead, never model compute. Local S1
   verification is `62 passed, 4 skipped`; remote exact replay, a new v3
   certificate, and the full no-open Gate remain pending.
+- 2026-07-17: independent max-level audit of resource-step commit `84a7144`
+  returned `HOLD` with no P0 and four P1 lifecycle/evidence gaps. Implemented
+  fail-closed Gate preflight ordering, evidence-guarded salvage, strict cgroup
+  v2 and Slurm job/step GPU membership checks, logical-CUDA/NVML UUID closure,
+  pre-lock in-memory matrix-start validation, per-profile/marker/descriptor
+  start-receipt binding, exact-nine completion sealing, and mandatory
+  completion validation in the final analyzer. The model, selected
+  checkpoints, existing sealed-test result, frozen order, 20/100 ms cadence,
+  and statistical thresholds are unchanged. Exact local regression is
+  `98 passed, 5 skipped`; this is `tested_local` only. No new campaign, Gate,
+  matrix, cost result, GO/KILL, S2, or Pro review has been created.
+- 2026-07-17: completed the follow-up evidence-closure repair. The logical
+  `cuda:0` UUID now comes from the public CUDA Driver API and must equal the
+  step-scoped NVML UUID; all nine cells undergo a no-write dry-run before the
+  matrix lock; every new official-test evidence file is bound to the canonical
+  matrix-start receipt; the sole historical dense256/seed3408 exception is
+  frozen by exact certificate path and hashes; descriptors are canonical-path
+  only; and salvage no longer accepts marker-only evidence or suppresses its
+  own failure. Exact local verification is `99 passed, 5 skipped`, with Python
+  syntax, Bash syntax, and whitespace checks passing. The same independent
+  max-level reviewer re-audited the current diff, found no P0/P1, and returned
+  `DEPLOY` without modifying files. This authorizes only a clean commit, exact
+  remote replay, and a new no-open Gate; no matrix or empirical conclusion is
+  authorized until that Gate passes.

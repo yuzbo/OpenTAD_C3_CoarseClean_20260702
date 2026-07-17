@@ -68,6 +68,27 @@ updated: 2026-07-17
     Slurm step with one GPU, five CPUs, and 96,000 MiB. Record the step-scoped
     GPU and finite cgroup limit. The idle outer GPU is scheduling overhead,
     not model compute or measured cost, and must be disclosed.
+19. Do not acquire or consume a formal matrix namespace before all no-write
+    preflights pass. This includes source/artifact checks, the representative
+    cell, finite cgroup v2 memory, step-GPU membership, logical-CUDA/NVML UUID,
+    Gate hardware/software class, and in-memory matrix-start receipt
+    validation. Never hand-write an alternative receipt in a launcher.
+20. Do not combine profiles from different Slurm jobs, steps, or GPUs. Every
+    profile, marker, and descriptor must bind the same canonical start receipt;
+    the analyzer requires one completion receipt that seals exactly nine
+    frozen-order descriptors. A directory count is not equivalent evidence.
+21. Do not open any new sealed-test cell before all nine frozen cells pass the
+    matrix no-write dry-run and the current start receipt passes runtime
+    hardware/software validation. A per-cell preflight after another cell has
+    opened the test is not a substitute for the all-cell dry-run.
+22. Do not accept unbound official-test evidence from a prior matrix. The only
+    exception is the historical dense256/seed3408 evidence whose canonical
+    path, file hash, internal hash, and cell identity are frozen by the active
+    recovery certificate. Every newly opened cell must publish and validate a
+    canonical test-to-matrix binding before profiling.
+23. Do not treat marker, stdout, or stderr files as proof that the NVML sidecar
+    started. Salvage is authorized only by sidecar PID/ready/raw-power/result
+    evidence, and a failed salvage must remain a hard failure.
 
 ## 任务与叙事
 

@@ -59,7 +59,9 @@ def sidecar_gate_hardware_class(hardware_identity: Mapping[str, Any]) -> dict[st
         "max_sm_clock": nvidia_smi.get("clocks.max.sm"),
         "max_memory_clock": nvidia_smi.get("clocks.max.memory"),
         "cpus_per_task": slurm.get("cpus_per_task"),
-        "mem_per_node_mb": slurm.get("mem_per_node_mb"),
+        "effective_step_memory_limit_mb": slurm.get(
+            "effective_step_memory_limit_mb"
+        ),
     }
 
 

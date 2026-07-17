@@ -66,6 +66,7 @@ from tools.bata.run_spatial_zoom_s1_precheck import (
 )
 from tools.bata.profile_spatial_zoom_s1 import (
     _dataset_exposure_topology,
+    _hardware_identity,
     _sample_identity,
     create_profile_attempt_marker,
     validate_profile_attempt_marker,
@@ -395,6 +396,11 @@ def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:
     monkeypatch.setenv("SLURM_STEP_GPUS", "7")
     assert require_slurm_single_gpu_allocation() == "7"
 
+    monkeypatch.setenv("SLURM_STEP_GPUS", "3")
+    with pytest.raises(RuntimeError, match="not a member"):
+        require_slurm_single_gpu_allocation()
+
+    monkeypatch.setenv("SLURM_STEP_GPUS", "7")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
     with pytest.raises(RuntimeError, match="exactly one Slurm-visible"):
         require_slurm_single_gpu_allocation()
@@ -447,11 +453,96 @@ def test_formal_s1_reads_the_tightest_finite_step_memory_limit(
         )
     empty_cgroup_root = tmp_path / "empty_cgroup"
     empty_cgroup_root.mkdir()
-    with pytest.raises(RuntimeError, match="no finite auditable cgroup"):
+    with pytest.raises(RuntimeError, match="cgroup v2"):
         require_slurm_memory_limit_mb(
             minimum_mb=90000,
             proc_cgroup_path=proc_cgroup,
             cgroup_root=empty_cgroup_root,
+        )
+    v1_proc_cgroup = tmp_path / "proc_self_cgroup_v1"
+    v1_proc_cgroup.write_text(
+        f"5:memory:/{relative.as_posix()}\n", encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="cgroup v2"):
+        require_slurm_memory_limit_mb(
+            minimum_mb=90000,
+            proc_cgroup_path=v1_proc_cgroup,
+            cgroup_root=cgroup_root,
+        )
+
+
+def test_hardware_identity_binds_logical_cuda_uuid_to_step_gpu(
+    monkeypatch,
+) -> None:
+    properties = SimpleNamespace(
+        name="S1 GPU",
+        total_memory=48 * 1024**3,
+        major=8,
+        minor=0,
+        multi_processor_count=108,
+    )
+    fake_cuda = SimpleNamespace(
+        get_device_properties=lambda _device: properties,
+    )
+    fake_torch = SimpleNamespace(cuda=fake_cuda)
+    expected_uuid = "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    monkeypatch.setattr(
+        "tools.bata.profile_spatial_zoom_s1._cuda_driver_device_uuid_hex",
+        lambda _ordinal=0: "aaaaaaaabbbbccccddddeeeeeeeeeeee",
+    )
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    monkeypatch.setenv("SLURM_STEP_ID", "0")
+    monkeypatch.setenv("SLURM_JOB_GPUS", "1,2")
+    monkeypatch.setenv("SLURM_STEP_GPUS", "1")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "5")
+    monkeypatch.setenv("SLURM_MEM_PER_NODE", "124400")
+    nvidia_smi = SimpleNamespace(
+        returncode=0,
+        stdout=(
+            f"{expected_uuid}, 00000000:01:00.0, 550.54, Enabled, Default, "
+            "300.00, 1410, 1215\n"
+        ),
+        stderr="",
+    )
+    monkeypatch.setattr(
+        "tools.bata.profile_spatial_zoom_s1.subprocess.run",
+        lambda *_args, **_kwargs: nvidia_smi,
+    )
+    identity = _hardware_identity(
+        fake_torch,
+        "cuda:0",
+        physical_gpu_id="1",
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+        detector_cpu_ids=(0, 1, 2, 3),
+        sidecar_cpu_id=4,
+        memory_limit_mb=96000,
+    )
+    assert identity["cuda_runtime_device_ordinal"] == 0
+    assert (
+        identity["cuda_runtime_device_uuid_hex"]
+        == "aaaaaaaabbbbccccddddeeeeeeeeeeee"
+    )
+    assert identity["cuda_visible_device_uuid"] == expected_uuid
+    assert identity["nvidia_smi"]["uuid"] == expected_uuid
+    assert identity["slurm_gpu_scope"]["step_id"] == "0"
+    assert (
+        identity["slurm_resources"]["effective_step_memory_limit_mb"] == 96000
+    )
+
+    monkeypatch.setattr(
+        "tools.bata.profile_spatial_zoom_s1._cuda_driver_device_uuid_hex",
+        lambda _ordinal=0: "11111111222233334444555555555555",
+    )
+    with pytest.raises(RuntimeError, match="logical cuda:0 UUID differs"):
+        _hardware_identity(
+            fake_torch,
+            "cuda:0",
+            physical_gpu_id="1",
+            allocated_cpu_ids=(0, 1, 2, 3, 4),
+            detector_cpu_ids=(0, 1, 2, 3),
+            sidecar_cpu_id=4,
+            memory_limit_mb=96000,
         )
 
 
@@ -473,6 +564,9 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     assert "SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT" in post
     assert "SPATIAL_ZOOM_S1_PROFILE_RECOVERY" in post
     assert "SPATIAL_ZOOM_S1_PREFLIGHT_ONLY" in post
+    assert "SPATIAL_ZOOM_S1_MATRIX_DRY_RUN" in post
+    assert "--matrix-start-receipt" in post
+    assert "build_test_matrix_binding" in post
     assert "reuse validated test evidence" in post
     assert 'cd "${TRAINING_ROOT}"' in post
     assert 'PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"' in post
@@ -496,16 +590,101 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     assert "CUDA_VISIBLE_DEVICES=" not in matrix
     assert 'mkdir "${MATRIX_LOCK_DIR}"' in matrix
     assert "matrix.started.json" in matrix
-    assert "matrix.completed.json" in matrix
+    assert "build_profile_matrix_start_receipt" in matrix
+    assert "validate_profile_matrix_start_receipt" in matrix
+    assert "build_profile_matrix_completion_receipt" in matrix
+    assert "validate_profile_matrix_completion_receipt" in matrix
+    assert "canonical_matrix_completion_path" in matrix
     assert "refusing a concurrent or repeated matrix" in matrix
     assert "validate_sidecar_gate_evidence" in matrix
-    assert "matrix start receipt identity mismatch" in matrix
+    matrix_preflight = matrix.index("SPATIAL_ZOOM_S1_MATRIX_DRY_RUN=1")
+    matrix_lock = matrix.index('mkdir "${MATRIX_LOCK_DIR}"')
+    assert matrix_preflight < matrix_lock
+    assert matrix.index("for cell in ${FROZEN_ORDER}", matrix_preflight) < matrix_lock
+    gate = (
+        ROOT / "scripts" / "run_spatial_zoom_s1_power_sidecar_gate_slurm.sh"
+    ).read_text(encoding="utf-8")
+    gate_memory_preflight = gate.index("require_slurm_memory_limit_mb")
+    gate_namespace = gate.index("sidecar Gate evidence already exists")
+    assert gate_memory_preflight < gate_namespace
+    cell_memory_preflight = post.index("require_slurm_memory_limit_mb")
+    cell_recovery_read = post.index('["training_code_commit"]')
+    assert cell_memory_preflight < cell_recovery_read
+    for source in (post, gate):
+        assert "has_sidecar_runtime_evidence" in source
+        assert "failed before the sidecar published attempt evidence" in source
+        assert "salvage also failed" in source
+        assert "salvage" in source
+        assert "|| true" not in source
     for source in (post, matrix):
         assert "SLURM_STEP_GPUS" in source
         assert "srun --exact" in source
         assert "--gpus=1" in source
         assert "--cpus-per-task=5" in source
         assert "--mem=96000M" in source
+    matrix_start_preflight = matrix.index("build_profile_matrix_start_receipt")
+    assert matrix_start_preflight < matrix_lock
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires Linux Slurm shell semantics")
+def test_s1_high_memory_launchers_reenter_one_exact_gpu_step(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_srun = fake_bin / "srun"
+    fake_srun.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "printf '%s\\n' \"$@\" > \"${S1_CAPTURE:?}\"\n",
+        encoding="utf-8",
+    )
+    fake_srun.chmod(0o755)
+    common_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "SLURM_JOB_ID": "12345",
+        "SLURM_JOB_GPUS": "1,2",
+        "SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT": str(ROOT),
+        "SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT": str(ROOT),
+        "SPATIAL_ZOOM_S1_RUN_ROOT": str(tmp_path / "run"),
+        "SPATIAL_ZOOM_S1_MANIFEST": str(tmp_path / "manifest.json"),
+        "SPATIAL_ZOOM_S1_ANNOTATION": str(tmp_path / "annotation.json"),
+        "SPATIAL_ZOOM_S1_TEST_OPEN": str(tmp_path / "test_open.json"),
+        "SPATIAL_ZOOM_S1_PROFILE_RECOVERY": str(tmp_path / "recovery.json"),
+        "SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT": str(tmp_path / "scratch"),
+        "SPATIAL_ZOOM_S1_RESOLUTION": "256",
+        "SPATIAL_ZOOM_S1_SEED": "3408",
+    }
+    common_env.pop("SLURM_STEP_GPUS", None)
+    common_env.pop("SPATIAL_ZOOM_S1_SINGLE_GPU_STEP", None)
+    expected_prefix = [
+        "--exact",
+        "--ntasks=1",
+        "--gpus=1",
+        "--cpus-per-task=5",
+        "--mem=96000M",
+        "bash",
+    ]
+    for filename in (
+        "run_spatial_zoom_s1_power_sidecar_gate_slurm.sh",
+        "run_spatial_zoom_s1_test_profile_slurm.sh",
+        "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
+    ):
+        capture = tmp_path / f"{filename}.args"
+        env = {**common_env, "S1_CAPTURE": str(capture)}
+        script = (ROOT / "scripts" / filename).resolve()
+        completed = subprocess.run(
+            ["bash", str(script)],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        args = capture.read_text(encoding="utf-8").splitlines()
+        assert args == [*expected_prefix, str(script)]
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:
@@ -769,6 +948,7 @@ def test_profile_recovery_certificate_preserves_failed_attempt_and_scope(
         "code_commit": "a" * 40,
         "experiment_namespace": "s1-experiment",
         "canonical_experiment_root": str(canonical_root),
+        "work_dir": str((canonical_root / "dense256" / "seed3408").resolve()),
         "manifest_sha256": "b" * 64,
         "protocol_fingerprint": "c" * 64,
         "precheck_file_sha256": "d" * 64,
@@ -871,6 +1051,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "code_commit": "a" * 40,
         "experiment_namespace": "s1-experiment",
         "canonical_experiment_root": str(canonical_root),
+        "work_dir": str((canonical_root / "dense256" / "seed3408").resolve()),
         "manifest_sha256": "b" * 64,
         "protocol_fingerprint": "c" * 64,
         "precheck_file_sha256": "d" * 64,
@@ -1056,6 +1237,21 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
     chain_path.write_text(
         json.dumps(chain, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    legacy_test_evidence_path = (
+        Path(binding["work_dir"])
+        / "gpu1_id0"
+        / "test_evidence"
+        / "test.evidence.json"
+    )
+    legacy_test_evidence = {"schema_version": "spatial_zoom_s1_test_evidence_v4"}
+    legacy_test_evidence["evidence_sha256"] = canonical_sha256(
+        legacy_test_evidence
+    )
+    legacy_test_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_test_evidence_path.write_text(
+        json.dumps(legacy_test_evidence, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     sidecar_marker_path = tmp_path / "sidecar.started.json"
     sidecar_marker = {
         **original_marker,
@@ -1063,6 +1259,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "profile_code_commit": chain["profile_code_commit"],
         "profile_recovery_certificate_sha256": chain["certificate_sha256"],
         "profile_recovery_campaign_id": chain["campaign_id"],
+        "test_evidence_sha256": legacy_test_evidence["evidence_sha256"],
     }
     sidecar_marker.pop("marker_sha256")
     sidecar_marker["marker_sha256"] = canonical_sha256(sidecar_marker)
@@ -1076,6 +1273,8 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         *chain_paths,
         "docs/superpowers/specs/2026-07-17-spatial-zoom-s1-power-sidecar-design.md",
         "scripts/run_spatial_zoom_s1_power_sidecar_gate_slurm.sh",
+        "tests/test_spatial_zoom_s1_matrix.py",
+        "tools/bata/spatial_zoom_s1_matrix.py",
         "tools/bata/spatial_zoom_s1_sidecar_gate.py",
     )
     sidecar_basis = {
@@ -1083,6 +1282,19 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "schema_version": S1_SIDECAR_PROFILE_RECOVERY_SCHEMA,
         "reason": S1_SIDECAR_RECOVERY_REASON,
         "profile_code_commit": "7" * 40,
+        "legacy_unbound_test_resolution": int(
+            build_s1_profile_order()[0]["resolution"]
+        ),
+        "legacy_unbound_test_seed": int(build_s1_profile_order()[0]["seed"]),
+        "legacy_unbound_test_evidence_path": str(
+            legacy_test_evidence_path.resolve()
+        ),
+        "legacy_unbound_test_evidence_file_sha256": sha256_file(
+            legacy_test_evidence_path
+        ),
+        "legacy_unbound_test_evidence_sha256": legacy_test_evidence[
+            "evidence_sha256"
+        ],
         "changed_files": [
             {"status": "M", "path": path, "file_sha256": "8" * 64}
             for path in sidecar_paths
@@ -1196,6 +1408,17 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
     )
     assert observed == first
     assert order_sha == canonical_sha256(order)
+    dry_run_second, _ = validate_profile_order_ready(
+        manifest=manifest,
+        binding=binding,
+        resolution=int(second["resolution"]),
+        seed=int(second["seed"]),
+        hardware_fingerprint="hardware",
+        software_fingerprint="software",
+        matrix_dry_run=True,
+        **recovery_kwargs,
+    )
+    assert dry_run_second == second
 
     future_prefix = (
         campaign_root
@@ -1214,6 +1437,17 @@ def test_profile_schedule_rejects_future_start_and_missing_prior_completion(
             seed=int(first["seed"]),
             hardware_fingerprint="hardware",
             software_fingerprint="software",
+            **recovery_kwargs,
+        )
+    with pytest.raises(RuntimeError, match="matrix dry-run"):
+        validate_profile_order_ready(
+            manifest=manifest,
+            binding=binding,
+            resolution=int(second["resolution"]),
+            seed=int(second["seed"]),
+            hardware_fingerprint="hardware",
+            software_fingerprint="software",
+            matrix_dry_run=True,
             **recovery_kwargs,
         )
     future_marker.unlink()
@@ -2165,6 +2399,11 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "gpu_compute_capability": [8, 0],
         "gpu_multi_processor_count": 108,
         "physical_gpu_id": "1",
+        "scoped_gpu_id": "1",
+        "step_gpu_uuid": "GPU-S1",
+        "cuda_visible_device_uuid": "GPU-S1",
+        "cuda_visible_devices": "0",
+        "cuda_visible_nvml_index": 1,
         "nvidia_smi": {
             "uuid": "GPU-S1",
             "pci.bus_id": "00000000:01:00.0",
@@ -2175,10 +2414,27 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
             "clocks.max.sm": "1410",
             "clocks.max.memory": "1215",
         },
+        "slurm_gpu_scope": {
+            "job_id": "123",
+            "step_id": "0",
+            "job_gpus": "1,2",
+            "step_gpus": "1",
+            "scoped_gpu_id": "1",
+            "cuda_visible_devices": "0",
+        },
         "slurm_resources": {
+            "slurm_job_id": "123",
+            "slurm_step_id": "0",
+            "slurm_job_gpus": "1,2",
+            "slurm_step_gpus": "1",
+            "scoped_gpu_id": "1",
+            "step_gpu_id": "1",
+            "step_gpu_uuid": "GPU-S1",
+            "cuda_visible_devices": "0",
             "cpus_per_task": 5,
-            "mem_per_node_mb": 96000,
-            "memory_limit_source": "tightest_finite_cgroup_or_slurm",
+            "outer_job_mem_per_node_mb": 124400,
+            "effective_step_memory_limit_mb": 96000,
+            "memory_limit_source": "tightest_finite_cgroup_v2_or_slurm",
             "allocated_cpu_ids": [0, 1, 2, 3, 4],
             "detector_cpu_ids": [0, 1, 2, 3],
             "sidecar_cpu_id": 4,
@@ -2279,6 +2535,12 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "sidecar_gate_evidence_path": "/s1/canonical/sidecar_gate.json",
         "sidecar_gate_evidence_file_sha256": "d" * 64,
         "sidecar_gate_sha256": "d" * 64,
+        "matrix_start_receipt_path": "/s1/canonical/matrix.lock/matrix.started.json",
+        "matrix_start_receipt_file_sha256": "d" * 64,
+        "matrix_sha256": "d" * 64,
+        "slurm_job_id": "123",
+        "slurm_step_id": "0",
+        "step_gpu_uuid": "GPU-S1",
     }
 
 

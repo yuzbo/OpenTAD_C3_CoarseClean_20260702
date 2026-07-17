@@ -581,11 +581,22 @@ def require_slurm_single_gpu_allocation() -> str:
         for value in os.environ.get("SLURM_JOB_GPUS", "").split(",")
         if value.strip()
     ]
-    scoped_ids = step_ids or physical_ids
-    if len(scoped_ids) != 1:
-        raise RuntimeError(
-            "formal S1 execution requires one auditable Slurm GPU identity"
-        )
+    if step_ids:
+        if len(step_ids) != 1 or not physical_ids:
+            raise RuntimeError(
+                "formal S1 execution requires one auditable Slurm step GPU identity"
+            )
+        if step_ids[0] not in physical_ids:
+            raise RuntimeError(
+                "formal S1 Slurm step GPU is not a member of SLURM_JOB_GPUS"
+            )
+        scoped_ids = step_ids
+    else:
+        scoped_ids = physical_ids
+        if len(scoped_ids) != 1:
+            raise RuntimeError(
+                "formal S1 execution requires one auditable Slurm GPU identity"
+            )
     gpu_count = os.environ.get("SLURM_GPUS_ON_NODE", "").strip()
     if gpu_count and gpu_count != "1":
         raise RuntimeError("formal S1 execution step must expose one GPU")
@@ -615,6 +626,7 @@ def require_slurm_memory_limit_mb(
 
     proc_path = Path(proc_cgroup_path).resolve()
     root = Path(cgroup_root).resolve()
+    saw_cgroup_v2 = False
     if proc_path.is_file() and root.is_dir():
         for raw_line in proc_path.read_text(encoding="utf-8").splitlines():
             try:
@@ -623,20 +635,8 @@ def require_slurm_memory_limit_mb(
                 raise RuntimeError("invalid /proc/self/cgroup record") from exc
             bases: list[tuple[Path, str]] = []
             if controllers == "":
+                saw_cgroup_v2 = True
                 bases.append((root / relative.lstrip("/"), "memory.max"))
-            elif "memory" in controllers.split(","):
-                bases.extend(
-                    (
-                        (
-                            root / "memory" / relative.lstrip("/"),
-                            "memory.limit_in_bytes",
-                        ),
-                        (
-                            root / relative.lstrip("/"),
-                            "memory.limit_in_bytes",
-                        ),
-                    )
-                )
             for base, filename in bases:
                 current = base.resolve()
                 while current == root or root in current.parents:
@@ -657,10 +657,10 @@ def require_slurm_memory_limit_mb(
                     current = current.parent
     if (
         os.environ.get("SLURM_STEP_GPUS", "").strip()
-        and not cgroup_limits_bytes
+        and (not saw_cgroup_v2 or not cgroup_limits_bytes)
     ):
         raise RuntimeError(
-            "formal S1 Slurm step has no finite auditable cgroup memory limit"
+            "formal S1 Slurm step requires a finite auditable cgroup v2 memory limit"
         )
     limits_bytes = env_limits_bytes + cgroup_limits_bytes
     if not limits_bytes:

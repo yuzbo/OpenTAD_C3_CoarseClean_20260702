@@ -581,6 +581,31 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   verification for this uncommitted resource repair is `62 passed, 4 skipped`;
   a clean commit, exact remote tests, a new v3 certificate, and the full
   no-open Gate remain mandatory.
+- The resource-step implementation at `84a7144` received an independent
+  max-level `HOLD` with no P0 and four P1 findings: Gate resource failure could
+  reach salvage, the canonical matrix lock preceded full no-write preflight,
+  the recorded physical GPU was not closed against job membership plus
+  logical `cuda:0` UUID, and nine descriptors were not cryptographically bound
+  to one matrix job/step. The commit remains diagnostic-only.
+- The current local repair addresses those findings without changing the S1
+  model, checkpoints, test evidence, frozen order, cost thresholds, or
+  statistics. Gate memory/GPU checks precede namespace access; salvage runs
+  only after real child evidence exists; formal inner steps require a finite
+  cgroup v2 limit; hardware identity binds job/step GPU membership, logical
+  CUDA and NVML UUID, and the exact 4+1 CPU partition. All nine frozen cells
+  pass a no-write dry-run before a fully validated start receipt is constructed
+  in node-local scratch and the canonical single-use lock is acquired. New
+  official-test evidence receives a canonical matrix binding before profiling;
+  only the previously opened dense256/seed3408 evidence may remain unbound, and
+  only under its certificate-frozen path and hashes. Every formal profile,
+  marker, canonical descriptor, and test binding references that receipt, and
+  one completion receipt seals exactly nine frozen-order descriptors before
+  analysis. Local S1/matrix/train-engine/C3 verification is
+  `99 passed, 5 skipped`. A follow-up independent max-level audit found no P0
+  or P1 and returned `DEPLOY`; it made no file changes. State remains
+  `tested_local`: a clean commit, exact remote Linux/CUDA checks, a new v3
+  certificate, and a full no-open Gate are still mandatory before one
+  replacement matrix.
 
 ## Decision Boundary
 

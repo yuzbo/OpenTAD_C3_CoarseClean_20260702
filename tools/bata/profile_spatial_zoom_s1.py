@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import hashlib
 import importlib.metadata
 import json
@@ -42,6 +43,11 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     load_profile_recovery_certificate,
     profile_campaign_prefix,
 )
+from tools.bata.spatial_zoom_s1_matrix import (  # noqa: E402
+    canonical_test_matrix_binding_path,
+    validate_profile_matrix_start_receipt,
+    validate_test_matrix_binding,
+)
 from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
     NvmlSidecarPowerSampler as PowerSampler,
 )
@@ -68,7 +74,7 @@ from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
     validate_s1_checkpoint_sidecar,
 )
 
-S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v6"
+S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v7"
 
 
 def _canonical_hash(value: Any) -> str:
@@ -114,6 +120,7 @@ def validate_profile_order_ready(
     profile_code_commit: str,
     profile_recovery_certificate_sha256: str,
     profile_recovery_campaign_id: str,
+    matrix_dry_run: bool = False,
 ) -> tuple[dict[str, int], str]:
     order = build_s1_profile_order()
     if manifest.get("profile_matrix_order") != order:
@@ -127,6 +134,33 @@ def validate_profile_order_ready(
         raise ValueError("S1 profile cell has no unique frozen schedule ordinal")
     current = matches[0]
     campaign_root = Path(campaign_root).resolve()
+    if matrix_dry_run:
+        for row in order:
+            prefix = (
+                campaign_root
+                / f"dense{int(row['resolution'])}"
+                / f"seed{int(row['seed'])}"
+                / f"dense{int(row['resolution'])}_seed{int(row['seed'])}"
+            )
+            paths = (
+                prefix.with_suffix(".started.json"),
+                prefix.with_suffix(".summary.json"),
+                prefix.with_suffix(".samples.jsonl"),
+                prefix.with_suffix(".power.jsonl"),
+                Path(f"{prefix}.power_attempt.json"),
+                Path(f"{prefix}.power_attempt.jsonl"),
+                campaign_root
+                / "descriptors"
+                / (
+                    f"dense{int(row['resolution'])}_"
+                    f"seed{int(row['seed'])}.run.json"
+                ),
+            )
+            if any(path.exists() for path in paths):
+                raise RuntimeError(
+                    "S1 matrix dry-run found an already-started profile namespace"
+                )
+        return current, canonical_sha256(order)
     for row in order:
         prefix = (
             campaign_root
@@ -406,6 +440,58 @@ def _software_identity(torch_module: Any) -> dict[str, Any]:
     }
 
 
+class _CudaDriverUuid(ctypes.Structure):
+    _fields_ = [("bytes", ctypes.c_ubyte * 16)]
+
+
+def _cuda_driver_device_uuid_hex(device_ordinal: int = 0) -> str:
+    """Read a logical CUDA device UUID through the public CUDA Driver API."""
+
+    try:
+        driver = ctypes.CDLL("libcuda.so.1")
+    except OSError as exc:
+        raise RuntimeError("formal S1 profiler could not load libcuda.so.1") from exc
+
+    driver.cuInit.argtypes = [ctypes.c_uint]
+    driver.cuInit.restype = ctypes.c_int
+    driver.cuDeviceGet.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+    driver.cuDeviceGet.restype = ctypes.c_int
+    uuid_function = getattr(driver, "cuDeviceGetUuid_v2", None)
+    if uuid_function is None:
+        uuid_function = getattr(driver, "cuDeviceGetUuid", None)
+    if uuid_function is None:
+        raise RuntimeError("formal S1 profiler could not resolve cuDeviceGetUuid")
+    uuid_function.argtypes = [ctypes.POINTER(_CudaDriverUuid), ctypes.c_int]
+    uuid_function.restype = ctypes.c_int
+
+    def check(code: int, operation: str) -> None:
+        if int(code) != 0:
+            raise RuntimeError(
+                f"formal S1 profiler CUDA Driver API {operation} failed with {code}"
+            )
+
+    check(driver.cuInit(0), "cuInit")
+    device = ctypes.c_int()
+    check(driver.cuDeviceGet(ctypes.byref(device), int(device_ordinal)), "cuDeviceGet")
+    uuid = _CudaDriverUuid()
+    check(uuid_function(ctypes.byref(uuid), device.value), "cuDeviceGetUuid")
+    return bytes(uuid.bytes).hex()
+
+
+def _normalized_gpu_uuid_hex(value: str) -> str:
+    normalized = str(value).strip().lower()
+    if normalized.startswith("gpu-"):
+        normalized = normalized[4:]
+    normalized = normalized.replace("-", "")
+    if len(normalized) != 32:
+        raise RuntimeError("formal S1 profiler received an invalid GPU UUID")
+    try:
+        int(normalized, 16)
+    except ValueError as exc:
+        raise RuntimeError("formal S1 profiler received an invalid GPU UUID") from exc
+    return normalized
+
+
 def _hardware_identity(
     torch_module: Any,
     device: Any,
@@ -417,6 +503,12 @@ def _hardware_identity(
     memory_limit_mb: int,
 ) -> dict[str, Any]:
     properties = torch_module.cuda.get_device_properties(device)
+    try:
+        cuda_runtime_uuid_hex = _cuda_driver_device_uuid_hex(0)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "formal S1 profiler could not read the logical cuda:0 UUID"
+        ) from exc
     query_fields = (
         "uuid",
         "pci.bus_id",
@@ -449,6 +541,11 @@ def _hardware_identity(
             "formal S1 profiler could not freeze GPU hardware state: "
             f"{query.stderr.strip()}"
         )
+    cuda_visible_uuid = values[0]
+    if _normalized_gpu_uuid_hex(cuda_visible_uuid) != cuda_runtime_uuid_hex:
+        raise RuntimeError(
+            "formal S1 logical cuda:0 UUID differs from the step-scoped NVML GPU"
+        )
     cpu_model = "unavailable"
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.is_file():
@@ -475,11 +572,38 @@ def _hardware_identity(
         "gpu_compute_capability": [int(properties.major), int(properties.minor)],
         "gpu_multi_processor_count": int(properties.multi_processor_count),
         "physical_gpu_id": str(physical_gpu_id),
+        "scoped_gpu_id": str(physical_gpu_id),
+        "step_gpu_uuid": cuda_visible_uuid,
+        "cuda_visible_device_uuid": cuda_visible_uuid,
+        "cuda_runtime_device_uuid_hex": cuda_runtime_uuid_hex,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "cuda_runtime_device_ordinal": 0,
         "nvidia_smi": dict(zip(query_fields, values)),
+        "slurm_gpu_scope": {
+            "job_id": os.environ.get("SLURM_JOB_ID"),
+            "step_id": os.environ.get("SLURM_STEP_ID"),
+            "job_gpus": os.environ.get("SLURM_JOB_GPUS"),
+            "step_gpus": os.environ.get("SLURM_STEP_GPUS"),
+            "scoped_gpu_id": str(physical_gpu_id),
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        },
         "slurm_resources": {
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+            "slurm_step_id": os.environ.get("SLURM_STEP_ID"),
+            "slurm_job_gpus": os.environ.get("SLURM_JOB_GPUS"),
+            "slurm_step_gpus": os.environ.get("SLURM_STEP_GPUS"),
+            "scoped_gpu_id": str(physical_gpu_id),
+            "step_gpu_id": str(physical_gpu_id),
+            "step_gpu_uuid": cuda_visible_uuid,
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "cpus_per_task": int(os.environ.get("SLURM_CPUS_PER_TASK", -1)),
-            "mem_per_node_mb": int(memory_limit_mb),
-            "memory_limit_source": "tightest_finite_cgroup_or_slurm",
+            "outer_job_mem_per_node_mb": (
+                int(os.environ["SLURM_MEM_PER_NODE"])
+                if os.environ.get("SLURM_MEM_PER_NODE", "").strip()
+                else None
+            ),
+            "effective_step_memory_limit_mb": int(memory_limit_mb),
+            "memory_limit_source": "tightest_finite_cgroup_v2_or_slurm",
             "allocated_cpu_ids": list(allocated_cpu_ids),
             "detector_cpu_ids": list(detector_cpu_ids),
             "sidecar_cpu_id": int(sidecar_cpu_id),
@@ -609,6 +733,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
     gate_mode = bool(args.sidecar_gate)
     if gate_mode:
+        if args.matrix_start_receipt is not None:
+            raise ValueError("the S1 sidecar Gate cannot consume a matrix receipt")
         if (resolution, int(args.seed)) != (256, 3408):
             raise ValueError("the representative S1 sidecar Gate is dense256/seed3408")
         canonical_prefix = sidecar_gate_profile_prefix(recovery)
@@ -618,6 +744,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             raise FileExistsError("S1 sidecar Gate evidence already exists")
         sidecar_gate = None
     else:
+        if args.matrix_start_receipt is None:
+            raise ValueError("formal S1 profile requires its matrix start receipt")
         canonical_prefix = profile_campaign_prefix(
             recovery, resolution=resolution, seed=int(args.seed)
         )
@@ -655,7 +783,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("formal S1 profiler requires the Slurm-local cuda:0 device")
     if str(args.power_gpu_id) != physical_gpu_id:
         raise ValueError(
-            "formal S1 power sampling must target the allocated SLURM_JOB_GPUS identity"
+            "formal S1 power sampling must target the Slurm step-scoped GPU identity"
         )
     torch.cuda.set_device(device)
     set_seed(int(args.seed), deterministic_warn_only=False)
@@ -671,6 +799,16 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     software_identity = _software_identity(torch)
     hardware_fingerprint = canonical_sha256(hardware_identity)
     software_fingerprint = canonical_sha256(software_identity)
+    matrix_start = None
+    if not gate_mode:
+        matrix_start = validate_profile_matrix_start_receipt(
+            args.matrix_start_receipt,
+            recovery=recovery,
+            verify_runtime=True,
+            hardware_identity=hardware_identity,
+            software_fingerprint=software_fingerprint,
+            effective_memory_limit_mb=memory_limit_mb,
+        )
     if sidecar_gate is not None:
         validate_sidecar_gate_runtime_identity(
             sidecar_gate,
@@ -711,6 +849,36 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         != certificate["certificate_sha256"]
     ):
         raise ValueError("formal S1 profile does not match sealed-test evidence")
+    legacy_unbound_test_evidence = (
+        resolution == int(recovery["legacy_unbound_test_resolution"])
+        and int(args.seed) == int(recovery["legacy_unbound_test_seed"])
+        and test_evidence_path
+        == Path(recovery["legacy_unbound_test_evidence_path"]).resolve()
+        and test_evidence_file_sha256_before
+        == recovery["legacy_unbound_test_evidence_file_sha256"]
+        and test_evidence["evidence_sha256"]
+        == recovery["legacy_unbound_test_evidence_sha256"]
+    )
+    test_matrix_binding = None
+    test_matrix_binding_path = canonical_test_matrix_binding_path(
+        test_evidence_path
+    )
+    if legacy_unbound_test_evidence:
+        if test_matrix_binding_path.exists():
+            raise RuntimeError(
+                "legacy S1 test evidence unexpectedly has a matrix binding"
+            )
+    elif gate_mode:
+        raise RuntimeError("S1 sidecar Gate can only reuse its frozen legacy test")
+    else:
+        test_matrix_binding = validate_test_matrix_binding(
+            test_matrix_binding_path,
+            test_evidence_path=test_evidence_path,
+            start_receipt_path=args.matrix_start_receipt,
+            recovery=recovery,
+            resolution=resolution,
+            seed=int(args.seed),
+        )
     profile_order_cell, profile_order_sha256 = validate_profile_order_ready(
         manifest=manifest,
         binding=binding,
@@ -739,6 +907,12 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "checkpoint_sha256": sha256_file(checkpoint_path),
             "test_open_certificate_sha256": certificate["certificate_sha256"],
             "test_evidence_sha256": test_evidence["evidence_sha256"],
+            "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
+            "test_matrix_binding_sha256": (
+                None
+                if test_matrix_binding is None
+                else test_matrix_binding["binding_sha256"]
+            ),
             "precheck_file_sha256": binding["precheck_file_sha256"],
             "precheck_sha256": binding["precheck_sha256"],
             "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
@@ -760,6 +934,28 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
             "sidecar_gate_sha256": (
                 None if sidecar_gate is None else sidecar_gate["gate_sha256"]
+            ),
+            "matrix_start_receipt_path": (
+                None
+                if matrix_start is None
+                else str(args.matrix_start_receipt.resolve())
+            ),
+            "matrix_start_receipt_file_sha256": (
+                None
+                if matrix_start is None
+                else sha256_file(args.matrix_start_receipt)
+            ),
+            "matrix_sha256": (
+                None if matrix_start is None else matrix_start["matrix_sha256"]
+            ),
+            "slurm_job_id": (
+                None if matrix_start is None else matrix_start["slurm_job_id"]
+            ),
+            "slurm_step_id": (
+                None if matrix_start is None else matrix_start["slurm_step_id"]
+            ),
+            "step_gpu_uuid": (
+                None if matrix_start is None else matrix_start["step_gpu_uuid"]
             ),
         },
     )
@@ -1069,6 +1265,22 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "test_open_certificate_sha256": certificate["certificate_sha256"],
         "test_evidence_sha256": test_evidence["evidence_sha256"],
+        "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
+        "test_matrix_binding_path": (
+            None
+            if test_matrix_binding is None
+            else str(test_matrix_binding_path)
+        ),
+        "test_matrix_binding_file_sha256": (
+            None
+            if test_matrix_binding is None
+            else sha256_file(test_matrix_binding_path)
+        ),
+        "test_matrix_binding_sha256": (
+            None
+            if test_matrix_binding is None
+            else test_matrix_binding["binding_sha256"]
+        ),
         "test_open_marker_sha256": test_evidence["test_open_marker_sha256"],
         "precheck_file_sha256": binding["precheck_file_sha256"],
         "precheck_sha256": binding["precheck_sha256"],
@@ -1107,6 +1319,26 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "sidecar_gate_sha256": (
             None if sidecar_gate is None else sidecar_gate["gate_sha256"]
         ),
+        "matrix_start_receipt_path": (
+            None if matrix_start is None else str(args.matrix_start_receipt.resolve())
+        ),
+        "matrix_start_receipt_file_sha256": (
+            None
+            if matrix_start is None
+            else sha256_file(args.matrix_start_receipt)
+        ),
+        "matrix_sha256": (
+            None if matrix_start is None else matrix_start["matrix_sha256"]
+        ),
+        "slurm_job_id": (
+            None if matrix_start is None else matrix_start["slurm_job_id"]
+        ),
+        "slurm_step_id": (
+            None if matrix_start is None else matrix_start["slurm_step_id"]
+        ),
+        "step_gpu_uuid": (
+            None if matrix_start is None else matrix_start["step_gpu_uuid"]
+        ),
     }
     report = build_profile_summary(
         samples, metadata=metadata, power_trace=power_trace
@@ -1140,6 +1372,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
     parser.add_argument("--sidecar-gate-evidence", type=Path, required=True)
     parser.add_argument("--sidecar-gate", action="store_true")
+    parser.add_argument("--matrix-start-receipt", type=Path)
     parser.add_argument("--output-prefix", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, required=True)

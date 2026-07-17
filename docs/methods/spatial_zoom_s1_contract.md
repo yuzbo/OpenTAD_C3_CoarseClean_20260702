@@ -28,11 +28,13 @@ rule remain identical.
 - Checkpoint selector: `tools/bata/select_spatial_zoom_s1_checkpoint.py`
 - Test-open certificate: `tools/bata/build_spatial_zoom_s1_test_open_certificate.py`
 - Evidence binder: `tools/bata/build_spatial_zoom_s1_run_descriptor.py`
+- Matrix lifecycle evidence: `tools/bata/spatial_zoom_s1_matrix.py`
 - Result gate: `tools/bata/analyze_spatial_zoom_s1_results.py`
 - Slurm launchers: `scripts/run_spatial_zoom_s1_precheck_slurm.sh`,
   `scripts/run_spatial_zoom_s1_train_slurm.sh`, and
   `scripts/run_spatial_zoom_s1_test_profile_slurm.sh`
-- Tests: `tests/test_spatial_zoom_s1_infrastructure.py`
+- Tests: `tests/test_spatial_zoom_s1_infrastructure.py` and
+  `tests/test_spatial_zoom_s1_matrix.py`
 
 ## Required Order
 
@@ -81,18 +83,30 @@ rule remain identical.
    five CPUs, and 96,000 MiB. The model, test, profiler, and power sidecar run
    only inside that step. They may not access the idle reserved GPU, override
    `CUDA_VISIBLE_DEVICES`, or describe the run as two-GPU computation. The
-   process must verify the tightest finite Slurm/cgroup memory limit is at
-   least 90,000 MiB before opening evidence.
+   process must verify a finite cgroup v2 step limit of at least 90,000 MiB
+   before opening evidence.
    Sampling uses `time.monotonic_ns`, preserves a sequence-numbered raw trace
    and a self-hashed attempt report even when profile validation fails, and
    uses one canonical output prefix. Cost claims are limited to same-node,
    same-GPU, warm serial per-window latency and gross GPU energy; they do not
    represent cold-start, whole-video latency, incremental energy, or CPU and
    storage energy.
-9. Bind checkpoint, prediction, marker, certificate, manifest, config, profile,
-   Git commit, precheck, and internal/file hashes into one
-   descriptor per resolution and seed.
-10. Recompute full class AP under a paired Bayesian video-cluster bootstrap
+9. Before consuming the single-use matrix namespace, complete all artifact,
+   test-evidence, source-checkout, representative-cell, Slurm-step, cgroup,
+   logical-CUDA UUID, software, and Gate-class checks without a canonical
+   write. Only then acquire the persistent matrix lock and atomically publish
+   one start receipt. The receipt binds one numeric Slurm job/inner-step pair,
+   a step GPU that belongs to the outer job allocation, logical `cuda:0` to
+   its NVML UUID, the exact 4+1 CPU partition, effective step memory, software,
+   Gate, recovery certificate, and frozen order. A failed lock is never
+   removed or reused.
+10. Bind checkpoint, prediction, marker, certificate, manifest, config,
+    profile, Git commit, precheck, matrix-start receipt, Slurm job/step, GPU
+    UUID, and internal/file hashes into one descriptor per resolution and
+    seed. After all nine cells complete, atomically publish one completion
+    receipt that revalidates the exact frozen-order descriptor set. The final
+    analyzer must reject a matrix without this completion receipt.
+11. Recompute full class AP under a paired Bayesian video-cluster bootstrap
     with fixed class support and hierarchical training-seed resampling. Require
     parity with the official THUMOS evaluator, apply a one-sided simultaneous
     max-T lower bound across 224 and 256, report boundary error, and use
@@ -191,3 +205,26 @@ rule remain identical.
   construction; it is not model, accuracy, or cost evidence. The second outer
   GPU remains an idle site-policy reservation and must be disclosed separately
   from the measured single-GPU profile.
+- Resource-step commit `84a7144` was independently audited as `HOLD` with no
+  P0 and four P1 gaps: preflight failures could enter salvage, the matrix lock
+  preceded complete no-write validation, GPU identity did not prove
+  job/step/logical-CUDA closure, and the nine descriptors were not sealed to
+  one matrix step. It is diagnostic-only and cannot issue a formal recovery
+  campaign.
+- The current local repair moves Gate resource checks before evidence access,
+  guards salvage on actual child evidence, requires cgroup v2, proves step-GPU
+  membership and logical-CUDA/NVML UUID equality, performs full matrix-start
+  construction before the canonical lock. All nine frozen cells must pass a
+  no-write dry-run before that lock is acquired. New official-test evidence is
+  cryptographically bound to the canonical matrix-start receipt before
+  profiling; the sole pre-existing dense256/seed3408 evidence is allowed only
+  through the v3 certificate's exact path, file hash, internal hash, and cell
+  identity. Every profile, marker, canonical descriptor, completion receipt,
+  and final report is bound to the same matrix job/step/GPU. The exact local
+  S1, matrix, train-engine, and required C3 regression reports
+  `99 passed, 5 skipped`. A second independent max-level review found no P0 or
+  P1 and returned `DEPLOY`, conditional on a clean commit, exact remote replay,
+  and a newly issued certificate. The skips remain platform/CUDA cases that
+  must pass in a clean remote snapshot. This is `tested_local`; no new recovery
+  certificate, no-open Gate, matrix, cost result, GO/KILL, S2, or Pro review
+  exists yet.

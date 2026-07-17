@@ -49,12 +49,14 @@ _ALLOWED_EXACT_PATHS = {
     "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
     "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
     "tests/test_spatial_zoom_s1_infrastructure.py",
+    "tests/test_spatial_zoom_s1_matrix.py",
     "tools/bata/analyze_spatial_zoom_s1_results.py",
     "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
     "tools/bata/preflight_spatial_zoom_s1_profile.py",
     "tools/bata/profile_spatial_zoom_s1.py",
     "tools/bata/run_spatial_zoom_s1_precheck.py",
     "tools/bata/spatial_zoom_s1_cost.py",
+    "tools/bata/spatial_zoom_s1_matrix.py",
     "tools/bata/spatial_zoom_s1_profile_recovery.py",
     "tools/bata/spatial_zoom_s1_power.py",
     "tools/bata/spatial_zoom_s1_sidecar_gate.py",
@@ -80,6 +82,8 @@ _REQUIRED_REPAIR_PATHS_CHAINED = _REQUIRED_REPAIR_PATHS_V1 | {
 _REQUIRED_REPAIR_PATHS_SIDECAR = _REQUIRED_REPAIR_PATHS_CHAINED | {
     "docs/superpowers/specs/2026-07-17-spatial-zoom-s1-power-sidecar-design.md",
     "scripts/run_spatial_zoom_s1_power_sidecar_gate_slurm.sh",
+    "tests/test_spatial_zoom_s1_matrix.py",
+    "tools/bata/spatial_zoom_s1_matrix.py",
     "tools/bata/spatial_zoom_s1_sidecar_gate.py",
 }
 
@@ -230,6 +234,18 @@ def _certificate_output_path(certificate: Mapping[str, Any]) -> Path:
     return (Path(certificate["campaign_root"]) / "recovery_certificate.json").resolve()
 
 
+def _legacy_unbound_test_evidence_path(binding: Mapping[str, Any]) -> Path:
+    first_profile_cell = build_s1_profile_order()[0]
+    return (
+        Path(binding["canonical_experiment_root"])
+        / f"dense{int(first_profile_cell['resolution'])}"
+        / f"seed{int(first_profile_cell['seed'])}"
+        / "gpu1_id0"
+        / "test_evidence"
+        / "test.evidence.json"
+    ).resolve()
+
+
 def build_sidecar_profile_recovery_certificate(
     *,
     binding: Mapping[str, Any],
@@ -298,6 +314,31 @@ def build_sidecar_profile_recovery_certificate(
         if failed_marker.get(key) != expected:
             raise ValueError(f"S1 sidecar recovery marker {key} mismatch")
 
+    expected_first_work_dir = _legacy_unbound_test_evidence_path(
+        binding
+    ).parents[2]
+    if Path(binding["work_dir"]).resolve() != expected_first_work_dir:
+        raise ValueError(
+            "S1 sidecar recovery must be issued from the frozen first cell"
+        )
+    legacy_test_evidence_path = _legacy_unbound_test_evidence_path(binding)
+    if not legacy_test_evidence_path.is_file():
+        raise FileNotFoundError(legacy_test_evidence_path)
+    legacy_test_evidence = json.loads(
+        legacy_test_evidence_path.read_text(encoding="utf-8")
+    )
+    legacy_test_evidence_sha256 = legacy_test_evidence.pop(
+        "evidence_sha256", None
+    )
+    if (
+        not legacy_test_evidence_sha256
+        or canonical_sha256(legacy_test_evidence)
+        != legacy_test_evidence_sha256
+        or failed_marker.get("test_evidence_sha256")
+        != legacy_test_evidence_sha256
+    ):
+        raise ValueError("S1 sidecar recovery legacy test evidence mismatch")
+
     exposure_count = int(expected_exposure_count)
     physical_count = int(expected_physical_window_count)
     duplicates = sorted(set(map(str, expected_duplicate_physical_window_ids)))
@@ -327,6 +368,13 @@ def build_sidecar_profile_recovery_certificate(
         "test_open_certificate_sha256": parent[
             "test_open_certificate_sha256"
         ],
+        "legacy_unbound_test_resolution": int(first_profile_cell["resolution"]),
+        "legacy_unbound_test_seed": int(first_profile_cell["seed"]),
+        "legacy_unbound_test_evidence_path": str(legacy_test_evidence_path),
+        "legacy_unbound_test_evidence_file_sha256": sha256_file(
+            legacy_test_evidence_path
+        ),
+        "legacy_unbound_test_evidence_sha256": legacy_test_evidence_sha256,
         "superseded_marker_path": parent["superseded_marker_path"],
         "superseded_marker_file_sha256": parent[
             "superseded_marker_file_sha256"
@@ -678,6 +726,20 @@ def validate_profile_recovery_certificate(
         "preserve_superseded_attempt": True,
         "reuse_valid_test_evidence": True,
     }
+    if sidecar:
+        first_profile_cell = build_s1_profile_order()[0]
+        legacy_test_evidence_path = _legacy_unbound_test_evidence_path(binding)
+        expected.update(
+            {
+                "legacy_unbound_test_resolution": int(
+                    first_profile_cell["resolution"]
+                ),
+                "legacy_unbound_test_seed": int(first_profile_cell["seed"]),
+                "legacy_unbound_test_evidence_path": str(
+                    legacy_test_evidence_path
+                ),
+            }
+        )
     for key, value in expected.items():
         if checked.get(key) != value:
             raise ValueError(f"S1 profile recovery certificate {key} mismatch")
@@ -708,6 +770,27 @@ def validate_profile_recovery_certificate(
     ):
         if not path.is_file() or sha256_file(path) != checked[key]:
             raise ValueError(f"S1 profile recovery artifact mismatch: {path}")
+    if sidecar:
+        legacy_test_evidence_path = Path(
+            checked["legacy_unbound_test_evidence_path"]
+        ).resolve()
+        if (
+            not legacy_test_evidence_path.is_file()
+            or sha256_file(legacy_test_evidence_path)
+            != checked.get("legacy_unbound_test_evidence_file_sha256")
+        ):
+            raise ValueError("S1 profile recovery legacy test-evidence file mismatch")
+        legacy_test_evidence = json.loads(
+            legacy_test_evidence_path.read_text(encoding="utf-8")
+        )
+        legacy_hash = legacy_test_evidence.pop("evidence_sha256", None)
+        if (
+            not legacy_hash
+            or canonical_sha256(legacy_test_evidence) != legacy_hash
+            or legacy_hash
+            != checked.get("legacy_unbound_test_evidence_sha256")
+        ):
+            raise ValueError("S1 profile recovery legacy test-evidence hash mismatch")
     failed_marker = _validate_superseded_marker(failed_marker_path)
     if failed_marker["marker_sha256"] != checked["superseded_marker_sha256"]:
         raise ValueError("S1 profile recovery superseded-marker identity mismatch")

@@ -15,7 +15,7 @@ from tools.bata.spatial_zoom_s1_contract import (
 )
 
 S1_PROFILE_PROTOCOL = "spatial_zoom_s1_offline_full_stack_v6"
-S1_PROFILE_SCHEMA = "spatial_zoom_s1_profile_v7"
+S1_PROFILE_SCHEMA = "spatial_zoom_s1_profile_v8"
 TOP_LEVEL_STAGES = (
     "input_pipeline_serial_ms",
     "h2d_ms",
@@ -197,6 +197,12 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "sidecar_gate_evidence_path",
         "sidecar_gate_evidence_file_sha256",
         "sidecar_gate_sha256",
+        "matrix_start_receipt_path",
+        "matrix_start_receipt_file_sha256",
+        "matrix_sha256",
+        "slurm_job_id",
+        "slurm_step_id",
+        "step_gpu_uuid",
     )
     missing = [key for key in required if key not in checked]
     if missing:
@@ -248,6 +254,27 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         if not str(checked[key]).strip():
             raise ValueError(f"S1 profile metadata requires {key}")
     if bool(checked["formal_profile"]):
+        for key in (
+            "matrix_start_receipt_path",
+            "slurm_job_id",
+            "slurm_step_id",
+            "step_gpu_uuid",
+        ):
+            if not str(checked[key]).strip():
+                raise ValueError(f"formal S1 profile requires {key}")
+        hardware = checked["hardware_identity"]
+        gpu_scope = dict(hardware.get("slurm_gpu_scope", {}))
+        nvidia_smi = dict(hardware.get("nvidia_smi", {}))
+        if (
+            checked["step_gpu_uuid"]
+            != hardware.get("cuda_visible_device_uuid")
+            or checked["step_gpu_uuid"] != nvidia_smi.get("uuid")
+            or checked["slurm_job_id"] != gpu_scope.get("job_id")
+            or checked["slurm_step_id"] != gpu_scope.get("step_id")
+        ):
+            raise ValueError(
+                "formal S1 profile matrix receipt differs from its CUDA/Slurm identity"
+            )
         if (
             int(checked["warmup_samples"]) != 50
             or int(checked["power_interval_ms"]) != 20
@@ -320,6 +347,8 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             "power_attempt_trace_file_sha256",
             "sidecar_gate_evidence_file_sha256",
             "sidecar_gate_sha256",
+            "matrix_start_receipt_file_sha256",
+            "matrix_sha256",
         )
         if any(
             len(str(checked[key])) != 64

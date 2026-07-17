@@ -6,6 +6,19 @@ fail() {
   exit 2
 }
 
+has_sidecar_runtime_evidence() {
+  local scratch_dir="$1"
+  local path
+  for path in \
+    "${scratch_dir}/pid.json" \
+    "${scratch_dir}/ready.json" \
+    "${scratch_dir}/power.jsonl" \
+    "${scratch_dir}/result.json"; do
+    [[ -e "${path}" ]] && return 0
+  done
+  return 1
+}
+
 ROOT="${SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT}"
 TRAINING_ROOT="${SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
@@ -18,6 +31,8 @@ POWER_SCRATCH_ROOT="${SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT:?set SPATIAL_ZOOM_S1_PO
 RESOLUTION="${SPATIAL_ZOOM_S1_RESOLUTION:?set SPATIAL_ZOOM_S1_RESOLUTION}"
 SEED="${SPATIAL_ZOOM_S1_SEED:?set SPATIAL_ZOOM_S1_SEED}"
 PREFLIGHT_ONLY="${SPATIAL_ZOOM_S1_PREFLIGHT_ONLY:-0}"
+MATRIX_DRY_RUN="${SPATIAL_ZOOM_S1_MATRIX_DRY_RUN:-0}"
+MATRIX_STARTED="${SPATIAL_ZOOM_S1_MATRIX_STARTED:-}"
 export PYTHONDONTWRITEBYTECODE=1
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal S1 test/profile requires a Slurm allocation"
@@ -46,6 +61,12 @@ case "${PREFLIGHT_ONLY}" in
   0|1) ;;
   *) fail "SPATIAL_ZOOM_S1_PREFLIGHT_ONLY must be 0 or 1" ;;
 esac
+case "${MATRIX_DRY_RUN}" in
+  0|1) ;;
+  *) fail "SPATIAL_ZOOM_S1_MATRIX_DRY_RUN must be 0 or 1" ;;
+esac
+[[ "${PREFLIGHT_ONLY}" != "1" || "${MATRIX_DRY_RUN}" != "1" ]] || \
+  fail "matrix dry-run and per-cell preflight-only are mutually exclusive"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
   fail "formal S1 test/profile requires exactly one Slurm-visible GPU"
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
@@ -78,6 +99,11 @@ fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
 
+(
+  cd "${ROOT}"
+  python -c 'from tools.bata.spatial_zoom_s1_training import require_slurm_memory_limit_mb, require_slurm_single_gpu_allocation; require_slurm_single_gpu_allocation(); print(require_slurm_memory_limit_mb(minimum_mb=90000))'
+)
+
 ALLOCATED_CPUS="$(python -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0)))))')"
 IFS=',' read -r -a CPU_ARRAY <<< "${ALLOCATED_CPUS}"
 [[ "${#CPU_ARRAY[@]}" == "5" ]] || fail "Slurm affinity does not expose five CPUs"
@@ -103,6 +129,14 @@ cd "${ROOT}"
 CHECKPOINT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["selected"]["checkpoint_path"])' "${SELECTION}")"
 [[ -f "${CHECKPOINT}" ]] || fail "selected checkpoint does not exist: ${CHECKPOINT}"
 TEST_EVIDENCE="${WORK_DIR}/gpu1_id0/test_evidence/test.evidence.json"
+PREFLIGHT_EXTRA_ARGS=()
+if [[ "${MATRIX_DRY_RUN}" == "1" ]]; then
+  PREFLIGHT_EXTRA_ARGS+=(--matrix-dry-run)
+else
+  [[ -n "${MATRIX_STARTED}" && -f "${MATRIX_STARTED}" ]] || \
+    fail "formal S1 profile requires the active matrix start receipt"
+  PREFLIGHT_EXTRA_ARGS+=(--matrix-start-receipt "${MATRIX_STARTED}")
+fi
 
 (
   cd "${TRAINING_ROOT}"
@@ -120,8 +154,15 @@ TEST_EVIDENCE="${WORK_DIR}/gpu1_id0/test_evidence/test.evidence.json"
       --test-evidence "${TEST_EVIDENCE}" \
       --allocated-cpus "${ALLOCATED_CPUS}" \
       --detector-cpus "${DETECTOR_CPUS}" \
-      --sidecar-cpu "${SIDECAR_CPU}"
+      --sidecar-cpu "${SIDECAR_CPU}" \
+      "${PREFLIGHT_EXTRA_ARGS[@]}"
 )
+
+if [[ "${MATRIX_DRY_RUN}" == "1" ]]; then
+  printf '[SPATIAL_ZOOM_S1_TEST_PROFILE] MATRIX DRY-RUN PASS resolution=%s seed=%s\n' \
+    "${RESOLUTION}" "${SEED}"
+  exit 0
+fi
 
 if [[ "${PREFLIGHT_ONLY}" == "1" ]]; then
   [[ -f "${TEST_EVIDENCE}" ]] || \
@@ -147,6 +188,45 @@ else
       --s1-test-open-certificate "${TEST_OPEN}"
   )
   (
+    cd "${ROOT}"
+    python - "${TEST_EVIDENCE}" "${MATRIX_STARTED}" "${PROFILE_RECOVERY}" \
+      "${RESOLUTION}" "${SEED}" <<'PY'
+import sys
+from pathlib import Path
+
+from tools.bata.spatial_zoom_s1_contract import atomic_publish_json
+from tools.bata.spatial_zoom_s1_matrix import (
+    build_test_matrix_binding,
+    canonical_test_matrix_binding_path,
+    validate_test_matrix_binding,
+)
+
+evidence_path = Path(sys.argv[1]).resolve()
+start_path = Path(sys.argv[2]).resolve()
+recovery_path = Path(sys.argv[3]).resolve()
+resolution = int(sys.argv[4])
+seed = int(sys.argv[5])
+binding_path = canonical_test_matrix_binding_path(evidence_path)
+binding = build_test_matrix_binding(
+    test_evidence_path=evidence_path,
+    start_receipt_path=start_path,
+    recovery=recovery_path,
+    resolution=resolution,
+    seed=seed,
+)
+atomic_publish_json(binding_path, binding)
+validate_test_matrix_binding(
+    binding_path,
+    test_evidence_path=evidence_path,
+    start_receipt_path=start_path,
+    recovery=recovery_path,
+    resolution=resolution,
+    seed=seed,
+)
+print(binding_path)
+PY
+  )
+  (
     cd "${TRAINING_ROOT}"
     PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
       taskset -c "${DETECTOR_CPUS}" \
@@ -162,7 +242,8 @@ else
         --test-evidence "${TEST_EVIDENCE}" \
         --allocated-cpus "${ALLOCATED_CPUS}" \
         --detector-cpus "${DETECTOR_CPUS}" \
-        --sidecar-cpu "${SIDECAR_CPU}"
+        --sidecar-cpu "${SIDECAR_CPU}" \
+        --matrix-start-receipt "${MATRIX_STARTED}"
   )
 fi
 
@@ -188,6 +269,7 @@ if ! (
       --test-evidence "${TEST_EVIDENCE}" \
       --profile-recovery-certificate "${PROFILE_RECOVERY}" \
       --sidecar-gate-evidence "${SIDECAR_GATE}" \
+      --matrix-start-receipt "${MATRIX_STARTED}" \
       --output-prefix "${PROFILE_PREFIX}" \
       --device cuda:0 \
       --seed "${SEED}" \
@@ -205,15 +287,23 @@ if ! (
       --detector-cpus "${DETECTOR_CPUS}" \
       --sidecar-cpu "${SIDECAR_CPU}"
 ); then
-  python "${ROOT}/tools/bata/spatial_zoom_s1_power.py" salvage \
-    --scratch-dir "${PROFILE_SCRATCH_DIR}" \
-    --attempt-prefix "${PROFILE_PREFIX}" \
-    --expected-uuid "${POWER_UUID}" \
-    --interval-ms 20 \
-    --sidecar-cpu-id "${SIDECAR_CPU}" \
-    --detector-cpus "${DETECTOR_CPUS}" \
-    --allocated-cpus "${ALLOCATED_CPUS}" || true
-  fail "formal S1 profile failed after sealing its sidecar attempt"
+  if has_sidecar_runtime_evidence "${PROFILE_SCRATCH_DIR}"; then
+    if python "${ROOT}/tools/bata/spatial_zoom_s1_power.py" salvage \
+      --scratch-dir "${PROFILE_SCRATCH_DIR}" \
+      --attempt-prefix "${PROFILE_PREFIX}" \
+      --expected-uuid "${POWER_UUID}" \
+      --interval-ms 20 \
+      --sidecar-cpu-id "${SIDECAR_CPU}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --allocated-cpus "${ALLOCATED_CPUS}"; then
+      fail "formal S1 profile failed after sealing its sidecar attempt"
+    fi
+    fail "formal S1 profile failed and sidecar salvage also failed"
+  fi
+  if [[ -e "${PROFILE_PREFIX}.started.json" ]]; then
+    fail "formal S1 profile consumed its namespace before sidecar startup"
+  fi
+  fail "formal S1 profile failed before the sidecar published attempt evidence"
 fi
 
 PROFILE="${PROFILE_PREFIX}.summary.json"
@@ -232,6 +322,7 @@ mkdir -p "$(dirname "${DESCRIPTOR}")"
       --test-evidence "${TEST_EVIDENCE}" \
       --profile "${PROFILE}" \
       --profile-recovery-certificate "${PROFILE_RECOVERY}" \
+      --matrix-start-receipt "${MATRIX_STARTED}" \
       --output "${DESCRIPTOR}"
 )
 
