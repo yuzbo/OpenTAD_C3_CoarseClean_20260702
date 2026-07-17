@@ -74,6 +74,15 @@ rule remain identical.
    zero workers, 50 warmups, and a UUID-bound native-NVML sidecar process at
    the frozen 20 ms interval. The Slurm allocation exposes exactly five CPUs:
    four remain bound to the detector and one is reserved for the sidecar.
+   On N16R4, a one-GPU batch request cannot receive the required memory
+   headroom. The site-specific launcher may therefore reserve two GPUs and
+   eight CPUs at the outer job level without an explicit memory request, but
+   it must immediately enter one `srun --exact` step with exactly one GPU,
+   five CPUs, and 96,000 MiB. The model, test, profiler, and power sidecar run
+   only inside that step. They may not access the idle reserved GPU, override
+   `CUDA_VISIBLE_DEVICES`, or describe the run as two-GPU computation. The
+   process must verify the tightest finite Slurm/cgroup memory limit is at
+   least 90,000 MiB before opening evidence.
    Sampling uses `time.monotonic_ns`, preserves a sequence-numbered raw trace
    and a self-hashed attempt report even when profile validation fails, and
    uses one canonical output prefix. Cost claims are limited to same-node,
@@ -172,3 +181,13 @@ rule remain identical.
   campaign. The current local S1 suite reports `61 passed, 4 skipped`; three
   Linux real-subprocess lifecycle/failure cases must execute remotely, while
   the CUDA-only parity case remains mandatory in the formal GPU precheck.
+- Resource-only Slurm diagnostics `1168504`, `1168506`, `1168509`, and
+  `1168510` established the N16R4 execution scope without reading model, data,
+  checkpoint, annotation, or sealed-test evidence. An outer two-GPU/eight-CPU
+  allocation receives `124400M`; an inner exact step receives one GPU, five
+  CPUs, and a finite cgroup limit of exactly `96000` MiB. Inside that step,
+  `CUDA_VISIBLE_DEVICES` exposes one logical device and `SLURM_STEP_GPUS`
+  identifies one physical GPU. This authorizes only the audited launcher
+  construction; it is not model, accuracy, or cost evidence. The second outer
+  GPU remains an idle site-policy reservation and must be disclosed separately
+  from the measured single-GPU profile.

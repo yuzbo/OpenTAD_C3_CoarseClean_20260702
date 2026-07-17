@@ -43,6 +43,16 @@ the detector, matching the previous detector budget; one CPU is reserved for
 the sidecar. The allocated, detector, and sidecar CPU sets are recorded and
 hashed. If affinity expansion is unavailable, the run fails before sampling.
 
+N16R4 limits a one-GPU outer request to 55 GB, below the observed full-path
+requirement. The launcher therefore supports a site-specific two-level
+allocation: an outer two-GPU/eight-CPU reservation obtains the site's default
+124400M, then immediately re-executes in one exact Slurm step requesting one
+GPU, five CPUs, and 96000M. All detector and sidecar work remains inside that
+single-GPU step. The process records `SLURM_STEP_GPUS`, preserves Slurm's
+`CUDA_VISIBLE_DEVICES`, and verifies the tightest finite cgroup/Slurm memory
+limit before evidence access. The unused outer GPU is scheduling overhead,
+not model compute, and must be disclosed as such.
+
 ## Evidence Contract
 
 Every sampling attempt atomically publishes two immutable campaign artifacts:
@@ -98,6 +108,10 @@ After the Gate passes, exactly one Slurm allocation runs the frozen nine cells
 serially on one node and physical GPU. All cells use the same five-CPU
 allocation with four detector CPUs plus one sidecar CPU and sufficient memory
 headroom. The existing dense256/seed3408 test evidence is reused, not reopened.
+On N16R4 the matrix's outer reservation may contain a second idle GPU solely
+to satisfy the site's memory policy, but the persistent matrix lock, Gate
+identity, all nine cells, and all measured costs bind to the same one-GPU
+96000M inner step.
 
 Before the first cell, the matrix atomically creates a persistent campaign
 lock and self-hashed start receipt binding the Slurm job, recovery certificate,

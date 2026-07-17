@@ -20,13 +20,21 @@ SEED=3408
 export PYTHONDONTWRITEBYTECODE=1
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Gate requires one Slurm allocation"
+if [[ "${SPATIAL_ZOOM_S1_SINGLE_GPU_STEP:-0}" != "1" && -z "${SLURM_STEP_GPUS:-}" ]]; then
+  IFS=',' read -r -a JOB_GPU_ARRAY <<< "${SLURM_JOB_GPUS:-}"
+  if [[ "${#JOB_GPU_ARRAY[@]}" -gt 1 ]]; then
+    export SPATIAL_ZOOM_S1_SINGLE_GPU_STEP=1
+    exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M \
+      bash "${ROOT}/scripts/run_spatial_zoom_s1_power_sidecar_gate_slurm.sh"
+  fi
+fi
+SCOPED_GPU_ID="${SLURM_STEP_GPUS:-${SLURM_JOB_GPUS:-}}"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
   fail "Gate requires exactly one Slurm-visible GPU"
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Gate requires one GPU"
-[[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
-  fail "Gate requires one physical GPU identity"
+[[ -n "${SCOPED_GPU_ID}" && "${SCOPED_GPU_ID}" != *,* ]] || \
+  fail "Gate requires one step-scoped physical GPU identity"
 [[ "${SLURM_CPUS_PER_TASK:-}" == "5" ]] || fail "Gate requires exactly five CPUs"
-[[ "${SLURM_MEM_PER_NODE:-0}" -ge 90000 ]] || fail "Gate requires >=90000 MiB"
 command -v taskset >/dev/null 2>&1 || fail "Gate requires taskset"
 case "${POWER_SCRATCH_ROOT}" in
   /tmp/*|/var/tmp/*) ;;
@@ -79,7 +87,7 @@ for suffix in started.json summary.json samples.jsonl power.jsonl power_attempt.
 done
 TEST_EVIDENCE_SHA_BEFORE="$(sha256sum "${TEST_EVIDENCE}" | awk '{print $1}')"
 GATE_SCRATCH_DIR="${POWER_SCRATCH_ROOT}/job${SLURM_JOB_ID}_dense256_seed3408_gate"
-POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SLURM_JOB_GPUS}" | tr -d '[:space:]')"
+POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SCOPED_GPU_ID}" | tr -d '[:space:]')"
 [[ "${POWER_UUID}" == GPU-* ]] || fail "could not resolve allocated GPU UUID"
 
 if ! (
@@ -110,7 +118,7 @@ if ! (
       --amp \
       --use-ema \
       --sample-power \
-      --power-gpu-id "${SLURM_JOB_GPUS}" \
+      --power-gpu-id "${SCOPED_GPU_ID}" \
       --power-interval-ms 20 \
       --power-scratch-root "${POWER_SCRATCH_ROOT}" \
       --allocated-cpus "${ALLOCATED_CPUS}" \

@@ -114,6 +114,7 @@ from tools.bata.spatial_zoom_s1_training import (
     build_s1_experiment_identity,
     build_s1_checkpoint_metadata,
     checkpoint_sidecar_path,
+    require_slurm_memory_limit_mb,
     require_slurm_single_gpu_allocation,
     should_save_s1_checkpoint,
     validate_bound_s1_training_config,
@@ -387,11 +388,71 @@ def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     monkeypatch.setenv("SLURM_GPUS_ON_NODE", "1")
     monkeypatch.setenv("SLURM_JOB_GPUS", "6")
+    monkeypatch.delenv("SLURM_STEP_GPUS", raising=False)
     assert require_slurm_single_gpu_allocation() == "6"
+
+    monkeypatch.setenv("SLURM_JOB_GPUS", "6,7")
+    monkeypatch.setenv("SLURM_STEP_GPUS", "7")
+    assert require_slurm_single_gpu_allocation() == "7"
 
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
     with pytest.raises(RuntimeError, match="exactly one Slurm-visible"):
         require_slurm_single_gpu_allocation()
+
+
+def test_formal_s1_reads_the_tightest_finite_step_memory_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    monkeypatch.setenv("SLURM_STEP_GPUS", "7")
+    monkeypatch.delenv("SLURM_MEM_PER_NODE", raising=False)
+    cgroup_root = tmp_path / "cgroup"
+    relative = Path(
+        "system.slice/slurmstepd.scope/job_123/step_0/user/task_0"
+    )
+    task_root = cgroup_root / relative
+    task_root.mkdir(parents=True)
+    (task_root / "memory.max").write_text("max\n", encoding="utf-8")
+    (task_root.parent / "memory.max").write_text(
+        "100663296000\n", encoding="utf-8"
+    )
+    (task_root.parent.parent.parent / "memory.max").write_text(
+        "130442854400\n", encoding="utf-8"
+    )
+    proc_cgroup = tmp_path / "proc_self_cgroup"
+    proc_cgroup.write_text(f"0::/{relative.as_posix()}\n", encoding="utf-8")
+
+    assert (
+        require_slurm_memory_limit_mb(
+            minimum_mb=90000,
+            proc_cgroup_path=proc_cgroup,
+            cgroup_root=cgroup_root,
+        )
+        == 96000
+    )
+    monkeypatch.setenv("SLURM_MEM_PER_NODE", "124400")
+    assert (
+        require_slurm_memory_limit_mb(
+            minimum_mb=90000,
+            proc_cgroup_path=proc_cgroup,
+            cgroup_root=cgroup_root,
+        )
+        == 96000
+    )
+    with pytest.raises(RuntimeError, match="below the required headroom"):
+        require_slurm_memory_limit_mb(
+            minimum_mb=96001,
+            proc_cgroup_path=proc_cgroup,
+            cgroup_root=cgroup_root,
+        )
+    empty_cgroup_root = tmp_path / "empty_cgroup"
+    empty_cgroup_root.mkdir()
+    with pytest.raises(RuntimeError, match="no finite auditable cgroup"):
+        require_slurm_memory_limit_mb(
+            minimum_mb=90000,
+            proc_cgroup_path=proc_cgroup,
+            cgroup_root=empty_cgroup_root,
+        )
 
 
 def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
@@ -439,6 +500,12 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     assert "refusing a concurrent or repeated matrix" in matrix
     assert "validate_sidecar_gate_evidence" in matrix
     assert "matrix start receipt identity mismatch" in matrix
+    for source in (post, matrix):
+        assert "SLURM_STEP_GPUS" in source
+        assert "srun --exact" in source
+        assert "--gpus=1" in source
+        assert "--cpus-per-task=5" in source
+        assert "--mem=96000M" in source
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:
@@ -2111,6 +2178,7 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "slurm_resources": {
             "cpus_per_task": 5,
             "mem_per_node_mb": 96000,
+            "memory_limit_source": "tightest_finite_cgroup_or_slurm",
             "allocated_cpu_ids": [0, 1, 2, 3, 4],
             "detector_cpu_ids": [0, 1, 2, 3],
             "sidecar_cpu_id": 4,
@@ -2525,8 +2593,12 @@ def test_sidecar_gate_and_matrix_launchers_freeze_resources_and_order() -> None:
 
     for source in (gate_source, cell_source, matrix_source):
         assert 'SLURM_CPUS_PER_TASK:-}" == "5"' in source
-        assert "SLURM_MEM_PER_NODE" in source
-        assert "90000" in source
+        assert "SLURM_STEP_GPUS" in source
+        assert "srun --exact" in source
+        assert "--gpus=1" in source
+        assert "--cpus-per-task=5" in source
+        assert "--mem=96000M" in source
+        assert "SLURM_MEM_PER_NODE" not in source
         assert "CUDA_VISIBLE_DEVICES=" not in source
     for source in (gate_source, cell_source):
         assert 'DETECTOR_CPUS="${CPU_ARRAY[0]},${CPU_ARRAY[1]}' in source
@@ -2540,6 +2612,7 @@ def test_sidecar_gate_and_matrix_launchers_freeze_resources_and_order() -> None:
     assert "Gate published a paper profile" in gate_source
     assert "FROZEN_ORDER=" in matrix_source
     assert "refusing to duplicate an already-started sidecar matrix" in matrix_source
+    assert "require_slurm_memory_limit_mb" in matrix_source
     assert "sched_getaffinity" in preflight_source
     assert "set(detector_cpu_ids) | {sidecar_cpu_id}" in preflight_source
 

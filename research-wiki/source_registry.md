@@ -241,6 +241,21 @@ updated: 2026-07-17
   and `1851fe1d8ead5225b2d37c6e9e7938cde74c29346795f6e1b997fcc38b8fb448`.
   No valid profile artifact or descriptor exists; these sources establish an
   infrastructure failure only.
+- Out-of-process sidecar repair commit
+  `35c7c5f6fdf2a85c7ecbadc2249f83476b7cdc3e`; clean remote snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_35c7c5f_20260717_sidecar`
+  passed the exact combined S1+C3 Linux suite with `85 passed`. The earlier
+  `c1253e6` snapshot's single failure was a test-only 150 ms process-start race
+  and created no GPU Gate or evidence campaign.
+- N16R4 resource-only diagnostics `1168504`, `1168506`, `1168509`, and
+  `1168510` read no model, annotation, checkpoint, test evidence, or profile
+  data. Their Slurm accounting establishes an outer `2 GPU / 8 CPU / 124400M`
+  allocation and an inner exact `1 GPU / 5 CPU / 96000M` step. Job `1168510`
+  measured the nearest finite cgroup v2 `memory.max` as `100663296000` bytes.
+  Diagnostic `1168508` failed because `python` was unavailable and is retained
+  only as an infrastructure error. A provisional campaign
+  `f2b616846cad6bc2` was generated before the resource-scope code change and
+  was never used for a Gate; it is superseded and cannot authorize execution.
 
 ## 外部附件
 

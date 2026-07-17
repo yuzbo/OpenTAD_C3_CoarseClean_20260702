@@ -53,10 +53,11 @@ max_chars: 8000
   sidecar, dedicated 4+1 CPU partition, node-local raw trace, immutable attempt
   and parent-failure evidence, recursive v3 recovery, and a full 792-exposure
   no-open Gate. An independent HOLD audit found five P1 evidence/lifecycle
-  gaps; all are locally fixed through immutable partial salvage, Gate-to-matrix
-  runtime-class binding, report/trace validation, an atomic matrix lock and
-  process tests. Local S1: `61 passed, 4 skipped`; Linux cases remain.
-  `experiment_running`: remote tests and the full 792-exposure
+  gaps; all are fixed; `35c7c5f` passed `85` Linux tests. N16R4 diagnostics
+  prove an outer two-GPU reservation can host an exact `1 GPU/5 CPU/96000M`
+  step. Launchers bind its GPU/cgroup; measured work is single-GPU.
+  `experiment_running`: a new commit/certificate and
+  792-exposure
   20/100 ms Gate must pass before one matrix; Pro and GO/KILL remain pending.
 
 ## 当前唯一活动任务：Spatial Zoom

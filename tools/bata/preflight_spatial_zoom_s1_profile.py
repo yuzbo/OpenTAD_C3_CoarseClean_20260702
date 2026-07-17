@@ -39,6 +39,7 @@ from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
     validate_test_open_certificate,
 )
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
+    require_slurm_memory_limit_mb,
     require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
@@ -65,6 +66,7 @@ def run_profile_preflight(
     if not binding["formal_precheck_verified"]:
         raise RuntimeError("S1 profile preflight requires a full-precheck binding")
     physical_gpu_id = require_slurm_single_gpu_allocation()
+    memory_limit_mb = require_slurm_memory_limit_mb(minimum_mb=90000)
     recovery_path = Path(profile_recovery_certificate_path).resolve()
     recovery = load_profile_recovery_certificate(
         recovery_path,
@@ -106,6 +108,7 @@ def run_profile_preflight(
         allocated_cpu_ids=allocated_cpu_ids,
         detector_cpu_ids=detector_cpu_ids,
         sidecar_cpu_id=sidecar_cpu_id,
+        memory_limit_mb=memory_limit_mb,
     )
     software_identity = _software_identity(torch)
     hardware_fingerprint = canonical_sha256(hardware_identity)

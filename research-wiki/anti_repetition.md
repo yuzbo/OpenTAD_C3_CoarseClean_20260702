@@ -61,6 +61,13 @@ updated: 2026-07-17
 17. A matrix namespace is single-use. The persistent atomic matrix lock and
     start/completion receipts are evidence, not temporary scheduling files.
     Never remove a failed lock to resume or duplicate the same campaign.
+18. Do not lower the formal 90,000 MiB memory floor to fit N16R4's 55 GB
+    one-GPU outer-job default, and do not override `CUDA_VISIBLE_DEVICES`.
+    Reserve the site's two-GPU outer resource only when required to obtain
+    sufficient memory, then run the entire Gate or frozen matrix in one exact
+    Slurm step with one GPU, five CPUs, and 96,000 MiB. Record the step-scoped
+    GPU and finite cgroup limit. The idle outer GPU is scheduling overhead,
+    not model compute or measured cost, and must be disclosed.
 
 ## 任务与叙事
 

@@ -62,6 +62,7 @@ from tools.bata.spatial_zoom_s1_evidence import (  # noqa: E402
     validate_s1_test_evidence,
 )
 from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
+    require_slurm_memory_limit_mb,
     require_slurm_single_gpu_allocation,
     validate_bound_s1_training_config,
     validate_s1_checkpoint_sidecar,
@@ -413,6 +414,7 @@ def _hardware_identity(
     allocated_cpu_ids: tuple[int, ...],
     detector_cpu_ids: tuple[int, ...],
     sidecar_cpu_id: int,
+    memory_limit_mb: int,
 ) -> dict[str, Any]:
     properties = torch_module.cuda.get_device_properties(device)
     query_fields = (
@@ -476,7 +478,8 @@ def _hardware_identity(
         "nvidia_smi": dict(zip(query_fields, values)),
         "slurm_resources": {
             "cpus_per_task": int(os.environ.get("SLURM_CPUS_PER_TASK", -1)),
-            "mem_per_node_mb": int(os.environ.get("SLURM_MEM_PER_NODE", -1)),
+            "mem_per_node_mb": int(memory_limit_mb),
+            "memory_limit_source": "tightest_finite_cgroup_or_slurm",
             "allocated_cpu_ids": list(allocated_cpu_ids),
             "detector_cpu_ids": list(detector_cpu_ids),
             "sidecar_cpu_id": int(sidecar_cpu_id),
@@ -587,6 +590,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     matrix = validate_config_matrix()
     cfg = Config.fromfile(str(args.config))
     physical_gpu_id = require_slurm_single_gpu_allocation()
+    memory_limit_mb = require_slurm_memory_limit_mb(minimum_mb=90000)
     binding = validate_bound_s1_training_config(cfg, seed=int(args.seed))
     if not binding["formal_precheck_verified"]:
         raise RuntimeError(
@@ -662,6 +666,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         allocated_cpu_ids=allocated_cpu_ids,
         detector_cpu_ids=detector_cpu_ids,
         sidecar_cpu_id=sidecar_cpu_id,
+        memory_limit_mb=memory_limit_mb,
     )
     software_identity = _software_identity(torch)
     hardware_fingerprint = canonical_sha256(hardware_identity)

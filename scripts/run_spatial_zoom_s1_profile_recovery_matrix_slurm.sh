@@ -12,9 +12,22 @@ PROFILE_RECOVERY="${SPATIAL_ZOOM_S1_PROFILE_RECOVERY:?set SPATIAL_ZOOM_S1_PROFIL
 POWER_SCRATCH_ROOT="${SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT:?set SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal recovery matrix requires one Slurm allocation"
+if [[ "${SPATIAL_ZOOM_S1_SINGLE_GPU_STEP:-0}" != "1" && -z "${SLURM_STEP_GPUS:-}" ]]; then
+  IFS=',' read -r -a JOB_GPU_ARRAY <<< "${SLURM_JOB_GPUS:-}"
+  if [[ "${#JOB_GPU_ARRAY[@]}" -gt 1 ]]; then
+    export SPATIAL_ZOOM_S1_SINGLE_GPU_STEP=1
+    exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M \
+      bash "${ROOT}/scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
+  fi
+fi
+SCOPED_GPU_ID="${SLURM_STEP_GPUS:-${SLURM_JOB_GPUS:-}}"
 [[ -f "${PROFILE_RECOVERY}" ]] || fail "profile recovery certificate does not exist"
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
+  fail "sidecar matrix requires exactly one Slurm-visible GPU"
+[[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "sidecar matrix step requires one GPU"
+[[ -n "${SCOPED_GPU_ID}" && "${SCOPED_GPU_ID}" != *,* ]] || \
+  fail "sidecar matrix requires one step-scoped physical GPU identity"
 [[ "${SLURM_CPUS_PER_TASK:-}" == "5" ]] || fail "sidecar matrix requires five CPUs"
-[[ "${SLURM_MEM_PER_NODE:-0}" -ge 90000 ]] || fail "sidecar matrix requires >=90000 MiB"
 
 if command -v module >/dev/null 2>&1; then
   module load cuda/11.8
@@ -22,6 +35,10 @@ if command -v module >/dev/null 2>&1; then
 fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
+MEMORY_LIMIT_MB="$(
+  cd "${ROOT}"
+  python -c 'from tools.bata.spatial_zoom_s1_training import require_slurm_memory_limit_mb; print(require_slurm_memory_limit_mb(minimum_mb=90000))'
+)"
 
 PROFILE_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["profile_code_commit"])' "${PROFILE_RECOVERY}")"
 [[ -d "${ROOT}/.git" || -f "${ROOT}/.git" ]] || \
@@ -67,7 +84,7 @@ case "${POWER_SCRATCH_ROOT}" in
   *) fail "matrix sidecar scratch must be node-local" ;;
 esac
 
-export MATRIX_LOCK_DIR PROFILE_RECOVERY PROFILE_COMMIT FROZEN_ORDER CAMPAIGN_ROOT
+export MATRIX_LOCK_DIR PROFILE_RECOVERY PROFILE_COMMIT FROZEN_ORDER CAMPAIGN_ROOT SCOPED_GPU_ID MEMORY_LIMIT_MB
 (
   cd "${ROOT}"
   python - <<'PY'
@@ -93,9 +110,11 @@ record = {
     "slurm_job_id": os.environ["SLURM_JOB_ID"],
     "slurm_job_nodelist": os.environ.get("SLURM_JOB_NODELIST"),
     "slurm_job_gpus": os.environ.get("SLURM_JOB_GPUS"),
+    "slurm_step_gpus": os.environ.get("SLURM_STEP_GPUS"),
+    "scoped_gpu_id": os.environ["SCOPED_GPU_ID"],
     "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
     "slurm_cpus_per_task": int(os.environ["SLURM_CPUS_PER_TASK"]),
-    "slurm_mem_per_node_mb": int(os.environ["SLURM_MEM_PER_NODE"]),
+    "slurm_memory_limit_mb": int(os.environ["MEMORY_LIMIT_MB"]),
     "profile_code_commit": os.environ["PROFILE_COMMIT"],
     "profile_recovery_certificate_path": str(certificate_path),
     "profile_recovery_certificate_file_sha256": sha256_file(certificate_path),

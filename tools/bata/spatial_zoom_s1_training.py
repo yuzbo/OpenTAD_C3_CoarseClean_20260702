@@ -571,19 +571,107 @@ def require_slurm_single_gpu_allocation() -> str:
         raise RuntimeError(
             "formal S1 execution requires exactly one Slurm-visible CUDA device"
         )
-    gpu_count = os.environ.get("SLURM_GPUS_ON_NODE", "").strip()
-    if gpu_count and gpu_count != "1":
-        raise RuntimeError("formal S1 execution requires a one-GPU Slurm allocation")
+    step_ids = [
+        value.strip()
+        for value in os.environ.get("SLURM_STEP_GPUS", "").split(",")
+        if value.strip()
+    ]
     physical_ids = [
         value.strip()
         for value in os.environ.get("SLURM_JOB_GPUS", "").split(",")
         if value.strip()
     ]
-    if len(physical_ids) != 1:
+    scoped_ids = step_ids or physical_ids
+    if len(scoped_ids) != 1:
         raise RuntimeError(
-            "formal S1 execution requires one auditable SLURM_JOB_GPUS identity"
+            "formal S1 execution requires one auditable Slurm GPU identity"
         )
-    return physical_ids[0]
+    gpu_count = os.environ.get("SLURM_GPUS_ON_NODE", "").strip()
+    if gpu_count and gpu_count != "1":
+        raise RuntimeError("formal S1 execution step must expose one GPU")
+    return scoped_ids[0]
+
+
+def require_slurm_memory_limit_mb(
+    *,
+    minimum_mb: int,
+    proc_cgroup_path: str | Path = "/proc/self/cgroup",
+    cgroup_root: str | Path = "/sys/fs/cgroup",
+) -> int:
+    """Return the tightest finite Slurm/cgroup memory limit for this process."""
+
+    if not os.environ.get("SLURM_JOB_ID"):
+        raise RuntimeError("formal S1 execution requires an allocated Slurm job")
+    env_limits_bytes: list[int] = []
+    cgroup_limits_bytes: list[int] = []
+    env_limit = os.environ.get("SLURM_MEM_PER_NODE", "").strip()
+    if env_limit:
+        try:
+            parsed_env_limit = int(env_limit)
+        except ValueError as exc:
+            raise RuntimeError("SLURM_MEM_PER_NODE is not an integer") from exc
+        if parsed_env_limit > 0:
+            env_limits_bytes.append(parsed_env_limit * 1024**2)
+
+    proc_path = Path(proc_cgroup_path).resolve()
+    root = Path(cgroup_root).resolve()
+    if proc_path.is_file() and root.is_dir():
+        for raw_line in proc_path.read_text(encoding="utf-8").splitlines():
+            try:
+                _, controllers, relative = raw_line.split(":", 2)
+            except ValueError as exc:
+                raise RuntimeError("invalid /proc/self/cgroup record") from exc
+            bases: list[tuple[Path, str]] = []
+            if controllers == "":
+                bases.append((root / relative.lstrip("/"), "memory.max"))
+            elif "memory" in controllers.split(","):
+                bases.extend(
+                    (
+                        (
+                            root / "memory" / relative.lstrip("/"),
+                            "memory.limit_in_bytes",
+                        ),
+                        (
+                            root / relative.lstrip("/"),
+                            "memory.limit_in_bytes",
+                        ),
+                    )
+                )
+            for base, filename in bases:
+                current = base.resolve()
+                while current == root or root in current.parents:
+                    limit_path = current / filename
+                    if limit_path.is_file():
+                        raw_limit = limit_path.read_text(encoding="utf-8").strip()
+                        if raw_limit != "max":
+                            try:
+                                limit_bytes = int(raw_limit)
+                            except ValueError as exc:
+                                raise RuntimeError(
+                                    f"invalid cgroup memory limit: {limit_path}"
+                                ) from exc
+                            if 0 < limit_bytes < 2**60:
+                                cgroup_limits_bytes.append(limit_bytes)
+                    if current == root:
+                        break
+                    current = current.parent
+    if (
+        os.environ.get("SLURM_STEP_GPUS", "").strip()
+        and not cgroup_limits_bytes
+    ):
+        raise RuntimeError(
+            "formal S1 Slurm step has no finite auditable cgroup memory limit"
+        )
+    limits_bytes = env_limits_bytes + cgroup_limits_bytes
+    if not limits_bytes:
+        raise RuntimeError("formal S1 execution has no finite auditable memory limit")
+    limit_mb = min(limits_bytes) // 1024**2
+    if limit_mb < int(minimum_mb):
+        raise RuntimeError(
+            "formal S1 execution memory limit is below the required headroom: "
+            f"{limit_mb} MiB < {int(minimum_mb)} MiB"
+        )
+    return int(limit_mb)
 
 
 __all__ = [
@@ -601,6 +689,7 @@ __all__ = [
     "should_save_s1_checkpoint",
     "S1_MIN_FREE_STORAGE_BYTES",
     "require_slurm_single_gpu_allocation",
+    "require_slurm_memory_limit_mb",
     "require_clean_git_checkout",
     "resolve_s1_formal_experiment_identity",
     "validate_bound_s1_training_config",

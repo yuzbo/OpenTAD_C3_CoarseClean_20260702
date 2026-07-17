@@ -20,6 +20,16 @@ SEED="${SPATIAL_ZOOM_S1_SEED:?set SPATIAL_ZOOM_S1_SEED}"
 PREFLIGHT_ONLY="${SPATIAL_ZOOM_S1_PREFLIGHT_ONLY:-0}"
 export PYTHONDONTWRITEBYTECODE=1
 
+[[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal S1 test/profile requires a Slurm allocation"
+if [[ "${SPATIAL_ZOOM_S1_SINGLE_GPU_STEP:-0}" != "1" && -z "${SLURM_STEP_GPUS:-}" ]]; then
+  IFS=',' read -r -a JOB_GPU_ARRAY <<< "${SLURM_JOB_GPUS:-}"
+  if [[ "${#JOB_GPU_ARRAY[@]}" -gt 1 ]]; then
+    export SPATIAL_ZOOM_S1_SINGLE_GPU_STEP=1
+    exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M \
+      bash "${ROOT}/scripts/run_spatial_zoom_s1_test_profile_slurm.sh"
+  fi
+fi
+SCOPED_GPU_ID="${SLURM_STEP_GPUS:-${SLURM_JOB_GPUS:-}}"
 case "${RUN_ROOT}" in
   /data/run01/sczc063/yuzibo|/data/run01/sczc063/yuzibo/*) ;;
   *) fail "run root must stay under /data/run01/sczc063/yuzibo" ;;
@@ -36,16 +46,13 @@ case "${PREFLIGHT_ONLY}" in
   0|1) ;;
   *) fail "SPATIAL_ZOOM_S1_PREFLIGHT_ONLY must be 0 or 1" ;;
 esac
-[[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal S1 test/profile requires a Slurm allocation"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
   fail "formal S1 test/profile requires exactly one Slurm-visible GPU"
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
-[[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
-  fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
+[[ -n "${SCOPED_GPU_ID}" && "${SCOPED_GPU_ID}" != *,* ]] || \
+  fail "Slurm step must identify exactly one allocated physical GPU"
 [[ "${SLURM_CPUS_PER_TASK:-}" == "5" ]] || \
   fail "formal S1 sidecar profile requires exactly five allocated CPUs"
-[[ "${SLURM_MEM_PER_NODE:-0}" -ge 90000 ]] || \
-  fail "formal S1 sidecar profile requires at least 90000 MiB node memory"
 command -v taskset >/dev/null 2>&1 || fail "formal S1 sidecar profile requires taskset"
 
 case "${POWER_SCRATCH_ROOT}" in
@@ -162,7 +169,7 @@ fi
 [[ -f "${TEST_EVIDENCE}" ]] || fail "sealed test evidence was not produced"
 PROFILE_PREFIX="${CAMPAIGN_ROOT}/dense${RESOLUTION}/seed${SEED}/dense${RESOLUTION}_seed${SEED}"
 PROFILE_SCRATCH_DIR="${POWER_SCRATCH_ROOT}/job${SLURM_JOB_ID}_dense${RESOLUTION}_seed${SEED}_formal"
-POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SLURM_JOB_GPUS}" | tr -d '[:space:]')"
+POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SCOPED_GPU_ID}" | tr -d '[:space:]')"
 [[ "${POWER_UUID}" == GPU-* ]] || fail "could not resolve allocated GPU UUID"
 if ! (
   cd "${TRAINING_ROOT}"
@@ -191,7 +198,7 @@ if ! (
       --amp \
       --use-ema \
       --sample-power \
-      --power-gpu-id "${SLURM_JOB_GPUS}" \
+      --power-gpu-id "${SCOPED_GPU_ID}" \
       --power-interval-ms 20 \
       --power-scratch-root "${POWER_SCRATCH_ROOT}" \
       --allocated-cpus "${ALLOCATED_CPUS}" \

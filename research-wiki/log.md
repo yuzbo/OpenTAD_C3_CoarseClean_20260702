@@ -320,3 +320,20 @@ append_only: true
   result. Raised only the early-exit observation window to 5 seconds; the
   explicit never-ready timeout remains 150 ms. No GPU job or evidence campaign
   was created from `c1253e6`.
+- 2026-07-17: timing-fix commit `35c7c5f` passed the exact combined remote
+  Linux suite with `85 passed`. A formal one-GPU/96GB request was rejected
+  before submission by N16R4's 55GB-per-requested-GPU rule, so no Gate or
+  evidence was created. Resource-only Jobs `1168504/1168506/1168509/1168510`
+  established that an outer two-GPU/eight-CPU allocation provides `124400M`
+  and can host one exact inner step with one GPU, five CPUs, and a finite
+  96,000 MiB cgroup limit. Job `1168508` was a no-evidence interpreter-path
+  diagnostic failure.
+- 2026-07-17: implemented the site-specific execution repair without changing
+  the S1 model, data, checkpoints, sealed-test result, profile order, cadence
+  threshold, or statistics. Gate/cell/matrix launchers now enter one exact
+  one-GPU/five-CPU/96000M Slurm step from the outer reservation, preserve
+  Slurm's CUDA mapping, bind identities to `SLURM_STEP_GPUS`, and verify the
+  tightest finite cgroup memory limit before evidence access. The second outer
+  GPU is recorded as idle scheduling overhead, never model compute. Local S1
+  verification is `62 passed, 4 skipped`; remote exact replay, a new v3
+  certificate, and the full no-open Gate remain pending.

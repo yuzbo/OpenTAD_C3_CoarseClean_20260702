@@ -558,6 +558,29 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   regression is `20 passed`. This is `tested_local`, not a remote Gate result.
   No replacement matrix, Pro review, GO/KILL, S2, or learned crop is authorized
   yet.
+- Remote process-test closure and resource-scope status: clean commit
+  `35c7c5f6fdf2a85c7ecbadc2249f83476b7cdc3e` passed the exact combined
+  Linux S1+C3 suite with `85 passed`. No formal Gate was submitted from that
+  commit. A first formal request for one GPU, five CPUs, and 96 GB was rejected
+  by the N16R4 site rule that caps memory per requested GPU at 55 GB. Read-only
+  resource diagnostics then established a compliant two-level scope:
+  Jobs `1168504` and `1168506` showed that an outer two-GPU/eight-CPU job
+  receives `124400M`, while an exact inner step receives one GPU, five CPUs,
+  and `96000M`; Jobs `1168509-1168510` located the tightest finite cgroup v2
+  limit at exactly 96,000 MiB even though the leaf reports `max` and
+  `SLURM_MEM_PER_NODE` is absent. Job `1168508` failed only because its
+  resource-only diagnostic invoked an unavailable `python` command and
+  produced no research evidence.
+- The current implementation now prefers `SLURM_STEP_GPUS`, verifies one
+  Slurm-visible GPU and the tightest finite cgroup/Slurm memory limit, and
+  re-executes Gate, cell, or matrix launchers into one exact
+  `--gpus=1 --cpus-per-task=5 --mem=96000M` step when the outer reservation
+  contains two GPUs. It never overwrites `CUDA_VISIBLE_DEVICES`. All nine
+  matrix cells remain inside one such step. The idle outer GPU is explicitly
+  classified as N16R4 scheduling overhead, not model compute. Local S1
+  verification for this uncommitted resource repair is `62 passed, 4 skipped`;
+  a clean commit, exact remote tests, a new v3 certificate, and the full
+  no-open Gate remain mandatory.
 
 ## Decision Boundary
 
