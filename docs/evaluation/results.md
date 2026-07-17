@@ -169,6 +169,26 @@ Epoch-59 EMA checkpoint 的 query embedding 审计显示，原始绝对 `center_
 | `phystime_train_geometry_drop_diagnostic.json` | `phystime_performance_geometry_diagnostic_v1` | `70032400eb08fb17629e670b4141c8070328c64dd814b492cb09765556044b67` |
 | `phystime_prediction_decomposition.json` | `phystime_prediction_diagnostic_v1` | `2e3a8a3a613036a9a6130656f2aee07ab49cd4f99d0145d0e6751731d4ac64bb` |
 
+## G1b SDPQ 20-Epoch Medium Run
+
+Code commit: `4a57577193c07cc90ac0867176aa79c76f637c36`.
+
+Run root: `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1b_sdpq_4a57577_gtboundaryfix_medium20_20260716_190900_0800`.
+
+| Stage / variant | Job | Status | Evaluation epoch | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| real THUMOS gate | `1167109` | completed / gate passed | NA | NA | NA | NA | NA | NA | NA |
+| G1b SDPQ | `1167110` | completed / validation passed | 19 | 52.60 | 43.54 | 31.82 | 18.24 | 8.19 | 30.88 |
+
+Artifact evidence:
+
+- `PILOT_COMPLETE.json` and `evaluation_metrics.json` are present and finite.
+- Final lightweight checkpoint `epoch_19.pth` is 132,393,307 bytes and passed online-state deserialization/finite-value validation. It did not retain `state_dict_ema`, while the epoch evaluation used EMA weights; therefore the saved prediction metrics are independently recomputable, but the exact evaluated weights cannot be replayed from this checkpoint.
+- The run completed all 20 epochs without Traceback, OOM, non-finite loss, AMP skip, or GT boundary repair event.
+- This run supports G1b trainability and continued learning beyond the old six-epoch pilots.
+- It does **not** establish superiority: the available G1a selected-axis and physical-metric controls were trained for only six epochs under older commits. A same-commit, same-seed, same-schedule 20-epoch three-arm comparison is required before any method claim or full-train decision.
+- The new matched suite closes the replay gap by retaining both online and EMA state dicts while still excluding optimizer and scheduler state.
+
 ## Matched Pilot
 
 统一 run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_7098049_pilot_20260710_214816_+0800`。

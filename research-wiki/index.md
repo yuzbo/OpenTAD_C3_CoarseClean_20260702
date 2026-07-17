@@ -1,6 +1,6 @@
 # Research Wiki Index
 
-更新时间：2026-07-13
+更新时间：2026-07-17
 
 这不是论文草稿，而是本项目的长期研究记忆。所有后续方法修改、实验部署和论文主张，必须先读取本页指向的当前方向、决策和失败记录。
 
@@ -62,6 +62,7 @@
 - `exp:phystime-adatad-k384`
 - `exp:phystime-performance-drop-diagnosis`
 - `exp:phystime-g1a-native-j192`
+- `exp:phystime-g1b-sdpq-medium20`
 
 ### Papers
 
@@ -79,4 +80,4 @@
 
 ## 当前状态一句话
 
-PhysTime-AdaTAD 1.0 的 K384 三头 full run 已完成并冻结为负基线。当前唯一执行阶段是 `HOLD AND REBUILD`：native tubelet feature-support provenance + 分离 K/J/Q0/QΣ 的 matched temporal-metric controls；`SM-PTAF` 只是 designed candidate。长期目标仍是直接处理任意不规则视频观测、在真实物理时间上分类和定位的独立离线 TAD 检测器。
+PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；G1b SDPQ 已完成稳定的 20-epoch medium run，但尚无同轮数基线，不能声称优越。当前决定性任务是同 commit、同 K384/J192、同 seed、同 20 epochs 的 selected-axis / physical-metric / G1b SDPQ 三臂对照；它通过后才允许启动 60-epoch full train。

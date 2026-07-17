@@ -15,6 +15,8 @@
 | `exp:phystime-feature-track` | I3D feature-token PhysTime pilots | 已取消 | software/feature diagnostic | 不得作为 raw-video PhysTime-AdaTAD 证据 |
 | `exp:phystime-adatad-k384` | raw-video 三头 matched comparison | completed / negative | matched full run | `3ac93a1` 三头完成并由只读 checkpoint replay 复现；PhysTime 1.0 未胜两个 sparse controls |
 | `exp:phystime-performance-drop-diagnosis` | 容量、几何、attention、预测分解 | completed | diagnostic + integrity audit | 排除 evaluator/训练崩溃；确认架构混杂、query 尺度、粗层聚合、候选密度和短动作问题 |
+| `exp:phystime-g1a-native-j192` | selected-axis / physical-metric native-J192 controls | six-epoch pilots completed | early matched diagnostic | 两臂差异很小，但轮数过短；不能与 G1b medium run 横比 |
+| `exp:phystime-g1b-sdpq-medium20` | support-decoupled physical query sparse head | completed | medium-run trainability evidence | 20轮稳定闭环成立；优越性仍需 same-commit 三臂 20轮对照 |
 
 ## 证据等级定义
 
@@ -26,4 +28,4 @@
 
 当前没有达到第 5 级的 PhysTime 实验。
 
-下一阶段的 provenance gate、capacity-matched coordinate-only control 和 SM-PTAF pilot 仍处于 `designed`，尚未生成 experiment node、commit、job 或结果。只有代码与预注册合同落地后才创建新的 `exp:*`，避免把外部方案误记为已部署实验。
+下一阶段不是继续添加新结构，而是完成 same-commit 三臂 20轮 medium comparison。该套件代码已达到 `tested`，正式 clean snapshot/Slurm 结果尚未产生；在结果完成前不得解锁 60轮 full train 或创建论文 claim。

@@ -1,97 +1,84 @@
-# Current status override, 2026-07-13
-
-GT/window repair redeployment, 2026-07-16: commit `4a57577193c07cc90ac0867176aa79c76f637c36` is pushed and deployed from clean snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1b_sdpq_4a57577_20260716_gtboundaryfix`, tree `2d9ae007b7d9cea179a9ec5e08a82bf01ef4cf4c`. Run root is `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1b_sdpq_4a57577_gtboundaryfix_medium20_20260716_190900_0800`; jobs are `1167109` real gate and `1167110` 20-epoch pilot afterok. Gate `1167109` completed successfully (`COMPLETED 0:0`, elapsed `00:01:52`) and pilot `1167110` is now `PENDING (Priority)`. Gate JSON confirms commit/tree match, `K_raw_observations=384`, `J_native_tubelet_tokens=192`, `feature_interpolation=false`, and `gt_without_assigned_query=0`. The old `d5a2136` medium run remains invalid as a completed artifact because it failed at epoch 12 DataLoader on GT/window end-exclusive boundary handling. Current status is `gate_passed_waiting_pilot`, not `medium_run_supported` and not `paper_ready`.
-
-Deployment update, 2026-07-16: commit `698ee4be20b6c3ace4ab168047446fae0e3e9073` is pushed and deployed from clean snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1b_sdpq_698ee4b_20260716_p0fix`, tree `b985813ed37a094c882d06a1e9f99dec931c48e6`. Run root is `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1b_sdpq_698ee4b_p0fix_20260716_005601_+0800`; jobs are `1165745` gate and `1165746` pilot afterok. First queue check: gate `RUNNING`, pilot `PENDING (Dependency)`. Full train remains held until gate and pilot evidence are collected.
-
-Gate update: `1165745` is now `COMPLETED 0:0`; pilot `1165746` is `RUNNING`. Current status is `pilot_running`, not `pilot_supported` and not `paper_ready`.
-
-Correction, 2026-07-16: the short G1b pilot `1165746` failed at final checkpoint save and cannot be used as completed pilot evidence. It reached epoch 4 evaluation with Avg-mAP `10.17%` and mAP@0.7 `1.66%`, but `epoch_5.pth` is 0 bytes and `PILOT_COMPLETE.json` was not generated. The user correctly noted that five/six epochs are too few for meaningful method analysis. The next run is a 20-epoch medium G1b SDPQ run with atomic lightweight checkpointing and dynamic final-epoch validation; remote focused tests for the checkpoint/script repair passed `15 passed in 53.05s`.
-
-Medium-run deployment: commit `d5a2136dfc4f9f9936ff2c0843cfc8e6768d4e42`, tree `28062d97cf4ab2605f3dacee6b3eb9f7375e3843`, snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1b_sdpq_d5a2136_20260716_medium20`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1b_sdpq_d5a2136_medium20_20260716_131046_+0800`. Jobs: `1166413` gate, `1166414` 20-epoch pilot afterok. First queue check: gate `PENDING (Priority)`, pilot `PENDING (Dependency)`.
-
-Current G1b SDPQ status override, 2026-07-16: commit `372fcbf58d1b2eb895b724f6f040458bde4d636e` received a `REVISE-BEFORE-FULL-TRAIN` review. The review is accepted: the old G1b SDPQ pilot delta over G1a was too small to support a claim, and full train remains blocked until evidence/assignment/projection diagnostics are repaired and re-gated. First P0 repair is now `implemented + remote-focused-tested`: domain-valid, evidence, and assignment masks are separated; coverage ratio and query/support geometry residuals are logged and learnable; uncovered support can remain in the detection domain but cannot silently become a positive assignment; center/log-width offset loss is explicit; pilot completion now reads structured metrics and final checkpoint artifacts. Remote focused check passed `21 passed in 52.60s` on `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1b_sdpq_p0fix_test_20260716_004648`. This is not yet a real THUMOS gate pass, not a pilot result, and not paper-ready evidence.
-
-PhysTime G1a native-J192 matched track is now `queued_for_gate`: independent Max review returned `GREEN_FOR_CLEAN_SNAPSHOT_AND_REAL_GATE`; commit `d1747d6657e185495b4db9eb491fd135d4b90360` was pushed; clean snapshot is `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_d1747d6_20260713_gate`; run root is `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_d1747d6_gatepilot_20260713_192727_+0800`; jobs are `1161476` real gate, `1161477` selected-axis pilot afterok, and `1161478` physical-metric pilot afterok. At the first queue check, gate was `PENDING (Priority)` and pilots were `PENDING (Dependency)`. No gate pass, no pilot mAP, no empirical claim yet.
-
-Update: `1161476` failed before pilot because the gate conflated K384 decoded slots with 384 valid raw observations and still assumed full `batch_size*378` assignment candidates. These were fixed and re-reviewed. Current active queue is commit `56c7e98e54ba83eb32b84dbdbeb74c3b5698eca2`, snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_56c7e98_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_56c7e98_gatepilot_20260713_194728_+0800`, jobs `1161486` gate, `1161487` selected-axis afterok, `1161488` physical-metric afterok. First check: gate `PENDING (Priority)`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
-
-Latest update: `1161486` then failed before pilot because selected-index checksum still required exactly 384 indices, while a real short production window had 269. G1a now uses variable-valid selected-index checksum and records `selected_index_lengths`. Active queue is commit `49fa13c15bb0e4e58428af52598f031e77a69ec2`, snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_49fa13c_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_49fa13c_gatepilot_20260713_200044_+0800`, jobs `1161495` gate, `1161496` selected-axis afterok, `1161497` physical-metric afterok. First check: gate `RUNNING`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
-
-Current active queue: `1161495` failed before pilot because `_selected_index_checksum_g1a` missed `import numpy as np`; fix commit `a4b7f1db0424966c9f9c5d4304a7619be59661db` is deployed from snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_a4b7f1d_20260713_gate`, run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_a4b7f1d_gatepilot_20260713_200922_+0800`, jobs `1161500` gate, `1161501` selected-axis afterok, `1161502` physical-metric afterok. First check: gate `PENDING (Priority)`, pilots `PENDING (Dependency)`. No gate pass or mAP yet.
-
-Gate `1161500` has now passed (`COMPLETED 0:0`, `gate_pass=true`). Pilots `1161501` selected-axis and `1161502` physical-metric are `RUNNING`; status is `experiment_running`, not `empirically_supported`. mAP remains NA until pilot artifacts complete.
-
-Latest checkpoint-fix update: pilots `1161501/1161502` failed after epoch 2 because `/data` was full and `torch.save` failed while writing per-epoch checkpoints. This is an artifact-storage failure, not evidence of model NaN or evaluator failure. Commit `623a376700c5781a3a54e3c6622ceb2ebc5ffc8e` changes G1a pilot checkpointing to final-only, preserving the required final `epoch_5.pth`. Remote clean snapshot `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1a_623a376_20260713_checkpointfix` passed focused checks (`40 passed`) and was requeued at run root `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1a_623a376_ckptfix_20260713_225354_+0800`: `1162048` gate, `1162049` selected-axis afterok, `1162050` physical-metric afterok. First check: gate `RUNNING`, pilots `PENDING`. No completed pilot mAP yet.
-
 # Research Wiki Query Pack
 
-当前 G1a 部署状态（2026-07-13）：独立 Max 复审已经在 `a4b7f1db0424966c9f9c5d4304a7619be59661db` 达到零 P0/P1，并允许 clean snapshot 与真实 gate。远端 gate contract `35 passed`、PhysTime/C3 physical-grid focused `248 passed`；真实 gate `1161500` 已 `COMPLETED 0:0` 且 `gate_pass=true`。`1161501` selected-axis 与 `1161502` physical-metric 6-epoch pilot 正在运行；当前状态是 `experiment_running`，不是 `empirically_supported`，没有新 mAP。完整审查见 `research-wiki/reviews/2026-07-13-phystime-g1a-max-code-review.md`。
+更新时间：2026-07-17。本文只保留当前决策所需的压缩记忆；完整历史见 `research-wiki/routes/`、各实验页与 `docs/evaluation/results.md`。
 
-更新时间：2026-07-13。长度必须保持在 8000 字符以内。
+## 当前方向与状态
 
-## 当前方向
+唯一执行主线是 **离线 PhysTime-TAD 稀疏检测头**，不是 DUCA 选帧插件，也不是 Online TAD。问题定义是：给定同一无学习、无 GT 的不规则原始帧采样，检测器能否直接使用真实秒时间戳和稀疏观测 support，在物理时间上完成分类、边界回归、NMS 与评价，并保护高 IoU 定位。
 
-长期唯一主线仍是独立离线 physical-time TAD detector。`PhysTime-AdaTAD 1.0` 的 THUMOS14 raw-RGB/K384 三头 full run 已完成并冻结为负基线。当前执行阶段是 `HOLD AND REBUILD`：先建立 native tubelet feature-support provenance，以及 capacity/context/candidate/assignment-matched 的 selected-time 与 physical-time controls；随后才决定是否实现 `idea:sm-ptaf`。独立核验要求分开 `K=384` raw observations、`J=192` native tubelet tokens、基础候选网格 `Q0` 与多尺度总候选 `QΣ`：G1a 使用 `Q0=J=192`、官方六层金字塔 `QΣ=378`，不做 J192→Q0=384 lift；G1b 才给双侧共享 `Q0=384` 中性 lift，最后才允许 mass residual。候选坐标、GT、回归、decode、NMS 与评测始终使用秒，不能回到 selected rank。
+长期目标是独立 TAD 方法；AdaTAD/VideoMAE 只是当前 raw-video 端到端载体。GT 与预测始终使用原视频秒坐标，可按 `round(t*fps)` 导出原视频帧号，但不得映射到 selected-rank。
 
-当前事实：最终修复 commit 为 `3ac93a1`，诊断锚点为 `d900c7c`。真实 gate、稳定性 gate、三头 full run 与最佳 checkpoint 复算均已完成。性能下降不是 NaN、evaluator、重复坐标换算或 checkpoint 读取错误。诊断与 2026-07-13 Pro 审查共同定位：原生 tubelet 轴被插值后错误绑定 raw-frame supports、检测容量/上下文不公平、raw absolute seconds 主导 query、粗层 attention 有效聚合坍缩、候选/短动作监督不足、assignment 不同构。`SM-PTAF` 只有 `designed` 状态，回复中的代码不是实现。原始数字只见 `docs/evaluation/results.md`。
-G1a native-J192 matched control 已实现并通过远端新旧相关回归：Q0=192、QΣ=378，不做 J192→Q0=384 lift；双臂共享官方 ActionFormer，仅改变统一秒轴。已修复 candidate mask 污染，并加入逐层 padding isolation、真实 test evaluator、完整内容指纹、checkpoint 反序列化与 evaluator 重算。正式 dataset 消费 411 个视频，test 根目录额外 2 个未引用 MP4 被显式登记。旧 gate `1161304`、`1161353`、`1161378`、`1161476`、`1161486`、`1161495` 都是 gate/artifact 合同错误或覆盖缺口，不能作为 pilot 结果。当前 v3 gate 使用正式 batch=2 DataLoader、warmup scheduler、EMA 与生产更新顺序，并记录 assignment/pre-ReLU/梯度/LR/optimizer state 和真实参数 delta，独立 validator 从逐步证据重算；`1161500` 已通过，依赖 pilot 已启动。AdaTAD interpolation 只允许在 G1b 作为双臂共享中性 lift，不能计作新增观测。
+当前模型为 G1b SDPQ：K=384 原始观测，经 VideoMAE 得到 J=192 原生 tubelet token；稀疏 support 与物理 query 解耦，`PhysTimeMeasureProjection` 从不规则 support 向物理 query 聚合，`SupportDecoupledPhysicalQueryHead` 在秒坐标上 assignment、回归与解码。不做 J192→384 feature interpolation，不把 gap 填成已观测特征。
 
-## Top gaps
+最新完成证据：commit `4a57577` 的 G1b 20-epoch medium run 已通过真实 gate、训练和独立评价。它证明 G1b 能稳定训练并持续学习，原始结果见 `docs/evaluation/results.md`；它**没有证明优于基线**，因为现有 G1a selected-axis / physical-metric 只有六轮且 commit 不同。该 run 的 checkpoint 未保存评价所用 EMA 权重，指标可由保存预测重算，但 evaluated-weight 不能精确重放；新三臂 suite 已把 EMA 纳入轻量 checkpoint 合同。
 
-1. `gap:G4`：三头 full run 已完成，但不是坐标表示的等容量隔离；必须先构建 capacity/context/candidate/assignment-matched control。
-2. `gap:G2`：算子级 support 已有，但 native VideoMAE tubelet feature 与多原子 support 的 provenance 尚未关闭，禁止继续使用 `192 -> 384` 长度相等冒充语义对齐。一个 tubelet 已融合两帧，multi-atom 只能先称 set-valued anchor，不能自动声称 feature measure 可加。
-3. `gap:G5`：边界与短动作诊断已完成；修复后的 coordinate-only、mass residual、bounded content 与 assignment 因果消融尚缺。
-4. `gap:G3`：需区分 mTAN、TE-TAD、FrameDrop/TRC、LiquidTAD；continuous time 本身不新。
-5. `gap:G7`：缺 raw decode 到 NMS 的全栈成本账本；泛化仍只有 THUMOS14 单协议、单种子证据。
+当前决定性任务：在同一新 commit、同 THUMOS 数据、K384/J192、无 GT sampler、seed=42、20 epochs、优化器、scheduler、评价器和 checkpoint 合同下，运行：
 
-## 失败/降级路线，禁止遗忘
+1. selected-axis：官方 ActionFormer，均匀 rank-derived 秒轴；
+2. physical-metric：官方 ActionFormer，真实物理秒轴；
+3. G1b SDPQ：物理 query 与稀疏 support 解耦。
 
-- PAction 是强 Stage1 baseline，不是最终 detector-aware 方法。
-- GAS-VT 非真正 sequential，存在 budget-conditioned train/apply shift；coverage、CVaR hole 与 hard repair 可能对 detector boundary utility 有害。
-- lattice/move/radius 从 uniform scaffold 局部替换，只是几何诊断；聚集偏移可能由二分类标签过粗、probe 时延和 hard/soft 不同构造成。
-- DUCA 完成了 no-leak、original-time、official head gradient、optimizer、exact-K/max-gap 等大量工程修复，但核心仍接近复杂 score+top-k+scaffold，GT boundary proxy 不是 detector utility，旧 full runs 不支持最终主张。
-- MUST 的 expected/hard/unique/padded/backbone K 不统一，padded cap 不是真 variable compute；动态预算降级 appendix。
-- X3D 和 SlowFast Fast 是 frozen prior appendix，dense inference 过慢且有 Kinetics prior/类别重叠风险，不能作为低成本主 probe。
-- ChronoTransport/DCRT 虽被 Pro 推荐，但用户否决为当前主线：接近 MoD/feature reuse，层级策略僵硬、系统工程与归因风险高。
-- ChronoTransport 不是纯 idea：本地 `codex/c3-coarse-clean-20260702` 已在 `92029ea` 完成正式单种子 Stage-B 闭环，但 P3 science gate 因 risk-regret 负相关、risk target 尺度错配和 feature transport 优势不稳定而失败；origin 落后 15 commits，P5 未解锁，所以状态是“工程闭环存在、科学 gate 失败、当前暂停”。
-- CoDeR 依赖 codec/硬件；ACTAL 是 streaming 新任务；均偏离离线 TAD。
-- PhysTime-TAL 1.0 的 normalized time、support width、固定 M、hazard 和双视图一致性定义不严，被 PhysTime-TAD 2.0 取代。
-- I3D feature-token PhysTime jobs 已取消；只保留算子测试，不是 raw-video 论文证据。
-- PhysTime-AdaTAD 1.0 的首个 full run 是高价值负结果：不要通过继续训练、增加 endpoint 权重或单独调 NMS 掩盖结构混杂；必须先做等容量、同上下文的因果对照。
-- 不把 Pro 给出的 SM-PTAF 公式、伪代码和 patch map 误写成已实现；不在 feature provenance、candidate parity 和 assignment parity 前启动新 full train。
+三臂统一 runner、validator、shared G1a+G1b gate 与 Slurm DAG 已实现；本地静态测试与远端 Linux/PyTorch focused suite 已通过。正式 clean snapshot 与队列是当前下一步。只有 matched 20-epoch 结果显示 G1b 有稳定且有意义的优势，才解锁 60-epoch full train。
+
+## 当前核心科学问题
+
+1. 物理时间收益是否真实，还是训练时长、容量、候选数或 assignment 差异造成？
+2. support-decoupled query 是否提高高 IoU、短动作和 contiguous-gap 条件下的定位？
+3. G1b 的优势若只出现在低 IoU，是否只是候选覆盖增益而非边界定位增益？
+4. support pooling、query scale、positive assignment、分类排序和 NMS 中，哪一项限制 mAP@0.7？
+5. K384 raw-video 的计算节省能否覆盖额外物理时间头开销？
+6. 单 THUMOS、单 seed 的信号能否在多种子、第二数据集和不同固定采样族上复现？
+
+## 最高优先级缺口
+
+- `G4` 公平隔离：必须完成 same-commit/schedule/seed 三臂 medium comparison；不同轮数结果禁止横比。
+- `G2` provenance：K384 raw observations、J192 tubelet tokens、Q0 与多尺度候选必须分开审计；一个 tubelet 融合两帧，只能先称 multi-atom support anchor。
+- `G5` 高 IoU：需要 proposal recall、class-aware recall、边界 MAE、短动作与 gap 条件分解，不能只看 Avg-mAP。
+- `G7` 成本与泛化：缺完整 decode/VideoMAE/head latency、FLOPs、显存和第二数据集证据。
+- `G3` 新颖性：mTAN、TE-TAD、RCL、FrameDrop/TRC、LiquidTAD 已占据连续时间或鲁棒 TAD 邻域；论文只能主张“不规则观测 support 与物理 query 解耦、无 dense imputation 的稀疏检测头”，不能宽泛声称首个 continuous-time TAD。
+
+## 已否定或降级的路线
+
+- C3/PAction/GAS-VT/lattice/move：是选帧与几何归因工具，不是当前最终检测头。
+- DUCA：虽完成 official head gradient、no-leak、exact-K/max-gap 等工程闭环，但仍接近复杂 score+top-k+scaffold；旧结果不支持最终主张，且项目当前不做在线选帧插件。
+- MUST dynamic budget：expected/hard/unique/padded/backbone K 不统一，动态预算降级 appendix。
+- X3D/SlowFast Fast：dense frozen prior 过慢且带 Kinetics 先验，只能作 appendix；不得恢复为当前主 probe。
+- ChronoTransport/DCRT：接近 MoD/feature reuse，系统归因风险高；工程 Stage-B 存在，但 science gate 为负，当前暂停。
+- PhysTime feature-token pilot：已取消；不能替代 raw-video 端到端证据。
+- PhysTime-AdaTAD 1.0：三头 full run 已完成并冻结为负基线。它同时改变坐标、投影、上下文、候选和容量，不能裁决 physical-time 假设。
+- G1a 六轮 pilot：只能作早期学习诊断，不能与 G1b 20轮结果比较。
+- 仅延长训练、调 endpoint loss 或 NMS：不能修复候选/assignment/上下文混杂，禁止作为主要解释。
+
+## 关键实现与实验教训
+
+- `K` 是原始观测槽位上限，`J` 是原生 tubelet token 数，`Q` 是候选数；三者不可混写。
+- 短窗口可有少于 384 个有效观测，不能把 K384 误写为每个样本必须有 384 个有效索引。
+- GT/window 使用 end-exclusive 物理域。相交 segment 可审计 clamp，空 segment filter，标签同步；必须记录视频、窗口、越界量与受影响索引。
+- masked softmax 必须 mask-before-exp，避免 AMP 下 `inf*0 -> NaN`。
+- gate 必须使用真实 DataLoader、优化器、scheduler、EMA、evaluator 与多步参数更新；one-step 或进程存活不等于方法有效。
+- 结果必须绑定 commit/tree/config/data/checkpoint 哈希，并由独立 evaluator 重算；checkpoint 必须反序列化和有限性检查。
+- `/data` 曾因逐 epoch 大 checkpoint 写满。medium suite 固定 final-only lightweight checkpoint，并用原子完成 artifact。
+- 评价若使用 EMA，final-only lightweight checkpoint 仍必须保存 `state_dict_ema`；省略 optimizer/scheduler，不省略被评价权重。
+- selected-axis、physical-metric 与 G1b 必须共享数据、采样、seed、训练轮数和评价协议；否则差值不可归因。
+- 程序跑完只代表 `runnable`；gate 通过、medium evidence、full evidence、`paper_ready` 必须分级。
 
 ## 活跃机制链
 
-不规则 raw frames -> 原始帧号/FPS 生成秒时间戳与不扩张 support cells -> native tubelet token 绑定 multi-atom support provenance -> overlap mass 保底路径与有界 correction -> candidate-matched physical query encoder -> ActionFormer-equivalent assignment/head 在秒上回归、NMS -> 可按 `round(t*fps)` 导出原视频帧号。
+不规则原始帧与原帧号/FPS → 非扩张物理 support 与 native tubelet provenance → support-decoupled physical query → measure projection / matched ActionFormer control → 秒坐标 assignment、回归、decode、NMS → mAP、高 IoU、短动作、gap robustness 与总成本审计。
 
-## 必须遵守
+## 状态边界
 
-- GT 和预测不能映射到 selected-rank；原视频帧号导出允许。
-- sparse gap 不能被 Voronoi/support expansion 填满。
-- primary comparison 不加 learned selector、actionness、teacher、ledger、dynamic K 或 paired consistency。
-- 所有头逐样本 selected-index checksum 一致。
-- query 坐标与 candidate cardinality 分离：K 只可用于公平匹配候选数量，不能成为物理坐标或 rank stride。
-- zero-coverage cell 可以保留为检测候选，但不得被表述为已经观测或插值重建的 feature。
-- smoke、one-step、full mAP、claim evidence 分级，不可混淆。
-- 实验数字只写 `docs/evaluation/results.md` 或正式 artifact。
+- G1b 20-epoch trainability：`empirically_supported`。
+- G1b 相对 matched controls 的优越性：`unknown`。
+- 三臂 medium suite 代码：`tested`，正式部署待完成。
+- 60-epoch full train：`blocked_by_matched_medium`。
+- PhysTime 论文主张：尚无 `paper_ready` claim。
 
-## 近邻文献簇
+## 必读入口
 
-- 不规则时间：mTAN 证明 continuous-time embedding+attention 已存在；RCL 已做连续锚表示。
-- TAD 实际时间：TE-TAD 已用 actual timeline coordinate 和长度相关 query。
-- 缺帧鲁棒性：Temporal Robustness Benchmark 表明退化主要来自 localization，并提出 FrameDrop/TRC。
-- 连续动力学 TAD：LiquidTAD 已用 parallel liquid-inspired temporal relaxation，不能宽泛声称首个 continuous-time TAD。
-- detector 基础：ActionFormer 和 AdaTAD 是当前 matched backbone/head 参照。
-
-## 开放未知
-
-1. PhysTime 能否同时胜 selected-axis 与 physical-grid baseline？
-2. 改善是否集中在 mAP@0.7、短动作和 contiguous gaps？
-3. support-integrated operator 是否明显胜 timestamp embedding、interpolation 和 mTAN-like projection？
-4. K=384 raw-video 节省在完整 decode/VideoMAE/head latency 中是否真实？
-5. 第二数据集和 held-out sampling family 是否复现？
-6. 在相同 ActionFormer 上下文与候选密度下，只改变物理时间表示后是否仍有收益？
-7. 在 tubelet Conv3d 与 TIA 已发生 selected-rank mixing 的前提下，multi-atom anchor 是否足够；还是必须使用 frame-separable tokenizer/physical-gap-conditioned stem？
-
-完整历史细节必须读取 `research-wiki/routes/`，不能只凭本 query pack 恢复 DUCA 或 ChronoTransport。
+- 当前禁区：`research-wiki/anti_repetition.md`
+- 方向：`research-wiki/current_direction.md`
+- 完整路线：`research-wiki/routes/phystime-complete-record.md`
+- G1b medium：`research-wiki/experiments/phystime-g1b-sdpq-medium20.md`
+- 原始结果：`docs/evaluation/results.md`
+- 关系图：`research-wiki/graph/edges.jsonl`

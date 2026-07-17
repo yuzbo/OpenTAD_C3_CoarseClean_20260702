@@ -58,3 +58,12 @@
 ## 当前唯一主线
 
 PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验已经完成并冻结。当前唯一执行阶段是 P0 rebuild：native tubelet provenance + capacity/context/candidate/assignment-matched coordinate-only control；`SM-PTAF` 仍为 designed candidate。当前状态以 `query_pack.md`、`current_direction.md`、`experiments/phystime-adatad-k384.md` 和 `docs/evaluation/results.md` 为准。
+
+## 2026-07-17 G1b Medium-Run Guardrail
+
+- G1b SDPQ 的 20-epoch medium run 只能证明该实现稳定训练且持续学习，不能与旧 G1a 六轮 pilot 直接比较。
+- 禁止把 `30.88%` 与旧 selected-axis `10.26%`、physical-metric `10.56%` 的差值解释为结构收益；commit、训练轮数和训练阶段均不匹配。
+- 下一项决定性实验固定为同一 commit、同 K384/J192、同采样、同 seed、同 20 epochs 的 selected-axis / physical-metric / G1b SDPQ 三臂比较。
+- 三臂训练必须共享 gate、dataset manifest、预训练权重、优化器、scheduler、验证周期与 evaluator；任一差异必须在 manifest 中显式列出并解释。
+- 若正式评价使用 EMA，最终轻量 checkpoint 必须保留 `state_dict_ema`；只保存 online 权重再声称 checkpoint 可复现评价属于证据断裂。
+- 三臂结果完成前，不启动 60-epoch full train，不创建 paper claim，也不把 `medium_run_supported` 写成 `paper_ready`。
