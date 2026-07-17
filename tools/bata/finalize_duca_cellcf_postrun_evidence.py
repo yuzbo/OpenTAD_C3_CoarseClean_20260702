@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import csv
+from functools import wraps
 import hashlib
 import io
 import json
@@ -43,6 +45,177 @@ CANDIDATE_SCHEMA = "duca_cellcf_postrun_evidence_candidate_v1"
 FINAL_SCHEMA = "duca_cellcf_postrun_evidence_completion_v3"
 FileIdentity = tuple[int, int, int, int, int]
 SnapshotRecord = tuple[str, FileIdentity, FileIdentity]
+
+
+class SnapshotRecords(dict[Path, SnapshotRecord]):
+    _IN_CLOSE_WRITE = 0x00000008
+    _IN_MODIFY = 0x00000002
+    _IN_ATTRIB = 0x00000004
+    _IN_MOVED_FROM = 0x00000040
+    _IN_MOVED_TO = 0x00000080
+    _IN_CREATE = 0x00000100
+    _IN_DELETE = 0x00000200
+    _IN_DELETE_SELF = 0x00000400
+    _IN_MOVE_SELF = 0x00000800
+    _IN_ONLYDIR = 0x01000000
+    _WATCH_MASK = (
+        _IN_CLOSE_WRITE
+        | _IN_MODIFY
+        | _IN_ATTRIB
+        | _IN_MOVED_FROM
+        | _IN_MOVED_TO
+        | _IN_CREATE
+        | _IN_DELETE
+        | _IN_DELETE_SELF
+        | _IN_MOVE_SELF
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._inotify_fd: int | None = None
+        self._watched_directories: dict[Path, FileIdentity] = {}
+        self._libc: Any = None
+        if sys.platform.startswith("linux"):
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.inotify_init1.argtypes = [ctypes.c_int]
+            libc.inotify_init1.restype = ctypes.c_int
+            libc.inotify_add_watch.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint32,
+            ]
+            libc.inotify_add_watch.restype = ctypes.c_int
+            descriptor = libc.inotify_init1(
+                os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+            )
+            if descriptor < 0:
+                error = ctypes.get_errno()
+                raise OSError(error, "failed to initialize inotify")
+            self._libc = libc
+            self._inotify_fd = int(descriptor)
+
+    def watch_path(self, path: str | Path, label: str) -> Path:
+        source = Path(path).expanduser()
+        source_identity = _file_identity(source, label)
+        try:
+            resolved = source.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(f"{label} is missing: {source}") from exc
+        _require(
+            _file_identity(resolved, label) == source_identity,
+            f"{label} resolved identity drifted before monitoring",
+        )
+        parent_identity = _directory_identity(resolved.parent, label)
+        self._watch_directory(resolved.parent, parent_identity, label)
+        try:
+            observed_resolved = source.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(f"{label} disappeared while monitoring began") from exc
+        _require(
+            observed_resolved == resolved
+            and _file_identity(resolved, label) == source_identity
+            and _directory_identity(resolved.parent, label) == parent_identity,
+            f"{label} path changed while monitoring began",
+        )
+        self.assert_no_mutations()
+        return resolved
+
+    def _watch_directory(
+        self,
+        directory: Path,
+        expected_identity: FileIdentity,
+        label: str,
+    ) -> None:
+        previous = self._watched_directories.get(directory)
+        if previous is not None:
+            _require(
+                previous == expected_identity,
+                f"{label} parent directory identity drifted",
+            )
+            return
+        if self._inotify_fd is None:
+            self._watched_directories[directory] = expected_identity
+            return
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            directory_fd = os.open(directory, flags)
+        except OSError as exc:
+            raise ValueError(
+                f"{label} parent directory cannot be opened safely: {directory}"
+            ) from exc
+        try:
+            opened_identity = _identity_from_stat(os.fstat(directory_fd))
+            _require(
+                opened_identity == expected_identity,
+                f"{label} parent directory changed before monitoring",
+            )
+            watch_path = f"/proc/self/fd/{directory_fd}"
+            watch = self._libc.inotify_add_watch(
+                self._inotify_fd,
+                os.fsencode(watch_path),
+                self._WATCH_MASK | self._IN_ONLYDIR,
+            )
+            if watch < 0:
+                error = ctypes.get_errno()
+                raise OSError(
+                    error,
+                    f"failed to monitor evidence directory: {directory}",
+                )
+            _require(
+                _identity_from_stat(os.fstat(directory_fd)) == expected_identity,
+                f"{label} parent directory changed while monitoring began",
+            )
+        finally:
+            os.close(directory_fd)
+        _require(
+            _directory_identity(directory, label) == expected_identity,
+            f"{label} parent directory path changed while monitoring began",
+        )
+        self._watched_directories[directory] = expected_identity
+
+    def observe(
+        self,
+        path: Path,
+        record: SnapshotRecord,
+        label: str,
+    ) -> None:
+        previous = self.get(path)
+        if previous is not None:
+            _require(previous == record, f"{label} changed between validations")
+        dict.__setitem__(self, path, record)
+
+    @property
+    def mutation_monitor_active(self) -> bool:
+        return self._inotify_fd is not None
+
+    def assert_no_mutations(self) -> None:
+        if self._inotify_fd is None:
+            return
+        observed = bytearray()
+        while True:
+            try:
+                chunk = os.read(self._inotify_fd, 1024 * 1024)
+            except BlockingIOError:
+                break
+            if not chunk:
+                break
+            observed.extend(chunk)
+        _require(
+            not observed,
+            "an evidence directory mutated during semantic validation",
+        )
+
+    def close(self) -> None:
+        if self._inotify_fd is not None:
+            os.close(self._inotify_fd)
+            self._inotify_fd = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except OSError:
+            pass
 
 
 def _require(condition: bool, message: str) -> None:
@@ -103,14 +276,20 @@ def _directory_identity(path: Path, label: str) -> FileIdentity:
 
 
 def _read_snapshot(
-    path: str | Path, label: str
+    path: str | Path,
+    label: str,
+    *,
+    records: SnapshotRecords | None = None,
 ) -> tuple[Path, bytes, str]:
-    source = Path(path).expanduser()
-    _file_identity(source, label)
-    try:
-        resolved = source.resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"{label} is missing: {source}") from exc
+    if records is not None:
+        resolved = records.watch_path(path, label)
+    else:
+        source = Path(path).expanduser()
+        _file_identity(source, label)
+        try:
+            resolved = source.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(f"{label} is missing: {source}") from exc
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -141,23 +320,39 @@ def _read_snapshot(
         f"{label} path identity changed while it was read",
     )
     payload_bytes = b"".join(chunks)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+    if records is not None:
+        records.observe(
+            resolved,
+            (
+                digest,
+                _identity_from_stat(after),
+                _directory_identity(resolved.parent, label),
+            ),
+            label,
+        )
     return (
         resolved,
         payload_bytes,
-        hashlib.sha256(payload_bytes).hexdigest(),
+        digest,
     )
 
 
 def _capture_snapshot_record(
     path: str | Path,
     label: str,
+    *,
+    records: SnapshotRecords | None = None,
 ) -> tuple[Path, SnapshotRecord]:
-    source = Path(path).expanduser()
-    _file_identity(source, label)
-    try:
-        resolved = source.resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"{label} is missing: {source}") from exc
+    if records is not None:
+        resolved = records.watch_path(path, label)
+    else:
+        source = Path(path).expanduser()
+        _file_identity(source, label)
+        try:
+            resolved = source.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(f"{label} is missing: {source}") from exc
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -185,30 +380,31 @@ def _capture_snapshot_record(
         _file_identity(resolved, label) == identity,
         f"{label} path identity changed while it was hashed",
     )
-    return (
-        resolved,
-        (
-            digest.hexdigest(),
-            identity,
-            _directory_identity(resolved.parent, label),
-        ),
+    record = (
+        digest.hexdigest(),
+        identity,
+        _directory_identity(resolved.parent, label),
     )
+    if records is not None:
+        records.observe(resolved, record, label)
+    return resolved, record
 
 
 def _record_snapshot(
-    records: dict[Path, SnapshotRecord],
+    records: SnapshotRecords,
     path: Path,
     digest: str,
     label: str,
 ) -> None:
-    resolved, record = _capture_snapshot_record(path, label)
+    resolved, record = _capture_snapshot_record(
+        path,
+        label,
+        records=records,
+    )
     observed_digest = record[0]
     _require(resolved == path, f"{label} resolved path drifted")
     _require(observed_digest == digest, f"{label} changed before it was recorded")
-    previous = records.get(resolved)
-    if previous is not None:
-        _require(previous == record, f"{label} changed between validations")
-    records[resolved] = record
+    records.observe(resolved, record, label)
 
 
 def _verify_snapshot(
@@ -231,7 +427,7 @@ def _verify_snapshot(
 
 
 def _record_hashed_dependency(
-    records: dict[Path, SnapshotRecord],
+    records: SnapshotRecords,
     record: Mapping[str, Any],
     label: str,
     *,
@@ -242,6 +438,7 @@ def _record_hashed_dependency(
     resolved, snapshot_record = _capture_snapshot_record(
         record.get("path", ""),
         label,
+        records=records,
     )
     if expected_path is not None:
         _require(resolved == expected_path, f"{label} path mismatch")
@@ -249,15 +446,12 @@ def _record_hashed_dependency(
         snapshot_record[0] == expected_digest,
         f"{label} bound hash mismatch",
     )
-    previous = records.get(resolved)
-    if previous is not None:
-        _require(previous == snapshot_record, f"{label} changed between validations")
-    records[resolved] = snapshot_record
+    records.observe(resolved, snapshot_record, label)
     return resolved
 
 
 def _record_payload_path_hash_pairs(
-    records: dict[Path, SnapshotRecord],
+    records: SnapshotRecords,
     payload: Mapping[str, Any],
     label: str,
 ) -> None:
@@ -278,9 +472,16 @@ def _record_payload_path_hash_pairs(
 
 
 def _load_json(
-    path: str | Path, label: str
+    path: str | Path,
+    label: str,
+    *,
+    records: SnapshotRecords | None = None,
 ) -> tuple[Path, dict[str, Any], str]:
-    resolved, payload_bytes, digest = _read_snapshot(path, label)
+    resolved, payload_bytes, digest = _read_snapshot(
+        path,
+        label,
+        records=records,
+    )
     payload = json.loads(payload_bytes.decode("utf-8"))
     _require(isinstance(payload, dict), f"{label} must be a JSON object")
     return resolved, payload, digest
@@ -478,8 +679,16 @@ def _default_repository_validator(root: Path, expected_commit: str) -> None:
     _require(not ignored, f"ignored Python source could shadow repository: {root}")
 
 
-def _load_ledger(path: Path) -> tuple[list[dict[str, str]], str]:
-    _, payload_bytes, digest = _read_snapshot(path, "post-run submitted ledger")
+def _load_ledger(
+    path: Path,
+    *,
+    records: SnapshotRecords | None = None,
+) -> tuple[list[dict[str, str]], str]:
+    _, payload_bytes, digest = _read_snapshot(
+        path,
+        "post-run submitted ledger",
+        records=records,
+    )
     decoded = payload_bytes.decode("utf-8")
     with io.StringIO(decoded, newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
@@ -496,9 +705,12 @@ def _load_formal_completion(
     expected_commit: str,
     expected_seed: int,
     expected_profile: str,
+    records: SnapshotRecords | None = None,
 ) -> tuple[dict[str, str], str]:
     _, payload_bytes, digest = _read_snapshot(
-        path, "formal submitted-job ledger"
+        path,
+        "formal submitted-job ledger",
+        records=records,
     )
     with io.StringIO(payload_bytes.decode("utf-8"), newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
@@ -606,11 +818,14 @@ def _validate_receipt(
     trained_commit: str,
     evidence_commit: str,
     aggregate_sha: str,
+    records: SnapshotRecords | None = None,
     submitted_path: Path | None = None,
     submitted_sha: str | None = None,
 ) -> tuple[Path, dict[str, Any], str]:
     path, payload, observed_sha = _load_json(
-        path_value, f"{row['job_key']} {expected_status} receipt"
+        path_value,
+        f"{row['job_key']} {expected_status} receipt",
+        records=records,
     )
     _require(
         observed_sha == expected_sha,
@@ -671,6 +886,22 @@ def _validate_receipt(
     return path, payload, observed_sha
 
 
+def _with_snapshot_records(
+    function: Callable[..., dict[str, Any]],
+) -> Callable[..., dict[str, Any]]:
+    @wraps(function)
+    def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        snapshot_records = SnapshotRecords()
+        kwargs["_snapshot_records"] = snapshot_records
+        try:
+            return function(*args, **kwargs)
+        finally:
+            snapshot_records.close()
+
+    return wrapped
+
+
+@_with_snapshot_records
 def finalize_postrun_evidence(
     *,
     run_root: str | Path,
@@ -706,6 +937,8 @@ def finalize_postrun_evidence(
     repository_validator: Callable[[Path, str], None] = (
         _default_repository_validator
     ),
+    require_linux_mutation_monitor: bool = True,
+    _snapshot_records: SnapshotRecords | None = None,
 ) -> dict[str, Any]:
     trained_commit = _require_commit(trained_commit, "trained commit")
     evidence_commit = _require_commit(evidence_commit, "evidence commit")
@@ -730,13 +963,23 @@ def finalize_postrun_evidence(
     _require(evidence_root.is_dir(), "evidence repository is missing")
     repository_validator(trained_root, trained_commit)
     repository_validator(evidence_root, evidence_commit)
-    snapshot_records: dict[Path, SnapshotRecord] = {}
+    _require(_snapshot_records is not None, "snapshot monitor was not initialized")
+    snapshot_records = _snapshot_records
+    _require(
+        not require_linux_mutation_monitor
+        or snapshot_records.mutation_monitor_active,
+        "formal evidence sealing requires the Linux mutation monitor",
+    )
 
     aggregate_file, aggregate_payload, aggregate_observed_sha = _load_json(
-        aggregate_path, "aggregate suite evidence"
+        aggregate_path,
+        "aggregate suite evidence",
+        records=snapshot_records,
     )
     final_file, final_payload, final_observed_sha = _load_json(
-        final_suite_path, "final suite evidence"
+        final_suite_path,
+        "final suite evidence",
+        records=snapshot_records,
     )
     _require(
         aggregate_observed_sha == aggregate_sha256,
@@ -765,7 +1008,9 @@ def finalize_postrun_evidence(
     post_run_payloads: dict[str, dict[str, Any]] = {}
     for variant, path in post_run_paths.items():
         resolved, payload, digest = _load_json(
-            path, f"{variant} post-run evidence"
+            path,
+            f"{variant} post-run evidence",
+            records=snapshot_records,
         )
         _require(resolved == path, f"{variant} post-run path drift")
         post_run_payloads[variant] = payload
@@ -847,6 +1092,7 @@ def finalize_postrun_evidence(
         expected_commit=trained_commit,
         expected_seed=int(aggregate_binding["seed"]),
         expected_profile="exposure132",
+        records=snapshot_records,
     )
     _record_snapshot(
         snapshot_records,
@@ -888,7 +1134,11 @@ def finalize_postrun_evidence(
         ("trained-checkpoint cost evidence", cost_record),
     ):
         _require(isinstance(record, Mapping), f"{label} binding is missing")
-        resolved, _, digest = _read_snapshot(record.get("path", ""), label)
+        resolved, _, digest = _read_snapshot(
+            record.get("path", ""),
+            label,
+            records=snapshot_records,
+        )
         expected_digest = record.get("sha256")
         if expected_digest is not None:
             _require(
@@ -902,6 +1152,7 @@ def finalize_postrun_evidence(
     loaded_cost_path, cost_payload, cost_payload_sha = _load_json(
         cost_evidence_path,
         "trained-checkpoint cost evidence",
+        records=snapshot_records,
     )
     _require(
         loaded_cost_path == cost_evidence_path
@@ -925,6 +1176,7 @@ def finalize_postrun_evidence(
                 loaded_path, profile_payload, profile_sha = _load_json(
                     profile_path,
                     profile_label,
+                    records=snapshot_records,
                 )
                 _require(
                     loaded_path == profile_path
@@ -966,7 +1218,9 @@ def finalize_postrun_evidence(
     _require(regenerated_final == final_payload, "final suite evidence is not reproducible")
 
     intent_path, intent, intent_sha = _load_json(
-        control_root_path / "submission_intent.json", "post-run submission intent"
+        control_root_path / "submission_intent.json",
+        "post-run submission intent",
+        records=snapshot_records,
     )
     _record_snapshot(
         snapshot_records,
@@ -1012,7 +1266,10 @@ def finalize_postrun_evidence(
 
     ledger_path = control_root_path / "jobs.submitted.tsv"
     _require(ledger_path.is_file(), "post-run submitted ledger is missing")
-    rows, ledger_sha = _load_ledger(ledger_path)
+    rows, ledger_sha = _load_ledger(
+        ledger_path,
+        records=snapshot_records,
+    )
     expected_dependencies = _expected_dependencies(rows)
     clusters = {row.get("cluster") for row in rows}
     _require(len(clusters) == 1 and None not in clusters, "post-run cluster identity is ambiguous")
@@ -1049,7 +1306,9 @@ def finalize_postrun_evidence(
         ):
             _require(row.get(field) == str(intent_job.get(field)), f"{key} intent mismatch: {field}")
         job_file, _, job_file_observed_sha = _read_snapshot(
-            row["job_file"], f"{key} bound job file"
+            row["job_file"],
+            f"{key} bound job file",
+            records=snapshot_records,
         )
         _require(
             job_file == control_root_path / "jobs" / f"{key}.sbatch"
@@ -1079,6 +1338,7 @@ def finalize_postrun_evidence(
             trained_commit=trained_commit,
             evidence_commit=evidence_commit,
             aggregate_sha=aggregate_sha256,
+            records=snapshot_records,
         )
         _record_snapshot(
             snapshot_records,
@@ -1096,6 +1356,7 @@ def finalize_postrun_evidence(
             trained_commit=trained_commit,
             evidence_commit=evidence_commit,
             aggregate_sha=aggregate_sha256,
+            records=snapshot_records,
             submitted_path=submitted_path,
             submitted_sha=row["submitted_receipt_sha256"],
         )
@@ -1154,6 +1415,7 @@ def finalize_postrun_evidence(
     manifest_path, manifest, manifest_sha = _load_json(
         control_root_path / "submission_manifest.json",
         "post-run submission manifest",
+        records=snapshot_records,
     )
     _record_snapshot(
         snapshot_records,
@@ -1193,10 +1455,12 @@ def finalize_postrun_evidence(
     convergence_path, convergence, convergence_sha = _load_json(
         postrun_output_root / "convergence" / "fixed_trajectory.json",
         "fixed convergence trajectory",
+        records=snapshot_records,
     )
     training_cost_path, training_cost, training_cost_sha = _load_json(
         postrun_output_root / "training_cost" / "training_cost_summary.json",
         "training cost summary",
+        records=snapshot_records,
     )
     _record_snapshot(
         snapshot_records,
@@ -1273,7 +1537,11 @@ def finalize_postrun_evidence(
             for variant, path in slurm_cost_paths.items()
         ]
     ):
-        resolved, payload, digest = _load_json(path, label)
+        resolved, payload, digest = _load_json(
+            path,
+            label,
+            records=snapshot_records,
+        )
         _record_snapshot(snapshot_records, resolved, digest, label)
         _record_payload_path_hash_pairs(
             snapshot_records,
@@ -1285,6 +1553,7 @@ def finalize_postrun_evidence(
             sidecar_path, sidecar, sidecar_sha = _load_json(
                 f"{Path(str(checkpoint_value)).expanduser().resolve()}.metadata.json",
                 f"{label} checkpoint sidecar",
+                records=snapshot_records,
             )
             _validate_embedded_hash(
                 sidecar,
@@ -1343,6 +1612,7 @@ def finalize_postrun_evidence(
         candidate_path, candidate, candidate_sha = _load_json(
             control_root_path / "postrun_evidence_candidate.json",
             "post-run completion candidate",
+            records=snapshot_records,
         )
         _validate_embedded_hash(
             candidate, "artifact_sha256", "post-run completion candidate"
@@ -1404,8 +1674,10 @@ def finalize_postrun_evidence(
             "sha256": candidate_sha,
         }
 
+    snapshot_records.assert_no_mutations()
     for path, record in snapshot_records.items():
         _verify_snapshot(path, record)
+    snapshot_records.assert_no_mutations()
 
     payload = {
         "schema": (
@@ -1547,6 +1819,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         final_suite_path=args.final_suite,
         final_suite_sha256=args.final_suite_sha256,
         require_postrun_completed=not args.candidate,
+        require_linux_mutation_monitor=True,
     )
     if args.candidate:
         _require(

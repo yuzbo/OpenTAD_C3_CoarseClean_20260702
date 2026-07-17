@@ -4,6 +4,8 @@ import csv
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -390,6 +392,7 @@ def _fixture(tmp_path: Path):
             "exit_code": "0:0",
         },
         "repository_validator": lambda *_args: None,
+        "require_linux_mutation_monitor": False,
     }
     candidate_kwargs = dict(kwargs)
     candidate_kwargs["require_postrun_completed"] = False
@@ -611,7 +614,12 @@ def test_postrun_finalizer_rejects_evidence_drift_during_rebuild(
         return convergence
 
     kwargs["convergence_rebuilder"] = rebuild_with_drift
-    with pytest.raises(ValueError, match="changed after snapshot"):
+    expected_error = (
+        "mutated during semantic validation"
+        if sys.platform.startswith("linux")
+        else "changed after snapshot"
+    )
+    with pytest.raises(ValueError, match=expected_error):
         finalize_postrun_evidence(**kwargs)
 
 
@@ -632,9 +640,50 @@ def test_postrun_finalizer_rejects_transient_swap_then_restore(
         return convergence
 
     kwargs["convergence_rebuilder"] = rebuild_with_transient_swap
+    expected_error = (
+        "mutated during semantic validation"
+        if sys.platform.startswith("linux")
+        else "changed after snapshot"
+    )
     with pytest.raises(
         ValueError,
-        match="directory changed after snapshot",
+        match=expected_error,
+    ):
+        finalize_postrun_evidence(**kwargs)
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="cross-process inotify gate is Linux-specific",
+)
+def test_postrun_finalizer_rejects_cross_process_transient_swap(
+    tmp_path: Path,
+) -> None:
+    kwargs, convergence_path, convergence = _fixture(tmp_path)
+    swap_script = """
+import os
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+original = path.with_name("cross_process_original.json")
+os.replace(path, original)
+path.write_text('{"malicious":true}\\n', encoding="utf-8")
+path.unlink()
+os.replace(original, path)
+"""
+
+    def rebuild_with_cross_process_swap(**_kwargs):
+        subprocess.run(
+            [sys.executable, "-c", swap_script, str(convergence_path)],
+            check=True,
+        )
+        return convergence
+
+    kwargs["convergence_rebuilder"] = rebuild_with_cross_process_swap
+    with pytest.raises(
+        ValueError,
+        match="mutated during semantic validation",
     ):
         finalize_postrun_evidence(**kwargs)
 
@@ -665,9 +714,14 @@ def test_postrun_finalizer_snapshots_transitive_training_audit(
         return original_loader(**loader_kwargs)
 
     kwargs["aggregate_loader"] = loader_with_transitive_swap
+    expected_error = (
+        "mutated during semantic validation"
+        if sys.platform.startswith("linux")
+        else "changed after snapshot"
+    )
     with pytest.raises(
         ValueError,
-        match="evidence directory changed after snapshot",
+        match=expected_error,
     ):
         finalize_postrun_evidence(**kwargs)
 
