@@ -3122,10 +3122,18 @@ def test_sidecar_sampler_real_subprocess_lifecycle(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("source", "expected_error"),
+    ("source", "expected_error", "startup_timeout_s"),
     (
-        ("import sys\nsys.exit(9)\n", "exited before its ready record"),
-        ("import time\ntime.sleep(30)\n", "did not become ready before timeout"),
+        (
+            "import sys\nsys.exit(9)\n",
+            "exited before its ready record",
+            5.0,
+        ),
+        (
+            "import time\ntime.sleep(30)\n",
+            "did not become ready before timeout",
+            0.15,
+        ),
     ),
 )
 @pytest.mark.skipif(
@@ -3136,6 +3144,7 @@ def test_sidecar_sampler_process_failure_leaves_no_orphan(
     tmp_path: Path,
     source: str,
     expected_error: str,
+    startup_timeout_s: float,
 ) -> None:
     original_affinity = tuple(sorted(os.sched_getaffinity(0)))
     if len(original_affinity) < 5:
@@ -3156,7 +3165,7 @@ def test_sidecar_sampler_process_failure_leaves_no_orphan(
             detector_cpu_ids=detector_cpus,
             allocated_cpu_ids=(*detector_cpus, sidecar_cpu),
             source_path=fake_sidecar,
-            startup_timeout_s=0.15,
+            startup_timeout_s=startup_timeout_s,
             stop_timeout_s=0.15,
         )
         with pytest.raises(RuntimeError, match=expected_error):

@@ -311,3 +311,12 @@ append_only: true
   no-orphan tests. Local S1 result is `61 passed, 4 skipped`; the required C3
   regression is `20 passed`. Remote Linux execution and the full 792-exposure
   Gate remain mandatory before exactly one replacement matrix.
+- 2026-07-17: clean remote snapshot `c1253e6` executed all Linux process tests
+  before any Gate submission. It produced `84 passed, 1 failed`: on the loaded
+  login node, the early-exit Python child had not started within the test's
+  `150 ms` window, so the implementation correctly took its timeout path,
+  killed the child and sealed a FAIL attempt, while the test expected the
+  early-exit label. This is a test-timing defect, not a leaked process or Gate
+  result. Raised only the early-exit observation window to 5 seconds; the
+  explicit never-ready timeout remains 150 ms. No GPU job or evidence campaign
+  was created from `c1253e6`.
