@@ -427,6 +427,16 @@ def _git_commit(repo_root: Path) -> str:
     return result.stdout.strip()
 
 
+def _git_repo_root(path: Path) -> Path:
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(result.stdout.strip()).resolve()
+
+
 def _git_tree_oid(repo_root: Path, commit: str, relative_path: str) -> str:
     result = subprocess.run(
         ["git", "rev-parse", f"{commit}:{relative_path}"],
@@ -452,6 +462,28 @@ def _tracked_tree_is_clean(repo_root: Path) -> bool:
         check=True,
     )
     return not bool(result.stdout.strip())
+
+
+def _ignored_python_sources(repo_root: Path) -> list[str]:
+    result = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--",
+            "*.py",
+            "*.pth",
+            "sitecustomize.py",
+            "usercustomize.py",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
 
 
 def _sha256_file(path: str | Path) -> str:
@@ -870,33 +902,66 @@ def main(argv: Sequence[str] | None = None) -> int:
         args,
         actual_commit=actual_commit,
     )
+    config_path = Path(args.config).expanduser().resolve()
     code_tree_binding: dict[str, Any] | None = None
+    profile_config_git_binding: dict[str, Any] | None = None
     if args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+        trained_repo_root = _git_repo_root(config_path.parent)
+        try:
+            config_relative_path = config_path.relative_to(
+                trained_repo_root
+            ).as_posix()
+        except ValueError as exc:
+            raise ValueError(
+                "formal profile config escaped its trained repository"
+            ) from exc
+        if _git_commit(trained_repo_root) != trained_commit:
+            raise ValueError(
+                "formal profile config repository is not at the trained commit"
+            )
+        if not _tracked_tree_is_clean(trained_repo_root):
+            raise ValueError(
+                "formal profile config repository is not clean"
+            )
+        if _ignored_python_sources(trained_repo_root):
+            raise ValueError(
+                "ignored Python source could shadow the trained config repository"
+            )
         trained_model_tree = _git_tree_oid(
-            repo_root, trained_commit, "opentad"
+            trained_repo_root, trained_commit, "opentad"
         )
         evidence_model_tree = _git_tree_oid(
             repo_root, evidence_commit, "opentad"
         )
         trained_config_tree = _git_tree_oid(
-            repo_root, trained_commit, "configs/adatad/thumos"
+            trained_repo_root,
+            trained_commit,
+            "configs/adatad/thumos",
         )
-        evidence_config_tree = _git_tree_oid(
-            repo_root, evidence_commit, "configs/adatad/thumos"
-        )
-        if (
-            trained_model_tree != evidence_model_tree
-            or trained_config_tree != evidence_config_tree
-        ):
+        if trained_model_tree != evidence_model_tree:
             raise ValueError(
-                "trained and evidence commits differ on inference model/config trees"
+                "trained and evidence commits differ on the inference model tree"
             )
+        profile_config_sha256 = _sha256_file(config_path)
+        profile_config_blob_oid = _git_tree_oid(
+            trained_repo_root,
+            trained_commit,
+            config_relative_path,
+        )
         code_tree_binding = {
             "trained_opentad_tree_oid": trained_model_tree,
             "evidence_opentad_tree_oid": evidence_model_tree,
             "trained_adatad_thumos_config_tree_oid": trained_config_tree,
-            "evidence_adatad_thumos_config_tree_oid": evidence_config_tree,
-            "model_and_config_trees_equal": True,
+            "model_trees_equal": True,
+            "profile_configs_loaded_from_trained_repository": True,
+        }
+        profile_config_git_binding = {
+            "trained_repository": str(trained_repo_root),
+            "trained_commit": trained_commit,
+            "relative_path": config_relative_path,
+            "git_blob_oid": profile_config_blob_oid,
+            "sha256": profile_config_sha256,
+            "trained_adatad_thumos_config_tree_oid": trained_config_tree,
         }
     cellcf_cost_binding = None
     trained_checkpoint_binding = None
@@ -907,7 +972,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_checkpoint_path=args.checkpoint,
             expected_commit=trained_commit,
         )
-    config_path = Path(args.config).expanduser().resolve()
     cfg = Config.fromfile(str(config_path))
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
@@ -1096,6 +1160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "trained_commit": trained_commit,
         "evidence_git_commit": evidence_commit or actual_commit,
         "inference_code_tree_binding": code_tree_binding,
+        "profile_config_git_binding": profile_config_git_binding,
         "profile_session_id": str(args.profile_session_id),
         "profile_pair_id": str(args.profile_pair_id),
         "profile_repeat_index": int(args.profile_repeat_index),

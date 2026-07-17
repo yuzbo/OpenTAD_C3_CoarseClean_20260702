@@ -45,8 +45,9 @@ esac
 SAMPLES="${DUCA_CELLCF_COST_SAMPLES:-500}"
 WARMUP="${DUCA_CELLCF_COST_WARMUP:-20}"
 REPEATS="${DUCA_CELLCF_COST_REPEATS:-3}"
-CELL_CONFIG="configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py"
-BARE_CONFIG="configs/adatad/thumos/duca_cellcf_bare_exact_uniform_fixed384_cost.py"
+TRAINED_REPO_ROOT="${DUCA_CELLCF_TRAINED_REPO_ROOT:?DUCA_CELLCF_TRAINED_REPO_ROOT is required}"
+CELL_CONFIG="${TRAINED_REPO_ROOT}/configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py"
+BARE_CONFIG="${TRAINED_REPO_ROOT}/configs/adatad/thumos/duca_cellcf_bare_exact_uniform_fixed384_cost.py"
 PRETRAIN="${ADATAD_PRETRAIN_PATH}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal cost profiling must run inside Slurm"
@@ -60,6 +61,15 @@ PRETRAIN="${ADATAD_PRETRAIN_PATH}"
   || fail "DUCA_EXPECTED_COMMIT is required"
 [[ "${EVIDENCE_COMMIT}" != "${EXPECTED_COMMIT}" ]] \
   || fail "trained and evidence commits must be distinct"
+[[ "$(git -C "${TRAINED_REPO_ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] \
+  || fail "trained config repository commit drift"
+[[ -z "$(git -C "${TRAINED_REPO_ROOT}" status --porcelain --untracked-files=normal)" ]] \
+  || fail "trained config repository is dirty"
+[[ -z "$(git -C "${TRAINED_REPO_ROOT}" ls-files --others --ignored --exclude-standard -- \
+  '*.py' '*.pth' 'sitecustomize.py' 'usercustomize.py')" ]] \
+  || fail "ignored Python source could shadow the trained config repository"
+[[ -f "${CELL_CONFIG}" && -f "${BARE_CONFIG}" ]] \
+  || fail "trained cost configs are missing"
 if [[ -n "${SUITE_MANIFEST}" || -n "${SUITE_MANIFEST_SHA256}" ]]; then
   [[ -f "${SUITE_MANIFEST}" ]] || fail "CellCF suite manifest is missing"
   [[ "${SUITE_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "CellCF suite manifest SHA256 is missing or invalid"

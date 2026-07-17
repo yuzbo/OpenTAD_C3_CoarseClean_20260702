@@ -23,7 +23,7 @@ from tools.bata.profile_duca_full_stack_cost import (
 )
 
 
-SCHEMA = "duca_cellcf_cost_pair_v2"
+SCHEMA = "duca_cellcf_cost_pair_v3"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -144,16 +144,61 @@ def _validate_group(
         code_tree_binding = report.get("inference_code_tree_binding")
         _require(
             isinstance(code_tree_binding, Mapping)
-            and code_tree_binding.get("model_and_config_trees_equal") is True
+            and code_tree_binding.get("model_trees_equal") is True
+            and code_tree_binding.get(
+                "profile_configs_loaded_from_trained_repository"
+            )
+            is True
             and code_tree_binding.get("trained_opentad_tree_oid")
             == code_tree_binding.get("evidence_opentad_tree_oid")
-            and code_tree_binding.get(
+            and re.fullmatch(
+                r"[0-9a-f]{40}",
+                str(
+                    code_tree_binding.get(
+                        "trained_adatad_thumos_config_tree_oid",
+                        "",
+                    )
+                ),
+            )
+            is not None,
+            f"{method} profile has an invalid inference-code tree binding",
+        )
+        config_binding = report.get("profile_config_git_binding")
+        expected_relative_path = (
+            "configs/adatad/thumos/"
+            "duca_cellcf_fixed384_official_adatad_backend_full_train.py"
+            if method == "cellcf-fixed384"
+            else "configs/adatad/thumos/"
+            "duca_cellcf_bare_exact_uniform_fixed384_cost.py"
+        )
+        _require(
+            isinstance(config_binding, Mapping)
+            and config_binding.get("trained_commit")
+            == binding["git_commit"]
+            and config_binding.get("relative_path")
+            == expected_relative_path
+            and config_binding.get("sha256")
+            == report.get("profile_config_sha256")
+            and config_binding.get(
                 "trained_adatad_thumos_config_tree_oid"
             )
             == code_tree_binding.get(
-                "evidence_adatad_thumos_config_tree_oid"
-            ),
-            f"{method} profile has an invalid inference-code tree binding",
+                "trained_adatad_thumos_config_tree_oid"
+            )
+            and re.fullmatch(
+                r"[0-9a-f]{40}",
+                str(config_binding.get("git_blob_oid", "")),
+            )
+            is not None
+            and Path(
+                str(config_binding.get("trained_repository", ""))
+            ).is_absolute()
+            and (
+                Path(str(config_binding["trained_repository"]))
+                / expected_relative_path
+            ).resolve()
+            == Path(str(report.get("config_path", ""))).resolve(),
+            f"{method} profile has an invalid trained-config Git binding",
         )
         _require(
             isinstance(report.get("profile_repeat_index"), int)
@@ -194,6 +239,7 @@ def _validate_group(
             "trained_commit",
             "evidence_git_commit",
             "inference_code_tree_binding",
+            "profile_config_git_binding",
         ):
             _require(report.get(key) == reference.get(key), f"{method} repeat drifted on {key}")
 
@@ -350,6 +396,10 @@ def summarize(
         "inference_code_tree_binding": cellcf[0][
             "inference_code_tree_binding"
         ],
+        "profile_config_git_bindings": {
+            "cellcf": cellcf[0]["profile_config_git_binding"],
+            "bare_uniform": bare[0]["profile_config_git_binding"],
+        },
         "seed": binding["seed"],
         "variant": binding["variant"],
         "training_profile": binding["training_profile"],

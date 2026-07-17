@@ -25,6 +25,7 @@ def test_recovery_uses_exact_cross_commit_cost_validation() -> None:
     assert "--evidence-repo-root" in source
     assert "--expected-evidence-commit" in source
     assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in source
+    assert "DUCA_CELLCF_TRAINED_REPO_ROOT" in source
     assert "DUCA_CELLCF_COST_SAMPLES" in source
     assert "DUCA_CELLCF_COST_REPEATS" in source
     assert "run_duca_cellcf_cost_pair.sh" in source

@@ -73,6 +73,12 @@ def _sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _git_blob_oid(path: str | Path) -> str:
+    payload = Path(path).read_bytes()
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload).hexdigest()
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.check_output(
         ["git", *args], cwd=root, text=True, encoding="utf-8"
@@ -149,30 +155,32 @@ def _require_no_symlink_components(
 def _expected_inference_code_tree_binding(
     evidence_root: Path,
     *,
+    trained_root: Path | None = None,
     trained_commit: str,
     evidence_commit: str,
 ) -> dict[str, Any]:
+    trained_source = (
+        evidence_root if trained_root is None else trained_root
+    )
     binding = {
         "trained_opentad_tree_oid": _git_tree_oid(
-            evidence_root, trained_commit, "opentad"
+            trained_source, trained_commit, "opentad"
         ),
         "evidence_opentad_tree_oid": _git_tree_oid(
             evidence_root, evidence_commit, "opentad"
         ),
         "trained_adatad_thumos_config_tree_oid": _git_tree_oid(
-            evidence_root, trained_commit, "configs/adatad/thumos"
+            trained_source,
+            trained_commit,
+            "configs/adatad/thumos",
         ),
-        "evidence_adatad_thumos_config_tree_oid": _git_tree_oid(
-            evidence_root, evidence_commit, "configs/adatad/thumos"
-        ),
-        "model_and_config_trees_equal": True,
+        "model_trees_equal": True,
+        "profile_configs_loaded_from_trained_repository": True,
     }
     _require(
         binding["trained_opentad_tree_oid"]
-        == binding["evidence_opentad_tree_oid"]
-        and binding["trained_adatad_thumos_config_tree_oid"]
-        == binding["evidence_adatad_thumos_config_tree_oid"],
-        "trained and cost evidence commits drifted on model/config trees",
+        == binding["evidence_opentad_tree_oid"],
+        "trained and cost evidence commits drifted on the model tree",
     )
     return binding
 
@@ -771,9 +779,9 @@ def _validate_cost_profile(
     evidence_commit: str,
     expected_checkpoint_path: Path,
     expected_checkpoint_sha256: str,
+    trained_repo_root: Path,
     trained_config_path: Path,
-    evidence_config_path: Path,
-    evidence_repo_root: Path,
+    trained_config_tree_oid: str,
     hash_cache: dict[Path, str],
 ) -> dict[str, str]:
     training_protocol = protocol_from_environment()
@@ -812,38 +820,44 @@ def _validate_cost_profile(
         and checkpoint_sha256 == expected_checkpoint_sha256,
         f"cost profile used another CellCF checkpoint: {profile_path}",
     )
-    expected_evidence_config = _require_no_symlink_components(
-        evidence_config_path,
-        root=evidence_repo_root,
-        label=f"{method} expected evidence config",
+    expected_trained_config = _require_no_symlink_components(
+        trained_config_path,
+        root=trained_repo_root,
+        label=f"{method} expected trained config",
     )
     config_path = _resolve_referenced_path(
         profile.get("config_path"), label=f"{method} cost config"
     )
     _require(
-        config_path == expected_evidence_config,
-        f"cost profile escaped the evidence repository config: {profile_path}",
+        config_path == expected_trained_config,
+        f"cost profile escaped the trained repository config: {profile_path}",
     )
     config_sha256 = hash_cache.setdefault(config_path, _sha256(config_path))
-    trained_config = trained_config_path.resolve()
-    trained_config_sha256 = hash_cache.setdefault(
-        trained_config, _sha256(trained_config)
-    )
     _require(
         profile.get("profile_config_sha256") == config_sha256,
         f"cost profile config hash mismatch: {profile_path}",
     )
+    relative_path = config_path.relative_to(trained_repo_root).as_posix()
+    expected_git_binding = {
+        "trained_repository": str(trained_repo_root),
+        "trained_commit": trained_commit,
+        "relative_path": relative_path,
+        "git_blob_oid": _git_blob_oid(config_path),
+        "sha256": config_sha256,
+        "trained_adatad_thumos_config_tree_oid": trained_config_tree_oid,
+    }
     _require(
-        config_sha256 == trained_config_sha256,
-        f"cost profile config differs from the trained repository: {profile_path}",
+        profile.get("profile_config_git_binding")
+        == expected_git_binding,
+        f"cost profile trained-config Git binding mismatch: {profile_path}",
     )
     return {
         "path": str(profile_path),
         "sha256": _sha256(profile_path),
         "config_path": str(config_path),
         "config_sha256": config_sha256,
-        "trained_config_path": str(trained_config),
-        "trained_config_sha256": trained_config_sha256,
+        "trained_config_path": str(config_path),
+        "trained_config_sha256": config_sha256,
         "trained_commit": trained_commit,
         "evidence_commit": evidence_commit,
     }
@@ -861,7 +875,11 @@ def validate_cost_evidence(
     expected_post_run_evidence_path: str | Path,
     expected_post_run_evidence_sha256: str,
 ) -> dict[str, Any]:
-    root = Path(repo_root).resolve()
+    root = _validate_exact_repository(
+        repo_root,
+        expected_commit=expected_commit,
+        label="trained cost config",
+    )
     evidence_root = _validate_exact_repository(
         evidence_repo_root,
         expected_commit=expected_evidence_commit,
@@ -873,6 +891,7 @@ def validate_cost_evidence(
     )
     expected_code_tree_binding = _expected_inference_code_tree_binding(
         evidence_root,
+        trained_root=root,
         trained_commit=expected_commit,
         evidence_commit=expected_evidence_commit,
     )
@@ -943,9 +962,11 @@ def validate_cost_evidence(
             evidence_commit=expected_evidence_commit,
             expected_checkpoint_path=checkpoint_path,
             expected_checkpoint_sha256=expected_checkpoint_sha256,
+            trained_repo_root=root,
             trained_config_path=root / VARIANTS["cellcf"],
-            evidence_config_path=evidence_root / VARIANTS["cellcf"],
-            evidence_repo_root=evidence_root,
+            trained_config_tree_oid=expected_code_tree_binding[
+                "trained_adatad_thumos_config_tree_oid"
+            ],
             hash_cache=hash_cache,
         )
         for profile_path in cellcf_paths
@@ -958,9 +979,11 @@ def validate_cost_evidence(
             evidence_commit=expected_evidence_commit,
             expected_checkpoint_path=checkpoint_path,
             expected_checkpoint_sha256=expected_checkpoint_sha256,
+            trained_repo_root=root,
             trained_config_path=root / BARE_COST_CONFIG,
-            evidence_config_path=evidence_root / BARE_COST_CONFIG,
-            evidence_repo_root=evidence_root,
+            trained_config_tree_oid=expected_code_tree_binding[
+                "trained_adatad_thumos_config_tree_oid"
+            ],
             hash_cache=hash_cache,
         )
         for profile_path in bare_paths

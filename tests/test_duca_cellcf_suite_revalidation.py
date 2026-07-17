@@ -21,9 +21,56 @@ TREE_BINDING = {
     "trained_opentad_tree_oid": "1" * 40,
     "evidence_opentad_tree_oid": "1" * 40,
     "trained_adatad_thumos_config_tree_oid": "2" * 40,
-    "evidence_adatad_thumos_config_tree_oid": "2" * 40,
-    "model_and_config_trees_equal": True,
+    "model_trees_equal": True,
+    "profile_configs_loaded_from_trained_repository": True,
 }
+
+
+def test_inference_binding_allows_evidence_tooling_config_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_tree(_root: Path, commit: str, relative: str) -> str:
+        calls.append((commit, relative))
+        if relative == "opentad":
+            return "1" * 40
+        if relative == "configs/adatad/thumos":
+            return "2" * 40
+        raise AssertionError(relative)
+
+    monkeypatch.setattr(suite, "_git_tree_oid", fake_tree)
+    binding = suite._expected_inference_code_tree_binding(
+        tmp_path,
+        trained_commit="a" * 40,
+        evidence_commit="e" * 40,
+    )
+
+    assert binding == TREE_BINDING
+    assert calls == [
+        ("a" * 40, "opentad"),
+        ("e" * 40, "opentad"),
+        ("a" * 40, "configs/adatad/thumos"),
+    ]
+
+
+def test_inference_binding_still_rejects_model_tree_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_tree(_root: Path, commit: str, relative: str) -> str:
+        if relative == "opentad":
+            return ("1" if commit.startswith("a") else "9") * 40
+        return "2" * 40
+
+    monkeypatch.setattr(suite, "_git_tree_oid", fake_tree)
+    with pytest.raises(ValueError, match="model tree"):
+        suite._expected_inference_code_tree_binding(
+            tmp_path,
+            trained_commit="a" * 40,
+            evidence_commit="e" * 40,
+        )
 
 
 def _sha256(path: Path) -> str:
@@ -365,14 +412,10 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
     evidence_repo_root = tmp_path / "evidence_repo"
     cellcf_config = repo_root / suite.VARIANTS["cellcf"]
     bare_config = repo_root / suite.BARE_COST_CONFIG
-    evidence_cellcf_config = evidence_repo_root / suite.VARIANTS["cellcf"]
-    evidence_bare_config = evidence_repo_root / suite.BARE_COST_CONFIG
     cellcf_config.parent.mkdir(parents=True, exist_ok=True)
-    evidence_cellcf_config.parent.mkdir(parents=True, exist_ok=True)
+    evidence_repo_root.mkdir(parents=True, exist_ok=True)
     cellcf_config.write_text("model = {'selector': True}\n", encoding="utf-8")
     bare_config.write_text("model = {'selector': False}\n", encoding="utf-8")
-    evidence_cellcf_config.write_bytes(cellcf_config.read_bytes())
-    evidence_bare_config.write_bytes(bare_config.read_bytes())
     checkpoint = tmp_path / "epoch_131.pth"
     checkpoint.write_bytes(b"terminal-cellcf-checkpoint")
     checkpoint_sha256 = _sha256(checkpoint)
@@ -445,8 +488,16 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         cellcf_metadata = {
             **common,
             "method": "cellcf-fixed384",
-            "config_path": str(evidence_cellcf_config.resolve()),
-            "profile_config_sha256": _sha256(evidence_cellcf_config),
+            "config_path": str(cellcf_config.resolve()),
+            "profile_config_sha256": _sha256(cellcf_config),
+            "profile_config_git_binding": {
+                "trained_repository": str(repo_root.resolve()),
+                "trained_commit": commit,
+                "relative_path": suite.VARIANTS["cellcf"],
+                "git_blob_oid": suite._git_blob_oid(cellcf_config),
+                "sha256": _sha256(cellcf_config),
+                "trained_adatad_thumos_config_tree_oid": "2" * 40,
+            },
             "profile_resolved_config_sha256": cost_binding[
                 "resolved_config_sha256"
             ],
@@ -463,8 +514,16 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         bare_metadata = {
             **common,
             "method": "bare-uniform384",
-            "config_path": str(evidence_bare_config.resolve()),
-            "profile_config_sha256": _sha256(evidence_bare_config),
+            "config_path": str(bare_config.resolve()),
+            "profile_config_sha256": _sha256(bare_config),
+            "profile_config_git_binding": {
+                "trained_repository": str(repo_root.resolve()),
+                "trained_commit": commit,
+                "relative_path": suite.BARE_COST_CONFIG,
+                "git_blob_oid": suite._git_blob_oid(bare_config),
+                "sha256": _sha256(bare_config),
+                "trained_adatad_thumos_config_tree_oid": "2" * 40,
+            },
             "profile_resolved_config_sha256": "e" * 64,
             "frontend_variant": "bare_exact_uniform_lower_bound",
             "checkpoint_dropped_prefixes": ["frame_selector."],
@@ -659,16 +718,24 @@ def test_cost_evidence_rejects_wrong_producer_commit(
         )
 
 
-def test_cost_evidence_rejects_profile_config_outside_evidence_repo(
+def test_cost_evidence_rejects_profile_config_outside_trained_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     case = _cost_case(tmp_path)
-    profile_path = case["cellcf_profiles"][0]
-    profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    profile["config_path"] = str(
-        (case["repo_root"] / suite.VARIANTS["cellcf"]).resolve()
-    )
-    _write_json(profile_path, profile)
+    outside_root = tmp_path / "outside-trained-repo"
+    outside = outside_root / suite.VARIANTS["cellcf"]
+    outside.parent.mkdir(parents=True)
+    trained_config = case["repo_root"] / suite.VARIANTS["cellcf"]
+    outside.write_bytes(trained_config.read_bytes())
+    for profile_path in case["cellcf_profiles"]:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile["config_path"] = str(outside.resolve())
+        profile["profile_config_git_binding"] = {
+            **profile["profile_config_git_binding"],
+            "trained_repository": str(outside_root.resolve()),
+            "git_blob_oid": suite._git_blob_oid(outside),
+        }
+        _write_json(profile_path, profile)
     cost_payload = summarize(
         [str(path) for path in case["cellcf_profiles"]],
         [str(path) for path in case["bare_profiles"]],
@@ -687,7 +754,7 @@ def test_cost_evidence_rejects_profile_config_outside_evidence_repo(
         lambda *_args, **_kwargs: TREE_BINDING,
     )
 
-    with pytest.raises(ValueError, match="escaped the evidence repository"):
+    with pytest.raises(ValueError, match="escaped the trained repository"):
         suite.validate_cost_evidence(
             case["cost"],
             repo_root=case["repo_root"],
@@ -701,13 +768,11 @@ def test_cost_evidence_rejects_profile_config_outside_evidence_repo(
         )
 
 
-def test_cost_evidence_rejects_symlinked_evidence_config(
+def test_cost_evidence_rejects_symlinked_trained_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     case = _cost_case(tmp_path)
-    config = (
-        case["evidence_repo_root"] / suite.VARIANTS["cellcf"]
-    )
+    config = case["repo_root"] / suite.VARIANTS["cellcf"]
     outside = tmp_path / "outside-cellcf-config.py"
     outside.write_bytes(config.read_bytes())
     config.unlink()

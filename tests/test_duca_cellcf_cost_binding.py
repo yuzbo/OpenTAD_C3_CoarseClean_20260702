@@ -27,9 +27,10 @@ TREE_BINDING = {
     "trained_opentad_tree_oid": "1" * 40,
     "evidence_opentad_tree_oid": "1" * 40,
     "trained_adatad_thumos_config_tree_oid": "2" * 40,
-    "evidence_adatad_thumos_config_tree_oid": "2" * 40,
-    "model_and_config_trees_equal": True,
+    "model_trees_equal": True,
+    "profile_configs_loaded_from_trained_repository": True,
 }
+TRAINED_PROFILE_ROOT = (Path.cwd() / "trained-profile-repo").resolve()
 EXPOSURE_PROTOCOL = protocol_for_name("exposure132")
 CELLCF_TERMINAL_EPOCH = EXPOSURE_PROTOCOL.terminal_epoch
 CELLCF_TERMINAL_STATE_KEY = EXPOSURE_PROTOCOL.terminal_state_key
@@ -91,6 +92,16 @@ def _profile(
     repeat: int,
 ) -> dict:
     is_cellcf = method == "cellcf-fixed384"
+    config_relative_path = (
+        "configs/adatad/thumos/"
+        "duca_cellcf_fixed384_official_adatad_backend_full_train.py"
+        if is_cellcf
+        else "configs/adatad/thumos/"
+        "duca_cellcf_bare_exact_uniform_fixed384_cost.py"
+    )
+    profile_config_sha256 = (
+        binding["config_sha256"] if is_cellcf else "f" * 64
+    )
     selector_ms = 3.0 if is_cellcf else 0.0
     probe_ms = 1.0 if is_cellcf else 0.0
     metadata = {
@@ -103,6 +114,17 @@ def _profile(
         "trained_commit": binding["git_commit"],
         "evidence_git_commit": EVIDENCE_COMMIT,
         "inference_code_tree_binding": TREE_BINDING,
+        "profile_config_git_binding": {
+            "trained_repository": str(TRAINED_PROFILE_ROOT),
+            "trained_commit": binding["git_commit"],
+            "relative_path": config_relative_path,
+            "git_blob_oid": ("3" if is_cellcf else "4") * 40,
+            "sha256": profile_config_sha256,
+            "trained_adatad_thumos_config_tree_oid": "2" * 40,
+        },
+        "config_path": str(
+            (TRAINED_PROFILE_ROOT / config_relative_path).resolve()
+        ),
         "profile_session_id": "slurm-test",
         "profile_pair_id": f"repeat-{repeat}",
         "profile_repeat_index": repeat,
@@ -131,7 +153,7 @@ def _profile(
         "checkpoint_state_key": binding["checkpoint_state_key"],
         "checkpoint_dropped_prefixes": [] if is_cellcf else ["frame_selector."],
         "checkpoint_dropped_key_count": 0 if is_cellcf else 17,
-        "profile_config_sha256": binding["config_sha256"] if is_cellcf else "f" * 64,
+        "profile_config_sha256": profile_config_sha256,
         "profile_resolved_config_sha256": (
             binding["resolved_config_sha256"] if is_cellcf else "1" * 64
         ),
@@ -409,7 +431,7 @@ def test_summary_rejects_inference_model_tree_drift(
         "evidence_opentad_tree_oid"
     ] = "3" * 40
     payload["inference_code_tree_binding"][
-        "model_and_config_trees_equal"
+        "model_trees_equal"
     ] = False
     _write_json(target, payload)
 
@@ -468,6 +490,10 @@ def test_formal_profile_cli_and_launcher_require_post_run_path_and_sha(tmp_path:
     assert "DUCA_CELLCF_POST_RUN_EVIDENCE_JSON" in launcher
     assert "DUCA_CELLCF_POST_RUN_EVIDENCE_SHA256" in launcher
     assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in launcher
+    assert "DUCA_CELLCF_TRAINED_REPO_ROOT" in launcher
+    assert 'CELL_CONFIG="${TRAINED_REPO_ROOT}/configs/' in launcher
+    assert 'BARE_CONFIG="${TRAINED_REPO_ROOT}/configs/' in launcher
+    assert 'git -C "${TRAINED_REPO_ROOT}" rev-parse HEAD' in launcher
     assert "git status --porcelain" in launcher
     assert launcher.count('--evidence-commit "${EVIDENCE_COMMIT}"') == 2
     assert launcher.count('--config-commit "${EXPECTED_COMMIT}"') == 2
