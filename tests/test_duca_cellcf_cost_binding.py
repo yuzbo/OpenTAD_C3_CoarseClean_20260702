@@ -22,6 +22,14 @@ from tools.bata.summarize_duca_cellcf_cost import summarize
 
 
 COMMIT = "a" * 40
+EVIDENCE_COMMIT = "e" * 40
+TREE_BINDING = {
+    "trained_opentad_tree_oid": "1" * 40,
+    "evidence_opentad_tree_oid": "1" * 40,
+    "trained_adatad_thumos_config_tree_oid": "2" * 40,
+    "evidence_adatad_thumos_config_tree_oid": "2" * 40,
+    "model_and_config_trees_equal": True,
+}
 EXPOSURE_PROTOCOL = protocol_for_name("exposure132")
 CELLCF_TERMINAL_EPOCH = EXPOSURE_PROTOCOL.terminal_epoch
 CELLCF_TERMINAL_STATE_KEY = EXPOSURE_PROTOCOL.terminal_state_key
@@ -92,6 +100,9 @@ def _profile(
         "host_fingerprint": "same-host",
         "software_fingerprint": "same-software",
         "config_commit": binding["git_commit"],
+        "trained_commit": binding["git_commit"],
+        "evidence_git_commit": EVIDENCE_COMMIT,
+        "inference_code_tree_binding": TREE_BINDING,
         "profile_session_id": "slurm-test",
         "profile_pair_id": f"repeat-{repeat}",
         "profile_repeat_index": repeat,
@@ -290,6 +301,9 @@ def test_summary_emits_complete_pass_frontend_only_cost_evidence(tmp_path: Path)
     assert payload["status"] == "complete"
     assert payload["pass"] is True
     assert payload["variant"] == "cellcf"
+    assert payload["trained_git_commit"] == COMMIT
+    assert payload["cost_producer_evidence_commit"] == EVIDENCE_COMMIT
+    assert payload["inference_code_tree_binding"] == TREE_BINDING
     assert payload["checkpoint_epoch"] == 131
     assert payload["checkpoint_state_key"] == "state_dict_ema"
     assert payload["paired_repeat_order_required"] is True
@@ -375,6 +389,33 @@ def test_summary_rejects_copied_raw_samples_with_new_repeat_metadata(
     _write_json(Path(cellcf_paths[1]), copied)
 
     with pytest.raises(ValueError, match="raw sample multiset"):
+        summarize(
+            cellcf_paths,
+            bare_paths,
+            post_run_evidence_path=evidence,
+            post_run_evidence_sha256=evidence_sha,
+        )
+
+
+def test_summary_rejects_inference_model_tree_drift(
+    tmp_path: Path,
+) -> None:
+    evidence, evidence_sha, _ = _post_run_evidence(tmp_path)
+    binding = load_cellcf_cost_binding(evidence, evidence_sha)
+    cellcf_paths, bare_paths = _profile_pair(tmp_path, binding)
+    target = Path(cellcf_paths[1])
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    payload["inference_code_tree_binding"][
+        "evidence_opentad_tree_oid"
+    ] = "3" * 40
+    payload["inference_code_tree_binding"][
+        "model_and_config_trees_equal"
+    ] = False
+    _write_json(target, payload)
+
+    with pytest.raises(
+        ValueError, match="invalid inference-code tree binding"
+    ):
         summarize(
             cellcf_paths,
             bare_paths,

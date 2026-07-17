@@ -23,7 +23,7 @@ from tools.bata.profile_duca_full_stack_cost import (
 )
 
 
-SCHEMA = "duca_cellcf_cost_pair_v1"
+SCHEMA = "duca_cellcf_cost_pair_v2"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -132,6 +132,30 @@ def _validate_group(
     for report in reports:
         _require(report.get("method") == method, f"unexpected method in {report['_path']}")
         _require(
+            report.get("trained_commit") == binding["git_commit"],
+            f"{method} profile does not bind the trained commit",
+        )
+        evidence_commit = str(report.get("evidence_git_commit", ""))
+        _require(
+            re.fullmatch(r"[0-9a-f]{40}", evidence_commit) is not None
+            and evidence_commit != binding["git_commit"],
+            f"{method} profile has an invalid evidence commit",
+        )
+        code_tree_binding = report.get("inference_code_tree_binding")
+        _require(
+            isinstance(code_tree_binding, Mapping)
+            and code_tree_binding.get("model_and_config_trees_equal") is True
+            and code_tree_binding.get("trained_opentad_tree_oid")
+            == code_tree_binding.get("evidence_opentad_tree_oid")
+            and code_tree_binding.get(
+                "trained_adatad_thumos_config_tree_oid"
+            )
+            == code_tree_binding.get(
+                "evidence_adatad_thumos_config_tree_oid"
+            ),
+            f"{method} profile has an invalid inference-code tree binding",
+        )
+        _require(
             isinstance(report.get("profile_repeat_index"), int)
             and not isinstance(report.get("profile_repeat_index"), bool)
             and int(report["profile_repeat_index"]) > 0,
@@ -167,6 +191,9 @@ def _validate_group(
             "checkpoint_epoch",
             "checkpoint_state_key",
             "cellcf_cost_binding_sha256",
+            "trained_commit",
+            "evidence_git_commit",
+            "inference_code_tree_binding",
         ):
             _require(report.get(key) == reference.get(key), f"{method} repeat drifted on {key}")
 
@@ -214,6 +241,16 @@ def summarize(
     _require(
         len(sessions) == 1 and bool(next(iter(sessions)).strip()),
         "cost repeats span multiple or empty profiling sessions",
+    )
+    evidence_commits = {
+        str(report.get("evidence_git_commit", ""))
+        for report in [*cellcf, *bare]
+    }
+    _require(
+        len(evidence_commits) == 1
+        and re.fullmatch(r"[0-9a-f]{40}", next(iter(evidence_commits))) is not None
+        and next(iter(evidence_commits)) != binding["git_commit"],
+        "cost repeats span multiple or invalid evidence commits",
     )
     order_receipt = []
     for repeat, (cellcf_report, bare_report) in enumerate(
@@ -282,6 +319,9 @@ def summarize(
         "checkpoint_epoch",
         "checkpoint_state_key",
         "cellcf_cost_binding_sha256",
+        "trained_commit",
+        "evidence_git_commit",
+        "inference_code_tree_binding",
     ):
         _require(cellcf[0].get(key) == bare[0].get(key), f"paired profiles differ on {key}")
     _require(all(_stage(report, "frame_selector_total_ms") > 0.0 for report in cellcf), "CellCF selector was not measured")
@@ -305,6 +345,11 @@ def summarize(
         "task": "offline_temporal_action_detection",
         "git_commit": binding["git_commit"],
         "config_commit": binding["git_commit"],
+        "trained_git_commit": binding["git_commit"],
+        "cost_producer_evidence_commit": next(iter(evidence_commits)),
+        "inference_code_tree_binding": cellcf[0][
+            "inference_code_tree_binding"
+        ],
         "seed": binding["seed"],
         "variant": binding["variant"],
         "training_profile": binding["training_profile"],

@@ -22,6 +22,8 @@ TRAINED_REPO_ROOT="${DUCA_CELLCF_TRAINED_REPO_ROOT:-}"
 TRAINED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 EVIDENCE_COMMIT="$(git rev-parse HEAD)"
 EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
+RECOVERY_MANIFEST="${DUCA_CELLCF_COST_RECOVERY_MANIFEST:-}"
+RECOVERY_MANIFEST_SHA256="${DUCA_CELLCF_COST_RECOVERY_MANIFEST_SHA256:-}"
 AGGREGATE="${RUN_ROOT}/aggregate_suite_evidence.json"
 FINAL_SUITE="${RUN_ROOT}/final_suite_evidence.json"
 LEDGER="${RUN_ROOT}/jobs.submitted.tsv"
@@ -64,6 +66,11 @@ RUN_ROOT="$(
   || fail "trained and evidence commits must be distinct"
 [[ "${EXPECTED_EVIDENCE_COMMIT}" == "${EVIDENCE_COMMIT}" ]] \
   || fail "checked-out evidence commit differs from the requested commit"
+[[ "${RECOVERY_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "DUCA_CELLCF_COST_RECOVERY_MANIFEST_SHA256 is required"
+[[ -f "${RECOVERY_MANIFEST}" ]] || fail "cost recovery manifest is missing"
+[[ "$(sha256_file "${RECOVERY_MANIFEST}")" == "${RECOVERY_MANIFEST_SHA256}" ]] \
+  || fail "cost recovery manifest hash mismatch"
 [[ "$(git -C "${TRAINED_REPO_ROOT}" rev-parse HEAD)" == "${TRAINED_COMMIT}" ]] \
   || fail "trained repository commit drift"
 [[ -z "$(git -C "${TRAINED_REPO_ROOT}" status --porcelain --untracked-files=normal)" ]] \
@@ -97,7 +104,9 @@ done
 readarray -t binding < <(
   env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
     "${PYTHON}" - "${RUN_ROOT}" "${AGGREGATE}" "${FINAL_SUITE}" \
-      "${LEDGER}" "${TRAINED_COMMIT}" "${TRAINED_REPO_ROOT}" <<'PY'
+      "${LEDGER}" "${TRAINED_COMMIT}" "${TRAINED_REPO_ROOT}" \
+      "${EVIDENCE_REPO_ROOT}" "${EVIDENCE_COMMIT}" \
+      "${RECOVERY_MANIFEST}" "${RECOVERY_MANIFEST_SHA256}" <<'PY'
 import csv
 import hashlib
 import json
@@ -119,6 +128,10 @@ final_path = Path(sys.argv[3]).resolve()
 ledger_path = Path(sys.argv[4]).resolve()
 commit = sys.argv[5]
 trained_repo_root = Path(sys.argv[6]).resolve()
+evidence_repo_root = Path(sys.argv[7]).resolve()
+evidence_commit = sys.argv[8]
+recovery_manifest_path = Path(sys.argv[9]).resolve()
+recovery_manifest_sha = sys.argv[10]
 
 for path in (aggregate_path, final_path, ledger_path):
     if run_root not in path.parents:
@@ -185,6 +198,8 @@ if not isinstance(cost_record, dict) or cost_record.get("validated") is not True
 os.environ["DUCA_CELLCF_TRAINING_PROFILE"] = "exposure132"
 regenerated_final = revalidate_trained_suite_exact(
     repo_root=trained_repo_root,
+    evidence_repo_root=evidence_repo_root,
+    expected_evidence_commit=evidence_commit,
     seed=aggregate_binding["seed"],
     expected_commit=commit,
     require_clean=True,
@@ -213,33 +228,79 @@ clusters = {row.get("cluster") for row in rows}
 if len(clusters) != 1 or not next(iter(clusters)):
     raise SystemExit("formal jobs do not share one target cluster")
 cluster = next(iter(clusters))
-completion = next(row for row in rows if row.get("job_key") == "completion")
+formal_by_key = {str(row["job_key"]): row for row in rows}
+completion = formal_by_key["completion"]
 job_id = str(completion.get("job_id") or "")
-job_name = str(completion.get("job_name") or "")
-if not job_id.isdigit() or not job_name:
-    raise SystemExit("completion job identity is incomplete")
-raw = subprocess.check_output(
-    [
-        "sacct",
-        "-X",
-        "-M",
-        cluster,
-        "-j",
-        job_id,
-        "-n",
-        "-P",
-        "-o",
-        "JobIDRaw,JobName%128,Cluster,State,ExitCode",
-    ],
-    text=True,
+if not job_id.isdigit() or not completion.get("job_name"):
+    raise SystemExit("original completion job identity is incomplete")
+if (
+    hashlib.sha256(recovery_manifest_path.read_bytes()).hexdigest()
+    != recovery_manifest_sha
+):
+    raise SystemExit("cost recovery manifest hash drift")
+recovery = json.loads(
+    recovery_manifest_path.read_text(encoding="utf-8")
 )
-matches = []
-for line in raw.splitlines():
-    fields = line.split("|")
-    if len(fields) >= 5 and fields[0] == job_id:
-        matches.append(fields[:5])
-if matches != [[job_id, job_name, cluster, "COMPLETED", "0:0"]]:
-    raise SystemExit("formal completion job is not uniquely COMPLETED/0:0")
+if (
+    recovery.get("schema")
+    != "duca_cellcf_cost_recovery_submission_v1"
+    or recovery.get("ok") is not True
+    or recovery.get("status") != "SUBMITTED_HELD_VERIFIED"
+    or recovery.get("trained_git_commit") != commit
+    or recovery.get("cost_producer_evidence_commit")
+    != evidence_commit
+    or recovery.get("final_suite_evidence_path")
+    != str(final_path)
+):
+    raise SystemExit("cost recovery manifest identity/status mismatch")
+recovery_jobs = recovery.get("jobs")
+if (
+    not isinstance(recovery_jobs, list)
+    or [record.get("job_key") for record in recovery_jobs]
+    != ["cost", "completion"]
+):
+    raise SystemExit(
+        "cost recovery manifest does not bind two ordered jobs"
+    )
+
+def query(row):
+    current_id = str(row.get("job_id") or "")
+    current_name = str(row.get("job_name") or "")
+    raw = subprocess.check_output(
+        [
+            "sacct", "-X", "-M", cluster, "-j", current_id,
+            "-n", "-P", "-o",
+            "JobIDRaw,JobName%128,Cluster,State,ExitCode",
+        ],
+        text=True,
+    )
+    matches = []
+    for line in raw.splitlines():
+        fields = line.split("|")
+        if len(fields) >= 5 and fields[0] == current_id:
+            matches.append(fields[:5])
+    if (
+        len(matches) != 1
+        or matches[0][1] != current_name
+        or matches[0][2] != cluster
+    ):
+        raise SystemExit(
+            f"scheduler identity mismatch for {current_name}"
+        )
+    return matches[0][3], matches[0][4]
+
+old_cost_state, old_cost_exit = query(formal_by_key["cost"])
+old_completion_state, _old_completion_exit = query(completion)
+if old_cost_state != "FAILED" or old_cost_exit != "1:0":
+    raise SystemExit("original cost job is not FAILED/1:0")
+if not old_completion_state.startswith("CANCELLED"):
+    raise SystemExit("original completion job is not cancelled")
+for record in recovery_jobs:
+    state, exit_code = query(record)
+    if state != "COMPLETED" or exit_code != "0:0":
+        raise SystemExit(
+            f"recovery {record.get('job_key')} is not COMPLETED/0:0"
+        )
 
 print(aggregate["seed"])
 print(cluster)
@@ -447,6 +508,8 @@ exec '${PYTHON}' -m tools.bata.finalize_duca_cellcf_postrun_evidence \
   --aggregate '${AGGREGATE}' --aggregate-sha256 '${AGGREGATE_SHA256}' \
   --final-suite '${FINAL_SUITE}' \
   --final-suite-sha256 '${FINAL_SUITE_SHA256}' \
+  --cost-recovery-manifest '${RECOVERY_MANIFEST}' \
+  --cost-recovery-manifest-sha256 '${RECOVERY_MANIFEST_SHA256}' \
   --candidate --output '${CONTROL_ROOT}/postrun_evidence_candidate.json'
 EOF
 } > "${CONTROL_ROOT}/jobs/completion.sbatch"
@@ -461,7 +524,8 @@ INTENT="${CONTROL_ROOT}/submission_intent.json"
   "${TRAINED_REPO_ROOT}" "${TRAINED_COMMIT}" "${EVIDENCE_REPO_ROOT}" \
   "${EVIDENCE_COMMIT}" "${TARGET_CLUSTER}" "${AGGREGATE}" \
   "${AGGREGATE_SHA256}" "${FINAL_SUITE}" "${FINAL_SUITE_SHA256}" \
-  "${POSTRUN_OUTPUT_ROOT}" <<'PY'
+  "${POSTRUN_OUTPUT_ROOT}" "${RECOVERY_MANIFEST}" \
+  "${RECOVERY_MANIFEST_SHA256}" <<'PY'
 import hashlib
 import json
 import os
@@ -483,6 +547,8 @@ from pathlib import Path
     final_value,
     final_sha,
     postrun_output_root_value,
+    recovery_manifest_value,
+    recovery_manifest_sha,
 ) = sys.argv[1:]
 output = Path(output_value).resolve()
 control_root = Path(control_root_value).resolve()
@@ -533,6 +599,10 @@ payload = {
     "final_suite_evidence_path": str(Path(final_value).resolve()),
     "final_suite_evidence_sha256": final_sha,
     "postrun_output_root": str(Path(postrun_output_root_value).resolve()),
+    "cost_recovery_manifest_path": str(
+        Path(recovery_manifest_value).resolve()
+    ),
+    "cost_recovery_manifest_sha256": recovery_manifest_sha,
     "jobs": jobs,
 }
 payload["artifact_sha256"] = hashlib.sha256(
@@ -920,7 +990,8 @@ chmod 0400 "${LEDGER_OUT}"
   "${EVIDENCE_REPO_ROOT}" "${EVIDENCE_COMMIT}" "${TARGET_CLUSTER}" \
   "${AGGREGATE}" "${AGGREGATE_SHA256}" "${FINAL_SUITE}" \
   "${FINAL_SUITE_SHA256}" "${FORMAL_COMPLETION_JOB_ID}" \
-  "${POSTRUN_OUTPUT_ROOT}" "${INTENT}" "${INTENT_SHA256}" <<'PY'
+  "${POSTRUN_OUTPUT_ROOT}" "${INTENT}" "${INTENT_SHA256}" \
+  "${RECOVERY_MANIFEST}" "${RECOVERY_MANIFEST_SHA256}" <<'PY'
 import csv
 import hashlib
 import json
@@ -946,6 +1017,8 @@ from pathlib import Path
     postrun_output_root_value,
     intent_value,
     intent_sha,
+    recovery_manifest_value,
+    recovery_manifest_sha,
 ) = sys.argv[1:]
 output = Path(output_value).resolve()
 ledger = Path(ledger_value).resolve()
@@ -979,6 +1052,12 @@ payload = {
     "submission_intent_path": str(Path(intent_value).resolve()),
     "submission_intent_sha256": intent_sha,
     "formal_completion_job_id": int(formal_completion_job_id),
+    "cost_recovery_manifest_path": str(
+        Path(recovery_manifest_value).resolve()
+    ),
+    "cost_recovery_manifest_sha256": recovery_manifest_sha,
+    "completion_mode": "cost_recovery",
+    "original_formal_dag_complete": False,
     "jobs_ledger_path": str(ledger),
     "jobs_ledger_sha256": hashlib.sha256(ledger.read_bytes()).hexdigest(),
     "jobs": jobs,

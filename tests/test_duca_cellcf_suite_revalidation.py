@@ -17,6 +17,15 @@ from tools.bata.profile_duca_full_stack_cost import load_cellcf_cost_binding
 from tools.bata.summarize_duca_cellcf_cost import summarize
 
 
+TREE_BINDING = {
+    "trained_opentad_tree_oid": "1" * 40,
+    "evidence_opentad_tree_oid": "1" * 40,
+    "trained_adatad_thumos_config_tree_oid": "2" * 40,
+    "evidence_adatad_thumos_config_tree_oid": "2" * 40,
+    "model_and_config_trees_equal": True,
+}
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -353,15 +362,22 @@ def test_post_run_rejects_rehashed_summary_scalar_forgery(
 
 def _cost_case(tmp_path: Path) -> dict[str, Any]:
     repo_root = tmp_path / "repo"
+    evidence_repo_root = tmp_path / "evidence_repo"
     cellcf_config = repo_root / suite.VARIANTS["cellcf"]
     bare_config = repo_root / suite.BARE_COST_CONFIG
+    evidence_cellcf_config = evidence_repo_root / suite.VARIANTS["cellcf"]
+    evidence_bare_config = evidence_repo_root / suite.BARE_COST_CONFIG
     cellcf_config.parent.mkdir(parents=True, exist_ok=True)
+    evidence_cellcf_config.parent.mkdir(parents=True, exist_ok=True)
     cellcf_config.write_text("model = {'selector': True}\n", encoding="utf-8")
     bare_config.write_text("model = {'selector': False}\n", encoding="utf-8")
+    evidence_cellcf_config.write_bytes(cellcf_config.read_bytes())
+    evidence_bare_config.write_bytes(bare_config.read_bytes())
     checkpoint = tmp_path / "epoch_131.pth"
     checkpoint.write_bytes(b"terminal-cellcf-checkpoint")
     checkpoint_sha256 = _sha256(checkpoint)
     commit = "a" * 40
+    evidence_commit = "e" * 40
     post_run_payload = {
         "schema": suite.POST_RUN_SCHEMA,
         "ok": True,
@@ -394,6 +410,9 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         "host_fingerprint": "host",
         "software_fingerprint": "software",
         "config_commit": commit,
+        "trained_commit": commit,
+        "evidence_git_commit": evidence_commit,
+        "inference_code_tree_binding": TREE_BINDING,
         "tracked_tree_clean": True,
         "dataset_fingerprint": "profile-dataset",
         "source_dataset_fingerprint": "dataset",
@@ -426,8 +445,8 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         cellcf_metadata = {
             **common,
             "method": "cellcf-fixed384",
-            "config_path": str(cellcf_config.resolve()),
-            "profile_config_sha256": _sha256(cellcf_config),
+            "config_path": str(evidence_cellcf_config.resolve()),
+            "profile_config_sha256": _sha256(evidence_cellcf_config),
             "profile_resolved_config_sha256": cost_binding[
                 "resolved_config_sha256"
             ],
@@ -444,8 +463,8 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         bare_metadata = {
             **common,
             "method": "bare-uniform384",
-            "config_path": str(bare_config.resolve()),
-            "profile_config_sha256": _sha256(bare_config),
+            "config_path": str(evidence_bare_config.resolve()),
+            "profile_config_sha256": _sha256(evidence_bare_config),
             "profile_resolved_config_sha256": "e" * 64,
             "frontend_variant": "bare_exact_uniform_lower_bound",
             "checkpoint_dropped_prefixes": ["frame_selector."],
@@ -500,6 +519,8 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
     _write_json(cost_path, cost_payload)
     return {
         "repo_root": repo_root,
+        "evidence_repo_root": evidence_repo_root,
+        "evidence_commit": evidence_commit,
         "checkpoint": checkpoint,
         "checkpoint_sha256": checkpoint_sha256,
         "commit": commit,
@@ -507,16 +528,31 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         "post_run_sha256": post_run_sha256,
         "cost": cost_path,
         "cellcf_profiles": [Path(path) for path in cellcf_paths],
+        "bare_profiles": [Path(path) for path in bare_paths],
     }
 
 
-def test_cost_evidence_reopens_profiles_and_checkpoint(tmp_path: Path) -> None:
+def test_cost_evidence_reopens_profiles_and_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     case = _cost_case(tmp_path)
+    monkeypatch.setattr(
+        suite,
+        "_validate_exact_repository",
+        lambda root, **_kwargs: Path(root).resolve(),
+    )
+    monkeypatch.setattr(
+        suite,
+        "_expected_inference_code_tree_binding",
+        lambda *_args, **_kwargs: TREE_BINDING,
+    )
 
     result = suite.validate_cost_evidence(
         case["cost"],
         repo_root=case["repo_root"],
         expected_commit=case["commit"],
+        evidence_repo_root=case["evidence_repo_root"],
+        expected_evidence_commit=case["evidence_commit"],
         expected_checkpoint_path=case["checkpoint"],
         expected_checkpoint_sha256=case["checkpoint_sha256"],
         expected_post_run_evidence_path=case["post_run"],
@@ -526,10 +562,23 @@ def test_cost_evidence_reopens_profiles_and_checkpoint(tmp_path: Path) -> None:
     assert result["validated"] is True
     assert len(result["cellcf_profiles"]) == 3
     assert len(result["bare_uniform_profiles"]) == 3
+    assert result["cost_producer_evidence_commit"] == case["evidence_commit"]
 
 
-def test_cost_evidence_rejects_profile_tamper(tmp_path: Path) -> None:
+def test_cost_evidence_rejects_profile_tamper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     case = _cost_case(tmp_path)
+    monkeypatch.setattr(
+        suite,
+        "_validate_exact_repository",
+        lambda root, **_kwargs: Path(root).resolve(),
+    )
+    monkeypatch.setattr(
+        suite,
+        "_expected_inference_code_tree_binding",
+        lambda *_args, **_kwargs: TREE_BINDING,
+    )
     profile_path = case["cellcf_profiles"][0]
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
     profile["stages"]["end_to_end_serial_ms"]["p50"] += 5.0
@@ -540,6 +589,8 @@ def test_cost_evidence_rejects_profile_tamper(tmp_path: Path) -> None:
             case["cost"],
             repo_root=case["repo_root"],
             expected_commit=case["commit"],
+            evidence_repo_root=case["evidence_repo_root"],
+            expected_evidence_commit=case["evidence_commit"],
             expected_checkpoint_path=case["checkpoint"],
             expected_checkpoint_sha256=case["checkpoint_sha256"],
             expected_post_run_evidence_path=case["post_run"],
@@ -547,8 +598,20 @@ def test_cost_evidence_rejects_profile_tamper(tmp_path: Path) -> None:
         )
 
 
-def test_cost_evidence_rejects_checkpoint_tamper(tmp_path: Path) -> None:
+def test_cost_evidence_rejects_checkpoint_tamper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     case = _cost_case(tmp_path)
+    monkeypatch.setattr(
+        suite,
+        "_validate_exact_repository",
+        lambda root, **_kwargs: Path(root).resolve(),
+    )
+    monkeypatch.setattr(
+        suite,
+        "_expected_inference_code_tree_binding",
+        lambda *_args, **_kwargs: TREE_BINDING,
+    )
     case["checkpoint"].write_bytes(b"changed-checkpoint")
 
     with pytest.raises(ValueError, match="cost checkpoint hash mismatch"):
@@ -556,6 +619,120 @@ def test_cost_evidence_rejects_checkpoint_tamper(tmp_path: Path) -> None:
             case["cost"],
             repo_root=case["repo_root"],
             expected_commit=case["commit"],
+            evidence_repo_root=case["evidence_repo_root"],
+            expected_evidence_commit=case["evidence_commit"],
+            expected_checkpoint_path=case["checkpoint"],
+            expected_checkpoint_sha256=case["checkpoint_sha256"],
+            expected_post_run_evidence_path=case["post_run"],
+            expected_post_run_evidence_sha256=case["post_run_sha256"],
+        )
+
+
+def test_cost_evidence_rejects_wrong_producer_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _cost_case(tmp_path)
+    monkeypatch.setattr(
+        suite,
+        "_validate_exact_repository",
+        lambda root, **_kwargs: Path(root).resolve(),
+    )
+    monkeypatch.setattr(
+        suite,
+        "_expected_inference_code_tree_binding",
+        lambda *_args, **_kwargs: TREE_BINDING,
+    )
+
+    with pytest.raises(
+        ValueError, match="cost producer evidence commit mismatch"
+    ):
+        suite.validate_cost_evidence(
+            case["cost"],
+            repo_root=case["repo_root"],
+            expected_commit=case["commit"],
+            evidence_repo_root=case["evidence_repo_root"],
+            expected_evidence_commit="f" * 40,
+            expected_checkpoint_path=case["checkpoint"],
+            expected_checkpoint_sha256=case["checkpoint_sha256"],
+            expected_post_run_evidence_path=case["post_run"],
+            expected_post_run_evidence_sha256=case["post_run_sha256"],
+        )
+
+
+def test_cost_evidence_rejects_profile_config_outside_evidence_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _cost_case(tmp_path)
+    profile_path = case["cellcf_profiles"][0]
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    profile["config_path"] = str(
+        (case["repo_root"] / suite.VARIANTS["cellcf"]).resolve()
+    )
+    _write_json(profile_path, profile)
+    cost_payload = summarize(
+        [str(path) for path in case["cellcf_profiles"]],
+        [str(path) for path in case["bare_profiles"]],
+        post_run_evidence_path=case["post_run"],
+        post_run_evidence_sha256=case["post_run_sha256"],
+    )
+    _write_json(case["cost"], cost_payload)
+    monkeypatch.setattr(
+        suite,
+        "_validate_exact_repository",
+        lambda root, **_kwargs: Path(root).resolve(),
+    )
+    monkeypatch.setattr(
+        suite,
+        "_expected_inference_code_tree_binding",
+        lambda *_args, **_kwargs: TREE_BINDING,
+    )
+
+    with pytest.raises(ValueError, match="escaped the evidence repository"):
+        suite.validate_cost_evidence(
+            case["cost"],
+            repo_root=case["repo_root"],
+            expected_commit=case["commit"],
+            evidence_repo_root=case["evidence_repo_root"],
+            expected_evidence_commit=case["evidence_commit"],
+            expected_checkpoint_path=case["checkpoint"],
+            expected_checkpoint_sha256=case["checkpoint_sha256"],
+            expected_post_run_evidence_path=case["post_run"],
+            expected_post_run_evidence_sha256=case["post_run_sha256"],
+        )
+
+
+def test_cost_evidence_rejects_symlinked_evidence_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _cost_case(tmp_path)
+    config = (
+        case["evidence_repo_root"] / suite.VARIANTS["cellcf"]
+    )
+    outside = tmp_path / "outside-cellcf-config.py"
+    outside.write_bytes(config.read_bytes())
+    config.unlink()
+    try:
+        config.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symbolic links are unavailable: {exc}")
+    monkeypatch.setattr(
+        suite,
+        "_validate_exact_repository",
+        lambda root, **_kwargs: Path(root).resolve(),
+    )
+    monkeypatch.setattr(
+        suite,
+        "_expected_inference_code_tree_binding",
+        lambda *_args, **_kwargs: TREE_BINDING,
+    )
+
+    with pytest.raises(ValueError, match="symbolic-link component"):
+        suite.validate_cost_evidence(
+            case["cost"],
+            repo_root=case["repo_root"],
+            expected_commit=case["commit"],
+            evidence_repo_root=case["evidence_repo_root"],
+            expected_evidence_commit=case["evidence_commit"],
             expected_checkpoint_path=case["checkpoint"],
             expected_checkpoint_sha256=case["checkpoint_sha256"],
             expected_post_run_evidence_path=case["post_run"],
@@ -601,7 +778,11 @@ def test_suite_required_cost_interface_fails_closed(
     monkeypatch.setattr(
         suite, "_variant_contract", lambda _cfg, variant: {"variant": variant}
     )
-    monkeypatch.setattr(suite, "validate_config", lambda variant, _path: {"variant": variant})
+    monkeypatch.setattr(
+        suite,
+        "validate_config",
+        lambda variant, _path, **_kwargs: {"variant": variant},
+    )
     monkeypatch.setattr(suite, "_reference_data", lambda _cfg: data)
     monkeypatch.setattr(
         suite,

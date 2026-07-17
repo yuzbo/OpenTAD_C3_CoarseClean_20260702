@@ -13,7 +13,9 @@ from tools.bata.duca_cellcf_protocol import protocol_from_workflow
 
 
 ROOT = Path(__file__).resolve().parents[2]
-OFFICIAL_BASE = ROOT / "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
+OFFICIAL_BASE = (
+    "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
+)
 VARIANTS = {
     "uniform": "configs/adatad/thumos/duca_cellcf_exact_uniform_fixed384_official_adatad_backend_full_train.py",
     "transition_beta0": "configs/adatad/thumos/duca_cellcf_transition_beta0_fixed384_official_adatad_backend_full_train.py",
@@ -38,13 +40,28 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def validate_config(variant: str, config_path: str | None = None) -> dict[str, Any]:
+def validate_config(
+    variant: str,
+    config_path: str | None = None,
+    *,
+    repo_root: str | Path | None = None,
+) -> dict[str, Any]:
     if variant not in VARIANTS:
         raise ValueError(f"unknown CellCF variant {variant!r}")
-    path = ROOT / (config_path or VARIANTS[variant])
+    root = Path(repo_root or ROOT).expanduser().resolve()
+    path = (root / (config_path or VARIANTS[variant])).resolve()
+    _require(
+        path != root and root in path.parents,
+        f"CellCF config escaped the repository root: {path}",
+    )
     _require(path.is_file(), f"CellCF config is missing: {path}")
     cfg = Config.fromfile(str(path))
-    official = Config.fromfile(str(OFFICIAL_BASE))
+    official_path = root / OFFICIAL_BASE
+    _require(
+        official_path.is_file(),
+        f"official AdaTAD base config is missing: {official_path}",
+    )
+    official = Config.fromfile(str(official_path))
     selector = cfg.model.frame_selector
     contract = cfg.duca_transition_only_contract
     source = selector.actionness_source_cfg
@@ -162,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", choices=sorted(VARIANTS), required=True)
     parser.add_argument("--config")
+    parser.add_argument("--repo-root")
     parser.add_argument("--output-json")
     args = parser.parse_args(argv)
     output_path = (
@@ -179,7 +197,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(failure, indent=2, sort_keys=True))
         return 1
     try:
-        summary = validate_config(args.variant, args.config)
+        summary = validate_config(
+            args.variant,
+            args.config,
+            repo_root=args.repo_root,
+        )
     except Exception as exc:
         summary = {"ok": False, "variant": args.variant, "error_type": type(exc).__name__, "error": str(exc)}
         code = 1

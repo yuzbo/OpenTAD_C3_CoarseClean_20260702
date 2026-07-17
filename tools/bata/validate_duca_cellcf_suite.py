@@ -79,6 +79,104 @@ def _git(root: Path, *args: str) -> str:
     ).strip()
 
 
+def _validate_exact_repository(
+    root: str | Path,
+    *,
+    expected_commit: str,
+    label: str,
+) -> Path:
+    resolved = Path(root).expanduser().resolve()
+    _require(resolved.is_dir(), f"{label} repository is missing")
+    _require(
+        _git(resolved, "rev-parse", "HEAD") == expected_commit,
+        f"{label} repository commit mismatch",
+    )
+    _require(
+        not _git(resolved, "status", "--porcelain", "--untracked-files=normal"),
+        f"{label} repository is dirty",
+    )
+    ignored = _git(
+        resolved,
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--",
+        "*.py",
+        "*.pth",
+        "sitecustomize.py",
+        "usercustomize.py",
+    )
+    _require(
+        not ignored,
+        f"ignored Python sources could shadow the {label} repository",
+    )
+    return resolved
+
+
+def _git_tree_oid(root: Path, commit: str, relative_path: str) -> str:
+    oid = _git(root, "rev-parse", f"{commit}:{relative_path}")
+    _require(
+        bool(re.fullmatch(r"[0-9a-f]{40}", oid)),
+        f"invalid Git tree OID for {commit}:{relative_path}",
+    )
+    return oid
+
+
+def _require_no_symlink_components(
+    path: str | Path,
+    *,
+    root: Path,
+    label: str,
+) -> Path:
+    canonical_root = root.resolve()
+    lexical = Path(os.path.abspath(Path(path).expanduser()))
+    _require(
+        lexical != canonical_root and canonical_root in lexical.parents,
+        f"{label} escaped the expected repository",
+    )
+    current = canonical_root
+    for part in lexical.relative_to(canonical_root).parts:
+        current = current / part
+        _require(
+            not current.is_symlink(),
+            f"{label} contains a symbolic-link component: {current}",
+        )
+    _require(lexical.is_file(), f"{label} is missing: {lexical}")
+    return lexical.resolve()
+
+
+def _expected_inference_code_tree_binding(
+    evidence_root: Path,
+    *,
+    trained_commit: str,
+    evidence_commit: str,
+) -> dict[str, Any]:
+    binding = {
+        "trained_opentad_tree_oid": _git_tree_oid(
+            evidence_root, trained_commit, "opentad"
+        ),
+        "evidence_opentad_tree_oid": _git_tree_oid(
+            evidence_root, evidence_commit, "opentad"
+        ),
+        "trained_adatad_thumos_config_tree_oid": _git_tree_oid(
+            evidence_root, trained_commit, "configs/adatad/thumos"
+        ),
+        "evidence_adatad_thumos_config_tree_oid": _git_tree_oid(
+            evidence_root, evidence_commit, "configs/adatad/thumos"
+        ),
+        "model_and_config_trees_equal": True,
+    }
+    _require(
+        binding["trained_opentad_tree_oid"]
+        == binding["evidence_opentad_tree_oid"]
+        and binding["trained_adatad_thumos_config_tree_oid"]
+        == binding["evidence_adatad_thumos_config_tree_oid"],
+        "trained and cost evidence commits drifted on model/config trees",
+    )
+    return binding
+
+
 def _load_json(path: str | Path, label: str) -> tuple[Path, dict[str, Any]]:
     resolved = Path(path).expanduser().resolve()
     _require(resolved.is_file(), f"{label} is missing: {resolved}")
@@ -669,16 +767,27 @@ def _validate_cost_profile(
     path: str | Path,
     *,
     method: str,
-    commit: str,
+    trained_commit: str,
+    evidence_commit: str,
     expected_checkpoint_path: Path,
     expected_checkpoint_sha256: str,
-    expected_config_path: Path,
+    trained_config_path: Path,
+    evidence_config_path: Path,
+    evidence_repo_root: Path,
     hash_cache: dict[Path, str],
 ) -> dict[str, str]:
     training_protocol = protocol_from_environment()
     profile_path, profile = _load_json(path, f"{method} cost profile")
     _require(profile.get("method") == method, f"unexpected cost method: {profile_path}")
-    _require(profile.get("config_commit") == commit, f"cost profile commit mismatch: {profile_path}")
+    _require(
+        profile.get("config_commit") == trained_commit
+        and profile.get("trained_commit") == trained_commit,
+        f"cost profile trained commit mismatch: {profile_path}",
+    )
+    _require(
+        profile.get("evidence_git_commit") == evidence_commit,
+        f"cost profile evidence commit mismatch: {profile_path}",
+    )
     _require(profile.get("uses_ema") is True, f"cost profile did not use EMA: {profile_path}")
     _require(profile.get("random_init") is False, f"cost profile used random init: {profile_path}")
     _require(
@@ -703,27 +812,40 @@ def _validate_cost_profile(
         and checkpoint_sha256 == expected_checkpoint_sha256,
         f"cost profile used another CellCF checkpoint: {profile_path}",
     )
+    expected_evidence_config = _require_no_symlink_components(
+        evidence_config_path,
+        root=evidence_repo_root,
+        label=f"{method} expected evidence config",
+    )
     config_path = _resolve_referenced_path(
         profile.get("config_path"), label=f"{method} cost config"
     )
     _require(
-        config_path == expected_config_path.resolve(),
-        f"cost profile used another config: {profile_path}",
+        config_path == expected_evidence_config,
+        f"cost profile escaped the evidence repository config: {profile_path}",
     )
-    if config_path in hash_cache:
-        config_sha256 = hash_cache[config_path]
-    else:
-        config_sha256 = _sha256(config_path)
-        hash_cache[config_path] = config_sha256
+    config_sha256 = hash_cache.setdefault(config_path, _sha256(config_path))
+    trained_config = trained_config_path.resolve()
+    trained_config_sha256 = hash_cache.setdefault(
+        trained_config, _sha256(trained_config)
+    )
     _require(
         profile.get("profile_config_sha256") == config_sha256,
         f"cost profile config hash mismatch: {profile_path}",
+    )
+    _require(
+        config_sha256 == trained_config_sha256,
+        f"cost profile config differs from the trained repository: {profile_path}",
     )
     return {
         "path": str(profile_path),
         "sha256": _sha256(profile_path),
         "config_path": str(config_path),
         "config_sha256": config_sha256,
+        "trained_config_path": str(trained_config),
+        "trained_config_sha256": trained_config_sha256,
+        "trained_commit": trained_commit,
+        "evidence_commit": evidence_commit,
     }
 
 
@@ -732,12 +854,28 @@ def validate_cost_evidence(
     *,
     repo_root: str | Path,
     expected_commit: str,
+    evidence_repo_root: str | Path,
+    expected_evidence_commit: str,
     expected_checkpoint_path: str | Path,
     expected_checkpoint_sha256: str,
     expected_post_run_evidence_path: str | Path,
     expected_post_run_evidence_sha256: str,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
+    evidence_root = _validate_exact_repository(
+        evidence_repo_root,
+        expected_commit=expected_evidence_commit,
+        label="cost evidence",
+    )
+    _require(
+        expected_evidence_commit != expected_commit,
+        "trained and cost evidence commits must be distinct",
+    )
+    expected_code_tree_binding = _expected_inference_code_tree_binding(
+        evidence_root,
+        trained_commit=expected_commit,
+        evidence_commit=expected_evidence_commit,
+    )
     resolved, payload = _load_json(path, "CellCF cost evidence")
     _require(payload.get("schema") == COST_EVIDENCE_SCHEMA, "bad CellCF cost evidence schema")
     _require(payload.get("ok") is True, "CellCF cost evidence did not pass")
@@ -746,6 +884,20 @@ def validate_cost_evidence(
         "CellCF cost evidence is not a complete passing artifact",
     )
     _require(payload.get("config_commit") == expected_commit, "CellCF cost evidence commit mismatch")
+    _require(
+        payload.get("trained_git_commit") == expected_commit,
+        "CellCF cost evidence trained commit mismatch",
+    )
+    _require(
+        payload.get("cost_producer_evidence_commit")
+        == expected_evidence_commit,
+        "CellCF cost producer evidence commit mismatch",
+    )
+    _require(
+        payload.get("inference_code_tree_binding")
+        == expected_code_tree_binding,
+        "CellCF cost evidence model/config tree binding mismatch",
+    )
     _require(
         payload.get("checkpoint_sha256") == expected_checkpoint_sha256,
         "CellCF cost evidence checkpoint mismatch",
@@ -787,10 +939,13 @@ def validate_cost_evidence(
         _validate_cost_profile(
             profile_path,
             method="cellcf-fixed384",
-            commit=expected_commit,
+            trained_commit=expected_commit,
+            evidence_commit=expected_evidence_commit,
             expected_checkpoint_path=checkpoint_path,
             expected_checkpoint_sha256=expected_checkpoint_sha256,
-            expected_config_path=root / VARIANTS["cellcf"],
+            trained_config_path=root / VARIANTS["cellcf"],
+            evidence_config_path=evidence_root / VARIANTS["cellcf"],
+            evidence_repo_root=evidence_root,
             hash_cache=hash_cache,
         )
         for profile_path in cellcf_paths
@@ -799,10 +954,13 @@ def validate_cost_evidence(
         _validate_cost_profile(
             profile_path,
             method="bare-uniform384",
-            commit=expected_commit,
+            trained_commit=expected_commit,
+            evidence_commit=expected_evidence_commit,
             expected_checkpoint_path=checkpoint_path,
             expected_checkpoint_sha256=expected_checkpoint_sha256,
-            expected_config_path=root / BARE_COST_CONFIG,
+            trained_config_path=root / BARE_COST_CONFIG,
+            evidence_config_path=evidence_root / BARE_COST_CONFIG,
+            evidence_repo_root=evidence_root,
             hash_cache=hash_cache,
         )
         for profile_path in bare_paths
@@ -822,6 +980,8 @@ def validate_cost_evidence(
         "checkpoint_sha256": expected_checkpoint_sha256,
         "post_run_evidence_path": str(post_run_path),
         "post_run_evidence_sha256": expected_post_run_evidence_sha256,
+        "cost_producer_evidence_repository": str(evidence_root),
+        "cost_producer_evidence_commit": expected_evidence_commit,
         "cellcf_profiles": cellcf_profiles,
         "bare_uniform_profiles": bare_profiles,
     }
@@ -849,6 +1009,8 @@ def validate_suite(
     post_run_evidence: Mapping[str, str | Path] | None = None,
     cost_evidence: str | Path | None = None,
     require_cost_evidence: bool = False,
+    evidence_repo_root: str | Path | None = None,
+    expected_evidence_commit: str | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     commit = _git(root, "rev-parse", "HEAD")
@@ -870,7 +1032,11 @@ def validate_suite(
     variants = []
     for variant in VARIANT_ORDER:
         cfg = configs[variant]
-        validation = validate_config(variant, VARIANTS[variant])
+        validation = validate_config(
+            variant,
+            VARIANTS[variant],
+            repo_root=root,
+        )
         _require(_shared_protocol(cfg) == reference_protocol, f"{variant}: shared protocol drift")
         config_path = root / VARIANTS[variant]
         contract = _variant_contract(cfg, variant)
@@ -951,10 +1117,17 @@ def validate_suite(
             bool(completed),
             "CellCF cost evidence requires all three validated post-run artifacts",
         )
+        _require(
+            evidence_repo_root is not None
+            and expected_evidence_commit is not None,
+            "CellCF cost evidence requires an exact evidence repository",
+        )
         validated_cost = validate_cost_evidence(
             cost_evidence,
             repo_root=root,
             expected_commit=commit,
+            evidence_repo_root=evidence_repo_root,
+            expected_evidence_commit=expected_evidence_commit,
             expected_checkpoint_path=completed["cellcf"]["checkpoint_path"],
             expected_checkpoint_sha256=completed["cellcf"]["checkpoint_sha256"],
             expected_post_run_evidence_path=completed["cellcf"]["path"],
@@ -997,6 +1170,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--post-run-evidence", action="append", default=[])
     parser.add_argument("--cost-evidence")
     parser.add_argument("--require-cost-evidence", action="store_true")
+    parser.add_argument("--evidence-repo-root")
+    parser.add_argument("--expected-evidence-commit")
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
     output_path = Path(args.output_json).expanduser().resolve()
@@ -1028,6 +1203,8 @@ def main(argv: list[str] | None = None) -> int:
             post_run_evidence=post_runs,
             cost_evidence=args.cost_evidence,
             require_cost_evidence=args.require_cost_evidence,
+            evidence_repo_root=args.evidence_repo_root,
+            expected_evidence_commit=args.expected_evidence_commit,
         )
         code = 0
     except Exception as exc:

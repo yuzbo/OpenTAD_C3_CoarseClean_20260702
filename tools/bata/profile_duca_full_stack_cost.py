@@ -427,6 +427,22 @@ def _git_commit(repo_root: Path) -> str:
     return result.stdout.strip()
 
 
+def _git_tree_oid(repo_root: Path, commit: str, relative_path: str) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", f"{commit}:{relative_path}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    oid = result.stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40}", oid) is None:
+        raise ValueError(
+            f"invalid Git tree OID for {commit}:{relative_path}"
+        )
+    return oid
+
+
 def _tracked_tree_is_clean(repo_root: Path) -> bool:
     result = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=normal"],
@@ -854,6 +870,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         args,
         actual_commit=actual_commit,
     )
+    code_tree_binding: dict[str, Any] | None = None
+    if args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+        trained_model_tree = _git_tree_oid(
+            repo_root, trained_commit, "opentad"
+        )
+        evidence_model_tree = _git_tree_oid(
+            repo_root, evidence_commit, "opentad"
+        )
+        trained_config_tree = _git_tree_oid(
+            repo_root, trained_commit, "configs/adatad/thumos"
+        )
+        evidence_config_tree = _git_tree_oid(
+            repo_root, evidence_commit, "configs/adatad/thumos"
+        )
+        if (
+            trained_model_tree != evidence_model_tree
+            or trained_config_tree != evidence_config_tree
+        ):
+            raise ValueError(
+                "trained and evidence commits differ on inference model/config trees"
+            )
+        code_tree_binding = {
+            "trained_opentad_tree_oid": trained_model_tree,
+            "evidence_opentad_tree_oid": evidence_model_tree,
+            "trained_adatad_thumos_config_tree_oid": trained_config_tree,
+            "evidence_adatad_thumos_config_tree_oid": evidence_config_tree,
+            "model_and_config_trees_equal": True,
+        }
     cellcf_cost_binding = None
     trained_checkpoint_binding = None
     if args.post_run_evidence:
@@ -1051,6 +1095,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "config_commit": args.config_commit or trained_commit,
         "trained_commit": trained_commit,
         "evidence_git_commit": evidence_commit or actual_commit,
+        "inference_code_tree_binding": code_tree_binding,
         "profile_session_id": str(args.profile_session_id),
         "profile_pair_id": str(args.profile_pair_id),
         "profile_repeat_index": int(args.profile_repeat_index),

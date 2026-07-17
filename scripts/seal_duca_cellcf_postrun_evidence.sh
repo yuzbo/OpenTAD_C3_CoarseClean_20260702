@@ -25,6 +25,8 @@ TRAINED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 EVIDENCE_COMMIT="$(git rev-parse HEAD)"
 EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
 EXPECTED_AGGREGATE_SHA256="${DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256:-}"
+RECOVERY_MANIFEST="${DUCA_CELLCF_COST_RECOVERY_MANIFEST:-}"
+RECOVERY_MANIFEST_SHA256="${DUCA_CELLCF_COST_RECOVERY_MANIFEST_SHA256:-}"
 SUPPORTED_TRAINED_COMMIT="1642f265e48391418a7c8a4a087e33e2b7bf6899"
 
 [[ -z "${SLURM_JOB_ID:-}" ]] \
@@ -69,6 +71,11 @@ done
   || fail "DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256 is required"
 [[ "$(sha256_file "${AGGREGATE}")" == "${EXPECTED_AGGREGATE_SHA256}" ]] \
   || fail "aggregate evidence hash mismatch"
+[[ -f "${RECOVERY_MANIFEST}" ]] || fail "cost recovery manifest is missing"
+[[ "${RECOVERY_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "DUCA_CELLCF_COST_RECOVERY_MANIFEST_SHA256 is required"
+[[ "$(sha256_file "${RECOVERY_MANIFEST}")" == "${RECOVERY_MANIFEST_SHA256}" ]] \
+  || fail "cost recovery manifest hash mismatch"
 FINAL_SUITE_SHA256="$(sha256_file "${FINAL_SUITE}")"
 
 exec "${PYTHON}" -m tools.bata.finalize_duca_cellcf_postrun_evidence \
@@ -81,4 +88,6 @@ exec "${PYTHON}" -m tools.bata.finalize_duca_cellcf_postrun_evidence \
   --aggregate-sha256 "${EXPECTED_AGGREGATE_SHA256}" \
   --final-suite "${FINAL_SUITE}" \
   --final-suite-sha256 "${FINAL_SUITE_SHA256}" \
+  --cost-recovery-manifest "${RECOVERY_MANIFEST}" \
+  --cost-recovery-manifest-sha256 "${RECOVERY_MANIFEST_SHA256}" \
   --output "${OUTPUT}"

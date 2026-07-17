@@ -13,6 +13,8 @@ def test_external_seal_is_terminal_only_and_commit_bound() -> None:
     assert "DUCA_CELLCF_POSTRUN_CONTROL_ROOT" in source
     assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in source
     assert "DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256" in source
+    assert "DUCA_CELLCF_COST_RECOVERY_MANIFEST" in source
+    assert "--cost-recovery-manifest" in source
     assert "1642f265e48391418a7c8a4a087e33e2b7bf6899" in source
     assert "trained and evidence commits must be distinct" in source
     assert "observer outside the post-run DAG" in source

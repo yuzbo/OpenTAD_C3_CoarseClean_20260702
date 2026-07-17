@@ -116,7 +116,13 @@ def _fixture(tmp_path: Path):
     _write_json(aggregate, AGGREGATE_PAYLOAD)
     final_payload = json.loads(json.dumps(FINAL_PAYLOAD))
     final_payload["cost_evidence"]["path"] = str(cost.resolve())
-    _write_json(cost, {"ok": True})
+    _write_json(
+        cost,
+        {
+            "ok": True,
+            "cost_producer_evidence_commit": EVIDENCE_COMMIT,
+        },
+    )
     _write_json(gate, {"ok": True, "kind": "real-loader-gate"})
     _write_json(pilot, {"ok": True, "kind": "ddp-pilot"})
     _write_json(final_suite, final_payload)
@@ -548,10 +554,12 @@ def test_postrun_finalizer_uses_durable_submission_script_proof(
 def test_historical_revalidation_executes_the_frozen_repository_module(
     tmp_path: Path,
 ) -> None:
-    repo = tmp_path / "frozen-repo"
-    module_root = repo / "tools" / "bata"
+    trained_repo = tmp_path / "trained-repo"
+    trained_repo.mkdir()
+    evidence_repo = tmp_path / "evidence-repo"
+    module_root = evidence_repo / "tools" / "bata"
     module_root.mkdir(parents=True)
-    (repo / "tools" / "__init__.py").write_text("", encoding="utf-8")
+    (evidence_repo / "tools" / "__init__.py").write_text("", encoding="utf-8")
     (module_root / "__init__.py").write_text("", encoding="utf-8")
     (module_root / "validate_duca_cellcf_suite.py").write_text(
         "\n".join(
@@ -565,7 +573,7 @@ def test_historical_revalidation_executes_the_frozen_repository_module(
                 "parser.add_argument('--output-json', required=True)",
                 "args, _ = parser.parse_known_args()",
                 "payload = {",
-                "    'source': 'frozen-repository-validator',",
+                "    'source': 'evidence-repository-validator',",
                 "    'git_commit': args.expected_commit,",
                 "    'seed': args.seed,",
                 "}",
@@ -579,7 +587,9 @@ def test_historical_revalidation_executes_the_frozen_repository_module(
     )
 
     payload = revalidate_trained_suite_exact(
-        repo_root=repo,
+        repo_root=trained_repo,
+        evidence_repo_root=evidence_repo,
+        expected_evidence_commit=EVIDENCE_COMMIT,
         seed=0,
         expected_commit=TRAINED_COMMIT,
         require_clean=True,
@@ -595,7 +605,7 @@ def test_historical_revalidation_executes_the_frozen_repository_module(
     )
 
     assert payload == {
-        "source": "frozen-repository-validator",
+        "source": "evidence-repository-validator",
         "git_commit": TRAINED_COMMIT,
         "seed": 0,
     }

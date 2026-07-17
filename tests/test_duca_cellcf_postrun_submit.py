@@ -14,7 +14,10 @@ def test_postrun_submitter_binds_dual_commits_and_terminal_suite() -> None:
     assert "DUCA_CELLCF_TRAINED_REPO_ROOT" in source
     assert "aggregate_suite_evidence.json" in source
     assert "final_suite_evidence.json" in source
-    assert "formal completion job is not uniquely COMPLETED/0:0" in source
+    assert "original cost job is not FAILED/1:0" in source
+    assert "original completion job is not cancelled" in source
+    assert "DUCA_CELLCF_COST_RECOVERY_MANIFEST" in source
+    assert "--cost-recovery-manifest" in source
     assert "LEGACY_EXPOSURE132_COMMITS" in source
     assert "PRECHECK_ONLY" in source
     assert "export PYTHONNOUSERSITE=1" in source

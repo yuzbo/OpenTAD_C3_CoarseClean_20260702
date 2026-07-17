@@ -41,8 +41,11 @@ RECEIPT_SCHEMA = "duca_cellcf_postrun_slurm_receipt_v1"
 CONVERGENCE_SCHEMA = "duca_cellcf_fixed_convergence_trajectory_v1"
 TRAINING_COST_SCHEMA = "duca_cellcf_training_cost_summary_v1"
 SUPPORTED_TRAINED_COMMIT = "1642f265e48391418a7c8a4a087e33e2b7bf6899"
-CANDIDATE_SCHEMA = "duca_cellcf_postrun_evidence_candidate_v1"
-FINAL_SCHEMA = "duca_cellcf_postrun_evidence_completion_v3"
+CANDIDATE_SCHEMA = "duca_cellcf_postrun_evidence_candidate_v2"
+FINAL_SCHEMA = "duca_cellcf_postrun_evidence_completion_v4"
+RECOVERY_INTENT_SCHEMA = "duca_cellcf_cost_recovery_intent_v1"
+RECOVERY_MANIFEST_SCHEMA = "duca_cellcf_cost_recovery_submission_v1"
+RECOVERY_FAILURE_SCHEMA = "duca_cellcf_cost_recovery_original_failure_v1"
 FileIdentity = tuple[int, int, int, int, int]
 SnapshotRecord = tuple[str, FileIdentity, FileIdentity]
 
@@ -529,9 +532,13 @@ def _default_aggregate_loader(**kwargs: Any) -> Mapping[str, Any]:
 
 
 def revalidate_trained_suite_exact(**kwargs: Any) -> Mapping[str, Any]:
-    repo_root = Path(kwargs["repo_root"]).expanduser().resolve()
+    trained_root = Path(kwargs["repo_root"]).expanduser().resolve()
+    evidence_root = Path(
+        kwargs["evidence_repo_root"]
+    ).expanduser().resolve()
+    expected_evidence_commit = str(kwargs["expected_evidence_commit"])
     with tempfile.TemporaryDirectory(
-        prefix="duca-cellcf-historical-revalidation-"
+        prefix="duca-cellcf-cross-commit-revalidation-"
     ) as output_root_value:
         output_path = Path(output_root_value) / "final_suite_evidence.json"
         command = [
@@ -539,11 +546,15 @@ def revalidate_trained_suite_exact(**kwargs: Any) -> Mapping[str, Any]:
             "-m",
             "tools.bata.validate_duca_cellcf_suite",
             "--repo-root",
-            str(repo_root),
+            str(trained_root),
             "--seed",
             str(kwargs["seed"]),
             "--expected-commit",
             str(kwargs["expected_commit"]),
+            "--evidence-repo-root",
+            str(evidence_root),
+            "--expected-evidence-commit",
+            expected_evidence_commit,
             "--gate-json",
             str(kwargs["gate_json"]),
             "--pilot-json",
@@ -564,7 +575,7 @@ def revalidate_trained_suite_exact(**kwargs: Any) -> Mapping[str, Any]:
         environment.pop("PYTHONPATH", None)
         result = subprocess.run(
             command,
-            cwd=repo_root,
+            cwd=evidence_root,
             env=environment,
             text=True,
             capture_output=True,
@@ -572,7 +583,7 @@ def revalidate_trained_suite_exact(**kwargs: Any) -> Mapping[str, Any]:
         )
         _require(
             result.returncode == 0,
-            "historical trained-suite revalidation failed: "
+            "cross-commit trained-suite revalidation failed: "
             f"{result.stderr.strip() or result.stdout.strip()}",
         )
         _, payload, _ = _load_json(
@@ -608,6 +619,22 @@ def _default_scheduler_validator(**kwargs: Any) -> Mapping[str, Any]:
 def _default_formal_completion_validator(
     *, job_id: int, job_name: str, cluster: str
 ) -> Mapping[str, Any]:
+    record = _default_scheduler_terminal_reader(
+        job_id=job_id,
+        job_name=job_name,
+        cluster=cluster,
+    )
+    _require(
+        record.get("state") == "COMPLETED"
+        and record.get("exit_code") == "0:0",
+        "formal completion is not uniquely COMPLETED/0:0",
+    )
+    return record
+
+
+def _default_scheduler_terminal_reader(
+    *, job_id: int, job_name: str, cluster: str
+) -> Mapping[str, Any]:
     result = subprocess.run(
         [
             "sacct",
@@ -619,7 +646,7 @@ def _default_formal_completion_validator(
             "-n",
             "-P",
             "-o",
-            "JobIDRaw,JobName%128,Cluster,State,ExitCode",
+            "JobIDRaw,JobName%128,Cluster,State,ExitCode,ElapsedRaw",
         ],
         text=True,
         capture_output=True,
@@ -632,17 +659,23 @@ def _default_formal_completion_validator(
     matches = []
     for line in result.stdout.splitlines():
         fields = line.split("|")
-        if len(fields) >= 5 and fields[0] == str(job_id):
-            matches.append(fields[:5])
-    expected = [[str(job_id), job_name, cluster, "COMPLETED", "0:0"]]
-    _require(matches == expected, "formal completion is not uniquely COMPLETED/0:0")
+        if len(fields) >= 6 and fields[0] == str(job_id):
+            matches.append(fields[:6])
+    _require(
+        len(matches) == 1
+        and matches[0][0] == str(job_id)
+        and matches[0][1] == job_name
+        and matches[0][2] == cluster,
+        "scheduler job identity is not unique",
+    )
     return {
         "ok": True,
         "job_id": job_id,
         "job_name": job_name,
         "cluster": cluster,
-        "state": "COMPLETED",
-        "exit_code": "0:0",
+        "state": matches[0][3],
+        "exit_code": matches[0][4],
+        "elapsed_raw_seconds": int(matches[0][5]),
     }
 
 
@@ -773,6 +806,408 @@ def _load_formal_completion(
     _require(completion.get("job_key") == "completion", "formal completion row is missing")
     _require(bool(completion.get("job_name")), "formal completion job name is missing")
     return completion, digest
+
+
+def _validate_cost_recovery_submission(
+    *,
+    manifest_path: str | Path,
+    manifest_sha256: str,
+    run_root: Path,
+    trained_root: Path,
+    trained_commit: str,
+    evidence_root: Path,
+    evidence_commit: str,
+    aggregate_file: Path,
+    aggregate_sha256: str,
+    final_file: Path,
+    cost_evidence_path: Path,
+    formal_ledger_path: Path,
+    formal_ledger_sha256: str,
+    terminal_state_reader: Callable[..., Mapping[str, Any]],
+    records: SnapshotRecords,
+) -> dict[str, Any]:
+    expected_manifest_sha = _require_hash(
+        manifest_sha256, "cost recovery manifest hash"
+    )
+    manifest_file, manifest, observed_manifest_sha = _load_json(
+        manifest_path,
+        "cost recovery submission manifest",
+        records=records,
+    )
+    _require(
+        observed_manifest_sha == expected_manifest_sha,
+        "cost recovery submission manifest hash mismatch",
+    )
+    _validate_embedded_hash(
+        manifest,
+        "artifact_sha256",
+        "cost recovery submission manifest",
+    )
+    _record_snapshot(
+        records,
+        manifest_file,
+        observed_manifest_sha,
+        "cost recovery submission manifest",
+    )
+    recovery_root = manifest_file.parent
+    _require_under(
+        recovery_root,
+        run_root,
+        "cost recovery root",
+    )
+    _require(
+        manifest.get("schema") == RECOVERY_MANIFEST_SCHEMA
+        and manifest.get("ok") is True
+        and manifest.get("status") == "SUBMITTED_HELD_VERIFIED"
+        and manifest.get("task") == "offline_temporal_action_detection",
+        "cost recovery submission manifest identity/status mismatch",
+    )
+    expected_manifest = {
+        "trained_git_commit": trained_commit,
+        "cost_producer_evidence_commit": evidence_commit,
+        "aggregate_evidence_path": str(aggregate_file),
+        "aggregate_evidence_sha256": aggregate_sha256,
+        "cost_evidence_path": str(cost_evidence_path),
+        "final_suite_evidence_path": str(final_file),
+    }
+    for key, value in expected_manifest.items():
+        _require(
+            manifest.get(key) == value,
+            f"cost recovery submission manifest mismatch: {key}",
+        )
+
+    intent_path, intent, intent_sha = _load_json(
+        manifest.get("submission_intent_path", ""),
+        "cost recovery submission intent",
+        records=records,
+    )
+    _require(
+        intent_path == recovery_root / "submission_intent.json"
+        and manifest.get("submission_intent_sha256") == intent_sha,
+        "cost recovery intent path/hash mismatch",
+    )
+    _validate_embedded_hash(
+        intent, "artifact_sha256", "cost recovery submission intent"
+    )
+    _record_snapshot(
+        records,
+        intent_path,
+        intent_sha,
+        "cost recovery submission intent",
+    )
+    expected_intent = {
+        "schema": RECOVERY_INTENT_SCHEMA,
+        "status": "INTENT_RECORDED",
+        "task": "offline_temporal_action_detection",
+        "formal_run_root": str(run_root),
+        "recovery_root": str(recovery_root),
+        "trained_repository": str(trained_root),
+        "trained_git_commit": trained_commit,
+        "cost_producer_repository": str(evidence_root),
+        "cost_producer_evidence_commit": evidence_commit,
+        "aggregate_evidence_path": str(aggregate_file),
+        "aggregate_evidence_sha256": aggregate_sha256,
+        "original_formal_ledger_path": str(formal_ledger_path),
+        "original_formal_ledger_sha256": formal_ledger_sha256,
+        "cost_root": str(recovery_root / "cost"),
+        "cost_evidence_path": str(cost_evidence_path),
+        "final_suite_evidence_path": str(final_file),
+    }
+    for key, value in expected_intent.items():
+        _require(
+            intent.get(key) == value,
+            f"cost recovery intent mismatch: {key}",
+        )
+    _require(
+        "do not rerun" in str(intent.get("recovery_scope", "")),
+        "cost recovery scope does not preserve the completed training arms",
+    )
+
+    original_failure_path, original_failure, original_failure_sha = _load_json(
+        manifest.get("original_failure_receipt_path", ""),
+        "original cost failure receipt",
+        records=records,
+    )
+    _require(
+        original_failure_path
+        == recovery_root / "original_failure_receipt.json"
+        and manifest.get("original_failure_receipt_sha256")
+        == original_failure_sha
+        and intent.get("original_failure_receipt_path")
+        == str(original_failure_path)
+        and intent.get("original_failure_receipt_sha256")
+        == original_failure_sha,
+        "original cost failure receipt path/hash mismatch",
+    )
+    _validate_embedded_hash(
+        original_failure,
+        "artifact_sha256",
+        "original cost failure receipt",
+    )
+    _record_snapshot(
+        records,
+        original_failure_path,
+        original_failure_sha,
+        "original cost failure receipt",
+    )
+    _require(
+        original_failure.get("schema") == RECOVERY_FAILURE_SCHEMA
+        and original_failure.get("ok") is True
+        and original_failure.get("original_formal_ledger_path")
+        == str(formal_ledger_path)
+        and original_failure.get("original_formal_ledger_sha256")
+        == formal_ledger_sha256,
+        "original cost failure receipt identity mismatch",
+    )
+    scheduler_query = _record_hashed_dependency(
+        records,
+        {
+            "path": original_failure.get("scheduler_query_path"),
+            "sha256": original_failure.get("scheduler_query_sha256"),
+        },
+        "original cost failure scheduler query",
+        expected_path=recovery_root
+        / "receipts"
+        / "original_terminal_jobs.sacct",
+    )
+
+    _, formal_bytes, reopened_formal_sha = _read_snapshot(
+        formal_ledger_path,
+        "original formal submitted-job ledger",
+        records=records,
+    )
+    _require(
+        reopened_formal_sha == formal_ledger_sha256,
+        "original formal submitted-job ledger changed during recovery validation",
+    )
+    with io.StringIO(formal_bytes.decode("utf-8"), newline="") as handle:
+        formal_rows = list(csv.DictReader(handle, delimiter="\t"))
+    _require(
+        [row.get("job_key") for row in formal_rows]
+        == list(FORMAL_JOB_KEYS),
+        "original formal ledger no longer binds the exact six-job DAG",
+    )
+    original_jobs = {
+        key: next(
+            row for row in formal_rows if row.get("job_key") == key
+        )
+        for key in ("cost", "completion")
+    }
+    frozen_original = {
+        key: original_failure.get(key)
+        for key in ("cost", "completion")
+    }
+    for key in ("cost", "completion"):
+        record = frozen_original[key]
+        row = original_jobs[key]
+        _require(
+            isinstance(record, Mapping)
+            and int(record.get("job_id", -1)) == int(row["job_id"])
+            and record.get("job_name") == row["job_name"]
+            and record.get("cluster") == row["cluster"],
+            f"original {key} failure receipt does not match the formal ledger",
+        )
+        observed_state = str(record.get("state", ""))
+        if key == "cost":
+            _require(
+                observed_state == "FAILED"
+                and record.get("exit_code") == "1:0"
+                and int(record.get("elapsed_raw_seconds", -1)) > 0,
+                "original cost frozen terminal state mismatch",
+            )
+        else:
+            _require(
+                re.fullmatch(
+                    r"CANCELLED(?: by [1-9][0-9]*)?",
+                    observed_state,
+                )
+                is not None
+                and record.get("exit_code") == "0:0"
+                and int(record.get("elapsed_raw_seconds", -1)) == 0,
+                "original completion frozen terminal state mismatch",
+            )
+        live = terminal_state_reader(
+            job_id=int(row["job_id"]),
+            job_name=row["job_name"],
+            cluster=row["cluster"],
+        )
+        _require(
+            live.get("ok") is True
+            and live.get("state") == record.get("state")
+            and live.get("exit_code") == record.get("exit_code")
+            and int(live.get("elapsed_raw_seconds", -1))
+            == int(record.get("elapsed_raw_seconds", -2)),
+            f"original {key} scheduler state no longer matches recovery evidence",
+        )
+        frozen_original[key] = {
+            "frozen": dict(record),
+            "live": dict(live),
+        }
+
+    ledger_path = Path(str(manifest.get("jobs_ledger_path", ""))).resolve()
+    _require(
+        ledger_path == recovery_root / "jobs.submitted.tsv",
+        "cost recovery ledger path mismatch",
+    )
+    rows, ledger_sha = _load_recovery_ledger(
+        ledger_path,
+        records=records,
+    )
+    _require(
+        manifest.get("jobs_ledger_sha256") == ledger_sha,
+        "cost recovery ledger hash mismatch",
+    )
+    jobs = manifest.get("jobs")
+    _require(
+        isinstance(jobs, list)
+        and [record.get("job_key") for record in jobs]
+        == ["cost", "completion"],
+        "cost recovery manifest job set/order mismatch",
+    )
+    manifest_jobs = {str(record["job_key"]): record for record in jobs}
+    ids = {str(row["job_key"]): str(row["job_id"]) for row in rows}
+    _require(
+        rows[0].get("dependency") == "none"
+        and rows[1].get("dependency") == f"afterok:{ids['cost']}",
+        "cost recovery dependency chain mismatch",
+    )
+    recovery_terminal = {}
+    for row in rows:
+        key = str(row["job_key"])
+        record = manifest_jobs[key]
+        expected_row = {
+            "trained_commit": trained_commit,
+            "cost_producer_evidence_commit": evidence_commit,
+            "submission_intent_sha256": intent_sha,
+            "original_formal_ledger_sha256": formal_ledger_sha256,
+        }
+        for field, value in expected_row.items():
+            _require(
+                row.get(field) == value,
+                f"cost recovery {key} ledger mismatch: {field}",
+            )
+        for field in (
+            "job_id",
+            "job_name",
+            "cluster",
+            "dependency",
+            "sbatch_file",
+            "sbatch_sha256",
+            "raw_sbatch_response",
+            "scheduler_script",
+            "scheduler_script_sha256",
+        ):
+            manifest_value = record.get(field)
+            if field == "job_id":
+                manifest_value = str(manifest_value)
+            _require(
+                row.get(field) == manifest_value,
+                f"cost recovery {key} manifest/ledger mismatch: {field}",
+            )
+        job_file = _record_hashed_dependency(
+            records,
+            {
+                "path": row.get("sbatch_file"),
+                "sha256": row.get("sbatch_sha256"),
+            },
+            f"cost recovery {key} sbatch",
+            expected_path=recovery_root / "jobs" / f"{key}.sbatch",
+        )
+        _record_hashed_dependency(
+            records,
+            {
+                "path": row.get("scheduler_receipt"),
+                "sha256": row.get("scheduler_receipt_sha256"),
+            },
+            f"cost recovery {key} scheduler receipt",
+            expected_path=recovery_root
+            / "receipts"
+            / f"{key}.scheduler.txt",
+        )
+        scheduler_script = _record_hashed_dependency(
+            records,
+            {
+                "path": row.get("scheduler_script"),
+                "sha256": row.get("scheduler_script_sha256"),
+            },
+            f"cost recovery {key} scheduler-owned script",
+            expected_path=recovery_root
+            / "receipts"
+            / f"{key}.scheduler.sbatch",
+        )
+        _require(
+            row.get("scheduler_script_sha256")
+            == row.get("sbatch_sha256"),
+            f"cost recovery {key} scheduler-owned script differs",
+        )
+        _require(
+            str(row.get("raw_sbatch_response"))
+            == f"{row['job_id']};{row['cluster']}",
+            f"cost recovery {key} raw sbatch response mismatch",
+        )
+        live = terminal_state_reader(
+            job_id=int(row["job_id"]),
+            job_name=row["job_name"],
+            cluster=row["cluster"],
+        )
+        _require(
+            live.get("ok") is True
+            and live.get("state") == "COMPLETED"
+            and live.get("exit_code") == "0:0",
+            f"cost recovery {key} is not COMPLETED/0:0",
+        )
+        recovery_terminal[key] = {
+            "job_file": str(job_file),
+            "scheduler_owned_script": str(scheduler_script),
+            "scheduler": dict(live),
+        }
+    original_terminal_ids = {
+        str(original_jobs["cost"]["job_id"]),
+        str(original_jobs["completion"]["job_id"]),
+    }
+    _require(
+        set(ids.values()).isdisjoint(original_terminal_ids),
+        "recovery job illegally reuses an original terminal job id",
+    )
+    return {
+        "schema": "duca_cellcf_cost_recovery_validation_v1",
+        "ok": True,
+        "status": "complete_via_cost_recovery",
+        "original_formal_dag_complete": False,
+        "cost_producer_evidence_commit": evidence_commit,
+        "manifest": {
+            "path": str(manifest_file),
+            "sha256": observed_manifest_sha,
+        },
+        "intent": {"path": str(intent_path), "sha256": intent_sha},
+        "ledger": {"path": str(ledger_path), "sha256": ledger_sha},
+        "original_failure_receipt": {
+            "path": str(original_failure_path),
+            "sha256": original_failure_sha,
+            "scheduler_query_path": str(scheduler_query),
+        },
+        "original_terminal_jobs": frozen_original,
+        "recovery_terminal_jobs": recovery_terminal,
+    }
+
+
+def _load_recovery_ledger(
+    path: Path,
+    *,
+    records: SnapshotRecords | None = None,
+) -> tuple[list[dict[str, str]], str]:
+    _, payload_bytes, digest = _read_snapshot(
+        path,
+        "cost recovery submitted-job ledger",
+        records=records,
+    )
+    with io.StringIO(payload_bytes.decode("utf-8"), newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    _require(
+        [row.get("job_key") for row in rows] == ["cost", "completion"],
+        "cost recovery ledger does not bind the exact two-job DAG",
+    )
+    return rows, digest
 
 
 def _expected_dependencies(rows: Sequence[Mapping[str, str]]) -> dict[str, str]:
@@ -914,6 +1349,8 @@ def finalize_postrun_evidence(
     aggregate_sha256: str,
     final_suite_path: str | Path,
     final_suite_sha256: str,
+    cost_recovery_manifest_path: str | Path | None = None,
+    cost_recovery_manifest_sha256: str | None = None,
     require_postrun_completed: bool = True,
     aggregate_loader: Callable[..., Mapping[str, Any]] = _default_aggregate_loader,
     final_suite_revalidator: Callable[..., Mapping[str, Any]] = (
@@ -934,6 +1371,9 @@ def finalize_postrun_evidence(
     postrun_terminal_validator: Callable[..., Mapping[str, Any]] = (
         _default_formal_completion_validator
     ),
+    scheduler_terminal_reader: Callable[..., Mapping[str, Any]] = (
+        _default_scheduler_terminal_reader
+    ),
     repository_validator: Callable[[Path, str], None] = (
         _default_repository_validator
     ),
@@ -952,6 +1392,11 @@ def finalize_postrun_evidence(
     )
     aggregate_sha256 = _require_hash(aggregate_sha256, "aggregate evidence hash")
     final_suite_sha256 = _require_hash(final_suite_sha256, "final suite hash")
+    _require(
+        (cost_recovery_manifest_path is None)
+        == (cost_recovery_manifest_sha256 is None),
+        "cost recovery manifest path and hash are required together",
+    )
     run_root_path = Path(run_root).expanduser().resolve()
     control_root_path = Path(control_root).expanduser().resolve()
     trained_root = Path(trained_repo_root).expanduser().resolve()
@@ -1100,16 +1545,6 @@ def finalize_postrun_evidence(
         formal_ledger_sha,
         "formal submitted-job ledger",
     )
-    formal_completion_scheduler = formal_completion_validator(
-        job_id=int(formal_completion["job_id"]),
-        job_name=formal_completion["job_name"],
-        cluster=formal_completion["cluster"],
-    )
-    _require(
-        formal_completion_scheduler.get("ok") is True,
-        "formal completion scheduler revalidation failed",
-    )
-
     cost_record = final_payload.get("cost_evidence")
     final_profile = final_payload.get("training_profile")
     if final_profile is None and trained_commit == SUPPORTED_TRAINED_COMMIT:
@@ -1159,6 +1594,50 @@ def finalize_postrun_evidence(
         and snapshot_records[cost_evidence_path][0] == cost_payload_sha,
         "trained-checkpoint cost evidence changed before dependency enumeration",
     )
+    _require(
+        cost_payload.get("cost_producer_evidence_commit")
+        == evidence_commit,
+        "trained-checkpoint cost producer differs from the sealing commit",
+    )
+    cost_recovery = None
+    if cost_recovery_manifest_path is None:
+        formal_completion_scheduler = formal_completion_validator(
+            job_id=int(formal_completion["job_id"]),
+            job_name=formal_completion["job_name"],
+            cluster=formal_completion["cluster"],
+        )
+        _require(
+            formal_completion_scheduler.get("ok") is True,
+            "formal completion scheduler revalidation failed",
+        )
+    else:
+        cost_recovery = _validate_cost_recovery_submission(
+            manifest_path=cost_recovery_manifest_path,
+            manifest_sha256=str(cost_recovery_manifest_sha256),
+            run_root=run_root_path,
+            trained_root=trained_root,
+            trained_commit=trained_commit,
+            evidence_root=evidence_root,
+            evidence_commit=evidence_commit,
+            aggregate_file=aggregate_file,
+            aggregate_sha256=aggregate_sha256,
+            final_file=final_file,
+            cost_evidence_path=cost_evidence_path,
+            formal_ledger_path=formal_ledger_path,
+            formal_ledger_sha256=formal_ledger_sha,
+            terminal_state_reader=scheduler_terminal_reader,
+            records=snapshot_records,
+        )
+        formal_completion_scheduler = {
+            "ok": True,
+            "mode": "cost_recovery",
+            "status": "complete_via_cost_recovery",
+            "original_formal_dag_complete": False,
+            "original_completion_job_id": int(
+                formal_completion["job_id"]
+            ),
+            "recovery": cost_recovery,
+        }
     profile_artifacts = cost_payload.get("profile_artifacts")
     if isinstance(profile_artifacts, Mapping):
         for group, profile_records in profile_artifacts.items():
@@ -1206,6 +1685,8 @@ def finalize_postrun_evidence(
                     )
     regenerated_final = final_suite_revalidator(
         repo_root=trained_root,
+        evidence_repo_root=evidence_root,
+        expected_evidence_commit=evidence_commit,
         seed=int(aggregate_binding["seed"]),
         expected_commit=trained_commit,
         require_clean=True,
@@ -1255,6 +1736,17 @@ def finalize_postrun_evidence(
         "final_suite_evidence_sha256": final_suite_sha256,
         "postrun_output_root": str(postrun_output_root),
     }
+    if cost_recovery is not None:
+        expected_intent.update(
+            {
+                "cost_recovery_manifest_path": cost_recovery[
+                    "manifest"
+                ]["path"],
+                "cost_recovery_manifest_sha256": cost_recovery[
+                    "manifest"
+                ]["sha256"],
+            }
+        )
     for key, value in expected_intent.items():
         _require(intent.get(key) == value, f"submission intent mismatch: {key}")
     intent_jobs = intent.get("jobs")
@@ -1449,6 +1941,19 @@ def finalize_postrun_evidence(
         "jobs_ledger_sha256": ledger_sha,
         "jobs": rows,
     }
+    if cost_recovery is not None:
+        expected_manifest.update(
+            {
+                "cost_recovery_manifest_path": cost_recovery[
+                    "manifest"
+                ]["path"],
+                "cost_recovery_manifest_sha256": cost_recovery[
+                    "manifest"
+                ]["sha256"],
+                "completion_mode": "cost_recovery",
+                "original_formal_dag_complete": False,
+            }
+        )
     for key, value in expected_manifest.items():
         _require(manifest.get(key) == value, f"submission manifest mismatch: {key}")
 
@@ -1694,6 +2199,13 @@ def finalize_postrun_evidence(
         "training_profile": "exposure132",
         "trained_git_commit": trained_commit,
         "evidence_git_commit": evidence_commit,
+        "cost_producer_evidence_commit": evidence_commit,
+        "completion_mode": (
+            "cost_recovery"
+            if cost_recovery is not None
+            else "original_formal_dag"
+        ),
+        "original_formal_dag_complete": cost_recovery is None,
         "aggregate_suite_evidence": {
             "path": str(aggregate_file),
             "sha256": aggregate_sha256,
@@ -1725,6 +2237,7 @@ def finalize_postrun_evidence(
         "formal_completion_scheduler_revalidation": dict(
             formal_completion_scheduler
         ),
+        "cost_recovery": cost_recovery,
         "candidate_evidence": candidate_binding,
         "artifacts": {
             "convergence": {
@@ -1790,6 +2303,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--aggregate-sha256", required=True)
     parser.add_argument("--final-suite", required=True)
     parser.add_argument("--final-suite-sha256", required=True)
+    parser.add_argument("--cost-recovery-manifest")
+    parser.add_argument("--cost-recovery-manifest-sha256")
     parser.add_argument("--output", required=True)
     parser.add_argument("--candidate", action="store_true")
     args = parser.parse_args(argv)
@@ -1818,6 +2333,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         aggregate_sha256=args.aggregate_sha256,
         final_suite_path=args.final_suite,
         final_suite_sha256=args.final_suite_sha256,
+        cost_recovery_manifest_path=args.cost_recovery_manifest,
+        cost_recovery_manifest_sha256=(
+            args.cost_recovery_manifest_sha256
+        ),
         require_postrun_completed=not args.candidate,
         require_linux_mutation_monitor=True,
     )

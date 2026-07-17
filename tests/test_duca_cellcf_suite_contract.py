@@ -19,6 +19,7 @@ from tools.bata.validate_duca_cellcf_suite import (
     _shared_protocol,
     validate_suite,
 )
+from tools.bata.validate_duca_cellcf_fixed384 import validate_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,27 @@ def _sha(path: Path) -> str:
 
 def _write(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_variant_validator_fails_closed_on_an_explicit_wrong_repo_root(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(AssertionError, match="CellCF config is missing"):
+        validate_config("cellcf", repo_root=tmp_path)
+
+
+def test_variant_validator_rejects_config_path_escape(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent / "outside-cellcf.py"
+    outside.write_text("model = {}\n", encoding="utf-8")
+
+    with pytest.raises(AssertionError, match="escaped"):
+        validate_config(
+            "cellcf",
+            str(outside),
+            repo_root=tmp_path,
+        )
 
 
 def _artifacts(tmp_path: Path, monkeypatch):
