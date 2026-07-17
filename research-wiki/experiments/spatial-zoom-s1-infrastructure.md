@@ -506,6 +506,31 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `a20768d5.../bacf8b0f...`; it is pending by Slurm priority and has not opened
   a new cell. S1 remains `experiment_running`; no cost matrix, paired result,
   GO/KILL, S2 or Pro review exists yet.
+- Full-profile NVML failure at `2026-07-17T10:03+08:00`: the only authorized
+  serial matrix Job `1167538` ended `FAILED 1:0` after `01:12:01` on `g0059`,
+  in the first frozen dense256/seed3408 cell. The official test evidence was
+  reused rather than reopened. The detector/profile completed the measured
+  path and collected `107147` native-NVML samples, but the formal validator
+  observed one `2413.519286` ms gap against the unchanged `100` ms limit.
+  Fail-closed publication worked: there is one started marker and zero
+  completed markers, profile summaries, latency traces, raw power traces, or
+  descriptors; none of the later eight cells started. Slurm reported
+  `63687456K` MaxRSS under a `62200M` allocation. The matrix stdout/stderr,
+  nvidia-smi audit, and started-marker file SHAs are respectively
+  `f82d2a9d...`, `bce50032...`, `300c4a3b...`, and `c9692531...`; the internal
+  marker SHA is `1851fe1d...`.
+- This failure falsifies the sufficiency of the short cadence Gate, not the S1
+  model or its existing mAP. The formal native-NVML sampler is still a Python
+  `threading.Thread` in the same process that accumulates detector outputs and
+  executes official finalization. The prior ten-second synthetic Gate
+  established correct UUID resolution and typical cadence, but could not
+  certify GIL/CPU scheduling under the full high-RSS inference/NMS path. The
+  most likely code-level failure mode is long-tail sampler starvation inside
+  the profiled process; the evidence does not justify blaming NVML itself or
+  weakening the 100 ms contract. No replacement matrix is authorized until a
+  separate minimal sampler process, atomic preservation of failed raw cadence,
+  and a representative long-duration no-open stress Gate are implemented,
+  tested, committed, and audited. Pro, S2, and GO/KILL remain blocked.
 
 ## Decision Boundary
 

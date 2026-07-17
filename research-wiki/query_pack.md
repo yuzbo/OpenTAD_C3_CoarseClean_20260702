@@ -41,9 +41,21 @@ max_chars: 8000
   `14c12730...`. No-open Gate `1167537` completed `0:0`; on a real allocation
   with `cuda:0` mapped to physical GPU 1, UUID-resolved NVML passed at
   median/P95/max gaps `20.000/20.025/57.848` ms. The only authorized serial
-  frozen-order matrix is Job `1167538`, currently pending by priority.
-  Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
-  the state is still `experiment_running`.
+  frozen-order matrix Job `1167538` later failed `1:0` in its first
+  dense256/seed3408 profile. It collected `107147` in-process NVML samples but
+  one observed gap reached `2413.519` ms, above the unchanged `100` ms limit.
+  No profile summary, latency trace, raw power trace, descriptor, or later cell
+  was published. The existing official-test result remains valid and was not
+  reopened. Slurm reported `63687456K` MaxRSS under a `62200M` allocation.
+  Static audit identifies a protocol mismatch: the formal sampler is a Python
+  `threading.Thread` inside the memory-heavy detector/profile process, whereas
+  the prior ten-second Gate tested only short synthetic load and cannot certify
+  long-run GIL/CPU-scheduling tail latency. A replacement matrix is forbidden
+  until an out-of-process UUID-bound NVML sidecar, failure-trace preservation,
+  and a representative long-duration no-open stress Gate are implemented and
+  audited without relaxing the 20 ms target or 100 ms limit. Cost matrix,
+  paired statistics, Pro review, and S1 GO/KILL remain pending; the state is
+  still `experiment_running`.
 
 ## 当前唯一活动任务：Spatial Zoom
 

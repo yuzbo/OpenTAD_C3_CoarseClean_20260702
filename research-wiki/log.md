@@ -271,3 +271,16 @@ append_only: true
   as Job `1167538`; it is pending by priority. Gate and matrix receipt internal
   SHAs are `a20341be.../a20768d5...`. S1 remains `experiment_running`; final
   cost/statistics, GO/KILL, Pro and S2 remain blocked.
+- 2026-07-17 11:38+08:00: detected that the sole serial matrix Job `1167538`
+  had failed `1:0` at `10:03+08:00` in its first dense256/seed3408 cell. It
+  collected `107147` UUID-resolved native-NVML samples, but one
+  `2413.519286` ms gap exceeded the unchanged `100` ms audit limit. Publication
+  failed closed: no summary, latency trace, raw power trace, descriptor, or
+  later cell exists, and the reused sealed-test evidence remains unchanged.
+  Slurm MaxRSS was `63687456K` under a `62200M` allocation. Code audit found
+  that the sampler is still an in-process Python thread; the earlier ten-second
+  synthetic Gate cannot certify its long-tail cadence under the full high-RSS
+  detector/finalizer path. Recorded all failure hashes and prohibited a silent
+  rerun. The next admissible infrastructure step is an out-of-process
+  UUID-bound NVML sidecar plus failed-trace preservation and a representative
+  long-duration no-open stress Gate, with the 20/100 ms contract unchanged.

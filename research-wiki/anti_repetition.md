@@ -37,6 +37,14 @@ updated: 2026-07-17
     with the historical clean training snapshot as the working directory while
     importing the certificate-bound repair code explicitly. Do not add hidden
     symlinks or Git excludes to make relative dataset paths appear available.
+13. Do not certify a long formal power profile from a short synthetic cadence
+    test while the sampler remains a Python thread inside the detector process.
+    Job `1167538` proved that native NVML can still suffer a `2413.519` ms
+    observed gap under the full memory-heavy inference/NMS path despite passing
+    a ten-second Gate. Keep the 20 ms target and 100 ms limit unchanged; require
+    an independently scheduled UUID-bound sampler process, preserve the raw
+    failure trace, and pass a representative long-duration no-open stress Gate
+    before any replacement matrix.
 
 ## 任务与叙事
 

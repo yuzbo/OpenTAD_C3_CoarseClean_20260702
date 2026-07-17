@@ -231,7 +231,16 @@ updated: 2026-07-17
   Serial matrix Job `1167538` has submission receipt internal/file SHAs
   `a20768d599c9eed4019dcaebd220e7eb4eb805e6b6043646dd8c82e19a45b448`
   and `bacf8b0f38efde7bcb0a5659978d8675c3004bf53151eb2a8ed2228840c2aa4f`;
-  no result is attributed until the matrix completes and validates.
+  it failed in the first cell with `107147` NVML samples and a
+  `2413.519286` ms maximum gap. Matrix stdout/stderr/audit SHAs are
+  `f82d2a9d6f63969cce18687946a49a9219556dbdd45ed102e5abbcf3d5748f12`,
+  `bce5003229c7f9ac14cc146ffb069bd9e0ddb6174487eb1be38351ab5ec2dae4`,
+  and `300c4a3be1087e283470344497fd291b490bb565a8bc4b10e4981b737bd1162c`.
+  The failed started-marker file/internal SHAs are
+  `c9692531c3b12ec49fa4c72756d18fb1a39ebe860ce3fca3658442b10ea4ee65`
+  and `1851fe1d8ead5225b2d37c6e9e7938cde74c29346795f6e1b997fcc38b8fb448`.
+  No valid profile artifact or descriptor exists; these sources establish an
+  infrastructure failure only.
 
 ## 外部附件
 
