@@ -21,6 +21,8 @@ from tools.bata.profile_duca_full_stack_cost import load_cellcf_cost_binding
 
 SCHEMA = "duca_dense_vs_cellcf_full_stack_cost_v1"
 MIN_REPEATS = 3
+MIN_SAMPLES = 500
+MIN_WARMUP_SAMPLES = 20
 
 
 def _require(condition: bool, message: str) -> None:
@@ -125,6 +127,17 @@ def _load_profiles(
         payload = json.loads(resolved.read_text(encoding="utf-8"))
         _require(isinstance(payload, dict), f"cost profile is not a JSON object: {resolved}")
         _require(payload.get("method") == expected_method, f"unexpected cost method: {resolved}")
+        _require(
+            int(payload.get("sample_count", 0)) >= MIN_SAMPLES,
+            f"{expected_method} profile requires at least {MIN_SAMPLES} measured samples",
+        )
+        _require(
+            int(payload.get("warmup_samples", 0)) >= MIN_WARMUP_SAMPLES,
+            (
+                f"{expected_method} profile requires at least "
+                f"{MIN_WARMUP_SAMPLES} warmup samples"
+            ),
+        )
         raw_sample_fingerprints = validate_and_rebuild_profile_summary(payload)
         _require(
             raw_sample_fingerprints["multiset_sha256"]

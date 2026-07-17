@@ -5,6 +5,7 @@ import csv
 import json
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -473,6 +474,7 @@ def _validate_variant_receipts(
     receipt_paths: Mapping[str, str | Path],
     *,
     expected_commit: str,
+    expected_evidence_commit: str,
     suite_binding: Mapping[str, Any],
     rows: Sequence[Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
@@ -510,6 +512,7 @@ def _validate_variant_receipts(
             "variant": variant,
             "seed": suite_binding["seed"],
         }
+        expected_fields["evidence_git_commit"] = expected_evidence_commit
         for key, value in expected_fields.items():
             _require(
                 receipt.get(key) == value,
@@ -583,6 +586,7 @@ def _validate_variant_receipts(
 def build_convergence_evidence(
     *,
     expected_commit: str,
+    expected_evidence_commit: str,
     suite_aggregate_path: str | Path,
     suite_aggregate_sha256: str,
     post_run_paths: Mapping[str, str | Path],
@@ -593,6 +597,10 @@ def build_convergence_evidence(
         [Path, Mapping[str, Any], int, int], Mapping[str, Any]
     ] = _inspect_checkpoint_payload,
 ) -> dict[str, Any]:
+    _require(
+        re.fullmatch(r"[0-9a-f]{40}", expected_evidence_commit) is not None,
+        "expected evidence commit is invalid",
+    )
     _require(
         set(post_run_paths) == set(VARIANTS),
         "post-run evidence must cover exactly the three frozen variants",
@@ -654,6 +662,7 @@ def build_convergence_evidence(
     receipt_records = _validate_variant_receipts(
         variant_receipt_paths,
         expected_commit=expected_commit,
+        expected_evidence_commit=expected_evidence_commit,
         suite_binding=suite_binding,
         rows=rows,
     )
@@ -662,6 +671,7 @@ def build_convergence_evidence(
         "ok": True,
         "task": "offline_temporal_action_detection",
         "git_commit": expected_commit,
+        "evidence_git_commit": expected_evidence_commit,
         "variants": list(VARIANTS),
         "fixed_epochs": list(FIXED_EPOCHS),
         "primary_epoch": PRIMARY_EPOCH,
@@ -781,6 +791,7 @@ def _parse_evaluation_path(values: Sequence[str]) -> dict[tuple[str, int], str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--expected-evidence-commit", required=True)
     parser.add_argument("--suite-aggregate", required=True)
     parser.add_argument("--suite-aggregate-sha256", required=True)
     parser.add_argument("--post-run", action="append", required=True)
@@ -808,6 +819,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         payload = build_convergence_evidence(
             expected_commit=args.expected_commit,
+            expected_evidence_commit=args.expected_evidence_commit,
             suite_aggregate_path=args.suite_aggregate,
             suite_aggregate_sha256=args.suite_aggregate_sha256,
             post_run_paths=_parse_variant_path(args.post_run, "post-run binding"),

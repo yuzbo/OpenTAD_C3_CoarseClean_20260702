@@ -9,14 +9,24 @@ fail() {
 EVIDENCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 source "${EVIDENCE_REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
+EVIDENCE_COMMIT="$(git -C "${EVIDENCE_REPO_ROOT}" rev-parse HEAD)"
+EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
 TRAINED_REPO_ROOT="${DUCA_CELLCF_TRAINED_REPO_ROOT:-}"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 RUN_ROOT="${DUCA_CELLCF_FORMAL_RUN_ROOT:-}"
+POSTRUN_OUTPUT_ROOT="${DUCA_CELLCF_POSTRUN_OUTPUT_ROOT:-}"
 VARIANT="${DUCA_CELLCF_VARIANT:-}"
 SEED="${SEED:-0}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "trajectory evaluation must run inside Slurm"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a logical GPU"
+[[ "${EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "evidence repository commit is invalid"
+[[ "${EXPECTED_EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "DUCA_EVIDENCE_EXPECTED_COMMIT is required"
+[[ "${EVIDENCE_COMMIT}" == "${EXPECTED_EVIDENCE_COMMIT}" ]] \
+  || fail "evidence repository commit drift"
+[[ -z "$(git -C "${EVIDENCE_REPO_ROOT}" status --porcelain --untracked-files=normal)" ]] \
+  || fail "evidence repository is dirty"
 [[ -d "${TRAINED_REPO_ROOT}" ]] || fail "exact trained repository is missing"
 [[ -n "${EXPECTED_COMMIT}" ]] || fail "DUCA_EXPECTED_COMMIT is required"
 [[ -d "${RUN_ROOT}" ]] || fail "formal run root is missing"
@@ -24,6 +34,19 @@ RUN_ROOT="$(
   duca_cellcf_require_external_path \
     "RUN_ROOT" "${EVIDENCE_REPO_ROOT}" "${BASE}" "${RUN_ROOT}"
 )" || fail "RUN_ROOT violates the formal path contract"
+if [[ -z "${POSTRUN_OUTPUT_ROOT}" ]]; then
+  POSTRUN_OUTPUT_ROOT="${RUN_ROOT}"
+else
+  POSTRUN_OUTPUT_ROOT="$(
+    duca_cellcf_require_external_path \
+      "POSTRUN_OUTPUT_ROOT" "${EVIDENCE_REPO_ROOT}" "${BASE}" \
+      "${POSTRUN_OUTPUT_ROOT}"
+  )" || fail "POSTRUN_OUTPUT_ROOT violates the formal path contract"
+  case "${POSTRUN_OUTPUT_ROOT}/" in
+    "${RUN_ROOT}/"*) ;;
+    *) fail "POSTRUN_OUTPUT_ROOT must stay under RUN_ROOT" ;;
+  esac
+fi
 case "${RUN_ROOT}/" in
   "$(realpath -e -- "${TRAINED_REPO_ROOT}")/"*)
     fail "formal run root must stay outside the trained worktree"
@@ -72,6 +95,8 @@ import json
 import sys
 from pathlib import Path
 
+from tools.bata.duca_cellcf_protocol import LEGACY_EXPOSURE132_COMMITS
+
 path = Path(sys.argv[1]).resolve()
 variant = sys.argv[2]
 commit = sys.argv[3]
@@ -80,7 +105,10 @@ if payload.get("schema") != "duca_cellcf_post_run_evidence_v1" or payload.get("o
     raise SystemExit("post-run evidence is invalid")
 if payload.get("variant") != variant or payload.get("git_commit") != commit:
     raise SystemExit("post-run variant/commit mismatch")
-if payload.get("training_profile", "exposure132") != "exposure132":
+profile = payload.get("training_profile")
+if profile is None and commit in LEGACY_EXPOSURE132_COMMITS:
+    profile = "exposure132"
+if profile != "exposure132":
     raise SystemExit("fixed trajectory only accepts exposure132 evidence")
 if payload.get("successful_optimizer_updates") != 13200:
     raise SystemExit("post-run terminal update count mismatch")
@@ -94,7 +122,7 @@ PY
 TERMINAL_CHECKPOINT="${binding[0]}"
 TERMINAL_EVALUATION="${binding[1]}"
 CHECKPOINT_DIR="$(dirname "${TERMINAL_CHECKPOINT}")"
-OUTPUT_ROOT="${RUN_ROOT}/convergence/${VARIANT}"
+OUTPUT_ROOT="${POSTRUN_OUTPUT_ROOT}/convergence/${VARIANT}"
 [[ ! -e "${OUTPUT_ROOT}" ]] || fail "refusing to overwrite trajectory evidence"
 mkdir -p "${OUTPUT_ROOT}"
 
@@ -151,6 +179,7 @@ done
   "${OUTPUT_ROOT}/epoch_59/evaluation.json" \
   "${OUTPUT_ROOT}/epoch_89/evaluation.json" "${TERMINAL_EVALUATION}" \
   "${VARIANT}" "${SEED}" "${EXPECTED_COMMIT}" \
+  "${EVIDENCE_COMMIT}" \
   "${EVALUATION_RUNTIME_HASHES[0]}" "${EVALUATION_RUNTIME_HASHES[1]}" <<'PY'
 import hashlib
 import json
@@ -164,7 +193,8 @@ paths = [Path(value).resolve() for value in sys.argv[2:6]]
 variant = sys.argv[6]
 seed = int(sys.argv[7])
 commit = sys.argv[8]
-runtime_hashes = sys.argv[9:11]
+evidence_commit = sys.argv[9]
+runtime_hashes = sys.argv[10:12]
 for path in paths:
     if not path.is_file():
         raise SystemExit(f"missing trajectory artifact: {path}")
@@ -173,6 +203,7 @@ payload = {
     "ok": True,
     "task": "offline_temporal_action_detection",
     "git_commit": commit,
+    "evidence_git_commit": evidence_commit,
     "training_profile": "exposure132",
     "variant": variant,
     "seed": seed,

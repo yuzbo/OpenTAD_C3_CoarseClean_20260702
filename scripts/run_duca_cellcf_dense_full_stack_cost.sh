@@ -29,6 +29,11 @@ REPEATS="${DUCA_DENSE_FULL_STACK_COST_REPEATS:-3}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "cost profiling must run inside Slurm"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a logical GPU"
+[[ "${SAMPLES}" =~ ^[1-9][0-9]*$ ]] || fail "sample count must be a positive integer"
+[[ "${WARMUP}" =~ ^[1-9][0-9]*$ ]] || fail "warmup count must be a positive integer"
+[[ "${REPEATS}" =~ ^[1-9][0-9]*$ ]] || fail "repeat count must be a positive integer"
+[[ "${SAMPLES}" -ge 500 ]] || fail "at least 500 measured samples are required"
+[[ "${WARMUP}" -ge 20 ]] || fail "at least 20 warmup samples are required"
 [[ "${REPEATS}" -ge 3 ]] || fail "at least three fresh repeats are required"
 for path in "${DENSE_CONFIG}" "${DENSE_CHECKPOINT}" "${DENSE_BINDING}" \
   "${CELLCF_CONFIG}" "${CELLCF_CHECKPOINT}" "${CELLCF_POST_RUN}"; do

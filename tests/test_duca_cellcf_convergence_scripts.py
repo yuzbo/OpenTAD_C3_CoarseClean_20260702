@@ -11,6 +11,8 @@ def test_convergence_runner_is_fixed_to_predeclared_diagnostic_epochs() -> None:
 
     assert "for epoch in 59 89" in text
     assert "DUCA_CELLCF_TRAINING_PROFILE=exposure132" in text
+    assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in text
+    assert "DUCA_CELLCF_POSTRUN_OUTPUT_ROOT" in text
     assert "--expected-checkpoint-epoch \"${epoch}\"" in text
     assert "--checkpoint-state-key state_dict_ema" in text
     assert "best" not in text.lower()
@@ -28,6 +30,8 @@ def test_convergence_summary_uses_sealed_terminal_evaluations() -> None:
         )
     assert "--suite-aggregate \"${AGGREGATE_EVIDENCE}\"" in text
     assert "DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256" in text
+    assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in text
+    assert "DUCA_CELLCF_POSTRUN_OUTPUT_ROOT" in text
     assert text.count("--variant-receipt") == 3
     assert "refusing to overwrite fixed trajectory JSON" in text
     assert "refusing to overwrite fixed trajectory TSV" in text

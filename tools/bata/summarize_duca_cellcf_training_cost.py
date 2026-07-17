@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -129,12 +130,17 @@ def _replay_slurm_cost(
 def summarize_training_cost(
     *,
     expected_commit: str,
+    expected_evidence_commit: str,
     suite_aggregate_path: str | Path,
     suite_aggregate_sha256: str,
     post_run_paths: Mapping[str, str | Path],
     slurm_cost_paths: Mapping[str, str | Path],
     suite_loader: Callable[..., Mapping[str, Any]] = load_suite_aggregate_binding,
 ) -> dict[str, Any]:
+    _require(
+        re.fullmatch(r"[0-9a-f]{40}", expected_evidence_commit) is not None,
+        "expected evidence commit is invalid",
+    )
     _require(set(post_run_paths) == set(VARIANTS), "post-run paths are incomplete")
     _require(set(slurm_cost_paths) == set(VARIANTS), "Slurm cost paths are incomplete")
     expected_profile = protocol_from_environment().name
@@ -225,6 +231,7 @@ def summarize_training_cost(
         "ok": True,
         "task": "offline_temporal_action_detection",
         "git_commit": expected_commit,
+        "evidence_git_commit": expected_evidence_commit,
         "training_profile": profile_name,
         "training_protocol": protocol_for_name(profile_name).to_dict(),
         "suite_aggregate_binding": {
@@ -325,6 +332,7 @@ def _exclusive_write_tsv(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--expected-evidence-commit", required=True)
     parser.add_argument("--suite-aggregate", required=True)
     parser.add_argument("--suite-aggregate-sha256", required=True)
     parser.add_argument("--post-run", action="append", required=True)
@@ -346,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         payload = summarize_training_cost(
             expected_commit=args.expected_commit,
+            expected_evidence_commit=args.expected_evidence_commit,
             suite_aggregate_path=args.suite_aggregate,
             suite_aggregate_sha256=args.suite_aggregate_sha256,
             post_run_paths=_parse_bindings(args.post_run, "post-run binding"),

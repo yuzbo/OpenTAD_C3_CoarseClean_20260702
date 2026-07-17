@@ -23,6 +23,7 @@ from tools.bata.summarize_duca_cellcf_convergence import (
 
 
 COMMIT = "a" * 40
+EVIDENCE_COMMIT = "e" * 40
 SEED = 0
 
 
@@ -289,6 +290,7 @@ def _fixture_tree(tmp_path: Path):
                 "ok": True,
                 "task": "offline_temporal_action_detection",
                 "git_commit": COMMIT,
+                "evidence_git_commit": EVIDENCE_COMMIT,
                 "training_profile": "exposure132",
                 "variant": variant,
                 "seed": SEED,
@@ -387,6 +389,7 @@ def _build(tmp_path: Path):
     ) = _fixture_tree(tmp_path)
     return build_convergence_evidence(
         expected_commit=COMMIT,
+        expected_evidence_commit=EVIDENCE_COMMIT,
         suite_aggregate_path=aggregate,
         suite_aggregate_sha256=aggregate_sha,
         post_run_paths=post_runs,
@@ -478,6 +481,7 @@ def test_convergence_evidence_rejects_metric_based_artifact_tampering(
     with pytest.raises(ValueError, match="differs from official recomputation"):
         build_convergence_evidence(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path=aggregate,
             suite_aggregate_sha256=aggregate_sha,
             post_run_paths=post_runs,
@@ -505,6 +509,7 @@ def test_convergence_evidence_rejects_mixed_suite_post_run(
     with pytest.raises(ValueError, match="binds another post-run path"):
         build_convergence_evidence(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path=aggregate,
             suite_aggregate_sha256=aggregate_sha,
             post_run_paths=post_runs,
@@ -535,6 +540,32 @@ def test_convergence_evidence_rejects_variant_receipt_runtime_tampering(
     with pytest.raises(ValueError, match="runtime config hashes mismatch"):
         build_convergence_evidence(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
+            suite_aggregate_path=aggregate,
+            suite_aggregate_sha256=aggregate_sha,
+            post_run_paths=post_runs,
+            variant_receipt_paths=variant_receipts,
+            evaluation_paths=evaluations,
+            recompute=_recompute,
+            checkpoint_inspector=_inspect_checkpoint,
+        )
+
+
+def test_convergence_evidence_rejects_evidence_commit_drift(
+    tmp_path: Path,
+) -> None:
+    (
+        aggregate,
+        aggregate_sha,
+        post_runs,
+        variant_receipts,
+        evaluations,
+    ) = _fixture_tree(tmp_path)
+
+    with pytest.raises(ValueError, match="evidence_git_commit"):
+        build_convergence_evidence(
+            expected_commit=COMMIT,
+            expected_evidence_commit="f" * 40,
             suite_aggregate_path=aggregate,
             suite_aggregate_sha256=aggregate_sha,
             post_run_paths=post_runs,
@@ -562,6 +593,7 @@ def test_convergence_evidence_rejects_unscoped_missing_profile_compatibility(
     with pytest.raises(ValueError, match="one audited legacy"):
         build_convergence_evidence(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path=aggregate,
             suite_aggregate_sha256=_sha(aggregate),
             post_run_paths=post_runs,
@@ -587,6 +619,7 @@ def test_convergence_evidence_rejects_missing_fixed_point(
     with pytest.raises(ValueError, match="exactly variants x fixed epochs"):
         build_convergence_evidence(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path=aggregate,
             suite_aggregate_sha256=aggregate_sha,
             post_run_paths=post_runs,

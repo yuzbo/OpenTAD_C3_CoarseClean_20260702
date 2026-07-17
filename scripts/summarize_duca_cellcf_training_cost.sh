@@ -11,21 +11,43 @@ cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 BOOTSTRAP_PYTHON="${BASE}/conda_envs/opentad/bin/python"
+EVIDENCE_COMMIT="$(git rev-parse HEAD)"
+EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
 RUN_ROOT="${DUCA_CELLCF_FORMAL_RUN_ROOT:-${RUN_ROOT:-}}"
+POSTRUN_OUTPUT_ROOT="${DUCA_CELLCF_POSTRUN_OUTPUT_ROOT:-}"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 LEDGER="${RUN_ROOT}/jobs.submitted.tsv"
-OUTPUT_ROOT="${RUN_ROOT}/training_cost"
 AGGREGATE_EVIDENCE="${RUN_ROOT}/aggregate_suite_evidence.json"
 AGGREGATE_SHA256="${DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256:-}"
 
 [[ -x "${BOOTSTRAP_PYTHON}" ]] || fail "Python is missing: ${BOOTSTRAP_PYTHON}"
+[[ "${EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "evidence repository commit is invalid"
+[[ "${EXPECTED_EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "DUCA_EVIDENCE_EXPECTED_COMMIT is required"
+[[ "${EVIDENCE_COMMIT}" == "${EXPECTED_EVIDENCE_COMMIT}" ]] \
+  || fail "evidence repository commit drift"
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
+  || fail "evidence repository is dirty"
 [[ -d "${RUN_ROOT}" ]] || fail "formal run root is missing"
 RUN_ROOT="$(
   duca_cellcf_require_external_path \
     "RUN_ROOT" "${REPO_ROOT}" "${BASE}" "${RUN_ROOT}"
 )" || fail "RUN_ROOT violates the formal path contract"
+if [[ -z "${POSTRUN_OUTPUT_ROOT}" ]]; then
+  POSTRUN_OUTPUT_ROOT="${RUN_ROOT}"
+else
+  POSTRUN_OUTPUT_ROOT="$(
+    duca_cellcf_require_external_path \
+      "POSTRUN_OUTPUT_ROOT" "${REPO_ROOT}" "${BASE}" \
+      "${POSTRUN_OUTPUT_ROOT}"
+  )" || fail "POSTRUN_OUTPUT_ROOT violates the formal path contract"
+  case "${POSTRUN_OUTPUT_ROOT}/" in
+    "${RUN_ROOT}/"*) ;;
+    *) fail "POSTRUN_OUTPUT_ROOT must stay under RUN_ROOT" ;;
+  esac
+fi
 LEDGER="${RUN_ROOT}/jobs.submitted.tsv"
-OUTPUT_ROOT="${RUN_ROOT}/training_cost"
+OUTPUT_ROOT="${POSTRUN_OUTPUT_ROOT}/training_cost"
 AGGREGATE_EVIDENCE="${RUN_ROOT}/aggregate_suite_evidence.json"
 [[ -f "${LEDGER}" ]] || fail "submitted-job ledger is missing"
 [[ -n "${EXPECTED_COMMIT}" ]] || fail "DUCA_EXPECTED_COMMIT is required"
@@ -113,6 +135,7 @@ done
 
 "${PYTHON}" -m tools.bata.summarize_duca_cellcf_training_cost \
   --expected-commit "${EXPECTED_COMMIT}" \
+  --expected-evidence-commit "${EVIDENCE_COMMIT}" \
   --suite-aggregate "${AGGREGATE_EVIDENCE}" \
   --suite-aggregate-sha256 "${AGGREGATE_SHA256}" \
   --post-run "uniform=${RUN_ROOT}/logs/uniform/post_run_evidence.json" \

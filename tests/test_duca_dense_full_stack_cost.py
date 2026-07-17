@@ -160,19 +160,46 @@ def _profile(path: Path, method: str, scale: float, repeat: int = 1) -> None:
         "head_ms": 3.0 * scale * jitter,
         "selected_count": 384 if method == "cellcf-fixed384" else 768,
     }
-    second_sample = {
-        key: (
-            value * 1.01
-            if key.endswith("_ms") and isinstance(value, (int, float))
-            else value
+    samples = []
+    for index in range(500):
+        factor = 1.0 + index * 0.00001
+        samples.append(
+            {
+                key: (
+                    value * factor
+                    if key.endswith("_ms") and isinstance(value, (int, float))
+                    else value
+                )
+                for key, value in sample.items()
+            }
         )
-        for key, value in sample.items()
-    }
     report = build_profile_summary(
-        [sample, second_sample],
+        samples,
         metadata=metadata,
     )
     path.write_text(json.dumps(report), encoding="utf-8")
+
+
+def _rebuild_with_raw_samples(payload: dict) -> dict:
+    return build_profile_summary(
+        payload["raw_samples"],
+        metadata={
+            key: value
+            for key, value in payload.items()
+            if key
+            not in {
+                "schema_version",
+                "sample_count",
+                "stage_semantics",
+                "stages",
+                "selected_count",
+                "resources",
+                "energy",
+                "claims",
+                "raw_samples",
+            }
+        },
+    )
 
 
 def test_dense_full_stack_summary_requires_all_repeat_cost_gates(
@@ -251,10 +278,58 @@ def test_dense_full_stack_runner_is_alternating_and_hash_bound() -> None:
     assert "duca_cellcf_require_external_path" in source
     assert "--sample-power" in source
     assert "REPEATS" in source
+    assert '[[ "${SAMPLES}" -ge 500 ]]' in source
+    assert '[[ "${WARMUP}" -ge 20 ]]' in source
     assert ".summary.json" in source
     assert "refusing to overwrite an existing cost root" in source
     assert "--profile-repeat-index" in source
     assert "--profile-order-position" in source
+
+
+def test_dense_full_stack_summary_rejects_too_few_samples(
+    tmp_path: Path,
+) -> None:
+    dense = []
+    cellcf = []
+    for repeat in range(1, 4):
+        dense_path = tmp_path / f"dense_{repeat}.json"
+        cellcf_path = tmp_path / f"cellcf_{repeat}.json"
+        _profile(dense_path, "dense-adatad", 2.0, repeat)
+        _profile(cellcf_path, "cellcf-fixed384", 1.0, repeat)
+        dense.append(dense_path)
+        cellcf.append(cellcf_path)
+    payload = json.loads(dense[0].read_text(encoding="utf-8"))
+    payload["raw_samples"] = payload["raw_samples"][:499]
+    dense[0].write_text(
+        json.dumps(_rebuild_with_raw_samples(payload)),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="at least 500 measured samples"):
+        summarize_dense_full_stack_cost(dense, cellcf)
+
+
+def test_dense_full_stack_summary_rejects_too_few_warmup_samples(
+    tmp_path: Path,
+) -> None:
+    dense = []
+    cellcf = []
+    for repeat in range(1, 4):
+        dense_path = tmp_path / f"dense_{repeat}.json"
+        cellcf_path = tmp_path / f"cellcf_{repeat}.json"
+        _profile(dense_path, "dense-adatad", 2.0, repeat)
+        _profile(cellcf_path, "cellcf-fixed384", 1.0, repeat)
+        dense.append(dense_path)
+        cellcf.append(cellcf_path)
+    payload = json.loads(dense[0].read_text(encoding="utf-8"))
+    payload["warmup_samples"] = 19
+    dense[0].write_text(
+        json.dumps(_rebuild_with_raw_samples(payload)),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="at least 20 warmup samples"):
+        summarize_dense_full_stack_cost(dense, cellcf)
 
 
 def test_dense_full_stack_summary_rejects_reused_repeat_file(
@@ -315,7 +390,10 @@ def test_dense_full_stack_summary_rejects_permuted_raw_sample_copy(
     copied["profile_repeat_index"] = 2
     copied["profile_pair_id"] = "repeat-2"
     copied["profile_order_position"] = 2
-    dense[1].write_text(json.dumps(copied), encoding="utf-8")
+    dense[1].write_text(
+        json.dumps(_rebuild_with_raw_samples(copied)),
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="raw sample multiset"):
         summarize_dense_full_stack_cost(dense, cellcf)

@@ -12,6 +12,7 @@ from tools.bata.summarize_duca_cellcf_training_cost import summarize_training_co
 
 
 COMMIT = "a" * 40
+EVIDENCE_COMMIT = "e" * 40
 VARIANTS = ("uniform", "transition_beta0", "cellcf")
 
 
@@ -154,6 +155,7 @@ def test_training_cost_summary_binds_jobs_to_audits_and_reports_availability(
     monkeypatch.setenv("DUCA_CELLCF_TRAINING_PROFILE", "official60")
     payload = summarize_training_cost(
         expected_commit=COMMIT,
+        expected_evidence_commit=EVIDENCE_COMMIT,
         suite_aggregate_path="aggregate.json",
         suite_aggregate_sha256="b" * 64,
         post_run_paths=post_runs,
@@ -162,6 +164,7 @@ def test_training_cost_summary_binds_jobs_to_audits_and_reports_availability(
     )
 
     assert payload["training_profile"] == "official60"
+    assert payload["evidence_git_commit"] == EVIDENCE_COMMIT
     assert payload["training_protocol"]["end_epoch"] == 60
     assert payload["total_three_arm_allocation_gpu_hours"] == pytest.approx(3.5)
     assert payload["training_only_gpu_hours"]["available"] is False
@@ -185,6 +188,7 @@ def test_training_cost_summary_rejects_job_identity_drift(
     with pytest.raises(ValueError, match="another job id"):
         summarize_training_cost(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path="aggregate.json",
             suite_aggregate_sha256="b" * 64,
             post_run_paths=post_runs,
@@ -209,6 +213,7 @@ def test_training_cost_summary_rejects_rehashed_derived_cost_tampering(
     with pytest.raises(ValueError, match="replayed raw sacct data"):
         summarize_training_cost(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path="aggregate.json",
             suite_aggregate_sha256="b" * 64,
             post_run_paths=post_runs,
@@ -233,6 +238,7 @@ def test_training_cost_summary_rejects_raw_sacct_tampering(
     with pytest.raises(ValueError, match="raw sacct artifact hash mismatch"):
         summarize_training_cost(
             expected_commit=COMMIT,
+            expected_evidence_commit=EVIDENCE_COMMIT,
             suite_aggregate_path="aggregate.json",
             suite_aggregate_sha256="b" * 64,
             post_run_paths=post_runs,
@@ -253,4 +259,7 @@ def test_training_cost_shell_uses_submitted_ledger_and_three_bound_arms() -> Non
     assert 'for key in ("uniform", "transition_beta0", "cellcf")' in source
     assert "must contain exactly one" in source
     assert "DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256" in source
+    assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in source
+    assert "DUCA_CELLCF_POSTRUN_OUTPUT_ROOT" in source
+    assert "--expected-evidence-commit" in source
     assert "--raw-output" in source
