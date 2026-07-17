@@ -13,6 +13,10 @@ from typing import Any
 
 from mmengine.config import Config
 
+from tools.bata.duca_cellcf_protocol import (
+    protocol_from_environment,
+    protocol_from_workflow,
+)
 
 PILOT_SCHEMA = "duca_cellcf_ddp_pilot_suite_v1"
 RUN_SCHEMA = "duca_cellcf_ddp_pilot_run_v1"
@@ -49,7 +53,6 @@ EXPECTED_OPTIMIZER_ATTEMPTS = EXPECTED_STEPS + 1
 EXPECTED_FORCED_AMP_OVERFLOWS = 1
 FIXED_K = 384
 DENSE_WINDOW_SIZE = 768
-FORMAL_END_EPOCH = 132
 CHECKPOINT_INTERVAL = 5
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _SELECTED_K_KEYS = (
@@ -65,6 +68,10 @@ _SELECTED_K_KEYS = (
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def _formal_protocol():
+    return protocol_from_environment()
 
 
 def _plain(value: Any) -> Any:
@@ -104,14 +111,14 @@ def _load_json(path: str | Path, label: str) -> tuple[Path, dict[str, Any]]:
     return resolved, payload
 
 
-def _atomic_write_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
+def _exclusive_write_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
     output = Path(path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    temporary.replace(output)
+    with output.open("x", encoding="utf-8") as handle:
+        json.dump(dict(payload), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     return output
 
 
@@ -159,11 +166,15 @@ def _validate_real_loader_gate(
         validate_real_loader_gate_artifact,
     )
 
-    validate_real_loader_gate_artifact(
+    validated = validate_real_loader_gate_artifact(
         gate_path,
         expected_commit=expected_commit,
         expected_sha256=expected_sha256,
         require_clean=False,
+    )
+    _require(
+        validated.get("training_profile") == _formal_protocol().name,
+        "CellCF real-loader gate training profile differs from the pilot",
     )
     if "task" in payload:
         _require(
@@ -175,6 +186,7 @@ def _validate_real_loader_gate(
         "sha256": observed_sha256,
         "schema": REAL_LOADER_GATE_SCHEMA,
         "git_commit": expected_commit,
+        "training_profile": str(validated["training_profile"]),
     }
 
 
@@ -195,6 +207,11 @@ def _validate_config_contract(root: Path, variant: str) -> dict[str, Any]:
     official = Config.fromfile(str(official_path))
     contract = formal.duca_transition_only_contract
     selector = formal.model.frame_selector
+    training_protocol = protocol_from_workflow(formal.workflow)
+    _require(
+        training_protocol == _formal_protocol(),
+        f"{variant}: formal training profile differs from the pilot environment",
+    )
 
     _require(
         contract.task == "offline_temporal_action_detection",
@@ -302,19 +319,20 @@ def _validate_config_contract(root: Path, variant: str) -> dict[str, Any]:
         )
 
     _require(
-        int(formal.workflow.end_epoch) == FORMAL_END_EPOCH,
-        f"{variant}: formal training must remain 132 epochs",
+        int(formal.workflow.end_epoch) == _formal_protocol().end_epoch,
+        f"{variant}: formal training profile drifted",
     )
     _require(
-        int(formal.scheduler.max_epoch) == FORMAL_END_EPOCH,
-        f"{variant}: scheduler must remain 132 epochs",
+        int(formal.scheduler.max_epoch) == _formal_protocol().end_epoch,
+        f"{variant}: scheduler training profile drifted",
     )
     _require(
         int(formal.workflow.checkpoint_interval) == CHECKPOINT_INTERVAL,
         f"{variant}: formal checkpoint interval must remain five",
     )
     _require(
-        int(formal.workflow.expected_successful_optimizer_updates) == 13200,
+        int(formal.workflow.expected_successful_optimizer_updates)
+        == _formal_protocol().expected_successful_optimizer_updates,
         f"{variant}: formal successful-update count drifted",
     )
     _require(
@@ -322,7 +340,8 @@ def _validate_config_contract(root: Path, variant: str) -> dict[str, Any]:
         f"{variant}: formal primary state must remain EMA",
     )
     _require(
-        int(formal.workflow.primary_checkpoint_epoch) == 131,
+        int(formal.workflow.primary_checkpoint_epoch)
+        == _formal_protocol().terminal_epoch,
         f"{variant}: formal primary checkpoint epoch drifted",
     )
 
@@ -398,7 +417,8 @@ def _validate_config_contract(root: Path, variant: str) -> dict[str, Any]:
         "pilot_config_sha256": _sha256(pilot_path),
         "task": "offline_temporal_action_detection",
         "fixed_k": FIXED_K,
-        "formal_end_epoch": FORMAL_END_EPOCH,
+        "training_profile": _formal_protocol().name,
+        "formal_end_epoch": _formal_protocol().end_epoch,
         "checkpoint_interval": CHECKPOINT_INTERVAL,
         "pilot_checkpoint_disabled": True,
     }
@@ -924,7 +944,12 @@ def _validate_manifest(
         "CellCF pilot dense window drifted",
     )
     _require(
-        int(manifest.get("formal_end_epoch", 0)) == FORMAL_END_EPOCH,
+        manifest.get("training_profile") == _formal_protocol().name,
+        "CellCF formal training profile drifted",
+    )
+    _require(
+        int(manifest.get("formal_end_epoch", 0))
+        == _formal_protocol().end_epoch,
         "CellCF formal epoch count drifted",
     )
     _require(
@@ -1008,7 +1033,8 @@ def _validate_probe_bindings(
         "run_manifest_sha256": _sha256(manifest_path),
         "task": "offline_temporal_action_detection",
         "fixed_k": FIXED_K,
-        "formal_end_epoch": FORMAL_END_EPOCH,
+        "training_profile": _formal_protocol().name,
+        "formal_end_epoch": _formal_protocol().end_epoch,
         "checkpoint_interval": CHECKPOINT_INTERVAL,
         "pilot_checkpoint_disabled": True,
     }
@@ -1076,7 +1102,8 @@ def validate_preflight(
         "real_loader_gate_sha256": gate["sha256"],
         "task": "offline_temporal_action_detection",
         "fixed_k": FIXED_K,
-        "formal_end_epoch": FORMAL_END_EPOCH,
+        "training_profile": _formal_protocol().name,
+        "formal_end_epoch": _formal_protocol().end_epoch,
         "checkpoint_interval": CHECKPOINT_INTERVAL,
         "variants": list(VARIANT_ORDER),
         "config_contracts": config_contracts,
@@ -1187,10 +1214,11 @@ def validate_pilot_suite(
         "pilot_nonce": manifest["pilot_nonce"],
         "task": "offline_temporal_action_detection",
         "fixed_k": FIXED_K,
+        "training_profile": _formal_protocol().name,
         "dense_window_size": DENSE_WINDOW_SIZE,
         "world_size": 1,
         "torch_distributed_entrypoint": "python -m torch.distributed.run",
-        "formal_end_epoch": FORMAL_END_EPOCH,
+        "formal_end_epoch": _formal_protocol().end_epoch,
         "checkpoint_interval": CHECKPOINT_INTERVAL,
         "pilot_checkpoint_disabled": True,
         "expected_successful_updates_per_arm": EXPECTED_SUCCESSFUL_UPDATES,
@@ -1292,6 +1320,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    output_path = Path(args.output_json).expanduser().resolve()
+    if output_path.exists():
+        raise SystemExit("refusing to overwrite CellCF DDP pilot evidence")
     if args.precheck_only:
         payload = validate_preflight(
             repo_root=args.repo_root,
@@ -1311,7 +1342,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_real_loader_gate_sha256=args.expected_real_loader_gate_sha256,
             require_clean=args.require_clean,
         )
-    output = _atomic_write_json(args.output_json, payload)
+    output = _exclusive_write_json(output_path, payload)
     if not args.precheck_only:
         validate_pilot_artifact(
             output,

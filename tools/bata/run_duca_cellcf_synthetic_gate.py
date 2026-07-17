@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ from opentad.models.duca.structured_selection import (
     local_cell_deformation,
 )
 from opentad.models.duca.transition_only import DucaTransitionUtilityScorer
+from tools.bata.duca_cellcf_protocol import protocol_from_environment
 from tools.bata.validate_duca_cellcf_fixed384 import VARIANTS, validate_config
 
 
@@ -36,6 +38,7 @@ AUDITED_PATHS = (
     "opentad/models/duca/structured_selection.py",
     "opentad/models/duca/transition_only.py",
     "opentad/models/selectors/duca_online_frame_selector.py",
+    "tools/bata/duca_cellcf_protocol.py",
     "tools/bata/validate_duca_cellcf_fixed384.py",
     "tools/bata/run_duca_cellcf_synthetic_gate.py",
     *VARIANTS.values(),
@@ -193,7 +196,15 @@ def run_gate(*, device: str = "cpu", require_clean: bool = True) -> dict[str, An
     torch_device = torch.device(device)
     if torch_device.type == "cuda":
         _require(torch.cuda.is_available(), "CUDA requested but unavailable")
+    training_protocol = protocol_from_environment()
     config_contracts = {name: validate_config(name) for name in sorted(VARIANTS)}
+    _require(
+        all(
+            contract.get("training_profile") == training_protocol.name
+            for contract in config_contracts.values()
+        ),
+        "CellCF synthetic gate config profiles differ from the environment",
+    )
     return {
         "ok": True,
         "schema": "duca_cellcf_synthetic_gate_v1",
@@ -204,6 +215,8 @@ def run_gate(*, device: str = "cpu", require_clean: bool = True) -> dict[str, An
         "real_dataset_loader_executed": False,
         "ddp_executed": False,
         "device": str(torch_device),
+        "training_profile": training_protocol.name,
+        "training_protocol": training_protocol.to_dict(),
         "config_contracts": config_contracts,
         "geometry": _exhaustive_geometry(torch_device),
         "step_zero": _soft_family_and_step_zero(torch_device),
@@ -218,6 +231,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--output-json")
     args = parser.parse_args(argv)
+    output_path = (
+        None
+        if not args.output_json
+        else Path(args.output_json).expanduser().resolve()
+    )
+    if output_path is not None and output_path.exists():
+        failure = {
+            "ok": False,
+            "schema": "duca_cellcf_synthetic_gate_v1",
+            "error_type": "FileExistsError",
+            "error": "refusing to overwrite synthetic-gate evidence",
+        }
+        print(json.dumps(failure, indent=2, sort_keys=True))
+        return 1
     try:
         summary = run_gate(device=args.device, require_clean=not args.allow_dirty)
     except Exception as exc:
@@ -227,8 +254,12 @@ def main(argv: list[str] | None = None) -> int:
         code = 0
     payload = json.dumps(summary, indent=2, sort_keys=True)
     print(payload)
-    if args.output_json:
-        Path(args.output_json).write_text(payload, encoding="utf-8")
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("x", encoding="utf-8") as handle:
+            handle.write(payload + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
     return code
 
 

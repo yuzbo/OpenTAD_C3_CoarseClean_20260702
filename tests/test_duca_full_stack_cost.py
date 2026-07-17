@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,7 @@ from tools.bata.duca_full_stack_cost import (
     build_cost_matrix,
     compare_profile_summaries,
     integrate_power_samples,
+    validate_and_rebuild_profile_summary,
     write_profile_artifacts,
     write_cost_matrix_artifacts,
 )
@@ -33,6 +35,31 @@ def _sample(scale: float = 1.0, *, selected_count: int = 384) -> dict:
         "selected_count": selected_count,
         "gpu_energy_j": 30.0 * scale,
     }
+
+
+def test_profile_and_matrix_writers_refuse_to_overwrite(
+    tmp_path: Path,
+) -> None:
+    report = build_profile_summary(
+        [_sample()], metadata=_metadata("candidate")
+    )
+    profile_prefix = tmp_path / "profile"
+    profile_paths = write_profile_artifacts(report, profile_prefix)
+    profile_json = profile_paths["json"].read_bytes()
+    with pytest.raises(FileExistsError, match="overwrite"):
+        write_profile_artifacts(report, profile_prefix)
+    assert profile_paths["json"].read_bytes() == profile_json
+
+    baseline = build_profile_summary(
+        [_sample(1.2)], metadata=_metadata("baseline")
+    )
+    matrix = build_cost_matrix(baseline, [report])
+    matrix_prefix = tmp_path / "matrix"
+    matrix_paths = write_cost_matrix_artifacts(matrix, matrix_prefix)
+    matrix_json = matrix_paths["json"].read_bytes()
+    with pytest.raises(FileExistsError, match="overwrite"):
+        write_cost_matrix_artifacts(matrix, matrix_prefix)
+    assert matrix_paths["json"].read_bytes() == matrix_json
 
 
 def _metadata(name: str) -> dict:
@@ -78,6 +105,22 @@ def test_profile_summary_reports_full_stack_cost_and_nonoverlapping_residuals() 
     assert report["claims"]["decoder_and_preprocess_separated"] is False
 
 
+def test_profile_summary_must_reconstruct_exactly_from_raw_samples() -> None:
+    report = build_profile_summary(
+        [_sample(1.0), _sample(2.0)],
+        metadata=_metadata("duca-fixed384"),
+    )
+
+    fingerprints = validate_and_rebuild_profile_summary(report)
+
+    assert len(fingerprints["ordered_sha256"]) == 64
+    assert len(fingerprints["multiset_sha256"]) == 64
+    tampered = json.loads(json.dumps(report))
+    tampered["stages"]["end_to_end_serial_ms"]["p50"] += 1.0
+    with pytest.raises(ValueError, match="does not reconstruct exactly"):
+        validate_and_rebuild_profile_summary(tampered)
+
+
 def test_profile_summary_rejects_missing_or_inconsistent_stage_costs() -> None:
     missing = _sample()
     missing.pop("h2d_ms")
@@ -89,6 +132,11 @@ def test_profile_summary_rejects_missing_or_inconsistent_stage_costs() -> None:
     overlapping["backbone_wrapper_total_ms"] = 70.0
     with pytest.raises(ValueError, match="model_forward_ms"):
         build_profile_summary([overlapping], metadata=_metadata("broken"))
+
+    unsupported = _sample()
+    unsupported["repeat_nonce"] = "metadata-disguised-as-a-sample"
+    with pytest.raises(ValueError, match="unsupported fields"):
+        build_profile_summary([unsupported], metadata=_metadata("broken"))
 
 
 def test_compare_profiles_enforces_protocol_and_hardware_and_reports_cost_gates() -> None:

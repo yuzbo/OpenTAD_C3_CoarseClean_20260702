@@ -64,7 +64,11 @@ def atomic_write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
             temporary.unlink()
 
 
-def formal_training_contract(cfg) -> dict[str, Any] | None:
+def formal_training_contract(
+    cfg,
+    *,
+    expected_checkpoint_criterion: str = "terminal_epoch_131_state_dict_ema",
+) -> dict[str, Any] | None:
     workflow = cfg.workflow
     if not bool(workflow.get("formal_successful_update_contract", False)):
         return None
@@ -97,7 +101,7 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
         raise ValueError("formal DUCA primary checkpoint must be the terminal epoch")
     if contract["primary_checkpoint_state_key"] != "state_dict_ema":
         raise ValueError("formal DUCA primary state must be state_dict_ema")
-    if contract["checkpoint_criterion"] != "terminal_epoch_131_state_dict_ema":
+    if contract["checkpoint_criterion"] != expected_checkpoint_criterion:
         raise ValueError("formal DUCA checkpoint criterion is not frozen")
     if contract["checkpoint_interval"] != 5:
         raise ValueError("formal DUCA checkpoint interval must remain five epochs")

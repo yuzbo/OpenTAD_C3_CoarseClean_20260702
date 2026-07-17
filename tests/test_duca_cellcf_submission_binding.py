@@ -46,6 +46,10 @@ def test_submitter_rejects_stale_receipts_and_closes_the_crash_window() -> None:
     assert 'command -v squeue' in SUBMIT
     assert 'command -v scontrol' in SUBMIT
     assert "duca_cellcf_slurm_submission_v2" in SUBMIT
+    assert "PRECHECK PASS profile=${TRAINING_PROFILE}" in SUBMIT
+    assert SUBMIT.index('if [[ "${PRECHECK_ONLY:-0}" == "1" ]]') < SUBMIT.index(
+        "command -v sbatch"
+    )
 
     for field in (
         "job_name",
@@ -57,6 +61,7 @@ def test_submitter_rejects_stale_receipts_and_closes_the_crash_window() -> None:
         "prepared_submission_sha256",
         "git_commit",
         "seed",
+        "training_profile",
     ):
         assert f'"{field}"' in SUBMIT
 
@@ -68,12 +73,17 @@ def test_submitter_rejects_stale_receipts_and_closes_the_crash_window() -> None:
     assert 'if ! intent_sha256="$(sha256_file' in SUBMIT
     assert "sbatch returned no valid job binding" in SUBMIT
     assert "parsed an invalid job id" in SUBMIT
-    assert "prepared suite binding must contain exactly seven fields" in SUBMIT
+    assert "prepared suite binding must contain exactly eight fields" in SUBMIT
     assert '--dependency "${dependency}"' in SUBMIT
     assert SUBMIT.count('--job-file "${job_file}"') == 3
     assert SUBMIT.count('--job-file-sha256 "${job_file_sha256}"') == 3
     assert SUBMIT.count("--require-scheduler-script") == 1
     assert "os.fsync(directory_fd)" in SUBMIT
+    assert "duca_cellcf_require_external_path" in SUBMIT
+    assert "prepared submission and suite manifest profile mismatch" in SUBMIT
+    assert "expected_job_name(profile, key, seed, commit)" in SUBMIT
+    assert "duca_cellcf_submission_contract" in PREPARE
+    assert "duca_cellcf_submission_contract" in SUBMIT
 
 
 def test_cost_and_completion_are_mandatory_after_successful_aggregate() -> None:
@@ -145,6 +155,7 @@ def _submit_once_harness(
             "PREPARED_SUBMISSION_SHA256=$HASH",
             "EXPECTED_COMMIT=$(printf 'a%.0s' {1..40})",
             "SEED=0",
+            "TRAINING_PROFILE=exposure132",
             "PYTHON=python_stub",
             f"SBATCH_RESPONSE={shlex.quote(response)}",
             f"FAIL_INTENT_HASH={int(fail_intent_hash)}",

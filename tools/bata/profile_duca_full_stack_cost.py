@@ -27,13 +27,19 @@ from tools.bata.duca_full_stack_cost import (
     integrate_power_samples,
     write_profile_artifacts,
 )
+from tools.bata.duca_cellcf_protocol import (
+    LEGACY_EXPOSURE132_COMMITS,
+    protocol_for_name,
+)
+from tools.bata.duca_trained_checkpoint_binding import (
+    load_trained_checkpoint_binding,
+)
 
 
 CELLCF_COST_METHODS = frozenset({"cellcf-fixed384", "bare-uniform384"})
+DENSE_COST_METHODS = frozenset({"dense-adatad"})
 CELLCF_POST_RUN_SCHEMA = "duca_cellcf_post_run_evidence_v1"
 CELLCF_COST_BINDING_SCHEMA = "duca_cellcf_cost_binding_v1"
-CELLCF_TERMINAL_EPOCH = 131
-CELLCF_TERMINAL_STATE_KEY = "state_dict_ema"
 
 
 class ProfileArgs(argparse.Namespace):
@@ -50,15 +56,47 @@ class ProfileArgs(argparse.Namespace):
             raise ValueError("--batch-size must be positive")
         if self.power_interval_ms <= 0:
             raise ValueError("--power-interval-ms must be positive")
+        if self.trained_commit and re.fullmatch(
+            r"[0-9a-f]{40}", str(self.trained_commit)
+        ) is None:
+            raise ValueError("--trained-commit must be a full lowercase Git commit")
         has_post_run_path = bool(str(self.post_run_evidence or "").strip())
         has_post_run_sha = bool(str(self.post_run_evidence_sha256 or "").strip())
+        has_checkpoint_evidence = bool(str(self.checkpoint_evidence or "").strip())
+        has_checkpoint_evidence_sha = bool(
+            str(self.checkpoint_evidence_sha256 or "").strip()
+        )
         if has_post_run_path != has_post_run_sha:
             raise ValueError("--post-run-evidence and --post-run-evidence-sha256 are required together")
+        if has_checkpoint_evidence != has_checkpoint_evidence_sha:
+            raise ValueError(
+                "--checkpoint-evidence and --checkpoint-evidence-sha256 are required together"
+            )
+        if has_post_run_path and has_checkpoint_evidence:
+            raise ValueError("CellCF and generic checkpoint evidence are mutually exclusive")
         if self.method_name in CELLCF_COST_METHODS:
             if not has_post_run_path:
                 raise ValueError("formal CellCF cost profiles require hash-bound post-run evidence")
             if self.allow_random_init or not self.use_ema:
                 raise ValueError("formal CellCF cost profiles require CellCF-trained EMA weights")
+        if self.method_name in DENSE_COST_METHODS:
+            if not has_checkpoint_evidence:
+                raise ValueError("formal dense cost profiles require hash-bound checkpoint evidence")
+            if self.allow_random_init or not self.use_ema:
+                raise ValueError("formal dense cost profiles require trained EMA weights")
+        if self.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+            if not str(self.profile_session_id or "").strip():
+                raise ValueError("formal cost profiles require --profile-session-id")
+            if not str(self.profile_pair_id or "").strip():
+                raise ValueError("formal cost profiles require --profile-pair-id")
+            if self.profile_repeat_index <= 0:
+                raise ValueError(
+                    "formal cost profiles require a positive --profile-repeat-index"
+                )
+            if self.profile_order_position not in (1, 2):
+                raise ValueError(
+                    "formal cost profiles require --profile-order-position 1 or 2"
+                )
 
 
 class ProfileArgumentParser(argparse.ArgumentParser):
@@ -74,6 +112,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-prefix", required=True, help="output path without extension")
     parser.add_argument("--method-name", default="duca-fixed384")
     parser.add_argument("--config-commit", default="")
+    parser.add_argument(
+        "--trained-commit",
+        default="",
+        help="commit that produced the bound trained checkpoint; defaults to profiler HEAD",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--warmup-samples", type=int, default=5)
@@ -89,6 +132,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--compare-baseline-summary", default="")
     parser.add_argument("--post-run-evidence", default="", help="CellCF post_run_evidence.json")
     parser.add_argument("--post-run-evidence-sha256", default="", help="frozen SHA256 of post-run evidence")
+    parser.add_argument("--checkpoint-evidence", default="", help="generic trained-checkpoint binding JSON")
+    parser.add_argument("--checkpoint-evidence-sha256", default="", help="generic binding SHA256")
+    parser.add_argument("--profile-session-id", default="")
+    parser.add_argument("--profile-pair-id", default="")
+    parser.add_argument("--profile-repeat-index", type=int, default=0)
+    parser.add_argument("--profile-order-position", type=int, default=0)
     return parser
 
 
@@ -327,11 +376,14 @@ def _git_commit(repo_root: Path) -> str:
 
 
 def _tracked_tree_is_clean(repo_root: Path) -> bool:
-    for args in (("diff", "--quiet", "--"), ("diff", "--cached", "--quiet", "--")):
-        result = subprocess.run(["git", *args], cwd=repo_root, check=False)
-        if result.returncode != 0:
-            return False
-    return True
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return not bool(result.stdout.strip())
 
 
 def _sha256_file(path: str | Path) -> str:
@@ -397,6 +449,15 @@ def load_cellcf_cost_binding(
         raise ValueError("CellCF post-run evidence has an invalid git commit")
     if expected_commit is not None and commit != str(expected_commit):
         raise ValueError("CellCF post-run evidence is bound to another commit")
+    training_profile = payload.get("training_profile")
+    if training_profile is None:
+        if commit not in LEGACY_EXPOSURE132_COMMITS:
+            raise ValueError(
+                "CellCF post-run training profile may be absent only for "
+                "the audited legacy exposure132 commit"
+            )
+        training_profile = "exposure132"
+    protocol = protocol_for_name(str(training_profile))
     if payload.get("variant") != "cellcf":
         raise ValueError("cost evidence must use the trained CellCF variant")
     seed = payload.get("seed")
@@ -412,16 +473,22 @@ def load_cellcf_cost_binding(
     ):
         config_hashes[key] = _require_sha256(payload.get(key), f"CellCF post-run {key}")
 
-    if int(payload.get("successful_optimizer_updates", -1)) != 13200:
-        raise ValueError("CellCF post-run evidence is not terminal at 13200 updates")
-    if int(payload.get("checkpoint_epoch", -1)) != CELLCF_TERMINAL_EPOCH:
-        raise ValueError("CellCF post-run evidence does not bind terminal epoch_131")
-    if payload.get("checkpoint_state_key") != CELLCF_TERMINAL_STATE_KEY:
+    if (
+        int(payload.get("successful_optimizer_updates", -1))
+        != protocol.expected_successful_optimizer_updates
+    ):
+        raise ValueError("CellCF post-run evidence is not at the frozen terminal update")
+    if int(payload.get("checkpoint_epoch", -1)) != protocol.terminal_epoch:
+        raise ValueError("CellCF post-run evidence does not bind the terminal epoch")
+    if payload.get("checkpoint_state_key") != protocol.terminal_state_key:
         raise ValueError("CellCF post-run evidence does not bind state_dict_ema")
 
     checkpoint_path = Path(str(payload.get("checkpoint_path") or "")).expanduser().resolve()
-    if checkpoint_path.name != "epoch_131.pth":
-        raise ValueError("CellCF post-run evidence does not name the exact epoch_131 checkpoint")
+    if checkpoint_path.name != f"epoch_{protocol.terminal_epoch}.pth":
+        raise ValueError(
+            "CellCF post-run evidence does not name the exact "
+            f"epoch_{protocol.terminal_epoch} checkpoint"
+        )
     if not checkpoint_path.is_file():
         raise ValueError(f"CellCF terminal checkpoint is missing: {checkpoint_path}")
     if expected_checkpoint_path is not None:
@@ -439,8 +506,8 @@ def load_cellcf_cost_binding(
         raise ValueError("CellCF post-run evidence is missing the reopened checkpoint contract")
     if checkpoint_contract.get("payload_reopened") is not True:
         raise ValueError("CellCF terminal checkpoint was not reopened during finalization")
-    if int(checkpoint_contract.get("epoch", -1)) != CELLCF_TERMINAL_EPOCH:
-        raise ValueError("CellCF reopened checkpoint contract is not terminal epoch_131")
+    if int(checkpoint_contract.get("epoch", -1)) != protocol.terminal_epoch:
+        raise ValueError("CellCF reopened checkpoint contract is not terminal")
 
     return {
         "schema": CELLCF_COST_BINDING_SCHEMA,
@@ -450,11 +517,13 @@ def load_cellcf_cost_binding(
         "git_commit": commit,
         "seed": int(seed),
         "variant": "cellcf",
+        "training_profile": protocol.name,
+        "training_protocol": protocol.to_dict(),
         **config_hashes,
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha,
-        "checkpoint_epoch": CELLCF_TERMINAL_EPOCH,
-        "checkpoint_state_key": CELLCF_TERMINAL_STATE_KEY,
+        "checkpoint_epoch": protocol.terminal_epoch,
+        "checkpoint_state_key": protocol.terminal_state_key,
     }
 
 
@@ -702,6 +771,20 @@ def _hardware_fingerprint(torch_module: Any, device: Any, *, gpu_uuid: str | Non
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     args.validate()
+    output_prefix = Path(args.output_prefix).expanduser().resolve()
+    output_targets = [
+        output_prefix.with_suffix(".summary.json"),
+        output_prefix.with_suffix(".summary.tsv"),
+        output_prefix.with_suffix(".samples.jsonl"),
+    ]
+    if args.compare_baseline_summary:
+        output_targets.append(output_prefix.with_suffix(".comparison.json"))
+    existing_outputs = [str(path) for path in output_targets if path.exists()]
+    if existing_outputs:
+        raise FileExistsError(
+            "refusing to overwrite profile evidence: "
+            + ", ".join(existing_outputs)
+        )
 
     import torch
     from mmengine.config import Config
@@ -715,7 +798,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.allow_random_init and not tracked_tree_clean:
         raise RuntimeError("paper cost profiling requires a clean tracked git tree")
     actual_commit = _git_commit(repo_root)
+    trained_commit = str(args.trained_commit or actual_commit)
+    if re.fullmatch(r"[0-9a-f]{40}", trained_commit) is None:
+        raise ValueError("--trained-commit must be a full lowercase Git commit")
     cellcf_cost_binding = None
+    trained_checkpoint_binding = None
     if args.post_run_evidence:
         if args.config_commit and args.config_commit != actual_commit:
             raise ValueError("--config-commit differs from the checked-out commit")
@@ -723,12 +810,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.post_run_evidence,
             args.post_run_evidence_sha256,
             expected_checkpoint_path=args.checkpoint,
-            expected_commit=actual_commit,
+            expected_commit=trained_commit,
         )
     config_path = Path(args.config).expanduser().resolve()
     cfg = Config.fromfile(str(config_path))
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
+    if args.checkpoint_evidence:
+        if args.config_commit and args.config_commit != actual_commit:
+            raise ValueError("--config-commit differs from the checked-out commit")
+        trained_checkpoint_binding = load_trained_checkpoint_binding(
+            args.checkpoint_evidence,
+            args.checkpoint_evidence_sha256,
+            expected_role="dense_adatad_baseline",
+            expected_commit=trained_commit,
+            expected_config_path=config_path,
+            expected_config_sha256=profile_config_sha256,
+            expected_resolved_config_sha256=profile_resolved_config_sha256,
+            expected_checkpoint_path=args.checkpoint,
+        )
     if cellcf_cost_binding is not None and args.method_name == "cellcf-fixed384":
         if profile_config_sha256 != cellcf_cost_binding["config_sha256"]:
             raise ValueError("CellCF profile source config differs from post-run evidence")
@@ -777,6 +877,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if cellcf_cost_binding is not None:
             validate_loaded_checkpoint_binding(checkpoint_meta, cellcf_cost_binding)
+        if trained_checkpoint_binding is not None:
+            for key in (
+                "checkpoint_path",
+                "checkpoint_sha256",
+                "checkpoint_epoch",
+                "checkpoint_state_key",
+            ):
+                if checkpoint_meta.get(key) != trained_checkpoint_binding.get(key):
+                    raise ValueError(f"loaded checkpoint differs from generic binding: {key}")
 
     modules, zero_stages = discover_profile_modules(model)
     external_cls = getattr(dataset, "class_map", None)
@@ -891,6 +1000,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "host_fingerprint": _host_fingerprint(),
         "software_fingerprint": _software_fingerprint(torch),
         "config_commit": actual_commit if cellcf_cost_binding is not None else (args.config_commit or actual_commit),
+        "trained_commit": trained_commit,
+        "profile_session_id": str(args.profile_session_id),
+        "profile_pair_id": str(args.profile_pair_id),
+        "profile_repeat_index": int(args.profile_repeat_index),
+        "profile_order_position": int(args.profile_order_position),
         "profile_config_sha256": profile_config_sha256,
         "profile_resolved_config_sha256": profile_resolved_config_sha256,
         "config_fingerprint": _payload_fingerprint(cfg),
@@ -926,20 +1040,43 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "dense_full_stack_savings_claimed": False,
             }
         )
+    if trained_checkpoint_binding is not None:
+        metadata.update(
+            {
+                "trained_checkpoint_binding": trained_checkpoint_binding,
+                "trained_checkpoint_binding_sha256": _canonical_sha256(
+                    trained_checkpoint_binding
+                ),
+                "weight_source": "dense_adatad_trained_state_dict_ema",
+                "frontend_variant": "dense_no_selector",
+                "dense_full_stack_savings_claimed": False,
+            }
+        )
     report = build_profile_summary(samples, metadata=metadata)
-    paths = write_profile_artifacts(report, args.output_prefix)
-    raw_path = Path(args.output_prefix).with_suffix(".samples.jsonl")
+    raw_path = output_prefix.with_suffix(".samples.jsonl")
     raw_path.parent.mkdir(parents=True, exist_ok=True)
-    with raw_path.open("w", encoding="utf-8") as handle:
+    with raw_path.open("x", encoding="utf-8") as handle:
         for sample in samples:
             handle.write(json.dumps(sample, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
-    outputs: dict[str, Any] = {"summary_json": str(paths["json"]), "summary_tsv": str(paths["tsv"]), "samples_jsonl": str(raw_path)}
+    comparison_path = None
     if args.compare_baseline_summary:
         baseline = json.loads(Path(args.compare_baseline_summary).read_text(encoding="utf-8"))
         comparison = compare_profile_summaries(baseline, report)
-        comparison_path = Path(args.output_prefix).with_suffix(".comparison.json")
-        comparison_path.write_text(json.dumps(comparison, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        comparison_path = output_prefix.with_suffix(".comparison.json")
+        with comparison_path.open("x", encoding="utf-8") as handle:
+            handle.write(json.dumps(comparison, indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    paths = write_profile_artifacts(report, output_prefix)
+    outputs: dict[str, Any] = {
+        "summary_json": str(paths["json"]),
+        "summary_tsv": str(paths["tsv"]),
+        "samples_jsonl": str(raw_path),
+    }
+    if comparison_path is not None:
         outputs["comparison_json"] = str(comparison_path)
     print(json.dumps(outputs, indent=2, sort_keys=True))
     return 0

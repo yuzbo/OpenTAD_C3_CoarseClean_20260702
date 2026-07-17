@@ -23,6 +23,7 @@ done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 CHECKPOINT="${DUCA_CELLCF_CHECKPOINT:-}"
@@ -30,6 +31,15 @@ POST_RUN_EVIDENCE="${DUCA_CELLCF_POST_RUN_EVIDENCE_JSON:-}"
 POST_RUN_EVIDENCE_SHA256="${DUCA_CELLCF_POST_RUN_EVIDENCE_SHA256:-}"
 OUTPUT_ROOT="${DUCA_CELLCF_COST_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_cost}"
 OUTPUT_JSON="${REQUESTED_OUTPUT_JSON:-${OUTPUT_ROOT}/cellcf_vs_bare_uniform.json}"
+OUTPUT_ROOT="$(
+  duca_cellcf_require_external_path \
+    "OUTPUT_ROOT" "${REPO_ROOT}" "${BASE}" "${OUTPUT_ROOT}"
+)" || fail "OUTPUT_ROOT violates the formal path contract"
+OUTPUT_JSON="$(realpath -m -- "${OUTPUT_JSON}")"
+case "${OUTPUT_JSON}" in
+  "${OUTPUT_ROOT}"/*) ;;
+  *) fail "OUTPUT_JSON must stay inside OUTPUT_ROOT" ;;
+esac
 SAMPLES="${DUCA_CELLCF_COST_SAMPLES:-500}"
 WARMUP="${DUCA_CELLCF_COST_WARMUP:-20}"
 REPEATS="${DUCA_CELLCF_COST_REPEATS:-3}"
@@ -104,28 +114,55 @@ fi
   || fail "CellCF post-run evidence hash drift"
 [[ "$(${PYTHON} -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] || fail "exactly one Slurm-visible GPU is required"
 
+[[ ! -e "${OUTPUT_ROOT}" ]] || fail "refusing to overwrite an existing cost root"
 mkdir -p "${OUTPUT_ROOT}" "$(dirname "${OUTPUT_JSON}")"
+PROFILE_SESSION_ID="slurm-${SLURM_JOB_ID}"
 cellcf_args=()
 bare_args=()
-for repeat in $(seq 1 "${REPEATS}"); do
-  cell_prefix="${OUTPUT_ROOT}/cellcf_repeat${repeat}"
-  bare_prefix="${OUTPUT_ROOT}/bare_uniform_repeat${repeat}"
+profile_cellcf() {
+  local repeat="$1"
+  local order_position="$2"
+  local cell_prefix="${OUTPUT_ROOT}/cellcf_repeat${repeat}"
   "${PYTHON}" tools/bata/profile_duca_full_stack_cost.py "${CELL_CONFIG}" \
     --checkpoint "${CHECKPOINT}" --use-ema --backbone-pretrain "${PRETRAIN}" \
     --output-prefix "${cell_prefix}" --method-name cellcf-fixed384 \
     --config-commit "${EXPECTED_COMMIT}" --device cuda:0 --samples "${SAMPLES}" \
+    --profile-session-id "${PROFILE_SESSION_ID}" \
+    --profile-pair-id "repeat-${repeat}" \
+    --profile-repeat-index "${repeat}" \
+    --profile-order-position "${order_position}" \
     --warmup-samples "${WARMUP}" --batch-size 1 --loader-workers 0 --amp \
     --post-run-evidence "${POST_RUN_EVIDENCE}" \
     --post-run-evidence-sha256 "${POST_RUN_EVIDENCE_SHA256}"
+  cellcf_args+=(--cellcf "${cell_prefix}.summary.json")
+}
+
+profile_bare() {
+  local repeat="$1"
+  local order_position="$2"
+  local bare_prefix="${OUTPUT_ROOT}/bare_uniform_repeat${repeat}"
   "${PYTHON}" tools/bata/profile_duca_full_stack_cost.py "${BARE_CONFIG}" \
     --checkpoint "${CHECKPOINT}" --use-ema --backbone-pretrain "${PRETRAIN}" \
     --output-prefix "${bare_prefix}" --method-name bare-uniform384 \
     --config-commit "${EXPECTED_COMMIT}" --device cuda:0 --samples "${SAMPLES}" \
+    --profile-session-id "${PROFILE_SESSION_ID}" \
+    --profile-pair-id "repeat-${repeat}" \
+    --profile-repeat-index "${repeat}" \
+    --profile-order-position "${order_position}" \
     --warmup-samples "${WARMUP}" --batch-size 1 --loader-workers 0 --amp \
     --post-run-evidence "${POST_RUN_EVIDENCE}" \
     --post-run-evidence-sha256 "${POST_RUN_EVIDENCE_SHA256}"
-  cellcf_args+=(--cellcf "${cell_prefix}.json")
-  bare_args+=(--bare-uniform "${bare_prefix}.json")
+  bare_args+=(--bare-uniform "${bare_prefix}.summary.json")
+}
+
+for repeat in $(seq 1 "${REPEATS}"); do
+  if ((repeat % 2 == 1)); then
+    profile_cellcf "${repeat}" 1
+    profile_bare "${repeat}" 2
+  else
+    profile_bare "${repeat}" 1
+    profile_cellcf "${repeat}" 2
+  fi
 done
 
 "${PYTHON}" tools/bata/summarize_duca_cellcf_cost.py \

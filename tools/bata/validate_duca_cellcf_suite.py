@@ -4,18 +4,20 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
 from mmengine.config import Config
 
+from tools.bata.duca_cellcf_protocol import (
+    protocol_for_name,
+    protocol_from_environment,
+)
 from tools.bata.duca_p0_evaluation import evaluation_config_sha256
 from tools.bata.finalize_duca_cellcf_run import (
     EVIDENCE_SCHEMA as POST_RUN_SCHEMA,
-    EXPECTED_UPDATES,
-    TERMINAL_EPOCH,
-    TERMINAL_STATE_KEY,
     finalize_run as finalize_cellcf_run,
 )
 from tools.bata.summarize_duca_cellcf_cost import (
@@ -35,6 +37,12 @@ VARIANT_ORDER = ("uniform", "transition_beta0", "cellcf")
 BARE_COST_CONFIG = (
     "configs/adatad/thumos/duca_cellcf_bare_exact_uniform_fixed384_cost.py"
 )
+_LEGACY_EXPOSURE132_PROTOCOL = protocol_for_name("exposure132")
+EXPECTED_UPDATES = (
+    _LEGACY_EXPOSURE132_PROTOCOL.expected_successful_optimizer_updates
+)
+TERMINAL_EPOCH = _LEGACY_EXPOSURE132_PROTOCOL.terminal_epoch
+TERMINAL_STATE_KEY = _LEGACY_EXPOSURE132_PROTOCOL.terminal_state_key
 
 
 def _require(condition: bool, message: str) -> None:
@@ -197,6 +205,11 @@ def _validate_gate(path: str | Path, commit: str) -> dict[str, Any]:
         expected_sha256=_sha256(resolved),
         require_clean=False,
     )
+    protocol = protocol_from_environment()
+    _require(
+        validated.get("training_profile", "exposure132") == protocol.name,
+        "CellCF gate training profile drift",
+    )
     return {
         "path": str(resolved),
         "sha256": _sha256(resolved),
@@ -221,6 +234,11 @@ def _validate_pilot(
         expected_real_loader_gate_sha256=gate_sha256,
         require_clean=False,
     )
+    _require(
+        payload.get("training_profile", "exposure132")
+        == protocol_from_environment().name,
+        "CellCF pilot training profile drift",
+    )
     _require(tuple(payload.get("variant_order", ())) == VARIANT_ORDER, "CellCF pilot arm order drift")
     return {"path": str(resolved), "sha256": _sha256(resolved), "payload": payload}
 
@@ -238,6 +256,7 @@ def _validate_post_run_artifacts(
     annotation_path: Path,
     class_map_path: Path,
 ) -> dict[str, Any]:
+    training_protocol = protocol_from_environment()
     hash_cache: dict[Path, str] = {}
     terminal_specs = {
         "checkpoint": ("checkpoint_path", "checkpoint_sha256"),
@@ -304,11 +323,13 @@ def _validate_post_run_artifacts(
         f"{variant}: checkpoint path binding mismatch",
     )
     _require(
-        int(evaluation.get("checkpoint_epoch", -1)) == TERMINAL_EPOCH,
+        int(evaluation.get("checkpoint_epoch", -1))
+        == training_protocol.terminal_epoch,
         f"{variant}: terminal evaluation checkpoint epoch mismatch",
     )
     _require(
-        evaluation.get("checkpoint_state_key") == TERMINAL_STATE_KEY,
+        evaluation.get("checkpoint_state_key")
+        == training_protocol.terminal_state_key,
         f"{variant}: terminal evaluation checkpoint state mismatch",
     )
     evaluation_prediction, _ = _require_hashed_file(
@@ -522,6 +543,7 @@ def _validate_post_run(
     class_map_sha256: str,
     evaluation_config_sha256: str,
 ) -> dict[str, Any]:
+    training_protocol = protocol_from_environment()
     resolved, payload = _load_json(path, f"{variant} post-run evidence")
     _require(payload.get("schema") == POST_RUN_SCHEMA, f"{variant}: bad post-run schema")
     _require(payload.get("ok") is True, f"{variant}: post-run evidence did not pass")
@@ -538,12 +560,20 @@ def _validate_post_run(
         "evaluation_annotation_sha256": annotation_sha256,
         "evaluation_class_map_sha256": class_map_sha256,
         "evaluation_config_sha256": evaluation_config_sha256,
-        "checkpoint_epoch": TERMINAL_EPOCH,
-        "checkpoint_state_key": TERMINAL_STATE_KEY,
-        "successful_optimizer_updates": EXPECTED_UPDATES,
+        "checkpoint_epoch": training_protocol.terminal_epoch,
+        "checkpoint_state_key": training_protocol.terminal_state_key,
+        "successful_optimizer_updates": (
+            training_protocol.expected_successful_optimizer_updates
+        ),
+        "training_profile": training_protocol.name,
     }
     for key, value in expected.items():
-        _require(payload.get(key) == value, f"{variant}: post-run {key} mismatch")
+        observed = (
+            payload.get(key, "exposure132")
+            if key == "training_profile"
+            else payload.get(key)
+        )
+        _require(observed == value, f"{variant}: post-run {key} mismatch")
     metrics = payload.get("metrics")
     _require(isinstance(metrics, Mapping), f"{variant}: post-run metrics are missing")
     for key in ("average_mAP", "mAP@0.3", "mAP@0.4", "mAP@0.5", "mAP@0.6", "mAP@0.7"):
@@ -578,7 +608,8 @@ def _validate_post_run(
     _require(
         isinstance(checkpoint_contract, Mapping)
         and checkpoint_contract.get("payload_reopened") is True
-        and checkpoint_contract.get("epoch") == TERMINAL_EPOCH,
+        and checkpoint_contract.get("epoch")
+        == training_protocol.terminal_epoch,
         f"{variant}: terminal checkpoint payload was not revalidated",
     )
     return {
@@ -644,17 +675,20 @@ def _validate_cost_profile(
     expected_config_path: Path,
     hash_cache: dict[Path, str],
 ) -> dict[str, str]:
+    training_protocol = protocol_from_environment()
     profile_path, profile = _load_json(path, f"{method} cost profile")
     _require(profile.get("method") == method, f"unexpected cost method: {profile_path}")
     _require(profile.get("config_commit") == commit, f"cost profile commit mismatch: {profile_path}")
     _require(profile.get("uses_ema") is True, f"cost profile did not use EMA: {profile_path}")
     _require(profile.get("random_init") is False, f"cost profile used random init: {profile_path}")
     _require(
-        int(profile.get("checkpoint_epoch", -1)) == TERMINAL_EPOCH,
+        int(profile.get("checkpoint_epoch", -1))
+        == training_protocol.terminal_epoch,
         f"cost profile checkpoint epoch mismatch: {profile_path}",
     )
     _require(
-        profile.get("checkpoint_state_key") == TERMINAL_STATE_KEY,
+        profile.get("checkpoint_state_key")
+        == training_protocol.terminal_state_key,
         f"cost profile checkpoint state mismatch: {profile_path}",
     )
     checkpoint_path, checkpoint_sha256 = _require_hashed_file(
@@ -824,6 +858,7 @@ def validate_suite(
     if require_clean:
         _require(not dirty, "CellCF suite requires a clean exact-commit tree")
     _require(seed >= 0, "seed must be non-negative")
+    training_protocol = protocol_from_environment()
 
     configs = {
         variant: Config.fromfile(str(root / VARIANTS[variant]))
@@ -934,6 +969,8 @@ def validate_suite(
         "git_commit": commit,
         "git_tree_clean": not bool(dirty),
         "seed": int(seed),
+        "training_profile": training_protocol.name,
+        "training_protocol": training_protocol.to_dict(),
         "variant_order": list(VARIANT_ORDER),
         "ordered_exposure_sha256": order_sha256,
         "shared_protocol": reference_protocol,
@@ -962,6 +999,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-cost-evidence", action="store_true")
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
+    output_path = Path(args.output_json).expanduser().resolve()
+    if output_path.exists():
+        failure = {
+            "schema": SCHEMA,
+            "ok": False,
+            "error_type": "FileExistsError",
+            "error": "refusing to overwrite suite evidence",
+        }
+        print(json.dumps(failure, indent=2, sort_keys=True))
+        return 1
     try:
         post_runs = None
         if args.post_run_evidence:
@@ -988,7 +1035,11 @@ def main(argv: list[str] | None = None) -> int:
         code = 1
     output = json.dumps(payload, indent=2, sort_keys=True)
     print(output)
-    Path(args.output_json).write_text(output + "\n", encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("x", encoding="utf-8") as handle:
+        handle.write(output + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     return code
 
 

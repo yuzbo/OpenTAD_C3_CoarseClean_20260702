@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from tools.bata import duca_p0_training as legacy
+from tools.bata.duca_cellcf_protocol import (
+    LEGACY_EXPOSURE132_COMMITS,
+    protocol_from_environment,
+    protocol_from_workflow,
+)
 from tools.bata.duca_p0_evaluation import evaluation_config_sha256
 
 
@@ -97,11 +102,16 @@ def expected_runtime_config_sha256(
 def formal_training_contract(cfg) -> dict[str, Any] | None:
     if str(cfg.workflow.get("formal_protocol", "")) != "duca_cellcf_v1":
         return None
-    contract = legacy.formal_training_contract(cfg)
+    protocol = protocol_from_workflow(cfg.workflow)
+    contract = legacy.formal_training_contract(
+        cfg,
+        expected_checkpoint_criterion=protocol.checkpoint_criterion,
+    )
     if contract is None:
         raise ValueError("CellCF formal protocol requires formal_successful_update_contract=True")
     contract = dict(contract)
     contract["formal_protocol"] = "duca_cellcf_v1"
+    contract["training_profile"] = protocol.name
     return contract
 
 
@@ -201,6 +211,26 @@ def build_runtime_bindings(
         expected_real_loader_gate_sha256=gate_sha,
         require_clean=True,
     )
+    training_profile = protocol_from_environment().name
+    gate_profile = gate.get("config_contract", {}).get("training_profile")
+    pilot_profile = pilot.get("training_profile")
+    if gate_profile is None or pilot_profile is None:
+        if (
+            git_commit not in LEGACY_EXPOSURE132_COMMITS
+            or training_profile != "exposure132"
+            or gate_profile not in (None, "exposure132")
+            or pilot_profile not in (None, "exposure132")
+        ):
+            raise ValueError(
+                "CellCF training profile may be absent only for the audited "
+                "legacy exposure132 commit"
+            )
+        gate_profile = "exposure132"
+        pilot_profile = "exposure132"
+    if gate_profile != training_profile:
+        raise ValueError("CellCF real-loader gate training profile differs from training")
+    if pilot_profile != training_profile:
+        raise ValueError("CellCF DDP pilot training profile differs from training")
     if pilot.get("real_loader_gate_sha256") != gate_sha:
         raise ValueError("CellCF pilot is not bound to the selected real-loader gate")
     if tuple(pilot.get("variant_order", ())) != VARIANTS:
@@ -237,6 +267,7 @@ def build_runtime_bindings(
 
     return {
         "formal_protocol": "duca_cellcf_v1",
+        "training_profile": training_profile,
         "git_commit": git_commit,
         "variant": variant,
         "seed": int(seed),

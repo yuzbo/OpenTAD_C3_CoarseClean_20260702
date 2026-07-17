@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -43,6 +44,7 @@ def _artifacts(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("C3_OFFICIAL_ACTION_SEG_REPOS", raising=False)
 
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    training_profile = os.environ.get("DUCA_CELLCF_TRAINING_PROFILE", "exposure132")
     cfg = Config.fromfile(str(ROOT / VARIANTS["uniform"]))
     protocol_sha = _canonical_sha256(_shared_protocol(cfg))
     order_sha = _canonical_sha256(list(VARIANT_ORDER))
@@ -54,6 +56,7 @@ def _artifacts(tmp_path: Path, monkeypatch):
             "ok": True,
             "git_commit": commit,
             "synthetic_gate_sha256": "a" * 64,
+            "config_contract": {"training_profile": training_profile},
             "evaluation_annotation_sha256": _sha(annotation),
             "evaluation_class_map_sha256": _sha(class_map),
             "dataset": {
@@ -70,6 +73,7 @@ def _artifacts(tmp_path: Path, monkeypatch):
             "ok": True,
             "git_commit": commit,
             "real_loader_gate_sha256": _sha(gate),
+            "training_profile": training_profile,
             "variant_order": list(VARIANT_ORDER),
             "shared_protocol_sha256": protocol_sha,
             "ordered_exposure_sha256": order_sha,
@@ -83,6 +87,7 @@ def _artifacts(tmp_path: Path, monkeypatch):
         return {
             "sha256": _sha(Path(path)),
             "synthetic_gate_sha256": payload["synthetic_gate_sha256"],
+            "training_profile": payload["config_contract"]["training_profile"],
         }
 
     def validate_pilot(path, *, expected_commit, expected_real_loader_gate_sha256, **kwargs):
@@ -117,6 +122,36 @@ def test_cellcf_suite_binds_exact_three_arm_protocol(tmp_path, monkeypatch) -> N
     assert payload["variants"][0]["variant_contract"]["force_exact_uniform"] is True
     assert payload["variants"][1]["variant_contract"]["counterfactual_weight"] == 0.0
     assert payload["variants"][2]["variant_contract"]["counterfactual_weight"] > 0.0
+
+
+def test_cellcf_suite_resolves_native_official60_protocol(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("DUCA_CELLCF_TRAINING_PROFILE", "official60")
+    monkeypatch.setenv("DUCA_OFFICIAL_ADATAD_END_EPOCH", "60")
+    monkeypatch.setenv("DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH", "100")
+    monkeypatch.setenv("DUCA_LOSS_SCHEDULE_TOTAL_STEPS", "6000")
+    commit, gate, pilot = _artifacts(tmp_path, monkeypatch)
+
+    payload = validate_suite(
+        repo_root=ROOT,
+        seed=0,
+        expected_commit=commit,
+        require_clean=False,
+        gate_json=gate,
+        pilot_json=pilot,
+    )
+
+    assert payload["training_profile"] == "official60"
+    assert payload["training_protocol"]["end_epoch"] == 60
+    assert payload["training_protocol"]["terminal_epoch"] == 59
+    assert payload["training_protocol"][
+        "expected_successful_optimizer_updates"
+    ] == 6000
+    assert all(
+        item["validation"]["training_profile"] == "official60"
+        for item in payload["variants"]
+    )
 
 
 def test_cellcf_suite_rejects_stale_gate_commit(tmp_path, monkeypatch) -> None:

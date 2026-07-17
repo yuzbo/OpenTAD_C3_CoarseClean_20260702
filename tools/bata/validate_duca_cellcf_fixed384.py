@@ -9,6 +9,8 @@ from typing import Any
 
 from mmengine.config import Config
 
+from tools.bata.duca_cellcf_protocol import protocol_from_workflow
+
 
 ROOT = Path(__file__).resolve().parents[2]
 OFFICIAL_BASE = ROOT / "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
@@ -46,6 +48,7 @@ def validate_config(variant: str, config_path: str | None = None) -> dict[str, A
     selector = cfg.model.frame_selector
     contract = cfg.duca_transition_only_contract
     source = selector.actionness_source_cfg
+    training_protocol = protocol_from_workflow(cfg.workflow)
 
     _require(contract.task == "offline_temporal_action_detection", "CellCF must be offline TAD")
     _require(contract.online_tad is False and contract.streaming is False, "online/streaming claims are forbidden")
@@ -103,10 +106,21 @@ def validate_config(variant: str, config_path: str | None = None) -> dict[str, A
     _require(int(cfg.model.projection.max_seq_len) == 384, "projection length must be 384")
     _require(cfg.model.backbone.backbone.with_cp is False, "audited dynamic graph requires with_cp=False")
     _require(cfg.solver.static_graph is False and cfg.solver.find_unused_parameters is True, "DDP protocol drift")
-    _require(int(cfg.workflow.end_epoch) == 132 and int(cfg.scheduler.max_epoch) == 132, "132-epoch protocol drift")
+    _require(
+        int(cfg.workflow.end_epoch) == training_protocol.end_epoch
+        and int(cfg.scheduler.max_epoch) == training_protocol.end_epoch,
+        f"{training_protocol.name} epoch protocol drift",
+    )
     _require(int(cfg.workflow.checkpoint_interval) == 5, "checkpoint interval must remain five epochs")
-    _require(int(cfg.workflow.expected_successful_optimizer_updates) == 13200, "successful-update contract drift")
-    _require(int(cfg.workflow.primary_checkpoint_epoch) == 131, "terminal checkpoint must be epoch 131")
+    _require(
+        int(cfg.workflow.expected_successful_optimizer_updates)
+        == training_protocol.expected_successful_optimizer_updates,
+        "successful-update contract drift",
+    )
+    _require(
+        int(cfg.workflow.primary_checkpoint_epoch) == training_protocol.terminal_epoch,
+        "terminal checkpoint epoch drift",
+    )
     _require(cfg.workflow.primary_checkpoint_state_key == "state_dict_ema", "terminal evaluation must use EMA")
     _require(contract.paper_claim_allowed is False and contract.metric_claim_allowed is False, "untested method cannot claim results")
 
@@ -134,6 +148,11 @@ def validate_config(variant: str, config_path: str | None = None) -> dict[str, A
         "dense_window_size": int(selector.dense_window_size),
         "checkpoint_interval": int(cfg.workflow.checkpoint_interval),
         "end_epoch": int(cfg.workflow.end_epoch),
+        "training_profile": training_protocol.name,
+        "expected_successful_optimizer_updates": (
+            training_protocol.expected_successful_optimizer_updates
+        ),
+        "terminal_epoch": training_protocol.terminal_epoch,
         "official_asformer_source_checked": official_source_checked,
         "paper_claim_allowed": False,
     }
@@ -145,6 +164,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config")
     parser.add_argument("--output-json")
     args = parser.parse_args(argv)
+    output_path = (
+        None
+        if not args.output_json
+        else Path(args.output_json).expanduser().resolve()
+    )
+    if output_path is not None and output_path.exists():
+        failure = {
+            "ok": False,
+            "variant": args.variant,
+            "error_type": "FileExistsError",
+            "error": "refusing to overwrite CellCF variant validation",
+        }
+        print(json.dumps(failure, indent=2, sort_keys=True))
+        return 1
     try:
         summary = validate_config(args.variant, args.config)
     except Exception as exc:
@@ -154,8 +187,12 @@ def main(argv: list[str] | None = None) -> int:
         code = 0
     payload = json.dumps(summary, indent=2, sort_keys=True)
     print(payload)
-    if args.output_json:
-        Path(args.output_json).write_text(payload, encoding="utf-8")
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("x", encoding="utf-8") as handle:
+            handle.write(payload + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
     return code
 
 

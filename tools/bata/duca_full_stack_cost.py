@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
+import os
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -30,6 +32,35 @@ _MODEL_CHILD_STAGES = (
 _REQUIRED_NESTED_STAGES = _MODEL_CHILD_STAGES + (
     "coarse_probe_ms",
     "heavy_backbone_ms",
+)
+_OPTIONAL_RAW_SAMPLE_KEYS = frozenset(
+    {
+        "peak_gpu_memory_mb",
+        "gpu_energy_j",
+        "average_gpu_power_w",
+    }
+)
+_ALLOWED_RAW_SAMPLE_KEYS = frozenset(
+    {
+        *_REQUIRED_TOP_LEVEL_STAGES,
+        *_REQUIRED_NESTED_STAGES,
+        "selected_count",
+        *_OPTIONAL_RAW_SAMPLE_KEYS,
+    }
+)
+
+_PROFILE_DERIVED_KEYS = frozenset(
+    {
+        "schema_version",
+        "sample_count",
+        "stage_semantics",
+        "stages",
+        "selected_count",
+        "resources",
+        "energy",
+        "claims",
+        "raw_samples",
+    }
 )
 
 
@@ -240,6 +271,12 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _derived_sample(sample: Mapping[str, Any], *, index: int) -> dict[str, float]:
+    unknown_keys = set(sample) - _ALLOWED_RAW_SAMPLE_KEYS
+    if unknown_keys:
+        raise ValueError(
+            f"profile sample {index} contains unsupported fields: "
+            f"{sorted(unknown_keys)}"
+        )
     checked: dict[str, float] = {}
     for key in _REQUIRED_TOP_LEVEL_STAGES + _REQUIRED_NESTED_STAGES:
         if key not in sample:
@@ -294,6 +331,12 @@ def build_profile_summary(
     peak_memory = []
     energy = []
     for index, sample in enumerate(samples):
+        for key in _OPTIONAL_RAW_SAMPLE_KEYS:
+            if sample.get(key) is not None:
+                _finite_nonnegative(
+                    sample[key],
+                    name=f"sample[{index}].{key}",
+                )
         if "selected_count" not in sample:
             raise ValueError(f"profile sample {index} is missing selected_count")
         selected_counts.append(_finite_nonnegative(sample["selected_count"], name="selected_count"))
@@ -333,6 +376,64 @@ def build_profile_summary(
         "raw_samples": [dict(sample) for sample in samples],
     }
     return report
+
+
+def validate_and_rebuild_profile_summary(
+    report: Mapping[str, Any],
+) -> dict[str, str]:
+    if not isinstance(report, Mapping):
+        raise ValueError("cost profile must be a mapping")
+    raw_samples = report.get("raw_samples")
+    if (
+        not isinstance(raw_samples, Sequence)
+        or isinstance(raw_samples, (str, bytes))
+        or not raw_samples
+        or not all(isinstance(sample, Mapping) for sample in raw_samples)
+    ):
+        raise ValueError("cost profile must contain non-empty raw_samples")
+    metadata = {
+        key: value
+        for key, value in report.items()
+        if key not in _PROFILE_DERIVED_KEYS
+    }
+    rebuilt = build_profile_summary(raw_samples, metadata=metadata)
+    if dict(report) != rebuilt:
+        raise ValueError(
+            "cost profile summary does not reconstruct exactly from raw_samples"
+        )
+    canonical_raw_samples = json.dumps(
+        raw_samples,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    ordered_sha256 = hashlib.sha256(
+        canonical_raw_samples.encode("utf-8")
+    ).hexdigest()
+    sample_hashes = sorted(
+        hashlib.sha256(
+            json.dumps(
+                sample,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        for sample in raw_samples
+    )
+    multiset_sha256 = hashlib.sha256(
+        json.dumps(
+            sample_hashes,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "ordered_sha256": ordered_sha256,
+        "multiset_sha256": multiset_sha256,
+    }
 
 
 def _require_comparable(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> None:
@@ -492,7 +593,8 @@ def write_cost_matrix_artifacts(matrix: Mapping[str, Any], output_prefix: str | 
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".json")
     tsv_path = prefix.with_suffix(".tsv")
-    json_path.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if json_path.exists() or tsv_path.exists():
+        raise FileExistsError("refusing to overwrite cost-matrix evidence")
     fields = (
         "candidate_method",
         "selected_count_p50",
@@ -508,7 +610,7 @@ def write_cost_matrix_artifacts(matrix: Mapping[str, Any], output_prefix: str | 
         "gpu_energy_j",
         "all_cost_gates_pass",
     )
-    with tsv_path.open("w", encoding="utf-8", newline="") as handle:
+    with tsv_path.open("x", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         for comparison in matrix.get("comparisons", []):
@@ -532,6 +634,12 @@ def write_cost_matrix_artifacts(matrix: Mapping[str, Any], output_prefix: str | 
                     "all_cost_gates_pass": comparison["gates"]["all_cost_gates_pass"],
                 }
             )
+        handle.flush()
+        os.fsync(handle.fileno())
+    with json_path.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(matrix, indent=2, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     return {"json": json_path, "tsv": tsv_path}
 
 
@@ -599,9 +707,10 @@ def write_profile_artifacts(report: Mapping[str, Any], output_prefix: str | Path
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".summary.json")
     tsv_path = prefix.with_suffix(".summary.tsv")
-    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if json_path.exists() or tsv_path.exists():
+        raise FileExistsError("refusing to overwrite profile-summary evidence")
 
-    with tsv_path.open("w", encoding="utf-8", newline="") as handle:
+    with tsv_path.open("x", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(("stage", "count", "mean_ms", "p50_ms", "p95_ms", "min_ms", "max_ms"))
         for stage, values in sorted(report.get("stages", {}).items()):
@@ -616,6 +725,12 @@ def write_profile_artifacts(report: Mapping[str, Any], output_prefix: str | Path
                     f"{float(values['max']):.6f}",
                 )
             )
+        handle.flush()
+        os.fsync(handle.fileno())
+    with json_path.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     return {"json": json_path, "tsv": tsv_path}
 
 
@@ -629,6 +744,7 @@ __all__ = [
     "build_profile_summary",
     "compare_profile_summaries",
     "integrate_power_samples",
+    "validate_and_rebuild_profile_summary",
     "write_cost_matrix_artifacts",
     "write_profile_artifacts",
 ]

@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "bata" / "run_duca_cellcf_real_loader_cuda_gate.py"
 SOURCE = SCRIPT.read_text(encoding="utf-8")
 TREE = ast.parse(SOURCE, filename=str(SCRIPT))
+SYNTHETIC_SOURCE = (
+    ROOT / "tools" / "bata" / "run_duca_cellcf_synthetic_gate.py"
+).read_text(encoding="utf-8")
 
 
 def _constant(name: str):
@@ -53,6 +56,7 @@ def test_gate_schema_scope_and_audited_surfaces_are_frozen() -> None:
     audited = set(_constant("AUDITED_PATHS"))
     assert "tools/bata/run_duca_cellcf_synthetic_gate.py" in audited
     assert "tools/bata/run_duca_cellcf_real_loader_cuda_gate.py" in audited
+    assert "tools/bata/duca_cellcf_protocol.py" in audited
     assert "opentad/cores/train_engine.py" in audited
     assert "opentad/datasets/transforms/end_to_end.py" in audited
     assert "opentad/models/detectors/actionformer.py" in audited
@@ -100,8 +104,13 @@ def test_synthetic_evidence_binding_is_same_commit_schema_and_sha_bound() -> Non
     assert 'payload.get("git_commit") == git_commit' in SOURCE
     assert 'payload.get("real_dataset_loader_executed") is False' in SOURCE
     assert 'audited.get(synthetic_script) == _sha256(ROOT / synthetic_script)' in SOURCE
+    assert 'audited.get(protocol_module) == _sha256(ROOT / protocol_module)' in SOURCE
+    assert 'synthetic["training_profile"] == config["training_profile"]' in SOURCE
     assert '"synthetic_gate_sha256"' in SOURCE
     assert '"synthetic_gate_schema"' in SOURCE
+    assert "protocol_from_environment()" in SYNTHETIC_SOURCE
+    assert '"training_profile": training_protocol.name' in SYNTHETIC_SOURCE
+    assert '"training_protocol": training_protocol.to_dict()' in SYNTHETIC_SOURCE
 
 
 def test_real_loader_model_and_training_engine_are_executed_without_substitutes() -> None:
@@ -126,8 +135,9 @@ def test_official_sources_and_frozen_training_semantics_are_checked() -> None:
     assert "loaded_through_backbone_custom_pretrain" in SOURCE
     assert 'repos_root / "ASFormer" / "model.py"' in SOURCE
     assert "official_asformer_source_normalized_lf_sha256" in SOURCE
-    assert 'int(cfg.workflow.end_epoch) == 132' in SOURCE
-    assert 'int(cfg.scheduler.max_epoch) == 132' in SOURCE
+    assert "protocol_from_workflow(cfg.workflow)" in SOURCE
+    assert "training_protocol.end_epoch" in SOURCE
+    assert "training_protocol.expected_successful_optimizer_updates" in SOURCE
     assert 'int(cfg.workflow.checkpoint_interval) == 5' in SOURCE
     assert 'int(selector.budget) == 384' in SOURCE
     assert 'int(selector.dense_window_size) == 768' in SOURCE

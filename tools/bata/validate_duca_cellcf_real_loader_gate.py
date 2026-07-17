@@ -40,6 +40,7 @@ AUDITED_PATHS = (
     "tools/bata/run_duca_cellcf_synthetic_gate.py",
     "tools/bata/run_duca_cellcf_real_loader_cuda_gate.py",
     "tools/bata/validate_duca_cellcf_real_loader_gate.py",
+    "tools/bata/duca_cellcf_protocol.py",
     "tools/bata/duca_cellcf_training.py",
     "tools/bata/finalize_duca_cellcf_run.py",
     "tools/bata/validate_duca_cellcf_ddp_pilot.py",
@@ -130,6 +131,17 @@ def validate_real_loader_gate_artifact(
     _require(synthetic.get("schema") == SYNTHETIC_GATE_SCHEMA and synthetic.get("ok") is True, "bound synthetic gate is invalid")
     _require(synthetic.get("git_commit") == expected_commit, "bound synthetic gate is stale")
     _require(synthetic.get("real_dataset_loader_executed") is False, "synthetic gate provenance is dishonest")
+    training_profile = payload.get("config_contract", {}).get("training_profile")
+    _require(
+        synthetic.get("training_profile") == training_profile,
+        "synthetic and real-loader gates use different training profiles",
+    )
+    synthetic_binding = payload.get("synthetic_gate_binding")
+    _require(
+        isinstance(synthetic_binding, Mapping)
+        and synthetic_binding.get("training_profile") == training_profile,
+        "real-loader gate synthetic binding lost its training profile",
+    )
 
     config_path = _require_hashed_file(payload, "config_path", "config_sha256", "CellCF main config")
     _require(config_path == (ROOT / CONFIG_DEFAULT).resolve(), "real-loader gate used another config")
@@ -190,6 +202,7 @@ def validate_real_loader_gate_artifact(
         "offline_tad",
         "fixed_k384",
         "official_adatad_actionformer_semantics_preserved",
+        "training_profile_preserved",
         "real_loader_cuda_gate_passed",
         "real_gt_remap_verified",
         "actual_acquisition_separate_from_fixed_detector_grid",
@@ -208,4 +221,5 @@ def validate_real_loader_gate_artifact(
         "synthetic_gate_sha256": str(payload["synthetic_gate_sha256"]),
         "dataset_annotation_sha256": str(dataset["annotation_sha256"]),
         "dataset_class_map_sha256": str(dataset["class_map_sha256"]),
+        "training_profile": str(training_profile),
     }

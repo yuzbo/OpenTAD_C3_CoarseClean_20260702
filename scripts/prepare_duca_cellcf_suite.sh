@@ -10,6 +10,13 @@ sha256_file() {
   sha256sum "$1" | awk '{print $1}'
 }
 
+require_single_quoted_heredoc_safe() {
+  local label="$1"
+  local value="$2"
+  [[ "${value}" != *"'"* && "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] \
+    || fail "${label} cannot be represented safely in generated sbatch files"
+}
+
 resolve_target_cluster() {
   local cluster="${DUCA_CELLCF_TARGET_CLUSTER:-${SLURM_CLUSTER_NAME:-}}"
   if [[ -z "${cluster}" ]]; then
@@ -25,11 +32,16 @@ resolve_target_cluster() {
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 SEED="${SEED:-0}"
 CURRENT_HEAD="$(git rev-parse HEAD)"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
-RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_${CURRENT_HEAD:0:7}_seed${SEED}}"
+RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_${CURRENT_HEAD:0:7}_${DUCA_CELLCF_TRAINING_PROFILE}_seed${SEED}}"
+RUN_ROOT="$(
+  duca_cellcf_require_external_path \
+    "RUN_ROOT" "${REPO_ROOT}" "${BASE}" "${RUN_ROOT}"
+)" || fail "RUN_ROOT violates the formal path contract"
 GATE_JSON="${DUCA_CELLCF_GATE_JSON:-}"
 PILOT_JSON="${DUCA_CELLCF_DDP_PILOT_JSON:-}"
 TARGET_CLUSTER="$(resolve_target_cluster)"
@@ -43,6 +55,12 @@ TARGET_CLUSTER="$(resolve_target_cluster)"
 [[ "${DUCA_OFFICIAL_ADATAD_CHECKPOINT_INTERVAL}" == "5" ]] || fail \
   "formal CellCF training must preserve checkpoint-every-5"
 [[ ! -e "${RUN_ROOT}" ]] || fail "RUN_ROOT already exists: ${RUN_ROOT}"
+for binding_name in \
+  REPO_ROOT BASE RUN_ROOT GATE_JSON PILOT_JSON TARGET_CLUSTER \
+  EXPECTED_COMMIT DUCA_CELLCF_TRAINING_PROFILE; do
+  require_single_quoted_heredoc_safe \
+    "${binding_name}" "${!binding_name}"
+done
 
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/work_dirs"
 CANONICAL_ENV_FILE="${RUN_ROOT}/canonical_env.tsv"
@@ -61,12 +79,27 @@ PILOT_SHA256="$(sha256_file "${PILOT_JSON}")"
 AGGREGATE_EVIDENCE="${RUN_ROOT}/aggregate_suite_evidence.json"
 COST_EVIDENCE="${RUN_ROOT}/cost/cellcf_vs_bare_uniform.json"
 FINAL_EVIDENCE="${RUN_ROOT}/final_suite_evidence.json"
-SHORT_COMMIT="${EXPECTED_COMMIT:0:7}"
 variants=(uniform transition_beta0 cellcf)
+readarray -t formal_job_names < <("${PYTHON}" - \
+  "${DUCA_CELLCF_TRAINING_PROFILE}" "${SEED}" "${EXPECTED_COMMIT}" <<'PY'
+import sys
+
+from tools.bata.duca_cellcf_submission_contract import (
+    JOB_ORDER,
+    expected_job_name,
+)
+
+profile, seed, commit = sys.argv[1:]
+for key in JOB_ORDER:
+    print(expected_job_name(profile, key, int(seed), commit))
+PY
+)
+[[ "${#formal_job_names[@]}" == "6" ]] \
+  || fail "failed to resolve the formal CellCF job-name contract"
 arm_job_names=(
-  "cellcf-uniform-s${SEED}-${SHORT_COMMIT}"
-  "cellcf-transition_beta0-s${SEED}-${SHORT_COMMIT}"
-  "cellcf-cellcf-s${SEED}-${SHORT_COMMIT}"
+  "${formal_job_names[0]}"
+  "${formal_job_names[1]}"
+  "${formal_job_names[2]}"
 )
 
 for index in "${!variants[@]}"; do
@@ -92,6 +125,11 @@ for value in (
     print(value)
 PY
 )
+  for binding_value in "${binding[@]}"; do
+    require_single_quoted_heredoc_safe "manifest binding" "${binding_value}"
+  done
+  require_single_quoted_heredoc_safe "variant" "${variant}"
+  require_single_quoted_heredoc_safe "job name" "${job_name}"
   job_file="${RUN_ROOT}/jobs/${variant}.sbatch"
   cat > "${job_file}" <<EOF
 #!/usr/bin/env bash
@@ -111,6 +149,7 @@ cd '${REPO_ROOT}'
 [[ "\${SLURM_CLUSTER_NAME:-}" == '${TARGET_CLUSTER}' ]] || { echo '[DUCA_CELLCF_JOB][FAIL] Slurm cluster drift' >&2; exit 1; }
 [[ "\${SLURM_JOB_NAME:-}" == '${job_name}' ]] || { echo '[DUCA_CELLCF_JOB][FAIL] Slurm job-name drift' >&2; exit 1; }
 export BASE='${BASE}'
+export DUCA_CELLCF_TRAINING_PROFILE='${DUCA_CELLCF_TRAINING_PROFILE}'
 export DUCA_CELLCF_VARIANT='${variant}'
 export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
 export DUCA_CELLCF_GATE_JSON='${GATE_JSON}'
@@ -138,7 +177,7 @@ EOF
   chmod 0755 "${job_file}"
 done
 
-aggregate_job_name="cellcf-aggregate-s${SEED}-${SHORT_COMMIT}"
+aggregate_job_name="${formal_job_names[3]}"
 aggregate_job="${RUN_ROOT}/jobs/aggregate.sbatch"
 cat > "${aggregate_job}" <<EOF
 #!/usr/bin/env bash
@@ -158,6 +197,8 @@ cd '${REPO_ROOT}'
 [[ "\${SLURM_CLUSTER_NAME:-}" == '${TARGET_CLUSTER}' ]] || { echo '[DUCA_CELLCF_AGGREGATE][FAIL] Slurm cluster drift' >&2; exit 1; }
 [[ "\${SLURM_JOB_NAME:-}" == '${aggregate_job_name}' ]] || { echo '[DUCA_CELLCF_AGGREGATE][FAIL] Slurm job-name drift' >&2; exit 1; }
 export BASE='${BASE}'
+export DUCA_CELLCF_TRAINING_PROFILE='${DUCA_CELLCF_TRAINING_PROFILE}'
+source scripts/duca_cellcf_canonical_env.sh
 '${PYTHON}' -m tools.bata.validate_duca_cellcf_suite \
   --repo-root '${REPO_ROOT}' --seed '${SEED}' \
   --expected-commit '${EXPECTED_COMMIT}' --require-clean \
@@ -169,7 +210,7 @@ export BASE='${BASE}'
 EOF
 chmod 0755 "${aggregate_job}"
 
-cost_job_name="cellcf-cost-s${SEED}-${SHORT_COMMIT}"
+cost_job_name="${formal_job_names[4]}"
 cost_job="${RUN_ROOT}/jobs/cost.sbatch"
 cat > "${cost_job}" <<EOF
 #!/usr/bin/env bash
@@ -189,8 +230,9 @@ cd '${REPO_ROOT}'
 [[ "\${SLURM_CLUSTER_NAME:-}" == '${TARGET_CLUSTER}' ]] || { echo '[DUCA_CELLCF_COST_JOB][FAIL] Slurm cluster drift' >&2; exit 1; }
 [[ "\${SLURM_JOB_NAME:-}" == '${cost_job_name}' ]] || { echo '[DUCA_CELLCF_COST_JOB][FAIL] Slurm job-name drift' >&2; exit 1; }
 export BASE='${BASE}'
+export DUCA_CELLCF_TRAINING_PROFILE='${DUCA_CELLCF_TRAINING_PROFILE}'
 export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
-export DUCA_CELLCF_CHECKPOINT='${RUN_ROOT}/work_dirs/cellcf/gpu1_id0/checkpoint/epoch_131.pth'
+export DUCA_CELLCF_CHECKPOINT='${RUN_ROOT}/work_dirs/cellcf/gpu1_id0/checkpoint/epoch_${DUCA_CELLCF_TERMINAL_EPOCH}.pth'
 export DUCA_CELLCF_COST_ROOT='${RUN_ROOT}/cost'
 export DUCA_CELLCF_SUITE_MANIFEST='${MANIFEST}'
 export DUCA_CELLCF_SUITE_MANIFEST_SHA256='${MANIFEST_SHA256}'
@@ -246,7 +288,7 @@ bash scripts/run_duca_cellcf_cost_pair.sh
 EOF
 chmod 0755 "${cost_job}"
 
-completion_job_name="cellcf-completion-s${SEED}-${SHORT_COMMIT}"
+completion_job_name="${formal_job_names[5]}"
 completion_job="${RUN_ROOT}/jobs/completion.sbatch"
 cat > "${completion_job}" <<EOF
 #!/usr/bin/env bash
@@ -266,6 +308,8 @@ cd '${REPO_ROOT}'
 [[ "\${SLURM_CLUSTER_NAME:-}" == '${TARGET_CLUSTER}' ]] || { echo '[DUCA_CELLCF_COMPLETION][FAIL] Slurm cluster drift' >&2; exit 1; }
 [[ "\${SLURM_JOB_NAME:-}" == '${completion_job_name}' ]] || { echo '[DUCA_CELLCF_COMPLETION][FAIL] Slurm job-name drift' >&2; exit 1; }
 export BASE='${BASE}'
+export DUCA_CELLCF_TRAINING_PROFILE='${DUCA_CELLCF_TRAINING_PROFILE}'
+source scripts/duca_cellcf_canonical_env.sh
 '${PYTHON}' - '${AGGREGATE_EVIDENCE}' '${EXPECTED_COMMIT}' '${SEED}' \
   '${RUN_ROOT}/logs/uniform/post_run_evidence.json' \
   '${RUN_ROOT}/logs/transition_beta0/post_run_evidence.json' \
@@ -389,6 +433,7 @@ payload = {
     "schema": "duca_cellcf_prepared_submission_v1",
     "git_commit": commit,
     "seed": int(seed),
+    "training_profile": os.environ.get("DUCA_CELLCF_TRAINING_PROFILE", "exposure132"),
     "target_cluster": cluster,
     "checkpoint_interval": 5,
     "suite_manifest": str(Path(manifest).resolve()),

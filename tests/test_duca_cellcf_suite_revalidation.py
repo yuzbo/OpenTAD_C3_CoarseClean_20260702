@@ -9,6 +9,10 @@ from typing import Any
 import pytest
 
 import tools.bata.validate_duca_cellcf_suite as suite
+from tools.bata.duca_full_stack_cost import (
+    OFFLINE_FULL_WINDOW_PROTOCOL,
+    build_profile_summary,
+)
 from tools.bata.profile_duca_full_stack_cost import load_cellcf_cost_binding
 from tools.bata.summarize_duca_cellcf_cost import summarize
 
@@ -364,6 +368,7 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
         "git_commit": commit,
         "seed": 0,
         "variant": "cellcf",
+        "training_profile": "exposure132",
         "config_sha256": _sha256(cellcf_config),
         "resolved_config_sha256": "b" * 64,
         "runtime_config_sha256": "c" * 64,
@@ -384,21 +389,25 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
     cost_binding = load_cellcf_cost_binding(post_run, post_run_sha256)
     cost_binding_sha256 = suite._canonical_sha256(cost_binding)
     common = {
-        "protocol": "offline-full-window-v1",
+        "protocol": OFFLINE_FULL_WINDOW_PROTOCOL,
         "hardware_fingerprint": "hardware",
         "host_fingerprint": "host",
         "software_fingerprint": "software",
         "config_commit": commit,
+        "tracked_tree_clean": True,
+        "dataset_fingerprint": "profile-dataset",
         "source_dataset_fingerprint": "dataset",
         "inference_fingerprint": "inference",
         "detector_stack_fingerprint": "detector",
         "batch_size": 1,
         "loader_workers": 0,
+        "warmup_samples": 20,
         "amp": True,
-        "sample_count": 500,
-        "tracked_tree_clean": True,
         "random_init": False,
         "uses_ema": True,
+        "power_sampling_enabled": True,
+        "power_interval_ms": 20,
+        "power_gpu_id": "GPU-1",
         "checkpoint_path": str(checkpoint.resolve()),
         "checkpoint_epoch": suite.TERMINAL_EPOCH,
         "checkpoint_state_key": suite.TERMINAL_STATE_KEY,
@@ -411,45 +420,73 @@ def _cost_case(tmp_path: Path) -> dict[str, Any]:
     cellcf_paths = []
     bare_paths = []
     for repeat in range(3):
+        repeat_index = repeat + 1
         cellcf_path = tmp_path / f"cellcf_repeat{repeat}.json"
         bare_path = tmp_path / f"bare_repeat{repeat}.json"
+        cellcf_metadata = {
+            **common,
+            "method": "cellcf-fixed384",
+            "config_path": str(cellcf_config.resolve()),
+            "profile_config_sha256": _sha256(cellcf_config),
+            "profile_resolved_config_sha256": cost_binding[
+                "resolved_config_sha256"
+            ],
+            "frontend_variant": "cellcf",
+            "checkpoint_dropped_prefixes": [],
+            "checkpoint_dropped_key_count": 0,
+            "profile_session_id": "slurm-test",
+            "profile_pair_id": f"repeat-{repeat_index}",
+            "profile_repeat_index": repeat_index,
+            "profile_order_position": (
+                1 if repeat_index % 2 == 1 else 2
+            ),
+        }
+        bare_metadata = {
+            **common,
+            "method": "bare-uniform384",
+            "config_path": str(bare_config.resolve()),
+            "profile_config_sha256": _sha256(bare_config),
+            "profile_resolved_config_sha256": "e" * 64,
+            "frontend_variant": "bare_exact_uniform_lower_bound",
+            "checkpoint_dropped_prefixes": ["frame_selector."],
+            "checkpoint_dropped_key_count": 1,
+            "profile_session_id": "slurm-test",
+            "profile_pair_id": f"repeat-{repeat_index}",
+            "profile_repeat_index": repeat_index,
+            "profile_order_position": (
+                2 if repeat_index % 2 == 1 else 1
+            ),
+        }
+
+        def profile_sample(end_to_end_ms: float, selector_ms: float) -> dict:
+            return {
+                "input_pipeline_serial_ms": 1.0,
+                "h2d_ms": 1.0,
+                "model_forward_ms": end_to_end_ms - 3.0,
+                "postprocess_ms": 1.0,
+                "frame_selector_total_ms": selector_ms,
+                "coarse_probe_ms": selector_ms * 0.5,
+                "backbone_wrapper_total_ms": 3.0,
+                "heavy_backbone_ms": 2.0,
+                "projection_ms": 1.0,
+                "neck_ms": 0.5,
+                "head_ms": 0.5,
+                "selected_count": 384,
+            }
+
         _write_json(
             cellcf_path,
-            {
-                **common,
-                "method": "cellcf-fixed384",
-                "config_path": str(cellcf_config.resolve()),
-                "profile_config_sha256": _sha256(cellcf_config),
-                "profile_resolved_config_sha256": cost_binding[
-                    "resolved_config_sha256"
-                ],
-                "frontend_variant": "cellcf",
-                "checkpoint_dropped_prefixes": [],
-                "checkpoint_dropped_key_count": 0,
-                "stages": {
-                    "end_to_end_serial_ms": {"p50": 12.0 + repeat},
-                    "frame_selector_total_ms": {"p50": 1.0},
-                    "coarse_probe_ms": {"p50": 0.5},
-                },
-            },
+            build_profile_summary(
+                [profile_sample(12.0 + repeat, 1.0)] * 500,
+                metadata=cellcf_metadata,
+            ),
         )
         _write_json(
             bare_path,
-            {
-                **common,
-                "method": "bare-uniform384",
-                "config_path": str(bare_config.resolve()),
-                "profile_config_sha256": _sha256(bare_config),
-                "profile_resolved_config_sha256": "e" * 64,
-                "frontend_variant": "bare_exact_uniform_lower_bound",
-                "checkpoint_dropped_prefixes": ["frame_selector."],
-                "checkpoint_dropped_key_count": 1,
-                "stages": {
-                    "end_to_end_serial_ms": {"p50": 10.0 + repeat},
-                    "frame_selector_total_ms": {"p50": 0.0},
-                    "coarse_probe_ms": {"p50": 0.0},
-                },
-            },
+            build_profile_summary(
+                [profile_sample(10.0 + repeat, 0.0)] * 500,
+                metadata=bare_metadata,
+            ),
         )
         cellcf_paths.append(str(cellcf_path.resolve()))
         bare_paths.append(str(bare_path.resolve()))

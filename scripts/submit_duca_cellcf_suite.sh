@@ -13,30 +13,64 @@ sha256_file() {
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
-source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
+source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
+BOOTSTRAP_PYTHON="${BASE}/conda_envs/opentad/bin/python"
 RUN_ROOT="${RUN_ROOT:-}"
 [[ -n "${RUN_ROOT}" && -d "${RUN_ROOT}" ]] || fail "RUN_ROOT must name a prepared suite"
+RUN_ROOT="$(
+  duca_cellcf_require_external_path \
+    "RUN_ROOT" "${REPO_ROOT}" "${BASE}" "${RUN_ROOT}"
+)" || fail "RUN_ROOT violates the formal path contract"
 
 MANIFEST="${RUN_ROOT}/suite_manifest.json"
 PREPARED_SUBMISSION="${RUN_ROOT}/prepared_submission.json"
 PREPARED_SUBMISSION_SHA_FILE="${PREPARED_SUBMISSION}.sha256"
+[[ -x "${BOOTSTRAP_PYTHON}" ]] || fail "Python is missing: ${BOOTSTRAP_PYTHON}"
 [[ -f "${MANIFEST}" ]] || fail "suite manifest is missing"
 [[ -f "${PREPARED_SUBMISSION}" ]] || fail "prepared submission binding is missing"
 [[ -f "${PREPARED_SUBMISSION_SHA_FILE}" ]] || fail "prepared submission hash sidecar is missing"
+PREPARED_PROFILE="$(
+  env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
+    "${BOOTSTRAP_PYTHON}" - "${PREPARED_SUBMISSION}" \
+      "${PREPARED_SUBMISSION_SHA_FILE}" "${MANIFEST}" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+prepared_path = Path(sys.argv[1]).resolve()
+sidecar_path = Path(sys.argv[2]).resolve()
+manifest_path = Path(sys.argv[3]).resolve()
+sidecar_sha = sidecar_path.read_text(encoding="utf-8").strip().split()[0]
+if re.fullmatch(r"[0-9a-f]{64}", sidecar_sha) is None:
+    raise SystemExit("prepared submission hash sidecar is invalid")
+if hashlib.sha256(prepared_path.read_bytes()).hexdigest() != sidecar_sha:
+    raise SystemExit("prepared submission binding hash drift")
+prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+profile = prepared.get("training_profile")
+if profile not in {"exposure132", "official60"}:
+    raise SystemExit("prepared submission has no supported training profile")
+if manifest.get("training_profile") != profile:
+    raise SystemExit("prepared submission and suite manifest profile mismatch")
+if prepared.get("suite_manifest_sha256") != hashlib.sha256(
+    manifest_path.read_bytes()
+).hexdigest():
+    raise SystemExit("prepared suite manifest hash drift")
+print(profile)
+PY
+)" || fail "cannot resolve the hash-bound prepared training profile"
+if [[ -n "${DUCA_CELLCF_TRAINING_PROFILE:-}" \
+  && "${DUCA_CELLCF_TRAINING_PROFILE}" != "${PREPARED_PROFILE}" ]]; then
+  fail "explicit training profile differs from prepared evidence"
+fi
+export DUCA_CELLCF_TRAINING_PROFILE="${PREPARED_PROFILE}"
+source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "submission requires a clean tree"
 [[ "${DUCA_OFFICIAL_ADATAD_CHECKPOINT_INTERVAL}" == "5" ]] || fail \
   "formal CellCF training must preserve checkpoint-every-5"
-command -v sbatch >/dev/null 2>&1 || fail "sbatch is unavailable"
-command -v flock >/dev/null 2>&1 || fail "flock is unavailable"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is unavailable"
-command -v sacct >/dev/null 2>&1 || fail "sacct is unavailable"
-command -v squeue >/dev/null 2>&1 || fail "squeue is unavailable"
-command -v scontrol >/dev/null 2>&1 || fail "scontrol is unavailable"
-
-RECEIPT_DIR="${RUN_ROOT}/submission_receipts"
-mkdir -p "${RECEIPT_DIR}"
-exec 9>"${RECEIPT_DIR}/submit.lock"
-flock -n 9 || fail "another submission process holds the suite lock"
 
 if ! suite_binding_output="$("${PYTHON}" - \
   "${PREPARED_SUBMISSION}" "${PREPARED_SUBMISSION_SHA_FILE}" \
@@ -47,6 +81,10 @@ import re
 import sys
 from pathlib import Path
 
+from tools.bata.duca_cellcf_submission_contract import (
+    JOB_ORDER,
+    expected_job_name,
+)
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -69,12 +107,15 @@ if prepared.get("schema") != "duca_cellcf_prepared_submission_v1":
 commit = prepared.get("git_commit")
 seed = prepared.get("seed")
 cluster = prepared.get("target_cluster")
+profile = prepared.get("training_profile")
 if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
     raise SystemExit("prepared submission has an invalid commit")
 if not isinstance(seed, int) or seed < 0:
     raise SystemExit("prepared submission has an invalid seed")
 if not isinstance(cluster, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", cluster):
     raise SystemExit("prepared submission has an invalid target cluster")
+if profile not in {"exposure132", "official60"}:
+    raise SystemExit("prepared submission has an invalid training profile")
 if prepared.get("checkpoint_interval") != 5:
     raise SystemExit("prepared submission changed checkpoint-every-5")
 if Path(prepared.get("suite_manifest", "")).resolve() != manifest_path:
@@ -88,15 +129,20 @@ if manifest.get("schema") != "duca_cellcf_suite_manifest_v1" or manifest.get("ok
     raise SystemExit("invalid CellCF suite manifest")
 if manifest.get("git_commit") != commit or manifest.get("seed") != seed:
     raise SystemExit("prepared submission and suite manifest disagree")
+if manifest.get("training_profile") != profile:
+    raise SystemExit("prepared submission and suite manifest profile mismatch")
 
 canonical_env = Path(prepared.get("canonical_env_file", "")).resolve()
 if sha256(canonical_env) != prepared.get("canonical_env_sha256"):
     raise SystemExit("prepared canonical environment hash drift")
+canonical_lines = canonical_env.read_text(encoding="utf-8").splitlines()
+if canonical_lines.count(f"DUCA_CELLCF_TRAINING_PROFILE={profile}") != 1:
+    raise SystemExit("prepared canonical environment profile mismatch")
 jobs_tsv = Path(prepared.get("jobs_tsv", "")).resolve()
 if sha256(jobs_tsv) != prepared.get("jobs_tsv_sha256"):
     raise SystemExit("prepared jobs ledger hash drift")
 
-expected_order = ["uniform", "transition_beta0", "cellcf", "aggregate", "cost", "completion"]
+expected_order = list(JOB_ORDER)
 expected_roles = {
     "uniform": "none",
     "transition_beta0": "none",
@@ -120,7 +166,7 @@ for job in jobs:
         raise SystemExit(f"prepared {key} sbatch hash drift")
     if job.get("dependency_role") != expected_roles[key]:
         raise SystemExit(f"prepared {key} dependency role mismatch")
-    expected_name = f"cellcf-{key}-s{seed}-{commit[:7]}"
+    expected_name = expected_job_name(profile, key, seed, commit)
     if job.get("job_name") != expected_name:
         raise SystemExit(f"prepared {key} job name mismatch")
     script = expected_path.read_text(encoding="utf-8")
@@ -145,13 +191,14 @@ print(pilot)
 print(cluster)
 print(manifest_sha)
 print(actual_prepared_sha)
+print(profile)
 PY
 )"; then
   fail "prepared suite binding validation failed"
 fi
 readarray -t suite_binding <<< "${suite_binding_output}"
-[[ "${#suite_binding[@]}" == "7" ]] || fail \
-  "prepared suite binding must contain exactly seven fields"
+[[ "${#suite_binding[@]}" == "8" ]] || fail \
+  "prepared suite binding must contain exactly eight fields"
 EXPECTED_COMMIT="${suite_binding[0]}"
 SEED="${suite_binding[1]}"
 GATE_JSON="${suite_binding[2]}"
@@ -159,11 +206,28 @@ PILOT_JSON="${suite_binding[3]}"
 TARGET_CLUSTER="${suite_binding[4]}"
 MANIFEST_SHA256="${suite_binding[5]}"
 PREPARED_SUBMISSION_SHA256="${suite_binding[6]}"
+TRAINING_PROFILE="${suite_binding[7]}"
+[[ "${TRAINING_PROFILE}" == "${DUCA_CELLCF_TRAINING_PROFILE}" ]] || fail \
+  "prepared training profile differs from the canonical environment"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "HEAD differs from suite manifest"
 if [[ -n "${DUCA_CELLCF_TARGET_CLUSTER:-}" ]]; then
   [[ "${DUCA_CELLCF_TARGET_CLUSTER}" == "${TARGET_CLUSTER}" ]] || fail \
     "requested cluster differs from the prepared suite"
 fi
+if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
+  echo "[DUCA_CELLCF_SUBMIT] PRECHECK PASS profile=${TRAINING_PROFILE} root=${RUN_ROOT}"
+  exit 0
+fi
+
+command -v sbatch >/dev/null 2>&1 || fail "sbatch is unavailable"
+command -v flock >/dev/null 2>&1 || fail "flock is unavailable"
+command -v sacct >/dev/null 2>&1 || fail "sacct is unavailable"
+command -v squeue >/dev/null 2>&1 || fail "squeue is unavailable"
+command -v scontrol >/dev/null 2>&1 || fail "scontrol is unavailable"
+RECEIPT_DIR="${RUN_ROOT}/submission_receipts"
+mkdir -p "${RECEIPT_DIR}"
+exec 9>"${RECEIPT_DIR}/submit.lock"
+flock -n 9 || fail "another submission process holds the suite lock"
 
 read_prepared_job() {
   local key="$1"
@@ -234,7 +298,7 @@ write_submission_json() {
     "${cluster}" "${token}" "${raw_response}" "${job_id}" "${job_ref}" \
     "${intent_sha256}" "${MANIFEST}" "${MANIFEST_SHA256}" \
     "${PREPARED_SUBMISSION}" "${PREPARED_SUBMISSION_SHA256}" \
-    "${EXPECTED_COMMIT}" "${SEED}" <<'PY'
+    "${EXPECTED_COMMIT}" "${SEED}" "${TRAINING_PROFILE}" <<'PY'
 import json
 import os
 import sys
@@ -262,6 +326,7 @@ from pathlib import Path
     prepared_submission_sha256,
     commit,
     seed,
+    training_profile,
 ) = sys.argv[1:]
 payload = {
     "schema_version": "duca_cellcf_slurm_submission_v2",
@@ -284,6 +349,7 @@ payload = {
     "prepared_submission_sha256": prepared_submission_sha256,
     "git_commit": commit,
     "seed": int(seed),
+    "training_profile": training_profile,
 }
 target = Path(output)
 target.parent.mkdir(parents=True, exist_ok=True)
@@ -294,7 +360,7 @@ try:
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(temporary, target)
+    os.link(temporary, target)
     directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
         os.fsync(directory_fd)
@@ -321,7 +387,7 @@ read_receipt_binding() {
     "${job_file}" "${job_file_sha256}" "${dependency_role}" "${dependency}" \
     "${cluster}" "${token}" "${MANIFEST}" "${MANIFEST_SHA256}" \
     "${PREPARED_SUBMISSION}" "${PREPARED_SUBMISSION_SHA256}" \
-    "${EXPECTED_COMMIT}" "${SEED}" <<'PY'
+    "${EXPECTED_COMMIT}" "${SEED}" "${TRAINING_PROFILE}" <<'PY'
 import hashlib
 import json
 import sys
@@ -344,6 +410,7 @@ from pathlib import Path
     prepared_submission_sha256,
     commit,
     seed,
+    training_profile,
 ) = sys.argv[1:]
 intent_file = Path(intent_path)
 receipt_file = Path(receipt_path)
@@ -365,6 +432,7 @@ common = {
     "prepared_submission_sha256": prepared_submission_sha256,
     "git_commit": commit,
     "seed": int(seed),
+    "training_profile": training_profile,
 }
 for label, payload, status in (
     ("intent", intent, "INTENT_RECORDED"),
@@ -406,7 +474,7 @@ submit_once() {
   local dependency_role="$5"
   local dependency="${6:-}"
   local target_cluster="$7"
-  local token="cellcf-${EXPECTED_COMMIT:0:12}-s${SEED}-${job_key}-${job_file_sha256:0:12}"
+  local token="cellcf-${TRAINING_PROFILE}-${EXPECTED_COMMIT:0:12}-s${SEED}-${job_key}-${job_file_sha256:0:12}"
   local intent="${RECEIPT_DIR}/${job_key}.intent.json"
   local receipt="${RECEIPT_DIR}/${job_key}.receipt.json"
   local legacy_receipt="${RECEIPT_DIR}/${job_key}.json"
@@ -630,17 +698,25 @@ record_binding "completion" "${completion_name}" "${completion_job}" "${completi
   "${completion_cluster}" "FORMAL_COMPLETION_SUBMITTED"
 
 ledger_tmp="${RUN_ROOT}/jobs.submitted.tsv.tmp.$$"
-printf 'job_key\tseed\tcommit\tmanifest_sha256\tsbatch_file\tsbatch_sha256\tjob_name\tdependency\tjob_id\tjob_ref\tcluster\tstatus\n' > "${ledger_tmp}"
+printf 'job_key\tseed\tcommit\ttraining_profile\tmanifest_sha256\tsbatch_file\tsbatch_sha256\tjob_name\tdependency\tjob_id\tjob_ref\tcluster\tstatus\n' > "${ledger_tmp}"
 for index in "${!all_keys[@]}"; do
   dependency="${all_dependencies[$index]:-none}"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "${all_keys[$index]}" "${SEED}" "${EXPECTED_COMMIT}" "${MANIFEST_SHA256}" \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "${all_keys[$index]}" "${SEED}" "${EXPECTED_COMMIT}" "${TRAINING_PROFILE}" \
+    "${MANIFEST_SHA256}" \
     "${all_job_files[$index]}" "${all_job_hashes[$index]}" \
     "${all_job_names[$index]}" "${dependency}" "${all_job_ids[$index]}" \
     "${all_job_refs[$index]}" "${all_clusters[$index]}" "${all_statuses[$index]}" \
     >> "${ledger_tmp}"
 done
-mv "${ledger_tmp}" "${RUN_ROOT}/jobs.submitted.tsv"
+ledger="${RUN_ROOT}/jobs.submitted.tsv"
+if [[ -f "${ledger}" ]]; then
+  cmp -s "${ledger_tmp}" "${ledger}" \
+    || fail "existing submitted-job ledger differs from reopened receipts"
+  rm -f "${ledger_tmp}"
+else
+  mv "${ledger_tmp}" "${ledger}"
+fi
 
 printf '[DUCA_CELLCF_SUBMIT] arms=%s aggregate=%s cost=%s completion=%s root=%s\n' \
   "$(IFS=,; echo "${arm_refs[*]}")" "${aggregate_ref}" "${cost_ref}" \

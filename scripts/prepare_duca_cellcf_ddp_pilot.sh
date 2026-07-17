@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current HEAD"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-${CURRENT_HEAD}}"
@@ -32,12 +33,16 @@ EXPECTED_GATE_SHA256="${DUCA_CELLCF_GATE_SHA256:-${DUCA_CELLCF_REAL_LOADER_GATE_
 [[ "${OBSERVED_GATE_SHA256}" == "${EXPECTED_GATE_SHA256}" ]] \
   || fail "real-loader gate SHA256 differs from the requested binding"
 
-RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_ddp_pilot_${CURRENT_HEAD:0:12}_${EXPECTED_GATE_SHA256:0:12}}"
+RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_ddp_pilot_${DUCA_CELLCF_TRAINING_PROFILE}_${CURRENT_HEAD:0:12}_${EXPECTED_GATE_SHA256:0:12}}"
+RUN_ROOT="$(
+  duca_cellcf_require_external_path \
+    "RUN_ROOT" "${REPO_ROOT}" "${BASE}" "${RUN_ROOT}"
+)" || fail "RUN_ROOT violates the formal path contract"
 SBATCH_FILE="${SBATCH_FILE:-${RUN_ROOT}.sbatch}"
-case "${RUN_ROOT}" in
-  "${BASE}"/*) ;;
-  *) fail "RUN_ROOT must stay beneath BASE=${BASE}" ;;
-esac
+SBATCH_FILE="$(
+  duca_cellcf_require_external_path \
+    "SBATCH_FILE" "${REPO_ROOT}" "${BASE}" "${SBATCH_FILE}"
+)" || fail "SBATCH_FILE violates the formal path contract"
 [[ ! -e "${RUN_ROOT}" ]] || fail "RUN_ROOT already exists: ${RUN_ROOT}"
 [[ ! -e "${SBATCH_FILE}" ]] || fail "SBATCH_FILE already exists: ${SBATCH_FILE}"
 
@@ -52,7 +57,8 @@ bash scripts/run_duca_cellcf_ddp_pilot.sh
 mkdir -p "$(dirname "${SBATCH_FILE}")"
 {
   printf '%s\n' '#!/usr/bin/env bash'
-  printf '%s\n' '#SBATCH --job-name=duca-cellcf-ddp-pilot'
+  printf '#SBATCH --job-name=duca-cellcf-%s-ddp-pilot\n' \
+    "${DUCA_CELLCF_TRAINING_PROFILE}"
   printf '%s\n' '#SBATCH --nodes=1'
   printf '%s\n' '#SBATCH --ntasks=1'
   printf '%s\n' '#SBATCH --gres=gpu:1'
@@ -62,6 +68,7 @@ mkdir -p "$(dirname "${SBATCH_FILE}")"
   printf '%s\n' 'set -euo pipefail'
   printf 'cd %q\n' "${REPO_ROOT}"
   printf 'export BASE=%q\n' "${BASE}"
+  printf 'export DUCA_CELLCF_TRAINING_PROFILE=%q\n' "${DUCA_CELLCF_TRAINING_PROFILE}"
   printf 'export DUCA_EXPECTED_COMMIT=%q\n' "${EXPECTED_COMMIT}"
   printf 'export DUCA_CELLCF_GATE_JSON=%q\n' "${REAL_LOADER_GATE_JSON}"
   printf 'export DUCA_CELLCF_GATE_SHA256=%q\n' "${EXPECTED_GATE_SHA256}"

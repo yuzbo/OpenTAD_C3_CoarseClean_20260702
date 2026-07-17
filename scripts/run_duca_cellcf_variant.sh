@@ -9,6 +9,7 @@ fail() {
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 VARIANT="${DUCA_CELLCF_VARIANT:-}"
 case "${VARIANT}" in
@@ -19,8 +20,16 @@ case "${VARIANT}" in
 esac
 
 SEED="${SEED:-0}"
-RUN_DIR="${RUN_DIR:-logs/duca_cellcf_${VARIANT}_seed${SEED}}"
-WORK_DIR="${WORK_DIR:-exps/thumos/adatad/duca_cellcf/${VARIANT}/seed${SEED}}"
+RUN_DIR="${RUN_DIR:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_standalone_${DUCA_CELLCF_TRAINING_PROFILE}_${VARIANT}_seed${SEED}/logs}"
+WORK_DIR="${WORK_DIR:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_standalone_${DUCA_CELLCF_TRAINING_PROFILE}_${VARIANT}_seed${SEED}/work_dir}"
+RUN_DIR="$(
+  duca_cellcf_require_external_path \
+    "RUN_DIR" "${REPO_ROOT}" "${BASE}" "${RUN_DIR}"
+)" || fail "RUN_DIR violates the formal path contract"
+WORK_DIR="$(
+  duca_cellcf_require_external_path \
+    "WORK_DIR" "${REPO_ROOT}" "${BASE}" "${WORK_DIR}"
+)" || fail "WORK_DIR violates the formal path contract"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 GATE_JSON="${DUCA_CELLCF_GATE_JSON:-}"
 PILOT_JSON="${DUCA_CELLCF_DDP_PILOT_JSON:-}"
@@ -43,6 +52,8 @@ done
 [[ "$(sha256sum "${GATE_JSON}" | awk '{print $1}')" == "${DUCA_CELLCF_GATE_SHA256}" ]] || fail "real-loader gate hash drift"
 [[ "$(sha256sum "${PILOT_JSON}" | awk '{print $1}')" == "${DUCA_CELLCF_DDP_PILOT_SHA256}" ]] || fail "DDP pilot hash drift"
 
+[[ ! -e "${RUN_DIR}" ]] || fail "refusing to overwrite RUN_DIR"
+[[ ! -e "${WORK_DIR}" ]] || fail "refusing to overwrite WORK_DIR"
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 RUNTIME_ENV="${RUN_DIR}/canonical_env.tsv"
 duca_cellcf_canonical_env_payload > "${RUNTIME_ENV}"
@@ -111,9 +122,10 @@ cat > "${RUN_DIR}/manifest.json" <<EOF
   "evaluation_annotation_sha256": "${DUCA_CELLCF_ANNOTATION_SHA256}",
   "evaluation_class_map_sha256": "${DUCA_CELLCF_CLASS_MAP_SHA256}",
   "evaluation_config_sha256": "${DUCA_CELLCF_EVALUATION_CONFIG_SHA256}",
-  "expected_successful_optimizer_updates": 13200,
-  "checkpoint_interval": 5,
-  "terminal_checkpoint": "epoch_131.pth/state_dict_ema",
+  "training_profile": "${DUCA_CELLCF_TRAINING_PROFILE}",
+  "expected_successful_optimizer_updates": ${DUCA_CELLCF_EXPECTED_UPDATES},
+  "checkpoint_interval": ${DUCA_OFFICIAL_ADATAD_CHECKPOINT_INTERVAL},
+  "terminal_checkpoint": "epoch_${DUCA_CELLCF_TERMINAL_EPOCH}.pth/${DUCA_CELLCF_TERMINAL_STATE_KEY}",
   "slurm_job_id": "${SLURM_JOB_ID}"
 }
 EOF
@@ -132,7 +144,7 @@ export DUCA_CELLCF_RUNTIME_CONFIG_SHA256 DUCA_CELLCF_EVAL_RUNTIME_CONFIG_SHA256
 
 ACTUAL_WORK_DIR="${WORK_DIR}/gpu1_id0"
 TRAINING_AUDIT="${ACTUAL_WORK_DIR}/duca_cellcf_training_audit.json"
-CHECKPOINT="${ACTUAL_WORK_DIR}/checkpoint/epoch_131.pth"
+CHECKPOINT="${ACTUAL_WORK_DIR}/checkpoint/epoch_${DUCA_CELLCF_TERMINAL_EPOCH}.pth"
 SIDECAR="${CHECKPOINT}.metadata.json"
 EVAL_JSON="${RUN_DIR}/terminal_evaluation.json"
 [[ -f "${TRAINING_AUDIT}" && -f "${CHECKPOINT}" && -f "${SIDECAR}" ]] || fail "terminal training evidence is incomplete"
@@ -141,7 +153,8 @@ EVAL_JSON="${RUN_DIR}/terminal_evaluation.json"
   --nproc_per_node=1 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
   --rdzv_id="cellcf-${SLURM_JOB_ID}-${VARIANT}-eval" \
   tools/test.py "${CONFIG}" --checkpoint "${CHECKPOINT}" \
-  --checkpoint-state-key state_dict_ema --expected-checkpoint-epoch 131 \
+  --checkpoint-state-key "${DUCA_CELLCF_TERMINAL_STATE_KEY}" \
+  --expected-checkpoint-epoch "${DUCA_CELLCF_TERMINAL_EPOCH}" \
   --metrics-json "${EVAL_JSON}" --id 0 --seed "${SEED}" \
   --cfg-options "work_dir=${EVAL_ROOT}" \
     "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \

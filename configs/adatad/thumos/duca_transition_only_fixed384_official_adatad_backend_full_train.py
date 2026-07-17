@@ -2,11 +2,16 @@ _base_ = ["./duca_online_official_adatad_backend_full_train.py"]
 
 import os
 
+from tools.bata.duca_cellcf_protocol import protocol_from_environment
+
 
 def _require_fixed_env(name, expected):
     value = os.environ.get(name)
     if value is not None and int(value) != int(expected):
         raise ValueError(f"{name} is fixed to {expected} for this audited configuration, got {value}")
+
+
+duca_training_protocol = protocol_from_environment()
 
 
 for _name, _expected in (
@@ -15,9 +20,15 @@ for _name, _expected in (
     ("DUCA_ONLINE_DENSE_WINDOW_SIZE", 768),
     ("DUCA_VALIDATOR_MAX_BUDGET", 384),
     ("DUCA_BUDGET_CURVE_MODE", 0),
-    ("DUCA_OFFICIAL_ADATAD_END_EPOCH", 132),
-    ("DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH", 100),
-    ("DUCA_LOSS_SCHEDULE_TOTAL_STEPS", 13200),
+    ("DUCA_OFFICIAL_ADATAD_END_EPOCH", duca_training_protocol.end_epoch),
+    (
+        "DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH",
+        duca_training_protocol.steps_per_epoch,
+    ),
+    (
+        "DUCA_LOSS_SCHEDULE_TOTAL_STEPS",
+        duca_training_protocol.expected_successful_optimizer_updates,
+    ),
 ):
     _require_fixed_env(_name, _expected)
 
@@ -26,13 +37,13 @@ dense_window_size = 768
 window_size = 384
 scale_factor = 1
 chunk_num = window_size // 16
-duca_end_epoch = 132
-duca_schedule_steps_per_epoch = 100
+duca_end_epoch = duca_training_protocol.end_epoch
+duca_schedule_steps_per_epoch = duca_training_protocol.steps_per_epoch
 duca_loss_schedule_total_steps = duca_end_epoch * duca_schedule_steps_per_epoch
-duca_policy_warmup_steps = 660
-duca_policy_transition_steps = 3960
-duca_detector_bridge_warmup_steps = 4620
-duca_detector_bridge_transition_steps = 3300
+duca_policy_warmup_steps = round(duca_loss_schedule_total_steps * 0.05)
+duca_policy_transition_steps = round(duca_loss_schedule_total_steps * 0.30)
+duca_detector_bridge_warmup_steps = round(duca_loss_schedule_total_steps * 0.35)
+duca_detector_bridge_transition_steps = round(duca_loss_schedule_total_steps * 0.25)
 duca_max_unselected_hole = 15
 duca_coarse_hidden_dim = 96
 
@@ -111,6 +122,7 @@ duca_transition_only_contract = dict(
     counterfactual_teacher_inference_passes=0,
     deployment_allowed=False,
     loss_schedule_step_update="successful_optimizer_step",
+    training_profile=duca_training_protocol.name,
     schedule_steps_per_epoch=duca_schedule_steps_per_epoch,
     schedule_expected_total_steps=duca_loss_schedule_total_steps,
     actual_successful_steps_must_be_logged=True,
@@ -277,6 +289,7 @@ scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch
 solver = dict(static_graph=False, find_unused_parameters=True)
 
 workflow = dict(
+    training_profile=duca_training_protocol.name,
     logging_interval=50,
     checkpoint_interval=5,
     val_loss_interval=-1,
@@ -292,7 +305,9 @@ workflow = dict(
     require_finite_train_loss=True,
     primary_checkpoint_epoch=duca_end_epoch - 1,
     primary_checkpoint_state_key="state_dict_ema",
-    checkpoint_criterion="terminal_epoch_131_state_dict_ema",
+    checkpoint_criterion=duca_training_protocol.checkpoint_criterion,
 )
 
 work_dir = "exps/thumos/adatad/duca_transition_only_fixed384_official_adatad_backend_full_train"
+
+del duca_training_protocol

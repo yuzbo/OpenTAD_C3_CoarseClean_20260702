@@ -134,6 +134,98 @@ def test_cli_requires_a_checkpoint_unless_random_init_is_explicit() -> None:
     assert args.power_gpu_id is None
 
 
+def test_dense_paper_profile_requires_hash_bound_checkpoint_evidence() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "dense.py",
+            "--checkpoint",
+            "dense.pth",
+            "--use-ema",
+            "--method-name",
+            "dense-adatad",
+            "--output-prefix",
+            "out/dense",
+        ]
+    )
+    with pytest.raises(ValueError, match="checkpoint evidence"):
+        args.validate()
+
+    args = parser.parse_args(
+        [
+            "dense.py",
+            "--checkpoint",
+            "dense.pth",
+            "--use-ema",
+            "--method-name",
+            "dense-adatad",
+            "--checkpoint-evidence",
+            "binding.json",
+            "--checkpoint-evidence-sha256",
+            "a" * 64,
+            "--profile-session-id",
+            "slurm-1",
+            "--profile-pair-id",
+            "repeat-1",
+            "--profile-repeat-index",
+            "1",
+            "--profile-order-position",
+            "1",
+            "--output-prefix",
+            "out/dense",
+        ]
+    )
+    args.validate()
+    args.profile_session_id = ""
+    with pytest.raises(ValueError, match="profile-session-id"):
+        args.validate()
+
+
+def test_cli_separates_profiler_and_trained_commits() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "dense.py",
+            "--checkpoint",
+            "dense.pth",
+            "--use-ema",
+            "--method-name",
+            "dense-adatad",
+            "--checkpoint-evidence",
+            "binding.json",
+            "--checkpoint-evidence-sha256",
+            "a" * 64,
+            "--trained-commit",
+            "b" * 40,
+            "--profile-session-id",
+            "slurm-1",
+            "--profile-pair-id",
+            "repeat-1",
+            "--profile-repeat-index",
+            "1",
+            "--profile-order-position",
+            "1",
+            "--output-prefix",
+            "out/dense",
+        ]
+    )
+    args.validate()
+    assert args.trained_commit == "b" * 40
+
+    args.trained_commit = "short"
+    with pytest.raises(ValueError, match="trained-commit"):
+        args.validate()
+
+
+def test_paper_profile_clean_tree_check_includes_untracked_files() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools/bata/profile_duca_full_stack_cost.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"status", "--porcelain", "--untracked-files=normal"' in source
+
+
 def test_gpu1_launcher_is_fail_closed_and_uses_the_full_stack_profiler() -> None:
     root = Path(__file__).resolve().parents[1]
     launcher = root / "scripts" / "run_duca_full_stack_cost_profile_gpu1.sh"

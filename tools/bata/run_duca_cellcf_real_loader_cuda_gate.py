@@ -41,6 +41,7 @@ from opentad.models import build_detector
 from opentad.models.duca.structured_selection import exact_uniform_cell_bounds
 from opentad.models.utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS, TrueTimeMap
 from opentad.utils import ModelEma
+from tools.bata.duca_cellcf_protocol import protocol_from_workflow
 
 
 SCHEMA = "duca_cellcf_real_loader_cuda_gate_v1"
@@ -85,6 +86,7 @@ AUDITED_PATHS = (
     "tools/bata/run_duca_cellcf_synthetic_gate.py",
     "tools/bata/run_duca_cellcf_real_loader_cuda_gate.py",
     "tools/bata/validate_duca_cellcf_real_loader_gate.py",
+    "tools/bata/duca_cellcf_protocol.py",
     "tools/bata/duca_cellcf_training.py",
     "tools/bata/finalize_duca_cellcf_run.py",
     "tools/bata/validate_duca_cellcf_ddp_pilot.py",
@@ -215,12 +217,22 @@ def _bind_synthetic_gate(path: str | Path, *, git_commit: str) -> dict[str, Any]
         payload.get("real_dataset_loader_executed") is False,
         "bound synthetic gate must honestly declare that it did not run the real loader",
     )
+    training_profile = payload.get("training_profile")
+    _require(
+        training_profile in {"exposure132", "official60"},
+        "synthetic gate has no valid CellCF training profile",
+    )
     audited = payload.get("audited_file_sha256")
     _require(isinstance(audited, Mapping), "synthetic gate lacks audited_file_sha256")
     synthetic_script = "tools/bata/run_duca_cellcf_synthetic_gate.py"
     _require(
         audited.get(synthetic_script) == _sha256(ROOT / synthetic_script),
         "synthetic gate does not bind the current synthetic gate implementation",
+    )
+    protocol_module = "tools/bata/duca_cellcf_protocol.py"
+    _require(
+        audited.get(protocol_module) == _sha256(ROOT / protocol_module),
+        "synthetic gate does not bind the current training-profile contract",
     )
     return {
         "path": str(gate_path),
@@ -229,6 +241,7 @@ def _bind_synthetic_gate(path: str | Path, *, git_commit: str) -> dict[str, Any]
         "ok": True,
         "git_commit": git_commit,
         "git_tree_clean": True,
+        "training_profile": training_profile,
         "input_provenance": payload.get("input_provenance"),
         "claims": dict(payload.get("claims", {})),
     }
@@ -236,6 +249,10 @@ def _bind_synthetic_gate(path: str | Path, *, git_commit: str) -> dict[str, Any]
 
 def _require_output_outside_worktree(path: str | Path) -> Path:
     output = _path(path)
+    _require(
+        not output.exists(),
+        "refusing to overwrite real-loader gate evidence",
+    )
     try:
         output.relative_to(ROOT)
     except ValueError:
@@ -352,6 +369,7 @@ def _validate_main_config(cfg: Config, config_path: Path) -> dict[str, Any]:
 
     selector = cfg.model.frame_selector
     source = selector.actionness_source_cfg
+    training_protocol = protocol_from_workflow(cfg.workflow)
     _require(cfg.model.type == "ActionFormer", "model.type must remain ActionFormer")
     _require(cfg.model.rpn_head.type == "ActionFormerHead", "detector head must remain ActionFormerHead")
     official_base_path = _path(ROOT / "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py")
@@ -384,12 +402,26 @@ def _validate_main_config(cfg: Config, config_path: Path) -> dict[str, Any]:
     _require(int(cfg.model.backbone.backbone.total_frames) == 384, "VideoMAE must receive K=384")
     _require(cfg.model.backbone.backbone.with_cp is False, "formal dynamic-DDP path requires with_cp=False")
     _require(int(cfg.model.projection.max_seq_len) == 384, "projection grid must remain K=384")
-    _require(int(cfg.workflow.end_epoch) == 132, "training must remain 132 epochs")
-    _require(int(cfg.scheduler.max_epoch) == 132, "scheduler must remain 132 epochs")
+    _require(
+        int(cfg.workflow.end_epoch) == training_protocol.end_epoch,
+        "training epoch profile drifted",
+    )
+    _require(
+        int(cfg.scheduler.max_epoch) == training_protocol.end_epoch,
+        "scheduler epoch profile drifted",
+    )
     _require(int(cfg.workflow.checkpoint_interval) == 5, "checkpoint cadence must remain every 5 epochs")
     _require(int(cfg.workflow.expected_train_batches_per_epoch) == 100, "formal schedule expects 100 batches per epoch")
-    _require(int(cfg.workflow.expected_successful_optimizer_updates) == 13200, "formal schedule expects 13200 updates")
-    _require(int(cfg.workflow.primary_checkpoint_epoch) == 131, "primary checkpoint must remain terminal epoch 131")
+    _require(
+        int(cfg.workflow.expected_successful_optimizer_updates)
+        == training_protocol.expected_successful_optimizer_updates,
+        "formal successful-update profile drifted",
+    )
+    _require(
+        int(cfg.workflow.primary_checkpoint_epoch)
+        == training_protocol.terminal_epoch,
+        "primary checkpoint must remain the terminal epoch",
+    )
     _require(cfg.workflow.primary_checkpoint_state_key == "state_dict_ema", "primary checkpoint must use EMA state")
     _require(cfg.solver.amp is True and cfg.solver.ema is True, "official path requires AMP and EMA")
     _require(cfg.solver.static_graph is False, "real mixed windows require dynamic DDP")
@@ -442,10 +474,14 @@ def _validate_main_config(cfg: Config, config_path: Path) -> dict[str, Any]:
         "online_tad": False,
         "dense_window_size": 768,
         "fixed_budget": 384,
-        "end_epoch": 132,
+        "training_profile": training_protocol.name,
+        "training_protocol_purpose": training_protocol.purpose,
+        "end_epoch": training_protocol.end_epoch,
         "checkpoint_interval": 5,
         "expected_train_batches_per_epoch": 100,
-        "expected_successful_updates": 13200,
+        "expected_successful_updates": (
+            training_protocol.expected_successful_optimizer_updates
+        ),
         "expected_asformer_normalized_lf_sha256": expected_asformer_hash,
         "asformer_hash_binding_config": str(binding_config_path),
         "asformer_hash_binding_config_sha256": _sha256(binding_config_path),
@@ -454,8 +490,8 @@ def _validate_main_config(cfg: Config, config_path: Path) -> dict[str, Any]:
         "official_base_sha256": _sha256(official_base_path),
         "official_actionformer_head_config_exact_match": True,
         "official_actionformer_nms_config_exact_match": True,
-        "primary_checkpoint_epoch": 131,
-        "primary_checkpoint_state_key": "state_dict_ema",
+        "primary_checkpoint_epoch": training_protocol.terminal_epoch,
+        "primary_checkpoint_state_key": training_protocol.terminal_state_key,
     }
 
 
@@ -1135,6 +1171,10 @@ def run_gate(
     _require(config_file.is_file(), f"CellCF main config is missing: {config_file}")
     cfg = Config.fromfile(str(config_file))
     config = _validate_main_config(cfg, config_file)
+    _require(
+        synthetic["training_profile"] == config["training_profile"],
+        "synthetic and real-loader gates use different training profiles",
+    )
     assets = _bind_external_assets(
         cfg,
         videomae_checkpoint=videomae_checkpoint,
@@ -1165,7 +1205,7 @@ def run_gate(
         )
         _require(
             len(full_train_loader) == int(cfg.workflow.expected_train_batches_per_epoch),
-            "real train loader length does not match the 132-epoch schedule contract",
+            "real train loader length does not match the frozen schedule contract",
             evidence={
                 "observed_train_batches": len(full_train_loader),
                 "expected_train_batches": int(cfg.workflow.expected_train_batches_per_epoch),
@@ -1242,7 +1282,10 @@ def run_gate(
             optimizer,
             len(full_train_loader),
         )
-        _require(int(scheduler_max_epoch) == 132, "built scheduler max epoch drifted")
+        _require(
+            int(scheduler_max_epoch) == int(cfg.workflow.end_epoch),
+            "built scheduler max epoch drifted",
+        )
         scaler = torch.cuda.amp.GradScaler(enabled=True)
         update, counterfactual = _verify_training_update(
             cfg=cfg,
@@ -1342,7 +1385,8 @@ def run_gate(
             "online_tad": False,
             "fixed_k384": True,
             "official_adatad_actionformer_semantics_preserved": True,
-            "epochs_132_preserved": True,
+            "training_profile": str(config["training_profile"]),
+            "training_profile_preserved": True,
             "checkpoint_every_5_preserved": True,
             "real_loader_cuda_gate_passed": True,
             "all_obtainable_validity_patterns_exercised": set(obtainable_patterns) == set(executed_patterns),
@@ -1360,7 +1404,11 @@ def run_gate(
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with path.open("x", encoding="utf-8") as handle:
+        json.dump(dict(payload), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def validate_real_loader_gate_artifact(

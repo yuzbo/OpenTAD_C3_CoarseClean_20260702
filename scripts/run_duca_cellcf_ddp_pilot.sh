@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current HEAD"
@@ -39,9 +40,10 @@ OBSERVED_GATE_SHA256="$(sha256sum "${REAL_LOADER_GATE_JSON}" | awk '{print $1}')
 [[ "${OBSERVED_GATE_SHA256}" == "${EXPECTED_GATE_SHA256}" ]] \
   || fail "real-loader gate SHA256 differs from the frozen deployment binding"
 
-preflight_json="$(mktemp "${TMPDIR:-/tmp}/duca_cellcf_ddp_preflight.XXXXXX")"
+preflight_dir="$(mktemp -d "${TMPDIR:-/tmp}/duca_cellcf_ddp_preflight.XXXXXX")"
+preflight_json="${preflight_dir}/preflight.json"
 cleanup_preflight() {
-  rm -f "${preflight_json}"
+  rm -rf "${preflight_dir}"
 }
 trap cleanup_preflight EXIT
 "${PYTHON}" -m tools.bata.validate_duca_cellcf_ddp_pilot \
@@ -72,11 +74,11 @@ module load miniforge3/24.11 >/dev/null 2>&1 || true
 VISIBLE_GPU_COUNT="$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')"
 [[ "${VISIBLE_GPU_COUNT}" == "1" ]] || fail "pilot requires exactly one Slurm-visible GPU"
 
-RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_ddp_pilot_${CURRENT_HEAD:0:12}_${EXPECTED_GATE_SHA256:0:12}}"
-case "${RUN_ROOT}" in
-  "${BASE}"/*) ;;
-  *) fail "RUN_ROOT must stay beneath BASE=${BASE}" ;;
-esac
+RUN_ROOT="${RUN_ROOT:-${BASE}/projects/c3_lowres_action_probe/duca_cellcf_ddp_pilot_${DUCA_CELLCF_TRAINING_PROFILE}_${CURRENT_HEAD:0:12}_${EXPECTED_GATE_SHA256:0:12}}"
+RUN_ROOT="$(
+  duca_cellcf_require_external_path \
+    "RUN_ROOT" "${REPO_ROOT}" "${BASE}" "${RUN_ROOT}"
+)" || fail "RUN_ROOT violates the formal path contract"
 [[ ! -e "${RUN_ROOT}" ]] || fail "RUN_ROOT already exists: ${RUN_ROOT}"
 
 mkdir -p "${RUN_ROOT}/probes" "${RUN_ROOT}/work_dirs" "${RUN_ROOT}/logs"
@@ -91,6 +93,7 @@ MANIFEST_PATH="${RUN_ROOT}/manifest.json"
   "${ADATAD_PRETRAIN_PATH}" "${OFFICIAL_ASFORMER_SOURCE}" "${CANONICAL_ENV_FILE}" <<'PY'
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -127,7 +130,8 @@ payload = {
     "task": "offline_temporal_action_detection",
     "fixed_k": 384,
     "dense_window_size": 768,
-    "formal_end_epoch": 132,
+    "training_profile": os.environ["DUCA_CELLCF_TRAINING_PROFILE"],
+    "formal_end_epoch": int(os.environ["DUCA_CELLCF_END_EPOCH"]),
     "checkpoint_interval": 5,
     "pilot_checkpoint_disabled": True,
     "successful_updates_per_arm": 10,
@@ -171,6 +175,7 @@ for index in "${!variants[@]}"; do
     "${MANIFEST_PATH}" "${RUN_MANIFEST_SHA256}" <<'PY'
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -219,7 +224,8 @@ payload = {
     "run_manifest_sha256": manifest_sha,
     "task": "offline_temporal_action_detection",
     "fixed_k": 384,
-    "formal_end_epoch": 132,
+    "training_profile": os.environ["DUCA_CELLCF_TRAINING_PROFILE"],
+    "formal_end_epoch": int(os.environ["DUCA_CELLCF_END_EPOCH"]),
     "checkpoint_interval": 5,
     "pilot_checkpoint_disabled": True,
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import statistics
 import sys
@@ -12,9 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from tools.bata.duca_full_stack_cost import (
+    validate_and_rebuild_profile_summary,
+)
 from tools.bata.profile_duca_full_stack_cost import (
-    CELLCF_TERMINAL_EPOCH,
-    CELLCF_TERMINAL_STATE_KEY,
     _canonical_sha256,
     _sha256_file,
     load_cellcf_cost_binding,
@@ -34,8 +36,15 @@ def _load(path: str | Path) -> dict[str, Any]:
     _require(resolved.is_file(), f"cost profile is missing: {resolved}")
     payload = json.loads(resolved.read_text(encoding="utf-8"))
     _require(isinstance(payload, dict), f"cost profile is not an object: {resolved}")
+    raw_sample_fingerprints = validate_and_rebuild_profile_summary(payload)
     payload["_path"] = str(resolved)
     payload["_sha256"] = _sha256_file(resolved)
+    payload["_raw_samples_sha256"] = raw_sample_fingerprints[
+        "ordered_sha256"
+    ]
+    payload["_raw_samples_multiset_sha256"] = raw_sample_fingerprints[
+        "multiset_sha256"
+    ]
     return payload
 
 
@@ -62,8 +71,8 @@ def _validate_profile_binding(
         "config_commit": binding["git_commit"],
         "checkpoint_path": binding["checkpoint_path"],
         "checkpoint_sha256": binding["checkpoint_sha256"],
-        "checkpoint_epoch": CELLCF_TERMINAL_EPOCH,
-        "checkpoint_state_key": CELLCF_TERMINAL_STATE_KEY,
+        "checkpoint_epoch": binding["checkpoint_epoch"],
+        "checkpoint_state_key": binding["checkpoint_state_key"],
         "weight_source": "cellcf_trained_terminal_state_dict_ema",
         "dense_full_stack_savings_claimed": False,
     }
@@ -109,9 +118,34 @@ def _validate_group(
     binding: Mapping[str, Any],
 ) -> None:
     _require(len(reports) >= 3, f"{method} requires at least three fresh-process repeats")
+    _require(
+        len(
+            {
+                report["_raw_samples_multiset_sha256"]
+                for report in reports
+            }
+        )
+        == len(reports),
+        f"{method} repeats reuse the same raw sample multiset",
+    )
     reference = reports[0]
     for report in reports:
         _require(report.get("method") == method, f"unexpected method in {report['_path']}")
+        _require(
+            isinstance(report.get("profile_repeat_index"), int)
+            and not isinstance(report.get("profile_repeat_index"), bool)
+            and int(report["profile_repeat_index"]) > 0,
+            f"{method} profile repeat index is invalid",
+        )
+        _require(
+            report.get("profile_order_position") in (1, 2),
+            f"{method} profile order position is invalid",
+        )
+        _require(
+            bool(str(report.get("profile_session_id", "")).strip())
+            and bool(str(report.get("profile_pair_id", "")).strip()),
+            f"{method} profile lacks session/pair identity",
+        )
         _require(int(report.get("sample_count", 0)) >= 500, f"{method} requires at least 500 real windows per repeat")
         _require(report.get("tracked_tree_clean") is True, f"{method} profile used a dirty tree")
         _require(report.get("random_init") is False and report.get("uses_ema") is True, f"{method} must use terminal EMA weights")
@@ -152,6 +186,85 @@ def summarize(
     bare = [_load(path) for path in bare_paths]
     _validate_group(cellcf, "cellcf-fixed384", binding)
     _validate_group(bare, "bare-uniform384", binding)
+    _require(
+        len(cellcf) == len(bare),
+        "CellCF and bare-uniform repeat counts differ",
+    )
+    cellcf = sorted(
+        cellcf, key=lambda report: int(report["profile_repeat_index"])
+    )
+    bare = sorted(
+        bare, key=lambda report: int(report["profile_repeat_index"])
+    )
+    expected_indices = list(range(1, len(cellcf) + 1))
+    _require(
+        [int(report.get("profile_repeat_index", -1)) for report in cellcf]
+        == expected_indices
+        and [
+            int(report.get("profile_repeat_index", -1))
+            for report in bare
+        ]
+        == expected_indices,
+        "cost repeats must be contiguous and start at one",
+    )
+    sessions = {
+        str(report.get("profile_session_id", ""))
+        for report in [*cellcf, *bare]
+    }
+    _require(
+        len(sessions) == 1 and bool(next(iter(sessions)).strip()),
+        "cost repeats span multiple or empty profiling sessions",
+    )
+    order_receipt = []
+    for repeat, (cellcf_report, bare_report) in enumerate(
+        zip(cellcf, bare), start=1
+    ):
+        expected_pair = f"repeat-{repeat}"
+        expected_cellcf_position = 1 if repeat % 2 == 1 else 2
+        expected_bare_position = 2 if repeat % 2 == 1 else 1
+        _require(
+            cellcf_report.get("profile_pair_id")
+            == bare_report.get("profile_pair_id")
+            == expected_pair,
+            f"repeat {repeat} pair identity mismatch",
+        )
+        _require(
+            cellcf_report.get("profile_order_position")
+            == expected_cellcf_position
+            and bare_report.get("profile_order_position")
+            == expected_bare_position,
+            f"repeat {repeat} did not follow the alternating order",
+        )
+        order_receipt.append(
+            {
+                "repeat": repeat,
+                "pair_id": expected_pair,
+                "first": (
+                    "cellcf-fixed384"
+                    if expected_cellcf_position == 1
+                    else "bare-uniform384"
+                ),
+                "second": (
+                    "bare-uniform384"
+                    if expected_bare_position == 2
+                    else "cellcf-fixed384"
+                ),
+                "cellcf_profile_sha256": cellcf_report["_sha256"],
+                "bare_profile_sha256": bare_report["_sha256"],
+                "cellcf_raw_samples_sha256": cellcf_report[
+                    "_raw_samples_sha256"
+                ],
+                "bare_raw_samples_sha256": bare_report[
+                    "_raw_samples_sha256"
+                ],
+                "cellcf_raw_samples_multiset_sha256": cellcf_report[
+                    "_raw_samples_multiset_sha256"
+                ],
+                "bare_raw_samples_multiset_sha256": bare_report[
+                    "_raw_samples_multiset_sha256"
+                ],
+            }
+        )
     for key in (
         "protocol",
         "hardware_fingerprint",
@@ -194,15 +307,20 @@ def summarize(
         "config_commit": binding["git_commit"],
         "seed": binding["seed"],
         "variant": binding["variant"],
+        "training_profile": binding["training_profile"],
+        "training_protocol": binding["training_protocol"],
         "config_sha256": binding["config_sha256"],
         "resolved_config_sha256": binding["resolved_config_sha256"],
         "runtime_config_sha256": binding["runtime_config_sha256"],
         "evaluation_runtime_config_sha256": binding["evaluation_runtime_config_sha256"],
         "hardware_fingerprint": cellcf[0]["hardware_fingerprint"],
+        "profile_session_id": next(iter(sessions)),
+        "paired_repeat_order_required": True,
+        "paired_repeat_order_receipt": order_receipt,
         "checkpoint_path": binding["checkpoint_path"],
         "checkpoint_sha256": binding["checkpoint_sha256"],
-        "checkpoint_epoch": CELLCF_TERMINAL_EPOCH,
-        "checkpoint_state_key": CELLCF_TERMINAL_STATE_KEY,
+        "checkpoint_epoch": binding["checkpoint_epoch"],
+        "checkpoint_state_key": binding["checkpoint_state_key"],
         "cellcf_cost_binding": binding,
         "cellcf_cost_binding_sha256": _canonical_sha256(binding),
         "repeats_per_method": min(len(cellcf), len(bare)),
@@ -240,11 +358,29 @@ def summarize(
         "bare_uniform_profile_paths": [report["_path"] for report in bare],
         "profile_artifacts": {
             "cellcf": [
-                {"path": report["_path"], "sha256": report["_sha256"]}
+                {
+                    "path": report["_path"],
+                    "sha256": report["_sha256"],
+                    "raw_samples_sha256": report[
+                        "_raw_samples_sha256"
+                    ],
+                    "raw_samples_multiset_sha256": report[
+                        "_raw_samples_multiset_sha256"
+                    ],
+                }
                 for report in cellcf
             ],
             "bare_uniform": [
-                {"path": report["_path"], "sha256": report["_sha256"]}
+                {
+                    "path": report["_path"],
+                    "sha256": report["_sha256"],
+                    "raw_samples_sha256": report[
+                        "_raw_samples_sha256"
+                    ],
+                    "raw_samples_multiset_sha256": report[
+                        "_raw_samples_multiset_sha256"
+                    ],
+                }
                 for report in bare
             ],
         },
@@ -261,6 +397,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--post-run-evidence-sha256", required=True)
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
+    output_path = Path(args.output_json).expanduser().resolve()
+    if output_path.exists():
+        failure = {
+            "schema": SCHEMA,
+            "ok": False,
+            "status": "incomplete",
+            "pass": False,
+            "error_type": "FileExistsError",
+            "error": "refusing to overwrite CellCF frontend cost evidence",
+        }
+        print(json.dumps(failure, indent=2, sort_keys=True))
+        return 1
     try:
         payload = summarize(
             args.cellcf,
@@ -281,7 +429,11 @@ def main(argv: list[str] | None = None) -> int:
         code = 1
     output = json.dumps(payload, indent=2, sort_keys=True)
     print(output)
-    Path(args.output_json).write_text(output + "\n", encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("x", encoding="utf-8") as handle:
+        handle.write(output + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     return code
 
 
