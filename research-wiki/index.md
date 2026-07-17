@@ -63,6 +63,7 @@
 - `exp:phystime-performance-drop-diagnosis`
 - `exp:phystime-g1a-native-j192`
 - `exp:phystime-g1b-sdpq-medium20`
+- `exp:phystime-g1-matched-medium20`
 
 ### Papers
 
@@ -80,4 +81,4 @@
 
 ## 当前状态一句话
 
-PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；G1b SDPQ 已完成稳定的 20-epoch medium run，但尚无同轮数基线，不能声称优越。当前决定性任务是同 commit、同 K384/J192、同 seed、同 20 epochs 的 selected-axis / physical-metric / G1b SDPQ 三臂对照；它通过后才允许启动 60-epoch full train。
+PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；G1b SDPQ 已完成稳定的 20-epoch medium run，但尚无同轮数基线，不能声称优越。决定性的 same-commit selected-axis / physical-metric / G1b SDPQ 三臂 20轮对照已通过共享真实 gate 并进入训练；结果完成前仍不允许启动 60-epoch full train。

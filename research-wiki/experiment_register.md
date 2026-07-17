@@ -17,6 +17,7 @@
 | `exp:phystime-performance-drop-diagnosis` | 容量、几何、attention、预测分解 | completed | diagnostic + integrity audit | 排除 evaluator/训练崩溃；确认架构混杂、query 尺度、粗层聚合、候选密度和短动作问题 |
 | `exp:phystime-g1a-native-j192` | selected-axis / physical-metric native-J192 controls | six-epoch pilots completed | early matched diagnostic | 两臂差异很小，但轮数过短；不能与 G1b medium run 横比 |
 | `exp:phystime-g1b-sdpq-medium20` | support-decoupled physical query sparse head | completed | medium-run trainability evidence | 20轮稳定闭环成立；优越性仍需 same-commit 三臂 20轮对照 |
+| `exp:phystime-g1-matched-medium20` | selected-axis / physical-metric / G1b SDPQ | experiment running | decisive matched medium control | shared gate 已通过，三臂正在训练；mAP 仍为 NA |
 
 ## 证据等级定义
 
@@ -28,4 +29,4 @@
 
 当前没有达到第 5 级的 PhysTime 实验。
 
-下一阶段不是继续添加新结构，而是完成 same-commit 三臂 20轮 medium comparison。该套件代码已达到 `tested`，正式 clean snapshot/Slurm 结果尚未产生；在结果完成前不得解锁 60轮 full train 或创建论文 claim。
+下一阶段不是继续添加新结构，而是完成 same-commit 三臂 20轮 medium comparison。代码 commit `5e8a821` 的 shared gate 已通过，三个 Slurm 训练作业正在运行；在三个完成 artifact 全部通过前不得解锁 60轮 full train 或创建论文 claim。

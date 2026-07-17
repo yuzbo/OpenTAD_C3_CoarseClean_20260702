@@ -1,6 +1,6 @@
 # 当前唯一方向与最终目标
 
-2026-07-17 状态覆盖：G1b SDPQ 的 20-epoch medium run 已完成并通过 gate 与独立 evaluator，证明模型可以稳定训练并持续学习；原始结果只见 `docs/evaluation/results.md`。这不是结构优越性证据，因为旧 G1a selected-axis / physical-metric 只有六轮且 commit 不同；该 run 还未保存评价所用 EMA 权重，无法从 checkpoint 精确重放 evaluated model。当前唯一决定性任务是同 commit、同 K384/J192、同无 GT sampler、同 seed=42、同 20 epochs 的三臂比较。统一 runner、validator、shared gate 与 Slurm DAG 已实现，新的轻量 checkpoint 同时保留 online/EMA 权重；正式 clean snapshot 和队列尚待建立。60-epoch full train 继续锁定。
+2026-07-17 状态覆盖：G1b SDPQ 的 20-epoch medium run 已完成并通过 gate 与独立 evaluator，证明模型可以稳定训练并持续学习；原始结果只见 `docs/evaluation/results.md`。这不是结构优越性证据，因为旧 G1a selected-axis / physical-metric 只有六轮且 commit 不同；该 run 还未保存评价所用 EMA 权重，无法从 checkpoint 精确重放 evaluated model。决定性的同 commit、同 K384/J192、同无 GT sampler、同 seed=42、同 20 epochs 三臂比较已由 commit `5e8a821` 部署：shared gate `1168484` 通过，训练 `1168485/1168486/1168487` 正在运行，新的轻量 checkpoint 同时保留 online/EMA 权重。60-epoch full train 继续锁定。
 
 2026-07-13 部署门槛更新：G1a 当前仅为 `tested`。独立 Max 审查第二轮的 4 个 P1 已修复，相关远端回归 `240 passed`；第三轮未达到零 P0/P1 前不得部署 real gate，gate 未通过前不得启动 matched pilot。
 

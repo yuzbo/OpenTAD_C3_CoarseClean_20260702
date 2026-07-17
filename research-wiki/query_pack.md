@@ -18,7 +18,7 @@
 2. physical-metric：官方 ActionFormer，真实物理秒轴；
 3. G1b SDPQ：物理 query 与稀疏 support 解耦。
 
-三臂统一 runner、validator、shared G1a+G1b gate 与 Slurm DAG 已实现；本地静态测试与远端 Linux/PyTorch focused suite 已通过。正式 clean snapshot 与队列是当前下一步。只有 matched 20-epoch 结果显示 G1b 有稳定且有意义的优势，才解锁 60-epoch full train。
+三臂统一 runner、validator、shared G1a+G1b gate 与 Slurm DAG 已实现。代码 commit `5e8a821` 的 clean snapshot 已通过远端 `100 passed`；shared gate `1168484` 已 `COMPLETED 0:0`，训练 `1168485/1168486/1168487` 已进入 epoch 0。当前状态仅为 `experiment_running`，mAP 为 NA。只有 matched 20-epoch 结果显示 G1b 有稳定且有意义的优势，才解锁 60-epoch full train。
 
 ## 当前核心科学问题
 
@@ -70,7 +70,7 @@
 
 - G1b 20-epoch trainability：`empirically_supported`。
 - G1b 相对 matched controls 的优越性：`unknown`。
-- 三臂 medium suite 代码：`tested`，正式部署待完成。
+- 三臂 medium suite：shared gate 已通过，三臂 `experiment_running`。
 - 60-epoch full train：`blocked_by_matched_medium`。
 - PhysTime 论文主张：尚无 `paper_ready` claim。
 
