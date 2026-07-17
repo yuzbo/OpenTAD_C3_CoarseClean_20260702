@@ -247,3 +247,16 @@ append_only: true
   and 100 ms limit unchanged. Local S1 verification is `49 passed, 1 skipped`;
   remote diagnostic evidence is pending, so no reprofile, GO/KILL, S2, or Pro
   review is authorized.
+- 2026-07-17 07:58+08:00: test-blind power diagnostic Job `1167536` completed
+  `0:0` on clean `7e75b43`. The inherited persistent `nvidia-smi` pipe failed
+  the frozen cadence audit (`767` samples; median/P95/max gap
+  `20.212/20.331/678.458` ms), while native NVML passed (`511` samples;
+  `20.000/20.018/57.709` ms). Diagnostic file/internal SHAs are
+  `14c12730.../596568ed...`; receipt SHA is `e32675c3...`. Implemented the
+  formal switch to NVML handles resolved by the frozen Slurm-allocated GPU UUID
+  with the 20 ms target and 100 ms limit unchanged, plus a chained recovery
+  `v2` certificate that must retain the original failure, parent recovery,
+  power failure, diagnostic commit, and diagnostic file. This is
+  tested infrastructure only: combined local S1+C3 verification is `71 passed,
+  1 skipped`; a new clean commit, certificate, no-open GPU gate and matrix
+  remain required before S1 GO/KILL.

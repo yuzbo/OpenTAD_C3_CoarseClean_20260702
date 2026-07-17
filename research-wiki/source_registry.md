@@ -200,6 +200,18 @@ updated: 2026-07-17
   `eeac13f9e4fa18c7d59b26972b5188dd50f3da8df6466a06968c776baf5c5edc`.
   No valid profile artifact or descriptor exists; these sources establish an
   infrastructure failure only.
+- S1 power-cadence diagnostic Job `1167536`: clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_7e75b43_20260717_powerdiag`;
+  output
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/spatial_zoom_s1_power_diag_7e75b43/power_sampler_diagnostic.json`.
+  Output file SHA-256 is
+  `14c12730d488fefe6e95b8dc004667e271c7d86213045fca3f3ce28606cf8c45`;
+  internal diagnostic SHA-256 is
+  `596568ed0044ba35835e416650644c74a612529a7ac3a5feccf12085bd188ae1`;
+  submission receipt SHA-256 is
+  `e32675c3d50099074f58117eebf4466a18185189c8c448beee869a6e464cb6c4`.
+  The artifact is test-blind and cannot itself support a paper cost claim; it
+  establishes only the formal sampler backend choice.
 
 ## 外部附件
 

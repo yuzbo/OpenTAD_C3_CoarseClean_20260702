@@ -187,6 +187,11 @@ class _Nvml:
             ctypes.POINTER(ctypes.c_void_p),
         ]
         self.lib.nvmlDeviceGetHandleByIndex_v2.restype = ctypes.c_int
+        self.lib.nvmlDeviceGetHandleByUUID.argtypes = [
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.lib.nvmlDeviceGetHandleByUUID.restype = ctypes.c_int
         self.lib.nvmlDeviceGetUUID.argtypes = [
             ctypes.c_void_p,
             ctypes.c_char_p,
@@ -224,6 +229,16 @@ class _Nvml:
         )
         return handle
 
+    def handle_by_uuid(self, uuid: str) -> ctypes.c_void_p:
+        handle = ctypes.c_void_p()
+        self._check(
+            self.lib.nvmlDeviceGetHandleByUUID(
+                str(uuid).encode("utf-8"), ctypes.byref(handle)
+            ),
+            "nvmlDeviceGetHandleByUUID",
+        )
+        return handle
+
     def uuid(self, handle: ctypes.c_void_p) -> str:
         buffer = ctypes.create_string_buffer(self.UUID_BUFFER_SIZE)
         self._check(
@@ -248,10 +263,7 @@ class NvmlPowerSampler:
 
     backend = "nvml-persistent-poll-v1"
 
-    def __init__(
-        self, *, local_gpu_index: int, expected_uuid: str, interval_ms: int
-    ) -> None:
-        self.local_gpu_index = int(local_gpu_index)
+    def __init__(self, *, expected_uuid: str, interval_ms: int) -> None:
         self.expected_uuid = str(expected_uuid)
         self.interval_s = max(0.005, int(interval_ms) / 1000.0)
         self.samples: list[tuple[float, float]] = []
@@ -265,7 +277,9 @@ class NvmlPowerSampler:
         try:
             nvml = _Nvml()
             nvml.initialize()
-            handle = nvml.handle_by_index(self.local_gpu_index)
+            # NVML indices are node-physical, while cuda:0 is Slurm-local. The
+            # frozen UUID is the stable identity shared by both namespaces.
+            handle = nvml.handle_by_uuid(self.expected_uuid)
             actual_uuid = nvml.uuid(handle)
             if actual_uuid != self.expected_uuid:
                 raise RuntimeError(
@@ -401,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Diagnose S1 GPU power-sampler cadence without reading test data"
     )
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--logical-gpu-id", default="0")
+    parser.add_argument("--physical-gpu-id", required=True)
     parser.add_argument("--interval-ms", type=int, default=20)
     parser.add_argument("--duration-seconds", type=float, default=10.0)
     parser.add_argument("--code-commit", required=True)
@@ -423,13 +437,26 @@ def main(argv: list[str] | None = None) -> int:
         character not in "0123456789abcdef" for character in commit
     ):
         raise ValueError("power-sampler diagnostic requires a concrete Git commit")
-    uuid = _query_uuid(args.logical_gpu_id)
+    visible = [
+        value.strip()
+        for value in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+        if value.strip()
+    ]
+    allocated = [
+        value.strip()
+        for value in os.environ.get("SLURM_JOB_GPUS", "").split(",")
+        if value.strip()
+    ]
+    if len(visible) != 1 or allocated != [str(args.physical_gpu_id)]:
+        raise RuntimeError(
+            "power-sampler diagnostic requires one matching Slurm GPU identity"
+        )
+    uuid = _query_uuid(args.physical_gpu_id)
     backends = [
         NvidiaSmiPowerSampler(
-            gpu_id=args.logical_gpu_id, interval_ms=int(args.interval_ms)
+            gpu_id=args.physical_gpu_id, interval_ms=int(args.interval_ms)
         ),
         NvmlPowerSampler(
-            local_gpu_index=int(args.logical_gpu_id),
             expected_uuid=uuid,
             interval_ms=int(args.interval_ms),
         ),
@@ -444,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
         "slurm_job_id": os.environ["SLURM_JOB_ID"],
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "slurm_job_gpus": os.environ.get("SLURM_JOB_GPUS"),
-        "logical_gpu_id": str(args.logical_gpu_id),
+        "physical_gpu_id": str(args.physical_gpu_id),
         "gpu_uuid": uuid,
         "target_interval_ms": int(args.interval_ms),
         "duration_seconds_per_backend": float(args.duration_seconds),

@@ -82,6 +82,7 @@ def _normalize_power_trace(
     samples: Sequence[Mapping[str, Any]],
     *,
     interval_ms: int,
+    sampler: str,
     formal: bool,
 ) -> tuple[list[dict[str, float]], dict[str, Any] | None, str | None]:
     normalized = []
@@ -107,7 +108,9 @@ def _normalize_power_trace(
     max_gap_limit_ms = max(100.0, float(interval_ms) * 5.0)
     if formal and (len(normalized) < 2 or max_gap_ms > max_gap_limit_ms):
         raise ValueError(
-            "formal S1 power trace is too sparse for auditable energy integration"
+            "formal S1 power trace is too sparse for auditable energy integration: "
+            f"sampler={sampler}, samples={len(normalized)}, "
+            f"max_gap_ms={max_gap_ms:.6f}, limit_ms={max_gap_limit_ms:.6f}"
         )
     jsonl = "".join(
         json.dumps(row, sort_keys=True) + "\n" for row in normalized
@@ -115,7 +118,7 @@ def _normalize_power_trace(
     return (
         normalized,
         {
-            "sampler": "nvidia-smi-persistent-loop-ms",
+            "sampler": str(sampler),
             "target_interval_ms": int(interval_ms),
             "sample_count": len(normalized),
             "duration_ms": timestamps[-1] - timestamps[0],
@@ -150,6 +153,7 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "warmup_samples",
         "amp",
         "power_sampling_enabled",
+        "power_sampler_backend",
         "formal_profile",
         "split",
         "seed",
@@ -238,6 +242,8 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             )
         if not bool(checked["amp"]) or not bool(checked["power_sampling_enabled"]):
             raise ValueError("formal S1 profile requires AMP and power sampling")
+        if checked["power_sampler_backend"] != "nvml-persistent-poll-v1":
+            raise ValueError("formal S1 profile requires the audited NVML sampler")
         if checked["split"] != "test" or not checked["test_open_certificate_sha256"]:
             raise ValueError(
                 "formal S1 profile requires a frozen test-open certificate"
@@ -425,6 +431,7 @@ def build_profile_summary(
     normalized_power, power_summary, power_trace_file_sha256 = _normalize_power_trace(
         power_trace,
         interval_ms=int(checked_metadata["power_interval_ms"] or 0),
+        sampler=str(checked_metadata["power_sampler_backend"]),
         formal=bool(checked_metadata["formal_profile"]),
     )
     raw_samples = [dict(sample) for sample in samples]
@@ -549,6 +556,7 @@ def compare_resolution_profiles(
         "warmup_samples",
         "amp",
         "power_sampling_enabled",
+        "power_sampler_backend",
         "sample_count",
         "formal_profile",
         "split",

@@ -42,7 +42,7 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     profile_campaign_prefix,
 )
 from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
-    NvidiaSmiPowerSampler as PowerSampler,
+    NvmlPowerSampler as PowerSampler,
 )
 from tools.bata.validate_spatial_zoom_s1 import validate_config_matrix  # noqa: E402
 from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
@@ -756,7 +756,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("formal S1 profiler requires --sample-power and --amp")
     if args.sample_power:
         power_sampler = PowerSampler(
-            gpu_id=args.power_gpu_id, interval_ms=args.power_interval_ms
+            expected_uuid=hardware_identity["nvidia_smi"]["uuid"],
+            interval_ms=args.power_interval_ms,
         )
         power_sampler.start()
         time.sleep(power_sampler.interval_s * 1.5)
@@ -899,6 +900,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "warmup_samples": int(args.warmup_samples),
         "amp": use_amp,
         "power_sampling_enabled": bool(args.sample_power),
+        "power_sampler_backend": (
+            power_sampler.backend if power_sampler is not None else None
+        ),
         "split": args.split,
         "seed": int(args.seed),
         "video_count": len(expected_ids),

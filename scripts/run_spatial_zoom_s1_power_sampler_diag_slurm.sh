@@ -14,6 +14,8 @@ BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "diagnostic requires one allocated GPU"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
   fail "diagnostic requires exactly one CUDA-visible GPU"
+[[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
+  fail "diagnostic requires one auditable physical GPU identity"
 [[ ! -e "${OUTPUT}" ]] || fail "diagnostic output already exists"
 
 if command -v module >/dev/null 2>&1; then
@@ -33,7 +35,7 @@ cd "${ROOT}"
 PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
   python tools/bata/spatial_zoom_s1_power.py \
     --output "${OUTPUT}" \
-    --logical-gpu-id 0 \
+    --physical-gpu-id "${SLURM_JOB_GPUS}" \
     --interval-ms 20 \
     --duration-seconds 10 \
     --code-commit "${COMMIT}"

@@ -662,6 +662,7 @@ def _assert_global_profile_matrix_comparability(
         "warmup_samples",
         "amp",
         "power_sampling_enabled",
+        "power_sampler_backend",
         "formal_profile",
         "split",
         "sample_count",

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from mmengine.config import Config
+import tools.bata.spatial_zoom_s1_power as s1_power
 import tools.bata.spatial_zoom_s1_test_open as s1_test_open
 
 from tools.bata.analyze_spatial_zoom_s1_results import (
@@ -67,13 +68,16 @@ from tools.bata.profile_spatial_zoom_s1 import (
     validate_profile_order_ready,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (
+    S1_CHAINED_PROFILE_RECOVERY_SCHEMA,
+    S1_CHAINED_RECOVERY_REASON,
     S1_PROFILE_FAILURE_SIGNATURE,
+    S1_POWER_FAILURE_SIGNATURE,
     S1_PROFILE_RECOVERY_REASON,
     S1_PROFILE_RECOVERY_SCHEMA,
     profile_campaign_prefix,
     validate_profile_recovery_certificate,
 )
-from tools.bata.spatial_zoom_s1_power import summarize_power_cadence
+from tools.bata.spatial_zoom_s1_power import NvmlPowerSampler, summarize_power_cadence
 from tools.bata.select_spatial_zoom_s1_checkpoint import (
     select_s1_checkpoint,
     validate_checkpoint_selection,
@@ -759,6 +763,220 @@ def test_profile_recovery_certificate_preserves_failed_attempt_and_scope(
     with pytest.raises(ValueError, match="campaign identity|exposure topology"):
         validate_profile_recovery_certificate(
             forged, binding=binding, verify_checkout=False
+        )
+
+
+def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
+    tmp_path: Path,
+) -> None:
+    canonical_root = (tmp_path / "canonical").resolve()
+    binding = {
+        "code_commit": "a" * 40,
+        "experiment_namespace": "s1-experiment",
+        "canonical_experiment_root": str(canonical_root),
+        "manifest_sha256": "b" * 64,
+        "protocol_fingerprint": "c" * 64,
+        "precheck_file_sha256": "d" * 64,
+        "precheck_sha256": "e" * 64,
+        "pretrained_checkpoint_sha256": "f" * 64,
+    }
+    first = build_s1_profile_order()[0]
+    original_marker_path = tmp_path / "original.started.json"
+    original_marker = {
+        "schema_version": "spatial_zoom_s1_profile_attempt_v4",
+        "resolution": int(first["resolution"]),
+        "seed": int(first["seed"]),
+        "code_commit": binding["code_commit"],
+        "experiment_namespace": binding["experiment_namespace"],
+        "canonical_experiment_root": binding["canonical_experiment_root"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "precheck_file_sha256": binding["precheck_file_sha256"],
+        "precheck_sha256": binding["precheck_sha256"],
+        "profile_order_ordinal": 0,
+        "test_open_certificate_sha256": "1" * 64,
+    }
+    original_marker["marker_sha256"] = canonical_sha256(original_marker)
+    original_marker_path.write_text(
+        json.dumps(original_marker, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    original_log = tmp_path / "original.log"
+    original_log.write_text(S1_PROFILE_FAILURE_SIGNATURE + "\n", encoding="utf-8")
+    required_v1 = (
+        "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
+        "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
+        "tests/test_spatial_zoom_s1_infrastructure.py",
+        "tools/bata/analyze_spatial_zoom_s1_results.py",
+        "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
+        "tools/bata/preflight_spatial_zoom_s1_profile.py",
+        "tools/bata/profile_spatial_zoom_s1.py",
+        "tools/bata/run_spatial_zoom_s1_precheck.py",
+        "tools/bata/spatial_zoom_s1_cost.py",
+        "tools/bata/spatial_zoom_s1_profile_recovery.py",
+        "tools/bata/spatial_zoom_s1_training.py",
+    )
+    parent_basis = {
+        "schema_version": S1_PROFILE_RECOVERY_SCHEMA,
+        "reason": S1_PROFILE_RECOVERY_REASON,
+        "failure_signature": S1_PROFILE_FAILURE_SIGNATURE,
+        "failed_job_id": "1167257",
+        "training_code_commit": binding["code_commit"],
+        "profile_code_commit": "2" * 40,
+        "experiment_namespace": binding["experiment_namespace"],
+        "canonical_experiment_root": binding["canonical_experiment_root"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "protocol_fingerprint": binding["protocol_fingerprint"],
+        "precheck_file_sha256": binding["precheck_file_sha256"],
+        "precheck_sha256": binding["precheck_sha256"],
+        "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
+        "test_open_certificate_sha256": original_marker[
+            "test_open_certificate_sha256"
+        ],
+        "superseded_marker_path": str(original_marker_path.resolve()),
+        "superseded_marker_file_sha256": sha256_file(original_marker_path),
+        "superseded_marker_sha256": original_marker["marker_sha256"],
+        "failure_log_path": str(original_log.resolve()),
+        "failure_log_sha256": sha256_file(original_log),
+        "expected_loader_exposure_count": 792,
+        "expected_physical_window_count": 791,
+        "expected_duplicate_physical_window_ids": ["video_test_0001431:7680"],
+        "changed_files": [
+            {"status": "M", "path": path, "file_sha256": "3" * 64}
+            for path in required_v1
+        ],
+        "repair_scope": "profile_identity_and_postprocessing_only",
+        "preserve_all_loader_exposures": True,
+        "preserve_superseded_attempt": True,
+        "reuse_valid_test_evidence": True,
+    }
+    parent_id = canonical_sha256(parent_basis)[:16]
+    parent = {
+        **parent_basis,
+        "campaign_id": parent_id,
+        "campaign_root": str(canonical_root / "profile_campaigns" / parent_id),
+    }
+    parent["certificate_sha256"] = canonical_sha256(parent)
+    parent_path = tmp_path / "parent.json"
+    parent_path.write_text(
+        json.dumps(parent, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    power_marker_path = tmp_path / "power.started.json"
+    power_marker = {
+        **original_marker,
+        "schema_version": "spatial_zoom_s1_profile_attempt_v5",
+        "profile_code_commit": parent["profile_code_commit"],
+        "profile_recovery_certificate_sha256": parent["certificate_sha256"],
+        "profile_recovery_campaign_id": parent["campaign_id"],
+    }
+    power_marker.pop("marker_sha256")
+    power_marker["marker_sha256"] = canonical_sha256(power_marker)
+    power_marker_path.write_text(
+        json.dumps(power_marker, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    power_log = tmp_path / "power.log"
+    power_log.write_text(S1_POWER_FAILURE_SIGNATURE + "\n", encoding="utf-8")
+    diagnostic_path = tmp_path / "power_diagnostic.json"
+    diagnostic = {
+        "schema_version": "spatial_zoom_s1_power_sampler_diagnostic_v1",
+        "reads_test_data": False,
+        "paper_claim_allowed": False,
+        "code_commit": "6" * 40,
+        "node": "g0059",
+        "gpu_uuid": "GPU-allocated",
+        "target_interval_ms": 20,
+        "duration_seconds_per_backend": 10.0,
+        "slurm_job_id": "1167536",
+        "backends": [
+            {
+                "backend": "nvidia-smi-persistent-loop-ms",
+                "status": "FAIL",
+                "cadence": {"formal_cadence_pass": False},
+            },
+            {
+                "backend": "nvml-persistent-poll-v1",
+                "status": "PASS",
+                "cadence": {
+                    "formal_cadence_pass": True,
+                    "max_gap_ms": 57.7,
+                    "max_gap_limit_ms": 100.0,
+                },
+            },
+        ],
+    }
+    diagnostic["diagnostic_sha256"] = canonical_sha256(diagnostic)
+    diagnostic_path.write_text(
+        json.dumps(diagnostic, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    chain_paths = (*required_v1, "tools/bata/spatial_zoom_s1_power.py")
+    chain_basis = {
+        **parent_basis,
+        "schema_version": S1_CHAINED_PROFILE_RECOVERY_SCHEMA,
+        "reason": S1_CHAINED_RECOVERY_REASON,
+        "profile_code_commit": "4" * 40,
+        "changed_files": [
+            {"status": "M", "path": path, "file_sha256": "5" * 64}
+            for path in chain_paths
+        ],
+        "repair_scope": "profile_identity_power_sampling_and_postprocessing_only",
+        "preserve_recovery_chain": True,
+        "superseded_recovery_certificate_path": str(parent_path.resolve()),
+        "superseded_recovery_certificate_file_sha256": sha256_file(parent_path),
+        "superseded_recovery_certificate_sha256": parent["certificate_sha256"],
+        "superseded_recovery_campaign_id": parent["campaign_id"],
+        "superseded_recovery_profile_code_commit": parent["profile_code_commit"],
+        "power_failure_signature": S1_POWER_FAILURE_SIGNATURE,
+        "power_failed_job_id": "1167516",
+        "power_failure_marker_path": str(power_marker_path.resolve()),
+        "power_failure_marker_file_sha256": sha256_file(power_marker_path),
+        "power_failure_marker_sha256": power_marker["marker_sha256"],
+        "power_failure_log_path": str(power_log.resolve()),
+        "power_failure_log_sha256": sha256_file(power_log),
+        "power_diagnostic_path": str(diagnostic_path.resolve()),
+        "power_diagnostic_file_sha256": sha256_file(diagnostic_path),
+        "power_diagnostic_sha256": diagnostic["diagnostic_sha256"],
+        "power_diagnostic_job_id": diagnostic["slurm_job_id"],
+        "power_diagnostic_code_commit": diagnostic["code_commit"],
+        "power_sampler_backend": "nvml-persistent-poll-v1",
+    }
+    chain_id = canonical_sha256(chain_basis)[:16]
+    chain = {
+        **chain_basis,
+        "campaign_id": chain_id,
+        "campaign_root": str(canonical_root / "profile_campaigns" / chain_id),
+    }
+    chain["certificate_sha256"] = canonical_sha256(chain)
+    checked = validate_profile_recovery_certificate(
+        chain, binding=binding, verify_checkout=False
+    )
+    assert checked["preserve_recovery_chain"] is True
+    assert checked["power_sampler_backend"] == "nvml-persistent-poll-v1"
+    assert checked["schema_version"] == S1_CHAINED_PROFILE_RECOVERY_SCHEMA
+
+    wrong_schema = copy.deepcopy(chain)
+    wrong_schema["schema_version"] = S1_PROFILE_RECOVERY_SCHEMA
+    wrong_schema.pop("certificate_sha256")
+    wrong_schema["certificate_sha256"] = canonical_sha256(wrong_schema)
+    with pytest.raises(ValueError, match="schema/reason mismatch"):
+        validate_profile_recovery_certificate(
+            wrong_schema, binding=binding, verify_checkout=False
+        )
+
+    wrong_backend = copy.deepcopy(chain)
+    wrong_backend["power_sampler_backend"] = "nvidia-smi-persistent-loop-ms"
+    for key in ("certificate_sha256", "campaign_id", "campaign_root"):
+        wrong_backend.pop(key)
+    wrong_backend_id = canonical_sha256(wrong_backend)[:16]
+    wrong_backend["campaign_id"] = wrong_backend_id
+    wrong_backend["campaign_root"] = str(
+        canonical_root / "profile_campaigns" / wrong_backend_id
+    )
+    wrong_backend["certificate_sha256"] = canonical_sha256(wrong_backend)
+    with pytest.raises(ValueError, match="power diagnostic mismatch"):
+        validate_profile_recovery_certificate(
+            wrong_backend, binding=binding, verify_checkout=False
         )
 
 
@@ -1796,6 +2014,7 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "warmup_samples": 5,
         "amp": True,
         "power_sampling_enabled": True,
+        "power_sampler_backend": "nvml-persistent-poll-v1",
         "formal_profile": False,
         "split": "test",
         "seed": seed,
@@ -2002,10 +2221,52 @@ def test_power_sampler_diagnostic_is_slurm_local_and_test_blind() -> None:
         ROOT / "scripts" / "run_spatial_zoom_s1_power_sampler_diag_slurm.sh"
     ).read_text(encoding="utf-8")
     assert "SLURM_GPUS_ON_NODE" in source
-    assert "--logical-gpu-id 0" in source
+    assert '--physical-gpu-id "${SLURM_JOB_GPUS}"' in source
     assert "CUDA_VISIBLE_DEVICES=" not in source
     assert "annotation" not in source.lower()
     assert "test_evidence" not in source.lower()
+    profile_source = (
+        ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py"
+    ).read_text(encoding="utf-8")
+    assert "NvmlPowerSampler as PowerSampler" in profile_source
+    assert 'expected_uuid=hardware_identity["nvidia_smi"]["uuid"]' in profile_source
+    assert "local_gpu_index=" not in profile_source
+
+
+def test_nvml_sampler_resolves_the_slurm_device_by_uuid(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeNvml:
+        def initialize(self) -> None:
+            calls["initialized"] = True
+
+        def handle_by_uuid(self, uuid: str) -> str:
+            calls["requested_uuid"] = uuid
+            return "allocated-handle"
+
+        def uuid(self, handle: str) -> str:
+            calls["checked_handle"] = handle
+            return "GPU-allocated"
+
+        def power_w(self, handle: str) -> float:
+            calls["sampled_handle"] = handle
+            return 123.0
+
+        def shutdown(self) -> None:
+            calls["shutdown"] = True
+
+    monkeypatch.setattr(s1_power, "_Nvml", FakeNvml)
+    sampler = NvmlPowerSampler(expected_uuid="GPU-allocated", interval_ms=20)
+    sampler.start()
+    sampler.stop()
+    assert calls == {
+        "initialized": True,
+        "requested_uuid": "GPU-allocated",
+        "checked_handle": "allocated-handle",
+        "sampled_handle": "allocated-handle",
+        "shutdown": True,
+    }
+    assert sampler.samples and sampler.samples[0][1] == 123.0
 
 
 def test_full_stack_profile_requires_trained_checkpoint_and_matched_protocol() -> None:

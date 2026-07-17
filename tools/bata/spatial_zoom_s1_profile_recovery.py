@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -25,11 +26,35 @@ from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
 )
 
 S1_PROFILE_RECOVERY_SCHEMA = "spatial_zoom_s1_profile_recovery_v1"
+S1_CHAINED_PROFILE_RECOVERY_SCHEMA = "spatial_zoom_s1_profile_recovery_v2"
 S1_SUPERSEDED_PROFILE_MARKER_SCHEMA = "spatial_zoom_s1_profile_attempt_v4"
 S1_PROFILE_RECOVERY_REASON = "duplicate_physical_window_identity"
 S1_PROFILE_FAILURE_SIGNATURE = "formal S1 profile window identities must be unique"
+S1_CHAINED_PROFILE_MARKER_SCHEMA = "spatial_zoom_s1_profile_attempt_v5"
+S1_CHAINED_RECOVERY_REASON = "duplicate_window_and_power_sampler_cadence"
+S1_POWER_FAILURE_SIGNATURE = (
+    "formal S1 power trace is too sparse for auditable energy integration"
+)
+S1_POWER_DIAGNOSTIC_SCHEMA = "spatial_zoom_s1_power_sampler_diagnostic_v1"
 
 _ALLOWED_EXACT_PATHS = {
+    "docs/methods/spatial_zoom_s1_contract.md",
+    "scripts/run_spatial_zoom_s1_power_sampler_diag_slurm.sh",
+    "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
+    "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
+    "tests/test_spatial_zoom_s1_infrastructure.py",
+    "tools/bata/analyze_spatial_zoom_s1_results.py",
+    "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
+    "tools/bata/preflight_spatial_zoom_s1_profile.py",
+    "tools/bata/profile_spatial_zoom_s1.py",
+    "tools/bata/run_spatial_zoom_s1_precheck.py",
+    "tools/bata/spatial_zoom_s1_cost.py",
+    "tools/bata/spatial_zoom_s1_profile_recovery.py",
+    "tools/bata/spatial_zoom_s1_power.py",
+    "tools/bata/spatial_zoom_s1_training.py",
+}
+_ALLOWED_PREFIXES = ("research-wiki/",)
+_REQUIRED_REPAIR_PATHS_V1 = {
     "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
     "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
     "tests/test_spatial_zoom_s1_infrastructure.py",
@@ -42,19 +67,8 @@ _ALLOWED_EXACT_PATHS = {
     "tools/bata/spatial_zoom_s1_profile_recovery.py",
     "tools/bata/spatial_zoom_s1_training.py",
 }
-_ALLOWED_PREFIXES = ("research-wiki/",)
-_REQUIRED_REPAIR_PATHS = {
-    "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
-    "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
-    "tests/test_spatial_zoom_s1_infrastructure.py",
-    "tools/bata/analyze_spatial_zoom_s1_results.py",
-    "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
-    "tools/bata/preflight_spatial_zoom_s1_profile.py",
-    "tools/bata/profile_spatial_zoom_s1.py",
-    "tools/bata/run_spatial_zoom_s1_precheck.py",
-    "tools/bata/spatial_zoom_s1_cost.py",
-    "tools/bata/spatial_zoom_s1_profile_recovery.py",
-    "tools/bata/spatial_zoom_s1_training.py",
+_REQUIRED_REPAIR_PATHS_CHAINED = _REQUIRED_REPAIR_PATHS_V1 | {
+    "tools/bata/spatial_zoom_s1_power.py",
 }
 
 
@@ -78,7 +92,12 @@ def require_clean_profile_checkout(*, expected_commit: str) -> None:
         raise RuntimeError("formal S1 profile recovery requires a clean checkout")
 
 
-def _changed_files(base_commit: str, profile_commit: str) -> list[dict[str, str]]:
+def _changed_files(
+    base_commit: str,
+    profile_commit: str,
+    *,
+    required_paths: set[str],
+) -> list[dict[str, str]]:
     lines = _run_git(
         "diff",
         "--name-status",
@@ -113,7 +132,7 @@ def _changed_files(base_commit: str, profile_commit: str) -> list[dict[str, str]
             }
         )
     changed_paths = {row["path"] for row in changed}
-    missing = sorted(_REQUIRED_REPAIR_PATHS - changed_paths)
+    missing = sorted(required_paths - changed_paths)
     if missing:
         raise ValueError(
             f"S1 profile recovery is missing audited repair paths: {missing}"
@@ -121,15 +140,61 @@ def _changed_files(base_commit: str, profile_commit: str) -> list[dict[str, str]
     return changed
 
 
-def _validate_superseded_marker(path: Path) -> dict[str, Any]:
+def _validate_superseded_marker(
+    path: Path, *, expected_schema: str = S1_SUPERSEDED_PROFILE_MARKER_SCHEMA
+) -> dict[str, Any]:
     marker = json.loads(path.read_text(encoding="utf-8"))
     marker_hash = marker.pop("marker_sha256", None)
     if not marker_hash or canonical_sha256(marker) != marker_hash:
         raise ValueError("superseded S1 profile marker self-hash mismatch")
     marker["marker_sha256"] = marker_hash
-    if marker.get("schema_version") != S1_SUPERSEDED_PROFILE_MARKER_SCHEMA:
-        raise ValueError("S1 recovery requires the exact failed v4 profile marker")
+    if marker.get("schema_version") != expected_schema:
+        raise ValueError(
+            f"S1 recovery requires the exact failed {expected_schema} marker"
+        )
     return marker
+
+
+def _validate_power_diagnostic(path: Path) -> dict[str, Any]:
+    diagnostic = json.loads(path.read_text(encoding="utf-8"))
+    diagnostic_hash = diagnostic.pop("diagnostic_sha256", None)
+    if not diagnostic_hash or canonical_sha256(diagnostic) != diagnostic_hash:
+        raise ValueError("S1 power diagnostic self-hash mismatch")
+    diagnostic["diagnostic_sha256"] = diagnostic_hash
+    code_commit = str(diagnostic.get("code_commit", ""))
+    if (
+        diagnostic.get("schema_version") != S1_POWER_DIAGNOSTIC_SCHEMA
+        or diagnostic.get("reads_test_data") is not False
+        or diagnostic.get("paper_claim_allowed") is not False
+        or int(diagnostic.get("target_interval_ms", -1)) != 20
+        or float(diagnostic.get("duration_seconds_per_backend", 0.0)) < 5.0
+        or len(code_commit) != 40
+        or any(character not in "0123456789abcdef" for character in code_commit)
+        or not str(diagnostic.get("node", "")).strip()
+        or not str(diagnostic.get("gpu_uuid", "")).startswith("GPU-")
+        or not str(diagnostic.get("slurm_job_id", "")).isdigit()
+    ):
+        raise ValueError("S1 power diagnostic provenance is invalid")
+    backends = {
+        str(row.get("backend")): row
+        for row in diagnostic.get("backends", ())
+        if isinstance(row, Mapping)
+    }
+    inherited = backends.get("nvidia-smi-persistent-loop-ms")
+    candidate = backends.get("nvml-persistent-poll-v1")
+    if not inherited or not candidate:
+        raise ValueError("S1 power diagnostic is missing a matched backend")
+    if (
+        inherited.get("status") != "FAIL"
+        or inherited.get("cadence", {}).get("formal_cadence_pass") is not False
+        or candidate.get("status") != "PASS"
+        or candidate.get("cadence", {}).get("formal_cadence_pass") is not True
+        or float(candidate.get("cadence", {}).get("max_gap_ms", math.inf)) > 100.0
+        or float(candidate.get("cadence", {}).get("max_gap_limit_ms", -1.0))
+        != 100.0
+    ):
+        raise ValueError("S1 power diagnostic does not justify the NVML backend")
+    return diagnostic
 
 
 def profile_campaign_prefix(
@@ -162,11 +227,23 @@ def build_profile_recovery_certificate(
     expected_exposure_count: int,
     expected_physical_window_count: int,
     expected_duplicate_physical_window_ids: Sequence[str],
+    superseded_recovery_certificate_path: str | Path | None = None,
+    power_diagnostic_path: str | Path | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     profile_commit = current_git_commit()
     require_clean_profile_checkout(expected_commit=profile_commit)
     training_commit = str(binding["code_commit"]).lower()
-    changed_files = _changed_files(training_commit, profile_commit)
+    chained = superseded_recovery_certificate_path is not None
+    if chained != (power_diagnostic_path is not None):
+        raise ValueError(
+            "S1 chained recovery requires both parent certificate and power diagnostic"
+        )
+    required_paths = (
+        _REQUIRED_REPAIR_PATHS_CHAINED if chained else _REQUIRED_REPAIR_PATHS_V1
+    )
+    changed_files = _changed_files(
+        training_commit, profile_commit, required_paths=required_paths
+    )
 
     failed_marker_path = Path(failed_marker_path).resolve()
     failure_log_path = Path(failure_log_path).resolve()
@@ -174,13 +251,40 @@ def build_profile_recovery_certificate(
         raise FileNotFoundError(
             "S1 recovery requires the failed marker and failure log"
         )
-    failed_marker = _validate_superseded_marker(failed_marker_path)
-    if S1_PROFILE_FAILURE_SIGNATURE not in failure_log_path.read_text(
+    parent = None
+    diagnostic = None
+    marker_schema = (
+        S1_CHAINED_PROFILE_MARKER_SCHEMA
+        if chained
+        else S1_SUPERSEDED_PROFILE_MARKER_SCHEMA
+    )
+    failure_signature = (
+        S1_POWER_FAILURE_SIGNATURE if chained else S1_PROFILE_FAILURE_SIGNATURE
+    )
+    failed_marker = _validate_superseded_marker(
+        failed_marker_path, expected_schema=marker_schema
+    )
+    if failure_signature not in failure_log_path.read_text(
         encoding="utf-8", errors="replace"
     ):
         raise ValueError(
             "S1 recovery failure log does not contain the frozen signature"
         )
+    if chained:
+        parent_path = Path(superseded_recovery_certificate_path).resolve()
+        if not parent_path.is_file():
+            raise FileNotFoundError(parent_path)
+        parent = validate_profile_recovery_certificate(
+            json.loads(parent_path.read_text(encoding="utf-8")),
+            binding=binding,
+            verify_checkout=False,
+        )
+        if parent.get("reason") != S1_PROFILE_RECOVERY_REASON:
+            raise ValueError("S1 chained recovery requires the identity-repair parent")
+        diagnostic_path = Path(power_diagnostic_path).resolve()
+        if not diagnostic_path.is_file():
+            raise FileNotFoundError(diagnostic_path)
+        diagnostic = _validate_power_diagnostic(diagnostic_path)
     first_profile_cell = build_s1_profile_order()[0]
     expected_marker = {
         "resolution": int(first_profile_cell["resolution"]),
@@ -193,6 +297,16 @@ def build_profile_recovery_certificate(
         "precheck_sha256": binding["precheck_sha256"],
         "profile_order_ordinal": 0,
     }
+    if chained:
+        expected_marker.update(
+            {
+                "profile_code_commit": parent["profile_code_commit"],
+                "profile_recovery_certificate_sha256": parent[
+                    "certificate_sha256"
+                ],
+                "profile_recovery_campaign_id": parent["campaign_id"],
+            }
+        )
     for key, expected in expected_marker.items():
         if failed_marker.get(key) != expected:
             raise ValueError(f"superseded S1 profile marker {key} mismatch")
@@ -209,11 +323,29 @@ def build_profile_recovery_certificate(
     if not str(failed_job_id).isdigit():
         raise ValueError("S1 recovery requires a numeric failed Slurm job id")
 
-    basis = {
-        "schema_version": S1_PROFILE_RECOVERY_SCHEMA,
-        "reason": S1_PROFILE_RECOVERY_REASON,
-        "failure_signature": S1_PROFILE_FAILURE_SIGNATURE,
+    original = parent or {
         "failed_job_id": str(failed_job_id),
+        "failure_signature": S1_PROFILE_FAILURE_SIGNATURE,
+        "test_open_certificate_sha256": failed_marker[
+            "test_open_certificate_sha256"
+        ],
+        "superseded_marker_path": str(failed_marker_path),
+        "superseded_marker_file_sha256": sha256_file(failed_marker_path),
+        "superseded_marker_sha256": failed_marker["marker_sha256"],
+        "failure_log_path": str(failure_log_path),
+        "failure_log_sha256": sha256_file(failure_log_path),
+    }
+    basis = {
+        "schema_version": (
+            S1_CHAINED_PROFILE_RECOVERY_SCHEMA
+            if chained
+            else S1_PROFILE_RECOVERY_SCHEMA
+        ),
+        "reason": (
+            S1_CHAINED_RECOVERY_REASON if chained else S1_PROFILE_RECOVERY_REASON
+        ),
+        "failure_signature": original["failure_signature"],
+        "failed_job_id": original["failed_job_id"],
         "training_code_commit": training_commit,
         "profile_code_commit": profile_commit,
         "experiment_namespace": binding["experiment_namespace"],
@@ -223,21 +355,63 @@ def build_profile_recovery_certificate(
         "precheck_file_sha256": binding["precheck_file_sha256"],
         "precheck_sha256": binding["precheck_sha256"],
         "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
-        "test_open_certificate_sha256": failed_marker["test_open_certificate_sha256"],
-        "superseded_marker_path": str(failed_marker_path),
-        "superseded_marker_file_sha256": sha256_file(failed_marker_path),
-        "superseded_marker_sha256": failed_marker["marker_sha256"],
-        "failure_log_path": str(failure_log_path),
-        "failure_log_sha256": sha256_file(failure_log_path),
+        "test_open_certificate_sha256": original[
+            "test_open_certificate_sha256"
+        ],
+        "superseded_marker_path": original["superseded_marker_path"],
+        "superseded_marker_file_sha256": original[
+            "superseded_marker_file_sha256"
+        ],
+        "superseded_marker_sha256": original["superseded_marker_sha256"],
+        "failure_log_path": original["failure_log_path"],
+        "failure_log_sha256": original["failure_log_sha256"],
         "expected_loader_exposure_count": exposure_count,
         "expected_physical_window_count": physical_count,
         "expected_duplicate_physical_window_ids": duplicates,
         "changed_files": changed_files,
-        "repair_scope": "profile_identity_and_postprocessing_only",
+        "repair_scope": (
+            "profile_identity_power_sampling_and_postprocessing_only"
+            if chained
+            else "profile_identity_and_postprocessing_only"
+        ),
         "preserve_all_loader_exposures": True,
         "preserve_superseded_attempt": True,
         "reuse_valid_test_evidence": True,
     }
+    if chained:
+        parent_path = Path(superseded_recovery_certificate_path).resolve()
+        diagnostic_path = Path(power_diagnostic_path).resolve()
+        basis.update(
+            {
+                "preserve_recovery_chain": True,
+                "superseded_recovery_certificate_path": str(parent_path),
+                "superseded_recovery_certificate_file_sha256": sha256_file(
+                    parent_path
+                ),
+                "superseded_recovery_certificate_sha256": parent[
+                    "certificate_sha256"
+                ],
+                "superseded_recovery_campaign_id": parent["campaign_id"],
+                "superseded_recovery_profile_code_commit": parent[
+                    "profile_code_commit"
+                ],
+                "power_failure_signature": S1_POWER_FAILURE_SIGNATURE,
+                "power_failed_job_id": str(failed_job_id),
+                "power_failure_marker_path": str(failed_marker_path),
+                "power_failure_marker_file_sha256": sha256_file(
+                    failed_marker_path
+                ),
+                "power_failure_marker_sha256": failed_marker["marker_sha256"],
+                "power_failure_log_path": str(failure_log_path),
+                "power_failure_log_sha256": sha256_file(failure_log_path),
+                "power_diagnostic_path": str(diagnostic_path),
+                "power_diagnostic_file_sha256": sha256_file(diagnostic_path),
+                "power_diagnostic_sha256": diagnostic["diagnostic_sha256"],
+                "power_diagnostic_job_id": diagnostic["slurm_job_id"],
+                "power_diagnostic_code_commit": diagnostic["code_commit"],
+                "power_sampler_backend": "nvml-persistent-poll-v1",
+            }
+        )
     campaign_id = canonical_sha256(basis)[:16]
     campaign_root = (
         Path(binding["canonical_experiment_root"]) / "profile_campaigns" / campaign_id
@@ -269,10 +443,20 @@ def validate_profile_recovery_certificate(
     if not certificate_hash or canonical_sha256(checked) != certificate_hash:
         raise ValueError("S1 profile recovery certificate self-hash mismatch")
     checked["certificate_sha256"] = certificate_hash
-    if checked.get("schema_version") != S1_PROFILE_RECOVERY_SCHEMA:
-        raise ValueError("unsupported S1 profile recovery certificate schema")
+    chained = checked.get("reason") == S1_CHAINED_RECOVERY_REASON
+    if checked.get("reason") not in {
+        S1_PROFILE_RECOVERY_REASON,
+        S1_CHAINED_RECOVERY_REASON,
+    }:
+        raise ValueError("unsupported S1 profile recovery reason")
+    expected_schema = (
+        S1_CHAINED_PROFILE_RECOVERY_SCHEMA
+        if chained
+        else S1_PROFILE_RECOVERY_SCHEMA
+    )
+    if checked.get("schema_version") != expected_schema:
+        raise ValueError("S1 profile recovery certificate schema/reason mismatch")
     expected = {
-        "reason": S1_PROFILE_RECOVERY_REASON,
         "failure_signature": S1_PROFILE_FAILURE_SIGNATURE,
         "training_code_commit": str(binding["code_commit"]).lower(),
         "experiment_namespace": binding["experiment_namespace"],
@@ -282,7 +466,11 @@ def validate_profile_recovery_certificate(
         "precheck_file_sha256": binding["precheck_file_sha256"],
         "precheck_sha256": binding["precheck_sha256"],
         "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
-        "repair_scope": "profile_identity_and_postprocessing_only",
+        "repair_scope": (
+            "profile_identity_power_sampling_and_postprocessing_only"
+            if chained
+            else "profile_identity_and_postprocessing_only"
+        ),
         "preserve_all_loader_exposures": True,
         "preserve_superseded_attempt": True,
         "reuse_valid_test_evidence": True,
@@ -290,6 +478,8 @@ def validate_profile_recovery_certificate(
     for key, value in expected.items():
         if checked.get(key) != value:
             raise ValueError(f"S1 profile recovery certificate {key} mismatch")
+    if bool(checked.get("preserve_recovery_chain", False)) != chained:
+        raise ValueError("S1 profile recovery chain-preservation flag mismatch")
     campaign_basis = {
         key: value
         for key, value in checked.items()
@@ -339,6 +529,84 @@ def validate_profile_recovery_certificate(
     ):
         raise ValueError("S1 profile recovery failure signature disappeared")
 
+    if chained:
+        parent_path = Path(
+            checked["superseded_recovery_certificate_path"]
+        ).resolve()
+        power_marker_path = Path(checked["power_failure_marker_path"]).resolve()
+        power_log_path = Path(checked["power_failure_log_path"]).resolve()
+        diagnostic_path = Path(checked["power_diagnostic_path"]).resolve()
+        for path, key in (
+            (parent_path, "superseded_recovery_certificate_file_sha256"),
+            (power_marker_path, "power_failure_marker_file_sha256"),
+            (power_log_path, "power_failure_log_sha256"),
+            (diagnostic_path, "power_diagnostic_file_sha256"),
+        ):
+            if not path.is_file() or sha256_file(path) != checked.get(key):
+                raise ValueError(f"S1 chained recovery artifact mismatch: {path}")
+        parent = validate_profile_recovery_certificate(
+            json.loads(parent_path.read_text(encoding="utf-8")),
+            binding=binding,
+            verify_checkout=False,
+        )
+        if (
+            parent.get("reason") != S1_PROFILE_RECOVERY_REASON
+            or parent["certificate_sha256"]
+            != checked.get("superseded_recovery_certificate_sha256")
+            or parent["campaign_id"]
+            != checked.get("superseded_recovery_campaign_id")
+            or parent["profile_code_commit"]
+            != checked.get("superseded_recovery_profile_code_commit")
+        ):
+            raise ValueError("S1 chained recovery parent identity mismatch")
+        power_marker = _validate_superseded_marker(
+            power_marker_path, expected_schema=S1_CHAINED_PROFILE_MARKER_SCHEMA
+        )
+        if (
+            power_marker["marker_sha256"]
+            != checked.get("power_failure_marker_sha256")
+            or S1_POWER_FAILURE_SIGNATURE
+            not in power_log_path.read_text(encoding="utf-8", errors="replace")
+            or checked.get("power_failure_signature")
+            != S1_POWER_FAILURE_SIGNATURE
+            or str(checked.get("power_failed_job_id", "")).isdigit() is False
+        ):
+            raise ValueError("S1 chained recovery power-failure evidence mismatch")
+        current_marker_expected = {
+            "resolution": int(first_profile_cell["resolution"]),
+            "seed": int(first_profile_cell["seed"]),
+            "code_commit": str(binding["code_commit"]).lower(),
+            "profile_code_commit": parent["profile_code_commit"],
+            "experiment_namespace": binding["experiment_namespace"],
+            "canonical_experiment_root": binding["canonical_experiment_root"],
+            "manifest_sha256": binding["manifest_sha256"],
+            "precheck_file_sha256": binding["precheck_file_sha256"],
+            "precheck_sha256": binding["precheck_sha256"],
+            "profile_order_ordinal": 0,
+            "test_open_certificate_sha256": checked[
+                "test_open_certificate_sha256"
+            ],
+            "profile_recovery_certificate_sha256": parent[
+                "certificate_sha256"
+            ],
+            "profile_recovery_campaign_id": parent["campaign_id"],
+        }
+        for key, value in current_marker_expected.items():
+            if power_marker.get(key) != value:
+                raise ValueError(f"S1 chained recovery marker {key} mismatch")
+        diagnostic = _validate_power_diagnostic(diagnostic_path)
+        if (
+            diagnostic["diagnostic_sha256"]
+            != checked.get("power_diagnostic_sha256")
+            or diagnostic["slurm_job_id"]
+            != checked.get("power_diagnostic_job_id")
+            or diagnostic["code_commit"]
+            != checked.get("power_diagnostic_code_commit")
+            or checked.get("power_sampler_backend")
+            != "nvml-persistent-poll-v1"
+        ):
+            raise ValueError("S1 chained recovery power diagnostic mismatch")
+
     exposure_count = int(checked.get("expected_loader_exposure_count", -1))
     physical_count = int(checked.get("expected_physical_window_count", -1))
     duplicates = checked.get("expected_duplicate_physical_window_ids")
@@ -370,14 +638,19 @@ def validate_profile_recovery_certificate(
                 "S1 profile recovery Git diff is outside the audited scope"
             )
         changed_paths.add(path)
-    if not _REQUIRED_REPAIR_PATHS.issubset(changed_paths):
+    required_paths = (
+        _REQUIRED_REPAIR_PATHS_CHAINED if chained else _REQUIRED_REPAIR_PATHS_V1
+    )
+    if not required_paths.issubset(changed_paths):
         raise ValueError("S1 profile recovery Git diff omits a required repair path")
 
     if verify_checkout:
         require_clean_profile_checkout(expected_commit=checked["profile_code_commit"])
         if (
             _changed_files(
-                checked["training_code_commit"], checked["profile_code_commit"]
+                checked["training_code_commit"],
+                checked["profile_code_commit"],
+                required_paths=required_paths,
             )
             != checked["changed_files"]
         ):
@@ -415,6 +688,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--failed-marker", type=Path, required=True)
     parser.add_argument("--failure-log", type=Path, required=True)
     parser.add_argument("--failed-job-id", required=True)
+    parser.add_argument("--superseded-recovery-certificate", type=Path)
+    parser.add_argument("--power-diagnostic", type=Path)
     parser.add_argument("--expected-exposure-count", type=int, required=True)
     parser.add_argument("--expected-physical-window-count", type=int, required=True)
     parser.add_argument(
@@ -434,6 +709,10 @@ def main(argv: list[str] | None = None) -> int:
             expected_duplicate_physical_window_ids=(
                 args.expected_duplicate_physical_window_id
             ),
+            superseded_recovery_certificate_path=(
+                args.superseded_recovery_certificate
+            ),
+            power_diagnostic_path=args.power_diagnostic,
         )
     except Exception as exc:
         print(
@@ -464,6 +743,9 @@ if __name__ == "__main__":
 
 __all__ = [
     "S1_PROFILE_RECOVERY_SCHEMA",
+    "S1_CHAINED_PROFILE_RECOVERY_SCHEMA",
+    "S1_CHAINED_RECOVERY_REASON",
+    "S1_POWER_FAILURE_SIGNATURE",
     "build_profile_recovery_certificate",
     "load_profile_recovery_certificate",
     "profile_campaign_prefix",

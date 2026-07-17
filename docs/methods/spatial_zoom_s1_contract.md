@@ -71,7 +71,8 @@ rule remain identical.
    test predictions and profile the same selected checkpoint. Profiling reuses
    the official single-rank
    DDP result aggregation/NMS path, the complete test loader, batch size 1,
-   zero workers, 50 warmups, a persistent 20 ms power sampler with raw trace,
+   zero workers, 50 warmups, a persistent native-NVML 20 ms power sampler with
+   raw trace,
    and one canonical output prefix. Cost claims are limited to same-node,
    same-GPU, warm serial per-window latency and gross GPU energy; they do not
    represent cold-start, whole-video latency, incremental energy, or CPU and
@@ -129,3 +130,11 @@ rule remain identical.
   `bf71376e2d57946a3f898d25b7dcc88cfc002549a9ed78656293f1a95316a8f7`.
   S1 is only `experiment_running`; no S1 GO, crop-model success, empirical
   support, or paper claim is allowed.
+- Power diagnostic Job `1167536` used no test data and compared the inherited
+  persistent `nvidia-smi` pipe against native NVML under matched CUDA load.
+  The pipe's maximum arrival gap was `678.458` ms and failed the frozen 100 ms
+  limit; NVML's maximum was `57.709` ms and passed. Formal profiles therefore
+  obtain the NVML handle by the frozen Slurm-allocated GPU UUID, retain the
+  20 ms target and 100 ms limit, and require a versioned chained recovery
+  certificate preserving both failed attempts plus the diagnostic before
+  another matrix can start.

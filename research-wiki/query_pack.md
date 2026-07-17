@@ -31,10 +31,13 @@ max_chars: 8000
   after all 792 exposures ran: the raw power trace violated the unchanged
   100 ms maximum-gap audit. No summary/sample/power/descriptor was published
   and no later cell started. This is cost-evidence infrastructure failure, not
-  model/mAP evidence. A no-test-data Slurm diagnostic now compares the original
-  persistent `nvidia-smi` pipe with native NVML under matched CUDA load and
-  records actual cadence; local S1 tests are `49 passed, 1 skipped`, while the
-  remote cadence result and any backend switch remain pending.
+  model/mAP evidence. Test-blind Job `1167536` then measured the original pipe
+  at median/P95/max gaps `20.212/20.331/678.458` ms (FAIL) and native NVML at
+  `20.000/20.018/57.709` ms (PASS) under matched CUDA load. The profiler now
+  resolves native NVML by the frozen Slurm-allocated GPU UUID without changing
+  the 20 ms target or
+  100 ms limit. A chained certificate must preserve both failed attempts and
+  bind diagnostic SHA `14c12730...` before another no-open gate/matrix.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

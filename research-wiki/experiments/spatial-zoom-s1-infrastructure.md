@@ -467,6 +467,27 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   skipped`; remote GPU cadence evidence is still pending. No formal profile
   backend switch or replacement matrix is authorized until that diagnostic
   proves a backend satisfies the unchanged threshold.
+- Power-cadence diagnostic Job `1167536` completed `0:0` in 30 seconds on a
+  Slurm-assigned `g0059` GPU, using clean commit `7e75b43`. Under matched
+  ten-second CUDA loads, inherited `nvidia-smi-persistent-loop-ms` produced 767
+  records with median/P95 gaps `20.212/20.331` ms but burst delivery with
+  minimum `0.002` ms and maximum `678.458` ms, so it failed the unchanged
+  100 ms audit. Native `nvml-persistent-poll-v1` produced 511 records with
+  median/P95/max gaps `20.000/20.018/57.709` ms and passed. The diagnostic
+  reads no test data, has `paper_claim_allowed=false`, and its file/internal
+  SHAs are `14c12730.../596568ed...`; submission receipt SHA is `e32675c3...`.
+  This proves the old failure was pipe-arrival buffering rather than an
+  infeasible formal cadence. The formal profiler now resolves the native NVML
+  device by the frozen Slurm-allocated GPU UUID, rather than conflating the
+  `cuda:0` logical index with a node-physical NVML index, while retaining 20 ms
+  sampling and the 100 ms gap limit. A versioned chained certificate must bind
+  the original identity failure,
+  failed campaign `bc9...`, Job `1167516` marker/log, and this diagnostic before
+  any new no-open gate or profile matrix is authorized. The combined local
+  S1+C3 regression for this implementation is `71 passed, 1 skipped`; the skip
+  remains the Linux/CUDA-only interpolation check. Remote exact-snapshot tests,
+  real chained-certificate validation, and a no-open GPU gate are still
+  required.
 
 ## Decision Boundary
 
