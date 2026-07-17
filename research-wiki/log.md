@@ -392,3 +392,21 @@ append_only: true
   and `git diff --check` pass. Pass three found no P0/P1 and
   returned `DEPLOY` without changing files. State remains `tested_local`; no
   campaign, Gate, matrix, GO/KILL, S2, or Pro was created.
+- 2026-07-17: pushed `bc9350e`; its clean remote snapshot passed `107` exact
+  Linux tests and issued v4 campaign `6021eaba62337726`. Sole no-open Gate
+  `1170341` failed `6:0` after the 96000M preflight and existing evidence hash,
+  before any profile/test run or sidecar marker. Resource-only `1170342`
+  diagnosed a strict identity-mapping bug: physical `SLURM_STEP_GPUS=1` was
+  cgroup-renumbered to the only visible `CUDA_VISIBLE_DEVICES=0`, so
+  `nvidia-smi -i 1` returned 6 while `-i 0` returned the allocated UUID. Kept
+  the failed campaign immutable. The local repair records both identities,
+  queries only the visible selector, and still cross-checks NVML UUID against
+  logical `cuda:0`. Combined verification is `102 passed, 5 skipped`; state is
+  `tested_local/audit_pending`, with no replacement campaign/Gate/matrix.
+- 2026-07-17: independent read-only agent
+  `019f70bc-5b43-71c0-9ca6-1122cb880eaf` audited the physical-slot versus
+  cgroup-selector repair and returned `DEPLOY` with no P0/P1. It confirmed both
+  Gate/formal-profile paths, UUID equality with logical `cuda:0`, provenance
+  retention, and regression coverage; it changed no files. State is
+  `tested_local`, authorizing only commit, exact remote replay, and one fresh
+  no-open Gate.

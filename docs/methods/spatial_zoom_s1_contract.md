@@ -254,3 +254,18 @@ rule remain identical.
   remains `tested_local`: a clean commit, exact remote Linux/CUDA replay, a new
   immutable v4 campaign, and another full no-open Gate are mandatory before
   one replacement matrix.
+- Commit `bc9350e628c7ec3f0abafa8814429eb0d8476c4a` passed `107` exact
+  remote Linux tests and issued v4 campaign `6021eaba62337726`. Its no-open
+  Gate Job `1170341` failed `6:0` after six seconds, after the 96000M resource
+  preflight and existing-test-evidence hash but before any profile/test run,
+  sidecar marker, or new evidence. Resource-only Job `1170342` proved the
+  mismatch: `SLURM_STEP_GPUS=1` is the node physical slot, while the cgroup
+  exposes only `CUDA_VISIBLE_DEVICES=0`; `nvidia-smi -i 1` returned 6 and
+  `nvidia-smi -i 0` returned the allocated UUID. Campaign `6021...` is
+  immutable failed infrastructure and cannot be retried. The local repair
+  retains physical slot `1` as Slurm identity, uses the sole cgroup-visible
+  selector `0` only for NVML queries, and still requires the NVML UUID to equal
+  logical `cuda:0`'s runtime UUID. Verification is `102 passed, 5 skipped`.
+  Independent review returned `DEPLOY` with no P0/P1 and made no file changes;
+  a clean commit, remote replay, a new v4 campaign, and a fresh no-open Gate
+  are still required.

@@ -516,9 +516,13 @@ def test_hardware_identity_binds_logical_cuda_uuid_to_step_gpu(
         ),
         stderr="",
     )
+    def fake_nvidia_smi(command, **_kwargs):
+        assert command[-2:] == ["-i", "0"]
+        return nvidia_smi
+
     monkeypatch.setattr(
         "tools.bata.profile_spatial_zoom_s1.subprocess.run",
-        lambda *_args, **_kwargs: nvidia_smi,
+        fake_nvidia_smi,
     )
     identity = _hardware_identity(
         fake_torch,
@@ -536,6 +540,8 @@ def test_hardware_identity_binds_logical_cuda_uuid_to_step_gpu(
     )
     assert identity["cuda_visible_device_uuid"] == expected_uuid
     assert identity["nvidia_smi"]["uuid"] == expected_uuid
+    assert identity["physical_gpu_id"] == "1"
+    assert identity["nvidia_smi_query_selector"] == "0"
     assert identity["slurm_gpu_scope"]["step_id"] == "0"
     assert (
         identity["slurm_resources"]["effective_step_memory_limit_mb"] == 96000
@@ -627,6 +633,8 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
         assert "salvage also failed" in source
         assert "salvage" in source
         assert "|| true" not in source
+        assert '-i "${CUDA_VISIBLE_DEVICES}"' in source
+        assert '-i "${SCOPED_GPU_ID}"' not in source
     for source in (post, matrix):
         assert "SLURM_STEP_GPUS" in source
         assert "srun --exact" in source

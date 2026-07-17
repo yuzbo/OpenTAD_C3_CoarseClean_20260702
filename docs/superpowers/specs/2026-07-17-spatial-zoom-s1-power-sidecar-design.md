@@ -128,6 +128,14 @@ records with a shifted ready timestamp or a finish before the final sample are
 rejected. Formal profiles and new no-open Gates accept only v4. Historical v3
 is read only for recursive validation of the failed parent campaign.
 
+The Slurm physical slot and the cgroup-visible NVML selector are separate
+identities. `SLURM_STEP_GPUS` remains the physical resource identity recorded
+in receipts. A one-GPU step may renumber that device to
+`CUDA_VISIBLE_DEVICES=0`; therefore `nvidia-smi` queries use that sole visible
+selector, record it explicitly, and accept the result only when its UUID equals
+the CUDA driver UUID for logical `cuda:0`. Neither field substitutes for the
+other.
+
 ## Formal Matrix
 
 After the Gate passes, exactly one Slurm allocation runs the frozen nine cells
@@ -171,6 +179,8 @@ Focused tests cover:
 - no trace-file publication during the sampling loop and atomic publication
   after normal stop;
 - rejection of rehashed ready/trace-first and finish/trace-last mismatches;
+- physical Slurm slot versus cgroup-visible NVML selector mapping, including a
+  nonzero physical slot renumbered to logical selector zero;
 - rejection of old in-process backend profiles;
 - existing S1 and C3 regression contracts.
 

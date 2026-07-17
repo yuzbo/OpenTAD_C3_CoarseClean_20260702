@@ -105,7 +105,7 @@ for suffix in started.json summary.json samples.jsonl power.jsonl power_attempt.
 done
 TEST_EVIDENCE_SHA_BEFORE="$(sha256sum "${TEST_EVIDENCE}" | awk '{print $1}')"
 GATE_SCRATCH_DIR="${POWER_SCRATCH_ROOT}/job${SLURM_JOB_ID}_dense256_seed3408_gate"
-POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SCOPED_GPU_ID}" | tr -d '[:space:]')"
+POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${CUDA_VISIBLE_DEVICES}" | tr -d '[:space:]')"
 [[ "${POWER_UUID}" == GPU-* ]] || fail "could not resolve allocated GPU UUID"
 
 if ! (

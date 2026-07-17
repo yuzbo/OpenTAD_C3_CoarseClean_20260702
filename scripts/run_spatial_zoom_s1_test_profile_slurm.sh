@@ -250,7 +250,7 @@ fi
 [[ -f "${TEST_EVIDENCE}" ]] || fail "sealed test evidence was not produced"
 PROFILE_PREFIX="${CAMPAIGN_ROOT}/dense${RESOLUTION}/seed${SEED}/dense${RESOLUTION}_seed${SEED}"
 PROFILE_SCRATCH_DIR="${POWER_SCRATCH_ROOT}/job${SLURM_JOB_ID}_dense${RESOLUTION}_seed${SEED}_formal"
-POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SCOPED_GPU_ID}" | tr -d '[:space:]')"
+POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${CUDA_VISIBLE_DEVICES}" | tr -d '[:space:]')"
 [[ "${POWER_UUID}" == GPU-* ]] || fail "could not resolve allocated GPU UUID"
 if ! (
   cd "${TRAINING_ROOT}"

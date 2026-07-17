@@ -308,6 +308,26 @@ updated: 2026-07-17
   `DEPLOY`. The reviewer made no file changes. This is code-review evidence
   only; clean commit, remote Linux/CUDA replay, v4 campaign, and no-open Gate
   remain pending.
+- V4 buffered-sidecar deployment, 2026-07-17. GitHub commit `bc9350e` clean
+  remote snapshot passed `107` exact Linux tests. Campaign
+  `6021eaba62337726` certificate internal/file SHAs are
+  `60c4a55813ce29bdabcfa378db2f91a70e01c45db366927fe2b7c86d95590dc6`
+  and
+  `10479cc65fbb291ceb726a1bb1463b96665f0547e893c99e345f4d0faf2f49c1`.
+  Gate Job `1170341` failed `6:0` in six seconds before profiling; submission
+  receipt SHA is
+  `4fd692eb836637a72e15e2a220641d31d281477cf71d7ae01e08c0328dc4b9dc`.
+  Resource-only Job `1170342` recorded `SLURM_STEP_GPUS=1`,
+  `CUDA_VISIBLE_DEVICES=0`, `nvidia-smi -i 1` return code 6, and
+  `nvidia-smi -i 0` UUID
+  `GPU-2a3d0dd8-f85f-7e9e-30fa-d01c759694c8`. These are infrastructure
+  diagnostics, not model, accuracy, or cost evidence.
+- Physical-slot/cgroup-selector independent review, 2026-07-17. Read-only
+  agent `019f70bc-5b43-71c0-9ca6-1122cb880eaf` audited the four changed
+  code/test files and the corresponding contract/wiki records. It returned
+  `DEPLOY` with no P0/P1, confirmed physical Slurm provenance remains distinct
+  from the cgroup-visible NVML selector, and made no file changes. This
+  authorizes only commit, remote replay, and a fresh no-open Gate.
 
 ## 外部附件
 

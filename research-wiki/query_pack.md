@@ -27,26 +27,12 @@ max_chars: 8000
   791 physical windows). Audited recovery preserves the existing test evidence,
   ordinal exposure IDs, exact historical code/config/checkpoint provenance and
   immutable failed campaigns. No-open Gate `1167512` passed those contracts.
-  Its serial recovery Job `1167516` failed in the first profile
-  after all 792 exposures ran: the raw power trace violated the unchanged
-  100 ms maximum-gap audit. No summary/sample/power/descriptor was published
-  and no later cell started. This is cost-evidence infrastructure failure, not
-  model/mAP evidence. Test-blind Job `1167536` then measured the original pipe
-  at median/P95/max gaps `20.212/20.331/678.458` ms (FAIL) and native NVML at
-  `20.000/20.018/57.709` ms (PASS) under matched CUDA load. The profiler now
-  resolves native NVML by the frozen Slurm-allocated GPU UUID without changing
-  the 20 ms target or 100 ms limit. Formal commit `2f8eb06` passed 72 exact
-  remote tests and issued chained campaign `02f8e8bf7c2d6d25`, whose `v2`
-  certificate preserves both failed attempts and binds diagnostic SHA
-  `14c12730...`. No-open Gate `1167537` completed `0:0`; on a real allocation
-  with `cuda:0` mapped to physical GPU 1, UUID-resolved NVML passed at
-  median/P95/max gaps `20.000/20.025/57.848` ms. The only authorized serial
-  frozen-order matrix Job `1167538` later failed `1:0` in its first
-  dense256/seed3408 profile. It collected `107147` in-process NVML samples but
-  one observed gap reached `2413.519` ms, above the unchanged `100` ms limit.
-  No profile summary, latency trace, raw power trace, descriptor, or later cell
-  was published. The existing official-test result remains valid and was not
-  reopened. Slurm reported `63687456K` MaxRSS under a `62200M` allocation.
+  Recovery `1167516` failed closed on sparse shell-pipe power samples; matched
+  test-blind diagnostics showed native UUID-bound NVML met the unchanged
+  20/100 ms cadence contract. The next Gate passed, but matrix `1167538`
+  failed its first cell when an in-process sampler stalled for 2413.519 ms
+  under detector memory pressure. Neither failure published a formal profile,
+  descriptor, later cell, or new mAP evidence.
   Static audit identified a protocol mismatch: the formal sampler was a Python
   `threading.Thread` inside the memory-heavy detector/profile process. The
   branch implements an out-of-process UUID-bound native-NVML sidecar, dedicated
@@ -58,8 +44,14 @@ max_chars: 8000
   `146.048` ms, three gaps above 100 ms, and no descriptor/later cell. Local
   v4 removes sampling-loop trace I/O, binds exact trace lifecycle and all parent
   evidence, and passed `102 passed, 5 skipped`. Three-pass independent review
-  ended `DEPLOY` with no P0/P1. It remains `tested_local`; no new campaign,
-  Gate, matrix, Pro or GO/KILL exists.
+  ended `DEPLOY` with no P0/P1. Commit `bc9350e` then passed `107` remote tests,
+  but v4 Gate `1170341` failed before profiling because physical
+  `SLURM_STEP_GPUS=1` was incorrectly used against cgroup-renumbered
+  `nvidia-smi` index 0; resource-only `1170342` proved the mapping. Campaign
+  `6021eaba...` is immutable failed infrastructure. A local fix preserves the
+  physical identity but queries the sole visible selector and cross-checks its
+  UUID against `cuda:0`; independent review returned `DEPLOY` with no P0/P1.
+  It remains `tested_local`: no valid Gate, matrix, Pro or GO/KILL exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 

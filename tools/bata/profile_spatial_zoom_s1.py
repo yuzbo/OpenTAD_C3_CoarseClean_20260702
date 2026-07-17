@@ -520,13 +520,18 @@ def _hardware_identity(
         "clocks.max.sm",
         "clocks.max.memory",
     )
+    nvidia_smi_selector = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if not nvidia_smi_selector or "," in nvidia_smi_selector:
+        raise RuntimeError(
+            "formal S1 profiler requires one cgroup-visible NVML selector"
+        )
     query = subprocess.run(
         [
             "nvidia-smi",
             f"--query-gpu={','.join(query_fields)}",
             "--format=csv,noheader,nounits",
             "-i",
-            str(physical_gpu_id),
+            nvidia_smi_selector,
         ],
         capture_output=True,
         text=True,
@@ -578,6 +583,7 @@ def _hardware_identity(
         "cuda_visible_device_uuid": cuda_visible_uuid,
         "cuda_runtime_device_uuid_hex": cuda_runtime_uuid_hex,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "nvidia_smi_query_selector": nvidia_smi_selector,
         "cuda_runtime_device_ordinal": 0,
         "nvidia_smi": dict(zip(query_fields, values)),
         "slurm_gpu_scope": {

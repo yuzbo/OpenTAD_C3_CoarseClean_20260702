@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: sidecar_recovery_tested_local_long_gate_pending
+outcome: gpu_selector_fix_independent_deploy_remote_pending
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-17
@@ -662,6 +662,31 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   modifying files. State is `tested_local`, not deployed: a clean commit, exact
   remote replay, a fresh immutable v4 campaign, and a new no-open Gate remain
   required before one replacement matrix.
+- GitHub commit `bc9350e628c7ec3f0abafa8814429eb0d8476c4a` and clean remote
+  snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_bc9350e_20260717_buffered_v4`
+  passed the exact Linux suite with `107 passed`. V4 campaign
+  `6021eaba62337726` has certificate internal/file SHAs
+  `60c4a55813ce29bdabcfa378db2f91a70e01c45db366927fe2b7c86d95590dc6`
+  and
+  `10479cc65fbb291ceb726a1bb1463b96665f0547e893c99e345f4d0faf2f49c1`.
+  Its sole no-open Gate Job `1170341` failed `6:0` in six seconds on `g0048`,
+  after the exact 96000M resource preflight and existing-test-evidence hash but
+  before any profile/test run, sidecar marker, or new evidence. The campaign
+  contains only its certificate, submission receipt, and short logs and is
+  immutable failed infrastructure.
+- Resource-only diagnostic Job `1170342` reproduced the failure without model,
+  data, checkpoint, annotation, or test access. The outer allocation received
+  physical GPUs `1,2`; the exact inner step had `SLURM_STEP_GPUS=1`,
+  `SLURM_GPUS_ON_NODE=1`, and `CUDA_VISIBLE_DEVICES=0`. Its cgroup exposed one
+  GPU as `nvidia-smi` index 0 with UUID
+  `GPU-2a3d0dd8-f85f-7e9e-30fa-d01c759694c8`; querying physical slot 1 returned
+  code 6. The local repair keeps slot 1 in Slurm provenance, uses selector 0
+  only for `nvidia-smi`, records both, and still requires NVML UUID equality
+  with logical `cuda:0`. Combined local verification is
+  `102 passed, 5 skipped`. An independent read-only audit returned `DEPLOY`
+  with no P0/P1 and made no file changes. State remains `tested_local`;
+  remote replay and a fresh no-open Gate do not yet exist.
 
 ## Decision Boundary
 
