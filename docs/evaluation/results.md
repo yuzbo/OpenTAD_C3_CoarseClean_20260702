@@ -189,6 +189,43 @@ Artifact evidence:
 - It does **not** establish superiority: the available G1a selected-axis and physical-metric controls were trained for only six epochs under older commits. A same-commit, same-seed, same-schedule 20-epoch three-arm comparison is required before any method claim or full-train decision.
 - The new matched suite closes the replay gap by retaining both online and EMA state dicts while still excluding optimizer and scheduler state.
 
+## G1 Native-J192 Matched Three-Arm 20-Epoch Comparison
+
+Code commit: `5e8a8219c27785c15d720c5ed3c6b37298a2a866`; Git tree: `7dfdf3d1c1e1c681a5df23f5916e2aa53de221ea`.
+
+Run root: `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_5e8a821_medium20_20260717_132000_0800`.
+
+All arms use the same THUMOS data, K384/J192 observations, sampler, seed 42, 20-epoch schedule, optimizer, evaluator, and no feature interpolation.
+
+| Variant | Job | Status | Best/final epoch | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| shared real gate | `1168484` | completed / gate passed | NA | NA | NA | NA | NA | NA | NA |
+| selected-axis | `1168485` | completed / validation passed | 19/19 | 56.43 | 43.58 | 30.19 | 16.13 | 5.77 | 30.42 |
+| physical-metric | `1168486` | completed / validation passed | 19/19 | 68.94 | 59.73 | 47.60 | 32.52 | 15.59 | 44.88 |
+| G1b SDPQ | `1168487` | completed / validation passed | 19/19 | 52.60 | 43.54 | 31.82 | 18.24 | 8.19 | 30.88 |
+
+Matched deltas in percentage points:
+
+| Comparison | Avg-mAP | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| physical-metric minus selected-axis | +14.46 | +12.51 | +16.15 | +17.41 | +16.40 | +9.82 |
+| G1b SDPQ minus selected-axis | +0.46 | -3.83 | -0.04 | +1.63 | +2.11 | +2.42 |
+| G1b SDPQ minus physical-metric | -14.00 | -16.34 | -16.19 | -15.78 | -14.28 | -7.40 |
+
+Artifact and stability evidence:
+
+| Variant | First logged loss | Final logged loss | Peak memory | Predictions | Checkpoint contract |
+| --- | ---: | ---: | ---: | ---: | --- |
+| selected-axis | 1.7229 | 0.6651 | 3596 MB | 422000 | 401,895,677 bytes; online/EMA 499/499; SHA256 `d1fbaf990253bfd1ff384e724f395f5781639f47cba21180376495cefe3dbbca` |
+| physical-metric | 1.7205 | 0.5879 | 3596 MB | 422000 | 401,895,677 bytes; online/EMA 499/499; SHA256 `72a3e001805209ea70b68dd72bce89d2d9344d098a153d874b67b08f08ab2ab5` |
+| G1b SDPQ | 1.9153 | 0.9530 | 3134 MB | 420280 | 264,786,987 bytes; online/EMA 432/432; SHA256 `2debe94c006042d5268f0553d4104c90fbda8bd6c9cb10c58091d39232e9407a` |
+
+- All three `MEDIUM_COMPLETE.json` artifacts report `validation_pass=true`; final checkpoints are lightweight, finite, replayable, and exclude optimizer/scheduler state.
+- No Traceback, OOM, non-finite loss/gradient, AMP skipped step, checkpoint write failure, dependency failure, or GT boundary clamp/filter event was found.
+- The physical-metric control is the clear matched-medium survivor. Its gain is large across every IoU threshold, so the evidence supports modeling ActionFormer assignment/regression in the real physical-time metric rather than selected rank.
+- G1b SDPQ does not improve Avg-mAP meaningfully over selected-axis. Its small high-IoU gains coexist with lower mAP@0.3, consistent with sharper localization for some matched actions but weaker coverage/classification recall.
+- This single-seed, 20-epoch THUMOS result is `matched-medium-supported`, not `paper_ready`. It does not justify claiming the SDPQ operator as the main contribution, and it does not by itself authorize an automatic 60-epoch run.
+
 ## Matched Pilot
 
 统一 run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_7098049_pilot_20260710_214816_+0800`。

@@ -1,10 +1,10 @@
 # 当前唯一方向与最终目标
 
-2026-07-17 状态覆盖：G1b SDPQ 的 20-epoch medium run 已完成并通过 gate 与独立 evaluator，证明模型可以稳定训练并持续学习；原始结果只见 `docs/evaluation/results.md`。这不是结构优越性证据，因为旧 G1a selected-axis / physical-metric 只有六轮且 commit 不同；该 run 还未保存评价所用 EMA 权重，无法从 checkpoint 精确重放 evaluated model。决定性的同 commit、同 K384/J192、同无 GT sampler、同 seed=42、同 20 epochs 三臂比较已由 commit `5e8a821` 部署：shared gate `1168484` 通过，训练 `1168485/1168486/1168487` 正在运行，新的轻量 checkpoint 同时保留 online/EMA 权重。60-epoch full train 继续锁定。
+2026-07-17 状态覆盖：commit `5e8a821` 的同 commit、同 K384/J192、同无 GT sampler、同 seed=42、同 20 epochs 三臂比较已全部完成，并通过 shared gate、独立 evaluator 与 online/EMA checkpoint validator。原始结果只见 `docs/evaluation/results.md`：selected-axis `30.42%`、physical-metric `44.88%`、G1b SDPQ `30.88%` Avg-mAP。当前最强证据支持 ActionFormer 在真实物理时间度量上 assignment/回归；它不支持当前 SDPQ 结构优于 physical-metric。状态为 `matched-medium-supported`，不是 `paper_ready`；60-epoch full train 不自动启动。
 
 2026-07-13 部署门槛更新：G1a 当前仅为 `tested`。独立 Max 审查第二轮的 4 个 P1 已修复，相关远端回归 `240 passed`；第三轮未达到零 P0/P1 前不得部署 real gate，gate 未通过前不得启动 matched pilot。
 
-更新时间：2026-07-13
+更新时间：2026-07-17
 
 ## 1. 最终研究目标
 
@@ -38,7 +38,7 @@
 
 三个稀疏系统共享数据、采样索引、backbone、预训练、空间增强、训练周期、优化器、seed、NMS 和评测。完成后的审计发现，PhysTime 还同时改变了 temporal projection、跨 query 上下文和可训练容量，因此 Phase 1 不能作为纯坐标表示隔离。
 
-### Phase 1.5：P0 重建（当前唯一执行阶段）
+### Phase 1.5：P0 重建与 matched-medium 裁决（已完成首个单 seed 对照）
 
 1. 冻结三个 `3ac93a1` 正式配置、checkpoint 与结果，不在旧 PhysTime 1.0 上继续调参。
 2. 删除主路线中原生 tubelet feature 被插值后再绑定 raw-frame support 的语义捷径，建立 native tubelet multi-atom provenance gate。
@@ -49,9 +49,11 @@
 
 当前 G1a native-J192 matched control 已达到 `tested`：远端新旧回归 `142 passed`，并修复了物理中心污染候选 mask、test evaluator 数据集错配、弱数据指纹、不可重算 artifact 与 VideoMAE 尾部 padding 泄漏。正式 dataset 消费 411 个 THUMOS14 视频；test 根目录另有 2 个未引用视频，已作为 inventory 显式登记。gate `1161304` 因旧审计范围失败，`1161353` 因标量 state byte-view 失败；`1161378` 在 selected-axis 首个真实样本因旧 gate 逐样本强制回归参数梯度非零而 fail-closed，三轮依赖 pilot 均未启动。该现象只与 ReLU dead zone 一致，旧 artifact 不足以证明根因。v3 gate 已改用正式 batch=2 DataLoader、warmup scheduler、EMA 和生产更新顺序，并记录 pre-ReLU/assignment/梯度/LR/optimizer state、trainable-only hash 与参数 delta；首轮独立审查的 4 个 P1/3 个 P2 已修复，正在复审。复审和新 clean gate 前不得部署 pilot。原始 AdaTAD interpolation 不被永久禁止；它只能在 G1b 作为双臂共享、单独归因的 query-grid lift，不能重新解释为 K 个观测。
 
+上述早期 gate/pilot 状态已被 commit `5e8a821` 的终态证据覆盖。jobs `1168485/1168486/1168487` 均完成 20 epochs；physical-metric 相对 selected-axis 提升 `+14.46` Avg-mAP，而 G1b 相对 selected-axis 仅 `+0.46`。因此下一阶段以 physical-metric 为 survivor 做复现与机制分解；G1b 保留为高 IoU/覆盖权衡诊断，不直接进入主方法 full train。
+
 ### Phase 2：结果门控后扩展
 
-在 Phase 1.5 的机制 gate 与单 seed survivor 出现前，以下扩展继续锁定：
+Phase 1.5 已产生单 seed survivor，但以下扩展仍需按“先复现、后扩展”的顺序由用户裁决：
 
 - K=192/384/768；
 - uniform、random、bursty、contiguous-gap；
@@ -79,15 +81,15 @@
 - 性能诊断已经排除训练崩溃、evaluator、重复坐标换算和缺失 test windows，并确认容量/上下文混杂、absolute-second query 主导、粗层 attention 坍缩、候选密度与短动作监督不足。
 - 2026-07-13 Pro 审查给出 `HOLD AND REBUILD`，进一步确认 native tubelet feature-support provenance、候选/assignment 同构和 query-mask 语义是 P0；推荐 `SM-PTAF` 作为 designed candidate，但尚无实现或实验。
 - 同日独立核验认同停止 1.0 和 P0 重建，但不接受“SM-PTAF 已是唯一最终模型”：tubelet 内两帧已被非线性融合，multi-atom 只能先作为 set-valued anchor；J192 到 Q384 也是必须单独归因的新算子。
-- G1a 已实现 K/J/Q 分离、canonical FPS/窗口秒域、逐层严格 padding isolation、结构性 lineage、原生 J192 official ActionFormer 路径、生产 engine 三步真实 gate、全量 timebase 审计和可重算 6 epoch artifact 合同；远端回归 `142 passed`。v3 gate 正在第二轮独立复审，尚无通过的正式 gate 或 mAP。
+- G1a/G1b 已实现 K/J/Q 分离、canonical FPS/窗口秒域、逐层严格 padding isolation、结构性 lineage、原生 J192 official ActionFormer 路径、生产 engine 真实 gate、全量 timebase 审计和可重算 medium artifact 合同。commit `5e8a821` 的 shared gate 与三臂 20-epoch 训练、独立评价、online/EMA checkpoint validator 均已完成。
 
 尚未形成的论文证据：
 
-- capacity/context/candidate-matched 的 physical-time 因果对照；
-- 修复后的一因素消融与多 seed；
+- physical-metric survivor 的多 seed、完整 schedule 与机制拆分；
+- G1b 高 IoU 小幅收益和低 IoU 覆盖损失的可审计归因；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已完成稳定 full run，但当前实现为负结果且比较存在 feature provenance、架构/容量、候选与 assignment 混杂；冻结为负基线。下一版先完成 coordinate-only control 和 native provenance gate，SM-PTAF 仍为 designed candidate，不得直接扩展论文主表。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已冻结为负基线；native-J192 matched medium 已明确支持 physical-time metric，但没有支持当前 SDPQ 结构。下一步复现并分解 physical-metric survivor，SM-PTAF/SDPQ 不得因高 IoU 小幅信号直接升级为论文主方法。**
 
 ## 5. 明确非目标
 
@@ -96,7 +98,7 @@
 - 不把 I3D feature archive 当作 raw-video 端到端证据。
 - 不把“continuous time”本身当作新颖性；核心是显式支持区间上的 measure operator 与物理时间检测闭环。
 - 不在 primary comparison 中加入 paired-view consistency，避免监督量不公平。
-- 不在 K=384 主比较完成前扩展新 idea。
+- 不在 K=384 matched-medium survivor 完成复现与机制分解前扩展新 idea。
 
 ## 6. 主张门槛
 

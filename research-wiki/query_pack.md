@@ -8,30 +8,30 @@
 
 长期目标是独立 TAD 方法；AdaTAD/VideoMAE 只是当前 raw-video 端到端载体。GT 与预测始终使用原视频秒坐标，可按 `round(t*fps)` 导出原视频帧号，但不得映射到 selected-rank。
 
-当前模型为 G1b SDPQ：K=384 原始观测，经 VideoMAE 得到 J=192 原生 tubelet token；稀疏 support 与物理 query 解耦，`PhysTimeMeasureProjection` 从不规则 support 向物理 query 聚合，`SupportDecoupledPhysicalQueryHead` 在秒坐标上 assignment、回归与解码。不做 J192→384 feature interpolation，不把 gap 填成已观测特征。
+当前 matched 实现固定 K=384 原始观测，经 VideoMAE 得到 J=192 原生 tubelet token，不做 J192→384 feature interpolation。它比较三种头：selected-axis ActionFormer、使用真实秒度量的 physical-metric ActionFormer，以及把稀疏 support 与物理 query 解耦的 G1b SDPQ。
 
-最新完成证据：commit `4a57577` 的 G1b 20-epoch medium run 已通过真实 gate、训练和独立评价。它证明 G1b 能稳定训练并持续学习，原始结果见 `docs/evaluation/results.md`；它**没有证明优于基线**，因为现有 G1a selected-axis / physical-metric 只有六轮且 commit 不同。该 run 的 checkpoint 未保存评价所用 EMA 权重，指标可由保存预测重算，但 evaluated-weight 不能精确重放；新三臂 suite 已把 EMA 纳入轻量 checkpoint 合同。
+最新完成证据：commit `5e8a821` 的同 commit、同数据、同 K384/J192、同 seed=42、同 20 epochs 三臂实验已全部通过 gate、训练、独立评价和 online/EMA checkpoint validator。原始结果见 `docs/evaluation/results.md`：selected-axis `30.42%`、physical-metric `44.88%`、G1b SDPQ `30.88%` Avg-mAP。
 
-当前决定性任务：在同一新 commit、同 THUMOS 数据、K384/J192、无 GT sampler、seed=42、20 epochs、优化器、scheduler、评价器和 checkpoint 合同下，运行：
+当前裁决：
 
-1. selected-axis：官方 ActionFormer，均匀 rank-derived 秒轴；
-2. physical-metric：官方 ActionFormer，真实物理秒轴；
-3. G1b SDPQ：物理 query 与稀疏 support 解耦。
+1. physical-metric 相对 selected-axis 提升 `+14.46` Avg-mAP 和 `+9.82` mAP@0.7，是明确的 matched-medium survivor；
+2. G1b SDPQ 相对 selected-axis 仅 `+0.46` Avg-mAP，虽在 mAP@0.6/0.7 分别提高 `+2.11/+2.42`，但 mAP@0.3 降低 `-3.83`；
+3. 因此证据支持真实物理时间度量，不支持当前 SDPQ 结构优于 physical-metric control。
 
-三臂统一 runner、validator、shared G1a+G1b gate 与 Slurm DAG 已实现。代码 commit `5e8a821` 的 clean snapshot 已通过远端 `100 passed`；shared gate `1168484` 已 `COMPLETED 0:0`，训练 `1168485/1168486/1168487` 已进入 epoch 0。当前状态仅为 `experiment_running`，mAP 为 NA。只有 matched 20-epoch 结果显示 G1b 有稳定且有意义的优势，才解锁 60-epoch full train。
+下一项决定性任务不是继续放大 G1b，而是验证 physical-metric survivor：先做同配置多 seed/复现实验和 proposal/边界/短动作/gap 分解，再由用户决定是否进入 60-epoch full schedule。当前结果是 `matched-medium-supported`，不是 `paper_ready`。
 
 ## 当前核心科学问题
 
-1. 物理时间收益是否真实，还是训练时长、容量、候选数或 assignment 差异造成？
-2. support-decoupled query 是否提高高 IoU、短动作和 contiguous-gap 条件下的定位？
-3. G1b 的优势若只出现在低 IoU，是否只是候选覆盖增益而非边界定位增益？
+1. physical-metric 的大幅收益能否在多 seed、完整 schedule 和第二数据集复现？
+2. 收益来自秒域 assignment、秒域回归、候选有效性还是后处理中的哪一环？
+3. G1b 为何提高高 IoU 却损失低 IoU：是 support observability、分类召回、query coverage 还是 NMS 排序？
 4. support pooling、query scale、positive assignment、分类排序和 NMS 中，哪一项限制 mAP@0.7？
 5. K384 raw-video 的计算节省能否覆盖额外物理时间头开销？
 6. 单 THUMOS、单 seed 的信号能否在多种子、第二数据集和不同固定采样族上复现？
 
 ## 最高优先级缺口
 
-- `G4` 公平隔离：必须完成 same-commit/schedule/seed 三臂 medium comparison；不同轮数结果禁止横比。
+- `G4` 公平隔离：same-commit/schedule/seed 三臂 medium comparison 已完成；下一步需要多 seed 和完整 schedule 复现，旧的不同轮数结果仍禁止横比。
 - `G2` provenance：K384 raw observations、J192 tubelet tokens、Q0 与多尺度候选必须分开审计；一个 tubelet 融合两帧，只能先称 multi-atom support anchor。
 - `G5` 高 IoU：需要 proposal recall、class-aware recall、边界 MAE、短动作与 gap 条件分解，不能只看 Avg-mAP。
 - `G7` 成本与泛化：缺完整 decode/VideoMAE/head latency、FLOPs、显存和第二数据集证据。
@@ -69,9 +69,10 @@
 ## 状态边界
 
 - G1b 20-epoch trainability：`empirically_supported`。
-- G1b 相对 matched controls 的优越性：`unknown`。
-- 三臂 medium suite：shared gate 已通过，三臂 `experiment_running`。
-- 60-epoch full train：`blocked_by_matched_medium`。
+- physical-metric 相对 selected-axis：`matched-medium-supported`。
+- G1b 相对 selected-axis：Avg-mAP 优势不成立，高 IoU 有弱正信号；相对 physical-metric 明显落后。
+- 三臂 medium suite：`completed`，全部 validator 通过。
+- 60-epoch full train：不再由 matched-medium 阻塞，但必须先由用户裁决 survivor、seed 和诊断矩阵，不能自动启动。
 - PhysTime 论文主张：尚无 `paper_ready` claim。
 
 ## 必读入口

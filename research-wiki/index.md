@@ -81,4 +81,4 @@
 
 ## 当前状态一句话
 
-PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；G1b SDPQ 已完成稳定的 20-epoch medium run，但尚无同轮数基线，不能声称优越。决定性的 same-commit selected-axis / physical-metric / G1b SDPQ 三臂 20轮对照已通过共享真实 gate 并进入训练；结果完成前仍不允许启动 60-epoch full train。
+PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；same-commit selected-axis / physical-metric / G1b SDPQ 三臂 20轮对照已全部完成。physical-metric `44.88%` 明显胜 selected-axis `30.42%`，G1b `30.88%` 未证明结构优势。当前结论是 physical-time metric 获得 matched-medium 支持；多 seed、完整 schedule、机制分解和第二数据集完成前仍不是 paper-ready。

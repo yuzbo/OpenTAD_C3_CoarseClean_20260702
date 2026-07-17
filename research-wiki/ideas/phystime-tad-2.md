@@ -3,13 +3,13 @@ type: idea
 node_id: idea:phystime-tad-2
 title: "PhysTime-TAD 2.0"
 stage: active
-outcome: pending
+outcome: mixed
 thesis: "把 TAD 定义为物理时间支持测度上的积分算子，使检测在观测网格细化和缺失下比 selected-rank operator 更一致。"
 risks: "可能被 timestamp/interpolation/mTAN-like baseline 匹配；feature track 不等于 raw-video；新颖性必须窄而可证。"
 based_on: ["paper:shukla2021_mtan", "paper:kim2024_te_tad", "paper:zeng2024_temporal_robustness", "paper:sun2026_liquidtad"]
 target_gaps: ["gap:G1", "gap:G2", "gap:G3", "gap:G5"]
 added: 2026-07-11T00:00:00+08:00
-updated: 2026-07-13T00:00:00+08:00
+updated: 2026-07-17T22:00:00+08:00
 ---
 
 # PhysTime-TAD 2.0
@@ -40,6 +40,12 @@ updated: 2026-07-13T00:00:00+08:00
 PhysTime 1.0 已冻结为负基线。下一候选被具体化为 `idea:sm-ptaf`：删除 `192 -> 384` feature interpolation，以 native tubelet multi-atom support 建立 provenance，用显式 mass residual 与有界 correction 投影到 candidate-matched physical query pyramid，并复用 ActionFormer 等级上下文与 assignment。
 
 该候选当前只有 `designed` 状态。必须先通过 capacity-matched coordinate-only control；否则无法区分 physical coordinate、support operator、候选恢复和容量增加的贡献。
+
+## 2026-07-17 Matched-Medium 裁决
+
+同 commit、同 K384/J192、同 seed 和同 20-epoch schedule 的三臂实验已经完成。physical-metric ActionFormer 相对 selected-axis 获得 `+14.46` Avg-mAP，说明真实物理时间度量在当前离线稀疏 TAD 设置中具有明确价值。G1b SDPQ 相对 selected-axis 仅 `+0.46` Avg-mAP，并显著落后 physical-metric；当前 support-decoupled operator 不构成已证实优势。
+
+因此 idea outcome 为 `mixed`：物理时间检测假设获得 matched-medium 支持，完整 support-measure/SDPQ 结构尚未获得支持。下一步以 physical-metric 为 survivor 做复现和机制拆分，不把 G1b 直接升级为主方法。
 
 ## Connections
 

@@ -67,3 +67,12 @@ PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验已经完成并冻结。当�
 - 三臂训练必须共享 gate、dataset manifest、预训练权重、优化器、scheduler、验证周期与 evaluator；任一差异必须在 manifest 中显式列出并解释。
 - 若正式评价使用 EMA，最终轻量 checkpoint 必须保留 `state_dict_ema`；只保存 online 权重再声称 checkpoint 可复现评价属于证据断裂。
 - 三臂结果完成前，不启动 60-epoch full train，不创建 paper claim，也不把 `medium_run_supported` 写成 `paper_ready`。
+
+## 2026-07-17 Matched-Medium Result Guardrail
+
+- 三臂结果已经完成；禁止继续写成 `experiment_running` 或 mAP=NA。
+- matched 结果支持的是 physical-time metric：physical-metric `44.88%` 对 selected-axis `30.42%` Avg-mAP。
+- 当前结果不支持 G1b SDPQ 结构优势：G1b `30.88%`，只在高 IoU 有小幅改善，同时低 IoU 覆盖下降。
+- 禁止把 physical-metric 的收益归到 SDPQ、support-measure operator 或“continuous-time TAD”整体概念。
+- 单 seed、20 epochs、单 THUMOS 只能写 `matched-medium-supported`；多 seed、完整 schedule、成本和跨数据集证据前不得写 `paper_ready`。
+- 不因 medium survivor 自动提交 60-epoch full train；先明确复现矩阵、机制拆分和停止条件。
