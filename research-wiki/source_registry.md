@@ -263,6 +263,29 @@ updated: 2026-07-17
   found no P0/P1, and returned `DEPLOY`. This is code-review evidence only; it
   does not replace the clean remote Linux/CUDA replay, recovery certificate,
   no-open Gate, matrix completion receipt, or S1 result analysis.
+- Final S1 profile/evidence commit
+  `5bfdc368304ec13a53b4571cd87c7d1f043c821a`; clean remote snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_5bfdc36_20260717_matrix_binding`
+  passed `104` exact Linux tests. Campaign `e3fccb9b12a5d24d` certificate
+  internal/file SHAs are
+  `0a3203ddd57f79c4438194b5e85cd6ae6eeab4b567489c787fff1467675020c6`
+  and
+  `9953a73b7e2fdb4b61d89e4e91fc8e5566d0eaaf1de18e5e233c8d95aca40792`.
+  No-open Gate Job `1168608` completed `0:0`; Gate internal/file SHAs are
+  `1fb199b29def8d3e5c6feb6a74b10ff5fdd335cbbc5405c931f8dac2eca8557f`
+  and
+  `57e10f86d32ef4699ae1f891e87d343c4b1ad60db7083f89ec988604267d3493`.
+  Gate submission receipt internal/file SHAs are
+  `0e4bc5e05486f934923fa1f481fc9008a942ebbf2cf9acfb21ba6b5942c91c7e`
+  and
+  `23e3012ccb7cc35c4a3face248527c6d6203ca0c4fe2c00209035ad2facbabc8`.
+  The sole serial matrix is Job `1168823`; its submission receipt internal/file
+  SHAs are
+  `7cfb3205252746fbb6fbdf5e6dd7d2b74d68d9338399c2b05124228f5752d985`
+  and
+  `7b5683e059f5680ae76fadf210fb384d5132cfd98b3361951723f89f704db694`.
+  These establish deployment and Gate validity only; final matrix evidence is
+  pending.
 
 ## 外部附件
 

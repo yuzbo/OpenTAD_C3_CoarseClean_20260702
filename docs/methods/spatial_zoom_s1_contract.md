@@ -225,6 +225,11 @@ rule remain identical.
   `99 passed, 5 skipped`. A second independent max-level review found no P0 or
   P1 and returned `DEPLOY`, conditional on a clean commit, exact remote replay,
   and a newly issued certificate. The skips remain platform/CUDA cases that
-  must pass in a clean remote snapshot. This is `tested_local`; no new recovery
-  certificate, no-open Gate, matrix, cost result, GO/KILL, S2, or Pro review
-  exists yet.
+  all passed in clean remote snapshot `5bfdc36` (`104 passed`). Recovery
+  campaign `e3fccb9b12a5d24d` then passed no-open Gate Job `1168608`: all
+  `792` loader exposures and `791` physical windows completed, the existing
+  test evidence hash stayed unchanged, and the out-of-process sidecar recorded
+  `110699` samples with median/P95/max gaps
+  `20.000/20.022/63.098` ms. The sole frozen-order matrix Job `1168823` is now
+  `experiment_running`. No matrix result, cost result, GO/KILL, S2, or Pro
+  review exists yet.

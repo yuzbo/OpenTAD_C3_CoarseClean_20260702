@@ -606,6 +606,34 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `tested_local`: a clean commit, exact remote Linux/CUDA checks, a new v3
   certificate, and a full no-open Gate are still mandatory before one
   replacement matrix.
+- Clean GitHub/profile commit
+  `5bfdc368304ec13a53b4571cd87c7d1f043c821a` and remote snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_5bfdc36_20260717_matrix_binding`
+  passed the exact Linux suite with `104 passed`. New immutable campaign
+  `e3fccb9b12a5d24d` has certificate internal/file SHAs
+  `0a3203ddd57f79c4438194b5e85cd6ae6eeab4b567489c787fff1467675020c6`
+  and
+  `9953a73b7e2fdb4b61d89e4e91fc8e5566d0eaaf1de18e5e233c8d95aca40792`.
+  No-open Gate Job `1168608` completed `0:0` in `00:58:39` on `g0041`; its
+  exact inner step was `1 GPU/5 CPU/96000M` and peaked at `75075160K` RSS.
+  It reused the existing dense256/seed3408 official-test evidence without
+  changing its file or internal hash, executed `792` loader exposures over
+  `791` physical windows, and published no paper profile. The sidecar recorded
+  `110699` samples over `2214719.883` ms with median/P95/max gaps
+  `20.000020/20.022297/63.098207` ms, passing the frozen `100` ms limit.
+  Gate internal/file SHAs are
+  `1fb199b29def8d3e5c6feb6a74b10ff5fdd335cbbc5405c931f8dac2eca8557f`
+  and
+  `57e10f86d32ef4699ae1f891e87d343c4b1ad60db7083f89ec988604267d3493`.
+- After verifying the Gate and checking that no matrix lock, receipt, or job
+  existed, exactly one serial frozen-order matrix was submitted as Job
+  `1168823`. Its submission receipt internal/file SHAs are
+  `7cfb3205252746fbb6fbdf5e6dd7d2b74d68d9338399c2b05124228f5752d985`
+  and
+  `7b5683e059f5680ae76fadf210fb384d5132cfd98b3361951723f89f704db694`.
+  State is `experiment_running`; no cell descriptor, pooled result, GO/KILL,
+  S2 authorization, or Pro review may be claimed until the exact-nine
+  completion receipt and final analyzer pass.
 
 ## Decision Boundary
 

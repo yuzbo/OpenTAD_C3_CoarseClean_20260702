@@ -361,3 +361,13 @@ append_only: true
   `DEPLOY` without modifying files. This authorizes only a clean commit, exact
   remote replay, and a new no-open Gate; no matrix or empirical conclusion is
   authorized until that Gate passes.
+- 2026-07-17: pushed final profile/evidence commit `5bfdc36`; its clean remote
+  snapshot passed the exact Linux suite with `104 passed`. Issued v3 recovery
+  campaign `e3fccb9b12a5d24d`. No-open Gate Job `1168608` completed `0:0` in
+  `00:58:39` on `g0041`, reused unchanged official-test evidence, exercised
+  `792` loader exposures/`791` physical windows, and published no paper
+  profile. Its dedicated NVML sidecar collected `110699` samples with
+  median/P95/max gaps `20.000/20.022/63.098` ms, passing the unchanged
+  `100` ms limit. After self-hash/artifact validation and an idempotency check,
+  submitted exactly one frozen-order serial matrix as Job `1168823`; it is
+  `experiment_running`. No final S1 evidence or GO/KILL exists yet.

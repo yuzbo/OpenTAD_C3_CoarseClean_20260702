@@ -61,10 +61,11 @@ max_chars: 8000
   start and exact-nine completion receipt, and dry-runs all cells before
   test access. New test evidence binds that receipt; only certificate-frozen
   dense256/seed3408 may remain unbound. Regression is
-  `99 passed, 5 skipped`; independent re-audit found no P0/P1 and returned
-  `DEPLOY`. Status is `tested_local`: clean commit, remote tests, new
-  certificate and full 792-exposure 20/100 ms Gate must pass before one
-  matrix. Pro and GO/KILL remain pending.
+  Re-audit returned `DEPLOY`; clean commit `5bfdc36` passed `104` remote tests.
+  Gate `1168608` reused unchanged test
+  evidence and passed 792/791 exposures with 110699 sidecar samples and
+  median/P95/max gaps `20.000/20.022/63.098` ms. Sole serial matrix
+  `1168823` is running; Pro and GO/KILL remain blocked.
 
 ## 当前唯一活动任务：Spatial Zoom
 
