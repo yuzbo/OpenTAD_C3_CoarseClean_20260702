@@ -55,6 +55,9 @@ def test_cellcf_runtime_bindings_reject_artifact_replacement(tmp_path, monkeypat
                 "ok": True,
                 "git_commit": commit,
                 "synthetic_gate_sha256": "3" * 64,
+                "config_contract": {
+                    "training_profile": "exposure132",
+                },
                 "evaluation_annotation_sha256": _sha(annotation),
                 "evaluation_class_map_sha256": _sha(class_map),
                 "dataset": {
@@ -78,6 +81,7 @@ def test_cellcf_runtime_bindings_reject_artifact_replacement(tmp_path, monkeypat
                 "schema": "duca_cellcf_ddp_pilot_suite_v1",
                 "ok": True,
                 "git_commit": commit,
+                "training_profile": "exposure132",
                 "real_loader_gate_sha256": _sha(gate),
                 "shared_protocol_sha256": protocol_sha,
                 "ordered_exposure_sha256": order_sha,
