@@ -2,19 +2,25 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from tools.bata.finalize_duca_cellcf_postrun_evidence import (
+    CANDIDATE_SCHEMA,
     JOB_KEYS,
+    SUPPORTED_TRAINED_COMMIT,
+    _read_snapshot,
     canonical_sha256,
     finalize_postrun_evidence,
+    revalidate_trained_suite_exact,
     sha256_file,
+    validate_seal_execution_context,
 )
 
 
-TRAINED_COMMIT = "a" * 40
+TRAINED_COMMIT = SUPPORTED_TRAINED_COMMIT
 EVIDENCE_COMMIT = "e" * 40
 AGGREGATE_PAYLOAD = {"kind": "aggregate", "seed": 0}
 FINAL_PAYLOAD = {
@@ -23,7 +29,6 @@ FINAL_PAYLOAD = {
     "status": "complete",
     "task": "offline_temporal_action_detection",
     "git_commit": TRAINED_COMMIT,
-    "training_profile": "exposure132",
     "seed": 0,
     "cost_evidence_required": True,
     "cost_evidence": {"validated": True, "path": "cost.json"},
@@ -80,7 +85,6 @@ def _fixture(tmp_path: Path):
                 "job_key": key,
                 "seed": "0",
                 "commit": TRAINED_COMMIT,
-                "training_profile": "exposure132",
                 "manifest_sha256": "f" * 64,
                 "sbatch_file": f"/formal/{key}.sbatch",
                 "sbatch_sha256": "b" * 64,
@@ -105,10 +109,14 @@ def _fixture(tmp_path: Path):
     aggregate = run_root / "aggregate_suite_evidence.json"
     final_suite = run_root / "final_suite_evidence.json"
     cost = run_root / "cost.json"
+    gate = run_root / "gate.json"
+    pilot = run_root / "pilot.json"
     _write_json(aggregate, AGGREGATE_PAYLOAD)
     final_payload = json.loads(json.dumps(FINAL_PAYLOAD))
     final_payload["cost_evidence"]["path"] = str(cost.resolve())
     _write_json(cost, {"ok": True})
+    _write_json(gate, {"ok": True, "kind": "real-loader-gate"})
+    _write_json(pilot, {"ok": True, "kind": "ddp-pilot"})
     _write_json(final_suite, final_payload)
     for variant in ("uniform", "transition_beta0", "cellcf"):
         _write_json(
@@ -221,6 +229,9 @@ def _fixture(tmp_path: Path):
                 "scheduler_validation": {
                     "ok": True,
                     "job_id": int(record["job_id"]),
+                    "scheduler_script_verified": True,
+                    "submission_command_held_verified": True,
+                    "current_user_hold_verified": True,
                 },
                 "submitted_receipt": str(submitted_path.resolve()),
                 "submitted_receipt_sha256": submitted_sha,
@@ -312,7 +323,30 @@ def _fixture(tmp_path: Path):
     training_cost_path = output_root / "training_cost" / "training_cost_summary.json"
     _write_json(convergence_path, convergence)
     _write_json(training_cost_path, training_cost)
-
+    for variant in ("uniform", "transition_beta0", "cellcf"):
+        _write_json(
+            output_root / "convergence" / variant / "variant_complete.json",
+            {"ok": True, "variant": variant},
+        )
+        for epoch in (59, 89):
+            _write_json(
+                output_root
+                / "convergence"
+                / variant
+                / f"epoch_{epoch}"
+                / "evaluation.json",
+                {"ok": True, "variant": variant, "epoch": epoch},
+            )
+        _write_json(
+            run_root / "logs" / variant / "terminal_evaluation.json",
+            {"ok": True, "variant": variant, "epoch": 131},
+        )
+        _write_json(
+            output_root
+            / "training_cost"
+            / f"{variant}.slurm_cost.json",
+            {"ok": True, "variant": variant},
+        )
     kwargs = {
         "run_root": run_root,
         "control_root": control_root,
@@ -326,8 +360,8 @@ def _fixture(tmp_path: Path):
         "final_suite_sha256": sha256_file(final_suite),
         "aggregate_loader": lambda **_kwargs: {
             "seed": 0,
-            "real_loader_gate": {"path": "gate.json"},
-            "ddp_pilot": {"path": "pilot.json"},
+            "real_loader_gate": {"path": str(gate.resolve())},
+            "ddp_pilot": {"path": str(pilot.resolve())},
         },
         "final_suite_revalidator": lambda **_kwargs: final_payload,
         "convergence_rebuilder": lambda **_kwargs: convergence,
@@ -335,6 +369,9 @@ def _fixture(tmp_path: Path):
         "scheduler_validator": lambda **kwargs: {
             "ok": True,
             "job_id": kwargs["job_id"],
+            "state": "COMPLETED",
+            "scheduler_script_verified": True,
+            "submission_command_held_verified": True,
         },
         "formal_completion_validator": lambda **kwargs: {
             "ok": True,
@@ -344,8 +381,34 @@ def _fixture(tmp_path: Path):
             "state": "COMPLETED",
             "exit_code": "0:0",
         },
+        "postrun_terminal_validator": lambda **kwargs: {
+            "ok": True,
+            "job_id": kwargs["job_id"],
+            "job_name": kwargs["job_name"],
+            "cluster": kwargs["cluster"],
+            "state": "COMPLETED",
+            "exit_code": "0:0",
+        },
         "repository_validator": lambda *_args: None,
     }
+    candidate_kwargs = dict(kwargs)
+    candidate_kwargs["require_postrun_completed"] = False
+    candidate_kwargs["scheduler_validator"] = lambda **values: {
+        "ok": True,
+        "job_id": values["job_id"],
+        "state": (
+            "RUNNING"
+            if values["job_name"] == "postrun-completion"
+            else "COMPLETED"
+        ),
+        "scheduler_script_verified": True,
+        "submission_command_held_verified": True,
+    }
+    candidate = finalize_postrun_evidence(**candidate_kwargs)
+    _write_json(
+        control_root / "postrun_evidence_candidate.json",
+        candidate,
+    )
     return kwargs, convergence_path, convergence
 
 
@@ -358,7 +421,37 @@ def test_postrun_finalizer_reopens_full_chain(tmp_path: Path) -> None:
     assert payload["trained_git_commit"] == TRAINED_COMMIT
     assert len(payload["receipts"]) == 6
     assert len(payload["scheduler_revalidation"]) == 6
+    assert len(payload["postrun_terminal_revalidation"]) == 6
+    assert all(
+        receipt["submission_time_scheduler_script_verified"] is True
+        for receipt in payload["receipts"]
+    )
+    assert payload["candidate_evidence"] is not None
     assert payload["formal_completion_scheduler_revalidation"]["job_id"] == 9006
+
+
+def test_postrun_candidate_cannot_claim_completion(tmp_path: Path) -> None:
+    kwargs, _, _ = _fixture(tmp_path)
+    kwargs["require_postrun_completed"] = False
+    kwargs["scheduler_validator"] = lambda **kwargs: {
+        "ok": True,
+        "job_id": kwargs["job_id"],
+        "state": (
+            "RUNNING"
+            if kwargs["job_name"] == "postrun-completion"
+            else "COMPLETED"
+        ),
+        "scheduler_script_verified": True,
+        "submission_command_held_verified": True,
+    }
+
+    payload = finalize_postrun_evidence(**kwargs)
+
+    assert payload["schema"] == CANDIDATE_SCHEMA
+    assert payload["ok"] is False
+    assert payload["status"] == "pending_external_seal"
+    assert payload["requires_external_seal"] is True
+    assert payload["postrun_terminal_revalidation"] == []
 
 
 def test_postrun_finalizer_rejects_rehashed_metric_tampering(
@@ -399,3 +492,218 @@ def test_postrun_finalizer_rejects_postrun_id_as_formal_completion(
 
     with pytest.raises(ValueError, match="formal_completion_job_id"):
         finalize_postrun_evidence(**kwargs)
+
+
+def test_postrun_finalizer_rejects_candidate_that_self_claims_completion(
+    tmp_path: Path,
+) -> None:
+    kwargs, _, _ = _fixture(tmp_path)
+    candidate_path = (
+        Path(kwargs["control_root"]) / "postrun_evidence_candidate.json"
+    )
+    candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+    candidate["postrun_completion_job"]["state_at_evidence_write"] = "COMPLETED"
+    candidate.pop("artifact_sha256")
+    _write_json(candidate_path, _hashed(candidate))
+
+    with pytest.raises(ValueError, match="active completion job"):
+        finalize_postrun_evidence(**kwargs)
+
+
+def test_postrun_finalizer_uses_durable_submission_script_proof(
+    tmp_path: Path,
+) -> None:
+    kwargs, _, _ = _fixture(tmp_path)
+    scheduler_calls = []
+
+    def scheduler_validator(**values):
+        scheduler_calls.append(values)
+        return {
+            "ok": True,
+            "job_id": values["job_id"],
+            "state": "COMPLETED",
+            "submission_command_held_verified": True,
+        }
+
+    kwargs["scheduler_validator"] = scheduler_validator
+    payload = finalize_postrun_evidence(**kwargs)
+
+    assert payload["ok"] is True
+    assert len(scheduler_calls) == 6
+    assert all(
+        call["require_scheduler_script"] is False
+        and call["submitted_with_hold"] is True
+        and call["require_current_user_hold"] is False
+        for call in scheduler_calls
+    )
+    assert all(
+        receipt["submission_time_scheduler_script_verified"] is True
+        for receipt in payload["receipts"]
+    )
+
+
+def test_historical_revalidation_executes_the_frozen_repository_module(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "frozen-repo"
+    module_root = repo / "tools" / "bata"
+    module_root.mkdir(parents=True)
+    (repo / "tools" / "__init__.py").write_text("", encoding="utf-8")
+    (module_root / "__init__.py").write_text("", encoding="utf-8")
+    (module_root / "validate_duca_cellcf_suite.py").write_text(
+        "\n".join(
+            [
+                "import argparse",
+                "import json",
+                "from pathlib import Path",
+                "parser = argparse.ArgumentParser()",
+                "parser.add_argument('--expected-commit', required=True)",
+                "parser.add_argument('--seed', type=int, required=True)",
+                "parser.add_argument('--output-json', required=True)",
+                "args, _ = parser.parse_known_args()",
+                "payload = {",
+                "    'source': 'frozen-repository-validator',",
+                "    'git_commit': args.expected_commit,",
+                "    'seed': args.seed,",
+                "}",
+                "Path(args.output_json).write_text(",
+                "    json.dumps(payload), encoding='utf-8'",
+                ")",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = revalidate_trained_suite_exact(
+        repo_root=repo,
+        seed=0,
+        expected_commit=TRAINED_COMMIT,
+        require_clean=True,
+        gate_json=tmp_path / "gate.json",
+        pilot_json=tmp_path / "pilot.json",
+        post_run_evidence={
+            "uniform": tmp_path / "uniform.json",
+            "transition_beta0": tmp_path / "transition.json",
+            "cellcf": tmp_path / "cellcf.json",
+        },
+        cost_evidence=tmp_path / "cost.json",
+        require_cost_evidence=True,
+    )
+
+    assert payload == {
+        "source": "frozen-repository-validator",
+        "git_commit": TRAINED_COMMIT,
+        "seed": 0,
+    }
+
+
+def test_postrun_finalizer_rejects_evidence_drift_during_rebuild(
+    tmp_path: Path,
+) -> None:
+    kwargs, convergence_path, convergence = _fixture(tmp_path)
+
+    def rebuild_with_drift(**_kwargs):
+        convergence_path.write_text(
+            convergence_path.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        return convergence
+
+    kwargs["convergence_rebuilder"] = rebuild_with_drift
+    with pytest.raises(ValueError, match="changed after snapshot"):
+        finalize_postrun_evidence(**kwargs)
+
+
+def test_postrun_finalizer_rejects_transient_swap_then_restore(
+    tmp_path: Path,
+) -> None:
+    kwargs, convergence_path, convergence = _fixture(tmp_path)
+    original = convergence_path.read_bytes()
+
+    def rebuild_with_transient_swap(**_kwargs):
+        original_path = convergence_path.with_name("original.json")
+        os.replace(convergence_path, original_path)
+        convergence_path.write_text('{"malicious":true}\n', encoding="utf-8")
+        assert convergence_path.read_bytes() != original
+        convergence_path.unlink()
+        os.replace(original_path, convergence_path)
+        assert convergence_path.read_bytes() == original
+        return convergence
+
+    kwargs["convergence_rebuilder"] = rebuild_with_transient_swap
+    with pytest.raises(
+        ValueError,
+        match="directory changed after snapshot",
+    ):
+        finalize_postrun_evidence(**kwargs)
+
+
+def test_postrun_finalizer_snapshots_transitive_training_audit(
+    tmp_path: Path,
+) -> None:
+    kwargs, _, _ = _fixture(tmp_path)
+    run_root = Path(kwargs["run_root"])
+    audit_path = tmp_path / "work_dir" / "gpu1_id0" / "training_audit.json"
+    _write_json(audit_path, {"status": "complete", "trusted": True})
+    post_run_path = (
+        run_root / "logs" / "uniform" / "post_run_evidence.json"
+    )
+    post_run = json.loads(post_run_path.read_text(encoding="utf-8"))
+    post_run["training_audit_path"] = str(audit_path.resolve())
+    post_run["training_audit_sha256"] = sha256_file(audit_path)
+    _write_json(post_run_path, post_run)
+    original_loader = kwargs["aggregate_loader"]
+
+    def loader_with_transitive_swap(**loader_kwargs):
+        original_path = audit_path.with_name("original_audit.json")
+        os.replace(audit_path, original_path)
+        _write_json(audit_path, {"status": "complete", "trusted": False})
+        assert json.loads(audit_path.read_text(encoding="utf-8"))["trusted"] is False
+        audit_path.unlink()
+        os.replace(original_path, audit_path)
+        return original_loader(**loader_kwargs)
+
+    kwargs["aggregate_loader"] = loader_with_transitive_swap
+    with pytest.raises(
+        ValueError,
+        match="evidence directory changed after snapshot",
+    ):
+        finalize_postrun_evidence(**kwargs)
+
+
+def test_candidate_and_final_seal_require_distinct_execution_contexts() -> None:
+    assert (
+        validate_seal_execution_context(
+            candidate=True,
+            slurm_job_id="12345",
+        )
+        == 12345
+    )
+    assert (
+        validate_seal_execution_context(
+            candidate=False,
+            slurm_job_id=None,
+        )
+        is None
+    )
+    with pytest.raises(ValueError, match="must be written by its Slurm"):
+        validate_seal_execution_context(candidate=True, slurm_job_id=None)
+    with pytest.raises(ValueError, match="outside every Slurm"):
+        validate_seal_execution_context(
+            candidate=False,
+            slurm_job_id="12345",
+        )
+
+
+def test_snapshot_reader_rejects_leaf_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "target.json"
+    target.write_text('{"ok":true}\n', encoding="utf-8")
+    link = tmp_path / "link.json"
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        _read_snapshot(link, "test evidence")

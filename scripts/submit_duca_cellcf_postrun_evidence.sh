@@ -21,11 +21,12 @@ RUN_ROOT="${DUCA_CELLCF_FORMAL_RUN_ROOT:-}"
 TRAINED_REPO_ROOT="${DUCA_CELLCF_TRAINED_REPO_ROOT:-}"
 TRAINED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 EVIDENCE_COMMIT="$(git rev-parse HEAD)"
-EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-${EVIDENCE_COMMIT}}"
+EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
 AGGREGATE="${RUN_ROOT}/aggregate_suite_evidence.json"
 FINAL_SUITE="${RUN_ROOT}/final_suite_evidence.json"
 LEDGER="${RUN_ROOT}/jobs.submitted.tsv"
 AGGREGATE_SHA256="${DUCA_CELLCF_AGGREGATE_EVIDENCE_SHA256:-}"
+SUPPORTED_TRAINED_COMMIT="1642f265e48391418a7c8a4a087e33e2b7bf6899"
 
 fsync_file() {
   "${PYTHON}" - "$1" <<'PY'
@@ -54,7 +55,13 @@ RUN_ROOT="$(
 )" || fail "formal run root violates the path contract"
 [[ -d "${TRAINED_REPO_ROOT}" ]] || fail "trained repository is missing"
 [[ "${TRAINED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "trained commit is invalid"
+[[ "${TRAINED_COMMIT}" == "${SUPPORTED_TRAINED_COMMIT}" ]] \
+  || fail "unsupported trained commit for this frozen post-run protocol"
 [[ "${EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "evidence commit is invalid"
+[[ "${EXPECTED_EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "DUCA_EVIDENCE_EXPECTED_COMMIT is required"
+[[ "${EVIDENCE_COMMIT}" != "${TRAINED_COMMIT}" ]] \
+  || fail "trained and evidence commits must be distinct"
 [[ "${EXPECTED_EVIDENCE_COMMIT}" == "${EVIDENCE_COMMIT}" ]] \
   || fail "checked-out evidence commit differs from the requested commit"
 [[ "$(git -C "${TRAINED_REPO_ROOT}" rev-parse HEAD)" == "${TRAINED_COMMIT}" ]] \
@@ -102,7 +109,9 @@ from pathlib import Path
 
 from tools.bata.duca_cellcf_protocol import LEGACY_EXPOSURE132_COMMITS
 from tools.bata.duca_cellcf_suite_binding import load_suite_aggregate_binding
-from tools.bata.validate_duca_cellcf_suite import validate_suite
+from tools.bata.finalize_duca_cellcf_postrun_evidence import (
+    revalidate_trained_suite_exact,
+)
 
 run_root = Path(sys.argv[1]).resolve()
 aggregate_path = Path(sys.argv[2]).resolve()
@@ -174,7 +183,7 @@ cost_record = final.get("cost_evidence")
 if not isinstance(cost_record, dict) or cost_record.get("validated") is not True:
     raise SystemExit("final suite evidence lacks validated cost evidence")
 os.environ["DUCA_CELLCF_TRAINING_PROFILE"] = "exposure132"
-regenerated_final = validate_suite(
+regenerated_final = revalidate_trained_suite_exact(
     repo_root=trained_repo_root,
     seed=aggregate_binding["seed"],
     expected_commit=commit,
@@ -256,14 +265,105 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-for command in sbatch flock sha256sum sacct scontrol squeue; do
+for command in sbatch scancel flock seq sha256sum sleep sacct scontrol squeue; do
   command -v "${command}" >/dev/null 2>&1 || fail "${command} is unavailable"
 done
+SLURM_QUERY_USER="${USER:-$(id -un)}"
+[[ -n "${SLURM_QUERY_USER}" ]] || fail "Slurm query user is unavailable"
 umask 077
 mkdir -p "${CONTROL_ROOT}/jobs" "${CONTROL_ROOT}/logs" \
   "${CONTROL_ROOT}/receipts"
 exec 9>"${CONTROL_ROOT}/submit.lock"
 flock -n 9 || fail "another post-run submitter holds the lock"
+SUBMITTED_JOB_IDS=()
+SUBMITTED_JOB_KEYS=()
+SUBMITTED_JOB_NAMES=()
+SUBMITTED_JOB_DEPENDENCIES=()
+SUBMITTED_JOB_TOKENS=()
+SUBMITTED_JOB_FILES=()
+SUBMITTED_JOB_FILE_SHA256S=()
+SUBMISSION_COMMITTED=0
+LAST_JOB_ID=""
+UNRESOLVED_SUBMISSION_TOKEN=""
+UNRESOLVED_JOB_NAME=""
+UNRESOLVED_JOB_FILE=""
+
+append_unique_job_id() {
+  local candidate="$1"
+  local existing
+  for existing in "${SUBMITTED_JOB_IDS[@]}"; do
+    [[ "${existing}" != "${candidate}" ]] || return 0
+  done
+  SUBMITTED_JOB_IDS+=("${candidate}")
+}
+
+terminate_on_signal() {
+  local exit_code="$1"
+  trap - HUP INT TERM
+  exit "${exit_code}"
+}
+
+rollback_submitted_jobs() {
+  local status="$?"
+  if [[ "${status}" -ne 0 && "${SUBMISSION_COMMITTED}" -ne 1 \
+    && ( "${#SUBMITTED_JOB_IDS[@]}" -gt 0 \
+      || -n "${UNRESOLVED_SUBMISSION_TOKEN}" ) ]]; then
+    local rollback_status="ROLLBACK_REQUESTED"
+    local scancel_exit_code="not_run"
+    local cancellation_verified=0
+    write_rollback_record "${rollback_status}" \
+      "${scancel_exit_code}" "${cancellation_verified}" || true
+    if [[ -n "${UNRESOLVED_SUBMISSION_TOKEN}" ]]; then
+      local recovered_job_id=""
+      if recovered_job_id="$(
+        recover_job_id_by_token \
+          "${UNRESOLVED_SUBMISSION_TOKEN}" \
+          "${UNRESOLVED_JOB_NAME}" \
+          "${UNRESOLVED_JOB_FILE}"
+      )"; then
+        append_unique_job_id "${recovered_job_id}"
+        UNRESOLVED_SUBMISSION_TOKEN=""
+        UNRESOLVED_JOB_NAME=""
+        UNRESOLVED_JOB_FILE=""
+      fi
+    fi
+    if [[ "${#SUBMITTED_JOB_IDS[@]}" -gt 0 ]]; then
+      if scancel --clusters="${TARGET_CLUSTER}" \
+        "${SUBMITTED_JOB_IDS[@]}" >/dev/null 2>&1; then
+        scancel_exit_code=0
+      else
+        scancel_exit_code="$?"
+      fi
+    fi
+    if [[ "${scancel_exit_code}" == "0" \
+      && -z "${UNRESOLVED_SUBMISSION_TOKEN}" ]]; then
+      local verify_attempt
+      for verify_attempt in $(seq 1 10); do
+        if verify_cancelled_jobs; then
+          cancellation_verified=1
+          break
+        fi
+        sleep 2
+      done
+    fi
+    if [[ "${cancellation_verified}" -eq 1 \
+      && -z "${UNRESOLVED_SUBMISSION_TOKEN}" ]]; then
+      rollback_status="ROLLED_BACK"
+    else
+      rollback_status="ROLLBACK_INCOMPLETE"
+    fi
+    write_rollback_record "${rollback_status}" \
+      "${scancel_exit_code}" "${cancellation_verified}" || true
+    if [[ "${rollback_status}" != "ROLLED_BACK" ]]; then
+      echo "[DUCA_CELLCF_POSTRUN_SUBMIT][FAIL] rollback is incomplete" >&2
+    fi
+  fi
+  return "${status}"
+}
+trap rollback_submitted_jobs EXIT
+trap 'terminate_on_signal 129' HUP
+trap 'terminate_on_signal 130' INT
+trap 'terminate_on_signal 143' TERM
 
 common_header() {
   local job_name="$1"
@@ -347,7 +447,7 @@ exec '${PYTHON}' -m tools.bata.finalize_duca_cellcf_postrun_evidence \
   --aggregate '${AGGREGATE}' --aggregate-sha256 '${AGGREGATE_SHA256}' \
   --final-suite '${FINAL_SUITE}' \
   --final-suite-sha256 '${FINAL_SUITE_SHA256}' \
-  --output '${CONTROL_ROOT}/postrun_evidence_complete.json'
+  --candidate --output '${CONTROL_ROOT}/postrun_evidence_candidate.json'
 EOF
 } > "${CONTROL_ROOT}/jobs/completion.sbatch"
 
@@ -580,6 +680,83 @@ finally:
 PY
 }
 
+write_rollback_record() {
+  local rollback_status="$1"
+  local scancel_exit_code="$2"
+  local cancellation_verified="$3"
+  printf \
+    'status=%s\nrollback_requested=true\ncluster=%s\njob_ids=%s\nscancel_exit_code=%s\ncancellation_verified=%s\nunresolved_submission_token=%s\n' \
+    "${rollback_status}" "${TARGET_CLUSTER}" "${SUBMITTED_JOB_IDS[*]}" \
+    "${scancel_exit_code}" "${cancellation_verified}" \
+    "${UNRESOLVED_SUBMISSION_TOKEN}" \
+    > "${CONTROL_ROOT}/submission_rollback.txt"
+  fsync_file "${CONTROL_ROOT}/submission_rollback.txt"
+}
+
+recover_job_id_by_token() {
+  local token="$1"
+  local job_name="$2"
+  local job_file="$3"
+  local attempt
+  for attempt in $(seq 1 10); do
+    if env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
+      "${PYTHON}" -m tools.bata.reconcile_duca_cellcf_slurm_submission \
+        recover-held-job --token "${token}" --job-name "${job_name}" \
+        --cluster "${TARGET_CLUSTER}" --job-file "${job_file}" \
+        --user "${SLURM_QUERY_USER}"; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+verify_cancelled_jobs() {
+  local ids_csv
+  ids_csv="$(IFS=,; echo "${SUBMITTED_JOB_IDS[*]}")"
+  env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
+    "${PYTHON}" -m tools.bata.reconcile_duca_cellcf_slurm_submission \
+      verify-cancelled --job-ids "${ids_csv}" \
+      --cluster "${TARGET_CLUSTER}" >/dev/null
+}
+
+revalidate_all_current_holds() {
+  [[ "${#SUBMITTED_JOB_IDS[@]}" -eq 6 \
+    && "${#SUBMITTED_JOB_KEYS[@]}" -eq 6 \
+    && "${#SUBMITTED_JOB_NAMES[@]}" -eq 6 \
+    && "${#SUBMITTED_JOB_DEPENDENCIES[@]}" -eq 6 \
+    && "${#SUBMITTED_JOB_TOKENS[@]}" -eq 6 \
+    && "${#SUBMITTED_JOB_FILES[@]}" -eq 6 \
+    && "${#SUBMITTED_JOB_FILE_SHA256S[@]}" -eq 6 ]] \
+    || fail "held barrier does not bind the exact six-job DAG"
+  local index
+  for index in "${!SUBMITTED_JOB_IDS[@]}"; do
+    local validation=""
+    local attempt
+    for attempt in $(seq 1 10); do
+      if validation="$(
+        env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
+          "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
+            --job-id "${SUBMITTED_JOB_IDS[index]}" \
+            --job-name "${SUBMITTED_JOB_NAMES[index]}" \
+            --comment "${SUBMITTED_JOB_TOKENS[index]}" \
+            --cluster "${TARGET_CLUSTER}" \
+            --job-file "${SUBMITTED_JOB_FILES[index]}" \
+            --job-file-sha256 "${SUBMITTED_JOB_FILE_SHA256S[index]}" \
+            --require-scheduler-script --require-submitted-with-hold \
+            --require-current-user-hold \
+            --dependency "${SUBMITTED_JOB_DEPENDENCIES[index]}"
+      )"; then
+        break
+      fi
+      validation=""
+      sleep 2
+    done
+    [[ -n "${validation}" ]] \
+      || fail "release barrier hold validation failed for ${SUBMITTED_JOB_KEYS[index]}"
+  done
+}
+
 submit_job() {
   local key="$1"
   local dependency="$2"
@@ -623,20 +800,23 @@ PY
     || fail "job file changed after submission intent for ${key}"
   local token="${intended[3]}"
   local output
+  UNRESOLVED_SUBMISSION_TOKEN="${token}"
+  UNRESOLVED_JOB_NAME="${job_name}"
+  UNRESOLVED_JOB_FILE="${job_file}"
   if [[ -n "${dependency}" ]]; then
-    if ! output="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+    if ! output="$(sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
       --job-name="${job_name}" --comment="${token}" \
       --dependency="${dependency}" "${job_file}")"; then
-      fail "sbatch failed for ${key}; reconcile the recorded intent and ledger"
+      fail "sbatch failed for ${key}; rollback reconciliation required"
     fi
   else
-    if ! output="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+    if ! output="$(sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
       --job-name="${job_name}" --comment="${token}" "${job_file}")"; then
-      fail "sbatch failed for ${key}; reconcile the recorded intent and ledger"
+      fail "sbatch failed for ${key}; rollback reconciliation required"
     fi
   fi
-  local normalized
-  normalized="$("${PYTHON}" - "${output}" "${TARGET_CLUSTER}" <<'PY'
+  local normalized=""
+  if normalized="$("${PYTHON}" - "${output}" "${TARGET_CLUSTER}" <<'PY'
 import re
 import sys
 
@@ -646,8 +826,25 @@ if match is None or match.group(2) != cluster:
     raise SystemExit("sbatch did not return exact jobid;cluster")
 print(f"{match.group(1)};{match.group(2)}")
 PY
-)" || fail "invalid sbatch response for ${key}"
+)"; then
+    :
+  else
+    local recovered_job_id=""
+    if recovered_job_id="$(
+      recover_job_id_by_token "${token}" "${job_name}" "${job_file}"
+    )"; then
+      append_unique_job_id "${recovered_job_id}"
+      UNRESOLVED_SUBMISSION_TOKEN=""
+      UNRESOLVED_JOB_NAME=""
+      UNRESOLVED_JOB_FILE=""
+    fi
+    fail "invalid sbatch response for ${key}; rollback reconciliation required"
+  fi
   local job_id="${normalized%%;*}"
+  append_unique_job_id "${job_id}"
+  UNRESOLVED_SUBMISSION_TOKEN=""
+  UNRESOLVED_JOB_NAME=""
+  UNRESOLVED_JOB_FILE=""
   local submitted_receipt="${CONTROL_ROOT}/receipts/${key}.submitted.json"
   write_job_receipt "${submitted_receipt}" "SUBMITTED_UNVERIFIED" \
     "${key}" "${job_id}" "${job_name}" "${dependency}" "${token}" \
@@ -655,17 +852,26 @@ PY
   chmod 0400 "${submitted_receipt}"
   local submitted_receipt_sha256
   submitted_receipt_sha256="$(sha256_file "${submitted_receipt}")"
-  local scheduler_validation
-  if ! scheduler_validation="$(
-    env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
-      "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
-        --job-id "${job_id}" --job-name "${job_name}" \
-        --comment "${token}" --cluster "${TARGET_CLUSTER}" \
-        --job-file "${job_file}" --job-file-sha256 "${job_file_sha256}" \
-        --require-scheduler-script --dependency "${dependency}"
-  )"; then
-    fail "scheduler identity validation failed for ${key}; submitted receipt preserved"
-  fi
+  local scheduler_validation=""
+  local validation_attempt
+  for validation_attempt in $(seq 1 10); do
+    if scheduler_validation="$(
+      env -u PYTHONHOME -u PYTHONPATH PYTHONNOUSERSITE=1 \
+        "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
+          --job-id "${job_id}" --job-name "${job_name}" \
+          --comment "${token}" --cluster "${TARGET_CLUSTER}" \
+          --job-file "${job_file}" --job-file-sha256 "${job_file_sha256}" \
+          --require-scheduler-script --require-submitted-with-hold \
+          --require-current-user-hold \
+          --dependency "${dependency}"
+    )"; then
+      break
+    fi
+    scheduler_validation=""
+    sleep 2
+  done
+  [[ -n "${scheduler_validation}" ]] \
+    || fail "scheduler identity validation failed for ${key}; submitted receipt preserved"
   local verified_receipt="${CONTROL_ROOT}/receipts/${key}.verified.json"
   write_job_receipt "${verified_receipt}" "VERIFIED" \
     "${key}" "${job_id}" "${job_name}" "${dependency}" "${token}" \
@@ -684,17 +890,29 @@ PY
     "${INTENT_SHA256}" \
     >> "${LEDGER_OUT}"
   fsync_file "${LEDGER_OUT}"
-  printf '%s' "${job_id}"
+  SUBMITTED_JOB_KEYS+=("${key}")
+  SUBMITTED_JOB_NAMES+=("${job_name}")
+  SUBMITTED_JOB_DEPENDENCIES+=("${dependency}")
+  SUBMITTED_JOB_TOKENS+=("${token}")
+  SUBMITTED_JOB_FILES+=("${job_file}")
+  SUBMITTED_JOB_FILE_SHA256S+=("${job_file_sha256}")
+  LAST_JOB_ID="${job_id}"
 }
 
-uniform_id="$(submit_job convergence_uniform "")"
-transition_id="$(submit_job convergence_transition_beta0 "")"
-cellcf_id="$(submit_job convergence_cellcf "")"
+submit_job convergence_uniform ""
+uniform_id="${LAST_JOB_ID}"
+submit_job convergence_transition_beta0 ""
+transition_id="${LAST_JOB_ID}"
+submit_job convergence_cellcf ""
+cellcf_id="${LAST_JOB_ID}"
 summary_dependency="afterok:${uniform_id}:${transition_id}:${cellcf_id}"
-summary_id="$(submit_job convergence_summary "${summary_dependency}")"
-training_cost_id="$(submit_job training_cost "")"
+submit_job convergence_summary "${summary_dependency}"
+summary_id="${LAST_JOB_ID}"
+submit_job training_cost ""
+training_cost_id="${LAST_JOB_ID}"
 completion_dependency="afterok:${summary_id}:${training_cost_id}"
-completion_id="$(submit_job completion "${completion_dependency}")"
+submit_job completion "${completion_dependency}"
+completion_id="${LAST_JOB_ID}"
 chmod 0400 "${LEDGER_OUT}"
 
 "${PYTHON}" - "${CONTROL_ROOT}/submission_manifest.json" "${LEDGER_OUT}" \
@@ -793,5 +1011,14 @@ finally:
         os.unlink(temporary)
 PY
 chmod 0400 "${CONTROL_ROOT}/submission_manifest.json"
+
+revalidate_all_current_holds
+for job_id in "${completion_id}" "${summary_id}" "${training_cost_id}" \
+  "${cellcf_id}" "${transition_id}" "${uniform_id}"; do
+  scontrol --clusters="${TARGET_CLUSTER}" release "${job_id}" \
+    || fail "failed to release verified held job ${job_id}"
+done
+SUBMISSION_COMMITTED=1
+trap - EXIT
 
 echo "[DUCA_CELLCF_POSTRUN_SUBMIT] submitted convergence=${uniform_id},${transition_id},${cellcf_id} summary=${summary_id} training_cost=${training_cost_id} completion=${completion_id}"

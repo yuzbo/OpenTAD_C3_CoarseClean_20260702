@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import tools.bata.summarize_duca_dense_full_stack_cost as summary_module
 
 from tools.bata.duca_full_stack_cost import (
     OFFLINE_FULL_WINDOW_PROTOCOL,
@@ -15,6 +16,8 @@ from tools.bata.duca_trained_checkpoint_binding import (
 )
 from tools.bata.profile_duca_full_stack_cost import load_cellcf_cost_binding
 from tools.bata.summarize_duca_dense_full_stack_cost import (
+    PAIR_COMPLETION_SCHEMA,
+    publish_output_pair,
     summarize_dense_full_stack_cost,
 )
 
@@ -121,6 +124,7 @@ def _profile(path: Path, method: str, scale: float, repeat: int = 1) -> None:
         "software_fingerprint": "same-software",
         "config_commit": "a" * 40,
         "trained_commit": "a" * 40,
+        "evidence_git_commit": "e" * 40,
         "profile_session_id": "slurm-123",
         "profile_pair_id": f"repeat-{repeat}",
         "profile_repeat_index": repeat,
@@ -222,7 +226,10 @@ def test_dense_full_stack_summary_requires_all_repeat_cost_gates(
         0.5
     )
     assert payload["aggregate"]["all_repeat_cost_gates_pass"] is True
-    assert payload["inference_cost_measurement_claim_allowed"] is True
+    assert payload["inference_cost_measurement_claim_allowed"] is False
+    assert payload["inference_cost_measurement_claim_blockers"] == [
+        "formal_scheduler_receipt_not_bound"
+    ]
     assert payload["paper_cost_claim_allowed"] is False
     assert (
         "dense_training_and_evaluation_semantic_validation_not_integrated"
@@ -274,6 +281,13 @@ def test_dense_full_stack_runner_is_alternating_and_hash_bound() -> None:
     assert "--checkpoint-evidence-sha256" in source
     assert "--post-run-evidence-sha256" in source
     assert "--trained-commit" in source
+    assert "--evidence-commit" in source
+    assert '--config-commit "${DENSE_TRAINED_COMMIT}"' in source
+    assert '--config-commit "${CELLCF_TRAINED_COMMIT}"' in source
+    assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in source
+    assert "dense trained and evidence commits must be distinct" in source
+    assert "CellCF trained and evidence commits must be distinct" in source
+    assert "git status --porcelain" in source
     assert "DUCA_CELLCF_TRAINED_CONFIG" in source
     assert "duca_cellcf_require_external_path" in source
     assert "--sample-power" in source
@@ -397,3 +411,55 @@ def test_dense_full_stack_summary_rejects_permuted_raw_sample_copy(
 
     with pytest.raises(ValueError, match="raw sample multiset"):
         summarize_dense_full_stack_cost(dense, cellcf)
+
+
+def test_dense_cost_output_pair_publishes_completion_marker(
+    tmp_path: Path,
+) -> None:
+    output_json = tmp_path / "dense_vs_cellcf.json"
+    output_tsv = tmp_path / "dense_vs_cellcf.tsv"
+    payload = {
+        "artifact_sha256": "a" * 64,
+        "comparisons": [],
+    }
+
+    marker = publish_output_pair(output_json, output_tsv, payload)
+
+    assert output_json.is_file()
+    assert output_tsv.is_file()
+    published = json.loads(marker.read_text(encoding="utf-8"))
+    assert published["schema"] == PAIR_COMPLETION_SCHEMA
+    assert published["ok"] is True
+    assert published["output_json_sha256"] == sha256_file(output_json)
+    assert published["output_tsv_sha256"] == sha256_file(output_tsv)
+    with pytest.raises(FileExistsError, match="completed dense cost"):
+        publish_output_pair(output_json, output_tsv, payload)
+
+
+def test_dense_cost_output_pair_rolls_back_partial_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_json = tmp_path / "dense_vs_cellcf.json"
+    output_tsv = tmp_path / "dense_vs_cellcf.tsv"
+    payload = {
+        "artifact_sha256": "b" * 64,
+        "comparisons": [],
+    }
+    real_link = summary_module.os.link
+    calls = 0
+
+    def fail_second_link(source: Path, target: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected publication failure")
+        real_link(source, target)
+
+    monkeypatch.setattr(summary_module.os, "link", fail_second_link)
+    with pytest.raises(OSError, match="injected publication failure"):
+        publish_output_pair(output_json, output_tsv, payload)
+
+    assert not output_json.exists()
+    assert not output_tsv.exists()
+    assert not list(tmp_path.glob(".dense-cost-pair-*"))

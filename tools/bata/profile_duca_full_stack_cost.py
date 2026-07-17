@@ -60,6 +60,10 @@ class ProfileArgs(argparse.Namespace):
             r"[0-9a-f]{40}", str(self.trained_commit)
         ) is None:
             raise ValueError("--trained-commit must be a full lowercase Git commit")
+        if self.evidence_commit and re.fullmatch(
+            r"[0-9a-f]{40}", str(self.evidence_commit)
+        ) is None:
+            raise ValueError("--evidence-commit must be a full lowercase Git commit")
         has_post_run_path = bool(str(self.post_run_evidence or "").strip())
         has_post_run_sha = bool(str(self.post_run_evidence_sha256 or "").strip())
         has_checkpoint_evidence = bool(str(self.checkpoint_evidence or "").strip())
@@ -85,6 +89,28 @@ class ProfileArgs(argparse.Namespace):
             if self.allow_random_init or not self.use_ema:
                 raise ValueError("formal dense cost profiles require trained EMA weights")
         if self.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+            if not self.trained_commit:
+                raise ValueError(
+                    "formal cost profiles require --trained-commit"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}", str(self.config_commit or "")
+            ) is None:
+                raise ValueError(
+                    "formal cost profiles require a full --config-commit"
+                )
+            if not self.evidence_commit:
+                raise ValueError(
+                    "formal cost profiles require --evidence-commit"
+                )
+            if self.config_commit != self.trained_commit:
+                raise ValueError(
+                    "--config-commit must identify the trained model/config commit"
+                )
+            if self.evidence_commit == self.trained_commit:
+                raise ValueError(
+                    "trained and evidence commits must be distinct"
+                )
             if not str(self.profile_session_id or "").strip():
                 raise ValueError("formal cost profiles require --profile-session-id")
             if not str(self.profile_pair_id or "").strip():
@@ -117,6 +143,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="commit that produced the bound trained checkpoint; defaults to profiler HEAD",
     )
+    parser.add_argument(
+        "--evidence-commit",
+        default="",
+        help="exact clean profiler/evidence code commit",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--warmup-samples", type=int, default=5)
@@ -139,6 +170,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-repeat-index", type=int, default=0)
     parser.add_argument("--profile-order-position", type=int, default=0)
     return parser
+
+
+def resolve_profile_commit_identities(
+    args: ProfileArgs, *, actual_commit: str
+) -> tuple[str, str]:
+    trained_commit = str(args.trained_commit or actual_commit)
+    if re.fullmatch(r"[0-9a-f]{40}", trained_commit) is None:
+        raise ValueError("--trained-commit must be a full lowercase Git commit")
+    evidence_commit = str(args.evidence_commit or "")
+    if args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+        if evidence_commit != actual_commit:
+            raise ValueError(
+                "--evidence-commit must equal the exact profiler repository HEAD"
+            )
+        if str(args.config_commit or "") != trained_commit:
+            raise ValueError(
+                "--config-commit must identify the trained model/config commit"
+            )
+        if trained_commit == evidence_commit:
+            raise ValueError("trained and evidence commits must be distinct")
+    return trained_commit, evidence_commit
 
 
 def strip_ddp_prefix(state_dict: Mapping[str, Any]) -> dict[str, Any]:
@@ -798,14 +850,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.allow_random_init and not tracked_tree_clean:
         raise RuntimeError("paper cost profiling requires a clean tracked git tree")
     actual_commit = _git_commit(repo_root)
-    trained_commit = str(args.trained_commit or actual_commit)
-    if re.fullmatch(r"[0-9a-f]{40}", trained_commit) is None:
-        raise ValueError("--trained-commit must be a full lowercase Git commit")
+    trained_commit, evidence_commit = resolve_profile_commit_identities(
+        args,
+        actual_commit=actual_commit,
+    )
     cellcf_cost_binding = None
     trained_checkpoint_binding = None
     if args.post_run_evidence:
-        if args.config_commit and args.config_commit != actual_commit:
-            raise ValueError("--config-commit differs from the checked-out commit")
         cellcf_cost_binding = load_cellcf_cost_binding(
             args.post_run_evidence,
             args.post_run_evidence_sha256,
@@ -817,8 +868,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
     if args.checkpoint_evidence:
-        if args.config_commit and args.config_commit != actual_commit:
-            raise ValueError("--config-commit differs from the checked-out commit")
         trained_checkpoint_binding = load_trained_checkpoint_binding(
             args.checkpoint_evidence,
             args.checkpoint_evidence_sha256,
@@ -999,8 +1048,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "hardware_fingerprint": _hardware_fingerprint(torch, device, gpu_uuid=power_gpu_id),
         "host_fingerprint": _host_fingerprint(),
         "software_fingerprint": _software_fingerprint(torch),
-        "config_commit": actual_commit if cellcf_cost_binding is not None else (args.config_commit or actual_commit),
+        "config_commit": args.config_commit or trained_commit,
         "trained_commit": trained_commit,
+        "evidence_git_commit": evidence_commit or actual_commit,
         "profile_session_id": str(args.profile_session_id),
         "profile_pair_id": str(args.profile_pair_id),
         "profile_repeat_index": int(args.profile_repeat_index),

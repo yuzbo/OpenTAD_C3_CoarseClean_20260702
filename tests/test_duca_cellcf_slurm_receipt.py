@@ -26,14 +26,21 @@ def _submit_line(
     dependency: str = "",
     job_file: Path = JOB_FILE,
     cluster: str = CLUSTER,
+    held: bool = False,
 ) -> str:
     tokens = [
         "sbatch",
         "--parsable",
-        f"--clusters={cluster}",
-        f"--job-name={job_name}",
-        f"--comment={token}",
     ]
+    if held:
+        tokens.append("--hold")
+    tokens.extend(
+        [
+            f"--clusters={cluster}",
+            f"--job-name={job_name}",
+            f"--comment={token}",
+        ]
+    )
     if dependency:
         tokens.append(f"--dependency={dependency}")
     tokens.append(str(job_file))
@@ -50,6 +57,8 @@ def _live(
     cluster: str = CLUSTER,
     job_file: Path = JOB_FILE,
     prefix: str | None = None,
+    hold: bool = False,
+    state_reason: str = "",
 ) -> str:
     payload = {
         "jobs": [
@@ -61,6 +70,8 @@ def _live(
                 "cluster": cluster,
                 "dependency": dependency,
                 "command": str(job_file),
+                "hold": hold,
+                "state_reason": state_reason,
             }
         ],
         "errors": [],
@@ -80,11 +91,13 @@ def _accounting(
     start: str = "Unknown",
     end: str = "Unknown",
     cluster: str = CLUSTER,
+    held: bool = False,
 ) -> str:
     line = submit_line or _submit_line(
         job_name=job_name,
         dependency=dependency,
         cluster=cluster,
+        held=held,
     )
     return (
         f"123|{job_name}|{state}|{comment}|{cluster}|{line}|{start}|{end}\n"
@@ -215,6 +228,116 @@ def test_new_submission_rejects_a_scheduler_script_hash_mismatch() -> None:
                 squeue=_live(job_name=name),
                 batch_script=b"#!/bin/bash\necho changed\n",
             ),
+        )
+
+
+def test_submitted_with_hold_requires_exact_accounting_submit_line() -> None:
+    name = "cellcf-uniform-s0-abcdef0"
+    result = _validate(
+        job_id=123,
+        job_name=name,
+        token=TOKEN,
+        cluster=CLUSTER,
+        submitted_with_hold=True,
+        runner=_runner(
+            squeue=_live(job_name=name),
+            sacct=_accounting(job_name=name, held=True),
+        ),
+    )
+    assert result["submission_command_held_verified"] is True
+
+    with pytest.raises(ValueError, match="canonical submission"):
+        _validate(
+            job_id=123,
+            job_name=name,
+            token=TOKEN,
+            cluster=CLUSTER,
+            submitted_with_hold=True,
+            runner=_runner(
+                squeue=_live(job_name=name),
+                sacct=_accounting(job_name=name, held=False),
+            ),
+        )
+
+
+def test_current_user_hold_requires_pending_jobhelduser_state() -> None:
+    name = "cellcf-uniform-s0-abcdef0"
+    result = _validate(
+        job_id=123,
+        job_name=name,
+        token=TOKEN,
+        cluster=CLUSTER,
+        submitted_with_hold=True,
+        require_current_user_hold=True,
+        runner=_runner(
+            squeue=_live(
+                job_name=name,
+                hold=True,
+                state_reason="JobHeldUser",
+            ),
+            sacct=_accounting(job_name=name, held=True),
+        ),
+    )
+    assert result["submission_command_held_verified"] is True
+    assert result["current_user_hold_verified"] is True
+
+    with pytest.raises(ValueError, match="PENDING under JobHeldUser"):
+        _validate(
+            job_id=123,
+            job_name=name,
+            token=TOKEN,
+            cluster=CLUSTER,
+            submitted_with_hold=True,
+            require_current_user_hold=True,
+            runner=_runner(
+                squeue=_live(
+                    job_name=name,
+                    state="RUNNING",
+                    hold=False,
+                    state_reason="None",
+                ),
+                sacct=_accounting(
+                    job_name=name,
+                    state="RUNNING",
+                    held=True,
+                    start="2026-07-16T10:00:00",
+                ),
+            ),
+        )
+
+
+def test_submission_hold_history_does_not_claim_current_hold() -> None:
+    name = "cellcf-uniform-s0-abcdef0"
+    result = _validate(
+        job_id=123,
+        job_name=name,
+        token=TOKEN,
+        cluster=CLUSTER,
+        submitted_with_hold=True,
+        runner=_runner(
+            squeue=_live(job_name=name, state="RUNNING"),
+            sacct=_accounting(
+                job_name=name,
+                state="RUNNING",
+                held=True,
+                start="2026-07-16T10:00:00",
+            ),
+        ),
+    )
+    assert result["submission_command_held_verified"] is True
+    assert "current_user_hold_verified" not in result
+
+
+def test_submission_command_hold_cannot_be_proved_from_live_queue_only() -> None:
+    name = "cellcf-uniform-s0-abcdef0"
+    with pytest.raises(ValueError, match="accounting submit line"):
+        _validate(
+            job_id=123,
+            job_name=name,
+            token=TOKEN,
+            cluster=CLUSTER,
+            submitted_with_hold=True,
+            runner=_runner(squeue=_live(job_name=name)),
         )
 
 

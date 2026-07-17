@@ -8,6 +8,8 @@ fail() {
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
+EVIDENCE_COMMIT="$(git rev-parse HEAD)"
+EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
@@ -29,6 +31,23 @@ REPEATS="${DUCA_DENSE_FULL_STACK_COST_REPEATS:-3}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "cost profiling must run inside Slurm"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a logical GPU"
+[[ "${EXPECTED_EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "DUCA_EVIDENCE_EXPECTED_COMMIT is required"
+[[ "${EVIDENCE_COMMIT}" == "${EXPECTED_EVIDENCE_COMMIT}" ]] \
+  || fail "evidence repository commit drift"
+[[ "${DENSE_TRAINED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "dense trained commit is invalid"
+[[ "${CELLCF_TRAINED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "CellCF trained commit is invalid"
+[[ "${EVIDENCE_COMMIT}" != "${DENSE_TRAINED_COMMIT}" ]] \
+  || fail "dense trained and evidence commits must be distinct"
+[[ "${EVIDENCE_COMMIT}" != "${CELLCF_TRAINED_COMMIT}" ]] \
+  || fail "CellCF trained and evidence commits must be distinct"
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
+  || fail "evidence repository is dirty"
+[[ -z "$(git ls-files --others --ignored --exclude-standard -- \
+  '*.py' '*.pth' 'sitecustomize.py' 'usercustomize.py')" ]] \
+  || fail "ignored Python source could shadow the evidence repository"
 [[ "${SAMPLES}" =~ ^[1-9][0-9]*$ ]] || fail "sample count must be a positive integer"
 [[ "${WARMUP}" =~ ^[1-9][0-9]*$ ]] || fail "warmup count must be a positive integer"
 [[ "${REPEATS}" =~ ^[1-9][0-9]*$ ]] || fail "repeat count must be a positive integer"
@@ -62,7 +81,9 @@ profile_dense() {
     "${DENSE_CONFIG}" --checkpoint "${DENSE_CHECKPOINT}" --use-ema --amp \
     --backbone-pretrain "${ADATAD_PRETRAIN_PATH}" \
     --method-name dense-adatad --output-prefix "${prefix}" \
+    --config-commit "${DENSE_TRAINED_COMMIT}" \
     --trained-commit "${DENSE_TRAINED_COMMIT}" \
+    --evidence-commit "${EVIDENCE_COMMIT}" \
     --profile-session-id "${PROFILE_SESSION_ID}" \
     --profile-pair-id "repeat-${repeat}" \
     --profile-repeat-index "${repeat}" \
@@ -82,7 +103,9 @@ profile_cellcf() {
     "${CELLCF_CONFIG}" --checkpoint "${CELLCF_CHECKPOINT}" --use-ema --amp \
     --backbone-pretrain "${ADATAD_PRETRAIN_PATH}" \
     --method-name cellcf-fixed384 --output-prefix "${prefix}" \
+    --config-commit "${CELLCF_TRAINED_COMMIT}" \
     --trained-commit "${CELLCF_TRAINED_COMMIT}" \
+    --evidence-commit "${EVIDENCE_COMMIT}" \
     --profile-session-id "${PROFILE_SESSION_ID}" \
     --profile-pair-id "repeat-${repeat}" \
     --profile-repeat-index "${repeat}" \

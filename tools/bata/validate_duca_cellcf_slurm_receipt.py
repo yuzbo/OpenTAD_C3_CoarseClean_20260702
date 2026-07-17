@@ -130,14 +130,21 @@ def _canonical_submit_line(
     token: str,
     dependency: str,
     job_file: Path,
+    submitted_with_hold: bool,
 ) -> str:
     tokens = [
         "sbatch",
         "--parsable",
-        f"--clusters={cluster}",
-        f"--job-name={job_name}",
-        f"--comment={token}",
     ]
+    if submitted_with_hold:
+        tokens.append("--hold")
+    tokens.extend(
+        [
+            f"--clusters={cluster}",
+            f"--job-name={job_name}",
+            f"--comment={token}",
+        ]
+    )
     if dependency:
         tokens.append(f"--dependency={dependency}")
     tokens.append(str(job_file))
@@ -395,6 +402,8 @@ def validate_slurm_receipt(
     job_file_sha256: str,
     dependency: str = "",
     require_scheduler_script: bool = False,
+    submitted_with_hold: bool = False,
+    require_current_user_hold: bool = False,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     if job_id <= 0:
@@ -407,6 +416,10 @@ def validate_slurm_receipt(
         raise ValueError("invalid Slurm cluster identity")
     if SHA256_PATTERN.fullmatch(job_file_sha256) is None:
         raise ValueError("invalid bound Slurm job file hash")
+    if require_current_user_hold and not submitted_with_hold:
+        raise ValueError(
+            "current user-hold proof requires a submission command with --hold"
+        )
     raw_job_file = Path(job_file).expanduser()
     if not raw_job_file.is_absolute():
         raise ValueError("job_file must be an absolute path")
@@ -435,6 +448,7 @@ def validate_slurm_receipt(
         token=token,
         dependency=expected_dependency,
         job_file=resolved_job_file,
+        submitted_with_hold=submitted_with_hold,
     )
 
     live_output = _run(
@@ -481,6 +495,16 @@ def validate_slurm_receipt(
                     "Slurm target started while dependencies remain: "
                     f"state={live_state}, dependency={live_dependency}"
                 )
+    if require_current_user_hold:
+        if (
+            live_job is None
+            or live_state != "PENDING"
+            or live_job.get("hold") is not True
+            or live_job.get("state_reason") != "JobHeldUser"
+        ):
+            raise ValueError(
+                "Slurm job is not currently PENDING under JobHeldUser"
+            )
 
     accounting_output = _run(
         [
@@ -552,13 +576,18 @@ def validate_slurm_receipt(
                 runner=runner,
             )
             payload["scheduler_script_verified"] = True
+        if submitted_with_hold:
+            payload["submission_command_held_verified"] = True
+        if require_current_user_hold:
+            payload["current_user_hold_verified"] = True
         return payload
     if accounting_rows:
         raise ValueError("receipt job is ambiguous in Slurm accounting")
-    if (
-        live_state is not None
-        and live_dependency_ids == expected_dependency_ids
-    ):
+    if live_state is not None and live_dependency_ids == expected_dependency_ids:
+        if submitted_with_hold:
+            raise ValueError(
+                "submission-command hold proof requires the exact accounting submit line"
+            )
         if expected_dependency_ids and live_state != "PENDING":
             raise ValueError(
                 "dependent Slurm target has started without accounting proof"
@@ -603,6 +632,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--job-file-sha256", required=True)
     parser.add_argument("--dependency", default="")
     parser.add_argument("--require-scheduler-script", action="store_true")
+    parser.add_argument("--require-submitted-with-hold", action="store_true")
+    parser.add_argument("--require-current-user-hold", action="store_true")
     args = parser.parse_args(argv)
     payload = validate_slurm_receipt(
         job_id=args.job_id,
@@ -613,6 +644,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         job_file_sha256=args.job_file_sha256,
         dependency=args.dependency,
         require_scheduler_script=args.require_scheduler_script,
+        submitted_with_hold=args.require_submitted_with_hold,
+        require_current_user_hold=args.require_current_user_hold,
     )
     print(json.dumps(payload, sort_keys=True))
     return 0

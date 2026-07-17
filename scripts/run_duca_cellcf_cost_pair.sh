@@ -22,6 +22,8 @@ done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
+EVIDENCE_COMMIT="$(git rev-parse HEAD)"
+EXPECTED_EVIDENCE_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:-}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 source "${REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
@@ -50,6 +52,14 @@ PRETRAIN="${ADATAD_PRETRAIN_PATH}"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal cost profiling must run inside Slurm"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a logical GPU"
 [[ -x "${PYTHON}" ]] || fail "Python is missing: ${PYTHON}"
+[[ "${EXPECTED_EVIDENCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "DUCA_EVIDENCE_EXPECTED_COMMIT is required"
+[[ "${EVIDENCE_COMMIT}" == "${EXPECTED_EVIDENCE_COMMIT}" ]] \
+  || fail "evidence repository commit drift"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "DUCA_EXPECTED_COMMIT is required"
+[[ "${EVIDENCE_COMMIT}" != "${EXPECTED_COMMIT}" ]] \
+  || fail "trained and evidence commits must be distinct"
 if [[ -n "${SUITE_MANIFEST}" || -n "${SUITE_MANIFEST_SHA256}" ]]; then
   [[ -f "${SUITE_MANIFEST}" ]] || fail "CellCF suite manifest is missing"
   [[ "${SUITE_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "CellCF suite manifest SHA256 is missing or invalid"
@@ -108,8 +118,10 @@ fi
 [[ -f "${PRETRAIN}" ]] || fail "AdaTAD pretrain is missing"
 [[ "${SAMPLES}" =~ ^[0-9]+$ && "${SAMPLES}" -ge 500 ]] || fail "at least 500 measured windows are required"
 [[ "${REPEATS}" =~ ^[0-9]+$ && "${REPEATS}" -ge 3 ]] || fail "at least three fresh-process repeats are required"
-[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "HEAD differs from DUCA_EXPECTED_COMMIT"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "cost profiling requires a clean tree"
+[[ -z "$(git ls-files --others --ignored --exclude-standard -- \
+  '*.py' '*.pth' 'sitecustomize.py' 'usercustomize.py')" ]] \
+  || fail "ignored Python source could shadow the evidence repository"
 [[ "$(sha256sum "${POST_RUN_EVIDENCE}" | awk '{print $1}')" == "${POST_RUN_EVIDENCE_SHA256}" ]] \
   || fail "CellCF post-run evidence hash drift"
 [[ "$(${PYTHON} -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] || fail "exactly one Slurm-visible GPU is required"
@@ -126,7 +138,10 @@ profile_cellcf() {
   "${PYTHON}" tools/bata/profile_duca_full_stack_cost.py "${CELL_CONFIG}" \
     --checkpoint "${CHECKPOINT}" --use-ema --backbone-pretrain "${PRETRAIN}" \
     --output-prefix "${cell_prefix}" --method-name cellcf-fixed384 \
-    --config-commit "${EXPECTED_COMMIT}" --device cuda:0 --samples "${SAMPLES}" \
+    --config-commit "${EXPECTED_COMMIT}" \
+    --trained-commit "${EXPECTED_COMMIT}" \
+    --evidence-commit "${EVIDENCE_COMMIT}" \
+    --device cuda:0 --samples "${SAMPLES}" \
     --profile-session-id "${PROFILE_SESSION_ID}" \
     --profile-pair-id "repeat-${repeat}" \
     --profile-repeat-index "${repeat}" \
@@ -144,7 +159,10 @@ profile_bare() {
   "${PYTHON}" tools/bata/profile_duca_full_stack_cost.py "${BARE_CONFIG}" \
     --checkpoint "${CHECKPOINT}" --use-ema --backbone-pretrain "${PRETRAIN}" \
     --output-prefix "${bare_prefix}" --method-name bare-uniform384 \
-    --config-commit "${EXPECTED_COMMIT}" --device cuda:0 --samples "${SAMPLES}" \
+    --config-commit "${EXPECTED_COMMIT}" \
+    --trained-commit "${EXPECTED_COMMIT}" \
+    --evidence-commit "${EVIDENCE_COMMIT}" \
+    --device cuda:0 --samples "${SAMPLES}" \
     --profile-session-id "${PROFILE_SESSION_ID}" \
     --profile-pair-id "repeat-${repeat}" \
     --profile-repeat-index "${repeat}" \

@@ -4,6 +4,8 @@ import argparse
 import csv
 import json
 import os
+import re
+import shutil
 import statistics
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -23,6 +25,7 @@ SCHEMA = "duca_dense_vs_cellcf_full_stack_cost_v1"
 MIN_REPEATS = 3
 MIN_SAMPLES = 500
 MIN_WARMUP_SAMPLES = 20
+PAIR_COMPLETION_SCHEMA = "duca_dense_full_stack_cost_pair_completion_v1"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -33,6 +36,14 @@ def _require(condition: bool, message: str) -> None:
 def _validate_profile_evidence(
     profile: Mapping[str, Any], *, expected_method: str
 ) -> None:
+    _require(
+        re.fullmatch(
+            r"[0-9a-f]{40}",
+            str(profile.get("evidence_git_commit") or ""),
+        )
+        is not None,
+        f"{expected_method} profile lacks an exact evidence commit",
+    )
     checkpoint_keys = (
         "checkpoint_path",
         "checkpoint_sha256",
@@ -181,6 +192,7 @@ def _require_same_bound_model(
 ) -> None:
     keys = (
         "trained_commit",
+        "evidence_git_commit",
         "profile_config_sha256",
         "profile_resolved_config_sha256",
         "checkpoint_sha256",
@@ -217,6 +229,13 @@ def summarize_dense_full_stack_cost(
     _require(len(sessions) == 1, "cost repeats span multiple profiling sessions")
     _require_same_bound_model(dense, method="dense-adatad")
     _require_same_bound_model(cellcf, method="cellcf-fixed384")
+    evidence_commits = {
+        str(item["evidence_git_commit"]) for item in [*dense, *cellcf]
+    }
+    _require(
+        len(evidence_commits) == 1,
+        "dense and CellCF profiles use different evidence code commits",
+    )
     comparisons = []
     order_receipt = []
     for repeat, (baseline, candidate) in enumerate(zip(dense, cellcf), start=1):
@@ -283,6 +302,7 @@ def summarize_dense_full_stack_cost(
         "schema": SCHEMA,
         "ok": True,
         "task": "offline_temporal_action_detection",
+        "evidence_git_commit": next(iter(evidence_commits)),
         "claim_scope": "dense_adatad_vs_cellcf_full_stack_serial_inference",
         "dense_full_stack_baseline_included": True,
         "repeat_count": len(comparisons),
@@ -300,9 +320,13 @@ def summarize_dense_full_stack_cost(
             "median_speedup": statistics.median(speedups),
             "all_repeat_cost_gates_pass": all_repeat_gates,
         },
-        "inference_cost_measurement_claim_allowed": all_repeat_gates,
+        "inference_cost_measurement_claim_allowed": False,
+        "inference_cost_measurement_claim_blockers": [
+            "formal_scheduler_receipt_not_bound",
+        ],
         "paper_cost_claim_allowed": False,
         "paper_cost_claim_blockers": [
+            "formal_scheduler_receipt_not_bound",
             "dense_training_and_evaluation_semantic_validation_not_integrated",
             "training_inference_break_even_unavailable",
         ],
@@ -393,6 +417,144 @@ def _exclusive_write_tsv(
     return target
 
 
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _pair_paths(
+    output_json: Path,
+    output_tsv: Path,
+) -> tuple[Path, Path]:
+    _require(
+        output_json.parent == output_tsv.parent,
+        "dense cost JSON and TSV must share one output directory",
+    )
+    token = canonical_sha256(
+        {
+            "output_json": output_json.name,
+            "output_tsv": output_tsv.name,
+        }
+    )[:16]
+    return (
+        output_json.parent / f".dense-cost-pair-{token}.staging",
+        output_json.parent / f".dense-cost-pair-{token}.complete.json",
+    )
+
+
+def _recover_incomplete_pair(
+    output_json: Path,
+    output_tsv: Path,
+    staging_root: Path,
+    completion_marker: Path,
+) -> None:
+    if completion_marker.exists():
+        raise FileExistsError("refusing to overwrite completed dense cost evidence")
+    if not staging_root.exists():
+        _require(
+            not output_json.exists() and not output_tsv.exists(),
+            "unowned partial dense cost evidence blocks recovery",
+        )
+        return
+    manifest_path = staging_root / "transaction.json"
+    if not manifest_path.is_file():
+        _require(
+            not output_json.exists() and not output_tsv.exists(),
+            "incomplete dense cost transaction lacks a recovery manifest",
+        )
+        shutil.rmtree(staging_root)
+        _fsync_directory(output_json.parent)
+        return
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    _require(
+        isinstance(manifest, dict)
+        and manifest.get("output_json") == str(output_json)
+        and manifest.get("output_tsv") == str(output_tsv),
+        "incomplete dense cost transaction targets differ",
+    )
+    for target, key in (
+        (output_json, "output_json_sha256"),
+        (output_tsv, "output_tsv_sha256"),
+    ):
+        if target.exists():
+            _require(
+                sha256_file(target) == manifest.get(key),
+                "partial dense cost output differs from its recovery manifest",
+            )
+            target.unlink()
+    shutil.rmtree(staging_root)
+    _fsync_directory(output_json.parent)
+
+
+def publish_output_pair(
+    output_json: Path,
+    output_tsv: Path,
+    payload: Mapping[str, Any],
+) -> Path:
+    output_json = output_json.expanduser().resolve()
+    output_tsv = output_tsv.expanduser().resolve()
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    staging_root, completion_marker = _pair_paths(output_json, output_tsv)
+    _recover_incomplete_pair(
+        output_json,
+        output_tsv,
+        staging_root,
+        completion_marker,
+    )
+    staging_root.mkdir(mode=0o700)
+    staged_json = staging_root / "evidence.json"
+    staged_tsv = staging_root / "evidence.tsv"
+    staged_marker = staging_root / "complete.json"
+    published: list[Path] = []
+    try:
+        _exclusive_write_json(staged_json, payload)
+        _exclusive_write_tsv(staged_tsv, payload["comparisons"])
+        transaction = {
+            "output_json": str(output_json),
+            "output_tsv": str(output_tsv),
+            "output_json_sha256": sha256_file(staged_json),
+            "output_tsv_sha256": sha256_file(staged_tsv),
+        }
+        _exclusive_write_json(staging_root / "transaction.json", transaction)
+        marker = {
+            "schema": PAIR_COMPLETION_SCHEMA,
+            "ok": True,
+            "output_json": str(output_json),
+            "output_tsv": str(output_tsv),
+            "output_json_sha256": transaction["output_json_sha256"],
+            "output_tsv_sha256": transaction["output_tsv_sha256"],
+            "evidence_artifact_sha256": payload["artifact_sha256"],
+        }
+        marker["artifact_sha256"] = canonical_sha256(marker)
+        _exclusive_write_json(staged_marker, marker)
+        _fsync_directory(staging_root)
+        for source, target in (
+            (staged_json, output_json),
+            (staged_tsv, output_tsv),
+            (staged_marker, completion_marker),
+        ):
+            os.link(source, target)
+            published.append(target)
+        _fsync_directory(output_json.parent)
+    except Exception:
+        for target in reversed(published):
+            target.unlink(missing_ok=True)
+        shutil.rmtree(staging_root, ignore_errors=True)
+        _fsync_directory(output_json.parent)
+        raise
+    shutil.rmtree(staging_root)
+    _fsync_directory(output_json.parent)
+    return completion_marker
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dense", action="append", required=True)
@@ -402,19 +564,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     output_json = Path(args.output_json).expanduser().resolve()
     output_tsv = Path(args.output_tsv).expanduser().resolve()
-    if output_json.exists() or output_tsv.exists():
-        failure = {
-            "schema": SCHEMA,
-            "ok": False,
-            "error_type": "FileExistsError",
-            "error": "refusing to overwrite dense full-stack cost evidence",
-        }
-        print(json.dumps(failure, indent=2, sort_keys=True))
-        return 1
     try:
         payload = summarize_dense_full_stack_cost(args.dense, args.cellcf)
-        _exclusive_write_tsv(output_tsv, payload["comparisons"])
-        _exclusive_write_json(output_json, payload)
+        completion_marker = publish_output_pair(
+            output_json,
+            output_tsv,
+            payload,
+        )
+        payload = dict(payload)
+        payload["output_pair_completion_marker"] = str(completion_marker)
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     except Exception as exc:
@@ -424,8 +582,6 @@ def main(argv: list[str] | None = None) -> int:
             "error_type": type(exc).__name__,
             "error": str(exc),
         }
-        if not output_json.exists():
-            _exclusive_write_json(output_json, failure)
         print(json.dumps(failure, indent=2, sort_keys=True))
         return 1
 

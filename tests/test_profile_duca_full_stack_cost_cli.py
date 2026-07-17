@@ -12,6 +12,7 @@ from tools.bata.profile_duca_full_stack_cost import (
     component_elapsed_ms,
     discover_profile_modules,
     parse_nvidia_smi_power_lines,
+    resolve_profile_commit_identities,
     strip_ddp_prefix,
 )
 from tools.bata.compare_duca_full_stack_cost import main as compare_cost_main
@@ -163,6 +164,12 @@ def test_dense_paper_profile_requires_hash_bound_checkpoint_evidence() -> None:
             "binding.json",
             "--checkpoint-evidence-sha256",
             "a" * 64,
+            "--config-commit",
+            "b" * 40,
+            "--trained-commit",
+            "b" * 40,
+            "--evidence-commit",
+            "c" * 40,
             "--profile-session-id",
             "slurm-1",
             "--profile-pair-id",
@@ -195,8 +202,12 @@ def test_cli_separates_profiler_and_trained_commits() -> None:
             "binding.json",
             "--checkpoint-evidence-sha256",
             "a" * 64,
+            "--config-commit",
+            "b" * 40,
             "--trained-commit",
             "b" * 40,
+            "--evidence-commit",
+            "c" * 40,
             "--profile-session-id",
             "slurm-1",
             "--profile-pair-id",
@@ -211,10 +222,97 @@ def test_cli_separates_profiler_and_trained_commits() -> None:
     )
     args.validate()
     assert args.trained_commit == "b" * 40
+    assert args.evidence_commit == "c" * 40
 
     args.trained_commit = "short"
     with pytest.raises(ValueError, match="trained-commit"):
         args.validate()
+
+
+def test_formal_profile_rejects_conflated_commit_identities() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "dense.py",
+            "--checkpoint",
+            "dense.pth",
+            "--use-ema",
+            "--method-name",
+            "dense-adatad",
+            "--checkpoint-evidence",
+            "binding.json",
+            "--checkpoint-evidence-sha256",
+            "a" * 64,
+            "--config-commit",
+            "b" * 40,
+            "--trained-commit",
+            "b" * 40,
+            "--evidence-commit",
+            "b" * 40,
+            "--profile-session-id",
+            "slurm-1",
+            "--profile-pair-id",
+            "repeat-1",
+            "--profile-repeat-index",
+            "1",
+            "--profile-order-position",
+            "1",
+            "--output-prefix",
+            "out/dense",
+        ]
+    )
+    with pytest.raises(ValueError, match="must be distinct"):
+        args.validate()
+
+    args.evidence_commit = "c" * 40
+    args.config_commit = "d" * 40
+    with pytest.raises(ValueError, match="trained model/config commit"):
+        args.validate()
+
+
+def test_main_commit_resolution_separates_model_and_profiler_commits() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "dense.py",
+            "--checkpoint",
+            "dense.pth",
+            "--use-ema",
+            "--method-name",
+            "dense-adatad",
+            "--checkpoint-evidence",
+            "binding.json",
+            "--checkpoint-evidence-sha256",
+            "a" * 64,
+            "--config-commit",
+            "b" * 40,
+            "--trained-commit",
+            "b" * 40,
+            "--evidence-commit",
+            "c" * 40,
+            "--profile-session-id",
+            "slurm-1",
+            "--profile-pair-id",
+            "repeat-1",
+            "--profile-repeat-index",
+            "1",
+            "--profile-order-position",
+            "1",
+            "--output-prefix",
+            "out/dense",
+        ]
+    )
+    args.validate()
+
+    assert resolve_profile_commit_identities(
+        args,
+        actual_commit="c" * 40,
+    ) == ("b" * 40, "c" * 40)
+    with pytest.raises(ValueError, match="profiler repository HEAD"):
+        resolve_profile_commit_identities(
+            args,
+            actual_commit="d" * 40,
+        )
 
 
 def test_paper_profile_clean_tree_check_includes_untracked_files() -> None:

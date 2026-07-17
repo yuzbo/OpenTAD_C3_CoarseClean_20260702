@@ -3,12 +3,16 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 import math
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
+import sys
+import tempfile
 from typing import Any, Callable, Mapping, Sequence
 
 
@@ -34,7 +38,11 @@ MANIFEST_SCHEMA = "duca_cellcf_postrun_submission_manifest_v1"
 RECEIPT_SCHEMA = "duca_cellcf_postrun_slurm_receipt_v1"
 CONVERGENCE_SCHEMA = "duca_cellcf_fixed_convergence_trajectory_v1"
 TRAINING_COST_SCHEMA = "duca_cellcf_training_cost_summary_v1"
-FINAL_SCHEMA = "duca_cellcf_postrun_evidence_completion_v2"
+SUPPORTED_TRAINED_COMMIT = "1642f265e48391418a7c8a4a087e33e2b7bf6899"
+CANDIDATE_SCHEMA = "duca_cellcf_postrun_evidence_candidate_v1"
+FINAL_SCHEMA = "duca_cellcf_postrun_evidence_completion_v3"
+FileIdentity = tuple[int, int, int, int, int]
+SnapshotRecord = tuple[str, FileIdentity, FileIdentity]
 
 
 def _require(condition: bool, message: str) -> None:
@@ -61,12 +69,221 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def _load_json(path: str | Path, label: str) -> tuple[Path, dict[str, Any]]:
-    resolved = Path(path).expanduser().resolve()
-    _require(resolved.is_file(), f"{label} is missing: {resolved}")
-    payload = json.loads(resolved.read_text(encoding="utf-8"))
+def _identity_from_stat(value: os.stat_result) -> FileIdentity:
+    return (
+        int(value.st_dev),
+        int(value.st_ino),
+        int(value.st_size),
+        int(value.st_mtime_ns),
+        int(value.st_ctime_ns),
+    )
+
+
+def _file_identity(path: Path, label: str) -> FileIdentity:
+    try:
+        observed = os.lstat(path)
+    except OSError as exc:
+        raise ValueError(f"{label} is missing: {path}") from exc
+    _require(not stat.S_ISLNK(observed.st_mode), f"{label} must not be a symlink")
+    _require(stat.S_ISREG(observed.st_mode), f"{label} is not a regular file")
+    return _identity_from_stat(observed)
+
+
+def _directory_identity(path: Path, label: str) -> FileIdentity:
+    try:
+        observed = os.stat(path, follow_symlinks=False)
+    except OSError as exc:
+        raise ValueError(f"{label} parent directory is missing: {path}") from exc
+    _require(
+        not stat.S_ISLNK(observed.st_mode)
+        and stat.S_ISDIR(observed.st_mode),
+        f"{label} parent is not a stable directory",
+    )
+    return _identity_from_stat(observed)
+
+
+def _read_snapshot(
+    path: str | Path, label: str
+) -> tuple[Path, bytes, str]:
+    source = Path(path).expanduser()
+    _file_identity(source, label)
+    try:
+        resolved = source.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"{label} is missing: {source}") from exc
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(resolved, flags)
+    except OSError as exc:
+        raise ValueError(f"{label} cannot be opened safely: {resolved}") from exc
+    try:
+        before = os.fstat(descriptor)
+        _require(
+            stat.S_ISREG(before.st_mode),
+            f"{label} is not a regular file",
+        )
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    _require(
+        _identity_from_stat(before) == _identity_from_stat(after),
+        f"{label} changed while it was read",
+    )
+    _require(
+        _file_identity(resolved, label) == _identity_from_stat(after),
+        f"{label} path identity changed while it was read",
+    )
+    payload_bytes = b"".join(chunks)
+    return (
+        resolved,
+        payload_bytes,
+        hashlib.sha256(payload_bytes).hexdigest(),
+    )
+
+
+def _capture_snapshot_record(
+    path: str | Path,
+    label: str,
+) -> tuple[Path, SnapshotRecord]:
+    source = Path(path).expanduser()
+    _file_identity(source, label)
+    try:
+        resolved = source.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"{label} is missing: {source}") from exc
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(resolved, flags)
+    except OSError as exc:
+        raise ValueError(f"{label} cannot be opened safely: {resolved}") from exc
+    digest = hashlib.sha256()
+    try:
+        before = os.fstat(descriptor)
+        _require(stat.S_ISREG(before.st_mode), f"{label} is not a regular file")
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    identity = _identity_from_stat(after)
+    _require(
+        _identity_from_stat(before) == identity,
+        f"{label} changed while it was hashed",
+    )
+    _require(
+        _file_identity(resolved, label) == identity,
+        f"{label} path identity changed while it was hashed",
+    )
+    return (
+        resolved,
+        (
+            digest.hexdigest(),
+            identity,
+            _directory_identity(resolved.parent, label),
+        ),
+    )
+
+
+def _record_snapshot(
+    records: dict[Path, SnapshotRecord],
+    path: Path,
+    digest: str,
+    label: str,
+) -> None:
+    resolved, record = _capture_snapshot_record(path, label)
+    observed_digest = record[0]
+    _require(resolved == path, f"{label} resolved path drifted")
+    _require(observed_digest == digest, f"{label} changed before it was recorded")
+    previous = records.get(resolved)
+    if previous is not None:
+        _require(previous == record, f"{label} changed between validations")
+    records[resolved] = record
+
+
+def _verify_snapshot(
+    path: Path,
+    record: SnapshotRecord,
+) -> None:
+    resolved, observed_record = _capture_snapshot_record(
+        path,
+        f"sealed evidence input {path}",
+    )
+    _require(resolved == path, f"evidence input path changed after validation: {path}")
+    _require(
+        observed_record[:2] == record[:2],
+        f"evidence input changed after snapshot validation: {path}",
+    )
+    _require(
+        observed_record[2] == record[2],
+        f"evidence directory changed after snapshot validation: {path.parent}",
+    )
+
+
+def _record_hashed_dependency(
+    records: dict[Path, SnapshotRecord],
+    record: Mapping[str, Any],
+    label: str,
+    *,
+    expected_path: Path | None = None,
+) -> Path:
+    _require(isinstance(record, Mapping), f"{label} binding is missing")
+    expected_digest = _require_hash(record.get("sha256"), f"{label} bound hash")
+    resolved, snapshot_record = _capture_snapshot_record(
+        record.get("path", ""),
+        label,
+    )
+    if expected_path is not None:
+        _require(resolved == expected_path, f"{label} path mismatch")
+    _require(
+        snapshot_record[0] == expected_digest,
+        f"{label} bound hash mismatch",
+    )
+    previous = records.get(resolved)
+    if previous is not None:
+        _require(previous == snapshot_record, f"{label} changed between validations")
+    records[resolved] = snapshot_record
+    return resolved
+
+
+def _record_payload_path_hash_pairs(
+    records: dict[Path, SnapshotRecord],
+    payload: Mapping[str, Any],
+    label: str,
+) -> None:
+    for path_key, path_value in sorted(payload.items()):
+        if not str(path_key).endswith("_path"):
+            continue
+        sha_key = f"{str(path_key)[:-5]}_sha256"
+        if sha_key not in payload:
+            continue
+        _record_hashed_dependency(
+            records,
+            {
+                "path": path_value,
+                "sha256": payload.get(sha_key),
+            },
+            f"{label} {path_key}",
+        )
+
+
+def _load_json(
+    path: str | Path, label: str
+) -> tuple[Path, dict[str, Any], str]:
+    resolved, payload_bytes, digest = _read_snapshot(path, label)
+    payload = json.loads(payload_bytes.decode("utf-8"))
     _require(isinstance(payload, dict), f"{label} must be a JSON object")
-    return resolved, payload
+    return resolved, payload, digest
 
 
 def _validate_embedded_hash(
@@ -110,10 +327,57 @@ def _default_aggregate_loader(**kwargs: Any) -> Mapping[str, Any]:
     return load_suite_aggregate_binding(**kwargs)
 
 
-def _default_final_suite_revalidator(**kwargs: Any) -> Mapping[str, Any]:
-    from tools.bata.validate_duca_cellcf_suite import validate_suite
-
-    return validate_suite(**kwargs)
+def revalidate_trained_suite_exact(**kwargs: Any) -> Mapping[str, Any]:
+    repo_root = Path(kwargs["repo_root"]).expanduser().resolve()
+    with tempfile.TemporaryDirectory(
+        prefix="duca-cellcf-historical-revalidation-"
+    ) as output_root_value:
+        output_path = Path(output_root_value) / "final_suite_evidence.json"
+        command = [
+            sys.executable,
+            "-m",
+            "tools.bata.validate_duca_cellcf_suite",
+            "--repo-root",
+            str(repo_root),
+            "--seed",
+            str(kwargs["seed"]),
+            "--expected-commit",
+            str(kwargs["expected_commit"]),
+            "--gate-json",
+            str(kwargs["gate_json"]),
+            "--pilot-json",
+            str(kwargs["pilot_json"]),
+            "--cost-evidence",
+            str(kwargs["cost_evidence"]),
+            "--require-cost-evidence",
+            "--output-json",
+            str(output_path),
+        ]
+        if kwargs.get("require_clean"):
+            command.append("--require-clean")
+        for variant, path in sorted(kwargs["post_run_evidence"].items()):
+            command.extend(["--post-run-evidence", f"{variant}={path}"])
+        environment = dict(os.environ)
+        environment["PYTHONNOUSERSITE"] = "1"
+        environment.pop("PYTHONHOME", None)
+        environment.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            command,
+            cwd=repo_root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        _require(
+            result.returncode == 0,
+            "historical trained-suite revalidation failed: "
+            f"{result.stderr.strip() or result.stdout.strip()}",
+        )
+        _, payload, _ = _load_json(
+            output_path, "historically regenerated final suite"
+        )
+        return payload
 
 
 def _default_convergence_rebuilder(**kwargs: Any) -> Mapping[str, Any]:
@@ -214,14 +478,16 @@ def _default_repository_validator(root: Path, expected_commit: str) -> None:
     _require(not ignored, f"ignored Python source could shadow repository: {root}")
 
 
-def _load_ledger(path: Path) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8", newline="") as handle:
+def _load_ledger(path: Path) -> tuple[list[dict[str, str]], str]:
+    _, payload_bytes, digest = _read_snapshot(path, "post-run submitted ledger")
+    decoded = payload_bytes.decode("utf-8")
+    with io.StringIO(decoded, newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     _require(
         [row.get("job_key") for row in rows] == list(JOB_KEYS),
         "post-run ledger does not bind the exact ordered six-job DAG",
     )
-    return rows
+    return rows, digest
 
 
 def _load_formal_completion(
@@ -230,15 +496,20 @@ def _load_formal_completion(
     expected_commit: str,
     expected_seed: int,
     expected_profile: str,
-) -> dict[str, str]:
-    _require(path.is_file(), "formal submitted-job ledger is missing")
-    with path.open(encoding="utf-8", newline="") as handle:
+) -> tuple[dict[str, str], str]:
+    _, payload_bytes, digest = _read_snapshot(
+        path, "formal submitted-job ledger"
+    )
+    with io.StringIO(payload_bytes.decode("utf-8"), newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     _require(
         [row.get("job_key") for row in rows] == list(FORMAL_JOB_KEYS),
         "formal submitted-job ledger does not bind the exact six-job DAG",
     )
     for row in rows:
+        profile = row.get("training_profile")
+        if profile is None and expected_commit == SUPPORTED_TRAINED_COMMIT:
+            profile = "exposure132"
         _require(
             row.get("commit") == expected_commit,
             f"formal {row.get('job_key')} commit mismatch",
@@ -248,7 +519,7 @@ def _load_formal_completion(
             f"formal {row.get('job_key')} seed mismatch",
         )
         _require(
-            row.get("training_profile") == expected_profile,
+            profile == expected_profile,
             f"formal {row.get('job_key')} training profile mismatch",
         )
     clusters = {row.get("cluster") for row in rows}
@@ -289,7 +560,7 @@ def _load_formal_completion(
     completion = dict(rows[-1])
     _require(completion.get("job_key") == "completion", "formal completion row is missing")
     _require(bool(completion.get("job_name")), "formal completion job name is missing")
-    return completion
+    return completion, digest
 
 
 def _expected_dependencies(rows: Sequence[Mapping[str, str]]) -> dict[str, str]:
@@ -337,9 +608,14 @@ def _validate_receipt(
     aggregate_sha: str,
     submitted_path: Path | None = None,
     submitted_sha: str | None = None,
-) -> tuple[Path, dict[str, Any]]:
-    path, payload = _load_json(path_value, f"{row['job_key']} {expected_status} receipt")
-    _require(sha256_file(path) == expected_sha, f"{row['job_key']} receipt hash mismatch")
+) -> tuple[Path, dict[str, Any], str]:
+    path, payload, observed_sha = _load_json(
+        path_value, f"{row['job_key']} {expected_status} receipt"
+    )
+    _require(
+        observed_sha == expected_sha,
+        f"{row['job_key']} receipt hash mismatch",
+    )
     _validate_embedded_hash(payload, "artifact_sha256", f"{row['job_key']} receipt")
     expected = {
         "schema": RECEIPT_SCHEMA,
@@ -378,12 +654,21 @@ def _validate_receipt(
             f"{row['job_key']} verified receipt lacks scheduler proof",
         )
         _require(
+            validation.get("scheduler_script_verified") is True,
+            f"{row['job_key']} verified receipt lacks scheduler script proof",
+        )
+        _require(
+            validation.get("submission_command_held_verified") is True
+            and validation.get("current_user_hold_verified") is True,
+            f"{row['job_key']} verified receipt lacks frozen held-job proof",
+        )
+        _require(
             submitted_path is not None
             and payload.get("submitted_receipt") == str(submitted_path)
             and payload.get("submitted_receipt_sha256") == submitted_sha,
             f"{row['job_key']} verified receipt lost its submitted receipt",
         )
-    return path, payload
+    return path, payload, observed_sha
 
 
 def finalize_postrun_evidence(
@@ -398,9 +683,10 @@ def finalize_postrun_evidence(
     aggregate_sha256: str,
     final_suite_path: str | Path,
     final_suite_sha256: str,
+    require_postrun_completed: bool = True,
     aggregate_loader: Callable[..., Mapping[str, Any]] = _default_aggregate_loader,
     final_suite_revalidator: Callable[..., Mapping[str, Any]] = (
-        _default_final_suite_revalidator
+        revalidate_trained_suite_exact
     ),
     convergence_rebuilder: Callable[..., Mapping[str, Any]] = (
         _default_convergence_rebuilder
@@ -414,12 +700,23 @@ def finalize_postrun_evidence(
     formal_completion_validator: Callable[..., Mapping[str, Any]] = (
         _default_formal_completion_validator
     ),
+    postrun_terminal_validator: Callable[..., Mapping[str, Any]] = (
+        _default_formal_completion_validator
+    ),
     repository_validator: Callable[[Path, str], None] = (
         _default_repository_validator
     ),
 ) -> dict[str, Any]:
     trained_commit = _require_commit(trained_commit, "trained commit")
     evidence_commit = _require_commit(evidence_commit, "evidence commit")
+    _require(
+        trained_commit == SUPPORTED_TRAINED_COMMIT,
+        "unsupported trained commit for this frozen post-run protocol",
+    )
+    _require(
+        evidence_commit != trained_commit,
+        "trained and evidence commits must be distinct",
+    )
     aggregate_sha256 = _require_hash(aggregate_sha256, "aggregate evidence hash")
     final_suite_sha256 = _require_hash(final_suite_sha256, "final suite hash")
     run_root_path = Path(run_root).expanduser().resolve()
@@ -433,23 +730,109 @@ def finalize_postrun_evidence(
     _require(evidence_root.is_dir(), "evidence repository is missing")
     repository_validator(trained_root, trained_commit)
     repository_validator(evidence_root, evidence_commit)
+    snapshot_records: dict[Path, SnapshotRecord] = {}
 
-    aggregate_file, aggregate_payload = _load_json(
+    aggregate_file, aggregate_payload, aggregate_observed_sha = _load_json(
         aggregate_path, "aggregate suite evidence"
     )
-    final_file, final_payload = _load_json(final_suite_path, "final suite evidence")
+    final_file, final_payload, final_observed_sha = _load_json(
+        final_suite_path, "final suite evidence"
+    )
     _require(
-        sha256_file(aggregate_file) == aggregate_sha256,
+        aggregate_observed_sha == aggregate_sha256,
         "aggregate suite evidence hash mismatch",
     )
     _require(
-        sha256_file(final_file) == final_suite_sha256,
+        final_observed_sha == final_suite_sha256,
         "final suite evidence hash mismatch",
+    )
+    _record_snapshot(
+        snapshot_records,
+        aggregate_file,
+        aggregate_observed_sha,
+        "aggregate suite evidence",
+    )
+    _record_snapshot(
+        snapshot_records,
+        final_file,
+        final_observed_sha,
+        "final suite evidence",
     )
     post_run_paths = {
         variant: run_root_path / "logs" / variant / "post_run_evidence.json"
         for variant in VARIANTS
     }
+    post_run_payloads: dict[str, dict[str, Any]] = {}
+    for variant, path in post_run_paths.items():
+        resolved, payload, digest = _load_json(
+            path, f"{variant} post-run evidence"
+        )
+        _require(resolved == path, f"{variant} post-run path drift")
+        post_run_payloads[variant] = payload
+        _record_snapshot(
+            snapshot_records,
+            resolved,
+            digest,
+            f"{variant} post-run evidence",
+        )
+    for label, record in (
+        ("aggregate real-loader gate", aggregate_payload.get("real_loader_gate")),
+        ("aggregate DDP pilot", aggregate_payload.get("ddp_pilot")),
+    ):
+        if record is not None:
+            _record_hashed_dependency(
+                snapshot_records,
+                record,
+                label,
+            )
+    completed_runs = aggregate_payload.get("completed_runs")
+    if isinstance(completed_runs, Mapping):
+        for variant in VARIANTS:
+            record = completed_runs.get(variant)
+            if record is not None:
+                _record_hashed_dependency(
+                    snapshot_records,
+                    record,
+                    f"{variant} aggregate post-run dependency",
+                    expected_path=post_run_paths[variant],
+                )
+    reference_data = aggregate_payload.get("reference_data_artifacts")
+    if isinstance(reference_data, Mapping):
+        _record_payload_path_hash_pairs(
+            snapshot_records,
+            reference_data,
+            "aggregate reference data",
+        )
+    variant_records = aggregate_payload.get("variants")
+    if isinstance(variant_records, list):
+        for record in variant_records:
+            if not isinstance(record, Mapping):
+                continue
+            validation = record.get("validation")
+            if not isinstance(validation, Mapping):
+                continue
+            config_value = validation.get("config")
+            config_sha = record.get("config_sha256")
+            if config_value is None or config_sha is None:
+                continue
+            relative_config = record.get("config")
+            expected_config = (
+                trained_root / str(relative_config)
+                if relative_config is not None
+                else Path(str(config_value))
+            ).resolve()
+            _record_hashed_dependency(
+                snapshot_records,
+                {"path": config_value, "sha256": config_sha},
+                f"{record.get('name')} trained config",
+                expected_path=expected_config,
+            )
+    for variant, payload in post_run_payloads.items():
+        _record_payload_path_hash_pairs(
+            snapshot_records,
+            payload,
+            f"{variant} post-run dependency",
+        )
     aggregate_binding = aggregate_loader(
         path=aggregate_file,
         expected_sha256=aggregate_sha256,
@@ -458,11 +841,18 @@ def finalize_postrun_evidence(
         post_run_paths=post_run_paths,
     )
     _require(aggregate_binding.get("seed") == aggregate_payload.get("seed"), "aggregate seed drift")
-    formal_completion = _load_formal_completion(
-        run_root_path / "jobs.submitted.tsv",
+    formal_ledger_path = run_root_path / "jobs.submitted.tsv"
+    formal_completion, formal_ledger_sha = _load_formal_completion(
+        formal_ledger_path,
         expected_commit=trained_commit,
         expected_seed=int(aggregate_binding["seed"]),
         expected_profile="exposure132",
+    )
+    _record_snapshot(
+        snapshot_records,
+        formal_ledger_path.resolve(),
+        formal_ledger_sha,
+        "formal submitted-job ledger",
     )
     formal_completion_scheduler = formal_completion_validator(
         job_id=int(formal_completion["job_id"]),
@@ -475,19 +865,93 @@ def finalize_postrun_evidence(
     )
 
     cost_record = final_payload.get("cost_evidence")
+    final_profile = final_payload.get("training_profile")
+    if final_profile is None and trained_commit == SUPPORTED_TRAINED_COMMIT:
+        final_profile = "exposure132"
     _require(
         final_payload.get("schema") == "duca_cellcf_suite_manifest_v1"
         and final_payload.get("ok") is True
         and final_payload.get("status") == "complete"
         and final_payload.get("task") == "offline_temporal_action_detection"
         and final_payload.get("git_commit") == trained_commit
-        and final_payload.get("training_profile") == "exposure132"
+        and final_profile == "exposure132"
         and final_payload.get("seed") == aggregate_binding["seed"]
         and final_payload.get("cost_evidence_required") is True
         and isinstance(cost_record, Mapping)
         and cost_record.get("validated") is True,
         "final suite evidence has invalid completion semantics",
     )
+    cost_evidence_path: Path | None = None
+    for label, record in (
+        ("real-loader gate", aggregate_binding.get("real_loader_gate")),
+        ("DDP pilot", aggregate_binding.get("ddp_pilot")),
+        ("trained-checkpoint cost evidence", cost_record),
+    ):
+        _require(isinstance(record, Mapping), f"{label} binding is missing")
+        resolved, _, digest = _read_snapshot(record.get("path", ""), label)
+        expected_digest = record.get("sha256")
+        if expected_digest is not None:
+            _require(
+                _require_hash(expected_digest, f"{label} bound hash") == digest,
+                f"{label} bound hash mismatch",
+            )
+        _record_snapshot(snapshot_records, resolved, digest, label)
+        if label == "trained-checkpoint cost evidence":
+            cost_evidence_path = resolved
+    _require(cost_evidence_path is not None, "trained-checkpoint cost path is missing")
+    loaded_cost_path, cost_payload, cost_payload_sha = _load_json(
+        cost_evidence_path,
+        "trained-checkpoint cost evidence",
+    )
+    _require(
+        loaded_cost_path == cost_evidence_path
+        and snapshot_records[cost_evidence_path][0] == cost_payload_sha,
+        "trained-checkpoint cost evidence changed before dependency enumeration",
+    )
+    profile_artifacts = cost_payload.get("profile_artifacts")
+    if isinstance(profile_artifacts, Mapping):
+        for group, profile_records in profile_artifacts.items():
+            if not isinstance(profile_records, list):
+                continue
+            for index, profile_record in enumerate(profile_records):
+                if not isinstance(profile_record, Mapping):
+                    continue
+                profile_label = f"{group} cost profile {index}"
+                profile_path = _record_hashed_dependency(
+                    snapshot_records,
+                    profile_record,
+                    profile_label,
+                )
+                loaded_path, profile_payload, profile_sha = _load_json(
+                    profile_path,
+                    profile_label,
+                )
+                _require(
+                    loaded_path == profile_path
+                    and snapshot_records[profile_path][0] == profile_sha,
+                    f"{profile_label} changed before dependency enumeration",
+                )
+                _record_payload_path_hash_pairs(
+                    snapshot_records,
+                    profile_payload,
+                    profile_label,
+                )
+                profile_config_path = profile_payload.get("config_path")
+                profile_config_sha = profile_payload.get(
+                    "profile_config_sha256"
+                )
+                if (
+                    profile_config_path is not None
+                    or profile_config_sha is not None
+                ):
+                    _record_hashed_dependency(
+                        snapshot_records,
+                        {
+                            "path": profile_config_path,
+                            "sha256": profile_config_sha,
+                        },
+                        f"{profile_label} config",
+                    )
     regenerated_final = final_suite_revalidator(
         repo_root=trained_root,
         seed=int(aggregate_binding["seed"]),
@@ -501,11 +965,16 @@ def finalize_postrun_evidence(
     )
     _require(regenerated_final == final_payload, "final suite evidence is not reproducible")
 
-    intent_path, intent = _load_json(
+    intent_path, intent, intent_sha = _load_json(
         control_root_path / "submission_intent.json", "post-run submission intent"
     )
+    _record_snapshot(
+        snapshot_records,
+        intent_path,
+        intent_sha,
+        "post-run submission intent",
+    )
     _validate_embedded_hash(intent, "artifact_sha256", "post-run submission intent")
-    intent_sha = sha256_file(intent_path)
     postrun_output_root = Path(str(intent.get("postrun_output_root") or "")).resolve()
     _require(
         postrun_output_root == control_root_path / "artifacts",
@@ -543,8 +1012,7 @@ def finalize_postrun_evidence(
 
     ledger_path = control_root_path / "jobs.submitted.tsv"
     _require(ledger_path.is_file(), "post-run submitted ledger is missing")
-    ledger_sha = sha256_file(ledger_path)
-    rows = _load_ledger(ledger_path)
+    rows, ledger_sha = _load_ledger(ledger_path)
     expected_dependencies = _expected_dependencies(rows)
     clusters = {row.get("cluster") for row in rows}
     _require(len(clusters) == 1 and None not in clusters, "post-run cluster identity is ambiguous")
@@ -559,6 +1027,7 @@ def finalize_postrun_evidence(
     )
     intent_by_key = {str(record["job_key"]): record for record in intent_jobs}
     scheduler_records = []
+    postrun_terminal_records = []
     receipt_records = []
     for row in rows:
         key = row["job_key"]
@@ -579,12 +1048,19 @@ def finalize_postrun_evidence(
             "job_file_sha256",
         ):
             _require(row.get(field) == str(intent_job.get(field)), f"{key} intent mismatch: {field}")
-        job_file = Path(row["job_file"]).resolve()
+        job_file, _, job_file_observed_sha = _read_snapshot(
+            row["job_file"], f"{key} bound job file"
+        )
         _require(
             job_file == control_root_path / "jobs" / f"{key}.sbatch"
-            and job_file.is_file()
-            and sha256_file(job_file) == row["job_file_sha256"],
+            and job_file_observed_sha == row["job_file_sha256"],
             f"{key} bound job file changed",
+        )
+        _record_snapshot(
+            snapshot_records,
+            job_file,
+            job_file_observed_sha,
+            f"{key} bound job file",
         )
         _require(
             Path(row["submitted_receipt"]).resolve()
@@ -593,7 +1069,7 @@ def finalize_postrun_evidence(
             == control_root_path / "receipts" / f"{key}.verified.json",
             f"{key} receipt path mismatch",
         )
-        submitted_path, _ = _validate_receipt(
+        submitted_path, _, submitted_observed_sha = _validate_receipt(
             row["submitted_receipt"],
             row["submitted_receipt_sha256"],
             expected_status="SUBMITTED_UNVERIFIED",
@@ -604,7 +1080,13 @@ def finalize_postrun_evidence(
             evidence_commit=evidence_commit,
             aggregate_sha=aggregate_sha256,
         )
-        verified_path, _ = _validate_receipt(
+        _record_snapshot(
+            snapshot_records,
+            submitted_path,
+            submitted_observed_sha,
+            f"{key} submitted receipt",
+        )
+        verified_path, _, verified_observed_sha = _validate_receipt(
             row["verified_receipt"],
             row["verified_receipt_sha256"],
             expected_status="VERIFIED",
@@ -617,6 +1099,12 @@ def finalize_postrun_evidence(
             submitted_path=submitted_path,
             submitted_sha=row["submitted_receipt_sha256"],
         )
+        _record_snapshot(
+            snapshot_records,
+            verified_path,
+            verified_observed_sha,
+            f"{key} verified receipt",
+        )
         scheduler = scheduler_validator(
             job_id=int(row["job_id"]),
             job_name=row["job_name"],
@@ -626,9 +1114,28 @@ def finalize_postrun_evidence(
             job_file_sha256=row["job_file_sha256"],
             dependency="" if row["dependency"] == "none" else row["dependency"],
             require_scheduler_script=False,
+            submitted_with_hold=True,
+            require_current_user_hold=False,
         )
-        _require(scheduler.get("ok") is True, f"{key} scheduler revalidation failed")
+        _require(
+            scheduler.get("ok") is True
+            and scheduler.get("submission_command_held_verified") is True,
+            f"{key} scheduler revalidation failed",
+        )
         scheduler_records.append(dict(scheduler))
+        if require_postrun_completed:
+            terminal = postrun_terminal_validator(
+                job_id=int(row["job_id"]),
+                job_name=row["job_name"],
+                cluster=row["cluster"],
+            )
+            _require(
+                terminal.get("ok") is True
+                and terminal.get("state") == "COMPLETED"
+                and terminal.get("exit_code") == "0:0",
+                f"{key} is not externally sealed as COMPLETED/0:0",
+            )
+            postrun_terminal_records.append(dict(terminal))
         receipt_records.append(
             {
                 "job_key": key,
@@ -640,11 +1147,18 @@ def finalize_postrun_evidence(
                     "path": str(verified_path),
                     "sha256": row["verified_receipt_sha256"],
                 },
+                "submission_time_scheduler_script_verified": True,
             }
         )
 
-    manifest_path, manifest = _load_json(
+    manifest_path, manifest, manifest_sha = _load_json(
         control_root_path / "submission_manifest.json",
+        "post-run submission manifest",
+    )
+    _record_snapshot(
+        snapshot_records,
+        manifest_path,
+        manifest_sha,
         "post-run submission manifest",
     )
     _validate_embedded_hash(manifest, "artifact_sha256", "post-run submission manifest")
@@ -676,12 +1190,24 @@ def finalize_postrun_evidence(
     for key, value in expected_manifest.items():
         _require(manifest.get(key) == value, f"submission manifest mismatch: {key}")
 
-    convergence_path, convergence = _load_json(
+    convergence_path, convergence, convergence_sha = _load_json(
         postrun_output_root / "convergence" / "fixed_trajectory.json",
         "fixed convergence trajectory",
     )
-    training_cost_path, training_cost = _load_json(
+    training_cost_path, training_cost, training_cost_sha = _load_json(
         postrun_output_root / "training_cost" / "training_cost_summary.json",
+        "training cost summary",
+    )
+    _record_snapshot(
+        snapshot_records,
+        convergence_path,
+        convergence_sha,
+        "fixed convergence trajectory",
+    )
+    _record_snapshot(
+        snapshot_records,
+        training_cost_path,
+        training_cost_sha,
         "training cost summary",
     )
     for payload, schema, label in (
@@ -711,6 +1237,18 @@ def finalize_postrun_evidence(
 
     convergence_root = postrun_output_root / "convergence"
     evaluation_paths = {}
+    variant_receipt_paths = {
+        variant: convergence_root / variant / "variant_complete.json"
+        for variant in VARIANTS
+    }
+    slurm_cost_paths = {
+        variant: (
+            postrun_output_root
+            / "training_cost"
+            / f"{variant}.slurm_cost.json"
+        )
+        for variant in VARIANTS
+    }
     for variant in VARIANTS:
         evaluation_paths[(variant, 59)] = (
             convergence_root / variant / "epoch_59" / "evaluation.json"
@@ -721,16 +1259,51 @@ def finalize_postrun_evidence(
         evaluation_paths[(variant, 131)] = (
             run_root_path / "logs" / variant / "terminal_evaluation.json"
         )
+    for label, path in (
+        [
+            (f"{variant} trajectory receipt", path)
+            for variant, path in variant_receipt_paths.items()
+        ]
+        + [
+            (f"{variant} epoch-{epoch} evaluation", path)
+            for (variant, epoch), path in evaluation_paths.items()
+        ]
+        + [
+            (f"{variant} Slurm cost evidence", path)
+            for variant, path in slurm_cost_paths.items()
+        ]
+    ):
+        resolved, payload, digest = _load_json(path, label)
+        _record_snapshot(snapshot_records, resolved, digest, label)
+        _record_payload_path_hash_pairs(
+            snapshot_records,
+            payload,
+            label,
+        )
+        checkpoint_value = payload.get("checkpoint_path")
+        if checkpoint_value is not None:
+            sidecar_path, sidecar, sidecar_sha = _load_json(
+                f"{Path(str(checkpoint_value)).expanduser().resolve()}.metadata.json",
+                f"{label} checkpoint sidecar",
+            )
+            _validate_embedded_hash(
+                sidecar,
+                "sidecar_sha256",
+                f"{label} checkpoint sidecar",
+            )
+            _record_snapshot(
+                snapshot_records,
+                sidecar_path,
+                sidecar_sha,
+                f"{label} checkpoint sidecar",
+            )
     rebuilt_convergence = convergence_rebuilder(
         expected_commit=trained_commit,
         expected_evidence_commit=evidence_commit,
         suite_aggregate_path=aggregate_file,
         suite_aggregate_sha256=aggregate_sha256,
         post_run_paths=post_run_paths,
-        variant_receipt_paths={
-            variant: convergence_root / variant / "variant_complete.json"
-            for variant in VARIANTS
-        },
+        variant_receipt_paths=variant_receipt_paths,
         evaluation_paths=evaluation_paths,
     )
     _require(
@@ -743,14 +1316,7 @@ def finalize_postrun_evidence(
         suite_aggregate_path=aggregate_file,
         suite_aggregate_sha256=aggregate_sha256,
         post_run_paths=post_run_paths,
-        slurm_cost_paths={
-            variant: (
-                postrun_output_root
-                / "training_cost"
-                / f"{variant}.slurm_cost.json"
-            )
-            for variant in VARIANTS
-        },
+        slurm_cost_paths=slurm_cost_paths,
     )
     _require(
         rebuilt_training_cost == training_cost,
@@ -764,9 +1330,94 @@ def finalize_postrun_evidence(
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 _require(math.isfinite(float(value)), "convergence contains non-finite metrics")
 
+    completion_row = next(
+        row for row in rows if row["job_key"] == "completion"
+    )
+    completion_scheduler = next(
+        record
+        for record in scheduler_records
+        if int(record["job_id"]) == int(completion_row["job_id"])
+    )
+    candidate_binding = None
+    if require_postrun_completed:
+        candidate_path, candidate, candidate_sha = _load_json(
+            control_root_path / "postrun_evidence_candidate.json",
+            "post-run completion candidate",
+        )
+        _validate_embedded_hash(
+            candidate, "artifact_sha256", "post-run completion candidate"
+        )
+        _require(
+            candidate.get("schema") == CANDIDATE_SCHEMA
+            and candidate.get("ok") is False
+            and candidate.get("status") == "pending_external_seal"
+            and candidate.get("requires_external_seal") is True
+            and candidate.get("trained_git_commit") == trained_commit
+            and candidate.get("evidence_git_commit") == evidence_commit
+            and candidate.get("jobs_ledger", {}).get("sha256") == ledger_sha,
+            "post-run completion candidate identity/status mismatch",
+        )
+        candidate_completion = candidate.get("postrun_completion_job")
+        _require(
+            isinstance(candidate_completion, Mapping)
+            and int(candidate_completion.get("job_id", -1))
+            == int(completion_row["job_id"])
+            and candidate_completion.get("job_name")
+            == completion_row["job_name"]
+            and candidate_completion.get("state_at_evidence_write")
+            in {"RUNNING", "COMPLETING"}
+            and candidate_completion.get("exit_code") is None,
+            "post-run completion candidate was not written by the active completion job",
+        )
+        _require(
+            candidate.get("postrun_terminal_revalidation") == []
+            and candidate.get("candidate_evidence") is None,
+            "post-run completion candidate contains forbidden terminal proof",
+        )
+        _require(
+            candidate.get("aggregate_suite_evidence", {}).get("sha256")
+            == aggregate_sha256
+            and candidate.get("final_suite_evidence", {}).get("sha256")
+            == final_suite_sha256
+            and candidate.get("submission_intent", {}).get("sha256")
+            == intent_sha
+            and candidate.get("submission_manifest", {}).get("sha256")
+            == manifest_sha
+            and candidate.get("artifacts", {})
+            .get("convergence", {})
+            .get("sha256")
+            == convergence_sha
+            and candidate.get("artifacts", {})
+            .get("training_cost", {})
+            .get("sha256")
+            == training_cost_sha,
+            "post-run completion candidate artifact binding mismatch",
+        )
+        _record_snapshot(
+            snapshot_records,
+            candidate_path,
+            candidate_sha,
+            "post-run completion candidate",
+        )
+        candidate_binding = {
+            "path": str(candidate_path),
+            "sha256": candidate_sha,
+        }
+
+    for path, record in snapshot_records.items():
+        _verify_snapshot(path, record)
+
     payload = {
-        "schema": FINAL_SCHEMA,
-        "ok": True,
+        "schema": (
+            FINAL_SCHEMA if require_postrun_completed else CANDIDATE_SCHEMA
+        ),
+        "ok": bool(require_postrun_completed),
+        "status": (
+            "complete"
+            if require_postrun_completed
+            else "pending_external_seal"
+        ),
+        "requires_external_seal": not require_postrun_completed,
         "task": "offline_temporal_action_detection",
         "training_profile": "exposure132",
         "trained_git_commit": trained_commit,
@@ -785,22 +1436,32 @@ def finalize_postrun_evidence(
         },
         "submission_manifest": {
             "path": str(manifest_path),
-            "sha256": sha256_file(manifest_path),
+            "sha256": manifest_sha,
         },
         "jobs_ledger": {"path": str(ledger_path), "sha256": ledger_sha},
         "receipts": receipt_records,
         "scheduler_revalidation": scheduler_records,
+        "postrun_terminal_revalidation": postrun_terminal_records,
+        "postrun_completion_job": {
+            "job_id": int(completion_row["job_id"]),
+            "job_name": completion_row["job_name"],
+            "state_at_evidence_write": completion_scheduler["state"],
+            "exit_code": (
+                "0:0" if require_postrun_completed else None
+            ),
+        },
         "formal_completion_scheduler_revalidation": dict(
             formal_completion_scheduler
         ),
+        "candidate_evidence": candidate_binding,
         "artifacts": {
             "convergence": {
                 "path": str(convergence_path),
-                "sha256": sha256_file(convergence_path),
+                "sha256": convergence_sha,
             },
             "training_cost": {
                 "path": str(training_cost_path),
-                "sha256": sha256_file(training_cost_path),
+                "sha256": training_cost_sha,
             },
         },
     }
@@ -826,6 +1487,25 @@ def _exclusive_write_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
     return target
 
 
+def validate_seal_execution_context(
+    *,
+    candidate: bool,
+    slurm_job_id: str | None,
+) -> int | None:
+    normalized = str(slurm_job_id or "").strip()
+    if candidate:
+        _require(
+            re.fullmatch(r"[1-9][0-9]*", normalized) is not None,
+            "candidate evidence must be written by its Slurm completion job",
+        )
+        return int(normalized)
+    _require(
+        not normalized,
+        "final evidence seal must run outside every Slurm allocation",
+    )
+    return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-root", required=True)
@@ -839,7 +1519,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--final-suite", required=True)
     parser.add_argument("--final-suite-sha256", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--candidate", action="store_true")
     args = parser.parse_args(argv)
+    control_root = Path(args.control_root).expanduser().resolve()
+    expected_output = control_root / (
+        "postrun_evidence_candidate.json"
+        if args.candidate
+        else "postrun_evidence_complete.json"
+    )
+    _require(
+        Path(args.output).expanduser().resolve() == expected_output,
+        "post-run output path does not match candidate/final mode",
+    )
+    active_slurm_job_id = validate_seal_execution_context(
+        candidate=args.candidate,
+        slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+    )
     payload = finalize_postrun_evidence(
         run_root=args.run_root,
         control_root=args.control_root,
@@ -851,7 +1546,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         aggregate_sha256=args.aggregate_sha256,
         final_suite_path=args.final_suite,
         final_suite_sha256=args.final_suite_sha256,
+        require_postrun_completed=not args.candidate,
     )
+    if args.candidate:
+        _require(
+            payload.get("postrun_completion_job", {}).get("job_id")
+            == active_slurm_job_id,
+            "candidate evidence was written by the wrong Slurm job",
+        )
     _exclusive_write_json(args.output, payload)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

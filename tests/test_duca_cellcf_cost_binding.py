@@ -426,6 +426,10 @@ def test_formal_profile_cli_and_launcher_require_post_run_path_and_sha(tmp_path:
     launcher = (root / "scripts" / "run_duca_cellcf_cost_pair.sh").read_text(encoding="utf-8")
     assert "DUCA_CELLCF_POST_RUN_EVIDENCE_JSON" in launcher
     assert "DUCA_CELLCF_POST_RUN_EVIDENCE_SHA256" in launcher
+    assert "DUCA_EVIDENCE_EXPECTED_COMMIT" in launcher
+    assert "git status --porcelain" in launcher
+    assert launcher.count('--evidence-commit "${EVIDENCE_COMMIT}"') == 2
+    assert launcher.count('--config-commit "${EXPECTED_COMMIT}"') == 2
     assert launcher.count('--post-run-evidence "${POST_RUN_EVIDENCE}"') == 3
     assert launcher.count('--post-run-evidence-sha256 "${POST_RUN_EVIDENCE_SHA256}"') == 3
     assert ".summary.json" in launcher
