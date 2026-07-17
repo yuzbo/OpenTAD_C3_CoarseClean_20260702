@@ -106,6 +106,7 @@ workflow = dict(
     val_eval_interval_anchor_epoch=9999,
     val_start_epoch=9999,
     end_epoch=duca_end_epoch,
+    training_profile="exposure132",
     formal_successful_update_contract=True,
     expected_train_batches_per_epoch=duca_schedule_steps_per_epoch,
     expected_successful_optimizer_updates=duca_loss_schedule_total_steps,
