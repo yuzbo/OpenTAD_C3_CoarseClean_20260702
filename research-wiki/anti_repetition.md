@@ -45,6 +45,22 @@ updated: 2026-07-17
     an independently scheduled UUID-bound sampler process, preserve the raw
     failure trace, and pass a representative long-duration no-open stress Gate
     before any replacement matrix.
+14. A locally passing sidecar implementation is not a passed Gate. Do not
+    submit a replacement matrix until a clean remote snapshot completes the
+    full 792-exposure dense256/seed3408 path with the frozen 20/100 ms cadence,
+    4+1 CPU isolation, UUID parity, unchanged test-evidence hash, and no formal
+    profile publication. Submit exactly one serial matrix only after that Gate.
+15. Do not require a separately scheduled Gate and matrix to receive the same
+    physical GPU UUID. The Gate must bind its own actual UUID; the matrix must
+    match the Gate's stable hardware/software class, bind its own actual UUID,
+    and keep all nine cells in one allocation on one physical GPU.
+16. Do not pair a sidecar report with an independently selected trace. Every
+    consumer must use the shared attempt validator and recompute trace hash and
+    cadence. Partial salvage may publish a missing hash-matching counterpart
+    but must never overwrite an existing report or trace.
+17. A matrix namespace is single-use. The persistent atomic matrix lock and
+    start/completion receipts are evidence, not temporary scheduling files.
+    Never remove a failed lock to resume or duplicate the same campaign.
 
 ## 任务与叙事
 

@@ -71,9 +71,12 @@ rule remain identical.
    test predictions and profile the same selected checkpoint. Profiling reuses
    the official single-rank
    DDP result aggregation/NMS path, the complete test loader, batch size 1,
-   zero workers, 50 warmups, a persistent native-NVML 20 ms power sampler with
-   raw trace,
-   and one canonical output prefix. Cost claims are limited to same-node,
+   zero workers, 50 warmups, and a UUID-bound native-NVML sidecar process at
+   the frozen 20 ms interval. The Slurm allocation exposes exactly five CPUs:
+   four remain bound to the detector and one is reserved for the sidecar.
+   Sampling uses `time.monotonic_ns`, preserves a sequence-numbered raw trace
+   and a self-hashed attempt report even when profile validation fails, and
+   uses one canonical output prefix. Cost claims are limited to same-node,
    same-GPU, warm serial per-window latency and gross GPU energy; they do not
    represent cold-start, whole-video latency, incremental energy, or CPU and
    storage energy.
@@ -138,3 +141,34 @@ rule remain identical.
   20 ms target and 100 ms limit, and require a versioned chained recovery
   certificate preserving both failed attempts plus the diagnostic before
   another matrix can start.
+- Serial profile Job `1167538` falsified the sufficiency of the short
+  in-process NVML Gate: the first full 792-exposure path reached
+  `2413.519` ms maximum sampling gap at about 60.7 GiB RSS. The replacement
+  recovery is therefore v3 and binds Job `1167538`, rejects the old
+  `nvml-persistent-poll-v1` backend, and requires
+  `nvml-sidecar-process-v1`. Before any replacement matrix, a representative
+  dense256/seed3408 no-new-test-open Gate must execute all 792 exposures and
+  official finalization with at least 90,000 MiB allocated memory. It may
+  publish only its sidecar trace/report and a self-hashed Gate record, never a
+  formal profile, prediction, latency table, or descriptor. Every formal cell
+  recursively validates that Gate record. The Gate attempt is bound to the
+  actual GPU UUID assigned to its own Slurm job. A later matrix allocation need
+  not receive that same physical UUID, but its stable GPU/CPU/resource class
+  and software fingerprint must match the Gate. All nine matrix cells must
+  still run serially in one allocation on one physical GPU, and each cell's
+  sidecar is bound to that allocation's actual UUID.
+- Attempt report and raw trace are validated as one indivisible pair by the
+  profiler, Gate, descriptor builder, and final analyzer: self-hash, exact
+  trace hash/path, recomputed cadence, monotonic clock, UUID, affinity, and
+  child records must all agree. A launcher-level salvage path seals node-local
+  samples as an immutable FAIL attempt if the detector worker exits before
+  normal finalization; if only one artifact exists it may complete only the
+  missing hash-matching artifact, never overwrite the survivor. If the attempt
+  was already sealed, salvage publishes a separate immutable parent-failure
+  record instead of rewriting the attempt.
+- The serial matrix acquires an atomic, persistent campaign lock before any
+  cell starts and publishes self-hashed start/completion receipts. A failed
+  matrix never releases that lock; retry requires a new certificate-bound
+  campaign. The current local S1 suite reports `61 passed, 4 skipped`; three
+  Linux real-subprocess lifecycle/failure cases must execute remotely, while
+  the CUDA-only parity case remains mandatory in the formal GPU precheck.

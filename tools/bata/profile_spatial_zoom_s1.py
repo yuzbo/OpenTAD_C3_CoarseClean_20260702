@@ -38,11 +38,20 @@ from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
     write_profile_summary,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
+    S1_SIDECAR_RECOVERY_REASON,
     load_profile_recovery_certificate,
     profile_campaign_prefix,
 )
 from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
-    NvmlPowerSampler as PowerSampler,
+    NvmlSidecarPowerSampler as PowerSampler,
+)
+from tools.bata.spatial_zoom_s1_sidecar_gate import (  # noqa: E402
+    build_sidecar_gate_evidence,
+    load_sidecar_gate_evidence,
+    sidecar_gate_path,
+    sidecar_gate_profile_prefix,
+    validate_sidecar_gate_runtime_identity,
+    write_sidecar_gate_evidence,
 )
 from tools.bata.validate_spatial_zoom_s1 import validate_config_matrix  # noqa: E402
 from tools.bata.spatial_zoom_s1_test_open import (  # noqa: E402
@@ -58,7 +67,7 @@ from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
     validate_s1_checkpoint_sidecar,
 )
 
-S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v5"
+S1_PROFILE_ATTEMPT_SCHEMA = "spatial_zoom_s1_profile_attempt_v6"
 
 
 def _canonical_hash(value: Any) -> str:
@@ -128,11 +137,20 @@ def validate_profile_order_ready(
         summary_path = prefix.with_suffix(".summary.json")
         samples_path = prefix.with_suffix(".samples.jsonl")
         power_path = prefix.with_suffix(".power.jsonl")
+        power_attempt_path = Path(f"{prefix}.power_attempt.json")
+        power_attempt_trace_path = Path(f"{prefix}.power_attempt.jsonl")
         ordinal = int(row["ordinal"])
         if ordinal < int(current["ordinal"]):
             if not all(
                 path.is_file()
-                for path in (marker_path, summary_path, samples_path, power_path)
+                for path in (
+                    marker_path,
+                    summary_path,
+                    samples_path,
+                    power_path,
+                    power_attempt_path,
+                    power_attempt_trace_path,
+                )
             ):
                 raise RuntimeError(
                     f"S1 profile order requires completed cell ordinal {ordinal}"
@@ -172,11 +190,22 @@ def validate_profile_order_ready(
                 raise ValueError(
                     f"completed S1 profile ordinal {ordinal} sample trace mismatch"
                 )
+            if (
+                sha256_file(power_attempt_path)
+                != prior["power_attempt_report_file_sha256"]
+                or sha256_file(power_attempt_trace_path)
+                != prior["power_attempt_trace_file_sha256"]
+            ):
+                raise ValueError(
+                    f"completed S1 profile ordinal {ordinal} sidecar attempt mismatch"
+                )
         elif ordinal == int(current["ordinal"]) and (
             marker_path.exists()
             or summary_path.exists()
             or samples_path.exists()
             or power_path.exists()
+            or power_attempt_path.exists()
+            or power_attempt_trace_path.exists()
         ):
             raise RuntimeError(f"S1 profile cell ordinal {ordinal} was already started")
         elif ordinal > int(current["ordinal"]) and (
@@ -184,6 +213,8 @@ def validate_profile_order_ready(
             or summary_path.exists()
             or samples_path.exists()
             or power_path.exists()
+            or power_attempt_path.exists()
+            or power_attempt_trace_path.exists()
         ):
             raise RuntimeError(
                 f"S1 profile cell ordinal {ordinal} started before its turn"
@@ -375,7 +406,13 @@ def _software_identity(torch_module: Any) -> dict[str, Any]:
 
 
 def _hardware_identity(
-    torch_module: Any, device: Any, *, physical_gpu_id: str
+    torch_module: Any,
+    device: Any,
+    *,
+    physical_gpu_id: str,
+    allocated_cpu_ids: tuple[int, ...],
+    detector_cpu_ids: tuple[int, ...],
+    sidecar_cpu_id: int,
 ) -> dict[str, Any]:
     properties = torch_module.cuda.get_device_properties(device)
     query_fields = (
@@ -437,7 +474,31 @@ def _hardware_identity(
         "gpu_multi_processor_count": int(properties.multi_processor_count),
         "physical_gpu_id": str(physical_gpu_id),
         "nvidia_smi": dict(zip(query_fields, values)),
+        "slurm_resources": {
+            "cpus_per_task": int(os.environ.get("SLURM_CPUS_PER_TASK", -1)),
+            "mem_per_node_mb": int(os.environ.get("SLURM_MEM_PER_NODE", -1)),
+            "allocated_cpu_ids": list(allocated_cpu_ids),
+            "detector_cpu_ids": list(detector_cpu_ids),
+            "sidecar_cpu_id": int(sidecar_cpu_id),
+            "detector_process_affinity": (
+                sorted(os.sched_getaffinity(0))
+                if hasattr(os, "sched_getaffinity")
+                else None
+            ),
+        },
     }
+
+
+def _cpu_ids(value: str) -> tuple[int, ...]:
+    try:
+        parsed = tuple(
+            sorted(int(field.strip()) for field in value.split(",") if field.strip())
+        )
+    except ValueError as exc:
+        raise ValueError(f"invalid S1 CPU list: {value!r}") from exc
+    if not parsed or len(set(parsed)) != len(parsed):
+        raise ValueError(f"invalid S1 CPU list: {value!r}")
+    return parsed
 
 
 def _dataset_video_ids(dataset: Any) -> set[str]:
@@ -539,12 +600,52 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         binding=binding,
         verify_checkout=True,
     )
+    if recovery.get("reason") != S1_SIDECAR_RECOVERY_REASON:
+        raise ValueError("formal S1 profile requires the v3 sidecar recovery")
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
-    canonical_prefix = profile_campaign_prefix(
-        recovery, resolution=resolution, seed=int(args.seed)
-    )
+    gate_mode = bool(args.sidecar_gate)
+    if gate_mode:
+        if (resolution, int(args.seed)) != (256, 3408):
+            raise ValueError("the representative S1 sidecar Gate is dense256/seed3408")
+        canonical_prefix = sidecar_gate_profile_prefix(recovery)
+        if args.sidecar_gate_evidence.resolve() != sidecar_gate_path(recovery):
+            raise ValueError("S1 sidecar Gate output is outside its campaign")
+        if args.sidecar_gate_evidence.exists():
+            raise FileExistsError("S1 sidecar Gate evidence already exists")
+        sidecar_gate = None
+    else:
+        canonical_prefix = profile_campaign_prefix(
+            recovery, resolution=resolution, seed=int(args.seed)
+        )
+        sidecar_gate = load_sidecar_gate_evidence(
+            args.sidecar_gate_evidence.resolve(),
+            recovery=recovery,
+        )
     if Path(args.output_prefix).resolve() != canonical_prefix:
         raise ValueError(f"formal S1 profile output prefix must be {canonical_prefix}")
+    allocated_cpu_ids = _cpu_ids(str(args.allocated_cpus))
+    detector_cpu_ids = _cpu_ids(str(args.detector_cpus))
+    sidecar_cpu_id = int(args.sidecar_cpu)
+    if (
+        len(allocated_cpu_ids) != int(recovery["allocated_cpu_count"])
+        or len(detector_cpu_ids) != int(recovery["detector_cpu_count"])
+        or sidecar_cpu_id in detector_cpu_ids
+        or set(detector_cpu_ids) | {sidecar_cpu_id} != set(allocated_cpu_ids)
+    ):
+        raise ValueError("formal S1 profile CPU partition violates the v3 recovery")
+    if (
+        int(os.environ.get("SLURM_CPUS_PER_TASK", -1))
+        != int(recovery["allocated_cpu_count"])
+        or not hasattr(os, "sched_getaffinity")
+        or tuple(sorted(os.sched_getaffinity(0))) != detector_cpu_ids
+    ):
+        raise RuntimeError("formal S1 detector process lacks its four-CPU affinity")
+    power_scratch_root = Path(args.power_scratch_root).resolve()
+    if (
+        str(power_scratch_root).startswith("/data/")
+        or str(power_scratch_root).startswith("/home/")
+    ):
+        raise ValueError("S1 sidecar scratch must use node-local storage")
     device = torch.device(args.device)
     if str(device) != "cuda:0":
         raise ValueError("formal S1 profiler requires the Slurm-local cuda:0 device")
@@ -555,11 +656,22 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     torch.cuda.set_device(device)
     set_seed(int(args.seed), deterministic_warn_only=False)
     hardware_identity = _hardware_identity(
-        torch, device, physical_gpu_id=str(args.power_gpu_id)
+        torch,
+        device,
+        physical_gpu_id=str(args.power_gpu_id),
+        allocated_cpu_ids=allocated_cpu_ids,
+        detector_cpu_ids=detector_cpu_ids,
+        sidecar_cpu_id=sidecar_cpu_id,
     )
     software_identity = _software_identity(torch)
     hardware_fingerprint = canonical_sha256(hardware_identity)
     software_fingerprint = canonical_sha256(software_identity)
+    if sidecar_gate is not None:
+        validate_sidecar_gate_runtime_identity(
+            sidecar_gate,
+            hardware_identity=hardware_identity,
+            software_fingerprint=software_fingerprint,
+        )
 
     dataset_cfg = copy.deepcopy(cfg.dataset.test)
     dataset_cfg.test_mode = True
@@ -587,6 +699,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         cfg=cfg,
         seed=int(args.seed),
     )
+    test_evidence_file_sha256_before = sha256_file(test_evidence_path)
     if (
         Path(test_evidence["checkpoint_path"]).resolve() != checkpoint_path.resolve()
         or test_evidence["test_open_certificate_sha256"]
@@ -634,6 +747,15 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
             "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
             "profile_recovery_campaign_id": recovery["campaign_id"],
+            "gate_only": gate_mode,
+            "power_sampler_backend": recovery["power_sampler_backend"],
+            "allocated_cpu_ids": list(allocated_cpu_ids),
+            "detector_cpu_ids": list(detector_cpu_ids),
+            "sidecar_cpu_id": sidecar_cpu_id,
+            "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+            "sidecar_gate_sha256": (
+                None if sidecar_gate is None else sidecar_gate["gate_sha256"]
+            ),
         },
     )
     dataset_cfg.subset_name = manifest["annotation_subsets"]["sealed_test"]
@@ -755,9 +877,22 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     if not args.sample_power or not args.amp:
         raise ValueError("formal S1 profiler requires --sample-power and --amp")
     if args.sample_power:
+        scratch_dir = (
+            power_scratch_root
+            / (
+                f"job{os.environ.get('SLURM_JOB_ID', 'unknown')}"
+                f"_dense{resolution}_seed{int(args.seed)}"
+                f"_{'gate' if gate_mode else 'formal'}"
+            )
+        )
         power_sampler = PowerSampler(
             expected_uuid=hardware_identity["nvidia_smi"]["uuid"],
             interval_ms=args.power_interval_ms,
+            scratch_dir=scratch_dir,
+            attempt_prefix=canonical_prefix,
+            sidecar_cpu_id=sidecar_cpu_id,
+            detector_cpu_ids=detector_cpu_ids,
+            allocated_cpu_ids=allocated_cpu_ids,
         )
         power_sampler.start()
         time.sleep(power_sampler.interval_s * 1.5)
@@ -770,7 +905,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         for ordinal in range(measured_windows):
             synchronize()
             continuous_started = time.perf_counter()
-            start_energy = continuous_started
+            start_energy = time.monotonic_ns() / 1_000_000_000.0
             cpu_batch, input_ms = _measure_wall_ms(next_batch, synchronize=synchronize)
             identity = _sample_identity(cpu_batch, ordinal)
             if (
@@ -796,8 +931,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             for result_video, rows in post_result.items():
                 video_rows.setdefault(str(result_video), []).extend(rows)
             synchronize()
-            end_energy = time.perf_counter()
-            continuous_ms = (end_energy - continuous_started) * 1000.0
+            continuous_ended = time.perf_counter()
+            end_energy = time.monotonic_ns() / 1_000_000_000.0
+            continuous_ms = (continuous_ended - continuous_started) * 1000.0
             sample = {
                 "input_pipeline_serial_ms": input_ms,
                 "h2d_ms": h2d_ms,
@@ -822,12 +958,12 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             energy_windows.append((start_energy, end_energy))
             del cpu_batch, gpu_batch, post_result
         synchronize()
-        final_started = time.perf_counter()
+        final_started = time.monotonic_ns() / 1_000_000_000.0
         finalized_results = gather_ddp_results(
             world_size, video_rows, cfg.post_processing
         )
         synchronize()
-        final_ended = time.perf_counter()
+        final_ended = time.monotonic_ns() / 1_000_000_000.0
         final_result_energy_window = (final_started, final_ended)
         if not isinstance(finalized_results, Mapping) or not set(
             finalized_results
@@ -840,13 +976,19 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             sample["final_video_nms_ms"] = amortized_ms
             sample["end_to_end_serial_ms"] += amortized_ms
     finally:
+        stop_error = None
         if power_sampler is not None:
-            time.sleep(power_sampler.interval_s * 1.5)
-            power_sampler.stop()
+            try:
+                time.sleep(power_sampler.interval_s * 1.5)
+                power_sampler.stop()
+            except Exception as exc:
+                stop_error = exc
         events.close()
         head_event.close()
         forward_test_event.close()
         postprocess_event.close()
+        if stop_error is not None:
+            raise stop_error
 
     if power_sampler is not None:
         for sample, (start, end) in zip(samples, energy_windows):
@@ -909,7 +1051,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "power_gpu_id": str(args.power_gpu_id) if args.sample_power else None,
         "power_interval_ms": int(args.power_interval_ms) if args.sample_power else None,
         "checkpoint_state_key": state_key,
-        "formal_profile": True,
+        "formal_profile": not gate_mode,
         "sample_manifest_sha256": canonical_sha256(sample_manifest),
         "physical_window_manifest_sha256": canonical_sha256(physical_manifest),
         "loader_exposure_count": exposure_topology["loader_exposure_count"],
@@ -938,8 +1080,45 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
+        "power_attempt_report_path": str(power_sampler.attempt_report_path),
+        "power_attempt_report_file_sha256": sha256_file(
+            power_sampler.attempt_report_path
+        ),
+        "power_attempt_sha256": power_sampler.attempt_report["attempt_sha256"],
+        "power_attempt_trace_path": str(power_sampler.attempt_trace_path),
+        "power_attempt_trace_file_sha256": sha256_file(
+            power_sampler.attempt_trace_path
+        ),
+        "power_attempt_cadence": power_sampler.attempt_report["cadence"],
+        "allocated_cpu_ids": list(allocated_cpu_ids),
+        "detector_cpu_ids": list(detector_cpu_ids),
+        "sidecar_cpu_id": sidecar_cpu_id,
+        "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+        "sidecar_gate_evidence_file_sha256": (
+            None
+            if sidecar_gate is None
+            else sha256_file(sidecar_gate_path(recovery))
+        ),
+        "sidecar_gate_sha256": (
+            None if sidecar_gate is None else sidecar_gate["gate_sha256"]
+        ),
     }
-    return build_profile_summary(samples, metadata=metadata, power_trace=power_trace)
+    report = build_profile_summary(
+        samples, metadata=metadata, power_trace=power_trace
+    )
+    if gate_mode:
+        gate_evidence = build_sidecar_gate_evidence(
+            recovery=recovery,
+            profile_report=report,
+            marker_path=marker_path,
+            attempt_report_path=power_sampler.attempt_report_path,
+            attempt_trace_path=power_sampler.attempt_trace_path,
+            test_evidence_path=test_evidence_path,
+            test_evidence_file_sha256_before=test_evidence_file_sha256_before,
+            slurm_job_id=os.environ.get("SLURM_JOB_ID", ""),
+        )
+        write_sidecar_gate_evidence(gate_evidence, recovery=recovery)
+    return report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -954,6 +1133,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-open-certificate", type=Path, required=True)
     parser.add_argument("--test-evidence", type=Path, required=True)
     parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
+    parser.add_argument("--sidecar-gate-evidence", type=Path, required=True)
+    parser.add_argument("--sidecar-gate", action="store_true")
     parser.add_argument("--output-prefix", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, required=True)
@@ -966,6 +1147,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-power", action="store_true")
     parser.add_argument("--power-gpu-id", default="")
     parser.add_argument("--power-interval-ms", type=int, default=20)
+    parser.add_argument("--power-scratch-root", type=Path, required=True)
+    parser.add_argument("--allocated-cpus", required=True)
+    parser.add_argument("--detector-cpus", required=True)
+    parser.add_argument("--sidecar-cpu", type=int, required=True)
     parser.add_argument("--compare-baseline", type=Path)
     return parser
 
@@ -973,11 +1158,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.sidecar_gate and args.compare_baseline:
+            raise ValueError("S1 sidecar Gate cannot create a profile comparison")
         summary_path = args.output_prefix.with_suffix(".summary.json")
         samples_path = args.output_prefix.with_suffix(".samples.jsonl")
         power_path = args.output_prefix.with_suffix(".power.jsonl")
         comparison_path = args.output_prefix.with_suffix(".comparison.json")
-        output_paths = [summary_path, samples_path, power_path]
+        output_paths = (
+            [args.sidecar_gate_evidence]
+            if args.sidecar_gate
+            else [summary_path, samples_path, power_path]
+        )
         if args.compare_baseline:
             output_paths.append(comparison_path)
         existing = [str(path) for path in output_paths if path.exists()]
@@ -986,6 +1177,16 @@ def main(argv: list[str] | None = None) -> int:
                 f"refusing to overwrite formal S1 profile artifacts: {existing}"
             )
         report = profile(args)
+        if args.sidecar_gate:
+            outputs = {"sidecar_gate": str(args.sidecar_gate_evidence.resolve())}
+            print(
+                json.dumps(
+                    {"status": "PASS", "outputs": outputs},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         samples_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_publish_text(
             samples_path,

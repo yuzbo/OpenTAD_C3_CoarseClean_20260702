@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from tools.bata.profile_spatial_zoom_s1 import (  # noqa: E402
     _dataset_exposure_topology,
     _dataset_video_ids,
     _hardware_identity,
+    _cpu_ids,
     _software_identity,
     validate_profile_order_ready,
 )
@@ -24,6 +26,10 @@ from tools.bata.spatial_zoom_s1_evidence import (  # noqa: E402
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     load_profile_recovery_certificate,
+)
+from tools.bata.spatial_zoom_s1_sidecar_gate import (  # noqa: E402
+    load_sidecar_gate_evidence,
+    validate_sidecar_gate_runtime_identity,
 )
 from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     canonical_sha256,
@@ -48,7 +54,11 @@ def run_profile_preflight(
     checkpoint_path: str | Path,
     certificate_path: str | Path,
     profile_recovery_certificate_path: str | Path,
+    sidecar_gate_evidence_path: str | Path,
     test_evidence_path: str | Path,
+    allocated_cpus: str,
+    detector_cpus: str,
+    sidecar_cpu: int,
 ) -> dict[str, object]:
     cfg = Config.fromfile(str(Path(config_path).resolve()))
     binding = validate_bound_s1_training_config(cfg, seed=int(seed))
@@ -61,6 +71,27 @@ def run_profile_preflight(
         binding=binding,
         verify_checkout=True,
     )
+    sidecar_gate = load_sidecar_gate_evidence(
+        sidecar_gate_evidence_path,
+        recovery=recovery,
+    )
+    allocated_cpu_ids = _cpu_ids(allocated_cpus)
+    detector_cpu_ids = _cpu_ids(detector_cpus)
+    sidecar_cpu_id = int(sidecar_cpu)
+    if (
+        len(allocated_cpu_ids) != int(recovery["allocated_cpu_count"])
+        or len(detector_cpu_ids) != int(recovery["detector_cpu_count"])
+        or sidecar_cpu_id in detector_cpu_ids
+        or set(detector_cpu_ids) | {sidecar_cpu_id} != set(allocated_cpu_ids)
+    ):
+        raise ValueError("S1 profile preflight CPU partition violates the recovery")
+    if (
+        int(os.environ.get("SLURM_CPUS_PER_TASK", -1))
+        != int(recovery["allocated_cpu_count"])
+        or not hasattr(os, "sched_getaffinity")
+        or tuple(sorted(os.sched_getaffinity(0))) != detector_cpu_ids
+    ):
+        raise RuntimeError("S1 profile preflight lacks its four-CPU affinity")
 
     import torch
 
@@ -68,10 +99,22 @@ def run_profile_preflight(
         raise RuntimeError("S1 profile preflight requires CUDA")
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
-    hardware_fingerprint = canonical_sha256(
-        _hardware_identity(torch, device, physical_gpu_id=physical_gpu_id)
+    hardware_identity = _hardware_identity(
+        torch,
+        device,
+        physical_gpu_id=physical_gpu_id,
+        allocated_cpu_ids=allocated_cpu_ids,
+        detector_cpu_ids=detector_cpu_ids,
+        sidecar_cpu_id=sidecar_cpu_id,
     )
-    software_fingerprint = canonical_sha256(_software_identity(torch))
+    software_identity = _software_identity(torch)
+    hardware_fingerprint = canonical_sha256(hardware_identity)
+    software_fingerprint = canonical_sha256(software_identity)
+    validate_sidecar_gate_runtime_identity(
+        sidecar_gate,
+        hardware_identity=hardware_identity,
+        software_fingerprint=software_fingerprint,
+    )
 
     manifest_path = Path(manifest_path).resolve()
     annotation_path = Path(annotation_path).resolve()
@@ -168,6 +211,7 @@ def run_profile_preflight(
         "test_open_certificate_sha256": certificate["certificate_sha256"],
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
+        "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
         "reuse_test_evidence": reuse_test_evidence,
         "loader_exposure_count": topology["loader_exposure_count"],
         "physical_window_count": topology["physical_window_count"],
@@ -185,7 +229,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--test-open-certificate", type=Path, required=True)
     parser.add_argument("--profile-recovery-certificate", type=Path, required=True)
+    parser.add_argument("--sidecar-gate-evidence", type=Path, required=True)
     parser.add_argument("--test-evidence", type=Path, required=True)
+    parser.add_argument("--allocated-cpus", required=True)
+    parser.add_argument("--detector-cpus", required=True)
+    parser.add_argument("--sidecar-cpu", type=int, required=True)
     args = parser.parse_args(argv)
     try:
         result = run_profile_preflight(
@@ -196,7 +244,11 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint_path=args.checkpoint,
             certificate_path=args.test_open_certificate,
             profile_recovery_certificate_path=args.profile_recovery_certificate,
+            sidecar_gate_evidence_path=args.sidecar_gate_evidence,
             test_evidence_path=args.test_evidence,
+            allocated_cpus=args.allocated_cpus,
+            detector_cpus=args.detector_cpus,
+            sidecar_cpu=args.sidecar_cpu,
         )
     except Exception as exc:
         print(

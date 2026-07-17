@@ -57,6 +57,15 @@ cadence failure still leaves auditable raw evidence. Formal profile
 summary/sample/power/descriptor publication remains transactional and occurs
 only after all validation passes.
 
+If the detector worker exits before its Python `finally` block completes, the
+Slurm launcher invokes a certificate-bound salvage entrypoint. It terminates
+the sidecar if still alive, copies the node-local trace once, and publishes an
+immutable self-hashed FAIL report. If the sidecar attempt was already sealed
+successfully before a later detector/profile failure, salvage leaves that
+attempt immutable and publishes a separate parent-failure record bound to both
+attempt artifacts. Salvage is idempotent and never converts a failed parent
+flow into a valid profile.
+
 Successful formal summaries and descriptors bind the attempt report and raw
 attempt trace hashes. Old in-process profiles are rejected by the new backend
 and metadata schema.
@@ -73,9 +82,11 @@ The Gate:
 - performs the complete 792-exposure model/profile/finalizer path;
 - publishes no paper profile, latency table, new prediction, or descriptor;
 - publishes only sidecar attempt evidence and a self-hashed Gate result;
-- requires the same UUID, CPU partition, memory allocation, software
-  fingerprint, recovery certificate, and full exposure topology intended for
-  the matrix.
+- binds the Gate sidecar to the actual UUID assigned to the Gate job;
+- requires the matrix to match the Gate's stable GPU/CPU/resource class,
+  software fingerprint, recovery certificate, and full exposure topology.
+  A separate matrix allocation may receive a different physical UUID, but
+  every matrix attempt must bind to its own actual UUID.
 
 Any sample gap above 100 ms, child crash, timeout, UUID mismatch, affinity
 drift, missing raw trace, or hash mismatch fails closed. A matrix launcher must
@@ -88,8 +99,13 @@ serially on one node and physical GPU. All cells use the same five-CPU
 allocation with four detector CPUs plus one sidecar CPU and sufficient memory
 headroom. The existing dense256/seed3408 test evidence is reused, not reopened.
 
-The matrix cannot resume a failed campaign. Receipt and immutable namespace
-checks prevent duplicate submission.
+Before the first cell, the matrix atomically creates a persistent campaign
+lock and self-hashed start receipt binding the Slurm job, recovery certificate,
+Gate, code commit, resources, and frozen order. Concurrent or repeated jobs
+fail at lock acquisition. A successful matrix adds a self-hashed completion
+receipt binding all nine descriptors. The lock is never removed after failure,
+so the matrix cannot resume a failed campaign; a new audited recovery campaign
+is required.
 
 ## Tests
 
@@ -100,10 +116,16 @@ Focused tests cover:
 - child crash, timeout, malformed or non-monotonic records;
 - sparse trace rejection without interpolation;
 - raw failure-trace and attempt-report preservation;
+- trace-only and report-only partial-state recovery without overwriting the
+  surviving artifact;
+- descriptor/analyzer rejection when an attempt report is paired with a
+  different raw trace;
 - immutable no-overwrite behavior and self-hashes;
 - cross-process monotonic timestamp integration;
+- a real Linux `Popen -> ready -> sample -> SIGTERM -> PASS` child lifecycle;
 - Gate-only prohibition on formal profile/descriptor publication;
-- matrix rejection without matching Gate evidence;
+- matrix rejection without matching Gate hardware/software class evidence;
+- atomic rejection of concurrent or repeated matrix launchers;
 - recursive recovery binding of Job 1167538;
 - rejection of old in-process backend profiles;
 - existing S1 and C3 regression contracts.

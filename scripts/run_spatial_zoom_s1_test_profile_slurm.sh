@@ -14,6 +14,7 @@ MANIFEST="${SPATIAL_ZOOM_S1_MANIFEST:?set SPATIAL_ZOOM_S1_MANIFEST}"
 ANNOTATION="${SPATIAL_ZOOM_S1_ANNOTATION:?set SPATIAL_ZOOM_S1_ANNOTATION}"
 TEST_OPEN="${SPATIAL_ZOOM_S1_TEST_OPEN:?set SPATIAL_ZOOM_S1_TEST_OPEN}"
 PROFILE_RECOVERY="${SPATIAL_ZOOM_S1_PROFILE_RECOVERY:?set SPATIAL_ZOOM_S1_PROFILE_RECOVERY}"
+POWER_SCRATCH_ROOT="${SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT:?set SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT}"
 RESOLUTION="${SPATIAL_ZOOM_S1_RESOLUTION:?set SPATIAL_ZOOM_S1_RESOLUTION}"
 SEED="${SPATIAL_ZOOM_S1_SEED:?set SPATIAL_ZOOM_S1_SEED}"
 PREFLIGHT_ONLY="${SPATIAL_ZOOM_S1_PREFLIGHT_ONLY:-0}"
@@ -41,6 +42,17 @@ esac
 [[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
 [[ -n "${SLURM_JOB_GPUS:-}" && "${SLURM_JOB_GPUS}" != *,* ]] || \
   fail "SLURM_JOB_GPUS must identify exactly one allocated physical GPU"
+[[ "${SLURM_CPUS_PER_TASK:-}" == "5" ]] || \
+  fail "formal S1 sidecar profile requires exactly five allocated CPUs"
+[[ "${SLURM_MEM_PER_NODE:-0}" -ge 90000 ]] || \
+  fail "formal S1 sidecar profile requires at least 90000 MiB node memory"
+command -v taskset >/dev/null 2>&1 || fail "formal S1 sidecar profile requires taskset"
+
+case "${POWER_SCRATCH_ROOT}" in
+  /tmp/*|/var/tmp/*) ;;
+  *) fail "power sidecar scratch must use node-local /tmp or /var/tmp" ;;
+esac
+mkdir -p "${POWER_SCRATCH_ROOT}"
 
 WORK_DIR="${RUN_ROOT}/dense${RESOLUTION}/seed${SEED}"
 BOUND_CONFIG="${RUN_ROOT}/control/dense${RESOLUTION}_seed${SEED}.py"
@@ -59,8 +71,17 @@ fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
 
+ALLOCATED_CPUS="$(python -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0)))))')"
+IFS=',' read -r -a CPU_ARRAY <<< "${ALLOCATED_CPUS}"
+[[ "${#CPU_ARRAY[@]}" == "5" ]] || fail "Slurm affinity does not expose five CPUs"
+DETECTOR_CPUS="${CPU_ARRAY[0]},${CPU_ARRAY[1]},${CPU_ARRAY[2]},${CPU_ARRAY[3]}"
+SIDECAR_CPU="${CPU_ARRAY[4]}"
+
 TRAINING_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["training_code_commit"])' "${PROFILE_RECOVERY}")"
 PROFILE_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["profile_code_commit"])' "${PROFILE_RECOVERY}")"
+CAMPAIGN_ROOT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["campaign_root"])' "${PROFILE_RECOVERY}")"
+SIDECAR_GATE="${CAMPAIGN_ROOT}/sidecar_gate.json"
+[[ -f "${SIDECAR_GATE}" ]] || fail "formal matrix requires the passed sidecar Gate"
 [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${PROFILE_COMMIT}" ]] || \
   fail "profile source root differs from the certificate-bound commit"
 [[ -z "$(git -C "${ROOT}" status --porcelain --untracked-files=all)" ]] || \
@@ -79,6 +100,7 @@ TEST_EVIDENCE="${WORK_DIR}/gpu1_id0/test_evidence/test.evidence.json"
 (
   cd "${TRAINING_ROOT}"
   PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    taskset -c "${DETECTOR_CPUS}" \
     python "${ROOT}/tools/bata/preflight_spatial_zoom_s1_profile.py" \
       --config "${BOUND_CONFIG}" \
       --seed "${SEED}" \
@@ -87,7 +109,11 @@ TEST_EVIDENCE="${WORK_DIR}/gpu1_id0/test_evidence/test.evidence.json"
       --checkpoint "${CHECKPOINT}" \
       --test-open-certificate "${TEST_OPEN}" \
       --profile-recovery-certificate "${PROFILE_RECOVERY}" \
-      --test-evidence "${TEST_EVIDENCE}"
+      --sidecar-gate-evidence "${SIDECAR_GATE}" \
+      --test-evidence "${TEST_EVIDENCE}" \
+      --allocated-cpus "${ALLOCATED_CPUS}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --sidecar-cpu "${SIDECAR_CPU}"
 )
 
 if [[ "${PREFLIGHT_ONLY}" == "1" ]]; then
@@ -103,6 +129,7 @@ if [[ -f "${TEST_EVIDENCE}" ]]; then
 else
   (
     cd "${TRAINING_ROOT}"
+    taskset -c "${DETECTOR_CPUS}" \
     torchrun --nnodes=1 --nproc_per_node=1 \
       --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
       --rdzv_id="s1-test-${SLURM_JOB_ID}-${RESOLUTION}-${SEED}" \
@@ -115,6 +142,7 @@ else
   (
     cd "${TRAINING_ROOT}"
     PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      taskset -c "${DETECTOR_CPUS}" \
       python "${ROOT}/tools/bata/preflight_spatial_zoom_s1_profile.py" \
         --config "${BOUND_CONFIG}" \
         --seed "${SEED}" \
@@ -123,16 +151,23 @@ else
         --checkpoint "${CHECKPOINT}" \
         --test-open-certificate "${TEST_OPEN}" \
         --profile-recovery-certificate "${PROFILE_RECOVERY}" \
-        --test-evidence "${TEST_EVIDENCE}"
+        --sidecar-gate-evidence "${SIDECAR_GATE}" \
+        --test-evidence "${TEST_EVIDENCE}" \
+        --allocated-cpus "${ALLOCATED_CPUS}" \
+        --detector-cpus "${DETECTOR_CPUS}" \
+        --sidecar-cpu "${SIDECAR_CPU}"
   )
 fi
 
 [[ -f "${TEST_EVIDENCE}" ]] || fail "sealed test evidence was not produced"
-CAMPAIGN_ROOT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["campaign_root"])' "${PROFILE_RECOVERY}")"
 PROFILE_PREFIX="${CAMPAIGN_ROOT}/dense${RESOLUTION}/seed${SEED}/dense${RESOLUTION}_seed${SEED}"
-(
+PROFILE_SCRATCH_DIR="${POWER_SCRATCH_ROOT}/job${SLURM_JOB_ID}_dense${RESOLUTION}_seed${SEED}_formal"
+POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${SLURM_JOB_GPUS}" | tr -d '[:space:]')"
+[[ "${POWER_UUID}" == GPU-* ]] || fail "could not resolve allocated GPU UUID"
+if ! (
   cd "${TRAINING_ROOT}"
   PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    taskset -c "${DETECTOR_CPUS}" \
     torchrun --nnodes=1 --nproc_per_node=1 \
       --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
       --rdzv_id="s1-profile-${SLURM_JOB_ID}-${RESOLUTION}-${SEED}" \
@@ -145,6 +180,7 @@ PROFILE_PREFIX="${CAMPAIGN_ROOT}/dense${RESOLUTION}/seed${SEED}/dense${RESOLUTIO
       --test-open-certificate "${TEST_OPEN}" \
       --test-evidence "${TEST_EVIDENCE}" \
       --profile-recovery-certificate "${PROFILE_RECOVERY}" \
+      --sidecar-gate-evidence "${SIDECAR_GATE}" \
       --output-prefix "${PROFILE_PREFIX}" \
       --device cuda:0 \
       --seed "${SEED}" \
@@ -156,8 +192,22 @@ PROFILE_PREFIX="${CAMPAIGN_ROOT}/dense${RESOLUTION}/seed${SEED}/dense${RESOLUTIO
       --use-ema \
       --sample-power \
       --power-gpu-id "${SLURM_JOB_GPUS}" \
-      --power-interval-ms 20
-)
+      --power-interval-ms 20 \
+      --power-scratch-root "${POWER_SCRATCH_ROOT}" \
+      --allocated-cpus "${ALLOCATED_CPUS}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --sidecar-cpu "${SIDECAR_CPU}"
+); then
+  python "${ROOT}/tools/bata/spatial_zoom_s1_power.py" salvage \
+    --scratch-dir "${PROFILE_SCRATCH_DIR}" \
+    --attempt-prefix "${PROFILE_PREFIX}" \
+    --expected-uuid "${POWER_UUID}" \
+    --interval-ms 20 \
+    --sidecar-cpu-id "${SIDECAR_CPU}" \
+    --detector-cpus "${DETECTOR_CPUS}" \
+    --allocated-cpus "${ALLOCATED_CPUS}" || true
+  fail "formal S1 profile failed after sealing its sidecar attempt"
+fi
 
 PROFILE="${PROFILE_PREFIX}.summary.json"
 DESCRIPTOR="${CAMPAIGN_ROOT}/descriptors/dense${RESOLUTION}_seed${SEED}.run.json"

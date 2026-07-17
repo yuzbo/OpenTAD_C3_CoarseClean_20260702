@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
 stage: experiment_running
-outcome: profile_identity_validation_failed_recovery_pending
+outcome: sidecar_recovery_tested_local_long_gate_pending
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-17
@@ -531,6 +531,33 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   separate minimal sampler process, atomic preservation of failed raw cadence,
   and a representative long-duration no-open stress Gate are implemented,
   tested, committed, and audited. Pro, S2, and GO/KILL remain blocked.
+- Out-of-process recovery implementation status: the current branch replaces
+  the formal in-process sampler with a minimal UUID-bound native-NVML process
+  pinned to a fifth Slurm CPU while the detector is pinned to four CPUs. It
+  records `time.monotonic_ns` samples in node-local scratch, then atomically
+  seals the raw trace and self-hashed attempt report; launcher salvage also
+  seals a distinct parent-failure record if the detector fails after the
+  sidecar attempt was already finalized. Recursive v3 recovery binds Job
+  `1167538`, the prior v2 certificate, the restricted repair diff, the 20 ms
+  target/100 ms limit, exact 4+1 CPU topology, and the representative Gate.
+  The Gate reuses dense256/seed3408's existing official-test evidence, executes
+  all 792 loader exposures plus official finalization, and is forbidden from
+  publishing a profile, samples, power table, prediction, or descriptor.
+  Formal cells recursively validate the Gate and bind attempt/Gate hashes into
+  profile, descriptor, and analyzer evidence. An independent max-level
+  implementation audit returned `HOLD` with no P0 and five P1 findings:
+  partial report/trace recovery, Gate runtime binding, report-trace closure in
+  descriptor/analyzer, concurrent matrix submission, and absence of a true
+  child-process lifecycle test. The branch now addresses all five: a shared
+  pair validator is used end to end; Gate UUID plus matrix hardware/software
+  class semantics are explicit; trace-only/report-only salvage is immutable;
+  the matrix has a persistent atomic lock and self-hashed receipts; and a Linux
+  subprocess lifecycle test is included. Local S1 verification is
+  `61 passed, 4 skipped`; three skips are Linux-only real child
+  lifecycle/failure cases and must execute remotely. The required AGENTS C3
+  regression is `20 passed`. This is `tested_local`, not a remote Gate result.
+  No replacement matrix, Pro review, GO/KILL, S2, or learned crop is authorized
+  yet.
 
 ## Decision Boundary
 

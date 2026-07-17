@@ -35,6 +35,14 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
     load_profile_recovery_certificate,
     profile_campaign_prefix,
 )
+from tools.bata.spatial_zoom_s1_sidecar_gate import (  # noqa: E402
+    load_sidecar_gate_evidence,
+    sidecar_gate_path,
+    validate_sidecar_gate_runtime_identity,
+)
+from tools.bata.spatial_zoom_s1_power import (  # noqa: E402
+    validate_nvml_sidecar_attempt,
+)
 from tools.bata.select_spatial_zoom_s1_checkpoint import (  # noqa: E402
     validate_checkpoint_selection,
 )
@@ -55,6 +63,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         recovery_path,
         binding=binding,
         verify_checkout=True,
+    )
+    sidecar_gate = load_sidecar_gate_evidence(
+        sidecar_gate_path(recovery),
+        recovery=recovery,
     )
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
     canonical_profile_prefix = profile_campaign_prefix(
@@ -117,12 +129,43 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         raise ValueError("S1 run descriptor requires an S1 full-stack profile")
     profile_samples_path = canonical_profile_prefix.with_suffix(".samples.jsonl")
     profile_power_path = canonical_profile_prefix.with_suffix(".power.jsonl")
+    profile_power_attempt_path = Path(
+        f"{canonical_profile_prefix}.power_attempt.json"
+    )
+    profile_power_attempt_trace_path = Path(
+        f"{canonical_profile_prefix}.power_attempt.jsonl"
+    )
     for artifact_path, expected_hash in (
         (profile_samples_path, profile["sample_trace_file_sha256"]),
         (profile_power_path, profile["power_trace_file_sha256"]),
+        (
+            profile_power_attempt_path,
+            profile["power_attempt_report_file_sha256"],
+        ),
+        (
+            profile_power_attempt_trace_path,
+            profile["power_attempt_trace_file_sha256"],
+        ),
     ):
         if not artifact_path.is_file() or sha256_file(artifact_path) != expected_hash:
             raise ValueError(f"S1 profile trace mismatch: {artifact_path}")
+    power_attempt = validate_nvml_sidecar_attempt(
+        profile_power_attempt_path,
+        profile_power_attempt_trace_path,
+        expected_uuid=profile["hardware_identity"]["nvidia_smi"]["uuid"],
+        require_pass=True,
+    )
+    if (
+        power_attempt["attempt_sha256"] != profile["power_attempt_sha256"]
+        or power_attempt["trace_file_sha256"]
+        != profile["power_attempt_trace_file_sha256"]
+    ):
+        raise ValueError("S1 sidecar attempt report identity mismatch")
+    validate_sidecar_gate_runtime_identity(
+        sidecar_gate,
+        hardware_identity=profile["hardware_identity"],
+        software_fingerprint=profile["software_fingerprint"],
+    )
     marker_path = Path(profile["profile_attempt_marker_path"]).resolve()
     if not marker_path.is_file():
         raise FileNotFoundError(marker_path)
@@ -164,6 +207,13 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
+        "gate_only": False,
+        "power_sampler_backend": recovery["power_sampler_backend"],
+        "allocated_cpu_ids": profile["allocated_cpu_ids"],
+        "detector_cpu_ids": profile["detector_cpu_ids"],
+        "sidecar_cpu_id": profile["sidecar_cpu_id"],
+        "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+        "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
     }
     for key, expected in expected_marker.items():
         if marker.get(key) != expected:
@@ -197,6 +247,12 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
+        "power_sampler_backend": recovery["power_sampler_backend"],
+        "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+        "sidecar_gate_evidence_file_sha256": sha256_file(
+            sidecar_gate_path(recovery)
+        ),
+        "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
     }
     for key, expected in expected_profile.items():
         if profile.get(key) != expected:
@@ -214,7 +270,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
             f"S1 prediction artifact contains videos outside sealed test: {unexpected}"
         )
     descriptor = {
-        "schema_version": "spatial_zoom_s1_run_v5",
+        "schema_version": "spatial_zoom_s1_run_v6",
         "resolution": resolution,
         "seed": int(args.seed),
         "config_path": str(args.config.resolve()),
@@ -263,6 +319,22 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_samples_sha256": sha256_file(profile_samples_path),
         "profile_power_path": str(profile_power_path),
         "profile_power_sha256": sha256_file(profile_power_path),
+        "profile_power_attempt_path": str(profile_power_attempt_path),
+        "profile_power_attempt_file_sha256": sha256_file(
+            profile_power_attempt_path
+        ),
+        "profile_power_attempt_sha256": profile["power_attempt_sha256"],
+        "profile_power_attempt_trace_path": str(
+            profile_power_attempt_trace_path
+        ),
+        "profile_power_attempt_trace_sha256": sha256_file(
+            profile_power_attempt_trace_path
+        ),
+        "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+        "sidecar_gate_evidence_file_sha256": sha256_file(
+            sidecar_gate_path(recovery)
+        ),
+        "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
         "profile_attempt_marker_path": str(marker_path),
         "profile_attempt_marker_file_sha256": marker_file_sha,
         "profile_attempt_marker_sha256": marker["marker_sha256"],

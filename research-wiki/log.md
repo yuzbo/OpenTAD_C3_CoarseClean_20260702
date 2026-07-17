@@ -284,3 +284,30 @@ append_only: true
   rerun. The next admissible infrastructure step is an out-of-process
   UUID-bound NVML sidecar plus failed-trace preservation and a representative
   long-duration no-open stress Gate, with the 20/100 ms contract unchanged.
+- 2026-07-17: implemented the admissible v3 recovery locally without changing
+  the S1 model, data, checkpoints, test result, frozen order, cadence threshold,
+  or statistical contract. The formal sampler is now a UUID-bound native-NVML
+  child process on one dedicated CPU, with four detector CPUs, node-local raw
+  trace, immutable attempt evidence, idempotent launcher salvage, and a
+  separate parent-failure record when the parent fails after a sealed attempt.
+  Added a recursive recovery certificate, full 792-exposure dense256/seed3408
+  no-open Gate, formal Gate/hash propagation, and exactly-one serial-matrix
+  guards. Local focused verification is `58 passed, 1 skipped`; required C3
+  regressions are `20 passed`. State remains `experiment_running`: remote clean
+  replay, independent audit, and the long Gate must pass before one replacement
+  matrix may be submitted.
+- 2026-07-17: independent max-level code audit returned HOLD with no P0 and
+  five P1 gaps in the uncommitted v3 recovery: partial attempt publication,
+  Gate runtime identity, report/trace closure in downstream consumers,
+  concurrent matrix launch, and a mocked rather than real child lifecycle.
+  Implemented all five without changing model, checkpoints, test evidence,
+  profile order, cadence thresholds, or statistical contract. Gate evidence
+  now binds its own actual UUID; matrix cells must match its stable
+  hardware/software class and bind their allocation's actual UUID. A shared
+  validator recomputes the raw trace hash/cadence in Gate, descriptor, and
+  analyzer. Salvage completes only a missing hash-matching counterpart, and
+  the matrix uses a persistent atomic lock plus self-hashed start/completion
+  receipts. Added Linux real-subprocess lifecycle, early-crash, timeout and
+  no-orphan tests. Local S1 result is `61 passed, 4 skipped`; the required C3
+  regression is `20 passed`. Remote Linux execution and the full 792-exposure
+  Gate remain mandatory before exactly one replacement matrix.

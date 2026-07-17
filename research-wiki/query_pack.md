@@ -47,15 +47,17 @@ max_chars: 8000
   No profile summary, latency trace, raw power trace, descriptor, or later cell
   was published. The existing official-test result remains valid and was not
   reopened. Slurm reported `63687456K` MaxRSS under a `62200M` allocation.
-  Static audit identifies a protocol mismatch: the formal sampler is a Python
-  `threading.Thread` inside the memory-heavy detector/profile process, whereas
-  the prior ten-second Gate tested only short synthetic load and cannot certify
-  long-run GIL/CPU-scheduling tail latency. A replacement matrix is forbidden
-  until an out-of-process UUID-bound NVML sidecar, failure-trace preservation,
-  and a representative long-duration no-open stress Gate are implemented and
-  audited without relaxing the 20 ms target or 100 ms limit. Cost matrix,
-  paired statistics, Pro review, and S1 GO/KILL remain pending; the state is
-  still `experiment_running`.
+  Static audit identified a protocol mismatch: the formal sampler was a Python
+  `threading.Thread` inside the memory-heavy detector/profile process. The
+  current branch now implements an out-of-process UUID-bound native-NVML
+  sidecar, dedicated 4+1 CPU partition, node-local raw trace, immutable attempt
+  and parent-failure evidence, recursive v3 recovery, and a full 792-exposure
+  no-open Gate. An independent HOLD audit found five P1 evidence/lifecycle
+  gaps; all are locally fixed through immutable partial salvage, Gate-to-matrix
+  runtime-class binding, report/trace validation, an atomic matrix lock and
+  process tests. Local S1: `61 passed, 4 skipped`; Linux cases remain.
+  `experiment_running`: remote tests and the full 792-exposure
+  20/100 ms Gate must pass before one matrix; Pro and GO/KILL remain pending.
 
 ## 当前唯一活动任务：Spatial Zoom
 

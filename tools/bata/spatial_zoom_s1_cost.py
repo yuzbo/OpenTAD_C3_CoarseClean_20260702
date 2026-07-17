@@ -185,6 +185,18 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "profile_recovery_certificate_file_sha256",
         "profile_recovery_certificate_sha256",
         "profile_recovery_campaign_id",
+        "power_attempt_report_path",
+        "power_attempt_report_file_sha256",
+        "power_attempt_sha256",
+        "power_attempt_trace_path",
+        "power_attempt_trace_file_sha256",
+        "power_attempt_cadence",
+        "allocated_cpu_ids",
+        "detector_cpu_ids",
+        "sidecar_cpu_id",
+        "sidecar_gate_evidence_path",
+        "sidecar_gate_evidence_file_sha256",
+        "sidecar_gate_sha256",
     )
     missing = [key for key in required if key not in checked]
     if missing:
@@ -229,6 +241,9 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         "profile_code_commit",
         "profile_recovery_certificate_path",
         "profile_recovery_campaign_id",
+        "power_attempt_report_path",
+        "power_attempt_trace_path",
+        "sidecar_gate_evidence_path",
     ):
         if not str(checked[key]).strip():
             raise ValueError(f"S1 profile metadata requires {key}")
@@ -242,8 +257,21 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             )
         if not bool(checked["amp"]) or not bool(checked["power_sampling_enabled"]):
             raise ValueError("formal S1 profile requires AMP and power sampling")
-        if checked["power_sampler_backend"] != "nvml-persistent-poll-v1":
-            raise ValueError("formal S1 profile requires the audited NVML sampler")
+        if checked["power_sampler_backend"] != "nvml-sidecar-process-v1":
+            raise ValueError("formal S1 profile requires the isolated NVML sidecar")
+        cadence = checked["power_attempt_cadence"]
+        if (
+            not isinstance(cadence, Mapping)
+            or cadence.get("formal_cadence_pass") is not True
+            or float(cadence.get("max_gap_ms", math.inf)) > 100.0
+            or float(cadence.get("max_gap_limit_ms", -1.0)) != 100.0
+            or len(checked["allocated_cpu_ids"]) != 5
+            or len(checked["detector_cpu_ids"]) != 4
+            or checked["sidecar_cpu_id"] in checked["detector_cpu_ids"]
+            or set(checked["detector_cpu_ids"]) | {checked["sidecar_cpu_id"]}
+            != set(checked["allocated_cpu_ids"])
+        ):
+            raise ValueError("formal S1 profile sidecar cadence/CPU contract failed")
         if checked["split"] != "test" or not checked["test_open_certificate_sha256"]:
             raise ValueError(
                 "formal S1 profile requires a frozen test-open certificate"
@@ -287,6 +315,11 @@ def _validate_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
             "profile_order_sha256",
             "profile_recovery_certificate_file_sha256",
             "profile_recovery_certificate_sha256",
+            "power_attempt_report_file_sha256",
+            "power_attempt_sha256",
+            "power_attempt_trace_file_sha256",
+            "sidecar_gate_evidence_file_sha256",
+            "sidecar_gate_sha256",
         )
         if any(
             len(str(checked[key])) != 64
@@ -577,6 +610,12 @@ def compare_resolution_profiles(
         "profile_recovery_certificate_file_sha256",
         "profile_recovery_certificate_sha256",
         "profile_recovery_campaign_id",
+        "sidecar_gate_evidence_path",
+        "sidecar_gate_evidence_file_sha256",
+        "sidecar_gate_sha256",
+        "allocated_cpu_ids",
+        "detector_cpu_ids",
+        "sidecar_cpu_id",
         "physical_window_manifest_sha256",
         "loader_exposure_count",
         "physical_window_count",

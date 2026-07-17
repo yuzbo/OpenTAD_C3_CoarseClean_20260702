@@ -1131,6 +1131,14 @@ def _load_run_descriptor(
         "profile_samples_sha256",
         "profile_power_path",
         "profile_power_sha256",
+        "profile_power_attempt_path",
+        "profile_power_attempt_file_sha256",
+        "profile_power_attempt_sha256",
+        "profile_power_attempt_trace_path",
+        "profile_power_attempt_trace_sha256",
+        "sidecar_gate_evidence_path",
+        "sidecar_gate_evidence_file_sha256",
+        "sidecar_gate_sha256",
         "ground_truth_path",
         "ground_truth_sha256",
         "config_path",
@@ -1156,7 +1164,7 @@ def _load_run_descriptor(
     missing = [key for key in required if key not in descriptor]
     if missing:
         raise ValueError(f"S1 run descriptor {path} is missing {missing}")
-    if descriptor["schema_version"] != "spatial_zoom_s1_run_v5":
+    if descriptor["schema_version"] != "spatial_zoom_s1_run_v6":
         raise ValueError("unsupported S1 run descriptor schema")
     if descriptor["manifest_sha256"] != manifest["manifest_sha256"]:
         raise ValueError("S1 run descriptor uses a different manifest")
@@ -1172,6 +1180,18 @@ def _load_run_descriptor(
         ("profile_summary_path", "profile_summary_sha256"),
         ("profile_samples_path", "profile_samples_sha256"),
         ("profile_power_path", "profile_power_sha256"),
+        (
+            "profile_power_attempt_path",
+            "profile_power_attempt_file_sha256",
+        ),
+        (
+            "profile_power_attempt_trace_path",
+            "profile_power_attempt_trace_sha256",
+        ),
+        (
+            "sidecar_gate_evidence_path",
+            "sidecar_gate_evidence_file_sha256",
+        ),
         (
             "profile_attempt_marker_path",
             "profile_attempt_marker_file_sha256",
@@ -1203,6 +1223,12 @@ def _load_run_descriptor(
     from tools.bata.spatial_zoom_s1_evidence import validate_s1_test_evidence
     from tools.bata.spatial_zoom_s1_training import validate_bound_s1_training_config
     from tools.bata.profile_spatial_zoom_s1 import validate_profile_attempt_marker
+    from tools.bata.spatial_zoom_s1_sidecar_gate import (
+        load_sidecar_gate_evidence,
+        sidecar_gate_path,
+        validate_sidecar_gate_runtime_identity,
+    )
+    from tools.bata.spatial_zoom_s1_power import validate_nvml_sidecar_attempt
 
     binding = validate_bound_s1_training_config(cfg, seed=int(descriptor["seed"]))
     if not binding["formal_precheck_verified"]:
@@ -1214,6 +1240,16 @@ def _load_run_descriptor(
         binding=binding,
         verify_checkout=True,
     )
+    sidecar_gate = load_sidecar_gate_evidence(
+        descriptor["sidecar_gate_evidence_path"],
+        recovery=recovery,
+    )
+    if (
+        Path(descriptor["sidecar_gate_evidence_path"]).resolve()
+        != sidecar_gate_path(recovery)
+        or sidecar_gate["gate_sha256"] != descriptor["sidecar_gate_sha256"]
+    ):
+        raise ValueError("S1 sidecar Gate identity mismatch")
     recovery_expected = {
         "profile_code_commit": recovery["profile_code_commit"],
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
@@ -1296,8 +1332,31 @@ def _load_run_descriptor(
     if (
         profile["sample_trace_file_sha256"] != descriptor["profile_samples_sha256"]
         or profile["power_trace_file_sha256"] != descriptor["profile_power_sha256"]
+        or profile["power_attempt_report_file_sha256"]
+        != descriptor["profile_power_attempt_file_sha256"]
+        or profile["power_attempt_trace_file_sha256"]
+        != descriptor["profile_power_attempt_trace_sha256"]
     ):
         raise ValueError("S1 descriptor profile trace identity mismatch")
+    power_attempt = validate_nvml_sidecar_attempt(
+        descriptor["profile_power_attempt_path"],
+        descriptor["profile_power_attempt_trace_path"],
+        expected_uuid=profile["hardware_identity"]["nvidia_smi"]["uuid"],
+        require_pass=True,
+    )
+    if (
+        power_attempt["attempt_sha256"]
+        != descriptor["profile_power_attempt_sha256"]
+        or power_attempt["attempt_sha256"] != profile["power_attempt_sha256"]
+        or power_attempt["trace_file_sha256"]
+        != descriptor["profile_power_attempt_trace_sha256"]
+    ):
+        raise ValueError("S1 profile sidecar-attempt identity mismatch")
+    validate_sidecar_gate_runtime_identity(
+        sidecar_gate,
+        hardware_identity=profile["hardware_identity"],
+        software_fingerprint=profile["software_fingerprint"],
+    )
     profile_expected = {
         "resolution": int(descriptor["resolution"]),
         "seed": int(descriptor["seed"]),
@@ -1331,6 +1390,12 @@ def _load_run_descriptor(
         ],
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
+        "power_sampler_backend": recovery["power_sampler_backend"],
+        "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+        "sidecar_gate_evidence_file_sha256": descriptor[
+            "sidecar_gate_evidence_file_sha256"
+        ],
+        "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
         **expected_profile_order,
         "trained_checkpoint": True,
     }
@@ -1370,6 +1435,13 @@ def _load_run_descriptor(
         ],
         "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
         "profile_recovery_campaign_id": recovery["campaign_id"],
+        "gate_only": False,
+        "power_sampler_backend": recovery["power_sampler_backend"],
+        "allocated_cpu_ids": profile["allocated_cpu_ids"],
+        "detector_cpu_ids": profile["detector_cpu_ids"],
+        "sidecar_cpu_id": profile["sidecar_cpu_id"],
+        "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
+        "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
     }
     for key, expected in marker_expected.items():
         if profile_attempt_marker.get(key) != expected:

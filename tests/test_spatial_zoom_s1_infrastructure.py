@@ -3,10 +3,14 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
+import textwrap
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -74,10 +78,30 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (
     S1_POWER_FAILURE_SIGNATURE,
     S1_PROFILE_RECOVERY_REASON,
     S1_PROFILE_RECOVERY_SCHEMA,
+    S1_SIDECAR_PROFILE_RECOVERY_SCHEMA,
+    S1_SIDECAR_RECOVERY_REASON,
     profile_campaign_prefix,
     validate_profile_recovery_certificate,
 )
-from tools.bata.spatial_zoom_s1_power import NvmlPowerSampler, summarize_power_cadence
+from tools.bata.spatial_zoom_s1_power import (
+    S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+    S1_POWER_SIDECAR_BACKEND,
+    NvmlPowerSampler,
+    NvmlSidecarPowerSampler,
+    _load_sidecar_trace,
+    run_nvml_sidecar,
+    salvage_nvml_sidecar_attempt,
+    summarize_power_cadence,
+    validate_nvml_sidecar_attempt,
+)
+from tools.bata.spatial_zoom_s1_sidecar_gate import (
+    build_sidecar_gate_evidence,
+    load_sidecar_gate_evidence,
+    sidecar_gate_hardware_class,
+    sidecar_gate_path,
+    validate_sidecar_gate_runtime_identity,
+    write_sidecar_gate_evidence,
+)
 from tools.bata.select_spatial_zoom_s1_checkpoint import (
     select_s1_checkpoint,
     validate_checkpoint_selection,
@@ -409,6 +433,12 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     assert "256:3408 224:3409" in matrix
     assert "build_s1_profile_order" in matrix
     assert "CUDA_VISIBLE_DEVICES=" not in matrix
+    assert 'mkdir "${MATRIX_LOCK_DIR}"' in matrix
+    assert "matrix.started.json" in matrix
+    assert "matrix.completed.json" in matrix
+    assert "refusing a concurrent or repeated matrix" in matrix
+    assert "validate_sidecar_gate_evidence" in matrix
+    assert "matrix start receipt identity mismatch" in matrix
 
 
 def test_config_validator_rejects_temporal_or_optimizer_drift() -> None:
@@ -954,6 +984,93 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
     assert checked["preserve_recovery_chain"] is True
     assert checked["power_sampler_backend"] == "nvml-persistent-poll-v1"
     assert checked["schema_version"] == S1_CHAINED_PROFILE_RECOVERY_SCHEMA
+
+    chain_path = tmp_path / "chain.json"
+    chain_path.write_text(
+        json.dumps(chain, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    sidecar_marker_path = tmp_path / "sidecar.started.json"
+    sidecar_marker = {
+        **original_marker,
+        "schema_version": "spatial_zoom_s1_profile_attempt_v5",
+        "profile_code_commit": chain["profile_code_commit"],
+        "profile_recovery_certificate_sha256": chain["certificate_sha256"],
+        "profile_recovery_campaign_id": chain["campaign_id"],
+    }
+    sidecar_marker.pop("marker_sha256")
+    sidecar_marker["marker_sha256"] = canonical_sha256(sidecar_marker)
+    sidecar_marker_path.write_text(
+        json.dumps(sidecar_marker, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    sidecar_log = tmp_path / "sidecar.log"
+    sidecar_log.write_text(S1_POWER_FAILURE_SIGNATURE + "\n", encoding="utf-8")
+    sidecar_paths = (
+        *chain_paths,
+        "docs/superpowers/specs/2026-07-17-spatial-zoom-s1-power-sidecar-design.md",
+        "scripts/run_spatial_zoom_s1_power_sidecar_gate_slurm.sh",
+        "tools/bata/spatial_zoom_s1_sidecar_gate.py",
+    )
+    sidecar_basis = {
+        **parent_basis,
+        "schema_version": S1_SIDECAR_PROFILE_RECOVERY_SCHEMA,
+        "reason": S1_SIDECAR_RECOVERY_REASON,
+        "profile_code_commit": "7" * 40,
+        "changed_files": [
+            {"status": "M", "path": path, "file_sha256": "8" * 64}
+            for path in sidecar_paths
+        ],
+        "repair_scope": "out_of_process_power_sidecar_and_failure_evidence_only",
+        "preserve_recovery_chain": True,
+        "superseded_recovery_certificate_path": str(chain_path.resolve()),
+        "superseded_recovery_certificate_file_sha256": sha256_file(chain_path),
+        "superseded_recovery_certificate_sha256": chain["certificate_sha256"],
+        "superseded_recovery_campaign_id": chain["campaign_id"],
+        "superseded_recovery_profile_code_commit": chain["profile_code_commit"],
+        "sidecar_power_failure_signature": S1_POWER_FAILURE_SIGNATURE,
+        "sidecar_power_failed_job_id": "1167538",
+        "sidecar_power_failure_marker_path": str(sidecar_marker_path.resolve()),
+        "sidecar_power_failure_marker_file_sha256": sha256_file(
+            sidecar_marker_path
+        ),
+        "sidecar_power_failure_marker_sha256": sidecar_marker["marker_sha256"],
+        "sidecar_power_failure_log_path": str(sidecar_log.resolve()),
+        "sidecar_power_failure_log_sha256": sha256_file(sidecar_log),
+        "power_sampler_backend": "nvml-sidecar-process-v1",
+        "power_target_interval_ms": 20,
+        "power_max_gap_limit_ms": 100.0,
+        "allocated_cpu_count": 5,
+        "detector_cpu_count": 4,
+        "sidecar_cpu_count": 1,
+        "requires_long_no_open_gate": True,
+        "sidecar_gate_relative_path": "sidecar_gate.json",
+    }
+    sidecar_id = canonical_sha256(sidecar_basis)[:16]
+    sidecar = {
+        **sidecar_basis,
+        "campaign_id": sidecar_id,
+        "campaign_root": str(canonical_root / "profile_campaigns" / sidecar_id),
+    }
+    sidecar["certificate_sha256"] = canonical_sha256(sidecar)
+    sidecar_checked = validate_profile_recovery_certificate(
+        sidecar, binding=binding, verify_checkout=False
+    )
+    assert sidecar_checked["power_sampler_backend"] == "nvml-sidecar-process-v1"
+    assert sidecar_checked["sidecar_power_failed_job_id"] == "1167538"
+    tampered_cpu = copy.deepcopy(sidecar)
+    tampered_cpu["allocated_cpu_count"] = 4
+    for key in ("certificate_sha256", "campaign_id", "campaign_root"):
+        tampered_cpu.pop(key)
+    tampered_id = canonical_sha256(tampered_cpu)[:16]
+    tampered_cpu["campaign_id"] = tampered_id
+    tampered_cpu["campaign_root"] = str(
+        canonical_root / "profile_campaigns" / tampered_id
+    )
+    tampered_cpu["certificate_sha256"] = canonical_sha256(tampered_cpu)
+    with pytest.raises(ValueError, match="sidecar recovery contract mismatch"):
+        validate_profile_recovery_certificate(
+            tampered_cpu, binding=binding, verify_checkout=False
+        )
 
     wrong_schema = copy.deepcopy(chain)
     wrong_schema["schema_version"] = S1_PROFILE_RECOVERY_SCHEMA
@@ -1972,8 +2089,33 @@ def test_formal_result_report_rejects_rehashed_manual_go_kill_edits() -> None:
 def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
     hardware_identity = {
         "node": "s1-node-a",
-        "gpu": {"uuid": "GPU-S1", "driver_version": "550.54"},
-        "cpu": {"model": "S1 CPU", "logical_count": 64},
+        "machine": "x86_64",
+        "cpu_model": "S1 CPU",
+        "logical_cpu_count": 64,
+        "system_memory_bytes": 256 * 1024**3,
+        "gpu_name": "S1 GPU",
+        "gpu_total_memory": 48 * 1024**3,
+        "gpu_compute_capability": [8, 0],
+        "gpu_multi_processor_count": 108,
+        "physical_gpu_id": "1",
+        "nvidia_smi": {
+            "uuid": "GPU-S1",
+            "pci.bus_id": "00000000:01:00.0",
+            "driver_version": "550.54",
+            "persistence_mode": "Enabled",
+            "compute_mode": "Default",
+            "power.limit": "300.00",
+            "clocks.max.sm": "1410",
+            "clocks.max.memory": "1215",
+        },
+        "slurm_resources": {
+            "cpus_per_task": 5,
+            "mem_per_node_mb": 96000,
+            "allocated_cpu_ids": [0, 1, 2, 3, 4],
+            "detector_cpu_ids": [0, 1, 2, 3],
+            "sidecar_cpu_id": 4,
+            "detector_process_affinity": [0, 1, 2, 3],
+        },
     }
     software_identity = {
         "python": "3.10.0",
@@ -2014,7 +2156,7 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "warmup_samples": 5,
         "amp": True,
         "power_sampling_enabled": True,
-        "power_sampler_backend": "nvml-persistent-poll-v1",
+        "power_sampler_backend": "nvml-sidecar-process-v1",
         "formal_profile": False,
         "split": "test",
         "seed": seed,
@@ -2046,7 +2188,138 @@ def _profile_metadata(resolution: int, seed: int = 3407) -> dict:
         "profile_recovery_certificate_file_sha256": "recovery-file",
         "profile_recovery_certificate_sha256": "recovery-internal",
         "profile_recovery_campaign_id": "campaign",
+        "power_attempt_report_path": "dense.power_attempt.json",
+        "power_attempt_report_file_sha256": "d" * 64,
+        "power_attempt_sha256": "d" * 64,
+        "power_attempt_trace_path": "dense.power_attempt.jsonl",
+        "power_attempt_trace_file_sha256": "d" * 64,
+        "power_attempt_cadence": {
+            "sample_count": 10,
+            "duration_ms": 180.0,
+            "finite_nonnegative": True,
+            "strictly_increasing": True,
+            "min_gap_ms": 20.0,
+            "median_gap_ms": 20.0,
+            "p95_gap_ms": 20.0,
+            "max_gap_ms": 20.0,
+            "max_gap_limit_ms": 100.0,
+            "formal_cadence_pass": True,
+        },
+        "allocated_cpu_ids": [0, 1, 2, 3, 4],
+        "detector_cpu_ids": [0, 1, 2, 3],
+        "sidecar_cpu_id": 4,
+        "sidecar_gate_evidence_path": "/s1/canonical/sidecar_gate.json",
+        "sidecar_gate_evidence_file_sha256": "d" * 64,
+        "sidecar_gate_sha256": "d" * 64,
     }
+
+
+def _write_valid_sidecar_attempt(
+    prefix: Path,
+    *,
+    expected_uuid: str = "GPU-S1",
+) -> tuple[Path, Path, dict]:
+    trace_path = Path(f"{prefix}.power_attempt.jsonl")
+    report_path = Path(f"{prefix}.power_attempt.json")
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "sequence": index,
+                    "monotonic_ns": 1_000_000_000 + index * 20_000_000,
+                    "power_w": 120.0 + index,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+            for index in range(4)
+        ),
+        encoding="utf-8",
+    )
+    clock = {
+        "clock": "time.monotonic_ns",
+        "implementation": "clock_gettime(CLOCK_MONOTONIC)",
+        "monotonic": True,
+        "adjustable": False,
+        "resolution_seconds": 1e-9,
+    }
+    pid_record = {
+        "schema_version": "spatial_zoom_s1_power_sidecar_pid_v1",
+        "pid": 1234,
+        "parent_pid": 1200,
+        "expected_uuid": expected_uuid,
+        "sidecar_cpu_id": 4,
+        "actual_cpu_affinity": [4],
+        "allocated_cpu_ids": [0, 1, 2, 3, 4],
+        "clock_identity": clock,
+    }
+    pid_record["pid_sha256"] = canonical_sha256(pid_record)
+    ready_record = {
+        "schema_version": "spatial_zoom_s1_power_sidecar_ready_v1",
+        "pid": 1234,
+        "parent_pid": 1200,
+        "expected_uuid": expected_uuid,
+        "actual_uuid": expected_uuid,
+        "sidecar_cpu_id": 4,
+        "actual_cpu_affinity": [4],
+        "allocated_cpu_ids": [0, 1, 2, 3, 4],
+        "interval_ms": 20,
+        "clock_identity": clock,
+        "first_sample_monotonic_ns": 1_000_000_000,
+    }
+    ready_record["ready_sha256"] = canonical_sha256(ready_record)
+    result_record = {
+        "schema_version": "spatial_zoom_s1_power_sidecar_result_v1",
+        "status": "PASS",
+        "error": None,
+        "pid": 1234,
+        "parent_pid": 1200,
+        "expected_uuid": expected_uuid,
+        "actual_uuid": expected_uuid,
+        "sidecar_cpu_id": 4,
+        "actual_cpu_affinity": [4],
+        "allocated_cpu_ids": [0, 1, 2, 3, 4],
+        "interval_ms": 20,
+        "clock_identity": clock,
+        "sample_count": 4,
+        "started_monotonic_ns": 999_000_000,
+        "finished_monotonic_ns": 1_061_000_000,
+        "trace_sha256": sha256_file(trace_path),
+    }
+    result_record["result_sha256"] = canonical_sha256(result_record)
+    cadence = summarize_power_cadence(
+        _load_sidecar_trace(trace_path.read_bytes()), target_interval_ms=20
+    )
+    report = {
+        "schema_version": S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+        "backend": S1_POWER_SIDECAR_BACKEND,
+        "status": "PASS",
+        "error": None,
+        "created_utc": "2026-07-17T00:00:00+00:00",
+        "expected_uuid": expected_uuid,
+        "interval_ms": 20,
+        "allocated_cpu_ids": [0, 1, 2, 3, 4],
+        "detector_cpu_ids": [0, 1, 2, 3],
+        "sidecar_cpu_id": 4,
+        "process_pid": 1234,
+        "process_exit_code": 0,
+        "clock_identity": clock,
+        "pid_record": pid_record,
+        "ready_record": ready_record,
+        "result_record": result_record,
+        "cadence": cadence,
+        "trace_path": str(trace_path.resolve()),
+        "trace_file_sha256": sha256_file(trace_path),
+        "stdout_sha256": "0" * 64,
+        "stderr_sha256": "0" * 64,
+    }
+    report["attempt_sha256"] = canonical_sha256(report)
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return report_path, trace_path, report
 
 
 def _profile_sample(scale: float, index: int) -> dict:
@@ -2228,9 +2501,47 @@ def test_power_sampler_diagnostic_is_slurm_local_and_test_blind() -> None:
     profile_source = (
         ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py"
     ).read_text(encoding="utf-8")
-    assert "NvmlPowerSampler as PowerSampler" in profile_source
+    assert "NvmlSidecarPowerSampler as PowerSampler" in profile_source
     assert 'expected_uuid=hardware_identity["nvidia_smi"]["uuid"]' in profile_source
+    assert "sidecar_cpu_id=sidecar_cpu_id" in profile_source
     assert "local_gpu_index=" not in profile_source
+
+
+def test_sidecar_gate_and_matrix_launchers_freeze_resources_and_order() -> None:
+    gate_source = (
+        ROOT / "scripts" / "run_spatial_zoom_s1_power_sidecar_gate_slurm.sh"
+    ).read_text(encoding="utf-8")
+    cell_source = (
+        ROOT / "scripts" / "run_spatial_zoom_s1_test_profile_slurm.sh"
+    ).read_text(encoding="utf-8")
+    matrix_source = (
+        ROOT
+        / "scripts"
+        / "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
+    ).read_text(encoding="utf-8")
+    preflight_source = (
+        ROOT / "tools" / "bata" / "preflight_spatial_zoom_s1_profile.py"
+    ).read_text(encoding="utf-8")
+
+    for source in (gate_source, cell_source, matrix_source):
+        assert 'SLURM_CPUS_PER_TASK:-}" == "5"' in source
+        assert "SLURM_MEM_PER_NODE" in source
+        assert "90000" in source
+        assert "CUDA_VISIBLE_DEVICES=" not in source
+    for source in (gate_source, cell_source):
+        assert 'DETECTOR_CPUS="${CPU_ARRAY[0]},${CPU_ARRAY[1]}' in source
+        assert 'SIDECAR_CPU="${CPU_ARRAY[4]}"' in source
+        assert 'taskset -c "${DETECTOR_CPUS}"' in source
+        assert "--power-scratch-root" in source
+        assert "spatial_zoom_s1_power.py\" salvage" in source
+    assert "--sidecar-gate" in gate_source
+    assert "--samples 0" in gate_source
+    assert "TEST_EVIDENCE_SHA_BEFORE" in gate_source
+    assert "Gate published a paper profile" in gate_source
+    assert "FROZEN_ORDER=" in matrix_source
+    assert "refusing to duplicate an already-started sidecar matrix" in matrix_source
+    assert "sched_getaffinity" in preflight_source
+    assert "set(detector_cpu_ids) | {sidecar_cpu_id}" in preflight_source
 
 
 def test_nvml_sampler_resolves_the_slurm_device_by_uuid(monkeypatch) -> None:
@@ -2267,6 +2578,678 @@ def test_nvml_sampler_resolves_the_slurm_device_by_uuid(monkeypatch) -> None:
         "shutdown": True,
     }
     assert sampler.samples and sampler.samples[0][1] == 123.0
+
+
+def test_sidecar_core_publishes_ordered_monotonic_trace(
+    tmp_path: Path, monkeypatch
+) -> None:
+    affinity = {0, 1, 2, 3, 4}
+
+    class FakeNvml:
+        def initialize(self) -> None:
+            pass
+
+        def handle_by_uuid(self, uuid: str) -> str:
+            assert uuid == "GPU-allocated"
+            return "handle"
+
+        def uuid(self, handle: str) -> str:
+            assert handle == "handle"
+            return "GPU-allocated"
+
+        def power_w(self, handle: str) -> float:
+            assert handle == "handle"
+            return 125.0
+
+        def shutdown(self) -> None:
+            pass
+
+    def set_affinity(_pid: int, cpus: set[int]) -> None:
+        nonlocal affinity
+        affinity = set(cpus)
+
+    monkeypatch.setattr(s1_power, "_Nvml", FakeNvml)
+    monkeypatch.setattr(s1_power.os, "sched_setaffinity", set_affinity, raising=False)
+    monkeypatch.setattr(
+        s1_power.os, "sched_getaffinity", lambda _pid: set(affinity), raising=False
+    )
+    scratch = tmp_path / "sidecar"
+    trace = scratch / "power.jsonl"
+    ready = scratch / "ready.json"
+    result = scratch / "result.json"
+    assert (
+        run_nvml_sidecar(
+            expected_uuid="GPU-allocated",
+            interval_ms=20,
+            trace_path=trace,
+            ready_path=ready,
+            result_path=result,
+            sidecar_cpu_id=4,
+            allocated_cpu_ids=(0, 1, 2, 3, 4),
+            stop_after_samples=3,
+        )
+        == 0
+    )
+    samples = _load_sidecar_trace(trace.read_bytes())
+    assert len(samples) == 3
+    assert all(power == 125.0 for _, power in samples)
+    result_record = json.loads(result.read_text(encoding="utf-8"))
+    result_hash = result_record.pop("result_sha256")
+    assert canonical_sha256(result_record) == result_hash
+    assert result_record["trace_sha256"] == sha256_file(trace)
+
+
+def test_sidecar_failure_preserves_raw_trace_and_self_hashed_report(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        s1_power.os,
+        "sched_getaffinity",
+        lambda _pid: {0, 1, 2, 3},
+        raising=False,
+    )
+    sampler = NvmlSidecarPowerSampler(
+        expected_uuid="GPU-allocated",
+        interval_ms=20,
+        scratch_dir=tmp_path / "scratch",
+        attempt_prefix=tmp_path / "campaign" / "dense256_seed3408",
+        sidecar_cpu_id=4,
+        detector_cpu_ids=(0, 1, 2, 3),
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+    )
+    sampler.scratch_dir.mkdir(parents=True)
+    trace_payload = (
+        json.dumps(
+            {"sequence": 0, "monotonic_ns": 1_000_000_000, "power_w": 120.0},
+            sort_keys=True,
+        )
+        + "\n"
+        + json.dumps(
+            {"sequence": 1, "monotonic_ns": 1_250_000_000, "power_w": 121.0},
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    sampler._trace_path.write_bytes(trace_payload)
+    result = {
+        "schema_version": "spatial_zoom_s1_power_sidecar_result_v1",
+        "status": "PASS",
+        "expected_uuid": "GPU-allocated",
+        "actual_uuid": "GPU-allocated",
+        "sample_count": 2,
+        "trace_sha256": sha256_file(sampler._trace_path),
+    }
+    result["result_sha256"] = canonical_sha256(result)
+    sampler._result_path.write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    sampler._stdout_path.write_text("", encoding="utf-8")
+    sampler._stderr_path.write_text("", encoding="utf-8")
+    sampler._process = SimpleNamespace(pid=123, poll=lambda: 0)
+    with pytest.raises(RuntimeError, match="cadence failed"):
+        sampler._finalize_attempt(forced_error=None)
+    assert sampler.attempt_trace_path.read_bytes() == trace_payload
+    report = json.loads(sampler.attempt_report_path.read_text(encoding="utf-8"))
+    report_hash = report.pop("attempt_sha256")
+    assert canonical_sha256(report) == report_hash
+    assert report["status"] == "FAIL"
+    assert report["cadence"]["max_gap_ms"] == pytest.approx(250.0)
+
+
+def test_launcher_salvage_seals_trace_after_detector_crash(tmp_path: Path) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    trace = scratch / "power.jsonl"
+    trace.write_text(
+        json.dumps(
+            {"sequence": 0, "monotonic_ns": 1_000_000_000, "power_w": 120.0},
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (scratch / "stdout.log").write_text("", encoding="utf-8")
+    (scratch / "stderr.log").write_text("worker OOM\n", encoding="utf-8")
+    prefix = tmp_path / "campaign" / "dense256_seed3408"
+    report = salvage_nvml_sidecar_attempt(
+        scratch_dir=scratch,
+        attempt_prefix=prefix,
+        expected_uuid="GPU-allocated",
+        interval_ms=20,
+        sidecar_cpu_id=4,
+        detector_cpu_ids=(0, 1, 2, 3),
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+    )
+    assert report["status"] == "FAIL"
+    assert report["salvaged_after_parent_failure"] is True
+    shared_trace = Path(f"{prefix}.power_attempt.jsonl")
+    shared_report = Path(f"{prefix}.power_attempt.json")
+    parent_failure = Path(f"{prefix}.power_parent_failure.json")
+    assert shared_trace.read_bytes() == trace.read_bytes()
+    assert shared_report.is_file()
+    assert parent_failure.is_file()
+    assert (
+        salvage_nvml_sidecar_attempt(
+            scratch_dir=scratch,
+            attempt_prefix=prefix,
+            expected_uuid="GPU-allocated",
+            interval_ms=20,
+            sidecar_cpu_id=4,
+            detector_cpu_ids=(0, 1, 2, 3),
+            allocated_cpu_ids=(0, 1, 2, 3, 4),
+        )
+        == report
+    )
+
+
+def test_launcher_salvage_preserves_completed_attempt_and_seals_parent_failure(
+    tmp_path: Path,
+) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    prefix = tmp_path / "campaign" / "dense256_seed3408"
+    shared_trace = Path(f"{prefix}.power_attempt.jsonl")
+    shared_report = Path(f"{prefix}.power_attempt.json")
+    shared_trace.parent.mkdir(parents=True)
+    shared_trace.write_text(
+        json.dumps(
+            {"sequence": 0, "monotonic_ns": 1_000_000_000, "power_w": 120.0},
+            sort_keys=True,
+        )
+        + "\n"
+        + json.dumps(
+            {"sequence": 1, "monotonic_ns": 1_020_000_000, "power_w": 121.0},
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    attempt = {
+        "schema_version": S1_POWER_SIDECAR_ATTEMPT_SCHEMA,
+        "backend": S1_POWER_SIDECAR_BACKEND,
+        "status": "PASS",
+        "trace_file_sha256": sha256_file(shared_trace),
+    }
+    attempt["attempt_sha256"] = canonical_sha256(attempt)
+    shared_report.write_text(
+        json.dumps(attempt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    attempt_bytes_before = shared_report.read_bytes()
+    trace_bytes_before = shared_trace.read_bytes()
+
+    failure = salvage_nvml_sidecar_attempt(
+        scratch_dir=scratch,
+        attempt_prefix=prefix,
+        expected_uuid="GPU-allocated",
+        interval_ms=20,
+        sidecar_cpu_id=4,
+        detector_cpu_ids=(0, 1, 2, 3),
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+    )
+
+    assert failure["status"] == "FAIL"
+    assert failure["power_attempt_status"] == "PASS"
+    assert failure["power_attempt_sha256"] == attempt["attempt_sha256"]
+    assert shared_report.read_bytes() == attempt_bytes_before
+    assert shared_trace.read_bytes() == trace_bytes_before
+    assert Path(f"{prefix}.power_parent_failure.json").is_file()
+
+
+def test_launcher_salvage_completes_trace_only_attempt_without_overwrite(
+    tmp_path: Path,
+) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    prefix = tmp_path / "campaign" / "dense256_seed3408"
+    shared_trace = Path(f"{prefix}.power_attempt.jsonl")
+    shared_trace.parent.mkdir(parents=True)
+    shared_trace.write_text(
+        json.dumps(
+            {"sequence": 0, "monotonic_ns": 1_000_000_000, "power_w": 120.0},
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    trace_before = shared_trace.read_bytes()
+
+    failure = salvage_nvml_sidecar_attempt(
+        scratch_dir=scratch,
+        attempt_prefix=prefix,
+        expected_uuid="GPU-allocated",
+        interval_ms=20,
+        sidecar_cpu_id=4,
+        detector_cpu_ids=(0, 1, 2, 3),
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+    )
+
+    shared_report = Path(f"{prefix}.power_attempt.json")
+    assert shared_trace.read_bytes() == trace_before
+    assert shared_report.is_file()
+    assert failure["power_attempt_artifacts_complete"] is True
+    attempt = json.loads(shared_report.read_text(encoding="utf-8"))
+    assert attempt["status"] == "FAIL"
+    assert attempt["trace_file_sha256"] == sha256_file(shared_trace)
+
+
+def test_launcher_salvage_completes_report_only_attempt_from_matching_scratch(
+    tmp_path: Path,
+) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    prefix = tmp_path / "campaign" / "dense256_seed3408"
+    shared_report, shared_trace, report = _write_valid_sidecar_attempt(
+        prefix,
+        expected_uuid="GPU-allocated",
+    )
+    scratch_trace = scratch / "power.jsonl"
+    scratch_trace.write_bytes(shared_trace.read_bytes())
+    report_before = shared_report.read_bytes()
+    expected_trace = shared_trace.read_bytes()
+    shared_trace.unlink()
+
+    failure = salvage_nvml_sidecar_attempt(
+        scratch_dir=scratch,
+        attempt_prefix=prefix,
+        expected_uuid="GPU-allocated",
+        interval_ms=20,
+        sidecar_cpu_id=4,
+        detector_cpu_ids=(0, 1, 2, 3),
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+    )
+
+    assert shared_report.read_bytes() == report_before
+    assert shared_trace.read_bytes() == expected_trace
+    assert failure["power_attempt_artifacts_complete"] is True
+    assert failure["power_attempt_sha256"] == report["attempt_sha256"]
+
+
+def test_salvage_verifies_live_pid_command_before_signalling(tmp_path: Path) -> None:
+    proc_root = tmp_path / "proc"
+    command_dir = proc_root / "321"
+    command_dir.mkdir(parents=True)
+    command_path = command_dir / "cmdline"
+    command_path.write_bytes(
+        b"/env/python\0/repo/tools/bata/spatial_zoom_s1_power.py\0"
+        b"sidecar\0--expected-uuid\0GPU-allocated\0"
+    )
+    pid_record = {
+        "schema_version": "spatial_zoom_s1_power_sidecar_pid_v1",
+        "pid": 321,
+        "parent_pid": 123,
+        "expected_uuid": "GPU-allocated",
+        "sidecar_cpu_id": 4,
+        "actual_cpu_affinity": [4],
+        "allocated_cpu_ids": [0, 1, 2, 3, 4],
+        "clock_identity": {"clock": "time.monotonic_ns"},
+    }
+    pid_record["pid_sha256"] = canonical_sha256(pid_record)
+    pid, error = s1_power._validated_sidecar_pid_for_salvage(
+        pid_record,
+        expected_uuid="GPU-allocated",
+        sidecar_cpu_id=4,
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+        proc_root=proc_root,
+    )
+    assert (pid, error) == (321, None)
+
+    command_path.write_bytes(b"/usr/bin/python\0unrelated.py\0")
+    pid, error = s1_power._validated_sidecar_pid_for_salvage(
+        pid_record,
+        expected_uuid="GPU-allocated",
+        sidecar_cpu_id=4,
+        allocated_cpu_ids=(0, 1, 2, 3, 4),
+        proc_root=proc_root,
+    )
+    assert pid is None
+    assert error == "live PID does not match the NVML sidecar command"
+
+
+def test_sidecar_attempt_validator_rejects_swapped_raw_trace(tmp_path: Path) -> None:
+    report_a, trace_a, _ = _write_valid_sidecar_attempt(
+        tmp_path / "a",
+        expected_uuid="GPU-S1",
+    )
+    _, trace_b, _ = _write_valid_sidecar_attempt(
+        tmp_path / "b",
+        expected_uuid="GPU-S1",
+    )
+    rows = [
+        json.loads(line)
+        for line in trace_b.read_text(encoding="utf-8").splitlines()
+    ]
+    rows[0]["power_w"] = 999.0
+    trace_b.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="trace, cadence, clock, or CPU"):
+        validate_nvml_sidecar_attempt(
+            report_a,
+            trace_b,
+            expected_uuid="GPU-S1",
+            require_pass=True,
+        )
+    for consumer in (
+        "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
+        "tools/bata/analyze_spatial_zoom_s1_results.py",
+    ):
+        source = (ROOT / consumer).read_text(encoding="utf-8")
+        assert "validate_nvml_sidecar_attempt(" in source
+        assert "expected_uuid=profile[\"hardware_identity\"]" in source
+
+
+@pytest.mark.skipif(
+    platform.system() != "Linux",
+    reason="real sidecar subprocess lifecycle requires Linux CPU affinity",
+)
+def test_sidecar_sampler_real_subprocess_lifecycle(tmp_path: Path) -> None:
+    original_affinity = tuple(sorted(os.sched_getaffinity(0)))
+    if len(original_affinity) < 5:
+        pytest.skip("real sidecar lifecycle test requires five available CPUs")
+    detector_cpus = original_affinity[:4]
+    sidecar_cpu = original_affinity[4]
+    fake_sidecar = tmp_path / "fake_sidecar.py"
+    fake_sidecar.write_text(
+        textwrap.dedent(
+            """
+            import argparse
+            import hashlib
+            import json
+            import os
+            from pathlib import Path
+            import signal
+            import time
+
+            def canonical(value):
+                payload = json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                )
+                return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+            def file_hash(path):
+                return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+            def publish(path, value):
+                path = Path(path)
+                temporary = path.with_name(path.name + ".tmp")
+                temporary.write_text(
+                    json.dumps(value, indent=2, sort_keys=True) + "\\n",
+                    encoding="utf-8",
+                )
+                os.replace(temporary, path)
+
+            def clock():
+                info = time.get_clock_info("monotonic")
+                return {
+                    "clock": "time.monotonic_ns",
+                    "implementation": info.implementation,
+                    "monotonic": bool(info.monotonic),
+                    "adjustable": bool(info.adjustable),
+                    "resolution_seconds": float(info.resolution),
+                }
+
+            parser = argparse.ArgumentParser()
+            parser.add_argument("mode")
+            parser.add_argument("--expected-uuid", required=True)
+            parser.add_argument("--interval-ms", type=int, required=True)
+            parser.add_argument("--trace", type=Path, required=True)
+            parser.add_argument("--ready", type=Path, required=True)
+            parser.add_argument("--result", type=Path, required=True)
+            parser.add_argument("--sidecar-cpu-id", type=int, required=True)
+            parser.add_argument("--allocated-cpus", required=True)
+            args = parser.parse_args()
+            allocated = [int(value) for value in args.allocated_cpus.split(",")]
+            os.sched_setaffinity(0, {args.sidecar_cpu_id})
+            affinity = sorted(os.sched_getaffinity(0))
+            pid_record = {
+                "schema_version": "spatial_zoom_s1_power_sidecar_pid_v1",
+                "pid": os.getpid(),
+                "parent_pid": os.getppid(),
+                "expected_uuid": args.expected_uuid,
+                "sidecar_cpu_id": args.sidecar_cpu_id,
+                "actual_cpu_affinity": affinity,
+                "allocated_cpu_ids": allocated,
+                "clock_identity": clock(),
+            }
+            pid_record["pid_sha256"] = canonical(pid_record)
+            publish(args.trace.parent / "pid.json", pid_record)
+            stop = False
+
+            def request_stop(_signum, _frame):
+                global stop
+                stop = True
+
+            signal.signal(signal.SIGTERM, request_stop)
+            started = time.monotonic_ns()
+            sequence = 0
+            with args.trace.open("x", encoding="utf-8", buffering=1) as handle:
+                while not stop:
+                    observed = time.monotonic_ns()
+                    handle.write(
+                        json.dumps(
+                            {
+                                "sequence": sequence,
+                                "monotonic_ns": observed,
+                                "power_w": 125.0,
+                            },
+                            sort_keys=True,
+                        )
+                        + "\\n"
+                    )
+                    if sequence == 0:
+                        ready = {
+                            "schema_version": "spatial_zoom_s1_power_sidecar_ready_v1",
+                            "pid": os.getpid(),
+                            "parent_pid": os.getppid(),
+                            "expected_uuid": args.expected_uuid,
+                            "actual_uuid": args.expected_uuid,
+                            "sidecar_cpu_id": args.sidecar_cpu_id,
+                            "actual_cpu_affinity": affinity,
+                            "allocated_cpu_ids": allocated,
+                            "interval_ms": args.interval_ms,
+                            "clock_identity": clock(),
+                            "first_sample_monotonic_ns": observed,
+                        }
+                        ready["ready_sha256"] = canonical(ready)
+                        publish(args.ready, ready)
+                    sequence += 1
+                    time.sleep(args.interval_ms / 1000.0)
+                handle.flush()
+                os.fsync(handle.fileno())
+            result = {
+                "schema_version": "spatial_zoom_s1_power_sidecar_result_v1",
+                "status": "PASS",
+                "error": None,
+                "pid": os.getpid(),
+                "parent_pid": os.getppid(),
+                "expected_uuid": args.expected_uuid,
+                "actual_uuid": args.expected_uuid,
+                "sidecar_cpu_id": args.sidecar_cpu_id,
+                "actual_cpu_affinity": affinity,
+                "allocated_cpu_ids": allocated,
+                "interval_ms": args.interval_ms,
+                "clock_identity": clock(),
+                "sample_count": sequence,
+                "started_monotonic_ns": started,
+                "finished_monotonic_ns": time.monotonic_ns(),
+                "trace_sha256": file_hash(args.trace),
+            }
+            result["result_sha256"] = canonical(result)
+            publish(args.result, result)
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    os.sched_setaffinity(0, set(detector_cpus))
+    sampler = None
+    try:
+        sampler = NvmlSidecarPowerSampler(
+            expected_uuid="GPU-S1",
+            interval_ms=20,
+            scratch_dir=tmp_path / "scratch",
+            attempt_prefix=tmp_path / "campaign" / "dense256_seed3408",
+            sidecar_cpu_id=sidecar_cpu,
+            detector_cpu_ids=detector_cpus,
+            allocated_cpu_ids=(*detector_cpus, sidecar_cpu),
+            source_path=fake_sidecar,
+            startup_timeout_s=5.0,
+            stop_timeout_s=5.0,
+        )
+        sampler.start()
+        time.sleep(0.12)
+        sampler.stop()
+        assert sampler._process is not None
+        assert sampler._process.poll() == 0
+        checked = validate_nvml_sidecar_attempt(
+            sampler.attempt_report_path,
+            sampler.attempt_trace_path,
+            expected_uuid="GPU-S1",
+            require_pass=True,
+        )
+        assert checked["status"] == "PASS"
+        assert checked["cadence"]["formal_cadence_pass"] is True
+    finally:
+        if sampler is not None and sampler._process is not None:
+            if sampler._process.poll() is None:
+                sampler._process.kill()
+                sampler._process.wait(timeout=5.0)
+        os.sched_setaffinity(0, set(original_affinity))
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_error"),
+    (
+        ("import sys\nsys.exit(9)\n", "exited before its ready record"),
+        ("import time\ntime.sleep(30)\n", "did not become ready before timeout"),
+    ),
+)
+@pytest.mark.skipif(
+    platform.system() != "Linux",
+    reason="real sidecar subprocess failures require Linux CPU affinity",
+)
+def test_sidecar_sampler_process_failure_leaves_no_orphan(
+    tmp_path: Path,
+    source: str,
+    expected_error: str,
+) -> None:
+    original_affinity = tuple(sorted(os.sched_getaffinity(0)))
+    if len(original_affinity) < 5:
+        pytest.skip("real sidecar lifecycle test requires five available CPUs")
+    detector_cpus = original_affinity[:4]
+    sidecar_cpu = original_affinity[4]
+    fake_sidecar = tmp_path / "failing_sidecar.py"
+    fake_sidecar.write_text(source, encoding="utf-8")
+    os.sched_setaffinity(0, set(detector_cpus))
+    sampler = None
+    try:
+        sampler = NvmlSidecarPowerSampler(
+            expected_uuid="GPU-S1",
+            interval_ms=20,
+            scratch_dir=tmp_path / "scratch",
+            attempt_prefix=tmp_path / "campaign" / "dense256_seed3408",
+            sidecar_cpu_id=sidecar_cpu,
+            detector_cpu_ids=detector_cpus,
+            allocated_cpu_ids=(*detector_cpus, sidecar_cpu),
+            source_path=fake_sidecar,
+            startup_timeout_s=0.15,
+            stop_timeout_s=0.15,
+        )
+        with pytest.raises(RuntimeError, match=expected_error):
+            sampler.start()
+        assert sampler._process is not None
+        assert sampler._process.poll() is not None
+        report = json.loads(
+            sampler.attempt_report_path.read_text(encoding="utf-8")
+        )
+        assert report["status"] == "FAIL"
+        assert expected_error in report["error"]
+        assert sampler.attempt_trace_path.is_file()
+    finally:
+        if sampler is not None and sampler._process is not None:
+            if sampler._process.poll() is None:
+                sampler._process.kill()
+                sampler._process.wait(timeout=5.0)
+        os.sched_setaffinity(0, set(original_affinity))
+
+
+def test_long_sidecar_gate_is_compact_test_reuse_evidence(
+    tmp_path: Path,
+) -> None:
+    campaign_root = (tmp_path / "campaign").resolve()
+    recovery = {
+        "reason": S1_SIDECAR_RECOVERY_REASON,
+        "campaign_root": str(campaign_root),
+        "sidecar_gate_relative_path": "sidecar_gate.json",
+        "profile_code_commit": "a" * 40,
+        "certificate_sha256": "b" * 64,
+        "campaign_id": "campaign",
+        "expected_loader_exposure_count": 2,
+        "expected_physical_window_count": 2,
+        "power_max_gap_limit_ms": 100.0,
+        "power_target_interval_ms": 20,
+        "allocated_cpu_count": 5,
+        "detector_cpu_count": 4,
+    }
+    metadata = _profile_metadata(256, 3408)
+    profile = build_profile_summary(
+        [_profile_sample(1.0, 0), _profile_sample(1.1, 1)],
+        metadata=metadata,
+    )
+    gate_dir = campaign_root / "sidecar_gate"
+    gate_dir.mkdir(parents=True)
+    prefix = gate_dir / "dense256_seed3408_long_full_path"
+    marker_path = prefix.with_suffix(".started.json")
+    marker = {
+        "schema_version": "spatial_zoom_s1_profile_attempt_v6",
+        "gate_only": True,
+    }
+    marker["marker_sha256"] = canonical_sha256(marker)
+    marker_path.write_text(
+        json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    attempt_report_path, attempt_trace, _ = _write_valid_sidecar_attempt(
+        prefix,
+        expected_uuid="GPU-S1",
+    )
+    test_evidence_path = tmp_path / "test.evidence.json"
+    test_evidence_path.write_text('{"sealed": true}\n', encoding="utf-8")
+    evidence = build_sidecar_gate_evidence(
+        recovery=recovery,
+        profile_report=profile,
+        marker_path=marker_path,
+        attempt_report_path=attempt_report_path,
+        attempt_trace_path=attempt_trace,
+        test_evidence_path=test_evidence_path,
+        test_evidence_file_sha256_before=sha256_file(test_evidence_path),
+        slurm_job_id="12345",
+    )
+    path = write_sidecar_gate_evidence(evidence, recovery=recovery)
+    assert path == sidecar_gate_path(recovery)
+    checked = load_sidecar_gate_evidence(path, recovery=recovery)
+    assert checked["status"] == "PASS"
+    assert checked["published_formal_profile"] is False
+    assert not prefix.with_suffix(".summary.json").exists()
+    assert checked["hardware_class"] == sidecar_gate_hardware_class(
+        profile["hardware_identity"]
+    )
+    validate_sidecar_gate_runtime_identity(
+        checked,
+        hardware_identity=profile["hardware_identity"],
+        software_fingerprint=profile["software_fingerprint"],
+    )
+    mismatched_hardware = copy.deepcopy(profile["hardware_identity"])
+    mismatched_hardware["gpu_name"] = "different GPU class"
+    with pytest.raises(ValueError, match="hardware class"):
+        validate_sidecar_gate_runtime_identity(
+            checked,
+            hardware_identity=mismatched_hardware,
+            software_fingerprint=profile["software_fingerprint"],
+        )
 
 
 def test_full_stack_profile_requires_trained_checkpoint_and_matched_protocol() -> None:
