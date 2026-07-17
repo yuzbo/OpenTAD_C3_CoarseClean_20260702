@@ -44,6 +44,13 @@ class _FakeSlurm:
     def __call__(self, command, **_kwargs):
         command = list(command)
         if command[0] == "sbatch":
+            response = self.responses.pop(0)
+            if response == "reject":
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="policy rejected the job",
+                )
             job_id = self.next_id
             self.next_id += 1
             cluster = self._argument(command, "--clusters=")
@@ -58,7 +65,6 @@ class _FakeSlurm:
                 "hold": held,
                 "state_reason": "JobHeldUser" if held else "Priority",
             }
-            response = self.responses.pop(0)
             stdout = (
                 f"{job_id};{cluster}\n"
                 if response == "canonical"
@@ -212,6 +218,31 @@ def test_non_user_hold_is_rejected_and_cancelled(tmp_path: Path) -> None:
         )
 
     assert slurm.jobs[101]["job_state"] == ["CANCELLED"]
+
+
+def test_rejected_sbatch_surfaces_scheduler_stderr(
+    tmp_path: Path,
+) -> None:
+    job_file = tmp_path / "cost.sbatch"
+    job_file.write_text("#!/bin/bash\n", encoding="utf-8")
+    slurm = _FakeSlurm(responses=["reject"])
+
+    with pytest.raises(
+        RuntimeError,
+        match="policy rejected the job",
+    ):
+        submit_held_job(
+            token="token-cost",
+            job_name="cost-job",
+            cluster="n16r4",
+            job_file=job_file,
+            user="sczc063",
+            recovery_attempts=1,
+            runner=slurm,
+            sleeper=lambda _delay: None,
+        )
+
+    assert slurm.jobs == {}
 
 
 def test_successful_sbatch_waits_through_delayed_visibility(

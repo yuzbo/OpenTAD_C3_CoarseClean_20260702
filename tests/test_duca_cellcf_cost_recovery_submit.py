@@ -29,6 +29,7 @@ def test_recovery_uses_exact_cross_commit_cost_validation() -> None:
     assert "DUCA_CELLCF_COST_SAMPLES" in source
     assert "DUCA_CELLCF_COST_REPEATS" in source
     assert "run_duca_cellcf_cost_pair.sh" in source
+    assert source.count("#SBATCH --gres=gpu:1") == 2
     assert "epoch_131.pth" in source
     assert "state_dict_ema" in source
 

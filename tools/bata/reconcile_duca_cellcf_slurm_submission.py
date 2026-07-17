@@ -316,18 +316,27 @@ def submit_held_job(
     visibility_attempts = (
         0 if int(result.returncode) == 0 else recovery_attempts
     )
-    recovered_id = _recover_with_retry(
-        token=token,
-        job_name=job_name,
-        cluster=cluster,
-        job_file=path,
-        user=user,
-        require_current_user_hold=False,
-        attempts=visibility_attempts,
-        delay_seconds=recovery_delay_seconds,
-        runner=runner,
-        sleeper=sleeper,
-    )
+    try:
+        recovered_id = _recover_with_retry(
+            token=token,
+            job_name=job_name,
+            cluster=cluster,
+            job_file=path,
+            user=user,
+            require_current_user_hold=False,
+            attempts=visibility_attempts,
+            delay_seconds=recovery_delay_seconds,
+            runner=runner,
+            sleeper=sleeper,
+        )
+    except RuntimeError as exc:
+        stderr = " ".join(str(result.stderr or "").split())
+        stdout = " ".join(raw.split())
+        raise RuntimeError(
+            "sbatch did not create a recoverable held job: "
+            f"returncode={int(result.returncode)}, "
+            f"stdout={stdout!r}, stderr={stderr!r}"
+        ) from exc
     try:
         held_id = _recover_unique_job_id(
             token=token,
