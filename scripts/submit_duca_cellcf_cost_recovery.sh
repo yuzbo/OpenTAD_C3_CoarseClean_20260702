@@ -40,7 +40,7 @@ WARMUP="${DUCA_CELLCF_COST_WARMUP:-20}"
 REPEATS="${DUCA_CELLCF_COST_REPEATS:-3}"
 SUPPORTED_TRAINED_COMMIT="1642f265e48391418a7c8a4a087e33e2b7bf6899"
 
-for command in git sbatch scancel scontrol sacct sha256sum flock; do
+for command in git sbatch scancel scontrol sacct sha256sum flock sleep; do
   command -v "${command}" >/dev/null 2>&1 || fail "${command} is unavailable"
 done
 [[ -x "${PYTHON}" ]] || fail "Python is missing: ${PYTHON}"
@@ -542,13 +542,26 @@ for binding in \
     "${id}" "${scheduler_script}"
   [[ "$(sha256_file "${scheduler_script}")" == "${job_sha}" ]] \
     || fail "scheduler-owned script differs for ${key}"
-  "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
-    --job-id "${id}" --job-name "${name}" --comment "${token}" \
-    --cluster "${TARGET_CLUSTER}" --job-file "${job_file}" \
-    --job-file-sha256 "${job_sha}" --dependency \
-    "$([[ "${dependency}" == "none" ]] || printf '%s' "${dependency}")" \
-    --require-scheduler-script --require-submitted-with-hold \
-    --require-current-user-hold >/dev/null
+  validation_ok=0
+  validation_error="${RECOVERY_ROOT}/receipts/${key}.validation.stderr"
+  for validation_attempt in {1..10}; do
+    if "${PYTHON}" -m tools.bata.validate_duca_cellcf_slurm_receipt \
+      --job-id "${id}" --job-name "${name}" --comment "${token}" \
+      --cluster "${TARGET_CLUSTER}" --job-file "${job_file}" \
+      --job-file-sha256 "${job_sha}" --dependency \
+      "$([[ "${dependency}" == "none" ]] || printf '%s' "${dependency}")" \
+      --require-scheduler-script --require-submitted-with-hold \
+      --require-current-user-hold >/dev/null 2>"${validation_error}"; then
+      validation_ok=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ "${validation_ok}" != "1" ]]; then
+    cat "${validation_error}" >&2
+    fail "scheduler identity validation failed for ${key}"
+  fi
+  rm -f "${validation_error}"
   "${PYTHON}" - "${receipt}" "${id}" "${name}" "${job_file}" \
     "${dependency}" "${token}" <<'PY'
 import sys

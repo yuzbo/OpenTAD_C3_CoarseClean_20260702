@@ -50,6 +50,8 @@ def test_recovery_commits_ledger_before_releasing_held_jobs() -> None:
     assert "scheduler-owned script differs" in source
     assert "--require-current-user-hold" in source
     assert "Reason=JobHeldUser" in source
+    assert "for validation_attempt in {1..10}" in source
+    assert "scheduler identity validation failed for ${key}" in source
     assert "fsync-artifacts" in source
     assert '--directory "${FORMAL_ROOT}"' in source
     assert '--directory "${RECOVERY_ROOT}/logs"' in source
