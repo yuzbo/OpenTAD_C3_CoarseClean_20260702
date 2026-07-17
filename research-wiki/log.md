@@ -260,3 +260,14 @@ append_only: true
   tested infrastructure only: combined local S1+C3 verification is `71 passed,
   1 skipped`; a new clean commit, certificate, no-open GPU gate and matrix
   remain required before S1 GO/KILL.
+- 2026-07-17 08:52+08:00: pushed formal NVML commit `2f8eb06`, passed `72`
+  exact remote tests, and issued chained campaign `02f8e8bf7c2d6d25`
+  (certificate internal/file SHA `e70cccc3.../74ba2f55...`). No-open Gate
+  `1167537` completed `0:0` in `20:57` with zero-byte stderr, validated reuse
+  of the existing dense256/seed3408 test evidence, and published no profile.
+  Its real Slurm mapping was logical `cuda:0` to physical GPU 1; UUID-resolved
+  NVML passed at median/P95/max `20.000/20.025/57.848` ms while the inherited
+  pipe failed at `674.014` ms. Submitted exactly one frozen-order serial matrix
+  as Job `1167538`; it is pending by priority. Gate and matrix receipt internal
+  SHAs are `a20341be.../a20768d5...`. S1 remains `experiment_running`; final
+  cost/statistics, GO/KILL, Pro and S2 remain blocked.

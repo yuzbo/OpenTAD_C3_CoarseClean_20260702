@@ -212,6 +212,26 @@ updated: 2026-07-17
   `e32675c3d50099074f58117eebf4466a18185189c8c448beee869a6e464cb6c4`.
   The artifact is test-blind and cannot itself support a paper cost claim; it
   establishes only the formal sampler backend choice.
+- Formal S1 NVML recovery commit
+  `2f8eb06f98ce35b61ce78b2b0cffa3eeb27a1b22`; clean remote snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_2f8eb06_20260717_nvml`
+  passed 72 exact Linux tests. Chained campaign
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/spatial_zoom_s1_canonical/d95a36db4bc70aa2ac9d15e5fb5be82174a8a3488c5150c71d2ad4c10c7234a7/profile_campaigns/02f8e8bf7c2d6d25`
+  has certificate internal SHA
+  `e70cccc34a725beb2b899ae3f498bed5a03a430b7eed0f17a09fb06510381b3b`
+  and file SHA
+  `74ba2f5546f1c05142bc7aabbea964a0add26927dedc216b26a7c5fcb0d174b2`.
+  No-open Gate `1167537` completed `0:0`; its power diagnostic internal/file
+  SHAs are
+  `037992cae297a1fe03356e6f461dad9cd5b5af681535e2525d2cd4b1956a4cdd`
+  and `e271056e75d0f11bcadbcebbdcc1e4876e0d3e5b3b95b360b264143fb05cfdab`.
+  Gate receipt internal/file SHAs are
+  `a20341be651d1810b57428e62f603e3b16970dbbc6932390113bf56cee6f8a99`
+  and `8f6f54c83515dcfdde549787f5e2a91b4c825663e9b40c646a9ad985e53dc581`.
+  Serial matrix Job `1167538` has submission receipt internal/file SHAs
+  `a20768d599c9eed4019dcaebd220e7eb4eb805e6b6043646dd8c82e19a45b448`
+  and `bacf8b0f38efde7bcb0a5659978d8675c3004bf53151eb2a8ed2228840c2aa4f`;
+  no result is attributed until the matrix completes and validates.
 
 ## 外部附件
 

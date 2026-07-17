@@ -35,9 +35,13 @@ max_chars: 8000
   at median/P95/max gaps `20.212/20.331/678.458` ms (FAIL) and native NVML at
   `20.000/20.018/57.709` ms (PASS) under matched CUDA load. The profiler now
   resolves native NVML by the frozen Slurm-allocated GPU UUID without changing
-  the 20 ms target or
-  100 ms limit. A chained certificate must preserve both failed attempts and
-  bind diagnostic SHA `14c12730...` before another no-open gate/matrix.
+  the 20 ms target or 100 ms limit. Formal commit `2f8eb06` passed 72 exact
+  remote tests and issued chained campaign `02f8e8bf7c2d6d25`, whose `v2`
+  certificate preserves both failed attempts and binds diagnostic SHA
+  `14c12730...`. No-open Gate `1167537` completed `0:0`; on a real allocation
+  with `cuda:0` mapped to physical GPU 1, UUID-resolved NVML passed at
+  median/P95/max gaps `20.000/20.025/57.848` ms. The only authorized serial
+  frozen-order matrix is Job `1167538`, currently pending by priority.
   Cost matrix, paired statistics, Pro review, and S1 GO/KILL remain pending;
   the state is still `experiment_running`.
 

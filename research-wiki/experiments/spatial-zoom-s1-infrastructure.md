@@ -488,6 +488,24 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   remains the Linux/CUDA-only interpolation check. Remote exact-snapshot tests,
   real chained-certificate validation, and a no-open GPU gate are still
   required.
+- Formal NVML commit `2f8eb06f98ce35b61ce78b2b0cffa3eeb27a1b22`
+  passed `72` exact remote Linux tests in clean snapshot
+  `opentad_spatial_zoom_s1_2f8eb06_20260717_nvml`. Real chained campaign
+  `02f8e8bf7c2d6d25` recursively validated the original v4 failure, parent
+  campaign `bc9...`, v5 power failure, Job `1167536` diagnostic and current
+  restricted Git diff. Its certificate internal/file SHAs are
+  `e70cccc3.../74ba2f55...`. No-open Gate `1167537` completed `0:0` in `20:57`
+  on `g0059`, with zero-byte stderr and no profile publication. Crucially,
+  Slurm exposed logical `cuda:0` while assigning physical GPU 1; UUID-resolved
+  NVML still passed with 510 samples and median/P95/max gaps
+  `20.000/20.025/57.848` ms, while the inherited pipe again failed at
+  `674.014` ms. Gate diagnostic internal/file SHAs are
+  `037992ca.../e271056e...`; gate receipt internal/file SHAs are
+  `a20341be.../8f6f54c8...`. Exactly one serial frozen-order matrix, Job
+  `1167538`, was submitted with receipt internal/file SHAs
+  `a20768d5.../bacf8b0f...`; it is pending by Slurm priority and has not opened
+  a new cell. S1 remains `experiment_running`; no cost matrix, paired result,
+  GO/KILL, S2 or Pro review exists yet.
 
 ## Decision Boundary
 
