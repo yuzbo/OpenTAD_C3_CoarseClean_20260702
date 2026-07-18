@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from tools.bata.duca_full_stack_cost import (
+    CPU_ENQUEUE_DIAGNOSTIC_KEYS,
     ModuleStageHooks,
     MethodStageHooks,
     StageRecorder,
@@ -12,6 +13,7 @@ from tools.bata.duca_full_stack_cost import (
     build_cost_matrix,
     compare_profile_summaries,
     integrate_power_samples,
+    validate_profile_sample,
     validate_and_rebuild_profile_summary,
     write_profile_artifacts,
     write_cost_matrix_artifacts,
@@ -137,6 +139,35 @@ def test_profile_summary_rejects_missing_or_inconsistent_stage_costs() -> None:
     unsupported["repeat_nonce"] = "metadata-disguised-as-a-sample"
     with pytest.raises(ValueError, match="unsupported fields"):
         build_profile_summary([unsupported], metadata=_metadata("broken"))
+
+
+def test_profile_summary_accepts_exact_cpu_enqueue_diagnostics_without_counting_them() -> None:
+    sample = _sample()
+    for index, key in enumerate(sorted(CPU_ENQUEUE_DIAGNOSTIC_KEYS), start=1):
+        sample[key] = float(index)
+
+    derived = validate_profile_sample(sample)
+    report = build_profile_summary([sample], metadata=_metadata("duca-fixed384"))
+
+    assert derived["end_to_end_serial_ms"] == pytest.approx(135.0)
+    assert report["stages"]["end_to_end_serial_ms"]["p50"] == pytest.approx(
+        135.0
+    )
+    assert not (CPU_ENQUEUE_DIAGNOSTIC_KEYS & set(report["stages"]))
+    assert CPU_ENQUEUE_DIAGNOSTIC_KEYS <= set(report["raw_samples"][0])
+    validate_and_rebuild_profile_summary(report)
+
+
+def test_profile_summary_rejects_invalid_or_unknown_cpu_enqueue_diagnostics() -> None:
+    invalid = _sample()
+    invalid[next(iter(CPU_ENQUEUE_DIAGNOSTIC_KEYS))] = -1.0
+    with pytest.raises(ValueError, match="cpu_enqueue_ms"):
+        validate_profile_sample(invalid)
+
+    unknown = _sample()
+    unknown["made_up_cpu_enqueue_ms"] = 1.0
+    with pytest.raises(ValueError, match="unsupported fields"):
+        validate_profile_sample(unknown)
 
 
 def test_compare_profiles_enforces_protocol_and_hardware_and_reports_cost_gates() -> None:

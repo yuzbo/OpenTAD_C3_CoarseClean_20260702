@@ -17,6 +17,10 @@ from tools.bata.profile_duca_full_stack_cost import (
 )
 from tools.bata.compare_duca_full_stack_cost import main as compare_cost_main
 from tools.bata.duca_full_stack_cost import OFFLINE_FULL_WINDOW_PROTOCOL, build_profile_summary
+from tools.bata.duca_full_stack_cost import (
+    CPU_ENQUEUE_DIAGNOSTIC_KEYS,
+    cpu_enqueue_diagnostic_key,
+)
 
 
 def test_strip_ddp_prefix_supports_training_and_ema_checkpoints() -> None:
@@ -50,6 +54,42 @@ def test_component_cost_uses_cuda_timeline_without_double_counting_cpu_enqueue()
     assert component_elapsed_ms(cuda_elapsed_ms=20.0, cpu_enqueue_ms=35.0) == pytest.approx(20.0)
     with pytest.raises(ValueError, match="CUDA"):
         component_elapsed_ms(cuda_elapsed_ms=-1.0, cpu_enqueue_ms=2.0)
+
+
+def test_cpu_enqueue_diagnostic_names_share_the_strict_summary_contract() -> None:
+    assert CPU_ENQUEUE_DIAGNOSTIC_KEYS == frozenset(
+        {
+            "backbone_wrapper_total_cpu_enqueue_ms",
+            "coarse_probe_cpu_enqueue_ms",
+            "frame_selector_total_cpu_enqueue_ms",
+            "head_cpu_enqueue_ms",
+            "heavy_backbone_cpu_enqueue_ms",
+            "neck_cpu_enqueue_ms",
+            "projection_cpu_enqueue_ms",
+        }
+    )
+    assert cpu_enqueue_diagnostic_key("coarse_probe_ms") == (
+        "coarse_probe_cpu_enqueue_ms"
+    )
+    assert "coarse_probe_cpu_enqueue_ms" in CPU_ENQUEUE_DIAGNOSTIC_KEYS
+    with pytest.raises(ValueError, match="do not support"):
+        cpu_enqueue_diagnostic_key("made_up_ms")
+
+
+def test_profiler_validates_each_sample_before_accumulating_the_full_run() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "bata"
+        / "profile_duca_full_stack_cost.py"
+    ).read_text(encoding="utf-8")
+
+    validation = source.index(
+        "validate_profile_sample(sample, index=len(samples))"
+    )
+    append = source.index("samples.append(sample)", validation)
+    summary = source.index("build_profile_summary(samples", append)
+    assert validation < append < summary
 
 
 def test_power_device_uuid_uses_torch_nvml_mapping_not_cuda_logical_index() -> None:

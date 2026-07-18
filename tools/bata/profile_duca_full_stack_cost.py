@@ -24,7 +24,9 @@ from tools.bata.duca_full_stack_cost import (
     StageRecorder,
     build_profile_summary,
     compare_profile_summaries,
+    cpu_enqueue_diagnostic_key,
     integrate_power_samples,
+    validate_profile_sample,
     write_profile_artifacts,
 )
 from tools.bata.duca_cellcf_protocol import (
@@ -305,7 +307,11 @@ class CudaModuleEventHooks:
                     component_elapsed_ms(cuda_elapsed_ms=cuda_ms, cpu_enqueue_ms=cpu_ms),
                     accumulate=True,
                 )
-                recorder.record_value(name.replace("_ms", "_cpu_enqueue_ms"), cpu_ms, accumulate=True)
+                recorder.record_value(
+                    cpu_enqueue_diagnostic_key(name),
+                    cpu_ms,
+                    accumulate=True,
+                )
         self.pending.clear()
 
     def close(self) -> None:
@@ -352,7 +358,11 @@ class CudaMethodEventHooks:
                     component_elapsed_ms(cuda_elapsed_ms=cuda_ms, cpu_enqueue_ms=cpu_ms),
                     accumulate=True,
                 )
-                recorder.record_value(name.replace("_ms", "_cpu_enqueue_ms"), cpu_ms, accumulate=True)
+                recorder.record_value(
+                    cpu_enqueue_diagnostic_key(name),
+                    cpu_ms,
+                    accumulate=True,
+                )
         self.pending.clear()
 
     def close(self) -> None:
@@ -1125,7 +1135,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 recorder.record_value("peak_gpu_memory_mb", 0.0)
             recorder.record_value("selected_count", _selected_count(model, gpu_batch["inputs"]))
-            samples.append(recorder.end_sample())
+            sample = recorder.end_sample()
+            validate_profile_sample(sample, index=len(samples))
+            samples.append(sample)
             power_windows.append((power_start, power_end))
             del cpu_batch, gpu_batch, predictions, metas
     finally:

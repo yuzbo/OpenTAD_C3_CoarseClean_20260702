@@ -33,11 +33,26 @@ _REQUIRED_NESTED_STAGES = _MODEL_CHILD_STAGES + (
     "coarse_probe_ms",
     "heavy_backbone_ms",
 )
+
+
+def cpu_enqueue_diagnostic_key(stage_name: str) -> str:
+    if stage_name not in _REQUIRED_NESTED_STAGES:
+        raise ValueError(
+            f"CPU enqueue diagnostics do not support stage {stage_name!r}"
+        )
+    return f"{stage_name[:-3]}_cpu_enqueue_ms"
+
+
+CPU_ENQUEUE_DIAGNOSTIC_KEYS = frozenset(
+    cpu_enqueue_diagnostic_key(stage_name)
+    for stage_name in _REQUIRED_NESTED_STAGES
+)
 _OPTIONAL_RAW_SAMPLE_KEYS = frozenset(
     {
         "peak_gpu_memory_mb",
         "gpu_energy_j",
         "average_gpu_power_w",
+        *CPU_ENQUEUE_DIAGNOSTIC_KEYS,
     }
 )
 _ALLOWED_RAW_SAMPLE_KEYS = frozenset(
@@ -311,6 +326,27 @@ def _derived_sample(sample: Mapping[str, Any], *, index: int) -> dict[str, float
     return derived
 
 
+def validate_profile_sample(
+    sample: Mapping[str, Any],
+    *,
+    index: int = 0,
+) -> dict[str, float]:
+    derived = _derived_sample(sample, index=index)
+    if "selected_count" not in sample:
+        raise ValueError(f"profile sample {index} is missing selected_count")
+    _finite_nonnegative(
+        sample["selected_count"],
+        name=f"sample[{index}].selected_count",
+    )
+    for key in _OPTIONAL_RAW_SAMPLE_KEYS:
+        if sample.get(key) is not None:
+            _finite_nonnegative(
+                sample[key],
+                name=f"sample[{index}].{key}",
+            )
+    return derived
+
+
 def build_profile_summary(
     samples: Sequence[Mapping[str, Any]],
     *,
@@ -319,7 +355,10 @@ def build_profile_summary(
     if not samples:
         raise ValueError("at least one measured sample is required")
     meta = _validate_metadata(metadata)
-    derived_samples = [_derived_sample(sample, index=index) for index, sample in enumerate(samples)]
+    derived_samples = [
+        validate_profile_sample(sample, index=index)
+        for index, sample in enumerate(samples)
+    ]
 
     stage_names = sorted(derived_samples[0])
     stages = {
@@ -330,15 +369,7 @@ def build_profile_summary(
     selected_counts = []
     peak_memory = []
     energy = []
-    for index, sample in enumerate(samples):
-        for key in _OPTIONAL_RAW_SAMPLE_KEYS:
-            if sample.get(key) is not None:
-                _finite_nonnegative(
-                    sample[key],
-                    name=f"sample[{index}].{key}",
-                )
-        if "selected_count" not in sample:
-            raise ValueError(f"profile sample {index} is missing selected_count")
+    for sample in samples:
         selected_counts.append(_finite_nonnegative(sample["selected_count"], name="selected_count"))
         if sample.get("peak_gpu_memory_mb") is not None:
             peak_memory.append(_finite_nonnegative(sample["peak_gpu_memory_mb"], name="peak_gpu_memory_mb"))
@@ -735,6 +766,7 @@ def write_profile_artifacts(report: Mapping[str, Any], output_prefix: str | Path
 
 
 __all__ = [
+    "CPU_ENQUEUE_DIAGNOSTIC_KEYS",
     "OFFLINE_FULL_WINDOW_PROTOCOL",
     "PROFILE_SCHEMA_VERSION",
     "MethodStageHooks",
@@ -743,7 +775,9 @@ __all__ = [
     "build_cost_matrix",
     "build_profile_summary",
     "compare_profile_summaries",
+    "cpu_enqueue_diagnostic_key",
     "integrate_power_samples",
+    "validate_profile_sample",
     "validate_and_rebuild_profile_summary",
     "write_cost_matrix_artifacts",
     "write_profile_artifacts",
