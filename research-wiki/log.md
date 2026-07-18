@@ -27,6 +27,10 @@
   ahead at every IoU threshold, including mAP@0.7 `28.00%` versus `14.49%`.
   Both jobs continue beyond epoch 49 with zero matched anomaly hits. Epoch 59
   and completion/checkpoint validation remain pending.
+- Epoch 51 produced the sixth consistent matched validation: selected-axis
+  `41.24%`, physical-metric `57.44%`, delta `+16.19` Avg-mAP. The mAP@0.7
+  values are `14.51/27.82`, delta `+13.31`. Both jobs remain active with
+  finite losses and zero anomaly hits; terminal artifacts are still absent.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 
