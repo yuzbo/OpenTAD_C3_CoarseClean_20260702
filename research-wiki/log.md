@@ -7,8 +7,8 @@
 - Local no-Torch deployment tests passed `6`; remote Linux focused tests passed
   `54`. The known local Torch `c10.dll` issue remains environmental.
 - Clean snapshot and run root are registered as `SRC-PT-014`.
-- Real gate `1170945` completed `0:0`; selected-axis `1170946` and
-  physical-metric `1170947` are running.
+- Real gate `1170945` and selected-axis/physical-metric jobs
+  `1170946/1170947` all completed `0:0`.
 - First matched epoch-41 validation: selected-axis Avg-mAP `39.84%`
   (`64.54/54.50/40.78/26.53/12.87` at tIoU 0.3:0.7), physical-metric
   `57.32%` (`77.57/71.41/61.44/48.00/28.17`), a `+17.48` Avg-mAP
@@ -45,6 +45,14 @@
   values are `14.82/28.66`, delta `+13.84`. Selected-axis completed epoch 58
   and an unvalidated epoch-59 checkpoint path appeared, but neither completion
   marker exists; both jobs remain active with zero anomaly hits.
+- Final epoch 59 completed with selected-axis `41.28%` and physical-metric
+  `57.57%` Avg-mAP, delta `+16.29`. IoU-wise deltas at 0.3:0.7 are
+  `+12.38/+14.10/+19.90/+21.30/+13.78`. Both independent completion validators
+  pass; checkpoints contain 499 finite online and 499 finite EMA entries,
+  exclude optimizer/scheduler state, and replay the evaluated weights. Best
+  logged validation for both arms is epoch 55 (`41.44/57.66%`). All anomaly and
+  GT-boundary audit counts are zero. Status advances to
+  `full60-single-seed-supported`, not `paper_ready`.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 

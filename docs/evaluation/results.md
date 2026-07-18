@@ -226,7 +226,7 @@ Artifact and stability evidence:
 - G1b SDPQ does not improve Avg-mAP meaningfully over selected-axis. Its small high-IoU gains coexist with lower mAP@0.3, consistent with sharper localization for some matched actions but weaker coverage/classification recall.
 - This single-seed, 20-epoch THUMOS result is `matched-medium-supported`, not `paper_ready`. It does not justify claiming the SDPQ operator as the main contribution, and it does not by itself authorize an automatic 60-epoch run.
 
-## G1 Native-J192 Matched Two-Arm 60-Epoch Validation (Running)
+## G1 Native-J192 Matched Two-Arm 60-Epoch Validation (Completed)
 
 Code commit: `0dc5851a8feb12b97d16bdb5ea8fc60e9273d132`; Git tree:
 `bddc9b9386604d00d213275a47ce7997b35d3f4c`.
@@ -236,7 +236,7 @@ Run root:
 
 Both arms use K384/J192, seed 42, no feature interpolation, the same data,
 sampler, backbone, optimizer, evaluator, and an exact 60-epoch cosine schedule.
-Gate `1170945` passed; jobs `1170946/1170947` remain running.
+Gate `1170945` passed; jobs `1170946/1170947` completed `0:0`.
 
 First matched validation after epoch 41, as recorded in the immutable training
 logs:
@@ -270,17 +270,34 @@ logs:
 | selected-axis | 57 | 64.89 | 56.24 | 43.02 | 27.89 | 14.82 | 41.37 |
 | physical-metric | 57 | 77.23 | 70.48 | 62.76 | 49.12 | 28.66 | 57.65 |
 | physical minus selected | 57 | +12.34 | +14.24 | +19.74 | +21.22 | +13.84 | +16.28 |
+| selected-axis | 59 | 64.82 | 56.39 | 42.63 | 27.71 | 14.86 | 41.28 |
+| physical-metric | 59 | 77.20 | 70.49 | 62.53 | 49.01 | 28.64 | 57.57 |
+| physical minus selected | 59 | +12.38 | +14.10 | +19.90 | +21.30 | +13.78 | +16.29 |
 
-This is an interim, same-epoch comparison. It strengthens the survivor signal
-from the 20-epoch matched run, but it is not the full60 result: epoch 59,
-final online/EMA checkpoint validation, independent mAP recomputation, and both
-`FULL_COMPLETE.json` artifacts are still pending. Current status remains
-`experiment_running`, not `full60-single-seed-supported` or `paper_ready`.
-The latest exact epoch-57 evaluator JSON SHA256 values are
-`a9bbe166f5efbd5d939326a89915b3f3bd765b34c996cc7ab80e2ed509571e4d`
+Both `FULL_COMPLETE.json` artifacts report `validation_pass=true`. The
+independent completion validator reproduced the epoch-59 metrics, and both
+checkpoints contain exactly 499 finite online entries plus 499 finite EMA
+entries. Direct deserialization found only `epoch`, `state_dict`, and
+`state_dict_ema`; optimizer and scheduler state are absent. Each arm produced
+422,000 predictions. The best logged validation was epoch 55
+(`41.44/57.66%`), while the required final epoch 59 is `41.28/57.57%`.
+
+Final checkpoint SHA256 values are
+`6fd0781b53e094bb30f0664e006a657fa7c7ef5b3be2de558856c8d23b6bb417`
 for selected-axis and
-`39394cf4e4d5af7fa0b9ef2e069ad78d0444c4d7d619a76d7120af70d1f3a1fe`
-for physical-metric.
+`c83a3463155c0a9926a4fc8d62f4d0ee7540c1a58293fb4c3cc9bad8ce9237ed`
+for physical-metric. Final metrics JSON SHA256 values are
+`526274c69703daf9b650fffe1ac37abd5c284b3ae0dd657aefbe15529ef1703d`
+and `f725e6ca86d6e54611e0de9f9c8fd687a2b43cfdce79bd5c3436ff5750a51cf1`.
+
+Final-batch loss is `0.5858` for selected-axis and `0.4777` for
+physical-metric; both report 3596 MB peak training memory. No Traceback, OOM,
+non-finite loss/gradient, AMP skipped step, checkpoint write failure, or GT
+boundary audit/repair event was found. Relative to the same-seed 20-epoch
+comparison (`30.42/44.88%`), both arms improved, and the physical-metric
+advantage grew from `+14.46` to `+16.29` Avg-mAP. This establishes
+`full60-single-seed-supported`, not `paper_ready`: multi-seed, mechanism,
+cost, robustness, and cross-dataset evidence remain required.
 
 ## Matched Pilot
 

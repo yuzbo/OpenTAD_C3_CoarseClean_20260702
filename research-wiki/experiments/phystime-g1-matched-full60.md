@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:phystime-g1-matched-full60
 title: "PhysTime G1 native-J192 matched two-arm 60-epoch validation"
 idea: idea:phystime-tad-2
-status: experiment_running
-verdict: interim_epochs41_to57_support_physical_metric_pending_epoch59
-confidence: nine_matched_interim_validations_not_full60_complete
-metrics: "Latest epoch 57 interim: selected-axis 41.37, physical-metric 57.65 Avg-mAP; matched epochs 41/43/45/47/49/51/53/55/57 preserve the ordering; final epoch 59 and FULL_COMPLETE validation pending."
+status: empirically_supported
+verdict: full60_single_seed_supports_physical_metric_not_paper_ready
+confidence: single_seed_single_dataset_full60_validated
+metrics: "Final epoch 59: selected-axis 41.28, physical-metric 57.57 Avg-mAP, delta +16.29; both FULL_COMPLETE validators pass with replayable finite online/EMA checkpoints."
 provenance: "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800"
 added: 2026-07-18T11:25:00+08:00
 ---
@@ -39,15 +39,15 @@ held fixed?
   `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1_full60_0dc5851_20260718`
 - Remote focused verification: `54 passed in 61.36s`
 - Gate job: `1170945`, `COMPLETED 0:0`, elapsed `00:04:47`
-- Selected-axis job: `1170946`, running after gate
-- Physical-metric job: `1170947`, running after gate
+- Selected-axis job: `1170946`, `COMPLETED 0:0`, elapsed `07:49:31`
+- Physical-metric job: `1170947`, `COMPLETED 0:0`, elapsed `07:55:13`
 - Submission free space: `31,285,616 KiB`; fail-closed floor: `8,388,608 KiB`
 
 The real gate binds commit, tree, canonical configs, the complete dataset
 manifest, the pretrained checkpoint, K/J geometry, optimizer behavior, and the
 official evaluator. Its top-level `gate_pass` is true.
 
-## Interim Evidence
+## Results
 
 The first matched validation after epoch 41 completed for both arms:
 
@@ -57,17 +57,16 @@ The first matched validation after epoch 41 completed for both arms:
 | physical-metric | 77.57 | 71.41 | 61.44 | 48.00 | 28.17 | 57.32 |
 | physical minus selected | +13.03 | +16.91 | +20.66 | +21.47 | +15.30 | +17.48 |
 
-Matched validations after epochs 43, 45, 47, 49, 51, 53, 55, and 57 retained the same ordering.
-The latest epoch-57 values are selected-axis `41.37%`, physical-metric
-`57.65%`, delta `+16.28` Avg-mAP. Across epochs 41/43/45/47/49/51/53/55/57, the interim
-physical-metric advantage is consistently `+16.19` to `+17.48` Avg-mAP.
-The exact latest evaluator JSON hashes are recorded in
-`docs/evaluation/results.md`.
+All ten matched validations at epochs 41/43/45/47/49/51/53/55/57/59 retain
+the same ordering. Final epoch-59 Avg-mAP is selected-axis `41.28%` and
+physical-metric `57.57%`, delta `+16.29`. Final mAP at tIoU 0.3:0.7 is
+`64.82/56.39/42.63/27.71/14.86` versus
+`77.20/70.49/62.53/49.01/28.64`. The best logged validation for both arms is
+epoch 55 (`41.44/57.66%`), so the final epoch remains close to the best.
 
-The jobs remain active and later validations overwrite the convenience
-`evaluation_metrics.json`, so these rounded epoch-41 values are anchored to
-the append-only `train.out` logs. This is a strong interim replication signal,
-not a terminal result.
+Relative to the same-seed 20-epoch run, selected-axis improves from `30.42`
+to `41.28`, physical-metric improves from `44.88` to `57.57`, and the method
+delta grows from `+14.46` to `+16.29` Avg-mAP.
 
 ## Artifact Contract
 
@@ -77,13 +76,21 @@ The independent validator recomputes mAP and rejects stale artifacts, schedule
 drift, config/data/checkpoint hash drift, missing EMA, optimizer/scheduler state
 inside the lightweight checkpoint, or a dirty runtime snapshot.
 
+Both arms pass this contract. Each checkpoint is 401,895,677 bytes and contains
+499 finite online plus 499 finite EMA entries, with no optimizer or scheduler
+state. Both completion artifacts report `validation_pass=true`,
+`evaluated_weights_replayable=true`, and 422,000 predictions. Training losses
+remain finite, peak logged memory is 3596 MB, and all required anomaly counts
+are zero.
+
 ## Evidence Boundary
 
-The current status is `experiment_running`. Interim epoch-41-to-57 mAP exists, but
-the required epoch-59 result and completion artifacts do not. Even a successful
-single-seed terminal result can only become `full60-single-seed-supported`; it
-cannot become `paper_ready` without replication, mechanism diagnostics, cost
-evidence, and cross-dataset evidence.
+The current status is `empirically_supported`, specifically
+`full60-single-seed-supported`. The complete schedule confirms that using the
+real physical-time metric is substantially better than selected rank under this
+matched THUMOS14 setting. It is not `paper_ready`: replication, mechanism
+diagnostics, cost evidence, robustness families, and cross-dataset evidence are
+still required.
 
 ## Connections
 

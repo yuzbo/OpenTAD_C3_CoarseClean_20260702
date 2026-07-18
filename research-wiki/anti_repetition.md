@@ -10,12 +10,11 @@
   100-epoch cosine schedule at epoch 60 is not an admissible full60 result.
 - A Slurm completion code is insufficient. Both arms require independently
   recomputed epoch-59 mAP and replayable finite online/EMA final checkpoints.
-- Epoch-41/43/45/47/49/51/53/55/57 interim validations consistently favor physical-metric;
-  the latest is `41.37/57.65` selected-axis/physical-metric. This is a strong
-  running signal, not a terminal full60 result. Do not promote it to
-  `full60-single-seed-supported` before both completion artifacts pass.
-- A single-seed THUMOS result may be called `full60-single-seed-supported`, not
-  `paper_ready`.
+- All matched validations through epoch 59 favor physical-metric. Final
+  selected-axis/physical-metric Avg-mAP is `41.28/57.57`, and both completion
+  artifacts pass. The admissible status is now `full60-single-seed-supported`.
+- Do not promote this single-seed THUMOS result to `paper_ready`; multi-seed,
+  mechanism, cost, robustness, and cross-dataset evidence remain missing.
 
 ## 2026-07-16 PhysTime GT/window boundary guardrail
 

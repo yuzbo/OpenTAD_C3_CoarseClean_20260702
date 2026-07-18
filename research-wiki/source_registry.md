@@ -7,13 +7,11 @@
   `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1_full60_0dc5851_20260718`,
   and run root
   `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800`.
-  Gate `1170945` passed; jobs `1170946/1170947` are active. Their append-only
-  train logs record the first matched epoch-41 validation: selected-axis
-  `39.84%` and physical-metric `57.32%` Avg-mAP. This is an interim result
-  source, not a completed epoch-59/checkpoint-validation source. The latest
-  epoch-57 evaluator JSON records `41.37/57.65%` and is content-bound by SHA256
-  `a9bbe166...` / `39394cf4...`; full hashes are in
-  `docs/evaluation/results.md`.
+  Gate `1170945` and jobs `1170946/1170947` completed `0:0`. Final epoch-59
+  selected-axis/physical-metric Avg-mAP is `41.28/57.57%`; both independent
+  completion validators pass. Checkpoint SHA256 is `6fd0781b...` /
+  `c83a3463...`, and metrics JSON SHA256 is `526274c6...` / `f725e6ca...`;
+  full hashes and IoU-wise metrics are in `docs/evaluation/results.md`.
 
 本文件登记新一轮方法判断所直接依赖的原始来源；完整历史覆盖仍见 `source_map.md`。
 

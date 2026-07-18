@@ -1,19 +1,18 @@
 # Research Wiki Query Pack
 
-## 2026-07-18 Active Full60 Override
+## 2026-07-18 Completed Full60 Evidence
 
 The user explicitly authorized the 60-epoch survivor validation, superseding
 older text below that says it must not be started automatically. Commit
 `0dc5851`, tree `bddc9b9`, and clean snapshot
 `opentad_phystime_g1_full60_0dc5851_20260718` are frozen. Real gate `1170945`
-passed; matched selected-axis `1170946` and physical-metric `1170947` are
-running with K384/J192, seed 42, no interpolation, and a true 60-epoch cosine
-schedule. Matched validations at epochs 41/43/45/47/49/51/53/55/57 consistently preserve the
-physical-metric lead; the latest is selected-axis/physical-metric
-`41.37/57.65%` Avg-mAP (`+16.28`), with physical-metric ahead at every IoU
-threshold. This is interim evidence only: epoch 59, independent
-recomputation, final online/EMA checkpoint validation, and both completion
-artifacts remain pending. G1b is not part of this survivor run.
+passed; matched selected-axis `1170946` and physical-metric `1170947` completed
+`0:0` with K384/J192, seed 42, no interpolation, and a true 60-epoch cosine
+schedule. Final epoch-59 Avg-mAP is `41.28/57.57%`, delta `+16.29`, with
+physical-metric ahead at every IoU threshold. Independent recomputation and
+both finite online/EMA checkpoint validators pass. This is
+`full60-single-seed-supported`, not `paper_ready`; G1b is not part of this
+survivor run.
 
 更新时间：2026-07-18。本文只保留当前决策所需的压缩记忆；完整历史见 `research-wiki/routes/`、各实验页与 `docs/evaluation/results.md`。
 
