@@ -367,6 +367,22 @@ updated: 2026-07-18
   and P3 split-field stdout concerns were fixed before commit; focused
   verification then passed `107` tests with `5` environment skips, and the
   reviewer reconfirmed no P0/P1.
+- Step-runtime clean replay and environment diagnosis, 2026-07-18. Runtime
+  commit `6524e1b698fd3e90f2621a8afd6a59b74395f972` passed `112` exact tests
+  in clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_6524e1b_20260718_step_runtime`.
+  The first v5 build failed before campaign publication because the login
+  shell resolved user-site NumPy `2.2.6`; the formal selection environment is
+  Conda NumPy `1.23.5`. Recomputing with `PYTHONNOUSERSITE=1` exactly matched
+  every stored candidate metric, proving environment contamination rather
+  than evidence drift.
+- Step-runtime environment-binding audit, 2026-07-18. The v5 certificate and
+  all three formal launchers now bind/verify `PYTHONNOUSERSITE=1`,
+  `site.ENABLE_USER_SITE=False`, NumPy `1.23.5`, and the fixed Conda NumPy
+  path. Focused verification passed `108` tests with `5` environment skips;
+  independent review returned `DEPLOY_READY_WITH_GATES` with no P0/P1 and
+  confirmed v1-v4 plus `verify_checkout=False` offline validation remain
+  compatible.
 
 ## 外部附件
 

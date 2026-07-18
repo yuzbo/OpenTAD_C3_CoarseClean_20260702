@@ -19,6 +19,12 @@ from tools.bata import spatial_zoom_s1_profile_recovery as recovery
 TRAINING_COMMIT = "18139b930bef6ee234f6220a6adc898eb9c23c0c"
 PARENT_COMMIT = "43ac70bea6720f0c882ed3208bccfc89b089b5d4"
 RUNTIME_COMMIT = "5" * 40
+FORMAL_PYTHON_ENVIRONMENT = {
+    "python_no_user_site": "1",
+    "site_enable_user_site": False,
+    "numpy_version": recovery.S1_FORMAL_NUMPY_VERSION,
+    "numpy_path": recovery.S1_FORMAL_NUMPY_PATH,
+}
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -79,6 +85,11 @@ def _install_git_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(recovery, "_assert_no_model_surface_changes", lambda *_: None)
     monkeypatch.setattr(recovery, "_git_file_sha256", _fake_git_file_sha256)
+    monkeypatch.setattr(
+        recovery,
+        "_formal_python_environment_evidence",
+        lambda: copy.deepcopy(FORMAL_PYTHON_ENVIRONMENT),
+    )
     monkeypatch.setattr(
         recovery,
         "_tools_test_semantic_evidence_between_commits",
@@ -277,6 +288,9 @@ def test_v5_parent_delta_uses_a_dedicated_narrow_allowlist() -> None:
     assert "tools/bata/spatial_zoom_s1_training.py" not in (
         recovery._PARENT_TO_STEP_RUNTIME_PATHS
     )
+    assert recovery._REQUIRED_STEP_RUNTIME_CODE_PATHS.issubset(
+        recovery._PARENT_TO_STEP_RUNTIME_PATHS
+    )
 
 
 def test_v5_build_validate_and_load_close_recursive_failure_chain(
@@ -292,6 +306,7 @@ def test_v5_build_validate_and_load_close_recursive_failure_chain(
     assert certificate["step_runtime_failed_profile_order_ordinal"] == 1
     assert certificate["step_runtime_failed_resolution"] == 224
     assert certificate["step_runtime_failed_seed"] == 3409
+    assert certificate["formal_python_environment"] == FORMAL_PYTHON_ENVIRONMENT
     assert certificate["step_runtime_completed_descriptor_count"] == 1
     assert certificate["step_runtime_completion_receipt_absent"] is True
     assert certificate["tools_test_zero_context_patch_sha256"] == "1" * 64
@@ -339,6 +354,28 @@ def test_v5_rejects_tampered_tools_test_zero_context_patch_evidence(
     tampered["certificate_sha256"] = canonical_sha256(tampered)
 
     with pytest.raises(ValueError, match="semantic evidence"):
+        recovery.validate_profile_recovery_certificate(
+            tampered,
+            binding=context["binding"],
+            verify_checkout=False,
+        )
+
+
+def test_v5_rejects_tampered_formal_python_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _v5_fixture(tmp_path, monkeypatch)
+    _, certificate = _build_v5(context)
+    tampered = copy.deepcopy(certificate)
+    tampered["formal_python_environment"]["numpy_version"] = "2.2.6"
+    tampered["certificate_sha256"] = canonical_sha256(
+        {key: value for key, value in tampered.items() if key != "certificate_sha256"}
+    )
+    with pytest.raises(
+        ValueError,
+        match="formal_python_environment mismatch",
+    ):
         recovery.validate_profile_recovery_certificate(
             tampered,
             binding=context["binding"],

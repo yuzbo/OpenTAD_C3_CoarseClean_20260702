@@ -93,7 +93,9 @@ rule remain identical.
    test-open marker, test evidence, matrix binding, profile, and descriptor
    must bind both training and runtime commits plus the recovery certificate.
    Rewriting Slurm identity variables or modifying the historical checkout in
-   place is forbidden.
+   place is forbidden. Formal recovery launchers must disable Python user-site
+   packages so package resolution stays inside the frozen Conda environment;
+   ambient login-node packages cannot participate in evidence recomputation.
    Sampling uses `time.monotonic_ns`, preserves a sequence-numbered raw trace
    and a self-hashed attempt report even when profile validation fails, and
    uses one canonical output prefix. Cost claims are limited to same-node,

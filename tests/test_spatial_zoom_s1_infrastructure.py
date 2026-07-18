@@ -3221,6 +3221,7 @@ def test_sidecar_gate_and_matrix_launchers_freeze_resources_and_order() -> None:
         assert "--mem=96000M" in source
         assert "SLURM_MEM_PER_NODE" not in source
         assert "CUDA_VISIBLE_DEVICES=" not in source
+        assert "export PYTHONNOUSERSITE=1" in source
     for source in (gate_source, cell_source):
         assert 'DETECTOR_CPUS="${CPU_ARRAY[0]},${CPU_ARRAY[1]}' in source
         assert 'SIDECAR_CPU="${CPU_ARRAY[4]}"' in source

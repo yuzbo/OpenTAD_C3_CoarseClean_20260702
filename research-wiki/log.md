@@ -437,3 +437,18 @@ append_only: true
   3409. State advanced to `tested_local`; only a clean runtime commit, exact
   remote replay, real-evidence v5 certificate, and one no-new-test-open Gate
   are authorized next.
+- 2026-07-18: pushed runtime commit `6524e1b`; a clean Linux snapshot passed
+  `112` exact tests. The first real-evidence v5 build failed closed during
+  parent descriptor selection revalidation. Diagnosis showed the login shell
+  loaded user-site NumPy `2.2.6`, whereas formal checkpoint selection used
+  Conda NumPy `1.23.5`; disabling user-site packages reproduced every stored
+  metric exactly. Began explicit `PYTHONNOUSERSITE=1` hardening in the Gate,
+  matrix, and per-cell launchers. No campaign was published and no Gate or
+  matrix was submitted.
+- 2026-07-18: completed environment-provenance hardening. The v5 certificate
+  now records and live-verifies the user-site flag, NumPy `1.23.5`, and fixed
+  Conda path; offline `verify_checkout=False` validation remains portable.
+  Focused verification passed `108` tests with `5` environment skips, and
+  final independent review returned `DEPLOY_READY_WITH_GATES` with no P0/P1.
+  State remains `tested_local` until this increment is committed, replayed
+  remotely, and the real-evidence v5 certificate validates.

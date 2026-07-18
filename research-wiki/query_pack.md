@@ -62,9 +62,15 @@ max_chars: 8000
   receipt. A step-scoped test-runtime recovery is now `tested_local`: focused
   verification passed `107` tests with `5` environment skips, and independent
   review returned `DEPLOY_READY_WITH_GATES` with no P0/P1 after its two
-  hardening requests were closed. No clean runtime commit, real-evidence v5
-  certificate, replacement Gate/matrix, Pro, GO/KILL, or complete cost table
-  exists yet.
+  hardening requests were closed. Runtime commit `6524e1b` passed `112` clean
+  Linux tests, but the first real-evidence certificate build correctly exposed
+  login-node user-site NumPy `2.2.6` contaminating recomputation that was
+  originally performed with Conda NumPy `1.23.5`. Disabling user-site packages
+  reproduces all stored gate metrics exactly. Launchers and the v5 certificate
+  now bind this environment; focused verification passed `108` tests with `5`
+  environment skips and independent review found no P0/P1. No committed
+  environment-hardening runtime, valid v5 certificate, replacement
+  Gate/matrix, Pro, GO/KILL, or complete cost table exists yet.
 
 ## 当前唯一活动任务：Spatial Zoom
 

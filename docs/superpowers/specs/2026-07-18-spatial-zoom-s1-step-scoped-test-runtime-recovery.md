@@ -47,10 +47,12 @@ Create a new recursive recovery schema and campaign. It validates the parent
 v4 certificate, failed matrix start/submission receipts, stdout/stderr,
 ordinal-0 descriptor and all descriptor artifacts, the absence of a completion
 receipt, and the exact ordinal-1 failure signature. The parent-to-runtime diff
-uses a dedicated nine-path allowlist rather than the broader historical S1
-infrastructure allowlist. Entry into the failed cell is accepted only when one
-structured stdout record jointly identifies ordinal 1, resolution 224, and
-seed 3409.
+uses a dedicated eleven-path allowlist rather than the broader historical S1
+infrastructure allowlist. The Gate, matrix, and per-cell launchers explicitly
+disable Python user-site packages so checkpoint selection is recomputed with
+the frozen Conda environment rather than ambient login-node packages. Entry
+into the failed cell is accepted only when one structured stdout record
+jointly identifies ordinal 1, resolution 224, and seed 3409.
 
 Formal tests with no existing evidence run `tools/test.py` from the new
 profile/runtime commit. The recovery certificate proves that the diff from

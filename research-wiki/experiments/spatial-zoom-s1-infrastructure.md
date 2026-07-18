@@ -721,10 +721,23 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   exact ordinal-1 error. Local focused verification passed `107` tests with
   `5` environment skips. Independent read-only review returned
   `DEPLOY_READY_WITH_GATES` with no P0/P1; its initial P2/P3 requests were
-  closed by a dedicated nine-path parent-delta allowlist and same-record JSON
+  closed by a dedicated parent-delta allowlist and same-record JSON
   validation of ordinal 1/resolution 224/seed 3409. No new campaign, Gate,
   matrix, analyzer, or Pro review is authorized before a clean commit, exact
   remote replay, and real-evidence v5 certificate validation.
+- Runtime commit `6524e1b698fd3e90f2621a8afd6a59b74395f972`
+  passed `112` exact tests in a clean Linux snapshot. Its first real-evidence
+  v5 build failed closed while revalidating the parent ordinal-0 descriptor.
+  No artifact had drifted: the login shell imported user-site NumPy `2.2.6`,
+  while formal training/checkpoint selection used Conda NumPy `1.23.5`.
+  Setting `PYTHONNOUSERSITE=1` reproduced every stored gate metric exactly.
+  The Gate, matrix, and per-cell launchers now explicitly disable user-site
+  packages. This is environment-provenance hardening, not a tolerance,
+  checkpoint reselection, metric rewrite, or protocol change. The v5
+  certificate also binds and live-verifies the user-site flag, NumPy `1.23.5`,
+  and its Conda path. Local focused verification passed `108` tests with `5`
+  environment skips; final independent read-only review again returned
+  `DEPLOY_READY_WITH_GATES` with no P0/P1.
 
 ## Decision Boundary
 

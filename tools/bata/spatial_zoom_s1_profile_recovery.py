@@ -6,6 +6,8 @@ from datetime import datetime
 import hashlib
 import json
 import math
+import os
+import site
 import subprocess
 import sys
 import textwrap
@@ -66,6 +68,11 @@ S1_STEP_RUNTIME_FAILED_RESOLUTION = 224
 S1_STEP_RUNTIME_FAILED_SEED = 3409
 S1_STEP_RUNTIME_TRAINING_COMMIT = "18139b930bef6ee234f6220a6adc898eb9c23c0c"
 S1_MATRIX_SUBMISSION_SCHEMA = "spatial_zoom_s1_sidecar_matrix_submission_v2"
+S1_FORMAL_NUMPY_VERSION = "1.23.5"
+S1_FORMAL_NUMPY_PATH = (
+    "/data/run01/sczc063/yuzibo/conda_envs/opentad/lib/python3.10/"
+    "site-packages/numpy/__init__.py"
+)
 
 _ALLOWED_EXACT_PATHS = {
     "docs/methods/spatial_zoom_s1_contract.md",
@@ -97,6 +104,8 @@ _ALLOWED_EXACT_PATHS_STEP_RUNTIME = _ALLOWED_EXACT_PATHS | {
 _PARENT_TO_STEP_RUNTIME_PATHS = {
     "docs/methods/spatial_zoom_s1_contract.md",
     "docs/superpowers/specs/2026-07-18-spatial-zoom-s1-step-scoped-test-runtime-recovery.md",
+    "scripts/run_spatial_zoom_s1_power_sidecar_gate_slurm.sh",
+    "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
     "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
     "tests/test_spatial_zoom_s1_infrastructure.py",
     "tests/test_spatial_zoom_s1_step_runtime_recovery.py",
@@ -131,6 +140,8 @@ _REQUIRED_REPAIR_PATHS_SIDECAR = _REQUIRED_REPAIR_PATHS_CHAINED | {
 }
 _REQUIRED_REPAIR_PATHS_BUFFERED_SIDECAR = _REQUIRED_REPAIR_PATHS_SIDECAR
 _REQUIRED_STEP_RUNTIME_CODE_PATHS = {
+    "scripts/run_spatial_zoom_s1_power_sidecar_gate_slurm.sh",
+    "scripts/run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh",
     "scripts/run_spatial_zoom_s1_test_profile_slurm.sh",
     "tools/bata/build_spatial_zoom_s1_run_descriptor.py",
     "tools/bata/spatial_zoom_s1_evidence.py",
@@ -196,6 +207,29 @@ def _run_git(*args: str) -> str:
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or "Git command failed")
     return completed.stdout
+
+
+def _formal_python_environment_evidence() -> dict[str, Any]:
+    import numpy
+
+    evidence = {
+        "python_no_user_site": os.environ.get("PYTHONNOUSERSITE"),
+        "site_enable_user_site": bool(site.ENABLE_USER_SITE),
+        "numpy_version": str(numpy.__version__),
+        "numpy_path": str(Path(numpy.__file__).resolve()),
+    }
+    expected = {
+        "python_no_user_site": "1",
+        "site_enable_user_site": False,
+        "numpy_version": S1_FORMAL_NUMPY_VERSION,
+        "numpy_path": S1_FORMAL_NUMPY_PATH,
+    }
+    if evidence != expected:
+        raise ValueError(
+            "S1 formal recovery requires the frozen Conda Python environment: "
+            f"expected={expected}, actual={evidence}"
+        )
+    return evidence
 
 
 def _run_git_bytes(*args: str) -> bytes:
@@ -1512,6 +1546,7 @@ def build_step_runtime_profile_recovery_certificate(
 
     profile_commit = current_git_commit()
     require_clean_profile_checkout(expected_commit=profile_commit)
+    formal_python_environment = _formal_python_environment_evidence()
     training_commit = str(binding["code_commit"]).lower()
     if training_commit != S1_STEP_RUNTIME_TRAINING_COMMIT:
         raise ValueError(
@@ -1705,6 +1740,7 @@ def build_step_runtime_profile_recovery_certificate(
         "superseded_recovery_campaign_id": parent["campaign_id"],
         "superseded_recovery_profile_code_commit": parent["profile_code_commit"],
         "formal_test_runtime_mode": S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+        "formal_python_environment": formal_python_environment,
         "step_runtime_failure_signature": S1_STEP_RUNTIME_FAILURE_SIGNATURE,
         "step_runtime_failed_job_id": S1_STEP_RUNTIME_PARENT_JOB_ID,
         "step_runtime_failed_slurm_step_id": matrix_start["slurm_step_id"],
@@ -2065,6 +2101,12 @@ def _validate_step_runtime_profile_recovery_certificate(
         "reuse_valid_test_evidence": True,
         "preserve_recovery_chain": True,
         "formal_test_runtime_mode": S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+        "formal_python_environment": {
+            "python_no_user_site": "1",
+            "site_enable_user_site": False,
+            "numpy_version": S1_FORMAL_NUMPY_VERSION,
+            "numpy_path": S1_FORMAL_NUMPY_PATH,
+        },
         "step_runtime_failure_signature": S1_STEP_RUNTIME_FAILURE_SIGNATURE,
         "step_runtime_failed_job_id": S1_STEP_RUNTIME_PARENT_JOB_ID,
         "step_runtime_failed_profile_order_ordinal": (S1_STEP_RUNTIME_FAILED_ORDINAL),
@@ -2333,6 +2375,11 @@ def _validate_step_runtime_profile_recovery_certificate(
     ):
         raise ValueError("S1 v5 parent completion-receipt absence mismatch")
     if verify_checkout:
+        if (
+            _formal_python_environment_evidence()
+            != checked["formal_python_environment"]
+        ):
+            raise ValueError("S1 v5 formal Python environment changed")
         require_clean_profile_checkout(expected_commit=checked["profile_code_commit"])
         rebuilt = _changed_files(
             checked["training_code_commit"],

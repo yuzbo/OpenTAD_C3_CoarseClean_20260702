@@ -99,6 +99,11 @@ updated: 2026-07-18
     not a partial 3x3 result. Without the exact-nine completion receipt it
     cannot select a resolution, drive GO/KILL, or be pooled with another
     campaign.
+26. Do not recompute S1 evidence with ambient Python user-site packages.
+    Runtime commit `6524e1b` proved NumPy `2.2.6` changes tied-score AP ordering
+    relative to the formal Conda NumPy `1.23.5`. This is not grounds for metric
+    tolerance: formal Gate/matrix/cell launchers must set
+    `PYTHONNOUSERSITE=1`, and exact stored metrics must reproduce.
 
 ## 任务与叙事
 
