@@ -44,7 +44,11 @@ from tools.bata.spatial_zoom_s1_contract import (
     stable_id_hash,
     validate_s1_manifest,
 )
-from tools.bata.spatial_zoom_s1_evidence import write_s1_gate_evidence
+from tools.bata.spatial_zoom_s1_evidence import (
+    S1_TEST_RUNTIME_EVIDENCE_FIELDS,
+    _validate_test_runtime_evidence,
+    write_s1_gate_evidence,
+)
 from tools.bata.spatial_zoom_s1_evidence import (
     validate_s1_checkpoint_metadata_for_binding,
 )
@@ -417,6 +421,67 @@ def test_formal_s1_accepts_slurm_assigned_single_gpu(monkeypatch) -> None:
         require_slurm_single_gpu_allocation()
 
 
+def test_s1_test_runtime_evidence_binds_the_recovery_certificate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    recovery_path = tmp_path / "recovery_certificate.json"
+    recovery_path.write_text('{"sealed": true}\n', encoding="utf-8")
+    binding = {"code_commit": "a" * 40}
+    recovery = {
+        "profile_code_commit": "b" * 40,
+        "certificate_sha256": "c" * 64,
+        "campaign_id": "runtime-campaign",
+        "formal_test_runtime_mode": (
+            s1_profile_recovery.S1_STEP_SCOPED_TEST_RUNTIME_MODE
+        ),
+    }
+
+    def fake_load(path, *, binding: dict, verify_checkout: bool):
+        assert Path(path).resolve() == recovery_path.resolve()
+        assert binding["code_commit"] == "a" * 40
+        assert verify_checkout is False
+        return copy.deepcopy(recovery)
+
+    monkeypatch.setattr(
+        s1_profile_recovery,
+        "load_profile_recovery_certificate",
+        fake_load,
+    )
+    payload = {
+        "formal_test_runtime_mode": (
+            s1_profile_recovery.S1_STEP_SCOPED_TEST_RUNTIME_MODE
+        ),
+        "training_code_commit": "a" * 40,
+        "test_runtime_code_commit": "b" * 40,
+        "profile_recovery_certificate_path": str(recovery_path.resolve()),
+        "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+        "profile_recovery_certificate_sha256": "c" * 64,
+        "profile_recovery_campaign_id": "runtime-campaign",
+    }
+    marker = {
+        key: value for key, value in payload.items() if key != "training_code_commit"
+    }
+    assert set(payload) == set(S1_TEST_RUNTIME_EVIDENCE_FIELDS)
+    assert (
+        _validate_test_runtime_evidence(
+            payload,
+            binding=binding,
+            marker=marker,
+        )
+        == recovery
+    )
+
+    incomplete = dict(payload)
+    incomplete.pop("profile_recovery_campaign_id")
+    with pytest.raises(ValueError, match="incomplete"):
+        _validate_test_runtime_evidence(incomplete, binding=binding)
+
+    forged = dict(payload)
+    forged["test_runtime_code_commit"] = "d" * 40
+    with pytest.raises(ValueError, match="test_runtime_code_commit"):
+        _validate_test_runtime_evidence(forged, binding=binding)
+
+
 def test_formal_s1_reads_the_tightest_finite_step_memory_limit(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -424,15 +489,11 @@ def test_formal_s1_reads_the_tightest_finite_step_memory_limit(
     monkeypatch.setenv("SLURM_STEP_GPUS", "7")
     monkeypatch.delenv("SLURM_MEM_PER_NODE", raising=False)
     cgroup_root = tmp_path / "cgroup"
-    relative = Path(
-        "system.slice/slurmstepd.scope/job_123/step_0/user/task_0"
-    )
+    relative = Path("system.slice/slurmstepd.scope/job_123/step_0/user/task_0")
     task_root = cgroup_root / relative
     task_root.mkdir(parents=True)
     (task_root / "memory.max").write_text("max\n", encoding="utf-8")
-    (task_root.parent / "memory.max").write_text(
-        "100663296000\n", encoding="utf-8"
-    )
+    (task_root.parent / "memory.max").write_text("100663296000\n", encoding="utf-8")
     (task_root.parent.parent.parent / "memory.max").write_text(
         "130442854400\n", encoding="utf-8"
     )
@@ -471,9 +532,7 @@ def test_formal_s1_reads_the_tightest_finite_step_memory_limit(
             cgroup_root=empty_cgroup_root,
         )
     v1_proc_cgroup = tmp_path / "proc_self_cgroup_v1"
-    v1_proc_cgroup.write_text(
-        f"5:memory:/{relative.as_posix()}\n", encoding="utf-8"
-    )
+    v1_proc_cgroup.write_text(f"5:memory:/{relative.as_posix()}\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="cgroup v2"):
         require_slurm_memory_limit_mb(
             minimum_mb=90000,
@@ -516,6 +575,7 @@ def test_hardware_identity_binds_logical_cuda_uuid_to_step_gpu(
         ),
         stderr="",
     )
+
     def fake_nvidia_smi(command, **_kwargs):
         assert command[-2:] == ["-i", "0"]
         return nvidia_smi
@@ -535,17 +595,14 @@ def test_hardware_identity_binds_logical_cuda_uuid_to_step_gpu(
     )
     assert identity["cuda_runtime_device_ordinal"] == 0
     assert (
-        identity["cuda_runtime_device_uuid_hex"]
-        == "aaaaaaaabbbbccccddddeeeeeeeeeeee"
+        identity["cuda_runtime_device_uuid_hex"] == "aaaaaaaabbbbccccddddeeeeeeeeeeee"
     )
     assert identity["cuda_visible_device_uuid"] == expected_uuid
     assert identity["nvidia_smi"]["uuid"] == expected_uuid
     assert identity["physical_gpu_id"] == "1"
     assert identity["nvidia_smi_query_selector"] == "0"
     assert identity["slurm_gpu_scope"]["step_id"] == "0"
-    assert (
-        identity["slurm_resources"]["effective_step_memory_limit_mb"] == 96000
-    )
+    assert identity["slurm_resources"]["effective_step_memory_limit_mb"] == 96000
 
     monkeypatch.setattr(
         "tools.bata.profile_spatial_zoom_s1._cuda_driver_device_uuid_hex",
@@ -586,6 +643,8 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     assert "build_test_matrix_binding" in post
     assert "reuse validated test evidence" in post
     assert 'cd "${TRAINING_ROOT}"' in post
+    assert '"${ROOT}/tools/test.py" "${BOUND_CONFIG}"' in post
+    assert "--s1-profile-recovery-certificate" in post
     assert 'PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"' in post
     assert '"${ROOT}/tools/bata/profile_spatial_zoom_s1.py"' in post
     environment_activation = post.index(
@@ -594,7 +653,7 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
     first_python = post.index("python")
     assert environment_activation < first_python
     preflight_exit = post.index("PREFLIGHT PASS")
-    test_open = post.index('tools/test.py "${BOUND_CONFIG}"')
+    test_open = post.index('"${ROOT}/tools/test.py" "${BOUND_CONFIG}"')
     profile_open = post.index('"${ROOT}/tools/bata/profile_spatial_zoom_s1.py"')
     assert preflight_exit < test_open < profile_open
     matrix = (
@@ -643,6 +702,11 @@ def test_s1_slurm_launchers_use_kernel_assigned_rendezvous_ports() -> None:
         assert "--mem=96000M" in source
     matrix_start_preflight = matrix.index("build_profile_matrix_start_receipt")
     assert matrix_start_preflight < matrix_lock
+    test_entrypoint = (ROOT / "tools" / "test.py").read_text(encoding="utf-8")
+    assert "--s1-profile-recovery-certificate" in test_entrypoint
+    assert "S1_STEP_SCOPED_TEST_RUNTIME_MODE" in test_entrypoint
+    assert "load_profile_recovery_certificate" in test_entrypoint
+    assert "test_runtime_code_commit" in test_entrypoint
 
 
 @pytest.mark.skipif(os.name == "nt", reason="requires Linux Slurm shell semantics")
@@ -655,7 +719,7 @@ def test_s1_high_memory_launchers_reenter_one_exact_gpu_step(
     fake_srun.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "printf '%s\\n' \"$@\" > \"${S1_CAPTURE:?}\"\n",
+        'printf \'%s\\n\' "$@" > "${S1_CAPTURE:?}"\n',
         encoding="utf-8",
     )
     fake_srun.chmod(0o755)
@@ -1127,9 +1191,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "precheck_file_sha256": binding["precheck_file_sha256"],
         "precheck_sha256": binding["precheck_sha256"],
         "pretrained_checkpoint_sha256": binding["pretrained_checkpoint_sha256"],
-        "test_open_certificate_sha256": original_marker[
-            "test_open_certificate_sha256"
-        ],
+        "test_open_certificate_sha256": original_marker["test_open_certificate_sha256"],
         "superseded_marker_path": str(original_marker_path.resolve()),
         "superseded_marker_file_sha256": sha256_file(original_marker_path),
         "superseded_marker_sha256": original_marker["marker_sha256"],
@@ -1258,15 +1320,10 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         json.dumps(chain, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     legacy_test_evidence_path = (
-        Path(binding["work_dir"])
-        / "gpu1_id0"
-        / "test_evidence"
-        / "test.evidence.json"
+        Path(binding["work_dir"]) / "gpu1_id0" / "test_evidence" / "test.evidence.json"
     )
     legacy_test_evidence = {"schema_version": "spatial_zoom_s1_test_evidence_v4"}
-    legacy_test_evidence["evidence_sha256"] = canonical_sha256(
-        legacy_test_evidence
-    )
+    legacy_test_evidence["evidence_sha256"] = canonical_sha256(legacy_test_evidence)
     legacy_test_evidence_path.parent.mkdir(parents=True, exist_ok=True)
     legacy_test_evidence_path.write_text(
         json.dumps(legacy_test_evidence, indent=2, sort_keys=True) + "\n",
@@ -1306,15 +1363,11 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
             build_s1_profile_order()[0]["resolution"]
         ),
         "legacy_unbound_test_seed": int(build_s1_profile_order()[0]["seed"]),
-        "legacy_unbound_test_evidence_path": str(
-            legacy_test_evidence_path.resolve()
-        ),
+        "legacy_unbound_test_evidence_path": str(legacy_test_evidence_path.resolve()),
         "legacy_unbound_test_evidence_file_sha256": sha256_file(
             legacy_test_evidence_path
         ),
-        "legacy_unbound_test_evidence_sha256": legacy_test_evidence[
-            "evidence_sha256"
-        ],
+        "legacy_unbound_test_evidence_sha256": legacy_test_evidence["evidence_sha256"],
         "changed_files": [
             {"status": "M", "path": path, "file_sha256": "8" * 64}
             for path in sidecar_paths
@@ -1329,9 +1382,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "sidecar_power_failure_signature": S1_POWER_FAILURE_SIGNATURE,
         "sidecar_power_failed_job_id": "1167538",
         "sidecar_power_failure_marker_path": str(sidecar_marker_path.resolve()),
-        "sidecar_power_failure_marker_file_sha256": sha256_file(
-            sidecar_marker_path
-        ),
+        "sidecar_power_failure_marker_file_sha256": sha256_file(sidecar_marker_path),
         "sidecar_power_failure_marker_sha256": sidecar_marker["marker_sha256"],
         "sidecar_power_failure_log_path": str(sidecar_log.resolve()),
         "sidecar_power_failure_log_sha256": sha256_file(sidecar_log),
@@ -1377,10 +1428,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         encoding="utf-8",
     )
     failed_prefix = (
-        Path(sidecar["campaign_root"])
-        / "dense256"
-        / "seed3408"
-        / "dense256_seed3408"
+        Path(sidecar["campaign_root"]) / "dense256" / "seed3408" / "dense256_seed3408"
     )
     attempt_report_path, attempt_trace_path, attempt = _write_valid_sidecar_attempt(
         failed_prefix,
@@ -1393,9 +1441,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         ),
         cadence_failure=True,
     )
-    parent_failure_path = Path(
-        f"{failed_prefix}.power_parent_failure.json"
-    )
+    parent_failure_path = Path(f"{failed_prefix}.power_parent_failure.json")
     parent_failure = {
         "schema_version": "spatial_zoom_s1_profile_parent_failure_v1",
         "status": "FAIL",
@@ -1415,9 +1461,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "slurm_step_id": "0",
         "step_gpu_uuid": "GPU-S1",
         "profile_code_commit": sidecar["profile_code_commit"],
-        "profile_recovery_certificate_sha256": sidecar[
-            "certificate_sha256"
-        ],
+        "profile_recovery_certificate_sha256": sidecar["certificate_sha256"],
         "profile_recovery_campaign_id": sidecar["campaign_id"],
         "frozen_order": build_s1_profile_order(),
     }
@@ -1431,9 +1475,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         **original_marker,
         "schema_version": "spatial_zoom_s1_profile_attempt_v7",
         "profile_code_commit": sidecar["profile_code_commit"],
-        "profile_recovery_certificate_sha256": sidecar[
-            "certificate_sha256"
-        ],
+        "profile_recovery_certificate_sha256": sidecar["certificate_sha256"],
         "profile_recovery_campaign_id": sidecar["campaign_id"],
         "test_evidence_sha256": legacy_test_evidence["evidence_sha256"],
         "canonical_output_prefix": str(failed_prefix.resolve()),
@@ -1497,15 +1539,11 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "profile_code_commit": "9" * 40,
         "legacy_unbound_test_resolution": int(first["resolution"]),
         "legacy_unbound_test_seed": int(first["seed"]),
-        "legacy_unbound_test_evidence_path": str(
-            legacy_test_evidence_path.resolve()
-        ),
+        "legacy_unbound_test_evidence_path": str(legacy_test_evidence_path.resolve()),
         "legacy_unbound_test_evidence_file_sha256": sha256_file(
             legacy_test_evidence_path
         ),
-        "legacy_unbound_test_evidence_sha256": legacy_test_evidence[
-            "evidence_sha256"
-        ],
+        "legacy_unbound_test_evidence_sha256": legacy_test_evidence["evidence_sha256"],
         "changed_files": [
             {"status": "M", "path": path, "file_sha256": "a" * 64}
             for path in sidecar_paths
@@ -1516,61 +1554,33 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
         "repair_scope": "buffered_sidecar_trace_publication_only",
         "preserve_recovery_chain": True,
         "superseded_recovery_certificate_path": str(sidecar_path.resolve()),
-        "superseded_recovery_certificate_file_sha256": sha256_file(
-            sidecar_path
-        ),
-        "superseded_recovery_certificate_sha256": sidecar[
-            "certificate_sha256"
-        ],
+        "superseded_recovery_certificate_file_sha256": sha256_file(sidecar_path),
+        "superseded_recovery_certificate_sha256": sidecar["certificate_sha256"],
         "superseded_recovery_campaign_id": sidecar["campaign_id"],
-        "superseded_recovery_profile_code_commit": sidecar[
-            "profile_code_commit"
-        ],
-        "buffered_sidecar_failure_signature": (
-            S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE
-        ),
+        "superseded_recovery_profile_code_commit": sidecar["profile_code_commit"],
+        "buffered_sidecar_failure_signature": (S1_BUFFERED_SIDECAR_FAILURE_SIGNATURE),
         "buffered_sidecar_failed_job_id": "1168823",
         "buffered_sidecar_failed_slurm_step_id": "0",
         "buffered_sidecar_failed_gpu_uuid": "GPU-S1",
-        "buffered_sidecar_failure_marker_path": str(
-            buffered_marker_path.resolve()
-        ),
+        "buffered_sidecar_failure_marker_path": str(buffered_marker_path.resolve()),
         "buffered_sidecar_failure_marker_file_sha256": sha256_file(
             buffered_marker_path
         ),
-        "buffered_sidecar_failure_marker_sha256": buffered_marker[
-            "marker_sha256"
-        ],
+        "buffered_sidecar_failure_marker_sha256": buffered_marker["marker_sha256"],
         "buffered_sidecar_failure_log_path": str(buffered_log.resolve()),
         "buffered_sidecar_failure_log_sha256": sha256_file(buffered_log),
-        "buffered_sidecar_attempt_report_path": str(
-            attempt_report_path.resolve()
-        ),
-        "buffered_sidecar_attempt_report_file_sha256": sha256_file(
-            attempt_report_path
-        ),
+        "buffered_sidecar_attempt_report_path": str(attempt_report_path.resolve()),
+        "buffered_sidecar_attempt_report_file_sha256": sha256_file(attempt_report_path),
         "buffered_sidecar_attempt_sha256": attempt["attempt_sha256"],
-        "buffered_sidecar_attempt_trace_path": str(
-            attempt_trace_path.resolve()
-        ),
-        "buffered_sidecar_attempt_trace_file_sha256": sha256_file(
-            attempt_trace_path
-        ),
-        "buffered_sidecar_parent_failure_path": str(
-            parent_failure_path.resolve()
-        ),
-        "buffered_sidecar_parent_failure_file_sha256": sha256_file(
-            parent_failure_path
-        ),
+        "buffered_sidecar_attempt_trace_path": str(attempt_trace_path.resolve()),
+        "buffered_sidecar_attempt_trace_file_sha256": sha256_file(attempt_trace_path),
+        "buffered_sidecar_parent_failure_path": str(parent_failure_path.resolve()),
+        "buffered_sidecar_parent_failure_file_sha256": sha256_file(parent_failure_path),
         "buffered_sidecar_parent_failure_sha256": parent_failure[
             "parent_failure_sha256"
         ],
-        "buffered_sidecar_matrix_start_path": str(
-            matrix_start_path.resolve()
-        ),
-        "buffered_sidecar_matrix_start_file_sha256": sha256_file(
-            matrix_start_path
-        ),
+        "buffered_sidecar_matrix_start_path": str(matrix_start_path.resolve()),
+        "buffered_sidecar_matrix_start_file_sha256": sha256_file(matrix_start_path),
         "buffered_sidecar_matrix_sha256": matrix_start["matrix_sha256"],
         "power_sampler_backend": "nvml-sidecar-process-v1",
         "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
@@ -1587,9 +1597,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
     buffered = {
         **buffered_basis,
         "campaign_id": buffered_id,
-        "campaign_root": str(
-            canonical_root / "profile_campaigns" / buffered_id
-        ),
+        "campaign_root": str(canonical_root / "profile_campaigns" / buffered_id),
     }
     buffered["certificate_sha256"] = canonical_sha256(buffered)
     buffered_checked = validate_profile_recovery_certificate(
@@ -1604,9 +1612,9 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
     no_sampling_change = copy.deepcopy(buffered)
     for key in ("certificate_sha256", "campaign_id", "campaign_root"):
         no_sampling_change.pop(key)
-    no_sampling_change["sampling_implementation_sha256"] = (
-        no_sampling_change["parent_sampling_implementation_sha256"]
-    )
+    no_sampling_change["sampling_implementation_sha256"] = no_sampling_change[
+        "parent_sampling_implementation_sha256"
+    ]
     no_sampling_change_id = canonical_sha256(no_sampling_change)[:16]
     no_sampling_change["campaign_id"] = no_sampling_change_id
     no_sampling_change["campaign_root"] = str(
@@ -1629,9 +1637,7 @@ def test_chained_profile_recovery_binds_power_failure_and_diagnostic(
     tampered_trace_mode["campaign_root"] = str(
         canonical_root / "profile_campaigns" / tampered_trace_id
     )
-    tampered_trace_mode["certificate_sha256"] = canonical_sha256(
-        tampered_trace_mode
-    )
+    tampered_trace_mode["certificate_sha256"] = canonical_sha256(tampered_trace_mode)
     with pytest.raises(ValueError, match="buffered-sidecar recovery contract"):
         validate_profile_recovery_certificate(
             tampered_trace_mode, binding=binding, verify_checkout=False
@@ -1694,9 +1700,7 @@ def test_profile_recovery_dispatches_v3_parent_to_buffered_builder(
         power_diagnostic_path=None,
     )
     assert result == sentinel
-    assert captured["superseded_recovery_certificate_path"] == (
-        parent_path.resolve()
-    )
+    assert captured["superseded_recovery_certificate_path"] == (parent_path.resolve())
     assert captured["failed_job_id"] == "1168823"
 
 
@@ -1890,9 +1894,7 @@ def test_precheck_certificate_can_be_rebuilt_from_its_historical_repository(
     historical["code_commit"] = commit
     for row in historical["rows"]:
         resolution = int(row["spec"]["resolution"])
-        row["spec"]["config"] = str(
-            (repository / CONFIG_PATHS[resolution]).resolve()
-        )
+        row["spec"]["config"] = str((repository / CONFIG_PATHS[resolution]).resolve())
     historical.pop("precheck_sha256")
     historical["precheck_sha256"] = canonical_sha256(historical)
     checked = validate_precheck_certificate(
@@ -2882,9 +2884,7 @@ def _write_valid_sidecar_attempt(
     report_path = Path(f"{prefix}.power_attempt.json")
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     if timestamps_ns is None:
-        timestamps_ns = tuple(
-            1_000_000_000 + index * 20_000_000 for index in range(4)
-        )
+        timestamps_ns = tuple(1_000_000_000 + index * 20_000_000 for index in range(4))
     trace_path.write_text(
         "".join(
             json.dumps(
@@ -3189,9 +3189,9 @@ def test_power_sampler_diagnostic_is_slurm_local_and_test_blind() -> None:
     assert "CUDA_VISIBLE_DEVICES=" not in source
     assert "annotation" not in source.lower()
     assert "test_evidence" not in source.lower()
-    profile_source = (
-        ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py"
-    ).read_text(encoding="utf-8")
+    profile_source = (ROOT / "tools" / "bata" / "profile_spatial_zoom_s1.py").read_text(
+        encoding="utf-8"
+    )
     assert "NvmlSidecarPowerSampler as PowerSampler" in profile_source
     assert 'expected_uuid=hardware_identity["nvidia_smi"]["uuid"]' in profile_source
     assert "sidecar_cpu_id=sidecar_cpu_id" in profile_source
@@ -3206,9 +3206,7 @@ def test_sidecar_gate_and_matrix_launchers_freeze_resources_and_order() -> None:
         ROOT / "scripts" / "run_spatial_zoom_s1_test_profile_slurm.sh"
     ).read_text(encoding="utf-8")
     matrix_source = (
-        ROOT
-        / "scripts"
-        / "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
+        ROOT / "scripts" / "run_spatial_zoom_s1_profile_recovery_matrix_slurm.sh"
     ).read_text(encoding="utf-8")
     preflight_source = (
         ROOT / "tools" / "bata" / "preflight_spatial_zoom_s1_profile.py"
@@ -3228,7 +3226,7 @@ def test_sidecar_gate_and_matrix_launchers_freeze_resources_and_order() -> None:
         assert 'SIDECAR_CPU="${CPU_ARRAY[4]}"' in source
         assert 'taskset -c "${DETECTOR_CPUS}"' in source
         assert "--power-scratch-root" in source
-        assert "spatial_zoom_s1_power.py\" salvage" in source
+        assert 'spatial_zoom_s1_power.py" salvage' in source
     assert "--sidecar-gate" in gate_source
     assert "--samples 0" in gate_source
     assert "TEST_EVIDENCE_SHA_BEFORE" in gate_source
@@ -3617,8 +3615,7 @@ def test_sidecar_attempt_validator_rejects_swapped_raw_trace(tmp_path: Path) -> 
         expected_uuid="GPU-S1",
     )
     rows = [
-        json.loads(line)
-        for line in trace_b.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in trace_b.read_text(encoding="utf-8").splitlines()
     ]
     rows[0]["power_w"] = 999.0
     trace_b.write_text(
@@ -3638,7 +3635,7 @@ def test_sidecar_attempt_validator_rejects_swapped_raw_trace(tmp_path: Path) -> 
     ):
         source = (ROOT / consumer).read_text(encoding="utf-8")
         assert "validate_nvml_sidecar_attempt(" in source
-        assert "expected_uuid=profile[\"hardware_identity\"]" in source
+        assert 'expected_uuid=profile["hardware_identity"]' in source
 
 
 def test_buffered_sidecar_cadence_failure_requires_healthy_process(
@@ -3866,9 +3863,7 @@ def test_sidecar_sampler_process_failure_leaves_no_orphan(
             sampler.start()
         assert sampler._process is not None
         assert sampler._process.poll() is not None
-        report = json.loads(
-            sampler.attempt_report_path.read_text(encoding="utf-8")
-        )
+        report = json.loads(sampler.attempt_report_path.read_text(encoding="utf-8"))
         assert report["status"] == "FAIL"
         assert expected_error in report["error"]
         assert sampler.attempt_trace_path.is_file()
@@ -3954,9 +3949,7 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
     assert path == sidecar_gate_path(recovery)
     checked = load_sidecar_gate_evidence(path, recovery=recovery)
     assert checked["status"] == "PASS"
-    assert checked["trace_publication_mode"] == recovery.get(
-        "trace_publication_mode"
-    )
+    assert checked["trace_publication_mode"] == recovery.get("trace_publication_mode")
     assert checked["trace_io_inside_sampling_loop"] == recovery.get(
         "trace_io_inside_sampling_loop"
     )

@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # 来源注册表
@@ -328,6 +328,45 @@ updated: 2026-07-17
   `DEPLOY` with no P0/P1, confirmed physical Slurm provenance remains distinct
   from the cgroup-visible NVML selector, and made no file changes. This
   authorizes only commit, remote replay, and a fresh no-open Gate.
+- Cgroup-selector deployment evidence, 2026-07-18. Profile/runtime commit
+  `43ac70bea6720f0c882ed3208bccfc89b089b5d4` passed `107` exact remote
+  tests. Campaign `20fe22c380fd38bd` certificate internal/file SHAs are
+  `455a0bbf799a091a6d17edc084930a71aa243a4ad34a5e909b3d8e1a286e7d7d`
+  and
+  `c984dba860ab9a8b6a0dbfb097435f0de486de5dd67d8fc04e8d7670cc96e1f1`.
+  Gate Job `1170433` completed `0:0`; Gate internal/file SHAs are
+  `38d07cdaf84969cb3a63862bd9a20b94a085bc2b4a05db0a373c1ceeca3ae46d`
+  and
+  `84499633d389e3dfb0a8402a63c4dc66ee6e22da0ecd3c20f88926170a28fe4d`.
+  Matrix submission receipt internal/file SHAs are
+  `5d09a3768fd985a24cbf05f95691a9f79c8622fc7a42d82664e680504c85a6c4`
+  and
+  `6501cc586aab889b4ef7173c21474afa76dbe07efc621c4a87063d3c021aead5`.
+- Formal matrix runtime failure, Job `1170468`, 2026-07-18. Slurm accounting:
+  `FAILED 1:0`, elapsed `03:05:47`, inner-step MaxRSS `77577404K`.
+  Matrix-start internal/file SHAs are
+  `e6199926c0364871fbad887c60ea05f7feb12d5571eac75b0233b35dca517968`
+  and
+  `b88827b236528f8f06c1a5e312ed316f6f88995c39f6548873bf435542642ba4`.
+  The only descriptor is
+  `descriptors/dense256_seed3408.run.json`, internal SHA
+  `7b029470a52218f8f75bfbc499545c44ddf11785c2deca6c9394b1374a39e2ea`.
+  The next cell failed in training snapshot `tools/test.py` with
+  `formal S1 execution requires one auditable SLURM_JOB_GPUS identity`.
+  No completion receipt or ordinal-1 test evidence exists. The one descriptor
+  and profile remain diagnostic evidence within an immutable failed campaign.
+- Step-scoped test-runtime recovery design,
+  `docs/superpowers/specs/2026-07-18-spatial-zoom-s1-step-scoped-test-runtime-recovery.md`.
+  It freezes model/test/cost/statistical invariants, rejects Slurm-variable
+  rewriting and in-place historical-source edits, and requires a recursive
+  recovery certificate plus independent P0/P1 audit before any new Gate.
+- Step-scoped runtime independent read-only audit, 2026-07-18. The reviewer
+  personally checked the complete working-tree diff and remote Job `1170468`
+  evidence, ran the focused suite, and returned
+  `DEPLOY_READY_WITH_GATES` with no P0/P1. Its P2 broad parent-delta allowlist
+  and P3 split-field stdout concerns were fixed before commit; focused
+  verification then passed `107` tests with `5` environment skips, and the
+  reviewer reconfirmed no P0/P1.
 
 ## 外部附件
 

@@ -410,3 +410,30 @@ append_only: true
   retention, and regression coverage; it changed no files. State is
   `tested_local`, authorizing only commit, exact remote replay, and one fresh
   no-open Gate.
+- 2026-07-18: pushed cgroup-selector commit `43ac70b`; clean remote tests were
+  `107 passed`. Campaign `20fe22c380fd38bd` no-open Gate `1170433` passed
+  the full 792/791 path with 126218 samples and max gap `67.728` ms. The sole
+  matrix `1170468` then completed ordinal-0 dense256/seed3408 and published one
+  descriptor, but failed before ordinal-1 test open. The historical training
+  snapshot's test guard rejected outer `SLURM_JOB_GPUS=2,4` despite the valid
+  exact one-GPU step `SLURM_STEP_GPUS=2`. Preserved the failed campaign and
+  lock unchanged; no completion receipt exists and the one cell is diagnostic
+  only.
+- 2026-07-18: designed and began implementing a step-scoped formal-test
+  runtime recovery. It runs the unchanged official test path from a
+  certificate-bound infrastructure commit, binds training/runtime commits and
+  recovery identity into marker/evidence/descriptor, and recursively seals
+  Job `1170468` failure evidence. Model/config/checkpoint/evaluator, sealed
+  test, 20/100 ms cadence, resources, frozen order, and statistics remain
+  unchanged. Status is `implemented_local`; no replacement campaign, Gate,
+  matrix, analyzer, GO/KILL, S2, or Pro is authorized until focused tests and
+  independent P0/P1 review pass.
+- 2026-07-18: completed local step-scoped runtime recovery verification:
+  `107 passed, 5 skipped`, Black, `git diff --check`, and Bash syntax checks
+  passed. Independent read-only review returned `DEPLOY_READY_WITH_GATES`
+  with no P0/P1. Its P2/P3 findings were closed before commit by narrowing the
+  parent-to-v5 diff to nine exact infrastructure paths and requiring one
+  structured stdout record to jointly identify ordinal 1/resolution 224/seed
+  3409. State advanced to `tested_local`; only a clean runtime commit, exact
+  remote replay, real-evidence v5 certificate, and one no-new-test-open Gate
+  are authorized next.

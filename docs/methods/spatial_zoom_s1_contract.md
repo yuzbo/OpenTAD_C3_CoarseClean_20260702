@@ -85,6 +85,15 @@ rule remain identical.
    `CUDA_VISIBLE_DEVICES`, or describe the run as two-GPU computation. The
    process must verify a finite cgroup v2 step limit of at least 90,000 MiB
    before opening evidence.
+   If the frozen training commit predates this two-level Slurm scope, a formal
+   test may run from a newer recovery-certificate-bound runtime commit only
+   when the certificate proves that all changes are confined to audited S1
+   test/profile/evidence infrastructure and that `opentad/`, resolved configs,
+   model code, checkpoint semantics, and evaluator code are unchanged. The
+   test-open marker, test evidence, matrix binding, profile, and descriptor
+   must bind both training and runtime commits plus the recovery certificate.
+   Rewriting Slurm identity variables or modifying the historical checkout in
+   place is forbidden.
    Sampling uses `time.monotonic_ns`, preserves a sequence-numbered raw trace
    and a self-hashed attempt report even when profile validation fails, and
    uses one canonical output prefix. Cost claims are limited to same-node,

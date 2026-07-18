@@ -22,6 +22,7 @@ from tools.bata.spatial_zoom_s1_contract import (  # noqa: E402
     validate_s1_manifest,
 )
 from tools.bata.spatial_zoom_s1_evidence import (  # noqa: E402
+    S1_TEST_RUNTIME_EVIDENCE_FIELDS,
     validate_s1_test_evidence,
 )
 from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
@@ -32,6 +33,7 @@ from tools.bata.profile_spatial_zoom_s1 import (  # noqa: E402
     validate_profile_attempt_marker,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
+    S1_STEP_SCOPED_TEST_RUNTIME_MODE,
     load_profile_recovery_certificate,
     profile_campaign_prefix,
 )
@@ -146,9 +148,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         and test_evidence["evidence_sha256"]
         == recovery["legacy_unbound_test_evidence_sha256"]
     )
-    test_matrix_binding_path = canonical_test_matrix_binding_path(
-        args.test_evidence
-    )
+    test_matrix_binding_path = canonical_test_matrix_binding_path(args.test_evidence)
     if legacy_unbound_test_evidence:
         if test_matrix_binding_path.exists():
             raise RuntimeError(
@@ -156,6 +156,18 @@ def build_descriptor(args: argparse.Namespace) -> dict:
             )
         test_matrix_binding = None
     else:
+        runtime_expected = {
+            "formal_test_runtime_mode": S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+            "training_code_commit": binding["code_commit"],
+            "test_runtime_code_commit": recovery["profile_code_commit"],
+            "profile_recovery_certificate_path": str(recovery_path),
+            "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+            "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+            "profile_recovery_campaign_id": recovery["campaign_id"],
+        }
+        for key, expected in runtime_expected.items():
+            if test_evidence.get(key) != expected:
+                raise ValueError(f"S1 test runtime evidence {key} mismatch")
         test_matrix_binding = validate_test_matrix_binding(
             test_matrix_binding_path,
             test_evidence_path=args.test_evidence,
@@ -168,9 +180,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         raise ValueError("S1 run descriptor requires an S1 full-stack profile")
     profile_samples_path = canonical_profile_prefix.with_suffix(".samples.jsonl")
     profile_power_path = canonical_profile_prefix.with_suffix(".power.jsonl")
-    profile_power_attempt_path = Path(
-        f"{canonical_profile_prefix}.power_attempt.json"
-    )
+    profile_power_attempt_path = Path(f"{canonical_profile_prefix}.power_attempt.json")
     profile_power_attempt_trace_path = Path(
         f"{canonical_profile_prefix}.power_attempt.jsonl"
     )
@@ -276,9 +286,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
         "matrix_start_receipt_path": str(args.matrix_start_receipt.resolve()),
-        "matrix_start_receipt_file_sha256": sha256_file(
-            args.matrix_start_receipt
-        ),
+        "matrix_start_receipt_file_sha256": sha256_file(args.matrix_start_receipt),
         "matrix_sha256": matrix_start["matrix_sha256"],
         "slurm_job_id": matrix_start["slurm_job_id"],
         "slurm_step_id": matrix_start["slurm_step_id"],
@@ -300,9 +308,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "test_evidence_sha256": test_evidence["evidence_sha256"],
         "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
         "test_matrix_binding_path": (
-            None
-            if test_matrix_binding is None
-            else str(test_matrix_binding_path)
+            None if test_matrix_binding is None else str(test_matrix_binding_path)
         ),
         "test_matrix_binding_file_sha256": (
             None
@@ -336,14 +342,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
         "trace_io_inside_sampling_loop": False,
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
-        "sidecar_gate_evidence_file_sha256": sha256_file(
-            sidecar_gate_path(recovery)
-        ),
+        "sidecar_gate_evidence_file_sha256": sha256_file(sidecar_gate_path(recovery)),
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
         "matrix_start_receipt_path": str(args.matrix_start_receipt.resolve()),
-        "matrix_start_receipt_file_sha256": sha256_file(
-            args.matrix_start_receipt
-        ),
+        "matrix_start_receipt_file_sha256": sha256_file(args.matrix_start_receipt),
         "matrix_sha256": matrix_start["matrix_sha256"],
         "slurm_job_id": matrix_start["slurm_job_id"],
         "slurm_step_id": matrix_start["slurm_step_id"],
@@ -399,9 +401,7 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "test_evidence_sha256": test_evidence["evidence_sha256"],
         "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
         "test_matrix_binding_path": (
-            None
-            if test_matrix_binding is None
-            else str(test_matrix_binding_path)
+            None if test_matrix_binding is None else str(test_matrix_binding_path)
         ),
         "test_matrix_binding_file_sha256": (
             None
@@ -431,30 +431,22 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         "profile_power_path": str(profile_power_path),
         "profile_power_sha256": sha256_file(profile_power_path),
         "profile_power_attempt_path": str(profile_power_attempt_path),
-        "profile_power_attempt_file_sha256": sha256_file(
-            profile_power_attempt_path
-        ),
+        "profile_power_attempt_file_sha256": sha256_file(profile_power_attempt_path),
         "profile_power_attempt_sha256": profile["power_attempt_sha256"],
-        "profile_power_attempt_trace_path": str(
-            profile_power_attempt_trace_path
-        ),
+        "profile_power_attempt_trace_path": str(profile_power_attempt_trace_path),
         "profile_power_attempt_trace_sha256": sha256_file(
             profile_power_attempt_trace_path
         ),
         "profile_trace_publication_mode": S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE,
         "profile_trace_io_inside_sampling_loop": False,
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
-        "sidecar_gate_evidence_file_sha256": sha256_file(
-            sidecar_gate_path(recovery)
-        ),
+        "sidecar_gate_evidence_file_sha256": sha256_file(sidecar_gate_path(recovery)),
         "sidecar_gate_sha256": sidecar_gate["gate_sha256"],
         "profile_attempt_marker_path": str(marker_path),
         "profile_attempt_marker_file_sha256": marker_file_sha,
         "profile_attempt_marker_sha256": marker["marker_sha256"],
         "matrix_start_receipt_path": str(args.matrix_start_receipt.resolve()),
-        "matrix_start_receipt_file_sha256": sha256_file(
-            args.matrix_start_receipt
-        ),
+        "matrix_start_receipt_file_sha256": sha256_file(args.matrix_start_receipt),
         "matrix_sha256": matrix_start["matrix_sha256"],
         "slurm_job_id": matrix_start["slurm_job_id"],
         "slurm_step_id": matrix_start["slurm_step_id"],
@@ -467,6 +459,10 @@ def build_descriptor(args: argparse.Namespace) -> dict:
         ),
         "paper_claim_allowed": False,
     }
+    if not legacy_unbound_test_evidence:
+        descriptor.update(
+            {key: test_evidence[key] for key in S1_TEST_RUNTIME_EVIDENCE_FIELDS}
+        )
     descriptor["descriptor_sha256"] = canonical_sha256(descriptor)
     return descriptor
 

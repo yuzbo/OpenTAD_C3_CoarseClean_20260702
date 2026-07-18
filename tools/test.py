@@ -53,6 +53,15 @@ def parse_args():
         default=None,
         help="required sealed-test certificate for manifest-bound S1 configs",
     )
+    parser.add_argument(
+        "--s1-profile-recovery-certificate",
+        type=str,
+        default=None,
+        help=(
+            "audited profile-runtime certificate required when formal S1 test "
+            "runs from an infrastructure-only recovery commit"
+        ),
+    )
     args = parser.parse_args()
     return args
 
@@ -87,8 +96,13 @@ def main():
         from tools.bata.spatial_zoom_s1_contract import (
             atomic_publish_json,
             canonical_sha256,
+            sha256_file,
         )
         from tools.bata.spatial_zoom_s1_evidence import S1_TEST_OPEN_MARKER_SCHEMA
+        from tools.bata.spatial_zoom_s1_profile_recovery import (
+            S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+            load_profile_recovery_certificate,
+        )
         from tools.bata.spatial_zoom_s1_training import (
             require_clean_git_checkout,
             require_slurm_single_gpu_allocation,
@@ -105,7 +119,24 @@ def main():
             raise RuntimeError(
                 "formal S1 test requires the bound full precheck certificate"
             )
-        require_clean_git_checkout(expected_commit=s1_binding["code_commit"])
+        recovery = None
+        recovery_path = None
+        if args.s1_profile_recovery_certificate:
+            recovery_path = os.path.abspath(args.s1_profile_recovery_certificate)
+            recovery = load_profile_recovery_certificate(
+                recovery_path,
+                binding=s1_binding,
+                verify_checkout=True,
+            )
+            if (
+                recovery.get("formal_test_runtime_mode")
+                != S1_STEP_SCOPED_TEST_RUNTIME_MODE
+            ):
+                raise RuntimeError(
+                    "formal S1 recovery test requires the step-scoped runtime contract"
+                )
+        else:
+            require_clean_git_checkout(expected_commit=s1_binding["code_commit"])
         certificate_path = os.path.abspath(args.s1_test_open_certificate)
         with open(certificate_path, "r", encoding="utf-8") as handle:
             certificate = json.load(handle)
@@ -129,6 +160,20 @@ def main():
             if bool(cfg.solver.get("ema", False))
             else "state_dict",
             seed=int(args.seed),
+        )
+        if recovery is not None:
+            cfg.spatial_zoom_s1_test_binding.update(
+                formal_test_runtime_mode=S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+                training_code_commit=s1_binding["code_commit"],
+                test_runtime_code_commit=recovery["profile_code_commit"],
+                profile_recovery_certificate_path=recovery_path,
+                profile_recovery_certificate_file_sha256=(sha256_file(recovery_path)),
+                profile_recovery_certificate_sha256=(recovery["certificate_sha256"]),
+                profile_recovery_campaign_id=recovery["campaign_id"],
+            )
+    elif args.s1_profile_recovery_certificate:
+        raise ValueError(
+            "--s1-profile-recovery-certificate is valid only for formal S1 configs"
         )
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
@@ -168,6 +213,19 @@ def main():
                 "checkpoint_sha256": sidecar["checkpoint_sha256"],
                 "test_open_certificate_sha256": certificate["certificate_sha256"],
             }
+            if recovery is not None:
+                marker.update(
+                    formal_test_runtime_mode=S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+                    test_runtime_code_commit=recovery["profile_code_commit"],
+                    profile_recovery_certificate_path=recovery_path,
+                    profile_recovery_certificate_file_sha256=(
+                        sha256_file(recovery_path)
+                    ),
+                    profile_recovery_certificate_sha256=(
+                        recovery["certificate_sha256"]
+                    ),
+                    profile_recovery_campaign_id=recovery["campaign_id"],
+                )
             marker["marker_sha256"] = canonical_sha256(marker)
             atomic_publish_json(marker_path, marker)
             cfg.spatial_zoom_s1_test_binding.open_marker_path = os.path.abspath(

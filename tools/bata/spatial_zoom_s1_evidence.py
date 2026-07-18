@@ -23,6 +23,70 @@ from tools.bata.spatial_zoom_s1_test_open import validate_test_open_certificate
 S1_GATE_EVIDENCE_SCHEMA = "spatial_zoom_s1_gate_evidence_v3"
 S1_TEST_EVIDENCE_SCHEMA = "spatial_zoom_s1_test_evidence_v4"
 S1_TEST_OPEN_MARKER_SCHEMA = "spatial_zoom_s1_test_open_marker_v2"
+S1_TEST_RUNTIME_EVIDENCE_FIELDS = (
+    "formal_test_runtime_mode",
+    "training_code_commit",
+    "test_runtime_code_commit",
+    "profile_recovery_certificate_path",
+    "profile_recovery_certificate_file_sha256",
+    "profile_recovery_certificate_sha256",
+    "profile_recovery_campaign_id",
+)
+
+
+def _validate_test_runtime_evidence(
+    payload: Mapping[str, Any],
+    *,
+    binding: Mapping[str, Any],
+    marker: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    present = [key in payload for key in S1_TEST_RUNTIME_EVIDENCE_FIELDS]
+    if not any(present):
+        return None
+    if not all(present):
+        raise ValueError("S1 test runtime evidence is incomplete")
+
+    from tools.bata.spatial_zoom_s1_profile_recovery import (
+        S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+        load_profile_recovery_certificate,
+    )
+
+    recovery_path = Path(payload["profile_recovery_certificate_path"]).resolve()
+    if (
+        not recovery_path.is_file()
+        or sha256_file(recovery_path)
+        != payload["profile_recovery_certificate_file_sha256"]
+    ):
+        raise ValueError("S1 test runtime recovery certificate file mismatch")
+    recovery = load_profile_recovery_certificate(
+        recovery_path,
+        binding=binding,
+        verify_checkout=False,
+    )
+    expected = {
+        "formal_test_runtime_mode": S1_STEP_SCOPED_TEST_RUNTIME_MODE,
+        "training_code_commit": binding["code_commit"],
+        "test_runtime_code_commit": recovery["profile_code_commit"],
+        "profile_recovery_certificate_path": str(recovery_path),
+        "profile_recovery_certificate_file_sha256": sha256_file(recovery_path),
+        "profile_recovery_certificate_sha256": recovery["certificate_sha256"],
+        "profile_recovery_campaign_id": recovery["campaign_id"],
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            raise ValueError(f"S1 test runtime evidence {key} mismatch")
+    if recovery.get("formal_test_runtime_mode") != S1_STEP_SCOPED_TEST_RUNTIME_MODE:
+        raise ValueError("S1 test runtime recovery mode mismatch")
+    if marker is not None:
+        marker_expected = {
+            key: value
+            for key, value in expected.items()
+            if key != "training_code_commit"
+        }
+        for key, value in marker_expected.items():
+            if marker.get(key) != value:
+                raise ValueError(f"S1 test-open marker {key} mismatch")
+    return recovery
 
 
 def validate_s1_checkpoint_metadata_for_binding(
@@ -135,9 +199,9 @@ def write_s1_gate_evidence(
     evidence_path = output_dir / f"epoch_{epoch}.evidence.json"
     if evidence_path.exists():
         raise FileExistsError("refusing to overwrite frozen S1 gate evidence")
-    prediction_payload = json.dumps(
-        {"results": dict(result_dict)}, sort_keys=True
-    ) + "\n"
+    prediction_payload = (
+        json.dumps({"results": dict(result_dict)}, sort_keys=True) + "\n"
+    )
     if prediction_path.exists():
         if prediction_path.read_text(encoding="utf-8") != prediction_payload:
             raise ValueError("existing S1 gate prediction is not recoverable")
@@ -261,6 +325,10 @@ def write_s1_test_evidence(
     binding = validate_bound_s1_training_config(
         bound_cfg, seed=int(test_binding["seed"])
     )
+    runtime_recovery = _validate_test_runtime_evidence(
+        test_binding,
+        binding=binding,
+    )
     certificate_path = Path(test_binding["certificate_path"])
     checkpoint_path = Path(test_binding["checkpoint_path"])
     certificate = validate_test_open_certificate(
@@ -280,6 +348,12 @@ def write_s1_test_evidence(
         checkpoint_sha256=sidecar["checkpoint_sha256"],
         certificate_sha256=certificate["certificate_sha256"],
     )
+    if runtime_recovery is not None:
+        _validate_test_runtime_evidence(
+            test_binding,
+            binding=binding,
+            marker=marker,
+        )
     manifest = json.loads(Path(binding["manifest_path"]).read_text(encoding="utf-8"))
     unexpected = sorted(set(map(str, result_dict)) - set(manifest["splits"]["test"]))
     if unexpected:
@@ -295,9 +369,9 @@ def write_s1_test_evidence(
     evidence_path = output_dir / "test.evidence.json"
     if evidence_path.exists():
         raise FileExistsError("refusing to overwrite sealed S1 test evidence")
-    prediction_payload = json.dumps(
-        {"results": dict(result_dict)}, sort_keys=True
-    ) + "\n"
+    prediction_payload = (
+        json.dumps({"results": dict(result_dict)}, sort_keys=True) + "\n"
+    )
     if prediction_path.exists():
         if prediction_path.read_text(encoding="utf-8") != prediction_payload:
             raise ValueError("existing S1 test prediction is not recoverable")
@@ -343,6 +417,10 @@ def write_s1_test_evidence(
         "single_test_open": True,
         "paper_claim_allowed": False,
     }
+    if runtime_recovery is not None:
+        evidence.update(
+            {key: test_binding[key] for key in S1_TEST_RUNTIME_EVIDENCE_FIELDS}
+        )
     evidence["evidence_sha256"] = canonical_sha256(evidence)
     atomic_publish_json(evidence_path, evidence)
     return evidence_path
@@ -415,6 +493,11 @@ def validate_s1_test_evidence(
     )
     if marker["marker_sha256"] != checked.get("test_open_marker_sha256"):
         raise ValueError("S1 test-open marker identity mismatch")
+    _validate_test_runtime_evidence(
+        checked,
+        binding=binding,
+        marker=marker,
+    )
     validate_s1_checkpoint_metadata_for_binding(
         sidecar["experiment_metadata"],
         binding=binding,
@@ -442,6 +525,7 @@ def validate_s1_test_evidence(
 __all__ = [
     "S1_GATE_EVIDENCE_SCHEMA",
     "S1_TEST_EVIDENCE_SCHEMA",
+    "S1_TEST_RUNTIME_EVIDENCE_FIELDS",
     "validate_s1_checkpoint_metadata_for_binding",
     "validate_s1_gate_evidence",
     "validate_s1_test_evidence",

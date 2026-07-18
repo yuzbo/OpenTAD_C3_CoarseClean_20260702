@@ -2,11 +2,11 @@
 type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
-stage: experiment_running
-outcome: gpu_selector_fix_independent_deploy_remote_pending
+stage: tested
+outcome: step_runtime_recovery_deploy_ready_remote_gate_pending
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # Spatial Zoom S1 Infrastructure Verification
@@ -687,13 +687,52 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   `102 passed, 5 skipped`. An independent read-only audit returned `DEPLOY`
   with no P0/P1 and made no file changes. State remains `tested_local`;
   remote replay and a fresh no-open Gate do not yet exist.
+- Cgroup-selector repair commit
+  `43ac70bea6720f0c882ed3208bccfc89b089b5d4` passed `107` exact remote
+  tests. Its immutable campaign `20fe22c380fd38bd` passed no-open Gate Job
+  `1170433`: unchanged dense256/seed3408 test evidence, 792 loader exposures,
+  791 physical windows, 126218 power samples, and median/P95/max gaps
+  `20.000/20.033/67.728` ms. The Gate opened no new test and published no
+  paper profile.
+- The sole matrix Job `1170468` failed `1:0` after `03:05:47`. Ordinal-0
+  dense256/seed3408 completed and published one descriptor. Its official-test
+  result remains Avg-mAP `67.09`, with mAP@0.3-0.7
+  `82.14/77.76/70.36/59.53/45.67`. The diagnostic profile reports warm-serial
+  per-window p50/p95 `2929.497/5257.977` ms, peak allocated/reserved GPU
+  memory `2338.041/2700.0` MiB, gross GPU-energy p50/p95
+  `303.529/470.737` J, and 121718 samples with max gap `52.894` ms. Because
+  there is no completion receipt, these numbers cannot select a resolution or
+  support GO/KILL.
+- Failure occurred before ordinal-1 dense224/seed3409 opened sealed-test
+  evidence. The historical training snapshot's `tools/test.py` imported a
+  guard that requires one value in `SLURM_JOB_GPUS`; it rejected the valid
+  outer `2,4` reservation despite exact inner `SLURM_STEP_GPUS=2`,
+  `CUDA_VISIBLE_DEVICES=0`, one logical GPU, five CPUs, and 96000 MiB. The
+  campaign and matrix lock are immutable. This is an infrastructure/runtime
+  source-split failure, not a model, checkpoint, mAP, evaluator, or cadence
+  failure.
+- A step-scoped formal-test runtime recovery is now `tested_local`. It keeps
+  training/model commit `18139b9`,
+  configs, checkpoints, sealed-test certificate, official evaluator, 20/100 ms
+  cadence, 4+1 CPU partition, resources, order, and statistics unchanged. The
+  new runtime commit must be restricted by a recursive certificate to S1
+  infrastructure paths and must bind Job `1170468`, its start/submission
+  receipts, logs, sole ordinal-0 descriptor, missing completion receipt, and
+  exact ordinal-1 error. Local focused verification passed `107` tests with
+  `5` environment skips. Independent read-only review returned
+  `DEPLOY_READY_WITH_GATES` with no P0/P1; its initial P2/P3 requests were
+  closed by a dedicated nine-path parent-delta allowlist and same-record JSON
+  validation of ordinal 1/resolution 224/seed 3409. No new campaign, Gate,
+  matrix, analyzer, or Pro review is authorized before a clean commit, exact
+  remote replay, and real-evidence v5 certificate validation.
 
 ## Decision Boundary
 
-`experiment_running` describes the formal 3x3 matrix, not a positive result. The route is not
-`empirically_supported` or `paper_ready`. S1 KILL permanently blocks S2. S1 GO
-only authorizes an oracle ROI/crop sufficiency experiment; it does not prove a
-learned zoom method.
+The formal 3x3 matrix is not running and has no valid completion receipt. The
+current recovery is `tested_local`; the route is not
+`empirically_supported` or `paper_ready`. S1 KILL permanently blocks S2. S1
+GO only authorizes an oracle ROI/crop sufficiency experiment; it does not prove
+a learned zoom method.
 
 ## Connections
 

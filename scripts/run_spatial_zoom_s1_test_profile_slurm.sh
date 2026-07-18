@@ -176,16 +176,17 @@ if [[ -f "${TEST_EVIDENCE}" ]]; then
   printf '[SPATIAL_ZOOM_S1_TEST_PROFILE] reuse validated test evidence: %s\n' "${TEST_EVIDENCE}"
 else
   (
-    cd "${TRAINING_ROOT}"
+    cd "${ROOT}"
     taskset -c "${DETECTOR_CPUS}" \
     torchrun --nnodes=1 --nproc_per_node=1 \
       --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
       --rdzv_id="s1-test-${SLURM_JOB_ID}-${RESOLUTION}-${SEED}" \
-      tools/test.py "${BOUND_CONFIG}" \
+      "${ROOT}/tools/test.py" "${BOUND_CONFIG}" \
       --checkpoint "${CHECKPOINT}" \
       --seed "${SEED}" \
       --id 0 \
-      --s1-test-open-certificate "${TEST_OPEN}"
+      --s1-test-open-certificate "${TEST_OPEN}" \
+      --s1-profile-recovery-certificate "${PROFILE_RECOVERY}"
   )
   (
     cd "${ROOT}"

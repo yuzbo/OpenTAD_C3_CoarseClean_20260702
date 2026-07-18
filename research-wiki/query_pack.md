@@ -1,12 +1,12 @@
 ---
 type: query_pack
-updated: 2026-07-17
+updated: 2026-07-18
 max_chars: 8000
 ---
 
 # Research Query Pack
 
-## Spatial Zoom S1 最新门禁状态（2026-07-17）
+## Spatial Zoom S1 最新门禁状态（2026-07-18）
 
 - 当前唯一执行线仍是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
   ROI、scout、crop policy 或 fusion。
@@ -51,7 +51,20 @@ max_chars: 8000
   `6021eaba...` is immutable failed infrastructure. A local fix preserves the
   physical identity but queries the sole visible selector and cross-checks its
   UUID against `cuda:0`; independent review returned `DEPLOY` with no P0/P1.
-  It remains `tested_local`: no valid Gate, matrix, Pro or GO/KILL exists.
+  Commit `43ac70b` passed `107` remote tests and its no-open Gate `1170433`
+  passed the full 792/791 path with 126218 samples and max gap `67.728` ms.
+  The sole matrix `1170468` completed ordinal-0 dense256/seed3408, producing
+  one descriptor and a valid diagnostic profile, then failed before ordinal-1
+  test open. Root cause is a source-runtime split: historical training snapshot
+  `tools/test.py` imported the old guard that rejects outer
+  `SLURM_JOB_GPUS=2,4`, even though the exact inner step was correctly scoped by
+  `SLURM_STEP_GPUS=2`. The failed campaign is immutable and has no completion
+  receipt. A step-scoped test-runtime recovery is now `tested_local`: focused
+  verification passed `107` tests with `5` environment skips, and independent
+  review returned `DEPLOY_READY_WITH_GATES` with no P0/P1 after its two
+  hardening requests were closed. No clean runtime commit, real-evidence v5
+  certificate, replacement Gate/matrix, Pro, GO/KILL, or complete cost table
+  exists yet.
 
 ## 当前唯一活动任务：Spatial Zoom
 

@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # 禁止重走清单
@@ -89,6 +89,16 @@ updated: 2026-07-17
 23. Do not treat marker, stdout, or stderr files as proof that the NVML sidecar
     started. Salvage is authorized only by sidecar PID/ready/raw-power/result
     evidence, and a failed salvage must remain a hard failure.
+24. Do not run the historical training snapshot's `tools/test.py` unchanged
+    inside the high-memory two-level Slurm allocation. Job `1170468` proved
+    that its old guard rejects the valid exact one-GPU step because it inspects
+    the two-GPU outer `SLURM_JOB_GPUS`. Never falsify Slurm variables or edit
+    that snapshot in place. A replacement must use a recovery-certificate-bound
+    runtime entrypoint while proving the model/config/evaluator tree is unchanged.
+25. One completed descriptor in a failed matrix is diagnostic cell evidence,
+    not a partial 3x3 result. Without the exact-nine completion receipt it
+    cannot select a resolution, drive GO/KILL, or be pooled with another
+    campaign.
 
 ## 任务与叙事
 
