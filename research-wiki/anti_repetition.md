@@ -109,6 +109,18 @@ updated: 2026-07-18
     atomically bind that Job ID with the certificate-bound Conda Python.
     Job `1170765` was recovered this way after the login-node bare `python`
     rejected an f-string; no duplicate Gate was submitted.
+28. Do not use a recovery schema name as a proxy for inherited runtime
+    capability. Job `1170765` failed before sidecar startup because v5 carried
+    the exact buffered-sidecar contract while the profiler accepted only the
+    literal v4 reason. Validate backend, atomic publication, no loop I/O,
+    20/100 ms cadence, 4+1 CPUs, and long-Gate fields together. A descendant
+    recovery must also bind the failed parent inventory and prove no sidecar or
+    new test evidence appeared; the failed campaign remains immutable.
+29. Do not let recovery evidence roles alias or mix. Parent certificates and
+    Gate stdout/stderr must use their canonical campaign paths; stdout/stderr
+    cannot share a path or inode. Legacy, matrix, Gate, and power-diagnostic
+    evidence are mutually exclusive for a schema transition, and incomplete
+    role sets must fail closed rather than be ignored.
 
 ## 任务与叙事
 

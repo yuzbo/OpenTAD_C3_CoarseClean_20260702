@@ -49,10 +49,21 @@ max_chars: 8000
   runtime commit `3d01d3b` then passed `113` exact tests in a clean Linux
   snapshot. Real-evidence v5 campaign `3180634880aa8de0` validates with
   certificate internal/file SHAs `a6d48b7c.../352bd5cc...`. Its sole no-open
-  Gate is Job `1170765`, running on `g0024` in the exact inner
-  `1 GPU / 5 CPU / 96000 MiB` step; submission receipt internal/file SHAs are
-  `d2d48a84.../0e1968ee...`. No replacement matrix, Pro, GO/KILL, or complete
-  cost table exists yet.
+  Gate Job `1170765` failed `2:0` before sidecar startup because the profiler
+  required the literal v4 reason rather than v5's inherited buffered-sidecar
+  capability. It opened no new test, published no sidecar/profile/descriptor,
+  changed no existing test evidence, and authorized no matrix. The immutable
+  parent campaign contains only its certificate, Gate receipt, and two logs.
+  A narrow v6 schema-family repair is `tested_local`: it validates the
+  full buffered contract by capability and recursively binds the failed Gate,
+  parent inventory, sidecar absence, and unchanged test-evidence hash. Focused
+  schema-compat verification is `52 passed`; the combined S1, train-engine,
+  and required C3 suite is `157 passed, 5 skipped`. Independent review first
+  held on test sufficiency, then returned `DEPLOY_READY_WITH_GATES` with no
+  P0/P1/P2 after exact alias and mixed-evidence regressions were added. Clean
+  commit/push, remote replay, and real-evidence v6 validation are still
+  required before any new Gate. No replacement matrix, Pro, GO/KILL, or
+  complete cost table exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 

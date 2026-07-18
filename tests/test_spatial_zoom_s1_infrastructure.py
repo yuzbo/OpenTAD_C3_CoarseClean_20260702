@@ -88,8 +88,10 @@ from tools.bata.spatial_zoom_s1_profile_recovery import (
     S1_POWER_FAILURE_SIGNATURE,
     S1_PROFILE_RECOVERY_REASON,
     S1_PROFILE_RECOVERY_SCHEMA,
+    S1_SCHEMA_COMPAT_RECOVERY_REASON,
     S1_SIDECAR_PROFILE_RECOVERY_SCHEMA,
     S1_SIDECAR_RECOVERY_REASON,
+    S1_STEP_RUNTIME_RECOVERY_REASON,
     profile_campaign_prefix,
     validate_profile_recovery_certificate,
 )
@@ -3878,11 +3880,17 @@ def test_sidecar_sampler_process_failure_leaves_no_orphan(
 
 @pytest.mark.parametrize(
     "recovery_reason",
-    (S1_SIDECAR_RECOVERY_REASON, S1_BUFFERED_SIDECAR_RECOVERY_REASON),
+    (
+        S1_SIDECAR_RECOVERY_REASON,
+        S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+        S1_STEP_RUNTIME_RECOVERY_REASON,
+        S1_SCHEMA_COMPAT_RECOVERY_REASON,
+    ),
 )
 def test_long_sidecar_gate_is_compact_test_reuse_evidence(
     tmp_path: Path, recovery_reason: str
 ) -> None:
+    buffered_recovery = recovery_reason != S1_SIDECAR_RECOVERY_REASON
     campaign_root = (tmp_path / "campaign").resolve()
     recovery = {
         "reason": recovery_reason,
@@ -3893,12 +3901,15 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
         "campaign_id": "campaign",
         "expected_loader_exposure_count": 2,
         "expected_physical_window_count": 2,
+        "power_sampler_backend": S1_POWER_SIDECAR_BACKEND,
         "power_max_gap_limit_ms": 100.0,
         "power_target_interval_ms": 20,
         "allocated_cpu_count": 5,
         "detector_cpu_count": 4,
+        "sidecar_cpu_count": 1,
+        "requires_long_no_open_gate": True,
     }
-    if recovery_reason == S1_BUFFERED_SIDECAR_RECOVERY_REASON:
+    if buffered_recovery:
         recovery.update(
             {
                 "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
@@ -3918,7 +3929,7 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
         "schema_version": "spatial_zoom_s1_profile_attempt_v6",
         "gate_only": True,
     }
-    if recovery_reason == S1_BUFFERED_SIDECAR_RECOVERY_REASON:
+    if buffered_recovery:
         marker.update(
             {
                 "trace_publication_mode": S1_BUFFERED_TRACE_PUBLICATION_MODE,
@@ -3932,7 +3943,7 @@ def test_long_sidecar_gate_is_compact_test_reuse_evidence(
     attempt_report_path, attempt_trace, _ = _write_valid_sidecar_attempt(
         prefix,
         expected_uuid="GPU-S1",
-        buffered=recovery_reason == S1_BUFFERED_SIDECAR_RECOVERY_REASON,
+        buffered=buffered_recovery,
     )
     test_evidence_path = tmp_path / "test.evidence.json"
     test_evidence_path.write_text('{"sealed": true}\n', encoding="utf-8")

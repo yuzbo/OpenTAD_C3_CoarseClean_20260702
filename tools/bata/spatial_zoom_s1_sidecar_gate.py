@@ -18,24 +18,21 @@ from tools.bata.spatial_zoom_s1_power import (
     validate_nvml_sidecar_attempt,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (
-    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
     S1_SIDECAR_RECOVERY_REASON,
+    is_buffered_sidecar_recovery,
 )
 
 
 S1_SIDECAR_GATE_SCHEMA = "spatial_zoom_s1_power_sidecar_gate_v1"
-_SIDECAR_RECOVERY_REASONS = {
-    S1_SIDECAR_RECOVERY_REASON,
-    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
-}
 
 
 def sidecar_gate_path(recovery: Mapping[str, Any]) -> Path:
-    if recovery.get("reason") not in _SIDECAR_RECOVERY_REASONS:
-        raise ValueError("S1 sidecar Gate requires a v3/v4 recovery certificate")
+    if recovery.get(
+        "reason"
+    ) != S1_SIDECAR_RECOVERY_REASON and not is_buffered_sidecar_recovery(recovery):
+        raise ValueError("S1 sidecar Gate requires a sidecar recovery certificate")
     return (
-        Path(recovery["campaign_root"])
-        / str(recovery["sidecar_gate_relative_path"])
+        Path(recovery["campaign_root"]) / str(recovery["sidecar_gate_relative_path"])
     ).resolve()
 
 
@@ -67,9 +64,7 @@ def sidecar_gate_hardware_class(hardware_identity: Mapping[str, Any]) -> dict[st
         "max_sm_clock": nvidia_smi.get("clocks.max.sm"),
         "max_memory_clock": nvidia_smi.get("clocks.max.memory"),
         "cpus_per_task": slurm.get("cpus_per_task"),
-        "effective_step_memory_limit_mb": slurm.get(
-            "effective_step_memory_limit_mb"
-        ),
+        "effective_step_memory_limit_mb": slurm.get("effective_step_memory_limit_mb"),
     }
 
 
@@ -82,12 +77,12 @@ def validate_sidecar_gate_runtime_identity(
     """Require the matrix runtime to match the Gate's stable execution class."""
 
     runtime_hardware_class = sidecar_gate_hardware_class(hardware_identity)
-    if (
-        runtime_hardware_class != evidence.get("hardware_class")
-        or canonical_sha256(runtime_hardware_class)
-        != evidence.get("hardware_class_sha256")
-    ):
-        raise ValueError("S1 matrix runtime differs from the sidecar Gate hardware class")
+    if runtime_hardware_class != evidence.get("hardware_class") or canonical_sha256(
+        runtime_hardware_class
+    ) != evidence.get("hardware_class_sha256"):
+        raise ValueError(
+            "S1 matrix runtime differs from the sidecar Gate hardware class"
+        )
     if str(software_fingerprint) != evidence.get("software_fingerprint"):
         raise ValueError("S1 matrix runtime differs from the sidecar Gate software")
     return runtime_hardware_class
@@ -115,8 +110,10 @@ def build_sidecar_gate_evidence(
 ) -> dict[str, Any]:
     """Build compact evidence for a full-path, no-new-test-open cadence Gate."""
 
-    if recovery.get("reason") not in _SIDECAR_RECOVERY_REASONS:
-        raise ValueError("S1 sidecar Gate requires a v3/v4 recovery certificate")
+    if recovery.get(
+        "reason"
+    ) != S1_SIDECAR_RECOVERY_REASON and not is_buffered_sidecar_recovery(recovery):
+        raise ValueError("S1 sidecar Gate requires a sidecar recovery certificate")
     if not str(slurm_job_id).isdigit():
         raise ValueError("S1 sidecar Gate requires a numeric Slurm job id")
     profile = validate_profile_summary(profile_report)
@@ -133,18 +130,14 @@ def build_sidecar_gate_evidence(
         if not path.is_file():
             raise FileNotFoundError(path)
     hardware_identity = profile.get("hardware_identity", {})
-    gate_gpu_uuid = str(
-        dict(hardware_identity.get("nvidia_smi", {})).get("uuid", "")
-    )
+    gate_gpu_uuid = str(dict(hardware_identity.get("nvidia_smi", {})).get("uuid", ""))
     attempt = validate_nvml_sidecar_attempt(
         attempt_report_path,
         attempt_trace_path,
         expected_uuid=gate_gpu_uuid,
         require_pass=True,
     )
-    buffered_recovery = (
-        recovery.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
-    )
+    buffered_recovery = is_buffered_sidecar_recovery(recovery)
     expected_attempt_schema = (
         S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
         if buffered_recovery
@@ -190,8 +183,7 @@ def build_sidecar_gate_evidence(
         or len(attempt.get("detector_cpu_ids", ()))
         != int(recovery["detector_cpu_count"])
         or attempt.get("sidecar_cpu_id") in attempt.get("detector_cpu_ids", ())
-        or set(attempt.get("detector_cpu_ids", ()))
-        | {attempt.get("sidecar_cpu_id")}
+        or set(attempt.get("detector_cpu_ids", ())) | {attempt.get("sidecar_cpu_id")}
         != set(attempt.get("allocated_cpu_ids", ()))
         or attempt.get("trace_file_sha256") != sha256_file(attempt_trace_path)
         or attempt.get("schema_version") != expected_attempt_schema
@@ -235,9 +227,7 @@ def build_sidecar_gate_evidence(
         "loader_exposure_count": profile["loader_exposure_count"],
         "physical_window_count": profile["physical_window_count"],
         "sample_manifest_sha256": profile["sample_manifest_sha256"],
-        "physical_window_manifest_sha256": profile[
-            "physical_window_manifest_sha256"
-        ],
+        "physical_window_manifest_sha256": profile["physical_window_manifest_sha256"],
         "result_finalizer": profile["result_finalizer"],
         "ephemeral_profile_sha256": profile["profile_sha256"],
         "hardware_fingerprint": profile["hardware_fingerprint"],
@@ -258,9 +248,7 @@ def build_sidecar_gate_evidence(
         "sidecar_attempt_trace_sha256": sha256_file(attempt_trace_path),
         "power_sampler_backend": S1_POWER_SIDECAR_BACKEND,
         "trace_publication_mode": recovery.get("trace_publication_mode"),
-        "trace_io_inside_sampling_loop": recovery.get(
-            "trace_io_inside_sampling_loop"
-        ),
+        "trace_io_inside_sampling_loop": recovery.get("trace_io_inside_sampling_loop"),
         "power_cadence": attempt["cadence"],
         "allocated_cpu_ids": attempt["allocated_cpu_ids"],
         "detector_cpu_ids": attempt["detector_cpu_ids"],
@@ -296,9 +284,7 @@ def validate_sidecar_gate_evidence(
         "seed": 3408,
         "power_sampler_backend": S1_POWER_SIDECAR_BACKEND,
         "trace_publication_mode": recovery.get("trace_publication_mode"),
-        "trace_io_inside_sampling_loop": recovery.get(
-            "trace_io_inside_sampling_loop"
-        ),
+        "trace_io_inside_sampling_loop": recovery.get("trace_io_inside_sampling_loop"),
         "gpu_scope": "gate_uuid_bound_matrix_hardware_class_matched",
         "loader_exposure_count": int(recovery["expected_loader_exposure_count"]),
         "physical_window_count": int(recovery["expected_physical_window_count"]),
@@ -309,25 +295,20 @@ def validate_sidecar_gate_evidence(
     if (
         not str(checked.get("slurm_job_id", "")).isdigit()
         or checked.get("power_cadence", {}).get("formal_cadence_pass") is not True
-        or float(
-            checked.get("power_cadence", {}).get("max_gap_ms", float("inf"))
-        )
+        or float(checked.get("power_cadence", {}).get("max_gap_ms", float("inf")))
         > float(recovery["power_max_gap_limit_ms"])
         or len(checked.get("allocated_cpu_ids", ()))
         != int(recovery["allocated_cpu_count"])
         or len(checked.get("detector_cpu_ids", ()))
         != int(recovery["detector_cpu_count"])
         or checked.get("sidecar_cpu_id") in checked.get("detector_cpu_ids", ())
-        or set(checked.get("detector_cpu_ids", ()))
-        | {checked.get("sidecar_cpu_id")}
+        or set(checked.get("detector_cpu_ids", ())) | {checked.get("sidecar_cpu_id")}
         != set(checked.get("allocated_cpu_ids", ()))
     ):
         raise ValueError("S1 sidecar Gate resource or cadence evidence is invalid")
-    if (
-        not str(checked.get("gate_gpu_uuid", "")).startswith("GPU-")
-        or canonical_sha256(checked.get("hardware_class", {}))
-        != checked.get("hardware_class_sha256")
-    ):
+    if not str(checked.get("gate_gpu_uuid", "")).startswith("GPU-") or canonical_sha256(
+        checked.get("hardware_class", {})
+    ) != checked.get("hardware_class_sha256"):
         raise ValueError("S1 sidecar Gate GPU or hardware-class evidence is invalid")
     if verify_artifacts:
         artifact_hashes = (
@@ -354,16 +335,15 @@ def validate_sidecar_gate_evidence(
         )
         expected_attempt_schema = (
             S1_POWER_BUFFERED_SIDECAR_ATTEMPT_SCHEMA
-            if recovery.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
+            if is_buffered_sidecar_recovery(recovery)
             else S1_POWER_SIDECAR_ATTEMPT_SCHEMA
         )
         if (
             attempt["attempt_sha256"] != checked["sidecar_attempt_sha256"]
-            or attempt["trace_file_sha256"]
-            != checked["sidecar_attempt_trace_sha256"]
+            or attempt["trace_file_sha256"] != checked["sidecar_attempt_trace_sha256"]
             or attempt.get("schema_version") != expected_attempt_schema
             or (
-                recovery.get("reason") == S1_BUFFERED_SIDECAR_RECOVERY_REASON
+                is_buffered_sidecar_recovery(recovery)
                 and (
                     attempt.get("trace_publication_mode")
                     != S1_POWER_BUFFERED_TRACE_PUBLICATION_MODE
@@ -386,9 +366,12 @@ def load_sidecar_gate_evidence(
         recovery=recovery,
         verify_artifacts=True,
     )
-    canonical_text = json.dumps(
-        json.loads(path.read_text(encoding="utf-8")), indent=2, sort_keys=True
-    ) + "\n"
+    canonical_text = (
+        json.dumps(
+            json.loads(path.read_text(encoding="utf-8")), indent=2, sort_keys=True
+        )
+        + "\n"
+    )
     if path.read_text(encoding="utf-8") != canonical_text:
         raise ValueError("S1 sidecar Gate evidence is not canonical JSON")
     return checked

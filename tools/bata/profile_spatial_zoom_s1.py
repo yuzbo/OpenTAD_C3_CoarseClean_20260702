@@ -39,10 +39,9 @@ from tools.bata.spatial_zoom_s1_cost import (  # noqa: E402
     write_profile_summary,
 )
 from tools.bata.spatial_zoom_s1_profile_recovery import (  # noqa: E402
-    S1_BUFFERED_SIDECAR_RECOVERY_REASON,
-    S1_BUFFERED_TRACE_PUBLICATION_MODE,
     load_profile_recovery_certificate,
     profile_campaign_prefix,
+    require_buffered_sidecar_recovery,
 )
 from tools.bata.spatial_zoom_s1_matrix import (  # noqa: E402
     canonical_test_matrix_binding_path,
@@ -153,8 +152,7 @@ def validate_profile_order_ready(
                 campaign_root
                 / "descriptors"
                 / (
-                    f"dense{int(row['resolution'])}_"
-                    f"seed{int(row['seed'])}.run.json"
+                    f"dense{int(row['resolution'])}_" f"seed{int(row['seed'])}.run.json"
                 ),
             )
             if any(path.exists() for path in paths):
@@ -735,13 +733,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         binding=binding,
         verify_checkout=True,
     )
-    if (
-        recovery.get("reason") != S1_BUFFERED_SIDECAR_RECOVERY_REASON
-        or recovery.get("trace_publication_mode")
-        != S1_BUFFERED_TRACE_PUBLICATION_MODE
-        or recovery.get("trace_io_inside_sampling_loop") is not False
-    ):
-        raise ValueError("formal S1 profile requires the exact v4 buffered recovery")
+    require_buffered_sidecar_recovery(recovery)
     resolution = int(cfg.spatial_zoom_s1_contract.runtime_resolution)
     gate_mode = bool(args.sidecar_gate)
     if gate_mode:
@@ -776,7 +768,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         or sidecar_cpu_id in detector_cpu_ids
         or set(detector_cpu_ids) | {sidecar_cpu_id} != set(allocated_cpu_ids)
     ):
-        raise ValueError("formal S1 profile CPU partition violates the v4 recovery")
+        raise ValueError(
+            "formal S1 profile CPU partition violates the buffered recovery contract"
+        )
     if (
         int(os.environ.get("SLURM_CPUS_PER_TASK", -1))
         != int(recovery["allocated_cpu_count"])
@@ -785,10 +779,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     ):
         raise RuntimeError("formal S1 detector process lacks its four-CPU affinity")
     power_scratch_root = Path(args.power_scratch_root).resolve()
-    if (
-        str(power_scratch_root).startswith("/data/")
-        or str(power_scratch_root).startswith("/home/")
-    ):
+    if str(power_scratch_root).startswith("/data/") or str(
+        power_scratch_root
+    ).startswith("/home/"):
         raise ValueError("S1 sidecar scratch must use node-local storage")
     device = torch.device(args.device)
     if str(device) != "cuda:0":
@@ -872,9 +865,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         == recovery["legacy_unbound_test_evidence_sha256"]
     )
     test_matrix_binding = None
-    test_matrix_binding_path = canonical_test_matrix_binding_path(
-        test_evidence_path
-    )
+    test_matrix_binding_path = canonical_test_matrix_binding_path(test_evidence_path)
     if legacy_unbound_test_evidence:
         if test_matrix_binding_path.exists():
             raise RuntimeError(
@@ -957,9 +948,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 else str(args.matrix_start_receipt.resolve())
             ),
             "matrix_start_receipt_file_sha256": (
-                None
-                if matrix_start is None
-                else sha256_file(args.matrix_start_receipt)
+                None if matrix_start is None else sha256_file(args.matrix_start_receipt)
             ),
             "matrix_sha256": (
                 None if matrix_start is None else matrix_start["matrix_sha256"]
@@ -1094,13 +1083,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     if not args.sample_power or not args.amp:
         raise ValueError("formal S1 profiler requires --sample-power and --amp")
     if args.sample_power:
-        scratch_dir = (
-            power_scratch_root
-            / (
-                f"job{os.environ.get('SLURM_JOB_ID', 'unknown')}"
-                f"_dense{resolution}_seed{int(args.seed)}"
-                f"_{'gate' if gate_mode else 'formal'}"
-            )
+        scratch_dir = power_scratch_root / (
+            f"job{os.environ.get('SLURM_JOB_ID', 'unknown')}"
+            f"_dense{resolution}_seed{int(args.seed)}"
+            f"_{'gate' if gate_mode else 'formal'}"
         )
         power_sampler = PowerSampler(
             expected_uuid=hardware_identity["nvidia_smi"]["uuid"],
@@ -1263,9 +1249,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             power_sampler.backend if power_sampler is not None else None
         ),
         "trace_publication_mode": recovery.get("trace_publication_mode"),
-        "trace_io_inside_sampling_loop": recovery.get(
-            "trace_io_inside_sampling_loop"
-        ),
+        "trace_io_inside_sampling_loop": recovery.get("trace_io_inside_sampling_loop"),
         "split": args.split,
         "seed": int(args.seed),
         "video_count": len(expected_ids),
@@ -1287,9 +1271,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "test_evidence_sha256": test_evidence["evidence_sha256"],
         "legacy_unbound_test_evidence": legacy_unbound_test_evidence,
         "test_matrix_binding_path": (
-            None
-            if test_matrix_binding is None
-            else str(test_matrix_binding_path)
+            None if test_matrix_binding is None else str(test_matrix_binding_path)
         ),
         "test_matrix_binding_file_sha256": (
             None
@@ -1332,9 +1314,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "sidecar_cpu_id": sidecar_cpu_id,
         "sidecar_gate_evidence_path": str(sidecar_gate_path(recovery)),
         "sidecar_gate_evidence_file_sha256": (
-            None
-            if sidecar_gate is None
-            else sha256_file(sidecar_gate_path(recovery))
+            None if sidecar_gate is None else sha256_file(sidecar_gate_path(recovery))
         ),
         "sidecar_gate_sha256": (
             None if sidecar_gate is None else sidecar_gate["gate_sha256"]
@@ -1343,9 +1323,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             None if matrix_start is None else str(args.matrix_start_receipt.resolve())
         ),
         "matrix_start_receipt_file_sha256": (
-            None
-            if matrix_start is None
-            else sha256_file(args.matrix_start_receipt)
+            None if matrix_start is None else sha256_file(args.matrix_start_receipt)
         ),
         "matrix_sha256": (
             None if matrix_start is None else matrix_start["matrix_sha256"]
@@ -1360,9 +1338,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             None if matrix_start is None else matrix_start["step_gpu_uuid"]
         ),
     }
-    report = build_profile_summary(
-        samples, metadata=metadata, power_trace=power_trace
-    )
+    report = build_profile_summary(samples, metadata=metadata, power_trace=power_trace)
     if gate_mode:
         gate_evidence = build_sidecar_gate_evidence(
             recovery=recovery,

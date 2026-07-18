@@ -462,3 +462,21 @@ append_only: true
   the receipt with Conda Python, and no duplicate Gate was submitted. The Job
   is running in the exact `1 GPU / 5 CPU / 96000 MiB` inner step on `g0024`.
   No replacement matrix, analyzer, GO/KILL, S2, or Pro is authorized yet.
+- 2026-07-18: Gate `1170765` failed closed `2:0` before sidecar startup because
+  profiler/Gate consumers accepted only the literal v4 recovery reason even
+  though v5 inherited the exact buffered-sidecar contract. The immutable
+  campaign contains only certificate, submission receipt, and stdout/stderr;
+  no new test, sidecar evidence, profile, descriptor, or matrix was published,
+  and the reused test-evidence hash remains unchanged. Implemented a narrow v6
+  capability-family repair and recursive no-open failure certificate.
+- 2026-07-18: independent reviewer
+  `019f737e-a382-7901-a1a1-1673a98193eb` first returned HOLD with no P0/P1 and
+  two P2 test-sufficiency gaps: the alias test did not reproduce the old
+  double-stderr dictionary overwrite, and mixed-evidence tests omitted legacy
+  and incomplete-role cases. Added double-stderr, hard-link, validator-alias,
+  legacy/power mixing, and incomplete Gate/matrix regressions. Focused
+  schema-compat verification is `52 passed`; the combined
+  S1/train-engine/required-C3 suite is `157 passed, 5 skipped`. Final read-only
+  verdict is `DEPLOY_READY_WITH_GATES` with no P0/P1/P2. Status remains
+  `tested_local`; clean commit/push, remote replay, and real-evidence v6
+  validation remain mandatory before any new Gate.

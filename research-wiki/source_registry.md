@@ -396,8 +396,28 @@ updated: 2026-07-18
   `d2d48a84180c2c75014c50614ba578c0d20efd1b0e58a87d263fa7eb5f712563`
   and
   `0e1968ee1f431649675db81a4e0afa7feffb88bd6d3e00f5267089b01bc33853`.
-  The Gate entered the exact inner `1 GPU / 5 CPU / 96000 MiB` step on `g0024`;
-  this is running infrastructure evidence, not an S1 result.
+  The Gate entered the exact inner `1 GPU / 5 CPU / 96000 MiB` step on `g0024`
+  but failed `2:0` before sidecar startup. Stdout/stderr file SHAs are
+  `8345aff79068bf9d5382a7256c35366711e4fc9fbbc2c7e1fc35bf4af4520282`
+  and
+  `c510b037dfd59bb67c0c2312689a6fd143011390b64eac1f9c43f10832e78154`.
+  The campaign published no sidecar/profile/descriptor/matrix artifact, and
+  reused official-test evidence remained at SHA
+  `10c0182d6fae42f37dec108988f22fbfd732725fc270426121ff2608837261e9`.
+  This is immutable failed infrastructure, not an S1 result.
+- V6 schema-family compatibility implementation, 2026-07-18. The local diff
+  replaces literal v4 checks with an exact buffered-sidecar capability
+  predicate and adds a recursive certificate binding Job `1170765` receipt,
+  failure logs, exact four-file parent inventory, sidecar absence, and
+  unchanged official-test evidence. Focused schema-compat verification passed
+  `52` tests; the combined S1/train-engine/required-C3 suite passed `157` with
+  `5` environment skips. Read-only reviewer
+  `019f737e-a382-7901-a1a1-1673a98193eb` first returned HOLD on two P2
+  test-sufficiency gaps. After exact double-stderr, hard-link, validator alias,
+  legacy/power mixing, and incomplete-role regressions were added, its final
+  verdict was `DEPLOY_READY_WITH_GATES` with no P0/P1/P2. Clean commit, remote
+  replay, and a real-evidence v6 certificate remain pending; no new Gate or
+  matrix is authorized.
 
 ## 外部附件
 

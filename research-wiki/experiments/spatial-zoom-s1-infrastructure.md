@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
-stage: experiment_running
-outcome: v5_no_open_gate_running
+stage: tested
+outcome: v5_gate_failed_v6_schema_compat_tested_local
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-18
@@ -753,16 +753,40 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   and
   `0e1968ee1f431649675db81a4e0afa7feffb88bd6d3e00f5267089b01bc33853`.
   At submission it entered the exact inner one-GPU/five-CPU/96000-MiB step on
-  `g0024` with no failure marker. The Gate is still running; no replacement
-  matrix is authorized.
+  `g0024`.
+- Job `1170765` later failed closed `2:0` after `00:10:10`, before sidecar
+  startup. Stdout contains exactly one
+  `formal S1 profile requires the exact v4 buffered recovery` failure and
+  stderr records that no sidecar attempt evidence was published. The parent
+  campaign contains exactly four files: recovery certificate, Gate submission
+  receipt, stdout, and stderr. It opened no new test, emitted no profile,
+  descriptor, sidecar Gate, or matrix receipt, and the reused
+  dense256/seed3408 official-test evidence file remains unchanged at SHA-256
+  `10c0182d6fae42f37dec108988f22fbfd732725fc270426121ff2608837261e9`.
+  No replacement matrix was submitted.
+- Root cause is an integration defect: v5 inherits the exact buffered-sidecar
+  backend/publication/cadence/CPU/Gate contract, but profiler and Gate consumers
+  compared the recovery reason to literal v4. The local v6 repair introduces
+  one fail-closed capability predicate and a recursively bound certificate for
+  the v5 receipt/logs, exact four-file inventory, sidecar absence, and unchanged
+  test-evidence hash. Canonical parent/log paths, path/inode non-aliasing,
+  frozen log hashes, exact failure payloads, and mutually exclusive evidence
+  modes are enforced by both build and validation paths. It changes no
+  model/config/checkpoint/evaluator/resource, cadence, frozen order, or
+  statistic. Focused schema-compat verification is `52 passed`; the combined
+  S1/train-engine/required-C3 suite is `157 passed, 5 skipped`. Independent
+  review first returned HOLD on two P2 test-sufficiency gaps, then
+  `DEPLOY_READY_WITH_GATES` with no P0/P1/P2 after the exact old alias and
+  mixed-evidence regressions were added. Status is `tested_local`, not
+  deployment-ready.
 
 ## Decision Boundary
 
 The formal 3x3 matrix is not running and has no valid completion receipt. The
-v5 no-open Gate is `experiment_running`; the route is not
-`empirically_supported` or `paper_ready`. S1 KILL permanently blocks S2. S1
-GO only authorizes an oracle ROI/crop sufficiency experiment; it does not prove
-a learned zoom method.
+v5 Gate is immutable failed infrastructure and v6 is `tested_local`; the
+route is not `empirically_supported` or `paper_ready`. S1 KILL permanently
+blocks S2. S1 GO only authorizes an oracle ROI/crop sufficiency experiment; it
+does not prove a learned zoom method.
 
 ## Connections
 

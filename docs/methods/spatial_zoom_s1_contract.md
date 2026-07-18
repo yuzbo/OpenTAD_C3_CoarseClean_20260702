@@ -280,3 +280,32 @@ rule remain identical.
   Independent review returned `DEPLOY` with no P0/P1 and made no file changes;
   a clean commit, remote replay, a new v4 campaign, and a fresh no-open Gate
   are still required.
+- Environment-pinned runtime commit
+  `3d01d3b7fc956ae17568ac3c8c04f9d6f36c42c5` and its v5 campaign
+  `3180634880aa8de0` closed the step-scoped test runtime and Python environment
+  provenance. Its sole no-open Gate Job `1170765` nevertheless failed closed
+  before sidecar startup because the formal profiler required the literal v4
+  recovery reason instead of validating the buffered-sidecar capability that
+  v5 inherits. The Job published only its immutable submission receipt and
+  stdout/stderr; it opened no new test, changed no existing test evidence,
+  emitted no sidecar Gate/profile/descriptor, and authorized no matrix.
+- Recovery descendants must be accepted by capability, not by schema name.
+  A formal buffered-sidecar recovery must preserve the exact backend,
+  post-sampling atomic publication mode, no sampling-loop I/O, 20/100 ms
+  cadence, 4+1 CPU split, long no-open Gate requirement, and Gate path. The v6
+  schema-compatibility certificate recursively binds the v5 certificate,
+  Job `1170765` submission receipt and exact failure logs, the exact four-file
+  parent campaign inventory, absence of sidecar evidence, and the unchanged
+  official-test evidence hash. The parent certificate and both logs must use
+  their canonical campaign paths; stdout/stderr may not share a path or inode,
+  and their frozen file hashes plus structured failure payloads must match.
+  Legacy, matrix, Gate, and power-diagnostic evidence modes are mutually
+  exclusive for each recovery transition. It permits changes only to the
+  three affected runtime consumers plus their contract/spec/test records;
+  model, config, checkpoint, evaluator, test protocol, resources, frozen
+  order, and statistics remain unchanged.
+
+This remains infrastructure evidence, not an S1 result. A clean commit, exact
+remote replay, independently reviewed v6 certificate, and one successful
+no-new-test-open full-path Gate are still mandatory before any replacement
+matrix.

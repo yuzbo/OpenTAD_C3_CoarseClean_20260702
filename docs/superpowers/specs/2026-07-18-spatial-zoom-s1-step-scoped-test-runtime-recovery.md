@@ -86,3 +86,31 @@ Before any new Slurm submission:
 Only then may exactly one replacement frozen-order serial matrix be submitted.
 No analyzer, S1 GO/KILL, or Pro review is allowed before all nine descriptors
 and the matrix completion receipt validate.
+
+## Schema-Family Compatibility Addendum
+
+The first v5 no-open Gate, Job `1170765`, failed before sidecar startup because
+two runtime consumers treated `buffered_out_of_process_power_sidecar` as a
+literal version tag. The validated v5 certificate already inherited the exact
+buffered-sidecar backend, atomic post-sampling publication, 20/100 ms cadence,
+4+1 CPU allocation, and long-Gate contract, but the profiler rejected any
+reason other than v4.
+
+Recovery descendants therefore use one fail-closed capability predicate. It
+accepts v4/v5/v6 only when every inherited buffered-sidecar field matches the
+frozen contract; changing any field rejects the certificate. The v6 recovery
+also recursively binds the failed v5 Gate receipt and logs, verifies that its
+campaign contains only the certificate, submission receipt, and two logs,
+proves that no sidecar evidence or new test artifact was published, and
+rechecks the reused official-test evidence hash. Parent and log paths are
+canonical, stdout and stderr cannot alias the same path or inode, and frozen
+hashes plus the exact structured failure records are revalidated by both
+builder and validator. Generic recovery dispatch rejects mixed legacy,
+matrix, Gate, or power evidence instead of silently ignoring it. This is an
+integration repair, not a model, evaluator, cost threshold, resource, test, or
+protocol change.
+
+Job `1170765` and campaign `3180634880aa8de0` remain immutable and cannot be
+resubmitted or reused. A new Gate is unauthorized until the v6 implementation
+passes focused tests, independent P0/P1 review, clean commit/push, exact remote
+Linux replay, and real-evidence certificate validation.
