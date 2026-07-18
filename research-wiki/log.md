@@ -15,6 +15,9 @@
   interim delta. This is still `experiment_running`; epoch 59, final
   online/EMA checkpoint validation, independent recomputation, and both
   completion artifacts remain pending.
+- Second matched validation at epoch 43 remained consistent: selected-axis
+  `40.41%`, physical-metric `57.19%`, interim delta `+16.78` Avg-mAP.
+  Both jobs continue from epoch 44 without logged anomalies.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 

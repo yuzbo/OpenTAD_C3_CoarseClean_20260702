@@ -18,7 +18,7 @@
 | `exp:phystime-g1a-native-j192` | selected-axis / physical-metric native-J192 controls | six-epoch pilots completed | early matched diagnostic | 两臂差异很小，但轮数过短；不能与 G1b medium run 横比 |
 | `exp:phystime-g1b-sdpq-medium20` | support-decoupled physical query sparse head | completed | medium-run trainability evidence | 20轮稳定闭环成立；优越性仍需 same-commit 三臂 20轮对照 |
 | `exp:phystime-g1-matched-medium20` | selected-axis / physical-metric / G1b SDPQ | completed | matched medium evidence | physical-metric 44.88 明显胜 selected-axis 30.42；G1b 30.88 未证明结构优势 |
-| `exp:phystime-g1-matched-full60` | selected-axis vs physical-metric, K384/J192 | gate passed; jobs `1170946/1170947` running | interim epoch-41 Avg-mAP `39.84/57.32`; epoch 59 pending | Validate the physical-metric medium survivor under an exact 60-epoch schedule |
+| `exp:phystime-g1-matched-full60` | selected-axis vs physical-metric, K384/J192 | gate passed; jobs `1170946/1170947` running | latest matched epoch-43 Avg-mAP `40.41/57.19`; epoch 59 pending | Validate the physical-metric medium survivor under an exact 60-epoch schedule |
 
 ## 证据等级定义
 

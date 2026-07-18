@@ -4,9 +4,9 @@ node_id: exp:phystime-g1-matched-full60
 title: "PhysTime G1 native-J192 matched two-arm 60-epoch validation"
 idea: idea:phystime-tad-2
 status: experiment_running
-verdict: interim_epoch41_supports_physical_metric_pending_epoch59
-confidence: matched_epoch41_only_not_full60_complete
-metrics: "Epoch 41 interim: selected-axis 39.84, physical-metric 57.32 Avg-mAP; final epoch 59 and FULL_COMPLETE validation pending."
+verdict: interim_epoch41_and_43_support_physical_metric_pending_epoch59
+confidence: two_matched_interim_validations_not_full60_complete
+metrics: "Latest epoch 43 interim: selected-axis 40.41, physical-metric 57.19 Avg-mAP; epoch 41 was 39.84/57.32; final epoch 59 and FULL_COMPLETE validation pending."
 provenance: "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800"
 added: 2026-07-18T11:25:00+08:00
 ---
@@ -56,6 +56,10 @@ The first matched validation after epoch 41 completed for both arms:
 | selected-axis | 64.54 | 54.50 | 40.78 | 26.53 | 12.87 | 39.84 |
 | physical-metric | 77.57 | 71.41 | 61.44 | 48.00 | 28.17 | 57.32 |
 | physical minus selected | +13.03 | +16.91 | +20.66 | +21.47 | +15.30 | +17.48 |
+
+The second matched validation after epoch 43 retained the same ordering:
+selected-axis `40.41%`, physical-metric `57.19%`, delta `+16.78` Avg-mAP.
+The exact evaluator JSON hashes are recorded in `docs/evaluation/results.md`.
 
 The jobs remain active and later validations overwrite the convenience
 `evaluation_metrics.json`, so these rounded epoch-41 values are anchored to

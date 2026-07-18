@@ -8,9 +8,10 @@ older text below that says it must not be started automatically. Commit
 `opentad_phystime_g1_full60_0dc5851_20260718` are frozen. Real gate `1170945`
 passed; matched selected-axis `1170946` and physical-metric `1170947` are
 running with K384/J192, seed 42, no interpolation, and a true 60-epoch cosine
-schedule. The first same-epoch validation at epoch 41 is selected-axis `39.84%`
-versus physical-metric `57.32%` Avg-mAP (`+17.48`), with physical-metric ahead
-at every IoU threshold. This is interim evidence only: epoch 59, independent
+schedule. Matched validations at epochs 41 and 43 are respectively
+selected-axis/physical-metric `39.84/57.32%` and `40.41/57.19%` Avg-mAP;
+physical-metric is ahead at every IoU threshold in both. This is interim
+evidence only: epoch 59, independent
 recomputation, final online/EMA checkpoint validation, and both completion
 artifacts remain pending. G1b is not part of this survivor run.
 
