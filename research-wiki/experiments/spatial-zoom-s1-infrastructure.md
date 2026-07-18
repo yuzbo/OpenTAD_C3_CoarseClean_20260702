@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:spatial-zoom-s1-infrastructure
 title: "Spatial Zoom S1 infrastructure verification"
-stage: tested
-outcome: step_runtime_recovery_deploy_ready_remote_gate_pending
+stage: experiment_running
+outcome: v5_no_open_gate_running
 tags: ["offline-tad", "spatial-zoom", "infrastructure", "falsification-gate"]
 added: 2026-07-13
 updated: 2026-07-18
@@ -738,11 +738,28 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   and its Conda path. Local focused verification passed `108` tests with `5`
   environment skips; final independent read-only review again returned
   `DEPLOY_READY_WITH_GATES` with no P0/P1.
+- Environment-pinned runtime commit
+  `3d01d3b7fc956ae17568ac3c8c04f9d6f36c42c5` passed `113` exact tests in
+  clean Linux snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_3d01d3b_20260718_env_pinned`.
+  Real-evidence v5 campaign `3180634880aa8de0` validates with certificate
+  internal/file SHAs
+  `a6d48b7c2fc0b162750ad5b215fcd1e46bd8fa3fb98b078beb7a2cf5aceaee20`
+  and
+  `352bd5cceb0659769c96f53c8b1c9b9329c1d43c6f42c429eb5bde794c0a0137`.
+  Exactly one no-open Gate was submitted as Job `1170765`
+  (`s1_3d01_gate`); its receipt internal/file SHAs are
+  `d2d48a84180c2c75014c50614ba578c0d20efd1b0e58a87d263fa7eb5f712563`
+  and
+  `0e1968ee1f431649675db81a4e0afa7feffb88bd6d3e00f5267089b01bc33853`.
+  At submission it entered the exact inner one-GPU/five-CPU/96000-MiB step on
+  `g0024` with no failure marker. The Gate is still running; no replacement
+  matrix is authorized.
 
 ## Decision Boundary
 
 The formal 3x3 matrix is not running and has no valid completion receipt. The
-current recovery is `tested_local`; the route is not
+v5 no-open Gate is `experiment_running`; the route is not
 `empirically_supported` or `paper_ready`. S1 KILL permanently blocks S2. S1
 GO only authorizes an oracle ROI/crop sufficiency experiment; it does not prove
 a learned zoom method.

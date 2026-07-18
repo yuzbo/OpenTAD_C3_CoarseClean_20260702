@@ -22,37 +22,14 @@ max_chars: 8000
   One sealed-test certificate was issued (internal SHA `8627866a...`). The first
   frozen cell dense256/seed3408 has raw official-test Avg-mAP `67.09` and
   mAP@0.3-0.7 `82.14/77.76/70.36/59.53/45.67`; this single cell cannot select a
-  resolution. Post-processing failures then exposed Slurm physical/local GPU
-  identity mismatch and one official duplicate loader exposure (792 exposures,
-  791 physical windows). Audited recovery preserves the existing test evidence,
-  ordinal exposure IDs, exact historical code/config/checkpoint provenance and
-  immutable failed campaigns. No-open Gate `1167512` passed those contracts.
-  Recovery `1167516` failed closed on sparse shell-pipe power samples; matched
-  test-blind diagnostics showed native UUID-bound NVML met the unchanged
-  20/100 ms cadence contract. The next Gate passed, but matrix `1167538`
-  failed its first cell when an in-process sampler stalled for 2413.519 ms
-  under detector memory pressure. Neither failure published a formal profile,
-  descriptor, later cell, or new mAP evidence.
-  Static audit identified a protocol mismatch: the formal sampler was a Python
-  `threading.Thread` inside the memory-heavy detector/profile process. The
-  branch implements an out-of-process UUID-bound native-NVML sidecar, dedicated
-  4+1 CPU partition, immutable attempts and recursive v3 recovery. Prior HOLD
-  audits fixed sidecar lifecycle, pre-lock, cgroup/job/step/CUDA identity and
-  matrix-binding gaps. `5bfdc36` passed `104` remote tests. Gate `1168608`
-  passed 792/791 exposures (max gap `63.098` ms).
-  Matrix `1168823` failed closed in its first cell: 112107 samples, max gap
-  `146.048` ms, three gaps above 100 ms, and no descriptor/later cell. Local
-  v4 removes sampling-loop trace I/O, binds exact trace lifecycle and all parent
-  evidence, and passed `102 passed, 5 skipped`. Three-pass independent review
-  ended `DEPLOY` with no P0/P1. Commit `bc9350e` then passed `107` remote tests,
-  but v4 Gate `1170341` failed before profiling because physical
-  `SLURM_STEP_GPUS=1` was incorrectly used against cgroup-renumbered
-  `nvidia-smi` index 0; resource-only `1170342` proved the mapping. Campaign
-  `6021eaba...` is immutable failed infrastructure. A local fix preserves the
-  physical identity but queries the sole visible selector and cross-checks its
-  UUID against `cuda:0`; independent review returned `DEPLOY` with no P0/P1.
-  Commit `43ac70b` passed `107` remote tests and its no-open Gate `1170433`
-  passed the full 792/791 path with 126218 samples and max gap `67.728` ms.
+  resolution. The recovery chain exposed duplicate loader exposure, in-process
+  sampler stalls, physical-versus-cgroup GPU identity, and two-level Slurm
+  runtime-guard failures. All affected campaigns are immutable diagnostics and
+  published no complete matrix. The repaired path uses an out-of-process
+  UUID-bound NVML sidecar, dedicated 4+1 CPU partition, unchanged 20/100 ms
+  cadence, recursive evidence, and one exact inner GPU step. Commit `43ac70b`
+  passed `107` remote tests; Gate `1170433` passed the full 792/791 path with
+  126218 samples and max gap `67.728` ms.
   The sole matrix `1170468` completed ordinal-0 dense256/seed3408, producing
   one descriptor and a valid diagnostic profile, then failed before ordinal-1
   test open. Root cause is a source-runtime split: historical training snapshot
@@ -68,9 +45,14 @@ max_chars: 8000
   originally performed with Conda NumPy `1.23.5`. Disabling user-site packages
   reproduces all stored gate metrics exactly. Launchers and the v5 certificate
   now bind this environment; focused verification passed `108` tests with `5`
-  environment skips and independent review found no P0/P1. No committed
-  environment-hardening runtime, valid v5 certificate, replacement
-  Gate/matrix, Pro, GO/KILL, or complete cost table exists yet.
+  environment skips and independent review found no P0/P1. Environment-pinned
+  runtime commit `3d01d3b` then passed `113` exact tests in a clean Linux
+  snapshot. Real-evidence v5 campaign `3180634880aa8de0` validates with
+  certificate internal/file SHAs `a6d48b7c.../352bd5cc...`. Its sole no-open
+  Gate is Job `1170765`, running on `g0024` in the exact inner
+  `1 GPU / 5 CPU / 96000 MiB` step; submission receipt internal/file SHAs are
+  `d2d48a84.../0e1968ee...`. No replacement matrix, Pro, GO/KILL, or complete
+  cost table exists yet.
 
 ## 当前唯一活动任务：Spatial Zoom
 

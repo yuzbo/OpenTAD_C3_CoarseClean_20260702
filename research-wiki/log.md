@@ -452,3 +452,13 @@ append_only: true
   final independent review returned `DEPLOY_READY_WITH_GATES` with no P0/P1.
   State remains `tested_local` until this increment is committed, replayed
   remotely, and the real-evidence v5 certificate validates.
+- 2026-07-18: pushed environment-pinned runtime `3d01d3b`; its clean Linux
+  snapshot passed `113` exact tests. Created and revalidated real-evidence v5
+  campaign `3180634880aa8de0` with certificate internal/file SHAs
+  `a6d48b7c.../352bd5cc...`. Submitted exactly one no-open Gate,
+  Job `1170765`, with receipt internal/file SHAs
+  `d2d48a84.../0e1968ee...`. A login-node bare-Python receipt-writing error
+  happened after `sbatch`; accounting was reconciled before atomically writing
+  the receipt with Conda Python, and no duplicate Gate was submitted. The Job
+  is running in the exact `1 GPU / 5 CPU / 96000 MiB` inner step on `g0024`.
+  No replacement matrix, analyzer, GO/KILL, S2, or Pro is authorized yet.

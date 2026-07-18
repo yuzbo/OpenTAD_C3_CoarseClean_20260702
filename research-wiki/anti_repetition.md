@@ -104,6 +104,11 @@ updated: 2026-07-18
     relative to the formal Conda NumPy `1.23.5`. This is not grounds for metric
     tolerance: formal Gate/matrix/cell launchers must set
     `PYTHONNOUSERSITE=1`, and exact stored metrics must reproduce.
+27. A failed post-`sbatch` receipt writer does not authorize another
+    submission. Reconcile the existing Job by name/accounting first, then
+    atomically bind that Job ID with the certificate-bound Conda Python.
+    Job `1170765` was recovered this way after the login-node bare `python`
+    rejected an f-string; no duplicate Gate was submitted.
 
 ## 任务与叙事
 

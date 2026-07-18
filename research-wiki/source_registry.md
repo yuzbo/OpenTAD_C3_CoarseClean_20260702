@@ -383,6 +383,21 @@ updated: 2026-07-18
   independent review returned `DEPLOY_READY_WITH_GATES` with no P0/P1 and
   confirmed v1-v4 plus `verify_checkout=False` offline validation remain
   compatible.
+- V5 real-evidence deployment, 2026-07-18. Environment-pinned runtime commit
+  `3d01d3b7fc956ae17568ac3c8c04f9d6f36c42c5` passed `113` exact tests in
+  clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_spatial_zoom_s1_3d01d3b_20260718_env_pinned`.
+  Campaign `3180634880aa8de0` certificate internal/file SHAs are
+  `a6d48b7c2fc0b162750ad5b215fcd1e46bd8fa3fb98b078beb7a2cf5aceaee20`
+  and
+  `352bd5cceb0659769c96f53c8b1c9b9329c1d43c6f42c429eb5bde794c0a0137`.
+  Its sole no-open Gate is Job `1170765`; submission receipt internal/file
+  SHAs are
+  `d2d48a84180c2c75014c50614ba578c0d20efd1b0e58a87d263fa7eb5f712563`
+  and
+  `0e1968ee1f431649675db81a4e0afa7feffb88bd6d3e00f5267089b01bc33853`.
+  The Gate entered the exact inner `1 GPU / 5 CPU / 96000 MiB` step on `g0024`;
+  this is running infrastructure evidence, not an S1 result.
 
 ## 外部附件
 
