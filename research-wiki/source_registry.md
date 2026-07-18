@@ -416,8 +416,9 @@ updated: 2026-07-18
   test-sufficiency gaps. After exact double-stderr, hard-link, validator alias,
   legacy/power mixing, and incomplete-role regressions were added, its final
   verdict was `DEPLOY_READY_WITH_GATES` with no P0/P1/P2. Clean commit, remote
-  replay, and a real-evidence v6 certificate remain pending; no new Gate or
-  matrix is authorized.
+  runtime commit `cef95485d1bfebccddb1055f30800ab081decaf7` was pushed.
+  Remote replay and a real-evidence v6 certificate remain pending; no new Gate
+  or matrix is authorized.
 
 ## 外部附件
 

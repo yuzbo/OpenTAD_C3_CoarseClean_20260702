@@ -480,3 +480,7 @@ append_only: true
   verdict is `DEPLOY_READY_WITH_GATES` with no P0/P1/P2. Status remains
   `tested_local`; clean commit/push, remote replay, and real-evidence v6
   validation remain mandatory before any new Gate.
+- 2026-07-18: committed and pushed the independently reviewed v6 runtime as
+  `cef95485d1bfebccddb1055f30800ab081decaf7`. This closes local
+  implementation provenance only; clean remote replay, real-evidence
+  certificate validation, and a new no-open Gate remain pending.

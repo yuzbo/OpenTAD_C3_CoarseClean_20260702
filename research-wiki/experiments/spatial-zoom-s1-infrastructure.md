@@ -778,7 +778,9 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
   review first returned HOLD on two P2 test-sufficiency gaps, then
   `DEPLOY_READY_WITH_GATES` with no P0/P1/P2 after the exact old alias and
   mixed-evidence regressions were added. Status is `tested_local`, not
-  deployment-ready.
+  deployment-ready. Runtime commit
+  `cef95485d1bfebccddb1055f30800ab081decaf7` is pushed; clean remote replay
+  and real-evidence v6 certificate validation remain pending.
 
 ## Decision Boundary
 

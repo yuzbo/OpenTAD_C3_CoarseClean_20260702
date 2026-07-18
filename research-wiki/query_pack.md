@@ -60,10 +60,10 @@ max_chars: 8000
   schema-compat verification is `52 passed`; the combined S1, train-engine,
   and required C3 suite is `157 passed, 5 skipped`. Independent review first
   held on test sufficiency, then returned `DEPLOY_READY_WITH_GATES` with no
-  P0/P1/P2 after exact alias and mixed-evidence regressions were added. Clean
-  commit/push, remote replay, and real-evidence v6 validation are still
-  required before any new Gate. No replacement matrix, Pro, GO/KILL, or
-  complete cost table exists.
+  P0/P1/P2 after exact alias and mixed-evidence regressions were added. Runtime
+  commit `cef9548` is pushed; clean remote replay and real-evidence v6
+  validation are still required before any new Gate. No replacement matrix,
+  Pro, GO/KILL, or complete cost table exists.
 
 ## 当前唯一活动任务：Spatial Zoom
 
