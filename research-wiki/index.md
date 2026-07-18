@@ -3,8 +3,8 @@
 ## Active Experiment (2026-07-18)
 
 - `exp:phystime-g1-matched-full60`: gate passed; selected-axis job `1170946`
-  and physical-metric job `1170947` are running. Latest matched epoch-55
-  Avg-mAP is `41.44%` versus `57.66%`; final epoch-59 evidence remains pending.
+  and physical-metric job `1170947` are running. Latest matched epoch-57
+  Avg-mAP is `41.37%` versus `57.65%`; final epoch-59 evidence remains pending.
 
 更新时间：2026-07-18
 

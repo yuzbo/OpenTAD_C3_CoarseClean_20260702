@@ -11,8 +11,8 @@
   train logs record the first matched epoch-41 validation: selected-axis
   `39.84%` and physical-metric `57.32%` Avg-mAP. This is an interim result
   source, not a completed epoch-59/checkpoint-validation source. The latest
-  epoch-55 evaluator JSON records `41.44/57.66%` and is content-bound by SHA256
-  `d163dedf...` / `c235f986...`; full hashes are in
+  epoch-57 evaluator JSON records `41.37/57.65%` and is content-bound by SHA256
+  `a9bbe166...` / `39394cf4...`; full hashes are in
   `docs/evaluation/results.md`.
 
 本文件登记新一轮方法判断所直接依赖的原始来源；完整历史覆盖仍见 `source_map.md`。

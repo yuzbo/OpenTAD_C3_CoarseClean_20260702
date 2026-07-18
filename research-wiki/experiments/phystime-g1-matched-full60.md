@@ -4,9 +4,9 @@ node_id: exp:phystime-g1-matched-full60
 title: "PhysTime G1 native-J192 matched two-arm 60-epoch validation"
 idea: idea:phystime-tad-2
 status: experiment_running
-verdict: interim_epochs41_to55_support_physical_metric_pending_epoch59
-confidence: eight_matched_interim_validations_not_full60_complete
-metrics: "Latest epoch 55 interim: selected-axis 41.44, physical-metric 57.66 Avg-mAP; matched epochs 41/43/45/47/49/51/53/55 preserve the ordering; final epoch 59 and FULL_COMPLETE validation pending."
+verdict: interim_epochs41_to57_support_physical_metric_pending_epoch59
+confidence: nine_matched_interim_validations_not_full60_complete
+metrics: "Latest epoch 57 interim: selected-axis 41.37, physical-metric 57.65 Avg-mAP; matched epochs 41/43/45/47/49/51/53/55/57 preserve the ordering; final epoch 59 and FULL_COMPLETE validation pending."
 provenance: "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800"
 added: 2026-07-18T11:25:00+08:00
 ---
@@ -57,9 +57,9 @@ The first matched validation after epoch 41 completed for both arms:
 | physical-metric | 77.57 | 71.41 | 61.44 | 48.00 | 28.17 | 57.32 |
 | physical minus selected | +13.03 | +16.91 | +20.66 | +21.47 | +15.30 | +17.48 |
 
-Matched validations after epochs 43, 45, 47, 49, 51, 53, and 55 retained the same ordering.
-The latest epoch-55 values are selected-axis `41.44%`, physical-metric
-`57.66%`, delta `+16.22` Avg-mAP. Across epochs 41/43/45/47/49/51/53/55, the interim
+Matched validations after epochs 43, 45, 47, 49, 51, 53, 55, and 57 retained the same ordering.
+The latest epoch-57 values are selected-axis `41.37%`, physical-metric
+`57.65%`, delta `+16.28` Avg-mAP. Across epochs 41/43/45/47/49/51/53/55/57, the interim
 physical-metric advantage is consistently `+16.19` to `+17.48` Avg-mAP.
 The exact latest evaluator JSON hashes are recorded in
 `docs/evaluation/results.md`.
@@ -79,7 +79,7 @@ inside the lightweight checkpoint, or a dirty runtime snapshot.
 
 ## Evidence Boundary
 
-The current status is `experiment_running`. Interim epoch-41-to-55 mAP exists, but
+The current status is `experiment_running`. Interim epoch-41-to-57 mAP exists, but
 the required epoch-59 result and completion artifacts do not. Even a successful
 single-seed terminal result can only become `full60-single-seed-supported`; it
 cannot become `paper_ready` without replication, mechanism diagnostics, cost
