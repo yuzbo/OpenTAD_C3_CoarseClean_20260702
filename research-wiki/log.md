@@ -18,6 +18,10 @@
 - Second matched validation at epoch 43 remained consistent: selected-axis
   `40.41%`, physical-metric `57.19%`, interim delta `+16.78` Avg-mAP.
   Both jobs continue from epoch 44 without logged anomalies.
+- Epochs 45 and 47 retained the ordering. Latest epoch-47 Avg-mAP is
+  selected-axis `40.81%`, physical-metric `57.48%`, delta `+16.66`;
+  mAP@0.7 is `14.22/27.99`, delta `+13.77`. Both jobs continue from epoch 48
+  with no logged anomaly. This remains interim evidence.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 

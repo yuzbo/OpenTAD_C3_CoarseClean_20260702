@@ -10,9 +10,9 @@
   Gate `1170945` passed; jobs `1170946/1170947` are active. Their append-only
   train logs record the first matched epoch-41 validation: selected-axis
   `39.84%` and physical-metric `57.32%` Avg-mAP. This is an interim result
-  source, not a completed epoch-59/checkpoint-validation source. Epoch-43
-  evaluator JSON records `40.41/57.19%` and is content-bound by SHA256
-  `3c3fd4d5...` / `b1d0c590...`; full hashes are in
+  source, not a completed epoch-59/checkpoint-validation source. The latest
+  epoch-47 evaluator JSON records `40.81/57.48%` and is content-bound by SHA256
+  `865e2495...` / `ae484902...`; full hashes are in
   `docs/evaluation/results.md`.
 
 本文件登记新一轮方法判断所直接依赖的原始来源；完整历史覆盖仍见 `source_map.md`。

@@ -249,16 +249,22 @@ logs:
 | selected-axis | 43 | 64.83 | 55.15 | 41.58 | 27.13 | 13.38 | 40.41 |
 | physical-metric | 43 | 77.29 | 70.93 | 61.57 | 48.16 | 28.01 | 57.19 |
 | physical minus selected | 43 | +12.47 | +15.78 | +19.99 | +21.03 | +14.63 | +16.78 |
+| selected-axis | 45 | 64.76 | 55.73 | 42.19 | 26.95 | 13.90 | 40.71 |
+| physical-metric | 45 | 77.35 | 71.10 | 62.02 | 48.33 | 27.77 | 57.31 |
+| physical minus selected | 45 | +12.59 | +15.37 | +19.83 | +21.38 | +13.87 | +16.60 |
+| selected-axis | 47 | 64.85 | 55.85 | 42.15 | 26.99 | 14.22 | 40.81 |
+| physical-metric | 47 | 77.36 | 71.27 | 62.09 | 48.65 | 27.99 | 57.48 |
+| physical minus selected | 47 | +12.51 | +15.42 | +19.95 | +21.66 | +13.77 | +16.66 |
 
 This is an interim, same-epoch comparison. It strengthens the survivor signal
 from the 20-epoch matched run, but it is not the full60 result: epoch 59,
 final online/EMA checkpoint validation, independent mAP recomputation, and both
 `FULL_COMPLETE.json` artifacts are still pending. Current status remains
 `experiment_running`, not `full60-single-seed-supported` or `paper_ready`.
-The exact epoch-43 evaluator JSON SHA256 values are
-`3c3fd4d5b0d8e83ad8b32514636591d59092b8d5934d1bd6661c8b17ef127521`
+The latest exact epoch-47 evaluator JSON SHA256 values are
+`865e249576edcef31c5cfe980e6c829ffec779d836720dc958daf27f02e0bc17`
 for selected-axis and
-`b1d0c59074fa4dc3a25ff4f3c4eef843f544bc1184d92e34a8c0a24ceff20b7b`
+`ae4849024367fc77f5cd412255efd3274413d4030844105eb477a572127e5206`
 for physical-metric.
 
 ## Matched Pilot

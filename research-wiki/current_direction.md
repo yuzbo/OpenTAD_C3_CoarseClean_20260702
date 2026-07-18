@@ -7,10 +7,10 @@ supersedes the previous hold on starting full60. Real gate `1170945` passed on
 commit `0dc5851`; selected-axis `1170946` and physical-metric `1170947` are
 running. This tests only whether the physical-time metric survivor replicates
 under a complete schedule. G1b/SDPQ remains diagnostic and is not promoted.
-Same-epoch validations at epochs 41 and 43 are selected-axis/physical-metric
-`39.84/57.32%` and `40.41/57.19%` Avg-mAP. This is interim evidence only;
-epoch 59 and the completion/checkpoint contracts remain pending, so no full60
-terminal or paper claim exists yet.
+Same-epoch validations at epochs 41/43/45/47 consistently favor
+physical-metric; the latest is selected-axis/physical-metric `40.81/57.48%`
+Avg-mAP. This is interim evidence only; epoch 59 and the completion/checkpoint
+contracts remain pending, so no full60 terminal or paper claim exists yet.
 
 2026-07-17 状态覆盖：commit `5e8a821` 的同 commit、同 K384/J192、同无 GT sampler、同 seed=42、同 20 epochs 三臂比较已全部完成，并通过 shared gate、独立 evaluator 与 online/EMA checkpoint validator。原始结果只见 `docs/evaluation/results.md`：selected-axis `30.42%`、physical-metric `44.88%`、G1b SDPQ `30.88%` Avg-mAP。当前最强证据支持 ActionFormer 在真实物理时间度量上 assignment/回归；它不支持当前 SDPQ 结构优于 physical-metric。状态为 `matched-medium-supported`，不是 `paper_ready`；60-epoch full train 不自动启动。
 
