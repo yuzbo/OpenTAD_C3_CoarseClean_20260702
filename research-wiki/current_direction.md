@@ -7,8 +7,8 @@ supersedes the previous hold on starting full60. Real gate `1170945` passed on
 commit `0dc5851`; selected-axis `1170946` and physical-metric `1170947` are
 running. This tests only whether the physical-time metric survivor replicates
 under a complete schedule. G1b/SDPQ remains diagnostic and is not promoted.
-Same-epoch validations at epochs 41/43/45/47 consistently favor
-physical-metric; the latest is selected-axis/physical-metric `40.81/57.48%`
+Same-epoch validations at epochs 41/43/45/47/49 consistently favor
+physical-metric; the latest is selected-axis/physical-metric `41.16/57.54%`
 Avg-mAP. This is interim evidence only; epoch 59 and the completion/checkpoint
 contracts remain pending, so no full60 terminal or paper claim exists yet.
 

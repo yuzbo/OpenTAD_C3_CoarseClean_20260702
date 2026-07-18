@@ -22,6 +22,11 @@
   selected-axis `40.81%`, physical-metric `57.48%`, delta `+16.66`;
   mAP@0.7 is `14.22/27.99`, delta `+13.77`. Both jobs continue from epoch 48
   with no logged anomaly. This remains interim evidence.
+- Epoch 49 again retained the ordering: selected-axis `41.16%`,
+  physical-metric `57.54%`, delta `+16.37` Avg-mAP. Physical-metric remains
+  ahead at every IoU threshold, including mAP@0.7 `28.00%` versus `14.49%`.
+  Both jobs continue beyond epoch 49 with zero matched anomaly hits. Epoch 59
+  and completion/checkpoint validation remain pending.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 
