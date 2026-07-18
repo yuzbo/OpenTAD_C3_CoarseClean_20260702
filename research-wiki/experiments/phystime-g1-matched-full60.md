@@ -4,9 +4,9 @@ node_id: exp:phystime-g1-matched-full60
 title: "PhysTime G1 native-J192 matched two-arm 60-epoch validation"
 idea: idea:phystime-tad-2
 status: experiment_running
-verdict: pending
-confidence: no_full60_metrics_yet
-metrics: "NA until both FULL_COMPLETE.json artifacts pass independent validation."
+verdict: interim_epoch41_supports_physical_metric_pending_epoch59
+confidence: matched_epoch41_only_not_full60_complete
+metrics: "Epoch 41 interim: selected-axis 39.84, physical-metric 57.32 Avg-mAP; final epoch 59 and FULL_COMPLETE validation pending."
 provenance: "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800"
 added: 2026-07-18T11:25:00+08:00
 ---
@@ -47,6 +47,21 @@ The real gate binds commit, tree, canonical configs, the complete dataset
 manifest, the pretrained checkpoint, K/J geometry, optimizer behavior, and the
 official evaluator. Its top-level `gate_pass` is true.
 
+## Interim Evidence
+
+The first matched validation after epoch 41 completed for both arms:
+
+| Variant | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| selected-axis | 64.54 | 54.50 | 40.78 | 26.53 | 12.87 | 39.84 |
+| physical-metric | 77.57 | 71.41 | 61.44 | 48.00 | 28.17 | 57.32 |
+| physical minus selected | +13.03 | +16.91 | +20.66 | +21.47 | +15.30 | +17.48 |
+
+The jobs remain active and later validations overwrite the convenience
+`evaluation_metrics.json`, so these rounded epoch-41 values are anchored to
+the append-only `train.out` logs. This is a strong interim replication signal,
+not a terminal result.
+
 ## Artifact Contract
 
 Each arm must produce epoch-59 predictions and metrics, a final-only lightweight
@@ -57,10 +72,11 @@ inside the lightweight checkpoint, or a dirty runtime snapshot.
 
 ## Evidence Boundary
 
-The current status is `experiment_running`. No full60 mAP exists yet. Even a
-successful single-seed result can only become `full60-single-seed-supported`;
-it cannot become `paper_ready` without replication, mechanism diagnostics,
-cost evidence, and cross-dataset evidence.
+The current status is `experiment_running`. Interim epoch-41 mAP exists, but
+the required epoch-59 result and completion artifacts do not. Even a successful
+single-seed terminal result can only become `full60-single-seed-supported`; it
+cannot become `paper_ready` without replication, mechanism diagnostics, cost
+evidence, and cross-dataset evidence.
 
 ## Connections
 

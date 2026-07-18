@@ -226,6 +226,33 @@ Artifact and stability evidence:
 - G1b SDPQ does not improve Avg-mAP meaningfully over selected-axis. Its small high-IoU gains coexist with lower mAP@0.3, consistent with sharper localization for some matched actions but weaker coverage/classification recall.
 - This single-seed, 20-epoch THUMOS result is `matched-medium-supported`, not `paper_ready`. It does not justify claiming the SDPQ operator as the main contribution, and it does not by itself authorize an automatic 60-epoch run.
 
+## G1 Native-J192 Matched Two-Arm 60-Epoch Validation (Running)
+
+Code commit: `0dc5851a8feb12b97d16bdb5ea8fc60e9273d132`; Git tree:
+`bddc9b9386604d00d213275a47ce7997b35d3f4c`.
+
+Run root:
+`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800`.
+
+Both arms use K384/J192, seed 42, no feature interpolation, the same data,
+sampler, backbone, optimizer, evaluator, and an exact 60-epoch cosine schedule.
+Gate `1170945` passed; jobs `1170946/1170947` remain running.
+
+First matched validation after epoch 41, as recorded in the immutable training
+logs:
+
+| Variant | Eval epoch | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| selected-axis | 41 | 64.54 | 54.50 | 40.78 | 26.53 | 12.87 | 39.84 |
+| physical-metric | 41 | 77.57 | 71.41 | 61.44 | 48.00 | 28.17 | 57.32 |
+| physical minus selected | 41 | +13.03 | +16.91 | +20.66 | +21.47 | +15.30 | +17.48 |
+
+This is an interim, same-epoch comparison. It strengthens the survivor signal
+from the 20-epoch matched run, but it is not the full60 result: epoch 59,
+final online/EMA checkpoint validation, independent mAP recomputation, and both
+`FULL_COMPLETE.json` artifacts are still pending. Current status remains
+`experiment_running`, not `full60-single-seed-supported` or `paper_ready`.
+
 ## Matched Pilot
 
 统一 run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_7098049_pilot_20260710_214816_+0800`。

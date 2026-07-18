@@ -7,8 +7,10 @@
   `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1_full60_0dc5851_20260718`,
   and run root
   `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800`.
-  Gate `1170945` passed; jobs `1170946/1170947` are active. This is deployment
-  provenance, not a completed mAP source.
+  Gate `1170945` passed; jobs `1170946/1170947` are active. Their append-only
+  train logs record the first matched epoch-41 validation: selected-axis
+  `39.84%` and physical-metric `57.32%` Avg-mAP. This is an interim result
+  source, not a completed epoch-59/checkpoint-validation source.
 
 本文件登记新一轮方法判断所直接依赖的原始来源；完整历史覆盖仍见 `source_map.md`。
 

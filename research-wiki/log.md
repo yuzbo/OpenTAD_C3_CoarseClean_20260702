@@ -8,7 +8,13 @@
   `54`. The known local Torch `c10.dll` issue remains environmental.
 - Clean snapshot and run root are registered as `SRC-PT-014`.
 - Real gate `1170945` completed `0:0`; selected-axis `1170946` and
-  physical-metric `1170947` are running. Full60 mAP remains NA.
+  physical-metric `1170947` are running.
+- First matched epoch-41 validation: selected-axis Avg-mAP `39.84%`
+  (`64.54/54.50/40.78/26.53/12.87` at tIoU 0.3:0.7), physical-metric
+  `57.32%` (`77.57/71.41/61.44/48.00/28.17`), a `+17.48` Avg-mAP
+  interim delta. This is still `experiment_running`; epoch 59, final
+  online/EMA checkpoint validation, independent recomputation, and both
+  completion artifacts remain pending.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 
