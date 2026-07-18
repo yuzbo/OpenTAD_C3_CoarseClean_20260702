@@ -1,5 +1,15 @@
 # Source Registry
 
+## 2026-07-18 Active Source
+
+- `SRC-PT-014`: commit `0dc5851a8feb12b97d16bdb5ea8fc60e9273d132`,
+  tree `bddc9b9386604d00d213275a47ce7997b35d3f4c`, clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_phystime_g1_full60_0dc5851_20260718`,
+  and run root
+  `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_g1_matched_full60_0dc5851_20260718_112053_+0800`.
+  Gate `1170945` passed; jobs `1170946/1170947` are active. This is deployment
+  provenance, not a completed mAP source.
+
 本文件登记新一轮方法判断所直接依赖的原始来源；完整历史覆盖仍见 `source_map.md`。
 
 | ID | 类型 | 来源 | 本轮用途 |

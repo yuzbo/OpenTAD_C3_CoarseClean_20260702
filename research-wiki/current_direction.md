@@ -1,10 +1,19 @@
 # 当前唯一方向与最终目标
 
+## 2026-07-18 Execution Status
+
+The active experiment is `exp:phystime-g1-matched-full60`. User authorization
+supersedes the previous hold on starting full60. Real gate `1170945` passed on
+commit `0dc5851`; selected-axis `1170946` and physical-metric `1170947` are
+running. This tests only whether the physical-time metric survivor replicates
+under a complete schedule. G1b/SDPQ remains diagnostic and is not promoted.
+No full60 metric or paper claim exists yet.
+
 2026-07-17 状态覆盖：commit `5e8a821` 的同 commit、同 K384/J192、同无 GT sampler、同 seed=42、同 20 epochs 三臂比较已全部完成，并通过 shared gate、独立 evaluator 与 online/EMA checkpoint validator。原始结果只见 `docs/evaluation/results.md`：selected-axis `30.42%`、physical-metric `44.88%`、G1b SDPQ `30.88%` Avg-mAP。当前最强证据支持 ActionFormer 在真实物理时间度量上 assignment/回归；它不支持当前 SDPQ 结构优于 physical-metric。状态为 `matched-medium-supported`，不是 `paper_ready`；60-epoch full train 不自动启动。
 
 2026-07-13 部署门槛更新：G1a 当前仅为 `tested`。独立 Max 审查第二轮的 4 个 P1 已修复，相关远端回归 `240 passed`；第三轮未达到零 P0/P1 前不得部署 real gate，gate 未通过前不得启动 matched pilot。
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 1. 最终研究目标
 

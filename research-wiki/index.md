@@ -1,6 +1,11 @@
 # Research Wiki Index
 
-更新时间：2026-07-17
+## Active Experiment (2026-07-18)
+
+- `exp:phystime-g1-matched-full60`: gate passed; selected-axis job `1170946`
+  and physical-metric job `1170947` are running. Metrics remain NA.
+
+更新时间：2026-07-18
 
 这不是论文草稿，而是本项目的长期研究记忆。所有后续方法修改、实验部署和论文主张，必须先读取本页指向的当前方向、决策和失败记录。
 
@@ -64,6 +69,7 @@
 - `exp:phystime-g1a-native-j192`
 - `exp:phystime-g1b-sdpq-medium20`
 - `exp:phystime-g1-matched-medium20`
+- `exp:phystime-g1-matched-full60`
 
 ### Papers
 

@@ -1,6 +1,16 @@
 # Research Wiki Query Pack
 
-更新时间：2026-07-17。本文只保留当前决策所需的压缩记忆；完整历史见 `research-wiki/routes/`、各实验页与 `docs/evaluation/results.md`。
+## 2026-07-18 Active Full60 Override
+
+The user explicitly authorized the 60-epoch survivor validation, superseding
+older text below that says it must not be started automatically. Commit
+`0dc5851`, tree `bddc9b9`, and clean snapshot
+`opentad_phystime_g1_full60_0dc5851_20260718` are frozen. Real gate `1170945`
+passed; matched selected-axis `1170946` and physical-metric `1170947` are
+running with K384/J192, seed 42, no interpolation, and a true 60-epoch cosine
+schedule. Full60 mAP is still NA. G1b is not part of this survivor run.
+
+更新时间：2026-07-18。本文只保留当前决策所需的压缩记忆；完整历史见 `research-wiki/routes/`、各实验页与 `docs/evaluation/results.md`。
 
 ## 当前方向与状态
 

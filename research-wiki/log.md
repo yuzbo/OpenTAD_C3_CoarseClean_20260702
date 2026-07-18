@@ -1,3 +1,15 @@
+# 2026-07-18 PhysTime G1 matched full60
+
+- User-authorized survivor validation was implemented at commit `0dc5851`.
+- The suite fixes K384/J192, seed 42, no feature interpolation, exact
+  scheduler/workflow length 60, final-only online+EMA checkpointing, an 8 GiB
+  free-space gate, and independent epoch-59 metric recomputation.
+- Local no-Torch deployment tests passed `6`; remote Linux focused tests passed
+  `54`. The known local Torch `c10.dll` issue remains environmental.
+- Clean snapshot and run root are registered as `SRC-PT-014`.
+- Real gate `1170945` completed `0:0`; selected-axis `1170946` and
+  physical-metric `1170947` are running. Full60 mAP remains NA.
+
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 
 # 2026-07-16 PhysTime G1b SDPQ P0 repair

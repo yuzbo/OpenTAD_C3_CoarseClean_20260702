@@ -1,5 +1,18 @@
 # Anti-Repetition Contract
 
+## 2026-07-18 Full60 Guardrail
+
+- The user has explicitly authorized the matched 60-epoch survivor run; do not
+  cancel it because older wiki text says full60 was awaiting authorization.
+- Only `selected_axis` and `physical_metric` belong to this run. Do not add G1b,
+  DUCA, a learned selector, interpolation, a new sampler, or a dynamic budget.
+- `scheduler.max_epoch` and `workflow.end_epoch` must both be 60. Stopping a
+  100-epoch cosine schedule at epoch 60 is not an admissible full60 result.
+- A Slurm completion code is insufficient. Both arms require independently
+  recomputed epoch-59 mAP and replayable finite online/EMA final checkpoints.
+- A single-seed THUMOS result may be called `full60-single-seed-supported`, not
+  `paper_ready`.
+
 ## 2026-07-16 PhysTime GT/window boundary guardrail
 
 - 不再允许 `BuildPhysTimeRawFrameGeometry` 因 GT segment 落在 end-exclusive window 外一点点而在训练中随机抛错。必须先定位 `video_name`、dense crop window、selected raw frame window、秒坐标 domain，再执行可审计的 clamp/filter。
