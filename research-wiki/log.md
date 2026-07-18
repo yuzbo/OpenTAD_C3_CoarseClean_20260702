@@ -36,6 +36,10 @@
   values are `14.63/27.94`, delta `+13.31`. The selected-axis arm completed
   epoch 54 while physical-metric finished epoch-53 evaluation; anomaly counts
   and terminal artifacts remain zero/absent.
+- Epoch 55 produced the eighth consistent matched validation: selected-axis
+  `41.44%`, physical-metric `57.66%`, delta `+16.22` Avg-mAP. The mAP@0.7
+  values are `14.77/28.21`, delta `+13.44`. Selected-axis completed epoch 56;
+  both jobs remain active with zero anomaly hits and no terminal artifacts.
 
 # 2026-07-13 PhysTime G1a d1747d6 deployment gate
 
