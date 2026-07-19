@@ -1,5 +1,18 @@
 # Source Registry
 
+## 2026-07-19 Active Review Source
+
+- `SRC-PT-015`: 外部 PhysTime Full60/Q-lift Pro 严审原文
+  `docs/methods/reviews/2026-07-19-phystime-full60-q-lift-pro-review-raw.md`，
+  SHA256
+  `BBD48B6BCE5E4AC612A395561D2EABCBB1F6DB5880B329EF21CAC6808CFBD5E0`。
+  审查对象为 commit `0dc5851` / tree `bddc9b9` 及
+  `41.28/57.57%` full60 结果。完整独立吸收见
+  `docs/methods/2026-07-19-phystime-full60-q-lift-pro-review-absorption.md`。
+  用途：固定代码作用域、比较公平性、K/J/Q 因果缺口、全精度 NMS 修复、
+  support-preserving query-lift 候选与下一轮四臂实验边界；不是新实验或
+  新 mAP 来源。
+
 ## 2026-07-18 Active Source
 
 - `SRC-PT-014`: commit `0dc5851a8feb12b97d16bdb5ea8fc60e9273d132`,

@@ -1,5 +1,21 @@
 # 当前唯一方向与最终目标
 
+## 2026-07-19 Pro 审查吸收
+
+已逐字归档并独立核验针对 commit `0dc5851` 的 Full60/Q-lift Pro 审查。
+核心裁决被接受：`57.57%` 是可信的单种子 full60 结果；当前两臂公平，
+但旧随机 `63.61%` 和 dense `68.29%` 不是因果公平对照；当前物理时间只
+从检测头点构造开始介入，VideoMAE/TIA/projection 不读取时间戳；剩余
+缺口不能在 Q、表示、排序、回归和 NMS 之间提前归因。
+
+下一候选收敛为 support-preserving physical query lift，并要求同一新
+commit 下做 Q192/Q384 × uniform-rank-seconds/physical-seconds 四臂
+20-epoch 因子实验。该候选仅为 `designed`，不是已实现或唯一正确结构。
+审查给出的固定收益/成本阈值、字面 timestamp shuffle 和直接指定
+ActivityNet-v1.3 不作为既定合同；必须先由方差、合法反事实、成本预算
+和数据协议审计确定。完整吸收见
+`docs/methods/2026-07-19-phystime-full60-q-lift-pro-review-absorption.md`。
+
 ## 2026-07-18 Execution Status
 
 Experiment `exp:phystime-g1-matched-full60` is complete. Real gate `1170945`
@@ -96,11 +112,14 @@ Phase 1.5 已产生单 seed survivor，但以下扩展仍需按“先复现、�
 
 尚未形成的论文证据：
 
-- physical-metric survivor 的多 seed、完整 schedule 与机制拆分；
+- physical-metric survivor 的多 seed、Q/坐标机制拆分与合法时间戳反事实；
 - G1b 高 IoU 小幅收益和低 IoU 覆盖损失的可审计归因；
 - Phase 2 robustness/multi-seed/cross-dataset。
 
-因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已冻结为负基线；native-J192 matched medium 已明确支持 physical-time metric，但没有支持当前 SDPQ 结构。下一步复现并分解 physical-metric survivor，SM-PTAF/SDPQ 不得因高 IoU 小幅信号直接升级为论文主方法。**
+因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已冻结为负基线；native-J192
+matched full60 单种子结果明确支持 physical-time metric，但没有支持当前
+SDPQ 结构，也未公平超过旧随机或 dense 锚点。下一步先做全精度 NMS 与
+Q/坐标四臂机制隔离；SM-PTAF/Q-lift 仍是 designed candidate。**
 
 ## 5. 明确非目标
 

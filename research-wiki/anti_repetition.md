@@ -1,5 +1,30 @@
 # Anti-Repetition Contract
 
+## 2026-07-19 Full60 / Q-Lift 审查禁区
+
+- 不推翻现有 `57.57%`：它是可信的单种子 full60 matched 结果；NMS 提前
+  round 是共享协议问题，不使 `57.57 vs 41.28` 差值失效。
+- 不再把旧随机 `63.61%` 或 dense `68.29%` 当当前方法的公平因果对照。
+  旧随机包含 `J192 -> Q384` feature interpolation、不同候选数和
+  selected-rank GT；dense 又改变观测与计算。
+- 不把剩余 mAP@0.7 缺口直接归因于 Q。Q、表示、assignment、排序、回归、
+  观测缺失和 NMS 都必须由四臂与 proposal replay 分解。
+- 不把 support-to-query cross-attention 称为已证明的唯一方案。它只是
+  `designed candidate`，必须与共享简单 lift 辅助对照一起审计容量贡献。
+- 新 bridge 的 Q192 也不等于当前旧 Q192 feature state；四臂必须在同一
+  新 commit 下全部重跑，旧 `41.28/57.57` 只能作历史锚点。
+- 不把 query 计作 frame、RGB、tubelet、observation 或新增 evidence；
+  Q384 只能表示更多检测状态。
+- 不做破坏单调性的字面 timestamp shuffle。反事实必须保持观测顺序、
+  合法 domain 和严格递增时间轴，可用 uniformization 或 gap 置换后累积。
+- 不把 `+6pp/+4pp/+1.5pp`、`1.40x/1.35x` 等外部建议阈值写成已证明合同；
+  先由 seed 方差、功效与成本预算预注册。
+- 不未经 raw-video 协议审计就把 ActivityNet-v1.3 固定为第二数据集。
+- 不直接启动新 Q-lift 60-epoch/full matrix。顺序固定为评估精度修复、
+  静态/单元测试、真实 CUDA gate、四臂 20-epoch、再多 seed。
+- “无 GT 采样”只允许描述已接受窗口内的固定不规则子采样；训练
+  `random_trunc` crop 使用 GT，必须明确披露。
+
 ## 2026-07-18 Full60 Guardrail
 
 - The user has explicitly authorized the matched 60-epoch survivor run; do not

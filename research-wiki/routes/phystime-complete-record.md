@@ -464,3 +464,24 @@ PhysTime 解决 detector 时间几何；ChronoTransport 解决 heavy feature rec
 Pro 给出 `HOLD AND REBUILD`，并把最严重的新问题定位为：原生 192 tubelet feature 被插值到 384 后与 384 raw-frame supports 一一绑定，没有建立 feature provenance。推荐候选 `SM-PTAF` 使用 native tubelet multi-atom supports、measure-preserving mass residual、bounded correction、ActionFormer 等级 physical query encoder、候选/容量/assignment parity。
 
 本 Wiki 的吸收边界是：接受问题裁决与因果顺序；把 SM-PTAF 登记为 `designed`；不把外部 PyTorch 片段当作已实现；先完成 coordinate-only control，再判断该候选是否值得 full train。
+
+## 18. 2026-07-19 Full60 / Q-Lift Pro 审查
+
+原文：
+`docs/methods/reviews/2026-07-19-phystime-full60-q-lift-pro-review-raw.md`。
+
+吸收：
+`docs/methods/2026-07-19-phystime-full60-q-lift-pro-review-absorption.md`。
+
+审查确认 `0dc5851` 的 `57.57%` 是可信单种子 full60 证据，同时把其
+作用域收窄为检测头后段的物理时间度量；VideoMAE/TIA/projection 尚不见
+timestamp。当前 matched 两臂公平，旧随机 `63.61%` 和 dense `68.29%`
+因 interpolation、Q、坐标或观测成本变化只能作历史锚点。
+
+下一候选登记为 support-preserving physical query lift：保持 K384/J192
+support，独立构造 Q192/Q384 query，做
+`Q × coordinate` 四臂 20-epoch 因子实验。先修全精度跨窗口 NMS，并补
+proposal recall、assignment、observability、合法 timestamp counterfactual
+和成本诊断。cross-attention 是优先候选而非已证明唯一结构；外部固定阈值
+和 ActivityNet 选择不直接写入研究合同。状态仍为 `designed`，新 full
+train 未解锁。

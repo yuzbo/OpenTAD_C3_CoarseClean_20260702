@@ -9,7 +9,7 @@ risks: "可能被 timestamp/interpolation/mTAN-like baseline 匹配；feature tr
 based_on: ["paper:shukla2021_mtan", "paper:kim2024_te_tad", "paper:zeng2024_temporal_robustness", "paper:sun2026_liquidtad"]
 target_gaps: ["gap:G1", "gap:G2", "gap:G3", "gap:G5"]
 added: 2026-07-11T00:00:00+08:00
-updated: 2026-07-17T22:00:00+08:00
+updated: 2026-07-19T23:15:00+08:00
 ---
 
 # PhysTime-TAD 2.0
@@ -46,6 +46,25 @@ PhysTime 1.0 已冻结为负基线。下一候选被具体化为 `idea:sm-ptaf`�
 同 commit、同 K384/J192、同 seed 和同 20-epoch schedule 的三臂实验已经完成。physical-metric ActionFormer 相对 selected-axis 获得 `+14.46` Avg-mAP，说明真实物理时间度量在当前离线稀疏 TAD 设置中具有明确价值。G1b SDPQ 相对 selected-axis 仅 `+0.46` Avg-mAP，并显著落后 physical-metric；当前 support-decoupled operator 不构成已证实优势。
 
 因此 idea outcome 为 `mixed`：物理时间检测假设获得 matched-medium 支持，完整 support-measure/SDPQ 结构尚未获得支持。下一步以 physical-metric 为 survivor 做复现和机制拆分，不把 G1b 直接升级为主方法。
+
+## 2026-07-19 Full60 / Q-Lift 审查吸收
+
+单种子 60-epoch 结果进一步把 physical-metric 相对 selected-axis 的优势
+固定为 `+16.29` Avg-mAP，但它仍低于不可直接横比的旧随机和 dense 锚点。
+代码核验确认：真实物理时间从检测头 point construction 开始覆盖
+assignment、回归和 decode，VideoMAE/TIA/projection 表示仍不见 timestamp。
+
+下一 designed candidate 是 support-preserving physical query lift：
+K384 RGB 只产生 J192 native supports，另建 Q192/Q384 deterministic
+detection query，由受 mask 的 support-to-query bridge 读取 support，再复用
+ActionFormer branch/head。query 不属于 observation，也不填补 dense RGB
+evidence。
+
+该候选必须在同一新 commit 下重跑
+`Q192/Q384 × uniform-rank-seconds/physical-seconds` 四臂。cross-attention
+只是优先实现，不是已证明的唯一结构；固定性能/成本阈值、timestamp
+shuffle 和第二数据集选择仍待审计。当前 stage 保持 `active`，operator
+状态保持 `designed`，不得写成 implemented/tested/paper-ready。
 
 ## Connections
 

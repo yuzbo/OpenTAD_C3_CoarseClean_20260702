@@ -1,5 +1,20 @@
 # Research Wiki Query Pack
 
+## 2026-07-19 Pro Review Decision
+
+针对 frozen commit `0dc5851` 的 Full60/Q-lift Pro 审查已逐字归档并独立
+吸收。保留 `57.57%` 为可信的 `full60-single-seed-supported` 证据；
+当前 selected-axis/physical-metric 两臂公平，旧 random `63.61%` 和
+dense `68.29%` 只作历史锚点。代码只在 head point construction 后使用
+物理时间，VideoMAE/TIA/projection 不读取 timestamp；跨窗口 NMS 当前
+先 round 再 NMS，应改成内部全精度。
+
+下一候选是 support-preserving physical query lift，但只处于 `designed`。
+先做同一新 commit 的 Q192/Q384 × uniform-rank-seconds/physical-seconds
+四臂 20-epoch 因子实验，并补 K/J/Q provenance、pre-NMS recall、合法
+timestamp/gap counterfactual 与成本。cross-attention 不是已证明的唯一
+结构；固定 pp/成本阈值和 ActivityNet-v1.3 选择仍待方差与协议审计。
+
 ## 2026-07-18 Completed Full60 Evidence
 
 The user explicitly authorized the 60-epoch survivor validation, superseding
@@ -32,7 +47,10 @@ survivor run.
 2. G1b SDPQ 相对 selected-axis 仅 `+0.46` Avg-mAP，虽在 mAP@0.6/0.7 分别提高 `+2.11/+2.42`，但 mAP@0.3 降低 `-3.83`；
 3. 因此证据支持真实物理时间度量，不支持当前 SDPQ 结构优于 physical-metric control。
 
-下一项决定性任务不是继续放大 G1b，而是验证 physical-metric survivor：先做同配置多 seed/复现实验和 proposal/边界/短动作/gap 分解，再由用户决定是否进入 60-epoch full schedule。当前结果是 `matched-medium-supported`，不是 `paper_ready`。
+60-epoch 单种子 survivor 已完成。下一项决定性任务不是继续放大 G1b，
+而是修复全精度跨窗口 NMS，并用同一新架构的 Q/坐标四臂隔离候选密度、
+物理时间和 support-to-query bridge；通过后再进入多 seed。当前状态是
+`full60-single-seed-supported`，不是 `paper_ready`。
 
 ## 当前核心科学问题
 
@@ -45,7 +63,8 @@ survivor run.
 
 ## 最高优先级缺口
 
-- `G4` 公平隔离：same-commit/schedule/seed 三臂 medium comparison 已完成；下一步需要多 seed 和完整 schedule 复现，旧的不同轮数结果仍禁止横比。
+- `G4` 公平隔离：same-commit/schedule/seed medium 与 full60 两臂已完成；
+  下一步需在新 Q-lift 架构内重跑 Q/坐标四臂，旧结果只作历史锚点。
 - `G2` provenance：K384 raw observations、J192 tubelet tokens、Q0 与多尺度候选必须分开审计；一个 tubelet 融合两帧，只能先称 multi-atom support anchor。
 - `G5` 高 IoU：需要 proposal recall、class-aware recall、边界 MAE、短动作与 gap 条件分解，不能只看 Avg-mAP。
 - `G7` 成本与泛化：缺完整 decode/VideoMAE/head latency、FLOPs、显存和第二数据集证据。
@@ -86,7 +105,8 @@ survivor run.
 - physical-metric 相对 selected-axis：`matched-medium-supported`。
 - G1b 相对 selected-axis：Avg-mAP 优势不成立，高 IoU 有弱正信号；相对 physical-metric 明显落后。
 - 三臂 medium suite：`completed`，全部 validator 通过。
-- 60-epoch full train：不再由 matched-medium 阻塞，但必须先由用户裁决 survivor、seed 和诊断矩阵，不能自动启动。
+- 60-epoch单种子两臂：已完成；新 Q-lift full train 未解锁，必须先通过
+  四臂 20-epoch、机制、成本和 artifact gate。
 - PhysTime 论文主张：尚无 `paper_ready` claim。
 
 ## 必读入口

@@ -92,6 +92,19 @@ matched THUMOS14 setting. It is not `paper_ready`: replication, mechanism
 diagnostics, cost evidence, robustness families, and cross-dataset evidence are
 still required.
 
+## 2026-07-19 External Review Boundary
+
+The reviewed `57.57` result remains valid. The review found no P0 issue that
+invalidates training, prediction, or evaluation. The early rounding used by
+cross-window NMS is shared by both arms, so it should be fixed prospectively but
+does not erase the matched delta.
+
+This experiment must not be used as a fair direct comparison with the older
+`63.61` random-sampling ActionFormer or the `68.29` dense anchor. Those systems
+change feature interpolation, candidate density, coordinate semantics, or raw
+observation cost. The next Q-lift architecture must rerun all four Q/coordinate
+arms; this experiment then becomes a historical external anchor.
+
 ## Connections
 
 [AUTO-GENERATED from graph/edges.jsonl]

@@ -9,7 +9,7 @@ risks: "可能被批评为 mTAN-style regridding + ActionFormer；TIA 仍按 sel
 based_on: ["idea:phystime-tad-2", "paper:zhang2022_actionformer", "paper:liu2024_adatad", "paper:shukla2021_mtan", "paper:kim2024_te_tad", "paper:wang2022_rcl"]
 target_gaps: ["gap:G1", "gap:G2", "gap:G3", "gap:G4", "gap:G5"]
 added: 2026-07-13T00:00:00+08:00
-updated: 2026-07-13T13:30:00+08:00
+updated: 2026-07-19T23:15:00+08:00
 ---
 
 # SM-PTAF
@@ -43,6 +43,15 @@ SM-PTAF 不能直接和旧 PhysTime 1.0 比较后声称有效。必须先建立�
 ## 当前状态
 
 `designed`。外部 Pro 回复给出了公式、伪代码和 patch map，但仓库尚未实现这些新类，也没有新 gate、训练或 mAP。PhysTime 1.0 继续冻结为负基线。
+
+2026-07-19 的新审查把下一最小候选收缩为
+`Support-Preserving Physical Query Lift`：保持 K384/J192 support 不变，
+显式构造 Q192/Q384 detection query，以 masked support-to-query bridge
+接入原 ActionFormer branch/head。它与原 SM-PTAF 的 support/token/query
+解耦目标一致，但暂不预设 measure residual 或 cross-attention 是唯一实现。
+
+新候选必须做 Q 与 coordinate 的 2x2 因子实验；只要 bridge 变化，旧
+G1a Q192 数值就不能直接复用。状态仍为 `designed`。
 
 ## 必须先关闭的风险
 
