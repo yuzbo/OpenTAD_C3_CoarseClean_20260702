@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # 来源注册表
@@ -33,6 +33,34 @@ updated: 2026-07-18
   rejects reversed/non-finite rows; focused tests `41 passed, 1 skipped`).
 
 ## 关键评审与吸收记录
+
+- Native-Crop S1 Pro review, 2026-07-20. The reviewer audited immutable commits
+  `d76ba1b`, `cef9548`, and `18139b9`, verified that the current path contains
+  full-frame resize rather than source-native crop, and returned
+  `PROCEED_NATIVE_CROP_S1`. Exact raw archive:
+  `docs/methods/reviews/2026-07-20-native-crop-s1-pro-review-raw.txt`,
+  SHA-256
+  `7AB0E10624A14FDF2FCABCBEF5EF435EB4994B83BC3E32F3240A3E0143CD44D5`.
+  Project absorption:
+  `docs/methods/reviews/2026-07-20-native-crop-s1-pro-review-absorption.md`.
+  The verdict is accepted only as authorization for a development-only,
+  no-training vertical slice. The project rejects route-level interpretation
+  of an eight-candidate oracle, final-mask-only padding claims, and uncalibrated
+  crop/GO thresholds.
+- Native-Crop primary-literature verification, 2026-07-20:
+  Glance and Focus `https://arxiv.org/abs/2010.05300`;
+  Uni-AdaFocus `https://arxiv.org/abs/2412.11228` and
+  `https://github.com/LeapLabTHU/Uni-AdaFocus`;
+  AdaSpot CVPR 2026
+  `https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html`
+  and `https://github.com/arturxe2/AdaSpot`;
+  EVAD ICCV 2023
+  `https://openaccess.thecvf.com/content/ICCV2023/html/Chen_Efficient_Video_Action_Detection_with_Token_Dropout_and_Context_Refinement_ICCV_2023_paper.html`;
+  AdaTAD `https://arxiv.org/abs/2311.17241`. These primary sources support
+  strong prior-art collision around global/local spatial focus. AdaSpot's
+  official implementation also supports the narrower observation that its
+  variable ROI is resized to a fixed local input, while this project's proposed
+  source-native no-resize contract remains only a candidate differentiator.
 
 以下记录是主要二级来源；原始 raw review 仍保存在各 repo 的
 `docs/methods/reviews/`：

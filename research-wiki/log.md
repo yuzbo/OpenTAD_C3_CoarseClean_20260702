@@ -493,3 +493,18 @@ append_only: true
   is a concrete Native-Crop S1 contract followed by one targeted Pro
   code/protocol review; learned ROI remains blocked until oracle/teacher-
   reference crop sufficiency passes preregistered criteria.
+- 2026-07-20: archived and independently absorbed the Native-Crop S1 Pro
+  review. Raw SHA-256 is
+  `7AB0E10624A14FDF2FCABCBEF5EF435EB4994B83BC3E32F3240A3E0143CD44D5`;
+  the original verdict is `PROCEED_NATIVE_CROP_S1`. Accepted the core findings
+  that current code has no crop, old R0 is split-brain historical control,
+  source-coordinate crop must precede resize, the 768/[B,384,768] detector
+  contract should remain fixed, sufficiency must precede learned policy, and
+  full-stack cost is mandatory. Added project qualifications: a finite
+  candidate library is not a route-level oracle; output masked pooling cannot
+  undo ViT padding-token mixing; 96/128/knot and numerical GO thresholds are
+  provisional; formal teacher/test issues are deferred because the next slice
+  uses no teacher and no official test. State remains `designed`. The sole
+  authorized next task is a development-only source-geometry census and
+  no-training global96/center-local128 vertical slice with source-pixel,
+  no-resize, backward, detector-parity, no-leak, and cost-schema tests.

@@ -3,7 +3,7 @@ type: idea
 node_id: idea:spatial-zoom-offline-tad
 title: "Dense-time spatial zoom for offline TAD"
 stage: designed
-status: native_crop_contract_pending_pro_review
+status: native_crop_vertical_slice_authorized
 tags: ["offline-tad", "spatial-redundancy", "roi", "adatad"]
 added: 2026-07-15
 ---
@@ -36,6 +36,26 @@ coverage.
 No native-crop or learned crop model is currently implemented. The existing
 dense-resolution matrix does not establish crop sufficiency, Zoom accuracy,
 efficiency, detector generality, or publishability.
+
+## Pro Review Absorption
+
+The 2026-07-20 Pro review returned `PROCEED_NATIVE_CROP_S1`. This authorizes
+only a development-only, no-training vertical slice; it is not empirical GO.
+The accepted next structure is a source-coordinate global/local crop path that
+keeps the full temporal axis and the existing `[B,384,768]` detector contract.
+
+The review's eight-candidate teacher library is treated only as a
+library-conditional upper bound. Its failure cannot kill continuous learned
+crop without a coverage certificate. Final masked pooling is also insufficient
+to undo padded-token mixing inside ViT attention, so fixed crops should be
+translated in-bounds whenever the source frame is large enough. Crop sizes,
+knot frequency, motion constraints, teacher protocol, and numerical GO/KILL
+thresholds remain provisional.
+
+The sole authorized implementation task is a source-geometry census followed
+by a no-teacher `global96 + fixed center/local128 + shared VideoMAE-S +
+384-point fusion + [B,384,768]` vertical slice with strict no-resize,
+backward, parity, no-leak, and cost-schema tests. R0 remains frozen.
 
 ## Connections
 

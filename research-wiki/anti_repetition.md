@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # 禁止重走清单
@@ -14,6 +14,16 @@ updated: 2026-07-19
    不得把低分辨率 crop 放大回完整重模型输入后仍声称节省了像素、FLOPs 或端到端成本。
 0. 在 oracle/teacher-reference crop sufficiency 通过预注册 GO 条件前，不得实现 learned
    ROI policy；也不得继续为旧 dense-resize recovery matrix 消耗 GPU 来替代 crop 验证。
+0. 不得把有限的八候选或其他固定 candidate library 称为整个连续空间的 oracle。没有
+   coverage certificate 时，候选库失败只能否定该库，不能直接 KILL continuous crop。
+0. 不得声称 final masked mean 已消除 padded token 污染。ViT self-attention 会在 pooling
+   前混合 token；优先将固定 crop 平移回图内，仅在源帧小于 crop 时 padding。
+0. 不得在 source-geometry 与统计审计前冻结 `96/128` crop、48 knots、速度/尺度约束或
+   `+1 pp/30%` 等 GO/KILL 门槛。
+0. 不得先物化或 H2D 整段 768 帧 native-resolution float tensor 再裁剪。必须尽可能在
+   decoded uint8 source frames 上完成 global/local crop 后再 format 与传输。
+0. 下一垂直切片不得使用 teacher、GT、oracle 或 official-test evidence。teacher split、
+   cache、候选训练分布与 formal test exception 必须在 oracle 实验前另行冻结。
 
 1. 不得把旧 R0 称为 Zoom/crop 模型。R0 只有 matched dense spatial-resolution matrix。
 2. 不得在 Native-Crop S1 GO 前实现 learned ROI policy，或用 oracle ROI 结果倒推修改

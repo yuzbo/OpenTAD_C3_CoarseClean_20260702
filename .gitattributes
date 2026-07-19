@@ -8,4 +8,4 @@
 *.json text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
-
+docs/methods/reviews/2026-07-20-native-crop-s1-pro-review-raw.txt -text -diff

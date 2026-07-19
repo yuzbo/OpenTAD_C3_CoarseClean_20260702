@@ -1,0 +1,1101 @@
+# 1. Visibility / Skill Certificate
+
+## 1.1 仓库与提交可见性
+
+**可见性门：PASS。**
+
+导航分支 `codex/spatial-zoom-s1-audit-fix-20260715` 可直接按 ref 读取，并解析到：
+
+```text
+d76ba1b82fbd43d278700e81ae1c688439db76b3
+Reframe Spatial Zoom around native crops
+```
+
+三个不可变提交均可由 GitHub 提交对象读取：
+
+* 路线纠偏：`d76ba1b82fbd43d278700e81ae1c688439db76b3`
+* S1 runtime：`cef95485d1bfebccddb1055f30800ab081decaf7`
+* 训练/模型：`18139b930bef6ee234f6220a6adc898eb9c23c0c`
+
+其中 `d76ba1b` 相对 `cef9548` 只改变研究 Wiki/路线表述，没有新增 Native-Crop 数据变换、模型、配置或运行代码。
+
+**审计方式限制：**
+
+* 通过 GitHub 连接器按 immutable ref、文件和行号执行只读审计。
+* 没有修改仓库、创建提交或启动任务。
+* 容器本地 GitHub DNS 不可用，因此没有完成独立 detached clone。
+* 没有执行 CUDA、Slurm、训练、profile 或测试；所有运行时兼容判断均明确标为静态代码判断。
+* 当前是否存在实际 Slurm 作业：**UNKNOWN**。本轮没有集群调度器访问权。
+
+## 1.2 Skill Loading Certificate
+
+| 能力                       | 状态                |
+| ------------------------ | ----------------- |
+| GitHub 官方连接器工作流          | **LOADED / USED** |
+| 一手论文与官方代码联网检索            | **USED**          |
+| `oss-audit`              | **UNAVAILABLE**   |
+| `experiment-audit`       | **UNAVAILABLE**   |
+| `experimental-design`    | **UNAVAILABLE**   |
+| `novelty-check`          | **UNAVAILABLE**   |
+| `kill-argument`          | **UNAVAILABLE**   |
+| `pytorch-training`       | **UNAVAILABLE**   |
+| `system-profile`         | **UNAVAILABLE**   |
+| `ccf-a-editorial-review` | **UNAVAILABLE**   |
+
+插件目录中没有返回上述八个命名 skill；以下审计没有伪造加载状态。
+
+## 1.3 实际阅读文件与范围
+
+大文件按调用链分段读取。下表中未列出的区间不作为本答复的实现依据。
+
+| 文件                                                            |                 实际阅读范围 | 得出的事实                                                                      |
+| ------------------------------------------------------------- | ---------------------: | -------------------------------------------------------------------------- |
+| `AGENTS.md`                                                   |                   1–66 | 仓库要求维护 Wiki、保持 768/384 时序合同、禁止无证据路线混入                                      |
+| `RTK.md`                                                      |                  1–115 | 强制数据/teacher/GT 泄漏约束和时序定位任务边界                                              |
+| `research-wiki/query_pack.md`                                 |                  1–108 | Native-Crop 才是真研究对象；旧矩阵降级为 R0；记录 gate 与唯一 official-test cell               |
+| `research-wiki/anti_repetition.md`                            |                  1–174 | 明确禁止把整图 resize 称为 crop；禁止 local crop 缩小再放大；learned policy 前必须做 sufficiency |
+| `research-wiki/ideas/spatial-zoom-offline-tad.md`             |                   1–40 | 当前梯级为 R0 → Native-Crop S1 → learned route                                  |
+| `research-wiki/experiments/spatial-zoom-s1-infrastructure.md` |                  1–430 | 旧实验是整图分辨率矩阵；失败主要是基础设施，不是 crop 证据                                           |
+| `docs/methods/spatial_zoom_s1_contract.md`                    |                  1–420 | 仍保留旧 160/224/256×3 的正式 S1 合同，与最新研究纠偏冲突                                     |
+| 三个 `s1_dense160/224/256_*.py`                                 |                    全文件 | 只有全图空间尺寸和 work dir 差异；三个方法开关均为 false                                       |
+| `e2e_thumos_videomae_s_768x1_160_adapter.py`                  |                  1–161 | 48×16 帧 VideoMAE、空间均值、384→768 插值、官方派生后端                                    |
+| `configs/_base_/datasets/...256x224x224.py`                   |                  1–102 | `DecordDecode` 后只有整图 Resize/RRC/CenterCrop                                 |
+| `opentad/datasets/transforms/end_to_end.py`                   |         20–310、360–820 | `LoadFrames` 只选择时间帧；没有 source-coordinate spatial ROI                       |
+| `opentad/models/backbones/vit_adapter.py`                     | 1–110、500–650、700–1080 | runtime H/W grid、位置编码插值、Adapter reshape、最终空间 feature map                   |
+| `opentad/models/detectors/actionformer.py`                    |                1–约 265 | backbone 后只处理 `[B,C,T]`；可选时序 selector/compressor，与当前 S1 无关                 |
+| `actionformer_proj.py`                                        |                1–约 188 | 与官方 OpenTAD blob 相同                                                        |
+| `actionformer_head.py`                                        |                    全文件 | 与官方 OpenTAD blob 相同                                                        |
+| `anchor_free_head.py`                                         |                1–约 380 | 有本地 debug/physical-grid 扩展，默认路径不影响 S1                                      |
+| manifest/contract/training/selection/test-open 脚本             |                 主要逻辑全读 | 哈希、split、checkpoint、seal 可抽象复用；方法身份硬编码为 dense resolution                   |
+| profile/cost/analyzer                                         |         分段读至主入口和正式报告生成 | profile 身份链较严密，但 stage schema 不含 scout/ROI/crop/local/fusion               |
+| `build_spatial_zoom_s1_run_descriptor.py`                     | 1–约 318；其后 **UNKNOWN** | descriptor 路径和身份硬编码 `dense{resolution}`                                    |
+| `spatial_zoom_s1_profile_recovery.py`                         | 1–约 294；其后 **UNKNOWN** | 大量历史 recovery/job/schema 常量，只属于旧 R0 基础设施                                   |
+| `preflight_spatial_zoom_s1_profile.py`                        |                  1–347 | GPU/CPU/commit/test seal 核验可复用，但绑定旧 resolution matrix                      |
+| 两个主要 Slurm 脚本                                                 |          1–108、1–约 263 | 只接受 160/224/256 和三个固定 seed                                                 |
+| `test_spatial_zoom_s1_infrastructure.py`                      |             分段读至约 1200 | 测 gradient、seal、Slurm、profile，但没有 native-crop 几何测试                         |
+| `test_spatial_zoom_s1_matrix.py`                              |                 主要逻辑全读 | 明确要求 9 个 descriptor 和 dense cell identity                                  |
+
+研究纠偏、旧合同和基础设施边界分别由以下代码/文档直接支持。
+
+---
+
+# 2. 当前实现事实表
+
+## 2.1 逐调用链证明：没有隐藏 Native-Crop 路径
+
+当前训练路径并非“只有一个 Resize 算子”，因为训练包含 `RandomResizedCrop`；但在研究对象意义上，它仍然是**整幅画面的固定分辨率输入路径**，不是 ROI 选择或 crop tube。
+
+完整链路如下：
+
+1. `LoadFrames` 根据 `random_trunc` 或 `sliding_window` 生成时间维 `frame_inds`、`masks`、`clip_len`。它不生成 `x/y` 坐标、ROI、tube、source H/W 或空间 policy 输出。
+2. `mmaction.DecordDecode` 解码这些完整帧。
+3. 解码后立即执行：
+
+   * train：全图 `Resize → RandomResizedCrop → Resize(square)`
+   * val/test：全图 `Resize → CenterCrop`
+4. `FormatShape(NCTHW)` 后，48 个 16-frame chunk 全部送入同一个 VideoMAE。
+5. VideoMAE 输出 `[B,C,T,h,w]`。
+6. 配置中的 `Reduce(... reduction="mean")` 对 `h,w` 做全局均值，得到 `[B,C,384]`。
+7. 线性插值为 `[B,C,768]` 后交给原 ActionFormer projection/head。
+8. validator 额外强制：
+
+   * `roi_policy_enabled=False`
+   * `teacher_oracle_enabled=False`
+   * `new_detector_enabled=False`
+
+因此：
+
+> **不存在 source-coordinate ROI、连续 crop tube、local heavy recomputation、global/local fusion 或隐藏 spatial policy。**
+
+仓库中确有 ChronoTransport、packed route、frame selector 等其他扩展，但它们是时序计算路径，当前 S1 配置未启用，也不是空间 ROI。
+
+## 2.2 实现事实
+
+| 问题                             | 审计事实                                                          |
+| ------------------------------ | ------------------------------------------------------------- |
+| 保留 768 点时间轴                    | **是**。原始窗口 768，48×16 frame chunks，tubelet=2 后为 384 点，再插值到 768 |
+| 当前空间输入                         | 整幅解码帧经过全局 Resize/RRC 或 Resize/CenterCrop                      |
+| Source-coordinate ROI          | **没有**                                                        |
+| 连续 ROI tube                    | **没有**                                                        |
+| 原生像素密度 local branch            | **没有**                                                        |
+| 多 ROI                          | **没有**                                                        |
+| Scout/context branch           | **没有**                                                        |
+| Global/local fusion            | **没有**                                                        |
+| VideoMAE 空间输出                  | 有 `[B,C,384,h,w]`                                             |
+| 空间信息如何消失                       | 对 `h,w` 直接求均值                                                 |
+| 最终 detector 输入                 | `[B,384,768]`                                                 |
+| ROI/teacher/new-detector flags | 全部为 `False`                                                   |
+| 当前 R0 gate 是否 official test    | **不是**                                                        |
+| 完成的 official-test cells        | 仅 `dense256/seed3408`                                         |
+| Native-Crop 结果                 | **零**                                                         |
+| 新 S1 正在运行                      | 用户陈述为否；独立调度器核验为 **UNKNOWN**                                   |
+
+VideoMAE 的空间池化和 384→768 合同位于基础配置 `post_processing_pipeline`；这也是为什么后端 ActionFormer 可以保持不变。
+
+## 2.3 R0 数字能证明什么
+
+三个 seed 的 gate Avg-mAP 均值为：
+
+* dense160：**64.220**
+* dense224：**64.228**
+* dense256：**64.252**
+
+最大均值差只有约 **0.033 个百分点**，远小于 seed 间波动。它没有形成可信的“分辨率越高越好”证据，更没有形成 crop sufficiency 证据。
+
+唯一 official-test cell `dense256/seed3408` 为：
+
+```text
+Avg-mAP = 67.09
+mAP@0.3/0.4/0.5/0.6/0.7
+= 82.14 / 77.76 / 70.36 / 59.53 / 45.67
+```
+
+该单 cell 不能选择分辨率、不能估计跨 seed 稳定性，也不能构成 GO/KILL。
+
+## 2.4 相对官方 OpenTAD/AdaTAD 的代码差异
+
+**可以保持不变的部分：**
+
+* `e2e_thumos_videomae_s_768x1_160_adapter.py` 与官方 OpenTAD 对应文件具有相同 Git blob SHA。
+* `actionformer_proj.py` 与官方完全相同。
+* 薄 `ActionFormerHead` 与官方完全相同。
+* 768 点 temporal grid、ActionFormer projection、neck、head、loss、NMS、evaluator 均无需重写。
+
+**本仓库额外加入、但当前 S1 应继续禁用的部分：**
+
+* ViT 内的 ChronoTransport 和 packed temporal route。
+* ActionFormer detector 的可选 frame selector/token compressor。
+* AnchorFreeHead 的 physical-grid/debug 扩展。
+
+这些不是 Native-Crop 必需组件，混入只会制造不可识别的复合变量。
+
+---
+
+# 3. P0 / P1 / P2 / P3 代码问题
+
+## P0：不解决就不能启动正式 Native-Crop S1
+
+| ID   | file:line                                                                                             | 证据与后果                                                                                                   | 最小复现                                                         | 最小修复                                                                                        |
+| ---- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| P0-1 | `query_pack.md:9-21`；`spatial_zoom_s1_contract.md:1-13,39-124`；`spatial_zoom_s1_test_open.py:289-297` | Wiki 已把旧矩阵降为 R0，但正式 contract/test-open 仍把 3×3 dense matrix 定义为唯一 S1。研究对象发生 split-brain                  | 用非 160/224/256 method cell 构造 selection matrix，test-open 会拒绝 | 历史代码冻结为 `spatial_zoom_r0_*`；新建独立 `native_crop_s1_*` schema、namespace、seal                   |
+| P0-2 | 三个 S1 config；基础 config `25-32,43-63,97-103`；validator `56-98,215-231`                                 | 没有任何 Native-Crop 代码。继续运行现有脚本只能产生更多 R0                                                                   | 对 pipeline/model 注册 hook：不会观测到 ROI 坐标或 local branch          | 新增 decode 后 source-coordinate transform 和 global/local backbone wrapper                     |
+| P0-3 | `anti_repetition.md:163-172`                                                                          | 当前规则禁止 val/test teacher/oracle；但拟议 official-test teacher-reference 上界需要 frozen teacher。未修订即违反 repo 自身合同 | 在 test descriptor 中加入 `uses_teacher=true`，当前 no-leak 约束应拒绝   | 冻结一个极窄的 `nondeployable_frozen_teacher_reference` 例外；否则 teacher 只能留在 fit/gate                |
+| P0-4 | `query_pack.md:31-38`；旧 global test-open marker 逻辑                                                    | 已经观察过一个 official-test cell，不能再声称整个研究从未接触 official test                                                  | 任何新 seal 都无法抹除已知的 dense256/3408 结果                           | 新 namespace、新 marker；论文和报告明确披露 prior exposure，禁止用该 cell 调 architecture/threshold/checkpoint |
+
+P0-1 是当前最严重问题：**文档上的研究纠偏是合理的，但 executable contract 尚未纠偏。**
+
+## P1：实现前必须闭合
+
+| ID   | 问题                                  | 最小修复                                                                                      |
+| ---- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| P1-1 | Native crop 插入层错误风险                 | 必须放在 `DecordDecode` 之后、任何 `Resize/RRC/CenterCrop` 之前；不得放在 patch embedding 后               |
+| P1-2 | 没有 source geometry                  | 记录每帧 `source_hw`、原始 frame index、像素边界坐标系和所有几何变换                                            |
+| P1-3 | ViT 可变分辨率只有隐式支持，无正式合同               | 增加 H/W `%16==0` 断言、96/112/128 和矩形 grid 前向/反向测试                                            |
+| P1-4 | Padding 会污染当前空间均值                   | 传递 pixel/patch valid mask，使用 masked spatial mean                                          |
+| P1-5 | 梯度 precheck 不认识 fusion/local branch | 扩展 gradient coverage：global/local adapters、fusion、projection、head 必须分别可审计                 |
+| P1-6 | profile stage 不足                    | 新增 decode、global resize、ROI 生成、crop/pad、H2D、global backbone、local backbone、fusion 等 stage |
+
+当前 profiler 只理解 input、H2D、model、postprocess，以及 backbone/projection/neck/head；这不足以声称 crop 的 full-stack 成本。
+
+## P2：不阻塞第一个 vertical slice，但必须在正式 gate 前处理
+
+1. **混合 H/W 无法直接组成一个 dense tensor batch。**
+   固定 S1 为 K=1、固定 128×128；矩形候选按 shape bucket 分组执行。
+
+2. **矩形/长宽比偏置。**
+   核心 gate 先用 128×128；补充等 token 的 160×96 和 96×160，但不得让模型按结果后选 aspect ratio。
+
+3. **位置编码插值开销与数值差异。**
+   当前代码会将基础 14×14 位置编码 bicubic 插值到 runtime `(h,w)`。需要记录调用次数；eval 可按 grid cache，但训练不得跨 graph 错误复用。
+
+4. **DDP `static_graph=True` 风险。**
+   branch 数量和 K 必须固定；每个 iteration 都执行 global 和 local。任何动态 K 都会破坏现有 static-graph 假设。
+
+当前 ViT 的 patch embedding 使用无 padding 的 `(tubelet,16,16)` kernel/stride；runtime H/W 用于位置编码插值和 Adapter reshape，因此 96/112/128 在静态代码上分别对应 6×6、7×7、8×8，但非 16 倍数会静默丢弃边缘像素。
+
+## P3：清理项
+
+* 历史文件中的 `S1_*`、`dense{resolution}`、旧 job ID 和 recovery schema 不应原地改写；应冻结为 R0 provenance。
+* 旧 R0 的 profile recovery、legacy exception 和 9-cell completion 不得复制进新 S1，只抽取通用 hashing、atomic publication、GPU identity、power sidecar 组件。
+
+---
+
+# 4. 三种结构比较与唯一选型
+
+| 结构                                                              | 精度上界                | 真实成本                                                           | 训练稳定性                               | 现有代码兼容性                             | 创新空间                                   | 泄漏风险                       |
+| --------------------------------------------------------------- | ------------------- | -------------------------------------------------------------- | ----------------------------------- | ----------------------------------- | -------------------------------------- | -------------------------- |
+| **A. 固定候选 ROI-tube + frozen dense teacher-reference oracle**    | 最高，直接测试候选 crop 是否足够 | 单候选可真实计费；oracle 总成本很高且必须单列                                     | 高；没有 learned policy 优化混杂            | 高；只改 backbone 前端，保留 ActionFormer    | 中等；必须依靠 native density、TAD regret、边界合同 | 可控，但 teacher test 需窄例外     |
+| **B. low-res global scout + learned 1/2 个 native local branch** | 部署潜力最高              | 可部署成本最有意义                                                      | 低到中；policy、fusion、detector 联合训练容易塌缩 | 中                                   | 低到中；与 Uni-AdaFocus/AdaSpot 强碰撞         | 无 GT 泄漏可控，但 policy 过拟合明显   |
+| **C. 源分辨率 ViT token/patch 稀疏计算**                                | 理论上高                | 可能仍支付 dense decode/patch embedding；稀疏 kernel 未必有 wall-clock 收益 | 中                                   | 低；会侵入 ViT block、checkpoint、batching | 拥挤；已有大量 token pruning                  | 较低，但研究对象已变成 token sparsity |
+
+## 唯一选择
+
+> **Native-Crop S1 选择 A。**
+
+理由不是 A 最“强”，而是它是唯一能在不引入 learned-policy 混杂的情况下回答当前关键问题的结构：
+
+> 在完整 768 时间轴、固定 VideoMAE-S/ActionFormer 后端和真实 local token 预算下，源像素密度 crop tube 本身是否足以接近 dense-high，并显著优于 center/random crop？
+
+B 只能在 A 通过后进入；C 应作为另一条 token-sparsification 研究线，不属于本轮 Spatial Crop S1。
+
+## 对研究纠偏的裁决
+
+把 Dense-160/224/256 降级为 R0 是**正确且必要**的，不是机械改名：
+
+* R0 没有裁剪选择变量。
+* R0 没有 local native-density branch。
+* R0 三个分辨率的 gate 均值几乎相同。
+* 基础设施失败不能代替 crop falsification。
+* 完成旧 3×3 official-test/profile matrix 不会回答 Native-Crop 的核心问题。
+
+---
+
+# 5. 完整 Native-Crop S1 合约
+
+以下全部为 **[PROPOSAL]**，不是仓库已实现事实。
+
+## 5.1 唯一研究问题
+
+在不改变：
+
+* 768 点时间轴；
+* 48×16 frame chunking；
+* VideoMAE-S adapter；
+* ActionFormer projection/head/loss/NMS；
+* fit/gate/test 数据边界；
+
+的条件下，测试：
+
+> `global 96×96 context + one 128×128 source-native local crop tube`
+
+是否能在显著降低真实 full-stack 成本的同时，保持 dense224/256 的高 tIoU、短动作和边界定位能力。
+
+## 5.2 坐标合同
+
+### Source of truth
+
+`source frame` 定义为：
+
+> `mmaction.DecordDecode` 返回、尚未经过任何空间 Resize/Crop/Flip 的图像张量。
+
+不是编码码流坐标，也不是已经 canonical-resize 的坐标。
+
+### 像素坐标
+
+采用左上角原点和半开区间：
+
+```text
+box = [x0, y0, x1, y1)
+0 <= x < W
+0 <= y < H
+```
+
+归一化表示：
+
+```text
+u0 = x0 / W
+v0 = y0 / H
+u1 = x1 / W
+v1 = y1 / H
+```
+
+整数裁剪：
+
+```text
+ix0 = floor(x0)
+iy0 = floor(y0)
+ix1 = ceil(x1)
+iy1 = ceil(y1)
+```
+
+### 越界
+
+不允许通过缩小 box 来掩盖越界：
+
+1. 保留请求的中心与尺寸；
+2. 与 source frame 求交；
+3. 缺失区域使用冻结的 `replicate` padding；
+4. 记录 `valid_pixel_mask`；
+5. pad 到 16 的倍数；
+6. 禁止任何 local spatial interpolation。
+
+### 强制元数据
+
+每个样本必须保存：
+
+```python
+source_frame_indices: IntTensor[T]
+source_hw: IntTensor[T, 2]
+boxes_xyxy_px: FloatTensor[T, K, 4]
+boxes_xyxy_norm: FloatTensor[T, K, 4]
+crop_unpadded_hw: IntTensor[T, K, 2]
+crop_padded_hw: IntTensor[T, K, 2]
+source_to_local_scale: FloatTensor[T, K, 2]  # 必须严格等于 [1,1]
+padding_ltrb: IntTensor[T, K, 4]
+roi_valid: BoolTensor[T, K]
+```
+
+## 5.3 时间粒度与平滑
+
+* 完整 decoded axis：`T=768`。
+* ROI tube knot：**48 个**，每个 16-frame chunk 一个 knot。
+* knot 参数：`(cx, cy, log_w, log_h)`。
+* 在相邻 knots 间对这四个量线性插值，得到每帧 box。
+* 冻结最大速度与尺度变化：
+
+  * `|Δcx|/W <= 0.20`
+  * `|Δcy|/H <= 0.20`
+  * 相邻 knot 宽高比例不超过 `1.5×`
+* proposal 短暂缺失时：
+
+  * 最多 hold 两个 knots；
+  * 之后线性回归 center crop；
+  * 不得读 GT 补 tube。
+
+S1 主实验固定 `K=1`。数据结构允许 `K<=2`，但 K=2 不是本轮 primary gate。
+
+## 5.4 输入和 token 预算
+
+### 输入
+
+```text
+decoded source:
+[B, 1, 3, 768, Hsrc, Wsrc]
+
+global context:
+[B, 1, 3, 768, 96, 96]
+
+local native crop:
+[B, K, 3, 768, 128, 128]
+```
+
+### 内部 chunk
+
+```text
+global:
+[B*48, 1, 3, 16, 96, 96]
+
+local:
+[B*K*48, 1, 3, 16, 128, 128]
+```
+
+### Patch/token 数
+
+VideoMAE patch=16，tubelet=2：
+
+| 分支       | 空间 patches/tubelet | tokens/16-frame clip |
+| -------- | -----------------: | -------------------: |
+| global96 |           6×6 = 36 |           8×36 = 288 |
+| local128 |           8×8 = 64 |           8×64 = 512 |
+| **总计**   |            **100** |              **800** |
+| dense224 |                196 |                1,568 |
+| dense256 |                256 |                2,048 |
+
+每帧 heavy pixels：
+
+```text
+96² + 128² = 25,600
+224²         = 50,176
+256²         = 65,536
+```
+
+因此像素预算约为 dense224 的 51.0%、dense256 的 39.1%。这只是预算合同，不是实际 latency/FLOP 结论。
+
+## 5.5 Backbone 与 pooling
+
+同一个 VideoMAE-S adapter 权重被 global 和 local 两次调用，**不复制两套 backbone 参数**。
+
+原始 map：
+
+```text
+global_map: [B, 384, 384, 6, 6]
+local_map:  [B, K, 384, 384, 8, 8]
+```
+
+局部分支必须用 patch mask 做空间池化：
+
+```python
+local_feat = (
+    local_map * local_patch_mask
+).sum(dim=(-1, -2)) / local_patch_mask.sum(dim=(-1, -2)).clamp_min(1)
+```
+
+不能沿用无条件 `mean(h,w)`，否则越界 padding 会进入特征。
+
+## 5.6 Fusion
+
+融合位置固定为：
+
+> VideoMAE 空间池化之后、384→768 插值之前、ActionFormer projection 之前。
+
+```text
+global_feat: [B,384,384]
+local_feat:  [B,K,384,384]
+fused_feat:  [B,384,384]
+interpolate: [B,384,768]
+```
+
+主合同采用残差门控：
+
+[
+f_t = f^g_t + \sigma(g_t)\odot W_l(f^l_t-W_g(f^g_t)).
+]
+
+其中：
+
+* `Wg`、`Wl` 为 1×1 temporal Conv/Linear；
+* gate 只看 global/local feature，不读 GT；
+* gate 初始偏置设为负值，使初始模型接近 global branch；
+* K=1 时不需要 ROI 间 attention。
+
+最终 detector 输入继续严格为：
+
+```text
+[B, 384, 768]
+```
+
+ActionFormer projection、neck、head、loss、NMS 不改。
+
+## 5.7 Loss 与梯度
+
+Primary S1 只使用官方 detector loss：
+
+```text
+classification loss
+regression loss
+```
+
+不在第一阶段加入：
+
+* crop-coordinate loss；
+* policy RL；
+* GT-derived spatial loss；
+* teacher feature distillation；
+* auxiliary boundary head。
+
+梯度路径：
+
+```text
+ActionFormer loss
+  -> ActionFormer head
+  -> neck/projection
+  -> fusion
+  -> global/local VideoMAE adapters
+```
+
+冻结：
+
+```text
+VideoMAE patch embedding
+VideoMAE non-adapter core
+teacher
+candidate generator
+oracle selection
+```
+
+Optimizer：
+
+```text
+existing adapters: lr=2e-4, wd=0.05
+fusion projections/gate: lr=1e-4, wd=0.05
+VideoMAE core: lr=0
+ActionFormer existing groups: unchanged
+```
+
+必须验证 global adapter、local adapter 调用、fusion、projection、head 均有有限非零梯度。
+
+## 5.8 训练与推理同构
+
+对于任一固定候选 tube：
+
+* train 与 infer 使用同一 source-coordinate crop；
+* 都不对 local crop resize；
+* 都执行 global96 + local128 + fusion；
+* 都输出 `[B,384,768]`；
+* 不允许 train 用 teacher-selected tube、infer 用 learned/heuristic tube而仍称同构。
+
+Teacher-reference oracle 是独立 diagnostic route，不是 deployable inference route。
+
+---
+
+# 6. 诚实的 THUMOS Teacher-Reference Oracle
+
+必须严格分三层。
+
+## 6.1 Fit/gate GT counterfactual diagnostic
+
+允许：
+
+* 在 fit/gate 上用 temporal GT 计算候选 tube 的最终检测 mAP、mAP@0.7、短动作和边界误差；
+* 验证 teacher regret 与真实检测损失是否相关；
+* 用于否证候选库是否覆盖合理 crop。
+
+禁止：
+
+* 产生或假装存在 spatial GT；
+* 将 fit/gate 的 per-video best candidate 直接作为 test policy；
+* 使用 official test 调权重或阈值。
+
+## 6.2 Official-test frozen dense teacher-reference upper bound
+
+### 前置条件
+
+当前 repo 的 blanket no-teacher 规则尚不允许该路线。必须先冻结一个窄例外：
+
+```text
+teacher_reference_only = true
+uses_test_gt = false
+uses_test_ap_for_selection = false
+nondeployable = true
+all_candidate_cost_reported = true
+teacher_cost_reported_separately = true
+```
+
+未批准该例外时，teacher-reference 只能运行到 gate。
+
+### Frozen teacher
+
+建议固定为：
+
+> 三个 dense256 gate-selected checkpoint 的冻结 ensemble。
+
+选择规则、checkpoint hashes、ensemble 权重和代码提交必须在新 official-test seal 前冻结；不能依据已知的 dense256/seed3408 official-test 数字选择 teacher。
+
+### 候选 tube 库
+
+固定八个完整 768-frame tubes：
+
+1. center；
+2. fixed top-left；
+3. fixed top-right；
+4. fixed bottom-left；
+5. fixed bottom-right；
+6. frozen motion tube；
+7. frozen person tube；
+8. frozen saliency tube。
+
+所有候选均使用同一 128×128 local token budget和同一平滑合同。
+
+### Teacher regret
+
+对候选 (q) 运行完整 crop detector，并与 frozen dense teacher 的 pre-NMS 输出比较：
+
+[
+R(q)=
+\lambda_c R_{\rm cls}
++\lambda_r R_{\rm reg}
++\lambda_b R_{\rm boundary}
++\lambda_f R_{\rm feature}.
+]
+
+建议：
+
+* `R_cls`：teacher-confidence-weighted sigmoid KL/JS；
+* `R_reg`：teacher 高置信 temporal points 上的 offset Smooth-L1；
+* `R_boundary`：分类/offset 在时间轴一阶差分的 L1；
+* `R_feature`：ActionFormer projection 输入特征的 cosine regret。
+
+所有 (\lambda)、teacher-confidence threshold 和归一化规则只在 fit/gate 冻结。
+
+### 是否必须运行所有候选
+
+**是。**
+
+只运行候选子集或先预测“最可能候选”就不再是 oracle，而是 policy/surrogate。
+
+### 成本报告
+
+至少拆成：
+
+```text
+candidate-path cost, excluding teacher
+dense-teacher cost
+all-8-candidate enumeration cost
+total diagnostic cost
+```
+
+论文中只能把第一项称为“被选中 crop 路径的假想部署成本”；总 diagnostic cost 才是 oracle 实际运行成本。
+
+### 能证明什么
+
+它只能证明：
+
+> 给定候选库中存在一个源像素密度 crop tube，足以近似 dense detector。
+
+它不能证明：
+
+* 能高效找到该 tube；
+* learned policy 能复现；
+* 部署时有相同成本；
+* teacher-free 系统有效。
+
+## 6.3 Learned policy
+
+只有上述 oracle 在 development gate 达到预注册 GO 后才允许：
+
+* 用 frozen regret pseudo-label 训练 scout；
+* gate 上选择 policy/checkpoint；
+* 打开新的 method-level official-test seal。
+
+---
+
+# 7. 文件级实施蓝图与关键代码
+
+## 7.1 新增文件
+
+| 文件                                                                      | 职责                                                   |
+| ----------------------------------------------------------------------- | ---------------------------------------------------- |
+| `opentad/datasets/transforms/native_crop.py`                            | source geometry、ROI tube、native slicing、padding、mask |
+| `opentad/models/backbones/global_local_vit_adapter.py`                  | 共享 VideoMAE 的 global/local 双调用和 masked pooling       |
+| `opentad/models/fusions/spatial_zoom_fusion.py`                         | 384-point global/local residual fusion               |
+| `opentad/models/roi_tubes/fixed_candidates.py`                          | center/random/fixed/motion/person/saliency tube      |
+| `configs/adatad/thumos/native_crop_s1/native_crop_global96_local128.py` | 唯一 primary config                                    |
+| `tools/bata/native_crop_s1_contract.py`                                 | 新 schema、method identity、no-leak 条款                  |
+| `tools/bata/build_native_crop_s1_manifest.py`                           | 新 namespace；可复用旧 split IDs/hash                      |
+| `tools/bata/native_crop_s1_teacher_reference.py`                        | frozen teacher regret 和候选枚举                          |
+| `tools/bata/profile_native_crop_s1.py`                                  | 完整 branch-wise 成本                                    |
+| `tools/bata/analyze_native_crop_s1_results.py`                          | method-based paired bootstrap/GO-KILL                |
+| `tests/test_native_crop_geometry.py`                                    | source-coordinate、OOB、padding、no-resize              |
+| `tests/test_native_crop_vit_contract.py`                                | 96/112/128、矩形、checkpoint、backward                    |
+| `tests/test_native_crop_no_leak.py`                                     | test GT/AP/teacher exception                         |
+| `tests/test_native_crop_detector_parity.py`                             | `[B,384,768]` 和 ActionFormer parity                  |
+| `tests/test_native_crop_cost_schema.py`                                 | teacher/candidate/full-stack cost 分离                 |
+
+## 7.2 应保持不变
+
+* `opentad/models/projections/actionformer_proj.py`
+* `opentad/models/dense_heads/actionformer_head.py`
+* ActionFormer loss、NMS、evaluator
+* Decord decoder
+* VideoMAE patch embedding和 Transformer blocks
+* THUMOS evaluator
+* ROIAlign：本方案并不需要 ROIAlign，因为 local crop 是 raw-pixel integer slicing，不是 feature-map resampling
+
+## 7.3 核心签名
+
+```python
+from dataclasses import dataclass
+from torch import Tensor, nn
+
+
+@dataclass(frozen=True)
+class ROITube:
+    boxes_xyxy_px: Tensor      # [T, K, 4], source pixel-edge coordinates
+    source_hw: Tensor          # [T, 2]
+    valid: Tensor              # [T, K]
+
+
+@dataclass(frozen=True)
+class NativeCropMeta:
+    source_to_local_scale: Tensor  # [T, K, 2], must equal one
+    unpadded_hw: Tensor             # [T, K, 2]
+    padded_hw: Tensor               # [T, K, 2]
+    padding_ltrb: Tensor            # [T, K, 4]
+
+
+class ApplyNativeROITube:
+    def __call__(self, results: dict) -> dict:
+        ...
+
+
+class GlobalLocalVideoMAE(nn.Module):
+    def forward(
+        self,
+        global_video: Tensor,       # [B,1,3,768,96,96]
+        local_video: Tensor,        # [B,K,3,768,128,128]
+        local_patch_mask: Tensor,   # [B,K,384,8,8]
+        roi_valid: Tensor,          # [B,K,384]
+    ) -> Tensor:                    # [B,384,384]
+        ...
+
+
+class TemporalGlobalLocalFusion(nn.Module):
+    def forward(
+        self,
+        global_feat: Tensor,        # [B,384,384]
+        local_feat: Tensor,         # [B,K,384,384]
+        roi_valid: Tensor,
+    ) -> Tensor:
+        ...
+```
+
+## 7.4 前向伪代码
+
+```python
+def forward_native_crop(batch):
+    # Produced immediately after DecordDecode.
+    source = batch["source_frames"]          # [B,1,3,768,H,W]
+    tube = batch["roi_tube"]                 # source-coordinate boxes
+
+    global_video = resize_global_only(source, size=(96, 96))
+
+    local_video, pixel_mask, crop_meta = native_slice_and_pad(
+        source,
+        tube,
+        patch_multiple=16,
+        padding_mode="replicate",
+        spatial_interpolation=None,
+    )
+
+    assert torch.equal(
+        crop_meta.source_to_local_scale,
+        torch.ones_like(crop_meta.source_to_local_scale),
+    )
+    assert local_video.shape[-2] % 16 == 0
+    assert local_video.shape[-1] % 16 == 0
+
+    global_chunks = chunk_48x16(global_video)
+    local_chunks = chunk_48x16_and_fold_k(local_video)
+
+    # One shared VideoMAE-S adapter instance, called twice.
+    global_map = self.videomae(global_chunks)
+    local_map = self.videomae(local_chunks)
+
+    global_feat = global_map.mean(dim=(-1, -2))
+    local_feat = masked_spatial_mean(local_map, pixel_mask)
+
+    global_feat = restore_384_axis(global_feat)
+    local_feat = restore_k_and_384_axis(local_feat)
+
+    fused_384 = self.fusion(global_feat, local_feat, batch["roi_valid"])
+
+    detector_input = torch.nn.functional.interpolate(
+        fused_384,
+        size=768,
+        mode="linear",
+        align_corners=False,
+    )
+
+    assert detector_input.shape[1:] == (384, 768)
+    return detector_input
+```
+
+这里的唯一允许空间 resize 是 `resize_global_only`。local 路径一旦调用 `Resize`、`grid_sample`、`ROIAlign` 或空间 `F.interpolate`，测试必须 fail closed。
+
+## 7.5 必须新增的测试
+
+### Source-coordinate/no-upsample
+
+* integer crop 与 source pixels bitwise 相同；
+* OOB 后只出现 replicate padding；
+* `source_to_local_scale == (1,1)`；
+* local 路径禁止 `Resize/F.interpolate/grid_sample/ROIAlign`；
+* crop 前不得存在 full-frame spatial Resize。
+
+### Variable-resolution
+
+* 96×96 → 6×6；
+* 112×112 → 7×7；
+* 128×128 → 8×8；
+* 160×96 → 10×6；
+* 96×160 → 6×10；
+* `with_cp=True` 前向和 backward；
+* pretrained core 严格加载；
+* mixed shape 不得进入同一 dense batch。
+
+### Detector parity
+
+* 当 wrapper 只保留与旧路径相同的 global160 输入和 identity fusion 时，最终 `[B,384,768]` 数值必须与旧 backbone wrapper一致到冻结容差；
+* projection/head 参数和 NMS 配置哈希不变。
+
+### No-leak
+
+* official test annotation 不得进入 candidate generator、teacher regret、threshold、checkpoint selection；
+* official-test AP 不得作为 oracle candidate score；
+* 手工 candidate override 必须记录并在 official test 拒绝；
+* teacher-reference exception 只能作用于冻结 teacher、非 GT、非 deployable route。
+
+### Cost accounting
+
+* teacher cost 不得混入 candidate deployable-path cost；
+* all-candidate enumeration 不得只报告 selected candidate；
+* H2D bytes 必须分别记录 global/local/source；
+* 任一 stage 缺失则正式 profile FAIL。
+
+---
+
+# 8. 最小实验矩阵、成本协议与预注册 GO/KILL
+
+## 8.1 Development D0：一 seed 快速否证
+
+统一使用：
+
+```text
+global = 96×96
+local = 128×128
+K = 1
+same VideoMAE-S adapter
+same ActionFormer
+same training steps
+same seed
+same heavy pixel/token budget
+```
+
+| Cell                     | ROI/tube route                 |
+| ------------------------ | ------------------------------ |
+| dense224                 | accuracy/cost reference        |
+| dense256                 | accuracy/cost reference        |
+| full-frame low-res96     | global-only lower bound        |
+| center native crop       | budget-matched trivial control |
+| random smooth tube       | budget-matched random control  |
+| motion tube              | frozen, no GT                  |
+| person tube              | frozen detector, no GT         |
+| saliency tube            | frozen saliency, no GT         |
+| Uni-AdaFocus direct port | 同预算 spatial policy 迁移          |
+| AdaSpot-like selector    | 同预算 saliency+smoothing route   |
+| teacher-reference oracle | 八候选全枚举上界                       |
+
+D0 只在 development fit/gate 上运行，不打开新的 official test。
+
+## 8.2 Development D1：三 seed 决定性 gate
+
+D0 没有明显失败后，只扩展：
+
+* dense224；
+* dense256；
+* center；
+* random；
+* 最强 nonteacher heuristic；
+* teacher-reference oracle。
+
+到 seeds `3407/3408/3409`。
+
+Uni-AdaFocus/AdaSpot direct port 若在 D0 距 proposed oracle 不超过 0.5 pp，或优于所有简单 heuristic，则纳入 D1；否则保留为一 seed collision control。
+
+## 8.3 成本协议
+
+必须在同一硬件、软件、单 GPU、batch=1、workers=0 的正式 profile 中记录：
+
+1. video decode；
+2. source-frame materialization；
+3. global resize/context；
+4. motion/person/saliency/scout；
+5. ROI tube smoothing；
+6. integer crop/padding；
+7. CPU→GPU H2D；
+8. global VideoMAE；
+9. local VideoMAE，每 ROI 分开；
+10. masked pooling；
+11. global/local fusion；
+12. 384→768 interpolation；
+13. ActionFormer projection；
+14. neck/head；
+15. pre-NMS decode；
+16. NMS；
+17. peak allocated/reserved GPU memory；
+18. p50/p95 window latency；
+19. whole-video latency；
+20. GPU energy；
+21. source/global/local pixels；
+22. patch/token 数；
+23. FLOPs；
+24. teacher 与全候选枚举成本。
+
+CPU energy 在没有可靠 RAPL/外部功耗计时前为 **UNKNOWN**，不得用 GPU energy 代替。
+
+## 8.4 预注册 GO 条件
+
+单位均为百分点。
+
+### 相对 center/random
+
+同时满足：
+
+* Avg-mAP mean：
+
+  * oracle − center ≥ **+1.00**
+  * oracle − random ≥ **+0.75**
+* mAP@0.7：
+
+  * oracle − center ≥ **+1.00**
+  * oracle − random ≥ **+1.00**
+* paired video-cluster bootstrap 的 simultaneous one-sided 95% LCB：
+
+  * 两个 Avg-mAP superiority contrasts 均 `> +0.25`
+  * 两个 mAP@0.7 contrasts 均 `> 0`
+
+### 相对 dense-high
+
+以 dense224/256 中 gate 均值更高者为 frozen comparator：
+
+* Avg-mAP 差距不超过 **−1.00**
+* mAP@0.7 差距不超过 **−1.50**
+* short-action mAP@0.7 差距不超过 **−1.50**
+* matched-boundary recall 下降不超过 **2 pp**
+* start/end MAE 相对恶化不超过 **5%**
+
+### 真实成本
+
+selected candidate path、排除 teacher 后：
+
+* p50 full-stack latency：
+
+  * 相对 dense224 至少下降 **30%**
+  * 相对 dense256 至少下降 **35%**
+* p95 latency 至少下降 **20%**
+* GPU energy/window 至少下降 **25%**
+* peak allocated memory 至少下降 **15%**
+
+### 跨 seed 稳定性
+
+* 至少 2/3 seeds 在 Avg-mAP 和 mAP@0.7 上同时优于 center/random；
+* 任一 seed 不得比 center：
+
+  * Avg-mAP 差超过 −0.5
+  * mAP@0.7 差超过 −1.0
+* 报告 max-T simultaneous correction；
+* 不得只报 seed mean 而隐藏单 seed collapse。
+
+## 8.5 KILL 条件
+
+下列任一项触发：
+
+1. teacher-reference oracle 仍不能接近 dense-high；
+2. oracle 对 center/random 的 simultaneous LCB 不为正；
+3. mAP@0.7 或 short-action 明显退化；
+4. full-stack latency下降不足 20%；
+5. native local path出现任何 spatial upsample；
+6. oracle 依赖 official-test GT/AP/manual inspection；
+7. teacher regret 在 gate 上与真实检测质量无有效关联；
+8. 结果高度依赖一个 seed。
+
+此时：
+
+> **KILL learned Spatial Zoom policy。**
+
+不得用“再做更复杂的 learned scout”挽救一个已经失败的 crop sufficiency 上界。
+
+## 8.6 旧 R0 的最终处理
+
+* 立即永久停止其作为 Native-Crop 前置 gate 的地位。
+* 不再为完成旧 3×3 recovery matrix 分配 GPU。
+* 保留已有训练、gate 和唯一 official-test cell，明确标为 partial historical R0。
+* 只有 Native-Crop 已通过且论文最终 appendix 确实需要完整 resolution sensitivity 时，才可另行授权补表。
+* 无论是否补表，R0 都不能阻塞新 S1。
+
+---
+
+# 9. 新颖性审计与审稿风险
+
+截至 2026-07-19，一手论文和官方代码显示，单纯的“全局低清 + 局部高清 crop”已经是高度拥挤区域。
+
+## 9.1 Method-by-method collision
+
+| 工作                                         | 已覆盖内容                                                                                               | 与 Native-Crop S1 的碰撞                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Glance-and-Focus                           | 从原图策略性裁出小 patch，递进处理以减少空间冗余                                                                         | “裁局部区域节省计算”本身不是新贡献。([arXiv][1])                                                              |
+| Uni-AdaFocus                               | low-cost global CNN、learned spatial policy、local heavy CNN，并进一步进行时序/sample 动态分配                     | “把 Uni-AdaFocus 搬到 TAD”只是任务迁移；官方代码用 `affine_grid/grid_sample` 将自适应区域采样为固定 patch。([arXiv][2]) |
+| AdaSpot, CVPR 2026                         | low-res global、逐帧 high-res ROI、saliency selector、时空平滑、global/local fusion，用于 precise event spotting | **最强碰撞。** 已覆盖“局部高分辨率用于精确时间定位”的主故事；其代码会把不同尺寸 ROI 双线性缩放到固定 `roi_size`。([CVF Open Access][3])   |
+| DynamicViT / STA / TokenLearner / Dyna-ViT | input-dependent token pruning、parameter-free token selection、少量自适应 token                            | 结构 C 的 token sparsity 空间高度拥挤。([arXiv][4])                                                    |
+| EVAD                                       | 在时空动作检测中进行 token dropout/context refinement                                                         | “给动作检测加 token pruning”也不是空白。([CVF Open Access][5])                                           |
+| AdaTAD / ETAD / ResidualViT                | adapter-efficient TAD、低内存训练、时序冗余与 token reduction                                                   | 高效 TAD 已有成熟性能/成本叙事；Spatial Zoom 必须证明不同的空间机制残差。([arXiv][6])                                   |
+
+## 9.2 为什么 Uni-AdaFocus direct port 不足以发表
+
+直接迁移只会得到：
+
+```text
+global encoder
++ spatial policy
++ fixed-size local patch
++ ActionFormer head
+```
+
+其中前三项都已有，第四项只是换 downstream task。评审会立即提出：
+
+1. AdaSpot 已经针对精确时间定位做 global/local ROI。
+2. Uni-AdaFocus 已经有 spatial-temporal dynamic compute。
+3. ActionFormer head 替换不构成机制创新。
+4. 如果 local crop 被 resize 到固定尺寸，所谓 native density 不成立。
+5. 如果只报 backbone FLOPs，效率证据不成立。
+6. 如果 oracle 依赖 teacher/all-candidate enumeration，部署效率不成立。
+
+## 9.3 仍可能成立的最小创新组合
+
+不能只取其中一项；必须形成组合：
+
+1. **Dense-time continuous ROI tube**
+   不是逐帧独立 crop，也不丢时间帧。
+
+2. **Source-native-density local compute**
+   local pixel 1:1，只有 padding，没有 rescale。
+
+3. **Detector-regret / high-tIoU / boundary-aware spatial supervision**
+   spatial selection 目标直接来自 segment detector，而不是 classification saliency。
+
+4. **面向 TAD 边界的 global/local fusion**
+   在 384-point temporal feature 上融合，保留 768-point detector geometry。
+
+5. **完整 end-to-end 成本闭环**
+   decode、selection、crop、H2D、两分支 backbone、fusion、head、NMS、memory、latency、energy 全部报告。
+
+即使五项全部实现，也只能说明有一个可投稿的候选机制，不等于自动达到 CVPR/ICCV/NeurIPS 接收线。
+
+## 9.4 允许与禁止的论文主张
+
+### 在证据通过后可以声称
+
+* 在固定 THUMOS14/AdaTAD/VideoMAE-S/ActionFormer 设置中，提出 source-native local crop 合同；
+* 证明固定候选库存在接近 dense detector 的 crop sufficiency；
+* 证明 detector-regret 与高 tIoU/边界质量存在预注册关联；
+* 报告真实 full-stack 成本与 teacher diagnostic cost；
+* 报告 learned policy 相对 matched center/random/Uni/AdaSpot-like controls 的结果。
+
+### 禁止声称
+
+* Dense-160/224/256 是 crop 证据；
+* 首次提出视频 spatial focus；
+* 首次提出 global/local video model；
+* oracle route 是可部署高效系统；
+* local crop 被 resize 后仍是 native density；
+* backbone FLOPs 等于端到端成本；
+* 单一 dense256/seed3408 official cell 证明分辨率选择；
+* test teacher 使用了 GT/AP但仍“无泄漏”；
+* THUMOS14 结果可直接泛化到其他 TAD 数据集；
+* 基础设施测试通过等于方法有效；
+* 当前仓库已经实现 Native-Crop。
+
+## 9.5 最可能的拒稿理由
+
+1. 与 AdaSpot/Uni-AdaFocus 的差异只剩 TAD head。
+2. “native density”实际仍包含 resize或 grid sampling。
+3. teacher-reference 上界很高，但 learned policy 无法接近。
+4. 成本只统计 local backbone，不统计 decode/scout/crop/H2D。
+5. 高 tIoU 与边界指标没有改善，只提升低 tIoU Avg-mAP。
+6. THUMOS 无空间标注，policy 学到场景/摄像机偏置。
+7. 只在 THUMOS14 和一个 backbone 上验证。
+8. 使用已观察 official-test 结果进行事后结构选择。
+9. seed 方差大于方法增益。
+10. 将工程协议完整度误写为方法贡献。
+
+---
+
+# 10. 最终裁决
+
+# **PROCEED_NATIVE_CROP_S1**
+
+裁决含义严格限定为：
+
+* 允许实现结构 A 的固定候选、source-native crop vertical slice；
+* 允许在 development fit/gate 上运行 crop sufficiency falsification；
+* 不允许继续旧 R0 recovery campaign作为前置门；
+* 不允许直接实现 learned ROI policy；
+* 不允许立即打开新的 official test；
+* 不允许声称已有 crop 有效性或论文贡献。
+
+不选择 `HOLD_AND_REDESIGN`，因为研究对象纠偏已经正确，现有 VideoMAE 可变 grid 和 `[B,384,768]` 后端合同足以支持一个小型正交实现。
+
+不选择 `KILL_SPATIAL_CROP`，因为当前没有任何真正 Native-Crop 上界实验；用 Dense-R0 的平坦结果杀死 crop 路线属于错误研究对象上的错误否证。
+
+---
+
+# 唯一下一步任务
+
+> **在 `d76ba1b82fbd43d278700e81ae1c688439db76b3` 之后实现一个不启动训练的 Native-Crop S1 vertical slice：`global96 + fixed center/local128 + shared VideoMAE-S + masked pooling + 384-point fusion + [B,384,768] output`，同时提交 source-coordinate、no-upsample、96/112/128/rectangular-grid、checkpoint/backward、detector-parity、no-leak 和分阶段 cost-schema 测试；旧 R0 文件保持冻结，不打开 official test。**
+
+[1]: https://arxiv.org/abs/2010.05300 "https://arxiv.org/abs/2010.05300"
+[2]: https://arxiv.org/abs/2412.11228 "https://arxiv.org/abs/2412.11228"
+[3]: https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html "https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html"
+[4]: https://arxiv.org/abs/2106.02034 "https://arxiv.org/abs/2106.02034"
+[5]: https://openaccess.thecvf.com/content/ICCV2023/html/Chen_Efficient_Video_Action_Detection_with_Token_Dropout_and_Context_Refinement_ICCV_2023_paper.html "https://openaccess.thecvf.com/content/ICCV2023/html/Chen_Efficient_Video_Action_Detection_with_Token_Dropout_and_Context_Refinement_ICCV_2023_paper.html"
+[6]: https://arxiv.org/abs/2311.17241 "https://arxiv.org/abs/2311.17241"

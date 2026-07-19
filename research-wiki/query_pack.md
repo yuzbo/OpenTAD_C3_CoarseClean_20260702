@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-19
+updated: 2026-07-20
 max_chars: 8000
 ---
 
@@ -15,88 +15,37 @@ max_chars: 8000
 - 旧 S1 从必经 falsification gate 降级为 `R0 dense-resize headroom control`。保留训练、
   sealed-test、profiling 与 provenance 基础设施，但暂停继续部署其 recovery Gate/matrix；
   不得要求 R0 完成后才允许验证 native crop。
-- 当前唯一方法任务是先冻结 `Native-Crop S1` 合约并进行一次定向 Pro 代码/协议严审。
-  该合约必须从源帧坐标裁剪、保持局部原始像素密度与 768 点时间轴，先验证
-  oracle/teacher-reference crop sufficiency；通过前不得实现 learned crop policy。
+- 定向 Pro 审查已经完成。当前唯一方法任务是 geometry census 和无训练 Native-Crop
+  垂直切片；它必须从源帧坐标裁剪、保持局部原始像素密度与 768 点时间轴。垂直切片和
+  后续 crop sufficiency 通过前不得实现 learned crop policy。
 - 当前没有任何 S1 crop 结果、GO/KILL 或可发表的 Spatial Zoom 主张。
 
-## R0 Dense-Resize 历史门禁状态（截至 2026-07-18）
+## Native-Crop Pro 审查吸收（2026-07-20）
 
-- 截至当日执行线是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
-  ROI、scout、crop policy 或 fusion。
-- 旧矩阵依次暴露了 dense-path `fc_norm` 断图、共享存储耗尽和错误拒绝官方 finite
-  zero-length proposal 三类基础设施问题；都已保留为 fail-closed 记忆，禁止 resume、
-  test 或性能引用。修复后 only gate-eligible checkpoint、96 GiB 启动门槛、官方 evaluator
-  parity 和完整梯度合同均已测试。
-- Replacement commit `18139b9` passed CUDA gate Job `1166358`; all fresh 3x3
-  Jobs `1166361-1166369` completed `0:0` with valid ten-candidate gate-only
-  selections. Gate Avg-mAP by resolution/seeds is
-  `160: 64.739/64.842/63.078`, `224: 65.695/63.205/63.783`, and
-  `256: 65.185/63.316/64.256`. These are selection scores, not test results.
-  One sealed-test certificate was issued (internal SHA `8627866a...`). The first
-  frozen cell dense256/seed3408 has raw official-test Avg-mAP `67.09` and
-  mAP@0.3-0.7 `82.14/77.76/70.36/59.53/45.67`; this single cell cannot select a
-  resolution. The recovery chain exposed duplicate loader exposure, in-process
-  sampler stalls, physical-versus-cgroup GPU identity, and two-level Slurm
-  runtime-guard failures. All affected campaigns are immutable diagnostics and
-  published no complete matrix. The repaired path uses an out-of-process
-  UUID-bound NVML sidecar, dedicated 4+1 CPU partition, unchanged 20/100 ms
-  cadence, recursive evidence, and one exact inner GPU step. Commit `43ac70b`
-  passed `107` remote tests; Gate `1170433` passed the full 792/791 path with
-  126218 samples and max gap `67.728` ms.
-  The sole matrix `1170468` completed ordinal-0 dense256/seed3408, producing
-  one descriptor and a valid diagnostic profile, then failed before ordinal-1
-  test open. Root cause is a source-runtime split: historical training snapshot
-  `tools/test.py` imported the old guard that rejects outer
-  `SLURM_JOB_GPUS=2,4`, even though the exact inner step was correctly scoped by
-  `SLURM_STEP_GPUS=2`. The failed campaign is immutable and has no completion
-  receipt. A step-scoped test-runtime recovery is now `tested_local`: focused
-  verification passed `107` tests with `5` environment skips, and independent
-  review returned `DEPLOY_READY_WITH_GATES` with no P0/P1 after its two
-  hardening requests were closed. Runtime commit `6524e1b` passed `112` clean
-  Linux tests, but the first real-evidence certificate build correctly exposed
-  login-node user-site NumPy `2.2.6` contaminating recomputation that was
-  originally performed with Conda NumPy `1.23.5`. Disabling user-site packages
-  reproduces all stored gate metrics exactly. Launchers and the v5 certificate
-  now bind this environment; focused verification passed `108` tests with `5`
-  environment skips and independent review found no P0/P1. Environment-pinned
-  runtime commit `3d01d3b` then passed `113` exact tests in a clean Linux
-  snapshot. Real-evidence v5 campaign `3180634880aa8de0` validates with
-  certificate internal/file SHAs `a6d48b7c.../352bd5cc...`. Its sole no-open
-  Gate Job `1170765` failed `2:0` before sidecar startup because the profiler
-  required the literal v4 reason rather than v5's inherited buffered-sidecar
-  capability. It opened no new test, published no sidecar/profile/descriptor,
-  changed no existing test evidence, and authorized no matrix. The immutable
-  parent campaign contains only its certificate, Gate receipt, and two logs.
-  A narrow v6 schema-family repair is `tested_local`: it validates the
-  full buffered contract by capability and recursively binds the failed Gate,
-  parent inventory, sidecar absence, and unchanged test-evidence hash. Focused
-  schema-compat verification is `52 passed`; the combined S1, train-engine,
-  and required C3 suite is `157 passed, 5 skipped`. Independent review first
-  held on test sufficiency, then returned `DEPLOY_READY_WITH_GATES` with no
-  P0/P1/P2 after exact alias and mixed-evidence regressions were added. Runtime
-  commit `cef9548` is pushed; clean remote replay and real-evidence v6
-  validation are still required before any new Gate. No replacement matrix,
-  Pro, GO/KILL, or complete cost table exists.
+- Pro 审查原始裁决为 `PROCEED_NATIVE_CROP_S1`。本项目只把它解释为授权一个
+  development-only、no-training、no-official-test 的 source-native crop 垂直切片；
+  不是 crop 有效性、路线 GO、learned policy 或论文贡献的证据。
+- 接受的主判断：当前仓库没有 crop；旧 R0 可执行合约与新路线 split-brain；crop 必须
+  在任何全图 resize 前发生；保留 768 点时间轴和 `[B,384,768]` detector 合同；先验证
+  sufficiency，再训练 learned policy；必须报告 full-stack cost。
+- 不直接接受：八候选库只能给出 library-conditional upper bound，失败不能杀死整个
+  continuous-crop 路线；最终 masked pooling 不能撤销 ViT 内 padding-token 污染；
+  `96/128/48 knots` 与数值 GO/KILL 门槛都需 geometry/statistics audit 后再冻结。
+- 唯一下一步：先做 fit/gate source-geometry census，再实现无 teacher 的
+  `global96 + center/local128 + shared VideoMAE-S + 384 fusion + [B,384,768]`
+  垂直切片和 source-pixel/no-resize/backward/parity/no-leak/cost-schema tests。
+- 原文与完整吸收记录见
+  `docs/methods/reviews/2026-07-20-native-crop-s1-pro-review-{raw.txt,absorption.md}`。
 
-## 历史 Dense-Resize 任务（2026-07-19 起冻结为 R0）
+## R0 Dense-Resize 历史状态（冻结）
 
-该历史执行线是离线 TAD 的整图分辨率控制，不是 DUCA，也不是时序选帧。时间轴、768 点
-detector grid、VideoMAE-S、AdaTAD adapter、ActionFormer projection/head 和评估协议
-保持不变。它用 `Dense-160/224/256 x seeds 3407/3408/3409` 试图回答：提高
-空间分辨率是否能稳定改善 mAP@0.6/0.7、短动作与边界定位，并且代价是否可被后续稀疏
-ROI 计算回收。
-
-该矩阵不包含 scout、ROI、crop policy、teacher、fusion 或新 detector，因此只能作为
-R0 控制。其完整 GO/KILL 不再是 Native-Crop S1 的必要条件；Native-Crop S1 应在新的
-预注册合约下直接验证 oracle/teacher-reference ROI tube 的充分性，通过后才允许设计
-learned low-resolution scout、连续 ROI tube、局部高分辨率重计算和全局/局部融合。
-
-旧 `35204f5` 3x3 任务因 CUDA 线性上采样 backward 的 nondeterminism warning 而失效并
-取消；其 checkpoint 仅作诊断，不能恢复或进入正式表。当前替换实现采用 exact-2x
-deterministic interpolation、strict deterministic formal entrypoints、真实 full-model
-backward precheck、无 class-support rejection 的 Bayesian cluster bootstrap 和原子证据提交。
-尚无有效 S1 最终 mAP、成本表、GO/KILL 或 Zoom 方法结果。
+- R0 只包含全图 `160/224/256 x 3 seeds`，不含 scout、ROI、native crop 或 fusion。
+  Gate means 为 `64.220/64.228/64.252`，近乎平坦；它们不是 official-test 结果。
+- 唯一 official-test cell 是 dense256/seed3408：Avg-mAP `67.09`，
+  mAP@0.3-0.7 `82.14/77.76/70.36/59.53/45.67`。单 cell 不能选择 resolution。
+- 历史矩阵没有 exact-nine completion receipt；基础设施失败、修复、Job/hash 与 profile
+  细节保留在 `experiments/spatial-zoom-s1-infrastructure.md`，禁止 resume 或拼接证据。
+- R0 已冻结为历史控制，不再是 Native-Crop 的必要门槛，也不能支持 crop GO/KILL。
 
 ## 项目方向
 

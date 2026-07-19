@@ -784,11 +784,17 @@ not be resumed, selected, tested, profiled, or reported as formal S1 evidence.
 
 ## Decision Boundary
 
-The formal 3x3 matrix is not running and has no valid completion receipt. The
-v5 Gate is immutable failed infrastructure and v6 is `tested_local`; the
-route is not `empirically_supported` or `paper_ready`. S1 KILL permanently
-blocks S2. S1 GO only authorizes an oracle ROI/crop sufficiency experiment; it
-does not prove a learned zoom method.
+This node records the historical full-frame R0 matrix and its infrastructure.
+R0 has no valid exact-nine completion receipt and cannot support a crop
+GO/KILL. Its gate means and sole official-test cell are retained as historical
+controls only; the recovery campaign is frozen and is not a prerequisite for
+Native-Crop.
+
+The 2026-07-20 Pro review returned `PROCEED_NATIVE_CROP_S1`, but only for a
+development-only, no-training source-native crop vertical slice. No crop code,
+crop result, route-level oracle, learned policy, empirical support, or
+paper-ready claim exists yet. A finite candidate library may only issue a
+library-conditional verdict unless its coverage is certified.
 
 ## Connections
 
