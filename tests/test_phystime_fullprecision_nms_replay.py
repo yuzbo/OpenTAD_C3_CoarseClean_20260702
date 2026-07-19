@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from mmengine.config import Config
+from mmengine.config import Config, ConfigDict
 
 import opentad.cores.test_engine as test_engine
 import opentad.models.utils.post_processing.nms.nms as nms_module
@@ -29,7 +29,7 @@ def _post_cfg(**overrides):
         "score_round_digits": 4,
     }
     values.update(overrides)
-    return SimpleNamespace(**values)
+    return ConfigDict(values)
 
 
 def _threshold_nms(segs, scores, labels, **kwargs):

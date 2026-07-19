@@ -69,6 +69,15 @@ physical-metric epoch-59 checkpoint。旧 `41.28/57.57%` 结果保持原证据
 - 最终限定复核结论为 `DEPLOY`，剩余 P0/P1 为零。提交器会从冻结 full60
   两臂共同绑定的 `g1a_gate.dataset_manifest` 自动恢复真实数据路径，不再
   使用另一个 raw-video 目录作为默认值。
+- 首次提交预检被集群策略拒绝：该集群只接受 `--gpus=1`，不接受
+  `--gres=gpu:1`，且没有独立 CPU partition。修复后 gate、四个 replay 与
+  suite 均申请 1 卡；suite 只使用 CPU 验证逻辑，并在部署清单中显式记录
+  `suite_validator_uses_cuda=false`。
+- 重试期间实际生成的旧 gate `1174679` 在 focused tests 阶段 fail-closed：
+  `31/33` 通过，两个失败分别是测试夹具不支持 ConfigDict 式赋值，以及
+  DDP gather 对首个 rank 列表的原地扩展污染测试期望。生产合并现复制首个
+  rank 列表，测试夹具改用真实 `ConfigDict`；旧依赖作业
+  `1174680–1174683` 已取消，不属于实验结果。
 
 ## 状态边界
 

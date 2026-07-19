@@ -74,7 +74,7 @@ def eval_one_epoch(
             if k in result_dict.keys():
                 result_dict[k].extend(v)
             else:
-                result_dict[k] = v
+                result_dict[k] = list(v)
 
     save_pre_cross_window = bool(
         _post_cfg_get(cfg.post_processing, "save_pre_cross_window_detections", False)
@@ -173,7 +173,7 @@ def gather_ddp_results(
             if k in result_dict.keys():
                 result_dict[k].extend(v)
             else:
-                result_dict[k] = v
+                result_dict[k] = list(v)
 
     if return_audit or return_pre_cross_window:
         merged, audit = apply_sliding_window_nms(result_dict, post_cfg, return_audit=True)

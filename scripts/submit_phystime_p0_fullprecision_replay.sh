@@ -119,14 +119,12 @@ submit() {
 }
 
 write_header() {
-  local path="$1" name="$2" time_limit="$3" needs_gpu="$4"
+  local path="$1" name="$2" time_limit="$3"
   {
     echo '#!/usr/bin/env bash'
     echo "#SBATCH --job-name=${name}"
     echo "#SBATCH --partition=${PARTITION}"
-    if [[ "${needs_gpu}" == "true" ]]; then
-      echo '#SBATCH --gres=gpu:1'
-    fi
+    echo '#SBATCH --gpus=1'
     echo '#SBATCH --cpus-per-task=6'
     echo "#SBATCH --time=${time_limit}"
     echo "#SBATCH --output=${LOG_ROOT}/${name}_%j.out"
@@ -159,7 +157,7 @@ write_header() {
 
 gate_sbatch="${SBATCH_ROOT}/p0_gate.sbatch"
 write_header \
-  "${gate_sbatch}" pt_p0_gate "${PHYSTIME_GATE_TIME:-02:00:00}" true
+  "${gate_sbatch}" pt_p0_gate "${PHYSTIME_GATE_TIME:-02:00:00}"
 {
   printf 'export PHYSTIME_P0_TEST_LOG=%q\n' "${TEST_LOG}"
   echo 'bash scripts/run_phystime_p0_fullprecision_gate_slurm.sh'
@@ -182,7 +180,7 @@ for spec in \
   run_dir="${RUN_ROOT}/${variant}"
   write_header \
     "${sbatch_path}" "pt_p0_${variant}" \
-    "${PHYSTIME_REPLAY_TIME:-20:00:00}" true
+    "${PHYSTIME_REPLAY_TIME:-20:00:00}"
   {
     printf 'export PHYSTIME_P0_ARM=%q\n' "${arm}"
     printf 'export PHYSTIME_P0_WEIGHTS_SOURCE=%q\n' "${weights}"
@@ -202,7 +200,7 @@ done
 
 suite_sbatch="${SBATCH_ROOT}/p0_suite.sbatch"
 write_header \
-  "${suite_sbatch}" pt_p0_suite "${PHYSTIME_SUITE_TIME:-02:00:00}" false
+  "${suite_sbatch}" pt_p0_suite "${PHYSTIME_SUITE_TIME:-02:00:00}"
 {
   printf 'export PHYSTIME_P0_RUN_ROOT=%q\n' "${RUN_ROOT}"
   echo 'bash scripts/run_phystime_p0_fullprecision_suite_slurm.sh'
@@ -236,6 +234,8 @@ cat > "${RUN_ROOT}/deployment_summary.json" <<EOF
   "suite_job": "${suite_job}",
   "suite_dependency": "${suite_dependency}",
   "suite_output": "${RUN_ROOT}/P0_SUITE_COMPLETE.json",
+  "suite_scheduler_gpu_allocation": 1,
+  "suite_validator_uses_cuda": false,
   "new_training": false,
   "frozen_epoch": 59,
   "arms": ["selected_axis", "physical_metric"],

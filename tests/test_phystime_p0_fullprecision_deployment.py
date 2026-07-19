@@ -70,6 +70,10 @@ def test_submitter_uses_one_gate_four_replays_and_one_suite_validator():
     assert "tools/train.py" not in source
     assert "p0_suite" in source
     assert "run_phystime_p0_fullprecision_suite_slurm.sh" in source
+    assert "echo '#SBATCH --gpus=1'" in source
+    assert "--gres=gpu:1" not in source
+    assert '"suite_scheduler_gpu_allocation": 1' in source
+    assert '"suite_validator_uses_cuda": false' in source
     assert 'gate["dataset_manifest"]' in source
     assert 'for key in ("annotation", "class_map", "train_videos", "test_videos")' in source
     assert "${BASE}/raw/Validation Data/validation" not in source
