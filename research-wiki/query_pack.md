@@ -16,9 +16,13 @@ max_chars: 8000
   rotation, frame count, and frame rate.
 - Remote focused tests pass `17/17`; the same independent max reviewer returned
   `DEPLOY` with `P0/P1/P2/P3 = 0` after three passes.
-- This authorizes only clean-snapshot CUDA precheck deployment. Crop mAP,
-  sufficiency, full-stack cost, GO/KILL, learned ROI, and paper claims remain
-  absent.
+- Clean snapshot replay passed `173` focused tests and formal one-GPU Slurm
+  Gate Job `1174671` completed `0:0`. The exact commit/source blobs,
+  200-video geometry, complete pretrained core, `[1,384,768]` detector
+  contract, and both branch/detector gradients are now closed.
+- This authorizes only crop-sufficiency protocol discussion. Crop mAP,
+  sufficiency, measured full-stack cost, GO/KILL, learned ROI, and paper claims
+  remain absent.
 
 ## Native-Crop S1 实现状态（2026-07-20）
 

@@ -556,3 +556,19 @@ append_only: true
   tests were added. Remote focused verification is `17 passed`; the same
   auditor's third pass returned `DEPLOY` with `P0/P1/P2/P3 = 0`. Formal
   clean-commit remote replay and the Slurm CUDA gate remain pending.
+- 2026-07-20: committed and pushed the reviewed Native-Crop vertical slice as
+  `0bf59be877eeb6879166893641c12bc4e60a2b53`. A clean remote snapshot passed
+  `173` focused Native-Crop/Spatial-Zoom/C3 tests. Formal one-GPU Slurm Gate
+  Job `1174671` completed `0:0` on `g0059` in `00:01:40`; run root is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/native_crop_s1_0bf59be_20260720_0225`.
+  Precheck internal/file SHAs are
+  `ba278a191905b492d78b07ec253857774a0311c363b70ceac8921159a855b0fc`
+  /
+  `b0cfe61261f39ef801be6b5800510d9feff54b0f0b73babfcc00d091a33bccde`.
+  The gate closed source/HEAD provenance, 200-video geometry re-probe,
+  `163/161/22,482,048` pretrained-core identity, `6x6/8x8` runtime grids,
+  `[1,384,768]` detector input, finite nonzero gradients through both views,
+  backbone/projection/head, and zero official-test/teacher/oracle use. This is
+  implementation evidence only; crop sufficiency, mAP, measured cost,
+  GO/KILL, learned ROI, and paper claims remain absent. The next task is a
+  separate crop-sufficiency protocol freeze/discussion.

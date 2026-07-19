@@ -72,6 +72,22 @@ updated: 2026-07-20
   three returned `DEPLOY` with `P0/P1/P2/P3 = 0`. Remote WIP focused tests:
   `17 passed`. This is implementation-audit evidence only; it is not a CUDA
   gate, crop-accuracy result, cost result, or paper claim.
+- Native-Crop S1 formal implementation Gate, 2026-07-20. Git commit
+  `0bf59be877eeb6879166893641c12bc4e60a2b53`; clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_native_crop_s1_0bf59be_20260720_clean`;
+  clean replay `173 passed`; Slurm Job `1174671`, `COMPLETED 0:0` on `g0059`;
+  run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/native_crop_s1_0bf59be_20260720_0225`.
+  Full-model precheck internal/file SHA-256:
+  `ba278a191905b492d78b07ec253857774a0311c363b70ceac8921159a855b0fc`
+  /
+  `b0cfe61261f39ef801be6b5800510d9feff54b0f0b73babfcc00d091a33bccde`.
+  Geometry census internal/file SHA-256:
+  `9a688297fec2ac8537a44e46254df2e277ec69785cfa179aac658ad0b0dc39d8`
+  /
+  `99089f8260a7a8c7ec3610e521e638f5c18e297c11217597e5b7b139407b013b`.
+  Scope is implementation/provenance/gradient closure, not crop accuracy,
+  efficiency, GO/KILL, or paper evidence.
 
 以下记录是主要二级来源；原始 raw review 仍保存在各 repo 的
 `docs/methods/reviews/`：

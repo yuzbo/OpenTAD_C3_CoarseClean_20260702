@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:native-crop-s1-vertical-slice
 title: "Native-Crop S1 development vertical slice"
 stage: tested
-status: cpu_and_real_decode_pass_cuda_gate_pending
-outcome: source_geometry_and_data_path_pass
+status: cuda_gate_pass_crop_sufficiency_protocol_pending
+outcome: implementation_graph_and_provenance_pass
 tags: ["offline-tad", "native-crop", "source-coordinate", "vertical-slice"]
 added: 2026-07-20
 ---
@@ -36,7 +36,22 @@ points, and preserve the AdaTAD-derived `[B,384,768]` feature contract.
 
 ## Evidence
 
-- Remote focused suite after the first independent HOLD repairs: `16 passed`.
+- Clean formal Git commit:
+  `0bf59be877eeb6879166893641c12bc4e60a2b53`.
+- Clean remote replay: `173 passed` across Native-Crop, Spatial-Zoom S1,
+  and required C3 focused suites.
+- Formal Slurm CUDA gate Job `1174671`: `COMPLETED 0:0` on `g0059` in
+  `00:01:40`, using one Slurm-visible GPU and process-local `cuda:0`.
+- Gate run root:
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/native_crop_s1_0bf59be_20260720_0225`.
+- Full-model precheck internal/file SHA-256:
+  `ba278a191905b492d78b07ec253857774a0311c363b70ceac8921159a855b0fc`
+  /
+  `b0cfe61261f39ef801be6b5800510d9feff54b0f0b73babfcc00d091a33bccde`.
+- Formal census internal/file SHA-256:
+  `9a688297fec2ac8537a44e46254df2e277ec69785cfa179aac658ad0b0dc39d8`
+  /
+  `99089f8260a7a8c7ec3610e521e638f5c18e297c11217597e5b7b139407b013b`.
 - Real decode sample:
   - `global [1,3,768,96,96] uint8`;
   - `local [1,3,768,128,128] uint8`;
@@ -55,6 +70,22 @@ points, and preserve the AdaTAD-derived `[B,384,768]` feature contract.
   - all source streams `320x180`;
   - 96/112/128 no-padding rates all 100%;
   - census SHA `73290dd5abbcac6e5a2da1945b8ebd5b44f2d62e5a570c549aee46679548a9f8`.
+
+The formal CUDA gate additionally verified:
+
+- expected commit equals actual commit; worktree is completely clean;
+- all audited source files are tracked and byte-equal to their `HEAD` blobs;
+- 200 census records are re-probed against current source files;
+- checkpoint state/core contract is `163/161/22,482,048`, with no core
+  missing, shape, or value mismatches;
+- runtime position grids are exactly `6x6` and `8x8`;
+- global/local features are `[1,384,384]`, fused detector input is
+  `[1,384,768]`;
+- detector loss reaches both branch features with `62,178` nonzero gradient
+  elements each, plus nonzero backbone, projection, and head gradients;
+- all present gradients are finite;
+- official-test annotation records and video files opened are both zero;
+- teacher, oracle, and paper-claim flags remain false.
 
 The inherited 0.25 validation overlap silently omitted the final short-action
 video `video_validation_0000054`. The isolated Native-Crop config now uses 0.5
@@ -81,14 +112,15 @@ is `17 passed`. The same max auditor's third pass returned `DEPLOY` with
 
 ## Boundaries
 
-No CUDA full-model gate, crop accuracy, mAP, full-stack cost, oracle upper
-bound, learned policy, official-test result, GO/KILL, or paper claim exists
-yet. The geometry census establishes feasibility of no-padding local128 only,
-not its semantic sufficiency.
+No crop accuracy, mAP, measured full-stack cost, oracle upper bound, learned
+policy, official-test result, GO/KILL, or paper claim exists yet. The CUDA
+gate proves implementation/provenance/gradient closure only. The geometry
+census establishes feasibility of no-padding local128, not semantic
+sufficiency.
 
 ## Next gate
 
-Commit and push the reviewed vertical slice, replay it from a clean remote Git
-snapshot, and run the one-card Slurm full-model precheck. If that gate passes,
-initiate the protocol discussion needed to freeze a development-only
-crop-sufficiency experiment. Do not implement learned ROI.
+Initiate the protocol discussion needed to freeze a development-only
+crop-sufficiency experiment: candidate coverage, teacher split/cache,
+matched-pixel/FLOP baselines, uncertainty, and GO/KILL margins. Do not
+implement learned ROI before that protocol and sufficiency result.
