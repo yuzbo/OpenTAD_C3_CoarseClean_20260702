@@ -135,8 +135,13 @@ def test_replay_map_runner_is_sealed_validation_only_and_hash_bound() -> None:
         / "run_duca_allocation_replay_map.sh"
     )
     text = path.read_text(encoding="utf-8")
-    assert "DUCA_ALLOCATION_VALIDATION_AUTHORIZED" in text
-    assert "validate_duca_allocation_ceiling_artifact" in text
+    assert "DUCA_ALLOCATION_VALIDATION_EXPORT_MANIFEST" in text
+    assert "DUCA_ALLOCATION_VALIDATION_EXPORT_MANIFEST_SHA256" in text
+    assert "duca_allocation_validation_export_manifest_v2" in text
+    assert "validation authorization evidence changed" in text
+    assert "validation video bytes changed" in text
+    assert '"pretrain", "pretrain_sha256"' in text
+    assert '"replay_config", "replay_config_sha256"' in text
     assert "DUCA_ALLOCATION_ARTIFACT_SHA256" in text
     assert "DUCA_ALLOCATION_ALLOW_PRIVILEGED" in text
     assert "selected_axis_gt_remap" in text
