@@ -2,8 +2,8 @@
 
 ## 2026-07-20 P0 实现状态
 
-`P0-FULLPRECISION-NMS-REPLAY` 已完成本地代码实现，状态仅为
-`implemented`。它不训练新模型，只重放 full60 epoch-59 的 selected-axis /
+`P0-FULLPRECISION-NMS-REPLAY` 已完成实现并进入 `experiment_running`。
+它不训练新模型，只重放 full60 epoch-59 的 selected-axis /
 physical-metric、online/EMA 冻结权重。评估链已移除模型输出的 2/4 位提前
 舍入，并把原始、舍入后 NMS 输入和 NMS 输出合法性分层审计。
 
@@ -11,8 +11,10 @@ physical-metric、online/EMA 冻结权重。评估链已移除模型输出的 2/
 四任务的独立 CPU suite validator。suite 必须重算跨臂、online/EMA、舍入/
 过滤差值，并输出抑制排序、边界位移、短动作与高 IoU proposal recall。
 三轮独立审查已收口，最后一次定点复核给出 `DEPLOY` 且无剩余 P0/P1；
-本地无 Torch 回归为 `25 passed`。远端 PyTorch gate 通过前仍不得把四个
-replay 视为有效，也不得写入新 mAP 或提升证据等级。完整合同见
+本地无 Torch 回归为 `25 passed`。最终 runtime commit 为 `c2cfcfa2`；
+gate `1174688` 的远端 focused tests 已 `33 passed`，完整 source/data/hash
+gate 仍在运行。gate 通过前不得把四个 replay 视为有效，也不得写入新 mAP
+或提升证据等级。完整合同见
 `research-wiki/experiments/phystime-p0-fullprecision-nms-replay.md`。
 
 ## 2026-07-20 STOP-Q-LIFT 审查吸收

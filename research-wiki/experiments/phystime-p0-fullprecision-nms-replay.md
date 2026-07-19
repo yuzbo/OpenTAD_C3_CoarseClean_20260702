@@ -3,11 +3,11 @@ type: experiment
 node_id: exp:phystime-p0-fullprecision-nms-replay
 title: "PhysTime P0 frozen full-precision NMS replay"
 idea: idea:phystime-tad-2
-status: implemented
-verdict: pending_real_gate_and_frozen_replay
-confidence: code_reviewed_locally_remote_evidence_pending
+status: experiment_running
+verdict: real_gate_running_replays_dependency_blocked
+confidence: remote_focused_tests_passed_full_gate_pending
 metrics: "NA; this experiment does not train and has not produced a remote completion artifact."
-provenance: "pending clean runtime commit/tree and Slurm run root"
+provenance: "runtime c2cfcfa2470f9f1e0b9d10e397480f6c66aeaf2c / tree 0b78dd402e8997239ef9d1b4b4cd8bfa4f7a6338; run root phystime_p0_fullprecision_c2cfcfa_20260720_025843_+0800"
 added: 2026-07-20T00:00:00+08:00
 ---
 
@@ -78,10 +78,17 @@ physical-metric epoch-59 checkpoint。旧 `41.28/57.57%` 结果保持原证据
   DDP gather 对首个 rank 列表的原地扩展污染测试期望。生产合并现复制首个
   rank 列表，测试夹具改用真实 `ConfigDict`；旧依赖作业
   `1174680–1174683` 已取消，不属于实验结果。
+- 最终运行锚点：commit `c2cfcfa2470f9f1e0b9d10e397480f6c66aeaf2c`，
+  tree `0b78dd402e8997239ef9d1b4b4cd8bfa4f7a6338`，clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_phystime_p0_c2cfcfa_20260720`。
+- 正式 run root：
+  `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_p0_fullprecision_c2cfcfa_20260720_025843_+0800`。
+  gate `1174688` 正在运行且远端 focused tests 已 `33 passed`；四个 replay
+  `1174689–1174692` 依赖 gate，suite `1174693` 依赖全部四臂。
 
 ## 状态边界
 
-当前状态仅为 `implemented`，不是 `tested`、`experiment_running`、
-`empirically_supported` 或 `paper_ready`。远端 gate 未通过时，四个 replay
+当前状态为 `experiment_running`，不是 `empirically_supported` 或
+`paper_ready`。远端 gate 未通过时，四个 replay
 不得视为有效；任一 unfiltered 模式因非法 proposal 阻断时，必须先报告具体
 视频、阶段与计数，再决定是否需要 Pro 讨论。

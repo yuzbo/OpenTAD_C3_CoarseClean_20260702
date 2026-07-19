@@ -19,7 +19,7 @@
 | `exp:phystime-g1b-sdpq-medium20` | support-decoupled physical query sparse head | completed | medium-run trainability evidence | 20轮稳定闭环成立；优越性仍需 same-commit 三臂 20轮对照 |
 | `exp:phystime-g1-matched-medium20` | selected-axis / physical-metric / G1b SDPQ | completed | matched medium evidence | physical-metric 44.88 明显胜 selected-axis 30.42；G1b 30.88 未证明结构优势 |
 | `exp:phystime-g1-matched-full60` | selected-axis vs physical-metric, K384/J192 | completed / validation passed | final epoch-59 Avg-mAP `41.28/57.57`, delta `+16.29`; finite online/EMA checkpoints pass | Full60 single-seed support for physical-time metric; not paper-ready |
-| `exp:phystime-p0-fullprecision-nms-replay` | frozen epoch-59 online/EMA full-precision cross-window NMS replay | implemented / remote gate pending | code and local static checks only; remote metrics are `NA` | Diagnose legacy rounding and proposal-validity effects without retraining; not empirical evidence yet |
+| `exp:phystime-p0-fullprecision-nms-replay` | frozen epoch-59 online/EMA full-precision cross-window NMS replay | experiment_running / gate `1174688` running | remote focused tests `33 passed`; replay metrics remain `NA` | Diagnose legacy rounding and proposal-validity effects without retraining; not empirical evidence yet |
 
 ## 证据等级定义
 
