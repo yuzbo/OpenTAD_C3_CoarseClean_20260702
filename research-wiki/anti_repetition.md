@@ -1,14 +1,23 @@
 ---
 type: anti_repetition
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # 禁止重走清单
 
 ## Spatial Zoom 当前边界
 
-1. 不得把 S1 称为 Zoom/crop 模型。S1 只有 matched dense spatial-resolution matrix。
-2. 不得在 S1 GO 前实现 learned ROI policy，或用 oracle ROI 结果倒推修改 S1 gate。
+0. 不得把整图 `Resize + CenterCrop/RandomResizedCrop` 实验称为空间选择、原生分辨率
+   crop 或 Zoom。旧 `Dense-160/224/256` 仅是 R0 分辨率控制，不再是 Native-Crop S1
+   的逻辑必要前置门槛。
+0. Native crop 必须先在源帧坐标中选择区域，再以明确记录的局部像素密度进入重分支。
+   不得把低分辨率 crop 放大回完整重模型输入后仍声称节省了像素、FLOPs 或端到端成本。
+0. 在 oracle/teacher-reference crop sufficiency 通过预注册 GO 条件前，不得实现 learned
+   ROI policy；也不得继续为旧 dense-resize recovery matrix 消耗 GPU 来替代 crop 验证。
+
+1. 不得把旧 R0 称为 Zoom/crop 模型。R0 只有 matched dense spatial-resolution matrix。
+2. 不得在 Native-Crop S1 GO 前实现 learned ROI policy，或用 oracle ROI 结果倒推修改
+   已冻结的预注册门槛。
 3. 不得把 DUCA、时序选帧、dynamic budget、max-gap 或 X3D/SlowFast prior 混入当前任务。
 4. 不得恢复 `35204f5` 的 warning-bearing partial checkpoints 作为正式结果；替换矩阵必须从
    新 exact commit、新 precheck 和新 canonical experiment namespace 全量重跑。

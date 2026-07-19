@@ -1,14 +1,28 @@
 ---
 type: query_pack
-updated: 2026-07-18
+updated: 2026-07-19
 max_chars: 8000
 ---
 
 # Research Query Pack
 
-## Spatial Zoom S1 最新门禁状态（2026-07-18）
+## Spatial Zoom 路线纠偏（2026-07-19）
 
-- 当前唯一执行线仍是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
+- 真实研究目标是保留完整时间轴，并在源视频坐标中选择保持原生局部像素密度的空间
+  crop/ROI tube；不是把整幅画面统一缩小到 160/224/256。
+- 现有 `Dense-160/224/256 x 3 seeds` 只验证整图分辨率敏感性。它不含 ROI、scout、
+  native crop、局部高分辨率分支或全局/局部融合，不能作为空间裁剪有效性的证据。
+- 旧 S1 从必经 falsification gate 降级为 `R0 dense-resize headroom control`。保留训练、
+  sealed-test、profiling 与 provenance 基础设施，但暂停继续部署其 recovery Gate/matrix；
+  不得要求 R0 完成后才允许验证 native crop。
+- 当前唯一方法任务是先冻结 `Native-Crop S1` 合约并进行一次定向 Pro 代码/协议严审。
+  该合约必须从源帧坐标裁剪、保持局部原始像素密度与 768 点时间轴，先验证
+  oracle/teacher-reference crop sufficiency；通过前不得实现 learned crop policy。
+- 当前没有任何 S1 crop 结果、GO/KILL 或可发表的 Spatial Zoom 主张。
+
+## R0 Dense-Resize 历史门禁状态（截至 2026-07-18）
+
+- 截至当日执行线是离线 TAD 的空间分辨率 falsification gate；不含 DUCA、时序选帧、
   ROI、scout、crop policy 或 fusion。
 - 旧矩阵依次暴露了 dense-path `fc_norm` 断图、共享存储耗尽和错误拒绝官方 finite
   zero-length proposal 三类基础设施问题；都已保留为 fail-closed 记忆，禁止 resume、
@@ -65,17 +79,17 @@ max_chars: 8000
   validation are still required before any new Gate. No replacement matrix,
   Pro, GO/KILL, or complete cost table exists.
 
-## 当前唯一活动任务：Spatial Zoom
+## 历史 Dense-Resize 任务（2026-07-19 起冻结为 R0）
 
-当前执行线是离线 TAD 的空间去冗余，不是 DUCA，也不是时序选帧。时间轴、768 点
+该历史执行线是离线 TAD 的整图分辨率控制，不是 DUCA，也不是时序选帧。时间轴、768 点
 detector grid、VideoMAE-S、AdaTAD adapter、ActionFormer projection/head 和评估协议
-保持不变。先用 `Dense-160/224/256 x seeds 3407/3408/3409` 回答一个前置问题：提高
+保持不变。它用 `Dense-160/224/256 x seeds 3407/3408/3409` 试图回答：提高
 空间分辨率是否能稳定改善 mAP@0.6/0.7、短动作与边界定位，并且代价是否可被后续稀疏
 ROI 计算回收。
 
-S1 只是 falsification gate，不包含 scout、ROI、crop policy、teacher、fusion 或新 detector。
-只有 S1 在严格确定性、matched protocol、paired Bayesian video-cluster bootstrap 和真实
-full-stack cost 下给出 GO，才允许进入 S2 oracle ROI/crop sufficiency。S2 再通过后才设计
+该矩阵不包含 scout、ROI、crop policy、teacher、fusion 或新 detector，因此只能作为
+R0 控制。其完整 GO/KILL 不再是 Native-Crop S1 的必要条件；Native-Crop S1 应在新的
+预注册合约下直接验证 oracle/teacher-reference ROI tube 的充分性，通过后才允许设计
 learned low-resolution scout、连续 ROI tube、局部高分辨率重计算和全局/局部融合。
 
 旧 `35204f5` 3x3 任务因 CUDA 线性上采样 backward 的 nondeterminism warning 而失效并

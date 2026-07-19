@@ -3,7 +3,7 @@ type: idea
 node_id: idea:spatial-zoom-offline-tad
 title: "Dense-time spatial zoom for offline TAD"
 stage: designed
-status: s1_falsification_gate_running
+status: native_crop_contract_pending_pro_review
 tags: ["offline-tad", "spatial-redundancy", "roi", "adatad"]
 added: 2026-07-15
 ---
@@ -20,18 +20,22 @@ coverage.
 
 ## Decision Ladder
 
-1. S1: matched dense160/224/256 determines whether useful spatial-resolution
-   headroom exists at high tIoU and for short actions.
-2. S2: only after S1 GO, oracle/teacher ROI crops test whether the dense
-   high-resolution gain can survive sparse spatial allocation at recoverable
-   measured cost.
-3. S3: only after S2 GO, learn a low-resolution scout, continuous ROI tubes,
-   local high-resolution processing, and global/local feature fusion.
+1. R0 control: preserve the completed dense160/224/256 training and its
+   incomplete test/profile evidence as a full-frame resolution-sensitivity
+   control. It is not crop evidence and is not a mandatory gate.
+2. Native-Crop S1: use source-frame coordinates and preserve native local
+   pixel density while keeping the full temporal axis. First test an honest
+   oracle/teacher-reference ROI-tube candidate library under matched
+   pixel/FLOP/full-stack budgets and no official-test leakage.
+3. Learned Spatial Zoom: only after Native-Crop S1 GO, learn a low-resolution
+   scout, continuous ROI tubes, local high-resolution processing, and
+   global/local feature fusion.
 
 ## Non-Claims
 
-No learned crop model is currently implemented. S1 does not establish Zoom
-accuracy, efficiency, detector generality, or publishability.
+No native-crop or learned crop model is currently implemented. The existing
+dense-resolution matrix does not establish crop sufficiency, Zoom accuracy,
+efficiency, detector generality, or publishability.
 
 ## Connections
 

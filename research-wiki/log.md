@@ -484,3 +484,12 @@ append_only: true
   `cef95485d1bfebccddb1055f30800ab081decaf7`. This closes local
   implementation provenance only; clean remote replay, real-evidence
   certificate validation, and a new no-open Gate remain pending.
+- 2026-07-19: corrected the Spatial Zoom research object after explicit user
+  review. The intended method selects native-density spatial crops/ROI tubes
+  while preserving the full temporal axis; it is not full-frame downsampling.
+  Reclassified the existing dense160/224/256 matrix as `R0 dense-resize
+  headroom control`, froze further recovery deployment, and removed it as a
+  mandatory prerequisite for crop sufficiency. The next authorized method task
+  is a concrete Native-Crop S1 contract followed by one targeted Pro
+  code/protocol review; learned ROI remains blocked until oracle/teacher-
+  reference crop sufficiency passes preregistered criteria.
