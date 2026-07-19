@@ -299,6 +299,58 @@ advantage grew from `+14.46` to `+16.29` Avg-mAP. This establishes
 `full60-single-seed-supported`, not `paper_ready`: multi-seed, mechanism,
 cost, robustness, and cross-dataset evidence remain required.
 
+## Frozen Full-Precision NMS Replay (Completed)
+
+Runtime commit:
+`c2cfcfa2470f9f1e0b9d10e397480f6c66aeaf2c`; tree:
+`0b78dd402e8997239ef9d1b4b4cd8bfa4f7a6338`.
+
+Run root:
+`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_p0_fullprecision_c2cfcfa_20260720_025843_+0800`.
+
+This experiment freezes the epoch-59 selected-axis and physical-metric
+checkpoints from the matched full60 run. It performs no training. For each
+online/EMA weight source, it records full-precision pre-cross-window proposals
+once, then replays legacy/fullprecision by filtered/unfiltered post-processing.
+Gate `1174688`, four replay jobs `1174689–1174692`, and suite `1174693` all
+completed `0:0`; remote focused tests report `33 passed`.
+
+Fullprecision-filtered raw metrics:
+
+| Frozen arm | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| selected-online | 64.5045 | 56.3893 | 42.6635 | 27.8208 | 14.9050 | 41.2566 |
+| selected-EMA | 64.8555 | 56.3456 | 42.6152 | 27.7450 | 14.8538 | 41.2830 |
+| physical-online | 77.0402 | 70.5574 | 62.0749 | 48.5937 | 29.5117 | 57.5556 |
+| physical-EMA | 77.2122 | 70.4557 | 62.5761 | 49.0066 | 28.7927 | 57.6087 |
+
+Legacy versus fullprecision Avg-mAP:
+
+| Frozen arm | Legacy | Fullprecision | Fullprecision minus legacy |
+| --- | ---: | ---: | ---: |
+| selected-online | 41.293237 | 41.256604 | -0.036632 |
+| selected-EMA | 41.283790 | 41.283021 | -0.000769 |
+| physical-online | 57.568992 | 57.555581 | -0.013411 |
+| physical-EMA | 57.574915 | 57.608685 | +0.033770 |
+
+All arms contain 1,584,000 pre-NMS proposals and 422,000 final predictions.
+Invalid, non-finite, malformed, and non-positive-duration counts are zero.
+Filtered and unfiltered outputs are exactly identical. Legacy EMA reproduces
+the frozen full60 metrics exactly. The physical-minus-selected EMA gap is
+`+16.325664` points with full precision and `+16.291125` with legacy rounding,
+so the old rounding path cannot explain the physical-time gain.
+
+On fullprecision-filtered final predictions, physical-EMA improves
+proposal recall@0.7 over selected-EMA by `+12.36` points overall and `+31.59`
+points for short actions (duration <=1.7 seconds). This is a joint diagnostic
+of geometry, classification, ranking, and NMS, not a pure assignment causal
+effect.
+
+The independent suite reports `validation_pass=true`. Its SHA256 is
+`afb3e300424a57eb590a21129217e040677dc875fdede3be344352dc2bd268e7`.
+This closes the frozen post-processing diagnostic only; evidence remains
+`full60-single-seed-supported`, not `paper_ready`.
+
 ## Matched Pilot
 
 统一 run root：`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_7098049_pilot_20260710_214816_+0800`。

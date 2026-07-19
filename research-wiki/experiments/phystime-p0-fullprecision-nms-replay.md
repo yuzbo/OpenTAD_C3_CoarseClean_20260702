@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:phystime-p0-fullprecision-nms-replay
 title: "PhysTime P0 frozen full-precision NMS replay"
 idea: idea:phystime-tad-2
-status: experiment_running
-verdict: real_gate_running_replays_dependency_blocked
-confidence: remote_focused_tests_passed_full_gate_pending
-metrics: "NA; this experiment does not train and has not produced a remote completion artifact."
+status: tested
+verdict: postprocessing_confound_closed_main_effect_preserved
+confidence: full_remote_suite_passed_single_frozen_run
+metrics: "EMA fullprecision selected/physical Avg-mAP 41.2830/57.6087%; delta +16.3257 pp. Rounding changes Avg-mAP by -0.0366 to +0.0338 pp; validity filtering changes 0."
 provenance: "runtime c2cfcfa2470f9f1e0b9d10e397480f6c66aeaf2c / tree 0b78dd402e8997239ef9d1b4b4cd8bfa4f7a6338; run root phystime_p0_fullprecision_c2cfcfa_20260720_025843_+0800"
 added: 2026-07-20T00:00:00+08:00
 ---
@@ -88,7 +88,64 @@ physical-metric epoch-59 checkpoint。旧 `41.28/57.57%` 结果保持原证据
 
 ## 状态边界
 
-当前状态为 `experiment_running`，不是 `empirically_supported` 或
-`paper_ready`。远端 gate 未通过时，四个 replay
-不得视为有效；任一 unfiltered 模式因非法 proposal 阻断时，必须先报告具体
-视频、阶段与计数，再决定是否需要 Pro 讨论。
+当前状态为 `tested`，不是新的训练结果，也不是 `paper_ready`。本实验只关闭
+冻结 epoch-59 评估链中的舍入与 proposal 合法性混杂；它不提供多种子、第二
+数据集、计算成本或新模型有效性证据。
+
+## 终态结果
+
+正式 DAG 全部正常完成：gate `1174688`、四条冻结回放
+`1174689–1174692` 与独立 suite `1174693` 均为 `COMPLETED 0:0`。
+远端 focused tests 为 `33 passed`；四份 `P0_COMPLETE.json` 均
+`validation_pass=true`，最终 `P0_SUITE_COMPLETE.json` 也为
+`validation_pass=true`。
+
+| 冻结臂 | legacy Avg-mAP | fullprecision Avg-mAP | 全精度减 legacy |
+| --- | ---: | ---: | ---: |
+| selected-online | 41.293237 | 41.256604 | -0.036632 |
+| selected-EMA | 41.283790 | 41.283021 | -0.000769 |
+| physical-online | 57.568992 | 57.555581 | -0.013411 |
+| physical-EMA | 57.574915 | 57.608685 | +0.033770 |
+
+fullprecision-filtered 的原始 IoU 指标如下：
+
+| 冻结臂 | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| selected-online | 64.5045 | 56.3893 | 42.6635 | 27.8208 | 14.9050 | 41.2566 |
+| selected-EMA | 64.8555 | 56.3456 | 42.6152 | 27.7450 | 14.8538 | 41.2830 |
+| physical-online | 77.0402 | 70.5574 | 62.0749 | 48.5937 | 29.5117 | 57.5556 |
+| physical-EMA | 77.2122 | 70.4557 | 62.5761 | 49.0066 | 28.7927 | 57.6087 |
+
+关键审计事实：
+
+- 每条臂均有 `1,584,000` 个 NMS 前 proposal、`422,000` 个 NMS 后预测；
+  非有限值、非正时长、非法标签和 malformed proposal 全为 `0`。
+- filtered 与 unfiltered 的预测、指标和 proposal 级匹配完全相同，过滤效应
+  严格为 `0`。
+- legacy-EMA 逐指标复现冻结 full60 的 `41.283790/57.574915%`，证明
+  checkpoint、数据、评估器和 replay 绑定正确。
+- 舍入确实改变局部决策：全精度与 legacy 的 IoU>=0.5 一对一匹配率为
+  `99.62%–99.78%`，每臂有 `947–1,605` 个预测无法配对；匹配预测的边界
+  位移中位数约 `0.0025s`、P95 小于 `0.00482s`。但最终 Avg-mAP 绝对变化
+  最大仅 `0.0367` 个百分点。
+- physical-EMA 相对 selected-EMA 的 fullprecision Avg-mAP 仍为
+  `+16.325664` 个百分点；legacy 下为 `+16.291125`。因此旧舍入最多只改变
+  两臂差值约 `0.0345` 点，不能解释 physical-metric 的主效应。
+- 在 fullprecision-filtered 最终预测上，physical-EMA 相对 selected-EMA 的
+  proposal recall@0.7：全体 `+12.36` 点、短动作（<=1.7s）`+31.59` 点、
+  中等动作 `+6.93` 点、长动作 `+3.75` 点。该诊断包含分类、排序与 NMS 的
+  联合作用，只能定位后续机制分解重点，不能单独证明秒域 assignment 的因果性。
+
+最终 suite SHA256：
+`afb3e300424a57eb590a21129217e040677dc875fdede3be344352dc2bd268e7`。
+
+## 裁决与下一步
+
+P0 关闭了发布级后处理混杂：未来 PhysTime 主实验应显式使用全精度
+cross-window NMS；历史 legacy 结果保留以便复现。当前结果清晰、验证器通过，
+无需为 P0 再发起 Pro 讨论。
+
+下一项决定性任务是冻结 decode cross-replay，然后在原 Q192 结构内做
+UU/UP/PU/PP 因子化：首字母表示 decode/回归坐标轴，次字母表示 assignment
+坐标轴。它必须继续冻结 checkpoint、候选和评估协议，先区分收益来自秒域
+assignment 还是秒域 decode；不得同时加入 Q-lift、新 loss、采样器或新训练。

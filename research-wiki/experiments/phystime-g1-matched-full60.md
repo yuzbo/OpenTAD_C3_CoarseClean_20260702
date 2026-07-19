@@ -123,14 +123,16 @@ This page retains `full60-single-seed-supported`. Early rounding, tail-mask
 risk, and proposal filtering are prospective publication blockers, not evidence
 that invalidates the completed matched result.
 
-## 2026-07-20 P0 Implementation Link
+## 2026-07-20 P0 Final Link
 
-The frozen full-precision replay is now implemented as
-`exp:phystime-p0-fullprecision-nms-replay`. It reuses both epoch-59 checkpoints
-and evaluates online plus EMA weights without new training. The implementation
-does not change this page's metrics or evidence tier. New absolute metrics and
-the corrected physical-minus-selected delta may be recorded only after the real
-gate, all four independent completions, and `P0_SUITE_COMPLETE.json` pass.
+The frozen full-precision replay
+`exp:phystime-p0-fullprecision-nms-replay` is complete. Gate, all four
+online/EMA replays, and the independent suite passed. Fullprecision EMA
+selected/physical Avg-mAP is `41.2830/57.6087%`, delta `+16.3257` points;
+legacy rounding changes the cross-arm delta by only about `0.0345` points,
+and proposal-validity filtering has zero effect. This closes the
+post-processing confound without changing this page's
+`full60-single-seed-supported` evidence tier.
 
 ## Connections
 

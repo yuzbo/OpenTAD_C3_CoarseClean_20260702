@@ -1,20 +1,23 @@
 # 当前唯一方向与最终目标
 
-## 2026-07-20 P0 实现状态
+## 2026-07-20 P0 终态与当前任务
 
-`P0-FULLPRECISION-NMS-REPLAY` 已完成实现并进入 `experiment_running`。
-它不训练新模型，只重放 full60 epoch-59 的 selected-axis /
-physical-metric、online/EMA 冻结权重。评估链已移除模型输出的 2/4 位提前
-舍入，并把原始、舍入后 NMS 输入和 NMS 输出合法性分层审计。
+`P0-FULLPRECISION-NMS-REPLAY` 已达到 `tested`。它冻结 full60 epoch-59
+selected-axis / physical-metric 的 online/EMA 权重，不训练新模型。gate
+`1174688`、四条回放 `1174689–1174692` 和 suite `1174693` 均
+`COMPLETED 0:0`；远端 focused tests `33 passed`，最终 suite
+`validation_pass=true`。
 
-部署 DAG 固定为一个真实 gate、四个 GPU 推理/2×2 重放作业和一个依赖全部
-四任务的独立 CPU suite validator。suite 必须重算跨臂、online/EMA、舍入/
-过滤差值，并输出抑制排序、边界位移、短动作与高 IoU proposal recall。
-三轮独立审查已收口，最后一次定点复核给出 `DEPLOY` 且无剩余 P0/P1；
-本地无 Torch 回归为 `25 passed`。最终 runtime commit 为 `c2cfcfa2`；
-gate `1174688` 的远端 focused tests 已 `33 passed`，完整 source/data/hash
-gate 仍在运行。gate 通过前不得把四个 replay 视为有效，也不得写入新 mAP
-或提升证据等级。完整合同见
+EMA 的 fullprecision selected/physical Avg-mAP 为
+`41.2830/57.6087%`，差值 `+16.3257` 点。舍入对四条臂 Avg-mAP 的影响仅
+`-0.0366` 到 `+0.0338` 点；四条臂的非法 proposal 均为 0，filtered 与
+unfiltered 完全相同。P0 因此关闭了后处理混杂，但不改变
+`full60-single-seed-supported`、非 `paper_ready` 的证据等级。
+
+当前唯一下一任务改为冻结 decode cross-replay，并在原 Q192 内做
+UU/UP/PU/PP：首字母是 decode/回归轴，次字母是 assignment 轴。先回答
+physical 收益来自哪条几何路径，再决定是否需要训练型改造；不得同时加入
+Q-lift、新 loss 或新采样器。完整 P0 证据见
 `research-wiki/experiments/phystime-p0-fullprecision-nms-replay.md`。
 
 ## 2026-07-20 STOP-Q-LIFT 审查吸收

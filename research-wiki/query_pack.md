@@ -1,26 +1,28 @@
 # Research Wiki Query Pack
 
-## 2026-07-20 P0 Implementation Checkpoint
+## 2026-07-20 P0 Final Checkpoint
 
-当前唯一任务 `P0-FULLPRECISION-NMS-REPLAY` 已达到
-`experiment_running`。实现固定 full60 commit `0dc5851`
-的 selected/physical epoch-59 online/EMA 权重；每套权重保存一次全精度
-pre-cross-window proposal，再做 legacy/fullprecision × unfiltered/filtered
-四模式重放。过滤必须发生在舍入后实际 NMS 输入上，unfiltered 遇到非法值
-必须 fail-closed。
+`P0-FULLPRECISION-NMS-REPLAY` 已完成，状态为 `tested`。runtime commit
+`c2cfcfa2` / tree `0b78dd40`；gate `1174688`、四条冻结回放
+`1174689–1174692` 和 suite `1174693` 全部 `COMPLETED 0:0`。远端 focused
+tests `33 passed`，四份单臂 completion 与最终 suite 均
+`validation_pass=true`。
 
-三轮独立代码审查已经收口。最后一轮曾发现 focused test 仍绑定旧实现、
-提交器数据路径未绑定 source gate，以及 P0 舍入开关污染普通主配置；均已
-修复并补回归。限定复核结论为 `DEPLOY`，本地无 Torch 回归 `25 passed`，
-四个 Bash 脚本语法检查通过。最终 runtime 为 commit `c2cfcfa2` / tree
-`0b78dd40`；正式 gate `1174688` 的远端 focused tests 已 `33 passed`，
-完整 source/data/hash gate 仍在运行，四个 replay 尚未解锁。
+EMA fullprecision selected/physical Avg-mAP 为 `41.2830/57.6087%`，
+physical-minus-selected `+16.3257` 点；legacy 差值为 `+16.2911`。
+舍入对任一臂 Avg-mAP 的绝对影响不超过 `0.0367` 点。每臂 NMS 前
+`1,584,000`、NMS 后 `422,000` 个 proposal，所有非法计数为 0；
+filtered/unfiltered 预测完全一致。结论：全精度 NMS 是正确的发布级修复，
+但不是 physical 主效应来源。
 
-权威终态不是四个单臂 `P0_COMPLETE.json` 的简单并列，而是依赖四任务的
-`P0_SUITE_COMPLETE.json`。它必须独立重算 evaluator、哈希、proposal 数、
-舍入/过滤 delta、physical-minus-selected、EMA-minus-online，以及抑制/
-排序、边界位移、短动作和高 IoU proposal recall。没有 suite completion
-时不得解释结果；没有新训练，也不得把 P0 写成新模型收益。
+fullprecision 最终预测的 physical-EMA 相对 selected-EMA
+proposal recall@0.7 在全体/短动作/中等动作/长动作上分别为
+`+12.36/+31.59/+6.93/+3.75` 点。它把下一步定位到短动作和高 IoU，但仍是
+assignment、decode、分类排序与 NMS 的联合结果，不能当纯因果证明。
+
+下一任务是冻结 decode cross-replay，再在原 Q192 内按
+decode/回归轴 × assignment 轴执行 UU/UP/PU/PP。禁止同时加入 Q-lift、
+新 loss、新采样器或新训练；P0 无需再次发起 Pro 讨论。
 
 ## 2026-07-20 STOP-Q-LIFT Decision
 
