@@ -1,5 +1,12 @@
 # Research Wiki Index
 
+## Latest Research Decision (2026-07-20)
+
+- `STOP-Q-LIFT`：保留 physical-metric Q192 与 `57.57%` 单种子完整训练
+  证据，但暂停训练型 Q-lift。当前唯一任务是冻结 epoch-59 online/EMA
+  权重的全精度跨窗口 NMS replay；随后才做 Q192 轴因子化和无训练
+  Q-density 诊断。状态不是 `paper_ready`。
+
 ## Latest Completed Experiment (2026-07-18)
 
 - `exp:phystime-g1-matched-full60`: gate and both arms completed. Final
@@ -7,7 +14,7 @@
   `+16.29`; independent metrics and online/EMA checkpoints pass. Status is
   `full60-single-seed-supported`, not `paper_ready`.
 
-更新时间：2026-07-18
+更新时间：2026-07-20
 
 这不是论文草稿，而是本项目的长期研究记忆。所有后续方法修改、实验部署和论文主张，必须先读取本页指向的当前方向、决策和失败记录。
 
@@ -89,4 +96,8 @@
 
 ## 当前状态一句话
 
-PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；same-commit selected-axis / physical-metric / G1b SDPQ 三臂 20轮对照已全部完成。physical-metric `44.88%` 明显胜 selected-axis `30.42%`，G1b `30.88%` 未证明结构优势。当前结论是 physical-time metric 获得 matched-medium 支持；多 seed、完整 schedule、机制分解和第二数据集完成前仍不是 paper-ready。
+PhysTime-AdaTAD 1.0 的 K384 三头 full run 已冻结为负基线；native-J192
+matched full60 的 physical-metric `57.57%` 明显胜 uniform-rank-seconds
+`41.28%`，但只有单 THUMOS14 seed。当前暂停训练型 Q-lift，先做全精度
+NMS 冻结重放与 Q192 机制分解；多 seed、成本和第二数据集完成前仍不是
+paper-ready。

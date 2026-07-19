@@ -1,19 +1,23 @@
 # Research Wiki Query Pack
 
-## 2026-07-19 Pro Review Decision
+## 2026-07-20 STOP-Q-LIFT Decision
 
-针对 frozen commit `0dc5851` 的 Full60/Q-lift Pro 审查已逐字归档并独立
-吸收。保留 `57.57%` 为可信的 `full60-single-seed-supported` 证据；
-当前 selected-axis/physical-metric 两臂公平，旧 random `63.61%` 和
-dense `68.29%` 只作历史锚点。代码只在 head point construction 后使用
-物理时间，VideoMAE/TIA/projection 不读取 timestamp；跨窗口 NMS 当前
-先 round 再 NMS，应改成内部全精度。
+针对 frozen commit `0dc5851` 的第二轮 Pro 严审已逐字归档并独立核验。
+操作性裁决为 `STOP-Q-LIFT`：保留 physical-metric Q192 和可信的
+`57.57%` 单种子完整训练证据，但停止把 Q384、cross-attention 或任何
+训练型 Q-lift 作为立即下一步。Q 是否构成瓶颈仍是未知，不是已被科学
+证伪。
 
-下一候选是 support-preserving physical query lift，但只处于 `designed`。
-先做同一新 commit 的 Q192/Q384 × uniform-rank-seconds/physical-seconds
-四臂 20-epoch 因子实验，并补 K/J/Q provenance、pre-NMS recall、合法
-timestamp/gap counterfactual 与成本。cross-attention 不是已证明的唯一
-结构；固定 pp/成本阈值和 ActivityNet-v1.3 选择仍待方差与协议审计。
+当前唯一任务是 `P0-FULLPRECISION-NMS-REPLAY`：删除跨窗口 NMS 前的
+segment/score 舍入，过滤并计数非有限/非正时长 proposal，用冻结的
+uniform/physical epoch-59 online/EMA 权重重放，并分别记录 rounding 与
+validity-filter 的影响。禁止同时加入 Q-lift、新 loss 或新训练。
+
+P0 通过后依次做冻结 decode cross-replay、固定 QΣ378 的 Q192
+UU/UP/PU/PP、无训练 QΣ378→756 subcell replay。四臂首字母是
+decode/回归轴，次字母是 assignment 轴；原 Pro 报告把两条主效应公式
+标签写反。当前 strict inside-GT 仍使用 decode center，所以四臂只能
+分解两个代码开关，不能夸大成完全纯净的抽象因果分解。
 
 ## 2026-07-18 Completed Full60 Evidence
 
@@ -29,7 +33,7 @@ both finite online/EMA checkpoint validators pass. This is
 `full60-single-seed-supported`, not `paper_ready`; G1b is not part of this
 survivor run.
 
-更新时间：2026-07-18。本文只保留当前决策所需的压缩记忆；完整历史见 `research-wiki/routes/`、各实验页与 `docs/evaluation/results.md`。
+更新时间：2026-07-20。本文只保留当前决策所需的压缩记忆；完整历史见 `research-wiki/routes/`、各实验页与 `docs/evaluation/results.md`。
 
 ## 当前方向与状态
 
@@ -47,10 +51,10 @@ survivor run.
 2. G1b SDPQ 相对 selected-axis 仅 `+0.46` Avg-mAP，虽在 mAP@0.6/0.7 分别提高 `+2.11/+2.42`，但 mAP@0.3 降低 `-3.83`；
 3. 因此证据支持真实物理时间度量，不支持当前 SDPQ 结构优于 physical-metric control。
 
-60-epoch 单种子 survivor 已完成。下一项决定性任务不是继续放大 G1b，
-而是修复全精度跨窗口 NMS，并用同一新架构的 Q/坐标四臂隔离候选密度、
-物理时间和 support-to-query bridge；通过后再进入多 seed。当前状态是
-`full60-single-seed-supported`，不是 `paper_ready`。
+60-epoch 单种子 survivor 已完成。下一项决定性任务不是继续放大 G1b
+或实现新 Q-lift，而是完成全精度跨窗口 NMS 冻结重放；随后在原 Q192
+结构内分解 assignment eligibility 与 regression/decode 几何。当前状态
+是 `full60-single-seed-supported`，不是 `paper_ready`。
 
 ## 当前核心科学问题
 
@@ -64,7 +68,7 @@ survivor run.
 ## 最高优先级缺口
 
 - `G4` 公平隔离：same-commit/schedule/seed medium 与 full60 两臂已完成；
-  下一步需在新 Q-lift 架构内重跑 Q/坐标四臂，旧结果只作历史锚点。
+  下一步先做冻结全精度 replay，再在原 Q192 结构内做 UU/UP/PU/PP。
 - `G2` provenance：K384 raw observations、J192 tubelet tokens、Q0 与多尺度候选必须分开审计；一个 tubelet 融合两帧，只能先称 multi-atom support anchor。
 - `G5` 高 IoU：需要 proposal recall、class-aware recall、边界 MAE、短动作与 gap 条件分解，不能只看 Avg-mAP。
 - `G7` 成本与泛化：缺完整 decode/VideoMAE/head latency、FLOPs、显存和第二数据集证据。
@@ -105,8 +109,9 @@ survivor run.
 - physical-metric 相对 selected-axis：`matched-medium-supported`。
 - G1b 相对 selected-axis：Avg-mAP 优势不成立，高 IoU 有弱正信号；相对 physical-metric 明显落后。
 - 三臂 medium suite：`completed`，全部 validator 通过。
-- 60-epoch单种子两臂：已完成；新 Q-lift full train 未解锁，必须先通过
-  四臂 20-epoch、机制、成本和 artifact gate。
+- 60-epoch 单种子两臂：已完成；训练型 Q-lift 暂停。P0 全精度 replay、
+  Q192 机制分解和无训练 Q-density replay 通过前，不解锁任何 Q-lift
+  pilot/full train。
 - PhysTime 论文主张：尚无 `paper_ready` claim。
 
 ## 必读入口

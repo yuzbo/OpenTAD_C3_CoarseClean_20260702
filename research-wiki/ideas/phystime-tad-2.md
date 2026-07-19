@@ -9,7 +9,7 @@ risks: "可能被 timestamp/interpolation/mTAN-like baseline 匹配；feature tr
 based_on: ["paper:shukla2021_mtan", "paper:kim2024_te_tad", "paper:zeng2024_temporal_robustness", "paper:sun2026_liquidtad"]
 target_gaps: ["gap:G1", "gap:G2", "gap:G3", "gap:G5"]
 added: 2026-07-11T00:00:00+08:00
-updated: 2026-07-19T23:15:00+08:00
+updated: 2026-07-20T00:00:00+08:00
 ---
 
 # PhysTime-TAD 2.0
@@ -65,6 +65,25 @@ evidence。
 只是优先实现，不是已证明的唯一结构；固定性能/成本阈值、timestamp
 shuffle 和第二数据集选择仍待审计。当前 stage 保持 `active`，operator
 状态保持 `designed`，不得写成 implemented/tested/paper-ready。
+
+## 2026-07-20 STOP-Q-LIFT 裁决
+
+第二轮代码严审否定了“physical Q192 有效，所以剩余缺口一定来自 Q 不足”
+这一未经证明的跳跃。当前保留 physical-metric Q192，暂停 Q384、
+cross-attention 和其他训练型 Q-lift。
+
+下一机制链固定为：
+
+1. full-precision NMS 冻结重放；
+2. 冻结 checkpoint 的 decode cross-replay；
+3. Q192 的 UU/UP/PU/PP 轴因子化；
+4. 无训练 subcell Q-density replay；
+5. 只有 oracle/pre-NMS 高 IoU coverage 明确改善，才恢复 Q-lift 讨论。
+
+本地核验还发现原 Pro 报告将 decode 与 assignment 主效应公式标签互换。
+当前 strict inside-GT 使用 decode center，因此四臂只分解两个实现开关，
+不构成完全纯净的抽象因果分解。idea outcome 继续为 `mixed`，不创建新
+paper claim。
 
 ## Connections
 

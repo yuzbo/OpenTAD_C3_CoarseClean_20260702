@@ -9,7 +9,7 @@ risks: "可能被批评为 mTAN-style regridding + ActionFormer；TIA 仍按 sel
 based_on: ["idea:phystime-tad-2", "paper:zhang2022_actionformer", "paper:liu2024_adatad", "paper:shukla2021_mtan", "paper:kim2024_te_tad", "paper:wang2022_rcl"]
 target_gaps: ["gap:G1", "gap:G2", "gap:G3", "gap:G4", "gap:G5"]
 added: 2026-07-13T00:00:00+08:00
-updated: 2026-07-19T23:15:00+08:00
+updated: 2026-07-20T00:00:00+08:00
 ---
 
 # SM-PTAF
@@ -52,6 +52,21 @@ SM-PTAF 不能直接和旧 PhysTime 1.0 比较后声称有效。必须先建立�
 
 新候选必须做 Q 与 coordinate 的 2x2 因子实验；只要 bridge 变化，旧
 G1a Q192 数值就不能直接复用。状态仍为 `designed`。
+
+### 2026-07-20 状态覆盖
+
+训练型 support-to-query lift 不再是立即下一任务。full60 证明的是现有
+Q192 physical metric，而不是 Q bottleneck。SM-PTAF 保持 `designed`，
+没有被永久证伪，但在以下证据完成前暂停实现和训练：
+
+1. full-precision NMS 冻结重放；
+2. Q192 assignment/decode 机制分解；
+3. 无训练 Q-density replay 显示 oracle/pre-NMS 高 IoU coverage 明确受
+   detection-location density 限制。
+
+若第三项不成立，Q-lift 永久降级为无必要的工程扩展；若成立，仍需重新
+比较无参数 replay、简单共享 lift 与学习式 bridge，不能自动指定
+cross-attention 为最终结构。
 
 ## 必须先关闭的风险
 

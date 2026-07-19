@@ -25,7 +25,8 @@ held fixed?
 - `physical_metric`: the same topology with real physical seconds.
 - Both arms use the same THUMOS14 raw videos, K=384 raw observations, J=192
   native tubelet tokens, seed 42, VideoMAE checkpoint, optimizer, augmentation,
-  evaluator, and fixed no-GT irregular sampler.
+  evaluator, GT-aware training-window crop, and GT-free fixed subsampling
+  inside each accepted window.
 - G1b SDPQ is excluded because the matched medium experiment did not support it.
 - Feature interpolation is disabled in both arms.
 - The cosine scheduler and workflow both end at 60 epochs. Validation starts at
@@ -96,14 +97,31 @@ still required.
 
 The reviewed `57.57` result remains valid. The review found no P0 issue that
 invalidates training, prediction, or evaluation. The early rounding used by
-cross-window NMS is shared by both arms, so it should be fixed prospectively but
-does not erase the matched delta.
+cross-window NMS is shared by both arms, so it does not automatically erase the
+matched evidence; however, the full-precision absolute metrics and delta remain
+to be replayed.
 
 This experiment must not be used as a fair direct comparison with the older
 `63.61` random-sampling ActionFormer or the `68.29` dense anchor. Those systems
 change feature interpolation, candidate density, coordinate semantics, or raw
-observation cost. The next Q-lift architecture must rerun all four Q/coordinate
-arms; this experiment then becomes a historical external anchor.
+observation cost. The former plan required a new Q-lift architecture to rerun
+all four Q/coordinate arms; the 2026-07-20 decision below supersedes that plan.
+
+## 2026-07-20 STOP-Q-LIFT Boundary
+
+The previous plan to proceed directly to a trained Q192/Q384 architecture is
+superseded. The current result proves a physical-metric effect under QΣ378; it
+does not prove that Q is the remaining bottleneck.
+
+The immediate task is frozen-checkpoint full-precision NMS replay for both
+online and EMA weights. Its artifact must separate the effect of removing
+rounding from the effect of filtering nonfinite or nonpositive-duration
+proposals. After that, the existing Q192 head should be decomposed with
+UU/UP/PU/PP axes and a training-free Q-density replay.
+
+This page retains `full60-single-seed-supported`. Early rounding, tail-mask
+risk, and proposal filtering are prospective publication blockers, not evidence
+that invalidates the completed matched result.
 
 ## Connections
 

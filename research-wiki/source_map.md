@@ -16,6 +16,8 @@
 | `docs/methods/reviews/2026-07-12-phystime-performance-drop-pro-audit-prompt.md` | 基于 `3ac93a1`/`d900c7c` 的最终 PhysTime Pro 代码审计、架构重设计与实验裁决 prompt |
 | `docs/methods/2026-07-13-phystime-performance-drop-pro-audit-absorption.md` | 1539 行 Pro 回复的状态、代码风险与执行顺序吸收 |
 | `docs/methods/2026-07-13-phystime-pro-audit-independent-verification.md` | 对 Pro 裁决、远端结果、代码事实和 SM-PTAF 路线的独立分级核验 |
+| `docs/methods/2026-07-19-phystime-full60-q-lift-pro-review-absorption.md` | Full60 证据、K/J/Q、公平性与 support-preserving query-lift 第一轮审查吸收 |
+| `docs/methods/2026-07-20-phystime-stop-q-lift-pro-review-absorption.md` | STOP-Q-LIFT、全精度 NMS、Q192 轴因子化、公式修正与当前唯一任务 |
 | `docs/evaluation/phystime-tad-track.md` | 已取消 feature-token track 的历史部署协议 |
 
 ## 2. DUCA/C3 评审与吸收记录
@@ -67,6 +69,7 @@
 | `1fc36774-3c6e-461c-a5a0-d719ac99ecb5` | `9F87B12F4DE594C2E542973F20D22DF6F7D95AE3F5E7776BB38D8A8565D390B7` | PIVOT、23 个候选、ChronoTransport/CoDeR/ACTAL/PhysTime/No-Free-Frames |
 | `e8d42e0b-ab00-43d4-8cbe-7d57f323f95a` | `A30B6D5547CD6891A4CA3A36C19651E0172ACF40B8D28F6904BD5EDE9E1CF302` | PhysTime 1.0 新颖性批判、support measure 2.0 与三类实验协议 |
 | `4efbcdfc-7b11-46fd-a863-da1d992a110f` | `651C4CA673073D7E4C05746138C82EBBE2E6174C459516FB40B3EFDCA47305AB` | PhysTime 1.0 性能下降逐文件 Pro 审查；`HOLD AND REBUILD`、native tubelet provenance、capacity-matched controls 与 SM-PTAF designed route |
+| `41c27fc1-85cc-4573-9ca4-f443a8cb0d7a` | `F08AF135EAC342960929031FE84400144F0ADA55720F9A744203CFF2943A5057` | 第二轮 `STOP-Q-LIFT` 严审；全精度 NMS、proposal/tail 风险、Q192 机制分解、无训练 Q-density replay 与本地主效应公式修正 |
 
 附件根路径格式：
 
@@ -88,6 +91,8 @@
 | `3ac93a1` | PhysTime-AdaTAD 最终稳定 matched full-run 实现 |
 | `d900c7c` | PhysTime 性能下降诊断、预测分解、结果审计与 Wiki 裁决 |
 | `f734aa4` | 触发本次 Pro 审查的固定 GitHub prompt |
+| `0dc5851` / tree `bddc9b9` | native-J192 matched 60-epoch uniform/physical 两臂可执行实验锚点 |
+| `21c264b` | 第一轮 Full60/Q-lift Pro 审查完成后的文档快照；第二轮审查的可见性锚点 |
 
 ### 额外分支来源
 
@@ -112,4 +117,4 @@
 
 ## 6. 覆盖声明
 
-本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 三头 full run、性能诊断和 SM-PTAF 设计审查。三份 `routes/*-complete-record.md` 进一步记录跨分支实现与实验谱系。本次 1539 行 Pro 回复已逐字归档，并完成独立结果/代码/路线核验；吸收记录只提炼状态、风险、停止条件和下一步，不替代原文。
+本 Wiki 已覆盖本线程中出现的目标争论、训练方式、zero-shot prior、固定/动态预算、max-gap、detector gradient、X3D/SlowFast、PIVOT/ChronoTransport/DCRT、两轮共 23+24 个发散候选、PhysTime 1.0/2.0、feature-track 取消、raw-video AdaTAD 三头 full run、native-J192 matched medium/full60、性能诊断、SM-PTAF 设计审查和 STOP-Q-LIFT 路线收缩。三份 `routes/*-complete-record.md` 进一步记录跨分支实现与实验谱系。三次关键 PhysTime Pro 回复均已逐字归档并完成独立结果/代码/路线核验；吸收记录只提炼状态、风险、停止条件和下一步，不替代原文。

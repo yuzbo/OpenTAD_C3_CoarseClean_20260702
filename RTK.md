@@ -4,11 +4,13 @@
 
 最终目标是一个独立的离线 PhysTime-TAD 检测器：接收任意不规则视频观测、真实时间戳和可审计支持区间，在物理时间轴上直接完成动作分类与起止边界定位，并在缺帧、非均匀密度和不同 FPS 下保护高-IoU 定位。
 
-PhysTime-AdaTAD 1.0 的 matched raw-video K384 comparison 已完成并得到负结果。当前阶段执行 P0 重建：先做等容量、同上下文、同候选、同 assignment 的 coordinate-only control，再以 gate 结果决定是否实现 SM-PTAF。完整定义见：
+PhysTime-AdaTAD 1.0 的 matched raw-video K384 comparison 已完成并得到负结果；native-J192 matched control 与 60-epoch 单种子验证也已完成，uniform-rank-seconds/physical-metric 最终 Avg-mAP 为 `41.28/57.57%`。当前唯一阶段是 `P0-FULLPRECISION-NMS-REPLAY`：先修跨窗口 NMS 前舍入和 proposal validity 合同，用冻结 epoch-59 online/EMA 权重重放。P0 前禁止实现或训练 Q-lift。完整定义见：
 
 - `research-wiki/current_direction.md`
 - `docs/superpowers/specs/2026-07-11-phystime-adatad-1-design.md`
 - `docs/superpowers/plans/2026-07-11-phystime-adatad-1.md`
+
+P0 通过后依次执行冻结 decode cross-replay、Q192 UU/UP/PU/PP 和无训练 Q-density replay。只有 oracle/pre-NMS 高 IoU coverage 明确受 Q 限制，才允许恢复 Q384/cross-attention 等训练型 Q-lift 讨论。当前结果状态为 `full60-single-seed-supported`，不是 `paper_ready`。
 
 ## Historical Route Boundary
 

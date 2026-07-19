@@ -30,6 +30,7 @@
 | DR-024 | `SM-PTAF` 只登记为 designed candidate，不是已实现最终方法 | 当前设计 | 唯一推荐的核心是 native tubelet multi-atom provenance + measure-preserving no-interpolation set-to-physical-query lift；capacity-matched AF 是先行 control，mass residual 是候选算子 | 先通过 G0 provenance 与 G1 coordinate-only control，再决定实现和 pilot；回复代码片段不能替代仓库实现、测试或 mAP |
 | DR-025 | K 可以决定 matched candidate cardinality，但不能定义物理坐标 | 已锁定 | 旧“query count 与 K 完全无关”会令候选数和 detector capacity 不公平；反向把 rank 当坐标又会破坏 PhysTime 初心 | 候选 center/width/stride、GT、decode、NMS 仍全部是秒；validator 必须分别审计 K、native token J 与 query Q |
 | DR-026 | Pro 总裁决分级接受，SM-PTAF 不直接升级为唯一最终模型 | 当前执行 | 独立核验确认 1.0 负结果、provenance/容量/候选/assignment 问题和 `HOLD AND REBUILD`；但 tubelet 已融合跨 gap 帧，且删除 J192 插值后恢复 Q384 必然新增 lift，不能再称纯 coordinate-only | 先完成 G0 lineage/Jacobian；再做 G1a `Q=J` matched temporal-metric、G1b 双侧共享 Q384 中性 lift；只有 survivor 才进入 mass residual，endpoint 最后消融 |
+| DR-027 | 暂停训练型 Q-lift，先完成 full-precision evaluator replay 与 Q192 机制分解 | 当前执行/已锁定顺序 | full60 已证明 physical metric 有效，但没有证明 Q 是剩余瓶颈；当前跨窗口 NMS 在 NMS 前舍入，physical intervention 又同时改变 center、stride、range、assignment、normalization 与 decode。直接加 Q384/cross-attention 会重新混入容量、上下文和优化路径 | 先完成冻结 online/EMA 的 P0 full-precision replay；再做冻结 decode cross-replay、Q192 UU/UP/PU/PP 与无训练 Q-density replay。只有 oracle/pre-NMS 高 IoU coverage 明确受 Q 限制，才允许恢复训练型 Q-lift |
 
 ## 不得静默推翻
 

@@ -147,3 +147,7 @@
 - 2026-07-19：逐字归档针对 commit `0dc5851` 与 full60 `41.28/57.57%` 的 PhysTime/Q-lift Pro 严审；附件与仓库原文 SHA256 均为 `BBD48B6BCE5E4AC612A395561D2EABCBB1F6DB5880B329EF21CAC6808CFBD5E0`。
 - 2026-07-19：完成独立代码与证据核验并分级吸收。接受 head-level physical-metric 作用域、旧随机/dense 非公平、K/J/Q 混杂、全精度跨窗口 NMS 修复、窗内无 GT 措辞和 Q×coordinate 四臂设计；不接受把 cross-attention 写成已证明唯一结构，也不把外部固定 pp/成本阈值、非单调 timestamp shuffle 或未经审计的 ActivityNet 选择写成既定合同。
 - 2026-07-19：`exp:phystime-g1-matched-full60` 保持 `full60-single-seed-supported`；`idea:sm-ptaf` 吸收 support-preserving physical query lift 后仍为 `designed`。下一步先关闭 NMS/provenance/反事实与真实 CUDA gate，再做同一新 commit 的 Q192/Q384 × uniform-rank/physical 四臂 20-epoch 因子实验；新 full train 未解锁。
+- 2026-07-20：逐字归档第二轮 PhysTime `STOP-Q-LIFT` Pro 严审；原文 1053 行、49884 字节，附件与仓库归档 SHA256 均为 `F08AF135EAC342960929031FE84400144F0ADA55720F9A744203CFF2943A5057`。审查代码锚点仍为 `0dc5851` / tree `bddc9b9`，当前文档 HEAD 相对该锚点没有可执行代码差异。
+- 2026-07-20：独立代码核验确认跨窗口 NMS 提前舍入、proposal validity filter 缺失、FPNIdentity LN 后未 remask、per-GT assignment 缺失、query audit 命名混淆、`random_trunc` 静默 fallback 与 float class ID。它们是发布级 blocker/风险，不自动撤销 `57.57%`。
+- 2026-07-20：高度认可 `STOP-Q-LIFT` 的研究顺序，但不完全接受原文。修正了 decode/assignment 主效应公式标签互换，并记录 strict inside-GT 仍依赖 decode center，故四臂只分解两个代码开关。Q-lift 是“未知且当前不获训练授权”，不是永久证伪。
+- 2026-07-20：当前唯一任务改为 `P0-FULLPRECISION-NMS-REPLAY`；禁止并行加入 Q-lift 或新训练。P0 后依次做冻结 decode cross-replay、Q192 UU/UP/PU/PP 与无训练 Q-density replay。`exp:phystime-g1-matched-full60` 保持 `full60-single-seed-supported`，`idea:sm-ptaf` 保持 `designed`，不创建新 claim。

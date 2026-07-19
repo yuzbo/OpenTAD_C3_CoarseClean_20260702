@@ -1,5 +1,27 @@
 # Anti-Repetition Contract
 
+## 2026-07-20 STOP-Q-LIFT 禁区
+
+- 不把 `STOP-Q-LIFT` 写成“Q 已被证明无用”。准确含义是：Q bottleneck
+  未被证明，因此训练型 Q-lift 当前 fail-closed 不获授权。
+- 当前唯一任务是 `P0-FULLPRECISION-NMS-REPLAY`；不得并行加入 Q384、
+  interpolation、copy、cross-attention、gap projection、新 loss 或训练。
+- P0 必须分别记录 rounding 开关与 proposal validity filter 开关的影响；
+  不把两个评估修复混成一个因果解释。
+- `CODE_CORRECT=false` 不得用于撤销现有 `57.57%`；正确边界是核心
+  physical geometry/结果有效，发布级 evaluator 与 tail-mask 合同未闭环。
+- UU/UP/PU/PP 首字母是 decode/回归轴，次字母是 assignment 轴。正确
+  主效应为：
+  `Δdecode=((PU-UU)+(PP-UP))/2`，
+  `Δassignment=((UP-UU)+(PP-PU))/2`。
+- 当前 strict inside-GT 使用 decode center。四臂只分解
+  regression/decode/inside-GT 轴与 center-sampling/range-eligibility 轴；
+  禁止宣称 assignment 与 decode 已完全纯净解耦。
+- FPN tail、零时长 proposal、`random_trunc` fallback 是待验证代码风险，
+  不是已经证明的 `57.57` 性能来源。
+- 只有无训练 Q-density replay 的 oracle/pre-NMS 高 IoU 指标显示明确收益，
+  才允许恢复训练型 Q-lift 讨论。
+
 ## 2026-07-19 Full60 / Q-Lift 审查禁区
 
 - 不推翻现有 `57.57%`：它是可信的单种子 full60 matched 结果；NMS 提前
@@ -20,8 +42,9 @@
 - 不把 `+6pp/+4pp/+1.5pp`、`1.40x/1.35x` 等外部建议阈值写成已证明合同；
   先由 seed 方差、功效与成本预算预注册。
 - 不未经 raw-video 协议审计就把 ActivityNet-v1.3 固定为第二数据集。
-- 不直接启动新 Q-lift 60-epoch/full matrix。顺序固定为评估精度修复、
-  静态/单元测试、真实 CUDA gate、四臂 20-epoch、再多 seed。
+- 不直接启动新 Q-lift 60-epoch/full matrix。该旧四臂 Q×coordinate 计划
+  已被 2026-07-20 裁决取代；顺序改为 P0 replay、冻结 decode
+  cross-replay、Q192 轴因子化、无训练 Q-density replay，再决定是否恢复。
 - “无 GT 采样”只允许描述已接受窗口内的固定不规则子采样；训练
   `random_trunc` crop 使用 GT，必须明确披露。
 
@@ -98,7 +121,12 @@
 
 ## 当前唯一主线
 
-PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验已经完成并冻结。当前唯一执行阶段是 P0 rebuild：native tubelet provenance + capacity/context/candidate/assignment-matched coordinate-only control；`SM-PTAF` 仍为 designed candidate。当前状态以 `query_pack.md`、`current_direction.md`、`experiments/phystime-adatad-k384.md` 和 `docs/evaluation/results.md` 为准。
+PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验已经完成并冻结；
+native-J192 matched full60 也已完成。当前唯一执行阶段是
+`P0-FULLPRECISION-NMS-REPLAY`；`SM-PTAF` 仍为 designed candidate，
+训练型 Q-lift 暂停。当前状态以 `query_pack.md`、`current_direction.md`、
+`experiments/phystime-g1-matched-full60.md` 和
+`docs/evaluation/results.md` 为准。
 
 ## 2026-07-17 G1b Medium-Run Guardrail
 

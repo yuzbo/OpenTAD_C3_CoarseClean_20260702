@@ -1,6 +1,6 @@
 # PhysTime 完整讨论、方法演化、实现与实验档案
 
-更新时间：2026-07-13
+更新时间：2026-07-20
 
 ## 0. 结论先行
 
@@ -437,7 +437,9 @@ PhysTime 解决 detector 时间几何；ChronoTransport 解决 heavy feature rec
 - 不得把 SM-PTAF 公式或代码草图称为已实现；
 - 不得继续用 `192 -> 384` feature interpolation 冒充 raw support provenance。
 
-## 15. 当前唯一下一步
+## 15. 2026-07-13 当时的下一步（已由 §19 覆盖）
+
+本节保留为历史决策记录；当前授权顺序以 §19 为准。
 
 执行 `HOLD AND REBUILD` 的 P0 顺序：
 
@@ -485,3 +487,51 @@ proposal recall、assignment、observability、合法 timestamp counterfactual
 和成本诊断。cross-attention 是优先候选而非已证明唯一结构；外部固定阈值
 和 ActivityNet 选择不直接写入研究合同。状态仍为 `designed`，新 full
 train 未解锁。
+
+## 19. 2026-07-20 STOP-Q-LIFT 审查与路线收缩
+
+原文：
+`docs/methods/reviews/2026-07-20-phystime-stop-q-lift-pro-review-raw.md`。
+
+吸收：
+`docs/methods/2026-07-20-phystime-stop-q-lift-pro-review-absorption.md`。
+
+第二轮严审保留 `57.57%` 及 physical-metric 路线，但否定了“剩余缺口
+必然来自 Q 不足，因此下一步应训练 Q384/cross-attention”的未经证明
+跳跃。当前 `STOP-Q-LIFT` 只表示训练授权暂停，不表示 Q 已被科学证伪。
+
+本地逐行核验确认：
+
+- 跨窗口 NMS 的确使用窗口内已舍入到 `0.01s/1e-4` 的 segment/score；
+- clamp 后没有统一过滤非有限或非正时长 proposal；
+- FPNIdentity 在 LN 后未 remask，head kernel-3 可能读取 invalid tail；
+- assignment diagnostics 缺 per-GT eligible/positive/zero-positive；
+- K/J/Q audit 命名和参数 numel artifact 不完整；
+- `random_trunc` 耗尽后静默使用最后一次 crop；
+- 所谓 selected-axis 实际是 `uniform-rank-seconds`。
+
+外部报告的一处公式错误已修正。若 arm 首字母为 decode/回归轴、次字母为
+assignment 轴：
+
+```text
+Δdecode = ((PU-UU) + (PP-UP)) / 2
+Δassignment = ((UP-UU) + (PP-PU)) / 2
+Δinteraction = PP-PU-UP+UU
+```
+
+此外，strict inside-GT 仍使用 decode center，所以四臂分解的是：
+
+1. regression/decode/strict-inside-GT axis；
+2. center-sampling/range-eligibility axis。
+
+不能把它夸大成完全纯净的 assignment/decode 抽象分解。
+
+当前唯一任务固定为 `P0-FULLPRECISION-NMS-REPLAY`：只修全精度评估、
+proposal validity、类型合同和对抗性测试，并用 epoch-59 uniform/physical
+online/EMA 冻结权重重放。artifact 必须分别记录 rounding 与 validity
+filter 的影响。该任务禁止 Q384、interpolation、copy、cross-attention、
+gap projection、新 loss 和训练。
+
+P0 之后的顺序为冻结 decode cross-replay、Q192 UU/UP/PU/PP、无训练
+QΣ378→756 replay。只有 oracle/pre-NMS 高 IoU coverage 明确受 Q 限制，
+才允许恢复训练型 Q-lift。多 seed、成本与第二数据集继续保持未解锁。

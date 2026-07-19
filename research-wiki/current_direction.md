@@ -1,20 +1,21 @@
 # 当前唯一方向与最终目标
 
-## 2026-07-19 Pro 审查吸收
+## 2026-07-20 STOP-Q-LIFT 审查吸收
 
-已逐字归档并独立核验针对 commit `0dc5851` 的 Full60/Q-lift Pro 审查。
-核心裁决被接受：`57.57%` 是可信的单种子 full60 结果；当前两臂公平，
-但旧随机 `63.61%` 和 dense `68.29%` 不是因果公平对照；当前物理时间只
-从检测头点构造开始介入，VideoMAE/TIA/projection 不读取时间戳；剩余
-缺口不能在 Q、表示、排序、回归和 NMS 之间提前归因。
+已逐字归档并独立核验针对 commit `0dc5851` 的第二轮 Pro 严审。核心研究
+顺序被接受：保留 `57.57%` 为可信的
+`full60-single-seed-supported` 证据；暂停把 Q384、cross-attention 或
+其他训练型 Q-lift 当作立即下一步；先修跨窗口 NMS 提前舍入，再在固定
+K384/J192/QΣ378 下分解现有 physical intervention。
 
-下一候选收敛为 support-preserving physical query lift，并要求同一新
-commit 下做 Q192/Q384 × uniform-rank-seconds/physical-seconds 四臂
-20-epoch 因子实验。该候选仅为 `designed`，不是已实现或唯一正确结构。
-审查给出的固定收益/成本阈值、字面 timestamp shuffle 和直接指定
-ActivityNet-v1.3 不作为既定合同；必须先由方差、合法反事实、成本预算
-和数据协议审计确定。完整吸收见
-`docs/methods/2026-07-19-phystime-full60-q-lift-pro-review-absorption.md`。
+本地核验同时修正两点：原报告把 decode 与 assignment 两条主效应公式的
+标签写反；当前 strict inside-GT 条件仍使用 decode center，所以
+UU/UP/PU/PP 分解的是两个代码开关，不是完全纯净的抽象因素。Q-lift
+状态是“尚未证明需要、当前不获训练授权”，不是永久无效。
+
+当前唯一任务是 `P0-FULLPRECISION-NMS-REPLAY`。该任务只能修复并重放
+评估链，不得加入 Q-lift、新 loss 或新训练。完整吸收见
+`docs/methods/2026-07-20-phystime-stop-q-lift-pro-review-absorption.md`。
 
 ## 2026-07-18 Execution Status
 
@@ -31,7 +32,7 @@ diagnostic and is not promoted. Status is `full60-single-seed-supported`, not
 
 2026-07-13 部署门槛更新：G1a 当前仅为 `tested`。独立 Max 审查第二轮的 4 个 P1 已修复，相关远端回归 `240 passed`；第三轮未达到零 P0/P1 前不得部署 real gate，gate 未通过前不得启动 matched pilot。
 
-更新时间：2026-07-18
+更新时间：2026-07-20
 
 ## 1. 最终研究目标
 
@@ -43,7 +44,11 @@ diagnostic and is not promoted. Status is `full60-single-seed-supported`, not
 
 ## 2. 当前唯一执行主线
 
-`idea:phystime-adatad-1` 已完成稳定 full run 并冻结为负基线。当前执行阶段是它之后的 **HOLD AND REBUILD**：先用最小而严格的 capacity-matched control 回答一个问题：
+`idea:phystime-adatad-1` 已完成稳定 full run 并冻结为负基线；
+native-J192 capacity-matched control 和单种子 full60 也已完成。当前唯一
+执行任务是 **`P0-FULLPRECISION-NMS-REPLAY`**：先用冻结权重修复并重放
+发布级评估链，再做 Q192 机制分解。下面这个 control 问题已经得到单种子
+正结果，但仍需多 seed：
 
 > 在完全相同的不规则原始帧观测、官方 AdaTAD/VideoMAE-S backbone、检测容量、跨 query 上下文、候选拓扑、assignment 和训练更新下，只改变 selected-coordinate 与 physical-coordinate，结果是否仍有稳定差异？
 
@@ -118,8 +123,9 @@ Phase 1.5 已产生单 seed survivor，但以下扩展仍需按“先复现、�
 
 因此当前状态必须写成：**PhysTime-AdaTAD 1.0 已冻结为负基线；native-J192
 matched full60 单种子结果明确支持 physical-time metric，但没有支持当前
-SDPQ 结构，也未公平超过旧随机或 dense 锚点。下一步先做全精度 NMS 与
-Q/坐标四臂机制隔离；SM-PTAF/Q-lift 仍是 designed candidate。**
+SDPQ 结构，也未公平超过旧随机或 dense 锚点。下一步只做全精度 NMS
+冻结重放；通过后在原 Q192 结构内做轴因子化和无训练 Q-density 诊断。
+SM-PTAF/Q-lift 仍为 designed candidate，但已暂停作为立即下一步。**
 
 ## 5. 明确非目标
 
@@ -128,7 +134,7 @@ Q/坐标四臂机制隔离；SM-PTAF/Q-lift 仍是 designed candidate。**
 - 不把 I3D feature archive 当作 raw-video 端到端证据。
 - 不把“continuous time”本身当作新颖性；核心是显式支持区间上的 measure operator 与物理时间检测闭环。
 - 不在 primary comparison 中加入 paired-view consistency，避免监督量不公平。
-- 不在 K=384 matched-medium survivor 完成复现与机制分解前扩展新 idea。
+- 不在 P0 全精度 replay 与 Q192 机制分解完成前扩展新 idea 或训练 Q-lift。
 
 ## 6. 主张门槛
 

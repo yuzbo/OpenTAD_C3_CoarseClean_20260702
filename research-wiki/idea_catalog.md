@@ -18,7 +18,7 @@
 | `idea:phystime-tal-1` | continuous-time irregular TAD | 被 2.0 取代 | support/time/hazard/consistency 定义不够严格且撞近邻 |
 | `idea:phystime-tad-2` | support-integrated physical-time detector | 长期目标 | 独立 detector，直接解决不规则时间几何 |
 | `idea:phystime-adatad-1` | raw-video matched head isolation | 已完成/负基线 | full run 已完成，但容量、候选、assignment 与 feature provenance 混杂 |
-| `idea:sm-ptaf` | native tubelet support-measure set-to-physical-query detector | designed rebuild candidate | 先关闭 provenance 与公平性 P0；尚未实现或测试 |
+| `idea:sm-ptaf` | native tubelet support-measure set-to-physical-query detector | designed / paused | 暂停结构扩张；先完成评估器全精度复算、Q192 轴向拆分与免训练密度复放 |
 
 ## B. 2026-07-10 发散产生的 23 个候选
 

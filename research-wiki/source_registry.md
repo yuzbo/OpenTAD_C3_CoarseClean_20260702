@@ -1,5 +1,19 @@
 # Source Registry
 
+## 2026-07-20 Active Review Source
+
+- `SRC-PT-016`: 外部 PhysTime `STOP-Q-LIFT` Pro 严审原文
+  `docs/methods/reviews/2026-07-20-phystime-stop-q-lift-pro-review-raw.md`，
+  SHA256
+  `F08AF135EAC342960929031FE84400144F0ADA55720F9A744203CFF2943A5057`。
+  审查对象为文档 commit `21c264b`、可执行 commit `0dc5851` /
+  tree `bddc9b9` 及 full60 `41.28/57.57%`。完整独立吸收见
+  `docs/methods/2026-07-20-phystime-stop-q-lift-pro-review-absorption.md`。
+  用途：暂停训练型 Q-lift，固定 P0 全精度 NMS replay、Q192
+  assignment/decode 机制分解、无训练 Q-density 反事实和发布级代码缺口；
+  不是新实验、实现或 mAP 来源。原报告主效应公式标签互换的修正以本地
+  吸收记录为准。
+
 ## 2026-07-19 Active Review Source
 
 - `SRC-PT-015`: 外部 PhysTime Full60/Q-lift Pro 严审原文

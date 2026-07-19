@@ -12,3 +12,4 @@
 # Preserve the attachment's CRLF checkout bytes and recorded SHA256.
 docs/methods/reviews/2026-07-13-phystime-performance-drop-pro-audit-response-raw.md text eol=crlf
 docs/methods/reviews/2026-07-19-phystime-full60-q-lift-pro-review-raw.md text eol=crlf
+docs/methods/reviews/2026-07-20-phystime-stop-q-lift-pro-review-raw.md text eol=crlf
