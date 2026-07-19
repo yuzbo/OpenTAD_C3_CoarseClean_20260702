@@ -70,11 +70,14 @@ is independently reconstructed from the hashed THUMOS annotation, class map,
 window start, stride and IoA rule; a self-consistent rewritten JSONL is not a
 trust root. Validation/test records must use the validation/testing dataset
 subset with `test_mode=True`, and both runtime batches and serialized records
-must contain no GT. Decoder FPS and annotation FPS must keep cumulative
-timeline drift below one frame over the complete decoded video, and every
-decoded frame index must lie inside `[0,total_frames-1]`. Boundary radii remain
-dense detector-grid radii; physical source-frame and seconds caps are reported
-separately.
+must contain no GT. The canonical alignment axis is decoded frame index:
+the decoder frame count and the annotation frame count reconstructed from
+`annotation_fps * annotation_duration` must agree within one frame, and every
+decoded frame index must lie inside `[0,total_frames-1]`. Decoder FPS and
+annotation FPS are different clocks in THUMOS and their full-video clock drift
+is retained as an explicit diagnostic, not used to reject an otherwise exact
+frame-index alignment. Boundary radii remain dense detector-grid radii;
+physical source-frame and seconds caps are reported separately.
 
 The allocation exporter also removes only exact duplicate sliding-window
 identities produced by the legacy end-window loop, retaining the first copy.

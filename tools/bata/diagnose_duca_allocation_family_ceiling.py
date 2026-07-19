@@ -60,6 +60,8 @@ _PHYSICAL_AXIS_KEYS = {
     "seconds",
     "decoder_fps",
     "annotation_fps",
+    "annotation_duration_seconds",
+    "annotation_total_frames",
     "total_frames",
 }
 _COORDINATE_AUDIT_KEYS = {
@@ -69,11 +71,15 @@ _COORDINATE_AUDIT_KEYS = {
     "passed",
 }
 _TIMELINE_AUDIT_KEYS = {
+    "canonical_alignment_axis",
     "decoder_fps",
     "annotation_fps",
+    "annotation_duration_seconds",
+    "decoder_total_frames",
+    "annotation_total_frames",
     "absolute_fps_error",
-    "tolerance_fps",
-    "cumulative_drift_frames",
+    "fps_clock_drift_frames_over_annotation_duration",
+    "frame_count_alignment_error_frames",
     "tolerance_frames",
     "passed",
 }
@@ -230,30 +236,44 @@ def validate_input_record(row: Mapping[str, Any], *, context: str) -> None:
         raise ValueError(f"{context}: strict timeline-audit fields mismatch")
     decoder_fps = float(physical_axis.get("decoder_fps", 0.0))
     annotation_fps = float(physical_axis.get("annotation_fps", 0.0))
+    annotation_duration = float(
+        physical_axis.get("annotation_duration_seconds", 0.0)
+    )
+    annotation_total_frames = annotation_fps * annotation_duration
     absolute_fps_error = abs(decoder_fps - annotation_fps)
-    cumulative_drift_frames = (
-        float(max(total_frames - 1, 0)) * abs(annotation_fps / decoder_fps - 1.0)
+    fps_clock_drift_frames = absolute_fps_error * annotation_duration
+    frame_count_alignment_error = abs(
+        float(total_frames) - annotation_total_frames
     )
     tolerance_frames = 1.0
-    tolerance_fps = (
-        decoder_fps
-        if total_frames == 1
-        else tolerance_frames * decoder_fps / float(total_frames - 1)
-    )
     expected_timeline = {
+        "canonical_alignment_axis": "decoded_frame_index",
         "decoder_fps": decoder_fps,
         "annotation_fps": annotation_fps,
+        "annotation_duration_seconds": annotation_duration,
+        "decoder_total_frames": total_frames,
+        "annotation_total_frames": annotation_total_frames,
         "absolute_fps_error": absolute_fps_error,
-        "tolerance_fps": tolerance_fps,
-        "cumulative_drift_frames": cumulative_drift_frames,
+        "fps_clock_drift_frames_over_annotation_duration": (
+            fps_clock_drift_frames
+        ),
+        "frame_count_alignment_error_frames": frame_count_alignment_error,
         "tolerance_frames": tolerance_frames,
         "passed": True,
     }
     if (
         timeline_audit != expected_timeline
-        or cumulative_drift_frames > tolerance_frames + 1.0e-9
+        or not math.isclose(
+            float(physical_axis.get("annotation_total_frames", math.inf)),
+            annotation_total_frames,
+            rel_tol=0.0,
+            abs_tol=1.0e-9,
+        )
+        or frame_count_alignment_error > tolerance_frames + 1.0e-9
     ):
-        raise ValueError(f"{context}: decoded and annotation timelines are misaligned")
+        raise ValueError(
+            f"{context}: decoded and annotation frame-index axes are misaligned"
+        )
     if row.get("gt_segments_unit") != "dense_ordinal_aligned_to_exported_physical_axis":
         raise ValueError(f"{context}: GT coordinate unit is missing or unsupported")
     canonical_gt = _canonical_gt_segments(
@@ -389,6 +409,22 @@ def _reconstruct_training_gt_segments(
         abs_tol=1.0e-9,
     ):
         raise ValueError("bound annotation FPS differs from exported metadata")
+    if not math.isclose(
+        duration,
+        float(physical_axis["annotation_duration_seconds"]),
+        rel_tol=0.0,
+        abs_tol=1.0e-9,
+    ):
+        raise ValueError("bound annotation duration differs from exported metadata")
+    if not math.isclose(
+        float(video_frames),
+        float(physical_axis["annotation_total_frames"]),
+        rel_tol=0.0,
+        abs_tol=1.0e-6,
+    ):
+        raise ValueError(
+            "bound annotation frame count differs from exported annotation total"
+        )
     source_frames = [float(value) for value in physical_axis["source_frames"]]
     window_start = source_frames[0]
     window_end = source_frames[-1]

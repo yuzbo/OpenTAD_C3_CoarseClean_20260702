@@ -111,6 +111,7 @@ def _input_record() -> dict:
         ],
         "avg_fps": 25.0,
         "fps": 25.0,
+        "duration": 4.0,
         "total_frames": 100,
     }
     return build_record(
@@ -199,6 +200,7 @@ def test_export_record_rejects_out_of_prefix_gt_instead_of_clipping() -> None:
         "frame_inds": [[8 + 4 * index] for index in range(row["valid_len"])],
         "avg_fps": 25.0,
         "fps": 25.0,
+        "duration": 4.0,
         "total_frames": 100,
     }
     with pytest.raises(ValueError, match="outside the exported valid prefix"):
@@ -215,21 +217,62 @@ def test_export_record_rejects_out_of_prefix_gt_instead_of_clipping() -> None:
         )
 
 
-def test_input_contract_rejects_decoder_annotation_timeline_drift() -> None:
+def test_input_contract_accepts_fps_clock_difference_when_frame_axis_aligns() -> None:
     row = _input_record()
-    row["physical_axis"]["annotation_fps"] = 30.0
-    row["timeline_audit"] = {
-        "decoder_fps": 25.0,
-        "annotation_fps": 30.0,
-        "absolute_fps_error": 5.0,
-        "tolerance_fps": 25.0 / 99.0,
-        "cumulative_drift_frames": 19.8,
-        "tolerance_frames": 1.0,
-        "passed": True,
+    selector_output = {
+        "selector_outputs": {
+            "p_action": [row["scores"]["p_action"]],
+            "actionness_logits": [row["scores"]["actionness_logits"]],
+            "transition_policy_scores": [row["scores"]["transition_policy_scores"]],
+            "transition_score": [row["scores"]["raw_transition_scores"]],
+            "abs_delta_p_action": [row["scores"]["abs_delta_p_action"]],
+            "uncertainty": [row["scores"]["uncertainty"]],
+        }
     }
+    annotation_fps = 25.0
+    aligned = build_record(
+        selector_output=selector_output,
+        masks=[[True] * row["valid_len"]],
+        gt_segments=[row["gt_segments"]],
+        metas=[
+            {
+                "video_name": row["video_id"],
+                "window_start_frame": 8,
+                "snippet_stride": 4,
+                "frame_inds": [
+                    [8 + 4 * index] for index in range(row["valid_len"])
+                ],
+                "avg_fps": 30.0,
+                "fps": annotation_fps,
+                "duration": 4.0,
+                "total_frames": 100,
+            }
+        ],
+        source=_source(),
+        split="train",
+        requested_budget=4,
+        seen_count=0,
+        coordinate_tolerance_frames=0.0,
+    )[0]
+    assert (
+        aligned["timeline_audit"][
+            "fps_clock_drift_frames_over_annotation_duration"
+        ]
+        > 0.0
+    )
+    assert (
+        aligned["timeline_audit"]["frame_count_alignment_error_frames"]
+        == pytest.approx(0.0)
+    )
+    validate_input_record(aligned, context="fixture")
+
+
+def test_input_contract_rejects_decoder_annotation_frame_count_mismatch() -> None:
+    row = _input_record()
+    row["physical_axis"]["annotation_total_frames"] = 95.0
     row.pop("record_sha256")
     row["record_sha256"] = canonical_sha256(row)
-    with pytest.raises(ValueError, match="timelines are misaligned"):
+    with pytest.raises(ValueError, match="frame-index axes are misaligned"):
         validate_input_record(row, context="fixture")
 
 

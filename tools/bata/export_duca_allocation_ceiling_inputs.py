@@ -15,8 +15,8 @@ from tools.bata.export_duca_selection_quality import (
 )
 
 
-SCHEMA_VERSION = "duca_allocation_ceiling_input_v1"
-SUMMARY_SCHEMA_VERSION = "duca_allocation_ceiling_export_summary_v1"
+SCHEMA_VERSION = "duca_allocation_ceiling_input_v2"
+SUMMARY_SCHEMA_VERSION = "duca_allocation_ceiling_export_summary_v2"
 SCORE_KEYS = (
     "p_action",
     "actionness_logits",
@@ -342,40 +342,44 @@ def audit_timeline_alignment(
     *,
     decoder_fps: float,
     annotation_fps: float,
+    annotation_duration_seconds: float,
     total_frames: int,
 ) -> dict[str, Any]:
     decoder = float(decoder_fps)
     annotation = float(annotation_fps)
+    duration = float(annotation_duration_seconds)
     if not math.isfinite(decoder) or decoder <= 0:
         raise ValueError("decoder_fps must be finite and positive")
     if not math.isfinite(annotation) or annotation <= 0:
         raise ValueError("annotation_fps must be finite and positive")
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("annotation_duration_seconds must be finite and positive")
     frames = int(total_frames)
     if frames < 1:
         raise ValueError("total_frames must be positive")
     absolute_error = abs(decoder - annotation)
-    cumulative_drift_frames = (
-        float(max(frames - 1, 0)) * abs(annotation / decoder - 1.0)
-    )
+    annotation_total_frames = annotation * duration
+    frame_count_alignment_error = abs(float(frames) - annotation_total_frames)
+    fps_clock_drift_frames = absolute_error * duration
     tolerance_frames = 1.0
-    tolerance_fps = (
-        decoder
-        if frames == 1
-        else tolerance_frames * decoder / float(frames - 1)
-    )
-    if cumulative_drift_frames > tolerance_frames + 1.0e-9:
+    if frame_count_alignment_error > tolerance_frames + 1.0e-9:
         raise ValueError(
-            "decoded and annotation timelines are not aligned closely enough: "
-            f"decoder_fps={decoder}, annotation_fps={annotation}, "
-            f"cumulative_drift_frames={cumulative_drift_frames}, "
+            "decoded and annotation frame-index axes are not aligned closely enough: "
+            f"decoder_total_frames={frames}, "
+            f"annotation_total_frames={annotation_total_frames}, "
+            f"frame_count_alignment_error_frames={frame_count_alignment_error}, "
             f"tolerance_frames={tolerance_frames}"
         )
     return {
+        "canonical_alignment_axis": "decoded_frame_index",
         "decoder_fps": decoder,
         "annotation_fps": annotation,
+        "annotation_duration_seconds": duration,
+        "decoder_total_frames": frames,
+        "annotation_total_frames": annotation_total_frames,
         "absolute_fps_error": absolute_error,
-        "tolerance_fps": tolerance_fps,
-        "cumulative_drift_frames": cumulative_drift_frames,
+        "fps_clock_drift_frames_over_annotation_duration": fps_clock_drift_frames,
+        "frame_count_alignment_error_frames": frame_count_alignment_error,
         "tolerance_frames": tolerance_frames,
         "passed": True,
     }
@@ -467,10 +471,14 @@ def build_record(
             raise ValueError("metadata avg_fps must be finite and positive")
         if not math.isfinite(annotation_fps) or annotation_fps <= 0:
             raise ValueError("metadata fps must be finite and positive")
+        annotation_duration = float(meta.get("duration", 0.0))
+        if not math.isfinite(annotation_duration) or annotation_duration <= 0:
+            raise ValueError("metadata duration must be finite and positive")
         total_frames = int(meta.get("total_frames", 0))
         timeline_audit = audit_timeline_alignment(
             decoder_fps=decoder_fps,
             annotation_fps=annotation_fps,
+            annotation_duration_seconds=annotation_duration,
             total_frames=total_frames,
         )
         window_start = float(meta.get("window_start_frame", 0.0))
@@ -504,6 +512,8 @@ def build_record(
                 "seconds": [value / decoder_fps for value in center_frames],
                 "decoder_fps": decoder_fps,
                 "annotation_fps": annotation_fps,
+                "annotation_duration_seconds": annotation_duration,
+                "annotation_total_frames": annotation_fps * annotation_duration,
                 "total_frames": total_frames,
             },
             "coordinate_audit": coordinate_audit,
