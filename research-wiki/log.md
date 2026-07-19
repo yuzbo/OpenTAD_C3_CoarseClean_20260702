@@ -508,3 +508,51 @@ append_only: true
   authorized next task is a development-only source-geometry census and
   no-training global96/center-local128 vertical slice with source-pixel,
   no-resize, backward, detector-parity, no-leak, and cost-schema tests.
+- 2026-07-20: implemented the development-only Native-Crop S1 vertical
+  slice. The data path creates a `global96` letterbox and exact source-pixel
+  `center-local128` crop immediately after Decord decode, before float/H2D;
+  one shared VideoMAE-S instance encodes both views, fixed-mean fusion occurs
+  on the 384-point tubelet axis, and deterministic 2x interpolation preserves
+  the AdaTAD-derived `[B,384,768]` projection contract. Generic train/test
+  entrypoints, teacher, oracle, official test, and paper claims remain
+  fail-closed.
+- 2026-07-20: completed a development-only source geometry and population
+  audit. All 200 available decoded source videos are `320x180`; crop sizes
+  96/112/128 require no padding. Census internal SHA is
+  `73290dd5abbcac6e5a2da1945b8ebd5b44f2d62e5a570c549aee46679548a9f8`
+  and sealed-test files opened is zero. The inherited 0.25 overlap omitted
+  `video_validation_0000054`, whose only 0.7-second action is near the end;
+  the isolated Native-Crop config now uses 0.5 overlap and closes the frozen
+  fit-160/gate-40 population without modifying historical R0.
+- 2026-07-20: the remote WIP focused Native-Crop suite passed `11 tests` and
+  one real gate sample produced `global [1,3,768,96,96] uint8` and
+  `local [1,3,768,128,128] uint8` from source `320x180`, with local source
+  box `[96,26,224,154]` and zero padding. This is implementation evidence,
+  not crop accuracy or cost evidence. A clean Git-bound CUDA full-model gate
+  and independent P0/P1 review remain required before protocol discussion.
+- 2026-07-20: the first independent max-agent implementation audit returned
+  `HOLD`. It found two P0 defects before deployment: the geometry-census CLI
+  argument had been placed on the wrong function signature, and synthetic
+  uint8 views remained on CPU after the model moved to CUDA. Both were fixed.
+  The same repair cycle froze the exact manifest/file/split hashes, generated
+  an immutable 200-record training-only annotation (SHA
+  `0985d3711ab31f404ff0be5a1ba75420796a6807d486410337078b38090bf749`),
+  asserted fit/gate/development populations `160/40/129/664`, re-derived the
+  geometry summary from all 200 source-bound records, matched the normalized
+  candidate model/NMS to the reference AdaTAD-derived config, verified the
+  complete 163/161/22,482,048 checkpoint/core contract, and added independent
+  global/local branch-gradient, 48x8 ordering, exact-2x, checkpointed runtime
+  grid, structured collate, and CLI wiring checks. Remote focused verification
+  is now `16 passed`; second independent review and formal CUDA gate remain
+  pending.
+- 2026-07-20: the second max-agent pass returned `HOLD` with no P0 but two
+  evidence-integrity P1s: expected commit did not bind working-tree source
+  bytes to `HEAD`, and the self-hashed geometry census was not re-probed
+  against current videos. It also found one P2 single-axis padding-ratio bug.
+  The repair requires a full expected commit, completely clean worktree,
+  tracked/byte-equal audited source blobs, and an in-gate re-probe of all 200
+  video files including containment, size, geometry, rotation, frame count,
+  and frame rate. Intersection-area math and forged/replaced-source negative
+  tests were added. Remote focused verification is `17 passed`; the same
+  auditor's third pass returned `DEPLOY` with `P0/P1/P2/P3 = 0`. Formal
+  clean-commit remote replay and the Slurm CUDA gate remain pending.

@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:spatial-zoom-offline-tad
 title: "Dense-time spatial zoom for offline TAD"
-stage: designed
-status: native_crop_vertical_slice_authorized
+stage: implemented
+status: native_crop_vertical_slice_cuda_gate_pending
 tags: ["offline-tad", "spatial-redundancy", "roi", "adatad"]
 added: 2026-07-15
 ---
@@ -33,9 +33,11 @@ coverage.
 
 ## Non-Claims
 
-No native-crop or learned crop model is currently implemented. The existing
-dense-resolution matrix does not establish crop sufficiency, Zoom accuracy,
-efficiency, detector generality, or publishability.
+A development-only fixed-center Native-Crop vertical slice is implemented and
+has passed source-geometry, real-decode, and focused CPU tests. It has not yet
+passed the commit-bound CUDA full-model gate. No crop-sufficiency, learned crop
+policy, Zoom accuracy, efficiency, detector generality, or publishability
+claim exists.
 
 ## Pro Review Absorption
 

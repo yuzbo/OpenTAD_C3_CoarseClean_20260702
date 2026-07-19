@@ -6,6 +6,37 @@ max_chars: 8000
 
 # Research Query Pack
 
+## Native-Crop S1 audit delta (2026-07-20)
+
+- The development-only vertical slice now binds a required full Git commit,
+  completely clean worktree, and byte-equal tracked `HEAD` blobs before any
+  model execution.
+- Its geometry evidence is not trusted by self-hash alone: the gate re-probes
+  all 200 fit/gate files and checks root containment, path, size, dimensions,
+  rotation, frame count, and frame rate.
+- Remote focused tests pass `17/17`; the same independent max reviewer returned
+  `DEPLOY` with `P0/P1/P2/P3 = 0` after three passes.
+- This authorizes only clean-snapshot CUDA precheck deployment. Crop mAP,
+  sufficiency, full-stack cost, GO/KILL, learned ROI, and paper claims remain
+  absent.
+
+## Native-Crop S1 实现状态（2026-07-20）
+
+- 已实现 development-only、no-training 的真实纵向切片：
+  `decoded uint8 source -> global96 letterbox + source-coordinate center128
+  crop -> one shared VideoMAE-S -> fixed 384-point fusion ->
+  [B,384,768] AdaTAD-derived detector contract`。
+- 200 个 development 视频的可用解码源均为 `320x180`；96/112/128 crop
+  均无需 padding。该事实只证明当前数据副本上的几何可行性，不证明语义充分性，
+  也不能表述为原始摄像机采集分辨率。
+- 真实数据人口已经按冻结 manifest 闭合为 fit 160 / gate 40。旧 `0.25`
+  sliding overlap 会漏掉末尾仅有 0.7 秒动作的
+  `video_validation_0000054`；新 Native-Crop 配置单独使用 `0.5`
+  overlap，R0 不改动。
+- focused Linux 测试和真实 decode 已通过；正式 commit-bound CUDA
+  full-model gate、预训练权重逐张量核验、完整 detector-loss backward
+  仍待闭合。当前不存在 crop mAP、成本结果、GO/KILL 或论文主张。
+
 ## Spatial Zoom 路线纠偏（2026-07-19）
 
 - 真实研究目标是保留完整时间轴，并在源视频坐标中选择保持原生局部像素密度的空间

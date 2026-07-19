@@ -5,6 +5,21 @@ updated: 2026-07-20
 
 # 禁止重走清单
 
+## Native-Crop S1 新增反例
+
+0. 不得把 `320x180` 称为原始摄像机采集分辨率；它只是当前数据副本中
+   ffprobe/Decord 可见的解码源分辨率。
+0. 不得沿用会漏掉 development 身份的滑窗设置。旧 `0.25` overlap
+   会遗漏 `video_validation_0000054` 的末尾短动作；Native-Crop 的
+   population audit 必须覆盖冻结 manifest 的 fit 160 / gate 40，
+   当前隔离配置使用 `0.5` overlap。
+0. 不得把共享 VideoMAE 权重写成一次 backbone 计算。global/local
+   两个视图复用同一参数实例，但仍产生两次前向计算；成本证据必须分开记录
+   global backbone 与 local backbone。
+0. 不得把 source-pixel equality、no-padding census、nonzero gradient
+   或 `[B,384,768]` shape parity 当成 crop sufficiency。它们只授权进入
+   development crop-sufficiency 协议讨论。
+
 ## Spatial Zoom 当前边界
 
 0. 不得把整图 `Resize + CenterCrop/RandomResizedCrop` 实验称为空间选择、原生分辨率
@@ -79,6 +94,15 @@ updated: 2026-07-20
     but must never overwrite an existing report or trace.
 17. A matrix namespace is single-use. The persistent atomic matrix lock and
     start/completion receipts are evidence, not temporary scheduling files.
+
+## Native-Crop provenance anti-repetition
+
+1. Do not accept `expected_commit` while ignoring untracked files or merely
+   recording working-tree hashes. Every audited executable/configuration file
+   must be tracked and byte-equal to its `HEAD` blob before the gate runs.
+2. Do not treat a self-hashed geometry census as source-bound evidence. The
+   gate must re-probe every frozen development video and match containment,
+   path, file size, dimensions, rotation, frame count, and frame rate.
     Never remove a failed lock to resume or duplicate the same campaign.
 18. Do not lower the formal 90,000 MiB memory floor to fit N16R4's 55 GB
     one-GPU outer-job default, and do not override `CUDA_VISIBLE_DEVICES`.

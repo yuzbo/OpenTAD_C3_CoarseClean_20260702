@@ -61,6 +61,17 @@ updated: 2026-07-20
   official implementation also supports the narrower observation that its
   variable ROI is resized to a fixed local input, while this project's proposed
   source-native no-resize contract remains only a candidate differentiator.
+- Native-Crop S1 implementation audit, 2026-07-20. Independent max agent
+  `019f7b48-3fad-75e2-a848-0606e7bd8887` reviewed the complete working-tree
+  implementation in three passes. Pass one found and verified repairs for two
+  P0 runtime defects plus P1 contract/test gaps. Pass two found two remaining
+  P1 provenance issues (expected-commit/source-blob binding and stale/self-
+  signed geometry) plus one P2 single-axis crop-area error. After exact Git
+  blob checks, in-gate re-probing of all 200 development videos, corrected
+  intersection-area formulas, and forged/replaced-source negative tests, pass
+  three returned `DEPLOY` with `P0/P1/P2/P3 = 0`. Remote WIP focused tests:
+  `17 passed`. This is implementation-audit evidence only; it is not a CUDA
+  gate, crop-accuracy result, cost result, or paper claim.
 
 以下记录是主要二级来源；原始 raw review 仍保存在各 repo 的
 `docs/methods/reviews/`：

@@ -1,10 +1,16 @@
 ---
 type: wiki_index
-updated: 2026-07-11
+updated: 2026-07-20
 project: C3-DUCA efficient temporal acquisition for TAD
 ---
 
 # C3 / DUCA Research Wiki
+
+## Spatial Zoom / Native-Crop 当前节点
+
+- [Spatial Zoom / Native-Crop offline TAD](ideas/spatial-zoom-offline-tad.md)
+- [Spatial Zoom R0 infrastructure](experiments/spatial-zoom-s1-infrastructure.md)
+- [Native-Crop S1 development vertical slice](experiments/native-crop-s1-vertical-slice.md)
 
 这是本项目研究记忆的单一入口。它区分讨论、代码、测试、实验和论文证据，
 用于阻止路线遗忘、旧错误复发和旧提交结果冒充最新实现。
