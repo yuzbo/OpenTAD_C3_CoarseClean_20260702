@@ -159,6 +159,13 @@ class SingleStageDetector(BaseDetector):
 
         pre_nms_thresh = getattr(post_cfg, "pre_nms_thresh", 0.001)
         pre_nms_topk = getattr(post_cfg, "pre_nms_topk", 2000)
+        round_before_cross_window_nms = getattr(
+            post_cfg,
+            "round_before_cross_window_nms",
+            True,
+        )
+        segment_round_digits = getattr(post_cfg, "segment_round_digits", 2)
+        score_round_digits = getattr(post_cfg, "score_round_digits", 4)
         num_classes = rpn_scores[0].shape[-1]
 
         results = {}
@@ -212,12 +219,19 @@ class SingleStageDetector(BaseDetector):
 
             results_per_video = []
             for segment, label, score in zip(segments, labels, scores):
-                # convert to python scalars
+                segment_output = [float(seg.item()) for seg in segment]
+                score_output = float(score.item())
+                if round_before_cross_window_nms:
+                    segment_output = [
+                        round(value, segment_round_digits)
+                        for value in segment_output
+                    ]
+                    score_output = round(score_output, score_round_digits)
                 results_per_video.append(
                     dict(
-                        segment=[round(seg.item(), 2) for seg in segment],
+                        segment=segment_output,
                         label=label,
-                        score=round(score.item(), 4),
+                        score=score_output,
                     )
                 )
 

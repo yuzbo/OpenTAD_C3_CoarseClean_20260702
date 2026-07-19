@@ -79,6 +79,7 @@
 - `exp:phystime-g1b-sdpq-medium20`
 - `exp:phystime-g1-matched-medium20`
 - `exp:phystime-g1-matched-full60`
+- `exp:phystime-p0-fullprecision-nms-replay`
 
 ### Papers
 

@@ -1,5 +1,26 @@
 # Research Wiki Query Pack
 
+## 2026-07-20 P0 Implementation Checkpoint
+
+当前唯一任务 `P0-FULLPRECISION-NMS-REPLAY` 已达到 `implemented`，尚未
+达到 `tested` 或 `experiment_running`。实现固定 full60 commit `0dc5851`
+的 selected/physical epoch-59 online/EMA 权重；每套权重保存一次全精度
+pre-cross-window proposal，再做 legacy/fullprecision × unfiltered/filtered
+四模式重放。过滤必须发生在舍入后实际 NMS 输入上，unfiltered 遇到非法值
+必须 fail-closed。
+
+三轮独立代码审查已经收口。最后一轮曾发现 focused test 仍绑定旧实现、
+提交器数据路径未绑定 source gate，以及 P0 舍入开关污染普通主配置；均已
+修复并补回归。限定复核结论为 `DEPLOY`，本地无 Torch 回归 `25 passed`，
+四个 Bash 脚本语法检查通过。远端真实 GPU gate 仍是从 `implemented`
+进入 `experiment_running` 的硬门槛。
+
+权威终态不是四个单臂 `P0_COMPLETE.json` 的简单并列，而是依赖四任务的
+`P0_SUITE_COMPLETE.json`。它必须独立重算 evaluator、哈希、proposal 数、
+舍入/过滤 delta、physical-minus-selected、EMA-minus-online，以及抑制/
+排序、边界位移、短动作和高 IoU proposal recall。没有 suite completion
+时不得解释结果；没有新训练，也不得把 P0 写成新模型收益。
+
 ## 2026-07-20 STOP-Q-LIFT Decision
 
 针对 frozen commit `0dc5851` 的第二轮 Pro 严审已逐字归档并独立核验。

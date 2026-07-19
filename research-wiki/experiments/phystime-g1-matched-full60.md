@@ -123,6 +123,15 @@ This page retains `full60-single-seed-supported`. Early rounding, tail-mask
 risk, and proposal filtering are prospective publication blockers, not evidence
 that invalidates the completed matched result.
 
+## 2026-07-20 P0 Implementation Link
+
+The frozen full-precision replay is now implemented as
+`exp:phystime-p0-fullprecision-nms-replay`. It reuses both epoch-59 checkpoints
+and evaluates online plus EMA weights without new training. The implementation
+does not change this page's metrics or evidence tier. New absolute metrics and
+the corrected physical-minus-selected delta may be recorded only after the real
+gate, all four independent completions, and `P0_SUITE_COMPLETE.json` pass.
+
 ## Connections
 
 [AUTO-GENERATED from graph/edges.jsonl]

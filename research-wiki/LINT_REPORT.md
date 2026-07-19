@@ -4,20 +4,20 @@
 
 ## Summary
 
-- Entity pages: 43
+- Entity pages: 44
 - Idea pages: 21
-- Experiment pages: 15
+- Experiment pages: 16
 - Paper pages: 7
 - Claim entities: 0
 - Gaps: 10
-- Graph edges: 73
+- Graph edges: 74
 - Orphan entities: 0
 - Invalid edge references: 0
 - Invalid edge types: 0（含项目已有 `diagnosed_by` 扩展）
 - Duplicate nodes: 0
 - Duplicate edges: 0
 - Broken local Markdown links outside immutable `sources/` archives: 0
-- `query_pack.md`: 6107 characters，低于 8000 上限
+- `query_pack.md`: 6709 characters，低于 8000 上限
 - `git diff --check`: passed
 - 2026-07-13 Pro raw archive: 1539 lines，SHA256 与附件一致
 - 2026-07-19 Full60/Q-lift Pro raw archive: 1298 lines，SHA256
@@ -45,7 +45,7 @@
 - `57.57%` 保持 `full60-single-seed-supported`；新 support-preserving
   physical query lift 仍为 `designed`，但暂停作为立即下一步；没有虚构
   实现、gate 或结果。
-- 本轮手工图检查：43 个 node、10 个 gap、73 条 edge，0 重复 node、
+- 本轮手工图检查：44 个 node、10 个 gap、74 条 edge，0 重复 node、
   0 非法 JSON、0 失效 edge 引用、0 重复 edge、0 orphan node。
 - 本轮本地链接检查：103 份 Wiki/方法 Markdown，0 broken local link
   （排除 immutable `research-wiki/sources/` 和外部 raw review）。
@@ -70,6 +70,6 @@
 
 ## Next Lint Trigger
 
-以下任一事件发生后重新运行：P0 full-precision replay 实现或完成、Q192
-轴因子化实现、无训练 Q-density replay、新 experiment node、远端作业、
+以下任一事件发生后重新运行：P0 full-precision replay 远端 gate 或四路重放完成、
+Q192 轴因子化实现、无训练 Q-density replay、新 experiment node、远端作业、
 方向/论文主张变化、worktree/branch 库存变化。

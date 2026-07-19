@@ -83,6 +83,7 @@ def main():
     model = DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank)
     logger.info(f"Using DDP with total {args.world_size} GPUS...")
 
+    evaluation_epoch = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
@@ -96,6 +97,7 @@ def main():
         device = f"cuda:{args.rank % torch.cuda.device_count()}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
         logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
+        evaluation_epoch = int(checkpoint["epoch"])
 
         # Model EMA
         use_ema = getattr(cfg.solver, "ema", False)
@@ -122,6 +124,7 @@ def main():
         use_amp=use_amp,
         world_size=args.world_size,
         not_eval=args.not_eval,
+        evaluation_epoch=evaluation_epoch,
     )
     logger.info("Testing Over...\n")
 

@@ -118,6 +118,7 @@ def batched_nms(
     # make sure the inputs are float
     segs = segs.float()
     scores = scores.float()
+    cls_idxs = cls_idxs.long()
 
     # Based on Detectron2 implementation,
     num_segs = segs.shape[0]

@@ -1,5 +1,21 @@
 # Anti-Repetition Contract
 
+## 2026-07-20 P0 实现禁区
+
+- 不得把 P0 写成训练实验；它只使用冻结 epoch-59 online/EMA 权重。
+- 不得先过滤全精度输入、后做 legacy 舍入。必须分别审计 raw validity 与
+  effective NMS-input validity；舍入诱发零时长属于第二层。
+- unfiltered 不等于“把 NaN/零时长送入 NMS”。发现非法值必须在 NMS 前
+  fail-closed，并保存审计。
+- 四个单臂完成不等于 suite 完成；缺 `P0_SUITE_COMPLETE.json` 时不得形成
+  physical-minus-selected 或 online/EMA 结论。
+- 单臂 validator 不得导入 producer 的模式常量或信任 producer delta；
+  suite validator 不得只信任四份 completion 中的汇总数字。
+- 不得用 P0 同时修改 Q、插值、loss、采样、assignment、网络结构或训练
+  schedule；这些变量继续冻结。
+- P0 若显示舍入/过滤影响很小，只能关闭后处理混杂，不能自动证明模型结构
+  新颖或 paper-ready；若显示影响很大，则先修正绝对指标并重新审视机制。
+
 ## 2026-07-20 STOP-Q-LIFT 禁区
 
 - 不把 `STOP-Q-LIFT` 写成“Q 已被证明无用”。准确含义是：Q bottleneck
