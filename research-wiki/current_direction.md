@@ -13,6 +13,8 @@ EMA 的 fullprecision selected/physical Avg-mAP 为
 `-0.0366` 到 `+0.0338` 点；四条臂的非法 proposal 均为 0，filtered 与
 unfiltered 完全相同。P0 因此关闭了后处理混杂，但不改变
 `full60-single-seed-supported`、非 `paper_ready` 的证据等级。
+physical 的 EMA 相对 online 仅提升 Avg-mAP `0.053` 点，却降低 mAP@0.7
+`0.719` 点；后续必须预先固定并同时报告 online/EMA，禁止逐指标挑选。
 
 当前唯一下一任务是无训练的冻结 decode cross-replay：固定 checkpoint、
 候选与评估协议，只交换可离线重算的 decode/回归坐标语义。该门通过后，

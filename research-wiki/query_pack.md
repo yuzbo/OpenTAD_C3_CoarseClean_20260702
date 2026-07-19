@@ -14,6 +14,8 @@ physical-minus-selected `+16.3257` 点；legacy 差值为 `+16.2911`。
 `1,584,000`、NMS 后 `422,000` 个 proposal，所有非法计数为 0；
 filtered/unfiltered 预测完全一致。结论：全精度 NMS 是正确的发布级修复，
 但不是 physical 主效应来源。
+physical-EMA 相对 physical-online 的 Avg-mAP 为 `+0.053` 点，但 mAP@0.7
+为 `-0.719` 点；后续须预先固定并同时报告权重来源，不能逐指标挑选。
 
 fullprecision 最终预测的 physical-EMA 相对 selected-EMA
 proposal recall@0.7 在全体/短动作/中等动作/长动作上分别为

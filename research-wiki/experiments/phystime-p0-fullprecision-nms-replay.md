@@ -131,6 +131,9 @@ fullprecision-filtered 的原始 IoU 指标如下：
 - physical-EMA 相对 selected-EMA 的 fullprecision Avg-mAP 仍为
   `+16.325664` 个百分点；legacy 下为 `+16.291125`。因此旧舍入最多只改变
   两臂差值约 `0.0345` 点，不能解释 physical-metric 的主效应。
+- EMA 不是逐指标占优：physical-EMA 相对 physical-online 的 Avg-mAP 仅
+  `+0.0531` 点，但 mAP@0.7 为 `-0.7190` 点。后续实验必须预先固定
+  online/EMA 选权规则并同时报告两者，禁止按指标挑选权重来源。
 - 在 fullprecision-filtered 最终预测上，physical-EMA 相对 selected-EMA 的
   proposal recall@0.7：全体 `+12.36` 点、短动作（<=1.7s）`+31.59` 点、
   中等动作 `+6.93` 点、长动作 `+3.75` 点。该诊断包含分类、排序与 NMS 的
