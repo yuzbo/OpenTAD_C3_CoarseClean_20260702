@@ -20,9 +20,10 @@ proposal recall@0.7 在全体/短动作/中等动作/长动作上分别为
 `+12.36/+31.59/+6.93/+3.75` 点。它把下一步定位到短动作和高 IoU，但仍是
 assignment、decode、分类排序与 NMS 的联合结果，不能当纯因果证明。
 
-下一任务是冻结 decode cross-replay，再在原 Q192 内按
-decode/回归轴 × assignment 轴执行 UU/UP/PU/PP。禁止同时加入 Q-lift、
-新 loss、新采样器或新训练；P0 无需再次发起 Pro 讨论。
+下一任务先做无训练的冻结 decode cross-replay：固定 checkpoint、候选和
+评估协议，只交换可离线重算的 decode/回归坐标语义。通过后再在原 Q192 内
+按 decode/回归轴 × assignment 轴执行严格匹配的 UU/UP/PU/PP 训练，四臂
+不得同时加入 Q-lift、新 loss 或新采样器。P0 无需再次发起 Pro 讨论。
 
 ## 2026-07-20 STOP-Q-LIFT Decision
 

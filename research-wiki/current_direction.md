@@ -14,10 +14,11 @@ EMA 的 fullprecision selected/physical Avg-mAP 为
 unfiltered 完全相同。P0 因此关闭了后处理混杂，但不改变
 `full60-single-seed-supported`、非 `paper_ready` 的证据等级。
 
-当前唯一下一任务改为冻结 decode cross-replay，并在原 Q192 内做
-UU/UP/PU/PP：首字母是 decode/回归轴，次字母是 assignment 轴。先回答
-physical 收益来自哪条几何路径，再决定是否需要训练型改造；不得同时加入
-Q-lift、新 loss 或新采样器。完整 P0 证据见
+当前唯一下一任务是无训练的冻结 decode cross-replay：固定 checkpoint、
+候选与评估协议，只交换可离线重算的 decode/回归坐标语义。该门通过后，
+才在原 Q192 内做严格匹配的 UU/UP/PU/PP 训练；首字母是 decode/回归轴，
+次字母是 assignment 轴。四臂只允许这两个开关不同，不得同时加入 Q-lift、
+新 loss 或新采样器。完整 P0 证据见
 `research-wiki/experiments/phystime-p0-fullprecision-nms-replay.md`。
 
 ## 2026-07-20 STOP-Q-LIFT 审查吸收

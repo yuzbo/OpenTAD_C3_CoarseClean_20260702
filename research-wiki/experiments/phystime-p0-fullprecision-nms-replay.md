@@ -145,7 +145,8 @@ P0 关闭了发布级后处理混杂：未来 PhysTime 主实验应显式使用�
 cross-window NMS；历史 legacy 结果保留以便复现。当前结果清晰、验证器通过，
 无需为 P0 再发起 Pro 讨论。
 
-下一项决定性任务是冻结 decode cross-replay，然后在原 Q192 结构内做
-UU/UP/PU/PP 因子化：首字母表示 decode/回归坐标轴，次字母表示 assignment
-坐标轴。它必须继续冻结 checkpoint、候选和评估协议，先区分收益来自秒域
-assignment 还是秒域 decode；不得同时加入 Q-lift、新 loss、采样器或新训练。
+下一项决定性任务先是**无训练**的冻结 decode cross-replay：固定 checkpoint、
+候选和评估协议，只交换可离线重算的 decode/回归坐标语义。该门通过后，再在
+原 Q192 结构内做严格匹配的 UU/UP/PU/PP 训练因子化：首字母表示
+decode/回归坐标轴，次字母表示 assignment 坐标轴。四臂训练只允许这两个
+坐标开关不同，不得同时加入 Q-lift、新 loss 或新采样器。
