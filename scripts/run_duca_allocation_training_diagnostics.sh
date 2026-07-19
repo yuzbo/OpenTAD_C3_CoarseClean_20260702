@@ -14,12 +14,29 @@ EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 RUN_ROOT="${DUCA_ALLOCATION_RUN_ROOT:-}"
 INPUT="${RUN_ROOT}/training_inputs.jsonl"
 GT_TIME_LIMIT_SECONDS="${DUCA_ALLOCATION_GT_TIME_LIMIT_SECONDS:-300}"
+GATE_JSON="${DUCA_ALLOCATION_GATE_JSON:-}"
+SUBMISSION_JSON="${DUCA_ALLOCATION_SUBMISSION_JSON:-}"
+SUBMISSION_TOKEN="${DUCA_ALLOCATION_SUBMISSION_TOKEN:-}"
+SUITE_MANIFEST="${DUCA_ALLOCATION_SUITE_MANIFEST:-}"
+SUITE_MANIFEST_SHA256="${DUCA_ALLOCATION_SUITE_MANIFEST_SHA256:-}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "diagnostics must run inside Slurm"
 [[ "${SLURM_CLUSTER_NAME:-}" == "n16r4" ]] || fail "diagnostics require cluster n16r4"
+[[ "${GT_TIME_LIMIT_SECONDS}" == "300" ]] \
+  || fail "GT total solver deadline must match the registered 300 seconds"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "diagnostics require a clean tree"
 [[ "${RUN_ROOT}" == "${BASE}/"* && -f "${INPUT}" ]] || fail "training input artifact is missing"
+
+"${PYTHON}" -m tools.bata.validate_duca_allocation_submission_receipt \
+  --submission-json "${SUBMISSION_JSON}" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${SUITE_MANIFEST}" \
+  --suite-manifest-sha256 "${SUITE_MANIFEST_SHA256}" \
+  --role diagnostics \
+  --current-job-id "${SLURM_JOB_ID}" \
+  --gate-json "${GATE_JSON}"
 
 "${PYTHON}" -m tools.bata.diagnose_duca_allocation_family_ceiling \
   --input-jsonl "${INPUT}" \

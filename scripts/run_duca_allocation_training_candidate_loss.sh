@@ -15,6 +15,11 @@ RUN_ROOT="${DUCA_ALLOCATION_RUN_ROOT:-}"
 CHECKPOINT="${DUCA_ALLOCATION_CHECKPOINT:-}"
 PRETRAIN="${ADATAD_PRETRAIN_PATH:-}"
 CONFIG="configs/adatad/thumos/duca_allocation_ceiling_training_windows.py"
+GATE_JSON="${DUCA_ALLOCATION_GATE_JSON:-}"
+SUBMISSION_JSON="${DUCA_ALLOCATION_SUBMISSION_JSON:-}"
+SUBMISSION_TOKEN="${DUCA_ALLOCATION_SUBMISSION_TOKEN:-}"
+SUITE_MANIFEST="${DUCA_ALLOCATION_SUITE_MANIFEST:-}"
+SUITE_MANIFEST_SHA256="${DUCA_ALLOCATION_SUITE_MANIFEST_SHA256:-}"
 
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "candidate evaluation requires a Slurm GPU"
 [[ "${SLURM_CLUSTER_NAME:-}" == "n16r4" ]] || fail "candidate evaluation requires cluster n16r4"
@@ -22,6 +27,16 @@ CONFIG="configs/adatad/thumos/duca_allocation_ceiling_training_windows.py"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "candidate evaluation requires a clean tree"
 [[ -f "${CHECKPOINT}" && -f "${PRETRAIN}" ]] || fail "checkpoint or pretrain is missing"
 [[ -f "${RUN_ROOT}/training_gt32_ceiling.jsonl" ]] || fail "GT ceiling artifact is missing"
+
+"${PYTHON}" -m tools.bata.validate_duca_allocation_submission_receipt \
+  --submission-json "${SUBMISSION_JSON}" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${SUITE_MANIFEST}" \
+  --suite-manifest-sha256 "${SUITE_MANIFEST_SHA256}" \
+  --role candidate \
+  --current-job-id "${SLURM_JOB_ID}" \
+  --gate-json "${GATE_JSON}"
 
 "${PYTHON}" -m tools.bata.evaluate_duca_allocation_candidates \
   --config "${CONFIG}" \

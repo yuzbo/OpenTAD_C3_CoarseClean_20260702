@@ -38,6 +38,13 @@ from tools.bata.validate_duca_allocation_candidate_loss_artifact import (
 from tools.bata.validate_duca_allocation_solver_cost_artifact import (
     validate_solver_cost_artifact,
 )
+from tools.bata.validate_duca_allocation_scheduler_receipt import (
+    capture_scheduler_snapshot,
+    validate_scheduler_receipt,
+)
+from tools.bata.validate_duca_allocation_submission_receipt import (
+    validate_submission_receipt,
+)
 
 
 def _source() -> dict:
@@ -518,22 +525,65 @@ def test_dataset_data_manifest_detects_content_drift(tmp_path: Path) -> None:
     assert first["dataset_data_manifest_sha256"] != second["dataset_data_manifest_sha256"]
 
 
-def test_gt_runtime_projection_fails_closed_above_bound(tmp_path: Path) -> None:
+def test_input_contract_rejects_even_sub_epsilon_gt_clipping() -> None:
+    row = _input_record()
+    row["gt_segments"] = [[-1.0e-7, 2.0]]
+    row.pop("record_sha256")
+    row["record_sha256"] = canonical_sha256(row)
+    with pytest.raises(ValueError, match="outside dense valid prefix"):
+        validate_input_record(row, context="strict-gt-fixture")
+
+
+def test_gt_runtime_analytical_bound_fails_closed_above_bound(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "runtime.json"
     path.write_text(
         json.dumps(
             {
-                "schema_version": "duca_allocation_gt_runtime_projection_v1",
-                "gt_generation_seconds": 10.0,
-                "gt_validation_seconds": 10.0,
-                "projected_gt32_seconds": 640.0,
-                "max_projected_gt32_seconds": 600.0,
+                "schema_version": "duca_allocation_gt_runtime_projection_v2",
+                "smoke_sample_count": 1,
+                "smoke_generation_seconds": 10.0,
+                "smoke_validation_seconds": 10.0,
+                "empirical_single_sample_projected_gt32_seconds": 640.0,
+                "solver_total_deadline_seconds": 300.0,
+                "registered_sample_count": 32,
+                "privileged_family_count": 2,
+                "independent_pass_count": 2,
+                "analytical_worst_case_gt32_seconds": 38400.0,
+                "max_allowed_gt32_seconds": 38000.0,
             }
         ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="exceeds"):
-        _validate_gt_runtime(path, max_projected_gt32_seconds=600.0)
+        _validate_gt_runtime(path, max_allowed_gt32_seconds=38000.0)
+
+
+def test_gt_runtime_analytical_bound_rejects_understated_formula(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "duca_allocation_gt_runtime_projection_v2",
+                "smoke_sample_count": 1,
+                "smoke_generation_seconds": 1.0,
+                "smoke_validation_seconds": 1.0,
+                "empirical_single_sample_projected_gt32_seconds": 64.0,
+                "solver_total_deadline_seconds": 300.0,
+                "registered_sample_count": 32,
+                "privileged_family_count": 2,
+                "independent_pass_count": 2,
+                "analytical_worst_case_gt32_seconds": 9600.0,
+                "max_allowed_gt32_seconds": 43200.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="analytical worst-case"):
+        _validate_gt_runtime(path, max_allowed_gt32_seconds=43200.0)
 
 
 def test_validation_authorization_binds_training_evidence(tmp_path: Path) -> None:
@@ -822,8 +872,30 @@ def test_training_submitter_requests_generic_gpu_for_every_dag_node() -> None:
         in script
     )
     assert "SLURM_CLUSTER_NAME" in script
-    assert "rollback_partial_submission" in script
-    assert 'sbatch --parsable --clusters="${TARGET_CLUSTER}"' in script
+    assert "cleanup_partial_submission" in script
+    assert 'trap cleanup_partial_submission EXIT' in script
+    assert script.count(
+        'sbatch --parsable --hold --clusters="${TARGET_CLUSTER}"'
+    ) == 5
+    assert 'scontrol --clusters="${TARGET_CLUSTER}" release "${job_id}"' in script
+    assert script.index("validate_duca_allocation_submission_receipt") < script.index(
+        'scontrol --clusters="${TARGET_CLUSTER}" release "${job_id}"'
+    )
+    assert "pre_release.snapshot.json" in script
+    assert "scheduler_receipt.json" in script
+    assert script.index("pre_release.snapshot.json") < script.index(
+        'scontrol --clusters="${TARGET_CLUSTER}" release "${job_id}"'
+    )
+    assert script.index("source /etc/profile") < script.index(
+        "module load cuda/11.8"
+    )
+    gate_script = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "run_duca_allocation_ceiling_real_gate.sh"
+    ).read_text(encoding="utf-8")
+    assert "--role gate" in gate_script
+    assert '--current-job-id "${SLURM_JOB_ID}"' in gate_script
 
 
 def test_validation_export_is_authorized_and_gt_free() -> None:
@@ -838,5 +910,300 @@ def test_validation_export_is_authorized_and_gt_free() -> None:
     assert "--split test" in script
     assert "--validation-authorized" in script
     assert "--gt-families none" in script
-    assert '"runtime_gt_input": false' in script
-    assert '"selected_axis_gt_remap": false' in script
+    assert '"runtime_gt_input": False' in script
+    assert '"selected_axis_gt_remap": False' in script
+    assert "duca_allocation_validation_export_manifest_v2" in script
+    assert '"pretrain_sha256": sha256(pretrain)' in script
+    assert "data_directory_provenance" in script
+    replay_script = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "run_duca_allocation_replay_map.sh"
+    ).read_text(encoding="utf-8")
+    assert "validation authorization evidence changed" in replay_script
+    assert '"replay_config", "replay_config_sha256"' in replay_script
+    assert "validation video bytes changed" in replay_script
+
+
+def test_submission_receipt_binds_job_chain_and_generated_files(
+    tmp_path: Path,
+) -> None:
+    roles = ("gate", "export", "diagnostics", "candidate", "completion")
+    job_ids = {
+        "gate": "101",
+        "export": "102",
+        "diagnostics": "103",
+        "candidate": "104",
+        "completion": "105",
+    }
+    dependencies = {
+        "gate": None,
+        "export": "afterok:101",
+        "diagnostics": "afterok:102",
+        "candidate": "afterok:103",
+        "completion": "afterok:104",
+    }
+    job_names = {
+        "gate": "dac-gate-aaaaaaa",
+        "export": "dac-export-aaaaaaa",
+        "diagnostics": "dac-diag-aaaaaaa",
+        "candidate": "dac-cand-aaaaaaa",
+        "completion": "dac-done-aaaaaaa",
+    }
+    run_root = tmp_path / "run"
+    jobs_dir = run_root / "jobs"
+    jobs_dir.mkdir(parents=True)
+    manifest = run_root / "suite_manifest.json"
+    manifest.write_text("{}\n", encoding="utf-8")
+    manifest_sha = sha256(manifest)
+    job_files = {}
+    for role in roles:
+        filename = "diagnostics.sbatch" if role == "diagnostics" else f"{role}.sbatch"
+        job_path = jobs_dir / filename
+        job_path.write_text(f"#!/bin/bash\n# {role}\n", encoding="utf-8")
+        job_files[role] = sha256(job_path)
+    intent = run_root / "submission_intent.json"
+    intent.write_text(
+        json.dumps(
+            {
+                "schema_version": (
+                    "duca_allocation_training_suite_submission_intent_v1"
+                ),
+                "git_commit": "a" * 40,
+                "target_cluster": "n16r4",
+                "run_root": str(run_root.resolve()),
+                "manifest_sha256": manifest_sha,
+                "job_files": job_files,
+                "mode": "submit",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    token = sha256(intent)
+    jobs_tsv = run_root / "jobs.tsv"
+    lines = [
+        "role\tjob_id\tcluster\tdependency\tjob_name\tjob_file"
+    ]
+    for role in roles:
+        filename = "diagnostics.sbatch" if role == "diagnostics" else f"{role}.sbatch"
+        lines.append(
+            "\t".join(
+                (
+                    role,
+                    job_ids[role],
+                    "n16r4",
+                    dependencies[role] or "none",
+                    job_names[role],
+                    str((jobs_dir / filename).resolve()),
+                )
+            )
+        )
+    jobs_tsv.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    submission = run_root / "submission.json"
+    payload = {
+        "schema_version": "duca_allocation_training_suite_submission_v3",
+        "git_commit": "a" * 40,
+        "submission_token": token,
+        "submission_intent_json": str(intent.resolve()),
+        "submission_intent_sha256": token,
+        "suite_manifest_json": str(manifest.resolve()),
+        "suite_manifest_sha256": manifest_sha,
+        "run_root": str(run_root.resolve()),
+        "target_cluster": "n16r4",
+        "jobs_tsv": str(jobs_tsv.resolve()),
+        "jobs_tsv_sha256": sha256(jobs_tsv),
+        "jobs": {
+            role: {
+                "job_id": job_ids[role],
+                "cluster": "n16r4",
+                "dependency": dependencies[role],
+                "job_name": job_names[role],
+                "job_file": str(
+                    (
+                        jobs_dir
+                        / (
+                            "diagnostics.sbatch"
+                            if role == "diagnostics"
+                            else f"{role}.sbatch"
+                        )
+                    ).resolve()
+                ),
+            }
+            for role in roles
+        },
+    }
+    submission.write_text(
+        json.dumps(payload, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    gate_submission_validation = validate_submission_receipt(
+        submission_json=submission,
+        submission_token=token,
+        expected_commit="a" * 40,
+        suite_manifest_json=manifest,
+        suite_manifest_sha256=manifest_sha,
+        role="gate",
+        current_job_id="101",
+    )
+    scheduler_dir = run_root / "scheduler"
+    scheduler_dir.mkdir()
+    repo_root = Path(__file__).resolve().parents[1]
+    raw_by_phase = {}
+    for phase in ("pre_release", "post_release"):
+        raw_by_phase[phase] = {}
+        for role in roles:
+            filename = (
+                "diagnostics.sbatch"
+                if role == "diagnostics"
+                else f"{role}.sbatch"
+            )
+            dependency = (
+                "(null)"
+                if dependencies[role] is None
+                else f"{dependencies[role]}(unfulfilled)"
+            )
+            reason = "JobHeldUser" if phase == "pre_release" else (
+                "None" if role == "gate" else "Dependency"
+            )
+            priority = "0" if phase == "pre_release" else "1"
+            raw_path = scheduler_dir / f"{phase}.{role}.scontrol.txt"
+            raw_path.write_text(
+                " ".join(
+                    (
+                        f"JobId={job_ids[role]}",
+                        f"JobName={job_names[role]}",
+                        f"Priority={priority}",
+                        "JobState=PENDING",
+                        f"Reason={reason}",
+                        f"Dependency={dependency}",
+                        "BatchFlag=1",
+                        "ReqTRES=cpu=1,gres/gpu=1",
+                        f"Command={(jobs_dir / filename).resolve()}",
+                        f"WorkDir={repo_root}",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            raw_by_phase[phase][role] = raw_path
+    pre_scheduler = scheduler_dir / "pre_release.snapshot.json"
+    capture_scheduler_snapshot(
+        submission_json=submission,
+        submission_token=token,
+        expected_commit="a" * 40,
+        suite_manifest_json=manifest,
+        suite_manifest_sha256=manifest_sha,
+        phase="pre_release",
+        raw_snapshots=raw_by_phase["pre_release"],
+        output_json=pre_scheduler,
+    )
+    scheduler_receipt = run_root / "scheduler_receipt.json"
+    capture_scheduler_snapshot(
+        submission_json=submission,
+        submission_token=token,
+        expected_commit="a" * 40,
+        suite_manifest_json=manifest,
+        suite_manifest_sha256=manifest_sha,
+        phase="post_release",
+        raw_snapshots=raw_by_phase["post_release"],
+        pre_release_snapshot_json=pre_scheduler,
+        output_json=scheduler_receipt,
+    )
+    scheduler_validation = validate_scheduler_receipt(
+        scheduler_receipt_json=scheduler_receipt,
+        submission_json=submission,
+        submission_token=token,
+        expected_commit="a" * 40,
+        suite_manifest_json=manifest,
+        suite_manifest_sha256=manifest_sha,
+    )
+    gate = run_root / "gate.json"
+    gate.write_text(
+        json.dumps(
+            {
+                "gate_passed": True,
+                "git_commit": "a" * 40,
+                "execution_cluster": "n16r4",
+                "gate_job_id": "101",
+                "submission_token": token,
+                "suite_manifest_json_sha256": manifest_sha,
+                "submission_validation": gate_submission_validation,
+                "scheduler_validation": scheduler_validation,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = validate_submission_receipt(
+        submission_json=submission,
+        submission_token=token,
+        expected_commit="a" * 40,
+        suite_manifest_json=manifest,
+        suite_manifest_sha256=manifest_sha,
+        role="candidate",
+        current_job_id="104",
+        gate_json=gate,
+    )
+    assert result["validation_passed"]
+
+    post_candidate = raw_by_phase["post_release"]["candidate"]
+    original_scheduler_raw = post_candidate.read_text(encoding="utf-8")
+    post_candidate.write_text(
+        original_scheduler_raw.replace("Reason=Dependency", "Reason=JobHeldUser"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="raw snapshot changed"):
+        validate_submission_receipt(
+            submission_json=submission,
+            submission_token=token,
+            expected_commit="a" * 40,
+            suite_manifest_json=manifest,
+            suite_manifest_sha256=manifest_sha,
+            role="candidate",
+            current_job_id="104",
+            gate_json=gate,
+        )
+    post_candidate.write_text(original_scheduler_raw, encoding="utf-8")
+    submission.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="receipt/DAG binding mismatch"):
+        validate_submission_receipt(
+            submission_json=submission,
+            submission_token=token,
+            expected_commit="a" * 40,
+            suite_manifest_json=manifest,
+            suite_manifest_sha256=manifest_sha,
+            role="candidate",
+            current_job_id="104",
+            gate_json=gate,
+        )
+    submission.write_text(
+        json.dumps(payload, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tampered = jobs_tsv.read_text(encoding="utf-8").replace(
+        "candidate\t104\tn16r4\t",
+        "candidate\t999\tn16r4\t",
+    )
+    jobs_tsv.write_text(tampered, encoding="utf-8")
+    payload["jobs_tsv_sha256"] = sha256(jobs_tsv)
+    submission.write_text(
+        json.dumps(payload, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="jobs.tsv row mismatch"):
+        validate_submission_receipt(
+            submission_json=submission,
+            submission_token=token,
+            expected_commit="a" * 40,
+            suite_manifest_json=manifest,
+            suite_manifest_sha256=manifest_sha,
+            role="candidate",
+            current_job_id="104",
+            gate_json=gate,
+        )

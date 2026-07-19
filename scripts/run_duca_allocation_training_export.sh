@@ -15,6 +15,10 @@ CHECKPOINT="${DUCA_ALLOCATION_CHECKPOINT:-}"
 RUN_ROOT="${DUCA_ALLOCATION_RUN_ROOT:-}"
 GATE_JSON="${DUCA_ALLOCATION_GATE_JSON:-}"
 CONFIG="configs/adatad/thumos/duca_allocation_ceiling_training_windows.py"
+SUBMISSION_JSON="${DUCA_ALLOCATION_SUBMISSION_JSON:-}"
+SUBMISSION_TOKEN="${DUCA_ALLOCATION_SUBMISSION_TOKEN:-}"
+SUITE_MANIFEST="${DUCA_ALLOCATION_SUITE_MANIFEST:-}"
+SUITE_MANIFEST_SHA256="${DUCA_ALLOCATION_SUITE_MANIFEST_SHA256:-}"
 
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "export requires a Slurm GPU"
 [[ "${SLURM_CLUSTER_NAME:-}" == "n16r4" ]] || fail "export requires cluster n16r4"
@@ -24,13 +28,15 @@ CONFIG="configs/adatad/thumos/duca_allocation_ceiling_training_windows.py"
 [[ "${RUN_ROOT}" == "${BASE}/"* && -d "${RUN_ROOT}" ]] || fail "invalid run root"
 [[ ! -e "${RUN_ROOT}/training_inputs.jsonl" ]] || fail "refusing to overwrite export"
 
-"${PYTHON}" - "${GATE_JSON}" "${EXPECTED_COMMIT}" <<'PY'
-import json
-import sys
-payload = json.load(open(sys.argv[1], encoding="utf-8"))
-if payload.get("gate_passed") is not True or payload.get("git_commit") != sys.argv[2]:
-    raise SystemExit("allocation gate binding is invalid")
-PY
+"${PYTHON}" -m tools.bata.validate_duca_allocation_submission_receipt \
+  --submission-json "${SUBMISSION_JSON}" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${SUITE_MANIFEST}" \
+  --suite-manifest-sha256 "${SUITE_MANIFEST_SHA256}" \
+  --role export \
+  --current-job-id "${SLURM_JOB_ID}" \
+  --gate-json "${GATE_JSON}"
 
 "${PYTHON}" -m tools.bata.export_duca_allocation_ceiling_inputs \
   --config "${CONFIG}" \

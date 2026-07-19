@@ -22,6 +22,12 @@ from tools.bata.validate_duca_allocation_candidate_loss_artifact import (
 from tools.bata.validate_duca_allocation_solver_cost_artifact import (
     validate_solver_cost_artifact,
 )
+from tools.bata.validate_duca_allocation_submission_receipt import (
+    validate_submission_receipt,
+)
+from tools.bata.validate_duca_allocation_scheduler_receipt import (
+    validate_scheduler_receipt,
+)
 
 
 def finalize_gate(
@@ -34,10 +40,14 @@ def finalize_gate(
     expected_pretrain_sha256: str,
     suite_manifest_json: str | Path,
     suite_manifest_sha256: str,
+    submission_json: str | Path,
+    scheduler_receipt_json: str | Path,
     ceiling_validation_json: str | Path,
     gt_runtime_json: str | Path,
-    max_projected_gt32_seconds: float,
+    max_allowed_gt32_seconds: float,
     execution_cluster: str,
+    gate_job_id: str | int,
+    submission_token: str,
     input_jsonl: str | Path,
     ceiling_jsonl: str | Path,
     ceiling_summary_json: str | Path,
@@ -51,9 +61,15 @@ def finalize_gate(
         raise ValueError("expected_commit must be a full lowercase Git commit")
     if execution_cluster != "n16r4":
         raise ValueError("allocation real gate must execute on n16r4")
+    if re.fullmatch(r"[0-9]+", str(gate_job_id)) is None:
+        raise ValueError("allocation real gate Job ID is invalid")
+    if re.fullmatch(r"[0-9a-f]{64}", submission_token) is None:
+        raise ValueError("allocation submission token is invalid")
     checkpoint_path = Path(checkpoint).resolve()
     pretrain_path = Path(pretrain).resolve()
     manifest_path = Path(suite_manifest_json).resolve()
+    submission_path = Path(submission_json).resolve()
+    scheduler_receipt_path = Path(scheduler_receipt_json).resolve()
     validation_path = Path(ceiling_validation_json).resolve()
     runtime_path = Path(gt_runtime_json).resolve()
     input_path = Path(input_jsonl).resolve()
@@ -80,6 +96,23 @@ def finalize_gate(
         expected_pretrain=pretrain_path,
         expected_pretrain_sha256=expected_pretrain_sha256,
     )
+    submission_validation = validate_submission_receipt(
+        submission_json=submission_path,
+        submission_token=submission_token,
+        expected_commit=expected_commit,
+        suite_manifest_json=manifest_path,
+        suite_manifest_sha256=suite_manifest_sha256,
+        role="gate",
+        current_job_id=gate_job_id,
+    )
+    scheduler_validation = validate_scheduler_receipt(
+        scheduler_receipt_json=scheduler_receipt_path,
+        submission_json=submission_path,
+        submission_token=submission_token,
+        expected_commit=expected_commit,
+        suite_manifest_json=manifest_path,
+        suite_manifest_sha256=suite_manifest_sha256,
+    )
     validation = validate_artifact_receipt(
         validation_json=validation_path,
         input_jsonl=input_path,
@@ -89,8 +122,15 @@ def finalize_gate(
     )
     runtime = _validate_gt_runtime(
         runtime_path,
-        max_projected_gt32_seconds=max_projected_gt32_seconds,
+        max_allowed_gt32_seconds=max_allowed_gt32_seconds,
     )
+    if (
+        runtime["solver_total_deadline_seconds"]
+        != manifest["gt_solver_total_deadline_seconds"]
+        or runtime["max_allowed_gt32_seconds"]
+        != manifest["gt_runtime_max_allowed_seconds"]
+    ):
+        raise ValueError("GT runtime contract differs from the suite manifest")
     candidate = _load_mapping(candidate_path)
     candidate_validation = validate_candidate_artifact(
         ceiling_jsonl=ceiling_path,
@@ -238,6 +278,10 @@ def finalize_gate(
         "gate_passed": True,
         "git_commit": expected_commit,
         "execution_cluster": execution_cluster,
+        "gate_job_id": str(gate_job_id),
+        "submission_token": submission_token,
+        "submission_validation": submission_validation,
+        "scheduler_validation": scheduler_validation,
         "checkpoint_epoch": int(expected_checkpoint_epoch),
         "checkpoint_state_key": "state_dict_ema",
         "checkpoint": str(checkpoint_path),
@@ -323,6 +367,8 @@ def _validate_suite_manifest(
         "train_data_path",
         "training_config",
         "training_config_sha256",
+        "gt_solver_total_deadline_seconds",
+        "gt_runtime_max_allowed_seconds",
         "target_cluster",
         "validation_subset_consumed",
         "selector_training_authorized",
@@ -343,7 +389,7 @@ def _validate_suite_manifest(
     if not training_config.is_file():
         raise ValueError("canonical allocation training config is missing")
     expected = {
-        "schema_version": "duca_allocation_training_suite_manifest_v1",
+        "schema_version": "duca_allocation_training_suite_manifest_v2",
         "git_commit": expected_commit,
         "task": "offline_temporal_action_detection",
         "checkpoint": str(expected_checkpoint),
@@ -359,6 +405,8 @@ def _validate_suite_manifest(
         "train_data_path": str(train_data),
         "training_config": str(training_config),
         "training_config_sha256": sha256(training_config),
+        "gt_solver_total_deadline_seconds": 300,
+        "gt_runtime_max_allowed_seconds": 43200,
         "target_cluster": "n16r4",
         "validation_subset_consumed": False,
         "selector_training_authorized": False,
@@ -371,42 +419,95 @@ def _validate_suite_manifest(
 def _validate_gt_runtime(
     path: Path,
     *,
-    max_projected_gt32_seconds: float,
+    max_allowed_gt32_seconds: float,
 ) -> dict[str, Any]:
     payload = _load_mapping(path)
     required = {
         "schema_version",
-        "gt_generation_seconds",
-        "gt_validation_seconds",
-        "projected_gt32_seconds",
-        "max_projected_gt32_seconds",
+        "smoke_sample_count",
+        "smoke_generation_seconds",
+        "smoke_validation_seconds",
+        "empirical_single_sample_projected_gt32_seconds",
+        "solver_total_deadline_seconds",
+        "registered_sample_count",
+        "privileged_family_count",
+        "independent_pass_count",
+        "analytical_worst_case_gt32_seconds",
+        "max_allowed_gt32_seconds",
     }
     if set(payload) != required:
         raise ValueError("strict GT runtime fields mismatch")
-    if payload.get("schema_version") != "duca_allocation_gt_runtime_projection_v1":
+    if payload.get("schema_version") != "duca_allocation_gt_runtime_projection_v2":
         raise ValueError("GT runtime schema mismatch")
-    generation = float(payload["gt_generation_seconds"])
-    validation = float(payload["gt_validation_seconds"])
-    projected = float(payload["projected_gt32_seconds"])
-    maximum = float(payload["max_projected_gt32_seconds"])
+    integer_fields = (
+        "smoke_sample_count",
+        "registered_sample_count",
+        "privileged_family_count",
+        "independent_pass_count",
+    )
+    for key in integer_fields:
+        value = payload[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"GT runtime {key} must be a positive integer")
+    if payload["smoke_sample_count"] != 1:
+        raise ValueError("GT runtime smoke gate must contain exactly one sample")
+    if payload["registered_sample_count"] != 32:
+        raise ValueError("GT runtime registered sample count must be 32")
+    if payload["privileged_family_count"] != 2:
+        raise ValueError("GT runtime privileged family count must be two")
+    if payload["independent_pass_count"] != 2:
+        raise ValueError("GT runtime independent pass count must be two")
+    generation = float(payload["smoke_generation_seconds"])
+    validation = float(payload["smoke_validation_seconds"])
+    empirical = float(payload["empirical_single_sample_projected_gt32_seconds"])
+    solver_deadline = float(payload["solver_total_deadline_seconds"])
+    analytical = float(payload["analytical_worst_case_gt32_seconds"])
+    maximum = float(payload["max_allowed_gt32_seconds"])
     if any(
         not math.isfinite(value) or value <= 0.0
-        for value in (generation, validation, projected, maximum)
+        for value in (
+            generation,
+            validation,
+            empirical,
+            solver_deadline,
+            analytical,
+            maximum,
+        )
     ):
         raise ValueError("GT runtime values must be finite and positive")
-    expected_projected = (generation + validation) * 32.0
-    if not math.isclose(projected, expected_projected, rel_tol=0.0, abs_tol=1.0e-6):
-        raise ValueError("GT runtime projection mismatch")
+    expected_empirical = (
+        generation + validation
+    ) * payload["registered_sample_count"]
+    if not math.isclose(
+        empirical,
+        expected_empirical,
+        rel_tol=0.0,
+        abs_tol=1.0e-6,
+    ):
+        raise ValueError("GT empirical runtime projection mismatch")
+    expected_analytical = (
+        solver_deadline
+        * payload["registered_sample_count"]
+        * payload["privileged_family_count"]
+        * payload["independent_pass_count"]
+    )
+    if not math.isclose(
+        analytical,
+        expected_analytical,
+        rel_tol=0.0,
+        abs_tol=1.0e-6,
+    ):
+        raise ValueError("GT analytical worst-case runtime mismatch")
     if not math.isclose(
         maximum,
-        float(max_projected_gt32_seconds),
+        float(max_allowed_gt32_seconds),
         rel_tol=0.0,
         abs_tol=1.0e-6,
     ):
         raise ValueError("GT runtime threshold differs from the submitted contract")
-    if projected > maximum:
+    if analytical > maximum:
         raise ValueError(
-            "projected 32-sample GT solver cost exceeds the fail-closed threshold"
+            "analytical 32-sample GT solver cost exceeds the fail-closed threshold"
         )
     return dict(payload)
 
@@ -437,14 +538,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--expected-pretrain-sha256", required=True)
     parser.add_argument("--suite-manifest-json", required=True)
     parser.add_argument("--suite-manifest-sha256", required=True)
+    parser.add_argument("--submission-json", required=True)
+    parser.add_argument("--scheduler-receipt-json", required=True)
     parser.add_argument("--ceiling-validation-json", required=True)
     parser.add_argument("--gt-runtime-json", required=True)
     parser.add_argument(
-        "--max-projected-gt32-seconds",
+        "--max-allowed-gt32-seconds",
         type=float,
         required=True,
     )
     parser.add_argument("--execution-cluster", required=True)
+    parser.add_argument("--gate-job-id", required=True)
+    parser.add_argument("--submission-token", required=True)
     parser.add_argument("--input-jsonl", required=True)
     parser.add_argument("--ceiling-jsonl", required=True)
     parser.add_argument("--ceiling-summary-json", required=True)
@@ -463,10 +568,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_pretrain_sha256=args.expected_pretrain_sha256,
         suite_manifest_json=args.suite_manifest_json,
         suite_manifest_sha256=args.suite_manifest_sha256,
+        submission_json=args.submission_json,
+        scheduler_receipt_json=args.scheduler_receipt_json,
         ceiling_validation_json=args.ceiling_validation_json,
         gt_runtime_json=args.gt_runtime_json,
-        max_projected_gt32_seconds=args.max_projected_gt32_seconds,
+        max_allowed_gt32_seconds=args.max_allowed_gt32_seconds,
         execution_cluster=args.execution_cluster,
+        gate_job_id=args.gate_job_id,
+        submission_token=args.submission_token,
         input_jsonl=args.input_jsonl,
         ceiling_jsonl=args.ceiling_jsonl,
         ceiling_summary_json=args.ceiling_summary_json,

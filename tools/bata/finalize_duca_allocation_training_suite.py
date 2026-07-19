@@ -22,6 +22,9 @@ from tools.bata.validate_duca_allocation_candidate_loss_artifact import (
 from tools.bata.validate_duca_allocation_solver_cost_artifact import (
     validate_solver_cost_artifact,
 )
+from tools.bata.validate_duca_allocation_submission_receipt import (
+    validate_submission_receipt,
+)
 
 
 def finalize_suite(
@@ -41,6 +44,9 @@ def finalize_suite(
     solver_cost_summary_json: str | Path,
     suite_manifest_json: str | Path,
     suite_manifest_sha256: str,
+    submission_json: str | Path,
+    submission_token: str,
+    current_job_id: str | int,
     output_json: str | Path,
 ) -> dict[str, Any]:
     paths = {
@@ -58,6 +64,7 @@ def finalize_suite(
         "solver_cost_samples": Path(solver_cost_samples_jsonl).resolve(),
         "solver_cost": Path(solver_cost_summary_json).resolve(),
         "suite_manifest": Path(suite_manifest_json).resolve(),
+        "submission": Path(submission_json).resolve(),
     }
     output_path = Path(output_json).resolve()
     if output_path.exists():
@@ -112,6 +119,16 @@ def finalize_suite(
     checkpoint_path = Path(str(payloads["gate"].get("checkpoint", ""))).resolve()
     pretrain_path = Path(str(payloads["gate"].get("pretrain", ""))).resolve()
     expected_pretrain_sha = str(payloads["gate"].get("pretrain_sha256"))
+    submission_validation = validate_submission_receipt(
+        submission_json=paths["submission"],
+        submission_token=submission_token,
+        expected_commit=expected_commit,
+        suite_manifest_json=paths["suite_manifest"],
+        suite_manifest_sha256=suite_manifest_sha256,
+        role="completion",
+        current_job_id=current_job_id,
+        gate_json=paths["gate"],
+    )
     manifest = _validate_suite_manifest(
         paths["suite_manifest"],
         expected_sha256=suite_manifest_sha256,
@@ -331,6 +348,7 @@ def finalize_suite(
         ),
         "solver_latency_ms": payloads["solver_cost"]["latency_ms"],
         "suite_manifest": manifest,
+        "submission_validation": submission_validation,
         "full_ceiling_validation": full_validation,
         "gt_ceiling_validation": gt_validation,
         "candidate_validation": candidate_validation,
@@ -388,6 +406,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--solver-cost-summary-json", required=True)
     parser.add_argument("--suite-manifest-json", required=True)
     parser.add_argument("--suite-manifest-sha256", required=True)
+    parser.add_argument("--submission-json", required=True)
+    parser.add_argument("--submission-token", required=True)
+    parser.add_argument("--current-job-id", required=True)
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
     result = finalize_suite(
@@ -406,6 +427,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         solver_cost_summary_json=args.solver_cost_summary_json,
         suite_manifest_json=args.suite_manifest_json,
         suite_manifest_sha256=args.suite_manifest_sha256,
+        submission_json=args.submission_json,
+        submission_token=args.submission_token,
+        current_job_id=args.current_job_id,
         output_json=args.output_json,
     )
     print(json.dumps(result, indent=2, sort_keys=True))

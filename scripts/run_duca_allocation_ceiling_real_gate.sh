@@ -20,8 +20,11 @@ EXPECTED_CHECKPOINT_SHA256="${DUCA_ALLOCATION_CHECKPOINT_SHA256:-}"
 EXPECTED_PRETRAIN_SHA256="${ADATAD_PRETRAIN_SHA256:-}"
 SUITE_MANIFEST="${DUCA_ALLOCATION_SUITE_MANIFEST:-}"
 SUITE_MANIFEST_SHA256="${DUCA_ALLOCATION_SUITE_MANIFEST_SHA256:-}"
+SUBMISSION_JSON="${DUCA_ALLOCATION_SUBMISSION_JSON:-}"
+SUBMISSION_TOKEN="${DUCA_ALLOCATION_SUBMISSION_TOKEN:-}"
+SCHEDULER_RECEIPT="${DUCA_ALLOCATION_SCHEDULER_RECEIPT:-}"
 GT_TIME_LIMIT_SECONDS="${DUCA_ALLOCATION_GT_TIME_LIMIT_SECONDS:-300}"
-MAX_PROJECTED_GT32_SECONDS="${DUCA_ALLOCATION_MAX_PROJECTED_GT32_SECONDS:-259200}"
+MAX_ALLOWED_GT32_SECONDS="${DUCA_ALLOCATION_MAX_GT32_SECONDS:-43200}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "real gate must run inside Slurm"
 [[ "${SLURM_CLUSTER_NAME:-}" == "n16r4" ]] || fail "real gate requires cluster n16r4"
@@ -41,14 +44,46 @@ MAX_PROJECTED_GT32_SECONDS="${DUCA_ALLOCATION_MAX_PROJECTED_GT32_SECONDS:-259200
   || fail "suite manifest hash drift"
 [[ "${GT_TIME_LIMIT_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]] \
   || fail "GT time limit is invalid"
-[[ "${MAX_PROJECTED_GT32_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]] \
-  || fail "GT projected-cost limit is invalid"
+[[ "${MAX_ALLOWED_GT32_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]] \
+  || fail "GT analytical-cost limit is invalid"
+[[ "${GT_TIME_LIMIT_SECONDS}" == "300" ]] \
+  || fail "GT total solver deadline must match the registered 300 seconds"
+[[ "${MAX_ALLOWED_GT32_SECONDS}" == "43200" ]] \
+  || fail "GT runtime allowance must match the registered 12 hours"
+[[ "${SUBMISSION_TOKEN}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "allocation submission token is invalid"
+[[ -f "${SUBMISSION_JSON}" ]] || fail "allocation submission receipt is missing"
 [[ -n "${OUTPUT_ROOT}" ]] || fail "DUCA_ALLOCATION_GATE_ROOT is required"
 [[ "${OUTPUT_ROOT}" == "${BASE}/"* ]] || fail "gate output must stay under ${BASE}"
 [[ ! -e "${OUTPUT_ROOT}" ]] || fail "refusing to overwrite gate output"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \
   || fail "gate requires exactly one Slurm-visible GPU"
 mkdir -p "${OUTPUT_ROOT}"
+
+for _attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 \
+  21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 \
+  41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60; do
+  [[ -f "${SCHEDULER_RECEIPT}" ]] && break
+  sleep 1
+done
+[[ -f "${SCHEDULER_RECEIPT}" ]] \
+  || fail "sealed scheduler receipt did not appear after gate release"
+
+"${PYTHON}" -m tools.bata.validate_duca_allocation_submission_receipt \
+  --submission-json "${SUBMISSION_JSON}" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${SUITE_MANIFEST}" \
+  --suite-manifest-sha256 "${SUITE_MANIFEST_SHA256}" \
+  --role gate \
+  --current-job-id "${SLURM_JOB_ID}"
+"${PYTHON}" -m tools.bata.validate_duca_allocation_scheduler_receipt validate \
+  --scheduler-receipt-json "${SCHEDULER_RECEIPT}" \
+  --submission-json "${SUBMISSION_JSON}" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${SUITE_MANIFEST}" \
+  --suite-manifest-sha256 "${SUITE_MANIFEST_SHA256}"
 
 INPUT_JSONL="${OUTPUT_ROOT}/training_input_one.jsonl"
 EXPORT_SUMMARY="${OUTPUT_ROOT}/training_input_one.summary.json"
@@ -103,7 +138,8 @@ GT_VALIDATION_END="$(date +%s.%N)"
   "${GT_GENERATION_END}" \
   "${GT_VALIDATION_START}" \
   "${GT_VALIDATION_END}" \
-  "${MAX_PROJECTED_GT32_SECONDS}" \
+  "${GT_TIME_LIMIT_SECONDS}" \
+  "${MAX_ALLOWED_GT32_SECONDS}" \
   "${GT_RUNTIME}" <<'PY'
 import json
 import pathlib
@@ -111,15 +147,32 @@ import sys
 
 generation = float(sys.argv[2]) - float(sys.argv[1])
 validation = float(sys.argv[4]) - float(sys.argv[3])
-maximum = float(sys.argv[5])
+solver_deadline = float(sys.argv[5])
+maximum = float(sys.argv[6])
+registered_samples = 32
+privileged_families = 2
+independent_passes = 2
 payload = {
-    "schema_version": "duca_allocation_gt_runtime_projection_v1",
-    "gt_generation_seconds": generation,
-    "gt_validation_seconds": validation,
-    "projected_gt32_seconds": (generation + validation) * 32.0,
-    "max_projected_gt32_seconds": maximum,
+    "schema_version": "duca_allocation_gt_runtime_projection_v2",
+    "smoke_sample_count": 1,
+    "smoke_generation_seconds": generation,
+    "smoke_validation_seconds": validation,
+    "empirical_single_sample_projected_gt32_seconds": (
+        generation + validation
+    ) * registered_samples,
+    "solver_total_deadline_seconds": solver_deadline,
+    "registered_sample_count": registered_samples,
+    "privileged_family_count": privileged_families,
+    "independent_pass_count": independent_passes,
+    "analytical_worst_case_gt32_seconds": (
+        solver_deadline
+        * registered_samples
+        * privileged_families
+        * independent_passes
+    ),
+    "max_allowed_gt32_seconds": maximum,
 }
-target = pathlib.Path(sys.argv[6])
+target = pathlib.Path(sys.argv[7])
 target.open("x", encoding="utf-8").write(
     json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
 )
@@ -166,10 +219,14 @@ PY
   --expected-pretrain-sha256 "${EXPECTED_PRETRAIN_SHA256}" \
   --suite-manifest-json "${SUITE_MANIFEST}" \
   --suite-manifest-sha256 "${SUITE_MANIFEST_SHA256}" \
+  --submission-json "${SUBMISSION_JSON}" \
+  --scheduler-receipt-json "${SCHEDULER_RECEIPT}" \
   --ceiling-validation-json "${VALIDATION_JSON}" \
   --gt-runtime-json "${GT_RUNTIME}" \
-  --max-projected-gt32-seconds "${MAX_PROJECTED_GT32_SECONDS}" \
+  --max-allowed-gt32-seconds "${MAX_ALLOWED_GT32_SECONDS}" \
   --execution-cluster "${SLURM_CLUSTER_NAME}" \
+  --gate-job-id "${SLURM_JOB_ID}" \
+  --submission-token "${SUBMISSION_TOKEN}" \
   --input-jsonl "${INPUT_JSONL}" \
   --ceiling-jsonl "${CEILING_JSONL}" \
   --ceiling-summary-json "${CEILING_SUMMARY}" \

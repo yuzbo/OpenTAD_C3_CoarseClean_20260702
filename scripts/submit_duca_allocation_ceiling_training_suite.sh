@@ -28,22 +28,20 @@ resolve_target_cluster() {
 require_generated_script_safe() {
   local label="$1"
   local value="$2"
-  [[ "${value}" != *"'"* && "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] \
+  [[ "${value}" != *"'"* && "${value}" != *","* && "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] \
     || fail "${label} cannot be represented safely in generated jobs"
 }
 
-normalize_job_id() {
+register_submitted_job() {
   local raw="$1"
   raw="${raw%%$'\n'*}"
   local job_id="${raw%%;*}"
-  local cluster=""
-  if [[ "${raw}" == *";"* ]]; then
-    cluster="${raw#*;}"
-    [[ "${cluster}" == "${TARGET_CLUSTER}" ]] \
-      || fail "sbatch returned unexpected cluster identity: ${raw}"
+  if [[ "${job_id}" =~ ^[0-9]+$ ]]; then
+    SUBMITTED_JOB_IDS+=("${job_id}")
   fi
-  [[ "${job_id}" =~ ^[0-9]+$ ]] || fail "unexpected sbatch response: ${raw}"
-  printf '%s\n' "${job_id}"
+  [[ "${raw}" =~ ^[0-9]+\;n16r4$ ]] \
+    || fail "sbatch did not return full jobid;n16r4 identity: ${raw}"
+  NORMALIZED_JOB_ID="${job_id}"
 }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -59,6 +57,8 @@ RUN_ROOT="${DUCA_ALLOCATION_RUN_ROOT:-}"
 CHECKPOINT="${DUCA_ALLOCATION_CHECKPOINT:-}"
 PRETRAIN="${ADATAD_PRETRAIN_PATH:-}"
 EXPECTED_EPOCH="${DUCA_ALLOCATION_CHECKPOINT_EPOCH:-131}"
+GT_SOLVER_TOTAL_DEADLINE_SECONDS=300
+GT_RUNTIME_MAX_ALLOWED_SECONDS=43200
 
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "expected commit is invalid"
 [[ "${TARGET_CLUSTER}" == "n16r4" ]] || fail \
@@ -90,7 +90,7 @@ SHORT_COMMIT="${EXPECTED_COMMIT:0:7}"
 
 cat > "${RUN_ROOT}/suite_manifest.json" <<EOF
 {
-  "schema_version": "duca_allocation_training_suite_manifest_v1",
+  "schema_version": "duca_allocation_training_suite_manifest_v2",
   "git_commit": "${EXPECTED_COMMIT}",
   "task": "offline_temporal_action_detection",
   "checkpoint": "${CHECKPOINT}",
@@ -106,6 +106,8 @@ cat > "${RUN_ROOT}/suite_manifest.json" <<EOF
   "train_data_path": "${THUMOS14_TRAIN_DATA_PATH}",
   "training_config": "${REPO_ROOT}/configs/adatad/thumos/duca_allocation_ceiling_training_windows.py",
   "training_config_sha256": "$(sha256sum "${REPO_ROOT}/configs/adatad/thumos/duca_allocation_ceiling_training_windows.py" | awk '{print $1}')",
+  "gt_solver_total_deadline_seconds": ${GT_SOLVER_TOTAL_DEADLINE_SECONDS},
+  "gt_runtime_max_allowed_seconds": ${GT_RUNTIME_MAX_ALLOWED_SECONDS},
   "target_cluster": "${TARGET_CLUSTER}",
   "validation_subset_consumed": false,
   "selector_training_authorized": false
@@ -132,6 +134,13 @@ write_header() {
     echo "#SBATCH --time=${time_limit}"
     echo "#SBATCH --output=${RUN_ROOT}/logs/${name}-%j.out"
     echo "#SBATCH --error=${RUN_ROOT}/logs/${name}-%j.err"
+    echo 'if [[ -f /etc/profile ]]; then source /etc/profile; fi'
+    echo 'if ! type module >/dev/null 2>&1; then'
+    echo '  for init in /etc/profile.d/modules.sh /usr/share/Modules/init/bash /usr/share/lmod/lmod/init/bash; do'
+    echo '    if [[ -f "${init}" ]]; then source "${init}"; break; fi'
+    echo '  done'
+    echo 'fi'
+    echo 'type module >/dev/null 2>&1 || { echo "[DUCA_ALLOCATION_JOB][FAIL] environment modules unavailable" >&2; exit 1; }'
     echo 'set -euo pipefail'
     echo "cd '${REPO_ROOT}'"
     echo "module load cuda/11.8"
@@ -153,8 +162,11 @@ write_header() {
     echo "export ADATAD_PRETRAIN_SHA256='${PRETRAIN_SHA256}'"
     echo "export DUCA_ALLOCATION_SUITE_MANIFEST='${RUN_ROOT}/suite_manifest.json'"
     echo "export DUCA_ALLOCATION_SUITE_MANIFEST_SHA256='${MANIFEST_SHA256}'"
+    echo "export DUCA_ALLOCATION_GT_TIME_LIMIT_SECONDS='${GT_SOLVER_TOTAL_DEADLINE_SECONDS}'"
+    echo "export DUCA_ALLOCATION_MAX_GT32_SECONDS='${GT_RUNTIME_MAX_ALLOWED_SECONDS}'"
     echo "export DUCA_ALLOCATION_RUN_ROOT='${RUN_ROOT}'"
     echo "export DUCA_ALLOCATION_GATE_JSON='${GATE_JSON}'"
+    echo "export DUCA_ALLOCATION_SCHEDULER_RECEIPT='${RUN_ROOT}/scheduler_receipt.json'"
   } > "${path}"
 }
 
@@ -198,6 +210,9 @@ cat >> "${COMPLETION_JOB}" <<EOF
   --solver-cost-summary-json '${RUN_ROOT}/training_solver_cost.summary.json' \
   --suite-manifest-json '${RUN_ROOT}/suite_manifest.json' \
   --suite-manifest-sha256 '${MANIFEST_SHA256}' \
+  --submission-json '${RUN_ROOT}/submission.json' \
+  --submission-token "\${DUCA_ALLOCATION_SUBMISSION_TOKEN}" \
+  --current-job-id "\${SLURM_JOB_ID}" \
   --output-json '${RUN_ROOT}/training_suite_evidence.json'
 EOF
 
@@ -247,6 +262,9 @@ cat > "${RUN_ROOT}/submission_intent.json" <<EOF
   "mode": "$([[ "${PRECHECK_ONLY:-0}" == "1" ]] && printf precheck || printf submit)"
 }
 EOF
+SUBMISSION_TOKEN="$(
+  sha256sum "${RUN_ROOT}/submission_intent.json" | awk '{print $1}'
+)"
 if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
   echo "[DUCA_ALLOCATION_SUBMIT] PRECHECK PASS ${RUN_ROOT}"
   exit 0
@@ -254,74 +272,218 @@ fi
 
 command -v sbatch >/dev/null 2>&1 || fail "sbatch is unavailable"
 command -v scancel >/dev/null 2>&1 || fail "scancel is unavailable"
+command -v scontrol >/dev/null 2>&1 || fail "scontrol is unavailable"
+command -v squeue >/dev/null 2>&1 || fail "squeue is unavailable"
 SUBMITTED_JOB_IDS=()
-rollback_partial_submission() {
+SUBMISSION_COMPLETE=0
+cleanup_partial_submission() {
   local exit_code=$?
-  trap - ERR
-  if [[ ${#SUBMITTED_JOB_IDS[@]} -gt 0 ]]; then
+  trap - EXIT INT TERM
+  if [[ "${SUBMISSION_COMPLETE}" != "1" && ${#SUBMITTED_JOB_IDS[@]} -gt 0 ]]; then
     echo \
       "[DUCA_ALLOCATION_SUBMIT] rolling back partial DAG: ${SUBMITTED_JOB_IDS[*]}" \
       >&2
-    scancel --clusters="${TARGET_CLUSTER}" "${SUBMITTED_JOB_IDS[@]}" || true
+    if ! scancel --clusters="${TARGET_CLUSTER}" "${SUBMITTED_JOB_IDS[@]}"; then
+      echo "[DUCA_ALLOCATION_SUBMIT][FAIL] scancel returned failure" >&2
+      exit_code=1
+    fi
+    local ids_csv
+    local active=""
+    local query_ok=0
+    ids_csv="$(IFS=,; printf '%s' "${SUBMITTED_JOB_IDS[*]}")"
+    for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+      if active="$(
+        squeue --clusters="${TARGET_CLUSTER}" \
+          --jobs="${ids_csv}" --noheader --format='%i %T'
+      )"; then
+        query_ok=1
+      else
+        query_ok=0
+        echo \
+          "[DUCA_ALLOCATION_SUBMIT][FAIL] could not confirm rollback with squeue" \
+          >&2
+        sleep 1
+        continue
+      fi
+      [[ -z "${active}" ]] && break
+      sleep 1
+    done
+    if [[ "${query_ok}" != "1" || -n "${active}" ]]; then
+      echo \
+        "[DUCA_ALLOCATION_SUBMIT][FAIL] jobs remain visible after rollback: ${active}" \
+        >&2
+      exit_code=1
+    fi
   fi
   exit "${exit_code}"
 }
-trap rollback_partial_submission ERR
+capture_scheduler_job() {
+  local phase="$1"
+  local role="$2"
+  local job_id="$3"
+  local output="${RUN_ROOT}/scheduler/${phase}.${role}.scontrol.txt"
+  local raw=""
+  for _attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if raw="$(
+      scontrol --clusters="${TARGET_CLUSTER}" show job -o "${job_id}" 2>/dev/null
+    )" && [[ "${raw}" == JobId="${job_id} "* ]]; then
+      if [[ "${phase}" == "pre_release" && "${raw}" != *" Reason=JobHeldUser "* ]]; then
+        sleep 1
+        continue
+      fi
+      if [[ "${phase}" == "post_release" && "${raw}" == *" Reason=JobHeldUser "* ]]; then
+        sleep 1
+        continue
+      fi
+      printf '%s\n' "${raw}" > "${output}"
+      return 0
+    fi
+    sleep 1
+  done
+  fail "could not capture scheduler state for ${role} Job ${job_id}"
+}
+trap cleanup_partial_submission EXIT
+trap 'exit 130' INT TERM
+SBATCH_EXPORT="ALL,DUCA_ALLOCATION_SUBMISSION_TOKEN=${SUBMISSION_TOKEN},DUCA_ALLOCATION_SUBMISSION_JSON=${RUN_ROOT}/submission.json"
 
-GATE_RAW="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" "${GATE_JOB}")"
-GATE_ID="$(normalize_job_id "${GATE_RAW}")"
-SUBMITTED_JOB_IDS+=("${GATE_ID}")
+GATE_RAW="$(
+  sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
+    --export="${SBATCH_EXPORT}" "${GATE_JOB}"
+)"
+register_submitted_job "${GATE_RAW}"
+GATE_ID="${NORMALIZED_JOB_ID}"
 EXPORT_RAW="$(
-  sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+  sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
+    --export="${SBATCH_EXPORT}" \
     --dependency="afterok:${GATE_ID}" "${EXPORT_JOB}"
 )"
-EXPORT_ID="$(normalize_job_id "${EXPORT_RAW}")"
-SUBMITTED_JOB_IDS+=("${EXPORT_ID}")
+register_submitted_job "${EXPORT_RAW}"
+EXPORT_ID="${NORMALIZED_JOB_ID}"
 DIAGNOSTIC_RAW="$(
-  sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+  sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
+    --export="${SBATCH_EXPORT}" \
     --dependency="afterok:${EXPORT_ID}" "${DIAGNOSTIC_JOB}"
 )"
-DIAGNOSTIC_ID="$(normalize_job_id "${DIAGNOSTIC_RAW}")"
-SUBMITTED_JOB_IDS+=("${DIAGNOSTIC_ID}")
+register_submitted_job "${DIAGNOSTIC_RAW}"
+DIAGNOSTIC_ID="${NORMALIZED_JOB_ID}"
 CANDIDATE_RAW="$(
-  sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+  sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
+    --export="${SBATCH_EXPORT}" \
     --dependency="afterok:${DIAGNOSTIC_ID}" "${CANDIDATE_JOB}"
 )"
-CANDIDATE_ID="$(normalize_job_id "${CANDIDATE_RAW}")"
-SUBMITTED_JOB_IDS+=("${CANDIDATE_ID}")
+register_submitted_job "${CANDIDATE_RAW}"
+CANDIDATE_ID="${NORMALIZED_JOB_ID}"
 COMPLETION_RAW="$(
-  sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+  sbatch --parsable --hold --clusters="${TARGET_CLUSTER}" \
+    --export="${SBATCH_EXPORT}" \
     --dependency="afterok:${CANDIDATE_ID}" "${COMPLETION_JOB}"
 )"
-COMPLETION_ID="$(normalize_job_id "${COMPLETION_RAW}")"
-SUBMITTED_JOB_IDS+=("${COMPLETION_ID}")
+register_submitted_job "${COMPLETION_RAW}"
+COMPLETION_ID="${NORMALIZED_JOB_ID}"
 
 cat > "${RUN_ROOT}/jobs.tsv" <<EOF
-role	job_id	cluster	dependency	job_file
-gate	${GATE_ID}	${TARGET_CLUSTER}	none	${GATE_JOB}
-export	${EXPORT_ID}	${TARGET_CLUSTER}	afterok:${GATE_ID}	${EXPORT_JOB}
-diagnostics	${DIAGNOSTIC_ID}	${TARGET_CLUSTER}	afterok:${EXPORT_ID}	${DIAGNOSTIC_JOB}
-candidate	${CANDIDATE_ID}	${TARGET_CLUSTER}	afterok:${DIAGNOSTIC_ID}	${CANDIDATE_JOB}
-completion	${COMPLETION_ID}	${TARGET_CLUSTER}	afterok:${CANDIDATE_ID}	${COMPLETION_JOB}
+role	job_id	cluster	dependency	job_name	job_file
+gate	${GATE_ID}	${TARGET_CLUSTER}	none	dac-gate-${SHORT_COMMIT}	${GATE_JOB}
+export	${EXPORT_ID}	${TARGET_CLUSTER}	afterok:${GATE_ID}	dac-export-${SHORT_COMMIT}	${EXPORT_JOB}
+diagnostics	${DIAGNOSTIC_ID}	${TARGET_CLUSTER}	afterok:${EXPORT_ID}	dac-diag-${SHORT_COMMIT}	${DIAGNOSTIC_JOB}
+candidate	${CANDIDATE_ID}	${TARGET_CLUSTER}	afterok:${DIAGNOSTIC_ID}	dac-cand-${SHORT_COMMIT}	${CANDIDATE_JOB}
+completion	${COMPLETION_ID}	${TARGET_CLUSTER}	afterok:${CANDIDATE_ID}	dac-done-${SHORT_COMMIT}	${COMPLETION_JOB}
 EOF
 
 cat > "${RUN_ROOT}/submission.json" <<EOF
 {
-  "schema_version": "duca_allocation_training_suite_submission_v1",
+  "schema_version": "duca_allocation_training_suite_submission_v3",
   "git_commit": "${EXPECTED_COMMIT}",
-  "manifest_sha256": "${MANIFEST_SHA256}",
-  "submission_intent_sha256": "$(sha256sum "${RUN_ROOT}/submission_intent.json" | awk '{print $1}')",
+  "submission_token": "${SUBMISSION_TOKEN}",
+  "submission_intent_json": "${RUN_ROOT}/submission_intent.json",
+  "submission_intent_sha256": "${SUBMISSION_TOKEN}",
+  "suite_manifest_json": "${RUN_ROOT}/suite_manifest.json",
+  "suite_manifest_sha256": "${MANIFEST_SHA256}",
   "run_root": "${RUN_ROOT}",
   "target_cluster": "${TARGET_CLUSTER}",
+  "jobs_tsv": "${RUN_ROOT}/jobs.tsv",
+  "jobs_tsv_sha256": "$(sha256sum "${RUN_ROOT}/jobs.tsv" | awk '{print $1}')",
   "jobs": {
-    "gate": "${GATE_ID}",
-    "export": "${EXPORT_ID}",
-    "diagnostics": "${DIAGNOSTIC_ID}",
-    "candidate": "${CANDIDATE_ID}",
-    "completion": "${COMPLETION_ID}"
+    "gate": {"job_id": "${GATE_ID}", "cluster": "${TARGET_CLUSTER}", "dependency": null, "job_name": "dac-gate-${SHORT_COMMIT}", "job_file": "${GATE_JOB}"},
+    "export": {"job_id": "${EXPORT_ID}", "cluster": "${TARGET_CLUSTER}", "dependency": "afterok:${GATE_ID}", "job_name": "dac-export-${SHORT_COMMIT}", "job_file": "${EXPORT_JOB}"},
+    "diagnostics": {"job_id": "${DIAGNOSTIC_ID}", "cluster": "${TARGET_CLUSTER}", "dependency": "afterok:${EXPORT_ID}", "job_name": "dac-diag-${SHORT_COMMIT}", "job_file": "${DIAGNOSTIC_JOB}"},
+    "candidate": {"job_id": "${CANDIDATE_ID}", "cluster": "${TARGET_CLUSTER}", "dependency": "afterok:${DIAGNOSTIC_ID}", "job_name": "dac-cand-${SHORT_COMMIT}", "job_file": "${CANDIDATE_JOB}"},
+    "completion": {"job_id": "${COMPLETION_ID}", "cluster": "${TARGET_CLUSTER}", "dependency": "afterok:${CANDIDATE_ID}", "job_name": "dac-done-${SHORT_COMMIT}", "job_file": "${COMPLETION_JOB}"}
   }
 }
 EOF
+"${PYTHON}" -m tools.bata.validate_duca_allocation_submission_receipt \
+  --submission-json "${RUN_ROOT}/submission.json" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${RUN_ROOT}/suite_manifest.json" \
+  --suite-manifest-sha256 "${MANIFEST_SHA256}" \
+  --role gate \
+  --current-job-id "${GATE_ID}"
+mkdir "${RUN_ROOT}/scheduler"
+for phase_role_id in \
+  "gate:${GATE_ID}" \
+  "export:${EXPORT_ID}" \
+  "diagnostics:${DIAGNOSTIC_ID}" \
+  "candidate:${CANDIDATE_ID}" \
+  "completion:${COMPLETION_ID}"; do
+  role="${phase_role_id%%:*}"
+  job_id="${phase_role_id#*:}"
+  capture_scheduler_job pre_release "${role}" "${job_id}"
+done
+"${PYTHON}" -m tools.bata.validate_duca_allocation_scheduler_receipt capture \
+  --submission-json "${RUN_ROOT}/submission.json" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${RUN_ROOT}/suite_manifest.json" \
+  --suite-manifest-sha256 "${MANIFEST_SHA256}" \
+  --phase pre_release \
+  --raw "gate=${RUN_ROOT}/scheduler/pre_release.gate.scontrol.txt" \
+  --raw "export=${RUN_ROOT}/scheduler/pre_release.export.scontrol.txt" \
+  --raw "diagnostics=${RUN_ROOT}/scheduler/pre_release.diagnostics.scontrol.txt" \
+  --raw "candidate=${RUN_ROOT}/scheduler/pre_release.candidate.scontrol.txt" \
+  --raw "completion=${RUN_ROOT}/scheduler/pre_release.completion.scontrol.txt" \
+  --output-json "${RUN_ROOT}/scheduler/pre_release.snapshot.json"
+for job_id in \
+  "${COMPLETION_ID}" \
+  "${CANDIDATE_ID}" \
+  "${DIAGNOSTIC_ID}" \
+  "${EXPORT_ID}" \
+  "${GATE_ID}"; do
+  scontrol --clusters="${TARGET_CLUSTER}" release "${job_id}"
+done
+for phase_role_id in \
+  "gate:${GATE_ID}" \
+  "export:${EXPORT_ID}" \
+  "diagnostics:${DIAGNOSTIC_ID}" \
+  "candidate:${CANDIDATE_ID}" \
+  "completion:${COMPLETION_ID}"; do
+  role="${phase_role_id%%:*}"
+  job_id="${phase_role_id#*:}"
+  capture_scheduler_job post_release "${role}" "${job_id}"
+done
+"${PYTHON}" -m tools.bata.validate_duca_allocation_scheduler_receipt capture \
+  --submission-json "${RUN_ROOT}/submission.json" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${RUN_ROOT}/suite_manifest.json" \
+  --suite-manifest-sha256 "${MANIFEST_SHA256}" \
+  --phase post_release \
+  --raw "gate=${RUN_ROOT}/scheduler/post_release.gate.scontrol.txt" \
+  --raw "export=${RUN_ROOT}/scheduler/post_release.export.scontrol.txt" \
+  --raw "diagnostics=${RUN_ROOT}/scheduler/post_release.diagnostics.scontrol.txt" \
+  --raw "candidate=${RUN_ROOT}/scheduler/post_release.candidate.scontrol.txt" \
+  --raw "completion=${RUN_ROOT}/scheduler/post_release.completion.scontrol.txt" \
+  --pre-release-snapshot-json "${RUN_ROOT}/scheduler/pre_release.snapshot.json" \
+  --output-json "${RUN_ROOT}/scheduler_receipt.json"
+"${PYTHON}" -m tools.bata.validate_duca_allocation_scheduler_receipt validate \
+  --scheduler-receipt-json "${RUN_ROOT}/scheduler_receipt.json" \
+  --submission-json "${RUN_ROOT}/submission.json" \
+  --submission-token "${SUBMISSION_TOKEN}" \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --suite-manifest-json "${RUN_ROOT}/suite_manifest.json" \
+  --suite-manifest-sha256 "${MANIFEST_SHA256}"
+SUBMISSION_COMPLETE=1
+trap - EXIT INT TERM
 echo "[DUCA_ALLOCATION_SUBMIT] SUBMITTED ${RUN_ROOT}"
 cat "${RUN_ROOT}/jobs.tsv"
-trap - ERR

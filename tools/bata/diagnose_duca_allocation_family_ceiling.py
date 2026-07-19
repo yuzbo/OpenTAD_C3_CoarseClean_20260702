@@ -1046,15 +1046,13 @@ def _canonical_gt_segments(
         if (
             not math.isfinite(start)
             or not math.isfinite(end)
-            or start < -1.0e-6
-            or end > upper + 1.0e-6
+            or start < 0.0
+            or end > upper
             or end < start
         ):
             raise AllocationContractError(
                 f"GT segment {index} is outside dense valid prefix [0,{upper}]"
             )
-        start = max(0.0, start)
-        end = min(upper, end)
         result.append((start, end))
     return tuple(result)
 

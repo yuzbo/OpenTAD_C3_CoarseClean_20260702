@@ -62,38 +62,78 @@ mkdir -p "${OUTPUT_ROOT}"
   "${VALIDATION_MANIFEST}" \
   "${EXPECTED_COMMIT}" \
   "${CHECKPOINT}" \
+  "${PRETRAIN}" \
+  "configs/adatad/thumos/duca_allocation_ceiling_validation_windows.py" \
+  "${CONFIG}" \
   "${INPUT_JSONL}" \
   "${CEILING_JSONL}" \
   "${CEILING_SUMMARY}" <<'PY'
-import hashlib
 import json
 import pathlib
 import sys
 
+from tools.bata.export_duca_allocation_ceiling_inputs import (
+    data_directory_provenance,
+    sha256,
+)
+
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-if manifest.get("schema_version") != "duca_allocation_validation_export_manifest_v1":
+if manifest.get("schema_version") != "duca_allocation_validation_export_manifest_v2":
     raise SystemExit("validation-export manifest schema mismatch")
-if manifest.get("git_commit") != sys.argv[2] or manifest.get("split") != "test":
-    raise SystemExit("validation-export manifest commit/split mismatch")
+if (
+    manifest.get("git_commit") != sys.argv[2]
+    or manifest.get("execution_cluster") != "n16r4"
+    or manifest.get("split") != "test"
+    or manifest.get("checkpoint_epoch") != 131
+    or manifest.get("checkpoint_state_key") != "state_dict_ema"
+    or manifest.get("model_training") is not False
+    or manifest.get("selected_axis_gt_remap") is not False
+):
+    raise SystemExit("validation-export manifest execution contract mismatch")
 if manifest.get("runtime_gt_input") is not False:
     raise SystemExit("validation-export manifest permits runtime GT")
 bindings = (
     ("checkpoint", "checkpoint_sha256", sys.argv[3]),
-    ("input_jsonl", "input_jsonl_sha256", sys.argv[4]),
-    ("ceiling_jsonl", "ceiling_jsonl_sha256", sys.argv[5]),
-    ("ceiling_summary_json", "ceiling_summary_json_sha256", sys.argv[6]),
+    ("pretrain", "pretrain_sha256", sys.argv[4]),
+    ("export_config", "export_config_sha256", sys.argv[5]),
+    ("replay_config", "replay_config_sha256", sys.argv[6]),
+    ("input_jsonl", "input_jsonl_sha256", sys.argv[7]),
+    ("ceiling_jsonl", "ceiling_jsonl_sha256", sys.argv[8]),
+    ("ceiling_summary_json", "ceiling_summary_json_sha256", sys.argv[9]),
 )
 for path_key, hash_key, expected_path in bindings:
     path = pathlib.Path(expected_path).resolve()
     if pathlib.Path(manifest.get(path_key, "")).resolve() != path:
         raise SystemExit(f"validation-export path mismatch: {path_key}")
-    if hashlib.sha256(path.read_bytes()).hexdigest() != manifest.get(hash_key):
+    if sha256(path) != manifest.get(hash_key):
         raise SystemExit(f"validation-export hash mismatch: {hash_key}")
 validation_path = pathlib.Path(manifest["ceiling_validation_json"]).resolve()
-if hashlib.sha256(validation_path.read_bytes()).hexdigest() != manifest.get(
+if sha256(validation_path) != manifest.get(
     "ceiling_validation_json_sha256"
 ):
     raise SystemExit("ceiling validation receipt hash mismatch")
+for path_key, hash_key in (
+    ("validation_go_json", "validation_go_json_sha256"),
+    ("training_suite_evidence_json", "training_suite_evidence_json_sha256"),
+):
+    evidence_path = pathlib.Path(manifest.get(path_key, "")).resolve()
+    if not evidence_path.is_file() or sha256(evidence_path) != manifest.get(hash_key):
+        raise SystemExit(f"validation authorization evidence changed: {path_key}")
+source = manifest.get("export_source")
+if not isinstance(source, dict):
+    raise SystemExit("validation-export dataset source is missing")
+for path_key, hash_key in (
+    ("annotation_path", "annotation_sha256"),
+    ("class_map_path", "class_map_sha256"),
+    ("config", "config_sha256"),
+):
+    path = pathlib.Path(source.get(path_key, "")).resolve()
+    if not path.is_file() or sha256(path) != source.get(hash_key):
+        raise SystemExit(f"validation-export source changed: {path_key}")
+current_data = data_directory_provenance(source["data_path"])
+for key, value in current_data.items():
+    if source.get(key) != value:
+        raise SystemExit(f"validation video bytes changed: {key}")
 PY
 
 "${PYTHON}" - "${CEILING_JSONL}" "${FAMILY_KEY}" "${ALLOW_PRIVILEGED}" <<'PY'

@@ -169,8 +169,11 @@ finalization stages consume the hash-bound validation receipt instead of
 solving the same MILP again. Rehashing a feasible but non-optimal selection is
 therefore not sufficient to pass. Each full GT solve has a total 300-second
 deadline across all sequential objectives. The one-window gate measures
-generation and independent-validation time, projects the registered
-32-window cost, and fails closed above 72 hours.
+generation and independent-validation time only as a smoke diagnostic. The
+formal gate uses the analytical worst case `32 windows x 2 privileged
+families x 2 independent passes x 300 seconds = 38,400 seconds` and fails
+closed above the preregistered 12-hour allowance. A fast first window cannot
+lower that formal bound.
 
 Detector loss and mAP are evaluated only as frozen empirical diagnostics.
 
@@ -216,6 +219,10 @@ Every run binds:
 - terminal checkpoint, backbone pretrain, exact config and suite-manifest
   hashes at every DAG node;
 - the exact `n16r4` Slurm cluster identity;
+- all DAG jobs held until a scheduler-side `scontrol` pre-release snapshot
+  proves Job IDs, names, commands, working directory, GPU requests and exact
+  `afterok` dependencies; a second post-release snapshot must prove that the
+  holds were removed without changing the DAG;
 - physical-coordinate input hash;
 - family, cap and score-quantization specification;
 - solver identity/version/options;
@@ -292,6 +299,8 @@ validation mAP or full-stack savings.
   `epoch_131` `state_dict_ema` checkpoint;
 - every ceiling, candidate-loss and solver-cost finalizer reopens raw JSONL,
   recomputes selections/metrics and rejects summary-only evidence;
+- a hash-bound scheduler receipt and every raw `scontrol` record remain
+  unchanged from gate execution through finalization;
 - privileged GT MILPs are generated once and independently replayed once;
   later stages verify the receipt and artifact hashes without redundant
   re-solving;
