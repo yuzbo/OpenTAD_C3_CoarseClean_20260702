@@ -16,6 +16,12 @@ This is offline full-window TAD. It is not Online TAD.
 - Base commit: `4ce69c852bdbd902046b47bc6019ae11e850dbe4`
 - Immutable trained model ancestor:
   `1642f265e48391418a7c8a4a087e33e2b7bf6899`
+- Primary frozen score source: the matched `transition_beta0`
+  `epoch_131.pth/state_dict_ema` checkpoint, SHA-256
+  `f4ac9891b7cfffd1ab482f28a43086a6e862112f6ffbcb79c7b86c3d2ed935ac`.
+  It is used because it is the strongest terminal matched deploy-visible
+  transition arm (`64.2755`), while CellCF is lower (`64.0610`) and remains a
+  killed local-allocation diagnostic.
 - Current CellCF is a tested local phase/content control, not a global
   allocation method.
 
@@ -28,7 +34,9 @@ This is offline full-window TAD. It is not Online TAD.
 - geometric GT ceilings;
 - deploy-visible coarse-score recovery through the same family-D decoder;
 - frozen physical-grid detector candidate evaluation;
-- dense/uniform/candidate full-stack cost evidence;
+- exact family-D decoder incremental-cost evidence;
+- code-complete, authorization-gated validation replay and later full-stack
+  cost evidence;
 - fail-closed artifacts, manifests, hashes and focused tests.
 
 ### Out of scope
@@ -54,6 +62,25 @@ It may reconstruct the expected regular grid from
 `window_start_frame + dense_index * snippet_stride`, but it must compare that
 grid with decoded indices and fail closed on an unregistered mismatch.
 Padding is excluded from all families.
+
+GT segments are stored explicitly as
+`dense_ordinal_aligned_to_exported_physical_axis`. They are never silently
+clipped: any endpoint outside the valid prefix fails closed. Training-side GT
+is independently reconstructed from the hashed THUMOS annotation, class map,
+window start, stride and IoA rule; a self-consistent rewritten JSONL is not a
+trust root. Validation/test records must use the validation/testing dataset
+subset with `test_mode=True`, and both runtime batches and serialized records
+must contain no GT. Decoder FPS and annotation FPS must keep cumulative
+timeline drift below one frame over the complete decoded video, and every
+decoded frame index must lie inside `[0,total_frames-1]`. Boundary radii remain
+dense detector-grid radii; physical source-frame and seconds caps are reported
+separately.
+
+The allocation exporter also removes only exact duplicate sliding-window
+identities produced by the legacy end-window loop, retaining the first copy.
+The removed count is provenance-bound. A repeated identity with different
+coordinates fails closed; the base OpenTAD dataset implementation is not
+modified.
 
 The primary cap policy is `uniform_reference`:
 
@@ -129,10 +156,21 @@ both-endpoint variables. Sequentially pin the preregistered objective vector:
 6. exact-uniform overlap;
 7. deterministic lexicographic tie break.
 
-Only solver status `OPTIMAL` supports exact language. A missing solver,
+Only solver status `OPTIMAL` with a non-boolean, numerically exact zero MIP
+gap supports exact language. A missing solver,
 `FEASIBLE`, timeout, numerical ambiguity or contract violation fails closed.
-Metric-wise upper envelopes are emitted separately from the one canonical
-lexicographic solution.
+Metric-wise upper envelopes are an optional analysis output, not part of the
+formal 32-window run.
+
+Generation solves each privileged D/E MILP once. One independent validation
+pass re-solves it with the summary-bound cap, objective and solver options,
+then compares positions and the complete objective payload. Candidate and
+finalization stages consume the hash-bound validation receipt instead of
+solving the same MILP again. Rehashing a feasible but non-optimal selection is
+therefore not sufficient to pass. Each full GT solve has a total 300-second
+deadline across all sequential objectives. The one-window gate measures
+generation and independent-validation time, projects the registered
+32-window cost, and fails closed above 72 hours.
 
 Detector loss and mAP are evaluated only as frozen empirical diagnostics.
 
@@ -147,15 +185,24 @@ tools/bata/export_duca_allocation_ceiling_inputs.py
 tools/bata/diagnose_duca_allocation_family_ceiling.py
 tools/bata/validate_duca_allocation_ceiling_artifact.py
 tools/bata/evaluate_duca_allocation_candidates.py
+tools/bata/validate_duca_allocation_candidate_loss_artifact.py
+tools/bata/profile_duca_allocation_solver_cost.py
+tools/bata/validate_duca_allocation_solver_cost_artifact.py
+tools/bata/finalize_duca_allocation_ceiling_gate.py
+tools/bata/finalize_duca_allocation_training_suite.py
+tools/bata/authorize_duca_allocation_validation.py
+opentad/models/selectors/duca_allocation_artifact_replay.py
+scripts/run_duca_allocation_validation_export.sh
 tests/test_duca_allocation_families.py
 tests/test_duca_exact_physical_solver.py
 tests/test_duca_allocation_ceiling_contract.py
 tests/test_duca_allocation_candidate_evaluator.py
 ```
 
-Modify the default `Collect` metadata only to retain actual decoded
-`frame_inds`, `avg_fps` and `total_frames`. Existing finite-candidate and
-CellCF tools remain unchanged.
+Do not modify the default `Collect` contract. Only the allocation-ceiling
+training and validation configs retain decoded `frame_inds`, `avg_fps` and
+`total_frames`, so completed CellCF and official baseline pipelines remain
+unchanged.
 
 ## Artifact contract
 
@@ -164,6 +211,11 @@ Every run binds:
 - exact Git commit and clean-tree state;
 - resolved config and checkpoint SHA-256;
 - annotation, class map, split and video/window manifest hashes;
+- the content hash of every raw video file, including the bytes and target
+  identity of canonical dataset symlinks;
+- terminal checkpoint, backbone pretrain, exact config and suite-manifest
+  hashes at every DAG node;
+- the exact `n16r4` Slurm cluster identity;
 - physical-coordinate input hash;
 - family, cap and score-quantization specification;
 - solver identity/version/options;
@@ -181,10 +233,22 @@ deployable score path or hash mismatch fail closed.
 ## Data and split protocol
 
 - Family/cap/objective implementation is fixed using deterministic
-  training-subset windows only.
+  training-subset windows only. The route-specific training dataset uses
+  sliding windows with `ioa_thresh=1e-8`; OpenTAD therefore truncates GT to
+  each local window, retains every genuinely action-intersecting window and
+  excludes background-only windows from privileged geometry.
+- The exact GT and frozen detector diagnostics use a deterministic
+  hash-ranked, cross-video round-robin subset of 32 training windows. This
+  subset rule is outcome-independent and fixed before results exist.
 - THUMOS validation is consumed once by a terminal, preregistered diagnostic.
 - Current config `val` and `test` both use the validation subset; different
   overlap ratios do not create an independent held-out population.
+- The validation replay uses the official test-style overlap `0.5`, includes
+  background windows and carries no runtime GT into the selector. It requires
+  a human-issued, hash-bound `GO` receipt over the completed training-side
+  evidence. The receipt is atomically consumed once by validation export;
+  replay must use the resulting sealed export manifest rather than an
+  unstructured environment flag.
 - GT is available only inside privileged diagnostic code. The deploy-visible
   D decoder receives only frozen coarse score vectors and physical metadata.
 
@@ -192,13 +256,17 @@ deployable score path or hash mismatch fail closed.
 
 1. Synthetic mathematical fixtures and exhaustive small-instance parity.
 2. Real training-loader coordinate/export gate.
-3. Training-side A-E geometry and coarse recoverability diagnostic.
-4. One sealed validation geometry/recoverability diagnostic.
-5. Frozen physical-grid detector finite-candidate evaluation.
-6. Dense/uniform/candidate full-stack cost profile.
-7. GO/HOLD/KILL decision.
+3. Full training-side A-D geometry and coarse recoverability diagnostic.
+4. Bounded 32-window training-side privileged D/E ceiling.
+5. Frozen physical-grid AdaTAD loss on uniform, deploy-score D, privileged D
+   and unrestricted E, using dense-axis GT without selected-axis remapping.
+6. Exact family-D CPU decoder incremental-cost profile.
+7. Training-side geometry/recoverability GO/HOLD/KILL decision.
+8. Only after GO: one sealed validation replay and matched full-stack cost
+   profile.
 
-No new selector training is authorized by steps 1-6.
+No new selector training is authorized by steps 1-8. Steps 1-7 do not claim
+validation mAP or full-stack savings.
 
 ## Decision rule
 
@@ -220,4 +288,13 @@ No new selector training is authorized by steps 1-6.
 - no selected-axis GT remapping is present in physical-grid evaluation;
 - no validation/test GT reaches deployable score generation;
 - raw detector and cost evidence is hash-bound and reproducible;
+- all export and frozen-detector evidence is bound to the immutable
+  `epoch_131` `state_dict_ema` checkpoint;
+- every ceiling, candidate-loss and solver-cost finalizer reopens raw JSONL,
+  recomputes selections/metrics and rejects summary-only evidence;
+- privileged GT MILPs are generated once and independently replayed once;
+  later stages verify the receipt and artifact hashes without redundant
+  re-solving;
+- the finalizer recomputes the preregistered 32-window
+  hash-video-round-robin subset from the full training export;
 - no model-training job is launched before the ceiling decision.
