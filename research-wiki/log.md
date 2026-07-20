@@ -734,3 +734,14 @@ append_only: true
   losses were finite and decreased from epoch 0; no
   Traceback/OOM/non-finite/fail marker was present. Status is
   `experiment_running`, not an empirical S2 result.
+- 2026-07-21: the formal matrix reached seven completed cells. D160
+  `1177668-1177670`, G96 `1177671-1177673`, and U128/3407 `1177674` all
+  completed `0:0`; their self-reported completion records are `PASS` with
+  exactly 4,800 successful updates, final-EMA-only checkpoints, matching EMA
+  keys, and no official-test access. Final losses were D160
+  `0.2190/0.2172/0.2115`, G96 `0.2259/0.2184/0.2219`, and U128/3407 `0.2517`.
+  AMP skips were 3-4 per run with maximum same-batch retry 1-2, below the
+  registered limit. U128/3408 and U128/3409 remained healthy in epochs 11 and
+  9. Exact-nine validation, development inference, reference sweeps, cost
+  evidence, and all S2 claims remain pending; status stays
+  `experiment_running`.

@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 - Project-authored Continuous-RoI S2 v2.1 contract, 2026-07-20:
@@ -568,7 +568,14 @@ updated: 2026-07-20
   and
   `67227c4478dc5bf10ac3fc613aededd603e34bb670bc159a2863f0a69594c204`.
   Jobs `1177668-1177676` are D160/G96/U128 x seeds 3407/3408/3409.
-  This source is an experiment-running receipt, not a completed result.
+  At 2026-07-21 06:21 CST, Jobs `1177668-1177674` were `COMPLETED 0:0` and
+  published seven `PASS` training-completion records with 4,800 successful
+  updates and final EMA checkpoints; Jobs `1177675-1177676` remained running.
+  The campaign root, Slurm accounting, stdout/stderr, final checkpoints,
+  metadata sidecars, and training-completion JSON files are the raw sources.
+  This remains experiment-running evidence until exact-nine validation; it is
+  not development mAP, crop-sufficiency, cost, official-test, or paper-result
+  evidence.
 
 ## 外部附件
 

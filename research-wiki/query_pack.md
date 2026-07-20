@@ -18,12 +18,17 @@ max_chars: 8000
   preflight 失败，旧 campaign `66cd32ff...` 已冻结且不得作为模型结果。部署契约现已拒绝
   控制字符/空白/逗号，并逐次绑定和复核 Git 中的规范 launcher。
 - 当前唯一正式 development 训练矩阵为 `1177668-1177676`：
-  `D160/G96/U128 x seeds 3407/3408/3409`。提交时六个 RUNNING、三个因
-  `AssocGrpGRES` 等待；六个运行任务已完成 epoch 1 并进入 epoch 2，D160/G96
-  loss 均有限且下降，未见 Traceback/OOM/non-finite。
+  `D160/G96/U128 x seeds 3407/3408/3409`。截至 2026-07-21 06:21 CST，
+  D160 三种子、G96 三种子和 U128/3407 共七格已 `COMPLETED 0:0`；每格 completion
+  均报告 `PASS`、4,800 successful updates、非空且键匹配的 final EMA、
+  `official_test_opened=false`。七格 AMP skipped attempts 为 `3-4`，单 batch 最大
+  retry 为 `1-2`，均低于冻结上限 8。U128/3408 与 U128/3409 已分别进入 epoch 11
+  和 epoch 9，loss 有限，仍在运行。未见 Traceback/OOM/non-finite/exhausted retry、
+  scheduler/EMA/update parity 或 fail marker。
 - 当前状态只能写作 `experiment_running`。没有 completed development mAP、
-  reference sweep、cost profile、crop-sufficiency 结论、official-test 结果、
-  learned ROI 或 paper claim。下一门禁是九格完整训练证据闭合，而不是新增方法。
+  exact-nine completion validation、reference sweep、cost profile、crop-sufficiency
+  结论、official-test 结果、learned ROI 或 paper claim。下一门禁仍是剩余两格完成并
+  对九格执行冻结证据验证，而不是新增方法。
 
 ## Native-Crop S1 audit delta (2026-07-20)
 

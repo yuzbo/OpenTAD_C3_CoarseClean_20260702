@@ -116,14 +116,33 @@ The registered jobs are:
 - G96: `1177671/1177672/1177673` for seeds `3407/3408/3409`.
 - U128: `1177674/1177675/1177676` for seeds `3407/3408/3409`.
 
-At deployment audit time, six jobs were running and the three U128 jobs were
-pending only on `AssocGrpGRES`. All six running jobs completed epochs 0 and 1
-and entered epoch 2. Epoch-1 final losses were finite: D160
-`1.0311/1.0493/1.0640` and G96 `1.1409/1.1498/1.1729`; memory was about
-`3919 MB` and `2153 MB`, respectively. No `Traceback`, OOM, non-finite loss,
-`RuntimeError`, `ValueError`, or fail marker was present. This is
-`experiment_running` evidence only: no development mAP, reference sweep, cost
-profile, mechanical outcome, or paper claim exists yet.
+At 2026-07-21 06:21 CST, D160 seeds 3407/3408/3409, G96 seeds
+3407/3408/3409, and U128 seed 3407 had all completed `0:0`. Their emitted
+completion records report `PASS`, exactly 4,800 successful updates, nonempty
+final EMA with keys matching the model, and `official_test_opened=false`.
+The raw final epoch-59 losses were:
+
+| Family | Seed | Final loss | AMP skipped attempts | Max retries/batch | Logged GPU memory |
+|---|---:|---:|---:|---:|---:|
+| D160 | 3407 | 0.2190 | 4 | 2 | 3919 MB |
+| D160 | 3408 | 0.2172 | 4 | 1 | 3919 MB |
+| D160 | 3409 | 0.2115 | 3 | 1 | 3919 MB |
+| G96 | 3407 | 0.2259 | 3 | 2 | 2153 MB |
+| G96 | 3408 | 0.2184 | 4 | 2 | 2153 MB |
+| G96 | 3409 | 0.2219 | 3 | 1 | 2153 MB |
+| U128 | 3407 | 0.2517 | 3 | 1 | 3647 MB |
+
+U128 seed 3408 was in epoch 11 with latest finite loss `0.6170`, and U128
+seed 3409 was in epoch 9 with latest finite loss `0.6433`; both remained
+`RUNNING`. Their inner-step MaxRSS was about 20.9/21.3 GiB under the 96,000 MiB
+limit. No `Traceback`, OOM, non-finite loss, exhausted retry,
+scheduler/EMA/update-parity failure, `PytorchStreamWriter`, or fail marker was
+found. Shared storage had 53 GiB free.
+
+This remains `experiment_running` evidence only. The seven completion records
+have not been promoted into an exact-nine matrix result, and the frozen
+all-cell validator must wait for the remaining two jobs. No development mAP,
+reference sweep, cost profile, mechanical outcome, or paper claim exists yet.
 
 ## Accepted
 
