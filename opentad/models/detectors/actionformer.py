@@ -146,6 +146,15 @@ class ActionFormer(SingleStageDetector):
             x = self.backbone(inputs)
         else:
             x = inputs
+        if self.with_backbone and hasattr(
+            self.backbone, "consume_training_auxiliary_losses"
+        ):
+            backbone_auxiliary = self.backbone.consume_training_auxiliary_losses(
+                masks=masks,
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+            )
+            self._merge_backbone_auxiliary_losses(losses, backbone_auxiliary)
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -322,6 +331,21 @@ class ActionFormer(SingleStageDetector):
             {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0, "lr": cfg["lr"]},
         ]
         return optim_groups
+
+    @staticmethod
+    def _merge_backbone_auxiliary_losses(losses, auxiliary):
+        if not isinstance(auxiliary, Mapping) or not auxiliary:
+            raise ValueError("backbone auxiliary losses must be a non-empty mapping")
+        for key, value in auxiliary.items():
+            if key == "cost" or key in losses:
+                raise ValueError(f"invalid backbone auxiliary loss key: {key}")
+            if not key.endswith("_loss"):
+                raise ValueError(f"backbone auxiliary key must end in _loss: {key}")
+            if not torch.is_tensor(value) or value.ndim != 0:
+                raise ValueError(f"backbone auxiliary loss {key} must be scalar")
+            if not bool(torch.isfinite(value).all().item()):
+                raise ValueError(f"backbone auxiliary loss {key} must be finite")
+            losses[key] = value
 
     def _freeze_non_selector_trainable_parameters(self):
         for name, param in self.named_parameters():

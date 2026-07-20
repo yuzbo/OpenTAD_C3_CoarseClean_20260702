@@ -89,8 +89,10 @@ class _ToyLoader:
 
 
 class _ToyModel:
-    def __init__(self, mutate_buffer=False):
+    def __init__(self, mutate_buffer=False, update_hook=None):
         self.module = types.SimpleNamespace()
+        if update_hook is not None:
+            self.module.backbone = update_hook
         self.train_calls = 0
         self.forward_calls = 0
         self.backward_calls = 0
@@ -110,6 +112,15 @@ class _ToyModel:
 
     def named_buffers(self):
         return [("loss_normalizer", self.loss_normalizer)]
+
+
+class _UpdateHook:
+    def __init__(self):
+        self.indices = []
+        self.freeze_backbone = True
+
+    def set_successful_update_index(self, index):
+        self.indices.append(int(index))
 
 
 class _ToyOptimizer:
@@ -311,6 +322,77 @@ def test_train_one_epoch_preserves_legacy_zero_retry_behavior(monkeypatch):
     assert optimizer.steps == 0
     assert scheduler.steps == 1
     assert model.loss_normalizer.value == 1
+
+
+def test_train_one_epoch_binds_retry_stable_success_index_and_strict_schedule(
+    monkeypatch,
+):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    update_hook = _UpdateHook()
+    model = _ToyModel(mutate_buffer=True, update_hook=update_hook)
+    optimizer = _ToyOptimizer()
+    scheduler = _ToyScheduler()
+
+    updates = train_engine.train_one_epoch(
+        train_loader=_ToyLoader(2),
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        curr_epoch=0,
+        logger=_Logger(),
+        scaler=_ToyScaler(skipped_attempts=1),
+        max_amp_retries_per_batch=2,
+        fail_on_skipped_update=True,
+        successful_update_start=17,
+        require_successful_update_hook=True,
+        schedule_and_ema_on_success_only=True,
+    )
+
+    assert updates == 2
+    assert update_hook.indices == [17, 18]
+    assert optimizer.steps == 2
+    assert scheduler.steps == 2
+
+
+def test_train_one_epoch_strict_schedule_does_not_advance_on_skipped_update(
+    monkeypatch,
+):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    update_hook = _UpdateHook()
+    model = _ToyModel(mutate_buffer=True, update_hook=update_hook)
+    scheduler = _ToyScheduler()
+
+    updates = train_engine.train_one_epoch(
+        train_loader=_ToyLoader(1),
+        model=model,
+        optimizer=_ToyOptimizer(),
+        scheduler=scheduler,
+        curr_epoch=0,
+        logger=_Logger(),
+        scaler=_ToyScaler(skipped_attempts=1),
+        max_amp_retries_per_batch=0,
+        successful_update_start=23,
+        require_successful_update_hook=True,
+        schedule_and_ema_on_success_only=True,
+    )
+
+    assert updates == 0
+    assert update_hook.indices == [23]
+    assert scheduler.steps == 0
+
+
+def test_train_one_epoch_rejects_missing_required_success_hook(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    with pytest.raises(RuntimeError, match="set_successful_update_index"):
+        train_engine.train_one_epoch(
+            train_loader=_ToyLoader(1),
+            model=_ToyModel(),
+            optimizer=_ToyOptimizer(),
+            scheduler=_ToyScheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+            require_successful_update_hook=True,
+        )
 
 
 @pytest.mark.parametrize("max_train_iters", [0, -1])

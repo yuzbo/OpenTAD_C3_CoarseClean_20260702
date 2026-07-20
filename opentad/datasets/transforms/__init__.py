@@ -1,7 +1,11 @@
 from .loading import LoadFeats, SlidingWindowTrunc, RandomTrunc
 from .formatting import Collect, ConvertToTensor, Rearrange, Reduce, Padding, ChannelReduction
 from .end_to_end import PrepareVideoInfo, LoadSnippetFrames, LoadFrames
-from .native_crop import NativeCropSourceViews
+from .native_crop import (
+    ContinuousRoiSourceViews,
+    FullFrameLetterboxView,
+    NativeCropSourceViews,
+)
 
 __all__ = [
     "LoadFeats",
@@ -16,5 +20,7 @@ __all__ = [
     "PrepareVideoInfo",
     "LoadSnippetFrames",
     "LoadFrames",
+    "ContinuousRoiSourceViews",
+    "FullFrameLetterboxView",
     "NativeCropSourceViews",
 ]

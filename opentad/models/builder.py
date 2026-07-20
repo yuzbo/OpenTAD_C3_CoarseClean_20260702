@@ -1,5 +1,9 @@
 from mmengine.registry import Registry
-from .backbones import BackboneWrapper, NativeCropBackboneWrapper
+from .backbones import (
+    BackboneWrapper,
+    ContinuousRoiBackboneWrapper,
+    NativeCropBackboneWrapper,
+)
 
 MODELS = Registry("models")
 
@@ -32,6 +36,8 @@ def build_backbone(cfg):
     )
     if wrapper_type == "native_crop_shared_videomae":
         return NativeCropBackboneWrapper(cfg)
+    if wrapper_type == "continuous_roi_common_support_u128":
+        return ContinuousRoiBackboneWrapper(cfg)
     if wrapper_type is not None:
         raise ValueError(f"unsupported backbone custom.wrapper_type={wrapper_type!r}")
     return BackboneWrapper(cfg)

@@ -22,6 +22,20 @@ def _restore_model_buffers(model, snapshot):
         current[name].copy_(saved)
 
 
+def _set_successful_update_index(model, index, *, required):
+    unwrapped = getattr(model, "module", model)
+    backbone = getattr(unwrapped, "backbone", None)
+    callback = getattr(backbone, "set_successful_update_index", None)
+    if callback is None:
+        if required:
+            raise RuntimeError(
+                "training protocol requires backbone.set_successful_update_index"
+            )
+        return False
+    callback(int(index))
+    return True
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -37,6 +51,9 @@ def train_one_epoch(
     fail_on_skipped_update=False,
     max_amp_retries_per_batch=0,
     update_audit=None,
+    successful_update_start=0,
+    require_successful_update_hook=False,
+    schedule_and_ema_on_success_only=False,
 ):
     """Training the model for one epoch"""
 
@@ -53,6 +70,9 @@ def train_one_epoch(
         raise ValueError("max_amp_retries_per_batch must be non-negative")
     if max_amp_retries_per_batch > 0 and scaler is None:
         raise ValueError("AMP retries require a GradScaler")
+    successful_update_start = int(successful_update_start)
+    if successful_update_start < 0:
+        raise ValueError("successful_update_start must be non-negative")
     if update_audit is not None:
         update_audit.setdefault("optimizer_attempts", 0)
         update_audit.setdefault("amp_skipped_attempts", 0)
@@ -62,6 +82,11 @@ def train_one_epoch(
     model.train()
     successful_updates = 0
     for iter_idx, data_dict in enumerate(train_loader):
+        _set_successful_update_index(
+            model,
+            successful_update_start + successful_updates,
+            required=bool(require_successful_update_hook),
+        )
         # current learning rate
         curr_backbone_lr = None
         if hasattr(model.module, "backbone"):  # if backbone exists
@@ -145,11 +170,15 @@ def train_one_epoch(
 
         successful_updates += int(update_succeeded)
 
-        # update scheduler
-        scheduler.step()
+        # Registered protocols may advance optimization state only on a real
+        # optimizer update. The default preserves legacy OpenTAD behavior.
+        if update_succeeded or not schedule_and_ema_on_success_only:
+            scheduler.step()
 
         # update ema
-        if model_ema is not None:
+        if model_ema is not None and (
+            update_succeeded or not schedule_and_ema_on_success_only
+        ):
             model_ema.update(model)
 
         # track all losses

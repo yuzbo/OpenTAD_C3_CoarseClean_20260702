@@ -264,7 +264,20 @@ def main():
         "amp_skipped_attempts": 0,
         "max_amp_retries_observed": 0,
     }
-    s1_amp_retry_limit = 8 if s1_binding is not None else 0
+    protocol_amp_retry_limit = (
+        8
+        if s1_binding is not None
+        else int(cfg.workflow.get("max_amp_retries_per_batch", 0))
+    )
+    protocol_fail_on_skip = (
+        s1_binding is not None
+        or bool(cfg.workflow.get("fail_on_skipped_update", False))
+    )
+    protocol_update_audit = (
+        s1_binding is not None
+        or protocol_amp_retry_limit > 0
+        or bool(cfg.workflow.get("require_successful_update_hook", False))
+    )
     for epoch in range(resume_epoch + 1, max_epoch):
         train_loader.sampler.set_epoch(epoch)
 
@@ -281,9 +294,16 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
-            fail_on_skipped_update=s1_binding is not None,
-            max_amp_retries_per_batch=s1_amp_retry_limit,
-            update_audit=update_audit if s1_binding is not None else None,
+            fail_on_skipped_update=protocol_fail_on_skip,
+            max_amp_retries_per_batch=protocol_amp_retry_limit,
+            update_audit=update_audit if protocol_update_audit else None,
+            successful_update_start=successful_updates,
+            require_successful_update_hook=cfg.workflow.get(
+                "require_successful_update_hook", False
+            ),
+            schedule_and_ema_on_success_only=cfg.workflow.get(
+                "schedule_and_ema_on_success_only", False
+            ),
         )
 
         # save checkpoint
@@ -305,7 +325,7 @@ def main():
                         successful_updates=successful_updates,
                         train_batches_per_epoch=len(train_loader),
                         amp_skipped_attempts=update_audit["amp_skipped_attempts"],
-                        max_amp_retries_per_batch=s1_amp_retry_limit,
+                        max_amp_retries_per_batch=protocol_amp_retry_limit,
                         max_amp_retries_observed=update_audit[
                             "max_amp_retries_observed"
                         ],

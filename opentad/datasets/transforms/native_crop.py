@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 
 import numpy as np
@@ -9,6 +10,8 @@ from ..builder import PIPELINES
 
 
 NATIVE_CROP_INPUT_SCHEMA = "native_crop_source_views_v1"
+CONTINUOUS_ROI_INPUT_SCHEMA = "continuous_roi_source_global_v2_1"
+CONTINUOUS_ROI_DENSE_INPUT_SCHEMA = "continuous_roi_full_frame_letterbox_v2_1"
 
 
 def _as_uint8_rgb(image: np.ndarray, *, frame_index: int) -> np.ndarray:
@@ -120,6 +123,13 @@ def _pack_ncthw(frames: Sequence[np.ndarray]) -> np.ndarray:
     return np.ascontiguousarray(stacked.transpose(3, 0, 1, 2)[None])
 
 
+def stable_video_key(video_name: str) -> np.int64:
+    if not isinstance(video_name, str) or not video_name:
+        raise ValueError("continuous ROI inputs require a non-empty video_name")
+    digest = hashlib.sha256(video_name.encode("utf-8")).digest()
+    return np.int64(int.from_bytes(digest[:8], "little") & ((1 << 63) - 1))
+
+
 @PIPELINES.register_module()
 class NativeCropSourceViews:
     """Create low-cost global and source-native local views before float/H2D."""
@@ -220,4 +230,186 @@ class NativeCropSourceViews:
             f"{self.__class__.__name__}(global_size={self.global_size}, "
             f"local_size={self.local_size}, allow_local_padding="
             f"{self.allow_local_padding})"
+        )
+
+
+@PIPELINES.register_module()
+class ContinuousRoiSourceViews:
+    """Keep source RGB and add only the registered low-cost global view."""
+
+    def __init__(
+        self,
+        global_size: int = 96,
+        output_key: str = "continuous_roi_inputs",
+        required_source_height: int = 180,
+        required_source_width: int = 320,
+        require_constant_geometry: bool = True,
+    ):
+        if global_size <= 0 or global_size % 16:
+            raise ValueError("continuous ROI global_size must be positive and divisible by 16")
+        if min(required_source_height, required_source_width) <= 0:
+            raise ValueError("required source geometry must be positive")
+        self.global_size = int(global_size)
+        self.output_key = str(output_key)
+        self.required_source_height = int(required_source_height)
+        self.required_source_width = int(required_source_width)
+        self.require_constant_geometry = bool(require_constant_geometry)
+
+    def __call__(self, results):
+        images = results.get("imgs")
+        if not isinstance(images, (list, tuple, np.ndarray)) or len(images) == 0:
+            raise TypeError(
+                "ContinuousRoiSourceViews requires decoded non-empty results['imgs']"
+            )
+        video_name = results.get("video_name")
+        window_start = int(results.get("window_start_frame", 0))
+        source_frames = []
+        global_frames = []
+        source_geometries = []
+        global_records = []
+        for frame_index, raw_image in enumerate(images):
+            image = _as_uint8_rgb(raw_image, frame_index=frame_index)
+            height, width = image.shape[:2]
+            source_geometries.append([int(height), int(width)])
+            source_frames.append(np.ascontiguousarray(image))
+            global_view, global_record = letterbox_global_uint8(
+                image,
+                output_size=self.global_size,
+                frame_index=frame_index,
+            )
+            global_frames.append(global_view)
+            global_records.append(global_record)
+
+        unique_geometries = {tuple(value) for value in source_geometries}
+        if self.require_constant_geometry and len(unique_geometries) != 1:
+            raise ValueError(
+                "one continuous ROI window changed source geometry across frames: "
+                f"{sorted(unique_geometries)}"
+            )
+        expected_geometry = (
+            self.required_source_height,
+            self.required_source_width,
+        )
+        if unique_geometries != {expected_geometry}:
+            raise ValueError(
+                "continuous ROI v2.1 is frozen to source geometry "
+                f"{expected_geometry}; got {sorted(unique_geometries)}"
+            )
+        if len(
+            {
+                tuple(record["content_box_xyxy"])
+                for record in global_records
+            }
+        ) != 1:
+            raise ValueError("global letterbox geometry changed within one video window")
+
+        source_tensor = _pack_ncthw(source_frames)
+        global_tensor = _pack_ncthw(global_frames)
+        if source_tensor.dtype != np.uint8 or global_tensor.dtype != np.uint8:
+            raise RuntimeError("continuous ROI source/global tensors must remain uint8")
+        results[self.output_key] = {
+            "global": global_tensor,
+            "source": source_tensor,
+            "sample_key": stable_video_key(video_name),
+            "window_start": np.int64(window_start),
+        }
+        global_record = global_records[0]
+        results["continuous_roi_geometry"] = {
+            "schema_version": CONTINUOUS_ROI_INPUT_SCHEMA,
+            "policy": "none_pre_policy_source",
+            "decision_inputs": [],
+            "video_key": int(stable_video_key(video_name)),
+            "window_start_frame": window_start,
+            "source_hw": list(expected_geometry),
+            "source_frame_count": len(source_frames),
+            "global_hw": [self.global_size, self.global_size],
+            "global_content_box_xyxy": global_record["content_box_xyxy"],
+            "global_interpolation": global_record["global_interpolation"],
+            "source_float_video_materialized": False,
+            "source_resized_before_crop": False,
+            "uses_gt": False,
+            "uses_teacher": False,
+            "uses_oracle": False,
+            "uses_test_evidence": False,
+        }
+        return results
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(global_size={self.global_size}, "
+            f"required_source_height={self.required_source_height}, "
+            f"required_source_width={self.required_source_width})"
+        )
+
+
+@PIPELINES.register_module()
+class FullFrameLetterboxView:
+    """Create a registered dense comparator without spatial cropping."""
+
+    def __init__(
+        self,
+        output_size: int,
+        output_key: str = "imgs",
+        required_source_height: int = 180,
+        required_source_width: int = 320,
+    ):
+        if output_size <= 0 or output_size % 16:
+            raise ValueError("letterbox output_size must be positive and divisible by 16")
+        self.output_size = int(output_size)
+        self.output_key = str(output_key)
+        self.required_source_height = int(required_source_height)
+        self.required_source_width = int(required_source_width)
+
+    def __call__(self, results):
+        images = results.get("imgs")
+        if not isinstance(images, (list, tuple, np.ndarray)) or len(images) == 0:
+            raise TypeError(
+                "FullFrameLetterboxView requires decoded non-empty results['imgs']"
+            )
+        views = []
+        records = []
+        source_geometries = []
+        for frame_index, raw_image in enumerate(images):
+            image = _as_uint8_rgb(raw_image, frame_index=frame_index)
+            source_geometries.append(tuple(map(int, image.shape[:2])))
+            view, record = letterbox_global_uint8(
+                image,
+                output_size=self.output_size,
+                frame_index=frame_index,
+            )
+            views.append(view)
+            records.append(record)
+        expected = (self.required_source_height, self.required_source_width)
+        if set(source_geometries) != {expected}:
+            raise ValueError(
+                f"full-frame comparator expects source geometry {expected}; "
+                f"got {sorted(set(source_geometries))}"
+            )
+        if len({tuple(record["content_box_xyxy"]) for record in records}) != 1:
+            raise ValueError("letterbox geometry changed inside one video window")
+        tensor = _pack_ncthw(views)
+        if tensor.dtype != np.uint8:
+            raise RuntimeError("full-frame letterbox must remain uint8")
+        results[self.output_key] = tensor
+        results["continuous_roi_geometry"] = {
+            "schema_version": CONTINUOUS_ROI_DENSE_INPUT_SCHEMA,
+            "policy": "full_frame_letterbox",
+            "source_hw": list(expected),
+            "source_frame_count": len(views),
+            "output_hw": [self.output_size, self.output_size],
+            "content_box_xyxy": records[0]["content_box_xyxy"],
+            "source_resized_before_crop": False,
+            "crop_applied": False,
+            "uses_gt": False,
+            "uses_teacher": False,
+            "uses_oracle": False,
+            "uses_test_evidence": False,
+        }
+        return results
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(output_size={self.output_size}, "
+            f"required_source_height={self.required_source_height}, "
+            f"required_source_width={self.required_source_width})"
         )
