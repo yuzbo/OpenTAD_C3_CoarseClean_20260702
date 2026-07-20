@@ -9,6 +9,7 @@ from tools.bata.continuous_roi_s2_contract import canonical_sha256, load_protoco
 from tools.bata.continuous_roi_s2_training import (
     S2_FULL_MODEL_GATE_SCHEMA,
     S2_TRAINING_RUNTIME_PRECHECK_SCHEMA,
+    _bind_deterministic_temporal_upsampling,
     should_save_final_checkpoint,
     validate_bound_training_config,
     validate_full_model_gate,
@@ -146,6 +147,41 @@ def test_s2_source_config_rejects_every_cfg_override_before_merge():
     for options in attacks:
         with pytest.raises(RuntimeError, match="rejected all --cfg-options"):
             assert_safe_cfg_options_for_gated_config(cfg, options)
+
+
+@pytest.mark.parametrize("family", ("d160", "g96"))
+def test_dense_comparators_use_deterministic_exact_2x_temporal_upsampling(
+    family,
+):
+    cfg = Config.fromfile(
+        "configs/adatad/thumos/"
+        f"continuous_roi_s2_{family}_videomae_s_768x1_adapter.py"
+    )
+    audit = _bind_deterministic_temporal_upsampling(
+        cfg, family=family.upper()
+    )
+    transforms = cfg.model.backbone.custom.post_processing_pipeline
+    interpolate = [
+        transform
+        for transform in transforms
+        if transform["type"] == "Interpolate"
+    ]
+    assert interpolate == [
+        {
+            "type": "Interpolate",
+            "keys": ["feats"],
+            "size": 768,
+            "mode": "linear",
+            "deterministic": True,
+            "expected_input_size": 384,
+        }
+    ]
+    assert audit == {
+        "implementation": "explicit_linear_2x_no_cuda_atomics",
+        "input_length": 384,
+        "output_length": 768,
+        "align_corners": False,
+    }
 
 
 def test_full_model_gate_validator_is_self_hash_and_commit_bound(tmp_path):

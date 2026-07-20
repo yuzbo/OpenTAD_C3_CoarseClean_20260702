@@ -688,3 +688,18 @@ append_only: true
   failed Gate namespace is immutable. The runtime config builder now uses
   `Config.pop`, with a focused regression test; a new commit, clean snapshot,
   and new Gate namespace are required.
+- 2026-07-21: clean remote fix commit
+  `6b192ffd4f13dc8f1c33574771b70d730c5f83ea` passed `71` exact
+  Linux tests. Replacement Gate Job `1177621` passed its v3 full-model
+  certificate and v2 runtime precheck, then failed closed on the first D160
+  backward because PyTorch 2.0 has no deterministic CUDA implementation for
+  `upsample_linear1d_backward`. No runtime checkpoint, authorization, formal
+  training job, or official-test access occurred. The D160/G96 comparator
+  configs now select the already-audited exact-2x explicit interpolation
+  (`384 -> 768`), which is forward/gradient equivalent to
+  `align_corners=False` linear interpolation without the nondeterministic CUDA
+  backward. The failed Gate namespace remains immutable; another clean commit
+  and Gate are required. An independent read-only review found no P0/P1/P2
+  in the bound-config-only deterministic replacement and returned
+  `DEPLOY_READY_WITH_GATES`; real D160/G96/U128 CUDA backward remains the
+  deciding evidence.

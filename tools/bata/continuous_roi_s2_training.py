@@ -578,6 +578,40 @@ def _source_config_path(
     return (Path(repository_root).resolve() / relative).resolve()
 
 
+def _bind_deterministic_temporal_upsampling(
+    cfg: Config, *, family: str
+) -> dict[str, Any]:
+    if family == "U128":
+        return {
+            "implementation": "continuous_roi_wrapper_explicit_linear_2x",
+            "input_length": 384,
+            "output_length": 768,
+            "align_corners": False,
+        }
+    pipeline = cfg.model.backbone.custom.post_processing_pipeline
+    transforms = [
+        transform for transform in pipeline if transform["type"] == "Interpolate"
+    ]
+    if (
+        len(transforms) != 1
+        or int(transforms[0]["size"]) != 768
+        or str(transforms[0].get("mode", "linear")) != "linear"
+    ):
+        raise ValueError(
+            "Continuous-RoI S2 dense comparator temporal interpolation changed"
+        )
+    transform = transforms[0]
+    transform["mode"] = "linear"
+    transform["deterministic"] = True
+    transform["expected_input_size"] = 384
+    return {
+        "implementation": "explicit_linear_2x_no_cuda_atomics",
+        "input_length": 384,
+        "output_length": 768,
+        "align_corners": False,
+    }
+
+
 def bind_training_config(
     *,
     source_config_path: str | Path,
@@ -760,6 +794,9 @@ def bind_training_config(
     cfg.model.backbone.custom.pretrain = str(
         Path(pretrained_checkpoint_path).resolve()
     )
+    temporal_upsampling = _bind_deterministic_temporal_upsampling(
+        cfg, family=family
+    )
     if family == "U128":
         cfg.model.backbone.custom.continuous_roi_training_seed = seed
     cfg.work_dir = str(work_dir)
@@ -866,6 +903,7 @@ def bind_training_config(
         "epochs": S2_EPOCHS,
         "checkpoint_selection": "final_ema_only",
         "checkpoint_consumer_state_key": "state_dict_ema",
+        "temporal_upsampling": temporal_upsampling,
         "official_test_opened": False,
         "paper_claim_allowed": False,
     }
