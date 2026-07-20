@@ -15,6 +15,9 @@ uniform-axis 与 physical-axis 两种离线重解码，共四个 checkpoint
 `afterok:a:b:c:d` 规范化为逗号分隔的四个 `afterok` 子句，旧字符串比较
 误判了同义依赖。当前只修这两个工程合同，状态仍为 `implemented`、mAP 仍为
 `NA`；旧 run root/token 永不复用。
+修复 runtime 已冻结为 `06a6734` / tree `c11dc39`，本地
+`46 passed / 6 skipped`，独立复核为 `DEPLOY` 且 P0/P1 为 0；真实 gate
+尚未运行，因此不得把该裁决写成 `tested`。
 
 本轮禁止训练，不修改 Q、采样、特征、assignment、loss、NMS 或训练
 schedule。缓存的 native proposal 只能用于重建误差审计，绝不能替代

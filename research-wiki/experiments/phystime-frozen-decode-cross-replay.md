@@ -7,7 +7,7 @@ status: implemented
 verdict: awaiting_real_gate_and_remote_suite
 confidence: software_contract_only
 metrics: "NA; no formal remote replay has completed."
-provenance: "full60 source 0dc5851/bddc9b9; P0 runtime c2cfcfa/0b78dd4; 9bbc6ea deployment attempt invalid before real gate; repair commit pending"
+provenance: "full60 source 0dc5851/bddc9b9; P0 runtime c2cfcfa/0b78dd4; invalid 9bbc6ea attempt; repaired runtime 06a6734/c11dc39 awaiting real gate"
 added: 2026-07-20T00:00:00+08:00
 ---
 
@@ -157,3 +157,11 @@ dependency mismatch。提交失败路径和人工复核只定向清理了该 tok
 
 修复不改变模型、输入张量、checkpoint、decode、NMS、evaluator 或任何指标。
 新部署必须使用新 commit/tree、clean snapshot、run root 和 DAG token。
+
+修复代码已冻结为 commit
+`06a6734449024875031cc3d1e0d08520824d2e67`、tree
+`c11dc39670254c90ad21f3e26581e4f654f25c59`。本地完整 focused suite 为
+`46 passed / 6 skipped`，Python 编译、Bash 语法和 `git diff --check`
+通过。同一独立部署审查代理在 P2 测试缺口补齐后复核，最终裁决为
+`DEPLOY`，P0/P1 为 0。该裁决只授权新 clean snapshot 和真实 gate；
+experiment 状态仍为 `implemented`，mAP 仍为 `NA`。
