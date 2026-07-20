@@ -67,6 +67,8 @@ class AnchorFreeHead(nn.Module):
             "separate_axis" if self.physical_grid_assignment_positions_key is not None else "physical_axis"
         )
         self._physical_grid_debug = {}
+        self._decode_replay_capture_enabled = False
+        self._last_decode_replay_state = None
 
         self.loss_weight = loss_weight
         self.center_sample = center_sample
@@ -443,6 +445,155 @@ class AnchorFreeHead(nn.Module):
     def collect_debug_state(self):
         return dict(self._physical_grid_debug)
 
+    def enable_decode_replay_capture(self, enabled=True):
+        enabled = bool(enabled)
+        if not enabled and self._last_decode_replay_state is not None:
+            raise RuntimeError(
+                "cannot disable decode replay capture before consuming the pending state"
+            )
+        self._decode_replay_capture_enabled = enabled
+        if not enabled:
+            self._last_decode_replay_state = None
+
+    def consume_decode_replay_state(self):
+        if not self._decode_replay_capture_enabled:
+            raise RuntimeError("decode replay capture is not enabled")
+        if self._last_decode_replay_state is None:
+            raise RuntimeError("decode replay state is missing for the latest forward")
+        state = self._last_decode_replay_state
+        self._last_decode_replay_state = None
+        return state
+
+    def _capture_decode_replay_state(
+        self,
+        *,
+        cls_pred,
+        reg_pred,
+        base_points,
+        base_masks,
+        native_points,
+        native_masks,
+        native_proposals,
+        dense_scores,
+        metas,
+    ):
+        if not self._decode_replay_capture_enabled:
+            return
+        if self._last_decode_replay_state is not None:
+            raise RuntimeError(
+                "decode replay state from the previous batch was not consumed"
+            )
+        if not isinstance(metas, (list, tuple)) or len(metas) != dense_scores.shape[0]:
+            raise ValueError(
+                "decode replay capture requires one metadata dictionary per sample"
+            )
+
+        cls_logits = torch.cat(cls_pred, dim=-1).permute(0, 2, 1)
+        reg_distances = torch.cat(reg_pred, dim=-1).permute(0, 2, 1)
+        base_mask = torch.cat(base_masks, dim=1).bool()
+        native_mask = torch.cat(native_masks, dim=1).bool()
+        base_points_concat = torch.cat(base_points, dim=0)
+        native_points_concat = (
+            torch.cat(native_points, dim=1)
+            if native_points[0].dim() == 3
+            else torch.cat(native_points, dim=0)
+        )
+        if native_points_concat.dim() == 2:
+            native_points_concat = native_points_concat.unsqueeze(0).expand(
+                cls_logits.shape[0], -1, -1
+            )
+
+        expected_shape = cls_logits.shape[:2]
+        for name, tensor in (
+            ("reg_distances", reg_distances),
+            ("base_mask", base_mask),
+            ("native_mask", native_mask),
+            ("native_proposals", native_proposals),
+            ("dense_scores", dense_scores),
+            ("native_points", native_points_concat),
+        ):
+            if tensor.shape[:2] != expected_shape:
+                raise RuntimeError(
+                    f"decode replay {name} shape {tuple(tensor.shape)} does not "
+                    f"match candidate shape {tuple(expected_shape)}"
+                )
+        if base_points_concat.shape[0] != expected_shape[1]:
+            raise RuntimeError("decode replay base point count differs from Q")
+
+        required_meta_keys = (
+            "video_name",
+            "duration",
+            "prediction_time_unit",
+            "phystime_native_coordinate_mode",
+            "phystime_native_valid_count",
+            "phystime_native_token_count",
+            "phystime_raw_observation_count",
+            "phystime_uniform_rank_timestamps_sec",
+            "phystime_native_token_timestamps_sec",
+            "phystime_g1a_axis_start_sec",
+            "phystime_g1a_axis_end_sec",
+            "phystime_selected_raw_frame_indices",
+        )
+        metadata = []
+        for sample_idx, meta in enumerate(metas):
+            if not isinstance(meta, dict):
+                raise ValueError(
+                    f"decode replay metas[{sample_idx}] must be a dictionary"
+                )
+            missing = [key for key in required_meta_keys if key not in meta]
+            if missing:
+                raise ValueError(
+                    f"decode replay metas[{sample_idx}] is missing {missing}"
+                )
+            metadata.append(
+                {
+                    key: meta[key]
+                    for key in required_meta_keys
+                }
+                | {
+                    key: meta[key]
+                    for key in (
+                        "window_start_frame",
+                        "selected_dense_indices",
+                        "phystime_raw_selected_dense_indices",
+                    )
+                    if key in meta
+                }
+            )
+
+        self._last_decode_replay_state = {
+            "source_tensor_dtypes": {
+                "cls_logits": str(cls_logits.dtype),
+                "cls_scores": str(dense_scores.dtype),
+                "reg_distances": str(reg_distances.dtype),
+                "base_points": str(base_points_concat.dtype),
+                "native_points": str(native_points_concat.dtype),
+                "native_proposals": str(native_proposals.dtype),
+            },
+            "cls_logits": cls_logits.detach().to(
+                device="cpu", dtype=torch.float32
+            ).contiguous(),
+            "cls_scores": dense_scores.detach().to(
+                device="cpu", dtype=torch.float32
+            ).contiguous(),
+            "reg_distances": reg_distances.detach().to(
+                device="cpu", dtype=torch.float32
+            ).contiguous(),
+            "base_mask": base_mask.detach().to(device="cpu").contiguous(),
+            "native_mask": native_mask.detach().to(device="cpu").contiguous(),
+            "base_points": base_points_concat.detach().to(
+                device="cpu", dtype=torch.float32
+            ).contiguous(),
+            "native_points": native_points_concat.detach().to(
+                device="cpu", dtype=torch.float32
+            ).contiguous(),
+            "native_proposals": native_proposals.detach().to(
+                device="cpu", dtype=torch.float32
+            ).contiguous(),
+            "level_lengths": [int(point.shape[0]) for point in base_points],
+            "metadata": metadata,
+        }
+
     def _reset_debug_state(self):
         if self.assignment_debug_enabled or self.physical_grid_enabled:
             self._physical_grid_debug = {}
@@ -549,13 +700,31 @@ class AnchorFreeHead(nn.Module):
             cls_pred.append(self.cls_head(cls_feat))
             reg_pred.append(F.relu(self.scale[l](self.reg_head(reg_feat))))
 
-        points = self.prior_generator(feat_list)
+        base_points = self.prior_generator(feat_list)
+        base_masks = mask_list
         points, mask_list = self._build_physical_points_and_masks(
-            points, mask_list, metas=metas, train_mode=False
+            base_points, mask_list, metas=metas, train_mode=False
         )
 
         # get refined proposals and scores
-        proposals, scores = self.get_valid_proposals_scores(points, reg_pred, cls_pred, mask_list)  # list [T,2]
+        proposals, scores, dense_proposals, dense_scores = self.get_valid_proposals_scores(
+            points,
+            reg_pred,
+            cls_pred,
+            mask_list,
+            return_dense=True,
+        )
+        self._capture_decode_replay_state(
+            cls_pred=cls_pred,
+            reg_pred=reg_pred,
+            base_points=base_points,
+            base_masks=base_masks,
+            native_points=points,
+            native_masks=mask_list,
+            native_proposals=dense_proposals,
+            dense_scores=dense_scores,
+            metas=metas,
+        )
         proposals = self._clamp_physical_proposals_to_domain(proposals, metas)
         return proposals, scores
 
@@ -574,7 +743,14 @@ class AnchorFreeHead(nn.Module):
         proposals = torch.stack((start, end), dim=-1)  # [B,T,2]
         return proposals
 
-    def get_valid_proposals_scores(self, points, reg_pred, cls_pred, mask_list):
+    def get_valid_proposals_scores(
+        self,
+        points,
+        reg_pred,
+        cls_pred,
+        mask_list,
+        return_dense=False,
+    ):
         # apply regression to get refined proposals
         proposals = self.get_refined_proposals(points, reg_pred)  # [B,T,2]
         # proposal scores
@@ -586,6 +762,8 @@ class AnchorFreeHead(nn.Module):
         for proposal, score, mask in zip(proposals, scores, masks):
             new_proposals.append(proposal[mask])  # [T,2]
             new_scores.append(score[mask])  # [T,num_classes]
+        if return_dense:
+            return new_proposals, new_scores, proposals, scores
         return new_proposals, new_scores
 
     def losses(

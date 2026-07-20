@@ -1,5 +1,28 @@
 # Anti-Repetition Contract
 
+## 2026-07-20 冻结解码交叉回放禁区
+
+- 本轮只做冻结 epoch-59 张量的离线重解码，不得加入新训练、Q-lift、
+  interpolation、新 sampler、新 loss、新 assignment 或新 NMS。
+- 捕获的 native proposal 仅用于数值审计，禁止把它覆盖回重建结果；
+  否则 native exactness 是自证循环，整个实验无效。
+- 不得把强制 float32 sigmoid 当作原 AMP 生产路径真值；必须保留并记录
+  原始 dtype。准确表述是“AMP 产生的张量数值以 float32 存储，再由 CPU
+  float32 重算 decode”，并用 native direct 与 P0 direct 双重等价门禁。
+- 真实门禁必须覆盖 selected-axis / physical-metric 乘 online / EMA
+  四个条件。缺任一条件、共享观测/时间轴契约、内容哈希或 checkpoint
+  state 哈希，都不得提交正式 replay。
+- 除新增 capture 开关外，模型、数据流水线、后处理、评估与 test solver
+  的推理语义必须与已审计 P0 完全一致。
+- 同 checkpoint 内 U/P 差异才是固定张量的解码轴干预；跨 checkpoint
+  差异与差中之差只允许作描述性诊断，不得宣称训练轴因果效应。
+- 时长分组指标来自最终检测的 oracle recall，不能命名或解释成 pre-NMS
+  proposal recall。
+- native direct 或 P0 direct 等价门禁失败时，必须 fail-closed 并发起
+  Pro 讨论；禁止绕过门禁、降低阈值或先跑 Q192 训练。
+- suite 通过最多把状态提升为 `tested`，不能直接提升为
+  `empirically_supported` 或 `paper_ready`。
+
 ## 2026-07-20 P0 实现禁区
 
 - 不得把 P0 写成训练实验；它只使用冻结 epoch-59 online/EMA 权重。
@@ -15,6 +38,24 @@
   schedule；这些变量继续冻结。
 - P0 若显示舍入/过滤影响很小，只能关闭后处理混杂，不能自动证明模型结构
   新颖或 paper-ready；若显示影响很大，则先修正绝对指标并重新审视机制。
+
+## 2026-07-20 冻结解码回放契约
+
+- `observation_sequence_sha256`、U/P 两套轴数组、mask、base points 和计数
+  才是 selected/physical 四条件应共享的观测契约。
+- `window_sequence_sha256` 含 `native_coordinate_mode`，属于轴特有契约；
+  selected-axis 与 physical-metric 按设计不同，只能要求同一 arm 的
+  online/EMA 一致。禁止再次把它并入四条件全等检查。
+- 临时 `flock` 不能替代永久所有权。每个 DAG token 必须由全局 owner
+  manifest 永久绑定唯一 `run_root/commit/tree`；同 token 换目录必须在
+  查询或取消作业前失败。
+- `sbatch` 响应丢失后不得只查一次就重投。必须先做有界可见性轮询，并在
+  调用前持久化提交意图。轮询预算耗尽仍不可见时必须保留 ambiguous 状态并
+  退出；恢复流程只能查询 exact comment，不得自动再次 `sbatch`。延迟可见的
+  唯一作业必须被接管，可靠记账或人工核验前不得清除 ambiguous 状态。
+- `resolved` marker 不是日志装饰：作业暂时不可见时仍只能等待其记录的
+  Job ID，禁止重投。`fatal` marker 永久禁用整个 token；suite 必须验证六个
+  resolved marker 与 `jobs.tsv` 一致并拒绝任何 ambiguous/fatal 状态。
 
 ## 2026-07-20 STOP-Q-LIFT 禁区
 

@@ -105,6 +105,8 @@ U/P 回放共享同一个 tensor artifact，禁止在两个分支中重新运行
 
 - train-U 的 decode-U 等于该次真实推理 direct result；
 - train-P 的 decode-P 等于该次真实推理 direct result。
+- 每个当前 capture-enabled direct 还必须等于对应已审计 P0 direct 的
+  pre-cross、最终结果和 mAP。
 
 比较内容包括：
 
@@ -120,6 +122,8 @@ U/P 回放共享同一个 tensor artifact，禁止在两个分支中重新运行
 - 轴非有限、非严格递增、越过物理域，或 valid count 不一致；
 - U/P 分支的 logits、回归量、mask 或候选拓扑 hash 不同；
 - 原生回放不能逐预测复现 direct result；
+- 当前 direct 不能逐预测复现已审计 P0 direct；
+- 除 capture 开关外的推理语义 hash 与 P0 不一致；
 - checkpoint 不是 epoch 59，或 source/runtime/data hash 不匹配；
 - 出现非法 proposal、NaN/OOM/Traceback 或 completion 缺失。
 
@@ -127,21 +131,35 @@ U/P 回放共享同一个 tensor artifact，禁止在两个分支中重新运行
 
 ## 7. 实验 DAG
 
-1. 一个真实 gate：
+1. 首次 `sbatch` 前运行纯 CPU preflight：
+   - 重算 THUMOS 全文件内容、VideoMAE、两个 checkpoint、source
+     manifest/completion、P0 suite/gate/四 condition completion 的哈希；
+   - 原子写入 preflight manifest，并把其 SHA 注入全部作业。
+2. 一个真实 gate：
    - 静态配置与 checkpoint/data/hash 检查；
    - focused tests；
-   - 一个真实 THUMOS batch 的 artifact capture、U/P decode 和 native
-     equivalence。
-2. 四个冻结任务：
+   - selected/physical × online/EMA 四个真实 THUMOS window 的 artifact
+     capture、U/P decode、native/P0 equivalence；
+   - 四条件共享观测/时间轴契约与各自 state hash 早期校验。
+3. 四个冻结任务：
    - selected-online；
    - selected-EMA；
    - physical-online；
    - physical-EMA。
-3. 一个独立 suite validator，依赖四个任务全部成功。
+4. 一个 suite validator，依赖四个任务全部成功。
 
 每个冻结任务只做一次 GPU 网络推理，U/P 解码和评价在同一任务内由 CPU
 artifact replay 完成。suite 只聚合已验证 completion，不重新训练或改写
-预测。
+预测。每个作业使用唯一 DAG token/comment；全局 owner manifest 必须永久
+绑定 `token/run_root/commit/tree`，同 token 换运行目录必须在查询或取消
+任何作业前失败。调用 `sbatch` 前先持久化提交意图；响应丢失、非数字响应或
+已接受作业在有界轮询内仍不可见时，必须保留 ambiguous 状态并退出，禁止同一
+调用自动重投。后续恢复只能查询并接管唯一 exact-comment 作业；可靠 accounting
+或人工核验前仍不可见时继续失败闭合。提交后保存 scontrol 依赖快照，suite
+保存 sacct 终态与 ExitCode。`resolved` marker 永久绑定已确认 Job ID，
+暂时不可见时只能等待该 ID；`fatal` marker 永久禁用该 token。suite 必须
+逐项证明六个 resolved marker 与 `jobs.tsv` 的 token/comment/Job ID 一致，
+并拒绝任何 ambiguous/fatal marker。
 
 ## 8. 报告与裁决
 
@@ -153,9 +171,9 @@ artifact replay 完成。suite 只聚合已验证 completion，不重新训练�
 
 - 同一 checkpoint 的 `decode-P - decode-U`；
 - 固定 decode 轴下 `train-P - train-U`；
-- train/decode interaction；
+- 仅作描述的跨 checkpoint 差分之差，不解释为训练因果效应；
 - online/EMA 一致性；
-- 短/中/长动作 proposal recall@0.5/0.7/0.9；
+- 基于最终检测结果的短/中/长动作 oracle recall@0.5/0.7/0.9，不称为 pre-NMS proposal recall；
 - NMS 决策与边界位移。
 
 状态最高为 `tested`。单数据集、单 seed 的冻结回放不能产生

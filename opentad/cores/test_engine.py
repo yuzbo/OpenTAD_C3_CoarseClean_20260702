@@ -12,6 +12,9 @@ from opentad.utils import create_folder
 from opentad.models.utils.post_processing import build_classifier, batched_nms
 from opentad.evaluations import build_evaluator
 from opentad.datasets.base import SlidingWindowDataset
+from opentad.cores.phystime_decode_replay_capture import (
+    build_decode_replay_collector,
+)
 
 
 class InvalidProposalError(RuntimeError):
@@ -54,6 +57,14 @@ def eval_one_epoch(
 
     # whether the testing dataset is sliding window
     cfg.post_processing.sliding_window = isinstance(test_loader.dataset, SlidingWindowDataset)
+    decode_replay_collector = build_decode_replay_collector(
+        model=model,
+        cfg=cfg,
+        external_cls=external_cls,
+        world_size=world_size,
+        rank=rank,
+        evaluation_epoch=evaluation_epoch,
+    )
 
     # model forward
     model.eval()
@@ -68,6 +79,8 @@ def eval_one_epoch(
                     post_cfg=cfg.post_processing,
                     ext_cls=external_cls,
                 )
+        if decode_replay_collector is not None:
+            decode_replay_collector.collect_latest_batch()
 
         # update the result dict
         for k, v in results.items():
@@ -75,6 +88,10 @@ def eval_one_epoch(
                 result_dict[k].extend(v)
             else:
                 result_dict[k] = list(v)
+
+    decode_replay_artifact = None
+    if decode_replay_collector is not None:
+        decode_replay_artifact = decode_replay_collector.finalize()
 
     save_pre_cross_window = bool(
         _post_cfg_get(cfg.post_processing, "save_pre_cross_window_detections", False)
@@ -133,6 +150,7 @@ def eval_one_epoch(
                 "git_commit": os.environ.get("PHYSTIME_EXPECTED_COMMIT"),
                 "git_tree": os.environ.get("PHYSTIME_EXPECTED_TREE"),
                 "pre_cross_window_artifact": pre_cross_window_artifact,
+                "decode_replay_artifact": decode_replay_artifact,
                 "post_processing": post_processing_audit,
             }
             _atomic_write_json(audit_path, audit_payload)

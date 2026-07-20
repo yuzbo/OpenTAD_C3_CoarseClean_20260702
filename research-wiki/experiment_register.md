@@ -20,6 +20,7 @@
 | `exp:phystime-g1-matched-medium20` | selected-axis / physical-metric / G1b SDPQ | completed | matched medium evidence | physical-metric 44.88 明显胜 selected-axis 30.42；G1b 30.88 未证明结构优势 |
 | `exp:phystime-g1-matched-full60` | selected-axis vs physical-metric, K384/J192 | completed / validation passed | final epoch-59 Avg-mAP `41.28/57.57`, delta `+16.29`; finite online/EMA checkpoints pass | Full60 single-seed support for physical-time metric; not paper-ready |
 | `exp:phystime-p0-fullprecision-nms-replay` | frozen epoch-59 online/EMA full-precision cross-window NMS replay | tested / suite `1174693` passed | EMA fullprecision selected/physical `41.2830/57.6087`; rounding Avg effect `[-0.0366,+0.0338]` pp; filter effect `0` | Post-processing confound closed; physical main effect preserved; not paper-ready |
+| `exp:phystime-frozen-decode-cross-replay` | frozen epoch-59 same-tensor uniform/physical decode replay | implemented / remote gate pending | software contract only; formal mAP `NA` | 先隔离同 checkpoint 的解码轴干预；门禁通过后才讨论 Q192 UU/UP/PU/PP 训练 |
 
 ## 证据等级定义
 

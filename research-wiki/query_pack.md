@@ -1,5 +1,27 @@
 # Research Wiki Query Pack
 
+## 2026-07-20 冻结解码交叉回放
+
+当前唯一执行任务是 `exp:phystime-frozen-decode-cross-replay`。固定
+full60 的 selected-axis / physical-metric 两个 epoch-59 checkpoint，
+分别使用 online / EMA 权重，在完全相同的冻结原始张量上执行
+uniform-axis 与 physical-axis 两种离线重解码，共四个 checkpoint
+条件、八个结果条件。当前状态为 `implemented`，正式远端 mAP 为 `NA`。
+
+本轮禁止训练，不修改 Q、采样、特征、assignment、loss、NMS 或训练
+schedule。缓存的 native proposal 只能用于重建误差审计，绝不能替代
+从原始分类/回归张量与点坐标重建的 proposal。真实门禁必须覆盖
+selected/physical 乘 online/EMA 四个条件，并绑定代码、数据、
+VideoMAE、checkpoint state、P0 suite/gate 与 Slurm 脚本哈希。
+
+同一 checkpoint 内的 physical-minus-uniform 是本轮可解释的解码轴干预；
+不同 checkpoint 之间的差中之差只作描述性诊断，不能写成训练轴因果效应。
+时长分组 recall 是最终检测结果的 oracle recall，不是 pre-NMS proposal
+recall。当前 capture-enabled 直推还必须逐条件精确复现已审计 P0 的
+pre-NMS、最终预测与 mAP。若任一 native direct replay 或 P0 锚定门禁失败，
+立即停止并发起 Pro 严审，不得进入 Q192 UU/UP/PU/PP 训练；只有门禁和
+正式 suite 全部通过，才允许讨论下一轮训练型轴分解。
+
 ## 2026-07-20 P0 Final Checkpoint
 
 `P0-FULLPRECISION-NMS-REPLAY` 已完成，状态为 `tested`。runtime commit
