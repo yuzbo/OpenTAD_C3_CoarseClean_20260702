@@ -352,6 +352,8 @@ def run_gate(
     checkpoint_source_commit: str,
     checkpoint_evidence: str,
     checkpoint_evidence_sha256: str,
+    adatad_pretrain: str,
+    adatad_pretrain_sha256: str,
     real_batches: int,
     candidates_per_batch: int,
     bootstrap_samples: int,
@@ -368,6 +370,12 @@ def run_gate(
     slurm = _bind_slurm_cuda()
     config_summary = validate_config(ROOT / config_path)
     cfg = Config.fromfile(str(ROOT / config_path))
+    pretrain = Path(adatad_pretrain).expanduser().resolve()
+    _require(pretrain.is_file(), "AdaTAD VideoMAE pretrain is missing")
+    _require(
+        _sha256(pretrain) == str(adatad_pretrain_sha256).lower(),
+        "AdaTAD pretrain SHA256 mismatch",
+    )
     _require(int(real_batches) >= 4, "pre-registered gate requires at least four real batches")
     _require(int(candidates_per_batch) >= 6, "pre-registered gate requires at least six candidates per batch")
 
@@ -387,7 +395,9 @@ def run_gate(
         **loader_cfg,
     )
 
-    model = build_detector(copy.deepcopy(cfg.model)).to("cuda:0")
+    model_cfg = copy.deepcopy(cfg.model)
+    model_cfg.backbone.custom.pretrain = str(pretrain)
+    model = build_detector(model_cfg).to("cuda:0")
     checkpoint = _load_trained_checkpoint(
         model,
         checkpoint_path=checkpoint_path,
@@ -553,6 +563,10 @@ def run_gate(
         "slurm": slurm,
         "config_contract": config_summary,
         "config_sha256": _sha256((ROOT / config_path).resolve()),
+        "adatad_pretrain": {
+            "path": str(pretrain),
+            "sha256": str(adatad_pretrain_sha256).lower(),
+        },
         "trained_checkpoint": checkpoint,
         "real_dataset_loader_executed": True,
         "numeric_contract": {
@@ -598,6 +612,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint-source-commit", required=True)
     parser.add_argument("--checkpoint-evidence", required=True)
     parser.add_argument("--checkpoint-evidence-sha256", required=True)
+    parser.add_argument("--adatad-pretrain", required=True)
+    parser.add_argument("--adatad-pretrain-sha256", required=True)
     parser.add_argument("--real-batches", type=int, default=4)
     parser.add_argument("--candidates-per-batch", type=int, default=8)
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
@@ -612,6 +628,8 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint_source_commit=args.checkpoint_source_commit,
             checkpoint_evidence=args.checkpoint_evidence,
             checkpoint_evidence_sha256=args.checkpoint_evidence_sha256,
+            adatad_pretrain=args.adatad_pretrain,
+            adatad_pretrain_sha256=args.adatad_pretrain_sha256,
             real_batches=args.real_batches,
             candidates_per_batch=args.candidates_per_batch,
             bootstrap_samples=args.bootstrap_samples,

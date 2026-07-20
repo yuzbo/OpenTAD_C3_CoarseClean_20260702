@@ -109,6 +109,8 @@ done
   --checkpoint-source-commit "${CHECKPOINT_SOURCE_COMMIT}" \
   --checkpoint-evidence "${CHECKPOINT_EVIDENCE}" \
   --checkpoint-evidence-sha256 "${CHECKPOINT_EVIDENCE_SHA256}" \
+  --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
+  --adatad-pretrain-sha256 "${ADATAD_PRETRAIN_SHA256}" \
   --real-batches 4 \
   --candidates-per-batch 8 \
   --bootstrap-samples 2000 \
