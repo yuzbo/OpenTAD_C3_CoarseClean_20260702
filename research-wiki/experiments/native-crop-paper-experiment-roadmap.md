@@ -17,16 +17,18 @@ The paper is not about reducing full-frame resolution. Its intended method
 selects source-coordinate local views while retaining the complete temporal
 axis:
 
-> A low-cost global view can guide source-native local spatial computation so
-> that an offline TAD detector preserves high-tIoU localization at a better
-> measured accuracy-cost tradeoff than dense full-frame processing.
+> A low-cost global view can regress a temporally coherent, continuous
+> source-coordinate ROI `(cx,cy,w,h)` whose center, scale, width, height, and
+> aspect ratio adapt to the video, so an offline TAD detector preserves
+> high-tIoU localization at a better measured accuracy-cost tradeoff than
+> dense full-frame processing.
 
 This thesis has two claims:
 
 | Claim | Minimum convincing evidence |
 |---|---|
-| C1: source-native crop representation is sufficient | A no-leak, preregistered finite-library reference or fixed crop is non-inferior to the same-runtime dense comparator on Avg-mAP, mAP@0.7, short actions, and boundary error, with measured representation-path cost headroom |
-| C2: task-aware learned selection is useful | A deployable selector trained without inference-time GT beats fixed/random crops, recovers registered S2 headroom, preserves the C1 accuracy constraints, and remains cheaper after selector cost |
+| C1: variable-RoI crop representation is sufficient | A no-leak continuous-box reference is non-inferior to the same-runtime dense comparator on Avg-mAP, mAP@0.7, short actions, and boundary error, with measured representation-path cost headroom |
+| C2: task-aware continuous ROI regression is useful | A deployable `(cx,cy,w,h)` policy trained without inference-time GT beats fixed-size/location-only controls, recovers registered S2 headroom, preserves C1 constraints, and remains cheaper after selector cost |
 
 The required anti-claims are:
 
@@ -43,25 +45,28 @@ The required anti-claims are:
 |---|---|---|---|---|
 | R0 | Dense160/224/256 full-frame resize | historical diagnostic | sensitivity to whole-frame resolution only | control/appendix; never crop evidence |
 | S1 | Native-Crop vertical slice and CUDA Gate `1174671` | `tested` | source-coordinate crop, shared backbone, detector contract, gradients, provenance, and no-leak are executable | infrastructure evidence |
-| S2-P | Crop-sufficiency preregistration v1.1 | **current stage: `designed`, revision required** | only defines a valid experiment and decision semantics | prerequisite, not an empirical result |
-| S2-E | Formal crop-sufficiency experiment | blocked | whether registered native crops are sufficient; whether adaptive headroom and cost headroom exist | mechanism/oracle diagnostic |
+| S2-P | Continuous-RoI crop-sufficiency protocol v2 | **current stage: `designed`, rewrite required** | defines the variable-box experiment and decision semantics | prerequisite, not an empirical result |
+| S2-E | Formal continuous-RoI sufficiency experiment | blocked | whether variable-center/variable-size crops are sufficient; whether adaptive and cost headroom exist | mechanism/reference diagnostic |
 | S3 | Learned Native-Crop policy | blocked by S2 | whether a deployable selector can recover S2 headroom through TAD supervision | final method candidate |
 | S4 | Primary official benchmark | blocked by S3 | final method accuracy-cost benefit on THUMOS14 official test | main paper Table 1/Figure 1 |
 | S5 | Detector/dataset generalization and ablations | blocked by S4 anchor | robustness, mechanism, simplicity, and transfer | main Tables 2-3/appendix |
 | S6 | Statistical, cost, and claim freeze | blocked by exact evidence closure | whether the complete claim is paper-ready | final paper gate |
 
-The current S2-P stage has no training job and no crop mAP. It is not the
-paper's main experiment.
+The prior 21-position fixed-`128x128` protocol is only a D0 discrete diagnostic
+and is superseded as the decisive S2. The current continuous S2-P stage has no
+implementation, training job, or crop mAP. It is not the paper's main
+experiment.
 
 ## What S2 Must Establish
 
-S2 is a falsification and sufficiency gate. It must answer three questions
-separately on development fit/gate:
+S2 is a falsification and sufficiency gate for continuous deformable boxes. It
+must answer three questions separately on development fit/gate:
 
-1. **Crop sufficiency:** can a registered source-native crop representation
-   remain equivalent to the same-runtime dense baseline?
-2. **Adaptive headroom:** is there a measurable gap between fixed/random crops
-   and a GT-visible heuristic reference that justifies learning a selector?
+1. **Crop sufficiency:** can a registered variable `(cx,cy,w,h)` crop
+   representation remain equivalent to the same-runtime dense baseline?
+2. **Adaptive headroom:** is there a measurable gap between fixed-size,
+   location-only, random crops and a GT-visible continuous-box heuristic that
+   justifies learning a regressor?
 3. **Cost viability:** does one global plus one local representation leave
    enough measured latency/energy headroom after reserving selector cost?
 
@@ -87,22 +92,25 @@ S2 cannot prove:
 
 ## End-To-End Stages
 
-### P0: Freeze S2 v1.1
+### P0: Freeze Continuous-RoI S2 v2
 
-- Correct reference semantics, outcome states, GT/cache order, uncertainty
-  units, coverage terminology, selector-cost reserve, and result-blind power
-  audit.
+- Freeze continuous box parameterization, width/height bounds, aspect/area
+  constraints, temporal grouping/interpolation, differentiable crop, runtime
+  source crop, anti-collapse regularization, fixed-library D0 controls,
+  reference semantics, GT/cache order, uncertainty units, selector-cost
+  reserve, and result-blind power audit.
 - Validate every proposed config, script, statistic, and Slurm dependency
   against the current immutable Git tree.
 - Output: one versioned protocol, one static validator, one no-GPU known-answer
   test suite.
-- GO: `V1.1_READY_FOR_IMPLEMENTATION`.
+- GO: `V2_READY_FOR_IMPLEMENTATION`.
 - KILL/HOLD: any unresolved P0/P1 or any numeric decision left as TBD.
 
-### P1: Implement And Run S2 Sufficiency
+### P1: Implement And Run Continuous S2 Sufficiency
 
-- Implement only the registered dense, fixed/random, and finite-library
-  sufficiency cells.
+- Implement the registered dense, fixed-size/location-only, random-variable,
+  and continuous-reference sufficiency cells. The 21 fixed candidates are
+  controls, not the route-level reference.
 - Keep official test closed.
 - Run three seeds and the registered fit/gate inference, detached reference
   join, detection statistics, and ABBA cost profile.
@@ -111,9 +119,9 @@ S2 cannot prove:
 - Output: S2 evidence commit and exactly one decision receipt.
 - GO to S3 only on `SUFFICIENT_AND_POLICY_HEADROOM`.
 
-The v1 draft proposed 21 training jobs. The final job count is not authorized
-until v1.1 freezes the training-distribution control and decision-critical
-matrix.
+The old v1 draft's 21 training jobs are not authorized. The final job count is
+unknown until v2 freezes the continuous crop distribution, evaluator, and
+decision-critical matrix.
 
 ### P2: Freeze And Implement The Learned Policy
 
@@ -124,8 +132,9 @@ The final method contract must be:
 ```text
 decoded source frames
 -> low-cost global view / scout
--> runtime crop decision without GT, teacher, or prediction cache
--> source-coordinate local crop
+-> normalized continuous box head `(cx,cy,w,h)`
+-> differentiable variable-box crop during training
+-> source-coordinate variable-box crop during inference
 -> registered shared/global-local representation
 -> TAD detector
 -> joint detector-aware training
@@ -148,6 +157,8 @@ The S3 formal comparison must include:
 - deterministic random/balanced crop;
 - fit-selected best fixed crop;
 - global-only representation;
+- learned location with fixed width/height;
+- learned center and variable width/height;
 - same-runtime dense comparator.
 
 GT-visible heuristic results remain development diagnostics and never become a
@@ -173,7 +184,8 @@ Required rows:
 - center local crop;
 - deterministic random crop;
 - fit-selected best fixed crop;
-- final learned Native-Crop method.
+- learned fixed-size location policy;
+- final deformable `(cx,cy,w,h)` policy.
 
 Required columns:
 
@@ -229,7 +241,8 @@ Must isolate only the claims needed by the final method:
 
 - source-coordinate native crop versus whole-frame resize at matched input
   cost;
-- learned versus center/random/best-fixed selection;
+- continuous variable-box policy versus center/random/best-fixed selection;
+- variable width/height versus learned location with fixed size;
 - global context removed;
 - local view removed;
 - detector-gradient path removed;
@@ -271,7 +284,7 @@ Paper status can become `paper_ready` only when:
 
 | Block | Claim defended | Evidence | Placement | Priority |
 |---|---|---|---|---|
-| B0 S2 sufficiency | Native crop has representational and selection headroom | development-only finite-library/fixed-reference study | motivation or appendix | must run before method |
+| B0 S2 sufficiency | Continuous variable ROI has representational and selection headroom | development-only continuous-box heuristic plus fixed controls | motivation or appendix | must run before method |
 | B1 primary result | learned crop improves measured accuracy-cost tradeoff | THUMOS14 official test, three seeds | Main Table 1 | must run |
 | B2 Pareto/cost | benefit survives real system accounting | at least three budgets, full-stack ABBA profile | Main Figure 1 | must run |
 | B3 generality | method is not tied to one head/dataset | TriDet plus ActivityNet-1.3 or preregistered FineAction fallback | Main Table 2 | must run for paper-ready |
@@ -281,7 +294,7 @@ Paper status can become `paper_ready` only when:
 
 | Order | Action | Stop rule |
 |---:|---|---|
-| 1 | Obtain and freeze S2 v1.1 | stop on unresolved protocol P0/P1 |
+| 1 | Obtain and freeze continuous-RoI S2 v2 | stop on unresolved protocol P0/P1 |
 | 2 | Implement static tests and one CUDA Gate | stop on leakage, gradient, evaluator, or cost-schema mismatch |
 | 3 | Run formal S2 matrix | only `SUFFICIENT_AND_POLICY_HEADROOM` unlocks S3 |
 | 4 | Freeze S3 learned-policy protocol | stop if policy consumes GT/cache or selector cost erases headroom |
@@ -292,6 +305,7 @@ Paper status can become `paper_ready` only when:
 
 ## Current Unique Next Step
 
-Obtain a corrected, code-audited S2 Preregistration v1.1. Do not implement the
-S2 matrix, learned selector, official-test evaluation, cross-head integration,
-or cross-dataset experiment before that protocol is frozen.
+Obtain a code-audited continuous-RoI S2 Preregistration v2. Do not implement
+the old fixed-library matrix as the decisive S2, or implement the learned
+selector, official-test evaluation, cross-head integration, or cross-dataset
+experiment before the continuous protocol is frozen.

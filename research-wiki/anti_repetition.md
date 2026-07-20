@@ -7,6 +7,16 @@ updated: 2026-07-20
 
 ## Native-Crop S2 协议反例
 
+0. 最终方法不得是固定分辨率、固定窗口大小或从 21 个固定 `128x128`
+   位置中离散选一个。目标是连续回归 source-coordinate
+   `(cx,cy,w,h)`；中心、宽、高、尺度和纵横比均可变化。
+0. 固定的是 local backbone 的批处理 tensor shape 时，必须明确它只是对可变
+   source ROI 的重采样规格，不得把它误写为固定 source crop，也不得继续声称
+   strict native-pixel-density/no-resize 是最终方法特征。
+0. 21-candidate fixed library 只能作为 D0 sanity/baseline。它的通过或失败均
+   不能代替连续 variable-RoI sufficiency，更不能 KILL 连续回归路线。
+0. 连续宽高学习必须防止 `w,h -> 0` 的退化，并对 in-bounds、面积/尺度、纵横比和
+   时间平滑给出可微参数化及测试；不得依赖推理后硬裁剪掩盖训练退化。
 0. 不得把 GT 可见、逐窗口词典序选择的 reference 称为 21-candidate library
    的上界或 global-mAP oracle。它通过可作为充分证据；它失败只能否定该规则，
    不能据此 `KILL_THIS_LIBRARY`。

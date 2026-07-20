@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:native-crop-s1-vertical-slice
 title: "Native-Crop S1 development vertical slice"
 stage: tested
-status: cuda_gate_pass_s2_protocol_revision_required
+status: cuda_gate_pass_continuous_roi_s2_protocol_required
 outcome: implementation_graph_and_provenance_pass
 tags: ["offline-tad", "native-crop", "source-coordinate", "vertical-slice"]
 added: 2026-07-20
@@ -120,10 +120,11 @@ sufficiency.
 
 ## Next gate
 
-The first S2 preregistration draft has been reviewed but is not frozen. Revise
-it to v1.1 so a GT-visible heuristic cannot kill the library, crop sufficiency
-is separated from adaptive-policy headroom and cost, gate GT is joined only
-after raw outputs are sealed, and detection/cost uncertainty uses correct
-sampling units. Complete a result-blind statistical feasibility audit before
-S2 implementation or queueing. Do not implement learned ROI before a valid
+The fixed-21/fixed-128 S2 draft is superseded as the decisive research object.
+Write a continuous-RoI S2 v2 for variable `(cx,cy,w,h)` boxes, with
+differentiable training crop, source-coordinate inference crop, size-collapse
+prevention, temporal coherence, corrected reference semantics, post-seal Gate
+GT join, and sampling-unit-correct detection/cost uncertainty. Complete a
+result-blind statistical feasibility audit before S2 implementation or
+queueing. Do not implement the learned ROI policy before a valid continuous
 S2 protocol and sufficiency result.

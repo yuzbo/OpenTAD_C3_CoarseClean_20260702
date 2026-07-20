@@ -13,6 +13,21 @@
 - Project verdict:
   `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`
 
+## Supersession Notice
+
+This document preserves the audit of the fixed-21/fixed-`128x128` v1 protocol.
+After this audit, the user clarified that the final research object is a
+Uni-AdaFocus-style continuous deformable ROI regressor whose
+`(cx,cy,w,h)` all vary. Therefore:
+
+- the fixed library is retained only as a D0 control;
+- the v1.1 revision described below is no longer the next decisive protocol;
+- none of the original implementation or queue plan is authorized; and
+- the new next task is a continuous-RoI S2 v2 protocol.
+
+The historical P0/P1 findings below still apply to any discrete control or
+heuristic reference included in v2.
+
 ## Bottom Line
 
 We do not fully accept v1 as an immediately executable preregistration.

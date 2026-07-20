@@ -26,8 +26,12 @@ max_chars: 8000
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 
-- Pro 的 21-candidate crop-sufficiency v1 已原样归档，但项目裁决为
-  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`，不是可立即编码排队的冻结协议。
+- 用户已明确最终目标是 Uni-AdaFocus 式连续 deformable ROI：策略回归
+  `(cx,cy,w,h)`，中心、宽、高、尺度和纵横比均不固定；固定 local tensor shape
+  仅是批处理规格，不等于固定 source window。
+- Pro 的 21-candidate fixed-128 v1 已降级为 D0 离散诊断，项目裁决为
+  `SUPERSEDED_FOR_FINAL_OBJECT / HOLD_IMPLEMENTATION`。此前 v1.1 修订 prompt
+  同样不再是下一协议。
 - 接受其 source-coordinate crop、同运行时 D160、fit/gate 隔离、无 GT raw sweep、
   official evaluator parity、完整成本和不可变证据设计。
 - 阻断点：GT 可见的逐窗词典序 reference 不是 library/global-mAP 上界，失败不能
@@ -36,14 +40,15 @@ max_chars: 8000
   ABBA 成本统计必须使用各自正确的重采样单位；几何 coverage 不能与模型条件的
   candidate-union reachability 混称。
 - 数值 margin 冻结前必须做不查看 S2 结果的 power/Monte-Carlo 可行性审计，并为未来
-  selector 预留成本。唯一下一步是修订 v1.1；S2 实现、训练、test-open 和 learned
-  policy 仍未授权。
+  selector 预留成本。唯一下一步是制定 continuous-RoI S2 v2；必须包含可微
+  variable-box crop、宽高防塌缩、时间平滑、source-coordinate inference 和 fixed-size
+  controls。S2 实现、训练、test-open 和 learned policy 仍未授权。
 - 完整结论见
   `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-absorption.md`。
 
 ## Native-Crop 论文实验路线
 
-- 当前处于 `S2-P preregistration revision`，不是主实验训练阶段。S1 Gate 只证明
+- 当前处于 `continuous S2-P protocol rewrite`，不是主实验训练阶段。S1 Gate 只证明
   crop 数据流、模型合同、梯度和 no-leak 可执行；S2 将证明 crop sufficiency、
   adaptive headroom 与 cost viability，仍不是 deployable final method。
 - 只有 `SUFFICIENT_AND_POLICY_HEADROOM` 才解锁 S3 learned crop policy；固定 crop

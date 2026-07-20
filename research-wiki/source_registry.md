@@ -50,8 +50,10 @@ updated: 2026-07-20
   the GT-visible rule is not a library upper bound; crop sufficiency,
   selection headroom, and cost need separate outcomes; gate GT ordering,
   statistical sampling units, coverage terminology, selector-cost reserve,
-  and result-blind power feasibility must be corrected in v1.1 before formal
-  implementation or queueing.
+  and result-blind power feasibility require correction. A subsequent user
+  clarification supersedes v1/v1.1 as the decisive object: the final method
+  regresses continuous `(cx,cy,w,h)`, while the fixed-21 protocol remains only
+  a D0 control. The next protocol is continuous-RoI S2 v2.
 - Native-Crop S1 Pro review, 2026-07-20. The reviewer audited immutable commits
   `d76ba1b`, `cef9548`, and `18139b9`, verified that the current path contains
   full-frame resize rather than source-native crop, and returned
@@ -77,8 +79,12 @@ updated: 2026-07-20
   AdaTAD `https://arxiv.org/abs/2311.17241`. These primary sources support
   strong prior-art collision around global/local spatial focus. AdaSpot's
   official implementation also supports the narrower observation that its
-  variable ROI is resized to a fixed local input, while this project's proposed
-  source-native no-resize contract remains only a candidate differentiator.
+  variable ROI is resized to a fixed local input. Uni-AdaFocus explicitly
+  models deformable patches with variable location, shape, size, and scale and
+  reports the `H_p,W_p -> 0` collapse risk without size regularization. The
+  project's final target is now aligned with continuous `(cx,cy,w,h)` ROI
+  regression; the earlier strict no-resize fixed-center path remains S1
+  infrastructure, not the final differentiator.
 - Native-Crop S1 implementation audit, 2026-07-20. Independent max agent
   `019f7b48-3fad-75e2-a848-0606e7bd8887` reviewed the complete working-tree
   implementation in three passes. Pass one found and verified repairs for two

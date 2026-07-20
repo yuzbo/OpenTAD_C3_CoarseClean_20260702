@@ -1,9 +1,9 @@
 ---
 type: experiment
 node_id: exp:native-crop-s2-crop-sufficiency
-title: "Native-Crop S2 crop sufficiency"
+title: "Continuous-RoI S2 crop sufficiency"
 stage: designed
-status: pro_protocol_reviewed_revision_required
+status: fixed_library_protocol_superseded_continuous_roi_redesign_required
 outcome: pending
 tags: ["offline-tad", "native-crop", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
@@ -13,18 +13,20 @@ added: 2026-07-20
 
 ## Purpose
 
-Determine whether source-coordinate local crops can preserve registered TAD
-accuracy and high-tIoU boundary behavior at lower measured representation-path
-cost while retaining the full 768-point temporal axis. S2 evaluates crop
-sufficiency before any learned crop selector is implemented.
+Determine whether continuously parameterized source-coordinate boxes
+`(cx,cy,w,h)` can preserve registered TAD accuracy and high-tIoU boundary
+behavior at lower measured representation-path cost while retaining the full
+768-point temporal axis. The center, width, height, scale, and aspect ratio are
+not fixed. S2 evaluates deformable crop sufficiency before a deployable learned
+policy is claimed.
 
 ## Reviewed Protocol
 
-The Pro-authored v1 protocol freezes a 21-position static `128x128` crop
-library over the current `320x180` decoded source geometry, a source-letterbox
-D160 baseline, global96/local128 shared-VideoMAE paths, three seeds,
-development fit/gate separation, official evaluator parity, full-stack cost,
-immutable receipts, and a GT-visible detached candidate reference.
+The Pro-authored v1 protocol froze a 21-position static `128x128` crop library.
+That protocol is now superseded as the decisive S2 object because the final
+method must regress variable center and variable width/height in the
+Uni-AdaFocus deformable-patch sense. The 21 candidates may remain a D0
+discrete baseline, but cannot establish or reject continuous-RoI sufficiency.
 
 The raw protocol is archived at
 `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-raw.txt`
@@ -45,32 +47,38 @@ with SHA-256
 
 ## Blocking Revisions
 
-1. The GT-visible lexicographic reference is a heuristic, not a certified
+1. Replace the fixed-library estimand with continuous normalized
+   `(cx,cy,w,h)` geometry, explicit in-bounds parameterization, variable
+   scale/aspect constraints, and a matched differentiable crop evaluator.
+2. The GT-visible reference remains a heuristic, not a certified
    library or global-mAP upper bound. Its failure cannot kill the library.
-2. Crop sufficiency, adaptive-selection headroom, and deployable cost viability
+3. Crop sufficiency, adaptive-selection headroom, and deployable cost viability
    need independent outcomes. A sufficient fixed crop is not a crop failure.
-3. Gate GT artifacts may be created only after raw gate predictions are sealed
+4. Gate GT artifacts may be created only after raw gate predictions are sealed
    in a separate privileged join stage.
-4. Detection and cost require sampling-unit-correct uncertainty families,
+5. Detection and cost require sampling-unit-correct uncertainty families,
    joined by an intersection decision rather than one mixed bootstrap.
-5. Geometry coverage must be separated from model-conditioned candidate-union
-   reachability.
-6. The registered crop schedule changes the training distribution; the
+6. Continuous-domain coverage/search quality must be separated from
+   model-conditioned reachability; a finite restart/search procedure is not a
+   certified continuous oracle.
+7. The registered crop distribution changes the training distribution; the
    estimand must state this explicitly.
-7. Any learned-policy authorization must reserve selector cost or limit its
+8. Any learned-policy authorization must reserve selector cost or limit its
    claim to representation-path headroom.
-8. Numerical margins require a result-blind power/Monte-Carlo feasibility
+9. Numerical margins require a result-blind power/Monte-Carlo feasibility
    audit before freeze.
 
 ## Boundaries
 
-No S2 model, training result, official-test result, measured cost, crop
-sufficiency claim, library KILL, learned selector, or paper claim exists.
-S1's CUDA gate validates implementation and gradients only.
+No continuous-RoI S2 model, training result, official-test result, measured
+cost, crop-sufficiency claim, learned selector, or paper claim exists. S1's
+fixed-center CUDA gate validates infrastructure and gradients only.
 
 ## Next Gate
 
-Revise v1 to v1.1 with corrected reference semantics, decision states, GT
-artifact ordering, uncertainty families, coverage terminology, and selector
-cost reserve. Freeze v1.1 only after a result-blind statistical feasibility
-audit. Formal implementation and queueing remain blocked until then.
+Write a new continuous-RoI S2 v2 protocol. It must freeze variable-box
+parameterization, differentiable training crop, source-coordinate inference
+crop, size-collapse prevention, temporal grouping/smoothing, reference search,
+matched baselines, decision states, uncertainty families, and selector-cost
+reserve. The prior fixed-library v1/v1.1 must not be implemented as the final
+S2 gate.

@@ -600,3 +600,16 @@ append_only: true
   result-to-claim closure. Every stage has an explicit stop rule; no later
   experiment is authorized before S2 v1.1 is frozen and its predecessor gate
   passes.
+- 2026-07-20: user corrected the final spatial method object. The target is not
+  a fixed resolution, fixed source window, or discrete choice among 21
+  `128x128` boxes. It is a Uni-AdaFocus-style continuous deformable ROI policy
+  that regresses normalized `(cx,cy,w,h)` with variable center, width, height,
+  scale, and aspect ratio over temporal groups. Official Uni-AdaFocus and
+  AdaFocusV2 sources confirm deformable variable-size patches,
+  interpolation-based end-to-end gradients, and the zero-size collapse,
+  supervision, diversity, and stability risks. S1 remains valid
+  infrastructure; fixed-21 S2 v1 and its v1.1 revision prompt are superseded as
+  decisive gates and retained only as D0 controls. The unique next task is a
+  continuous-RoI S2 v2 protocol covering differentiable crop, source-coordinate
+  inference, box constraints, temporal coherence, matched controls, cost, and
+  no-leak semantics.
