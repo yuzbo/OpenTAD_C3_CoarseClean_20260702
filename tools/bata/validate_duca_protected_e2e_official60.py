@@ -95,7 +95,12 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
     _require(cfg.dataset.test.subset_name == "validation", "official OpenTAD THUMOS terminal evaluation subset changed")
 
     route = str(contract.route)
-    if route == "DUCA_PROTECTED_E2E_FIXED384_OFFICIAL60":
+    homotopy_routes = {
+        "DUCA_PROTECTED_E2E_FIXED384_OFFICIAL60",
+        "DUCA_PROTECTED_E2E_HOMOTOPY025_FIXED384_OFFICIAL60",
+        "DUCA_PROTECTED_E2E_HOMOTOPY_UNI_COMPANION025_FIXED384_OFFICIAL60",
+    }
+    if route in homotopy_routes:
         _require(selector.detector_gradient_mode == "protected_structured_transport", "protected bridge mode is missing")
         _require(float(selector.policy_hidden_gradient_scale) == 0.0, "main protected arm must detach ASFormer hidden")
         _require(
@@ -106,6 +111,56 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         _require(float(schedule.detector_gradient.end) == 0.25, "bridge endpoint must be preregistered at 0.25")
         _require(int(schedule.detector_gradient.warmup_steps) == 2100, "bridge warmup must end after policy homotopy")
         _require(int(schedule.detector_gradient.transition_steps) == 1500, "bridge ramp must be 1500 updates")
+        companion_fraction = float(
+            selector.get("training_uniform_companion_fraction", 0.0)
+        )
+        if route == "DUCA_PROTECTED_E2E_HOMOTOPY_UNI_COMPANION025_FIXED384_OFFICIAL60":
+            _require(
+                companion_fraction == 0.50,
+                "Uni companion arm must replace exactly half of each multi-row training batch",
+            )
+            _require(
+                contract.detector_gradient_updates
+                == "transition_scorer_only_on_learned_rows",
+                "Uni companion gradient ownership declaration changed",
+            )
+            _require(
+                contract.inference_uses_learned_policy_only is True
+                and contract.inference_extra_companion_cost is False,
+                "Uni companion must remain training-only",
+            )
+        else:
+            _require(
+                companion_fraction == 0.0,
+                "non-companion homotopy arm unexpectedly enables uniform views",
+            )
+    elif route == "DUCA_PROTECTED_E2E_DIRECT025_FIXED384_OFFICIAL60":
+        _require(selector.detector_gradient_mode == "protected_structured_transport", "direct arm requires protected bridge")
+        _require(float(selector.policy_hidden_gradient_scale) == 0.0, "direct arm must detach ASFormer hidden")
+        _require(
+            float(schedule.policy_alpha.start) == 1.0
+            and float(schedule.policy_alpha.end) == 1.0,
+            "direct arm must use the learned policy from step zero",
+        )
+        _require(
+            int(schedule.policy_alpha.warmup_steps) == 0
+            and int(schedule.policy_alpha.transition_steps) == 0,
+            "direct arm cannot hide a policy warmup",
+        )
+        _require(
+            float(schedule.detector_gradient.start) == 0.25
+            and float(schedule.detector_gradient.end) == 0.25,
+            "direct arm bridge must remain fixed at 0.25",
+        )
+        _require(
+            int(schedule.detector_gradient.warmup_steps) == 0
+            and int(schedule.detector_gradient.transition_steps) == 0,
+            "direct arm cannot hide a detector-gradient warmup",
+        )
+        _require(
+            float(selector.get("training_uniform_companion_fraction", 0.0)) == 0.0,
+            "direct arm unexpectedly enables uniform companion rows",
+        )
     elif route == "DUCA_TRANSITION_NO_BRIDGE_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "none", "no-bridge arm must disable bridge code")
         _require(float(schedule.detector_gradient.end) == 0.0, "no-bridge arm must have zero bridge weight")
@@ -155,6 +210,9 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "primary_checkpoint_state_key": str(cfg.workflow.primary_checkpoint_state_key),
         "detector_gradient_mode": str(selector.detector_gradient_mode),
         "policy_hidden_gradient_scale": float(selector.policy_hidden_gradient_scale),
+        "training_uniform_companion_fraction": float(
+            selector.get("training_uniform_companion_fraction", 0.0)
+        ),
         "paper_claim_allowed": False,
     }
 

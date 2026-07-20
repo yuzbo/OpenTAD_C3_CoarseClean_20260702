@@ -32,6 +32,7 @@ from ..duca.acquisition import (
     _sync_profile_clock,
     validate_actionness_provenance,
 )
+from ..duca.structured_selection import exact_uniform_positions
 from ..utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS, TrueTimeMap
 
 
@@ -124,6 +125,68 @@ def _apply_slot_weights(inputs: torch.Tensor, weights: torch.Tensor) -> torch.Te
     if inputs.ndim == 6:
         return inputs * weights[:, None, None, :, None, None].to(dtype=inputs.dtype)
     raise ValueError(f"unsupported DUCA selector input shape: {tuple(inputs.shape)}")
+
+
+def _training_uniform_companion_mask(
+    batch_size: int,
+    *,
+    fraction: float,
+    device: torch.device,
+) -> torch.Tensor:
+    """Choose uniform-view rows while retaining one learned row per multi-row batch."""
+
+    mask = torch.zeros(int(batch_size), device=device, dtype=torch.bool)
+    if batch_size <= 1 or fraction <= 0.0:
+        return mask
+    uniform_count = max(1, int(round(float(batch_size) * float(fraction))))
+    uniform_count = min(uniform_count, int(batch_size) - 1)
+    permutation = torch.randperm(int(batch_size), device=device)
+    mask[permutation[:uniform_count]] = True
+    return mask
+
+
+def _exact_uniform_companion_tensors(
+    valid_mask: torch.Tensor,
+    *,
+    slot_count: int,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build the canonical round(linspace) hard path and its one-hot slots."""
+
+    valid = valid_mask.bool()
+    batch, temporal_len = valid.shape
+    positions = torch.full(
+        (batch, int(slot_count)),
+        -1,
+        device=valid.device,
+        dtype=torch.long,
+    )
+    dense_mask = torch.zeros(
+        (batch, temporal_len),
+        device=valid.device,
+        dtype=torch.bool,
+    )
+    slot_assignment = torch.zeros(
+        (batch, int(slot_count), temporal_len),
+        device=valid.device,
+        dtype=dtype,
+    )
+    for batch_idx in range(batch):
+        valid_positions = torch.nonzero(valid[batch_idx], as_tuple=False).flatten()
+        effective_k = min(int(slot_count), int(valid_positions.numel()))
+        if effective_k <= 0:
+            raise ValueError("uniform companion requires one valid candidate")
+        anchors = exact_uniform_positions(
+            int(valid_positions.numel()),
+            effective_k,
+            device=valid.device,
+        )
+        selected = valid_positions[anchors]
+        positions[batch_idx, :effective_k] = selected
+        dense_mask[batch_idx, selected] = True
+        slots = torch.arange(effective_k, device=valid.device)
+        slot_assignment[batch_idx, slots, selected] = 1.0
+    return positions, dense_mask, slot_assignment
 
 
 def _add_soft_context_gradient_path(
@@ -383,6 +446,7 @@ class DucaOnlineFrameSelector(nn.Module):
         structured_temperature: float = 1.0,
         local_cell_force_exact_uniform: bool = False,
         inference_policy_alpha: float = 1.0,
+        training_uniform_companion_fraction: float = 0.0,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
         coarse_trunk_lr: float = 2.5e-5,
@@ -471,6 +535,16 @@ class DucaOnlineFrameSelector(nn.Module):
         self.inference_policy_alpha = float(inference_policy_alpha)
         if not 0.0 <= self.inference_policy_alpha <= 1.0:
             raise ValueError("inference_policy_alpha must lie in [0,1]")
+        self.training_uniform_companion_fraction = float(
+            training_uniform_companion_fraction
+        )
+        if (
+            not math.isfinite(self.training_uniform_companion_fraction)
+            or not 0.0 <= self.training_uniform_companion_fraction < 1.0
+        ):
+            raise ValueError(
+                "training_uniform_companion_fraction must lie in [0,1)"
+            )
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
         self.coarse_trunk_lr = float(coarse_trunk_lr)
         self.action_head_lr = float(action_head_lr)
@@ -630,6 +704,23 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if not self.forbid_external_actionness:
                 raise ValueError("transition_only requires an in-graph coarse probe, not external actionness")
+        if self.training_uniform_companion_fraction > 0.0:
+            if self.selector_variant != "transition_only":
+                raise ValueError(
+                    "uniform companion training is restricted to transition_only"
+                )
+            if self.budget_mode != "fixed":
+                raise ValueError(
+                    "uniform companion training requires a fixed exact budget"
+                )
+            if self.acquisition_policy != "global_structured_topk":
+                raise ValueError(
+                    "uniform companion training requires global_structured_topk"
+                )
+            if self.detector_output_coordinate_space != SELECTED_AXIS:
+                raise ValueError(
+                    "uniform companion training is defined on the selected-axis detector path"
+                )
         if self.counterfactual_objective == "local_cell_signed_logistic":
             if self.acquisition_policy != "local_cell_deformation":
                 raise ValueError("local-cell counterfactual utility requires local_cell_deformation")
@@ -1471,6 +1562,89 @@ class DucaOnlineFrameSelector(nn.Module):
             "selector_outputs": outputs["selector_outputs"],
         }
 
+    def _apply_training_uniform_companion(self, grid, scores, valid_mask):
+        companion_mask = _training_uniform_companion_mask(
+            int(valid_mask.shape[0]),
+            fraction=self.training_uniform_companion_fraction,
+            device=valid_mask.device,
+        )
+        scores["training_uniform_companion_mask"] = companion_mask
+        scores["training_uniform_companion_fraction"] = float(
+            self.training_uniform_companion_fraction
+        )
+        if not bool(companion_mask.any().item()):
+            return companion_mask
+
+        slot_count = int(grid.selected_positions.shape[1])
+        score_dtype = scores["center_scores"].dtype
+        uniform_positions, uniform_dense_mask, uniform_assignment = (
+            _exact_uniform_companion_tensors(
+                valid_mask,
+                slot_count=slot_count,
+                dtype=score_dtype,
+            )
+        )
+        mask_bk = companion_mask[:, None]
+        mask_bkt = companion_mask[:, None, None]
+        blended_positions = torch.where(
+            mask_bk,
+            uniform_positions,
+            grid.selected_positions,
+        )
+        blended_dense_mask = torch.where(
+            mask_bk,
+            uniform_dense_mask,
+            grid.selected_mask.bool(),
+        )
+
+        structured_assignment = scores.get("structured_soft_slot_assignment")
+        if structured_assignment is None:
+            raise ValueError(
+                "uniform companion requires structured exact-K slot marginals"
+            )
+        scores["structured_soft_slot_assignment"] = torch.where(
+            mask_bkt,
+            uniform_assignment,
+            structured_assignment,
+        )
+        selected_mask_st = scores.get("selected_mask_st")
+        if selected_mask_st is None:
+            raise ValueError("uniform companion requires selected_mask_st")
+        scores["selected_mask_st"] = torch.where(
+            mask_bk,
+            uniform_dense_mask.to(dtype=selected_mask_st.dtype),
+            selected_mask_st,
+        )
+        detector_positions = scores.get("detector_grid_positions")
+        if detector_positions is not None:
+            scores["detector_grid_positions"] = torch.where(
+                mask_bk,
+                uniform_positions,
+                detector_positions,
+            )
+        scores["selected_indices_st"] = blended_positions
+        scores["training_uniform_companion_positions"] = uniform_positions
+
+        grid.selected_positions = blended_positions
+        grid.selected_mask = blended_dense_mask
+        grid.detector_input_length = blended_dense_mask.long().sum(dim=1)
+        grid.metadata = dict(grid.metadata)
+        grid.metadata.update(
+            {
+                "training_uniform_companion": True,
+                "training_uniform_companion_fraction": float(
+                    self.training_uniform_companion_fraction
+                ),
+                "training_uniform_companion_count": int(
+                    companion_mask.long().sum().item()
+                ),
+                "inference_uniform_companion": False,
+            }
+        )
+        scores["decode_metadata"] = grid.metadata
+        grid.validate()
+        return companion_mask
+
     def _forward_select(
         self,
         inputs: torch.Tensor,
@@ -1562,6 +1736,17 @@ class DucaOnlineFrameSelector(nn.Module):
             stable_selection=stable_selection,
             policy_mix_alpha=policy_mix_alpha,
         )
+        uniform_companion_mask = torch.zeros(
+            int(masks.shape[0]),
+            device=masks.device,
+            dtype=torch.bool,
+        )
+        if self.training and self.training_uniform_companion_fraction > 0.0:
+            uniform_companion_mask = self._apply_training_uniform_companion(
+                grid,
+                scores,
+                masks,
+            )
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
             scores["external_actionness_provenance"] = external_actionness["provenance"]
@@ -1743,6 +1928,13 @@ class DucaOnlineFrameSelector(nn.Module):
             "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
             "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
             "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),
+            "training_uniform_companion_fraction": float(
+                self.training_uniform_companion_fraction
+            ),
+            "training_uniform_companion_count": int(
+                uniform_companion_mask.long().sum().detach().cpu().item()
+            ),
+            "inference_uniform_companion": False,
         }
         if temporal_contract_audit is not None:
             self.last_forward_summary["temporal_sampling_contract"] = temporal_contract_audit

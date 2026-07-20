@@ -114,7 +114,7 @@ def _cuda_batch(batch: Mapping[str, Any]) -> dict[str, Any]:
 def _real_full_batch(cfg: Config) -> dict[str, Any]:
     dataset = build_dataset(copy.deepcopy(cfg.dataset.train), default_args={"logger": None})
     loader_cfg = copy.deepcopy(cfg.solver.train)
-    loader_cfg["batch_size"] = 1
+    loader_cfg["batch_size"] = 2
     loader = build_dataloader(
         Subset(dataset, list(range(min(len(dataset), 64)))),
         rank=0,
@@ -125,9 +125,16 @@ def _real_full_batch(cfg: Config) -> dict[str, Any]:
     )
     for raw_batch in loader:
         batch = _cuda_batch(raw_batch)
-        if int(batch["masks"][0].sum().item()) == int(cfg.dense_window_size):
+        if (
+            int(batch["masks"].shape[0]) == 2
+            and bool(
+                torch.all(
+                    batch["masks"].sum(dim=1) == int(cfg.dense_window_size)
+                ).item()
+            )
+        ):
             return batch
-    raise ExactGateFailure("no full T=768 real THUMOS training window was found")
+    raise ExactGateFailure("no two-row full T=768 real THUMOS training batch was found")
 
 
 def _is_action_head(name: str) -> bool:
@@ -330,6 +337,25 @@ def run_gate(
         positions,
         batch["masks"],
     )
+    companion_fraction = float(
+        getattr(selector, "training_uniform_companion_fraction", 0.0)
+    )
+    companion_count = int(
+        model.frame_selector.last_forward_summary.get(
+            "training_uniform_companion_count",
+            0,
+        )
+    )
+    if companion_fraction > 0.0:
+        _require(
+            companion_count == 1,
+            "two-row Uni companion gate must route one uniform and one learned row",
+        )
+    else:
+        _require(
+            companion_count == 0,
+            "non-companion gate unexpectedly routed a uniform training row",
+        )
 
     rho_arm = (
         str(cfg.duca_transition_only_contract.route)
@@ -406,6 +432,12 @@ def run_gate(
         },
         "hard_forward_equals_real_backbone_input": True,
         "temporal_sampling_audit": temporal_audit,
+        "training_uniform_companion": {
+            "fraction": companion_fraction,
+            "count": companion_count,
+            "batch_size": int(batch["inputs"].shape[0]),
+            "inference_extra_cost": False,
+        },
         "gradient_ownership": {
             "detector_only": detector_gradients,
             "action_bce_only": action_gradients,

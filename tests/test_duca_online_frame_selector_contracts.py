@@ -7,7 +7,12 @@ try:
 except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
     pytest.skip(f"torch is unavailable in this environment: {exc}", allow_module_level=True)
 
-from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+from opentad.models.selectors.duca_online_frame_selector import (
+    DucaOnlineFrameSelector,
+    _exact_uniform_companion_tensors,
+    _training_uniform_companion_mask,
+)
+from opentad.models.duca.acquisition import SparseTemporalGrid
 
 
 def _manual_actionness_cfg(p_action: torch.Tensor, *, no_target: bool = True) -> dict:
@@ -52,6 +57,89 @@ def _selector(p_action: torch.Tensor, *, budget: int = 4, no_target: bool = True
         },
         **kwargs,
     )
+
+
+def test_uniform_companion_uses_canonical_endpoint_anchors_and_keeps_a_learned_row() -> None:
+    torch.manual_seed(7)
+    valid = torch.tensor(
+        [
+            [True, True, True, True, True, True, True, True],
+            [True, True, True, True, True, True, False, False],
+        ]
+    )
+
+    positions, dense_mask, assignment = _exact_uniform_companion_tensors(
+        valid,
+        slot_count=4,
+        dtype=torch.float32,
+    )
+    companion = _training_uniform_companion_mask(
+        2,
+        fraction=0.5,
+        device=valid.device,
+    )
+
+    assert positions.tolist() == [[0, 2, 5, 7], [0, 2, 3, 5]]
+    assert torch.equal(dense_mask.long().sum(dim=1), torch.tensor([4, 4]))
+    assert torch.equal(assignment.sum(dim=2), torch.ones(2, 4))
+    assert int(companion.sum().item()) == 1
+
+
+def test_uniform_companion_configuration_is_selected_axis_transition_only() -> None:
+    p_action = torch.full((1, 8), 0.5)
+
+    with pytest.raises(ValueError, match="transition_only"):
+        _selector(
+            p_action,
+            budget=4,
+            training_uniform_companion_fraction=0.5,
+        )
+
+
+def test_uniform_companion_replaces_only_hard_forward_rows_and_blocks_their_bridge_gradient() -> None:
+    selector = _selector(torch.full((2, 8), 0.5), budget=4)
+    selector.training_uniform_companion_fraction = 0.5
+    valid = torch.ones(2, 8, dtype=torch.bool)
+    learned_positions = torch.tensor([[1, 3, 5, 7], [0, 1, 4, 6]])
+    learned_dense_mask = torch.zeros(2, 8, dtype=torch.bool)
+    learned_dense_mask.scatter_(1, learned_positions, True)
+    grid = SparseTemporalGrid(
+        selected_positions=learned_positions.clone(),
+        selected_mask=learned_dense_mask.clone(),
+        original_length=8,
+        valid_len=torch.tensor([8, 8]),
+        budget=4,
+        requested_budget=torch.tensor([4, 4]),
+        effective_budget=torch.tensor([4, 4]),
+        detector_input_length=torch.tensor([4, 4]),
+    ).validate()
+    logits = torch.randn(2, 4, 8, requires_grad=True)
+    soft_assignment = logits.softmax(dim=2)
+    selected_st = learned_dense_mask.float() + (
+        soft_assignment.sum(dim=1) - soft_assignment.sum(dim=1).detach()
+    )
+    scores = {
+        "center_scores": torch.zeros(2, 8),
+        "structured_soft_slot_assignment": soft_assignment,
+        "selected_mask_st": selected_st,
+        "detector_grid_positions": learned_positions.clone(),
+    }
+    torch.manual_seed(11)
+
+    companion = selector._apply_training_uniform_companion(grid, scores, valid)
+
+    assert int(companion.sum().item()) == 1
+    uniform_positions = torch.tensor([0, 2, 5, 7])
+    uniform_row = int(torch.nonzero(companion, as_tuple=False).item())
+    learned_row = 1 - uniform_row
+    assert torch.equal(grid.selected_positions[uniform_row], uniform_positions)
+    assert torch.equal(
+        grid.selected_positions[learned_row], learned_positions[learned_row]
+    )
+    weighted = torch.arange(8, dtype=torch.float32)
+    (scores["structured_soft_slot_assignment"] * weighted).sum().backward()
+    assert logits.grad[uniform_row].abs().sum().item() == pytest.approx(0.0)
+    assert logits.grad[learned_row].abs().sum().item() > 0.0
 
 
 def test_duca_selector_rejects_runtime_budget_above_hard_cap() -> None:
