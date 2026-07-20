@@ -1,5 +1,18 @@
 # Source Registry
 
+## 2026-07-20 Decode-Cross Active Deployment Source
+
+- `SRC-PT-018`: runtime commit
+  `06a6734449024875031cc3d1e0d08520824d2e67` / tree
+  `c11dc39670254c90ad21f3e26581e4f654f25c59`，clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_phystime_decode_cross_06a6734_20260720`，
+  run root
+  `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_decode_cross_06a6734_20260720_161200_0800_9c608d9ee647451a91ec438c93ecc2f1`。
+  Gate `1175820`、四 replay `1175821–1175824`、suite `1175825`；
+  scheduler snapshot v2 与全内容 preflight 通过，gate 内 focused tests
+  `73 passed`，真实 gate 仍在运行。该来源当前只证明正式部署身份与
+  `experiment_running`，尚不是 mAP 或方法有效性证据。
+
 ## 2026-07-20 Decode-Cross Failed Deployment Source
 
 - `SRC-PT-017`: runtime commit

@@ -3,11 +3,11 @@ type: experiment
 node_id: exp:phystime-frozen-decode-cross-replay
 title: "PhysTime frozen dual-axis decode cross replay"
 idea: idea:phystime-tad-2
-status: implemented
-verdict: awaiting_real_gate_and_remote_suite
-confidence: software_contract_only
+status: experiment_running
+verdict: formal_real_gate_running
+confidence: deployment_identity_verified_gate_pending
 metrics: "NA; no formal remote replay has completed."
-provenance: "full60 source 0dc5851/bddc9b9; P0 runtime c2cfcfa/0b78dd4; invalid 9bbc6ea attempt; repaired runtime 06a6734/c11dc39 awaiting real gate"
+provenance: "full60 0dc5851/bddc9b9; P0 c2cfcfa/0b78dd4; runtime 06a6734/c11dc39; run phystime_decode_cross_06a6734_20260720_161200_0800_9c608d9ee647451a91ec438c93ecc2f1"
 added: 2026-07-20T00:00:00+08:00
 ---
 
@@ -165,3 +165,41 @@ dependency mismatch。提交失败路径和人工复核只定向清理了该 tok
 通过。同一独立部署审查代理在 P2 测试缺口补齐后复核，最终裁决为
 `DEPLOY`，P0/P1 为 0。该裁决只授权新 clean snapshot 和真实 gate；
 experiment 状态仍为 `implemented`，mAP 仍为 `NA`。
+
+## 2026-07-20 `06a6734` 正式 DAG
+
+clean snapshot：
+`/data/run01/sczc063/yuzibo/projects/opentad_phystime_decode_cross_06a6734_20260720`；
+正式 run root：
+`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_decode_cross_06a6734_20260720_161200_0800_9c608d9ee647451a91ec438c93ecc2f1`；
+DAG token：
+`ptdc_06a6734_9c608d9ee647451a91ec438c93ecc2f1`。
+
+| 角色 | Job ID | 首次核验状态 |
+| --- | ---: | --- |
+| gate | 1175820 | `RUNNING` |
+| selected-online | 1175821 | `PENDING (Dependency)` |
+| selected-EMA | 1175822 | `PENDING (Dependency)` |
+| physical-online | 1175823 | `PENDING (Dependency)` |
+| physical-EMA | 1175824 | `PENDING (Dependency)` |
+| suite | 1175825 | `PENDING (Dependency)` |
+
+提交前全内容 preflight 为 `validation_pass=true`，重算并复现：
+
+- dataset manifest：
+  `1da0bca28f14ca2f1e4b2baf0f199dce18f4dd925e0f097a70a3fcc1c13eb1b2`；
+- VideoMAE：
+  `4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251`；
+- selected checkpoint：
+  `6fd0781b53e094bb30f0664e006a657fa7c7ef5b3be2de558856c8d23b6bb417`；
+- physical checkpoint：
+  `c83a3463155c0a9926a4fc8d62f4d0ee7540c1a58293fb4c3cc9bad8ce9237ed`。
+
+真实 scheduler snapshot v2 已核对六个 Job ID、name、comment、stdout/stderr
+与依赖。suite 的 Slurm 原始依赖为逗号分隔并带 `(unfulfilled)` 的四个
+`afterok` 子句，规范化后与预期 `afterok:1175821:1175822:1175823:1175824`
+完全相同，证明本轮依赖修复在真实调度器上生效。
+
+gate 内与生产一致的 Linux focused suite 已 `73 passed`，随后进入真实 CUDA
+门禁；当前尚无 `decode_cross_gate.json`，因此只能标记
+`experiment_running`。四个 replay 没有解除依赖，正式 mAP 仍为 `NA`。
