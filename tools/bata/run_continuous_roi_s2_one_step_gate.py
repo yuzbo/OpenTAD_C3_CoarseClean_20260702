@@ -34,6 +34,10 @@ from tools.bata.native_crop_s1_contract import (  # noqa: E402
 from tools.bata.run_native_crop_s1_precheck import (  # noqa: E402
     audit_loaded_pretrained_state,
 )
+from tools.bata.profile_spatial_zoom_s1 import (  # noqa: E402
+    _cuda_driver_device_uuid_hex,
+    _normalized_gpu_uuid_hex,
+)
 from tools.bata.spatial_zoom_s1_contract import sha256_file  # noqa: E402
 from tools.bata.validate_continuous_roi_s2_implementation import (  # noqa: E402
     CONFIGS,
@@ -41,7 +45,7 @@ from tools.bata.validate_continuous_roi_s2_implementation import (  # noqa: E402
 )
 
 
-GATE_SCHEMA = "continuous_roi_s2_full_model_one_step_cuda_gate_v1"
+GATE_SCHEMA = "continuous_roi_s2_full_model_one_step_cuda_gate_v2"
 AUDITED_SOURCE_PATHS = (
     "configs/_base_/models/actionformer.py",
     "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py",
@@ -66,6 +70,7 @@ AUDITED_SOURCE_PATHS = (
     "tests/test_continuous_roi_s2_protocol.py",
     "tests/test_continuous_roi_s2_one_step_gate.py",
     "tools/bata/continuous_roi_s2_contract.py",
+    "tools/bata/profile_spatial_zoom_s1.py",
     "tools/bata/run_continuous_roi_s2_one_step_gate.py",
     "tools/bata/validate_continuous_roi_s2_implementation.py",
 )
@@ -356,6 +361,61 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
+def audit_cuda_device_identity(torch_module, device) -> dict:
+    selector = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if not selector or "," in selector:
+        raise RuntimeError(
+            "formal Continuous-RoI Gate requires one Slurm-visible GPU selector"
+        )
+    if int(device.index if device.index is not None else 0) != 0:
+        raise RuntimeError("formal Continuous-RoI Gate must use logical cuda:0")
+
+    runtime_uuid_hex = _cuda_driver_device_uuid_hex(0)
+    fields = ("uuid", "pci.bus_id", "name")
+    query = subprocess.run(
+        [
+            "nvidia-smi",
+            f"--query-gpu={','.join(fields)}",
+            "--format=csv,noheader,nounits",
+            "-i",
+            selector,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    values = (
+        [value.strip() for value in query.stdout.strip().split(",")]
+        if query.returncode == 0
+        else []
+    )
+    if len(values) != len(fields) or any(not value for value in values):
+        raise RuntimeError(
+            "formal Continuous-RoI Gate could not identify the Slurm GPU: "
+            f"{query.stderr.strip()}"
+        )
+    visible_uuid = values[0]
+    if _normalized_gpu_uuid_hex(visible_uuid) != runtime_uuid_hex:
+        raise RuntimeError(
+            "formal Continuous-RoI logical cuda:0 UUID differs from the "
+            "Slurm-visible NVIDIA GPU"
+        )
+    properties = torch_module.cuda.get_device_properties(device)
+    return {
+        "logical_device": "cuda:0",
+        "cuda_visible_devices": selector,
+        "cuda_runtime_device_uuid_hex": runtime_uuid_hex,
+        "cuda_visible_device_uuid": visible_uuid,
+        "pci_bus_id": values[1],
+        "nvidia_smi_name": values[2],
+        "torch_device_name": str(properties.name),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurm_step_id": os.environ.get("SLURM_STEP_ID"),
+        "slurm_job_gpus": os.environ.get("SLURM_JOB_GPUS"),
+        "slurm_step_gpus": os.environ.get("SLURM_STEP_GPUS"),
+    }
+
+
 def run_gate(
     *,
     config_path: Path,
@@ -621,6 +681,7 @@ def run_gate(
         raise RuntimeError("training accepted externally supplied geometry")
 
     sampler_gradient_audit = audit_sampler_geometry_gradient(device)
+    cuda_device_identity = audit_cuda_device_identity(torch, device)
     loss_values = {
         name: float(value.detach().float().cpu().item())
         for name, value in losses.items()
@@ -637,8 +698,9 @@ def run_gate(
         "checkpoint_sha256": checkpoint_hash,
         "pretrained_load_audit": pretrained_audit,
         "device": device_text,
-        "cuda_device_name": torch.cuda.get_device_name(device),
-        "cuda_device_uuid": str(torch.cuda.get_device_properties(device).uuid),
+        "cuda_device_name": cuda_device_identity["torch_device_name"],
+        "cuda_device_uuid": cuda_device_identity["cuda_visible_device_uuid"],
+        "cuda_device_identity": cuda_device_identity,
         "amp": bool(amp),
         "diagnostic_elapsed_ms": elapsed_ms,
         "paper_latency_claim_allowed": False,
