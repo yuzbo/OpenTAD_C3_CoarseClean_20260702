@@ -101,12 +101,34 @@ def test_formal_config_seals_validation_and_derives_loader_exposure():
 def test_slurm_launchers_use_current_n16r4_gpu_contract():
     for relative_path in (
         "scripts/submit_duca_protected_physical_gate_suite.sh",
+        "scripts/submit_duca_protected_physical_gate_single_job.sh",
         "scripts/submit_duca_protected_physical_official60_suite.sh",
     ):
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         assert 'DUCA_TARGET_CLUSTER:-n16r4' in source
         assert "#SBATCH --gpus=1" in source
         assert "#SBATCH --gres=" not in source
+
+
+def test_single_job_gate_preserves_component_order_and_fail_closed_completion():
+    source = (
+        ROOT / "scripts/submit_duca_protected_physical_gate_single_job.sh"
+    ).read_text(encoding="utf-8")
+    markers = [
+        "DUCA_PROTECTED_GATE_ARM='protected_e2e'",
+        "DUCA_PROTECTED_GATE_ARM='protected_e2e_rho001'",
+        "DUCA_PROTECTED_P3_STRATUM='short'",
+        "DUCA_PROTECTED_P3_STRATUM='medium'",
+        "DUCA_PROTECTED_P3_STRATUM='long'",
+        "bash scripts/complete_duca_protected_physical_gate_suite.sh",
+    ]
+    offsets = [source.index(marker) for marker in markers]
+    assert offsets == sorted(offsets)
+    assert "set -euo pipefail" in source
+    assert "#SBATCH --time=2-00:00:00" in source
+    assert "sbatch --hold --parsable" in source
+    assert "scontrol --clusters=" in source
+    assert " release " in source
 
 
 def test_loader_contract_hashes_realized_dataset_sampler_and_drop_last(
