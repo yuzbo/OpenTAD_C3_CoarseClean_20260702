@@ -37,9 +37,27 @@ _ARMS = {
     "exact_uniform",
     "transition_no_bridge",
     "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_uni_companion",
     "protected_e2e_rho001",
 }
 _PROTECTED_CONTRACT = "duca_protected_e2e_physical_v1"
+_DETECTOR_BRIDGE_SCALES = {
+    "exact_uniform": 0.0,
+    "transition_no_bridge": 0.0,
+    "protected_e2e": 1.0,
+    "protected_e2e_bridge025": 0.25,
+    "protected_e2e_uni_companion": 0.25,
+    "protected_e2e_rho001": 1.0,
+}
+_UNIFORM_COMPANION_FRACTIONS = {
+    "exact_uniform": 0.0,
+    "transition_no_bridge": 0.0,
+    "protected_e2e": 0.0,
+    "protected_e2e_bridge025": 0.0,
+    "protected_e2e_uni_companion": 0.50,
+    "protected_e2e_rho001": 0.0,
+}
 
 
 def _time_dim(inputs: torch.Tensor) -> int:
@@ -47,9 +65,7 @@ def _time_dim(inputs: torch.Tensor) -> int:
         return 2
     if inputs.ndim == 6:
         return 3
-    raise ValueError(
-        "protected DUCA expects [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]"
-    )
+    raise ValueError("protected DUCA expects [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]")
 
 
 def _hard_gather(
@@ -90,9 +106,7 @@ def _soft_resample(inputs: torch.Tensor, assignment: torch.Tensor) -> torch.Tens
         return torch.einsum("bcthw,bkt->bckhw", inputs, weights)
     if inputs.ndim == 6:
         return torch.einsum("bncthw,bkt->bnckhw", inputs, weights)
-    raise ValueError(
-        "protected DUCA expects [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]"
-    )
+    raise ValueError("protected DUCA expects [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]")
 
 
 def _exact_uniform_hard(
@@ -163,6 +177,72 @@ def _exact_uniform_hard(
     )
 
 
+def _sample_uniform_companion_mask(
+    batch_size: int,
+    *,
+    fraction: float,
+    device: torch.device,
+) -> torch.Tensor:
+    mask = torch.zeros(batch_size, device=device, dtype=torch.bool)
+    if batch_size <= 1 or fraction <= 0.0:
+        return mask
+    uniform_count = max(1, int(round(float(batch_size) * float(fraction))))
+    uniform_count = min(uniform_count, batch_size - 1)
+    permutation = torch.randperm(batch_size, device=device)
+    mask[permutation[:uniform_count]] = True
+    return mask
+
+
+def _blend_hard_outputs(
+    learned: PhysicalExactKHardOutput,
+    uniform: PhysicalExactKHardOutput,
+    uniform_mask: torch.Tensor,
+) -> PhysicalExactKHardOutput:
+    if uniform_mask.ndim != 1:
+        raise ValueError("uniform companion mask must be [B]")
+    if learned.hard_positions.shape[0] != uniform_mask.shape[0]:
+        raise ValueError("uniform companion mask batch does not match hard paths")
+    mask_bt = uniform_mask[:, None]
+    mask_bkt = uniform_mask[:, None, None]
+    return PhysicalExactKHardOutput(
+        hard_occupancy=torch.where(
+            mask_bt,
+            uniform.hard_occupancy,
+            learned.hard_occupancy,
+        ),
+        hard_slot_assignment=torch.where(
+            mask_bkt,
+            uniform.hard_slot_assignment,
+            learned.hard_slot_assignment,
+        ),
+        hard_positions=torch.where(
+            mask_bt,
+            uniform.hard_positions,
+            learned.hard_positions,
+        ),
+        hard_slot_mask=torch.where(
+            mask_bt,
+            uniform.hard_slot_mask,
+            learned.hard_slot_mask,
+        ),
+        edge_count=torch.where(
+            uniform_mask,
+            uniform.edge_count,
+            learned.edge_count,
+        ),
+        effective_k=torch.where(
+            uniform_mask,
+            uniform.effective_k,
+            learned.effective_k,
+        ),
+        max_gap_seconds=torch.where(
+            uniform_mask,
+            uniform.max_gap_seconds,
+            learned.max_gap_seconds,
+        ),
+    )
+
+
 def _action_target_from_gt_segments(
     gt_segments,
     valid_mask: torch.Tensor,
@@ -190,9 +270,9 @@ def _action_target_from_gt_segments(
             continue
         starts = torch.minimum(row[:, 0], row[:, 1])[:, None]
         ends = torch.maximum(row[:, 0], row[:, 1])[:, None]
-        target[batch_idx] = (
-            (centers[None] >= starts) & (centers[None] < ends)
-        ).any(dim=0)
+        target[batch_idx] = ((centers[None] >= starts) & (centers[None] < ends)).any(
+            dim=0
+        )
     return target.masked_fill(~valid_mask, 0.0)
 
 
@@ -208,12 +288,8 @@ def _transition_target_from_gt_segments(
         return None
     if len(gt_segments) != int(valid_mask.shape[0]):
         raise ValueError("gt_segments batch must match protected DUCA inputs")
-    if boundary_validity is not None and len(boundary_validity) != len(
-        gt_segments
-    ):
-        raise ValueError(
-            "gt_boundary_validity batch must match protected DUCA inputs"
-        )
+    if boundary_validity is not None and len(boundary_validity) != len(gt_segments):
+        raise ValueError("gt_boundary_validity batch must match protected DUCA inputs")
     temporal_len = int(valid_mask.shape[1])
     centers = torch.arange(
         temporal_len,
@@ -250,9 +326,7 @@ def _transition_target_from_gt_segments(
                 dtype=torch.bool,
             ).reshape(-1, 2)
             if endpoint_validity.shape != endpoint_matrix.shape:
-                raise ValueError(
-                    "gt_boundary_validity must align with GT segments"
-                )
+                raise ValueError("gt_boundary_validity must align with GT segments")
         endpoints = endpoint_matrix[endpoint_validity]
         if endpoints.numel() == 0:
             continue
@@ -294,6 +368,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         coarse_trunk_lr: float = 2.5e-5,
         action_head_lr: float = 5.0e-5,
         selector_lr: float = 1.0e-4,
+        detector_bridge_gradient_scale: Optional[float] = None,
+        uniform_companion_fraction: Optional[float] = None,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         strict_physical_metadata: bool = True,
         forbid_raw_prediction_cache: bool = True,
@@ -317,40 +393,78 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         )
         self.action_loss_weight = float(action_loss_weight)
         self.transition_loss_weight = float(transition_loss_weight)
-        self.transition_boundary_loss_weight = float(
-            transition_boundary_loss_weight
-        )
+        self.transition_boundary_loss_weight = float(transition_boundary_loss_weight)
         self.coarse_trunk_lr = float(coarse_trunk_lr)
         self.action_head_lr = float(action_head_lr)
         self.selector_lr = float(selector_lr)
+        if self.arm not in _ARMS:
+            raise ValueError(f"arm must be one of {sorted(_ARMS)}")
+        expected_bridge_scale = _DETECTOR_BRIDGE_SCALES.get(self.arm)
+        expected_companion_fraction = _UNIFORM_COMPANION_FRACTIONS.get(self.arm)
+        self.detector_bridge_gradient_scale = float(
+            expected_bridge_scale
+            if detector_bridge_gradient_scale is None
+            else detector_bridge_gradient_scale
+        )
+        self.uniform_companion_fraction = float(
+            expected_companion_fraction
+            if uniform_companion_fraction is None
+            else uniform_companion_fraction
+        )
         self.strict_physical_metadata = bool(strict_physical_metadata)
         self.forbid_raw_prediction_cache = bool(forbid_raw_prediction_cache)
         self.extra_config = dict(extra_config)
 
-        if self.arm not in _ARMS:
-            raise ValueError(f"arm must be one of {sorted(_ARMS)}")
+        if not math.isclose(
+            self.detector_bridge_gradient_scale,
+            float(_DETECTOR_BRIDGE_SCALES[self.arm]),
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError(
+                f"{self.arm} requires detector_bridge_gradient_scale="
+                f"{_DETECTOR_BRIDGE_SCALES[self.arm]}"
+            )
+        if not math.isclose(
+            self.uniform_companion_fraction,
+            float(_UNIFORM_COMPANION_FRACTIONS[self.arm]),
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError(
+                f"{self.arm} requires uniform_companion_fraction="
+                f"{_UNIFORM_COMPANION_FRACTIONS[self.arm]}"
+            )
         if self.budget <= 0 or self.dense_window_size <= 0:
             raise ValueError("budget and dense_window_size must be positive")
         if self.budget > self.dense_window_size:
             raise ValueError("budget cannot exceed dense_window_size")
         if self.coarse_hidden_dim != 96 or self.selector_hidden_dim != 64:
-            raise ValueError("protected DUCA freezes ASFormer hidden=96 and selector hidden=64")
+            raise ValueError(
+                "protected DUCA freezes ASFormer hidden=96 and selector hidden=64"
+            )
         if not 0.0 <= self.coverage_floor_weight < 1.0:
             raise ValueError("coverage_floor_weight must lie in [0,1)")
-        if min(
-            self.score_temperature,
-            self.path_temperature,
-            self.transition_target_sigma,
-            self.transition_distribution_temperature,
-        ) <= 0.0:
+        if (
+            min(
+                self.score_temperature,
+                self.path_temperature,
+                self.transition_target_sigma,
+                self.transition_distribution_temperature,
+            )
+            <= 0.0
+        ):
             raise ValueError("protected DUCA temperatures and sigma must be positive")
         if self.transition_target_radius < 0 or self.transition_boundary_radius < 0:
             raise ValueError("transition radii must be non-negative")
-        if min(
-            self.action_loss_weight,
-            self.transition_loss_weight,
-            self.transition_boundary_loss_weight,
-        ) < 0.0:
+        if (
+            min(
+                self.action_loss_weight,
+                self.transition_loss_weight,
+                self.transition_boundary_loss_weight,
+            )
+            < 0.0
+        ):
             raise ValueError("protected DUCA loss weights must be non-negative")
         if min(self.coarse_trunk_lr, self.action_head_lr, self.selector_lr) <= 0.0:
             raise ValueError("protected DUCA learning rates must be positive")
@@ -381,11 +495,17 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             cfg = dict(actionness_source_cfg or {})
             source_type = cfg.pop("type", "C3CoarseProbeActionnessSource")
             if source_type != "C3CoarseProbeActionnessSource":
-                raise ValueError("protected DUCA requires C3CoarseProbeActionnessSource")
+                raise ValueError(
+                    "protected DUCA requires C3CoarseProbeActionnessSource"
+                )
             if str(cfg.get("probe_model", "")) != "official-action-seg":
-                raise ValueError("protected DUCA requires probe_model='official-action-seg'")
+                raise ValueError(
+                    "protected DUCA requires probe_model='official-action-seg'"
+                )
             if str(cfg.get("official_action_seg_backend", "")) != "official_asformer":
-                raise ValueError("protected DUCA requires the official ASFormer implementation")
+                raise ValueError(
+                    "protected DUCA requires the official ASFormer implementation"
+                )
             if bool(cfg.get("frozen", False)) or cfg.get("trainable") is False:
                 raise ValueError("protected DUCA requires a trainable coarse ASFormer")
             cfg.setdefault("tcn_hidden_dim", self.coarse_hidden_dim)
@@ -436,9 +556,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self._last_selected_positions = (
             None if selected is None else selected.detach().clone()
         )
-        self._last_physical_metas = copy.deepcopy(
-            snapshot.get("last_physical_metas")
-        )
+        self._last_physical_metas = copy.deepcopy(snapshot.get("last_physical_metas"))
         policy_scores = snapshot.get("last_policy_scores")
         self._last_policy_scores = (
             None if policy_scores is None else policy_scores.detach().clone()
@@ -505,8 +623,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     transition_loss * self.transition_loss_weight
                 ),
                 "selector_transition_boundary_loss": (
-                    transition_boundary_loss
-                    * self.transition_boundary_loss_weight
+                    transition_boundary_loss * self.transition_boundary_loss_weight
                 ),
             }
             selector_state["action_target"] = action_target
@@ -591,6 +708,11 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         }
 
         learned_selection: Optional[PhysicalExactKSelectionOutput] = None
+        uniform_companion_mask = torch.zeros(
+            int(valid_mask.shape[0]),
+            device=valid_mask.device,
+            dtype=torch.bool,
+        )
         if self.arm == "exact_uniform":
             hard = _exact_uniform_hard(
                 valid_mask,
@@ -612,13 +734,18 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 valid_mask=valid_mask,
             )
             hidden = source.get("coarse_hidden_features")
-            if hidden is None or source.get("hidden_kind") != ASFORMER_ENCODER_HIDDEN_KIND:
+            if (
+                hidden is None
+                or source.get("hidden_kind") != ASFORMER_ENCODER_HIDDEN_KIND
+            ):
                 raise RuntimeError(
                     "protected DUCA requires official ASFormer encoder hidden features"
                 )
             policy_hidden = source.get("policy_hidden_features")
             if self.arm == "protected_e2e_rho001" and policy_hidden is None:
-                raise RuntimeError("rho001 arm requires restricted last-block policy hidden")
+                raise RuntimeError(
+                    "rho001 arm requires restricted last-block policy hidden"
+                )
             paths = transition_utility_paths(
                 self.transition_scorer,
                 source["actionness_logits"],
@@ -649,7 +776,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 auxiliary_prob.detach(),
                 policy_prob.detach(),
             ):
-                raise RuntimeError("auxiliary and policy coverage distributions must match")
+                raise RuntimeError(
+                    "auxiliary and policy coverage distributions must match"
+                )
             if training:
                 learned_selection = physical_exact_k_select(
                     policy_log_prob,
@@ -668,6 +797,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     effective_k=learned_selection.effective_k,
                     max_gap_seconds=learned_selection.max_gap_seconds,
                 )
+                selector_state[
+                    "learned_selected_positions"
+                ] = learned_selection.hard_positions
                 auxiliary_soft = physical_exact_k_forward_backward(
                     auxiliary_log_prob,
                     physical_seconds,
@@ -676,12 +808,40 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     max_gap_seconds=caps,
                     temperature=self.path_temperature,
                 )
-                selector_state["auxiliary_soft_occupancy"] = (
-                    auxiliary_soft.soft_occupancy
-                )
-                selector_state["auxiliary_soft_slot_assignment"] = (
-                    auxiliary_soft.soft_slot_assignment
-                )
+                selector_state[
+                    "auxiliary_soft_occupancy"
+                ] = auxiliary_soft.soft_occupancy
+                selector_state[
+                    "auxiliary_soft_slot_assignment"
+                ] = auxiliary_soft.soft_slot_assignment
+                if self.uniform_companion_fraction > 0.0:
+                    uniform = _exact_uniform_hard(
+                        valid_mask,
+                        k=self.budget,
+                        dtype=inputs.dtype,
+                    )
+                    uniform = PhysicalExactKHardOutput(
+                        hard_occupancy=uniform.hard_occupancy,
+                        hard_slot_assignment=uniform.hard_slot_assignment,
+                        hard_positions=uniform.hard_positions,
+                        hard_slot_mask=uniform.hard_slot_mask,
+                        edge_count=uniform.edge_count,
+                        effective_k=uniform.effective_k,
+                        max_gap_seconds=caps.to(dtype=inputs.dtype),
+                    )
+                    uniform_companion_mask = _sample_uniform_companion_mask(
+                        int(valid_mask.shape[0]),
+                        fraction=self.uniform_companion_fraction,
+                        device=valid_mask.device,
+                    )
+                    hard = _blend_hard_outputs(
+                        hard,
+                        uniform,
+                        uniform_companion_mask,
+                    )
+                    selector_state[
+                        "uniform_companion_positions"
+                    ] = uniform.hard_positions
             else:
                 hard = physical_exact_k_viterbi(
                     policy_log_prob,
@@ -713,23 +873,35 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             hard.hard_positions,
             hard.hard_slot_mask,
         )
-        detector_bridge = (
-            training
-            and self.arm in {"protected_e2e", "protected_e2e_rho001"}
+        detector_bridge = training and self.detector_bridge_gradient_scale > 0.0
+        detector_bridge_mask = (
+            ~uniform_companion_mask
+            if detector_bridge
+            else torch.zeros_like(uniform_companion_mask)
         )
         if detector_bridge:
+            bridge_assignment = learned_selection.soft_slot_assignment
+            if bool(uniform_companion_mask.any().item()):
+                bridge_assignment = torch.where(
+                    uniform_companion_mask[:, None, None],
+                    hard.hard_slot_assignment,
+                    bridge_assignment,
+                )
             soft_selected = _soft_resample(
                 inputs,
-                learned_selection.soft_slot_assignment,
+                bridge_assignment,
             )
             selected_inputs = hard_selected + (
-                soft_selected - soft_selected.detach()
+                self.detector_bridge_gradient_scale
+                * (soft_selected - soft_selected.detach())
             )
             if not torch.equal(
                 selected_inputs.detach(),
                 hard_selected.detach(),
             ):
-                raise RuntimeError("protected DUCA detector input is not exact hard forward")
+                raise RuntimeError(
+                    "protected DUCA detector input is not exact hard forward"
+                )
         else:
             selected_inputs = hard_selected
 
@@ -748,18 +920,22 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 "selected_mask": hard.hard_slot_mask,
                 "selected_count": hard.effective_k,
                 "edge_count": hard.edge_count,
-                    "detector_gradient_bridge": detector_bridge,
-                    "detector_input": selected_inputs,
-                    "hard_detector_input": hard_selected,
-                    "backbone_tail_padding_mode": "replicate_last_selected",
-                    "train_inference_hard_decoder": "same_physical_exact_k_viterbi",
-                }
-            )
+                "detector_gradient_bridge": detector_bridge,
+                "detector_gradient_bridge_mask": detector_bridge_mask,
+                "detector_bridge_gradient_scale": (self.detector_bridge_gradient_scale),
+                "uniform_companion_mask": uniform_companion_mask,
+                "uniform_companion_fraction": self.uniform_companion_fraction,
+                "detector_input": selected_inputs,
+                "hard_detector_input": hard_selected,
+                "backbone_tail_padding_mode": "replicate_last_selected",
+                "train_inference_hard_decoder": "same_physical_exact_k_viterbi",
+            }
+        )
         if learned_selection is not None:
             selector_state["soft_occupancy"] = learned_selection.soft_occupancy
-            selector_state["soft_slot_assignment"] = (
-                learned_selection.soft_slot_assignment
-            )
+            selector_state[
+                "soft_slot_assignment"
+            ] = learned_selection.soft_slot_assignment
             selector_state["selection_st"] = learned_selection.selection_st
             selector_state["log_partition"] = learned_selection.log_partition
 
@@ -769,10 +945,15 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             "selected_count": [
                 int(value) for value in hard.effective_k.detach().cpu().tolist()
             ],
-            "max_gap_seconds": [
-                float(value) for value in caps.detach().cpu().tolist()
-            ],
+            "max_gap_seconds": [float(value) for value in caps.detach().cpu().tolist()],
             "detector_gradient_bridge": detector_bridge,
+            "detector_bridge_gradient_scale": self.detector_bridge_gradient_scale,
+            "uniform_companion_count": int(
+                uniform_companion_mask.detach().sum().cpu().item()
+            ),
+            "learned_detector_count": int(
+                detector_bridge_mask.detach().sum().cpu().item()
+            ),
             "selected_axis_gt_remap": False,
             "contract": _PROTECTED_CONTRACT,
         }
@@ -815,9 +996,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         )
         batch, temporal_len = valid_mask.shape
         occupancy = inputs.new_zeros((batch, temporal_len))
-        slot_assignment = inputs.new_zeros(
-            (batch, self.budget, temporal_len)
-        )
+        slot_assignment = inputs.new_zeros((batch, self.budget, temporal_len))
         slot_mask = positions >= 0
         effective_k = slot_mask.sum(dim=1)
         for batch_idx in range(batch):
@@ -830,9 +1009,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 torch.any(active >= valid_len).item()
             ):
                 raise ValueError("fixed hard path is outside valid candidates")
-            if expected_k > 1 and not bool(
-                torch.all(active[1:] > active[:-1]).item()
-            ):
+            if expected_k > 1 and not bool(torch.all(active[1:] > active[:-1]).item()):
                 raise ValueError("fixed hard path must be unique and ordered")
             occupancy[batch_idx].scatter_(0, active, 1.0)
             slot_assignment[batch_idx, :expected_k].scatter_(
@@ -891,7 +1068,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             expected = torch.arange(valid_len, device=row.device)
             observed = torch.nonzero(row, as_tuple=False).flatten()
             if valid_len <= 0 or not torch.equal(observed, expected):
-                raise ValueError("protected DUCA requires one nonempty contiguous valid prefix")
+                raise ValueError(
+                    "protected DUCA requires one nonempty contiguous valid prefix"
+                )
         if not isinstance(metas, (list, tuple)) or len(metas) != int(inputs.shape[0]):
             raise ValueError("protected DUCA requires one metadata mapping per sample")
         if not all(isinstance(meta, Mapping) for meta in metas):
@@ -938,7 +1117,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 dtype=torch.float64,
             )
             if frame_inds.numel() % temporal_len != 0:
-                raise ValueError("frame_inds must be divisible by dense temporal length")
+                raise ValueError(
+                    "frame_inds must be divisible by dense temporal length"
+                )
             frame_inds = frame_inds.reshape(temporal_len, -1)
             if frame_inds.shape[1] <= 0:
                 raise ValueError("frame_inds must contain at least one decoded frame")
@@ -988,8 +1169,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             selected_frames = source_frames[batch_idx, positions]
             intervals = [
                 selected_seconds[0] - physical_seconds[batch_idx, 0],
-                physical_seconds[batch_idx, dense_valid_len - 1]
-                - selected_seconds[-1],
+                physical_seconds[batch_idx, dense_valid_len - 1] - selected_seconds[-1],
             ]
             if effective_k > 1:
                 intervals.append(selected_seconds[1:] - selected_seconds[:-1])
@@ -1033,15 +1213,11 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                         float(value) for value in selected_seconds.cpu().tolist()
                     ],
                     "duca_max_gap_seconds_cap": float(cap.item()),
-                    "duca_observed_max_gap_seconds": float(
-                        observed_max_gap.item()
-                    ),
+                    "duca_observed_max_gap_seconds": float(observed_max_gap.item()),
                     "duca_candidate_coordinate_unit": "dense_candidate_ordinal",
                     "duca_source_frame_unit": "decoded_frame_index",
                     "duca_physical_time_unit": "seconds",
-                    "duca_backbone_tail_padding_mode": (
-                        "replicate_last_selected"
-                    ),
+                    "duca_backbone_tail_padding_mode": ("replicate_last_selected"),
                 }
             )
             output.append(meta)

@@ -12,14 +12,14 @@ from tools.bata import duca_p0_training
 FORMAL_PROTOCOL = "duca_protected_physical_v1"
 TRAINING_AUDIT_SCHEMA = "duca_protected_physical_training_audit_v1"
 CHECKPOINT_METADATA_SCHEMA = "duca_protected_physical_checkpoint_metadata_v1"
-DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA = (
-    "duca_protected_physical_checkpoint_sidecar_v1"
-)
+DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA = "duca_protected_physical_checkpoint_sidecar_v1"
 DUCA_TRAINING_AUDIT_FILENAME = "duca_protected_physical_training_audit.json"
 VARIANTS = (
     "exact_uniform",
     "transition_no_bridge",
     "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_uni_companion",
     "protected_e2e_rho001",
 )
 _UPDATE_KEYS = (
@@ -73,19 +73,14 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
         raise ValueError("primary checkpoint must be terminal epoch 59")
     if str(workflow.primary_checkpoint_state_key) != "state_dict_ema":
         raise ValueError("primary checkpoint must use terminal EMA")
-    if (
-        str(workflow.checkpoint_criterion)
-        != "terminal_epoch_59_state_dict_ema"
-    ):
+    if str(workflow.checkpoint_criterion) != "terminal_epoch_59_state_dict_ema":
         raise ValueError("terminal checkpoint criterion drift")
     return {
         "protocol": FORMAL_PROTOCOL,
         "expected_train_batches_per_epoch": None,
         "expected_successful_optimizer_updates": None,
         "end_epoch": 60,
-        "max_amp_retries_per_batch": int(
-            workflow.max_amp_retries_per_batch
-        ),
+        "max_amp_retries_per_batch": int(workflow.max_amp_retries_per_batch),
         "primary_checkpoint_epoch": 59,
         "primary_checkpoint_state_key": "state_dict_ema",
         "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
@@ -109,9 +104,7 @@ def _dataset_identity(dataset) -> dict[str, Any]:
         "subset_name": str(dataset.subset_name),
         "ann_file": str(Path(dataset.ann_file).expanduser().resolve()),
         "ann_file_sha256": sha256_file(dataset.ann_file),
-        "class_map_path": str(
-            Path(dataset.class_map_path).expanduser().resolve()
-        )
+        "class_map_path": str(Path(dataset.class_map_path).expanduser().resolve())
         if hasattr(dataset, "class_map_path")
         else None,
         "sample_identity_sha256": canonical_sha256(rows),
@@ -146,9 +139,7 @@ def derive_train_loader_contract(
         "drop_last": True,
         "shuffle": True,
         "sampler_class": train_loader.sampler.__class__.__name__,
-        "dataset_config_sha256": canonical_sha256(
-            cfg.dataset.train.to_dict()
-        ),
+        "dataset_config_sha256": canonical_sha256(cfg.dataset.train.to_dict()),
     }
     loader_manifest["contract_sha256"] = canonical_sha256(loader_manifest)
     return loader_manifest
@@ -269,9 +260,7 @@ def build_runtime_bindings(
         raise ValueError(f"invalid protected physical variant: {variant}")
     if int(seed) != 3407:
         raise ValueError("protected physical DUCA seed must be 3407")
-    if resolved_config_sha256 != os.environ.get(
-        "DUCA_RESOLVED_CONFIG_SHA256"
-    ):
+    if resolved_config_sha256 != os.environ.get("DUCA_RESOLVED_CONFIG_SHA256"):
         raise RuntimeError("resolved config hash differs from suite manifest")
     protocol = _load_bound_json(
         os.environ.get("DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON"),
@@ -288,20 +277,31 @@ def build_runtime_bindings(
     if authorization.get("ok") is not True:
         raise RuntimeError("P0-P3 authorization did not pass")
     if (
-        authorization.get("authorized_scope", {}).get(
-            "official60_four_arm_training"
-        )
+        authorization.get("authorized_scope", {}).get("official60_four_arm_training")
         is not True
         or authorization.get("paper_claim_allowed") is not False
     ):
         raise RuntimeError("authorization does not unlock official-60 training")
+    if (
+        variant
+        in {
+            "protected_e2e_bridge025",
+            "protected_e2e_uni_companion",
+        }
+        and authorization.get("authorized_scope", {}).get(
+            "official60_uni_companion_training"
+        )
+        is not True
+    ):
+        raise RuntimeError(
+            "authorization does not permit the Uni companion optimization suite"
+        )
     if protocol.get("git_commit") != git_commit:
         raise RuntimeError("P0 protocol commit drift")
     if authorization.get("git_commit") != git_commit:
         raise RuntimeError("authorization commit drift")
-    if (
-        authorization.get("protocol_manifest_sha256")
-        != os.environ.get("DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256")
+    if authorization.get("protocol_manifest_sha256") != os.environ.get(
+        "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256"
     ):
         raise RuntimeError("authorization is bound to another P0 manifest")
     protocol_arm = protocol.get("configs", {}).get("arms", {}).get(variant)
@@ -342,18 +342,14 @@ def build_runtime_bindings(
         "protocol_manifest_sha256": str(
             os.environ["DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256"]
         ),
-        "authorization_sha256": str(
-            os.environ["DUCA_PROTECTED_AUTHORIZATION_SHA256"]
-        ),
+        "authorization_sha256": str(os.environ["DUCA_PROTECTED_AUTHORIZATION_SHA256"]),
         "pretrain_path": str(pretrain),
         "pretrain_sha256": pretrain_sha256,
         "evaluation_annotation_path": str(annotation),
         "evaluation_annotation_sha256": annotation_sha256,
         "evaluation_class_map_path": str(class_map),
         "evaluation_class_map_sha256": class_map_sha256,
-        "evaluation_config_sha256": canonical_sha256(
-            dict(evaluation_config)
-        ),
+        "evaluation_config_sha256": canonical_sha256(dict(evaluation_config)),
     }
     return bindings
 
@@ -452,9 +448,7 @@ def build_training_audit(
         "update_audit": {key: int(value) for key, value in update_audit.items()},
         "scheduler_last_epoch": int(scheduler_last_epoch),
         "selector_schedule_step": int(selector_step),
-        "grad_scaler_scale": (
-            None if scaler_scale is None else float(scaler_scale)
-        ),
+        "grad_scaler_scale": (None if scaler_scale is None else float(scaler_scale)),
         "epoch_records": [dict(item) for item in epoch_records],
     }
     payload["audit_sha256"] = canonical_sha256(payload)

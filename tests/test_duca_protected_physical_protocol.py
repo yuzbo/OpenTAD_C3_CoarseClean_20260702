@@ -105,7 +105,7 @@ def test_slurm_launchers_use_current_n16r4_gpu_contract():
         "scripts/submit_duca_protected_physical_official60_suite.sh",
     ):
         source = (ROOT / relative_path).read_text(encoding="utf-8")
-        assert 'DUCA_TARGET_CLUSTER:-n16r4' in source
+        assert "DUCA_TARGET_CLUSTER:-n16r4" in source
         assert "#SBATCH --gpus=1" in source
         assert "#SBATCH --gres=" not in source
 
@@ -116,6 +116,8 @@ def test_single_job_gate_preserves_component_order_and_fail_closed_completion():
     ).read_text(encoding="utf-8")
     markers = [
         "DUCA_PROTECTED_GATE_ARM='protected_e2e'",
+        "DUCA_PROTECTED_GATE_ARM='protected_e2e_bridge025'",
+        "DUCA_PROTECTED_GATE_ARM='protected_e2e_uni_companion'",
         "DUCA_PROTECTED_GATE_ARM='protected_e2e_rho001'",
         "DUCA_PROTECTED_P3_STRATUM='short'",
         "DUCA_PROTECTED_P3_STRATUM='medium'",
@@ -242,11 +244,7 @@ def test_protected_cfg_override_allowlist_is_fail_closed():
     assert_safe_cfg_options(
         {
             "work_dir": "/external/run",
-            "model": {
-                "backbone": {
-                    "custom": {"pretrain": "/external/pretrain.pth"}
-                }
-            },
+            "model": {"backbone": {"custom": {"pretrain": "/external/pretrain.pth"}}},
         },
         entrypoint="tools/train.py",
     )

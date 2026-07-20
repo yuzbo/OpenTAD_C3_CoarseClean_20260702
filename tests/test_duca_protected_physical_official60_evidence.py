@@ -20,6 +20,12 @@ VARIANTS = (
     "protected_e2e",
     "protected_e2e_rho001",
 )
+UNI_COMPANION_VARIANTS = (
+    "exact_uniform",
+    "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_uni_companion",
+)
 
 
 def _write_evidence(
@@ -71,9 +77,19 @@ def _suite_paths(root: Path) -> list[Path]:
         "protected_e2e": 65.6,
         "protected_e2e_rho001": 65.5,
     }
+    return [_write_evidence(root, variant, maps[variant]) for variant in VARIANTS]
+
+
+def _uni_companion_suite_paths(root: Path) -> list[Path]:
+    maps = {
+        "exact_uniform": 65.0,
+        "protected_e2e": 64.6,
+        "protected_e2e_bridge025": 65.4,
+        "protected_e2e_uni_companion": 65.8,
+    }
     return [
         _write_evidence(root, variant, maps[variant])
-        for variant in VARIANTS
+        for variant in UNI_COMPANION_VARIANTS
     ]
 
 
@@ -92,9 +108,27 @@ def test_official60_aggregate_reports_preregistered_comparisons(
     assert result["decision"]["best_learned_variant"] == "protected_e2e"
     assert result["decision"]["strictly_above_65"] is True
     assert result["decision"]["strictly_above_matched_uniform"] is True
-    assert result["comparisons"]["protected_minus_transition"] == pytest.approx(
-        0.4
+    assert result["comparisons"]["protected_minus_transition"] == pytest.approx(0.4)
+
+
+def test_official60_aggregate_reports_uni_companion_optimization(
+    tmp_path: Path,
+) -> None:
+    result = aggregate_official60(
+        expected_commit=COMMIT,
+        protocol_manifest_sha256=P0_SHA256,
+        authorization_sha256=AUTH_SHA256,
+        evidence_paths=_uni_companion_suite_paths(tmp_path),
     )
+
+    assert result["suite_kind"] == "uni_companion_optimization"
+    assert result["decision"]["best_learned_variant"] == "protected_e2e_uni_companion"
+    assert result["decision"]["strictly_above_65"] is True
+    assert result["decision"]["strictly_above_matched_uniform"] is True
+    assert result["decision"]["bridge025_improves_protected"] is True
+    assert result["decision"]["uni_companion_improves_bridge025"] is True
+    assert result["comparisons"]["bridge025_minus_protected"] == pytest.approx(0.8)
+    assert result["comparisons"]["uni_companion_minus_bridge025"] == pytest.approx(0.4)
 
 
 def test_official60_aggregate_rejects_commit_drift(tmp_path: Path) -> None:

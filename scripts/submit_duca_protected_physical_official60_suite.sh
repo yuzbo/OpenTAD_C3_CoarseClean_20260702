@@ -18,6 +18,7 @@ PROTOCOL_JSON="${DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON:-}"
 PROTOCOL_SHA256="${DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256:-}"
 AUTHORIZATION_JSON="${DUCA_PROTECTED_AUTHORIZATION_JSON:-}"
 AUTHORIZATION_SHA256="${DUCA_PROTECTED_AUTHORIZATION_SHA256:-}"
+SUITE_KIND="${DUCA_PROTECTED_SUITE_KIND:-original_protected}"
 [[ -n "${RUN_ROOT}" && -d "${RUN_ROOT}" ]] || fail "prepared RUN_ROOT is required"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
@@ -31,7 +32,7 @@ AUTHORIZATION_SHA256="${DUCA_PROTECTED_AUTHORIZATION_SHA256:-}"
 [[ ! -e "${RUN_ROOT}/jobs.tsv" ]] || fail "RUN_ROOT was already submitted"
 
 "${PYTHON}" - "${PROTOCOL_JSON}" "${AUTHORIZATION_JSON}" \
-  "${EXPECTED_COMMIT}" "${PROTOCOL_SHA256}" <<'PY'
+  "${EXPECTED_COMMIT}" "${PROTOCOL_SHA256}" "${SUITE_KIND}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -57,16 +58,39 @@ if (
     or authorization.get("paper_claim_allowed") is not False
 ):
     raise SystemExit("P0-P3 authorization contract mismatch")
+if (
+    sys.argv[5] == "uni_companion_optimization"
+    and authorization.get("authorized_scope", {}).get(
+        "official60_uni_companion_training"
+    )
+    is not True
+):
+    raise SystemExit("authorization does not include Uni companion training")
 PY
 
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/arms"
 SHORT_COMMIT="${EXPECTED_COMMIT:0:7}"
-VARIANTS=(
-  exact_uniform
-  transition_no_bridge
-  protected_e2e
-  protected_e2e_rho001
-)
+case "${SUITE_KIND}" in
+  original_protected)
+    VARIANTS=(
+      exact_uniform
+      transition_no_bridge
+      protected_e2e
+      protected_e2e_rho001
+    )
+    ;;
+  uni_companion_optimization)
+    VARIANTS=(
+      exact_uniform
+      protected_e2e
+      protected_e2e_bridge025
+      protected_e2e_uni_companion
+    )
+    ;;
+  *)
+    fail "unknown DUCA_PROTECTED_SUITE_KIND: ${SUITE_KIND}"
+    ;;
+esac
 
 for variant in "${VARIANTS[@]}"; do
   job_file="${RUN_ROOT}/jobs/${variant}.sbatch"
@@ -124,12 +148,13 @@ cd '${REPO_ROOT}'
   --expected-commit '${EXPECTED_COMMIT}' \
   --protocol-manifest-sha256 '${PROTOCOL_SHA256}' \
   --authorization-sha256 '${AUTHORIZATION_SHA256}' \
-  --evidence '${RUN_ROOT}/arms/exact_uniform/run/post_run_evidence.json' \
-  --evidence '${RUN_ROOT}/arms/transition_no_bridge/run/post_run_evidence.json' \
-  --evidence '${RUN_ROOT}/arms/protected_e2e/run/post_run_evidence.json' \
-  --evidence '${RUN_ROOT}/arms/protected_e2e_rho001/run/post_run_evidence.json' \
-  --output-json '${SUITE_JSON}'
 EOF
+for variant in "${VARIANTS[@]}"; do
+  printf "  --evidence '%s' \\\\\n" \
+    "${RUN_ROOT}/arms/${variant}/run/post_run_evidence.json" \
+    >> "${COMPLETE_JOB}"
+done
+printf "  --output-json '%s'\n" "${SUITE_JSON}" >> "${COMPLETE_JOB}"
 chmod 0755 "${COMPLETE_JOB}"
 
 if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then

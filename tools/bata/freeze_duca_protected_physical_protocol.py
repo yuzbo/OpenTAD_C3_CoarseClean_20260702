@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,8 @@ CONFIGS = {
     "exact_uniform": "configs/adatad/thumos/duca_protected_physical_exact_uniform_fixed384_official60.py",
     "transition_no_bridge": "configs/adatad/thumos/duca_protected_physical_transition_no_bridge_fixed384_official60.py",
     "protected_e2e": "configs/adatad/thumos/duca_protected_physical_e2e_fixed384_official60.py",
+    "protected_e2e_bridge025": "configs/adatad/thumos/duca_protected_physical_e2e_bridge025_fixed384_official60.py",
+    "protected_e2e_uni_companion": "configs/adatad/thumos/duca_protected_physical_e2e_uni_companion_fixed384_official60.py",
     "protected_e2e_rho001": "configs/adatad/thumos/duca_protected_physical_e2e_rho001_fixed384_official60.py",
 }
 
@@ -72,16 +75,23 @@ def _bind_git(expected_commit: str) -> dict[str, Any]:
     }
 
 
-def _normalized_config(cfg: Config) -> dict[str, Any]:
+def _normalized_config(
+    cfg: Config,
+    *,
+    hide_coarse_source: bool,
+) -> dict[str, Any]:
     payload = cfg.to_dict()
     payload.pop("work_dir", None)
     payload.pop("duca_variant_contract", None)
     selector = payload["model"]["frame_selector"]
     selector.pop("arm")
+    selector.pop("detector_bridge_gradient_scale", None)
+    selector.pop("uniform_companion_fraction", None)
     source = selector.get("actionness_source_cfg")
     if isinstance(source, dict):
         source.pop("policy_hidden_gradient_scope", None)
-    selector["actionness_source_cfg"] = "ARM_CONTROLLED_COARSE_SOURCE"
+    if hide_coarse_source:
+        selector["actionness_source_cfg"] = "ARM_CONTROLLED_COARSE_SOURCE"
     return payload
 
 
@@ -90,18 +100,52 @@ def _config_evidence() -> tuple[dict[str, Config], dict[str, Any]]:
         arm: Config.fromfile(str(ROOT / relative_path))
         for arm, relative_path in CONFIGS.items()
     }
-    normalized = {
-        arm: _normalized_config(cfg) for arm, cfg in configs.items()
+    common_normalized = {
+        arm: _normalized_config(cfg, hide_coarse_source=True)
+        for arm, cfg in configs.items()
     }
-    reference = normalized["protected_e2e"]
+    common_reference = common_normalized["protected_e2e"]
     _require(
-        all(payload == reference for payload in normalized.values()),
-        "four resolved configs differ outside the arm whitelist",
+        all(payload == common_reference for payload in common_normalized.values()),
+        "resolved configs differ outside the arm whitelist",
+    )
+    learned_arms = tuple(arm for arm in CONFIGS if arm != "exact_uniform")
+    learned_normalized = {
+        arm: _normalized_config(configs[arm], hide_coarse_source=False)
+        for arm in learned_arms
+    }
+    learned_reference = learned_normalized["protected_e2e"]
+    _require(
+        all(payload == learned_reference for payload in learned_normalized.values()),
+        "learned-arm coarse source differs outside policy_hidden_gradient_scope",
     )
     evidence = {}
     for arm, cfg in configs.items():
         relative_path = CONFIGS[arm]
         _require(cfg.model.frame_selector.arm == arm, f"{arm} arm drift")
+        source = cfg.model.frame_selector.get("actionness_source_cfg")
+        if arm == "exact_uniform":
+            _require(
+                source is None, "exact_uniform must not instantiate a coarse source"
+            )
+            policy_hidden_gradient_scope = None
+        else:
+            _require(
+                isinstance(source, Mapping),
+                f"{arm} must retain the audited coarse source",
+            )
+            policy_hidden_gradient_scope = str(
+                source.get("policy_hidden_gradient_scope", "")
+            )
+            expected_scope = (
+                "asformer_last_encoder_layer"
+                if arm == "protected_e2e_rho001"
+                else "none"
+            )
+            _require(
+                policy_hidden_gradient_scope == expected_scope,
+                f"{arm} policy hidden-gradient scope drift",
+            )
         _require(cfg.dataset.val is None, f"{arm} exposes validation data")
         _require(
             bool(cfg.workflow.seal_eval_dataloaders_during_training),
@@ -111,13 +155,24 @@ def _config_evidence() -> tuple[dict[str, Config], dict[str, Any]]:
             "path": relative_path,
             "source_sha256": sha256_file(ROOT / relative_path),
             "resolved_sha256": canonical_sha256(cfg.to_dict()),
+            "policy_hidden_gradient_scope": policy_hidden_gradient_scope,
         }
     return configs, {
         "arms": evidence,
-        "normalized_shared_sha256": canonical_sha256(reference),
+        "normalized_shared_sha256": canonical_sha256(common_reference),
+        "normalized_learned_coarse_source_sha256": canonical_sha256(learned_reference),
         "whitelisted_differences": [
             "model.frame_selector.arm",
-            "model.frame_selector.actionness_source_cfg",
+            "model.frame_selector.detector_bridge_gradient_scale",
+            "model.frame_selector.uniform_companion_fraction",
+            (
+                "model.frame_selector.actionness_source_cfg=None "
+                "for exact_uniform only"
+            ),
+            (
+                "model.frame_selector.actionness_source_cfg."
+                "policy_hidden_gradient_scope for rho001 only"
+            ),
             "duca_variant_contract",
             "work_dir",
         ],
@@ -125,9 +180,7 @@ def _config_evidence() -> tuple[dict[str, Config], dict[str, Any]]:
 
 
 def _official_asformer_evidence(cfg: Config) -> dict[str, Any]:
-    source_cfg = copy.deepcopy(
-        cfg.model.frame_selector.actionness_source_cfg.to_dict()
-    )
+    source_cfg = copy.deepcopy(cfg.model.frame_selector.actionness_source_cfg.to_dict())
     source_cfg.pop("type")
     source = C3CoarseProbeActionnessSource(**source_cfg)
     probe = source.probe
@@ -193,8 +246,7 @@ def freeze_protocol(
     )
     expected_updates = int(loader_contract["loader_length"]) * 60
     p3_config_path = (
-        ROOT
-        / "configs/adatad/thumos/duca_protected_physical_p3_train_windows.py"
+        ROOT / "configs/adatad/thumos/duca_protected_physical_p3_train_windows.py"
     )
     p3_cfg = Config.fromfile(str(p3_config_path))
     p3_dataset = build_dataset(

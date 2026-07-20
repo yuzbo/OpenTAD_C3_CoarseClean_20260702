@@ -18,7 +18,9 @@ PRETRAIN_SHA256 = "d" * 64
 P3_CONFIG_SHA256 = "e" * 64
 ARM_CONFIG_SHA256 = {
     "protected_e2e": "1" * 64,
-    "protected_e2e_rho001": "2" * 64,
+    "protected_e2e_bridge025": "2" * 64,
+    "protected_e2e_uni_companion": "3" * 64,
+    "protected_e2e_rho001": "4" * 64,
 }
 STRATA = ("short", "medium", "long")
 
@@ -86,13 +88,9 @@ def _window_rows(stratum: str, stratum_index: int):
                     "video_id": video_id,
                     "window_start": window_start,
                     "duration_stratum": stratum,
-                    "window_kind": (
-                        "padded" if local_index < 4 else "full"
-                    ),
+                    "window_kind": ("padded" if local_index < 4 else "full"),
                     "boundary_source": "original_uncropped_annotation",
-                    "boundary_distance_stratum": ("near", "mid", "far")[
-                        swap_index % 3
-                    ],
+                    "boundary_distance_stratum": ("near", "mid", "far")[swap_index % 3],
                     "removed": removed,
                     "incoming": incoming,
                     "sampling_sha256": hashlib.sha256(
@@ -105,9 +103,7 @@ def _window_rows(stratum: str, stratum_index: int):
                     "predicted_delta": predicted,
                     "actual_delta": predicted * 0.1,
                     "predicted_best_quartile": swap_index < 3,
-                    "boundary_distance_gain_seconds": (
-                        0.5 if swap_index < 3 else -0.1
-                    ),
+                    "boundary_distance_gain_seconds": (0.5 if swap_index < 3 else -0.1),
                     "excluded_reason": None,
                     "physical_violation_count": 0,
                     "restoration_mismatch": False,
@@ -139,9 +135,7 @@ def _make_bundle(tmp_path: Path):
                     "source_sha256": source_sha256,
                     "resolved_sha256": f"{index + 3}" * 64,
                 }
-                for index, (arm, source_sha256) in enumerate(
-                    ARM_CONFIG_SHA256.items()
-                )
+                for index, (arm, source_sha256) in enumerate(ARM_CONFIG_SHA256.items())
             }
         },
         "p3_population": {
@@ -159,79 +153,94 @@ def _make_bundle(tmp_path: Path):
     protocol_path = _write_json(tmp_path / "p0.json", protocol)
     protocol_sha256 = _file_sha256(protocol_path)
 
-    gate_paths = []
+    gate_paths = {}
     for arm, config_sha256 in ARM_CONFIG_SHA256.items():
-        gate_paths.append(
-            _write_json(
-                tmp_path / f"{arm}_gate.json",
-                {
-                    "schema": "duca_protected_physical_full_model_gate_v1",
-                    "ok": True,
-                    "status": "p1_p2_full_model_gate_passed",
-                    "runtime": {
-                        "git_commit": COMMIT,
-                        "git_tree": GIT_TREE,
-                    },
-                    "protocol_manifest": {
-                        "sha256": protocol_sha256,
-                        "content_sha256": protocol[
-                            "manifest_content_sha256"
-                        ],
-                    },
-                    "config": {
-                        "arm": arm,
-                        "sha256": config_sha256,
-                    },
-                    "adatad_pretrain": {"sha256": PRETRAIN_SHA256},
-                    "hard_forward_equals_real_backbone_input": True,
-                    "optimizer_exact_coverage": True,
-                    "exact_uniform_physical_legacy_parity": {
-                        "full_window": {
-                            "target_assignment": {
-                                "classification_targets_equal": True,
-                                "positive_masks_equal": True,
-                                "physical_regression_targets_equal": True,
-                            },
-                            "target_assignment_parity": True,
-                            "decode_parity": True,
-                            "target_and_decode_parity": True,
-                        },
-                        "short_padded_window": {
-                            "target_assignment": {
-                                "classification_targets_equal": True,
-                                "positive_masks_equal": True,
-                                "physical_regression_targets_equal": True,
-                            },
-                            "target_assignment_parity": True,
-                            "decode_parity": True,
-                            "target_and_decode_parity": True,
+        gate_paths[arm] = _write_json(
+            tmp_path / f"{arm}_gate.json",
+            {
+                "schema": "duca_protected_physical_full_model_gate_v1",
+                "ok": True,
+                "status": "p1_p2_full_model_gate_passed",
+                "runtime": {
+                    "git_commit": COMMIT,
+                    "git_tree": GIT_TREE,
+                },
+                "protocol_manifest": {
+                    "sha256": protocol_sha256,
+                    "content_sha256": protocol["manifest_content_sha256"],
+                },
+                "config": {
+                    "arm": arm,
+                    "sha256": config_sha256,
+                },
+                "adatad_pretrain": {"sha256": PRETRAIN_SHA256},
+                "hard_forward_equals_real_backbone_input": True,
+                "optimizer_exact_coverage": True,
+                "exact_uniform_physical_legacy_parity": {
+                    "full_window": {
+                        "target_assignment": {
+                            "classification_targets_equal": True,
+                            "positive_masks_equal": True,
+                            "physical_regression_targets_equal": True,
                         },
                         "target_assignment_parity": True,
                         "decode_parity": True,
                         "target_and_decode_parity": True,
                     },
-                    "padded_real_window_audit": {
-                        "valid_len": 320,
-                        "effective_k": 320,
-                        "hard_forward_equal": True,
-                        "tail_padding_mode": "replicate_last_selected",
-                        "tail_padding_reference_equal": True,
+                    "short_padded_window": {
+                        "target_assignment": {
+                            "classification_targets_equal": True,
+                            "positive_masks_equal": True,
+                            "physical_regression_targets_equal": True,
+                        },
+                        "target_assignment_parity": True,
+                        "decode_parity": True,
+                        "target_and_decode_parity": True,
                     },
-                    "real_optimizer_step_audit": {
-                        "successful_optimizer_updates": 3,
-                        "successful_batch_updates": [
-                            "full",
-                            "padded",
-                            "short_padded",
-                        ],
-                        "full_batch_update": True,
-                        "padded_batch_update": True,
-                        "short_padded_batch_update": True,
-                        "scheduler_and_ema_updated": True,
-                    },
-                    "paper_claim_allowed": False,
+                    "target_assignment_parity": True,
+                    "decode_parity": True,
+                    "target_and_decode_parity": True,
                 },
-            )
+                "padded_real_window_audit": {
+                    "valid_len": 320,
+                    "effective_k": 320,
+                    "hard_forward_equal": True,
+                    "tail_padding_mode": "replicate_last_selected",
+                    "tail_padding_reference_equal": True,
+                },
+                "real_optimizer_step_audit": {
+                    "successful_optimizer_updates": 3,
+                    "successful_batch_updates": [
+                        "full",
+                        "padded",
+                        "short_padded",
+                    ],
+                    "full_batch_update": True,
+                    "padded_batch_update": True,
+                    "short_padded_batch_update": True,
+                    "scheduler_and_ema_updated": True,
+                },
+                "training_companion_audit": {
+                    "training_only": arm == "protected_e2e_uni_companion",
+                    "detector_forward_count": 1,
+                    "uniform_companion_count": (
+                        1 if arm == "protected_e2e_uni_companion" else 0
+                    ),
+                    "learned_detector_count": (
+                        1 if arm == "protected_e2e_uni_companion" else 0
+                    ),
+                    "detector_bridge_gradient_scale": (
+                        0.25
+                        if arm
+                        in {
+                            "protected_e2e_bridge025",
+                            "protected_e2e_uni_companion",
+                        }
+                        else 1.0
+                    ),
+                },
+                "paper_claim_allowed": False,
+            },
         )
 
     shard_paths = {}
@@ -287,10 +296,16 @@ def _authorize(bundle, aggregate: Path, output: Path):
     return authorize_suite(
         protocol_manifest=bundle["protocol"],
         protocol_manifest_sha256=bundle["protocol_sha256"],
-        main_gate=bundle["gates"][0],
-        main_gate_sha256=_file_sha256(bundle["gates"][0]),
-        rho_gate=bundle["gates"][1],
-        rho_gate_sha256=_file_sha256(bundle["gates"][1]),
+        main_gate=bundle["gates"]["protected_e2e"],
+        main_gate_sha256=_file_sha256(bundle["gates"]["protected_e2e"]),
+        bridge025_gate=bundle["gates"]["protected_e2e_bridge025"],
+        bridge025_gate_sha256=_file_sha256(bundle["gates"]["protected_e2e_bridge025"]),
+        uni_companion_gate=bundle["gates"]["protected_e2e_uni_companion"],
+        uni_companion_gate_sha256=_file_sha256(
+            bundle["gates"]["protected_e2e_uni_companion"]
+        ),
+        rho_gate=bundle["gates"]["protected_e2e_rho001"],
+        rho_gate_sha256=_file_sha256(bundle["gates"]["protected_e2e_rho001"]),
         p3_aggregate=aggregate,
         p3_aggregate_sha256=_file_sha256(aggregate),
         output_json=output,
@@ -325,11 +340,10 @@ def test_evidence_chain_happy_path_authorizes_official60(tmp_path: Path) -> None
     assert receipt["ok"] is True
     assert receipt["git_commit"] == COMMIT
     assert receipt["protocol_manifest_sha256"] == bundle["protocol_sha256"]
-    assert receipt["input_hashes"]["p3_aggregate"] == _file_sha256(
-        aggregate_path
-    )
+    assert receipt["input_hashes"]["p3_aggregate"] == _file_sha256(aggregate_path)
     assert receipt["authorized_scope"] == {
         "official60_four_arm_training": True,
+        "official60_uni_companion_training": True,
         "paper_claim": False,
     }
     assert receipt["paper_claim_allowed"] is False
@@ -391,6 +405,7 @@ def test_aggregate_rejects_bound_evidence_drift(
     message: str,
 ) -> None:
     bundle = _make_bundle(tmp_path)
+
     def mutate(payload):
         if drift == "commit":
             payload["runtime"]["git_commit"] = "9" * 40
@@ -411,7 +426,10 @@ def test_aggregate_rejects_failed_full_model_gate(tmp_path: Path) -> None:
     bundle = _make_bundle(tmp_path)
     aggregate_path = tmp_path / "aggregate.json"
     _aggregate(bundle, aggregate_path)
-    _rewrite(bundle["gates"][0], lambda payload: payload.update(ok=False))
+    _rewrite(
+        bundle["gates"]["protected_e2e"],
+        lambda payload: payload.update(ok=False),
+    )
 
     with pytest.raises(RuntimeError, match="gate"):
         _authorize(bundle, aggregate_path, tmp_path / "authorization.json")
@@ -426,11 +444,9 @@ def test_authorizer_rejects_aggregate_loss_as_target_parity(
 
     def remove_explicit_targets(payload):
         parity = payload["exact_uniform_physical_legacy_parity"]
-        parity["full_window"]["target_assignment"][
-            "positive_masks_equal"
-        ] = False
+        parity["full_window"]["target_assignment"]["positive_masks_equal"] = False
 
-    _rewrite(bundle["gates"][0], remove_explicit_targets)
+    _rewrite(bundle["gates"]["protected_e2e"], remove_explicit_targets)
     with pytest.raises(RuntimeError, match="assignment/decode parity"):
         _authorize(bundle, aggregate_path, tmp_path / "authorization.json")
 
@@ -451,7 +467,7 @@ def test_authorizer_requires_partial_padded_real_optimizer_update(
             "short_padded",
         ]
 
-    _rewrite(bundle["gates"][0], remove_partial_update)
+    _rewrite(bundle["gates"]["protected_e2e"], remove_partial_update)
     with pytest.raises(RuntimeError, match="optimizer/scheduler/EMA"):
         _authorize(bundle, aggregate_path, tmp_path / "authorization.json")
 

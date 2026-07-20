@@ -42,7 +42,12 @@ from opentad.utils import ModelEma
 
 SCHEMA = "duca_protected_physical_full_model_gate_v1"
 CONTRACT = "duca_protected_e2e_physical_v1"
-SUPPORTED_ARMS = {"protected_e2e", "protected_e2e_rho001"}
+SUPPORTED_ARMS = {
+    "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_uni_companion",
+    "protected_e2e_rho001",
+}
 
 
 class ProtectedPhysicalGateFailure(RuntimeError):
@@ -121,8 +126,7 @@ def _load_protocol_manifest(
     payload = json.loads(resolved.read_text(encoding="utf-8"))
     _require(
         isinstance(payload, Mapping)
-        and payload.get("schema")
-        == "duca_protected_physical_protocol_manifest_v1"
+        and payload.get("schema") == "duca_protected_physical_protocol_manifest_v1"
         and payload.get("ok") is True,
         "P0 protocol manifest did not pass",
     )
@@ -134,7 +138,9 @@ def _validate_config(cfg: Config) -> str:
     arm = str(cfg.model.frame_selector.arm)
     _require(arm in SUPPORTED_ARMS, f"unsupported gate arm {arm!r}")
     _require(cfg.model.type == "ActionFormer", "detector must be ActionFormer")
-    _require(cfg.model.rpn_head.type == "ActionFormerHead", "head must be ActionFormerHead")
+    _require(
+        cfg.model.rpn_head.type == "ActionFormerHead", "head must be ActionFormerHead"
+    )
     _require(
         cfg.model.frame_selector.type == "DucaProtectedE2EFrameSelector",
         "selector type drift",
@@ -160,7 +166,9 @@ def _validate_config(cfg: Config) -> str:
         "backbone tail-padding contract drift",
     )
     _require(int(cfg.workflow.end_epoch) == 60, "official protocol must be 60 epochs")
-    _require(int(cfg.workflow.val_eval_interval) < 0, "training must seal test evaluation")
+    _require(
+        int(cfg.workflow.val_eval_interval) < 0, "training must seal test evaluation"
+    )
     _require(
         bool(cfg.workflow.seal_eval_dataloaders_during_training),
         "training must not construct validation/test loaders",
@@ -176,17 +184,13 @@ def _validate_config(cfg: Config) -> str:
 def _cuda_batch(batch: Mapping[str, Any]) -> dict[str, Any]:
     output = {
         "inputs": batch["inputs"].to("cuda:0", non_blocking=True),
-        "masks": batch["masks"].to(
-            "cuda:0", dtype=torch.bool, non_blocking=True
-        ),
+        "masks": batch["masks"].to("cuda:0", dtype=torch.bool, non_blocking=True),
         "metas": [dict(meta) for meta in batch["metas"]],
         "gt_segments": [
-            value.to("cuda:0", non_blocking=True)
-            for value in batch["gt_segments"]
+            value.to("cuda:0", non_blocking=True) for value in batch["gt_segments"]
         ],
         "gt_labels": [
-            value.to("cuda:0", non_blocking=True)
-            for value in batch["gt_labels"]
+            value.to("cuda:0", non_blocking=True) for value in batch["gt_labels"]
         ],
     }
     if "gt_boundary_validity" in batch:
@@ -195,6 +199,23 @@ def _cuda_batch(batch: Mapping[str, Any]) -> dict[str, Any]:
             for value in batch["gt_boundary_validity"]
         ]
     return output
+
+
+def _concat_gate_batches(
+    first: Mapping[str, Any],
+    second: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "inputs": torch.cat([first["inputs"], second["inputs"]], dim=0),
+        "masks": torch.cat([first["masks"], second["masks"]], dim=0),
+        "metas": [*first["metas"], *second["metas"]],
+        "gt_segments": [*first["gt_segments"], *second["gt_segments"]],
+        "gt_labels": [*first["gt_labels"], *second["gt_labels"]],
+        "gt_boundary_validity": [
+            *first["gt_boundary_validity"],
+            *second["gt_boundary_validity"],
+        ],
+    }
 
 
 def _real_gate_batches(
@@ -216,15 +237,11 @@ def _real_gate_batches(
         indexed_lengths.append((index, candidate_len))
     descending = sorted(indexed_lengths, key=lambda row: (-row[1], row[0]))
     ascending = sorted(indexed_lengths, key=lambda row: (row[1], row[0]))
-    full_indices = [
-        index for index, length in descending if length >= 768
-    ][:24]
-    padded_indices = [
-        index for index, length in descending if 384 < length < 768
-    ][:24]
-    short_padded_indices = [
-        index for index, length in ascending if 0 < length < 384
-    ][:48]
+    full_indices = [index for index, length in descending if length >= 768][:24]
+    padded_indices = [index for index, length in descending if 384 < length < 768][:24]
+    short_padded_indices = [index for index, length in ascending if 0 < length < 384][
+        :48
+    ]
     candidate_indices = []
     for index in full_indices + padded_indices + short_padded_indices:
         if index not in candidate_indices:
@@ -268,11 +285,11 @@ def _real_gate_batches(
         )
         batches[key] = batch
         evidence[key] = {
-                "dataset_index": int(candidate_indices[batch_index]),
-                "batch_index": int(batch_index),
-                "valid_len": valid_len,
-                "video_name": str(meta.get("video_name", "")),
-            }
+            "dataset_index": int(candidate_indices[batch_index]),
+            "batch_index": int(batch_index),
+            "valid_len": valid_len,
+            "video_name": str(meta.get("video_name", "")),
+        }
         if set(batches) == {"full", "padded", "short_padded"}:
             return batches, evidence
     raise ProtectedPhysicalGateFailure(
@@ -283,8 +300,7 @@ def _real_gate_batches(
 def _capture_mutable_state(model) -> dict[str, Any]:
     return {
         "buffers": {
-            name: value.detach().clone()
-            for name, value in model.named_buffers()
+            name: value.detach().clone() for name, value in model.named_buffers()
         },
         "module_training": {
             name: bool(module.training) for name, module in model.named_modules()
@@ -331,9 +347,7 @@ def _is_action_head(name: str) -> bool:
     tail = name.split(marker, 1)[1]
     parts = tail.split(".")
     return tail.startswith("encoder.conv_out.") or (
-        len(parts) >= 4
-        and parts[0] == "decoders"
-        and parts[2] == "conv_out"
+        len(parts) >= 4 and parts[0] == "decoders" and parts[2] == "conv_out"
     )
 
 
@@ -344,10 +358,7 @@ def _parameter_group(model, name: str) -> str:
     layers = (
         selector.raw_actionness_source.probe_module.official_temporal.encoder.layers
     )
-    last_prefix = (
-        probe_prefix
-        + f"official_temporal.encoder.layers.{len(layers) - 1}."
-    )
+    last_prefix = probe_prefix + f"official_temporal.encoder.layers.{len(layers) - 1}."
     if name.startswith(scorer_prefix):
         return "selector"
     if _is_action_head(name):
@@ -442,13 +453,11 @@ def _gradient_report(model, optimizer_ids: Mapping[int, int]) -> dict[str, Any]:
         summary["grad_l2"] = float(summary.pop("grad_l2_squared") ** 0.5)
         summary["optimizer_group_ids"] = sorted(summary["optimizer_group_ids"])
     _require(
-        groups.get("unexpected_selector", {}).get("parameter_tensor_count", 0)
-        == 0,
+        groups.get("unexpected_selector", {}).get("parameter_tensor_count", 0) == 0,
         "unexpected trainable selector parameter",
     )
     _require(
-        groups.get("unexpected_detector", {}).get("parameter_tensor_count", 0)
-        == 0,
+        groups.get("unexpected_detector", {}).get("parameter_tensor_count", 0) == 0,
         "unexpected trainable detector parameter",
     )
     return {"groups": groups, "per_parameter": per_parameter}
@@ -488,8 +497,7 @@ def _hard_gather(inputs: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         "hard gather requires one active slot per sample",
     )
     prefix = (
-        torch.arange(active.shape[1], device=active.device)[None]
-        < effective_k[:, None]
+        torch.arange(active.shape[1], device=active.device)[None] < effective_k[:, None]
     )
     _require(
         torch.equal(active, prefix),
@@ -607,9 +615,7 @@ def _remap_gt_to_selected_axis(
         )
         left = right - 1
         denominator = (xp[right] - xp[left]).clamp(min=1.0e-6)
-        mapped = fp[left] + (
-            (flat - xp[left]) / denominator
-        ) * (fp[right] - fp[left])
+        mapped = fp[left] + ((flat - xp[left]) / denominator) * (fp[right] - fp[left])
         output.append(mapped.reshape_as(row))
     return output
 
@@ -708,9 +714,7 @@ def _target_assignment_parity(
     legacy_valid = torch.cat(legacy_masks, dim=1).bool()
     physical_pos = (physical_cls.sum(dim=-1) > 0) & physical_valid
     legacy_pos = (legacy_cls.sum(dim=-1) > 0) & legacy_valid
-    cls_error = float(
-        (physical_cls - legacy_cls).abs().max().detach().float().item()
-    )
+    cls_error = float((physical_cls - legacy_cls).abs().max().detach().float().item())
     _require(
         torch.equal(physical_valid, legacy_valid),
         "exact-uniform physical and selected-axis valid masks disagree",
@@ -730,13 +734,21 @@ def _target_assignment_parity(
     )
 
     split_sizes = [int(point.shape[-2]) for point in physical_points]
-    physical_reg_levels = torch.stack(physical_reg).permute(0, 2, 1).split(
-        split_sizes,
-        dim=-1,
+    physical_reg_levels = (
+        torch.stack(physical_reg)
+        .permute(0, 2, 1)
+        .split(
+            split_sizes,
+            dim=-1,
+        )
     )
-    legacy_reg_levels = torch.stack(legacy_reg).permute(0, 2, 1).split(
-        split_sizes,
-        dim=-1,
+    legacy_reg_levels = (
+        torch.stack(legacy_reg)
+        .permute(0, 2, 1)
+        .split(
+            split_sizes,
+            dim=-1,
+        )
     )
     physical_target_segments = head.get_refined_proposals(
         physical_points,
@@ -760,10 +772,7 @@ def _target_assignment_parity(
         )
     mapped_legacy_targets = torch.stack(mapped_legacy_rows)
     regression_error = float(
-        (
-            physical_target_segments[physical_pos]
-            - mapped_legacy_targets[legacy_pos]
-        )
+        (physical_target_segments[physical_pos] - mapped_legacy_targets[legacy_pos])
         .abs()
         .max()
         .detach()
@@ -826,8 +835,7 @@ def _uniform_physical_legacy_parity(
     finally:
         _restore_physical_head_state(model.rpn_head, head_state)
     loss_errors = {
-        key: abs(physical_losses[key] - legacy_losses[key])
-        for key in physical_losses
+        key: abs(physical_losses[key] - legacy_losses[key]) for key in physical_losses
     }
     _require(
         all(
@@ -937,9 +945,7 @@ def _uniform_physical_legacy_parity(
     )
     _restore_mutable_state(model, mutable_state)
     return {
-        "positions": [
-            int(value) for value in positions[0].detach().cpu().tolist()
-        ],
+        "positions": [int(value) for value in positions[0].detach().cpu().tolist()],
         "physical_losses": physical_losses,
         "legacy_selected_axis_losses": legacy_losses,
         "loss_abs_errors": loss_errors,
@@ -1002,8 +1008,7 @@ def _padded_window_audit(
         )
         expected_hard = _hard_gather(batch["inputs"], positions)
         _require(
-            len(captured) == 1
-            and torch.equal(captured[0], expected_hard),
+            len(captured) == 1 and torch.equal(captured[0], expected_hard),
             "padded window backbone input is not exact hard gather",
         )
         temporal_dim = 3 if expected_hard.ndim == 6 else 2
@@ -1119,8 +1124,7 @@ def _real_optimizer_step_audit(
                 )
                 objective = losses["cost"]
             _require(
-                objective.ndim == 0
-                and bool(torch.isfinite(objective.detach()).item()),
+                objective.ndim == 0 and bool(torch.isfinite(objective.detach()).item()),
                 f"{batch_name} optimizer-step objective is non-finite",
             )
             scale_before = float(scaler.get_scale())
@@ -1172,10 +1176,7 @@ def _real_optimizer_step_audit(
     )
     parameter_changes = {
         name: float(
-            (
-                dict(model.named_parameters())[name].detach().cpu()
-                - before
-            )
+            (dict(model.named_parameters())[name].detach().cpu() - before)
             .abs()
             .max()
             .item()
@@ -1184,10 +1185,7 @@ def _real_optimizer_step_audit(
     }
     ema_changes = {
         name: float(
-            (
-                dict(ema_root.named_parameters())[name].detach().cpu()
-                - before
-            )
+            (dict(ema_root.named_parameters())[name].detach().cpu() - before)
             .abs()
             .max()
             .item()
@@ -1262,10 +1260,7 @@ def _assert_gradient_ownership(arm: str, reports: Mapping[str, Any]) -> None:
     )
 
     _require(
-        all(
-            _group_mass(transition, group) <= 1.0e-12
-            for group in detector_groups
-        ),
+        all(_group_mass(transition, group) <= 1.0e-12 for group in detector_groups),
         "transition loss reached detector",
     )
     _require(
@@ -1298,11 +1293,10 @@ def _assert_gradient_ownership(arm: str, reports: Mapping[str, Any]) -> None:
         _group_mass(detector, "action_head") <= 1.0e-12,
         "detector loss reached action head",
     )
-    if arm == "protected_e2e":
+    if arm != "protected_e2e_rho001":
         _require(
             _group_mass(detector, "asformer_last_encoder_layer") <= 1.0e-12
-            and _group_mass(detector, "asformer_earlier_or_spatial")
-            <= 1.0e-12,
+            and _group_mass(detector, "asformer_earlier_or_spatial") <= 1.0e-12,
             "main detector loss leaked into coarse ASFormer",
         )
     else:
@@ -1379,8 +1373,7 @@ def run_gate(
         "VideoMAE-S pretrain SHA256 mismatch",
     )
     _require(
-        protocol.get("videomae_pretrain", {}).get("sha256")
-        == actual_pretrain_sha,
+        protocol.get("videomae_pretrain", {}).get("sha256") == actual_pretrain_sha,
         "VideoMAE-S pretrain differs from P0",
     )
 
@@ -1421,9 +1414,15 @@ def run_gate(
         static_graph=False,
     )
     gate_batches, loader_evidence = _real_gate_batches(cfg)
-    batch = gate_batches["full"]
+    full_batch = gate_batches["full"]
     partial_padded_batch = gate_batches["padded"]
     short_padded_batch = gate_batches["short_padded"]
+    batch = (
+        _concat_gate_batches(full_batch, partial_padded_batch)
+        if arm == "protected_e2e_uni_companion"
+        else full_batch
+    )
+    loader_evidence["gradient_batch_size"] = int(batch["inputs"].shape[0])
     mutable_state = _capture_mutable_state(model)
     reports: dict[str, Any] = {}
 
@@ -1511,6 +1510,16 @@ def run_gate(
         hook.remove()
 
     _assert_gradient_ownership(arm, reports)
+    companion_summary = copy.deepcopy(model.frame_selector.last_forward_summary)
+    if arm == "protected_e2e_uni_companion":
+        _require(
+            companion_summary.get("uniform_companion_count") == 1,
+            "Uni companion gate did not route exactly one row through uniform",
+        )
+        _require(
+            companion_summary.get("learned_detector_count") == 1,
+            "Uni companion gate did not retain exactly one learned row",
+        )
     positions = model.frame_selector._last_selected_positions
     physical_metas = model.frame_selector._last_physical_metas
     _require(positions is not None, "missing hard positions after total route")
@@ -1549,8 +1558,7 @@ def run_gate(
         "physical head path did not execute",
     )
     _require(
-        int(head_debug.get("physical_grid_actionformer_selected_count", -1))
-        == 384,
+        int(head_debug.get("physical_grid_actionformer_selected_count", -1)) == 384,
         "physical head did not consume exact K=384",
     )
     full_uniform_parity = _uniform_physical_legacy_parity(
@@ -1583,7 +1591,7 @@ def run_gate(
         cfg=cfg,
         protocol=protocol,
         batches={
-            "full": batch,
+            "full": full_batch,
             "padded": partial_padded_batch,
             "short_padded": short_padded_batch,
         },
@@ -1611,6 +1619,19 @@ def run_gate(
             "sha256": actual_pretrain_sha,
         },
         "loader_evidence": loader_evidence,
+        "training_companion_audit": {
+            "training_only": arm == "protected_e2e_uni_companion",
+            "detector_forward_count": 1,
+            "uniform_companion_count": int(
+                companion_summary.get("uniform_companion_count", 0)
+            ),
+            "learned_detector_count": int(
+                companion_summary.get("learned_detector_count", 0)
+            ),
+            "detector_bridge_gradient_scale": float(
+                companion_summary.get("detector_bridge_gradient_scale", 0.0)
+            ),
+        },
         "hard_forward_equals_real_backbone_input": True,
         "unselected_perturbation_audit": {
             "hard_gather_equal": True,

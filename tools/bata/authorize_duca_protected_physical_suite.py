@@ -24,6 +24,8 @@ PROTOCOL_SCHEMA = "duca_protected_physical_protocol_manifest_v1"
 FULL_MODEL_GATE_SCHEMA = "duca_protected_physical_full_model_gate_v1"
 P3_AGGREGATE_SCHEMA = "duca_protected_physical_p3_aggregate_v1"
 MAIN_ARM = "protected_e2e"
+BRIDGE025_ARM = "protected_e2e_bridge025"
+UNI_COMPANION_ARM = "protected_e2e_uni_companion"
 RHO_ARM = "protected_e2e_rho001"
 
 
@@ -115,8 +117,16 @@ def _validate_protocol(
     configs = _require_mapping(protocol.get("configs"), "P0 configs")
     arms = _require_mapping(configs.get("arms"), "P0 configs.arms")
     _require(
-        MAIN_ARM in arms and RHO_ARM in arms,
-        "P0 lacks main/rho config evidence",
+        all(
+            arm in arms
+            for arm in (
+                MAIN_ARM,
+                BRIDGE025_ARM,
+                UNI_COMPANION_ARM,
+                RHO_ARM,
+            )
+        ),
+        "P0 lacks a required protected/optimization config",
     )
     pretrain = _require_mapping(
         protocol.get("videomae_pretrain"),
@@ -131,8 +141,7 @@ def _validate_protocol(
         "P0 p3_population",
     )
     _require(
-        _require_int(p3_population.get("window_count"), "P0 P3 window_count")
-        == 48,
+        _require_int(p3_population.get("window_count"), "P0 P3 window_count") == 48,
         "P0 P3 window count drift",
     )
     _require(
@@ -181,8 +190,7 @@ def _validate_full_model_gate(
         f"{label} commit differs from P0",
     )
     _require(
-        _require_git_object(runtime.get("git_tree"), f"{label} tree")
-        == expected_tree,
+        _require_git_object(runtime.get("git_tree"), f"{label} tree") == expected_tree,
         f"{label} tree differs from P0",
     )
     protocol_binding = _require_mapping(
@@ -297,6 +305,51 @@ def _validate_full_model_gate(
         == ["full", "padded", "short_padded"],
         f"{label} lacks real optimizer/scheduler/EMA updates",
     )
+    companion = _require_mapping(
+        gate.get("training_companion_audit"),
+        f"{label}.training_companion_audit",
+    )
+    expected_bridge_scale = {
+        MAIN_ARM: 1.0,
+        BRIDGE025_ARM: 0.25,
+        UNI_COMPANION_ARM: 0.25,
+        RHO_ARM: 1.0,
+    }[expected_arm]
+    _require(
+        _require_int(
+            companion.get("detector_forward_count"),
+            f"{label} detector forward count",
+        )
+        == 1
+        and float(companion.get("detector_bridge_gradient_scale", -1.0))
+        == expected_bridge_scale,
+        f"{label} bridge scale or detector-forward contract drift",
+    )
+    if expected_arm == UNI_COMPANION_ARM:
+        _require(
+            companion.get("training_only") is True
+            and _require_int(
+                companion.get("uniform_companion_count"),
+                f"{label} uniform companion count",
+            )
+            == 1
+            and _require_int(
+                companion.get("learned_detector_count"),
+                f"{label} learned detector count",
+            )
+            == 1,
+            f"{label} lacks one-pass learned/uniform companion routing",
+        )
+    else:
+        _require(
+            companion.get("training_only") is False
+            and _require_int(
+                companion.get("uniform_companion_count"),
+                f"{label} uniform companion count",
+            )
+            == 0,
+            f"{label} unexpectedly enables the Uni companion route",
+        )
 
 
 def _validate_p3_aggregate(
@@ -318,8 +371,7 @@ def _validate_p3_aggregate(
         "P3 aggregate weakens the paper-claim contract",
     )
     _require(
-        _require_git_object(p3.get("git_commit"), "P3 git_commit")
-        == expected_commit,
+        _require_git_object(p3.get("git_commit"), "P3 git_commit") == expected_commit,
         "P3 commit differs from P0",
     )
     _require(
@@ -381,8 +433,7 @@ def _validate_p3_aggregate(
         "P3 nested aggregate content hash mismatch",
     )
     _require(
-        aggregate.get("schema") == P3_AGGREGATE_SCHEMA
-        and aggregate.get("ok") is True,
+        aggregate.get("schema") == P3_AGGREGATE_SCHEMA and aggregate.get("ok") is True,
         "nested aggregate_p3_rows result did not pass",
     )
     bootstrap = _require_mapping(
@@ -390,10 +441,8 @@ def _validate_p3_aggregate(
         "P3 aggregate bootstrap",
     )
     _require(
-        _require_int(bootstrap.get("replicates"), "P3 bootstrap replicates")
-        == 2000
-        and _require_int(bootstrap.get("seed"), "P3 bootstrap seed")
-        == 20260720,
+        _require_int(bootstrap.get("replicates"), "P3 bootstrap replicates") == 2000
+        and _require_int(bootstrap.get("seed"), "P3 bootstrap seed") == 20260720,
         "P3 bootstrap contract drift",
     )
     _require(
@@ -442,6 +491,10 @@ def authorize_suite(
     protocol_manifest_sha256: str,
     main_gate: str | Path,
     main_gate_sha256: str,
+    bridge025_gate: str | Path,
+    bridge025_gate_sha256: str,
+    uni_companion_gate: str | Path,
+    uni_companion_gate_sha256: str,
     rho_gate: str | Path,
     rho_gate_sha256: str,
     p3_aggregate: str | Path,
@@ -461,6 +514,18 @@ def authorize_suite(
         label="main full-model gate",
         schema=FULL_MODEL_GATE_SCHEMA,
     )
+    bridge025, bridge025_path, bridge025_hash = _load_bound_json(
+        bridge025_gate,
+        bridge025_gate_sha256,
+        label="bridge025 full-model gate",
+        schema=FULL_MODEL_GATE_SCHEMA,
+    )
+    companion, companion_path, companion_hash = _load_bound_json(
+        uni_companion_gate,
+        uni_companion_gate_sha256,
+        label="Uni companion full-model gate",
+        schema=FULL_MODEL_GATE_SCHEMA,
+    )
     rho, rho_path, rho_hash = _load_bound_json(
         rho_gate,
         rho_gate_sha256,
@@ -475,10 +540,26 @@ def authorize_suite(
     )
 
     main_config = _require_mapping(arms.get(MAIN_ARM), f"P0 {MAIN_ARM} config")
+    bridge025_config = _require_mapping(
+        arms.get(BRIDGE025_ARM),
+        f"P0 {BRIDGE025_ARM} config",
+    )
+    companion_config = _require_mapping(
+        arms.get(UNI_COMPANION_ARM),
+        f"P0 {UNI_COMPANION_ARM} config",
+    )
     rho_config = _require_mapping(arms.get(RHO_ARM), f"P0 {RHO_ARM} config")
     main_config_hash = _require_sha256(
         main_config.get("source_sha256"),
         f"P0 {MAIN_ARM} config hash",
+    )
+    bridge025_config_hash = _require_sha256(
+        bridge025_config.get("source_sha256"),
+        f"P0 {BRIDGE025_ARM} config hash",
+    )
+    companion_config_hash = _require_sha256(
+        companion_config.get("source_sha256"),
+        f"P0 {UNI_COMPANION_ARM} config hash",
     )
     rho_config_hash = _require_sha256(
         rho_config.get("source_sha256"),
@@ -502,6 +583,28 @@ def authorize_suite(
         protocol_manifest_sha256=protocol_file_hash,
         protocol_content_sha256=content_hash,
         expected_config_sha256=main_config_hash,
+        expected_pretrain_sha256=pretrain_hash,
+    )
+    _validate_full_model_gate(
+        bridge025,
+        label="bridge025 full-model gate",
+        expected_arm=BRIDGE025_ARM,
+        expected_commit=commit,
+        expected_tree=tree,
+        protocol_manifest_sha256=protocol_file_hash,
+        protocol_content_sha256=content_hash,
+        expected_config_sha256=bridge025_config_hash,
+        expected_pretrain_sha256=pretrain_hash,
+    )
+    _validate_full_model_gate(
+        companion,
+        label="Uni companion full-model gate",
+        expected_arm=UNI_COMPANION_ARM,
+        expected_commit=commit,
+        expected_tree=tree,
+        protocol_manifest_sha256=protocol_file_hash,
+        protocol_content_sha256=content_hash,
+        expected_config_sha256=companion_config_hash,
         expected_pretrain_sha256=pretrain_hash,
     )
     _validate_full_model_gate(
@@ -537,23 +640,30 @@ def authorize_suite(
         "pretrain_sha256": pretrain_hash,
         "config_hashes": {
             MAIN_ARM: main_config_hash,
+            BRIDGE025_ARM: bridge025_config_hash,
+            UNI_COMPANION_ARM: companion_config_hash,
             RHO_ARM: rho_config_hash,
             "p3": p3_config_hash,
         },
         "input_paths": {
             "protocol_manifest": str(protocol_path),
             "main_full_model_gate": str(main_path),
+            "bridge025_full_model_gate": str(bridge025_path),
+            "uni_companion_full_model_gate": str(companion_path),
             "rho_full_model_gate": str(rho_path),
             "p3_aggregate": str(p3_path),
         },
         "input_hashes": {
             "protocol_manifest": protocol_file_hash,
             "main_full_model_gate": main_hash,
+            "bridge025_full_model_gate": bridge025_hash,
+            "uni_companion_full_model_gate": companion_hash,
             "rho_full_model_gate": rho_hash,
             "p3_aggregate": p3_hash,
         },
         "authorized_scope": {
             "official60_four_arm_training": True,
+            "official60_uni_companion_training": True,
             "paper_claim": False,
         },
         "paper_claim_allowed": False,
@@ -591,6 +701,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
     )
     parser.add_argument(
+        "--bridge025-gate",
+        "--bridge025-full-model-gate",
+        dest="bridge025_gate",
+        required=True,
+    )
+    parser.add_argument(
+        "--bridge025-gate-sha256",
+        "--bridge025-full-model-gate-sha256",
+        dest="bridge025_gate_sha256",
+        required=True,
+    )
+    parser.add_argument(
+        "--uni-companion-gate",
+        "--uni-companion-full-model-gate",
+        dest="uni_companion_gate",
+        required=True,
+    )
+    parser.add_argument(
+        "--uni-companion-gate-sha256",
+        "--uni-companion-full-model-gate-sha256",
+        dest="uni_companion_gate_sha256",
+        required=True,
+    )
+    parser.add_argument(
         "--rho-gate",
         "--rho-full-model-gate",
         dest="rho_gate",
@@ -617,6 +751,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             protocol_manifest_sha256=args.protocol_manifest_sha256,
             main_gate=args.main_gate,
             main_gate_sha256=args.main_gate_sha256,
+            bridge025_gate=args.bridge025_gate,
+            bridge025_gate_sha256=args.bridge025_gate_sha256,
+            uni_companion_gate=args.uni_companion_gate,
+            uni_companion_gate_sha256=args.uni_companion_gate_sha256,
             rho_gate=args.rho_gate,
             rho_gate_sha256=args.rho_gate_sha256,
             p3_aggregate=args.p3_aggregate,

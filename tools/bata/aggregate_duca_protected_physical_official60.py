@@ -24,6 +24,18 @@ METRIC_KEYS = (
     "mAP@0.6",
     "mAP@0.7",
 )
+ORIGINAL_SUITE_VARIANTS = (
+    "exact_uniform",
+    "transition_no_bridge",
+    "protected_e2e",
+    "protected_e2e_rho001",
+)
+UNI_COMPANION_SUITE_VARIANTS = (
+    "exact_uniform",
+    "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_uni_companion",
+)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -60,7 +72,7 @@ def aggregate_official60(
     evidence_paths: list[str | Path],
 ) -> dict[str, Any]:
     _require(
-        len(evidence_paths) == len(VARIANTS),
+        len(evidence_paths) == 4,
         "official-60 suite requires exactly four evidence files",
     )
     by_variant: dict[str, dict[str, Any]] = {}
@@ -73,8 +85,7 @@ def aggregate_official60(
             f"official-60 evidence {index}",
         )
         _require(
-            evidence.get("schema") == EVIDENCE_SCHEMA
-            and evidence.get("ok") is True,
+            evidence.get("schema") == EVIDENCE_SCHEMA and evidence.get("ok") is True,
             f"official-60 evidence {path} did not pass",
         )
         _require(
@@ -90,8 +101,7 @@ def aggregate_official60(
         )
         _require(int(evidence.get("seed", -1)) == 3407, f"{variant} seed drift")
         _require(
-            evidence.get("protocol_manifest_sha256")
-            == protocol_manifest_sha256,
+            evidence.get("protocol_manifest_sha256") == protocol_manifest_sha256,
             f"{variant} P0 binding drift",
         )
         _require(
@@ -140,25 +150,44 @@ def aggregate_official60(
             "prediction_sha256": evidence.get("prediction_sha256"),
             "metrics": _finite_metrics(evidence.get("metrics"), variant),
         }
-    _require(
-        set(by_variant) == set(VARIANTS),
-        "official-60 suite is missing a preregistered arm",
-    )
+    observed_variants = set(by_variant)
+    if observed_variants == set(ORIGINAL_SUITE_VARIANTS):
+        suite_kind = "original_protected"
+        active_variants = ORIGINAL_SUITE_VARIANTS
+    elif observed_variants == set(UNI_COMPANION_SUITE_VARIANTS):
+        suite_kind = "uni_companion_optimization"
+        active_variants = UNI_COMPANION_SUITE_VARIANTS
+    else:
+        raise ValueError(
+            "official-60 evidence does not match a preregistered four-arm suite"
+        )
 
     uniform = by_variant["exact_uniform"]["metrics"]["average_mAP"]
-    transition = by_variant["transition_no_bridge"]["metrics"]["average_mAP"]
     protected = by_variant["protected_e2e"]["metrics"]["average_mAP"]
-    rho = by_variant["protected_e2e_rho001"]["metrics"]["average_mAP"]
-    comparisons = {
-        "transition_minus_uniform": transition - uniform,
-        "protected_minus_transition": protected - transition,
-        "protected_minus_uniform": protected - uniform,
-        "rho001_minus_protected": rho - protected,
-        "rho001_minus_uniform": rho - uniform,
-    }
+    if suite_kind == "original_protected":
+        transition = by_variant["transition_no_bridge"]["metrics"]["average_mAP"]
+        rho = by_variant["protected_e2e_rho001"]["metrics"]["average_mAP"]
+        comparisons = {
+            "transition_minus_uniform": transition - uniform,
+            "protected_minus_transition": protected - transition,
+            "protected_minus_uniform": protected - uniform,
+            "rho001_minus_protected": rho - protected,
+            "rho001_minus_uniform": rho - uniform,
+        }
+    else:
+        bridge025 = by_variant["protected_e2e_bridge025"]["metrics"]["average_mAP"]
+        companion = by_variant["protected_e2e_uni_companion"]["metrics"]["average_mAP"]
+        comparisons = {
+            "protected_minus_uniform": protected - uniform,
+            "bridge025_minus_protected": bridge025 - protected,
+            "bridge025_minus_uniform": bridge025 - uniform,
+            "uni_companion_minus_bridge025": companion - bridge025,
+            "uni_companion_minus_protected": companion - protected,
+            "uni_companion_minus_uniform": companion - uniform,
+        }
     learned = {
         variant: by_variant[variant]["metrics"]["average_mAP"]
-        for variant in VARIANTS
+        for variant in active_variants
         if variant != "exact_uniform"
     }
     best_variant = max(learned, key=learned.get)
@@ -168,6 +197,7 @@ def aggregate_official60(
         "ok": True,
         "paper_claim_allowed": False,
         "task": "offline_temporal_action_detection",
+        "suite_kind": suite_kind,
         "git_commit": expected_commit,
         "seed": 3407,
         "protocol_manifest_sha256": protocol_manifest_sha256,
@@ -181,8 +211,22 @@ def aggregate_official60(
             "best_learned_average_mAP": best_map,
             "strictly_above_65": best_map > 65.0,
             "strictly_above_matched_uniform": best_map > uniform,
-            "protected_bridge_improves_transition": protected > transition,
-            "rho001_improves_protected": rho > protected,
+            "protected_bridge_improves_transition": (
+                protected > transition if suite_kind == "original_protected" else None
+            ),
+            "rho001_improves_protected": (
+                rho > protected if suite_kind == "original_protected" else None
+            ),
+            "bridge025_improves_protected": (
+                bridge025 > protected
+                if suite_kind == "uni_companion_optimization"
+                else None
+            ),
+            "uni_companion_improves_bridge025": (
+                companion > bridge025
+                if suite_kind == "uni_companion_optimization"
+                else None
+            ),
             "single_seed_only": True,
         },
         "limitations": [

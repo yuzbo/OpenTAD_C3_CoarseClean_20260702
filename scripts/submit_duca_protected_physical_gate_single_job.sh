@@ -42,6 +42,8 @@ PY
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/gates" \
   "${RUN_ROOT}/p3"
 MAIN_GATE="${RUN_ROOT}/gates/protected_e2e.json"
+BRIDGE025_GATE="${RUN_ROOT}/gates/protected_e2e_bridge025.json"
+UNI_COMPANION_GATE="${RUN_ROOT}/gates/protected_e2e_uni_companion.json"
 RHO_GATE="${RUN_ROOT}/gates/protected_e2e_rho001.json"
 SHORT_SHARD="${RUN_ROOT}/p3/short.json"
 MEDIUM_SHARD="${RUN_ROOT}/p3/medium.json"
@@ -77,6 +79,14 @@ export DUCA_PROTECTED_GATE_ARM='protected_e2e'
 export DUCA_PROTECTED_GATE_OUTPUT_JSON='${MAIN_GATE}'
 bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
 
+export DUCA_PROTECTED_GATE_ARM='protected_e2e_bridge025'
+export DUCA_PROTECTED_GATE_OUTPUT_JSON='${BRIDGE025_GATE}'
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
+
+export DUCA_PROTECTED_GATE_ARM='protected_e2e_uni_companion'
+export DUCA_PROTECTED_GATE_OUTPUT_JSON='${UNI_COMPANION_GATE}'
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
+
 export DUCA_PROTECTED_GATE_ARM='protected_e2e_rho001'
 export DUCA_PROTECTED_GATE_OUTPUT_JSON='${RHO_GATE}'
 bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
@@ -94,6 +104,8 @@ export DUCA_PROTECTED_P3_OUTPUT_JSON='${LONG_SHARD}'
 bash scripts/run_duca_protected_physical_p3_shard_gpu1.sh
 
 export DUCA_PROTECTED_MAIN_GATE_JSON='${MAIN_GATE}'
+export DUCA_PROTECTED_BRIDGE025_GATE_JSON='${BRIDGE025_GATE}'
+export DUCA_PROTECTED_UNI_COMPANION_GATE_JSON='${UNI_COMPANION_GATE}'
 export DUCA_PROTECTED_RHO_GATE_JSON='${RHO_GATE}'
 export DUCA_PROTECTED_P3_SHORT_JSON='${SHORT_SHARD}'
 export DUCA_PROTECTED_P3_MEDIUM_JSON='${MEDIUM_SHARD}'
@@ -107,11 +119,13 @@ chmod 0755 "${JOB_FILE}"
 cat > "${RUN_ROOT}/execution_plan.tsv" <<'EOF'
 order	component
 1	gate_main
-2	gate_rho
-3	p3_short
-4	p3_medium
-5	p3_long
-6	complete
+2	gate_bridge025
+3	gate_uni_companion
+4	gate_rho
+5	p3_short
+6	p3_medium
+7	p3_long
+8	complete
 EOF
 
 if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
