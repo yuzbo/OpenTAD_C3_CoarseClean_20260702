@@ -186,7 +186,7 @@ def test_submitter_is_one_gate_four_frozen_replays_one_suite():
     assert '"native_exact_equivalence_required": True' in source
     assert "tools/train.py" not in source
     assert "echo '#SBATCH --gpus=1'" in source
-    assert "echo '#SBATCH --mem=32G'" in source
+    assert "#SBATCH --mem=" not in source
     assert "--gres=gpu:1" not in source
     assert 'gate["dataset_manifest"]' in source
     assert (

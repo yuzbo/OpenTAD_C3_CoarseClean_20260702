@@ -46,7 +46,8 @@ full60 的 physical-metric 比 selected-axis 高约 16.29 个 Avg-mAP 点，P0 �
   SHA256。
 - 原始 AMP 张量 dtype 单独登记；存档统一上转 float32，但不把 float32
   `sigmoid(logits)` 复算冒充生产 AMP 真值。
-- 捕获内存设置 8 GiB 估计峰值硬上限；Slurm 作业申请 32 GiB 内存。
+- 捕获内存设置 8 GiB 估计峰值硬上限；Slurm 作业申请 1 卡，由 N16R4
+  按已验证的每卡默认 55 GiB 合同分配内存，不显式覆盖 `--mem`。
 - native proposals 只作为重建误差审计参照，禁止覆盖重建 proposals。
 - native 轴必须逐预测复现 direct pre-cross、最终结果和 mAP，否则 fail-closed。
 - 当前 capture-enabled direct 还必须逐条件精确复现已审计 P0 direct 的

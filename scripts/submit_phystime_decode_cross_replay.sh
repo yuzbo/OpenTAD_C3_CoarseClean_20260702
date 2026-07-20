@@ -524,7 +524,6 @@ write_header() {
     echo "#SBATCH --partition=${PARTITION}"
     echo '#SBATCH --gpus=1'
     echo '#SBATCH --cpus-per-task=6'
-    echo '#SBATCH --mem=32G'
     echo "#SBATCH --time=${time_limit}"
     echo "#SBATCH --output=${LOG_ROOT}/${name}_%j.out"
     echo "#SBATCH --error=${LOG_ROOT}/${name}_%j.err"
