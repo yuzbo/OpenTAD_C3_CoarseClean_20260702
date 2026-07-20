@@ -6,7 +6,9 @@ fail() {
   exit 1
 }
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd -P)}"
+[[ -f "${REPO_ROOT}/tools/bata/validate_duca_protected_e2e_official60.py" ]] \
+  || fail "DUCA_REPO_ROOT does not identify the exact repository snapshot"
 cd "${REPO_ROOT}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 export DUCA_CELLCF_TRAINING_PROFILE=official60
