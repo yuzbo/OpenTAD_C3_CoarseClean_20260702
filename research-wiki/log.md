@@ -679,3 +679,12 @@ append_only: true
   `DEPLOY_READY_WITH_GATES` with no P0/P1/P2. This is still a `tested`
   implementation state: clean Linux tests and the integrated real-data CUDA
   Gate remain mandatory before the nine formal jobs can be queued.
+- 2026-07-21: clean remote commit `342f4526e6f72a0674d68f49391fe3180191db32`
+  passed `70` exact Linux tests. Integrated Slurm Gate Job `1177616` passed
+  the v3 full-model CUDA certificate and v2 200-video/nine-config runtime
+  precheck, then failed closed before the first D160 optimizer step because
+  `mmengine.Config` does not implement `__delitem__`. No runtime checkpoint,
+  authorization, formal training job, or official-test access occurred. The
+  failed Gate namespace is immutable. The runtime config builder now uses
+  `Config.pop`, with a focused regression test; a new commit, clean snapshot,
+  and new Gate namespace are required.

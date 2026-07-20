@@ -373,6 +373,14 @@ def test_cuda_gate_runs_real_development_runtime_precheck():
     assert "CONTINUOUS_ROI_S2_DEVELOPMENT_VIDEO_ROOT" in launcher
 
 
+def test_runtime_gate_uses_mmengine_supported_config_removal():
+    source = Path(
+        "tools/bata/continuous_roi_s2_runtime_gate.py"
+    ).read_text(encoding="utf-8")
+    assert 'cfg.pop("continuous_roi_s2_runtime_binding")' in source
+    assert 'del cfg["continuous_roi_s2_runtime_binding"]' not in source
+
+
 def test_train_entrypoint_enforces_s2_runtime_binding_and_80_batches():
     source = Path("tools/train.py").read_text(encoding="utf-8")
     assert '"continuous_roi_s2_runtime_binding" in cfg' in source

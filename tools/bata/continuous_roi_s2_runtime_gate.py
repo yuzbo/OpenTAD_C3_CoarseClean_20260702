@@ -116,7 +116,7 @@ def bind_runtime_gate_config(
         require_runtime_authorization=False,
     )
     base_binding = copy.deepcopy(cfg.continuous_roi_s2_runtime_binding)
-    del cfg["continuous_roi_s2_runtime_binding"]
+    cfg.pop("continuous_roi_s2_runtime_binding")
     work_dir = Path(work_dir).resolve()
     expected_suffix = Path("training_runtime_gate") / family.lower()
     if work_dir.parts[-2:] != expected_suffix.parts:
