@@ -80,6 +80,16 @@ def _selector(arm: str):
         selector.policy_hidden_gradient_scale = (
             0.01 if arm == "protected_e2e_rho001" else 0.0
         )
+        selector.detector_bridge_gradient_scale = {
+            "transition_no_bridge": 0.0,
+            "protected_e2e": 1.0,
+            "protected_e2e_bridge025": 0.25,
+            "protected_e2e_uni_companion": 0.25,
+            "protected_e2e_rho001": 1.0,
+        }[arm]
+        selector.uniform_companion_fraction = (
+            0.50 if arm == "protected_e2e_uni_companion" else 0.0
+        )
     return selector
 
 
