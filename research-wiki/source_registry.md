@@ -71,6 +71,7 @@ updated: 2026-07-20
   Glance and Focus `https://arxiv.org/abs/2010.05300`;
   Uni-AdaFocus `https://arxiv.org/abs/2412.11228` and
   `https://github.com/LeapLabTHU/Uni-AdaFocus`;
+  AdaFocusV2 `https://arxiv.org/abs/2112.14238`;
   AdaSpot CVPR 2026
   `https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html`
   and `https://github.com/arturxe2/AdaSpot`;

@@ -5,11 +5,11 @@ title: "Continuous-RoI S2 crop sufficiency"
 stage: designed
 status: fixed_library_protocol_superseded_continuous_roi_redesign_required
 outcome: pending
-tags: ["offline-tad", "native-crop", "crop-sufficiency", "preregistration"]
+tags: ["offline-tad", "continuous-roi", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
 ---
 
-# Native-Crop S2 Crop Sufficiency
+# Continuous-RoI S2 Crop Sufficiency
 
 ## Purpose
 
@@ -81,4 +81,7 @@ parameterization, differentiable training crop, source-coordinate inference
 crop, size-collapse prevention, temporal grouping/smoothing, reference search,
 matched baselines, decision states, uncertainty families, and selector-cost
 reserve. The prior fixed-library v1/v1.1 must not be implemented as the final
-S2 gate.
+S2 gate. The implementation-targeted Pro review prompt is frozen at
+`docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-prompt.md`;
+it is bound to immutable code/research-state commit
+`6118cd50a3601d044dab690427ad9c756ce7d827`.

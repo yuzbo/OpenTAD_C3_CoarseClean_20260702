@@ -613,3 +613,13 @@ append_only: true
   continuous-RoI S2 v2 protocol covering differentiable crop, source-coordinate
   inference, box constraints, temporal coherence, matched controls, cost, and
   no-leak semantics.
+- 2026-07-20: froze an implementation-targeted Pro prompt for
+  `Continuous-RoI S2 Crop-Sufficiency Preregistration v2`, bound to immutable
+  commit `6118cd50a3601d044dab690427ad9c756ce7d827`. The prompt consolidates the
+  fixed-resolution/fixed-window ambiguity, absence of spatial GT, finite-search
+  non-oracle semantics, variable-box anti-collapse and temporal-coherence
+  requirements, differentiable/runtime crop parity, joint detector-gradient
+  training, matched baselines, separate detection/cost inference families,
+  complete cost accounting, no-leak evidence closure, and an exact
+  implementation/Slurm output contract. This records a protocol-review request
+  only; no Continuous-RoI implementation or experiment is yet authorized.

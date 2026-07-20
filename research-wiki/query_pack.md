@@ -8,21 +8,13 @@ max_chars: 8000
 
 ## Native-Crop S1 audit delta (2026-07-20)
 
-- The development-only vertical slice now binds a required full Git commit,
-  completely clean worktree, and byte-equal tracked `HEAD` blobs before any
-  model execution.
-- Its geometry evidence is not trusted by self-hash alone: the gate re-probes
-  all 200 fit/gate files and checks root containment, path, size, dimensions,
-  rotation, frame count, and frame rate.
-- Remote focused tests pass `17/17`; the same independent max reviewer returned
-  `DEPLOY` with `P0/P1/P2/P3 = 0` after three passes.
-- Clean snapshot replay passed `173` focused tests and formal one-GPU Slurm
-  Gate Job `1174671` completed `0:0`. The exact commit/source blobs,
-  200-video geometry, complete pretrained core, `[1,384,768]` detector
-  contract, and both branch/detector gradients are now closed.
-- This authorizes only crop-sufficiency protocol discussion. Crop mAP,
-  sufficiency, measured full-stack cost, GO/KILL, learned ROI, and paper claims
-  remain absent.
+- The development-only vertical slice binds a clean full commit and byte-equal
+  `HEAD` blobs; its gate independently re-probes all 200 fit/gate source files.
+- Clean replay passed `173` focused tests; one-GPU Gate `1174671` completed
+  `0:0`, closing source/pretrained identity, geometry, `[1,384,768]`, gradients,
+  and no-leak execution.
+- This authorizes only crop-sufficiency protocol discussion. Crop mAP, measured
+  cost, GO/KILL, learned ROI, and paper claims remain absent.
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 
