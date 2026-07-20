@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:native-crop-s2-crop-sufficiency
 title: "Continuous-RoI S2 crop sufficiency"
 stage: designed
-status: pro_v2_received_hold_for_p0_revision
+status: v2_1_static_validated_implementation_in_progress
 outcome: pending
 tags: ["offline-tad", "continuous-roi", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
@@ -41,6 +41,15 @@ Its author verdict is `V2_READY`; the project verdict is
 `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`. The complete absorption is
 at
 `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`.
+
+The project-authored v2.1 corrigendum is frozen at
+`docs/methods/continuous_roi_s2_v2_1_contract.md` with machine-readable core
+`docs/methods/continuous_roi_s2_v2_1_protocol.json`. Its protocol SHA-256 is
+`ef806b7cd37c704d14a54211b1d4e2f9fb88b75599da918272cc6acad157b3af`.
+The static validator passed eight contract families and all 128 outcome-state
+assignments; audit SHA-256 is
+`5af59b755dd4528fe3e4fd989bb20da71ee40e43ecb5add34083b8ae96057f9d`.
+This authorizes implementation only, not training or test opening.
 
 ## Accepted
 
@@ -84,8 +93,9 @@ fixed-center CUDA gate validates infrastructure and gradients only.
 
 ## Next Gate
 
-Freeze a narrow Continuous-RoI S2 v2.1 corrigendum that repairs the S2/S3
-boundary, training-matched controls, privilege-matched references, search
-adequacy, queue/storage/power contracts, and outcome state machine. No model
-implementation or queueing is authorized before the corrected protocol and
-its static feasibility validator pass.
+Implement and test the v2.1 geometry decoder, paired exogenous geometry
+generator, tube interpolation, differentiable/runtime sampler parity, and the
+selector-free common-support `U128` model. Training and queueing remain blocked
+until focused tests and a full-model one-step CUDA Gate prove detector-gradient
+connectivity, optimizer coverage, exact successful-update behavior, no-leak,
+and the inherited AdaTAD-derived detector contract.

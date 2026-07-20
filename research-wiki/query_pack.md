@@ -37,15 +37,20 @@ max_chars: 8000
 - P1 风险：ROI head measured cost 与 selector reserve 可能重复计费，ABBA repetition
   口径含糊，power audit 使用拟合内预测且仅三种子，状态机混淆 reference 失效与
   continuous-crop 不充分，privileged matching 仍欠精确定义。
-- 唯一下一步是形成窄范围 v2.1 corrigendum，先拆分 `S2-P` 与 `S3-P`，补齐
-  train/inference-matched controls、matched-privilege continuous reference、外生
-  search-adequacy 检查和可执行资源合同。修订通过前不实现、不训练、不排队、不打开 test。
+- 项目自写 v2.1 corrigendum 已冻结并通过静态验证：协议 SHA-256 为
+  `ef806b7c...b3af`，八类合同与 128 种状态组合全部通过，审计 SHA-256 为
+  `5af59b75...f9d`。它采用 selector-free common-support `U128`，成对且同权限的
+  fixed/variable reference，并拆开 S2 表示充分性与 S3 learned policy。
+- 当前唯一下一步是实现连续几何、确定性外生 tube、可微/运行时 sampler 和共享
+  `U128`，再以 focused tests 与 full-model one-step CUDA Gate 验证检测梯度、
+  optimizer coverage、successful-update 计数和 no-leak。Gate 前不训练、不排队、
+  不打开 official test。
 - 完整结论见
   `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`。
 
 ## Native-Crop 论文实验路线
 
-- 当前处于 `continuous S2-P v2.1 corrigendum`，不是主实验训练阶段。S1 Gate 只证明
+- 当前处于 `continuous S2-P v2.1 implementation`，不是主实验训练阶段。S1 Gate 只证明
   crop 数据流、模型合同、梯度和 no-leak 可执行；S2 将证明 crop sufficiency、
   adaptive headroom 与 cost viability，仍不是 deployable final method。
 - 只有 `SUFFICIENT_AND_POLICY_HEADROOM` 才解锁 S3 learned crop policy；固定 crop

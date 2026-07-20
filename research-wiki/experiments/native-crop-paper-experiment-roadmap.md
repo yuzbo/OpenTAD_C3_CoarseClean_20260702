@@ -3,7 +3,7 @@ type: experiment_plan
 node_id: plan:native-crop-paper-experiments
 title: "Native-Crop paper experiment roadmap"
 stage: designed
-status: s2_v2_major_revision
+status: s2_v2_1_implementation_in_progress
 outcome: pending
 tags: ["offline-tad", "native-crop", "paper-plan", "claim-driven"]
 added: 2026-07-20
@@ -45,7 +45,7 @@ The required anti-claims are:
 |---|---|---|---|---|
 | R0 | Dense160/224/256 full-frame resize | historical diagnostic | sensitivity to whole-frame resolution only | control/appendix; never crop evidence |
 | S1 | Native-Crop vertical slice and CUDA Gate `1174671` | `tested` | source-coordinate crop, shared backbone, detector contract, gradients, provenance, and no-leak are executable | infrastructure evidence |
-| S2-P | Continuous-RoI crop-sufficiency protocol v2.1 | **current stage: `designed`, major revision required** | must define a matched variable-box experiment without merging S2 and S3 | prerequisite, not an empirical result |
+| S2-P | Continuous-RoI crop-sufficiency protocol v2.1 | **current stage: static protocol validated; implementation in progress** | defines a matched variable-box experiment without merging S2 and S3 | prerequisite, not an empirical result |
 | S2-E | Formal continuous-RoI sufficiency experiment | blocked | whether variable-center/variable-size crops are sufficient; whether adaptive and cost headroom exist | mechanism/reference diagnostic |
 | S3 | Learned Native-Crop policy | blocked by S2 | whether a deployable selector can recover S2 headroom through TAD supervision | final method candidate |
 | S4 | Primary official benchmark | blocked by S3 | final method accuracy-cost benefit on THUMOS14 official test | main paper Table 1/Figure 1 |
@@ -53,9 +53,9 @@ The required anti-claims are:
 | S6 | Statistical, cost, and claim freeze | blocked by exact evidence closure | whether the complete claim is paper-ready | final paper gate |
 
 The prior 21-position fixed-`128x128` protocol is only a D0 discrete diagnostic
-and is superseded as the decisive S2. The current continuous S2-P stage has no
-implementation, training job, or crop mAP. It is not the paper's main
-experiment.
+and is superseded as the decisive S2. The Continuous-RoI v2.1 protocol and
+static validator exist, but model implementation, training jobs, and crop mAP
+do not yet exist. S2 is not the paper's main experiment.
 
 ## What S2 Must Establish
 
@@ -92,7 +92,7 @@ S2 cannot prove:
 
 ## End-To-End Stages
 
-### P0: Freeze Continuous-RoI S2 v2
+### P0: Freeze Continuous-RoI S2 v2.1
 
 - Freeze continuous box parameterization, width/height bounds, aspect/area
   constraints, temporal grouping/interpolation, differentiable crop, runtime
@@ -106,12 +106,19 @@ S2 cannot prove:
 - GO: `V2_READY_FOR_IMPLEMENTATION`.
 - KILL/HOLD: any unresolved P0/P1 or any numeric decision left as TBD.
 
-The first Pro-authored v2 returned `V2_READY`, but the project does not adopt
+The first Pro-authored v2 returned `V2_READY`, but the project did not adopt
 that verdict. It trains a learned ROI head inside the pre-policy S2 stage,
 derives controls by post-hoc inference overrides, compares a privileged
 continuous reference against unmatched controls, and freezes queue/storage/
 power rules that conflict with the audited cluster. A v2.1 corrigendum must
 close these items before P1.
+
+The project-authored v2.1 now closes those P0 items with a selector-free
+common-support `U128`, paired and privilege-matched fixed/variable references,
+an external search-adequacy rule, executable N16R4 resources, and a total
+outcome state machine. The static validator passed eight contract families and
+all 128 outcome assignments. This authorizes P1 implementation only; it does
+not authorize training.
 
 ### P1: Implement And Run Continuous S2 Sufficiency
 
@@ -312,10 +319,10 @@ Paper status can become `paper_ready` only when:
 
 ## Current Unique Next Step
 
-Freeze a code-audited Continuous-RoI S2 v2.1 corrigendum with a true pre-policy
-S2 boundary, training-matched controls, privilege-matched fixed-size versus
-variable-size references, an honest search-adequacy rule, and executable
-N16R4 storage/power/Slurm contracts. Do not implement the v2 matrix, the old
-fixed-library matrix, a learned selector, official-test evaluation, cross-head
-integration, or cross-dataset experiments before the corrected protocol is
-frozen.
+Implement the frozen v2.1 geometry decoder, deterministic common-support
+generator, temporal tube interpolation, differentiable/runtime sampler parity,
+and selector-free `U128` shared-backbone path. Then run focused tests and one
+full-model CUDA Gate proving detector gradients, optimizer coverage,
+successful-update indexing, no-leak, and the `[B,384,768]` detector contract.
+Do not train or queue the formal S2 matrix, implement S3, or open official test
+before that Gate passes.

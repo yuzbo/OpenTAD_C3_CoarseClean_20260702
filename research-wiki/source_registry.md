@@ -3,6 +3,16 @@ type: source_registry
 updated: 2026-07-20
 ---
 
+- Project-authored Continuous-RoI S2 v2.1 contract, 2026-07-20:
+  `docs/methods/continuous_roi_s2_v2_1_contract.md` and
+  `docs/methods/continuous_roi_s2_v2_1_protocol.json`. Canonical protocol
+  SHA-256 is
+  `ef806b7cd37c704d14a54211b1d4e2f9fb88b75599da918272cc6acad157b3af`.
+  Static audit SHA-256 is
+  `5af59b755dd4528fe3e4fd989bb20da71ee40e43ecb5add34083b8ae96057f9d`;
+  eight contract families and all 128 outcome assignments passed. This is a
+  project design and implementation authorization, not empirical evidence or
+  a Pro verdict.
 - Continuous-RoI S2 Crop-Sufficiency Preregistration v2, 2026-07-20.
   The Pro reviewer audited immutable commit
   `6118cd50a3601d044dab690427ad9c756ce7d827` and returned `V2_READY`.

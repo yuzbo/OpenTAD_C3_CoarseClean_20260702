@@ -637,3 +637,14 @@ append_only: true
   contradict audited infrastructure. The unique next step is a narrow v2.1
   corrigendum; no implementation, queueing, test opening, or paper claim is
   authorized.
+- 2026-07-20: froze the project-authored Continuous-RoI S2 v2.1 corrigendum.
+  Its machine-readable protocol SHA-256 is
+  `ef806b7cd37c704d14a54211b1d4e2f9fb88b75599da918272cc6acad157b3af`.
+  The static validator passed eight contract families and exhaustively mapped
+  all 128 outcome-state assignments; audit SHA-256 is
+  `5af59b755dd4528fe3e4fd989bb20da71ee40e43ecb5add34083b8ae96057f9d`.
+  The design trains `D160`, `G96`, and one selector-free common-support `U128`
+  per seed, pairs fixed/variable references under equal privilege, and reserves
+  the learned ROI policy for S3. This authorizes implementation only. Formal
+  training, queueing, official-test access, and empirical claims remain
+  blocked until focused tests and a full-model one-step CUDA Gate pass.
