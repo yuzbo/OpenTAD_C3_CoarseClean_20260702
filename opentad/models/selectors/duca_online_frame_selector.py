@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from collections.abc import Mapping
 from typing import Any, Optional
 
@@ -8,7 +9,13 @@ import torch
 import torch.nn as nn
 
 from ..builder import SELECTORS
-from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
+from ..duca import (
+    C3CoarseProbeActionnessSource,
+    DucaAcquisitionAdapter,
+    DucaTemporalSamplingContract,
+    ZeroShotActionnessSource,
+    duca_losses,
+)
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
     build_local_cell_hard_flip_candidates,
@@ -261,6 +268,102 @@ def _add_structured_zero_forward_gradient_path(
     return hard_base + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
 
 
+def _add_protected_structured_transport_gradient_path(
+    hard_selected: torch.Tensor,
+    dense_inputs: torch.Tensor,
+    *,
+    selected_positions: torch.Tensor,
+    soft_slot_assignment: torch.Tensor,
+    slot_mask: torch.Tensor,
+    bridge_weight: float,
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """Use a hard-anchored local transport derivative for detector feedback.
+
+    The forward value is the exact hard gather. Backward uses the expected
+    ordered slot position from the same exact-K/max-gap structured family and
+    the local temporal derivative around each actually selected observation.
+    This remains a surrogate and must pass the hard-swap alignment gate before
+    any full training run is admissible.
+    """
+
+    if soft_slot_assignment.ndim != 3:
+        raise ValueError("protected structured soft_slot_assignment must be [B,K,T]")
+    temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
+    if temporal_dim is None:
+        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
+    expected = (int(hard_selected.shape[0]), int(slot_mask.shape[1]), int(dense_inputs.shape[temporal_dim]))
+    if tuple(soft_slot_assignment.shape) != expected:
+        raise ValueError(
+            "protected structured soft_slot_assignment shape must match [batch, selected slots, dense time]: "
+            f"expected {expected}, got {tuple(soft_slot_assignment.shape)}"
+        )
+    if selected_positions.shape != slot_mask.shape or slot_mask.shape != soft_slot_assignment.shape[:2]:
+        raise ValueError("selected_positions and slot_mask must match protected structured slots [B,K]")
+    if not torch.isfinite(soft_slot_assignment).all():
+        raise ValueError("protected structured soft_slot_assignment must be finite")
+    if torch.any(soft_slot_assignment < 0):
+        raise ValueError("protected structured soft_slot_assignment must be non-negative")
+    slot_mass = soft_slot_assignment.sum(dim=-1)
+    active = slot_mask.to(device=slot_mass.device, dtype=torch.bool)
+    if active.any() and not torch.allclose(
+        slot_mass[active],
+        torch.ones_like(slot_mass[active]),
+        atol=1.0e-4,
+        rtol=1.0e-4,
+    ):
+        raise ValueError("every active protected structured slot assignment must sum to one")
+    if (~active).any() and not torch.allclose(
+        slot_mass[~active],
+        torch.zeros_like(slot_mass[~active]),
+        atol=1.0e-6,
+        rtol=0.0,
+    ):
+        raise ValueError("inactive protected structured slot assignments must have zero mass")
+    if active.any():
+        active_positions = selected_positions.to(device=active.device)[active]
+        if torch.any(active_positions < 0) or torch.any(active_positions >= expected[2]):
+            raise ValueError("active protected structured selected_positions are out of dense-time bounds")
+
+    bridge = float(bridge_weight)
+    if bridge <= 0.0:
+        return hard_selected, None
+    context_inputs = (
+        dense_inputs
+        if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs)
+        else dense_inputs.float()
+    )
+    hard_base = (
+        hard_selected
+        if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected)
+        else hard_selected.float()
+    )
+    weights = soft_slot_assignment.to(device=context_inputs.device, dtype=context_inputs.dtype)
+    time_axis = torch.arange(expected[2], device=weights.device, dtype=weights.dtype)
+    expected_positions = torch.einsum("bkt,t->bk", weights, time_axis)
+
+    hard_positions = selected_positions.to(device=context_inputs.device, dtype=torch.long).clamp_min(0)
+    left_positions = (hard_positions - 1).clamp_min(0)
+    right_positions = (hard_positions + 1).clamp_max(expected[2] - 1)
+    left = _gather_time(context_inputs, left_positions, slot_mask)
+    right = _gather_time(context_inputs, right_positions, slot_mask)
+    denominator = (right_positions - left_positions).clamp_min(1).to(dtype=context_inputs.dtype)
+    if context_inputs.ndim == 3:
+        slope = (right - left) / denominator[:, None, :]
+        displacement = (expected_positions - expected_positions.detach())[:, None, :]
+        slot = slot_mask[:, None, :]
+    elif context_inputs.ndim == 5:
+        slope = (right - left) / denominator[:, None, :, None, None]
+        displacement = (expected_positions - expected_positions.detach())[:, None, :, None, None]
+        slot = slot_mask[:, None, :, None, None]
+    else:
+        slope = (right - left) / denominator[:, None, None, :, None, None]
+        displacement = (expected_positions - expected_positions.detach())[:, None, None, :, None, None]
+        slot = slot_mask[:, None, None, :, None, None]
+    surrogate = hard_base + slope * displacement
+    bridged = hard_base + bridge * (surrogate - surrogate.detach()) * slot.to(dtype=surrogate.dtype)
+    return bridged, expected_positions
+
+
 @SELECTORS.register_module()
 class DucaOnlineFrameSelector(nn.Module):
     """Registry-buildable full-window DUCA selector for offline TAD."""
@@ -294,6 +397,7 @@ class DucaOnlineFrameSelector(nn.Module):
         coarse_hidden_dim: Optional[int] = None,
         use_coarse_hidden_features: bool = True,
         require_coarse_hidden_features: Optional[bool] = None,
+        policy_hidden_gradient_scale: float = 0.0,
         max_unselected_hole: Optional[int] = None,
         hard_max_gap_repair: bool = True,
         fail_on_infeasible_max_gap: bool = True,
@@ -315,6 +419,7 @@ class DucaOnlineFrameSelector(nn.Module):
         detector_output_coordinate_space: str = SELECTED_AXIS,
         selected_positions_unit: str = "original_time_index",
         true_time_source_axis: str = TRUE_TIME_AXIS,
+        temporal_sampling_contract: Optional[Mapping[str, Any]] = None,
         loss_weights: Optional[Mapping[str, float]] = None,
         loss_weight_schedule: Optional[Mapping[str, Any]] = None,
         no_ledger_decision: bool = True,
@@ -330,6 +435,7 @@ class DucaOnlineFrameSelector(nn.Module):
         require_external_actionness: bool = False,
         profile_runtime: bool = False,
         profile_sync_cuda: bool = True,
+        retain_gradient_audit_tensors: bool = False,
         metadata_keys: Optional[Mapping[str, str]] = None,
         **kwargs: Any,
     ) -> None:
@@ -386,6 +492,12 @@ class DucaOnlineFrameSelector(nn.Module):
         self.require_coarse_hidden_features = (
             None if require_coarse_hidden_features is None else bool(require_coarse_hidden_features)
         )
+        self.policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
+        if (
+            not math.isfinite(self.policy_hidden_gradient_scale)
+            or not 0.0 <= self.policy_hidden_gradient_scale <= 1.0
+        ):
+            raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
         self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
@@ -431,6 +543,11 @@ class DucaOnlineFrameSelector(nn.Module):
         self.coordinate_space = self.detector_output_coordinate_space
         self.selected_positions_unit = str(selected_positions_unit)
         self.true_time_source_axis = str(true_time_source_axis)
+        self.temporal_sampling_contract = (
+            None
+            if temporal_sampling_contract is None
+            else DucaTemporalSamplingContract.from_mapping(dict(temporal_sampling_contract))
+        )
         self.loss_weights = dict(loss_weights or {})
         self.loss_weight_schedule = self._normalize_loss_weight_schedule(loss_weight_schedule)
         self.register_buffer("_loss_weight_schedule_step", torch.zeros((), dtype=torch.long), persistent=True)
@@ -447,6 +564,7 @@ class DucaOnlineFrameSelector(nn.Module):
         self.require_external_actionness = bool(require_external_actionness)
         self.profile_runtime = bool(profile_runtime)
         self.profile_sync_cuda = bool(profile_sync_cuda)
+        self.retain_gradient_audit_tensors = bool(retain_gradient_audit_tensors)
         self.metadata_keys = dict(_DEFAULT_METADATA_KEYS)
         if metadata_keys:
             self.metadata_keys.update(dict(metadata_keys))
@@ -463,10 +581,12 @@ class DucaOnlineFrameSelector(nn.Module):
             "st_sparse_gather_soft_context",
             "soft_to_hard_resample",
             "structured_zero_forward",
+            "protected_structured_transport",
         }:
             raise ValueError(
                 "detector_gradient_mode must be none, st_sparse_gather, "
-                "st_sparse_gather_soft_context, soft_to_hard_resample, or structured_zero_forward"
+                "st_sparse_gather_soft_context, soft_to_hard_resample, structured_zero_forward, "
+                "or protected_structured_transport"
             )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
@@ -476,6 +596,16 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("selected_positions_unit must be original_time_index")
         if self.true_time_source_axis != TRUE_TIME_AXIS:
             raise ValueError("true_time_source_axis must be true_time_dense_index")
+        if self.temporal_sampling_contract is not None:
+            contract = self.temporal_sampling_contract
+            if contract.hard_budget != self.budget:
+                raise ValueError("temporal sampling contract hard_budget must match selector budget")
+            if self.dense_window_size is None or contract.dense_window_size != self.dense_window_size:
+                raise ValueError("temporal sampling contract dense_window_size must match selector")
+            if contract.max_unselected_hole_dense_candidates != self.max_unselected_hole:
+                raise ValueError("temporal sampling contract max gap must match selector max_unselected_hole")
+            if contract.detector_axis != self.detector_output_coordinate_space:
+                raise ValueError("temporal sampling contract detector_axis must match selector output axis")
         if self.dense_window_size is not None and self.dense_window_size <= 0:
             raise ValueError("dense_window_size must be positive")
         if not self.no_ledger_decision:
@@ -590,6 +720,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 and self.raw_actionness_source is not None
                 and self.require_coarse_hidden_features is not False
             ),
+            policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
             max_unselected_hole=self.max_unselected_hole,
             hard_max_gap_repair=self.hard_max_gap_repair,
             fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
@@ -1391,6 +1522,7 @@ class DucaOnlineFrameSelector(nn.Module):
         p_action = None
         actionness_provenance = None
         coarse_hidden_features = None
+        coarse_policy_hidden_features = None
         coarse_hidden_kind = None
         if external_actionness is not None:
             actionness_logits = external_actionness.get("actionness_logits")
@@ -1406,6 +1538,9 @@ class DucaOnlineFrameSelector(nn.Module):
                 coarse_hidden_features = online_actionness.get("coarse_hidden_features")
                 if coarse_hidden_features is None:
                     coarse_hidden_features = online_actionness.get("hidden_features")
+                coarse_policy_hidden_features = online_actionness.get(
+                    "policy_hidden_features"
+                )
                 coarse_hidden_kind = online_actionness.get("hidden_kind")
         stable_selection = self._use_stable_structured_selection(schedule_state)
         policy_mix_alpha = self.inference_policy_alpha
@@ -1421,6 +1556,7 @@ class DucaOnlineFrameSelector(nn.Module):
             p_action=p_action,
             actionness_provenance=actionness_provenance,
             coarse_hidden_features=coarse_hidden_features,
+            coarse_policy_hidden_features=coarse_policy_hidden_features,
             coarse_hidden_kind=coarse_hidden_kind,
             compute_profile_context=profile_context,
             stable_selection=stable_selection,
@@ -1445,6 +1581,10 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("detector_grid_positions must align with acquisition positions")
         if not torch.equal(detector_grid_positions >= 0, positions >= 0):
             raise ValueError("detector-grid and acquisition slot masks must be identical")
+        temporal_contract_audit = None
+        if self.temporal_sampling_contract is not None:
+            temporal_contract_audit = self.temporal_sampling_contract.audit_positions(positions, masks)
+            scores["temporal_sampling_contract_audit"] = temporal_contract_audit
         self._last_selected_positions = positions.detach()
         self._last_detector_grid_positions = detector_grid_positions.detach()
         slot_mask = positions >= 0
@@ -1456,6 +1596,7 @@ class DucaOnlineFrameSelector(nn.Module):
         # only adds dense compute and memory traffic.
         detector_gradient_weight = self._detector_gradient_weight(schedule_state) if self.training else 0.0
         soft_resample_weights = None
+        structured_expected_positions = None
         bridge_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         bridge_ms = None
         if self.detector_gradient_mode == "st_sparse_gather_soft_context":
@@ -1488,9 +1629,25 @@ class DucaOnlineFrameSelector(nn.Module):
                 slot_mask=slot_mask,
                 bridge_weight=detector_gradient_weight,
             )
+        elif self.detector_gradient_mode == "protected_structured_transport":
+            assignment = scores.get("structured_soft_slot_assignment")
+            if assignment is None:
+                raise ValueError("protected_structured_transport requires structured slot marginals")
+            hard_selected, structured_expected_positions = _add_protected_structured_transport_gradient_path(
+                hard_selected,
+                inputs,
+                selected_positions=positions,
+                soft_slot_assignment=assignment,
+                slot_mask=slot_mask,
+                bridge_weight=detector_gradient_weight,
+            )
         bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
         hard_slot_weights = slot_mask.to(dtype=scores["center_scores"].dtype)
-        if self.detector_gradient_mode in {"none", "structured_zero_forward"}:
+        if self.detector_gradient_mode in {
+            "none",
+            "structured_zero_forward",
+            "protected_structured_transport",
+        }:
             st_weights = hard_slot_weights
         else:
             st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
@@ -1551,6 +1708,15 @@ class DucaOnlineFrameSelector(nn.Module):
         scores["detector_gradient_weight"] = float(detector_gradient_weight)
         if soft_resample_weights is not None:
             scores["soft_resample_weights"] = soft_resample_weights
+        if structured_expected_positions is not None:
+            scores["structured_expected_positions"] = structured_expected_positions
+        if self.retain_gradient_audit_tensors:
+            self._gradient_audit_tensors = {
+                "center_scores": scores["center_scores"],
+                "structured_soft_slot_assignment": scores.get("structured_soft_slot_assignment"),
+                "selected_positions": positions,
+                "detector_gradient_weight": float(detector_gradient_weight),
+            }
         scores["sparse_grid"] = grid
         selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
         self._record_pending_dynamic_budget_dual(scores, grid)
@@ -1575,8 +1741,11 @@ class DucaOnlineFrameSelector(nn.Module):
             "selection_path": scores.get("selection_path", "legacy_center_radius"),
             "selector_variant": self.selector_variant,
             "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
+            "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
             "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),
         }
+        if temporal_contract_audit is not None:
+            self.last_forward_summary["temporal_sampling_contract"] = temporal_contract_audit
         if isinstance(schedule_state, Mapping):
             self.last_forward_summary["loss_weight_schedule"] = dict(schedule_state)
         return {
@@ -1606,12 +1775,24 @@ class DucaOnlineFrameSelector(nn.Module):
     ) -> None:
         components = dict(profile.get("components", {}))
         component_name = str(mode)
-        supported_modes = {"soft_to_hard_resample", "structured_zero_forward"}
+        supported_modes = {
+            "soft_to_hard_resample",
+            "structured_zero_forward",
+            "protected_structured_transport",
+        }
         enabled = component_name in supported_modes and float(bridge_weight) > 0.0
         dense_input_elements = int(dense_inputs.numel())
         if temporal_len <= 0 or dense_input_elements % int(temporal_len) != 0:
             raise ValueError("detector gradient bridge requires a valid dense temporal dimension")
-        macs = dense_input_elements * int(slot_count) if enabled else 0
+        soft_selected_output_elements = (dense_input_elements // int(temporal_len)) * int(slot_count)
+        if enabled and component_name == "protected_structured_transport":
+            macs = int(batch_size * slot_count * temporal_len + 3 * soft_selected_output_elements)
+            complexity = "O(B*K*T + numel(selected_raw_video)) hard-anchored local transport"
+            accounting_scope = "expected_position_and_local_temporal_slope_lower_bound"
+        else:
+            macs = dense_input_elements * int(slot_count) if enabled else 0
+            complexity = "O(numel(dense_raw_video)*K) soft slot resampling" if enabled else "disabled"
+            accounting_scope = "dominant_einsum_lower_bound"
         softmax_flops = (
             int(batch_size * slot_count * temporal_len * 8)
             if enabled and component_name == "soft_to_hard_resample"
@@ -1619,7 +1800,6 @@ class DucaOnlineFrameSelector(nn.Module):
         )
         flops = int(2 * macs + softmax_flops)
         context_element_size = int(dense_inputs.element_size()) if dense_inputs.is_floating_point() else 4
-        soft_selected_output_elements = (dense_input_elements // int(temporal_len)) * int(slot_count)
         component = {
             "enabled": bool(enabled),
             "mode": component_name,
@@ -1638,8 +1818,8 @@ class DucaOnlineFrameSelector(nn.Module):
                 int(soft_selected_output_elements * context_element_size) if enabled else 0
             ),
             "slot_assignment_elements": int(batch_size * slot_count * temporal_len),
-            "complexity": "O(numel(dense_raw_video)*K) soft slot resampling" if enabled else "disabled",
-            "accounting_scope": "dominant_einsum_lower_bound",
+            "complexity": complexity,
+            "accounting_scope": accounting_scope,
             "estimated_flops_are_lower_bound": True,
             "complete_memory_accounting": False,
         }
@@ -2009,6 +2189,11 @@ class DucaOnlineFrameSelector(nn.Module):
                 meta["duca_online_compute_profile"] = dict(compute_profile)
             meta["duca_online_budget_unit"] = grid.budget_unit
             meta["duca_online_coordinate"] = grid.coordinate
+            if self.temporal_sampling_contract is not None:
+                fps = meta.get("avg_fps", meta.get("fps"))
+                meta["duca_temporal_sampling_contract"] = self.temporal_sampling_contract.to_dict(
+                    fps=None if fps is None else float(fps)
+                )
             meta["detector_output_coordinate_space"] = self.detector_output_coordinate_space
             meta["detector_prediction_inverse_map_required"] = self.detector_output_coordinate_space == SELECTED_AXIS
             meta["selected_axis_to_true_time_dense_index"] = detector_positions

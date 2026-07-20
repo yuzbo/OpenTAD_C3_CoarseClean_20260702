@@ -2052,6 +2052,7 @@ class C3OfficialActionSegmentationProbe:
         num_layers: int = 2,
         dropout: float = 0.10,
         hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
+        policy_hidden_gradient_scope: str = "none",
     ) -> None:
         if backend not in SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS:
             raise ValueError(f"unsupported official action segmentation backend: {backend}")
@@ -2065,6 +2066,7 @@ class C3OfficialActionSegmentationProbe:
         self.hidden_dim = int(hidden_dim)
         self.num_layers = int(num_layers)
         self.hidden_output_kind = str(hidden_output_kind)
+        self.policy_hidden_gradient_scope = str(policy_hidden_gradient_scope)
         supported_hidden_kinds = {
             "pre_temporal_spatial_stem_hidden",
             "official_asformer_encoder_hidden",
@@ -2076,6 +2078,20 @@ class C3OfficialActionSegmentationProbe:
             )
         if self.hidden_output_kind == "official_asformer_encoder_hidden" and self.backend != "official_asformer":
             raise ValueError("official_asformer_encoder_hidden requires backend='official_asformer'")
+        if self.policy_hidden_gradient_scope not in {
+            "none",
+            "asformer_last_encoder_layer",
+        }:
+            raise ValueError(
+                "policy_hidden_gradient_scope must be none or asformer_last_encoder_layer"
+            )
+        if self.policy_hidden_gradient_scope != "none" and (
+            self.backend != "official_asformer"
+            or self.hidden_output_kind != "official_asformer_encoder_hidden"
+        ):
+            raise ValueError(
+                "restricted policy hidden requires official ASFormer encoder hidden"
+            )
         repo_root = _official_repos_root()
         self.official_source = {
             "backend": self.backend,
@@ -2232,14 +2248,47 @@ class C3OfficialActionSegmentationProbe:
         elif self.backend == "official_asformer":
             rows = []
             encoder_hidden_rows = []
-            hook = None
+            policy_replay_inputs = []
+            policy_replay_masks = []
+            policy_replay_rng = []
+            hooks = []
             if return_hidden and self.hidden_output_kind == "official_asformer_encoder_hidden":
                 def capture_encoder_hidden(_module, _inputs, output):
                     if not isinstance(output, tuple) or len(output) != 2:
                         raise RuntimeError("official ASFormer encoder must return (logits, hidden)")
                     encoder_hidden_rows.append(output[1])
 
-                hook = self.official_temporal.encoder.register_forward_hook(capture_encoder_hidden)
+                hooks.append(
+                    self.official_temporal.encoder.register_forward_hook(capture_encoder_hidden)
+                )
+                if self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
+                    encoder_layers = getattr(self.official_temporal.encoder, "layers", None)
+                    if encoder_layers is None or len(encoder_layers) < 1:
+                        raise RuntimeError(
+                            "official ASFormer encoder exposes no last layer for restricted policy gradient"
+                        )
+
+                    def capture_last_layer_input(_module, inputs):
+                        if len(inputs) != 3:
+                            raise RuntimeError(
+                                "official ASFormer encoder layer must receive feature, cross-feature and mask"
+                            )
+                        policy_replay_inputs.append(inputs[0])
+                        policy_replay_masks.append(inputs[2])
+                        policy_replay_rng.append(
+                            {
+                                "cpu": torch.random.get_rng_state(),
+                                "cuda": (
+                                    torch.cuda.get_rng_state_all()
+                                    if inputs[0].is_cuda
+                                    else None
+                                ),
+                            }
+                        )
+
+                    hooks.append(
+                        encoder_layers[-1].register_forward_pre_hook(capture_last_layer_input)
+                    )
             try:
                 for idx in range(int(batch)):
                     outputs = self.official_temporal(
@@ -2248,7 +2297,7 @@ class C3OfficialActionSegmentationProbe:
                     )
                     rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
             finally:
-                if hook is not None:
+                for hook in hooks:
                     hook.remove()
             logits = torch.stack(rows, dim=0)
         elif self.backend == "official_fact":
@@ -2275,13 +2324,61 @@ class C3OfficialActionSegmentationProbe:
                 )
             hidden = torch.cat(encoder_hidden_rows, dim=0).transpose(1, 2).contiguous()
             hidden_kind = "official_asformer_encoder_hidden"
+            policy_hidden = None
+            if self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
+                if not (
+                    len(policy_replay_inputs)
+                    == len(policy_replay_masks)
+                    == len(policy_replay_rng)
+                    == int(batch)
+                ):
+                    raise RuntimeError(
+                        "restricted ASFormer policy replay capture count does not match the batch"
+                    )
+                encoder_layers = self.official_temporal.encoder.layers
+                current_cpu_rng = torch.random.get_rng_state()
+                current_cuda_rng = (
+                    torch.cuda.get_rng_state_all()
+                    if features.is_cuda
+                    else None
+                )
+                replay_rows = []
+                try:
+                    for replay_input, replay_mask, rng_state in zip(
+                        policy_replay_inputs,
+                        policy_replay_masks,
+                        policy_replay_rng,
+                    ):
+                        torch.random.set_rng_state(rng_state["cpu"])
+                        if rng_state["cuda"] is not None:
+                            torch.cuda.set_rng_state_all(rng_state["cuda"])
+                        replay_rows.append(
+                            encoder_layers[-1](
+                                replay_input.detach(),
+                                None,
+                                replay_mask,
+                            )
+                        )
+                finally:
+                    torch.random.set_rng_state(current_cpu_rng)
+                    if current_cuda_rng is not None:
+                        torch.cuda.set_rng_state_all(current_cuda_rng)
+                replay_hidden = torch.cat(replay_rows, dim=0).transpose(1, 2).contiguous()
+                policy_hidden = hidden.detach() + (
+                    replay_hidden - replay_hidden.detach()
+                )
         else:
             hidden = features.transpose(1, 2).contiguous()
             hidden_kind = "pre_temporal_spatial_stem_hidden"
+            policy_hidden = None
         hidden = hidden.masked_fill(~mask[:, :, None], 0.0)
+        if policy_hidden is not None:
+            policy_hidden = policy_hidden.masked_fill(~mask[:, :, None], 0.0)
         return {
             "logits": logits,
             "hidden": hidden,
+            "policy_hidden": policy_hidden,
+            "policy_hidden_gradient_scope": self.policy_hidden_gradient_scope,
             "hidden_kind": hidden_kind,
             "official_source_sha256": self.official_source["source_sha256"],
             "official_source_normalized_lf_sha256": self.official_source["source_normalized_lf_sha256"],

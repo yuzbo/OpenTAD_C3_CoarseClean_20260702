@@ -22,16 +22,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class Encoder(nn.Module):
-    def __init__(self, input_dim, hidden, classes):
+    def __init__(self, input_dim, hidden, classes, num_layers):
         super().__init__()
         self.conv_1x1 = nn.Conv1d(input_dim, hidden, 1)
         self.dropout = nn.Dropout(0.25)
+        self.layers = nn.ModuleList([Layer(hidden) for _ in range(num_layers)])
         self.conv_out = nn.Conv1d(hidden, classes, 1)
         self.calls = 0
     def forward(self, x, mask):
         self.calls += 1
         feature = self.dropout(torch.tanh(self.conv_1x1(x)))
+        for layer in self.layers:
+            feature = layer(feature, None, mask)
         return self.conv_out(feature) * mask[:, :1], feature
+
+class Layer(nn.Module):
+    def __init__(self, hidden):
+        super().__init__()
+        self.proj = nn.Conv1d(hidden, hidden, 1)
+        self.dropout = nn.Dropout(0.25)
+    def forward(self, x, _f, mask):
+        return (x + self.dropout(torch.tanh(self.proj(x)))) * mask[:, :1]
 
 class Decoder(nn.Module):
     def __init__(self, classes, hidden):
@@ -46,7 +57,7 @@ class Decoder(nn.Module):
 class MyTransformer(nn.Module):
     def __init__(self, num_decoders, num_layers, r1, r2, num_f_maps, input_dim, num_classes, channel_masking_rate):
         super().__init__()
-        self.encoder = Encoder(input_dim, num_f_maps, num_classes)
+        self.encoder = Encoder(input_dim, num_f_maps, num_classes, num_layers)
         self.decoders = nn.ModuleList([Decoder(num_classes, num_f_maps) for _ in range(num_decoders)])
     def forward(self, x, mask):
         out, feature = self.encoder(x, mask)
@@ -61,7 +72,13 @@ class Trainer:
 '''
 
 
-def _make_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def _make_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    policy_hidden_gradient_scope: str = "none",
+    num_layers: int = 1,
+):
     source_path = tmp_path / "ASFormer" / "model.py"
     source_path.parent.mkdir(parents=True)
     source_path.write_text(_FAKE_ASFORMER, encoding="utf-8")
@@ -71,9 +88,10 @@ def _make_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         backend="official_asformer",
         spatial_size=8,
         hidden_dim=16,
-        num_layers=1,
+        num_layers=num_layers,
         dropout=0.0,
         hidden_output_kind=ASFORMER_ENCODER_HIDDEN_KIND,
+        policy_hidden_gradient_scope=policy_hidden_gradient_scope,
     )
     return probe, source_path
 
@@ -110,3 +128,39 @@ def test_official_asformer_hidden_capture_preserves_logits_and_rng(
     assert with_hidden["official_source_normalized_lf_sha256"] == hashlib.sha256(
         source_path.read_bytes().replace(b"\r\n", b"\n")
     ).hexdigest()
+
+
+def test_restricted_policy_hidden_updates_only_last_official_encoder_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe, _ = _make_probe(
+        tmp_path,
+        monkeypatch,
+        policy_hidden_gradient_scope="asformer_last_encoder_layer",
+        num_layers=2,
+    )
+    probe.eval()
+    output = probe(
+        torch.randn(1, 6, 3, 8, 8),
+        torch.ones(1, 6, dtype=torch.bool),
+        return_hidden=True,
+    )
+
+    assert torch.equal(output["policy_hidden"].detach(), output["hidden"].detach())
+    output["policy_hidden"].square().mean().backward()
+    named = dict(probe.module.named_parameters())
+    last = sum(
+        float(parameter.grad.abs().sum())
+        for name, parameter in named.items()
+        if name.startswith("official_temporal.encoder.layers.1.")
+        and parameter.grad is not None
+    )
+    protected = sum(
+        float(parameter.grad.abs().sum())
+        for name, parameter in named.items()
+        if not name.startswith("official_temporal.encoder.layers.1.")
+        and parameter.grad is not None
+    )
+    assert last > 0.0
+    assert protected == pytest.approx(0.0)

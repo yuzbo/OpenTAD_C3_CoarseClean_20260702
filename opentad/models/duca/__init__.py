@@ -25,6 +25,12 @@ from .counterfactual_utility import (
     signed_one_swap_proximal_loss,
 )
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
+from .hard_soft_alignment import (
+    enumerate_legal_local_hard_swaps,
+    hard_soft_alignment_report,
+    preregistered_hard_soft_gate,
+    surrogate_hard_swap_descent,
+)
 from .structured_selection import (
     LocalCellSelectionOutput,
     StructuredSelectionOutput,
@@ -32,6 +38,7 @@ from .structured_selection import (
     global_structured_topk,
     local_cell_deformation,
 )
+from .temporal_contract import DucaTemporalSamplingContract
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaTransitionUtilityScorer,
@@ -54,6 +61,11 @@ __all__ = [
     "LocalCellSelectionOutput",
     "ASFORMER_ENCODER_HIDDEN_KIND",
     "DucaTransitionUtilityScorer",
+    "DucaTemporalSamplingContract",
+    "enumerate_legal_local_hard_swaps",
+    "hard_soft_alignment_report",
+    "preregistered_hard_soft_gate",
+    "surrogate_hard_swap_descent",
     "balanced_binary_actionness_loss",
     "ZeroShotActionnessSource",
     "budgeted_center_radius_decode",

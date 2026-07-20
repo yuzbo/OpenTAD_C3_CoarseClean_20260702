@@ -666,6 +666,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         return_hidden_features: bool = True,
         require_hidden_features: bool = True,
         hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
+        policy_hidden_gradient_scope: str = "none",
         **_: Any,
     ) -> None:
         super().__init__()
@@ -710,6 +711,21 @@ class C3CoarseProbeActionnessSource(nn.Module):
         )
         self.return_hidden_features = bool(return_hidden_features)
         self.require_hidden_features = bool(require_hidden_features)
+        self.policy_hidden_gradient_scope = str(policy_hidden_gradient_scope)
+        if self.policy_hidden_gradient_scope not in {
+            "none",
+            "asformer_last_encoder_layer",
+        }:
+            raise ValueError(
+                "policy_hidden_gradient_scope must be none or asformer_last_encoder_layer"
+            )
+        if self.policy_hidden_gradient_scope != "none" and (
+            self.probe_model != "official-action-seg"
+            or str(official_action_seg_backend) != "official_asformer"
+        ):
+            raise ValueError(
+                "restricted policy hidden is only supported by the official ASFormer probe"
+            )
         if self.require_checkpoint and not self.checkpoint_path:
             raise ValueError("C3CoarseProbeActionnessSource requires checkpoint_path")
         if self.checkpoint_path and not os.path.isfile(self.checkpoint_path):
@@ -756,6 +772,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "returns_hidden_features": self.return_hidden_features,
             "requires_hidden_features": self.require_hidden_features,
             "hidden_output_kind": str(hidden_output_kind),
+            "policy_hidden_gradient_scope": self.policy_hidden_gradient_scope,
         }
 
         probe_mod = self._probe_module()
@@ -781,6 +798,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 num_layers=int(official_num_layers),
                 dropout=self.dropout,
                 hidden_output_kind=str(hidden_output_kind),
+                policy_hidden_gradient_scope=self.policy_hidden_gradient_scope,
             )
         elif self.probe_model == "matrix-zoo":
             self.probe = probe_mod.C3MatrixZooActionProbe(
@@ -958,6 +976,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         else:
             probe_output = call_probe()
         hidden = None
+        policy_hidden = None
         hidden_kind = None
         official_source_sha256 = None
         official_source_normalized_lf_sha256 = None
@@ -969,6 +988,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 if probe_output.get("coarse_hidden_features") is not None
                 else probe_output.get("hidden")
             )
+            policy_hidden = probe_output.get("policy_hidden")
             if logits is None:
                 raise ValueError("C3 coarse probe output mapping must contain logits")
             hidden_kind = probe_output.get("hidden_kind")
@@ -988,6 +1008,13 @@ class C3CoarseProbeActionnessSource(nn.Module):
             if hidden.shape[:2] != logits.shape:
                 raise ValueError("C3 coarse hidden features must align with logits [B,T]")
             hidden = hidden.float().to(device=inputs.device).masked_fill(~valid[:, :, None], 0.0)
+        if policy_hidden is not None:
+            if hidden is None:
+                raise ValueError("restricted policy hidden requires the shared coarse hidden")
+            if policy_hidden.shape != hidden.shape:
+                raise ValueError("restricted policy hidden must match shared coarse hidden [B,T,D]")
+            policy_hidden = policy_hidden.float().to(device=inputs.device)
+            policy_hidden = policy_hidden.masked_fill(~valid[:, :, None], 0.0)
         latency_ms = float((time.perf_counter() - start) * 1000.0)
         calibrated_logits = (logits + self.calibration_bias) / self.calibration_temperature
         p_action = torch.sigmoid(calibrated_logits).masked_fill(~valid, 0.0)
@@ -1017,6 +1044,9 @@ class C3CoarseProbeActionnessSource(nn.Module):
             output["official_source_sha256"] = official_source_sha256
             output["official_source_normalized_lf_sha256"] = official_source_normalized_lf_sha256
             output["official_source_file"] = official_source_file
+            if policy_hidden is not None:
+                output["policy_hidden_features"] = policy_hidden
+                output["policy_hidden_gradient_scope"] = self.policy_hidden_gradient_scope
             profile["hidden_output_shape"] = [int(v) for v in hidden.shape]
             profile["hidden_kind"] = hidden_kind
             profile["official_source_sha256"] = official_source_sha256
@@ -1060,6 +1090,7 @@ class DucaAcquisitionAdapter(nn.Module):
         selector_variant: str = "direct_boundary",
         coarse_hidden_dim: Optional[int] = None,
         require_coarse_hidden_features: bool = False,
+        policy_hidden_gradient_scale: float = 0.0,
         max_unselected_hole: Optional[int] = None,
         hard_max_gap_repair: bool = True,
         fail_on_infeasible_max_gap: bool = True,
@@ -1131,6 +1162,12 @@ class DucaAcquisitionAdapter(nn.Module):
         if self.coarse_hidden_dim < 0:
             raise ValueError("coarse_hidden_dim must be non-negative")
         self.require_coarse_hidden_features = bool(require_coarse_hidden_features)
+        self.policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
+        if (
+            not math.isfinite(self.policy_hidden_gradient_scale)
+            or not 0.0 <= self.policy_hidden_gradient_scale <= 1.0
+        ):
+            raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
         self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
@@ -1464,6 +1501,7 @@ class DucaAcquisitionAdapter(nn.Module):
         p_action: Optional[torch.Tensor] = None,
         actionness_provenance: Optional[Mapping[str, Any]] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
+        coarse_policy_hidden_features: Optional[torch.Tensor] = None,
         coarse_hidden_kind: Optional[str] = None,
     ) -> Dict[str, Any]:
         if dense_observations.ndim != 3:
@@ -1524,6 +1562,22 @@ class DucaAcquisitionAdapter(nn.Module):
                 dense_observations.shape[1],
                 int(self.coarse_hidden_dim),
             )
+        coarse_policy_hidden = None
+        if coarse_policy_hidden_features is not None:
+            if coarse_hidden is None or coarse_hidden_features is None:
+                raise ValueError("coarse_policy_hidden_features require coarse_hidden_features")
+            if coarse_policy_hidden_features.shape != coarse_hidden_features.shape:
+                raise ValueError(
+                    "coarse_policy_hidden_features must match coarse_hidden_features [B,T,D]"
+                )
+            coarse_policy_hidden = coarse_policy_hidden_features.to(
+                dense_observations.device,
+                dense_observations.dtype,
+            )
+            coarse_policy_hidden = coarse_policy_hidden.masked_fill(
+                ~valid[:, :, None],
+                0.0,
+            )
         transition_paths = None
         if self.selector_variant == "transition_only":
             if coarse_hidden_kind != ASFORMER_ENCODER_HIDDEN_KIND:
@@ -1539,6 +1593,8 @@ class DucaAcquisitionAdapter(nn.Module):
                 coarse_hidden,
                 valid,
                 compute_auxiliary=self.training,
+                policy_hidden=coarse_policy_hidden,
+                policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
             )
             center_scores = transition_paths["policy_scores"]
             selection_features = transition_paths["transition_descriptors"]
@@ -1619,6 +1675,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "calibrated_actionness_logits": source["logits"],
             "selection_features": selection_features.masked_fill(~valid[:, :, None], 0.0),
             "coarse_hidden_features": None if coarse_hidden is None else coarse_hidden.masked_fill(~valid[:, :, None], 0.0),
+            "coarse_policy_hidden_features": coarse_policy_hidden,
             "uses_coarse_hidden_features": bool(has_coarse_hidden_features),
             "coarse_hidden_kind": coarse_hidden_kind,
             "selector_variant": self.selector_variant,
@@ -1631,6 +1688,7 @@ class DucaAcquisitionAdapter(nn.Module):
                     "transition_descriptors": transition_paths["transition_descriptors"],
                     "transition_auxiliary_scores": transition_paths["auxiliary_scores"],
                     "transition_policy_scores": transition_paths["policy_scores"],
+                    "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
                     "uses_absolute_hidden_features": False,
                     "uses_raw_rgb_descriptors": False,
                     "legacy_direct_heads_enabled": False,
@@ -1894,6 +1952,7 @@ class DucaAcquisitionAdapter(nn.Module):
         p_action: Optional[torch.Tensor] = None,
         actionness_provenance: Optional[Mapping[str, Any]] = None,
         coarse_hidden_features: Optional[torch.Tensor] = None,
+        coarse_policy_hidden_features: Optional[torch.Tensor] = None,
         coarse_hidden_kind: Optional[str] = None,
         compute_profile_context: Optional[Mapping[str, Any]] = None,
         stable_selection: bool = False,
@@ -1910,6 +1969,7 @@ class DucaAcquisitionAdapter(nn.Module):
             p_action=p_action,
             actionness_provenance=actionness_provenance,
             coarse_hidden_features=coarse_hidden_features,
+            coarse_policy_hidden_features=coarse_policy_hidden_features,
             coarse_hidden_kind=coarse_hidden_kind,
         )
         score_ms = _elapsed_ms(score_start, dense_observations, enabled=sync_enabled)

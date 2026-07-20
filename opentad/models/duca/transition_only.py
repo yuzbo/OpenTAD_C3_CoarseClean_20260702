@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -172,11 +172,16 @@ def transition_utility_paths(
     valid_mask: torch.Tensor,
     *,
     compute_auxiliary: bool = True,
+    policy_hidden: Optional[torch.Tensor] = None,
+    policy_hidden_gradient_scale: float = 0.0,
     calibration_temperature: float = 1.0,
     calibration_bias: float = 0.0,
 ) -> Dict[str, torch.Tensor | str]:
     """Create equal-valued routes with intentionally different gradient ownership."""
 
+    policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
+    if not math.isfinite(policy_hidden_gradient_scale) or not 0.0 <= policy_hidden_gradient_scale <= 1.0:
+        raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
     valid = _validate_temporal_inputs(actionness_logits, hidden, valid_mask)
     descriptors = build_transition_descriptors(
         actionness_logits.detach(),
@@ -185,7 +190,32 @@ def transition_utility_paths(
         calibration_temperature=calibration_temperature,
         calibration_bias=calibration_bias,
     )
-    policy_scores = scorer(descriptors.detach()).masked_fill(~valid, 0.0)
+    policy_descriptor_source = descriptors
+    if policy_hidden is not None:
+        policy_descriptor_source = build_transition_descriptors(
+            actionness_logits.detach(),
+            policy_hidden,
+            valid,
+            calibration_temperature=calibration_temperature,
+            calibration_bias=calibration_bias,
+        )
+        if not torch.allclose(
+            policy_descriptor_source.detach(),
+            descriptors.detach(),
+            atol=1.0e-5,
+            rtol=1.0e-5,
+        ):
+            raise RuntimeError(
+                "policy-specific hidden route must be numerically identical to the shared ASFormer hidden"
+            )
+    elif policy_hidden_gradient_scale > 0.0:
+        raise ValueError(
+            "positive policy_hidden_gradient_scale requires a restricted policy_hidden route"
+        )
+    policy_descriptors = policy_descriptor_source.detach() + policy_hidden_gradient_scale * (
+        policy_descriptor_source - policy_descriptor_source.detach()
+    )
+    policy_scores = scorer(policy_descriptors).masked_fill(~valid, 0.0)
     auxiliary_scores = (
         scorer(descriptors).masked_fill(~valid, 0.0)
         if bool(compute_auxiliary)
@@ -195,8 +225,10 @@ def transition_utility_paths(
         raise RuntimeError("shared transition scorer routes must be numerically identical")
     return {
         "transition_descriptors": descriptors,
+        "policy_descriptors": policy_descriptors,
         "auxiliary_scores": auxiliary_scores,
         "policy_scores": policy_scores,
+        "policy_hidden_gradient_scale": policy_hidden_gradient_scale,
         "hidden_kind": ASFORMER_ENCODER_HIDDEN_KIND,
     }
 

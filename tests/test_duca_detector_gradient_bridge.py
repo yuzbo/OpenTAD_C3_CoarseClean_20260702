@@ -10,6 +10,7 @@ import pytest
 
 from opentad.models.duca.acquisition import DucaAcquisitionAdapter
 from opentad.models.selectors.duca_online_frame_selector import (
+    _add_protected_structured_transport_gradient_path,
     _add_structured_zero_forward_gradient_path,
 )
 
@@ -67,6 +68,51 @@ def test_structured_bridge_rejects_invalid_slot_marginals(assignment: torch.Tens
             slot_mask=torch.ones(1, 1, dtype=torch.bool),
             bridge_weight=1.0,
         )
+
+
+def test_protected_transport_is_exact_hard_forward_and_has_policy_gradient() -> None:
+    logits = torch.tensor(
+        [[[2.0, 1.0, -1.0, -2.0, -3.0], [-3.0, -2.0, -1.0, 1.0, 2.0]]],
+        requires_grad=True,
+    )
+    assignment = torch.softmax(logits, dim=-1)
+    dense = torch.tensor([[[0.0, 1.0, 4.0, 2.0, 5.0]]])
+    positions = torch.tensor([[1, 3]])
+    slot_mask = torch.ones(1, 2, dtype=torch.bool)
+    hard = torch.tensor([[[1.0, 2.0]]])
+
+    bridged, expected_positions = _add_protected_structured_transport_gradient_path(
+        hard,
+        dense,
+        selected_positions=positions,
+        soft_slot_assignment=assignment,
+        slot_mask=slot_mask,
+        bridge_weight=0.25,
+    )
+
+    assert torch.equal(bridged.detach(), hard)
+    assert expected_positions is not None and expected_positions.shape == positions.shape
+    bridged.square().mean().backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert float(logits.grad.abs().sum()) > 0.0
+
+
+def test_protected_transport_zero_weight_is_identity_without_surrogate() -> None:
+    hard = torch.tensor([[[1.0, 2.0]]])
+    out, expected_positions = _add_protected_structured_transport_gradient_path(
+        hard,
+        torch.tensor([[[0.0, 1.0, 4.0, 2.0, 5.0]]]),
+        selected_positions=torch.tensor([[1, 3]]),
+        soft_slot_assignment=torch.tensor(
+            [[[0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.5, 0.5]]]
+        ),
+        slot_mask=torch.ones(1, 2, dtype=torch.bool),
+        bridge_weight=0.0,
+    )
+
+    assert out is hard
+    assert expected_positions is None
 
 
 def test_acquisition_detector_only_loss_moves_structured_policy_and_preserves_hard_input() -> None:

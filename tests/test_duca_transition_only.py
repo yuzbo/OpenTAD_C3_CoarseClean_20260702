@@ -145,6 +145,63 @@ def test_shared_transition_scorer_has_protected_auxiliary_and_policy_routes() ->
     assert sum(float(p.grad.abs().sum()) for p in scorer.parameters() if p.grad is not None) > 0.0
 
 
+def test_policy_hidden_gradient_scale_only_opens_the_declared_hidden_route() -> None:
+    torch.manual_seed(31)
+    logits = torch.randn(1, 7, requires_grad=True)
+    hidden = torch.randn(1, 7, 4, requires_grad=True)
+    restricted_policy_hidden = hidden.detach().clone().requires_grad_(True)
+    valid = torch.ones(1, 7, dtype=torch.bool)
+    scorer = DucaTransitionUtilityScorer(hidden_dim=4, scorer_hidden_dim=8)
+
+    protected = transition_utility_paths(
+        scorer,
+        logits,
+        hidden,
+        valid,
+        policy_hidden_gradient_scale=0.0,
+    )
+    collaborative = transition_utility_paths(
+        scorer,
+        logits,
+        hidden,
+        valid,
+        policy_hidden=restricted_policy_hidden,
+        policy_hidden_gradient_scale=0.05,
+    )
+    assert torch.equal(protected["policy_scores"], collaborative["policy_scores"])
+
+    collaborative["policy_scores"].square().mean().backward()
+    assert _grad_sum(hidden) == pytest.approx(0.0)
+    assert _grad_sum(restricted_policy_hidden) > 0.0
+    assert _grad_sum(logits) == pytest.approx(0.0)
+    assert collaborative["policy_hidden_gradient_scale"] == pytest.approx(0.05)
+
+
+def test_positive_policy_hidden_scale_requires_a_restricted_route() -> None:
+    scorer = DucaTransitionUtilityScorer(hidden_dim=2, scorer_hidden_dim=4)
+    with pytest.raises(ValueError, match="restricted policy_hidden"):
+        transition_utility_paths(
+            scorer,
+            torch.zeros(1, 3),
+            torch.zeros(1, 3, 2),
+            torch.ones(1, 3, dtype=torch.bool),
+            policy_hidden_gradient_scale=0.05,
+        )
+
+
+@pytest.mark.parametrize("scale", [-0.1, 1.1, float("nan")])
+def test_policy_hidden_gradient_scale_fails_closed(scale: float) -> None:
+    scorer = DucaTransitionUtilityScorer(hidden_dim=2, scorer_hidden_dim=4)
+    with pytest.raises(ValueError, match="policy_hidden_gradient_scale"):
+        transition_utility_paths(
+            scorer,
+            torch.zeros(1, 3),
+            torch.zeros(1, 3, 2),
+            torch.ones(1, 3, dtype=torch.bool),
+            policy_hidden_gradient_scale=scale,
+        )
+
+
 def test_continuous_policy_homotopy_has_exact_endpoints_and_smooth_midpoint() -> None:
     learned = torch.tensor([[2.0, -1.0, 0.5, 3.0]], dtype=torch.float32)
     valid = torch.ones_like(learned, dtype=torch.bool)
