@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.modules.batchnorm import _BatchNorm
 
 from .continuous_roi_geometry import (
     CONTINUOUS_ROI_GENERATOR_SCHEMA,
@@ -198,6 +199,7 @@ class ContinuousRoiBackboneWrapper(NativeCropBackboneWrapper):
             raise ValueError("Continuous-RoI source time geometry is inconsistent")
         if self.expected_local_size != 128 or self.expected_global_size != 96:
             raise ValueError("Continuous-RoI U128 requires global96 and local128")
+        self._freeze_shared_backbone_except_adapters()
         self.fusion = ContinuousRoiFeatureFusion(channels=384)
         self.global_aux_head = nn.Conv1d(384, self.num_classes, kernel_size=1)
         self.local_aux_head = nn.Conv1d(384, self.num_classes, kernel_size=1)
@@ -217,6 +219,28 @@ class ContinuousRoiBackboneWrapper(NativeCropBackboneWrapper):
         self._successful_update_index = None
         self._pending_auxiliary = None
         self.latest_continuous_roi_audit = None
+
+    def _freeze_shared_backbone_except_adapters(self) -> None:
+        trainable_adapter_parameters = 0
+        for name, parameter in self.model.backbone.named_parameters():
+            is_adapter = ".adapter." in f".{name}."
+            parameter.requires_grad = is_adapter
+            if is_adapter:
+                trainable_adapter_parameters += parameter.numel()
+        if trainable_adapter_parameters <= 0:
+            raise RuntimeError(
+                "Continuous-RoI U128 requires trainable official VideoMAE adapters"
+            )
+        self.trainable_adapter_parameters = trainable_adapter_parameters
+
+    def set_norm_layer(self) -> None:
+        """Keep the frozen VideoMAE norms in eval without freezing fusion norms."""
+
+        if not self.norm_eval:
+            return
+        for module in self.model.backbone.modules():
+            if isinstance(module, (nn.LayerNorm, nn.GroupNorm, _BatchNorm)):
+                module.eval()
 
     def set_successful_update_index(self, index: int) -> None:
         index = int(index)

@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from opentad.models.backbones.continuous_roi_wrapper import (
+    ContinuousRoiBackboneWrapper,
     ContinuousRoiFeatureFusion,
     auxiliary_loss_weights,
     temporal_class_occupancy_targets,
@@ -56,3 +57,46 @@ def test_temporal_class_occupancy_uses_only_temporal_gt_and_labels():
 )
 def test_auxiliary_weight_schedule(update, expected):
     assert auxiliary_loss_weights(update) == pytest.approx(expected)
+
+
+class _ToySharedBackbone(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.patch_embed = torch.nn.Linear(4, 4)
+        self.blocks = torch.nn.ModuleList(
+            [
+                torch.nn.ModuleDict(
+                    {
+                        "attn": torch.nn.Linear(4, 4),
+                        "adapter": torch.nn.Linear(4, 4),
+                    }
+                )
+            ]
+        )
+        self.norm = torch.nn.LayerNorm(4)
+        self.fc_norm = torch.nn.LayerNorm(4)
+
+
+class _ToyRecognizer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone = _ToySharedBackbone()
+
+
+def test_u128_freezes_every_shared_core_parameter_and_preserves_fusion_norms():
+    wrapper = ContinuousRoiBackboneWrapper.__new__(ContinuousRoiBackboneWrapper)
+    torch.nn.Module.__init__(wrapper)
+    wrapper.model = _ToyRecognizer()
+    wrapper.norm_eval = True
+    wrapper.fusion = ContinuousRoiFeatureFusion()
+
+    wrapper._freeze_shared_backbone_except_adapters()
+    for name, parameter in wrapper.model.backbone.named_parameters():
+        assert parameter.requires_grad is (".adapter." in f".{name}.")
+    assert wrapper.trainable_adapter_parameters > 0
+
+    wrapper.set_norm_layer()
+    assert wrapper.model.backbone.norm.training is False
+    assert wrapper.model.backbone.fc_norm.training is False
+    assert wrapper.fusion.global_norm.norm.training is True
+    assert all(parameter.requires_grad for parameter in wrapper.fusion.parameters())
