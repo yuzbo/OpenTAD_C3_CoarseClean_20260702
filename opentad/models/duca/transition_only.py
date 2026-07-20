@@ -165,8 +165,92 @@ class DucaTransitionUtilityScorer(nn.Module):
         return self.net(descriptors).squeeze(-1)
 
 
+class DucaProtectedTransitionScorer(nn.Module):
+    """Explicit selector parameter boundary for the protected-E2E route."""
+
+    def __init__(
+        self,
+        hidden_dim: int = 96,
+        scorer_hidden_dim: int = 64,
+        *,
+        zero_init_output: bool = False,
+    ) -> None:
+        super().__init__()
+        hidden_dim = int(hidden_dim)
+        scorer_hidden_dim = int(scorer_hidden_dim)
+        if hidden_dim <= 0 or scorer_hidden_dim <= 0:
+            raise ValueError("hidden_dim and scorer_hidden_dim must be positive")
+        self.hidden_dim = hidden_dim
+        self.input_dim = 2 * hidden_dim + 5
+        self.scorer_hidden_dim = scorer_hidden_dim
+        self.zero_init_output = bool(zero_init_output)
+        self.selector_adapter = nn.Sequential(
+            nn.LayerNorm(self.input_dim),
+            nn.Linear(self.input_dim, scorer_hidden_dim),
+            nn.GELU(),
+        )
+        self.selector_score_head = nn.Linear(scorer_hidden_dim, 1)
+        if self.zero_init_output:
+            nn.init.zeros_(self.selector_score_head.weight)
+            nn.init.zeros_(self.selector_score_head.bias)
+
+    def forward(self, descriptors: torch.Tensor) -> torch.Tensor:
+        if descriptors.ndim != 3 or int(descriptors.shape[-1]) != self.input_dim:
+            raise ValueError(f"transition descriptors must be [B,T,{self.input_dim}]")
+        return self.selector_score_head(self.selector_adapter(descriptors)).squeeze(-1)
+
+
+def coverage_floor_distribution(
+    scores: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    floor_weight: float = 0.10,
+    score_temperature: float = 0.70,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Mix learned temporal mass with a fixed uniform coverage floor."""
+
+    if scores.ndim != 2 or not scores.is_floating_point():
+        raise ValueError("scores must be a floating-point [B,T] tensor")
+    valid = valid_mask.to(device=scores.device, dtype=torch.bool)
+    if valid.shape != scores.shape:
+        raise ValueError("valid_mask must align with scores")
+    if bool(torch.any(valid.sum(dim=1) == 0).item()):
+        raise ValueError("coverage-floor distribution requires one valid point per row")
+    floor_weight = float(floor_weight)
+    score_temperature = float(score_temperature)
+    if not math.isfinite(floor_weight) or not 0.0 <= floor_weight < 1.0:
+        raise ValueError("floor_weight must lie in [0,1)")
+    if not math.isfinite(score_temperature) or score_temperature <= 0.0:
+        raise ValueError("score_temperature must be finite and positive")
+
+    work = scores.float()
+    learned = F.softmax(
+        (work / score_temperature).masked_fill(~valid, float("-inf")),
+        dim=1,
+    ).masked_fill(~valid, 0.0)
+    valid_count = valid.sum(dim=1, keepdim=True).to(dtype=work.dtype)
+    uniform = valid.to(dtype=work.dtype) / valid_count
+    probabilities = (
+        (1.0 - floor_weight) * learned + floor_weight * uniform
+    ).masked_fill(~valid, 0.0)
+    row_sum = probabilities.sum(dim=1)
+    if not torch.allclose(
+        row_sum,
+        torch.ones_like(row_sum),
+        atol=1.0e-6,
+        rtol=1.0e-6,
+    ):
+        raise RuntimeError("coverage-floor probabilities must sum to one")
+    log_probabilities = torch.where(
+        valid,
+        probabilities.clamp_min(torch.finfo(probabilities.dtype).tiny).log(),
+        probabilities.new_full((), float("-inf")),
+    )
+    return probabilities.to(dtype=scores.dtype), log_probabilities.to(dtype=scores.dtype)
+
+
 def transition_utility_paths(
-    scorer: DucaTransitionUtilityScorer,
+    scorer: nn.Module,
     actionness_logits: torch.Tensor,
     hidden: torch.Tensor,
     valid_mask: torch.Tensor,
@@ -379,11 +463,13 @@ def local_boundary_mass_coverage_loss(
 
 __all__ = [
     "ASFORMER_ENCODER_HIDDEN_KIND",
+    "DucaProtectedTransitionScorer",
     "DucaTransitionUtilityScorer",
     "balanced_binary_actionness_loss",
     "build_transition_descriptors",
     "calibrated_actionness_probability",
     "continuous_policy_logits",
+    "coverage_floor_distribution",
     "local_boundary_coverage_loss",
     "local_boundary_mass_coverage_loss",
     "transition_distribution_loss",

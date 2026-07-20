@@ -25,6 +25,7 @@ from opentad.utils.training_guard import (
 )
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
 from tools.bata import duca_cellcf_training
+from tools.bata import duca_protected_physical_training
 from tools.bata.duca_p0_evaluation import (
     evaluation_config_sha256,
     normalize_evaluation_config,
@@ -56,11 +57,20 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
-    cellcf_formal = str(cfg.workflow.get("formal_protocol", "")) == "duca_cellcf_v1"
+    formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
+    cellcf_formal = formal_protocol == "duca_cellcf_v1"
+    protected_physical_formal = (
+        formal_protocol == "duca_protected_physical_v1"
+    )
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/test.py"
+        )
+    elif protected_physical_formal:
+        duca_protected_physical_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/test.py",
         )
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
@@ -72,7 +82,7 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if cellcf_formal:
+    if cellcf_formal or protected_physical_formal:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
@@ -86,9 +96,30 @@ def main():
             encoding="utf-8",
         ).strip()
         if status:
-            raise RuntimeError("formal CellCF evaluation requires a clean exact-commit checkout")
+            raise RuntimeError(
+                "formal evaluation requires a clean exact-commit checkout"
+            )
         if args.world_size != 1 or args.not_eval:
-            raise RuntimeError("formal CellCF evaluation requires one process and official mAP evaluation")
+            raise RuntimeError(
+                "formal evaluation requires one process and official mAP evaluation"
+            )
+    if protected_physical_formal:
+        if source_resolved_config_sha256 != os.environ.get(
+            "DUCA_RESOLVED_CONFIG_SHA256"
+        ):
+            raise RuntimeError(
+                "formal protected evaluation source config differs from P0"
+            )
+        if (
+            args.seed != 3407
+            or args.expected_checkpoint_epoch != 59
+            or args.checkpoint_state_key != "state_dict_ema"
+            or not args.metrics_json
+        ):
+            raise RuntimeError(
+                "formal protected evaluation must use seed 3407, "
+                "terminal epoch-59 EMA, and structured metrics"
+            )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
@@ -197,11 +228,15 @@ def main():
         evaluator_identity = official_evaluator_identity()
         if evaluation_summary.get("evaluator") != evaluator_identity:
             raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
-        evaluation_schema = (
-            "duca_cellcf_terminal_evaluation_v1"
-            if str(cfg.workflow.get("formal_protocol", "")) == "duca_cellcf_v1"
-            else "duca_p0_terminal_evaluation_v3"
-        )
+        formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
+        if formal_protocol == "duca_cellcf_v1":
+            evaluation_schema = "duca_cellcf_terminal_evaluation_v1"
+        elif formal_protocol == "duca_protected_physical_v1":
+            evaluation_schema = (
+                "duca_protected_physical_terminal_evaluation_v1"
+            )
+        else:
+            evaluation_schema = "duca_p0_terminal_evaluation_v3"
         payload = {
             "schema_version": evaluation_schema,
             "git_commit": subprocess.check_output(

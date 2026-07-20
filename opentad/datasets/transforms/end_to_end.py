@@ -387,6 +387,7 @@ class LoadFrames:
         bata_value_transport_source="pc_ot_mras_frontend_hard_positions",
         bata_value_transport_config_hash="",
         bata_value_transport_use_expanded_positions=False,
+        emit_boundary_validity=False,
     ):
         self.num_clips = num_clips
         self.scale_factor = scale_factor  # multiply by the frame number, if backbone has downsampling
@@ -410,16 +411,32 @@ class LoadFrames:
         self.bata_value_transport_source = bata_value_transport_source
         self.bata_value_transport_config_hash = bata_value_transport_config_hash
         self.bata_value_transport_use_expanded_positions = bool(bata_value_transport_use_expanded_positions)
+        self.emit_boundary_validity = bool(emit_boundary_validity)
         self._bata_value_transport_ledger = None
 
-    def random_trunc(self, feats, trunc_len, gt_segments, gt_labels, offset=0, max_num_trials=200):
+    def random_trunc(
+        self,
+        feats,
+        trunc_len,
+        gt_segments,
+        gt_labels,
+        offset=0,
+        max_num_trials=200,
+        return_boundary_validity=False,
+    ):
         feat_len = feats.shape[0]
         num_segs = gt_segments.shape[0]
+
+        def pack(out_feats, out_segments, out_labels, validity):
+            if return_boundary_validity:
+                return out_feats, out_segments, out_labels, validity
+            return out_feats, out_segments, out_labels
 
         trunc_len = trunc_len
         if feat_len <= trunc_len:
             if self.crop_ratio == None:  # do nothing
-                return feats, gt_segments, gt_labels
+                validity = np.ones((num_segs, 2), dtype=np.bool_)
+                return pack(feats, gt_segments, gt_labels, validity)
             else:  # randomly crop the seq by setting trunc_len to a value in [l, r]
                 trunc_len = random.randint(
                     max(round(self.crop_ratio[0] * feat_len), 1),
@@ -427,7 +444,8 @@ class LoadFrames:
                 )
                 # corner case
                 if feat_len == trunc_len:
-                    return feats, gt_segments, gt_labels
+                    validity = np.ones((num_segs, 2), dtype=np.bool_)
+                    return pack(feats, gt_segments, gt_labels, validity)
 
         # try a few times till a valid truncation with at least one action
         for _ in range(max_num_trials):
@@ -452,10 +470,28 @@ class LoadFrames:
                 break
 
         feats = feats[st:ed]
+        original_segments = gt_segments[seg_idx]
+        boundary_validity = np.stack(
+            (
+                np.isclose(
+                    left[seg_idx],
+                    original_segments[:, 0],
+                    rtol=0.0,
+                    atol=1.0e-6,
+                ),
+                np.isclose(
+                    right[seg_idx],
+                    original_segments[:, 1],
+                    rtol=0.0,
+                    atol=1.0e-6,
+                ),
+            ),
+            axis=1,
+        ).astype(np.bool_)
         gt_segments = np.stack((left[seg_idx], right[seg_idx]), axis=1)  # [N,2] in feature grids
         gt_segments = gt_segments - st  # shift the time stamps due to truncation
         gt_labels = gt_labels[seg_idx]  # [N]
-        return feats, gt_segments, gt_labels
+        return pack(feats, gt_segments, gt_labels, boundary_validity)
 
     def _map_coord_to_selected_axis(self, coord, kept_positions, valid_len):
         if kept_positions.size == 0:
@@ -673,12 +709,23 @@ class LoadFrames:
             frame_idxs = np.arange(0, total_frames, frame_stride)
 
             # trunc the frame_idxs
-            frame_idxs, gt_segments, gt_labels = self.random_trunc(
+            truncation = self.random_trunc(
                 frame_idxs,
                 trunc_len=frame_num,
                 gt_segments=results["gt_segments"] * self.scale_factor,  # gt segment should be mapped to frame level
                 gt_labels=results["gt_labels"],
+                return_boundary_validity=self.emit_boundary_validity,
             )
+            if self.emit_boundary_validity:
+                (
+                    frame_idxs,
+                    gt_segments,
+                    gt_labels,
+                    gt_boundary_validity,
+                ) = truncation
+                results["gt_boundary_validity"] = gt_boundary_validity
+            else:
+                frame_idxs, gt_segments, gt_labels = truncation
             results["gt_segments"] = gt_segments / self.scale_factor  # convert back to original scale
             results["gt_labels"] = gt_labels
 

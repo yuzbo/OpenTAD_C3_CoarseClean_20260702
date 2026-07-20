@@ -130,9 +130,11 @@ class ActionFormer(SingleStageDetector):
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         skip_frame_selector = bool(kwargs.pop("_duca_skip_frame_selector", False))
         counterfactual_eval = bool(kwargs.pop("_duca_counterfactual_eval", False))
+        gt_boundary_validity = kwargs.pop("gt_boundary_validity", None)
         losses = dict()
         selector_loss_keys = set()
         raw_selector_context = None
+        detector_rng_state = self._capture_protected_detector_rng(inputs)
         if self.frame_selector is not None and not skip_frame_selector:
             raw_selector_context = (inputs, masks, metas, gt_segments, gt_labels)
             selector_outputs = self.frame_selector.forward_train(
@@ -141,12 +143,22 @@ class ActionFormer(SingleStageDetector):
                 metas=metas,
                 gt_segments=gt_segments,
                 gt_labels=gt_labels,
+                gt_boundary_validity=gt_boundary_validity,
             )
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
             gt_labels = selector_outputs["gt_labels"]
+            self._validate_protected_selector_contract(
+                inputs,
+                masks,
+                metas,
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+                original_gt_segments=raw_selector_context[3],
+                original_gt_labels=raw_selector_context[4],
+            )
             selector_losses = selector_outputs.get("losses", {})
             self._validate_selector_losses(selector_losses)
             for key, value in selector_losses.items():
@@ -180,6 +192,7 @@ class ActionFormer(SingleStageDetector):
                 raw_selector_context, selector_outputs["selector_outputs"], request, **kwargs
             )
 
+        self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
             x = self.backbone(inputs)
         else:
@@ -424,6 +437,7 @@ class ActionFormer(SingleStageDetector):
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
+        detector_rng_state = self._capture_protected_detector_rng(inputs)
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_test(
                 inputs=inputs,
@@ -433,9 +447,15 @@ class ActionFormer(SingleStageDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
+            self._validate_protected_selector_contract(
+                inputs,
+                masks,
+                metas,
+            )
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
             self._require_selector_remap_metadata(metas)
 
+        self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
             x = self.backbone(inputs)
         else:
@@ -541,12 +561,26 @@ class ActionFormer(SingleStageDetector):
 
         selector = getattr(self, "frame_selector", None)
         transition_only = getattr(selector, "selector_variant", None) == "transition_only"
+        protected_e2e = (
+            getattr(selector, "selector_variant", None)
+            == "protected_e2e_physical"
+        )
 
         def parameter_lr(name):
             scorer_prefix = "frame_selector.adapter.transition_scorer."
+            protected_adapter_prefix = (
+                "frame_selector.transition_scorer.selector_adapter."
+            )
+            protected_head_prefix = (
+                "frame_selector.transition_scorer.selector_score_head."
+            )
             coarse_prefix = "frame_selector.raw_actionness_source.probe_module."
             if transition_only and name.startswith(scorer_prefix):
                 return float(selector.transition_scorer_lr)
+            if protected_e2e and name.startswith(
+                (protected_adapter_prefix, protected_head_prefix)
+            ):
+                return float(selector.selector_lr)
             if name.startswith(coarse_prefix):
                 temporal_marker = ".official_temporal."
                 tail = name.split(temporal_marker, 1)[1] if temporal_marker in name else ""
@@ -560,6 +594,24 @@ class ActionFormer(SingleStageDetector):
                 return float(selector.coarse_trunk_lr)
             return float(cfg["lr"])
 
+        if protected_e2e:
+            protected_prefixes = (
+                "frame_selector.transition_scorer.selector_adapter.",
+                "frame_selector.transition_scorer.selector_score_head.",
+                "frame_selector.raw_actionness_source.probe_module.",
+            )
+            unexpected = sorted(
+                name
+                for name in param_dict
+                if name.startswith("frame_selector.")
+                and not name.startswith(protected_prefixes)
+            )
+            if unexpected:
+                raise AssertionError(
+                    "protected DUCA exposes trainable selector parameters outside "
+                    f"the frozen optimizer contract: {unexpected}"
+                )
+
         grouped = {}
         for names, weight_decay in ((decay, float(cfg["weight_decay"])), (no_decay, 0.0)):
             for name in sorted(names):
@@ -571,6 +623,90 @@ class ActionFormer(SingleStageDetector):
             if params
         ]
         return optim_groups
+
+    def _capture_protected_detector_rng(self, inputs):
+        selector = getattr(self, "frame_selector", None)
+        if selector is None or not bool(
+            getattr(selector, "separate_detector_rng", False)
+        ):
+            return None
+        return {
+            "cpu": torch.random.get_rng_state(),
+            "cuda": (
+                torch.cuda.get_rng_state_all()
+                if torch.is_tensor(inputs) and inputs.is_cuda
+                else None
+            ),
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+        }
+
+    @staticmethod
+    def _restore_protected_detector_rng(state):
+        if state is None:
+            return
+        torch.random.set_rng_state(state["cpu"])
+        if state["cuda"] is not None:
+            torch.cuda.set_rng_state_all(state["cuda"])
+        random.setstate(state["python"])
+        np.random.set_state(state["numpy"])
+
+    def _validate_protected_selector_contract(
+        self,
+        inputs,
+        masks,
+        metas,
+        *,
+        gt_segments=None,
+        gt_labels=None,
+        original_gt_segments=None,
+        original_gt_labels=None,
+    ):
+        selector = getattr(self, "frame_selector", None)
+        if getattr(selector, "selector_variant", None) != "protected_e2e_physical":
+            return
+        if masks.ndim != 2 or int(masks.shape[1]) > int(selector.budget):
+            raise RuntimeError("protected DUCA detector mask violates exact-K budget")
+        temporal_dim = 3 if inputs.ndim == 6 else 2
+        if inputs.ndim not in {3, 5, 6} or int(inputs.shape[temporal_dim]) != int(
+            masks.shape[1]
+        ):
+            raise RuntimeError(
+                "protected DUCA detector input and mask temporal axes disagree"
+            )
+        if not isinstance(metas, (list, tuple)) or len(metas) != int(
+            inputs.shape[0]
+        ):
+            raise RuntimeError("protected DUCA requires one detector meta per sample")
+        for meta, mask in zip(metas, masks):
+            if meta.get("duca_contract") != "duca_protected_e2e_physical_v1":
+                raise RuntimeError("protected DUCA metadata contract is missing")
+            if meta.get("irregular_native_axis") is not True:
+                raise RuntimeError("protected DUCA requires native dense detector axis")
+            if any(
+                bool(meta.get(key, False))
+                for key in (
+                    "remap_gt_to_selected_axis",
+                    "gt_remapped_to_selected_axis",
+                    "pc_ot_mras_prebackbone_remap_gt_to_selected_axis",
+                    "selected_axis_remap_required",
+                    "detector_prediction_inverse_map_required",
+                )
+            ):
+                raise RuntimeError("protected DUCA forbids selected-axis remapping")
+            if meta.get("detector_output_coordinate_space") != "dense_physical":
+                raise RuntimeError(
+                    "protected DUCA detector output must remain in dense physical coordinates"
+                )
+            selected_count = int(meta.get("irregular_selected_count", -1))
+            if selected_count != int(mask.to(dtype=torch.bool).sum().item()):
+                raise RuntimeError(
+                    "protected DUCA metadata selected count does not match detector mask"
+                )
+        if original_gt_segments is not None and gt_segments is not original_gt_segments:
+            raise RuntimeError("protected DUCA must preserve dense GT segment objects")
+        if original_gt_labels is not None and gt_labels is not original_gt_labels:
+            raise RuntimeError("protected DUCA must preserve dense GT label objects")
 
     def _freeze_non_selector_trainable_parameters(self):
         for name, param in self.named_parameters():

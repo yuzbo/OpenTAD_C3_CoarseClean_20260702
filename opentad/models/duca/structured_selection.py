@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import math
 
 import torch
+import torch.nn.functional as F
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,57 @@ class StructuredSelectionOutput:
     max_unselected_hole: int
     temperature: float
     selection_scope: str = "full_window_non_streaming"
+
+
+@dataclass(frozen=True)
+class PhysicalExactKSelectionOutput:
+    hard_occupancy: torch.Tensor
+    hard_slot_assignment: torch.Tensor
+    hard_positions: torch.Tensor
+    hard_slot_mask: torch.Tensor
+    soft_occupancy: torch.Tensor
+    soft_slot_assignment: torch.Tensor
+    selection_st: torch.Tensor
+    log_partition: torch.Tensor
+    edge_count: torch.Tensor
+    effective_k: torch.Tensor
+    max_gap_seconds: torch.Tensor
+    temperature: float
+    selection_scope: str = "full_window_offline_physical_exact_k"
+
+
+@dataclass(frozen=True)
+class PhysicalExactKGraph:
+    predecessor_index: torch.Tensor
+    predecessor_valid: torch.Tensor
+    successor_index: torch.Tensor
+    successor_valid: torch.Tensor
+    source_valid: torch.Tensor
+    sink_valid: torch.Tensor
+    max_gap_seconds: torch.Tensor
+    edge_count: int
+
+
+@dataclass(frozen=True)
+class PhysicalExactKHardOutput:
+    hard_occupancy: torch.Tensor
+    hard_slot_assignment: torch.Tensor
+    hard_positions: torch.Tensor
+    hard_slot_mask: torch.Tensor
+    edge_count: torch.Tensor
+    effective_k: torch.Tensor
+    max_gap_seconds: torch.Tensor
+
+
+@dataclass(frozen=True)
+class PhysicalExactKSoftOutput:
+    soft_occupancy: torch.Tensor
+    soft_slot_assignment: torch.Tensor
+    log_partition: torch.Tensor
+    edge_count: torch.Tensor
+    effective_k: torch.Tensor
+    max_gap_seconds: torch.Tensor
+    temperature: float
 
 
 @dataclass(frozen=True)
@@ -58,6 +110,723 @@ def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.
             quotient += 1
         anchors.append(quotient)
     return torch.tensor(anchors, device=device, dtype=torch.long)
+
+
+def _validate_physical_axis_row(
+    physical_seconds: torch.Tensor,
+    valid_mask: torch.Tensor,
+) -> int:
+    if physical_seconds.ndim != 1 or valid_mask.ndim != 1:
+        raise ValueError("physical time and validity rows must be one-dimensional")
+    if physical_seconds.shape != valid_mask.shape:
+        raise ValueError("physical time and validity rows must align")
+    valid = valid_mask.to(dtype=torch.bool)
+    valid_len = int(valid.sum().item())
+    expected = torch.arange(
+        valid_len,
+        device=valid.device,
+        dtype=torch.long,
+    )
+    observed = torch.nonzero(valid, as_tuple=False).flatten()
+    if not torch.equal(observed, expected):
+        raise ValueError("physical exact-K selection requires a contiguous valid prefix")
+    if valid_len == 0:
+        return 0
+    active = physical_seconds[:valid_len]
+    if not active.is_floating_point() or not bool(torch.isfinite(active).all().item()):
+        raise ValueError("valid physical seconds must be finite floating-point values")
+    if valid_len > 1 and not bool(torch.all(active[1:] > active[:-1]).item()):
+        raise ValueError("valid physical seconds must be strictly increasing")
+    return valid_len
+
+
+def physical_exact_uniform_gap_cap(
+    physical_seconds: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+) -> torch.Tensor:
+    """Return each sample's exact-uniform-reference maximum interval in seconds."""
+
+    if physical_seconds.ndim != 2 or not physical_seconds.is_floating_point():
+        raise ValueError("physical_seconds must be a floating-point [B,T] tensor")
+    valid = valid_mask.to(device=physical_seconds.device, dtype=torch.bool)
+    if valid.shape != physical_seconds.shape:
+        raise ValueError("valid_mask must align with physical_seconds")
+    k = int(k)
+    if k < 1:
+        raise ValueError("k must be positive")
+    caps = []
+    for batch_idx in range(int(physical_seconds.shape[0])):
+        valid_len = _validate_physical_axis_row(
+            physical_seconds[batch_idx],
+            valid[batch_idx],
+        )
+        effective_k = min(k, valid_len)
+        if valid_len == 0 or effective_k == 0:
+            caps.append(physical_seconds.new_zeros(()))
+            continue
+        row = physical_seconds[batch_idx, :valid_len]
+        anchors = exact_uniform_positions(
+            valid_len,
+            effective_k,
+            device=physical_seconds.device,
+        )
+        selected = row[anchors]
+        intervals = [selected[0] - row[0], row[-1] - selected[-1]]
+        if effective_k > 1:
+            intervals.append(selected[1:] - selected[:-1])
+        caps.append(torch.cat([item.reshape(-1) for item in intervals]).max())
+    return torch.stack(caps)
+
+
+def _build_physical_exact_k_graph(
+    physical_seconds: torch.Tensor,
+    max_gap_seconds: torch.Tensor,
+) -> PhysicalExactKGraph:
+    """Build the one graph object consumed by both Viterbi and Gibbs paths."""
+
+    temporal_len = int(physical_seconds.numel())
+    if temporal_len == 0:
+        raise ValueError("physical exact-K graph requires at least one valid candidate")
+    cap = max_gap_seconds.to(
+        device=physical_seconds.device,
+        dtype=physical_seconds.dtype,
+    )
+    if cap.ndim != 0 or not bool(torch.isfinite(cap).item()) or float(cap.item()) < 0.0:
+        raise ValueError("max_gap_seconds must be a finite non-negative scalar")
+    tolerance = max(1.0e-9, 8.0 * torch.finfo(physical_seconds.dtype).eps)
+    lower = physical_seconds - cap - tolerance
+    left = torch.searchsorted(physical_seconds, lower, right=False)
+    positions = torch.arange(
+        temporal_len,
+        device=physical_seconds.device,
+        dtype=torch.long,
+    )
+    predecessor_span = positions - left
+    max_span = int(predecessor_span.max().item())
+    if max_span == 0:
+        predecessor_index = positions.new_zeros((temporal_len, 0))
+        predecessor_valid = torch.zeros(
+            (temporal_len, 0),
+            device=physical_seconds.device,
+            dtype=torch.bool,
+        )
+    else:
+        columns = torch.arange(
+            max_span,
+            device=physical_seconds.device,
+            dtype=torch.long,
+        )
+        predecessor_index = left[:, None] + columns[None, :]
+        predecessor_valid = columns[None, :] < predecessor_span[:, None]
+        predecessor_index = predecessor_index.clamp(max=temporal_len - 1)
+
+    upper = physical_seconds + cap + tolerance
+    right = torch.searchsorted(physical_seconds, upper, right=True)
+    successor_span = right - positions - 1
+    max_successors = int(successor_span.max().item())
+    if max_successors == 0:
+        successor_index = positions.new_zeros((temporal_len, 0))
+        successor_valid = torch.zeros(
+            (temporal_len, 0),
+            device=physical_seconds.device,
+            dtype=torch.bool,
+        )
+    else:
+        columns = torch.arange(
+            max_successors,
+            device=physical_seconds.device,
+            dtype=torch.long,
+        )
+        successor_index = positions[:, None] + 1 + columns[None, :]
+        successor_valid = columns[None, :] < successor_span[:, None]
+        successor_index = successor_index.clamp(max=temporal_len - 1)
+
+    source_valid = physical_seconds - physical_seconds[0] <= cap + tolerance
+    sink_valid = physical_seconds[-1] - physical_seconds <= cap + tolerance
+    predecessor_edges = int(predecessor_valid.sum().item())
+    successor_edges = int(successor_valid.sum().item())
+    if predecessor_edges != successor_edges:
+        raise RuntimeError("physical exact-K predecessor/successor edge tables disagree")
+    return PhysicalExactKGraph(
+        predecessor_index=predecessor_index,
+        predecessor_valid=predecessor_valid,
+        successor_index=successor_index,
+        successor_valid=successor_valid,
+        source_valid=source_valid,
+        sink_valid=sink_valid,
+        max_gap_seconds=cap,
+        edge_count=(
+            predecessor_edges
+            + int(source_valid.sum().item())
+            + int(sink_valid.sum().item())
+        ),
+    )
+
+
+def _safe_masked_logsumexp(
+    values: torch.Tensor,
+    valid: torch.Tensor,
+    *,
+    dim: int,
+) -> torch.Tensor:
+    valid = valid.to(device=values.device, dtype=torch.bool)
+    if valid.shape != values.shape:
+        valid = valid.expand_as(values)
+    reachable = valid & torch.isfinite(values)
+    has_reachable = reachable.any(dim=dim)
+    finite_floor = values.new_full((), -1.0e30)
+    reduced = torch.logsumexp(
+        torch.where(reachable, values, finite_floor),
+        dim=dim,
+    )
+    return torch.where(
+        has_reachable,
+        reduced,
+        values.new_full(reduced.shape, float("-inf")),
+    )
+
+
+def _physical_row_viterbi(
+    node_log_probs: torch.Tensor,
+    *,
+    k: int,
+    graph: PhysicalExactKGraph,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    temporal_len = int(node_log_probs.numel())
+    if k == 0:
+        return (
+            node_log_probs.new_zeros((temporal_len,)),
+            torch.empty((0,), device=node_log_probs.device, dtype=torch.long),
+            node_log_probs.new_zeros((0, temporal_len)),
+        )
+    if graph.source_valid.numel() != temporal_len:
+        raise ValueError("physical exact-K graph length does not match node scores")
+    scores = node_log_probs.float()
+    neg_inf = scores.new_full((), float("-inf"))
+    dp = scores.new_full((k, temporal_len), float("-inf"))
+    back = torch.full(
+        (k, temporal_len),
+        -1,
+        device=scores.device,
+        dtype=torch.long,
+    )
+    ranks = torch.full(
+        (k, temporal_len),
+        -1,
+        device=scores.device,
+        dtype=torch.long,
+    )
+    dp[0] = torch.where(graph.source_valid, scores, neg_inf)
+    initial_positions = torch.nonzero(graph.source_valid, as_tuple=False).flatten()
+    ranks[0, initial_positions] = torch.arange(
+        initial_positions.numel(),
+        device=scores.device,
+        dtype=torch.long,
+    )
+    for slot_idx in range(1, k):
+        if graph.predecessor_index.shape[1] == 0:
+            continue
+        candidates = dp[slot_idx - 1][graph.predecessor_index]
+        predecessor_ranks = ranks[slot_idx - 1][graph.predecessor_index]
+        candidate_valid = (
+            graph.predecessor_valid
+            & torch.isfinite(candidates)
+            & (predecessor_ranks >= 0)
+        )
+        candidates = candidates.masked_fill(~candidate_valid, float("-inf"))
+        best_value = candidates.max(dim=1).values
+        best_score_mask = candidate_valid & (candidates == best_value[:, None])
+        rank_sentinel = torch.iinfo(torch.long).max
+        tied_ranks = predecessor_ranks.masked_fill(~best_score_mask, rank_sentinel)
+        best_rank, best_offset = tied_ranks.min(dim=1)
+        reachable = torch.isfinite(best_value) & (best_rank != rank_sentinel)
+        best_predecessor = graph.predecessor_index.gather(
+            1,
+            best_offset[:, None],
+        ).squeeze(1)
+        dp[slot_idx] = torch.where(
+            reachable,
+            scores + best_value,
+            neg_inf,
+        )
+        back[slot_idx] = torch.where(
+            reachable,
+            best_predecessor,
+            back[slot_idx],
+        )
+        reachable_positions = torch.nonzero(reachable, as_tuple=False).flatten()
+        if reachable_positions.numel():
+            parent_rank = ranks[slot_idx - 1, best_predecessor[reachable_positions]]
+            lex_keys = parent_rank * (temporal_len + 1) + reachable_positions
+            order = torch.argsort(lex_keys, stable=True)
+            ranks[slot_idx, reachable_positions[order]] = torch.arange(
+                reachable_positions.numel(),
+                device=scores.device,
+                dtype=torch.long,
+            )
+    terminal_valid = graph.sink_valid & torch.isfinite(dp[k - 1]) & (ranks[k - 1] >= 0)
+    terminal_value = dp[k - 1].masked_fill(~terminal_valid, float("-inf")).max()
+    if not bool(torch.isfinite(terminal_value).item()):
+        raise RuntimeError(
+            "physical exact-K Viterbi could not reach a legal source-to-sink path"
+        )
+    tied_terminals = terminal_valid & (dp[k - 1] == terminal_value)
+    terminal_ranks = ranks[k - 1].masked_fill(
+        ~tied_terminals,
+        torch.iinfo(torch.long).max,
+    )
+    terminal_index = terminal_ranks.argmin()
+    positions = torch.empty(
+        (k,),
+        device=node_log_probs.device,
+        dtype=torch.long,
+    )
+    positions[-1] = terminal_index
+    for slot_idx in range(k - 1, 0, -1):
+        predecessor = back[slot_idx, positions[slot_idx]]
+        if int(predecessor.item()) < 0:
+            raise RuntimeError("physical exact-K Viterbi backtracking failed")
+        positions[slot_idx - 1] = predecessor
+    if k > 1 and not bool(torch.all(positions[1:] > positions[:-1]).item()):
+        raise RuntimeError("physical exact-K Viterbi produced unordered positions")
+    hard = node_log_probs.new_zeros((temporal_len,))
+    hard.scatter_(0, positions, 1.0)
+    hard_slots = node_log_probs.new_zeros((k, temporal_len))
+    hard_slots.scatter_(1, positions[:, None], 1.0)
+    return hard, positions, hard_slots
+
+
+def _physical_row_forward_backward(
+    node_log_probs: torch.Tensor,
+    *,
+    k: int,
+    graph: PhysicalExactKGraph,
+    temperature: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    temporal_len = int(node_log_probs.numel())
+    if k == 0:
+        return (
+            node_log_probs.new_zeros((temporal_len,)),
+            node_log_probs.new_zeros((0, temporal_len)),
+            node_log_probs.float().new_zeros(()),
+        )
+    if graph.source_valid.numel() != temporal_len:
+        raise ValueError("physical exact-K graph length does not match node scores")
+    scores = node_log_probs.float() / float(temperature)
+    alpha_rows = []
+    alpha = torch.where(
+        graph.source_valid,
+        scores,
+        scores.new_full(scores.shape, float("-inf")),
+    )
+    alpha_rows.append(alpha)
+    for _slot_idx in range(1, k):
+        if graph.predecessor_index.shape[1] == 0:
+            alpha = scores.new_full(scores.shape, float("-inf"))
+        else:
+            candidates = alpha[graph.predecessor_index]
+            predecessor_mass = _safe_masked_logsumexp(
+                candidates,
+                graph.predecessor_valid,
+                dim=1,
+            )
+            alpha = scores + predecessor_mass
+        alpha_rows.append(alpha)
+    alpha_table = torch.stack(alpha_rows, dim=0)
+    log_partition = _safe_masked_logsumexp(
+        alpha_table[-1],
+        graph.sink_valid,
+        dim=0,
+    )
+    if not bool(torch.isfinite(log_partition).item()):
+        raise RuntimeError(
+            "physical exact-K forward-backward could not reach a legal source-to-sink path"
+        )
+
+    beta_rows = [scores.new_empty((temporal_len,)) for _ in range(k)]
+    beta = torch.where(
+        graph.sink_valid,
+        scores.new_zeros(scores.shape),
+        scores.new_full(scores.shape, float("-inf")),
+    )
+    beta_rows[k - 1] = beta
+    for slot_idx in range(k - 2, -1, -1):
+        if graph.successor_index.shape[1] == 0:
+            beta = scores.new_full(scores.shape, float("-inf"))
+        else:
+            candidates = (
+                scores[graph.successor_index]
+                + beta[graph.successor_index]
+            )
+            beta = _safe_masked_logsumexp(
+                candidates,
+                graph.successor_valid,
+                dim=1,
+            )
+        beta_rows[slot_idx] = beta
+    beta_table = torch.stack(beta_rows, dim=0)
+    log_marginal = alpha_table + beta_table - log_partition
+    finite = torch.isfinite(log_marginal)
+    slots = torch.where(
+        finite,
+        torch.exp(log_marginal),
+        log_marginal.new_zeros(()),
+    )
+    row_mass = slots.sum(dim=1)
+    if not torch.allclose(
+        row_mass,
+        torch.ones_like(row_mass),
+        atol=2.0e-4,
+        rtol=2.0e-4,
+    ):
+        raise RuntimeError("physical exact-K slot marginals do not sum to one")
+    occupancy = slots.sum(dim=0)
+    if bool(torch.any(occupancy > 1.0 + 5.0e-4).item()):
+        raise RuntimeError("physical exact-K slot marginals exceed unit column occupancy")
+    expectations = (
+        slots
+        * torch.arange(
+            temporal_len,
+            device=slots.device,
+            dtype=slots.dtype,
+        )[None, :]
+    ).sum(dim=1)
+    if k > 1 and not bool(torch.all(expectations[1:] > expectations[:-1]).item()):
+        raise RuntimeError("physical exact-K slot expectations are not strictly ordered")
+    return occupancy, slots, log_partition
+
+
+def _prepare_physical_exact_k_batch(
+    node_log_probs: torch.Tensor,
+    physical_seconds: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    max_gap_seconds: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, int, torch.Tensor]:
+    if (
+        node_log_probs.ndim != 2
+        or not node_log_probs.is_floating_point()
+        or physical_seconds.shape != node_log_probs.shape
+    ):
+        raise ValueError(
+            "node_log_probs and physical_seconds must be aligned floating-point [B,T] tensors"
+        )
+    valid = valid_mask.to(device=node_log_probs.device, dtype=torch.bool)
+    physical_seconds = physical_seconds.to(
+        device=node_log_probs.device,
+        dtype=torch.float64,
+    )
+    if valid.shape != node_log_probs.shape:
+        raise ValueError("valid_mask must align with node_log_probs")
+    k = int(k)
+    if k < 1:
+        raise ValueError("k must be positive")
+    for batch_idx in range(int(node_log_probs.shape[0])):
+        valid_len = _validate_physical_axis_row(
+            physical_seconds[batch_idx],
+            valid[batch_idx],
+        )
+        if valid_len == 0:
+            raise ValueError("physical exact-K selection requires at least one valid candidate")
+        if not bool(
+            torch.isfinite(node_log_probs[batch_idx, :valid_len]).all().item()
+        ):
+            raise ValueError("valid node_log_probs must be finite")
+    if max_gap_seconds is None:
+        caps = physical_exact_uniform_gap_cap(
+            physical_seconds,
+            valid,
+            k=k,
+        )
+    else:
+        caps = torch.as_tensor(
+            max_gap_seconds,
+            device=node_log_probs.device,
+            dtype=torch.float64,
+        ).reshape(-1)
+        if caps.numel() == 1 and node_log_probs.shape[0] > 1:
+            caps = caps.expand(node_log_probs.shape[0])
+        if caps.shape != (node_log_probs.shape[0],):
+            raise ValueError("max_gap_seconds must be scalar or [B]")
+        if not bool(torch.isfinite(caps).all().item()) or bool(torch.any(caps < 0).item()):
+            raise ValueError("max_gap_seconds must contain finite non-negative values")
+    return physical_seconds, valid, k, caps
+
+
+def _pad_physical_hard_row(
+    hard_valid: torch.Tensor,
+    active_positions: torch.Tensor,
+    active_slots: torch.Tensor,
+    *,
+    temporal_len: int,
+    k: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    effective_k = int(active_positions.numel())
+    valid_len = int(hard_valid.numel())
+    hard = F.pad(hard_valid, (0, temporal_len - valid_len))
+    hard_slots = F.pad(
+        active_slots,
+        (0, temporal_len - valid_len, 0, k - effective_k),
+    )
+    positions = torch.full(
+        (k,),
+        -1,
+        device=active_positions.device,
+        dtype=torch.long,
+    )
+    positions[:effective_k] = active_positions
+    slot_mask = torch.zeros(
+        (k,),
+        device=active_positions.device,
+        dtype=torch.bool,
+    )
+    slot_mask[:effective_k] = True
+    return hard, hard_slots, positions, slot_mask
+
+
+def _pad_physical_soft_row(
+    soft_valid: torch.Tensor,
+    active_slots: torch.Tensor,
+    *,
+    temporal_len: int,
+    k: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    effective_k, valid_len = active_slots.shape
+    return (
+        F.pad(soft_valid, (0, temporal_len - valid_len)),
+        F.pad(
+            active_slots,
+            (0, temporal_len - valid_len, 0, k - effective_k),
+        ),
+    )
+
+
+def physical_exact_k_select(
+    node_log_probs: torch.Tensor,
+    physical_seconds: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    max_gap_seconds: torch.Tensor | None = None,
+    temperature: float = 1.0,
+) -> PhysicalExactKSelectionOutput:
+    """Return hard Viterbi and soft Gibbs assignments from the same graph."""
+
+    temperature = float(temperature)
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature must be finite and positive")
+    physical_seconds, valid, k, caps = _prepare_physical_exact_k_batch(
+        node_log_probs,
+        physical_seconds,
+        valid_mask,
+        k=k,
+        max_gap_seconds=max_gap_seconds,
+    )
+
+    hard_rows = []
+    hard_slot_rows = []
+    position_rows = []
+    slot_mask_rows = []
+    soft_rows = []
+    slot_rows = []
+    partition_rows = []
+    edge_counts = []
+    effective_rows = []
+    temporal_len = int(node_log_probs.shape[1])
+    for batch_idx in range(int(node_log_probs.shape[0])):
+        valid_len = int(valid[batch_idx].sum().item())
+        effective_k = min(k, valid_len)
+        effective_rows.append(effective_k)
+        row_scores = node_log_probs[batch_idx, :valid_len]
+        row_seconds = physical_seconds[batch_idx, :valid_len]
+        graph = _build_physical_exact_k_graph(row_seconds, caps[batch_idx])
+        hard_valid, active_positions, active_hard_slots = _physical_row_viterbi(
+            row_scores.detach(),
+            k=effective_k,
+            graph=graph,
+        )
+        soft_valid, active_soft_slots, partition = _physical_row_forward_backward(
+            row_scores,
+            k=effective_k,
+            graph=graph,
+            temperature=temperature,
+        )
+        hard, hard_slots, positions, slot_mask = _pad_physical_hard_row(
+            hard_valid,
+            active_positions,
+            active_hard_slots,
+            temporal_len=temporal_len,
+            k=k,
+        )
+        soft, slots = _pad_physical_soft_row(
+            soft_valid,
+            active_soft_slots,
+            temporal_len=temporal_len,
+            k=k,
+        )
+        hard_rows.append(hard)
+        hard_slot_rows.append(hard_slots)
+        position_rows.append(positions)
+        slot_mask_rows.append(slot_mask)
+        soft_rows.append(soft)
+        slot_rows.append(slots)
+        partition_rows.append(partition)
+        edge_counts.append(graph.edge_count)
+
+    hard_occupancy = torch.stack(hard_rows, dim=0)
+    hard_slot_assignment = torch.stack(hard_slot_rows, dim=0)
+    soft_occupancy = torch.stack(soft_rows, dim=0)
+    soft_slot_assignment = torch.stack(slot_rows, dim=0)
+    selection_st = (
+        hard_slot_assignment
+        + (soft_slot_assignment - soft_slot_assignment.detach())
+    )
+    return PhysicalExactKSelectionOutput(
+        hard_occupancy=hard_occupancy,
+        hard_slot_assignment=hard_slot_assignment,
+        hard_positions=torch.stack(position_rows, dim=0),
+        hard_slot_mask=torch.stack(slot_mask_rows, dim=0),
+        soft_occupancy=soft_occupancy,
+        soft_slot_assignment=soft_slot_assignment,
+        selection_st=selection_st,
+        log_partition=torch.stack(partition_rows, dim=0),
+        edge_count=torch.tensor(
+            edge_counts,
+            device=node_log_probs.device,
+            dtype=torch.long,
+        ),
+        effective_k=torch.tensor(
+            effective_rows,
+            device=node_log_probs.device,
+            dtype=torch.long,
+        ),
+        max_gap_seconds=caps.to(
+            device=node_log_probs.device,
+            dtype=node_log_probs.dtype,
+        ),
+        temperature=temperature,
+    )
+
+
+def physical_exact_k_viterbi(
+    node_log_probs: torch.Tensor,
+    physical_seconds: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    max_gap_seconds: torch.Tensor | None = None,
+) -> PhysicalExactKHardOutput:
+    physical_seconds, valid, k, caps = _prepare_physical_exact_k_batch(
+        node_log_probs,
+        physical_seconds,
+        valid_mask,
+        k=k,
+        max_gap_seconds=max_gap_seconds,
+    )
+    temporal_len = int(node_log_probs.shape[1])
+    hard_rows = []
+    hard_slot_rows = []
+    position_rows = []
+    slot_mask_rows = []
+    edge_counts = []
+    effective_rows = []
+    for batch_idx in range(int(node_log_probs.shape[0])):
+        valid_len = int(valid[batch_idx].sum().item())
+        effective_k = min(k, valid_len)
+        graph = _build_physical_exact_k_graph(
+            physical_seconds[batch_idx, :valid_len],
+            caps[batch_idx],
+        )
+        hard_valid, active_positions, active_slots = _physical_row_viterbi(
+            node_log_probs[batch_idx, :valid_len].detach(),
+            k=effective_k,
+            graph=graph,
+        )
+        hard, hard_slots, positions, slot_mask = _pad_physical_hard_row(
+            hard_valid,
+            active_positions,
+            active_slots,
+            temporal_len=temporal_len,
+            k=k,
+        )
+        hard_rows.append(hard)
+        hard_slot_rows.append(hard_slots)
+        position_rows.append(positions)
+        slot_mask_rows.append(slot_mask)
+        edge_counts.append(graph.edge_count)
+        effective_rows.append(effective_k)
+    return PhysicalExactKHardOutput(
+        hard_occupancy=torch.stack(hard_rows, dim=0),
+        hard_slot_assignment=torch.stack(hard_slot_rows, dim=0),
+        hard_positions=torch.stack(position_rows, dim=0),
+        hard_slot_mask=torch.stack(slot_mask_rows, dim=0),
+        edge_count=torch.tensor(edge_counts, device=node_log_probs.device, dtype=torch.long),
+        effective_k=torch.tensor(effective_rows, device=node_log_probs.device, dtype=torch.long),
+        max_gap_seconds=caps.to(device=node_log_probs.device, dtype=node_log_probs.dtype),
+    )
+
+
+def physical_exact_k_forward_backward(
+    node_log_probs: torch.Tensor,
+    physical_seconds: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    max_gap_seconds: torch.Tensor | None = None,
+    temperature: float = 1.0,
+) -> PhysicalExactKSoftOutput:
+    temperature = float(temperature)
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature must be finite and positive")
+    physical_seconds, valid, k, caps = _prepare_physical_exact_k_batch(
+        node_log_probs,
+        physical_seconds,
+        valid_mask,
+        k=k,
+        max_gap_seconds=max_gap_seconds,
+    )
+    temporal_len = int(node_log_probs.shape[1])
+    soft_rows = []
+    slot_rows = []
+    partition_rows = []
+    edge_counts = []
+    effective_rows = []
+    for batch_idx in range(int(node_log_probs.shape[0])):
+        valid_len = int(valid[batch_idx].sum().item())
+        effective_k = min(k, valid_len)
+        graph = _build_physical_exact_k_graph(
+            physical_seconds[batch_idx, :valid_len],
+            caps[batch_idx],
+        )
+        soft_valid, active_slots, partition = _physical_row_forward_backward(
+            node_log_probs[batch_idx, :valid_len],
+            k=effective_k,
+            graph=graph,
+            temperature=temperature,
+        )
+        soft, slots = _pad_physical_soft_row(
+            soft_valid,
+            active_slots,
+            temporal_len=temporal_len,
+            k=k,
+        )
+        soft_rows.append(soft)
+        slot_rows.append(slots)
+        partition_rows.append(partition)
+        edge_counts.append(graph.edge_count)
+        effective_rows.append(effective_k)
+    return PhysicalExactKSoftOutput(
+        soft_occupancy=torch.stack(soft_rows, dim=0),
+        soft_slot_assignment=torch.stack(slot_rows, dim=0),
+        log_partition=torch.stack(partition_rows, dim=0),
+        edge_count=torch.tensor(edge_counts, device=node_log_probs.device, dtype=torch.long),
+        effective_k=torch.tensor(effective_rows, device=node_log_probs.device, dtype=torch.long),
+        max_gap_seconds=caps.to(device=node_log_probs.device, dtype=node_log_probs.dtype),
+        temperature=temperature,
+    )
 
 
 def exact_uniform_reference_scores(
@@ -510,11 +1279,19 @@ def global_structured_topk(
 
 __all__ = [
     "LocalCellSelectionOutput",
+    "PhysicalExactKGraph",
+    "PhysicalExactKHardOutput",
+    "PhysicalExactKSelectionOutput",
+    "PhysicalExactKSoftOutput",
     "StructuredSelectionOutput",
     "exact_uniform_cell_bounds",
     "exact_uniform_positions",
     "exact_uniform_reference_scores",
     "global_structured_topk",
     "local_cell_deformation",
+    "physical_exact_k_forward_backward",
+    "physical_exact_k_select",
+    "physical_exact_k_viterbi",
+    "physical_exact_uniform_gap_cap",
     "structured_local_coverage_probability",
 ]

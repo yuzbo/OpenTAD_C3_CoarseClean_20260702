@@ -43,7 +43,11 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from opentad.utils.train_schedule import should_eval_epoch
-from tools.bata import duca_cellcf_training, duca_p0_training
+from tools.bata import (
+    duca_cellcf_training,
+    duca_p0_training,
+    duca_protected_physical_training,
+)
 
 
 def _sha256(path):
@@ -127,17 +131,24 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
-    duca_training = (
-        duca_cellcf_training
-        if str(cfg.workflow.get("formal_protocol", "")) == "duca_cellcf_v1"
-        else duca_p0_training
-    )
+    formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
+    if formal_protocol == "duca_cellcf_v1":
+        duca_training = duca_cellcf_training
+    elif formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
+        duca_training = duca_protected_physical_training
+    else:
+        duca_training = duca_p0_training
     source_config_sha256 = _sha256(args.config)
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     duca_formal_contract = duca_training.formal_training_contract(cfg)
     if duca_training is duca_cellcf_training:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/train.py"
+        )
+    elif duca_training is duca_protected_physical_training:
+        duca_protected_physical_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/train.py",
         )
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/train.py")
     if args.cfg_options is not None:
@@ -180,9 +191,14 @@ def main():
     cfg = update_workdir(cfg, args.id, args.world_size)
     duca_runtime_bindings = None
     if duca_formal_contract is not None:
+        variant = (
+            os.environ.get("DUCA_PROTECTED_VARIANT", "")
+            if duca_training is duca_protected_physical_training
+            else os.environ.get("DUCA_P0_VARIANT", "")
+        )
         runtime_binding_kwargs = dict(
             git_commit=duca_git_commit,
-            variant=os.environ.get("DUCA_P0_VARIANT", ""),
+            variant=variant,
             seed=args.seed,
             slurm_job_id=os.environ.get("SLURM_JOB_ID"),
             source_config_path=args.config,
@@ -193,7 +209,10 @@ def main():
             evaluation_class_map_path=cfg.dataset.test.class_map,
             evaluation_config=cfg.evaluation,
         )
-        if duca_training is duca_cellcf_training:
+        if duca_training in (
+            duca_cellcf_training,
+            duca_protected_physical_training,
+        ):
             runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain
         duca_runtime_bindings = duca_training.build_runtime_bindings(**runtime_binding_kwargs)
     if args.rank == 0:
@@ -216,26 +235,64 @@ def main():
         **cfg.solver.train,
     )
 
-    val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
-    val_loader = build_dataloader(
-        val_dataset,
-        rank=args.rank,
-        world_size=args.world_size,
-        shuffle=False,
-        drop_last=False,
-        **cfg.solver.val,
+    seal_eval_loaders = bool(
+        cfg.workflow.get("seal_eval_dataloaders_during_training", False)
     )
+    if seal_eval_loaders:
+        if cfg.dataset.get("val", None) is not None:
+            raise RuntimeError(
+                "sealed formal training requires dataset.val=None"
+            )
+        if int(cfg.workflow.get("val_loss_interval", -1)) > 0 or int(
+            cfg.workflow.get("val_eval_interval", -1)
+        ) > 0:
+            raise RuntimeError(
+                "sealed formal training forbids validation/test intervals"
+            )
+        val_loader = None
+        test_loader = None
+        logger.info(
+            "Validation and test dataloaders are sealed during formal training."
+        )
+    else:
+        val_dataset = build_dataset(
+            cfg.dataset.val, default_args=dict(logger=logger)
+        )
+        val_loader = build_dataloader(
+            val_dataset,
+            rank=args.rank,
+            world_size=args.world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.val,
+        )
 
-    test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
-    test_loader = build_dataloader(
-        test_dataset,
-        rank=args.rank,
-        world_size=args.world_size,
-        shuffle=False,
-        drop_last=False,
-        **cfg.solver.test,
-    )
+        test_dataset = build_dataset(
+            cfg.dataset.test, default_args=dict(logger=logger)
+        )
+        test_loader = build_dataloader(
+            test_dataset,
+            rank=args.rank,
+            world_size=args.world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.test,
+        )
     if duca_formal_contract is not None:
+        bind_loader = getattr(
+            duca_training, "bind_train_loader_contract", None
+        )
+        if callable(bind_loader):
+            duca_formal_contract, train_loader_binding = bind_loader(
+                duca_formal_contract,
+                cfg=cfg,
+                train_dataset=train_dataset,
+                train_loader=train_loader,
+                world_size=args.world_size,
+            )
+            duca_runtime_bindings["train_loader_contract_sha256"] = (
+                train_loader_binding["contract_sha256"]
+            )
         expected_batches = int(
             duca_formal_contract["expected_train_batches_per_epoch"]
         )
@@ -369,6 +426,13 @@ def main():
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
     for epoch in range(resume_epoch + 1, max_epoch):
+        dataset_set_epoch = getattr(train_loader.dataset, "set_epoch", None)
+        if bool(cfg.workflow.get("derive_train_loader_contract", False)):
+            if not callable(dataset_set_epoch):
+                raise RuntimeError(
+                    "formal stateless training dataset has no set_epoch"
+                )
+            dataset_set_epoch(epoch)
         train_loader.sampler.set_epoch(epoch)
         audit_before_epoch = (
             dict(update_audit) if update_audit is not None else None
@@ -416,9 +480,13 @@ def main():
                 duca_formal_contract["expected_train_batches_per_epoch"]
             )
             if delta["attempted_batches"] != expected_batches:
-                raise RuntimeError("formal DUCA epoch did not consume exactly 100 batches")
+                raise RuntimeError(
+                    "formal DUCA epoch did not consume the derived batch count"
+                )
             if delta["successful_optimizer_updates"] != expected_batches:
-                raise RuntimeError("formal DUCA epoch did not execute exactly 100 updates")
+                raise RuntimeError(
+                    "formal DUCA epoch did not execute the derived update count"
+                )
             epoch_records.append(
                 {
                     "epoch": int(epoch),
@@ -518,6 +586,7 @@ def main():
         if epoch >= val_start_epoch:
             if (cfg.workflow.val_loss_interval > 0) and ((epoch + 1) % cfg.workflow.val_loss_interval == 0):
                 val_loss = val_one_epoch(
+                    # val_loader is non-None whenever this branch is enabled.
                     val_loader,
                     model,
                     logger,
@@ -542,6 +611,7 @@ def main():
         if epoch >= val_start_epoch:
             if should_eval_epoch(epoch, cfg.workflow):
                 eval_one_epoch(
+                    # test_loader is non-None whenever this branch is enabled.
                     test_loader,
                     model,
                     cfg,
