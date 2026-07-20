@@ -193,6 +193,25 @@ updated: 2026-07-20
     cannot share a path or inode. Legacy, matrix, Gate, and power-diagnostic
     evidence are mutually exclusive for a schema transition, and incomplete
     role sets must fail closed rather than be ignored.
+30. Do not merge the pre-policy S2 representation gate with S3 learned-policy
+    training while retaining the old stage names. A learned ROI head inside S2
+    changes the scientific question and cost semantics.
+31. Do not derive fixed-center, random, discrete, or fixed-size controls by
+    overriding a variable-box-trained checkpoint only at inference. A
+    decision-critical comparison requires matched training distributions.
+32. Do not compare a per-window GT-privileged continuous reference with
+    unprivileged fixed or location-only controls. Privilege and search budgets
+    must match before attributing gains to variable width/height.
+33. Do not certify continuous spatial-reference adequacy merely because a
+    detector-confidence objective converges. Confidence optimization can select
+    false positives or action interiors and is only a no-GT policy diagnostic.
+34. Do not double-count both a measured ROI policy head and a future-selector
+    reserve in the same cost path.
+35. Do not delete a failed or contaminated formal namespace. Preserve it
+    immutably and create a new recursively bound campaign.
+36. Do not freeze one-GPU high-memory Slurm requests, storage floors, or NVML
+    gap thresholds that contradict the audited N16R4 allocation and validated
+    20/100 ms sampler contract.
 
 ## 任务与叙事
 

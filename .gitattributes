@@ -10,3 +10,4 @@
 *.yml text eol=lf
 docs/methods/reviews/2026-07-20-native-crop-s1-pro-review-raw.txt -text -diff
 docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-raw.txt -text -diff
+docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-raw.txt -text -diff

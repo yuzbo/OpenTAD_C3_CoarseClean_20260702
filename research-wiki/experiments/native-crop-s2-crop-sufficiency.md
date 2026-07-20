@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:native-crop-s2-crop-sufficiency
 title: "Continuous-RoI S2 crop sufficiency"
 stage: designed
-status: fixed_library_protocol_superseded_continuous_roi_redesign_required
+status: pro_v2_received_hold_for_p0_revision
 outcome: pending
 tags: ["offline-tad", "continuous-roi", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
@@ -20,7 +20,7 @@ behavior at lower measured representation-path cost while retaining the full
 not fixed. S2 evaluates deformable crop sufficiency before a deployable learned
 policy is claimed.
 
-## Reviewed Protocol
+## Reviewed Protocols
 
 The Pro-authored v1 protocol froze a 21-position static `128x128` crop library.
 That protocol is now superseded as the decisive S2 object because the final
@@ -33,8 +33,20 @@ The raw protocol is archived at
 with SHA-256
 `e14abfab41fafa3c3f411df87d3148170872a190c274ed9b7eb2dd44c520c7d5`.
 
+The Pro-authored Continuous-RoI v2 is archived at
+`docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-raw.txt`
+with SHA-256
+`9adbd388ad41f79e9323612c25be493332127b226eb2aa968832d14c5446582b`.
+Its author verdict is `V2_READY`; the project verdict is
+`ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`. The complete absorption is
+at
+`docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`.
+
 ## Accepted
 
+- Use continuous `(cx,cy,w,h)` source boxes with analytic in-bounds geometry.
+- Use a temporal ROI tube and matched differentiable/runtime bilinear sampling.
+- Keep a fixed local output tensor while allowing source box size/aspect to vary.
 - Crop source pixels before resize and preserve the complete time axis.
 - Rebuild the D160 comparator in the same S2 runtime.
 - Use one shared VideoMAE parameter instance while accounting for two forward
@@ -44,29 +56,25 @@ with SHA-256
 - Measure latency, memory, and gross GPU energy; disclose exhaustive reference
   search separately.
 - Treat the finite candidate library as library-conditional evidence only.
+- Separate geometry, search adequacy, representation sufficiency, adaptive
+  headroom, and cost viability.
 
-## Blocking Revisions
+## Current Blocking Revisions
 
-1. Replace the fixed-library estimand with continuous normalized
-   `(cx,cy,w,h)` geometry, explicit in-bounds parameterization, variable
-   scale/aspect constraints, and a matched differentiable crop evaluator.
-2. The GT-visible reference remains a heuristic, not a certified
-   library or global-mAP upper bound. Its failure cannot kill the library.
-3. Crop sufficiency, adaptive-selection headroom, and deployable cost viability
-   need independent outcomes. A sufficient fixed crop is not a crop failure.
-4. Gate GT artifacts may be created only after raw gate predictions are sealed
-   in a separate privileged join stage.
-5. Detection and cost require sampling-unit-correct uncertainty families,
-   joined by an intersection decision rather than one mixed bootstrap.
-6. Continuous-domain coverage/search quality must be separated from
-   model-conditioned reachability; a finite restart/search procedure is not a
-   certified continuous oracle.
-7. The registered crop distribution changes the training distribution; the
-   estimand must state this explicitly.
-8. Any learned-policy authorization must reserve selector cost or limit its
-   claim to representation-path headroom.
-9. Numerical margins require a result-blind power/Monte-Carlo feasibility
-   audit before freeze.
+1. Do not train a deployable learned ROI policy inside S2 while claiming S2 is
+   a pre-policy representation gate; keep S2/S3 separate.
+2. Do not derive fixed, random, D0, or location-only controls by overriding an
+   adaptive GL checkpoint only at inference. Train decision-critical geometry
+   families under matched registered distributions.
+3. Do not compare GT-privileged `CR-PREF` against unprivileged `C/R/LC`.
+   Variable-size and fixed-size references require the same search and join.
+4. Confidence-objective convergence is not spatial-reference adequacy.
+   Separate no-GT policy diagnostics from result-independent geometry/support.
+5. Repair the formal queue for the audited N16R4 memory policy, actual storage,
+   validated 20/100 ms power sampler, and immutable failed namespaces.
+6. Remove selector-cost double counting, fix ABBA population arithmetic, use
+   independent variance evidence, specify privileged matching completely, and
+   add a sufficient-but-no-adaptive-headroom state.
 
 ## Boundaries
 
@@ -76,12 +84,8 @@ fixed-center CUDA gate validates infrastructure and gradients only.
 
 ## Next Gate
 
-Write a new continuous-RoI S2 v2 protocol. It must freeze variable-box
-parameterization, differentiable training crop, source-coordinate inference
-crop, size-collapse prevention, temporal grouping/smoothing, reference search,
-matched baselines, decision states, uncertainty families, and selector-cost
-reserve. The prior fixed-library v1/v1.1 must not be implemented as the final
-S2 gate. The implementation-targeted Pro review prompt is frozen at
-`docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-prompt.md`;
-it is bound to immutable code/research-state commit
-`6118cd50a3601d044dab690427ad9c756ce7d827`.
+Freeze a narrow Continuous-RoI S2 v2.1 corrigendum that repairs the S2/S3
+boundary, training-matched controls, privilege-matched references, search
+adequacy, queue/storage/power contracts, and outcome state machine. No model
+implementation or queueing is authorized before the corrected protocol and
+its static feasibility validator pass.

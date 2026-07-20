@@ -1,0 +1,2457 @@
+# Continuous-RoI S2 Crop-Sufficiency Preregistration v2
+
+**裁决：`V2_READY`**
+
+## 1. Visibility and Read Certificate
+
+### 1.1 不可变快照可见性
+
+| 字段                      | 冻结值                                                        |
+| ----------------------- | ---------------------------------------------------------- |
+| Repository              | `yuzbo/OpenTAD_C3_CoarseClean_20260702`                    |
+| Navigation branch       | `codex/spatial-zoom-s1-audit-fix-20260715`                 |
+| Audited commit          | `6118cd50a3601d044dab690427ad9c756ce7d827`                 |
+| GitHub 返回的实际 commit SHA | `6118cd50a3601d044dab690427ad9c756ce7d827`                 |
+| Commit message          | `docs: redefine Spatial Zoom as continuous ROI regression` |
+| Snapshot result         | `PASS`                                                     |
+
+GitHub commit API 与按该 commit ref 读取的文件 blob 均返回成功。容器侧 `git clone` 曾返回 `Could not resolve host: github.com`，这是该执行容器的 DNS 失败，不是仓库不存在；GitHub connector 随后完整读取了不可变 commit 和文件内容，因此不触发 `BLOCKED`。当前 commit 的连续 ROI 内容仍是设计记录，不是已实现代码、训练结果或成本证据。
+
+### 1.2 实际读取文件与有效范围
+
+下列范围表示本轮实际读取的完整或连续 blob 范围。后文的“现有实现事实”只能来自这些文件；新模型、超参数、阈值和文件名均属于本预注册冻结的“协议设计要求”。
+
+| 文件                                                                                                  |   有效读取范围 |
+| --------------------------------------------------------------------------------------------------- | -------: |
+| `AGENTS.md`                                                                                         |   `1-66` |
+| `RTK.md`                                                                                            |  `1-115` |
+| `research-wiki/query_pack.md`                                                                       |  `1-174` |
+| `research-wiki/anti_repetition.md`                                                                  |  `1-244` |
+| `research-wiki/ideas/spatial-zoom-offline-tad.md`                                                   |   `1-80` |
+| `research-wiki/experiments/spatial-zoom-s1-infrastructure.md`                                       |  `1-803` |
+| `research-wiki/experiments/native-crop-s2-crop-sufficiency.md`                                      |   `1-86` |
+| `research-wiki/experiments/native-crop-paper-experiment-roadmap.md`                                 |  `1-313` |
+| `docs/methods/native_crop_s1_vertical_slice_contract.md`                                            |  `1-112` |
+| `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-raw.txt`       | `1-1900` |
+| `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-absorption.md` |  `1-233` |
+| `opentad/datasets/transforms/native_crop.py`                                                        |  `1-225` |
+| `opentad/models/backbones/native_crop_wrapper.py`                                                   |  `1-262` |
+| `configs/adatad/thumos/native_crop_s1_center_videomae_s_768x1_adapter.py`                           |  `1-122` |
+| `tools/bata/native_crop_s1_contract.py`                                                             |  `1-171` |
+| `tools/bata/run_native_crop_s1_precheck.py`                                                         | `1-1024` |
+| `tools/bata/native_crop_s1_geometry_census.py`                                                      |  `1-212` |
+| `scripts/run_native_crop_s1_gate_slurm.sh`                                                          |  `1-103` |
+| `tests/test_native_crop_s1_vertical_slice.py`                                                       |  `1-510` |
+| `opentad/models/detectors/base.py`                                                                  |   `1-63` |
+| `opentad/models/detectors/single_stage.py`                                                          |  `1-212` |
+| `opentad/models/detectors/actionformer.py`                                                          |  `1-714` |
+| `opentad/models/backbones/vit_adapter.py`                                                           |  `1-996` |
+| `opentad/models/projections/actionformer_proj.py`                                                   |  `1-188` |
+| `opentad/models/dense_heads/actionformer_head.py`                                                   |   `1-41` |
+| `opentad/models/dense_heads/anchor_free_head.py`                                                    |  `1-497` |
+| `opentad/cores/train_engine.py`                                                                     |  `1-239` |
+| `opentad/cores/optimizer.py`                                                                        |  `1-142` |
+| `opentad/cores/scheduler.py`                                                                        |  `1-192` |
+| `opentad/evaluations/mAP.py`                                                                        |  `1-464` |
+| `opentad/models/utils/post_processing/nms/nms.py`                                                   |  `1-210` |
+| `configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py`                                  |  `1-161` |
+| `configs/_base_/models/actionformer.py`                                                             |   `1-45` |
+| `configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py`                          |  `1-102` |
+| `opentad/models/builder.py`                                                                         |   `1-94` |
+| `opentad/models/backbones/__init__.py`                                                              |   `1-21` |
+| `opentad/models/backbones/backbone_wrapper.py`                                                      |  `1-179` |
+| `opentad/datasets/transforms/__init__.py`                                                           |   `1-22` |
+| `opentad/datasets/transforms/formatting.py`                                                         |  `1-308` |
+| `opentad/datasets/transforms/end_to_end.py`                                                         |  `1-819` |
+| `opentad/datasets/thumos.py`                                                                        |  `1-109` |
+| `opentad/datasets/base/__init__.py`                                                                 |   `1-13` |
+| `opentad/datasets/base/sliding_dataset.py`                                                          |  `1-203` |
+| `opentad/datasets/base/padding_dataset.py`                                                          |  `1-101` |
+| `opentad/datasets/builder.py`                                                                       |   `1-81` |
+| `opentad/cores/test_engine.py`                                                                      |  `1-180` |
+| `opentad/evaluations/builder.py`                                                                    |   `1-32` |
+| `tools/train.py`                                                                                    |  `1-369` |
+| `tools/bata/spatial_zoom_s1_contract.py`                                                            |  `1-470` |
+| `tools/bata/spatial_zoom_s1_training.py`                                                            |  `1-432` |
+| `tools/bata/spatial_zoom_s1_evidence.py`                                                            |  `1-362` |
+| `tools/bata/build_native_crop_s1_development_annotation.py`                                         |   `1-97` |
+| `opentad/utils/ema.py`                                                                              |   `1-29` |
+| `LeapLabTHU/Uni-AdaFocus/README.md`                                                                 |  `1-154` |
+| `LeapLabTHU/AdaFocusV2/README.md`                                                                   |   `1-96` |
+
+附加的一手来源读取范围为：
+
+* Uni-AdaFocus，arXiv `2412.11228`：abstract、方法总览、deep-feature policy、deformable patch、temporal/sample-wise dynamic computation 段落。
+* AdaFocusV2，arXiv `2112.14238` 与 CVPR 官方 PDF：differentiable interpolation、global/local auxiliary supervision、random-crop diversity、one-stage end-to-end training 段落。
+* Uni-AdaFocus 与 AdaFocusV2 官方 GitHub README。
+
+AdaFocusV2 明确以可微插值取代强化学习式三阶段训练，并用全局/局部辅助监督、随机 patch 输入和稳定化训练补足监督；Uni-AdaFocus 的 deformable patch 同时改变中心、宽和高，再统一重采样到固定局部输入尺寸。([CVF Open Access][1])
+
+### 1.3 当前代码事实裁决
+
+1. `NativeCropSourceViews` 只实现了 decoded `uint8` 上的固定中心 `128×128` source crop 和 `96×96` full-frame letterbox；局部 crop 不插值、不学习、全窗口固定。`native_crop.py:30-77,80-117,125-217`。
+2. 当前 wrapper 使用同一个 `self.model.backbone` 先后编码 global 与 local 两个 view，再分别得到 `[B,384,384]` 并执行固定均值融合；共享参数不等于一次 forward。`native_crop_wrapper.py:83-114,157-235`。
+3. `VisionTransformerAdapter` 的 patch/tubelet 为 `(2,16,16)`，`return_feat_map=True` 保留 `[B,C,T,H,W]`，所以 `96×96` 与 `128×128` 分别产生 `6×6` 与 `8×8` 空间图；当前 S1 wrapper 随后才进行空间均值。`vit_adapter.py:784-792,929-936,971-996`。
+4. S1 config 显式禁止 detector training、mAP、teacher、oracle、learned policy 和 official test。`native_crop_s1_center_videomae_s_768x1_adapter.py:95-118`。
+5. 后端实际链路为 VideoMAE-S adapter → `ActionFormerProjection` → `FPNIdentity` → 原 `ActionFormerHead` focal/DIoU loss → 原 soft-NMS/evaluator，不得替换成简化检测器。`actionformer.py:128-215,217-265`；`anchor_free_head.py:288-413`；`nms.py:103-210`。
+6. 当前 optimizer 的 backbone 分组依赖参数名 substring，且 backbone 分组遍历本身不先过滤 `requires_grad=False`；v2 必须增加参数级唯一覆盖审计。`optimizer.py:61-142`。
+7. 当前 AMP retry 已保存并恢复 RNG 与 model buffers，但 v2 仍须将 scheduler、EMA、homotopy 和 successful-update 计数显式绑定到成功 optimizer step。`train_engine.py:74-155`。
+8. 当前滑窗推理在 per-window 输出 gather 后才执行 full-video sliding NMS；任何 reference 选择必须发生在该 NMS 之前。`test_engine.py:138-179`。
+
+---
+
+## 2. Protocol Identity and Immutable Hashes
+
+### 2.1 协议身份
+
+| 字段                      | 冻结值                                                                |
+| ----------------------- | ------------------------------------------------------------------ |
+| Schema                  | `continuous_roi_s2_preregistration_v2`                             |
+| Audit commit            | `6118cd50a3601d044dab690427ad9c756ce7d827`                         |
+| Protocol-core SHA-256   | `3aac17439277fa213f02c5c61f1c2429d6c631abe76e4ce163419ae088b62653` |
+| Training seeds          | `3407, 3408, 3409`                                                 |
+| Statistics seed         | `20260720`                                                         |
+| Reference Sobol seed    | `20260720`                                                         |
+| Random-fixed Sobol seed | `20260721`                                                         |
+
+`protocol-core` 是下列 canonical JSON 使用 `sort_keys=True`、分隔符 `(",",":")`、UTF-8 编码后的 SHA-256：
+
+```json
+{
+  "audit_commit": "6118cd50a3601d044dab690427ad9c756ce7d827",
+  "base_manifest_sha256": "10b14faac57d4631dfae93c9a7d14eb81b8dc308f0e80232469e5b7c974589ca",
+  "fit_split_hash": "fa8f3a005f97c82a8e3dbb470eec7bce27b813e9d6a8908cbdcc6d5a2d1bb3af",
+  "gate_split_hash": "4d4e956aae298720529a2949c8aeb9fc90a1fc4730348bf5b5ba165d7df1f576",
+  "geometry": {
+    "area_max": "0.36",
+    "area_min": "0.18",
+    "ratio_max": "2.25",
+    "ratio_min": "0.75"
+  },
+  "reference": {
+    "accepted_steps": "16",
+    "lr_end": "0.005",
+    "lr_start": "0.05",
+    "optimizer": "Adam",
+    "restarts": "12"
+  },
+  "schema_version": "continuous_roi_s2_preregistration_v2",
+  "sealed_test_hash": "5f9adf639fbcff869075ac78f6aa26d9da14986199a7d5b2181127769600746e",
+  "seeds": ["3407", "3408", "3409"],
+  "source_hw": ["180", "320"],
+  "statistics": {
+    "bootstrap_replicates": "20000",
+    "power_mc_campaigns": "50000",
+    "seed": "20260720"
+  },
+  "temporal": {
+    "chunks": "48",
+    "chunks_per_knot": "4",
+    "frames_per_chunk": "16",
+    "knots": "12"
+  },
+  "training": {
+    "amp_retries": "8",
+    "batch_size": "2",
+    "epochs": "60",
+    "successful_updates": "4800"
+  },
+  "views": {
+    "dense": "160",
+    "global": "96",
+    "local": "128"
+  }
+}
+```
+
+### 2.2 冻结输入哈希
+
+| Artifact                    | SHA-256                                                            |
+| --------------------------- | ------------------------------------------------------------------ |
+| VideoMAE-S checkpoint       | `4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251` |
+| S1 manifest semantic hash   | `10b14faac57d4631dfae93c9a7d14eb81b8dc308f0e80232469e5b7c974589ca` |
+| S1 manifest file hash       | `8e5a8901cb24b735750d5766405996dcac022b37f5a79fdbbdaa1f5479bf141d` |
+| Source annotation           | `ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad` |
+| Development-only annotation | `0985d3711ab31f404ff0be5a1ba75420796a6807d486410337078b38090bf749` |
+| Class map                   | `a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31` |
+| Fit IDs                     | `fa8f3a005f97c82a8e3dbb470eec7bce27b813e9d6a8908cbdcc6d5a2d1bb3af` |
+| Gate IDs                    | `4d4e956aae298720529a2949c8aeb9fc90a1fc4730348bf5b5ba165d7df1f576` |
+| Sealed-test IDs             | `5f9adf639fbcff869075ac78f6aa26d9da14986199a7d5b2181127769600746e` |
+
+这些值已由现有 S1 contract 冻结。`fit=160`、`gate=40`、sealed test `=211`；development 共 200 个视频，现有 geometry census 记录 664 个 development sliding windows 和 129 个 gate windows。`native_crop_s1_contract.py:14-51`。
+
+### 2.3 实现身份与 namespace
+
+正式编码完成后：
+
+```text
+IMPLEMENTATION_COMMIT := git rev-parse HEAD
+```
+
+必须满足：
+
+* 是具体 40-hex commit；
+* `6118cd50...` 是其祖先；
+* checkout 完全 clean，包括 untracked files；
+* executable source mapping `<relative_path -> Git blob SHA>` 使用 canonical JSON 哈希；
+* 除第 16 节允许文件外无科学代码变化；
+* 所有 formal job 均绑定同一个 `IMPLEMENTATION_COMMIT` 和 tree mapping。
+
+唯一输出根目录为：
+
+```text
+/data/run01/sczc063/yuzibo/continuous_roi_s2_v2/<EXPERIMENT_NAMESPACE>
+```
+
+其中：
+
+```text
+EXPERIMENT_NAMESPACE =
+SHA256(canonical_json({
+  protocol_core_sha256,
+  implementation_commit,
+  executable_tree_sha256,
+  pretrained_checkpoint_sha256,
+  manifest_sha256,
+  development_annotation_sha256,
+  class_map_sha256
+}))
+```
+
+不同 namespace、现有非空目录、symlink、bind mount、父目录逃逸或 hash 不一致均 fail-closed。
+
+---
+
+## 3. Research Thesis, Estimands, and Forbidden Claims
+
+### 3.1 唯一研究命题
+
+在冻结的 THUMOS14 development fit/gate、完整 768 点时间轴、同一 VideoMAE-S adapter 和同一 ActionFormer detection backend 下：
+
+> 具有连续中心、面积和长宽比、以 12 个时间 knot 形成平滑空间 tube 的可变源 ROI，重采样到固定 `128×128` local tensor 后，是否能在保留 `96×96` global context 的条件下达到 `160×160` full-frame dense comparator 的 TAD 表示充分性；连续几何是否相对固定中心、固定随机框、21 框离散库和 fixed-size learned-center 产生可测 headroom；计入双分支和未来 selector 预算后是否仍有成本可行性。
+
+### 3.2 五个独立 estimand
+
+| Boolean | Estimand                                         | 失败含义                                         |
+| ------- | ------------------------------------------------ | -------------------------------------------- |
+| `G`     | deterministic geometry/support                   | 几何、source support 或 sampler parity 不成立       |
+| `Q`     | model-conditioned continuous-search reachability | 当前有限搜索未充分探索可达表示                              |
+| `S_CR`  | continuous-reference representation sufficiency  | 当前 search-conditioned reference 未达到 D160 非劣界 |
+| `H`     | continuous geometry headroom                     | 连续中心/面积/ratio 未显著超过固定或离散控制                   |
+| `K`     | prospective deployable cost viability            | 双分支加预留 selector 预算未达到成本门                     |
+
+这五者不得合并为单一“crop works/does not work”结论。
+
+### 3.3 从一手工作迁移的机制
+
+冻结迁移：
+
+* AdaFocusV2 的 differentiable interpolation；
+* global/local auxiliary temporal supervision；
+* train-time random crop diversity；
+* 从稳定 anchor 逐步开放 learned geometry 的单次联合训练；
+* Uni-AdaFocus 的连续中心、宽、高变化；
+* 可变源 ROI 统一重采样到固定 local tensor；
+* 从 global deep feature map 产生几何参数。
+
+明确不迁移：
+
+* online/causal frame-by-frame emission；
+* temporal frame selection、DUCA、动态时间 budget；
+* conditional early exit；
+* X3D、SlowFast 或分类模型先验；
+* 强化学习；
+* 彼此独立的 lightweight/heavy backbones；
+* classification-only objective；
+* test-time per-video optimization 作为部署策略。
+
+Uni-AdaFocus 官方实现同时研究空间、时间和 sample-wise 动态计算；本协议只吸收空间 deformable patch，不吸收其在线逐帧和动态选帧部分。([ar5iv][2])
+
+### 3.4 永久禁止的主张
+
+* 不得称 THUMOS14 temporal GT 为 spatial box、actor box 或 GT crop。
+* 不得称 `CR-PREF` 为 oracle、global optimum、continuous upper bound 或部署 selector。
+* 不得由 finite-search 失败永久 KILL Continuous-RoI。
+* 不得把固定 `128×128` 输出解释成固定 source ROI 或保持 source-native density。
+* 不得声称 source area 变小会自动降低 local backbone FLOPs。
+* 不得把共享参数写成一次 forward。
+* 不得从 development gate 推出 official-test、论文主方法或跨 detector 泛化结论。
+* 不得用 D0 的 21 框替代连续域。
+* 不得把 D160/G full-frame letterbox 称为空间裁剪。
+* 不得在 S2 决策前读取 official test media、GT、prediction 或 checkpoint-selection 指标。
+
+---
+
+## 4. Data Splits, Permissions, and Sealed-Test Rules
+
+### 4.1 Fit/gate 划分
+
+复用冻结的 S1 manifest，不重新抽样：
+
+* split seed：`3407`
+* gate ratio：`0.20`
+* fit：160 videos
+* gate：40 videos
+* sealed test：211 videos
+
+原 split 算法：
+
+1. 从 source annotation 的 `subset=="training"` 且含有效非 `Ambiguous` action 的 200 个视频构造 development population。
+2. 用全 development action duration 的四分位组与 class support 做分层。
+3. 每轮优先补足 class 和 duration-group deficit，并用 `SHA256("3407\0"+video_id)` 确定稳定 tie-break。
+4. gate 取 40 个视频；fit 为余下 160。
+5. fit/gate 均必须保留全部 development class 和四个 duration groups。`spatial_zoom_s1_contract.py:120-236,266-295`。
+
+Short-Q1 阈值严格等于 manifest 中由 fit action durations 计算的 `duration_quartiles_seconds.q1`，公式和 class/duration support 校验已在 `spatial_zoom_s1_contract.py:293-382` 固定。
+
+### 4.2 数据使用权限
+
+| 阶段                            | Fit temporal GT | Gate temporal GT | Spatial GT | Teacher/reference cache |      Official test |
+| ----------------------------- | --------------: | ---------------: | ---------: | ----------------------: | -----------------: |
+| Manifest/precheck             |              允许 | 仅用于既有 split 身份校验 |         禁止 |                      禁止 | 仅验证 sealed ID hash |
+| Model training                |              允许 |               禁止 |         禁止 |                      禁止 |                 禁止 |
+| Fit-side variance/power audit |              允许 |               禁止 |         禁止 |                      禁止 |                 禁止 |
+| Gate raw inference            |              禁止 |               禁止 |         禁止 |                      禁止 |                 禁止 |
+| Continuous search             |              禁止 |               禁止 |         禁止 |                      禁止 |                 禁止 |
+| Raw seal                      |              禁止 |               禁止 |         禁止 |                      禁止 |                 禁止 |
+| Privileged join               |             不读取 |               允许 |         禁止 |        只读已封存 raw bundle |                 禁止 |
+| Cost profile                  |              禁止 |               禁止 |         禁止 |                      禁止 |                 禁止 |
+| Final S2 analysis             |         允许已封存统计 |       允许已封存 join |         禁止 |                      只读 |                 禁止 |
+
+### 4.3 Gate no-GT manifest
+
+precheck 必须生成：
+
+```text
+gate_inference_manifest.json
+```
+
+该文件只包含：
+
+* exact gate video IDs；
+* source file identity；
+* frame count、duration、fps；
+* 129 个冻结 window 的 start/end/valid length；
+* source geometry；
+* split/hash/provenance。
+
+其 JSON tree 中不得出现：
+
+```text
+annotations
+gt_segments
+gt_labels
+targets
+teacher
+oracle
+reference_id
+selected_restart
+```
+
+Gate raw/search job 只挂载该 redacted manifest。含 GT 的 development annotation 路径不得出现在 argv、environment、open file descriptor、Python object graph 或 `/proc/self/fd` 指向中。
+
+### 4.4 训练与 checkpoint
+
+* fit train dataset：160 items/epoch，`batch_size=2`，`drop_last=True`；
+* 80 successful updates/epoch；
+* 60 epochs；
+* 精确 4,800 successful optimizer updates；
+* checkpoint selection：只允许 update 4,800 的 final EMA；
+* 不保存或比较中间 gate mAP；
+* gate 不反向传播；
+* 三个 seed 全部进入统计，不得选最佳 seed。
+
+Official test 在本协议所有 outcome state 下均保持 sealed。
+
+---
+
+## 5. Continuous ROI Geometry Contract
+
+### 5.1 Source geometry
+
+Formal source geometry 精确为：
+
+```text
+H = 180
+W = 320
+q = W/H = 16/9
+```
+
+任一 frame/window 不是 `180×320`、同一 window 内 geometry 变化、EXIF/decoder 旋转或隐式 resize，均使该 evidence namespace 失效。当前 source geometry 只能称为“冻结实验解码源”，不得称为摄像机原始采集分辨率。
+
+### 5.2 唯一连续参数化
+
+ROI head 对每个 knot 输出：
+
+```text
+s = (s_x, s_y, s_a, s_r) ∈ R^4
+```
+
+定义：
+
+[
+a=0.18+0.18,\sigma(s_a)
+]
+
+[
+r=\exp\left(\log 0.75+\log 3\cdot\sigma(s_r)\right)
+]
+
+其中 `a=w·h` 是 normalized source area，`r=(wW)/(hH)` 是 source-pixel width/height ratio。随后：
+
+[
+w=\sqrt{\frac{ar}{q}},\qquad
+h=\sqrt{\frac{aq}{r}}
+]
+
+[
+c_x=\frac{w}{2}+(1-w)\sigma(s_x),\qquad
+c_y=\frac{h}{2}+(1-h)\sigma(s_y)
+]
+
+最终 box：
+
+[
+b=(c_x,c_y,w,h),\qquad
+[x_0,y_0,x_1,y_1]=
+[c_x-\tfrac w2,c_y-\tfrac h2,c_x+\tfrac w2,c_y+\tfrac h2].
+]
+
+这是唯一 decoder。禁止直接预测 `xyxy`、独立 clamp `w/h`、仅预测 center、softplus 无限尺度或训练/推理使用不同 decoder。
+
+### 5.3 硬范围
+
+| 量                      |                   最小值 |                  最大值 |
+| ---------------------- | --------------------: | -------------------: |
+| normalized area `a`    |                `0.18` |               `0.36` |
+| pixel aspect ratio `r` |                `0.75` |               `2.25` |
+| normalized width `w`   | `0.27556759606310754` |              `0.675` |
+| normalized height `h`  |  `0.3771236166328253` | `0.9237604307034011` |
+| source width           |    `88.1816307402 px` |             `216 px` |
+| source height          |    `67.8822509939 px` |  `166.2768775266 px` |
+
+decoder 解析上保证 box in-bounds；formal path 不做 silent clamp、rigid translation 或 padding。允许的数值检查误差为 `1e-6` normalized coordinate。超出即 fail。
+
+### 5.4 Anchor
+
+S1 fixed-center `128×128` box：
+
+```text
+w0 = 128/320 = 0.4
+h0 = 128/180 = 0.7111111111111111
+a0 = 0.28444444444444444
+r0 = 1.0
+cx0 = cy0 = 0.5
+source xyxy = [96, 26, 224, 154)
+```
+
+对应 logits：
+
+```text
+s_x0 = 0
+s_y0 = 0
+s_a0 = 0.3237870770938973
+s_r0 = -1.0363260485493035
+```
+
+ROI head 最后一层 bias 初始化为上述四值，weight 使用 seed `20260720` 的 `Normal(0,1e-4)`，不得全零；全零会使第一步时 ROI head 前层梯度断开。
+
+### 5.5 Patch/grid 关系
+
+* global tensor：`96×96`，VideoMAE patch grid `6×6`；
+* local tensor：`128×128`，patch grid `8×8`；
+* D160 tensor：`160×160`，patch grid `10×10`；
+* `96²+128²=160²=25,600` pixels/frame；
+* `6²+8²=10²=100` spatial tokens/tubelet。
+
+因此 D160 是像素数和第一层 token 数匹配的 full-frame comparator。局部 source area 变化只改变采样内容和 source-to-output scale；local backbone 始终处理 `128×128`，其 FLOPs 不随 `a` 改变。
+
+### 5.6 几何异常定义
+
+* out-of-bounds rate：任一 decoded edge 超出 `[0,1]±1e-6`；
+* clamp rate：formal code 调用了 coordinate clamp/project 修复；
+* saturation rate：`|s_d|>5`；
+* bound-degenerate rate：`a` 距面积边界小于 `0.002`，或 `r` 距 ratio 边界小于 `0.02`；
+* background-collapse proxy：action-context clip 中 `a<0.24`；
+* invalid geometry：非 finite、negative extent、source geometry mismatch。
+
+任何 out-of-bounds 或 clamp count 非零均使 `G=false`。
+
+---
+
+## 6. Temporal Tube and Interpolation Contract
+
+### 6.1 时间粒度
+
+完整输入保持 768 frames：
+
+* 48 个 VideoMAE clips；
+* 每 clip 16 frames；
+* tubelet size 2；
+* 每 clip 输出 8 temporal points；
+* global/local 各得到 384 temporal points；
+* 不删除、不重复选择、不稀疏化时间点。
+
+### 6.2 12-knot tube
+
+ROI head 输出 12 个 knot logits：
+
+```text
+S ∈ R[B,12,4]
+```
+
+clip index 为 `j=0,...,47`，knot center 为：
+
+[
+\kappa_m=1.5+4m,\quad m=0,\ldots,11.
+]
+
+在 logits 空间执行 piecewise-linear interpolation：
+
+* `j≤1.5`：使用 knot 0；
+* `j≥45.5`：使用 knot 11；
+* 其余 `j` 在相邻 knot 间线性插值。
+
+插值后才运行第 5 节 decoder。每个 clip 的同一 box 应用于该 clip 的全部 16 frames。因此每个 768-frame window 有 48 个连续 box，而不是逐帧回归或全视频单框。
+
+### 6.3 平滑损失
+
+对 decoded clip box 定义：
+
+[
+z_j=
+\left(
+c_{x,j},
+c_{y,j},
+\frac{\log(a_j/a_0)}{\log 2},
+\frac{\log r_j}{\log 3}
+\right).
+]
+
+[
+L_{\rm vel}=\frac1{47\cdot4}
+\sum_{j=0}^{46}|z_{j+1}-z_j|_1
+]
+
+[
+L_{\rm acc}=\frac1{46\cdot4}
+\sum_{j=1}^{46}
+|z_{j+1}-2z_j+z_{j-1}|_1.
+]
+
+训练 action-context mask：
+
+* clip 与任一 fit GT segment 有非空交集时为 action clip；
+* 再向左右各 dilation 2 clips，即各 32 frames；
+* 该 mask 只参与 fit regularizer；
+* gate/inference 无 GT mask。
+
+### 6.4 Tube diagnostics
+
+逐 window/seed 报告：
+
+* adjacent center speed：
+
+[
+v_j=\sqrt{(320\Delta c_x)^2+(180\Delta c_y)^2};
+]
+
+* second-order center acceleration；
+* adjacent box IoU；
+* tube jitter：
+
+[
+1-\frac1{47}\sum_j \operatorname{IoU}(b_j,b_{j+1});
+]
+
+* area/ratio velocity；
+* knot-to-clip interpolation checksum；
+* constant-extension frame count；
+* boundary-context area violation rate。
+
+---
+
+## 7. Differentiable Training Crop vs Runtime Crop Parity
+
+### 7.1 唯一像素中心约定
+
+对 local output pixel `i,j∈{0,...,127}`：
+
+[
+p_x=x_0+\frac{j+0.5}{128}w,\qquad
+p_y=y_0+\frac{i+0.5}{128}h.
+]
+
+在 source pixel-center 坐标中：
+
+[
+X=p_xW-0.5,\qquad Y=p_yH-0.5.
+]
+
+对应 PyTorch normalized grid：
+
+[
+g_x=2p_x-1,\qquad g_y=2p_y-1.
+]
+
+语义固定为：
+
+```text
+mode = bilinear
+align_corners = False
+padding_mode = border
+```
+
+### 7.2 训练 sampler
+
+正式训练不直接依赖 CUDA `grid_sample` backward，而实现与其 forward 语义等价的 deterministic four-neighbor gather：
+
+1. source pixels `requires_grad=False`；
+2. 坐标和 bilinear weights 使用 FP32；
+3. `X,Y` 仅按 border semantics 映射到 `[0,W-1]×[0,H-1]`；
+4. `floor` 确定四邻域 index；
+5. 以可微权重合成输出；
+6. backward 只需对 weights/box logits 求导，不对 source image 求梯度。
+
+`torch.nn.functional.grid_sample` 只作为 parity oracle，不是 formal sampler。
+
+训练时 source 以 pinned CPU `uint8` 保存；global forward 得到 box 后，按 16-frame clip 将 source 搬到 GPU、转换 FP32、采样并进入 local backbone。不得物化完整 768-frame FP32 source tensor。crop+local backbone 使用 `use_reentrant=False` activation checkpointing。
+
+### 7.3 Runtime sampler
+
+runtime 顺序固定为：
+
+1. CPU decode source `uint8`；
+2. CPU 生成 global96 float32 letterbox；
+3. H2D global；
+4. global VideoMAE + ROI head；
+5. box logits/48 boxes D2H；
+6. CPU 使用相同 pixel-center 公式执行 float32 bilinear crop/resize；
+7. H2D local128；
+8. local VideoMAE、fusion、detector、NMS。
+
+不得把 box edge round 成 integer 再 crop。D0 的整数 `128×128` box 在该公式下恰好重现 source pixel centers。
+
+### 7.4 Full-frame letterbox
+
+D160 和 G 使用同一个 canonical CPU float32 bilinear letterbox：
+
+* `320×180 → 160×90`，上下各 pad 35；
+* `320×180 → 96×54`，上下各 pad 21；
+* padding mode：edge replication；
+* 无 random resized crop；
+* 无 center crop；
+* 无二次 source crop。
+
+### 7.5 Parity gate
+
+在 fixed seed 下，对 10,000 个合法 boxes、impulse、checkerboard、horizontal/vertical ramp 和真实 source frames：
+
+| 检查                                                        |                                              阈值 |
+| --------------------------------------------------------- | ----------------------------------------------: |
+| decoded edge CPU/GPU                                      |                                 max abs `≤1e-7` |
+| formal GPU sampler vs `grid_sample` oracle，输入归一化到 `[0,1]` |                max abs `≤2e-4`，mean abs `≤1e-5` |
+| CPU runtime vs formal GPU sampler                         |                max abs `≤2e-4`，mean abs `≤1e-5` |
+| VideoMAE normalization 后                                  |                                 max abs `≤2e-5` |
+| analytic box gradient vs central finite difference        | relative error `≤5e-3` 且 absolute error `≤1e-4` |
+| D0 integer box identity                                   |                            exact pixel identity |
+| implicit clamp/padding                                    |                                       count `0` |
+
+任一阈值失败令 `G=false`，不得用更宽容 tolerance 继续 formal run。
+
+---
+
+## 8. Model Architecture and Tensor Contracts
+
+### 8.1 Detector identity
+
+全部 D160、G、GL 模型使用：
+
+```text
+ContinuousROIActionFormer
+  └── original ActionFormer projection
+  └── original FPNIdentity
+  └── original ActionFormerHead
+  └── original focal/DIoU losses
+  └── original proposal decode
+  └── original sliding-window aggregation
+  └── original soft-NMS
+  └── original mAP evaluator
+```
+
+`ContinuousROIActionFormer` 只负责接收 backbone 额外 loss dictionary，并把它与原 detector losses 相加；推理输出、proposal decode、head、NMS 和 evaluator 不得重写。
+
+### 8.2 共享 VideoMAE
+
+GL 只创建一套 `VisionTransformerAdapter` 参数实例，并执行两个完整 view evaluations：
+
+```text
+global96 → shared VideoMAE
+local128 → same shared VideoMAE
+```
+
+两次计算都计入 FLOPs、latency 和 energy。pretrained non-adapter core 保持冻结；12 层 adapters 共享并从两条分支累计梯度。`fc_norm.weight/bias` 因 `return_feat_map=True` 不在路径上，必须显式 `requires_grad=False` 且不进入 optimizer。
+
+### 8.3 Tensor contract
+
+| Tensor                        | Shape                                 |
+| ----------------------------- | ------------------------------------- |
+| global input                  | `[B,1,3,768,96,96]`                   |
+| source input                  | `[B,1,3,768,180,320]`, CPU `uint8`    |
+| global map                    | `[B,48,384,8,6,6]`                    |
+| ROI-head map                  | `[B,48,384,6,6]`，对 tubelet-time 8 求均值 |
+| knot logits                   | `[B,12,4]`                            |
+| clip boxes                    | `[B,48,4]`                            |
+| local input                   | `[B,1,3,768,128,128]`                 |
+| local map                     | `[B,48,384,8,8,8]`                    |
+| global temporal feature `F_g` | `[B,384,384]`                         |
+| local temporal feature `F_l`  | `[B,384,384]`                         |
+| fusion alpha                  | `[B,1,384]`                           |
+| fused feature                 | `[B,384,384]`                         |
+| detector input                | `[B,384,768]`                         |
+| detector mask                 | `[B,768]`                             |
+
+### 8.4 ROI head
+
+ROI head 只读取 final adapter-layer global map：
+
+1. `Conv2d(384,128,1,bias=False)`；
+2. `GroupNorm(8,128)`；
+3. `GELU`；
+4. 拼接三个固定通道：source-normalized `x`、source-normalized `y`、global-letterbox content fraction mask，得到 131 channels；
+5. `Conv2d(131,128,3,padding=1,bias=False)`；
+6. `GroupNorm(8,128)`；
+7. `GELU`；
+8. `Conv2d(128,1,1)` 后对 `6×6` softmax；
+9. attention-weighted 128-d feature，加 weighted `x,y,content_mass`，得到 131-d；
+10. reshape `[B,131,48]`；
+11. `AvgPool1d(kernel=4,stride=4)`，得到 `[B,131,12]`；
+12. `Conv1d(131,192,3,padding=1)` + GELU；
+13. `Conv1d(192,4,1)`。
+
+global content mask 对 `96×96` 上 `96×54` content 的每个 `16×16` patch 计算精确 fractional overlap。
+
+### 8.5 Fusion
+
+定义 channel LayerNorm：
+
+```python
+LN_C(x) = LN(x.transpose(1, 2)).transpose(1, 2)
+```
+
+[
+g=LN_g(F_g),\qquad l=LN_l(F_l)
+]
+
+[
+u=\operatorname{cat}(g,l,l-g)\in\mathbb R^{B\times1152\times384}
+]
+
+[
+\alpha=0.25+0.50,\sigma(\operatorname{Conv1d}_{1152\to1}(u))
+]
+
+[
+\delta=
+\operatorname{Conv1d}*{384\to384}
+\left(
+\operatorname{GELU}
+\left(
+\operatorname{Conv1d}*{1152\to384}(u)
+\right)
+\right)
+]
+
+[
+F_{384}=LN_f\left((1-\alpha)F_g+\alpha F_l+0.10\tanh\delta\right).
+]
+
+随后使用现有确定性 linear temporal interpolation：
+
+```text
+384 → 768
+align_corners=False
+```
+
+得到 detector contract `[B,384,768]`。
+
+`alpha∈[0.25,0.75]` 是硬结构约束，防止 global 或 local 被完全旁路。
+
+### 8.6 辅助 heads
+
+* global auxiliary：`Conv1d(384,20,1)`，384 点；
+* local auxiliary：`Conv1d(384,20,1)`，384 点；
+* ROI-semantic auxiliary：在 detached global map 上按 predicted boxes 采样 `3×3` feature，空间均值后 `Linear(384,20)`，48 clips。
+
+新增 trainable 参数总数必须精确为：
+
+```text
+ROI head              277,125
+fusion                 594,049
+three auxiliary heads  23,100
+total                  894,274
+```
+
+不一致即配置或实现漂移。
+
+### 8.7 Gradient ownership
+
+允许 detach：
+
+* decoded source pixels；
+* masks；
+* logging/receipt tensors；
+* ROI-semantic auxiliary 的 global feature value：`global_map.detach()`；
+* reference search 中 frozen model parameters。
+
+禁止 detach：
+
+```text
+L_det
+→ ActionFormerHead
+→ projection/neck
+→ fusion
+→ local feature
+→ differentiable sampler
+→ ROI boxes
+→ ROI head
+→ global feature map
+→ shared VideoMAE adapters
+```
+
+同样禁止 detach `F_g`、`F_l`、fusion alpha 或 predicted box logits。
+
+---
+
+## 9. Joint Training Schedule and Exact Losses
+
+### 9.1 单一联合训练模型
+
+GL 只有一条 4,800-update 训练轨迹。ROI head、shared adapters、fusion、auxiliary heads、projection、neck 和 ActionFormerHead 从 update 1 起全部进入 optimizer。不存在独立 ROI pretrain、独立 detector finetune 或第三个组合模型。
+
+D160、G 是 matched comparators；C/R/D0/LC/CR 不单独训练，全部从同 seed 的一个 GL final-EMA checkpoint 派生。
+
+### 9.2 Temporal targets
+
+对 384-point global/local aux：
+
+[
+t_n=2n+1,\quad n=0,\ldots,383.
+]
+
+若 `t_n` 落在某 class 的任一 fit temporal GT `[start,end)` 内，则该 class target 为 1；允许 multi-hot。padding points 由 mask 排除。
+
+对 48-point ROI-semantic aux，clip `[16j,16(j+1))` 与某 class GT 有非空交集即为正。
+
+这些是 temporal class occupancy，不是 spatial pseudo box。
+
+### 9.3 Auxiliary focal loss
+
+每个 auxiliary head 使用：
+
+[
+{\rm FL}(p,y)=
+-\alpha y(1-p)^\gamma\log p
+-(1-\alpha)(1-y)p^\gamma\log(1-p),
+]
+
+其中：
+
+```text
+alpha = 0.25
+gamma = 2
+```
+
+按 `max(number_of_positive_targets,1)` 归一化。
+
+### 9.4 Geometry losses
+
+[
+L_{\rm area}=
+\frac1{48}\sum_j
+\left(\frac{\log(a_j/a_0)}{\log2}\right)^2
+]
+
+[
+L_{\rm ratio}=
+\frac1{48}\sum_j
+\left(\frac{\log r_j}{\log3}\right)^2
+]
+
+[
+L_{\rm context}=
+\frac1{|A|}
+\sum_{j\in A}
+\left[
+\max\left(0,\frac{0.24-a_j}{0.06}\right)
+\right]^2
+]
+
+其中 `A` 是 action clips 经左右各 2 clips dilation 后的集合；空集合取 0。
+
+[
+L_{\rm sat}=
+\frac1{48\cdot4}
+\sum_{j,d}
+\left[
+\max\left(0,\frac{|s_{j,d}|-4}{2}\right)
+\right]^2.
+]
+
+总损失：
+
+[
+\begin{aligned}
+L={}&L_{\rm det}
++\lambda_g L_g
++\lambda_l L_l
++\lambda_{\rm sem}L_{\rm sem}\
+&+0.05L_{\rm vel}
++0.10L_{\rm acc}
++\lambda_aL_{\rm area}
++\lambda_rL_{\rm ratio}
++0.20L_{\rm context}
++0.01L_{\rm sat}.
+\end{aligned}
+]
+
+`L_det` 完全等于原 ActionFormer classification + regression losses。
+
+### 9.5 Loss schedule
+
+令 successful update 为 `u∈[1,4800]`：
+
+[
+\rho(u)=\operatorname{clip}\left(\frac{u-800}{1600},0,1\right).
+]
+
+| Weight  | `u≤800` |  `800<u<2400` | `u≥2400` |
+| ------- | ------: | ------------: | -------: |
+| `λ_g`   |  `0.25` |  `0.25-0.15ρ` |   `0.10` |
+| `λ_l`   |  `0.50` |  `0.50-0.30ρ` |   `0.20` |
+| `λ_sem` |  `0.50` |  `0.50-0.25ρ` |   `0.25` |
+| `λ_a`   |  `0.10` |  `0.10-0.08ρ` |   `0.02` |
+| `λ_r`   |  `0.02` | `0.02-0.015ρ` |  `0.005` |
+
+其余权重全程固定。
+
+### 9.6 Anchor homotopy
+
+对 ROI head prediction `s_pred`：
+
+[
+\lambda_{\rm roi}(u)=\min(1,u/800)
+]
+
+[
+s_{\rm hom}=s_0+
+\lambda_{\rm roi}(u)(s_{\rm pred}-s_0).
+]
+
+所有 parameters 从 update 1 训练；homotopy 只限制实际 crop geometry，不冻结 ROI head。
+
+### 9.7 Random-crop diversity
+
+每个 sample 使用 stateless Philox draw：
+
+```text
+key = (training_seed, successful_update, video_id, temporal_window_start)
+```
+
+随机替换概率：
+
+| Updates     |             `p_rand` |
+| ----------- | -------------------: |
+| `1-800`     |               `0.50` |
+| `801-2400`  | 从 `0.50` 线性降到 `0.10` |
+| `2401-4000` |               `0.10` |
+| `4001-4800` |                  `0` |
+
+随机 trajectory 在 logits 空间按 AR(1) 生成：
+
+[
+\epsilon_0\sim N(0,1),\qquad
+\epsilon_m=0.85\epsilon_{m-1}+
+\sqrt{1-0.85^2}\eta_m
+]
+
+并 clamp `ε∈[-2,2]`。center logits scale `1.5`；area/ratio logits 分别以 anchor 为中心、scale `0.75`。
+
+当 sample 被 random geometry 替换：
+
+* main detector/local auxiliary 使用 random crop；
+* ROI-semantic auxiliary 始终使用 `s_hom`；
+* 其余 sample 的 detector loss 正常回传 ROI head。
+
+这是本协议对 AdaFocusV2 random patch diversity 的 TAD 迁移；不增加第二个 local forward。
+
+### 9.8 Optimizer
+
+```text
+optimizer = AdamW
+betas = (0.9, 0.999)
+eps = 1e-8
+gradient clip L2 = 1.0
+```
+
+| 参数组                                   |     LR |                 Weight decay |
+| ------------------------------------- | -----: | ---------------------------: |
+| shared VideoMAE adapters              | `2e-4` |       `0.05`，norm/bias 为 `0` |
+| ROI head/fusion/aux heads             | `2e-4` |       `0.05`，norm/bias 为 `0` |
+| projection/neck/ActionFormerHead      | `1e-4` | `0.05`，norm/bias/scale 为 `0` |
+| pretrained non-adapter core、`fc_norm` | frozen |                不进入 optimizer |
+
+禁止按 substring 决定 formal 参数组。builder 必须以完整 parameter name 和 module type 构造集合，并断言：
+
+```text
+union(optimizer_parameter_ids)
+  == set(id(p) for p in model.parameters() if p.requires_grad)
+
+all parameter IDs appear exactly once
+no requires_grad=False parameter appears
+no optimizer group is empty
+```
+
+当前 substring-based backbone 分组不足以满足此合同。
+
+### 9.9 Scheduler、EMA、AMP
+
+* warmup：前 400 successful updates，从 `0.1×base_lr` 线性到 base LR；
+* updates `401-4800`：cosine decay；
+* minimum LR：`1e-6`；
+* EMA decay：`0.999`，只在成功 update 后推进；现有 `ModelEma` 默认也是 `0.999`。
+* AMP：FP16；
+* box decode、sampler coordinates、geometry losses：FP32；
+* 每 sampled batch 最多 8 次 AMP overflow retry；
+* 每次 retry 恢复 CPU/CUDA RNG、model buffers 和 stateless augmentation key；
+* scheduler、EMA、homotopy、random-crop schedule 与 update counter 只在成功 optimizer step 后推进；
+* 第 9 次失败、pre-scale nonfinite loss 或 nonfinite gradient 立即终止该 run；
+* `torch.use_deterministic_algorithms(True)`；
+* `CUBLAS_WORKSPACE_CONFIG=:4096:8`；
+* `cudnn.benchmark=False`；
+* TF32 禁止；
+* formal run 禁止 resume、`--cfg-options` 和不同 world size。
+
+### 9.10 Full-model one-step gradient gate
+
+真实 checkpoint、真实 source frames、真实 ActionFormer loss、`B=1`，执行一条完整 forward/backward，但不写 optimizer artifact。必须断言：
+
+* ROI head 每个 trainable parameter 有 finite nonzero gradient；
+* shared adapters 有来自 global 和 local 两条路径的 finite nonzero贡献；
+* fusion、projection、neck、classification、regression parameters 均有 finite nonzero gradient；
+* `∂L_det/∂F_g`、`∂L_det/∂F_l`、`∂L_det/∂box_logits` finite 且 L2 norm `>1e-8`；
+* `fc_norm`、frozen core 无 gradient；
+* optimizer coverage 精确；
+* loss decomposition sum 与 `losses["cost"]` 误差 `≤1e-6`；
+* one-step output shape精确 `[1,384,768]`；
+* local/source no-GT sanitizer 保持通过。
+
+---
+
+## 10. Continuous Reference and Privileged-Join Protocol
+
+### 10.1 Reference identity
+
+```text
+schema = continuous_roi_s2_search_conditioned_reference_v1
+model = corresponding-seed GL final EMA
+search variables = 12×4 knot logits
+model parameters = frozen
+GT during search = none
+restarts = 12
+accepted Adam steps = 16
+```
+
+它只回答“在冻结模型与冻结搜索算法下，连续几何是否存在可达 headroom”，不是全局上界。
+
+### 10.2 No-GT objective
+
+从原 ActionFormerHead 取得所有 valid FPN temporal points 的 pre-sigmoid classification logits `z_{i,c}`。令：
+
+[
+m_i=\max_c z_{i,c},\qquad q_i=\sigma(m_i).
+]
+
+使用原 prior-generator point coordinate，把每个 point 映射到 768 轴并分入 12 个等长 temporal bins。
+
+[
+J_{\rm peak}=
+\operatorname{mean}\left(\operatorname{Top64}{q_i}\right)
+]
+
+对 bin `b`：
+
+[
+e_b=0.25\log\left[
+\frac1{N_b}\sum_{i\in b}
+\exp(m_i/0.25)
+\right]
+]
+
+[
+J_{\rm cov}=\frac1{12}\sum_b\sigma(e_b).
+]
+
+把 global/local auxiliary logits 在每个 16-frame clip 内平均，得到 Bernoulli class probabilities `p_g,p_l`，定义：
+
+[
+J_{\rm agree}=1-
+\operatorname{mean}
+\left[
+\frac{{\rm JS}_{\rm Bern}(p_g,p_l)}{\log2}
+\right].
+]
+
+搜索期间无 GT 的 context regularizer对全部 clips 使用：
+
+[
+R_{\rm context}^{NG}=
+\frac1{48}\sum_j
+\left[
+\max\left(0,\frac{0.24-a_j}{0.06}\right)
+\right]^2.
+]
+
+最终最大化：
+
+[
+\begin{aligned}
+J={}&0.50J_{\rm cov}
++0.35J_{\rm peak}
++0.15J_{\rm agree}\
+&-0.05L_{\rm vel}
+-0.10L_{\rm acc}
+-0.02L_{\rm area}
+-0.005L_{\rm ratio}\
+&-0.20R_{\rm context}^{NG}
+-0.01L_{\rm sat}.
+\end{aligned}
+]
+
+禁止修改 objective 权重、top-k、bin 数或温度。
+
+### 10.3 12 个初始化
+
+| Restart | 初始化                                                |
+| ------: | -------------------------------------------------- |
+|       0 | joint ROI head 的完整 predicted trajectory            |
+|       1 | learned centers，area/ratio 替换为 anchor              |
+|       2 | 全 knot anchor                                      |
+|       3 | deterministic random-fixed `128×128` box，全 knot 相同 |
+|    4-11 | 8 个 Owen-scrambled Sobol 48-D trajectories         |
+
+Restart 3：
+
+```python
+SobolEngine(dimension=2, scramble=True, seed=20260721).draw(1)
+```
+
+用于 fixed-size center 的两个可行区间。
+
+Restarts 4-11：
+
+```python
+SobolEngine(dimension=48, scramble=True, seed=20260720).draw(8)
+```
+
+reshape 为 `[8,12,4]`，每个 `u` 映射为 `logit(clamp(u,0.0025,0.9975))`。该固定 Sobol population 对每个参数维的四个 quartile 精确各有 24 个 knot samples；precheck 必须复算并绑定 hash。
+
+### 10.4 Optimization
+
+* optimizer：Adam；
+* betas：`(0.9,0.999)`；
+* eps：`1e-8`；
+* weight decay：`0`；
+* minimize `-J`；
+* exactly 16 accepted steps；
+* learning rate：
+
+[
+\operatorname{lr}(u)=
+0.005+
+0.045\frac{1+\cos(\pi(u-1)/15)}2,
+\quad u=1,\ldots,16;
+]
+
+* box-logit gradient norm clip：`5.0`；
+* 每步后 logits project 到 `[-6,6]`；
+* model `eval()`；
+* model parameters `requires_grad=False`；
+* global feature 只计算一次并缓存于该 window/restart job；
+* 任一 nonfinite objective、gradient 或 box 使该 restart invalid；
+* 不做 early stop；
+* 保存 step 0 到 step 16 的完整 trajectory。
+
+### 10.5 Raw artifact 与封存
+
+Gate raw/search 进程无 GT，输出：
+
+```text
+raw/<seed>/<window_id>/
+  standard_cells.safetensors
+  d0_21_candidates.safetensors
+  cr_restart_<00..11>.safetensors
+  cr_trajectory_<00..11>.jsonl
+  boxes_<cell_or_restart>.npy
+  search_summary.json
+  receipt.json
+```
+
+每个 final candidate/restart 保存：
+
+* unrounded pre-NMS segments；
+* pre-sigmoid logits；
+* sigmoid class scores；
+* valid masks/prior points；
+* auxiliary logits；
+* 48 boxes；
+* 12 knot logits；
+* no-GT objective components；
+* initialization and optimizer seeds；
+* checkpoint/config/code hashes。
+
+所有 129 gate windows×3 seeds 完整后，`seal_raw.py`：
+
+1. 验证 exact population；
+2. 验证无 GT field/path；
+3. 计算每文件 SHA-256；
+4. 生成 Merkle root；
+5. 原子写 `raw_seal.json`；
+6. chmod files `0444`、directories `0555`；
+7. 拒绝覆盖。
+
+privileged join 在 `raw_seal.json` 不存在、hash 不符或 seal 时间早于任何 raw file 时必须拒绝运行。
+
+### 10.6 No-GT evaluator
+
+`CR-NG` 对每个 window 选择 final `J` 最大的 restart；tie 选最小 restart ID。随后使用原 per-window post-processing、sliding aggregation、soft-NMS 和 evaluator。
+
+它仍是高成本 search selector，不是部署方法；只用于衡量 no-GT objective 与 privileged reference 的差距。
+
+### 10.7 Privileged join
+
+封存后，单独 CPU job 可读取 gate temporal GT。对 candidate/restart `c` 和 window `w`：
+
+* `n_0.7`：同 class、one-to-one matched、tIoU≥0.7 的 GT 数；
+* `n_0.5`：同定义，threshold 0.5；
+* `q`：对每个 GT 取同 class prediction 的最大 `score×tIoU` 后求和；
+* `f`：与任一同 class GT 的最大 tIoU `<0.3` 的 predictions 中，top-50 score 均值，不足补零；
+* `J`：封存的 no-GT objective。
+
+选择 lexicographic maximum：
+
+[
+V(c,w)=
+(n_{0.7},n_{0.5},q,-f,J,-{\rm restart_id}).
+]
+
+禁止：
+
+* 用 aggregate gate mAP 选择 restart；
+* 调整 tie tolerance；
+* 搜索后重新优化；
+* privileged join 回写模型或 boxes；
+* 使用 test GT。
+
+选中 per-window output 后才运行原 sliding aggregation/NMS。
+
+### 10.8 D0 reference
+
+D0 固定 21 个 source-native `128×128` boxes：
+
+```text
+x0 = [0, 32, 64, 96, 128, 160, 192]
+y0 = [0, 26, 52]
+index q = 7*k + j
+box = [x0[j], y0[k], x0[j]+128, y0[k]+128)
+```
+
+中心框为 `[96,26,224,154)`。该定义已存在于旧协议原文。
+
+D0 生成两个输出：
+
+* `D0-FIX`：每 seed 在 fit 535 sliding windows 上用 official Avg-mAP 选一个全局固定 candidate；tie 依次比较 mAP@0.7、mAP@0.6、较小 ID；gate 全部 windows 用同一 ID。
+* `D0-PREF`：gate raw seal 后，用与 CR 相同的 per-window privileged tuple 在 21 candidates 中选择。
+
+D0-PREF 是有限离散库诊断，不是 continuous reference。
+
+### 10.9 Search adequacy `Q`
+
+`Q=true` 当且仅当：
+
+1. 8 个 Sobol trajectories 的每参数四分位 count 均为 `[24,24,24,24]`；
+2. 全部 initialization boxes geometry valid；
+3. 每个 gate window 至少 10/12 restarts finite；
+4. 全 population finite window-restart fraction `≥0.99`；
+5. step-0 box-logit gradient norm median `≥1e-6`，且 `≥90%` 大于 `1e-8`；
+6. median `J_16-J_0≥0.005`；
+7. 至少 60% finite restarts 满足 `J_16-J_0≥0.001`；
+8. 至少 60% finite restarts 满足：
+
+```text
+abs(J16-J12) ≤ 1e-3
+and max_abs(box_edge16-box_edge12) ≤ 0.01
+```
+
+`Q=false` 表示当前 search-conditioned reference 不足，不能解释为连续表示不存在。
+
+---
+
+## 11. Matched Baselines and Exact Matrix
+
+### 11.1 训练 artifact 数量
+
+每 seed 只训练三类模型：
+
+```text
+D160
+G
+GL
+```
+
+共 `3 models × 3 seeds = 9` 个训练 runs。
+
+### 11.2 Cell matrix
+
+| Cell      | Training checkpoint | Inference geometry                                         |   Gate GT | 作用                           |
+| --------- | ------------------- | ---------------------------------------------------------- | --------: | ---------------------------- |
+| `D160`    | D160                | full-frame letterbox160                                    |         无 | same-pixel dense comparator  |
+| `G`       | G                   | full-frame letterbox96                                     |         无 | global-only control          |
+| `C`       | GL                  | 固定中心 `128×128`                                             |         无 | fixed center                 |
+| `R`       | GL                  | deterministic random fixed-size continuous box，整 window 固定 |         无 | matched random control       |
+| `D0-FIX`  | GL                  | fit-selected 单一 21-library box                             |         无 | fixed-library control        |
+| `D0-PREF` | GL                  | 21-library post-seal privileged per-window join            | join-only | 离散 adaptive diagnostic       |
+| `LC`      | GL                  | learned 12-knot centers；`w,h` 固定 anchor                    |         无 | learned-center control       |
+| `CR-NG`   | GL                  | 12-restart continuous no-GT search                         |         无 | no-GT search diagnostic      |
+| `CR-PREF` | GL                  | 同一 continuous search 的 post-seal privileged join           | join-only | primary continuous reference |
+
+### 11.3 Cell-contract hashes
+
+| Cell    | Contract SHA-256                                                   |
+| ------- | ------------------------------------------------------------------ |
+| D160    | `c269971035f8af94b0581d15dba2469b7faad51c6435b4ee5b10b2c586ee6ffb` |
+| G       | `73a27306a3f445db91a1c1967d370271d69fe23414f8fd24d5bc621a41966c29` |
+| C       | `476484097ddd47490c54fd267027e8f5b1c30248a367d4669998aed1cafac03f` |
+| R       | `5be97a725e4a2e232749b933491c5c2fa5ee0000aa37262f3adec7d9095bab5b` |
+| D0-FIX  | `80f78cf6084475885e37a93b0feb5e503f93820058b467426d20fa69e748d2ea` |
+| D0-PREF | `6df2f37fbc8522836e50a0e45d3d227f274be02e29f4a645fcc418806facf8db` |
+| LC      | `9b56a15d26c86f1c89cd94b8ff49cda58c21b25d4128f17b5edf85dcb4d0c416` |
+| CR-NG   | `2cb6f6a9d4f41a07a1639606f5529d7978d7d0010ca664ac9efec613317143a8` |
+| CR-PREF | `e7721be0a746b2df2425f0569cb98355b0cfef770b9dbb43e4d2693ba672b972` |
+
+materialized config 另行使用完整 config canonical SHA-256 绑定；contract hash 与 config hash 均须进入 receipt。
+
+### 11.4 Matched fields
+
+所有训练 artifacts 固定相同：
+
+* fit160 videos；
+* temporal random trunc；
+* 768 timeline；
+* batch exposure；
+* successful updates；
+* optimizer/scheduler规则；
+* VideoMAE checkpoint；
+* adapter placement；
+* projection/FPN/head；
+* post-processing/NMS；
+* evaluator；
+* three seeds；
+* final-EMA checkpoint rule。
+
+唯一允许差异：
+
+| 字段                     | D160    | G        | GL                |
+| ---------------------- | ------- | -------- | ----------------- |
+| spatial views          | full160 | global96 | global96+local128 |
+| ROI head/fusion/aux    | 无       | 无        | 有                 |
+| geometry diversity     | 无       | 无        | 第 9.7 节           |
+| backbone evaluations   | 1       | 1        | 2                 |
+| extra trainable params | 0       | 0        | 894,274           |
+
+禁止继承旧 dense160 config 的 train `RandomResizedCrop` 或 val/test `CenterCrop(160)`；正式 D160 必须是 full-frame letterbox160。
+
+---
+
+## 12. Metrics and Diagnostics
+
+### 12.1 Detection metrics
+
+使用原 20-class official evaluator：
+
+* `mAP@0.3`
+* `mAP@0.4`
+* `mAP@0.5`
+* `mAP@0.6`
+* `mAP@0.7`
+* `Avg-mAP`：上述五值等权平均。
+
+每个结果必须包含全部 40 gate video IDs；无 prediction 的视频写空列表，不得从 population 删除。固定 class support 不因 bootstrap sample、cell 或缺预测而变化。现有 evaluator 和 sliding-NMS 路径保持原实现。
+
+### 12.2 High-tIoU 与 short actions
+
+* high-tIoU：`mAP@0.6`、`mAP@0.7`；
+* Short-Q1：GT duration `≤ frozen fit q1`；
+* `Short-Q1 Recall@100@0.5`；
+* `Short-Q1 Recall@100@0.7`；
+* `Short-Q1 start/end normalized error`。
+
+Recall@100 使用每视频 full-video NMS 后 top-100 predictions，同 class、每 GT 最多匹配一次。
+
+### 12.3 Boundary errors
+
+用 score descending、同 class、tIoU≥0.5 one-to-one match。对 GT `g`：
+
+[
+e_s=
+\min\left(1,
+\frac{|p_s-g_s|}{\max(g_e-g_s,10^{-6})}
+\right),
+]
+
+[
+e_e=
+\min\left(1,
+\frac{|p_e-g_e|}{\max(g_e-g_s,10^{-6})}
+\right).
+]
+
+未匹配 GT 的 start/end error 均记 1。先按 video 求均值，再进入 video-cluster statistic。
+
+### 12.4 Geometry diagnostics
+
+逐 cell/seed 报告：
+
+* source area mean、median、q05/q25/q75/q95；
+* pixel aspect ratio；
+* source width/height；
+* center heatmap；
+* center distance from frame center；
+* speed、acceleration、adjacent IoU、tube jitter；
+* out-of-bounds、clamp、saturation、bound-degenerate rates；
+* action-context `a<0.24` rate；
+* D0 candidate identity distribution；
+* CR restart identity distribution；
+* CR-PREF 与 CR-NG box trajectory IoU。
+
+### 12.5 Feature utilization
+
+在 sealed raw 后的 privileged diagnostic 中，冻结模型且不更新参数，计算：
+
+* `||∂L_det/∂F_g||₂`；
+* `||∂L_det/∂F_l||₂`；
+* `||∂L_det/∂box_logits||₂`；
+* zero-gradient fraction；
+* fusion alpha mean/q05/q95；
+* global/local feature norm ratio；
+* global-zero 和 local-zero inference 的 Avg-mAP drop；
+* auxiliary-head occupancy AUROC/AUPRC，仅作诊断。
+
+Evidence validity 要求三类核心 gradient norm median 均 `>1e-8`，zero-gradient window fraction `<0.01`。
+
+### 12.6 Reference diagnostics
+
+* finite restart fraction；
+* initialization quartile coverage；
+* step-0 gradient distribution；
+* objective improvement；
+* convergence fraction；
+* final objective spread；
+* top-4 restart pairwise trajectory IoU；
+* CR-NG/CR-PREF selected-restart agreement；
+* CR-PREF 与 D0-PREF gain；
+* per-window search wall time、GPU energy；
+* failed restart reason。
+
+---
+
+## 13. Power Audit and Statistical Decision Rules
+
+### 13.1 Result-blind power audit
+
+Power audit 在九个 fit runs 完成后、任何 gate raw inference 前运行。它只能读取：
+
+* fit predictions；
+* fit GT；
+* fit video IDs；
+* fit-side cost measurements；
+* frozen effect margins。
+
+进程不得读取 gate model outputs、gate raw directory 或 official test。输出不得包含当前 fit effect estimate；只写 variance summaries、FWER、power 和 pass/fail。
+
+算法：
+
+1. 对 paired fit-video cell residuals减去每 seed/cell 的 observed mean，只保留 cluster variance。
+2. 对 seed effects 同样中心化。
+3. 生成 `50,000` hierarchical Monte-Carlo campaigns，seed `20260720`。
+4. 每个 campaign 抽 3 个 seeds 和 40 个 videos，使用正式 max-T transformation。
+5. 在 global null 下估计 FWER。
+6. 在冻结 design alternatives 下估计 power。
+7. 不允许根据 power 输出改变 margin、bootstrap 数或 matrix。
+
+Design alternatives：
+
+| Family                  | Null margin | Power target alternative |
+| ----------------------- | ----------: | -----------------------: |
+| Avg sufficiency         |  `-1.00 pp` |               `-0.25 pp` |
+| mAP@0.7 sufficiency     |  `-1.50 pp` |               `-0.50 pp` |
+| Short-Q1 Recall@100@0.7 |     `-0.03` |                  `-0.01` |
+| boundary ratio          |      `1.15` |                   `1.05` |
+| Avg continuous headroom |  `+0.75 pp` |               `+1.50 pp` |
+| mAP@0.7 headroom        |  `+0.25 pp` |               `+0.75 pp` |
+| p50 cost ratio          |      `0.90` |                   `0.85` |
+| p95 cost ratio          |      `0.95` |                   `0.90` |
+| energy ratio            |      `0.92` |                   `0.87` |
+
+Power audit 通过当且仅当：
+
+```text
+estimated FWER ≤ 0.055
+and every primary hypothesis power ≥ 0.80
+```
+
+失败时 gate raw jobs 不启动，最终为 `NO_DECISION_INVALID_EVIDENCE`。
+
+### 13.2 Detection bootstrap
+
+* replicates：`20,000`；
+* RNG：PCG64 seed `20260720`；
+* two-level paired bootstrap：
+
+  1. 从三个 seed 中有放回抽取 3 个；
+  2. 对每个抽中 seed，从 40 个 gate videos 中有放回抽取 40 个；
+  3. 同一 replicate 中所有 cells 使用相同 seed/video draws；
+  4. 重复 video 使用 synthetic unique ID，重新运行完整 fixed-class AP；
+  5. 先求每 seed 指标，再对抽取 seed 平均。
+* 不得 bootstrap windows、proposals 或 GT instances 代替 videos。
+
+### 13.3 Simultaneous inference
+
+把所有 hypotheses 转成“值越大越好”的 contrast。对第 `j` 个 contrast：
+
+* `θ_j` 为 observed contrast；
+* `se_j` 为 20,000 bootstrap contrasts 的标准差；
+* `se_j=0` 使 evidence invalid；
+* replicate statistic：
+
+[
+T_b=\max_j\frac{\theta_j-\theta^*_{b,j}}{se_j}.
+]
+
+取 `T_b` 的 95th percentile 为 `c_0.95`：
+
+[
+LCB_j=\theta_j-c_{0.95}se_j.
+]
+
+检测 family 和成本 family 分别计算 max-T，不混用 video 与 profile-window 采样单位。最终授权采用 intersection-union：所有相关 adjusted bounds 同时满足。
+
+### 13.4 Representation sufficiency
+
+`S_CR=true` 当且仅当所有条件成立：
+
+| Contrast                    |                Adjusted condition |
+| --------------------------- | --------------------------------: |
+| `CR-PREF − D160` Avg-mAP    |                  LCB `≥ -1.00 pp` |
+| `CR-PREF − D160` mAP@0.7    |                  LCB `≥ -1.50 pp` |
+| Short-Q1 Recall@100@0.7     |                     LCB `≥ -0.03` |
+| start-error ratio `CR/D160` |              adjusted UCB `≤1.15` |
+| end-error ratio `CR/D160`   |              adjusted UCB `≤1.15` |
+| seed guardrail              | 无 seed Avg difference `<-3.00 pp` |
+
+固定表示充分性 `F=true` 使用完全相同门槛，但 comparator 为 `D0-FIX` 对 D160。
+
+### 13.5 Continuous headroom
+
+`H=true` 当且仅当：
+
+| Contrast                  | Adjusted LCB |
+| ------------------------- | -----------: |
+| CR-PREF − C Avg-mAP       |  `≥+0.75 pp` |
+| CR-PREF − R Avg-mAP       |  `≥+0.75 pp` |
+| CR-PREF − D0-PREF Avg-mAP |  `≥+0.75 pp` |
+| CR-PREF − LC Avg-mAP      |  `≥+0.75 pp` |
+| CR-PREF − LC mAP@0.7      |  `≥+0.25 pp` |
+
+并且 CR-PREF 对 D0-PREF 与 LC 的 Avg point estimate 均至少 `2/3` seeds 为正。
+
+D0-FIX 或 C 的失败不能替代上述连续 headroom 条件。
+
+### 13.6 Official evaluator parity
+
+focused parity test 必须覆盖：
+
+* empty video prediction；
+* empty class prediction；
+* unknown prediction class；
+* duplicated prediction；
+* finite zero-length proposal；
+* all-background video；
+* sliding windows with duplicate proposals；
+* class support固定；
+* pre-NMS threshold `0.001`；
+* pre-NMS top-k `2000`；
+* soft-NMS `sigma=0.7`；
+* max segments `2000`；
+* multiclass NMS；
+* voting threshold `0.7`。
+
+任何自定义 analyzer 与 official evaluator 的每 threshold AP、mAP、matched counts 差异必须 `≤1e-10`。
+
+---
+
+## 14. Full-Stack Cost Ledger
+
+### 14.1 三种成本分开披露
+
+1. **Training cost**：包括 full source H2D、differentiable crop backward、两次 VideoMAE、activation checkpoint recomputation。
+2. **S2 reference-search cost**：12 restarts×16 steps、D0 21 sweep、privileged join；不得计入部署优势。
+3. **Prospective deployable path cost**：一次 global、一次 ROI head、一次 runtime crop、一次 local、fusion 和 detector；不含 search。
+
+### 14.2 必须计费的 stages
+
+每个 cell 即使 stage 不适用也写零，禁止省略：
+
+```text
+decode
+CPU preprocessing
+host-to-device transfer
+global scout/global branch
+ROI policy head
+box device-to-host transfer
+box decoding and temporal interpolation
+runtime crop and resize
+local host-to-device transfer
+local backbone
+global-local fusion
+projection/neck
+ActionFormerHead
+post-processing/NMS
+end-to-end
+```
+
+共享参数仍计两次 backbone evaluation。local source area 不改变 local FLOPs。
+
+### 14.3 Profile population
+
+* 同一 Slurm allocation；
+* 同一 node；
+* 同一 physical GPU UUID；
+* 同一 software environment；
+* single process/single GPU；
+* warm serial；
+* gate 129 windows；
+* three seeds；
+* 每 comparator 与 D160 对每 window 执行四次 ABBA block：
+
+  * 偶数 window ordinal：`A-B-B-A`
+  * 奇数 ordinal：`B-A-A-B`
+* A=`D160`；
+* B=`GL-PATH`；
+* 每个 cell 先运行 32 个不计入统计的 warmup windows；
+* measured invocations：`129×4×3=1,548`/cell；
+* 每 stage 前后 CUDA synchronize；
+* latency 使用 `CLOCK_MONOTONIC_RAW`；
+* peak CUDA memory 每 window reset；
+* CPU threads、NUMA affinity 与 GPU UUID 写入 receipt。
+
+### 14.4 Energy
+
+* NVML sampling interval：`20 ms`；
+* 允许最大实际 sampling gap：`40 ms`；
+* 从 decode 前开始，到 NMS 后 CUDA synchronize 结束；
+* trapezoidal integration；
+* 不减 idle baseline；
+* 报告 gross GPU joules；
+* CPU energy 未测量，因此禁止称为 system energy；
+* sidecar 保存 timestamp、power、clock、temperature、utilization；
+* 任一 window gap 超限则该 window invalid；
+* invalid profile windows 不得静默删除；存在任一 invalid window使成本 evidence invalid。
+
+### 14.5 FLOPs/MACs/params
+
+* 一次 768-frame window；
+* MACs 与 FLOPs 分开报告；
+* FLOPs 定义为 `2×MACs`；
+* 使用 module-level analytical counter，并对 sampler、ROI head、fusion 显式计数；
+* unsupported trainable/compute op count 必须为 0；
+* 报告 total/trainable params；
+* GL 新增 params 必须精确 894,274。
+
+### 14.6 Future-selector reserve
+
+即使 S2 尚无获批 deployable selector，成本判决加入：
+
+```text
+p50 latency   +3.0 ms/window
+p95 latency   +5.0 ms/window
+GPU energy    +0.50 J/window
+peak memory   +64 MiB
+FLOPs         +0.50 GFLOPs/window
+parameters    +1,000,000
+```
+
+这些 reserve 在统计前逐 window/metric 加入，不得根据观测结果缩小。
+
+### 14.7 Cost viability `K`
+
+成本 family 使用 paired seed/window bootstrap 与独立 max-T。`K=true` 当且仅当：
+
+| Metric                                   |                   Adjusted condition |
+| ---------------------------------------- | -----------------------------------: |
+| `(GL-PATH p50 + reserve)/D160 p50`       | upper simultaneous 95% bound `≤0.90` |
+| `(GL-PATH p95 + reserve)/D160 p95`       |                  upper bound `≤0.95` |
+| `(GL-PATH energy + reserve)/D160 energy` |                  upper bound `≤0.92` |
+| `(GL-PATH peak +64MiB)/D160 peak`        |                   hard ratio `≤1.05` |
+| `(GL-PATH FLOPs +0.5G)/D160 FLOPs`       |                   hard ratio `≤0.90` |
+| `GL current params +1M reserve`          |    `≤D160 params+2M` 且 ratio `≤1.10` |
+
+结果只允许称为 warm per-window cost。禁止外推 whole-video decode overlap、cold start、multi-stream throughput 或系统级节能。
+
+---
+
+## 15. Outcome State Machine and Authorization Rules
+
+定义：
+
+* `I`：commit/config/checkpoint/data/provenance、no-leak、sampler parity、gradient、optimizer、successful-update、evaluator、raw seal、power、statistics 和 cost evidence 全部有效；
+* `G`：第 5-7 节 deterministic geometry/support 条件通过；
+* `Q`：第 10.9 节 reference adequacy 通过；
+* `S_CR`：第 13.4 节 CR sufficiency 通过；
+* `F`：D0-FIX fixed-crop sufficiency 通过；
+* `H`：第 13.5 节 continuous headroom 通过；
+* `K`：第 14.7 节成本通过。
+
+按下列优先顺序产生唯一状态：
+
+| 顺序 | Boolean expression            | Outcome                              | 唯一授权                                                               |
+| -: | ----------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+|  1 | `¬I`                          | `NO_DECISION_INVALID_EVIDENCE`       | 修复首个证据缺陷，重做受影响 stage 及其全部 descendants                              |
+|  2 | `I ∧ ¬G`                      | `INCONCLUSIVE_GEOMETRY_OR_SUPPORT`   | 修复 geometry/source/sampler support；不得解释方法效果                        |
+|  3 | `I ∧ G ∧ Q ∧ S_CR ∧ H ∧ K`    | `SUFFICIENT_AND_CONTINUOUS_HEADROOM` | 唯一允许冻结 S3 learned continuous ROI deployment-policy preregistration |
+|  4 | `I ∧ G ∧ Q ∧ S_CR ∧ H ∧ ¬K`   | `SUFFICIENT_BUT_COST_NOT_VIABLE`     | 只允许重构计算路径；不得声称高效或打开 official test                                  |
+|  5 | `I ∧ G ∧ F ∧ ¬(Q ∧ S_CR ∧ H)` | `SUFFICIENT_FIXED_ONLY`              | 只允许固定 crop 表示路线；不得声称连续自适应必要                                        |
+|  6 | `I ∧ G` 且不满足 3-5              | `CONTINUOUS_REFERENCE_INSUFFICIENT`  | 只允许重做独立 reference/reachability 协议；不得永久 KILL Continuous-RoI         |
+
+`CONTINUOUS_REFERENCE_INSUFFICIENT` 同时覆盖 search 不充分、CR 不满足 D160 非劣或 headroom 不成立但 fixed sufficiency 也未被证明的情况。其含义是“本次 reference package 不足以授权 S3”，不是“连续 ROI 被证伪”。
+
+任一状态均不得自动打开 official test。
+
+---
+
+## 16. Code Changes by Exact File
+
+### 16.1 新增文件
+
+```text
+opentad/datasets/transforms/continuous_roi.py
+opentad/models/backbones/continuous_roi_geometry.py
+opentad/models/backbones/continuous_roi_sampler.py
+opentad/models/backbones/continuous_roi_head.py
+opentad/models/backbones/continuous_roi_fusion.py
+opentad/models/backbones/continuous_roi_wrapper.py
+opentad/models/losses/continuous_roi_losses.py
+opentad/models/detectors/continuous_roi_actionformer.py
+
+configs/adatad/thumos/continuous_roi_s2_d160_videomae_s_768x1_adapter.py
+configs/adatad/thumos/continuous_roi_s2_global96_videomae_s_768x1_adapter.py
+configs/adatad/thumos/continuous_roi_s2_gl_videomae_s_768x1_adapter.py
+
+tools/bata/continuous_roi_s2_contract.py
+tools/bata/build_continuous_roi_s2_redacted_gate.py
+tools/bata/run_continuous_roi_s2_precheck.py
+tools/bata/train_continuous_roi_s2.py
+tools/bata/run_continuous_roi_s2_cuda_gate.py
+tools/bata/run_continuous_roi_s2_raw_inference.py
+tools/bata/run_continuous_roi_s2_reference_search.py
+tools/bata/seal_continuous_roi_s2_raw.py
+tools/bata/join_continuous_roi_s2_privileged.py
+tools/bata/run_continuous_roi_s2_power_audit.py
+tools/bata/profile_continuous_roi_s2_cost.py
+tools/bata/analyze_continuous_roi_s2.py
+tools/bata/validate_continuous_roi_s2.py
+
+scripts/run_continuous_roi_s2_v2_slurm.sh
+
+tests/test_continuous_roi_s2_geometry.py
+tests/test_continuous_roi_s2_sampler_parity.py
+tests/test_continuous_roi_s2_model_contract.py
+tests/test_continuous_roi_s2_training_transaction.py
+tests/test_continuous_roi_s2_no_leak.py
+tests/test_continuous_roi_s2_reference.py
+tests/test_continuous_roi_s2_evaluator_statistics.py
+tests/test_continuous_roi_s2_cost_schema.py
+tests/test_continuous_roi_s2_filesystem.py
+```
+
+### 16.2 允许修改
+
+```text
+opentad/datasets/transforms/__init__.py
+opentad/datasets/transforms/formatting.py
+opentad/models/backbones/__init__.py
+opentad/models/detectors/__init__.py
+opentad/models/builder.py
+opentad/cores/optimizer.py
+opentad/cores/train_engine.py
+```
+
+修改范围：
+
+* 注册新 transform/wrapper/detector；
+* `Collect` 允许 `continuous_roi_geometry` meta；
+* builder 增加 `continuous_roi` wrapper type；
+* optimizer 增加 exact parameter coverage path；
+* train engine 增加 successful-update callback，并只在成功 step 后推进 scheduler/EMA。
+
+### 16.3 禁止修改
+
+```text
+opentad/models/backbones/vit_adapter.py
+opentad/models/detectors/actionformer.py
+opentad/models/detectors/single_stage.py
+opentad/models/projections/actionformer_proj.py
+opentad/models/dense_heads/actionformer_head.py
+opentad/models/dense_heads/anchor_free_head.py
+opentad/evaluations/mAP.py
+opentad/models/utils/post_processing/nms/nms.py
+opentad/cores/test_engine.py
+opentad/datasets/thumos.py
+opentad/datasets/base/*
+opentad/datasets/transforms/native_crop.py
+opentad/models/backbones/native_crop_wrapper.py
+configs/adatad/thumos/native_crop_s1_center_videomae_s_768x1_adapter.py
+pretrained checkpoint bytes
+source/development annotations
+class map
+S1 manifest and receipts
+```
+
+### 16.4 S1 复用边界
+
+可复用：
+
+* checkpoint/hash constants；
+* fit/gate manifest；
+* clean checkout；
+* Slurm single-GPU guard；
+* atomic publish/self-hash；
+* immutable namespace；
+* geometry census；
+* AMP retry buffer/RNG restore；
+* exact dataset-ID binding；
+* no-overwrite evidence writer。
+
+必须重构：
+
+* fixed-center transform；
+* fixed-mean wrapper；
+* cost schema；
+* optimizer grouping；
+* training entrypoint；
+* raw gate sealing；
+* statistics analyzer。
+
+绝不能作为 Continuous-RoI 已实现证据：
+
+* S1 CUDA one-step PASS；
+* `[B,384,768]` shape PASS；
+* fixed center gradient PASS；
+* D0 21-box coverage；
+* historical dense160/224/256 metrics；
+* S1 precheck-only artifact。
+
+---
+
+## 17. Core Implementation Pseudocode
+
+### 17.1 Decoder 与 temporal interpolation
+
+```python
+def decode_logits(logits: Tensor) -> Tensor:
+    # logits: [..., 4], fp32
+    sx, sy, sa, sr = logits.unbind(-1)
+
+    area = 0.18 + 0.18 * torch.sigmoid(sa)
+    ratio = torch.exp(
+        math.log(0.75) + math.log(3.0) * torch.sigmoid(sr)
+    )
+
+    q = 16.0 / 9.0
+    width = torch.sqrt(area * ratio / q)
+    height = torch.sqrt(area * q / ratio)
+
+    cx = 0.5 * width + (1.0 - width) * torch.sigmoid(sx)
+    cy = 0.5 * height + (1.0 - height) * torch.sigmoid(sy)
+
+    boxes = torch.stack((cx, cy, width, height), dim=-1)
+    assert torch.isfinite(boxes).all()
+    assert_geometry_without_clamp(boxes, tolerance=1e-6)
+    return boxes
+
+
+def interpolate_knots(knot_logits: Tensor) -> Tensor:
+    # [B, 12, 4] -> [B, 48, 4]
+    knot_x = torch.arange(12, dtype=torch.float32,
+                          device=knot_logits.device) * 4.0 + 1.5
+    clip_x = torch.arange(48, dtype=torch.float32,
+                          device=knot_logits.device)
+
+    out = []
+    for x in clip_x:
+        if x <= 1.5:
+            out.append(knot_logits[:, 0])
+        elif x >= 45.5:
+            out.append(knot_logits[:, 11])
+        else:
+            right = torch.searchsorted(knot_x, x).item()
+            left = right - 1
+            t = (x - knot_x[left]) / 4.0
+            out.append(
+                knot_logits[:, left] * (1.0 - t)
+                + knot_logits[:, right] * t
+            )
+    return torch.stack(out, dim=1)
+```
+
+### 17.2 Deterministic bilinear sampler
+
+```python
+def bilinear_sample_source(
+    source_uint8: Tensor,   # [B, 3, 16, H, W], no grad
+    boxes: Tensor,          # [B, 4], grad enabled
+    out_h: int = 128,
+    out_w: int = 128,
+) -> Tensor:
+    assert not source_uint8.requires_grad
+    src = source_uint8.to(dtype=torch.float32)
+
+    cx, cy, w, h = boxes.float().unbind(-1)
+    x0 = cx - 0.5 * w
+    y0 = cy - 0.5 * h
+
+    jj = torch.arange(out_w, device=src.device, dtype=torch.float32)
+    ii = torch.arange(out_h, device=src.device, dtype=torch.float32)
+
+    px = x0[:, None] + (jj[None, :] + 0.5) * w[:, None] / out_w
+    py = y0[:, None] + (ii[None, :] + 0.5) * h[:, None] / out_h
+
+    X = px * src.shape[-1] - 0.5
+    Y = py * src.shape[-2] - 0.5
+
+    Xb = X.clamp(0.0, src.shape[-1] - 1.0)
+    Yb = Y.clamp(0.0, src.shape[-2] - 1.0)
+
+    xa = torch.floor(Xb).to(torch.long)
+    ya = torch.floor(Yb).to(torch.long)
+    xb = (xa + 1).clamp(max=src.shape[-1] - 1)
+    yb = (ya + 1).clamp(max=src.shape[-2] - 1)
+
+    wx = Xb - xa.float()
+    wy = Yb - ya.float()
+
+    # gather four neighbors for every frame/channel/output point
+    v00 = gather_hw(src, ya, xa)
+    v01 = gather_hw(src, ya, xb)
+    v10 = gather_hw(src, yb, xa)
+    v11 = gather_hw(src, yb, xb)
+
+    out = (
+        v00 * (1 - wy)[..., None] * (1 - wx)[:, None, :]
+        + v01 * (1 - wy)[..., None] * wx[:, None, :]
+        + v10 * wy[..., None] * (1 - wx)[:, None, :]
+        + v11 * wy[..., None] * wx[:, None, :]
+    )
+    return out
+```
+
+formal validator 单独检查这里的 `clamp` 只实现 border sampling semantics，不修改 decoded box；decoded edge clamp count 必须为零。
+
+### 17.3 Joint wrapper
+
+```python
+def forward_train(
+    self,
+    inputs: dict[str, Tensor],
+    masks: Tensor,
+    gt_segments: list[Tensor],
+    gt_labels: list[Tensor],
+    successful_update: int,
+    sample_ids: list[str],
+) -> BackboneTrainOutput:
+    global_map = self.encode_feature_map(inputs["global"])
+    # [B,48,384,8,6,6]
+
+    global_clip_map = global_map.mean(dim=3)
+    knot_logits = self.roi_head(global_clip_map)
+
+    lam = min(1.0, successful_update / 800.0)
+    hom_logits = self.anchor + lam * (knot_logits - self.anchor)
+
+    random_mask = stateless_random_mask(
+        sample_ids, successful_update, probability=p_rand(successful_update)
+    )
+    random_logits = build_random_ar1_trajectories(sample_ids, successful_update)
+    crop_logits = torch.where(
+        random_mask[:, None, None], random_logits, hom_logits
+    )
+
+    clip_boxes = decode_logits(interpolate_knots(crop_logits))
+    local_input = self.sample_all_clips(inputs["source"], clip_boxes)
+    local_map = self.encode_feature_map(local_input)
+
+    fg = flatten_spatial_temporal(global_map)  # [B,384,384]
+    fl = flatten_spatial_temporal(local_map)   # [B,384,384]
+    fused = self.fusion(fg, fl)
+    detector_features = interpolate_temporal_384_to_768(fused)
+
+    losses = self.losses(
+        fg=fg,
+        fl=fl,
+        global_map=global_clip_map,
+        predicted_logits=hom_logits,
+        boxes=decode_logits(interpolate_knots(hom_logits)),
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+        masks=masks,
+    )
+    return BackboneTrainOutput(detector_features, losses)
+```
+
+### 17.4 Loss aggregation
+
+```python
+det_losses = original_actionformer_forward_train(
+    detector_features, masks, gt_segments, gt_labels
+)
+
+all_losses = {
+    **det_losses,
+    **backbone_output.losses,
+}
+cost_terms = [
+    value for key, value in all_losses.items()
+    if key.endswith("_loss")
+]
+all_losses["cost"] = torch.stack(cost_terms).sum()
+assert torch.isfinite(all_losses["cost"])
+```
+
+### 17.5 Optimizer coverage
+
+```python
+def build_s2_optimizer(model: nn.Module) -> AdamW:
+    trainable = {
+        name: parameter
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    }
+
+    assignments: dict[str, tuple[str, float, float]] = {}
+    for name, parameter in trainable.items():
+        module = owning_module(model, name)
+
+        family = classify_by_module_identity(module, name)
+        lr = 2e-4 if family in {"adapter", "roi"} else 1e-4
+        decay = 0.0 if is_norm_bias_or_scale(module, name) else 0.05
+        assignments[name] = (family, lr, decay)
+
+    assert set(assignments) == set(trainable)
+
+    groups = materialize_exact_groups(trainable, assignments)
+    ids = [id(p) for group in groups for p in group["params"]]
+    assert len(ids) == len(set(ids)) == len(trainable)
+    assert set(ids) == {id(p) for p in trainable.values()}
+
+    return torch.optim.AdamW(
+        groups, betas=(0.9, 0.999), eps=1e-8
+    )
+```
+
+### 17.6 No-leak sanitizer
+
+```python
+FORBIDDEN_KEYS = {
+    "annotations", "gt_segments", "gt_labels", "targets",
+    "teacher", "oracle", "reference_id", "selected_restart",
+}
+
+def assert_raw_runtime_clean(config, batch, environment, open_fds):
+    recursive_reject_keys(config, FORBIDDEN_KEYS)
+    recursive_reject_keys(batch, FORBIDDEN_KEYS)
+
+    for value in environment.values():
+        reject_annotation_or_target_path(value)
+
+    for fd_target in open_fds:
+        reject_annotation_or_target_path(fd_target)
+
+    assert_exact_video_ids(batch, frozen_gate_ids)
+    assert config["test_mode"] is True
+    assert config["official_test_opened"] is False
+```
+
+### 17.7 Reference search
+
+```python
+with freeze_model_parameters(model), torch.enable_grad():
+    global_cache = model.compute_global_once(window)
+
+    for restart_id, initial_logits in enumerate(initializations):
+        logits = initial_logits.detach().clone().requires_grad_(True)
+        optimizer = torch.optim.Adam(
+            [logits], lr=0.05, betas=(0.9, 0.999), eps=1e-8
+        )
+
+        save_state(step=0, logits=logits)
+
+        for step in range(1, 17):
+            optimizer.param_groups[0]["lr"] = reference_lr(step)
+            boxes = decode_logits(interpolate_knots(logits))
+            raw = model.local_fusion_head_from_global_cache(
+                window.source, global_cache, boxes
+            )
+            objective, components = no_gt_objective(raw, boxes, logits)
+
+            optimizer.zero_grad(set_to_none=True)
+            (-objective).backward()
+            clip_grad_norm_([logits], 5.0)
+            assert_finite(objective, logits.grad)
+            optimizer.step()
+
+            with torch.no_grad():
+                logits.clamp_(-6.0, 6.0)
+
+            save_state(step, logits, boxes, objective, components)
+
+        save_final_raw_outputs(restart_id, raw, boxes)
+```
+
+### 17.8 Seal 与 privileged join
+
+```python
+def seal_raw(root: Path) -> dict:
+    population = require_exact_population(root)
+    for artifact in population:
+        reject_symlink_or_escape(artifact)
+        validate_self_hash(artifact)
+        validate_no_gt_schema(artifact)
+
+    merkle = build_merkle_root(population)
+    seal = {
+        "schema_version": "continuous_roi_s2_raw_seal_v1",
+        "population_count": len(population),
+        "merkle_root": merkle,
+        "official_test_read": False,
+    }
+    seal["seal_sha256"] = canonical_sha256(seal)
+    atomic_publish_exclusive(root / "raw_seal.json", seal)
+    make_tree_read_only(root)
+    return seal
+
+
+def privileged_select(raw_candidates, temporal_gt):
+    scored = []
+    for candidate in raw_candidates:
+        utility = (
+            matched_count(candidate, temporal_gt, threshold=0.7),
+            matched_count(candidate, temporal_gt, threshold=0.5),
+            score_weighted_overlap(candidate, temporal_gt),
+            -false_evidence_mass(candidate, temporal_gt, topk=50),
+            candidate.no_gt_objective,
+            -candidate.stable_id,
+        )
+        scored.append((utility, candidate))
+    return max(scored, key=lambda item: item[0])[1]
+```
+
+### 17.9 Cost profiler
+
+```python
+for window in frozen_profile_order:
+    for cell in abba_order(window.ordinal):
+        nvml_sidecar.start(interval_ms=20)
+        cuda_reset_peak_memory()
+
+        t0 = monotonic_raw()
+        decoded = timed("decode", decode_window)
+        preprocessed = timed("cpu_preprocess", preprocess_views)
+
+        global_gpu = timed("h2d_global", copy_global)
+        global_feat = timed_cuda("global_backbone", run_global)
+        box = timed_cuda("roi_head", run_roi_head)
+        boxes_cpu = timed("box_decode_d2h", decode_and_copy_boxes)
+
+        local_cpu = timed("runtime_crop", runtime_crop)
+        local_gpu = timed("h2d_local", copy_local)
+        local_feat = timed_cuda("local_backbone", run_local)
+        fused = timed_cuda("fusion", fuse)
+        projected = timed_cuda("projection_neck", project)
+        raw = timed_cuda("actionformer_head", run_head)
+        result = timed("nms", run_nms)
+        cuda_synchronize()
+
+        total = monotonic_raw() - t0
+        energy = nvml_sidecar.stop_and_integrate()
+        publish_window_profile(total, energy, peak_memory, stage_times)
+```
+
+---
+
+## 18. Focused Unit/Integration/CUDA Gates
+
+| Test                                  | 输入                               | 必须断言                                               | 预期失败方式                         |
+| ------------------------------------- | -------------------------------- | -------------------------------------------------- | ------------------------------ |
+| `test_decode_anchor_exact`            | anchor logits                    | box=`[96,26,224,154)`                              | numeric mismatch               |
+| `test_decode_random_bounds`           | 100k logits                      | hard area/ratio/in-bounds                          | any violation                  |
+| `test_decode_gradients`               | random finite logits             | four dimensions finite nonzero grad                | zero/nonfinite                 |
+| `test_temporal_knot_interpolation`    | synthetic 12 knots               | endpoints、linear weights、48 outputs exact          | off-by-one                     |
+| `test_source_geometry_contract`       | 180×320 与错误尺寸                    | correct accepted，others rejected                   | silent resize                  |
+| `test_sampler_grid_oracle`            | 10k boxes/patterns               | 第 7.5 节 tolerance                                  | value mismatch                 |
+| `test_sampler_cpu_runtime_parity`     | same population                  | CPU/GPU parity                                     | rounding/coordinate mismatch   |
+| `test_sampler_finite_difference`      | box logits                       | gradient tolerance                                 | broken crop gradient           |
+| `test_d0_identity`                    | 21 integer boxes                 | pixel-exact crop，IDs/coords exact                  | interpolation drift            |
+| `test_shared_backbone_identity`       | GL model                         | one parameter object，two branch evaluations        | duplicate backbone             |
+| `test_full_tensor_contract`           | B=1×768                          | every shape exact                                  | temporal/spatial mismatch      |
+| `test_actionformer_backend_parity`    | D160 mode、aux=0                  | original/new raw outputs and losses `≤1e-7`        | detector drift                 |
+| `test_fusion_branch_bounds`           | random Fg/Fl                     | alpha `[.25,.75]`                                  | branch bypass                  |
+| `test_optimizer_exact_coverage`       | full GL model                    | all trainable exactly once                         | missing/duplicate/frozen param |
+| `test_full_one_step_gradients`        | real fit batch                   | required finite nonzero grads                      | disconnected ROI/branch        |
+| `test_amp_retry_transaction`          | forced overflow                  | RNG/buffers/batch replay exact；one successful step | scheduler/EMA drift            |
+| `test_successful_update_parity`       | synthetic retries                | schedule advances only on success                  | unequal exposure               |
+| `test_gate_redaction`                 | redacted manifest                | no forbidden field/path                            | GT leakage                     |
+| `test_raw_search_rejects_gt`          | injected GT key/path             | immediate failure before model forward             | false no-leak                  |
+| `test_reference_deterministic_replay` | same raw window                  | byte-identical trajectories/hash                   | nondeterminism                 |
+| `test_reference_sobol_coverage`       | fixed Sobol seed                 | quartiles `[24,24,24,24]`                          | changed generator              |
+| `test_join_requires_seal`             | absent/corrupt seal              | reject                                             | privileged early access        |
+| `test_join_cannot_mutate_raw`         | read-only tree                   | no write succeeds                                  | evidence mutation              |
+| `test_official_evaluator_parity`      | adversarial prediction suite     | AP/mAP difference `≤1e-10`                         | analyzer drift                 |
+| `test_zero_length_proposal_behavior`  | finite zero-length proposal      | official-compatible FP handling                    | selector false rejection       |
+| `test_cost_schema_complete`           | all cells                        | every required stage present                       | missing cost stage             |
+| `test_power_audit_blindness`          | injected gate path               | reject before read                                 | result-aware power             |
+| `test_immutable_namespace`            | symlink/dirty tree/hash mismatch | reject                                             | provenance bypass              |
+| `test_receipt_idempotency`            | identical/different rerun        | identical exits 0；different rejects                | overwrite                      |
+
+Real CUDA gate 还必须：
+
+* 在 Slurm、唯一 visible GPU 上运行；
+* 加载冻结 VideoMAE checkpoint；
+* 使用真实 decoded source window；
+* AMP forward/backward；
+* 成功完成一个 optimizer step 后立即销毁 optimizer state；
+* 写只含 precheck/gradient/shape/identity 的 gate artifact；
+* 不写 detector metric、mAP 或模型 checkpoint。
+
+---
+
+## 19. Slurm DAG, Idempotency, Receipts, and Failure Policy
+
+### 19.1 环境
+
+所有 GPU jobs：
+
+```text
+module load cuda/11.8
+module load miniforge3/24.11
+source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+
+PYTHONDONTWRITEBYTECODE=1
+PYTHONNOUSERSITE=1
+WORLD_SIZE=1
+RANK=0
+LOCAL_RANK=0
+```
+
+必须只有一个 `CUDA_VISIBLE_DEVICES` entry，并记录 physical GPU UUID。现有 S1 launcher 已执行 clean commit、single visible GPU、tracked source 和固定 environment 检查，可复用其 fail-closed 方式。`run_native_crop_s1_gate_slurm.sh:39-71`。
+
+### 19.2 唯一 DAG
+
+```text
+J00 PRECHECK
+  ↓
+J01 CPU_FOCUSED_TESTS
+  ↓
+J02 REAL_CUDA_ONE_STEP_GATE
+  ↓
+J03 FIT_ARRAY[D160,G,GL × 3 seeds]
+  ↓
+J04 FIT_SIDE_RAW_AND_VARIANCE
+  ↓
+J05 RESULT_BLIND_POWER_AUDIT
+  ├───────────────┬──────────────────┐
+  ↓               ↓                  ↓
+J06 STANDARD_GATE_RAW   J07 D0_SWEEP_RAW   J08 CR_SEARCH_RAW
+  └───────────────┴──────────────────┘
+                  ↓
+J09 RAW_SEAL
+        ├────────────────┐
+        ↓                ↓
+J10 PRIVILEGED_JOIN   J11 COST_PROFILE_SERIAL
+        └────────────────┘
+                  ↓
+J12 SEALED_ANALYSIS
+```
+
+依赖必须使用 `afterok`。任何 ancestor 非零退出，所有 descendants 不得启动。
+
+### 19.3 Resources
+
+| Job | Slurm resources                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------ |
+| J00 | `--cpus-per-task=16 --mem=64G --time=02:00:00`                                                               |
+| J01 | `--cpus-per-task=16 --mem=64G --time=02:00:00`                                                               |
+| J02 | `--gres=gpu:1 --cpus-per-task=16 --mem=96G --time=04:00:00`                                                  |
+| J03 | array `0-8%3`；每 task `--gres=gpu:1 --cpus-per-task=16 --mem=128G --time=72:00:00`                            |
+| J04 | array `0-8%3`；每 task `--gres=gpu:1 --cpus-per-task=16 --mem=128G --time=24:00:00`                            |
+| J05 | `--cpus-per-task=32 --mem=192G --time=12:00:00`                                                              |
+| J06 | array standard cells/seeds；每 task `--gres=gpu:1 --cpus-per-task=16 --mem=128G --time=24:00:00`               |
+| J07 | array 3 seeds；每 task `--gres=gpu:1 --cpus-per-task=16 --mem=128G --time=48:00:00`                            |
+| J08 | 129 tasks=`3 seeds×43 shards`，每 shard 3 windows；`--gres=gpu:1 --cpus-per-task=12 --mem=128G --time=24:00:00` |
+| J09 | `--cpus-per-task=32 --mem=192G --time=12:00:00`                                                              |
+| J10 | `--cpus-per-task=32 --mem=192G --time=24:00:00`                                                              |
+| J11 | 单一 serial GPU allocation；`--gres=gpu:1 --cpus-per-task=16 --mem=128G --time=72:00:00`                        |
+| J12 | `--cpus-per-task=32 --mem=256G --time=24:00:00`                                                              |
+
+J11 在一个 allocation 内完成全部 ABBA，以保证同 node/同 physical GPU。
+
+### 19.4 Storage 与 filesystem
+
+J00 要求：
+
+```text
+free bytes ≥ 512 GiB
+free inodes ≥ 1,000,000
+```
+
+所有正式文件操作：
+
+* `lstat`/no-follow；
+* parent 必须位于 namespace；
+* 禁止 symlink、hard-link 到 namespace 外、FIFO、device node；
+* temporary file 使用 `open(..., O_CREAT|O_EXCL)`；
+* `fsync(file)`、`fsync(parent)` 后原子发布；
+* existing identical receipt/artifact：验证完整后 idempotent exit 0；
+* existing different artifact：exit 2；
+* 不覆盖、不 append、不“修复”已有 formal artifact。
+
+### 19.5 Receipt schema
+
+每个 job 必须写：
+
+```text
+schema_version
+stage
+protocol_core_sha256
+implementation_commit
+executable_tree_sha256
+experiment_namespace
+slurm_job_id
+slurm_array_task_id
+hostname
+gpu_uuid
+cuda_visible_devices
+python_executable
+python_version
+torch_version
+cuda_runtime
+driver_version
+conda_prefix
+argv
+environment_allowlist
+input_paths_and_sha256
+output_paths_and_sha256
+start_time_utc
+end_time_utc
+successful_update_count
+official_test_read
+gt_permission
+status
+first_failure
+receipt_sha256
+```
+
+只有 repository-owned entrypoint 可以生成 formal receipt。禁止 caller 注入 model、loss、prediction、boxes、hash、output mapping 或 PASS status。
+
+### 19.6 Failure policy
+
+* precheck、tests、CUDA gate、power audit任一失败：不启动训练/gate；
+* 单 seed fit 失败：整个 matrix invalid，不用剩余 seeds；
+* raw population 缺一 window/restart/candidate：不 seal；
+* search restart 数值失败按第 10.9 节进入 `Q`，但文件缺失或进程 crash 属于 `I=false`；
+* GT 在 seal 前可见：删除整个 namespace，重新从 J00 执行；
+* cost sidecar gap 超限：成本 evidence invalid；
+* analyzer schema/hash mismatch：`NO_DECISION_INVALID_EVIDENCE`；
+* 磁盘、inode、环境、NumPy/schema/provenance 不匹配均在 scientific computation 前失败。
+
+---
+
+## 20. Implementation-Ready Checklist
+
+* [ ] commit/tree 固定为具体 clean implementation snapshot。
+* [ ] protocol core hash精确为 `3aac1743...b62653`。
+* [ ] pretrained、manifest、annotation、class-map、split hashes全部匹配。
+* [ ] source geometry全 population 为 `180×320`。
+* [ ] official test未挂载、未读取、未生成 loader。
+* [ ] global96、local128、D160 使用 canonical float32 letterbox/sampler。
+* [ ] geometry decoder只有第 5.2 节一个版本。
+* [ ] area、ratio、width、height和中心硬范围通过。
+* [ ] 12-knot/48-clip interpolation checksum通过。
+* [ ] CPU/runtime/GPU/grid-oracle parity通过。
+* [ ] one shared VideoMAE parameter instance、两次 view evaluation。
+* [ ] ROI head、fusion、auxiliary heads参数量精确 894,274。
+* [ ] detector input精确 `[B,384,768]`。
+* [ ] ActionFormer projection/head/NMS/evaluator未修改。
+* [ ] detector loss可回传 ROI head与两条 adapter路径。
+* [ ] `fc_norm`和non-adapter core显式冻结。
+* [ ] optimizer对所有 trainable parameters唯一覆盖。
+* [ ] 4,800 successful updates/seed/cell。
+* [ ] scheduler、EMA、homotopy只随成功 update推进。
+* [ ] final EMA是唯一 checkpoint。
+* [ ] D160/G/GL 共九个训练 runs。
+* [ ] C/R/D0/LC/CR全部从同 seed GL checkpoint派生。
+* [ ] D0 21 box坐标和 stable IDs精确。
+* [ ] 12-restart×16-step no-GT continuous search精确。
+* [ ] gate raw process无 GT、teacher、oracle、reference ID。
+* [ ] raw outputs、boxes、trajectories、seeds和hash先封存。
+* [ ] privileged join只在 seal 后运行。
+* [ ] CR-PREF始终标记为 finite search-conditioned diagnostic。
+* [ ] result-blind power audit在 gate inference前通过。
+* [ ] detection采用 paired hierarchical video-cluster bootstrap。
+* [ ] cost采用同 GPU ABBA paired windows。
+* [ ] detection/cost分别 max-T。
+* [ ] cost ledger包含所有 stages。
+* [ ] search/training/deployable-path成本分开。
+* [ ] future selector reserve已加入成本判决。
+* [ ] outcome state machine只产生一个状态。
+* [ ] official test在所有 S2 outcome下继续 sealed。
+
+---
+
+## 21. Final Verdict
+
+`6118cd50a3601d044dab690427ad9c756ce7d827` 下的现有代码只证明 fixed-center S1 vertical slice 可运行，不包含 Continuous-RoI decoder、tube、differentiable sampler、ROI head、联合训练、continuous reference 或正式成本实现；因此不得把本裁决写成“Continuous-RoI 已通过”。
+
+本 v2 已闭合原协议的阻塞歧义：
+
+* 连续研究对象不再被 dense resize、固定中心或 21-box library 替代；
+* 无 spatial GT 被制造；
+* finite search 不再冒充 oracle；
+* reference 失败不再永久 KILL 路线；
+* geometry、reachability、sufficiency、headroom、cost 可独立失败；
+* train/runtime sampler、坐标和插值具有唯一合同；
+* joint training、loss、schedule、gradient ownership和optimizer coverage已冻结；
+* detection 与成本采用不同且正确的统计单位；
+* raw inference 与 privileged GT join被强制分离；
+* 双分支和未来 selector reserve均进入成本判决；
+* code files、tests、Slurm DAG、receipt和fail-closed规则已达到直接编码与排队粒度。
+
+因此协议裁决为：
+
+```text
+V2_READY
+```
+
+V2_READY_FOR_IMPLEMENTATION
+
+[1]: https://openaccess.thecvf.com/content/CVPR2022/papers/Wang_AdaFocus_V2_End-to-End_Training_of_Spatial_Dynamic_Networks_for_Video_CVPR_2022_paper.pdf?utm_source=chatgpt.com "AdaFocus V2: End-to-End Training of Spatial Dynamic Networks for Video Recognition"
+[2]: https://ar5iv.org/html/2412.11228v1 "https://ar5iv.org/html/2412.11228v1"

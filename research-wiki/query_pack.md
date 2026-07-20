@@ -24,23 +24,28 @@ max_chars: 8000
 - Pro 的 21-candidate fixed-128 v1 已降级为 D0 离散诊断，项目裁决为
   `SUPERSEDED_FOR_FINAL_OBJECT / HOLD_IMPLEMENTATION`。此前 v1.1 修订 prompt
   同样不再是下一协议。
-- 接受其 source-coordinate crop、同运行时 D160、fit/gate 隔离、无 GT raw sweep、
-  official evaluator parity、完整成本和不可变证据设计。
-- 阻断点：GT 可见的逐窗词典序 reference 不是 library/global-mAP 上界，失败不能
-  `KILL_THIS_LIBRARY`；crop sufficiency、adaptive headroom、cost viability 必须分开裁决。
-- gate GT cache 只能在 raw gate outputs 封存后由特权 join 阶段创建；检测统计和
-  ABBA 成本统计必须使用各自正确的重采样单位；几何 coverage 不能与模型条件的
-  candidate-union reachability 混称。
-- 数值 margin 冻结前必须做不查看 S2 结果的 power/Monte-Carlo 可行性审计，并为未来
-  selector 预留成本。唯一下一步是制定 continuous-RoI S2 v2；必须包含可微
-  variable-box crop、宽高防塌缩、时间平滑、source-coordinate inference 和 fixed-size
-  controls。S2 实现、训练、test-open 和 learned policy 仍未授权。
+- Pro 已交付 Continuous-RoI S2 v2 并自评 `V2_READY`；项目复算其 protocol-core hash
+  `3aac1743...b62653` 和新增参数 `894,274` 均一致，但项目裁决为
+  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`。
+- 接受其 source-coordinate 连续框、宽高防塌缩、temporal tube、可微/运行时 sampler
+  parity、共享 VideoMAE 单实例、真实 AdaTAD-derived detection path、detector 梯度、
+  no-GT raw 后 privileged join、D0 仅诊断和 full-stack cost ledger。
+- P0 阻断：协议把 S3 learned policy 混入 S2 sufficiency；只训练 D160/G/GL，却用 GL
+  checkpoint 推理改造 C/R/D0/LC；CR-PREF 获得逐窗 gate GT 而其主要比较对象没有同等
+  privilege；no-GT confidence 搜索及其收敛不能证明有用空间覆盖；Slurm/存储/NVML
+  条款与已审计 N16R4 事实冲突。
+- P1 风险：ROI head measured cost 与 selector reserve 可能重复计费，ABBA repetition
+  口径含糊，power audit 使用拟合内预测且仅三种子，状态机混淆 reference 失效与
+  continuous-crop 不充分，privileged matching 仍欠精确定义。
+- 唯一下一步是形成窄范围 v2.1 corrigendum，先拆分 `S2-P` 与 `S3-P`，补齐
+  train/inference-matched controls、matched-privilege continuous reference、外生
+  search-adequacy 检查和可执行资源合同。修订通过前不实现、不训练、不排队、不打开 test。
 - 完整结论见
-  `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-absorption.md`。
+  `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`。
 
 ## Native-Crop 论文实验路线
 
-- 当前处于 `continuous S2-P protocol rewrite`，不是主实验训练阶段。S1 Gate 只证明
+- 当前处于 `continuous S2-P v2.1 corrigendum`，不是主实验训练阶段。S1 Gate 只证明
   crop 数据流、模型合同、梯度和 no-leak 可执行；S2 将证明 crop sufficiency、
   adaptive headroom 与 cost viability，仍不是 deployable final method。
 - 只有 `SUFFICIENT_AND_POLICY_HEADROOM` 才解锁 S3 learned crop policy；固定 crop

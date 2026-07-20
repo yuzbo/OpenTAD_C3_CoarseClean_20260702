@@ -3,7 +3,7 @@ type: experiment_plan
 node_id: plan:native-crop-paper-experiments
 title: "Native-Crop paper experiment roadmap"
 stage: designed
-status: s2_preregistration_revision
+status: s2_v2_major_revision
 outcome: pending
 tags: ["offline-tad", "native-crop", "paper-plan", "claim-driven"]
 added: 2026-07-20
@@ -45,7 +45,7 @@ The required anti-claims are:
 |---|---|---|---|---|
 | R0 | Dense160/224/256 full-frame resize | historical diagnostic | sensitivity to whole-frame resolution only | control/appendix; never crop evidence |
 | S1 | Native-Crop vertical slice and CUDA Gate `1174671` | `tested` | source-coordinate crop, shared backbone, detector contract, gradients, provenance, and no-leak are executable | infrastructure evidence |
-| S2-P | Continuous-RoI crop-sufficiency protocol v2 | **current stage: `designed`, rewrite required** | defines the variable-box experiment and decision semantics | prerequisite, not an empirical result |
+| S2-P | Continuous-RoI crop-sufficiency protocol v2.1 | **current stage: `designed`, major revision required** | must define a matched variable-box experiment without merging S2 and S3 | prerequisite, not an empirical result |
 | S2-E | Formal continuous-RoI sufficiency experiment | blocked | whether variable-center/variable-size crops are sufficient; whether adaptive and cost headroom exist | mechanism/reference diagnostic |
 | S3 | Learned Native-Crop policy | blocked by S2 | whether a deployable selector can recover S2 headroom through TAD supervision | final method candidate |
 | S4 | Primary official benchmark | blocked by S3 | final method accuracy-cost benefit on THUMOS14 official test | main paper Table 1/Figure 1 |
@@ -105,6 +105,13 @@ S2 cannot prove:
   test suite.
 - GO: `V2_READY_FOR_IMPLEMENTATION`.
 - KILL/HOLD: any unresolved P0/P1 or any numeric decision left as TBD.
+
+The first Pro-authored v2 returned `V2_READY`, but the project does not adopt
+that verdict. It trains a learned ROI head inside the pre-policy S2 stage,
+derives controls by post-hoc inference overrides, compares a privileged
+continuous reference against unmatched controls, and freezes queue/storage/
+power rules that conflict with the audited cluster. A v2.1 corrigendum must
+close these items before P1.
 
 ### P1: Implement And Run Continuous S2 Sufficiency
 
@@ -305,7 +312,10 @@ Paper status can become `paper_ready` only when:
 
 ## Current Unique Next Step
 
-Obtain a code-audited continuous-RoI S2 Preregistration v2. Do not implement
-the old fixed-library matrix as the decisive S2, or implement the learned
-selector, official-test evaluation, cross-head integration, or cross-dataset
-experiment before the continuous protocol is frozen.
+Freeze a code-audited Continuous-RoI S2 v2.1 corrigendum with a true pre-policy
+S2 boundary, training-matched controls, privilege-matched fixed-size versus
+variable-size references, an honest search-adequacy rule, and executable
+N16R4 storage/power/Slurm contracts. Do not implement the v2 matrix, the old
+fixed-library matrix, a learned selector, official-test evaluation, cross-head
+integration, or cross-dataset experiments before the corrected protocol is
+frozen.

@@ -3,6 +3,22 @@ type: source_registry
 updated: 2026-07-20
 ---
 
+- Continuous-RoI S2 Crop-Sufficiency Preregistration v2, 2026-07-20.
+  The Pro reviewer audited immutable commit
+  `6118cd50a3601d044dab690427ad9c756ce7d827` and returned `V2_READY`.
+  Exact raw archive:
+  `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-raw.txt`,
+  SHA-256
+  `9ADBD388AD41F79E9323612C25BE493332127B226EB2AA968832D14C5446582B`.
+  Project absorption:
+  `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`.
+  The project retains the continuous geometry, sampler parity, joint-gradient,
+  no-leak, evaluator, statistics, and cost-accounting ingredients but records
+  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION` because S2/S3 are
+  conflated, controls and GT privilege are unmatched, confidence convergence
+  is not reference adequacy, and the frozen queue/storage/power contract is
+  not executable on the audited cluster.
+
 # 来源注册表
 
 ## Codex Tasks

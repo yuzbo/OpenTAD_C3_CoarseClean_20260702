@@ -623,3 +623,17 @@ append_only: true
   complete cost accounting, no-leak evidence closure, and an exact
   implementation/Slurm output contract. This records a protocol-review request
   only; no Continuous-RoI implementation or experiment is yet authorized.
+- 2026-07-20: archived and independently checked the 2,457-line Pro-authored
+  `Continuous-RoI S2 Crop-Sufficiency Preregistration v2`. Raw SHA-256 is
+  `9ADBD388AD41F79E9323612C25BE493332127B226EB2AA968832D14C5446582B`;
+  its protocol-core hash and 894,274 proposed-parameter arithmetic reproduce.
+  The project does not adopt the response's `V2_READY` verdict and records
+  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`. Blocking issues are:
+  learned-policy S3 machinery is embedded in pre-policy S2; fixed/random/D0/LC
+  controls are post-hoc overrides of a variable-box-trained checkpoint;
+  `CR-PREF` has unmatched gate-GT privilege; confidence-objective convergence
+  does not certify useful continuous spatial coverage; and the one-GPU
+  high-memory, 512-GiB storage, 40-ms power-gap, and namespace-deletion rules
+  contradict audited infrastructure. The unique next step is a narrow v2.1
+  corrigendum; no implementation, queueing, test opening, or paper claim is
+  authorized.
