@@ -6,7 +6,7 @@ fail() {
   exit 2
 }
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${CONTINUOUS_ROI_S2_SOURCE_ROOT:?set CONTINUOUS_ROI_S2_SOURCE_ROOT}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 OUT_ROOT="${CONTINUOUS_ROI_S2_GATE_ROOT:?set CONTINUOUS_ROI_S2_GATE_ROOT}"
 EXPECTED_COMMIT="${CONTINUOUS_ROI_S2_EXPECTED_COMMIT:?set CONTINUOUS_ROI_S2_EXPECTED_COMMIT}"
@@ -17,6 +17,7 @@ export PYTHONDONTWRITEBYTECODE=1
 export PYTHONNOUSERSITE=1
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "the formal Gate requires Slurm"
+[[ -d "${ROOT}/.git" ]] || fail "bound source root is not a Git checkout"
 if [[ "${CONTINUOUS_ROI_S2_SINGLE_GPU_STEP:-0}" != "1" && -z "${SLURM_STEP_GPUS:-}" ]]; then
   IFS=',' read -r -a JOB_GPU_ARRAY <<< "${SLURM_JOB_GPUS:-}"
   if [[ "${#JOB_GPU_ARRAY[@]}" -gt 1 ]]; then
