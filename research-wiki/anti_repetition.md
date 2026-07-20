@@ -185,12 +185,30 @@
 
 ## 当前唯一主线
 
-PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验已经完成并冻结；
-native-J192 matched full60 也已完成。当前唯一执行阶段是
-`P0-FULLPRECISION-NMS-REPLAY`；`SM-PTAF` 仍为 designed candidate，
-训练型 Q-lift 暂停。当前状态以 `query_pack.md`、`current_direction.md`、
-`experiments/phystime-g1-matched-full60.md` 和
+PhysTime 1.0 的 THUMOS14 raw-RGB/K384 三头实验、native-J192 matched full60
+与 `P0-FULLPRECISION-NMS-REPLAY` 均已完成并冻结。当前唯一主线是
+`exp:phystime-frozen-decode-cross-replay`，但真实门禁已经失败并进入 Pro
+严审阻断态；`SM-PTAF` 仍为 designed candidate，训练型 Q-lift 与
+Q192 UU/UP/PU/PP 均暂停。当前状态以 `query_pack.md`、
+`experiments/phystime-frozen-decode-cross-replay.md` 和
 `docs/evaluation/results.md` 为准。
+
+## 2026-07-20 Decode-Cross Gate-Failure Guardrail
+
+- `06a6734` 的真实 gate `1175820` 已失败，禁止继续写成
+  `experiment_running`；状态是 `tested`、verdict 是 gate failed、mAP 是 NA。
+- selected-online 与 selected-EMA 的单窗口 native 等价通过；
+  physical-online 失败，physical-EMA 未执行。禁止把未执行条件写成失败或通过。
+- 失败不是 physical point/proposal 重建误差。边界裁剪后 native proposal 与
+  重建 proposal 逐元素相同；审计后处理结果也逐行相同。
+- 已复现的根因是生产 `float16` 分类分数被存档统一上转 `float32`，导致并列
+  排序和 top-2000 成员变化。禁止把“数值无损上转”等同于“排序语义不变”。
+- 禁止降低哈希/逐行等价要求、增加容差、事后舍入、忽略 top-k 集合差异，或用
+  捕获的 native proposal 覆盖重建结果。
+- 禁止复用 run root、DAG token 或直接重排 `1175820–1175825`。下一次部署必须
+  来自 Pro 审核后的新 commit/tree、clean snapshot、新 token 和四条件真实 gate。
+- 在 Pro 明确裁决“保留源 score dtype”与“生产/重放共同稳定并列排序”的边界前，
+  不修改正式实现、不启动 replay，不进入 Q192 UU/UP/PU/PP。
 
 ## 2026-07-17 G1b Medium-Run Guardrail
 

@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:phystime-frozen-decode-cross-replay
 title: "PhysTime frozen dual-axis decode cross replay"
 idea: idea:phystime-tad-2
-status: experiment_running
-verdict: formal_real_gate_running
-confidence: deployment_identity_verified_gate_pending
-metrics: "NA; no formal remote replay has completed."
+status: tested
+verdict: real_gate_failed_on_score_dtype_replay_contract
+confidence: failure_reproduced_by_read_only_forensics
+metrics: "NA; the real gate failed before formal replay/evaluation."
 provenance: "full60 0dc5851/bddc9b9; P0 c2cfcfa/0b78dd4; runtime 06a6734/c11dc39; run phystime_decode_cross_06a6734_20260720_161200_0800_9c608d9ee647451a91ec438c93ecc2f1"
 added: 2026-07-20T00:00:00+08:00
 ---
@@ -44,8 +44,10 @@ full60 的 physical-metric 比 selected-axis 高约 16.29 个 Avg-mAP 点，P0 �
 - 捕获功能默认关闭，不改变普通训练/测试路径。
 - 同一条件只产生一份 pickle-free NPZ；数组逐项记录 dtype、shape 与 canonical
   SHA256。
-- 原始 AMP 张量 dtype 单独登记；存档统一上转 float32，但不把 float32
-  `sigmoid(logits)` 复算冒充生产 AMP 真值。
+- 原实现把原始 AMP 张量 dtype 单独登记、把存档统一上转 float32。真实门禁已经
+  证明：在本次 `physical_online` 单窗口 native 轴上，point/proposal 重建经相同
+  clamp 后没有差异；这不能外推为全数据集回归合同。分类分数上转会改变并列排序
+  和 top-k 截断行为，因此统一上转策略不能继续作为已接受合同。
 - 捕获内存设置 8 GiB 估计峰值硬上限；Slurm 作业申请 1 卡，由 N16R4
   按已验证的每卡默认 55 GiB 合同分配内存，不显式覆盖 `--mem`。
 - native proposals 只作为重建误差审计参照，禁止覆盖重建 proposals。
@@ -61,8 +63,8 @@ full60 的 physical-metric 比 selected-axis 高约 16.29 个 Avg-mAP 点，P0 �
   state_dict、config、sbatch、Slurm ID/依赖和日志均用哈希或身份链绑定。
 - 首次 `sbatch` 前由纯 CPU preflight 重新计算全部不可变内容哈希；作业使用唯一
   DAG token/comment，网络重试先查询并接管已接受作业，避免重复提交。
-- 来源数值语义明确记录为：AMP 产生张量，存档上转 float32，CPU float32
-  重算 decode；不是完整复刻 autocast 算术。
+- 本次失败实现的数值语义为：AMP 产生张量，存档统一上转 float32，CPU float32
+  重算 decode。该语义并不完整复刻生产后处理，现已被真实门禁否决。
 - suite 使用生产语义的重复后处理/evaluator 复算，不冒充外部独立 evaluator。
 - 时长分层 recall 基于最终检测结果，明确不是 pre-NMS proposal recall。
 
@@ -104,15 +106,16 @@ owner manifest，永久绑定 `token/run_root/commit/tree`，并与运行目录�
 
 ## 当前状态与停止条件
 
-当前状态只能是 `implemented`，正式 mAP 为 `NA`。本地纯部署测试和语法检查通过；
-本机 Windows PyTorch 因 `c10.dll` 初始化失败，数值测试必须由远端固定 conda gate
-执行。最终独立部署复审已给出 `DEPLOY`，P0/P1 为 0；该裁决只授权真实 gate，
-不等于 gate 已通过或正式 replay 已完成。
+当前状态是 `tested`，裁决为真实门禁失败，正式 mAP 为 `NA`。本地部署测试、远端
+Linux focused suite 和 Slurm 身份链均通过，但真实 CUDA 门禁在
+`physical_online` 的 native direct/replay 精确等价检查处失败。此前独立部署复审
+给出的 `DEPLOY` 只授权执行真实 gate，不等于实现语义已正确。
 
 若四条件真实 gate 中任一 native replay 不能精确复现 direct 结果，立即停止正式
 DAG并发起 Pro 讨论；不得用捕获 proposals 替代重建来“修复”等价。只有 gate 和四
-份 completion、suite 全部通过，状态才可升为 `tested`。通过后也只决定是否进入
-Q192 UU/UP/PU/PP 训练设计，不产生 `paper_ready` 结论。
+份 completion、suite 全部通过，才允许裁决该回放是否获得实验支持。失败门禁本身
+可记录为 `tested / real_gate_failed`，但不得写成 replay 已完成。通过后也只决定
+是否进入 Q192 UU/UP/PU/PP 训练设计，不产生 `paper_ready` 结论。
 
 ## 2026-07-20 `9bbc6ea` 无效部署审计
 
@@ -175,14 +178,14 @@ clean snapshot：
 DAG token：
 `ptdc_06a6734_9c608d9ee647451a91ec438c93ecc2f1`。
 
-| 角色 | Job ID | 首次核验状态 |
+| 角色 | Job ID | 最终状态 |
 | --- | ---: | --- |
-| gate | 1175820 | `RUNNING` |
-| selected-online | 1175821 | `PENDING (Dependency)` |
-| selected-EMA | 1175822 | `PENDING (Dependency)` |
-| physical-online | 1175823 | `PENDING (Dependency)` |
-| physical-EMA | 1175824 | `PENDING (Dependency)` |
-| suite | 1175825 | `PENDING (Dependency)` |
+| gate | 1175820 | `FAILED 1:0` |
+| selected-online | 1175821 | `CANCELLED`，未启动 |
+| selected-EMA | 1175822 | `CANCELLED`，未启动 |
+| physical-online | 1175823 | `CANCELLED`，未启动 |
+| physical-EMA | 1175824 | `CANCELLED`，未启动 |
+| suite | 1175825 | `CANCELLED`，未启动 |
 
 提交前全内容 preflight 为 `validation_pass=true`，重算并复现：
 
@@ -200,6 +203,58 @@ DAG token：
 `afterok` 子句，规范化后与预期 `afterok:1175821:1175822:1175823:1175824`
 完全相同，证明本轮依赖修复在真实调度器上生效。
 
-gate 内与生产一致的 Linux focused suite 已 `73 passed`，随后进入真实 CUDA
-门禁；当前尚无 `decode_cross_gate.json`，因此只能标记
-`experiment_running`。四个 replay 没有解除依赖，正式 mAP 仍为 `NA`。
+gate 内与生产一致的 Linux focused suite 为 `73 passed`，随后进入真实 CUDA
+门禁。`selected_online` 与 `selected_ema` 的单窗口 native direct/replay 精确
+等价通过；`physical_online` 在同一检查失败，`physical_ema` 未执行。由于失败
+发生在最终 gate JSON 写出前，没有 `decode_cross_gate.json`。五个下游作业均按
+同一 DAG token 定向取消且从未执行，正式 mAP 为 `NA`。
+
+## 真实门禁失败取证
+
+失败窗口为 `video_test_0000004`，物理时间域 `[0.0, 33.826]` 秒；原始观测
+`K=384`、选中原始帧 `253`、native token `J=192`、有效 token `127`、候选
+`Q=378`。三份已生成 artifact 的共享观测序列哈希均为
+`502cfeb5e2bf5eb0e0cc0f40fe43c5b22682ece3e711b4fe74d1b6ae158dc1b6`。
+
+对 `physical_online` artifact 的只读取证得到：
+
+- native point 重建最大绝对误差为 `0.0`；
+- native proposal 重建最大绝对误差为 `0.0`；
+- 裁剪前有 7 个坐标值不同，最大差 `5.807575225830078`，均来自生产路径尚未
+  执行的边界裁剪；执行同一 `[0, 33.826]` 裁剪后，251 行 proposal 全部逐元素
+  相同；
+- 用捕获的 native proposal 作审计参照与从原始回归张量重建的结果，后处理后均
+  为 2000 条，逐行完全相同，哈希均为
+  `08022c244c88a5446e1a3f66dc569c29d055ee66fb13d8079a6bc3ba97715f51`；
+- 因此失败不是 physical point/proposal 重建误差。
+
+进一步只读模拟复现了直接路径与存档路径的真正差异。生产 AMP 的
+`cls_scores` 是 `float16`，捕获器在
+`AnchorFreeHead._capture_decode_replay_state()` 中把它统一转成 `float32`；
+数值虽然无损扩展，但 `SingleStageDetector.post_processing()` 的 CPU
+`sort(descending=True)` 在大量并列分数上产生不同顺序，并在
+`pre_nms_topk=2000` 截断边界改变候选集合。
+
+| 条件 | 分数元素 | 同值冗余计数 `sum(n-1)` | float16 / float32 结果 |
+| --- | ---: | ---: | --- |
+| selected-online | 5020 | 3812 | 逐行、哈希完全相同 |
+| selected-EMA | 5020 | 3810 | 逐行、哈希完全相同 |
+| physical-online | 5020 | 3830 | 零基索引 147（第 148 条）分叉；top-k 集合各有 2 条独有结果 |
+
+`physical_online` 的 float16 审计结果哈希为
+`fd07d8b7c6f366e0996cd97c4ee04d7d51a02e03213a508abcd624f9d3b5ceb3`，
+float32 重放哈希为
+`08022c244c88a5446e1a3f66dc569c29d055ee66fb13d8079a6bc3ba97715f51`。
+其中 4613 个分数元素属于至少含两个元素的同值组，3830 是每个同值组扣除首项后
+的冗余计数，二者不得混写。
+这说明“统一上转 float32 不改变推理语义”是错误合同。不能降低精确等价门禁、
+不能对结果事后舍入、不能用捕获 proposal 覆盖重建 proposal，也不能直接重排
+原 DAG。下一步必须先由 Pro 严审决定：保留源分数 dtype，还是为生产与重放共同
+定义可审计的稳定并列排序；通过审查与新回归后，才允许新 commit/tree/token
+重新走单窗口四条件 gate。
+
+独立终态复审给出 `REVIEW_VERDICT=REVISE_BEFORE_REQUEUE`、
+`EXECUTION_VERDICT=HOLD`，确认当前根因链足以解释 exact gate 失败，但不等于
+PhysTime 性能下降根因，也不使既有 full60 数值失效。复审同时指出：正式 gate
+没有记录 CPU 型号、实际 `torch.get_num_threads()` 或线程环境，现有证据只能绑定
+当前固定 PyTorch/NumPy/节点架构，尚未证明跨 PyTorch/CPU 的并列排序可移植性。

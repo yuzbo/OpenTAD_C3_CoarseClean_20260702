@@ -6,8 +6,8 @@
 full60 的 selected-axis / physical-metric 两个 epoch-59 checkpoint，
 分别使用 online / EMA 权重，在完全相同的冻结原始张量上执行
 uniform-axis 与 physical-axis 两种离线重解码，共四个 checkpoint
-条件、八个结果条件。当前状态为 `experiment_running`，正式远端 mAP 为
-`NA`。
+条件、八个结果条件。当前状态为 `tested`，但真实门禁失败；正式远端 mAP 为
+`NA`，Q192 UU/UP/PU/PP 仍未解锁。
 
 `9bbc6ea` 首次六作业 DAG 不构成真实门禁：gate `1175739` 在进入 CUDA
 四条件推理前因最小测试配置缺少可选 `solver` 段而以 focused-test
@@ -16,12 +16,21 @@ uniform-axis 与 physical-axis 两种离线重解码，共四个 checkpoint
 `afterok:a:b:c:d` 规范化为逗号分隔的四个 `afterok` 子句，旧字符串比较
 误判了同义依赖。当前只修这两个工程合同，状态仍为 `implemented`、mAP 仍为
 `NA`；旧 run root/token 永不复用。
-修复 runtime 已冻结为 `06a6734` / tree `c11dc39`，本地
-`46 passed / 6 skipped`，独立复核为 `DEPLOY` 且 P0/P1 为 0；真实 gate
-`1175820` 已在 clean snapshot 上运行，gate 内 Linux focused suite
-`73 passed`，但真实四条件 gate JSON 尚未生成。四个 replay
-`1175821–1175824` 与 suite `1175825` 仍由 afterok 阻塞，不得写成
-`tested`。
+修复 runtime 冻结为 `06a6734` / tree `c11dc39`，本地
+`46 passed / 6 skipped`，独立部署复核为 `DEPLOY` 且 P0/P1 为 0。真实 gate
+`1175820` 的 Linux focused suite `73 passed`，但 CUDA 单窗口检查在
+`physical_online` 的 native direct/replay 精确等价处失败。门禁只完成
+selected-online、selected-EMA 和 physical-online；physical-EMA 未执行，
+最终 gate JSON 未生成。四个 replay `1175821–1175824` 与 suite `1175825`
+已定向取消且未启动。
+
+只读取证排除了物理点与 proposal 重建误差：`physical_online` 在相同边界裁剪后
+251 行 proposal 与 2000 条后处理结果逐行完全一致。根因是生产
+`cls_scores=float16` 被捕获器统一上转为 `float32`；5020 个有效分数中有
+4613 个属于同值组，同值冗余计数 `sum(n-1)=3830`。dtype 改写让 CPU 并列排序
+在零基索引 147（第 148 条）分叉，并在 top-2000 边界各替换 2 条候选。当前必须
+发起 Pro 严审；禁止放宽等价门禁、事后舍入、使用捕获 proposal 替代重建、
+原 token 重排或直接进入训练。
 
 本轮禁止训练，不修改 Q、采样、特征、assignment、loss、NMS 或训练
 schedule。缓存的 native proposal 只能用于重建误差审计，绝不能替代

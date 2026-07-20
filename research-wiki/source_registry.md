@@ -1,6 +1,6 @@
 # Source Registry
 
-## 2026-07-20 Decode-Cross Active Deployment Source
+## 2026-07-20 Decode-Cross Real-Gate Failure Source
 
 - `SRC-PT-018`: runtime commit
   `06a6734449024875031cc3d1e0d08520824d2e67` / tree
@@ -10,8 +10,21 @@
   `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_decode_cross_06a6734_20260720_161200_0800_9c608d9ee647451a91ec438c93ecc2f1`。
   Gate `1175820`、四 replay `1175821–1175824`、suite `1175825`；
   scheduler snapshot v2 与全内容 preflight 通过，gate 内 focused tests
-  `73 passed`，真实 gate 仍在运行。该来源当前只证明正式部署身份与
-  `experiment_running`，尚不是 mAP 或方法有效性证据。
+  `73 passed`。真实 gate 在 `physical_online` 的 native direct/replay
+  精确等价处失败；selected-online/EMA 已通过该单窗口检查，physical-EMA
+  未执行。五个下游均未启动并已取消，无 gate JSON、无 mAP。只读取证将失败
+  定位到 AMP `float16` 分类分数被存档上转 `float32` 后改变并列排序与
+  top-2000 候选集合；该来源是实现合同失败证据，不是方法性能证据。
+  三份 NPZ SHA256 依次为 selected-online
+  `b6afd0afcf169e20dac43e62641cafb65e8c0ce8a49d0bee19db5ed7b1800803`、
+  selected-EMA
+  `e741de538e2a13b7d7ac28ad25709583d695f8f4d32a6e7f26a190fe1023597e`、
+  physical-online
+  `1d2e8b066c4b99ab94a82ff10e3a25bdbbf06e5102022ea06fa1f18f4270854a`；
+  对应 manifest SHA256 为
+  `ba4ad835b8fb4ade18140b50437af6630766aebf78953b8c68c2b2c4ac48cd12`、
+  `2dd361c5639fc0dc0dbc8cea15e92e60651592d5e0705514bdf2554194574548`、
+  `8c6e8d05728eb13e62826489863e0634a3535bd09f6f097cdb86220ed7a1de49`。
 
 ## 2026-07-20 Decode-Cross Failed Deployment Source
 

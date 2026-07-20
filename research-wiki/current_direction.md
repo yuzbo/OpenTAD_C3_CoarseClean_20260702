@@ -1,5 +1,19 @@
 # 当前唯一方向与最终目标
 
+## 2026-07-20 Decode-Cross 真实门禁终态
+
+`P0-FULLPRECISION-NMS-REPLAY` 已完成；其后的无训练冻结 decode cross-replay
+也已按正式 Slurm DAG 部署，但 runtime `06a6734` 的真实 gate `1175820`
+在 `physical_online` 的 native direct/replay 精确等价检查失败。
+selected-online 与 selected-EMA 已通过单窗口检查，physical-EMA 未执行；
+四个 replay 与 suite 均未启动并已取消，正式 mAP 为 `NA`。
+
+只读取证排除了物理 point/proposal 重建错误。失败来自生产 AMP
+`cls_scores=float16` 被捕获器统一上转为 `float32`，在大量同分候选上改变
+CPU 排序与 top-2000 成员。当前唯一动作是发起 Pro 严审并确定正确的
+score dtype / 稳定并列排序合同；在新 commit 的四条件真实 gate 通过前，
+Q192 UU/UP/PU/PP、Q-lift 和其他训练全部冻结。
+
 ## 2026-07-20 P0 终态与当前任务
 
 `P0-FULLPRECISION-NMS-REPLAY` 已达到 `tested`。它冻结 full60 epoch-59
@@ -16,11 +30,11 @@ unfiltered 完全相同。P0 因此关闭了后处理混杂，但不改变
 physical 的 EMA 相对 online 仅提升 Avg-mAP `0.053` 点，却降低 mAP@0.7
 `0.719` 点；后续必须预先固定并同时报告 online/EMA，禁止逐指标挑选。
 
-当前唯一下一任务是无训练的冻结 decode cross-replay：固定 checkpoint、
-候选与评估协议，只交换可离线重算的 decode/回归坐标语义。该门通过后，
-才在原 Q192 内做严格匹配的 UU/UP/PU/PP 训练；首字母是 decode/回归轴，
-次字母是 assignment 轴。四臂只允许这两个开关不同，不得同时加入 Q-lift、
-新 loss 或新采样器。完整 P0 证据见
+P0 之后的无训练冻结 decode cross-replay 已执行真实门禁，但因 score dtype
+改变 top-k 排序语义而失败。该门通过后，才允许在原 Q192 内设计严格匹配的
+UU/UP/PU/PP 训练；首字母是 decode/回归轴，次字母是 assignment 轴。四臂
+只允许这两个开关不同，不得同时加入 Q-lift、新 loss 或新采样器。完整 P0
+证据见
 `research-wiki/experiments/phystime-p0-fullprecision-nms-replay.md`。
 
 ## 2026-07-20 STOP-Q-LIFT 审查吸收
@@ -36,8 +50,9 @@ K384/J192/QΣ378 下分解现有 physical intervention。
 UU/UP/PU/PP 分解的是两个代码开关，不是完全纯净的抽象因素。Q-lift
 状态是“尚未证明需要、当前不获训练授权”，不是永久无效。
 
-当前唯一任务是 `P0-FULLPRECISION-NMS-REPLAY`。该任务只能修复并重放
-评估链，不得加入 Q-lift、新 loss 或新训练。完整吸收见
+该审查当时授权的下一任务是 `P0-FULLPRECISION-NMS-REPLAY`，目前已完成；
+当前已进入其后的 decode-cross 门禁失败严审阶段。仍不得加入 Q-lift、新 loss
+或新训练。完整吸收见
 `docs/methods/2026-07-20-phystime-stop-q-lift-pro-review-absorption.md`。
 
 ## 2026-07-18 Execution Status
@@ -68,10 +83,11 @@ diagnostic and is not promoted. Status is `full60-single-seed-supported`, not
 ## 2. 当前唯一执行主线
 
 `idea:phystime-adatad-1` 已完成稳定 full run 并冻结为负基线；
-native-J192 capacity-matched control 和单种子 full60 也已完成。当前唯一
-执行任务是 **`P0-FULLPRECISION-NMS-REPLAY`**：先用冻结权重修复并重放
-发布级评估链，再做 Q192 机制分解。下面这个 control 问题已经得到单种子
-正结果，但仍需多 seed：
+native-J192 capacity-matched control、单种子 full60 与
+`P0-FULLPRECISION-NMS-REPLAY` 也已完成。当前唯一执行状态是
+**decode-cross 真实门禁失败后的 Pro 严审**：先修复并验证冻结分数的 dtype /
+top-k 排序合同，再决定是否重排无训练回放；Q192 机制分解尚未解锁。下面这个
+control 问题已经得到单种子正结果，但仍需多 seed：
 
 > 在完全相同的不规则原始帧观测、官方 AdaTAD/VideoMAE-S backbone、检测容量、跨 query 上下文、候选拓扑、assignment 和训练更新下，只改变 selected-coordinate 与 physical-coordinate，结果是否仍有稳定差异？
 
