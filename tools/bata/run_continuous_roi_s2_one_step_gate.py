@@ -473,19 +473,16 @@ def run_gate(
             raise RuntimeError("U128 fusion did not receive two branch features")
         branch_features["global_branch_feature"] = args[0]
         branch_features["local_branch_feature"] = args[1]
+        args[0].retain_grad()
+        args[1].retain_grad()
 
-    projection_hook = model.projection.register_forward_pre_hook(capture_projection)
-    fusion_hook = model.backbone.fusion.register_forward_pre_hook(
-        capture_fusion_inputs
-    )
-    started = time.perf_counter()
-    try:
+    def forward_losses():
         with torch.autocast(
             device_type="cuda",
             dtype=torch.float16,
             enabled=bool(amp),
         ):
-            losses = model.forward_train(
+            values = model.forward_train(
                 inputs,
                 masks,
                 metas,
@@ -497,43 +494,47 @@ def run_gate(
             "continuous_roi_local_aux_loss",
             "cost",
         }
-        if not required_loss_keys.issubset(losses):
+        if not required_loss_keys.issubset(values):
             raise RuntimeError(
-                f"full model losses lack {sorted(required_loss_keys - set(losses))}"
+                f"full model losses lack {sorted(required_loss_keys - set(values))}"
             )
-        for name, value in losses.items():
+        for name, value in values.items():
             if not torch.is_tensor(value) or value.ndim != 0:
                 raise TypeError(f"loss {name} is not a scalar tensor")
             if not bool(torch.isfinite(value).all().item()):
                 raise FloatingPointError(f"loss {name} is non-finite")
+        return values
 
+    projection_hook = model.projection.register_forward_pre_hook(capture_projection)
+    fusion_hook = model.backbone.fusion.register_forward_pre_hook(
+        capture_fusion_inputs
+    )
+    started = time.perf_counter()
+    try:
+        detector_losses = forward_losses()
         detector_terms = [
             value
-            for name, value in losses.items()
+            for name, value in detector_losses.items()
             if name != "cost" and not name.startswith("continuous_roi_")
         ]
         if not detector_terms:
             raise RuntimeError("official detector produced no detector loss")
         detector_cost = sum(detector_terms)
-        detector_targets = []
         detector_target_names = []
+        detector_gradients = []
+        detector_cost.backward()
+        torch.cuda.synchronize(device)
         for name, parameter in model.named_parameters():
             component = _parameter_component(name)
             if component in ("shared_adapter", "fusion", "projection", "rpn_head"):
                 detector_target_names.append(name)
-                detector_targets.append(parameter)
+                detector_gradients.append(parameter.grad)
         for name in ("global_branch_feature", "local_branch_feature"):
             feature = branch_features.get(name)
             if feature is None:
                 raise RuntimeError(f"missing captured {name}")
             detector_target_names.append(name)
-            detector_targets.append(feature)
-        detector_gradients = torch.autograd.grad(
-            detector_cost,
-            detector_targets,
-            retain_graph=True,
-            allow_unused=True,
-        )
+            detector_gradients.append(feature.grad)
         detector_gradient_audit = _nonzero_finite_gradient_audit(
             detector_target_names,
             detector_gradients,
@@ -546,6 +547,10 @@ def run_gate(
                 "local_branch_feature",
             ),
         )
+        optimizer.zero_grad(set_to_none=True)
+        branch_features.clear()
+        model.backbone.set_successful_update_index(0)
+        losses = forward_losses()
         losses["cost"].backward()
         torch.cuda.synchronize(device)
     finally:

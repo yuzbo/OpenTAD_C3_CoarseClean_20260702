@@ -77,3 +77,12 @@ def test_gate_launcher_uses_slurm_logical_cuda_zero_without_override():
     assert 'cd "${ROOT}"' in launcher
     assert "export CUDA_VISIBLE_DEVICES=" not in launcher
     assert "official" not in launcher.lower()
+
+
+def test_gate_uses_backward_compatible_with_official_reentrant_checkpointing():
+    source = Path(
+        "tools/bata/run_continuous_roi_s2_one_step_gate.py"
+    ).read_text(encoding="utf-8")
+    assert "detector_gradients = torch.autograd.grad(" not in source
+    assert "detector_cost.backward()" in source
+    assert 'losses["cost"].backward()' in source
