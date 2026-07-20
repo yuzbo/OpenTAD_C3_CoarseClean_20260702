@@ -12,12 +12,28 @@ from opentad.models.dense_heads.actionformer_head import ActionFormerHead
 from opentad.models.detectors.actionformer import ActionFormer
 from opentad.models.duca.transition_only import DucaProtectedTransitionScorer
 from tools.bata.run_duca_protected_physical_full_model_gate import (
+    _perturb_unselected,
     _remap_gt_to_selected_axis,
     _target_assignment_parity,
 )
 
 
 CONTRACT = "duca_protected_e2e_physical_v1"
+
+
+def test_real_loader_uint8_unselected_perturbation_preserves_hard_gather():
+    inputs = torch.arange(18, dtype=torch.uint8).reshape(1, 3, 6, 1, 1)
+    positions = torch.tensor([[0, 2, 5]], dtype=torch.long)
+    perturbed = _perturb_unselected(inputs, positions)
+
+    assert torch.equal(perturbed[:, :, [0, 2, 5]], inputs[:, :, [0, 2, 5]])
+    assert torch.equal(
+        perturbed[:, :, [1, 3, 4]],
+        torch.bitwise_xor(
+            inputs[:, :, [1, 3, 4]],
+            torch.full_like(inputs[:, :, [1, 3, 4]], 0xFF),
+        ),
+    )
 
 
 def _make_head() -> ActionFormerHead:

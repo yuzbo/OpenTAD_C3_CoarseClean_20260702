@@ -692,6 +692,13 @@ def _perturb_unselected(
     view = [selected.shape[0]] + [1] * (inputs.ndim - 1)
     view[temporal_dim] = selected.shape[1]
     unselected = (~selected).view(view)
+    if inputs.dtype == torch.uint8:
+        perturbed = torch.bitwise_xor(inputs, torch.full_like(inputs, 0xFF))
+        return torch.where(unselected, perturbed, inputs)
+    _require(
+        inputs.is_floating_point(),
+        "unselected-frame perturbation requires floating-point or uint8 input",
+    )
     perturbation = torch.randn_like(inputs) * 3.0 + 1.0
     return torch.where(unselected, inputs + perturbation, inputs)
 
