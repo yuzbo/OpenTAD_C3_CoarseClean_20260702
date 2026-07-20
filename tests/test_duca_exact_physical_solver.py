@@ -6,6 +6,7 @@ import random
 import pytest
 
 from tools.bata.duca_allocation_families import (
+    AllocationContractError,
     PhysicalAxis,
     physical_gap_report,
     resolve_physical_cap,
@@ -176,6 +177,193 @@ def test_gt_milp_matches_exhaustive_lexicographic_objective() -> None:
             objective_spec=spec,
         )
         assert solved.positions == expected
+
+
+def test_gt_milp_canonicalizes_tiny_integer_residuals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    np = pytest.importorskip("numpy")
+    scipy_optimize = pytest.importorskip("scipy.optimize")
+    original_milp = scipy_optimize.milp
+    axis = PhysicalAxis.from_source_frames(
+        range(31),
+        decoder_fps=2.0,
+        annotation_fps=2.0,
+    )
+    cap = resolve_physical_cap(axis, requested_budget=15)
+    spec = GroundTruthObjectiveSpec(lex_block_size=30)
+    expected = solve_ground_truth_lexicographic(
+        axis,
+        [(3.0, 9.0), (18.0, 25.0)],
+        requested_budget=15,
+        cap=cap,
+        objective_spec=spec,
+        compute_upper_envelopes=True,
+    )
+
+    def perturbed_milp(*args, **kwargs):
+        result = original_milp(*args, **kwargs)
+        if result.x is not None:
+            result.x = result.x.copy()
+            integer_indices = np.flatnonzero(np.asarray(kwargs["integrality"]) != 0)
+            for index in integer_indices:
+                result.x[index] += 1.0e-12
+        return result
+
+    monkeypatch.setattr(scipy_optimize, "milp", perturbed_milp)
+    solved = solve_ground_truth_lexicographic(
+        axis,
+        [(3.0, 9.0), (18.0, 25.0)],
+        requested_budget=15,
+        cap=cap,
+        objective_spec=spec,
+        compute_upper_envelopes=True,
+    )
+    assert solved.positions == expected.positions
+    assert solved.objective_vector == expected.objective_vector
+    assert solved.metric_upper_envelopes == expected.metric_upper_envelopes
+    assert solved.mip_gap == 0.0
+
+
+def test_gt_milp_rejects_material_integer_residual(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    np = pytest.importorskip("numpy")
+    scipy_optimize = pytest.importorskip("scipy.optimize")
+    original_milp = scipy_optimize.milp
+
+    def perturbed_milp(*args, **kwargs):
+        result = original_milp(*args, **kwargs)
+        if result.x is not None:
+            result.x = result.x.copy()
+            index = int(np.flatnonzero(np.asarray(kwargs["integrality"]) != 0)[0])
+            direction = 1.0 if result.x[index] < 0.5 else -1.0
+            result.x[index] += direction * 1.0e-3
+        return result
+
+    monkeypatch.setattr(scipy_optimize, "milp", perturbed_milp)
+    axis = _axis(8)
+    cap = resolve_physical_cap(axis, requested_budget=4)
+    with pytest.raises(AllocationContractError, match="violates integrality"):
+        solve_ground_truth_lexicographic(
+            axis,
+            [(1.0, 2.0), (5.0, 6.0)],
+            requested_budget=4,
+            cap=cap,
+            objective_spec=GroundTruthObjectiveSpec(lex_block_size=8),
+        )
+
+
+@pytest.mark.parametrize("invalid_gap", [True, 1.0e-6])
+def test_gt_milp_requires_numeric_exact_zero_gap(
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_gap,
+) -> None:
+    scipy_optimize = pytest.importorskip("scipy.optimize")
+    original_milp = scipy_optimize.milp
+
+    def invalid_gap_milp(*args, **kwargs):
+        result = original_milp(*args, **kwargs)
+        result.mip_gap = invalid_gap
+        return result
+
+    monkeypatch.setattr(scipy_optimize, "milp", invalid_gap_milp)
+    axis = _axis(8)
+    cap = resolve_physical_cap(axis, requested_budget=4)
+    expected_message = "numeric mip_gap" if invalid_gap is True else "zero MIP gap"
+    with pytest.raises(AllocationContractError, match=expected_message):
+        solve_ground_truth_lexicographic(
+            axis,
+            [(1.0, 2.0), (5.0, 6.0)],
+            requested_budget=4,
+            cap=cap,
+            objective_spec=GroundTruthObjectiveSpec(lex_block_size=8),
+        )
+
+
+def test_gt_milp_rejects_terminal_positions_not_certified_by_solver_objective(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scipy_optimize = pytest.importorskip("scipy.optimize")
+    original_milp = scipy_optimize.milp
+    call_count = 0
+
+    def swapped_terminal_milp(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        result = original_milp(*args, **kwargs)
+        if call_count == 7 and result.x is not None:
+            result.x = result.x.copy()
+            assert result.x[1] > 0.5
+            assert result.x[0] < 0.5
+            result.x[1] = 0.0
+            result.x[0] = 1.0
+        return result
+
+    monkeypatch.setattr(scipy_optimize, "milp", swapped_terminal_milp)
+    axis = PhysicalAxis.from_source_frames(
+        range(8),
+        decoder_fps=2.0,
+        annotation_fps=2.0,
+    )
+    cap = resolve_physical_cap(axis, requested_budget=4)
+    with pytest.raises(
+        AllocationContractError,
+        match="contradicts solver fun",
+    ):
+        solve_ground_truth_lexicographic(
+            axis,
+            [(1.0, 2.0), (5.0, 6.0)],
+            requested_budget=4,
+            cap=cap,
+            objective_spec=GroundTruthObjectiveSpec(
+                boundary_radii=(0,),
+                lex_block_size=8,
+            ),
+        )
+
+
+def test_gt_milp_rejects_uncertified_upper_envelope_positions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scipy_optimize = pytest.importorskip("scipy.optimize")
+    original_milp = scipy_optimize.milp
+    call_count = 0
+
+    def swapped_upper_envelope_milp(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        result = original_milp(*args, **kwargs)
+        if call_count == 1 and result.x is not None:
+            result.x = result.x.copy()
+            assert result.x[1] > 0.5
+            assert result.x[0] < 0.5
+            result.x[1] = 0.0
+            result.x[0] = 1.0
+        return result
+
+    monkeypatch.setattr(scipy_optimize, "milp", swapped_upper_envelope_milp)
+    axis = PhysicalAxis.from_source_frames(
+        range(8),
+        decoder_fps=2.0,
+        annotation_fps=2.0,
+    )
+    cap = resolve_physical_cap(axis, requested_budget=4)
+    with pytest.raises(
+        AllocationContractError,
+        match="both_endpoints_r0 is inconsistent with selected positions",
+    ):
+        solve_ground_truth_lexicographic(
+            axis,
+            [(1.0, 2.0), (5.0, 6.0)],
+            requested_budget=4,
+            cap=cap,
+            objective_spec=GroundTruthObjectiveSpec(
+                boundary_radii=(0,),
+                lex_block_size=8,
+            ),
+            compute_upper_envelopes=True,
+        )
 
 
 def _gt_exhaustive_key(positions, segments, spec, valid_len):

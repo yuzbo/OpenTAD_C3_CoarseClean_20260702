@@ -306,9 +306,138 @@ def solve_ground_truth_lexicographic(
 
     pinned_values: dict[str, int] = {}
     last_result: Any = None
+    last_values: Any = None
+    last_integer_values: Any = None
+    last_mip_gap: float | None = None
+    pinned_coefficients: dict[str, Mapping[int, int]] = {}
+
+    def numeric_result_field(name: str, result: Any, field: str) -> float:
+        value = getattr(result, field, None)
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, float, np.integer, np.floating))
+        ):
+            raise AllocationContractError(
+                f"GT MILP objective {name} did not report numeric {field}"
+            )
+        number = float(value)
+        if not math.isfinite(number):
+            raise AllocationContractError(
+                f"GT MILP objective {name} reported non-finite {field}"
+            )
+        return number
+
+    def validate_optimal_result(
+        name: str,
+        result: Any,
+    ) -> tuple[Any, Any, float, float, float]:
+        if result.status != 0 or result.x is None:
+            message = str(getattr(result, "message", "unknown HiGHS failure"))
+            raise AllocationContractError(f"GT MILP objective {name} was not OPTIMAL: {message}")
+
+        mip_gap = numeric_result_field(name, result, "mip_gap")
+        if mip_gap != 0.0:
+            raise AllocationContractError(
+                f"GT MILP objective {name} did not prove a zero MIP gap"
+            )
+        objective_value = numeric_result_field(name, result, "fun")
+        objective_bound = numeric_result_field(name, result, "mip_dual_bound")
+
+        values = np.asarray(result.x, dtype=float)
+        if values.ndim != 1 or values.shape[0] != model.variable_count:
+            raise AllocationContractError(
+                f"GT MILP objective {name} returned an invalid solution shape"
+            )
+        if not np.all(np.isfinite(values)):
+            raise AllocationContractError(
+                f"GT MILP objective {name} returned non-finite variables"
+            )
+        integer_indices = np.flatnonzero(integrality != 0)
+        integer_values = np.rint(values)
+        if integer_indices.size:
+            residual = float(
+                np.max(np.abs(values[integer_indices] - integer_values[integer_indices]))
+            )
+            if residual > 1.0e-6:
+                raise AllocationContractError(
+                    f"GT MILP objective {name} violates integrality"
+                )
+        if np.any(values < -1.0e-6) or np.any(values > 1.0 + 1.0e-6):
+            raise AllocationContractError(
+                f"GT MILP objective {name} violates variable bounds"
+            )
+        return values, integer_values, mip_gap, objective_value, objective_bound
+
+    def encoded_integer_objective_value(
+        name: str,
+        coefficient: Mapping[int, int],
+        integer_values: Any,
+    ) -> int:
+        variables = tuple(int(variable) for variable in coefficient)
+        if any(integrality[variable] == 0 for variable in variables):
+            raise RuntimeError(f"GT MILP objective {name} is not integer encoded")
+        return sum(
+            int(coefficient[variable]) * int(integer_values[variable])
+            for variable in variables
+        )
+
+    def positions_from_integer_values(name: str, integer_values: Any) -> tuple[int, ...]:
+        positions = tuple(
+            index
+            for index in range(axis.valid_len)
+            if int(integer_values[model.x_index(index)]) == 1
+        )
+        if len(positions) != budget:
+            raise AllocationContractError(f"GT MILP objective {name} violates exact-K")
+        return positions
+
+    def exact_objective_from_positions(
+        name: str,
+        coefficient: Mapping[int, int],
+        integer_values: Any,
+    ) -> int:
+        positions = positions_from_integer_values(name, integer_values)
+        semantic_values = model.objective_values_from_positions(positions)
+        if name in semantic_values:
+            semantic_value = semantic_values[name]
+            if all(integrality[int(variable)] != 0 for variable in coefficient):
+                encoded_value = encoded_integer_objective_value(
+                    name,
+                    coefficient,
+                    integer_values,
+                )
+                if encoded_value != semantic_value:
+                    raise AllocationContractError(
+                        f"GT MILP objective {name} is inconsistent with selected positions"
+                    )
+            return semantic_value
+        return encoded_integer_objective_value(name, coefficient, integer_values)
+
+    def validate_objective_certificate(
+        name: str,
+        integer_value: int,
+        *,
+        maximize: bool,
+        objective_value: float,
+        objective_bound: float,
+    ) -> None:
+        signed_value = -int(integer_value) if maximize else int(integer_value)
+        for label, reported in (
+            ("fun", objective_value),
+            ("mip_dual_bound", objective_bound),
+        ):
+            nearest_integer = int(round(reported))
+            if abs(reported - nearest_integer) >= 0.25:
+                raise AllocationContractError(
+                    f"GT MILP objective {name} has ambiguous {label}"
+                )
+            if nearest_integer != signed_value:
+                raise AllocationContractError(
+                    f"GT MILP objective {name} contradicts solver {label}"
+                )
 
     def solve_and_pin(name: str, coefficient: Mapping[int, int], *, maximize: bool) -> int:
-        nonlocal last_result
+        nonlocal last_integer_values, last_mip_gap, last_result, last_values
         objective = np.zeros(model.variable_count, dtype=float)
         for variable, value in coefficient.items():
             objective[int(variable)] = -int(value) if maximize else int(value)
@@ -319,22 +448,41 @@ def solve_ground_truth_lexicographic(
             constraints=constraints,
             options=current_options(),
         )
-        if result.status != 0 or result.x is None:
-            message = str(getattr(result, "message", "unknown HiGHS failure"))
-            raise AllocationContractError(f"GT MILP objective {name} was not OPTIMAL: {message}")
-        raw_value = sum(int(value) * float(result.x[int(variable)]) for variable, value in coefficient.items())
-        integer_value = int(round(raw_value))
-        if abs(raw_value - integer_value) > 1.0e-5:
-            raise AllocationContractError(f"GT MILP objective {name} is numerically ambiguous")
+        (
+            values,
+            integer_values,
+            mip_gap,
+            objective_value,
+            objective_bound,
+        ) = validate_optimal_result(name, result)
+        integer_value = exact_objective_from_positions(
+            name,
+            coefficient,
+            integer_values,
+        )
+        validate_objective_certificate(
+            name,
+            integer_value,
+            maximize=maximize,
+            objective_value=objective_value,
+            objective_bound=objective_bound,
+        )
         columns = np.fromiter(coefficient.keys(), dtype=int)
-        values = np.fromiter((int(coefficient[index]) for index in coefficient), dtype=float)
+        pin_values = np.fromiter(
+            (int(coefficient[index]) for index in coefficient),
+            dtype=float,
+        )
         pin_row = csr_matrix(
-            (values, (np.zeros(len(columns), dtype=int), columns)),
+            (pin_values, (np.zeros(len(columns), dtype=int), columns)),
             shape=(1, model.variable_count),
         )
         constraints.append(LinearConstraint(pin_row, [integer_value], [integer_value]))
         pinned_values[name] = integer_value
+        pinned_coefficients[name] = coefficient
         last_result = result
+        last_values = values
+        last_integer_values = integer_values
+        last_mip_gap = mip_gap
         return integer_value
 
     objective_sequence = model.objective_sequence()
@@ -348,13 +496,29 @@ def solve_ground_truth_lexicographic(
                 constraints=constraints[:1],
                 options=current_options(),
             )
-            if standalone.status != 0 or standalone.x is None:
-                raise AllocationContractError(f"GT metric upper envelope {name} was not OPTIMAL")
-            raw = sum(int(value) * float(standalone.x[int(variable)]) for variable, value in coefficient.items())
-            rounded = int(round(raw))
-            if abs(raw - rounded) > 1.0e-5:
-                raise AllocationContractError(f"GT metric upper envelope {name} is ambiguous")
-            upper_envelopes[name] = rounded
+            (
+                values,
+                integer_values,
+                _,
+                objective_value,
+                objective_bound,
+            ) = validate_optimal_result(
+                f"upper envelope {name}",
+                standalone,
+            )
+            upper_envelope = exact_objective_from_positions(
+                name,
+                coefficient,
+                integer_values,
+            )
+            validate_objective_certificate(
+                f"upper envelope {name}",
+                upper_envelope,
+                maximize=maximize,
+                objective_value=objective_value,
+                objective_bound=objective_bound,
+            )
+            upper_envelopes[name] = upper_envelope
 
     for name, coefficient, maximize in objective_sequence:
         solve_and_pin(name, coefficient, maximize=maximize)
@@ -371,12 +535,17 @@ def solve_ground_truth_lexicographic(
             maximize=True,
         )
 
-    if last_result is None or last_result.x is None:
+    if (
+        last_result is None
+        or last_values is None
+        or last_integer_values is None
+        or last_mip_gap is None
+    ):
         raise RuntimeError("GT MILP completed without a terminal result")
     positions = tuple(
         index
         for index in range(axis.valid_len)
-        if float(last_result.x[model.x_index(index)]) >= 0.5
+        if int(last_integer_values[model.x_index(index)]) == 1
     )
     if len(positions) != budget:
         raise AllocationContractError("GT MILP terminal solution violates exact-K")
@@ -389,8 +558,20 @@ def solve_ground_truth_lexicographic(
             requested_budget=requested_budget,
             cap=cap,
         )
-    mip_gap_value = getattr(last_result, "mip_gap", None)
-    mip_gap = None if mip_gap_value is None else float(mip_gap_value)
+    terminal_semantic_values = model.objective_values_from_positions(positions)
+    for name, expected_value in pinned_values.items():
+        if name in terminal_semantic_values:
+            actual_value = terminal_semantic_values[name]
+        else:
+            actual_value = encoded_integer_objective_value(
+                name,
+                pinned_coefficients[name],
+                last_integer_values,
+            )
+        if actual_value != expected_value:
+            raise AllocationContractError(
+                f"GT MILP terminal solution violates pinned objective {name}"
+            )
     return GroundTruthSolveResult(
         positions=positions,
         objective_vector=pinned_values,
@@ -398,7 +579,7 @@ def solve_ground_truth_lexicographic(
         solver_status="OPTIMAL",
         solver_identity=f"scipy_highs_milp_{scipy_version}",
         solver_message=str(last_result.message),
-        mip_gap=mip_gap,
+        mip_gap=last_mip_gap,
         exact=True,
     )
 
@@ -651,6 +832,61 @@ class _GroundTruthMilpModel:
             )
         )
         return objectives
+
+    def objective_values_from_positions(
+        self,
+        positions: Sequence[int],
+    ) -> dict[str, int]:
+        selected = frozenset(int(position) for position in positions)
+        if len(selected) != self.budget:
+            raise AllocationContractError("GT objective replay requires an exact-K selection")
+        if any(position < 0 or position >= self.axis.valid_len for position in selected):
+            raise AllocationContractError("GT objective replay position is out of range")
+
+        values: dict[str, int] = {}
+        for radius in self.spec.boundary_radii:
+            values[f"both_endpoints_r{radius}"] = sum(
+                any(abs(float(position) - start) <= radius + 1.0e-9 for position in selected)
+                and any(abs(float(position) - end) <= radius + 1.0e-9 for position in selected)
+                for start, end in self.segments
+            )
+            values[f"distinct_endpoint_hits_r{radius}"] = sum(
+                any(
+                    abs(float(position) - endpoint) <= radius + 1.0e-9
+                    for position in selected
+                )
+                for endpoint in self.endpoints
+            )
+        values["total_endpoint_distance_q"] = sum(
+            min(
+                int(
+                    round(
+                        abs(float(position) - endpoint)
+                        * self.spec.distance_scale
+                    )
+                )
+                for position in selected
+            )
+            for endpoint in self.endpoints
+        )
+        values["short_action_support"] = sum(
+            end - start <= self.spec.short_action_max_length + 1.0e-9
+            and any(
+                start - 1.0e-9 <= float(position) <= end + 1.0e-9
+                for position in selected
+            )
+            for start, end in self.segments
+        )
+        values["selected_background"] = sum(
+            not any(
+                start - 1.0e-9 <= float(position) <= end + 1.0e-9
+                for start, end in self.segments
+            )
+            for position in selected
+        )
+        uniform = set(exact_uniform_positions(self.axis.valid_len, self.budget))
+        values["exact_uniform_overlap"] = len(selected & uniform)
+        return values
 
     def numpy_objective(self, coefficient: Mapping[int, int], *, maximize: bool):
         import numpy as np
