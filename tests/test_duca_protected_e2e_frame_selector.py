@@ -19,7 +19,7 @@ class _FakeOfficialASFormerSource(nn.Module):
         self.restricted_policy_hidden = bool(restricted_policy_hidden)
 
     def forward(self, inputs, valid_mask=None):
-        base = inputs.mean(dim=(1, 3, 4))
+        base = inputs.float().mean(dim=(1, 3, 4))
         hidden = base[:, :, None] * self.trunk[None, None, :]
         logits = hidden[:, :, 0] * self.action_head
         valid = valid_mask.bool()
@@ -188,6 +188,37 @@ def test_main_detector_gradient_stops_at_selector_adapter_head():
         output["inputs"].detach(),
         output["selector_outputs"]["hard_detector_input"].detach(),
     )
+
+
+def test_detector_bridge_accepts_uint8_full_train_windows():
+    selector = _selector("protected_e2e_bridge025")
+    inputs, masks, metas, segments, labels, boundary_validity = _batch()
+    uint8_inputs = ((inputs + 1.0) * 100.0).round().to(torch.uint8)
+    output = selector.forward_train(
+        uint8_inputs,
+        masks,
+        metas,
+        gt_segments=segments,
+        gt_labels=labels,
+        gt_boundary_validity=boundary_validity,
+    )
+
+    positions = output["selector_outputs"]["selected_positions"]
+    expected = torch.gather(
+        uint8_inputs,
+        2,
+        positions[:, None, :, None, None].expand(
+            -1,
+            uint8_inputs.shape[1],
+            -1,
+            uint8_inputs.shape[3],
+            uint8_inputs.shape[4],
+        ),
+    ).float()
+    assert output["inputs"].dtype == torch.float32
+    assert torch.equal(output["inputs"].detach(), expected)
+    output["inputs"].square().mean().backward()
+    assert _grad_mass(selector.transition_scorer.parameters()) > 0.0
 
 
 def test_auxiliary_loss_gradient_ownership_is_separated():

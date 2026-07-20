@@ -99,13 +99,14 @@ def _hard_gather(
 
 
 def _soft_resample(inputs: torch.Tensor, assignment: torch.Tensor) -> torch.Tensor:
-    weights = assignment.to(device=inputs.device, dtype=inputs.dtype)
-    if inputs.ndim == 3:
-        return torch.einsum("bct,bkt->bck", inputs, weights)
-    if inputs.ndim == 5:
-        return torch.einsum("bcthw,bkt->bckhw", inputs, weights)
-    if inputs.ndim == 6:
-        return torch.einsum("bncthw,bkt->bnckhw", inputs, weights)
+    work_inputs = inputs if inputs.is_floating_point() else inputs.float()
+    weights = assignment.to(device=work_inputs.device, dtype=work_inputs.dtype)
+    if work_inputs.ndim == 3:
+        return torch.einsum("bct,bkt->bck", work_inputs, weights)
+    if work_inputs.ndim == 5:
+        return torch.einsum("bcthw,bkt->bckhw", work_inputs, weights)
+    if work_inputs.ndim == 6:
+        return torch.einsum("bncthw,bkt->bnckhw", work_inputs, weights)
     raise ValueError("protected DUCA expects [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]")
 
 
@@ -879,6 +880,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             if detector_bridge
             else torch.zeros_like(uniform_companion_mask)
         )
+        hard_detector_input = hard_selected
         if detector_bridge:
             bridge_assignment = learned_selection.soft_slot_assignment
             if bool(uniform_companion_mask.any().item()):
@@ -891,13 +893,19 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 inputs,
                 bridge_assignment,
             )
-            selected_inputs = hard_selected + (
+            hard_base = (
+                hard_selected
+                if hard_selected.is_floating_point()
+                else hard_selected.float()
+            )
+            hard_detector_input = hard_base
+            selected_inputs = hard_base + (
                 self.detector_bridge_gradient_scale
                 * (soft_selected - soft_selected.detach())
             )
             if not torch.equal(
                 selected_inputs.detach(),
-                hard_selected.detach(),
+                hard_base.detach(),
             ):
                 raise RuntimeError(
                     "protected DUCA detector input is not exact hard forward"
@@ -926,7 +934,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 "uniform_companion_mask": uniform_companion_mask,
                 "uniform_companion_fraction": self.uniform_companion_fraction,
                 "detector_input": selected_inputs,
-                "hard_detector_input": hard_selected,
+                "hard_detector_input": hard_detector_input,
                 "backbone_tail_padding_mode": "replicate_last_selected",
                 "train_inference_hard_decoder": "same_physical_exact_k_viterbi",
             }
@@ -995,8 +1003,16 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             k=self.budget,
         )
         batch, temporal_len = valid_mask.shape
-        occupancy = inputs.new_zeros((batch, temporal_len))
-        slot_assignment = inputs.new_zeros((batch, self.budget, temporal_len))
+        occupancy = torch.zeros(
+            (batch, temporal_len),
+            device=inputs.device,
+            dtype=torch.float32,
+        )
+        slot_assignment = torch.zeros(
+            (batch, self.budget, temporal_len),
+            device=inputs.device,
+            dtype=torch.float32,
+        )
         slot_mask = positions >= 0
         effective_k = slot_mask.sum(dim=1)
         for batch_idx in range(batch):
@@ -1028,7 +1044,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 dtype=torch.long,
             ),
             effective_k=effective_k,
-            max_gap_seconds=caps.to(dtype=inputs.dtype),
+            max_gap_seconds=caps.to(dtype=torch.float32),
         )
         selected_inputs = _hard_gather(inputs, positions, slot_mask)
         output_metas = self._write_physical_metadata(
@@ -1050,8 +1066,12 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         }
 
     def _validate_inputs(self, inputs, masks, metas) -> None:
-        if not torch.is_tensor(inputs) or not inputs.is_floating_point():
-            raise ValueError("protected DUCA inputs must be a floating-point tensor")
+        if not torch.is_tensor(inputs) or not (
+            inputs.is_floating_point() or inputs.dtype == torch.uint8
+        ):
+            raise ValueError(
+                "protected DUCA inputs must be floating-point or uint8 RGB tensors"
+            )
         temporal_dim = _time_dim(inputs)
         if masks.ndim != 2 or tuple(masks.shape) != (
             int(inputs.shape[0]),

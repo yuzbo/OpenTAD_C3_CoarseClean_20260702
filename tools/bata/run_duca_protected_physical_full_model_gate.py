@@ -1496,6 +1496,10 @@ def run_gate(
             positions = model.frame_selector._last_selected_positions
             _require(positions is not None, "selector did not expose hard positions")
             expected_hard = _hard_gather(batch["inputs"], positions)
+            expected_hard = expected_hard.to(
+                device=captured_backbone_inputs[0].device,
+                dtype=captured_backbone_inputs[0].dtype,
+            )
             _require(
                 torch.equal(captured_backbone_inputs[0], expected_hard),
                 f"{route} backbone input is not exact hard gather",
