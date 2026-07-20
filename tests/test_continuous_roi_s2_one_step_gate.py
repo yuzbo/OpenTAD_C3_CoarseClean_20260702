@@ -74,5 +74,6 @@ def test_gate_launcher_uses_slurm_logical_cuda_zero_without_override():
     assert "--device cuda:0" in launcher
     assert "CONTINUOUS_ROI_S2_SOURCE_ROOT" in launcher
     assert 'dirname "${BASH_SOURCE[0]}"' not in launcher
+    assert 'cd "${ROOT}"' in launcher
     assert "export CUDA_VISIBLE_DEVICES=" not in launcher
     assert "official" not in launcher.lower()

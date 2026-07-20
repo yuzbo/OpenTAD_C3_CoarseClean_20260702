@@ -45,6 +45,7 @@ ACTUAL_COMMIT="$(git -C "${ROOT}" rev-parse HEAD)"
 [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || \
   fail "formal Gate snapshot is not completely clean"
 
+cd "${ROOT}"
 mkdir -p "${OUT_ROOT}"
 if command -v module >/dev/null 2>&1; then
   module load cuda/11.8
