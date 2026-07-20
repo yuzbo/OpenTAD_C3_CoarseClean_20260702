@@ -605,9 +605,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         elif step < self.homotopy_warmup_steps:
             alpha = 0.0
             phase = "exact_uniform_warmup"
-        elif step >= (
-            self.homotopy_warmup_steps + self.homotopy_transition_steps - 1
-        ):
+        elif step >= self.homotopy_warmup_steps + self.homotopy_transition_steps:
             alpha = 1.0
             phase = "learned_policy"
         else:

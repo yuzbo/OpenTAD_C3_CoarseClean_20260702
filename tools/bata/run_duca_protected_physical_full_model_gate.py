@@ -1261,6 +1261,8 @@ def _real_optimizer_step_audit(
     objective_values = []
     scaler_history = []
     successful_batch_updates = []
+    forced_overflow_attempts = 0
+    forced_overflow_replay_verified = False
     for batch_name in ("full", "padded", "short_padded"):
         _require(
             batch_name in batches,
@@ -1273,6 +1275,7 @@ def _real_optimizer_step_audit(
             attempts += 1
             batch_attempts += 1
             attempt_state = _capture_mutable_state(model)
+            optimizer_state_count_before = len(optimizer.state)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(
                 device_type="cuda",
@@ -1296,6 +1299,21 @@ def _real_optimizer_step_audit(
             )
             scale_before = float(scaler.get_scale())
             scaler.scale(objective).backward()
+            force_overflow = schedule_enabled and forced_overflow_attempts == 0
+            forced_parameter = None
+            if force_overflow:
+                for parameter_name, parameter in model.named_parameters():
+                    if parameter.grad is None or parameter.grad.numel() == 0:
+                        continue
+                    with torch.no_grad():
+                        parameter.grad.reshape(-1)[0] = float("inf")
+                    forced_parameter = parameter_name
+                    forced_overflow_attempts += 1
+                    break
+                _require(
+                    forced_parameter is not None,
+                    "homotopy AMP gate found no gradient to overflow",
+                )
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(),
@@ -1312,11 +1330,67 @@ def _real_optimizer_step_audit(
                     "before": scale_before,
                     "after": scale_after,
                     "optimizer_step_ran": batch_succeeded,
+                    "forced_overflow": force_overflow,
+                    "forced_parameter": forced_parameter,
                 }
             )
             if not batch_succeeded:
                 _restore_mutable_state(model, attempt_state)
+                if force_overflow:
+                    _require(
+                        scale_after < scale_before,
+                        "forced AMP overflow did not reduce the scaler",
+                    )
+                    _require(
+                        int(scheduler.last_epoch)
+                        == initial_scheduler_epoch + successful_updates,
+                        "scheduler advanced on a forced AMP overflow",
+                    )
+                    _require(
+                        len(optimizer.state) == optimizer_state_count_before,
+                        "optimizer state changed on a forced AMP overflow",
+                    )
+                    _require(
+                        all(
+                            torch.equal(
+                                dict(model.named_parameters())[name]
+                                .detach()
+                                .cpu(),
+                                before,
+                            )
+                            for name, before in active_parameters.items()
+                        ),
+                        "model parameters changed on a forced AMP overflow",
+                    )
+                    _require(
+                        all(
+                            torch.equal(
+                                dict(ema_root.named_parameters())[name]
+                                .detach()
+                                .cpu(),
+                                before,
+                            )
+                            for name, before in ema_before.items()
+                        ),
+                        "EMA parameters changed on a forced AMP overflow",
+                    )
+                    _require(
+                        int(model.frame_selector.schedule_step.detach().item())
+                        == initial_selector_step + successful_updates,
+                        "homotopy schedule advanced on a forced AMP overflow",
+                    )
+                    replay_summary = model.after_optimizer_step()
+                    _require(
+                        isinstance(replay_summary, Mapping)
+                        and replay_summary.get("updated") is False,
+                        "restored AMP replay retained a pending homotopy update",
+                    )
+                    forced_overflow_replay_verified = True
                 continue
+            _require(
+                not force_overflow,
+                "optimizer ran despite the forced AMP overflow",
+            )
             schedule_summary = model.after_optimizer_step()
             if schedule_enabled:
                 _require(
@@ -1350,6 +1424,11 @@ def _real_optimizer_step_audit(
         successful_updates == 3,
         "real AMP gate did not complete three optimizer updates",
     )
+    if schedule_enabled:
+        _require(
+            forced_overflow_attempts == 1 and forced_overflow_replay_verified,
+            "full-model homotopy gate did not verify one forced AMP replay",
+        )
     parameter_changes = {
         name: float(
             (dict(model.named_parameters())[name].detach().cpu() - before)
@@ -1416,6 +1495,8 @@ def _real_optimizer_step_audit(
         "initial_grad_scaler_scale": initial_scaler_scale,
         "final_grad_scaler_scale": float(scaler.get_scale()),
         "scaler_history": scaler_history,
+        "forced_amp_overflow_attempts": forced_overflow_attempts,
+        "forced_amp_overflow_replay_verified": forced_overflow_replay_verified,
         "optimizer_state_parameter_count": int(len(optimizer.state)),
         "audited_parameter_max_abs_changes": parameter_changes,
         "audited_ema_parameter_max_abs_changes": ema_changes,

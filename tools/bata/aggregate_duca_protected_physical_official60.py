@@ -94,6 +94,18 @@ def aggregate_official60(
             evidence.get("schema") == EVIDENCE_SCHEMA and evidence.get("ok") is True,
             f"official-60 evidence {path} did not pass",
         )
+        artifact_chain_sha256 = evidence.get("artifact_chain_sha256")
+        _require(
+            isinstance(artifact_chain_sha256, str)
+            and len(artifact_chain_sha256) == 64,
+            f"official-60 evidence {path} has no canonical artifact-chain hash",
+        )
+        unhashed_evidence = dict(evidence)
+        unhashed_evidence.pop("artifact_chain_sha256", None)
+        _require(
+            canonical_sha256(unhashed_evidence) == artifact_chain_sha256,
+            f"official-60 evidence {path} artifact-chain hash mismatch",
+        )
         _require(
             evidence.get("task") == "offline_temporal_action_detection",
             f"official-60 evidence {path} is not offline TAD",
@@ -150,7 +162,7 @@ def aggregate_official60(
         by_variant[variant] = {
             "evidence_path": str(path),
             "evidence_sha256": sha256_file(path),
-            "artifact_chain_sha256": evidence.get("artifact_chain_sha256"),
+            "artifact_chain_sha256": artifact_chain_sha256,
             "successful_optimizer_updates": updates,
             "checkpoint_sha256": evidence.get("checkpoint_sha256"),
             "prediction_sha256": evidence.get("prediction_sha256"),

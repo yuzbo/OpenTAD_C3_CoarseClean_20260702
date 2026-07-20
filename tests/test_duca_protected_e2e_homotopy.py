@@ -321,9 +321,17 @@ def test_homotopy_alpha_schedule_endpoints_and_inference_override() -> None:
     selector.schedule_step.fill_(4)
     assert selector._policy_homotopy_state(training=True)["alpha"] == 0.0
     selector.schedule_step.fill_(19)
-    assert selector._policy_homotopy_state(training=True)["alpha"] == pytest.approx(0.5)
+    midpoint = selector._policy_homotopy_state(training=True)
+    assert midpoint["alpha"] == pytest.approx(0.5)
+    assert midpoint["phase"] == "physical_exact_k_policy_homotopy"
     selector.schedule_step.fill_(34)
-    assert selector._policy_homotopy_state(training=True)["alpha"] == 1.0
+    transition_endpoint = selector._policy_homotopy_state(training=True)
+    assert transition_endpoint["alpha"] == 1.0
+    assert transition_endpoint["phase"] == "physical_exact_k_policy_homotopy"
+    selector.schedule_step.fill_(35)
+    learned = selector._policy_homotopy_state(training=True)
+    assert learned["alpha"] == 1.0
+    assert learned["phase"] == "learned_policy"
 
     selector.schedule_step.zero_()
     output = _forward_train(selector)

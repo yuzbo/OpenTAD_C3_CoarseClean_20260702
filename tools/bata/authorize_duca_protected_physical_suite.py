@@ -457,6 +457,15 @@ def _validate_full_model_gate(
             ),
             f"{label} lacks successful-update/EMA schedule parity",
         )
+        _require(
+            _require_int(
+                update.get("forced_amp_overflow_attempts"),
+                f"{label} forced AMP overflow attempts",
+            )
+            == 1
+            and update.get("forced_amp_overflow_replay_verified") is True,
+            f"{label} lacks full-model AMP replay schedule verification",
+        )
     else:
         _require(
             homotopy.get("enabled") is False

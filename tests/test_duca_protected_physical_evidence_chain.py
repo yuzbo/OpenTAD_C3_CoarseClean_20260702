@@ -235,6 +235,12 @@ def _make_bundle(tmp_path: Path):
                     "padded_batch_update": True,
                     "short_padded_batch_update": True,
                     "scheduler_and_ema_updated": True,
+                    "forced_amp_overflow_attempts": (
+                        1 if arm == "protected_e2e_homotopy025" else 0
+                    ),
+                    "forced_amp_overflow_replay_verified": (
+                        arm == "protected_e2e_homotopy025"
+                    ),
                     "selector_schedule_enabled": (
                         arm == "protected_e2e_homotopy025"
                     ),
@@ -524,6 +530,23 @@ def test_authorizer_requires_partial_padded_real_optimizer_update(
 
     _rewrite(bundle["gates"]["protected_e2e"], remove_partial_update)
     with pytest.raises(RuntimeError, match="optimizer/scheduler/EMA"):
+        _authorize(bundle, aggregate_path, tmp_path / "authorization.json")
+
+
+def test_authorizer_requires_homotopy_full_model_amp_replay(
+    tmp_path: Path,
+) -> None:
+    bundle = _make_bundle(tmp_path)
+    aggregate_path = tmp_path / "aggregate.json"
+    _aggregate(bundle, aggregate_path)
+
+    def remove_amp_replay_proof(payload):
+        update = payload["real_optimizer_step_audit"]
+        update["forced_amp_overflow_attempts"] = 0
+        update["forced_amp_overflow_replay_verified"] = False
+
+    _rewrite(bundle["gates"]["protected_e2e_homotopy025"], remove_amp_replay_proof)
+    with pytest.raises(RuntimeError, match="AMP replay schedule verification"):
         _authorize(bundle, aggregate_path, tmp_path / "authorization.json")
 
 

@@ -69,8 +69,8 @@ def _write_evidence(
             "mAP@0.7": average_map - 10.0,
         },
         "non_finite_collapse": False,
-        "artifact_chain_sha256": canonical_sha256([variant, "artifact"]),
     }
+    payload["artifact_chain_sha256"] = canonical_sha256(payload)
     path = root / f"{variant}.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -253,6 +253,23 @@ def test_official60_aggregate_rejects_unmatched_updates(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="exposure"):
+        aggregate_official60(
+            expected_commit=COMMIT,
+            protocol_manifest_sha256=P0_SHA256,
+            authorization_sha256=AUTH_SHA256,
+            evidence_paths=paths,
+        )
+
+
+def test_official60_aggregate_rejects_tampered_artifact_chain(
+    tmp_path: Path,
+) -> None:
+    paths = _homotopy_suite_paths(tmp_path)
+    payload = json.loads(paths[-1].read_text(encoding="utf-8"))
+    payload["metrics"]["average_mAP"] = 99.0
+    paths[-1].write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="artifact-chain hash mismatch"):
         aggregate_official60(
             expected_commit=COMMIT,
             protocol_manifest_sha256=P0_SHA256,
