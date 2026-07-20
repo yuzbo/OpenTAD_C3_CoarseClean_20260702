@@ -1,5 +1,17 @@
 # Source Registry
 
+## 2026-07-20 Decode-Cross Failed Deployment Source
+
+- `SRC-PT-017`: runtime commit
+  `9bbc6eadf85dd65364223da719d13dd5b3789dda` / tree
+  `68b5cc3f68ec1dfedbba82ac1421bf89d88b88d8`，run root
+  `/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_decode_cross_9bbc6ea_20260720_153600_0800_6f75b261e21d4626a7399a248afd6aee`。
+  Gate `1175739` 在真实四条件推理前因 focused test 的可选 `solver`
+  配置读取缺陷失败；`1175740–1175744` 未启动并取消。原始 gate 日志为
+  `slurm_logs/pt_dc_gate_1175739.out/.err`，`jobs.tsv` 保留六个
+  token/comment/Job ID。该来源只证明配置兼容性与 Slurm 多依赖规范化缺陷，
+  不是 gate、mAP 或方法有效性证据。
+
 ## 2026-07-20 Active Review Source
 
 - `SRC-PT-016`: 外部 PhysTime `STOP-Q-LIFT` Pro 严审原文

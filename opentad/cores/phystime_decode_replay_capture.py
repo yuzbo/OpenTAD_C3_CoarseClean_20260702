@@ -546,7 +546,11 @@ class DecodeReplayCollector:
             "level_lengths": list(self.level_lengths),
             "source_tensor_dtypes": self.source_tensor_dtypes,
             "source_amp_enabled": bool(
-                _cfg_get(self.cfg.solver, "amp", False)
+                _cfg_get(
+                    _cfg_get(self.cfg, "solver", None),
+                    "amp",
+                    False,
+                )
             ),
             "capture_memory": {
                 "captured_tensor_bytes": self.captured_tensor_bytes,

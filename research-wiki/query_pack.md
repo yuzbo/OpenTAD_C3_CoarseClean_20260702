@@ -8,6 +8,14 @@ full60 的 selected-axis / physical-metric 两个 epoch-59 checkpoint，
 uniform-axis 与 physical-axis 两种离线重解码，共四个 checkpoint
 条件、八个结果条件。当前状态为 `implemented`，正式远端 mAP 为 `NA`。
 
+`9bbc6ea` 首次六作业 DAG 不构成真实门禁：gate `1175739` 在进入 CUDA
+四条件推理前因最小测试配置缺少可选 `solver` 段而以 focused-test
+`61 passed / 1 failed` 终止；四个 replay `1175740–1175743` 与 suite
+`1175744` 均未启动并已定向取消。另发现 Slurm 将 suite 的
+`afterok:a:b:c:d` 规范化为逗号分隔的四个 `afterok` 子句，旧字符串比较
+误判了同义依赖。当前只修这两个工程合同，状态仍为 `implemented`、mAP 仍为
+`NA`；旧 run root/token 永不复用。
+
 本轮禁止训练，不修改 Q、采样、特征、assignment、loss、NMS 或训练
 schedule。缓存的 native proposal 只能用于重建误差审计，绝不能替代
 从原始分类/回归张量与点坐标重建的 proposal。真实门禁必须覆盖

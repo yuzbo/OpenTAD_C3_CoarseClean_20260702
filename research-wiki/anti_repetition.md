@@ -56,6 +56,13 @@
 - `resolved` marker 不是日志装饰：作业暂时不可见时仍只能等待其记录的
   Job ID，禁止重投。`fatal` marker 永久禁用整个 token；suite 必须验证六个
   resolved marker 与 `jobs.tsv` 一致并拒绝任何 ambiguous/fatal 状态。
+- Slurm 的多作业 `afterok:a:b:c:d` 在 `scontrol` 中可显示为
+  `afterok:a(unfulfilled),afterok:b(unfulfilled),...`。禁止再做删除括号后的
+  字面字符串比较；必须解析依赖类型与数字 Job ID，按集合核对且拒绝缺失、
+  额外、错误类型、错误 Job ID 或重复项。
+- capture focused test 的最小 `Config` 可以不含 `solver`；读取审计字段时
+  必须安全处理可选段。该兼容性只影响清单记录，禁止借机改动生产配置或 AMP
+  推理语义。
 
 ## 2026-07-20 STOP-Q-LIFT 禁区
 

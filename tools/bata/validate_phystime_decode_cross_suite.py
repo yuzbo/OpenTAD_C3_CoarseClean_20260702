@@ -73,6 +73,69 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def expected_dependency_contract(value):
+    value = str(value).strip()
+    if value == "none":
+        return []
+    parts = value.split(":")
+    require(
+        len(parts) >= 2 and parts[0] == "afterok",
+        f"invalid expected dependency contract: {value}",
+    )
+    job_ids = parts[1:]
+    require(
+        all(job_id.isdigit() for job_id in job_ids),
+        f"expected dependency contains a non-numeric job ID: {value}",
+    )
+    require(
+        len(set(job_ids)) == len(job_ids),
+        f"expected dependency contains a duplicate job ID: {value}",
+    )
+    return [
+        {
+            "dependency_type": "afterok",
+            "job_id": job_id,
+        }
+        for job_id in sorted(job_ids, key=int)
+    ]
+
+
+def validate_scheduler_job_snapshots(
+    jobs,
+    submission_jobs,
+    terminal_jobs,
+):
+    require(
+        set(submission_jobs) == set(jobs)
+        and set(terminal_jobs) == set(jobs),
+        "scheduler snapshots do not cover the full DAG",
+    )
+    for variant, job in jobs.items():
+        submission_job = submission_jobs[variant]
+        terminal_job = terminal_jobs[variant]
+        expected_contract = expected_dependency_contract(
+            job["dependency"]
+        )
+        require(
+            submission_job.get("job_id") == job["job_id"]
+            and submission_job.get("job_name") == job["job_name"]
+            and submission_job.get("comment") == job["comment"]
+            and submission_job.get("expected_dependency")
+            == job["dependency"]
+            and submission_job.get("expected_dependency_contract")
+            == expected_contract
+            and submission_job.get("dependency_contract")
+            == expected_contract,
+            f"{variant} submission scheduler identity/dependency mismatch",
+        )
+        require(
+            terminal_job.get("job_id") == job["job_id"]
+            and terminal_job.get("job_name") == job["job_name"]
+            and terminal_job.get("comment") == job["comment"],
+            f"{variant} terminal scheduler identity mismatch",
+        )
+
+
 def read_json(path, description):
     path = Path(path)
     require(path.is_file(), f"missing {description}: {path}")
@@ -366,7 +429,9 @@ def validate_suite(run_root):
         "submission scheduler snapshot",
     )
     require(
-        scheduler_submission.get("validation_pass") is True
+        scheduler_submission.get("schema_version")
+        == "phystime_decode_cross_scheduler_snapshot_v2"
+        and scheduler_submission.get("validation_pass") is True
         and scheduler_submission.get("mode") == "submission"
         and scheduler_submission.get("dag_token") == deployment["dag_token"]
         and sha256_file(scheduler_submission_path)
@@ -379,17 +444,19 @@ def validate_suite(run_root):
         "terminal scheduler snapshot",
     )
     require(
-        scheduler_terminal.get("validation_pass") is True
+        scheduler_terminal.get("schema_version")
+        == "phystime_decode_cross_scheduler_snapshot_v2"
+        and scheduler_terminal.get("validation_pass") is True
         and scheduler_terminal.get("mode") == "terminal"
         and scheduler_terminal.get("dag_token") == deployment["dag_token"]
         and scheduler_terminal.get("jobs_tsv_sha256")
         == deployment["jobs_tsv_sha256"],
         "terminal scheduler snapshot mismatch",
     )
-    require(
-        set(scheduler_submission["jobs"]) == set(jobs)
-        and set(scheduler_terminal["jobs"]) == set(jobs),
-        "scheduler snapshots do not cover the full DAG",
+    validate_scheduler_job_snapshots(
+        jobs,
+        scheduler_submission["jobs"],
+        scheduler_terminal["jobs"],
     )
     decode_gate_path = Path(deployment["gate_output"]).resolve()
     decode_gate = read_json(decode_gate_path, "decode-cross gate")

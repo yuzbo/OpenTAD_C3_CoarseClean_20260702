@@ -65,6 +65,51 @@ def parse_scontrol_line(line):
     return fields
 
 
+def parse_dependency_contract(value):
+    raw = "" if value is None else str(value).strip()
+    if raw.lower() in {"", "(null)", "none"}:
+        return ()
+
+    dependencies = []
+    for clause in raw.split(","):
+        clause = clause.strip()
+        match = re.fullmatch(r"([a-z][a-z0-9_-]*):(.+)", clause)
+        require(match is not None, f"invalid Slurm dependency clause: {clause}")
+        dependency_type, job_tokens = match.groups()
+        for job_token in job_tokens.split(":"):
+            job_token = job_token.strip()
+            job_match = re.fullmatch(
+                r"([0-9]+)(?:\([^()]*\))?",
+                job_token,
+            )
+            require(
+                job_match is not None,
+                f"invalid Slurm dependency job token: {job_token}",
+            )
+            dependencies.append((dependency_type, job_match.group(1)))
+
+    require(
+        len(set(dependencies)) == len(dependencies),
+        "duplicate Slurm dependency entry",
+    )
+    return tuple(
+        sorted(
+            dependencies,
+            key=lambda item: (item[0], int(item[1])),
+        )
+    )
+
+
+def dependency_contract_records(dependencies):
+    return [
+        {
+            "dependency_type": dependency_type,
+            "job_id": job_id,
+        }
+        for dependency_type, job_id in dependencies
+    ]
+
+
 def capture_submission(records, dag_token):
     reports = {}
     for record in records:
@@ -89,22 +134,21 @@ def capture_submission(records, dag_token):
         )
         expected_dependency = record["dependency"]
         actual_dependency = fields.get("Dependency", "")
-        normalized_dependency = re.sub(
-            r"\([^)]*\)",
-            "",
-            actual_dependency,
+        expected_contract = parse_dependency_contract(expected_dependency)
+        actual_contract = parse_dependency_contract(actual_dependency)
+        require(
+            not expected_contract
+            or all(
+                dependency_type == "afterok"
+                for dependency_type, _ in expected_contract
+            ),
+            f"{record['variant']} expected dependency is not afterok-only",
         )
-        if expected_dependency == "none":
-            require(
-                actual_dependency in {"", "(null)", "none"},
-                "gate unexpectedly has a Slurm dependency",
-            )
-        else:
-            require(
-                normalized_dependency == expected_dependency,
-                f"{record['variant']} Slurm dependency mismatch: "
-                f"{actual_dependency} != {expected_dependency}",
-            )
+        require(
+            actual_contract == expected_contract,
+            f"{record['variant']} Slurm dependency mismatch: "
+            f"{actual_dependency} != {expected_dependency}",
+        )
         require(
             str(Path(fields.get("StdOut", "")).resolve())
             == str(Path(record["stdout"]).resolve())
@@ -117,6 +161,13 @@ def capture_submission(records, dag_token):
             "job_name": fields["JobName"],
             "comment": fields["Comment"],
             "dependency": actual_dependency,
+            "expected_dependency": expected_dependency,
+            "dependency_contract": dependency_contract_records(
+                actual_contract
+            ),
+            "expected_dependency_contract": dependency_contract_records(
+                expected_contract
+            ),
             "stdout": str(Path(fields["StdOut"]).resolve()),
             "stderr": str(Path(fields["StdErr"]).resolve()),
             "raw_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
@@ -203,7 +254,7 @@ def main():
     else:
         reports = capture_terminal(records, args.dag_token)
     payload = {
-        "schema_version": "phystime_decode_cross_scheduler_snapshot_v1",
+        "schema_version": "phystime_decode_cross_scheduler_snapshot_v2",
         "validation_pass": True,
         "mode": args.mode,
         "dag_token": args.dag_token,

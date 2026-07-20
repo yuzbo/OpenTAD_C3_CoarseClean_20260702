@@ -7,7 +7,7 @@ status: implemented
 verdict: awaiting_real_gate_and_remote_suite
 confidence: software_contract_only
 metrics: "NA; no formal remote replay has completed."
-provenance: "full60 source 0dc5851/bddc9b9; P0 runtime c2cfcfa/0b78dd4; implementation commit pending clean snapshot"
+provenance: "full60 source 0dc5851/bddc9b9; P0 runtime c2cfcfa/0b78dd4; 9bbc6ea deployment attempt invalid before real gate; repair commit pending"
 added: 2026-07-20T00:00:00+08:00
 ---
 
@@ -113,3 +113,47 @@ owner manifest，永久绑定 `token/run_root/commit/tree`，并与运行目录�
 DAG并发起 Pro 讨论；不得用捕获 proposals 替代重建来“修复”等价。只有 gate 和四
 份 completion、suite 全部通过，状态才可升为 `tested`。通过后也只决定是否进入
 Q192 UU/UP/PU/PP 训练设计，不产生 `paper_ready` 结论。
+
+## 2026-07-20 `9bbc6ea` 无效部署审计
+
+运行时 commit `9bbc6eadf85dd65364223da719d13dd5b3789dda`、tree
+`68b5cc3f68ec1dfedbba82ac1421bf89d88b88d8` 的 CPU 全内容 preflight
+通过，且无显式 `--mem` 的 N16R4 一卡资源合同通过 `sbatch --test-only`。
+随后用全新 DAG token
+`ptdc_9bbc6ea_6f75b261e21d4626a7399a248afd6aee` 创建了六个作业：
+
+| 角色 | Job ID | 最终状态 |
+| --- | ---: | --- |
+| gate | 1175739 | `FAILED 1:0` |
+| selected-online | 1175740 | `CANCELLED`，未启动 |
+| selected-EMA | 1175741 | `CANCELLED`，未启动 |
+| physical-online | 1175742 | `CANCELLED`，未启动 |
+| physical-EMA | 1175743 | `CANCELLED`，未启动 |
+| suite | 1175744 | `CANCELLED`，未启动 |
+
+精确 run root 为
+`/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/phystime_decode_cross_9bbc6ea_20260720_153600_0800_6f75b261e21d4626a7399a248afd6aee`。
+gate 只运行到 focused tests，结果为 `61 passed / 1 failed`；失败发生在
+`DecodeReplayCollector.finalize()` 读取最小测试配置中不存在的
+`cfg.solver`，真实四条件 CUDA 推理、native direct 等价和 P0 direct 锚定均
+未执行，gate JSON 也未产生。因此这不是科学门禁失败，不触发方法否定或 mAP
+讨论。
+
+同一提交的 submission scheduler capture 还发现 Slurm 会把
+`afterok:a:b:c:d` 展开为
+`afterok:a(unfulfilled),afterok:b(unfulfilled),...`。旧比较仅删除括号，
+没有把两种表示解析成同一依赖集合，因而在六个作业身份均正确时误报 suite
+dependency mismatch。提交失败路径和人工复核只定向清理了该 token 的六个
+作业；旧 token、run root 与 resolved markers 永不复用。
+
+修复边界严格限定为：
+
+- 可选 `solver` 段缺失时只把清单中的 `source_amp_enabled` 记为 `false`；
+  生产完整配置的 AMP 值仍按原配置读取。
+- 调度依赖按“依赖类型 + 数字 Job ID”结构解析、去状态注释、顺序无关比较；
+  缺失、额外、错误类型、错误 Job ID 和重复依赖继续 fail-closed。
+- scheduler snapshot 升级为 v2，同时保存原始依赖、预期依赖和两者的规范化
+  记录；最终 suite 必须再次核对六个作业身份和规范化依赖。
+
+修复不改变模型、输入张量、checkpoint、decode、NMS、evaluator 或任何指标。
+新部署必须使用新 commit/tree、clean snapshot、run root 和 DAG token。

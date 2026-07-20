@@ -142,9 +142,18 @@ def test_capture_refuses_to_overwrite_unconsumed_batch():
     head.enable_decode_replay_capture(False)
 
 
+@pytest.mark.parametrize(
+    ("solver_config", "expected_source_amp"),
+    [
+        (None, False),
+        ({"amp": True}, True),
+    ],
+)
 def test_collector_writes_pickle_free_hashed_artifact(
     tmp_path,
     monkeypatch,
+    solver_config,
+    expected_source_amp,
 ):
     checkpoint = tmp_path / "epoch_59.pth"
     checkpoint.write_bytes(b"frozen")
@@ -156,21 +165,22 @@ def test_collector_writes_pickle_free_hashed_artifact(
 
     head = _make_capture_head()
     model = SimpleNamespace(rpn_head=head)
-    cfg = Config(
-        {
-            "work_dir": str(tmp_path),
-            "inference": {
-                "phystime_decode_replay_capture": {
-                    "enabled": True,
-                    "train_axis": "physical_time_seconds",
-                    "expected_native_coordinate_mode": (
-                        "physical_time_seconds"
-                    ),
-                    "weights_source": "ema",
-                }
-            },
-        }
-    )
+    cfg_payload = {
+        "work_dir": str(tmp_path),
+        "inference": {
+            "phystime_decode_replay_capture": {
+                "enabled": True,
+                "train_axis": "physical_time_seconds",
+                "expected_native_coordinate_mode": (
+                    "physical_time_seconds"
+                ),
+                "weights_source": "ema",
+            }
+        },
+    }
+    if solver_config is not None:
+        cfg_payload["solver"] = solver_config
+    cfg = Config(cfg_payload)
     collector = build_decode_replay_collector(
         model=model,
         cfg=cfg,
@@ -195,6 +205,7 @@ def test_collector_writes_pickle_free_hashed_artifact(
     assert manifest["runtime"]["commit"] == "a" * 40
     assert manifest["source"]["commit"] == "c" * 40
     assert manifest["weights_source"] == "ema"
+    assert manifest["source_amp_enabled"] is expected_source_amp
     assert manifest["window_count"] == 1
     assert manifest["capture_memory"]["within_budget"] is True
     assert (

@@ -598,6 +598,216 @@ def test_scheduler_submission_snapshot_checks_real_identity(monkeypatch):
     report = scheduler.capture_submission([record], "token")
     assert report["selected_online"]["job_id"] == "12345"
     assert report["selected_online"]["dependency"].startswith("afterok:12344")
+    assert report["selected_online"]["dependency_contract"] == [
+        {"dependency_type": "afterok", "job_id": "12344"}
+    ]
+
+
+def test_scheduler_accepts_slurm_multi_dependency_rendering(monkeypatch):
+    scheduler = _load_module(
+        "tools/bata/capture_phystime_decode_cross_scheduler.py",
+        "decode_cross_scheduler_multi_test",
+    )
+    stdout = "/tmp/phystime/suite.out"
+    stderr = "/tmp/phystime/suite.err"
+    record = {
+        "variant": "decode_cross_suite",
+        "job_id": "20000",
+        "job_name": "pt_dc_suite",
+        "comment": "token:decode_cross_suite",
+        "dependency": "afterok:101:102:103:104",
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+    line = (
+        "JobId=20000 JobName=pt_dc_suite "
+        "Comment=token:decode_cross_suite "
+        "Dependency=afterok:104(unfulfilled),afterok:101(unfulfilled),"
+        "afterok:103(unfulfilled),afterok:102(unfulfilled) "
+        f"StdOut={stdout} StdErr={stderr}"
+    )
+    monkeypatch.setattr(
+        scheduler.subprocess,
+        "check_output",
+        lambda *args, **kwargs: line,
+    )
+
+    report = scheduler.capture_submission([record], "token")
+
+    assert report["decode_cross_suite"]["dependency_contract"] == [
+        {"dependency_type": "afterok", "job_id": job_id}
+        for job_id in ("101", "102", "103", "104")
+    ]
+    assert (
+        report["decode_cross_suite"]["dependency_contract"]
+        == report["decode_cross_suite"]["expected_dependency_contract"]
+    )
+    assert scheduler.parse_dependency_contract(
+        "afterok:104:101(unfulfilled),afterok:103:102(unfulfilled)"
+    ) == scheduler.parse_dependency_contract("afterok:101:102:103:104")
+
+
+@pytest.mark.parametrize(
+    "actual_dependency",
+    [
+        "afterok:101(unfulfilled),afterok:102(unfulfilled)",
+        "afterany:101(unfulfilled),afterok:102(unfulfilled),"
+        "afterok:103(unfulfilled),afterok:104(unfulfilled)",
+        "afterok:101(unfulfilled),afterok:102(unfulfilled),"
+        "afterok:103(unfulfilled),afterok:104(unfulfilled),"
+        "afterok:105(unfulfilled)",
+    ],
+)
+def test_scheduler_rejects_wrong_multi_dependency(
+    monkeypatch,
+    actual_dependency,
+):
+    scheduler = _load_module(
+        "tools/bata/capture_phystime_decode_cross_scheduler.py",
+        f"decode_cross_scheduler_reject_{abs(hash(actual_dependency))}",
+    )
+    record = {
+        "variant": "decode_cross_suite",
+        "job_id": "20000",
+        "job_name": "pt_dc_suite",
+        "comment": "token:decode_cross_suite",
+        "dependency": "afterok:101:102:103:104",
+        "stdout": "/tmp/phystime/suite.out",
+        "stderr": "/tmp/phystime/suite.err",
+    }
+    line = (
+        "JobId=20000 JobName=pt_dc_suite "
+        "Comment=token:decode_cross_suite "
+        f"Dependency={actual_dependency} "
+        "StdOut=/tmp/phystime/suite.out "
+        "StdErr=/tmp/phystime/suite.err"
+    )
+    monkeypatch.setattr(
+        scheduler.subprocess,
+        "check_output",
+        lambda *args, **kwargs: line,
+    )
+
+    with pytest.raises(ValueError, match="dependency mismatch"):
+        scheduler.capture_submission([record], "token")
+
+
+@pytest.mark.parametrize("actual_dependency", ["", "(null)", "none"])
+def test_scheduler_accepts_empty_gate_dependency(
+    monkeypatch,
+    actual_dependency,
+):
+    scheduler = _load_module(
+        "tools/bata/capture_phystime_decode_cross_scheduler.py",
+        f"decode_cross_scheduler_empty_{actual_dependency or 'blank'}",
+    )
+    record = {
+        "variant": "decode_cross_gate",
+        "job_id": "30000",
+        "job_name": "pt_dc_gate",
+        "comment": "token:decode_cross_gate",
+        "dependency": "none",
+        "stdout": "/tmp/phystime/gate.out",
+        "stderr": "/tmp/phystime/gate.err",
+    }
+    line = (
+        "JobId=30000 JobName=pt_dc_gate "
+        "Comment=token:decode_cross_gate "
+        f"Dependency={actual_dependency} "
+        "StdOut=/tmp/phystime/gate.out "
+        "StdErr=/tmp/phystime/gate.err"
+    )
+    monkeypatch.setattr(
+        scheduler.subprocess,
+        "check_output",
+        lambda *args, **kwargs: line,
+    )
+
+    report = scheduler.capture_submission([record], "token")
+
+    assert report["decode_cross_gate"]["dependency_contract"] == []
+
+
+def test_scheduler_rejects_duplicate_dependency_entry():
+    scheduler = _load_module(
+        "tools/bata/capture_phystime_decode_cross_scheduler.py",
+        "decode_cross_scheduler_duplicate_test",
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        scheduler.parse_dependency_contract(
+            "afterok:101(unfulfilled),afterok:101(unfulfilled)"
+        )
+
+
+def test_scheduler_rejects_or_dependency_syntax():
+    scheduler = _load_module(
+        "tools/bata/capture_phystime_decode_cross_scheduler.py",
+        "decode_cross_scheduler_or_test",
+    )
+
+    with pytest.raises(ValueError, match="invalid"):
+        scheduler.parse_dependency_contract(
+            "afterok:101?afterok:102"
+        )
+
+
+def test_suite_accepts_identity_only_terminal_snapshot():
+    source = _read("tools/bata/validate_phystime_decode_cross_suite.py")
+    module = ast.parse(source)
+    names = {
+        "expected_dependency_contract",
+        "validate_scheduler_job_snapshots",
+    }
+    functions = [
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
+    namespace = {
+        "require": lambda condition, message: (
+            None
+            if condition
+            else (_ for _ in ()).throw(ValueError(message))
+        )
+    }
+    exec(
+        compile(ast.Module(body=functions, type_ignores=[]), "<suite>", "exec"),
+        namespace,
+    )
+    jobs = {
+        "decode_cross_gate": {
+            "job_id": "30000",
+            "job_name": "pt_dc_gate",
+            "comment": "token:decode_cross_gate",
+            "dependency": "none",
+        }
+    }
+    submission_jobs = {
+        "decode_cross_gate": {
+            "job_id": "30000",
+            "job_name": "pt_dc_gate",
+            "comment": "token:decode_cross_gate",
+            "expected_dependency": "none",
+            "expected_dependency_contract": [],
+            "dependency_contract": [],
+        }
+    }
+    terminal_jobs = {
+        "decode_cross_gate": {
+            "job_id": "30000",
+            "job_name": "pt_dc_gate",
+            "comment": "token:decode_cross_gate",
+            "state": "COMPLETED",
+            "exit_code": "0:0",
+        }
+    }
+
+    namespace["validate_scheduler_job_snapshots"](
+        jobs,
+        submission_jobs,
+        terminal_jobs,
+    )
 
 
 def test_preflight_recomputes_content_before_submission():
