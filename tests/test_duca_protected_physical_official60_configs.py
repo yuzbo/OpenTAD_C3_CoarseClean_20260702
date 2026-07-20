@@ -19,6 +19,9 @@ CONFIGS = {
     "exact_uniform": "duca_protected_physical_exact_uniform_fixed384_official60.py",
     "transition_no_bridge": "duca_protected_physical_transition_no_bridge_fixed384_official60.py",
     "protected_e2e": "duca_protected_physical_e2e_fixed384_official60.py",
+    "protected_e2e_bridge025": "duca_protected_physical_e2e_bridge025_fixed384_official60.py",
+    "protected_e2e_homotopy025": "duca_protected_physical_e2e_homotopy025_fixed384_official60.py",
+    "protected_e2e_uni_companion": "duca_protected_physical_e2e_uni_companion_fixed384_official60.py",
     "protected_e2e_rho001": "duca_protected_physical_e2e_rho001_fixed384_official60.py",
 }
 
@@ -34,6 +37,9 @@ def _normalized_model(cfg):
     model = copy.deepcopy(cfg.model.to_dict())
     selector = model["frame_selector"]
     selector.pop("arm")
+    selector.pop("detector_bridge_gradient_scale", None)
+    selector.pop("uniform_companion_fraction", None)
+    selector.pop("homotopy_total_steps", None)
     source = selector.get("actionness_source_cfg")
     if source is None:
         selector["actionness_source_cfg"] = "ARM_CONTROLLED_COARSE_SOURCE"
@@ -44,7 +50,7 @@ def _normalized_model(cfg):
     return model
 
 
-def test_four_arm_configs_have_one_shared_training_and_detector_protocol():
+def test_all_protected_configs_have_one_shared_training_and_detector_protocol():
     configs = _load_all()
     reference = configs["protected_e2e"]
     for arm, cfg in configs.items():

@@ -19,6 +19,7 @@ P3_CONFIG_SHA256 = "e" * 64
 ARM_CONFIG_SHA256 = {
     "protected_e2e": "1" * 64,
     "protected_e2e_bridge025": "2" * 64,
+    "protected_e2e_homotopy025": "5" * 64,
     "protected_e2e_uni_companion": "3" * 64,
     "protected_e2e_rho001": "4" * 64,
 }
@@ -134,8 +135,23 @@ def _make_bundle(tmp_path: Path):
                     "path": f"configs/{arm}.py",
                     "source_sha256": source_sha256,
                     "resolved_sha256": f"{index + 3}" * 64,
+                    "homotopy_total_steps": (
+                        6000 if arm == "protected_e2e_homotopy025" else 0
+                    ),
                 }
                 for index, (arm, source_sha256) in enumerate(ARM_CONFIG_SHA256.items())
+            }
+        },
+        "expected_successful_optimizer_updates_per_arm": 6000,
+        "frozen_method": {
+            "homotopy": {
+                "arm": "protected_e2e_homotopy025",
+                "warmup_fraction": 0.05,
+                "transition_fraction": 0.30,
+                "transition_shape": "cosine",
+                "total_successful_updates": 6000,
+                "alpha_zero_contract": "hard_forward_exact_uniform",
+                "inference_alpha": 1.0,
             }
         },
         "p3_population": {
@@ -219,6 +235,18 @@ def _make_bundle(tmp_path: Path):
                     "padded_batch_update": True,
                     "short_padded_batch_update": True,
                     "scheduler_and_ema_updated": True,
+                    "selector_schedule_enabled": (
+                        arm == "protected_e2e_homotopy025"
+                    ),
+                    "initial_selector_schedule_step": (
+                        1199 if arm == "protected_e2e_homotopy025" else 0
+                    ),
+                    "selector_schedule_step": (
+                        1202 if arm == "protected_e2e_homotopy025" else 0
+                    ),
+                    "ema_selector_schedule_step": (
+                        1202 if arm == "protected_e2e_homotopy025" else 0
+                    ),
                 },
                 "training_companion_audit": {
                     "training_only": arm == "protected_e2e_uni_companion",
@@ -234,11 +262,33 @@ def _make_bundle(tmp_path: Path):
                         if arm
                         in {
                             "protected_e2e_bridge025",
+                            "protected_e2e_homotopy025",
                             "protected_e2e_uni_companion",
                         }
                         else 1.0
                     ),
                 },
+                "policy_homotopy_audit": (
+                    {
+                        "enabled": True,
+                        "alpha_zero_contract": "hard_forward_exact_uniform",
+                        "alpha_zero_exact_uniform_rows": [
+                            {"window": "full", "exact_uniform_equal": True},
+                            {
+                                "window": "short_padded",
+                                "exact_uniform_equal": True,
+                            },
+                        ],
+                        "alpha_one_equals_direct_learned_potential": True,
+                        "inference_forces_alpha_one": True,
+                        "total_steps": 6000,
+                        "warmup_steps": 300,
+                        "transition_steps": 1800,
+                        "gradient_audit_alpha": 0.5,
+                    }
+                    if arm == "protected_e2e_homotopy025"
+                    else {"enabled": False}
+                ),
                 "paper_claim_allowed": False,
             },
         )
@@ -300,6 +350,10 @@ def _authorize(bundle, aggregate: Path, output: Path):
         main_gate_sha256=_file_sha256(bundle["gates"]["protected_e2e"]),
         bridge025_gate=bundle["gates"]["protected_e2e_bridge025"],
         bridge025_gate_sha256=_file_sha256(bundle["gates"]["protected_e2e_bridge025"]),
+        homotopy_gate=bundle["gates"]["protected_e2e_homotopy025"],
+        homotopy_gate_sha256=_file_sha256(
+            bundle["gates"]["protected_e2e_homotopy025"]
+        ),
         uni_companion_gate=bundle["gates"]["protected_e2e_uni_companion"],
         uni_companion_gate_sha256=_file_sha256(
             bundle["gates"]["protected_e2e_uni_companion"]
@@ -344,6 +398,7 @@ def test_evidence_chain_happy_path_authorizes_official60(tmp_path: Path) -> None
     assert receipt["authorized_scope"] == {
         "official60_four_arm_training": True,
         "official60_uni_companion_training": True,
+        "official60_homotopy_training": True,
         "paper_claim": False,
     }
     assert receipt["paper_claim_allowed"] is False

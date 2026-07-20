@@ -43,6 +43,7 @@ mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/gates" \
   "${RUN_ROOT}/p3"
 MAIN_GATE="${RUN_ROOT}/gates/protected_e2e.json"
 BRIDGE025_GATE="${RUN_ROOT}/gates/protected_e2e_bridge025.json"
+HOMOTOPY_GATE="${RUN_ROOT}/gates/protected_e2e_homotopy025.json"
 UNI_COMPANION_GATE="${RUN_ROOT}/gates/protected_e2e_uni_companion.json"
 RHO_GATE="${RUN_ROOT}/gates/protected_e2e_rho001.json"
 SHORT_SHARD="${RUN_ROOT}/p3/short.json"
@@ -64,6 +65,7 @@ cat > "${JOB_FILE}" <<EOF
 #SBATCH --time=2-00:00:00
 #SBATCH --output=${RUN_ROOT}/logs/all_gates-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/all_gates-%j.err
+source /etc/profile
 set -euo pipefail
 module load cuda/11.8
 module load miniforge3/24.11
@@ -81,6 +83,10 @@ bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
 
 export DUCA_PROTECTED_GATE_ARM='protected_e2e_bridge025'
 export DUCA_PROTECTED_GATE_OUTPUT_JSON='${BRIDGE025_GATE}'
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
+
+export DUCA_PROTECTED_GATE_ARM='protected_e2e_homotopy025'
+export DUCA_PROTECTED_GATE_OUTPUT_JSON='${HOMOTOPY_GATE}'
 bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
 
 export DUCA_PROTECTED_GATE_ARM='protected_e2e_uni_companion'
@@ -105,6 +111,7 @@ bash scripts/run_duca_protected_physical_p3_shard_gpu1.sh
 
 export DUCA_PROTECTED_MAIN_GATE_JSON='${MAIN_GATE}'
 export DUCA_PROTECTED_BRIDGE025_GATE_JSON='${BRIDGE025_GATE}'
+export DUCA_PROTECTED_HOMOTOPY_GATE_JSON='${HOMOTOPY_GATE}'
 export DUCA_PROTECTED_UNI_COMPANION_GATE_JSON='${UNI_COMPANION_GATE}'
 export DUCA_PROTECTED_RHO_GATE_JSON='${RHO_GATE}'
 export DUCA_PROTECTED_P3_SHORT_JSON='${SHORT_SHARD}'
@@ -120,12 +127,13 @@ cat > "${RUN_ROOT}/execution_plan.tsv" <<'EOF'
 order	component
 1	gate_main
 2	gate_bridge025
-3	gate_uni_companion
-4	gate_rho
-5	p3_short
-6	p3_medium
-7	p3_long
-8	complete
+3	gate_homotopy025
+4	gate_uni_companion
+5	gate_rho
+6	p3_short
+7	p3_medium
+8	p3_long
+9	complete
 EOF
 
 if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then

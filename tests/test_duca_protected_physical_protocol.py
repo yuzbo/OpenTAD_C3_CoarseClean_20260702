@@ -10,6 +10,7 @@ from mmengine.config import Config, ConfigDict
 
 from opentad.datasets.duca_stateless import DucaStatelessThumosPaddingDataset
 from opentad.datasets.thumos import ThumosPaddingDataset
+from tools.bata.freeze_duca_protected_physical_protocol import _config_evidence
 from tools.bata.duca_protected_physical_training import (
     assert_safe_cfg_options,
     atomic_write_json,
@@ -29,6 +30,13 @@ CONFIG = (
     / "adatad"
     / "thumos"
     / "duca_protected_physical_e2e_fixed384_official60.py"
+)
+HOMOTOPY_CONFIG = (
+    ROOT
+    / "configs"
+    / "adatad"
+    / "thumos"
+    / "duca_protected_physical_e2e_homotopy025_fixed384_official60.py"
 )
 
 
@@ -96,6 +104,27 @@ def test_formal_config_seals_validation_and_derives_loader_exposure():
     assert contract["end_epoch"] == 60
     assert contract["expected_train_batches_per_epoch"] is None
     assert contract["expected_successful_optimizer_updates"] is None
+    assert contract["selector_schedule_enabled"] is False
+    assert contract["homotopy_total_steps"] == 0
+
+
+def test_homotopy_formal_config_binds_schedule_to_successful_updates():
+    cfg = Config.fromfile(str(HOMOTOPY_CONFIG))
+    contract = formal_training_contract(cfg)
+    assert contract["selector_schedule_enabled"] is True
+    assert contract["homotopy_total_steps"] == 6000
+    assert contract["expected_selector_schedule_updates"] is None
+
+
+def test_p0_config_evidence_accepts_only_the_whitelisted_homotopy_fields():
+    configs, evidence = _config_evidence()
+    homotopy = configs["protected_e2e_homotopy025"]
+    assert homotopy.model.frame_selector.homotopy_total_steps == 6000
+    assert "homotopy_total_steps" not in homotopy
+    assert (
+        evidence["arms"]["protected_e2e_homotopy025"]["homotopy_total_steps"]
+        == 6000
+    )
 
 
 def test_slurm_launchers_use_current_n16r4_gpu_contract():
@@ -103,10 +132,16 @@ def test_slurm_launchers_use_current_n16r4_gpu_contract():
         "scripts/submit_duca_protected_physical_gate_suite.sh",
         "scripts/submit_duca_protected_physical_gate_single_job.sh",
         "scripts/submit_duca_protected_physical_official60_suite.sh",
+        "scripts/submit_duca_protected_physical_homotopy_official60.sh",
     ):
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         assert "DUCA_TARGET_CLUSTER:-n16r4" in source
         assert "#SBATCH --gpus=1" in source
+        assert "source /etc/profile" in source
+        assert source.index("source /etc/profile") < source.index(
+            "module load"
+        )
+        assert "source /etc/profile\nset -euo pipefail\nmodule load" in source
         assert "#SBATCH --gres=" not in source
 
 
@@ -117,6 +152,7 @@ def test_single_job_gate_preserves_component_order_and_fail_closed_completion():
     markers = [
         "DUCA_PROTECTED_GATE_ARM='protected_e2e'",
         "DUCA_PROTECTED_GATE_ARM='protected_e2e_bridge025'",
+        "DUCA_PROTECTED_GATE_ARM='protected_e2e_homotopy025'",
         "DUCA_PROTECTED_GATE_ARM='protected_e2e_uni_companion'",
         "DUCA_PROTECTED_GATE_ARM='protected_e2e_rho001'",
         "DUCA_PROTECTED_P3_STRATUM='short'",
@@ -129,6 +165,20 @@ def test_single_job_gate_preserves_component_order_and_fail_closed_completion():
     assert "set -euo pipefail" in source
     assert "#SBATCH --time=2-00:00:00" in source
     assert "sbatch --hold --parsable" in source
+    assert "scontrol --clusters=" in source
+    assert " release " in source
+
+
+def test_homotopy_submitter_is_single_arm_and_transactional():
+    source = (
+        ROOT
+        / "scripts"
+        / "submit_duca_protected_physical_homotopy_official60.sh"
+    ).read_text(encoding="utf-8")
+    assert 'VARIANT="protected_e2e_homotopy025"' in source
+    assert "official60_homotopy_training" in source
+    assert "sbatch --hold --parsable" in source
+    assert "jobs.tsv" in source
     assert "scontrol --clusters=" in source
     assert " release " in source
 
@@ -304,6 +354,7 @@ def _runtime_binding_files(tmp_path):
         "ok": True,
         "git_commit": "a" * 40,
         "protocol_manifest_sha256": protocol_sha,
+        "config_hashes": {"protected_e2e": sha256_file(config)},
         "authorized_scope": {
             "official60_four_arm_training": True,
             "paper_claim": False,

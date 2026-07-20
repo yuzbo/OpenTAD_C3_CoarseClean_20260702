@@ -66,6 +66,20 @@ if (
     is not True
 ):
     raise SystemExit("authorization does not include Uni companion training")
+if (
+    sys.argv[5] == "homotopy_optimization"
+    and (
+        authorization.get("authorized_scope", {}).get(
+            "official60_uni_companion_training"
+        )
+        is not True
+        or authorization.get("authorized_scope", {}).get(
+            "official60_homotopy_training"
+        )
+        is not True
+    )
+):
+    raise SystemExit("authorization does not include bridge025 and homotopy training")
 PY
 
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/arms"
@@ -85,6 +99,14 @@ case "${SUITE_KIND}" in
       protected_e2e
       protected_e2e_bridge025
       protected_e2e_uni_companion
+    )
+    ;;
+  homotopy_optimization)
+    VARIANTS=(
+      exact_uniform
+      protected_e2e
+      protected_e2e_bridge025
+      protected_e2e_homotopy025
     )
     ;;
   *)
@@ -109,6 +131,7 @@ for variant in "${VARIANTS[@]}"; do
 #SBATCH --time=3-00:00:00
 #SBATCH --output=${RUN_ROOT}/logs/${variant}-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/${variant}-%j.err
+source /etc/profile
 set -euo pipefail
 module load cuda/11.8
 module load miniforge3/24.11
@@ -140,6 +163,7 @@ cat > "${COMPLETE_JOB}" <<EOF
 #SBATCH --time=01:00:00
 #SBATCH --output=${RUN_ROOT}/logs/complete-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/complete-%j.err
+source /etc/profile
 set -euo pipefail
 module load miniforge3/24.11
 source '${BASE}/conda_envs/opentad/bin/activate'
@@ -147,7 +171,7 @@ cd '${REPO_ROOT}'
 '${PYTHON}' -m tools.bata.aggregate_duca_protected_physical_official60 \
   --expected-commit '${EXPECTED_COMMIT}' \
   --protocol-manifest-sha256 '${PROTOCOL_SHA256}' \
-  --authorization-sha256 '${AUTHORIZATION_SHA256}' \
+  --authorization-sha256 '${AUTHORIZATION_SHA256}' \\
 EOF
 for variant in "${VARIANTS[@]}"; do
   printf "  --evidence '%s' \\\\\n" \

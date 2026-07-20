@@ -16,6 +16,7 @@ from tools.bata.duca_protected_physical_training import (
     CHECKPOINT_METADATA_SCHEMA,
     DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA,
     TRAINING_AUDIT_SCHEMA,
+    HOMOTOPY_VARIANT,
     VARIANTS,
     canonical_sha256,
     sha256_file,
@@ -78,6 +79,7 @@ def _inspect_checkpoint(
     *,
     expected_metadata: Mapping[str, Any],
     expected_updates: int,
+    expected_selector_step: int,
 ) -> dict[str, Any]:
     import torch
 
@@ -105,6 +107,32 @@ def _inspect_checkpoint(
         int(checkpoint["scheduler"].get("last_epoch", -1)) == expected_updates,
         "terminal scheduler update count mismatch",
     )
+    schedule_values = {}
+    for state_key in ("state_dict", "state_dict_ema"):
+        matches = [
+            (name, value)
+            for name, value in checkpoint[state_key].items()
+            if str(name).endswith("frame_selector.schedule_step")
+        ]
+        if expected_selector_step > 0:
+            _require(
+                len(matches) == 1,
+                f"{state_key} lacks one persistent selector schedule buffer",
+            )
+            value = matches[0][1]
+            _require(
+                torch.is_tensor(value)
+                and value.numel() == 1
+                and int(value.detach().item()) == expected_selector_step,
+                f"{state_key} selector schedule step mismatch",
+            )
+            schedule_values[state_key] = int(value.detach().item())
+        else:
+            _require(
+                not matches,
+                f"{state_key} exposes a schedule buffer for a schedule-free arm",
+            )
+            schedule_values[state_key] = 0
     rng_state = checkpoint["rng_state"]
     _require(
         isinstance(rng_state, Mapping)
@@ -119,7 +147,8 @@ def _inspect_checkpoint(
         "state_dict_ema_present": True,
         "grad_scaler_present": True,
         "global_rng_state_present": True,
-        "selector_schedule_step": 0,
+        "selector_schedule_step": schedule_values["state_dict"],
+        "ema_selector_schedule_step": schedule_values["state_dict_ema"],
         "embedded_metadata_exact": True,
     }
 
@@ -181,6 +210,14 @@ def finalize_run(
         and authorization.get("paper_claim_allowed") is False,
         "authorization does not unlock official-60 training",
     )
+    if variant == HOMOTOPY_VARIANT:
+        _require(
+            authorization.get("authorized_scope", {}).get(
+                "official60_homotopy_training"
+            )
+            is True,
+            "authorization does not unlock homotopy training",
+        )
     _require(
         authorization.get("protocol_manifest_sha256")
         == protocol_manifest_sha256,
@@ -237,10 +274,19 @@ def finalize_run(
             int(counters.get(key, -1)) == expected_updates,
             f"training counter {key} mismatch",
         )
+    expected_selector_step = expected_updates if variant == HOMOTOPY_VARIANT else 0
     _require(
-        int(counters.get("duca_schedule_updates", -1)) == 0
-        and int(audit.get("selector_schedule_step", -1)) == 0,
-        "schedule-free selector advanced a hidden schedule",
+        bool(audit.get("selector_schedule_enabled"))
+        is (variant == HOMOTOPY_VARIANT)
+        and int(audit.get("expected_selector_schedule_updates", -1))
+        == expected_selector_step
+        and int(audit.get("homotopy_total_steps", -1))
+        == expected_selector_step
+        and int(counters.get("duca_schedule_updates", -1))
+        == expected_selector_step
+        and int(audit.get("selector_schedule_step", -1))
+        == expected_selector_step,
+        "selector schedule exposure mismatch",
     )
     _require(
         int(counters.get("replay_exhaustions", -1)) == 0
@@ -286,6 +332,7 @@ def finalize_run(
         checkpoint_file,
         expected_metadata=metadata,
         expected_updates=expected_updates,
+        expected_selector_step=expected_selector_step,
     )
 
     _require(
@@ -384,6 +431,7 @@ def finalize_run(
         "authorization_path": str(authorization_file),
         "authorization_sha256": authorization_sha256,
         "successful_optimizer_updates": expected_updates,
+        "selector_schedule_step": expected_selector_step,
         "checkpoint_epoch": TERMINAL_EPOCH,
         "checkpoint_state_key": TERMINAL_STATE_KEY,
         "checkpoint_path": str(checkpoint_file),

@@ -41,6 +41,9 @@ PY
 mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/gates" \
   "${RUN_ROOT}/p3"
 MAIN_GATE="${RUN_ROOT}/gates/protected_e2e.json"
+BRIDGE025_GATE="${RUN_ROOT}/gates/protected_e2e_bridge025.json"
+HOMOTOPY_GATE="${RUN_ROOT}/gates/protected_e2e_homotopy025.json"
+UNI_COMPANION_GATE="${RUN_ROOT}/gates/protected_e2e_uni_companion.json"
 RHO_GATE="${RUN_ROOT}/gates/protected_e2e_rho001.json"
 SHORT_SHARD="${RUN_ROOT}/p3/short.json"
 MEDIUM_SHARD="${RUN_ROOT}/p3/medium.json"
@@ -66,6 +69,7 @@ write_gpu_job() {
 #SBATCH --time=${hours}:00:00
 #SBATCH --output=${RUN_ROOT}/logs/${key}-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/${key}-%j.err
+source /etc/profile
 set -euo pipefail
 module load cuda/11.8
 module load miniforge3/24.11
@@ -84,6 +88,24 @@ write_gpu_job \
   "gate_main" \
   "export DUCA_PROTECTED_GATE_ARM='protected_e2e'
 export DUCA_PROTECTED_GATE_OUTPUT_JSON='${MAIN_GATE}'
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh" \
+  2
+write_gpu_job \
+  "gate_bridge025" \
+  "export DUCA_PROTECTED_GATE_ARM='protected_e2e_bridge025'
+export DUCA_PROTECTED_GATE_OUTPUT_JSON='${BRIDGE025_GATE}'
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh" \
+  2
+write_gpu_job \
+  "gate_homotopy025" \
+  "export DUCA_PROTECTED_GATE_ARM='protected_e2e_homotopy025'
+export DUCA_PROTECTED_GATE_OUTPUT_JSON='${HOMOTOPY_GATE}'
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh" \
+  2
+write_gpu_job \
+  "gate_uni_companion" \
+  "export DUCA_PROTECTED_GATE_ARM='protected_e2e_uni_companion'
+export DUCA_PROTECTED_GATE_OUTPUT_JSON='${UNI_COMPANION_GATE}'
 bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh" \
   2
 write_gpu_job \
@@ -117,6 +139,7 @@ cat > "${COMPLETE_JOB}" <<EOF
 #SBATCH --time=01:00:00
 #SBATCH --output=${RUN_ROOT}/logs/complete-%j.out
 #SBATCH --error=${RUN_ROOT}/logs/complete-%j.err
+source /etc/profile
 set -euo pipefail
 module load miniforge3/24.11
 source '${BASE}/conda_envs/opentad/bin/activate'
@@ -126,6 +149,9 @@ export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
 export DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON='${PROTOCOL_JSON}'
 export DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256='${PROTOCOL_SHA256}'
 export DUCA_PROTECTED_MAIN_GATE_JSON='${MAIN_GATE}'
+export DUCA_PROTECTED_BRIDGE025_GATE_JSON='${BRIDGE025_GATE}'
+export DUCA_PROTECTED_HOMOTOPY_GATE_JSON='${HOMOTOPY_GATE}'
+export DUCA_PROTECTED_UNI_COMPANION_GATE_JSON='${UNI_COMPANION_GATE}'
 export DUCA_PROTECTED_RHO_GATE_JSON='${RHO_GATE}'
 export DUCA_PROTECTED_P3_SHORT_JSON='${SHORT_SHARD}'
 export DUCA_PROTECTED_P3_MEDIUM_JSON='${MEDIUM_SHARD}'
@@ -174,6 +200,12 @@ submit_held() {
 
 submit_held "${RUN_ROOT}/jobs/gate_main.sbatch"
 gate_main_id="${LAST_SUBMITTED_JOB_ID}"
+submit_held "${RUN_ROOT}/jobs/gate_bridge025.sbatch"
+gate_bridge025_id="${LAST_SUBMITTED_JOB_ID}"
+submit_held "${RUN_ROOT}/jobs/gate_homotopy025.sbatch"
+gate_homotopy025_id="${LAST_SUBMITTED_JOB_ID}"
+submit_held "${RUN_ROOT}/jobs/gate_uni_companion.sbatch"
+gate_uni_companion_id="${LAST_SUBMITTED_JOB_ID}"
 submit_held "${RUN_ROOT}/jobs/gate_rho.sbatch"
 gate_rho_id="${LAST_SUBMITTED_JOB_ID}"
 submit_held "${RUN_ROOT}/jobs/p3_short.sbatch"
@@ -182,13 +214,16 @@ submit_held "${RUN_ROOT}/jobs/p3_medium.sbatch"
 p3_medium_id="${LAST_SUBMITTED_JOB_ID}"
 submit_held "${RUN_ROOT}/jobs/p3_long.sbatch"
 p3_long_id="${LAST_SUBMITTED_JOB_ID}"
-dependency="afterok:${gate_main_id}:${gate_rho_id}:${p3_short_id}:${p3_medium_id}:${p3_long_id}"
+dependency="afterok:${gate_main_id}:${gate_bridge025_id}:${gate_homotopy025_id}:${gate_uni_companion_id}:${gate_rho_id}:${p3_short_id}:${p3_medium_id}:${p3_long_id}"
 submit_held "${COMPLETE_JOB}" --dependency="${dependency}"
 complete_id="${LAST_SUBMITTED_JOB_ID}"
 
 cat > "${RUN_ROOT}/jobs.tsv" <<EOF
 key	job_id	dependency
 gate_main	${gate_main_id}	none
+gate_bridge025	${gate_bridge025_id}	none
+gate_homotopy025	${gate_homotopy025_id}	none
+gate_uni_companion	${gate_uni_companion_id}	none
 gate_rho	${gate_rho_id}	none
 p3_short	${p3_short_id}	none
 p3_medium	${p3_medium_id}	none

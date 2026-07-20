@@ -18,6 +18,7 @@ from ..duca.structured_selection import (
     PhysicalExactKSelectionOutput,
     exact_uniform_positions,
     physical_exact_k_forward_backward,
+    physical_exact_k_homotopy_log_potential,
     physical_exact_k_select,
     physical_exact_k_viterbi,
     physical_exact_uniform_gap_cap,
@@ -38,6 +39,7 @@ _ARMS = {
     "transition_no_bridge",
     "protected_e2e",
     "protected_e2e_bridge025",
+    "protected_e2e_homotopy025",
     "protected_e2e_uni_companion",
     "protected_e2e_rho001",
 }
@@ -47,6 +49,7 @@ _DETECTOR_BRIDGE_SCALES = {
     "transition_no_bridge": 0.0,
     "protected_e2e": 1.0,
     "protected_e2e_bridge025": 0.25,
+    "protected_e2e_homotopy025": 0.25,
     "protected_e2e_uni_companion": 0.25,
     "protected_e2e_rho001": 1.0,
 }
@@ -55,6 +58,7 @@ _UNIFORM_COMPANION_FRACTIONS = {
     "transition_no_bridge": 0.0,
     "protected_e2e": 0.0,
     "protected_e2e_bridge025": 0.0,
+    "protected_e2e_homotopy025": 0.0,
     "protected_e2e_uni_companion": 0.50,
     "protected_e2e_rho001": 0.0,
 }
@@ -371,6 +375,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         selector_lr: float = 1.0e-4,
         detector_bridge_gradient_scale: Optional[float] = None,
         uniform_companion_fraction: Optional[float] = None,
+        homotopy_total_steps: int = 0,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         strict_physical_metadata: bool = True,
         forbid_raw_prediction_cache: bool = True,
@@ -398,6 +403,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self.coarse_trunk_lr = float(coarse_trunk_lr)
         self.action_head_lr = float(action_head_lr)
         self.selector_lr = float(selector_lr)
+        self.homotopy_total_steps = int(homotopy_total_steps)
+        self.homotopy_warmup_steps = round(self.homotopy_total_steps * 0.05)
+        self.homotopy_transition_steps = round(self.homotopy_total_steps * 0.30)
         if self.arm not in _ARMS:
             raise ValueError(f"arm must be one of {sorted(_ARMS)}")
         expected_bridge_scale = _DETECTOR_BRIDGE_SCALES.get(self.arm)
@@ -469,6 +477,23 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             raise ValueError("protected DUCA loss weights must be non-negative")
         if min(self.coarse_trunk_lr, self.action_head_lr, self.selector_lr) <= 0.0:
             raise ValueError("protected DUCA learning rates must be positive")
+        if self.arm == "protected_e2e_homotopy025":
+            if self.homotopy_total_steps <= 0:
+                raise ValueError("homotopy_total_steps must be positive")
+            if self.homotopy_warmup_steps <= 0:
+                raise ValueError("homotopy warmup must contain at least one step")
+            if self.homotopy_transition_steps <= 0:
+                raise ValueError("homotopy transition must contain at least one step")
+            if (
+                self.homotopy_warmup_steps + self.homotopy_transition_steps
+                > self.homotopy_total_steps
+            ):
+                raise ValueError("homotopy phases exceed the total-step contract")
+            self.register_buffer(
+                "schedule_step",
+                torch.zeros((), dtype=torch.long),
+                persistent=True,
+            )
 
         self.selector_variant = "protected_e2e_physical"
         self.require_counterfactual_utility_teacher = False
@@ -483,6 +508,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self._last_physical_metas: Optional[list[dict[str, Any]]] = None
         self.capture_policy_score_gradients = False
         self._last_policy_scores: Optional[torch.Tensor] = None
+        self._pending_homotopy_schedule_advance = False
 
         self.raw_actionness_source: Optional[C3CoarseProbeActionnessSource]
         self.transition_scorer: Optional[DucaProtectedTransitionScorer]
@@ -547,6 +573,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 if self._last_policy_scores is None
                 else self._last_policy_scores.detach().clone()
             ),
+            "pending_homotopy_schedule_advance": bool(
+                self._pending_homotopy_schedule_advance
+            ),
         }
 
     def restore_amp_replay_state(self, snapshot: Mapping[str, Any]) -> None:
@@ -562,8 +591,63 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self._last_policy_scores = (
             None if policy_scores is None else policy_scores.detach().clone()
         )
+        self._pending_homotopy_schedule_advance = bool(
+            snapshot.get("pending_homotopy_schedule_advance", False)
+        )
+
+    def _policy_homotopy_state(self, *, training: bool) -> dict[str, Any]:
+        if self.arm != "protected_e2e_homotopy025":
+            return {"enabled": False, "alpha": 1.0}
+        step = int(self.schedule_step.detach().item())
+        if not training:
+            alpha = 1.0
+            phase = "inference_learned_policy"
+        elif step < self.homotopy_warmup_steps:
+            alpha = 0.0
+            phase = "exact_uniform_warmup"
+        elif step >= (
+            self.homotopy_warmup_steps + self.homotopy_transition_steps - 1
+        ):
+            alpha = 1.0
+            phase = "learned_policy"
+        else:
+            progress = (
+                float(step - self.homotopy_warmup_steps + 1)
+                / float(self.homotopy_transition_steps)
+            )
+            alpha = 0.5 - 0.5 * math.cos(math.pi * progress)
+            phase = "physical_exact_k_policy_homotopy"
+        return {
+            "enabled": True,
+            "alpha_zero_contract": "hard_forward_exact_uniform",
+            "alpha": float(alpha),
+            "step": step,
+            "total_steps": self.homotopy_total_steps,
+            "warmup_steps": self.homotopy_warmup_steps,
+            "transition_steps": self.homotopy_transition_steps,
+            "shape": "cosine",
+            "phase": phase,
+            "inference_alpha": 1.0,
+        }
 
     def after_optimizer_step(self) -> dict[str, Any]:
+        if self.arm == "protected_e2e_homotopy025":
+            if not self.training:
+                return {"updated": False, "reason": "selector_not_training"}
+            if not self._pending_homotopy_schedule_advance:
+                return {"updated": False, "reason": "no_pending_homotopy_step"}
+            before = int(self.schedule_step.detach().item())
+            self.schedule_step.add_(1)
+            self._pending_homotopy_schedule_advance = False
+            summary = {
+                "updated": True,
+                "source": "successful_optimizer_step",
+                "step_before": before,
+                "step_after": int(self.schedule_step.detach().item()),
+            }
+            if isinstance(self.last_forward_summary, dict):
+                self.last_forward_summary["schedule_step_update"] = summary
+            return summary
         return {"updated": False, "reason": "protected_duca_has_no_selector_schedule"}
 
     def forward_train(
@@ -592,6 +676,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             metas,
             training=True,
         )
+        if self.arm == "protected_e2e_homotopy025":
+            self._pending_homotopy_schedule_advance = True
         losses: dict[str, torch.Tensor] = {}
         selector_state = selected["selector_outputs"]
         if self.arm != "exact_uniform":
@@ -707,6 +793,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             "selection_scope": "full_window_offline",
             "budget": self.budget,
         }
+        homotopy_state = self._policy_homotopy_state(training=training)
+        if homotopy_state["enabled"]:
+            selector_state["policy_homotopy"] = homotopy_state
 
         learned_selection: Optional[PhysicalExactKSelectionOutput] = None
         uniform_companion_mask = torch.zeros(
@@ -780,9 +869,17 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 raise RuntimeError(
                     "auxiliary and policy coverage distributions must match"
                 )
+            policy_log_potential = policy_log_prob
+            if homotopy_state["enabled"]:
+                policy_log_potential = physical_exact_k_homotopy_log_potential(
+                    policy_log_prob,
+                    valid_mask,
+                    k=self.budget,
+                    alpha=float(homotopy_state["alpha"]),
+                )
             if training:
                 learned_selection = physical_exact_k_select(
-                    policy_log_prob,
+                    policy_log_potential,
                     physical_seconds,
                     valid_mask,
                     k=self.budget,
@@ -845,7 +942,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     ] = uniform.hard_positions
             else:
                 hard = physical_exact_k_viterbi(
-                    policy_log_prob,
+                    policy_log_potential,
                     physical_seconds,
                     valid_mask,
                     k=self.budget,
@@ -863,6 +960,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     "policy_scores": paths["policy_scores"],
                     "auxiliary_probabilities": auxiliary_prob,
                     "policy_probabilities": policy_prob,
+                    "policy_log_probabilities": policy_log_prob,
+                    "policy_log_potential": policy_log_potential,
                     "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
                     "coarse_provenance": source["provenance"],
                     "coarse_compute_profile": source.get("compute_profile"),
@@ -965,6 +1064,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             "selected_axis_gt_remap": False,
             "contract": _PROTECTED_CONTRACT,
         }
+        if homotopy_state["enabled"]:
+            self.last_forward_summary["policy_homotopy"] = dict(homotopy_state)
         self._last_selected_positions = hard.hard_positions.detach().clone()
         self._last_physical_metas = copy.deepcopy(output_metas)
         return {

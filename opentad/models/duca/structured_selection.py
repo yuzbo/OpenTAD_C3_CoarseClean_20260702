@@ -858,6 +858,47 @@ def exact_uniform_reference_scores(
     return reference
 
 
+def physical_exact_k_homotopy_log_potential(
+    learned_log_potential: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    alpha: float,
+) -> torch.Tensor:
+    """Mix exact-uniform and learned node potentials before exact-K decoding."""
+
+    if (
+        not torch.is_tensor(learned_log_potential)
+        or learned_log_potential.ndim != 2
+        or not learned_log_potential.is_floating_point()
+    ):
+        raise ValueError(
+            "learned_log_potential must be a floating-point [B,T] tensor"
+        )
+    valid = valid_mask.to(device=learned_log_potential.device, dtype=torch.bool)
+    if valid.shape != learned_log_potential.shape:
+        raise ValueError("valid_mask must align with learned_log_potential")
+    if bool(torch.any(valid.sum(dim=1) == 0).item()):
+        raise ValueError("physical exact-K homotopy requires one valid point per row")
+    if not bool(torch.isfinite(learned_log_potential[valid]).all().item()):
+        raise ValueError("valid learned log-potentials must be finite")
+    k = int(k)
+    if k < 1 or k > int(learned_log_potential.shape[1]):
+        raise ValueError("k must lie in [1,T]")
+    alpha = float(alpha)
+    if not math.isfinite(alpha) or not 0.0 <= alpha <= 1.0:
+        raise ValueError("homotopy alpha must lie in [0,1]")
+
+    reference = exact_uniform_reference_scores(
+        learned_log_potential,
+        valid,
+        k,
+    )
+    learned_valid = learned_log_potential.masked_fill(~valid, 0.0)
+    mixed = (1.0 - alpha) * reference + alpha * learned_valid
+    return mixed.masked_fill(~valid, float("-inf"))
+
+
 def exact_uniform_cell_bounds(
     temporal_len: int,
     k: int,
@@ -1290,6 +1331,7 @@ __all__ = [
     "global_structured_topk",
     "local_cell_deformation",
     "physical_exact_k_forward_backward",
+    "physical_exact_k_homotopy_log_potential",
     "physical_exact_k_select",
     "physical_exact_k_viterbi",
     "physical_exact_uniform_gap_cap",

@@ -26,6 +26,12 @@ UNI_COMPANION_VARIANTS = (
     "protected_e2e_bridge025",
     "protected_e2e_uni_companion",
 )
+HOMOTOPY_VARIANTS = (
+    "exact_uniform",
+    "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_homotopy025",
+)
 
 
 def _write_evidence(
@@ -93,6 +99,23 @@ def _uni_companion_suite_paths(root: Path) -> list[Path]:
     ]
 
 
+def _homotopy_suite_paths(
+    root: Path,
+    *,
+    homotopy_map: float = 65.7,
+) -> list[Path]:
+    maps = {
+        "exact_uniform": 65.0,
+        "protected_e2e": 64.6,
+        "protected_e2e_bridge025": 65.4,
+        "protected_e2e_homotopy025": homotopy_map,
+    }
+    return [
+        _write_evidence(root, variant, maps[variant])
+        for variant in HOMOTOPY_VARIANTS
+    ]
+
+
 def test_official60_aggregate_reports_preregistered_comparisons(
     tmp_path: Path,
 ) -> None:
@@ -129,6 +152,77 @@ def test_official60_aggregate_reports_uni_companion_optimization(
     assert result["decision"]["uni_companion_improves_bridge025"] is True
     assert result["comparisons"]["bridge025_minus_protected"] == pytest.approx(0.8)
     assert result["comparisons"]["uni_companion_minus_bridge025"] == pytest.approx(0.4)
+
+
+def test_official60_aggregate_reports_homotopy_optimization(
+    tmp_path: Path,
+) -> None:
+    result = aggregate_official60(
+        expected_commit=COMMIT,
+        protocol_manifest_sha256=P0_SHA256,
+        authorization_sha256=AUTH_SHA256,
+        evidence_paths=_homotopy_suite_paths(tmp_path),
+    )
+
+    assert result["suite_kind"] == "homotopy_optimization"
+    assert result["decision"]["best_learned_variant"] == (
+        "protected_e2e_homotopy025"
+    )
+    assert result["decision"]["homotopy_average_mAP"] == pytest.approx(65.7)
+    assert result["decision"]["homotopy_strictly_above_65"] is True
+    assert result["decision"]["homotopy_improves_bridge025"] is True
+    assert result["decision"]["homotopy_improves_uniform"] is True
+    assert result["comparisons"]["homotopy_minus_bridge025"] == pytest.approx(0.3)
+    assert result["comparisons"]["homotopy_minus_uniform"] == pytest.approx(0.7)
+
+
+def test_official60_homotopy_threshold_is_strict(tmp_path: Path) -> None:
+    result = aggregate_official60(
+        expected_commit=COMMIT,
+        protocol_manifest_sha256=P0_SHA256,
+        authorization_sha256=AUTH_SHA256,
+        evidence_paths=_homotopy_suite_paths(tmp_path, homotopy_map=65.0),
+    )
+
+    assert result["decision"]["homotopy_strictly_above_65"] is False
+
+
+def test_official60_submitter_requires_homotopy_authorization() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "submit_duca_protected_physical_official60_suite.sh"
+    )
+    script = script_path.read_text(encoding="utf-8")
+    authorization_start = script.index(
+        '    sys.argv[5] == "homotopy_optimization"'
+    )
+    authorization_end = script.index("\nPY", authorization_start)
+    authorization_block = script[authorization_start:authorization_end]
+    suite_start = script.index("  homotopy_optimization)")
+    suite_end = script.index("    ;;", suite_start)
+    suite_block = script[suite_start:suite_end]
+
+    assert '"official60_four_arm_training"' in script
+    assert '"official60_uni_companion_training"' in authorization_block
+    assert '"official60_homotopy_training"' in authorization_block
+    assert "exact_uniform" in suite_block
+    assert "protected_e2e" in suite_block
+    assert "protected_e2e_bridge025" in suite_block
+    assert "protected_e2e_homotopy025" in suite_block
+    assert "protected_e2e_uni_companion" not in suite_block
+
+
+def test_official60_submitter_closes_completion_heredoc() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "submit_duca_protected_physical_official60_suite.sh"
+    )
+    lines = script_path.read_text(encoding="utf-8").splitlines()
+    delimiter_index = lines.index("EOF", lines.index('cat > "${COMPLETE_JOB}" <<EOF'))
+
+    assert lines[delimiter_index - 1].endswith("\\\\")
 
 
 def test_official60_aggregate_rejects_commit_drift(tmp_path: Path) -> None:

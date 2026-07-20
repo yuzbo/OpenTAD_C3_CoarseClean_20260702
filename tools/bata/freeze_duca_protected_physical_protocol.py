@@ -35,6 +35,7 @@ CONFIGS = {
     "transition_no_bridge": "configs/adatad/thumos/duca_protected_physical_transition_no_bridge_fixed384_official60.py",
     "protected_e2e": "configs/adatad/thumos/duca_protected_physical_e2e_fixed384_official60.py",
     "protected_e2e_bridge025": "configs/adatad/thumos/duca_protected_physical_e2e_bridge025_fixed384_official60.py",
+    "protected_e2e_homotopy025": "configs/adatad/thumos/duca_protected_physical_e2e_homotopy025_fixed384_official60.py",
     "protected_e2e_uni_companion": "configs/adatad/thumos/duca_protected_physical_e2e_uni_companion_fixed384_official60.py",
     "protected_e2e_rho001": "configs/adatad/thumos/duca_protected_physical_e2e_rho001_fixed384_official60.py",
 }
@@ -87,6 +88,7 @@ def _normalized_config(
     selector.pop("arm")
     selector.pop("detector_bridge_gradient_scale", None)
     selector.pop("uniform_companion_fraction", None)
+    selector.pop("homotopy_total_steps", None)
     source = selector.get("actionness_source_cfg")
     if isinstance(source, dict):
         source.pop("policy_hidden_gradient_scope", None)
@@ -156,6 +158,9 @@ def _config_evidence() -> tuple[dict[str, Config], dict[str, Any]]:
             "source_sha256": sha256_file(ROOT / relative_path),
             "resolved_sha256": canonical_sha256(cfg.to_dict()),
             "policy_hidden_gradient_scope": policy_hidden_gradient_scope,
+            "homotopy_total_steps": int(
+                cfg.model.frame_selector.get("homotopy_total_steps", 0)
+            ),
         }
     return configs, {
         "arms": evidence,
@@ -165,6 +170,7 @@ def _config_evidence() -> tuple[dict[str, Config], dict[str, Any]]:
             "model.frame_selector.arm",
             "model.frame_selector.detector_bridge_gradient_scale",
             "model.frame_selector.uniform_companion_fraction",
+            "model.frame_selector.homotopy_total_steps for homotopy025 only",
             (
                 "model.frame_selector.actionness_source_cfg=None "
                 "for exact_uniform only"
@@ -245,6 +251,28 @@ def freeze_protocol(
         world_size=1,
     )
     expected_updates = int(loader_contract["loader_length"]) * 60
+    homotopy_steps = int(
+        configs["protected_e2e_homotopy025"].model.frame_selector.homotopy_total_steps
+    )
+    _require(
+        homotopy_steps == expected_updates,
+        "homotopy schedule must equal the frozen successful-update exposure",
+    )
+    homotopy_contract = configs[
+        "protected_e2e_homotopy025"
+    ].duca_variant_contract
+    _require(
+        float(homotopy_contract.policy_alpha_warmup_fraction) == 0.05
+        and float(homotopy_contract.policy_alpha_transition_fraction) == 0.30
+        and str(homotopy_contract.policy_alpha_transition_shape) == "cosine"
+        and str(homotopy_contract.policy_alpha_zero_contract)
+        == "hard_forward_exact_uniform"
+        and int(homotopy_contract.successful_optimizer_updates)
+        == expected_updates
+        and float(homotopy_contract.inference_policy_alpha) == 1.0
+        and bool(homotopy_contract.schedule_step_checkpointed),
+        "homotopy schedule semantics drifted",
+    )
     p3_config_path = (
         ROOT / "configs/adatad/thumos/duca_protected_physical_p3_train_windows.py"
     )
@@ -311,6 +339,15 @@ def freeze_protocol(
             "transition_loss_weight": 0.50,
             "transition_boundary_loss_weight": 0.25,
             "detector_bridge_coefficient": 1.00,
+            "homotopy": {
+                "arm": "protected_e2e_homotopy025",
+                "warmup_fraction": 0.05,
+                "transition_fraction": 0.30,
+                "transition_shape": "cosine",
+                "total_successful_updates": homotopy_steps,
+                "alpha_zero_contract": "hard_forward_exact_uniform",
+                "inference_alpha": 1.0,
+            },
         },
         "paper_claim_allowed": False,
     }

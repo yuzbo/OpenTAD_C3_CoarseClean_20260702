@@ -25,6 +25,7 @@ FULL_MODEL_GATE_SCHEMA = "duca_protected_physical_full_model_gate_v1"
 P3_AGGREGATE_SCHEMA = "duca_protected_physical_p3_aggregate_v1"
 MAIN_ARM = "protected_e2e"
 BRIDGE025_ARM = "protected_e2e_bridge025"
+HOMOTOPY_ARM = "protected_e2e_homotopy025"
 UNI_COMPANION_ARM = "protected_e2e_uni_companion"
 RHO_ARM = "protected_e2e_rho001"
 
@@ -97,7 +98,7 @@ def _load_bound_json(
 
 def _validate_protocol(
     protocol: Mapping[str, Any],
-) -> tuple[str, str, str, Mapping[str, Any], str]:
+) -> tuple[str, str, str, Mapping[str, Any], str, Mapping[str, Any]]:
     _require(
         protocol.get("paper_claim_allowed") is False,
         "P0 weakens the paper-claim contract",
@@ -122,11 +123,51 @@ def _validate_protocol(
             for arm in (
                 MAIN_ARM,
                 BRIDGE025_ARM,
+                HOMOTOPY_ARM,
                 UNI_COMPANION_ARM,
                 RHO_ARM,
             )
         ),
         "P0 lacks a required protected/optimization config",
+    )
+    expected_updates = _require_int(
+        protocol.get("expected_successful_optimizer_updates_per_arm"),
+        "P0 expected successful optimizer updates",
+    )
+    homotopy_arm = _require_mapping(
+        arms.get(HOMOTOPY_ARM),
+        f"P0 {HOMOTOPY_ARM} config",
+    )
+    _require(
+        _require_int(
+            homotopy_arm.get("homotopy_total_steps"),
+            "P0 homotopy total steps",
+        )
+        == expected_updates,
+        "P0 homotopy schedule differs from optimizer exposure",
+    )
+    frozen_method = _require_mapping(
+        protocol.get("frozen_method"),
+        "P0 frozen method",
+    )
+    homotopy_contract = _require_mapping(
+        frozen_method.get("homotopy"),
+        "P0 frozen homotopy contract",
+    )
+    _require(
+        homotopy_contract.get("arm") == HOMOTOPY_ARM
+        and float(homotopy_contract.get("warmup_fraction", -1.0)) == 0.05
+        and float(homotopy_contract.get("transition_fraction", -1.0)) == 0.30
+        and homotopy_contract.get("transition_shape") == "cosine"
+        and homotopy_contract.get("alpha_zero_contract")
+        == "hard_forward_exact_uniform"
+        and _require_int(
+            homotopy_contract.get("total_successful_updates"),
+            "P0 frozen homotopy total updates",
+        )
+        == expected_updates
+        and float(homotopy_contract.get("inference_alpha", -1.0)) == 1.0,
+        "P0 frozen homotopy schedule semantics drift",
     )
     pretrain = _require_mapping(
         protocol.get("videomae_pretrain"),
@@ -160,7 +201,7 @@ def _validate_protocol(
         == 576,
         "P0 P3 swap count drift",
     )
-    return commit, tree, content_hash, arms, pretrain_hash
+    return commit, tree, content_hash, arms, pretrain_hash, homotopy_contract
 
 
 def _validate_full_model_gate(
@@ -174,6 +215,7 @@ def _validate_full_model_gate(
     protocol_content_sha256: str,
     expected_config_sha256: str,
     expected_pretrain_sha256: str,
+    expected_homotopy_contract: Mapping[str, Any] | None = None,
 ) -> None:
     _require(
         gate.get("status") == "p1_p2_full_model_gate_passed",
@@ -312,6 +354,7 @@ def _validate_full_model_gate(
     expected_bridge_scale = {
         MAIN_ARM: 1.0,
         BRIDGE025_ARM: 0.25,
+        HOMOTOPY_ARM: 0.25,
         UNI_COMPANION_ARM: 0.25,
         RHO_ARM: 1.0,
     }[expected_arm]
@@ -349,6 +392,81 @@ def _validate_full_model_gate(
             )
             == 0,
             f"{label} unexpectedly enables the Uni companion route",
+        )
+    homotopy = _require_mapping(
+        gate.get("policy_homotopy_audit"),
+        f"{label}.policy_homotopy_audit",
+    )
+    if expected_arm == HOMOTOPY_ARM:
+        _require(
+            isinstance(expected_homotopy_contract, Mapping),
+            f"{label} lacks its P0 homotopy binding",
+        )
+        total_steps = _require_int(
+            expected_homotopy_contract.get("total_successful_updates"),
+            f"{label} P0 homotopy total steps",
+        )
+        expected_warmup = round(
+            total_steps * float(expected_homotopy_contract["warmup_fraction"])
+        )
+        expected_transition = round(
+            total_steps * float(expected_homotopy_contract["transition_fraction"])
+        )
+        _require(
+            homotopy.get("enabled") is True
+            and homotopy.get("alpha_zero_contract")
+            == "hard_forward_exact_uniform"
+            and homotopy.get("alpha_one_equals_direct_learned_potential") is True
+            and homotopy.get("inference_forces_alpha_one") is True
+            and _require_int(homotopy.get("total_steps"), f"{label} total steps")
+            == total_steps
+            and _require_int(homotopy.get("warmup_steps"), f"{label} warmup steps")
+            == expected_warmup
+            and _require_int(
+                homotopy.get("transition_steps"), f"{label} transition steps"
+            )
+            == expected_transition
+            and float(homotopy.get("gradient_audit_alpha", -1.0)) == 0.5,
+            f"{label} lacks the homotopy endpoint contract",
+        )
+        rows = homotopy.get("alpha_zero_exact_uniform_rows")
+        _require(
+            isinstance(rows, list)
+            and len(rows) >= 2
+            and all(row.get("exact_uniform_equal") is True for row in rows),
+            f"{label} lacks full/short alpha-zero uniform parity",
+        )
+        _require(
+            update.get("selector_schedule_enabled") is True
+            and _require_int(
+                update.get("selector_schedule_step"),
+                f"{label} selector schedule step",
+            )
+            == _require_int(
+                update.get("initial_selector_schedule_step"),
+                f"{label} initial selector schedule step",
+            )
+            + 3
+            and _require_int(
+                update.get("ema_selector_schedule_step"),
+                f"{label} EMA selector schedule step",
+            )
+            == _require_int(
+                update.get("selector_schedule_step"),
+                f"{label} final selector schedule step",
+            ),
+            f"{label} lacks successful-update/EMA schedule parity",
+        )
+    else:
+        _require(
+            homotopy.get("enabled") is False
+            and update.get("selector_schedule_enabled") is False
+            and _require_int(
+                update.get("selector_schedule_step"),
+                f"{label} selector schedule step",
+            )
+            == 0,
+            f"{label} unexpectedly enables a selector schedule",
         )
 
 
@@ -493,6 +611,8 @@ def authorize_suite(
     main_gate_sha256: str,
     bridge025_gate: str | Path,
     bridge025_gate_sha256: str,
+    homotopy_gate: str | Path,
+    homotopy_gate_sha256: str,
     uni_companion_gate: str | Path,
     uni_companion_gate_sha256: str,
     rho_gate: str | Path,
@@ -507,7 +627,14 @@ def authorize_suite(
         label="P0 protocol manifest",
         schema=PROTOCOL_SCHEMA,
     )
-    commit, tree, content_hash, arms, pretrain_hash = _validate_protocol(protocol)
+    (
+        commit,
+        tree,
+        content_hash,
+        arms,
+        pretrain_hash,
+        homotopy_contract,
+    ) = _validate_protocol(protocol)
     main, main_path, main_hash = _load_bound_json(
         main_gate,
         main_gate_sha256,
@@ -518,6 +645,12 @@ def authorize_suite(
         bridge025_gate,
         bridge025_gate_sha256,
         label="bridge025 full-model gate",
+        schema=FULL_MODEL_GATE_SCHEMA,
+    )
+    homotopy, homotopy_path, homotopy_hash = _load_bound_json(
+        homotopy_gate,
+        homotopy_gate_sha256,
+        label="homotopy full-model gate",
         schema=FULL_MODEL_GATE_SCHEMA,
     )
     companion, companion_path, companion_hash = _load_bound_json(
@@ -544,6 +677,10 @@ def authorize_suite(
         arms.get(BRIDGE025_ARM),
         f"P0 {BRIDGE025_ARM} config",
     )
+    homotopy_config = _require_mapping(
+        arms.get(HOMOTOPY_ARM),
+        f"P0 {HOMOTOPY_ARM} config",
+    )
     companion_config = _require_mapping(
         arms.get(UNI_COMPANION_ARM),
         f"P0 {UNI_COMPANION_ARM} config",
@@ -556,6 +693,10 @@ def authorize_suite(
     bridge025_config_hash = _require_sha256(
         bridge025_config.get("source_sha256"),
         f"P0 {BRIDGE025_ARM} config hash",
+    )
+    homotopy_config_hash = _require_sha256(
+        homotopy_config.get("source_sha256"),
+        f"P0 {HOMOTOPY_ARM} config hash",
     )
     companion_config_hash = _require_sha256(
         companion_config.get("source_sha256"),
@@ -595,6 +736,18 @@ def authorize_suite(
         protocol_content_sha256=content_hash,
         expected_config_sha256=bridge025_config_hash,
         expected_pretrain_sha256=pretrain_hash,
+    )
+    _validate_full_model_gate(
+        homotopy,
+        label="homotopy full-model gate",
+        expected_arm=HOMOTOPY_ARM,
+        expected_commit=commit,
+        expected_tree=tree,
+        protocol_manifest_sha256=protocol_file_hash,
+        protocol_content_sha256=content_hash,
+        expected_config_sha256=homotopy_config_hash,
+        expected_pretrain_sha256=pretrain_hash,
+        expected_homotopy_contract=homotopy_contract,
     )
     _validate_full_model_gate(
         companion,
@@ -641,6 +794,7 @@ def authorize_suite(
         "config_hashes": {
             MAIN_ARM: main_config_hash,
             BRIDGE025_ARM: bridge025_config_hash,
+            HOMOTOPY_ARM: homotopy_config_hash,
             UNI_COMPANION_ARM: companion_config_hash,
             RHO_ARM: rho_config_hash,
             "p3": p3_config_hash,
@@ -649,6 +803,7 @@ def authorize_suite(
             "protocol_manifest": str(protocol_path),
             "main_full_model_gate": str(main_path),
             "bridge025_full_model_gate": str(bridge025_path),
+            "homotopy_full_model_gate": str(homotopy_path),
             "uni_companion_full_model_gate": str(companion_path),
             "rho_full_model_gate": str(rho_path),
             "p3_aggregate": str(p3_path),
@@ -657,6 +812,7 @@ def authorize_suite(
             "protocol_manifest": protocol_file_hash,
             "main_full_model_gate": main_hash,
             "bridge025_full_model_gate": bridge025_hash,
+            "homotopy_full_model_gate": homotopy_hash,
             "uni_companion_full_model_gate": companion_hash,
             "rho_full_model_gate": rho_hash,
             "p3_aggregate": p3_hash,
@@ -664,6 +820,7 @@ def authorize_suite(
         "authorized_scope": {
             "official60_four_arm_training": True,
             "official60_uni_companion_training": True,
+            "official60_homotopy_training": True,
             "paper_claim": False,
         },
         "paper_claim_allowed": False,
@@ -713,6 +870,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
     )
     parser.add_argument(
+        "--homotopy-gate",
+        "--homotopy-full-model-gate",
+        dest="homotopy_gate",
+        required=True,
+    )
+    parser.add_argument(
+        "--homotopy-gate-sha256",
+        "--homotopy-full-model-gate-sha256",
+        dest="homotopy_gate_sha256",
+        required=True,
+    )
+    parser.add_argument(
         "--uni-companion-gate",
         "--uni-companion-full-model-gate",
         dest="uni_companion_gate",
@@ -753,6 +922,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             main_gate_sha256=args.main_gate_sha256,
             bridge025_gate=args.bridge025_gate,
             bridge025_gate_sha256=args.bridge025_gate_sha256,
+            homotopy_gate=args.homotopy_gate,
+            homotopy_gate_sha256=args.homotopy_gate_sha256,
             uni_companion_gate=args.uni_companion_gate,
             uni_companion_gate_sha256=args.uni_companion_gate_sha256,
             rho_gate=args.rho_gate,

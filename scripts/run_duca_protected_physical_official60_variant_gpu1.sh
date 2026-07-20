@@ -42,6 +42,9 @@ case "${VARIANT}" in
   protected_e2e_bridge025)
     CONFIG="configs/adatad/thumos/duca_protected_physical_e2e_bridge025_fixed384_official60.py"
     ;;
+  protected_e2e_homotopy025)
+    CONFIG="configs/adatad/thumos/duca_protected_physical_e2e_homotopy025_fixed384_official60.py"
+    ;;
   protected_e2e_uni_companion)
     CONFIG="configs/adatad/thumos/duca_protected_physical_e2e_uni_companion_fixed384_official60.py"
     ;;

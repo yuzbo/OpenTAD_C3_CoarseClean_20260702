@@ -19,9 +19,11 @@ VARIANTS = (
     "transition_no_bridge",
     "protected_e2e",
     "protected_e2e_bridge025",
+    "protected_e2e_homotopy025",
     "protected_e2e_uni_companion",
     "protected_e2e_rho001",
 )
+HOMOTOPY_VARIANT = "protected_e2e_homotopy025"
 _UPDATE_KEYS = (
     "attempted_batches",
     "optimizer_attempts",
@@ -75,10 +77,25 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
         raise ValueError("primary checkpoint must use terminal EMA")
     if str(workflow.checkpoint_criterion) != "terminal_epoch_59_state_dict_ema":
         raise ValueError("terminal checkpoint criterion drift")
+    variant = str(cfg.model.frame_selector.arm)
+    if variant not in VARIANTS:
+        raise ValueError(f"unsupported protected physical variant: {variant}")
+    selector_schedule_enabled = variant == HOMOTOPY_VARIANT
+    homotopy_total_steps = int(
+        cfg.model.frame_selector.get("homotopy_total_steps", 0)
+    )
+    if selector_schedule_enabled and homotopy_total_steps <= 0:
+        raise ValueError("homotopy arm requires a positive total-step contract")
+    if not selector_schedule_enabled and homotopy_total_steps != 0:
+        raise ValueError("schedule-free arm cannot declare homotopy_total_steps")
     return {
         "protocol": FORMAL_PROTOCOL,
+        "variant": variant,
         "expected_train_batches_per_epoch": None,
         "expected_successful_optimizer_updates": None,
+        "selector_schedule_enabled": selector_schedule_enabled,
+        "expected_selector_schedule_updates": None,
+        "homotopy_total_steps": homotopy_total_steps,
         "end_epoch": 60,
         "max_amp_retries_per_batch": int(workflow.max_amp_retries_per_batch),
         "primary_checkpoint_epoch": 59,
@@ -172,9 +189,20 @@ def bind_train_loader_contract(
         raise RuntimeError("runtime train-loader contract differs from P0")
 
     loader_length = int(loader_manifest["loader_length"])
+    expected_updates = loader_length * 60
     bound = dict(contract)
+    bound.setdefault("selector_schedule_enabled", False)
+    bound.setdefault("homotopy_total_steps", 0)
     bound["expected_train_batches_per_epoch"] = loader_length
-    bound["expected_successful_optimizer_updates"] = loader_length * 60
+    bound["expected_successful_optimizer_updates"] = expected_updates
+    bound["expected_selector_schedule_updates"] = (
+        expected_updates if bool(bound["selector_schedule_enabled"]) else 0
+    )
+    if bool(bound["selector_schedule_enabled"]):
+        if int(bound["homotopy_total_steps"]) != expected_updates:
+            raise RuntimeError(
+                "homotopy total steps differ from the frozen optimizer exposure"
+            )
     bound["train_loader_contract"] = loader_manifest
     return bound, loader_manifest
 
@@ -296,6 +324,14 @@ def build_runtime_bindings(
         raise RuntimeError(
             "authorization does not permit the Uni companion optimization suite"
         )
+    if (
+        variant == HOMOTOPY_VARIANT
+        and authorization.get("authorized_scope", {}).get(
+            "official60_homotopy_training"
+        )
+        is not True
+    ):
+        raise RuntimeError("authorization does not permit homotopy training")
     if protocol.get("git_commit") != git_commit:
         raise RuntimeError("P0 protocol commit drift")
     if authorization.get("git_commit") != git_commit:
@@ -304,6 +340,11 @@ def build_runtime_bindings(
         "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256"
     ):
         raise RuntimeError("authorization is bound to another P0 manifest")
+    authorization_config_hashes = authorization.get("config_hashes")
+    if not isinstance(authorization_config_hashes, Mapping):
+        raise RuntimeError("authorization lacks config-hash bindings")
+    if authorization_config_hashes.get(variant) != source_config_sha256:
+        raise RuntimeError("runtime source config differs from authorization")
     protocol_arm = protocol.get("configs", {}).get("arms", {}).get(variant)
     if not isinstance(protocol_arm, Mapping):
         raise RuntimeError(f"P0 manifest has no config evidence for {variant}")
@@ -363,6 +404,14 @@ def selector_schedule_step(model) -> int:
     selector = getattr(module, "frame_selector", None)
     if selector is None or selector.selector_variant != "protected_e2e_physical":
         raise RuntimeError("formal model lacks protected physical selector")
+    arm = str(getattr(selector, "arm", ""))
+    if arm == HOMOTOPY_VARIANT:
+        schedule_step = getattr(selector, "schedule_step", None)
+        if schedule_step is None or getattr(schedule_step, "numel", lambda: 0)() != 1:
+            raise RuntimeError("homotopy selector lacks its persistent schedule step")
+        return int(schedule_step.detach().item())
+    if hasattr(selector, "schedule_step"):
+        raise RuntimeError("schedule-free selector exposes a hidden schedule buffer")
     return 0
 
 
@@ -394,8 +443,29 @@ def validate_update_state(
         raise RuntimeError("scheduler exposure mismatch")
     if int(update_audit["ema_updates"]) != (successful if uses_ema else 0):
         raise RuntimeError("EMA exposure mismatch")
-    if int(update_audit["duca_schedule_updates"]) != 0 or int(selector_step) != 0:
-        raise RuntimeError("schedule-free selector advanced a hidden schedule")
+    schedule_enabled = bool(contract["selector_schedule_enabled"])
+    full_selector_updates = int(contract["expected_selector_schedule_updates"])
+    full_optimizer_updates = int(contract["expected_successful_optimizer_updates"])
+    if schedule_enabled:
+        if full_selector_updates != full_optimizer_updates:
+            raise RuntimeError(
+                "homotopy full-run schedule exposure differs from optimizer exposure"
+            )
+        expected_selector_updates = expected_updates
+    else:
+        if full_selector_updates != 0:
+            raise RuntimeError("schedule-free arm declares selector schedule exposure")
+        expected_selector_updates = 0
+    if (
+        int(update_audit["duca_schedule_updates"]) != expected_selector_updates
+        or int(selector_step) != expected_selector_updates
+    ):
+        label = (
+            "homotopy selector schedule exposure mismatch"
+            if schedule_enabled
+            else "schedule-free selector advanced a hidden schedule"
+        )
+        raise RuntimeError(label)
     if int(scheduler_last_epoch) != successful:
         raise RuntimeError("scheduler state differs from successful updates")
     if int(update_audit["max_amp_retries_observed"]) > int(
@@ -443,6 +513,11 @@ def build_training_audit(
         "expected_successful_optimizer_updates": int(
             contract["expected_successful_optimizer_updates"]
         ),
+        "selector_schedule_enabled": bool(contract["selector_schedule_enabled"]),
+        "expected_selector_schedule_updates": int(
+            contract["expected_selector_schedule_updates"]
+        ),
+        "homotopy_total_steps": int(contract["homotopy_total_steps"]),
         "last_completed_epoch": int(epoch),
         "epochs_completed": int(epoch) + 1,
         "update_audit": {key: int(value) for key, value in update_audit.items()},
@@ -509,6 +584,7 @@ __all__ = [
     "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",
     "DUCA_TRAINING_AUDIT_FILENAME",
     "FORMAL_PROTOCOL",
+    "HOMOTOPY_VARIANT",
     "atomic_write_json",
     "bind_train_loader_contract",
     "build_checkpoint_metadata",

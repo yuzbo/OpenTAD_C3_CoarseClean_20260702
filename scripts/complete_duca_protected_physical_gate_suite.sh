@@ -16,6 +16,7 @@ PROTOCOL_JSON="${DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON:-}"
 PROTOCOL_SHA256="${DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256:-}"
 MAIN_GATE="${DUCA_PROTECTED_MAIN_GATE_JSON:-}"
 BRIDGE025_GATE="${DUCA_PROTECTED_BRIDGE025_GATE_JSON:-}"
+HOMOTOPY_GATE="${DUCA_PROTECTED_HOMOTOPY_GATE_JSON:-}"
 UNI_COMPANION_GATE="${DUCA_PROTECTED_UNI_COMPANION_GATE_JSON:-}"
 RHO_GATE="${DUCA_PROTECTED_RHO_GATE_JSON:-}"
 SHORT_SHARD="${DUCA_PROTECTED_P3_SHORT_JSON:-}"
@@ -29,7 +30,7 @@ AUTHORIZATION_JSON="${DUCA_PROTECTED_AUTHORIZATION_JSON:-}"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
 for path in \
   "${PROTOCOL_JSON}" "${MAIN_GATE}" "${BRIDGE025_GATE}" \
-  "${UNI_COMPANION_GATE}" "${RHO_GATE}" \
+  "${HOMOTOPY_GATE}" "${UNI_COMPANION_GATE}" "${RHO_GATE}" \
   "${SHORT_SHARD}" "${MEDIUM_SHARD}" "${LONG_SHARD}"; do
   [[ -f "${path}" ]] || fail "required evidence is missing: ${path}"
 done
@@ -39,6 +40,7 @@ done
 
 MAIN_GATE_SHA256="$(sha256sum "${MAIN_GATE}" | awk '{print $1}')"
 BRIDGE025_GATE_SHA256="$(sha256sum "${BRIDGE025_GATE}" | awk '{print $1}')"
+HOMOTOPY_GATE_SHA256="$(sha256sum "${HOMOTOPY_GATE}" | awk '{print $1}')"
 UNI_COMPANION_GATE_SHA256="$(sha256sum "${UNI_COMPANION_GATE}" | awk '{print $1}')"
 RHO_GATE_SHA256="$(sha256sum "${RHO_GATE}" | awk '{print $1}')"
 SHORT_SHA256="$(sha256sum "${SHORT_SHARD}" | awk '{print $1}')"
@@ -64,6 +66,8 @@ printf '%s  %s\n' "${AGGREGATE_SHA256}" "${AGGREGATE_JSON}" \
   --main-gate-sha256 "${MAIN_GATE_SHA256}" \
   --bridge025-gate "${BRIDGE025_GATE}" \
   --bridge025-gate-sha256 "${BRIDGE025_GATE_SHA256}" \
+  --homotopy-gate "${HOMOTOPY_GATE}" \
+  --homotopy-gate-sha256 "${HOMOTOPY_GATE_SHA256}" \
   --uni-companion-gate "${UNI_COMPANION_GATE}" \
   --uni-companion-gate-sha256 "${UNI_COMPANION_GATE_SHA256}" \
   --rho-gate "${RHO_GATE}" \

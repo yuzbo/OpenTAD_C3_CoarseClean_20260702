@@ -480,6 +480,14 @@ def _format_frame_selector_diagnostics(model):
             for key in ("actionness", "detector_utility", "hole", "lagrangian_budget"):
                 if key in weights:
                     items.append("duca_{}_w={:.4f}".format(key, float(weights[key])))
+    homotopy = summary.get("policy_homotopy")
+    if isinstance(homotopy, dict) and homotopy.get("enabled") is True:
+        if "step" in homotopy:
+            items.append("duca_policy_step={}".format(int(homotopy["step"])))
+        if "alpha" in homotopy:
+            items.append("duca_policy_alpha={:.4f}".format(float(homotopy["alpha"])))
+        if homotopy.get("phase"):
+            items.append("duca_policy_phase={}".format(str(homotopy["phase"])))
     for key, label in (
         ("budget", "duca_budget"),
         ("dynamic_budget", "duca_dynamic_budget"),

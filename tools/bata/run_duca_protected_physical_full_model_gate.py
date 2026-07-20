@@ -45,9 +45,11 @@ CONTRACT = "duca_protected_e2e_physical_v1"
 SUPPORTED_ARMS = {
     "protected_e2e",
     "protected_e2e_bridge025",
+    "protected_e2e_homotopy025",
     "protected_e2e_uni_companion",
     "protected_e2e_rho001",
 }
+HOMOTOPY_ARM = "protected_e2e_homotopy025"
 
 
 class ProtectedPhysicalGateFailure(RuntimeError):
@@ -150,6 +152,30 @@ def _validate_config(cfg: Config) -> str:
         int(cfg.model.frame_selector.dense_window_size) == 768,
         "dense window must be 768",
     )
+    configured_homotopy_steps = int(
+        cfg.model.frame_selector.get("homotopy_total_steps", 0)
+    )
+    if arm == HOMOTOPY_ARM:
+        _require(
+            configured_homotopy_steps == 6000,
+            "homotopy gate requires exactly 6000 successful-update steps",
+        )
+        homotopy_contract = cfg.duca_variant_contract
+        _require(
+            float(homotopy_contract.policy_alpha_warmup_fraction) == 0.05
+            and float(homotopy_contract.policy_alpha_transition_fraction) == 0.30
+            and str(homotopy_contract.policy_alpha_transition_shape) == "cosine"
+            and str(homotopy_contract.policy_alpha_zero_contract)
+            == "hard_forward_exact_uniform"
+            and float(homotopy_contract.inference_policy_alpha) == 1.0
+            and bool(homotopy_contract.schedule_step_checkpointed),
+            "homotopy config schedule contract drift",
+        )
+    else:
+        _require(
+            configured_homotopy_steps == 0,
+            "schedule-free gate arm declares a homotopy schedule",
+        )
     _require(
         cfg.model.rpn_head.physical_grid_actionformer.contract == CONTRACT,
         "physical head contract drift",
@@ -338,6 +364,141 @@ def _restore_mutable_state(model, state: Mapping[str, Any]) -> None:
     torch.cuda.set_rng_state_all(state["cuda_rng"])
     random.setstate(state["python_rng"])
     np.random.set_state(state["numpy_rng"])
+
+
+def _homotopy_endpoint_audit(
+    model,
+    *,
+    full_batch: Mapping[str, Any],
+    short_batch: Mapping[str, Any],
+) -> dict[str, Any]:
+    selector = model.frame_selector
+    if selector.arm != HOMOTOPY_ARM:
+        return {"enabled": False}
+    mutable_state = _capture_mutable_state(model)
+    rows = []
+    try:
+        selector.train()
+        selector.schedule_step.zero_()
+        for label, batch in (("full", full_batch), ("short_padded", short_batch)):
+            with torch.no_grad(), torch.autocast(
+                device_type="cuda",
+                dtype=torch.float16,
+                enabled=True,
+                cache_enabled=False,
+            ):
+                output = selector.forward_train(
+                    inputs=batch["inputs"],
+                    masks=batch["masks"],
+                    metas=batch["metas"],
+                    gt_segments=batch["gt_segments"],
+                    gt_labels=batch["gt_labels"],
+                    gt_boundary_validity=batch["gt_boundary_validity"],
+                )
+            state = output["selector_outputs"]
+            _require(
+                float(state["policy_homotopy"]["alpha"]) == 0.0,
+                f"{label} homotopy warmup is not exact alpha zero",
+            )
+            positions = state["selected_positions"]
+            for batch_index in range(int(positions.shape[0])):
+                valid_len = int(batch["masks"][batch_index].sum().item())
+                effective_k = min(int(selector.budget), valid_len)
+                expected = exact_uniform_positions(
+                    valid_len,
+                    effective_k,
+                    device=positions.device,
+                )
+                observed = positions[batch_index, :effective_k]
+                _require(
+                    torch.equal(observed, expected),
+                    f"{label} alpha-zero hard path is not exact uniform",
+                )
+                _require(
+                    bool(torch.all(positions[batch_index, effective_k:] < 0).item()),
+                    f"{label} alpha-zero padded slots are not inactive",
+                )
+                rows.append(
+                    {
+                        "window": label,
+                        "valid_len": valid_len,
+                        "effective_k": effective_k,
+                        "exact_uniform_equal": True,
+                    }
+                )
+
+        learned_step = (
+            int(selector.homotopy_warmup_steps)
+            + int(selector.homotopy_transition_steps)
+            - 1
+        )
+        selector.schedule_step.fill_(learned_step)
+        with torch.no_grad(), torch.autocast(
+            device_type="cuda",
+            dtype=torch.float16,
+            enabled=True,
+            cache_enabled=False,
+        ):
+            learned_output = selector.forward_train(
+                inputs=full_batch["inputs"],
+                masks=full_batch["masks"],
+                metas=full_batch["metas"],
+                gt_segments=full_batch["gt_segments"],
+                gt_labels=full_batch["gt_labels"],
+                gt_boundary_validity=full_batch["gt_boundary_validity"],
+            )
+        learned_state = learned_output["selector_outputs"]
+        _require(
+            float(learned_state["policy_homotopy"]["alpha"]) == 1.0,
+            "homotopy learned endpoint is not alpha one",
+        )
+        _require(
+            torch.equal(
+                learned_state["policy_log_potential"],
+                learned_state["policy_log_probabilities"],
+            ),
+            "alpha-one potential differs from the learned policy potential",
+        )
+
+        selector.eval()
+        selector.schedule_step.zero_()
+        with torch.no_grad(), torch.autocast(
+            device_type="cuda",
+            dtype=torch.float16,
+            enabled=True,
+            cache_enabled=False,
+        ):
+            inference = selector.forward_test(
+                full_batch["inputs"],
+                full_batch["masks"],
+                full_batch["metas"],
+            )
+        inference_state = inference["selector_outputs"]
+        _require(
+            float(inference_state["policy_homotopy"]["alpha"]) == 1.0
+            and inference_state["policy_homotopy"]["phase"]
+            == "inference_learned_policy",
+            "inference did not force the learned-policy endpoint",
+        )
+        _require(
+            torch.equal(
+                inference_state["policy_log_potential"],
+                inference_state["policy_log_probabilities"],
+            ),
+            "inference potential differs from the learned policy potential",
+        )
+        return {
+            "enabled": True,
+            "alpha_zero_contract": "hard_forward_exact_uniform",
+            "alpha_zero_exact_uniform_rows": rows,
+            "alpha_one_equals_direct_learned_potential": True,
+            "inference_forces_alpha_one": True,
+            "warmup_steps": int(selector.homotopy_warmup_steps),
+            "transition_steps": int(selector.homotopy_transition_steps),
+            "total_steps": int(selector.homotopy_total_steps),
+        }
+    finally:
+        _restore_mutable_state(model, mutable_state)
 
 
 def _is_action_head(name: str) -> bool:
@@ -1089,6 +1250,12 @@ def _real_optimizer_step_audit(
     initial_scheduler_epoch = int(scheduler.last_epoch)
     initial_scaler_scale = float(scaler.get_scale())
     _restore_mutable_state(model, mutable_state)
+    schedule_enabled = model.frame_selector.arm == HOMOTOPY_ARM
+    initial_selector_step = (
+        int(model.frame_selector.schedule_step.detach().item())
+        if schedule_enabled
+        else 0
+    )
     successful_updates = 0
     attempts = 0
     objective_values = []
@@ -1151,11 +1318,20 @@ def _real_optimizer_step_audit(
                 _restore_mutable_state(model, attempt_state)
                 continue
             schedule_summary = model.after_optimizer_step()
-            _require(
-                isinstance(schedule_summary, Mapping)
-                and schedule_summary.get("updated") is False,
-                "protected selector advanced a hidden schedule",
-            )
+            if schedule_enabled:
+                _require(
+                    isinstance(schedule_summary, Mapping)
+                    and schedule_summary.get("updated") is True
+                    and int(schedule_summary.get("step_after", -1))
+                    == initial_selector_step + successful_updates + 1,
+                    "homotopy schedule did not advance with the successful update",
+                )
+            else:
+                _require(
+                    isinstance(schedule_summary, Mapping)
+                    and schedule_summary.get("updated") is False,
+                    "schedule-free protected selector advanced a hidden schedule",
+                )
             scheduler.step()
             model_ema.update(ddp)
             successful_updates += 1
@@ -1205,6 +1381,28 @@ def _real_optimizer_step_audit(
         int(scheduler.last_epoch) == initial_scheduler_epoch + 3,
         "scheduler did not advance exactly once per successful update",
     )
+    final_selector_step = (
+        int(model.frame_selector.schedule_step.detach().item())
+        if schedule_enabled
+        else 0
+    )
+    expected_final_selector_step = initial_selector_step + (
+        3 if schedule_enabled else 0
+    )
+    _require(
+        final_selector_step == expected_final_selector_step,
+        "selector schedule differs from successful optimizer exposure",
+    )
+    ema_selector = getattr(ema_root, "frame_selector", None)
+    ema_selector_step = (
+        int(ema_selector.schedule_step.detach().item())
+        if schedule_enabled and ema_selector is not None
+        else 0
+    )
+    _require(
+        ema_selector_step == expected_final_selector_step,
+        "EMA did not copy the integer selector schedule buffer",
+    )
     return {
         "attempts": attempts,
         "successful_optimizer_updates": successful_updates,
@@ -1221,7 +1419,10 @@ def _real_optimizer_step_audit(
         "optimizer_state_parameter_count": int(len(optimizer.state)),
         "audited_parameter_max_abs_changes": parameter_changes,
         "audited_ema_parameter_max_abs_changes": ema_changes,
-        "selector_schedule_step": 0,
+        "selector_schedule_enabled": schedule_enabled,
+        "initial_selector_schedule_step": initial_selector_step,
+        "selector_schedule_step": final_selector_step,
+        "ema_selector_schedule_step": ema_selector_step,
         "scheduler_and_ema_updated": True,
     }
 
@@ -1423,6 +1624,33 @@ def run_gate(
         else full_batch
     )
     loader_evidence["gradient_batch_size"] = int(batch["inputs"].shape[0])
+    homotopy_endpoint_audit = _homotopy_endpoint_audit(
+        model,
+        full_batch=full_batch,
+        short_batch=short_padded_batch,
+    )
+    if arm == HOMOTOPY_ARM:
+        midpoint_step = (
+            int(model.frame_selector.homotopy_warmup_steps)
+            + int(model.frame_selector.homotopy_transition_steps) // 2
+            - 1
+        )
+        model.frame_selector.schedule_step.fill_(midpoint_step)
+        midpoint_state = model.frame_selector._policy_homotopy_state(training=True)
+        _require(
+            math.isclose(
+                float(midpoint_state["alpha"]),
+                0.5,
+                rel_tol=0.0,
+                abs_tol=1.0e-12,
+            ),
+            "homotopy midpoint does not expose alpha 0.5",
+        )
+        homotopy_endpoint_audit["gradient_audit_schedule_step"] = midpoint_step
+        homotopy_endpoint_audit["gradient_audit_alpha"] = float(
+            midpoint_state["alpha"]
+        )
+    model.train()
     mutable_state = _capture_mutable_state(model)
     reports: dict[str, Any] = {}
 
@@ -1636,6 +1864,7 @@ def run_gate(
                 companion_summary.get("detector_bridge_gradient_scale", 0.0)
             ),
         },
+        "policy_homotopy_audit": homotopy_endpoint_audit,
         "hard_forward_equals_real_backbone_input": True,
         "unselected_perturbation_audit": {
             "hard_gather_equal": True,

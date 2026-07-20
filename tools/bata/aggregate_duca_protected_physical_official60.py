@@ -36,6 +36,12 @@ UNI_COMPANION_SUITE_VARIANTS = (
     "protected_e2e_bridge025",
     "protected_e2e_uni_companion",
 )
+HOMOTOPY_SUITE_VARIANTS = (
+    "exact_uniform",
+    "protected_e2e",
+    "protected_e2e_bridge025",
+    "protected_e2e_homotopy025",
+)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -157,6 +163,9 @@ def aggregate_official60(
     elif observed_variants == set(UNI_COMPANION_SUITE_VARIANTS):
         suite_kind = "uni_companion_optimization"
         active_variants = UNI_COMPANION_SUITE_VARIANTS
+    elif observed_variants == set(HOMOTOPY_SUITE_VARIANTS):
+        suite_kind = "homotopy_optimization"
+        active_variants = HOMOTOPY_SUITE_VARIANTS
     else:
         raise ValueError(
             "official-60 evidence does not match a preregistered four-arm suite"
@@ -174,7 +183,7 @@ def aggregate_official60(
             "rho001_minus_protected": rho - protected,
             "rho001_minus_uniform": rho - uniform,
         }
-    else:
+    elif suite_kind == "uni_companion_optimization":
         bridge025 = by_variant["protected_e2e_bridge025"]["metrics"]["average_mAP"]
         companion = by_variant["protected_e2e_uni_companion"]["metrics"]["average_mAP"]
         comparisons = {
@@ -184,6 +193,18 @@ def aggregate_official60(
             "uni_companion_minus_bridge025": companion - bridge025,
             "uni_companion_minus_protected": companion - protected,
             "uni_companion_minus_uniform": companion - uniform,
+        }
+    else:
+        bridge025 = by_variant["protected_e2e_bridge025"]["metrics"]["average_mAP"]
+        homotopy = by_variant["protected_e2e_homotopy025"]["metrics"][
+            "average_mAP"
+        ]
+        comparisons = {
+            "protected_minus_uniform": protected - uniform,
+            "bridge025_minus_protected": bridge025 - protected,
+            "bridge025_minus_uniform": bridge025 - uniform,
+            "homotopy_minus_bridge025": homotopy - bridge025,
+            "homotopy_minus_uniform": homotopy - uniform,
         }
     learned = {
         variant: by_variant[variant]["metrics"]["average_mAP"]
@@ -225,6 +246,22 @@ def aggregate_official60(
             "uni_companion_improves_bridge025": (
                 companion > bridge025
                 if suite_kind == "uni_companion_optimization"
+                else None
+            ),
+            "homotopy_average_mAP": (
+                homotopy if suite_kind == "homotopy_optimization" else None
+            ),
+            "homotopy_strictly_above_65": (
+                homotopy > 65.0 if suite_kind == "homotopy_optimization" else None
+            ),
+            "homotopy_improves_bridge025": (
+                homotopy > bridge025
+                if suite_kind == "homotopy_optimization"
+                else None
+            ),
+            "homotopy_improves_uniform": (
+                homotopy > uniform
+                if suite_kind == "homotopy_optimization"
                 else None
             ),
             "single_seed_only": True,
