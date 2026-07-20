@@ -814,7 +814,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 hard_slot_mask=hard.hard_slot_mask,
                 edge_count=hard.edge_count,
                 effective_k=hard.effective_k,
-                max_gap_seconds=caps.to(dtype=inputs.dtype),
+                max_gap_seconds=caps,
             )
         else:
             source = self.raw_actionness_source(
@@ -923,7 +923,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                         hard_slot_mask=uniform.hard_slot_mask,
                         edge_count=uniform.edge_count,
                         effective_k=uniform.effective_k,
-                        max_gap_seconds=caps.to(dtype=inputs.dtype),
+                        max_gap_seconds=caps,
                     )
                     uniform_companion_mask = _sample_uniform_companion_mask(
                         int(valid_mask.shape[0]),
@@ -1143,7 +1143,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 dtype=torch.long,
             ),
             effective_k=effective_k,
-            max_gap_seconds=caps.to(dtype=torch.float32),
+            max_gap_seconds=caps,
         )
         selected_inputs = _hard_gather(inputs, positions, slot_mask)
         output_metas = self._write_physical_metadata(
@@ -1304,7 +1304,12 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 8.0 * torch.finfo(observed_max_gap.dtype).eps,
             )
             if float(observed_max_gap.item()) > float(cap.item()) + tolerance:
-                raise RuntimeError("protected DUCA hard path violates physical max-gap")
+                raise RuntimeError(
+                    "protected DUCA hard path violates physical max-gap: "
+                    f"observed={float(observed_max_gap.item()):.17g}, "
+                    f"cap={float(cap.item()):.17g}, tolerance={tolerance:.3g}, "
+                    f"effective_k={effective_k}, dense_valid_len={dense_valid_len}"
+                )
 
             dense_positions = [int(value) for value in positions.cpu().tolist()]
             meta.update(

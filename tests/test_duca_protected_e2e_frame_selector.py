@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import numpy as np
+import pytest
 
 from opentad.datasets.transforms.end_to_end import LoadFrames
 from opentad.models.selectors.duca_protected_e2e_frame_selector import (
@@ -129,6 +130,24 @@ def test_exact_uniform_skips_coarse_and_writes_native_physical_contract():
     assert meta["detector_prediction_inverse_map_required"] is False
     assert meta["detector_output_coordinate_space"] == "dense_physical"
     assert meta["irregular_selected_positions"] == [0, 2, 5]
+    assert meta["duca_observed_max_gap_seconds"] <= meta["duca_max_gap_seconds_cap"]
+
+
+def test_uint8_exact_uniform_preserves_float64_physical_gap_cap():
+    selector = _selector("exact_uniform")
+    inputs, masks, metas, segments, labels, boundary_validity = _batch()
+    uint8_inputs = ((inputs + 1.0) * 100.0).to(torch.uint8)
+    output = selector.forward_train(
+        uint8_inputs,
+        masks,
+        metas,
+        gt_segments=segments,
+        gt_labels=labels,
+        gt_boundary_validity=boundary_validity,
+    )
+
+    meta = output["metas"][0]
+    assert meta["duca_max_gap_seconds_cap"] == pytest.approx(1.2)
     assert meta["duca_observed_max_gap_seconds"] <= meta["duca_max_gap_seconds_cap"]
 
 

@@ -703,10 +703,10 @@ def physical_exact_k_select(
             device=node_log_probs.device,
             dtype=torch.long,
         ),
-        max_gap_seconds=caps.to(
-            device=node_log_probs.device,
-            dtype=node_log_probs.dtype,
-        ),
+        # Physical feasibility is a control-plane contract. Keep the exact
+        # float64 cap used to build the graph instead of narrowing it to AMP
+        # policy-score precision.
+        max_gap_seconds=caps.to(device=node_log_probs.device),
         temperature=temperature,
     )
 
@@ -765,7 +765,7 @@ def physical_exact_k_viterbi(
         hard_slot_mask=torch.stack(slot_mask_rows, dim=0),
         edge_count=torch.tensor(edge_counts, device=node_log_probs.device, dtype=torch.long),
         effective_k=torch.tensor(effective_rows, device=node_log_probs.device, dtype=torch.long),
-        max_gap_seconds=caps.to(device=node_log_probs.device, dtype=node_log_probs.dtype),
+        max_gap_seconds=caps.to(device=node_log_probs.device),
     )
 
 
@@ -824,7 +824,7 @@ def physical_exact_k_forward_backward(
         log_partition=torch.stack(partition_rows, dim=0),
         edge_count=torch.tensor(edge_counts, device=node_log_probs.device, dtype=torch.long),
         effective_k=torch.tensor(effective_rows, device=node_log_probs.device, dtype=torch.long),
-        max_gap_seconds=caps.to(device=node_log_probs.device, dtype=node_log_probs.dtype),
+        max_gap_seconds=caps.to(device=node_log_probs.device),
         temperature=temperature,
     )
 

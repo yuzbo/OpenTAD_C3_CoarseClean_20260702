@@ -14,6 +14,9 @@ from opentad.models.duca.structured_selection import (
     exact_uniform_positions,
     exact_uniform_reference_scores,
     global_structured_topk,
+    physical_exact_k_select,
+    physical_exact_k_viterbi,
+    physical_exact_uniform_gap_cap,
     structured_local_coverage_probability,
 )
 
@@ -56,6 +59,39 @@ def test_exact_uniform_routes_share_one_rounding_contract(temporal_len: int) -> 
         reference = exact_uniform_reference_scores(scores, valid, budget)
         assert torch.equal(torch.nonzero(reference[0] == 0, as_tuple=False).flatten(), positions)
         assert positions.unique().numel() == budget
+
+
+def test_physical_gap_cap_is_not_narrowed_to_amp_score_precision() -> None:
+    seconds = torch.tensor(
+        [[0.0, 0.11, 0.31, 0.52, 0.73, 0.94]],
+        dtype=torch.float64,
+    )
+    valid = torch.ones((1, 6), dtype=torch.bool)
+    scores = torch.tensor(
+        [[0.2, -0.4, 0.7, 0.1, -0.2, 0.6]],
+        dtype=torch.float16,
+    )
+    cap = physical_exact_uniform_gap_cap(seconds, valid, k=3)
+
+    hard = physical_exact_k_viterbi(
+        scores,
+        seconds,
+        valid,
+        k=3,
+        max_gap_seconds=cap,
+    )
+    joint = physical_exact_k_select(
+        scores,
+        seconds,
+        valid,
+        k=3,
+        max_gap_seconds=cap,
+    )
+
+    assert hard.max_gap_seconds.dtype == torch.float64
+    assert joint.max_gap_seconds.dtype == torch.float64
+    assert torch.equal(hard.max_gap_seconds, cap)
+    assert torch.equal(joint.max_gap_seconds, cap)
 
 
 def test_structured_local_coverage_matches_bruteforce_path_distribution() -> None:
