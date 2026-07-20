@@ -3,7 +3,7 @@ type: experiment_plan
 node_id: plan:native-crop-paper-experiments
 title: "Native-Crop paper experiment roadmap"
 stage: designed
-status: s2_v2_1_implementation_in_progress
+status: s2_v2_1_training_runtime_gate_pending
 outcome: pending
 tags: ["offline-tad", "native-crop", "paper-plan", "claim-driven"]
 added: 2026-07-20
@@ -45,17 +45,18 @@ The required anti-claims are:
 |---|---|---|---|---|
 | R0 | Dense160/224/256 full-frame resize | historical diagnostic | sensitivity to whole-frame resolution only | control/appendix; never crop evidence |
 | S1 | Native-Crop vertical slice and CUDA Gate `1174671` | `tested` | source-coordinate crop, shared backbone, detector contract, gradients, provenance, and no-leak are executable | infrastructure evidence |
-| S2-P | Continuous-RoI crop-sufficiency protocol v2.1 | **current stage: static protocol validated; implementation in progress** | defines a matched variable-box experiment without merging S2 and S3 | prerequisite, not an empirical result |
-| S2-E | Formal continuous-RoI sufficiency experiment | blocked | whether variable-center/variable-size crops are sufficient; whether adaptive and cost headroom exist | mechanism/reference diagnostic |
+| S2-P | Continuous-RoI crop-sufficiency protocol v2.1 | **protocol frozen; model Gate passed; training-runtime Gate pending** | defines and implements a matched pre-policy representation experiment without merging S2 and S3 | prerequisite, not an empirical result |
+| S2-E | Formal continuous-RoI sufficiency experiment | not queued; blocked on integrated runtime Gate | whether variable-center/variable-size crops are sufficient; whether adaptive and cost headroom exist | mechanism/reference diagnostic |
 | S3 | Learned Native-Crop policy | blocked by S2 | whether a deployable selector can recover S2 headroom through TAD supervision | final method candidate |
 | S4 | Primary official benchmark | blocked by S3 | final method accuracy-cost benefit on THUMOS14 official test | main paper Table 1/Figure 1 |
 | S5 | Detector/dataset generalization and ablations | blocked by S4 anchor | robustness, mechanism, simplicity, and transfer | main Tables 2-3/appendix |
 | S6 | Statistical, cost, and claim freeze | blocked by exact evidence closure | whether the complete claim is paper-ready | final paper gate |
 
 The prior 21-position fixed-`128x128` protocol is only a D0 discrete diagnostic
-and is superseded as the decisive S2. The Continuous-RoI v2.1 protocol and
-static validator exist, but model implementation, training jobs, and crop mAP
-do not yet exist. S2 is not the paper's main experiment.
+and is superseded as the decisive S2. The Continuous-RoI v2.1 model and
+full-model Gate now exist, while formal training jobs, development crop mAP,
+reference sweeps, and measured cost do not. S2 is not the paper's main
+experiment.
 
 ## What S2 Must Establish
 

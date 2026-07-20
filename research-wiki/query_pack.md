@@ -41,10 +41,10 @@ max_chars: 8000
   `ef806b7c...b3af`，八类合同与 128 种状态组合全部通过，审计 SHA-256 为
   `5af59b75...f9d`。它采用 selector-free common-support `U128`，成对且同权限的
   fixed/variable reference，并拆开 S2 表示充分性与 S3 learned policy。
-- 当前唯一下一步是实现连续几何、确定性外生 tube、可微/运行时 sampler 和共享
-  `U128`，再以 focused tests 与 full-model one-step CUDA Gate 验证检测梯度、
-  optimizer coverage、successful-update 计数和 no-leak。Gate 前不训练、不排队、
-  不打开 official test。
+- `6187899` 的模型实现与 Job `1177561` one-step Gate 已通过；当前唯一阻塞是把
+  九格配置、fit160/gate40、真实 development 样本、80 batch/epoch、4800
+  successful updates 与 final-EMA-only 绑定成新的集成 runtime Gate。该 Gate
+  通过前不排训练、不打开 official test、不实现 learned ROI。
 - 完整结论见
   `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`。
 

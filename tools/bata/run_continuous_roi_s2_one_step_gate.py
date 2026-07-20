@@ -45,7 +45,7 @@ from tools.bata.validate_continuous_roi_s2_implementation import (  # noqa: E402
 )
 
 
-GATE_SCHEMA = "continuous_roi_s2_full_model_one_step_cuda_gate_v2"
+GATE_SCHEMA = "continuous_roi_s2_full_model_one_step_cuda_gate_v3"
 AUDITED_SOURCE_PATHS = (
     "configs/_base_/models/actionformer.py",
     "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py",
@@ -56,6 +56,10 @@ AUDITED_SOURCE_PATHS = (
     "docs/methods/continuous_roi_s2_v2_1_protocol.json",
     "opentad/cores/optimizer.py",
     "opentad/cores/train_engine.py",
+    "opentad/datasets/base/padding_dataset.py",
+    "opentad/datasets/base/sliding_dataset.py",
+    "opentad/datasets/builder.py",
+    "opentad/datasets/thumos.py",
     "opentad/datasets/transforms/native_crop.py",
     "opentad/models/backbones/continuous_roi_geometry.py",
     "opentad/models/backbones/continuous_roi_sampler.py",
@@ -63,13 +67,26 @@ AUDITED_SOURCE_PATHS = (
     "opentad/models/backbones/native_crop_wrapper.py",
     "opentad/models/backbones/vit_adapter.py",
     "opentad/models/detectors/actionformer.py",
+    "opentad/utils/training_guard.py",
     "scripts/run_continuous_roi_s2_cuda_gate_slurm.sh",
+    "scripts/run_continuous_roi_s2_train_slurm.sh",
     "tests/test_continuous_roi_geometry_sampler.py",
     "tests/test_continuous_roi_representation.py",
     "tests/test_continuous_roi_s2_implementation_static.py",
     "tests/test_continuous_roi_s2_protocol.py",
     "tests/test_continuous_roi_s2_one_step_gate.py",
+    "tests/test_continuous_roi_s2_training.py",
+    "tools/train.py",
+    "tools/bata/authorize_continuous_roi_s2_training_runtime.py",
+    "tools/bata/build_continuous_roi_s2_training_config.py",
+    "tools/bata/build_continuous_roi_s2_runtime_gate_config.py",
     "tools/bata/continuous_roi_s2_contract.py",
+    "tools/bata/continuous_roi_s2_runtime_gate.py",
+    "tools/bata/continuous_roi_s2_training.py",
+    "tools/bata/deploy_continuous_roi_s2_training_matrix.py",
+    "tools/bata/finalize_continuous_roi_s2_training.py",
+    "tools/bata/finalize_continuous_roi_s2_runtime_gate.py",
+    "tools/bata/precheck_continuous_roi_s2_training_runtime.py",
     "tools/bata/profile_spatial_zoom_s1.py",
     "tools/bata/run_continuous_roi_s2_one_step_gate.py",
     "tools/bata/validate_continuous_roi_s2_implementation.py",
@@ -723,7 +740,8 @@ def run_gate(
         "oracle_used": False,
         "learned_selector_present": False,
         "paper_claim_allowed": False,
-        "formal_training_authorized_by_this_gate": True,
+        "training_runtime_gate_authorized_by_this_gate": True,
+        "formal_training_authorized_by_this_gate": False,
     }
     return finalize_self_hash(result, "gate_sha256")
 

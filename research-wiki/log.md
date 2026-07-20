@@ -648,3 +648,34 @@ append_only: true
   the learned ROI policy for S3. This authorizes implementation only. Formal
   training, queueing, official-test access, and empirical claims remain
   blocked until focused tests and a full-model one-step CUDA Gate pass.
+- 2026-07-20: committed model implementation `61878997adc4ca3d1de7396a804862d4c6943ee8`
+  passed `61` focused tests in a clean remote snapshot. Formal one-GPU
+  model-level Gate Job `1177561` completed `0:0`; evidence internal SHA is
+  `51b3afec1af0d02197eb660daf719439dfb3c297262f51dde052aafbceecb2ef`.
+  It verifies shared VideoMAE with two evaluations, detector-only and total
+  gradients, optimizer coverage, `[1,384,768]`, external-geometry rejection,
+  pretrained identity, logical `cuda:0` provenance, and zero official-test
+  opens. This advances S2 from `implemented` to model-level `tested`; it does
+  not authorize empirical claims by itself.
+- 2026-07-20: implemented the formal development-training runtime binding for
+  `D160/G96/U128 x seeds 3407/3408/3409`: immutable nine-cell configs,
+  fit160/gate40 isolation, real-video inventory, exact 80 train batches per
+  epoch, 60 epochs/4800 successful optimizer updates, success-only
+  scheduler/EMA, AMP replay audit, final-EMA-only checkpoint, completion
+  sidecars, one-GPU inner Slurm launcher, and idempotent matrix deployment.
+  Local non-Torch checks pass `35`; the broader Windows Torch suite remains
+  blocked by the known user-site `c10.dll` initialization error. A clean Linux
+  exact suite and a single integrated real-development CUDA Gate are required
+  before any of the nine training jobs may be submitted. Official test remains
+  sealed and no mAP/cost/paper conclusion exists.
+- 2026-07-20: closed the final runtime-authorization audit gap. Authorization
+  now reopens each real Gate checkpoint and sidecar, verifies their current
+  file hashes and canonical paths, reloads the checkpoint, and checks final
+  EMA, optimizer state, scheduler progress, bound-config identity, Slurm
+  identity, and work-directory ownership. Deleting, moving, replacing, or
+  tampering with any entity fails closed. Local pure-logic regression is
+  `36 passed`; Python compilation, both Slurm shell syntax checks, and
+  `git diff --check` pass. The independent read-only final audit returned
+  `DEPLOY_READY_WITH_GATES` with no P0/P1/P2. This is still a `tested`
+  implementation state: clean Linux tests and the integrated real-data CUDA
+  Gate remain mandatory before the nine formal jobs can be queued.

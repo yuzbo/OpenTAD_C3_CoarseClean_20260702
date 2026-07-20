@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:native-crop-s2-crop-sufficiency
 title: "Continuous-RoI S2 crop sufficiency"
-stage: designed
-status: v2_1_static_validated_implementation_in_progress
+stage: tested
+status: model_gate_passed_training_runtime_gate_pending
 outcome: pending
 tags: ["offline-tad", "continuous-roi", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
@@ -49,7 +49,32 @@ The project-authored v2.1 corrigendum is frozen at
 The static validator passed eight contract families and all 128 outcome-state
 assignments; audit SHA-256 is
 `5af59b755dd4528fe3e4fd989bb20da71ee40e43ecb5add34083b8ae96057f9d`.
-This authorizes implementation only, not training or test opening.
+This authorized implementation only, not training or test opening.
+
+## Implementation Evidence
+
+- Commit `61878997adc4ca3d1de7396a804862d4c6943ee8` contains the
+  selector-free D160/G96/U128 representation path. Clean remote focused tests
+  passed `61`.
+- Slurm Job `1177561` completed `0:0` and produced a self-hashed v2 full-model
+  one-step Gate. It verified `[1,384,768]`, exact optimizer coverage, finite
+  nonzero detector-only gradients through both U128 branches, fusion,
+  projection and the AdaTAD-derived head, one shared VideoMAE parameter
+  instance, two branch evaluations, and zero official-test access.
+- The training runtime now binds the immutable fit-160/gate-40 development
+  manifest, all nine family/seed configs, exactly 80 batches per epoch, 4,800
+  successful updates, success-only scheduler/EMA advancement, and one
+  final-EMA checkpoint. A real-data precheck opens one development training
+  sample per family and revalidates the 200-video inventory.
+- The integrated runtime authorization reopens every D160/G96/U128 Gate
+  checkpoint and sidecar, recomputes their hashes, and revalidates EMA,
+  optimizer, scheduler, config, Slurm, and work-directory bindings. The final
+  independent read-only audit found no remaining P0/P1/P2 and returned
+  `DEPLOY_READY_WITH_GATES`. Local pure-logic tests pass `36`; both Slurm
+  launchers pass shell syntax checks.
+- These are implementation and Gate facts only. No S2 checkpoint, development
+  mAP, reference sweep, cost profile, mechanical outcome, or paper claim
+  exists yet.
 
 ## Accepted
 
@@ -87,15 +112,17 @@ This authorizes implementation only, not training or test opening.
 
 ## Boundaries
 
-No continuous-RoI S2 model, training result, official-test result, measured
-cost, crop-sufficiency claim, learned selector, or paper claim exists. S1's
-fixed-center CUDA gate validates infrastructure and gradients only.
+No Continuous-RoI S2 training result, official-test result, measured cost,
+crop-sufficiency claim, learned selector, or paper claim exists. The
+implemented S2 model and Job `1177561` validate model connectivity only.
 
 ## Next Gate
 
-Implement and test the v2.1 geometry decoder, paired exogenous geometry
-generator, tube interpolation, differentiable/runtime sampler parity, and the
-selector-free common-support `U128` model. Training and queueing remain blocked
-until focused tests and a full-model one-step CUDA Gate prove detector-gradient
-connectivity, optimizer coverage, exact successful-update behavior, no-leak,
-and the inherited AdaTAD-derived detector contract.
+Commit and push the audited training runtime, replay the exact Linux suite in
+a clean remote snapshot, and run one integrated Slurm Gate. The Gate must
+produce a new full-model one-step certificate, a real-development-data
+runtime-precheck certificate, three two-successful-update D160/G96/U128
+checkpoints with final EMA sidecars, and an entity-revalidated runtime
+authorization. Only that authorization may unlock the D160/G96/U128 x
+three-seed development training matrix. Official test, learned ROI, S2
+reference sweeps, cost claims, and paper claims remain blocked.

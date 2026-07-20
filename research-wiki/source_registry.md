@@ -525,6 +525,18 @@ updated: 2026-07-20
   runtime commit `cef95485d1bfebccddb1055f30800ab081decaf7` was pushed.
   Remote replay and a real-evidence v6 certificate remain pending; no new Gate
   or matrix is authorized.
+- Continuous-RoI S2 model-level implementation Gate, 2026-07-20. Runtime
+  commit `61878997adc4ca3d1de7396a804862d4c6943ee8` passed `61` focused
+  tests in the clean remote snapshot and Slurm Job `1177561` completed
+  `0:0`. Gate evidence is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/continuous_roi_s2_6187899_20260720_225148/gate/full_model_one_step_gate.json`;
+  internal SHA is
+  `51b3afec1af0d02197eb660daf719439dfb3c297262f51dde052aafbceecb2ef`.
+  It closes the shared-VideoMAE/two-view implementation, detector-only and
+  total-gradient connectivity, optimizer coverage, `[1,384,768]`, external
+  geometry rejection, pretrained identity, and zero official-test opens.
+  It is model/interface evidence only: no development training, mAP, measured
+  cost, S2 outcome, learned ROI, or paper claim follows from this Gate.
 
 ## 外部附件
 

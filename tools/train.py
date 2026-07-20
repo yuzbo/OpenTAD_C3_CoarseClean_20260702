@@ -72,10 +72,23 @@ def main():
     assert_safe_cfg_options_for_gated_config(
         cfg, args.cfg_options, entrypoint="tools/train.py"
     )
+    if (
+        "continuous_roi_s2_gate" in cfg
+        and "continuous_roi_s2_runtime_binding" not in cfg
+        and "continuous_roi_s2_runtime_gate_binding" not in cfg
+    ):
+        raise RuntimeError(
+            "Continuous-RoI S2 source configs are not trainable; use a "
+            "certificate-bound formal or runtime-Gate config"
+        )
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
     s1_binding = None
     s1_checkpoint_sidecar_schema = None
+    s2_binding = None
+    s2_checkpoint_sidecar_schema = None
+    s2_runtime_gate_binding = None
+    s2_runtime_gate_sidecar_schema = None
     if "spatial_zoom_s1_contract" in cfg:
         from tools.bata.spatial_zoom_s1_training import (
             S1_CHECKPOINT_SIDECAR_SCHEMA,
@@ -104,6 +117,78 @@ def main():
             raise ValueError(
                 "formal S1 training requires deterministic execution with gate evaluation"
             )
+    if "continuous_roi_s2_runtime_binding" in cfg:
+        from tools.bata.continuous_roi_s2_training import (
+            S2_CHECKPOINT_SIDECAR_SCHEMA,
+            build_checkpoint_metadata as build_s2_checkpoint_metadata,
+            require_clean_git_checkout as require_clean_s2_git_checkout,
+            should_save_final_checkpoint,
+            validate_bound_training_config,
+        )
+        from tools.bata.spatial_zoom_s1_training import (
+            require_slurm_single_gpu_allocation,
+        )
+
+        if s1_binding is not None:
+            raise RuntimeError("one training config cannot bind both S1 and S2")
+        s2_checkpoint_sidecar_schema = S2_CHECKPOINT_SIDECAR_SCHEMA
+        require_slurm_single_gpu_allocation()
+        s2_binding = validate_bound_training_config(cfg, seed=args.seed)
+        require_clean_s2_git_checkout(
+            expected_commit=s2_binding["code_commit"]
+        )
+        if args.cfg_options is not None:
+            raise ValueError("formal Continuous-RoI S2 training forbids --cfg-options")
+        if args.resume is not None:
+            raise ValueError(
+                "formal Continuous-RoI S2 training forbids resume"
+            )
+        if args.disable_deterministic or args.not_eval:
+            raise ValueError(
+                "formal Continuous-RoI S2 training requires deterministic execution"
+            )
+    if "continuous_roi_s2_runtime_gate_binding" in cfg:
+        from tools.bata.continuous_roi_s2_runtime_gate import (
+            S2_RUNTIME_GATE_SIDECAR_SCHEMA,
+            build_runtime_gate_checkpoint_metadata,
+            validate_runtime_gate_config,
+        )
+        from tools.bata.continuous_roi_s2_training import (
+            require_clean_git_checkout as require_clean_s2_git_checkout,
+        )
+        from tools.bata.spatial_zoom_s1_training import (
+            require_slurm_single_gpu_allocation,
+        )
+
+        if s1_binding is not None or s2_binding is not None:
+            raise RuntimeError(
+                "one config cannot combine formal and runtime-Gate bindings"
+            )
+        s2_runtime_gate_sidecar_schema = S2_RUNTIME_GATE_SIDECAR_SCHEMA
+        require_slurm_single_gpu_allocation()
+        s2_runtime_gate_binding = validate_runtime_gate_config(
+            cfg, seed=args.seed
+        )
+        require_clean_s2_git_checkout(
+            expected_commit=s2_runtime_gate_binding["code_commit"]
+        )
+        if (
+            args.cfg_options is not None
+            or args.resume is not None
+            or args.disable_deterministic
+            or args.not_eval
+        ):
+            raise ValueError(
+                "Continuous-RoI S2 runtime Gate forbids overrides, resume, "
+                "nondeterminism, and disabled evaluation"
+            )
+    formal_binding = (
+        s1_binding
+        if s1_binding is not None
+        else s2_binding
+        if s2_binding is not None
+        else s2_runtime_gate_binding
+    )
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
 
@@ -111,8 +196,10 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if s1_binding is not None and args.world_size != 1:
-        raise RuntimeError("formal S1 training is frozen to one Slurm GPU process")
+    if formal_binding is not None and args.world_size != 1:
+        raise RuntimeError(
+            "formal registered training is frozen to one Slurm GPU process"
+        )
     print(
         f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
     )
@@ -123,14 +210,18 @@ def main():
     set_seed(
         args.seed,
         args.disable_deterministic,
-        deterministic_warn_only=s1_binding is None,
+        deterministic_warn_only=formal_binding is None,
     )
-    if s1_binding is None:
+    if formal_binding is None:
         cfg = update_workdir(cfg, args.id, args.world_size)
     elif args.id != 0:
-        raise ValueError("formal S1 work_dir is manifest-bound; --id must remain zero")
+        raise ValueError(
+            "formal registered work_dir is manifest-bound; --id must remain zero"
+        )
     elif os.path.exists(cfg.work_dir):
-        raise FileExistsError("formal S1 training requires a fresh bound work_dir")
+        raise FileExistsError(
+            "formal registered training requires a fresh bound work_dir"
+        )
     if args.rank == 0:
         create_folder(cfg.work_dir)
         save_config(args.config, cfg.work_dir)
@@ -188,6 +279,43 @@ def main():
             raise ValueError(
                 "formal S1 gate loaders do not match the frozen gate split"
             )
+    if s2_binding is not None:
+        runtime_ids = {
+            "train": {str(row[0]) for row in train_dataset.data_list},
+            "val": {str(row[0]) for row in val_dataset.data_list},
+            "test": {str(row[0]) for row in test_dataset.data_list},
+        }
+        if runtime_ids["train"] != set(s2_binding["fit_video_ids"]):
+            raise ValueError(
+                "formal Continuous-RoI S2 train dataset differs from fit"
+            )
+        if runtime_ids["val"] != set(s2_binding["gate_video_ids"]) or runtime_ids[
+            "test"
+        ] != set(s2_binding["gate_video_ids"]):
+            raise ValueError(
+                "formal Continuous-RoI S2 development Gate loaders differ from binding"
+            )
+        if len(train_loader) != int(s2_binding["updates_per_epoch"]):
+            raise RuntimeError(
+                "formal Continuous-RoI S2 requires exactly 80 batches per epoch"
+            )
+    if s2_runtime_gate_binding is not None:
+        base_binding = s2_runtime_gate_binding["base_binding"]
+        runtime_ids = {
+            "train": {str(row[0]) for row in train_dataset.data_list},
+            "val": {str(row[0]) for row in val_dataset.data_list},
+            "test": {str(row[0]) for row in test_dataset.data_list},
+        }
+        if runtime_ids["train"] != set(base_binding["fit_video_ids"]):
+            raise ValueError("runtime Gate train dataset differs from fit")
+        if runtime_ids["val"] != set(base_binding["gate_video_ids"]) or runtime_ids[
+            "test"
+        ] != set(base_binding["gate_video_ids"]):
+            raise ValueError("runtime Gate loaders differ from development Gate")
+        if len(train_loader) != int(
+            s2_runtime_gate_binding["train_batches_per_epoch"]
+        ):
+            raise RuntimeError("runtime Gate requires the real 80-batch loader")
 
     # build model
     model = build_detector(cfg.model)
@@ -266,15 +394,15 @@ def main():
     }
     protocol_amp_retry_limit = (
         8
-        if s1_binding is not None
+        if formal_binding is not None
         else int(cfg.workflow.get("max_amp_retries_per_batch", 0))
     )
     protocol_fail_on_skip = (
-        s1_binding is not None
+        formal_binding is not None
         or bool(cfg.workflow.get("fail_on_skipped_update", False))
     )
     protocol_update_audit = (
-        s1_binding is not None
+        formal_binding is not None
         or protocol_amp_retry_limit > 0
         or bool(cfg.workflow.get("require_successful_update_hook", False))
     )
@@ -314,9 +442,16 @@ def main():
             should_save_checkpoint = should_save_s1_checkpoint(
                 epoch=epoch, binding=s1_binding
             )
+        elif s2_binding is not None:
+            should_save_checkpoint = should_save_final_checkpoint(
+                epoch=epoch, binding=s2_binding
+            )
+        elif s2_runtime_gate_binding is not None:
+            should_save_checkpoint = epoch == 0
         if not disable_checkpoint and should_save_checkpoint:
             if args.rank == 0:
                 checkpoint_metadata = None
+                checkpoint_sidecar_schema = None
                 if s1_binding is not None:
                     checkpoint_metadata = build_s1_checkpoint_metadata(
                         cfg,
@@ -330,6 +465,40 @@ def main():
                             "max_amp_retries_observed"
                         ],
                     )
+                    checkpoint_sidecar_schema = s1_checkpoint_sidecar_schema
+                elif s2_binding is not None:
+                    checkpoint_metadata = build_s2_checkpoint_metadata(
+                        cfg,
+                        seed=args.seed,
+                        epoch=epoch,
+                        successful_updates=successful_updates,
+                        train_batches_per_epoch=len(train_loader),
+                        amp_skipped_attempts=update_audit["amp_skipped_attempts"],
+                        max_amp_retries_observed=update_audit[
+                            "max_amp_retries_observed"
+                        ],
+                    )
+                    checkpoint_sidecar_schema = s2_checkpoint_sidecar_schema
+                elif s2_runtime_gate_binding is not None:
+                    checkpoint_metadata = (
+                        build_runtime_gate_checkpoint_metadata(
+                            cfg,
+                            seed=args.seed,
+                            epoch=epoch,
+                            successful_updates=successful_updates,
+                            train_batches_per_epoch=len(train_loader),
+                            amp_skipped_attempts=update_audit[
+                                "amp_skipped_attempts"
+                            ],
+                            max_amp_retries_observed=update_audit[
+                                "max_amp_retries_observed"
+                            ],
+                            world_size=args.world_size,
+                        )
+                    )
+                    checkpoint_sidecar_schema = (
+                        s2_runtime_gate_sidecar_schema
+                    )
                 save_checkpoint(
                     model,
                     model_ema,
@@ -338,7 +507,7 @@ def main():
                     epoch,
                     work_dir=cfg.work_dir,
                     experiment_metadata=checkpoint_metadata,
-                    experiment_sidecar_schema=s1_checkpoint_sidecar_schema,
+                    experiment_sidecar_schema=checkpoint_sidecar_schema,
                 )
 
         # val for one epoch

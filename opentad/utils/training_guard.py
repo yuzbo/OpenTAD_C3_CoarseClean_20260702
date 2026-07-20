@@ -93,6 +93,11 @@ def _is_pc_ot_mras_gate(gate):
     return "pc-ot-mras" in route or "pc_ot_mras" in stage or "pc-ot-mras" in stage
 
 
+def _is_continuous_roi_s2_gate(gate):
+    route = _lower_text(_get_value(gate, "route", _MISSING))
+    return route == "spatial-zoom-continuous-roi-s2"
+
+
 def _as_int(value, default=None):
     if value is _MISSING or value is None:
         return default
@@ -256,7 +261,19 @@ def _has_pc_ot_mras_gate(cfg):
 
 def assert_safe_cfg_options_for_gated_config(cfg, cfg_options, entrypoint="tools/train.py"):
     """Reject CLI config overrides that can mutate PC-OT-MRAS gate boundaries."""
-    if not cfg_options or not _has_pc_ot_mras_gate(cfg):
+    if not cfg_options:
+        return
+    if any(
+        _is_continuous_roi_s2_gate(gate)
+        for _, gate in _iter_candidate_gates(cfg)
+    ):
+        paths = ", ".join(sorted(map(str, _iter_option_paths(cfg_options))))
+        raise RuntimeError(
+            f"{entrypoint} rejected all --cfg-options for Continuous-RoI S2 "
+            f"gated config: {paths}. Materialize a certificate-bound config "
+            "with the registered launcher."
+        )
+    if not _has_pc_ot_mras_gate(cfg):
         return
 
     safe_exact = {

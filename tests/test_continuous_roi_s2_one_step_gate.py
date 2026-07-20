@@ -22,6 +22,12 @@ def test_gate_audits_its_own_executable_surface():
         "opentad/models/detectors/actionformer.py",
         "opentad/cores/optimizer.py",
         "tools/bata/profile_spatial_zoom_s1.py",
+        "tools/bata/continuous_roi_s2_training.py",
+        "tools/bata/continuous_roi_s2_runtime_gate.py",
+        "tools/bata/deploy_continuous_roi_s2_training_matrix.py",
+        "tools/bata/precheck_continuous_roi_s2_training_runtime.py",
+        "scripts/run_continuous_roi_s2_train_slurm.sh",
+        "tools/train.py",
     }
     assert required.issubset(AUDITED_SOURCE_PATHS)
     assert Path(CONFIGS["U128"]).name == (
