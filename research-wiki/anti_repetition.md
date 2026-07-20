@@ -1,7 +1,24 @@
 ---
 type: anti_repetition
-updated: 2026-07-20
+updated: 2026-07-21
 ---
+
+## Continuous-RoI S2 deployment anti-repetition
+
+0. Never pass a Windows/CRLF-derived final CLI value into a Slurm
+   `--export` string without fail-closed validation. Every export key/value
+   must reject ASCII controls, leading/trailing whitespace and commas before
+   `sbatch`, and the launcher must repeat the check before nested `srun`.
+0. A deployment launcher is experiment code. It must resolve to the tracked
+   canonical path, match the expected Git blob, and be rehashed immediately
+   before every submission. A caller-selected launcher is not an auditable
+   alternative.
+0. A Gate-passing campaign whose training launcher fails is immutable
+   deployment-failure evidence. Never edit, resume or reinterpret it as a
+   model result; use a new commit, Gate authorization and campaign namespace.
+0. `SUBMITTED`, `PENDING`, `RUNNING`, `Training Starts`, and epoch-0 logs are
+   distinct states. None is crop-sufficiency evidence; only complete registered
+   development results can advance the scientific claim.
 
 # 禁止重走清单
 

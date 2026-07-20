@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:native-crop-s2-crop-sufficiency
 title: "Continuous-RoI S2 crop sufficiency"
-stage: tested
-status: model_gate_passed_training_runtime_gate_pending
+stage: experiment_running
+status: formal_3x3_development_training_running
 outcome: pending
 tags: ["offline-tad", "continuous-roi", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
@@ -72,9 +72,58 @@ This authorized implementation only, not training or test opening.
   independent read-only audit found no remaining P0/P1/P2 and returned
   `DEPLOY_READY_WITH_GATES`. Local pure-logic tests pass `36`; both Slurm
   launchers pass shell syntax checks.
-- These are implementation and Gate facts only. No S2 checkpoint, development
-  mAP, reference sweep, cost profile, mechanical outcome, or paper claim
-  exists yet.
+- Runtime commit `6ee8a83` passed its integrated Gate and authorized a first
+  formal matrix, but Jobs `1177641-1177646` failed during launcher preflight
+  and Jobs `1177647-1177649` were cancelled before allocation. The exact root
+  cause was a Windows carriage return appended to `YUZIBO_ROOT`, producing the
+  nonexistent path
+  `/data/run01/sczc063/yuzibo^M/conda_envs/opentad/bin/activate`. Campaign
+  `66cd32ffecf22b5868997bb9f73e8c20befd3a3a668ba96a59901d18a16b43da`
+  is immutable deployment-failure evidence and contributes no model result.
+- Commits `eea1f906b035dceaa0cb8c17a8271cf5385ca791` and
+  `9a61da27e65c2227c8d2a0c547d8f3cb44966738` make the deployment contract
+  reject ASCII control characters, whitespace and commas in Slurm export
+  values; require the exact canonical YUZIBO root; bind the launcher to the
+  expected Git blob; recheck its hash immediately before every `sbatch`; and
+  bind the normalized environment into v2 intent, receipt and summary
+  evidence. The clean Linux exact suite passed `81`.
+- Integrated Gate Job `1177662` completed `0:0`. It reran all `81` exact
+  tests, produced full-model Gate SHA
+  `c633c3b7bc824c2f65800498621904fe307bc9be674375a3849c8c4e815f8c73`,
+  runtime-precheck SHA
+  `6c5b8f52fe99c2b865ebf8d58db60b579e62c6258a93f6c7276020a7eb077272`,
+  and runtime-authorization SHA
+  `62a0fb21809f9b297337fd17d8440c8c557bfca00ab609c934832abc25846a5f`.
+  The Gate verified two successful real-data updates for every family,
+  nonempty optimizer/scheduler/EMA state, deterministic D160/G96 upsampling,
+  U128 auxiliary losses, exact one-GPU Slurm identity, and zero official-test
+  access.
+
+## Formal Development Matrix
+
+The sole formal campaign is
+`77c2149aa9fe7d6b19c777bebe5a95de710a0a738d89158431e69a9c5e78d066`
+under base experiment namespace
+`469652821b1ffb984ced17360a333cf1fed2700465ec6f8ac210b578e7dc5de9`.
+Deployment intent SHA is
+`96a805cafc2f918f8f24518d86744666e2ec39ef77981b954e36ef6db047a264`
+and deployment SHA is
+`67227c4478dc5bf10ac3fc613aededd603e34bb670bc159a2863f0a69594c204`.
+
+The registered jobs are:
+
+- D160: `1177668/1177669/1177670` for seeds `3407/3408/3409`.
+- G96: `1177671/1177672/1177673` for seeds `3407/3408/3409`.
+- U128: `1177674/1177675/1177676` for seeds `3407/3408/3409`.
+
+At deployment audit time, six jobs were running and the three U128 jobs were
+pending only on `AssocGrpGRES`. All six running jobs completed epochs 0 and 1
+and entered epoch 2. Epoch-1 final losses were finite: D160
+`1.0311/1.0493/1.0640` and G96 `1.1409/1.1498/1.1729`; memory was about
+`3919 MB` and `2153 MB`, respectively. No `Traceback`, OOM, non-finite loss,
+`RuntimeError`, `ValueError`, or fail marker was present. This is
+`experiment_running` evidence only: no development mAP, reference sweep, cost
+profile, mechanical outcome, or paper claim exists yet.
 
 ## Accepted
 
@@ -93,36 +142,34 @@ This authorized implementation only, not training or test opening.
 - Separate geometry, search adequacy, representation sufficiency, adaptive
   headroom, and cost viability.
 
-## Current Blocking Revisions
+## Remaining Decision Gates
 
-1. Do not train a deployable learned ROI policy inside S2 while claiming S2 is
-   a pre-policy representation gate; keep S2/S3 separate.
-2. Do not derive fixed, random, D0, or location-only controls by overriding an
-   adaptive GL checkpoint only at inference. Train decision-critical geometry
-   families under matched registered distributions.
-3. Do not compare GT-privileged `CR-PREF` against unprivileged `C/R/LC`.
-   Variable-size and fixed-size references require the same search and join.
-4. Confidence-objective convergence is not spatial-reference adequacy.
-   Separate no-GT policy diagnostics from result-independent geometry/support.
-5. Repair the formal queue for the audited N16R4 memory policy, actual storage,
-   validated 20/100 ms power sampler, and immutable failed namespaces.
-6. Remove selector-cost double counting, fix ABBA population arithmetic, use
-   independent variance evidence, specify privileged matching completely, and
-   add a sufficient-but-no-adaptive-headroom state.
+1. All nine registered development jobs must complete with exact successful
+   update exposure, final-EMA-only checkpoints, valid sidecars, and no silent
+   fallback.
+2. Development-only checkpoint selection and the matched fixed/variable
+   reference sweep must remain result-blind with equal privilege. Confidence
+   convergence alone is not spatial-reference adequacy.
+3. Representation sufficiency, adaptive headroom, and deployable cost
+   viability remain separate outcomes. S2 must not train or claim the S3
+   learned ROI policy.
+4. Latency, memory and energy profiling must use trained checkpoints and the
+   frozen cost protocol. Selector reserve and ROI-head cost must not be counted
+   twice.
+5. Official test remains sealed until the complete development decision and
+   its immutable evidence pass the v2.1 contract.
 
 ## Boundaries
 
-No Continuous-RoI S2 training result, official-test result, measured cost,
-crop-sufficiency claim, learned selector, or paper claim exists. The
-implemented S2 model and Job `1177561` validate model connectivity only.
+No completed Continuous-RoI S2 training result, official-test result, measured
+cost, crop-sufficiency claim, learned selector, or paper claim exists. Jobs
+`1177668-1177676` are the first valid formal development matrix, but queue
+submission and early epoch-0 execution are not empirical support.
 
 ## Next Gate
 
-Commit and push the audited training runtime, replay the exact Linux suite in
-a clean remote snapshot, and run one integrated Slurm Gate. The Gate must
-produce a new full-model one-step certificate, a real-development-data
-runtime-precheck certificate, three two-successful-update D160/G96/U128
-checkpoints with final EMA sidecars, and an entity-revalidated runtime
-authorization. Only that authorization may unlock the D160/G96/U128 x
-three-seed development training matrix. Official test, learned ROI, S2
-reference sweeps, cost claims, and paper claims remain blocked.
+Monitor the sole nine-job matrix to completion, validate successful-update
+exposure and all final-EMA sidecars, then execute only the preregistered
+development checkpoint-selection and matched reference phases. Do not open
+official test, implement learned ROI, or make crop-sufficiency/cost/paper
+claims before those evidence gates close.

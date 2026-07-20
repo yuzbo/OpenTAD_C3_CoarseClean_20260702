@@ -1,10 +1,29 @@
 ---
 type: query_pack
-updated: 2026-07-20
+updated: 2026-07-21
 max_chars: 8000
 ---
 
 # Research Query Pack
+
+## Continuous-RoI S2 当前状态（2026-07-21）
+
+- 唯一正式运行时为
+  [`9a61da27`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/9a61da27e65c2227c8d2a0c547d8f3cb44966738)；
+  clean Linux exact suite 为 `81 passed`。
+- Integrated Gate Job `1177662` 已 `COMPLETED 0:0`，重新验证 full-model、
+  fit160/gate40、D160/G96/U128 各两次成功更新、optimizer/scheduler/final EMA、
+  单 GPU Slurm 身份和 official-test 零访问。
+- 首个矩阵 `1177641-1177649` 仅因 Windows `CR` 污染 `YUZIBO_ROOT` 而在 launcher
+  preflight 失败，旧 campaign `66cd32ff...` 已冻结且不得作为模型结果。部署契约现已拒绝
+  控制字符/空白/逗号，并逐次绑定和复核 Git 中的规范 launcher。
+- 当前唯一正式 development 训练矩阵为 `1177668-1177676`：
+  `D160/G96/U128 x seeds 3407/3408/3409`。提交时六个 RUNNING、三个因
+  `AssocGrpGRES` 等待；六个运行任务已完成 epoch 1 并进入 epoch 2，D160/G96
+  loss 均有限且下降，未见 Traceback/OOM/non-finite。
+- 当前状态只能写作 `experiment_running`。没有 completed development mAP、
+  reference sweep、cost profile、crop-sufficiency 结论、official-test 结果、
+  learned ROI 或 paper claim。下一门禁是九格完整训练证据闭合，而不是新增方法。
 
 ## Native-Crop S1 audit delta (2026-07-20)
 

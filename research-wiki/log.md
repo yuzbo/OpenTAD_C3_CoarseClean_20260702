@@ -703,3 +703,34 @@ append_only: true
   in the bound-config-only deterministic replacement and returned
   `DEPLOY_READY_WITH_GATES`; real D160/G96/U128 CUDA backward remains the
   deciding evidence.
+- 2026-07-21: deterministic-upsample runtime `6ee8a83` passed its clean Linux
+  suite and integrated CUDA/runtime Gate, but its first authorized formal
+  matrix failed before training. Jobs `1177641-1177646` failed immediately and
+  `1177647-1177649` were cancelled before allocation because a Windows
+  carriage return contaminated the exported `YUZIBO_ROOT`, resolving Conda
+  under `/data/run01/sczc063/yuzibo^M`. Campaign `66cd32ff...` is frozen as
+  deployment-failure evidence; it contains no S2 model result.
+- 2026-07-21: commits `eea1f90` and `9a61da27` hardened the formal deployment
+  surface: control/whitespace/comma rejection in Python and shell, exact
+  canonical root, canonical launcher bound to the expected Git blob, per-job
+  pre-sbatch rehash, v2 self-hashed environment/intent/receipt schemas, and
+  POSIX behavior tests in the formal Gate. Independent review returned
+  `DEPLOY_READY_WITH_GATES` with no P0/P1. The clean Linux exact suite passed
+  `81`.
+- 2026-07-21: integrated Gate Job `1177662` completed `0:0`. Full-model,
+  runtime-precheck, and runtime-authorization SHAs are respectively
+  `c633c3b7bc824c2f65800498621904fe307bc9be674375a3849c8c4e815f8c73`,
+  `6c5b8f52fe99c2b865ebf8d58db60b579e62c6258a93f6c7276020a7eb077272`,
+  and
+  `62a0fb21809f9b297337fd17d8440c8c557bfca00ab609c934832abc25846a5f`.
+  It validated two successful real-data updates per family, optimizer,
+  scheduler, final EMA, exact Slurm identity and zero official-test access.
+- 2026-07-21: the sole formal Continuous-RoI S2 development matrix was
+  submitted under campaign `77c2149a...`; deployment intent/deployment SHAs
+  are `96a805ca...a264` and `67227c44...c204`. Jobs
+  `1177668-1177676` bind D160/G96/U128 to seeds 3407/3408/3409. Six tasks
+  entered GPU execution and the remaining three waited only on `AssocGrpGRES`;
+  all six running tasks completed epochs 0 and 1 and entered epoch 2. Epoch-1
+  losses were finite and decreased from epoch 0; no
+  Traceback/OOM/non-finite/fail marker was present. Status is
+  `experiment_running`, not an empirical S2 result.

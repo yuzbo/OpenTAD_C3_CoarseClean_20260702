@@ -537,6 +537,38 @@ updated: 2026-07-20
   geometry rejection, pretrained identity, and zero official-test opens.
   It is model/interface evidence only: no development training, mAP, measured
   cost, S2 outcome, learned ROI, or paper claim follows from this Gate.
+- Continuous-RoI S2 deployment failure and correction, 2026-07-21. Runtime
+  `6ee8a83` authorized campaign
+  `66cd32ffecf22b5868997bb9f73e8c20befd3a3a668ba96a59901d18a16b43da`,
+  but Jobs `1177641-1177646` failed in launcher preflight and
+  `1177647-1177649` were cancelled because `YUZIBO_ROOT` contained a trailing
+  carriage return. The immutable failed campaign is at
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/continuous_roi_s2_canonical/4a6485551008f46c4651ed2193c2394606d7a6902641a3375d1fe2b81fa1e13f/campaigns/66cd32ffecf22b5868997bb9f73e8c20befd3a3a668ba96a59901d18a16b43da`.
+  It is deployment evidence only.
+- Continuous-RoI S2 hardened runtime and integrated Gate, 2026-07-21. Git
+  commits
+  [`eea1f90`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/eea1f906b035dceaa0cb8c17a8271cf5385ca791)
+  and
+  [`9a61da27`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/9a61da27e65c2227c8d2a0c547d8f3cb44966738)
+  bind control-free Slurm exports and the canonical launcher. Clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_continuous_roi_s2_9a61da2_20260721_deploy`
+  passed `81` exact Linux tests. Gate Job `1177662` evidence root is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/continuous_roi_s2_9a61da2_gate_20260721_0152`;
+  full-model/precheck/authorization SHAs are
+  `c633c3b7bc824c2f65800498621904fe307bc9be674375a3849c8c4e815f8c73`,
+  `6c5b8f52fe99c2b865ebf8d58db60b579e62c6258a93f6c7276020a7eb077272`,
+  and
+  `62a0fb21809f9b297337fd17d8440c8c557bfca00ab609c934832abc25846a5f`.
+- Continuous-RoI S2 formal development matrix, 2026-07-21. Campaign
+  `77c2149aa9fe7d6b19c777bebe5a95de710a0a738d89158431e69a9c5e78d066`
+  is rooted at
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/continuous_roi_s2_canonical/469652821b1ffb984ced17360a333cf1fed2700465ec6f8ac210b578e7dc5de9/campaigns/77c2149aa9fe7d6b19c777bebe5a95de710a0a738d89158431e69a9c5e78d066`.
+  Intent/deployment SHAs are
+  `96a805cafc2f918f8f24518d86744666e2ec39ef77981b954e36ef6db047a264`
+  and
+  `67227c4478dc5bf10ac3fc613aededd603e34bb670bc159a2863f0a69594c204`.
+  Jobs `1177668-1177676` are D160/G96/U128 x seeds 3407/3408/3409.
+  This source is an experiment-running receipt, not a completed result.
 
 ## 外部附件
 
