@@ -589,3 +589,14 @@ append_only: true
   result-blind power/Monte-Carlo audit. S2 remains `designed`; no formal
   implementation, queueing, test opening, learned policy, or paper claim is
   authorized.
+- 2026-07-20: created the claim-driven Native-Crop paper experiment roadmap.
+  It fixes the current position as `S2-P preregistration revision`, separates
+  S2 crop sufficiency from the S3 deployable learned policy, and reserves
+  official-test main evidence for the frozen final method. The paper-ready
+  route now requires a three-seed THUMOS14 accuracy-cost anchor and Pareto
+  curve, a TriDet secondary head, an ActivityNet-1.3 dataset census and run
+  (with a pre-result FineAction fallback only if completeness fails), minimal
+  mechanism ablations, full selector-inclusive cost, and immutable
+  result-to-claim closure. Every stage has an explicit stop rule; no later
+  experiment is authorized before S2 v1.1 is frozen and its predecessor gate
+  passes.

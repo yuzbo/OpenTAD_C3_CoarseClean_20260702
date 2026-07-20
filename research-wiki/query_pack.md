@@ -41,6 +41,19 @@ max_chars: 8000
 - 完整结论见
   `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-absorption.md`。
 
+## Native-Crop 论文实验路线
+
+- 当前处于 `S2-P preregistration revision`，不是主实验训练阶段。S1 Gate 只证明
+  crop 数据流、模型合同、梯度和 no-leak 可执行；S2 将证明 crop sufficiency、
+  adaptive headroom 与 cost viability，仍不是 deployable final method。
+- 只有 `SUFFICIENT_AND_POLICY_HEADROOM` 才解锁 S3 learned crop policy；固定 crop
+  已足够时转为简单 fixed-global/local 裁决，成本不成立时停止效率主张。
+- 论文主证据来自 S3/S4：runtime learned crop selector、THUMOS14 official test
+  三种子 accuracy-cost 主表与 Pareto 曲线。paper-ready 还要求 TriDet 第二检测头、
+  ActivityNet-1.3（完整性失败则预注册 FineAction）第二数据集，以及最小机制消融。
+- 完整依赖图、主表和 stop rules 见
+  `research-wiki/experiments/native-crop-paper-experiment-roadmap.md`。
+
 ## Spatial Zoom 路线纠偏（2026-07-19）
 
 - 真实研究目标是保留完整时间轴，并在源视频坐标中选择保持原生局部像素密度的空间
