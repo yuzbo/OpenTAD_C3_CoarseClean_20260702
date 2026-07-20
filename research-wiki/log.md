@@ -572,3 +572,20 @@ append_only: true
   implementation evidence only; crop sufficiency, mAP, measured cost,
   GO/KILL, learned ROI, and paper claims remain absent. The next task is a
   separate crop-sufficiency protocol freeze/discussion.
+- 2026-07-20: archived and independently audited the Pro-authored
+  `Native-Crop S2 Crop-Sufficiency Preregistration v1`. Raw SHA-256 is
+  `E14ABFAB41FAFA3C3F411DF87D3148170872A190C274ED9B7EB2DD44C520C7D5`.
+  The project accepts its source-coordinate crop object, same-runtime D160,
+  fit/gate and official-test isolation, no-GT raw inference, evaluator parity,
+  full-stack cost, and immutable evidence framework, but records
+  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`. Two decision-semantic
+  blockers remain: the GT-visible lexicographic reference is not a certified
+  library/global-mAP upper bound and cannot kill the library on failure; crop
+  sufficiency must be separated from adaptive-selection headroom and
+  deployable cost. v1.1 must also move gate GT creation after raw-output
+  sealing, split detection and ABBA cost uncertainty by sampling unit,
+  distinguish geometric coverage from model-conditioned reachability,
+  disclose crop-schedule estimand, reserve future selector cost, and pass a
+  result-blind power/Monte-Carlo audit. S2 remains `designed`; no formal
+  implementation, queueing, test opening, learned policy, or paper claim is
+  authorized.

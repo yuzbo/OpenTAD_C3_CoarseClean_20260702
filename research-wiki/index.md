@@ -11,6 +11,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [Spatial Zoom / Native-Crop offline TAD](ideas/spatial-zoom-offline-tad.md)
 - [Spatial Zoom R0 infrastructure](experiments/spatial-zoom-s1-infrastructure.md)
 - [Native-Crop S1 development vertical slice](experiments/native-crop-s1-vertical-slice.md)
+- [Native-Crop S2 crop sufficiency](experiments/native-crop-s2-crop-sufficiency.md)
 
 这是本项目研究记忆的单一入口。它区分讨论、代码、测试、实验和论文证据，
 用于阻止路线遗忘、旧错误复发和旧提交结果冒充最新实现。
@@ -66,6 +67,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [a5e1774 full-stack cost](experiments/duca-a5e-cost.md)
 - [parallel routes](experiments/parallel-routes.md)
 - [ChronoTransport formal Stage-B 负 gate](experiments/chronotransport-formal-stage-b.md)
+- [Native-Crop S2 crop sufficiency](experiments/native-crop-s2-crop-sufficiency.md)
 
 ### Claims
 

@@ -34,6 +34,24 @@ updated: 2026-07-20
 
 ## 关键评审与吸收记录
 
+- Native-Crop S2 Crop-Sufficiency Preregistration v1, 2026-07-20. The Pro
+  protocol audited commit
+  `f9eca5ab81ee0429469789cfa697e7851dce4bd4` and proposed a 21-candidate,
+  three-seed, source-native crop-sufficiency matrix with fit/gate isolation,
+  detached GT-visible reference analysis, official evaluator parity,
+  full-stack cost, immutable receipts, and mechanical decisions. Exact raw
+  archive:
+  `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-raw.txt`,
+  SHA-256
+  `E14ABFAB41FAFA3C3F411DF87D3148170872A190C274ED9B7EB2DD44C520C7D5`.
+  Project absorption:
+  `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-absorption.md`.
+  Project verdict is `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`:
+  the GT-visible rule is not a library upper bound; crop sufficiency,
+  selection headroom, and cost need separate outcomes; gate GT ordering,
+  statistical sampling units, coverage terminology, selector-cost reserve,
+  and result-blind power feasibility must be corrected in v1.1 before formal
+  implementation or queueing.
 - Native-Crop S1 Pro review, 2026-07-20. The reviewer audited immutable commits
   `d76ba1b`, `cef9548`, and `18139b9`, verified that the current path contains
   full-frame resize rather than source-native crop, and returned

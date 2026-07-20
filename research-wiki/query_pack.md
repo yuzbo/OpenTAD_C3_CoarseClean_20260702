@@ -24,22 +24,22 @@ max_chars: 8000
   sufficiency, measured full-stack cost, GO/KILL, learned ROI, and paper claims
   remain absent.
 
-## Native-Crop S1 实现状态（2026-07-20）
+## Native-Crop S2 协议裁决（2026-07-20）
 
-- 已实现 development-only、no-training 的真实纵向切片：
-  `decoded uint8 source -> global96 letterbox + source-coordinate center128
-  crop -> one shared VideoMAE-S -> fixed 384-point fusion ->
-  [B,384,768] AdaTAD-derived detector contract`。
-- 200 个 development 视频的可用解码源均为 `320x180`；96/112/128 crop
-  均无需 padding。该事实只证明当前数据副本上的几何可行性，不证明语义充分性，
-  也不能表述为原始摄像机采集分辨率。
-- 真实数据人口已经按冻结 manifest 闭合为 fit 160 / gate 40。旧 `0.25`
-  sliding overlap 会漏掉末尾仅有 0.7 秒动作的
-  `video_validation_0000054`；新 Native-Crop 配置单独使用 `0.5`
-  overlap，R0 不改动。
-- focused Linux 测试和真实 decode 已通过；正式 commit-bound CUDA
-  full-model gate、预训练权重逐张量核验、完整 detector-loss backward
-  仍待闭合。当前不存在 crop mAP、成本结果、GO/KILL 或论文主张。
+- Pro 的 21-candidate crop-sufficiency v1 已原样归档，但项目裁决为
+  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`，不是可立即编码排队的冻结协议。
+- 接受其 source-coordinate crop、同运行时 D160、fit/gate 隔离、无 GT raw sweep、
+  official evaluator parity、完整成本和不可变证据设计。
+- 阻断点：GT 可见的逐窗词典序 reference 不是 library/global-mAP 上界，失败不能
+  `KILL_THIS_LIBRARY`；crop sufficiency、adaptive headroom、cost viability 必须分开裁决。
+- gate GT cache 只能在 raw gate outputs 封存后由特权 join 阶段创建；检测统计和
+  ABBA 成本统计必须使用各自正确的重采样单位；几何 coverage 不能与模型条件的
+  candidate-union reachability 混称。
+- 数值 margin 冻结前必须做不查看 S2 结果的 power/Monte-Carlo 可行性审计，并为未来
+  selector 预留成本。唯一下一步是修订 v1.1；S2 实现、训练、test-open 和 learned
+  policy 仍未授权。
+- 完整结论见
+  `docs/methods/reviews/2026-07-20-native-crop-s2-crop-sufficiency-preregistration-pro-absorption.md`。
 
 ## Spatial Zoom 路线纠偏（2026-07-19）
 

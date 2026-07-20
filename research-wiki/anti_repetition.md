@@ -5,6 +5,25 @@ updated: 2026-07-20
 
 # 禁止重走清单
 
+## Native-Crop S2 协议反例
+
+0. 不得把 GT 可见、逐窗口词典序选择的 reference 称为 21-candidate library
+   的上界或 global-mAP oracle。它通过可作为充分证据；它失败只能否定该规则，
+   不能据此 `KILL_THIS_LIBRARY`。
+0. 不得把 crop sufficiency、adaptive-selection headroom 和 deployable cost
+   viability 合并成一个二元 GO/KILL。固定 crop 足够但无选择 headroom 时，应记录
+   `SUFFICIENT_FIXED_CROP_ONLY`，而不是宣判 crop library 失败。
+0. gate raw predictions 封存前不得创建可被训练或推理命名空间访问的 gate GT
+   target cache。顺序必须是 no-GT raw sweep、不可变 receipt、特权 GT join。
+0. 不得用 video-cluster bootstrap 同时代表检测 mAP 与 ABBA latency/energy
+   不确定性。检测和成本必须按各自采样单位校正，再做交集裁决。
+0. 不得把确定性的 candidate geometry coverage 与训练模型产生的
+   `CandidateUnionRecall` 混为一谈；后者应称 model-conditioned reachability。
+0. 不得声称 selector-free 的 policy-shaped path 已证明 learned selector 的部署成本。
+   必须预留 selector 成本预算，或只主张 representation-path headroom。
+0. 不得在看过 S2 结果后调整等效、headroom 或成本 margin。冻结前只能用 synthetic
+   或历史方差做 result-blind power/Monte-Carlo feasibility audit。
+
 ## Native-Crop S1 新增反例
 
 0. 不得把 `320x180` 称为原始摄像机采集分辨率；它只是当前数据副本中

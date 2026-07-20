@@ -1,0 +1,1898 @@
+# Native-Crop S2 Crop-Sufficiency Preregistration v1
+
+## 1. 协议身份与逐行审计依据
+
+**冻结审查对象**
+
+* Repository：`yuzbo/OpenTAD_C3_CoarseClean_20260702`
+* Audit branch：`codex/spatial-zoom-s1-audit-fix-20260715`，仅用于定位
+* 唯一审查 commit：`f9eca5ab81ee0429469789cfa697e7851dce4bd4`
+* GitHub commit object 已核验存在，提交信息为 `Record Native-Crop S1 CUDA gate`。
+* S1 实现锚点：`0bf59be877eeb6879166893641c12bc4e60a2b53`
+* 本协议的代码事实只来自 `f9eca5ab81ee0429469789cfa697e7851dce4bd4` 下的 Git blob；分支 HEAD、工作区文件、历史 R0 数字、README 叙述均不得替代该快照。
+
+**审计裁决**
+
+1. S1 已闭合 source-uint8 crop、共享 VideoMAE 实例、`6×6/8×8` token grid、`[B,384,768]` detector 输入和双分支梯度连通，但明确没有 crop mAP、完整成本、GO/KILL、learned policy 或论文证据。
+2. `NativeCropSourceViews` 确实在 `DecordDecode` 后立即处理 decoded `uint8` frame；local crop 没有插值，global view 才执行 bilinear letterbox。
+3. global/local 共用同一个 `self.model.backbone`，但 wrapper 顺序执行两次 `_encode_view`；固定均值发生在两个 `[B,384,384]` feature stream 之后。共享权重不等于一次计算。
+4. 当前 S1 config 明确禁止 detector training、`tools/train.py`、map、teacher、oracle、learned policy 和 official test，因此 S2 不得直接解除该 config 的 gate；必须新增独立 S2 config 与注册。
+5. 历史 `e2e_thumos_videomae_s_768x1_160_adapter.py` 的 train path 包含 `RandomResizedCrop`，val/test path 包含 resize 后 `CenterCrop(160)`；它不是保留完整画面的 matched full-frame dense160。S2 的正式 `matched dense160` 因而冻结为 **decoded source full-frame letterbox160**，而不是复用该旧空间 pipeline。旧文件只提供 VideoMAE、optimizer、scheduler、head 和 NMS 继承依据。
+6. 正式模型保持原 projection、FPN、ActionFormer head、loss 和 sliding-window NMS。当前推理先产生 per-window 结果，sliding population 汇总后再运行 NMS；S2 reference 必须在该汇总 NMS 之前选择 window candidate。
+7. official mAP evaluator 按 score 降序、逐类逐 tIoU 贪心锁定 GT；零长度 proposal 不会被预先删除，tIoU 为零时继续作为 false positive。S2 analyzer 必须复现该行为。
+8. `return_feat_map=True` 绕过分类出口 `fc_norm`；历史 gate 只允许这两个参数无梯度。S2 不再保留“trainable 但 disconnected”的例外，而是在模型构建后显式冻结 `fc_norm.{weight,bias}`。
+9. 所有 formal training 使用一个进程、一个 Slurm-visible GPU、strict deterministic、无 resume、无 `--cfg-options`，AMP overflow 最多重试 8 次；scheduler、EMA 和 successful-update counter 只能在成功 optimizer step 后推进。现有训练入口已经具备这些事务语义，S2 仅增加独立 binding。
+
+**必读文件逐行审计锚点**
+
+下列文件均按完整 blob 阅读；表中列出形成协议裁决的决定性 `file:line`。
+
+| 审计表面                    | 决定性行锚点                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 研究身份                    | `AGENTS.md:7-11,28-32,36-55,66`；`RTK.md:5-19,35-45,85-92`                                                                                    |
+| 研究记忆                    | `research-wiki/query_pack.md:11-27,48-73,79-92,125-131,139-152`；`research-wiki/anti_repetition.md:12-43,52-65,76-98,102-124,147-151,172-215` |
+| S1 实验记录                 | `research-wiki/experiments/native-crop-s1-vertical-slice.md:18-37,41-94,115-128`                                                             |
+| Native-Crop contract    | `docs/methods/native_crop_s1_vertical_slice_contract.md:7-20,24-44,48-70,74-103,107-112`                                                     |
+| Dense-R0 contract       | `docs/methods/spatial_zoom_s1_contract.md:7-15,43-126,139-158,180-204`                                                                       |
+| Native S1 config        | `configs/adatad/thumos/native_crop_s1_center_videomae_s_768x1_adapter.py:8-34,36-77,79-120`                                                  |
+| 历史 dense160 config      | `configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py:3-10,13-64,68-138,141-159`                                                 |
+| Source transform        | `opentad/datasets/transforms/native_crop.py:16-27,30-77,80-123,125-225`                                                                      |
+| Formatting/registration | `opentad/datasets/transforms/formatting.py:14-101`；`opentad/datasets/transforms/__init__.py:3-22`                                            |
+| Native wrapper          | `opentad/models/backbones/native_crop_wrapper.py:16-80,83-114,116-207,209-262`                                                               |
+| Backbone registration   | `opentad/models/backbones/__init__.py:3-21`；`opentad/models/builder.py:22-39`                                                                |
+| Dataset base config     | `configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py:10-41,43-93,97-102`                                                |
+| Detector base config    | `configs/_base_/models/actionformer.py:3-44`                                                                                                 |
+| VideoMAE adapter        | `opentad/models/backbones/vit_adapter.py:737-874,920-996`                                                                                    |
+| ActionFormer call chain | `opentad/models/detectors/actionformer.py:96-215,217-326`；`opentad/models/detectors/single_stage.py:16-29,51-97,99-171`                      |
+| Dense head/objective    | `opentad/models/dense_heads/actionformer_head.py:7-41`；`opentad/models/dense_heads/anchor_free_head.py:288-413`                              |
+| Optimizer               | `opentad/cores/optimizer.py:7-58,61-142`；`opentad/cores/layer_decay_optimizer.py:29-95`                                                      |
+| Train transaction       | `opentad/cores/train_engine.py:27-191`；`opentad/cores/scheduler.py:10-146`；`tools/train.py:69-179,199-305`                                   |
+| Frame/window mapping    | `opentad/datasets/transforms/end_to_end.py:448-519`；`opentad/datasets/thumos.py:33-61,89-108`；`opentad/datasets/builder.py:28-61`            |
+| Official evaluation     | `opentad/cores/test_engine.py:25-135,138-179`；`opentad/evaluations/mAP.py:44-155,232-350,420-464`                                            |
+| Contract schemas        | `tools/bata/native_crop_s1_contract.py:11-62,86-171`                                                                                         |
+| Geometry census         | `tools/bata/native_crop_s1_geometry_census.py:25-172`                                                                                        |
+| Development annotation  | `tools/bata/build_native_crop_s1_development_annotation.py:24-76`                                                                            |
+| Full-model precheck     | `tools/bata/run_native_crop_s1_precheck.py:51-144,191-342,358-476,480-1024`                                                                  |
+| Slurm gate              | `scripts/run_native_crop_s1_gate_slurm.sh:3-101`                                                                                             |
+| Focused tests           | `tests/test_native_crop_s1_vertical_slice.py:31-164,182-344,347-510`                                                                         |
+
+当前 immutable snapshot 对 S2 的唯一授权是：在 development fit/gate 上冻结并执行本 crop-sufficiency 协议。`320×180` 仅指当前可解码实验源，不能表述为摄像机原始采集分辨率；有限 library 也不能表述为连续空间 oracle。
+
+---
+
+## 2. 唯一研究命题与 estimand
+
+**唯一命题 H1**
+
+> 对冻结的 THUMOS14 development fit/gate、完整 768 点时间轴、同一 VideoMAE-S/AdaTAD-derived ActionFormer detector、同一训练预算和 official evaluator，一个由 21 个静态、source-native、`128×128` local crop 构成并具有明确几何 coverage certificate 的有限 library，是否存在一个非部署、GT 可见的 library-conditional reference，使 `global96 + selected-local128` 在 Avg-mAP、高 tIoU、短动作和边界保护上与 full-frame letterbox160 等效，同时相对固定中心、确定性随机和最佳固定位置保留足够的选择 headroom，并使单 local-candidate 的真实 full-stack 路径显著低于 dense160 成本。
+
+H1 是一个交集命题；第 11 节的全部 coverage、准确率、headroom、成本和种子稳定性条件必须同时满足，才允许 `GO_TO_LEARNED_POLICY`。
+
+**Primary estimand**
+
+令：
+
+* (M_{s,\mathrm{REF}})：seed (s) 下 `NC2-GL-LIB-REF` 在 40 个 gate 视频上的 official Avg-mAP；
+* (M_{s,\mathrm{D160}})：同 seed 下 `NC2-D160` 的 official Avg-mAP；
+* seeds (S={3407,3408,3409})。
+
+冻结 primary estimand 为：
+
+[
+\Delta_{\mathrm{Avg}}
+=====================
+
+\frac{1}{3}
+\sum_{s\in S}
+\left(
+M_{s,\mathrm{REF}}-M_{s,\mathrm{D160}}
+\right).
+]
+
+单位为 percentage points。`NC2-GL-LIB-REF` 是有限 21-candidate、per-window、GT-visible reference；它不是可部署模型，也不是连续空间或 global-mAP oracle。
+
+---
+
+## 3. 允许主张与禁止主张
+
+**S2 通过后唯一允许主张**
+
+> 在冻结的 21-candidate、static local128 library、global96 context、fixed-mean fusion、VideoMAE-S/AdaTAD-derived ActionFormer、development fit/gate 和注册成本环境下，存在足以保护已注册 TAD 指标且具有选择 headroom 的 source-native local views；该证据仅授权启动一个独立预注册的 learned candidate-selection 研究阶段。
+
+同时允许报告：
+
+* library 的几何覆盖率和 minimum same-size crop IoU certificate；
+* library-union proposal coverage；
+* center、deterministic random、fit-selected best-fixed 和 GT-visible reference 的 paired margins；
+* matched dense160、dense224、dense256 的同提交 development 结果；
+* 单 global+单 local 路径与 dense160 的 warm-serial full-stack 成本；
+* non-deployable exhaustive reference-search 成本，且必须单独列示。
+
+**始终禁止主张**
+
+* 禁止把 S2 称为 learned ROI、learned crop policy、强化学习、动态 budget 或时变 tracking 方法。
+* 禁止把 `global96`、dense160/224/256 full-frame letterbox 称为空间裁剪。
+* 禁止虚构 THUMOS14 空间框、actor box、spatial GT 或“ground-truth crop”。
+* 禁止把 reference 称为连续空间 oracle、mAP oracle、真实部署策略或 paper method。
+* 禁止从 S2 推出 learned policy 必然可训练、必然低成本或必然优于 reference。
+* 禁止把 matched view pixels、token 数或理论 FLOPs 当成实测延时、显存或能耗。
+* 禁止把共享 VideoMAE 参数写成一次 backbone forward。
+* 禁止使用 historical R0 数字填充正式矩阵。
+* 禁止把 development gate 结果称为 official-test 结果。
+* 禁止把 GO 写成论文贡献成立、跨 detector 泛化成立或 continuous-crop 路线成立。
+* `KILL_THIS_LIBRARY` 只否定第 5 节冻结的 21 个 static local128 candidate 及其 registered use，不得否定全部 continuous-crop 研究。
+* `INCONCLUSIVE_COVERAGE` 不得授权 learned policy，也不得 KILL continuous crop。
+
+---
+
+## 4. 冻结数据划分与可见权限
+
+**冻结身份**
+
+| 项目                                      |                                                                冻结值 |
+| --------------------------------------- | -----------------------------------------------------------------: |
+| Development annotation SHA-256          | `0985d3711ab31f404ff0be5a1ba75420796a6807d486410337078b38090bf749` |
+| Source annotation SHA-256               | `ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad` |
+| Class map SHA-256                       | `a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31` |
+| Manifest schema                         |                                      `spatial_zoom_s1_manifest_v4` |
+| Manifest internal SHA-256               | `10b14faac57d4631dfae93c9a7d14eb81b8dc308f0e80232469e5b7c974589ca` |
+| Manifest file SHA-256                   | `8e5a8901cb24b735750d5766405996dcac022b37f5a79fdbbdaa1f5479bf141d` |
+| Fit identities                          |                                                                160 |
+| Fit identity hash                       | `fa8f3a005f97c82a8e3dbb470eec7bce27b813e9d6a8908cbdcc6d5a2d1bb3af` |
+| Gate identities                         |                                                                 40 |
+| Gate identity hash                      | `4d4e956aae298720529a2949c8aeb9fc90a1fc4730348bf5b5ba165d7df1f576` |
+| Sealed official-test identities         |                                                                211 |
+| Sealed-test identity hash               | `5f9adf639fbcff869075ac78f6aa26d9da14986199a7d5b2181127769600746e` |
+| Gate sliding windows                    |                                                                129 |
+| Complete development sliding population |                                                                664 |
+| Fit sliding windows                     |                                                                535 |
+| Window length                           |                                                         768 points |
+| Sliding overlap                         |                                                                0.5 |
+
+这些常量由当前 contract 固定，并已实现 split count、identity hash 和交集拒绝。
+
+**正式 dataset binding**
+
+* `train`：
+
+  * annotation 仅为 development annotation；
+  * `subset_name="training"`；
+  * block gate 40 IDs；
+  * 最终 runtime identity 必须精确等于 fit 160。
+* `val` 与名义上的 `test` loader：
+
+  * 二者均为 development gate loader；
+  * block fit 160 IDs；
+  * runtime identity 必须精确等于 gate 40；
+  * `window_overlap_ratio=0.5`；
+  * 不指向 official test annotation 或 test video root。
+* evaluator：
+
+  * `subset="training"`；
+  * `blocked_videos` 精确为 fit list；
+  * tIoU thresholds 为 `[0.3,0.4,0.5,0.6,0.7]`。当前 base evaluator 的五阈值定义见 `configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py:97-102`。
+
+**可见权限矩阵**
+
+| 阶段                         |                   Fit image |                        Fit GT |       Gate image |                                         Gate GT | Teacher |                   Prediction | Official test |
+| -------------------------- | --------------------------: | ----------------------------: | ---------------: | ----------------------------------------------: | ------: | ---------------------------: | ------------: |
+| Static tests               |           synthetic/fixture |                       fixture |                否 |                                               否 |       否 |                            否 |             否 |
+| CUDA gate                  | 1 个 development real window |      仅 backward fixture 对应 GT |                否 |                                               否 |       否 |                   smoke only |             否 |
+| Candidate/cache generation |                           否 |             允许构建 target cache |                否 |                        允许构建 sealed target cache |       否 |                            否 |             否 |
+| Formal training            |                           是 |            是，标准 detector loss |                否 |                                               否 |       否 |                      不读取历史预测 |             否 |
+| Fit exhaustive sweep       |                           是 | 只在 detached utility/evaluator |                否 |                                               否 |       否 | final-checkpoint predictions |             否 |
+| Gate raw candidate sweep   |                           否 |                             否 |                是 |                            **不得进入 raw forward** |       否 |                          新生成 |             否 |
+| Reference utility join     |                           否 |                             否 | 已哈希的 raw outputs |                                               是 |       否 |                            是 |             否 |
+| Full-stack profile         |                           否 |                             否 |                是 | 仅 reference-search profile 可读 selection receipt |       否 |                          新生成 |             否 |
+| Frozen analyzer            |                           否 |            fit aggregate only |                否 |                                               是 |       否 |                            是 |             否 |
+
+**Short-Q1 冻结**
+
+* 从 fit 160 的全部非 `Ambiguous` GT duration 计算 25th percentile；
+* 算法固定为 NumPy `1.23.5` 的 linear percentile；
+* 得到的标量以秒为单位，在 candidate/cache stage 写入 `short_q1_threshold_seconds`；
+* gate GT duration 不超过该阈值的实例构成 Short-Q1；
+* 该阈值在任何模型训练或预测产生前冻结；
+* gate Short-Q1 必须包含至少 30 个 GT、至少 8 个类别，否则 coverage 状态为 `INCONCLUSIVE_COVERAGE`。
+
+**Official-test sealed certificate**
+
+每个阶段均必须验证：
+
+* test identity count/hash 为 `211` 和注册 hash；
+* config、环境变量、annotation path、video path 均不指向 official-test root；
+* `/proc/<pid>/fd` 打开文件清单中 official-test annotation/video 文件数均为零；
+* 不允许 symlink、bind mount、alternate path 或 cache alias 穿透；
+* 任一阶段发现 fit/gate/test ID 重叠、cache split 不一致或 test path 被打开，campaign 失效，不生成 decision。
+
+---
+
+## 5. 冻结 candidate library 与 coverage certificate
+
+**Library identity**
+
+* Schema：`native_crop_s2_candidate_library_v1`
+* Library ID：`NC2-L128-STATIC-7X3-V1`
+* local crop：`128×128`
+* coordinate convention：decoded source RGB frame 上的 half-open `xyxy`
+* source geometry：runtime 必须与 geometry cache 一致；当前冻结 population 为 `W=320,H=180`
+* temporal behavior：static
+* knots：空集合
+* temporal interpolation：`NONE`
+* horizontal/vertical velocity：精确为零
+* acceleration、jitter、smoothing：精确为零
+* candidates/window：21
+* scale candidates：只有 `128×128`
+* aspect-ratio candidates：只有 `1:1`
+
+**坐标公式**
+
+令 (C=128)、(J_x=6)、(J_y=2)，定义确定性 half-up rounding：
+
+[
+\operatorname{RH}(a,b)
+======================
+
+\left\lfloor
+\frac{2a+b}{2b}
+\right\rfloor .
+]
+
+对 (j\in{0,\ldots,6})、(k\in{0,1,2})：
+
+[
+x_j=\operatorname{RH}\big(j(W-C),J_x\big),\qquad
+y_k=\operatorname{RH}\big(k(H-C),J_y\big).
+]
+
+candidate box 为：
+
+[
+B_{j,k}=[x_j,y_k,x_j+C,y_k+C).
+]
+
+在 `320×180` 上：
+
+* (x_0) 集合：`[0,32,64,96,128,160,192]`
+* (y_0) 集合：`[0,26,52]`
+* center candidate：`j=3,k=1`，box `[96,26,224,154)`
+* stable linear index：(q=7k+j)，范围 `0..20`
+* stable ID：`NC2-L128-S-J{j:02d}-K{k:02d}`
+
+**越界、平移和 padding**
+
+* 上述公式在 (W,H\ge128) 时必定给出 in-bounds box。
+* runtime 重新根据 `(j,k,W,H)` 计算坐标；cached absolute box 只用于一致性验证。
+* 若外部或损坏 cache 给出越界 box，先按保持 `128×128` 的 rigid translation 计算可行 box，但 formal validator 要求 translation delta 精确为 `[0,0]`；非零即拒绝，不能静默修复。
+* 若 `W<128` 或 `H<128`，formal S2 禁止 padding，整个 campaign 在 coverage 前置门失败。
+* local crop 不执行 resize、resample、interpolation、mask pooling 或 float materialization。
+* full-frame global/dense views执行独立 letterbox；不得在 full-frame resize 后再取 local crop。
+
+**Candidate cache population**
+
+* 664 development sliding windows × 21 = `13,944` rows；
+* 535 fit windows × 21 = `11,235` rows；
+* 129 gate windows × 21 = `2,709` rows；
+* 每行绑定 source geometry、window ID、candidate ID 和 exact box；
+* 不缓存 RGB pixels、float tensor、feature 或 model prediction。
+
+**稳定 window ID**
+
+```text
+window_id :=
+  video_id
+  + "|"
+  + zero_pad(window_start_frame, 10)
+  + "|"
+  + zero_pad(valid_temporal_points, 4)
+```
+
+**几何 coverage certificate**
+
+对任意 admissible continuous same-size crop top-left：
+
+[
+(u,v)\in[0,W-C]\times[0,H-C],
+]
+
+其最近 library candidate 满足：
+
+[
+|u-x_j|\le16,\qquad |v-y_k|\le13.
+]
+
+因此最坏 equal-size box IoU 下界为：
+
+[
+\operatorname{IoU}_{\min}
+=========================
+
+\frac{(128-16)(128-13)}
+{2\cdot128^2-(128-16)(128-13)}
+==============================
+
+# \frac{12880}{19888}
+
+0.6476267095736.
+]
+
+正式 certificate 必须同时证明：
+
+* `min_same_size_crop_iou >= 0.6476267095736`；
+* 逐个枚举 `193×53=10,229` 个 integer top-left，结果不低于解析下界；
+* 21 个 crop 的 source-pixel union 覆盖 `320×180` 的 100%；
+* 所有 13,944 rows 都 in-bounds；
+* padding rate 为 0；
+* translation delta 全为 0；
+* candidate count/window 精确为 21；
+* stable ID、index、coordinates 无重复；
+* 任意 runtime geometry 与 cache geometry 不一致时 fail-closed。
+
+**模型条件下的 candidate coverage**
+
+对 `NC2-GL-LIB` final EMA，每个 candidate 保留其 top-200 pre-NMS proposals，按 proposal 的最大 class score 排序。对每个 GT (g)：
+
+[
+h(g,\tau)=
+\mathbf 1\left[
+\exists c,p:
+\operatorname{label}(p)=\operatorname{label}(g),
+\operatorname{tIoU}(p,g)\ge\tau
+\right].
+]
+
+注册 coverage 指标为：
+
+* overall `CandidateUnionRecall@0.7`；
+* Short-Q1 `CandidateUnionRecall@0.7`；
+* 同时报告 `@0.5`、per-class、per-duration quartile；
+* 它们使用 21 candidates 的 union，但不组成可部署预测。
+
+**生成与验证工具**
+
+* 生成：`tools/bata/build_native_crop_s2_candidate_cache.py`
+* 验证：`tools/bata/validate_native_crop_s2_candidate_cache.py`
+* 几何 certificate：`tools/bata/native_crop_s2_coverage.py`
+* 输出：`candidate_library.json`、`candidate_rows.jsonl`、`coverage_certificate.json`
+* 三个文件均使用 canonical JSON、自哈希、文件 SHA-256 和 `O_EXCL` 原子发布。
+
+---
+
+## 6. 冻结 library-conditional reference
+
+**Reference identity**
+
+* Schema：`native_crop_s2_detector_objective_reference_v1`
+* 模型：对应 seed 的 `NC2-GL-LIB` final EMA
+* candidate set：第 5 节的 21 个 static local128 boxes
+* selection granularity：每个 768-point sliding window一个 candidate
+* GT visibility：fit/gate 均允许，但仅在 detached reference utility 阶段
+* teacher：无
+* spatial GT：无
+* reference cache 进入 raw model prediction：禁止
+* reference selection 进入 deployable cell：禁止
+
+**Raw candidate prediction**
+
+对每个 window 和 candidate：
+
+1. decode source frames 一次；
+2. 生成一个 global96 和 21 个 source-native local128；
+3. global branch feature 只计算一次；
+4. 每个 local branch feature 计算一次；
+5. 对每个 candidate 与同一 global feature fixed-mean fusion；
+6. projection/FPN/head 产生未聚合、未 sliding-NMS 的 proposal 与 class score；
+7. 该 raw forward 不接收 GT、target cache、teacher、reference ID 或其它 candidate 的结果。
+
+**注册 utility**
+
+令 (G_w) 为 window (w) 的 temporal GT，(P_{w,c}) 为 candidate (c) 的 official-domain、pre-sliding-NMS predictions。预测采用原路径的 `pre_nms_thresh=0.001` 和 `pre_nms_topk=2000`，但 utility 使用未 round 的 float tensor。
+
+对 (g\in G_w)：
+
+[
+b_\tau(g,c)
+===========
+
+\max_{\substack{p\in P_{w,c}\
+\operatorname{label}(p)=\operatorname{label}(g)}}
+\operatorname{tIoU}(p,g),
+]
+
+空集合取 0。
+
+[
+n_\tau(c,w)
+===========
+
+\sum_{g\in G_w}
+\mathbf 1[b_\tau(g,c)\ge\tau].
+]
+
+[
+q(c,w)
+======
+
+\sum_{g\in G_w}
+\max_{\substack{p\in P_{w,c}\
+\operatorname{label}(p)=\operatorname{label}(g)}}
+\left[
+\operatorname{score}(p)\operatorname{tIoU}(p,g)
+\right].
+]
+
+定义 false-evidence set：
+
+[
+F_{w,c}
+=======
+
+\left{
+p\in P_{w,c}:
+\max_{\substack{g\in G_w\
+\operatorname{label}(g)=\operatorname{label}(p)}}
+\operatorname{tIoU}(p,g)<0.3
+\right}.
+]
+
+按 score 降序取前 50 个，不足补零：
+
+[
+f(c,w)
+======
+
+\frac{1}{50}
+\sum_{p\in\operatorname{Top50}(F_{w,c})}
+\operatorname{score}(p).
+]
+
+再计算原 ActionFormer head 的 evaluation-mode detector objective：
+
+[
+L_{\mathrm{det}}(c,w)
+=====================
+
+L_{\mathrm{cls}}(c,w)+L_{\mathrm{reg}}(c,w).
+]
+
+`model.eval()` 时，当前 head 使用 per-window `max(num_pos,1)`，不会更新训练期 EMA loss normalizer。
+
+Reference utility 是下列 tuple 的 lexicographic maximum：
+
+[
+V(c,w)
+======
+
+\left(
+n_{0.7},
+n_{0.5},
+q,
+-f,
+-L_{\mathrm{det}},
+-q_{\mathrm{index}}
+\right).
+]
+
+因此 reference 首先最大化 high-IoU GT proposal coverage，然后最大化 0.5 coverage 和 score-weighted overlap，再最小化 false evidence、detector loss 和 candidate index。无 GT window 的前三项精确为零，选择由 false evidence、detector loss 和 ID 决定。
+
+**Tie-break**
+
+lexicographic tuple 完全相同时，选择最小 candidate index。禁止 epsilon tie、近似 tie、随机 tie 或基于 gate aggregate mAP 的二次选择。
+
+**Fit 与 gate 计算**
+
+* Fit：
+
+  * 对 535 个 fixed sliding windows 完成全 21-candidate sweep；
+  * 计算同一 per-window reference；
+  * 只用于 fit/reference diagnostic 和 `BESTFIXED` control；
+  * 不改变模型、candidate library、阈值或 checkpoint。
+* Gate：
+
+  * 对 129 windows 完成全 candidate sweep；
+  * raw outputs 全部哈希并关闭后，才允许读取 gate target cache；
+  * 计算 per-window reference ID；
+  * 选择该 candidate 的 per-window official result；
+  * 之后调用原 sliding aggregation/NMS 和 evaluator。
+
+**BESTFIXED control**
+
+对每个 seed：
+
+1. 在 fit 535 windows 上，为每个 candidate ID 分别组成一个全-fit fixed-position预测集；
+2. 用 official evaluator 计算 Avg-mAP；
+3. 最大 Avg-mAP 胜出；
+4. tie 时依次比较 mAP@0.7、mAP@0.6、较小 candidate ID；
+5. 得到一个 fit-selected candidate ID；
+6. gate 上所有 window 使用该同一 ID；
+7. gate GT 不参与该选择。
+
+**Cache 与 artifact schema**
+
+`reference_target_cache.jsonl` 每行包含：
+
+```text
+schema_version
+window_id
+split
+video_id
+window_start_frame
+valid_temporal_points
+mask_sha256
+gt_segments_768
+gt_labels
+short_q1_flags
+annotation_sha256
+candidate_library_sha256
+row_sha256
+```
+
+`reference_utility_rows.jsonl` 每行包含：
+
+```text
+schema_version
+seed
+checkpoint_file_sha256
+checkpoint_state_sha256
+window_id
+candidate_id
+n_tiou_07
+n_tiou_05
+score_weighted_tiou_sum
+false_score_mass_top50
+cls_loss
+reg_loss
+detector_loss
+raw_prediction_internal_sha256
+row_sha256
+```
+
+`reference_selection_receipt.json` 包含完整 21-row set hash、selected ID、tie trace 和自哈希。
+
+**为何不是 continuous spatial oracle**
+
+* 仅有 21 个 box；
+* crop size 固定为 128；
+* aspect ratio 固定为 1:1；
+* 无 scale search；
+* 无 trajectory；
+* 无 sub-grid coordinates；
+* reference 只在当前模型输出和注册 utility 下最优；
+* 它不是 global official mAP 的组合优化 oracle；
+* 它不能证明 library 外不存在更好 crop。
+
+**Cache 是否进入模型推理**
+
+不进入。raw candidate logits/proposals 必须先在无 GT、无 cache 条件下生成和封存；target cache 仅对 detached outputs 计算 utility。reference ID 只由 analyzer 用于选择已经存在的 per-window result。任何在 backbone、fusion、projection、head 或 score 生成前读取 reference ID 的实现均失效。
+
+---
+
+## 7. 冻结模型与训练配置
+
+**共同模型**
+
+* 时间轴：768
+* chunk count：48
+* clip length：16
+* tubelet：2
+* intermediate temporal feature：384
+* detector input：`[B,384,768]`
+* VideoMAE-S：
+
+  * patch size 16；
+  * embed dim 384；
+  * depth 12；
+  * heads 6；
+  * 12 个 temporal adapters；
+  * activation checkpointing 开启；
+  * runtime spatial position interpolation。
+* Detector：
+
+  * 原 ActionFormer projection；
+  * 原 FPN；
+  * 原 ActionFormer head；
+  * 原 focal classification loss、DIoU regression loss；
+  * 原 soft-NMS；
+  * 不增加 detector parameter、loss 或 post-processing repair。
+
+现有 dense config 已冻结 backbone、optimizer、scheduler、NMS 等具体参数。
+
+**输入视图**
+
+* `D160/D224/D256`：decoded source 的完整 frame，分别 letterbox 到 `160/224/256`；不是 local crop。
+* `G96`：完整 frame letterbox96。
+* `L128-C`：source-coordinate center local128，无 global。
+* `GL-C`：global96 + center local128。
+* `GL-LIB`：global96 + library-selected local128。
+* 所有 source transforms 在 decoded CPU `uint8` 上完成。
+* formal S2 关闭 `RandomResizedCrop`、`Flip`、`ImgAug` 和 `ColorJitter`；所有 cell 使用相同、确定性的空间处理。
+* temporal random trunc、GT clipping 和 mask 逻辑保持一致。
+
+**共享 VideoMAE**
+
+* dual-view cell 中只有一个 `Recognizer3D/VisionTransformerAdapter` 参数实例；
+* global/local 顺序调用同一实例；
+* 不建立 `global_backbone` 与 `local_backbone` 两份 state；
+* checkpoint 中不得出现重复 branch core；
+* global/local features 形状均为 `[B,384,384]`。
+
+**Fusion**
+
+[
+F_{\mathrm{GL}}(t)
+==================
+
+\frac{F_{\mathrm{global}}(t)+F_{\mathrm{local}}(t)}{2}.
+]
+
+* fusion 位置：384-point、384-channel feature level；
+* fusion 参数：零；
+* 之后使用现有 exact deterministic 2× interpolation 到 768；
+* `G96` 和 `L128` control 跳过未使用 branch 的计算，不允许“计算两支后丢弃一支”。
+
+**初始化**
+
+* pretrained filename：`vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth`
+* pretrained SHA-256：`4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251`
+* checkpoint state tensors：163
+* backbone core tensors：161
+* core parameters：22,482,048
+* 每个 seed 下，所有 cell 的共享形状参数必须具有相同 initialization-state hash；
+* adapters、projection、FPN、head 的随机初始化由 seed 唯一决定；
+* 不从历史 S1/R0 trained checkpoint 初始化。
+
+**Trainable/frozen parameters**
+
+Trainable：
+
+* 12 个 VideoMAE temporal adapters；
+* projection；
+* FPN；
+* ActionFormer classification/regression towers；
+* predictor heads 和 scale parameters。
+
+Frozen：
+
+* VideoMAE patch embed；
+* 所有非-adapter attention、MLP 和 transformer norm 参数；
+* pretrained core 的其它非-adapter参数；
+* `backbone.model.backbone.fc_norm.weight`；
+* `backbone.model.backbone.fc_norm.bias`；
+* fusion，无参数。
+
+训练完成后 frozen core 必须与初始化 checkpoint bitwise 一致。
+
+**Optimizer**
+
+* type：AdamW
+* detector base LR：`1.0e-4`
+* adapter LR：`2.0e-4`
+* detector weight decay：`0.05`
+* adapter weight decay：`0.05`
+* detector bias/norm/no-decay 规则保持现有 `ActionFormer.get_optim_groups`
+* frozen core 不得进入 optimizer
+* 每个 `requires_grad=True` parameter 必须精确出现在一个 optimizer group；
+* 每个 `requires_grad=False` parameter 必须出现在零个 optimizer group；
+* duplicate storage、duplicate parameter ID、empty unexpected group 均 fail-closed。
+
+**训练预算**
+
+| 项目                       |                               冻结值 |
+| ------------------------ | --------------------------------: |
+| epochs                   |                                60 |
+| epoch index              |                           `0..59` |
+| fit videos/epoch         |                               160 |
+| global batch size        |                                 2 |
+| world size               |                                 1 |
+| batches/epoch            |                                80 |
+| successful updates       |                             4,800 |
+| workers                  |                                 2 |
+| drop_last                |                              true |
+| AMP                      |                              fp16 |
+| gradient clipping        |                global L2 norm 1.0 |
+| DDP static graph         |                              true |
+| find_unused_parameters   |                             false |
+| AMP retry limit          |                       8 per batch |
+| EMA decay                |                             0.999 |
+| warmup                   | 5 epochs = 400 successful updates |
+| cosine scheduler horizon |        100 epochs = 8,000 updates |
+| formal execution horizon |    first 4,800 successful updates |
+| resume                   |                         forbidden |
+| CLI config override      |                         forbidden |
+
+当前 EMA 默认 decay 为 `0.999`。
+
+**Seeds**
+
+`3407`, `3408`, `3409`，且只允许这三个 seeds。
+
+**GL-LIB training schedule**
+
+对每个 seed (s)、epoch (e)：
+
+1. 将 160 个 fit IDs 按
+   `SHA256("NC2-TRAIN-V1|" + seed + "|" + epoch + "|" + video_id)` 排序；
+2. 排名为 (r\in[0,159]) 的视频使用 candidate：
+
+[
+q=(160e+r)\bmod21.
+]
+
+因此每个 seed 的 9,600 个 video-epoch exposures 中：
+
+* 每个 candidate 出现 457 或 458 次；
+* 最大 count difference 为 1；
+* schedule 与 GT、RGB、prediction 无关；
+* schedule 在 candidate/cache stage 生成并哈希；
+* dataset 在每个 epoch 开始前接收精确 epoch index。
+
+**Checkpoint selection**
+
+* 训练期不运行 gate evaluator；
+* 不保存可参与选择的中间 checkpoint；
+* 唯一 formal checkpoint 为完成 epoch index 59、累计 4,800 successful updates 后的 checkpoint；
+* formal inference、reference、统计和 profile 只使用其 EMA state；
+* checkpoint filename：`checkpoint_final_e0059_u004800.pth`
+* 不允许 gate-based epoch selection、best loss selection、历史 checkpoint fallback 或 partial resume。
+
+**反向传播**
+
+标准 detector loss：
+
+[
+L=L_{\mathrm{cls}}+L_{\mathrm{reg}}
+]
+
+必须反向到：
+
+* active global branch feature；
+* active local branch feature；
+* shared adapter parameters；
+* projection；
+* FPN；
+* RPN/head。
+
+双分支 cell 必须两支均有 finite nonzero gradients；单分支 control 必须只有 active branch 执行且有梯度。任一新的 disconnected trainable parameter、silent global-only/local-only fallback、额外 input key、缺失 branch 或 zero gradient component 均使 CUDA Gate 失败。
+
+---
+
+## 8. 冻结实验矩阵
+
+每个 base experiment 对 seeds `3407/3408/3409` 展开。正式 evaluation cells 共 30 个；独立训练模型共 21 个，因为四个 `GL-LIB` selector rows 共享同一个 seed-specific checkpoint。
+
+| Base ID；正式 cell IDs                     | 输入与 selector                                          |                      View pixels/frame |                 Backbone branch forwards/window | Initialization / training | Checkpoint       | 因果作用                                                     |
+| --------------------------------------- | ----------------------------------------------------- | -------------------------------------: | ----------------------------------------------: | ------------------------- | ---------------- | -------------------------------------------------------- |
+| `NC2-D160`；`NC2-D160-s3407/s3408/s3409` | full-frame source letterbox160                        |                                 25,600 |                                               1 | 独立训练，4,800 updates        | 本 cell final EMA | primary matched-view-pixel control                       |
+| `NC2-G96`；三个 seed IDs                   | full-frame global96 only                              |                                  9,216 |                                               1 | 独立训练，4,800                | 本 cell final EMA | global context sufficiency                               |
+| `NC2-L128-C`；三个 seed IDs                | center local128 only                                  |                                 16,384 |                                               1 | 独立训练，4,800                | 本 cell final EMA | local-only 与缺失 global context                            |
+| `NC2-GL-C`；三个 seed IDs                  | global96 + center128；fixed mean；center train/eval     |                                 25,600 |                                               2 | 独立训练，4,800                | 本 cell final EMA | faithful fixed-center vertical-slice control             |
+| `NC2-GL-LIB-C`；三个 seed IDs              | global96 + center candidate；library-balanced training |                                 25,600 |                                               2 | 共享 `NC2-GL-LIB`，4,800     | GL-LIB final EMA | 与 random/reference 同 checkpoint 的 center selector        |
+| `NC2-GL-LIB-R`；三个 seed IDs              | global96 + deterministic balanced random candidate    |                                 25,600 |                                               2 | 0 additional；共享 GL-LIB    | GL-LIB final EMA | no-image/no-GT selector baseline；policy-shaped cost path |
+| `NC2-GL-LIB-BF`；三个 seed IDs             | global96 + fit-selected best fixed candidate          |                                 25,600 |                                               2 | 0 additional；共享 GL-LIB    | GL-LIB final EMA | 排除“一个非中心固定位置已足够”                                         |
+| `NC2-GL-LIB-REF`；三个 seed IDs            | 21-candidate exhaustive reference；per-window utility  | logical selected 25,600；search 353,280 | selected path 2；search 1 global + 21 local = 22 | 0 additional；共享 GL-LIB    | GL-LIB final EMA | finite-library conditional upper reference               |
+| `NC2-D224`；三个 seed IDs                  | full-frame source letterbox224                        |                                 50,176 |                                               1 | 独立训练，4,800                | 本 cell final EMA | accuracy ceiling；不进入 matched cost equivalence            |
+| `NC2-D256`；三个 seed IDs                  | full-frame source letterbox256                        |                                 65,536 |                                               1 | 独立训练，4,800                | 本 cell final EMA | higher accuracy ceiling；不进入 matched cost equivalence     |
+
+**Deterministic random selector**
+
+对 gate 129 windows：
+
+1. 按 `SHA256("NC2-RANDOM-V1|" + window_id)` 排序；
+2. 排名 (r) 的 window 使用 candidate (q=r\bmod21)；
+3. 每个 candidate 在 gate 出现 6 或 7 次；
+4. 不读取 seed、RGB、GT、prediction 或 model state；
+5. 三个 model seeds 使用完全相同的 gate candidate assignment。
+
+**正式进入矩阵的控制裁决**
+
+* matched dense160：进入，且改为 full-frame source letterbox160。
+* global96-only：进入。
+* local128-only：进入，固定 center。
+* fixed-center global96+local128：进入，独立 center-trained cell。
+* deterministic random candidate：进入，共享 library-trained checkpoint。
+* library-conditional reference：进入，非部署。
+* dense224/256：进入，作为同提交 accuracy ceilings；不参与 primary equivalence comparator，也不替代 crop comparison。
+* fit-selected best-fixed：进入，用于判定 adaptive selection 是否具有必要 headroom。
+
+所有 cell 必须在同一个 S2 implementation commit、同一 manifest、同一 annotation、同一 training budget、同一 evaluator 和同一 NMS 下重跑。历史 R0、S1 precheck、旧 checkpoint 或单-cell official-test 数字不得并入。
+
+---
+
+## 9. 冻结指标与统计
+
+**Official detection metrics**
+
+对每个 seed/cell 报告：
+
+* Avg-mAP；
+* mAP@0.3；
+* mAP@0.4；
+* mAP@0.5；
+* mAP@0.6；
+* mAP@0.7；
+* per-class AP；
+* prediction count；
+* zero-length proposal count；
+* score-tie count。
+
+[
+\mathrm{Avg\text{-}mAP}
+=======================
+
+\frac{
+\mathrm{mAP}*{0.3}+
+\mathrm{mAP}*{0.4}+
+\mathrm{mAP}*{0.5}+
+\mathrm{mAP}*{0.6}+
+\mathrm{mAP}_{0.7}
+}{5}.
+]
+
+**Short-duration Q1**
+
+报告：
+
+* Short-Q1 same-class detection recall@0.5；
+* Short-Q1 same-class detection recall@0.7；
+* Short-Q1 start/end boundary error；
+* Short-Q1 count、class support 和 duration range。
+
+最终 prediction domain 使用 official post-NMS predictions；一个 Q1 GT 在存在同 class prediction 且 tIoU 达阈值时计为 hit。
+
+**Boundary metrics**
+
+按 official class-wise score order 和 tIoU 0.5 TP matching 得到每个 GT 的匹配 prediction。对 duration (d_g=e_g-s_g)：
+
+[
+E_{\mathrm{start}}(g)=
+\begin{cases}
+\min\left(1,\frac{|\hat s_g-s_g|}{d_g}\right),&\text{matched}\
+1,&\text{missed}
+\end{cases}
+]
+
+[
+E_{\mathrm{end}}(g)=
+\begin{cases}
+\min\left(1,\frac{|\hat e_g-e_g|}{d_g}\right),&\text{matched}\
+1,&\text{missed}.
+\end{cases}
+]
+
+报告：
+
+* miss-penalized normalized start error；
+* miss-penalized normalized end error；
+* matched-only start MAE seconds；
+* matched-only end MAE seconds；
+* overall 与 Short-Q1。
+
+**Proposal recall**
+
+使用 class-agnostic proposal、score 为最大 class score，报告：
+
+* AR@100、AR@200；
+* tIoU 0.5、0.7；
+* overall、Short-Q1、per-duration quartile；
+* candidate-union recall 单独报告，不与可部署 cell 混合。
+
+**Selector paired margins**
+
+同一 seed、同一 40 gate videos、同一 bootstrap replicate 下报告：
+
+* `REF − GL-LIB-C`；
+* `REF − GL-LIB-R`；
+* `REF − GL-LIB-BF`；
+* `GL-LIB-C − GL-C`，用于观察 library-balanced training effect；
+* 每个 contrast 的 Avg-mAP、mAP@0.7、Q1 recall 和 boundary metrics。
+
+**Seed pooling**
+
+* 不将三个 checkpoints 做 prediction ensemble；
+* 先计算每个 seed 的完整指标；
+* point estimate 为三个 seed 指标或 paired contrast 的算术平均；
+* bootstrap 中进行 hierarchical seed resampling。
+
+**Paired Bayesian video-cluster bootstrap**
+
+* replicates：10,000
+* random seed：`20260720`
+* 每个 replicate 对 40 个 gate videos 独立抽取 (w_v\sim\mathrm{Exp}(1))；
+* 同一 replicate 的 video weights 对所有 cells、candidates 和 metrics 完全配对；
+* 以 replacement 从三个 training seeds 抽取三个 seed indices；
+* 对每个抽到的 seed 计算 weighted metric，再取均值；
+* prediction、TP、FP 和 GT contribution 均继承所属 video 的 (w_v)；
+* 正权重保证原 gate class support 不被 bootstrap replicate 人为删除；
+* 不得拒绝 rare-class replicate。
+
+**Class support**
+
+* standard mAP 使用 gate 中至少有一个 GT 的全部类；
+* class list 在 cache stage 冻结；
+* all-one video weights 时 weighted evaluator 必须精确复现 official evaluator；
+* Short-Q1 单独记录支持类；少于 8 类时转 `INCONCLUSIVE_COVERAGE`。
+
+**Simultaneous correction**
+
+所有第 11 节定义的 14 个“越大越好”决策 score 使用同一个 one-sided 95% studentized max-T bound。
+
+令 observed score 为 (\hat\theta_j)，bootstrap score 为 (\hat\theta_{b,j})，标准误为 (se_j)：
+
+[
+T_b=
+\max_j
+\frac{\hat\theta_j-\hat\theta_{b,j}}{se_j}.
+]
+
+令 (q_{0.95}) 为 (T_b) 的 95th percentile：
+
+[
+LCB_j=
+\hat\theta_j-q_{0.95}se_j.
+]
+
+* (se_j=0) 时 `LCB_j=observed_score_j`；
+* 非有限 score、SE、quantile 或 LCB 使 analyzer fail-closed；
+* 同时报告每项普通 two-sided 95% percentile CI；
+* GO 判断只读 simultaneous LCB。
+
+**Zero-length proposals**
+
+* 不删除；
+* 不修改 start/end；
+* 不给予 epsilon length；
+* 按 official tIoU 和 score ordering 作为 FP 或未匹配 proposal；
+* analyzer 必须报告数量及其 AP 影响。
+
+**Official evaluator parity**
+
+在 all-one weights、无 subgroup filter 时，新 analyzer 必须满足：
+
+* Avg-mAP 与 original `opentad.evaluations.mAP` 精确一致；
+* 五个 threshold mAP 精确一致；
+* per-class AP 精确一致；
+* TP/FP rank trace 精确一致；
+* prediction count 精确一致；
+* tolerance 为零；
+* Python user-site 禁用，NumPy 固定为 1.23.5，以保留当前 tied-score ordering。
+
+---
+
+## 10. 冻结 full-stack 成本协议
+
+**成本对象**
+
+* 决策成本 comparator：`NC2-GL-LIB-R` versus `NC2-D160`
+* 原因：random cell 使用一个随 window 变化的 local candidate，执行形状与未来单-candidate selector 路径一致，但不包含 learned selector 本身。
+* `NC2-GL-LIB-REF` 的 exhaustive search 成本单列，绝不用于声称可部署节省。
+* dense224/256、G96、L128、GL-C、GL-LIB-C/BF 均完整报告。
+
+**Stage ledger**
+
+每个 measured window 记录：
+
+1. `decode`
+2. `source_local_crop`
+3. `full_frame_letterbox_resize`
+4. `format_and_normalization`
+5. `h2d`
+6. `global_backbone_inclusive`
+7. `local_backbone_inclusive`
+8. `global_backbone_core_exclusive`
+9. `local_backbone_core_exclusive`
+10. `temporal_adapters_total`
+11. `fusion`
+12. `temporal_2x_interpolation`
+13. `detector_projection_fpn_head`
+14. `postprocess_and_nms`
+15. `end_to_end_total`
+
+约束：
+
+* inclusive branch time = exclusive core + branch adapter time；
+* `temporal_adapters_total` 是 active branches 的所有 adapter time 之和；
+* CPU stage 使用 `time.perf_counter_ns`；
+* CUDA stage 使用配对 CUDA events，并在 stage boundary 同步；
+* end-to-end total 从 window decode 开始到 sliding result/NMS 完成；
+* global/local branch 必须分别记录；
+* N/A stage 写零和明确 `active=false`，不得缺字段。
+
+**测量设置**
+
+* trained final EMA checkpoint；
+* batch size 1；
+* workers 0；
+* complete 129-window gate population；
+* 每个 profile block 先运行 50 个 warmup windows；
+* 之后按冻结 window order 测量 129 个 windows；
+* decision-critical `D160 ↔ GL-LIB-R` 使用 ABBA：
+
+  * D160 block；
+  * GL-LIB-R block；
+  * GL-LIB-R block；
+  * D160 block；
+* 每个 block 均独立 50 warmups + 129 measurements；
+* 其余 cell 每 seed 一个 block；
+* 所有 blocks 在一个 Slurm allocation、一个 physical GPU、一个 inner step 中 serial 执行；
+* cell order 固定为 seed ascending、experiment ID ascending，ABBA block 保持相邻；
+* 不跨 job、step、GPU 或 node 拼接。
+
+**Latency**
+
+报告每 stage 和 total 的：
+
+* mean；
+* p50；
+* p95；
+* max；
+* per-window raw trace；
+* seed-specific 与 pooled summaries。
+
+正式 cost reduction 只使用 end-to-end total。
+
+**Peak memory**
+
+每个 block 报告：
+
+* `torch.cuda.max_memory_allocated`；
+* `torch.cuda.max_memory_reserved`；
+* process RSS；
+* cgroup peak/current；
+* reference exhaustive runner 另报 candidate search peak。
+
+**Gross GPU energy**
+
+* 独立 NVML sidecar process；
+* 通过 Slurm-visible logical `cuda:0` 对应的 GPU UUID 获取 handle；
+* target sampling period：20 ms；
+* maximum allowed observed gap：100 ms；
+* clock：`time.monotonic_ns`；
+* raw trace 含 sequence number、timestamp、power、temperature、SM/memory clock、utilization、UUID；
+* energy 用 trapezoidal integration；
+* 从 decode marker 前开始，到 NMS marker 后结束；
+* 不减 idle baseline；
+* 表述仅为 gross GPU energy；
+* 不声称 CPU、storage、network 或 full-node energy；
+* trace/report 必须互相绑定 file hash 和 self-hash。
+
+**理论 descriptors**
+
+每个 window 报告：
+
+| Cell             | Spatial tokens/tubelet | Tokens/16-frame chunk | View pixels/frame |
+| ---------------- | ---------------------: | --------------------: | ----------------: |
+| D160             |                    100 |                   800 |            25,600 |
+| G96              |                     36 |                   288 |             9,216 |
+| L128             |                     64 |                   512 |            16,384 |
+| GL one-candidate |                36 + 64 |             288 + 512 |            25,600 |
+| Reference search |     36 + 21×64 = 1,380 |                11,040 |           353,280 |
+| D224             |                    196 |                 1,568 |            50,176 |
+| D256             |                    256 |                 2,048 |            65,536 |
+
+理论 FLOPs：
+
+* 由 runtime shape hooks 对 Conv3d、Conv1d、Linear、attention matmul、MLP 和 detector ops 计数；
+* 一次 multiply-add 计 2 FLOPs；
+* 分别报告 core、adapter、projection/head 和总数；
+* reference search 计 1 global + 21 local；
+* theoretical FLOPs 不替代 measured cost。
+
+**公平性**
+
+* 同 node、同 GPU UUID、同 driver/CUDA/PyTorch/Conda；
+* 同 power limit、默认 clock policy；
+* 4 个 detector CPUs + 1 个 sidecar CPU；
+* inner step memory `96,000 MiB`，且 cgroup finite limit 不低于 `90,000 MiB`；
+* outer allocation 允许因 N16R4 memory topology 申请两张 GPU，但 inner step 只暴露一张 GPU；空闲 GPU 不参与模型、profile 或成本描述；
+* 不覆盖 `CUDA_VISIBLE_DEVICES`；
+* 进程内设备始终 `cuda:0`；
+* `PYTHONNOUSERSITE=1`；
+* 任一 trace sampling gap 超过 100 ms、UUID 不一致、CPU affinity 不完整或 profile block 缺 window 时，整个 profile stage 失败。
+
+---
+
+## 11. 数值 GO/KILL 规则
+
+所有 mAP/recall 数值在公式中使用 `[0,1]`；`pp` 阈值按 percentage points 解释。
+
+**Coverage 前置条件**
+
+以下全部满足才定义 `coverage_pass=true`：
+
+1. 13,944 candidate rows 全部存在并通过 hash/provenance；
+2. 每个 window 精确 21 candidates；
+3. padding rate = 0；
+4. translation delta 全零；
+5. source-area union coverage = 1.0；
+6. minimum same-size crop IoU certificate
+   (\ge0.6476267095736)；
+7. gate Short-Q1 GT ≥30 且 class support ≥8；
+8. simultaneous LCB：
+
+[
+R^{\mathrm{union}}_{0.7,\mathrm{all}}-0.95\ge0;
+]
+
+9. simultaneous LCB：
+
+[
+R^{\mathrm{union}}_{0.7,\mathrm{Q1}}-0.90\ge0.
+]
+
+任一 coverage 条件失败，机械结果为 `INCONCLUSIVE_COVERAGE`；其它性能或成本结果不得覆盖该状态。
+
+**准确率等效 scores**
+
+[
+S_{\mathrm{Avg}}
+================
+
+\Delta_{\mathrm{Avg}}+0.010.
+]
+
+[
+S_{0.7}
+=======
+
+\Delta_{\mathrm{mAP@0.7}}+0.015.
+]
+
+[
+S_{\mathrm{Q1}}
+===============
+
+\Delta_{\mathrm{Q1Recall@0.7}}+0.020.
+]
+
+[
+S_{\mathrm{Start}}
+==================
+
+1.15E_{\mathrm{Start,D160}}-E_{\mathrm{Start,REF}}.
+]
+
+[
+S_{\mathrm{End}}
+================
+
+1.15E_{\mathrm{End,D160}}-E_{\mathrm{End,REF}}.
+]
+
+五项 simultaneous LCB 必须均不小于零。
+
+**选择 headroom scores**
+
+[
+S_{\mathrm{BF,Avg}}
+===================
+
+M_{\mathrm{REF}}-M_{\mathrm{BESTFIXED}}-0.005.
+]
+
+[
+S_{\mathrm{BF,0.7}}
+===================
+
+M_{\mathrm{REF},0.7}-M_{\mathrm{BESTFIXED},0.7}-0.0025.
+]
+
+[
+S_{\mathrm{Center}}
+===================
+
+M_{\mathrm{REF}}-M_{\mathrm{LIBCENTER}}-0.0075.
+]
+
+[
+S_{\mathrm{Random}}
+===================
+
+M_{\mathrm{REF}}-M_{\mathrm{RANDOM}}-0.005.
+]
+
+四项 simultaneous LCB 必须均不小于零。该条件防止仅因一个固定非中心 crop 足够而错误授权 learned policy。
+
+**Full-stack cost scores**
+
+令 policy-shaped cell 为 `NC2-GL-LIB-R`：
+
+[
+S_{\mathrm{Lat50}}
+==================
+
+1-
+\frac{\mathrm{p50}*{\mathrm{RANDOM}}}
+{\mathrm{p50}*{\mathrm{D160}}}
+-0.10.
+]
+
+[
+S_{\mathrm{Lat95}}
+==================
+
+1-
+\frac{\mathrm{p95}*{\mathrm{RANDOM}}}
+{\mathrm{p95}*{\mathrm{D160}}}
+-0.05.
+]
+
+[
+S_{\mathrm{Energy}}
+===================
+
+1-
+\frac{\mathrm{Energy}*{\mathrm{RANDOM}}}
+{\mathrm{Energy}*{\mathrm{D160}}}
+-0.08.
+]
+
+三项 simultaneous LCB 必须均不小于零。
+
+此外，每个 seed 必须满足：
+
+[
+\frac{\mathrm{PeakMemory}*{\mathrm{RANDOM}}}
+{\mathrm{PeakMemory}*{\mathrm{D160}}}
+\le1.10.
+]
+
+**Simultaneous decision family**
+
+同一个 max-T family 精确包含 14 项：
+
+1. overall candidate-union coverage；
+2. Q1 candidate-union coverage；
+3. Avg-mAP equivalence；
+4. mAP@0.7 equivalence；
+5. Q1 recall equivalence；
+6. start-boundary protection；
+7. end-boundary protection；
+8. REF versus BESTFIXED Avg；
+9. REF versus BESTFIXED mAP@0.7；
+10. REF versus LIBCENTER Avg；
+11. REF versus RANDOM Avg；
+12. p50 latency reduction；
+13. p95 latency reduction；
+14. gross energy reduction。
+
+GO 要求 14 个 simultaneous LCB 全部 `>=0`。
+
+**Seed 稳定性**
+
+同时要求：
+
+* 每个 seed 的 `REF − D160 Avg-mAP >= -2.00 pp`；
+* 三个 seed 的该 contrast range `<=2.00 pp`；
+* 每个 seed 的 `REF − BESTFIXED Avg-mAP >=0`；
+* 每个 seed 的 `GL-LIB-R` p50 latency reduction `>0`；
+* 每个训练 cell 精确 4,800 successful updates；
+* 三个 seed 均具有完整 inference、profile 和 hash closure。
+
+**机械状态规则**
+
+```text
+if evidence_or_provenance_invalid:
+    emit no decision receipt
+
+elif coverage_pass is false:
+    decision = INCONCLUSIVE_COVERAGE
+
+elif all 14 simultaneous LCBs >= 0
+     and peak-memory rule passes for all seeds
+     and all seed-stability rules pass:
+    decision = GO_TO_LEARNED_POLICY
+
+else:
+    decision = KILL_THIS_LIBRARY
+```
+
+禁止人工 override、near-pass、rounding-up、删除 outlier、减少 simultaneous family、改变 margin 或基于 dense224/256 ceiling 进行补救。
+
+---
+
+## 12. 文件级实现与关键伪代码
+
+**协议和 config**
+
+| 文件                                                                   | 职责                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------- |
+| `docs/methods/native_crop_s2_crop_sufficiency_preregistration_v1.md` | 本协议的 byte-exact 仓库版本                                    |
+| `configs/adatad/thumos/native_crop_s2_common_v1.py`                  | 冻结 model、optimizer、scheduler、split、training transaction |
+| `configs/adatad/thumos/native_crop_s2_d160_v1.py`                    | full-frame letterbox160                                 |
+| `configs/adatad/thumos/native_crop_s2_g96_v1.py`                     | global96-only                                           |
+| `configs/adatad/thumos/native_crop_s2_l128_center_v1.py`             | local128 center-only                                    |
+| `configs/adatad/thumos/native_crop_s2_gl_center_v1.py`               | center-trained global96+local128                        |
+| `configs/adatad/thumos/native_crop_s2_gl_library_v1.py`              | library-balanced global96+local128                      |
+| `configs/adatad/thumos/native_crop_s2_d224_v1.py`                    | full-frame letterbox224 ceiling                         |
+| `configs/adatad/thumos/native_crop_s2_d256_v1.py`                    | full-frame letterbox256 ceiling                         |
+
+**最小源码修改**
+
+| 文件                                                | 冻结修改                                                                                                    |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `opentad/datasets/transforms/native_crop.py`      | 新增 explicit `xyxy` source crop、S2 candidate transform、single full-frame letterbox output；保留 S1 behavior |
+| `opentad/datasets/transforms/__init__.py`         | 注册 S2 transforms                                                                                        |
+| `opentad/datasets/thumos.py`                      | 新增 epoch-aware S2 padding dataset，向 pipeline 注入 `native_crop_epoch`                                     |
+| `opentad/datasets/__init__.py`                    | 注册 S2 dataset                                                                                           |
+| `opentad/models/backbones/native_crop_wrapper.py` | 增加 active-view skip、public encode/fuse helper、S2 audit；仍只有一个 shared model                               |
+| `opentad/models/backbones/__init__.py`            | 导出 S2 wrapper                                                                                           |
+| `opentad/models/builder.py`                       | 增加 `native_crop_s2_shared_videomae` 明确 dispatch                                                         |
+| `opentad/utils/training_guard.py`                 | 增加 S2 entrypoint、split、no-resume/no-override guards                                                     |
+| `tools/train.py`                                  | 增加 S2 binding、`dataset.set_epoch(epoch)`、final-only checkpoint transaction                              |
+
+以下文件禁止修改：
+
+* `opentad/models/backbones/vit_adapter.py`
+* `opentad/models/detectors/actionformer.py`
+* `opentad/models/dense_heads/actionformer_head.py`
+* `opentad/models/dense_heads/anchor_free_head.py`
+* `opentad/evaluations/mAP.py`
+* `opentad/cores/optimizer.py`
+* `opentad/cores/scheduler.py`
+* official NMS 实现
+
+**S2 tools**
+
+| 文件                                                      | 职责                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------- |
+| `tools/bata/native_crop_s2_contract.py`                 | constants、schemas、decision scores、canonical hashes      |
+| `tools/bata/build_native_crop_s2_candidate_cache.py`    | candidate rows、train schedule、reference target cache    |
+| `tools/bata/validate_native_crop_s2_candidate_cache.py` | coordinates、count、split、hash、no-padding                 |
+| `tools/bata/native_crop_s2_coverage.py`                 | analytic/exhaustive geometry certificate 和 union recall |
+| `tools/bata/run_native_crop_s2_cuda_gate.py`            | full-model CUDA gate                                    |
+| `tools/bata/native_crop_s2_training.py`                 | bound config、optimizer coverage、checkpoint receipts     |
+| `tools/bata/run_native_crop_s2_development_sweep.py`    | standard cells 和 GL-LIB exhaustive fit/gate sweep       |
+| `tools/bata/native_crop_s2_reference.py`                | utility、BESTFIXED、selection receipts                    |
+| `tools/bata/profile_native_crop_s2_full_stack.py`       | stage timing、memory、NVML energy                         |
+| `tools/bata/analyze_native_crop_s2.py`                  | official parity、bootstrap、max-T、mechanical decision     |
+| `tools/bata/native_crop_s2_receipts.py`                 | generic immutable receipt validation                    |
+
+**Tests**
+
+* `tests/test_native_crop_s2_candidate_library.py`
+* `tests/test_native_crop_s2_model_contract.py`
+* `tests/test_native_crop_s2_reference.py`
+* `tests/test_native_crop_s2_statistics.py`
+* `tests/test_native_crop_s2_profiler.py`
+* 现有 `tests/test_native_crop_s1_vertical_slice.py` 保持通过。
+
+**Slurm scripts**
+
+* `scripts/run_native_crop_s2_static_slurm.sh`
+* `scripts/run_native_crop_s2_cuda_gate_slurm.sh`
+* `scripts/run_native_crop_s2_cache_slurm.sh`
+* `scripts/run_native_crop_s2_train_array_slurm.sh`
+* `scripts/run_native_crop_s2_infer_array_slurm.sh`
+* `scripts/run_native_crop_s2_profile_serial_slurm.sh`
+* `scripts/run_native_crop_s2_analyze_slurm.sh`
+* `scripts/run_native_crop_s2_receipt_slurm.sh`
+* `scripts/submit_native_crop_s2_dag.sh`
+
+这些 launcher 复用现有 Slurm resource、inner-step、UUID、cgroup、power-sidecar 和 immutable-evidence helpers；不得重写或绕过现有基础设施。
+
+**Candidate generation 伪代码**
+
+```python
+C = 128
+JX = 6
+JY = 2
+
+def round_half_up_fraction(numerator: int, denominator: int) -> int:
+    return (2 * numerator + denominator) // (2 * denominator)
+
+def candidate_box(width: int, height: int, j: int, k: int):
+    assert width >= C and height >= C
+    assert 0 <= j <= JX and 0 <= k <= JY
+
+    x0 = round_half_up_fraction(j * (width - C), JX)
+    y0 = round_half_up_fraction(k * (height - C), JY)
+    box = [x0, y0, x0 + C, y0 + C]
+
+    assert 0 <= box[0] < box[2] <= width
+    assert 0 <= box[1] < box[3] <= height
+    return box
+
+for window in frozen_664_windows:
+    for k in range(3):
+        for j in range(7):
+            q = 7 * k + j
+            emit_immutable_row(
+                window_id=window.id,
+                candidate_id=f"NC2-L128-S-J{j:02d}-K{k:02d}",
+                candidate_index=q,
+                box=candidate_box(window.width, window.height, j, k),
+                padding=[0, 0, 0, 0],
+                trajectory="static",
+            )
+```
+
+**Balanced fit schedule 伪代码**
+
+```python
+for seed in (3407, 3408, 3409):
+    for epoch in range(60):
+        ordered = sorted(
+            fit_ids,
+            key=lambda vid: sha256(
+                f"NC2-TRAIN-V1|{seed}|{epoch}|{vid}".encode()
+            ).hexdigest(),
+        )
+        for rank, video_id in enumerate(ordered):
+            q = (160 * epoch + rank) % 21
+            emit(seed, epoch, video_id, candidate_id_from_index(q))
+
+assert total_rows == 3 * 60 * 160
+assert max(candidate_counts) - min(candidate_counts) == 1
+```
+
+**Reference 伪代码**
+
+```python
+model.load_ema(final_checkpoint)
+model.eval()
+
+for window in development_sliding_windows:
+    global_feature = backbone.encode_global(window.global96)
+
+    rows = []
+    for candidate in all_21_candidates:
+        # No GT is passed into feature or prediction generation.
+        local_feature = backbone.encode_local(window.local128[candidate])
+        fused = backbone.fuse_and_expand(global_feature, local_feature)
+
+        projected, masks = model.projection(fused, window.mask)
+        if model.with_neck:
+            projected, masks, _ = model._call_neck_forward(
+                projected, masks, metas=window.metas
+            )
+
+        proposals, scores = model.rpn_head.forward_test(projected, masks)
+
+        # GT enters only after predictions exist.
+        losses = model.rpn_head.forward_train(
+            projected,
+            masks,
+            gt_segments=target_cache[window.id].segments,
+            gt_labels=target_cache[window.id].labels,
+        )
+
+        utility = build_lexicographic_utility(
+            proposals=proposals,
+            scores=scores,
+            gt=target_cache[window.id],
+            detector_loss=losses["cls_loss"] + losses["reg_loss"],
+            candidate_index=candidate.index,
+        )
+        rows.append(seal_candidate_row(candidate, utility, proposals, scores))
+
+    selected = lexicographic_max(rows)
+    seal_reference_selection(window.id, selected, rows_hash)
+```
+
+**Analyzer 伪代码**
+
+```python
+validate_all_upstream_receipts()
+recompute_all_file_hashes()
+recompute_center_random_bestfixed_reference_assignments()
+rebuild_sliding_results_with_original_nms()
+assert_exact_official_evaluator_parity()
+
+observed = compute_all_registered_scores()
+
+bootstrap_scores = []
+rng = np.random.RandomState(20260720)
+for _ in range(10_000):
+    video_weights = rng.exponential(scale=1.0, size=40)
+    sampled_seeds = rng.choice([3407, 3408, 3409], size=3, replace=True)
+    bootstrap_scores.append(
+        compute_all_scores(
+            video_weights=video_weights,
+            sampled_seeds=sampled_seeds,
+        )
+    )
+
+lcbs = simultaneous_max_t_lcbs(observed, bootstrap_scores)
+
+if not coverage_pass(lcbs):
+    decision = "INCONCLUSIVE_COVERAGE"
+elif go_scores_pass(lcbs) and seed_rules_pass() and memory_rule_passes():
+    decision = "GO_TO_LEARNED_POLICY"
+else:
+    decision = "KILL_THIS_LIBRARY"
+
+publish_once(decision_receipt(decision, observed, lcbs))
+```
+
+---
+
+## 13. 测试、CUDA Gate 与 fail-closed
+
+**Static tests**
+
+必须覆盖：
+
+1. 21 个 candidate 在 `320×180` 的 exact coordinates；
+2. center ID 精确映射到 `[96,26,224,154)`；
+3. source pixel byte equality；
+4. local crop 前不存在 full-frame resize；
+5. local interpolation 为 false；
+6. formal padding 为零；
+7. synthetic out-of-range box rigid-translation 计算正确，但 formal validator 拒绝非零 translation；
+8. source 任一轴小于 128 时 formal S2 拒绝；
+9. candidate ID/index/order deterministic；
+10. 13,944 cache row count；
+11. 28,800 training schedule row count；
+12. 每 seed candidate exposure count 457/458；
+13. deterministic random gate assignment count 6/7；
+14. geometry analytic bound 与 integer exhaustive bound 一致；
+15. full source union coverage 100%；
+16. all cache hashes、self-hashes、parent hashes；
+17. no symlink、no parent traversal、no alternate-root alias；
+18. full-frame letterbox160/224/256 保留完整 source content；
+19. dense160 不调用 `CenterCrop` 或 `RandomResizedCrop`；
+20. current S1 config 仍保持 no-training；
+21. formatting/collate structured tensor shapes；
+22. checkpoint 只有一个 shared VideoMAE core；
+23. initial core 163/161/22,482,048 identity；
+24. frozen core bitwise identity；
+25. `[B,384,768]` detector input；
+26. `6×6`、`8×8` 以及 dense `10×10/14×14/16×16` grids；
+27. branch gradients；
+28. optimizer exact coverage；
+29. `fc_norm` frozen且不进入 optimizer；
+30. raw reference forward 不读取 GT/cache；
+31. detached reference utility 与 candidate rows 完整；
+32. BESTFIXED 只读 fit；
+33. random selector不读 image/GT/prediction；
+34. zero-length proposal parity；
+35. all-one weighted evaluator exact official parity；
+36. max-T synthetic known-answer test；
+37. profiler stage schema；
+38. NVML trace/report pair validation；
+39. immutable O_EXCL publication；
+40. receipt self-hash tamper rejection。
+
+**CUDA Gate**
+
+CUDA Gate 必须在一个真实 development window 上顺序完成：
+
+* exact Git commit、clean worktree、tracked blob byte parity；
+* 200-video geometry re-probe；
+* official-test opened-file count 0；
+* pretrained checkpoint逐 tensor identity；
+* 7 个独立训练 config 的 model construction；
+* each config one real AMP forward/loss/backward；
+* finite loss；
+* active branch finite nonzero gradients；
+* adapter/projection/FPN/head finite nonzero gradients；
+* no disconnected trainable parameter；
+* optimizer exact coverage；
+* one successful AMP optimizer transaction followed by complete state rollback；
+* final checkpoint write/read atomicity smoke；
+* all 21 local candidates 的 exhaustive forward；
+* cached-global versus independent dual-call numerical parity，要求 bitwise equality；
+* reference `forward_test` versus existing detector path parity；
+* reference detached `forward_train` loss parity；
+* official post-processing/NMS parity；
+* output shape `[1,384,768]`；
+* one shared backbone instance；
+* no teacher/oracle/test fields；
+* NVML sidecar 至少 60 秒代表性 stress，20 ms target、100 ms max gap；
+* profiler只发布 schema/gate receipt，不发布正式成本。
+
+**Fail-closed 条件**
+
+任一以下情况阻止 downstream jobs，且同一 namespace 不得 resume：
+
+* commit、tree、source blob、protocol hash 不一致；
+* worktree dirty 或存在未跟踪 executable/config；
+* split、window、annotation、geometry 或 candidate cache 不一致；
+* official-test path 被打开；
+* teacher、oracle、checkpoint prediction cache 或 external JSONL 进入 selector；
+* candidate count、ID、coordinates、padding、translation 不合约；
+* runtime source geometry 与 cache 不一致；
+* silent center fallback、missing-candidate fallback 或 cache fallback；
+* trainable parameter 未进入 optimizer、重复进入或无梯度；
+* AMP retry超过8；
+* successful updates不等于4,800；
+* EMA checkpoint缺失；
+* reference candidate row不完整；
+* raw prediction在 GT join 前未封存；
+* evaluator parity非 exact；
+* nonfinite statistic、bootstrap、profile或energy；
+* NVML gap超过100 ms；
+* GPU UUID、Slurm step、CPU affinity、cgroup 不匹配；
+* receipt、trace、profile或prediction发生覆盖；
+* 任一 parent receipt 缺失或 self-hash 错误。
+
+基础设施失败不等于 `INCONCLUSIVE_COVERAGE`，也不等于 KILL；它不产生任何合法 S2 决策。
+
+---
+
+## 14. Slurm Job DAG
+
+```text
+static tests
+-> CUDA gate
+-> candidate/reference cache
+-> training matrix
+-> development gate inference
+-> serial full-stack profile
+-> frozen analyzer
+-> GO/KILL receipt
+```
+
+**统一资源纪律**
+
+* 禁止固定 physical GPU index；
+* 禁止覆盖 Slurm 的 `CUDA_VISIBLE_DEVICES`；
+* inner process 使用 `cuda:0`；
+* GPU stages 在一个 exact inner step 中使用 1 GPU、5 CPUs、96,000 MiB；
+* 4 CPUs 给 detector/data path，1 CPU 给 power sidecar；
+* N16R4 outer job 允许申请 2 GPUs/8 CPUs 获取 memory headroom，但只有 inner-step GPU 参与计算；
+* `PYTHONNOUSERSITE=1`；
+* 每个 job name 同时绑定 `campaign_id`；
+* `sbatch --parsable` 返回值只写入 submission receipt，不在协议中虚构 Job ID。
+
+| 阶段        | Job name           |    Array | 资源                                                    | Dependency            | 输入                                    | 输出/receipt                                                                              |
+| --------- | ------------------ | -------: | ----------------------------------------------------- | --------------------- | ------------------------------------- | --------------------------------------------------------------------------------------- |
+| Static    | `nc2s2-v1-static`  |        无 | 8 CPU，32 GiB，无 GPU                                    | 无                     | audit commit、protocol                 | `static_tests_receipt.json`                                                             |
+| CUDA Gate | `nc2s2-v1-cuda`    |        无 | outer 2 GPU/8 CPU；inner 1 GPU/5 CPU/96,000 MiB        | `afterok:STATIC`      | static receipt、pretrain、geometry      | `cuda_gate_receipt.json`                                                                |
+| Cache     | `nc2s2-v1-cache`   |        无 | 16 CPU，96 GiB，无 GPU                                   | `afterok:CUDA`        | manifest、annotation、geometry、protocol | candidate/target/schedule caches；`cache_receipt.json`                                   |
+| Training  | `nc2s2-v1-train`   | `0-20%3` | 每 task outer 2 GPU/8 CPU；inner 1 GPU/5 CPU/96,000 MiB | `afterok:CACHE`       | bound config、schedule、cache           | 21 final checkpoints、21 receipts、matrix completion receipt                              |
+| Inference | `nc2s2-v1-infer`   | `0-20%3` | 同 GPU inner-step 资源                                   | `afterok:TRAIN_ARRAY` | checkpoints、candidate cache           | standard predictions、GL-LIB exhaustive sweeps、utility rows、inference completion receipt |
+| Profile   | `nc2s2-v1-profile` |        无 | outer 2 GPU/8 CPU；单 inner 1 GPU/5 CPU/96,000 MiB      | `afterok:INFER_ARRAY` | all checkpoints、selector receipts     | serial profiles、NVML traces、profile completion receipt                                  |
+| Analyzer  | `nc2s2-v1-analyze` |        无 | 16 CPU，64 GiB，无 GPU                                   | `afterok:PROFILE`     | all immutable evidence                | `analysis_report.json`、`decision_candidate.json`                                        |
+| Receipt   | `nc2s2-v1-receipt` |        无 | 2 CPU，8 GiB，无 GPU                                     | `afterok:ANALYZE`     | analysis report、all parent receipts   | one immutable `decision_receipt.json`                                                   |
+
+**Training array mapping**
+
+令 task index (a\in[0,20])：
+
+[
+model_index=\lfloor a/3\rfloor,\qquad
+seed_index=a\bmod3.
+]
+
+model order：
+
+1. D160
+2. G96
+3. L128-C
+4. GL-C
+5. GL-LIB
+6. D224
+7. D256
+
+seed order：
+
+1. 3407
+2. 3408
+3. 3409
+
+**Inference array mapping**
+
+同样为 7 execution groups × 3 seeds：
+
+1. D160 standard
+2. G96 standard
+3. L128-C standard
+4. GL-C standard
+5. GL-LIB exhaustive fit+gate 21-candidate sweep
+6. D224 standard
+7. D256 standard
+
+`GL-LIB-C/R/BF/REF` 的 12 个 metric cells 均由三个 exhaustive sweep tasks 的 immutable outputs 派生，不重复 backbone inference。
+
+**Profile order**
+
+对 seed `3407,3408,3409` 依次执行：
+
+```text
+D160
+G96
+L128-C
+GL-C
+GL-LIB-C
+GL-LIB-R
+GL-LIB-BF
+GL-LIB-REF-selected
+GL-LIB-REF-search
+D224
+D256
+```
+
+decision-critical D160/RANDOM 额外执行冻结 ABBA blocks。所有 profile descriptors 由一个 completion receipt 封存。
+
+**幂等与 failure handling**
+
+* 每个 campaign namespace 单次使用；
+* stage 开始使用 `O_EXCL` persistent lock；
+* 已存在且 hash-valid 的 PASS receipt 只允许 validator 返回成功，不重写；
+* partial、FAIL 或 hash-invalid namespace 永久关闭；
+* 不删除 lock；
+* 不 resume checkpoint；
+* 不覆盖 prediction/profile/trace；
+* retry 必须使用新 code commit、新 campaign ID 和新全部 DAG；
+* submission script 在再次 `sbatch` 前按 job name、campaign ID 和 accounting receipt 检索已存在 job；发现已提交 job 时只执行 reconciliation，不重复提交；
+* downstream dependency 只接受完整 array completion receipt，而非文件数量。
+
+---
+
+## 15. 不可变证据、哈希与 receipt schema
+
+**当前必须继承的已知哈希**
+
+| Evidence role                   | SHA-256 / identity                                                 |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Audit commit                    | `f9eca5ab81ee0429469789cfa697e7851dce4bd4`                         |
+| S1 implementation anchor        | `0bf59be877eeb6879166893641c12bc4e60a2b53`                         |
+| Pretrained VideoMAE             | `4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251` |
+| Manifest internal               | `10b14faac57d4631dfae93c9a7d14eb81b8dc308f0e80232469e5b7c974589ca` |
+| Manifest file                   | `8e5a8901cb24b735750d5766405996dcac022b37f5a79fdbbdaa1f5479bf141d` |
+| Source annotation               | `ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad` |
+| Development annotation          | `0985d3711ab31f404ff0be5a1ba75420796a6807d486410337078b38090bf749` |
+| Class map                       | `a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31` |
+| Fit IDs                         | `fa8f3a005f97c82a8e3dbb470eec7bce27b813e9d6a8908cbdcc6d5a2d1bb3af` |
+| Gate IDs                        | `4d4e956aae298720529a2949c8aeb9fc90a1fc4730348bf5b5ba165d7df1f576` |
+| Test IDs                        | `5f9adf639fbcff869075ac78f6aa26d9da14986199a7d5b2181127769600746e` |
+| Geometry census identity        | `73290dd5abbcac6e5a2da1945b8ebd5b44f2d62e5a570c549aee46679548a9f8` |
+| Formal census internal          | `9a688297fec2ac8537a44e46254df2e277ec69785cfa179aac658ad0b0dc39d8` |
+| Formal census file              | `99089f8260a7a8c7ec3610e521e638f5c18e297c11217597e5b7b139407b013b` |
+| S1 full-model precheck internal | `ba278a191905b492d78b07ec253857774a0311c363b70ceac8921159a855b0fc` |
+| S1 full-model precheck file     | `b0cfe61261f39ef801be6b5800510d9feff54b0f0b73babfcc00d091a33bccde` |
+
+几何 census identity、formal internal hash 和 formal file hash 是三个不同 evidence roles，不得互相替代或 alias。当前 S1 evidence 对这些角色和 implementation closure 的记录见 `research-wiki/experiments/native-crop-s1-vertical-slice.md:41-90`。
+
+**S2 registration 时必须新生成并绑定**
+
+* exact preregistration markdown file SHA-256；
+* S2 implementation full commit；
+* Git tree；
+* audited source blob map；
+* environment lock hash；
+* candidate library internal/file hash；
+* 13,944-row candidate cache Merkle root；
+* 28,800-row training schedule Merkle root；
+* reference target cache internal/file hash；
+* Q1 threshold receipt hash；
+* seven resolved config hashes；
+* CUDA gate internal/file hash；
+* 每个 checkpoint file/state/EMA hash；
+* 每个 prediction internal/file hash；
+* 每个 reference utility row-set hash；
+* 每个 selection receipt hash；
+* profile start/completion receipt hash；
+* NVML trace/report hashes；
+* analyzer source hash；
+* analysis report hash；
+* decision receipt hash。
+
+这些值由正式 registration generator 从 exact bytes 计算；generator 必须先把全部 64-hex 值写入 immutable registration receipt，之后才允许提交 Slurm。不存在手填、空字段或通配符。
+
+**Generic receipt schema**
+
+每个 receipt 至少包含：
+
+```text
+schema_version
+stage
+status
+campaign_id
+preregistration_sha256
+audit_commit
+code_commit
+git_tree
+clean_worktree
+source_blob_sha256_map
+manifest_sha256
+annotation_sha256
+class_map_sha256
+split_hashes
+geometry_hash_roles
+upstream_receipt_sha256s
+input_artifact_sha256s
+output_artifact_sha256s
+environment_fingerprint
+python_package_lock_sha256
+slurm_job_id
+slurm_step_id
+node
+outer_resources
+inner_resources
+cuda_visible_device_count
+logical_cuda_device
+gpu_uuid
+cpu_affinity
+cgroup_memory_limit_bytes
+opened_file_inventory_sha256
+official_test_open_count
+teacher_use
+oracle_use
+prediction_cache_use
+started_at_utc
+completed_at_utc
+failure_reason
+receipt_sha256
+```
+
+**Decision receipt 扩展字段**
+
+```text
+decision_schema_version
+all_30_cell_ids
+all_checkpoint_sha256s
+all_prediction_sha256s
+all_profile_sha256s
+bootstrap_seed
+bootstrap_replicates
+simultaneous_family
+observed_scores
+ordinary_confidence_intervals
+simultaneous_lcbs
+coverage_pass
+seed_stability_pass
+peak_memory_pass
+mechanical_decision_trace
+decision
+analysis_report_sha256
+receipt_sha256
+```
+
+**Canonicalization**
+
+* UTF-8；
+* object keys lexicographic sort；
+* compact separators；
+* 禁止 NaN、Infinity、duplicate key；
+* timestamp 不参与 scientific content hash，但参与 file receipt hash；
+* self-hash 计算时只删除自身 hash 字段；
+* internal hash 与 file hash 分开；
+* artifact 使用 `lstat`、`O_NOFOLLOW`、regular-file 检查；
+* parent directory 和 inode 记录；
+* 原子临时文件写入、`fsync`、hard-link/O_EXCL 发布；
+* 发布后 chmod read-only；
+* 任何已存在 canonical path 不得覆盖。
+
+**一次性 gate decision receipt**
+
+* 同一 campaign ID 只能存在一个 decision receipt；
+* receipt 生成前重新验证全部 parent evidence；
+* decision receipt 一经发布，任何新训练、重算 cache、改变阈值、改变 bootstrap、补 cell 或替换 profile 均必须使用新协议版本和新 campaign；
+* official test 在所有三种 decision 下均继续 sealed。
+
+---
+
+## 16. 协议执行后的唯一合法结论
+
+`GO_TO_LEARNED_POLICY` 的含义仅为：
+
+* 第 5 节的 21-candidate static local128 library 通过 coverage；
+* finite-library reference 在注册 TAD 指标上达到 dense160 等效；
+* reference 相对 center、random 和 best-fixed 存在 simultaneous headroom；
+* 单-candidate dual-view full-stack 路径达到注册成本改善；
+* 三个 seeds 稳定；
+* 因而允许另立、另行预注册 learned candidate-selection 研究。
+
+它不表示 learned policy 已实现、已通过、可部署或可发表。
+
+`KILL_THIS_LIBRARY` 的含义仅为：
+
+* coverage 已充分；
+* 但该 `21×static×local128×global96×fixed-mean×VideoMAE-S/ActionFormer` 注册对象未同时满足性能、选择 headroom、成本或稳定性门槛；
+* 不授权 learned policy；
+* 不得外推为 continuous crop、其它尺度、轨迹或其它 detector 的失败。
+
+`INCONCLUSIVE_COVERAGE` 的含义仅为：
+
+* 几何、subgroup support 或 candidate-union proposal coverage 不足以将失败归因于 library sufficiency；
+* 不授权 learned policy；
+* 不得 KILL continuous-crop 路线；
+* 不得用性能或成本的表面通过覆盖 coverage 失败。
+
+在正式 evidence 产生前，本协议不提前宣布任何决策。
+
+DECISION := GO_TO_LEARNED_POLICY
+| KILL_THIS_LIBRARY
+| INCONCLUSIVE_COVERAGE

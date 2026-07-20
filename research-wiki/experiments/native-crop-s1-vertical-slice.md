@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:native-crop-s1-vertical-slice
 title: "Native-Crop S1 development vertical slice"
 stage: tested
-status: cuda_gate_pass_crop_sufficiency_protocol_pending
+status: cuda_gate_pass_s2_protocol_revision_required
 outcome: implementation_graph_and_provenance_pass
 tags: ["offline-tad", "native-crop", "source-coordinate", "vertical-slice"]
 added: 2026-07-20
@@ -120,7 +120,10 @@ sufficiency.
 
 ## Next gate
 
-Initiate the protocol discussion needed to freeze a development-only
-crop-sufficiency experiment: candidate coverage, teacher split/cache,
-matched-pixel/FLOP baselines, uncertainty, and GO/KILL margins. Do not
-implement learned ROI before that protocol and sufficiency result.
+The first S2 preregistration draft has been reviewed but is not frozen. Revise
+it to v1.1 so a GT-visible heuristic cannot kill the library, crop sufficiency
+is separated from adaptive-policy headroom and cost, gate GT is joined only
+after raw outputs are sealed, and detection/cost uncertainty uses correct
+sampling units. Complete a result-blind statistical feasibility audit before
+S2 implementation or queueing. Do not implement learned ROI before a valid
+S2 protocol and sufficiency result.
