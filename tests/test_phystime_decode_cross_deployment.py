@@ -2,6 +2,7 @@ import ast
 import importlib.util
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -102,7 +103,7 @@ RUN_ROOT="${{TEST_RUN_ROOT}}"
 AMBIGUOUS_SUBMISSION_ROOT="${{RUN_ROOT}}/submission_attempts"
 COMMIT=test-commit
 TREE=test-tree
-PYTHON=python
+PYTHON="${{HARNESS_PYTHON}}"
 mkdir -p "${{AMBIGUOUS_SUBMISSION_ROOT}}"
 submit selected_online fake.sbatch
 """
@@ -114,6 +115,7 @@ submit selected_online fake.sbatch
             "QUERIES_FILE": queries_path.as_posix(),
             "HARNESS_MODE": mode,
             "TEST_RUN_ROOT": tmp_path.as_posix(),
+            "HARNESS_PYTHON": sys.executable,
         }
     )
     completed = subprocess.run(
