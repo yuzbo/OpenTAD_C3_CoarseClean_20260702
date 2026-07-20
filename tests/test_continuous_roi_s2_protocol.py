@@ -39,6 +39,43 @@ def test_frozen_protocol_hash_and_static_audit():
     assert audit["check_count"] == 8
 
 
+def test_deployment_text_contract_rejects_control_characters():
+    from tools.bata.continuous_roi_s2_contract import require_clean_text
+
+    assert require_clean_text(
+        "/data/run01/sczc063/yuzibo",
+        name="root",
+    ) == "/data/run01/sczc063/yuzibo"
+    for dirty in (
+        "/data/run01/sczc063/yuzibo\r",
+        "/data/run01/sczc063/yuzibo\n",
+        "/data/run01/sczc063/yuzibo\t",
+        "/data/run01/sczc063/yuzibo\x1f",
+        "/data/run01/sczc063/yuzibo\x7f",
+        " /data/run01/sczc063/yuzibo",
+        "/data/run01/sczc063/yuzibo ",
+    ):
+        with pytest.raises(ValueError):
+            require_clean_text(dirty, name="root")
+
+
+def test_slurm_export_contract_rejects_ambiguous_values():
+    from tools.bata.continuous_roi_s2_contract import validate_slurm_export_map
+
+    clean = validate_slurm_export_map(
+        {"YUZIBO_ROOT": "/data/run01/sczc063/yuzibo"}
+    )
+    assert clean == {"YUZIBO_ROOT": "/data/run01/sczc063/yuzibo"}
+    with pytest.raises(ValueError):
+        validate_slurm_export_map(
+            {"YUZIBO_ROOT": "/data/run01/sczc063/yuzibo\r"}
+        )
+    with pytest.raises(ValueError):
+        validate_slurm_export_map({"YUZIBO_ROOT": "/data/a,/data/b"})
+    with pytest.raises(ValueError):
+        validate_slurm_export_map({"bad-key": "value"})
+
+
 def test_protocol_rejects_s2_s3_conflation_even_when_resigned():
     from tools.bata.continuous_roi_s2_contract import validate_protocol
 

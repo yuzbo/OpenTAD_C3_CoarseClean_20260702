@@ -6,6 +6,25 @@ fail() {
   exit 2
 }
 
+require_control_free_value() {
+  local name="$1"
+  local value="$2"
+  local character
+  local ordinal
+  local index
+  [[ -n "${value}" ]] || fail "${name} must not be empty"
+  [[ "${value}" != [[:space:]]* && "${value}" != *[[:space:]] ]] || \
+    fail "${name} contains leading or trailing whitespace"
+  [[ "${value}" != *,* ]] || fail "${name} contains a comma"
+  for ((index = 0; index < ${#value}; index++)); do
+    character="${value:index:1}"
+    printf -v ordinal '%d' "'${character}"
+    if ((ordinal < 32 || ordinal == 127)); then
+      fail "${name} contains an ASCII control character"
+    fi
+  done
+}
+
 ROOT="${CONTINUOUS_ROI_S2_SOURCE_ROOT:?set CONTINUOUS_ROI_S2_SOURCE_ROOT}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 RUN_ROOT="${CONTINUOUS_ROI_S2_RUN_ROOT:?set CONTINUOUS_ROI_S2_RUN_ROOT}"
@@ -20,6 +39,15 @@ RUNTIME_AUTHORIZATION="${CONTINUOUS_ROI_S2_RUNTIME_AUTHORIZATION:?set CONTINUOUS
 EXPECTED_COMMIT="${CONTINUOUS_ROI_S2_EXPECTED_COMMIT:?set CONTINUOUS_ROI_S2_EXPECTED_COMMIT}"
 FAMILY="${CONTINUOUS_ROI_S2_FAMILY:?set CONTINUOUS_ROI_S2_FAMILY}"
 SEED="${CONTINUOUS_ROI_S2_SEED:?set CONTINUOUS_ROI_S2_SEED}"
+
+for variable_name in \
+  ROOT BASE RUN_ROOT MANIFEST ANNOTATION CLASS_MAP VIDEO_ROOT PRETRAINED \
+  FULL_MODEL_GATE TRAINING_RUNTIME_PRECHECK RUNTIME_AUTHORIZATION \
+  EXPECTED_COMMIT FAMILY SEED; do
+  require_control_free_value "${variable_name}" "${!variable_name}"
+done
+[[ "${BASE}" == "/data/run01/sczc063/yuzibo" ]] || \
+  fail "YUZIBO_ROOT must be /data/run01/sczc063/yuzibo"
 
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONNOUSERSITE=1
@@ -65,8 +93,10 @@ if command -v module >/dev/null 2>&1; then
   module load cuda/11.8
   module load miniforge3/24.11
 fi
+CONDA_ACTIVATE="${BASE}/conda_envs/opentad/bin/activate"
+[[ -f "${CONDA_ACTIVATE}" ]] || fail "Conda activation script is missing: ${CONDA_ACTIVATE}"
 # shellcheck disable=SC1091
-source "${BASE}/conda_envs/opentad/bin/activate"
+source "${CONDA_ACTIVATE}"
 
 python -c 'from tools.bata.spatial_zoom_s1_training import require_slurm_memory_limit_mb; print(require_slurm_memory_limit_mb(minimum_mb=90000))'
 python -c 'import numpy; assert numpy.__version__ == "1.23.5", numpy.__version__; print(numpy.__file__)'

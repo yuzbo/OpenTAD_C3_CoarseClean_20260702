@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import hashlib
 import json
 import os
 import subprocess
@@ -14,7 +15,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.bata.continuous_roi_s2_contract import canonical_sha256  # noqa: E402
+from tools.bata.continuous_roi_s2_contract import (  # noqa: E402
+    canonical_sha256,
+    require_clean_text,
+    validate_slurm_export_map,
+)
 from tools.bata.continuous_roi_s2_training import (  # noqa: E402
     S2_FAMILIES,
     S2_SOURCE_CONFIGS,
@@ -29,10 +34,11 @@ from tools.bata.continuous_roi_s2_runtime_gate import (  # noqa: E402
 from tools.bata.spatial_zoom_s1_contract import sha256_file  # noqa: E402
 
 
-DEPLOYMENT_SCHEMA = "continuous_roi_s2_training_deployment_v1"
-INTENT_SCHEMA = "continuous_roi_s2_training_deployment_intent_v1"
-JOB_RECEIPT_SCHEMA = "continuous_roi_s2_training_job_submission_v1"
-CELL_INTENT_SCHEMA = "continuous_roi_s2_training_cell_intent_v1"
+DEPLOYMENT_SCHEMA = "continuous_roi_s2_training_deployment_v2"
+INTENT_SCHEMA = "continuous_roi_s2_training_deployment_intent_v2"
+JOB_RECEIPT_SCHEMA = "continuous_roi_s2_training_job_submission_v2"
+CELL_INTENT_SCHEMA = "continuous_roi_s2_training_cell_intent_v2"
+CANONICAL_LAUNCHER = Path("scripts/run_continuous_roi_s2_train_slurm.sh")
 
 
 def _load_self_hashed(path: Path, *, hash_key: str, schema: str) -> dict[str, Any]:
@@ -71,6 +77,42 @@ def _run(*arguments: str) -> str:
             f"{' '.join(arguments)} failed: {completed.stderr.strip()}"
         )
     return completed.stdout.strip()
+
+
+def _resolve_canonical_launcher(
+    *,
+    source_root: Path,
+    requested_launcher: Path,
+    expected_commit: str,
+) -> tuple[Path, str]:
+    canonical_launcher = (source_root / CANONICAL_LAUNCHER).resolve()
+    requested = (source_root / requested_launcher).resolve()
+    if requested != canonical_launcher:
+        raise ValueError(
+            "Continuous-RoI S2 deployment requires the canonical tracked launcher"
+        )
+    if not canonical_launcher.is_file():
+        raise FileNotFoundError(canonical_launcher)
+    file_sha256 = sha256_file(canonical_launcher)
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source_root),
+            "show",
+            f"{expected_commit}:{CANONICAL_LAUNCHER.as_posix()}",
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "failed to read the canonical launcher blob from the expected commit"
+        )
+    blob_sha256 = hashlib.sha256(completed.stdout).hexdigest()
+    if file_sha256 != blob_sha256:
+        raise ValueError("canonical launcher differs from its expected Git blob")
+    return canonical_launcher, file_sha256
 
 
 def _accounted_jobs(job_names: set[str]) -> dict[str, list[dict[str, str]]]:
@@ -117,7 +159,11 @@ def _submit_job(
     job_token: str,
     log_dir: Path,
     exports: dict[str, str],
+    expected_launcher_sha256: str,
 ) -> str:
+    if sha256_file(launcher) != expected_launcher_sha256:
+        raise ValueError("canonical launcher changed after deployment intent")
+    exports = validate_slurm_export_map(exports)
     export_text = "ALL," + ",".join(
         f"{key}={value}" for key, value in sorted(exports.items())
     )
@@ -171,14 +217,72 @@ def _write_jobs_tsv(path: Path, receipts: list[dict[str, Any]]) -> None:
     temporary.unlink(missing_ok=True)
 
 
+def _validate_existing_deployment_request(
+    *,
+    summary: dict[str, Any],
+    intent_path: Path,
+    expected_commit: str,
+    base_experiment_namespace: str,
+    campaign_namespace: str,
+    canonical_root: Path,
+    full_model_gate_sha256: str,
+    precheck_sha256: str,
+    authorization_sha256: str,
+    submission_environment: dict[str, str],
+) -> None:
+    if (
+        summary.get("code_commit") != expected_commit
+        or summary.get("base_experiment_namespace")
+        != base_experiment_namespace
+        or summary.get("campaign_namespace") != campaign_namespace
+        or summary.get("canonical_experiment_root") != str(canonical_root)
+        or summary.get("full_model_gate_sha256") != full_model_gate_sha256
+        or summary.get("training_runtime_precheck_sha256")
+        != precheck_sha256
+        or summary.get("runtime_authorization_sha256")
+        != authorization_sha256
+        or summary.get("submission_environment") != submission_environment
+    ):
+        raise ValueError("existing deployment summary differs from this request")
+    existing_intent = _load_self_hashed(
+        intent_path,
+        hash_key="intent_sha256",
+        schema=INTENT_SCHEMA,
+    )
+    if (
+        summary.get("intent_path") != str(intent_path)
+        or summary.get("intent_sha256") != existing_intent["intent_sha256"]
+        or existing_intent.get("submission_environment")
+        != submission_environment
+    ):
+        raise ValueError("existing deployment intent differs from this request")
+
+
 def deploy(args) -> dict[str, Any]:
     source_root = args.source_root.resolve()
-    launcher = (source_root / args.launcher).resolve()
-    if not launcher.is_file():
-        raise FileNotFoundError(launcher)
     require_clean_git_checkout(
         expected_commit=args.expected_commit, repository_root=source_root
     )
+    launcher, launcher_sha256 = _resolve_canonical_launcher(
+        source_root=source_root,
+        requested_launcher=args.launcher,
+        expected_commit=args.expected_commit,
+    )
+    yuzibo_root_text = require_clean_text(
+        args.yuzibo_root,
+        name="--yuzibo-root",
+    )
+    yuzibo_root = Path(yuzibo_root_text).resolve()
+    if str(yuzibo_root).replace("\\", "/") != "/data/run01/sczc063/yuzibo":
+        raise ValueError(
+            "--yuzibo-root must resolve to /data/run01/sczc063/yuzibo"
+        )
+    submission_environment = {
+        "yuzibo_root": str(yuzibo_root),
+        "launcher_path": str(launcher),
+        "launcher_sha256": launcher_sha256,
+        "slurm_export_encoding": "comma_delimited_control_free_v1",
+    }
     precheck = validate_training_runtime_precheck(
         args.training_runtime_precheck,
         expected_commit=args.expected_commit,
@@ -247,24 +351,18 @@ def deploy(args) -> dict[str, Any]:
                 hash_key="deployment_sha256",
                 schema=DEPLOYMENT_SCHEMA,
             )
-            if (
-                summary.get("code_commit") != args.expected_commit
-                or summary.get("base_experiment_namespace")
-                != precheck["experiment_namespace"]
-                or summary.get("campaign_namespace")
-                != authorization["campaign_namespace"]
-                or summary.get("canonical_experiment_root")
-                != str(canonical_root)
-                or summary.get("full_model_gate_sha256")
-                != args.full_model_gate_sha256
-                or summary.get("training_runtime_precheck_sha256")
-                != precheck["precheck_sha256"]
-                or summary.get("runtime_authorization_sha256")
-                != authorization["authorization_sha256"]
-            ):
-                raise ValueError(
-                    "existing deployment summary differs from this request"
-                )
+            _validate_existing_deployment_request(
+                summary=summary,
+                intent_path=intent_path,
+                expected_commit=args.expected_commit,
+                base_experiment_namespace=precheck["experiment_namespace"],
+                campaign_namespace=authorization["campaign_namespace"],
+                canonical_root=canonical_root,
+                full_model_gate_sha256=args.full_model_gate_sha256,
+                precheck_sha256=precheck["precheck_sha256"],
+                authorization_sha256=authorization["authorization_sha256"],
+                submission_environment=submission_environment,
+            )
             return summary
 
         intent_core = {
@@ -286,6 +384,7 @@ def deploy(args) -> dict[str, Any]:
             "runtime_authorization_sha256": authorization[
                 "authorization_sha256"
             ],
+            "submission_environment": submission_environment,
             "cells": cells,
             "outer_allocation": {
                 "partition": "gpu",
@@ -433,7 +532,7 @@ def deploy(args) -> dict[str, Any]:
                     "CONTINUOUS_ROI_S2_EXPECTED_COMMIT": args.expected_commit,
                     "CONTINUOUS_ROI_S2_FAMILY": cell["family"],
                     "CONTINUOUS_ROI_S2_SEED": str(cell["seed"]),
-                    "YUZIBO_ROOT": args.yuzibo_root,
+                    "YUZIBO_ROOT": str(yuzibo_root),
                 }
                 job_id = _submit_job(
                     launcher=launcher,
@@ -441,6 +540,7 @@ def deploy(args) -> dict[str, Any]:
                     job_token=job_token,
                     log_dir=log_dir,
                     exports=exports,
+                    expected_launcher_sha256=launcher_sha256,
                 )
                 recovered_from_accounting = False
                 accounting_state = "SUBMITTED_BY_THIS_PROCESS"
@@ -487,6 +587,7 @@ def deploy(args) -> dict[str, Any]:
             "runtime_authorization_sha256": authorization[
                 "authorization_sha256"
             ],
+            "submission_environment": intent["submission_environment"],
             "intent_path": str(intent_path),
             "intent_sha256": intent["intent_sha256"],
             "jobs_tsv": str(jobs_path),

@@ -393,6 +393,9 @@ def test_training_launcher_requires_both_gate_certificates():
     assert "--cpus-per-task=5" in launcher
     assert "--mem=96000M" in launcher
     assert "export CUDA_VISIBLE_DEVICES=" not in launcher
+    assert "require_control_free_value" in launcher
+    assert '[[ "${BASE}" == "/data/run01/sczc063/yuzibo" ]]' in launcher
+    assert "CONDA_ACTIVATE=" in launcher
     assert "tools/train.py" in launcher
 
 
@@ -404,6 +407,7 @@ def test_cuda_gate_runs_real_development_runtime_precheck():
     assert "training_runtime_precheck.json" in launcher
     assert "training_runtime_authorization.json" in launcher
     assert "build_continuous_roi_s2_runtime_gate_config.py" in launcher
+    assert "tests/test_continuous_roi_s2_deployment_posix.py" in launcher
     assert launcher.count("torchrun --nnodes=1 --nproc_per_node=1") >= 1
     assert "CONTINUOUS_ROI_S2_DEVELOPMENT_ANNOTATION" in launcher
     assert "CONTINUOUS_ROI_S2_DEVELOPMENT_VIDEO_ROOT" in launcher
@@ -437,6 +441,9 @@ def test_deployment_uses_site_memory_allocation_and_exact_inner_step():
     assert '"overrides_cuda_visible_devices": False' in deployer
     assert "CONTINUOUS_ROI_S2_TRAINING_RUNTIME_PRECHECK" in deployer
     assert "CONTINUOUS_ROI_S2_RUNTIME_AUTHORIZATION" in deployer
+    assert "validate_slurm_export_map" in deployer
+    assert "submission_environment" in deployer
+    assert "comma_delimited_control_free_v1" in deployer
     assert "--comment=crs2:" in deployer
     assert "cell intent exists but its Slurm job is not visible" in deployer
     assert "official_test_open_allowed" in deployer

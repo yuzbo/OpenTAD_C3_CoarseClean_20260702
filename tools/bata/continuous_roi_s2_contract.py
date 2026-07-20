@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -37,6 +38,7 @@ EXPECTED_OUTCOMES = (
     "SUFFICIENT_FIXED_SIZE_ONLY",
     "REFERENCE_REPRESENTATION_INSUFFICIENT",
 )
+SLURM_EXPORT_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 def canonical_json_bytes(payload: Mapping) -> bytes:
@@ -50,6 +52,28 @@ def canonical_json_bytes(payload: Mapping) -> bytes:
 
 def canonical_sha256(payload: Mapping) -> str:
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def require_clean_text(value: str, *, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a non-empty string")
+    if value != value.strip():
+        raise ValueError(f"{name} contains leading or trailing whitespace")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError(f"{name} contains an ASCII control character")
+    return value
+
+
+def validate_slurm_export_map(exports: Mapping[str, str]) -> dict[str, str]:
+    checked = {}
+    for key, value in exports.items():
+        if not isinstance(key, str) or SLURM_EXPORT_KEY_PATTERN.fullmatch(key) is None:
+            raise ValueError(f"invalid Slurm export key: {key!r}")
+        clean_value = require_clean_text(value, name=f"Slurm export {key}")
+        if "," in clean_value:
+            raise ValueError(f"Slurm export {key} contains a comma")
+        checked[key] = clean_value
+    return checked
 
 
 def protocol_core_sha256(payload: Mapping) -> str:

@@ -90,6 +90,7 @@ python -m pytest -p no:cacheprovider \
   tests/test_continuous_roi_source_views.py \
   tests/test_continuous_roi_s2_one_step_gate.py \
   tests/test_continuous_roi_s2_training.py \
+  tests/test_continuous_roi_s2_deployment_posix.py \
   tests/test_train_engine_max_train_iters.py \
   -q
 
