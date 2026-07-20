@@ -8,6 +8,7 @@ fail() {
 
 WORK_DIR="${PHYSTIME_WORK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${WORK_DIR}"
+export PYTHONPATH="${WORK_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 BASE="${PHYSTIME_BASE:-/data/run01/sczc063/yuzibo}"
 COMMIT="$(git rev-parse HEAD)"
 TREE="$(git rev-parse 'HEAD^{tree}')"

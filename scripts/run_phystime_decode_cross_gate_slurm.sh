@@ -50,7 +50,7 @@ if command -v module >/dev/null 2>&1; then
 fi
 source "${BASE}/conda_envs/opentad/bin/activate"
 cd "${WORK_DIR}"
-export PYTHONPATH="${WORK_DIR}:${PYTHONPATH:-}"
+export PYTHONPATH="${WORK_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 export PHYSTIME_SOURCE_COMMIT="${PHYSTIME_SOURCE_COMMIT:?source commit is required}"
 export PHYSTIME_SOURCE_TREE="${PHYSTIME_SOURCE_TREE:?source tree is required}"
 export PHYSTIME_CHECKPOINT_PATH="${PHYSICAL_CHECKPOINT}"

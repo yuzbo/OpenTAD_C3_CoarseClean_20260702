@@ -36,7 +36,7 @@ if command -v module >/dev/null 2>&1; then
 fi
 source "${BASE}/conda_envs/opentad/bin/activate"
 cd "${WORK_DIR}"
-export PYTHONPATH="${WORK_DIR}:${PYTHONPATH:-}"
+export PYTHONPATH="${WORK_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] \
   || fail "runtime commit mismatch"
 [[ "$(git rev-parse 'HEAD^{tree}')" == "${EXPECTED_TREE}" ]] \

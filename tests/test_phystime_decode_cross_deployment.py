@@ -220,6 +220,22 @@ def test_submitter_is_one_gate_four_frozen_replays_one_suite():
     assert "scheduler_submission_sha256" in source
 
 
+def test_all_deployment_scripts_bind_the_exact_snapshot_as_pythonpath():
+    binding = (
+        'export PYTHONPATH="${WORK_DIR}'
+        '${PYTHONPATH:+:${PYTHONPATH}}"'
+    )
+    for relative_path in (
+        "scripts/submit_phystime_decode_cross_replay.sh",
+        "scripts/run_phystime_decode_cross_gate_slurm.sh",
+        "scripts/run_phystime_decode_cross_replay_slurm.sh",
+        "scripts/run_phystime_decode_cross_suite_slurm.sh",
+    ):
+        source = _read(relative_path)
+        assert binding in source
+        assert source.index('cd "${WORK_DIR}"') < source.index(binding)
+
+
 def test_replay_runner_captures_once_then_replays_both_axes():
     source = _read("scripts/run_phystime_decode_cross_replay_slurm.sh")
     assert source.count("tools/test.py") == 1
