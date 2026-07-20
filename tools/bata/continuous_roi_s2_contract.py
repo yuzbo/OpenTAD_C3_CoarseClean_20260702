@@ -57,10 +57,10 @@ def canonical_sha256(payload: Mapping) -> str:
 def require_clean_text(value: str, *, name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} must be a non-empty string")
-    if value != value.strip():
-        raise ValueError(f"{name} contains leading or trailing whitespace")
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise ValueError(f"{name} contains an ASCII control character")
+    if value != value.strip():
+        raise ValueError(f"{name} contains leading or trailing whitespace")
     return value
 
 

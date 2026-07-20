@@ -13,9 +13,6 @@ require_control_free_value() {
   local ordinal
   local index
   [[ -n "${value}" ]] || fail "${name} must not be empty"
-  [[ "${value}" != [[:space:]]* && "${value}" != *[[:space:]] ]] || \
-    fail "${name} contains leading or trailing whitespace"
-  [[ "${value}" != *,* ]] || fail "${name} contains a comma"
   for ((index = 0; index < ${#value}; index++)); do
     character="${value:index:1}"
     printf -v ordinal '%d' "'${character}"
@@ -23,6 +20,9 @@ require_control_free_value() {
       fail "${name} contains an ASCII control character"
     fi
   done
+  [[ "${value}" != [[:space:]]* && "${value}" != *[[:space:]] ]] || \
+    fail "${name} contains leading or trailing whitespace"
+  [[ "${value}" != *,* ]] || fail "${name} contains a comma"
 }
 
 ROOT="${CONTINUOUS_ROI_S2_SOURCE_ROOT:?set CONTINUOUS_ROI_S2_SOURCE_ROOT}"
