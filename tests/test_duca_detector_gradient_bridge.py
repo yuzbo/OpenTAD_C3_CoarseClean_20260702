@@ -76,10 +76,13 @@ def test_protected_transport_is_exact_hard_forward_and_has_policy_gradient() -> 
         requires_grad=True,
     )
     assignment = torch.softmax(logits, dim=-1)
-    dense = torch.tensor([[[0.0, 1.0, 4.0, 2.0, 5.0]]])
+    dense = torch.tensor(
+        [[[0.0, 1.0, 4.0, 2.0, 5.0]]],
+        requires_grad=True,
+    )
     positions = torch.tensor([[1, 3]])
     slot_mask = torch.ones(1, 2, dtype=torch.bool)
-    hard = torch.tensor([[[1.0, 2.0]]])
+    hard = torch.tensor([[[1.0, 2.0]]], requires_grad=True)
 
     bridged, expected_positions = _add_protected_structured_transport_gradient_path(
         hard,
@@ -92,7 +95,9 @@ def test_protected_transport_is_exact_hard_forward_and_has_policy_gradient() -> 
 
     assert torch.equal(bridged.detach(), hard)
     assert expected_positions is not None and expected_positions.shape == positions.shape
-    bridged.square().mean().backward()
+    bridged.sum().backward()
+    assert torch.equal(hard.grad, torch.ones_like(hard))
+    assert dense.grad is None or torch.equal(dense.grad, torch.zeros_like(dense))
     assert logits.grad is not None
     assert torch.isfinite(logits.grad).all()
     assert float(logits.grad.abs().sum()) > 0.0

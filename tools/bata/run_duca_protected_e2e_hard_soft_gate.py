@@ -105,6 +105,8 @@ def _load_trained_checkpoint(
     checkpoint_path: str,
     expected_sha256: str,
     source_commit: str,
+    evidence_path: str,
+    evidence_sha256: str,
 ) -> dict[str, Any]:
     path = Path(checkpoint_path).expanduser().resolve()
     _require(path.is_file(), f"trained checkpoint is missing: {path}")
@@ -118,9 +120,71 @@ def _load_trained_checkpoint(
         re.fullmatch(r"[0-9a-f]{40}", str(source_commit).lower()) is not None,
         "--checkpoint-source-commit must be an exact commit",
     )
+    evidence_file = Path(evidence_path).expanduser().resolve()
+    _require(evidence_file.is_file(), "trained checkpoint evidence is missing")
+    _require(
+        re.fullmatch(r"[0-9a-f]{64}", str(evidence_sha256).lower()) is not None,
+        "--checkpoint-evidence-sha256 must be an exact SHA256",
+    )
+    _require(
+        _sha256(evidence_file) == str(evidence_sha256).lower(),
+        "trained checkpoint evidence SHA256 mismatch",
+    )
+    evidence = json.loads(evidence_file.read_text(encoding="utf-8"))
+    _require(
+        evidence.get("schema") == "duca_cellcf_post_run_evidence_v1"
+        and evidence.get("ok") is True,
+        "trained checkpoint evidence schema/status is invalid",
+    )
+    _require(
+        evidence.get("task") == "offline_temporal_action_detection",
+        "trained checkpoint evidence is not offline TAD",
+    )
+    _require(
+        evidence.get("variant") == "transition_beta0",
+        "P3 audit checkpoint must be the trained transition_beta0 control",
+    )
+    _require(
+        evidence.get("git_commit") == str(source_commit).lower(),
+        "checkpoint evidence source commit mismatch",
+    )
+    _require(
+        Path(str(evidence.get("checkpoint_path"))).resolve() == path
+        and evidence.get("checkpoint_sha256") == actual_sha256,
+        "checkpoint evidence path/hash mismatch",
+    )
+    _require(
+        evidence.get("checkpoint_state_key") == "state_dict_ema"
+        and int(evidence.get("checkpoint_epoch", -1)) == 131
+        and int(evidence.get("successful_optimizer_updates", -1)) == 13200,
+        "checkpoint evidence terminal training protocol mismatch",
+    )
+    _require(
+        evidence.get("non_finite_collapse") is False,
+        "checkpoint evidence reports non-finite collapse",
+    )
+    manifest_path = Path(str(evidence.get("run_manifest_path"))).resolve()
+    _require(
+        manifest_path.is_file()
+        and _sha256(manifest_path) == evidence.get("run_manifest_sha256"),
+        "checkpoint run manifest binding is invalid",
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    _require(
+        manifest.get("git_commit") == str(source_commit).lower()
+        and manifest.get("variant") == "transition_beta0"
+        and manifest.get("training_profile") == "exposure132"
+        and int(manifest.get("expected_successful_optimizer_updates", -1)) == 13200,
+        "checkpoint run manifest protocol mismatch",
+    )
     payload = torch.load(path, map_location="cpu")
     _require(isinstance(payload, Mapping), "trained checkpoint must be a mapping")
     _require("state_dict_ema" in payload, "trained checkpoint must contain terminal state_dict_ema")
+    _require(
+        int(payload.get("epoch", -1)) == 131
+        and int(payload.get("scheduler", {}).get("last_epoch", -1)) == 13200,
+        "checkpoint payload epoch/update mismatch",
+    )
     state_dict = payload["state_dict_ema"]
     _require(isinstance(state_dict, Mapping), "state_dict_ema must be a mapping")
     incompatible = model.load_state_dict(state_dict, strict=False)
@@ -133,6 +197,12 @@ def _load_trained_checkpoint(
         "sha256": actual_sha256,
         "source_commit": str(source_commit).lower(),
         "state_key": "state_dict_ema",
+        "evidence_path": str(evidence_file),
+        "evidence_sha256": str(evidence_sha256).lower(),
+        "source_variant": "transition_beta0",
+        "source_training_profile": "exposure132",
+        "source_successful_optimizer_updates": 13200,
+        "source_terminal_average_map": float(evidence["metrics"]["average_mAP"]),
         "strict_parameter_and_buffer_match": True,
     }
 
@@ -197,7 +267,12 @@ def _candidate_detector_loss(
         batch["gt_labels"],
         [meta],
     )
-    with torch.no_grad():
+    with torch.no_grad(), torch.autocast(
+        device_type="cuda",
+        dtype=torch.float16,
+        enabled=True,
+        cache_enabled=False,
+    ):
         losses = model.forward_train(
             selected_inputs,
             selected_masks,
@@ -275,6 +350,8 @@ def run_gate(
     checkpoint_path: str,
     checkpoint_sha256: str,
     checkpoint_source_commit: str,
+    checkpoint_evidence: str,
+    checkpoint_evidence_sha256: str,
     real_batches: int,
     candidates_per_batch: int,
     bootstrap_samples: int,
@@ -316,6 +393,8 @@ def run_gate(
         checkpoint_path=checkpoint_path,
         expected_sha256=checkpoint_sha256,
         source_commit=checkpoint_source_commit,
+        evidence_path=checkpoint_evidence,
+        evidence_sha256=checkpoint_evidence_sha256,
     )
     model.train()
     selector = model.frame_selector
@@ -354,14 +433,20 @@ def run_gate(
 
             entry_hook = model.backbone.register_forward_pre_hook(capture_detector_entry)
             try:
-                losses = model(
-                    batch["inputs"],
-                    batch["masks"],
-                    batch["metas"],
-                    gt_segments=batch["gt_segments"],
-                    gt_labels=batch["gt_labels"],
-                    return_loss=True,
-                )
+                with torch.autocast(
+                    device_type="cuda",
+                    dtype=torch.float16,
+                    enabled=True,
+                    cache_enabled=False,
+                ):
+                    losses = model(
+                        batch["inputs"],
+                        batch["masks"],
+                        batch["metas"],
+                        gt_segments=batch["gt_segments"],
+                        gt_labels=batch["gt_labels"],
+                        return_loss=True,
+                    )
             finally:
                 entry_hook.remove()
             _require(detector_entry_state, "failed to capture detector-entry replay state")
@@ -372,6 +457,7 @@ def run_gate(
             _require(isinstance(audit_tensors, Mapping), "selector did not retain P3 audit tensors")
             center_scores = audit_tensors["center_scores"]
             gradient = torch.autograd.grad(detector_loss, center_scores, retain_graph=False)[0].detach()
+            _require(torch.isfinite(gradient).all().item(), "AMP policy gradient is non-finite")
             positions = audit_tensors["selected_positions"].detach()
             swaps = enumerate_legal_local_hard_swaps(
                 positions,
@@ -469,6 +555,13 @@ def run_gate(
         "config_sha256": _sha256((ROOT / config_path).resolve()),
         "trained_checkpoint": checkpoint,
         "real_dataset_loader_executed": True,
+        "numeric_contract": {
+            "autocast_enabled": True,
+            "autocast_device_type": "cuda",
+            "autocast_dtype": "float16",
+            "grad_scaler_direction_effect": "positive_scalar_only_not_required_for_sign",
+            "baseline_and_all_hard_candidates_share_autocast": True,
+        },
         "real_batches_requested": int(real_batches),
         "real_batches_audited": accepted_batches,
         "candidates_per_batch": int(candidates_per_batch),
@@ -503,6 +596,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--checkpoint-sha256", required=True)
     parser.add_argument("--checkpoint-source-commit", required=True)
+    parser.add_argument("--checkpoint-evidence", required=True)
+    parser.add_argument("--checkpoint-evidence-sha256", required=True)
     parser.add_argument("--real-batches", type=int, default=4)
     parser.add_argument("--candidates-per-batch", type=int, default=8)
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
@@ -515,6 +610,8 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint_path=args.checkpoint,
             checkpoint_sha256=args.checkpoint_sha256,
             checkpoint_source_commit=args.checkpoint_source_commit,
+            checkpoint_evidence=args.checkpoint_evidence,
+            checkpoint_evidence_sha256=args.checkpoint_evidence_sha256,
             real_batches=args.real_batches,
             candidates_per_batch=args.candidates_per_batch,
             bootstrap_samples=args.bootstrap_samples,

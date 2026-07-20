@@ -10,6 +10,7 @@ duca_transition_only_contract = dict(
     ),
     policy_hidden_gradient_scale=duca_policy_hidden_gradient_scale,
     policy_hidden_gradient_scope="asformer_last_encoder_layer",
+    asformer_trunk_detector_gradient=True,
     action_head_detector_gradient=False,
     earlier_asformer_detector_gradient=False,
 )

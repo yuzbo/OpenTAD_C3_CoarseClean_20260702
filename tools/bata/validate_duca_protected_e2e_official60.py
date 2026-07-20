@@ -128,6 +128,12 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             == "transition_scorer_and_official_asformer_last_encoder_layer_only",
             "rho gradient ownership declaration changed",
         )
+        _require(
+            contract.asformer_trunk_detector_gradient is True
+            and contract.earlier_asformer_detector_gradient is False
+            and contract.action_head_detector_gradient is False,
+            "rho ASFormer gradient ownership metadata is internally inconsistent",
+        )
     else:
         raise AssertionError(f"unregistered official-60 route {route!r}")
 

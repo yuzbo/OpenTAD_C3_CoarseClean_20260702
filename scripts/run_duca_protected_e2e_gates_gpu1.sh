@@ -17,6 +17,8 @@ GATE_ROOT="${DUCA_PROTECTED_E2E_GATE_ROOT:-}"
 CHECKPOINT="${DUCA_PROTECTED_E2E_AUDIT_CHECKPOINT:-}"
 CHECKPOINT_SHA256="${DUCA_PROTECTED_E2E_AUDIT_CHECKPOINT_SHA256:-}"
 CHECKPOINT_SOURCE_COMMIT="${DUCA_PROTECTED_E2E_AUDIT_CHECKPOINT_SOURCE_COMMIT:-}"
+CHECKPOINT_EVIDENCE="${DUCA_PROTECTED_E2E_AUDIT_CHECKPOINT_EVIDENCE:-}"
+CHECKPOINT_EVIDENCE_SHA256="${DUCA_PROTECTED_E2E_AUDIT_CHECKPOINT_EVIDENCE_SHA256:-}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "gates must run inside Slurm"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a logical GPU"
@@ -32,11 +34,17 @@ CHECKPOINT_SOURCE_COMMIT="${DUCA_PROTECTED_E2E_AUDIT_CHECKPOINT_SOURCE_COMMIT:-}
   || fail "checkpoint hash drift"
 [[ "${CHECKPOINT_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
   || fail "checkpoint source commit is invalid"
+[[ -f "${CHECKPOINT_EVIDENCE}" ]] || fail "checkpoint evidence is missing"
+[[ "${CHECKPOINT_EVIDENCE_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "checkpoint evidence SHA256 is invalid"
+[[ "$(sha256sum "${CHECKPOINT_EVIDENCE}" | awk '{print $1}')" == "${CHECKPOINT_EVIDENCE_SHA256}" ]] \
+  || fail "checkpoint evidence hash drift"
 [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain is missing"
 [[ -f "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py" ]] \
   || fail "official ASFormer source is missing"
 
 mkdir -p "${GATE_ROOT}/contracts" "${GATE_ROOT}/tests" "${GATE_ROOT}/gradients" "${GATE_ROOT}/alignment"
+ADATAD_PRETRAIN_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
 
 configs=(
   configs/adatad/thumos/duca_exact_uniform_fixed384_official60.py
@@ -69,12 +77,38 @@ done
   --device cuda \
   --output-json "${GATE_ROOT}/gradients/protected_rho.json"
 
+"${PYTHON}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=localhost:0 \
+  --rdzv_id="duca-protected-main-${SLURM_JOB_ID}" \
+  tools/bata/run_duca_protected_e2e_exact_full_model_gate.py \
+  --config configs/adatad/thumos/duca_protected_e2e_fixed384_official60.py \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
+  --adatad-pretrain-sha256 "${ADATAD_PRETRAIN_SHA256}" \
+  --output-json "${GATE_ROOT}/gradients/exact_protected_main.json"
+
+"${PYTHON}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=localhost:0 \
+  --rdzv_id="duca-protected-rho-${SLURM_JOB_ID}" \
+  tools/bata/run_duca_protected_e2e_exact_full_model_gate.py \
+  --config configs/adatad/thumos/duca_protected_e2e_rho_fixed384_official60.py \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
+  --adatad-pretrain-sha256 "${ADATAD_PRETRAIN_SHA256}" \
+  --output-json "${GATE_ROOT}/gradients/exact_protected_rho.json"
+
 "${PYTHON}" tools/bata/run_duca_protected_e2e_hard_soft_gate.py \
   --config configs/adatad/thumos/duca_protected_e2e_fixed384_official60.py \
   --expected-commit "${EXPECTED_COMMIT}" \
   --checkpoint "${CHECKPOINT}" \
   --checkpoint-sha256 "${CHECKPOINT_SHA256}" \
   --checkpoint-source-commit "${CHECKPOINT_SOURCE_COMMIT}" \
+  --checkpoint-evidence "${CHECKPOINT_EVIDENCE}" \
+  --checkpoint-evidence-sha256 "${CHECKPOINT_EVIDENCE_SHA256}" \
   --real-batches 4 \
   --candidates-per-batch 8 \
   --bootstrap-samples 2000 \

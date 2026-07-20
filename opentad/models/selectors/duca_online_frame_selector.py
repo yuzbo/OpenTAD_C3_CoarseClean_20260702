@@ -359,8 +359,8 @@ def _add_protected_structured_transport_gradient_path(
         slope = (right - left) / denominator[:, None, None, :, None, None]
         displacement = (expected_positions - expected_positions.detach())[:, None, None, :, None, None]
         slot = slot_mask[:, None, None, :, None, None]
-    surrogate = hard_base + slope * displacement
-    bridged = hard_base + bridge * (surrogate - surrogate.detach()) * slot.to(dtype=surrogate.dtype)
+    surrogate_delta = slope.detach() * displacement
+    bridged = hard_base + bridge * surrogate_delta * slot.to(dtype=surrogate_delta.dtype)
     return bridged, expected_positions
 
 

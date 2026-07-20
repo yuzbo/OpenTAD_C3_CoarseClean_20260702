@@ -140,13 +140,21 @@ def test_restricted_policy_hidden_updates_only_last_official_encoder_layer(
         policy_hidden_gradient_scope="asformer_last_encoder_layer",
         num_layers=2,
     )
-    probe.eval()
-    output = probe(
-        torch.randn(1, 6, 3, 8, 8),
-        torch.ones(1, 6, dtype=torch.bool),
-        return_hidden=True,
-    )
+    probe.train()
+    frames = torch.randn(1, 6, 3, 8, 8)
+    valid = torch.ones(1, 6, dtype=torch.bool)
+    torch.manual_seed(29)
+    output = probe(frames, valid, return_hidden=True)
+    restricted_rng = torch.random.get_rng_state().clone()
+    probe.policy_hidden_gradient_scope = "none"
+    torch.manual_seed(29)
+    reference = probe(frames, valid, return_hidden=True)
+    reference_rng = torch.random.get_rng_state().clone()
+    probe.policy_hidden_gradient_scope = "asformer_last_encoder_layer"
 
+    assert torch.equal(output["logits"], reference["logits"])
+    assert torch.equal(output["hidden"], reference["hidden"])
+    assert torch.equal(restricted_rng, reference_rng)
     assert torch.equal(output["policy_hidden"].detach(), output["hidden"].detach())
     output["policy_hidden"].square().mean().backward()
     named = dict(probe.module.named_parameters())
