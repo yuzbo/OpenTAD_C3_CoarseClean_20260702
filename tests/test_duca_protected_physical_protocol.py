@@ -98,6 +98,17 @@ def test_formal_config_seals_validation_and_derives_loader_exposure():
     assert contract["expected_successful_optimizer_updates"] is None
 
 
+def test_slurm_launchers_use_current_n16r4_gpu_contract():
+    for relative_path in (
+        "scripts/submit_duca_protected_physical_gate_suite.sh",
+        "scripts/submit_duca_protected_physical_official60_suite.sh",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert 'DUCA_TARGET_CLUSTER:-n16r4' in source
+        assert "#SBATCH --gpus=1" in source
+        assert "#SBATCH --gres=" not in source
+
+
 def test_loader_contract_hashes_realized_dataset_sampler_and_drop_last(
     tmp_path,
 ):

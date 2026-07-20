@@ -12,7 +12,7 @@ BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 source "${REPO_ROOT}/scripts/duca_protected_physical_env.sh"
 
 RUN_ROOT="${RUN_ROOT:-}"
-TARGET_CLUSTER="${DUCA_TARGET_CLUSTER:-BSCC-N16R4}"
+TARGET_CLUSTER="${DUCA_TARGET_CLUSTER:-n16r4}"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 PROTOCOL_JSON="${DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON:-}"
 PROTOCOL_SHA256="${DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256:-}"
@@ -61,7 +61,7 @@ write_gpu_job() {
 #SBATCH --clusters=${TARGET_CLUSTER}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=${hours}:00:00
 #SBATCH --output=${RUN_ROOT}/logs/${key}-%j.out
