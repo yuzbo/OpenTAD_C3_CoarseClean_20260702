@@ -35,18 +35,38 @@ def _mean(summary: Mapping[str, Any], *keys: str) -> float:
 
 def _effective_budget_contract_verified(
     summary: Mapping[str, Any],
-    mean_selected_count: float,
     *,
     requested_budget: int = 384,
+    requested_max_unselected_hole: int = 2,
 ) -> bool:
-    """Accept exact per-sample min(K, valid_len), including short tail windows."""
+    """Require analyzer-derived per-sample K/G evidence, not aggregate means."""
 
     protocol = summary.get("protocol", {})
+    evidence = protocol.get("sampling_contract_evidence", {}) if isinstance(protocol, Mapping) else {}
     return bool(
         isinstance(protocol, Mapping)
+        and isinstance(evidence, Mapping)
         and protocol.get("budget_matched") is True
         and protocol.get("valid_length_matched") is True
-        and 0.0 < float(mean_selected_count) <= float(requested_budget)
+        and protocol.get("max_hole_matched") is True
+        and int(evidence.get("sample_count", 0)) == int(summary.get("sample_count", -1))
+        and int(evidence.get("sample_count", 0)) > 0
+        and int(evidence.get("budget_violation_count", -1)) == 0
+        and int(evidence.get("max_hole_violation_count", -1)) == 0
+        and int(evidence.get("requested_budget_min", -1)) == int(requested_budget)
+        and int(evidence.get("requested_budget_max", -1)) == int(requested_budget)
+        and int(evidence.get("requested_max_unselected_hole_min", -1))
+        == int(requested_max_unselected_hole)
+        and int(evidence.get("requested_max_unselected_hole_max", -1))
+        == int(requested_max_unselected_hole)
+        and int(evidence.get("effective_budget_min", -1)) > 0
+        and int(evidence.get("effective_budget_max", -1)) <= int(requested_budget)
+        and int(evidence.get("selected_count_min", -2))
+        == int(evidence.get("effective_budget_min", -1))
+        and int(evidence.get("selected_count_max", -2))
+        == int(evidence.get("effective_budget_max", -1))
+        and int(evidence.get("observed_max_unselected_hole_max", requested_max_unselected_hole + 1))
+        <= int(requested_max_unselected_hole)
     )
 
 
@@ -106,15 +126,34 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
     gates = {
         "coarse_auroc_at_least_0_55": metrics["coarse_auroc"] >= 0.55,
         "coarse_auprc_above_prevalence": metrics["coarse_auprc_lift"] > 1.0,
+        "transition_scorer_not_worse_than_pure_delta_r0": (
+            metrics["policy_transition_auroc_r0"]
+            >= metrics["pure_delta_transition_auroc_r0"]
+        ),
+        "endpoint_centering_not_worse_than_uniform": (
+            metrics["uniform_minus_learned_endpoint_distance"] >= 0.0
+        ),
         "exact_effective_budget_per_sample": _effective_budget_contract_verified(
             summary,
-            metrics["learned_selected_count"],
         ),
-        "max_unselected_hole_at_most_2": metrics[
-            "learned_max_unselected_hole"
-        ]
-        <= 2.0,
     }
+    if burst_key is not None:
+        gates.update(
+            {
+                "burst_endpoint_quota_gain_positive": metrics[
+                    "endpoint_quota_recall_gain"
+                ]
+                > 0.0,
+                "burst_bilateral_gain_positive": metrics[
+                    "endpoint_bilateral_recall_gain"
+                ]
+                > 0.0,
+                "burst_both_endpoints_quota_gain_positive": metrics[
+                    "both_endpoints_quota_recall_gain"
+                ]
+                > 0.0,
+            }
+        )
     epoch = int(candidate["epoch_one_based"])
     if epoch not in {5, 10, 15, 20}:
         raise RuntimeError("candidate epoch is outside the frozen P0 cadence")
@@ -134,22 +173,7 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
 
 
 def _ranking_key(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
-    metrics = candidate["metrics"]
-    if candidate["variant"].startswith("burst_"):
-        mechanism = (
-            -metrics["both_endpoints_quota_recall_gain"],
-            -metrics["endpoint_quota_recall_gain"],
-            -metrics["endpoint_bilateral_recall_gain"],
-        )
-    else:
-        mechanism = ()
-    return (
-        *mechanism,
-        -metrics["boundary_recall_r0_gain"],
-        -metrics["uniform_minus_learned_endpoint_distance"],
-        -metrics["policy_transition_auroc_r0"],
-        candidate["epoch_one_based"],
-    )
+    return (int(candidate["epoch_one_based"]),)
 
 
 def select_variants(
@@ -212,8 +236,8 @@ def select_variants(
         "split_manifest_path": str(split_path),
         "split_manifest_sha256": split_manifest_sha256,
         "selection_rule": (
-            "select one stable checkpoint per mechanism; final method ranking is reserved "
-            "for matched terminal-EMA TAD mAP"
+            "earliest passing checkpoint at epoch 5/10/15/20; no holdout metric "
+            "optimization; final method ranking is reserved for matched terminal-EMA TAD mAP"
         ),
         "winners": winners,
         "candidates": candidates,

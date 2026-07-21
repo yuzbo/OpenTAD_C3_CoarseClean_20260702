@@ -400,6 +400,32 @@ def test_boundary_burst_utility_forms_a_symmetric_five_frame_microcluster() -> N
         output["offset_probabilities"][0, 5],
         torch.full((5,), 0.2),
     )
+    assert torch.equal(
+        output["offset_inclusion"][0, 5],
+        torch.ones(5),
+    )
+
+
+def test_boundary_burst_quota_limits_each_predicted_center_support() -> None:
+    center = torch.full((1, 11), -20.0)
+    center[0, 5] = 20.0
+    offsets = torch.zeros(1, 11, 5, requires_grad=True)
+    output = build_boundary_burst_utility(
+        center,
+        offsets,
+        torch.ones(1, 11, dtype=torch.bool),
+        k=6,
+        radius=2,
+        quota=3.0,
+        boundary_budget_fraction=0.5,
+        context_weight=0.0,
+    )
+
+    inclusion = output["offset_inclusion"][0, 5]
+    assert torch.equal(inclusion, torch.tensor([0.0, 1.0, 1.0, 1.0, 0.0]))
+    assert inclusion.sum().item() == 3.0
+    output["burst_utility"].sum().backward()
+    assert offsets.grad is not None and torch.isfinite(offsets.grad).all()
 
 
 def test_boundary_burst_saturating_union_stays_bounded_for_overlapping_centers() -> None:

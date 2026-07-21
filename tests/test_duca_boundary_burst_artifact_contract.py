@@ -92,12 +92,15 @@ def test_p0_blocks_nonpositive_r0_headroom_before_training() -> None:
         encoding="utf-8"
     )
 
-    headroom_gate = source.index("R0 nonpositive Oracle-U headroom blocks learned training")
+    headroom_gate = source.index("R0 constrained burst Oracle headroom does not clear")
     real_gate = source.index("run_duca_frontend_p0_real_gate.py")
     first_variant = source.index("run_duca_frontend_pretrain_variant_gpu1.sh")
     assert headroom_gate < real_gate < first_variant
     assert 'digest != row.get("metrics_sha256")' in source
-    assert 'if not headroom > 0.0:' in source
+    assert 'if not headroom > required_headroom:' in source
+    assert 'required_headroom < 0.20' in source
+    assert 'R2Q3_privileged_boundary_burst' in source
+    assert 'R4Q5_privileged_boundary_burst' in source
 
 
 def test_uniform_arm_never_claims_a_gaussian_frontend_checkpoint() -> None:

@@ -43,7 +43,7 @@ from pathlib import Path
 
 source = Path(sys.argv[1]).expanduser().resolve()
 payload = json.loads(source.read_text(encoding="utf-8"))
-if payload.get("schema") != "duca_r0_selected_axis_holdout_map_v1":
+if payload.get("schema") != "duca_r0_selected_axis_boundary_burst_map_v2":
     raise SystemExit("R0 summary schema mismatch")
 if payload.get("ok") is not True or payload.get("git_commit") != sys.argv[2]:
     raise SystemExit("R0 summary did not complete on the exact commit")
@@ -54,8 +54,8 @@ if payload.get("test_subset_consumed") is not False:
 rows = {row.get("family"): row for row in payload.get("rows", [])}
 required = {
     "A_exact_uniform",
-    "D_privileged_gt_ceiling",
-    "E_privileged_unrestricted_gt",
+    "R2Q3_privileged_boundary_burst",
+    "R4Q5_privileged_boundary_burst",
 }
 if set(rows) != required:
     raise SystemExit("R0 family set mismatch")
@@ -73,13 +73,17 @@ for family, row in rows.items():
     values[family] = value
 uniform = values["A_exact_uniform"]
 best_privileged = max(
-    values["D_privileged_gt_ceiling"],
-    values["E_privileged_unrestricted_gt"],
+    values["R2Q3_privileged_boundary_burst"],
+    values["R4Q5_privileged_boundary_burst"],
 )
 headroom = best_privileged - uniform
-if not headroom > 0.0:
+required_headroom = float(payload.get("required_headroom_average_mAP", float("nan")))
+if not math.isfinite(required_headroom) or required_headroom < 0.20:
+    raise SystemExit("R0 required headroom contract is missing or too weak")
+if not headroom > required_headroom:
     raise SystemExit(
-        f"R0 nonpositive Oracle-U headroom blocks learned training: {headroom}"
+        "R0 constrained burst Oracle headroom does not clear the frozen threshold: "
+        f"headroom={headroom}, required>{required_headroom}"
     )
 gate = {
     "schema": "duca_r0_headroom_gate_v1",
@@ -89,6 +93,7 @@ gate = {
     "r0_summary_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
     "average_mAP": values,
     "best_privileged_minus_uniform_average_mAP": headroom,
+    "required_strict_headroom_average_mAP": required_headroom,
     "test_subset_consumed": False,
     "paper_claim_allowed": False,
 }

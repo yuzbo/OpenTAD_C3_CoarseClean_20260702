@@ -1787,6 +1787,12 @@ class DucaAcquisitionAdapter(nn.Module):
                         "boundary_burst_offset_probabilities": burst_outputs[
                             "offset_probabilities"
                         ],
+                        "boundary_burst_offset_inclusion": burst_outputs[
+                            "offset_inclusion"
+                        ],
+                        "boundary_burst_effective_offset_quota": burst_outputs[
+                            "effective_offset_quota"
+                        ],
                         "boundary_burst_context_reference": burst_outputs[
                             "context_reference"
                         ],

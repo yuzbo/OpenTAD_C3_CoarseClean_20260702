@@ -218,11 +218,67 @@ def _action_labels(valid_len: int, segments: Sequence[tuple[float, float]]) -> l
     return [int(any(float(idx) >= start and float(idx) < end for start, end in segments)) for idx in range(valid_len)]
 
 
-def _boundaries(valid_len: int, segments: Sequence[tuple[float, float]]) -> list[float]:
-    values: list[float] = []
-    for start, end in segments:
-        values.extend((max(0.0, min(valid_len - 1.0, start)), max(0.0, min(valid_len - 1.0, end))))
+def _segment_endpoint_events(
+    valid_len: int,
+    segments: Sequence[tuple[float, float]],
+    endpoint_validity: Sequence[tuple[bool, bool]] | None = None,
+) -> list[tuple[int, int, bool, bool]]:
+    if valid_len <= 0:
+        return []
+    if endpoint_validity is None:
+        endpoint_validity = [(True, True) for _ in segments]
+    if len(endpoint_validity) != len(segments):
+        raise ValueError("endpoint validity must align with segments")
+    values: list[tuple[int, int, bool, bool]] = []
+    for (start, end), (start_valid, end_valid) in zip(segments, endpoint_validity):
+        start_index = max(0, min(valid_len - 1, int(math.floor(start))))
+        end_index = max(0, min(valid_len - 1, int(math.ceil(end)) - 1))
+        values.append((start_index, end_index, bool(start_valid), bool(end_valid)))
     return values
+
+
+def _segment_endpoints(
+    valid_len: int, segments: Sequence[tuple[float, float]]
+) -> list[tuple[int, int]]:
+    return [
+        (start, end)
+        for start, end, _, _ in _segment_endpoint_events(valid_len, segments)
+    ]
+
+
+def _boundaries(
+    valid_len: int,
+    segments: Sequence[tuple[float, float]],
+    endpoint_validity: Sequence[tuple[bool, bool]] | None = None,
+) -> list[int]:
+    return list(
+        dict.fromkeys(
+            endpoint
+            for start, end, start_valid, end_valid in _segment_endpoint_events(
+                valid_len,
+                segments,
+                endpoint_validity,
+            )
+            for endpoint, is_valid in ((start, start_valid), (end, end_valid))
+            if is_valid
+        )
+    )
+
+
+def _validated_endpoint_validity(
+    record: Mapping[str, Any], segment_count: int
+) -> list[tuple[bool, bool]]:
+    raw = record.get("gt_boundary_validity")
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise ValueError("record is missing gt_boundary_validity")
+    if len(raw) != segment_count:
+        raise ValueError("gt_boundary_validity must align with gt_segments")
+    rows: list[tuple[bool, bool]] = []
+    for pair in raw:
+        if not isinstance(pair, Sequence) or isinstance(pair, (str, bytes)) or len(pair) != 2:
+            raise ValueError("each gt_boundary_validity row must contain start/end flags")
+        rows.append((bool(pair[0]), bool(pair[1])))
+    return rows
 
 
 def _boundary_labels(valid_len: int, boundaries: Sequence[float], radius: int) -> list[int]:
@@ -249,6 +305,7 @@ def _selection_metrics(
     positions: Sequence[int],
     segments: Sequence[tuple[float, float]],
     boundaries: Sequence[float],
+    endpoint_validity: Sequence[tuple[bool, bool]] | None = None,
 ) -> dict[str, Any]:
     selected = sorted(set(int(item) for item in positions))
     if any(item < 0 or item >= valid_len for item in selected):
@@ -267,19 +324,22 @@ def _selection_metrics(
             if not selected or not boundaries
             else mean(any(abs(float(pos) - boundary) <= radius for boundary in boundaries) for pos in selected)
         )
+        both_valid_events = [
+            (start, end)
+            for start, end, start_valid, end_valid in _segment_endpoint_events(
+                valid_len,
+                segments,
+                endpoint_validity,
+            )
+            if start_valid and end_valid
+        ]
         both_endpoint_coverage[f"r{radius}"] = (
             None
-            if not segments
+            if not both_valid_events
             else mean(
-                any(
-                    abs(float(pos) - max(0.0, min(valid_len - 1.0, start))) <= radius
-                    for pos in selected
-                )
-                and any(
-                    abs(float(pos) - max(0.0, min(valid_len - 1.0, end))) <= radius
-                    for pos in selected
-                )
-                for start, end in segments
+                any(abs(float(pos) - start) <= radius for pos in selected)
+                and any(abs(float(pos) - end) <= radius for pos in selected)
+                for start, end in both_valid_events
             )
         )
     nearest = [min(abs(float(pos) - boundary) for pos in selected) for boundary in boundaries] if selected else []
@@ -302,9 +362,7 @@ def _selection_metrics(
             for boundary in boundaries
         ]
         segment_quota_hits = []
-        for start, end in segments:
-            start_endpoint = max(0.0, min(valid_len - 1.0, math.floor(start)))
-            end_endpoint = max(0.0, min(valid_len - 1.0, math.ceil(end) - 1.0))
+        for start_endpoint, end_endpoint in both_valid_events:
             start_count = sum(
                 abs(float(pos) - start_endpoint) <= radius for pos in selected
             )
@@ -358,26 +416,58 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
     if not sample_id:
         raise ValueError("record is missing sample_id")
     valid_len = int(record.get("valid_len", 0))
-    budget = min(int(record.get("budget", 0)), valid_len)
-    if valid_len <= 0 or budget <= 0:
-        raise ValueError(f"{sample_id}: valid_len and budget must be positive")
+    requested_budget = int(record.get("requested_budget", 0))
+    recorded_effective_budget = int(record.get("effective_budget", -1))
+    max_hole_contract = record.get("max_hole_contract")
+    if not isinstance(max_hole_contract, Mapping):
+        raise ValueError(f"{sample_id}: missing max_hole_contract")
+    requested_max_hole = int(max_hole_contract.get("requested_max_unselected_hole", -1))
+    if valid_len <= 0 or requested_budget <= 0 or requested_max_hole < 0:
+        raise ValueError(
+            f"{sample_id}: valid_len, requested_budget, and max-hole contract are invalid"
+        )
+    effective_budget = min(requested_budget, valid_len)
+    if recorded_effective_budget != effective_budget:
+        raise ValueError(
+            f"{sample_id}: effective_budget={recorded_effective_budget} does not match "
+            f"min(requested_budget, valid_len)={effective_budget}"
+        )
     segments = _validated_segments(record, valid_len)
-    boundaries = _boundaries(valid_len, segments)
+    endpoint_validity = _validated_endpoint_validity(record, len(segments))
+    boundaries = _boundaries(valid_len, segments, endpoint_validity)
     action_labels = _action_labels(valid_len, segments)
     p_action = _score_vector(record, "p_action", valid_len)
     policy_scores = _score_vector(record, "transition_policy_scores", valid_len)
     raw_scores = _score_vector(record, "raw_transition_scores", valid_len)
     pure_delta_scores = _score_vector(record, "abs_delta_p_action", valid_len)
-    selected = [int(item) for item in record.get("selected_positions", []) if int(item) >= 0]
-    if len(selected) != budget:
-        raise ValueError(f"{sample_id}: selected_count={len(selected)} does not match budget={budget}")
+    raw_selected = record.get("selected_positions", [])
+    if not isinstance(raw_selected, Sequence) or isinstance(raw_selected, (str, bytes)):
+        raise ValueError(f"{sample_id}: selected_positions must be a sequence")
+    selected = [int(item) for item in raw_selected]
+    if any(float(item) != float(index) for item, index in zip(raw_selected, selected)):
+        raise ValueError(f"{sample_id}: selected_positions must contain integer indices")
+    if len(selected) != len(set(selected)):
+        raise ValueError(f"{sample_id}: selected_positions contains duplicates")
+    if any(item < 0 or item >= valid_len for item in selected):
+        raise ValueError(f"{sample_id}: selected_positions lies outside the valid prefix")
+    if len(selected) != effective_budget:
+        raise ValueError(
+            f"{sample_id}: selected_count={len(selected)} does not match "
+            f"effective_budget={effective_budget}"
+        )
+    observed_max_hole = _max_unselected_hole(valid_len, selected)
+    if observed_max_hole > requested_max_hole:
+        raise ValueError(
+            f"{sample_id}: observed max hole {observed_max_hole} exceeds "
+            f"requested G={requested_max_hole}"
+        )
     methods = {
         "learned": selected,
-        "uniform": exact_uniform_positions(valid_len, budget),
-        "stratified_random": stratified_random_positions(valid_len, budget, seed=random_seed + sum(map(ord, sample_id))),
-        "utility_topk_diagnostic": _topk_positions(policy_scores, budget),
-        "pure_delta_topk_diagnostic": _topk_positions(pure_delta_scores, budget),
-        "raw_transition_topk_diagnostic": _topk_positions(raw_scores, budget),
+        "uniform": exact_uniform_positions(valid_len, effective_budget),
+        "stratified_random": stratified_random_positions(valid_len, effective_budget, seed=random_seed + sum(map(ord, sample_id))),
+        "utility_topk_diagnostic": _topk_positions(policy_scores, effective_budget),
+        "pure_delta_topk_diagnostic": _topk_positions(pure_delta_scores, effective_budget),
+        "raw_transition_topk_diagnostic": _topk_positions(raw_scores, effective_budget),
     }
     selection = {
         name: _selection_metrics(
@@ -385,6 +475,7 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
             positions=positions,
             segments=segments,
             boundaries=boundaries,
+            endpoint_validity=endpoint_validity,
         )
         for name, positions in methods.items()
     }
@@ -407,9 +498,19 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
         "sample_id": sample_id,
         "video_id": str(record.get("video_id") or sample_id.split("|")[0]),
         "valid_len": valid_len,
-        "budget": budget,
+        "budget": effective_budget,
+        "sampling_contract": {
+            "requested_budget": requested_budget,
+            "effective_budget": effective_budget,
+            "selected_count": len(selected),
+            "requested_max_unselected_hole": requested_max_hole,
+            "observed_max_unselected_hole": observed_max_hole,
+            "budget_violation": False,
+            "max_hole_violation": False,
+        },
         "gt_segment_count": len(segments),
         "gt_boundary_count": len(boundaries),
+        "gt_boundary_validity": [list(pair) for pair in endpoint_validity],
         "action_labels": action_labels,
         "p_action": p_action,
         "transition_policy_scores": policy_scores,
@@ -644,6 +745,32 @@ def analyze_jsonl(
     pooled_action_labels = [label for row in rows for label in row["action_labels"]]
     pooled_action_scores = [score for row in rows for score in row["p_action"]]
     video_clusters = [str(row["video_id"]) for row in rows]
+    sampling_rows = [row["sampling_contract"] for row in rows]
+    budget_violation_count = sum(bool(row["budget_violation"]) for row in sampling_rows)
+    max_hole_violation_count = sum(bool(row["max_hole_violation"]) for row in sampling_rows)
+    sampling_contract = {
+        "sample_count": len(sampling_rows),
+        "requested_budget_min": min(int(row["requested_budget"]) for row in sampling_rows),
+        "requested_budget_max": max(int(row["requested_budget"]) for row in sampling_rows),
+        "effective_budget_min": min(int(row["effective_budget"]) for row in sampling_rows),
+        "effective_budget_max": max(int(row["effective_budget"]) for row in sampling_rows),
+        "selected_count_min": min(int(row["selected_count"]) for row in sampling_rows),
+        "selected_count_max": max(int(row["selected_count"]) for row in sampling_rows),
+        "budget_violation_count": budget_violation_count,
+        "requested_max_unselected_hole_min": min(
+            int(row["requested_max_unselected_hole"]) for row in sampling_rows
+        ),
+        "requested_max_unselected_hole_max": max(
+            int(row["requested_max_unselected_hole"]) for row in sampling_rows
+        ),
+        "observed_max_unselected_hole_min": min(
+            int(row["observed_max_unselected_hole"]) for row in sampling_rows
+        ),
+        "observed_max_unselected_hole_max": max(
+            int(row["observed_max_unselected_hole"]) for row in sampling_rows
+        ),
+        "max_hole_violation_count": max_hole_violation_count,
+    }
     summary: dict[str, Any] = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "records_jsonl": str(records_path),
@@ -663,8 +790,10 @@ def analyze_jsonl(
             "task": "offline_tad_diagnostic",
             "gt_role": "evaluation_only_not_selection",
             "uniform_reference": "round_linspace_endpoints",
-            "budget_matched": True,
-            "valid_length_matched": True,
+            "budget_matched": budget_violation_count == 0,
+            "valid_length_matched": budget_violation_count == 0,
+            "max_hole_matched": max_hole_violation_count == 0,
+            "sampling_contract_evidence": sampling_contract,
             "bootstrap_unit": "validation_video_cluster",
             "random_baseline": "one_sample_per_temporal_stratum",
         },
@@ -713,18 +842,35 @@ def analyze_jsonl(
             for row in rows:
                 positions = row["selection"][method]["selected_positions"]
                 segments = [tuple(segment) for segment in row["gt_segments"]]
-                boundaries = _boundaries(row["valid_len"], segments)
+                endpoint_validity = [
+                    (bool(pair[0]), bool(pair[1]))
+                    for pair in row["gt_boundary_validity"]
+                ]
+                boundaries = _boundaries(
+                    row["valid_len"],
+                    segments,
+                    endpoint_validity,
+                )
                 boundary_hits += sum(
                     any(abs(float(position) - boundary) <= radius for position in positions)
                     for boundary in boundaries
                 )
                 boundary_total += len(boundaries)
+                both_valid_events = [
+                    (start, end)
+                    for start, end, start_valid, end_valid in _segment_endpoint_events(
+                        row["valid_len"],
+                        segments,
+                        endpoint_validity,
+                    )
+                    if start_valid and end_valid
+                ]
                 both_hits += sum(
                     any(abs(float(position) - start) <= radius for position in positions)
-                    and any(abs(float(position) - min(float(row["valid_len"] - 1), end)) <= radius for position in positions)
-                    for start, end in segments
+                    and any(abs(float(position) - end) <= radius for position in positions)
+                    for start, end in both_valid_events
                 )
-                instance_total += len(segments)
+                instance_total += len(both_valid_events)
             method_summary["pooled"]["boundary_recall"][f"r{radius}"] = (
                 None if boundary_total == 0 else boundary_hits / float(boundary_total)
             )

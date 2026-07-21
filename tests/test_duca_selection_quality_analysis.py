@@ -15,12 +15,16 @@ def _record(sample_id: str, learned_positions: list[int]) -> dict:
         "sample_id": sample_id,
         "video_id": sample_id.split("|")[0],
         "valid_len": 8,
+        "requested_budget": 4,
+        "effective_budget": 4,
         "budget": 4,
+        "max_hole_contract": {"requested_max_unselected_hole": 2},
         "gt_segments": [[2.0, 6.0]],
+        "gt_boundary_validity": [[True, True]],
         "p_action": [0.05, 0.10, 0.80, 0.90, 0.85, 0.75, 0.10, 0.05],
-        "transition_policy_scores": [0.0, 0.2, 1.0, 0.1, 0.1, 0.2, 0.9, 0.0],
-        "abs_delta_p_action": [0.0, 0.05, 0.70, 0.10, 0.05, 0.10, 0.65, 0.05],
-        "raw_transition_scores": [0.0, 0.1, 0.8, 0.2, 0.2, 0.1, 0.7, 0.0],
+        "transition_policy_scores": [0.0, 0.2, 1.0, 0.1, 0.1, 0.9, 0.2, 0.0],
+        "abs_delta_p_action": [0.0, 0.05, 0.70, 0.10, 0.05, 0.65, 0.10, 0.05],
+        "raw_transition_scores": [0.0, 0.1, 0.8, 0.2, 0.1, 0.7, 0.1, 0.0],
         "selected_positions": learned_positions,
     }
 
@@ -108,9 +112,28 @@ def test_exporter_records_existing_decoder_repair_metadata() -> None:
         metas=[{"video_name": "v"}],
         source={},
         seen_count=0,
+        requested_budget=4,
+        requested_max_unselected_hole=2,
     )
     assert records[0]["decode_diagnostics"]["repair_count"] == 2
     assert records[0]["decode_diagnostics"]["repair_enabled"] is True
+    assert records[0]["requested_budget"] == 4
+    assert records[0]["effective_budget"] == 4
+    assert records[0]["max_hole_contract"]["requested_max_unselected_hole"] == 2
+
+
+def test_exporter_reads_budget_and_max_hole_independently_from_selector_config() -> None:
+    class Selector:
+        budget = 384
+        max_unselected_hole = 2
+
+    assert exporter._selector_sampling_contract(
+        Selector(), {"budget": 384, "max_unselected_hole": 2}
+    ) == (384, 2)
+    with pytest.raises(ValueError, match="budget drift"):
+        exporter._selector_sampling_contract(
+            Selector(), {"budget": 256, "max_unselected_hole": 2}
+        )
 
 
 def test_binary_metrics_cover_discrimination_calibration_and_prevalence() -> None:
@@ -148,6 +171,27 @@ def test_half_open_segment_end_equal_to_valid_len_keeps_last_frame_positive() ->
     assert quality._boundaries(8, segments) == [6.0, 7.0]
 
 
+def test_endpoint_events_match_training_floor_start_ceil_end_minus_one() -> None:
+    integer = quality._validated_segments({"gt_segments": [[2.0, 6.0]]}, valid_len=8)
+    fractional = quality._validated_segments(
+        {"gt_segments": [[2.2, 5.2], [2.8, 5.01]]}, valid_len=8
+    )
+
+    assert quality._segment_endpoints(8, integer) == [(2, 5)]
+    assert quality._boundaries(8, integer) == [2, 5]
+    assert quality._segment_endpoints(8, fractional) == [(2, 5), (2, 5)]
+    assert quality._boundaries(8, fractional) == [2, 5]
+
+
+def test_cropped_endpoint_validity_excludes_window_cut_from_boundary_metrics() -> None:
+    record = _record("video_crop|0", [0, 2, 5, 7])
+    record["gt_boundary_validity"] = [[True, False]]
+    row = quality.analyze_record(record)
+
+    assert row["gt_boundary_count"] == 1
+    assert row["selection"]["learned"]["both_endpoint_coverage"]["r0"] is None
+
+
 def test_selection_coverage_clamps_half_open_end_to_last_observable_position() -> None:
     metrics = quality._selection_metrics(
         valid_len=8,
@@ -180,7 +224,7 @@ def test_boundary_burst_metrics_distinguish_microclusters_from_uniform_hits() ->
 
 
 def test_sample_analysis_separates_coarse_transition_and_selection_quality() -> None:
-    row = quality.analyze_record(_record("video_a|0", [1, 2, 6, 7]), random_seed=17)
+    row = quality.analyze_record(_record("video_a|0", [1, 2, 5, 7]), random_seed=17)
 
     assert row["coarse"]["auroc"] == pytest.approx(1.0)
     assert row["transition"]["r0"]["policy"]["auprc"] == pytest.approx(1.0)
@@ -189,9 +233,40 @@ def test_sample_analysis_separates_coarse_transition_and_selection_quality() -> 
     assert row["selection"]["learned"]["selected_count"] == 4
     assert row["selection"]["uniform"]["selected_positions"] == [0, 2, 5, 7]
     assert row["selection"]["learned"]["boundary_recall"]["r0"] == pytest.approx(1.0)
-    assert row["selection"]["learned"]["max_unselected_hole"] == 3
+    assert row["selection"]["learned"]["max_unselected_hole"] == 2
     assert row["selection"]["utility_topk_diagnostic"]["boundary_recall"]["r0"] == pytest.approx(1.0)
     assert row["selection"]["pure_delta_topk_diagnostic"]["selected_positions"] != row["selection"]["raw_transition_topk_diagnostic"]["selected_positions"]
+
+
+def test_sample_analysis_fails_closed_on_budget_or_max_hole_violation() -> None:
+    wrong_budget = _record("video_a|0", [1, 2, 5])
+    with pytest.raises(ValueError, match="effective_budget"):
+        quality.analyze_record(wrong_budget)
+
+    excessive_hole = _record("video_b|0", [0, 1, 2, 7])
+    with pytest.raises(ValueError, match="exceeds requested G"):
+        quality.analyze_record(excessive_hole)
+
+
+def test_short_window_uses_min_requested_budget_and_valid_length() -> None:
+    record = _record("video_short|0", [0, 1, 2])
+    record["valid_len"] = 3
+    record["requested_budget"] = 4
+    record["effective_budget"] = 3
+    for key in (
+        "p_action",
+        "transition_policy_scores",
+        "abs_delta_p_action",
+        "raw_transition_scores",
+    ):
+        record[key] = record[key][:3]
+    record["gt_segments"] = [[0.0, 3.0]]
+
+    row = quality.analyze_record(record)
+
+    assert row["sampling_contract"]["requested_budget"] == 4
+    assert row["sampling_contract"]["effective_budget"] == 3
+    assert row["sampling_contract"]["selected_count"] == 3
 
 
 def test_representative_samples_are_best_median_and_worst_without_manual_choice() -> None:
@@ -233,6 +308,14 @@ def test_analyze_jsonl_writes_machine_readable_outputs_and_vector_figure(tmp_pat
     )
 
     assert summary["sample_count"] == 2
+    evidence = summary["protocol"]["sampling_contract_evidence"]
+    assert evidence["requested_budget_min"] == 4
+    assert evidence["requested_budget_max"] == 4
+    assert evidence["effective_budget_min"] == 4
+    assert evidence["selected_count_min"] == 4
+    assert evidence["budget_violation_count"] == 0
+    assert evidence["observed_max_unselected_hole_max"] <= 2
+    assert evidence["max_hole_violation_count"] == 0
     assert "pure_abs_delta_p_action" in summary["transition"]["r0"]
     assert (tmp_path / "out" / "selection_quality_summary.json").is_file()
     assert (tmp_path / "out" / "selection_quality_per_sample.csv").is_file()

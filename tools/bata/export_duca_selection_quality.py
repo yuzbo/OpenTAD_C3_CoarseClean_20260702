@@ -92,6 +92,29 @@ def _sample_id(meta: Mapping[str, Any], fallback: int) -> str:
     return f"{video_id}|{window}"
 
 
+def _selector_sampling_contract(selector: Any, frame_selector_cfg: Mapping[str, Any]) -> tuple[int, int]:
+    config_budget = frame_selector_cfg.get("budget", frame_selector_cfg.get("budget_max"))
+    runtime_budget = getattr(selector, "budget", None)
+    if config_budget is None or runtime_budget is None:
+        raise ValueError("selection-quality export requires an explicit fixed selector budget")
+    requested_budget = int(config_budget)
+    if requested_budget <= 0 or int(runtime_budget) != requested_budget:
+        raise ValueError(
+            f"selector budget drift: config={config_budget!r}, runtime={runtime_budget!r}"
+        )
+    config_max_hole = frame_selector_cfg.get("max_unselected_hole")
+    runtime_max_hole = getattr(selector, "max_unselected_hole", None)
+    if config_max_hole is None or runtime_max_hole is None:
+        raise ValueError("selection-quality export requires an explicit max_unselected_hole")
+    requested_max_hole = int(config_max_hole)
+    if requested_max_hole < 0 or int(runtime_max_hole) != requested_max_hole:
+        raise ValueError(
+            "selector max-hole drift: "
+            f"config={config_max_hole!r}, runtime={runtime_max_hole!r}"
+        )
+    return requested_budget, requested_max_hole
+
+
 def _records_from_batch(
     *,
     selector_output: Mapping[str, Any],
@@ -100,6 +123,9 @@ def _records_from_batch(
     metas: Sequence[Mapping[str, Any]],
     source: Mapping[str, Any],
     seen_count: int,
+    requested_budget: int,
+    requested_max_unselected_hole: int,
+    gt_boundary_validity: Sequence[Any] | None = None,
 ) -> list[dict[str, Any]]:
     scores = selector_output.get("selector_outputs")
     if not isinstance(scores, Mapping):
@@ -112,8 +138,15 @@ def _records_from_batch(
     records: list[dict[str, Any]] = []
     for idx, meta in enumerate(metas):
         valid_len = int(masks[idx].detach().long().sum().cpu().item())
+        effective_budget = min(int(requested_budget), valid_len)
         selected = [int(item) for item in selected_rows[idx].tolist() if 0 <= int(item) < valid_len]
         gt = _to_list(gt_segments[idx]) if idx < len(gt_segments) else []
+        if gt_boundary_validity is None or idx >= len(gt_boundary_validity):
+            validity = [[True, True] for _ in gt]
+        else:
+            validity = _to_list(gt_boundary_validity[idx])
+        if len(validity) != len(gt) or any(len(pair) != 2 for pair in validity):
+            raise ValueError("gt_boundary_validity must align one-to-one with gt_segments")
         sample_id = _sample_id(meta, seen_count + idx)
         repair = repair_rows[idx] if idx < len(repair_rows) and isinstance(repair_rows[idx], Mapping) else {}
         records.append(
@@ -124,8 +157,16 @@ def _records_from_batch(
                 "window_start_frame": int(meta.get("window_start_frame", 0)),
                 "snippet_stride": int(meta.get("snippet_stride", 1)),
                 "valid_len": valid_len,
-                "budget": len(selected),
+                "requested_budget": int(requested_budget),
+                "effective_budget": int(effective_budget),
+                "budget": int(effective_budget),
+                "max_hole_contract": {
+                    "requested_max_unselected_hole": int(requested_max_unselected_hole),
+                },
                 "gt_segments": [[round(float(pair[0]), 6), round(float(pair[1]), 6)] for pair in gt],
+                "gt_boundary_validity": [
+                    [bool(pair[0]), bool(pair[1])] for pair in validity
+                ],
                 "p_action": _strict_float_row(scores.get("p_action"), idx, valid_len),
                 "actionness_logits": _strict_float_row(scores.get("actionness_logits"), idx, valid_len),
                 "transition_policy_scores": _strict_float_row(
@@ -217,6 +258,10 @@ def export_records(
         **loader_cfg,
     )
     selector = build_selector(selector_cfg.model.frame_selector)
+    requested_budget, requested_max_unselected_hole = _selector_sampling_contract(
+        selector,
+        selector_cfg.model.frame_selector,
+    )
     checkpoint_payload = torch.load(str(checkpoint_path), map_location="cpu")
     if not isinstance(checkpoint_payload, Mapping):
         raise ValueError("checkpoint must be a mapping")
@@ -243,6 +288,8 @@ def export_records(
         "detector_backbone_executed": False,
         "uses_gt_for_selection": False,
         "seed": int(seed),
+        "requested_budget": int(requested_budget),
+        "requested_max_unselected_hole": int(requested_max_unselected_hole),
     }
     row_count = 0
     sample_count = 0
@@ -254,6 +301,14 @@ def export_records(
             masks = data["masks"].to(torch_device, non_blocking=True)
             metas = [dict(item) for item in data.get("metas", [{} for _ in range(inputs.shape[0])])]
             gt_segments = data.get("gt_segments", [[] for _ in range(inputs.shape[0])])
+            gt_boundary_validity = data.get("gt_boundary_validity")
+            if (
+                str(getattr(selector, "transition_objective", "")) == "boundary_burst"
+                and gt_boundary_validity is None
+            ):
+                raise ValueError(
+                    "boundary-burst quality export requires gt_boundary_validity"
+                )
             with torch.cuda.amp.autocast(dtype=torch.float16, enabled=bool(use_amp and torch_device.type == "cuda")):
                 # GT is intentionally absent from this call. It is consumed only below for evaluation records.
                 output = selector.forward_test(inputs=inputs, masks=masks, metas=metas)
@@ -264,6 +319,9 @@ def export_records(
                 metas=metas,
                 source=source,
                 seen_count=sample_count,
+                requested_budget=requested_budget,
+                requested_max_unselected_hole=requested_max_unselected_hole,
+                gt_boundary_validity=gt_boundary_validity,
             )
             for record in records:
                 handle.write(json.dumps(record, sort_keys=True) + "\n")

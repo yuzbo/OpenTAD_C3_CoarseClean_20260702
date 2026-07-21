@@ -116,7 +116,8 @@ def _uniform_family(row: Mapping[str, Any], cap: Any) -> dict[str, Any]:
     )
     payload["allocation_metrics"]["uniform_overlap"] = 1.0
     payload["r0_contract"] = {
-        "exact_k": True,
+        "exact_k": len(selected.positions)
+        == min(axis.valid_len, int(row["requested_budget"])),
         "max_unselected_hole": selected.gap_report.dense_max_unselected_hole,
         "privileged": False,
         "diagnostic_only": True,

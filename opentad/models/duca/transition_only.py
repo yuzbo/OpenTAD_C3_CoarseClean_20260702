@@ -484,6 +484,7 @@ def build_boundary_burst_utility(
     radius = int(radius)
     k = int(k)
     quota = float(quota)
+    quota_int = int(round(quota))
     boundary_budget_fraction = float(boundary_budget_fraction)
     context_weight = float(context_weight)
     center_temperature = float(center_temperature)
@@ -499,6 +500,8 @@ def build_boundary_burst_utility(
         raise ValueError("boundary burst utility requires one valid point per row")
     if k <= 0 or quota <= 0.0:
         raise ValueError("boundary burst k and quota must be positive")
+    if abs(quota - float(quota_int)) > 1.0e-6 or quota_int > 2 * radius + 1:
+        raise ValueError("boundary burst quota must be an integer within its radius")
     if not 0.0 < boundary_budget_fraction <= 1.0:
         raise ValueError("boundary_budget_fraction must lie in (0,1]")
     if context_weight < 0.0 or not math.isfinite(context_weight):
@@ -522,19 +525,54 @@ def build_boundary_burst_utility(
             offset_valid[:, : temporal_len - delta, offset_idx] = valid[:, delta:]
         else:
             offset_valid[:, :, offset_idx] = valid
-    offset_probabilities = F.softmax(
-        (offsets / offset_temperature).masked_fill(~offset_valid, float("-inf")),
-        dim=-1,
+    offset_axis = torch.arange(
+        -radius,
+        radius + 1,
+        device=offsets.device,
+        dtype=offsets.dtype,
+    )
+    # Break an all-zero initialization toward a centered bilateral profile.
+    # Learned evidence easily dominates this deterministic tie break.
+    offset_scores = offsets / offset_temperature - 1.0e-4 * offset_axis.abs()
+    masked_offset_scores = offset_scores.masked_fill(~offset_valid, -1.0e4)
+    offset_probabilities = F.softmax(masked_offset_scores, dim=-1).masked_fill(
+        ~offset_valid,
+        0.0,
+    )
+    effective_quota = offset_valid.sum(dim=-1).clamp(max=quota_int)
+    soft_offset_inclusion = offset_probabilities * effective_quota[:, :, None].to(
+        offset_probabilities.dtype
+    )
+    hard_offset_inclusion = torch.zeros_like(offset_probabilities)
+    flat_scores = masked_offset_scores.reshape(-1, masked_offset_scores.shape[-1])
+    flat_hard = hard_offset_inclusion.reshape(-1, hard_offset_inclusion.shape[-1])
+    flat_quota = effective_quota.reshape(-1)
+    for row_quota in range(1, quota_int + 1):
+        rows = torch.nonzero(flat_quota == row_quota, as_tuple=False).flatten()
+        if rows.numel() == 0:
+            continue
+        indices = torch.topk(
+            flat_scores[rows],
+            k=row_quota,
+            dim=-1,
+            sorted=False,
+        ).indices
+        flat_hard[rows[:, None], indices] = 1.0
+    hard_offset_inclusion = flat_hard.reshape_as(hard_offset_inclusion)
+    offset_inclusion = (
+        hard_offset_inclusion.detach()
+        + soft_offset_inclusion
+        - soft_offset_inclusion.detach()
     ).masked_fill(~offset_valid, 0.0)
 
     expected_centers = max(
         float(k) * boundary_budget_fraction / quota,
         1.0,
     )
-    center_mass = center_probabilities * (expected_centers * quota)
+    center_mass = center_probabilities * expected_centers
     burst_mass = work.new_zeros((batch, temporal_len))
     for offset_idx, delta in enumerate(range(-radius, radius + 1)):
-        contribution = center_mass * offset_probabilities[:, :, offset_idx]
+        contribution = center_mass * offset_inclusion[:, :, offset_idx]
         if delta < 0:
             burst_mass[:, : temporal_len + delta] += contribution[:, -delta:]
         elif delta > 0:
@@ -556,6 +594,8 @@ def build_boundary_burst_utility(
         "burst_utility": burst_utility.to(center_scores.dtype),
         "center_probabilities": center_probabilities.to(center_scores.dtype),
         "offset_probabilities": offset_probabilities.to(center_scores.dtype),
+        "offset_inclusion": offset_inclusion.to(center_scores.dtype),
+        "effective_offset_quota": effective_quota,
         "context_reference": context_reference.to(center_scores.dtype),
     }
 
