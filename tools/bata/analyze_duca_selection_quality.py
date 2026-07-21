@@ -799,7 +799,22 @@ def analyze_jsonl(
         },
     }
     for radius in RADII:
-        labels = [label for row in rows for label in _boundary_labels(row["valid_len"], _boundaries(row["valid_len"], [tuple(seg) for seg in row["gt_segments"]]), radius)]
+        labels = [
+            label
+            for row in rows
+            for label in _boundary_labels(
+                row["valid_len"],
+                _boundaries(
+                    row["valid_len"],
+                    [tuple(seg) for seg in row["gt_segments"]],
+                    [
+                        (bool(pair[0]), bool(pair[1]))
+                        for pair in row["gt_boundary_validity"]
+                    ],
+                ),
+                radius,
+            )
+        ]
         policy = [score for row in rows for score in row["transition_policy_scores"]]
         pure_delta = [score for row in rows for score in row["abs_delta_p_action"]]
         raw = [score for row in rows for score in row["raw_transition_scores"]]

@@ -11,6 +11,7 @@ from tools.bata.duca_p0_evaluation import evaluation_config_sha256
 
 
 FORMAL_PROTOCOL = "duca_selected_axis_optimization_v1"
+BOUNDARY_BURST_GATE_SCHEMA = "duca_boundary_burst_full_model_gate_v1"
 VARIANT_CONFIGS = {
     "exact_uniform": "duca_exact_uniform_fixed384_official60.py",
     "direct025": "duca_protected_e2e_direct025_fixed384_official60.py",
@@ -36,6 +37,15 @@ VARIANT_CONFIGS = {
     ),
     "global_curriculum_g2": (
         "duca_global_curriculum_g2_uni_companion_fixed384_official60.py"
+    ),
+    "gaussian_matched_g0": (
+        "duca_global_curriculum_g0_no_feedback_fixed384_official60.py"
+    ),
+    "boundary_burst_r2q3_g0": (
+        "duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
+    ),
+    "boundary_burst_r4q5_g0": (
+        "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     ),
 }
 
@@ -144,7 +154,11 @@ def _load_gate_suite(git_commit: str) -> tuple[dict[str, Any], str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(payload, dict)
-        or payload.get("schema") != "duca_selected_axis_optimization_gate_v1"
+        or payload.get("schema")
+        not in {
+            "duca_selected_axis_optimization_gate_v1",
+            BOUNDARY_BURST_GATE_SCHEMA,
+        }
         or payload.get("ok") is not True
         or payload.get("formal_training_unlocked") is not True
         or payload.get("git_commit") != git_commit
@@ -292,6 +306,7 @@ def build_runtime_bindings(
 
 
 __all__ = [
+    "BOUNDARY_BURST_GATE_SCHEMA",
     "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
     "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",
     "DUCA_P0_TRAINING_AUDIT_SCHEMA",

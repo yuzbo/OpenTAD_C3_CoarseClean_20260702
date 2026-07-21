@@ -11,19 +11,67 @@ source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 CHECKPOINT="${DUCA_R0_CHECKPOINT:-}"
+CHECKPOINT_SHA256="${DUCA_R0_CHECKPOINT_SHA256:-}"
 EXPECTED_EPOCH="${DUCA_R0_CHECKPOINT_EPOCH:-131}"
 OUTPUT_ROOT="${DUCA_R0_OUTPUT_ROOT:-}"
+SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
+SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
+SPLIT_ANNOTATION="${DUCA_SPLIT_ANNOTATION_PATH:-}"
+SPLIT_ANNOTATION_SHA256="${DUCA_SPLIT_ANNOTATION_SHA256:-}"
+TRAIN_BLOCK_LIST="${DUCA_FRONTEND_TRAIN_BLOCK_LIST:-}"
+TRAIN_BLOCK_LIST_SHA256="${DUCA_FRONTEND_TRAIN_BLOCK_LIST_SHA256:-}"
+HOLDOUT_BLOCK_LIST="${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST:-}"
+HOLDOUT_BLOCK_LIST_SHA256="${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST_SHA256:-}"
+EXPECTED_PRETRAIN="${DUCA_ADATAD_PRETRAIN_PATH:-}"
+EXPECTED_PRETRAIN_SHA256="${DUCA_ADATAD_PRETRAIN_SHA256:-}"
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm GPU is required"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
+[[ "${CHECKPOINT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "expected R0 checkpoint SHA256 is required"
+[[ "${EXPECTED_PRETRAIN_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "expected AdaTAD pretrain SHA256 is required"
 [[ -f "${CHECKPOINT}" && -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "checkpoint/pretrain is missing"
-[[ -f "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST:-}" ]] || fail "holdout block list is missing"
+[[ "$(readlink -f "${EXPECTED_PRETRAIN}")" == "$(readlink -f "${ADATAD_PRETRAIN_PATH}")" ]] || fail "AdaTAD pretrain path drift"
 [[ -n "${OUTPUT_ROOT}" && ! -e "${OUTPUT_ROOT}" ]] || fail "fresh output root is required"
 mkdir -p "${OUTPUT_ROOT}"
 
+# The shared preflight delegates split reopening to validate_split_manifest.
+"${PYTHON}" - "${OUTPUT_ROOT}/runtime_bindings.json" \
+  "${SPLIT_MANIFEST}" "${SPLIT_SHA256}" \
+  "${SPLIT_ANNOTATION}" "${SPLIT_ANNOTATION_SHA256}" \
+  "${TRAIN_BLOCK_LIST}" "${TRAIN_BLOCK_LIST_SHA256}" \
+  "${HOLDOUT_BLOCK_LIST}" "${HOLDOUT_BLOCK_LIST_SHA256}" \
+  "${CHECKPOINT}" "${CHECKPOINT_SHA256}" \
+  "${ADATAD_PRETRAIN_PATH}" "${EXPECTED_PRETRAIN_SHA256}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_r0_runtime_bindings,
+)
+
+out = Path(sys.argv[1])
+values = sys.argv[2:]
+payload = validate_r0_runtime_bindings(
+    split_manifest=values[0],
+    split_manifest_sha256=values[1],
+    annotation_path=values[2],
+    annotation_sha256=values[3],
+    train_block_list=values[4],
+    train_block_list_sha256=values[5],
+    holdout_block_list=values[6],
+    holdout_block_list_sha256=values[7],
+    checkpoint_path=values[8],
+    checkpoint_sha256=values[9],
+    pretrain_path=values[10],
+    pretrain_sha256=values[11],
+)
+out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
 EVAL_BLOCKED="${OUTPUT_ROOT}/evaluation_blocked_videos.json"
-"${PYTHON}" - "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST}" "${EVAL_BLOCKED}" <<'PY'
+"${PYTHON}" - "${HOLDOUT_BLOCK_LIST}" "${EVAL_BLOCKED}" <<'PY'
 import json, sys
 from pathlib import Path
 source, target = map(Path, sys.argv[1:])
@@ -81,7 +129,8 @@ for family in "${families[@]}"; do
 done
 
 "${PYTHON}" - "${OUTPUT_ROOT}" "${EXPECTED_COMMIT}" "${CHECKPOINT}" \
-  "${INPUT}" "${FAMILIES}" "${FAMILY_SUMMARY}" <<'PY'
+  "${INPUT}" "${FAMILIES}" "${FAMILY_SUMMARY}" "${SPLIT_MANIFEST}" \
+  "${SPLIT_SHA256}" "${ADATAD_PRETRAIN_PATH}" "${EXPECTED_PRETRAIN_SHA256}" <<'PY'
 import hashlib, json, math, sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
@@ -125,6 +174,10 @@ summary = {
     "git_commit": sys.argv[2],
     "checkpoint": str(Path(sys.argv[3]).resolve()),
     "checkpoint_sha256": digest(sys.argv[3]),
+    "split_manifest_path": str(Path(sys.argv[7]).resolve()),
+    "split_manifest_sha256": sys.argv[8],
+    "adatad_pretrain_path": str(Path(sys.argv[9]).resolve()),
+    "adatad_pretrain_sha256": sys.argv[10],
     "input_jsonl": str(Path(sys.argv[4]).resolve()),
     "input_jsonl_sha256": digest(sys.argv[4]),
     "families_jsonl": str(Path(sys.argv[5]).resolve()),
@@ -162,5 +215,7 @@ decision = {
 if not decision["ok"]:
     raise SystemExit("no constrained burst Oracle exceeds U by >0.20 Avg-mAP")
 PY
+
+sha256sum "${OUTPUT_ROOT}/r0_summary.json" | awk '{print $1}' > "${OUTPUT_ROOT}/r0_summary.sha256"
 
 echo "[DUCA_R0_HOLDOUT_MAP] completed ${OUTPUT_ROOT}/r0_decision.json"

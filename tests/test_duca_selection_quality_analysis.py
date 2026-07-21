@@ -321,3 +321,44 @@ def test_analyze_jsonl_writes_machine_readable_outputs_and_vector_figure(tmp_pat
     assert (tmp_path / "out" / "selection_quality_per_sample.csv").is_file()
     assert (tmp_path / "out" / "selection_quality_overview.pdf").is_file()
     assert (tmp_path / "out" / "selection_quality_samples.pdf").is_file()
+
+
+def test_analyze_jsonl_pooled_metrics_exclude_crop_cut_boundary(tmp_path: Path) -> None:
+    record = _record("video_crop|0", [0, 2, 5, 7])
+    record["gt_segments"] = [[0.0, 2.0]]
+    record["gt_boundary_validity"] = [[False, True]]
+    record["transition_policy_scores"] = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    sample = quality.analyze_record(record)
+    records = tmp_path / "crop_records.jsonl"
+    records.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    summary = quality.analyze_jsonl(
+        records_jsonl=records,
+        output_dir=tmp_path / "crop_out",
+        bootstrap_samples=8,
+        random_seed=7,
+        representative_per_stratum=0,
+    )
+
+    sample_transition = sample["transition"]["r0"]["policy"]
+    pooled_transition = summary["transition"]["r0"]["policy"]
+    assert sample["gt_boundary_count"] == 1
+    assert sample_transition["positive_count"] == 1
+    assert sample_transition["prevalence"] == pytest.approx(1.0 / 8.0)
+    assert sample_transition["auprc"] == pytest.approx(1.0)
+    assert pooled_transition == sample_transition
+    assert summary["selection"]["learned"]["pooled"]["boundary_recall"]["r0"] == pytest.approx(
+        sample["selection"]["learned"]["boundary_recall"]["r0"]
+    )
+    for field in (
+        "mean_endpoint_selected_count",
+        "endpoint_quota_recall",
+        "endpoint_bilateral_recall",
+        "both_endpoints_quota_recall",
+    ):
+        sample_value = sample["selection"]["learned"]["boundary_burst"]["r2q3"][field]
+        pooled_value = summary["selection"]["learned"]["boundary_burst"]["r2q3"][field]["mean"]
+        if sample_value is None:
+            assert pooled_value is None
+        else:
+            assert pooled_value == pytest.approx(sample_value)

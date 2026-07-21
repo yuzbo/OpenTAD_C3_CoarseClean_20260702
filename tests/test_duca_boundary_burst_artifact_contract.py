@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -9,9 +10,27 @@ from tools.bata.create_duca_frontend_split import (
     create_split,
     validate_split_manifest,
 )
+from tools.bata.aggregate_duca_boundary_burst_results import (
+    EXPECTED_VARIANTS,
+    aggregate,
+)
+from tools.bata.select_duca_boundary_burst_candidates import (
+    select_variants,
+    validate_r0_headroom_summary,
+    validate_r0_runtime_bindings,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _split(tmp_path: Path) -> tuple[dict, Path]:
@@ -74,6 +93,230 @@ def test_split_manifest_fails_closed_on_runtime_path_substitution(tmp_path: Path
         validate_split_manifest(manifest, train_block_list=replacement)
 
 
+def test_candidate_selector_reopens_split_reference_hashes(tmp_path: Path) -> None:
+    split, manifest = _split(tmp_path)
+    Path(split["holdout_block_list"]).write_text("tampered\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="artifact hash drift"):
+        select_variants(
+            expected_commit="a" * 40,
+            split_manifest=manifest,
+            split_manifest_sha256=_sha256(manifest),
+            receipt_paths=[],
+            output_path=tmp_path / "decision.json",
+        )
+
+
+def test_r0_runtime_reopens_split_reference_hashes(tmp_path: Path) -> None:
+    split, manifest = _split(tmp_path)
+    checkpoint = tmp_path / "r0.pth"
+    pretrain = tmp_path / "pretrain.pth"
+    checkpoint.write_bytes(b"checkpoint-v1")
+    pretrain.write_bytes(b"pretrain-v1")
+    Path(split["annotation_path"]).write_text("tampered\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="artifact hash drift"):
+        validate_r0_runtime_bindings(
+            split_manifest=manifest,
+            split_manifest_sha256=_sha256(manifest),
+            annotation_path=split["annotation_path"],
+            annotation_sha256=split["annotation_sha256"],
+            train_block_list=split["train_block_list"],
+            train_block_list_sha256=split["train_block_list_sha256"],
+            holdout_block_list=split["holdout_block_list"],
+            holdout_block_list_sha256=split["holdout_block_list_sha256"],
+            checkpoint_path=checkpoint,
+            checkpoint_sha256=_sha256(checkpoint),
+            pretrain_path=pretrain,
+            pretrain_sha256=_sha256(pretrain),
+        )
+
+
+@pytest.mark.parametrize("tampered", ("checkpoint", "pretrain"))
+def test_r0_runtime_binding_fails_closed_on_weight_drift(
+    tmp_path: Path,
+    tampered: str,
+) -> None:
+    split, manifest = _split(tmp_path)
+    checkpoint = tmp_path / "r0.pth"
+    pretrain = tmp_path / "pretrain.pth"
+    checkpoint.write_bytes(b"checkpoint-v1")
+    pretrain.write_bytes(b"pretrain-v1")
+    expected = {"checkpoint": _sha256(checkpoint), "pretrain": _sha256(pretrain)}
+    Path({"checkpoint": checkpoint, "pretrain": pretrain}[tampered]).write_bytes(b"tampered")
+
+    with pytest.raises(RuntimeError, match="path/hash drift"):
+        validate_r0_runtime_bindings(
+            split_manifest=manifest,
+            split_manifest_sha256=_sha256(manifest),
+            annotation_path=split["annotation_path"],
+            annotation_sha256=split["annotation_sha256"],
+            train_block_list=split["train_block_list"],
+            train_block_list_sha256=split["train_block_list_sha256"],
+            holdout_block_list=split["holdout_block_list"],
+            holdout_block_list_sha256=split["holdout_block_list_sha256"],
+            checkpoint_path=checkpoint,
+            checkpoint_sha256=expected["checkpoint"],
+            pretrain_path=pretrain,
+            pretrain_sha256=expected["pretrain"],
+        )
+
+
+def _r0_summary(tmp_path: Path) -> Path:
+    rows = []
+    values = {
+        "A_exact_uniform": 0.50,
+        "R2Q3_privileged_boundary_burst": 0.75,
+        "R4Q5_privileged_boundary_burst": 0.80,
+    }
+    for family, value in values.items():
+        metrics_path = tmp_path / "metrics" / family / "metrics.json"
+        metrics = {"metrics": {"average_mAP": value, "mAP@0.5": value - 0.1}}
+        _write_json(metrics_path, metrics)
+        rows.append(
+            {
+                "family": family,
+                "metrics_path": str(metrics_path.resolve()),
+                "metrics_sha256": _sha256(metrics_path),
+                "metrics": metrics["metrics"],
+                "average_mAP": value,
+                "headroom_vs_uniform_average_mAP": value - values["A_exact_uniform"],
+            }
+        )
+    summary = tmp_path / "r0_summary.json"
+    _write_json(
+        summary,
+        {
+            "schema": "duca_r0_selected_axis_boundary_burst_map_v2",
+            "ok": True,
+            "git_commit": "a" * 40,
+            "source_subset": "training_internal_holdout",
+            "test_subset_consumed": False,
+            "required_headroom_average_mAP": 0.20,
+            "rows": rows,
+        },
+    )
+    return summary
+
+
+@pytest.mark.parametrize("copied_field", ("metrics", "average_mAP"))
+def test_p0_rejects_tampered_r0_summary_metric_copy(
+    tmp_path: Path,
+    copied_field: str,
+) -> None:
+    summary = _r0_summary(tmp_path)
+    payload = json.loads(summary.read_text(encoding="utf-8"))
+    if copied_field == "metrics":
+        payload["rows"][0]["metrics"]["average_mAP"] = 0.99
+    else:
+        payload["rows"][0]["average_mAP"] = 0.99
+    _write_json(summary, payload)
+
+    with pytest.raises(RuntimeError, match="copied .*mismatch"):
+        validate_r0_headroom_summary(
+            summary_path=summary,
+            summary_sha256=_sha256(summary),
+            expected_commit="a" * 40,
+        )
+
+
+def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
+    decision = tmp_path / "frontend_decision.json"
+    _write_json(
+        decision,
+        {
+            "schema": "duca_boundary_burst_frontend_decision_v1",
+            "ok": True,
+            "git_commit": "a" * 40,
+        },
+    )
+    gate = tmp_path / "gate_suite.json"
+    _write_json(gate, {"ok": True, "git_commit": "a" * 40})
+    decision_sha = _sha256(decision)
+    gate_sha = _sha256(gate)
+    completions = []
+    completion_shas = []
+    for index, variant in enumerate(EXPECTED_VARIANTS):
+        root = tmp_path / variant
+        checkpoint = root / "epoch_59.pth"
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_bytes(f"checkpoint-{variant}".encode())
+        evaluation = root / "evaluation.json"
+        metrics = {"average_mAP": 0.60 + index * 0.01, "mAP@0.5": 0.70}
+        _write_json(
+            evaluation,
+            {
+                "schema_version": "duca_selected_axis_terminal_evaluation_v1",
+                "metrics": metrics,
+            },
+        )
+        completion = root / "completion.json"
+        _write_json(
+            completion,
+            {
+                "schema": "duca_two_stage_curriculum_completion_v1",
+                "ok": True,
+                "git_commit": "a" * 40,
+                "variant": variant,
+                "checkpoint_path": str(checkpoint.resolve()),
+                "checkpoint_sha256": _sha256(checkpoint),
+                "evaluation_path": str(evaluation.resolve()),
+                "evaluation_sha256": _sha256(evaluation),
+                "metrics": metrics,
+                "frontend_decision_sha256": decision_sha,
+                "gate_suite_sha256": gate_sha,
+            },
+        )
+        completions.append(completion)
+        completion_shas.append(_sha256(completion))
+    return (
+        {"decision": decision, "gate": gate},
+        completions,
+        completion_shas,
+    )
+
+
+def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
+    tmp_path: Path,
+) -> None:
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    payload = json.loads(completions[0].read_text(encoding="utf-8"))
+    payload["metrics"]["average_mAP"] = 0.99
+    _write_json(completions[0], payload)
+    completion_shas[0] = _sha256(completions[0])
+
+    with pytest.raises(RuntimeError, match="copied completion metrics mismatch"):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+def test_terminal_aggregate_uses_verified_evaluation_metrics(tmp_path: Path) -> None:
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+
+    payload = aggregate(
+        expected_commit="a" * 40,
+        decision_path=roots["decision"],
+        decision_sha256=_sha256(roots["decision"]),
+        gate_path=roots["gate"],
+        gate_sha256=_sha256(roots["gate"]),
+        completion_paths=completions,
+        completion_sha256s=completion_shas,
+        output_path=tmp_path / "aggregate.json",
+    )
+
+    assert [row["average_mAP"] for row in payload["results"]] == pytest.approx(
+        [0.60, 0.61, 0.62, 0.63]
+    )
+
+
 def test_submission_dag_requires_r0_before_every_learned_stage() -> None:
     source = (ROOT / "scripts" / "submit_duca_boundary_burst_official60_suite.sh").read_text(
         encoding="utf-8"
@@ -92,15 +335,45 @@ def test_p0_blocks_nonpositive_r0_headroom_before_training() -> None:
         encoding="utf-8"
     )
 
-    headroom_gate = source.index("R0 constrained burst Oracle headroom does not clear")
+    headroom_gate = source.index("validate_r0_headroom_summary")
     real_gate = source.index("run_duca_frontend_p0_real_gate.py")
     first_variant = source.index("run_duca_frontend_pretrain_variant_gpu1.sh")
     assert headroom_gate < real_gate < first_variant
-    assert 'digest != row.get("metrics_sha256")' in source
-    assert 'if not headroom > required_headroom:' in source
-    assert 'required_headroom < 0.20' in source
-    assert 'R2Q3_privileged_boundary_burst' in source
-    assert 'R4Q5_privileged_boundary_burst' in source
+    assert "validate_r0_headroom_summary" in source
+    assert "R0_SUMMARY_SHA256_FILE" in source
+
+
+def test_artifact_consumers_use_upstream_sha256_seals() -> None:
+    source = (ROOT / "scripts" / "submit_duca_boundary_burst_official60_suite.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'frontend_decision.sha256' in source
+    assert 'gate_suite.sha256' in source
+    assert 'completion.sha256' in source
+    assert 'sha256sum "${DUCA_FRONTEND_DECISION_JSON}"' not in source
+    assert 'sha256sum "${DUCA_SELECTED_OPT_GATE_SUITE}"' not in source
+    assert "--completion-sha256" in source
+
+
+def test_submit_prefreezes_all_r0_weight_and_split_bindings() -> None:
+    submit = (ROOT / "scripts" / "submit_duca_boundary_burst_official60_suite.sh").read_text(
+        encoding="utf-8"
+    )
+    r0 = (ROOT / "scripts" / "run_duca_boundary_burst_r0_holdout_map_gpu1.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for name in (
+        "R0_CHECKPOINT_SHA256",
+        "ADATAD_PRETRAIN_SHA256",
+        "SPLIT_ANNOTATION_SHA256",
+        "SPLIT_TRAIN_BLOCK_LIST_SHA256",
+        "SPLIT_HOLDOUT_BLOCK_LIST_SHA256",
+    ):
+        assert name in submit
+    assert "validate_r0_runtime_bindings" in r0
+    assert "DUCA_FRONTEND_SPLIT_MANIFEST" in r0
 
 
 def test_uniform_arm_never_claims_a_gaussian_frontend_checkpoint() -> None:
@@ -119,8 +392,10 @@ def test_uniform_arm_never_claims_a_gaussian_frontend_checkpoint() -> None:
 def test_all_split_consumers_reopen_the_shared_hash_contract() -> None:
     paths = (
         "scripts/run_duca_boundary_burst_p0_gpu1.sh",
+        "scripts/run_duca_boundary_burst_r0_holdout_map_gpu1.sh",
         "scripts/run_duca_frontend_pretrain_variant_gpu1.sh",
         "tools/bata/run_duca_frontend_p0_real_gate.py",
+        "tools/bata/select_duca_boundary_burst_candidates.py",
     )
     for relative in paths:
         source = (ROOT / relative).read_text(encoding="utf-8")

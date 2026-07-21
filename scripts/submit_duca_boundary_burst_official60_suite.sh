@@ -19,6 +19,7 @@ R0_CHECKPOINT_EPOCH="${DUCA_R0_CHECKPOINT_EPOCH:-131}"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
 [[ -f "${R0_CHECKPOINT}" ]] || fail "DUCA_R0_CHECKPOINT is required"
+[[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain is missing"
 mkdir -p "${RUN_ROOT}/logs" "${RUN_ROOT}/submission"
 [[ ! -f "${RUN_ROOT}/jobs.tsv" ]] || { cat "${RUN_ROOT}/jobs.tsv"; exit 0; }
 
@@ -35,6 +36,14 @@ SPLIT_SHA256="$(sha256sum "${SPLIT_MANIFEST}" | awk '{print $1}')"
   --train-block-list "${SPLIT_ROOT}/frontend_train_block_list.txt" \
   --holdout-block-list "${SPLIT_ROOT}/frontend_holdout_block_list.txt" \
   > "${RUN_ROOT}/frontend_split.validation.json"
+SPLIT_ANNOTATION="${THUMOS14_ANNOTATION_PATH}"
+SPLIT_TRAIN_BLOCK_LIST="${SPLIT_ROOT}/frontend_train_block_list.txt"
+SPLIT_HOLDOUT_BLOCK_LIST="${SPLIT_ROOT}/frontend_holdout_block_list.txt"
+SPLIT_ANNOTATION_SHA256="$(sha256sum "${SPLIT_ANNOTATION}" | awk '{print $1}')"
+SPLIT_TRAIN_BLOCK_LIST_SHA256="$(sha256sum "${SPLIT_TRAIN_BLOCK_LIST}" | awk '{print $1}')"
+SPLIT_HOLDOUT_BLOCK_LIST_SHA256="$(sha256sum "${SPLIT_HOLDOUT_BLOCK_LIST}" | awk '{print $1}')"
+R0_CHECKPOINT_SHA256="$(sha256sum "${R0_CHECKPOINT}" | awk '{print $1}')"
+ADATAD_PRETRAIN_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
 
 write_header() {
   local path="$1" name="$2" time="$3" gpu="$4"
@@ -67,15 +76,26 @@ cat >>"${P0_SBATCH}" <<EOF
 export DUCA_FRONTEND_SPLIT_MANIFEST='${SPLIT_MANIFEST}'
 export DUCA_FRONTEND_SPLIT_MANIFEST_SHA256='${SPLIT_SHA256}'
 export DUCA_R0_SUMMARY_JSON='${RUN_ROOT}/r0_holdout_map/r0_summary.json'
+export DUCA_R0_SUMMARY_SHA256_FILE='${RUN_ROOT}/r0_holdout_map/r0_summary.sha256'
 bash scripts/run_duca_boundary_burst_p0_gpu1.sh
 EOF
 
 R0_SBATCH="${RUN_ROOT}/submission/r0.sbatch"
 write_header "${R0_SBATCH}" "burst_r0_${EXPECTED_COMMIT:0:7}" "2-00:00:00" 1
 cat >>"${R0_SBATCH}" <<EOF
-export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST='${SPLIT_ROOT}/frontend_holdout_block_list.txt'
+export DUCA_FRONTEND_SPLIT_MANIFEST='${SPLIT_MANIFEST}'
+export DUCA_FRONTEND_SPLIT_MANIFEST_SHA256='${SPLIT_SHA256}'
+export DUCA_SPLIT_ANNOTATION_PATH='${SPLIT_ANNOTATION}'
+export DUCA_SPLIT_ANNOTATION_SHA256='${SPLIT_ANNOTATION_SHA256}'
+export DUCA_FRONTEND_TRAIN_BLOCK_LIST='${SPLIT_TRAIN_BLOCK_LIST}'
+export DUCA_FRONTEND_TRAIN_BLOCK_LIST_SHA256='${SPLIT_TRAIN_BLOCK_LIST_SHA256}'
+export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST='${SPLIT_HOLDOUT_BLOCK_LIST}'
+export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST_SHA256='${SPLIT_HOLDOUT_BLOCK_LIST_SHA256}'
 export DUCA_R0_CHECKPOINT='${R0_CHECKPOINT}'
+export DUCA_R0_CHECKPOINT_SHA256='${R0_CHECKPOINT_SHA256}'
 export DUCA_R0_CHECKPOINT_EPOCH='${R0_CHECKPOINT_EPOCH}'
+export DUCA_ADATAD_PRETRAIN_PATH='${ADATAD_PRETRAIN_PATH}'
+export DUCA_ADATAD_PRETRAIN_SHA256='${ADATAD_PRETRAIN_SHA256}'
 export DUCA_R0_OUTPUT_ROOT='${RUN_ROOT}/r0_holdout_map'
 bash scripts/run_duca_boundary_burst_r0_holdout_map_gpu1.sh
 EOF
@@ -84,9 +104,13 @@ GATE_SBATCH="${RUN_ROOT}/submission/gate.sbatch"
 write_header "${GATE_SBATCH}" "burst_gate_${EXPECTED_COMMIT:0:7}" "04:00:00" 1
 cat >>"${GATE_SBATCH}" <<'EOF'
 export DUCA_FRONTEND_DECISION_JSON="${RUN_ROOT}/frontend_decision.json"
-export DUCA_FRONTEND_DECISION_SHA256="$(sha256sum "${DUCA_FRONTEND_DECISION_JSON}" | awk '{print $1}')"
+IFS= read -r DUCA_FRONTEND_DECISION_SHA256 < "${RUN_ROOT}/frontend_decision.sha256"
+[[ "${DUCA_FRONTEND_DECISION_SHA256}" =~ ^[0-9a-f]{64}$ ]] || exit 1
+export DUCA_FRONTEND_DECISION_SHA256
 export DUCA_BOUNDARY_BURST_GATE_ROOT="${RUN_ROOT}/full_model_gate"
 bash scripts/run_duca_boundary_burst_gate_gpu1.sh
+sha256sum "${RUN_ROOT}/full_model_gate/gate_suite.json" | awk '{print $1}' > \
+  "${RUN_ROOT}/full_model_gate/gate_suite.sha256"
 EOF
 
 variants=(
@@ -101,12 +125,18 @@ for variant in "${variants[@]}"; do
   cat >>"${file}" <<EOF
 export DUCA_SELECTED_OPT_VARIANT='${variant}'
 export DUCA_FRONTEND_DECISION_JSON="\${RUN_ROOT}/frontend_decision.json"
-export DUCA_FRONTEND_DECISION_SHA256="\$(sha256sum "\${DUCA_FRONTEND_DECISION_JSON}" | awk '{print \$1}')"
+IFS= read -r DUCA_FRONTEND_DECISION_SHA256 < "\${RUN_ROOT}/frontend_decision.sha256"
+[[ "\${DUCA_FRONTEND_DECISION_SHA256}" =~ ^[0-9a-f]{64}$ ]] || exit 1
+export DUCA_FRONTEND_DECISION_SHA256
 export DUCA_SELECTED_OPT_GATE_SUITE="\${RUN_ROOT}/full_model_gate/gate_suite.json"
-export DUCA_SELECTED_OPT_GATE_SUITE_SHA256="\$(sha256sum "\${DUCA_SELECTED_OPT_GATE_SUITE}" | awk '{print \$1}')"
+IFS= read -r DUCA_SELECTED_OPT_GATE_SUITE_SHA256 < "\${RUN_ROOT}/full_model_gate/gate_suite.sha256"
+[[ "\${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || exit 1
+export DUCA_SELECTED_OPT_GATE_SUITE_SHA256
 export RUN_DIR="\${RUN_ROOT}/official60/${variant}/run"
 export WORK_DIR="\${RUN_ROOT}/official60/${variant}/work"
 bash scripts/run_duca_two_stage_curriculum_variant_gpu1.sh
+sha256sum "\${RUN_DIR}/completion.json" | awk '{print \$1}' > \
+  "\${RUN_DIR}/completion.sha256"
 EOF
 done
 
@@ -115,14 +145,27 @@ write_header "${AGG_SBATCH}" "burst_agg_${EXPECTED_COMMIT:0:7}" "01:00:00" 0
 cat >>"${AGG_SBATCH}" <<'EOF'
 decision="${RUN_ROOT}/frontend_decision.json"
 gate="${RUN_ROOT}/full_model_gate/gate_suite.json"
+read_seal() {
+  local seal="$1" value
+  [[ -f "${seal}" ]] || return 1
+  IFS= read -r value < "${seal}"
+  [[ "${value}" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s' "${value}"
+}
+decision_sha256="$(read_seal "${RUN_ROOT}/frontend_decision.sha256")"
+gate_sha256="$(read_seal "${RUN_ROOT}/full_model_gate/gate_suite.sha256")"
 python -m tools.bata.aggregate_duca_boundary_burst_results \
   --expected-commit "${DUCA_EXPECTED_COMMIT}" \
-  --decision "${decision}" --decision-sha256 "$(sha256sum "${decision}" | awk '{print $1}')" \
-  --gate "${gate}" --gate-sha256 "$(sha256sum "${gate}" | awk '{print $1}')" \
+  --decision "${decision}" --decision-sha256 "${decision_sha256}" \
+  --gate "${gate}" --gate-sha256 "${gate_sha256}" \
   --completion "${RUN_ROOT}/official60/two_stage_exact_uniform/run/completion.json" \
+  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/two_stage_exact_uniform/run/completion.sha256")" \
   --completion "${RUN_ROOT}/official60/gaussian_matched_g0/run/completion.json" \
+  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/gaussian_matched_g0/run/completion.sha256")" \
   --completion "${RUN_ROOT}/official60/boundary_burst_r2q3_g0/run/completion.json" \
+  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/boundary_burst_r2q3_g0/run/completion.sha256")" \
   --completion "${RUN_ROOT}/official60/boundary_burst_r4q5_g0/run/completion.json" \
+  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/boundary_burst_r4q5_g0/run/completion.sha256")" \
   --output-json "${RUN_ROOT}/final_suite_results.json"
 EOF
 
@@ -130,24 +173,59 @@ for file in "${P0_SBATCH}" "${R0_SBATCH}" "${GATE_SBATCH}" "${AGG_SBATCH}" "${RU
   bash -n "${file}"
 done
 "${PYTHON}" - "${RUN_ROOT}/submission_manifest.json" "${EXPECTED_COMMIT}" \
-  "${SPLIT_MANIFEST}" "${SPLIT_SHA256}" "${R0_CHECKPOINT}" <<'PY'
+  "${SPLIT_MANIFEST}" "${SPLIT_SHA256}" \
+  "${SPLIT_ANNOTATION}" "${SPLIT_ANNOTATION_SHA256}" \
+  "${SPLIT_TRAIN_BLOCK_LIST}" "${SPLIT_TRAIN_BLOCK_LIST_SHA256}" \
+  "${SPLIT_HOLDOUT_BLOCK_LIST}" "${SPLIT_HOLDOUT_BLOCK_LIST_SHA256}" \
+  "${R0_CHECKPOINT}" "${R0_CHECKPOINT_SHA256}" \
+  "${ADATAD_PRETRAIN_PATH}" "${ADATAD_PRETRAIN_SHA256}" <<'PY'
 import hashlib
 import json
 import sys
 from pathlib import Path
 
-out, commit, split, split_sha, checkpoint = sys.argv[1:]
+(
+    out,
+    commit,
+    split,
+    split_sha,
+    annotation,
+    annotation_sha,
+    train_block,
+    train_block_sha,
+    holdout_block,
+    holdout_block_sha,
+    checkpoint,
+    checkpoint_sha,
+    pretrain,
+    pretrain_sha,
+) = sys.argv[1:]
 checkpoint_path = Path(checkpoint).expanduser().resolve()
-if not checkpoint_path.is_file():
-    raise SystemExit("R0 checkpoint disappeared while sealing submission")
+pretrain_path = Path(pretrain).expanduser().resolve()
+for path, expected, label in (
+    (checkpoint_path, checkpoint_sha, "R0 checkpoint"),
+    (pretrain_path, pretrain_sha, "AdaTAD pretrain"),
+):
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        raise SystemExit(f"{label} drifted while sealing submission")
 payload = {
     "schema": "duca_boundary_burst_submission_v1",
     "ok": True,
     "git_commit": commit,
     "split_manifest_path": str(Path(split).resolve()),
     "split_manifest_sha256": split_sha,
+    "split_reference_bindings": {
+        "annotation_path": str(Path(annotation).resolve()),
+        "annotation_sha256": annotation_sha,
+        "train_block_list": str(Path(train_block).resolve()),
+        "train_block_list_sha256": train_block_sha,
+        "holdout_block_list": str(Path(holdout_block).resolve()),
+        "holdout_block_list_sha256": holdout_block_sha,
+    },
     "r0_checkpoint_path": str(checkpoint_path),
-    "r0_checkpoint_sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
+    "r0_checkpoint_sha256": checkpoint_sha,
+    "adatad_pretrain_path": str(pretrain_path),
+    "adatad_pretrain_sha256": pretrain_sha,
     "dependency_contract": {
         "r0_holdout_map": "none",
         "p0": "afterok:r0_holdout_map",

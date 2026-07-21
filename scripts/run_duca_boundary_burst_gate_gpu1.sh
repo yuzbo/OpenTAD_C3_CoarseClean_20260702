@@ -32,6 +32,7 @@ entries=(
 )
 for entry in "${entries[@]}"; do
   IFS=: read -r variant frontend config <<<"${entry}"
+  config_stem="$(basename "${config}" .py)"
   readarray -t selected < <("${PYTHON}" - "${DECISION}" "${frontend}" <<'PY'
 import json, sys
 from pathlib import Path
@@ -52,7 +53,7 @@ PY
     --config "${config}" --expected-commit "${EXPECTED_COMMIT}" \
     --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
     --adatad-pretrain-sha256 "${ADATAD_PRETRAIN_SHA256}" \
-    --output-json "${GATE_ROOT}/full_model/${variant}.json"
+    --output-json "${GATE_ROOT}/full_model/${config_stem}.json"
 done
 
 "${PYTHON}" -m pytest \
@@ -74,6 +75,7 @@ records = [
 payload = {
     "schema": "duca_boundary_burst_full_model_gate_v1",
     "ok": True,
+    "formal_training_unlocked": True,
     "status": "uniform_gaussian_r2q3_r4q5_full_model_gate_passed",
     "task": "offline_temporal_action_detection",
     "git_commit": sys.argv[2],

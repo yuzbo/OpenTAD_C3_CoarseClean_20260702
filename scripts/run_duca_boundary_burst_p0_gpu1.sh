@@ -14,6 +14,7 @@ EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
 SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
 R0_SUMMARY="${DUCA_R0_SUMMARY_JSON:-${RUN_ROOT}/r0_holdout_map/r0_summary.json}"
+R0_SUMMARY_SHA256_FILE="${DUCA_R0_SUMMARY_SHA256_FILE:-${RUN_ROOT}/r0_holdout_map/r0_summary.sha256}"
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm GPU is required"
 [[ -d "${RUN_ROOT}" ]] || fail "prepared RUN_ROOT is required"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
@@ -33,71 +34,25 @@ export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_hol
   > "${RUN_ROOT}/frontend_split.validation.json"
 
 [[ -f "${R0_SUMMARY}" ]] || fail "R0 summary is missing"
-"${PYTHON}" - "${R0_SUMMARY}" "${EXPECTED_COMMIT}" \
+[[ -f "${R0_SUMMARY_SHA256_FILE}" ]] || fail "R0 summary SHA256 seal is missing"
+IFS= read -r R0_SUMMARY_SHA256 < "${R0_SUMMARY_SHA256_FILE}"
+[[ "${R0_SUMMARY_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "invalid R0 summary SHA256 seal"
+"${PYTHON}" - "${R0_SUMMARY}" "${R0_SUMMARY_SHA256}" "${EXPECTED_COMMIT}" \
   "${RUN_ROOT}/r0_headroom_gate.json" <<'PY'
-import hashlib
 import json
-import math
 import sys
 from pathlib import Path
 
-source = Path(sys.argv[1]).expanduser().resolve()
-payload = json.loads(source.read_text(encoding="utf-8"))
-if payload.get("schema") != "duca_r0_selected_axis_boundary_burst_map_v2":
-    raise SystemExit("R0 summary schema mismatch")
-if payload.get("ok") is not True or payload.get("git_commit") != sys.argv[2]:
-    raise SystemExit("R0 summary did not complete on the exact commit")
-if payload.get("source_subset") != "training_internal_holdout":
-    raise SystemExit("R0 did not use the sealed training holdout")
-if payload.get("test_subset_consumed") is not False:
-    raise SystemExit("R0 consumed the test subset")
-rows = {row.get("family"): row for row in payload.get("rows", [])}
-required = {
-    "A_exact_uniform",
-    "R2Q3_privileged_boundary_burst",
-    "R4Q5_privileged_boundary_burst",
-}
-if set(rows) != required:
-    raise SystemExit("R0 family set mismatch")
-values = {}
-for family, row in rows.items():
-    metrics_path = Path(row.get("metrics_path", "")).expanduser().resolve()
-    if not metrics_path.is_file():
-        raise SystemExit(f"R0 metrics are missing for {family}")
-    digest = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
-    if digest != row.get("metrics_sha256"):
-        raise SystemExit(f"R0 metrics hash drift for {family}")
-    value = float(row.get("metrics", {}).get("average_mAP", float("nan")))
-    if not math.isfinite(value):
-        raise SystemExit(f"R0 average_mAP is missing for {family}")
-    values[family] = value
-uniform = values["A_exact_uniform"]
-best_privileged = max(
-    values["R2Q3_privileged_boundary_burst"],
-    values["R4Q5_privileged_boundary_burst"],
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_r0_headroom_summary,
 )
-headroom = best_privileged - uniform
-required_headroom = float(payload.get("required_headroom_average_mAP", float("nan")))
-if not math.isfinite(required_headroom) or required_headroom < 0.20:
-    raise SystemExit("R0 required headroom contract is missing or too weak")
-if not headroom > required_headroom:
-    raise SystemExit(
-        "R0 constrained burst Oracle headroom does not clear the frozen threshold: "
-        f"headroom={headroom}, required>{required_headroom}"
-    )
-gate = {
-    "schema": "duca_r0_headroom_gate_v1",
-    "ok": True,
-    "git_commit": sys.argv[2],
-    "r0_summary_path": str(source),
-    "r0_summary_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-    "average_mAP": values,
-    "best_privileged_minus_uniform_average_mAP": headroom,
-    "required_strict_headroom_average_mAP": required_headroom,
-    "test_subset_consumed": False,
-    "paper_claim_allowed": False,
-}
-Path(sys.argv[3]).write_text(
+
+gate = validate_r0_headroom_summary(
+    summary_path=sys.argv[1],
+    summary_sha256=sys.argv[2],
+    expected_commit=sys.argv[3],
+)
+Path(sys.argv[4]).write_text(
     json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8"
 )
 PY
@@ -135,5 +90,7 @@ done
   --receipt "${RUN_ROOT}/p0/burst_r2q3/run/completion.json" \
   --receipt "${RUN_ROOT}/p0/burst_r4q5/run/completion.json" \
   --output-json "${RUN_ROOT}/frontend_decision.json"
+sha256sum "${RUN_ROOT}/frontend_decision.json" | awk '{print $1}' > \
+  "${RUN_ROOT}/frontend_decision.sha256"
 
 echo "[DUCA_BURST_P0] completed ${RUN_ROOT}/frontend_decision.json"
