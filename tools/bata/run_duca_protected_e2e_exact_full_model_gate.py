@@ -231,6 +231,25 @@ def _optimizer_state_step(optimizer, parameter: torch.nn.Parameter) -> int:
     return int(step)
 
 
+def _position_scheduler_at_successful_step(scheduler, *, step: int) -> list[float]:
+    _require(step > 0, "scheduler proof position must be positive")
+    scheduler.last_epoch = int(step)
+    learning_rates = [float(value) for value in scheduler._get_closed_form_lr()]
+    _require(
+        len(learning_rates) == len(scheduler.optimizer.param_groups),
+        "scheduler LR group count drifted",
+    )
+    _require(
+        any(value > 0.0 for value in learning_rates),
+        "scheduler proof position must expose a non-zero LR",
+    )
+    for group, learning_rate in zip(scheduler.optimizer.param_groups, learning_rates):
+        group["lr"] = learning_rate
+    scheduler._last_lr = list(learning_rates)
+    scheduler._step_count = max(int(getattr(scheduler, "_step_count", 0)), 1)
+    return learning_rates
+
+
 def run_gate(
     *,
     config_path: str,
@@ -472,6 +491,10 @@ def run_gate(
         optimizer,
         int(cfg.workflow.expected_train_batches_per_epoch),
     )
+    initial_scheduler_lrs = _position_scheduler_at_successful_step(
+        scheduler,
+        step=1,
+    )
     model_ema = ModelEma(ddp)
     ema_root = getattr(model_ema.module, "module", model_ema.module)
     scaler = torch.cuda.amp.GradScaler(enabled=True)
@@ -585,6 +608,7 @@ def run_gate(
         "selector_step_after": int(selector._loss_weight_schedule_step.item()),
         "scheduler_epoch_before": scheduler_epoch_before,
         "scheduler_epoch_after": int(scheduler.last_epoch),
+        "initial_nonzero_scheduler_lrs": initial_scheduler_lrs,
         "ema_updated": True,
         "update_audit": update_audit,
         "training_probe": dict(training_probe),

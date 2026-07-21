@@ -71,6 +71,8 @@ def test_selected_axis_full_model_gate_reuses_the_production_amp_replay_path() -
     assert "max_amp_retries_per_batch=int(cfg.workflow.max_amp_retries_per_batch)" in source
     assert "fail_on_amp_replay_exhaustion=True" in source
     assert "ModelEma(ddp)" in source
+    assert "_position_scheduler_at_successful_step(" in source
+    assert "initial_nonzero_scheduler_lrs" in source
     assert "scheduler_updates" in source
     assert "duca_schedule_updates" in source
     assert "FORMAL_SEED = 3407" in source
