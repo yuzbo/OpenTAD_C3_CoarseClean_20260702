@@ -26,6 +26,21 @@ case "${VARIANT}" in
   two_stage_pretrained_frozen)
     CONFIG="configs/adatad/thumos/duca_two_stage_pretrained_frozen_fixed384_official60.py"
     ;;
+  local_u_exact_uniform)
+    CONFIG="configs/adatad/thumos/duca_local_residual_u_exact_uniform_fixed384_official60.py"
+    ;;
+  local_d_pure_delta)
+    CONFIG="configs/adatad/thumos/duca_local_residual_d_pure_delta_fixed384_official60.py"
+    ;;
+  local_r0_no_feedback)
+    CONFIG="configs/adatad/thumos/duca_local_residual_r0_no_feedback_fixed384_official60.py"
+    ;;
+  local_r1_feedback)
+    CONFIG="configs/adatad/thumos/duca_local_residual_r1_feedback_fixed384_official60.py"
+    ;;
+  local_r1_uniform_companion)
+    CONFIG="configs/adatad/thumos/duca_local_residual_r1_uniform_companion_fixed384_official60.py"
+    ;;
   *)
     fail "unknown two-stage variant: ${VARIANT}"
     ;;

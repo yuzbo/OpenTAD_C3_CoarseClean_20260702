@@ -279,11 +279,11 @@ def _add_structured_zero_forward_gradient_path(
     slot_mask: torch.Tensor,
     bridge_weight: float,
 ) -> torch.Tensor:
-    """Legacy local surrogate; forbidden as detector-utility evidence.
+    """Keep the hard gather in forward and use categorical slots in backward.
 
-    Its hard forward is exact, but its gradient need not agree with the loss
-    change from an actual discrete one-swap selection. Formal transition-only
-    configs must use detached hard counterfactual utility distillation instead.
+    This is a surrogate derivative. Connectivity alone is not detector-utility
+    evidence; a formal route must additionally pass a legal hard-swap alignment
+    gate and report terminal detector mAP.
     """
     if soft_slot_assignment.ndim != 3:
         raise ValueError("structured soft_slot_assignment must be [B,K,T]")
@@ -450,6 +450,9 @@ class DucaOnlineFrameSelector(nn.Module):
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
         local_cell_force_exact_uniform: bool = False,
+        local_cell_base_policy: str = "learned",
+        local_cell_residual_scale: float = 1.0,
+        local_cell_detector_grid_mode: str = "anchor",
         inference_policy_alpha: float = 1.0,
         training_uniform_companion_fraction: float = 0.0,
         dense_window_size: Optional[int] = None,
@@ -541,6 +544,13 @@ class DucaOnlineFrameSelector(nn.Module):
         self.acquisition_policy = str(acquisition_policy)
         self.structured_temperature = float(structured_temperature)
         self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
+        self.local_cell_base_policy = str(local_cell_base_policy)
+        self.local_cell_residual_scale = float(local_cell_residual_scale)
+        self.local_cell_detector_grid_mode = str(local_cell_detector_grid_mode)
+        if self.local_cell_detector_grid_mode not in {"anchor", "selected"}:
+            raise ValueError(
+                "local_cell_detector_grid_mode must be anchor or selected"
+            )
         self.inference_policy_alpha = float(inference_policy_alpha)
         if not 0.0 <= self.inference_policy_alpha <= 1.0:
             raise ValueError("inference_policy_alpha must lie in [0,1]")
@@ -686,12 +696,13 @@ class DucaOnlineFrameSelector(nn.Module):
             "st_sparse_gather_soft_context",
             "soft_to_hard_resample",
             "structured_zero_forward",
+            "local_cell_straight_through",
             "protected_structured_transport",
         }:
             raise ValueError(
                 "detector_gradient_mode must be none, st_sparse_gather, "
                 "st_sparse_gather_soft_context, soft_to_hard_resample, structured_zero_forward, "
-                "or protected_structured_transport"
+                "local_cell_straight_through, or protected_structured_transport"
             )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
@@ -744,13 +755,41 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError(
                     "uniform companion training requires a fixed exact budget"
                 )
-            if self.acquisition_policy != "global_structured_topk":
+            if self.acquisition_policy not in {
+                "global_structured_topk",
+                "local_cell_deformation",
+            }:
                 raise ValueError(
-                    "uniform companion training requires global_structured_topk"
+                    "uniform companion training requires a structured exact-K policy"
                 )
             if self.detector_output_coordinate_space != SELECTED_AXIS:
                 raise ValueError(
                     "uniform companion training is defined on the selected-axis detector path"
+                )
+        if self.detector_gradient_mode == "local_cell_straight_through":
+            if self.selector_variant != "transition_only":
+                raise ValueError(
+                    "local_cell_straight_through requires transition_only"
+                )
+            if self.acquisition_policy != "local_cell_deformation":
+                raise ValueError(
+                    "local_cell_straight_through requires local_cell_deformation"
+                )
+            if self.detector_output_coordinate_space != SELECTED_AXIS:
+                raise ValueError(
+                    "local_cell_straight_through requires the selected-axis detector path"
+                )
+            if self.policy_hidden_gradient_scale != 0.0:
+                raise ValueError(
+                    "local_cell_straight_through must isolate detector gradients from the coarse trunk"
+                )
+            if self.local_cell_base_policy != "abs_delta_actionness":
+                raise ValueError(
+                    "local_cell_straight_through requires an immutable abs_delta_actionness base"
+                )
+            if self.local_cell_detector_grid_mode != "selected":
+                raise ValueError(
+                    "local_cell_straight_through requires actual selected detector-grid positions"
                 )
         if self.counterfactual_objective == "local_cell_signed_logistic":
             if self.acquisition_policy != "local_cell_deformation":
@@ -832,6 +871,8 @@ class DucaOnlineFrameSelector(nn.Module):
             acquisition_policy=self.acquisition_policy,
             structured_temperature=self.structured_temperature,
             local_cell_force_exact_uniform=self.local_cell_force_exact_uniform,
+            local_cell_base_policy=self.local_cell_base_policy,
+            local_cell_residual_scale=self.local_cell_residual_scale,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -1809,6 +1850,13 @@ class DucaOnlineFrameSelector(nn.Module):
             stable_selection=stable_selection,
             policy_mix_alpha=policy_mix_alpha,
         )
+        if (
+            self.acquisition_policy == "local_cell_deformation"
+            and self.local_cell_detector_grid_mode == "selected"
+        ):
+            scores["detector_grid_positions"] = grid.selected_positions
+            grid.metadata = dict(grid.metadata)
+            grid.metadata["local_cell_detector_grid_mode"] = "selected"
         uniform_companion_mask = torch.zeros(
             int(masks.shape[0]),
             device=masks.device,
@@ -1876,10 +1924,15 @@ class DucaOnlineFrameSelector(nn.Module):
                 valid_mask=masks,
                 bridge_weight=detector_gradient_weight,
             )
-        elif self.detector_gradient_mode == "structured_zero_forward":
+        elif self.detector_gradient_mode in {
+            "structured_zero_forward",
+            "local_cell_straight_through",
+        }:
             assignment = scores.get("structured_soft_slot_assignment")
             if assignment is None:
-                raise ValueError("structured_zero_forward requires structured slot marginals")
+                raise ValueError(
+                    f"{self.detector_gradient_mode} requires structured slot marginals"
+                )
             hard_selected = _add_structured_zero_forward_gradient_path(
                 hard_selected,
                 inputs,
@@ -1904,6 +1957,7 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.detector_gradient_mode in {
             "none",
             "structured_zero_forward",
+            "local_cell_straight_through",
             "protected_structured_transport",
         }:
             st_weights = hard_slot_weights
@@ -2001,6 +2055,9 @@ class DucaOnlineFrameSelector(nn.Module):
             "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
             "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
             "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),
+            "local_cell_base_policy": self.local_cell_base_policy,
+            "local_cell_residual_scale": self.local_cell_residual_scale,
+            "local_cell_detector_grid_mode": self.local_cell_detector_grid_mode,
             "training_uniform_companion_fraction": float(
                 self.training_uniform_companion_fraction
             ),
@@ -2043,6 +2100,7 @@ class DucaOnlineFrameSelector(nn.Module):
         supported_modes = {
             "soft_to_hard_resample",
             "structured_zero_forward",
+            "local_cell_straight_through",
             "protected_structured_transport",
         }
         enabled = component_name in supported_modes and float(bridge_weight) > 0.0

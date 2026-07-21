@@ -929,6 +929,47 @@ def exact_uniform_cell_bounds(
     return anchors, starts, ends
 
 
+def normalize_scores_within_exact_uniform_cells(
+    scores: torch.Tensor,
+    *,
+    k: int,
+    variance_floor: float = 1.0e-4,
+) -> torch.Tensor:
+    """Normalize each exact-uniform cell without mixing statistics across cells."""
+
+    if not torch.is_tensor(scores) or scores.ndim != 2 or not scores.is_floating_point():
+        raise ValueError("scores must be a floating-point [B,T] tensor")
+    if not bool(torch.isfinite(scores).all().item()):
+        raise ValueError("scores must be finite")
+    variance_floor = float(variance_floor)
+    if not math.isfinite(variance_floor) or variance_floor <= 0.0:
+        raise ValueError("variance_floor must be finite and positive")
+    _, starts, ends = exact_uniform_cell_bounds(
+        int(scores.shape[1]),
+        int(k),
+        device=scores.device,
+    )
+    cell_lengths = ends - starts
+    cell_ids = torch.repeat_interleave(
+        torch.arange(int(k), device=scores.device, dtype=torch.long),
+        cell_lengths,
+    )
+    if int(cell_ids.numel()) != int(scores.shape[1]):
+        raise RuntimeError("exact-uniform cells must partition the full temporal axis")
+    expanded_ids = cell_ids[None, :].expand(int(scores.shape[0]), -1)
+    sums = scores.new_zeros((int(scores.shape[0]), int(k)))
+    sums.scatter_add_(1, expanded_ids, scores)
+    counts = cell_lengths.to(dtype=scores.dtype)[None, :]
+    means = sums / counts
+    centered = scores - means.gather(1, expanded_ids)
+    squared_sums = scores.new_zeros((int(scores.shape[0]), int(k)))
+    squared_sums.scatter_add_(1, expanded_ids, centered.square())
+    variances = squared_sums / counts
+    return centered / (
+        variances.gather(1, expanded_ids) + variance_floor
+    ).sqrt()
+
+
 def _max_unselected_hole(positions: torch.Tensor, temporal_len: int) -> int:
     if positions.numel() == 0:
         return int(temporal_len)

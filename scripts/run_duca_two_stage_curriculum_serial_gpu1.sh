@@ -28,8 +28,10 @@ SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \
   || fail "exactly one Slurm-visible GPU is required"
 
-export DUCA_FRONTEND_TRAIN_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_train_block_list.txt"
-export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_holdout_block_list.txt"
+export DUCA_FRONTEND_TRAIN_BLOCK_LIST="$("${PYTHON}" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["train_block_list"])' "${SPLIT_MANIFEST}")"
+export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="$("${PYTHON}" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["holdout_block_list"])' "${SPLIT_MANIFEST}")"
+[[ -f "${DUCA_FRONTEND_TRAIN_BLOCK_LIST}" ]] || fail "frontend train block list is missing"
+[[ -f "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST}" ]] || fail "frontend holdout block list is missing"
 "${PYTHON}" -m torch.distributed.run \
   --standalone \
   --nproc_per_node=1 \

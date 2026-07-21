@@ -22,6 +22,7 @@ from .structured_selection import (
     exact_uniform_reference_scores,
     global_structured_topk,
     local_cell_deformation,
+    normalize_scores_within_exact_uniform_cells,
 )
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
@@ -1093,6 +1094,8 @@ class DucaAcquisitionAdapter(nn.Module):
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
         local_cell_force_exact_uniform: bool = False,
+        local_cell_base_policy: str = "learned",
+        local_cell_residual_scale: float = 1.0,
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
@@ -1147,6 +1150,21 @@ class DucaAcquisitionAdapter(nn.Module):
             )
         self.structured_temperature = float(structured_temperature)
         self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
+        self.local_cell_base_policy = str(local_cell_base_policy)
+        if self.local_cell_base_policy not in {"learned", "abs_delta_actionness"}:
+            raise ValueError(
+                "local_cell_base_policy must be learned or abs_delta_actionness"
+            )
+        self.local_cell_residual_scale = float(local_cell_residual_scale)
+        if (
+            not math.isfinite(self.local_cell_residual_scale)
+            or self.local_cell_residual_scale < 0.0
+        ):
+            raise ValueError("local_cell_residual_scale must be finite and non-negative")
+        if self.local_cell_base_policy != "learned" and self.acquisition_policy != "local_cell_deformation":
+            raise ValueError(
+                "a fixed local-cell base policy requires local_cell_deformation"
+            )
         if not math.isfinite(self.structured_temperature) or self.structured_temperature <= 0.0:
             raise ValueError("structured_temperature must be finite and positive")
         if self.budget <= 0:
@@ -1863,10 +1881,12 @@ class DucaAcquisitionAdapter(nn.Module):
     def _decode_local_cell(
         self,
         center_scores: torch.Tensor,
+        base_scores: Optional[torch.Tensor],
         valid_mask: torch.Tensor,
         budgets: torch.Tensor,
         *,
         stable_selection: bool,
+        policy_mix_alpha: float,
     ) -> Dict[str, Any]:
         batch, temporal_len = center_scores.shape
         max_slots = int(self.budget)
@@ -1881,7 +1901,11 @@ class DucaAcquisitionAdapter(nn.Module):
         cell_start_rows = []
         cell_end_rows = []
         max_hole_rows = []
+        base_rows = []
+        residual_rows = []
+        utility_rows = []
         force_uniform = bool(stable_selection or self.local_cell_force_exact_uniform)
+        effective_policy_alpha = 0.0 if force_uniform else float(policy_mix_alpha)
         for batch_idx in range(batch):
             valid_positions = torch.nonzero(valid_mask[batch_idx], as_tuple=False).flatten()
             valid_count = int(valid_positions.numel())
@@ -1891,7 +1915,43 @@ class DucaAcquisitionAdapter(nn.Module):
             if not torch.equal(valid_positions, expected):
                 raise ValueError("local_cell_deformation requires a contiguous valid prefix")
             effective_k = min(int(budgets[batch_idx].item()), valid_count)
-            policy_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
+            residual_scores = center_scores[batch_idx : batch_idx + 1, :valid_count]
+            normalized_base = torch.zeros_like(residual_scores)
+            bounded_residual = residual_scores
+            learned_scores = residual_scores
+            if self.local_cell_base_policy == "abs_delta_actionness":
+                if base_scores is None or base_scores.shape != center_scores.shape:
+                    raise ValueError(
+                        "abs_delta_actionness local policy requires aligned base_scores"
+                    )
+                normalized_base = normalize_scores_within_exact_uniform_cells(
+                    base_scores[batch_idx : batch_idx + 1, :valid_count].detach(),
+                    k=effective_k,
+                )
+                bounded_residual = self.local_cell_residual_scale * torch.tanh(
+                    residual_scores
+                )
+                learned_scores = normalized_base + bounded_residual
+            policy_scores = learned_scores
+            if self.selector_variant == "transition_only" and not force_uniform:
+                valid_row = torch.ones_like(learned_scores, dtype=torch.bool)
+                if self.local_cell_base_policy == "abs_delta_actionness":
+                    reference = exact_uniform_reference_scores(
+                        learned_scores,
+                        valid_row,
+                        effective_k,
+                    )
+                    policy_scores = (
+                        (1.0 - effective_policy_alpha) * reference
+                        + effective_policy_alpha * learned_scores
+                    )
+                else:
+                    policy_scores = continuous_policy_logits(
+                        learned_scores,
+                        valid_row,
+                        k=effective_k,
+                        alpha=effective_policy_alpha,
+                    )
             decoded = local_cell_deformation(
                 policy_scores,
                 k=effective_k,
@@ -1923,6 +1983,14 @@ class DucaAcquisitionAdapter(nn.Module):
             policy_row[:valid_count] = policy_scores[0]
             policy_rows.append(policy_row)
             for values, rows in (
+                (normalized_base, base_rows),
+                (bounded_residual, residual_rows),
+                (learned_scores, utility_rows),
+            ):
+                padded = center_scores.new_zeros(temporal_len)
+                padded[:valid_count] = values[0]
+                rows.append(padded)
+            for values, rows in (
                 (decoded.anchor_positions, anchor_rows),
                 (decoded.cell_starts, cell_start_rows),
                 (decoded.cell_ends, cell_end_rows),
@@ -1953,9 +2021,24 @@ class DucaAcquisitionAdapter(nn.Module):
                 }
                 for index in range(batch)
             ],
-            "selection_path": "local_cell_exact_uniform" if force_uniform else "local_cell_transition_deformation",
+            "selection_path": (
+                "local_cell_exact_uniform"
+                if force_uniform
+                else "local_cell_uniform_reference"
+                if self.selector_variant == "transition_only" and effective_policy_alpha <= 0.0
+                else "local_cell_learned"
+                if self.selector_variant == "transition_only" and effective_policy_alpha >= 1.0
+                else "local_cell_continuous_homotopy"
+                if self.selector_variant == "transition_only"
+                else "local_cell_transition_deformation"
+            ),
             "decode_policy_logits": torch.stack(policy_rows, dim=0),
-            "policy_mix_alpha": 0.0 if force_uniform else 1.0,
+            "policy_mix_alpha": effective_policy_alpha,
+            "local_cell_base_policy": self.local_cell_base_policy,
+            "local_cell_residual_scale": self.local_cell_residual_scale,
+            "local_cell_normalized_base_scores": torch.stack(base_rows, dim=0),
+            "local_cell_bounded_residual_scores": torch.stack(residual_rows, dim=0),
+            "local_cell_utility_scores": torch.stack(utility_rows, dim=0),
             "local_cell_anchor_positions": torch.stack(anchor_rows, dim=0),
             "local_cell_starts": torch.stack(cell_start_rows, dim=0),
             "local_cell_ends": torch.stack(cell_end_rows, dim=0),
@@ -2034,9 +2117,11 @@ class DucaAcquisitionAdapter(nn.Module):
         elif self.acquisition_policy == "local_cell_deformation":
             decoded = self._decode_local_cell(
                 scores["center_scores"],
+                scores.get("abs_delta_p_action"),
                 scores["valid_mask"],
                 budgets,
                 stable_selection=bool(stable_selection),
+                policy_mix_alpha=float(policy_mix_alpha),
             )
         else:
             decoded = budgeted_center_radius_decode(
@@ -2120,6 +2205,8 @@ class DucaAcquisitionAdapter(nn.Module):
                     else decoded["local_cell_ends"].detach().cpu().tolist()
                 ),
                 "local_cell_max_unselected_hole": decoded.get("local_cell_max_unselected_hole"),
+                "local_cell_base_policy": decoded.get("local_cell_base_policy"),
+                "local_cell_residual_scale": decoded.get("local_cell_residual_scale"),
                 "cost_ledger": cost_ledger,
             },
         ).validate()
@@ -2171,6 +2258,15 @@ class DucaAcquisitionAdapter(nn.Module):
                 "local_cell_starts": decoded.get("local_cell_starts"),
                 "local_cell_ends": decoded.get("local_cell_ends"),
                 "local_cell_max_unselected_hole": decoded.get("local_cell_max_unselected_hole"),
+                "local_cell_base_policy": decoded.get("local_cell_base_policy"),
+                "local_cell_residual_scale": decoded.get("local_cell_residual_scale"),
+                "local_cell_normalized_base_scores": decoded.get(
+                    "local_cell_normalized_base_scores"
+                ),
+                "local_cell_bounded_residual_scores": decoded.get(
+                    "local_cell_bounded_residual_scores"
+                ),
+                "local_cell_utility_scores": decoded.get("local_cell_utility_scores"),
                 "detector_grid_positions": decoded.get(
                     "local_cell_anchor_positions",
                     decoded["selected_positions"],
