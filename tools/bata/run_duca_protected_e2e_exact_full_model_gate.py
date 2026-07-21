@@ -37,6 +37,9 @@ from opentad.models.duca.structured_selection import exact_uniform_positions
 from opentad.models.selectors.duca_online_frame_selector import _gather_time
 from opentad.utils import ModelEma, set_seed
 from tools.bata.validate_duca_protected_e2e_official60 import validate_config
+from tools.bata.duca_frontend_initialization import (
+    initialize_frame_selector_from_checkpoint,
+)
 
 
 SCHEMA = "duca_protected_e2e_exact_full_model_gradient_gate_v1"
@@ -224,6 +227,19 @@ def _transition_output_weight(model) -> tuple[str, torch.nn.Parameter]:
     raise ExactGateFailure("transition scorer output weight is absent from the model")
 
 
+def _detector_output_weight(model) -> tuple[str, torch.nn.Parameter]:
+    candidates = [
+        (name, parameter)
+        for name, parameter in model.named_parameters()
+        if name.startswith("rpn_head.")
+        and parameter.requires_grad
+        and parameter.ndim >= 2
+    ]
+    if not candidates:
+        raise ExactGateFailure("ActionFormerHead exposes no trainable output weight")
+    return candidates[-1]
+
+
 def _optimizer_state_step(optimizer, parameter: torch.nn.Parameter) -> int:
     step = optimizer.state.get(parameter, {}).get("step", 0)
     if torch.is_tensor(step):
@@ -281,6 +297,10 @@ def run_gate(
     model_cfg = copy.deepcopy(cfg.model)
     model_cfg.backbone.custom.pretrain = str(pretrain)
     model = build_detector(model_cfg)
+    selector_initialization = initialize_frame_selector_from_checkpoint(
+        model,
+        cfg.workflow.get("selector_initialization", None),
+    )
     _require(model.__class__.__name__ == "ActionFormer", "detector is not ActionFormer")
     _require(
         model.rpn_head.__class__.__name__ == "ActionFormerHead",
@@ -303,6 +323,78 @@ def run_gate(
     selector = model.frame_selector
     route = str(cfg.duca_transition_only_contract.route)
     exact_uniform_route = route == "DUCA_EXACT_UNIFORM_FIXED384_OFFICIAL60"
+    two_stage_route = str(cfg.duca_transition_only_contract.get("stage", "")) == (
+        "uniform_detector_cowarmup_then_joint_detection"
+    )
+    batch = _real_full_batch(cfg)
+    uniform_warmup_audit = None
+    if two_stage_route:
+        warmup_state = selector._loss_schedule_state()
+        warmup_weights = warmup_state.get("weights", {})
+        _require(
+            all(
+                float(warmup_weights.get(name, float("nan"))) == 0.0
+                for name in (
+                    "actionness",
+                    "transition",
+                    "transition_boundary",
+                )
+            ),
+            "two-stage uniform warmup has nonzero frontend loss weights",
+        )
+        _require(
+            float(warmup_weights.get("policy_alpha", float("nan"))) == 0.0
+            and float(warmup_state.get("detector_gradient_weight", float("nan")))
+            == 0.0,
+            "two-stage uniform warmup activated policy or detector bridge",
+        )
+        with torch.no_grad(), torch.autocast(
+            device_type="cuda",
+            dtype=torch.float16,
+            enabled=True,
+            cache_enabled=False,
+        ):
+            warmup_outputs = selector.forward_train(
+                inputs=batch["inputs"],
+                masks=batch["masks"],
+                metas=batch["metas"],
+                gt_segments=batch["gt_segments"],
+                gt_labels=batch["gt_labels"],
+            )
+        expected_uniform = exact_uniform_positions(
+            int(cfg.dense_window_size),
+            int(cfg.model.frame_selector.budget),
+            device=selector._last_selected_positions.device,
+        )
+        _require(
+            torch.equal(
+                selector._last_selected_positions,
+                expected_uniform[None, :].expand_as(
+                    selector._last_selected_positions
+                ),
+            ),
+            "two-stage warmup did not feed canonical exact-uniform positions",
+        )
+        warmup_frontend_cost = sum(
+            float(warmup_outputs["losses"][name].detach().float().item())
+            for name in (
+                "actionness_bce_loss",
+                "transition_distribution_loss",
+                "transition_boundary_coverage_loss",
+            )
+        )
+        _require(
+            warmup_frontend_cost == 0.0,
+            "two-stage detector warmup retained a frontend optimization cost",
+        )
+        selector._pending_loss_schedule_advance = False
+        uniform_warmup_audit = {
+            "successful_update_range": [0, 999],
+            "selected_positions": "canonical_round_linspace_k384",
+            "frontend_loss_weights_exactly_zero": True,
+            "detector_gradient_bridge_weight": 0.0,
+            "frontend_gradient_clipping_coupling": False,
+        }
     bridge_ready = int(
         selector.loss_weight_schedule["detector_gradient"]["warmup_steps"]
     ) + int(selector.loss_weight_schedule["detector_gradient"]["transition_steps"])
@@ -313,8 +405,6 @@ def run_gate(
         == expected_bridge_weight,
         "detector bridge did not reach the route endpoint",
     )
-    batch = _real_full_batch(cfg)
-
     def selector_route(loss_names: tuple[str, ...]) -> dict[str, float]:
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(
@@ -338,10 +428,20 @@ def run_gate(
             objective = sum(route_losses[name] for name in loss_names)
         return _finite_backward(objective, model=model, optimizer=optimizer)
 
-    action_gradients = selector_route(("actionness_bce_loss",))
-    transition_gradients = selector_route(
-        ("transition_distribution_loss", "transition_boundary_coverage_loss")
-    )
+    coarse_frozen = bool(selector.raw_actionness_source.frozen)
+    frontend_objectives_disabled = exact_uniform_route
+    if coarse_frozen or frontend_objectives_disabled:
+        optimizer.zero_grad(set_to_none=True)
+        action_gradients = _gradient_partition(model)
+    else:
+        action_gradients = selector_route(("actionness_bce_loss",))
+    if frontend_objectives_disabled:
+        optimizer.zero_grad(set_to_none=True)
+        transition_gradients = _gradient_partition(model)
+    else:
+        transition_gradients = selector_route(
+            ("transition_distribution_loss", "transition_boundary_coverage_loss")
+        )
 
     captured_inputs: list[torch.Tensor] = []
 
@@ -463,23 +563,47 @@ def run_gate(
         and action_gradients["selector_scorer"] == 0.0,
         "action BCE leaked outside the coarse probe",
     )
-    _require(
-        action_gradients["action_head"] > 0.0
-        and action_gradients["asformer_last_encoder_layer"] > 0.0
-        and action_gradients["asformer_earlier_or_spatial"] > 0.0,
-        "action BCE did not train the complete coarse probe",
-    )
+    if coarse_frozen or frontend_objectives_disabled:
+        _require(
+            action_gradients["action_head"] == 0.0
+            and action_gradients["asformer_last_encoder_layer"] == 0.0
+            and action_gradients["asformer_earlier_or_spatial"] == 0.0,
+            "frozen coarse probe unexpectedly received action gradients",
+        )
+    else:
+        _require(
+            action_gradients["action_head"] > 0.0
+            and action_gradients["asformer_last_encoder_layer"] > 0.0
+            and action_gradients["asformer_earlier_or_spatial"] > 0.0,
+            "action BCE did not train the complete coarse probe",
+        )
     _require(
         transition_gradients["detector"] == 0.0
         and transition_gradients["action_head"] == 0.0,
         "transition supervision leaked into detector or action head",
     )
-    _require(
-        transition_gradients["selector_scorer"] > 0.0
-        and transition_gradients["asformer_last_encoder_layer"] > 0.0
-        and transition_gradients["asformer_earlier_or_spatial"] > 0.0,
-        "transition supervision missed its declared parameters",
-    )
+    if frontend_objectives_disabled:
+        _require(
+            transition_gradients["selector_scorer"] == 0.0,
+            "disabled exact-uniform frontend objective reached the selector scorer",
+        )
+    else:
+        _require(
+            transition_gradients["selector_scorer"] > 0.0,
+            "transition supervision missed the selector scorer",
+        )
+    if coarse_frozen or frontend_objectives_disabled:
+        _require(
+            transition_gradients["asformer_last_encoder_layer"] == 0.0
+            and transition_gradients["asformer_earlier_or_spatial"] == 0.0,
+            "transition supervision leaked into the frozen coarse probe",
+        )
+    else:
+        _require(
+            transition_gradients["asformer_last_encoder_layer"] > 0.0
+            and transition_gradients["asformer_earlier_or_spatial"] > 0.0,
+            "transition supervision missed the trainable coarse probe",
+        )
 
     # Reuse the production train engine for one real AMP update. The forced
     # first overflow proves that the same batch is replayed and that no
@@ -498,7 +622,11 @@ def run_gate(
     model_ema = ModelEma(ddp)
     ema_root = getattr(model_ema.module, "module", model_ema.module)
     scaler = torch.cuda.amp.GradScaler(enabled=True)
-    parameter_name, parameter = _transition_output_weight(model)
+    parameter_name, parameter = (
+        _detector_output_weight(model)
+        if exact_uniform_route
+        else _transition_output_weight(model)
+    )
     ema_parameter = dict(ema_root.named_parameters())[parameter_name]
     parameter_before = parameter.detach().clone()
     ema_before = ema_parameter.detach().clone()
@@ -647,11 +775,14 @@ def run_gate(
             "batch_size": int(batch["inputs"].shape[0]),
             "inference_extra_cost": False,
         },
+        "uniform_detector_warmup": uniform_warmup_audit,
         "gradient_ownership": {
             "detector_only": detector_gradients,
             "action_bce_only": action_gradients,
             "transition_auxiliary_only": transition_gradients,
         },
+        "selector_initialization": selector_initialization,
+        "coarse_probe_frozen": coarse_frozen,
         "optimizer_exact_coverage": True,
         "real_optimizer_step_audit": optimizer_step_audit,
         "paper_claim_allowed": False,

@@ -134,6 +134,72 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
                 companion_fraction == 0.0,
                 "non-companion homotopy arm unexpectedly enables uniform views",
             )
+    elif route in {
+        "DUCA_TWO_STAGE_SCRATCH_FIXED384_OFFICIAL60",
+        "DUCA_TWO_STAGE_PRETRAINED_JOINT_FIXED384_OFFICIAL60",
+        "DUCA_TWO_STAGE_PRETRAINED_FROZEN_FIXED384_OFFICIAL60",
+    }:
+        _require(
+            selector.detector_gradient_mode == "protected_structured_transport",
+            "two-stage joint arms require the protected detector bridge",
+        )
+        _require(
+            float(selector.policy_hidden_gradient_scale) == 0.0,
+            "two-stage detector gradients must stop before ASFormer",
+        )
+        _require(
+            float(schedule.policy_alpha.start) == 0.0
+            and float(schedule.policy_alpha.end) == 1.0,
+            "two-stage policy must begin with exact uniform input",
+        )
+        _require(
+            int(schedule.policy_alpha.warmup_steps) == 1000
+            and int(schedule.policy_alpha.transition_steps) == 1500,
+            "two-stage uniform detector co-warmup schedule changed",
+        )
+        _require(
+            float(schedule.actionness.start) == 0.0
+            and float(schedule.transition.start) == 0.0
+            and float(schedule.transition_boundary.start) == 0.0,
+            "uniform detector co-warmup must have exactly zero frontend losses",
+        )
+        _require(
+            float(schedule.detector_gradient.start) == 0.0
+            and float(schedule.detector_gradient.end) == 0.25,
+            "two-stage protected bridge endpoints changed",
+        )
+        _require(
+            int(schedule.detector_gradient.warmup_steps) == 2500
+            and int(schedule.detector_gradient.transition_steps) == 1500,
+            "two-stage protected bridge must start after policy homotopy",
+        )
+        frozen = route == "DUCA_TWO_STAGE_PRETRAINED_FROZEN_FIXED384_OFFICIAL60"
+        source = selector.actionness_source_cfg
+        _require(
+            bool(source.frozen) is frozen and bool(source.trainable) is (not frozen),
+            "two-stage coarse-probe frozen state disagrees with the route",
+        )
+        _require(
+            bool(selector.get("allow_frozen_coarse_probe", False)) is frozen,
+            "only the frozen two-stage route may permit a frozen coarse probe",
+        )
+        initialization = cfg.workflow.get("selector_initialization", None)
+        if route == "DUCA_TWO_STAGE_SCRATCH_FIXED384_OFFICIAL60":
+            _require(initialization is None, "scratch route cannot load a frontend checkpoint")
+        else:
+            _require(initialization is not None, "pretrained route requires selector initialization")
+            _require(
+                initialization.state_key == "state_dict_ema"
+                and list(initialization.reset_state_keys)
+                == ["_loss_weight_schedule_step"],
+                "pretrained route must load EMA selector state and reset only its schedule",
+            )
+        if frozen:
+            _require(
+                float(schedule.actionness.start) == 0.0
+                and float(schedule.actionness.end) == 0.0,
+                "frozen coarse probe cannot retain an action-BCE optimizer objective",
+            )
     elif route == "DUCA_PROTECTED_E2E_DIRECT025_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "protected_structured_transport", "direct arm requires protected bridge")
         _require(float(selector.policy_hidden_gradient_scale) == 0.0, "direct arm must detach ASFormer hidden")
@@ -169,6 +235,18 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         _require(selector.detector_gradient_mode == "none", "uniform control must disable detector bridge")
         _require(float(selector.inference_policy_alpha) == 0.0, "uniform control must remain exact uniform")
         _require(float(schedule.policy_alpha.start) == 0.0 and float(schedule.policy_alpha.end) == 0.0, "uniform policy schedule changed")
+        _require(
+            all(
+                float(schedule[name].start) == 0.0
+                and float(schedule[name].end) == 0.0
+                for name in (
+                    "actionness",
+                    "transition",
+                    "transition_boundary",
+                )
+            ),
+            "exact-uniform control must not couple frontend gradients into global clipping",
+        )
         _require(float(selector.policy_hidden_gradient_scale) == 0.0, "uniform control cannot expose ASFormer")
     elif route == "DUCA_PROTECTED_E2E_RHO_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "protected_structured_transport", "rho arm must use the protected bridge")

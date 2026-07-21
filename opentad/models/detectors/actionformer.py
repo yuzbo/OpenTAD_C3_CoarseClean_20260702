@@ -38,6 +38,7 @@ class ActionFormer(SingleStageDetector):
         pc_ot_mras_reader_value_loss=None,
         pc_ot_mras_reader_eval_override=None,
         selector_train_only=False,
+        selector_train_only_skip_detector=False,
     ):
         super().__init__(
             backbone=backbone,
@@ -64,6 +65,13 @@ class ActionFormer(SingleStageDetector):
         if self.pc_ot_mras_reader_value_loss is not None and self.pc_ot_mras_reader is None:
             raise ValueError("pc_ot_mras_reader_value_loss requires pc_ot_mras_reader")
         self.selector_train_only = bool(selector_train_only)
+        self.selector_train_only_skip_detector = bool(
+            selector_train_only_skip_detector
+        )
+        if self.selector_train_only_skip_detector and not self.selector_train_only:
+            raise ValueError(
+                "selector_train_only_skip_detector=True requires selector_train_only=True"
+            )
         if self.selector_train_only:
             if self.frame_selector is None:
                 raise ValueError("selector_train_only=True requires frame_selector")
@@ -181,6 +189,16 @@ class ActionFormer(SingleStageDetector):
             and request is None
         ):
             raise RuntimeError("required integrated counterfactual teacher request is missing")
+        if self.selector_train_only_skip_detector:
+            if request is not None:
+                raise RuntimeError(
+                    "selector-only detector skipping is incompatible with a counterfactual detector teacher"
+                )
+            if isinstance(self.frame_selector.last_forward_summary, dict):
+                self.frame_selector.last_forward_summary[
+                    "frontend_only_detector_skipped"
+                ] = True
+            return self._selector_only_losses(losses, selector_loss_keys)
         counterfactual_loss = None
         if request is not None:
             if raw_selector_context is None:
@@ -266,15 +284,19 @@ class ActionFormer(SingleStageDetector):
 
         # only key has loss will be record
         if self.selector_train_only:
-            selector_cost_terms = [
-                value for key, value in losses.items() if key.startswith("selector_") and key.endswith("_loss")
-            ]
-            if not selector_cost_terms:
-                raise RuntimeError("selector_train_only=True requires at least one selector loss")
-            losses["cost"] = sum(selector_cost_terms)
+            losses = self._selector_only_losses(losses, selector_loss_keys)
         else:
             losses["cost"] = sum(_value for _key, _value in losses.items())
         return losses
+
+    @staticmethod
+    def _selector_only_losses(losses, selector_loss_keys):
+        selector_loss_keys = tuple(sorted(str(key) for key in selector_loss_keys))
+        if not selector_loss_keys:
+            raise RuntimeError("selector_train_only=True requires at least one selector loss")
+        selector_losses = {key: losses[key] for key in selector_loss_keys}
+        selector_losses["cost"] = sum(selector_losses.values())
+        return selector_losses
 
     @staticmethod
     def _duca_gather_raw(inputs, positions):

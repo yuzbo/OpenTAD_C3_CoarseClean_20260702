@@ -461,6 +461,7 @@ class DucaOnlineFrameSelector(nn.Module):
         coarse_hidden_dim: Optional[int] = None,
         use_coarse_hidden_features: bool = True,
         require_coarse_hidden_features: Optional[bool] = None,
+        allow_frozen_coarse_probe: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
         max_unselected_hole: Optional[int] = None,
         hard_max_gap_repair: bool = True,
@@ -566,6 +567,7 @@ class DucaOnlineFrameSelector(nn.Module):
         self.require_coarse_hidden_features = (
             None if require_coarse_hidden_features is None else bool(require_coarse_hidden_features)
         )
+        self.allow_frozen_coarse_probe = bool(allow_frozen_coarse_probe)
         self.policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
         if (
             not math.isfinite(self.policy_hidden_gradient_scale)
@@ -740,8 +742,12 @@ class DucaOnlineFrameSelector(nn.Module):
                         raise ValueError("transition_only requires probe_model='official-action-seg'")
                     if str(cfg.get("official_action_seg_backend", "")) != "official_asformer":
                         raise ValueError("transition_only requires the official ASFormer backend")
-                    if bool(cfg.get("frozen", False)) or cfg.get("trainable") is False:
-                        raise ValueError("transition_only requires a trainable shared ASFormer probe")
+                    coarse_frozen = bool(cfg.get("frozen", False)) or cfg.get("trainable") is False
+                    if coarse_frozen and not self.allow_frozen_coarse_probe:
+                        raise ValueError(
+                            "transition_only frozen ASFormer requires "
+                            "allow_frozen_coarse_probe=True"
+                        )
                     cfg.setdefault("hidden_output_kind", "official_asformer_encoder_hidden")
                     if cfg["hidden_output_kind"] != "official_asformer_encoder_hidden":
                         raise ValueError("transition_only requires official ASFormer encoder hidden output")
@@ -998,6 +1004,17 @@ class DucaOnlineFrameSelector(nn.Module):
             max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
             loss_weights=schedule_state["weights"],
         )
+        supervision_loss_audit = self._supervision_loss_audit(
+            selector_losses,
+            schedule_state["weights"],
+        )
+        outputs["selector_outputs"]["supervision_loss_audit"] = (
+            supervision_loss_audit
+        )
+        if isinstance(self.last_forward_summary, dict):
+            self.last_forward_summary["supervision_loss_audit"] = (
+                supervision_loss_audit
+            )
         if self.require_counterfactual_utility_teacher and teacher_utility is not None:
             raise RuntimeError("integrated counterfactual teacher forbids externally supplied teacher_utility")
         if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is not None:
@@ -1052,6 +1069,28 @@ class DucaOnlineFrameSelector(nn.Module):
             "selector_outputs": outputs["selector_outputs"],
             "counterfactual_request": counterfactual_request,
         }
+
+    @staticmethod
+    def _supervision_loss_audit(selector_losses, weights):
+        loss_to_weight = {
+            "actionness_bce_loss": "actionness",
+            "transition_distribution_loss": "transition",
+            "transition_boundary_coverage_loss": "transition_boundary",
+        }
+        audit = {}
+        for loss_name, weight_name in loss_to_weight.items():
+            value = selector_losses.get(loss_name)
+            if not torch.is_tensor(value):
+                continue
+            weight = float(weights.get(weight_name, 0.0))
+            weighted = float(value.detach().float().cpu().item())
+            audit[loss_name] = {
+                "weight_name": weight_name,
+                "weight": weight,
+                "weighted": weighted,
+                "unweighted": None if weight == 0.0 else weighted / weight,
+            }
+        return audit
 
     def counterfactual_distillation_loss(
         self,

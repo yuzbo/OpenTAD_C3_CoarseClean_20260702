@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "[DUCA_FRONTEND_PRETRAIN][FAIL] $*" >&2
+  exit 1
+}
+
+REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd -P)}"
+cd "${REPO_ROOT}"
+BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+export DUCA_CELLCF_TRAINING_PROFILE=official60
+source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
+
+VARIANT="${DUCA_FRONTEND_VARIANT:-}"
+case "${VARIANT}" in
+  a1_t005_b8)
+    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_a1_t005_b8.py"
+    ACTION_WEIGHT=1.0
+    TRANSITION_WEIGHT=0.05
+    BOUNDARY_WEIGHT=8.0
+    ;;
+  a1_t010_b16)
+    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_a1_t010_b16.py"
+    ACTION_WEIGHT=1.0
+    TRANSITION_WEIGHT=0.10
+    BOUNDARY_WEIGHT=16.0
+    ;;
+  a1_t020_b32)
+    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_a1_t020_b32.py"
+    ACTION_WEIGHT=1.0
+    TRANSITION_WEIGHT=0.20
+    BOUNDARY_WEIGHT=32.0
+    ;;
+  *)
+    fail "unknown frontend weight variant: ${VARIANT}"
+    ;;
+esac
+
+QUALITY_CONFIG="configs/adatad/thumos/duca_frontend_holdout_quality_fixed384.py"
+EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
+RUN_DIR="${RUN_DIR:-}"
+WORK_DIR="${WORK_DIR:-}"
+SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
+SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
+
+[[ -n "${SLURM_JOB_ID:-}" ]] || fail "Slurm allocation is required"
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a GPU"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
+[[ -f "${SPLIT_MANIFEST}" ]] || fail "frontend split manifest is missing"
+[[ "$(sha256sum "${SPLIT_MANIFEST}" | awk '{print $1}')" == "${SPLIT_SHA256}" ]] \
+  || fail "frontend split manifest hash drift"
+[[ -f "${DUCA_FRONTEND_TRAIN_BLOCK_LIST:-}" ]] || fail "frontend train block list is missing"
+[[ -f "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST:-}" ]] || fail "frontend holdout block list is missing"
+[[ -n "${RUN_DIR}" && ! -e "${RUN_DIR}" ]] || fail "fresh RUN_DIR is required"
+[[ -n "${WORK_DIR}" && ! -e "${WORK_DIR}" ]] || fail "fresh WORK_DIR is required"
+[[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \
+  || fail "exactly one Slurm-visible GPU is required"
+
+mkdir -p "${RUN_DIR}/quality" "${WORK_DIR}"
+"${PYTHON}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=localhost:0 \
+  --rdzv_id="duca-frontend-${SLURM_JOB_ID}-${VARIANT}" \
+  tools/train.py "${CONFIG}" \
+  --id 0 \
+  --seed 3407 \
+  --cfg-options \
+    "work_dir=${WORK_DIR}" \
+    "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+  2>&1 | tee "${RUN_DIR}/train.out"
+
+ACTUAL_WORK_DIR="${WORK_DIR}/gpu1_id0"
+candidate_files=()
+for item in "5:4" "10:9" "15:14" "20:19"; do
+  epoch_one="${item%%:*}"
+  epoch_zero="${item##*:}"
+  checkpoint="${ACTUAL_WORK_DIR}/checkpoint/epoch_${epoch_zero}.pth"
+  quality_dir="${RUN_DIR}/quality/epoch_${epoch_one}"
+  records="${quality_dir}/selection_quality_records.jsonl"
+  export_summary="${quality_dir}/selection_quality_export.json"
+  summary="${quality_dir}/selection_quality_summary.json"
+  candidate="${quality_dir}/candidate.json"
+  [[ -f "${checkpoint}" ]] || fail "missing checkpoint ${checkpoint}"
+  mkdir -p "${quality_dir}"
+  "${PYTHON}" tools/bata/export_duca_selection_quality.py \
+    --config "${QUALITY_CONFIG}" \
+    --checkpoint "${checkpoint}" \
+    --output-jsonl "${records}" \
+    --summary-json "${export_summary}" \
+    --split val \
+    --device cuda:0 \
+    --use-ema true \
+    --seed 3407 \
+    2>&1 | tee "${quality_dir}/export.out"
+  "${PYTHON}" tools/bata/analyze_duca_selection_quality.py \
+    --records-jsonl "${records}" \
+    --output-dir "${quality_dir}" \
+    --bootstrap-samples 2000 \
+    --random-seed 3407 \
+    2>&1 | tee "${quality_dir}/analyze.out"
+  "${PYTHON}" - "${candidate}" "${VARIANT}" "${epoch_one}" \
+    "${checkpoint}" "${summary}" "${records}" \
+    "${ACTION_WEIGHT}" "${TRANSITION_WEIGHT}" "${BOUNDARY_WEIGHT}" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+out, variant, epoch, checkpoint, summary, records, action, transition, boundary = sys.argv[1:]
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+payload = {
+    "variant": variant,
+    "epoch_one_based": int(epoch),
+    "checkpoint_path": str(Path(checkpoint).resolve()),
+    "checkpoint_sha256": digest(checkpoint),
+    "summary_path": str(Path(summary).resolve()),
+    "summary_sha256": digest(summary),
+    "records_path": str(Path(records).resolve()),
+    "records_sha256": digest(records),
+    "loss_weights": {
+        "actionness": float(action),
+        "transition": float(transition),
+        "transition_boundary": float(boundary),
+    },
+}
+Path(out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  candidate_files+=("${candidate}")
+done
+
+"${PYTHON}" - "${RUN_DIR}/completion.json" "${EXPECTED_COMMIT}" "${VARIANT}" \
+  "${SPLIT_SHA256}" "${ACTION_WEIGHT}" "${TRANSITION_WEIGHT}" "${BOUNDARY_WEIGHT}" \
+  "${candidate_files[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out, commit, variant, split_sha, action, transition, boundary, *candidate_paths = sys.argv[1:]
+candidates = [json.loads(Path(path).read_text(encoding="utf-8")) for path in candidate_paths]
+payload = {
+    "schema": "duca_frontend_variant_completion_v1",
+    "ok": True,
+    "git_commit": commit,
+    "variant": variant,
+    "split_manifest_sha256": split_sha,
+    "test_subset_consumed": False,
+    "loss_weights": {
+        "actionness": float(action),
+        "transition": float(transition),
+        "transition_boundary": float(boundary),
+    },
+    "candidates": candidates,
+}
+Path(out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+echo "[DUCA_FRONTEND_PRETRAIN] completed ${RUN_DIR}/completion.json"

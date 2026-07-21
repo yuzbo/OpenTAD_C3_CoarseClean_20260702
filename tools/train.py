@@ -49,6 +49,9 @@ from tools.bata import (
     duca_protected_physical_training,
     duca_selected_axis_training,
 )
+from tools.bata.duca_frontend_initialization import (
+    initialize_frame_selector_from_checkpoint,
+)
 
 
 def _sha256(path):
@@ -227,6 +230,10 @@ def main():
             duca_selected_axis_training,
         ):
             runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain
+        if duca_training is duca_selected_axis_training:
+            runtime_binding_kwargs["selector_initialization"] = cfg.workflow.get(
+                "selector_initialization", None
+            )
         duca_runtime_bindings = duca_training.build_runtime_bindings(**runtime_binding_kwargs)
     if args.rank == 0:
         create_folder(cfg.work_dir)
@@ -317,6 +324,15 @@ def main():
 
     # build model
     model = build_detector(cfg.model)
+    selector_initialization_receipt = initialize_frame_selector_from_checkpoint(
+        model,
+        cfg.workflow.get("selector_initialization", None),
+        logger=logger,
+    )
+    if selector_initialization_receipt is not None and duca_runtime_bindings is not None:
+        duca_runtime_bindings["selector_initialization_receipt"] = dict(
+            selector_initialization_receipt
+        )
 
     # Optimizer exclusions change requires_grad and must be applied before DDP
     # captures its parameter set.

@@ -18,6 +18,16 @@ VARIANT_CONFIGS = {
     "homotopy_uni_companion025": (
         "duca_protected_e2e_homotopy_uni_companion025_fixed384_official60.py"
     ),
+    "two_stage_exact_uniform": (
+        "duca_two_stage_exact_uniform_fixed384_official60.py"
+    ),
+    "two_stage_scratch": "duca_two_stage_scratch_fixed384_official60.py",
+    "two_stage_pretrained_joint": (
+        "duca_two_stage_pretrained_joint_fixed384_official60.py"
+    ),
+    "two_stage_pretrained_frozen": (
+        "duca_two_stage_pretrained_frozen_fixed384_official60.py"
+    ),
 }
 
 DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA
@@ -172,6 +182,7 @@ def build_runtime_bindings(
     evaluation_class_map_path: str | Path,
     evaluation_config: Mapping[str, Any],
     runtime_pretrain_path: str | Path,
+    selector_initialization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if variant not in VARIANT_CONFIGS:
         raise ValueError(f"invalid selected-axis variant: {variant}")
@@ -205,7 +216,49 @@ def build_runtime_bindings(
     if full_gate.get("adatad_pretrain", {}).get("sha256") != pretrain_sha256:
         raise RuntimeError("runtime pretrain differs from the full-model gate")
 
-    return {
+    initialization_cfg = dict(selector_initialization or {})
+    initialization_enabled = bool(
+        initialization_cfg and initialization_cfg.get("enabled", True)
+    )
+    gate_initialization = full_gate.get("selector_initialization")
+    initialization_binding = None
+    if initialization_enabled:
+        if not isinstance(gate_initialization, Mapping):
+            raise RuntimeError("full-model gate lacks selector initialization evidence")
+        checkpoint = Path(
+            str(initialization_cfg.get("checkpoint_path", ""))
+        ).expanduser().resolve()
+        if not checkpoint.is_file():
+            raise RuntimeError("runtime selector initialization checkpoint is missing")
+        checkpoint_sha256 = sha256_file(checkpoint)
+        expected_sha256 = str(
+            initialization_cfg.get("checkpoint_sha256", "")
+        ).lower()
+        if checkpoint_sha256 != expected_sha256:
+            raise RuntimeError("runtime selector initialization checkpoint hash drift")
+        expected_epoch = int(initialization_cfg["expected_checkpoint_epoch"])
+        expected_state_key = str(initialization_cfg.get("state_key", "state_dict_ema"))
+        if (
+            gate_initialization.get("checkpoint_sha256") != checkpoint_sha256
+            or int(gate_initialization.get("checkpoint_epoch", -1)) != expected_epoch
+            or gate_initialization.get("checkpoint_state_key") != expected_state_key
+            or gate_initialization.get("detector_state_loaded") is not False
+            or gate_initialization.get("optimizer_state_loaded") is not False
+            or gate_initialization.get("scheduler_state_loaded") is not False
+        ):
+            raise RuntimeError("runtime selector initialization differs from the full-model gate")
+        initialization_binding = {
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_sha256": checkpoint_sha256,
+            "checkpoint_epoch": expected_epoch,
+            "checkpoint_state_key": expected_state_key,
+            "reset_state_keys": list(initialization_cfg.get("reset_state_keys", [])),
+            "gate_receipt_sha256": str(gate_initialization.get("receipt_sha256", "")),
+        }
+    elif gate_initialization is not None:
+        raise RuntimeError("full-model gate unexpectedly initialized a selector checkpoint")
+
+    bindings = {
         "git_commit": str(git_commit),
         "variant": str(variant),
         "seed": int(seed),
@@ -224,6 +277,9 @@ def build_runtime_bindings(
         "evaluation_class_map_sha256": sha256_file(class_map),
         "evaluation_config_sha256": evaluation_config_sha256(evaluation_config),
     }
+    if initialization_binding is not None:
+        bindings["selector_initialization_contract"] = initialization_binding
+    return bindings
 
 
 __all__ = [

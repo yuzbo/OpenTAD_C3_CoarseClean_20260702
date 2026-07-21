@@ -379,6 +379,13 @@ def _selector_probe_snapshot(model):
                 for key in ("step", "phase", "progress", "detector_gradient_weight", "weights")
                 if key in schedule
             }
+        supervision = summary.get("supervision_loss_audit")
+        if isinstance(supervision, dict):
+            snapshot["supervision_loss_audit"] = _probe_jsonable(supervision)
+        if "frontend_only_detector_skipped" in summary:
+            snapshot["frontend_only_detector_skipped"] = bool(
+                summary["frontend_only_detector_skipped"]
+            )
     counterfactual = getattr(selector, "last_counterfactual_summary", None)
     if isinstance(counterfactual, dict):
         snapshot["counterfactual"] = {
@@ -477,9 +484,29 @@ def _format_frame_selector_diagnostics(model):
             items.append("duca_detector_grad_w={:.4f}".format(float(schedule["detector_gradient_weight"])))
         weights = schedule.get("weights")
         if isinstance(weights, dict):
-            for key in ("actionness", "detector_utility", "hole", "lagrangian_budget"):
+            for key in (
+                "actionness",
+                "transition",
+                "transition_boundary",
+                "policy_alpha",
+                "detector_utility",
+                "hole",
+                "lagrangian_budget",
+            ):
                 if key in weights:
                     items.append("duca_{}_w={:.4f}".format(key, float(weights[key])))
+    supervision = summary.get("supervision_loss_audit")
+    if isinstance(supervision, dict):
+        for loss_name, label in (
+            ("actionness_bce_loss", "duca_action_raw"),
+            ("transition_distribution_loss", "duca_transition_raw"),
+            ("transition_boundary_coverage_loss", "duca_boundary_raw"),
+        ):
+            entry = supervision.get(loss_name)
+            if isinstance(entry, dict) and entry.get("unweighted") is not None:
+                items.append("{}={:.4f}".format(label, float(entry["unweighted"])))
+    if summary.get("frontend_only_detector_skipped") is True:
+        items.append("duca_detector_path=skipped")
     homotopy = summary.get("policy_homotopy")
     if isinstance(homotopy, dict) and homotopy.get("enabled") is True:
         if "step" in homotopy:

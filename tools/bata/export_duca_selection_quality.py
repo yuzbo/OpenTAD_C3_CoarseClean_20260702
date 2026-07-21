@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -164,11 +165,21 @@ def export_records(
     batch_size: int | None = None,
     num_workers: int | None = None,
     limit_batches: int = 0,
+    seed: int = 3407,
 ) -> dict[str, Any]:
+    import numpy as np
     import torch
     from mmengine.config import Config
     from opentad.datasets import build_dataloader, build_dataset
     from opentad.models.builder import build_selector
+
+    random.seed(int(seed))
+    np.random.seed(int(seed))
+    torch.manual_seed(int(seed))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(seed))
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     config_path = Path(config).expanduser().resolve()
     checkpoint_path = Path(checkpoint).expanduser().resolve()
@@ -219,6 +230,7 @@ def export_records(
         "selector_only_inference": True,
         "detector_backbone_executed": False,
         "uses_gt_for_selection": False,
+        "seed": int(seed),
     }
     row_count = 0
     sample_count = 0
@@ -253,6 +265,7 @@ def export_records(
         "row_count": row_count,
         "sample_count": sample_count,
         "limit_batches": int(limit_batches),
+        "seed": int(seed),
         "source": source,
         "decision_contract": {
             "gt_passed_to_selector": False,
@@ -278,6 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--num-workers", type=int)
     parser.add_argument("--limit-batches", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=3407)
     args = parser.parse_args(argv)
     summary = export_records(
         config=args.config,
@@ -291,6 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         limit_batches=args.limit_batches,
+        seed=args.seed,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
