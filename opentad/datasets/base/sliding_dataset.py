@@ -129,12 +129,30 @@ class SlidingWindowDataset:
                 # truncate the gt segments inside the window and compute the completeness
                 gt_completeness, truncated_gt = compute_gt_completeness(gt_segments, anchor)
                 valid_idx = gt_completeness > self.ioa_thresh
+                endpoint_validity = np.stack(
+                    (
+                        np.isclose(
+                            truncated_gt[:, 0],
+                            gt_segments[:, 0],
+                            rtol=0.0,
+                            atol=1.0e-6,
+                        ),
+                        np.isclose(
+                            truncated_gt[:, 1],
+                            gt_segments[:, 1],
+                            rtol=0.0,
+                            atol=1.0e-6,
+                        ),
+                    ),
+                    axis=1,
+                ).astype(np.bool_)
 
                 # only append window who has gt
                 if np.sum(valid_idx) > 0:
                     window_anno = dict(
                         gt_segments=truncated_gt[valid_idx],
                         gt_labels=gt_labels[valid_idx],
+                        gt_boundary_validity=endpoint_validity[valid_idx],
                     )
                     data_list.append(
                         [
@@ -152,6 +170,7 @@ class SlidingWindowDataset:
                             dict(
                                 gt_segments=np.empty((0, 2), dtype=np.float32),
                                 gt_labels=np.empty((0,), dtype=gt_labels.dtype),
+                                gt_boundary_validity=np.empty((0, 2), dtype=np.bool_),
                             ),
                             window_snippet_centers,
                         ]

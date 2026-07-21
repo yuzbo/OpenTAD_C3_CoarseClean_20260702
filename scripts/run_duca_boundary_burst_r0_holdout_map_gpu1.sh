@@ -45,20 +45,19 @@ FAMILY_SUMMARY="${OUTPUT_ROOT}/holdout_families.summary.json"
   --device cuda:0 --use-ema true --batch-size 1 --num-workers 2 \
   --coordinate-tolerance-frames 0
 
-"${PYTHON}" -m tools.bata.diagnose_duca_allocation_family_ceiling \
-  --input-jsonl "${INPUT}" --output-jsonl "${FAMILIES}" \
-  --summary-json "${FAMILY_SUMMARY}" --score-key transition_policy_scores \
-  --cap-policy explicit_frames --cap-value 12 --gt-families both \
-  --boundary-radii 0 1 2 4 --quantization-scale 1000000 \
-  --gt-time-limit-seconds 120
-"${PYTHON}" -m tools.bata.validate_duca_allocation_ceiling_artifact \
-  --input-jsonl "${INPUT}" --output-jsonl "${FAMILIES}" \
-  --summary-json "${FAMILY_SUMMARY}" \
-  --validation-json "${OUTPUT_ROOT}/holdout_families.validation.json"
+"${PYTHON}" -m tools.bata.build_duca_r0_boundary_burst_oracles \
+  --input-jsonl "${INPUT}" \
+  --config configs/adatad/thumos/duca_boundary_burst_r0_holdout_export.py \
+  --output-jsonl "${FAMILIES}" --summary-json "${FAMILY_SUMMARY}" \
+  --max-unselected-hole 2
 
 export DUCA_ALLOCATION_ARTIFACT_PATH="${FAMILIES}"
 export DUCA_ALLOCATION_ARTIFACT_SHA256="$(sha256sum "${FAMILIES}" | awk '{print $1}')"
-families=(A_exact_uniform D_privileged_gt_ceiling E_privileged_unrestricted_gt)
+families=(
+  A_exact_uniform
+  R2Q3_privileged_boundary_burst
+  R4Q5_privileged_boundary_burst
+)
 for family in "${families[@]}"; do
   export DUCA_ALLOCATION_FAMILY_KEY="${family}"
   if [[ "${family}" == A_exact_uniform ]]; then
@@ -83,18 +82,45 @@ done
 
 "${PYTHON}" - "${OUTPUT_ROOT}" "${EXPECTED_COMMIT}" "${CHECKPOINT}" \
   "${INPUT}" "${FAMILIES}" "${FAMILY_SUMMARY}" <<'PY'
-import hashlib, json, sys
+import hashlib, json, math, sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 def digest(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def average_map(payload):
+    metrics = payload.get("metrics", payload)
+    value = metrics.get("average_mAP")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise SystemExit("R0 metrics are missing numeric average_mAP")
+    value = float(value)
+    if not math.isfinite(value):
+        raise SystemExit("R0 average_mAP is non-finite")
+    return value
 rows = []
-for family in ("A_exact_uniform", "D_privileged_gt_ceiling", "E_privileged_unrestricted_gt"):
+for family in (
+    "A_exact_uniform",
+    "R2Q3_privileged_boundary_burst",
+    "R4Q5_privileged_boundary_burst",
+):
     path = root / "map" / family / "metrics.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    rows.append({"family": family, "metrics_path": str(path), "metrics_sha256": digest(path), "metrics": payload.get("metrics", payload)})
+    rows.append({
+        "family": family,
+        "metrics_path": str(path),
+        "metrics_sha256": digest(path),
+        "metrics": payload.get("metrics", payload),
+        "average_mAP": average_map(payload),
+    })
+uniform_map = rows[0]["average_mAP"]
+for row in rows:
+    row["headroom_vs_uniform_average_mAP"] = row["average_mAP"] - uniform_map
+threshold = 0.20
+eligible = [
+    row for row in rows[1:]
+    if row["headroom_vs_uniform_average_mAP"] > threshold
+]
 summary = {
-    "schema": "duca_r0_selected_axis_holdout_map_v1",
-    "ok": True,
+    "schema": "duca_r0_selected_axis_boundary_burst_map_v2",
+    "ok": bool(eligible),
     "task": "offline_temporal_action_detection",
     "git_commit": sys.argv[2],
     "checkpoint": str(Path(sys.argv[3]).resolve()),
@@ -111,10 +137,30 @@ summary = {
     "test_subset_consumed": False,
     "runtime_gt_input_to_selector": False,
     "selected_axis_detector": True,
+    "diagnostic_only": True,
+    "absolute_map_paper_claim_allowed": False,
+    "decision_uses_relative_same_detector_headroom_only": True,
+    "required_headroom_average_mAP": threshold,
     "rows": rows,
     "paper_claim_allowed": False,
 }
 (root / "r0_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+decision = {
+    "schema": "duca_r0_boundary_burst_decision_v1",
+    "ok": bool(eligible),
+    "diagnostic_only": True,
+    "absolute_map_paper_claim_allowed": False,
+    "uniform_average_mAP": uniform_map,
+    "required_strict_headroom_average_mAP": threshold,
+    "eligible_families": [row["family"] for row in eligible],
+    "headroom_by_family": {
+        row["family"]: row["headroom_vs_uniform_average_mAP"]
+        for row in rows[1:]
+    },
+}
+(root / "r0_decision.json").write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+if not decision["ok"]:
+    raise SystemExit("no constrained burst Oracle exceeds U by >0.20 Avg-mAP")
 PY
 
-echo "[DUCA_R0_HOLDOUT_MAP] completed ${OUTPUT_ROOT}/r0_summary.json"
+echo "[DUCA_R0_HOLDOUT_MAP] completed ${OUTPUT_ROOT}/r0_decision.json"

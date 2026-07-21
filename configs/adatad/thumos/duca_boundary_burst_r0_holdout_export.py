@@ -22,6 +22,42 @@ dataset = dict(
         block_list=holdout_block_list,
         include_background_windows=True,
         ioa_thresh=1.0e-8,
+        pipeline=[
+            dict(type="PrepareVideoInfo", format="mp4"),
+            dict(type="mmaction.DecordInit", num_threads=4),
+            dict(
+                type="LoadFrames",
+                num_clips=1,
+                method="sliding_window",
+                scale_factor=1,
+            ),
+            dict(type="mmaction.DecordDecode"),
+            dict(type="mmaction.Resize", scale=(-1, 160)),
+            dict(type="mmaction.CenterCrop", crop_size=160),
+            dict(type="mmaction.FormatShape", input_format="NCTHW"),
+            dict(
+                type="ConvertToTensor",
+                keys=["imgs", "gt_segments", "gt_labels", "gt_boundary_validity"],
+            ),
+            dict(
+                type="Collect",
+                inputs="imgs",
+                keys=["masks", "gt_segments", "gt_labels", "gt_boundary_validity"],
+                meta_keys=[
+                    "video_name",
+                    "data_path",
+                    "fps",
+                    "avg_fps",
+                    "duration",
+                    "total_frames",
+                    "snippet_stride",
+                    "window_start_frame",
+                    "frame_inds",
+                    "window_size",
+                    "offset_frames",
+                ],
+            ),
+        ],
     ),
 )
 

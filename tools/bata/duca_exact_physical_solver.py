@@ -14,6 +14,8 @@ from tools.bata.duca_allocation_families import (
     build_family_selection,
     effective_budget,
     exact_uniform_positions,
+    physical_gap_report,
+    validate_physical_selection,
 )
 
 
@@ -73,6 +75,29 @@ class GroundTruthSolveResult:
     solver_message: str
     mip_gap: float | None
     exact: bool
+    privileged: bool = True
+    deployable: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BoundaryBurstSolveResult:
+    positions: tuple[int, ...]
+    required_positions: tuple[int, ...]
+    radius: int
+    quota: int
+    endpoint_contracts: tuple[Mapping[str, Any], ...]
+    invalid_endpoint_count: int
+    residual_fill_count: int
+    background_selected_count: int
+    background_component_count: int
+    uniform_overlap: int
+    max_unselected_hole: int
+    solver_status: str = "OPTIMAL"
+    solver_identity: str = "duca_r0_required_burst_exact_k_physical_dp_v1"
+    exact: bool = True
     privileged: bool = True
     deployable: bool = False
 
@@ -183,6 +208,173 @@ def solve_additive_exact_k_physical(
         quantized_objective=previous_scores[terminal],
         raw_score_sum=sum(raw_scores[index] for index in positions),
         quantized_scores=quantized,
+    )
+
+
+def solve_boundary_burst_oracle(
+    axis: PhysicalAxis,
+    gt_segments: Sequence[Sequence[float | int]],
+    gt_boundary_validity: Sequence[Sequence[bool | int]],
+    *,
+    requested_budget: int,
+    cap: ResolvedPhysicalCap,
+    radius: int,
+    quota: int,
+    max_unselected_hole: int,
+) -> BoundaryBurstSolveResult:
+    """Construct the constrained R0 Oracle: local bursts plus global fill.
+
+    This diagnostic never participates in training or inference. Required burst
+    positions receive a provably dominant additive score; the existing exact-K
+    physical DP then performs the remaining global fill under the same cap.
+    """
+
+    radius = int(radius)
+    quota = int(quota)
+    max_unselected_hole = int(max_unselected_hole)
+    if radius < 1 or quota < 3:
+        raise AllocationContractError("boundary-burst radius/quota are too small")
+    if max_unselected_hole < 0:
+        raise AllocationContractError("max_unselected_hole must be non-negative")
+    segments = _canonical_gt_segments(gt_segments, axis.valid_len)
+    validity = tuple(tuple(bool(value) for value in row) for row in gt_boundary_validity)
+    if len(validity) != len(segments) or any(len(row) != 2 for row in validity):
+        raise AllocationContractError("boundary validity must be [num_segments,2]")
+
+    required: set[int] = set()
+    endpoint_specs: list[dict[str, Any]] = []
+    invalid_endpoint_count = 0
+    for segment_index, ((start, end), valid_row) in enumerate(zip(segments, validity)):
+        centers = (
+            int(math.floor(start)),
+            int(math.ceil(end) - 1),
+        )
+        for side, (center, is_valid) in enumerate(zip(centers, valid_row)):
+            if not is_valid:
+                invalid_endpoint_count += 1
+                continue
+            center = min(max(center, 0), axis.valid_len - 1)
+            left = tuple(range(max(0, center - radius), center))
+            right = tuple(range(center + 1, min(axis.valid_len, center + radius + 1)))
+            neighborhood = tuple(range(max(0, center - radius), min(axis.valid_len, center + radius + 1)))
+            target_quota = min(quota, len(neighborhood))
+            ordered = [center]
+            for distance in range(1, radius + 1):
+                if center - distance >= 0:
+                    ordered.append(center - distance)
+                if center + distance < axis.valid_len:
+                    ordered.append(center + distance)
+            endpoint_required = tuple(ordered[:target_quota])
+            required.update(endpoint_required)
+            endpoint_specs.append(
+                {
+                    "segment_index": int(segment_index),
+                    "endpoint": "start" if side == 0 else "end",
+                    "center": int(center),
+                    "radius": radius,
+                    "quota": int(target_quota),
+                    "neighborhood": neighborhood,
+                    "left_candidates": left,
+                    "right_candidates": right,
+                    "required_positions": endpoint_required,
+                    "bilateral_applicable": bool(left and right),
+                }
+            )
+
+    # The physical cap constrains selected-to-selected intervals. Pinning both
+    # dense-axis endpoints also makes its source/sink semantics exactly match
+    # the declared max-unselected-hole contract at the two edges.
+    required.update({0, axis.valid_len - 1})
+    budget = effective_budget(axis.valid_len, requested_budget)
+    if len(required) > budget:
+        raise AllocationContractError(
+            f"boundary-burst required set exceeds K_eff: {len(required)} > {budget}"
+        )
+    uniform = set(exact_uniform_positions(axis.valid_len, requested_budget))
+    # One missed required position costs more than every possible non-required
+    # gain, so an OPTIMAL path includes the complete required set whenever it is
+    # physically feasible.
+    dominant = axis.valid_len * 4 + 4
+    scores = [
+        (dominant if position in required else 0)
+        + (2 if position in uniform else 0)
+        + (1 if position % 2 == 0 else 0)
+        for position in range(axis.valid_len)
+    ]
+    solved = solve_additive_exact_k_physical(
+        axis,
+        scores,
+        requested_budget=requested_budget,
+        cap=cap,
+        quantization_scale=1,
+    )
+    selected = set(solved.positions)
+    missing = sorted(required - selected)
+    if missing:
+        raise AllocationContractError(
+            f"boundary-burst required positions are infeasible under K/G: {missing[:16]}"
+        )
+    validate_physical_selection(
+        axis,
+        solved.positions,
+        requested_budget=requested_budget,
+        cap=cap,
+    )
+    gap_report = physical_gap_report(axis, solved.positions)
+    if gap_report.dense_max_unselected_hole > max_unselected_hole:
+        raise AllocationContractError("boundary-burst violates candidate-axis max-hole")
+
+    validated_contracts: list[Mapping[str, Any]] = []
+    burst_union: set[int] = set()
+    for spec in endpoint_specs:
+        neighborhood = set(spec["neighborhood"])
+        left = set(spec["left_candidates"])
+        right = set(spec["right_candidates"])
+        local_count = len(selected & neighborhood)
+        left_count = len(selected & left)
+        right_count = len(selected & right)
+        quota_pass = local_count >= int(spec["quota"])
+        bilateral_pass = (
+            not bool(spec["bilateral_applicable"])
+            or (left_count >= 1 and right_count >= 1)
+        )
+        if not quota_pass or not bilateral_pass:
+            raise AllocationContractError("boundary-burst endpoint contract was not satisfied")
+        burst_union.update(neighborhood)
+        validated_contracts.append(
+            {
+                **spec,
+                "selected_in_radius": local_count,
+                "selected_left": left_count,
+                "selected_right": right_count,
+                "quota_pass": quota_pass,
+                "bilateral_pass": bilateral_pass,
+            }
+        )
+
+    background = sorted(set(range(axis.valid_len)) - burst_union)
+    components: list[tuple[int, ...]] = []
+    for position in background:
+        if not components or position != components[-1][-1] + 1:
+            components.append((position,))
+        else:
+            components[-1] = components[-1] + (position,)
+    for component in components:
+        if len(component) > max_unselected_hole and not (selected & set(component)):
+            raise AllocationContractError("boundary-burst global background fill is incomplete")
+
+    return BoundaryBurstSolveResult(
+        positions=solved.positions,
+        required_positions=tuple(sorted(required)),
+        radius=radius,
+        quota=quota,
+        endpoint_contracts=tuple(validated_contracts),
+        invalid_endpoint_count=invalid_endpoint_count,
+        residual_fill_count=len(selected - required),
+        background_selected_count=len(selected & set(background)),
+        background_component_count=len(components),
+        uniform_overlap=len(selected & uniform),
+        max_unselected_hole=gap_report.dense_max_unselected_hole,
     )
 
 

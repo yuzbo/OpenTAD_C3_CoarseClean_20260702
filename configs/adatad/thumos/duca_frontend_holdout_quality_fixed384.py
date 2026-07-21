@@ -48,11 +48,14 @@ dataset = dict(
             dict(type="mmaction.Resize", scale=(-1, 160)),
             dict(type="mmaction.CenterCrop", crop_size=160),
             dict(type="mmaction.FormatShape", input_format="NCTHW"),
-            dict(type="ConvertToTensor", keys=["imgs", "gt_segments", "gt_labels"]),
+            dict(
+                type="ConvertToTensor",
+                keys=["imgs", "gt_segments", "gt_labels", "gt_boundary_validity"],
+            ),
             dict(
                 type="Collect",
                 inputs="imgs",
-                keys=["masks", "gt_segments", "gt_labels"],
+                keys=["masks", "gt_segments", "gt_labels", "gt_boundary_validity"],
             ),
         ],
     ),
