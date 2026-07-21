@@ -235,18 +235,19 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         _require(selector.detector_gradient_mode == "none", "uniform control must disable detector bridge")
         _require(float(selector.inference_policy_alpha) == 0.0, "uniform control must remain exact uniform")
         _require(float(schedule.policy_alpha.start) == 0.0 and float(schedule.policy_alpha.end) == 0.0, "uniform policy schedule changed")
-        _require(
-            all(
-                float(schedule[name].start) == 0.0
-                and float(schedule[name].end) == 0.0
-                for name in (
-                    "actionness",
-                    "transition",
-                    "transition_boundary",
-                )
-            ),
-            "exact-uniform control must not couple frontend gradients into global clipping",
-        )
+        if str(contract.get("stage", "")) == "uniform_detector_cowarmup_then_joint_detection":
+            _require(
+                all(
+                    float(schedule[name].start) == 0.0
+                    and float(schedule[name].end) == 0.0
+                    for name in (
+                        "actionness",
+                        "transition",
+                        "transition_boundary",
+                    )
+                ),
+                "two-stage exact-uniform control must not couple frontend gradients into global clipping",
+            )
         _require(float(selector.policy_hidden_gradient_scale) == 0.0, "uniform control cannot expose ASFormer")
     elif route == "DUCA_PROTECTED_E2E_RHO_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "protected_structured_transport", "rho arm must use the protected bridge")

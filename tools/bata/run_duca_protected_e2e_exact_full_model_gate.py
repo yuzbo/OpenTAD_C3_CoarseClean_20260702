@@ -429,7 +429,7 @@ def run_gate(
         return _finite_backward(objective, model=model, optimizer=optimizer)
 
     coarse_frozen = bool(selector.raw_actionness_source.frozen)
-    frontend_objectives_disabled = exact_uniform_route
+    frontend_objectives_disabled = exact_uniform_route and two_stage_route
     if coarse_frozen or frontend_objectives_disabled:
         optimizer.zero_grad(set_to_none=True)
         action_gradients = _gradient_partition(model)
