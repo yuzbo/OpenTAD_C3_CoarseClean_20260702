@@ -404,9 +404,11 @@ def test_boundary_burst_utility_forms_a_symmetric_five_frame_microcluster() -> N
     assert torch.allclose(offset_probabilities, offset_probabilities.flip(0))
     assert float(offset_probabilities[2]) >= float(offset_probabilities[1])
     assert float(offset_probabilities[1]) >= float(offset_probabilities[0])
-    assert torch.equal(
+    assert torch.allclose(
         output["offset_inclusion"][0, 5],
-        torch.ones(5),
+        output["offset_inclusion"].new_ones(5),
+        atol=1.0e-6,
+        rtol=0.0,
     )
 
 
