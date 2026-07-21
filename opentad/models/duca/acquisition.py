@@ -12,6 +12,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from opentad.duca_loss_contract import (
+    DUCA_LOSS_TO_WEIGHT_KEY,
+    DUCA_LOSS_WEIGHT_DEFAULTS,
+)
+
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
 from .structured_selection import (
     exact_uniform_reference_scores,
@@ -639,6 +644,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         tcn_variant: str = "lite",
         tcn_hidden_dim: int = 96,
         dropout: float = 0.0,
+        spatial_norm: str = "batchnorm",
         mobilenet_pretrained: bool = True,
         mobilenet_variant: str = "small",
         mobilenet_freeze_backbone: bool = True,
@@ -678,6 +684,9 @@ class C3CoarseProbeActionnessSource(nn.Module):
         self.tcn_variant = str(tcn_variant)
         self.tcn_hidden_dim = int(tcn_hidden_dim)
         self.dropout = float(dropout)
+        self.spatial_norm = str(spatial_norm).lower()
+        if self.spatial_norm not in {"batchnorm", "groupnorm"}:
+            raise ValueError("spatial_norm must be batchnorm or groupnorm")
         self.source_name = str(source_name or self._default_source_name())
         self.train_split_supervised = bool(train_split_supervised)
         self.calibration_split = str(calibration_split or "none")
@@ -741,6 +750,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
             ),
             "matrix_model_id": str(matrix_model_id) if self.probe_model == "matrix-zoo" else None,
             "spatial_size": self.spatial_size,
+            "spatial_norm": self.spatial_norm,
             "checkpoint_path": self.checkpoint_path,
             "checkpoint_hash": self.checkpoint_hash,
             "train_split_supervised": self.train_split_supervised,
@@ -797,6 +807,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 hidden_dim=self.tcn_hidden_dim,
                 num_layers=int(official_num_layers),
                 dropout=self.dropout,
+                spatial_norm=self.spatial_norm,
                 hidden_output_kind=str(hidden_output_kind),
                 policy_hidden_gradient_scope=self.policy_hidden_gradient_scope,
             )
@@ -1091,6 +1102,7 @@ class DucaAcquisitionAdapter(nn.Module):
         coarse_hidden_dim: Optional[int] = None,
         require_coarse_hidden_features: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
+        auxiliary_hidden_gradient_scale: float = 1.0,
         max_unselected_hole: Optional[int] = None,
         hard_max_gap_repair: bool = True,
         fail_on_infeasible_max_gap: bool = True,
@@ -1168,6 +1180,12 @@ class DucaAcquisitionAdapter(nn.Module):
             or not 0.0 <= self.policy_hidden_gradient_scale <= 1.0
         ):
             raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
+        self.auxiliary_hidden_gradient_scale = float(auxiliary_hidden_gradient_scale)
+        if (
+            not math.isfinite(self.auxiliary_hidden_gradient_scale)
+            or not 0.0 <= self.auxiliary_hidden_gradient_scale <= 1.0
+        ):
+            raise ValueError("auxiliary_hidden_gradient_scale must lie in [0,1]")
         self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
@@ -1595,6 +1613,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 compute_auxiliary=self.training,
                 policy_hidden=coarse_policy_hidden,
                 policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
+                auxiliary_hidden_gradient_scale=self.auxiliary_hidden_gradient_scale,
             )
             center_scores = transition_paths["policy_scores"]
             selection_features = transition_paths["transition_descriptors"]
@@ -2895,7 +2914,9 @@ def duca_losses(
     max_gap_loss_source: str = "soft_coverage",
     transition_boundary_radius: int = 4,
     transition_distribution_temperature: float = 0.7,
+    actionness_loss_mode: str = "posterior_bce",
     loss_weights: Optional[Mapping[str, float]] = None,
+    strict_loss_contract: bool = False,
 ) -> Dict[str, torch.Tensor]:
     """DUCA acquisition regularizers plus optional train-only utility loss."""
 
@@ -2950,64 +2971,71 @@ def duca_losses(
     valid = _as_valid_mask(center_scores, valid_mask)
     if selected_mask_st.shape != center_scores.shape:
         raise ValueError("selected_mask_st must match scores")
-    weights = {
-        "detector": 1.0,
-        "actionness": 0.0,
-        "budget": 0.05,
-        "boundary": 0.25,
-        "hole": 0.25,
-        "max_gap_hole": 0.0,
-        "redundancy": 0.05,
-        "radius": 0.02,
-        "entropy": 0.01,
-        "teacher": 0.50,
-        "detector_utility": 0.0,
-        "start": 0.0,
-        "end": 0.0,
-        "context": 0.0,
-        "lagrangian_budget": 1.0,
-        "marginal_monotonic": 0.01,
-        "hard_budget_cap": 1.0,
-        "transition": 0.0,
-        "transition_boundary": 0.0,
-    }
+    weights = dict(DUCA_LOSS_WEIGHT_DEFAULTS)
+    strict_loss_contract = bool(strict_loss_contract)
     if loss_weights is not None:
+        unknown = set(loss_weights) - set(DUCA_LOSS_WEIGHT_DEFAULTS)
+        if unknown:
+            raise ValueError(f"unknown DUCA loss weights: {sorted(unknown)}")
+        if strict_loss_contract and set(loss_weights) != set(DUCA_LOSS_WEIGHT_DEFAULTS):
+            missing = sorted(set(DUCA_LOSS_WEIGHT_DEFAULTS) - set(loss_weights))
+            raise ValueError(
+                "strict DUCA loss contract requires every weight explicitly; "
+                f"missing={missing}"
+            )
         weights.update({key: float(value) for key, value in loss_weights.items()})
+    elif strict_loss_contract:
+        raise ValueError("strict DUCA loss contract requires an explicit loss_weights mapping")
+    if any(not math.isfinite(value) or value < 0.0 for value in weights.values()):
+        raise ValueError("DUCA loss weights must be finite and non-negative")
+    if actionness_loss_mode not in {"posterior_bce", "class_balanced_mean"}:
+        raise ValueError(
+            "actionness_loss_mode must be posterior_bce or class_balanced_mean"
+        )
     budgets = _budget_tensor(budget, center_scores.shape[0], center_scores.device).to(center_scores.dtype)
     selected = selected_mask_st.masked_fill(~valid, 0.0)
-    losses: Dict[str, torch.Tensor] = {}
     zero = center_scores.float().new_zeros(())
-    if detector_loss is not None:
+    losses: Dict[str, torch.Tensor] = {
+        loss_name: zero for loss_name in DUCA_LOSS_TO_WEIGHT_KEY
+    }
+    if detector_loss is not None and weights["detector"] != 0.0:
         losses["detector_loss"] = detector_loss * weights["detector"]
-    else:
-        losses["detector_loss"] = zero
-    over = F.relu(selected.sum(dim=1) - budgets)
-    losses["budget_loss"] = over.pow(2).mean() * weights["budget"]
+    if weights["budget"] != 0.0:
+        over = F.relu(selected.sum(dim=1) - budgets)
+        losses["budget_loss"] = over.pow(2).mean() * weights["budget"]
     if budget_decision is not None:
         if not isinstance(budget_decision, DynamicBudgetDecision):
             raise TypeError("budget_decision must be a DynamicBudgetDecision")
         budget_decision.validate(batch_size=center_scores.shape[0])
         if grid is not None and torch.any(grid.selected_count.to(center_scores.device) > int(budget_decision.budget_max)):
             raise RuntimeError("selected count exceeds dynamic hard budget cap")
-        dynamic_cost = budget_decision.expected_cost.to(device=center_scores.device, dtype=center_scores.dtype)
-        target = torch.as_tensor(
-            float(budget_decision.target_budget),
-            device=center_scores.device,
-            dtype=center_scores.dtype,
-        )
-        lambda_dual = budget_decision.lambda_dual.to(device=center_scores.device, dtype=center_scores.dtype).detach()
-        losses["lagrangian_budget_loss"] = (
-            lambda_dual * (dynamic_cost.mean() - target) / target.clamp_min(1.0)
-        ) * weights["lagrangian_budget"]
-        marginal = budget_decision.marginal_utility.to(device=center_scores.device, dtype=center_scores.dtype)
-        if marginal.shape[1] > 1:
-            monotonic = F.relu(marginal[:, 1:] - marginal[:, :-1]).pow(2).mean()
-        else:
-            monotonic = zero
-        losses["marginal_monotonic_loss"] = monotonic * weights["marginal_monotonic"]
-        hard_over = F.relu(budget_decision.budget_hard.to(center_scores.dtype) - float(budget_decision.budget_max))
-        losses["hard_budget_cap_loss"] = hard_over.pow(2).mean() * weights["hard_budget_cap"]
-    if teacher_utility is not None:
+        if weights["lagrangian_budget"] != 0.0:
+            dynamic_cost = budget_decision.expected_cost.to(device=center_scores.device, dtype=center_scores.dtype)
+            target = torch.as_tensor(
+                float(budget_decision.target_budget),
+                device=center_scores.device,
+                dtype=center_scores.dtype,
+            )
+            lambda_dual = budget_decision.lambda_dual.to(device=center_scores.device, dtype=center_scores.dtype).detach()
+            losses["lagrangian_budget_loss"] = (
+                lambda_dual * (dynamic_cost.mean() - target) / target.clamp_min(1.0)
+            ) * weights["lagrangian_budget"]
+        if weights["marginal_monotonic"] != 0.0:
+            marginal = budget_decision.marginal_utility.to(device=center_scores.device, dtype=center_scores.dtype)
+            if marginal.shape[1] > 1:
+                monotonic = F.relu(marginal[:, 1:] - marginal[:, :-1]).pow(2).mean()
+            else:
+                monotonic = zero
+            losses["marginal_monotonic_loss"] = monotonic * weights["marginal_monotonic"]
+        if weights["hard_budget_cap"] != 0.0:
+            hard_over = F.relu(
+                budget_decision.budget_hard.to(center_scores.dtype)
+                - float(budget_decision.budget_max)
+            )
+            losses["hard_budget_cap_loss"] = (
+                hard_over.pow(2).mean() * weights["hard_budget_cap"]
+            )
+    if teacher_utility is not None and weights["teacher"] != 0.0:
         if teacher_utility.shape != center_scores.shape:
             raise ValueError("teacher_utility must match scores [B,T]")
         utility = teacher_utility.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
@@ -3016,54 +3044,49 @@ def duca_losses(
         gain_loss = -((selected * positive_utility).sum(dim=1) / budgets.clamp_min(1.0)).mean()
         risk_loss = ((selected * negative_utility).sum(dim=1) / budgets.clamp_min(1.0)).mean()
         losses["teacher_utility_loss"] = (gain_loss + risk_loss) * weights["teacher"]
-    elif utility_gain is not None or utility_risk is not None:
+    elif weights["teacher"] != 0.0 and (
+        utility_gain is not None or utility_risk is not None
+    ):
         gain = torch.zeros_like(center_scores) if utility_gain is None else utility_gain.to(center_scores.device, center_scores.dtype)
         risk = torch.zeros_like(center_scores) if utility_risk is None else utility_risk.to(center_scores.device, center_scores.dtype)
         losses["teacher_utility_loss"] = (
             -((selected * gain.clamp_min(0.0)).sum(dim=1) / budgets.clamp_min(1.0)).mean()
             + ((selected * risk.clamp_min(0.0)).sum(dim=1) / budgets.clamp_min(1.0)).mean()
         ) * weights["teacher"]
-    else:
-        losses["teacher_utility_loss"] = zero
     utility_proxy = boundary_utility_proxy_target if boundary_utility_proxy_target is not None else detector_utility_target
-    utility_proxy_loss: Optional[torch.Tensor] = None
-    if utility_proxy is not None:
+    if utility_proxy is not None and weights["detector_utility"] != 0.0:
         if utility_proxy.shape != center_scores.shape:
             raise ValueError("boundary_utility_proxy_target must match scores")
         utility = utility_proxy.to(center_scores.device, center_scores.dtype).clamp_min(0.0)
         utility = utility.masked_fill(~valid, 0.0)
         utility_logits = center_scores if utility_scores is None else utility_scores.to(center_scores.device, center_scores.dtype)
-        utility_proxy_loss = _target_distribution_loss(utility_logits, utility, valid) * weights["detector_utility"]
-    else:
-        utility_proxy_loss = zero
-    losses["boundary_utility_proxy_distribution_loss"] = utility_proxy_loss
-    if start_target is not None:
+        losses["boundary_utility_proxy_distribution_loss"] = (
+            _target_distribution_loss(utility_logits, utility, valid)
+            * weights["detector_utility"]
+        )
+    if start_target is not None and weights["start"] != 0.0:
         if start_logits is None:
             raise ValueError("start_logits are required when start_target is provided")
         losses["start_endpoint_distribution_loss"] = (
             _target_distribution_loss(start_logits.to(center_scores.dtype), start_target, valid) * weights["start"]
         )
-    else:
-        losses["start_endpoint_distribution_loss"] = zero
-    if end_target is not None:
+    if end_target is not None and weights["end"] != 0.0:
         if end_logits is None:
             raise ValueError("end_logits are required when end_target is provided")
         losses["end_endpoint_distribution_loss"] = (
             _target_distribution_loss(end_logits.to(center_scores.dtype), end_target, valid) * weights["end"]
         )
-    else:
-        losses["end_endpoint_distribution_loss"] = zero
-    if context_target is not None:
+    if context_target is not None and weights["context"] != 0.0:
         if context_logits is None:
             raise ValueError("context_logits are required when context_target is provided")
         losses["boundary_context_distribution_loss"] = (
             _target_distribution_loss(context_logits.to(center_scores.dtype), context_target, valid) * weights["context"]
         )
-    else:
-        losses["boundary_context_distribution_loss"] = zero
-    if transition_target is not None:
+    if transition_target is not None and weights["transition"] != 0.0:
         if transition_auxiliary_scores is None:
-            raise ValueError("transition_auxiliary_scores are required when transition_target is provided")
+            raise ValueError(
+                "transition_auxiliary_scores are required for active transition supervision"
+            )
         losses["transition_distribution_loss"] = (
             transition_distribution_loss(
                 transition_auxiliary_scores.to(center_scores.dtype),
@@ -3073,8 +3096,11 @@ def duca_losses(
             )
             * weights["transition"]
         )
+    if transition_target is not None and weights["transition_boundary"] != 0.0:
         if not isinstance(scores, Mapping):
-            raise ValueError("transition boundary coverage requires structured decoder outputs")
+            raise ValueError(
+                "active transition boundary coverage requires structured decoder outputs"
+            )
         soft_occupancy = scores.get("soft_coverage")
         if soft_occupancy is None or soft_occupancy.shape != center_scores.shape:
             raise ValueError("transition boundary coverage requires aligned structured soft_coverage")
@@ -3087,10 +3113,7 @@ def duca_losses(
             )
             * weights["transition_boundary"]
         )
-    else:
-        losses["transition_distribution_loss"] = zero
-        losses["transition_boundary_coverage_loss"] = zero
-    if boundary_target is not None:
+    if boundary_target is not None and weights["boundary"] != 0.0:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")
         target = boundary_target.to(center_scores.device, torch.float32).masked_fill(~valid, 0.0)
@@ -3098,19 +3121,22 @@ def duca_losses(
         denom = target.sum(dim=1).clamp_min(1.0)
         uncovered = (target * (1.0 - selected_for_boundary.clamp(0.0, 1.0))).sum(dim=1) / denom
         losses["boundary_coverage_loss"] = uncovered.mean() * weights["boundary"]
-    else:
-        losses["boundary_coverage_loss"] = zero
     if action_target is not None:
         if action_target.shape != center_scores.shape:
             raise ValueError("action_target must match scores")
         action = action_target.to(center_scores.device, center_scores.dtype).masked_fill(~valid, 0.0)
-        if actionness_logits is not None:
+        if actionness_logits is not None and weights["actionness"] != 0.0:
             logits = actionness_logits.to(center_scores.device, center_scores.dtype)
             if logits.shape != center_scores.shape:
                 raise ValueError("actionness_logits must match scores when action_target is provided")
             logits = logits.masked_fill(~valid, 0.0)
             if selector_variant == "transition_only":
-                actionness_loss, positive_weight = balanced_binary_actionness_loss(logits, action, valid)
+                actionness_loss, positive_weight = balanced_binary_actionness_loss(
+                    logits,
+                    action,
+                    valid,
+                    reduction_mode=actionness_loss_mode,
+                )
                 losses["actionness_bce_loss"] = actionness_loss * weights["actionness"]
                 if isinstance(scores, dict):
                     scores["actionness_positive_weight"] = positive_weight
@@ -3120,14 +3146,18 @@ def duca_losses(
                 ).masked_fill(~valid, 0.0)
                 denom = valid.to(torch.float32).sum(dim=1).clamp_min(1.0)
                 losses["actionness_bce_loss"] = ((bce.sum(dim=1) / denom).mean()) * weights["actionness"]
-        else:
-            losses["actionness_bce_loss"] = zero
-        local = F.max_pool1d(selected[:, None, :].clamp(0.0, 1.0), kernel_size=9, stride=1, padding=4).squeeze(1)
-        denom = action.sum(dim=1).clamp_min(1.0)
-        losses["action_local_hole_loss"] = ((action * (1.0 - local)).sum(dim=1) / denom).mean() * weights["hole"]
-    else:
-        losses["actionness_bce_loss"] = zero
-        losses["action_local_hole_loss"] = zero
+        if weights["hole"] != 0.0:
+            local = F.max_pool1d(
+                selected[:, None, :].clamp(0.0, 1.0),
+                kernel_size=9,
+                stride=1,
+                padding=4,
+            ).squeeze(1)
+            denom = action.sum(dim=1).clamp_min(1.0)
+            losses["action_local_hole_loss"] = (
+                ((action * (1.0 - local)).sum(dim=1) / denom).mean()
+                * weights["hole"]
+            )
     if max_unselected_hole not in (None, 0) and weights["max_gap_hole"] != 0.0:
         if isinstance(scores, Mapping) and str(max_gap_loss_source) == "soft_coverage" and scores.get("soft_coverage") is not None:
             gap_mass = scores["soft_coverage"]

@@ -38,6 +38,7 @@ def aggregate(
         raise RuntimeError("frontend split consumed the test subset")
 
     receipts = []
+    contract_evidence = []
     for raw_path in receipt_paths:
         path = Path(raw_path).expanduser().resolve()
         if not path.is_file():
@@ -51,6 +52,28 @@ def aggregate(
             or payload.get("test_subset_consumed") is not False
         ):
             raise RuntimeError(f"invalid frontend completion receipt: {path}")
+        contract_path = Path(str(payload.get("p0_contract_path", ""))).resolve()
+        if (
+            not contract_path.is_file()
+            or sha256_file(contract_path) != payload.get("p0_contract_sha256")
+        ):
+            raise RuntimeError(f"frontend P0 contract evidence drift: {path}")
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        if (
+            contract.get("schema_version") != "duca_frontend_p0_contract_v1"
+            or contract.get("ok") is not True
+            or contract.get("git_commit") != expected_commit
+            or contract.get("detector_executed") is not False
+            or contract.get("test_subset_consumed") is not False
+        ):
+            raise RuntimeError(f"invalid frontend P0 contract evidence: {contract_path}")
+        contract_evidence.append(
+            {
+                "variant": payload.get("variant"),
+                "path": str(contract_path),
+                "sha256": payload["p0_contract_sha256"],
+            }
+        )
         receipts.append(payload)
     if {item["variant"] for item in receipts} != set(EXPECTED_VARIANTS):
         raise RuntimeError("frontend completion receipts do not cover the frozen weight grid")
@@ -79,6 +102,7 @@ def aggregate(
         "split_manifest_sha256": split_manifest_sha256,
         "weight_grid": EXPECTED_VARIANTS,
         "checkpoint_epochs_one_based": [5, 10, 15, 20],
+        "p0_contract_evidence": contract_evidence,
         "candidates": candidates,
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)

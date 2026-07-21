@@ -76,6 +76,29 @@ def test_actionness_weight_uses_fixed_prior_not_batch_prevalence() -> None:
     assert dense_weight.item() == pytest.approx(4.0)
 
 
+def test_class_balanced_actionness_is_mean_per_class_not_element_prevalence() -> None:
+    logits = torch.tensor([[0.0, 2.0, 2.0, 2.0]], requires_grad=True)
+    target = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    valid = torch.ones_like(target, dtype=torch.bool)
+
+    loss, _ = balanced_binary_actionness_loss(
+        logits,
+        target,
+        valid,
+        reduction_mode="class_balanced_mean",
+    )
+    positive = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits[:, :1], target[:, :1]
+    )
+    negative = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits[:, 1:], target[:, 1:]
+    )
+
+    assert torch.allclose(loss, 0.5 * (positive + negative))
+    loss.backward()
+    assert _grad_sum(logits) > 0.0
+
+
 def test_actionness_probability_supports_frozen_temperature_bias_calibration() -> None:
     logits = torch.tensor([-2.0, 0.0, 2.0], requires_grad=True)
     probability = calibrated_actionness_probability(logits, temperature=2.0, bias=1.0)
@@ -143,6 +166,44 @@ def test_shared_transition_scorer_has_protected_auxiliary_and_policy_routes() ->
     assert _grad_sum(hidden) > 0.0
     assert _grad_sum(logits) == pytest.approx(0.0)
     assert sum(float(p.grad.abs().sum()) for p in scorer.parameters() if p.grad is not None) > 0.0
+
+
+def test_p0_auxiliary_transition_supervision_does_not_rewrite_coarse_hidden() -> None:
+    torch.manual_seed(13)
+    logits = torch.randn(1, 7, requires_grad=True)
+    hidden = torch.randn(1, 7, 4, requires_grad=True)
+    valid = torch.ones(1, 7, dtype=torch.bool)
+    scorer = DucaTransitionUtilityScorer(hidden_dim=4, scorer_hidden_dim=8)
+
+    paths = transition_utility_paths(
+        scorer,
+        logits,
+        hidden,
+        valid,
+        auxiliary_hidden_gradient_scale=0.0,
+    )
+    paths["auxiliary_scores"].square().mean().backward()
+
+    assert torch.equal(
+        paths["auxiliary_descriptors"], paths["transition_descriptors"].detach()
+    )
+    assert paths["auxiliary_hidden_gradient_scale"] == pytest.approx(0.0)
+    assert _grad_sum(hidden) == pytest.approx(0.0)
+    assert _grad_sum(logits) == pytest.approx(0.0)
+    assert sum(float(p.grad.abs().sum()) for p in scorer.parameters() if p.grad is not None) > 0.0
+
+
+@pytest.mark.parametrize("scale", [-0.1, 1.1, float("nan")])
+def test_auxiliary_hidden_gradient_scale_fails_closed(scale: float) -> None:
+    scorer = DucaTransitionUtilityScorer(hidden_dim=2, scorer_hidden_dim=4)
+    with pytest.raises(ValueError, match="auxiliary_hidden_gradient_scale"):
+        transition_utility_paths(
+            scorer,
+            torch.zeros(1, 3),
+            torch.zeros(1, 3, 2),
+            torch.ones(1, 3, dtype=torch.bool),
+            auxiliary_hidden_gradient_scale=scale,
+        )
 
 
 def test_policy_hidden_gradient_scale_only_opens_the_declared_hidden_route() -> None:

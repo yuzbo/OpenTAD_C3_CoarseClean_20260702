@@ -30,6 +30,16 @@ SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
 
 export DUCA_FRONTEND_TRAIN_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_train_block_list.txt"
 export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_holdout_block_list.txt"
+"${PYTHON}" -m torch.distributed.run \
+  --standalone \
+  --nproc_per_node=1 \
+  tools/bata/run_duca_frontend_p0_real_gate.py \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --checkpoint "${ADATAD_PRETRAIN_PATH}" \
+  --official-repos-root "${C3_OFFICIAL_ACTION_SEG_REPOS}" \
+  --split-manifest "${SPLIT_MANIFEST}" \
+  --expected-split-sha256 "${SPLIT_SHA256}" \
+  --output-json "${RUN_ROOT}/p0_real_gate.json"
 frontend_variants=(a1_t005_b8 a1_t010_b16 a1_t020_b32)
 for variant in "${frontend_variants[@]}"; do
   export DUCA_FRONTEND_VARIANT="${variant}"
@@ -49,6 +59,12 @@ CANDIDATE_MANIFEST="${RUN_ROOT}/frontend_candidate_manifest.json"
   --receipt "${RUN_ROOT}/p0/a1_t020_b32/run/completion.json" \
   --candidate-manifest "${CANDIDATE_MANIFEST}" \
   --decision-json "${DECISION}"
+
+if [[ "${DUCA_FRONTEND_ONLY:-0}" == "1" ]]; then
+  echo "[DUCA_TWO_STAGE_SERIAL] frontend completed ${DECISION}"
+  exit 0
+fi
+
 DECISION_SHA256="$(sha256sum "${DECISION}" | awk '{print $1}')"
 
 export DUCA_FRONTEND_DECISION_JSON="${DECISION}"

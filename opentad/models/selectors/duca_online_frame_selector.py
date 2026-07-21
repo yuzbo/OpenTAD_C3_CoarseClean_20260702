@@ -8,6 +8,11 @@ from typing import Any, Optional
 import torch
 import torch.nn as nn
 
+from opentad.duca_loss_contract import (
+    DUCA_LOSS_TO_WEIGHT_KEY,
+    DUCA_LOSS_WEIGHT_DEFAULTS,
+)
+
 from ..builder import SELECTORS
 from ..duca import (
     C3CoarseProbeActionnessSource,
@@ -463,6 +468,7 @@ class DucaOnlineFrameSelector(nn.Module):
         require_coarse_hidden_features: Optional[bool] = None,
         allow_frozen_coarse_probe: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
+        auxiliary_hidden_gradient_scale: float = 1.0,
         max_unselected_hole: Optional[int] = None,
         hard_max_gap_repair: bool = True,
         fail_on_infeasible_max_gap: bool = True,
@@ -486,6 +492,8 @@ class DucaOnlineFrameSelector(nn.Module):
         true_time_source_axis: str = TRUE_TIME_AXIS,
         temporal_sampling_contract: Optional[Mapping[str, Any]] = None,
         loss_weights: Optional[Mapping[str, float]] = None,
+        actionness_loss_mode: str = "posterior_bce",
+        strict_loss_contract: bool = False,
         loss_weight_schedule: Optional[Mapping[str, Any]] = None,
         no_ledger_decision: bool = True,
         remap_gt_to_selected_axis: bool = True,
@@ -574,6 +582,12 @@ class DucaOnlineFrameSelector(nn.Module):
             or not 0.0 <= self.policy_hidden_gradient_scale <= 1.0
         ):
             raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
+        self.auxiliary_hidden_gradient_scale = float(auxiliary_hidden_gradient_scale)
+        if (
+            not math.isfinite(self.auxiliary_hidden_gradient_scale)
+            or not 0.0 <= self.auxiliary_hidden_gradient_scale <= 1.0
+        ):
+            raise ValueError("auxiliary_hidden_gradient_scale must lie in [0,1]")
         self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
@@ -625,6 +639,21 @@ class DucaOnlineFrameSelector(nn.Module):
             else DucaTemporalSamplingContract.from_mapping(dict(temporal_sampling_contract))
         )
         self.loss_weights = dict(loss_weights or {})
+        self.actionness_loss_mode = str(actionness_loss_mode)
+        if self.actionness_loss_mode not in {"posterior_bce", "class_balanced_mean"}:
+            raise ValueError(
+                "actionness_loss_mode must be posterior_bce or class_balanced_mean"
+            )
+        self.strict_loss_contract = bool(strict_loss_contract)
+        if self.strict_loss_contract and set(self.loss_weights) != set(
+            DUCA_LOSS_WEIGHT_DEFAULTS
+        ):
+            missing = sorted(set(DUCA_LOSS_WEIGHT_DEFAULTS) - set(self.loss_weights))
+            extra = sorted(set(self.loss_weights) - set(DUCA_LOSS_WEIGHT_DEFAULTS))
+            raise ValueError(
+                "strict DUCA selector loss contract requires every loss weight "
+                f"exactly once; missing={missing}, extra={extra}"
+            )
         self.loss_weight_schedule = self._normalize_loss_weight_schedule(loss_weight_schedule)
         self.register_buffer("_loss_weight_schedule_step", torch.zeros((), dtype=torch.long), persistent=True)
         self.no_ledger_decision = bool(no_ledger_decision)
@@ -818,6 +847,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 and self.require_coarse_hidden_features is not False
             ),
             policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
+            auxiliary_hidden_gradient_scale=self.auxiliary_hidden_gradient_scale,
             max_unselected_hole=self.max_unselected_hole,
             hard_max_gap_repair=self.hard_max_gap_repair,
             fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
@@ -986,6 +1016,11 @@ class DucaOnlineFrameSelector(nn.Module):
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
             gt_segments, gt_labels, outputs["metas"]
         )
+        active_loss_weights = {
+            key: float(schedule_state["weights"][key])
+            for key in DUCA_LOSS_WEIGHT_DEFAULTS
+            if key in schedule_state["weights"]
+        }
         selector_losses = duca_losses(
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
@@ -1002,11 +1037,13 @@ class DucaOnlineFrameSelector(nn.Module):
                 self.max_gap_loss_max_unselected_hole if self.soft_max_gap_loss_enabled else 0
             ),
             max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
-            loss_weights=schedule_state["weights"],
+            actionness_loss_mode=self.actionness_loss_mode,
+            loss_weights=active_loss_weights,
+            strict_loss_contract=self.strict_loss_contract,
         )
         supervision_loss_audit = self._supervision_loss_audit(
             selector_losses,
-            schedule_state["weights"],
+            active_loss_weights,
         )
         outputs["selector_outputs"]["supervision_loss_audit"] = (
             supervision_loss_audit
@@ -1072,21 +1109,18 @@ class DucaOnlineFrameSelector(nn.Module):
 
     @staticmethod
     def _supervision_loss_audit(selector_losses, weights):
-        loss_to_weight = {
-            "actionness_bce_loss": "actionness",
-            "transition_distribution_loss": "transition",
-            "transition_boundary_coverage_loss": "transition_boundary",
-        }
         audit = {}
-        for loss_name, weight_name in loss_to_weight.items():
+        for loss_name, weight_name in DUCA_LOSS_TO_WEIGHT_KEY.items():
             value = selector_losses.get(loss_name)
             if not torch.is_tensor(value):
-                continue
+                raise RuntimeError(f"DUCA loss inventory is missing {loss_name}")
             weight = float(weights.get(weight_name, 0.0))
             weighted = float(value.detach().float().cpu().item())
             audit[loss_name] = {
                 "weight_name": weight_name,
                 "weight": weight,
+                "active": bool(weight != 0.0),
+                "requires_grad": bool(value.requires_grad),
                 "weighted": weighted,
                 "unweighted": None if weight == 0.0 else weighted / weight,
             }

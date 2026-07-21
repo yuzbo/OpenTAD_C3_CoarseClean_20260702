@@ -46,6 +46,7 @@ class GroundTruthObjectiveSpec:
     short_action_max_length: float = 16.0
     distance_scale: int = 1000
     lex_block_size: int = 20
+    position_tie_break: bool = True
 
     def __post_init__(self) -> None:
         if not self.boundary_radii or any(int(value) < 0 for value in self.boundary_radii):
@@ -58,6 +59,8 @@ class GroundTruthObjectiveSpec:
             raise AllocationContractError("distance_scale must be positive")
         if int(self.lex_block_size) < 1 or int(self.lex_block_size) > 30:
             raise AllocationContractError("lex_block_size must lie in [1,30]")
+        if not isinstance(self.position_tie_break, bool):
+            raise AllocationContractError("position_tie_break must be boolean")
 
 
 @dataclass(frozen=True)
@@ -183,6 +186,73 @@ def solve_additive_exact_k_physical(
     )
 
 
+def solve_additive_one_per_cell_physical(
+    axis: PhysicalAxis,
+    scores: Sequence[float | int],
+    *,
+    requested_budget: int,
+    cap: ResolvedPhysicalCap,
+    one_per_cell_bounds: Sequence[Sequence[int]],
+    quantization_scale: int = 1_000_000,
+) -> AdditiveSolveResult:
+    """Solve additive one-per-cell selection under the same physical cap."""
+
+    raw_scores = _finite_score_vector(scores, axis.valid_len)
+    quantized = quantize_scores(raw_scores, scale=quantization_scale)
+    budget = effective_budget(axis.valid_len, requested_budget)
+    cell_bounds = _canonical_one_per_cell_bounds(
+        one_per_cell_bounds,
+        valid_len=axis.valid_len,
+        budget=budget,
+    )
+    if cell_bounds is None:
+        raise AllocationContractError("one-per-cell bounds are required")
+
+    previous: dict[int, tuple[int, tuple[int, ...]]] = {}
+    for cell_index, (start, end) in enumerate(cell_bounds):
+        current: dict[int, tuple[int, tuple[int, ...]]] = {}
+        for position in range(start, end):
+            candidates: list[tuple[int, tuple[int, ...]]] = []
+            if cell_index == 0:
+                if cap.allows(axis, 0, position):
+                    candidates.append((quantized.values[position], (position,)))
+            else:
+                for predecessor, (prefix_score, prefix) in previous.items():
+                    if cap.allows(axis, predecessor, position):
+                        candidates.append(
+                            (
+                                prefix_score + quantized.values[position],
+                                prefix + (position,),
+                            )
+                        )
+            if candidates:
+                current[position] = min(
+                    candidates,
+                    key=lambda item: (-item[0], item[1]),
+                )
+        if not current:
+            raise AllocationContractError(
+                f"one-per-cell physical path is infeasible at cell {cell_index}"
+            )
+        previous = current
+
+    terminals = [
+        item
+        for position, item in previous.items()
+        if cap.allows(axis, position, axis.valid_len - 1)
+    ]
+    if not terminals:
+        raise AllocationContractError("one-per-cell physical path cannot reach the sink")
+    objective, positions = min(terminals, key=lambda item: (-item[0], item[1]))
+    return AdditiveSolveResult(
+        positions=positions,
+        quantized_objective=objective,
+        raw_score_sum=sum(raw_scores[index] for index in positions),
+        quantized_scores=quantized,
+        solver_identity="duca_exact_one_per_cell_physical_dp_v1",
+    )
+
+
 def solve_additive_unrestricted(
     axis: PhysicalAxis,
     scores: Sequence[float | int],
@@ -249,6 +319,7 @@ def solve_ground_truth_lexicographic(
     requested_budget: int,
     cap: ResolvedPhysicalCap | None,
     objective_spec: GroundTruthObjectiveSpec = GroundTruthObjectiveSpec(),
+    one_per_cell_bounds: Sequence[Sequence[int]] | None = None,
     compute_upper_envelopes: bool = False,
     time_limit_seconds: float | None = None,
 ) -> GroundTruthSolveResult:
@@ -264,12 +335,18 @@ def solve_ground_truth_lexicographic(
 
     segments = _canonical_gt_segments(gt_segments, axis.valid_len)
     budget = effective_budget(axis.valid_len, requested_budget)
+    cell_bounds = _canonical_one_per_cell_bounds(
+        one_per_cell_bounds,
+        valid_len=axis.valid_len,
+        budget=budget,
+    )
     model = _GroundTruthMilpModel(
         axis=axis,
         segments=segments,
         budget=budget,
         cap=cap,
         spec=objective_spec,
+        one_per_cell_bounds=cell_bounds,
     )
     matrix = csr_matrix(
         (model.constraint_data, (model.constraint_rows, model.constraint_cols)),
@@ -364,7 +441,8 @@ def solve_ground_truth_lexicographic(
                 )
         if np.any(values < -1.0e-6) or np.any(values > 1.0 + 1.0e-6):
             raise AllocationContractError(
-                f"GT MILP objective {name} violates variable bounds"
+                f"GT MILP objective {name} violates variable bounds: "
+                f"min={float(values.min()):.12g}, max={float(values.max()):.12g}"
             )
         return values, integer_values, mip_gap, objective_value, objective_bound
 
@@ -523,17 +601,18 @@ def solve_ground_truth_lexicographic(
     for name, coefficient, maximize in objective_sequence:
         solve_and_pin(name, coefficient, maximize=maximize)
 
-    for block_start in range(0, axis.valid_len, objective_spec.lex_block_size):
-        block_end = min(axis.valid_len, block_start + objective_spec.lex_block_size)
-        coefficient = {
-            model.x_index(position): 1 << (block_end - position - 1)
-            for position in range(block_start, block_end)
-        }
-        solve_and_pin(
-            f"lex_block_{block_start:04d}_{block_end:04d}",
-            coefficient,
-            maximize=True,
-        )
+    if objective_spec.position_tie_break:
+        for block_start in range(0, axis.valid_len, objective_spec.lex_block_size):
+            block_end = min(axis.valid_len, block_start + objective_spec.lex_block_size)
+            coefficient = {
+                model.x_index(position): 1 << (block_end - position - 1)
+                for position in range(block_start, block_end)
+            }
+            solve_and_pin(
+                f"lex_block_{block_start:04d}_{block_end:04d}",
+                coefficient,
+                maximize=True,
+            )
 
     if (
         last_result is None
@@ -549,6 +628,13 @@ def solve_ground_truth_lexicographic(
     )
     if len(positions) != budget:
         raise AllocationContractError("GT MILP terminal solution violates exact-K")
+    if cell_bounds is not None and any(
+        sum(start <= position < end for position in positions) != 1
+        for start, end in cell_bounds
+    ):
+        raise AllocationContractError(
+            "GT MILP terminal solution violates one-per-cell constraints"
+        )
     if cap is not None:
         from tools.bata.duca_allocation_families import validate_physical_selection
 
@@ -577,7 +663,15 @@ def solve_ground_truth_lexicographic(
         objective_vector=pinned_values,
         metric_upper_envelopes=upper_envelopes,
         solver_status="OPTIMAL",
-        solver_identity=f"scipy_highs_milp_{scipy_version}",
+        solver_identity=(
+            f"scipy_highs_milp_{scipy_version}"
+            + ("_one_per_cell" if cell_bounds is not None else "")
+            + (
+                "_position_lexicographic"
+                if objective_spec.position_tie_break
+                else "_semantic_optimum"
+            )
+        ),
         solver_message=str(last_result.message),
         mip_gap=last_mip_gap,
         exact=True,
@@ -593,12 +687,14 @@ class _GroundTruthMilpModel:
         budget: int,
         cap: ResolvedPhysicalCap | None,
         spec: GroundTruthObjectiveSpec,
+        one_per_cell_bounds: tuple[tuple[int, int], ...] | None,
     ) -> None:
         self.axis = axis
         self.segments = segments
         self.budget = budget
         self.cap = cap
         self.spec = spec
+        self.one_per_cell_bounds = one_per_cell_bounds
         self._next_variable = axis.valid_len
         self.integrality: list[int] = [1] * axis.valid_len
         self.constraint_rows: list[int] = []
@@ -648,6 +744,16 @@ class _GroundTruthMilpModel:
             self.budget,
             self.budget,
         )
+        if self.one_per_cell_bounds is not None:
+            for start, end in self.one_per_cell_bounds:
+                self._add_constraint(
+                    {
+                        self.x_index(position): 1
+                        for position in range(start, end)
+                    },
+                    1,
+                    1,
+                )
         if self.cap is not None:
             self._build_path_contract()
         self._build_boundary_variables()
@@ -928,3 +1034,33 @@ def _canonical_gt_segments(
             )
         canonical.append((start, end))
     return tuple(canonical)
+
+
+def _canonical_one_per_cell_bounds(
+    bounds: Sequence[Sequence[int]] | None,
+    *,
+    valid_len: int,
+    budget: int,
+) -> tuple[tuple[int, int], ...] | None:
+    if bounds is None:
+        return None
+    canonical: list[tuple[int, int]] = []
+    for index, cell in enumerate(bounds):
+        if len(cell) != 2:
+            raise AllocationContractError(
+                f"one-per-cell bound {index} must contain [start,end)"
+            )
+        canonical.append((int(cell[0]), int(cell[1])))
+    result = tuple(canonical)
+    if len(result) != int(budget):
+        raise AllocationContractError("one-per-cell count must equal the exact budget")
+    cursor = 0
+    for index, (start, end) in enumerate(result):
+        if start != cursor or end <= start or end > int(valid_len):
+            raise AllocationContractError(
+                f"one-per-cell bounds must be a contiguous partition; invalid cell {index}"
+            )
+        cursor = end
+    if cursor != int(valid_len):
+        raise AllocationContractError("one-per-cell bounds must cover the valid prefix")
+    return result

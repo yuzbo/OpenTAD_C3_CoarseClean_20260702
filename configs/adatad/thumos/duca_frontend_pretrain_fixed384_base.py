@@ -36,6 +36,10 @@ duca_transition_only_contract = dict(
     checkpoint_interval=5,
     maximum_epoch_count=duca_frontend_end_epoch,
     paper_metric_claim_allowed=False,
+    strict_explicit_loss_inventory=True,
+    actionness_reduction="class_balanced_positive_negative_means",
+    transition_supervision_updates_coarse_representation=False,
+    spatial_stem_normalization="groupnorm_padding_invariant",
 )
 
 
@@ -48,9 +52,29 @@ model = dict(
         require_counterfactual_utility_teacher=False,
         training_uniform_companion_fraction=0.0,
         inference_policy_alpha=1.0,
+        auxiliary_hidden_gradient_scale=0.0,
+        actionness_loss_mode="class_balanced_mean",
+        strict_loss_contract=True,
+        actionness_source_cfg=dict(spatial_norm="groupnorm"),
         loss_weights=dict(
             _delete_=True,
+            detector=0.0,
             actionness=1.0,
+            budget=0.0,
+            boundary=0.0,
+            hole=0.0,
+            max_gap_hole=0.0,
+            redundancy=0.0,
+            radius=0.0,
+            entropy=0.0,
+            teacher=0.0,
+            detector_utility=0.0,
+            start=0.0,
+            end=0.0,
+            context=0.0,
+            lagrangian_budget=0.0,
+            marginal_monotonic=0.0,
+            hard_budget_cap=0.0,
             transition=0.10,
             transition_boundary=16.0,
         ),
@@ -94,7 +118,11 @@ scheduler = dict(
 )
 
 
-solver = dict(static_graph=False, find_unused_parameters=True)
+solver = dict(
+    static_graph=False,
+    find_unused_parameters=True,
+    clip_grad_norm=-1.0,
+)
 
 
 # Frontend-only training freezes and skips the complete AdaTAD backbone.  Drop

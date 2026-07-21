@@ -20,6 +20,7 @@ def balanced_binary_actionness_loss(
     *,
     positive_prior: float = 0.5,
     max_positive_weight: float = 8.0,
+    reduction_mode: str = "posterior_bce",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if logits.shape != target.shape:
         raise ValueError("actionness logits and target must have identical [B,T] shape")
@@ -34,8 +35,36 @@ def balanced_binary_actionness_loss(
         raise ValueError("positive_prior must be a fixed finite value in (0,1)")
     if not math.isfinite(max_positive_weight) or max_positive_weight < 1.0:
         raise ValueError("max_positive_weight must be finite and at least one")
+    if reduction_mode not in {"posterior_bce", "class_balanced_mean"}:
+        raise ValueError(
+            "reduction_mode must be posterior_bce or class_balanced_mean"
+        )
     prior_odds = (1.0 - positive_prior) / positive_prior
     positive_weight = work.new_tensor(min(max(prior_odds, 1.0), max_positive_weight))
+    if reduction_mode == "class_balanced_mean":
+        per_element = F.binary_cross_entropy_with_logits(
+            work,
+            target,
+            reduction="none",
+        )
+        positive = valid & (target >= 0.5)
+        negative = valid & ~positive
+        class_terms = []
+        class_weights = []
+        if bool(positive.any().item()):
+            class_terms.append(per_element[positive].mean())
+            class_weights.append(positive_prior)
+        if bool(negative.any().item()):
+            class_terms.append(per_element[negative].mean())
+            class_weights.append(1.0 - positive_prior)
+        if not class_terms:
+            return work.sum() * 0.0, positive_weight
+        weight_total = sum(class_weights)
+        loss = sum(
+            term * (weight / weight_total)
+            for term, weight in zip(class_terms, class_weights)
+        )
+        return loss, positive_weight
     per_element = F.binary_cross_entropy_with_logits(
         work,
         target,
@@ -258,6 +287,7 @@ def transition_utility_paths(
     compute_auxiliary: bool = True,
     policy_hidden: Optional[torch.Tensor] = None,
     policy_hidden_gradient_scale: float = 0.0,
+    auxiliary_hidden_gradient_scale: float = 1.0,
     calibration_temperature: float = 1.0,
     calibration_bias: float = 0.0,
 ) -> Dict[str, torch.Tensor | str]:
@@ -266,6 +296,12 @@ def transition_utility_paths(
     policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
     if not math.isfinite(policy_hidden_gradient_scale) or not 0.0 <= policy_hidden_gradient_scale <= 1.0:
         raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
+    auxiliary_hidden_gradient_scale = float(auxiliary_hidden_gradient_scale)
+    if (
+        not math.isfinite(auxiliary_hidden_gradient_scale)
+        or not 0.0 <= auxiliary_hidden_gradient_scale <= 1.0
+    ):
+        raise ValueError("auxiliary_hidden_gradient_scale must lie in [0,1]")
     valid = _validate_temporal_inputs(actionness_logits, hidden, valid_mask)
     descriptors = build_transition_descriptors(
         actionness_logits.detach(),
@@ -300,8 +336,11 @@ def transition_utility_paths(
         policy_descriptor_source - policy_descriptor_source.detach()
     )
     policy_scores = scorer(policy_descriptors).masked_fill(~valid, 0.0)
+    auxiliary_descriptors = descriptors.detach() + auxiliary_hidden_gradient_scale * (
+        descriptors - descriptors.detach()
+    )
     auxiliary_scores = (
-        scorer(descriptors).masked_fill(~valid, 0.0)
+        scorer(auxiliary_descriptors).masked_fill(~valid, 0.0)
         if bool(compute_auxiliary)
         else policy_scores
     )
@@ -310,9 +349,11 @@ def transition_utility_paths(
     return {
         "transition_descriptors": descriptors,
         "policy_descriptors": policy_descriptors,
+        "auxiliary_descriptors": auxiliary_descriptors,
         "auxiliary_scores": auxiliary_scores,
         "policy_scores": policy_scores,
         "policy_hidden_gradient_scale": policy_hidden_gradient_scale,
+        "auxiliary_hidden_gradient_scale": auxiliary_hidden_gradient_scale,
         "hidden_kind": ASFORMER_ENCODER_HIDDEN_KIND,
     }
 

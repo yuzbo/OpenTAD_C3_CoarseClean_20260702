@@ -554,6 +554,78 @@ def test_duca_losses_expose_required_components() -> None:
     assert any(value.requires_grad for value in losses.values())
 
 
+def test_strict_duca_loss_contract_requires_complete_explicit_inventory() -> None:
+    from opentad.models.duca.acquisition import DUCA_LOSS_WEIGHT_DEFAULTS
+
+    scores = torch.zeros(1, 4)
+    selected = torch.tensor([[1.0, 0.0, 1.0, 0.0]])
+    incomplete = {key: 0.0 for key in DUCA_LOSS_WEIGHT_DEFAULTS}
+    incomplete.pop("teacher")
+
+    with pytest.raises(ValueError, match="requires every weight explicitly"):
+        duca_losses(
+            scores=scores,
+            selected_mask_st=selected,
+            budget=2,
+            loss_weights=incomplete,
+            strict_loss_contract=True,
+        )
+
+
+def test_strict_zero_weight_losses_have_fixed_inventory_and_no_graph() -> None:
+    from opentad.models.duca.acquisition import (
+        DUCA_LOSS_TO_WEIGHT_KEY,
+        DUCA_LOSS_WEIGHT_DEFAULTS,
+    )
+
+    scores = torch.zeros(1, 4, requires_grad=True)
+    selected = torch.tensor(
+        [[1.0, 0.0, 1.0, 0.0]], requires_grad=True
+    )
+    weights = {key: 0.0 for key in DUCA_LOSS_WEIGHT_DEFAULTS}
+    losses = duca_losses(
+        scores=scores,
+        selected_mask_st=selected,
+        budget=2,
+        detector_loss=scores.square().mean(),
+        action_target=torch.ones_like(scores),
+        actionness_logits=scores,
+        transition_target=torch.ones_like(scores),
+        loss_weights=weights,
+        strict_loss_contract=True,
+    )
+
+    assert set(losses) == set(DUCA_LOSS_TO_WEIGHT_KEY)
+    assert all(value.item() == pytest.approx(0.0) for value in losses.values())
+    assert all(not value.requires_grad for value in losses.values())
+
+
+def test_strict_actionness_only_loss_does_not_open_other_objective_graphs() -> None:
+    from opentad.models.duca.acquisition import DUCA_LOSS_WEIGHT_DEFAULTS
+
+    policy_scores = torch.zeros(1, 4, requires_grad=True)
+    actionness_logits = torch.zeros(1, 4, requires_grad=True)
+    selected = torch.tensor([[1.0, 0.0, 1.0, 0.0]])
+    weights = {key: 0.0 for key in DUCA_LOSS_WEIGHT_DEFAULTS}
+    weights["actionness"] = 1.0
+    losses = duca_losses(
+        scores=policy_scores,
+        selected_mask_st=selected,
+        budget=2,
+        action_target=torch.tensor([[1.0, 0.0, 1.0, 0.0]]),
+        actionness_logits=actionness_logits,
+        transition_target=torch.ones_like(policy_scores),
+        actionness_loss_mode="class_balanced_mean",
+        loss_weights=weights,
+        strict_loss_contract=True,
+    )
+
+    sum(losses.values()).backward()
+    assert actionness_logits.grad is not None
+    assert float(actionness_logits.grad.abs().sum()) > 0.0
+    assert policy_scores.grad is None
+
+
 def test_duca_loss_aggregation_counts_boundary_utility_gradient_once() -> None:
     scores = torch.tensor([[1.0, 0.5, -0.5, -1.0]], requires_grad=True)
     selected = torch.tensor([[0.7, 0.2, 0.1, 0.0]], requires_grad=True)

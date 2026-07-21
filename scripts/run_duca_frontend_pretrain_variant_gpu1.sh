@@ -60,6 +60,9 @@ SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
   || fail "exactly one Slurm-visible GPU is required"
 
 mkdir -p "${RUN_DIR}/quality" "${WORK_DIR}"
+"${PYTHON}" -m tools.bata.validate_duca_frontend_p0_contract \
+  --config "${CONFIG}" \
+  --output-json "${RUN_DIR}/p0_contract.json"
 "${PYTHON}" -m torch.distributed.run \
   --nproc_per_node=1 \
   --rdzv_backend=c10d \
@@ -135,13 +138,16 @@ done
 
 "${PYTHON}" - "${RUN_DIR}/completion.json" "${EXPECTED_COMMIT}" "${VARIANT}" \
   "${SPLIT_SHA256}" "${ACTION_WEIGHT}" "${TRANSITION_WEIGHT}" "${BOUNDARY_WEIGHT}" \
+  "${RUN_DIR}/p0_contract.json" \
   "${candidate_files[@]}" <<'PY'
+import hashlib
 import json
 import sys
 from pathlib import Path
 
-out, commit, variant, split_sha, action, transition, boundary, *candidate_paths = sys.argv[1:]
+out, commit, variant, split_sha, action, transition, boundary, contract_path, *candidate_paths = sys.argv[1:]
 candidates = [json.loads(Path(path).read_text(encoding="utf-8")) for path in candidate_paths]
+contract = Path(contract_path).resolve()
 payload = {
     "schema": "duca_frontend_variant_completion_v1",
     "ok": True,
@@ -154,6 +160,8 @@ payload = {
         "transition": float(transition),
         "transition_boundary": float(boundary),
     },
+    "p0_contract_path": str(contract),
+    "p0_contract_sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),
     "candidates": candidates,
 }
 Path(out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

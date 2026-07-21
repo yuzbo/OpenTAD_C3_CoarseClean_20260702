@@ -201,6 +201,34 @@ def test_two_stage_configs_freeze_only_the_declared_coarse_branch(
     assert frontend.optimizer.type == "AdamW"
     assert frontend.optimizer.paramwise is True
     assert "backbone" not in frontend.optimizer
+    assert frontend.solver.clip_grad_norm <= 0.0
+    assert frontend.model.frame_selector.strict_loss_contract is True
+    assert frontend.model.frame_selector.actionness_loss_mode == "class_balanced_mean"
+    assert frontend.model.frame_selector.auxiliary_hidden_gradient_scale == 0.0
+    assert frontend.model.frame_selector.actionness_source_cfg.spatial_norm == "groupnorm"
+    assert set(frontend.model.frame_selector.loss_weights) == {
+        "detector",
+        "actionness",
+        "budget",
+        "boundary",
+        "hole",
+        "max_gap_hole",
+        "redundancy",
+        "radius",
+        "entropy",
+        "teacher",
+        "detector_utility",
+        "start",
+        "end",
+        "context",
+        "lagrangian_budget",
+        "marginal_monotonic",
+        "hard_budget_cap",
+        "transition",
+        "transition_boundary",
+    }
+    assert frontend.model.frame_selector.loss_weights.detector == 0.0
+    assert frontend.model.frame_selector.loss_weights.actionness == 1.0
     assert frontend.model.frame_selector.loss_weight_schedule.transition.end == 0.10
     assert (
         frontend.model.frame_selector.loss_weight_schedule.transition_boundary.end

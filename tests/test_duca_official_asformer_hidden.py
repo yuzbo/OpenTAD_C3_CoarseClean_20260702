@@ -78,6 +78,7 @@ def _make_probe(
     *,
     policy_hidden_gradient_scope: str = "none",
     num_layers: int = 1,
+    spatial_norm: str = "batchnorm",
 ):
     source_path = tmp_path / "ASFormer" / "model.py"
     source_path.parent.mkdir(parents=True)
@@ -90,10 +91,38 @@ def _make_probe(
         hidden_dim=16,
         num_layers=num_layers,
         dropout=0.0,
+        spatial_norm=spatial_norm,
         hidden_output_kind=ASFORMER_ENCODER_HIDDEN_KIND,
         policy_hidden_gradient_scope=policy_hidden_gradient_scope,
     )
     return probe, source_path
+
+
+def test_groupnorm_spatial_stem_is_invariant_to_other_padded_batch_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe, _ = _make_probe(tmp_path, monkeypatch, spatial_norm="groupnorm")
+    probe.train()
+    first = torch.rand(1, 6, 3, 8, 8)
+    companion_a = torch.zeros(1, 6, 3, 8, 8)
+    companion_b = torch.full((1, 6, 3, 8, 8), 1.5)
+    valid = torch.tensor(
+        [[True, True, True, True, False, False], [True, False, False, False, False, False]]
+    )
+
+    torch.manual_seed(101)
+    output_a = probe(
+        torch.cat([first, companion_a], dim=0), valid, return_hidden=True
+    )
+    torch.manual_seed(101)
+    output_b = probe(
+        torch.cat([first, companion_b], dim=0), valid, return_hidden=True
+    )
+
+    assert output_a["spatial_norm"] == "groupnorm"
+    assert torch.allclose(output_a["logits"][0, :4], output_b["logits"][0, :4])
+    assert torch.allclose(output_a["hidden"][0, :4], output_b["hidden"][0, :4])
 
 
 def test_official_asformer_hidden_capture_preserves_logits_and_rng(

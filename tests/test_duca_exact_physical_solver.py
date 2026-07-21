@@ -10,12 +10,14 @@ from tools.bata.duca_allocation_families import (
     PhysicalAxis,
     physical_gap_report,
     resolve_physical_cap,
+    uniform_cell_bounds,
 )
 from tools.bata.duca_exact_physical_solver import (
     GroundTruthObjectiveSpec,
     quantize_scores,
     select_family_d,
     solve_additive_exact_k_physical,
+    solve_additive_one_per_cell_physical,
     solve_additive_unrestricted,
     solve_ground_truth_lexicographic,
 )
@@ -78,6 +80,36 @@ def test_additive_physical_dp_uses_lexicographic_tie_break() -> None:
         cap,
     )
     assert solved.positions == expected
+
+
+def test_additive_one_per_cell_dp_enforces_cell_and_physical_contracts() -> None:
+    axis = _axis(8)
+    budget = 4
+    cap = resolve_physical_cap(axis, requested_budget=budget)
+    _anchors, starts, ends = uniform_cell_bounds(axis.valid_len, budget)
+    cells = tuple(zip(starts, ends))
+    scores = [0.0, 9.0, 8.0, 0.0, 0.0, 1.0, 7.0, 0.0]
+    solved = solve_additive_one_per_cell_physical(
+        axis,
+        scores,
+        requested_budget=budget,
+        cap=cap,
+        one_per_cell_bounds=cells,
+    )
+    validate = physical_gap_report(axis, solved.positions)
+    assert validate.source_frame_max_interval <= cap.max_source_frame_interval + 1.0e-9
+    assert all(
+        sum(start <= position < end for position in solved.positions) == 1
+        for start, end in cells
+    )
+    feasible = []
+    for positions in combinations(range(axis.valid_len), budget):
+        if any(sum(start <= position < end for position in positions) != 1 for start, end in cells):
+            continue
+        report = physical_gap_report(axis, positions)
+        if report.source_frame_max_interval <= cap.max_source_frame_interval + 1.0e-9:
+            feasible.append((sum(scores[position] for position in positions), positions))
+    assert solved.positions == min(feasible, key=lambda item: (-item[0], item[1]))[1]
 
 
 def test_decimal_quantization_has_explicit_half_even_semantics() -> None:
@@ -177,6 +209,113 @@ def test_gt_milp_matches_exhaustive_lexicographic_objective() -> None:
             objective_spec=spec,
         )
         assert solved.positions == expected
+
+
+def test_gt_milp_one_per_cell_matches_exhaustive_local_oracle() -> None:
+    pytest.importorskip("scipy.optimize")
+    axis = PhysicalAxis.from_source_frames(
+        range(9),
+        decoder_fps=2.0,
+        annotation_fps=2.0,
+    )
+    budget = 4
+    cap = resolve_physical_cap(axis, requested_budget=budget)
+    spec = GroundTruthObjectiveSpec(
+        boundary_radii=(0, 1, 2),
+        short_action_max_length=3.0,
+        distance_scale=10,
+        lex_block_size=8,
+    )
+    segments = ((1.0, 2.0), (6.0, 7.0))
+    _anchors, starts, ends = uniform_cell_bounds(axis.valid_len, budget)
+    cell_bounds = tuple(zip(starts, ends))
+    feasible = []
+    for positions in combinations(range(axis.valid_len), budget):
+        if any(sum(start <= position < end for position in positions) != 1 for start, end in cell_bounds):
+            continue
+        report = physical_gap_report(axis, positions)
+        if report.source_frame_max_interval <= cap.max_source_frame_interval + 1.0e-9:
+            feasible.append((_gt_exhaustive_key(positions, segments, spec, axis.valid_len), positions))
+    expected = min(feasible)[1]
+    solved = solve_ground_truth_lexicographic(
+        axis,
+        segments,
+        requested_budget=budget,
+        cap=cap,
+        objective_spec=spec,
+        one_per_cell_bounds=cell_bounds,
+    )
+    assert solved.positions == expected
+    assert "_one_per_cell_" in solved.solver_identity
+    assert all(
+        sum(start <= position < end for position in solved.positions) == 1
+        for start, end in cell_bounds
+    )
+
+
+def test_gt_milp_semantic_optimum_without_position_tie_break_is_exact() -> None:
+    pytest.importorskip("scipy.optimize")
+    axis = PhysicalAxis.from_source_frames(
+        range(9),
+        decoder_fps=2.0,
+        annotation_fps=2.0,
+    )
+    budget = 4
+    cap = resolve_physical_cap(axis, requested_budget=budget)
+    spec = GroundTruthObjectiveSpec(
+        boundary_radii=(0, 1, 2),
+        short_action_max_length=3.0,
+        distance_scale=10,
+        lex_block_size=8,
+        position_tie_break=False,
+    )
+    segments = ((1.0, 2.0), (6.0, 7.0))
+    _anchors, starts, ends = uniform_cell_bounds(axis.valid_len, budget)
+    cell_bounds = tuple(zip(starts, ends))
+    feasible = []
+    for positions in combinations(range(axis.valid_len), budget):
+        if any(
+            sum(start <= position < end for position in positions) != 1
+            for start, end in cell_bounds
+        ):
+            continue
+        report = physical_gap_report(axis, positions)
+        if report.source_frame_max_interval <= cap.max_source_frame_interval + 1.0e-9:
+            feasible.append(
+                (_gt_exhaustive_key(positions, segments, spec, axis.valid_len), positions)
+            )
+    expected_semantic_key = min(feasible)[0][:-1]
+    solved = solve_ground_truth_lexicographic(
+        axis,
+        segments,
+        requested_budget=budget,
+        cap=cap,
+        objective_spec=spec,
+        one_per_cell_bounds=cell_bounds,
+    )
+    observed_semantic_key = _gt_exhaustive_key(
+        solved.positions,
+        segments,
+        spec,
+        axis.valid_len,
+    )[:-1]
+    assert observed_semantic_key == expected_semantic_key
+    assert solved.solver_identity.endswith("_semantic_optimum")
+    assert not any(key.startswith("lex_block_") for key in solved.objective_vector)
+
+
+def test_gt_milp_rejects_nonpartition_cell_bounds() -> None:
+    pytest.importorskip("scipy.optimize")
+    axis = _axis(8)
+    cap = resolve_physical_cap(axis, requested_budget=4)
+    with pytest.raises(AllocationContractError, match="contiguous partition"):
+        solve_ground_truth_lexicographic(
+            axis,
+            [(1.0, 2.0)],
+            requested_budget=4,
+            cap=cap,
+            one_per_cell_bounds=((0, 2), (3, 4), (4, 6), (6, 8)),
+        )
 
 
 def test_gt_milp_canonicalizes_tiny_integer_residuals(

@@ -2051,6 +2051,7 @@ class C3OfficialActionSegmentationProbe:
         hidden_dim: int = 96,
         num_layers: int = 2,
         dropout: float = 0.10,
+        spatial_norm: str = "batchnorm",
         hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
         policy_hidden_gradient_scope: str = "none",
     ) -> None:
@@ -2065,6 +2066,9 @@ class C3OfficialActionSegmentationProbe:
         self.spatial_size = int(spatial_size)
         self.hidden_dim = int(hidden_dim)
         self.num_layers = int(num_layers)
+        self.spatial_norm = str(spatial_norm).lower()
+        if self.spatial_norm not in {"batchnorm", "groupnorm"}:
+            raise ValueError("spatial_norm must be batchnorm or groupnorm")
         self.hidden_output_kind = str(hidden_output_kind)
         self.policy_hidden_gradient_scope = str(policy_hidden_gradient_scope)
         supported_hidden_kinds = {
@@ -2102,13 +2106,22 @@ class C3OfficialActionSegmentationProbe:
         }
 
         temporal_dim = max(16, int(hidden_dim))
+
+        def make_spatial_norm(channels: int):
+            if self.spatial_norm == "batchnorm":
+                return nn.BatchNorm2d(channels)
+            groups = min(8, int(channels))
+            while int(channels) % groups != 0:
+                groups -= 1
+            return nn.GroupNorm(groups, channels)
+
         self.module = nn.Module()
         self.spatial_stem = nn.Sequential(
             nn.Conv2d(3, temporal_dim, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(temporal_dim),
+            make_spatial_norm(temporal_dim),
             nn.SiLU(inplace=True),
             nn.Conv2d(temporal_dim, temporal_dim, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(temporal_dim),
+            make_spatial_norm(temporal_dim),
             nn.SiLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
         )
@@ -2379,6 +2392,7 @@ class C3OfficialActionSegmentationProbe:
             "hidden": hidden,
             "policy_hidden": policy_hidden,
             "policy_hidden_gradient_scope": self.policy_hidden_gradient_scope,
+            "spatial_norm": self.spatial_norm,
             "hidden_kind": hidden_kind,
             "official_source_sha256": self.official_source["source_sha256"],
             "official_source_normalized_lf_sha256": self.official_source["source_normalized_lf_sha256"],
