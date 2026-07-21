@@ -59,7 +59,6 @@ DUCA_TRAINING_AUDIT_FILENAME = "duca_selected_axis_training_audit.json"
 
 atomic_write_json = legacy.atomic_write_json
 build_checkpoint_metadata = legacy.build_checkpoint_metadata
-build_training_audit = legacy.build_training_audit
 capture_global_rng_state = legacy.capture_global_rng_state
 canonical_sha256 = legacy.canonical_sha256
 new_update_audit = legacy.new_update_audit
@@ -68,6 +67,44 @@ restore_training_state = legacy.restore_training_state
 selector_schedule_step = legacy.selector_schedule_step
 sha256_file = legacy.sha256_file
 validate_update_state = legacy.validate_update_state
+
+
+def build_training_audit(
+    *,
+    contract: Mapping[str, Any],
+    bindings: Mapping[str, Any],
+    epoch: int,
+    train_batches_per_epoch: int,
+    update_audit: Mapping[str, Any],
+    epoch_records: list[Mapping[str, Any]],
+    scheduler_last_epoch: int,
+    selector_step: int,
+    scaler_scale: float | None,
+    uses_ema: bool,
+    complete: bool,
+) -> dict[str, Any]:
+    if str(contract.get("formal_protocol", "")) != FORMAL_PROTOCOL:
+        raise RuntimeError("selected-axis training audit protocol is not frozen")
+    if str(contract.get("training_profile", "")) != "official60":
+        raise RuntimeError("selected-axis training audit profile is not official60")
+    payload = legacy.build_training_audit(
+        contract=contract,
+        bindings=bindings,
+        epoch=epoch,
+        train_batches_per_epoch=train_batches_per_epoch,
+        update_audit=update_audit,
+        epoch_records=epoch_records,
+        scheduler_last_epoch=scheduler_last_epoch,
+        selector_step=selector_step,
+        scaler_scale=scaler_scale,
+        uses_ema=uses_ema,
+        complete=complete,
+    )
+    payload.pop("audit_sha256", None)
+    payload["formal_protocol"] = FORMAL_PROTOCOL
+    payload["training_profile"] = "official60"
+    payload["audit_sha256"] = canonical_sha256(payload)
+    return payload
 
 
 def _validate_embedded_hash(

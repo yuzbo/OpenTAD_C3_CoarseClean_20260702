@@ -207,6 +207,9 @@ def aggregate(
             or audit_payload.get("git_commit") != expected_commit
             or audit_payload.get("variant") != variant
             or audit_payload.get("seed") != 3407
+            or audit_payload.get("formal_protocol")
+            != "duca_selected_axis_optimization_v1"
+            or audit_payload.get("training_profile") != "official60"
             or audit_payload.get("source_config_path") != str(config)
             or audit_payload.get("source_config_sha256") != sha256_file(config)
             or audit_payload.get("resolved_config_sha256")
@@ -238,6 +241,7 @@ def aggregate(
             or audit_payload.get("primary_checkpoint_epoch") != 59
             or audit_payload.get("primary_checkpoint_state_key")
             != "state_dict_ema"
+            or audit_payload.get("expected_train_batches_per_epoch") != 100
             or audit_payload.get("expected_successful_optimizer_updates") != 6000
             or audit_payload.get("last_completed_epoch") != 59
             or audit_payload.get("epochs_completed") != 60

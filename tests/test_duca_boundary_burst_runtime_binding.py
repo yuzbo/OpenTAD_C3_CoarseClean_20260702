@@ -293,10 +293,7 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
         "forced_amp_overflow_attempts": 0,
         "max_amp_retries_observed": 0,
     }
-    audit = {
-        "schema_version": training.DUCA_P0_TRAINING_AUDIT_SCHEMA,
-        "status": "complete",
-        **bindings,
+    contract = {
         "formal_protocol": training.FORMAL_PROTOCOL,
         "training_profile": "official60",
         "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
@@ -304,21 +301,23 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
         "primary_checkpoint_state_key": "state_dict_ema",
         "expected_train_batches_per_epoch": 100,
         "expected_successful_optimizer_updates": 6000,
-        "last_completed_epoch": 59,
-        "epochs_completed": 60,
-        "train_batches_per_epoch": 100,
-        "update_audit": counters,
-        "scheduler_last_epoch": 6000,
-        "selector_schedule_step": 6000,
-        "epoch_records": [{"epoch": index} for index in range(60)],
+        "max_amp_retries_per_batch": 3,
     }
-    audit["audit_sha256"] = training.canonical_sha256(audit)
+    audit = training.build_training_audit(
+        contract=contract,
+        bindings=bindings,
+        epoch=59,
+        train_batches_per_epoch=100,
+        update_audit=counters,
+        epoch_records=[{"epoch": index} for index in range(60)],
+        scheduler_last_epoch=6000,
+        selector_step=6000,
+        scaler_scale=32768.0,
+        uses_ema=True,
+        complete=True,
+    )
     _write_json(audit_path, audit)
-    metadata = {
-        "schema_version": training.DUCA_P0_CHECKPOINT_METADATA_SCHEMA,
-        "training_audit": audit,
-    }
-    metadata["metadata_sha256"] = training.canonical_sha256(metadata)
+    metadata = training.build_checkpoint_metadata(audit)
     sidecar = {
         "schema_version": training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA,
         "checkpoint_path": str(checkpoint.resolve()),

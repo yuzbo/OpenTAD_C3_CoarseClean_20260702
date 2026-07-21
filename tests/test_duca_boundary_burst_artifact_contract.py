@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools.bata import aggregate_duca_boundary_burst_results as aggregate_module
+from tools.bata import duca_selected_axis_training as selected_axis_training
 from tools.bata.create_duca_frontend_split import (
     create_split,
     validate_split_manifest,
@@ -272,9 +273,7 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
                 "thread": 16,
             }
         )
-        audit = {
-            "schema_version": "duca_p0_training_audit_v2",
-            "status": "complete",
+        bindings = {
             "git_commit": "a" * 40,
             "variant": variant,
             "seed": 3407,
@@ -290,30 +289,43 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             "evaluation_annotation_sha256": _sha256(annotation),
             "evaluation_class_map_path": str(class_map.resolve()),
             "evaluation_class_map_sha256": _sha256(class_map),
+        }
+        contract = {
+            "formal_protocol": selected_axis_training.FORMAL_PROTOCOL,
+            "training_profile": "official60",
             "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
             "primary_checkpoint_epoch": 59,
             "primary_checkpoint_state_key": "state_dict_ema",
+            "expected_train_batches_per_epoch": 100,
             "expected_successful_optimizer_updates": 6000,
-            "last_completed_epoch": 59,
-            "epochs_completed": 60,
-            "scheduler_last_epoch": 6000,
-            "selector_schedule_step": 6000,
-            "update_audit": {
-                "successful_optimizer_updates": 6000,
-                "scheduler_updates": 6000,
-                "ema_updates": 6000,
-                "duca_schedule_updates": 6000,
-                "replay_exhaustions": 0,
-            },
+            "max_amp_retries_per_batch": 3,
         }
-        audit["audit_sha256"] = canonical_sha256(audit)
+        counters = selected_axis_training.new_update_audit()
+        for key in (
+            "attempted_batches",
+            "optimizer_attempts",
+            "successful_optimizer_updates",
+            "scheduler_updates",
+            "ema_updates",
+            "duca_schedule_updates",
+        ):
+            counters[key] = 6000
+        audit = selected_axis_training.build_training_audit(
+            contract=contract,
+            bindings=bindings,
+            epoch=59,
+            train_batches_per_epoch=100,
+            update_audit=counters,
+            epoch_records=[{"epoch": epoch} for epoch in range(60)],
+            scheduler_last_epoch=6000,
+            selector_step=6000,
+            scaler_scale=32768.0,
+            uses_ema=True,
+            complete=True,
+        )
         audit_path = root / "duca_selected_axis_training_audit.json"
         _write_json(audit_path, audit)
-        metadata = {
-            "schema_version": "duca_p0_checkpoint_metadata_v2",
-            "training_audit": audit,
-        }
-        metadata["metadata_sha256"] = canonical_sha256(metadata)
+        metadata = selected_axis_training.build_checkpoint_metadata(audit)
         sidecar = {
             "schema_version": "duca_p0_checkpoint_sidecar_v2",
             "checkpoint_path": str(checkpoint.resolve()),
