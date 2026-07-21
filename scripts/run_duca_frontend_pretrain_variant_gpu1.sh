@@ -92,7 +92,7 @@ for item in "5:4" "10:9" "15:14" "20:19"; do
   candidate="${quality_dir}/candidate.json"
   [[ -f "${checkpoint}" ]] || fail "missing checkpoint ${checkpoint}"
   mkdir -p "${quality_dir}"
-  "${PYTHON}" tools/bata/export_duca_selection_quality.py \
+  "${PYTHON}" -m tools.bata.export_duca_selection_quality \
     --config "${QUALITY_CONFIG}" \
     --checkpoint "${checkpoint}" \
     --output-jsonl "${records}" \
@@ -102,7 +102,7 @@ for item in "5:4" "10:9" "15:14" "20:19"; do
     --use-ema true \
     --seed 3407 \
     2>&1 | tee "${quality_dir}/export.out"
-  "${PYTHON}" tools/bata/analyze_duca_selection_quality.py \
+  "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
     --records-jsonl "${records}" \
     --output-dir "${quality_dir}" \
     --bootstrap-samples 2000 \
