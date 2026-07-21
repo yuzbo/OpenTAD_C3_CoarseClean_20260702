@@ -32,13 +32,35 @@ case "${VARIANT}" in
     ACTION_HEAD_LR=2.0e-4
     TRANSITION_SCORER_LR=5.0e-5
     ;;
+  gaussian_matched)
+    CONFIG="configs/adatad/thumos/duca_gaussian_frontend_pretrain_matched_fixed384.py"
+    COARSE_TRUNK_LR=5.0e-5
+    ACTION_HEAD_LR=1.0e-4
+    TRANSITION_SCORER_LR=1.0e-4
+    ;;
+  burst_r2q3)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py"
+    COARSE_TRUNK_LR=5.0e-5
+    ACTION_HEAD_LR=1.0e-4
+    TRANSITION_SCORER_LR=1.0e-4
+    ;;
+  burst_r4q5)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py"
+    COARSE_TRUNK_LR=5.0e-5
+    ACTION_HEAD_LR=1.0e-4
+    TRANSITION_SCORER_LR=1.0e-4
+    ;;
   *)
     fail "unknown frontend learning-rate variant: ${VARIANT}"
     ;;
 esac
 ACTION_WEIGHT=1.0
 TRANSITION_WEIGHT=0.10
-BOUNDARY_WEIGHT=16.0
+if [[ "${VARIANT}" == gaussian_matched || "${VARIANT}" == burst_* ]]; then
+  BOUNDARY_WEIGHT=2.0
+else
+  BOUNDARY_WEIGHT=16.0
+fi
 
 QUALITY_CONFIG="configs/adatad/thumos/duca_frontend_holdout_quality_fixed384.py"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
@@ -94,6 +116,7 @@ for item in "5:4" "10:9" "15:14" "20:19"; do
   mkdir -p "${quality_dir}"
   "${PYTHON}" -m tools.bata.export_duca_selection_quality \
     --config "${QUALITY_CONFIG}" \
+    --selector-config "${CONFIG}" \
     --checkpoint "${checkpoint}" \
     --output-jsonl "${records}" \
     --summary-json "${export_summary}" \

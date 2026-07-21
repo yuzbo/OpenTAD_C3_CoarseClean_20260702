@@ -15,6 +15,8 @@ from opentad.models.duca.transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaTransitionUtilityScorer,
     balanced_binary_actionness_loss,
+    boundary_burst_coverage_loss,
+    build_boundary_burst_utility,
     build_transition_descriptors,
     calibrated_actionness_probability,
     continuous_policy_logits,
@@ -373,6 +375,108 @@ def test_local_boundary_mass_coverage_has_bounded_finite_long_window_gradients()
     assert logits.grad.abs().max() < 1.0
 
 
+def test_boundary_burst_utility_forms_a_symmetric_five_frame_microcluster() -> None:
+    center = torch.full((1, 11), -20.0)
+    center[0, 5] = 20.0
+    offsets = torch.zeros(1, 11, 5)
+    valid = torch.ones(1, 11, dtype=torch.bool)
+
+    output = build_boundary_burst_utility(
+        center,
+        offsets,
+        valid,
+        k=6,
+        radius=2,
+        quota=5.0,
+        boundary_budget_fraction=0.5,
+        context_weight=0.0,
+    )
+
+    burst = output["burst_utility"][0]
+    assert torch.allclose(burst[3:8], burst[3].expand(5), atol=1e-6)
+    assert float(burst[3]) > float(burst[2])
+    assert float(burst.max()) < 1.0
+    assert torch.allclose(
+        output["offset_probabilities"][0, 5],
+        torch.full((5,), 0.2),
+    )
+
+
+def test_boundary_burst_saturating_union_stays_bounded_for_overlapping_centers() -> None:
+    center = torch.full((1, 12), -20.0)
+    center[0, 5:7] = 20.0
+    output = build_boundary_burst_utility(
+        center,
+        torch.zeros(1, 12, 5),
+        torch.ones(1, 12, dtype=torch.bool),
+        k=6,
+        radius=2,
+        quota=5.0,
+        boundary_budget_fraction=0.5,
+        context_weight=0.0,
+    )
+
+    assert bool((output["burst_utility"] >= 0.0).all())
+    assert bool((output["burst_utility"] < 1.0).all())
+    assert output["burst_mass"][0, 5] > output["burst_mass"][0, 3]
+
+
+def test_boundary_burst_loss_prefers_complete_bilateral_quota() -> None:
+    target = torch.zeros(1, 9)
+    target[0, 4] = 1.0
+    valid = torch.ones(1, 9, dtype=torch.bool)
+    complete = torch.zeros(1, 9)
+    complete[0, 2:7] = 1.0
+    one_sided = torch.zeros(1, 9)
+    one_sided[0, 4:7] = 1.0
+    missing = torch.zeros(1, 9)
+
+    complete_loss, _ = boundary_burst_coverage_loss(
+        complete, target, valid, radius=2, quota=5.0
+    )
+    one_sided_loss, _ = boundary_burst_coverage_loss(
+        one_sided, target, valid, radius=2, quota=5.0
+    )
+    missing_loss, _ = boundary_burst_coverage_loss(
+        missing, target, valid, radius=2, quota=5.0
+    )
+
+    assert complete_loss < one_sided_loss < missing_loss
+
+
+def test_boundary_burst_fairness_penalizes_an_unserved_endpoint() -> None:
+    target = torch.zeros(1, 17)
+    target[0, [4, 12]] = 1.0
+    valid = torch.ones(1, 17, dtype=torch.bool)
+    balanced = torch.zeros(1, 17)
+    balanced[0, 2:7] = 1.0
+    balanced[0, 10:15] = 1.0
+    collapsed = torch.zeros(1, 17)
+    collapsed[0, 2:7] = 1.0
+
+    balanced_loss, balanced_parts = boundary_burst_coverage_loss(
+        balanced, target, valid, radius=2, quota=5.0
+    )
+    collapsed_loss, collapsed_parts = boundary_burst_coverage_loss(
+        collapsed, target, valid, radius=2, quota=5.0
+    )
+
+    assert balanced_loss < collapsed_loss
+    assert balanced_parts["fairness"] < collapsed_parts["fairness"]
+
+
+def test_boundary_burst_event_target_filters_cropped_boundaries_and_deduplicates() -> None:
+    target = DucaOnlineFrameSelector._transition_event_target_from_gt_segments(
+        [torch.tensor([[2.2, 7.2], [2.4, 7.1]])],
+        torch.ones(1, 10, dtype=torch.bool),
+        boundary_validity=[torch.tensor([[True, False], [True, True]])],
+    )
+
+    assert target is not None
+    assert torch.equal(torch.nonzero(target[0]).flatten(), torch.tensor([2, 7]))
+    assert target.sum().item() == pytest.approx(2.0)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA autocast regression")
 def test_local_boundary_mass_coverage_stays_fp32_under_autocast_and_scaled_backward() -> None:
     # GradScaler scales FP32 model parameters; using an FP16 leaf here makes any
@@ -439,6 +543,28 @@ def _transition_adapter() -> DucaAcquisitionAdapter:
     )
 
 
+def _boundary_burst_adapter() -> DucaAcquisitionAdapter:
+    return DucaAcquisitionAdapter(
+        feature_dim=3,
+        hidden_dim=8,
+        actionness_source=ZeroShotActionnessSource(mode="motion"),
+        budget=6,
+        budget_mode="fixed",
+        acquisition_policy="global_structured_topk",
+        structured_temperature=0.7,
+        selector_variant="transition_only",
+        transition_objective="boundary_burst",
+        boundary_burst_radius=2,
+        boundary_burst_quota=5.0,
+        boundary_burst_budget_fraction=0.5,
+        boundary_burst_context_weight=0.05,
+        coarse_hidden_dim=4,
+        require_coarse_hidden_features=True,
+        max_unselected_hole=2,
+        hard_max_gap_repair=False,
+    )
+
+
 def test_transition_adapter_removes_all_legacy_direct_heads() -> None:
     adapter = _transition_adapter()
 
@@ -490,6 +616,45 @@ def test_transition_adapter_exact_k_max_gap_and_protected_policy_gradients() -> 
         for param in adapter.transition_scorer.parameters()
         if param.grad is not None
     ) > 0.0
+
+
+def test_boundary_burst_adapter_keeps_exact_k_gap_and_trains_offset_head() -> None:
+    torch.manual_seed(23)
+    adapter = _boundary_burst_adapter()
+    adapter.train()
+    hidden = torch.randn(1, 12, 4, requires_grad=True)
+    logits = torch.randn(1, 12, requires_grad=True)
+    grid, scores = adapter.acquire(
+        torch.zeros(1, 12, 3),
+        valid_mask=torch.ones(1, 12, dtype=torch.bool),
+        actionness_logits=logits,
+        coarse_hidden_features=hidden,
+        coarse_hidden_kind=ASFORMER_ENCODER_HIDDEN_KIND,
+        policy_mix_alpha=1.0,
+    )
+
+    positions = grid.selected_positions[0]
+    holes = torch.tensor(
+        [
+            int(positions[0]),
+            *[int(right - left - 1) for left, right in zip(positions[:-1], positions[1:])],
+            12 - int(positions[-1]) - 1,
+        ]
+    )
+    assert positions.numel() == 6
+    assert int(holes.max()) <= 2
+    assert scores["transition_objective"] == "boundary_burst"
+    assert scores["burst_offset_logits"].shape == (1, 12, 5)
+    assert scores["transition_center_scores"].shape == (1, 12)
+    assert scores["center_scores"].shape == (1, 12)
+
+    scores["soft_coverage"].square().mean().backward()
+    assert _grad_sum(hidden) == pytest.approx(0.0)
+    assert _grad_sum(logits) == pytest.approx(0.0)
+    offset_head = adapter.transition_scorer.burst_offset_head
+    assert offset_head is not None
+    assert offset_head.weight.grad is not None
+    assert float(offset_head.weight.grad.abs().sum()) > 0.0
 
 
 def test_transition_adapter_fails_closed_on_spatial_stem_hidden() -> None:

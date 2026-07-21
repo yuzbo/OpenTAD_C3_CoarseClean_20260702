@@ -232,10 +232,20 @@ def _coarse_subgroup(name: str) -> str:
     return "coarse_other"
 
 
+def _transition_subgroup(name: str) -> str:
+    normalized = name.removeprefix("module.")
+    if ".transition_scorer.burst_offset_head." in normalized:
+        return "burst_offset_head"
+    if ".transition_scorer." in normalized:
+        return "transition_center_scorer"
+    return "not_transition_scorer"
+
+
 def _gradient_evidence(model: torch.nn.Module) -> dict[str, Any]:
     sums: dict[str, float] = {}
     names: dict[str, list[str]] = {}
     coarse_sums: dict[str, float] = {}
+    transition_sums: dict[str, float] = {}
     for name, parameter in model.named_parameters():
         if parameter.grad is None:
             continue
@@ -249,10 +259,14 @@ def _gradient_evidence(model: torch.nn.Module) -> dict[str, Any]:
         if group == "coarse_probe":
             subgroup = _coarse_subgroup(name)
             coarse_sums[subgroup] = coarse_sums.get(subgroup, 0.0) + value
+        elif group == "transition_scorer":
+            subgroup = _transition_subgroup(name)
+            transition_sums[subgroup] = transition_sums.get(subgroup, 0.0) + value
     return {
         "absolute_gradient_sum": sums,
         "nonzero_parameter_count": {key: len(value) for key, value in names.items()},
         "coarse_subgroup_absolute_gradient_sum": coarse_sums,
+        "transition_subgroup_absolute_gradient_sum": transition_sums,
         "representative_parameter": {
             key: value[0] for key, value in names.items() if value
         },
@@ -598,6 +612,18 @@ def run_gate(
         _validate_loss_inventory(transition_losses, selector)
         transition_sums = transition_gradients["absolute_gradient_sum"]
         _require(transition_sums.get("transition_scorer", 0.0) > 0.0, "transition objectives did not train scorer")
+        transition_subgroups = transition_gradients[
+            "transition_subgroup_absolute_gradient_sum"
+        ]
+        _require(
+            transition_subgroups.get("transition_center_scorer", 0.0) > 0.0,
+            "transition objectives did not train the center scorer",
+        )
+        if str(selector.transition_objective) == "boundary_burst":
+            _require(
+                transition_subgroups.get("burst_offset_head", 0.0) > 0.0,
+                "boundary-burst objectives did not train the offset head",
+            )
         _require(transition_sums.get("coarse_probe", 0.0) == 0.0, "transition objectives rewrote coarse probe")
         _require(transition_sums.get("detector", 0.0) == 0.0, "transition objectives reached detector")
     finally:

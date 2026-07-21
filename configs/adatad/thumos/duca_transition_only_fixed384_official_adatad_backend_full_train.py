@@ -133,6 +133,46 @@ duca_transition_only_contract = dict(
 )
 
 
+# Train-only boundary validity prevents random-window truncation edges from
+# becoming false transition supervision. Validation/test inference remains
+# label-free and keeps the inherited pipelines.
+dataset = dict(
+    train=dict(
+        pipeline=[
+            dict(type="PrepareVideoInfo", format="mp4"),
+            dict(type="mmaction.DecordInit", num_threads=4),
+            dict(
+                type="LoadFrames",
+                num_clips=1,
+                method="random_trunc",
+                trunc_len=dense_window_size,
+                trunc_thresh=0.75,
+                crop_ratio=[0.9, 1.0],
+                scale_factor=scale_factor,
+                emit_boundary_validity=True,
+            ),
+            dict(type="mmaction.DecordDecode"),
+            dict(type="mmaction.Resize", scale=(-1, 182)),
+            dict(type="mmaction.RandomResizedCrop"),
+            dict(type="mmaction.Resize", scale=(160, 160), keep_ratio=False),
+            dict(type="mmaction.Flip", flip_ratio=0.5),
+            dict(type="mmaction.ImgAug", transforms="default"),
+            dict(type="mmaction.ColorJitter"),
+            dict(type="mmaction.FormatShape", input_format="NCTHW"),
+            dict(
+                type="ConvertToTensor",
+                keys=["imgs", "gt_segments", "gt_labels", "gt_boundary_validity"],
+            ),
+            dict(
+                type="Collect",
+                inputs="imgs",
+                keys=["masks", "gt_segments", "gt_labels", "gt_boundary_validity"],
+            ),
+        ],
+    ),
+)
+
+
 model = dict(
     frame_selector=dict(
         _delete_=True,

@@ -27,6 +27,7 @@ class SlidingWindowDataset:
         window_size=-1,  # the number of features in a window
         window_overlap_ratio=0.25,  # the overlap ratio of two adjacent windows
         ioa_thresh=0.75,  # the threshold of the completeness of the gt inside the window
+        include_background_windows=False,
         fps=-1,  # some annotations are based on video-seconds
         logger=None,
     ):
@@ -55,6 +56,7 @@ class SlidingWindowDataset:
         self.window_size = int(window_size)
         self.window_stride = int(window_size * (1 - window_overlap_ratio))
         self.ioa_thresh = ioa_thresh
+        self.include_background_windows = bool(include_background_windows)
 
         self.get_dataset()
         self.logger(
@@ -139,6 +141,18 @@ class SlidingWindowDataset:
                             video_name,
                             video_info,
                             window_anno,
+                            window_snippet_centers,
+                        ]
+                    )
+                elif self.include_background_windows:
+                    data_list.append(
+                        [
+                            video_name,
+                            video_info,
+                            dict(
+                                gt_segments=np.empty((0, 2), dtype=np.float32),
+                                gt_labels=np.empty((0,), dtype=gt_labels.dtype),
+                            ),
                             window_snippet_centers,
                         ]
                     )

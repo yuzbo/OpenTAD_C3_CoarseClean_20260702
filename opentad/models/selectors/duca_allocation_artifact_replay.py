@@ -10,6 +10,7 @@ import torch
 
 from ..builder import SELECTORS
 from .duca_online_frame_selector import DucaOnlineFrameSelector
+from ..utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS
 
 
 @SELECTORS.register_module()
@@ -89,6 +90,21 @@ class DucaAllocationArtifactReplaySelector(DucaOnlineFrameSelector):
             selected_rows.append(positions)
             effective_budgets.append(len(positions))
             meta = dict(source_meta)
+            selected_axis = self.detector_output_coordinate_space == SELECTED_AXIS
+            remap = {
+                "source": SELECTED_AXIS,
+                "target": TRUE_TIME_AXIS,
+                "selected_to_original": {
+                    int(axis): int(position)
+                    for axis, position in enumerate(positions)
+                },
+                "original_to_selected": {
+                    int(position): int(axis)
+                    for axis, position in enumerate(positions)
+                },
+                "selected_axis_to_true_time_dense_index": list(positions),
+                "acquisition_positions": list(positions),
+            }
             meta.update(
                 {
                     "irregular_selected_positions": list(positions),
@@ -98,11 +114,21 @@ class DucaAllocationArtifactReplaySelector(DucaOnlineFrameSelector):
                     "irregular_selected_valid_len": len(positions),
                     "irregular_dense_valid_len": valid_len,
                     "irregular_native_axis": True,
-                    "remap_gt_to_selected_axis": False,
+                    "remap_gt_to_selected_axis": bool(selected_axis),
                     "gt_remapped_to_selected_axis": False,
-                    "pc_ot_mras_prebackbone_remap_gt_to_selected_axis": False,
-                    "detector_output_coordinate_space": "true_time_dense_index",
-                    "detector_prediction_inverse_map_required": False,
+                    "pc_ot_mras_prebackbone_remap_gt_to_selected_axis": bool(
+                        selected_axis
+                    ),
+                    "detector_output_coordinate_space": self.detector_output_coordinate_space,
+                    "detector_prediction_inverse_map_required": bool(selected_axis),
+                    "selected_axis_to_true_time_dense_index": list(positions),
+                    "truetime_selected_positions": list(positions),
+                    "truetime_dense_len": int(
+                        inputs.shape[2 if inputs.ndim in (3, 5) else 3]
+                    ),
+                    "truetime_dense_valid_len": valid_len,
+                    "duca_online_selected_positions": list(positions),
+                    "duca_online_selected_axis_remap": remap,
                     "allocation_replay_family_key": self.family_key,
                     "allocation_replay_artifact_sha256": self.artifact_sha256,
                     "allocation_replay_privileged": bool(row["privileged"]),
@@ -130,6 +156,7 @@ class DucaAllocationArtifactReplaySelector(DucaOnlineFrameSelector):
             "artifact_sha256": self.artifact_sha256,
             "effective_budget": effective_budgets,
             "uses_gt_at_runtime": False,
+            "detector_output_coordinate_space": self.detector_output_coordinate_space,
             "paper_deployable": False,
         }
         return {

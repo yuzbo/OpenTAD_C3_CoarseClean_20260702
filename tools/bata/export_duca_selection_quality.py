@@ -155,6 +155,7 @@ def _records_from_batch(
 def export_records(
     *,
     config: str | Path,
+    selector_config: str | Path | None = None,
     checkpoint: str | Path,
     output_jsonl: str | Path,
     summary_json: str | Path,
@@ -182,6 +183,11 @@ def export_records(
     torch.backends.cudnn.benchmark = False
 
     config_path = Path(config).expanduser().resolve()
+    selector_config_path = (
+        config_path
+        if selector_config is None
+        else Path(selector_config).expanduser().resolve()
+    )
     checkpoint_path = Path(checkpoint).expanduser().resolve()
     output_path = Path(output_jsonl).expanduser().resolve()
     summary_path = Path(summary_json).expanduser().resolve()
@@ -189,6 +195,11 @@ def export_records(
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     repo_root = _find_git_root(config_path.parent) or Path.cwd().resolve()
     cfg = Config.fromfile(str(config_path))
+    selector_cfg = (
+        cfg
+        if selector_config_path == config_path
+        else Config.fromfile(str(selector_config_path))
+    )
     if split not in cfg.dataset or split not in cfg.solver:
         raise ValueError(f"config must define dataset.{split} and solver.{split}")
     dataset = build_dataset(cfg.dataset[split], default_args=dict(logger=None))
@@ -205,7 +216,7 @@ def export_records(
         drop_last=False,
         **loader_cfg,
     )
-    selector = build_selector(cfg.model.frame_selector)
+    selector = build_selector(selector_cfg.model.frame_selector)
     checkpoint_payload = torch.load(str(checkpoint_path), map_location="cpu")
     if not isinstance(checkpoint_payload, Mapping):
         raise ValueError("checkpoint must be a mapping")
@@ -221,6 +232,7 @@ def export_records(
     selector = selector.to(torch_device).eval()
     source = {
         "config": str(config_path),
+        "selector_config": str(selector_config_path),
         "checkpoint": str(checkpoint_path),
         "checkpoint_sha256": _sha256(checkpoint_path),
         "checkpoint_state_key": state_key,
@@ -281,6 +293,10 @@ def export_records(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export DUCA selector quality records from a real checkpoint.")
     parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--selector-config",
+        help="optional model config; dataset/loader still come from --config",
+    )
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output-jsonl", required=True)
     parser.add_argument("--summary-json", required=True)
@@ -295,6 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     summary = export_records(
         config=args.config,
+        selector_config=args.selector_config,
         checkpoint=args.checkpoint,
         output_jsonl=args.output_jsonl,
         summary_json=args.summary_json,

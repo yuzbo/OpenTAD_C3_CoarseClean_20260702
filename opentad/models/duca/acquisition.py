@@ -27,6 +27,8 @@ from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaTransitionUtilityScorer,
     balanced_binary_actionness_loss,
+    boundary_burst_coverage_loss,
+    build_boundary_burst_utility,
     continuous_policy_logits,
     local_boundary_coverage_loss,
     local_boundary_mass_coverage_loss,
@@ -1099,6 +1101,13 @@ class DucaAcquisitionAdapter(nn.Module):
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
         selector_variant: str = "direct_boundary",
+        transition_objective: str = "gaussian_mass",
+        boundary_burst_radius: int = 2,
+        boundary_burst_quota: float = 5.0,
+        boundary_burst_budget_fraction: float = 0.25,
+        boundary_burst_context_weight: float = 0.05,
+        boundary_burst_center_temperature: float = 0.7,
+        boundary_burst_offset_temperature: float = 1.0,
         coarse_hidden_dim: Optional[int] = None,
         require_coarse_hidden_features: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
@@ -1170,6 +1179,29 @@ class DucaAcquisitionAdapter(nn.Module):
         self.selector_variant = str(selector_variant)
         if self.selector_variant not in {"direct_boundary", "transition_only"}:
             raise ValueError("selector_variant must be direct_boundary or transition_only")
+        self.transition_objective = str(transition_objective)
+        if self.transition_objective not in {"gaussian_mass", "boundary_burst"}:
+            raise ValueError("transition_objective must be gaussian_mass or boundary_burst")
+        self.boundary_burst_radius = int(boundary_burst_radius)
+        self.boundary_burst_quota = float(boundary_burst_quota)
+        self.boundary_burst_budget_fraction = float(boundary_burst_budget_fraction)
+        self.boundary_burst_context_weight = float(boundary_burst_context_weight)
+        self.boundary_burst_center_temperature = float(boundary_burst_center_temperature)
+        self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
+        if self.transition_objective == "boundary_burst":
+            if self.selector_variant != "transition_only":
+                raise ValueError("boundary_burst is restricted to transition_only")
+            if self.boundary_burst_radius <= 0 or self.boundary_burst_quota <= 0.0:
+                raise ValueError("boundary burst radius/quota must be positive")
+            if not 0.0 < self.boundary_burst_budget_fraction <= 1.0:
+                raise ValueError("boundary burst budget fraction must lie in (0,1]")
+            if self.boundary_burst_context_weight < 0.0:
+                raise ValueError("boundary burst context weight must be non-negative")
+            if min(
+                self.boundary_burst_center_temperature,
+                self.boundary_burst_offset_temperature,
+            ) <= 0.0:
+                raise ValueError("boundary burst temperatures must be positive")
         self.coarse_hidden_dim = 0 if coarse_hidden_dim in (None, 0) else int(coarse_hidden_dim)
         if self.coarse_hidden_dim < 0:
             raise ValueError("coarse_hidden_dim must be non-negative")
@@ -1221,6 +1253,11 @@ class DucaAcquisitionAdapter(nn.Module):
                 hidden_dim=self.coarse_hidden_dim,
                 scorer_hidden_dim=int(hidden_dim),
                 zero_init_output=self.acquisition_policy == "local_cell_deformation",
+                burst_radius=(
+                    self.boundary_burst_radius
+                    if self.transition_objective == "boundary_burst"
+                    else 0
+                ),
             )
             selector_feature_dim = int(self.transition_scorer.input_dim)
         elif self.feature_dim is None:
@@ -1615,7 +1652,27 @@ class DucaAcquisitionAdapter(nn.Module):
                 policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
                 auxiliary_hidden_gradient_scale=self.auxiliary_hidden_gradient_scale,
             )
-            center_scores = transition_paths["policy_scores"]
+            transition_center_scores = transition_paths["policy_scores"]
+            burst_outputs = None
+            if self.transition_objective == "boundary_burst":
+                offset_logits = transition_paths.get("policy_offset_logits")
+                if offset_logits is None:
+                    raise RuntimeError("boundary_burst requires burst offset logits")
+                burst_outputs = build_boundary_burst_utility(
+                    transition_center_scores,
+                    offset_logits,
+                    valid,
+                    k=self.budget,
+                    radius=self.boundary_burst_radius,
+                    quota=self.boundary_burst_quota,
+                    boundary_budget_fraction=self.boundary_burst_budget_fraction,
+                    context_weight=self.boundary_burst_context_weight,
+                    center_temperature=self.boundary_burst_center_temperature,
+                    offset_temperature=self.boundary_burst_offset_temperature,
+                )
+                center_scores = burst_outputs["policy_utility"]
+            else:
+                center_scores = transition_center_scores
             selection_features = transition_paths["transition_descriptors"]
             radius = center_scores.new_zeros(center_scores.shape)
             start_logits = center_scores.new_zeros(center_scores.shape)
@@ -1698,6 +1755,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "uses_coarse_hidden_features": bool(has_coarse_hidden_features),
             "coarse_hidden_kind": coarse_hidden_kind,
             "selector_variant": self.selector_variant,
+            "transition_objective": self.transition_objective,
             "valid_mask": valid,
             "provenance": source["provenance"],
         }
@@ -1707,12 +1765,33 @@ class DucaAcquisitionAdapter(nn.Module):
                     "transition_descriptors": transition_paths["transition_descriptors"],
                     "transition_auxiliary_scores": transition_paths["auxiliary_scores"],
                     "transition_policy_scores": transition_paths["policy_scores"],
+                    "transition_center_scores": transition_paths["policy_scores"],
                     "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
                     "uses_absolute_hidden_features": False,
                     "uses_raw_rgb_descriptors": False,
                     "legacy_direct_heads_enabled": False,
                 }
             )
+            if transition_paths.get("policy_offset_logits") is not None:
+                output["burst_offset_logits"] = transition_paths[
+                    "policy_offset_logits"
+                ]
+            if burst_outputs is not None:
+                output.update(
+                    {
+                        "boundary_burst_mass": burst_outputs["burst_mass"],
+                        "boundary_burst_utility": burst_outputs["burst_utility"],
+                        "boundary_burst_center_probabilities": burst_outputs[
+                            "center_probabilities"
+                        ],
+                        "boundary_burst_offset_probabilities": burst_outputs[
+                            "offset_probabilities"
+                        ],
+                        "boundary_burst_context_reference": burst_outputs[
+                            "context_reference"
+                        ],
+                    }
+                )
         return output
 
     def _decode_global_structured(
@@ -2914,6 +2993,14 @@ def duca_losses(
     max_gap_loss_source: str = "soft_coverage",
     transition_boundary_radius: int = 4,
     transition_distribution_temperature: float = 0.7,
+    transition_objective: str = "gaussian_mass",
+    boundary_burst_quota: float = 5.0,
+    boundary_burst_side_min_mass: float = 1.0,
+    boundary_burst_anchor_weight: float = 1.0,
+    boundary_burst_bilateral_weight: float = 1.0,
+    boundary_burst_quota_weight: float = 1.0,
+    boundary_burst_fairness_weight: float = 0.5,
+    boundary_burst_overfill_weight: float = 0.25,
     actionness_loss_mode: str = "posterior_bce",
     loss_weights: Optional[Mapping[str, float]] = None,
     strict_loss_contract: bool = False,
@@ -3104,15 +3191,39 @@ def duca_losses(
         soft_occupancy = scores.get("soft_coverage")
         if soft_occupancy is None or soft_occupancy.shape != center_scores.shape:
             raise ValueError("transition boundary coverage requires aligned structured soft_coverage")
-        losses["transition_boundary_coverage_loss"] = (
-            local_boundary_mass_coverage_loss(
+        if str(transition_objective) == "boundary_burst":
+            burst_loss, burst_components = boundary_burst_coverage_loss(
                 soft_occupancy,
                 transition_target,
                 valid,
                 radius=int(transition_boundary_radius),
+                quota=float(boundary_burst_quota),
+                side_min_mass=float(boundary_burst_side_min_mass),
+                anchor_weight=float(boundary_burst_anchor_weight),
+                bilateral_weight=float(boundary_burst_bilateral_weight),
+                quota_weight=float(boundary_burst_quota_weight),
+                fairness_weight=float(boundary_burst_fairness_weight),
+                overfill_weight=float(boundary_burst_overfill_weight),
             )
-            * weights["transition_boundary"]
-        )
+            losses["transition_boundary_coverage_loss"] = (
+                burst_loss * weights["transition_boundary"]
+            )
+            if isinstance(scores, dict):
+                scores["boundary_burst_loss_components"] = burst_components
+        elif str(transition_objective) == "gaussian_mass":
+            losses["transition_boundary_coverage_loss"] = (
+                local_boundary_mass_coverage_loss(
+                    soft_occupancy,
+                    transition_target,
+                    valid,
+                    radius=int(transition_boundary_radius),
+                )
+                * weights["transition_boundary"]
+            )
+        else:
+            raise ValueError(
+                "transition_objective must be gaussian_mass or boundary_burst"
+            )
     if boundary_target is not None and weights["boundary"] != 0.0:
         if boundary_target.shape != center_scores.shape:
             raise ValueError("boundary_target must match scores")

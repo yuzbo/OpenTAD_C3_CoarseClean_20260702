@@ -517,6 +517,18 @@ class DucaOnlineFrameSelector(nn.Module):
         transition_target_radius: int = 4,
         transition_boundary_radius: int = 4,
         transition_distribution_temperature: float = 0.7,
+        transition_objective: str = "gaussian_mass",
+        boundary_burst_quota: float = 5.0,
+        boundary_burst_budget_fraction: float = 0.25,
+        boundary_burst_context_weight: float = 0.05,
+        boundary_burst_center_temperature: float = 0.7,
+        boundary_burst_offset_temperature: float = 1.0,
+        boundary_burst_side_min_mass: float = 1.0,
+        boundary_burst_anchor_weight: float = 1.0,
+        boundary_burst_bilateral_weight: float = 1.0,
+        boundary_burst_quota_weight: float = 1.0,
+        boundary_burst_fairness_weight: float = 0.5,
+        boundary_burst_overfill_weight: float = 0.25,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
         counterfactual_utility_distillation_weight: float = 0.0,
@@ -645,12 +657,38 @@ class DucaOnlineFrameSelector(nn.Module):
         self.transition_target_radius = int(transition_target_radius)
         self.transition_boundary_radius = int(transition_boundary_radius)
         self.transition_distribution_temperature = float(transition_distribution_temperature)
+        self.transition_objective = str(transition_objective)
+        self.boundary_burst_quota = float(boundary_burst_quota)
+        self.boundary_burst_budget_fraction = float(boundary_burst_budget_fraction)
+        self.boundary_burst_context_weight = float(boundary_burst_context_weight)
+        self.boundary_burst_center_temperature = float(boundary_burst_center_temperature)
+        self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
+        self.boundary_burst_side_min_mass = float(boundary_burst_side_min_mass)
+        self.boundary_burst_anchor_weight = float(boundary_burst_anchor_weight)
+        self.boundary_burst_bilateral_weight = float(boundary_burst_bilateral_weight)
+        self.boundary_burst_quota_weight = float(boundary_burst_quota_weight)
+        self.boundary_burst_fairness_weight = float(boundary_burst_fairness_weight)
+        self.boundary_burst_overfill_weight = float(boundary_burst_overfill_weight)
         if self.transition_target_sigma <= 0.0:
             raise ValueError("transition_target_sigma must be positive")
         if self.transition_distribution_temperature <= 0.0:
             raise ValueError("transition_distribution_temperature must be positive")
         if self.transition_target_radius < 0 or self.transition_boundary_radius < 0:
             raise ValueError("transition target/coverage radii must be non-negative")
+        if self.transition_objective not in {"gaussian_mass", "boundary_burst"}:
+            raise ValueError("transition_objective must be gaussian_mass or boundary_burst")
+        if self.transition_objective == "boundary_burst":
+            if self.selector_variant != "transition_only":
+                raise ValueError("boundary_burst requires transition_only")
+            if self.transition_boundary_radius <= 0 or self.boundary_burst_quota <= 0.0:
+                raise ValueError("boundary burst radius/quota must be positive")
+            if not 0.0 < self.boundary_burst_budget_fraction <= 1.0:
+                raise ValueError("boundary burst budget fraction must lie in (0,1]")
+            if min(
+                self.boundary_burst_center_temperature,
+                self.boundary_burst_offset_temperature,
+            ) <= 0.0:
+                raise ValueError("boundary burst temperatures must be positive")
         self.detector_gradient_mode = str(detector_gradient_mode)
         self.counterfactual_utility_distillation_weight = float(counterfactual_utility_distillation_weight)
         self.counterfactual_utility_temperature = float(counterfactual_utility_temperature)
@@ -890,6 +928,13 @@ class DucaOnlineFrameSelector(nn.Module):
             utility_weight=self.utility_weight,
             boundary_weight=self.boundary_weight,
             selector_variant=self.selector_variant,
+            transition_objective=self.transition_objective,
+            boundary_burst_radius=self.transition_boundary_radius,
+            boundary_burst_quota=self.boundary_burst_quota,
+            boundary_burst_budget_fraction=self.boundary_burst_budget_fraction,
+            boundary_burst_context_weight=self.boundary_burst_context_weight,
+            boundary_burst_center_temperature=self.boundary_burst_center_temperature,
+            boundary_burst_offset_temperature=self.boundary_burst_offset_temperature,
             coarse_hidden_dim=self.coarse_hidden_dim if self.use_coarse_hidden_features else 0,
             require_coarse_hidden_features=bool(
                 self.use_coarse_hidden_features
@@ -988,6 +1033,7 @@ class DucaOnlineFrameSelector(nn.Module):
         metas,
         gt_segments=None,
         gt_labels=None,
+        gt_boundary_validity=None,
         teacher_utility: Optional[torch.Tensor] = None,
         budget=None,
         **kwargs: Any,
@@ -998,12 +1044,20 @@ class DucaOnlineFrameSelector(nn.Module):
         transition_target = None
         if self.selector_variant == "transition_only":
             start_target = end_target = context_target = None
-            transition_target = self._transition_target_from_gt_segments(
-                gt_segments,
-                masks,
-                sigma=self.transition_target_sigma,
-                truncate_radius=self.transition_target_radius,
-            )
+            if self.transition_objective == "boundary_burst":
+                transition_target = self._transition_event_target_from_gt_segments(
+                    gt_segments,
+                    masks,
+                    boundary_validity=gt_boundary_validity,
+                )
+            else:
+                transition_target = self._transition_target_from_gt_segments(
+                    gt_segments,
+                    masks,
+                    sigma=self.transition_target_sigma,
+                    truncate_radius=self.transition_target_radius,
+                    boundary_validity=gt_boundary_validity,
+                )
             boundary_target = transition_target
             boundary_utility_proxy_target = None
         else:
@@ -1050,7 +1104,9 @@ class DucaOnlineFrameSelector(nn.Module):
             if self.selector_variant == "transition_only":
                 outputs["selector_outputs"]["transition_target"] = transition_target
                 outputs["selector_outputs"]["transition_target_kind"] = (
-                    "equal_mass_fixed_sigma_truncated_start_end_gaussians"
+                    "deduplicated_valid_floor_start_ceil_end_minus_one_events"
+                    if self.transition_objective == "boundary_burst"
+                    else "equal_mass_fixed_sigma_truncated_start_end_gaussians"
                 )
             else:
                 outputs["selector_outputs"]["start_target"] = start_target
@@ -1083,6 +1139,14 @@ class DucaOnlineFrameSelector(nn.Module):
             boundary_utility_proxy_target=boundary_utility_proxy_target,
             transition_boundary_radius=self.transition_boundary_radius,
             transition_distribution_temperature=self.transition_distribution_temperature,
+            transition_objective=self.transition_objective,
+            boundary_burst_quota=self.boundary_burst_quota,
+            boundary_burst_side_min_mass=self.boundary_burst_side_min_mass,
+            boundary_burst_anchor_weight=self.boundary_burst_anchor_weight,
+            boundary_burst_bilateral_weight=self.boundary_burst_bilateral_weight,
+            boundary_burst_quota_weight=self.boundary_burst_quota_weight,
+            boundary_burst_fairness_weight=self.boundary_burst_fairness_weight,
+            boundary_burst_overfill_weight=self.boundary_burst_overfill_weight,
             max_unselected_hole=(
                 self.max_gap_loss_max_unselected_hole if self.soft_max_gap_loss_enabled else 0
             ),
@@ -1602,6 +1666,7 @@ class DucaOnlineFrameSelector(nn.Module):
         *,
         sigma: float,
         truncate_radius: int,
+        boundary_validity=None,
     ) -> Optional[torch.Tensor]:
         if gt_segments is None:
             return None
@@ -1610,6 +1675,8 @@ class DucaOnlineFrameSelector(nn.Module):
         batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
         if len(gt_segments) != batch:
             raise ValueError("gt_segments length must match batch size for transition targets")
+        if boundary_validity is not None and len(boundary_validity) != batch:
+            raise ValueError("gt_boundary_validity batch must match transition targets")
         sigma = float(sigma)
         truncate_radius = int(truncate_radius)
         if sigma <= 0.0 or truncate_radius < 0:
@@ -1625,10 +1692,23 @@ class DucaOnlineFrameSelector(nn.Module):
             seg = seg.to(device=device, dtype=torch.float32).reshape(-1, 2)
             if seg.numel() == 0:
                 continue
-            endpoints = torch.stack(
+            endpoint_matrix = torch.stack(
                 (torch.minimum(seg[:, 0], seg[:, 1]), torch.maximum(seg[:, 0], seg[:, 1])),
                 dim=1,
-            ).reshape(-1)
+            )
+            if boundary_validity is None:
+                endpoint_validity = torch.ones_like(endpoint_matrix, dtype=torch.bool)
+            else:
+                endpoint_validity = torch.as_tensor(
+                    boundary_validity[batch_idx],
+                    device=device,
+                    dtype=torch.bool,
+                ).reshape(-1, 2)
+                if endpoint_validity.shape != endpoint_matrix.shape:
+                    raise ValueError("gt_boundary_validity must align with GT segments")
+            endpoints = endpoint_matrix[endpoint_validity]
+            if endpoints.numel() == 0:
+                continue
             row_valid = valid[batch_idx].to(dtype=torch.float32)
             endpoint_mass = 1.0 / float(endpoints.numel())
             for endpoint in endpoints:
@@ -1638,6 +1718,56 @@ class DucaOnlineFrameSelector(nn.Module):
                 kernel_mass = kernel.sum()
                 if float(kernel_mass.detach().item()) > 0.0:
                     target[batch_idx] += endpoint_mass * kernel / kernel_mass
+        return target.masked_fill(~valid, 0.0)
+
+    @staticmethod
+    def _transition_event_target_from_gt_segments(
+        gt_segments,
+        masks: torch.Tensor,
+        *,
+        boundary_validity=None,
+    ) -> Optional[torch.Tensor]:
+        """Build exact Oracle-compatible start/end events for burst supervision."""
+
+        if gt_segments is None:
+            return None
+        if masks.ndim != 2:
+            raise ValueError("DUCA transition events expect dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match transition events")
+        if boundary_validity is not None and len(boundary_validity) != batch:
+            raise ValueError("gt_boundary_validity batch must match transition events")
+        device = masks.device
+        valid = masks.to(device=device, dtype=torch.bool)
+        target = torch.zeros(batch, temporal_len, device=device, dtype=torch.float32)
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            row = torch.as_tensor(
+                segments,
+                device=device,
+                dtype=torch.float32,
+            ).reshape(-1, 2)
+            if row.numel() == 0:
+                continue
+            starts = torch.minimum(row[:, 0], row[:, 1]).floor().long()
+            ends = torch.maximum(row[:, 0], row[:, 1]).ceil().long() - 1
+            endpoints = torch.stack((starts, ends), dim=1)
+            if boundary_validity is None:
+                endpoint_validity = torch.ones_like(endpoints, dtype=torch.bool)
+            else:
+                endpoint_validity = torch.as_tensor(
+                    boundary_validity[batch_idx],
+                    device=device,
+                    dtype=torch.bool,
+                ).reshape(-1, 2)
+                if endpoint_validity.shape != endpoints.shape:
+                    raise ValueError("gt_boundary_validity must align with GT segments")
+            for endpoint in endpoints[endpoint_validity].tolist():
+                endpoint = int(endpoint)
+                if 0 <= endpoint < temporal_len and bool(valid[batch_idx, endpoint].item()):
+                    target[batch_idx, endpoint] = 1.0
         return target.masked_fill(~valid, 0.0)
 
     @staticmethod

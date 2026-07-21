@@ -13,6 +13,7 @@ from typing import Any, Iterable, Mapping, Sequence
 RECORD_SCHEMA_VERSION = "duca_selection_quality_record_v2"
 SUMMARY_SCHEMA_VERSION = "duca_selection_quality_summary_v2"
 RADII = (0, 1, 2, 4, 8)
+BURST_SPECS = ((2, 3), (4, 5))
 SELECTION_METHODS = (
     "learned",
     "uniform",
@@ -289,6 +290,35 @@ def _selection_metrics(
     action_prevalence = _mean(_action_labels(valid_len, segments))
     action_fraction = _mean(action_selected)
     gaps = [right - left for left, right in zip(selected, selected[1:])]
+    burst_metrics: dict[str, dict[str, float | None]] = {}
+    for radius, quota in BURST_SPECS:
+        endpoint_counts = [
+            sum(abs(float(pos) - boundary) <= radius for pos in selected)
+            for boundary in boundaries
+        ]
+        bilateral_hits = [
+            any(boundary - radius <= float(pos) < boundary for pos in selected)
+            and any(boundary < float(pos) <= boundary + radius for pos in selected)
+            for boundary in boundaries
+        ]
+        segment_quota_hits = []
+        for start, end in segments:
+            start_endpoint = max(0.0, min(valid_len - 1.0, math.floor(start)))
+            end_endpoint = max(0.0, min(valid_len - 1.0, math.ceil(end) - 1.0))
+            start_count = sum(
+                abs(float(pos) - start_endpoint) <= radius for pos in selected
+            )
+            end_count = sum(
+                abs(float(pos) - end_endpoint) <= radius for pos in selected
+            )
+            segment_quota_hits.append(start_count >= quota and end_count >= quota)
+        key = f"r{radius}q{quota}"
+        burst_metrics[key] = {
+            "mean_endpoint_selected_count": _mean(endpoint_counts),
+            "endpoint_quota_recall": _mean(count >= quota for count in endpoint_counts),
+            "endpoint_bilateral_recall": _mean(bilateral_hits),
+            "both_endpoints_quota_recall": _mean(segment_quota_hits),
+        }
     return {
         "selected_positions": selected,
         "selected_count": len(selected),
@@ -308,6 +338,7 @@ def _selection_metrics(
             if action_fraction is None or action_prevalence in {None, 0.0}
             else action_fraction / float(action_prevalence)
         ),
+        "boundary_burst": burst_metrics,
     }
 
 
@@ -664,6 +695,7 @@ def analyze_jsonl(
             "boundary_precision": {},
             "both_endpoint_coverage": {},
             "pooled": {"boundary_recall": {}, "both_endpoint_coverage": {}},
+            "boundary_burst": {},
             "diagnostic_only": method.endswith("_diagnostic"),
         }
         for radius in RADII:
@@ -699,6 +731,25 @@ def analyze_jsonl(
             method_summary["pooled"]["both_endpoint_coverage"][f"r{radius}"] = (
                 None if instance_total == 0 else both_hits / float(instance_total)
             )
+        for radius, quota in BURST_SPECS:
+            key = f"r{radius}q{quota}"
+            method_summary["boundary_burst"][key] = {
+                field: _bootstrap_ci(
+                    [
+                        row["selection"][method]["boundary_burst"][key][field]
+                        for row in rows
+                    ],
+                    samples=bootstrap_samples,
+                    seed=random_seed + 80 + radius + quota,
+                    clusters=video_clusters,
+                )
+                for field in (
+                    "mean_endpoint_selected_count",
+                    "endpoint_quota_recall",
+                    "endpoint_bilateral_recall",
+                    "both_endpoints_quota_recall",
+                )
+            }
         summary["selection"][method] = method_summary
     summary["comparison"] = {
         "learned_minus_uniform_boundary_recall_r0": (
@@ -747,6 +798,30 @@ def analyze_jsonl(
             clusters=video_clusters,
         ),
     }
+    for radius, quota in BURST_SPECS:
+        key = f"r{radius}q{quota}"
+        for field in (
+            "endpoint_quota_recall",
+            "endpoint_bilateral_recall",
+            "both_endpoints_quota_recall",
+        ):
+            summary["comparison"][f"paired_learned_minus_uniform_{key}_{field}"] = (
+                _bootstrap_ci(
+                    [
+                        row["selection"]["learned"]["boundary_burst"][key][field]
+                        - row["selection"]["uniform"]["boundary_burst"][key][field]
+                        if row["selection"]["learned"]["boundary_burst"][key][field]
+                        is not None
+                        and row["selection"]["uniform"]["boundary_burst"][key][field]
+                        is not None
+                        else None
+                        for row in rows
+                    ],
+                    samples=bootstrap_samples,
+                    seed=random_seed + 100 + radius + quota,
+                    clusters=video_clusters,
+                )
+            )
     representatives = choose_representative_samples(rows, per_stratum=representative_per_stratum)
     summary["representative_samples"] = [
         {"sample_id": row["sample_id"], "stratum": row["sample_stratum"], "selection_gain_vs_uniform": row["selection_gain_vs_uniform"]}

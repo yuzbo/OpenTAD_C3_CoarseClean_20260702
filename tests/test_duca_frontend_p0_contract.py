@@ -10,6 +10,7 @@ try:
     from tools.bata.run_duca_frontend_p0_real_gate import (
         _coarse_subgroup,
         _group_parameter_change_evidence,
+        _transition_subgroup,
     )
     from tools.bata.validate_duca_frontend_p0_contract import validate_config
 except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
@@ -161,6 +162,44 @@ def test_real_gate_measures_ema_updates_over_each_parameter_group() -> None:
 )
 def test_real_gate_matches_actionformer_asformer_head_partition(name: str, expected: str) -> None:
     assert _coarse_subgroup(name) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "radius", "quota"),
+    (
+        ("duca_boundary_burst_frontend_pretrain_fixed384.py", 2, 3.0),
+        ("duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py", 4, 5.0),
+    ),
+)
+def test_boundary_burst_candidates_satisfy_exact_event_p0_contract(
+    name: str,
+    radius: int,
+    quota: float,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DUCA_FRONTEND_TRAIN_BLOCK_LIST", "train_block.txt")
+
+    payload = validate_config(CONFIG_ROOT / name)
+
+    assert payload["ok"] is True
+    assert payload["transition_objective"] == "boundary_burst"
+    assert payload["boundary_burst"]["radius"] == radius
+    assert payload["boundary_burst"]["quota"] == pytest.approx(quota)
+
+
+def test_real_gate_separates_boundary_center_and_offset_gradients() -> None:
+    assert (
+        _transition_subgroup(
+            "frame_selector.adapter.transition_scorer.net.1.weight"
+        )
+        == "transition_center_scorer"
+    )
+    assert (
+        _transition_subgroup(
+            "frame_selector.adapter.transition_scorer.burst_offset_head.weight"
+        )
+        == "burst_offset_head"
+    )
 
 
 def test_frontend_grid_varies_learning_speed_not_auxiliary_loss_definition() -> None:

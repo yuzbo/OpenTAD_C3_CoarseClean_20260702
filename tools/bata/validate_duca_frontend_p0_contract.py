@@ -77,6 +77,35 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         selector.actionness_source_cfg.spatial_norm == "groupnorm",
         "the spatial stem must use padding-invariant GroupNorm",
     )
+    transition_objective = str(selector.get("transition_objective", "gaussian_mass"))
+    _require(
+        transition_objective in {"gaussian_mass", "boundary_burst"},
+        "unsupported transition objective",
+    )
+    if transition_objective == "boundary_burst":
+        _require(
+            int(selector.transition_target_radius) == 0,
+            "boundary-burst supervision must use exact endpoint events",
+        )
+        _require(
+            int(selector.transition_boundary_radius) > 0
+            and float(selector.boundary_burst_quota) > 0.0,
+            "boundary-burst radius/quota must be positive",
+        )
+        load_frames = next(
+            item for item in cfg.dataset.train.pipeline if item.type == "LoadFrames"
+        )
+        collect = next(
+            item for item in cfg.dataset.train.pipeline if item.type == "Collect"
+        )
+        _require(
+            bool(load_frames.get("emit_boundary_validity", False)),
+            "boundary-burst P0 must emit crop-boundary validity",
+        )
+        _require(
+            "gt_boundary_validity" in collect["keys"],
+            "boundary-burst P0 must collect crop-boundary validity",
+        )
     _require(bool(cfg.optimizer.paramwise), "frontend optimizer must use explicit groups")
     _require("backbone" not in cfg.optimizer, "frontend optimizer leaked a detector backbone group")
     _require(
@@ -114,6 +143,16 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         "actionness_loss_mode": str(selector.actionness_loss_mode),
         "auxiliary_hidden_gradient_scale": float(
             selector.auxiliary_hidden_gradient_scale
+        ),
+        "transition_objective": transition_objective,
+        "boundary_burst": (
+            {
+                "radius": int(selector.transition_boundary_radius),
+                "quota": float(selector.boundary_burst_quota),
+                "budget_fraction": float(selector.boundary_burst_budget_fraction),
+            }
+            if transition_objective == "boundary_burst"
+            else None
         ),
         "spatial_norm": str(selector.actionness_source_cfg.spatial_norm),
         "optimizer": {

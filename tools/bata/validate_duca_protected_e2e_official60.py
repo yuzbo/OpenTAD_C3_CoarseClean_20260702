@@ -141,10 +141,14 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
         "DUCA_GLOBAL_CURRICULUM_G1_PROTECTED_FIXED384_OFFICIAL60",
         "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+        "DUCA_BOUNDARY_BURST_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+        "DUCA_BOUNDARY_BURST_R4Q5_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
     }:
-        feedback_enabled = route != (
-            "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60"
-        )
+        feedback_enabled = route not in {
+            "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R4Q5_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+        }
         _require(
             selector.detector_gradient_mode
             == (
@@ -190,6 +194,8 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
             "DUCA_GLOBAL_CURRICULUM_G1_PROTECTED_FIXED384_OFFICIAL60",
             "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R4Q5_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
         }
         source = selector.actionness_source_cfg
         _require(
@@ -245,6 +251,21 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             _require(
                 companion_fraction == 0.0 and not normalize_learned_gradient,
                 "non-G2 two-stage arm unexpectedly enables a uniform companion",
+            )
+        if route.startswith("DUCA_BOUNDARY_BURST"):
+            expected = (
+                (4, 5.0)
+                if "R4Q5" in route
+                else (2, 3.0)
+            )
+            _require(
+                str(selector.transition_objective) == "boundary_burst",
+                "boundary-burst route did not build the burst policy",
+            )
+            _require(
+                int(selector.transition_boundary_radius) == expected[0]
+                and float(selector.boundary_burst_quota) == expected[1],
+                "boundary-burst route radius/quota drifted",
             )
     elif route == "DUCA_PROTECTED_E2E_DIRECT025_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "protected_structured_transport", "direct arm requires protected bridge")

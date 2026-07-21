@@ -35,6 +35,15 @@ case "${VARIANT}" in
   global_curriculum_g2)
     CONFIG="configs/adatad/thumos/duca_global_curriculum_g2_uni_companion_fixed384_official60.py"
     ;;
+  gaussian_matched_g0)
+    CONFIG="configs/adatad/thumos/duca_global_curriculum_g0_no_feedback_fixed384_official60.py"
+    ;;
+  boundary_burst_r2q3_g0)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
+    ;;
+  boundary_burst_r4q5_g0)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
+    ;;
   *)
     fail "unknown two-stage variant: ${VARIANT}"
     ;;
@@ -64,7 +73,7 @@ WORK_DIR="${WORK_DIR:-}"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \
   || fail "exactly one Slurm-visible GPU is required"
 
-readarray -t winner < <("${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" <<'PY'
+readarray -t winner < <("${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" "${VARIANT}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -72,10 +81,24 @@ from pathlib import Path
 payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 if payload.get("ok") is not True or payload.get("test_subset_consumed") is not False:
     raise SystemExit("frontend decision did not authorize training")
-manifest = json.loads(Path(payload["candidate_manifest_path"]).read_text(encoding="utf-8"))
-if manifest.get("git_commit") != sys.argv[2]:
+if payload.get("git_commit") not in {None, sys.argv[2]}:
     raise SystemExit("frontend decision commit mismatch")
-winner = payload["winner"]
+variant = sys.argv[3]
+if "winners" in payload:
+    key = {
+        "two_stage_exact_uniform": "gaussian_matched",
+        "gaussian_matched_g0": "gaussian_matched",
+        "boundary_burst_r2q3_g0": "burst_r2q3",
+        "boundary_burst_r4q5_g0": "burst_r4q5",
+    }.get(variant)
+    if key is None or key not in payload["winners"]:
+        raise SystemExit(f"no frontend winner is registered for {variant}")
+    winner = payload["winners"][key]
+else:
+    manifest = json.loads(Path(payload["candidate_manifest_path"]).read_text(encoding="utf-8"))
+    if manifest.get("git_commit") != sys.argv[2]:
+        raise SystemExit("frontend candidate manifest commit mismatch")
+    winner = payload["winner"]
 print(winner["checkpoint_path"])
 print(winner["checkpoint_sha256"])
 print(int(winner["epoch_one_based"]) - 1)

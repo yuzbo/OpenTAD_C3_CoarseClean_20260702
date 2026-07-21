@@ -49,6 +49,12 @@ def test_exporter_finds_repository_from_config_tree_not_deployment_script(tmp_pa
     assert exporter._find_git_root(config_dir) == repo
 
 
+def test_export_cli_can_separate_dataset_and_selector_configs() -> None:
+    source = Path(exporter.__file__).read_text(encoding="utf-8")
+    assert '"--selector-config"' in source
+    assert "build_selector(selector_cfg.model.frame_selector)" in source
+
+
 def test_exporter_records_existing_decoder_repair_metadata() -> None:
     class FakeTensor:
         def __init__(self, value):
@@ -151,6 +157,26 @@ def test_selection_coverage_clamps_half_open_end_to_last_observable_position() -
     )
 
     assert metrics["both_endpoint_coverage"]["r0"] == pytest.approx(1.0)
+
+
+def test_boundary_burst_metrics_distinguish_microclusters_from_uniform_hits() -> None:
+    clustered = quality._selection_metrics(
+        valid_len=20,
+        positions=[2, 3, 4, 5, 6, 12, 13, 14, 15, 16],
+        segments=[(4.0, 15.2)],
+        boundaries=[4.0, 15.0],
+    )
+    sparse = quality._selection_metrics(
+        valid_len=20,
+        positions=[0, 2, 4, 7, 10, 13, 15, 17, 18, 19],
+        segments=[(4.0, 15.2)],
+        boundaries=[4.0, 15.0],
+    )
+
+    assert clustered["boundary_burst"]["r2q3"]["endpoint_quota_recall"] == pytest.approx(1.0)
+    assert clustered["boundary_burst"]["r2q3"]["both_endpoints_quota_recall"] == pytest.approx(1.0)
+    assert sparse["boundary_recall"]["r0"] == pytest.approx(1.0)
+    assert sparse["boundary_burst"]["r2q3"]["both_endpoints_quota_recall"] == pytest.approx(0.0)
 
 
 def test_sample_analysis_separates_coarse_transition_and_selection_quality() -> None:
