@@ -148,14 +148,14 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             "direct arm cannot hide a policy warmup",
         )
         _require(
-            float(schedule.detector_gradient.start) == 0.25
+            float(schedule.detector_gradient.start) == 0.0
             and float(schedule.detector_gradient.end) == 0.25,
-            "direct arm bridge must remain fixed at 0.25",
+            "direct arm must share the detector-gradient endpoints",
         )
         _require(
-            int(schedule.detector_gradient.warmup_steps) == 0
-            and int(schedule.detector_gradient.transition_steps) == 0,
-            "direct arm cannot hide a detector-gradient warmup",
+            int(schedule.detector_gradient.warmup_steps) == 2100
+            and int(schedule.detector_gradient.transition_steps) == 1500,
+            "direct and homotopy arms must share one detector-gradient schedule",
         )
         _require(
             float(selector.get("training_uniform_companion_fraction", 0.0)) == 0.0,

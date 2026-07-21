@@ -49,12 +49,13 @@ done
   tests/test_duca_temporal_sampling_contract.py \
   -q 2>&1 | tee "${GATE_ROOT}/tests/focused_pytest.out"
 
-learned_configs=(
+full_model_configs=(
+  configs/adatad/thumos/duca_exact_uniform_fixed384_official60.py
   configs/adatad/thumos/duca_protected_e2e_direct025_fixed384_official60.py
   configs/adatad/thumos/duca_protected_e2e_homotopy025_fixed384_official60.py
   configs/adatad/thumos/duca_protected_e2e_homotopy_uni_companion025_fixed384_official60.py
 )
-for config in "${learned_configs[@]}"; do
+for config in "${full_model_configs[@]}"; do
   name="$(basename "${config}" .py)"
   "${PYTHON}" -m torch.distributed.run \
     --nproc_per_node=1 \
@@ -88,7 +89,7 @@ for path in sorted(path for path in root.rglob("*") if path.is_file()):
 payload = {
     "schema": "duca_selected_axis_optimization_gate_v1",
     "ok": True,
-    "status": "three_learned_variants_full_model_gate_passed",
+    "status": "four_matched_variants_full_model_gate_passed",
     "task": "offline_temporal_action_detection",
     "git_commit": commit,
     "formal_training_unlocked": True,

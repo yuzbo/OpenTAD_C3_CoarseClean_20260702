@@ -20,13 +20,6 @@ model = dict(
                 warmup_steps=0,
                 transition_steps=0,
             ),
-            detector_gradient=dict(
-                _delete_=True,
-                start=0.25,
-                end=0.25,
-                warmup_steps=0,
-                transition_steps=0,
-            ),
         ),
     ),
 )
