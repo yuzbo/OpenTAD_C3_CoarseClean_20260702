@@ -78,6 +78,20 @@ check is the purpose of the one formal Linux training-matrix finalizer run. AMP
 retry evidence closes the aggregate attempt/update ledger, but historical logs
 do not independently reconstruct every same-batch replay.
 
+The first formal Linux replay, Slurm Job `1178693`, failed closed before
+publishing a matrix receipt. Its validator compared the historical Gate source
+hashes with the newer finalizer checkout instead of the Gate-bound training
+checkout. The correction passes the already-validated clean training repository
+root into Gate source verification; it does not weaken the commit, source-hash
+or self-hash requirements. Job `1178693` is immutable diagnostic evidence and
+cannot be reused as a successful receipt.
+
+An independent read-only review of this repair returned `NO_P0_P1`. It noted a
+P2 API-hardening opportunity: direct callers of the low-level Gate validator
+could supply a non-Git source directory with matching bytes. The formal path is
+not exposed to that ambiguity because it first requires the derived historical
+repository root to be clean and exactly at the Gate-bound commit.
+
 ## Reference-Phase Code Audit
 
 The repository contains reusable continuous geometry, runtime sampling,

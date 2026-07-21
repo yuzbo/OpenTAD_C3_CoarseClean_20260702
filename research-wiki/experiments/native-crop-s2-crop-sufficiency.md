@@ -162,6 +162,14 @@ receipts, configs, checkpoint metadata and tracked validator bytes. Residual
 P2 is the missing real D160/G96/U128 Linux integration run; local small-model
 tests cannot substitute for the formal training-only finalizer Job.
 
+The first finalizer Job `1178693` failed closed before writing
+`training_matrix_completion.json`. The historical Gate correctly binds runtime
+commit `9a61da27`, but the new validator accidentally compared its audited source
+hashes with the newer finalizer checkout. The correction makes the Gate source
+root explicit and points it to the clean, commit-exact training snapshot. No
+hash, commit, Slurm, checkpoint or no-claim invariant is relaxed; `1178693`
+remains immutable diagnostic evidence.
+
 ## Post-Training Reference Audit
 
 The v2.1 reference phase is not executable without changing scientific

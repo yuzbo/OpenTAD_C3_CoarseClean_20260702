@@ -173,9 +173,13 @@ def load_pure_data_config(path: str | Path) -> Config:
 
 
 def validate_full_model_gate(
-    gate_path: str | Path, *, expected_commit: str
+    gate_path: str | Path,
+    *,
+    expected_commit: str,
+    audited_source_root: str | Path = ROOT,
 ) -> dict[str, Any]:
     gate_path = Path(gate_path).resolve()
+    audited_source_root = Path(audited_source_root).resolve()
     gate = _load_json(gate_path)
     gate_hash = gate.pop("gate_sha256", None)
     if not gate_hash or canonical_sha256(gate) != gate_hash:
@@ -242,7 +246,8 @@ def validate_full_model_gate(
             for value in source_hashes.values()
         )
         or any(
-            sha256_file(ROOT / relative_path) != source_hashes[relative_path]
+            sha256_file(audited_source_root / relative_path)
+            != source_hashes[relative_path]
             for relative_path in AUDITED_SOURCE_PATHS
         )
         or not protocol_hash
@@ -685,7 +690,11 @@ def bind_training_config(
     require_clean_git_checkout(
         expected_commit=code_commit, repository_root=repository_root
     )
-    gate = validate_full_model_gate(full_model_gate_path, expected_commit=code_commit)
+    gate = validate_full_model_gate(
+        full_model_gate_path,
+        expected_commit=code_commit,
+        audited_source_root=repository_root,
+    )
     external = validate_external_training_inputs(
         manifest_path=manifest_path,
         development_annotation_path=development_annotation_path,

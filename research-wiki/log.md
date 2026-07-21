@@ -777,3 +777,10 @@ append_only: true
   binding. Final verdict is `NO_P0_P1`; the remaining P2 is the pending formal
   Linux replay of all nine real D160/G96/U128 checkpoints. No reference or
   official-test Job was authorized.
+- 2026-07-21: formal finalizer Job `1178693` failed closed before publishing
+  `training_matrix_completion.json`. Root cause was validator provenance, not
+  model state: the historical full-model Gate source hashes were compared with
+  the newer finalizer checkout rather than the Gate-bound clean training
+  snapshot at `9a61da27`. The repair makes the audited source root explicit;
+  all commit and source hashes remain mandatory. Job `1178693` is immutable
+  diagnostic evidence and no reference or official-test work was started.

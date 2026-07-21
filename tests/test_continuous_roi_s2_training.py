@@ -52,12 +52,8 @@ def _valid_gate(commit: str) -> dict:
         "status": "PASS",
         "official_test_materialized": False,
         "protocol_sha256": protocol_sha256,
-        "config_hashes": {
-            family: "a" * 64 for family in ("D160", "G96", "U128")
-        },
-        "pipeline_audits": {
-            family: {} for family in ("D160", "G96", "U128")
-        },
+        "config_hashes": {family: "a" * 64 for family in ("D160", "G96", "U128")},
+        "pipeline_audits": {family: {} for family in ("D160", "G96", "U128")},
         "detector_model_surface_matches_reference": True,
         "post_processing_matches_reference": True,
         "u128_selector_parameters": 0,
@@ -86,9 +82,7 @@ def _valid_gate(commit: str) -> dict:
         "official_test_annotation_records_loaded": 0,
         "official_test_video_files_opened": 0,
         "projection_input_shape": [1, 384, 768],
-        "checkpoint_sha256": load_protocol()["data"][
-            "videomae_s_checkpoint_sha256"
-        ],
+        "checkpoint_sha256": load_protocol()["data"]["videomae_s_checkpoint_sha256"],
         "detector_only_gradient_audit": {
             "missing_target_gradients": [],
             "all_present_gradients_finite": True,
@@ -126,8 +120,7 @@ def _valid_gate(commit: str) -> dict:
 
 def test_source_config_is_not_directly_trainable():
     cfg = Config.fromfile(
-        "configs/adatad/thumos/"
-        "continuous_roi_s2_u128_videomae_s_768x1_adapter.py"
+        "configs/adatad/thumos/" "continuous_roi_s2_u128_videomae_s_768x1_adapter.py"
     )
     with pytest.raises(ValueError, match="not directly trainable"):
         validate_bound_training_config(cfg, seed=3407)
@@ -135,8 +128,7 @@ def test_source_config_is_not_directly_trainable():
 
 def test_s2_source_config_rejects_every_cfg_override_before_merge():
     cfg = Config.fromfile(
-        "configs/adatad/thumos/"
-        "continuous_roi_s2_u128_videomae_s_768x1_adapter.py"
+        "configs/adatad/thumos/" "continuous_roi_s2_u128_videomae_s_768x1_adapter.py"
     )
     attacks = (
         {"continuous_roi_s2_gate.allow_tools_train": True},
@@ -157,14 +149,10 @@ def test_dense_comparators_use_deterministic_exact_2x_temporal_upsampling(
         "configs/adatad/thumos/"
         f"continuous_roi_s2_{family}_videomae_s_768x1_adapter.py"
     )
-    audit = _bind_deterministic_temporal_upsampling(
-        cfg, family=family.upper()
-    )
+    audit = _bind_deterministic_temporal_upsampling(cfg, family=family.upper())
     transforms = cfg.model.backbone.custom.post_processing_pipeline
     interpolate = [
-        transform
-        for transform in transforms
-        if transform["type"] == "Interpolate"
+        transform for transform in transforms if transform["type"] == "Interpolate"
     ]
     assert interpolate == [
         {
@@ -187,9 +175,9 @@ def test_dense_comparators_use_deterministic_exact_2x_temporal_upsampling(
 def test_full_model_gate_validator_is_self_hash_and_commit_bound(tmp_path):
     commit = "a" * 40
     gate_path = _write_json(tmp_path / "gate.json", _valid_gate(commit))
-    assert validate_full_model_gate(
-        gate_path, expected_commit=commit
-    )["status"] == "PASS"
+    assert (
+        validate_full_model_gate(gate_path, expected_commit=commit)["status"] == "PASS"
+    )
     with pytest.raises(ValueError, match="commit provenance"):
         validate_full_model_gate(gate_path, expected_commit="b" * 40)
     incomplete = _valid_gate(commit)
@@ -200,6 +188,32 @@ def test_full_model_gate_validator_is_self_hash_and_commit_bound(tmp_path):
     incomplete_path = _write_json(tmp_path / "incomplete_gate.json", incomplete)
     with pytest.raises(ValueError, match="evidence is incomplete"):
         validate_full_model_gate(incomplete_path, expected_commit=commit)
+
+
+def test_full_model_gate_validator_accepts_its_frozen_training_source_root(tmp_path):
+    commit = "a" * 40
+    frozen_root = tmp_path / "frozen-training-source"
+    for relative_path in AUDITED_SOURCE_PATHS:
+        source = Path(relative_path)
+        destination = frozen_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read_bytes())
+    gate_path = _write_json(tmp_path / "gate.json", _valid_gate(commit))
+    assert (
+        validate_full_model_gate(
+            gate_path,
+            expected_commit=commit,
+            audited_source_root=frozen_root,
+        )["status"]
+        == "PASS"
+    )
+    (frozen_root / AUDITED_SOURCE_PATHS[0]).write_text("changed", encoding="utf-8")
+    with pytest.raises(ValueError, match="evidence is incomplete"):
+        validate_full_model_gate(
+            gate_path,
+            expected_commit=commit,
+            audited_source_root=frozen_root,
+        )
 
 
 def test_runtime_precheck_validator_is_gate_bound(tmp_path):
@@ -256,9 +270,7 @@ def test_runtime_precheck_validator_is_gate_bound(tmp_path):
                 },
                 "real_training_batch_audit": {
                     "batch_size": 2,
-                    "input_shapes": {
-                        "dense": [2, 1, 3, 768, 160, 160]
-                    },
+                    "input_shapes": {"dense": [2, 1, 3, 768, 160, 160]},
                     "mask_shape": [2, 768],
                     "uses_gt_for_geometry": False,
                     "uses_teacher": False,
@@ -282,9 +294,7 @@ def test_runtime_precheck_validator_is_gate_bound(tmp_path):
                 },
                 "real_training_batch_audit": {
                     "batch_size": 2,
-                    "input_shapes": {
-                        "dense": [2, 1, 3, 768, 96, 96]
-                    },
+                    "input_shapes": {"dense": [2, 1, 3, 768, 96, 96]},
                     "mask_shape": [2, 768],
                     "uses_gt_for_geometry": False,
                     "uses_teacher": False,
@@ -338,11 +348,14 @@ def test_runtime_precheck_validator_is_gate_bound(tmp_path):
     }
     payload["precheck_sha256"] = canonical_sha256(payload)
     path = _write_json(tmp_path / "precheck.json", payload)
-    assert validate_training_runtime_precheck(
-        path,
-        expected_commit=commit,
-        expected_full_model_gate_sha256="c" * 64,
-    )["status"] == "PASS"
+    assert (
+        validate_training_runtime_precheck(
+            path,
+            expected_commit=commit,
+            expected_full_model_gate_sha256="c" * 64,
+        )["status"]
+        == "PASS"
+    )
     with pytest.raises(ValueError, match="lacks a PASS invariant"):
         validate_training_runtime_precheck(
             path,
@@ -356,15 +369,9 @@ def test_runtime_precheck_validator_is_gate_bound(tmp_path):
         "U128": {},
     }
     incomplete["precheck_sha256"] = canonical_sha256(
-        {
-            key: value
-            for key, value in incomplete.items()
-            if key != "precheck_sha256"
-        }
+        {key: value for key, value in incomplete.items() if key != "precheck_sha256"}
     )
-    incomplete_path = _write_json(
-        tmp_path / "incomplete_precheck.json", incomplete
-    )
+    incomplete_path = _write_json(tmp_path / "incomplete_precheck.json", incomplete)
     with pytest.raises(ValueError, match="lacks a PASS invariant"):
         validate_training_runtime_precheck(
             incomplete_path,
@@ -381,9 +388,9 @@ def test_s2_saves_only_the_final_ema_checkpoint():
 
 
 def test_training_launcher_requires_both_gate_certificates():
-    launcher = Path(
-        "scripts/run_continuous_roi_s2_train_slurm.sh"
-    ).read_text(encoding="utf-8")
+    launcher = Path("scripts/run_continuous_roi_s2_train_slurm.sh").read_text(
+        encoding="utf-8"
+    )
     assert "CONTINUOUS_ROI_S2_FULL_MODEL_GATE" in launcher
     assert "CONTINUOUS_ROI_S2_TRAINING_RUNTIME_PRECHECK" in launcher
     assert "CONTINUOUS_ROI_S2_RUNTIME_AUTHORIZATION" in launcher
@@ -400,9 +407,9 @@ def test_training_launcher_requires_both_gate_certificates():
 
 
 def test_cuda_gate_runs_real_development_runtime_precheck():
-    launcher = Path(
-        "scripts/run_continuous_roi_s2_cuda_gate_slurm.sh"
-    ).read_text(encoding="utf-8")
+    launcher = Path("scripts/run_continuous_roi_s2_cuda_gate_slurm.sh").read_text(
+        encoding="utf-8"
+    )
     assert "precheck_continuous_roi_s2_training_runtime.py" in launcher
     assert "training_runtime_precheck.json" in launcher
     assert "training_runtime_authorization.json" in launcher
@@ -414,9 +421,9 @@ def test_cuda_gate_runs_real_development_runtime_precheck():
 
 
 def test_runtime_gate_uses_mmengine_supported_config_removal():
-    source = Path(
-        "tools/bata/continuous_roi_s2_runtime_gate.py"
-    ).read_text(encoding="utf-8")
+    source = Path("tools/bata/continuous_roi_s2_runtime_gate.py").read_text(
+        encoding="utf-8"
+    )
     assert 'cfg.pop("continuous_roi_s2_runtime_binding")' in source
     assert 'del cfg["continuous_roi_s2_runtime_binding"]' not in source
 
@@ -430,9 +437,9 @@ def test_train_entrypoint_enforces_s2_runtime_binding_and_80_batches():
 
 
 def test_deployment_uses_site_memory_allocation_and_exact_inner_step():
-    deployer = Path(
-        "tools/bata/deploy_continuous_roi_s2_training_matrix.py"
-    ).read_text(encoding="utf-8")
+    deployer = Path("tools/bata/deploy_continuous_roi_s2_training_matrix.py").read_text(
+        encoding="utf-8"
+    )
     assert '"--gpus=2"' in deployer
     assert '"--cpus-per-task=8"' in deployer
     assert '"gpus": 1' in deployer
