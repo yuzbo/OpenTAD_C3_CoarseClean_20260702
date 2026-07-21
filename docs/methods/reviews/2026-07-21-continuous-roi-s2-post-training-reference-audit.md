@@ -71,12 +71,11 @@ checkpoint data with `weights_only=true`. It also binds deployment-intent and
 job-receipt status plus base/campaign namespaces. A third read-only review
 returned `NO_P0_P1` after these changes.
 
-Residual P2 risk remains explicit. The local negative tests use a small Torch
-model and do not replace strict loading of the three real D160/G96/U128
-detectors, optimizers, historical receipts and checkpoints. That integration
-check is the purpose of the one formal Linux training-matrix finalizer run. AMP
-retry evidence closes the aggregate attempt/update ledger, but historical logs
-do not independently reconstruct every same-batch replay.
+The local negative tests use a small Torch model, so they were followed by a
+formal Linux replay of the three real D160/G96/U128 detectors, optimizers,
+historical receipts and all nine checkpoints. That integration check is now
+closed. AMP retry evidence closes the aggregate attempt/update ledger, but
+historical logs do not independently reconstruct every same-batch replay.
 
 The first formal Linux replay, Slurm Job `1178693`, failed closed before
 publishing a matrix receipt. Its validator compared the historical Gate source
@@ -118,6 +117,18 @@ the Bash-only `set -o pipefail` and exited `2:0` in zero seconds. It produced no
 matrix receipt and is retained as immutable submission-infrastructure evidence.
 The next submission must invoke an explicit Bash process; it may not change
 the runtime commit, checkpoints, deployment hash or scientific protocol.
+
+Explicit-Bash finalizer Job `1178744` completed `0:0` in `00:01:51`. It
+published the canonical training-only receipt with file SHA-256
+`14e0fac382e2bd5b570a7a9240258d34b83b6e16129e924bc343705fea0446db`
+and internal SHA-256
+`9eedfa1e3d30af7be2902325e589b4898cff326fcd200f509210e36b8c37dda5`.
+Independent read-only replay Job `1178746` completed `0:0` in `00:01:15` and
+left that file hash unchanged. All nine real models, EMA states and optimizers
+strict-loaded; all cells closed at `4,800` successful updates; every generic
+and real-model dtype mismatch set was exactly the one-key frozen buffer
+allowlist. The receipt says `PASS_TRAINING_ONLY` and explicitly keeps reference
+sweep, official test, crop sufficiency and paper claims closed.
 
 ## Reference-Phase Code Audit
 

@@ -14,9 +14,8 @@ max_chars: 8000
 - Integrated Gate Job `1177662` 已 `COMPLETED 0:0`，重新验证 full-model、
   fit160/gate40、D160/G96/U128 各两次成功更新、optimizer/scheduler/final EMA、
   单 GPU Slurm 身份和 official-test 零访问。
-- 首个矩阵 `1177641-1177649` 仅因 Windows `CR` 污染 `YUZIBO_ROOT` 而在 launcher
-  preflight 失败，旧 campaign `66cd32ff...` 已冻结且不得作为模型结果。部署契约现已拒绝
-  控制字符/空白/逗号，并逐次绑定和复核 Git 中的规范 launcher。
+- 首个矩阵 `1177641-1177649` 因 Windows `CR` 污染在 preflight 失败；旧 campaign
+  `66cd32ff...` 已冻结，部署契约现拒绝控制字符并绑定 Git launcher。
 - 唯一正式 development 训练矩阵 `1177668-1177676` 已全部 `COMPLETED 0:0`。
   九格均被从现场 checkpoint/config/sidecar/completion 重新加载验证：每格 60 epochs、
   80 successful updates/epoch、总计 4,800 successful updates、final-EMA-only。
@@ -25,13 +24,16 @@ max_chars: 8000
   `3-4`，单 batch 最大 retry 为 `1-2`；
   未见 Traceback/OOM/non-finite/exhausted retry、scheduler/EMA/update parity 或
   fail marker。
+- finalizer `1178744` 与只读重放 `1178746` 均 `COMPLETED 0:0`；receipt SHA
+  `9eedfa1e...7dda5`，九格 raw/EMA/optimizer 严格加载且仅有冻结的
+  `module.rpn_head.loss_normalizer` buffer dtype 差异。
 - 状态仍是 `experiment_running`，不是 crop-sufficiency 结果。没有 development mAP、
   reference sweep、cost profile、official-test 结果、learned ROI 或 paper claim。
 - v2.1 reference 阶段现处于协议 HOLD：FS/VS 共享 `sx,sy` 但 decoder 的物理中心依赖
   `w,h`，所以并不共享物理中心轨迹；Sobol engine/dtype/serialization/KAT、raw candidate
   ID 规则、无标注 raw entrypoint、privileged join/tie/statistics 也未完全机器冻结。
-  禁止实现者猜测后排队；下一步是先封存 training-only exact-nine receipt，再发布最小
-  v2.2 corrigendum。official test 继续封存，S3 learned ROI 继续禁止。
+  禁止实现者猜测后排队；training receipt 已封存，下一步只允许发布最小 v2.2
+  corrigendum。official test 继续封存，S3 learned ROI 继续禁止。
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 

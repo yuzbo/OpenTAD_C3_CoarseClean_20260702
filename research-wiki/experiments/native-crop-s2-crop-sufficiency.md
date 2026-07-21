@@ -146,8 +146,8 @@ registered 60-epoch runs are matched truncations of the inherited 100-epoch
 schedule, not completed cosine cycles. This is not an evidence-integrity
 failure, but convergence claims must retain this limitation.
 
-The exact-nine evidence finalizer is being added as a training-only receipt.
-It revalidates live artifacts and Slurm accounting and explicitly records
+The exact-nine evidence finalizer is sealed as a training-only receipt. It
+revalidates live artifacts and Slurm accounting and explicitly records
 `reference_sweep_completed=false`, `crop_sufficiency_established=false`, and
 `paper_claim_allowed=false`. This remains `experiment_running`: no
 development mAP, reference sweep, cost profile, mechanical outcome, official
@@ -158,9 +158,10 @@ returned `NO_P0_P1` after the implementation rejected executable configs,
 forced live Slurm accounting, strict-loaded raw/EMA state into real model
 interfaces, rejected duplicate/orphan optimizer state, enabled restricted
 `weights_only` checkpoint loading, and recursively bound deployment intent,
-receipts, configs, checkpoint metadata and tracked validator bytes. Residual
-P2 is the missing real D160/G96/U128 Linux integration run; local small-model
-tests cannot substitute for the formal training-only finalizer Job.
+receipts, configs, checkpoint metadata and tracked validator bytes. The formal
+Linux finalizer and its independent replay now close real D160/G96/U128 model,
+checkpoint and optimizer integration; local small-model tests were not treated
+as a substitute.
 
 The first finalizer Job `1178693` failed closed before writing
 `training_matrix_completion.json`. The historical Gate correctly binds runtime
@@ -188,6 +189,16 @@ was given Bash-only `set -o pipefail`; it exited `2:0` at zero seconds and
 created no receipt. This is immutable submission-infrastructure evidence, not
 a model or checkpoint-audit result. A replacement may only make the shell
 interpreter explicit while preserving the exact runtime and evidence inputs.
+
+Explicit-Bash finalizer Job `1178744` completed `0:0` in `00:01:51`; read-only
+replay Job `1178746` completed `0:0` in `00:01:15` and preserved the receipt
+file hash. The canonical receipt file SHA-256 is `14e0fac3...46db`, with
+internal `matrix_completion_sha256=9eedfa1e...7dda5`. It binds training commit
+`9a61da27`, validator commit `4543205`, all nine `4,800`-update cells, Slurm
+accounting, checkpoints and sidecars. Every raw/EMA/optimizer strict load
+passed; every generic and real-model mismatch set is exactly
+`module.rpn_head.loss_normalizer`. Its status is `PASS_TRAINING_ONLY` and it
+keeps reference sweep, official test, crop sufficiency and paper claims closed.
 
 ## Post-Training Reference Audit
 

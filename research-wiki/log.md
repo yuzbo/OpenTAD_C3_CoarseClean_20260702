@@ -803,3 +803,11 @@ append_only: true
   `/bin/sh` wrapper rejected Bash-only `set -o pipefail`; no matrix receipt was
   created. The immutable failure authorizes only an explicit-Bash submission
   correction, with no change to runtime commit, evidence or protocol.
+- 2026-07-21: explicit-Bash finalizer Job `1178744` completed `0:0` and sealed
+  the exact-nine `PASS_TRAINING_ONLY` receipt; read-only replay Job `1178746`
+  also completed `0:0` without changing file SHA-256 `14e0fac3...46db`.
+  Internal receipt SHA-256 is `9eedfa1e...7dda5`. All real raw/EMA/optimizer
+  strict loads passed and the only dtype exception in all nine cells was the
+  frozen `module.rpn_head.loss_normalizer` buffer. Reference, official test,
+  crop-sufficiency and paper claims remain closed; the sole next action is the
+  result-blind v2.2 reference-protocol corrigendum.
