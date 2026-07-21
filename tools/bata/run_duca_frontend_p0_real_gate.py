@@ -214,7 +214,7 @@ def _parameter_group(name: str) -> str:
 
 def _coarse_subgroup(name: str) -> str:
     normalized = name.removeprefix("module.")
-    if ".spatial_encoder." in normalized:
+    if ".spatial_stem." in normalized:
         return "spatial_stem"
     if ".official_temporal." in normalized and ".conv_out." in normalized:
         return "action_head"
