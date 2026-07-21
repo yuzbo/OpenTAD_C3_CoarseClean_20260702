@@ -108,6 +108,7 @@ scheduler = dict(
 )
 
 workflow = dict(
+    formal_protocol="duca_selected_axis_optimization_v1",
     training_profile=duca_training_protocol.name,
     logging_interval=50,
     checkpoint_interval=5,

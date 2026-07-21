@@ -47,6 +47,7 @@ from tools.bata import (
     duca_cellcf_training,
     duca_p0_training,
     duca_protected_physical_training,
+    duca_selected_axis_training,
 )
 
 
@@ -136,6 +137,8 @@ def main():
         duca_training = duca_cellcf_training
     elif formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
         duca_training = duca_protected_physical_training
+    elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
+        duca_training = duca_selected_axis_training
     else:
         duca_training = duca_p0_training
     source_config_sha256 = _sha256(args.config)
@@ -147,6 +150,11 @@ def main():
         )
     elif duca_training is duca_protected_physical_training:
         duca_protected_physical_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/train.py",
+        )
+    elif duca_training is duca_selected_axis_training:
+        duca_selected_axis_training.assert_safe_cfg_options(
             args.cfg_options,
             entrypoint="tools/train.py",
         )
@@ -194,7 +202,11 @@ def main():
         variant = (
             os.environ.get("DUCA_PROTECTED_VARIANT", "")
             if duca_training is duca_protected_physical_training
-            else os.environ.get("DUCA_P0_VARIANT", "")
+            else (
+                os.environ.get("DUCA_SELECTED_OPT_VARIANT", "")
+                if duca_training is duca_selected_axis_training
+                else os.environ.get("DUCA_P0_VARIANT", "")
+            )
         )
         runtime_binding_kwargs = dict(
             git_commit=duca_git_commit,
@@ -212,6 +224,7 @@ def main():
         if duca_training in (
             duca_cellcf_training,
             duca_protected_physical_training,
+            duca_selected_axis_training,
         ):
             runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain
         duca_runtime_bindings = duca_training.build_runtime_bindings(**runtime_binding_kwargs)

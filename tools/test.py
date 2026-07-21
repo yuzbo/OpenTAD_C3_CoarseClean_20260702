@@ -26,6 +26,7 @@ from opentad.utils.training_guard import (
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
 from tools.bata import duca_cellcf_training
 from tools.bata import duca_protected_physical_training
+from tools.bata import duca_selected_axis_training
 from tools.bata.duca_p0_evaluation import (
     evaluation_config_sha256,
     normalize_evaluation_config,
@@ -62,6 +63,9 @@ def main():
     protected_physical_formal = (
         formal_protocol == "duca_protected_physical_v1"
     )
+    selected_axis_formal = (
+        formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL
+    )
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
         duca_cellcf_training.assert_safe_cfg_options(
@@ -69,6 +73,11 @@ def main():
         )
     elif protected_physical_formal:
         duca_protected_physical_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/test.py",
+        )
+    elif selected_axis_formal:
+        duca_selected_axis_training.assert_safe_cfg_options(
             args.cfg_options,
             entrypoint="tools/test.py",
         )
@@ -82,7 +91,7 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if cellcf_formal or protected_physical_formal:
+    if cellcf_formal or protected_physical_formal or selected_axis_formal:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
@@ -235,6 +244,8 @@ def main():
             evaluation_schema = (
                 "duca_protected_physical_terminal_evaluation_v1"
             )
+        elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
+            evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
         else:
             evaluation_schema = "duca_p0_terminal_evaluation_v3"
         payload = {

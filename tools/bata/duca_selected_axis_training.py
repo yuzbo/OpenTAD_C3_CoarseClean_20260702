@@ -1,0 +1,250 @@
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+from tools.bata import duca_p0_training as legacy
+from tools.bata.duca_p0_evaluation import evaluation_config_sha256
+
+
+FORMAL_PROTOCOL = "duca_selected_axis_optimization_v1"
+VARIANT_CONFIGS = {
+    "exact_uniform": "duca_exact_uniform_fixed384_official60.py",
+    "direct025": "duca_protected_e2e_direct025_fixed384_official60.py",
+    "homotopy025": "duca_protected_e2e_homotopy025_fixed384_official60.py",
+    "homotopy_uni_companion025": (
+        "duca_protected_e2e_homotopy_uni_companion025_fixed384_official60.py"
+    ),
+}
+
+DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA
+DUCA_P0_CHECKPOINT_METADATA_SCHEMA = legacy.DUCA_P0_CHECKPOINT_METADATA_SCHEMA
+DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA = legacy.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
+DUCA_TRAINING_AUDIT_FILENAME = "duca_selected_axis_training_audit.json"
+
+atomic_write_json = legacy.atomic_write_json
+build_checkpoint_metadata = legacy.build_checkpoint_metadata
+build_training_audit = legacy.build_training_audit
+capture_global_rng_state = legacy.capture_global_rng_state
+canonical_sha256 = legacy.canonical_sha256
+new_update_audit = legacy.new_update_audit
+restore_global_rng_state = legacy.restore_global_rng_state
+restore_training_state = legacy.restore_training_state
+selector_schedule_step = legacy.selector_schedule_step
+sha256_file = legacy.sha256_file
+validate_update_state = legacy.validate_update_state
+
+
+def formal_training_contract(cfg) -> dict[str, Any] | None:
+    workflow = cfg.workflow
+    if str(workflow.get("formal_protocol", "")) != FORMAL_PROTOCOL:
+        return None
+    contract = legacy.formal_training_contract(
+        cfg,
+        expected_checkpoint_criterion="terminal_epoch_59_state_dict_ema",
+    )
+    if contract is None:
+        raise ValueError(
+            "selected-axis official-60 requires formal_successful_update_contract"
+        )
+    if str(workflow.get("training_profile", "")) != "official60":
+        raise ValueError("selected-axis training profile must be official60")
+    if int(contract["end_epoch"]) != 60:
+        raise ValueError("selected-axis official training must use 60 epochs")
+    if int(contract["expected_train_batches_per_epoch"]) != 100:
+        raise ValueError("selected-axis official training must use 100 batches per epoch")
+    if int(contract["expected_successful_optimizer_updates"]) != 6000:
+        raise ValueError("selected-axis official training must use 6000 updates")
+    selector = cfg.model.frame_selector
+    if int(selector.budget) != 384 or int(selector.dense_window_size) != 768:
+        raise ValueError("selected-axis official training requires T=768 and K=384")
+    if str(selector.detector_output_coordinate_space) != "selected_axis_index":
+        raise ValueError("selected-axis detector geometry is not frozen")
+    if not bool(selector.remap_gt_to_selected_axis):
+        raise ValueError("selected-axis GT remapping is required")
+    contract = dict(contract)
+    contract["formal_protocol"] = FORMAL_PROTOCOL
+    contract["training_profile"] = "official60"
+    return contract
+
+
+def assert_safe_cfg_options(
+    cfg_options: Mapping[str, Any] | None,
+    *,
+    entrypoint: str,
+) -> None:
+    if not cfg_options:
+        return
+    allowed: dict[str, Any] = {
+        "work_dir": None,
+        "model.backbone.custom.pretrain": None,
+    }
+    if entrypoint == "tools/test.py":
+        allowed.update(
+            {
+                "post_processing.save_dict": True,
+                "inference.load_from_raw_predictions": False,
+            }
+        )
+
+    def flatten(node: Mapping[str, Any], prefix: str = ""):
+        for key, value in node.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, Mapping):
+                yield from flatten(value, path)
+            else:
+                yield path, value
+
+    rejected = []
+    for path, value in flatten(cfg_options):
+        if path not in allowed:
+            rejected.append(path)
+            continue
+        expected = allowed[path]
+        if expected is not None and value is not expected:
+            rejected.append(path)
+    if rejected:
+        raise RuntimeError(
+            f"{entrypoint} rejected selected-axis DUCA cfg overrides: "
+            + ", ".join(sorted(rejected))
+        )
+
+
+def _load_gate_suite(git_commit: str) -> tuple[dict[str, Any], str]:
+    raw_path = os.environ.get("DUCA_SELECTED_OPT_GATE_SUITE", "")
+    expected_sha256 = os.environ.get("DUCA_SELECTED_OPT_GATE_SUITE_SHA256", "")
+    path = Path(raw_path).expanduser().resolve()
+    if not path.is_file():
+        raise RuntimeError("selected-axis gate suite is missing")
+    observed_sha256 = sha256_file(path)
+    if observed_sha256 != expected_sha256:
+        raise RuntimeError("selected-axis gate suite hash drift")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != "duca_selected_axis_optimization_gate_v1"
+        or payload.get("ok") is not True
+        or payload.get("formal_training_unlocked") is not True
+        or payload.get("git_commit") != git_commit
+    ):
+        raise RuntimeError("selected-axis gate suite did not authorize this commit")
+    return payload, observed_sha256
+
+
+def _load_full_model_gate(
+    suite: Mapping[str, Any],
+    *,
+    config_name: str,
+) -> tuple[dict[str, Any], str]:
+    suffix = f"/full_model/{Path(config_name).stem}.json"
+    matches = [
+        item
+        for item in suite.get("artifacts", [])
+        if isinstance(item, Mapping)
+        and str(item.get("path", "")).replace("\\", "/").endswith(suffix)
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("selected-axis suite lacks one matching full-model gate")
+    record = matches[0]
+    path = Path(str(record["path"])).expanduser().resolve()
+    if not path.is_file() or sha256_file(path) != record.get("sha256"):
+        raise RuntimeError("selected-axis full-model gate hash drift")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        raise RuntimeError("selected-axis full-model gate did not pass")
+    return payload, str(record["sha256"])
+
+
+def build_runtime_bindings(
+    *,
+    git_commit: str,
+    variant: str,
+    seed: int,
+    slurm_job_id: str | None,
+    source_config_path: str | Path,
+    source_config_sha256: str,
+    resolved_config_sha256: str,
+    runtime_config_sha256: str,
+    evaluation_annotation_path: str | Path,
+    evaluation_class_map_path: str | Path,
+    evaluation_config: Mapping[str, Any],
+    runtime_pretrain_path: str | Path,
+) -> dict[str, Any]:
+    if variant not in VARIANT_CONFIGS:
+        raise ValueError(f"invalid selected-axis variant: {variant}")
+    if int(seed) != 3407:
+        raise ValueError("selected-axis official training seed must be 3407")
+    source_config = Path(source_config_path).resolve()
+    if source_config.name != VARIANT_CONFIGS[variant]:
+        raise RuntimeError("selected-axis variant/config mismatch")
+    suite, suite_sha256 = _load_gate_suite(git_commit)
+    full_gate, full_gate_sha256 = _load_full_model_gate(
+        suite,
+        config_name=source_config.name,
+    )
+    if full_gate.get("config_sha256") != source_config_sha256:
+        raise RuntimeError("runtime config source differs from the full-model gate")
+    runtime = full_gate.get("runtime", {})
+    if runtime.get("git_commit") != git_commit:
+        raise RuntimeError("full-model gate commit drift")
+
+    pretrain = Path(runtime_pretrain_path).expanduser().resolve()
+    annotation = Path(evaluation_annotation_path).expanduser().resolve()
+    class_map = Path(evaluation_class_map_path).expanduser().resolve()
+    for path, label in (
+        (pretrain, "VideoMAE-S pretrain"),
+        (annotation, "evaluation annotation"),
+        (class_map, "evaluation class map"),
+    ):
+        if not path.is_file():
+            raise RuntimeError(f"selected-axis {label} is missing: {path}")
+    pretrain_sha256 = sha256_file(pretrain)
+    if full_gate.get("adatad_pretrain", {}).get("sha256") != pretrain_sha256:
+        raise RuntimeError("runtime pretrain differs from the full-model gate")
+
+    return {
+        "git_commit": str(git_commit),
+        "variant": str(variant),
+        "seed": int(seed),
+        "slurm_job_id": None if slurm_job_id is None else str(slurm_job_id),
+        "source_config_path": str(source_config),
+        "source_config_sha256": str(source_config_sha256),
+        "resolved_config_sha256": str(resolved_config_sha256),
+        "runtime_config_sha256": str(runtime_config_sha256),
+        "gate_suite_sha256": suite_sha256,
+        "full_model_gate_sha256": full_gate_sha256,
+        "pretrain_path": str(pretrain),
+        "pretrain_sha256": pretrain_sha256,
+        "evaluation_annotation_path": str(annotation),
+        "evaluation_annotation_sha256": sha256_file(annotation),
+        "evaluation_class_map_path": str(class_map),
+        "evaluation_class_map_sha256": sha256_file(class_map),
+        "evaluation_config_sha256": evaluation_config_sha256(evaluation_config),
+    }
+
+
+__all__ = [
+    "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
+    "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",
+    "DUCA_P0_TRAINING_AUDIT_SCHEMA",
+    "DUCA_TRAINING_AUDIT_FILENAME",
+    "FORMAL_PROTOCOL",
+    "VARIANT_CONFIGS",
+    "assert_safe_cfg_options",
+    "atomic_write_json",
+    "build_checkpoint_metadata",
+    "build_runtime_bindings",
+    "build_training_audit",
+    "capture_global_rng_state",
+    "canonical_sha256",
+    "formal_training_contract",
+    "new_update_audit",
+    "restore_global_rng_state",
+    "restore_training_state",
+    "selector_schedule_step",
+    "sha256_file",
+    "validate_update_state",
+]
