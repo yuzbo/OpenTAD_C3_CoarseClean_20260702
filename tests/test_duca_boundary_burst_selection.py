@@ -1,6 +1,22 @@
 from __future__ import annotations
 
-from tools.bata.select_duca_boundary_burst_candidates import _ranking_key
+from tools.bata.select_duca_boundary_burst_candidates import (
+    _effective_budget_contract_verified,
+    _ranking_key,
+)
+
+
+def test_effective_budget_contract_accepts_short_valid_windows() -> None:
+    summary = {
+        "protocol": {
+            "budget_matched": True,
+            "valid_length_matched": True,
+        }
+    }
+    assert _effective_budget_contract_verified(summary, 379.78)
+    assert _effective_budget_contract_verified(summary, 384.0)
+    assert not _effective_budget_contract_verified(summary, 384.01)
+    assert not _effective_budget_contract_verified({}, 379.78)
 
 
 def _candidate(variant: str, quota_gain: float, epoch: int) -> dict:

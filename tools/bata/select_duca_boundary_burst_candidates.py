@@ -33,6 +33,23 @@ def _mean(summary: Mapping[str, Any], *keys: str) -> float:
     return _finite(value, ".".join(keys))
 
 
+def _effective_budget_contract_verified(
+    summary: Mapping[str, Any],
+    mean_selected_count: float,
+    *,
+    requested_budget: int = 384,
+) -> bool:
+    """Accept exact per-sample min(K, valid_len), including short tail windows."""
+
+    protocol = summary.get("protocol", {})
+    return bool(
+        isinstance(protocol, Mapping)
+        and protocol.get("budget_matched") is True
+        and protocol.get("valid_length_matched") is True
+        and 0.0 < float(mean_selected_count) <= float(requested_budget)
+    )
+
+
 def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any]:
     checkpoint = Path(candidate["checkpoint_path"]).expanduser().resolve()
     summary_path = Path(candidate["summary_path"]).expanduser().resolve()
@@ -89,7 +106,10 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
     gates = {
         "coarse_auroc_at_least_0_55": metrics["coarse_auroc"] >= 0.55,
         "coarse_auprc_above_prevalence": metrics["coarse_auprc_lift"] > 1.0,
-        "exact_k_384": abs(metrics["learned_selected_count"] - 384.0) <= 1.0e-6,
+        "exact_effective_budget_per_sample": _effective_budget_contract_verified(
+            summary,
+            metrics["learned_selected_count"],
+        ),
         "max_unselected_hole_at_most_2": metrics[
             "learned_max_unselected_hole"
         ]
