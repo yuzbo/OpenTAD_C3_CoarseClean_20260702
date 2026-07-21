@@ -238,6 +238,40 @@ def test_sample_analysis_separates_coarse_transition_and_selection_quality() -> 
     assert row["selection"]["pure_delta_topk_diagnostic"]["selected_positions"] != row["selection"]["raw_transition_topk_diagnostic"]["selected_positions"]
 
 
+def test_simple_delta_structured_dp_enforces_exact_k_order_and_max_hole() -> None:
+    cases = (
+        ([12.0 - index for index in range(12)], 6, 2),
+        ([0.0, 9.0, 8.0, 0.0, 0.0, 7.0, 6.0, 0.0], 4, 1),
+    )
+    decoded = []
+    for scores, budget, max_hole in cases:
+        positions = quality._global_structured_positions(
+            scores,
+            budget=budget,
+            max_unselected_hole=max_hole,
+        )
+        decoded.append(positions)
+        assert len(positions) == budget
+        assert positions == sorted(positions)
+        assert len(set(positions)) == budget
+        assert quality._max_unselected_hole(len(scores), positions) <= max_hole
+
+    assert decoded[0] != list(range(6))
+
+
+def test_simple_delta_quality_can_truthfully_exceed_learned_policy() -> None:
+    row = quality.analyze_record(_record("video_delta_wins|0", [0, 3, 4, 7]))
+    learned = row["selection"]["learned"]
+    simple_delta = row["selection"]["pure_delta_same_feasible_dp"]
+    assert simple_delta == row["selection"]["pure_delta_topk_diagnostic"]
+
+    assert simple_delta["selected_count"] == row["sampling_contract"]["effective_budget"]
+    assert simple_delta["selected_positions"] == sorted(set(simple_delta["selected_positions"]))
+    assert simple_delta["max_unselected_hole"] <= row["sampling_contract"]["requested_max_unselected_hole"]
+    assert simple_delta["boundary_recall"]["r0"] > learned["boundary_recall"]["r0"]
+    assert simple_delta["mean_endpoint_distance"] < learned["mean_endpoint_distance"]
+
+
 def test_sample_analysis_fails_closed_on_budget_or_max_hole_violation() -> None:
     wrong_budget = _record("video_a|0", [1, 2, 5])
     with pytest.raises(ValueError, match="effective_budget"):

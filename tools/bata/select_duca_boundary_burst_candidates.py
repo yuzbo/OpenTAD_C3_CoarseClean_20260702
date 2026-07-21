@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from tools.bata.create_duca_frontend_split import validate_split_manifest
+from tools.bata.finalize_duca_r0_boundary_burst import revalidate_r0_summary
 from tools.bata.select_duca_frontend_checkpoint import sha256_file
 
 
@@ -100,90 +101,13 @@ def validate_r0_headroom_summary(
     summary_sha256: str,
     expected_commit: str,
 ) -> dict[str, Any]:
-    """Derive the P0 headroom gate from sealed metric files, not summary copies."""
+    """Reopen and recompute the complete R0 evidence chain before P0."""
 
-    source = _verified_file(summary_path, summary_sha256, label="R0 summary")
-    payload = json.loads(source.read_text(encoding="utf-8"))
-    if payload.get("schema") != "duca_r0_selected_axis_boundary_burst_map_v2":
-        raise RuntimeError("R0 summary schema mismatch")
-    if payload.get("ok") is not True or payload.get("git_commit") != expected_commit:
-        raise RuntimeError("R0 summary did not complete on the exact commit")
-    if payload.get("source_subset") != "training_internal_holdout":
-        raise RuntimeError("R0 did not use the sealed training holdout")
-    if payload.get("test_subset_consumed") is not False:
-        raise RuntimeError("R0 consumed the test subset")
-
-    rows = {row.get("family"): row for row in payload.get("rows", [])}
-    required = {
-        "A_exact_uniform",
-        "R2Q3_privileged_boundary_burst",
-        "R4Q5_privileged_boundary_burst",
-    }
-    if set(rows) != required:
-        raise RuntimeError("R0 family set mismatch")
-
-    values: dict[str, float] = {}
-    for family, row in rows.items():
-        metrics_path = _verified_file(
-            row.get("metrics_path", ""),
-            str(row.get("metrics_sha256", "")),
-            label=f"R0 metrics for {family}",
-        )
-        metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
-        value = _average_map_from_payload(metrics_payload, label=f"R0 {family}")
-        copied_metrics = row.get("metrics")
-        canonical_metrics = metrics_payload.get("metrics", metrics_payload)
-        if copied_metrics != canonical_metrics:
-            raise RuntimeError(f"R0 copied metrics mismatch for {family}")
-        copied_average_map = row.get("average_mAP")
-        if (
-            isinstance(copied_average_map, bool)
-            or not isinstance(copied_average_map, (int, float))
-            or float(copied_average_map) != value
-        ):
-            raise RuntimeError(f"R0 copied average_mAP mismatch for {family}")
-        values[str(family)] = value
-
-    uniform = values["A_exact_uniform"]
-    headroom_by_family = {
-        family: values[family] - uniform
-        for family in (
-            "R2Q3_privileged_boundary_burst",
-            "R4Q5_privileged_boundary_burst",
-        )
-    }
-    for family, headroom in headroom_by_family.items():
-        copied = rows[family].get("headroom_vs_uniform_average_mAP")
-        if (
-            isinstance(copied, bool)
-            or not isinstance(copied, (int, float))
-            or float(copied) != headroom
-        ):
-            raise RuntimeError(f"R0 copied headroom mismatch for {family}")
-    best_headroom = max(headroom_by_family.values())
-    required_headroom = _finite(
-        payload.get("required_headroom_average_mAP", float("nan")),
-        "required_headroom_average_mAP",
+    return revalidate_r0_summary(
+        summary_path=summary_path,
+        summary_file_sha256=summary_sha256,
+        expected_commit=expected_commit,
     )
-    if required_headroom < 0.20:
-        raise RuntimeError("R0 required headroom contract is missing or too weak")
-    if not best_headroom > required_headroom:
-        raise RuntimeError(
-            "R0 constrained burst Oracle headroom does not clear the frozen "
-            f"threshold: headroom={best_headroom}, required>{required_headroom}"
-        )
-    return {
-        "schema": "duca_r0_headroom_gate_v1",
-        "ok": True,
-        "git_commit": expected_commit,
-        "r0_summary_path": str(source),
-        "r0_summary_sha256": summary_sha256,
-        "average_mAP": values,
-        "best_privileged_minus_uniform_average_mAP": best_headroom,
-        "required_strict_headroom_average_mAP": required_headroom,
-        "test_subset_consumed": False,
-        "paper_claim_allowed": False,
-    }
 
 
 def _finite(value: Any, label: str) -> float:
@@ -256,6 +180,11 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
 
     learned = summary["selection"]["learned"]
     uniform = summary["selection"]["uniform"]
+    simple_delta = summary["selection"].get("pure_delta_same_feasible_dp")
+    if not isinstance(simple_delta, Mapping):
+        raise RuntimeError(
+            "selection summary lacks the same-exact-K/max-hole simple-delta DP"
+        )
     metrics = {
         "coarse_auroc": _mean(summary, "coarse", "pooled", "auroc"),
         "coarse_auprc_lift": _mean(
@@ -271,8 +200,18 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
             learned, "boundary_recall", "r0"
         )
         - _mean(uniform, "boundary_recall", "r0"),
+        "learned_boundary_recall_r0": _mean(
+            learned, "boundary_recall", "r0"
+        ),
+        "simple_delta_boundary_recall_r0": _mean(
+            simple_delta, "boundary_recall", "r0"
+        ),
         "uniform_minus_learned_endpoint_distance": _mean(
             uniform, "mean_endpoint_distance"
+        )
+        - _mean(learned, "mean_endpoint_distance"),
+        "simple_delta_minus_learned_endpoint_distance": _mean(
+            simple_delta, "mean_endpoint_distance"
         )
         - _mean(learned, "mean_endpoint_distance"),
         "learned_max_unselected_hole": _mean(
@@ -284,6 +223,7 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
     if burst_key is not None:
         learned_burst = learned["boundary_burst"][burst_key]
         uniform_burst = uniform["boundary_burst"][burst_key]
+        simple_delta_burst = simple_delta["boundary_burst"][burst_key]
         for field in (
             "endpoint_quota_recall",
             "endpoint_bilateral_recall",
@@ -292,6 +232,26 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
             metrics[f"{field}_gain"] = _mean(learned_burst, field) - _mean(
                 uniform_burst, field
             )
+            metrics[f"{field}_gain_vs_simple_delta"] = _mean(
+                learned_burst, field
+            ) - _mean(simple_delta_burst, field)
+    simple_delta_pareto_gains = [
+        metrics["learned_boundary_recall_r0"]
+        - metrics["simple_delta_boundary_recall_r0"],
+        metrics["simple_delta_minus_learned_endpoint_distance"],
+    ]
+    if burst_key is not None:
+        simple_delta_pareto_gains.extend(
+            metrics[f"{field}_gain_vs_simple_delta"]
+            for field in (
+                "endpoint_quota_recall",
+                "endpoint_bilateral_recall",
+                "both_endpoints_quota_recall",
+            )
+        )
+    simple_delta_stop_rule_pass = all(
+        value >= 0.0 for value in simple_delta_pareto_gains
+    ) and any(value > 0.0 for value in simple_delta_pareto_gains)
     gates = {
         "coarse_auroc_at_least_0_55": metrics["coarse_auroc"] >= 0.55,
         "coarse_auprc_above_prevalence": metrics["coarse_auprc_lift"] > 1.0,
@@ -301,6 +261,9 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
         ),
         "endpoint_centering_not_worse_than_uniform": (
             metrics["uniform_minus_learned_endpoint_distance"] >= 0.0
+        ),
+        "learned_selector_strictly_pareto_beats_same_feasible_simple_delta": (
+            simple_delta_stop_rule_pass
         ),
         "exact_effective_budget_per_sample": _effective_budget_contract_verified(
             summary,

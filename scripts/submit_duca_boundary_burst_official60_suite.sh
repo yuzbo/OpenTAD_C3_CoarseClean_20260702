@@ -18,10 +18,22 @@ R0_CHECKPOINT_EPOCH="${DUCA_R0_CHECKPOINT_EPOCH:-131}"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
+mkdir -p "${RUN_ROOT}/logs" "${RUN_ROOT}/submission"
+JOBS_TSV="${RUN_ROOT}/jobs.tsv"
+JOBS_COMPLETE="${RUN_ROOT}/jobs.complete.json"
+journal() {
+  "${PYTHON}" -m tools.bata.duca_boundary_burst_submission_journal \
+    --journal "${JOBS_TSV}" --seal "${JOBS_COMPLETE}" \
+    --expected-commit "${EXPECTED_COMMIT}" --target-cluster "${TARGET_CLUSTER}" "$@"
+}
+if [[ -e "${JOBS_TSV}" || -e "${JOBS_COMPLETE}" ]]; then
+  journal inspect >/dev/null \
+    || fail "partial or invalid submission journal exists; reconcile Slurm manually"
+  cat "${JOBS_TSV}"
+  exit 0
+fi
 [[ -f "${R0_CHECKPOINT}" ]] || fail "DUCA_R0_CHECKPOINT is required"
 [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain is missing"
-mkdir -p "${RUN_ROOT}/logs" "${RUN_ROOT}/submission"
-[[ ! -f "${RUN_ROOT}/jobs.tsv" ]] || { cat "${RUN_ROOT}/jobs.tsv"; exit 0; }
 
 SPLIT_ROOT="${RUN_ROOT}/frontend_split"
 "${PYTHON}" -m tools.bata.create_duca_frontend_split \
@@ -246,22 +258,46 @@ if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
   exit 0
 fi
 
-r0="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" "${R0_SBATCH}")"; r0="${r0%%;*}"
-p0="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afterok:${r0}" "${P0_SBATCH}")"; p0="${p0%%;*}"
-gate="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afterok:${p0}" "${GATE_SBATCH}")"; gate="${gate%%;*}"
+journal initialize
+
+SUBMITTED_JOB_ID=""
+submit_and_record() {
+  local role="$1" dependency="$2" sbatch_file="$3"
+  local raw job_id
+  local sbatch_args=(--parsable --clusters="${TARGET_CLUSTER}")
+  if [[ "${dependency}" != "none" ]]; then
+    sbatch_args+=(--dependency="${dependency}")
+  fi
+  journal reserve --role "${role}" --dependency "${dependency}"
+  if ! raw="$(sbatch "${sbatch_args[@]}" "${sbatch_file}")"; then
+    fail "sbatch failed for ${role}; partial journal retained for manual reconciliation"
+  fi
+  job_id="${raw%%;*}"
+  [[ "${job_id}" =~ ^[1-9][0-9]*$ ]] \
+    || fail "invalid sbatch response for ${role}; partial journal retained"
+  journal record --role "${role}" --job-id "${job_id}" \
+    --dependency "${dependency}"
+  SUBMITTED_JOB_ID="${job_id}"
+}
+
+submit_and_record "r0_holdout_map" "none" "${R0_SBATCH}"
+r0="${SUBMITTED_JOB_ID}"
+p0_dependency="afterok:${r0}"
+submit_and_record "p0" "${p0_dependency}" "${P0_SBATCH}"
+p0="${SUBMITTED_JOB_ID}"
+gate_dependency="afterok:${p0}"
+submit_and_record "gate" "${gate_dependency}" "${GATE_SBATCH}"
+gate="${SUBMITTED_JOB_ID}"
 train_ids=()
 for variant in "${variants[@]}"; do
-  raw="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afterok:${gate}" "${RUN_ROOT}/submission/${variant}.sbatch")"
-  train_ids+=("${raw%%;*}")
+  submit_and_record "${variant}" "afterok:${gate}" \
+    "${RUN_ROOT}/submission/${variant}.sbatch"
+  train_ids+=("${SUBMITTED_JOB_ID}")
 done
 dependency="$(IFS=:; echo "${train_ids[*]}")"
-aggregate="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afterok:${dependency}" "${AGG_SBATCH}")"; aggregate="${aggregate%%;*}"
-{
-  printf 'key\tjob_id\tdependency\n'
-  printf 'r0_holdout_map\t%s\tnone\n' "${r0}"
-  printf 'p0\t%s\tafterok:%s\n' "${p0}" "${r0}"
-  printf 'gate\t%s\tafterok:%s\n' "${gate}" "${p0}"
-  for idx in "${!variants[@]}"; do printf '%s\t%s\tafterok:%s\n' "${variants[$idx]}" "${train_ids[$idx]}" "${gate}"; done
-  printf 'aggregate\t%s\tafterok:%s\n' "${aggregate}" "${dependency}"
-} > "${RUN_ROOT}/jobs.tsv"
-cat "${RUN_ROOT}/jobs.tsv"
+aggregate_dependency="afterok:${dependency}"
+submit_and_record "aggregate" "${aggregate_dependency}" "${AGG_SBATCH}"
+aggregate="${SUBMITTED_JOB_ID}"
+journal seal
+journal inspect >/dev/null
+cat "${JOBS_TSV}"

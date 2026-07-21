@@ -86,7 +86,16 @@ def test_checkpoint_selection_uses_epoch_for_all_mechanisms() -> None:
     assert sorted([late, early], key=_ranking_key)[0] is early
 
 
-def _write_candidate(tmp_path: Path, *, variant: str, policy_auroc: float, distance_gain: float, burst_gain: float = 0.0) -> dict:
+def _write_candidate(
+    tmp_path: Path,
+    *,
+    variant: str,
+    policy_auroc: float,
+    distance_gain: float,
+    burst_gain: float = 0.0,
+    simple_delta_recall: float = 0.65,
+    simple_delta_distance: float = 1.10,
+) -> dict:
     checkpoint = tmp_path / f"{variant}.pth"
     records = tmp_path / f"{variant}.jsonl"
     summary_path = tmp_path / f"{variant}.summary.json"
@@ -116,12 +125,21 @@ def _write_candidate(tmp_path: Path, *, variant: str, policy_auroc: float, dista
                     "mean_endpoint_distance": {"mean": 1.0},
                     "boundary_burst": {},
                 },
+                "pure_delta_same_feasible_dp": {
+                    "boundary_recall": {"r0": {"mean": simple_delta_recall}},
+                    "mean_endpoint_distance": {"mean": simple_delta_distance},
+                    "boundary_burst": {},
+                },
             },
         }
     )
     if variant.startswith("burst_"):
         key = "r2q3" if variant == "burst_r2q3" else "r4q5"
-        for method, base in (("learned", burst_gain), ("uniform", 0.0)):
+        for method, base in (
+            ("learned", burst_gain),
+            ("uniform", 0.0),
+            ("pure_delta_same_feasible_dp", 0.0),
+        ):
             summary["selection"][method]["boundary_burst"][key] = {
                 "endpoint_quota_recall": {"mean": base},
                 "endpoint_bilateral_recall": {"mean": base},
@@ -166,6 +184,25 @@ def test_candidate_gate_requires_scorer_centering_and_burst_mechanism_gains(tmp_
     assert weak["gates"]["endpoint_centering_not_worse_than_uniform"] is False
     assert weak["gates"]["burst_bilateral_gain_positive"] is False
     assert weak["all_sanity_gates_pass"] is False
+
+
+def test_candidate_stop_rule_rejects_simple_delta_dominance(tmp_path: Path) -> None:
+    candidate = _read_candidate(
+        _write_candidate(
+            tmp_path,
+            variant="burst_r2q3",
+            policy_auroc=0.65,
+            distance_gain=0.05,
+            burst_gain=0.05,
+            simple_delta_recall=0.80,
+            simple_delta_distance=0.50,
+        ),
+        "burst_r2q3",
+    )
+    assert candidate["gates"][
+        "learned_selector_strictly_pareto_beats_same_feasible_simple_delta"
+    ] is False
+    assert candidate["all_sanity_gates_pass"] is False
 
 
 def test_gaussian_candidate_does_not_require_burst_metrics(tmp_path: Path) -> None:

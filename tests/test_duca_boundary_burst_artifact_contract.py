@@ -169,57 +169,19 @@ def test_r0_runtime_binding_fails_closed_on_weight_drift(
         )
 
 
-def _r0_summary(tmp_path: Path) -> Path:
-    rows = []
-    values = {
-        "A_exact_uniform": 0.50,
-        "R2Q3_privileged_boundary_burst": 0.75,
-        "R4Q5_privileged_boundary_burst": 0.80,
-    }
-    for family, value in values.items():
-        metrics_path = tmp_path / "metrics" / family / "metrics.json"
-        metrics = {"metrics": {"average_mAP": value, "mAP@0.5": value - 0.1}}
-        _write_json(metrics_path, metrics)
-        rows.append(
-            {
-                "family": family,
-                "metrics_path": str(metrics_path.resolve()),
-                "metrics_sha256": _sha256(metrics_path),
-                "metrics": metrics["metrics"],
-                "average_mAP": value,
-                "headroom_vs_uniform_average_mAP": value - values["A_exact_uniform"],
-            }
-        )
-    summary = tmp_path / "r0_summary.json"
+def test_p0_rejects_legacy_r0_summary_without_recomputed_identity(
+    tmp_path: Path,
+) -> None:
+    summary = tmp_path / "legacy_r0_summary.json"
     _write_json(
         summary,
         {
             "schema": "duca_r0_selected_axis_boundary_burst_map_v2",
             "ok": True,
             "git_commit": "a" * 40,
-            "source_subset": "training_internal_holdout",
-            "test_subset_consumed": False,
-            "required_headroom_average_mAP": 0.20,
-            "rows": rows,
         },
     )
-    return summary
-
-
-@pytest.mark.parametrize("copied_field", ("metrics", "average_mAP"))
-def test_p0_rejects_tampered_r0_summary_metric_copy(
-    tmp_path: Path,
-    copied_field: str,
-) -> None:
-    summary = _r0_summary(tmp_path)
-    payload = json.loads(summary.read_text(encoding="utf-8"))
-    if copied_field == "metrics":
-        payload["rows"][0]["metrics"]["average_mAP"] = 0.99
-    else:
-        payload["rows"][0]["average_mAP"] = 0.99
-    _write_json(summary, payload)
-
-    with pytest.raises(RuntimeError, match="copied .*mismatch"):
+    with pytest.raises(RuntimeError):
         validate_r0_headroom_summary(
             summary_path=summary,
             summary_sha256=_sha256(summary),
@@ -534,8 +496,8 @@ def test_submission_dag_requires_r0_before_every_learned_stage() -> None:
         encoding="utf-8"
     )
 
-    assert '--dependency="afterok:${r0}" "${P0_SBATCH}"' in source
-    assert 'printf \'p0\\t%s\\tafterok:%s\\n\' "${p0}" "${r0}"' in source
+    assert 'p0_dependency="afterok:${r0}"' in source
+    assert 'submit_and_record "p0" "${p0_dependency}" "${P0_SBATCH}"' in source
     assert '"p0": "afterok:r0_holdout_map"' in source
     assert '"gate": "afterok:p0"' in source
     assert '"official60_arms": "afterok:gate"' in source

@@ -274,11 +274,20 @@ def main():
         result_path = evaluation_summary.get("result_path")
         if not result_path or not os.path.isfile(result_path):
             raise RuntimeError("structured metric evidence requires saved predictions")
-        evaluation_config = normalize_evaluation_config(cfg.evaluation)
+        formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
+        r0_selected_axis_replay = (
+            formal_protocol == "duca_r0_selected_axis_holdout_replay_v1"
+        )
+        expected_evaluation_subset = (
+            "training" if r0_selected_axis_replay else "validation"
+        )
+        evaluation_config = normalize_evaluation_config(
+            cfg.evaluation,
+            expected_subset=expected_evaluation_subset,
+        )
         evaluator_identity = official_evaluator_identity()
         if evaluation_summary.get("evaluator") != evaluator_identity:
             raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
-        formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
         if formal_protocol == "duca_cellcf_v1":
             evaluation_schema = "duca_cellcf_terminal_evaluation_v1"
         elif formal_protocol == "duca_protected_physical_v1":
@@ -287,6 +296,8 @@ def main():
             )
         elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
             evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
+        elif r0_selected_axis_replay:
+            evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
         else:
             evaluation_schema = "duca_p0_terminal_evaluation_v3"
         payload = {
@@ -311,7 +322,8 @@ def main():
             "evaluator": evaluator_identity,
             "evaluation_config": evaluation_config,
             "evaluation_config_sha256": evaluation_config_sha256(
-                evaluation_config
+                evaluation_config,
+                expected_subset=expected_evaluation_subset,
             ),
             "evaluation_annotation_path": os.path.abspath(
                 os.path.expanduser(str(cfg.evaluation.ground_truth_filename))
@@ -332,6 +344,38 @@ def main():
                     "seed": int(args.seed),
                     "variant": os.environ.get("DUCA_SELECTED_OPT_VARIANT"),
                     "training_identity": selected_axis_terminal_identity,
+                }
+            )
+        if r0_selected_axis_replay:
+            allocation_artifact = os.path.abspath(
+                os.path.expanduser(
+                    os.environ.get("DUCA_ALLOCATION_ARTIFACT_PATH", "")
+                )
+            )
+            allocation_sha256 = os.environ.get(
+                "DUCA_ALLOCATION_ARTIFACT_SHA256", ""
+            )
+            family_key = os.environ.get("DUCA_ALLOCATION_FAMILY_KEY", "")
+            blocked_path = evaluation_config.get("blocked_videos")
+            if (
+                not family_key
+                or not os.path.isfile(allocation_artifact)
+                or sha256_file(allocation_artifact) != allocation_sha256
+                or not blocked_path
+                or not os.path.isfile(blocked_path)
+            ):
+                raise RuntimeError("R0 selected-axis replay identity is incomplete")
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "family": family_key,
+                    "allocation_artifact_path": allocation_artifact,
+                    "allocation_artifact_sha256": allocation_sha256,
+                    "evaluation_blocked_videos_path": os.path.abspath(blocked_path),
+                    "evaluation_blocked_videos_sha256": sha256_file(blocked_path),
+                    "source_subset": "training_internal_holdout",
+                    "test_subset_consumed": False,
+                    "runtime_gt_input_to_selector": False,
                 }
             )
         payload["evaluation_sha256"] = _canonical_sha256(payload)

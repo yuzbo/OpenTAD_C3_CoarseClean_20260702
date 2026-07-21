@@ -18,6 +18,7 @@ try:
         PhysicalAxis,
         resolve_physical_cap,
     )
+    from tools.bata.diagnose_duca_allocation_family_ceiling import allocation_metrics
     from tools.bata.duca_exact_physical_solver import solve_boundary_burst_oracle
 except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
     pytest.skip(f"OpenTAD dataset dependencies are unavailable: {exc}", allow_module_level=True)
@@ -202,6 +203,26 @@ def test_r0_launcher_is_headroom_gated_and_uses_constrained_burst_families() -> 
     assert "build_duca_r0_boundary_burst_oracles" in script
     assert "R2Q3_privileged_boundary_burst" in script
     assert "R4Q5_privileged_boundary_burst" in script
-    assert '"r0_decision.json"' in script
-    assert "headroom_vs_uniform_average_mAP" in script
-    assert "no constrained burst Oracle exceeds U by >0.20 Avg-mAP" in script
+    assert "Z_unrestricted_gt_oracle" in script
+    assert "finalize_duca_r0_boundary_burst" in script
+    assert '"${TRAIN_BLOCK_LIST}" "${EVAL_BLOCKED}"' in script
+    assert '"${HOLDOUT_BLOCK_LIST}" "${EVAL_BLOCKED}"' not in script
+    assert "--bootstrap-samples 1000" in script
+    assert "--required-headroom-percentage-points 0.20" in script
+
+
+def test_r0_allocation_metrics_exclude_crop_cut_endpoint() -> None:
+    metrics = allocation_metrics(
+        [0, 5, 10, 15],
+        [[0.0, 15.0]],
+        valid_len=16,
+        radii=(0, 1),
+        short_action_max_length=16.0,
+        gt_boundary_validity=[[False, True]],
+    )
+
+    assert metrics["endpoint_count"] == 1
+    assert metrics["invalid_crop_endpoint_count"] == 1
+    assert metrics["mean_endpoint_distance"] == pytest.approx(0.0)
+    assert metrics["endpoint_recall_r0"] == pytest.approx(1.0)
+    assert metrics["both_boundary_recall_r0"] is None

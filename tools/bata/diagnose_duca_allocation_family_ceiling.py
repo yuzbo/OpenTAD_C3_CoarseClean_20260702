@@ -551,25 +551,48 @@ def allocation_metrics(
     valid_len: int,
     radii: Sequence[int],
     short_action_max_length: float,
+    gt_boundary_validity: Sequence[Sequence[bool | int]] | None = None,
 ) -> dict[str, Any]:
     selected = tuple(int(value) for value in positions)
     segments = _canonical_gt_segments(gt_segments, valid_len)
-    endpoints = tuple(value for segment in segments for value in segment)
+    if gt_boundary_validity is None:
+        validity = tuple((True, True) for _ in segments)
+    else:
+        validity = tuple(
+            tuple(bool(value) for value in row)
+            for row in gt_boundary_validity
+        )
+        if len(validity) != len(segments) or any(len(row) != 2 for row in validity):
+            raise ValueError("gt_boundary_validity must have shape [num_segments,2]")
+    endpoint_rows = tuple(
+        (segment_index, side, float(segment[side]))
+        for segment_index, (segment, valid_row) in enumerate(zip(segments, validity))
+        for side in range(2)
+        if valid_row[side]
+    )
+    endpoints = tuple(value for _, _, value in endpoint_rows)
     distances = [
         min(abs(float(position) - endpoint) for position in selected)
         for endpoint in endpoints
     ]
     metrics: dict[str, Any] = {
         "endpoint_count": len(endpoints),
+        "invalid_crop_endpoint_count": 2 * len(segments) - len(endpoints),
         "mean_endpoint_distance": _mean(distances),
         "max_endpoint_distance": max(distances) if distances else None,
         "uniform_overlap_placeholder": None,
     }
     for radius in radii:
         hit = [distance <= int(radius) + 1.0e-9 for distance in distances]
+        hit_by_endpoint = {
+            (segment_index, side): value
+            for (segment_index, side, _), value in zip(endpoint_rows, hit)
+        }
         both = [
-            hit[2 * segment_index] and hit[2 * segment_index + 1]
+            hit_by_endpoint[(segment_index, 0)]
+            and hit_by_endpoint[(segment_index, 1)]
             for segment_index in range(len(segments))
+            if validity[segment_index][0] and validity[segment_index][1]
         ]
         metrics[f"endpoint_recall_r{radius}"] = _mean(float(value) for value in hit)
         metrics[f"both_boundary_recall_r{radius}"] = _mean(float(value) for value in both)

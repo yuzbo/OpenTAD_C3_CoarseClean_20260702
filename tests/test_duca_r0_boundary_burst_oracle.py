@@ -67,3 +67,35 @@ def test_boundary_burst_oracle_does_not_supervise_crop_cut_endpoint() -> None:
     assert result.invalid_endpoint_count == 1
     assert len(result.endpoint_contracts) == 1
     assert result.endpoint_contracts[0]["endpoint"] == "end"
+
+
+def test_unrestricted_boundary_burst_oracle_removes_coverage_scaffold() -> None:
+    axis = PhysicalAxis.from_source_frames(
+        [4 * index for index in range(24)],
+        decoder_fps=30.0,
+        annotation_fps=30.0,
+    )
+    cap = resolve_physical_cap(
+        axis,
+        requested_budget=6,
+        policy="explicit_frames",
+        value=92,
+    )
+    result = solve_boundary_burst_oracle(
+        axis,
+        [[10.0, 11.0]],
+        [[True, False]],
+        requested_budget=6,
+        cap=cap,
+        radius=4,
+        quota=5,
+        max_unselected_hole=23,
+        enforce_global_coverage=False,
+    )
+
+    assert len(result.positions) == 6
+    assert 0 not in result.required_positions
+    assert 23 not in result.required_positions
+    assert result.positions[-1] < 23
+    assert result.max_unselected_hole > 2
+    assert result.endpoint_contracts[0]["quota_pass"] is True

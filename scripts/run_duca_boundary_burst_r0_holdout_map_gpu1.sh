@@ -71,7 +71,7 @@ out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="u
 PY
 
 EVAL_BLOCKED="${OUTPUT_ROOT}/evaluation_blocked_videos.json"
-"${PYTHON}" - "${HOLDOUT_BLOCK_LIST}" "${EVAL_BLOCKED}" <<'PY'
+"${PYTHON}" - "${TRAIN_BLOCK_LIST}" "${EVAL_BLOCKED}" <<'PY'
 import json, sys
 from pathlib import Path
 source, target = map(Path, sys.argv[1:])
@@ -105,6 +105,7 @@ families=(
   A_exact_uniform
   R2Q3_privileged_boundary_burst
   R4Q5_privileged_boundary_burst
+  Z_unrestricted_gt_oracle
 )
 for family in "${families[@]}"; do
   export DUCA_ALLOCATION_FAMILY_KEY="${family}"
@@ -128,94 +129,31 @@ for family in "${families[@]}"; do
     2>&1 | tee "${root}/test.out"
 done
 
-"${PYTHON}" - "${OUTPUT_ROOT}" "${EXPECTED_COMMIT}" "${CHECKPOINT}" \
-  "${INPUT}" "${FAMILIES}" "${FAMILY_SUMMARY}" "${SPLIT_MANIFEST}" \
-  "${SPLIT_SHA256}" "${ADATAD_PRETRAIN_PATH}" "${EXPECTED_PRETRAIN_SHA256}" <<'PY'
-import hashlib, json, math, sys
-from pathlib import Path
-root = Path(sys.argv[1]).resolve()
-def digest(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-def average_map(payload):
-    metrics = payload.get("metrics", payload)
-    value = metrics.get("average_mAP")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise SystemExit("R0 metrics are missing numeric average_mAP")
-    value = float(value)
-    if not math.isfinite(value):
-        raise SystemExit("R0 average_mAP is non-finite")
-    return value
-rows = []
-for family in (
-    "A_exact_uniform",
-    "R2Q3_privileged_boundary_burst",
-    "R4Q5_privileged_boundary_burst",
-):
-    path = root / "map" / family / "metrics.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    rows.append({
-        "family": family,
-        "metrics_path": str(path),
-        "metrics_sha256": digest(path),
-        "metrics": payload.get("metrics", payload),
-        "average_mAP": average_map(payload),
-    })
-uniform_map = rows[0]["average_mAP"]
-for row in rows:
-    row["headroom_vs_uniform_average_mAP"] = row["average_mAP"] - uniform_map
-threshold = 0.20
-eligible = [
-    row for row in rows[1:]
-    if row["headroom_vs_uniform_average_mAP"] > threshold
-]
-summary = {
-    "schema": "duca_r0_selected_axis_boundary_burst_map_v2",
-    "ok": bool(eligible),
-    "task": "offline_temporal_action_detection",
-    "git_commit": sys.argv[2],
-    "checkpoint": str(Path(sys.argv[3]).resolve()),
-    "checkpoint_sha256": digest(sys.argv[3]),
-    "split_manifest_path": str(Path(sys.argv[7]).resolve()),
-    "split_manifest_sha256": sys.argv[8],
-    "adatad_pretrain_path": str(Path(sys.argv[9]).resolve()),
-    "adatad_pretrain_sha256": sys.argv[10],
-    "input_jsonl": str(Path(sys.argv[4]).resolve()),
-    "input_jsonl_sha256": digest(sys.argv[4]),
-    "families_jsonl": str(Path(sys.argv[5]).resolve()),
-    "families_jsonl_sha256": digest(sys.argv[5]),
-    "family_summary": str(Path(sys.argv[6]).resolve()),
-    "family_summary_sha256": digest(sys.argv[6]),
-    "evaluation_blocked_videos": str(root / "evaluation_blocked_videos.json"),
-    "evaluation_blocked_videos_sha256": digest(root / "evaluation_blocked_videos.json"),
-    "source_subset": "training_internal_holdout",
-    "test_subset_consumed": False,
-    "runtime_gt_input_to_selector": False,
-    "selected_axis_detector": True,
-    "diagnostic_only": True,
-    "absolute_map_paper_claim_allowed": False,
-    "decision_uses_relative_same_detector_headroom_only": True,
-    "required_headroom_average_mAP": threshold,
-    "rows": rows,
-    "paper_claim_allowed": False,
-}
-(root / "r0_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-decision = {
-    "schema": "duca_r0_boundary_burst_decision_v1",
-    "ok": bool(eligible),
-    "diagnostic_only": True,
-    "absolute_map_paper_claim_allowed": False,
-    "uniform_average_mAP": uniform_map,
-    "required_strict_headroom_average_mAP": threshold,
-    "eligible_families": [row["family"] for row in eligible],
-    "headroom_by_family": {
-        row["family"]: row["headroom_vs_uniform_average_mAP"]
-        for row in rows[1:]
-    },
-}
-(root / "r0_decision.json").write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-if not decision["ok"]:
-    raise SystemExit("no constrained burst Oracle exceeds U by >0.20 Avg-mAP")
-PY
+R0_CONFIG="configs/adatad/thumos/duca_boundary_burst_r0_selected_axis_replay.py"
+R0_CONFIG_SHA256="$(sha256sum "${R0_CONFIG}" | awk '{print $1}')"
+FAMILY_SUMMARY_SHA256="$(sha256sum "${FAMILY_SUMMARY}" | awk '{print $1}')"
+EVAL_BLOCKED_SHA256="$(sha256sum "${EVAL_BLOCKED}" | awk '{print $1}')"
+family_evaluations=()
+for family in "${families[@]}"; do
+  family_evaluations+=(--family-evaluation "${family}=${OUTPUT_ROOT}/map/${family}/metrics.json")
+done
+"${PYTHON}" -m tools.bata.finalize_duca_r0_boundary_burst \
+  --expected-commit "${EXPECTED_COMMIT}" \
+  "${family_evaluations[@]}" \
+  --split-manifest "${SPLIT_MANIFEST}" --split-manifest-sha256 "${SPLIT_SHA256}" \
+  --checkpoint "${CHECKPOINT}" --checkpoint-sha256 "${CHECKPOINT_SHA256}" \
+  --checkpoint-epoch "${EXPECTED_EPOCH}" \
+  --config "${R0_CONFIG}" --config-sha256 "${R0_CONFIG_SHA256}" \
+  --allocation-artifact "${FAMILIES}" \
+  --allocation-artifact-sha256 "${DUCA_ALLOCATION_ARTIFACT_SHA256}" \
+  --family-summary "${FAMILY_SUMMARY}" --family-summary-sha256 "${FAMILY_SUMMARY_SHA256}" \
+  --pretrain "${ADATAD_PRETRAIN_PATH}" --pretrain-sha256 "${EXPECTED_PRETRAIN_SHA256}" \
+  --blocked-videos "${EVAL_BLOCKED}" --blocked-videos-sha256 "${EVAL_BLOCKED_SHA256}" \
+  --bootstrap-output "${OUTPUT_ROOT}/r0_bootstrap.json" \
+  --summary-output "${OUTPUT_ROOT}/r0_summary.json" \
+  --bootstrap-samples 1000 --bootstrap-seed 3407 --bootstrap-confidence 0.95 \
+  --required-headroom-percentage-points 0.20
 
 sha256sum "${OUTPUT_ROOT}/r0_summary.json" | awk '{print $1}' > "${OUTPUT_ROOT}/r0_summary.sha256"
 
-echo "[DUCA_R0_HOLDOUT_MAP] completed ${OUTPUT_ROOT}/r0_decision.json"
+echo "[DUCA_R0_HOLDOUT_MAP] completed ${OUTPUT_ROOT}/r0_summary.json"

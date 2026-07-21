@@ -31,6 +31,7 @@ FAMILY_SPECS = (
     ("R2Q3_privileged_boundary_burst", 2, 3),
     ("R4Q5_privileged_boundary_burst", 4, 5),
 )
+UNRESTRICTED_FAMILY = "Z_unrestricted_gt_oracle"
 
 
 def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -98,7 +99,11 @@ def _segments_close(left: Sequence[Any], right: Sequence[Any]) -> bool:
     )
 
 
-def _uniform_family(row: Mapping[str, Any], cap: Any) -> dict[str, Any]:
+def _uniform_family(
+    row: Mapping[str, Any],
+    validity: Sequence[Sequence[bool]],
+    cap: Any,
+) -> dict[str, Any]:
     axis = axis_from_record(row)
     selected = select_family_a(
         axis,
@@ -113,6 +118,7 @@ def _uniform_family(row: Mapping[str, Any], cap: Any) -> dict[str, Any]:
         valid_len=axis.valid_len,
         radii=(0, 1, 2, 4),
         short_action_max_length=16.0,
+        gt_boundary_validity=validity,
     )
     payload["allocation_metrics"]["uniform_overlap"] = 1.0
     payload["r0_contract"] = {
@@ -134,6 +140,7 @@ def _burst_family(
     radius: int,
     quota: int,
     max_unselected_hole: int,
+    enforce_global_coverage: bool = True,
 ) -> dict[str, Any]:
     axis = axis_from_record(row)
     solved = solve_boundary_burst_oracle(
@@ -145,15 +152,17 @@ def _burst_family(
         radius=radius,
         quota=quota,
         max_unselected_hole=max_unselected_hole,
+        enforce_global_coverage=enforce_global_coverage,
     )
     report = physical_gap_report(axis, solved.positions)
-    uniform = set(_uniform_family(row, cap)["positions"])
+    uniform = set(_uniform_family(row, validity, cap)["positions"])
     metrics = allocation_metrics(
         solved.positions,
         row.get("gt_segments", []),
         valid_len=axis.valid_len,
         radii=(0, 1, 2, 4),
         short_action_max_length=16.0,
+        gt_boundary_validity=validity,
     )
     metrics["uniform_overlap"] = len(set(solved.positions) & uniform) / len(uniform)
     return {
@@ -187,8 +196,40 @@ def _burst_family(
             "background_component_count": solved.background_component_count,
             "invalid_crop_endpoint_count": solved.invalid_endpoint_count,
             "diagnostic_only": True,
+            "global_coverage_enforced": bool(enforce_global_coverage),
         },
     }
+
+
+def _unrestricted_family(
+    row: Mapping[str, Any],
+    validity: Sequence[Sequence[bool]],
+    *,
+    radius: int = 4,
+    quota: int = 5,
+) -> dict[str, Any]:
+    axis = axis_from_record(row)
+    source_span = max(axis.source_frames[-1] - axis.source_frames[0], 0.0)
+    cap = resolve_physical_cap(
+        axis,
+        requested_budget=int(row["requested_budget"]),
+        policy="explicit_frames",
+        value=source_span,
+    )
+    payload = _burst_family(
+        row,
+        validity,
+        cap,
+        family_key=UNRESTRICTED_FAMILY,
+        radius=radius,
+        quota=quota,
+        max_unselected_hole=max(0, axis.valid_len - 1),
+        enforce_global_coverage=False,
+    )
+    payload["r0_contract"]["coverage_cap"] = "unrestricted"
+    payload["r0_contract"]["projected_into_deployment_feasible_set"] = False
+    payload["r0_contract"]["upper_bound_diagnostic"] = True
+    return payload
 
 
 def build_oracles(
@@ -206,7 +247,11 @@ def build_oracles(
         raise FileExistsError(f"refusing to overwrite R0 artifact: {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".partial")
-    family_counts = {"A_exact_uniform": 0, **{name: 0 for name, _, _ in FAMILY_SPECS}}
+    family_counts = {
+        "A_exact_uniform": 0,
+        **{name: 0 for name, _, _ in FAMILY_SPECS},
+        UNRESTRICTED_FAMILY: 0,
+    }
     try:
         with temporary.open("x", encoding="utf-8") as handle:
             for row in rows:
@@ -228,12 +273,13 @@ def build_oracles(
                     policy="explicit_frames",
                     value=(int(max_unselected_hole) + 1) * step,
                 )
-                families = [_uniform_family(row, cap)]
+                validity = bound["gt_boundary_validity"]
+                families = [_uniform_family(row, validity, cap)]
                 for family_key, radius, quota in FAMILY_SPECS:
                     families.append(
                         _burst_family(
                             row,
-                            bound["gt_boundary_validity"],
+                            validity,
                             cap,
                             family_key=family_key,
                             radius=radius,
@@ -241,11 +287,16 @@ def build_oracles(
                             max_unselected_hole=max_unselected_hole,
                         )
                     )
+                families.append(_unrestricted_family(row, validity))
                 for family in families:
                     contract = family["r0_contract"]
                     if contract["exact_k"] is not True:
                         raise ValueError(f"{sample_id}: {family['family_key']} violates exact-K")
-                    if int(contract["max_unselected_hole"]) > int(max_unselected_hole):
+                    if (
+                        family["family_key"] != UNRESTRICTED_FAMILY
+                        and int(contract["max_unselected_hole"])
+                        > int(max_unselected_hole)
+                    ):
                         raise ValueError(f"{sample_id}: {family['family_key']} violates G")
                     if family["privileged"] and (
                         contract["all_endpoint_quotas_pass"] is not True

@@ -221,6 +221,7 @@ def solve_boundary_burst_oracle(
     radius: int,
     quota: int,
     max_unselected_hole: int,
+    enforce_global_coverage: bool = True,
 ) -> BoundaryBurstSolveResult:
     """Construct the constrained R0 Oracle: local bursts plus global fill.
 
@@ -281,10 +282,12 @@ def solve_boundary_burst_oracle(
                 }
             )
 
-    # The physical cap constrains selected-to-selected intervals. Pinning both
-    # dense-axis endpoints also makes its source/sink semantics exactly match
-    # the declared max-unselected-hole contract at the two edges.
-    required.update({0, axis.valid_len - 1})
+    # Projected families pin both dense-axis endpoints so the physical DP and
+    # the declared edge-hole contract agree.  The unrestricted R0 upper bound
+    # deliberately omits this scaffold; it keeps exact-K and the same burst
+    # objective, but allows the remaining budget to move anywhere.
+    if enforce_global_coverage:
+        required.update({0, axis.valid_len - 1})
     budget = effective_budget(axis.valid_len, requested_budget)
     if len(required) > budget:
         raise AllocationContractError(
@@ -301,27 +304,39 @@ def solve_boundary_burst_oracle(
         + (1 if position % 2 == 0 else 0)
         for position in range(axis.valid_len)
     ]
-    solved = solve_additive_exact_k_physical(
-        axis,
-        scores,
-        requested_budget=requested_budget,
-        cap=cap,
-        quantization_scale=1,
-    )
+    if enforce_global_coverage:
+        solved = solve_additive_exact_k_physical(
+            axis,
+            scores,
+            requested_budget=requested_budget,
+            cap=cap,
+            quantization_scale=1,
+        )
+    else:
+        solved = solve_additive_unrestricted(
+            axis,
+            scores,
+            requested_budget=requested_budget,
+            quantization_scale=1,
+        )
     selected = set(solved.positions)
     missing = sorted(required - selected)
     if missing:
         raise AllocationContractError(
             f"boundary-burst required positions are infeasible under K/G: {missing[:16]}"
         )
-    validate_physical_selection(
-        axis,
-        solved.positions,
-        requested_budget=requested_budget,
-        cap=cap,
-    )
+    if enforce_global_coverage:
+        validate_physical_selection(
+            axis,
+            solved.positions,
+            requested_budget=requested_budget,
+            cap=cap,
+        )
     gap_report = physical_gap_report(axis, solved.positions)
-    if gap_report.dense_max_unselected_hole > max_unselected_hole:
+    if (
+        enforce_global_coverage
+        and gap_report.dense_max_unselected_hole > max_unselected_hole
+    ):
         raise AllocationContractError("boundary-burst violates candidate-axis max-hole")
 
     validated_contracts: list[Mapping[str, Any]] = []
@@ -359,9 +374,12 @@ def solve_boundary_burst_oracle(
             components.append((position,))
         else:
             components[-1] = components[-1] + (position,)
-    for component in components:
-        if len(component) > max_unselected_hole and not (selected & set(component)):
-            raise AllocationContractError("boundary-burst global background fill is incomplete")
+    if enforce_global_coverage:
+        for component in components:
+            if len(component) > max_unselected_hole and not (selected & set(component)):
+                raise AllocationContractError(
+                    "boundary-burst global background fill is incomplete"
+                )
 
     return BoundaryBurstSolveResult(
         positions=solved.positions,
