@@ -79,6 +79,13 @@ SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
   || fail "frontend split manifest hash drift"
 [[ -f "${DUCA_FRONTEND_TRAIN_BLOCK_LIST:-}" ]] || fail "frontend train block list is missing"
 [[ -f "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST:-}" ]] || fail "frontend holdout block list is missing"
+"${PYTHON}" -m tools.bata.create_duca_frontend_split \
+  --validate-manifest "${SPLIT_MANIFEST}" \
+  --expected-manifest-sha256 "${SPLIT_SHA256}" \
+  --annotation "${THUMOS14_ANNOTATION_PATH}" \
+  --train-block-list "${DUCA_FRONTEND_TRAIN_BLOCK_LIST}" \
+  --holdout-block-list "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST}" \
+  > /dev/null
 [[ -n "${RUN_DIR}" && ! -e "${RUN_DIR}" ]] || fail "fresh RUN_DIR is required"
 [[ -n "${WORK_DIR}" && ! -e "${WORK_DIR}" ]] || fail "fresh WORK_DIR is required"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \

@@ -23,11 +23,18 @@ mkdir -p "${RUN_ROOT}/logs" "${RUN_ROOT}/submission"
 [[ ! -f "${RUN_ROOT}/jobs.tsv" ]] || { cat "${RUN_ROOT}/jobs.tsv"; exit 0; }
 
 SPLIT_ROOT="${RUN_ROOT}/frontend_split"
-"${PYTHON}" tools/bata/create_duca_frontend_split.py \
+"${PYTHON}" -m tools.bata.create_duca_frontend_split \
   --annotation "${THUMOS14_ANNOTATION_PATH}" --output-dir "${SPLIT_ROOT}" \
   --seed 3407 --holdout-fraction 0.20 > "${RUN_ROOT}/frontend_split.out"
 SPLIT_MANIFEST="${SPLIT_ROOT}/frontend_split_manifest.json"
 SPLIT_SHA256="$(sha256sum "${SPLIT_MANIFEST}" | awk '{print $1}')"
+"${PYTHON}" -m tools.bata.create_duca_frontend_split \
+  --validate-manifest "${SPLIT_MANIFEST}" \
+  --expected-manifest-sha256 "${SPLIT_SHA256}" \
+  --annotation "${THUMOS14_ANNOTATION_PATH}" \
+  --train-block-list "${SPLIT_ROOT}/frontend_train_block_list.txt" \
+  --holdout-block-list "${SPLIT_ROOT}/frontend_holdout_block_list.txt" \
+  > "${RUN_ROOT}/frontend_split.validation.json"
 
 write_header() {
   local path="$1" name="$2" time="$3" gpu="$4"
@@ -59,6 +66,7 @@ write_header "${P0_SBATCH}" "burst_p0_${EXPECTED_COMMIT:0:7}" "2-00:00:00" 1
 cat >>"${P0_SBATCH}" <<EOF
 export DUCA_FRONTEND_SPLIT_MANIFEST='${SPLIT_MANIFEST}'
 export DUCA_FRONTEND_SPLIT_MANIFEST_SHA256='${SPLIT_SHA256}'
+export DUCA_R0_SUMMARY_JSON='${RUN_ROOT}/r0_holdout_map/r0_summary.json'
 bash scripts/run_duca_boundary_burst_p0_gpu1.sh
 EOF
 
@@ -121,13 +129,45 @@ EOF
 for file in "${P0_SBATCH}" "${R0_SBATCH}" "${GATE_SBATCH}" "${AGG_SBATCH}" "${RUN_ROOT}"/submission/*.sbatch; do
   bash -n "${file}"
 done
+"${PYTHON}" - "${RUN_ROOT}/submission_manifest.json" "${EXPECTED_COMMIT}" \
+  "${SPLIT_MANIFEST}" "${SPLIT_SHA256}" "${R0_CHECKPOINT}" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+out, commit, split, split_sha, checkpoint = sys.argv[1:]
+checkpoint_path = Path(checkpoint).expanduser().resolve()
+if not checkpoint_path.is_file():
+    raise SystemExit("R0 checkpoint disappeared while sealing submission")
+payload = {
+    "schema": "duca_boundary_burst_submission_v1",
+    "ok": True,
+    "git_commit": commit,
+    "split_manifest_path": str(Path(split).resolve()),
+    "split_manifest_sha256": split_sha,
+    "r0_checkpoint_path": str(checkpoint_path),
+    "r0_checkpoint_sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
+    "dependency_contract": {
+        "r0_holdout_map": "none",
+        "p0": "afterok:r0_holdout_map",
+        "gate": "afterok:p0",
+        "official60_arms": "afterok:gate",
+        "aggregate": "afterok:all_official60_arms",
+    },
+    "r0_positive_headroom_required": True,
+    "uniform_frontend_checkpoint": None,
+    "learned_frontend_checkpoint_source": "variant_matched_p0_winner",
+}
+Path(out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
   echo "[DUCA_BURST_SUBMIT] PRECHECK PASS ${RUN_ROOT}"
   exit 0
 fi
 
 r0="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" "${R0_SBATCH}")"; r0="${r0%%;*}"
-p0="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" "${P0_SBATCH}")"; p0="${p0%%;*}"
+p0="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afterok:${r0}" "${P0_SBATCH}")"; p0="${p0%%;*}"
 gate="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afterok:${p0}" "${GATE_SBATCH}")"; gate="${gate%%;*}"
 train_ids=()
 for variant in "${variants[@]}"; do
@@ -139,7 +179,7 @@ aggregate="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" --dependency="afte
 {
   printf 'key\tjob_id\tdependency\n'
   printf 'r0_holdout_map\t%s\tnone\n' "${r0}"
-  printf 'p0\t%s\tnone\n' "${p0}"
+  printf 'p0\t%s\tafterok:%s\n' "${p0}" "${r0}"
   printf 'gate\t%s\tafterok:%s\n' "${gate}" "${p0}"
   for idx in "${!variants[@]}"; do printf '%s\t%s\tafterok:%s\n' "${variants[$idx]}" "${train_ids[$idx]}" "${gate}"; done
   printf 'aggregate\t%s\tafterok:%s\n' "${aggregate}" "${dependency}"

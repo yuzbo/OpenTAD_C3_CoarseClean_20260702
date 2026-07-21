@@ -38,6 +38,7 @@ from opentad.duca_loss_contract import DUCA_LOSS_TO_WEIGHT_KEY
 from opentad.models import build_detector
 from opentad.utils import ModelEma
 from tools.bata.validate_duca_frontend_p0_contract import validate_config
+from tools.bata.create_duca_frontend_split import validate_split_manifest
 
 
 SCHEMA = "duca_frontend_p0_real_cuda_gate_v1"
@@ -528,10 +529,16 @@ def run_gate(
     torch.cuda.reset_peak_memory_stats(0)
 
     split_path = Path(split_manifest).expanduser().resolve()
-    _require(split_path.is_file(), "frontend split manifest is missing")
-    _require(_sha256(split_path) == expected_split_sha256, "frontend split manifest hash drift")
-    split = json.loads(split_path.read_text(encoding="utf-8"))
-    _require(split.get("test_subset_consumed") is False, "P0 split consumed the test subset")
+    train_block = Path(os.environ.get("DUCA_FRONTEND_TRAIN_BLOCK_LIST", "")).expanduser().resolve()
+    holdout_block = Path(os.environ.get("DUCA_FRONTEND_HOLDOUT_BLOCK_LIST", "")).expanduser().resolve()
+    annotation = Path(os.environ.get("THUMOS14_ANNOTATION_PATH", "")).expanduser().resolve()
+    split_binding = validate_split_manifest(
+        split_path,
+        expected_manifest_sha256=expected_split_sha256,
+        annotation_path=annotation,
+        train_block_list=train_block,
+        holdout_block_list=holdout_block,
+    )
 
     config_contracts = {}
     for raw in variant_config_paths:
@@ -545,10 +552,8 @@ def run_gate(
 
     checkpoint = Path(checkpoint_path).expanduser().resolve()
     official_source = Path(official_repos_root).expanduser().resolve() / "ASFormer" / "model.py"
-    train_block = Path(os.environ.get("DUCA_FRONTEND_TRAIN_BLOCK_LIST", "")).expanduser().resolve()
     _require(checkpoint.is_file(), "AdaTAD VideoMAE checkpoint is missing")
     _require(official_source.is_file(), "official ASFormer source is missing")
-    _require(train_block.is_file(), "frontend train block list is missing")
     cfg.model.backbone.custom.pretrain = str(checkpoint)
 
     train_dataset = build_dataset(copy.deepcopy(cfg.dataset.train), default_args={"logger": logger})
@@ -754,6 +759,7 @@ def run_gate(
         "variant_config_contracts": config_contracts,
         "split_manifest_path": str(split_path),
         "split_manifest_sha256": expected_split_sha256,
+        "split_artifact_binding": split_binding,
         "train_block_list_path": str(train_block),
         "train_block_list_sha256": _sha256(train_block),
         "assets": {

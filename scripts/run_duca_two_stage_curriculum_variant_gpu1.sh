@@ -73,7 +73,24 @@ WORK_DIR="${WORK_DIR:-}"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \
   || fail "exactly one Slurm-visible GPU is required"
 
-readarray -t winner < <("${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" "${VARIANT}" <<'PY'
+if [[ "${VARIANT}" == "two_stage_exact_uniform" ]]; then
+  "${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if payload.get("ok") is not True or payload.get("test_subset_consumed") is not False:
+    raise SystemExit("frontend decision did not authorize the matched suite")
+if payload.get("git_commit") not in {None, sys.argv[2]}:
+    raise SystemExit("frontend decision commit mismatch")
+PY
+  unset DUCA_FRONTEND_CHECKPOINT DUCA_FRONTEND_CHECKPOINT_SHA256 DUCA_FRONTEND_CHECKPOINT_EPOCH
+  FRONTEND_BINDING="not_applicable_exact_uniform"
+  FRONTEND_CHECKPOINT_SHA256_JSON=null
+  FRONTEND_CHECKPOINT_EPOCH_JSON=null
+else
+  readarray -t winner < <("${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" "${VARIANT}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -86,7 +103,6 @@ if payload.get("git_commit") not in {None, sys.argv[2]}:
 variant = sys.argv[3]
 if "winners" in payload:
     key = {
-        "two_stage_exact_uniform": "gaussian_matched",
         "gaussian_matched_g0": "gaussian_matched",
         "boundary_burst_r2q3_g0": "burst_r2q3",
         "boundary_burst_r4q5_g0": "burst_r4q5",
@@ -103,13 +119,17 @@ print(winner["checkpoint_path"])
 print(winner["checkpoint_sha256"])
 print(int(winner["epoch_one_based"]) - 1)
 PY
-)
-export DUCA_FRONTEND_CHECKPOINT="${winner[0]}"
-export DUCA_FRONTEND_CHECKPOINT_SHA256="${winner[1]}"
-export DUCA_FRONTEND_CHECKPOINT_EPOCH="${winner[2]}"
-[[ -f "${DUCA_FRONTEND_CHECKPOINT}" ]] || fail "selected frontend checkpoint is missing"
-[[ "$(sha256sum "${DUCA_FRONTEND_CHECKPOINT}" | awk '{print $1}')" == "${DUCA_FRONTEND_CHECKPOINT_SHA256}" ]] \
-  || fail "selected frontend checkpoint hash drift"
+  )
+  export DUCA_FRONTEND_CHECKPOINT="${winner[0]}"
+  export DUCA_FRONTEND_CHECKPOINT_SHA256="${winner[1]}"
+  export DUCA_FRONTEND_CHECKPOINT_EPOCH="${winner[2]}"
+  [[ -f "${DUCA_FRONTEND_CHECKPOINT}" ]] || fail "selected frontend checkpoint is missing"
+  [[ "$(sha256sum "${DUCA_FRONTEND_CHECKPOINT}" | awk '{print $1}')" == "${DUCA_FRONTEND_CHECKPOINT_SHA256}" ]] \
+    || fail "selected frontend checkpoint hash drift"
+  FRONTEND_BINDING="variant_matched_p0_winner"
+  FRONTEND_CHECKPOINT_SHA256_JSON="\"${DUCA_FRONTEND_CHECKPOINT_SHA256}\""
+  FRONTEND_CHECKPOINT_EPOCH_JSON="${DUCA_FRONTEND_CHECKPOINT_EPOCH}"
+fi
 
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
@@ -123,8 +143,9 @@ cat > "${RUN_DIR}/launch_manifest.json" <<EOF
   "config": "${CONFIG}",
   "config_sha256": "${CONFIG_SHA256}",
   "frontend_decision_sha256": "${DECISION_SHA256}",
-  "frontend_checkpoint_sha256": "${DUCA_FRONTEND_CHECKPOINT_SHA256}",
-  "frontend_checkpoint_epoch_zero_based": ${DUCA_FRONTEND_CHECKPOINT_EPOCH},
+  "frontend_checkpoint_binding": "${FRONTEND_BINDING}",
+  "frontend_checkpoint_sha256": ${FRONTEND_CHECKPOINT_SHA256_JSON},
+  "frontend_checkpoint_epoch_zero_based": ${FRONTEND_CHECKPOINT_EPOCH_JSON},
   "gate_suite_sha256": "${GATE_SUITE_SHA256}",
   "uniform_detector_warmup_successful_updates": 1000,
   "official_training_successful_updates": 6000,

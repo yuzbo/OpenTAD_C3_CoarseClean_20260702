@@ -13,6 +13,7 @@ RUN_ROOT="${RUN_ROOT:-}"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
 SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
+R0_SUMMARY="${DUCA_R0_SUMMARY_JSON:-${RUN_ROOT}/r0_holdout_map/r0_summary.json}"
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm GPU is required"
 [[ -d "${RUN_ROOT}" ]] || fail "prepared RUN_ROOT is required"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
@@ -23,6 +24,78 @@ SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
 
 export DUCA_FRONTEND_TRAIN_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_train_block_list.txt"
 export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_holdout_block_list.txt"
+"${PYTHON}" -m tools.bata.create_duca_frontend_split \
+  --validate-manifest "${SPLIT_MANIFEST}" \
+  --expected-manifest-sha256 "${SPLIT_SHA256}" \
+  --annotation "${THUMOS14_ANNOTATION_PATH}" \
+  --train-block-list "${DUCA_FRONTEND_TRAIN_BLOCK_LIST}" \
+  --holdout-block-list "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST}" \
+  > "${RUN_ROOT}/frontend_split.validation.json"
+
+[[ -f "${R0_SUMMARY}" ]] || fail "R0 summary is missing"
+"${PYTHON}" - "${R0_SUMMARY}" "${EXPECTED_COMMIT}" \
+  "${RUN_ROOT}/r0_headroom_gate.json" <<'PY'
+import hashlib
+import json
+import math
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).expanduser().resolve()
+payload = json.loads(source.read_text(encoding="utf-8"))
+if payload.get("schema") != "duca_r0_selected_axis_holdout_map_v1":
+    raise SystemExit("R0 summary schema mismatch")
+if payload.get("ok") is not True or payload.get("git_commit") != sys.argv[2]:
+    raise SystemExit("R0 summary did not complete on the exact commit")
+if payload.get("source_subset") != "training_internal_holdout":
+    raise SystemExit("R0 did not use the sealed training holdout")
+if payload.get("test_subset_consumed") is not False:
+    raise SystemExit("R0 consumed the test subset")
+rows = {row.get("family"): row for row in payload.get("rows", [])}
+required = {
+    "A_exact_uniform",
+    "D_privileged_gt_ceiling",
+    "E_privileged_unrestricted_gt",
+}
+if set(rows) != required:
+    raise SystemExit("R0 family set mismatch")
+values = {}
+for family, row in rows.items():
+    metrics_path = Path(row.get("metrics_path", "")).expanduser().resolve()
+    if not metrics_path.is_file():
+        raise SystemExit(f"R0 metrics are missing for {family}")
+    digest = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+    if digest != row.get("metrics_sha256"):
+        raise SystemExit(f"R0 metrics hash drift for {family}")
+    value = float(row.get("metrics", {}).get("average_mAP", float("nan")))
+    if not math.isfinite(value):
+        raise SystemExit(f"R0 average_mAP is missing for {family}")
+    values[family] = value
+uniform = values["A_exact_uniform"]
+best_privileged = max(
+    values["D_privileged_gt_ceiling"],
+    values["E_privileged_unrestricted_gt"],
+)
+headroom = best_privileged - uniform
+if not headroom > 0.0:
+    raise SystemExit(
+        f"R0 nonpositive Oracle-U headroom blocks learned training: {headroom}"
+    )
+gate = {
+    "schema": "duca_r0_headroom_gate_v1",
+    "ok": True,
+    "git_commit": sys.argv[2],
+    "r0_summary_path": str(source),
+    "r0_summary_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    "average_mAP": values,
+    "best_privileged_minus_uniform_average_mAP": headroom,
+    "test_subset_consumed": False,
+    "paper_claim_allowed": False,
+}
+Path(sys.argv[3]).write_text(
+    json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+PY
 variant_configs=(
   configs/adatad/thumos/duca_gaussian_frontend_pretrain_matched_fixed384.py
   configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py
