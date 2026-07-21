@@ -97,6 +97,17 @@ scheduler = dict(
 solver = dict(static_graph=False, find_unused_parameters=True)
 
 
+# Frontend-only training freezes and skips the complete AdaTAD backbone.  Drop
+# the inherited backbone optimizer group so it cannot leak into torch AdamW.
+optimizer = dict(
+    _delete_=True,
+    type="AdamW",
+    lr=1e-4,
+    weight_decay=0.05,
+    paramwise=True,
+)
+
+
 workflow = dict(
     _delete_=True,
     formal_protocol="",

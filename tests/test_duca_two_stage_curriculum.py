@@ -198,6 +198,9 @@ def test_two_stage_configs_freeze_only_the_declared_coarse_branch(
     assert frontend.workflow.end_epoch == 20
     assert frontend.workflow.checkpoint_interval == 5
     assert frontend.dataset.val is None and frontend.dataset.test is None
+    assert frontend.optimizer.type == "AdamW"
+    assert frontend.optimizer.paramwise is True
+    assert "backbone" not in frontend.optimizer
     assert frontend.model.frame_selector.loss_weight_schedule.transition.end == 0.10
     assert (
         frontend.model.frame_selector.loss_weight_schedule.transition_boundary.end

@@ -39,6 +39,22 @@ if [[ ! -f "${SPLIT_ROOT}/frontend_split_manifest.json" ]]; then
 fi
 SPLIT_MANIFEST="${SPLIT_ROOT}/frontend_split_manifest.json"
 SPLIT_SHA256="$(sha256sum "${SPLIT_MANIFEST}" | awk '{print $1}')"
+export DUCA_FRONTEND_TRAIN_BLOCK_LIST="${SPLIT_ROOT}/frontend_train_block_list.txt"
+export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${SPLIT_ROOT}/frontend_holdout_block_list.txt"
+"${PYTHON}" - <<'PY'
+from mmengine.config import Config
+
+for path in (
+    "configs/adatad/thumos/duca_frontend_pretrain_a1_t005_b8.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_a1_t010_b16.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_a1_t020_b32.py",
+):
+    cfg = Config.fromfile(path)
+    if "backbone" in cfg.optimizer:
+        raise RuntimeError(f"frontend optimizer leaked a backbone group: {path}")
+    if not bool(cfg.model.selector_train_only_skip_detector):
+        raise RuntimeError(f"frontend detector skip is disabled: {path}")
+PY
 JOB_FILE="${RUN_ROOT}/serial.sbatch"
 if [[ ! -f "${JOB_FILE}" ]]; then
   cat > "${JOB_FILE}" <<EOF
