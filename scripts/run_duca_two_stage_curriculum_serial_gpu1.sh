@@ -54,7 +54,7 @@ done
 
 DECISION="${RUN_ROOT}/frontend_decision.json"
 CANDIDATE_MANIFEST="${RUN_ROOT}/frontend_candidate_manifest.json"
-"${PYTHON}" tools/bata/aggregate_duca_frontend_candidates.py \
+"${PYTHON}" -m tools.bata.aggregate_duca_frontend_candidates \
   --expected-commit "${EXPECTED_COMMIT}" \
   --split-manifest "${SPLIT_MANIFEST}" \
   --split-manifest-sha256 "${SPLIT_SHA256}" \
@@ -93,7 +93,7 @@ for variant in "${official_variants[@]}"; do
   bash scripts/run_duca_two_stage_curriculum_variant_gpu1.sh
 done
 
-"${PYTHON}" tools/bata/aggregate_duca_two_stage_results.py \
+"${PYTHON}" -m tools.bata.aggregate_duca_two_stage_results \
   --expected-commit "${EXPECTED_COMMIT}" \
   --frontend-decision "${DECISION}" \
   --frontend-decision-sha256 "${DECISION_SHA256}" \

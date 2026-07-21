@@ -82,6 +82,16 @@ def test_frontend_quality_tools_are_invoked_as_repo_modules() -> None:
     assert "tools/bata/analyze_duca_selection_quality.py" not in source
 
 
+def test_serial_aggregators_are_invoked_as_repo_modules() -> None:
+    source = (
+        ROOT / "scripts" / "run_duca_two_stage_curriculum_serial_gpu1.sh"
+    ).read_text(encoding="utf-8")
+    assert "-m tools.bata.aggregate_duca_frontend_candidates" in source
+    assert "-m tools.bata.aggregate_duca_two_stage_results" in source
+    assert "tools/bata/aggregate_duca_frontend_candidates.py" not in source
+    assert "tools/bata/aggregate_duca_two_stage_results.py" not in source
+
+
 def test_real_gate_classifies_the_executed_spatial_stem_parameter_path() -> None:
     gate_source = (ROOT / "tools" / "bata" / "run_duca_frontend_p0_real_gate.py").read_text(
         encoding="utf-8"
