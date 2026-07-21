@@ -71,7 +71,7 @@ out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="u
 PY
 
 EVAL_BLOCKED="${OUTPUT_ROOT}/evaluation_blocked_videos.json"
-"${PYTHON}" - "${TRAIN_BLOCK_LIST}" "${EVAL_BLOCKED}" <<'PY'
+"${PYTHON}" - "${HOLDOUT_BLOCK_LIST}" "${EVAL_BLOCKED}" <<'PY'
 import json, sys
 from pathlib import Path
 source, target = map(Path, sys.argv[1:])
