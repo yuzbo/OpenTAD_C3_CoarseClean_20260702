@@ -195,18 +195,74 @@ EVAL_JSON="${RUN_DIR}/terminal_evaluation.json"
   2>&1 | tee "${RUN_DIR}/terminal_eval.out"
 
 "${PYTHON}" - "${RUN_DIR}" "${VARIANT}" "${EXPECTED_COMMIT}" \
-  "${CHECKPOINT}" "${EVAL_JSON}" "${DECISION_SHA256}" "${GATE_SUITE_SHA256}" <<'PY'
+  "${CHECKPOINT}" "${EVAL_JSON}" "${DECISION_SHA256}" "${GATE_SUITE_SHA256}" \
+  "${CONFIG}" "${CONFIG_SHA256}" "${DUCA_ADATAD_PRETRAIN_SHA256}" \
+  "${RUN_DIR}/launch_manifest.json" <<'PY'
 import hashlib
 import json
 import sys
 from pathlib import Path
 
-run_dir, variant, commit, checkpoint, evaluation, decision_sha, gate_sha = sys.argv[1:]
+(
+    run_dir,
+    variant,
+    commit,
+    checkpoint,
+    evaluation,
+    decision_sha,
+    gate_sha,
+    config,
+    config_sha,
+    pretrain_sha,
+    launch_manifest,
+) = sys.argv[1:]
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def canonical(payload):
+    return hashlib.sha256(
+        json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
+    ).hexdigest()
 metrics = json.loads(Path(evaluation).read_text(encoding="utf-8"))
 if metrics.get("schema_version") != "duca_selected_axis_terminal_evaluation_v1":
     raise SystemExit("terminal evaluation schema mismatch")
+unsigned_metrics = dict(metrics)
+expected_self_hash = unsigned_metrics.pop("evaluation_sha256", None)
+if expected_self_hash != canonical(unsigned_metrics):
+    raise SystemExit("terminal evaluation self-hash mismatch")
+if (
+    metrics.get("git_commit") != commit
+    or metrics.get("variant") != variant
+    or metrics.get("seed") != 3407
+    or Path(metrics.get("config_path", "")).resolve() != Path(config).resolve()
+    or metrics.get("config_sha256") != config_sha
+    or Path(metrics.get("checkpoint_path", "")).resolve() != Path(checkpoint).resolve()
+    or metrics.get("checkpoint_sha256") != digest(checkpoint)
+    or metrics.get("checkpoint_epoch") != 59
+    or metrics.get("checkpoint_state_key") != "state_dict_ema"
+):
+    raise SystemExit("terminal evaluation identity mismatch")
+identity = metrics.get("training_identity")
+if (
+    not isinstance(identity, dict)
+    or identity.get("variant") != variant
+    or identity.get("seed") != 3407
+    or identity.get("successful_optimizer_updates") != 6000
+    or identity.get("gate_suite_sha256") != gate_sha
+    or identity.get("pretrain_sha256") != pretrain_sha
+):
+    raise SystemExit("terminal training identity mismatch")
+for path_key, sha_key in (
+    ("checkpoint_sidecar_path", "checkpoint_sidecar_sha256"),
+    ("training_audit_path", "training_audit_sha256"),
+):
+    artifact = Path(identity.get(path_key, "")).resolve()
+    if not artifact.is_file() or digest(artifact) != identity.get(sha_key):
+        raise SystemExit(f"terminal training artifact drift: {path_key}")
+prediction = Path(metrics.get("prediction_path", "")).resolve()
+if not prediction.is_file() or digest(prediction) != metrics.get("prediction_sha256"):
+    raise SystemExit("terminal prediction artifact drift")
 payload = {
     "schema": "duca_two_stage_curriculum_completion_v1",
     "ok": True,
@@ -216,7 +272,13 @@ payload = {
     "checkpoint_sha256": digest(checkpoint),
     "evaluation_path": str(Path(evaluation).resolve()),
     "evaluation_sha256": digest(evaluation),
+    "evaluation_self_sha256": expected_self_hash,
+    "prediction_path": str(prediction),
+    "prediction_sha256": metrics["prediction_sha256"],
     "metrics": metrics["metrics"],
+    "training_identity": identity,
+    "launch_manifest_path": str(Path(launch_manifest).resolve()),
+    "launch_manifest_sha256": digest(launch_manifest),
     "frontend_decision_sha256": decision_sha,
     "gate_suite_sha256": gate_sha,
 }

@@ -129,6 +129,17 @@ def main():
                 "formal protected evaluation must use seed 3407, "
                 "terminal epoch-59 EMA, and structured metrics"
             )
+    if selected_axis_formal:
+        if (
+            args.seed != 3407
+            or args.expected_checkpoint_epoch != 59
+            or args.checkpoint_state_key != "state_dict_ema"
+            or not args.metrics_json
+        ):
+            raise RuntimeError(
+                "formal selected-axis evaluation must use seed 3407, "
+                "terminal epoch-59 EMA, and structured metrics"
+            )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
@@ -171,6 +182,7 @@ def main():
     checkpoint_path = None
     checkpoint_epoch = None
     checkpoint_state_key = None
+    selected_axis_terminal_identity = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
@@ -202,6 +214,35 @@ def main():
         if checkpoint_state_key not in checkpoint:
             raise RuntimeError(
                 f"checkpoint does not contain requested state {checkpoint_state_key}"
+            )
+        if selected_axis_formal:
+            selected_axis_terminal_identity = (
+                duca_selected_axis_training.validate_terminal_checkpoint_binding(
+                    checkpoint_path=checkpoint_path,
+                    checkpoint=checkpoint,
+                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                    variant=os.environ.get("DUCA_SELECTED_OPT_VARIANT", ""),
+                    seed=args.seed,
+                    slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+                    source_config_path=args.config,
+                    source_config_sha256=sha256_file(args.config),
+                    resolved_config_sha256=source_resolved_config_sha256,
+                    checkpoint_epoch=checkpoint_epoch,
+                    checkpoint_state_key=checkpoint_state_key,
+                    evaluation_annotation_path=cfg.evaluation.ground_truth_filename,
+                    evaluation_class_map_path=cfg.dataset.test.class_map,
+                    evaluation_config=cfg.evaluation,
+                    runtime_pretrain_path=cfg.model.backbone.custom.pretrain,
+                    frozen_pretrain_path=os.environ.get(
+                        "DUCA_ADATAD_PRETRAIN_PATH", ""
+                    ),
+                    frozen_pretrain_sha256=os.environ.get(
+                        "DUCA_ADATAD_PRETRAIN_SHA256", ""
+                    ),
+                    selector_initialization=cfg.workflow.get(
+                        "selector_initialization", None
+                    ),
+                )
             )
         model.load_state_dict(checkpoint[checkpoint_state_key])
         if checkpoint_state_key == "state_dict_ema":
@@ -285,6 +326,14 @@ def main():
                 cfg.dataset.test.class_map
             ),
         }
+        if selected_axis_formal:
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "variant": os.environ.get("DUCA_SELECTED_OPT_VARIANT"),
+                    "training_identity": selected_axis_terminal_identity,
+                }
+            )
         payload["evaluation_sha256"] = _canonical_sha256(payload)
         atomic_write_json(args.metrics_json, payload)
     logger.info("Testing Over...\n")

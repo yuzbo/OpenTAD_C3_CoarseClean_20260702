@@ -117,6 +117,28 @@ def _build_training_probe_bindings(cfg, args):
     return bindings
 
 
+def _select_duca_training(formal_protocol):
+    if formal_protocol == "duca_cellcf_v1":
+        return duca_cellcf_training
+    if formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
+        return duca_protected_physical_training
+    if formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
+        return duca_selected_axis_training
+    return duca_p0_training
+
+
+def _dispatch_duca_runtime_bindings(
+    duca_training,
+    runtime_binding_kwargs,
+    *,
+    selector_initialization=None,
+):
+    kwargs = dict(runtime_binding_kwargs)
+    if duca_training is duca_selected_axis_training:
+        kwargs["selector_initialization"] = selector_initialization
+    return duca_training.build_runtime_bindings(**kwargs)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
@@ -136,14 +158,7 @@ def main():
     # load config
     cfg = Config.fromfile(args.config)
     formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
-    if formal_protocol == "duca_cellcf_v1":
-        duca_training = duca_cellcf_training
-    elif formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
-        duca_training = duca_protected_physical_training
-    elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
-        duca_training = duca_selected_axis_training
-    else:
-        duca_training = duca_p0_training
+    duca_training = _select_duca_training(formal_protocol)
     source_config_sha256 = _sha256(args.config)
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     duca_formal_contract = duca_training.formal_training_contract(cfg)
@@ -230,11 +245,13 @@ def main():
             duca_selected_axis_training,
         ):
             runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain
-        if duca_training is duca_selected_axis_training:
-            runtime_binding_kwargs["selector_initialization"] = cfg.workflow.get(
+        duca_runtime_bindings = _dispatch_duca_runtime_bindings(
+            duca_training,
+            runtime_binding_kwargs,
+            selector_initialization=cfg.workflow.get(
                 "selector_initialization", None
-            )
-        duca_runtime_bindings = duca_training.build_runtime_bindings(**runtime_binding_kwargs)
+            ),
+        )
     if args.rank == 0:
         create_folder(cfg.work_dir)
         save_config(args.config, cfg.work_dir)

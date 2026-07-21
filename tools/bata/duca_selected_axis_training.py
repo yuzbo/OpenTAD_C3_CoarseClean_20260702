@@ -70,6 +70,18 @@ sha256_file = legacy.sha256_file
 validate_update_state = legacy.validate_update_state
 
 
+def _validate_embedded_hash(
+    payload: Mapping[str, Any], *, hash_key: str, label: str
+) -> str:
+    expected = str(payload.get(hash_key, ""))
+    unsigned = dict(payload)
+    unsigned.pop(hash_key, None)
+    observed = canonical_sha256(unsigned)
+    if expected != observed:
+        raise RuntimeError(f"selected-axis {label} self-hash mismatch")
+    return observed
+
+
 def validate_frozen_pretrain_binding(
     *,
     runtime_path: str | Path,
@@ -333,6 +345,185 @@ def build_runtime_bindings(
     return bindings
 
 
+def validate_terminal_checkpoint_binding(
+    *,
+    checkpoint_path: str | Path,
+    checkpoint: Mapping[str, Any],
+    git_commit: str,
+    variant: str,
+    seed: int,
+    slurm_job_id: str | None,
+    source_config_path: str | Path,
+    source_config_sha256: str,
+    resolved_config_sha256: str,
+    checkpoint_epoch: int,
+    checkpoint_state_key: str,
+    evaluation_annotation_path: str | Path,
+    evaluation_class_map_path: str | Path,
+    evaluation_config: Mapping[str, Any],
+    runtime_pretrain_path: str | Path,
+    frozen_pretrain_path: str | Path,
+    frozen_pretrain_sha256: str,
+    selector_initialization: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate the terminal checkpoint and its complete training identity chain."""
+
+    if int(seed) != 3407:
+        raise RuntimeError("selected-axis terminal evaluation seed must be 3407")
+    if int(checkpoint_epoch) != 59 or checkpoint_state_key != "state_dict_ema":
+        raise RuntimeError(
+            "selected-axis terminal evaluation requires epoch-59 EMA"
+        )
+    if checkpoint_state_key not in checkpoint:
+        raise RuntimeError("selected-axis checkpoint lacks terminal EMA weights")
+
+    checkpoint_file = Path(checkpoint_path).expanduser().resolve()
+    if not checkpoint_file.is_file():
+        raise RuntimeError("selected-axis terminal checkpoint is missing")
+    sidecar_file = Path(f"{checkpoint_file}.metadata.json").resolve()
+    if not sidecar_file.is_file():
+        raise RuntimeError("selected-axis terminal checkpoint sidecar is missing")
+    sidecar = json.loads(sidecar_file.read_text(encoding="utf-8"))
+    if (
+        not isinstance(sidecar, Mapping)
+        or sidecar.get("schema_version") != DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
+    ):
+        raise RuntimeError("selected-axis terminal checkpoint sidecar schema mismatch")
+    _validate_embedded_hash(
+        sidecar, hash_key="sidecar_sha256", label="checkpoint sidecar"
+    )
+    checkpoint_sha256 = sha256_file(checkpoint_file)
+    if (
+        Path(str(sidecar.get("checkpoint_path", ""))).expanduser().resolve()
+        != checkpoint_file
+        or sidecar.get("checkpoint_sha256") != checkpoint_sha256
+    ):
+        raise RuntimeError("selected-axis terminal checkpoint/sidecar drift")
+
+    metadata = sidecar.get("experiment_metadata")
+    embedded_metadata = checkpoint.get("experiment_metadata")
+    if (
+        not isinstance(metadata, Mapping)
+        or metadata.get("schema_version") != DUCA_P0_CHECKPOINT_METADATA_SCHEMA
+        or embedded_metadata != metadata
+    ):
+        raise RuntimeError("selected-axis terminal checkpoint metadata mismatch")
+    _validate_embedded_hash(
+        metadata, hash_key="metadata_sha256", label="checkpoint metadata"
+    )
+    audit = metadata.get("training_audit")
+    if (
+        not isinstance(audit, Mapping)
+        or audit.get("schema_version") != DUCA_P0_TRAINING_AUDIT_SCHEMA
+    ):
+        raise RuntimeError("selected-axis terminal training audit is missing")
+    _validate_embedded_hash(audit, hash_key="audit_sha256", label="training audit")
+
+    audit_file = checkpoint_file.parent.parent / DUCA_TRAINING_AUDIT_FILENAME
+    if not audit_file.is_file():
+        raise RuntimeError("selected-axis terminal training audit file is missing")
+    persisted_audit = json.loads(audit_file.read_text(encoding="utf-8"))
+    if persisted_audit != audit:
+        raise RuntimeError("selected-axis persisted training audit differs from checkpoint")
+
+    counters = audit.get("update_audit")
+    if not isinstance(counters, Mapping):
+        raise RuntimeError("selected-axis terminal update audit is missing")
+    expected_updates = 6000
+    required_identity = {
+        "status": "complete",
+        "git_commit": str(git_commit),
+        "variant": str(variant),
+        "seed": 3407,
+        "formal_protocol": FORMAL_PROTOCOL,
+        "training_profile": "official60",
+        "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
+        "primary_checkpoint_epoch": 59,
+        "primary_checkpoint_state_key": "state_dict_ema",
+        "expected_train_batches_per_epoch": 100,
+        "expected_successful_optimizer_updates": expected_updates,
+        "last_completed_epoch": 59,
+        "epochs_completed": 60,
+        "train_batches_per_epoch": 100,
+        "scheduler_last_epoch": expected_updates,
+        "selector_schedule_step": expected_updates,
+    }
+    for key, expected in required_identity.items():
+        if audit.get(key) != expected:
+            raise RuntimeError(
+                f"selected-axis terminal training identity mismatch: {key}"
+            )
+    for key in (
+        "attempted_batches",
+        "successful_optimizer_updates",
+        "scheduler_updates",
+        "ema_updates",
+        "duca_schedule_updates",
+    ):
+        if int(counters.get(key, -1)) != expected_updates:
+            raise RuntimeError(
+                f"selected-axis terminal update accounting mismatch: {key}"
+            )
+    if (
+        int(counters.get("replay_exhaustions", -1)) != 0
+        or int(counters.get("forced_amp_overflow_attempts", -1)) != 0
+    ):
+        raise RuntimeError("selected-axis terminal AMP contract was violated")
+    if int(counters.get("optimizer_attempts", -1)) != expected_updates + int(
+        counters.get("amp_skipped_attempts", -1)
+    ):
+        raise RuntimeError("selected-axis terminal optimizer accounting mismatch")
+    records = audit.get("epoch_records")
+    if (
+        not isinstance(records, list)
+        or len(records) != 60
+        or [int(item.get("epoch", -1)) for item in records] != list(range(60))
+    ):
+        raise RuntimeError("selected-axis terminal epoch audit is incomplete")
+
+    pretrain = validate_frozen_pretrain_binding(
+        runtime_path=runtime_pretrain_path,
+        expected_path=frozen_pretrain_path,
+        expected_sha256=frozen_pretrain_sha256,
+    )
+    expected_bindings = build_runtime_bindings(
+        git_commit=git_commit,
+        variant=variant,
+        seed=seed,
+        slurm_job_id=slurm_job_id,
+        source_config_path=source_config_path,
+        source_config_sha256=source_config_sha256,
+        resolved_config_sha256=resolved_config_sha256,
+        runtime_config_sha256=str(audit.get("runtime_config_sha256", "")),
+        evaluation_annotation_path=evaluation_annotation_path,
+        evaluation_class_map_path=evaluation_class_map_path,
+        evaluation_config=evaluation_config,
+        runtime_pretrain_path=runtime_pretrain_path,
+        selector_initialization=selector_initialization,
+    )
+    for key, expected in expected_bindings.items():
+        if audit.get(key) != expected:
+            raise RuntimeError(
+                f"selected-axis terminal training binding mismatch: {key}"
+            )
+
+    return {
+        "variant": str(variant),
+        "seed": 3407,
+        "successful_optimizer_updates": expected_updates,
+        "checkpoint_sidecar_path": str(sidecar_file),
+        "checkpoint_sidecar_sha256": sha256_file(sidecar_file),
+        "training_audit_path": str(audit_file.resolve()),
+        "training_audit_sha256": sha256_file(audit_file),
+        "training_audit_self_sha256": str(audit["audit_sha256"]),
+        "gate_suite_sha256": str(audit["gate_suite_sha256"]),
+        "full_model_gate_sha256": str(audit["full_model_gate_sha256"]),
+        "pretrain_path": pretrain["path"],
+        "pretrain_sha256": pretrain["sha256"],
+        "frontend_initialization": audit.get("selector_initialization_contract"),
+    }
+
+
 __all__ = [
     "BOUNDARY_BURST_GATE_SCHEMA",
     "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
@@ -356,5 +547,6 @@ __all__ = [
     "selector_schedule_step",
     "sha256_file",
     "validate_frozen_pretrain_binding",
+    "validate_terminal_checkpoint_binding",
     "validate_update_state",
 ]

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.bata import aggregate_duca_boundary_burst_results as aggregate_module
 from tools.bata.create_duca_frontend_split import (
     create_split,
     validate_split_manifest,
@@ -18,6 +19,11 @@ from tools.bata.select_duca_boundary_burst_candidates import (
     select_variants,
     validate_r0_headroom_summary,
     validate_r0_runtime_bindings,
+)
+from tools.bata.duca_p0_evaluation import (
+    canonical_sha256,
+    normalize_evaluation_config,
+    official_evaluator_identity,
 )
 
 
@@ -238,16 +244,145 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
     completion_shas = []
     for index, variant in enumerate(EXPECTED_VARIANTS):
         root = tmp_path / variant
+        config = root / f"{variant}.py"
+        pretrain = root / "pretrain.pth"
+        annotation = root / "annotation.json"
+        class_map = root / "class_map.txt"
+        prediction = root / "prediction.json"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(f"# {variant}\n", encoding="utf-8")
+        pretrain.write_bytes(f"pretrain-{variant}".encode())
+        annotation.write_text("{}\n", encoding="utf-8")
+        class_map.write_text("action\n", encoding="utf-8")
         checkpoint = root / "epoch_59.pth"
-        checkpoint.parent.mkdir(parents=True, exist_ok=True)
         checkpoint.write_bytes(f"checkpoint-{variant}".encode())
-        evaluation = root / "evaluation.json"
         metrics = {"average_mAP": 0.60 + index * 0.01, "mAP@0.5": 0.70}
         _write_json(
-            evaluation,
+            prediction,
+            {"metrics": metrics, "result_count": 3, "video_count": 1},
+        )
+        evaluation_config = normalize_evaluation_config(
             {
-                "schema_version": "duca_selected_axis_terminal_evaluation_v1",
-                "metrics": metrics,
+                "type": "mAP",
+                "ground_truth_filename": str(annotation.resolve()),
+                "subset": "validation",
+                "tiou_thresholds": [0.3, 0.4, 0.5, 0.6, 0.7],
+                "top_k": None,
+                "blocked_videos": None,
+                "thread": 16,
+            }
+        )
+        audit = {
+            "schema_version": "duca_p0_training_audit_v2",
+            "status": "complete",
+            "git_commit": "a" * 40,
+            "variant": variant,
+            "seed": 3407,
+            "source_config_path": str(config.resolve()),
+            "source_config_sha256": _sha256(config),
+            "resolved_config_sha256": "c" * 64,
+            "gate_suite_sha256": gate_sha,
+            "full_model_gate_sha256": "d" * 64,
+            "pretrain_path": str(pretrain.resolve()),
+            "pretrain_sha256": _sha256(pretrain),
+            "evaluation_config_sha256": canonical_sha256(evaluation_config),
+            "evaluation_annotation_path": str(annotation.resolve()),
+            "evaluation_annotation_sha256": _sha256(annotation),
+            "evaluation_class_map_path": str(class_map.resolve()),
+            "evaluation_class_map_sha256": _sha256(class_map),
+            "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
+            "primary_checkpoint_epoch": 59,
+            "primary_checkpoint_state_key": "state_dict_ema",
+            "expected_successful_optimizer_updates": 6000,
+            "last_completed_epoch": 59,
+            "epochs_completed": 60,
+            "scheduler_last_epoch": 6000,
+            "selector_schedule_step": 6000,
+            "update_audit": {
+                "successful_optimizer_updates": 6000,
+                "scheduler_updates": 6000,
+                "ema_updates": 6000,
+                "duca_schedule_updates": 6000,
+                "replay_exhaustions": 0,
+            },
+        }
+        audit["audit_sha256"] = canonical_sha256(audit)
+        audit_path = root / "duca_selected_axis_training_audit.json"
+        _write_json(audit_path, audit)
+        metadata = {
+            "schema_version": "duca_p0_checkpoint_metadata_v2",
+            "training_audit": audit,
+        }
+        metadata["metadata_sha256"] = canonical_sha256(metadata)
+        sidecar = {
+            "schema_version": "duca_p0_checkpoint_sidecar_v2",
+            "checkpoint_path": str(checkpoint.resolve()),
+            "checkpoint_sha256": _sha256(checkpoint),
+            "experiment_metadata": metadata,
+        }
+        sidecar["sidecar_sha256"] = canonical_sha256(sidecar)
+        sidecar_path = Path(f"{checkpoint}.metadata.json")
+        _write_json(sidecar_path, sidecar)
+        identity = {
+            "variant": variant,
+            "seed": 3407,
+            "successful_optimizer_updates": 6000,
+            "checkpoint_sidecar_path": str(sidecar_path.resolve()),
+            "checkpoint_sidecar_sha256": _sha256(sidecar_path),
+            "training_audit_path": str(audit_path.resolve()),
+            "training_audit_sha256": _sha256(audit_path),
+            "training_audit_self_sha256": audit["audit_sha256"],
+            "gate_suite_sha256": gate_sha,
+            "full_model_gate_sha256": "d" * 64,
+            "pretrain_path": str(pretrain.resolve()),
+            "pretrain_sha256": _sha256(pretrain),
+            "frontend_initialization": None,
+        }
+        evaluation = root / "evaluation.json"
+        evaluation_payload = {
+            "schema_version": "duca_selected_axis_terminal_evaluation_v1",
+            "git_commit": "a" * 40,
+            "task": "offline_temporal_action_detection",
+            "seed": 3407,
+            "variant": variant,
+            "config_path": str(config.resolve()),
+            "config_sha256": _sha256(config),
+            "resolved_config_sha256": "c" * 64,
+            "runtime_config_sha256": "e" * 64,
+            "checkpoint_path": str(checkpoint.resolve()),
+            "checkpoint_sha256": _sha256(checkpoint),
+            "checkpoint_epoch": 59,
+            "checkpoint_state_key": "state_dict_ema",
+            "prediction_path": str(prediction.resolve()),
+            "prediction_sha256": _sha256(prediction),
+            "metrics": metrics,
+            "result_count": 3,
+            "video_count": 1,
+            "evaluator": official_evaluator_identity(),
+            "evaluation_config": evaluation_config,
+            "evaluation_config_sha256": canonical_sha256(evaluation_config),
+            "evaluation_annotation_path": str(annotation.resolve()),
+            "evaluation_annotation_sha256": _sha256(annotation),
+            "evaluation_class_map_path": str(class_map.resolve()),
+            "evaluation_class_map_sha256": _sha256(class_map),
+            "training_identity": identity,
+        }
+        evaluation_payload["evaluation_sha256"] = canonical_sha256(
+            evaluation_payload
+        )
+        _write_json(evaluation, evaluation_payload)
+        launch = root / "launch_manifest.json"
+        _write_json(
+            launch,
+            {
+                "schema": "duca_two_stage_curriculum_launch_v1",
+                "git_commit": "a" * 40,
+                "variant": variant,
+                "seed": 3407,
+                "config_sha256": _sha256(config),
+                "gate_suite_sha256": gate_sha,
+                "terminal_checkpoint": "epoch_59.pth/state_dict_ema",
+                "official_training_successful_updates": 6000,
             },
         )
         completion = root / "completion.json"
@@ -262,7 +397,13 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
                 "checkpoint_sha256": _sha256(checkpoint),
                 "evaluation_path": str(evaluation.resolve()),
                 "evaluation_sha256": _sha256(evaluation),
+                "evaluation_self_sha256": evaluation_payload["evaluation_sha256"],
+                "prediction_path": str(prediction.resolve()),
+                "prediction_sha256": _sha256(prediction),
                 "metrics": metrics,
+                "training_identity": identity,
+                "launch_manifest_path": str(launch.resolve()),
+                "launch_manifest_sha256": _sha256(launch),
                 "frontend_decision_sha256": decision_sha,
                 "gate_suite_sha256": gate_sha,
             },
@@ -276,9 +417,19 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
     )
 
 
+def _stub_official_recompute(monkeypatch) -> None:
+    def recompute(path, _evaluation_config):
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        return payload
+
+    monkeypatch.setattr(aggregate_module, "recompute_official_map", recompute)
+
+
 def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    _stub_official_recompute(monkeypatch)
     roots, completions, completion_shas = _terminal_suite(tmp_path)
     payload = json.loads(completions[0].read_text(encoding="utf-8"))
     payload["metrics"]["average_mAP"] = 0.99
@@ -298,7 +449,10 @@ def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
         )
 
 
-def test_terminal_aggregate_uses_verified_evaluation_metrics(tmp_path: Path) -> None:
+def test_terminal_aggregate_uses_verified_evaluation_metrics(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _stub_official_recompute(monkeypatch)
     roots, completions, completion_shas = _terminal_suite(tmp_path)
 
     payload = aggregate(
@@ -315,6 +469,52 @@ def test_terminal_aggregate_uses_verified_evaluation_metrics(tmp_path: Path) -> 
     assert [row["average_mAP"] for row in payload["results"]] == pytest.approx(
         [0.60, 0.61, 0.62, 0.63]
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("git_commit", "b" * 40),
+        ("variant", "wrong_variant"),
+        ("checkpoint_epoch", 58),
+        ("checkpoint_state_key", "state_dict"),
+        ("config_sha256", "b" * 64),
+        ("evaluator", {"module": "wrong"}),
+        ("evaluation_annotation_sha256", "b" * 64),
+        ("prediction_sha256", "b" * 64),
+    ),
+)
+def test_terminal_aggregate_rejects_resealed_identity_mutation(
+    tmp_path: Path,
+    monkeypatch,
+    field: str,
+    replacement,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    completion = json.loads(completions[0].read_text(encoding="utf-8"))
+    evaluation_path = Path(completion["evaluation_path"])
+    evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    evaluation[field] = replacement
+    evaluation.pop("evaluation_sha256")
+    evaluation["evaluation_sha256"] = canonical_sha256(evaluation)
+    _write_json(evaluation_path, evaluation)
+    completion["evaluation_sha256"] = _sha256(evaluation_path)
+    completion["evaluation_self_sha256"] = evaluation["evaluation_sha256"]
+    _write_json(completions[0], completion)
+    completion_shas[0] = _sha256(completions[0])
+
+    with pytest.raises(RuntimeError):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
 
 
 def test_submission_dag_requires_r0_before_every_learned_stage() -> None:

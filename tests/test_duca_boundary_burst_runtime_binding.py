@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from mmengine.config import Config
@@ -17,6 +19,54 @@ BOUNDARY_VARIANTS = (
     "boundary_burst_r2q3_g0",
     "boundary_burst_r4q5_g0",
 )
+
+
+def test_train_entrypoint_dispatches_selected_axis_runtime_binder(monkeypatch) -> None:
+    source_path = ROOT / "tools" / "train.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    selected_functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name
+        in {"_select_duca_training", "_dispatch_duca_runtime_bindings"}
+    ]
+    namespace = {
+        "duca_cellcf_training": SimpleNamespace(),
+        "duca_p0_training": SimpleNamespace(),
+        "duca_protected_physical_training": SimpleNamespace(
+            FORMAL_PROTOCOL="protected"
+        ),
+        "duca_selected_axis_training": training,
+    }
+    exec(
+        compile(
+            ast.Module(body=selected_functions, type_ignores=[]),
+            str(source_path),
+            "exec",
+        ),
+        namespace,
+    )
+    observed = {}
+
+    def fake_binder(**kwargs):
+        observed.update(kwargs)
+        return {"bound": True}
+
+    monkeypatch.setattr(training, "build_runtime_bindings", fake_binder)
+    selected = namespace["_select_duca_training"](training.FORMAL_PROTOCOL)
+    result = namespace["_dispatch_duca_runtime_bindings"](
+        selected,
+        {"git_commit": "a" * 40},
+        selector_initialization={"enabled": True},
+    )
+
+    assert selected is training
+    assert result == {"bound": True}
+    assert observed == {
+        "git_commit": "a" * 40,
+        "selector_initialization": {"enabled": True},
+    }
 
 
 def test_submit_frozen_pretrain_binding_rejects_replacement(tmp_path: Path) -> None:
@@ -88,6 +138,11 @@ def test_p0_frontend_and_gate_consume_the_submit_frozen_pretrain_contract() -> N
         assert "DUCA_ADATAD_PRETRAIN_PATH" in source
         assert "DUCA_ADATAD_PRETRAIN_SHA256" in source
         assert "validate_frozen_pretrain_binding" in source
+    official = (
+        ROOT / "scripts" / "run_duca_two_stage_curriculum_variant_gpu1.sh"
+    ).read_text(encoding="utf-8")
+    assert '"${DUCA_ADATAD_PRETRAIN_SHA256}"' in official
+    assert '"${ADATAD_PRETRAIN_SHA256}"' not in official
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -187,6 +242,166 @@ def test_boundary_burst_suite_binds_all_four_production_variants(
         expected_gate = tmp_path / "full_model" / f"{config_path.stem}.json"
         assert bindings["full_model_gate_sha256"] == training.sha256_file(
             expected_gate
+        )
+
+
+def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
+    variant = "two_stage_exact_uniform"
+    commit = "a" * 40
+    work_dir = tmp_path / "gpu1_id0"
+    checkpoint = work_dir / "checkpoint" / "epoch_59.pth"
+    audit_path = work_dir / training.DUCA_TRAINING_AUDIT_FILENAME
+    config = tmp_path / training.VARIANT_CONFIGS[variant]
+    annotation = tmp_path / "annotation.json"
+    class_map = tmp_path / "class_map.txt"
+    pretrain = tmp_path / "pretrain.pth"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"checkpoint")
+    config.write_text("# config\n", encoding="utf-8")
+    annotation.write_text("{}\n", encoding="utf-8")
+    class_map.write_text("action\n", encoding="utf-8")
+    pretrain.write_bytes(b"pretrain")
+    bindings = {
+        "git_commit": commit,
+        "variant": variant,
+        "seed": 3407,
+        "slurm_job_id": "7",
+        "source_config_path": str(config.resolve()),
+        "source_config_sha256": training.sha256_file(config),
+        "resolved_config_sha256": "b" * 64,
+        "runtime_config_sha256": "c" * 64,
+        "gate_suite_sha256": "d" * 64,
+        "full_model_gate_sha256": "e" * 64,
+        "pretrain_path": str(pretrain.resolve()),
+        "pretrain_sha256": training.sha256_file(pretrain),
+        "evaluation_annotation_path": str(annotation.resolve()),
+        "evaluation_annotation_sha256": training.sha256_file(annotation),
+        "evaluation_class_map_path": str(class_map.resolve()),
+        "evaluation_class_map_sha256": training.sha256_file(class_map),
+        "evaluation_config_sha256": "f" * 64,
+    }
+    counters = {
+        "attempted_batches": 6000,
+        "optimizer_attempts": 6000,
+        "successful_optimizer_updates": 6000,
+        "amp_skipped_attempts": 0,
+        "replayed_batches": 0,
+        "replay_exhaustions": 0,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "duca_schedule_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 0,
+    }
+    audit = {
+        "schema_version": training.DUCA_P0_TRAINING_AUDIT_SCHEMA,
+        "status": "complete",
+        **bindings,
+        "formal_protocol": training.FORMAL_PROTOCOL,
+        "training_profile": "official60",
+        "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
+        "primary_checkpoint_epoch": 59,
+        "primary_checkpoint_state_key": "state_dict_ema",
+        "expected_train_batches_per_epoch": 100,
+        "expected_successful_optimizer_updates": 6000,
+        "last_completed_epoch": 59,
+        "epochs_completed": 60,
+        "train_batches_per_epoch": 100,
+        "update_audit": counters,
+        "scheduler_last_epoch": 6000,
+        "selector_schedule_step": 6000,
+        "epoch_records": [{"epoch": index} for index in range(60)],
+    }
+    audit["audit_sha256"] = training.canonical_sha256(audit)
+    _write_json(audit_path, audit)
+    metadata = {
+        "schema_version": training.DUCA_P0_CHECKPOINT_METADATA_SCHEMA,
+        "training_audit": audit,
+    }
+    metadata["metadata_sha256"] = training.canonical_sha256(metadata)
+    sidecar = {
+        "schema_version": training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA,
+        "checkpoint_path": str(checkpoint.resolve()),
+        "checkpoint_sha256": training.sha256_file(checkpoint),
+        "experiment_metadata": metadata,
+    }
+    sidecar["sidecar_sha256"] = training.canonical_sha256(sidecar)
+    _write_json(Path(f"{checkpoint}.metadata.json"), sidecar)
+    monkeypatch.setattr(training, "build_runtime_bindings", lambda **_: bindings)
+    return {
+        "checkpoint": checkpoint,
+        "checkpoint_payload": {
+            "epoch": 59,
+            "state_dict_ema": {},
+            "experiment_metadata": metadata,
+        },
+        "commit": commit,
+        "variant": variant,
+        "config": config,
+        "annotation": annotation,
+        "class_map": class_map,
+        "pretrain": pretrain,
+    }
+
+
+def test_terminal_checkpoint_binding_validates_complete_training_chain(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = _terminal_checkpoint_case(tmp_path, monkeypatch)
+    identity = training.validate_terminal_checkpoint_binding(
+        checkpoint_path=case["checkpoint"],
+        checkpoint=case["checkpoint_payload"],
+        git_commit=case["commit"],
+        variant=case["variant"],
+        seed=3407,
+        slurm_job_id="7",
+        source_config_path=case["config"],
+        source_config_sha256=training.sha256_file(case["config"]),
+        resolved_config_sha256="b" * 64,
+        checkpoint_epoch=59,
+        checkpoint_state_key="state_dict_ema",
+        evaluation_annotation_path=case["annotation"],
+        evaluation_class_map_path=case["class_map"],
+        evaluation_config={},
+        runtime_pretrain_path=case["pretrain"],
+        frozen_pretrain_path=case["pretrain"],
+        frozen_pretrain_sha256=training.sha256_file(case["pretrain"]),
+    )
+
+    assert identity["variant"] == case["variant"]
+    assert identity["successful_optimizer_updates"] == 6000
+
+
+def test_terminal_checkpoint_binding_rejects_resealed_sidecar_drift(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = _terminal_checkpoint_case(tmp_path, monkeypatch)
+    sidecar_path = Path(f"{case['checkpoint']}.metadata.json")
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar["checkpoint_sha256"] = "0" * 64
+    sidecar.pop("sidecar_sha256")
+    sidecar["sidecar_sha256"] = training.canonical_sha256(sidecar)
+    _write_json(sidecar_path, sidecar)
+
+    with pytest.raises(RuntimeError, match="checkpoint/sidecar drift"):
+        training.validate_terminal_checkpoint_binding(
+            checkpoint_path=case["checkpoint"],
+            checkpoint=case["checkpoint_payload"],
+            git_commit=case["commit"],
+            variant=case["variant"],
+            seed=3407,
+            slurm_job_id="7",
+            source_config_path=case["config"],
+            source_config_sha256=training.sha256_file(case["config"]),
+            resolved_config_sha256="b" * 64,
+            checkpoint_epoch=59,
+            checkpoint_state_key="state_dict_ema",
+            evaluation_annotation_path=case["annotation"],
+            evaluation_class_map_path=case["class_map"],
+            evaluation_config={},
+            runtime_pretrain_path=case["pretrain"],
+            frozen_pretrain_path=case["pretrain"],
+            frozen_pretrain_sha256=training.sha256_file(case["pretrain"]),
         )
 
 
