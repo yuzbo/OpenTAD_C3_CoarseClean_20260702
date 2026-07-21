@@ -67,6 +67,8 @@ module load miniforge3/24.11
 source '${BASE}/conda_envs/opentad/bin/activate'
 cd '${REPO_ROOT}'
 export BASE='${BASE}' DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}' RUN_ROOT='${RUN_ROOT}'
+export DUCA_ADATAD_PRETRAIN_PATH='${ADATAD_PRETRAIN_PATH}'
+export DUCA_ADATAD_PRETRAIN_SHA256='${ADATAD_PRETRAIN_SHA256}'
 EOF
 }
 

@@ -12,6 +12,9 @@ from tools.bata.duca_p0_evaluation import evaluation_config_sha256
 
 FORMAL_PROTOCOL = "duca_selected_axis_optimization_v1"
 BOUNDARY_BURST_GATE_SCHEMA = "duca_boundary_burst_full_model_gate_v1"
+LOCKED_ALIGNMENT_VARIANTS = frozenset(
+    {"global_curriculum_g1", "global_curriculum_g2"}
+)
 VARIANT_CONFIGS = {
     "exact_uniform": "duca_exact_uniform_fixed384_official60.py",
     "direct025": "duca_protected_e2e_direct025_fixed384_official60.py",
@@ -65,6 +68,27 @@ restore_training_state = legacy.restore_training_state
 selector_schedule_step = legacy.selector_schedule_step
 sha256_file = legacy.sha256_file
 validate_update_state = legacy.validate_update_state
+
+
+def validate_frozen_pretrain_binding(
+    *,
+    runtime_path: str | Path,
+    expected_path: str | Path,
+    expected_sha256: str,
+) -> dict[str, str]:
+    runtime = Path(runtime_path).expanduser().resolve()
+    expected = Path(expected_path).expanduser().resolve()
+    digest = str(expected_sha256).strip().lower()
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise RuntimeError("submit-frozen AdaTAD pretrain SHA256 is invalid")
+    if runtime != expected:
+        raise RuntimeError("AdaTAD pretrain path drifted after submission")
+    if not runtime.is_file():
+        raise RuntimeError(f"AdaTAD pretrain is missing: {runtime}")
+    observed = sha256_file(runtime)
+    if observed != digest:
+        raise RuntimeError("AdaTAD pretrain content drifted after submission")
+    return {"path": str(runtime), "sha256": observed}
 
 
 def formal_training_contract(cfg) -> dict[str, Any] | None:
@@ -207,6 +231,10 @@ def build_runtime_bindings(
     runtime_pretrain_path: str | Path,
     selector_initialization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if variant in LOCKED_ALIGNMENT_VARIANTS:
+        raise RuntimeError(
+            f"selected-axis variant {variant} requires real legal hard-swap alignment"
+        )
     if variant not in VARIANT_CONFIGS:
         raise ValueError(f"invalid selected-axis variant: {variant}")
     if int(seed) != 3407:
@@ -312,6 +340,7 @@ __all__ = [
     "DUCA_P0_TRAINING_AUDIT_SCHEMA",
     "DUCA_TRAINING_AUDIT_FILENAME",
     "FORMAL_PROTOCOL",
+    "LOCKED_ALIGNMENT_VARIANTS",
     "VARIANT_CONFIGS",
     "assert_safe_cfg_options",
     "atomic_write_json",
@@ -326,5 +355,6 @@ __all__ = [
     "restore_training_state",
     "selector_schedule_step",
     "sha256_file",
+    "validate_frozen_pretrain_binding",
     "validate_update_state",
 ]

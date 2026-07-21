@@ -68,12 +68,23 @@ RUN_DIR="${RUN_DIR:-}"
 WORK_DIR="${WORK_DIR:-}"
 SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
 SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
+FROZEN_PRETRAIN_PATH="${DUCA_ADATAD_PRETRAIN_PATH:-}"
+FROZEN_PRETRAIN_SHA256="${DUCA_ADATAD_PRETRAIN_SHA256:-}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Slurm allocation is required"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a GPU"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
+"${PYTHON}" - "${ADATAD_PRETRAIN_PATH}" "${FROZEN_PRETRAIN_PATH}" \
+  "${FROZEN_PRETRAIN_SHA256}" <<'PY'
+import sys
+from tools.bata.duca_selected_axis_training import validate_frozen_pretrain_binding
+
+validate_frozen_pretrain_binding(
+    runtime_path=sys.argv[1], expected_path=sys.argv[2], expected_sha256=sys.argv[3]
+)
+PY
 [[ -f "${SPLIT_MANIFEST}" ]] || fail "frontend split manifest is missing"
 [[ "$(sha256sum "${SPLIT_MANIFEST}" | awk '{print $1}')" == "${SPLIT_SHA256}" ]] \
   || fail "frontend split manifest hash drift"
