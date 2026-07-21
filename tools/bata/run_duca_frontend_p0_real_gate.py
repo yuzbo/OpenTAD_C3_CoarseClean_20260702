@@ -218,9 +218,16 @@ def _coarse_subgroup(name: str) -> str:
     normalized = name.removeprefix("module.")
     if ".spatial_stem." in normalized:
         return "spatial_stem"
-    if ".official_temporal." in normalized and ".conv_out." in normalized:
-        return "action_head"
-    if ".official_temporal." in normalized:
+    temporal_marker = ".official_temporal."
+    if temporal_marker in normalized:
+        tail = normalized.split(temporal_marker, 1)[1]
+        parts = tail.split(".")
+        is_encoder_action_head = tail.startswith("encoder.conv_out.")
+        is_decoder_action_head = (
+            len(parts) >= 4 and parts[0] == "decoders" and parts[2] == "conv_out"
+        )
+        if is_encoder_action_head or is_decoder_action_head:
+            return "action_head"
         return "temporal_trunk"
     return "coarse_other"
 

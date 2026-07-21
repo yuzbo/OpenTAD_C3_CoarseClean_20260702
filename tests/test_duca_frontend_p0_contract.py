@@ -7,6 +7,7 @@ import pytest
 
 try:
     from tools.bata.aggregate_duca_frontend_candidates import EXPECTED_VARIANTS
+    from tools.bata.run_duca_frontend_p0_real_gate import _coarse_subgroup
     from tools.bata.validate_duca_frontend_p0_contract import validate_config
 except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
     pytest.skip(f"DUCA contract dependencies are unavailable: {exc}", allow_module_level=True)
@@ -107,6 +108,31 @@ def test_real_gate_binds_declared_component_learning_rates_to_optimizer_groups()
     assert "def _expected_parameter_lr(name: str, selector)" in gate_source
     assert "declared_component_learning_rates_realized" in gate_source
     assert "_optimizer_partition(model, optimizer, selector)" in gate_source
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    (
+        (
+            "frame_selector.raw_actionness_source.probe_module.official_temporal.encoder.conv_out.weight",
+            "action_head",
+        ),
+        (
+            "frame_selector.raw_actionness_source.probe_module.official_temporal.decoders.0.conv_out.bias",
+            "action_head",
+        ),
+        (
+            "frame_selector.raw_actionness_source.probe_module.official_temporal.encoder.layers.0.att_layer.conv_out.weight",
+            "temporal_trunk",
+        ),
+        (
+            "frame_selector.raw_actionness_source.probe_module.official_temporal.decoders.0.layers.0.att_layer.conv_out.weight",
+            "temporal_trunk",
+        ),
+    ),
+)
+def test_real_gate_matches_actionformer_asformer_head_partition(name: str, expected: str) -> None:
+    assert _coarse_subgroup(name) == expected
 
 
 def test_frontend_grid_varies_learning_speed_not_auxiliary_loss_definition() -> None:
