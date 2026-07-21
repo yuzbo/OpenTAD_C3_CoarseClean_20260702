@@ -431,6 +431,32 @@ def _representative_parameter(model, name: str) -> torch.nn.Parameter:
     return mapping[name]
 
 
+def _group_parameter_change_evidence(
+    named_after: Mapping[str, torch.Tensor],
+    named_before: Mapping[str, torch.Tensor],
+) -> dict[str, dict[str, float | int]]:
+    evidence: dict[str, dict[str, float | int]] = {}
+    for name, before in named_before.items():
+        _require(name in named_after, f"parameter disappeared while measuring update: {name}")
+        group = _parameter_group(name)
+        if group not in {"coarse_probe", "transition_scorer"}:
+            continue
+        delta = float((named_after[name].detach() - before).abs().max().item())
+        _require(math.isfinite(delta), f"non-finite parameter change in {name}")
+        row = evidence.setdefault(
+            group,
+            {
+                "parameter_count": 0,
+                "changed_parameter_count": 0,
+                "max_abs_change": 0.0,
+            },
+        )
+        row["parameter_count"] = int(row["parameter_count"]) + 1
+        row["changed_parameter_count"] = int(row["changed_parameter_count"]) + int(delta > 0.0)
+        row["max_abs_change"] = max(float(row["max_abs_change"]), delta)
+    return evidence
+
+
 def _optimizer_step(optimizer, parameter: torch.nn.Parameter) -> int:
     state = optimizer.state.get(parameter)
     _require(isinstance(state, Mapping) and "step" in state, "optimizer state was not created")
@@ -615,6 +641,10 @@ def run_gate(
     ema_named = dict(ema_root.named_parameters())
     ema_coarse_before = ema_named[coarse_name].detach().clone()
     ema_scorer_before = ema_named[scorer_name].detach().clone()
+    ema_trainable_before = {
+        name: ema_named[name].detach().clone()
+        for name in trainable
+    }
     schedule_before = int(selector._loss_weight_schedule_step.item())
     scheduler_before = int(scheduler.last_epoch)
     update_audit: dict[str, Any] = {}
@@ -657,8 +687,13 @@ def run_gate(
     scorer_delta = float((scorer_parameter.detach() - scorer_before).abs().max().item())
     ema_coarse_delta = float((ema_named[coarse_name].detach() - ema_coarse_before).abs().max().item())
     ema_scorer_delta = float((ema_named[scorer_name].detach() - ema_scorer_before).abs().max().item())
+    ema_group_changes = _group_parameter_change_evidence(ema_named, ema_trainable_before)
     _require(coarse_delta > 0.0 and scorer_delta > 0.0, "production update did not change both P0 branches")
-    _require(ema_coarse_delta > 0.0 and ema_scorer_delta > 0.0, "EMA did not update both P0 branches")
+    for group in ("coarse_probe", "transition_scorer"):
+        _require(
+            int(ema_group_changes.get(group, {}).get("changed_parameter_count", 0)) > 0,
+            f"EMA did not update any parameter in {group}",
+        )
     _require(_optimizer_step(optimizer, coarse_parameter) == 1, "coarse Adam state did not advance once")
     _require(_optimizer_step(optimizer, scorer_parameter) == 1, "scorer Adam state did not advance once")
     _require(int(selector._loss_weight_schedule_step.item()) == schedule_before + 1, "P0 schedule step drifted")
@@ -739,6 +774,7 @@ def run_gate(
             "scorer_parameter_max_abs_change": scorer_delta,
             "ema_coarse_parameter_max_abs_change": ema_coarse_delta,
             "ema_scorer_parameter_max_abs_change": ema_scorer_delta,
+            "ema_group_parameter_change": ema_group_changes,
             "update_audit": update_audit,
             "training_probe": dict(probe),
         },

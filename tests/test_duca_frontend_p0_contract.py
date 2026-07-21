@@ -7,7 +7,10 @@ import pytest
 
 try:
     from tools.bata.aggregate_duca_frontend_candidates import EXPECTED_VARIANTS
-    from tools.bata.run_duca_frontend_p0_real_gate import _coarse_subgroup
+    from tools.bata.run_duca_frontend_p0_real_gate import (
+        _coarse_subgroup,
+        _group_parameter_change_evidence,
+    )
     from tools.bata.validate_duca_frontend_p0_contract import validate_config
 except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
     pytest.skip(f"DUCA contract dependencies are unavailable: {exc}", allow_module_level=True)
@@ -108,6 +111,31 @@ def test_real_gate_binds_declared_component_learning_rates_to_optimizer_groups()
     assert "def _expected_parameter_lr(name: str, selector)" in gate_source
     assert "declared_component_learning_rates_realized" in gate_source
     assert "_optimizer_partition(model, optimizer, selector)" in gate_source
+
+
+def test_real_gate_measures_ema_updates_over_each_parameter_group() -> None:
+    import torch
+
+    coarse_first = "frame_selector.raw_actionness_source.probe_module.spatial_stem.0.weight"
+    coarse_second = "frame_selector.raw_actionness_source.probe_module.spatial_stem.1.bias"
+    scorer = "frame_selector.adapter.transition_scorer.0.weight"
+    before = {
+        coarse_first: torch.tensor([1.0]),
+        coarse_second: torch.tensor([0.0]),
+        scorer: torch.tensor([0.0]),
+    }
+    after = {
+        coarse_first: before[coarse_first].clone(),
+        coarse_second: torch.tensor([1.0e-8]),
+        scorer: torch.tensor([2.0e-8]),
+    }
+
+    evidence = _group_parameter_change_evidence(after, before)
+
+    assert evidence["coarse_probe"]["parameter_count"] == 2
+    assert evidence["coarse_probe"]["changed_parameter_count"] == 1
+    assert evidence["coarse_probe"]["max_abs_change"] > 0.0
+    assert evidence["transition_scorer"]["changed_parameter_count"] == 1
 
 
 @pytest.mark.parametrize(
