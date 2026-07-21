@@ -41,11 +41,13 @@ from tools.bata.validate_duca_frontend_p0_contract import validate_config
 
 
 SCHEMA = "duca_frontend_p0_real_cuda_gate_v1"
-DEFAULT_CONFIG = "configs/adatad/thumos/duca_frontend_pretrain_a1_t010_b16.py"
+DEFAULT_CONFIG = (
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_coarse50_action100_scorer25.py"
+)
 DEFAULT_VARIANT_CONFIGS = (
-    "configs/adatad/thumos/duca_frontend_pretrain_a1_t005_b8.py",
-    "configs/adatad/thumos/duca_frontend_pretrain_a1_t010_b16.py",
-    "configs/adatad/thumos/duca_frontend_pretrain_a1_t020_b32.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_control_c25_a50_s100.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_coarse50_action100_scorer25.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_coarse100_action200_scorer50.py",
 )
 ACTIVE_LOSS_NAMES = {
     "actionness_bce_loss",
@@ -355,7 +357,17 @@ def _normalization_metamorphic_audit(model, batch: Mapping[str, Any]) -> dict[st
     }
 
 
-def _optimizer_partition(model, optimizer) -> dict[str, Any]:
+def _expected_parameter_lr(name: str, selector) -> float:
+    category = _parameter_group(name)
+    if category == "transition_scorer":
+        return float(selector.transition_scorer_lr)
+    _require(category == "coarse_probe", f"unexpected optimizer parameter {name}")
+    if _coarse_subgroup(name) == "action_head":
+        return float(selector.action_head_lr)
+    return float(selector.coarse_trunk_lr)
+
+
+def _optimizer_partition(model, optimizer, selector) -> dict[str, Any]:
     names = {id(parameter): name for name, parameter in model.named_parameters()}
     groups = []
     seen_categories = set()
@@ -364,13 +376,29 @@ def _optimizer_partition(model, optimizer) -> dict[str, Any]:
         categories = sorted({_parameter_group(name) for name in group_names})
         _require(categories and set(categories) <= {"coarse_probe", "transition_scorer"}, "optimizer contains a detector or unexpected selector parameter")
         _require(len(categories) == 1, "an optimizer group mixes coarse and transition parameters")
+        expected_lrs = {_expected_parameter_lr(name, selector) for name in group_names}
+        _require(len(expected_lrs) == 1, "an optimizer group mixes declared component learning rates")
+        expected_lr = next(iter(expected_lrs))
+        actual_lr = float(group["lr"])
+        _require(
+            math.isclose(actual_lr, expected_lr, rel_tol=0.0, abs_tol=1.0e-12),
+            f"optimizer LR drifted for {categories[0]}: {actual_lr} != {expected_lr}",
+        )
         seen_categories.update(categories)
         groups.append(
             {
                 "index": index,
                 "category": categories[0],
+                "coarse_subcategories": sorted(
+                    {
+                        _coarse_subgroup(name)
+                        for name in group_names
+                        if _parameter_group(name) == "coarse_probe"
+                    }
+                ),
                 "parameter_count": len(group_names),
-                "lr": float(group["lr"]),
+                "lr": actual_lr,
+                "expected_lr": expected_lr,
                 "weight_decay": float(group["weight_decay"]),
             }
         )
@@ -378,6 +406,12 @@ def _optimizer_partition(model, optimizer) -> dict[str, Any]:
     return {
         "optimizer_type": optimizer.__class__.__name__,
         "single_optimizer_with_disjoint_parameter_groups": True,
+        "declared_component_learning_rates_realized": True,
+        "declared_component_learning_rates": {
+            "coarse_trunk": float(selector.coarse_trunk_lr),
+            "action_head": float(selector.action_head_lr),
+            "transition_scorer": float(selector.transition_scorer_lr),
+        },
         "global_gradient_clipping_enabled": False,
         "categories": sorted(seen_categories),
         "groups": groups,
@@ -554,7 +588,7 @@ def run_gate(
         ddp_model.register_comm_hook(state=None, hook=comm_hooks.fp16_compress_hook)
     optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), ddp_model, logger)
     assert_optimizer_exact_coverage(model, optimizer)
-    optimizer_partition = _optimizer_partition(model, optimizer)
+    optimizer_partition = _optimizer_partition(model, optimizer, selector)
     scheduler, scheduler_max_epoch = build_scheduler(
         copy.deepcopy(cfg.scheduler), optimizer, len(full_loader)
     )

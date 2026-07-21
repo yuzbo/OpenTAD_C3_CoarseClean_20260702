@@ -86,6 +86,16 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
     _require(cfg.dataset.val is None and cfg.dataset.test is None, "P0 must not consume evaluation splits")
     _require(cfg.workflow.val_eval_interval == -1, "P0 validation mAP must be disabled")
 
+    component_lrs = {
+        "coarse_trunk": float(selector.coarse_trunk_lr),
+        "action_head": float(selector.action_head_lr),
+        "transition_scorer": float(selector.transition_scorer_lr),
+    }
+    _require(
+        all(value > 0.0 for value in component_lrs.values()),
+        "all frontend component learning rates must be positive",
+    )
+
     root = Path(__file__).resolve().parents[2]
     return {
         "schema_version": SCHEMA_VERSION,
@@ -100,6 +110,7 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         "test_subset_consumed": False,
         "loss_weights": {key: float(weights[key]) for key in sorted(weights)},
         "active_losses": sorted(ACTIVE_LOSSES),
+        "component_lrs": component_lrs,
         "actionness_loss_mode": str(selector.actionness_loss_mode),
         "auxiliary_hidden_gradient_scale": float(
             selector.auxiliary_hidden_gradient_scale

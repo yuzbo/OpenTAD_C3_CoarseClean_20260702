@@ -14,28 +14,31 @@ source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 VARIANT="${DUCA_FRONTEND_VARIANT:-}"
 case "${VARIANT}" in
-  a1_t005_b8)
-    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_a1_t005_b8.py"
-    ACTION_WEIGHT=1.0
-    TRANSITION_WEIGHT=0.05
-    BOUNDARY_WEIGHT=8.0
+  lr_control_c25_a50_s100)
+    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_lr_control_c25_a50_s100.py"
+    COARSE_TRUNK_LR=2.5e-5
+    ACTION_HEAD_LR=5.0e-5
+    TRANSITION_SCORER_LR=1.0e-4
     ;;
-  a1_t010_b16)
-    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_a1_t010_b16.py"
-    ACTION_WEIGHT=1.0
-    TRANSITION_WEIGHT=0.10
-    BOUNDARY_WEIGHT=16.0
+  lr_coarse50_action100_scorer25)
+    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_lr_coarse50_action100_scorer25.py"
+    COARSE_TRUNK_LR=5.0e-5
+    ACTION_HEAD_LR=1.0e-4
+    TRANSITION_SCORER_LR=2.5e-5
     ;;
-  a1_t020_b32)
-    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_a1_t020_b32.py"
-    ACTION_WEIGHT=1.0
-    TRANSITION_WEIGHT=0.20
-    BOUNDARY_WEIGHT=32.0
+  lr_coarse100_action200_scorer50)
+    CONFIG="configs/adatad/thumos/duca_frontend_pretrain_lr_coarse100_action200_scorer50.py"
+    COARSE_TRUNK_LR=1.0e-4
+    ACTION_HEAD_LR=2.0e-4
+    TRANSITION_SCORER_LR=5.0e-5
     ;;
   *)
-    fail "unknown frontend weight variant: ${VARIANT}"
+    fail "unknown frontend learning-rate variant: ${VARIANT}"
     ;;
 esac
+ACTION_WEIGHT=1.0
+TRANSITION_WEIGHT=0.10
+BOUNDARY_WEIGHT=16.0
 
 QUALITY_CONFIG="configs/adatad/thumos/duca_frontend_holdout_quality_fixed384.py"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
@@ -107,13 +110,27 @@ for item in "5:4" "10:9" "15:14" "20:19"; do
     2>&1 | tee "${quality_dir}/analyze.out"
   "${PYTHON}" - "${candidate}" "${VARIANT}" "${epoch_one}" \
     "${checkpoint}" "${summary}" "${records}" \
-    "${ACTION_WEIGHT}" "${TRANSITION_WEIGHT}" "${BOUNDARY_WEIGHT}" <<'PY'
+    "${ACTION_WEIGHT}" "${TRANSITION_WEIGHT}" "${BOUNDARY_WEIGHT}" \
+    "${COARSE_TRUNK_LR}" "${ACTION_HEAD_LR}" "${TRANSITION_SCORER_LR}" <<'PY'
 import hashlib
 import json
 import sys
 from pathlib import Path
 
-out, variant, epoch, checkpoint, summary, records, action, transition, boundary = sys.argv[1:]
+(
+    out,
+    variant,
+    epoch,
+    checkpoint,
+    summary,
+    records,
+    action,
+    transition,
+    boundary,
+    coarse_lr,
+    action_lr,
+    scorer_lr,
+) = sys.argv[1:]
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 payload = {
@@ -130,6 +147,11 @@ payload = {
         "transition": float(transition),
         "transition_boundary": float(boundary),
     },
+    "component_lrs": {
+        "coarse_trunk": float(coarse_lr),
+        "action_head": float(action_lr),
+        "transition_scorer": float(scorer_lr),
+    },
 }
 Path(out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
@@ -138,6 +160,7 @@ done
 
 "${PYTHON}" - "${RUN_DIR}/completion.json" "${EXPECTED_COMMIT}" "${VARIANT}" \
   "${SPLIT_SHA256}" "${ACTION_WEIGHT}" "${TRANSITION_WEIGHT}" "${BOUNDARY_WEIGHT}" \
+  "${COARSE_TRUNK_LR}" "${ACTION_HEAD_LR}" "${TRANSITION_SCORER_LR}" \
   "${RUN_DIR}/p0_contract.json" \
   "${candidate_files[@]}" <<'PY'
 import hashlib
@@ -145,7 +168,20 @@ import json
 import sys
 from pathlib import Path
 
-out, commit, variant, split_sha, action, transition, boundary, contract_path, *candidate_paths = sys.argv[1:]
+(
+    out,
+    commit,
+    variant,
+    split_sha,
+    action,
+    transition,
+    boundary,
+    coarse_lr,
+    action_lr,
+    scorer_lr,
+    contract_path,
+    *candidate_paths,
+) = sys.argv[1:]
 candidates = [json.loads(Path(path).read_text(encoding="utf-8")) for path in candidate_paths]
 contract = Path(contract_path).resolve()
 payload = {
@@ -159,6 +195,11 @@ payload = {
         "actionness": float(action),
         "transition": float(transition),
         "transition_boundary": float(boundary),
+    },
+    "component_lrs": {
+        "coarse_trunk": float(coarse_lr),
+        "action_head": float(action_lr),
+        "transition_scorer": float(scorer_lr),
     },
     "p0_contract_path": str(contract),
     "p0_contract_sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),

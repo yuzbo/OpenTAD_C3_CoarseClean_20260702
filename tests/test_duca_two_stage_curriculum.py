@@ -191,7 +191,10 @@ def test_two_stage_configs_freeze_only_the_declared_coarse_branch(
     monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT_EPOCH", "19")
 
     frontend = Config.fromfile(
-        str(CONFIG_DIR / "duca_frontend_pretrain_a1_t010_b16.py")
+        str(
+            CONFIG_DIR
+            / "duca_frontend_pretrain_lr_coarse50_action100_scorer25.py"
+        )
     )
     assert frontend.model.selector_train_only is True
     assert frontend.model.selector_train_only_skip_detector is True
@@ -206,6 +209,9 @@ def test_two_stage_configs_freeze_only_the_declared_coarse_branch(
     assert frontend.model.frame_selector.actionness_loss_mode == "class_balanced_mean"
     assert frontend.model.frame_selector.auxiliary_hidden_gradient_scale == 0.0
     assert frontend.model.frame_selector.actionness_source_cfg.spatial_norm == "groupnorm"
+    assert frontend.model.frame_selector.coarse_trunk_lr == 5.0e-5
+    assert frontend.model.frame_selector.action_head_lr == 1.0e-4
+    assert frontend.model.frame_selector.transition_scorer_lr == 2.5e-5
     assert set(frontend.model.frame_selector.loss_weights) == {
         "detector",
         "actionness",

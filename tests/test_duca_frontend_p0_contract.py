@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 try:
+    from tools.bata.aggregate_duca_frontend_candidates import EXPECTED_VARIANTS
     from tools.bata.validate_duca_frontend_p0_contract import validate_config
 except Exception as exc:  # pragma: no cover - local Windows torch/c10.dll guard.
     pytest.skip(f"DUCA contract dependencies are unavailable: {exc}", allow_module_level=True)
@@ -16,15 +17,26 @@ CONFIG_ROOT = ROOT / "configs" / "adatad" / "thumos"
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("name", "expected_lrs"),
     (
-        "duca_frontend_pretrain_a1_t005_b8.py",
-        "duca_frontend_pretrain_a1_t010_b16.py",
-        "duca_frontend_pretrain_a1_t020_b32.py",
+        (
+            "duca_frontend_pretrain_lr_control_c25_a50_s100.py",
+            {"coarse_trunk": 2.5e-5, "action_head": 5.0e-5, "transition_scorer": 1.0e-4},
+        ),
+        (
+            "duca_frontend_pretrain_lr_coarse50_action100_scorer25.py",
+            {"coarse_trunk": 5.0e-5, "action_head": 1.0e-4, "transition_scorer": 2.5e-5},
+        ),
+        (
+            "duca_frontend_pretrain_lr_coarse100_action200_scorer50.py",
+            {"coarse_trunk": 1.0e-4, "action_head": 2.0e-4, "transition_scorer": 5.0e-5},
+        ),
     ),
 )
 def test_frontend_variants_satisfy_strict_p0_contract(
-    name: str, monkeypatch: pytest.MonkeyPatch
+    name: str,
+    expected_lrs: dict[str, float],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DUCA_FRONTEND_TRAIN_BLOCK_LIST", "train_block.txt")
 
@@ -45,6 +57,10 @@ def test_frontend_variants_satisfy_strict_p0_contract(
     assert payload["spatial_norm"] == "groupnorm"
     assert payload["auxiliary_hidden_gradient_scale"] == 0.0
     assert payload["optimizer"]["global_gradient_clipping_enabled"] is False
+    assert payload["component_lrs"] == expected_lrs
+    assert payload["loss_weights"]["actionness"] == 1.0
+    assert payload["loss_weights"]["transition"] == 0.10
+    assert payload["loss_weights"]["transition_boundary"] == 16.0
 
 
 def test_serial_curriculum_runs_one_real_gate_before_frontend_training() -> None:
@@ -62,3 +78,32 @@ def test_real_gate_classifies_the_executed_spatial_stem_parameter_path() -> None
     )
     assert 'if ".spatial_stem." in normalized:' in gate_source
     assert 'if ".spatial_encoder." in normalized:' not in gate_source
+
+
+def test_real_gate_binds_declared_component_learning_rates_to_optimizer_groups() -> None:
+    gate_source = (
+        ROOT / "tools" / "bata" / "run_duca_frontend_p0_real_gate.py"
+    ).read_text(encoding="utf-8")
+    assert "def _expected_parameter_lr(name: str, selector)" in gate_source
+    assert "declared_component_learning_rates_realized" in gate_source
+    assert "_optimizer_partition(model, optimizer, selector)" in gate_source
+
+
+def test_frontend_grid_varies_learning_speed_not_auxiliary_loss_definition() -> None:
+    assert set(EXPECTED_VARIANTS) == {
+        "lr_control_c25_a50_s100",
+        "lr_coarse50_action100_scorer25",
+        "lr_coarse100_action200_scorer50",
+    }
+    losses = {tuple(sorted(spec["loss_weights"].items())) for spec in EXPECTED_VARIANTS.values()}
+    lrs = {tuple(sorted(spec["component_lrs"].items())) for spec in EXPECTED_VARIANTS.values()}
+    assert losses == {
+        (("actionness", 1.0), ("transition", 0.10), ("transition_boundary", 16.0))
+    }
+    assert len(lrs) == 3
+    for name, spec in EXPECTED_VARIANTS.items():
+        component_lrs = spec["component_lrs"]
+        if name == "lr_control_c25_a50_s100":
+            assert component_lrs["transition_scorer"] > component_lrs["coarse_trunk"]
+        else:
+            assert component_lrs["transition_scorer"] < component_lrs["coarse_trunk"]

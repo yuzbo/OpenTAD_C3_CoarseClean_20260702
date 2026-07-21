@@ -41,7 +41,11 @@ def _read_bound(path_value: str, sha256_value: str, label: str) -> tuple[Path, A
     return path, json.loads(path.read_text(encoding="utf-8"))
 
 
-def _short_action_both_endpoint_r1(records_path: Path) -> dict[str, Any]:
+def _short_action_both_endpoint(
+    records_path: Path,
+    *,
+    radius: float,
+) -> dict[str, Any]:
     rows = [
         json.loads(line)
         for line in records_path.read_text(encoding="utf-8").splitlines()
@@ -73,20 +77,21 @@ def _short_action_both_endpoint_r1(records_path: Path) -> dict[str, Any]:
                 continue
             total += 1
             learned_hits += int(
-                any(abs(position - start) <= 1.0 for position in learned)
-                and any(abs(position - end) <= 1.0 for position in learned)
+                any(abs(position - start) <= radius for position in learned)
+                and any(abs(position - end) <= radius for position in learned)
             )
             uniform_hits += int(
-                any(abs(position - start) <= 1.0 for position in uniform)
-                and any(abs(position - end) <= 1.0 for position in uniform)
+                any(abs(position - start) <= radius for position in uniform)
+                and any(abs(position - end) <= radius for position in uniform)
             )
     _require(total > 0, "candidate records contain no short action instances")
     return {
         "definition": "duration_at_or_below_train_holdout_instance_median",
+        "radius_dense_candidates": float(radius),
         "duration_threshold_dense_candidates": duration_threshold,
         "instance_count": total,
-        "learned_both_endpoint_r1": learned_hits / float(total),
-        "uniform_both_endpoint_r1": uniform_hits / float(total),
+        "learned_both_endpoint": learned_hits / float(total),
+        "uniform_both_endpoint": uniform_hits / float(total),
     }
 
 
@@ -114,10 +119,26 @@ def _candidate_metrics(candidate: Mapping[str, Any]) -> dict[str, Any]:
     )
     _require(int(summary.get("sample_count", 0)) > 0, "empty holdout summary")
     coarse_auroc = _finite(summary["coarse"]["pooled"]["auroc"], "coarse AUROC")
-    policy_auroc = _finite(summary["transition"]["r1"]["policy"]["auroc"], "policy transition AUROC")
-    delta_auroc = _finite(
-        summary["transition"]["r1"]["pure_abs_delta_p_action"]["auroc"],
-        "pure-delta transition AUROC",
+    coarse_auprc = _finite(summary["coarse"]["pooled"]["auprc"], "coarse AUPRC")
+    coarse_auprc_lift = _finite(
+        summary["coarse"]["pooled"]["auprc_lift"],
+        "coarse AUPRC lift",
+    )
+    policy_auroc_r0 = _finite(
+        summary["transition"]["r0"]["policy"]["auroc"],
+        "policy transition AUROC r0",
+    )
+    delta_auroc_r0 = _finite(
+        summary["transition"]["r0"]["pure_abs_delta_p_action"]["auroc"],
+        "pure-delta transition AUROC r0",
+    )
+    learned_r0 = _finite(
+        summary["selection"]["learned"]["boundary_recall"]["r0"]["mean"],
+        "learned boundary recall r0",
+    )
+    uniform_r0 = _finite(
+        summary["selection"]["uniform"]["boundary_recall"]["r0"]["mean"],
+        "uniform boundary recall r0",
     )
     learned_r1 = _finite(
         summary["selection"]["learned"]["boundary_recall"]["r1"]["mean"],
@@ -139,14 +160,30 @@ def _candidate_metrics(candidate: Mapping[str, Any]) -> dict[str, Any]:
         summary["selection"]["learned"]["max_unselected_hole"]["mean"],
         "learned max hole",
     )
-    short = _short_action_both_endpoint_r1(records_path)
+    short_r0 = _short_action_both_endpoint(records_path, radius=0.0)
+    short_r1 = _short_action_both_endpoint(records_path, radius=1.0)
+    raw_component_lrs = candidate.get("component_lrs")
+    _require(isinstance(raw_component_lrs, Mapping), "candidate component LRs are missing")
+    _require(
+        set(raw_component_lrs) == {"coarse_trunk", "action_head", "transition_scorer"},
+        "candidate component LR inventory is invalid",
+    )
+    component_lrs = {
+        key: _finite(value, f"{key} learning rate")
+        for key, value in raw_component_lrs.items()
+    }
+    _require(all(value > 0.0 for value in component_lrs.values()), "component LRs must be positive")
     gates = {
         "coarse_action_auroc_at_least_0_55": coarse_auroc >= 0.55,
-        "policy_transition_auroc_not_below_pure_delta": policy_auroc >= delta_auroc,
-        "learned_boundary_recall_r1_not_below_uniform": learned_r1 >= uniform_r1,
+        "coarse_action_auprc_above_prevalence": coarse_auprc_lift > 1.0,
+        "policy_transition_auroc_r0_not_below_pure_delta": (
+            policy_auroc_r0 >= delta_auroc_r0
+        ),
+        "learned_boundary_recall_r0_not_below_uniform": learned_r0 >= uniform_r0,
         "learned_endpoint_distance_not_above_uniform": learned_distance <= uniform_distance,
-        "short_action_both_endpoint_r1_not_below_uniform": (
-            short["learned_both_endpoint_r1"] >= short["uniform_both_endpoint_r1"]
+        "short_action_both_endpoint_r0_not_below_uniform": (
+            short_r0["learned_both_endpoint"]
+            >= short_r0["uniform_both_endpoint"]
         ),
         "mean_max_unselected_hole_at_most_2": learned_max_hole <= 2.0,
     }
@@ -164,8 +201,13 @@ def _candidate_metrics(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "loss_weights": dict(candidate["loss_weights"]),
         "metrics": {
             "coarse_action_auroc": coarse_auroc,
-            "policy_transition_auroc_r1": policy_auroc,
-            "pure_delta_transition_auroc_r1": delta_auroc,
+            "coarse_action_auprc": coarse_auprc,
+            "coarse_action_auprc_lift": coarse_auprc_lift,
+            "policy_transition_auroc_r0": policy_auroc_r0,
+            "pure_delta_transition_auroc_r0": delta_auroc_r0,
+            "learned_boundary_recall_r0": learned_r0,
+            "uniform_boundary_recall_r0": uniform_r0,
+            "learned_minus_uniform_boundary_recall_r0": learned_r0 - uniform_r0,
             "learned_boundary_recall_r1": learned_r1,
             "uniform_boundary_recall_r1": uniform_r1,
             "learned_minus_uniform_boundary_recall_r1": learned_r1 - uniform_r1,
@@ -173,8 +215,10 @@ def _candidate_metrics(candidate: Mapping[str, Any]) -> dict[str, Any]:
             "uniform_mean_endpoint_distance": uniform_distance,
             "uniform_minus_learned_endpoint_distance": uniform_distance - learned_distance,
             "learned_mean_max_unselected_hole": learned_max_hole,
-            "short_action": short,
+            "short_action_r0": short_r0,
+            "short_action_r1_diagnostic": short_r1,
         },
+        "component_lrs": component_lrs,
         "gates": gates,
         "all_gates_pass": all(gates.values()),
     }
@@ -198,20 +242,21 @@ def select_checkpoint(
     )
     _require(split.get("test_subset_consumed") is False, "split manifest consumed the test subset")
     candidates = [_candidate_metrics(item) for item in manifest.get("candidates", [])]
-    _require(len(candidates) == 12, "P0 requires exactly 3 weights x 4 checkpoints")
+    _require(len(candidates) == 12, "P0 requires exactly 3 LR profiles x 4 checkpoints")
     identities = {(item["variant"], item["epoch_one_based"]) for item in candidates}
     _require(len(identities) == 12, "P0 candidate identities must be unique")
     eligible = [item for item in candidates if item["all_gates_pass"]]
     eligible.sort(
         key=lambda item: (
-            -item["metrics"]["learned_minus_uniform_boundary_recall_r1"],
+            -item["metrics"]["learned_minus_uniform_boundary_recall_r0"],
             -(
-                item["metrics"]["short_action"]["learned_both_endpoint_r1"]
-                - item["metrics"]["short_action"]["uniform_both_endpoint_r1"]
+                item["metrics"]["short_action_r0"]["learned_both_endpoint"]
+                - item["metrics"]["short_action_r0"]["uniform_both_endpoint"]
             ),
             -item["metrics"]["uniform_minus_learned_endpoint_distance"],
-            -item["metrics"]["policy_transition_auroc_r1"],
+            -item["metrics"]["policy_transition_auroc_r0"],
             -item["metrics"]["coarse_action_auroc"],
+            -item["metrics"]["coarse_action_auprc_lift"],
             item["epoch_one_based"],
             item["variant"],
         )
@@ -228,10 +273,12 @@ def select_checkpoint(
         "split_manifest_path": str(split_path),
         "split_manifest_sha256": sha256_file(split_path),
         "selection_rule": [
-            "all six mechanism gates must pass",
-            "maximize learned-minus-uniform boundary recall at radius 1",
-            "then maximize short-action both-endpoint gain at radius 1",
-            "then maximize endpoint-distance gain, policy AUROC, and action AUROC",
+            "all seven mechanism gates must pass",
+            "maximize learned-minus-uniform exact boundary recall at radius 0",
+            "then maximize short-action exact both-endpoint gain at radius 0",
+            "then maximize endpoint-distance gain and radius-0 policy AUROC",
+            "then maximize coarse action AUROC and AUPRC lift",
+            "radius-1 coverage is diagnostic only and never selects a checkpoint",
             "then prefer the earlier checkpoint",
         ],
         "candidate_count": len(candidates),

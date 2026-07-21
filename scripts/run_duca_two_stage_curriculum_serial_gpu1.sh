@@ -40,7 +40,11 @@ export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_hol
   --split-manifest "${SPLIT_MANIFEST}" \
   --expected-split-sha256 "${SPLIT_SHA256}" \
   --output-json "${RUN_ROOT}/p0_real_gate.json"
-frontend_variants=(a1_t005_b8 a1_t010_b16 a1_t020_b32)
+frontend_variants=(
+  lr_control_c25_a50_s100
+  lr_coarse50_action100_scorer25
+  lr_coarse100_action200_scorer50
+)
 for variant in "${frontend_variants[@]}"; do
   export DUCA_FRONTEND_VARIANT="${variant}"
   export RUN_DIR="${RUN_ROOT}/p0/${variant}/run"
@@ -54,9 +58,9 @@ CANDIDATE_MANIFEST="${RUN_ROOT}/frontend_candidate_manifest.json"
   --expected-commit "${EXPECTED_COMMIT}" \
   --split-manifest "${SPLIT_MANIFEST}" \
   --split-manifest-sha256 "${SPLIT_SHA256}" \
-  --receipt "${RUN_ROOT}/p0/a1_t005_b8/run/completion.json" \
-  --receipt "${RUN_ROOT}/p0/a1_t010_b16/run/completion.json" \
-  --receipt "${RUN_ROOT}/p0/a1_t020_b32/run/completion.json" \
+  --receipt "${RUN_ROOT}/p0/lr_control_c25_a50_s100/run/completion.json" \
+  --receipt "${RUN_ROOT}/p0/lr_coarse50_action100_scorer25/run/completion.json" \
+  --receipt "${RUN_ROOT}/p0/lr_coarse100_action200_scorer50/run/completion.json" \
   --candidate-manifest "${CANDIDATE_MANIFEST}" \
   --decision-json "${DECISION}"
 

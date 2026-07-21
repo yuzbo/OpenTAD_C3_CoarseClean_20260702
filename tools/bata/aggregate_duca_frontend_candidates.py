@@ -13,9 +13,42 @@ from tools.bata.select_duca_frontend_checkpoint import (
 
 
 EXPECTED_VARIANTS = {
-    "a1_t005_b8": {"actionness": 1.0, "transition": 0.05, "transition_boundary": 8.0},
-    "a1_t010_b16": {"actionness": 1.0, "transition": 0.10, "transition_boundary": 16.0},
-    "a1_t020_b32": {"actionness": 1.0, "transition": 0.20, "transition_boundary": 32.0},
+    "lr_control_c25_a50_s100": {
+        "loss_weights": {
+            "actionness": 1.0,
+            "transition": 0.10,
+            "transition_boundary": 16.0,
+        },
+        "component_lrs": {
+            "coarse_trunk": 2.5e-5,
+            "action_head": 5.0e-5,
+            "transition_scorer": 1.0e-4,
+        },
+    },
+    "lr_coarse50_action100_scorer25": {
+        "loss_weights": {
+            "actionness": 1.0,
+            "transition": 0.10,
+            "transition_boundary": 16.0,
+        },
+        "component_lrs": {
+            "coarse_trunk": 5.0e-5,
+            "action_head": 1.0e-4,
+            "transition_scorer": 2.5e-5,
+        },
+    },
+    "lr_coarse100_action200_scorer50": {
+        "loss_weights": {
+            "actionness": 1.0,
+            "transition": 0.10,
+            "transition_boundary": 16.0,
+        },
+        "component_lrs": {
+            "coarse_trunk": 1.0e-4,
+            "action_head": 2.0e-4,
+            "transition_scorer": 5.0e-5,
+        },
+    },
 }
 
 
@@ -67,6 +100,14 @@ def aggregate(
             or contract.get("test_subset_consumed") is not False
         ):
             raise RuntimeError(f"invalid frontend P0 contract evidence: {contract_path}")
+        if contract.get("component_lrs") != payload.get("component_lrs"):
+            raise RuntimeError(f"frontend P0 component-LR evidence drift: {path}")
+        declared_weights = {
+            key: contract.get("loss_weights", {}).get(key)
+            for key in ("actionness", "transition", "transition_boundary")
+        }
+        if declared_weights != payload.get("loss_weights"):
+            raise RuntimeError(f"frontend P0 loss-weight evidence drift: {path}")
         contract_evidence.append(
             {
                 "variant": payload.get("variant"),
@@ -76,16 +117,23 @@ def aggregate(
         )
         receipts.append(payload)
     if {item["variant"] for item in receipts} != set(EXPECTED_VARIANTS):
-        raise RuntimeError("frontend completion receipts do not cover the frozen weight grid")
+        raise RuntimeError("frontend completion receipts do not cover the frozen LR grid")
 
     candidates = []
     for receipt in receipts:
-        expected_weights = EXPECTED_VARIANTS[receipt["variant"]]
-        if receipt.get("loss_weights") != expected_weights:
+        expected = EXPECTED_VARIANTS[receipt["variant"]]
+        if receipt.get("loss_weights") != expected["loss_weights"]:
             raise RuntimeError("frontend loss-weight receipt drift")
+        if receipt.get("component_lrs") != expected["component_lrs"]:
+            raise RuntimeError("frontend component-LR receipt drift")
         rows = receipt.get("candidates", [])
         if [int(row["epoch_one_based"]) for row in rows] != [5, 10, 15, 20]:
             raise RuntimeError("frontend checkpoint cadence drift")
+        for row in rows:
+            if row.get("loss_weights") != expected["loss_weights"]:
+                raise RuntimeError("frontend candidate loss-weight drift")
+            if row.get("component_lrs") != expected["component_lrs"]:
+                raise RuntimeError("frontend candidate component-LR drift")
         candidates.extend(rows)
     if len(candidates) != 12:
         raise RuntimeError("frontend grid must contain exactly twelve candidates")
@@ -100,7 +148,14 @@ def aggregate(
         "test_subset_consumed": False,
         "split_manifest_path": str(split_path),
         "split_manifest_sha256": split_manifest_sha256,
-        "weight_grid": EXPECTED_VARIANTS,
+        "loss_grid": {
+            "actionness": 1.0,
+            "transition": 0.10,
+            "transition_boundary": 16.0,
+        },
+        "component_lr_grid": {
+            key: value["component_lrs"] for key, value in EXPECTED_VARIANTS.items()
+        },
         "checkpoint_epochs_one_based": [5, 10, 15, 20],
         "p0_contract_evidence": contract_evidence,
         "candidates": candidates,

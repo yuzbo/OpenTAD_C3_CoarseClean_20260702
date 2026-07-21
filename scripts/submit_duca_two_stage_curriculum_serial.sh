@@ -45,9 +45,9 @@ export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${SPLIT_ROOT}/frontend_holdout_block_li
 from mmengine.config import Config
 
 for path in (
-    "configs/adatad/thumos/duca_frontend_pretrain_a1_t005_b8.py",
-    "configs/adatad/thumos/duca_frontend_pretrain_a1_t010_b16.py",
-    "configs/adatad/thumos/duca_frontend_pretrain_a1_t020_b32.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_control_c25_a50_s100.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_coarse50_action100_scorer25.py",
+    "configs/adatad/thumos/duca_frontend_pretrain_lr_coarse100_action200_scorer50.py",
 ):
     cfg = Config.fromfile(path)
     if "backbone" in cfg.optimizer:
