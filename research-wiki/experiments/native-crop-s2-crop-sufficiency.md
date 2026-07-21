@@ -170,6 +170,18 @@ root explicit and points it to the clean, commit-exact training snapshot. No
 hash, commit, Slurm, checkpoint or no-claim invariant is relaxed; `1178693`
 remains immutable diagnostic evidence.
 
+Replacement finalizer Job `1178735` also failed closed before publishing a
+receipt. Diagnostic Job `1178737` isolated one checkpoint and all-nine
+diagnostic Job `1178739` confirmed exactly the same sole raw/EMA dtype mismatch
+in every D160/G96/U128 seed: `module.rpn_head.loss_normalizer` is reassigned
+from an integer constructor buffer to a floating raw training buffer, while
+EMA retains integer dtype. This buffer is not a learned parameter and official
+inference consumes EMA. The repaired validator wraps the real detector with
+the training-compatible `module.` prefix, requires exact keys/shapes, exact
+EMA runtime dtype and exact raw parameter dtype across shared aliases, and
+accepts only this frozen raw-buffer key. Generic and real-model mismatch sets
+must agree exactly. No receipt, reference or official-test work occurred.
+
 ## Post-Training Reference Audit
 
 The v2.1 reference phase is not executable without changing scientific

@@ -92,6 +92,25 @@ could supply a non-Git source directory with matching bytes. The formal path is
 not exposed to that ambiguity because it first requires the derived historical
 repository root to be clean and exactly at the Gate-bound commit.
 
+Replacement finalizer Job `1178735` then failed closed on one legitimate
+raw/EMA buffer dtype difference. Diagnostic Job `1178737` isolated the D160
+seed-3407 checkpoint, and all-nine diagnostic Job `1178739` confirmed the same
+single key in every D160/G96/U128 checkpoint:
+`module.rpn_head.loss_normalizer`. Training reassigns the registered integer
+buffer to a floating tensor in the raw model, while the EMA copy keeps the
+constructor's integer dtype. The official EMA consumer therefore remains
+dtype-exact; this is not parameter corruption. Neither diagnostic published a
+matrix receipt or accessed a reference or official-test phase.
+
+The validator now requires exact keys and shapes, exact EMA-to-runtime dtype,
+and exact raw parameter dtype, including every shared-parameter alias. It
+allows only the frozen `module.rpn_head.loss_normalizer` raw-buffer cast,
+requires the generic raw/EMA audit and real-model classification to identify
+the same key set, and records that set in every cell. This is a one-key model
+contract, not permission for arbitrary registered-buffer coercion. The
+validation model also reproduces the training DDP `module.` state prefix
+instead of loading into an unwrapped detector.
+
 ## Reference-Phase Code Audit
 
 The repository contains reusable continuous geometry, runtime sampling,

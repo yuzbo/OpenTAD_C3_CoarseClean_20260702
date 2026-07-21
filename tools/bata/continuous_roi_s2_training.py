@@ -10,7 +10,6 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from mmengine.config import Config
@@ -41,6 +40,7 @@ S2_TRAINING_SEEDS = (3407, 3408, 3409)
 S2_SUCCESSFUL_UPDATES = 4800
 S2_UPDATES_PER_EPOCH = 80
 S2_EPOCHS = 60
+S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS = ("module.rpn_head.loss_normalizer",)
 S2_CANONICAL_EXPERIMENTS_ROOT = (
     "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/"
     "continuous_roi_s2_canonical"
@@ -1129,16 +1129,23 @@ def build_checkpoint_validation_runtime(cfg: Config) -> tuple[Any, Any]:
     importlib.import_module("opentad.models.backbones")
     from opentad.cores import build_optimizer
     from opentad.models import build_detector
+    import torch
+
+    class _DistributedStateWrapper(torch.nn.Module):
+        def __init__(self, module: torch.nn.Module):
+            super().__init__()
+            self.module = module
 
     model_cfg = copy.deepcopy(cfg.model)
     custom = model_cfg.backbone.custom
     if not hasattr(custom, "pretrain"):
         raise ValueError("Continuous-RoI S2 model has no bound pretrain field")
     custom.pretrain = None
-    model = build_detector(model_cfg).cpu().eval()
+    detector = build_detector(model_cfg).cpu().eval()
+    model = _DistributedStateWrapper(detector).cpu().eval()
     optimizer = build_optimizer(
         copy.deepcopy(cfg.optimizer),
-        SimpleNamespace(module=model),
+        model,
         _CheckpointAuditLogger(),
     )
     return model, optimizer
@@ -1151,6 +1158,62 @@ def audit_checkpoint_against_model(
 
     raw_state = checkpoint["state_dict"]
     ema_state = checkpoint["state_dict_ema"]
+    runtime_state = model.state_dict()
+    parameter_keys = {
+        name for name, _ in model.named_parameters(remove_duplicate=False)
+    }
+    buffer_keys = {name for name, _ in model.named_buffers(remove_duplicate=False)}
+    runtime_keys = set(runtime_state)
+    if parameter_keys & buffer_keys:
+        raise ValueError(
+            "Continuous-RoI S2 runtime state classifies a key as both parameter "
+            "and buffer"
+        )
+    persistent_parameter_keys = parameter_keys & runtime_keys
+    persistent_buffer_keys = buffer_keys & runtime_keys
+    if runtime_keys != (persistent_parameter_keys | persistent_buffer_keys):
+        raise ValueError(
+            "Continuous-RoI S2 runtime state is not fully classified as parameters "
+            "or buffers"
+        )
+    if set(raw_state) != set(runtime_state) or set(ema_state) != set(runtime_state):
+        raise ValueError("Continuous-RoI S2 checkpoint keys differ from the real model")
+    raw_buffer_dtype_casts = []
+    for key, runtime_value in runtime_state.items():
+        raw_value = raw_state[key]
+        ema_value = ema_state[key]
+        if not all(
+            hasattr(value, "shape") and hasattr(value, "dtype")
+            for value in (runtime_value, raw_value, ema_value)
+        ):
+            raise ValueError(
+                "Continuous-RoI S2 model state contains a non-tensor value"
+            )
+        if (
+            raw_value.shape != runtime_value.shape
+            or ema_value.shape != runtime_value.shape
+        ):
+            raise ValueError(f"Continuous-RoI S2 tensor shape differs for {key}")
+        if ema_value.dtype != runtime_value.dtype:
+            raise ValueError(f"Continuous-RoI S2 EMA tensor dtype differs for {key}")
+        if raw_value.dtype != runtime_value.dtype:
+            if key in persistent_parameter_keys:
+                raise ValueError(
+                    f"Continuous-RoI S2 raw parameter dtype differs for {key}"
+                )
+            if key not in persistent_buffer_keys:
+                raise ValueError(
+                    f"Continuous-RoI S2 raw unclassified state dtype differs for {key}"
+                )
+            raw_buffer_dtype_casts.append(key)
+    unexpected_buffer_casts = sorted(
+        set(raw_buffer_dtype_casts) - set(S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS)
+    )
+    if unexpected_buffer_casts:
+        raise ValueError(
+            "Continuous-RoI S2 raw buffer dtype casts are not allowlisted: "
+            f"{unexpected_buffer_casts}"
+        )
     raw_result = model.load_state_dict(raw_state, strict=True)
     ema_result = model.load_state_dict(ema_state, strict=True)
     if (
@@ -1197,6 +1260,8 @@ def audit_checkpoint_against_model(
         "runtime_optimizer_state_count": len(optimizer.state),
         "runtime_optimizer_param_group_count": len(optimizer.param_groups),
         "runtime_optimizer_param_group_sizes": runtime_group_sizes,
+        "raw_buffer_dtype_cast_keys": raw_buffer_dtype_casts,
+        "raw_buffer_dtype_cast_count": len(raw_buffer_dtype_casts),
     }
 
 
@@ -1277,14 +1342,17 @@ def audit_final_checkpoint_state(
         )
 
     changed_tensors = 0
+    dtype_mismatch_keys = []
     for key in raw_state:
         raw_value = raw_state[key]
         ema_value = ema_state[key]
         if torch.is_tensor(raw_value) != torch.is_tensor(ema_value):
             raise ValueError("Continuous-RoI S2 raw/EMA state types differ")
         if torch.is_tensor(raw_value):
-            if raw_value.shape != ema_value.shape or raw_value.dtype != ema_value.dtype:
-                raise ValueError("Continuous-RoI S2 raw/EMA tensor metadata differ")
+            if raw_value.shape != ema_value.shape:
+                raise ValueError(f"Continuous-RoI S2 raw/EMA shape differs for {key}")
+            if raw_value.dtype != ema_value.dtype:
+                dtype_mismatch_keys.append(key)
             changed_tensors += int(not torch.equal(raw_value, ema_value))
         elif raw_value != ema_value:
             changed_tensors += 1
@@ -1301,6 +1369,8 @@ def audit_final_checkpoint_state(
         "raw_state_key_count": len(raw_state),
         "ema_state_key_count": len(ema_state),
         "ema_changed_value_count": changed_tensors,
+        "raw_ema_dtype_mismatch_keys": dtype_mismatch_keys,
+        "raw_ema_dtype_mismatch_count": len(dtype_mismatch_keys),
         "optimizer_state_count": len(optimizer["state"]),
         "optimizer_param_group_count": len(optimizer["param_groups"]),
         "optimizer_state_step_min": min(optimizer_steps),
@@ -1381,13 +1451,19 @@ def _build_training_completion_and_audit(
     if (strict_model is None) != (strict_optimizer is None):
         raise ValueError("strict model and optimizer must be provided together")
     if strict_model is not None:
-        checkpoint_audit.update(
-            audit_checkpoint_against_model(
-                checkpoint,
-                model=strict_model,
-                optimizer=strict_optimizer,
-            )
+        strict_audit = audit_checkpoint_against_model(
+            checkpoint,
+            model=strict_model,
+            optimizer=strict_optimizer,
         )
+        generic_dtype_mismatches = set(checkpoint_audit["raw_ema_dtype_mismatch_keys"])
+        strict_buffer_casts = set(strict_audit["raw_buffer_dtype_cast_keys"])
+        if generic_dtype_mismatches != strict_buffer_casts:
+            raise ValueError(
+                "Continuous-RoI S2 generic and real-model dtype mismatch audits "
+                "disagree"
+            )
+        checkpoint_audit.update(strict_audit)
     del checkpoint
     report = {
         "schema_version": S2_TRAINING_COMPLETION_SCHEMA,
@@ -1487,6 +1563,7 @@ def validate_training_completion_with_audit(
 
 
 __all__ = [
+    "S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS",
     "S2_CHECKPOINT_SIDECAR_SCHEMA",
     "S2_EPOCHS",
     "S2_FAMILIES",

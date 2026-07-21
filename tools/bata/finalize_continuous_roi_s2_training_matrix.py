@@ -19,6 +19,7 @@ from tools.bata.continuous_roi_s2_contract import (
     finalize_self_hash,
 )
 from tools.bata.continuous_roi_s2_training import (
+    S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS,
     S2_FAMILIES,
     S2_TRAINING_SEEDS,
     build_checkpoint_validation_runtime,
@@ -422,6 +423,13 @@ def build_training_matrix_completion(
             strict_model=strict_model,
             strict_optimizer=strict_optimizer,
         )
+        if checkpoint_audit["raw_buffer_dtype_cast_keys"] != list(
+            S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS
+        ):
+            raise ValueError(
+                f"raw buffer dtype casts differ from the frozen allowlist: "
+                f"{family}/{seed}"
+            )
         runtime_binding = checkpoint_audit["runtime_binding"]
         if (
             completion["family"] != family
@@ -519,6 +527,7 @@ def build_training_matrix_completion(
         "all_cells_revalidated_from_live_artifacts": True,
         "all_checkpoint_structures_live_validated": True,
         "all_checkpoints_strict_loaded_into_real_models": True,
+        "all_raw_buffer_dtype_casts_match_frozen_allowlist": True,
         "all_cells_final_checkpoint_only": True,
         "all_checkpoint_consumers_use_state_dict_ema": True,
         "all_cells_exact_4800_successful_updates": True,

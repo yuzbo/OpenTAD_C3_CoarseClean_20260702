@@ -784,3 +784,17 @@ append_only: true
   snapshot at `9a61da27`. The repair makes the audited source root explicit;
   all commit and source hashes remain mandatory. Job `1178693` is immutable
   diagnostic evidence and no reference or official-test work was started.
+- 2026-07-21: replacement finalizer Job `1178735` failed closed on a raw/EMA
+  dtype check. Diagnostic Job `1178737` completed `0:0` and found only
+  `module.rpn_head.loss_normalizer` (`float32` raw, `int64` EMA), caused by the
+  official head reassigning an integer registered buffer during training. The
+  repair emulates the DDP `module.` state prefix, keeps strict key/shape and
+  parameter/EMA dtype checks, and records only raw registered-buffer casts
+  accepted by the real loader. Neither failed Job produced a matrix receipt or
+  authorized reference/official-test work.
+- 2026-07-21: all-nine diagnostic Job `1178739` completed `0:0` and confirmed
+  that every D160/G96/U128 seed has exactly the same sole dtype mismatch. The
+  finalizer repair now classifies all parameter aliases with duplicate removal
+  disabled, freezes the only permitted raw-buffer cast to
+  `module.rpn_head.loss_normalizer`, and requires the generic and real-model
+  mismatch sets to agree. This remains training-receipt validation only.

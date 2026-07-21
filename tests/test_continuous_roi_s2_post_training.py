@@ -189,6 +189,134 @@ def test_final_checkpoint_audit_rejects_incomplete_or_stale_state():
         optimizer=validation_optimizer,
     )
     assert strict_audit["raw_model_strict_load_valid"] is True
+
+    class BufferHead(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("loss_normalizer", torch.tensor(100))
+
+    class BufferDetector(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(1))
+            self.rpn_head = BufferHead()
+            self.register_buffer("runtime_only", torch.tensor(0), persistent=False)
+
+        def forward(self, value):
+            return value * self.weight
+
+    class BufferModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.module = BufferDetector()
+
+        def forward(self, value):
+            return self.module(value)
+
+    trained_buffer_model = BufferModel()
+    trained_buffer_optimizer = torch.optim.AdamW(
+        trained_buffer_model.parameters(), lr=1e-4
+    )
+    trained_buffer_model(torch.ones(1)).sum().backward()
+    trained_buffer_optimizer.step()
+    raw_buffer_state = trained_buffer_model.state_dict()
+    raw_buffer_state["module.rpn_head.loss_normalizer"] = torch.tensor(42.5)
+    buffer_checkpoint = {
+        "state_dict": raw_buffer_state,
+        "state_dict_ema": trained_buffer_model.state_dict(),
+        "optimizer": trained_buffer_optimizer.state_dict(),
+    }
+    validation_buffer_model = BufferModel()
+    buffer_audit = training.audit_checkpoint_against_model(
+        buffer_checkpoint,
+        model=validation_buffer_model,
+        optimizer=torch.optim.AdamW(validation_buffer_model.parameters(), lr=1e-4),
+    )
+    assert buffer_audit["raw_buffer_dtype_cast_keys"] == list(
+        training.S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS
+    )
+    assert set(buffer_audit["raw_buffer_dtype_cast_keys"]) == {
+        "module.rpn_head.loss_normalizer"
+    }
+
+    class UnknownBufferHead(BufferHead):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("unexpected", torch.tensor(1))
+
+    class UnknownBufferDetector(BufferDetector):
+        def __init__(self):
+            super().__init__()
+            self.rpn_head = UnknownBufferHead()
+
+    class UnknownBufferModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.module = UnknownBufferDetector()
+
+        def forward(self, value):
+            return self.module(value)
+
+    unknown_buffer_model = UnknownBufferModel()
+    unknown_buffer_optimizer = torch.optim.AdamW(
+        unknown_buffer_model.parameters(), lr=1e-4
+    )
+    unknown_buffer_state = {
+        key: value.clone() for key, value in unknown_buffer_model.state_dict().items()
+    }
+    unknown_buffer_state["module.rpn_head.unexpected"] = torch.tensor(1.5)
+    unknown_buffer_checkpoint = {
+        "state_dict": unknown_buffer_state,
+        "state_dict_ema": unknown_buffer_model.state_dict(),
+        "optimizer": unknown_buffer_optimizer.state_dict(),
+    }
+    validation_unknown_buffer_model = UnknownBufferModel()
+    with pytest.raises(ValueError, match="raw buffer dtype casts are not allowlisted"):
+        training.audit_checkpoint_against_model(
+            unknown_buffer_checkpoint,
+            model=validation_unknown_buffer_model,
+            optimizer=torch.optim.AdamW(
+                validation_unknown_buffer_model.parameters(), lr=1e-4
+            ),
+        )
+    raw_parameter_state = {
+        key: value.clone() for key, value in strict_checkpoint["state_dict"].items()
+    }
+    raw_parameter_state["weight"] = raw_parameter_state["weight"].half()
+    parameter_dtype_checkpoint = dict(strict_checkpoint, state_dict=raw_parameter_state)
+    parameter_dtype_model = torch.nn.Linear(1, 1)
+    with pytest.raises(ValueError, match="raw parameter dtype differs"):
+        training.audit_checkpoint_against_model(
+            parameter_dtype_checkpoint,
+            model=parameter_dtype_model,
+            optimizer=torch.optim.AdamW(parameter_dtype_model.parameters(), lr=1e-4),
+        )
+
+    class AliasModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            shared = torch.nn.Parameter(torch.ones(1))
+            self.primary = shared
+            self.alias = shared
+
+    trained_alias_model = AliasModel()
+    alias_optimizer = torch.optim.AdamW(trained_alias_model.parameters(), lr=1e-4)
+    alias_raw_state = {
+        key: value.clone() for key, value in trained_alias_model.state_dict().items()
+    }
+    alias_raw_state["alias"] = alias_raw_state["alias"].half()
+    alias_checkpoint = {
+        "state_dict": alias_raw_state,
+        "state_dict_ema": trained_alias_model.state_dict(),
+        "optimizer": alias_optimizer.state_dict(),
+    }
+    validation_alias_model = AliasModel()
+    with pytest.raises(ValueError, match="raw parameter dtype differs for alias"):
+        training.audit_checkpoint_against_model(
+            alias_checkpoint,
+            model=validation_alias_model,
+            optimizer=torch.optim.AdamW(validation_alias_model.parameters(), lr=1e-4),
+        )
     orphan_optimizer = strict_optimizer.state_dict()
     orphan_optimizer["state"][999] = {"step": torch.tensor(4800)}
     orphan_checkpoint = dict(strict_checkpoint, optimizer=orphan_optimizer)
@@ -213,7 +341,7 @@ def test_final_checkpoint_audit_rejects_incomplete_or_stale_state():
         )
     malformed = dict(strict_checkpoint)
     malformed["state_dict"] = {"wrong.weight": torch.ones(1)}
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError, match="checkpoint keys differ"):
         malformed_model = torch.nn.Linear(1, 1)
         training.audit_checkpoint_against_model(
             malformed,
@@ -297,6 +425,12 @@ def test_matrix_finalizer_is_training_only_and_fail_closed():
     assert "validate_training_completion_with_audit" in source
     assert "build_checkpoint_validation_runtime" in source
     assert '"all_checkpoints_strict_loaded_into_real_models": True' in source
+    assert '"all_raw_buffer_dtype_casts_match_frozen_allowlist": True' in source
+    assert "S2_ALLOWED_RAW_BUFFER_DTYPE_CAST_KEYS" in source
+    training_source = Path("tools/bata/continuous_roi_s2_training.py").read_text(
+        encoding="utf-8"
+    )
+    assert "generic_dtype_mismatches != strict_buffer_casts" in training_source
     assert '"bound_config_sha256"' in source
     assert "bound config differs from the submitted cell intent" in source
     assert "JobIDRaw,JobName,State,ExitCode,Elapsed,Comment" in source
