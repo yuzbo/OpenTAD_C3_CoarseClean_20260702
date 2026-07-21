@@ -79,6 +79,7 @@ export DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}'
 export RUN_ROOT='${RUN_ROOT}'
 export DUCA_FRONTEND_SPLIT_MANIFEST='${SPLIT_MANIFEST}'
 export DUCA_FRONTEND_SPLIT_MANIFEST_SHA256='${SPLIT_SHA256}'
+export DUCA_FRONTEND_ONLY='${DUCA_FRONTEND_ONLY:-0}'
 bash scripts/run_duca_two_stage_curriculum_serial_gpu1.sh
 EOF
   chmod 0755 "${JOB_FILE}"

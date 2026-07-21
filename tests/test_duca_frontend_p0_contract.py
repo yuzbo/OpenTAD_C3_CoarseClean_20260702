@@ -69,6 +69,9 @@ def test_serial_curriculum_reopens_split_paths_from_manifest() -> None:
     serial_launcher = (ROOT / "scripts" / "run_duca_two_stage_curriculum_serial_gpu1.sh").read_text(
         encoding="utf-8"
     )
+    submitter = (ROOT / "scripts" / "submit_duca_two_stage_curriculum_serial.sh").read_text(
+        encoding="utf-8"
+    )
     assert '["train_block_list"]' in serial_launcher
     assert '["holdout_block_list"]' in serial_launcher
     assert (
@@ -81,6 +84,7 @@ def test_serial_curriculum_reopens_split_paths_from_manifest() -> None:
     )
     assert '[[ -f "${DUCA_FRONTEND_TRAIN_BLOCK_LIST}" ]]' in serial_launcher
     assert '[[ -f "${DUCA_FRONTEND_HOLDOUT_BLOCK_LIST}" ]]' in serial_launcher
+    assert "export DUCA_FRONTEND_ONLY='${DUCA_FRONTEND_ONLY:-0}'" in submitter
 
 
 def test_real_gate_classifies_the_executed_spatial_stem_parameter_path() -> None:
