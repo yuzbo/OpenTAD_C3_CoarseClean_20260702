@@ -78,9 +78,9 @@ export DUCA_SELECTED_OPT_GATE_SUITE="${GATE_SUITE}"
 export DUCA_SELECTED_OPT_GATE_SUITE_SHA256="${GATE_SUITE_SHA256}"
 official_variants=(
   two_stage_exact_uniform
-  two_stage_scratch
-  two_stage_pretrained_joint
-  two_stage_pretrained_frozen
+  global_curriculum_g0
+  global_curriculum_g1
+  global_curriculum_g2
 )
 for variant in "${official_variants[@]}"; do
   export DUCA_SELECTED_OPT_VARIANT="${variant}"
@@ -96,9 +96,9 @@ done
   --gate-suite "${GATE_SUITE}" \
   --gate-suite-sha256 "${GATE_SUITE_SHA256}" \
   --completion "${RUN_ROOT}/official60/two_stage_exact_uniform/run/completion.json" \
-  --completion "${RUN_ROOT}/official60/two_stage_scratch/run/completion.json" \
-  --completion "${RUN_ROOT}/official60/two_stage_pretrained_joint/run/completion.json" \
-  --completion "${RUN_ROOT}/official60/two_stage_pretrained_frozen/run/completion.json" \
+  --completion "${RUN_ROOT}/official60/global_curriculum_g0/run/completion.json" \
+  --completion "${RUN_ROOT}/official60/global_curriculum_g1/run/completion.json" \
+  --completion "${RUN_ROOT}/official60/global_curriculum_g2/run/completion.json" \
   --output-json "${RUN_ROOT}/final_suite_results.json"
 
 echo "[DUCA_TWO_STAGE_SERIAL] completed ${RUN_ROOT}/final_suite_results.json"

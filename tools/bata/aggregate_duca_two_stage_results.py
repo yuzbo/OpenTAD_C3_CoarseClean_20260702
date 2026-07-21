@@ -10,9 +10,9 @@ from tools.bata.select_duca_frontend_checkpoint import sha256_file
 
 EXPECTED_VARIANTS = (
     "two_stage_exact_uniform",
-    "two_stage_scratch",
-    "two_stage_pretrained_joint",
-    "two_stage_pretrained_frozen",
+    "global_curriculum_g0",
+    "global_curriculum_g1",
+    "global_curriculum_g2",
 )
 
 
@@ -70,10 +70,10 @@ def aggregate_results(
             }
         )
     if {row["variant"] for row in rows} != set(EXPECTED_VARIANTS):
-        raise RuntimeError("two-stage result set does not cover the four frozen arms")
+        raise RuntimeError("global-curriculum result set does not cover U/G0/G1/G2")
     rows.sort(key=lambda row: EXPECTED_VARIANTS.index(row["variant"]))
     payload = {
-        "schema": "duca_two_stage_curriculum_result_suite_v1",
+        "schema": "duca_global_curriculum_result_suite_v1",
         "ok": True,
         "status": "four_arm_terminal_ema_results_sealed",
         "task": "offline_temporal_action_detection",

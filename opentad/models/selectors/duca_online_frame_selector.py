@@ -150,6 +150,25 @@ def _training_uniform_companion_mask(
     return mask
 
 
+def _training_uniform_companion_bridge_scale(
+    companion_mask: torch.Tensor,
+    *,
+    normalize_learned_gradient: bool,
+) -> torch.Tensor:
+    """Return per-row selector-gradient scales for a mixed learned/uniform batch."""
+
+    if companion_mask.ndim != 1 or companion_mask.dtype != torch.bool:
+        raise ValueError("uniform companion mask must be a one-dimensional bool tensor")
+    learned_mask = ~companion_mask
+    learned_count = int(learned_mask.long().sum().item())
+    if learned_count <= 0:
+        raise ValueError("uniform companion training requires at least one learned row")
+    scales = learned_mask.to(dtype=torch.float32)
+    if normalize_learned_gradient:
+        scales = scales * (float(companion_mask.numel()) / float(learned_count))
+    return scales
+
+
 def _exact_uniform_companion_tensors(
     valid_mask: torch.Tensor,
     *,
@@ -344,6 +363,7 @@ def _add_protected_structured_transport_gradient_path(
     soft_slot_assignment: torch.Tensor,
     slot_mask: torch.Tensor,
     bridge_weight: float,
+    bridge_row_scale: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Use a hard-anchored local transport derivative for detector feedback.
 
@@ -395,6 +415,20 @@ def _add_protected_structured_transport_gradient_path(
     bridge = float(bridge_weight)
     if bridge <= 0.0:
         return hard_selected, None
+    if bridge_row_scale is None:
+        row_scale = torch.ones(
+            int(hard_selected.shape[0]),
+            device=hard_selected.device,
+            dtype=torch.float32,
+        )
+    else:
+        if bridge_row_scale.ndim != 1 or int(bridge_row_scale.shape[0]) != int(
+            hard_selected.shape[0]
+        ):
+            raise ValueError("protected structured bridge_row_scale must be [B]")
+        if not torch.isfinite(bridge_row_scale).all() or torch.any(bridge_row_scale < 0):
+            raise ValueError("protected structured bridge_row_scale must be finite and non-negative")
+        row_scale = bridge_row_scale.to(device=hard_selected.device, dtype=torch.float32)
     context_inputs = (
         dense_inputs
         if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs)
@@ -427,7 +461,10 @@ def _add_protected_structured_transport_gradient_path(
         slope = (right - left) / denominator[:, None, None, :, None, None]
         displacement = (expected_positions - expected_positions.detach())[:, None, None, :, None, None]
         slot = slot_mask[:, None, None, :, None, None]
-    surrogate_delta = slope.detach() * displacement
+    row_scale_view = row_scale.to(dtype=displacement.dtype).view(
+        int(row_scale.shape[0]), *([1] * (displacement.ndim - 1))
+    )
+    surrogate_delta = slope.detach() * displacement * row_scale_view
     bridged = hard_base + bridge * surrogate_delta * slot.to(dtype=surrogate_delta.dtype)
     return bridged, expected_positions
 
@@ -452,6 +489,7 @@ class DucaOnlineFrameSelector(nn.Module):
         local_cell_force_exact_uniform: bool = False,
         inference_policy_alpha: float = 1.0,
         training_uniform_companion_fraction: float = 0.0,
+        training_uniform_companion_normalize_learned_gradient: bool = False,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
         coarse_trunk_lr: float = 2.5e-5,
@@ -546,6 +584,9 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("inference_policy_alpha must lie in [0,1]")
         self.training_uniform_companion_fraction = float(
             training_uniform_companion_fraction
+        )
+        self.training_uniform_companion_normalize_learned_gradient = bool(
+            training_uniform_companion_normalize_learned_gradient
         )
         if (
             not math.isfinite(self.training_uniform_companion_fraction)
@@ -751,6 +792,15 @@ class DucaOnlineFrameSelector(nn.Module):
             if self.detector_output_coordinate_space != SELECTED_AXIS:
                 raise ValueError(
                     "uniform companion training is defined on the selected-axis detector path"
+                )
+        if self.training_uniform_companion_normalize_learned_gradient:
+            if self.training_uniform_companion_fraction <= 0.0:
+                raise ValueError(
+                    "learned-row gradient normalization requires a positive uniform companion fraction"
+                )
+            if self.detector_gradient_mode != "protected_structured_transport":
+                raise ValueError(
+                    "learned-row gradient normalization requires protected_structured_transport"
                 )
         if self.counterfactual_objective == "local_cell_signed_logistic":
             if self.acquisition_policy != "local_cell_deformation":
@@ -1820,6 +1870,14 @@ class DucaOnlineFrameSelector(nn.Module):
                 scores,
                 masks,
             )
+        companion_bridge_scale = _training_uniform_companion_bridge_scale(
+            uniform_companion_mask,
+            normalize_learned_gradient=(
+                self.training
+                and self.training_uniform_companion_normalize_learned_gradient
+            ),
+        ).to(device=inputs.device)
+        scores["training_uniform_companion_bridge_scale"] = companion_bridge_scale
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
             scores["external_actionness_provenance"] = external_actionness["provenance"]
@@ -1898,6 +1956,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 soft_slot_assignment=assignment,
                 slot_mask=slot_mask,
                 bridge_weight=detector_gradient_weight,
+                bridge_row_scale=companion_bridge_scale,
             )
         bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
         hard_slot_weights = slot_mask.to(dtype=scores["center_scores"].dtype)
@@ -2007,6 +2066,13 @@ class DucaOnlineFrameSelector(nn.Module):
             "training_uniform_companion_count": int(
                 uniform_companion_mask.long().sum().detach().cpu().item()
             ),
+            "training_uniform_companion_normalize_learned_gradient": bool(
+                self.training_uniform_companion_normalize_learned_gradient
+            ),
+            "training_uniform_companion_bridge_scale": [
+                float(value)
+                for value in companion_bridge_scale.detach().cpu().tolist()
+            ],
             "inference_uniform_companion": False,
         }
         if temporal_contract_audit is not None:

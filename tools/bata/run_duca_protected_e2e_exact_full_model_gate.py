@@ -399,7 +399,9 @@ def run_gate(
         selector.loss_weight_schedule["detector_gradient"]["warmup_steps"]
     ) + int(selector.loss_weight_schedule["detector_gradient"]["transition_steps"])
     selector._loss_weight_schedule_step.fill_(bridge_ready)
-    expected_bridge_weight = 0.0 if exact_uniform_route else 0.25
+    expected_bridge_weight = float(
+        selector.loss_weight_schedule["detector_gradient"]["end"]
+    )
     _require(
         float(selector._loss_schedule_state()["detector_gradient_weight"])
         == expected_bridge_weight,
@@ -519,16 +521,39 @@ def run_gate(
             companion_count == 1,
             "two-row Uni companion gate must route one uniform and one learned row",
         )
+        normalize_learned_gradient = bool(
+            getattr(
+                selector,
+                "training_uniform_companion_normalize_learned_gradient",
+                False,
+            )
+        )
+        companion_bridge_scale = model.frame_selector.last_forward_summary.get(
+            "training_uniform_companion_bridge_scale",
+            [],
+        )
+        if normalize_learned_gradient:
+            _require(
+                sorted(float(value) for value in companion_bridge_scale)
+                == [0.0, 2.0],
+                "two-row companion did not preserve matched learned-row gradient exposure",
+            )
     else:
         _require(
             companion_count == 0,
             "non-companion gate unexpectedly routed a uniform training row",
         )
+        normalize_learned_gradient = False
+        companion_bridge_scale = model.frame_selector.last_forward_summary.get(
+            "training_uniform_companion_bridge_scale",
+            [],
+        )
 
     rho_arm = route == "DUCA_PROTECTED_E2E_RHO_FIXED384_OFFICIAL60"
     _require(detector_gradients["detector"] > 0.0, "detector loss missed detector parameters")
     _require(detector_gradients["action_head"] == 0.0, "detector loss leaked into action head")
-    if exact_uniform_route:
+    detector_feedback_enabled = expected_bridge_weight > 0.0
+    if exact_uniform_route or not detector_feedback_enabled:
         _require(
             detector_gradients["selector_scorer"] == 0.0
             and detector_gradients["asformer_last_encoder_layer"] == 0.0
@@ -773,6 +798,8 @@ def run_gate(
             "fraction": companion_fraction,
             "count": companion_count,
             "batch_size": int(batch["inputs"].shape[0]),
+            "normalize_learned_gradient": normalize_learned_gradient,
+            "bridge_scale": companion_bridge_scale,
             "inference_extra_cost": False,
         },
         "uniform_detector_warmup": uniform_warmup_audit,

@@ -26,6 +26,15 @@ case "${VARIANT}" in
   two_stage_pretrained_frozen)
     CONFIG="configs/adatad/thumos/duca_two_stage_pretrained_frozen_fixed384_official60.py"
     ;;
+  global_curriculum_g0)
+    CONFIG="configs/adatad/thumos/duca_global_curriculum_g0_no_feedback_fixed384_official60.py"
+    ;;
+  global_curriculum_g1)
+    CONFIG="configs/adatad/thumos/duca_global_curriculum_g1_protected_fixed384_official60.py"
+    ;;
+  global_curriculum_g2)
+    CONFIG="configs/adatad/thumos/duca_global_curriculum_g2_uni_companion_fixed384_official60.py"
+    ;;
   *)
     fail "unknown two-stage variant: ${VARIANT}"
     ;;

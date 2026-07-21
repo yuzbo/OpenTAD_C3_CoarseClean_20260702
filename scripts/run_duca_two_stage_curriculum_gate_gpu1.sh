@@ -56,9 +56,9 @@ mkdir -p "${GATE_ROOT}/contracts" "${GATE_ROOT}/tests" "${GATE_ROOT}/full_model"
 ADATAD_PRETRAIN_SHA256="$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')"
 configs=(
   configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py
-  configs/adatad/thumos/duca_two_stage_scratch_fixed384_official60.py
-  configs/adatad/thumos/duca_two_stage_pretrained_joint_fixed384_official60.py
-  configs/adatad/thumos/duca_two_stage_pretrained_frozen_fixed384_official60.py
+  configs/adatad/thumos/duca_global_curriculum_g0_no_feedback_fixed384_official60.py
+  configs/adatad/thumos/duca_global_curriculum_g1_protected_fixed384_official60.py
+  configs/adatad/thumos/duca_global_curriculum_g2_uni_companion_fixed384_official60.py
 )
 for config in "${configs[@]}"; do
   name="$(basename "${config}" .py)"
@@ -69,6 +69,7 @@ done
 
 "${PYTHON}" -m pytest \
   tests/test_duca_two_stage_curriculum.py \
+  tests/test_duca_global_curriculum.py \
   tests/test_duca_frontend_checkpoint_selection.py \
   tests/test_duca_online_frame_selector_contracts.py \
   tests/test_duca_selected_axis_optimization_configs.py \
@@ -105,7 +106,7 @@ for path in sorted(path for path in root.rglob("*") if path.is_file()):
 payload = {
     "schema": "duca_selected_axis_optimization_gate_v1",
     "ok": True,
-    "status": "two_stage_four_arm_full_model_gate_passed",
+    "status": "global_curriculum_u_g0_g1_g2_full_model_gate_passed",
     "task": "offline_temporal_action_detection",
     "git_commit": sys.argv[2],
     "formal_training_unlocked": True,

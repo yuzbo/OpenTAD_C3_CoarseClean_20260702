@@ -12,6 +12,7 @@ from opentad.models.duca.acquisition import DucaAcquisitionAdapter
 from opentad.models.selectors.duca_online_frame_selector import (
     _add_protected_structured_transport_gradient_path,
     _add_structured_zero_forward_gradient_path,
+    _training_uniform_companion_bridge_scale,
 )
 
 
@@ -118,6 +119,60 @@ def test_protected_transport_zero_weight_is_identity_without_surrogate() -> None
 
     assert out is hard
     assert expected_positions is None
+
+
+def test_uniform_companion_normalization_matches_full_learned_batch_gradient_mass() -> None:
+    base_logits = torch.tensor(
+        [[[0.0, 1.0, 0.0]], [[0.0, 1.0, 0.0]]],
+        requires_grad=True,
+    )
+    dense = torch.tensor([[[0.0, 1.0, 4.0]], [[0.0, 1.0, 4.0]]])
+    hard = torch.tensor([[[1.0]], [[1.0]]])
+    positions = torch.tensor([[1], [1]])
+    slot_mask = torch.ones(2, 1, dtype=torch.bool)
+
+    base, _ = _add_protected_structured_transport_gradient_path(
+        hard,
+        dense,
+        selected_positions=positions,
+        soft_slot_assignment=base_logits.softmax(dim=-1),
+        slot_mask=slot_mask,
+        bridge_weight=0.25,
+    )
+    base.mean().backward()
+    base_grad_mass = float(base_logits.grad.abs().sum().item())
+
+    mixed_logits = base_logits.detach().clone().requires_grad_(True)
+    companion_mask = torch.tensor([True, False])
+    learned_assignment = mixed_logits.softmax(dim=-1)
+    uniform_assignment = torch.tensor([[[0.0, 1.0, 0.0]], [[0.0, 1.0, 0.0]]])
+    mixed_assignment = torch.where(
+        companion_mask[:, None, None],
+        uniform_assignment,
+        learned_assignment,
+    )
+    bridge_scale = _training_uniform_companion_bridge_scale(
+        companion_mask,
+        normalize_learned_gradient=True,
+    )
+    mixed, _ = _add_protected_structured_transport_gradient_path(
+        hard,
+        dense,
+        selected_positions=positions,
+        soft_slot_assignment=mixed_assignment,
+        slot_mask=slot_mask,
+        bridge_weight=0.25,
+        bridge_row_scale=bridge_scale,
+    )
+    mixed.mean().backward()
+
+    assert bridge_scale.tolist() == [0.0, 2.0]
+    assert float(mixed_logits.grad[0].abs().sum().item()) == pytest.approx(0.0)
+    assert float(mixed_logits.grad.abs().sum().item()) == pytest.approx(
+        base_grad_mass,
+        rel=1.0e-6,
+        abs=1.0e-8,
+    )
 
 
 def test_acquisition_detector_only_loss_moves_structured_policy_and_preserves_hard_input() -> None:

@@ -138,10 +138,21 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "DUCA_TWO_STAGE_SCRATCH_FIXED384_OFFICIAL60",
         "DUCA_TWO_STAGE_PRETRAINED_JOINT_FIXED384_OFFICIAL60",
         "DUCA_TWO_STAGE_PRETRAINED_FROZEN_FIXED384_OFFICIAL60",
+        "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+        "DUCA_GLOBAL_CURRICULUM_G1_PROTECTED_FIXED384_OFFICIAL60",
+        "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
     }:
+        feedback_enabled = route != (
+            "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60"
+        )
         _require(
-            selector.detector_gradient_mode == "protected_structured_transport",
-            "two-stage joint arms require the protected detector bridge",
+            selector.detector_gradient_mode
+            == (
+                "protected_structured_transport"
+                if feedback_enabled
+                else "none"
+            ),
+            "two-stage detector bridge mode disagrees with the registered arm",
         )
         _require(
             float(selector.policy_hidden_gradient_scale) == 0.0,
@@ -165,7 +176,8 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         )
         _require(
             float(schedule.detector_gradient.start) == 0.0
-            and float(schedule.detector_gradient.end) == 0.25,
+            and float(schedule.detector_gradient.end)
+            == (0.25 if feedback_enabled else 0.0),
             "two-stage protected bridge endpoints changed",
         )
         _require(
@@ -173,7 +185,12 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             and int(schedule.detector_gradient.transition_steps) == 1500,
             "two-stage protected bridge must start after policy homotopy",
         )
-        frozen = route == "DUCA_TWO_STAGE_PRETRAINED_FROZEN_FIXED384_OFFICIAL60"
+        frozen = route in {
+            "DUCA_TWO_STAGE_PRETRAINED_FROZEN_FIXED384_OFFICIAL60",
+            "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+            "DUCA_GLOBAL_CURRICULUM_G1_PROTECTED_FIXED384_OFFICIAL60",
+            "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+        }
         source = selector.actionness_source_cfg
         _require(
             bool(source.frozen) is frozen and bool(source.trainable) is (not frozen),
@@ -199,6 +216,35 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
                 float(schedule.actionness.start) == 0.0
                 and float(schedule.actionness.end) == 0.0,
                 "frozen coarse probe cannot retain an action-BCE optimizer objective",
+            )
+        companion_fraction = float(
+            selector.get("training_uniform_companion_fraction", 0.0)
+        )
+        normalize_learned_gradient = bool(
+            selector.get(
+                "training_uniform_companion_normalize_learned_gradient",
+                False,
+            )
+        )
+        if route == "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60":
+            _require(
+                companion_fraction == 0.50 and normalize_learned_gradient,
+                "G2 requires one 50% uniform companion with learned-row gradient normalization",
+            )
+            _require(
+                contract.learned_row_detector_gradient_normalization
+                == "batch_size_over_learned_rows",
+                "G2 learned-row gradient normalization contract changed",
+            )
+            _require(
+                contract.inference_uses_learned_policy_only is True
+                and contract.inference_extra_companion_cost is False,
+                "G2 companion must remain training-only",
+            )
+        else:
+            _require(
+                companion_fraction == 0.0 and not normalize_learned_gradient,
+                "non-G2 two-stage arm unexpectedly enables a uniform companion",
             )
     elif route == "DUCA_PROTECTED_E2E_DIRECT025_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "protected_structured_transport", "direct arm requires protected bridge")

@@ -28,6 +28,15 @@ VARIANT_CONFIGS = {
     "two_stage_pretrained_frozen": (
         "duca_two_stage_pretrained_frozen_fixed384_official60.py"
     ),
+    "global_curriculum_g0": (
+        "duca_global_curriculum_g0_no_feedback_fixed384_official60.py"
+    ),
+    "global_curriculum_g1": (
+        "duca_global_curriculum_g1_protected_fixed384_official60.py"
+    ),
+    "global_curriculum_g2": (
+        "duca_global_curriculum_g2_uni_companion_fixed384_official60.py"
+    ),
 }
 
 DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA
