@@ -6,14 +6,15 @@ import os
 import sys
 from pathlib import Path
 
-from mmengine.config import Config
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.bata.continuous_roi_s2_contract import canonical_sha256
-from tools.bata.continuous_roi_s2_training import build_training_completion
+from tools.bata.continuous_roi_s2_training import (
+    build_training_completion,
+    load_pure_data_config,
+    validate_training_completion,
+)
 
 
 def _publish_once(path: Path, report: dict) -> None:
@@ -40,18 +41,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        cfg = load_pure_data_config(args.config)
         if args.output.exists():
             existing = json.loads(args.output.read_text(encoding="utf-8"))
-            existing_hash = existing.pop("completion_sha256", None)
-            if (
-                not existing_hash
-                or canonical_sha256(existing) != existing_hash
-            ):
-                raise ValueError("existing S2 completion receipt is invalid")
-            existing["completion_sha256"] = existing_hash
+            existing = validate_training_completion(
+                existing,
+                cfg=cfg,
+                seed=args.seed,
+                checkpoint_path=args.checkpoint,
+            )
             print(json.dumps(existing, indent=2, sort_keys=True))
             return 0
-        cfg = Config.fromfile(str(args.config.resolve()))
         report = build_training_completion(
             cfg=cfg,
             seed=args.seed,

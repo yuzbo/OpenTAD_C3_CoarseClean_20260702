@@ -229,6 +229,20 @@ updated: 2026-07-21
 36. Do not freeze one-GPU high-memory Slurm requests, storage floors, or NVML
     gap thresholds that contradict the audited N16R4 allocation and validated
     20/100 ms sampler contract.
+37. Do not call equal `sx,sy` an equal physical center trajectory when the
+    decoder also conditions `cx,cy` on `w,h`. A fixed-size versus variable-size
+    contrast must pair physical centers explicitly or state the center change
+    as part of the intervention.
+38. Do not launch the Continuous-RoI S2 reference sweep until the Sobol engine,
+    dtype, transform serialization, stable-hash bytes and known-answer hash are
+    frozen. A seed and draw shape alone are not an auditable generator identity.
+39. Do not interpret the raw no-leak ban on a preferred/GT-selected reference
+    ID as a ban on a result-blind enumerated candidate ID. Freeze the typed raw
+    schema and object-graph audit before inference; never let the privileged
+    join run in the raw GPU process.
+40. Exact-nine training completion proves only training/exposure integrity.
+    It is not development mAP, reference adequacy, crop sufficiency, cost
+    viability, official-test evidence, or authorization for S3.
 
 ## 任务与叙事
 

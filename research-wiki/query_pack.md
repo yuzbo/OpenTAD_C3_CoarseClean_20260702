@@ -17,58 +17,37 @@ max_chars: 8000
 - 首个矩阵 `1177641-1177649` 仅因 Windows `CR` 污染 `YUZIBO_ROOT` 而在 launcher
   preflight 失败，旧 campaign `66cd32ff...` 已冻结且不得作为模型结果。部署契约现已拒绝
   控制字符/空白/逗号，并逐次绑定和复核 Git 中的规范 launcher。
-- 当前唯一正式 development 训练矩阵为 `1177668-1177676`：
-  `D160/G96/U128 x seeds 3407/3408/3409`。截至 2026-07-21 06:21 CST，
-  D160 三种子、G96 三种子和 U128/3407 共七格已 `COMPLETED 0:0`；每格 completion
-  均报告 `PASS`、4,800 successful updates、非空且键匹配的 final EMA、
-  `official_test_opened=false`。七格 AMP skipped attempts 为 `3-4`，单 batch 最大
-  retry 为 `1-2`，均低于冻结上限 8。U128/3408 与 U128/3409 已分别进入 epoch 11
-  和 epoch 9，loss 有限，仍在运行。未见 Traceback/OOM/non-finite/exhausted retry、
-  scheduler/EMA/update parity 或 fail marker。
-- 当前状态只能写作 `experiment_running`。没有 completed development mAP、
-  exact-nine completion validation、reference sweep、cost profile、crop-sufficiency
-  结论、official-test 结果、learned ROI 或 paper claim。下一门禁仍是剩余两格完成并
-  对九格执行冻结证据验证，而不是新增方法。
-
-## Native-Crop S1 audit delta (2026-07-20)
-
-- The development-only vertical slice binds a clean full commit and byte-equal
-  `HEAD` blobs; its gate independently re-probes all 200 fit/gate source files.
-- Clean replay passed `173` focused tests; one-GPU Gate `1174671` completed
-  `0:0`, closing source/pretrained identity, geometry, `[1,384,768]`, gradients,
-  and no-leak execution.
-- This authorizes only crop-sufficiency protocol discussion. Crop mAP, measured
-  cost, GO/KILL, learned ROI, and paper claims remain absent.
+- 唯一正式 development 训练矩阵 `1177668-1177676` 已全部 `COMPLETED 0:0`。
+  九格均被从现场 checkpoint/config/sidecar/completion 重新加载验证：每格 60 epochs、
+  80 successful updates/epoch、总计 4,800 successful updates、final-EMA-only。
+  部署与 completion 契约禁止 official test，且没有 official-test Job、结果或证据产物；
+  历史训练未做 syscall 级访问审计，因此不能表述为 runtime zero-open。AMP skips 为
+  `3-4`，单 batch 最大 retry 为 `1-2`；
+  未见 Traceback/OOM/non-finite/exhausted retry、scheduler/EMA/update parity 或
+  fail marker。
+- 状态仍是 `experiment_running`，不是 crop-sufficiency 结果。没有 development mAP、
+  reference sweep、cost profile、official-test 结果、learned ROI 或 paper claim。
+- v2.1 reference 阶段现处于协议 HOLD：FS/VS 共享 `sx,sy` 但 decoder 的物理中心依赖
+  `w,h`，所以并不共享物理中心轨迹；Sobol engine/dtype/serialization/KAT、raw candidate
+  ID 规则、无标注 raw entrypoint、privileged join/tie/statistics 也未完全机器冻结。
+  禁止实现者猜测后排队；下一步是先封存 training-only exact-nine receipt，再发布最小
+  v2.2 corrigendum。official test 继续封存，S3 learned ROI 继续禁止。
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 
 - 用户已明确最终目标是 Uni-AdaFocus 式连续 deformable ROI：策略回归
   `(cx,cy,w,h)`，中心、宽、高、尺度和纵横比均不固定；固定 local tensor shape
   仅是批处理规格，不等于固定 source window。
-- Pro 的 21-candidate fixed-128 v1 已降级为 D0 离散诊断，项目裁决为
-  `SUPERSEDED_FOR_FINAL_OBJECT / HOLD_IMPLEMENTATION`。此前 v1.1 修订 prompt
-  同样不再是下一协议。
-- Pro 已交付 Continuous-RoI S2 v2 并自评 `V2_READY`；项目复算其 protocol-core hash
-  `3aac1743...b62653` 和新增参数 `894,274` 均一致，但项目裁决为
-  `ACCEPT_WITH_MAJOR_REVISION / HOLD_IMPLEMENTATION`。
+- 21-candidate fixed-128 v1 已降级为 D0 离散诊断；Pro v2 虽自评 `V2_READY`，项目
+  裁决仍是 `ACCEPT_WITH_MAJOR_REVISION`，因为它混入 S3 policy、比较权限不匹配且
+  confidence convergence 不能证明空间覆盖。
 - 接受其 source-coordinate 连续框、宽高防塌缩、temporal tube、可微/运行时 sampler
   parity、共享 VideoMAE 单实例、真实 AdaTAD-derived detection path、detector 梯度、
   no-GT raw 后 privileged join、D0 仅诊断和 full-stack cost ledger。
-- P0 阻断：协议把 S3 learned policy 混入 S2 sufficiency；只训练 D160/G/GL，却用 GL
-  checkpoint 推理改造 C/R/D0/LC；CR-PREF 获得逐窗 gate GT 而其主要比较对象没有同等
-  privilege；no-GT confidence 搜索及其收敛不能证明有用空间覆盖；Slurm/存储/NVML
-  条款与已审计 N16R4 事实冲突。
-- P1 风险：ROI head measured cost 与 selector reserve 可能重复计费，ABBA repetition
-  口径含糊，power audit 使用拟合内预测且仅三种子，状态机混淆 reference 失效与
-  continuous-crop 不充分，privileged matching 仍欠精确定义。
 - 项目自写 v2.1 corrigendum 已冻结并通过静态验证：协议 SHA-256 为
   `ef806b7c...b3af`，八类合同与 128 种状态组合全部通过，审计 SHA-256 为
   `5af59b75...f9d`。它采用 selector-free common-support `U128`，成对且同权限的
   fixed/variable reference，并拆开 S2 表示充分性与 S3 learned policy。
-- `6187899` 的模型实现与 Job `1177561` one-step Gate 已通过；当前唯一阻塞是把
-  九格配置、fit160/gate40、真实 development 样本、80 batch/epoch、4800
-  successful updates 与 final-EMA-only 绑定成新的集成 runtime Gate。该 Gate
-  通过前不排训练、不打开 official test、不实现 learned ROI。
 - 完整结论见
   `docs/methods/reviews/2026-07-20-continuous-roi-s2-v2-preregistration-pro-absorption.md`。
 

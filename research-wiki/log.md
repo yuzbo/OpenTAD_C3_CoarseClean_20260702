@@ -745,3 +745,35 @@ append_only: true
   9. Exact-nine validation, development inference, reference sweeps, cost
   evidence, and all S2 claims remain pending; status stays
   `experiment_running`.
+- 2026-07-21: all nine formal Continuous-RoI S2 training Jobs
+  `1177668-1177676` completed `0:0`. Strict live-artifact replay verified every
+  bound config, raw/EMA checkpoint state, metadata sidecar and completion
+  receipt: each cell has 60 epochs, 80 successful updates/epoch, exactly 4,800
+  successful updates and final EMA only. Deployment/completion evidence forbids
+  official-test use and no official-test Job, result, or artifact exists, but
+  historical training had no syscall-level access instrumentation; no runtime
+  zero-open claim is made. No hard training anomaly was found. A training-only
+  exact-nine receipt finalizer and focused regressions were added; it cannot
+  authorize reference inference or any S2 claim. The checkpoint scheduler
+  states close at update 4,800 against a matched inherited 8,000-update cosine
+  horizon; these are registered 60-epoch truncations, not completed cosine
+  cycles.
+- 2026-07-21: a post-training code/protocol audit found that the v2.1 reference
+  phase is not safely executable. FS/VS share logits but not physical centers
+  under the width/height-dependent decoder; exact Sobol identity, candidate-ID
+  no-leak semantics, an annotation-free raw entrypoint, D0, privileged-join
+  ties and several statistical definitions are under-specified or absent.
+  Reference jobs were deliberately not submitted. Status remains
+  `experiment_running`, with verdict
+  `TRAINING_MATRIX_COMPLETE / REFERENCE_PROTOCOL_HOLD`; official test and S3
+  remain sealed.
+- 2026-07-21: the exact-nine training-only finalizer passed a three-round
+  independent read-only audit. Intermediate HOLD findings covered injectable
+  accounting, executable config loading, incomplete real-model/optimizer
+  validation, orphan optimizer state and unrestricted pickle. The repaired
+  code now uses live Slurm accounting, a pure-data config decoder, restricted
+  `weights_only` checkpoint loading, real detector/optimizer strict loading,
+  duplicate/orphan-state rejection and recursive intent/receipt/config/log/Git
+  binding. Final verdict is `NO_P0_P1`; the remaining P2 is the pending formal
+  Linux replay of all nine real D160/G96/U128 checkpoints. No reference or
+  official-test Job was authorized.

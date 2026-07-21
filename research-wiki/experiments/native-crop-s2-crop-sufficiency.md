@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:native-crop-s2-crop-sufficiency
 title: "Continuous-RoI S2 crop sufficiency"
 stage: experiment_running
-status: formal_3x3_development_training_running
+status: formal_3x3_training_complete_reference_protocol_hold
 outcome: pending
 tags: ["offline-tad", "continuous-roi", "crop-sufficiency", "preregistration"]
 added: 2026-07-20
@@ -116,11 +116,17 @@ The registered jobs are:
 - G96: `1177671/1177672/1177673` for seeds `3407/3408/3409`.
 - U128: `1177674/1177675/1177676` for seeds `3407/3408/3409`.
 
-At 2026-07-21 06:21 CST, D160 seeds 3407/3408/3409, G96 seeds
-3407/3408/3409, and U128 seed 3407 had all completed `0:0`. Their emitted
-completion records report `PASS`, exactly 4,800 successful updates, nonempty
-final EMA with keys matching the model, and `official_test_opened=false`.
-The raw final epoch-59 losses were:
+At 2026-07-21 14:25 CST, all nine jobs were `COMPLETED 0:0`. A strict
+post-training replay loaded every raw and EMA state from disk and verified the
+checkpoint, metadata sidecar, bound config, protocol, campaign and completion
+hashes. Every cell has exactly 60 epochs, 80 successful updates per epoch,
+4,800 successful updates and a final-EMA-only checkpoint. The bound deployment
+and completion contracts prohibit official-test use, and no official-test job,
+result, or evidence artifact exists. Historical training did not instrument
+syscall-level file access, so this is not a runtime zero-open audit. No
+`Traceback`, OOM, non-finite loss, exhausted retry, scheduler/EMA/update-parity
+failure, `PytorchStreamWriter`, or failure marker was found. The raw final
+epoch-59 losses were:
 
 | Family | Seed | Final loss | AMP skipped attempts | Max retries/batch | Logged GPU memory |
 |---|---:|---:|---:|---:|---:|
@@ -131,18 +137,54 @@ The raw final epoch-59 losses were:
 | G96 | 3408 | 0.2184 | 4 | 2 | 2153 MB |
 | G96 | 3409 | 0.2219 | 3 | 1 | 2153 MB |
 | U128 | 3407 | 0.2517 | 3 | 1 | 3647 MB |
+| U128 | 3408 | 0.2483 | 3 | 1 | 3647 MB |
+| U128 | 3409 | 0.2404 | 3 | 1 | 3647 MB |
 
-U128 seed 3408 was in epoch 11 with latest finite loss `0.6170`, and U128
-seed 3409 was in epoch 9 with latest finite loss `0.6433`; both remained
-`RUNNING`. Their inner-step MaxRSS was about 20.9/21.3 GiB under the 96,000 MiB
-limit. No `Traceback`, OOM, non-finite loss, exhausted retry,
-scheduler/EMA/update-parity failure, `PytorchStreamWriter`, or fail marker was
-found. Shared storage had 53 GiB free.
+The saved scheduler states close at successful update `4800`, with the matched
+inherited cosine horizon still at `8000` updates and warmup at `400`. Thus the
+registered 60-epoch runs are matched truncations of the inherited 100-epoch
+schedule, not completed cosine cycles. This is not an evidence-integrity
+failure, but convergence claims must retain this limitation.
 
-This remains `experiment_running` evidence only. The seven completion records
-have not been promoted into an exact-nine matrix result, and the frozen
-all-cell validator must wait for the remaining two jobs. No development mAP,
-reference sweep, cost profile, mechanical outcome, or paper claim exists yet.
+The exact-nine evidence finalizer is being added as a training-only receipt.
+It revalidates live artifacts and Slurm accounting and explicitly records
+`reference_sweep_completed=false`, `crop_sufficiency_established=false`, and
+`paper_claim_allowed=false`. This remains `experiment_running`: no
+development mAP, reference sweep, cost profile, mechanical outcome, official
+test result, or paper claim exists.
+
+Three read-only evidence-finalizer review rounds are closed. The final round
+returned `NO_P0_P1` after the implementation rejected executable configs,
+forced live Slurm accounting, strict-loaded raw/EMA state into real model
+interfaces, rejected duplicate/orphan optimizer state, enabled restricted
+`weights_only` checkpoint loading, and recursively bound deployment intent,
+receipts, configs, checkpoint metadata and tracked validator bytes. Residual
+P2 is the missing real D160/G96/U128 Linux integration run; local small-model
+tests cannot substitute for the formal training-only finalizer Job.
+
+## Post-Training Reference Audit
+
+The v2.1 reference phase is not executable without changing scientific
+meaning. The audit found these protocol-level blockers:
+
+1. The decisive claim says FS and VS share physical center trajectories and
+   differ only in area/aspect. The protocol instead shares `sx,sy`, while the
+   decoder computes `cx=0.5*w+(1-w)*sigmoid(sx)` and the analogous `cy`.
+   Because VS changes `w,h`, equal logits do not imply equal physical centers.
+   The current contrast therefore confounds center and scale/aspect.
+2. The exact Owen-scrambled Sobol engine, dtype, transform serialization,
+   stable-hash byte encoding and known-answer hash are not machine-frozen,
+   despite the required exact generator hash.
+3. The raw phase forbids a reference ID in the Python object graph while also
+   requiring enumerated candidate IDs to be sealed. It must distinguish a
+   result-blind enumerated candidate ID from a GT-selected preferred ID.
+4. The annotation-free 129-window raw manifest/entrypoint, typed raw sharding,
+   privileged CPU join, D0 coordinates/order, tie handling, Short-Q1 and
+   bootstrap/max-T details are not fully machine-defined or implemented.
+
+No reference job may be submitted by guessing these definitions. This is a
+protocol hold, not a negative result for Continuous-RoI and not permission to
+open official test or implement S3.
 
 ## Accepted
 
@@ -163,32 +205,32 @@ reference sweep, cost profile, mechanical outcome, or paper claim exists yet.
 
 ## Remaining Decision Gates
 
-1. All nine registered development jobs must complete with exact successful
-   update exposure, final-EMA-only checkpoints, valid sidecars, and no silent
-   fallback.
-2. Development-only checkpoint selection and the matched fixed/variable
+1. Seal the validated exact-nine training-only completion receipt without
+   assigning any crop-sufficiency meaning.
+2. Correct and re-freeze the FS/VS physical-center contract, exact generator
+   identity, raw candidate-ID rule, privileged join and statistical details.
+3. Development-only checkpoint selection and the matched fixed/variable
    reference sweep must remain result-blind with equal privilege. Confidence
    convergence alone is not spatial-reference adequacy.
-3. Representation sufficiency, adaptive headroom, and deployable cost
+4. Representation sufficiency, adaptive headroom, and deployable cost
    viability remain separate outcomes. S2 must not train or claim the S3
    learned ROI policy.
-4. Latency, memory and energy profiling must use trained checkpoints and the
+5. Latency, memory and energy profiling must use trained checkpoints and the
    frozen cost protocol. Selector reserve and ROI-head cost must not be counted
    twice.
-5. Official test remains sealed until the complete development decision and
+6. Official test remains sealed until the complete development decision and
    its immutable evidence pass the v2.1 contract.
 
 ## Boundaries
 
-No completed Continuous-RoI S2 training result, official-test result, measured
-cost, crop-sufficiency claim, learned selector, or paper claim exists. Jobs
-`1177668-1177676` are the first valid formal development matrix, but queue
-submission and early epoch-0 execution are not empirical support.
+The first valid Continuous-RoI S2 exact-nine training matrix is complete, but
+no development detection result, official-test result, measured cost,
+crop-sufficiency claim, learned selector, or paper claim exists. Training
+completion proves optimization/exposure integrity only.
 
 ## Next Gate
 
-Monitor the sole nine-job matrix to completion, validate successful-update
-exposure and all final-EMA sidecars, then execute only the preregistered
-development checkpoint-selection and matched reference phases. Do not open
-official test, implement learned ROI, or make crop-sufficiency/cost/paper
-claims before those evidence gates close.
+Seal the exact-nine training-only receipt, then issue a minimal v2.2 protocol
+corrigendum that resolves the four reference blockers before implementing or
+queueing development raw inference. Do not open official test, implement
+learned ROI, or make crop-sufficiency/cost/paper claims.

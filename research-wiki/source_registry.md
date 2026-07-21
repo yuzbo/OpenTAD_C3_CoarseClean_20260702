@@ -576,6 +576,20 @@ updated: 2026-07-21
   This remains experiment-running evidence until exact-nine validation; it is
   not development mAP, crop-sufficiency, cost, official-test, or paper-result
   evidence.
+- Continuous-RoI S2 exact-nine training and post-training reference audit,
+  2026-07-21. Slurm accounting now records Jobs `1177668-1177676` as
+  `COMPLETED 0:0`. The campaign contains exactly nine final checkpoints, nine
+  checkpoint metadata sidecars and nine training-completion receipts. A
+  strict replay from live artifacts verified all nine 4,800-update final-EMA
+  cells. Deployment/completion evidence forbids official-test use and no
+  official-test Job, result, or evidence artifact exists; because historical
+  training did not instrument syscall-level file access, this is not a runtime
+  zero-open audit. The audit record is
+  `docs/methods/reviews/2026-07-21-continuous-roi-s2-post-training-reference-audit.md`.
+  Its protocol verdict is
+  `TRAINING_MATRIX_COMPLETE / REFERENCE_PROTOCOL_HOLD`: no development raw
+  prediction, mAP, cost, crop-sufficiency, official-test or S3 evidence was
+  generated.
 
 ## 外部附件
 
