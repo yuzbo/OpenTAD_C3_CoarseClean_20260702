@@ -182,6 +182,13 @@ EMA runtime dtype and exact raw parameter dtype across shared aliases, and
 accepts only this frozen raw-buffer key. Generic and real-model mismatch sets
 must agree exactly. No receipt, reference or official-test work occurred.
 
+Commit `4543205` passed `83` clean Linux focused tests. Finalizer Job `1178742`
+then failed before Python started because an `sbatch --wrap` `/bin/sh` process
+was given Bash-only `set -o pipefail`; it exited `2:0` at zero seconds and
+created no receipt. This is immutable submission-infrastructure evidence, not
+a model or checkpoint-audit result. A replacement may only make the shell
+interpreter explicit while preserving the exact runtime and evidence inputs.
+
 ## Post-Training Reference Audit
 
 The v2.1 reference phase is not executable without changing scientific

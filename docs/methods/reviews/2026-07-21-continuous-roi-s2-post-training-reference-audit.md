@@ -111,6 +111,14 @@ contract, not permission for arbitrary registered-buffer coercion. The
 validation model also reproduces the training DDP `module.` state prefix
 instead of loading into an unwrapped detector.
 
+The repaired code was committed as `4543205`; a clean Linux snapshot at the
+exact commit passed `83` focused tests with NumPy `1.23.5`. Finalizer Job
+`1178742` did not enter Python: Slurm's generated `/bin/sh` wrapper rejected
+the Bash-only `set -o pipefail` and exited `2:0` in zero seconds. It produced no
+matrix receipt and is retained as immutable submission-infrastructure evidence.
+The next submission must invoke an explicit Bash process; it may not change
+the runtime commit, checkpoints, deployment hash or scientific protocol.
+
 ## Reference-Phase Code Audit
 
 The repository contains reusable continuous geometry, runtime sampling,

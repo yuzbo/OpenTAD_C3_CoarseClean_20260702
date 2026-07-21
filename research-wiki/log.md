@@ -798,3 +798,8 @@ append_only: true
   disabled, freezes the only permitted raw-buffer cast to
   `module.rpn_head.loss_normalizer`, and requires the generic and real-model
   mismatch sets to agree. This remains training-receipt validation only.
+- 2026-07-21: dtype-audit commit `4543205` passed `83` tests in a clean Linux
+  snapshot. Finalizer Job `1178742` exited `2:0` before Python because Slurm's
+  `/bin/sh` wrapper rejected Bash-only `set -o pipefail`; no matrix receipt was
+  created. The immutable failure authorizes only an explicit-Bash submission
+  correction, with no change to runtime commit, evidence or protocol.
