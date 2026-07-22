@@ -172,6 +172,7 @@ def test_temporalmaxer_live_rgb_backward_and_optimizer_coverage() -> None:
                 updated.update(
                     selected_axis_to_true_time_dense_index=[0, 2, 5, 7],
                     detector_prediction_inverse_map_required=True,
+                    detector_output_coordinate_space=SELECTED_AXIS,
                     gt_remapped_to_selected_axis=True,
                     gt_coordinate_space=SELECTED_AXIS,
                 )
