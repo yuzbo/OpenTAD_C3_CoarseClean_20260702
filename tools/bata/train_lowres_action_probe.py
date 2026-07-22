@@ -1300,6 +1300,7 @@ class C3MobileNetV3ActionProbe:
         variant: str = "small",
         freeze_backbone: bool = False,
         weights_path: str | None = None,
+        preserve_pretrained_classifier: bool = False,
     ) -> None:
         if variant != "small":
             raise ValueError("only MobileNetV3-small is supported for this probe")
@@ -1318,8 +1319,9 @@ class C3MobileNetV3ActionProbe:
             self.backbone = mobilenet_v3_small(weights=weights)
         self.module.backbone = self.backbone if isinstance(self.backbone, nn.Module) else nn.Identity()
         self._external_backbone = None if isinstance(self.backbone, nn.Module) else self.backbone
+        self.preserve_pretrained_classifier = bool(preserve_pretrained_classifier)
         self.output_head = None
-        if hasattr(self.backbone, "classifier"):
+        if hasattr(self.backbone, "classifier") and not self.preserve_pretrained_classifier:
             classifier = getattr(self.backbone, "classifier")
             try:
                 last_layer = classifier[-1]
@@ -1333,10 +1335,13 @@ class C3MobileNetV3ActionProbe:
             self.output_head = nn.LazyLinear(1)
             self.module.output_head = self.output_head
         if freeze_backbone:
-            for name, param in self.module.named_parameters():
-                if not name.startswith("output_head"):
-                    param.requires_grad = False
-            if isinstance(self.backbone, nn.Module) and hasattr(self.backbone, "classifier"):
+            for param in self.module.parameters():
+                param.requires_grad = False
+            if (
+                not self.preserve_pretrained_classifier
+                and isinstance(self.backbone, nn.Module)
+                and hasattr(self.backbone, "classifier")
+            ):
                 for param in self.backbone.classifier.parameters():
                     param.requires_grad = True
 
@@ -1372,14 +1377,32 @@ class C3MobileNetV3ActionProbe:
             hidden = out
         if self.output_head is not None:
             out = self.output_head(out)
-        logits = out.reshape(batch, dense_len, -1)[..., 0]
+        class_logits = None
+        if self.preserve_pretrained_classifier:
+            class_logits = out.reshape(batch, dense_len, -1)
+            probs = class_logits.float().softmax(dim=-1)
+            entropy = -(probs * probs.clamp_min(torch.finfo(probs.dtype).eps).log()).sum(dim=-1)
+            confidence = 0.5 * probs.amax(dim=-1) + 0.5 * (
+                1.0 - entropy / math.log(float(probs.shape[-1]))
+            )
+            confidence = confidence.clamp(1.0e-6, 1.0 - 1.0e-6)
+            logits = torch.logit(confidence)
+        else:
+            logits = out.reshape(batch, dense_len, -1)[..., 0]
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
         logits = logits.masked_fill(~valid, 0.0)
         if not return_hidden:
             return logits
         hidden = hidden.reshape(batch, dense_len, -1).masked_fill(~valid[:, :, None], 0.0)
-        return {"logits": logits, "hidden": hidden}
+        payload = {
+            "logits": logits,
+            "hidden": hidden,
+            "hidden_kind": "imagenet_mobilenetv3_pooled_hidden",
+        }
+        if class_logits is not None:
+            payload["class_logits"] = class_logits.masked_fill(~valid[:, :, None], 0.0)
+        return payload
 
     def train(self):
         self.module.train()
@@ -1397,6 +1420,86 @@ class C3MobileNetV3ActionProbe:
         self.module.to(*args, **kwargs)
         if hasattr(self.backbone, "to"):
             self.backbone.to(*args, **kwargs)
+        return self
+
+    def parameters(self):
+        return self.module.parameters()
+
+    def state_dict(self):
+        return self.module.state_dict()
+
+    def load_state_dict(self, state_dict):
+        return self.module.load_state_dict(state_dict)
+
+
+class C3SlowFastFastFrozenProbe:
+    """Kinetics-pretrained SlowFast Fast pathway without Slow-path execution."""
+
+    def __init__(self, *, pretrained: bool = True, weights_path: str | None = None) -> None:
+        torch, _F = _import_torch()
+        nn = getattr(sys.modules.get(__name__), "nn", None)
+        if nn is None:
+            import torch.nn as nn  # type: ignore
+        from pytorchvideo.models import hub
+
+        model = hub.slowfast_r50(pretrained=bool(pretrained and not weights_path))
+        if weights_path:
+            model.load_state_dict(dict(_load_torch_state_dict(weights_path)), strict=True)
+        try:
+            fast_blocks = [block.multipathway_blocks[1] for block in model.blocks[:5]]
+        except Exception as exc:
+            raise RuntimeError(
+                "official PyTorchVideo SlowFast layout does not expose the Fast pathway"
+            ) from exc
+        self.module = nn.Module()
+        self.module.fast_blocks = nn.ModuleList(fast_blocks)
+        for param in self.module.parameters():
+            param.requires_grad = False
+        self.module.eval()
+
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
+        torch, F = _import_torch()
+        if frames.ndim != 5:
+            raise ValueError(f"SlowFast Fast probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
+        batch, dense_len, channels, _height, _width = frames.shape
+        if int(channels) != 3:
+            raise ValueError("SlowFast Fast probe expects RGB inputs")
+        x = frames.float()
+        if bool((x.detach().abs().amax() > 2.0).item()):
+            x = x / 255.0
+        mean = torch.tensor([0.45, 0.45, 0.45], dtype=x.dtype, device=x.device).view(1, 1, 3, 1, 1)
+        std = torch.tensor([0.225, 0.225, 0.225], dtype=x.dtype, device=x.device).view(1, 1, 3, 1, 1)
+        x = ((x - mean) / std).permute(0, 2, 1, 3, 4).contiguous()
+        for block in self.module.fast_blocks:
+            x = block(x)
+        hidden = x.mean(dim=(3, 4))
+        if int(hidden.shape[-1]) != int(dense_len):
+            hidden = F.interpolate(hidden, size=int(dense_len), mode="linear", align_corners=False)
+        hidden = hidden.transpose(1, 2).contiguous()
+        valid = valid.to(device=hidden.device, dtype=torch.bool)
+        hidden = hidden.masked_fill(~valid[:, :, None], 0.0)
+        energy = torch.linalg.vector_norm(hidden.float(), dim=-1)
+        scale = energy.amax(dim=1, keepdim=True).clamp_min(torch.finfo(energy.dtype).eps)
+        score = (energy / scale).clamp(1.0e-6, 1.0 - 1.0e-6)
+        logits = torch.logit(score).masked_fill(~valid, 0.0)
+        if not return_hidden:
+            return logits
+        return {
+            "logits": logits,
+            "hidden": hidden,
+            "hidden_kind": "kinetics_slowfast_r50_fast_pathway_hidden",
+        }
+
+    def train(self):
+        self.module.eval()
+        return self
+
+    def eval(self):
+        self.module.eval()
+        return self
+
+    def to(self, *args, **kwargs):
+        self.module.to(*args, **kwargs)
         return self
 
     def parameters(self):
@@ -2741,7 +2844,13 @@ def make_lowres_frame_images(inputs: Any, *, spatial_size: int = 32, normalize: 
 def prepare_probe_inputs(inputs: Any, *, probe_model: str, spatial_size: int):
     if probe_model == "c3-reader":
         return make_lowres_descriptors(inputs, scout_spatial_size=int(spatial_size))
-    if probe_model in {"mobilenetv3", "temporal-tcn", MATRIX_ZOO_PROBE_MODEL, OFFICIAL_ACTION_SEG_PROBE_MODEL}:
+    if probe_model in {
+        "mobilenetv3",
+        "slowfast-fast",
+        "temporal-tcn",
+        MATRIX_ZOO_PROBE_MODEL,
+        OFFICIAL_ACTION_SEG_PROBE_MODEL,
+    }:
         return make_lowres_frame_images(inputs, spatial_size=int(spatial_size))
     raise ValueError(f"unsupported probe_model: {probe_model}")
 

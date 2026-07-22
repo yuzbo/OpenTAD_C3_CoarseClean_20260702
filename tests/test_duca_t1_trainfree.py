@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import torch
+from mmengine.config import Config
+
+from opentad.models.duca import DucaAcquisitionAdapter, TrueTimeFeatureResidual, ZeroShotActionnessSource
+from opentad.models.duca.acquisition import C3CoarseProbeActionnessSource
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_true_time_residual_is_exact_identity_at_initialization_and_trainable() -> None:
+    module = TrueTimeFeatureResidual(feature_dim=8, hidden_dim=6, descriptor_mode="actual")
+    features = torch.randn(2, 8, 4, requires_grad=True)
+    masks = torch.ones(2, 4, dtype=torch.bool)
+    metas = [
+        {
+            "selected_axis_to_true_time_dense_index": [0, 2, 5, 7],
+            "truetime_dense_valid_len": 8,
+        },
+        {
+            "selected_axis_to_true_time_dense_index": [1, 3, 4, 7],
+            "truetime_dense_valid_len": 9,
+        },
+    ]
+    output = module(features, masks, metas)
+    torch.testing.assert_close(output, features, atol=0.0, rtol=0.0)
+    output.square().sum().backward()
+    assert module.projector[-1].weight.grad is not None
+    assert float(module.projector[-1].weight.grad.abs().sum()) > 0.0
+
+
+def test_reversed_true_time_control_changes_only_descriptor_alignment() -> None:
+    features = torch.zeros(1, 4, 3)
+    masks = torch.ones(1, 3, dtype=torch.bool)
+    metas = [{"selected_axis_to_true_time_dense_index": [0, 3, 7], "truetime_dense_valid_len": 8}]
+    actual = TrueTimeFeatureResidual(4, descriptor_mode="actual")._descriptors(features, masks, metas)
+    reversed_code = TrueTimeFeatureResidual(4, descriptor_mode="reversed")._descriptors(features, masks, metas)
+    torch.testing.assert_close(reversed_code[:, :3], torch.flip(actual[:, :3], dims=(1,)))
+
+
+def test_parameter_free_feature_change_peaks_at_hidden_state_transition() -> None:
+    hidden = torch.zeros(1, 8, 4)
+    hidden[:, :4, 0] = 1.0
+    hidden[:, 4:, 1] = 1.0
+    valid = torch.ones(1, 8, dtype=torch.bool)
+    payload = C3CoarseProbeActionnessSource._parameter_free_evidence(
+        hidden,
+        valid,
+        class_logits=None,
+        mode="frozen_feature_change",
+    )
+    peak = int(payload["feature_change"].argmax(dim=1).item())
+    assert peak in {3, 4}
+
+
+def test_parameter_free_r2q3_reuses_exact_k_max_hole_decoder() -> None:
+    source = ZeroShotActionnessSource(
+        mode="motion",
+        source_name="test_parameter_free_prior",
+        thumos_trained=False,
+        uses_labels=False,
+        uses_teacher=False,
+        uses_gt=False,
+        uses_prediction_cache=False,
+        calibration_split="none",
+    )
+    adapter = DucaAcquisitionAdapter(
+        feature_dim=None,
+        actionness_source=source,
+        budget=4,
+        acquisition_policy="global_structured_topk",
+        selector_variant="direct_boundary",
+        parameter_free_selector=True,
+        transition_objective="boundary_burst",
+        boundary_burst_radius=1,
+        boundary_burst_quota=3,
+        boundary_burst_budget_fraction=0.75,
+        boundary_burst_require_bilateral_offsets=True,
+        boundary_burst_require_global_mandatory_groups=True,
+        max_unselected_hole=1,
+        hard_max_gap_repair=False,
+    )
+    evidence = torch.tensor([[0.01, 0.02, 0.10, 0.99, 0.10, 0.02, 0.01, 0.01]])
+    dense = torch.zeros(1, 8, 3)
+    grid, scores = adapter.acquire(dense, p_action=evidence)
+    assert int(grid.selected_count.item()) == 4
+    assert scores["parameter_free_selector"] is True
+    selected = set(grid.selected_positions[0].tolist())
+    assert {2, 3, 4}.issubset(selected)
+
+
+def test_train_free_configs_are_frozen_and_target_label_free() -> None:
+    configs = [
+        "duca_trainfree_fixed384_official60_base.py",
+        "duca_trainfree_mobilenet_semantic_fixed384_official60.py",
+        "duca_trainfree_mobilenet_fusion_r2q3_fixed384_official60.py",
+        "duca_trainfree_slowfast_fast_fusion_r2q3_fixed384_official60.py",
+    ]
+    for name in configs:
+        cfg = Config.fromfile(str(ROOT / "configs" / "adatad" / "thumos" / name))
+        selector = cfg.model.frame_selector
+        source = selector.actionness_source_cfg
+        assert selector.parameter_free_selector is True
+        assert selector.detector_gradient_mode == "none"
+        assert source.frozen is True and source.trainable is False
+        assert source.train_split_supervised is False
+        assert source.uses_labels is False and source.uses_gt is False
+        assert source.calibration_split == "none"

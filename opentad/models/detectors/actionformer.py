@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from ..builder import DETECTORS, build_selector, build_token_compressor
 from .single_stage import SingleStageDetector
 from ..bricks import Scale, AffineDropPath
+from ..duca.true_time_residual import TrueTimeFeatureResidual
 
 
 _PC_OT_MRAS_READER_OUTPUTS_META_KEY = "pc_ot_mras_reader_outputs"
@@ -31,6 +32,7 @@ class ActionFormer(SingleStageDetector):
         backbone=None,
         frame_selector=None,
         token_compressor=None,
+        true_time_residual=None,
         pc_ot_mras_reader=None,
         pc_ot_mras_reader_feature_level=0,
         pc_ot_mras_reader_aux_loss=None,
@@ -48,6 +50,11 @@ class ActionFormer(SingleStageDetector):
         )
         self.frame_selector = build_selector(frame_selector) if frame_selector is not None else None
         self.token_compressor = build_token_compressor(token_compressor) if token_compressor is not None else None
+        self.true_time_residual = (
+            TrueTimeFeatureResidual(**dict(true_time_residual))
+            if true_time_residual is not None
+            else None
+        )
         self.pc_ot_mras_reader = build_selector(pc_ot_mras_reader) if pc_ot_mras_reader is not None else None
         self.pc_ot_mras_reader_feature_level = int(pc_ot_mras_reader_feature_level)
         self.pc_ot_mras_reader_aux_loss = self._normalize_pc_ot_mras_reader_aux_loss(pc_ot_mras_reader_aux_loss)
@@ -237,6 +244,11 @@ class ActionFormer(SingleStageDetector):
                     "token_compressor output length must match projection.max_seq_len before pad_data; "
                     f"got {x.shape[-1]} and {self.max_seq_len}"
                 )
+
+        if self.true_time_residual is not None:
+            self._assert_feature_mask_temporal_match(x, masks, "before true_time_residual")
+            x = self.true_time_residual(x, masks, metas)
+            self._assert_feature_mask_temporal_match(x, masks, "after true_time_residual")
 
         # pad the features and unsqueeze the mask for actionformer
         x, masks = self.pad_data(x, masks)
@@ -500,6 +512,11 @@ class ActionFormer(SingleStageDetector):
                     "token_compressor output length must match projection.max_seq_len before pad_data; "
                     f"got {x.shape[-1]} and {self.max_seq_len}"
                 )
+
+        if self.true_time_residual is not None:
+            self._assert_feature_mask_temporal_match(x, masks, "before true_time_residual")
+            x = self.true_time_residual(x, masks, metas)
+            self._assert_feature_mask_temporal_match(x, masks, "after true_time_residual")
 
         x, masks = self.pad_data(x, masks)
 

@@ -501,6 +501,7 @@ class DucaOnlineFrameSelector(nn.Module):
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
         selector_variant: str = "direct_boundary",
+        parameter_free_selector: bool = False,
         coarse_hidden_dim: Optional[int] = None,
         use_coarse_hidden_features: bool = True,
         require_coarse_hidden_features: Optional[bool] = None,
@@ -616,6 +617,7 @@ class DucaOnlineFrameSelector(nn.Module):
         if min(self.coarse_trunk_lr, self.action_head_lr, self.transition_scorer_lr) <= 0.0:
             raise ValueError("transition-only component learning rates must be positive")
         self.actionness_weight = float(actionness_weight)
+        self.parameter_free_selector = bool(parameter_free_selector)
         self.transition_weight = float(transition_weight)
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
@@ -686,8 +688,8 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.transition_objective not in {"gaussian_mass", "boundary_burst"}:
             raise ValueError("transition_objective must be gaussian_mass or boundary_burst")
         if self.transition_objective == "boundary_burst":
-            if self.selector_variant != "transition_only":
-                raise ValueError("boundary_burst requires transition_only")
+            if self.selector_variant != "transition_only" and not self.parameter_free_selector:
+                raise ValueError("boundary_burst requires transition_only or parameter-free evidence")
             if self.transition_boundary_radius <= 0 or self.boundary_burst_quota <= 0.0:
                 raise ValueError("boundary burst radius/quota must be positive")
             if not 0.0 < self.boundary_burst_budget_fraction <= 1.0:
@@ -822,6 +824,13 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if not self.forbid_external_actionness:
                 raise ValueError("transition_only requires an in-graph coarse probe, not external actionness")
+        if self.parameter_free_selector:
+            if self.selector_variant != "direct_boundary":
+                raise ValueError("parameter-free selection uses selector_variant='direct_boundary'")
+            if self.budget_mode != "fixed" or self.acquisition_policy != "global_structured_topk":
+                raise ValueError("parameter-free selection requires fixed global_structured_topk")
+            if self.max_unselected_hole is None:
+                raise ValueError("parameter-free selection requires max_unselected_hole")
         if self.training_uniform_companion_fraction > 0.0:
             if self.selector_variant != "transition_only":
                 raise ValueError(
@@ -916,7 +925,7 @@ class DucaOnlineFrameSelector(nn.Module):
             else:
                 raise ValueError(f"unsupported actionness_source_cfg type {source_type!r}")
         self.adapter = DucaAcquisitionAdapter(
-            feature_dim=self.in_channels,
+            feature_dim=None if self.parameter_free_selector else self.in_channels,
             budget=None if self.budget_mode == "dynamic_must" else self.budget,
             budget_mode=self.budget_mode,
             budget_min=self.budget_min,
@@ -936,6 +945,7 @@ class DucaOnlineFrameSelector(nn.Module):
             utility_weight=self.utility_weight,
             boundary_weight=self.boundary_weight,
             selector_variant=self.selector_variant,
+            parameter_free_selector=self.parameter_free_selector,
             transition_objective=self.transition_objective,
             boundary_burst_radius=self.transition_boundary_radius,
             boundary_burst_quota=self.boundary_burst_quota,

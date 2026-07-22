@@ -11,6 +11,7 @@ source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 VARIANT="${DUCA_INDEPENDENT_VARIANT:-}"
 SPARSE_PROBE_STRIDE=""
+TRAINFREE=0
 case "${VARIANT}" in
   two_stage_exact_uniform)
     CONFIG="configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py"
@@ -39,6 +40,34 @@ case "${VARIANT}" in
   boundary_burst_r4q5_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py"
+    ;;
+  t1_true_time_residual_g0)
+    CONFIG="configs/adatad/thumos/duca_t1_true_time_residual_g0_fixed384_official60.py"
+    P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py"
+    ;;
+  t1_reversed_time_residual_g0)
+    CONFIG="configs/adatad/thumos/duca_t1_reversed_time_residual_g0_fixed384_official60.py"
+    P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py"
+    ;;
+  trainfree_mobilenet_feature_change)
+    CONFIG="configs/adatad/thumos/duca_trainfree_fixed384_official60_base.py"
+    P0_CONFIG=""
+    TRAINFREE=1
+    ;;
+  trainfree_mobilenet_semantic)
+    CONFIG="configs/adatad/thumos/duca_trainfree_mobilenet_semantic_fixed384_official60.py"
+    P0_CONFIG=""
+    TRAINFREE=1
+    ;;
+  trainfree_mobilenet_fusion_r2q3)
+    CONFIG="configs/adatad/thumos/duca_trainfree_mobilenet_fusion_r2q3_fixed384_official60.py"
+    P0_CONFIG=""
+    TRAINFREE=1
+    ;;
+  trainfree_slowfast_fast_fusion_r2q3)
+    CONFIG="configs/adatad/thumos/duca_trainfree_slowfast_fast_fusion_r2q3_fixed384_official60.py"
+    P0_CONFIG=""
+    TRAINFREE=1
     ;;
   sparse_probe_hidden_linear_d1|sparse_probe_hidden_linear_d2|sparse_probe_hidden_linear_d3|sparse_probe_hidden_linear_d4)
     SPARSE_PROBE_STRIDE="${VARIANT##*d}"
@@ -112,17 +141,52 @@ fi
 CONFIG_STEM="$(basename "${CONFIG}" .py)"
 CONTRACT_JSON="${ARM_ROOT}/gate/contracts/${VARIANT}.json"
 FULL_GATE_JSON="${ARM_ROOT}/gate/full_model/${CONFIG_STEM}.json"
-"${PYTHON}" tools/bata/validate_duca_protected_e2e_official60.py \
-  --config "${CONFIG}" --output-json "${CONTRACT_JSON}"
-"${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
-  --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
-  --rdzv_id="duca-independent-${SLURM_JOB_ID}-${VARIANT}-gate" \
-  tools/bata/run_duca_protected_e2e_exact_full_model_gate.py \
-  --config "${CONFIG}" --expected-commit "${EXPECTED_COMMIT}" \
-  --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
-  --adatad-pretrain-sha256 "${FROZEN_PRETRAIN_SHA256}" \
-  --output-json "${FULL_GATE_JSON}" \
-  2>&1 | tee "${ARM_ROOT}/gate/full_model_gate.out"
+if [[ "${TRAINFREE}" == 1 ]]; then
+  "${PYTHON}" - "${CONFIG}" "${CONTRACT_JSON}" "${EXPECTED_COMMIT}" <<'PY'
+import json
+import sys
+from pathlib import Path
+from mmengine.config import Config
+
+config_path, output_path, commit = sys.argv[1:]
+cfg = Config.fromfile(config_path)
+selector = cfg.model.frame_selector
+source = selector.actionness_source_cfg
+checks = {
+    "parameter_free_selector": bool(selector.parameter_free_selector),
+    "fixed_budget_384": int(selector.budget) == 384,
+    "max_hole_2": int(selector.max_unselected_hole) == 2,
+    "detector_gradient_disabled": str(selector.detector_gradient_mode) == "none",
+    "frozen_source": bool(source.frozen) and not bool(source.trainable),
+    "target_label_free": not any(bool(source[key]) for key in ("uses_labels", "uses_gt", "uses_teacher", "uses_prediction_cache")),
+    "uncalibrated_on_target": str(source.calibration_split) == "none",
+}
+if not all(checks.values()):
+    raise SystemExit(f"train-free config precheck failed: {checks}")
+Path(output_path).write_text(json.dumps({
+    "schema": "duca_trainfree_config_precheck_v1",
+    "ok": True,
+    "git_commit": commit,
+    "config": str(Path(config_path).resolve()),
+    "checks": checks,
+    "real_model_execution": "fail_closed_in_immediately_following_official_training",
+}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  cp "${CONTRACT_JSON}" "${FULL_GATE_JSON}"
+  echo "[DUCA_INDEPENDENT_OFFICIAL60] train-free config precheck passed; real model starts in training"
+else
+  "${PYTHON}" tools/bata/validate_duca_protected_e2e_official60.py \
+    --config "${CONFIG}" --output-json "${CONTRACT_JSON}"
+  "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
+    --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
+    --rdzv_id="duca-independent-${SLURM_JOB_ID}-${VARIANT}-gate" \
+    tools/bata/run_duca_protected_e2e_exact_full_model_gate.py \
+    --config "${CONFIG}" --expected-commit "${EXPECTED_COMMIT}" \
+    --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
+    --adatad-pretrain-sha256 "${FROZEN_PRETRAIN_SHA256}" \
+    --output-json "${FULL_GATE_JSON}" \
+    2>&1 | tee "${ARM_ROOT}/gate/full_model_gate.out"
+fi
 
 GATE_SUITE="${ARM_ROOT}/gate/gate_suite.json"
 "${PYTHON}" - "${GATE_SUITE}" "${EXPECTED_COMMIT}" "${CONTRACT_JSON}" \

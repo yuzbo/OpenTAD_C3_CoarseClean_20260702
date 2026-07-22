@@ -48,6 +48,7 @@ from .structured_selection import (
     physical_exact_uniform_gap_cap,
 )
 from .temporal_contract import DucaTemporalSamplingContract
+from .true_time_residual import TrueTimeFeatureResidual
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaProtectedTransitionScorer,
@@ -78,6 +79,7 @@ __all__ = [
     "DucaProtectedTransitionScorer",
     "DucaTransitionUtilityScorer",
     "DucaTemporalSamplingContract",
+    "TrueTimeFeatureResidual",
     "enumerate_legal_local_hard_swaps",
     "hard_soft_alignment_report",
     "preregistered_hard_soft_gate",

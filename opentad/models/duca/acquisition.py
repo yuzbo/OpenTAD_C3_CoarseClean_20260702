@@ -652,6 +652,10 @@ class C3CoarseProbeActionnessSource(nn.Module):
         mobilenet_variant: str = "small",
         mobilenet_freeze_backbone: bool = True,
         mobilenet_weights_path: Optional[str] = None,
+        mobilenet_preserve_pretrained_classifier: bool = False,
+        slowfast_fast_pretrained: bool = True,
+        slowfast_fast_weights_path: Optional[str] = None,
+        train_free_evidence_mode: str = "learned_logits",
         official_action_seg_backend: str = "official_asformer",
         official_num_layers: int = 2,
         matrix_model_id: str = "timm_mobilenetv3_large_100_tsm_tcn",
@@ -689,6 +693,32 @@ class C3CoarseProbeActionnessSource(nn.Module):
         self.tcn_variant = str(tcn_variant)
         self.tcn_hidden_dim = int(tcn_hidden_dim)
         self.dropout = float(dropout)
+        self.train_free_evidence_mode = str(train_free_evidence_mode)
+        if self.train_free_evidence_mode not in {
+            "learned_logits",
+            "frozen_feature_change",
+            "frozen_semantic_saliency",
+            "frozen_transition_fusion",
+        }:
+            raise ValueError("unsupported train_free_evidence_mode")
+        if self.train_free_evidence_mode != "learned_logits":
+            if not self.frozen:
+                raise ValueError("train-free evidence requires a fully frozen probe")
+            if bool(train_split_supervised) or any(
+                bool(value)
+                for value in (
+                    thumos_trained,
+                    uses_labels,
+                    uses_teacher,
+                    uses_gt,
+                    uses_prediction_cache,
+                    trained_with_thumos_labels,
+                    trained_with_gt_segments,
+                )
+            ):
+                raise ValueError("train-free evidence forbids target-dataset supervision and caches")
+            if str(calibration_split or "none") != "none":
+                raise ValueError("train-free evidence forbids target-dataset calibration")
         self.spatial_norm = str(spatial_norm).lower()
         if self.spatial_norm not in {"batchnorm", "groupnorm"}:
             raise ValueError("spatial_norm must be batchnorm or groupnorm")
@@ -802,6 +832,17 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "interpolated_hidden_is_selector_evidence": True,
             "selector_receives_anchor_mask": False,
             "selector_receives_anchor_distance": False,
+            "train_free_evidence_mode": self.train_free_evidence_mode,
+            "target_dataset_optimization": self.train_free_evidence_mode == "learned_logits",
+            "probability_semantics": (
+                "parameter_free_rank_score_not_action_posterior"
+                if self.train_free_evidence_mode != "learned_logits"
+                else (
+                    "train_only_temperature_bias_calibrated_posterior"
+                    if self.calibration_split == "train_only"
+                    else "uncalibrated_sigmoid_score"
+                )
+            ),
         }
 
         probe_mod = self._probe_module()
@@ -811,6 +852,20 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 variant=str(mobilenet_variant),
                 freeze_backbone=bool(mobilenet_freeze_backbone),
                 weights_path=mobilenet_weights_path,
+                preserve_pretrained_classifier=bool(
+                    mobilenet_preserve_pretrained_classifier
+                    or self.train_free_evidence_mode != "learned_logits"
+                ),
+            )
+        elif self.probe_model == "slowfast-fast":
+            if self.train_free_evidence_mode not in {
+                "frozen_feature_change",
+                "frozen_transition_fusion",
+            }:
+                raise ValueError("SlowFast Fast supports frozen feature-change evidence only")
+            self.probe = probe_mod.C3SlowFastFastFrozenProbe(
+                pretrained=bool(slowfast_fast_pretrained),
+                weights_path=slowfast_fast_weights_path,
             )
         elif self.probe_model == "temporal-tcn":
             self.probe = probe_mod.C3TemporalTCNActionProbe(
@@ -838,7 +893,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
             )
         else:
             raise ValueError(
-                "probe_model must be one of mobilenetv3, temporal-tcn, official-action-seg, or matrix-zoo"
+                "probe_model must be one of mobilenetv3, slowfast-fast, temporal-tcn, official-action-seg, or matrix-zoo"
             )
         module = getattr(self.probe, "module", None)
         if isinstance(module, nn.Module):
@@ -893,6 +948,75 @@ class C3CoarseProbeActionnessSource(nn.Module):
     def _prepare_probe_inputs(self, inputs: torch.Tensor) -> torch.Tensor:
         probe_mod = self._probe_module()
         return probe_mod.prepare_probe_inputs(inputs, probe_model=self.probe_model, spatial_size=self.spatial_size)
+
+    @staticmethod
+    def _rank_normalize(values: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        if values.shape != valid.shape:
+            raise ValueError("rank-normalized values and valid mask must align")
+        rows = []
+        for row, keep in zip(values.float(), valid):
+            active = row[keep]
+            normalized = row.new_zeros(row.shape)
+            if active.numel() == 1:
+                normalized[keep] = 0.5
+            elif active.numel() > 1:
+                unique, inverse = torch.unique(active, sorted=True, return_inverse=True)
+                if unique.numel() == 1:
+                    normalized[keep] = 0.0
+                else:
+                    normalized[keep] = inverse.to(row.dtype) / float(unique.numel() - 1)
+            rows.append(normalized)
+        return torch.stack(rows, dim=0)
+
+    @classmethod
+    def _parameter_free_evidence(
+        cls,
+        hidden: torch.Tensor,
+        valid: torch.Tensor,
+        class_logits: Optional[torch.Tensor],
+        mode: str,
+    ) -> Dict[str, torch.Tensor]:
+        normalized_hidden = F.normalize(hidden.float(), dim=-1, eps=1.0e-6)
+        pair_delta = 1.0 - (normalized_hidden[:, 1:] * normalized_hidden[:, :-1]).sum(dim=-1)
+        left = hidden.new_zeros(hidden.shape[:2], dtype=torch.float32)
+        right = hidden.new_zeros(hidden.shape[:2], dtype=torch.float32)
+        left[:, 1:] = pair_delta
+        right[:, :-1] = pair_delta
+        feature_change = cls._rank_normalize(torch.maximum(left, right), valid)
+        if class_logits is not None:
+            probs = class_logits.float().softmax(dim=-1)
+            entropy = -(probs * probs.clamp_min(torch.finfo(probs.dtype).eps).log()).sum(dim=-1)
+            normalized_entropy = entropy / math.log(float(probs.shape[-1]))
+            semantic_raw = 0.5 * probs.amax(dim=-1) + 0.5 * (1.0 - normalized_entropy)
+            uncertainty = normalized_entropy.masked_fill(~valid, 0.0)
+        else:
+            semantic_raw = torch.linalg.vector_norm(hidden.float(), dim=-1)
+            semantic_rank = cls._rank_normalize(semantic_raw, valid)
+            uncertainty = (1.0 - (2.0 * semantic_rank - 1.0).abs()).masked_fill(~valid, 0.0)
+        semantic_saliency = cls._rank_normalize(semantic_raw, valid)
+        previous = F.pad(uncertainty[:, :-1], (1, 0), value=0.0)
+        following = F.pad(uncertainty[:, 1:], (0, 1), value=0.0)
+        uncertainty_peak = cls._rank_normalize(
+            (uncertainty - torch.maximum(previous, following)).clamp_min(0.0),
+            valid,
+        )
+        fusion = (
+            0.75 * feature_change
+            + 0.20 * semantic_saliency
+            + 0.05 * uncertainty_peak
+        ).masked_fill(~valid, 0.0)
+        evidence = {
+            "frozen_feature_change": feature_change,
+            "frozen_semantic_saliency": semantic_saliency,
+            "frozen_transition_fusion": fusion,
+        }[mode]
+        return {
+            "evidence": evidence,
+            "feature_change": feature_change,
+            "semantic_saliency": semantic_saliency,
+            "uncertainty_peak": uncertainty_peak,
+            "fusion": fusion,
+        }
 
     @staticmethod
     def _sparse_probe_positions(valid: torch.Tensor, stride: int) -> torch.Tensor:
@@ -977,6 +1101,9 @@ class C3CoarseProbeActionnessSource(nn.Module):
             per_frame_macs = int(56_500_000 * (spatial / 224.0) ** 2)
             macs = tokens * per_frame_macs
             family = "MobileNetV3-small"
+        elif self.probe_model == "slowfast-fast":
+            macs = int(tokens * max(params["total"], 1))
+            family = "SlowFast-R50/Fast-pathway-only"
         elif self.probe_model == "temporal-tcn":
             hidden = max(96 if self.tcn_variant in {"asformer_lite", "fact_lite", "temporal_mamba_lite", "ms_tcnpp", "c2f_tcn"} else 32, self.tcn_hidden_dim)
             stem_macs = tokens * (3 * hidden * 9 * max(1, spatial // 2) * max(1, spatial // 2) // 16)
@@ -1085,6 +1212,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         else:
             probe_output = call_probe()
         hidden = None
+        class_logits = None
         policy_hidden = None
         hidden_kind = None
         official_source_sha256 = None
@@ -1106,6 +1234,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
                 "official_source_normalized_lf_sha256"
             )
             official_source_file = probe_output.get("official_source_file")
+            class_logits = probe_output.get("class_logits")
         else:
             logits = probe_output
         if hidden is None and self.return_hidden_features and self.require_hidden_features:
@@ -1119,6 +1248,10 @@ class C3CoarseProbeActionnessSource(nn.Module):
             if hidden.shape[:2] != logits.shape:
                 raise ValueError("C3 coarse hidden features must align with sparse logits [B,A]")
             hidden = hidden.float().to(device=inputs.device)
+        if class_logits is not None:
+            if class_logits.ndim != 3 or class_logits.shape[:2] != logits.shape:
+                raise ValueError("frozen class logits must align with sparse anchors [B,A,C]")
+            class_logits = class_logits.float().to(device=inputs.device)
         if policy_hidden is not None:
             if hidden is None:
                 raise ValueError("restricted policy hidden requires the shared coarse hidden")
@@ -1128,6 +1261,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
         sparse_logits = logits
         sparse_hidden = hidden
         sparse_policy_hidden = policy_hidden
+        sparse_class_logits = class_logits
         if self.temporal_probe_stride > 1:
             logits = self._reconstruct_sparse_sequence(
                 sparse_logits,
@@ -1152,14 +1286,37 @@ class C3CoarseProbeActionnessSource(nn.Module):
                     dense_valid=valid,
                     mode=self.temporal_interpolation_mode,
                 )
+            if sparse_class_logits is not None:
+                class_logits = self._reconstruct_sparse_sequence(
+                    sparse_class_logits,
+                    anchor_positions=anchor_positions,
+                    anchor_valid=sparse_valid,
+                    dense_valid=valid,
+                    mode=self.temporal_interpolation_mode,
+                )
         logits = logits.masked_fill(~valid, _neg(torch.float32))
         if hidden is not None:
             hidden = hidden.masked_fill(~valid[:, :, None], 0.0)
         if policy_hidden is not None:
             policy_hidden = policy_hidden.masked_fill(~valid[:, :, None], 0.0)
         latency_ms = float((time.perf_counter() - start) * 1000.0)
-        calibrated_logits = (logits + self.calibration_bias) / self.calibration_temperature
-        p_action = torch.sigmoid(calibrated_logits).masked_fill(~valid, 0.0)
+        train_free_payload = None
+        if self.train_free_evidence_mode != "learned_logits":
+            if hidden is None:
+                raise ValueError("train-free evidence requires frozen hidden features")
+            train_free_payload = self._parameter_free_evidence(
+                hidden,
+                valid,
+                class_logits,
+                self.train_free_evidence_mode,
+            )
+            p_action = train_free_payload["evidence"].clamp(1.0e-6, 1.0 - 1.0e-6)
+            p_action = p_action.masked_fill(~valid, 0.0)
+            calibrated_logits = torch.logit(p_action).masked_fill(~valid, _neg(torch.float32))
+            logits = calibrated_logits
+        else:
+            calibrated_logits = (logits + self.calibration_bias) / self.calibration_temperature
+            p_action = torch.sigmoid(calibrated_logits).masked_fill(~valid, 0.0)
         transition = _actionness_transition_payload(p_action, valid)
         profile = self._estimate_probe_profile(sparse_inputs, sparse_logits, latency_ms)
         hidden_width = 0 if hidden is None else int(hidden.shape[-1])
@@ -1199,6 +1356,16 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "source_name": self.source_name,
             "sparse_probe_anchor_positions": anchor_positions.detach().cpu().tolist(),
         }
+        if train_free_payload is not None:
+            output.update(
+                {
+                    "train_free_feature_change": train_free_payload["feature_change"],
+                    "train_free_semantic_saliency": train_free_payload["semantic_saliency"],
+                    "train_free_uncertainty_peak": train_free_payload["uncertainty_peak"],
+                    "train_free_transition_fusion": train_free_payload["fusion"],
+                    "train_free_evidence_mode": self.train_free_evidence_mode,
+                }
+            )
         if hidden is not None:
             output["coarse_hidden_features"] = hidden
             output["hidden_features"] = hidden
@@ -1250,6 +1417,7 @@ class DucaAcquisitionAdapter(nn.Module):
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
         selector_variant: str = "direct_boundary",
+        parameter_free_selector: bool = False,
         transition_objective: str = "gaussian_mass",
         boundary_burst_radius: int = 2,
         boundary_burst_quota: float = 5.0,
@@ -1330,6 +1498,14 @@ class DucaAcquisitionAdapter(nn.Module):
         self.selector_variant = str(selector_variant)
         if self.selector_variant not in {"direct_boundary", "transition_only"}:
             raise ValueError("selector_variant must be direct_boundary or transition_only")
+        self.parameter_free_selector = bool(parameter_free_selector)
+        if self.parameter_free_selector:
+            if self.selector_variant != "direct_boundary":
+                raise ValueError("parameter-free selection uses the direct_boundary adapter path")
+            if self.dynamic_budget:
+                raise ValueError("parameter-free selection requires a fixed budget")
+            if self.acquisition_policy != "global_structured_topk":
+                raise ValueError("parameter-free selection requires global_structured_topk")
         self.transition_objective = str(transition_objective)
         if self.transition_objective not in {"gaussian_mass", "boundary_burst"}:
             raise ValueError("transition_objective must be gaussian_mass or boundary_burst")
@@ -1346,8 +1522,8 @@ class DucaAcquisitionAdapter(nn.Module):
             boundary_burst_require_global_mandatory_groups
         )
         if self.transition_objective == "boundary_burst":
-            if self.selector_variant != "transition_only":
-                raise ValueError("boundary_burst is restricted to transition_only")
+            if self.selector_variant != "transition_only" and not self.parameter_free_selector:
+                raise ValueError("boundary_burst requires transition_only or parameter-free evidence")
             if self.boundary_burst_radius <= 0 or self.boundary_burst_quota <= 0.0:
                 raise ValueError("boundary burst radius/quota must be positive")
             if not 0.0 < self.boundary_burst_budget_fraction <= 1.0:
@@ -1378,6 +1554,8 @@ class DucaAcquisitionAdapter(nn.Module):
         self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
         if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
             raise ValueError("max_unselected_hole must be non-negative")
+        if self.parameter_free_selector and self.max_unselected_hole is None:
+            raise ValueError("parameter-free selection requires an explicit max_unselected_hole")
         self.hard_max_gap_repair = bool(hard_max_gap_repair)
         if self.acquisition_policy in {"global_structured_topk", "local_cell_deformation"} and self.hard_max_gap_repair:
             raise ValueError("structured acquisition policies encode coverage and forbid hard repair")
@@ -1417,7 +1595,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 ),
             )
             selector_feature_dim = int(self.transition_scorer.input_dim)
-        elif self.feature_dim is None:
+        elif self.feature_dim is None or self.parameter_free_selector:
             self.encoder = None
             self.center_head = None
             self.radius_head = None
@@ -1791,7 +1969,37 @@ class DucaAcquisitionAdapter(nn.Module):
                 0.0,
             )
         transition_paths = None
-        if self.selector_variant == "transition_only":
+        transition_center_scores = None
+        burst_outputs = None
+        if self.parameter_free_selector:
+            transition_center_scores = actionness_aux
+            if self.transition_objective == "boundary_burst":
+                offset_logits = transition_center_scores.new_zeros(
+                    (*transition_center_scores.shape, 2 * self.boundary_burst_radius + 1)
+                )
+                burst_outputs = build_boundary_burst_utility(
+                    transition_center_scores,
+                    offset_logits,
+                    valid,
+                    k=self.budget,
+                    radius=self.boundary_burst_radius,
+                    quota=self.boundary_burst_quota,
+                    boundary_budget_fraction=self.boundary_burst_budget_fraction,
+                    context_weight=self.boundary_burst_context_weight,
+                    center_temperature=self.boundary_burst_center_temperature,
+                    offset_temperature=self.boundary_burst_offset_temperature,
+                    require_bilateral_offsets=self.boundary_burst_require_bilateral_offsets,
+                )
+                center_scores = burst_outputs["policy_utility"]
+            else:
+                center_scores = transition_center_scores
+            selection_features = source["features"].float()
+            radius = center_scores.new_zeros(center_scores.shape)
+            start_logits = center_scores.new_zeros(center_scores.shape)
+            end_logits = center_scores.new_zeros(center_scores.shape)
+            context_logits = center_scores.new_zeros(center_scores.shape)
+            utility_scores = center_scores
+        elif self.selector_variant == "transition_only":
             if coarse_hidden_kind != ASFORMER_ENCODER_HIDDEN_KIND:
                 raise ValueError(
                     "transition_only requires hidden_kind="
@@ -1810,7 +2018,6 @@ class DucaAcquisitionAdapter(nn.Module):
                 auxiliary_hidden_gradient_scale=self.auxiliary_hidden_gradient_scale,
             )
             transition_center_scores = transition_paths["policy_scores"]
-            burst_outputs = None
             if self.transition_objective == "boundary_burst":
                 offset_logits = transition_paths.get("policy_offset_logits")
                 if offset_logits is None:
@@ -1915,6 +2122,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "uses_coarse_hidden_features": bool(has_coarse_hidden_features),
             "coarse_hidden_kind": coarse_hidden_kind,
             "selector_variant": self.selector_variant,
+            "parameter_free_selector": self.parameter_free_selector,
             "transition_objective": self.transition_objective,
             "boundary_burst_local_bilateral_utility_enabled": bool(
                 self.transition_objective == "boundary_burst"
@@ -1927,6 +2135,8 @@ class DucaAcquisitionAdapter(nn.Module):
             "valid_mask": valid,
             "provenance": source["provenance"],
         }
+        if transition_center_scores is not None:
+            output["transition_center_scores"] = transition_center_scores
         if transition_paths is not None:
             output.update(
                 {
@@ -1944,34 +2154,20 @@ class DucaAcquisitionAdapter(nn.Module):
                 output["burst_offset_logits"] = transition_paths[
                     "policy_offset_logits"
                 ]
-            if burst_outputs is not None:
-                output.update(
-                    {
-                        "boundary_burst_mass": burst_outputs["burst_mass"],
-                        "boundary_burst_utility": burst_outputs["burst_utility"],
-                        "boundary_burst_center_probabilities": burst_outputs[
-                            "center_probabilities"
-                        ],
-                        "boundary_burst_offset_probabilities": burst_outputs[
-                            "offset_probabilities"
-                        ],
-                        "boundary_burst_offset_inclusion": burst_outputs[
-                            "offset_inclusion"
-                        ],
-                        "boundary_burst_effective_offset_quota": burst_outputs[
-                            "effective_offset_quota"
-                        ],
-                        "boundary_burst_context_reference": burst_outputs[
-                            "context_reference"
-                        ],
-                        "boundary_burst_bilateral_offset_feasible": burst_outputs[
-                            "bilateral_offset_feasible"
-                        ],
-                        "boundary_burst_bilateral_offset_satisfied": burst_outputs[
-                            "bilateral_offset_satisfied"
-                        ],
-                    }
-                )
+        if burst_outputs is not None:
+            output.update(
+                {
+                    "boundary_burst_mass": burst_outputs["burst_mass"],
+                    "boundary_burst_utility": burst_outputs["burst_utility"],
+                    "boundary_burst_center_probabilities": burst_outputs["center_probabilities"],
+                    "boundary_burst_offset_probabilities": burst_outputs["offset_probabilities"],
+                    "boundary_burst_offset_inclusion": burst_outputs["offset_inclusion"],
+                    "boundary_burst_effective_offset_quota": burst_outputs["effective_offset_quota"],
+                    "boundary_burst_context_reference": burst_outputs["context_reference"],
+                    "boundary_burst_bilateral_offset_feasible": burst_outputs["bilateral_offset_feasible"],
+                    "boundary_burst_bilateral_offset_satisfied": burst_outputs["bilateral_offset_satisfied"],
+                }
+            )
         return output
 
     def _decode_global_structured(
@@ -2155,6 +2351,9 @@ class DucaAcquisitionAdapter(nn.Module):
             "fill_strategy": ["global_structured_map" for _ in range(batch)],
             "max_gap_repair": [{"enabled": False, "encoded_in_policy": True} for _ in range(batch)],
             "selection_path": (
+                "parameter_free_transition_prior"
+                if self.parameter_free_selector
+                else
                 "transition_uniform_reference"
                 if self.selector_variant == "transition_only" and float(policy_mix_alpha) <= 0.0
                 else "transition_learned"
