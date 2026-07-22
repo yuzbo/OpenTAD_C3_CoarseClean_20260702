@@ -142,13 +142,15 @@ CONFIG_STEM="$(basename "${CONFIG}" .py)"
 CONTRACT_JSON="${ARM_ROOT}/gate/contracts/${VARIANT}.json"
 FULL_GATE_JSON="${ARM_ROOT}/gate/full_model/${CONFIG_STEM}.json"
 if [[ "${TRAINFREE}" == 1 ]]; then
-  "${PYTHON}" - "${CONFIG}" "${CONTRACT_JSON}" "${EXPECTED_COMMIT}" <<'PY'
+  "${PYTHON}" - "${CONFIG}" "${CONTRACT_JSON}" "${EXPECTED_COMMIT}" \
+    "${ADATAD_PRETRAIN_PATH}" "${FROZEN_PRETRAIN_SHA256}" <<'PY'
+import hashlib
 import json
 import sys
 from pathlib import Path
 from mmengine.config import Config
 
-config_path, output_path, commit = sys.argv[1:]
+config_path, output_path, commit, pretrain_path, pretrain_sha256 = sys.argv[1:]
 cfg = Config.fromfile(config_path)
 selector = cfg.model.frame_selector
 source = selector.actionness_source_cfg
@@ -168,6 +170,12 @@ Path(output_path).write_text(json.dumps({
     "ok": True,
     "git_commit": commit,
     "config": str(Path(config_path).resolve()),
+    "config_sha256": hashlib.sha256(Path(config_path).read_bytes()).hexdigest(),
+    "runtime": {"git_commit": commit},
+    "adatad_pretrain": {
+        "path": str(Path(pretrain_path).resolve()),
+        "sha256": pretrain_sha256,
+    },
     "checks": checks,
     "real_model_execution": "fail_closed_in_immediately_following_official_training",
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")

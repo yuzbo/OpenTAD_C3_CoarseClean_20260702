@@ -1,4 +1,4 @@
-_base_ = ["./duca_transition_only_fixed384_official_adatad_backend_full_train.py"]
+_base_ = ["./duca_protected_e2e_fixed384_official60.py"]
 
 
 duca_trainfree_contract = dict(

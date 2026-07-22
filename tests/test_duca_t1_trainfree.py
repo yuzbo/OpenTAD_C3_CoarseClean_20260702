@@ -7,6 +7,7 @@ from mmengine.config import Config
 
 from opentad.models.duca import DucaAcquisitionAdapter, TrueTimeFeatureResidual, ZeroShotActionnessSource
 from opentad.models.duca.acquisition import C3CoarseProbeActionnessSource
+from tools.bata import duca_selected_axis_training
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,13 +135,13 @@ def test_parameter_free_r2q3_is_feasible_at_formal_k384_g2_scale() -> None:
 
 
 def test_train_free_configs_are_frozen_and_target_label_free() -> None:
-    configs = [
-        "duca_trainfree_fixed384_official60_base.py",
-        "duca_trainfree_mobilenet_semantic_fixed384_official60.py",
-        "duca_trainfree_mobilenet_fusion_r2q3_fixed384_official60.py",
-        "duca_trainfree_slowfast_fast_fusion_r2q3_fixed384_official60.py",
-    ]
-    for name in configs:
+    configs = {
+        "trainfree_mobilenet_feature_change": "duca_trainfree_fixed384_official60_base.py",
+        "trainfree_mobilenet_semantic": "duca_trainfree_mobilenet_semantic_fixed384_official60.py",
+        "trainfree_mobilenet_fusion_r2q3": "duca_trainfree_mobilenet_fusion_r2q3_fixed384_official60.py",
+        "trainfree_slowfast_fast_fusion_r2q3": "duca_trainfree_slowfast_fast_fusion_r2q3_fixed384_official60.py",
+    }
+    for variant, name in configs.items():
         cfg = Config.fromfile(str(ROOT / "configs" / "adatad" / "thumos" / name))
         selector = cfg.model.frame_selector
         source = selector.actionness_source_cfg
@@ -150,3 +151,10 @@ def test_train_free_configs_are_frozen_and_target_label_free() -> None:
         assert source.train_split_supervised is False
         assert source.uses_labels is False and source.uses_gt is False
         assert source.calibration_split == "none"
+        assert cfg.workflow.formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL
+        contract = duca_selected_axis_training.formal_training_contract(cfg)
+        assert contract is not None
+        assert contract["end_epoch"] == 60
+        assert contract["expected_successful_optimizer_updates"] == 6000
+        assert contract["checkpoint_criterion"] == "terminal_epoch_59_state_dict_ema"
+        assert duca_selected_axis_training.VARIANT_CONFIGS[variant] == name

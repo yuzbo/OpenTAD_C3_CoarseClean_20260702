@@ -85,6 +85,18 @@ VARIANT_CONFIGS = {
     "boundary_burst_r4q5_g2": (
         "duca_boundary_burst_r4q5_g2_uni_companion_fixed384_official60.py"
     ),
+    "trainfree_mobilenet_feature_change": (
+        "duca_trainfree_fixed384_official60_base.py"
+    ),
+    "trainfree_mobilenet_semantic": (
+        "duca_trainfree_mobilenet_semantic_fixed384_official60.py"
+    ),
+    "trainfree_mobilenet_fusion_r2q3": (
+        "duca_trainfree_mobilenet_fusion_r2q3_fixed384_official60.py"
+    ),
+    "trainfree_slowfast_fast_fusion_r2q3": (
+        "duca_trainfree_slowfast_fast_fusion_r2q3_fixed384_official60.py"
+    ),
 }
 
 DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA
