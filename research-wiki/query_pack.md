@@ -1,5 +1,32 @@
 # Research Wiki Query Pack
 
+## 2026-07-23 Pro verdict intake: source-score-dtype repair
+
+External Pro review attachment SHA256
+`28C6D00404B7530D5A85E27538FA3EFBE07021ACDC54AEA713E0E4222EA79CC1`
+has been recorded and locally cross-checked against the frozen code. The
+binding operational verdict is `REVISE_BEFORE_REQUEUE / HOLD`, with
+`IMPLEMENTATION_CHOICE=A-STRICT-SOURCE-DTYPE`.
+
+The narrow repair preserves frozen production semantics: capture
+`cls_scores` at its source dtype (observed physical-online source is
+`torch.float16`), replay CPU threshold/sort/top-k with that same dtype, and
+do not change production post-processing, NMS, evaluator, checkpoints, or
+training. A shared stable tie-break is a separate inference-semantic version,
+not a replay repair; it would require fresh P0 and full60 inference anchors.
+
+The source confirms the S0 mechanism: capture casts `cls_scores` to float32,
+both replay validators require float32, while production moves the source score
+to CPU then sorts and top-k truncates it. The real gate's sliding-window path
+therefore first fails before cross-window NMS. Existing remote count/hash
+figures are retained as project forensics, not newly remeasured evidence in
+this intake.
+
+Before a new gate: schema/dtype provenance, source-score roundtrip and
+tie-boundary tests, ordered and top-k ID diagnostics, failure artifacts, and
+runtime fingerprint are required. Q192 UU/UP/PU/PP, Q-lift, sampling, loss,
+assignment, NMS, and all training remain frozen.
+
 ## 2026-07-20 冻结解码交叉回放
 
 当前唯一执行任务是 `exp:phystime-frozen-decode-cross-replay`。固定

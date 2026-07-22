@@ -104,6 +104,28 @@ owner manifest，永久绑定 `token/run_root/commit/tree`，并与运行目录�
 和自身共六个 resolved marker 与 `jobs.tsv` 的 token/comment/Job ID，并拒绝
 遗留 ambiguous/fatal 文件。
 
+## 2026-07-23 Pro verdict intake
+
+External Pro review attachment SHA256
+`28C6D00404B7530D5A85E27538FA3EFBE07021ACDC54AEA713E0E4222EA79CC1`
+was recorded in `docs/methods/reviews/2026-07-23-pro-decode-replay-verdict-intake.md`.
+The accepted verdict is `REVISE_BEFORE_REQUEUE / HOLD`, not abandon. Local
+source review confirms that the capture layer rewrites source `cls_scores` to
+float32 and both replay validators enforce that rewrite, whereas direct
+post-processing sorts the source score after CPU transfer.
+
+The next implementation is A-STRICT-SOURCE-DTYPE: preserve ordering-sensitive
+scores at source dtype and use that dtype for replay CPU pre-NMS operations.
+It must not change production post-processing, NMS, evaluator, checkpoint, or
+training. Stable total ordering is explicitly deferred as a new inference
+semantic requiring a separate re-anchor. Existing remote hashes/counts remain
+forensic records pending independent raw-artifact recomputation.
+
+Required before requeue: schema-v2 dtype provenance, v1 source-fp16/stored-fp32
+rejection, source-score roundtrip/tie-boundary tests, ordered/top-k candidate
+diagnostics, failure artifacts, runtime fingerprint, P0 direct anchoring, then
+the four-condition CUDA gate. Training remains frozen.
+
 ## 当前状态与停止条件
 
 当前状态是 `tested`，裁决为真实门禁失败，正式 mAP 为 `NA`。本地部署测试、远端

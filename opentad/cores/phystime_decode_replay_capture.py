@@ -10,8 +10,14 @@ import numpy as np
 import torch
 
 
-SCHEMA_VERSION = "phystime_decode_replay_inputs_v1"
+SCHEMA_VERSION = "phystime_decode_replay_inputs_v2"
 ARTIFACT_KIND = "frozen_pre_decode_actionformer_tensors"
+NUMERIC_SEMANTICS_VERSION = "source_score_dtype_legacy_order_v1"
+_TORCH_TO_NUMPY_DTYPE = {
+    "torch.float16": np.dtype("float16"),
+    "torch.float32": np.dtype("float32"),
+    "torch.float64": np.dtype("float64"),
+}
 SUPPORTED_AXES = {
     "uniform_rank_seconds",
     "physical_time_seconds",
@@ -89,6 +95,29 @@ def _atomic_write_npz(path, arrays):
     with open(temporary, "wb") as handle:
         np.savez_compressed(handle, **arrays)
     os.replace(temporary, path)
+
+
+def _score_dtype_contract(source_dtype, stored_dtype):
+    """Keep the captured ranking representation identical to production."""
+    try:
+        expected = _TORCH_TO_NUMPY_DTYPE[str(source_dtype)]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"unsupported source score dtype for decode replay: {source_dtype!r}"
+        ) from exc
+    if stored_dtype != expected:
+        raise RuntimeError(
+            "decode replay score capture widened or narrowed the production "
+            f"dtype: source={source_dtype}, stored={stored_dtype}"
+        )
+    return {
+        "semantic_role": "ranking_scores",
+        "ordering_sensitive": True,
+        "source_torch_dtype": str(source_dtype),
+        "stored_numpy_dtype": str(stored_dtype),
+        "replay_torch_dtype": str(source_dtype),
+        "allowed_casts_before_topk": [],
+    }
 
 
 def _unwrap_model(model):
@@ -487,17 +516,24 @@ class DecodeReplayCollector:
         manifest_path = work_dir / manifest_name
         _atomic_write_npz(artifact_path, arrays)
 
-        array_contract = {
-            name: {
+        array_contract = {}
+        for name, array in arrays.items():
+            contract = {
                 "dtype": str(array.dtype),
                 "shape": list(array.shape),
                 "canonical_sha256": _array_sha256(array),
             }
-            for name, array in arrays.items()
-        }
+            if name == "cls_scores":
+                contract.update(
+                    _score_dtype_contract(
+                        self.source_tensor_dtypes["cls_scores"], array.dtype
+                    )
+                )
+            array_contract[name] = contract
         manifest = {
             "schema_version": SCHEMA_VERSION,
             "artifact_kind": ARTIFACT_KIND,
+            "numeric_semantics_version": NUMERIC_SEMANTICS_VERSION,
             "evaluation_epoch": self.evaluation_epoch,
             "runtime": {
                 "commit": os.environ.get("PHYSTIME_EXPECTED_COMMIT"),

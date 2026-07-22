@@ -128,6 +128,7 @@ def test_capture_is_opt_in_and_does_not_change_forward_outputs():
     assert state["native_mask"].tolist() == [[True, True, True, False]]
     assert state["metadata"][0]["video_name"] == "synthetic"
     assert state["source_tensor_dtypes"]["cls_logits"].startswith("torch.")
+    assert state["cls_scores"].dtype == ordinary_scores[0].dtype
     head.enable_decode_replay_capture(False)
 
 
@@ -213,6 +214,17 @@ def test_collector_writes_pickle_free_hashed_artifact(
         <= manifest["capture_memory"]["max_in_memory_bytes"]
     )
     assert manifest["source_tensor_dtypes"]["cls_scores"].startswith("torch.")
+    score_contract = manifest["array_contract"]["cls_scores"]
+    assert manifest["schema_version"] == replay.SCHEMA_VERSION
+    assert (
+        manifest["numeric_semantics_version"]
+        == replay.NUMERIC_SEMANTICS_VERSION
+    )
+    assert score_contract["semantic_role"] == "ranking_scores"
+    assert score_contract["ordering_sensitive"] is True
+    assert score_contract["source_torch_dtype"] == "torch.float32"
+    assert score_contract["stored_numpy_dtype"] == "float32"
+    assert score_contract["allowed_casts_before_topk"] == []
     assert len(manifest["observation_sequence_sha256"]) == 64
     assert (
         replay.canonical_sha256(
@@ -220,6 +232,24 @@ def test_collector_writes_pickle_free_hashed_artifact(
         )
         == manifest["observation_sequence_sha256"]
     )
+
+
+def test_score_contract_rejects_precision_widening_before_topk():
+    contract = {
+        "semantic_role": "ranking_scores",
+        "ordering_sensitive": True,
+        "source_torch_dtype": "torch.float16",
+        "stored_numpy_dtype": "float16",
+        "replay_torch_dtype": "torch.float16",
+        "allowed_casts_before_topk": [],
+    }
+    replay.validate_score_dtype_contract(
+        np.asarray([[[0.5]]], dtype=np.float16), contract
+    )
+    with pytest.raises(ValueError, match="preserve the source dtype"):
+        replay.validate_score_dtype_contract(
+            np.asarray([[[0.5]]], dtype=np.float32), contract
+        )
 
 
 def _synthetic_dense_arrays():

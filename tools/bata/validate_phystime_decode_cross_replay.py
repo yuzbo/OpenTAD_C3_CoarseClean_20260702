@@ -252,8 +252,13 @@ def validate_capture(run_dir, run_manifest):
     capture = read_json(manifest_path, "capture manifest")
     require(
         capture.get("schema_version")
-        == "phystime_decode_replay_inputs_v1",
+        == "phystime_decode_replay_inputs_v2",
         "capture schema mismatch",
+    )
+    require(
+        capture.get("numeric_semantics_version")
+        == "source_score_dtype_legacy_order_v1",
+        "capture numeric semantics mismatch",
     )
     require(
         capture.get("artifact_kind")
@@ -339,8 +344,27 @@ def validate_capture(run_dir, run_manifest):
     scores = arrays["cls_scores"]
     reg = arrays["reg_distances"]
     require(
-        logits.dtype == scores.dtype == reg.dtype == np.float32,
-        "capture logits/scores/reg must be float32",
+        logits.dtype == reg.dtype == np.float32,
+        "capture logits/reg must be float32",
+    )
+    score_contract = capture["array_contract"]["cls_scores"]
+    source_dtype = score_contract.get("source_torch_dtype")
+    expected_score_dtype = {
+        "torch.float16": np.dtype("float16"),
+        "torch.float32": np.dtype("float32"),
+        "torch.float64": np.dtype("float64"),
+    }.get(source_dtype)
+    require(expected_score_dtype is not None, "unsupported capture score dtype")
+    require(
+        score_contract.get("semantic_role") == "ranking_scores"
+        and score_contract.get("ordering_sensitive") is True
+        and score_contract.get("source_torch_dtype")
+        == capture.get("source_tensor_dtypes", {}).get("cls_scores")
+        and score_contract.get("stored_numpy_dtype") == str(scores.dtype)
+        and score_contract.get("replay_torch_dtype") == source_dtype
+        and score_contract.get("allowed_casts_before_topk") == []
+        and scores.dtype == expected_score_dtype,
+        "capture score ordering/dtype contract mismatch",
     )
     require(
         logits.ndim == 3
@@ -769,10 +793,13 @@ def validate_run(run_dir):
         == capture.get("source_amp_enabled")
         and numeric_precision.get("source_tensor_dtypes")
         == capture.get("source_tensor_dtypes")
-        and numeric_precision.get("decode_compute_dtype") == "float32"
-        and numeric_precision.get("decode_compute_device") == "cpu"
-        and set(numeric_precision.get("stored_tensor_dtypes", {}).values())
-        == {"float32"},
+        and numeric_precision.get("numeric_semantics_version")
+        == capture.get("numeric_semantics_version")
+        and numeric_precision.get("score_sort_dtype")
+        == str(arrays["cls_scores"].dtype)
+        and numeric_precision.get("score_sort_device") == "cpu"
+        and numeric_precision.get("geometry_compute_dtype") == "float32"
+        and numeric_precision.get("geometry_compute_device") == "cpu",
         "producer numeric precision provenance mismatch",
     )
 

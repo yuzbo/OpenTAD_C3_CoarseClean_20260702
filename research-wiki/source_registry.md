@@ -1,5 +1,18 @@
 # Source Registry
 
+## 2026-07-23 Decode-Cross Pro Verdict Source
+
+- `SRC-PT-019`: 外部 Pro 审查附件
+  `69e90dee-f3f3-4276-a89d-97be17ac92ba/pasted-text.txt`，SHA256
+  `28C6D00404B7530D5A85E27538FA3EFBE07021ACDC54AEA713E0E4222EA79CC1`。
+  审查 runtime `06a6734` / tree `c11dc39` 的 score dtype / tie-ordering
+  gate failure；本地吸收记录为
+  `docs/methods/reviews/2026-07-23-pro-decode-replay-verdict-intake.md`。
+  用途：裁决 `REVISE_BEFORE_REQUEUE / HOLD` 与
+  `A-STRICT-SOURCE-DTYPE`。核心机制已由本地源代码交叉核验；远端原始
+  NPZ/Slurm 数字仍属于项目取证，等待只读 artifact 复算。该来源不产生
+  新 mAP、训练或论文主张。
+
 ## 2026-07-20 Decode-Cross Real-Gate Failure Source
 
 - `SRC-PT-018`: runtime commit

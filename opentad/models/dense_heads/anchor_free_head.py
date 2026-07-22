@@ -573,9 +573,10 @@ class AnchorFreeHead(nn.Module):
             "cls_logits": cls_logits.detach().to(
                 device="cpu", dtype=torch.float32
             ).contiguous(),
-            "cls_scores": dense_scores.detach().to(
-                device="cpu", dtype=torch.float32
-            ).contiguous(),
+            # The production top-k consumes AMP scores at their source dtype.
+            # Preserve that ordering-sensitive representation for CPU replay;
+            # widening fp16 ties to fp32 changes the legacy sort/top-k result.
+            "cls_scores": dense_scores.detach().to(device="cpu").contiguous(),
             "reg_distances": reg_distances.detach().to(
                 device="cpu", dtype=torch.float32
             ).contiguous(),

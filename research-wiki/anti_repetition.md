@@ -1,14 +1,35 @@
 # Anti-Repetition Contract
 
+## 2026-07-23 Source-score-dtype repair decision
+
+- `06a6734` must not be requeued unchanged. The accepted repair is
+  `A-STRICT-SOURCE-DTYPE`: preserve ordering-sensitive `cls_scores` at source
+  dtype through CPU capture and replay pre-NMS sort/top-k.
+- The prior wording that CPU float32 replay was an accurate production contract
+  is superseded and rejected for ordering-sensitive scores. Float16-to-float32
+  value expansion is exact, but it can still change unspecified tie ordering
+  and top-k membership.
+- Do not introduce stable sorting, epsilon score perturbations, new tie-breaks,
+  changed NMS, or altered evaluator behavior as part of this repair. Those are
+  a new inference semantic and require separate P0/full60 re-anchoring.
+- Preserve ordered equality as the native exact gate. Unordered hashes,
+  top-k-set hashes, boundary tie statistics, and first-difference records are
+  diagnostics, never substitutes for ordered equality.
+- A source-fp16/stored-fp32 ordering-sensitive v1 artifact is invalid for
+  formal replay and must fail closed. A new commit/tree/snapshot/run root/DAG
+  token is mandatory.
+
 ## 2026-07-20 冻结解码交叉回放禁区
 
 - 本轮只做冻结 epoch-59 张量的离线重解码，不得加入新训练、Q-lift、
   interpolation、新 sampler、新 loss、新 assignment 或新 NMS。
 - 捕获的 native proposal 仅用于数值审计，禁止把它覆盖回重建结果；
   否则 native exactness 是自证循环，整个实验无效。
-- 不得把强制 float32 sigmoid 当作原 AMP 生产路径真值；必须保留并记录
-  原始 dtype。准确表述是“AMP 产生的张量数值以 float32 存储，再由 CPU
-  float32 重算 decode”，并用 native direct 与 P0 direct 双重等价门禁。
+- [已否决，见 2026-07-23] 不得把强制 float32 sigmoid 当作原 AMP 生产路径
+  真值；必须保留并记录原始 dtype。旧的“AMP 张量统一存为 float32、CPU
+  float32 重算 decode”表述已经被真实 gate 否决。对 ordering-sensitive
+  `cls_scores`，正确合同是来源 dtype 捕获，并在同一 CPU dtype 上完成
+  threshold/sort/top-k，再用 native direct 与 P0 direct 双重等价门禁。
 - 真实门禁必须覆盖 selected-axis / physical-metric 乘 online / EMA
   四个条件。缺任一条件、共享观测/时间轴契约、内容哈希或 checkpoint
   state 哈希，都不得提交正式 replay。

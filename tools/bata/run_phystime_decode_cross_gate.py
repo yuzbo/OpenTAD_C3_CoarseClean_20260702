@@ -623,6 +623,9 @@ def run_real_window(
         "observation_contract": observation_contract,
         "axis_window_contract": axis_window_contract,
         "numeric_precision": {
+            "numeric_semantics_version": capture_manifest[
+                "numeric_semantics_version"
+            ],
             "source_amp_enabled": use_amp,
             "source_tensor_dtypes": capture_manifest[
                 "source_tensor_dtypes"
@@ -640,8 +643,10 @@ def run_real_window(
                     "physical_axis_sec",
                 }
             },
-            "decode_compute_dtype": "float32",
-            "decode_compute_device": "cpu",
+            "score_sort_dtype": str(arrays["cls_scores"].dtype),
+            "score_sort_device": "cpu",
+            "geometry_compute_dtype": "float32",
+            "geometry_compute_device": "cpu",
         },
     }
     del model, collector, batch

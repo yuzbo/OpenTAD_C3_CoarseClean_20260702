@@ -19,8 +19,14 @@ from opentad.evaluations import build_evaluator
 from opentad.models.detectors.single_stage import SingleStageDetector
 
 
-SCHEMA_VERSION = "phystime_decode_replay_inputs_v1"
+SCHEMA_VERSION = "phystime_decode_replay_inputs_v2"
 ARTIFACT_KIND = "frozen_pre_decode_actionformer_tensors"
+NUMERIC_SEMANTICS_VERSION = "source_score_dtype_legacy_order_v1"
+_TORCH_TO_NUMPY_DTYPE = {
+    "torch.float16": np.dtype("float16"),
+    "torch.float32": np.dtype("float32"),
+    "torch.float64": np.dtype("float64"),
+}
 REQUIRED_ARRAYS = {
     "cls_logits",
     "cls_scores",
@@ -199,6 +205,11 @@ def load_and_validate_capture(args):
         "decode replay manifest has the wrong artifact kind",
     )
     require(
+        manifest.get("numeric_semantics_version")
+        == NUMERIC_SEMANTICS_VERSION,
+        "decode replay numeric semantics version mismatch",
+    )
+    require(
         manifest.get("runtime", {}).get("commit")
         == args.expected_runtime_commit,
         "capture runtime commit mismatch",
@@ -277,6 +288,38 @@ def load_and_validate_capture(args):
     return arrays, manifest
 
 
+def validate_score_dtype_contract(scores, contract):
+    """Reject artifacts that alter source score precision before legacy top-k."""
+    source_dtype = contract.get("source_torch_dtype")
+    try:
+        expected = _TORCH_TO_NUMPY_DTYPE[str(source_dtype)]
+    except KeyError as exc:
+        raise ValueError(
+            f"unsupported source score dtype: {source_dtype!r}"
+        ) from exc
+    require(
+        contract.get("semantic_role") == "ranking_scores",
+        "score role mismatch",
+    )
+    require(
+        contract.get("ordering_sensitive") is True,
+        "score ordering contract missing",
+    )
+    require(
+        contract.get("stored_numpy_dtype") == str(scores.dtype),
+        "stored score dtype mismatch",
+    )
+    require(
+        contract.get("replay_torch_dtype") == str(source_dtype),
+        "replay score dtype mismatch",
+    )
+    require(
+        contract.get("allowed_casts_before_topk") == [],
+        "score casts before top-k are forbidden",
+    )
+    require(scores.dtype == expected, "cls_scores must preserve the source dtype")
+
+
 def validate_array_semantics(arrays, manifest):
     logits = arrays["cls_logits"]
     scores = arrays["cls_scores"]
@@ -291,7 +334,7 @@ def validate_array_semantics(arrays, manifest):
     domains = arrays["domain_sec"]
 
     require(logits.dtype == np.float32, "cls_logits must be float32")
-    require(scores.dtype == np.float32, "cls_scores must be float32")
+    validate_score_dtype_contract(scores, manifest["array_contract"]["cls_scores"])
     require(reg.dtype == np.float32, "reg_distances must be float32")
     require(base_mask.dtype == np.bool_, "base_mask must be bool")
     require(native_mask.dtype == np.bool_, "native_mask must be bool")
@@ -362,6 +405,13 @@ def validate_array_semantics(arrays, manifest):
         and set(source_dtypes)
         >= {"cls_logits", "cls_scores", "reg_distances"},
         "source tensor dtype provenance is missing",
+    )
+    require(
+        source_dtypes["cls_scores"]
+        == manifest["array_contract"]["cls_scores"].get(
+            "source_torch_dtype"
+        ),
+        "score source dtype differs from the replay contract",
     )
     capture_memory = manifest.get("capture_memory")
     require(
@@ -957,6 +1007,9 @@ def main():
             ],
         },
         "numeric_precision": {
+            "numeric_semantics_version": capture_manifest[
+                "numeric_semantics_version"
+            ],
             "source_amp_enabled": capture_manifest[
                 "source_amp_enabled"
             ],
@@ -976,8 +1029,10 @@ def main():
                     "physical_axis_sec",
                 }
             },
-            "decode_compute_dtype": "float32",
-            "decode_compute_device": "cpu",
+            "score_sort_dtype": str(arrays["cls_scores"].dtype),
+            "score_sort_device": "cpu",
+            "geometry_compute_dtype": "float32",
+            "geometry_compute_device": "cpu",
         },
         "provenance": provenance,
         "mode_reports": mode_reports,

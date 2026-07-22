@@ -680,12 +680,15 @@ def validate_suite(run_root):
             == capture_manifest.get("source_amp_enabled")
             and numeric_precision.get("source_tensor_dtypes")
             == capture_manifest.get("source_tensor_dtypes")
-            and numeric_precision.get("decode_compute_dtype") == "float32"
-            and numeric_precision.get("decode_compute_device") == "cpu"
-            and set(
-                numeric_precision.get("stored_tensor_dtypes", {}).values()
+            and numeric_precision.get("numeric_semantics_version")
+            == capture_manifest.get("numeric_semantics_version")
+            and numeric_precision.get("score_sort_dtype")
+            == capture_manifest["array_contract"]["cls_scores"].get(
+                "stored_numpy_dtype"
             )
-            == {"float32"},
+            and numeric_precision.get("score_sort_device") == "cpu"
+            and numeric_precision.get("geometry_compute_dtype") == "float32"
+            and numeric_precision.get("geometry_compute_device") == "cpu",
             f"{variant} numeric precision provenance mismatch",
         )
         numeric_precision_contracts[variant] = numeric_precision
