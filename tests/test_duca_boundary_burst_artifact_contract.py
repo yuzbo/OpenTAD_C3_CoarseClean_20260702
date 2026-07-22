@@ -237,6 +237,66 @@ def test_r0_selected_family_has_one_exact_p0_and_official_route(
     assert routing["simple_delta_role"] == "no_training_same_feasible_control"
 
 
+def test_family_manifest_binds_distinct_r0_producer_and_p0_commits(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    producer_commit = "a" * 40
+    consumer_commit = "b" * 40
+    summary = tmp_path / "r0_summary.json"
+    _write_json(
+        summary,
+        {
+            "schema": "focused_r0_summary_v1",
+            "git_commit": producer_commit,
+            "selected_weakest_projected_family": "R2Q3_privileged_boundary_burst",
+        },
+    )
+
+    def replay_focused_r0(
+        *, summary_path: str | Path, summary_sha256: str, expected_commit: str
+    ) -> dict:
+        path = Path(summary_path).resolve()
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if _sha256(path) != summary_sha256 or payload["git_commit"] != expected_commit:
+            raise RuntimeError("sealed R0 producer drift")
+        return {
+            "schema": "duca_r0_headroom_gate_v2",
+            "ok": True,
+            "git_commit": expected_commit,
+            "r0_summary_path": str(path),
+            "r0_summary_sha256": summary_sha256,
+            "selected_weakest_projected_family": payload[
+                "selected_weakest_projected_family"
+            ],
+            "eligible_projected_families": [
+                payload["selected_weakest_projected_family"]
+            ],
+            "test_subset_consumed": False,
+        }
+
+    monkeypatch.setattr(
+        selector_module, "validate_r0_headroom_summary", replay_focused_r0
+    )
+    manifest_path = tmp_path / "family_routing_manifest.json"
+    create_family_routing_manifest(
+        summary_path=summary,
+        summary_sha256=_sha256(summary),
+        expected_commit=consumer_commit,
+        r0_expected_commit=producer_commit,
+        output_path=manifest_path,
+    )
+    manifest = validate_family_routing_manifest(
+        manifest_path=manifest_path,
+        manifest_sha256=_sha256(manifest_path),
+        expected_commit=consumer_commit,
+    )
+
+    assert manifest["git_commit"] == consumer_commit
+    assert manifest["r0_producer_commit"] == producer_commit
+    assert manifest["r0_headroom_gate"]["git_commit"] == producer_commit
+
+
 @pytest.mark.parametrize("wrong_family", ("Gaussian", "R2Q3", "burst_r4q5"))
 def test_family_routing_rejects_wrong_or_unprojected_family(
     wrong_family: str,
@@ -1247,6 +1307,8 @@ def test_p0_blocks_nonpositive_r0_headroom_before_training() -> None:
     assert "validate_r0_headroom_summary" in source
     assert "create_family_routing_manifest" in source
     assert "R0_SUMMARY_SHA256_FILE" in source
+    assert 'R0_PRODUCER_COMMIT="${DUCA_R0_PRODUCER_COMMIT:-${EXPECTED_COMMIT}}"' in source
+    assert "r0_expected_commit=sys.argv[4]" in source
 
 
 def test_artifact_consumers_use_upstream_sha256_seals() -> None:

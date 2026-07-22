@@ -522,16 +522,20 @@ def create_family_routing_manifest(
     summary_path: str | Path,
     summary_sha256: str,
     expected_commit: str,
+    r0_expected_commit: str | None = None,
     output_path: str | Path,
 ) -> dict[str, Any]:
     """Freeze the only learned family allowed to gate P0 and matched R3."""
 
     if len(expected_commit) != 40:
         raise ValueError("expected commit must be exact")
+    producer_commit = r0_expected_commit or expected_commit
+    if len(producer_commit) != 40:
+        raise ValueError("R0 producer commit must be exact")
     r0_gate = validate_r0_headroom_summary(
         summary_path=summary_path,
         summary_sha256=summary_sha256,
-        expected_commit=expected_commit,
+        expected_commit=producer_commit,
     )
     routing = _family_routing_contract(
         r0_gate.get("selected_weakest_projected_family")
@@ -540,6 +544,7 @@ def create_family_routing_manifest(
         "schema": FAMILY_MANIFEST_SCHEMA,
         "ok": True,
         "git_commit": expected_commit,
+        "r0_producer_commit": producer_commit,
         "r0_headroom_gate": r0_gate,
         "family_routing": routing,
         "test_subset_consumed": False,
@@ -579,10 +584,13 @@ def validate_family_routing_manifest(
     recorded_r0 = payload.get("r0_headroom_gate")
     if not isinstance(recorded_r0, Mapping):
         raise RuntimeError("boundary-burst family manifest lacks its R0 binding")
+    producer_commit = str(payload.get("r0_producer_commit", expected_commit))
+    if len(producer_commit) != 40:
+        raise RuntimeError("boundary-burst family manifest R0 producer commit drift")
     reopened_r0 = validate_r0_headroom_summary(
         summary_path=recorded_r0.get("r0_summary_path", ""),
         summary_sha256=str(recorded_r0.get("r0_summary_sha256", "")),
-        expected_commit=expected_commit,
+        expected_commit=producer_commit,
     )
     mismatch = _first_mismatch(recorded_r0, reopened_r0, path="r0_headroom_gate")
     if mismatch is not None:
@@ -602,6 +610,7 @@ def validate_family_routing_manifest(
         "sha256": str(manifest_sha256),
         "schema": FAMILY_MANIFEST_SCHEMA,
         "git_commit": expected_commit,
+        "r0_producer_commit": producer_commit,
         "ok": True,
         "r0_headroom_gate": reopened_r0,
         "family_routing": routing,

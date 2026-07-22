@@ -11,6 +11,7 @@ source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 RUN_ROOT="${RUN_ROOT:-}"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
+R0_PRODUCER_COMMIT="${DUCA_R0_PRODUCER_COMMIT:-${EXPECTED_COMMIT}}"
 SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
 SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
 R0_SUMMARY="${DUCA_R0_SUMMARY_JSON:-${RUN_ROOT}/r0_holdout_map/r0_summary.json}"
@@ -22,6 +23,7 @@ FROZEN_PRETRAIN_SHA256="${DUCA_ADATAD_PRETRAIN_SHA256:-}"
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm GPU is required"
 [[ -d "${RUN_ROOT}" ]] || fail "prepared RUN_ROOT is required"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
+[[ "${R0_PRODUCER_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact R0 producer commit is required"
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail "commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "clean tree required"
 "${PYTHON}" - "${ADATAD_PRETRAIN_PATH}" "${FROZEN_PRETRAIN_PATH}" \
@@ -50,7 +52,7 @@ export DUCA_FRONTEND_HOLDOUT_BLOCK_LIST="${RUN_ROOT}/frontend_split/frontend_hol
 [[ -f "${R0_SUMMARY_SHA256_FILE}" ]] || fail "R0 summary SHA256 seal is missing"
 IFS= read -r R0_SUMMARY_SHA256 < "${R0_SUMMARY_SHA256_FILE}"
 [[ "${R0_SUMMARY_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "invalid R0 summary SHA256 seal"
-"${PYTHON}" - "${R0_SUMMARY}" "${R0_SUMMARY_SHA256}" "${EXPECTED_COMMIT}" \
+"${PYTHON}" - "${R0_SUMMARY}" "${R0_SUMMARY_SHA256}" "${R0_PRODUCER_COMMIT}" \
   "${RUN_ROOT}/r0_headroom_gate.json" <<'PY'
 import sys
 from pathlib import Path
@@ -70,7 +72,7 @@ _atomic_write_json(
 )
 PY
 "${PYTHON}" - "${R0_SUMMARY}" "${R0_SUMMARY_SHA256}" "${EXPECTED_COMMIT}" \
-  "${FAMILY_MANIFEST}" <<'PY'
+  "${R0_PRODUCER_COMMIT}" "${FAMILY_MANIFEST}" <<'PY'
 import sys
 from tools.bata.select_duca_boundary_burst_candidates import (
     create_family_routing_manifest,
@@ -80,7 +82,8 @@ create_family_routing_manifest(
     summary_path=sys.argv[1],
     summary_sha256=sys.argv[2],
     expected_commit=sys.argv[3],
-    output_path=sys.argv[4],
+    r0_expected_commit=sys.argv[4],
+    output_path=sys.argv[5],
 )
 PY
 FAMILY_MANIFEST_SHA256="$(sha256sum "${FAMILY_MANIFEST}" | awk '{print $1}')"
