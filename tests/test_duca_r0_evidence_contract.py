@@ -214,7 +214,7 @@ def _finalize(tmp_path: Path, fixture: dict) -> tuple[dict, Path]:
     return summary, summary_path
 
 
-def test_r0_producer_to_consumer_reexecutes_official_evaluator(tmp_path: Path) -> None:
+def test_r0_consumer_revalidates_sealed_official_bootstrap(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     summary, summary_path = _finalize(tmp_path, fixture)
 
@@ -226,7 +226,34 @@ def test_r0_producer_to_consumer_reexecutes_official_evaluator(tmp_path: Path) -
     )
     assert gate["ok"]
     assert gate["official_evaluator_reexecuted_per_resample"]
+    assert gate["consumer_revalidated_sealed_bootstrap_without_reexecution"]
     assert gate["selected_weakest_projected_family"] == FAMILY_ORDER[1]
+
+
+def test_r0_consumer_rejects_resealed_bootstrap_arithmetic_drift(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    summary, summary_path = _finalize(tmp_path, fixture)
+    bootstrap_path = Path(summary["bootstrap_path"])
+    bootstrap = json.loads(bootstrap_path.read_text(encoding="utf-8"))
+    bootstrap["comparisons"][FAMILY_ORDER[1]]["headroom_ci_lower"] += 0.01
+    bootstrap.pop("bootstrap_sha256")
+    bootstrap["bootstrap_sha256"] = canonical_sha256(bootstrap)
+    _write_json(bootstrap_path, bootstrap)
+
+    summary["bootstrap_file_sha256"] = sha256_file(bootstrap_path)
+    summary["bootstrap_self_sha256"] = bootstrap["bootstrap_sha256"]
+    summary.pop("summary_sha256")
+    summary["summary_sha256"] = canonical_sha256(summary)
+    _write_json(summary_path, summary)
+
+    with pytest.raises(RuntimeError, match="bootstrap arithmetic mismatch"):
+        revalidate_r0_summary(
+            summary_path=summary_path,
+            summary_file_sha256=sha256_file(summary_path),
+            expected_commit="a" * 40,
+        )
 
 
 def test_r0_rejects_point_gain_when_bootstrap_lower_bound_fails(tmp_path: Path) -> None:

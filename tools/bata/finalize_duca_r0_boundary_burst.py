@@ -506,7 +506,15 @@ def revalidate_r0_summary(
     summary_file_sha256: str,
     expected_commit: str,
 ) -> dict[str, Any]:
-    """Fail-closed P0 consumer: reopen and recompute every R0 source."""
+    """Fail-closed P0 consumer for the sealed R0 producer artifact.
+
+    The producer already executes the official evaluator for every bootstrap
+    resample.  Repeating all 4,000 evaluator calls in every downstream
+    consumer does not strengthen the sealed evidence and used to delay P0 by
+    hours.  Consumers instead reopen the source predictions/evaluations,
+    recompute each family's official point estimate, and recompute all
+    bootstrap differences and quantiles from the hashed producer samples.
+    """
 
     source = _require_file(summary_path, summary_file_sha256, label="R0 summary")
     summary = json.loads(source.read_text(encoding="utf-8"))
@@ -658,33 +666,63 @@ def revalidate_r0_summary(
     evaluation_config = json.loads(
         Path(reopened[0]["evaluation_path"]).read_text(encoding="utf-8")
     )["evaluation_config"]
-    recomputed_bootstrap = bootstrap_official_map_differences(
-        {row["family"]: row["prediction_path"] for row in reopened},
-        evaluation_config,
-        baseline_family=FAMILY_ORDER[0],
-        expected_video_ids=holdout_videos,
-        expected_subset="training",
-        samples=int(bootstrap["samples"]),
-        seed=int(bootstrap["seed"]),
-        confidence=float(bootstrap["confidence"]),
-    )
-    recomputed_bootstrap.update(
-        {
-            "git_commit": expected_commit,
-            "split_manifest_path": split["manifest_path"],
-            "split_manifest_sha256": summary["split_manifest_sha256"],
-            "assignment_sha256": split["assignment_sha256"],
-            "prediction_sha256_by_family": {
-                row["family"]: row["prediction_sha256"] for row in reopened
-            },
-            "test_subset_consumed": False,
+    if (
+        bootstrap.get("official_evaluator_reexecuted_per_resample") is not True
+        or bootstrap.get("paired_video_cluster_bootstrap") is not True
+        or bootstrap.get("baseline_family") != FAMILY_ORDER[0]
+        or tuple(bootstrap.get("family_order", ())) != FAMILY_ORDER
+        or tuple(bootstrap.get("video_ids", ())) != holdout_videos
+        or bootstrap.get("evaluation_config") != evaluation_config
+        or bootstrap.get("evaluation_config_sha256")
+        != canonical_sha256(evaluation_config)
+        or bootstrap.get("git_commit") != expected_commit
+        or bootstrap.get("split_manifest_path") != split["manifest_path"]
+        or bootstrap.get("split_manifest_sha256")
+        != summary["split_manifest_sha256"]
+        or bootstrap.get("assignment_sha256") != split["assignment_sha256"]
+        or bootstrap.get("prediction_sha256_by_family")
+        != {row["family"]: row["prediction_sha256"] for row in reopened}
+        or bootstrap.get("test_subset_consumed") is not False
+    ):
+        raise RuntimeError("R0 sealed bootstrap identity mismatch")
+
+    import numpy as np
+
+    samples = int(bootstrap["samples"])
+    sampled = bootstrap.get("sampled_average_mAP")
+    comparisons = bootstrap.get("comparisons")
+    if (
+        not isinstance(sampled, Mapping)
+        or tuple(sampled) != FAMILY_ORDER
+        or not isinstance(comparisons, Mapping)
+        or tuple(comparisons) != FAMILY_ORDER[1:]
+    ):
+        raise RuntimeError("R0 sealed bootstrap family order mismatch")
+    arrays: dict[str, Any] = {}
+    for family in FAMILY_ORDER:
+        values = np.asarray(sampled[family], dtype=np.float64)
+        if (
+            values.shape != (samples,)
+            or not np.isfinite(values).all()
+            or bool((values < 0.0).any())
+            or bool((values > 1.0).any())
+        ):
+            raise RuntimeError(f"R0 sealed bootstrap samples are invalid for {family}")
+        arrays[family] = values
+    alpha = (1.0 - float(bootstrap["confidence"])) / 2.0
+    baseline = arrays[FAMILY_ORDER[0]]
+    for family in FAMILY_ORDER[1:]:
+        delta = arrays[family] - baseline
+        expected_comparison = {
+            "headroom_samples": [float(value) for value in delta],
+            "headroom_mean": float(delta.mean()),
+            "headroom_ci_lower": float(np.quantile(delta, alpha)),
+            "headroom_ci_upper": float(np.quantile(delta, 1.0 - alpha)),
         }
-    )
-    recomputed_bootstrap["bootstrap_sha256"] = canonical_sha256(
-        recomputed_bootstrap
-    )
-    if bootstrap != recomputed_bootstrap:
-        raise RuntimeError("R0 bootstrap official-evaluator recomputation mismatch")
+        if comparisons.get(family) != expected_comparison:
+            raise RuntimeError(
+                f"R0 sealed bootstrap arithmetic mismatch for {family}"
+            )
 
     required_pp = float(summary["required_headroom_percentage_points"])
     required_fraction = float(summary["required_headroom_average_mAP_fraction"])
@@ -738,6 +776,7 @@ def revalidate_r0_summary(
         "average_mAP": {row["family"]: row["average_mAP"] for row in reopened},
         "bootstrap_self_sha256": bootstrap["bootstrap_sha256"],
         "official_evaluator_reexecuted_per_resample": True,
+        "consumer_revalidated_sealed_bootstrap_without_reexecution": True,
         "test_subset_consumed": False,
         "paper_claim_allowed": False,
     }
