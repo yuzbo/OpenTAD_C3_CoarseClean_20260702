@@ -195,7 +195,12 @@ def test_r5_runtime_binding_reopens_matrix_gate_and_learned_frontend(
         runtime_config_sha256="e" * 64,
         evaluation_annotation_path=annotation,
         evaluation_class_map_path=class_map,
-        evaluation_config={},
+        evaluation_config={
+            "type": "mAP",
+            "ground_truth_filename": str(annotation),
+            "subset": "validation",
+            "tiou_thresholds": [0.3, 0.4, 0.5, 0.6, 0.7],
+        },
         runtime_pretrain_path=pretrain,
         selector_initialization={
             "enabled": True,
