@@ -330,7 +330,7 @@ def test_boundary_burst_adapter_preserves_mandatory_group_in_final_hard_position
     mandatory = state["mandatory_boundary_mask"]
 
     assert int(mandatory.sum().item()) == 3
-    assert torch.all(state["selected_mask"] | ~mandatory)
+    assert torch.all(state["grid"].selected_mask | ~mandatory)
     assert torch.all(state["soft_coverage"][mandatory] > 0.999)
     assert state["mandatory_boundary_group_count"] == [1]
 
