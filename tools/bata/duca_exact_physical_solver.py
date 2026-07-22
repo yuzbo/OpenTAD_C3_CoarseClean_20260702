@@ -19,6 +19,9 @@ from tools.bata.duca_allocation_families import (
 )
 
 
+_POSITION_LEX_BLOCK_SIZE = 20
+
+
 @dataclass(frozen=True)
 class QuantizedScores:
     values: tuple[int, ...]
@@ -47,7 +50,7 @@ class GroundTruthObjectiveSpec:
     boundary_radii: tuple[int, ...] = (0, 1, 2, 4)
     short_action_max_length: float = 16.0
     distance_scale: int = 1000
-    lex_block_size: int = 20
+    lex_block_size: int = _POSITION_LEX_BLOCK_SIZE
     position_tie_break: bool = True
 
     def __post_init__(self) -> None:
@@ -96,7 +99,9 @@ class BoundaryBurstSolveResult:
     uniform_overlap: int
     max_unselected_hole: int
     solver_status: str = "OPTIMAL"
-    solver_identity: str = "duca_r0_exact_quota_physical_milp_v1"
+    solver_identity: str = (
+        "duca_r0_exact_quota_physical_milp_v2_position_lexicographic"
+    )
     solver_message: str = ""
     mip_gap: float | None = 0.0
     exact: bool = True
@@ -235,61 +240,140 @@ def _solve_boundary_burst_exact_quota_milp(
         shape=(len(lower), next_variable),
         dtype=float,
     )
-    constraints = LinearConstraint(
-        matrix,
-        np.asarray(lower, dtype=float),
-        np.asarray(upper, dtype=float),
+    constraints = [
+        LinearConstraint(
+            matrix,
+            np.asarray(lower, dtype=float),
+            np.asarray(upper, dtype=float),
+        )
+    ]
+    integrality = np.ones(next_variable, dtype=np.uint8)
+    bounds = Bounds(
+        np.zeros(next_variable, dtype=float),
+        np.ones(next_variable, dtype=float),
     )
     uniform = set(exact_uniform_positions(valid_len, requested_budget))
-    primary_scale = valid_len * valid_len + 1
-    objective = np.zeros(next_variable, dtype=float)
-    for position in range(valid_len):
-        objective[position] = -(
-            (primary_scale if position in uniform else 0)
-            + valid_len
-            - position
+    pinned_objectives: list[tuple[str, Mapping[int, int], int]] = []
+    last_result: Any | None = None
+    last_integer_values: Any | None = None
+    last_mip_gap: float | None = None
+
+    def solve_and_pin(
+        name: str,
+        coefficient: Mapping[int, int],
+        *,
+        maximize: bool,
+    ) -> int:
+        nonlocal last_integer_values, last_mip_gap, last_result
+        objective = np.zeros(next_variable, dtype=float)
+        for variable, value in coefficient.items():
+            objective[int(variable)] = -int(value) if maximize else int(value)
+        result = milp(
+            c=objective,
+            integrality=integrality,
+            bounds=bounds,
+            constraints=constraints,
+            options={"presolve": True, "mip_rel_gap": 0.0},
         )
-    result = milp(
-        c=objective,
-        integrality=np.ones(next_variable, dtype=np.uint8),
-        bounds=Bounds(
-            np.zeros(next_variable, dtype=float),
-            np.ones(next_variable, dtype=float),
-        ),
-        constraints=constraints,
-        options={"presolve": True, "mip_rel_gap": 0.0},
+        if result.status != 0 or result.x is None:
+            raise AllocationContractError(
+                f"boundary-burst exact quota MILP objective {name} was not OPTIMAL: "
+                f"{getattr(result, 'message', 'unknown HiGHS failure')}"
+            )
+        mip_gap = float(getattr(result, "mip_gap", math.inf))
+        if not math.isfinite(mip_gap) or mip_gap != 0.0:
+            raise AllocationContractError(
+                f"boundary-burst exact quota MILP objective {name} "
+                "did not prove a zero MIP gap"
+            )
+        values = np.asarray(result.x, dtype=float)
+        if values.shape != (next_variable,) or not np.all(np.isfinite(values)):
+            raise AllocationContractError(
+                f"boundary-burst exact quota MILP objective {name} "
+                "returned invalid variables"
+            )
+        integer_values = np.rint(values)
+        if float(np.max(np.abs(values - integer_values), initial=0.0)) > 1.0e-6:
+            raise AllocationContractError(
+                f"boundary-burst exact quota MILP objective {name} "
+                "violates integrality"
+            )
+        integer_value = sum(
+            int(value) * int(integer_values[int(variable)])
+            for variable, value in coefficient.items()
+        )
+        coefficient_items = tuple(coefficient.items())
+        columns = np.fromiter(
+            (variable for variable, _ in coefficient_items),
+            dtype=int,
+        )
+        pin_values = np.fromiter(
+            (value for _, value in coefficient_items),
+            dtype=float,
+        )
+        pin_row = csr_matrix(
+            (pin_values, (np.zeros(len(columns), dtype=int), columns)),
+            shape=(1, next_variable),
+        )
+        constraints.append(
+            LinearConstraint(pin_row, [integer_value], [integer_value])
+        )
+        pinned_objectives.append((name, coefficient, integer_value))
+        last_result = result
+        last_integer_values = integer_values
+        last_mip_gap = mip_gap
+        return integer_value
+
+    solve_and_pin(
+        "exact_uniform_overlap",
+        {position: 1 for position in uniform},
+        maximize=True,
     )
-    if result.status != 0 or result.x is None:
-        raise AllocationContractError(
-            "boundary-burst exact quota MILP was not OPTIMAL: "
-            f"{getattr(result, 'message', 'unknown HiGHS failure')}"
+    solve_and_pin(
+        "selected_position_sum",
+        {position: position for position in range(valid_len)},
+        maximize=False,
+    )
+    for block_start in range(0, valid_len, _POSITION_LEX_BLOCK_SIZE):
+        block_end = min(valid_len, block_start + _POSITION_LEX_BLOCK_SIZE)
+        solve_and_pin(
+            f"lex_block_{block_start:04d}_{block_end:04d}",
+            {
+                position: 1 << (block_end - position - 1)
+                for position in range(block_start, block_end)
+            },
+            maximize=True,
         )
-    mip_gap = float(getattr(result, "mip_gap", math.inf))
-    if not math.isfinite(mip_gap) or mip_gap != 0.0:
-        raise AllocationContractError(
-            "boundary-burst exact quota MILP did not prove a zero MIP gap"
-        )
-    values = np.asarray(result.x, dtype=float)
-    rounded = np.rint(values)
-    if values.shape != (next_variable,) or not np.all(np.isfinite(values)):
-        raise AllocationContractError(
-            "boundary-burst exact quota MILP returned invalid variables"
-        )
-    if float(np.max(np.abs(values - rounded), initial=0.0)) > 1.0e-6:
-        raise AllocationContractError(
-            "boundary-burst exact quota MILP violates integrality"
-        )
+
+    if (
+        last_result is None
+        or last_integer_values is None
+        or last_mip_gap is None
+    ):
+        raise RuntimeError("boundary-burst exact quota MILP completed without a result")
     positions = tuple(
-        position for position in range(valid_len) if int(rounded[position]) == 1
+        position
+        for position in range(valid_len)
+        if int(last_integer_values[position]) == 1
     )
     if len(positions) != budget:
         raise AllocationContractError(
             "boundary-burst exact quota MILP terminal solution violates exact-K"
         )
+    for name, coefficient, expected_value in pinned_objectives:
+        actual_value = sum(
+            int(value) * int(last_integer_values[int(variable)])
+            for variable, value in coefficient.items()
+        )
+        if actual_value != expected_value:
+            raise AllocationContractError(
+                "boundary-burst exact quota MILP terminal solution violates "
+                f"pinned objective {name}"
+            )
     return _BoundaryBurstMilpResult(
         positions=positions,
-        solver_message=str(result.message),
-        mip_gap=mip_gap,
+        solver_message=str(last_result.message),
+        mip_gap=last_mip_gap,
     )
 
 
