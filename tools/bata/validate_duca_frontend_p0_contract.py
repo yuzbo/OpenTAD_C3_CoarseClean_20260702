@@ -112,6 +112,16 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         selector.actionness_source_cfg.spatial_norm == "groupnorm",
         "the spatial stem must use padding-invariant GroupNorm",
     )
+    official_asformer_sha256 = str(
+        cfg.duca_transition_only_contract.get(
+            "official_asformer_source_normalized_lf_sha256", ""
+        )
+    ).lower()
+    _require(
+        len(official_asformer_sha256) == 64
+        and all(char in "0123456789abcdef" for char in official_asformer_sha256),
+        "the official ASFormer normalized-LF SHA256 must be declared",
+    )
     transition_objective = str(selector.get("transition_objective", "gaussian_mass"))
     _require(
         transition_objective in {"gaussian_mass", "boundary_burst"},
@@ -217,6 +227,9 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
             else None
         ),
         "spatial_norm": str(selector.actionness_source_cfg.spatial_norm),
+        "official_asformer_source_normalized_lf_sha256": (
+            official_asformer_sha256
+        ),
         "optimizer": {
             "type": str(cfg.optimizer.type),
             "paramwise": bool(cfg.optimizer.paramwise),

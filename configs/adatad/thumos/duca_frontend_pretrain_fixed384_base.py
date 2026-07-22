@@ -40,6 +40,9 @@ duca_transition_only_contract = dict(
     actionness_reduction="class_balanced_positive_negative_means",
     transition_supervision_updates_coarse_representation=False,
     spatial_stem_normalization="groupnorm_padding_invariant",
+    official_asformer_source_normalized_lf_sha256=(
+        "e075ee4825a201cfe324d5fbfb1332c0800f532e85b9d3809f6ca5180381c600"
+    ),
 )
 
 

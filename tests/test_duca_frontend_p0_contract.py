@@ -60,6 +60,9 @@ def test_frontend_variants_satisfy_strict_p0_contract(
         if key not in payload["active_losses"]
     )
     assert payload["spatial_norm"] == "groupnorm"
+    assert payload["official_asformer_source_normalized_lf_sha256"] == (
+        "e075ee4825a201cfe324d5fbfb1332c0800f532e85b9d3809f6ca5180381c600"
+    )
     assert payload["auxiliary_hidden_gradient_scale"] == 0.0
     assert payload["optimizer"]["global_gradient_clipping_enabled"] is False
     assert payload["component_lrs"] == expected_lrs
