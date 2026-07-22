@@ -306,6 +306,10 @@ def validate_score_dtype_contract(scores, contract):
         "score ordering contract missing",
     )
     require(
+        scores.dtype == expected,
+        "cls_scores must preserve the source dtype",
+    )
+    require(
         contract.get("stored_numpy_dtype") == str(scores.dtype),
         "stored score dtype mismatch",
     )
@@ -317,7 +321,6 @@ def validate_score_dtype_contract(scores, contract):
         contract.get("allowed_casts_before_topk") == [],
         "score casts before top-k are forbidden",
     )
-    require(scores.dtype == expected, "cls_scores must preserve the source dtype")
 
 
 def validate_array_semantics(arrays, manifest):
