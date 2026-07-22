@@ -20,6 +20,7 @@ from tools.bata.aggregate_duca_boundary_burst_results import (
 from tools.bata.select_duca_boundary_burst_candidates import (
     FULL_MODEL_ARTIFACT_SCHEMA,
     FULL_MODEL_GATE_SCHEMA,
+    PREREGISTERED_PROJECTED_FAMILY,
     R0_PROJECTED_FAMILY_ROUTES,
     UNIFORM_OFFICIAL_VARIANT,
     _family_routing_contract,
@@ -121,6 +122,7 @@ def test_candidate_selector_reopens_split_reference_hashes(tmp_path: Path) -> No
             expected_commit="a" * 40,
             split_manifest=manifest,
             split_manifest_sha256=_sha256(manifest),
+            preregistered_family=PREREGISTERED_PROJECTED_FAMILY,
             family_manifest_path=tmp_path / "missing_family_manifest.json",
             family_manifest_sha256="0" * 64,
             receipt_paths=[],
@@ -249,7 +251,7 @@ def test_family_manifest_binds_distinct_r0_producer_and_p0_commits(
         {
             "schema": "focused_r0_summary_v1",
             "git_commit": producer_commit,
-            "selected_weakest_projected_family": "R2Q3_privileged_boundary_burst",
+            "selected_weakest_projected_family": "R4Q5_privileged_boundary_burst",
         },
     )
 
@@ -283,6 +285,7 @@ def test_family_manifest_binds_distinct_r0_producer_and_p0_commits(
         summary_path=summary,
         summary_sha256=_sha256(summary),
         expected_commit=consumer_commit,
+        preregistered_family=PREREGISTERED_PROJECTED_FAMILY,
         r0_expected_commit=producer_commit,
         output_path=manifest_path,
     )
@@ -295,13 +298,29 @@ def test_family_manifest_binds_distinct_r0_producer_and_p0_commits(
     assert manifest["git_commit"] == consumer_commit
     assert manifest["r0_producer_commit"] == producer_commit
     assert manifest["r0_headroom_gate"]["git_commit"] == producer_commit
+    assert (
+        manifest["r0_diagnostic_provenance"][
+            "reported_selected_weakest_projected_family"
+        ]
+        == "R4Q5_privileged_boundary_burst"
+    )
+    assert manifest["r0_diagnostic_provenance"]["routing_authority"] is False
+    assert (
+        manifest["family_routing"]["preregistered_projected_family"]
+        == PREREGISTERED_PROJECTED_FAMILY
+    )
+    assert manifest["family_routing"]["selected_p0_variant"] == "burst_r2q3"
+    assert (
+        manifest["family_routing"]["selected_official60_variant"]
+        == "boundary_burst_r2q3_g0"
+    )
 
 
 @pytest.mark.parametrize("wrong_family", ("Gaussian", "R2Q3", "burst_r4q5"))
 def test_family_routing_rejects_wrong_or_unprojected_family(
     wrong_family: str,
 ) -> None:
-    with pytest.raises(RuntimeError, match="unsupported R0 projected family"):
+    with pytest.raises(RuntimeError, match="unsupported projected family"):
         _family_routing_contract(wrong_family)
 
 
@@ -361,6 +380,7 @@ def _terminal_suite(
         summary_path=r0_summary,
         summary_sha256=_sha256(r0_summary),
         expected_commit=commit,
+        preregistered_family=PREREGISTERED_PROJECTED_FAMILY,
         output_path=family_manifest_path,
     )
     family_manifest = validate_family_routing_manifest(
@@ -446,10 +466,10 @@ def _terminal_suite(
     _write_json(
         decision,
         {
-            "schema": "duca_boundary_burst_frontend_decision_v1",
+            "schema": "duca_boundary_burst_frontend_decision_v2",
             "ok": True,
             "fail_closed": True,
-            "status": "GO_TO_MATCHED_U_SELECTED_G0_OFFICIAL60",
+            "status": "GO_TO_PREREGISTERED_R2Q3_P0_AND_MATCHED_OFFICIAL60",
             "git_commit": commit,
             "test_subset_consumed": False,
             "split_manifest_path": str(split_manifest.resolve()),
@@ -459,8 +479,15 @@ def _terminal_suite(
                 expected_manifest_sha256=_sha256(split_manifest),
             ),
             "family_manifest": family_manifest,
+            "preregistered_projected_family": family_manifest[
+                "preregistered_projected_family"
+            ],
+            "r0_diagnostic_provenance": family_manifest[
+                "r0_diagnostic_provenance"
+            ],
             "r0_headroom_gate": family_manifest["r0_headroom_gate"],
             "family_routing": routing,
+            "continuation_rule": routing["continuation_rule"],
             "p0_real_gate": p0_gate_binding,
             "p0_training_asformer_consumer": p0_consumer,
             "winners": {selected_p0: winner},
@@ -899,21 +926,20 @@ def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
 
 
 @pytest.mark.parametrize(
-    ("selected_family", "selected_variant"),
+    "r0_reported_family",
     (
-        ("R2Q3_privileged_boundary_burst", "boundary_burst_r2q3_g0"),
-        ("R4Q5_privileged_boundary_burst", "boundary_burst_r4q5_g0"),
+        "R2Q3_privileged_boundary_burst",
+        "R4Q5_privileged_boundary_burst",
     ),
 )
-def test_terminal_aggregate_uses_verified_evaluation_metrics(
+def test_terminal_aggregate_keeps_preregistered_r2q3_when_r0_report_differs(
     tmp_path: Path,
     monkeypatch,
-    selected_family: str,
-    selected_variant: str,
+    r0_reported_family: str,
 ) -> None:
     _stub_official_recompute(monkeypatch)
     roots, completions, completion_shas = _terminal_suite(
-        tmp_path, monkeypatch, selected_family=selected_family
+        tmp_path, monkeypatch, selected_family=r0_reported_family
     )
 
     payload = aggregate(
@@ -932,8 +958,16 @@ def test_terminal_aggregate_uses_verified_evaluation_metrics(
     )
     assert [row["variant"] for row in payload["results"]] == [
         "two_stage_exact_uniform",
-        selected_variant,
+        "boundary_burst_r2q3_g0",
     ]
+    assert (
+        payload["family_routing"]["preregistered_projected_family"]
+        == PREREGISTERED_PROJECTED_FAMILY
+    )
+    assert (
+        payload["r0_headroom_gate"]["selected_weakest_projected_family"]
+        == r0_reported_family
+    )
     written = json.loads((tmp_path / "aggregate.json").read_text(encoding="utf-8"))
     assert written == payload
     assert validate_suite_self_hash(written) == payload["suite_sha256"]
@@ -1306,6 +1340,9 @@ def test_p0_blocks_nonpositive_r0_headroom_before_training() -> None:
     assert headroom_gate < real_gate < asformer_consumer < first_variant
     assert "validate_r0_headroom_summary" in source
     assert "create_family_routing_manifest" in source
+    assert "PREREGISTERED_FAMILY" in source
+    assert "preregistered_family=sys.argv[5]" in source
+    assert '--preregistered-family "${PREREGISTERED_FAMILY}"' in source
     assert "R0_SUMMARY_SHA256_FILE" in source
     assert 'R0_PRODUCER_COMMIT="${DUCA_R0_PRODUCER_COMMIT:-${EXPECTED_COMMIT}}"' in source
     assert "r0_expected_commit=sys.argv[4]" in source

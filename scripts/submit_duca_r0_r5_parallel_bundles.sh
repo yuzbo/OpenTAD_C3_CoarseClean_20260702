@@ -20,6 +20,7 @@ DENSE_CONFIG="${DUCA_R5_DENSE_CONFIG:-}"
 DENSE_CHECKPOINT="${DUCA_R5_DENSE_CHECKPOINT:-}"
 DENSE_EVIDENCE="${DUCA_R5_DENSE_CHECKPOINT_EVIDENCE:-}"
 DENSE_TRAINED_COMMIT="${DUCA_R5_DENSE_TRAINED_COMMIT:-b3de5d8fac23d67cd9cae9c8c08bb60ba217f64f}"
+PREREGISTERED_FAMILY=R2Q3_privileged_boundary_burst
 
 [[ -n "${RUN_ROOT}" && ! -e "${RUN_ROOT}" ]] || fail "fresh RUN_ROOT is required"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "exact commit is required"
@@ -32,6 +33,9 @@ DENSE_TRAINED_COMMIT="${DUCA_R5_DENSE_TRAINED_COMMIT:-b3de5d8fac23d67cd9cae9c8c0
   || fail "dense config, checkpoint, and checkpoint evidence are required"
 [[ -f "${UNIFORM_CONFIG}" && -f "${LEARNED_CONFIG}" ]] \
   || fail "R5 source configs are missing"
+[[ -z "${DUCA_PREREGISTERED_PROJECTED_FAMILY:-}" \
+  || "${DUCA_PREREGISTERED_PROJECTED_FAMILY}" == "${PREREGISTERED_FAMILY}" ]] \
+  || fail "this deployment preregisters only R2Q3"
 [[ "$(basename "${LEARNED_CONFIG}")" == \
    duca_boundary_burst_g1_protected_fixed384_official60.py ]] \
   || fail "formal self-contained R5 currently binds the existing R2Q3 G1 config"
@@ -129,6 +133,7 @@ export DUCA_R0_CHECKPOINT='${R0_CHECKPOINT}'
 export DUCA_R0_CHECKPOINT_SHA256='${R0_CHECKPOINT_SHA256}'
 export DUCA_R0_CHECKPOINT_EPOCH='${R0_CHECKPOINT_EPOCH}'
 export DUCA_R0_BOOTSTRAP_WORKERS=8
+export DUCA_PREREGISTERED_PROJECTED_FAMILY='${PREREGISTERED_FAMILY}'
 bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh
 EOF
   bash -n "${file}"
@@ -178,6 +183,13 @@ atomic_write_json(Path(output).resolve(), {
     ],
     "dependency_null_bundle_count": 5,
     "aggregate_is_only_afterok_job": True,
+    "preregistered_projected_family": "R2Q3_privileged_boundary_burst",
+    "family_routing_source": "preregistered_fixed_candidate",
+    "r0_role": "detector_seen_training_internal_non_routing_diagnostic",
+    "r4_r5_continuation_rule": (
+        "official60_hard_adapted_r2q3_g0_average_mAP_strictly_greater_than_"
+        "exact_uniform"
+    ),
     "r5_cell_count": 24,
     "r5_coverage": coverage,
     "source_configs": {

@@ -67,6 +67,22 @@ def test_worker_rebuilds_current_commit_bootstrap_inside_r4_and_r5():
     assert "aggregate_duca_boundary_burst_results" in text
     assert "run_duca_boundary_burst_hard_swap_alignment_gpu1.sh" in text
     assert "current-commit P0, U/G0, terminal, alignment" in text
+    assert "resolve_preregistered_route" in text
+    assert "DUCA_PREREGISTERED_PROJECTED_FAMILY" in text
+    assert 'PREREGISTERED_FAMILY=R2Q3_privileged_boundary_burst' in text
+    assert '"schema": "duca_current_commit_bootstrap_v2"' in text
+    assert "was not selected by current-commit R0" not in text
+    assert "current-commit R0 selected another family" not in text
+
+
+def test_r4_r5_continue_only_after_official60_g0_beats_exact_uniform():
+    worker = _text(WORKER)
+    alignment = _text(
+        ROOT / "tools/bata/duca_boundary_burst_hard_swap_alignment.py"
+    )
+    assert "aggregate_duca_boundary_burst_results" in worker
+    assert "run_duca_boundary_burst_hard_swap_alignment_gpu1.sh" in worker
+    assert '_require(selected_map > uniform_map, "G0 must beat U before R4")' in alignment
 
 
 def test_r2_r3_factorial_arms_keep_p0_gate_official60_inside_each_child():
@@ -89,7 +105,7 @@ def test_r2_r3_factorial_arms_keep_p0_gate_official60_inside_each_child():
         assert config in independent
 
 
-def test_r5_covers_exactly_four_groups_of_six_cells_and_all_costs():
+def test_r5_covers_exactly_four_groups_of_six_cells_and_same_backend_costs():
     submitter = _text(SUBMITTER)
     worker = _text(WORKER)
     assert '"r5_cell_count": 24' in submitter
@@ -102,9 +118,12 @@ def test_r5_covers_exactly_four_groups_of_six_cells_and_all_costs():
     ):
         assert group in worker
     assert '[[ "${count}" == 6 ]]' in worker
-    assert 'if [[ "${seed}" == 3407 ]]' in worker
+    assert 'if [[ "${seed}" == 3407 && "${backend}" == actionformer ]]' in worker
     assert "cost_dense_adatad_k768" not in worker
-    assert "all 24 R5 cells and all eight paired candidate/dense cost profiles completed" in worker
+    assert (
+        "all 24 R5 cells and four paired ActionFormer candidate/dense cost profiles completed"
+        in worker
+    )
 
 
 def test_parallel_sources_bind_final_head_bilateral_and_hidden_gradient_contract():
@@ -117,9 +136,11 @@ def test_parallel_sources_bind_final_head_bilateral_and_hidden_gradient_contract
     )
     assert "duca_boundary_burst_g1_protected_fixed384_official60.py" in submitter
     assert "boundary_burst_require_bilateral_offsets=True" in p0
+    assert "boundary_burst_require_global_mandatory_groups=True" in p0
     assert 'hard_global_burst_support="mandatory_group_constrained_exact_k_max_hole"' in p0
     assert "auxiliary_hidden_gradient_scale=0.25" in p0
     assert "boundary_burst_require_bilateral_offsets=True" in g0
+    assert "boundary_burst_require_global_mandatory_groups=True" in g0
     assert 'hard_global_burst_support="mandatory_group_constrained_exact_k_max_hole"' in g0
 
 

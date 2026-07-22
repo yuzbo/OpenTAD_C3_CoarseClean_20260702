@@ -28,6 +28,7 @@ def _selector(
     budget: int = 4,
     transition_objective: str = "gaussian_mass",
     require_bilateral_burst: bool = False,
+    require_global_mandatory_burst: bool = False,
 ) -> DucaOnlineFrameSelector:
     uses_structured_policy = (
         selector_variant == "transition_only" or acquisition_policy == "global_structured_topk"
@@ -54,6 +55,9 @@ def _selector(
         boundary_burst_budget_fraction=0.5,
         boundary_burst_context_weight=0.05,
         boundary_burst_require_bilateral_offsets=require_bilateral_burst,
+        boundary_burst_require_global_mandatory_groups=(
+            require_global_mandatory_burst
+        ),
         profile_runtime=True,
         actionness_source_cfg={
             "type": "C3CoarseProbeActionnessSource",
@@ -309,6 +313,72 @@ def test_structured_surrogate_matches_each_mixed_length_hard_feasible_family(sel
     assert torch.equal(state["soft_coverage"][1, 3:], torch.zeros_like(state["soft_coverage"][1, 3:]))
 
 
+def test_boundary_burst_soft_and_hard_arms_share_local_utility_only() -> None:
+    torch.manual_seed(37)
+    common = dict(
+        selector_variant="transition_only",
+        acquisition_policy="global_structured_topk",
+        detector_gradient_mode="structured_zero_forward",
+        budget=6,
+        transition_objective="boundary_burst",
+        require_bilateral_burst=True,
+    )
+    soft = _selector(**common, require_global_mandatory_burst=False)
+    hard = _selector(**common, require_global_mandatory_burst=True)
+    hard.load_state_dict(soft.state_dict())
+    soft.train()
+    hard.train()
+    inputs = torch.randn(1, 1, 3, 8, 16, 16)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+    metas = [{"video_name": "burst"}]
+    gt_segments = [torch.tensor([[2.0, 6.0]])]
+    gt_labels = [torch.tensor([1])]
+
+    soft_state = soft.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=metas,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )["selector_outputs"]
+    hard_state = hard.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=metas,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )["selector_outputs"]
+
+    local_fields = (
+        "center_scores",
+        "decode_policy_logits",
+        "boundary_burst_mass",
+        "boundary_burst_utility",
+        "boundary_burst_center_probabilities",
+        "boundary_burst_offset_probabilities",
+        "boundary_burst_offset_inclusion",
+        "boundary_burst_effective_offset_quota",
+        "boundary_burst_context_reference",
+        "boundary_burst_bilateral_offset_feasible",
+        "boundary_burst_bilateral_offset_satisfied",
+    )
+    for field in local_fields:
+        assert torch.equal(soft_state[field], hard_state[field]), field
+
+    assert soft.adapter.boundary_burst_require_bilateral_offsets is True
+    assert hard.adapter.boundary_burst_require_bilateral_offsets is True
+    assert soft.adapter.boundary_burst_require_global_mandatory_groups is False
+    assert hard.adapter.boundary_burst_require_global_mandatory_groups is True
+    assert soft_state["boundary_burst_local_bilateral_utility_enabled"] is True
+    assert hard_state["boundary_burst_local_bilateral_utility_enabled"] is True
+    assert soft_state["boundary_burst_global_mandatory_groups_enabled"] is False
+    assert hard_state["boundary_burst_global_mandatory_groups_enabled"] is True
+    assert int(soft_state["mandatory_boundary_mask"].sum().item()) == 0
+    assert int(hard_state["mandatory_boundary_mask"].sum().item()) == 3
+    assert soft_state["mandatory_boundary_group_count"] == [0]
+    assert hard_state["mandatory_boundary_group_count"] == [1]
+
+
 def test_boundary_burst_adapter_preserves_mandatory_group_in_final_hard_positions() -> None:
     selector = _selector(
         selector_variant="transition_only",
@@ -317,6 +387,7 @@ def test_boundary_burst_adapter_preserves_mandatory_group_in_final_hard_position
         budget=6,
         transition_objective="boundary_burst",
         require_bilateral_burst=True,
+        require_global_mandatory_burst=True,
     )
     selector.train()
     out = selector.forward_train(

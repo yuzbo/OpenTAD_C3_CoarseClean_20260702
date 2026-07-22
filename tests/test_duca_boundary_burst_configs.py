@@ -38,6 +38,8 @@ def test_boundary_burst_p0_candidates_change_only_the_preregistered_geometry() -
     assert (r4.model.frame_selector.transition_boundary_radius, r4.model.frame_selector.boundary_burst_quota) == (4, 5.0)
     assert r2.model.frame_selector.boundary_burst_require_bilateral_offsets is True
     assert r4.model.frame_selector.boundary_burst_require_bilateral_offsets is True
+    assert r2.model.frame_selector.boundary_burst_require_global_mandatory_groups is True
+    assert r4.model.frame_selector.boundary_burst_require_global_mandatory_groups is True
     assert r2.duca_transition_only_contract.hard_global_burst_support == (
         "mandatory_group_constrained_exact_k_max_hole"
     )
@@ -62,7 +64,7 @@ def test_boundary_burst_p0_candidates_change_only_the_preregistered_geometry() -
         assert r2[key].to_dict() == r4[key].to_dict()
 
 
-def test_r2q3_hard_and_hidden_adaptation_form_a_matched_two_by_two_ablation() -> None:
+def test_r2q3_global_decoder_and_hidden_adaptation_form_a_matched_two_by_two_ablation() -> None:
     names = {
         (False, False): "duca_boundary_burst_soft_detached_frontend_pretrain_fixed384.py",
         (True, False): "duca_boundary_burst_hard_detached_frontend_pretrain_fixed384.py",
@@ -76,7 +78,8 @@ def test_r2q3_hard_and_hidden_adaptation_form_a_matched_two_by_two_ablation() ->
     for (hard, adapted), cfg in configs.items():
         assert validate_p0_config(CONFIG_ROOT / names[(hard, adapted)])["ok"] is True
         selector = cfg.model.frame_selector
-        assert selector.boundary_burst_require_bilateral_offsets is hard
+        assert selector.boundary_burst_require_bilateral_offsets is True
+        assert selector.boundary_burst_require_global_mandatory_groups is hard
         assert (float(selector.auxiliary_hidden_gradient_scale) > 0.0) is adapted
         assert (float(selector.policy_hidden_gradient_scale) > 0.0) is adapted
         assert (
@@ -94,6 +97,8 @@ def test_r2q3_hard_and_hidden_adaptation_form_a_matched_two_by_two_ablation() ->
                 else "none"
             )
         )
+        assert cfg.duca_transition_only_contract.local_bilateral_utility_relaxation is True
+        assert cfg.duca_transition_only_contract.global_mandatory_group_decoder is hard
         for key in ("dataset", "optimizer", "scheduler", "solver", "workflow"):
             assert cfg[key].to_dict() == reference[key].to_dict()
 
@@ -106,8 +111,10 @@ def test_r2q3_hard_and_hidden_adaptation_form_a_matched_two_by_two_ablation() ->
     hard_g0 = Config.fromfile(
         str(CONFIG_ROOT / "duca_boundary_burst_g0_no_feedback_fixed384_official60.py")
     )
-    assert soft_g0.model.frame_selector.boundary_burst_require_bilateral_offsets is False
+    assert soft_g0.model.frame_selector.boundary_burst_require_bilateral_offsets is True
     assert hard_g0.model.frame_selector.boundary_burst_require_bilateral_offsets is True
+    assert soft_g0.model.frame_selector.boundary_burst_require_global_mandatory_groups is False
+    assert hard_g0.model.frame_selector.boundary_burst_require_global_mandatory_groups is True
     assert soft_g0.model.rpn_head.to_dict() == hard_g0.model.rpn_head.to_dict()
     for key in ("dataset", "optimizer", "scheduler", "solver", "workflow"):
         assert soft_g0[key].to_dict() == hard_g0[key].to_dict()
@@ -129,12 +136,33 @@ def test_boundary_burst_official60_arms_keep_the_same_detector_and_protocol() ->
         assert selector.detector_gradient_mode == "none"
         if selector.get("transition_objective") == "boundary_burst":
             assert selector.boundary_burst_require_bilateral_offsets is True
+            assert selector.boundary_burst_require_global_mandatory_groups is True
         assert cfg.model.rpn_head.to_dict() == detector_head
         assert int(cfg.workflow.expected_successful_optimizer_updates) == 6000
         assert int(cfg.workflow.primary_checkpoint_epoch) == 59
     for key in ("dataset", "optimizer", "scheduler", "workflow"):
         assert configs[0][key].to_dict() == configs[1][key].to_dict()
         assert configs[1][key].to_dict() == configs[2][key].to_dict()
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "duca_boundary_burst_g0_no_feedback_fixed384_official60.py",
+        "duca_boundary_burst_g1_protected_fixed384_official60.py",
+        "duca_boundary_burst_g2_uni_companion_fixed384_official60.py",
+        "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py",
+        "duca_boundary_burst_r4q5_g1_protected_fixed384_official60.py",
+        "duca_boundary_burst_r4q5_g2_uni_companion_fixed384_official60.py",
+    ),
+)
+def test_formal_hard_boundary_burst_arms_enable_local_and_global_contracts(
+    name: str,
+) -> None:
+    selector = Config.fromfile(str(CONFIG_ROOT / name)).model.frame_selector
+
+    assert selector.boundary_burst_require_bilateral_offsets is True
+    assert selector.boundary_burst_require_global_mandatory_groups is True
 
 
 @pytest.mark.parametrize(

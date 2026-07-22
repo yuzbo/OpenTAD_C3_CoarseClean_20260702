@@ -283,6 +283,19 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
                 if "R4Q5" in route
                 else (2, 3.0)
             )
+            local_bilateral_utility = bool(
+                selector.get("boundary_burst_require_bilateral_offsets", False)
+            )
+            global_mandatory_groups = bool(
+                selector.get(
+                    "boundary_burst_require_global_mandatory_groups",
+                    False,
+                )
+            )
+            expected_global_mandatory_groups = (
+                route
+                != "DUCA_BOUNDARY_BURST_SOFT_G0_NO_FEEDBACK_FIXED384_OFFICIAL60"
+            )
             _require(
                 str(selector.transition_objective) == "boundary_burst",
                 "boundary-burst route did not build the burst policy",
@@ -291,6 +304,33 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
                 int(selector.transition_boundary_radius) == expected[0]
                 and float(selector.boundary_burst_quota) == expected[1],
                 "boundary-burst route radius/quota drifted",
+            )
+            _require(
+                local_bilateral_utility,
+                "all boundary-burst arms require the same local bilateral utility relaxation",
+            )
+            _require(
+                global_mandatory_groups is expected_global_mandatory_groups,
+                "boundary-burst arm changed more than the registered global mandatory decoder",
+            )
+            _require(
+                bool(contract.local_bilateral_utility_relaxation)
+                is local_bilateral_utility,
+                "local bilateral utility contract disagrees with the selector",
+            )
+            _require(
+                bool(contract.global_mandatory_group_decoder)
+                is global_mandatory_groups,
+                "global mandatory-group contract disagrees with the selector",
+            )
+            _require(
+                str(contract.hard_global_burst_support)
+                == (
+                    "mandatory_group_constrained_exact_k_max_hole"
+                    if global_mandatory_groups
+                    else "none"
+                ),
+                "global mandatory-group decoder declaration drifted",
             )
             if feedback_enabled:
                 _require(
@@ -388,6 +428,21 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "policy_hidden_gradient_scale": float(selector.policy_hidden_gradient_scale),
         "training_uniform_companion_fraction": float(
             selector.get("training_uniform_companion_fraction", 0.0)
+        ),
+        "boundary_burst_local_bilateral_utility_relaxation": (
+            bool(selector.get("boundary_burst_require_bilateral_offsets", False))
+            if route.startswith("DUCA_BOUNDARY_BURST")
+            else None
+        ),
+        "boundary_burst_global_mandatory_groups": (
+            bool(
+                selector.get(
+                    "boundary_burst_require_global_mandatory_groups",
+                    False,
+                )
+            )
+            if route.startswith("DUCA_BOUNDARY_BURST")
+            else None
         ),
         "paper_claim_allowed": False,
     }

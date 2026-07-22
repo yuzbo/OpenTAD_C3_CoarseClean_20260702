@@ -170,7 +170,7 @@ def _build_matrix(tmp_path: Path) -> tuple[Path, str, list[dict]]:
                             ),
                         }
                     )
-                    if seed == 3407:
+                    if seed == 3407 and backend == "actionformer":
                         costs.append(
                             {
                                 "id": f"cost_{cell_id}",
@@ -196,6 +196,7 @@ def _build_matrix(tmp_path: Path) -> tuple[Path, str, list[dict]]:
         "git_commit": commit,
         "cells": cells,
         "costs": costs,
+        "paired_cost_backend": "actionformer",
         "dense_cost_baseline": dense,
         "matrix_summary_sha256_file": str(summary_sha_file.resolve()),
         "mechanism_gate_output": str(gate.resolve()),
@@ -226,6 +227,7 @@ def _build_matrix(tmp_path: Path) -> tuple[Path, str, list[dict]]:
         "software_fingerprint": "software-1",
         "source_dataset_fingerprint": "thumos-validation-1",
         "inference_fingerprint": "official-thumos-map-1",
+        "detector_stack_fingerprint": "actionformer-stack-v1",
         "batch_size": 1,
         "loader_workers": 0,
         "warmup_samples": 5,
@@ -450,7 +452,7 @@ def _build_matrix(tmp_path: Path) -> tuple[Path, str, list[dict]]:
         evaluation = _sealed(evaluation, "evaluation_sha256")
         _write_json(tmp_path / "results" / f"{cell_id}.terminal_evaluation.json", evaluation)
 
-        if cell["seed"] == 3407:
+        if cell["seed"] == 3407 and cell["backend"] == "actionformer":
             cost_path = tmp_path / "cost" / f"{cell_id}.summary.json"
             cost = {
                 **profile_identity,
@@ -529,17 +531,17 @@ def test_r5_aggregate_reopens_training_chain_and_binds_costs(
 
     assert result["ok"] is True
     assert result["cell_count"] == 24
-    assert result["cost_count"] == 8
+    assert result["cost_count"] == 4
     assert len(result["three_seed_aggregates"]) == 8
     assert len(result["paired_deltas"]) == 12
     assert all(row["training_binding"]["epoch_record_count"] == 60 for row in result["rows"])
     assert all(row["source_checkpoint_sha256"] for row in result["costs"])
-    assert len(result["paired_dense_costs"]) == 8
+    assert len(result["paired_dense_costs"]) == 4
     assert all(
         row["selected_count_p50"] == 768.0
         for row in result["paired_dense_costs"]
     )
-    assert len(result["cost_comparisons"]) == 8
+    assert len(result["cost_comparisons"]) == 4
     assert all(row["speedup_vs_dense"] == 2.0 for row in result["cost_comparisons"])
 
 
@@ -696,12 +698,38 @@ def test_r5_aggregate_rejects_cost_bound_to_another_source_cell(
         aggregate_matrix(matrix_summary=summary_path, expected_commit=commit)
 
 
+def test_r5_aggregate_rejects_cross_backend_cost_pairing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary_path, commit, _ = _build_matrix(tmp_path)
+    monkeypatch.setattr(
+        aggregate_module, "validate_and_rebuild_profile_summary", lambda payload: {}
+    )
+    validated_rows = aggregate_matrix(
+        matrix_summary=summary_path, expected_commit=commit
+    )["rows"]
+    summary = json.loads(summary_path.read_text())
+    summary["costs"][0]["source_cell"] = "temporalmaxer_uniform_k384_s3407"
+    _write_json(summary_path, summary)
+    Path(summary["matrix_summary_sha256_file"]).write_text(
+        _sha(summary_path) + "\n", encoding="utf-8"
+    )
+    row_iter = iter(validated_rows)
+    monkeypatch.setattr(
+        aggregate_module, "_validate_evaluation", lambda **_kwargs: next(row_iter)
+    )
+
+    with pytest.raises(RuntimeError, match="cross-backend cost pairing is forbidden"):
+        aggregate_matrix(matrix_summary=summary_path, expected_commit=commit)
+
+
 @pytest.mark.parametrize(
     ("key", "value", "message"),
     (
         ("hardware_fingerprint", "another-gpu", "mismatch: hardware_fingerprint"),
         ("software_fingerprint", "another-stack", "mismatch: software_fingerprint"),
         ("source_dataset_fingerprint", "another-input", "mismatch: source_dataset_fingerprint"),
+        ("detector_stack_fingerprint", "temporalmaxer-stack-v1", "mismatch: detector_stack_fingerprint"),
         ("amp", False, "mismatch: amp"),
         ("profile_session_id", "another-session", "not measured in one session"),
         ("profile_pair_id", "another-pair", "not a paired profile"),

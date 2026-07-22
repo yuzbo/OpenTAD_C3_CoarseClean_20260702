@@ -85,10 +85,15 @@ def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -
     assert summary["max_unselected_holes"] == {"384": 2, "256": 3}
     assert summary["learned_variant"] == "boundary_burst_r2q3_g1"
     assert len(list((output / "configs").glob("*.py"))) == 24
-    assert len(list((output / "jobs").glob("*.sbatch"))) == 34
+    assert len(list((output / "jobs").glob("*.sbatch"))) == 30
     assert len((output / "cells.tsv").read_text(encoding="utf-8").splitlines()) == 25
-    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 9
-    assert summary["cost_count"] == 8
+    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 5
+    assert summary["cost_count"] == 4
+    assert summary["paired_cost_backend"] == "actionformer"
+    assert {row["source_cell"].split("_", 1)[0] for row in summary["costs"]} == {
+        "actionformer"
+    }
+    assert not (output / "jobs/cost_temporalmaxer_uniform_k384_s3407.sbatch").exists()
     assert (
         summary["dense_cost_baseline"]["trained_commit"]
         == EXPECTED_DENSE_TRAINED_COMMIT

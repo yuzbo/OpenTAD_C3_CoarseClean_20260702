@@ -20,9 +20,13 @@ from tools.bata.finalize_duca_r0_boundary_burst import revalidate_r0_summary
 from tools.bata.select_duca_frontend_checkpoint import sha256_file
 
 
-SCHEMA = "duca_boundary_burst_frontend_decision_v1"
-FAMILY_MANIFEST_SCHEMA = "duca_boundary_burst_family_routing_manifest_v1"
+SCHEMA = "duca_boundary_burst_frontend_decision_v2"
+FAMILY_MANIFEST_SCHEMA = "duca_boundary_burst_family_routing_manifest_v2"
 FULL_MODEL_GATE_SCHEMA = "duca_boundary_burst_full_model_gate_v1"
+R0_DIAGNOSTIC_PROVENANCE_SCHEMA = (
+    "duca_r0_detector_seen_training_internal_nonrouting_diagnostic_v1"
+)
+PREREGISTERED_PROJECTED_FAMILY = "R2Q3_privileged_boundary_burst"
 P0_REAL_GATE_SCHEMA = "duca_frontend_p0_real_cuda_gate_v1"
 P0_ASFORMER_CONSUMER_SCHEMA = "duca_p0_training_asformer_consumer_v1"
 FULL_MODEL_ARTIFACT_SCHEMA = (
@@ -106,7 +110,7 @@ def _atomic_write_json(
 def _family_routing_contract(selected_family: Any) -> dict[str, Any]:
     selected = str(selected_family)
     if selected not in R0_PROJECTED_FAMILY_ROUTES:
-        raise RuntimeError(f"unsupported R0 projected family: {selected}")
+        raise RuntimeError(f"unsupported projected family: {selected}")
     selected_route = R0_PROJECTED_FAMILY_ROUTES[selected]
     alternate_routes = [
         route
@@ -114,12 +118,17 @@ def _family_routing_contract(selected_family: Any) -> dict[str, Any]:
         if family != selected
     ]
     return {
-        "schema": "duca_boundary_burst_r0_family_routing_v1",
+        "schema": "duca_boundary_burst_preregistered_family_routing_v2",
+        "routing_source": "preregistered_fixed_candidate",
+        "preregistered_projected_family": selected,
+        "r0_diagnostic_routing_authority": False,
+        # Retained as a compatibility alias for downstream family-specific code.
         "selected_weakest_projected_family": selected,
         "selected_p0_variant": selected_route["p0_variant"],
         "selected_p0_config": selected_route["p0_config"],
         "selected_official60_variant": selected_route["official60_variant"],
         "selected_official60_config": selected_route["official60_config"],
+        "selected_official60_role": "hard_adapted_g0",
         "required_p0_variants": [selected_route["p0_variant"]],
         "diagnostic_p0_variants": [
             GAUSSIAN_P0_VARIANT,
@@ -140,6 +149,45 @@ def _family_routing_contract(selected_family: Any) -> dict[str, Any]:
             for family, route in R0_PROJECTED_FAMILY_ROUTES.items()
         },
         "simple_delta_role": "no_training_same_feasible_control",
+        "continuation_rule": {
+            "schema": "duca_boundary_burst_official60_continuation_v1",
+            "decision_source": "official60_hard_adapted_g0_vs_exact_uniform",
+            "candidate_variant": selected_route["official60_variant"],
+            "baseline_variant": UNIFORM_OFFICIAL_VARIANT,
+            "metric": (
+                "terminal_epoch_59_state_dict_ema_official_validation_average_mAP"
+            ),
+            "operator": "strictly_greater",
+        },
+    }
+
+
+def _require_preregistered_family(value: Any) -> str:
+    family = str(value)
+    if family != PREREGISTERED_PROJECTED_FAMILY:
+        raise RuntimeError(
+            "preregistered projected family must be "
+            f"{PREREGISTERED_PROJECTED_FAMILY}, got {family}"
+        )
+    return family
+
+
+def _r0_diagnostic_provenance(r0_gate: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "schema": R0_DIAGNOSTIC_PROVENANCE_SCHEMA,
+        "role": "detector_seen_training_internal_non_routing_diagnostic",
+        "routing_authority": False,
+        "official_validation_comparable": False,
+        "paper_claim_allowed": False,
+        "producer_commit": r0_gate.get("git_commit"),
+        "summary_path": r0_gate.get("r0_summary_path"),
+        "summary_sha256": r0_gate.get("r0_summary_sha256"),
+        "reported_selected_weakest_projected_family": r0_gate.get(
+            "selected_weakest_projected_family"
+        ),
+        "reported_eligible_projected_families": list(
+            r0_gate.get("eligible_projected_families", [])
+        ),
     }
 
 
@@ -522,10 +570,11 @@ def create_family_routing_manifest(
     summary_path: str | Path,
     summary_sha256: str,
     expected_commit: str,
+    preregistered_family: str,
     r0_expected_commit: str | None = None,
     output_path: str | Path,
 ) -> dict[str, Any]:
-    """Freeze the only learned family allowed to gate P0 and matched R3."""
+    """Bind fixed R2Q3 routing while preserving R0 as non-routing evidence."""
 
     if len(expected_commit) != 40:
         raise ValueError("expected commit must be exact")
@@ -537,14 +586,17 @@ def create_family_routing_manifest(
         summary_sha256=summary_sha256,
         expected_commit=producer_commit,
     )
-    routing = _family_routing_contract(
-        r0_gate.get("selected_weakest_projected_family")
-    )
+    preregistered = _require_preregistered_family(preregistered_family)
+    routing = _family_routing_contract(preregistered)
+    diagnostic_provenance = _r0_diagnostic_provenance(r0_gate)
     payload: dict[str, Any] = {
         "schema": FAMILY_MANIFEST_SCHEMA,
         "ok": True,
         "git_commit": expected_commit,
         "r0_producer_commit": producer_commit,
+        "preregistered_projected_family": preregistered,
+        "routing_source": "preregistered_fixed_candidate",
+        "r0_diagnostic_provenance": diagnostic_provenance,
         "r0_headroom_gate": r0_gate,
         "family_routing": routing,
         "test_subset_consumed": False,
@@ -562,7 +614,7 @@ def validate_family_routing_manifest(
     manifest_sha256: str,
     expected_commit: str,
 ) -> dict[str, Any]:
-    """Reopen the manifest and independently replay its sealed R0 decision."""
+    """Reopen fixed routing and independently replay non-routing R0 evidence."""
 
     path = _verified_file(
         manifest_path, manifest_sha256, label="boundary-burst family manifest"
@@ -595,9 +647,22 @@ def validate_family_routing_manifest(
     mismatch = _first_mismatch(recorded_r0, reopened_r0, path="r0_headroom_gate")
     if mismatch is not None:
         raise RuntimeError(f"boundary-burst family manifest R0 drift at {mismatch}")
-    routing = _family_routing_contract(
-        reopened_r0.get("selected_weakest_projected_family")
+    diagnostic_provenance = _r0_diagnostic_provenance(reopened_r0)
+    mismatch = _first_mismatch(
+        payload.get("r0_diagnostic_provenance"),
+        diagnostic_provenance,
+        path="r0_diagnostic_provenance",
     )
+    if mismatch is not None:
+        raise RuntimeError(
+            f"boundary-burst R0 diagnostic provenance drift at {mismatch}"
+        )
+    preregistered = _require_preregistered_family(
+        payload.get("preregistered_projected_family")
+    )
+    if payload.get("routing_source") != "preregistered_fixed_candidate":
+        raise RuntimeError("boundary-burst family routing source drift")
+    routing = _family_routing_contract(preregistered)
     mismatch = _first_mismatch(
         payload.get("family_routing"), routing, path="family_routing"
     )
@@ -612,6 +677,9 @@ def validate_family_routing_manifest(
         "git_commit": expected_commit,
         "r0_producer_commit": producer_commit,
         "ok": True,
+        "preregistered_projected_family": preregistered,
+        "routing_source": "preregistered_fixed_candidate",
+        "r0_diagnostic_provenance": diagnostic_provenance,
         "r0_headroom_gate": reopened_r0,
         "family_routing": routing,
     }
@@ -835,7 +903,8 @@ def validate_frontend_decision(
         or payload.get("schema") != SCHEMA
         or payload.get("ok") is not True
         or payload.get("fail_closed") is not True
-        or payload.get("status") != "GO_TO_MATCHED_U_SELECTED_G0_OFFICIAL60"
+        or payload.get("status")
+        != "GO_TO_PREREGISTERED_R2Q3_P0_AND_MATCHED_OFFICIAL60"
         or payload.get("git_commit") != expected_commit
         or payload.get("test_subset_consumed") is not False
     ):
@@ -860,6 +929,29 @@ def validate_frontend_decision(
     )
     if mismatch is not None:
         raise RuntimeError(f"boundary-burst decision routing drift at {mismatch}")
+    if (
+        payload.get("preregistered_projected_family")
+        != reopened_manifest["preregistered_projected_family"]
+    ):
+        raise RuntimeError("boundary-burst decision preregistered family drift")
+    mismatch = _first_mismatch(
+        payload.get("r0_diagnostic_provenance"),
+        reopened_manifest["r0_diagnostic_provenance"],
+        path="r0_diagnostic_provenance",
+    )
+    if mismatch is not None:
+        raise RuntimeError(
+            f"boundary-burst decision R0 diagnostic drift at {mismatch}"
+        )
+    mismatch = _first_mismatch(
+        payload.get("continuation_rule"),
+        routing["continuation_rule"],
+        path="continuation_rule",
+    )
+    if mismatch is not None:
+        raise RuntimeError(
+            f"boundary-burst decision official60 continuation drift at {mismatch}"
+        )
     mismatch = _first_mismatch(
         payload.get("r0_headroom_gate"),
         reopened_manifest["r0_headroom_gate"],
@@ -954,7 +1046,7 @@ def validate_full_model_gate(
     decision_sha256: str,
     expected_commit: str,
 ) -> dict[str, Any]:
-    """Require a gate over exactly U and the R0-selected learned family."""
+    """Require a gate over exactly U and preregistered R2Q3 G0."""
 
     decision = validate_frontend_decision(
         decision_path=decision_path,
@@ -1138,6 +1230,7 @@ def select_variants(
     expected_commit: str,
     split_manifest: str | Path,
     split_manifest_sha256: str,
+    preregistered_family: str,
     family_manifest_path: str | Path,
     family_manifest_sha256: str,
     receipt_paths: Sequence[str | Path],
@@ -1154,11 +1247,14 @@ def select_variants(
         expected_manifest_sha256=split_manifest_sha256,
     )
     split_path = Path(split_binding["manifest_path"])
+    preregistered = _require_preregistered_family(preregistered_family)
     family_manifest = validate_family_routing_manifest(
         manifest_path=family_manifest_path,
         manifest_sha256=family_manifest_sha256,
         expected_commit=expected_commit,
     )
+    if family_manifest["preregistered_projected_family"] != preregistered:
+        raise RuntimeError("family manifest differs from the preregistered candidate")
     routing = family_manifest["family_routing"]
     selected_p0_variant = routing["selected_p0_variant"]
     if p0_real_gate_path is None or p0_real_gate_sha256 is None:
@@ -1209,7 +1305,7 @@ def select_variants(
     for variant, rows in candidates.items():
         if variant == selected_p0_variant and len(rows) != 4:
             raise RuntimeError(
-                f"R0-selected family {variant} requires four P0 checkpoints"
+                f"preregistered family {variant} requires four P0 checkpoints"
             )
         if variant != selected_p0_variant and len(rows) not in {0, 4}:
             raise RuntimeError(
@@ -1224,7 +1320,7 @@ def select_variants(
         "ok": ok,
         "fail_closed": True,
         "status": (
-            "GO_TO_MATCHED_U_SELECTED_G0_OFFICIAL60"
+            "GO_TO_PREREGISTERED_R2Q3_P0_AND_MATCHED_OFFICIAL60"
             if ok
             else "HOLD_SELECTED_P0_SANITY_GATE_FAILED"
         ),
@@ -1235,15 +1331,21 @@ def select_variants(
         "split_manifest_sha256": split_manifest_sha256,
         "split_binding": split_binding,
         "family_manifest": family_manifest,
+        "preregistered_projected_family": preregistered,
+        "r0_diagnostic_provenance": family_manifest[
+            "r0_diagnostic_provenance"
+        ],
         "r0_headroom_gate": family_manifest["r0_headroom_gate"],
         "family_routing": routing,
+        "continuation_rule": routing["continuation_rule"],
         "p0_real_gate": p0_real_gate,
         "p0_training_asformer_consumer": p0_asformer_consumer,
         "selection_rule": (
-            "the R0-selected burst family is the only required learned P0 family; "
+            "the preregistered R2Q3 burst family is the only required learned P0 "
+            "family; R0 is a detector-seen training-internal non-routing diagnostic; "
             "choose its earliest passing checkpoint at epoch 5/10/15/20; Gaussian "
-            "and the unselected burst family are non-vetoing diagnostics; final method "
-            "ranking is reserved for matched terminal-EMA U versus selected G0 TAD mAP"
+            "and R4Q5 are non-vetoing diagnostics; continuation is decided only by "
+            "matched official60 terminal-EMA exact-uniform versus hard-adapted R2Q3 G0"
         ),
         "winners": winners,
         "candidates": candidates,
@@ -1260,6 +1362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--split-manifest", required=True)
     parser.add_argument("--split-manifest-sha256", required=True)
+    parser.add_argument("--preregistered-family", required=True)
     parser.add_argument("--family-manifest", required=True)
     parser.add_argument("--family-manifest-sha256", required=True)
     parser.add_argument("--p0-real-gate", required=True)
@@ -1273,6 +1376,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_commit=args.expected_commit,
         split_manifest=args.split_manifest,
         split_manifest_sha256=args.split_manifest_sha256,
+        preregistered_family=args.preregistered_family,
         family_manifest_path=args.family_manifest,
         family_manifest_sha256=args.family_manifest_sha256,
         p0_real_gate_path=args.p0_real_gate,

@@ -524,6 +524,7 @@ class DucaOnlineFrameSelector(nn.Module):
         boundary_burst_center_temperature: float = 0.7,
         boundary_burst_offset_temperature: float = 1.0,
         boundary_burst_require_bilateral_offsets: bool = False,
+        boundary_burst_require_global_mandatory_groups: bool = False,
         boundary_burst_side_min_mass: float = 1.0,
         boundary_burst_anchor_weight: float = 1.0,
         boundary_burst_bilateral_weight: float = 1.0,
@@ -666,6 +667,9 @@ class DucaOnlineFrameSelector(nn.Module):
         self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
         self.boundary_burst_require_bilateral_offsets = bool(
             boundary_burst_require_bilateral_offsets
+        )
+        self.boundary_burst_require_global_mandatory_groups = bool(
+            boundary_burst_require_global_mandatory_groups
         )
         self.boundary_burst_side_min_mass = float(boundary_burst_side_min_mass)
         self.boundary_burst_anchor_weight = float(boundary_burst_anchor_weight)
@@ -941,6 +945,9 @@ class DucaOnlineFrameSelector(nn.Module):
             boundary_burst_offset_temperature=self.boundary_burst_offset_temperature,
             boundary_burst_require_bilateral_offsets=(
                 self.boundary_burst_require_bilateral_offsets
+            ),
+            boundary_burst_require_global_mandatory_groups=(
+                self.boundary_burst_require_global_mandatory_groups
             ),
             coarse_hidden_dim=self.coarse_hidden_dim if self.use_coarse_hidden_features else 0,
             require_coarse_hidden_features=bool(
@@ -2194,6 +2201,15 @@ class DucaOnlineFrameSelector(nn.Module):
             "max_unselected_hole": self.max_unselected_hole,
             "selection_path": scores.get("selection_path", "legacy_center_radius"),
             "selector_variant": self.selector_variant,
+            "boundary_burst_local_bilateral_utility_enabled": bool(
+                scores.get("boundary_burst_local_bilateral_utility_enabled", False)
+            ),
+            "boundary_burst_global_mandatory_groups_enabled": bool(
+                scores.get("boundary_burst_global_mandatory_groups_enabled", False)
+            ),
+            "mandatory_boundary_group_count": scores.get(
+                "mandatory_boundary_group_count"
+            ),
             "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
             "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
             "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),

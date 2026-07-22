@@ -1110,6 +1110,7 @@ class DucaAcquisitionAdapter(nn.Module):
         boundary_burst_center_temperature: float = 0.7,
         boundary_burst_offset_temperature: float = 1.0,
         boundary_burst_require_bilateral_offsets: bool = False,
+        boundary_burst_require_global_mandatory_groups: bool = False,
         coarse_hidden_dim: Optional[int] = None,
         require_coarse_hidden_features: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
@@ -1192,6 +1193,9 @@ class DucaAcquisitionAdapter(nn.Module):
         self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
         self.boundary_burst_require_bilateral_offsets = bool(
             boundary_burst_require_bilateral_offsets
+        )
+        self.boundary_burst_require_global_mandatory_groups = bool(
+            boundary_burst_require_global_mandatory_groups
         )
         if self.transition_objective == "boundary_burst":
             if self.selector_variant != "transition_only":
@@ -1764,6 +1768,14 @@ class DucaAcquisitionAdapter(nn.Module):
             "coarse_hidden_kind": coarse_hidden_kind,
             "selector_variant": self.selector_variant,
             "transition_objective": self.transition_objective,
+            "boundary_burst_local_bilateral_utility_enabled": bool(
+                self.transition_objective == "boundary_burst"
+                and self.boundary_burst_require_bilateral_offsets
+            ),
+            "boundary_burst_global_mandatory_groups_enabled": bool(
+                self.transition_objective == "boundary_burst"
+                and self.boundary_burst_require_global_mandatory_groups
+            ),
             "valid_mask": valid,
             "provenance": source["provenance"],
         }
@@ -1869,7 +1881,7 @@ class DucaAcquisitionAdapter(nn.Module):
             retained_group_count = 0
             if (
                 self.transition_objective == "boundary_burst"
-                and self.boundary_burst_require_bilateral_offsets
+                and self.boundary_burst_require_global_mandatory_groups
                 and not stable_selection
                 and mandatory_center_scores is not None
                 and mandatory_offset_inclusion is not None
@@ -2269,6 +2281,14 @@ class DucaAcquisitionAdapter(nn.Module):
                 ),
                 "mandatory_boundary_group_count": decoded.get(
                     "mandatory_boundary_group_count"
+                ),
+                "boundary_burst_local_bilateral_utility_enabled": bool(
+                    self.transition_objective == "boundary_burst"
+                    and self.boundary_burst_require_bilateral_offsets
+                ),
+                "boundary_burst_global_mandatory_groups_enabled": bool(
+                    self.transition_objective == "boundary_burst"
+                    and self.boundary_burst_require_global_mandatory_groups
                 ),
                 "local_cell_anchor_positions": (
                     None

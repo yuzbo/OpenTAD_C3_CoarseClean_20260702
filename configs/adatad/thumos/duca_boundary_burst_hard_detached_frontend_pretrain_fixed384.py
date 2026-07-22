@@ -14,6 +14,8 @@ duca_transition_only_contract = dict(
 
 model = dict(
     frame_selector=dict(
+        boundary_burst_require_bilateral_offsets=True,
+        boundary_burst_require_global_mandatory_groups=True,
         auxiliary_hidden_gradient_scale=0.0,
         policy_hidden_gradient_scale=0.0,
         actionness_source_cfg=dict(policy_hidden_gradient_scope="none"),

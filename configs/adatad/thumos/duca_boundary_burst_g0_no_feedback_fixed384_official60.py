@@ -9,6 +9,8 @@ duca_transition_only_contract = dict(
     boundary_burst_budget_fraction=0.25,
     hard_local_burst_support="center_plus_best_left_plus_best_right_when_feasible",
     hard_global_burst_support="mandatory_group_constrained_exact_k_max_hole",
+    local_bilateral_utility_relaxation=True,
+    global_mandatory_group_decoder=True,
     detector_gradient_bridge="none",
     paper_claim_allowed=False,
 )
@@ -25,6 +27,7 @@ model = dict(
         boundary_burst_center_temperature=0.7,
         boundary_burst_offset_temperature=1.0,
         boundary_burst_require_bilateral_offsets=True,
+        boundary_burst_require_global_mandatory_groups=True,
         boundary_burst_side_min_mass=1.0,
         boundary_burst_anchor_weight=1.0,
         boundary_burst_bilateral_weight=1.0,

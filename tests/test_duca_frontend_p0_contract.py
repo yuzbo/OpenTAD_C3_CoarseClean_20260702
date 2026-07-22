@@ -188,8 +188,9 @@ def test_boundary_burst_candidates_satisfy_exact_event_p0_contract(
     assert payload["transition_objective"] == "boundary_burst"
     assert payload["boundary_burst"]["radius"] == radius
     assert payload["boundary_burst"]["quota"] == pytest.approx(quota)
-    assert payload["boundary_burst"]["hard_bilateral_offsets"] is True
-    assert payload["boundary_burst"]["hard_global_support"] == (
+    assert payload["boundary_burst"]["local_bilateral_utility_relaxation"] is True
+    assert payload["boundary_burst"]["global_mandatory_groups"] is True
+    assert payload["boundary_burst"]["global_decoder_contract"] == (
         "mandatory_group_constrained_exact_k_max_hole"
     )
     assert payload["transition_supervision_updates_coarse_representation"] is True

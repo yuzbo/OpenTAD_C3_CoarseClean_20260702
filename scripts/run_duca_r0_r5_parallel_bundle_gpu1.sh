@@ -14,6 +14,7 @@ BUNDLE_ROOT="${DUCA_PARALLEL_BUNDLE_ROOT:-}"
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 FROZEN_PRETRAIN="${DUCA_ADATAD_PRETRAIN_PATH:-}"
 FROZEN_PRETRAIN_SHA256="${DUCA_ADATAD_PRETRAIN_SHA256:-}"
+PREREGISTERED_FAMILY=R2Q3_privileged_boundary_burst
 
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] \
   || fail "a Slurm GPU allocation is required"
@@ -26,6 +27,10 @@ FROZEN_PRETRAIN_SHA256="${DUCA_ADATAD_PRETRAIN_SHA256:-}"
 [[ -f "${FROZEN_PRETRAIN}" ]] || fail "AdaTAD pretrain is missing"
 [[ "${FROZEN_PRETRAIN_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
   || fail "AdaTAD pretrain SHA256 is required"
+[[ -z "${DUCA_PREREGISTERED_PROJECTED_FAMILY:-}" \
+  || "${DUCA_PREREGISTERED_PROJECTED_FAMILY}" == "${PREREGISTERED_FAMILY}" ]] \
+  || fail "external family routing differs from preregistered R2Q3"
+export DUCA_PREREGISTERED_PROJECTED_FAMILY="${PREREGISTERED_FAMILY}"
 [[ "$(sha256sum "${FROZEN_PRETRAIN}" | awk '{print $1}')" == \
    "${FROZEN_PRETRAIN_SHA256}" ]] || fail "AdaTAD pretrain drift"
 mkdir -p "${BUNDLE_ROOT}"
@@ -88,7 +93,7 @@ run_curriculum_arm() {
   seal_file "${RUN_DIR}/completion.json"
 }
 
-resolve_selected_route() {
+resolve_preregistered_route() {
   local decision="$1" decision_sha="$2"
   "${PYTHON}" - "${decision}" "${decision_sha}" "${EXPECTED_COMMIT}" <<'PY'
 import sys
@@ -102,7 +107,7 @@ decision = validate_frontend_decision(
 route = decision["family_routing"]
 print(route["selected_p0_variant"])
 print(route["selected_official60_variant"])
-print(route["selected_weakest_projected_family"])
+print(route["preregistered_projected_family"])
 PY
 }
 
@@ -146,8 +151,9 @@ run_current_commit_bootstrap() {
   export DUCA_SELECTED_OPT_GATE_SUITE="${gate}"
   export DUCA_SELECTED_OPT_GATE_SUITE_SHA256="${gate_sha}"
 
-  readarray -t route < <(resolve_selected_route "${decision}" "${decision_sha}")
-  [[ "${#route[@]}" == 3 ]] || fail "current-commit family routing failed"
+  readarray -t route < <(resolve_preregistered_route "${decision}" "${decision_sha}")
+  [[ "${#route[@]}" == 3 && "${route[2]}" == "${PREREGISTERED_FAMILY}" ]] \
+    || fail "current-commit preregistered family routing failed"
   local selected_g0="${route[1]}"
   run_curriculum_arm two_stage_exact_uniform \
     "${root}/official60/two_stage_exact_uniform"
@@ -179,6 +185,7 @@ run_current_commit_bootstrap() {
     "${root}/r4_alignment/alignment.json" \
     "$(read_seal "${root}/r4_alignment/alignment.json.sha256")" \
     "${route[0]}" "${selected_g0}" "${route[2]}" <<'PY'
+import json
 import sys
 from pathlib import Path
 from tools.bata.duca_selected_axis_training import atomic_write_json
@@ -188,16 +195,28 @@ from tools.bata.duca_selected_axis_training import atomic_write_json
     terminal, terminal_sha, alignment, alignment_sha,
     selected_p0, selected_g0, selected_family,
 ) = sys.argv[1:]
+decision_payload = json.loads(Path(decision).read_text(encoding="utf-8"))
+diagnostic = decision_payload.get("r0_diagnostic_provenance")
+if (
+    selected_family != "R2Q3_privileged_boundary_burst"
+    or decision_payload.get("preregistered_projected_family") != selected_family
+    or not isinstance(diagnostic, dict)
+    or diagnostic.get("routing_authority") is not False
+):
+    raise SystemExit("bootstrap preregistration/non-routing R0 contract drift")
 atomic_write_json(
     Path(output).resolve(),
     {
-        "schema": "duca_current_commit_bootstrap_v1",
+        "schema": "duca_current_commit_bootstrap_v2",
         "ok": True,
         "task": "offline_temporal_action_detection",
         "git_commit": commit,
         "selected_p0_variant": selected_p0,
         "selected_g0_variant": selected_g0,
-        "selected_family": selected_family,
+        "preregistered_projected_family": selected_family,
+        "routing_source": "preregistered_fixed_candidate",
+        "r0_diagnostic_provenance": diagnostic,
+        "continuation_rule": decision_payload["continuation_rule"],
         "frontend_decision": {"path": decision, "sha256": decision_sha},
         "gate_suite": {"path": gate, "sha256": gate_sha},
         "terminal_u_g0_suite": {"path": terminal, "sha256": terminal_sha},
@@ -214,10 +233,19 @@ import json, sys
 from pathlib import Path
 
 p = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if p.get("schema") != "duca_current_commit_bootstrap_v1" or not p.get("ok"):
+if p.get("schema") != "duca_current_commit_bootstrap_v2" or not p.get("ok"):
     raise SystemExit("invalid current-commit bootstrap receipt")
 if p.get("git_commit") != sys.argv[2]:
     raise SystemExit("bootstrap commit drift")
+if (
+    p.get("preregistered_projected_family")
+    != "R2Q3_privileged_boundary_burst"
+    or p.get("routing_source") != "preregistered_fixed_candidate"
+    or p.get("r0_diagnostic_provenance", {}).get("routing_authority") is not False
+    or p.get("continuation_rule", {}).get("decision_source")
+    != "official60_hard_adapted_g0_vs_exact_uniform"
+):
+    raise SystemExit("bootstrap routing/continuation contract drift")
 for key in ("frontend_decision", "gate_suite", "terminal_u_g0_suite", "alignment"):
     row = p[key]
     path = Path(row["path"])
@@ -230,7 +258,7 @@ print(p["gate_suite"]["path"])
 print(p["gate_suite"]["sha256"])
 print(p["alignment"]["path"])
 print(p["alignment"]["sha256"])
-print(p["selected_family"])
+print(p["preregistered_projected_family"])
 PY
   )
   [[ "${#bootstrap[@]}" == 7 ]] || fail "bootstrap export resolution failed"
@@ -312,7 +340,7 @@ run_r4() {
     > "${BUNDLE_ROOT}/bootstrap.out" 2>&1
   load_bootstrap_exports "${bootstrap_root}/bootstrap_receipt.json"
   [[ "${bootstrap[6]}" == R2Q3_privileged_boundary_burst ]] \
-    || fail "formal R4 R2Q3 bundle was not selected by current-commit R0"
+    || fail "formal R4 bundle differs from preregistered R2Q3"
 
   local variants=(boundary_burst_r2q3_g1 boundary_burst_r2q3_g2)
   local pids=()
@@ -373,7 +401,7 @@ run_r5_group_child() {
       || fail "R5 sbatch drift: ${cell_id}"
     bash "${sbatch_file}"
     count=$((count + 1))
-    if [[ "${seed}" == 3407 ]]; then
+    if [[ "${seed}" == 3407 && "${backend}" == actionformer ]]; then
       local cost_sbatch
       cost_sbatch="$(awk -F '\t' -v source="${cell_id}" \
         'NR > 1 && $3 == source {print $4}' "${matrix_root}/costs.tsv")"
@@ -383,7 +411,7 @@ run_r5_group_child() {
   done < "${matrix_root}/cells.tsv"
   [[ "${count}" == 6 ]] || fail "R5 group must execute exactly six cells"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "six R5 ${backend}/${arm} cells and bound costs completed"
+    "six R5 ${backend}/${arm} cells and applicable same-backend costs completed"
 }
 
 run_r5_all() {
@@ -397,7 +425,7 @@ run_r5_all() {
     > "${BUNDLE_ROOT}/bootstrap.out" 2>&1
   load_bootstrap_exports "${bootstrap_root}/bootstrap_receipt.json"
   [[ "${bootstrap[6]}" == R2Q3_privileged_boundary_burst ]] \
-    || fail "formal R5 learned source is R2Q3 but current-commit R0 selected another family"
+    || fail "formal R5 learned source differs from preregistered R2Q3"
 
   srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
     env DUCA_PARALLEL_BUNDLE_ROLE=r5_gate_child \
@@ -438,7 +466,7 @@ run_r5_all() {
   for pid in "${pids[@]}"; do wait "${pid}" || failed=1; done
   [[ "${failed}" == 0 ]] || fail "at least one R5 backend-by-arm group failed"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "all 24 R5 cells and all eight paired candidate/dense cost profiles completed"
+    "all 24 R5 cells and four paired ActionFormer candidate/dense cost profiles completed"
 }
 
 case "${ROLE}" in

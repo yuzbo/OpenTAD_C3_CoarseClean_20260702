@@ -128,6 +128,15 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         "unsupported transition objective",
     )
     if transition_objective == "boundary_burst":
+        local_bilateral_utility = bool(
+            selector.get("boundary_burst_require_bilateral_offsets", False)
+        )
+        global_mandatory_groups = bool(
+            selector.get(
+                "boundary_burst_require_global_mandatory_groups",
+                False,
+            )
+        )
         _require(
             int(selector.transition_target_radius) == 0,
             "boundary-burst supervision must use exact endpoint events",
@@ -151,15 +160,45 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
             "gt_boundary_validity" in collect["keys"],
             "boundary-burst P0 must collect crop-boundary validity",
         )
-        if bool(selector.get("boundary_burst_require_bilateral_offsets", False)):
+        _require(
+            local_bilateral_utility,
+            "boundary-burst P0 must keep the local center/left/right utility relaxation",
+        )
+        _require(
+            bool(
+                cfg.duca_transition_only_contract.get(
+                    "local_bilateral_utility_relaxation",
+                    False,
+                )
+            )
+            is local_bilateral_utility,
+            "local bilateral utility contract disagrees with the selector",
+        )
+        _require(
+            bool(
+                cfg.duca_transition_only_contract.get(
+                    "global_mandatory_group_decoder",
+                    False,
+                )
+            )
+            is global_mandatory_groups,
+            "global mandatory-group contract disagrees with the selector",
+        )
+        if global_mandatory_groups:
             _require(
                 float(selector.boundary_burst_quota) >= 3.0,
-                "hard bilateral burst support requires quota >= 3",
+                "global mandatory bilateral groups require quota >= 3",
             )
             _require(
                 cfg.duca_transition_only_contract.get("hard_global_burst_support")
                 == "mandatory_group_constrained_exact_k_max_hole",
-                "hard bilateral burst support lacks the mandatory exact-K decoder contract",
+                "global mandatory groups lack the constrained exact-K decoder contract",
+            )
+        else:
+            _require(
+                cfg.duca_transition_only_contract.get("hard_global_burst_support")
+                == "none",
+                "soft global decoder arm must not claim mandatory burst support",
             )
     _require(bool(cfg.optimizer.paramwise), "frontend optimizer must use explicit groups")
     _require("backbone" not in cfg.optimizer, "frontend optimizer leaked a detector backbone group")
@@ -212,12 +251,18 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
                 "radius": int(selector.transition_boundary_radius),
                 "quota": float(selector.boundary_burst_quota),
                 "budget_fraction": float(selector.boundary_burst_budget_fraction),
-                "hard_bilateral_offsets": bool(
+                "local_bilateral_utility_relaxation": bool(
                     selector.get(
                         "boundary_burst_require_bilateral_offsets", False
                     )
                 ),
-                "hard_global_support": str(
+                "global_mandatory_groups": bool(
+                    selector.get(
+                        "boundary_burst_require_global_mandatory_groups",
+                        False,
+                    )
+                ),
+                "global_decoder_contract": str(
                     cfg.duca_transition_only_contract.get(
                         "hard_global_burst_support", "none"
                     )

@@ -21,6 +21,7 @@ from tools.bata.duca_p0_evaluation import (
 from tools.bata.duca_r5_paper_matrix import (
     DENSE_RECEIPT_SCHEMA,
     EXPECTED_DENSE_TRAINED_COMMIT,
+    PAIRED_COST_BACKEND,
 )
 from tools.bata.profile_duca_full_stack_cost import (
     load_r5_terminal_cost_binding,
@@ -36,6 +37,7 @@ COST_COMPARABILITY_KEYS = (
     "software_fingerprint",
     "source_dataset_fingerprint",
     "inference_fingerprint",
+    "detector_stack_fingerprint",
     "batch_size",
     "loader_workers",
     "warmup_samples",
@@ -189,6 +191,7 @@ def _validate_dense_receipt(row: Mapping[str, Any]) -> dict[str, Any]:
         "schema": DENSE_RECEIPT_SCHEMA,
         "task": "offline_temporal_action_detection",
         "role": "dense_adatad_baseline",
+        "backend": PAIRED_COST_BACKEND,
         "trained_commit": EXPECTED_DENSE_TRAINED_COMMIT,
         "checkpoint_epoch": 59,
         "checkpoint_state_key": "state_dict_ema",
@@ -449,6 +452,7 @@ def _validate_cost(
     return {
         "id": row["id"],
         "source_cell": row["source_cell"],
+        "backend": source["backend"],
         "summary_path": str(path),
         "summary_sha256": _sha256(path),
         "source_evaluation_sha256": source["evaluation_sha256"],
@@ -606,6 +610,7 @@ def _validate_dense_cost(
         "checkpoint_sha256": row["checkpoint_sha256"],
         "checkpoint_evidence_sha256": row["checkpoint_evidence_sha256"],
         "receipt_sha256": receipt["receipt_sha256"],
+        "backend": receipt["backend"],
         "comparability": comparability,
         "end_to_end_serial_ms_p50": latency,
         "selected_count_p50": selected_count,
@@ -633,11 +638,14 @@ def aggregate_matrix(
     costs = summary.get("costs")
     _require(isinstance(cells, list) and len(cells) == 24, "matrix must contain 24 cells")
     _require(
-        isinstance(costs, list) and len(costs) == 8,
-        "matrix must contain eight paired candidate/dense cost profiles",
+        isinstance(costs, list) and len(costs) == 4,
+        "matrix must contain four paired ActionFormer candidate/dense cost profiles",
     )
     r5_cost_rows = [row for row in costs if row.get("kind") == "r5_cell"]
-    _require(len(r5_cost_rows) == 8, "matrix must profile all seed-3407 R5 cells")
+    _require(
+        len(r5_cost_rows) == 4,
+        "matrix must profile all seed-3407 ActionFormer R5 cells",
+    )
     declared_dense = summary.get("dense_cost_baseline")
     _require(
         isinstance(declared_dense, Mapping),
@@ -647,7 +655,7 @@ def aggregate_matrix(
         declared_dense.get("trained_commit") == EXPECTED_DENSE_TRAINED_COMMIT,
         "dense baseline is not the frozen historical training commit",
     )
-    _validate_dense_receipt(declared_dense)
+    dense_receipt = _validate_dense_receipt(declared_dense)
     root = summary_path.parent
     matrix_digest = _load_sha256_file(
         Path(str(summary.get("matrix_summary_sha256_file", ""))).resolve(),
@@ -675,6 +683,28 @@ def aggregate_matrix(
         for cell in cells
     ]
     rows_by_id = {str(row["id"]): row for row in rows}
+    paired_cost_backend = dense_receipt["backend"]
+    _require(
+        summary.get("paired_cost_backend") == paired_cost_backend,
+        "matrix paired-cost backend differs from sealed dense receipt",
+    )
+    expected_cost_sources = {
+        str(row["id"])
+        for row in rows
+        if row["backend"] == paired_cost_backend and row["seed"] == 3407
+    }
+    for cost_row in r5_cost_rows:
+        source_cell = str(cost_row.get("source_cell", ""))
+        source = rows_by_id.get(source_cell)
+        _require(source is not None, f"{cost_row.get('id')} has an unknown source cell")
+        _require(
+            source["backend"] == paired_cost_backend,
+            f"{source_cell} cross-backend cost pairing is forbidden",
+        )
+    _require(
+        {str(row["source_cell"]) for row in r5_cost_rows} == expected_cost_sources,
+        "matrix must contain exactly the seed-3407 paired-backend cost cells",
+    )
     grouped: dict[tuple[str, str, int], list[dict[str, Any]]] = defaultdict(list)
     by_pair: dict[tuple[str, int, int], dict[str, dict[str, Any]]] = defaultdict(dict)
     for row in rows:
@@ -740,6 +770,10 @@ def aggregate_matrix(
             cost["comparability"],
             dense_cost["comparability"],
             label=str(cost["source_cell"]),
+        )
+        _require(
+            cost["backend"] == dense_cost["backend"] == paired_cost_backend,
+            f"{cost['source_cell']} cross-backend cost pairing is forbidden",
         )
         dense_latency = float(dense_cost["end_to_end_serial_ms_p50"])
         _require(dense_latency > 0.0, "paired dense latency must be positive")

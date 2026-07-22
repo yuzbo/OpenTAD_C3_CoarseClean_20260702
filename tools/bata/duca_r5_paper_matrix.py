@@ -19,6 +19,7 @@ BUDGETS = (384, 256)
 MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
 ARMS = ("uniform", "learned")
 BACKENDS = ("actionformer", "temporalmaxer")
+PAIRED_COST_BACKEND = "actionformer"
 EXPECTED_DENSE_TRAINED_COMMIT = "b3de5d8fac23d67cd9cae9c8c08bb60ba217f64f"
 DENSE_RECEIPT_SCHEMA = "duca_r5_dense_baseline_receipt_v1"
 
@@ -80,6 +81,7 @@ def _build_dense_baseline_receipt(
         "schema": DENSE_RECEIPT_SCHEMA,
         "task": "offline_temporal_action_detection",
         "role": "dense_adatad_baseline",
+        "backend": PAIRED_COST_BACKEND,
         "trained_commit": trained_commit,
         "config_path": binding["config_path"],
         "config_sha256": binding["config_sha256"],
@@ -742,7 +744,13 @@ def generate_matrix(
     lines = ["\t".join(columns)]
     lines.extend("\t".join(str(cell[key]) for key in columns) for cell in cells)
     _write(output / "cells.tsv", "\n".join(lines) + "\n")
-    cost_cells = [cell for cell in cells if cell["seed"] == 3407]
+    # The single sealed dense receipt is an ActionFormer baseline. TemporalMaxer
+    # remains in the mAP matrix, but cannot be paired against this backend.
+    cost_cells = [
+        cell
+        for cell in cells
+        if cell["seed"] == 3407 and cell["backend"] == PAIRED_COST_BACKEND
+    ]
     costs: list[dict[str, Any]] = []
     for cell in cost_cells:
         cost_id = f"cost_{cell['id']}"
@@ -790,6 +798,7 @@ def generate_matrix(
         },
         "arms": list(ARMS),
         "backends": list(BACKENDS),
+        "paired_cost_backend": PAIRED_COST_BACKEND,
         "learned_variant": learned_variant,
         "learned_source": str(sources["learned"]),
         "gate_config": str(gate_config),
