@@ -14,7 +14,8 @@ FORMAL_PROTOCOL = "duca_selected_axis_optimization_v1"
 R5_FORMAL_PROTOCOL = "duca_r5_mechanism_matrix_v1"
 FORMAL_PROTOCOLS = frozenset({FORMAL_PROTOCOL, R5_FORMAL_PROTOCOL})
 R5_SEEDS = frozenset({3407, 5801, 8123})
-R5_BUDGETS = frozenset({384, 256})
+R5_MAX_UNSELECTED_HOLES = {384: 2, 320: 2, 256: 3, 192: 4, 128: 6}
+R5_BUDGETS = frozenset(R5_MAX_UNSELECTED_HOLES)
 R5_BACKENDS = frozenset({"actionformer", "temporalmaxer"})
 R5_ARMS = frozenset({"uniform", "learned"})
 R5_LEARNED_VARIANTS = {
@@ -214,7 +215,7 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
             raise ValueError("R5 cell is outside the frozen paper matrix")
         if budget != int(cell["budget"]):
             raise ValueError("R5 selector budget differs from its cell identity")
-        expected_max_hole = {384: 2, 256: 3}[budget]
+        expected_max_hole = R5_MAX_UNSELECTED_HOLES[budget]
         if (
             int(cell.get("max_unselected_hole", -1)) != expected_max_hole
             or int(selector.max_unselected_hole) != expected_max_hole
@@ -385,7 +386,7 @@ def _build_r5_runtime_bindings(
         backend not in R5_BACKENDS
         or arm not in R5_ARMS
         or budget not in R5_BUDGETS
-        or max_unselected_hole != ({384: 2, 256: 3}).get(budget)
+        or max_unselected_hole != R5_MAX_UNSELECTED_HOLES.get(budget)
         or cell_seed not in R5_SEEDS
         or int(seed) != cell_seed
         or variant != cell_id
@@ -397,7 +398,32 @@ def _build_r5_runtime_bindings(
         digest_value=os.environ.get("R5_MATRIX_SUMMARY_SHA256", ""),
         label="matrix summary",
     )
-    if matrix.get("git_commit") != git_commit or matrix.get("cell_count") != 24:
+    matrix_backends = tuple(str(value) for value in matrix.get("backends", ()))
+    matrix_arms = tuple(str(value) for value in matrix.get("arms", ()))
+    matrix_budgets = tuple(int(value) for value in matrix.get("budgets", ()))
+    matrix_seeds = tuple(int(value) for value in matrix.get("seeds", ()))
+    expected_cell_count = (
+        len(matrix_backends)
+        * len(matrix_arms)
+        * len(matrix_budgets)
+        * len(matrix_seeds)
+    )
+    if (
+        matrix.get("git_commit") != git_commit
+        or not matrix_backends
+        or not matrix_arms
+        or not matrix_budgets
+        or not matrix_seeds
+        or set(matrix_backends) != set(R5_BACKENDS)
+        or set(matrix_arms) != set(R5_ARMS)
+        or not set(matrix_budgets).issubset(R5_BUDGETS)
+        or not set(matrix_seeds).issubset(R5_SEEDS)
+        or matrix.get("cell_count") != expected_cell_count
+        or backend not in matrix_backends
+        or arm not in matrix_arms
+        or budget not in matrix_budgets
+        or cell_seed not in matrix_seeds
+    ):
         raise RuntimeError("R5 matrix summary commit/count drift")
     rows = matrix.get("cells")
     matches = [row for row in rows or [] if isinstance(row, Mapping) and row.get("id") == cell_id]

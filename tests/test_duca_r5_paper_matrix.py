@@ -220,6 +220,28 @@ def test_generated_actionformer_cell_keeps_official_head(tmp_path: Path) -> None
     assert contract["expected_successful_optimizer_updates"] == 6000
 
 
+def test_generated_k128_cell_is_accepted_by_formal_runtime_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT", "/tmp/frontend.pth")
+    monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT_SHA256", "0" * 64)
+    monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT_EPOCH", "6")
+    _, output = _generate(tmp_path)
+    cfg = Config.fromfile(
+        str(output / "configs/actionformer_learned_k128_s3407.py")
+    )
+    assert cfg.r5_cell.budget == 128
+    assert cfg.r5_cell.max_unselected_hole == 6
+    assert cfg.r5_cell.max_selected_interval_source_frames == 28
+    assert cfg.model.frame_selector.budget == 128
+    assert cfg.model.frame_selector.max_unselected_hole == 6
+    assert cfg.model.backbone.backbone.total_frames == 128
+    assert cfg.model.backbone.custom.post_processing_pipeline[-1].size == 128
+    contract = formal_training.formal_training_contract(cfg)
+    assert contract is not None
+    assert contract["r5_cell"]["budget"] == 128
+
+
 @pytest.mark.skipif(os.name == "nt", reason="selection validator imports Windows torch")
 def test_r5_runtime_binding_reopens_matrix_gate_and_learned_frontend(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
