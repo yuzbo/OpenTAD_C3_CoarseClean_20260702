@@ -676,6 +676,8 @@ class C3CoarseProbeActionnessSource(nn.Module):
         require_hidden_features: bool = True,
         hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
         policy_hidden_gradient_scope: str = "none",
+        temporal_probe_stride: int = 1,
+        temporal_interpolation_mode: str = "hidden_linear",
         **_: Any,
     ) -> None:
         super().__init__()
@@ -723,6 +725,14 @@ class C3CoarseProbeActionnessSource(nn.Module):
         )
         self.return_hidden_features = bool(return_hidden_features)
         self.require_hidden_features = bool(require_hidden_features)
+        self.temporal_probe_stride = int(temporal_probe_stride)
+        self.temporal_interpolation_mode = str(temporal_interpolation_mode)
+        if self.temporal_probe_stride <= 0:
+            raise ValueError("temporal_probe_stride must be positive")
+        if self.temporal_interpolation_mode not in {"hidden_linear", "nearest"}:
+            raise ValueError(
+                "temporal_interpolation_mode must be hidden_linear or nearest"
+            )
         self.policy_hidden_gradient_scope = str(policy_hidden_gradient_scope)
         if self.policy_hidden_gradient_scope not in {
             "none",
@@ -786,6 +796,12 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "requires_hidden_features": self.require_hidden_features,
             "hidden_output_kind": str(hidden_output_kind),
             "policy_hidden_gradient_scope": self.policy_hidden_gradient_scope,
+            "temporal_probe_stride_dense_candidates": self.temporal_probe_stride,
+            "temporal_probe_source_frame_interval": 4 * self.temporal_probe_stride,
+            "temporal_interpolation_mode": self.temporal_interpolation_mode,
+            "interpolated_hidden_is_selector_evidence": True,
+            "selector_receives_anchor_mask": False,
+            "selector_receives_anchor_distance": False,
         }
 
         probe_mod = self._probe_module()
@@ -878,6 +894,78 @@ class C3CoarseProbeActionnessSource(nn.Module):
         probe_mod = self._probe_module()
         return probe_mod.prepare_probe_inputs(inputs, probe_model=self.probe_model, spatial_size=self.spatial_size)
 
+    @staticmethod
+    def _sparse_probe_positions(valid: torch.Tensor, stride: int) -> torch.Tensor:
+        if valid.ndim != 2 or valid.dtype != torch.bool:
+            raise ValueError("sparse probe valid mask must be bool [B,T]")
+        if stride <= 0:
+            raise ValueError("sparse probe stride must be positive")
+        temporal_len = int(valid.shape[1])
+        if temporal_len <= 0 or not bool(valid.any(dim=1).all().item()):
+            raise ValueError("every sparse probe row needs at least one valid candidate")
+        regular = torch.arange(0, temporal_len, int(stride), device=valid.device)
+        indices = torch.arange(temporal_len, device=valid.device)
+        first = torch.where(valid, indices[None, :], temporal_len).amin(dim=1)
+        last = torch.where(valid, indices[None, :], -1).amax(dim=1)
+        return torch.unique(torch.cat((regular, first, last)), sorted=True)
+
+    @staticmethod
+    def _gather_sparse_inputs(inputs: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        temporal_dim = 3 if inputs.ndim == 6 else 2 if inputs.ndim == 5 else None
+        if temporal_dim is None:
+            raise ValueError("sparse coarse probe expects raw video with five or six dimensions")
+        return torch.index_select(inputs, temporal_dim, positions.to(device=inputs.device))
+
+    @staticmethod
+    def _reconstruct_sparse_sequence(
+        values: torch.Tensor,
+        *,
+        anchor_positions: torch.Tensor,
+        anchor_valid: torch.Tensor,
+        dense_valid: torch.Tensor,
+        mode: str,
+    ) -> torch.Tensor:
+        if values.ndim not in {2, 3}:
+            raise ValueError("sparse probe values must be [B,A] or [B,A,D]")
+        if anchor_valid.shape != values.shape[:2]:
+            raise ValueError("anchor_valid must match sparse values [B,A]")
+        if dense_valid.ndim != 2 or dense_valid.shape[0] != values.shape[0]:
+            raise ValueError("dense_valid must be [B,T]")
+        if anchor_positions.ndim != 1 or anchor_positions.numel() != values.shape[1]:
+            raise ValueError("anchor_positions must match sparse axis A")
+        if mode not in {"hidden_linear", "nearest"}:
+            raise ValueError("unknown sparse probe reconstruction mode")
+        dense_len = int(dense_valid.shape[1])
+        queries = torch.arange(dense_len, device=values.device, dtype=torch.long)
+        rows = []
+        for batch_idx in range(int(values.shape[0])):
+            keep = anchor_valid[batch_idx]
+            x = anchor_positions.to(device=values.device, dtype=torch.long)[keep]
+            y = values[batch_idx, keep]
+            if x.numel() == 0:
+                raise ValueError("every sparse probe row needs one valid anchor")
+            right = torch.searchsorted(x, queries).clamp(max=int(x.numel()) - 1)
+            left = (right - 1).clamp(min=0)
+            right_x = x[right]
+            left_x = x[left]
+            if mode == "nearest":
+                choose_right = (queries - left_x) > (right_x - queries)
+                gather = torch.where(choose_right, right, left)
+                row = y[gather]
+            else:
+                denom = (right_x - left_x).clamp_min(1).to(dtype=values.dtype)
+                weight = (queries - left_x).to(dtype=values.dtype) / denom
+                if values.ndim == 3:
+                    weight = weight[:, None]
+                row = y[left] + weight * (y[right] - y[left])
+            row_valid = dense_valid[batch_idx]
+            if values.ndim == 3:
+                row = row.masked_fill(~row_valid[:, None], 0.0)
+            else:
+                row = row.masked_fill(~row_valid, 0.0)
+            rows.append(row)
+        return torch.stack(rows, dim=0)
+
     def _estimate_probe_profile(self, inputs: torch.Tensor, logits: torch.Tensor, latency_ms: Optional[float]) -> Dict[str, Any]:
         params = _module_param_counts(self)
         batch = int(logits.shape[0])
@@ -964,17 +1052,24 @@ class C3CoarseProbeActionnessSource(nn.Module):
         if valid.shape != (batch, temporal_len):
             raise ValueError(f"valid_mask must be [B,T]={batch, temporal_len}, got {tuple(valid.shape)}")
         start = time.perf_counter()
-        probe_inputs = self._prepare_probe_inputs(inputs)
+        anchor_positions = self._sparse_probe_positions(valid, self.temporal_probe_stride)
+        sparse_inputs = self._gather_sparse_inputs(inputs, anchor_positions)
+        sparse_valid = torch.index_select(valid, 1, anchor_positions)
+        probe_inputs = self._prepare_probe_inputs(sparse_inputs)
         if hasattr(probe_inputs, "to"):
             probe_inputs = probe_inputs.to(device=inputs.device)
         def call_probe() -> Any:
             def invoke() -> Any:
                 try:
-                    return self.probe(probe_inputs, valid, return_hidden=self.return_hidden_features)
+                    return self.probe(
+                        probe_inputs,
+                        sparse_valid,
+                        return_hidden=self.return_hidden_features,
+                    )
                 except TypeError:
                     if self.return_hidden_features and self.require_hidden_features:
                         raise
-                    return self.probe(probe_inputs, valid)
+                    return self.probe(probe_inputs, sparse_valid)
 
             if self.probe_model == "official-action-seg":
                 # ASFormer temporal conv gradients can overflow under the outer
@@ -1015,25 +1110,77 @@ class C3CoarseProbeActionnessSource(nn.Module):
             logits = probe_output
         if hidden is None and self.return_hidden_features and self.require_hidden_features:
             raise ValueError("C3 coarse probe must return hidden features for final DUCA selector fusion")
-        logits = logits.float().to(device=inputs.device).masked_fill(~valid, _neg(torch.float32))
+        logits = logits.float().to(device=inputs.device)
+        if logits.shape != sparse_valid.shape:
+            raise ValueError("C3 sparse coarse logits must align with sparse anchors [B,A]")
         if hidden is not None:
             if hidden.ndim != 3:
                 raise ValueError(f"C3 coarse hidden features must be [B,T,D], got {tuple(hidden.shape)}")
             if hidden.shape[:2] != logits.shape:
-                raise ValueError("C3 coarse hidden features must align with logits [B,T]")
-            hidden = hidden.float().to(device=inputs.device).masked_fill(~valid[:, :, None], 0.0)
+                raise ValueError("C3 coarse hidden features must align with sparse logits [B,A]")
+            hidden = hidden.float().to(device=inputs.device)
         if policy_hidden is not None:
             if hidden is None:
                 raise ValueError("restricted policy hidden requires the shared coarse hidden")
             if policy_hidden.shape != hidden.shape:
                 raise ValueError("restricted policy hidden must match shared coarse hidden [B,T,D]")
             policy_hidden = policy_hidden.float().to(device=inputs.device)
+        sparse_logits = logits
+        sparse_hidden = hidden
+        sparse_policy_hidden = policy_hidden
+        if self.temporal_probe_stride > 1:
+            logits = self._reconstruct_sparse_sequence(
+                sparse_logits,
+                anchor_positions=anchor_positions,
+                anchor_valid=sparse_valid,
+                dense_valid=valid,
+                mode=self.temporal_interpolation_mode,
+            )
+            if sparse_hidden is not None:
+                hidden = self._reconstruct_sparse_sequence(
+                    sparse_hidden,
+                    anchor_positions=anchor_positions,
+                    anchor_valid=sparse_valid,
+                    dense_valid=valid,
+                    mode=self.temporal_interpolation_mode,
+                )
+            if sparse_policy_hidden is not None:
+                policy_hidden = self._reconstruct_sparse_sequence(
+                    sparse_policy_hidden,
+                    anchor_positions=anchor_positions,
+                    anchor_valid=sparse_valid,
+                    dense_valid=valid,
+                    mode=self.temporal_interpolation_mode,
+                )
+        logits = logits.masked_fill(~valid, _neg(torch.float32))
+        if hidden is not None:
+            hidden = hidden.masked_fill(~valid[:, :, None], 0.0)
+        if policy_hidden is not None:
             policy_hidden = policy_hidden.masked_fill(~valid[:, :, None], 0.0)
         latency_ms = float((time.perf_counter() - start) * 1000.0)
         calibrated_logits = (logits + self.calibration_bias) / self.calibration_temperature
         p_action = torch.sigmoid(calibrated_logits).masked_fill(~valid, 0.0)
         transition = _actionness_transition_payload(p_action, valid)
-        profile = self._estimate_probe_profile(inputs, logits, latency_ms)
+        profile = self._estimate_probe_profile(sparse_inputs, sparse_logits, latency_ms)
+        hidden_width = 0 if hidden is None else int(hidden.shape[-1])
+        policy_width = 0 if policy_hidden is None else int(policy_hidden.shape[-1])
+        interpolated_values = batch * temporal_len * (1 + hidden_width + policy_width)
+        interpolation_macs = 0 if self.temporal_probe_stride == 1 else 3 * interpolated_values
+        profile.update(
+            {
+                "temporal_probe_stride_dense_candidates": self.temporal_probe_stride,
+                "temporal_probe_source_frame_interval": 4 * self.temporal_probe_stride,
+                "sparse_anchor_count": int(anchor_positions.numel()),
+                "dense_output_length": temporal_len,
+                "computed_frame_fraction": float(anchor_positions.numel()) / float(temporal_len),
+                "temporal_interpolation_mode": self.temporal_interpolation_mode,
+                "interpolation_estimated_macs": int(interpolation_macs),
+                "estimated_macs": int(profile["estimated_macs"]) + int(interpolation_macs),
+                "estimated_flops": int(profile["estimated_flops"]) + int(2 * interpolation_macs),
+                "output_shape": [batch, temporal_len],
+                "cache_lookup_or_interpolation": self.temporal_probe_stride > 1,
+            }
+        )
         output = {
             "p_action": transition["p_action"],
             "logits": logits,
@@ -1050,6 +1197,7 @@ class C3CoarseProbeActionnessSource(nn.Module):
             "provenance": self._provenance(),
             "compute_profile": profile,
             "source_name": self.source_name,
+            "sparse_probe_anchor_positions": anchor_positions.detach().cpu().tolist(),
         }
         if hidden is not None:
             output["coarse_hidden_features"] = hidden

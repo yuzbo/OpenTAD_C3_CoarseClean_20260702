@@ -10,6 +10,7 @@ export DUCA_CELLCF_TRAINING_PROFILE=official60
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 VARIANT="${DUCA_INDEPENDENT_VARIANT:-}"
+SPARSE_PROBE_STRIDE=""
 case "${VARIANT}" in
   two_stage_exact_uniform)
     CONFIG="configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py"
@@ -39,8 +40,20 @@ case "${VARIANT}" in
     CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py"
     ;;
+  sparse_probe_hidden_linear_d1|sparse_probe_hidden_linear_d2|sparse_probe_hidden_linear_d3|sparse_probe_hidden_linear_d4)
+    SPARSE_PROBE_STRIDE="${VARIANT##*d}"
+    CONFIG="configs/adatad/thumos/duca_sparse_probe_hidden_linear_g0_fixed384_official60.py"
+    P0_CONFIG="configs/adatad/thumos/duca_sparse_probe_hidden_linear_frontend_pretrain_fixed384.py"
+    ;;
   *) fail "unknown independent variant: ${VARIANT}" ;;
 esac
+
+if [[ -n "${SPARSE_PROBE_STRIDE}" ]]; then
+  [[ -z "${DUCA_SPARSE_PROBE_STRIDE:-}" \
+    || "${DUCA_SPARSE_PROBE_STRIDE}" == "${SPARSE_PROBE_STRIDE}" ]] \
+    || fail "sparse probe stride disagrees with variant"
+  export DUCA_SPARSE_PROBE_STRIDE="${SPARSE_PROBE_STRIDE}"
+fi
 
 EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:-}"
 ARM_ROOT="${DUCA_INDEPENDENT_ARM_ROOT:-}"
