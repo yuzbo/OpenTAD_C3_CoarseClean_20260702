@@ -1022,7 +1022,7 @@ def test_terminal_aggregate_rejects_resealed_frontend_split_binding_drift(
     decision["split_binding"]["annotation_sha256"] = "b" * 64
     _write_json(roots["decision"], decision)
 
-    with pytest.raises(RuntimeError, match="frontend split binding mismatch"):
+    with pytest.raises(RuntimeError, match="boundary-burst decision split drift"):
         aggregate(
             expected_commit="a" * 40,
             decision_path=roots["decision"],
