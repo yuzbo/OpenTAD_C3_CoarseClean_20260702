@@ -115,6 +115,22 @@ class _TinyModel(nn.Module):
         self.detector = nn.Linear(2, 1)
 
 
+class _BatchNormSelector(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.linear = nn.Linear(2, 2)
+        self.norm = nn.BatchNorm1d(2)
+        self.register_buffer(
+            "_loss_weight_schedule_step", torch.zeros((), dtype=torch.long)
+        )
+
+
+class _BatchNormModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.frame_selector = _BatchNormSelector()
+
+
 def test_selector_initialization_is_strict_hash_bound_and_resets_schedule(
     tmp_path: Path,
 ) -> None:
@@ -159,6 +175,83 @@ def test_selector_initialization_is_strict_hash_bound_and_resets_schedule(
                 "checkpoint_path": str(checkpoint),
                 "checkpoint_sha256": "0" * 64,
                 "state_key": "state_dict_ema",
+            },
+        )
+
+
+def test_selector_initialization_retains_only_missing_nonparameter_buffers(
+    tmp_path: Path,
+) -> None:
+    source = _BatchNormModel()
+    source.frame_selector.linear.weight.data.fill_(3.0)
+    source.frame_selector.linear.bias.data.fill_(4.0)
+    source.frame_selector.norm.weight.data.fill_(5.0)
+    source.frame_selector.norm.bias.data.fill_(6.0)
+    source.frame_selector._loss_weight_schedule_step.fill_(1600)
+    parameter_names = set(dict(source.frame_selector.named_parameters()))
+    state = {
+        f"module.frame_selector.{key}": value.detach().clone()
+        for key, value in source.frame_selector.state_dict().items()
+        if key in parameter_names or key == "_loss_weight_schedule_step"
+    }
+    checkpoint = tmp_path / "frontend_without_buffers.pth"
+    torch.save({"epoch": 19, "state_dict_ema": state}, checkpoint)
+    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+
+    target = _BatchNormModel()
+    running_mean_before = target.frame_selector.norm.running_mean.detach().clone()
+    receipt = initialize_frame_selector_from_checkpoint(
+        target,
+        {
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_sha256": digest,
+            "state_key": "state_dict_ema",
+            "expected_checkpoint_epoch": 19,
+            "reset_state_keys": ["_loss_weight_schedule_step"],
+        },
+    )
+
+    assert receipt is not None
+    assert receipt["retained_target_buffer_state_keys"] == [
+        "norm.num_batches_tracked",
+        "norm.running_mean",
+        "norm.running_var",
+    ]
+    assert receipt["retained_target_buffer_state_count"] == 3
+    assert torch.equal(
+        target.frame_selector.linear.weight,
+        source.frame_selector.linear.weight,
+    )
+    assert torch.equal(
+        target.frame_selector.norm.weight,
+        source.frame_selector.norm.weight,
+    )
+    assert torch.equal(target.frame_selector.norm.running_mean, running_mean_before)
+    assert int(target.frame_selector._loss_weight_schedule_step.item()) == 0
+
+
+def test_selector_initialization_still_rejects_missing_parameters(
+    tmp_path: Path,
+) -> None:
+    source = _TinyModel()
+    state = {
+        f"module.frame_selector.{key}": value.detach().clone()
+        for key, value in source.frame_selector.state_dict().items()
+        if key != "linear.weight"
+    }
+    checkpoint = tmp_path / "frontend_without_parameter.pth"
+    torch.save({"epoch": 19, "state_dict_ema": state}, checkpoint)
+    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+
+    with pytest.raises(RuntimeError, match="missing_parameters"):
+        initialize_frame_selector_from_checkpoint(
+            _TinyModel(),
+            {
+                "checkpoint_path": str(checkpoint),
+                "checkpoint_sha256": digest,
+                "state_key": "state_dict_ema",
+                "expected_checkpoint_epoch": 19,
+                "reset_state_keys": ["_loss_weight_schedule_step"],
             },
         )
 
