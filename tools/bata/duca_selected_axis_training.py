@@ -214,6 +214,19 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
             raise ValueError("R5 cell is outside the frozen paper matrix")
         if budget != int(cell["budget"]):
             raise ValueError("R5 selector budget differs from its cell identity")
+        expected_max_hole = {384: 2, 256: 3}[budget]
+        if (
+            int(cell.get("max_unselected_hole", -1)) != expected_max_hole
+            or int(selector.max_unselected_hole) != expected_max_hole
+            or int(selector.max_gap_loss_max_unselected_hole) != expected_max_hole
+            or int(
+                selector.temporal_sampling_contract[
+                    "max_unselected_hole_dense_candidates"
+                ]
+            )
+            != expected_max_hole
+        ):
+            raise ValueError("R5 cell and selector max-gap contract differ")
         contract["r5_cell"] = dict(cell)
     if int(selector.dense_window_size) != 768:
         raise ValueError("selected-axis official training requires T=768")
@@ -365,12 +378,14 @@ def _build_r5_runtime_bindings(
     backend = str(cell.get("backend", ""))
     arm = str(cell.get("arm", ""))
     budget = int(cell.get("budget", -1))
+    max_unselected_hole = int(cell.get("max_unselected_hole", -1))
     cell_seed = int(cell.get("seed", -1))
     cell_id = f"{backend}_{arm}_k{budget}_s{cell_seed}"
     if (
         backend not in R5_BACKENDS
         or arm not in R5_ARMS
         or budget not in R5_BUDGETS
+        or max_unselected_hole != ({384: 2, 256: 3}).get(budget)
         or cell_seed not in R5_SEEDS
         or int(seed) != cell_seed
         or variant != cell_id
@@ -394,7 +409,10 @@ def _build_r5_runtime_bindings(
         Path(str(row.get("config", ""))).expanduser().resolve() != source_config
         or row.get("config_sha256") != source_config_sha256
         or sha256_file(source_config) != source_config_sha256
-        or any(row.get(key) != cell[key] for key in ("backend", "arm", "budget", "seed"))
+        or any(
+            row.get(key) != cell[key]
+            for key in ("backend", "arm", "budget", "max_unselected_hole", "seed")
+        )
     ):
         raise RuntimeError("R5 runtime config differs from the sealed matrix cell")
 
@@ -863,7 +881,7 @@ def validate_terminal_checkpoint_binding(
                 f"selected-axis terminal training binding mismatch: {key}"
             )
 
-    return {
+    identity = {
         "variant": str(variant),
         "seed": int(seed),
         "successful_optimizer_updates": expected_updates,
@@ -872,12 +890,28 @@ def validate_terminal_checkpoint_binding(
         "training_audit_path": str(audit_file.resolve()),
         "training_audit_sha256": sha256_file(audit_file),
         "training_audit_self_sha256": str(audit["audit_sha256"]),
-        "gate_suite_sha256": str(audit["gate_suite_sha256"]),
-        "full_model_gate_sha256": str(audit["full_model_gate_sha256"]),
         "pretrain_path": pretrain["path"],
         "pretrain_sha256": pretrain["sha256"],
         "frontend_initialization": audit.get("selector_initialization_contract"),
     }
+    if protocol == R5_FORMAL_PROTOCOL:
+        identity.update(
+            {
+                "matrix_summary_path": str(audit["matrix_summary_path"]),
+                "matrix_summary_sha256": str(audit["matrix_summary_sha256"]),
+                "mechanism_gate_path": str(audit["mechanism_gate_path"]),
+                "mechanism_gate_sha256": str(audit["mechanism_gate_sha256"]),
+                "hard_swap_alignment": audit.get("hard_swap_alignment"),
+            }
+        )
+    else:
+        identity.update(
+            {
+                "gate_suite_sha256": str(audit["gate_suite_sha256"]),
+                "full_model_gate_sha256": str(audit["full_model_gate_sha256"]),
+            }
+        )
+    return identity
 
 
 __all__ = [

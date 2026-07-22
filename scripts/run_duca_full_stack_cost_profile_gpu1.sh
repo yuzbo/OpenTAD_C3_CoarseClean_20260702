@@ -20,6 +20,14 @@ PROFILE_BATCH_SIZE="${PROFILE_BATCH_SIZE:-1}"
 PROFILE_SAMPLE_POWER="${PROFILE_SAMPLE_POWER:-1}"
 PROFILE_POWER_INTERVAL_MS="${PROFILE_POWER_INTERVAL_MS:-20}"
 PROFILE_POWER_GPU_ID="${PROFILE_POWER_GPU_ID:-}"
+PROFILE_TRAINED_COMMIT="${PROFILE_TRAINED_COMMIT:-}"
+PROFILE_EVIDENCE_COMMIT="${PROFILE_EVIDENCE_COMMIT:-}"
+PROFILE_CHECKPOINT_EVIDENCE="${PROFILE_CHECKPOINT_EVIDENCE:-}"
+PROFILE_CHECKPOINT_EVIDENCE_SHA256="${PROFILE_CHECKPOINT_EVIDENCE_SHA256:-}"
+PROFILE_SESSION_ID="${PROFILE_SESSION_ID:-}"
+PROFILE_PAIR_ID="${PROFILE_PAIR_ID:-}"
+PROFILE_REPEAT_INDEX="${PROFILE_REPEAT_INDEX:-}"
+PROFILE_ORDER_POSITION="${PROFILE_ORDER_POSITION:-}"
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 OUTPUT_PREFIX="${OUTPUT_PREFIX:-${BASE}/projects/c3_lowres_action_probe/duca_cost_profiles/${PROFILE_METHOD}_$(date +%Y%m%d_%H%M%S_%z)}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
@@ -71,7 +79,7 @@ ARGS=(
   "${CONFIG}"
   --output-prefix "${OUTPUT_PREFIX}"
   --method-name "${PROFILE_METHOD}"
-  --config-commit "$(git rev-parse HEAD)"
+  --config-commit "${PROFILE_TRAINED_COMMIT:-$(git rev-parse HEAD)}"
   --backbone-pretrain "${ADATAD_PRETRAIN_PATH}"
   --device cuda:0
   --samples "${PROFILE_SAMPLES}"
@@ -85,6 +93,31 @@ if [[ "${ALLOW_RANDOM_INIT}" == "1" ]]; then
   ARGS+=(--allow-random-init)
 else
   ARGS+=(--checkpoint "${PROFILE_CHECKPOINT}" --use-ema)
+fi
+if [[ -n "${PROFILE_TRAINED_COMMIT}" ]]; then
+  ARGS+=(--trained-commit "${PROFILE_TRAINED_COMMIT}")
+fi
+if [[ -n "${PROFILE_EVIDENCE_COMMIT}" ]]; then
+  ARGS+=(--evidence-commit "${PROFILE_EVIDENCE_COMMIT}")
+fi
+if [[ -n "${PROFILE_CHECKPOINT_EVIDENCE}" || -n "${PROFILE_CHECKPOINT_EVIDENCE_SHA256}" ]]; then
+  [[ -n "${PROFILE_CHECKPOINT_EVIDENCE}" && -n "${PROFILE_CHECKPOINT_EVIDENCE_SHA256}" ]] \
+    || fail "PROFILE_CHECKPOINT_EVIDENCE and its SHA256 are required together"
+  ARGS+=(
+    --checkpoint-evidence "${PROFILE_CHECKPOINT_EVIDENCE}"
+    --checkpoint-evidence-sha256 "${PROFILE_CHECKPOINT_EVIDENCE_SHA256}"
+  )
+fi
+if [[ -n "${PROFILE_SESSION_ID}${PROFILE_PAIR_ID}${PROFILE_REPEAT_INDEX}${PROFILE_ORDER_POSITION}" ]]; then
+  [[ -n "${PROFILE_SESSION_ID}" && -n "${PROFILE_PAIR_ID}" && \
+     -n "${PROFILE_REPEAT_INDEX}" && -n "${PROFILE_ORDER_POSITION}" ]] \
+    || fail "formal profile session fields are required together"
+  ARGS+=(
+    --profile-session-id "${PROFILE_SESSION_ID}"
+    --profile-pair-id "${PROFILE_PAIR_ID}"
+    --profile-repeat-index "${PROFILE_REPEAT_INDEX}"
+    --profile-order-position "${PROFILE_ORDER_POSITION}"
+  )
 fi
 if [[ "${PROFILE_SAMPLE_POWER}" == "1" ]]; then
   ARGS+=(--sample-power --power-interval-ms "${PROFILE_POWER_INTERVAL_MS}")

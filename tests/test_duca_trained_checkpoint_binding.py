@@ -8,7 +8,9 @@ import pytest
 
 from tools.bata.duca_cellcf_training import canonical_sha256
 from tools.bata.duca_trained_checkpoint_binding import (
+    build_trained_checkpoint_binding,
     load_trained_checkpoint_binding,
+    write_trained_checkpoint_binding,
 )
 
 
@@ -90,3 +92,35 @@ def test_trained_checkpoint_binding_rejects_replaced_checkpoint(
             expected_resolved_config_sha256="b" * 64,
             expected_checkpoint_path=checkpoint,
         )
+
+
+def test_trained_checkpoint_binding_builder_seals_dense_epoch59_ema(
+    tmp_path: Path,
+) -> None:
+    _, config, checkpoint = _fixture(tmp_path)
+    training = tmp_path / "training.json"
+    evaluation = tmp_path / "evaluation.json"
+    payload = build_trained_checkpoint_binding(
+        role="dense_adatad_baseline",
+        git_commit=COMMIT,
+        config_path=config,
+        resolved_config_sha256="b" * 64,
+        checkpoint_path=checkpoint,
+        checkpoint_epoch=59,
+        checkpoint_state_key="state_dict_ema",
+        training_evidence_path=training,
+        evaluation_evidence_path=evaluation,
+    )
+    output = write_trained_checkpoint_binding(tmp_path / "built.json", payload)
+
+    loaded = load_trained_checkpoint_binding(
+        output,
+        _sha(output),
+        expected_role="dense_adatad_baseline",
+        expected_commit=COMMIT,
+        expected_config_path=config,
+        expected_config_sha256=_sha(config),
+        expected_resolved_config_sha256="b" * 64,
+        expected_checkpoint_path=checkpoint,
+    )
+    assert loaded["checkpoint_epoch"] == 59

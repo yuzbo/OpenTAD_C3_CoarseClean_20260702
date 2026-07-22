@@ -42,10 +42,64 @@ CELLCF_COST_METHODS = frozenset({"cellcf-fixed384", "bare-uniform384"})
 DENSE_COST_METHODS = frozenset({"dense-adatad"})
 CELLCF_POST_RUN_SCHEMA = "duca_cellcf_post_run_evidence_v1"
 CELLCF_COST_BINDING_SCHEMA = "duca_cellcf_cost_binding_v1"
+R5_COST_BINDING_SCHEMA = "duca_r5_terminal_cost_binding_v1"
+R5_FORMAL_PROTOCOL = "duca_r5_mechanism_matrix_v1"
+R5_MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
+R5_METHOD_PATTERN = re.compile(
+    r"^(?P<backend>actionformer|temporalmaxer)_"
+    r"(?P<arm>uniform|learned)_k(?P<budget>384|256)_"
+    r"s(?P<seed>3407|5801|8123)$"
+)
+
+
+def parse_r5_method_name(method_name: str) -> dict[str, Any] | None:
+    match = R5_METHOD_PATTERN.fullmatch(str(method_name))
+    if match is None:
+        return None
+    return {
+        "backend": match.group("backend"),
+        "arm": match.group("arm"),
+        "budget": int(match.group("budget")),
+        "seed": int(match.group("seed")),
+    }
+
+
+def is_r5_cost_method(method_name: str) -> bool:
+    return parse_r5_method_name(method_name) is not None
+
+
+def _validate_r5_cell_payload(
+    payload: Any,
+    *,
+    core: Mapping[str, Any],
+    require_sampling_contract: bool,
+) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("R5 cell payload is missing")
+    for key, expected in core.items():
+        if payload.get(key) != expected:
+            raise ValueError(f"R5 cell identity drift: {key}")
+    budget = int(core["budget"])
+    max_hole = R5_MAX_UNSELECTED_HOLES[budget]
+    if int(payload.get("max_unselected_hole", -1)) != max_hole:
+        raise ValueError("R5 cell max-gap contract drift")
+    expected_interval = (max_hole + 1) * 4
+    interval = payload.get("max_selected_interval_source_frames")
+    regime = payload.get("sampling_regime")
+    if require_sampling_contract and (interval is None or regime is None):
+        raise ValueError("R5 cell sampling contract is incomplete")
+    if interval is not None and int(interval) != expected_interval:
+        raise ValueError("R5 cell source-frame interval drift")
+    if regime is not None and regime != "boundary_burst_with_global_coverage":
+        raise ValueError("R5 cell sampling regime drift")
+    return {**dict(core), "max_unselected_hole": max_hole}
 
 
 class ProfileArgs(argparse.Namespace):
     def validate(self) -> None:
+        r5_method = is_r5_cost_method(self.method_name)
+        if str(self.method_name).startswith(("actionformer_", "temporalmaxer_")) and not r5_method:
+            raise ValueError("R5 method name is outside the frozen cell matrix")
         if not self.allow_random_init and not self.checkpoint:
             raise ValueError("a checkpoint is required unless --allow-random-init is explicit")
         if self.samples <= 0:
@@ -90,6 +144,11 @@ class ProfileArgs(argparse.Namespace):
                 raise ValueError("formal dense cost profiles require hash-bound checkpoint evidence")
             if self.allow_random_init or not self.use_ema:
                 raise ValueError("formal dense cost profiles require trained EMA weights")
+        if r5_method:
+            if self.allow_random_init or not self.use_ema or not self.checkpoint:
+                raise ValueError("formal R5 cost profiles require an epoch-59 EMA checkpoint")
+            if re.fullmatch(r"[0-9a-f]{40}", str(self.config_commit or "")) is None:
+                raise ValueError("formal R5 cost profiles require a full --config-commit")
         if self.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
             if not self.trained_commit:
                 raise ValueError(
@@ -181,7 +240,15 @@ def resolve_profile_commit_identities(
     if re.fullmatch(r"[0-9a-f]{40}", trained_commit) is None:
         raise ValueError("--trained-commit must be a full lowercase Git commit")
     evidence_commit = str(args.evidence_commit or "")
-    if args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+    if is_r5_cost_method(args.method_name):
+        if trained_commit != actual_commit:
+            raise ValueError("R5 trained checkpoint and profiler must use the same exact commit")
+        if str(args.config_commit or "") != trained_commit:
+            raise ValueError("R5 --config-commit must identify the exact trained commit")
+        if evidence_commit and evidence_commit != actual_commit:
+            raise ValueError("R5 --evidence-commit must equal the profiler repository HEAD")
+        evidence_commit = actual_commit
+    elif args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
         if evidence_commit != actual_commit:
             raise ValueError(
                 "--evidence-commit must equal the exact profiler repository HEAD"
@@ -522,6 +589,400 @@ def _require_sha256(value: Any, label: str) -> str:
     return text
 
 
+def _r5_load_json(path: str | Path, digest: str, label: str) -> tuple[dict[str, Any], Path]:
+    resolved = Path(path).expanduser().resolve()
+    expected = _require_sha256(digest, f"{label} SHA256")
+    if not resolved.is_file():
+        raise ValueError(f"R5 {label} is missing: {resolved}")
+    if _sha256_file(resolved) != expected:
+        raise ValueError(f"R5 {label} SHA256 mismatch")
+    payload = json.loads(resolved.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"R5 {label} must be a JSON object")
+    return payload, resolved
+
+
+def _validate_r5_self_hash(
+    payload: Mapping[str, Any], *, hash_key: str, label: str
+) -> str:
+    expected = _require_sha256(payload.get(hash_key), f"R5 {label} self hash")
+    unsigned = dict(payload)
+    unsigned.pop(hash_key, None)
+    if _canonical_sha256(unsigned) != expected:
+        raise ValueError(f"R5 {label} self-hash mismatch")
+    return expected
+
+
+def _r5_bound_file(path: Any, digest: Any, label: str) -> dict[str, str]:
+    resolved = Path(str(path or "")).expanduser().resolve()
+    expected = _require_sha256(digest, f"R5 {label} SHA256")
+    if not resolved.is_file():
+        raise ValueError(f"R5 {label} is missing: {resolved}")
+    if _sha256_file(resolved) != expected:
+        raise ValueError(f"R5 {label} content drift")
+    return {"path": str(resolved), "sha256": expected}
+
+
+def load_r5_terminal_cost_binding(
+    *,
+    method_name: str,
+    config_path: str | Path,
+    checkpoint_path: str | Path,
+    expected_commit: str,
+    matrix_summary_path: str | Path,
+    matrix_summary_sha256: str,
+    mechanism_gate_path: str | Path,
+    mechanism_gate_sha256: str,
+    expected_resolved_config_sha256: str | None = None,
+    expected_training_identity: Mapping[str, Any] | None = None,
+    expected_evaluation: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Reopen the complete terminal R5 provenance chain for cost and aggregation."""
+
+    cell = parse_r5_method_name(method_name)
+    if cell is None:
+        raise ValueError(f"unsupported R5 method/cell: {method_name}")
+    if re.fullmatch(r"[0-9a-f]{40}", str(expected_commit)) is None:
+        raise ValueError("R5 binding requires an exact Git commit")
+
+    config = Path(config_path).expanduser().resolve()
+    if not config.is_file():
+        raise ValueError(f"R5 config is missing: {config}")
+    config_sha256 = _sha256_file(config)
+    checkpoint = Path(checkpoint_path).expanduser().resolve()
+    if checkpoint.name != "epoch_59.pth" or not checkpoint.is_file():
+        raise ValueError("R5 cost binding requires the terminal epoch_59 checkpoint")
+    checkpoint_sha256 = _sha256_file(checkpoint)
+
+    matrix, matrix_path = _r5_load_json(
+        matrix_summary_path, matrix_summary_sha256, "matrix summary"
+    )
+    if (
+        matrix.get("schema") != "duca_r5_paper_matrix_v1"
+        or matrix.get("task") != "offline_temporal_action_detection"
+        or matrix.get("git_commit") != expected_commit
+    ):
+        raise ValueError("R5 matrix summary protocol/commit drift")
+    matrix_cells = matrix.get("cells")
+    matrix_cell = next(
+        (
+            item
+            for item in matrix_cells
+            if isinstance(item, Mapping) and item.get("id") == method_name
+        ),
+        None,
+    ) if isinstance(matrix_cells, list) else None
+    try:
+        bound_cell = _validate_r5_cell_payload(
+            matrix_cell,
+            core=cell,
+            require_sampling_contract=False,
+        )
+    except ValueError as exc:
+        raise ValueError("R5 cell/config differs from the sealed matrix") from exc
+    if (
+        Path(str(matrix_cell.get("config", ""))).expanduser().resolve() != config
+        or matrix_cell.get("config_sha256") != config_sha256
+    ):
+        raise ValueError("R5 cell/config differs from the sealed matrix")
+
+    gate, gate_path = _r5_load_json(
+        mechanism_gate_path, mechanism_gate_sha256, "mechanism gate"
+    )
+    if (
+        Path(str(matrix.get("mechanism_gate_output", ""))).expanduser().resolve()
+        != gate_path
+        or gate.get("ok") is not True
+        or gate.get("task") != "offline_temporal_action_detection"
+        or gate.get("git_commit") != expected_commit
+        or gate.get("forward_backward_optimizer_step_completed") is not True
+    ):
+        raise ValueError("R5 mechanism gate did not authorize this matrix")
+
+    sidecar_path = Path(f"{checkpoint}.metadata.json").resolve()
+    if not sidecar_path.is_file():
+        raise ValueError("R5 terminal checkpoint sidecar is missing")
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(sidecar, Mapping)
+        or sidecar.get("schema_version") != "duca_p0_checkpoint_sidecar_v2"
+    ):
+        raise ValueError("R5 terminal checkpoint sidecar schema mismatch")
+    sidecar_self_sha256 = _validate_r5_self_hash(
+        sidecar, hash_key="sidecar_sha256", label="checkpoint sidecar"
+    )
+    if (
+        Path(str(sidecar.get("checkpoint_path", ""))).expanduser().resolve()
+        != checkpoint
+        or sidecar.get("checkpoint_sha256") != checkpoint_sha256
+    ):
+        raise ValueError("R5 checkpoint/sidecar identity drift")
+
+    metadata = sidecar.get("experiment_metadata")
+    if (
+        not isinstance(metadata, Mapping)
+        or metadata.get("schema_version") != "duca_p0_checkpoint_metadata_v2"
+    ):
+        raise ValueError("R5 checkpoint metadata is missing")
+    metadata_self_sha256 = _validate_r5_self_hash(
+        metadata, hash_key="metadata_sha256", label="checkpoint metadata"
+    )
+    audit = metadata.get("training_audit")
+    if (
+        not isinstance(audit, Mapping)
+        or audit.get("schema_version") != "duca_p0_training_audit_v2"
+    ):
+        raise ValueError("R5 terminal training audit is missing")
+    audit_self_sha256 = _validate_r5_self_hash(
+        audit, hash_key="audit_sha256", label="training audit"
+    )
+    audit_path = checkpoint.parent.parent / "duca_selected_axis_training_audit.json"
+    if not audit_path.is_file():
+        raise ValueError("R5 persisted training audit is missing")
+    persisted_audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    if persisted_audit != audit:
+        raise ValueError("R5 persisted and checkpoint-embedded audits differ")
+
+    required = {
+        "status": "complete",
+        "git_commit": expected_commit,
+        "variant": method_name,
+        "seed": cell["seed"],
+        "formal_protocol": R5_FORMAL_PROTOCOL,
+        "training_profile": "official60",
+        "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
+        "primary_checkpoint_epoch": 59,
+        "primary_checkpoint_state_key": "state_dict_ema",
+        "expected_train_batches_per_epoch": 100,
+        "expected_successful_optimizer_updates": 6000,
+        "last_completed_epoch": 59,
+        "epochs_completed": 60,
+        "train_batches_per_epoch": 100,
+        "scheduler_last_epoch": 6000,
+        "selector_schedule_step": 6000,
+    }
+    for key, expected in required.items():
+        if audit.get(key) != expected:
+            raise ValueError(f"R5 terminal training identity mismatch: {key}")
+    _validate_r5_cell_payload(
+        audit.get("r5_cell"),
+        core=cell,
+        require_sampling_contract=True,
+    )
+    if (
+        Path(str(audit.get("source_config_path", ""))).expanduser().resolve()
+        != config
+        or audit.get("source_config_sha256") != config_sha256
+    ):
+        raise ValueError("R5 audit config identity drift")
+    resolved_config_sha256 = _require_sha256(
+        audit.get("resolved_config_sha256"), "R5 resolved config SHA256"
+    )
+    runtime_config_sha256 = _require_sha256(
+        audit.get("runtime_config_sha256"), "R5 runtime config SHA256"
+    )
+    if (
+        expected_resolved_config_sha256 is not None
+        and resolved_config_sha256 != expected_resolved_config_sha256
+    ):
+        raise ValueError("R5 resolved config differs from the terminal evidence")
+    if (
+        Path(str(audit.get("matrix_summary_path", ""))).expanduser().resolve()
+        != matrix_path
+        or audit.get("matrix_summary_sha256") != matrix_summary_sha256
+        or Path(str(audit.get("mechanism_gate_path", ""))).expanduser().resolve()
+        != gate_path
+        or audit.get("mechanism_gate_sha256") != mechanism_gate_sha256
+    ):
+        raise ValueError("R5 audit matrix/gate binding drift")
+
+    counters = audit.get("update_audit")
+    if not isinstance(counters, Mapping):
+        raise ValueError("R5 update audit is missing")
+    for key in (
+        "attempted_batches",
+        "successful_optimizer_updates",
+        "scheduler_updates",
+        "ema_updates",
+        "duca_schedule_updates",
+    ):
+        if int(counters.get(key, -1)) != 6000:
+            raise ValueError(f"R5 terminal update accounting mismatch: {key}")
+    if (
+        int(counters.get("optimizer_attempts", -1))
+        != 6000 + int(counters.get("amp_skipped_attempts", -1))
+        or int(counters.get("replay_exhaustions", -1)) != 0
+        or int(counters.get("forced_amp_overflow_attempts", -1)) != 0
+    ):
+        raise ValueError("R5 optimizer/AMP accounting drift")
+    records = audit.get("epoch_records")
+    if (
+        not isinstance(records, list)
+        or len(records) != 60
+        or [int(record.get("epoch", -1)) for record in records] != list(range(60))
+    ):
+        raise ValueError("R5 epoch records are incomplete")
+    for epoch, record in enumerate(records):
+        delta = record.get("counter_delta")
+        if not isinstance(delta, Mapping):
+            raise ValueError(f"R5 epoch {epoch} counter delta is missing")
+        for key in (
+            "attempted_batches",
+            "successful_optimizer_updates",
+            "scheduler_updates",
+            "ema_updates",
+            "duca_schedule_updates",
+        ):
+            if int(delta.get(key, -1)) != 100:
+                raise ValueError(f"R5 epoch {epoch} accounting mismatch: {key}")
+        if (
+            int(record.get("scheduler_last_epoch", -1)) != (epoch + 1) * 100
+            or int(record.get("selector_schedule_step", -1)) != (epoch + 1) * 100
+        ):
+            raise ValueError(f"R5 epoch {epoch} scheduler/selector state drift")
+
+    data_bindings = {}
+    for prefix in ("pretrain", "evaluation_annotation", "evaluation_class_map"):
+        data_bindings[prefix] = _r5_bound_file(
+            audit.get(f"{prefix}_path"), audit.get(f"{prefix}_sha256"), prefix
+        )
+    evaluation_config_sha256 = _require_sha256(
+        audit.get("evaluation_config_sha256"), "R5 evaluation config SHA256"
+    )
+    if gate.get("pretrain_path") != data_bindings["pretrain"]["path"] or (
+        gate.get("pretrain_sha256") != data_bindings["pretrain"]["sha256"]
+    ):
+        raise ValueError("R5 mechanism gate pretrain drift")
+
+    frontend = None
+    alignment = None
+    if cell["arm"] == "learned":
+        initialization = audit.get("selector_initialization_contract")
+        if not isinstance(initialization, Mapping):
+            raise ValueError("R5 learned cell lacks frontend initialization")
+        frontend = {
+            **_r5_bound_file(
+                initialization.get("checkpoint_path"),
+                initialization.get("checkpoint_sha256"),
+                "learned frontend checkpoint",
+            ),
+            "checkpoint_epoch": int(initialization.get("checkpoint_epoch", -1)),
+            "checkpoint_state_key": str(initialization.get("checkpoint_state_key", "")),
+            "selected_p0_variant": str(initialization.get("selected_p0_variant", "")),
+            "learned_variant": str(initialization.get("learned_variant", "")),
+        }
+        if frontend["checkpoint_epoch"] < 0 or frontend["checkpoint_state_key"] != "state_dict_ema":
+            raise ValueError("R5 learned frontend is not a frozen EMA checkpoint")
+        alignment_binding = audit.get("hard_swap_alignment")
+        if not isinstance(alignment_binding, Mapping):
+            raise ValueError("R5 learned cell lacks hard-swap alignment")
+        alignment_payload, alignment_path = _r5_load_json(
+            alignment_binding.get("path", ""),
+            str(alignment_binding.get("sha256", "")),
+            "hard-swap alignment",
+        )
+        alignment_self_sha256 = _validate_r5_self_hash(
+            alignment_payload,
+            hash_key="alignment_sha256",
+            label="hard-swap alignment",
+        )
+        if alignment_binding.get("self_sha256") != alignment_self_sha256:
+            raise ValueError("R5 hard-swap alignment self-hash drift")
+        alignment = {
+            "path": str(alignment_path),
+            "sha256": str(alignment_binding["sha256"]),
+            "self_sha256": alignment_self_sha256,
+            "context_sha256": str(alignment_binding.get("context_sha256", "")),
+            "terminal_suite_sha256": str(
+                alignment_binding.get("terminal_suite_sha256", "")
+            ),
+        }
+        _require_sha256(alignment["context_sha256"], "R5 alignment context SHA256")
+        _require_sha256(
+            alignment["terminal_suite_sha256"], "R5 terminal suite SHA256"
+        )
+    elif audit.get("selector_initialization_contract") is not None or audit.get(
+        "hard_swap_alignment"
+    ) is not None:
+        raise ValueError("R5 uniform cell unexpectedly carries learned evidence")
+
+    if expected_evaluation is not None:
+        expected_pairs = {
+            "resolved_config_sha256": resolved_config_sha256,
+            "runtime_config_sha256": runtime_config_sha256,
+            "evaluation_annotation_path": data_bindings["evaluation_annotation"]["path"],
+            "evaluation_annotation_sha256": data_bindings["evaluation_annotation"]["sha256"],
+            "evaluation_class_map_path": data_bindings["evaluation_class_map"]["path"],
+            "evaluation_class_map_sha256": data_bindings["evaluation_class_map"]["sha256"],
+            "evaluation_config_sha256": evaluation_config_sha256,
+        }
+        for key, expected in expected_pairs.items():
+            observed = expected_evaluation.get(key)
+            if key.endswith("_path"):
+                observed = str(Path(str(observed or "")).expanduser().resolve())
+            if observed != expected:
+                raise ValueError(f"R5 evaluation/audit binding mismatch: {key}")
+
+    binding = {
+        "schema": R5_COST_BINDING_SCHEMA,
+        "git_commit": expected_commit,
+        "method": method_name,
+        "r5_cell": bound_cell,
+        "config_path": str(config),
+        "config_sha256": config_sha256,
+        "resolved_config_sha256": resolved_config_sha256,
+        "runtime_config_sha256": runtime_config_sha256,
+        "checkpoint_path": str(checkpoint),
+        "checkpoint_sha256": checkpoint_sha256,
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_sidecar_path": str(sidecar_path),
+        "checkpoint_sidecar_sha256": _sha256_file(sidecar_path),
+        "checkpoint_sidecar_self_sha256": sidecar_self_sha256,
+        "checkpoint_metadata_self_sha256": metadata_self_sha256,
+        "checkpoint_experiment_metadata_sha256": _canonical_sha256(metadata),
+        "training_audit_path": str(audit_path.resolve()),
+        "training_audit_sha256": _sha256_file(audit_path),
+        "training_audit_self_sha256": audit_self_sha256,
+        "successful_optimizer_updates": 6000,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "epoch_record_count": 60,
+        "matrix_summary_path": str(matrix_path),
+        "matrix_summary_sha256": matrix_summary_sha256,
+        "mechanism_gate_path": str(gate_path),
+        "mechanism_gate_sha256": mechanism_gate_sha256,
+        "pretrain": data_bindings["pretrain"],
+        "evaluation_annotation": data_bindings["evaluation_annotation"],
+        "evaluation_class_map": data_bindings["evaluation_class_map"],
+        "evaluation_config_sha256": evaluation_config_sha256,
+        "frontend_initialization": frontend,
+        "hard_swap_alignment": alignment,
+    }
+    binding["binding_sha256"] = _canonical_sha256(binding)
+
+    if expected_training_identity is not None:
+        identity_pairs = {
+            "variant": method_name,
+            "seed": cell["seed"],
+            "successful_optimizer_updates": 6000,
+            "checkpoint_sidecar_path": binding["checkpoint_sidecar_path"],
+            "checkpoint_sidecar_sha256": binding["checkpoint_sidecar_sha256"],
+            "training_audit_path": binding["training_audit_path"],
+            "training_audit_sha256": binding["training_audit_sha256"],
+            "training_audit_self_sha256": binding["training_audit_self_sha256"],
+            "matrix_summary_sha256": matrix_summary_sha256,
+            "mechanism_gate_sha256": mechanism_gate_sha256,
+            "pretrain_path": binding["pretrain"]["path"],
+            "pretrain_sha256": binding["pretrain"]["sha256"],
+            "frontend_initialization": frontend,
+        }
+        for key, expected in identity_pairs.items():
+            if expected_training_identity.get(key) != expected:
+                raise ValueError(f"R5 terminal identity mismatch: {key}")
+    return binding
+
+
 def load_cellcf_cost_binding(
     post_run_evidence_path: str | Path,
     post_run_evidence_sha256: str,
@@ -852,6 +1313,11 @@ def _load_checkpoint(
         "checkpoint_sha256": _sha256_file(path),
         "checkpoint_dropped_prefixes": list(drop_prefixes),
         "checkpoint_dropped_key_count": len(dropped),
+        "checkpoint_experiment_metadata_sha256": (
+            None
+            if not isinstance(checkpoint.get("experiment_metadata"), Mapping)
+            else _canonical_sha256(checkpoint["experiment_metadata"])
+        ),
     }
 
 
@@ -899,10 +1365,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     import torch
     from mmengine.config import Config
 
-    from opentad.datasets import build_dataloader, build_dataset
-    from opentad.datasets.base import SlidingWindowDataset
-    from opentad.models import build_detector
-
     repo_root = REPO_ROOT
     tracked_tree_clean = _tracked_tree_is_clean(repo_root)
     if not args.allow_random_init and not tracked_tree_clean:
@@ -913,9 +1375,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         actual_commit=actual_commit,
     )
     config_path = Path(args.config).expanduser().resolve()
+    r5_cell = parse_r5_method_name(args.method_name)
+    git_blob_bound_profile = args.method_name in (
+        CELLCF_COST_METHODS | DENSE_COST_METHODS
+    )
     code_tree_binding: dict[str, Any] | None = None
     profile_config_git_binding: dict[str, Any] | None = None
-    if args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+    execution_model_repo = repo_root
+    if git_blob_bound_profile:
         trained_repo_root = _git_repo_root(config_path.parent)
         try:
             config_relative_path = config_path.relative_to(
@@ -948,10 +1415,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             trained_commit,
             "configs/adatad/thumos",
         )
-        if trained_model_tree != evidence_model_tree:
+        model_trees_equal = trained_model_tree == evidence_model_tree
+        if args.method_name in CELLCF_COST_METHODS and not model_trees_equal:
             raise ValueError(
                 "trained and evidence commits differ on the inference model tree"
             )
+        execution_model_repo = trained_repo_root
         profile_config_sha256 = _sha256_file(config_path)
         profile_config_blob_oid = _git_tree_oid(
             trained_repo_root,
@@ -962,7 +1431,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "trained_opentad_tree_oid": trained_model_tree,
             "evidence_opentad_tree_oid": evidence_model_tree,
             "trained_adatad_thumos_config_tree_oid": trained_config_tree,
-            "model_trees_equal": True,
+            "model_trees_equal": model_trees_equal,
+            "profile_model_loaded_from_trained_repository": True,
             "profile_configs_loaded_from_trained_repository": True,
         }
         profile_config_git_binding = {
@@ -973,8 +1443,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             "sha256": profile_config_sha256,
             "trained_adatad_thumos_config_tree_oid": trained_config_tree,
         }
+    if "opentad" in sys.modules:
+        raise RuntimeError(
+            "opentad was imported before the formal execution repository was bound"
+        )
+    sys.path.insert(0, str(execution_model_repo))
+    from opentad.datasets import build_dataloader, build_dataset
+    from opentad.datasets.base import SlidingWindowDataset
+    from opentad.models import build_detector
+    import opentad as opentad_package
+
+    loaded_opentad_root = Path(opentad_package.__file__).resolve().parent
+    expected_opentad_root = execution_model_repo / "opentad"
+    if loaded_opentad_root != expected_opentad_root:
+        raise RuntimeError(
+            "formal profile imported opentad from a repository other than the bound execution tree"
+        )
+    if code_tree_binding is not None:
+        code_tree_binding["loaded_opentad_root"] = str(loaded_opentad_root)
+        code_tree_binding["execution_repository"] = str(execution_model_repo)
     cellcf_cost_binding = None
     trained_checkpoint_binding = None
+    r5_cost_binding = None
     if args.post_run_evidence:
         cellcf_cost_binding = load_cellcf_cost_binding(
             args.post_run_evidence,
@@ -985,6 +1475,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     cfg = Config.fromfile(str(config_path))
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
+    if r5_cell is not None:
+        configured_cell = _stable_payload(cfg.get("r5_cell", None))
+        _validate_r5_cell_payload(
+            configured_cell,
+            core=r5_cell,
+            require_sampling_contract=True,
+        )
+        r5_cost_binding = load_r5_terminal_cost_binding(
+            method_name=args.method_name,
+            config_path=config_path,
+            checkpoint_path=args.checkpoint,
+            expected_commit=trained_commit,
+            matrix_summary_path=os.environ.get("R5_MATRIX_SUMMARY", ""),
+            matrix_summary_sha256=os.environ.get("R5_MATRIX_SUMMARY_SHA256", ""),
+            mechanism_gate_path=os.environ.get("R5_MECHANISM_GATE_JSON", ""),
+            mechanism_gate_sha256=os.environ.get(
+                "R5_MECHANISM_GATE_SHA256", ""
+            ),
+            expected_resolved_config_sha256=profile_resolved_config_sha256,
+        )
     if args.checkpoint_evidence:
         trained_checkpoint_binding = load_trained_checkpoint_binding(
             args.checkpoint_evidence,
@@ -1053,6 +1563,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             ):
                 if checkpoint_meta.get(key) != trained_checkpoint_binding.get(key):
                     raise ValueError(f"loaded checkpoint differs from generic binding: {key}")
+        if r5_cost_binding is not None:
+            validate_loaded_checkpoint_binding(checkpoint_meta, r5_cost_binding)
+            if (
+                checkpoint_meta.get("checkpoint_experiment_metadata_sha256")
+                != r5_cost_binding["checkpoint_experiment_metadata_sha256"]
+            ):
+                raise ValueError(
+                    "loaded checkpoint metadata differs from the R5 terminal binding"
+                )
 
     modules, zero_stages = discover_profile_modules(model)
     external_cls = getattr(dataset, "class_map", None)
@@ -1221,6 +1740,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 "weight_source": "dense_adatad_trained_state_dict_ema",
                 "frontend_variant": "dense_no_selector",
+                "dense_full_stack_savings_claimed": False,
+            }
+        )
+    if r5_cost_binding is not None:
+        metadata.update(
+            {
+                "r5_cost_binding": r5_cost_binding,
+                "r5_cost_binding_sha256": _canonical_sha256(r5_cost_binding),
+                "weight_source": "r5_terminal_epoch_59_state_dict_ema",
+                "frontend_variant": str(r5_cell["arm"]),
                 "dense_full_stack_savings_claimed": False,
             }
         )

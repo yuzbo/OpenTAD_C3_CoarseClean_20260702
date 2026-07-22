@@ -28,6 +28,24 @@ LEARNED = (
 )
 
 
+def _dense_inputs(tmp_path: Path) -> dict[str, object]:
+    dense_config = tmp_path / "dense_adatad.py"
+    dense_checkpoint = tmp_path / "epoch_59.pth"
+    dense_evidence = tmp_path / "dense_checkpoint_binding.json"
+    dense_config.write_text("model = dict(type='ActionFormer')\n", encoding="utf-8")
+    dense_checkpoint.write_bytes(b"trained-dense-ema")
+    dense_evidence.write_text(
+        json.dumps({"schema": "duca_trained_checkpoint_binding_v1"}),
+        encoding="utf-8",
+    )
+    return {
+        "dense_config": dense_config,
+        "dense_checkpoint": dense_checkpoint,
+        "dense_checkpoint_evidence": dense_evidence,
+        "dense_trained_commit": "b" * 40,
+    }
+
+
 def _generate(tmp_path: Path) -> tuple[dict, Path]:
     output = tmp_path / "r5"
     summary = generate_matrix(
@@ -35,6 +53,7 @@ def _generate(tmp_path: Path) -> tuple[dict, Path]:
         output_dir=output,
         uniform_config=UNIFORM,
         learned_config=LEARNED,
+        **_dense_inputs(tmp_path),
     )
     return summary, output
 
@@ -44,12 +63,14 @@ def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -
     assert summary["cell_count"] == len(BACKENDS) * 2 * len(BUDGETS) * len(SEEDS) == 24
     assert summary["seeds"] == [3407, 5801, 8123]
     assert summary["budgets"] == [384, 256]
+    assert summary["max_unselected_holes"] == {"384": 2, "256": 3}
     assert summary["learned_variant"] == "boundary_burst_r2q3_g1"
     assert len(list((output / "configs").glob("*.py"))) == 24
-    assert len(list((output / "jobs").glob("*.sbatch"))) == 30
+    assert len(list((output / "jobs").glob("*.sbatch"))) == 35
     assert len((output / "cells.tsv").read_text(encoding="utf-8").splitlines()) == 25
-    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 5
-    assert summary["cost_count"] == 4
+    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 10
+    assert summary["cost_count"] == 9
+    assert summary["dense_cost_baseline"]["trained_commit"] == "b" * 40
     assert summary["git_commit"]
     assert (output / "matrix_summary.json.sha256").is_file()
     gate = (output / "jobs/temporalmaxer_one_step.sbatch").read_text(
@@ -57,6 +78,12 @@ def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -
     )
     assert "run_duca_temporalmaxer_one_step" in gate
     assert "sbatch " not in gate
+    dense_cost_job = (output / "jobs/cost_dense_adatad_k768.sbatch").read_text(
+        encoding="utf-8"
+    )
+    assert "PROFILE_METHOD=dense-adatad" in dense_cost_job
+    assert "PROFILE_CHECKPOINT_EVIDENCE=" in dense_cost_job
+    assert "PROFILE_SESSION_ID=r5-paper-matrix" in dense_cost_job
     generated_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in [*(output / "configs").glob("*.py"), *(output / "jobs").glob("*.sbatch")]
@@ -79,6 +106,9 @@ def test_generated_temporalmaxer_config_resolves_real_k256_path(
         "backend": "temporalmaxer",
         "arm": "learned",
         "budget": 256,
+        "max_unselected_hole": 3,
+        "max_selected_interval_source_frames": 16,
+        "sampling_regime": "boundary_burst_with_global_coverage",
         "seed": 5801,
         "source_config": str(LEARNED).replace("\\", "/"),
         "live_duca_to_videomae": True,
@@ -87,7 +117,14 @@ def test_generated_temporalmaxer_config_resolves_real_k256_path(
     }
     assert cfg.model.type == "TemporalMaxer"
     assert cfg.model.frame_selector.budget == 256
+    assert cfg.model.frame_selector.max_unselected_hole == 3
+    assert cfg.model.frame_selector.max_gap_loss_max_unselected_hole == 3
     assert cfg.model.frame_selector.temporal_sampling_contract.hard_budget == 256
+    assert (
+        cfg.model.frame_selector.temporal_sampling_contract.max_unselected_hole_dense_candidates
+        == 3
+    )
+    assert cfg.r5_cell.max_selected_interval_source_frames == 16
     assert cfg.model.backbone.backbone.total_frames == 256
     assert cfg.model.backbone.custom.pre_processing_pipeline[0].t1 == 16
     assert cfg.model.backbone.custom.post_processing_pipeline[-1].size == 256
@@ -229,6 +266,7 @@ def test_generator_rejects_source_config_outside_repo(tmp_path: Path) -> None:
             output_dir=tmp_path / "output",
             uniform_config=outside,
             learned_config=LEARNED,
+            **_dense_inputs(tmp_path),
         )
 
 

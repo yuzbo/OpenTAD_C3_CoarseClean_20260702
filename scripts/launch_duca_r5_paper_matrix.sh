@@ -4,6 +4,10 @@ set -euo pipefail
 REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd -P)}"
 OUTPUT_DIR="${R5_OUTPUT_DIR:?set R5_OUTPUT_DIR}"
 LEARNED_CONFIG="${R5_LEARNED_CONFIG:?set R5_LEARNED_CONFIG to the R0-selected reviewed G1 config}"
+R5_DENSE_CONFIG="${R5_DENSE_CONFIG:?set R5_DENSE_CONFIG}"
+R5_DENSE_CHECKPOINT="${R5_DENSE_CHECKPOINT:?set R5_DENSE_CHECKPOINT}"
+R5_DENSE_CHECKPOINT_EVIDENCE="${R5_DENSE_CHECKPOINT_EVIDENCE:?set R5_DENSE_CHECKPOINT_EVIDENCE}"
+R5_DENSE_TRAINED_COMMIT="${R5_DENSE_TRAINED_COMMIT:?set R5_DENSE_TRAINED_COMMIT}"
 UNIFORM_CONFIG="${R5_UNIFORM_CONFIG:-${REPO_ROOT}/configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py}"
 TARGET_CLUSTER="${TARGET_CLUSTER:-n16r4}"
 R5_SUBMIT="${R5_SUBMIT:-0}"
@@ -15,6 +19,10 @@ python -m tools.bata.duca_r5_paper_matrix \
   --output-dir "${OUTPUT_DIR}" \
   --uniform-config "${UNIFORM_CONFIG}" \
   --learned-config "${LEARNED_CONFIG}" \
+  --dense-config "${R5_DENSE_CONFIG}" \
+  --dense-checkpoint "${R5_DENSE_CHECKPOINT}" \
+  --dense-checkpoint-evidence "${R5_DENSE_CHECKPOINT_EVIDENCE}" \
+  --dense-trained-commit "${R5_DENSE_TRAINED_COMMIT}" \
   --cluster "${TARGET_CLUSTER}"
 
 if [[ "${R5_SUBMIT}" != 1 ]]; then
@@ -51,7 +59,7 @@ tail -n +2 "${OUTPUT_DIR}/cells.tsv" | while IFS=$'\t' read -r \
 done
 
 tail -n +2 "${OUTPUT_DIR}/costs.tsv" | while IFS=$'\t' read -r \
-  cost_id source_cell sbatch_file summary; do
+  cost_id kind source_cell sbatch_file summary; do
   source_job="$(awk -F '\t' -v role="${source_cell}" '$1 == role {print $2}' \
     "${OUTPUT_DIR}/jobs.tsv")"
   [[ "${source_job}" =~ ^[1-9][0-9]*$ ]]
@@ -80,5 +88,5 @@ printf 'aggregate\t%s\t%s\t%s\n' \
 sha256sum "${OUTPUT_DIR}/jobs.tsv" | awk '{print $1}' > \
   "${OUTPUT_DIR}/jobs.tsv.sha256"
 
-echo "Submitted R5 gate, 24 train+terminal-eval jobs, 4 cost jobs, and aggregate."
+echo "Submitted R5 gate, 24 train+terminal-eval jobs, 8 R5 cost jobs, dense-768 cost, and aggregate."
 cat "${OUTPUT_DIR}/jobs.tsv"

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Mapping
+from uuid import uuid4
 
 from tools.bata.duca_cellcf_training import canonical_sha256, sha256_file
 
@@ -113,4 +115,73 @@ def load_trained_checkpoint_binding(
     }
 
 
-__all__ = ["SCHEMA", "load_trained_checkpoint_binding"]
+def build_trained_checkpoint_binding(
+    *,
+    role: str,
+    git_commit: str,
+    config_path: str | Path,
+    resolved_config_sha256: str,
+    checkpoint_path: str | Path,
+    checkpoint_epoch: int,
+    checkpoint_state_key: str,
+    training_evidence_path: str | Path,
+    evaluation_evidence_path: str | Path,
+) -> dict[str, Any]:
+    _require(re.fullmatch(r"[0-9a-f]{40}", git_commit) is not None, "git commit is invalid")
+    _require(role == "dense_adatad_baseline", "unsupported checkpoint binding role")
+    _require_sha256(resolved_config_sha256, "resolved config hash")
+    _require(checkpoint_epoch >= 0, "checkpoint epoch is invalid")
+    _require(checkpoint_state_key == "state_dict_ema", "checkpoint binding must use EMA")
+    files = {
+        "config": Path(config_path).expanduser().resolve(),
+        "checkpoint": Path(checkpoint_path).expanduser().resolve(),
+        "training_evidence": Path(training_evidence_path).expanduser().resolve(),
+        "evaluation_evidence": Path(evaluation_evidence_path).expanduser().resolve(),
+    }
+    for label, path in files.items():
+        _require(path.is_file(), f"{label} is missing: {path}")
+    payload = {
+        "schema": SCHEMA,
+        "ok": True,
+        "task": "offline_temporal_action_detection",
+        "role": role,
+        "git_commit": git_commit,
+        "config_path": str(files["config"]),
+        "config_sha256": sha256_file(files["config"]),
+        "resolved_config_sha256": resolved_config_sha256,
+        "checkpoint_path": str(files["checkpoint"]),
+        "checkpoint_sha256": sha256_file(files["checkpoint"]),
+        "checkpoint_epoch": int(checkpoint_epoch),
+        "checkpoint_state_key": checkpoint_state_key,
+        "training_evidence_path": str(files["training_evidence"]),
+        "training_evidence_sha256": sha256_file(files["training_evidence"]),
+        "evaluation_evidence_path": str(files["evaluation_evidence"]),
+        "evaluation_evidence_sha256": sha256_file(files["evaluation_evidence"]),
+    }
+    payload["artifact_sha256"] = canonical_sha256(payload)
+    return payload
+
+
+def write_trained_checkpoint_binding(path: str | Path, payload: Mapping[str, Any]) -> Path:
+    output = Path(path).expanduser().resolve()
+    _require(not output.exists(), f"refusing to overwrite checkpoint binding: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
+            json.dump(dict(payload), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return output
+
+
+__all__ = [
+    "SCHEMA",
+    "build_trained_checkpoint_binding",
+    "load_trained_checkpoint_binding",
+    "write_trained_checkpoint_binding",
+]

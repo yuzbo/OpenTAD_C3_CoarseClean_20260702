@@ -11,6 +11,7 @@ from typing import Any
 
 SEEDS = (3407, 5801, 8123)
 BUDGETS = (384, 256)
+MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
 ARMS = ("uniform", "learned")
 BACKENDS = ("actionformer", "temporalmaxer")
 
@@ -26,6 +27,14 @@ LEARNED_VARIANTS = {
 
 def _python_path(path: Path) -> str:
     return str(path.resolve()).replace("\\", "/")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _write(path: Path, text: str, *, executable: bool = False) -> None:
@@ -60,13 +69,15 @@ def render_cell_config(
     if budget not in BUDGETS or seed not in SEEDS or budget % 16:
         raise ValueError("R5 budget/seed is outside the fixed matrix")
     chunks = budget // 16
+    max_unselected_hole = MAX_UNSELECTED_HOLES[budget]
+    max_source_frame_interval = (max_unselected_hole + 1) * 4
     temporal_contract = f'''dict(
     hard_budget={budget},
     dense_window_size=768,
-    max_unselected_hole_dense_candidates=2,
+    max_unselected_hole_dense_candidates={max_unselected_hole},
     dataset_feature_stride_source_frames=4,
     dataset_sample_stride=1,
-    requested_max_source_frame_interval=15,
+    requested_max_source_frame_interval={max_source_frame_interval},
     detector_axis="selected_axis_index",
     dense_axis_unit="dense_candidate_index",
     task="offline_temporal_action_detection",
@@ -136,6 +147,9 @@ r5_cell = dict(
     backend={backend!r},
     arm={arm!r},
     budget={budget},
+    max_unselected_hole={max_unselected_hole},
+    max_selected_interval_source_frames={max_source_frame_interval},
+    sampling_regime="boundary_burst_with_global_coverage",
     seed={seed},
     source_config={_python_path(source)!r},
     live_duca_to_videomae=True,
@@ -153,6 +167,8 @@ duca_transition_only_contract = dict(
 model = dict(
     frame_selector=dict(
         budget={budget},
+        max_unselected_hole={max_unselected_hole},
+        max_gap_loss_max_unselected_hole={max_unselected_hole},
         temporal_sampling_contract=duca_temporal_sampling_contract,
     ),
     backbone=dict(
@@ -422,6 +438,39 @@ bash scripts/run_duca_full_stack_cost_profile_gpu1.sh
     )
 
 
+def render_dense_cost_sbatch(
+    *, dense: dict[str, Any], output_dir: Path, cluster: str
+) -> str:
+    prefix = output_dir / "cost" / "dense_adatad_k768"
+    return _job_header(
+        name="r5-cost-dense768",
+        output_dir=output_dir,
+        cluster=cluster,
+        walltime="08:00:00",
+    ) + f'''[[ -f {shlex.quote(str(dense["config"]))} ]]
+[[ -f {shlex.quote(str(dense["checkpoint"]))} ]]
+[[ -f {shlex.quote(str(dense["checkpoint_evidence"]))} ]]
+mkdir -p {shlex.quote(_python_path(output_dir / "cost"))}
+export PRECHECK_ONLY=0
+export CONFIG={shlex.quote(str(dense["config"]))}
+export PROFILE_CHECKPOINT={shlex.quote(str(dense["checkpoint"]))}
+export PROFILE_METHOD=dense-adatad
+export PROFILE_TRAINED_COMMIT={shlex.quote(str(dense["trained_commit"]))}
+export PROFILE_EVIDENCE_COMMIT="${{DUCA_EXPECTED_COMMIT}}"
+export PROFILE_CHECKPOINT_EVIDENCE={shlex.quote(str(dense["checkpoint_evidence"]))}
+export PROFILE_CHECKPOINT_EVIDENCE_SHA256={shlex.quote(str(dense["checkpoint_evidence_sha256"]))}
+export PROFILE_SESSION_ID=r5-paper-matrix
+export PROFILE_PAIR_ID=dense-reference
+export PROFILE_REPEAT_INDEX=1
+export PROFILE_ORDER_POSITION=1
+export OUTPUT_PREFIX={shlex.quote(_python_path(prefix))}
+export PROFILE_SAMPLES=30 PROFILE_WARMUP_SAMPLES=5 PROFILE_BATCH_SIZE=1
+bash scripts/run_duca_full_stack_cost_profile_gpu1.sh
+[[ -s {shlex.quote(_python_path(prefix.with_suffix(".summary.json")))} ]]
+[[ -s {shlex.quote(_python_path(prefix.with_suffix(".samples.jsonl")))} ]]
+'''
+
+
 def render_aggregate_sbatch(*, output_dir: Path, cluster: str) -> str:
     name = "r5-aggregate"
     return f'''#!/usr/bin/env bash
@@ -488,6 +537,10 @@ def generate_matrix(
     output_dir: str | Path,
     uniform_config: str | Path,
     learned_config: str | Path,
+    dense_config: str | Path,
+    dense_checkpoint: str | Path,
+    dense_checkpoint_evidence: str | Path,
+    dense_trained_commit: str,
     cluster: str = "n16r4",
 ) -> dict[str, Any]:
     repo = Path(repo_root).expanduser().resolve()
@@ -510,6 +563,29 @@ def generate_matrix(
         raise ValueError(
             "learned R5 config must be an R0-selected boundary-burst G1 config"
         )
+    dense_config_path = Path(dense_config).expanduser().resolve()
+    dense_checkpoint_path = Path(dense_checkpoint).expanduser().resolve()
+    dense_evidence_path = Path(dense_checkpoint_evidence).expanduser().resolve()
+    for path, label in (
+        (dense_config_path, "dense config"),
+        (dense_checkpoint_path, "dense checkpoint"),
+        (dense_evidence_path, "dense checkpoint evidence"),
+    ):
+        if not path.is_file():
+            raise FileNotFoundError(f"{label} is missing: {path}")
+    if len(dense_trained_commit) != 40 or any(
+        char not in "0123456789abcdef" for char in dense_trained_commit
+    ):
+        raise ValueError("dense trained commit must be an exact lowercase SHA")
+    dense = {
+        "config": str(dense_config_path),
+        "config_sha256": _sha256_file(dense_config_path),
+        "checkpoint": str(dense_checkpoint_path),
+        "checkpoint_sha256": _sha256_file(dense_checkpoint_path),
+        "checkpoint_evidence": str(dense_evidence_path),
+        "checkpoint_evidence_sha256": _sha256_file(dense_evidence_path),
+        "trained_commit": dense_trained_commit,
+    }
     (output / "logs").mkdir(parents=True, exist_ok=True)
     cells: list[dict[str, Any]] = []
     for backend in BACKENDS:
@@ -552,6 +628,7 @@ def generate_matrix(
                             "backend": backend,
                             "arm": arm,
                             "budget": budget,
+                            "max_unselected_hole": MAX_UNSELECTED_HOLES[budget],
                             "seed": seed,
                             "config": str(config),
                             "config_sha256": hashlib.sha256(
@@ -591,11 +668,7 @@ def generate_matrix(
     lines = ["\t".join(columns)]
     lines.extend("\t".join(str(cell[key]) for key in columns) for cell in cells)
     _write(output / "cells.tsv", "\n".join(lines) + "\n")
-    cost_cells = [
-        cell
-        for cell in cells
-        if cell["budget"] == 384 and cell["seed"] == 3407
-    ]
+    cost_cells = [cell for cell in cells if cell["seed"] == 3407]
     costs: list[dict[str, Any]] = []
     for cell in cost_cells:
         cost_id = f"cost_{cell['id']}"
@@ -614,12 +687,30 @@ def generate_matrix(
         costs.append(
             {
                 "id": cost_id,
+                "kind": "r5_cell",
                 "source_cell": cell["id"],
                 "sbatch": str(job),
                 "summary": str(output / "cost" / f"{cell['id']}.summary.json"),
             }
         )
-    cost_columns = ("id", "source_cell", "sbatch", "summary")
+    dense_cost_id = "cost_dense_adatad_k768"
+    dense_cost_job = output / "jobs" / f"{dense_cost_id}.sbatch"
+    _write(
+        dense_cost_job,
+        render_dense_cost_sbatch(dense=dense, output_dir=output, cluster=cluster),
+        executable=True,
+    )
+    costs.append(
+        {
+            "id": dense_cost_id,
+            "kind": "dense_baseline",
+            "source_cell": "temporalmaxer_one_step",
+            "sbatch": str(dense_cost_job),
+            "summary": str(output / "cost" / "dense_adatad_k768.summary.json"),
+            **dense,
+        }
+    )
+    cost_columns = ("id", "kind", "source_cell", "sbatch", "summary")
     cost_lines = ["\t".join(cost_columns)]
     cost_lines.extend(
         "\t".join(str(row[key]) for key in cost_columns) for row in costs
@@ -633,6 +724,9 @@ def generate_matrix(
         "cell_count": len(cells),
         "seeds": list(SEEDS),
         "budgets": list(BUDGETS),
+        "max_unselected_holes": {
+            str(budget): MAX_UNSELECTED_HOLES[budget] for budget in BUDGETS
+        },
         "arms": list(ARMS),
         "backends": list(BACKENDS),
         "learned_variant": learned_variant,
@@ -649,6 +743,7 @@ def generate_matrix(
         "cost_count": len(costs),
         "costs_tsv": str(output / "costs.tsv"),
         "costs": costs,
+        "dense_cost_baseline": dense,
         "aggregate_sbatch": str(output / "jobs/aggregate.sbatch"),
         "matrix_summary_sha256_file": str(output / "matrix_summary.json.sha256"),
     }
@@ -674,6 +769,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--uniform-config", required=True)
     parser.add_argument("--learned-config", required=True)
+    parser.add_argument("--dense-config", required=True)
+    parser.add_argument("--dense-checkpoint", required=True)
+    parser.add_argument("--dense-checkpoint-evidence", required=True)
+    parser.add_argument("--dense-trained-commit", required=True)
     parser.add_argument("--cluster", default="n16r4")
     return parser.parse_args()
 
@@ -685,6 +784,10 @@ def main() -> None:
         output_dir=args.output_dir,
         uniform_config=args.uniform_config,
         learned_config=args.learned_config,
+        dense_config=args.dense_config,
+        dense_checkpoint=args.dense_checkpoint,
+        dense_checkpoint_evidence=args.dense_checkpoint_evidence,
+        dense_trained_commit=args.dense_trained_commit,
         cluster=args.cluster,
     )
     print(json.dumps(summary, indent=2))

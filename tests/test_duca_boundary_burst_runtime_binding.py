@@ -411,13 +411,19 @@ def test_runtime_binding_preserves_optional_diagnostic_variant_support(
         )
 
 
-def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
-    variant = "two_stage_exact_uniform"
+def _terminal_checkpoint_case(tmp_path: Path, monkeypatch, *, r5: bool = False):
+    variant = "actionformer_learned_k256_s5801" if r5 else "two_stage_exact_uniform"
+    seed = 5801 if r5 else 3407
+    protocol = training.R5_FORMAL_PROTOCOL if r5 else training.FORMAL_PROTOCOL
     commit = "a" * 40
     work_dir = tmp_path / "gpu1_id0"
     checkpoint = work_dir / "checkpoint" / "epoch_59.pth"
     audit_path = work_dir / training.DUCA_TRAINING_AUDIT_FILENAME
-    config = tmp_path / training.VARIANT_CONFIGS[variant]
+    config = tmp_path / (
+        "actionformer_learned_k256_s5801.py"
+        if r5
+        else training.VARIANT_CONFIGS[variant]
+    )
     annotation = tmp_path / "annotation.json"
     class_map = tmp_path / "class_map.txt"
     pretrain = tmp_path / "pretrain.pth"
@@ -430,14 +436,12 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
     bindings = {
         "git_commit": commit,
         "variant": variant,
-        "seed": 3407,
+        "seed": seed,
         "slurm_job_id": "7",
         "source_config_path": str(config.resolve()),
         "source_config_sha256": training.sha256_file(config),
         "resolved_config_sha256": "b" * 64,
         "runtime_config_sha256": "c" * 64,
-        "gate_suite_sha256": "d" * 64,
-        "full_model_gate_sha256": "e" * 64,
         "pretrain_path": str(pretrain.resolve()),
         "pretrain_sha256": training.sha256_file(pretrain),
         "evaluation_annotation_path": str(annotation.resolve()),
@@ -446,6 +450,22 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
         "evaluation_class_map_sha256": training.sha256_file(class_map),
         "evaluation_config_sha256": "f" * 64,
     }
+    if r5:
+        bindings.update(
+            {
+                "matrix_summary_path": str((tmp_path / "matrix.json").resolve()),
+                "matrix_summary_sha256": "d" * 64,
+                "mechanism_gate_path": str((tmp_path / "mechanism.json").resolve()),
+                "mechanism_gate_sha256": "e" * 64,
+            }
+        )
+    else:
+        bindings.update(
+            {
+                "gate_suite_sha256": "d" * 64,
+                "full_model_gate_sha256": "e" * 64,
+            }
+        )
     counters = {
         "attempted_batches": 6000,
         "optimizer_attempts": 6000,
@@ -460,7 +480,7 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
         "max_amp_retries_observed": 0,
     }
     contract = {
-        "formal_protocol": training.FORMAL_PROTOCOL,
+        "formal_protocol": protocol,
         "training_profile": "official60",
         "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
         "primary_checkpoint_epoch": 59,
@@ -502,6 +522,9 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch):
         },
         "commit": commit,
         "variant": variant,
+        "seed": seed,
+        "formal_protocol": protocol,
+        "r5_cell": {"seed": seed} if r5 else None,
         "config": config,
         "annotation": annotation,
         "class_map": class_map,
@@ -535,6 +558,37 @@ def test_terminal_checkpoint_binding_validates_complete_training_chain(
 
     assert identity["variant"] == case["variant"]
     assert identity["successful_optimizer_updates"] == 6000
+
+
+def test_r5_terminal_checkpoint_binding_returns_r5_evidence_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = _terminal_checkpoint_case(tmp_path, monkeypatch, r5=True)
+    identity = training.validate_terminal_checkpoint_binding(
+        checkpoint_path=case["checkpoint"],
+        checkpoint=case["checkpoint_payload"],
+        git_commit=case["commit"],
+        variant=case["variant"],
+        seed=case["seed"],
+        slurm_job_id="7",
+        source_config_path=case["config"],
+        source_config_sha256=training.sha256_file(case["config"]),
+        resolved_config_sha256="b" * 64,
+        checkpoint_epoch=59,
+        checkpoint_state_key="state_dict_ema",
+        evaluation_annotation_path=case["annotation"],
+        evaluation_class_map_path=case["class_map"],
+        evaluation_config={},
+        runtime_pretrain_path=case["pretrain"],
+        frozen_pretrain_path=case["pretrain"],
+        frozen_pretrain_sha256=training.sha256_file(case["pretrain"]),
+        formal_protocol=case["formal_protocol"],
+        r5_cell=case["r5_cell"],
+    )
+
+    assert identity["matrix_summary_sha256"] == "d" * 64
+    assert identity["mechanism_gate_sha256"] == "e" * 64
+    assert "gate_suite_sha256" not in identity
 
 
 def test_terminal_checkpoint_binding_rejects_resealed_sidecar_drift(

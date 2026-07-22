@@ -12,6 +12,7 @@ from tools.bata.profile_duca_full_stack_cost import (
     component_elapsed_ms,
     discover_profile_modules,
     parse_nvidia_smi_power_lines,
+    parse_r5_method_name,
     resolve_profile_commit_identities,
     strip_ddp_prefix,
 )
@@ -173,6 +174,54 @@ def test_cli_requires_a_checkpoint_unless_random_init_is_explicit() -> None:
     assert args.samples == 3
     assert args.loader_workers == 0
     assert args.power_gpu_id is None
+
+
+def test_r5_dynamic_method_is_exact_and_requires_terminal_ema() -> None:
+    parser = build_arg_parser()
+    method = "temporalmaxer_learned_k256_s5801"
+    assert parse_r5_method_name(method) == {
+        "backend": "temporalmaxer",
+        "arm": "learned",
+        "budget": 256,
+        "seed": 5801,
+    }
+    args = parser.parse_args(
+        [
+            "cell.py",
+            "--checkpoint",
+            "epoch_59.pth",
+            "--use-ema",
+            "--method-name",
+            method,
+            "--config-commit",
+            "a" * 40,
+            "--output-prefix",
+            "out/r5",
+        ]
+    )
+    args.validate()
+    assert resolve_profile_commit_identities(
+        args, actual_commit="a" * 40
+    ) == ("a" * 40, "a" * 40)
+
+    args.use_ema = False
+    with pytest.raises(ValueError, match="epoch-59 EMA"):
+        args.validate()
+
+    malformed = parser.parse_args(
+        [
+            "cell.py",
+            "--checkpoint",
+            "epoch_59.pth",
+            "--use-ema",
+            "--method-name",
+            "temporalmaxer_learned_k256_s9999",
+            "--output-prefix",
+            "out/r5",
+        ]
+    )
+    with pytest.raises(ValueError, match="outside the frozen cell matrix"):
+        malformed.validate()
 
 
 def test_dense_paper_profile_requires_hash_bound_checkpoint_evidence() -> None:
