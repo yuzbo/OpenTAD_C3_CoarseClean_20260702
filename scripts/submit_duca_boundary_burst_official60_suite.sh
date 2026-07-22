@@ -124,6 +124,8 @@ export DUCA_FRONTEND_DECISION_SHA256
 export DUCA_BOUNDARY_BURST_GATE_ROOT="${RUN_ROOT}/full_model_gate"
 bash scripts/run_duca_boundary_burst_gate_gpu1.sh
 sha256sum "${RUN_ROOT}/full_model_gate/gate_suite.json" | awk '{print $1}' > \
+  "${RUN_ROOT}/full_model_gate/gate_suite.sha256.tmp"
+mv -f "${RUN_ROOT}/full_model_gate/gate_suite.sha256.tmp" \
   "${RUN_ROOT}/full_model_gate/gate_suite.sha256"
 EOF
 
@@ -137,6 +139,9 @@ for variant in "${variants[@]}"; do
   file="${RUN_ROOT}/submission/${variant}.sbatch"
   write_header "${file}" "${variant}_${EXPECTED_COMMIT:0:7}" "3-00:00:00" 1
   cat >>"${file}" <<EOF
+set +e
+(
+set -euo pipefail
 export DUCA_SELECTED_OPT_VARIANT='${variant}'
 export DUCA_FRONTEND_DECISION_JSON="\${RUN_ROOT}/frontend_decision.json"
 IFS= read -r DUCA_FRONTEND_DECISION_SHA256 < "\${RUN_ROOT}/frontend_decision.sha256"
@@ -146,11 +151,91 @@ export DUCA_SELECTED_OPT_GATE_SUITE="\${RUN_ROOT}/full_model_gate/gate_suite.jso
 IFS= read -r DUCA_SELECTED_OPT_GATE_SUITE_SHA256 < "\${RUN_ROOT}/full_model_gate/gate_suite.sha256"
 [[ "\${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || exit 1
 export DUCA_SELECTED_OPT_GATE_SUITE_SHA256
+readarray -t route_policy < <("\${PYTHON}" - \
+  "\${DUCA_FRONTEND_DECISION_JSON}" "\${DUCA_FRONTEND_DECISION_SHA256}" \
+  "\${DUCA_SELECTED_OPT_GATE_SUITE}" "\${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" \
+  "\${DUCA_EXPECTED_COMMIT}" '${variant}' <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_frontend_decision,
+    validate_full_model_gate,
+)
+
+decision = validate_frontend_decision(
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[5],
+)
+validate_full_model_gate(
+    gate_path=sys.argv[3],
+    gate_sha256=sys.argv[4],
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[5],
+)
+variant = sys.argv[6]
+print("required_main" if variant in decision["family_routing"]["required_official60_variants"] else "diagnostic_not_scheduled")
+print(decision["family_routing"]["selected_official60_variant"])
+PY
+)
+if [[ "\${route_policy[0]}" != required_main ]]; then
+  "\${PYTHON}" - "\${RUN_ROOT}/official60/${variant}/diagnostic_status.json" \
+    "\${DUCA_EXPECTED_COMMIT}" '${variant}' "\${DUCA_FRONTEND_DECISION_SHA256}" \
+    "\${route_policy[1]}" <<'PY'
+import sys
+from pathlib import Path
+from tools.bata.select_duca_boundary_burst_candidates import _atomic_write_json
+
+_atomic_write_json(
+    Path(sys.argv[1]).resolve(),
+    {
+        "schema": "duca_boundary_burst_optional_diagnostic_status_v1",
+        "ok": True,
+        "git_commit": sys.argv[2],
+        "variant": sys.argv[3],
+        "frontend_decision_sha256": sys.argv[4],
+        "selected_official60_variant": sys.argv[5],
+        "main_result_required": False,
+        "diagnostic_executed": False,
+        "status": "not_scheduled_by_r0_family_routing",
+    },
+    require_absent=True,
+)
+PY
+  exit 0
+fi
 export RUN_DIR="\${RUN_ROOT}/official60/${variant}/run"
 export WORK_DIR="\${RUN_ROOT}/official60/${variant}/work"
 bash scripts/run_duca_two_stage_curriculum_variant_gpu1.sh
 sha256sum "\${RUN_DIR}/completion.json" | awk '{print \$1}' > \
-  "\${RUN_DIR}/completion.sha256"
+  "\${RUN_DIR}/completion.sha256.tmp"
+mv -f "\${RUN_DIR}/completion.sha256.tmp" "\${RUN_DIR}/completion.sha256"
+)
+role_status=\$?
+if [[ \${role_status} -ne 0 ]]; then
+  "\${PYTHON}" - "\${RUN_ROOT}/official60/${variant}/role_failure.json" \
+    "\${DUCA_EXPECTED_COMMIT}" '${variant}' "\${role_status}" <<'PY'
+import sys
+from pathlib import Path
+
+from tools.bata.select_duca_boundary_burst_candidates import _atomic_write_json
+
+_atomic_write_json(
+    Path(sys.argv[1]).resolve(),
+    {
+        "schema": "duca_boundary_burst_official_role_failure_v1",
+        "ok": False,
+        "fail_closed": True,
+        "git_commit": sys.argv[2],
+        "variant": sys.argv[3],
+        "worker_exit_code": int(sys.argv[4]),
+        "status": "worker_failed_aggregate_will_adjudicate_required_main",
+    },
+    require_absent=False,
+)
+PY
+fi
+exit 0
 EOF
 done
 
@@ -168,25 +253,47 @@ read_seal() {
 }
 decision_sha256="$(read_seal "${RUN_ROOT}/frontend_decision.sha256")"
 gate_sha256="$(read_seal "${RUN_ROOT}/full_model_gate/gate_suite.sha256")"
-python -m tools.bata.aggregate_duca_boundary_burst_results \
+selected_variant="$("${PYTHON}" - "${decision}" "${decision_sha256}" \
+  "${gate}" "${gate_sha256}" "${DUCA_EXPECTED_COMMIT}" <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_frontend_decision,
+    validate_full_model_gate,
+)
+
+decision = validate_frontend_decision(
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[5],
+)
+validate_full_model_gate(
+    gate_path=sys.argv[3],
+    gate_sha256=sys.argv[4],
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[5],
+)
+print(decision["family_routing"]["selected_official60_variant"])
+PY
+)"
+[[ "${selected_variant}" == boundary_burst_r2q3_g0 \
+  || "${selected_variant}" == boundary_burst_r4q5_g0 ]] || exit 1
+"${PYTHON}" -m tools.bata.aggregate_duca_boundary_burst_results \
   --expected-commit "${DUCA_EXPECTED_COMMIT}" \
   --decision "${decision}" --decision-sha256 "${decision_sha256}" \
   --gate "${gate}" --gate-sha256 "${gate_sha256}" \
   --completion "${RUN_ROOT}/official60/two_stage_exact_uniform/run/completion.json" \
   --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/two_stage_exact_uniform/run/completion.sha256")" \
-  --completion "${RUN_ROOT}/official60/gaussian_matched_g0/run/completion.json" \
-  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/gaussian_matched_g0/run/completion.sha256")" \
-  --completion "${RUN_ROOT}/official60/boundary_burst_r2q3_g0/run/completion.json" \
-  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/boundary_burst_r2q3_g0/run/completion.sha256")" \
-  --completion "${RUN_ROOT}/official60/boundary_burst_r4q5_g0/run/completion.json" \
-  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/boundary_burst_r4q5_g0/run/completion.sha256")" \
+  --completion "${RUN_ROOT}/official60/${selected_variant}/run/completion.json" \
+  --completion-sha256 "$(read_seal "${RUN_ROOT}/official60/${selected_variant}/run/completion.sha256")" \
   --output-json "${RUN_ROOT}/final_suite_results.json"
 EOF
 
 for file in "${P0_SBATCH}" "${R0_SBATCH}" "${GATE_SBATCH}" "${AGG_SBATCH}" "${RUN_ROOT}"/submission/*.sbatch; do
   bash -n "${file}"
 done
-"${PYTHON}" - "${RUN_ROOT}/submission_manifest.json" "${EXPECTED_COMMIT}" \
+"${PYTHON}" - "${RUN_ROOT}/submission_manifest.json" \
+  "${RUN_ROOT}/submission_manifest.sha256" "${EXPECTED_COMMIT}" \
   "${SPLIT_MANIFEST}" "${SPLIT_SHA256}" \
   "${SPLIT_ANNOTATION}" "${SPLIT_ANNOTATION_SHA256}" \
   "${SPLIT_TRAIN_BLOCK_LIST}" "${SPLIT_TRAIN_BLOCK_LIST_SHA256}" \
@@ -195,11 +302,20 @@ done
   "${ADATAD_PRETRAIN_PATH}" "${ADATAD_PRETRAIN_SHA256}" <<'PY'
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
+from uuid import uuid4
+
+from tools.bata.duca_p0_evaluation import canonical_sha256
+from tools.bata.select_duca_boundary_burst_candidates import (
+    R0_PROJECTED_FAMILY_ROUTES,
+    _atomic_write_json,
+)
 
 (
     out,
+    seal_out,
     commit,
     split,
     split_sha,
@@ -223,8 +339,9 @@ for path, expected, label in (
     if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         raise SystemExit(f"{label} drifted while sealing submission")
 payload = {
-    "schema": "duca_boundary_burst_submission_v1",
+    "schema": "duca_boundary_burst_submission_v2",
     "ok": True,
+    "fail_closed": True,
     "git_commit": commit,
     "split_manifest_path": str(Path(split).resolve()),
     "split_manifest_sha256": split_sha,
@@ -240,18 +357,61 @@ payload = {
     "r0_checkpoint_sha256": checkpoint_sha,
     "adatad_pretrain_path": str(pretrain_path),
     "adatad_pretrain_sha256": pretrain_sha,
+    "r0_summary_contract": {
+        "path": str(Path(out).parent / "r0_holdout_map" / "r0_summary.json"),
+        "sha256_seal_path": str(
+            Path(out).parent / "r0_holdout_map" / "r0_summary.sha256"
+        ),
+        "git_commit": commit,
+        "consumer": "family_routing_manifest_v1",
+    },
+    "projected_family_mappings": {
+        family: {
+            "p0_variant": route["p0_variant"],
+            "official60_variant": route["official60_variant"],
+        }
+        for family, route in R0_PROJECTED_FAMILY_ROUTES.items()
+    },
     "dependency_contract": {
         "r0_holdout_map": "none",
         "p0": "afterok:r0_holdout_map",
         "gate": "afterok:p0",
-        "official60_arms": "afterok:gate",
-        "aggregate": "afterok:all_official60_arms",
+        "journal_official60_roles": "afterok:gate",
+        "aggregate": "afterok:journal_policy_sentinels_then_revalidate_required_main",
     },
+    "required_p0_policy": "r0_selected_projected_family_only",
+    "required_official60_policy": [
+        "two_stage_exact_uniform",
+        "r0_selected_boundary_burst_g0",
+    ],
+    "diagnostic_official60_roles": [
+        "gaussian_matched_g0",
+        "r0_unselected_boundary_burst_g0",
+    ],
+    "diagnostic_failures_block_main": False,
+    "official60_job_envelope": (
+        "worker failures become atomic role_failure evidence; aggregate requires "
+        "sealed U plus the R0-selected G0 completion"
+    ),
+    "required_main_failure_blocks_final_aggregate": True,
+    "aggregate_inputs": "matched_u_plus_r0_selected_g0_only",
     "r0_positive_headroom_required": True,
     "uniform_frontend_checkpoint": None,
     "learned_frontend_checkpoint_source": "variant_matched_p0_winner",
 }
-Path(out).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+payload["manifest_sha256"] = canonical_sha256(payload)
+output = Path(out).resolve()
+_atomic_write_json(output, payload, require_absent=True)
+seal = Path(seal_out).resolve()
+temporary = seal.with_name(f".{seal.name}.{uuid4().hex}.tmp")
+try:
+    with temporary.open("xb") as handle:
+        handle.write((hashlib.sha256(output.read_bytes()).hexdigest() + "\n").encode())
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, seal)
+finally:
+    temporary.unlink(missing_ok=True)
 PY
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
   echo "[DUCA_BURST_SUBMIT] PRECHECK PASS ${RUN_ROOT}"

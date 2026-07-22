@@ -8,9 +8,12 @@ import pytest
 from tools.bata import analyze_duca_selection_quality as quality
 from tools.bata.select_duca_boundary_burst_candidates import (
     _effective_budget_contract_verified,
+    _normalized_lf_sha256,
     _read_candidate,
     _ranking_key,
+    create_p0_training_asformer_consumer_receipt,
     validate_p0_real_gate,
+    validate_p0_training_asformer_consumer_receipt,
 )
 from tools.bata.select_duca_frontend_checkpoint import sha256_file
 
@@ -182,6 +185,14 @@ def test_candidate_reanalysis_rejects_records_identity_drift(tmp_path: Path) -> 
 
 
 def _write_p0_real_gate(path: Path, commit: str) -> None:
+    config = path.parent / "selected_p0.py"
+    pretrain = path.parent / "pretrain.pth"
+    source = path.parent / "official" / "ASFormer" / "model.py"
+    config.write_text("formal = True\n", encoding="utf-8")
+    pretrain.write_bytes(b"pretrain")
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"class ASFormer:\r\n    pass\r\n")
+    normalized = _normalized_lf_sha256(source)
     path.write_text(
         json.dumps(
             {
@@ -190,6 +201,20 @@ def _write_p0_real_gate(path: Path, commit: str) -> None:
                 "fail_closed": True,
                 "git_binding": {"git_commit": commit},
                 "final_git_binding": {"git_commit": commit},
+                "config_path": str(config.resolve()),
+                "config_sha256": sha256_file(config),
+                "assets": {
+                    "videomae_checkpoint": {
+                        "path": str(pretrain.resolve()),
+                        "sha256": sha256_file(pretrain),
+                    },
+                    "official_asformer_source": {
+                        "path": str(source.resolve()),
+                        "sha256": sha256_file(source),
+                        "normalized_lf_sha256": normalized,
+                        "config_declared_normalized_lf_sha256": normalized,
+                    },
+                },
             }
         ),
         encoding="utf-8",
@@ -215,6 +240,26 @@ def test_p0_real_gate_identity_is_path_hash_schema_commit_and_ok_bound(
         "schema": "duca_frontend_p0_real_cuda_gate_v1",
         "git_commit": commit,
         "ok": True,
+        "config_path": str((tmp_path / "selected_p0.py").resolve()),
+        "config_sha256": sha256_file(tmp_path / "selected_p0.py"),
+        "adatad_pretrain": {
+            "path": str((tmp_path / "pretrain.pth").resolve()),
+            "sha256": sha256_file(tmp_path / "pretrain.pth"),
+        },
+        "official_asformer_source": {
+            "path": str(
+                (tmp_path / "official" / "ASFormer" / "model.py").resolve()
+            ),
+            "sha256": sha256_file(
+                tmp_path / "official" / "ASFormer" / "model.py"
+            ),
+            "normalized_lf_sha256": _normalized_lf_sha256(
+                tmp_path / "official" / "ASFormer" / "model.py"
+            ),
+            "config_declared_normalized_lf_sha256": _normalized_lf_sha256(
+                tmp_path / "official" / "ASFormer" / "model.py"
+            ),
+        },
     }
     with pytest.raises(RuntimeError, match="path/hash drift"):
         validate_p0_real_gate(
@@ -244,3 +289,39 @@ def test_p0_real_gate_identity_is_path_hash_schema_commit_and_ok_bound(
                 gate_sha256=sha256_file(gate),
                 expected_commit=commit,
             )
+
+
+def test_p0_training_consumer_recomputes_official_asformer_source(
+    tmp_path: Path,
+) -> None:
+    commit = "a" * 40
+    gate = tmp_path / "p0_real_gate.json"
+    _write_p0_real_gate(gate, commit)
+    receipt = tmp_path / "p0_asformer_consumer.json"
+    create_p0_training_asformer_consumer_receipt(
+        gate_path=gate,
+        gate_sha256=sha256_file(gate),
+        expected_commit=commit,
+        selected_config_path=tmp_path / "selected_p0.py",
+        output_path=receipt,
+    )
+    binding = validate_p0_training_asformer_consumer_receipt(
+        receipt_path=receipt,
+        receipt_sha256=sha256_file(receipt),
+        expected_commit=commit,
+        expected_config_path=tmp_path / "selected_p0.py",
+    )
+    assert binding["official_asformer_source"]["normalized_lf_sha256"] == (
+        _normalized_lf_sha256(tmp_path / "official" / "ASFormer" / "model.py")
+    )
+
+    (tmp_path / "official" / "ASFormer" / "model.py").write_text(
+        "class Drifted: pass\n", encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="path/hash drift|normalized-LF"):
+        validate_p0_training_asformer_consumer_receipt(
+            receipt_path=receipt,
+            receipt_sha256=sha256_file(receipt),
+            expected_commit=commit,
+            expected_config_path=tmp_path / "selected_p0.py",
+        )

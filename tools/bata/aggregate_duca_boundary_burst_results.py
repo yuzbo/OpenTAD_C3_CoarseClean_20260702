@@ -16,14 +16,25 @@ from tools.bata.duca_p0_evaluation import (
     official_evaluator_identity,
     recompute_official_map,
 )
-
-
-EXPECTED_VARIANTS = (
-    "two_stage_exact_uniform",
-    "gaussian_matched_g0",
-    "boundary_burst_r2q3_g0",
-    "boundary_burst_r4q5_g0",
+from tools.bata.select_duca_boundary_burst_candidates import (
+    GAUSSIAN_OFFICIAL_VARIANT,
+    R0_PROJECTED_FAMILY_ROUTES,
+    UNIFORM_OFFICIAL_VARIANT,
+    validate_frontend_decision,
+    validate_full_model_gate,
 )
+
+
+KNOWN_VARIANTS = (
+    UNIFORM_OFFICIAL_VARIANT,
+    GAUSSIAN_OFFICIAL_VARIANT,
+    *(
+        route["official60_variant"]
+        for route in R0_PROJECTED_FAMILY_ROUTES.values()
+    ),
+)
+# Compatibility export for existing evidence fixtures; required variants are dynamic.
+EXPECTED_VARIANTS = KNOWN_VARIANTS
 
 
 def sha256_file(path: Path) -> str:
@@ -59,7 +70,11 @@ def _require_file(path: Any, sha256: Any, *, label: str) -> Path:
 
 
 def validate_suite_self_hash(payload: Mapping[str, Any]) -> str:
-    if payload.get("schema") != "duca_boundary_burst_terminal_suite_v1":
+    if (
+        payload.get("schema") != "duca_boundary_burst_terminal_suite_v1"
+        or payload.get("ok") is not True
+        or payload.get("fail_closed") is not True
+    ):
         raise RuntimeError("boundary-burst terminal suite schema mismatch")
     return _validate_self_hash(
         payload,
@@ -179,23 +194,25 @@ def aggregate(
 ) -> dict:
     decision = Path(decision_path).expanduser().resolve()
     gate = Path(gate_path).expanduser().resolve()
-    if not decision.is_file() or sha256_file(decision) != decision_sha256:
-        raise RuntimeError("boundary-burst frontend decision drift")
-    if not gate.is_file() or sha256_file(gate) != gate_sha256:
-        raise RuntimeError("boundary-burst full-model gate drift")
-    decision_payload = json.loads(decision.read_text(encoding="utf-8"))
-    if (
-        decision_payload.get("schema") != "duca_boundary_burst_frontend_decision_v1"
-        or decision_payload.get("ok") is not True
-        or decision_payload.get("git_commit") != expected_commit
-    ):
-        raise RuntimeError("boundary-burst decision commit/status mismatch")
+    decision_payload = validate_frontend_decision(
+        decision_path=decision,
+        decision_sha256=decision_sha256,
+        expected_commit=expected_commit,
+    )
+    gate_payload = validate_full_model_gate(
+        gate_path=gate,
+        gate_sha256=gate_sha256,
+        decision_path=decision,
+        decision_sha256=decision_sha256,
+        expected_commit=expected_commit,
+    )
     frontend_split = _validated_frontend_split_binding(decision_payload)
-    gate_payload = json.loads(gate.read_text(encoding="utf-8"))
-    if gate_payload.get("ok") is not True or gate_payload.get("git_commit") != expected_commit:
-        raise RuntimeError("boundary-burst gate commit/status mismatch")
+    routing = decision_payload["family_routing"]
+    required_variants = tuple(routing["required_official60_variants"])
     if len(completion_paths) != len(completion_sha256s):
         raise RuntimeError("every completion requires an upstream SHA256 seal")
+    if len(completion_paths) != len(required_variants):
+        raise RuntimeError("main aggregate requires only matched U and selected G0")
 
     rows = []
     matched_arm_identity: dict[str, Any] | None = None
@@ -213,8 +230,20 @@ def aggregate(
         if (
             payload.get("schema") != "duca_two_stage_curriculum_completion_v1"
             or payload.get("ok") is not True
+            or payload.get("fail_closed") is not True
             or payload.get("git_commit") != expected_commit
+            or payload.get("execution_role") != "required_main"
+            or Path(str(payload.get("frontend_decision_path", ""))).resolve()
+            != decision
             or payload.get("frontend_decision_sha256") != decision_sha256
+            or payload.get("family_manifest")
+            != decision_payload["family_manifest"]
+            or payload.get("r0_headroom_gate")
+            != decision_payload["r0_headroom_gate"]
+            or payload.get("family_routing") != routing
+            or payload.get("p0_training_asformer_consumer")
+            != decision_payload["p0_training_asformer_consumer"]
+            or Path(str(payload.get("gate_path", ""))).resolve() != gate
             or payload.get("gate_suite_sha256") != gate_sha256
         ):
             raise RuntimeError(f"invalid boundary-burst completion: {path}")
@@ -239,7 +268,7 @@ def aggregate(
             raise RuntimeError(f"boundary-burst evaluation self-hash copy mismatch: {path}")
         variant = str(payload.get("variant", ""))
         if (
-            variant not in EXPECTED_VARIANTS
+            variant not in required_variants
             or evaluation_payload.get("git_commit") != expected_commit
             or evaluation_payload.get("task")
             != "offline_temporal_action_detection"
@@ -262,6 +291,15 @@ def aggregate(
             evaluation_payload.get("config_sha256"),
             label=f"boundary-burst source config {variant}",
         )
+        expected_config = Path(
+            routing["uniform_official60_config"]
+            if variant == UNIFORM_OFFICIAL_VARIANT
+            else routing["selected_official60_config"]
+        ).expanduser().resolve()
+        if config != expected_config:
+            raise RuntimeError(
+                f"boundary-burst routed config mismatch: {variant}"
+            )
         launch = _require_file(
             payload.get("launch_manifest_path"),
             payload.get("launch_manifest_sha256"),
@@ -270,16 +308,55 @@ def aggregate(
         launch_payload = json.loads(launch.read_text(encoding="utf-8"))
         if (
             launch_payload.get("schema") != "duca_two_stage_curriculum_launch_v1"
+            or launch_payload.get("fail_closed") is not True
             or launch_payload.get("git_commit") != expected_commit
             or launch_payload.get("variant") != variant
+            or launch_payload.get("execution_role") != "required_main"
             or launch_payload.get("seed") != 3407
             or launch_payload.get("config_sha256") != sha256_file(config)
+            or Path(
+                str(launch_payload.get("frontend_decision_path", ""))
+            ).resolve()
+            != decision
+            or launch_payload.get("frontend_decision_sha256") != decision_sha256
+            or launch_payload.get("family_manifest")
+            != decision_payload["family_manifest"]
+            or launch_payload.get("r0_headroom_gate")
+            != decision_payload["r0_headroom_gate"]
+            or launch_payload.get("family_routing") != routing
+            or launch_payload.get("p0_training_asformer_consumer")
+            != decision_payload["p0_training_asformer_consumer"]
+            or Path(str(launch_payload.get("gate_path", ""))).resolve() != gate
             or launch_payload.get("gate_suite_sha256") != gate_sha256
             or launch_payload.get("terminal_checkpoint")
             != "epoch_59.pth/state_dict_ema"
             or launch_payload.get("official_training_successful_updates") != 6000
         ):
             raise RuntimeError(f"boundary-burst launch identity mismatch: {launch}")
+        if variant == UNIFORM_OFFICIAL_VARIANT:
+            if (
+                launch_payload.get("frontend_checkpoint_binding")
+                != "not_applicable_exact_uniform"
+                or launch_payload.get("frontend_checkpoint_sha256") is not None
+                or launch_payload.get("frontend_checkpoint_epoch_zero_based")
+                is not None
+            ):
+                raise RuntimeError(
+                    "boundary-burst uniform launch claimed a frontend checkpoint"
+                )
+        else:
+            winner = decision_payload["winners"][routing["selected_p0_variant"]]
+            if (
+                launch_payload.get("frontend_checkpoint_binding")
+                != "variant_matched_p0_winner"
+                or launch_payload.get("frontend_checkpoint_sha256")
+                != winner["checkpoint_sha256"]
+                or launch_payload.get("frontend_checkpoint_epoch_zero_based")
+                != int(winner["epoch_one_based"]) - 1
+            ):
+                raise RuntimeError(
+                    "boundary-burst selected launch P0 winner binding mismatch"
+                )
 
         identity = evaluation_payload.get("training_identity")
         if not isinstance(identity, Mapping) or payload.get("training_identity") != identity:
@@ -291,6 +368,30 @@ def aggregate(
             or identity.get("gate_suite_sha256") != gate_sha256
         ):
             raise RuntimeError(f"boundary-burst training contract mismatch: {path}")
+        training_initialization = identity.get("frontend_initialization")
+        if variant == UNIFORM_OFFICIAL_VARIANT:
+            if training_initialization is not None:
+                raise RuntimeError(
+                    "boundary-burst uniform training claimed a frontend checkpoint"
+                )
+        else:
+            winner = decision_payload["winners"][routing["selected_p0_variant"]]
+            if (
+                not isinstance(training_initialization, Mapping)
+                or Path(
+                    str(training_initialization.get("checkpoint_path", ""))
+                ).resolve()
+                != Path(winner["checkpoint_path"]).resolve()
+                or training_initialization.get("checkpoint_sha256")
+                != winner["checkpoint_sha256"]
+                or training_initialization.get("checkpoint_epoch")
+                != int(winner["epoch_one_based"]) - 1
+                or training_initialization.get("checkpoint_state_key")
+                != "state_dict_ema"
+            ):
+                raise RuntimeError(
+                    "boundary-burst selected training P0 winner binding mismatch"
+                )
         sidecar = _require_file(
             identity.get("checkpoint_sidecar_path"),
             identity.get("checkpoint_sidecar_sha256"),
@@ -470,15 +571,16 @@ def aggregate(
                 "completion_sha256": expected_completion_sha256,
             }
         )
-    if {row["variant"] for row in rows} != set(EXPECTED_VARIANTS):
-        raise RuntimeError("result set does not cover uniform/Gaussian/R2Q3/R4Q5")
+    if {row["variant"] for row in rows} != set(required_variants):
+        raise RuntimeError("result set does not cover matched U and selected G0")
     if matched_arm_identity is None:
         raise RuntimeError("boundary-burst result set is empty")
-    rows.sort(key=lambda row: EXPECTED_VARIANTS.index(row["variant"]))
+    rows.sort(key=lambda row: required_variants.index(row["variant"]))
     payload = {
         "schema": "duca_boundary_burst_terminal_suite_v1",
         "ok": True,
-        "status": "matched_four_arm_terminal_ema_results_sealed",
+        "fail_closed": True,
+        "status": "matched_u_selected_g0_terminal_ema_results_sealed",
         "task": "offline_temporal_action_detection",
         "git_commit": expected_commit,
         "seed": 3407,
@@ -486,8 +588,19 @@ def aggregate(
         "test_subset_used_once_for_terminal_metrics": True,
         "frontend_decision_path": str(decision),
         "frontend_decision_sha256": decision_sha256,
+        "family_manifest": decision_payload["family_manifest"],
+        "r0_headroom_gate": decision_payload["r0_headroom_gate"],
+        "family_routing": routing,
+        "p0_training_asformer_consumer": decision_payload[
+            "p0_training_asformer_consumer"
+        ],
         "gate_path": str(gate),
         "gate_sha256": gate_sha256,
+        "required_official60_variants": list(required_variants),
+        "diagnostic_official60_variants": routing[
+            "diagnostic_official60_variants"
+        ],
+        "diagnostic_failures_block_main": False,
         "matched_arm_identity": matched_arm_identity,
         "results": rows,
         "paper_claim_allowed": False,

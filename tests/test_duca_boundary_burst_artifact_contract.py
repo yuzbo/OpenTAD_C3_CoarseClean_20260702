@@ -8,17 +8,28 @@ import pytest
 
 from tools.bata import aggregate_duca_boundary_burst_results as aggregate_module
 from tools.bata import duca_selected_axis_training as selected_axis_training
+from tools.bata import select_duca_boundary_burst_candidates as selector_module
 from tools.bata.create_duca_frontend_split import (
     create_split,
     validate_split_manifest,
 )
 from tools.bata.aggregate_duca_boundary_burst_results import (
-    EXPECTED_VARIANTS,
     aggregate,
     validate_suite_self_hash,
 )
 from tools.bata.select_duca_boundary_burst_candidates import (
+    FULL_MODEL_ARTIFACT_SCHEMA,
+    FULL_MODEL_GATE_SCHEMA,
+    R0_PROJECTED_FAMILY_ROUTES,
+    UNIFORM_OFFICIAL_VARIANT,
+    _family_routing_contract,
+    _normalized_lf_sha256,
+    create_family_routing_manifest,
+    create_p0_training_asformer_consumer_receipt,
     select_variants,
+    validate_family_routing_manifest,
+    validate_p0_real_gate,
+    validate_p0_training_asformer_consumer_receipt,
     validate_r0_headroom_summary,
     validate_r0_runtime_bindings,
 )
@@ -110,6 +121,8 @@ def test_candidate_selector_reopens_split_reference_hashes(tmp_path: Path) -> No
             expected_commit="a" * 40,
             split_manifest=manifest,
             split_manifest_sha256=_sha256(manifest),
+            family_manifest_path=tmp_path / "missing_family_manifest.json",
+            family_manifest_sha256="0" * 64,
             receipt_paths=[],
             output_path=tmp_path / "decision.json",
         )
@@ -190,7 +203,55 @@ def test_p0_rejects_legacy_r0_summary_without_recomputed_identity(
         )
 
 
-def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
+@pytest.mark.parametrize(
+    ("selected_family", "p0_variant", "official_variant"),
+    (
+        (
+            "R2Q3_privileged_boundary_burst",
+            "burst_r2q3",
+            "boundary_burst_r2q3_g0",
+        ),
+        (
+            "R4Q5_privileged_boundary_burst",
+            "burst_r4q5",
+            "boundary_burst_r4q5_g0",
+        ),
+    ),
+)
+def test_r0_selected_family_has_one_exact_p0_and_official_route(
+    selected_family: str,
+    p0_variant: str,
+    official_variant: str,
+) -> None:
+    routing = _family_routing_contract(selected_family)
+
+    assert routing["selected_p0_variant"] == p0_variant
+    assert routing["required_p0_variants"] == [p0_variant]
+    assert routing["selected_official60_variant"] == official_variant
+    assert routing["required_official60_variants"] == [
+        "two_stage_exact_uniform",
+        official_variant,
+    ]
+    assert "gaussian_matched" in routing["diagnostic_p0_variants"]
+    assert "gaussian_matched_g0" in routing["diagnostic_official60_variants"]
+    assert routing["simple_delta_role"] == "no_training_same_feasible_control"
+
+
+@pytest.mark.parametrize("wrong_family", ("Gaussian", "R2Q3", "burst_r4q5"))
+def test_family_routing_rejects_wrong_or_unprojected_family(
+    wrong_family: str,
+) -> None:
+    with pytest.raises(RuntimeError, match="unsupported R0 projected family"):
+        _family_routing_contract(wrong_family)
+
+
+def _terminal_suite(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    selected_family: str = "R2Q3_privileged_boundary_burst",
+) -> tuple[dict, list[Path], list[str]]:
+    commit = "a" * 40
     split, split_manifest = _split(tmp_path)
     shared = tmp_path / "shared"
     shared.mkdir()
@@ -198,37 +259,263 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
     class_map = shared / "class_map.txt"
     pretrain.write_bytes(b"shared-pretrain")
     class_map.write_text("action\n", encoding="utf-8")
+
+    r0_summary = tmp_path / "r0_summary.json"
+    _write_json(
+        r0_summary,
+        {
+            "schema": "focused_r0_summary_v1",
+            "git_commit": commit,
+            "selected_weakest_projected_family": selected_family,
+        },
+    )
+
+    def replay_focused_r0(
+        *, summary_path: str | Path, summary_sha256: str, expected_commit: str
+    ) -> dict:
+        path = Path(summary_path).resolve()
+        if not path.is_file() or _sha256(path) != summary_sha256:
+            raise RuntimeError("sealed R0 summary drift")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("git_commit") != expected_commit:
+            raise RuntimeError("sealed R0 summary commit drift")
+        selected = payload.get("selected_weakest_projected_family")
+        _family_routing_contract(selected)
+        return {
+            "schema": "duca_r0_headroom_gate_v2",
+            "ok": True,
+            "git_commit": expected_commit,
+            "r0_summary_path": str(path),
+            "r0_summary_sha256": summary_sha256,
+            "selected_weakest_projected_family": selected,
+            "eligible_projected_families": [selected],
+            "positive_headroom_required": True,
+            "test_subset_consumed": False,
+        }
+
+    monkeypatch.setattr(
+        selector_module, "validate_r0_headroom_summary", replay_focused_r0
+    )
+    family_manifest_path = tmp_path / "family_routing_manifest.json"
+    create_family_routing_manifest(
+        summary_path=r0_summary,
+        summary_sha256=_sha256(r0_summary),
+        expected_commit=commit,
+        output_path=family_manifest_path,
+    )
+    family_manifest = validate_family_routing_manifest(
+        manifest_path=family_manifest_path,
+        manifest_sha256=_sha256(family_manifest_path),
+        expected_commit=commit,
+    )
+    routing = family_manifest["family_routing"]
+
+    source = shared / "official" / "ASFormer" / "model.py"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"class ASFormer:\r\n    pass\r\n")
+    normalized_source_sha = _normalized_lf_sha256(source)
+    official_asformer = {
+        "path": str(source.resolve()),
+        "sha256": _sha256(source),
+        "normalized_lf_sha256": normalized_source_sha,
+        "config_declared_normalized_lf_sha256": normalized_source_sha,
+    }
+    p0_config = (ROOT / routing["selected_p0_config"]).resolve()
+    p0_gate = tmp_path / "p0_real_gate.json"
+    _write_json(
+        p0_gate,
+        {
+            "schema": "duca_frontend_p0_real_cuda_gate_v1",
+            "ok": True,
+            "fail_closed": True,
+            "git_binding": {"git_commit": commit},
+            "final_git_binding": {"git_commit": commit},
+            "config_path": str(p0_config),
+            "config_sha256": _sha256(p0_config),
+            "assets": {
+                "videomae_checkpoint": {
+                    "path": str(pretrain.resolve()),
+                    "sha256": _sha256(pretrain),
+                },
+                "official_asformer_source": official_asformer,
+            },
+        },
+    )
+    p0_gate_binding = validate_p0_real_gate(
+        gate_path=p0_gate,
+        gate_sha256=_sha256(p0_gate),
+        expected_commit=commit,
+    )
+    p0_consumer_path = tmp_path / "p0_asformer_consumer.json"
+    create_p0_training_asformer_consumer_receipt(
+        gate_path=p0_gate,
+        gate_sha256=_sha256(p0_gate),
+        expected_commit=commit,
+        selected_config_path=p0_config,
+        output_path=p0_consumer_path,
+    )
+    p0_consumer = validate_p0_training_asformer_consumer_receipt(
+        receipt_path=p0_consumer_path,
+        receipt_sha256=_sha256(p0_consumer_path),
+        expected_commit=commit,
+        expected_p0_gate=p0_gate_binding,
+        expected_config_path=p0_config,
+    )
+
+    p0_winner_root = tmp_path / "selected_p0_winner"
+    p0_winner_root.mkdir()
+    p0_checkpoint = p0_winner_root / "epoch_4.pth"
+    p0_summary = p0_winner_root / "selection_quality_summary.json"
+    p0_records = p0_winner_root / "selection_quality_records.jsonl"
+    p0_checkpoint.write_bytes(b"selected-p0-checkpoint")
+    _write_json(p0_summary, {"ok": True})
+    p0_records.write_text('{"ok": true}\n', encoding="utf-8")
+    selected_p0 = routing["selected_p0_variant"]
+    winner = {
+        "variant": selected_p0,
+        "epoch_one_based": 5,
+        "checkpoint_path": str(p0_checkpoint.resolve()),
+        "checkpoint_sha256": _sha256(p0_checkpoint),
+        "summary_path": str(p0_summary.resolve()),
+        "summary_sha256": _sha256(p0_summary),
+        "records_path": str(p0_records.resolve()),
+        "records_sha256": _sha256(p0_records),
+        "all_sanity_gates_pass": True,
+    }
     decision = tmp_path / "frontend_decision.json"
     _write_json(
         decision,
         {
             "schema": "duca_boundary_burst_frontend_decision_v1",
             "ok": True,
-            "git_commit": "a" * 40,
+            "fail_closed": True,
+            "status": "GO_TO_MATCHED_U_SELECTED_G0_OFFICIAL60",
+            "git_commit": commit,
+            "test_subset_consumed": False,
             "split_manifest_path": str(split_manifest.resolve()),
             "split_manifest_sha256": _sha256(split_manifest),
             "split_binding": validate_split_manifest(
                 split_manifest,
                 expected_manifest_sha256=_sha256(split_manifest),
             ),
+            "family_manifest": family_manifest,
+            "r0_headroom_gate": family_manifest["r0_headroom_gate"],
+            "family_routing": routing,
+            "p0_real_gate": p0_gate_binding,
+            "p0_training_asformer_consumer": p0_consumer,
+            "winners": {selected_p0: winner},
+            "candidates": {
+                variant: ([dict(winner) for _ in range(4)] if variant == selected_p0 else [])
+                for variant in selector_module.VARIANT_SPECS
+            },
+            "diagnostic_failures_block_main": False,
         },
     )
-    gate = tmp_path / "gate_suite.json"
-    _write_json(gate, {"ok": True, "git_commit": "a" * 40})
     decision_sha = _sha256(decision)
+
+    required_configs = {
+        UNIFORM_OFFICIAL_VARIANT: routing["uniform_official60_config"],
+        routing["selected_official60_variant"]: routing[
+            "selected_official60_config"
+        ],
+    }
+    gate_artifacts = []
+    for variant, relative_config in required_configs.items():
+        config = (ROOT / relative_config).resolve()
+        initialization = None
+        if variant != UNIFORM_OFFICIAL_VARIANT:
+            initialization = {
+                "schema": "duca_frontend_initialization_v1",
+                "checkpoint_path": winner["checkpoint_path"],
+                "checkpoint_sha256": winner["checkpoint_sha256"],
+                "checkpoint_epoch": winner["epoch_one_based"] - 1,
+                "checkpoint_state_key": "state_dict_ema",
+                "loaded_selector_state_count": 1,
+                "reset_state_keys": [],
+                "detector_state_loaded": False,
+                "optimizer_state_loaded": False,
+                "scheduler_state_loaded": False,
+            }
+            initialization["receipt_sha256"] = canonical_sha256(initialization)
+        artifact = tmp_path / "full_model" / f"{config.stem}.json"
+        _write_json(
+            artifact,
+            {
+                "schema": FULL_MODEL_ARTIFACT_SCHEMA,
+                "ok": True,
+                "status": "p1_p2_exact_full_model_amp_ddp_gate_passed",
+                "runtime": {"git_commit": commit},
+                "config_contract": {
+                    "ok": True,
+                    "task": "offline_temporal_action_detection",
+                    "config": str(config),
+                },
+                "config_sha256": _sha256(config),
+                "real_thumos_loader_executed": True,
+                "optimizer_exact_coverage": True,
+                "gt_boundary_validity": {
+                    "batch_size": 1,
+                    "endpoint_count": 2,
+                    "valid_endpoint_count": 2,
+                },
+                "adatad_pretrain": p0_gate_binding["adatad_pretrain"],
+                "official_asformer_source": p0_consumer[
+                    "official_asformer_source"
+                ],
+                "selector_initialization": initialization,
+            },
+        )
+        gate_artifacts.append(
+            {"path": str(artifact.resolve()), "sha256": _sha256(artifact)}
+        )
+    gate = tmp_path / "gate_suite.json"
+    _write_json(
+        gate,
+        {
+            "schema": FULL_MODEL_GATE_SCHEMA,
+            "ok": True,
+            "fail_closed": True,
+            "formal_training_unlocked": True,
+            "status": "matched_u_selected_g0_full_model_gate_passed",
+            "git_commit": commit,
+            "frontend_decision_path": str(decision.resolve()),
+            "frontend_decision_sha256": decision_sha,
+            "gated_variants": routing["required_official60_variants"],
+            "required_official60_variants": routing[
+                "required_official60_variants"
+            ],
+            "family_manifest": family_manifest,
+            "r0_headroom_gate": family_manifest["r0_headroom_gate"],
+            "family_routing": routing,
+            "p0_real_gate": p0_gate_binding,
+            "p0_training_asformer_consumer": p0_consumer,
+            "artifacts": gate_artifacts,
+        },
+    )
     gate_sha = _sha256(gate)
     completions = []
     completion_shas = []
-    for index, variant in enumerate(EXPECTED_VARIANTS):
+    for index, variant in enumerate(routing["required_official60_variants"]):
         root = tmp_path / variant
-        config = root / f"{variant}.py"
+        config = (ROOT / required_configs[variant]).resolve()
         annotation = Path(split["annotation_path"])
         prediction = root / "prediction.json"
-        config.parent.mkdir(parents=True, exist_ok=True)
-        config.write_text(f"# {variant}\n", encoding="utf-8")
+        root.mkdir(parents=True, exist_ok=True)
         checkpoint = root / "epoch_59.pth"
         checkpoint.write_bytes(f"checkpoint-{variant}".encode())
         metrics = {"average_mAP": 0.60 + index * 0.01, "mAP@0.5": 0.70}
+        frontend_initialization = (
+            None
+            if variant == UNIFORM_OFFICIAL_VARIANT
+            else {
+                "checkpoint_path": winner["checkpoint_path"],
+                "checkpoint_sha256": winner["checkpoint_sha256"],
+                "checkpoint_epoch": winner["epoch_one_based"] - 1,
+                "checkpoint_state_key": "state_dict_ema",
+                "reset_state_keys": [],
+                "gate_receipt_sha256": "f" * 64,
+            }
+        )
         _write_json(
             prediction,
             {"metrics": metrics, "result_count": 3, "video_count": 1},
@@ -245,14 +532,14 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             }
         )
         bindings = {
-            "git_commit": "a" * 40,
+            "git_commit": commit,
             "variant": variant,
             "seed": 3407,
             "source_config_path": str(config.resolve()),
             "source_config_sha256": _sha256(config),
             "resolved_config_sha256": "c" * 64,
             "gate_suite_sha256": gate_sha,
-            "full_model_gate_sha256": "d" * 64,
+            "full_model_gate_sha256": gate_sha,
             "pretrain_path": str(pretrain.resolve()),
             "pretrain_sha256": _sha256(pretrain),
             "evaluation_config_sha256": canonical_sha256(evaluation_config),
@@ -260,6 +547,7 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             "evaluation_annotation_sha256": _sha256(annotation),
             "evaluation_class_map_path": str(class_map.resolve()),
             "evaluation_class_map_sha256": _sha256(class_map),
+            "selector_initialization_contract": frontend_initialization,
         }
         contract = {
             "formal_protocol": selected_axis_training.FORMAL_PROTOCOL,
@@ -316,15 +604,15 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             "training_audit_sha256": _sha256(audit_path),
             "training_audit_self_sha256": audit["audit_sha256"],
             "gate_suite_sha256": gate_sha,
-            "full_model_gate_sha256": "d" * 64,
+            "full_model_gate_sha256": gate_sha,
             "pretrain_path": str(pretrain.resolve()),
             "pretrain_sha256": _sha256(pretrain),
-            "frontend_initialization": None,
+            "frontend_initialization": frontend_initialization,
         }
         evaluation = root / "evaluation.json"
         evaluation_payload = {
             "schema_version": "duca_selected_axis_terminal_evaluation_v1",
-            "git_commit": "a" * 40,
+            "git_commit": commit,
             "task": "offline_temporal_action_detection",
             "seed": 3407,
             "variant": variant,
@@ -359,11 +647,35 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             launch,
             {
                 "schema": "duca_two_stage_curriculum_launch_v1",
-                "git_commit": "a" * 40,
+                "fail_closed": True,
+                "git_commit": commit,
                 "variant": variant,
+                "execution_role": "required_main",
                 "seed": 3407,
                 "config_sha256": _sha256(config),
+                "frontend_decision_path": str(decision.resolve()),
+                "frontend_decision_sha256": decision_sha,
+                "family_manifest": family_manifest,
+                "r0_headroom_gate": family_manifest["r0_headroom_gate"],
+                "family_routing": routing,
+                "p0_training_asformer_consumer": p0_consumer,
+                "gate_path": str(gate.resolve()),
                 "gate_suite_sha256": gate_sha,
+                "frontend_checkpoint_binding": (
+                    "not_applicable_exact_uniform"
+                    if variant == UNIFORM_OFFICIAL_VARIANT
+                    else "variant_matched_p0_winner"
+                ),
+                "frontend_checkpoint_sha256": (
+                    None
+                    if variant == UNIFORM_OFFICIAL_VARIANT
+                    else winner["checkpoint_sha256"]
+                ),
+                "frontend_checkpoint_epoch_zero_based": (
+                    None
+                    if variant == UNIFORM_OFFICIAL_VARIANT
+                    else winner["epoch_one_based"] - 1
+                ),
                 "terminal_checkpoint": "epoch_59.pth/state_dict_ema",
                 "official_training_successful_updates": 6000,
             },
@@ -374,8 +686,10 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             {
                 "schema": "duca_two_stage_curriculum_completion_v1",
                 "ok": True,
-                "git_commit": "a" * 40,
+                "fail_closed": True,
+                "git_commit": commit,
                 "variant": variant,
+                "execution_role": "required_main",
                 "checkpoint_path": str(checkpoint.resolve()),
                 "checkpoint_sha256": _sha256(checkpoint),
                 "evaluation_path": str(evaluation.resolve()),
@@ -387,14 +701,26 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
                 "training_identity": identity,
                 "launch_manifest_path": str(launch.resolve()),
                 "launch_manifest_sha256": _sha256(launch),
+                "frontend_decision_path": str(decision.resolve()),
                 "frontend_decision_sha256": decision_sha,
+                "family_manifest": family_manifest,
+                "r0_headroom_gate": family_manifest["r0_headroom_gate"],
+                "family_routing": routing,
+                "p0_training_asformer_consumer": p0_consumer,
+                "gate_path": str(gate.resolve()),
                 "gate_suite_sha256": gate_sha,
             },
         )
         completions.append(completion)
         completion_shas.append(_sha256(completion))
     return (
-        {"decision": decision, "gate": gate},
+        {
+            "decision": decision,
+            "gate": gate,
+            "r0_summary": r0_summary,
+            "family_manifest": family_manifest_path,
+            "p0_consumer": p0_consumer_path,
+        },
         completions,
         completion_shas,
     )
@@ -491,7 +817,7 @@ def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
     monkeypatch,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
     payload = json.loads(completions[0].read_text(encoding="utf-8"))
     payload["metrics"]["average_mAP"] = 0.99
     _write_json(completions[0], payload)
@@ -510,11 +836,23 @@ def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
         )
 
 
+@pytest.mark.parametrize(
+    ("selected_family", "selected_variant"),
+    (
+        ("R2Q3_privileged_boundary_burst", "boundary_burst_r2q3_g0"),
+        ("R4Q5_privileged_boundary_burst", "boundary_burst_r4q5_g0"),
+    ),
+)
 def test_terminal_aggregate_uses_verified_evaluation_metrics(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
+    selected_family: str,
+    selected_variant: str,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(
+        tmp_path, monkeypatch, selected_family=selected_family
+    )
 
     payload = aggregate(
         expected_commit="a" * 40,
@@ -528,14 +866,125 @@ def test_terminal_aggregate_uses_verified_evaluation_metrics(
     )
 
     assert [row["average_mAP"] for row in payload["results"]] == pytest.approx(
-        [0.60, 0.61, 0.62, 0.63]
+        [0.60, 0.61]
     )
+    assert [row["variant"] for row in payload["results"]] == [
+        "two_stage_exact_uniform",
+        selected_variant,
+    ]
     written = json.loads((tmp_path / "aggregate.json").read_text(encoding="utf-8"))
     assert written == payload
     assert validate_suite_self_hash(written) == payload["suite_sha256"]
     assert written["matched_arm_identity"]["frontend_split_annotation"]["sha256"] == (
         written["matched_arm_identity"]["evaluation_annotation"]["sha256"]
     )
+
+
+def test_missing_and_failed_diagnostics_do_not_block_main_aggregate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
+    failed_gaussian = tmp_path / "official60" / "gaussian_matched_g0" / "diagnostic_status.json"
+    _write_json(failed_gaussian, {"ok": False, "status": "diagnostic_failed"})
+
+    payload = aggregate(
+        expected_commit="a" * 40,
+        decision_path=roots["decision"],
+        decision_sha256=_sha256(roots["decision"]),
+        gate_path=roots["gate"],
+        gate_sha256=_sha256(roots["gate"]),
+        completion_paths=completions,
+        completion_sha256s=completion_shas,
+        output_path=tmp_path / "aggregate.json",
+    )
+
+    assert payload["diagnostic_failures_block_main"] is False
+    assert "gaussian_matched_g0" in payload["diagnostic_official60_variants"]
+    assert len(payload["results"]) == 2
+
+
+def test_terminal_aggregate_rejects_sealed_r0_summary_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
+    r0_summary = json.loads(roots["r0_summary"].read_text(encoding="utf-8"))
+    r0_summary["selected_weakest_projected_family"] = (
+        "R4Q5_privileged_boundary_burst"
+    )
+    _write_json(roots["r0_summary"], r0_summary)
+
+    with pytest.raises(RuntimeError, match="sealed R0 summary drift"):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+@pytest.mark.parametrize("reseal_gate_index", (False, True))
+def test_full_model_gate_reopens_artifact_hash_and_pass_content(
+    tmp_path: Path,
+    monkeypatch,
+    reseal_gate_index: bool,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
+    gate_payload = json.loads(roots["gate"].read_text(encoding="utf-8"))
+    artifact_record = gate_payload["artifacts"][0]
+    artifact_path = Path(artifact_record["path"])
+    artifact_payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact_payload["optimizer_exact_coverage"] = False
+    _write_json(artifact_path, artifact_payload)
+    expected_error = "path/hash drift"
+    if reseal_gate_index:
+        artifact_record["sha256"] = _sha256(artifact_path)
+        _write_json(roots["gate"], gate_payload)
+        expected_error = "did not pass"
+
+    with pytest.raises(RuntimeError, match=expected_error):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+def test_terminal_aggregate_rejects_unselected_family_substitution(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
+    completion = json.loads(completions[1].read_text(encoding="utf-8"))
+    completion["variant"] = "boundary_burst_r4q5_g0"
+    _write_json(completions[1], completion)
+    completion_shas[1] = _sha256(completions[1])
+
+    with pytest.raises(RuntimeError, match="evaluation run identity mismatch"):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
 
 
 @pytest.mark.parametrize("mutation", ("class_map", "evaluation_target", "adatad_pretrain"))
@@ -545,7 +994,7 @@ def test_terminal_aggregate_rejects_resealed_cross_arm_identity_drift(
     mutation: str,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
     completion_shas[1] = _reseal_arm_after_identity_mutation(
         completions[1], mutation=mutation
     )
@@ -568,7 +1017,7 @@ def test_terminal_aggregate_rejects_resealed_frontend_split_binding_drift(
     monkeypatch,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
     decision = json.loads(roots["decision"].read_text(encoding="utf-8"))
     decision["split_binding"]["annotation_sha256"] = "b" * 64
     _write_json(roots["decision"], decision)
@@ -591,7 +1040,7 @@ def test_terminal_aggregate_rejects_resealed_annotation_path_drift(
     monkeypatch,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
     completion_shas[1] = _reseal_arm_after_identity_mutation(
         completions[1], mutation="evaluation_annotation"
     )
@@ -616,7 +1065,7 @@ def test_terminal_aggregate_replaces_only_after_a_complete_sealed_write(
     monkeypatch,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
     output = tmp_path / "aggregate.json"
     output.write_text('{"partial": true}\n', encoding="utf-8")
 
@@ -673,7 +1122,7 @@ def test_terminal_aggregate_rejects_resealed_identity_mutation(
     replacement,
 ) -> None:
     _stub_official_recompute(monkeypatch)
-    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
     completion = json.loads(completions[0].read_text(encoding="utf-8"))
     evaluation_path = Path(completion["evaluation_path"])
     evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
@@ -708,7 +1157,15 @@ def test_submission_dag_requires_r0_before_every_learned_stage() -> None:
     assert 'submit_and_record "p0" "${p0_dependency}" "${P0_SBATCH}"' in source
     assert '"p0": "afterok:r0_holdout_map"' in source
     assert '"gate": "afterok:p0"' in source
-    assert '"official60_arms": "afterok:gate"' in source
+    assert '"journal_official60_roles": "afterok:gate"' in source
+    assert '"aggregate_inputs": "matched_u_plus_r0_selected_g0_only"' in source
+    assert '"diagnostic_failures_block_main": False' in source
+    assert '"diagnostic_executed": False' in source
+    assert 'role_status=\\$?' in source
+    assert '"required_main_failure_blocks_final_aggregate": True' in source
+    assert '"worker_failed_aggregate_will_adjudicate_required_main"' in source
+    assert 'selected_variant="$(${PYTHON}' not in source
+    assert 'selected_variant="$("${PYTHON}"' in source
     assert '"r0_positive_headroom_required": True' in source
 
 
@@ -719,9 +1176,13 @@ def test_p0_blocks_nonpositive_r0_headroom_before_training() -> None:
 
     headroom_gate = source.index("validate_r0_headroom_summary")
     real_gate = source.index("run_duca_frontend_p0_real_gate.py")
+    asformer_consumer = source.index(
+        "create_p0_training_asformer_consumer_receipt"
+    )
     first_variant = source.index("run_duca_frontend_pretrain_variant_gpu1.sh")
-    assert headroom_gate < real_gate < first_variant
+    assert headroom_gate < real_gate < asformer_consumer < first_variant
     assert "validate_r0_headroom_summary" in source
+    assert "create_family_routing_manifest" in source
     assert "R0_SUMMARY_SHA256_FILE" in source
 
 
@@ -766,9 +1227,9 @@ def test_uniform_arm_never_claims_a_gaussian_frontend_checkpoint() -> None:
     assert 'if [[ "${VARIANT}" == "two_stage_exact_uniform" ]]' in source
     assert "unset DUCA_FRONTEND_CHECKPOINT" in source
     assert 'FRONTEND_BINDING="not_applicable_exact_uniform"' in source
-    assert "FRONTEND_CHECKPOINT_SHA256_JSON=null" in source
+    assert 'FRONTEND_CHECKPOINT_SHA256_VALUE=""' in source
     assert '"two_stage_exact_uniform": "gaussian_matched"' not in source
-    assert '"frontend_checkpoint_sha256": ${FRONTEND_CHECKPOINT_SHA256_JSON}' in source
+    assert '"frontend_checkpoint_sha256": frontend_checkpoint_sha256 or None' in source
 
 
 def test_all_split_consumers_reopen_the_shared_hash_contract() -> None:

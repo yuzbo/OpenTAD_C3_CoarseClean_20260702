@@ -56,6 +56,7 @@ GATE_SUITE="${DUCA_SELECTED_OPT_GATE_SUITE:-}"
 GATE_SUITE_SHA256="${DUCA_SELECTED_OPT_GATE_SUITE_SHA256:-}"
 RUN_DIR="${RUN_DIR:-}"
 WORK_DIR="${WORK_DIR:-}"
+DIAGNOSTIC_ONLY="${DUCA_BOUNDARY_BURST_DIAGNOSTIC_ONLY:-0}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Slurm allocation is required"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a GPU"
@@ -68,32 +69,56 @@ WORK_DIR="${WORK_DIR:-}"
 [[ -f "${GATE_SUITE}" ]] || fail "two-stage gate suite is missing"
 [[ "$(sha256sum "${GATE_SUITE}" | awk '{print $1}')" == "${GATE_SUITE_SHA256}" ]] \
   || fail "two-stage gate suite hash drift"
-"${PYTHON}" - "${DECISION}" "${GATE_SUITE}" "${EXPECTED_COMMIT}" <<'PY'
-import json
+readarray -t execution_policy < <("${PYTHON}" - "${DECISION}" \
+  "${DECISION_SHA256}" "${GATE_SUITE}" "${GATE_SUITE_SHA256}" \
+  "${EXPECTED_COMMIT}" "${VARIANT}" "${DIAGNOSTIC_ONLY}" <<'PY'
 import sys
-from pathlib import Path
-from tools.bata.select_duca_boundary_burst_candidates import validate_p0_real_gate
-
-decision = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-suite = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-binding = decision.get("p0_real_gate")
-if not isinstance(binding, dict):
-    raise SystemExit("frontend decision lacks P0 real gate binding")
-validate_p0_real_gate(
-    gate_path=binding.get("path", ""),
-    gate_sha256=binding.get("sha256", ""),
-    expected_commit=sys.argv[3],
+from tools.bata.select_duca_boundary_burst_candidates import (
+    GAUSSIAN_OFFICIAL_VARIANT,
+    GAUSSIAN_P0_VARIANT,
+    R0_PROJECTED_FAMILY_ROUTES,
+    UNIFORM_OFFICIAL_VARIANT,
+    validate_frontend_decision,
+    validate_full_model_gate,
 )
-expected = {
-    "path": str(Path(binding["path"]).resolve()),
-    "sha256": binding["sha256"],
-    "schema": "duca_frontend_p0_real_cuda_gate_v1",
-    "git_commit": sys.argv[3],
-    "ok": True,
-}
-if suite.get("p0_real_gate") != expected:
-    raise SystemExit("full-model gate P0 real gate binding drift")
+
+decision = validate_frontend_decision(
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[5],
+)
+validate_full_model_gate(
+    gate_path=sys.argv[3],
+    gate_sha256=sys.argv[4],
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[5],
+)
+routing = decision["family_routing"]
+variant = sys.argv[6]
+diagnostic_only = sys.argv[7] == "1"
+if variant in routing["required_official60_variants"]:
+    execution_role = "required_main"
+elif diagnostic_only and variant in routing["diagnostic_official60_variants"]:
+    execution_role = "optional_diagnostic"
+else:
+    raise SystemExit(f"R0 family routing did not authorize {variant}")
+variant_to_p0 = {GAUSSIAN_OFFICIAL_VARIANT: GAUSSIAN_P0_VARIANT}
+variant_to_p0.update(
+    {
+        route["official60_variant"]: route["p0_variant"]
+        for route in R0_PROJECTED_FAMILY_ROUTES.values()
+    }
+)
+frontend_variant = (
+    "not_applicable" if variant == UNIFORM_OFFICIAL_VARIANT else variant_to_p0[variant]
+)
+print(execution_role)
+print(frontend_variant)
 PY
+)
+EXECUTION_ROLE="${execution_policy[0]}"
+FRONTEND_VARIANT="${execution_policy[1]}"
 [[ -n "${RUN_DIR}" && ! -e "${RUN_DIR}" ]] || fail "fresh RUN_DIR is required"
 [[ -n "${WORK_DIR}" && ! -e "${WORK_DIR}" ]] || fail "fresh WORK_DIR is required"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \
@@ -113,34 +138,23 @@ if payload.get("git_commit") not in {None, sys.argv[2]}:
 PY
   unset DUCA_FRONTEND_CHECKPOINT DUCA_FRONTEND_CHECKPOINT_SHA256 DUCA_FRONTEND_CHECKPOINT_EPOCH
   FRONTEND_BINDING="not_applicable_exact_uniform"
-  FRONTEND_CHECKPOINT_SHA256_JSON=null
-  FRONTEND_CHECKPOINT_EPOCH_JSON=null
+  FRONTEND_CHECKPOINT_SHA256_VALUE=""
+  FRONTEND_CHECKPOINT_EPOCH_VALUE=""
 else
-  readarray -t winner < <("${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" "${VARIANT}" <<'PY'
-import json
+  readarray -t winner < <("${PYTHON}" - "${DECISION}" "${DECISION_SHA256}" \
+    "${EXPECTED_COMMIT}" "${FRONTEND_VARIANT}" <<'PY'
 import sys
-from pathlib import Path
+from tools.bata.select_duca_boundary_burst_candidates import validate_frontend_decision
 
-payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if payload.get("ok") is not True or payload.get("test_subset_consumed") is not False:
-    raise SystemExit("frontend decision did not authorize training")
-if payload.get("git_commit") not in {None, sys.argv[2]}:
-    raise SystemExit("frontend decision commit mismatch")
-variant = sys.argv[3]
-if "winners" in payload:
-    key = {
-        "gaussian_matched_g0": "gaussian_matched",
-        "boundary_burst_r2q3_g0": "burst_r2q3",
-        "boundary_burst_r4q5_g0": "burst_r4q5",
-    }.get(variant)
-    if key is None or key not in payload["winners"]:
-        raise SystemExit(f"no frontend winner is registered for {variant}")
-    winner = payload["winners"][key]
-else:
-    manifest = json.loads(Path(payload["candidate_manifest_path"]).read_text(encoding="utf-8"))
-    if manifest.get("git_commit") != sys.argv[2]:
-        raise SystemExit("frontend candidate manifest commit mismatch")
-    winner = payload["winner"]
+payload = validate_frontend_decision(
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[3],
+)
+key = sys.argv[4]
+if key not in payload["winners"]:
+    raise SystemExit(f"no frontend winner is registered for diagnostic/main variant {key}")
+winner = payload["winners"][key]
 print(winner["checkpoint_path"])
 print(winner["checkpoint_sha256"])
 print(int(winner["epoch_one_based"]) - 1)
@@ -153,34 +167,89 @@ PY
   [[ "$(sha256sum "${DUCA_FRONTEND_CHECKPOINT}" | awk '{print $1}')" == "${DUCA_FRONTEND_CHECKPOINT_SHA256}" ]] \
     || fail "selected frontend checkpoint hash drift"
   FRONTEND_BINDING="variant_matched_p0_winner"
-  FRONTEND_CHECKPOINT_SHA256_JSON="\"${DUCA_FRONTEND_CHECKPOINT_SHA256}\""
-  FRONTEND_CHECKPOINT_EPOCH_JSON="${DUCA_FRONTEND_CHECKPOINT_EPOCH}"
+  FRONTEND_CHECKPOINT_SHA256_VALUE="${DUCA_FRONTEND_CHECKPOINT_SHA256}"
+  FRONTEND_CHECKPOINT_EPOCH_VALUE="${DUCA_FRONTEND_CHECKPOINT_EPOCH}"
 fi
 
 mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
-cat > "${RUN_DIR}/launch_manifest.json" <<EOF
-{
-  "schema": "duca_two_stage_curriculum_launch_v1",
-  "task": "offline_temporal_action_detection",
-  "git_commit": "${EXPECTED_COMMIT}",
-  "variant": "${VARIANT}",
-  "seed": 3407,
-  "config": "${CONFIG}",
-  "config_sha256": "${CONFIG_SHA256}",
-  "frontend_decision_sha256": "${DECISION_SHA256}",
-  "frontend_checkpoint_binding": "${FRONTEND_BINDING}",
-  "frontend_checkpoint_sha256": ${FRONTEND_CHECKPOINT_SHA256_JSON},
-  "frontend_checkpoint_epoch_zero_based": ${FRONTEND_CHECKPOINT_EPOCH_JSON},
-  "gate_suite_sha256": "${GATE_SUITE_SHA256}",
-  "uniform_detector_warmup_successful_updates": 1000,
-  "official_training_successful_updates": 6000,
-  "detector_extra_updates": 0,
-  "terminal_checkpoint": "epoch_59.pth/state_dict_ema",
-  "checkpoint_interval": 5,
-  "slurm_job_id": "${SLURM_JOB_ID}"
+"${PYTHON}" - "${RUN_DIR}/launch_manifest.json" "${VARIANT}" \
+  "${EXPECTED_COMMIT}" "${CONFIG}" "${CONFIG_SHA256}" \
+  "${DECISION}" "${DECISION_SHA256}" "${GATE_SUITE}" \
+  "${GATE_SUITE_SHA256}" "${FRONTEND_BINDING}" \
+  "${FRONTEND_CHECKPOINT_SHA256_VALUE}" "${FRONTEND_CHECKPOINT_EPOCH_VALUE}" \
+  "${EXECUTION_ROLE}" "${SLURM_JOB_ID}" <<'PY'
+import sys
+from pathlib import Path
+
+from tools.bata.select_duca_boundary_burst_candidates import (
+    _atomic_write_json,
+    validate_frontend_decision,
+    validate_full_model_gate,
+)
+
+(
+    output,
+    variant,
+    commit,
+    config,
+    config_sha256,
+    decision_path,
+    decision_sha256,
+    gate_path,
+    gate_sha256,
+    frontend_binding,
+    frontend_checkpoint_sha256,
+    frontend_checkpoint_epoch,
+    execution_role,
+    slurm_job_id,
+) = sys.argv[1:]
+decision = validate_frontend_decision(
+    decision_path=decision_path,
+    decision_sha256=decision_sha256,
+    expected_commit=commit,
+)
+validate_full_model_gate(
+    gate_path=gate_path,
+    gate_sha256=gate_sha256,
+    decision_path=decision_path,
+    decision_sha256=decision_sha256,
+    expected_commit=commit,
+)
+payload = {
+    "schema": "duca_two_stage_curriculum_launch_v1",
+    "fail_closed": True,
+    "task": "offline_temporal_action_detection",
+    "git_commit": commit,
+    "variant": variant,
+    "execution_role": execution_role,
+    "seed": 3407,
+    "config": config,
+    "config_sha256": config_sha256,
+    "frontend_decision_path": str(Path(decision_path).resolve()),
+    "frontend_decision_sha256": decision_sha256,
+    "family_manifest": decision["family_manifest"],
+    "r0_headroom_gate": decision["r0_headroom_gate"],
+    "family_routing": decision["family_routing"],
+    "p0_training_asformer_consumer": decision[
+        "p0_training_asformer_consumer"
+    ],
+    "frontend_checkpoint_binding": frontend_binding,
+    "frontend_checkpoint_sha256": frontend_checkpoint_sha256 or None,
+    "frontend_checkpoint_epoch_zero_based": (
+        int(frontend_checkpoint_epoch) if frontend_checkpoint_epoch else None
+    ),
+    "gate_path": str(Path(gate_path).resolve()),
+    "gate_suite_sha256": gate_sha256,
+    "uniform_detector_warmup_successful_updates": 1000,
+    "official_training_successful_updates": 6000,
+    "detector_extra_updates": 0,
+    "terminal_checkpoint": "epoch_59.pth/state_dict_ema",
+    "checkpoint_interval": 5,
+    "slurm_job_id": slurm_job_id,
 }
-EOF
+_atomic_write_json(Path(output).resolve(), payload, require_absent=True)
+PY
 
 "${PYTHON}" -m torch.distributed.run \
   --nproc_per_node=1 \
@@ -228,6 +297,12 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+
+from tools.bata.select_duca_boundary_burst_candidates import (
+    _atomic_write_json,
+    validate_frontend_decision,
+    validate_full_model_gate,
+)
 
 (
     run_dir,
@@ -289,11 +364,46 @@ for path_key, sha_key in (
 prediction = Path(metrics.get("prediction_path", "")).resolve()
 if not prediction.is_file() or digest(prediction) != metrics.get("prediction_sha256"):
     raise SystemExit("terminal prediction artifact drift")
+launch_path = Path(launch_manifest).resolve()
+launch = json.loads(launch_path.read_text(encoding="utf-8"))
+if (
+    launch.get("schema") != "duca_two_stage_curriculum_launch_v1"
+    or launch.get("fail_closed") is not True
+    or launch.get("git_commit") != commit
+    or launch.get("variant") != variant
+    or launch.get("config_sha256") != config_sha
+    or launch.get("frontend_decision_sha256") != decision_sha
+    or launch.get("gate_suite_sha256") != gate_sha
+    or launch.get("execution_role") not in {"required_main", "optional_diagnostic"}
+):
+    raise SystemExit("launch manifest evidence drift")
+decision = validate_frontend_decision(
+    decision_path=launch["frontend_decision_path"],
+    decision_sha256=decision_sha,
+    expected_commit=commit,
+)
+validate_full_model_gate(
+    gate_path=launch["gate_path"],
+    gate_sha256=gate_sha,
+    decision_path=launch["frontend_decision_path"],
+    decision_sha256=decision_sha,
+    expected_commit=commit,
+)
+if (
+    launch.get("family_manifest") != decision["family_manifest"]
+    or launch.get("r0_headroom_gate") != decision["r0_headroom_gate"]
+    or launch.get("family_routing") != decision["family_routing"]
+    or launch.get("p0_training_asformer_consumer")
+    != decision["p0_training_asformer_consumer"]
+):
+    raise SystemExit("completion propagation evidence drift")
 payload = {
     "schema": "duca_two_stage_curriculum_completion_v1",
     "ok": True,
+    "fail_closed": True,
     "git_commit": commit,
     "variant": variant,
+    "execution_role": launch["execution_role"],
     "checkpoint_path": str(Path(checkpoint).resolve()),
     "checkpoint_sha256": digest(checkpoint),
     "evaluation_path": str(Path(evaluation).resolve()),
@@ -303,13 +413,21 @@ payload = {
     "prediction_sha256": metrics["prediction_sha256"],
     "metrics": metrics["metrics"],
     "training_identity": identity,
-    "launch_manifest_path": str(Path(launch_manifest).resolve()),
-    "launch_manifest_sha256": digest(launch_manifest),
+    "launch_manifest_path": str(launch_path),
+    "launch_manifest_sha256": digest(launch_path),
+    "frontend_decision_path": launch["frontend_decision_path"],
     "frontend_decision_sha256": decision_sha,
+    "family_manifest": decision["family_manifest"],
+    "r0_headroom_gate": decision["r0_headroom_gate"],
+    "family_routing": decision["family_routing"],
+    "p0_training_asformer_consumer": decision[
+        "p0_training_asformer_consumer"
+    ],
+    "gate_path": launch["gate_path"],
     "gate_suite_sha256": gate_sha,
 }
-Path(run_dir, "completion.json").write_text(
-    json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+_atomic_write_json(
+    Path(run_dir, "completion.json").resolve(), payload, require_absent=True
 )
 PY
 

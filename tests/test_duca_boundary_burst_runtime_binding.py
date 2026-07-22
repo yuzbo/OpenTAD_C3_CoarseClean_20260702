@@ -13,7 +13,7 @@ from tools.bata import duca_selected_axis_training as training
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "configs" / "adatad" / "thumos"
-BOUNDARY_VARIANTS = (
+SUPPORTED_BOUNDARY_VARIANTS = (
     "two_stage_exact_uniform",
     "gaussian_matched_g0",
     "boundary_burst_r2q3_g0",
@@ -145,7 +145,7 @@ def test_p0_frontend_and_gate_consume_the_submit_frozen_pretrain_contract() -> N
     assert '"${ADATAD_PRETRAIN_SHA256}"' not in official
 
 
-def test_real_p0_gate_identity_is_reopened_by_decision_gate_and_official_runtime() -> None:
+def test_sealed_decision_and_full_gate_are_replayed_by_every_consumer() -> None:
     p0 = (ROOT / "scripts" / "run_duca_boundary_burst_p0_gpu1.sh").read_text(
         encoding="utf-8"
     )
@@ -159,10 +159,13 @@ def test_real_p0_gate_identity_is_reopened_by_decision_gate_and_official_runtime
     assert "--p0-real-gate" in p0
     assert "--p0-real-gate-sha256" in p0
     assert "P0_REAL_GATE_SHA256" in p0
-    assert "validate_p0_real_gate" in gate
+    assert "create_p0_training_asformer_consumer_receipt" in p0
+    assert "validate_frontend_decision" in gate
+    assert "validate_full_model_gate" in gate
     assert '"p0_real_gate"' in gate
-    assert "validate_p0_real_gate" in official
-    assert 'suite.get("p0_real_gate")' in official
+    assert "validate_frontend_decision" in official
+    assert "validate_full_model_gate" in official
+    assert "completion propagation evidence drift" in official
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -173,7 +176,7 @@ def _write_json(path: Path, payload: dict) -> None:
     )
 
 
-def test_boundary_burst_suite_binds_all_four_production_variants(
+def test_runtime_binding_preserves_optional_diagnostic_variant_support(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -192,7 +195,7 @@ def test_boundary_burst_suite_binds_all_four_production_variants(
     monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT_EPOCH", "19")
 
     artifacts = []
-    for variant in BOUNDARY_VARIANTS:
+    for variant in SUPPORTED_BOUNDARY_VARIANTS:
         config_path = CONFIG_DIR / training.VARIANT_CONFIGS[variant]
         initialized = variant != "two_stage_exact_uniform"
         gate = {
@@ -238,7 +241,7 @@ def test_boundary_burst_suite_binds_all_four_production_variants(
         training.sha256_file(suite_path),
     )
 
-    for variant in BOUNDARY_VARIANTS:
+    for variant in SUPPORTED_BOUNDARY_VARIANTS:
         config_path = CONFIG_DIR / training.VARIANT_CONFIGS[variant]
         cfg = Config.fromfile(str(config_path))
         evaluation = cfg.evaluation.to_dict()

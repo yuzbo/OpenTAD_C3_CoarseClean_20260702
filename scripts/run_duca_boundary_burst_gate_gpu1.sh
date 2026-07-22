@@ -31,48 +31,59 @@ validate_frozen_pretrain_binding(
 PY
 [[ -f "${DECISION}" ]] || fail "frontend decision is missing"
 [[ "$(sha256sum "${DECISION}" | awk '{print $1}')" == "${DECISION_SHA256}" ]] || fail "decision drift"
-"${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" <<'PY'
+readarray -t selected_route < <("${PYTHON}" - "${DECISION}" \
+  "${DECISION_SHA256}" "${EXPECTED_COMMIT}" <<'PY'
 import sys
-from tools.bata.select_duca_boundary_burst_candidates import validate_p0_real_gate
-import json
-from pathlib import Path
-
-decision = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-gate = decision.get("p0_real_gate")
-if not isinstance(gate, dict):
-    raise SystemExit("frontend decision lacks P0 real gate binding")
-validate_p0_real_gate(
-    gate_path=gate.get("path", ""),
-    gate_sha256=gate.get("sha256", ""),
-    expected_commit=sys.argv[2],
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_frontend_decision,
 )
-if gate.get("schema") != "duca_frontend_p0_real_cuda_gate_v1" or gate.get("ok") is not True:
-    raise SystemExit("frontend decision P0 real gate fields drifted")
+
+decision = validate_frontend_decision(
+    decision_path=sys.argv[1],
+    decision_sha256=sys.argv[2],
+    expected_commit=sys.argv[3],
+)
+routing = decision["family_routing"]
+print(routing["selected_p0_variant"])
+print(routing["selected_official60_variant"])
+print(routing["selected_official60_config"])
+print(routing["uniform_official60_config"])
 PY
+)
+SELECTED_P0_VARIANT="${selected_route[0]}"
+SELECTED_OFFICIAL60_VARIANT="${selected_route[1]}"
+SELECTED_OFFICIAL60_CONFIG="${selected_route[2]}"
+UNIFORM_OFFICIAL60_CONFIG="${selected_route[3]}"
+[[ -n "${SELECTED_P0_VARIANT}" && -n "${SELECTED_OFFICIAL60_VARIANT}" \
+  && -f "${SELECTED_OFFICIAL60_CONFIG}" && -f "${UNIFORM_OFFICIAL60_CONFIG}" ]] \
+  || fail "selected family route is incomplete"
 [[ ! -e "${GATE_ROOT}" ]] || fail "fresh gate root is required"
 
 mkdir -p "${GATE_ROOT}/contracts" "${GATE_ROOT}/full_model" "${GATE_ROOT}/tests"
 ADATAD_PRETRAIN_SHA256="${FROZEN_PRETRAIN_SHA256}"
 entries=(
-  "two_stage_exact_uniform:gaussian_matched:configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py"
-  "gaussian_matched_g0:gaussian_matched:configs/adatad/thumos/duca_global_curriculum_g0_no_feedback_fixed384_official60.py"
-  "boundary_burst_r2q3_g0:burst_r2q3:configs/adatad/thumos/duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
-  "boundary_burst_r4q5_g0:burst_r4q5:configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
+  "two_stage_exact_uniform:not_applicable:${UNIFORM_OFFICIAL60_CONFIG}"
+  "${SELECTED_OFFICIAL60_VARIANT}:${SELECTED_P0_VARIANT}:${SELECTED_OFFICIAL60_CONFIG}"
 )
 for entry in "${entries[@]}"; do
   IFS=: read -r variant frontend config <<<"${entry}"
   config_stem="$(basename "${config}" .py)"
-  readarray -t selected < <("${PYTHON}" - "${DECISION}" "${frontend}" <<'PY'
+  if [[ "${frontend}" == "not_applicable" ]]; then
+    unset DUCA_FRONTEND_CHECKPOINT DUCA_FRONTEND_CHECKPOINT_SHA256 \
+      DUCA_FRONTEND_CHECKPOINT_EPOCH
+  else
+    readarray -t selected < <("${PYTHON}" - "${DECISION}" "${frontend}" <<'PY'
 import json, sys
 from pathlib import Path
 p = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 w = p["winners"][sys.argv[2]]
 print(w["checkpoint_path"]); print(w["checkpoint_sha256"]); print(int(w["epoch_one_based"]) - 1)
 PY
-)
-  export DUCA_FRONTEND_CHECKPOINT="${selected[0]}"
-  export DUCA_FRONTEND_CHECKPOINT_SHA256="${selected[1]}"
-  export DUCA_FRONTEND_CHECKPOINT_EPOCH="${selected[2]}"
+    )
+    export DUCA_FRONTEND_CHECKPOINT="${selected[0]}"
+    export DUCA_FRONTEND_CHECKPOINT_SHA256="${selected[1]}"
+    export DUCA_FRONTEND_CHECKPOINT_EPOCH="${selected[2]}"
+  fi
   "${PYTHON}" tools/bata/validate_duca_protected_e2e_official60.py \
     --config "${config}" --output-json "${GATE_ROOT}/contracts/${variant}.json"
   "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
@@ -94,9 +105,22 @@ done
   2>&1 | tee "${GATE_ROOT}/tests/focused_pytest.out"
 
 "${PYTHON}" - "${GATE_ROOT}" "${EXPECTED_COMMIT}" "${DECISION}" "${DECISION_SHA256}" <<'PY'
-import hashlib, json, sys
+import hashlib, json, os, sys
 from pathlib import Path
+from uuid import uuid4
+
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_frontend_decision,
+)
+
 root = Path(sys.argv[1]).resolve()
+decision_path = Path(sys.argv[3]).resolve()
+decision = validate_frontend_decision(
+    decision_path=decision_path,
+    decision_sha256=sys.argv[4],
+    expected_commit=sys.argv[2],
+)
+routing = decision["family_routing"]
 records = [
     {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     for path in sorted(root.rglob("*")) if path.is_file()
@@ -104,16 +128,48 @@ records = [
 payload = {
     "schema": "duca_boundary_burst_full_model_gate_v1",
     "ok": True,
+    "fail_closed": True,
     "formal_training_unlocked": True,
-    "status": "uniform_gaussian_r2q3_r4q5_full_model_gate_passed",
+    "status": "matched_u_selected_g0_full_model_gate_passed",
     "task": "offline_temporal_action_detection",
     "git_commit": sys.argv[2],
-    "frontend_decision_path": str(Path(sys.argv[3]).resolve()),
+    "frontend_decision_path": str(decision_path),
     "frontend_decision_sha256": sys.argv[4],
-    "p0_real_gate": json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))["p0_real_gate"],
+    "family_manifest": decision["family_manifest"],
+    "r0_headroom_gate": decision["r0_headroom_gate"],
+    "family_routing": routing,
+    "p0_real_gate": decision["p0_real_gate"],
+    "p0_training_asformer_consumer": decision["p0_training_asformer_consumer"],
+    "gated_variants": routing["required_official60_variants"],
+    "required_official60_variants": routing["required_official60_variants"],
+    "diagnostic_official60_variants": routing["diagnostic_official60_variants"],
     "artifacts": records,
 }
-(root / "gate_suite.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+output = root / "gate_suite.json"
+temporary = root / f".gate_suite.json.{uuid4().hex}.tmp"
+try:
+    with temporary.open("xb") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, output)
+finally:
+    temporary.unlink(missing_ok=True)
+PY
+
+GATE_SUITE_SHA256="$(sha256sum "${GATE_ROOT}/gate_suite.json" | awk '{print $1}')"
+"${PYTHON}" - "${GATE_ROOT}/gate_suite.json" "${GATE_SUITE_SHA256}" \
+  "${DECISION}" "${DECISION_SHA256}" "${EXPECTED_COMMIT}" <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import validate_full_model_gate
+
+validate_full_model_gate(
+    gate_path=sys.argv[1],
+    gate_sha256=sys.argv[2],
+    decision_path=sys.argv[3],
+    decision_sha256=sys.argv[4],
+    expected_commit=sys.argv[5],
+)
 PY
 
 echo "[DUCA_BURST_GATE] passed ${GATE_ROOT}/gate_suite.json"

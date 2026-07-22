@@ -15,6 +15,8 @@ SPLIT_MANIFEST="${DUCA_FRONTEND_SPLIT_MANIFEST:-}"
 SPLIT_SHA256="${DUCA_FRONTEND_SPLIT_MANIFEST_SHA256:-}"
 R0_SUMMARY="${DUCA_R0_SUMMARY_JSON:-${RUN_ROOT}/r0_holdout_map/r0_summary.json}"
 R0_SUMMARY_SHA256_FILE="${DUCA_R0_SUMMARY_SHA256_FILE:-${RUN_ROOT}/r0_holdout_map/r0_summary.sha256}"
+FAMILY_MANIFEST="${DUCA_BOUNDARY_BURST_FAMILY_MANIFEST:-${RUN_ROOT}/family_routing_manifest.json}"
+FAMILY_MANIFEST_SHA256_FILE="${DUCA_BOUNDARY_BURST_FAMILY_MANIFEST_SHA256_FILE:-${RUN_ROOT}/family_routing_manifest.sha256}"
 FROZEN_PRETRAIN_PATH="${DUCA_ADATAD_PRETRAIN_PATH:-}"
 FROZEN_PRETRAIN_SHA256="${DUCA_ADATAD_PRETRAIN_SHA256:-}"
 [[ -n "${SLURM_JOB_ID:-}" && -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm GPU is required"
@@ -50,11 +52,11 @@ IFS= read -r R0_SUMMARY_SHA256 < "${R0_SUMMARY_SHA256_FILE}"
 [[ "${R0_SUMMARY_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "invalid R0 summary SHA256 seal"
 "${PYTHON}" - "${R0_SUMMARY}" "${R0_SUMMARY_SHA256}" "${EXPECTED_COMMIT}" \
   "${RUN_ROOT}/r0_headroom_gate.json" <<'PY'
-import json
 import sys
 from pathlib import Path
 
 from tools.bata.select_duca_boundary_burst_candidates import (
+    _atomic_write_json,
     validate_r0_headroom_summary,
 )
 
@@ -63,21 +65,57 @@ gate = validate_r0_headroom_summary(
     summary_sha256=sys.argv[2],
     expected_commit=sys.argv[3],
 )
-Path(sys.argv[4]).write_text(
-    json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+_atomic_write_json(
+    Path(sys.argv[4]).resolve(), gate, require_absent=True
 )
 PY
-variant_configs=(
-  configs/adatad/thumos/duca_gaussian_frontend_pretrain_matched_fixed384.py
-  configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py
-  configs/adatad/thumos/duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py
+"${PYTHON}" - "${R0_SUMMARY}" "${R0_SUMMARY_SHA256}" "${EXPECTED_COMMIT}" \
+  "${FAMILY_MANIFEST}" <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import (
+    create_family_routing_manifest,
 )
-gate_args=()
-for config in "${variant_configs[@]}"; do gate_args+=(--variant-config "${config}"); done
+
+create_family_routing_manifest(
+    summary_path=sys.argv[1],
+    summary_sha256=sys.argv[2],
+    expected_commit=sys.argv[3],
+    output_path=sys.argv[4],
+)
+PY
+FAMILY_MANIFEST_SHA256="$(sha256sum "${FAMILY_MANIFEST}" | awk '{print $1}')"
+[[ "${FAMILY_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "invalid family manifest SHA256"
+printf '%s\n' "${FAMILY_MANIFEST_SHA256}" > "${FAMILY_MANIFEST_SHA256_FILE}.tmp"
+mv -f "${FAMILY_MANIFEST_SHA256_FILE}.tmp" "${FAMILY_MANIFEST_SHA256_FILE}"
+readarray -t selected_route < <("${PYTHON}" - "${FAMILY_MANIFEST}" \
+  "${FAMILY_MANIFEST_SHA256}" "${EXPECTED_COMMIT}" <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import (
+    validate_family_routing_manifest,
+)
+
+manifest = validate_family_routing_manifest(
+    manifest_path=sys.argv[1],
+    manifest_sha256=sys.argv[2],
+    expected_commit=sys.argv[3],
+)
+routing = manifest["family_routing"]
+print(routing["selected_p0_variant"])
+print(routing["selected_p0_config"])
+print(routing["selected_official60_variant"])
+PY
+)
+SELECTED_P0_VARIANT="${selected_route[0]}"
+SELECTED_P0_CONFIG="${selected_route[1]}"
+SELECTED_OFFICIAL60_VARIANT="${selected_route[2]}"
+[[ -n "${SELECTED_P0_VARIANT}" && -f "${SELECTED_P0_CONFIG}" \
+  && -n "${SELECTED_OFFICIAL60_VARIANT}" ]] \
+  || fail "R0-selected family route is incomplete"
 "${PYTHON}" -m torch.distributed.run --standalone --nproc_per_node=1 \
   tools/bata/run_duca_frontend_p0_real_gate.py \
-  --config configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py \
-  "${gate_args[@]}" \
+  --config "${SELECTED_P0_CONFIG}" \
+  --variant-config "${SELECTED_P0_CONFIG}" \
   --expected-commit "${EXPECTED_COMMIT}" \
   --checkpoint "${ADATAD_PRETRAIN_PATH}" \
   --official-repos-root "${C3_OFFICIAL_ACTION_SEG_REPOS}" \
@@ -87,26 +125,46 @@ for config in "${variant_configs[@]}"; do gate_args+=(--variant-config "${config
 P0_REAL_GATE="${RUN_ROOT}/p0_real_gate.json"
 P0_REAL_GATE_SHA256="$(sha256sum "${P0_REAL_GATE}" | awk '{print $1}')"
 [[ "${P0_REAL_GATE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "invalid P0 real gate SHA256"
+P0_ASFORMER_CONSUMER="${RUN_ROOT}/p0_training_asformer_consumer.json"
+"${PYTHON}" - "${P0_REAL_GATE}" "${P0_REAL_GATE_SHA256}" \
+  "${EXPECTED_COMMIT}" "${SELECTED_P0_CONFIG}" "${P0_ASFORMER_CONSUMER}" <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import (
+    create_p0_training_asformer_consumer_receipt,
+)
 
-variants=(gaussian_matched burst_r2q3 burst_r4q5)
-for variant in "${variants[@]}"; do
-  export DUCA_FRONTEND_VARIANT="${variant}"
-  export RUN_DIR="${RUN_ROOT}/p0/${variant}/run"
-  export WORK_DIR="${RUN_ROOT}/p0/${variant}/work"
-  bash scripts/run_duca_frontend_pretrain_variant_gpu1.sh
-done
+create_p0_training_asformer_consumer_receipt(
+    gate_path=sys.argv[1],
+    gate_sha256=sys.argv[2],
+    expected_commit=sys.argv[3],
+    selected_config_path=sys.argv[4],
+    output_path=sys.argv[5],
+)
+PY
+P0_ASFORMER_CONSUMER_SHA256="$(sha256sum "${P0_ASFORMER_CONSUMER}" | awk '{print $1}')"
+[[ "${P0_ASFORMER_CONSUMER_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "invalid P0 training ASFormer consumer SHA256"
+
+export DUCA_FRONTEND_VARIANT="${SELECTED_P0_VARIANT}"
+export RUN_DIR="${RUN_ROOT}/p0/${SELECTED_P0_VARIANT}/run"
+export WORK_DIR="${RUN_ROOT}/p0/${SELECTED_P0_VARIANT}/work"
+bash scripts/run_duca_frontend_pretrain_variant_gpu1.sh
 
 "${PYTHON}" -m tools.bata.select_duca_boundary_burst_candidates \
   --expected-commit "${EXPECTED_COMMIT}" \
   --split-manifest "${SPLIT_MANIFEST}" \
   --split-manifest-sha256 "${SPLIT_SHA256}" \
+  --family-manifest "${FAMILY_MANIFEST}" \
+  --family-manifest-sha256 "${FAMILY_MANIFEST_SHA256}" \
   --p0-real-gate "${P0_REAL_GATE}" \
   --p0-real-gate-sha256 "${P0_REAL_GATE_SHA256}" \
-  --receipt "${RUN_ROOT}/p0/gaussian_matched/run/completion.json" \
-  --receipt "${RUN_ROOT}/p0/burst_r2q3/run/completion.json" \
-  --receipt "${RUN_ROOT}/p0/burst_r4q5/run/completion.json" \
+  --p0-asformer-consumer "${P0_ASFORMER_CONSUMER}" \
+  --p0-asformer-consumer-sha256 "${P0_ASFORMER_CONSUMER_SHA256}" \
+  --receipt "${RUN_ROOT}/p0/${SELECTED_P0_VARIANT}/run/completion.json" \
   --output-json "${RUN_ROOT}/frontend_decision.json"
 sha256sum "${RUN_ROOT}/frontend_decision.json" | awk '{print $1}' > \
+  "${RUN_ROOT}/frontend_decision.sha256.tmp"
+mv -f "${RUN_ROOT}/frontend_decision.sha256.tmp" \
   "${RUN_ROOT}/frontend_decision.sha256"
 
 echo "[DUCA_BURST_P0] completed ${RUN_ROOT}/frontend_decision.json"
