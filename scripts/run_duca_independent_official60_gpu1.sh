@@ -114,22 +114,46 @@ mkdir -p "${ARM_ROOT}/gate/contracts" "${ARM_ROOT}/gate/full_model" \
 P0_CHECKPOINT=""
 P0_CHECKPOINT_SHA256=""
 if [[ -n "${P0_CONFIG}" ]]; then
-  EMPTY_BLOCK_LIST="${ARM_ROOT}/p0/no_blocked_training_videos.txt"
-  : > "${EMPTY_BLOCK_LIST}"
-  export DUCA_FRONTEND_TRAIN_BLOCK_LIST="${EMPTY_BLOCK_LIST}"
-  P0_WORK="${ARM_ROOT}/p0/work"
-  "${PYTHON}" -m tools.bata.validate_duca_frontend_p0_contract \
-    --config "${P0_CONFIG}" --output-json "${ARM_ROOT}/p0/contract.json"
-  "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
-    --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
-    --rdzv_id="duca-independent-${SLURM_JOB_ID}-${VARIANT}-p0" \
-    tools/train.py "${P0_CONFIG}" --id 0 --seed 3407 --cfg-options \
-      "work_dir=${P0_WORK}" \
-      "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
-    2>&1 | tee "${ARM_ROOT}/p0/train.out"
-  P0_CHECKPOINT="${P0_WORK}/gpu1_id0/checkpoint/epoch_19.pth"
-  [[ -f "${P0_CHECKPOINT}" ]] || fail "terminal P0 epoch-19 checkpoint is missing"
-  P0_CHECKPOINT_SHA256="$(sha256sum "${P0_CHECKPOINT}" | awk '{print $1}')"
+  if [[ -n "${DUCA_REUSE_P0_CHECKPOINT:-}" ]]; then
+    P0_CHECKPOINT="$(readlink -f "${DUCA_REUSE_P0_CHECKPOINT}")"
+    P0_CHECKPOINT_SHA256="${DUCA_REUSE_P0_CHECKPOINT_SHA256:-}"
+    [[ -f "${P0_CHECKPOINT}" ]] || fail "reused P0 checkpoint is missing"
+    [[ "${P0_CHECKPOINT_SHA256}" =~ ^[0-9a-f]{64}$ ]] \
+      || fail "reused P0 checkpoint SHA256 is required"
+    [[ "$(sha256sum "${P0_CHECKPOINT}" | awk '{print $1}')" == \
+      "${P0_CHECKPOINT_SHA256}" ]] || fail "reused P0 checkpoint SHA256 mismatch"
+    "${PYTHON}" - "${P0_CHECKPOINT}" <<'PY'
+import sys
+
+import torch
+
+checkpoint = torch.load(sys.argv[1], map_location="cpu")
+if not isinstance(checkpoint, dict) or int(checkpoint.get("epoch", -1)) != 19:
+    raise SystemExit("reused P0 checkpoint must be terminal epoch 19")
+if not isinstance(checkpoint.get("state_dict_ema"), dict):
+    raise SystemExit("reused P0 checkpoint lacks state_dict_ema")
+PY
+    printf '[DUCA_INDEPENDENT_OFFICIAL60] reusing P0 checkpoint %s\n' \
+      "${P0_CHECKPOINT}"
+  else
+    EMPTY_BLOCK_LIST="${ARM_ROOT}/p0/no_blocked_training_videos.txt"
+    : > "${EMPTY_BLOCK_LIST}"
+    export DUCA_FRONTEND_TRAIN_BLOCK_LIST="${EMPTY_BLOCK_LIST}"
+    P0_WORK="${ARM_ROOT}/p0/work"
+    "${PYTHON}" -m tools.bata.validate_duca_frontend_p0_contract \
+      --config "${P0_CONFIG}" --output-json "${ARM_ROOT}/p0/contract.json"
+    "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
+      --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
+      --rdzv_id="duca-independent-${SLURM_JOB_ID}-${VARIANT}-p0" \
+      tools/train.py "${P0_CONFIG}" --id 0 --seed 3407 --cfg-options \
+        "work_dir=${P0_WORK}" \
+        "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+      2>&1 | tee "${ARM_ROOT}/p0/train.out"
+    P0_CHECKPOINT="${P0_WORK}/gpu1_id0/checkpoint/epoch_19.pth"
+    [[ -f "${P0_CHECKPOINT}" ]] \
+      || fail "terminal P0 epoch-19 checkpoint is missing"
+    P0_CHECKPOINT_SHA256="$(sha256sum "${P0_CHECKPOINT}" | awk '{print $1}')"
+  fi
   export DUCA_FRONTEND_CHECKPOINT="${P0_CHECKPOINT}"
   export DUCA_FRONTEND_CHECKPOINT_SHA256="${P0_CHECKPOINT_SHA256}"
   export DUCA_FRONTEND_CHECKPOINT_EPOCH=19
