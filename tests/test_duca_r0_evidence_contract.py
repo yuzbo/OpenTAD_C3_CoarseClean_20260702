@@ -180,7 +180,12 @@ def _fixture(tmp_path: Path, *, mixed_projected_gain: bool = False) -> dict:
     }
 
 
-def _finalize(tmp_path: Path, fixture: dict) -> tuple[dict, Path]:
+def _finalize(
+    tmp_path: Path,
+    fixture: dict,
+    *,
+    bootstrap_workers: int = 1,
+) -> tuple[dict, Path]:
     summary_path = tmp_path / "r0_summary.json"
     summary = finalize_r0(
         expected_commit="a" * 40,
@@ -209,9 +214,37 @@ def _finalize(tmp_path: Path, fixture: dict) -> tuple[dict, Path]:
         bootstrap_samples=100,
         bootstrap_seed=3407,
         bootstrap_confidence=0.95,
+        bootstrap_workers=bootstrap_workers,
         required_headroom_percentage_points=0.20,
     )
     return summary, summary_path
+
+
+def test_parallel_r0_bootstrap_is_exactly_equal_to_serial(tmp_path: Path) -> None:
+    serial_fixture = _fixture(tmp_path / "serial")
+    parallel_fixture = _fixture(tmp_path / "parallel")
+    serial_summary, _ = _finalize(
+        tmp_path / "serial", serial_fixture, bootstrap_workers=1
+    )
+    parallel_summary, _ = _finalize(
+        tmp_path / "parallel", parallel_fixture, bootstrap_workers=2
+    )
+    serial_bootstrap = json.loads(
+        Path(serial_summary["bootstrap_path"]).read_text(encoding="utf-8")
+    )
+    parallel_bootstrap = json.loads(
+        Path(parallel_summary["bootstrap_path"]).read_text(encoding="utf-8")
+    )
+
+    assert (
+        parallel_bootstrap["sampled_average_mAP"]
+        == serial_bootstrap["sampled_average_mAP"]
+    )
+    assert parallel_bootstrap["comparisons"] == serial_bootstrap["comparisons"]
+    assert (
+        parallel_summary["selected_weakest_projected_family"]
+        == serial_summary["selected_weakest_projected_family"]
+    )
 
 
 def test_r0_consumer_revalidates_sealed_official_bootstrap(tmp_path: Path) -> None:

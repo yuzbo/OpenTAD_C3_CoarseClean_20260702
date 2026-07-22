@@ -152,6 +152,7 @@ done
   --bootstrap-output "${OUTPUT_ROOT}/r0_bootstrap.json" \
   --summary-output "${OUTPUT_ROOT}/r0_summary.json" \
   --bootstrap-samples 1000 --bootstrap-seed 3407 --bootstrap-confidence 0.95 \
+  --bootstrap-workers "${DUCA_R0_BOOTSTRAP_WORKERS:-${SLURM_CPUS_PER_TASK:-1}}" \
   --required-headroom-percentage-points 0.20
 
 sha256sum "${OUTPUT_ROOT}/r0_summary.json" | awk '{print $1}' > "${OUTPUT_ROOT}/r0_summary.sha256"

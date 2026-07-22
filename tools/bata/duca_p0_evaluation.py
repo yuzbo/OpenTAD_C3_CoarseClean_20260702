@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 import inspect
 import hashlib
 import json
@@ -11,6 +12,9 @@ from typing import Any, Mapping
 EXPECTED_TIOU_THRESHOLDS = [0.3, 0.4, 0.5, 0.6, 0.7]
 EXPECTED_EVALUATOR_MODULE = "opentad.evaluations.mAP"
 EXPECTED_EVALUATOR_CLASS = "mAP"
+
+_BOOTSTRAP_WORKER_STATE: dict[str, Any] | None = None
+_BOOTSTRAP_WORKER_DIRECTORY: tempfile.TemporaryDirectory[str] | None = None
 
 
 def canonical_sha256(value: Any) -> str:
@@ -246,6 +250,70 @@ def recompute_official_map(
     }
 
 
+def _evaluate_bootstrap_draw(
+    draw: tuple[str, ...],
+    *,
+    families: tuple[str, ...],
+    database: Mapping[str, Any],
+    predictions: Mapping[str, Mapping[str, list[dict[str, Any]]]],
+    cfg: Mapping[str, Any],
+    ground_truth_path: Path,
+) -> tuple[float, ...]:
+    from opentad.evaluations.mAP import mAP
+
+    synthetic_database: dict[str, Any] = {}
+    synthetic_predictions = {family: {} for family in families}
+    for draw_index, video_id in enumerate(draw):
+        synthetic_id = f"bootstrap_{draw_index:05d}_{video_id}"
+        synthetic_database[synthetic_id] = dict(database[video_id])
+        for family in families:
+            synthetic_predictions[family][synthetic_id] = [
+                dict(item) for item in predictions[family].get(video_id, [])
+            ]
+    ground_truth_path.write_text(
+        json.dumps({"database": synthetic_database}, sort_keys=True),
+        encoding="utf-8",
+    )
+    kwargs = dict(cfg)
+    kwargs.pop("type")
+    kwargs["ground_truth_filename"] = str(ground_truth_path)
+    kwargs["blocked_videos"] = None
+    values = []
+    for family in families:
+        evaluator = mAP(
+            prediction_filename={"results": synthetic_predictions[family]},
+            **kwargs,
+        )
+        values.append(_metrics_from_evaluator(evaluator)["average_mAP"])
+    return tuple(values)
+
+
+def _initialize_bootstrap_worker(
+    families: tuple[str, ...],
+    database: Mapping[str, Any],
+    predictions: Mapping[str, Mapping[str, list[dict[str, Any]]]],
+    cfg: Mapping[str, Any],
+) -> None:
+    global _BOOTSTRAP_WORKER_DIRECTORY, _BOOTSTRAP_WORKER_STATE
+    _BOOTSTRAP_WORKER_DIRECTORY = tempfile.TemporaryDirectory(
+        prefix="duca-r0-bootstrap-worker-"
+    )
+    _BOOTSTRAP_WORKER_STATE = {
+        "families": families,
+        "database": database,
+        "predictions": predictions,
+        "cfg": cfg,
+        "ground_truth_path": Path(_BOOTSTRAP_WORKER_DIRECTORY.name)
+        / "ground_truth.json",
+    }
+
+
+def _evaluate_bootstrap_draw_in_worker(draw: tuple[str, ...]) -> tuple[float, ...]:
+    if _BOOTSTRAP_WORKER_STATE is None:
+        raise RuntimeError("DUCA bootstrap worker was not initialized")
+    return _evaluate_bootstrap_draw(draw, **_BOOTSTRAP_WORKER_STATE)
+
+
 def bootstrap_official_map_differences(
     prediction_paths: Mapping[str, str | Path],
     evaluation_config: Any,
@@ -256,6 +324,7 @@ def bootstrap_official_map_differences(
     samples: int = 1000,
     seed: int = 3407,
     confidence: float = 0.95,
+    workers: int = 1,
 ) -> dict[str, Any]:
     """Paired video-cluster bootstrap that reruns the official evaluator.
 
@@ -265,8 +334,6 @@ def bootstrap_official_map_differences(
 
     import numpy as np
 
-    from opentad.evaluations.mAP import mAP
-
     families = tuple(str(key) for key in prediction_paths)
     if baseline_family not in families or len(families) < 2:
         raise ValueError("bootstrap requires a baseline and at least one comparison")
@@ -274,6 +341,9 @@ def bootstrap_official_map_differences(
         raise ValueError("formal DUCA bootstrap requires at least 100 samples")
     if not 0.0 < float(confidence) < 1.0:
         raise ValueError("bootstrap confidence must lie in (0,1)")
+    workers = int(workers)
+    if workers < 1 or workers > 64:
+        raise ValueError("formal DUCA bootstrap workers must lie in [1,64]")
     expected = tuple(str(value) for value in expected_video_ids)
     if not expected or len(expected) != len(set(expected)):
         raise ValueError("bootstrap video identities must be nonempty and unique")
@@ -303,37 +373,60 @@ def bootstrap_official_map_differences(
             raise ValueError(f"{family} prediction contains out-of-scope videos: {sorted(extras)[:4]}")
 
     rng = random.Random(int(seed))
+    draws = [
+        tuple(expected[rng.randrange(len(expected))] for _ in expected)
+        for _ in range(int(samples))
+    ]
     sampled_maps = {family: [] for family in families}
     alpha = (1.0 - float(confidence)) / 2.0
-    with tempfile.TemporaryDirectory(prefix="duca-r0-bootstrap-") as directory:
-        ground_truth_path = Path(directory) / "ground_truth.json"
-        for _ in range(int(samples)):
-            draw = [expected[rng.randrange(len(expected))] for _ in expected]
-            synthetic_database: dict[str, Any] = {}
-            synthetic_predictions = {family: {} for family in families}
-            for draw_index, video_id in enumerate(draw):
-                synthetic_id = f"bootstrap_{draw_index:05d}_{video_id}"
-                synthetic_database[synthetic_id] = dict(database[video_id])
-                for family in families:
-                    synthetic_predictions[family][synthetic_id] = [
-                        dict(item) for item in predictions[family].get(video_id, [])
-                    ]
-            ground_truth_path.write_text(
-                json.dumps({"database": synthetic_database}, sort_keys=True),
-                encoding="utf-8",
+    if workers == 1:
+        with tempfile.TemporaryDirectory(prefix="duca-r0-bootstrap-") as directory:
+            ground_truth_path = Path(directory) / "ground_truth.json"
+            results = (
+                _evaluate_bootstrap_draw(
+                    draw,
+                    families=families,
+                    database=database,
+                    predictions=predictions,
+                    cfg=cfg,
+                    ground_truth_path=ground_truth_path,
+                )
+                for draw in draws
             )
-            kwargs = dict(cfg)
-            kwargs.pop("type")
-            kwargs["ground_truth_filename"] = str(ground_truth_path)
-            kwargs["blocked_videos"] = None
-            for family in families:
-                evaluator = mAP(
-                    prediction_filename={"results": synthetic_predictions[family]},
-                    **kwargs,
-                )
-                sampled_maps[family].append(
-                    _metrics_from_evaluator(evaluator)["average_mAP"]
-                )
+            for sample_index, values in enumerate(results, start=1):
+                for family, value in zip(families, values):
+                    sampled_maps[family].append(value)
+                if sample_index % max(1, len(draws) // 10) == 0 or sample_index == len(
+                    draws
+                ):
+                    print(
+                        f"[DUCA_R0_BOOTSTRAP] {sample_index}/{len(draws)} "
+                        f"workers={workers}",
+                        flush=True,
+                    )
+    else:
+        chunk_size = max(1, len(draws) // (workers * 8))
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_initialize_bootstrap_worker,
+            initargs=(families, database, predictions, cfg),
+        ) as executor:
+            results = executor.map(
+                _evaluate_bootstrap_draw_in_worker,
+                draws,
+                chunksize=chunk_size,
+            )
+            for sample_index, values in enumerate(results, start=1):
+                for family, value in zip(families, values):
+                    sampled_maps[family].append(value)
+                if sample_index % max(1, len(draws) // 10) == 0 or sample_index == len(
+                    draws
+                ):
+                    print(
+                        f"[DUCA_R0_BOOTSTRAP] {sample_index}/{len(draws)} "
+                        f"workers={workers}",
+                        flush=True,
+                    )
 
     baseline = np.asarray(sampled_maps[baseline_family], dtype=np.float64)
     comparisons: dict[str, Any] = {}

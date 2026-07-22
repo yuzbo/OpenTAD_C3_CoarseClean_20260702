@@ -114,3 +114,17 @@ def test_r0_replay_evaluates_the_training_holdout_annotation_subset(
     assert cfg.evaluation.subset == "training"
     assert cfg.evaluation.blocked_videos == "blocked.json"
     assert cfg.workflow.formal_protocol == "duca_r0_selected_axis_holdout_replay_v1"
+
+
+def test_r0_launcher_uses_allocated_cpus_for_bootstrap_only() -> None:
+    launcher = (
+        ROOT / "scripts" / "run_duca_boundary_burst_r0_holdout_map_gpu1.sh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        '--bootstrap-workers "${DUCA_R0_BOOTSTRAP_WORKERS:-${SLURM_CPUS_PER_TASK:-1}}"'
+        in launcher
+    )
+    assert "--bootstrap-samples 1000" in launcher
+    assert "--bootstrap-seed 3407" in launcher
+    assert "--bootstrap-confidence 0.95" in launcher

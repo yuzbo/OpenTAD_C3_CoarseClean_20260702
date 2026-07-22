@@ -295,6 +295,7 @@ def finalize_r0(
     bootstrap_samples: int = 1000,
     bootstrap_seed: int = 3407,
     bootstrap_confidence: float = 0.95,
+    bootstrap_workers: int = 1,
     required_headroom_percentage_points: float = 0.20,
 ) -> dict[str, Any]:
     if len(expected_commit) != 40:
@@ -389,6 +390,7 @@ def finalize_r0(
         samples=bootstrap_samples,
         seed=bootstrap_seed,
         confidence=bootstrap_confidence,
+        workers=bootstrap_workers,
     )
     bootstrap.update(
         {
@@ -806,6 +808,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--bootstrap-samples", type=int, default=1000)
     parser.add_argument("--bootstrap-seed", type=int, default=3407)
     parser.add_argument("--bootstrap-confidence", type=float, default=0.95)
+    parser.add_argument("--bootstrap-workers", type=int, default=1)
     parser.add_argument("--required-headroom-percentage-points", type=float, default=0.20)
     args = parser.parse_args(argv)
     summary = finalize_r0(
@@ -831,6 +834,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         bootstrap_samples=args.bootstrap_samples,
         bootstrap_seed=args.bootstrap_seed,
         bootstrap_confidence=args.bootstrap_confidence,
+        bootstrap_workers=args.bootstrap_workers,
         required_headroom_percentage_points=args.required_headroom_percentage_points,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
