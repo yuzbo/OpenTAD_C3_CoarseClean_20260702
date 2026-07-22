@@ -4,6 +4,7 @@ from .end_to_end import PrepareVideoInfo, LoadSnippetFrames, LoadFrames
 from .native_crop import (
     ContinuousRoiSourceViews,
     FullFrameLetterboxView,
+    GeoRouteSourceViews,
     NativeCropSourceViews,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "LoadFrames",
     "ContinuousRoiSourceViews",
     "FullFrameLetterboxView",
+    "GeoRouteSourceViews",
     "NativeCropSourceViews",
 ]

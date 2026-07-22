@@ -776,6 +776,11 @@ class VisionTransformerAdapter(BaseModule):
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
         self.latest_chronotransport_summary = None
+        self.latest_native_packed_summary = None
+        # Runtime evidence only.  GeoRoute records a before/after delta around
+        # the actual packed call so P0 does not merely trust a hand-written
+        # "one forward" field in a summary dictionary.
+        self.native_packed_forward_invocations = 0
         self.chronotransport_checkpoint_loaded = False
         self.chronotransport_allow_legacy_checkpoint = False
 
@@ -904,6 +909,263 @@ class VisionTransformerAdapter(BaseModule):
         if missing and self.chronotransport_allow_legacy_checkpoint:
             for key in missing:
                 incompatible_keys.missing_keys.remove(key)
+
+    def _native_packed_position_embedding(self, grid_height: int, grid_width: int) -> Tensor:
+        """Interpolate positional embeddings for a native source patch lattice."""
+
+        if int(grid_height) <= 0 or int(grid_width) <= 0:
+            raise ValueError("native packed grid dimensions must be positive")
+        base_height, base_width = self.grid_size
+        spatial_base = int(base_height) * int(base_width)
+        if self.pos_embed.shape[1] % spatial_base:
+            raise RuntimeError("VideoMAE positional embedding has an invalid spatial layout")
+        temporal_tokens = int(self.pos_embed.shape[1]) // spatial_base
+        pos_embed = self.pos_embed.reshape(1, temporal_tokens, base_height, base_width, self.embed_dims)
+        pos_embed = pos_embed.permute(0, 1, 4, 2, 3).flatten(0, 1)
+        if (grid_height, grid_width) != self.grid_size:
+            pos_embed = F.interpolate(
+                pos_embed,
+                size=(int(grid_height), int(grid_width)),
+                mode="bicubic",
+                align_corners=False,
+            )
+        return (
+            pos_embed.reshape(1, temporal_tokens, self.embed_dims, grid_height, grid_width)
+            .permute(0, 1, 3, 4, 2)
+            .flatten(1, 3)
+        )
+
+    def _prepare_native_packed_lattice(
+        self,
+        native_tubelets: Tensor,
+        spatial_indices: Tensor,
+        *,
+        source_grid_hw: Tuple[int, int],
+        use_absolute_position: bool = True,
+    ) -> Tuple[Tensor, Tensor, Tensor, Dict[str, int]]:
+        """Embed native selected tubelets and reconstruct their source lattice.
+
+        Both the packed runtime and the P0 dense numerical reference call this
+        helper.  Keeping their patch embedding, position table and scatter
+        setup identical makes a full-token P0 comparison meaningful instead
+        of comparing two different VideoMAE inputs.
+        """
+
+        if native_tubelets.ndim != 7:
+            raise ValueError("native_tubelets must be [B,T,K,3,tubelet,patch,patch]")
+        if spatial_indices.ndim != 3:
+            raise ValueError("spatial_indices must be [B,T,K]")
+        if tuple(native_tubelets.shape[:3]) != tuple(spatial_indices.shape):
+            raise ValueError("native tubelets and spatial indices must share [B,T,K]")
+        if native_tubelets.shape[3] != 3:
+            raise ValueError("native packed input requires RGB tubelets")
+        if native_tubelets.shape[4] != 2 or native_tubelets.shape[5:] != (self.patch_size, self.patch_size):
+            raise ValueError("native packed input must use VideoMAE 2x16x16 tubelets")
+        if self.with_cp:
+            raise ValueError(
+                "GeoRoute native packed execution requires with_cp=False so the one-heavy-forward ledger remains exact"
+            )
+        if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
+            raise RuntimeError("native packed execution cannot combine with tubelet_packed_runtime_route")
+        if self.chronotransport is not None and self.chronotransport.enabled:
+            raise RuntimeError("native packed execution cannot combine with ChronoTransport")
+
+        batch_size, total_tubelets, select_count = map(int, spatial_indices.shape)
+        if select_count <= 0:
+            raise ValueError("native packed execution requires at least one token per tubelet")
+        grid_height, grid_width = map(int, source_grid_hw)
+        spatial_tokens = grid_height * grid_width
+        if spatial_tokens <= 0:
+            raise ValueError("source_grid_hw must contain positive dimensions")
+        if bool(((spatial_indices < 0) | (spatial_indices >= spatial_tokens)).any().item()):
+            raise ValueError("native packed spatial indices fall outside the source patch lattice")
+        if select_count > 1:
+            ordered_indices = torch.sort(spatial_indices, dim=-1).values
+            if bool((ordered_indices[..., 1:] == ordered_indices[..., :-1]).any().item()):
+                raise ValueError("native packed execution received duplicate spatial indices")
+
+        base_height, base_width = self.grid_size
+        temporal_per_chunk = int(self.pos_embed.shape[1]) // (int(base_height) * int(base_width))
+        if total_tubelets % temporal_per_chunk:
+            raise ValueError("native packed tubelet count must be divisible by one VideoMAE clip")
+        chunk_count = total_tubelets // temporal_per_chunk
+
+        self._freeze_layers()
+        embedded = self.patch_embed(
+            native_tubelets.reshape(-1, 3, 2, self.patch_size, self.patch_size)
+        )[0]
+        if embedded.shape[1:] != (1, self.embed_dims):
+            raise RuntimeError("native patch embedder did not produce one token per gathered tubelet")
+        embedded = embedded.squeeze(1).reshape(
+            batch_size,
+            chunk_count,
+            temporal_per_chunk,
+            select_count,
+            self.embed_dims,
+        )
+        per_chunk_indices = spatial_indices.reshape(
+            batch_size,
+            chunk_count,
+            temporal_per_chunk,
+            select_count,
+        )
+
+        if use_absolute_position:
+            position = self._native_packed_position_embedding(grid_height, grid_width)
+        else:
+            # This is an explicit ablation, not a hidden coordinate fallback:
+            # neither the dense lattice nor the selected tokens receive the
+            # pretrained absolute spatial position table in this path.
+            position = embedded.new_zeros(
+                1,
+                temporal_per_chunk * spatial_tokens,
+                self.embed_dims,
+            )
+        dense = position.reshape(1, 1, temporal_per_chunk, spatial_tokens, self.embed_dims).expand(
+            batch_size,
+            chunk_count,
+            temporal_per_chunk,
+            spatial_tokens,
+            self.embed_dims,
+        ).clone()
+        scatter_index = per_chunk_indices.unsqueeze(-1).expand_as(embedded)
+        dense.scatter_(3, scatter_index, embedded + dense.gather(3, scatter_index))
+        dense_mask = torch.zeros(
+            batch_size,
+            chunk_count,
+            temporal_per_chunk,
+            spatial_tokens,
+            device=spatial_indices.device,
+            dtype=torch.bool,
+        ).scatter_(3, per_chunk_indices, True)
+        x = self.pos_drop(dense.reshape(batch_size * chunk_count, -1, self.embed_dims))
+        packed_mask = dense_mask.reshape(batch_size * chunk_count, -1)
+        metadata = {
+            "batch_size": batch_size,
+            "total_tubelets": total_tubelets,
+            "select_count": select_count,
+            "grid_height": grid_height,
+            "grid_width": grid_width,
+            "spatial_tokens": spatial_tokens,
+            "chunk_count": chunk_count,
+            "temporal_per_chunk": temporal_per_chunk,
+            "absolute_position_enabled": int(bool(use_absolute_position)),
+        }
+        return x, packed_mask, scatter_index, metadata
+
+    @staticmethod
+    def _gather_native_selected_output(
+        x: Tensor,
+        scatter_index: Tensor,
+        metadata: Dict[str, int],
+    ) -> Tensor:
+        dense_output = x.reshape(
+            metadata["batch_size"],
+            metadata["chunk_count"],
+            metadata["temporal_per_chunk"],
+            metadata["spatial_tokens"],
+            x.shape[-1],
+        )
+        return dense_output.gather(3, scatter_index).reshape(
+            metadata["batch_size"],
+            metadata["total_tubelets"],
+            metadata["select_count"],
+            x.shape[-1],
+        )
+
+    def forward_native_packed(
+        self,
+        native_tubelets: Tensor,
+        spatial_indices: Tensor,
+        *,
+        source_grid_hw: Tuple[int, int],
+        use_absolute_position: bool = True,
+    ) -> Tensor:
+        """Run one VideoMAE pass on exact-K native ``2x16x16`` tubelets.
+
+        The visual input is never resized or sampled by coordinates.  The
+        gathered tubelets are embedded with the same pretrained Conv3d patch
+        embedder, scattered into their native dense lattice, then the existing
+        packed block path executes attention/MLP only for selected locations.
+        Adapter convolutions remain dense by design; callers must therefore
+        report attention/MLP sparsity separately from whole-model cost.
+        """
+
+        self.native_packed_forward_invocations += 1
+        x, packed_mask, scatter_index, metadata = self._prepare_native_packed_lattice(
+            native_tubelets,
+            spatial_indices,
+            source_grid_hw=source_grid_hw,
+            use_absolute_position=use_absolute_position,
+        )
+
+        stats: Dict[str, int] = {
+            "heavy_backbone_forward_count": 1,
+            "packed_attention_forward_count": 0,
+            "packed_mlp_forward_count": 0,
+            "dense_adapter_forward_count": 0,
+        }
+        for block in self.blocks:
+            x = block(
+                x,
+                metadata["grid_height"],
+                metadata["grid_width"],
+                packed_dense_mask=packed_mask,
+                packed_stats=stats,
+            )
+            if getattr(block, "use_adapter", False):
+                stats["dense_adapter_forward_count"] += 1
+        x = self.norm(x)
+        selected = self._gather_native_selected_output(x, scatter_index, metadata)
+        self.latest_native_packed_summary = {
+            "schema_version": "videomae_native_packed_v1",
+            "heavy_backbone_forward_count": 1,
+            "batch_size": metadata["batch_size"],
+            "total_tubelets": metadata["total_tubelets"],
+            "chunks_per_window": metadata["chunk_count"],
+            "tubelets_per_chunk": metadata["temporal_per_chunk"],
+            "source_grid_hw": [metadata["grid_height"], metadata["grid_width"]],
+            "spatial_tokens_per_tubelet": metadata["spatial_tokens"],
+            "selected_tokens_per_tubelet": metadata["select_count"],
+            "absolute_position_enabled": bool(metadata["absolute_position_enabled"]),
+            "selected_attention_tokens_per_chunk": metadata["temporal_per_chunk"] * metadata["select_count"],
+            "dense_tokens_per_chunk": metadata["temporal_per_chunk"] * metadata["spatial_tokens"],
+            "packed_attention_forward_count": stats["packed_attention_forward_count"],
+            "packed_mlp_forward_count": stats["packed_mlp_forward_count"],
+            "dense_adapter_forward_count": stats["dense_adapter_forward_count"],
+        }
+        return selected
+
+    def forward_native_dense_reference(
+        self,
+        native_tubelets: Tensor,
+        spatial_indices: Tensor,
+        *,
+        source_grid_hw: Tuple[int, int],
+        use_absolute_position: bool = True,
+    ) -> Tensor:
+        """P0-only dense reference for an all-native-token packed route.
+
+        This method intentionally performs a second *debug* forward and must
+        never be enabled in a train/eval result cell.  It runs the same native
+        lattice preparation as :meth:`forward_native_packed`, but executes the
+        ordinary dense attention/MLP branch.  Its only purpose is to establish
+        numerical agreement when every native patch is selected.
+        """
+
+        x, packed_mask, scatter_index, metadata = self._prepare_native_packed_lattice(
+            native_tubelets,
+            spatial_indices,
+            source_grid_hw=source_grid_hw,
+            use_absolute_position=use_absolute_position,
+        )
+        if not bool(packed_mask.all().item()):
+            raise ValueError("dense native reference requires every source patch to be selected")
+        self._freeze_layers()
+        for block in self.blocks:
+            x = block(x, metadata["grid_height"], metadata["grid_width"])
+        x = self.norm(x)
+        return self._gather_native_selected_output(x, scatter_index, metadata)
 
     def forward(self, x: Tensor) -> Tensor:
         """Defines the computation performed at every call.

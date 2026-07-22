@@ -1,6 +1,6 @@
 ---
 type: wiki_index
-updated: 2026-07-20
+updated: 2026-07-22
 project: C3-DUCA efficient temporal acquisition for TAD
 ---
 
@@ -13,6 +13,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [Native-Crop S1 development vertical slice](experiments/native-crop-s1-vertical-slice.md)
 - [Continuous-RoI S2 crop sufficiency](experiments/native-crop-s2-crop-sufficiency.md)
 - [Native-Crop paper experiment roadmap](experiments/native-crop-paper-experiment-roadmap.md)
+- [GeoRoute-AdaTAD native routing](experiments/georoute-adatad.md)
 
 这是本项目研究记忆的单一入口。它区分讨论、代码、测试、实验和论文证据，
 用于阻止路线遗忘、旧错误复发和旧提交结果冒充最新实现。
@@ -57,6 +58,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [CVCR / BCFT / CoDeTAD](ideas/cvcr-bcft-codetad.md)
 - [ChronoTransport](ideas/chronotransport.md)
 - [PhysTime](ideas/phystime.md)
+- [Geometry-Residual-Depth Routing for offline TAD](ideas/geo-route-adatad.md)
 
 ### Experiments
 

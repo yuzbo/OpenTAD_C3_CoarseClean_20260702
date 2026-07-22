@@ -203,6 +203,14 @@ class ActionFormer(SingleStageDetector):
             **kwargs,
         )
         losses.update(loc_losses)
+        if self.with_backbone and hasattr(
+            self.backbone, "consume_detector_policy_loss"
+        ):
+            policy_auxiliary = self.backbone.consume_detector_policy_loss(
+                detector_losses=loc_losses,
+            )
+            if policy_auxiliary:
+                self._merge_backbone_auxiliary_losses(losses, policy_auxiliary)
         self._merge_pc_ot_mras_extra_losses(
             losses,
             reader_extra_losses,

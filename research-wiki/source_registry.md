@@ -1,7 +1,47 @@
 ---
 type: source_registry
-updated: 2026-07-21
+updated: 2026-07-23
 ---
+
+- External GeoRoute-AdaTAD v1 implementation verdict, 2026-07-23. User-provided
+  review attachment SHA-256
+  `61A1918B36D811F178152F1E9DE60B464186D9C52678722BA679D617F4468E78`,
+  archived verbatim at
+  `docs/methods/reviews/2026-07-23-georoute-adatad-v1-pro-review-raw.md` with
+  an explicit project response at
+  `docs/methods/reviews/2026-07-23-georoute-adatad-v1-pro-review-absorption.md`.
+  It audited historical commit `8ebe5f069494dc2efb3d4f9dc1ea3a2fbb51f89c`,
+  which predates the GeoRoute design files; it is therefore code-grounded
+  evidence about the baseline and a design review, not an audit of a GeoRoute
+  implementation. Its cited Uni-AdaFocus/A-MoD facts are treated as design
+  constraints pending independent P0 checks, not GeoRoute performance evidence.
+
+- GeoRoute-AdaTAD design audit, 2026-07-23. Uni-AdaFocus official repository,
+  `https://github.com/LeapLabTHU/Uni-AdaFocus`, and paper,
+  `https://arxiv.org/abs/2412.11228`, are the source for global observation,
+  continuous ROI parameterization, temporal interpolation and policy
+  stabilization. Their fixed-output resampling and classification-proxy,
+  detached-local-policy mechanism are explicitly not transplanted. A-MoD,
+  `https://arxiv.org/abs/2412.20875`, is the source for previous-attention
+  column-mean routing, exact capacity and identity bypass. No author official
+  A-MoD implementation was verified in this audit; any local port must be
+  described as a paper-exact reproduction. These references establish design
+  constraints, not performance evidence for offline TAD.
+
+- Geometry/token/depth-routing literature audit, 2026-07-22. A-MoD,
+  "Attention Is All You Need For Mixture-of-Depths Routing,"
+  `https://arxiv.org/abs/2412.20875`, routes using the preceding attention map,
+  reports no added trainable router, and explicitly studies adaptation from
+  pretrained transformers. Original MoD,
+  `https://arxiv.org/abs/2404.02258`, is the fixed-capacity per-layer token
+  routing reference. ToMe,
+  `https://github.com/facebookresearch/tome`, is the token-merging reference.
+  DynamicViT, `https://arxiv.org/abs/2106.02034`, TokenLearner,
+  `https://arxiv.org/abs/2106.11297`, and STTS,
+  `https://arxiv.org/abs/2111.11591`, are learned token-selection references.
+  These sources establish relevant prior art and baseline requirements only;
+  none establishes an AdaTAD-compatible native-token result, TAD mAP gain, or
+  end-to-end speedup for this project.
 
 - Project-authored Continuous-RoI S2 v2.1 contract, 2026-07-20:
   `docs/methods/continuous_roi_s2_v2_1_contract.md` and

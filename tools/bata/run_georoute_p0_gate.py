@@ -92,11 +92,55 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
     detector = report.get("detector")
     if not isinstance(detector, Mapping) or detector.get("training_forward") is not True or detector.get("backward_completed") is not True:
         raise ValueError("P0 requires a completed detector training forward and backward")
+    detector_loss_keys = detector.get("detector_loss_keys")
+    if not isinstance(detector_loss_keys, list) or not {"cls_loss", "reg_loss"} <= set(detector_loss_keys):
+        raise ValueError("P0 must backpropagate the real AdaTAD classification and regression losses")
     gradient = report.get("gradient")
-    if not isinstance(gradient, Mapping) or gradient.get("all_trainable_gradients_finite") is not True:
-        raise ValueError("P0 gradients must be finite")
+    if not isinstance(gradient, Mapping) or gradient.get("all_required_gradients_finite") is not True:
+        raise ValueError("P0 required gradients must be finite")
     if not gradient.get("nonzero_components"):
         raise ValueError("P0 did not record nonzero gradient components")
+    if gradient.get("missing_required_components"):
+        raise ValueError("P0 is missing a required detector-to-router gradient path")
+    source_grid = report.get("source_grid")
+    if not isinstance(source_grid, Mapping) or int(source_grid.get("patch_capacity", 0)) <= 0:
+        raise ValueError("P0 source-grid evidence is missing")
+    native_route = report.get("native_route")
+    if not isinstance(native_route, Mapping):
+        raise ValueError("P0 native-route evidence is missing")
+    selected_shape = native_route.get("selected_native_tubelet_shape")
+    if not isinstance(selected_shape, list) or len(selected_shape) != 7:
+        raise ValueError("P0 selected native-tubelet evidence is missing")
+    if int(selected_shape[2]) != target:
+        raise ValueError("P0 selected native-tubelet shape disagrees with exact-K")
+    output_shape = native_route.get("output_shape")
+    if not isinstance(output_shape, list) or len(output_shape) != 3 or int(output_shape[-1]) != 768:
+        raise ValueError("P0 did not retain the required [B,C,768] detector feature contract")
+    if int(native_route.get("selected_unique_count_min", -1)) != target or int(
+        native_route.get("selected_unique_count_max", -1)
+    ) != target:
+        raise ValueError("P0 native route did not independently observe exact unique-K selection")
+    before = int(native_route.get("native_packed_invocation_counter_before", -1))
+    after = int(native_route.get("native_packed_invocation_counter_after", -1))
+    if before < 0 or after - before != 1:
+        raise ValueError("P0 native packed invocation counter is inconsistent with one heavy forward")
+    if report.get("route_mode") not in {"dense", "roi", "free", "hybrid"}:
+        raise ValueError("P0 route mode is missing or unsupported")
+    if report.get("route_mode") == "dense":
+        dense_reference = report.get("dense_native_reference")
+        if (
+            not isinstance(dense_reference, Mapping)
+            or dense_reference.get("passed") is not True
+            or int(dense_reference.get("reference_heavy_backbone_forward_count", -1)) != 1
+            or int(dense_reference.get("real_route_heavy_backbone_forward_count", -1)) != 1
+        ):
+            raise ValueError("dense P0 must include a passed native dense numerical reference")
+    if report.get("route_mode") in {"roi", "free"} and report.get("estimator", {}).get("name") == "score_function":
+        policy_evidence = report.get("score_function_detector_binding")
+        if not isinstance(policy_evidence, Mapping) or not {"cls_loss", "reg_loss"} <= set(
+            policy_evidence.get("detector_loss_keys", [])
+        ):
+            raise ValueError("P0 score-function route is not bound to the real detector losses")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -105,10 +149,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Atomic JSON report path.")
     parser.add_argument("--pretrained", default=None, help="Optional VideoMAE checkpoint overriding config.custom.pretrain.")
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--route-mode", choices=("roi", "free", "hybrid"), default="hybrid")
+    parser.add_argument("--route-mode", choices=("dense", "roi", "free", "hybrid"), default="hybrid")
     parser.add_argument(
         "--policy-estimator",
-        choices=("straight_through", "score_function"),
+        choices=("none", "straight_through", "score_function"),
         default="straight_through",
     )
     parser.add_argument("--tokens-per-tubelet", type=int, default=32)
@@ -142,6 +186,9 @@ def _configure_in_memory(config_path: Path, args):
     custom.georoute_roi_temperature = 0.25
     custom.georoute_min_roi_extent = 0.2
     custom.georoute_max_roi_extent = 1.0
+    custom.georoute_geometry_smoothness_weight = 0.0
+    custom.georoute_area_prior_weight = 0.0
+    custom.georoute_p0_dense_reference_check = args.route_mode == "dense"
     custom.georoute_max_batch_size = 1
     custom.norm_eval = False
     if args.pretrained is not None:
@@ -156,10 +203,16 @@ def _configure_in_memory(config_path: Path, args):
         raise FileNotFoundError(f"GeoRoute P0 VideoMAE checkpoint does not exist: {checkpoint}")
     if args.policy_estimator == "score_function" and args.route_mode == "hybrid":
         raise ValueError("score-function P0 requires roi/free, not staged hybrid")
+    if args.route_mode == "dense" and args.policy_estimator != "none":
+        raise ValueError("dense P0 parity uses estimator=none")
+    if args.route_mode == "dense" and args.context_tokens != 0:
+        raise ValueError("dense P0 parity requires context_tokens=0")
+    if args.route_mode != "dense" and args.policy_estimator == "none":
+        raise ValueError("learned P0 routes require an explicit estimator")
     return cfg
 
 
-def _gradient_summary(model) -> dict[str, Any]:
+def _gradient_summary(model, *, required_components: set[str]) -> dict[str, Any]:
     components: set[str] = set()
     nonfinite: list[str] = []
     missing: list[str] = []
@@ -172,8 +225,12 @@ def _gradient_summary(model) -> dict[str, Any]:
         if not bool(__import__("torch").isfinite(parameter.grad).all().item()):
             nonfinite.append(name)
         elif bool(__import__("torch").count_nonzero(parameter.grad).item()):
-            if name.startswith("backbone.scout"):
-                components.add("scout")
+            if name.startswith("backbone.scout.geometry_head"):
+                components.add("scout_geometry")
+            elif name.startswith("backbone.scout.residual_head"):
+                components.add("scout_residual")
+            elif name.startswith("backbone.scout"):
+                components.add("scout_stem")
             elif name.startswith("backbone.sparse_adapter"):
                 components.add("sparse_adapter")
             elif ".adapter." in f".{name}":
@@ -190,11 +247,37 @@ def _gradient_summary(model) -> dict[str, Any]:
         raise FloatingPointError(f"non-finite gradients: {nonfinite}")
     if not components:
         raise RuntimeError("no nonzero gradient reached any trainable GeoRoute/AdaTAD component")
+    missing_required = sorted(required_components - components)
     return {
-        "all_trainable_gradients_finite": True,
+        "all_required_gradients_finite": not nonfinite and not missing_required,
         "nonzero_components": sorted(components),
         "missing_trainable_gradient_tensors": sorted(missing),
+        "required_components": sorted(required_components),
+        "missing_required_components": missing_required,
     }
+
+
+def _detector_only_objective(losses: Mapping[str, Any]):
+    """Extract AdaTAD detector losses without GeoRoute regularizers/policy loss."""
+
+    excluded = {"cost", "georoute_geometry_regularization_loss", "georoute_score_function_loss"}
+    detector_terms = {
+        key: value
+        for key, value in losses.items()
+        if key not in excluded and __import__("torch").is_tensor(value)
+    }
+    if not detector_terms:
+        raise RuntimeError("P0 did not expose any detector-only loss term")
+    required_detector_terms = {"cls_loss", "reg_loss"}
+    if not required_detector_terms <= set(detector_terms):
+        raise RuntimeError(
+            "P0 requires the real AdaTAD classification and regression losses; observed "
+            + ", ".join(sorted(detector_terms))
+        )
+    detector_cost = sum(detector_terms.values())
+    if detector_cost.ndim != 0 or not bool(__import__("torch").isfinite(detector_cost).item()):
+        raise FloatingPointError("P0 detector-only objective is absent or non-finite")
+    return detector_cost, sorted(detector_terms)
 
 
 def _run_cuda_gate(args) -> dict[str, Any]:
@@ -204,10 +287,11 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         raise RuntimeError("GeoRoute P0 is CUDA-only and requires a Slurm-provided CUDA device")
     if args.height <= 0 or args.width <= 0:
         raise ValueError("P0 source height and width must be positive")
-    if args.height % 16 or args.width % 16:
-        raise ValueError("P0 source dimensions must be native 16-patch aligned")
-    if args.tokens_per_tubelet <= 0 or args.tokens_per_tubelet > (args.height // 16) * (args.width // 16):
+    source_capacity = ((args.height + 15) // 16) * ((args.width + 15) // 16)
+    if args.tokens_per_tubelet <= 0 or args.tokens_per_tubelet > source_capacity:
         raise ValueError("P0 tokens_per_tubelet must lie in the native source-grid capacity")
+    if args.route_mode == "dense" and args.tokens_per_tubelet != source_capacity:
+        raise ValueError("dense P0 numerical reference must select every native source token")
     if not (0 <= args.context_tokens < args.tokens_per_tubelet):
         raise ValueError("P0 context_tokens must lie in [0,K)")
 
@@ -256,10 +340,31 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         gt_segments=gt_segments,
         gt_labels=gt_labels,
     )
-    if "cost" not in losses or not bool(torch.isfinite(losses["cost"]).item()):
-        raise FloatingPointError("P0 detector cost is absent or non-finite")
-    losses["cost"].backward()
-    gradient = _gradient_summary(model)
+    geometry_regularizer = losses.get("georoute_geometry_regularization_loss")
+    if not torch.is_tensor(geometry_regularizer) or float(geometry_regularizer.detach().abs().item()) != 0.0:
+        raise RuntimeError("P0 must disable geometry regularization before detector-gradient auditing")
+    detector_cost, detector_loss_keys = _detector_only_objective(losses)
+    required_components = {"rpn_head", "projection", "sparse_adapter", "videomae_adapter"}
+    if args.route_mode == "hybrid":
+        required_components.update(("scout_geometry", "scout_residual"))
+    elif args.route_mode in {"roi", "free"}:
+        required_components.add("scout_geometry" if args.route_mode == "roi" else "scout_residual")
+    backward_objective = detector_cost
+    policy_loss = None
+    if args.policy_estimator == "score_function":
+        policy_loss = losses.get("georoute_score_function_loss")
+        if not torch.is_tensor(policy_loss) or policy_loss.ndim != 0 or not bool(torch.isfinite(policy_loss).item()):
+            raise FloatingPointError("P0 score-function route lacks a finite detector-derived policy loss")
+        backward_objective = detector_cost + policy_loss
+    if not bool(torch.isfinite(backward_objective).item()):
+        raise FloatingPointError("P0 backward objective is non-finite")
+    backward_objective.backward()
+    gradient = _gradient_summary(model, required_components=required_components)
+    if gradient["missing_required_components"]:
+        raise RuntimeError(
+            "P0 detector-to-router gradient audit failed: "
+            + ", ".join(gradient["missing_required_components"])
+        )
     audit = dict(model.backbone.latest_georoute_audit or {})
     if not audit:
         raise RuntimeError("GeoRoute backbone did not emit its native packed audit")
@@ -269,11 +374,15 @@ def _run_cuda_gate(args) -> dict[str, Any]:
     observed_k = int(selected_native_shape[2])
     if observed_k != int(audit["target_k"]):
         raise RuntimeError("GeoRoute selected native tubelets disagree with exact-K audit")
+    if int(audit.get("selected_unique_count_min", -1)) != observed_k or int(
+        audit.get("selected_unique_count_max", -1)
+    ) != observed_k:
+        raise RuntimeError("GeoRoute P0 independently observed non-unique native selection")
     exact_k = {
         "target_k": int(audit["target_k"]),
         "observed_min": observed_k,
         "observed_max": observed_k,
-        "duplicates": 0,
+        "duplicates": int(audit.get("selected_duplicate_count", -1)),
     }
     memory = {
         "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
@@ -293,6 +402,7 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "name": str(audit["policy_estimator"]),
             "claim": str(audit["estimator_claim"]),
         },
+        "route_mode": str(audit["route_mode"]),
         "memory": memory,
         "losses": {key: float(value.detach().item()) for key, value in losses.items()},
         "gradient": gradient,
@@ -300,6 +410,10 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "training_forward": True,
             "backward_completed": True,
             "output_length": int(audit["output_shape"][-1]),
+            "detector_only_loss": float(detector_cost.detach().item()),
+            "detector_loss_keys": detector_loss_keys,
+            "backward_objective": "detector_only" if policy_loss is None else "detector_only_plus_score_function",
+            "score_function_policy_loss": None if policy_loss is None else float(policy_loss.detach().item()),
         },
         "input": {
             "source_shape": list(source.shape),
@@ -307,6 +421,25 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "source_dtype": str(source.dtype),
             "synthetic": True,
         },
+        "source_grid": {
+            "height": int(args.height),
+            "width": int(args.width),
+            "patch_size": 16,
+            "grid_height": (int(args.height) + 15) // 16,
+            "grid_width": (int(args.width) + 15) // 16,
+            "patch_capacity": int(source_capacity),
+            "boundary_padding": "replicate_bottom_right_only",
+        },
+        "native_route": {
+            "selected_native_tubelet_shape": selected_native_shape,
+            "output_shape": list(audit["output_shape"]),
+            "selected_unique_count_min": int(audit.get("selected_unique_count_min", -1)),
+            "selected_unique_count_max": int(audit.get("selected_unique_count_max", -1)),
+            "native_packed_invocation_counter_before": int(audit.get("native_packed_invocation_counter_before", -1)),
+            "native_packed_invocation_counter_after": int(audit.get("native_packed_invocation_counter_after", -1)),
+        },
+        "dense_native_reference": audit.get("dense_native_reference"),
+        "score_function_detector_binding": audit.get("score_function_detector_binding"),
         "cuda": {
             "logical_device": str(device),
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),

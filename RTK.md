@@ -1,5 +1,16 @@
 # RTK Project Rules
 
+## Research priority
+
+The first obligation is to improve the scientific model: a stronger, more
+novel, and empirically defensible offline-TAD algorithm. Engineering rigor is
+required only to the extent that it makes the model, comparison, and claim
+auditable. Do not substitute a more elaborate framework, provenance layer, or
+visualization for a model improvement; do not spend material research time on
+infrastructure that cannot change a P0/P1/P2 decision. Conversely, do not make
+an efficiency, novelty, or paper claim without the minimum matched evidence
+that can falsify it.
+
 本文件是当前仓库的简短上下文锚点。详细研究记忆以 `research-wiki/` 为单一事实源。
 
 ## 当前目标

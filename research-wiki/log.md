@@ -811,3 +811,55 @@ append_only: true
   frozen `module.rpn_head.loss_normalizer` buffer. Reference, official test,
   crop-sufficiency and paper claims remain closed; the sole next action is the
   result-blind v2.2 reference-protocol corrigendum.
+
+- 2026-07-22: recorded a new `designed`, unimplemented Geometry-Residual-Depth
+  Routing candidate for offline TAD after the user required a direct comparison
+  between continuous ROI, free TokenSelect, A-MoD, and token merging. ROI is a
+  structured native-token support prior, not a replacement for arbitrary token
+  selection; a residual free-token budget covers disjoint evidence and A-MoD
+  routes only later-block depth compute. The required matched matrix is Dense,
+  ToMe-only, A-MoD-only, free TokenSelect, ROI-only, ROI+residual, and the
+  three-way fusion. A-MoD is recorded as a pretrained-transformer-adaptable
+  baseline from arXiv:2412.20875, not as established VideoMAE/AdaTAD evidence.
+  No existing S2 receipt, metric, official test, or policy implementation was
+  reinterpreted or reopened.
+
+- 2026-07-23: froze the GeoRoute-AdaTAD final-target design and implementation
+  matrix in `docs/methods/2026-07-23-georoute-adatad-design-and-experiment-plan.md`.
+  The design corrects the depth-router schedule to an initial dense prefix plus
+  alternating `Dense -> MoD` pairs: each MoD block consumes the immediately
+  preceding dense block's full attention importance. It also records a
+  single-heavy-forward soft-support warm-up followed by exact-K sparse
+  fine-tuning as a hypothesis requiring direct detector-gradient and matched
+  mAP/cost evidence. A Pro audit prompt was recorded beside the design. Status
+  remains `designed`; no implementation, deployment, metric, official-test, or
+  paper claim was created.
+
+- 2026-07-23: archived the user-provided `GeoRoute-AdaTAD v1 实施裁决`
+  attachment (SHA-256 `61A1918B36D811F178152F1E9DE60B464186D9C52678722BA679D617F4468E78`)
+  and recorded a point-by-point absorption. The review correctly audits the
+  historical baseline commit rather than a GeoRoute implementation, returns
+  `HOLD`, and identifies the fixed-resample/two-VideoMAE/no-policy current
+  route plus the absence of an independent quality loss. The project accepts
+  native tubelet semantics, a one-heavy-forward P0, and alternating
+  Dense-MoD. It does not freeze the review's uncalibrated numerical choices or
+  make score-function policy gradients, CPU gather, or dense scatter the sole
+  final implementation before matched P0 evidence. Status remains `designed`;
+  no implementation, deployment, metric, official-test, or paper claim was
+  created.
+
+- 2026-07-23: implemented the local GeoRoute native-token vertical slice and
+  its result-blind P0/P1/P2/P3 dispatcher. The P0 gate now requires real
+  AdaTAD classification/regression losses, exact unique-K native selection,
+  an independently counted one-heavy-forward path, required finite gradients,
+  zeroed geometry regularizers, dense numerical reference parity, and
+  detector-bound score-function evidence. The P1/P2 matrix now includes a
+  fixed-lattice plus learned geometry side-channel control, so a gain cannot
+  be attributed to token selection when it can be explained by geometry
+  injection. Added a conditional theory package and external plot/table
+  renderers that preserve raw seed rows and bind outputs to validated record
+  hashes. Pure Python focused checks passed `20` tests; local Torch routing
+  checks are blocked by the documented Windows `c10.dll` loader failure and
+  must be rerun in the remote CUDA environment. Status is
+  `implemented_local_pending_cuda_p0`: no mAP, cost, official-test, A-MoD,
+  or paper claim exists.

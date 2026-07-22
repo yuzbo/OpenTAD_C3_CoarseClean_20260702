@@ -54,6 +54,7 @@ class Collect:
             "pc_ot_mras_prebackbone_remap_gt_to_selected_axis",
             "native_crop_geometry",
             "continuous_roi_geometry",
+            "georoute_geometry",
         ],
     ):
         self.inputs = inputs

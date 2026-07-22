@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  printf '[GEOROUTE_P0][FAIL] %s\n' "$*" >&2
+  exit 2
+}
+
+ROOT="${GEOROUTE_SOURCE_ROOT:?set GEOROUTE_SOURCE_ROOT}"
+BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+CONFIG="${GEOROUTE_SOURCE_CONFIG:?set GEOROUTE_SOURCE_CONFIG}"
+PRETRAINED="${GEOROUTE_PRETRAINED:?set GEOROUTE_PRETRAINED}"
+OUTPUT="${GEOROUTE_P0_OUTPUT:?set GEOROUTE_P0_OUTPUT}"
+EXPECTED_COMMIT="${GEOROUTE_EXPECTED_COMMIT:?set GEOROUTE_EXPECTED_COMMIT}"
+ROUTE_MODE="${GEOROUTE_P0_ROUTE_MODE:?set GEOROUTE_P0_ROUTE_MODE}"
+ESTIMATOR="${GEOROUTE_P0_POLICY_ESTIMATOR:?set GEOROUTE_P0_POLICY_ESTIMATOR}"
+TOKENS="${GEOROUTE_P0_TOKENS_PER_TUBELET:-32}"
+CONTEXT="${GEOROUTE_P0_CONTEXT_TOKENS:-0}"
+
+[[ -n "${SLURM_JOB_ID:-}" ]] || fail 'P0 requires Slurm'
+if [[ "${GEOROUTE_INNER_STEP:-0}" != "1" && "${SLURM_GPUS_ON_NODE:-1}" != "1" ]]; then
+  export GEOROUTE_INNER_STEP=1
+  exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M \
+    bash "${ROOT}/scripts/run_georoute_p0_slurm.sh"
+fi
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
+  fail 'P0 requires one Slurm-visible GPU and must use logical cuda:0'
+[[ -d "${ROOT}/.git" ]] || fail 'GeoRoute source root is not a git checkout'
+[[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail 'source commit mismatch'
+[[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || fail 'source snapshot is not clean'
+[[ -f "${CONFIG}" && -f "${PRETRAINED}" ]] || fail 'P0 config or pretrained checkpoint is missing'
+[[ ! -e "${OUTPUT}" ]] || fail 'P0 output namespace already exists'
+case "${OUTPUT}" in /data/run01/sczc063/yuzibo/*) ;; *) fail 'output must stay inside the remote write boundary' ;; esac
+
+export PYTHONNOUSERSITE=1
+export PYTHONDONTWRITEBYTECODE=1
+cd "${ROOT}"
+if command -v module >/dev/null 2>&1; then
+  module load cuda/11.8
+  module load miniforge3/24.11
+fi
+# shellcheck disable=SC1091
+source "${BASE}/conda_envs/opentad/bin/activate"
+python -c 'import numpy; assert numpy.__version__ == "1.23.5", numpy.__version__'
+
+python tools/bata/run_georoute_p0_gate.py \
+  --config "${CONFIG}" \
+  --pretrained "${PRETRAINED}" \
+  --output "${OUTPUT}" \
+  --device cuda:0 \
+  --route-mode "${ROUTE_MODE}" \
+  --policy-estimator "${ESTIMATOR}" \
+  --tokens-per-tubelet "${TOKENS}" \
+  --context-tokens "${CONTEXT}" \
+  --height 160 --width 160 --seed 3407

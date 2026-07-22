@@ -13,8 +13,10 @@ from analyze_georoute_results import analyze  # noqa: E402
 from georoute_result_schema import (  # noqa: E402
     GeoRouteResultSchemaError,
     SCHEMA_VERSION,
+    VALID_VARIANTS,
     validate_records,
 )
+from plot_georoute_paper import COLORS, MARKERS  # noqa: E402
 
 
 def make_record(variant="free_token_select", seed=3407, budget=64):
@@ -141,6 +143,68 @@ class GeoRoutePaperToolsTest(unittest.TestCase):
             )
             self.assertIn("georoute_accuracy_cost_pareto.png", completed.stdout)
             self.assertTrue((output_dir / "georoute_accuracy_cost_pareto.png").is_file())
+
+    def test_plotter_has_a_distinct_style_for_every_valid_variant(self):
+        self.assertTrue(VALID_VARIANTS.issubset(COLORS))
+        self.assertTrue(VALID_VARIANTS.issubset(MARKERS))
+
+    def test_table_renderer_preserves_raw_rows_and_writes_external_outputs(self):
+        records = [
+            make_record("fixed_lattice_geometry", 3407),
+            make_record("free_token_select", 3407),
+            make_record("roi_residual", 3407),
+        ]
+        analysis = analyze(records, development_only=True, structured_variant="roi_residual")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            records_path = temp_dir / "records.json"
+            analysis_path = temp_dir / "analysis.json"
+            output_dir = temp_dir / "tables"
+            records_path.write_text(json.dumps(records), encoding="utf-8")
+            analysis_path.write_text(json.dumps(analysis), encoding="utf-8")
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "tools" / "bata" / "render_georoute_paper_tables.py"),
+                    "--records",
+                    str(records_path),
+                    "--analysis",
+                    str(analysis_path),
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            self.assertIn("georoute_raw_seed_table.csv", completed.stdout)
+            raw_table = output_dir / "georoute_raw_seed_table.csv"
+            inventory = output_dir / "georoute_evidence_inventory.md"
+            self.assertTrue(raw_table.is_file())
+            self.assertTrue((output_dir / "georoute_summary_table.tex").is_file())
+            self.assertIn("fixed_lattice_geometry", raw_table.read_text(encoding="utf-8"))
+            self.assertIn("incomplete", inventory.read_text(encoding="utf-8"))
+
+    def test_architecture_plot_is_generated_from_the_checked_in_figurespec(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "georoute_architecture.pdf"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "tools" / "bata" / "plot_georoute_architecture.py"),
+                    "--spec",
+                    str(REPO_ROOT / "docs" / "methods" / "georoute_adatad_architecture_spec.json"),
+                    "--output",
+                    str(output),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            self.assertIn("georoute_architecture.pdf", completed.stdout)
+            self.assertTrue(output.is_file())
 
 
 if __name__ == "__main__":

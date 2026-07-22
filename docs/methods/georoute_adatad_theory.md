@@ -181,7 +181,10 @@ of the sampled route leaves the expectation unchanged:
 This is an **identity under Assumption 5**, not proof that variance is useful
 at the target `K`, video length, or batch size.  The P0 known-answer test must
 compare this estimator with enumerated expected gradients on a tiny finite
-case, and P1 must report variance and optimization behavior.
+case, including the sign of the minimization objective
+`(L_det-b) log p_phi(S|x)`, and P1 must report variance and optimization
+behavior.  Negating that objective would optimize the opposite expected-risk
+direction; a nonzero router gradient alone would not expose that error.
 
 ### 3. Why the straight-through gradient is biased
 
@@ -255,6 +258,38 @@ camera cuts, and multi-actor actions are explicit counterexamples; residual
 tokens and the spatial/temporal diagnostic plots are intended to expose those
 regimes rather than hide them.
 
+### 6. Separating token-selection benefit from geometry side information
+
+The detector can benefit from a learned geometry vector even when that vector
+does not change which native tokens are selected. Without a matched control,
+the contrast between a routed model and a fixed lattice confounds these two
+paths. Write the detector-facing computation as
+
+\[
+  \hat{y} = D_{\theta}\bigl(A_{\theta}(F(x, S), g)\bigr),
+\]
+
+where \(S\) is the selected native-token support and \(g\) is the geometry
+encoding supplied to the adapter. The routed intervention uses
+\(S=S(g_{\phi}(x))\), whereas the geometry-side-channel control uses the same
+learned \(g_{\phi}(x)\) but fixes \(S=S_{\mathrm{lattice}}\). At a matched
+budget, its contrast with the routed model tests whether changing support is
+useful beyond merely exposing \(g\) to the detector:
+
+\[
+  D_{\theta}(A_{\theta}(F(x,S(g)),g))
+  \quad\text{versus}\quad
+  D_{\theta}(A_{\theta}(F(x,S_{\mathrm{lattice}}),g)).
+\]
+
+This is a **matched architectural control**, not an identification theorem.
+It only carries its intended interpretation when the source lattice, scout
+capacity, geometry encoder, detector, update budget, random seeds, and charged
+cost scope are all held fixed. A positive difference still cannot establish
+that the rectangle tracks an actor or that the geometry is uniquely causal; it
+does rule out the narrower explanation that all gain comes from injecting the
+geometry embedding while selection remains fixed.
+
 ## Falsification Map
 
 | Analytical statement | Observable required to challenge it |
@@ -264,6 +299,7 @@ regimes rather than hide them.
 | Score-function implementation matches its identity | Enumerated finite known-answer gradient and variance report |
 | ST is only a surrogate | Explicit estimator label, stop-gradient control, and empirical comparison |
 | ROI+residual is a useful structural prior | Matched free/ROI/hybrid high-IoU-cost Pareto and structure diagnostics |
+| Geometry changes token support rather than merely adding a feature | Fixed-lattice learned-geometry-side-channel control, matched to the same scout and adapter geometry input |
 | Geometry is temporally coherent without collapse | ROI area, centre velocity, coverage, and residual-allocation distributions |
 
 ## Boundaries and Non-Claims

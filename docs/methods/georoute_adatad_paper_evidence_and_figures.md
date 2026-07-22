@@ -40,6 +40,7 @@ The main paper cannot omit these controls.
 | --- | --- |
 | Dense-native upper-cost reference | a gain caused only by degrading the detector or changing its temporal interface |
 | Fixed lattice/uniform exact-K | a gain caused only by fewer tokens rather than adaptive allocation |
+| Fixed lattice + learned geometry side-channel | a gain caused by feeding the detector extra scout geometry rather than using geometry to select native tokens |
 | Random exact-K | an accidental benefit from a particular count or padding pattern |
 | Free TokenSelect exact-K | the hypothesis that arbitrary token utility is enough and ROI structure adds nothing |
 | ROI-only exact-K | the contribution of residual free evidence |
@@ -48,9 +49,9 @@ The main paper cannot omit these controls.
 | Equal scout and cost accounting | an uncharged low-cost observer or hidden compute advantage |
 
 Dense-native is an upper-compute reference, not a same-budget competitor.  The
-fair same-budget comparison set is fixed-lattice, random, free, ROI-only, and
-ROI-plus-residual at identical `K`, source grid, scout protocol, detector,
-updates, and seeds.
+fair same-budget comparison set is fixed-lattice, fixed-lattice plus the same
+learned geometry side-channel, random, free, ROI-only, and ROI-plus-residual
+at identical `K`, source grid, scout protocol, detector, updates, and seeds.
 
 ## Figure Set
 
@@ -64,11 +65,31 @@ nor results.
 | F2 | Accuracy-cost Pareto | Does a matched structured route lie on the measured end-to-end Pareto frontier? | per-seed Avg-mAP, p50/p95, energy, memory, full cost scope | FLOPs alone or an uncharged scout cannot support this claim |
 | F3 | High-IoU comparison | Is localization retained at tIoU 0.6/0.7 rather than only Avg-mAP? | per-seed mAP at 0.3--0.7 and short/boundary metrics where defined | Avg-mAP-only superiority |
 | F4 | Budget curve | Does the relative ranking persist across `K`? | matched `K` values for all primary controls | selecting the best `K` separately per method without disclosure |
-| F5 | Mechanism ablation table | Is every component necessary? | free, ROI-only, hybrid, no residual, no coordinates, no detector policy gradient | claiming a component works from a visually plausible ROI |
+| F5 | Mechanism ablation table | Is every component necessary? | fixed geometry-side-channel, free, ROI-only, hybrid, no residual, no coordinates, no detector policy gradient | claiming a component works from a visually plausible ROI |
 | F6 | Spatial/temporal structure diagnostics | Does geometry avoid collapse and how often does residual allocation matter? | ROI area, centre velocity, selected-region fraction, residual fraction, coverage and time-bin summaries | semantic actor tracking without annotation evidence |
 | F7 | Estimator/stability panels | Does the selected estimator train stably and obey the P0 known-answer test? | finite-gradient KAT, gradient variance, loss/update/retry logs | treating a nonzero gradient as estimator correctness |
-| T1 | Main raw table | Are the P2/P3 claims reproducible across seeds? | raw seed rows before pooling | pooled mean without per-seed rows |
+| T1 | Main raw table | Are the P2/P3 claims reproducible across seeds? | raw seed rows before pooling; external `render_georoute_paper_tables.py` output | pooled mean without per-seed rows |
 | T2 | Generalization table | Is the claim detector/data specific? | second detector or second dataset under a frozen policy/config protocol | calling one AdaTAD-derived result generality |
+
+## Claim Ladder and Current Risk
+
+The paper has to earn its narrative in order.  A more elaborate diagram does
+not move a result to a higher rung.
+
+| Rung | Minimum evidence | Allowed wording | Still forbidden |
+| --- | --- | --- | --- |
+| M0 | P0 CUDA gate | "The native packed path, exact-K accounting, and labelled estimator paths execute." | any accuracy, efficiency, or novelty claim |
+| M1 | P1 one-seed development comparison | "The predeclared ROI hypothesis was screened against matched controls." | paper conclusion, generalization, or official-test wording |
+| M2 | P2/P3 three-seed development matrix with full-cost protocol | "Under the stated AdaTAD/THUMOS development protocol, structured routing improves the matched high-IoU/cost trade-off." | dataset-wide or detector-agnostic claim |
+| M3 | frozen second detector/data and sealed one-time official test | "GeoRoute improves the stated offline TAD trade-off under the reported evaluation scope." | universal superiority or a theorem about mAP |
+
+At the current pre-result stage, reviewers would correctly attack three
+things: the proposal could be a collection of familiar modules; the apparent
+saving could exclude scout/gather/dense-adapter work; and an appealing ROI
+trajectory could be a post-hoc visualization.  The P1 free-TokenSelect stop
+rule, P2 paired three-seed rule, the scope-complete cost record, and all-video
+diagnostics are not optional polish: they are the evidence that turns those
+attacks into falsifiable tests.
 
 ## Captions as Claim Guards
 
@@ -90,6 +111,7 @@ accuracy and total-cost evidence have passed the predeclared decision rule.
 | Likely attack | Required response in evidence, not prose |
 | --- | --- |
 | "ROI is unnecessary; free tokens can do this." | F2/F3/F4 compare hybrid and ROI-only directly to free TokenSelect at equal K |
+| "Your ROI gain is just an extra geometry feature." | F5 includes fixed-lattice plus the same learned geometry-side-channel, while its selected native token lattice remains deterministic |
 | "This is only heuristic engineering." | Theory package labels assumptions; F5 isolates geometry, residual, coordinates, and detector policy feedback |
 | "Savings ignore local/global overhead." | F2 records decode through NMS p50/p95, memory, and energy with a machine-readable scope |
 | "It wins only loose localization." | F3 reports tIoU 0.6/0.7, short-action and boundary diagnostics where valid |
@@ -107,7 +129,10 @@ accuracy and total-cost evidence have passed the predeclared decision rule.
    identities, and produces an analysis JSON without changing any result.
 4. `plot_georoute_paper.py` reads that JSON and the validated records.  It
    cannot invent values and writes figures outside the repository.
-5. Only after P3 decisions are frozen may a separate sealed official-test
+5. `render_georoute_paper_tables.py` binds the same record hash to a raw-seed
+   CSV, a descriptive summary table, a LaTeX table, and a matched-control
+   coverage audit. It cannot decide a paper claim or silently omit seeds.
+6. Only after P3 decisions are frozen may a separate sealed official-test
    evidence package be analyzed with an explicit override and reported as
    confirmatory evidence.
 
@@ -115,8 +140,18 @@ accuracy and total-cost evidence have passed the predeclared decision rule.
 
 `georoute_adatad_architecture_spec.json` is an editable FigureSpec source for
 F1.  It is intentionally a source specification rather than a checked-in SVG.
+Render it outside the repository with:
+
+```bash
+python tools/bata/plot_georoute_architecture.py \
+  --spec docs/methods/georoute_adatad_architecture_spec.json \
+  --output /outside/repository/georoute_architecture.pdf
+```
+
 The rendered figure must be reviewed against the runtime audit before use in a
-paper.
+paper.  In particular, its red dashed feedback arrows are labelled either
+score-function feedback or biased ST feedback; they must never be redrawn as a
+generic exact pathwise gradient.
 
 ## Non-Claims
 

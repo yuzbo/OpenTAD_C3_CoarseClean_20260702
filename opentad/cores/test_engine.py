@@ -1,6 +1,7 @@
 import os
 import copy
 import json
+import time
 import tqdm
 import torch
 import torch.distributed as dist
@@ -35,6 +36,15 @@ def eval_one_epoch(
 ):
     """Inference and Evaluation the model"""
 
+    # GeoRoute uses this narrow, opt-in development profiler only for matched
+    # route screening.  It deliberately records component timings rather than
+    # claiming a paper-grade system cost; formal whole-system cost remains a
+    # later frozen protocol.
+    georoute_profile_cfg = cfg.get("georoute_development_profile", {})
+    georoute_profile_enabled = bool(georoute_profile_cfg.get("enabled", False))
+    georoute_samples = []
+    previous_window_end = time.perf_counter()
+
     # load the ema dict for evaluation
     if model_ema != None:
         current_dict = copy.deepcopy(model.state_dict())
@@ -65,6 +75,10 @@ def eval_one_epoch(
         iter_limited_batches(test_loader, max_batches=max_batches),
         disable=(rank != 0),
     ):
+        loader_ready = time.perf_counter()
+        if georoute_profile_enabled:
+            torch.cuda.synchronize()
+            model_start = time.perf_counter()
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             with torch.no_grad():
                 results = model(
@@ -74,6 +88,18 @@ def eval_one_epoch(
                     post_cfg=post_processing_cfg,
                     ext_cls=external_cls,
                 )
+        if georoute_profile_enabled:
+            torch.cuda.synchronize()
+            window_end = time.perf_counter()
+            georoute_samples.append(
+                {
+                    "loader_wait_ms": (loader_ready - previous_window_end) * 1000.0,
+                    "model_and_postprocess_ms": (window_end - model_start) * 1000.0,
+                    "window_wall_ms": (window_end - previous_window_end) * 1000.0,
+                    "peak_allocated_mb": torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
+                }
+            )
+            previous_window_end = window_end
 
         # update the result dict
         for k, v in results.items():
@@ -88,6 +114,7 @@ def eval_one_epoch(
     if model_ema != None:
         model.load_state_dict(current_dict)
 
+    metrics_dict = None
     if rank == 0:
         result_eval = dict(results=result_dict)
         evaluated_video_ids = sorted(
@@ -131,6 +158,45 @@ def eval_one_epoch(
             logger.info("Evaluation starts...")
             metrics_dict = evaluator.evaluate()
             evaluator.logging(logger)
+        if georoute_profile_enabled:
+            if not georoute_samples:
+                raise RuntimeError("GeoRoute development profiler observed no inference windows")
+            import numpy as np
+
+            # The first item includes loader startup and is kept in the raw
+            # list but excluded from the steady-state percentile whenever a
+            # later window exists.  The report labels this scope explicitly.
+            steady_samples = georoute_samples[1:] or georoute_samples
+            profile_payload = {
+                "schema_version": "georoute_development_profile_v1",
+                "scope": {
+                    "development_only": True,
+                    "same_process_loader_wait": True,
+                    "model_and_postprocess": True,
+                    "evaluator_excluded": True,
+                    "paper_grade_end_to_end_claim_allowed": False,
+                },
+                "sample_count": len(georoute_samples),
+                "steady_sample_count": len(steady_samples),
+                "loader_wait_p50_ms": float(np.percentile([item["loader_wait_ms"] for item in steady_samples], 50)),
+                "loader_wait_p95_ms": float(np.percentile([item["loader_wait_ms"] for item in steady_samples], 95)),
+                "model_and_postprocess_p50_ms": float(np.percentile([item["model_and_postprocess_ms"] for item in steady_samples], 50)),
+                "model_and_postprocess_p95_ms": float(np.percentile([item["model_and_postprocess_ms"] for item in steady_samples], 95)),
+                "window_wall_p50_ms": float(np.percentile([item["window_wall_ms"] for item in steady_samples], 50)),
+                "window_wall_p95_ms": float(np.percentile([item["window_wall_ms"] for item in steady_samples], 95)),
+                "peak_allocated_mb": float(max(item["peak_allocated_mb"] for item in georoute_samples)),
+                "samples": georoute_samples,
+            }
+            unwrapped_model = getattr(model, "module", model)
+            backbone = getattr(unwrapped_model, "backbone", None)
+            latest_audit = getattr(backbone, "latest_georoute_audit", None)
+            if latest_audit is not None:
+                profile_payload["last_georoute_audit"] = latest_audit
+            profile_path = os.path.join(cfg.work_dir, "georoute_development_profile.json")
+            with open(profile_path, "w", encoding="utf-8") as handle:
+                json.dump(profile_payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+    return metrics_dict
 
 
 def gather_ddp_results(world_size, result_dict, post_cfg):

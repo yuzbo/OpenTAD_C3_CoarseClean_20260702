@@ -28,8 +28,44 @@ def _valid_payload() -> dict:
         "estimator": {"name": "straight_through", "claim": "biased_straight_through"},
         "memory": {"peak_allocated_bytes": 4096, "peak_reserved_bytes": 8192},
         "losses": {"cost": 1.0},
-        "gradient": {"all_trainable_gradients_finite": True, "nonzero_components": ["scout", "rpn_head"]},
-        "detector": {"training_forward": True, "backward_completed": True, "output_length": 768},
+        "gradient": {
+            "all_required_gradients_finite": True,
+            "nonzero_components": [
+                "scout_geometry",
+                "scout_residual",
+                "sparse_adapter",
+                "videomae_adapter",
+                "projection",
+                "rpn_head",
+            ],
+            "required_components": [
+                "scout_geometry",
+                "scout_residual",
+                "sparse_adapter",
+                "videomae_adapter",
+                "projection",
+                "rpn_head",
+            ],
+            "missing_required_components": [],
+        },
+        "detector": {
+            "training_forward": True,
+            "backward_completed": True,
+            "output_length": 768,
+            "detector_loss_keys": ["cls_loss", "reg_loss"],
+        },
+        "route_mode": "hybrid",
+        "source_grid": {"patch_capacity": 100},
+        "native_route": {
+            "selected_native_tubelet_shape": [1, 384, 16, 3, 2, 16, 16],
+            "output_shape": [1, 384, 768],
+            "selected_unique_count_min": 16,
+            "selected_unique_count_max": 16,
+            "native_packed_invocation_counter_before": 4,
+            "native_packed_invocation_counter_after": 5,
+        },
+        "dense_native_reference": None,
+        "score_function_detector_binding": None,
         "p0_scope": {"synthetic_inputs_only": True, "full_training": False, "official_evaluation": False},
     }
 
@@ -52,6 +88,7 @@ def test_p0_report_builder_and_validator_preserve_the_gate_contract():
         (("exact_k", "duplicates"), 1, "duplicate"),
         (("p0_scope", "official_evaluation"), True, "official"),
         (("estimator", "claim"), "unbiased_st", "estimator"),
+        (("gradient", "missing_required_components"), ["scout_geometry"], "gradient"),
     ],
 )
 def test_p0_report_validator_fails_closed_for_invalid_core_claims(path, value, message):

@@ -8,6 +8,7 @@ from opentad.models.backbones.georoute_routing import (
     decode_continuous_geometry,
     native_patch_centers,
     ordered_plackett_luce_log_prob,
+    interpolate_temporal_knots,
     score_function_policy_loss,
     select_exact_k,
 )
@@ -139,6 +140,75 @@ def test_score_function_route_has_plackett_luce_gradient_and_loss():
     assert torch.isfinite(roi.grad).all()
     assert torch.count_nonzero(roi.grad) > 0
     assert residual.grad is None
+
+
+def test_score_function_loss_has_the_exact_risk_gradient_sign_for_one_draw():
+    """A finite K=1 case catches an otherwise easy-to-miss REINFORCE sign flip."""
+
+    logits = torch.tensor([[[0.2, -0.3, 0.7]]], requires_grad=True)
+    losses = torch.tensor([0.4, 1.1, -0.2])
+    probabilities = torch.softmax(logits, dim=-1)
+    expected_risk = (probabilities * losses.view(1, 1, -1)).sum()
+    expected_gradient = torch.autograd.grad(expected_risk, logits, retain_graph=True)[0]
+
+    # Exact expectation of the implemented score-function objective, with a
+    # zero baseline.  This is not a Monte Carlo approximation.
+    estimator_expectation = logits.new_zeros(())
+    for choice in range(losses.numel()):
+        ordered = torch.tensor([[[choice]]])
+        log_probability = ordered_plackett_luce_log_prob(
+            logits,
+            ordered,
+            temperature=1.0,
+        )
+        estimator_expectation = estimator_expectation + probabilities[..., choice].detach() * score_function_policy_loss(
+            detector_cost=losses[choice],
+            ordered_log_prob=log_probability,
+            baseline=torch.zeros(()),
+            weight=1.0,
+        )
+    observed_gradient = torch.autograd.grad(estimator_expectation, logits)[0]
+    assert torch.allclose(observed_gradient, expected_gradient, atol=1e-6, rtol=1e-6)
+
+
+def test_temporal_knot_interpolation_is_endpoint_aligned_and_differentiable():
+    knots = torch.tensor([[[0.0], [1.0], [4.0], [9.0], [16.0]]], requires_grad=True)
+    interpolated = interpolate_temporal_knots(knots, stride=2)
+    assert torch.equal(interpolated.detach(), torch.tensor([[[0.0], [2.0], [4.0], [10.0], [16.0]]]))
+    interpolated.sum().backward()
+    assert knots.grad is not None
+    assert torch.count_nonzero(knots.grad) > 0
+
+
+def test_stateless_random_control_is_independent_of_global_rng_state():
+    roi, residual = _logits(batch=1, tubelets=2, patches=13)
+    torch.manual_seed(1)
+    first = select_exact_k(
+        roi_logits=roi,
+        residual_logits=residual,
+        mode="random",
+        tokens_per_tubelet=5,
+        context_tokens=0,
+        roi_fraction=0.0,
+        training=True,
+        estimator="none",
+        temperature=0.5,
+        random_seed=91,
+    )["indices"]
+    torch.manual_seed(999999)
+    second = select_exact_k(
+        roi_logits=roi,
+        residual_logits=residual,
+        mode="random",
+        tokens_per_tubelet=5,
+        context_tokens=0,
+        roi_fraction=0.0,
+        training=True,
+        estimator="none",
+        temperature=0.5,
+        random_seed=91,
+    )["indices"]
+    assert torch.equal(first, second)
 
 
 def test_score_function_and_training_contracts_fail_closed_when_semantics_are_invalid():

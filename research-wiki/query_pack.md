@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-21
+updated: 2026-07-23
 max_chars: 8000
 ---
 
@@ -34,6 +34,18 @@ max_chars: 8000
   ID 规则、无标注 raw entrypoint、privileged join/tie/statistics 也未完全机器冻结。
   禁止实现者猜测后排队；training receipt 已封存，下一步只允许发布最小 v2.2
   corrigendum。official test 继续封存，S3 learned ROI 继续禁止。
+
+## Geometry-Residual-Depth Routing / GeoRoute（2026-07-23）
+
+- 状态为 `implemented_local_pending_cuda_p0`：已实现单重主干原生 tubelet、
+  exact-K ROI/free/hybrid、几何侧信息因果对照、P0 与结果盲 DAG；现有 U128
+  不是 GeoRoute。
+- 外部 v1 审查为 `HOLD`，接受原生 token、真实检测损失、单重主干和间隔
+  Dense-MoD 的问题拆解。Windows `c10.dll` 阻塞本地 Torch；仅 N16R4 CUDA
+  P0 可验证模型数值、梯度、显存和一次真实前向。
+- P1 必须同预算比较 fixed/random/free/ROI/hybrid 与 fixed-lattice +
+  geometry-side-channel；free 在高 IoU 和全成本获胜即杀死 ROI 主张。当前无
+  mAP、成本、official-test、A-MoD 结果或论文主张。
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 
@@ -80,21 +92,10 @@ max_chars: 8000
   后续 crop sufficiency 通过前不得实现 learned crop policy。
 - 当前没有任何 S1 crop 结果、GO/KILL 或可发表的 Spatial Zoom 主张。
 
-## Native-Crop Pro 审查吸收（2026-07-20）
+## Native-Crop S1 历史审查
 
-- Pro 审查原始裁决为 `PROCEED_NATIVE_CROP_S1`。本项目只把它解释为授权一个
-  development-only、no-training、no-official-test 的 source-native crop 垂直切片；
-  不是 crop 有效性、路线 GO、learned policy 或论文贡献的证据。
-- 接受的主判断：当前仓库没有 crop；旧 R0 可执行合约与新路线 split-brain；crop 必须
-  在任何全图 resize 前发生；保留 768 点时间轴和 `[B,384,768]` detector 合同；先验证
-  sufficiency，再训练 learned policy；必须报告 full-stack cost。
-- 不直接接受：八候选库只能给出 library-conditional upper bound，失败不能杀死整个
-  continuous-crop 路线；最终 masked pooling 不能撤销 ViT 内 padding-token 污染；
-  `96/128/48 knots` 与数值 GO/KILL 门槛都需 geometry/statistics audit 后再冻结。
-- 唯一下一步：先做 fit/gate source-geometry census，再实现无 teacher 的
-  `global96 + center/local128 + shared VideoMAE-S + 384 fusion + [B,384,768]`
-  垂直切片和 source-pixel/no-resize/backward/parity/no-leak/cost-schema tests。
-- 原文与完整吸收记录见
+- S1 仅证明 source-native crop 数据/模型/梯度/no-leak 垂直切片可运行；它不是精度、
+  成本、ROI 或论文证据。固定候选库也不能裁决连续路线。完整记录见
   `docs/methods/reviews/2026-07-20-native-crop-s1-pro-review-{raw.txt,absorption.md}`。
 
 ## R0 Dense-Resize 历史状态（冻结）

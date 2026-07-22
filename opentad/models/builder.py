@@ -2,6 +2,7 @@ from mmengine.registry import Registry
 from .backbones import (
     BackboneWrapper,
     ContinuousRoiBackboneWrapper,
+    GeoRouteBackboneWrapper,
     NativeCropBackboneWrapper,
 )
 
@@ -38,6 +39,8 @@ def build_backbone(cfg):
         return NativeCropBackboneWrapper(cfg)
     if wrapper_type == "continuous_roi_common_support_u128":
         return ContinuousRoiBackboneWrapper(cfg)
+    if wrapper_type == "georoute_native_packed_v1":
+        return GeoRouteBackboneWrapper(cfg)
     if wrapper_type is not None:
         raise ValueError(f"unsupported backbone custom.wrapper_type={wrapper_type!r}")
     return BackboneWrapper(cfg)
