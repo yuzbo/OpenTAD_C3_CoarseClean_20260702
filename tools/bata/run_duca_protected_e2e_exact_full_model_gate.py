@@ -149,8 +149,13 @@ def _record_boundary_validity_consumption(selector, boundary_validity, evidence)
     def recording_forward_train(*args, **kwargs):
         observed = kwargs.get("gt_boundary_validity")
         _require(
-            observed is boundary_validity,
-            "selector did not consume the exact gt_boundary_validity emitted by the real loader",
+            isinstance(observed, (list, tuple))
+            and len(observed) == len(boundary_validity)
+            and all(
+                torch.equal(torch.as_tensor(left), torch.as_tensor(right))
+                for left, right in zip(observed, boundary_validity)
+            ),
+            "selector did not consume the exact gt_boundary_validity values emitted by the real loader",
         )
         _require(
             _boundary_validity_evidence(observed, kwargs["gt_segments"]) == evidence,
