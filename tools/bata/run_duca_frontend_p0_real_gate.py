@@ -101,8 +101,15 @@ def _official_asformer_binding(cfg: Config, selector) -> dict[str, str]:
         len(expected) == 64 and all(char in "0123456789abcdef" for char in expected),
         "config lacks an official ASFormer normalized-LF SHA256 declaration",
     )
-    probe = selector.raw_actionness_source.probe_module
+    source = selector.raw_actionness_source
+    probe = getattr(source, "probe", None)
     source_metadata = getattr(probe, "official_source", None)
+    if not isinstance(source_metadata, Mapping):
+        # Older focused fixtures attach provenance to the registered parameter
+        # container. Production C3 probes keep it on the probe wrapper.
+        source_metadata = getattr(
+            getattr(source, "probe_module", None), "official_source", None
+        )
     _require(
         isinstance(source_metadata, Mapping),
         "official ASFormer probe did not expose source provenance",

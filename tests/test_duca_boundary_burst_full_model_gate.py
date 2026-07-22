@@ -16,6 +16,9 @@ def test_production_cuda_gates_require_config_declared_normalized_lf_hashes() ->
         assert "config_declared_normalized_lf_sha256" in source
         assert "observed == expected" in source
         assert "official_asformer_binding = _official_asformer_binding(cfg, selector)" in source
+        assert 'probe = getattr(source, "probe", None)' in source
+        assert 'getattr(probe, "official_source", None)' in source
+        assert 'getattr(source, "probe_module", None), "official_source", None' in source
 
 
 def test_full_model_gate_preserves_and_traces_real_boundary_validity() -> None:
