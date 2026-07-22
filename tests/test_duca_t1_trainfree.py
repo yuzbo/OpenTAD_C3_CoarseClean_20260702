@@ -81,7 +81,7 @@ def test_parameter_free_r2q3_reuses_exact_k_max_hole_decoder() -> None:
         boundary_burst_budget_fraction=0.75,
         boundary_burst_require_bilateral_offsets=True,
         boundary_burst_require_global_mandatory_groups=True,
-        max_unselected_hole=1,
+        max_unselected_hole=2,
         hard_max_gap_repair=False,
     )
     evidence = torch.tensor([[0.01, 0.02, 0.10, 0.99, 0.10, 0.02, 0.01, 0.01]])
@@ -91,6 +91,46 @@ def test_parameter_free_r2q3_reuses_exact_k_max_hole_decoder() -> None:
     assert scores["parameter_free_selector"] is True
     selected = set(grid.selected_positions[0].tolist())
     assert {2, 3, 4}.issubset(selected)
+
+
+def test_parameter_free_r2q3_is_feasible_at_formal_k384_g2_scale() -> None:
+    source = ZeroShotActionnessSource(
+        mode="motion",
+        source_name="test_parameter_free_formal_scale",
+        thumos_trained=False,
+        uses_labels=False,
+        uses_teacher=False,
+        uses_gt=False,
+        uses_prediction_cache=False,
+        calibration_split="none",
+    )
+    adapter = DucaAcquisitionAdapter(
+        feature_dim=None,
+        actionness_source=source,
+        budget=384,
+        acquisition_policy="global_structured_topk",
+        selector_variant="direct_boundary",
+        parameter_free_selector=True,
+        transition_objective="boundary_burst",
+        boundary_burst_radius=2,
+        boundary_burst_quota=3,
+        boundary_burst_budget_fraction=0.25,
+        boundary_burst_require_bilateral_offsets=True,
+        boundary_burst_require_global_mandatory_groups=True,
+        max_unselected_hole=2,
+        hard_max_gap_repair=False,
+    )
+    time = torch.arange(768, dtype=torch.float32)
+    evidence = (
+        0.5
+        + 0.2 * torch.sin(time / 17.0)
+        + 0.15 * torch.sin(time / 41.0)
+    ).clamp(1.0e-4, 1.0 - 1.0e-4)[None]
+    dense = torch.zeros(1, 768, 3)
+    grid, _scores = adapter.acquire(dense, p_action=evidence)
+    assert int(grid.selected_count.item()) == 384
+    positions = grid.selected_positions[0]
+    assert int((positions[1:] - positions[:-1] - 1).max().item()) <= 2
 
 
 def test_train_free_configs_are_frozen_and_target_label_free() -> None:
