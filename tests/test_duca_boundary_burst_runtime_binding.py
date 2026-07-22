@@ -145,6 +145,26 @@ def test_p0_frontend_and_gate_consume_the_submit_frozen_pretrain_contract() -> N
     assert '"${ADATAD_PRETRAIN_SHA256}"' not in official
 
 
+def test_real_p0_gate_identity_is_reopened_by_decision_gate_and_official_runtime() -> None:
+    p0 = (ROOT / "scripts" / "run_duca_boundary_burst_p0_gpu1.sh").read_text(
+        encoding="utf-8"
+    )
+    gate = (ROOT / "scripts" / "run_duca_boundary_burst_gate_gpu1.sh").read_text(
+        encoding="utf-8"
+    )
+    official = (
+        ROOT / "scripts" / "run_duca_two_stage_curriculum_variant_gpu1.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "--p0-real-gate" in p0
+    assert "--p0-real-gate-sha256" in p0
+    assert "P0_REAL_GATE_SHA256" in p0
+    assert "validate_p0_real_gate" in gate
+    assert '"p0_real_gate"' in gate
+    assert "validate_p0_real_gate" in official
+    assert 'suite.get("p0_real_gate")' in official
+
+
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

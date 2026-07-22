@@ -66,6 +66,96 @@ def _sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _normalized_lf_sha256(path: str | Path) -> str:
+    source_bytes = Path(path).read_bytes()
+    return hashlib.sha256(source_bytes.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _official_asformer_binding(cfg: Config, selector) -> dict[str, str]:
+    contract = cfg.get("duca_transition_only_contract", {})
+    expected = str(
+        contract.get("official_asformer_source_normalized_lf_sha256", "")
+    ).lower()
+    _require(
+        len(expected) == 64 and all(char in "0123456789abcdef" for char in expected),
+        "config lacks an official ASFormer normalized-LF SHA256 declaration",
+    )
+    probe = selector.raw_actionness_source.probe_module
+    source_metadata = getattr(probe, "official_source", None)
+    _require(
+        isinstance(source_metadata, Mapping),
+        "official ASFormer probe did not expose source provenance",
+    )
+    source_path = Path(str(source_metadata.get("source_file", ""))).expanduser().resolve()
+    _require(source_path.is_file(), "official ASFormer source is missing")
+    observed = _normalized_lf_sha256(source_path)
+    _require(
+        observed == expected,
+        "official ASFormer normalized-LF SHA256 differs from the config declaration",
+    )
+    _require(
+        str(source_metadata.get("source_normalized_lf_sha256", "")).lower() == observed,
+        "official ASFormer runtime provenance differs from the reopened source",
+    )
+    return {
+        "path": str(source_path),
+        "sha256": _sha256(source_path),
+        "normalized_lf_sha256": observed,
+        "config_declared_normalized_lf_sha256": expected,
+    }
+
+
+def _boundary_validity_evidence(
+    boundary_validity: Any,
+    gt_segments: list[torch.Tensor],
+) -> dict[str, int]:
+    _require(
+        isinstance(boundary_validity, (list, tuple)),
+        "real loader did not provide gt_boundary_validity as a per-video sequence",
+    )
+    _require(
+        len(boundary_validity) == len(gt_segments),
+        "gt_boundary_validity batch size differs from gt_segments",
+    )
+    endpoint_count = 0
+    valid_endpoint_count = 0
+    for index, (value, segments) in enumerate(zip(boundary_validity, gt_segments)):
+        validity = torch.as_tensor(value)
+        _require(
+            validity.dtype == torch.bool and tuple(validity.shape) == tuple(segments.shape),
+            f"gt_boundary_validity row {index} is not a boolean [N,2] pipeline artifact",
+        )
+        endpoint_count += int(validity.numel())
+        valid_endpoint_count += int(validity.sum().item())
+    _require(endpoint_count > 0, "real full-model batch has no boundary-validity endpoints")
+    return {
+        "batch_size": len(boundary_validity),
+        "endpoint_count": endpoint_count,
+        "valid_endpoint_count": valid_endpoint_count,
+    }
+
+
+def _record_boundary_validity_consumption(selector, boundary_validity, evidence):
+    original_forward_train = selector.forward_train
+    audit = {"selector_forward_train_calls": 0, "training_forward_train_calls": 0}
+
+    def recording_forward_train(*args, **kwargs):
+        observed = kwargs.get("gt_boundary_validity")
+        _require(
+            observed is boundary_validity,
+            "selector did not consume the exact gt_boundary_validity emitted by the real loader",
+        )
+        _require(
+            _boundary_validity_evidence(observed, kwargs["gt_segments"]) == evidence,
+            "selector consumed altered gt_boundary_validity rather than the real loader artifact",
+        )
+        audit["selector_forward_train_calls"] += 1
+        return original_forward_train(*args, **kwargs)
+
+    selector.forward_train = recording_forward_train
+    return original_forward_train, audit
+
+
 def _git_output(*args: str) -> str:
     return subprocess.check_output(
         ["git", *args],
@@ -106,6 +196,7 @@ def _bind_exact_runtime(expected_commit: str) -> dict[str, Any]:
 
 
 def _cuda_batch(batch: Mapping[str, Any]) -> dict[str, Any]:
+    _require("gt_boundary_validity" in batch, "real loader omitted gt_boundary_validity")
     return {
         "inputs": batch["inputs"].to("cuda:0", non_blocking=True),
         "masks": batch["masks"].to("cuda:0", dtype=torch.bool, non_blocking=True),
@@ -116,6 +207,8 @@ def _cuda_batch(batch: Mapping[str, Any]) -> dict[str, Any]:
         "gt_labels": [
             value.to("cuda:0", non_blocking=True) for value in batch["gt_labels"]
         ],
+        # Keep the unmodified transform output so crop endpoint validity reaches training.
+        "gt_boundary_validity": batch["gt_boundary_validity"],
     }
 
 
@@ -321,12 +414,23 @@ def run_gate(
     assert_optimizer_exact_coverage(model, optimizer)
     model.train()
     selector = model.frame_selector
+    official_asformer_binding = _official_asformer_binding(cfg, selector)
     route = str(cfg.duca_transition_only_contract.route)
     exact_uniform_route = route == "DUCA_EXACT_UNIFORM_FIXED384_OFFICIAL60"
     two_stage_route = str(cfg.duca_transition_only_contract.get("stage", "")) == (
         "uniform_detector_cowarmup_then_joint_detection"
     )
     batch = _real_full_batch(cfg)
+    boundary_validity_evidence = _boundary_validity_evidence(
+        batch["gt_boundary_validity"], batch["gt_segments"]
+    )
+    original_selector_forward_train, boundary_validity_audit = (
+        _record_boundary_validity_consumption(
+            selector,
+            batch["gt_boundary_validity"],
+            boundary_validity_evidence,
+        )
+    )
     uniform_warmup_audit = None
     if two_stage_route:
         warmup_state = selector._loss_schedule_state()
@@ -360,6 +464,7 @@ def run_gate(
                 metas=batch["metas"],
                 gt_segments=batch["gt_segments"],
                 gt_labels=batch["gt_labels"],
+                gt_boundary_validity=batch["gt_boundary_validity"],
             )
         expected_uniform = exact_uniform_positions(
             int(cfg.dense_window_size),
@@ -421,6 +526,7 @@ def run_gate(
                 metas=batch["metas"],
                 gt_segments=batch["gt_segments"],
                 gt_labels=batch["gt_labels"],
+                gt_boundary_validity=batch["gt_boundary_validity"],
             )
             route_losses = outputs["losses"]
             _require(
@@ -472,6 +578,7 @@ def run_gate(
                 batch["metas"],
                 gt_segments=batch["gt_segments"],
                 gt_labels=batch["gt_labels"],
+                gt_boundary_validity=batch["gt_boundary_validity"],
                 return_loss=True,
             )
             detector_objective = model._duca_detector_objective(losses)
@@ -659,6 +766,9 @@ def run_gate(
     scheduler_epoch_before = int(scheduler.last_epoch)
     scale_before = float(scaler.get_scale())
     update_audit: dict[str, Any] = {}
+    selector_calls_before_training = int(
+        boundary_validity_audit["selector_forward_train_calls"]
+    )
     training_probe = train_one_epoch(
         _OneCudaBatchLoader(batch),
         ddp,
@@ -678,6 +788,14 @@ def run_gate(
         force_amp_overflow_attempts=1,
         update_audit=update_audit,
     )
+    boundary_validity_audit["training_forward_train_calls"] = int(
+        boundary_validity_audit["selector_forward_train_calls"]
+    ) - selector_calls_before_training
+    _require(
+        boundary_validity_audit["training_forward_train_calls"] > 0,
+        "production train_one_epoch did not consume gt_boundary_validity",
+    )
+    selector.forward_train = original_selector_forward_train
     _require(isinstance(training_probe, Mapping), "training engine returned no update probe")
     skipped_attempts = int(update_audit.get("amp_skipped_attempts", -1))
     optimizer_attempts = int(update_audit.get("optimizer_attempts", -1))
@@ -777,7 +895,14 @@ def run_gate(
             "path": str(pretrain),
             "sha256": str(adatad_pretrain_sha256).lower(),
         },
+        "official_asformer_source": official_asformer_binding,
         "real_thumos_loader_executed": True,
+        "gt_boundary_validity": {
+            **boundary_validity_evidence,
+            **boundary_validity_audit,
+            "preserved_from_real_loader": True,
+            "consumed_by_production_training": True,
+        },
         "real_model": {
             "detector": model.__class__.__name__,
             "backbone": model.backbone.__class__.__name__,

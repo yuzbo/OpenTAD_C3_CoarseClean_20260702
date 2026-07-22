@@ -68,6 +68,32 @@ WORK_DIR="${WORK_DIR:-}"
 [[ -f "${GATE_SUITE}" ]] || fail "two-stage gate suite is missing"
 [[ "$(sha256sum "${GATE_SUITE}" | awk '{print $1}')" == "${GATE_SUITE_SHA256}" ]] \
   || fail "two-stage gate suite hash drift"
+"${PYTHON}" - "${DECISION}" "${GATE_SUITE}" "${EXPECTED_COMMIT}" <<'PY'
+import json
+import sys
+from pathlib import Path
+from tools.bata.select_duca_boundary_burst_candidates import validate_p0_real_gate
+
+decision = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+suite = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+binding = decision.get("p0_real_gate")
+if not isinstance(binding, dict):
+    raise SystemExit("frontend decision lacks P0 real gate binding")
+validate_p0_real_gate(
+    gate_path=binding.get("path", ""),
+    gate_sha256=binding.get("sha256", ""),
+    expected_commit=sys.argv[3],
+)
+expected = {
+    "path": str(Path(binding["path"]).resolve()),
+    "sha256": binding["sha256"],
+    "schema": "duca_frontend_p0_real_cuda_gate_v1",
+    "git_commit": sys.argv[3],
+    "ok": True,
+}
+if suite.get("p0_real_gate") != expected:
+    raise SystemExit("full-model gate P0 real gate binding drift")
+PY
 [[ -n "${RUN_DIR}" && ! -e "${RUN_DIR}" ]] || fail "fresh RUN_DIR is required"
 [[ -n "${WORK_DIR}" && ! -e "${WORK_DIR}" ]] || fail "fresh WORK_DIR is required"
 [[ "$("${PYTHON}" -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] \

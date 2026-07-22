@@ -84,6 +84,9 @@ for config in "${variant_configs[@]}"; do gate_args+=(--variant-config "${config
   --split-manifest "${SPLIT_MANIFEST}" \
   --expected-split-sha256 "${SPLIT_SHA256}" \
   --output-json "${RUN_ROOT}/p0_real_gate.json"
+P0_REAL_GATE="${RUN_ROOT}/p0_real_gate.json"
+P0_REAL_GATE_SHA256="$(sha256sum "${P0_REAL_GATE}" | awk '{print $1}')"
+[[ "${P0_REAL_GATE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || fail "invalid P0 real gate SHA256"
 
 variants=(gaussian_matched burst_r2q3 burst_r4q5)
 for variant in "${variants[@]}"; do
@@ -97,6 +100,8 @@ done
   --expected-commit "${EXPECTED_COMMIT}" \
   --split-manifest "${SPLIT_MANIFEST}" \
   --split-manifest-sha256 "${SPLIT_SHA256}" \
+  --p0-real-gate "${P0_REAL_GATE}" \
+  --p0-real-gate-sha256 "${P0_REAL_GATE_SHA256}" \
   --receipt "${RUN_ROOT}/p0/gaussian_matched/run/completion.json" \
   --receipt "${RUN_ROOT}/p0/burst_r2q3/run/completion.json" \
   --receipt "${RUN_ROOT}/p0/burst_r4q5/run/completion.json" \

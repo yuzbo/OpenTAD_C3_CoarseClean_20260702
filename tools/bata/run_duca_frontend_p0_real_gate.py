@@ -87,6 +87,45 @@ def _sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _normalized_lf_sha256(path: str | Path) -> str:
+    source_bytes = Path(path).read_bytes()
+    return hashlib.sha256(source_bytes.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _official_asformer_binding(cfg: Config, selector) -> dict[str, str]:
+    contract = cfg.get("duca_transition_only_contract", {})
+    expected = str(
+        contract.get("official_asformer_source_normalized_lf_sha256", "")
+    ).lower()
+    _require(
+        len(expected) == 64 and all(char in "0123456789abcdef" for char in expected),
+        "config lacks an official ASFormer normalized-LF SHA256 declaration",
+    )
+    probe = selector.raw_actionness_source.probe_module
+    source_metadata = getattr(probe, "official_source", None)
+    _require(
+        isinstance(source_metadata, Mapping),
+        "official ASFormer probe did not expose source provenance",
+    )
+    source_path = Path(str(source_metadata.get("source_file", ""))).expanduser().resolve()
+    _require(source_path.is_file(), "official ASFormer source is missing")
+    observed = _normalized_lf_sha256(source_path)
+    _require(
+        observed == expected,
+        "official ASFormer normalized-LF SHA256 differs from the config declaration",
+    )
+    _require(
+        str(source_metadata.get("source_normalized_lf_sha256", "")).lower() == observed,
+        "official ASFormer runtime provenance differs from the reopened source",
+    )
+    return {
+        "path": str(source_path),
+        "sha256": _sha256(source_path),
+        "normalized_lf_sha256": observed,
+        "config_declared_normalized_lf_sha256": expected,
+    }
+
+
 def _git(*args: str) -> str:
     return subprocess.check_output(
         ["git", *args], cwd=ROOT, text=True, encoding="utf-8"
@@ -575,6 +614,11 @@ def run_gate(
     selector = model.frame_selector
     _require(selector.__class__.__name__ == "DucaOnlineFrameSelector", "P0 selector type drifted")
     _require(selector.raw_actionness_source.__class__.__name__ == "C3CoarseProbeActionnessSource", "P0 coarse source drifted")
+    official_asformer_binding = _official_asformer_binding(cfg, selector)
+    _require(
+        Path(official_asformer_binding["path"]) == official_source.resolve(),
+        "P0 official ASFormer runtime source differs from --official-repos-root",
+    )
     trainable = [name for name, parameter in model.named_parameters() if parameter.requires_grad]
     categories = {_parameter_group(name) for name in trainable}
     _require(categories == {"coarse_probe", "transition_scorer"}, "P0 trainable parameter surface drifted")
@@ -764,7 +808,7 @@ def run_gate(
         "train_block_list_sha256": _sha256(train_block),
         "assets": {
             "videomae_checkpoint": {"path": str(checkpoint), "sha256": _sha256(checkpoint)},
-            "official_asformer_source": {"path": str(official_source), "sha256": _sha256(official_source)},
+            "official_asformer_source": official_asformer_binding,
         },
         "dataset": {
             "type": train_dataset.__class__.__name__,

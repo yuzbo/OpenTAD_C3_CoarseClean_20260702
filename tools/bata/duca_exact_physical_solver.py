@@ -96,13 +96,201 @@ class BoundaryBurstSolveResult:
     uniform_overlap: int
     max_unselected_hole: int
     solver_status: str = "OPTIMAL"
-    solver_identity: str = "duca_r0_required_burst_exact_k_physical_dp_v1"
+    solver_identity: str = "duca_r0_exact_quota_physical_milp_v1"
+    solver_message: str = ""
+    mip_gap: float | None = 0.0
     exact: bool = True
     privileged: bool = True
     deployable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class _BoundaryBurstMilpResult:
+    positions: tuple[int, ...]
+    solver_message: str
+    mip_gap: float
+
+
+def _solve_boundary_burst_exact_quota_milp(
+    axis: PhysicalAxis,
+    endpoint_specs: Sequence[Mapping[str, Any]],
+    *,
+    requested_budget: int,
+    cap: ResolvedPhysicalCap,
+    enforce_global_coverage: bool,
+) -> _BoundaryBurstMilpResult:
+    try:
+        import numpy as np
+        from scipy.optimize import Bounds, LinearConstraint, milp
+        from scipy.sparse import csr_matrix
+    except (ImportError, AttributeError) as exc:
+        raise AllocationContractError(
+            "SciPy HiGHS milp is required for the exact boundary-burst Oracle"
+        ) from exc
+
+    valid_len = axis.valid_len
+    budget = effective_budget(valid_len, requested_budget)
+    path_variables: dict[tuple[int, int], int] = {}
+    next_variable = valid_len
+    if enforce_global_coverage:
+        source = -1
+        sink = valid_len
+        for right in range(valid_len):
+            if cap.allows(axis, 0, right):
+                path_variables[(source, right)] = next_variable
+                next_variable += 1
+            for left in range(right):
+                if cap.allows(axis, left, right):
+                    path_variables[(left, right)] = next_variable
+                    next_variable += 1
+        for left in range(valid_len):
+            if cap.allows(axis, left, valid_len - 1):
+                path_variables[(left, sink)] = next_variable
+                next_variable += 1
+
+    rows: list[int] = []
+    columns: list[int] = []
+    data: list[float] = []
+    lower: list[float] = []
+    upper: list[float] = []
+
+    def add_constraint(
+        coefficients: Mapping[int, float],
+        minimum: float,
+        maximum: float,
+    ) -> None:
+        row = len(lower)
+        for column, value in coefficients.items():
+            if value != 0:
+                rows.append(row)
+                columns.append(int(column))
+                data.append(float(value))
+        lower.append(float(minimum))
+        upper.append(float(maximum))
+
+    add_constraint({position: 1 for position in range(valid_len)}, budget, budget)
+    if enforce_global_coverage:
+        add_constraint({0: 1}, 1, 1)
+        add_constraint({valid_len - 1: 1}, 1, 1)
+        add_constraint(
+            {
+                variable: 1
+                for (left, _), variable in path_variables.items()
+                if left == -1
+            },
+            1,
+            1,
+        )
+        add_constraint(
+            {
+                variable: 1
+                for (_, right), variable in path_variables.items()
+                if right == valid_len
+            },
+            1,
+            1,
+        )
+        for position in range(valid_len):
+            incoming = {
+                variable: -1
+                for (_, right), variable in path_variables.items()
+                if right == position
+            }
+            incoming[position] = 1
+            add_constraint(incoming, 0, 0)
+            outgoing = {
+                variable: -1
+                for (left, _), variable in path_variables.items()
+                if left == position
+            }
+            outgoing[position] = 1
+            add_constraint(outgoing, 0, 0)
+
+    for spec in endpoint_specs:
+        center = int(spec["center"])
+        neighborhood = tuple(int(value) for value in spec["neighborhood"])
+        add_constraint({center: 1}, 1, 1)
+        add_constraint(
+            {position: 1 for position in neighborhood},
+            int(spec["quota"]),
+            math.inf,
+        )
+        if bool(spec["bilateral_applicable"]):
+            add_constraint(
+                {int(position): 1 for position in spec["left_candidates"]},
+                1,
+                math.inf,
+            )
+            add_constraint(
+                {int(position): 1 for position in spec["right_candidates"]},
+                1,
+                math.inf,
+            )
+
+    matrix = csr_matrix(
+        (data, (rows, columns)),
+        shape=(len(lower), next_variable),
+        dtype=float,
+    )
+    constraints = LinearConstraint(
+        matrix,
+        np.asarray(lower, dtype=float),
+        np.asarray(upper, dtype=float),
+    )
+    uniform = set(exact_uniform_positions(valid_len, requested_budget))
+    primary_scale = valid_len * valid_len + 1
+    objective = np.zeros(next_variable, dtype=float)
+    for position in range(valid_len):
+        objective[position] = -(
+            (primary_scale if position in uniform else 0)
+            + valid_len
+            - position
+        )
+    result = milp(
+        c=objective,
+        integrality=np.ones(next_variable, dtype=np.uint8),
+        bounds=Bounds(
+            np.zeros(next_variable, dtype=float),
+            np.ones(next_variable, dtype=float),
+        ),
+        constraints=constraints,
+        options={"presolve": True, "mip_rel_gap": 0.0},
+    )
+    if result.status != 0 or result.x is None:
+        raise AllocationContractError(
+            "boundary-burst exact quota MILP was not OPTIMAL: "
+            f"{getattr(result, 'message', 'unknown HiGHS failure')}"
+        )
+    mip_gap = float(getattr(result, "mip_gap", math.inf))
+    if not math.isfinite(mip_gap) or mip_gap != 0.0:
+        raise AllocationContractError(
+            "boundary-burst exact quota MILP did not prove a zero MIP gap"
+        )
+    values = np.asarray(result.x, dtype=float)
+    rounded = np.rint(values)
+    if values.shape != (next_variable,) or not np.all(np.isfinite(values)):
+        raise AllocationContractError(
+            "boundary-burst exact quota MILP returned invalid variables"
+        )
+    if float(np.max(np.abs(values - rounded), initial=0.0)) > 1.0e-6:
+        raise AllocationContractError(
+            "boundary-burst exact quota MILP violates integrality"
+        )
+    positions = tuple(
+        position for position in range(valid_len) if int(rounded[position]) == 1
+    )
+    if len(positions) != budget:
+        raise AllocationContractError(
+            "boundary-burst exact quota MILP terminal solution violates exact-K"
+        )
+    return _BoundaryBurstMilpResult(
+        positions=positions,
+        solver_message=str(result.message),
+        mip_gap=mip_gap,
+    )
 
 
 def quantize_scores(
@@ -225,9 +413,9 @@ def solve_boundary_burst_oracle(
 ) -> BoundaryBurstSolveResult:
     """Construct the constrained R0 Oracle: local bursts plus global fill.
 
-    This diagnostic never participates in training or inference. Required burst
-    positions receive a provably dominant additive score; the existing exact-K
-    physical DP then performs the remaining global fill under the same cap.
+    This diagnostic never participates in training or inference. The exact
+    MILP jointly chooses quota positions so nearby endpoints can share samples
+    while the same exact-K and physical coverage contract remains enforced.
     """
 
     radius = int(radius)
@@ -259,14 +447,8 @@ def solve_boundary_burst_oracle(
             right = tuple(range(center + 1, min(axis.valid_len, center + radius + 1)))
             neighborhood = tuple(range(max(0, center - radius), min(axis.valid_len, center + radius + 1)))
             target_quota = min(quota, len(neighborhood))
-            ordered = [center]
-            for distance in range(1, radius + 1):
-                if center - distance >= 0:
-                    ordered.append(center - distance)
-                if center + distance < axis.valid_len:
-                    ordered.append(center + distance)
-            endpoint_required = tuple(ordered[:target_quota])
-            required.update(endpoint_required)
+            endpoint_required = (center,)
+            required.add(center)
             endpoint_specs.append(
                 {
                     "segment_index": int(segment_index),
@@ -291,34 +473,16 @@ def solve_boundary_burst_oracle(
     budget = effective_budget(axis.valid_len, requested_budget)
     if len(required) > budget:
         raise AllocationContractError(
-            f"boundary-burst required set exceeds K_eff: {len(required)} > {budget}"
+            f"boundary-burst endpoint centers exceed K_eff: {len(required)} > {budget}"
         )
     uniform = set(exact_uniform_positions(axis.valid_len, requested_budget))
-    # One missed required position costs more than every possible non-required
-    # gain, so an OPTIMAL path includes the complete required set whenever it is
-    # physically feasible.
-    dominant = axis.valid_len * 4 + 4
-    scores = [
-        (dominant if position in required else 0)
-        + (2 if position in uniform else 0)
-        + (1 if position % 2 == 0 else 0)
-        for position in range(axis.valid_len)
-    ]
-    if enforce_global_coverage:
-        solved = solve_additive_exact_k_physical(
-            axis,
-            scores,
-            requested_budget=requested_budget,
-            cap=cap,
-            quantization_scale=1,
-        )
-    else:
-        solved = solve_additive_unrestricted(
-            axis,
-            scores,
-            requested_budget=requested_budget,
-            quantization_scale=1,
-        )
+    solved = _solve_boundary_burst_exact_quota_milp(
+        axis,
+        endpoint_specs,
+        requested_budget=requested_budget,
+        cap=cap,
+        enforce_global_coverage=enforce_global_coverage,
+    )
     selected = set(solved.positions)
     missing = sorted(required - selected)
     if missing:
@@ -359,6 +523,7 @@ def solve_boundary_burst_oracle(
         validated_contracts.append(
             {
                 **spec,
+                "selected_positions_in_radius": tuple(sorted(selected & neighborhood)),
                 "selected_in_radius": local_count,
                 "selected_left": left_count,
                 "selected_right": right_count,
@@ -393,6 +558,8 @@ def solve_boundary_burst_oracle(
         background_component_count=len(components),
         uniform_overlap=len(selected & uniform),
         max_unselected_hole=gap_report.dense_max_unselected_hole,
+        solver_message=solved.solver_message,
+        mip_gap=solved.mip_gap,
     )
 
 

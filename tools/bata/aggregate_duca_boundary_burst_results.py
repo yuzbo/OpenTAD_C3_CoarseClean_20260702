@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from uuid import uuid4
 
+from tools.bata.create_duca_frontend_split import validate_split_manifest
 from tools.bata.duca_p0_evaluation import (
     canonical_sha256,
     normalize_evaluation_config,
     official_evaluator_identity,
     recompute_official_map,
 )
-from tools.bata.select_duca_frontend_checkpoint import sha256_file
 
 
 EXPECTED_VARIANTS = (
@@ -21,6 +24,10 @@ EXPECTED_VARIANTS = (
     "boundary_burst_r2q3_g0",
     "boundary_burst_r4q5_g0",
 )
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _average_map(metrics: Mapping[str, Any], *, label: str) -> float:
@@ -49,6 +56,103 @@ def _require_file(path: Any, sha256: Any, *, label: str) -> Path:
     if not artifact.is_file() or sha256_file(artifact) != str(sha256):
         raise RuntimeError(f"{label} path/hash drift")
     return artifact
+
+
+def validate_suite_self_hash(payload: Mapping[str, Any]) -> str:
+    if payload.get("schema") != "duca_boundary_burst_terminal_suite_v1":
+        raise RuntimeError("boundary-burst terminal suite schema mismatch")
+    return _validate_self_hash(
+        payload,
+        hash_key="suite_sha256",
+        label="boundary-burst terminal suite",
+    )
+
+
+def _validated_frontend_split_binding(
+    decision_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    split_path = decision_payload.get("split_manifest_path")
+    split_sha256 = decision_payload.get("split_manifest_sha256")
+    recorded_binding = decision_payload.get("split_binding")
+    if not isinstance(recorded_binding, Mapping):
+        raise RuntimeError("boundary-burst frontend split binding is missing")
+    if not isinstance(split_sha256, str) or len(split_sha256) != 64:
+        raise RuntimeError("boundary-burst frontend split seal is invalid")
+    try:
+        binding = validate_split_manifest(
+            split_path,
+            expected_manifest_sha256=split_sha256,
+        )
+    except (FileNotFoundError, ValueError, TypeError) as exc:
+        raise RuntimeError("boundary-burst frontend split binding drift") from exc
+    if dict(recorded_binding) != binding:
+        raise RuntimeError("boundary-burst frontend split binding mismatch")
+    return binding
+
+
+def _arm_identity(
+    *,
+    variant: str,
+    evaluation_payload: Mapping[str, Any],
+    normalized_evaluation: Mapping[str, Any],
+    pretrain: Path,
+    frontend_split: Mapping[str, Any],
+) -> dict[str, Any]:
+    identity = {
+        "evaluation_annotation": {
+            "path": str(evaluation_payload["evaluation_annotation_path"]),
+            "sha256": evaluation_payload["evaluation_annotation_sha256"],
+        },
+        "evaluation_class_map": {
+            "path": str(evaluation_payload["evaluation_class_map_path"]),
+            "sha256": evaluation_payload["evaluation_class_map_sha256"],
+        },
+        "evaluation_target": dict(normalized_evaluation),
+        "adatad_pretrain": {
+            "path": str(pretrain),
+            "sha256": evaluation_payload["training_identity"]["pretrain_sha256"],
+        },
+        "frontend_split_annotation": {
+            "manifest_path": frontend_split["manifest_path"],
+            "manifest_sha256": frontend_split["manifest_sha256"],
+            "path": frontend_split["annotation_path"],
+            "sha256": frontend_split["annotation_sha256"],
+            "assignment_sha256": frontend_split["assignment_sha256"],
+        },
+    }
+    annotation = identity["evaluation_annotation"]
+    split_annotation = identity["frontend_split_annotation"]
+    if (
+        annotation["path"] != split_annotation["path"]
+        or annotation["sha256"] != split_annotation["sha256"]
+    ):
+        raise RuntimeError(
+            f"boundary-burst frontend split/evaluation annotation mismatch: {variant}"
+        )
+    return identity
+
+
+def _atomic_write_sealed_json(output: Path, payload: Mapping[str, Any]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.{uuid4().hex}.tmp")
+    encoded = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    try:
+        with temporary.open("xb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        written = json.loads(temporary.read_text(encoding="utf-8"))
+        validate_suite_self_hash(written)
+        os.replace(temporary, output)
+        if os.name != "nt":
+            directory_fd = os.open(output.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _same_metrics(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
@@ -86,6 +190,7 @@ def aggregate(
         or decision_payload.get("git_commit") != expected_commit
     ):
         raise RuntimeError("boundary-burst decision commit/status mismatch")
+    frontend_split = _validated_frontend_split_binding(decision_payload)
     gate_payload = json.loads(gate.read_text(encoding="utf-8"))
     if gate_payload.get("ok") is not True or gate_payload.get("git_commit") != expected_commit:
         raise RuntimeError("boundary-burst gate commit/status mismatch")
@@ -93,6 +198,7 @@ def aggregate(
         raise RuntimeError("every completion requires an upstream SHA256 seal")
 
     rows = []
+    matched_arm_identity: dict[str, Any] | None = None
     for raw, expected_completion_sha256 in zip(
         completion_paths, completion_sha256s
     ):
@@ -287,7 +393,6 @@ def aggregate(
             identity.get("pretrain_sha256"),
             label=f"boundary-burst AdaTAD pretrain {variant}",
         )
-        del pretrain
         prediction = _require_file(
             evaluation_payload.get("prediction_path"),
             evaluation_payload.get("prediction_sha256"),
@@ -318,6 +423,19 @@ def aggregate(
             normalized_evaluation
         ):
             raise RuntimeError(f"boundary-burst evaluation config mismatch: {path}")
+        arm_identity = _arm_identity(
+            variant=variant,
+            evaluation_payload=evaluation_payload,
+            normalized_evaluation=normalized_evaluation,
+            pretrain=pretrain,
+            frontend_split=frontend_split,
+        )
+        if matched_arm_identity is None:
+            matched_arm_identity = arm_identity
+        elif arm_identity != matched_arm_identity:
+            raise RuntimeError(
+                f"boundary-burst cross-arm identity drift: {variant}"
+            )
         evaluation_metrics = evaluation_payload.get("metrics")
         if not isinstance(evaluation_metrics, Mapping):
             raise RuntimeError(f"boundary-burst evaluation metrics missing: {evaluation}")
@@ -354,6 +472,8 @@ def aggregate(
         )
     if {row["variant"] for row in rows} != set(EXPECTED_VARIANTS):
         raise RuntimeError("result set does not cover uniform/Gaussian/R2Q3/R4Q5")
+    if matched_arm_identity is None:
+        raise RuntimeError("boundary-burst result set is empty")
     rows.sort(key=lambda row: EXPECTED_VARIANTS.index(row["variant"]))
     payload = {
         "schema": "duca_boundary_burst_terminal_suite_v1",
@@ -368,13 +488,14 @@ def aggregate(
         "frontend_decision_sha256": decision_sha256,
         "gate_path": str(gate),
         "gate_sha256": gate_sha256,
+        "matched_arm_identity": matched_arm_identity,
         "results": rows,
         "paper_claim_allowed": False,
     }
     output = Path(output_path).expanduser().resolve()
-    if output.exists():
-        raise FileExistsError(output)
-    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    payload["suite_sha256"] = canonical_sha256(payload)
+    validate_suite_self_hash(payload)
+    _atomic_write_sealed_json(output, payload)
     return payload
 
 

@@ -15,6 +15,7 @@ from tools.bata.create_duca_frontend_split import (
 from tools.bata.aggregate_duca_boundary_burst_results import (
     EXPECTED_VARIANTS,
     aggregate,
+    validate_suite_self_hash,
 )
 from tools.bata.select_duca_boundary_burst_candidates import (
     select_variants,
@@ -190,6 +191,13 @@ def test_p0_rejects_legacy_r0_summary_without_recomputed_identity(
 
 
 def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
+    split, split_manifest = _split(tmp_path)
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    pretrain = shared / "pretrain.pth"
+    class_map = shared / "class_map.txt"
+    pretrain.write_bytes(b"shared-pretrain")
+    class_map.write_text("action\n", encoding="utf-8")
     decision = tmp_path / "frontend_decision.json"
     _write_json(
         decision,
@@ -197,6 +205,12 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
             "schema": "duca_boundary_burst_frontend_decision_v1",
             "ok": True,
             "git_commit": "a" * 40,
+            "split_manifest_path": str(split_manifest.resolve()),
+            "split_manifest_sha256": _sha256(split_manifest),
+            "split_binding": validate_split_manifest(
+                split_manifest,
+                expected_manifest_sha256=_sha256(split_manifest),
+            ),
         },
     )
     gate = tmp_path / "gate_suite.json"
@@ -208,15 +222,10 @@ def _terminal_suite(tmp_path: Path) -> tuple[dict, list[Path], list[str]]:
     for index, variant in enumerate(EXPECTED_VARIANTS):
         root = tmp_path / variant
         config = root / f"{variant}.py"
-        pretrain = root / "pretrain.pth"
-        annotation = root / "annotation.json"
-        class_map = root / "class_map.txt"
+        annotation = Path(split["annotation_path"])
         prediction = root / "prediction.json"
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(f"# {variant}\n", encoding="utf-8")
-        pretrain.write_bytes(f"pretrain-{variant}".encode())
-        annotation.write_text("{}\n", encoding="utf-8")
-        class_map.write_text("action\n", encoding="utf-8")
         checkpoint = root / "epoch_59.pth"
         checkpoint.write_bytes(f"checkpoint-{variant}".encode())
         metrics = {"average_mAP": 0.60 + index * 0.01, "mAP@0.5": 0.70}
@@ -399,6 +408,84 @@ def _stub_official_recompute(monkeypatch) -> None:
     monkeypatch.setattr(aggregate_module, "recompute_official_map", recompute)
 
 
+def _reseal_arm_after_identity_mutation(
+    completion_path: Path,
+    *,
+    mutation: str,
+) -> str:
+    completion = json.loads(completion_path.read_text(encoding="utf-8"))
+    evaluation_path = Path(completion["evaluation_path"])
+    evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    identity = evaluation["training_identity"]
+    audit_path = Path(identity["training_audit_path"])
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    root = completion_path.parent
+
+    if mutation == "evaluation_annotation":
+        replacement = root / "replacement_annotation.json"
+        replacement.write_text(
+            Path(evaluation["evaluation_annotation_path"]).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        evaluation["evaluation_annotation_path"] = str(replacement.resolve())
+        evaluation["evaluation_annotation_sha256"] = _sha256(replacement)
+        evaluation["evaluation_config"]["ground_truth_filename"] = str(
+            replacement.resolve()
+        )
+        evaluation["evaluation_config_sha256"] = canonical_sha256(
+            normalize_evaluation_config(evaluation["evaluation_config"])
+        )
+        audit["evaluation_annotation_path"] = evaluation["evaluation_annotation_path"]
+        audit["evaluation_annotation_sha256"] = evaluation["evaluation_annotation_sha256"]
+        audit["evaluation_config_sha256"] = evaluation["evaluation_config_sha256"]
+    elif mutation == "class_map":
+        replacement = root / "replacement_class_map.txt"
+        replacement.write_text("replacement-action\n", encoding="utf-8")
+        evaluation["evaluation_class_map_path"] = str(replacement.resolve())
+        evaluation["evaluation_class_map_sha256"] = _sha256(replacement)
+        audit["evaluation_class_map_path"] = evaluation["evaluation_class_map_path"]
+        audit["evaluation_class_map_sha256"] = evaluation["evaluation_class_map_sha256"]
+    elif mutation == "evaluation_target":
+        replacement = root / "replacement_blocked_videos.json"
+        replacement.write_text("[]\n", encoding="utf-8")
+        evaluation["evaluation_config"]["blocked_videos"] = str(replacement.resolve())
+        evaluation["evaluation_config_sha256"] = canonical_sha256(
+            normalize_evaluation_config(evaluation["evaluation_config"])
+        )
+        audit["evaluation_config_sha256"] = evaluation["evaluation_config_sha256"]
+    elif mutation == "adatad_pretrain":
+        replacement = root / "replacement_pretrain.pth"
+        replacement.write_bytes(b"replacement-pretrain")
+        identity["pretrain_path"] = str(replacement.resolve())
+        identity["pretrain_sha256"] = _sha256(replacement)
+        audit["pretrain_path"] = identity["pretrain_path"]
+        audit["pretrain_sha256"] = identity["pretrain_sha256"]
+    else:
+        raise AssertionError(f"unsupported identity mutation: {mutation}")
+
+    audit.pop("audit_sha256")
+    audit["audit_sha256"] = canonical_sha256(audit)
+    _write_json(audit_path, audit)
+    sidecar_path = Path(identity["checkpoint_sidecar_path"])
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar["experiment_metadata"] = selected_axis_training.build_checkpoint_metadata(audit)
+    sidecar.pop("sidecar_sha256")
+    sidecar["sidecar_sha256"] = canonical_sha256(sidecar)
+    _write_json(sidecar_path, sidecar)
+    identity["training_audit_sha256"] = _sha256(audit_path)
+    identity["training_audit_self_sha256"] = audit["audit_sha256"]
+    identity["checkpoint_sidecar_sha256"] = _sha256(sidecar_path)
+    evaluation["training_identity"] = identity
+    evaluation.pop("evaluation_sha256")
+    evaluation["evaluation_sha256"] = canonical_sha256(evaluation)
+    _write_json(evaluation_path, evaluation)
+    completion["evaluation_sha256"] = _sha256(evaluation_path)
+    completion["evaluation_self_sha256"] = evaluation["evaluation_sha256"]
+    completion["training_identity"] = identity
+    _write_json(completion_path, completion)
+    return _sha256(completion_path)
+
+
 def test_terminal_aggregate_rejects_tampered_completion_metric_copy(
     tmp_path: Path,
     monkeypatch,
@@ -443,6 +530,127 @@ def test_terminal_aggregate_uses_verified_evaluation_metrics(
     assert [row["average_mAP"] for row in payload["results"]] == pytest.approx(
         [0.60, 0.61, 0.62, 0.63]
     )
+    written = json.loads((tmp_path / "aggregate.json").read_text(encoding="utf-8"))
+    assert written == payload
+    assert validate_suite_self_hash(written) == payload["suite_sha256"]
+    assert written["matched_arm_identity"]["frontend_split_annotation"]["sha256"] == (
+        written["matched_arm_identity"]["evaluation_annotation"]["sha256"]
+    )
+
+
+@pytest.mark.parametrize("mutation", ("class_map", "evaluation_target", "adatad_pretrain"))
+def test_terminal_aggregate_rejects_resealed_cross_arm_identity_drift(
+    tmp_path: Path,
+    monkeypatch,
+    mutation: str,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    completion_shas[1] = _reseal_arm_after_identity_mutation(
+        completions[1], mutation=mutation
+    )
+
+    with pytest.raises(RuntimeError, match="cross-arm identity drift"):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+def test_terminal_aggregate_rejects_resealed_frontend_split_binding_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    decision = json.loads(roots["decision"].read_text(encoding="utf-8"))
+    decision["split_binding"]["annotation_sha256"] = "b" * 64
+    _write_json(roots["decision"], decision)
+
+    with pytest.raises(RuntimeError, match="frontend split binding mismatch"):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+def test_terminal_aggregate_rejects_resealed_annotation_path_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    completion_shas[1] = _reseal_arm_after_identity_mutation(
+        completions[1], mutation="evaluation_annotation"
+    )
+
+    with pytest.raises(
+        RuntimeError, match="frontend split/evaluation annotation mismatch"
+    ):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+def test_terminal_aggregate_replaces_only_after_a_complete_sealed_write(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path)
+    output = tmp_path / "aggregate.json"
+    output.write_text('{"partial": true}\n', encoding="utf-8")
+
+    payload = aggregate(
+        expected_commit="a" * 40,
+        decision_path=roots["decision"],
+        decision_sha256=_sha256(roots["decision"]),
+        gate_path=roots["gate"],
+        gate_sha256=_sha256(roots["gate"]),
+        completion_paths=completions,
+        completion_sha256s=completion_shas,
+        output_path=output,
+    )
+
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
+    assert not list(tmp_path.glob(".aggregate.json.*.tmp"))
+
+    def interrupted_replace(_source, _destination) -> None:
+        raise OSError("simulated replace interruption")
+
+    monkeypatch.setattr(aggregate_module.os, "replace", interrupted_replace)
+    with pytest.raises(OSError, match="simulated replace interruption"):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=output,
+        )
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
+    assert not list(tmp_path.glob(".aggregate.json.*.tmp"))
 
 
 @pytest.mark.parametrize(

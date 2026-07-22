@@ -3,20 +3,138 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from tools.bata.analyze_duca_selection_quality import (
+    SUMMARY_SCHEMA_VERSION,
+    analyze_jsonl,
+)
 from tools.bata.create_duca_frontend_split import validate_split_manifest
 from tools.bata.finalize_duca_r0_boundary_burst import revalidate_r0_summary
 from tools.bata.select_duca_frontend_checkpoint import sha256_file
 
 
 SCHEMA = "duca_boundary_burst_frontend_decision_v1"
+P0_REAL_GATE_SCHEMA = "duca_frontend_p0_real_cuda_gate_v1"
+P0_ANALYZER_BOOTSTRAP_SAMPLES = 2000
+P0_ANALYZER_RANDOM_SEED = 3407
+P0_ANALYZER_REPRESENTATIVE_PER_STRATUM = 2
 VARIANT_SPECS = {
     "gaussian_matched": None,
     "burst_r2q3": "r2q3",
     "burst_r4q5": "r4q5",
 }
+
+
+def _first_mismatch(
+    expected: Any,
+    observed: Any,
+    *,
+    path: str = "summary",
+) -> str | None:
+    """Return the first recursive difference so evidence drift is actionable."""
+
+    if type(expected) is not type(observed):
+        return f"{path} (type {type(expected).__name__} != {type(observed).__name__})"
+    if isinstance(expected, Mapping):
+        if set(expected) != set(observed):
+            return f"{path} (keys differ)"
+        for key in sorted(expected, key=str):
+            mismatch = _first_mismatch(
+                expected[key], observed[key], path=f"{path}.{key}"
+            )
+            if mismatch is not None:
+                return mismatch
+        return None
+    if isinstance(expected, list):
+        if len(expected) != len(observed):
+            return f"{path} (length {len(expected)} != {len(observed)})"
+        for index, (left, right) in enumerate(zip(expected, observed)):
+            mismatch = _first_mismatch(left, right, path=f"{path}[{index}]")
+            if mismatch is not None:
+                return mismatch
+        return None
+    return None if expected == observed else path
+
+
+def _recompute_selection_summary(
+    *,
+    records_path: Path,
+    records_sha256: str,
+    summary_path: Path,
+    summary_sha256: str,
+) -> dict[str, Any]:
+    """Accept only a summary regenerated from the sealed production records."""
+
+    if not records_path.read_text(encoding="utf-8").strip():
+        raise RuntimeError("candidate records JSONL is empty")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if not isinstance(summary, Mapping):
+        raise RuntimeError("selection-quality summary is not a mapping")
+    if summary.get("schema_version") != SUMMARY_SCHEMA_VERSION:
+        raise RuntimeError("unexpected selection-quality summary schema")
+    try:
+        summary_records_path = Path(str(summary["records_jsonl"])).expanduser().resolve()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("selection-quality summary lacks records identity") from exc
+    if summary_records_path != records_path:
+        raise RuntimeError("selection-quality summary records identity drift")
+
+    # This is deliberately the same production analyzer and fixed P0 invocation.
+    with tempfile.TemporaryDirectory(prefix="duca-p0-summary-reanalysis-") as output_dir:
+        recomputed = analyze_jsonl(
+            records_jsonl=records_path,
+            output_dir=output_dir,
+            bootstrap_samples=P0_ANALYZER_BOOTSTRAP_SAMPLES,
+            random_seed=P0_ANALYZER_RANDOM_SEED,
+            representative_per_stratum=P0_ANALYZER_REPRESENTATIVE_PER_STRATUM,
+        )
+    if sha256_file(records_path) != str(records_sha256):
+        raise RuntimeError("candidate records drifted during production reanalysis")
+    if sha256_file(summary_path) != str(summary_sha256):
+        raise RuntimeError("candidate summary drifted during production reanalysis")
+    mismatch = _first_mismatch(summary, recomputed)
+    if mismatch is not None:
+        raise RuntimeError(
+            f"selection-quality summary disagrees with production reanalysis at {mismatch}"
+        )
+    return dict(summary)
+
+
+def validate_p0_real_gate(
+    *,
+    gate_path: str | Path,
+    gate_sha256: str,
+    expected_commit: str,
+) -> dict[str, Any]:
+    """Reopen the real P0 CUDA gate before it can authorize any consumer."""
+
+    path = _verified_file(gate_path, gate_sha256, label="P0 real gate")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    git_binding = payload.get("git_binding") if isinstance(payload, Mapping) else None
+    final_git_binding = (
+        payload.get("final_git_binding") if isinstance(payload, Mapping) else None
+    )
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("schema") != P0_REAL_GATE_SCHEMA
+        or payload.get("ok") is not True
+        or payload.get("fail_closed") is not True
+        or not isinstance(git_binding, Mapping)
+        or not isinstance(final_git_binding, Mapping)
+        or git_binding.get("git_commit") != expected_commit
+        or final_git_binding.get("git_commit") != expected_commit
+    ):
+        raise RuntimeError("P0 real gate contract drift")
+    return {
+        "path": str(path),
+        "sha256": str(gate_sha256),
+        "schema": P0_REAL_GATE_SCHEMA,
+        "git_commit": expected_commit,
+        "ok": True,
+    }
 
 
 def _verified_file(
@@ -174,9 +292,12 @@ def _read_candidate(candidate: Mapping[str, Any], variant: str) -> dict[str, Any
     ):
         if not path.is_file() or sha256_file(path) != str(digest):
             raise RuntimeError(f"{variant} candidate {label} drift: {path}")
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    if summary.get("schema_version") != "duca_selection_quality_summary_v2":
-        raise RuntimeError("unexpected selection-quality summary schema")
+    summary = _recompute_selection_summary(
+        records_path=records_path,
+        records_sha256=str(candidate["records_sha256"]),
+        summary_path=summary_path,
+        summary_sha256=str(candidate["summary_sha256"]),
+    )
 
     learned = summary["selection"]["learned"]
     uniform = summary["selection"]["uniform"]
@@ -315,6 +436,8 @@ def select_variants(
     split_manifest_sha256: str,
     receipt_paths: Sequence[str | Path],
     output_path: str | Path,
+    p0_real_gate_path: str | Path | None = None,
+    p0_real_gate_sha256: str | None = None,
 ) -> dict[str, Any]:
     if len(expected_commit) != 40:
         raise ValueError("expected commit must be exact")
@@ -323,6 +446,13 @@ def select_variants(
         expected_manifest_sha256=split_manifest_sha256,
     )
     split_path = Path(split_binding["manifest_path"])
+    if p0_real_gate_path is None or p0_real_gate_sha256 is None:
+        raise RuntimeError("P0 real gate binding is required")
+    p0_real_gate = validate_p0_real_gate(
+        gate_path=p0_real_gate_path,
+        gate_sha256=p0_real_gate_sha256,
+        expected_commit=expected_commit,
+    )
 
     candidates: dict[str, list[dict[str, Any]]] = {
         key: [] for key in VARIANT_SPECS
@@ -367,6 +497,7 @@ def select_variants(
         "split_manifest_path": str(split_path),
         "split_manifest_sha256": split_manifest_sha256,
         "split_binding": split_binding,
+        "p0_real_gate": p0_real_gate,
         "selection_rule": (
             "earliest passing checkpoint at epoch 5/10/15/20; no holdout metric "
             "optimization; final method ranking is reserved for matched terminal-EMA TAD mAP"
@@ -387,6 +518,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--split-manifest", required=True)
     parser.add_argument("--split-manifest-sha256", required=True)
+    parser.add_argument("--p0-real-gate", required=True)
+    parser.add_argument("--p0-real-gate-sha256", required=True)
     parser.add_argument("--receipt", action="append", required=True)
     parser.add_argument("--output-json", required=True)
     args = parser.parse_args(argv)
@@ -394,6 +527,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_commit=args.expected_commit,
         split_manifest=args.split_manifest,
         split_manifest_sha256=args.split_manifest_sha256,
+        p0_real_gate_path=args.p0_real_gate,
+        p0_real_gate_sha256=args.p0_real_gate_sha256,
         receipt_paths=args.receipt,
         output_path=args.output_json,
     )

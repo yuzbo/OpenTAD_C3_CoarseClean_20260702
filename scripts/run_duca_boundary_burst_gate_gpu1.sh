@@ -31,6 +31,24 @@ validate_frozen_pretrain_binding(
 PY
 [[ -f "${DECISION}" ]] || fail "frontend decision is missing"
 [[ "$(sha256sum "${DECISION}" | awk '{print $1}')" == "${DECISION_SHA256}" ]] || fail "decision drift"
+"${PYTHON}" - "${DECISION}" "${EXPECTED_COMMIT}" <<'PY'
+import sys
+from tools.bata.select_duca_boundary_burst_candidates import validate_p0_real_gate
+import json
+from pathlib import Path
+
+decision = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+gate = decision.get("p0_real_gate")
+if not isinstance(gate, dict):
+    raise SystemExit("frontend decision lacks P0 real gate binding")
+validate_p0_real_gate(
+    gate_path=gate.get("path", ""),
+    gate_sha256=gate.get("sha256", ""),
+    expected_commit=sys.argv[2],
+)
+if gate.get("schema") != "duca_frontend_p0_real_cuda_gate_v1" or gate.get("ok") is not True:
+    raise SystemExit("frontend decision P0 real gate fields drifted")
+PY
 [[ ! -e "${GATE_ROOT}" ]] || fail "fresh gate root is required"
 
 mkdir -p "${GATE_ROOT}/contracts" "${GATE_ROOT}/full_model" "${GATE_ROOT}/tests"
@@ -92,6 +110,7 @@ payload = {
     "git_commit": sys.argv[2],
     "frontend_decision_path": str(Path(sys.argv[3]).resolve()),
     "frontend_decision_sha256": sys.argv[4],
+    "p0_real_gate": json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))["p0_real_gate"],
     "artifacts": records,
 }
 (root / "gate_suite.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
