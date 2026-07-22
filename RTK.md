@@ -100,3 +100,22 @@ PRECHECK_ONLY=1 bash scripts/run_c3_asformer_delta_ledger_adatad_full_train_gpu1
 ```
 
 当前本机 Windows Python 的 user-site `torch` 可能加载 `c10.dll` 失败；完整 Torch 相关测试优先在 N16R4 OpenTAD 环境中验证。
+
+## R0-R5 生产交付合同（2026-07-22）
+
+本轮唯一验收目标是：R0-R5 生产代码全部完成，真实后端门禁通过，所有正式实验具有可运行配置并实际提交 Slurm，同时完整记录 Job、依赖、精确提交、run root、manifest/hash 与预期产物路径。缺少任一项都不得称为“完整实现”或“完整部署”。
+
+- 性能实验优先。实现、测试和成本统计可并行准备；上游证据仅通过 `afterok` 和 fail-closed consumer 约束下游实际运行。
+- 模型实现优先于启动工程。启动器只保留直接运行、依赖与结果路径所需的最小逻辑；禁止扩张通用编排、复杂 schema/journal/router。时间优先投入粗分类证据、边界微簇、真实硬换帧、检测梯度回传与真实检测后端。
+- R0 必须给出同 K/G 的 exact-uniform、R2Q3、R4Q5、unrestricted Oracle 冻结 official detector mAP、逐视频 paired bootstrap、sealed summary 和唯一 family 裁决。
+- R1 必须落实真实数据/模型 identity、无泄漏、原子提交 journal、哈希封存和 fail-closed 消费链。
+- R2 必须使用 R0 唯一选中 family 完成真实 coarse/transition/burst P0 训练与 holdout 裁决。
+- R3 必须在同一精确协议下部署 matched U 与 G0 的 official TAD 正式训练。
+- R4 必须实现真实合法 hard-swap、冻结 official detector signed utility/alignment 门禁，并部署真实 G1/G2。
+- R5 必须覆盖三种子、K384/K256、official AdaTAD、仓库中真实可训练的第二 TAD backend，以及完整端到端成本测量。
+- mock、sentinel、占位 backend、仅 `PRECHECK_ONLY`、TODO、未接真实 loader/model/CUDA/backend 的入口均是半成品。
+- “已部署”仅在 `sbatch` 返回有效 Job ID，并记录 dependency、exact commit、run root、manifest/hash 和预期终端产物后成立。
+- 并行智能体的文字结论不算交付；代码必须合入唯一分支、通过 focused/contract/Linux/真实 CUDA 门禁，形成一个精确提交后才可部署。
+- 独立 MAX 审计只在完整关键合并版本执行一次；禁止把每个小补丁扩成新一轮门禁。Wiki 只在提交、Job、错误、mAP、成本或裁决发生变化时更新。
+- 全部 R0-R5 生产实现和真实后端门禁完成后、任何新的正式 Slurm 实验 DAG 部署前，启动一个全新、无实现上下文的独立 MAX 审阅智能体；只有审阅通过才允许部署，禁止把审阅拖到结果收割之后。审阅重心是模型设计与机理是否忠于最初目标，真实梯度归属、硬选帧行为与训练推理合同是否正确；工程问题只在改变模型行为、实验真实性或可复现性时阻断，不得纠缠无关细节。
+- 禁止修改或借用 SparseHead、Spatial-Zoom、ChronoTransport 路线；禁止重新创建同义 selector、decoder、worktree。
