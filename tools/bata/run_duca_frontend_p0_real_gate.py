@@ -312,6 +312,7 @@ def _gradient_evidence(model: torch.nn.Module) -> dict[str, Any]:
     return {
         "absolute_gradient_sum": sums,
         "nonzero_parameter_count": {key: len(value) for key, value in names.items()},
+        "nonzero_parameter_names": names,
         "coarse_subgroup_absolute_gradient_sum": coarse_sums,
         "transition_subgroup_absolute_gradient_sum": transition_sums,
         "representative_parameter": {
@@ -680,7 +681,59 @@ def run_gate(
                 transition_subgroups.get("burst_offset_head", 0.0) > 0.0,
                 "boundary-burst objectives did not train the offset head",
             )
-        _require(transition_sums.get("coarse_probe", 0.0) == 0.0, "transition objectives rewrote coarse probe")
+        transition_updates_coarse = bool(
+            cfg.duca_transition_only_contract.get(
+                "transition_supervision_updates_coarse_representation", False
+            )
+        )
+        transition_coarse = transition_gradients[
+            "coarse_subgroup_absolute_gradient_sum"
+        ]
+        if transition_updates_coarse:
+            _require(
+                0.0 < float(selector.auxiliary_hidden_gradient_scale) <= 0.25,
+                "adaptive transition route lacks a protected hidden-gradient scale",
+            )
+            _require(
+                0.0 < float(selector.policy_hidden_gradient_scale) <= 0.05,
+                "adaptive boundary route lacks a protected policy-hidden scale",
+            )
+            _require(
+                selector.raw_actionness_source.policy_hidden_gradient_scope
+                == "asformer_last_encoder_layer",
+                "adaptive boundary route is not restricted to the final ASFormer encoder layer",
+            )
+            _require(
+                transition_sums.get("coarse_probe", 0.0) > 0.0,
+                "transition objectives did not adapt coarse representation",
+            )
+            _require(
+                transition_coarse.get("spatial_stem", 0.0) == 0.0,
+                "transition objectives escaped into the spatial stem",
+            )
+            _require(
+                transition_coarse.get("temporal_trunk", 0.0) > 0.0,
+                "transition objectives did not adapt the ASFormer temporal trunk",
+            )
+            _require(
+                transition_coarse.get("action_head", 0.0) == 0.0,
+                "boundary supervision must not rewrite the binary action head",
+            )
+            encoder_layers = selector.raw_actionness_source.probe_module.official_temporal.encoder.layers
+            last_layer_marker = f".official_temporal.encoder.layers.{len(encoder_layers) - 1}."
+            transition_coarse_names = transition_gradients[
+                "nonzero_parameter_names"
+            ].get("coarse_probe", [])
+            _require(
+                bool(transition_coarse_names)
+                and all(last_layer_marker in name for name in transition_coarse_names),
+                "transition objectives must update only the final ASFormer encoder layer",
+            )
+        else:
+            _require(
+                transition_sums.get("coarse_probe", 0.0) == 0.0,
+                "detached transition objectives rewrote coarse probe",
+            )
         _require(transition_sums.get("detector", 0.0) == 0.0, "transition objectives reached detector")
     finally:
         _remove_hooks(handles)

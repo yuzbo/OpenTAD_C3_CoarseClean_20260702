@@ -11,8 +11,13 @@ from mmengine.config import Config
 from tools.bata.duca_r5_paper_matrix import (
     BACKENDS,
     BUDGETS,
+    EXPECTED_DENSE_TRAINED_COMMIT,
     SEEDS,
     generate_matrix,
+)
+from tools.bata.duca_trained_checkpoint_binding import (
+    build_trained_checkpoint_binding,
+    write_trained_checkpoint_binding,
 )
 from tools.bata import duca_selected_axis_training as formal_training
 
@@ -32,17 +37,31 @@ def _dense_inputs(tmp_path: Path) -> dict[str, object]:
     dense_config = tmp_path / "dense_adatad.py"
     dense_checkpoint = tmp_path / "epoch_59.pth"
     dense_evidence = tmp_path / "dense_checkpoint_binding.json"
+    dense_training = tmp_path / "dense_training.json"
+    dense_evaluation = tmp_path / "dense_evaluation.json"
     dense_config.write_text("model = dict(type='ActionFormer')\n", encoding="utf-8")
     dense_checkpoint.write_bytes(b"trained-dense-ema")
-    dense_evidence.write_text(
-        json.dumps({"schema": "duca_trained_checkpoint_binding_v1"}),
-        encoding="utf-8",
+    dense_training.write_text('{"ok": true}\n', encoding="utf-8")
+    dense_evaluation.write_text('{"ok": true}\n', encoding="utf-8")
+    write_trained_checkpoint_binding(
+        dense_evidence,
+        build_trained_checkpoint_binding(
+            role="dense_adatad_baseline",
+            git_commit=EXPECTED_DENSE_TRAINED_COMMIT,
+            config_path=dense_config,
+            resolved_config_sha256="f" * 64,
+            checkpoint_path=dense_checkpoint,
+            checkpoint_epoch=59,
+            checkpoint_state_key="state_dict_ema",
+            training_evidence_path=dense_training,
+            evaluation_evidence_path=dense_evaluation,
+        ),
     )
     return {
         "dense_config": dense_config,
         "dense_checkpoint": dense_checkpoint,
         "dense_checkpoint_evidence": dense_evidence,
-        "dense_trained_commit": "b" * 40,
+        "dense_trained_commit": EXPECTED_DENSE_TRAINED_COMMIT,
     }
 
 
@@ -66,24 +85,43 @@ def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -
     assert summary["max_unselected_holes"] == {"384": 2, "256": 3}
     assert summary["learned_variant"] == "boundary_burst_r2q3_g1"
     assert len(list((output / "configs").glob("*.py"))) == 24
-    assert len(list((output / "jobs").glob("*.sbatch"))) == 35
+    assert len(list((output / "jobs").glob("*.sbatch"))) == 34
     assert len((output / "cells.tsv").read_text(encoding="utf-8").splitlines()) == 25
-    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 10
-    assert summary["cost_count"] == 9
-    assert summary["dense_cost_baseline"]["trained_commit"] == "b" * 40
+    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 9
+    assert summary["cost_count"] == 8
+    assert (
+        summary["dense_cost_baseline"]["trained_commit"]
+        == EXPECTED_DENSE_TRAINED_COMMIT
+    )
+    receipt = summary["dense_cost_baseline"]["receipt"]
+    assert receipt["trained_commit"] == EXPECTED_DENSE_TRAINED_COMMIT
+    assert receipt["checkpoint_epoch"] == 59
+    assert receipt["training_evidence_sha256"]
+    assert receipt["evaluation_evidence_sha256"]
     assert summary["git_commit"]
+    first_cell = summary["cells"][0]
+    assert Path(first_cell["prediction_path"]) == (
+        output
+        / "results"
+        / f"{first_cell['id']}_eval"
+        / "gpu1_id0/result_detection.json"
+    )
     assert (output / "matrix_summary.json.sha256").is_file()
     gate = (output / "jobs/temporalmaxer_one_step.sbatch").read_text(
         encoding="utf-8"
     )
     assert "run_duca_temporalmaxer_one_step" in gate
     assert "sbatch " not in gate
-    dense_cost_job = (output / "jobs/cost_dense_adatad_k768.sbatch").read_text(
-        encoding="utf-8"
-    )
-    assert "PROFILE_METHOD=dense-adatad" in dense_cost_job
-    assert "PROFILE_CHECKPOINT_EVIDENCE=" in dense_cost_job
-    assert "PROFILE_SESSION_ID=r5-paper-matrix" in dense_cost_job
+    paired_cost_job = (
+        output / "jobs/cost_actionformer_uniform_k384_s3407.sbatch"
+    ).read_text(encoding="utf-8")
+    assert "PROFILE_METHOD=dense-adatad" in paired_cost_job
+    assert "PROFILE_METHOD=actionformer_uniform_k384_s3407" in paired_cost_job
+    assert "PROFILE_CHECKPOINT_EVIDENCE=" in paired_cost_job
+    assert paired_cost_job.count('PROFILE_SESSION_ID="${SLURM_JOB_ID}"') == 2
+    assert "PROFILE_PAIR_ID=r5-actionformer_uniform_k384_s3407-repeat-1" in paired_cost_job
+    assert "PROFILE_ORDER_POSITION=1" in paired_cost_job
+    assert "PROFILE_ORDER_POSITION=2" in paired_cost_job
     generated_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in [*(output / "configs").glob("*.py"), *(output / "jobs").glob("*.sbatch")]
@@ -270,6 +308,19 @@ def test_generator_rejects_source_config_outside_repo(tmp_path: Path) -> None:
         )
 
 
+def test_generator_rejects_arbitrary_dense_commit(tmp_path: Path) -> None:
+    dense = _dense_inputs(tmp_path)
+    dense["dense_trained_commit"] = "c" * 40
+    with pytest.raises(ValueError, match="frozen historical commit"):
+        generate_matrix(
+            repo_root=ROOT,
+            output_dir=tmp_path / "output",
+            uniform_config=UNIFORM,
+            learned_config=LEARNED,
+            **dense,
+        )
+
+
 def test_real_one_step_runner_uses_production_data_model_and_optimizer() -> None:
     source = (
         ROOT / "tools/bata/run_duca_temporalmaxer_one_step.py"
@@ -337,7 +388,11 @@ def test_generated_jobs_bind_frontend_alignment_and_terminal_map(
     ).read_text(encoding="utf-8")
     aggregate = (output / "jobs/aggregate.sbatch").read_text(encoding="utf-8")
     assert "run_duca_full_stack_cost_profile_gpu1.sh" in learned_cost
+    assert learned_cost.count("run_duca_full_stack_cost_profile_gpu1.sh") == 2
     assert "PROFILE_CHECKPOINT" in learned_cost
+    assert 'PROFILE_SESSION_ID="${SLURM_JOB_ID}"' in learned_cost
+    assert "PROFILE_PAIR_ID=r5-actionformer_learned_k384_s3407-repeat-1" in learned_cost
+    assert "PROFILE_ORDER_POSITION=2" in learned_cost
     assert "aggregate_duca_r5_paper_matrix" in aggregate
     assert "temporalmaxer_one_step.json.sha256" in gate
 

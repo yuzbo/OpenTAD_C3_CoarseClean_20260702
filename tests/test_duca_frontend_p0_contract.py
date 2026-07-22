@@ -185,6 +185,14 @@ def test_boundary_burst_candidates_satisfy_exact_event_p0_contract(
     assert payload["transition_objective"] == "boundary_burst"
     assert payload["boundary_burst"]["radius"] == radius
     assert payload["boundary_burst"]["quota"] == pytest.approx(quota)
+    assert payload["boundary_burst"]["hard_bilateral_offsets"] is True
+    assert payload["boundary_burst"]["hard_global_support"] == (
+        "mandatory_group_constrained_exact_k_max_hole"
+    )
+    assert payload["transition_supervision_updates_coarse_representation"] is True
+    assert payload["auxiliary_hidden_gradient_scale"] == pytest.approx(0.25)
+    assert payload["policy_hidden_gradient_scale"] == pytest.approx(0.05)
+    assert payload["policy_hidden_gradient_scope"] == "asformer_last_encoder_layer"
 
 
 def test_real_gate_separates_boundary_center_and_offset_gradients() -> None:

@@ -29,6 +29,7 @@ from .transition_only import (
     balanced_binary_actionness_loss,
     boundary_burst_coverage_loss,
     build_boundary_burst_utility,
+    build_mandatory_bilateral_set,
     continuous_policy_logits,
     local_boundary_coverage_loss,
     local_boundary_mass_coverage_loss,
@@ -1108,6 +1109,7 @@ class DucaAcquisitionAdapter(nn.Module):
         boundary_burst_context_weight: float = 0.05,
         boundary_burst_center_temperature: float = 0.7,
         boundary_burst_offset_temperature: float = 1.0,
+        boundary_burst_require_bilateral_offsets: bool = False,
         coarse_hidden_dim: Optional[int] = None,
         require_coarse_hidden_features: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
@@ -1188,6 +1190,9 @@ class DucaAcquisitionAdapter(nn.Module):
         self.boundary_burst_context_weight = float(boundary_burst_context_weight)
         self.boundary_burst_center_temperature = float(boundary_burst_center_temperature)
         self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
+        self.boundary_burst_require_bilateral_offsets = bool(
+            boundary_burst_require_bilateral_offsets
+        )
         if self.transition_objective == "boundary_burst":
             if self.selector_variant != "transition_only":
                 raise ValueError("boundary_burst is restricted to transition_only")
@@ -1669,6 +1674,9 @@ class DucaAcquisitionAdapter(nn.Module):
                     context_weight=self.boundary_burst_context_weight,
                     center_temperature=self.boundary_burst_center_temperature,
                     offset_temperature=self.boundary_burst_offset_temperature,
+                    require_bilateral_offsets=(
+                        self.boundary_burst_require_bilateral_offsets
+                    ),
                 )
                 center_scores = burst_outputs["policy_utility"]
             else:
@@ -1796,6 +1804,12 @@ class DucaAcquisitionAdapter(nn.Module):
                         "boundary_burst_context_reference": burst_outputs[
                             "context_reference"
                         ],
+                        "boundary_burst_bilateral_offset_feasible": burst_outputs[
+                            "bilateral_offset_feasible"
+                        ],
+                        "boundary_burst_bilateral_offset_satisfied": burst_outputs[
+                            "bilateral_offset_satisfied"
+                        ],
                     }
                 )
         return output
@@ -1808,6 +1822,8 @@ class DucaAcquisitionAdapter(nn.Module):
         *,
         stable_selection: bool,
         policy_mix_alpha: float,
+        mandatory_center_scores: Optional[torch.Tensor] = None,
+        mandatory_offset_inclusion: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         batch, temporal_len = center_scores.shape
         max_slots = int(self.budget)
@@ -1818,6 +1834,9 @@ class DucaAcquisitionAdapter(nn.Module):
         slot_rows = []
         effective_rows = []
         policy_rows = []
+        mandatory_rows = []
+        mandatory_center_rows = []
+        mandatory_group_counts = []
         for batch_idx in range(batch):
             valid_positions = torch.nonzero(valid_mask[batch_idx], as_tuple=False).flatten()
             valid_count = int(valid_positions.numel())
@@ -1845,10 +1864,45 @@ class DucaAcquisitionAdapter(nn.Module):
             policy_row = center_scores.new_zeros(temporal_len)
             policy_row[:valid_count] = policy_scores[0]
             policy_rows.append(policy_row)
+            required_mask = torch.zeros_like(policy_scores, dtype=torch.bool)
+            retained_center_mask = torch.zeros_like(policy_scores, dtype=torch.bool)
+            retained_group_count = 0
+            if (
+                self.transition_objective == "boundary_burst"
+                and self.boundary_burst_require_bilateral_offsets
+                and not stable_selection
+                and mandatory_center_scores is not None
+                and mandatory_offset_inclusion is not None
+            ):
+                max_mandatory = int(
+                    math.floor(
+                        effective_k
+                        * self.boundary_burst_budget_fraction
+                        * float(policy_mix_alpha)
+                    )
+                )
+                mandatory = build_mandatory_bilateral_set(
+                    mandatory_center_scores[
+                        batch_idx : batch_idx + 1, :valid_count
+                    ],
+                    mandatory_offset_inclusion[
+                        batch_idx : batch_idx + 1, :valid_count
+                    ],
+                    torch.ones_like(policy_scores, dtype=torch.bool),
+                    radius=self.boundary_burst_radius,
+                    quota=int(round(self.boundary_burst_quota)),
+                    max_mandatory=max_mandatory,
+                )
+                required_mask = mandatory["mandatory_mask"]
+                retained_center_mask = mandatory["retained_center_mask"]
+                retained_group_count = int(
+                    mandatory["retained_group_count"][0].item()
+                )
             hard_structured = global_structured_topk(
                 policy_scores,
                 k=effective_k,
                 max_unselected_hole=max_hole,
+                required_mask=required_mask,
                 temperature=self.structured_temperature,
                 training=False,
             )
@@ -1858,6 +1912,15 @@ class DucaAcquisitionAdapter(nn.Module):
             dense_mask = torch.zeros(temporal_len, dtype=torch.bool, device=center_scores.device)
             dense_mask[:valid_count] = hard_structured.hard_occupancy[0].bool()
             dense_masks.append(dense_mask)
+            mandatory_row = torch.zeros(
+                temporal_len, dtype=torch.bool, device=center_scores.device
+            )
+            mandatory_row[:valid_count] = required_mask[0]
+            mandatory_rows.append(mandatory_row)
+            mandatory_center_row = torch.zeros_like(mandatory_row)
+            mandatory_center_row[:valid_count] = retained_center_mask[0]
+            mandatory_center_rows.append(mandatory_center_row)
+            mandatory_group_counts.append(retained_group_count)
             if self.training:
                 # The relaxed path must describe the same feasible family as
                 # the hard path. Run it on the real valid prefix/effective K,
@@ -1894,6 +1957,7 @@ class DucaAcquisitionAdapter(nn.Module):
                     surrogate_policy,
                     k=effective_k,
                     max_unselected_hole=max_hole,
+                    required_mask=required_mask,
                     temperature=self.structured_temperature,
                     training=True,
                 )
@@ -1943,6 +2007,11 @@ class DucaAcquisitionAdapter(nn.Module):
             ),
             "decode_policy_logits": torch.stack(policy_rows, dim=0),
             "policy_mix_alpha": float(policy_mix_alpha),
+            "mandatory_boundary_mask": torch.stack(mandatory_rows, dim=0),
+            "mandatory_boundary_centers": torch.stack(
+                mandatory_center_rows, dim=0
+            ),
+            "mandatory_boundary_group_count": mandatory_group_counts,
         }
 
     def _decode_local_cell(
@@ -2115,6 +2184,10 @@ class DucaAcquisitionAdapter(nn.Module):
                 budgets,
                 stable_selection=bool(stable_selection),
                 policy_mix_alpha=float(policy_mix_alpha),
+                mandatory_center_scores=scores.get("transition_center_scores"),
+                mandatory_offset_inclusion=scores.get(
+                    "boundary_burst_offset_inclusion"
+                ),
             )
         elif self.acquisition_policy == "local_cell_deformation":
             decoded = self._decode_local_cell(
@@ -2189,6 +2262,14 @@ class DucaAcquisitionAdapter(nn.Module):
                 "max_unselected_hole": self.max_unselected_hole,
                 "hard_max_gap_repair": bool(self.hard_max_gap_repair),
                 "max_gap_repair": decoded.get("max_gap_repair", []),
+                "mandatory_boundary_count": (
+                    None
+                    if decoded.get("mandatory_boundary_mask") is None
+                    else decoded["mandatory_boundary_mask"].sum(dim=1).detach().cpu().tolist()
+                ),
+                "mandatory_boundary_group_count": decoded.get(
+                    "mandatory_boundary_group_count"
+                ),
                 "local_cell_anchor_positions": (
                     None
                     if decoded.get("local_cell_anchor_positions") is None
@@ -2252,6 +2333,13 @@ class DucaAcquisitionAdapter(nn.Module):
                 "selection_path": decoded.get("selection_path", "legacy_center_radius"),
                 "decode_policy_logits": decoded.get("decode_policy_logits"),
                 "policy_mix_alpha": float(decoded.get("policy_mix_alpha", policy_mix_alpha)),
+                "mandatory_boundary_mask": decoded.get("mandatory_boundary_mask"),
+                "mandatory_boundary_centers": decoded.get(
+                    "mandatory_boundary_centers"
+                ),
+                "mandatory_boundary_group_count": decoded.get(
+                    "mandatory_boundary_group_count"
+                ),
                 "local_cell_anchor_positions": decoded.get("local_cell_anchor_positions"),
                 "local_cell_starts": decoded.get("local_cell_starts"),
                 "local_cell_ends": decoded.get("local_cell_ends"),

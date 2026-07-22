@@ -25,13 +25,16 @@ def _selector(
     selector_variant: str = "direct_boundary",
     acquisition_policy: str | None = None,
     detector_gradient_mode: str = "st_sparse_gather_soft_context",
+    budget: int = 4,
+    transition_objective: str = "gaussian_mass",
+    require_bilateral_burst: bool = False,
 ) -> DucaOnlineFrameSelector:
     uses_structured_policy = (
         selector_variant == "transition_only" or acquisition_policy == "global_structured_topk"
     )
     return DucaOnlineFrameSelector(
         in_channels=3,
-        budget=4,
+        budget=budget,
         max_radius=2,
         dense_window_size=8,
         selector_hidden_channels=8,
@@ -45,6 +48,12 @@ def _selector(
         hard_max_gap_repair=not uses_structured_policy,
         forbid_external_actionness=(selector_variant == "transition_only"),
         detector_gradient_mode=detector_gradient_mode,
+        transition_objective=transition_objective,
+        transition_boundary_radius=2,
+        boundary_burst_quota=3.0,
+        boundary_burst_budget_fraction=0.5,
+        boundary_burst_context_weight=0.05,
+        boundary_burst_require_bilateral_offsets=require_bilateral_burst,
         profile_runtime=True,
         actionness_source_cfg={
             "type": "C3CoarseProbeActionnessSource",
@@ -298,6 +307,32 @@ def test_structured_surrogate_matches_each_mixed_length_hard_feasible_family(sel
     assert torch.allclose(slots[1, :3, :3], expected.soft_slot_assignment[0], atol=1.0e-6)
     assert torch.allclose(state["soft_coverage"][1, :3], expected.soft_occupancy[0], atol=1.0e-6)
     assert torch.equal(state["soft_coverage"][1, 3:], torch.zeros_like(state["soft_coverage"][1, 3:]))
+
+
+def test_boundary_burst_adapter_preserves_mandatory_group_in_final_hard_positions() -> None:
+    selector = _selector(
+        selector_variant="transition_only",
+        acquisition_policy="global_structured_topk",
+        detector_gradient_mode="structured_zero_forward",
+        budget=6,
+        transition_objective="boundary_burst",
+        require_bilateral_burst=True,
+    )
+    selector.train()
+    out = selector.forward_train(
+        inputs=torch.randn(1, 1, 3, 8, 16, 16),
+        masks=torch.ones(1, 8, dtype=torch.bool),
+        metas=[{"video_name": "burst"}],
+        gt_segments=[torch.tensor([[2.0, 6.0]])],
+        gt_labels=[torch.tensor([1])],
+    )
+    state = out["selector_outputs"]
+    mandatory = state["mandatory_boundary_mask"]
+
+    assert int(mandatory.sum().item()) == 3
+    assert torch.all(state["selected_mask"] | ~mandatory)
+    assert torch.all(state["soft_coverage"][mandatory] > 0.999)
+    assert state["mandatory_boundary_group_count"] == [1]
 
 
 def test_direct_all_short_structured_slots_keep_active_mass_contract() -> None:

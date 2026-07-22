@@ -6,6 +6,9 @@ import pytest
 from mmengine.config import Config
 
 from tools.bata.validate_duca_protected_e2e_official60 import validate_config
+from tools.bata.validate_duca_frontend_p0_contract import (
+    validate_config as validate_p0_config,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,8 +36,81 @@ def test_boundary_burst_p0_candidates_change_only_the_preregistered_geometry() -
     assert r4.model.frame_selector.transition_objective == "boundary_burst"
     assert (r2.model.frame_selector.transition_boundary_radius, r2.model.frame_selector.boundary_burst_quota) == (2, 3.0)
     assert (r4.model.frame_selector.transition_boundary_radius, r4.model.frame_selector.boundary_burst_quota) == (4, 5.0)
+    assert r2.model.frame_selector.boundary_burst_require_bilateral_offsets is True
+    assert r4.model.frame_selector.boundary_burst_require_bilateral_offsets is True
+    assert r2.duca_transition_only_contract.hard_global_burst_support == (
+        "mandatory_group_constrained_exact_k_max_hole"
+    )
+    assert r4.duca_transition_only_contract.hard_global_burst_support == (
+        "mandatory_group_constrained_exact_k_max_hole"
+    )
+    assert r2.duca_transition_only_contract.transition_distribution_updates == (
+        "asformer_last_encoder_layer_only"
+    )
+    assert r4.duca_transition_only_contract.transition_distribution_updates == (
+        "asformer_last_encoder_layer_only"
+    )
+    assert r2.model.frame_selector.auxiliary_hidden_gradient_scale == pytest.approx(0.25)
+    assert r4.model.frame_selector.auxiliary_hidden_gradient_scale == pytest.approx(0.25)
+    assert r2.model.frame_selector.policy_hidden_gradient_scale == pytest.approx(0.05)
+    assert r4.model.frame_selector.policy_hidden_gradient_scale == pytest.approx(0.05)
+    assert (
+        r2.model.frame_selector.actionness_source_cfg.policy_hidden_gradient_scope
+        == "asformer_last_encoder_layer"
+    )
     for key in ("dataset", "optimizer", "scheduler", "solver", "workflow"):
         assert r2[key].to_dict() == r4[key].to_dict()
+
+
+def test_r2q3_hard_and_hidden_adaptation_form_a_matched_two_by_two_ablation() -> None:
+    names = {
+        (False, False): "duca_boundary_burst_soft_detached_frontend_pretrain_fixed384.py",
+        (True, False): "duca_boundary_burst_hard_detached_frontend_pretrain_fixed384.py",
+        (False, True): "duca_boundary_burst_soft_adapted_frontend_pretrain_fixed384.py",
+        (True, True): "duca_boundary_burst_frontend_pretrain_fixed384.py",
+    }
+    configs = {
+        key: Config.fromfile(str(CONFIG_ROOT / name)) for key, name in names.items()
+    }
+    reference = configs[(True, True)]
+    for (hard, adapted), cfg in configs.items():
+        assert validate_p0_config(CONFIG_ROOT / names[(hard, adapted)])["ok"] is True
+        selector = cfg.model.frame_selector
+        assert selector.boundary_burst_require_bilateral_offsets is hard
+        assert (float(selector.auxiliary_hidden_gradient_scale) > 0.0) is adapted
+        assert (float(selector.policy_hidden_gradient_scale) > 0.0) is adapted
+        assert (
+            selector.actionness_source_cfg.policy_hidden_gradient_scope
+            == ("asformer_last_encoder_layer" if adapted else "none")
+        )
+        assert bool(
+            cfg.duca_transition_only_contract.transition_supervision_updates_coarse_representation
+        ) is adapted
+        assert (
+            cfg.duca_transition_only_contract.hard_global_burst_support
+            == (
+                "mandatory_group_constrained_exact_k_max_hole"
+                if hard
+                else "none"
+            )
+        )
+        for key in ("dataset", "optimizer", "scheduler", "solver", "workflow"):
+            assert cfg[key].to_dict() == reference[key].to_dict()
+
+    soft_g0 = Config.fromfile(
+        str(
+            CONFIG_ROOT
+            / "duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py"
+        )
+    )
+    hard_g0 = Config.fromfile(
+        str(CONFIG_ROOT / "duca_boundary_burst_g0_no_feedback_fixed384_official60.py")
+    )
+    assert soft_g0.model.frame_selector.boundary_burst_require_bilateral_offsets is False
+    assert hard_g0.model.frame_selector.boundary_burst_require_bilateral_offsets is True
+    assert soft_g0.model.rpn_head.to_dict() == hard_g0.model.rpn_head.to_dict()
+    for key in ("dataset", "optimizer", "scheduler", "solver", "workflow"):
+        assert soft_g0[key].to_dict() == hard_g0[key].to_dict()
 
 
 def test_boundary_burst_official60_arms_keep_the_same_detector_and_protocol() -> None:
@@ -51,6 +127,8 @@ def test_boundary_burst_official60_arms_keep_the_same_detector_and_protocol() ->
         assert int(selector.budget) == 384
         assert int(selector.max_unselected_hole) == 2
         assert selector.detector_gradient_mode == "none"
+        if selector.get("transition_objective") == "boundary_burst":
+            assert selector.boundary_burst_require_bilateral_offsets is True
         assert cfg.model.rpn_head.to_dict() == detector_head
         assert int(cfg.workflow.expected_successful_optimizer_updates) == 6000
         assert int(cfg.workflow.primary_checkpoint_epoch) == 59
@@ -65,6 +143,7 @@ def test_boundary_burst_official60_arms_keep_the_same_detector_and_protocol() ->
         "duca_two_stage_exact_uniform_fixed384_official60.py",
         "duca_global_curriculum_g0_no_feedback_fixed384_official60.py",
         "duca_boundary_burst_g0_no_feedback_fixed384_official60.py",
+        "duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py",
         "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py",
         "duca_boundary_burst_g1_protected_fixed384_official60.py",
         "duca_boundary_burst_g2_uni_companion_fixed384_official60.py",

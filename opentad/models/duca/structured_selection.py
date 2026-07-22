@@ -1059,9 +1059,32 @@ def _validate_contract(logits: torch.Tensor, k: int, max_hole: int, temperature:
     return k, max_hole, temperature
 
 
-def _hard_viterbi(logits: torch.Tensor, *, k: int, max_hole: int) -> tuple[torch.Tensor, torch.Tensor]:
+def _required_selection_mask(
+    logits: torch.Tensor,
+    required_mask: torch.Tensor | None,
+    *,
+    k: int,
+) -> torch.Tensor:
+    if required_mask is None:
+        return torch.zeros_like(logits, dtype=torch.bool)
+    required = required_mask.to(device=logits.device, dtype=torch.bool)
+    if required.shape != logits.shape:
+        raise ValueError("required_mask must align with policy logits")
+    if bool(torch.any(required.sum(dim=1) > int(k)).item()):
+        raise ValueError("required structured selections exceed exact K")
+    return required
+
+
+def _hard_viterbi(
+    logits: torch.Tensor,
+    *,
+    k: int,
+    max_hole: int,
+    required_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     batch, temporal_len = logits.shape
     work = logits.float()
+    required = _required_selection_mask(logits, required_mask, k=k)
     neg_inf = torch.tensor(float("-inf"), device=work.device, dtype=work.dtype)
     dp = torch.full((batch, k + 1, max_hole + 1), neg_inf, device=work.device, dtype=work.dtype)
     dp[:, 0, 0] = 0.0
@@ -1083,6 +1106,11 @@ def _hard_viterbi(logits: torch.Tensor, *, k: int, max_hole: int) -> tuple[torch
             select_gap_zero = torch.full((batch, 1), neg_inf, device=work.device, dtype=work.dtype)
             back_gap = torch.zeros((batch, 1), device=work.device, dtype=torch.long)
         skipped = dp[:, :, :max_hole] if max_hole > 0 else dp[:, :, :0]
+        if bool(required[:, time_idx].any().item()):
+            skipped = skipped.masked_fill(
+                required[:, time_idx, None, None],
+                neg_inf,
+            )
         dp = torch.cat((select_gap_zero[:, :, None], skipped), dim=2)
         select_prev_gaps.append(back_gap)
 
@@ -1105,6 +1133,8 @@ def _hard_viterbi(logits: torch.Tensor, *, k: int, max_hole: int) -> tuple[torch
             raise RuntimeError("structured Viterbi backtracking did not recover exactly K selections")
     positions = torch.arange(temporal_len, device=logits.device, dtype=torch.long)[None, :]
     positions = positions.expand(batch, -1)[hard.bool()].reshape(batch, k)
+    if not bool(torch.all(hard.bool() | ~required).item()):
+        raise RuntimeError("structured Viterbi omitted a required selection")
     return hard, positions
 
 
@@ -1114,8 +1144,10 @@ def _soft_forward_backward(
     k: int,
     max_hole: int,
     temperature: float,
+    required_mask: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     batch, temporal_len = logits.shape
+    required = _required_selection_mask(logits, required_mask, k=k)
     work = logits.float() / float(temperature)
     work = work - work.detach().amax(dim=1, keepdim=True)
     work = work.clamp(min=-80.0, max=0.0)
@@ -1135,6 +1167,11 @@ def _soft_forward_backward(
         else:
             select_zero = torch.full((batch, 1), neg_inf, device=work.device, dtype=work.dtype)
         skipped = alpha[:, :, :max_hole] if max_hole > 0 else alpha[:, :, :0]
+        if bool(required[:, time_idx].any().item()):
+            skipped = skipped.masked_fill(
+                required[:, time_idx, None, None],
+                neg_inf,
+            )
         alpha = torch.cat((select_zero[:, :, None], skipped), dim=2)
         alphas.append(alpha)
 
@@ -1163,6 +1200,11 @@ def _soft_forward_backward(
             )
         else:
             skip_candidate = torch.full_like(beta, neg_inf)
+        if bool(required[:, time_idx].any().item()):
+            skip_candidate = skip_candidate.masked_fill(
+                required[:, time_idx, None, None],
+                neg_inf,
+            )
         beta = torch.logaddexp(select_candidate, skip_candidate)
         betas.append(beta)
     betas.reverse()
@@ -1278,6 +1320,7 @@ def global_structured_topk(
     *,
     k: int,
     max_unselected_hole: int,
+    required_mask: torch.Tensor | None = None,
     temperature: float = 1.0,
     training: bool = False,
 ) -> StructuredSelectionOutput:
@@ -1289,13 +1332,20 @@ def global_structured_topk(
         max_unselected_hole,
         temperature,
     )
-    hard, positions = _hard_viterbi(policy_logits.detach(), k=k, max_hole=max_hole)
+    required = _required_selection_mask(policy_logits, required_mask, k=k)
+    hard, positions = _hard_viterbi(
+        policy_logits.detach(),
+        k=k,
+        max_hole=max_hole,
+        required_mask=required,
+    )
     if training:
         soft, slots, log_partition = _soft_forward_backward(
             policy_logits,
             k=k,
             max_hole=max_hole,
             temperature=temperature,
+            required_mask=required,
         )
         selection_st = hard + (soft - soft.detach())
     else:

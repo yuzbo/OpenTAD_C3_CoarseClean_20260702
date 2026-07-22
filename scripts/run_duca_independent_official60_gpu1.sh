@@ -23,6 +23,18 @@ case "${VARIANT}" in
     CONFIG="configs/adatad/thumos/duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py"
     ;;
+  boundary_burst_r2q3_soft_detached_g0)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py"
+    P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_detached_frontend_pretrain_fixed384.py"
+    ;;
+  boundary_burst_r2q3_hard_detached_g0)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
+    P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_hard_detached_frontend_pretrain_fixed384.py"
+    ;;
+  boundary_burst_r2q3_soft_adapted_g0)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py"
+    P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_adapted_frontend_pretrain_fixed384.py"
+    ;;
   boundary_burst_r4q5_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py"

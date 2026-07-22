@@ -523,6 +523,7 @@ class DucaOnlineFrameSelector(nn.Module):
         boundary_burst_context_weight: float = 0.05,
         boundary_burst_center_temperature: float = 0.7,
         boundary_burst_offset_temperature: float = 1.0,
+        boundary_burst_require_bilateral_offsets: bool = False,
         boundary_burst_side_min_mass: float = 1.0,
         boundary_burst_anchor_weight: float = 1.0,
         boundary_burst_bilateral_weight: float = 1.0,
@@ -663,6 +664,9 @@ class DucaOnlineFrameSelector(nn.Module):
         self.boundary_burst_context_weight = float(boundary_burst_context_weight)
         self.boundary_burst_center_temperature = float(boundary_burst_center_temperature)
         self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
+        self.boundary_burst_require_bilateral_offsets = bool(
+            boundary_burst_require_bilateral_offsets
+        )
         self.boundary_burst_side_min_mass = float(boundary_burst_side_min_mass)
         self.boundary_burst_anchor_weight = float(boundary_burst_anchor_weight)
         self.boundary_burst_bilateral_weight = float(boundary_burst_bilateral_weight)
@@ -935,6 +939,9 @@ class DucaOnlineFrameSelector(nn.Module):
             boundary_burst_context_weight=self.boundary_burst_context_weight,
             boundary_burst_center_temperature=self.boundary_burst_center_temperature,
             boundary_burst_offset_temperature=self.boundary_burst_offset_temperature,
+            boundary_burst_require_bilateral_offsets=(
+                self.boundary_burst_require_bilateral_offsets
+            ),
             coarse_hidden_dim=self.coarse_hidden_dim if self.use_coarse_hidden_features else 0,
             require_coarse_hidden_features=bool(
                 self.use_coarse_hidden_features

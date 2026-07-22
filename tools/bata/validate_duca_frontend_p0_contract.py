@@ -69,10 +69,45 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         selector.actionness_loss_mode == "class_balanced_mean",
         "actionness must use positive/negative class means",
     )
-    _require(
-        float(selector.auxiliary_hidden_gradient_scale) == 0.0,
-        "transition supervision must not rewrite coarse hidden features",
+    transition_updates_coarse = bool(
+        cfg.duca_transition_only_contract.get(
+            "transition_supervision_updates_coarse_representation", False
+        )
     )
+    auxiliary_hidden_gradient_scale = float(
+        selector.auxiliary_hidden_gradient_scale
+    )
+    policy_hidden_gradient_scale = float(selector.policy_hidden_gradient_scale)
+    if transition_updates_coarse:
+        _require(
+            0.0 < auxiliary_hidden_gradient_scale <= 0.25,
+            "adaptive transition supervision requires a protected scale in (0,0.25]",
+        )
+        _require(
+            0.0 < policy_hidden_gradient_scale <= 0.05,
+            "adaptive boundary coverage requires a protected policy scale in (0,0.05]",
+        )
+        _require(
+            selector.actionness_source_cfg.policy_hidden_gradient_scope
+            == "asformer_last_encoder_layer",
+            "boundary coverage may update only the final ASFormer encoder layer",
+        )
+        _require(
+            cfg.duca_transition_only_contract.get(
+                "transition_distribution_updates"
+            )
+            == "asformer_last_encoder_layer_only",
+            "transition distribution may update only the final ASFormer encoder layer",
+        )
+    else:
+        _require(
+            auxiliary_hidden_gradient_scale == 0.0,
+            "detached transition supervision requires zero coarse-hidden gradient",
+        )
+        _require(
+            policy_hidden_gradient_scale == 0.0,
+            "detached boundary coverage requires zero policy-hidden gradient",
+        )
     _require(
         selector.actionness_source_cfg.spatial_norm == "groupnorm",
         "the spatial stem must use padding-invariant GroupNorm",
@@ -106,6 +141,16 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
             "gt_boundary_validity" in collect["keys"],
             "boundary-burst P0 must collect crop-boundary validity",
         )
+        if bool(selector.get("boundary_burst_require_bilateral_offsets", False)):
+            _require(
+                float(selector.boundary_burst_quota) >= 3.0,
+                "hard bilateral burst support requires quota >= 3",
+            )
+            _require(
+                cfg.duca_transition_only_contract.get("hard_global_burst_support")
+                == "mandatory_group_constrained_exact_k_max_hole",
+                "hard bilateral burst support lacks the mandatory exact-K decoder contract",
+            )
     _require(bool(cfg.optimizer.paramwise), "frontend optimizer must use explicit groups")
     _require("backbone" not in cfg.optimizer, "frontend optimizer leaked a detector backbone group")
     _require(
@@ -141,8 +186,15 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         "active_losses": sorted(ACTIVE_LOSSES),
         "component_lrs": component_lrs,
         "actionness_loss_mode": str(selector.actionness_loss_mode),
-        "auxiliary_hidden_gradient_scale": float(
-            selector.auxiliary_hidden_gradient_scale
+        "auxiliary_hidden_gradient_scale": auxiliary_hidden_gradient_scale,
+        "policy_hidden_gradient_scale": policy_hidden_gradient_scale,
+        "policy_hidden_gradient_scope": str(
+            selector.actionness_source_cfg.get(
+                "policy_hidden_gradient_scope", "none"
+            )
+        ),
+        "transition_supervision_updates_coarse_representation": (
+            transition_updates_coarse
         ),
         "transition_objective": transition_objective,
         "boundary_burst": (
@@ -150,6 +202,16 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
                 "radius": int(selector.transition_boundary_radius),
                 "quota": float(selector.boundary_burst_quota),
                 "budget_fraction": float(selector.boundary_burst_budget_fraction),
+                "hard_bilateral_offsets": bool(
+                    selector.get(
+                        "boundary_burst_require_bilateral_offsets", False
+                    )
+                ),
+                "hard_global_support": str(
+                    cfg.duca_transition_only_contract.get(
+                        "hard_global_burst_support", "none"
+                    )
+                ),
             }
             if transition_objective == "boundary_burst"
             else None

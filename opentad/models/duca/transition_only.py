@@ -383,8 +383,11 @@ def transition_utility_paths(
             ~valid[:, :, None],
             0.0,
         )
-    auxiliary_descriptors = descriptors.detach() + auxiliary_hidden_gradient_scale * (
-        descriptors - descriptors.detach()
+    auxiliary_descriptor_source = (
+        policy_descriptor_source if policy_hidden is not None else descriptors
+    )
+    auxiliary_descriptors = auxiliary_descriptor_source.detach() + auxiliary_hidden_gradient_scale * (
+        auxiliary_descriptor_source - auxiliary_descriptor_source.detach()
     )
     if bool(compute_auxiliary):
         if hasattr(scorer, "forward_with_burst"):
@@ -413,6 +416,9 @@ def transition_utility_paths(
         "policy_scores": policy_scores,
         "policy_hidden_gradient_scale": policy_hidden_gradient_scale,
         "auxiliary_hidden_gradient_scale": auxiliary_hidden_gradient_scale,
+        "auxiliary_hidden_uses_restricted_policy_route": bool(
+            policy_hidden is not None
+        ),
         "hidden_kind": ASFORMER_ENCODER_HIDDEN_KIND,
     }
     if policy_offset_logits is not None:
@@ -476,6 +482,7 @@ def build_boundary_burst_utility(
     context_weight: float = 0.05,
     center_temperature: float = 0.7,
     offset_temperature: float = 1.0,
+    require_bilateral_offsets: bool = False,
 ) -> Dict[str, torch.Tensor]:
     """Spread learned transition centers into saturating bilateral micro-clusters."""
 
@@ -489,6 +496,7 @@ def build_boundary_burst_utility(
     context_weight = float(context_weight)
     center_temperature = float(center_temperature)
     offset_temperature = float(offset_temperature)
+    require_bilateral_offsets = bool(require_bilateral_offsets)
     if radius <= 0:
         raise ValueError("boundary burst radius must be positive")
     if offset_logits.shape != (*center_scores.shape, 2 * radius + 1):
@@ -547,8 +555,121 @@ def build_boundary_burst_utility(
     flat_scores = masked_offset_scores.reshape(-1, masked_offset_scores.shape[-1])
     flat_hard = hard_offset_inclusion.reshape(-1, hard_offset_inclusion.shape[-1])
     flat_quota = effective_quota.reshape(-1)
+    flat_valid = offset_valid.reshape(-1, offset_valid.shape[-1])
+    flat_soft = soft_offset_inclusion.reshape(-1, soft_offset_inclusion.shape[-1])
+    bilateral_feasible = torch.zeros_like(effective_quota, dtype=torch.bool)
+    if require_bilateral_offsets:
+        center_index = radius
+        left_indices = torch.arange(radius, device=offsets.device)
+        right_indices = torch.arange(radius + 1, 2 * radius + 1, device=offsets.device)
+        flat_center_feasible = (flat_quota >= 1) & flat_valid[:, center_index]
+        flat_feasible = (
+            (flat_quota >= 3)
+            & flat_center_feasible
+            & flat_valid[:, :radius].any(dim=-1)
+            & flat_valid[:, radius + 1 :].any(dim=-1)
+        )
+        bilateral_feasible = flat_feasible.reshape_as(effective_quota)
+        center_rows = torch.nonzero(flat_center_feasible, as_tuple=False).flatten()
+        flat_hard[center_rows, center_index] = 1.0
+        feasible_rows = torch.nonzero(flat_feasible, as_tuple=False).flatten()
+        if feasible_rows.numel() > 0:
+            left_scores = flat_scores[feasible_rows][:, :radius]
+            right_scores = flat_scores[feasible_rows][:, radius + 1 :]
+            best_left = left_indices[left_scores.argmax(dim=-1)]
+            best_right = right_indices[right_scores.argmax(dim=-1)]
+            flat_hard[feasible_rows, center_index] = 1.0
+            flat_hard[feasible_rows, best_left] = 1.0
+            flat_hard[feasible_rows, best_right] = 1.0
+
+            left_probabilities = F.softmax(left_scores, dim=-1).masked_fill(
+                ~flat_valid[feasible_rows, :radius], 0.0
+            )
+            right_probabilities = F.softmax(right_scores, dim=-1).masked_fill(
+                ~flat_valid[feasible_rows, radius + 1 :], 0.0
+            )
+            left_probabilities = left_probabilities / (
+                left_probabilities.sum(dim=-1, keepdim=True).clamp_min(1.0e-8)
+            )
+            right_probabilities = right_probabilities / (
+                right_probabilities.sum(dim=-1, keepdim=True).clamp_min(1.0e-8)
+            )
+            flat_soft[feasible_rows] = 0.0
+            flat_soft[feasible_rows, center_index] = 1.0
+            flat_soft[feasible_rows[:, None], left_indices[None, :]] = left_probabilities
+            flat_soft[feasible_rows[:, None], right_indices[None, :]] = right_probabilities
+
+            remaining_quota = flat_quota[feasible_rows] - 3
+            remaining_scores = flat_scores[feasible_rows].clone()
+            forced = flat_hard[feasible_rows].bool()
+            remaining_scores = remaining_scores.masked_fill(forced, -1.0e4)
+            remaining_scores = remaining_scores.masked_fill(
+                ~flat_valid[feasible_rows], -1.0e4
+            )
+            remaining_probabilities = F.softmax(remaining_scores, dim=-1).masked_fill(
+                forced | ~flat_valid[feasible_rows], 0.0
+            )
+            remaining_probabilities = remaining_probabilities / (
+                remaining_probabilities.sum(dim=-1, keepdim=True).clamp_min(1.0e-8)
+            )
+            flat_soft[feasible_rows] += (
+                remaining_probabilities
+                * remaining_quota[:, None].to(remaining_probabilities.dtype)
+            )
+
+            for remaining_count in range(1, max(quota_int - 2, 1)):
+                rows = torch.nonzero(
+                    remaining_quota == remaining_count, as_tuple=False
+                ).flatten()
+                if rows.numel() == 0:
+                    continue
+                selected = torch.topk(
+                    remaining_scores[rows],
+                    k=remaining_count,
+                    dim=-1,
+                    sorted=False,
+                ).indices
+                selected_rows = feasible_rows[rows]
+                flat_hard[selected_rows[:, None], selected] = 1.0
+
+        one_sided_rows = torch.nonzero(
+            flat_center_feasible & ~flat_feasible, as_tuple=False
+        ).flatten()
+        for row_quota in range(1, quota_int + 1):
+            rows = one_sided_rows[flat_quota[one_sided_rows] == row_quota]
+            if rows.numel() == 0:
+                continue
+            flat_soft[rows] = 0.0
+            flat_soft[rows, center_index] = 1.0
+            if row_quota == 1:
+                continue
+            remaining_scores = flat_scores[rows].clone()
+            remaining_scores[:, center_index] = -1.0e4
+            remaining_scores = remaining_scores.masked_fill(
+                ~flat_valid[rows], -1.0e4
+            )
+            probabilities = F.softmax(remaining_scores, dim=-1).masked_fill(
+                ~flat_valid[rows], 0.0
+            )
+            probabilities[:, center_index] = 0.0
+            probabilities = probabilities / (
+                probabilities.sum(dim=-1, keepdim=True).clamp_min(1.0e-8)
+            )
+            flat_soft[rows] += probabilities * float(row_quota - 1)
+            selected = torch.topk(
+                remaining_scores,
+                k=row_quota - 1,
+                dim=-1,
+                sorted=False,
+            ).indices
+            flat_hard[rows[:, None], selected] = 1.0
+
+        fallback_rows = torch.nonzero(~flat_center_feasible, as_tuple=False).flatten()
+    else:
+        fallback_rows = torch.arange(flat_quota.numel(), device=flat_quota.device)
+
     for row_quota in range(1, quota_int + 1):
-        rows = torch.nonzero(flat_quota == row_quota, as_tuple=False).flatten()
+        rows = fallback_rows[flat_quota[fallback_rows] == row_quota]
         if rows.numel() == 0:
             continue
         indices = torch.topk(
@@ -559,6 +680,15 @@ def build_boundary_burst_utility(
         ).indices
         flat_hard[rows[:, None], indices] = 1.0
     hard_offset_inclusion = flat_hard.reshape_as(hard_offset_inclusion)
+    soft_offset_inclusion = flat_soft.reshape_as(soft_offset_inclusion)
+    left_selected = hard_offset_inclusion[:, :, :radius].bool().any(dim=-1)
+    right_selected = hard_offset_inclusion[:, :, radius + 1 :].bool().any(dim=-1)
+    center_selected = hard_offset_inclusion[:, :, radius].bool()
+    bilateral_satisfied = center_selected & left_selected & right_selected
+    if require_bilateral_offsets and not bool(
+        bilateral_satisfied[bilateral_feasible].all().item()
+    ):
+        raise RuntimeError("bilateral boundary-burst offset construction failed")
     offset_inclusion = (
         hard_offset_inclusion.detach()
         + soft_offset_inclusion
@@ -596,7 +726,134 @@ def build_boundary_burst_utility(
         "offset_probabilities": offset_probabilities.to(center_scores.dtype),
         "offset_inclusion": offset_inclusion.to(center_scores.dtype),
         "effective_offset_quota": effective_quota,
+        "bilateral_offset_feasible": bilateral_feasible,
+        "bilateral_offset_satisfied": bilateral_satisfied,
         "context_reference": context_reference.to(center_scores.dtype),
+    }
+
+
+def build_mandatory_bilateral_set(
+    center_scores: torch.Tensor,
+    offset_inclusion: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    radius: int,
+    quota: int,
+    max_mandatory: int,
+) -> Dict[str, torch.Tensor]:
+    """Build a detached, group-preserving hard burst set for exact-K decoding."""
+
+    if center_scores.ndim != 2 or not center_scores.is_floating_point():
+        raise ValueError("center_scores must be a floating-point [B,T] tensor")
+    radius = int(radius)
+    quota = int(quota)
+    max_mandatory = int(max_mandatory)
+    if radius <= 0 or quota < 3 or quota > 2 * radius + 1:
+        raise ValueError("mandatory bilateral radius/quota are invalid")
+    if max_mandatory < 0:
+        raise ValueError("max_mandatory must be non-negative")
+    if offset_inclusion.shape != (*center_scores.shape, 2 * radius + 1):
+        raise ValueError("offset_inclusion must be [B,T,2*radius+1]")
+    valid = valid_mask.to(device=center_scores.device, dtype=torch.bool)
+    if valid.shape != center_scores.shape:
+        raise ValueError("valid_mask must align with center_scores")
+
+    batch, temporal_len = center_scores.shape
+    mandatory = torch.zeros_like(valid)
+    retained_centers = torch.zeros_like(valid)
+    retained_group_count = torch.zeros(
+        (batch,), device=center_scores.device, dtype=torch.long
+    )
+    target_groups = max_mandatory // quota
+    if target_groups <= 0:
+        return {
+            "mandatory_mask": mandatory,
+            "retained_center_mask": retained_centers,
+            "retained_group_count": retained_group_count,
+            "mandatory_count": mandatory.sum(dim=1),
+        }
+
+    hard_offsets = offset_inclusion.detach() > 0.5
+    detached_scores = center_scores.detach().float().masked_fill(
+        ~valid, float("-inf")
+    )
+    for batch_idx in range(batch):
+        ranked = torch.argsort(
+            detached_scores[batch_idx], descending=True, stable=True
+        )
+        chosen_centers: list[int] = []
+        current = torch.zeros((temporal_len,), device=center_scores.device, dtype=torch.bool)
+        for candidate_tensor in ranked:
+            candidate = int(candidate_tensor.item())
+            if not bool(valid[batch_idx, candidate].item()):
+                continue
+            if any(abs(candidate - previous) <= radius for previous in chosen_centers):
+                continue
+            offset_indices = torch.nonzero(
+                hard_offsets[batch_idx, candidate], as_tuple=False
+            ).flatten()
+            targets = candidate + offset_indices - radius
+            legal = (
+                (targets >= 0)
+                & (targets < temporal_len)
+                & valid[batch_idx, targets.clamp(0, temporal_len - 1)]
+            )
+            targets = targets[legal]
+            group = torch.zeros_like(current)
+            if targets.numel() > 0:
+                group[targets] = True
+            left = group[:candidate].any()
+            right = group[candidate + 1 :].any()
+            center = group[candidate]
+            left_valid = valid[
+                batch_idx, max(0, candidate - radius) : candidate
+            ].any()
+            right_valid = valid[
+                batch_idx,
+                candidate + 1 : min(temporal_len, candidate + radius + 1),
+            ].any()
+            bilateral_feasible = bool(left_valid.item() and right_valid.item())
+            expected_group_size = min(
+                quota,
+                int(
+                    valid[
+                        batch_idx,
+                        max(0, candidate - radius) : min(
+                            temporal_len, candidate + radius + 1
+                        ),
+                    ].sum().item()
+                ),
+            )
+            if int(group.sum().item()) != expected_group_size:
+                raise RuntimeError(
+                    "mandatory burst group does not preserve its feasible quota"
+                )
+            if not bool(center.item()) or (
+                bilateral_feasible
+                and (not bool(left.item()) or not bool(right.item()))
+            ):
+                raise RuntimeError(
+                    "mandatory burst group lacks its center or feasible bilateral support"
+                )
+            proposed = current | group
+            if int(proposed.sum().item()) > max_mandatory:
+                continue
+            current = proposed
+            chosen_centers.append(candidate)
+            if len(chosen_centers) >= target_groups:
+                break
+        mandatory[batch_idx] = current
+        if chosen_centers:
+            retained_centers[batch_idx, chosen_centers] = True
+        retained_group_count[batch_idx] = len(chosen_centers)
+
+    if bool(torch.any(mandatory.sum(dim=1) > max_mandatory).item()):
+        raise RuntimeError("mandatory bilateral union exceeds its reserved budget")
+    return {
+        "mandatory_mask": mandatory,
+        "retained_center_mask": retained_centers,
+        "retained_group_count": retained_group_count,
+        "mandatory_count": mandatory.sum(dim=1),
     }
 
 

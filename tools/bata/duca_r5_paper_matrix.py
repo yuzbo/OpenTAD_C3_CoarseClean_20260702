@@ -8,12 +8,19 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from tools.bata.duca_p0_evaluation import canonical_sha256
+from tools.bata.duca_trained_checkpoint_binding import (
+    load_trained_checkpoint_binding,
+)
+
 
 SEEDS = (3407, 5801, 8123)
 BUDGETS = (384, 256)
 MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
 ARMS = ("uniform", "learned")
 BACKENDS = ("actionformer", "temporalmaxer")
+EXPECTED_DENSE_TRAINED_COMMIT = "b3de5d8fac23d67cd9cae9c8c08bb60ba217f64f"
+DENSE_RECEIPT_SCHEMA = "duca_r5_dense_baseline_receipt_v1"
 
 LEARNED_VARIANTS = {
     "duca_boundary_burst_g1_protected_fixed384_official60.py": (
@@ -35,6 +42,61 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _build_dense_baseline_receipt(
+    *,
+    config: Path,
+    checkpoint: Path,
+    checkpoint_evidence: Path,
+    trained_commit: str,
+) -> dict[str, Any]:
+    if trained_commit != EXPECTED_DENSE_TRAINED_COMMIT:
+        raise ValueError(
+            "dense trained commit must be the frozen historical commit "
+            f"{EXPECTED_DENSE_TRAINED_COMMIT}"
+        )
+    evidence_payload = json.loads(checkpoint_evidence.read_text(encoding="utf-8"))
+    if not isinstance(evidence_payload, dict):
+        raise ValueError("dense checkpoint evidence must be a JSON object")
+    binding = load_trained_checkpoint_binding(
+        checkpoint_evidence,
+        _sha256_file(checkpoint_evidence),
+        expected_role="dense_adatad_baseline",
+        expected_commit=trained_commit,
+        expected_config_path=config,
+        expected_config_sha256=_sha256_file(config),
+        expected_resolved_config_sha256=str(
+            evidence_payload.get("resolved_config_sha256", "")
+        ),
+        expected_checkpoint_path=checkpoint,
+    )
+    if (
+        binding.get("checkpoint_epoch") != 59
+        or binding.get("checkpoint_state_key") != "state_dict_ema"
+    ):
+        raise ValueError("dense baseline receipt must bind terminal epoch-59 EMA")
+    receipt = {
+        "schema": DENSE_RECEIPT_SCHEMA,
+        "task": "offline_temporal_action_detection",
+        "role": "dense_adatad_baseline",
+        "trained_commit": trained_commit,
+        "config_path": binding["config_path"],
+        "config_sha256": binding["config_sha256"],
+        "resolved_config_sha256": binding["resolved_config_sha256"],
+        "checkpoint_path": binding["checkpoint_path"],
+        "checkpoint_sha256": binding["checkpoint_sha256"],
+        "checkpoint_epoch": binding["checkpoint_epoch"],
+        "checkpoint_state_key": binding["checkpoint_state_key"],
+        "checkpoint_evidence_path": binding["path"],
+        "checkpoint_evidence_sha256": binding["sha256"],
+        "training_evidence_path": binding["training_evidence_path"],
+        "training_evidence_sha256": binding["training_evidence_sha256"],
+        "evaluation_evidence_path": binding["evaluation_evidence_path"],
+        "evaluation_evidence_sha256": binding["evaluation_evidence_sha256"],
+    }
+    receipt["receipt_sha256"] = canonical_sha256(receipt)
+    return receipt
 
 
 def _write(path: Path, text: str, *, executable: bool = False) -> None:
@@ -398,6 +460,7 @@ mkdir -p {shlex.quote(_python_path(output_dir / "results"))}
 def render_cost_sbatch(
     *,
     cell: dict[str, Any],
+    dense: dict[str, Any],
     output_dir: Path,
     cluster: str,
     learned_variant: str,
@@ -407,6 +470,8 @@ def render_cost_sbatch(
     config = Path(str(cell["config"]))
     checkpoint = output_dir / "runs" / cell_id / "gpu1_id0/checkpoint/epoch_59.pth"
     prefix = output_dir / "cost" / cell_id
+    dense_prefix = output_dir / "cost" / f"{cell_id}.paired_dense"
+    pair_id = f"r5-{cell_id}-repeat-1"
     frontend_guard = ""
     if cell["arm"] == "learned":
         frontend_guard = _learned_runtime_binding(
@@ -422,36 +487,16 @@ def render_cost_sbatch(
         )
         + _r5_evidence_guard(output_dir=output_dir)
         + frontend_guard
-        + f'''export DUCA_SELECTED_OPT_VARIANT={shlex.quote(cell_id)}
+        + f'''[[ -f {shlex.quote(str(dense["config"]))} ]]
+[[ -f {shlex.quote(str(dense["checkpoint"]))} ]]
+[[ -f {shlex.quote(str(dense["checkpoint_evidence"]))} ]]
 [[ -f {shlex.quote(_python_path(checkpoint))} ]]
 mkdir -p {shlex.quote(_python_path(output_dir / "cost"))}
 export PRECHECK_ONLY=0
-export CONFIG={shlex.quote(_python_path(config))}
-export PROFILE_CHECKPOINT={shlex.quote(_python_path(checkpoint))}
-export PROFILE_METHOD={shlex.quote(cell_id)}
-export OUTPUT_PREFIX={shlex.quote(_python_path(prefix))}
-export PROFILE_SAMPLES=30 PROFILE_WARMUP_SAMPLES=5 PROFILE_BATCH_SIZE=1
-bash scripts/run_duca_full_stack_cost_profile_gpu1.sh
-[[ -s {shlex.quote(_python_path(prefix.with_suffix(".summary.json")))} ]]
-[[ -s {shlex.quote(_python_path(prefix.with_suffix(".samples.jsonl")))} ]]
-'''
-    )
-
-
-def render_dense_cost_sbatch(
-    *, dense: dict[str, Any], output_dir: Path, cluster: str
-) -> str:
-    prefix = output_dir / "cost" / "dense_adatad_k768"
-    return _job_header(
-        name="r5-cost-dense768",
-        output_dir=output_dir,
-        cluster=cluster,
-        walltime="08:00:00",
-    ) + f'''[[ -f {shlex.quote(str(dense["config"]))} ]]
-[[ -f {shlex.quote(str(dense["checkpoint"]))} ]]
-[[ -f {shlex.quote(str(dense["checkpoint_evidence"]))} ]]
-mkdir -p {shlex.quote(_python_path(output_dir / "cost"))}
-export PRECHECK_ONLY=0
+export PROFILE_SESSION_ID="${{SLURM_JOB_ID}}"
+export PROFILE_PAIR_ID={shlex.quote(pair_id)}
+export PROFILE_REPEAT_INDEX=1
+export PROFILE_ORDER_POSITION=1
 export CONFIG={shlex.quote(str(dense["config"]))}
 export PROFILE_CHECKPOINT={shlex.quote(str(dense["checkpoint"]))}
 export PROFILE_METHOD=dense-adatad
@@ -459,16 +504,30 @@ export PROFILE_TRAINED_COMMIT={shlex.quote(str(dense["trained_commit"]))}
 export PROFILE_EVIDENCE_COMMIT="${{DUCA_EXPECTED_COMMIT}}"
 export PROFILE_CHECKPOINT_EVIDENCE={shlex.quote(str(dense["checkpoint_evidence"]))}
 export PROFILE_CHECKPOINT_EVIDENCE_SHA256={shlex.quote(str(dense["checkpoint_evidence_sha256"]))}
-export PROFILE_SESSION_ID=r5-paper-matrix
-export PROFILE_PAIR_ID=dense-reference
+export OUTPUT_PREFIX={shlex.quote(_python_path(dense_prefix))}
+export PROFILE_SAMPLES=30 PROFILE_WARMUP_SAMPLES=5 PROFILE_BATCH_SIZE=1
+bash scripts/run_duca_full_stack_cost_profile_gpu1.sh
+[[ -s {shlex.quote(_python_path(dense_prefix.with_suffix(".summary.json")))} ]]
+[[ -s {shlex.quote(_python_path(dense_prefix.with_suffix(".samples.jsonl")))} ]]
+
+unset PROFILE_CHECKPOINT_EVIDENCE PROFILE_CHECKPOINT_EVIDENCE_SHA256
+export DUCA_SELECTED_OPT_VARIANT={shlex.quote(cell_id)}
+export CONFIG={shlex.quote(_python_path(config))}
+export PROFILE_CHECKPOINT={shlex.quote(_python_path(checkpoint))}
+export PROFILE_METHOD={shlex.quote(cell_id)}
+export PROFILE_TRAINED_COMMIT="${{DUCA_EXPECTED_COMMIT}}"
+unset PROFILE_EVIDENCE_COMMIT
+export PROFILE_SESSION_ID="${{SLURM_JOB_ID}}"
+export PROFILE_PAIR_ID={shlex.quote(pair_id)}
 export PROFILE_REPEAT_INDEX=1
-export PROFILE_ORDER_POSITION=1
+export PROFILE_ORDER_POSITION=2
 export OUTPUT_PREFIX={shlex.quote(_python_path(prefix))}
 export PROFILE_SAMPLES=30 PROFILE_WARMUP_SAMPLES=5 PROFILE_BATCH_SIZE=1
 bash scripts/run_duca_full_stack_cost_profile_gpu1.sh
 [[ -s {shlex.quote(_python_path(prefix.with_suffix(".summary.json")))} ]]
 [[ -s {shlex.quote(_python_path(prefix.with_suffix(".samples.jsonl")))} ]]
 '''
+    )
 
 
 def render_aggregate_sbatch(*, output_dir: Path, cluster: str) -> str:
@@ -573,10 +632,17 @@ def generate_matrix(
     ):
         if not path.is_file():
             raise FileNotFoundError(f"{label} is missing: {path}")
-    if len(dense_trained_commit) != 40 or any(
-        char not in "0123456789abcdef" for char in dense_trained_commit
-    ):
-        raise ValueError("dense trained commit must be an exact lowercase SHA")
+    if dense_trained_commit != EXPECTED_DENSE_TRAINED_COMMIT:
+        raise ValueError(
+            "dense trained commit must be the frozen historical commit "
+            f"{EXPECTED_DENSE_TRAINED_COMMIT}"
+        )
+    dense_receipt = _build_dense_baseline_receipt(
+        config=dense_config_path,
+        checkpoint=dense_checkpoint_path,
+        checkpoint_evidence=dense_evidence_path,
+        trained_commit=dense_trained_commit,
+    )
     dense = {
         "config": str(dense_config_path),
         "config_sha256": _sha256_file(dense_config_path),
@@ -585,6 +651,8 @@ def generate_matrix(
         "checkpoint_evidence": str(dense_evidence_path),
         "checkpoint_evidence_sha256": _sha256_file(dense_evidence_path),
         "trained_commit": dense_trained_commit,
+        "receipt": dense_receipt,
+        "receipt_sha256": dense_receipt["receipt_sha256"],
     }
     (output / "logs").mkdir(parents=True, exist_ok=True)
     cells: list[dict[str, Any]] = []
@@ -634,6 +702,12 @@ def generate_matrix(
                             "config_sha256": hashlib.sha256(
                                 config.read_bytes()
                             ).hexdigest(),
+                            "prediction_path": str(
+                                output
+                                / "results"
+                                / f"{cell_id}_eval"
+                                / "gpu1_id0/result_detection.json"
+                            ),
                             "sbatch": str(job),
                             "sbatch_sha256": hashlib.sha256(
                                 job.read_bytes()
@@ -677,6 +751,7 @@ def generate_matrix(
             job,
             render_cost_sbatch(
                 cell=cell,
+                dense=dense,
                 output_dir=output,
                 cluster=cluster,
                 learned_variant=learned_variant,
@@ -691,25 +766,11 @@ def generate_matrix(
                 "source_cell": cell["id"],
                 "sbatch": str(job),
                 "summary": str(output / "cost" / f"{cell['id']}.summary.json"),
+                "paired_dense_summary": str(
+                    output / "cost" / f"{cell['id']}.paired_dense.summary.json"
+                ),
             }
         )
-    dense_cost_id = "cost_dense_adatad_k768"
-    dense_cost_job = output / "jobs" / f"{dense_cost_id}.sbatch"
-    _write(
-        dense_cost_job,
-        render_dense_cost_sbatch(dense=dense, output_dir=output, cluster=cluster),
-        executable=True,
-    )
-    costs.append(
-        {
-            "id": dense_cost_id,
-            "kind": "dense_baseline",
-            "source_cell": "temporalmaxer_one_step",
-            "sbatch": str(dense_cost_job),
-            "summary": str(output / "cost" / "dense_adatad_k768.summary.json"),
-            **dense,
-        }
-    )
     cost_columns = ("id", "kind", "source_cell", "sbatch", "summary")
     cost_lines = ["\t".join(cost_columns)]
     cost_lines.extend(

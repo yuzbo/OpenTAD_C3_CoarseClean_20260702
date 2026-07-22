@@ -17,6 +17,7 @@ from opentad.models.duca.transition_only import (
     balanced_binary_actionness_loss,
     boundary_burst_coverage_loss,
     build_boundary_burst_utility,
+    build_mandatory_bilateral_set,
     build_transition_descriptors,
     calibrated_actionness_probability,
     continuous_policy_logits,
@@ -193,6 +194,53 @@ def test_p0_auxiliary_transition_supervision_does_not_rewrite_coarse_hidden() ->
     assert _grad_sum(hidden) == pytest.approx(0.0)
     assert _grad_sum(logits) == pytest.approx(0.0)
     assert sum(float(p.grad.abs().sum()) for p in scorer.parameters() if p.grad is not None) > 0.0
+
+
+def test_p0_adaptive_transition_supervision_updates_hidden_but_not_action_logits() -> None:
+    torch.manual_seed(17)
+    logits = torch.randn(1, 7, requires_grad=True)
+    hidden = torch.randn(1, 7, 4, requires_grad=True)
+    valid = torch.ones(1, 7, dtype=torch.bool)
+    scorer = DucaTransitionUtilityScorer(hidden_dim=4, scorer_hidden_dim=8)
+
+    paths = transition_utility_paths(
+        scorer,
+        logits,
+        hidden,
+        valid,
+        auxiliary_hidden_gradient_scale=0.25,
+    )
+    paths["auxiliary_scores"].square().mean().backward()
+
+    assert paths["auxiliary_hidden_gradient_scale"] == pytest.approx(0.25)
+    assert _grad_sum(hidden) > 0.0
+    assert _grad_sum(logits) == pytest.approx(0.0)
+    assert sum(float(p.grad.abs().sum()) for p in scorer.parameters() if p.grad is not None) > 0.0
+
+
+def test_p0_adaptive_transition_supervision_uses_only_restricted_hidden_route() -> None:
+    torch.manual_seed(19)
+    logits = torch.randn(1, 7, requires_grad=True)
+    hidden = torch.randn(1, 7, 4, requires_grad=True)
+    restricted_hidden = hidden.detach().clone().requires_grad_(True)
+    valid = torch.ones(1, 7, dtype=torch.bool)
+    scorer = DucaTransitionUtilityScorer(hidden_dim=4, scorer_hidden_dim=8)
+
+    paths = transition_utility_paths(
+        scorer,
+        logits,
+        hidden,
+        valid,
+        policy_hidden=restricted_hidden,
+        policy_hidden_gradient_scale=0.05,
+        auxiliary_hidden_gradient_scale=0.25,
+    )
+    paths["auxiliary_scores"].square().mean().backward()
+
+    assert paths["auxiliary_hidden_uses_restricted_policy_route"] is True
+    assert _grad_sum(hidden) == pytest.approx(0.0)
+    assert _grad_sum(restricted_hidden) > 0.0
+    assert _grad_sum(logits) == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("scale", [-0.1, 1.1, float("nan")])
@@ -437,6 +485,124 @@ def test_boundary_burst_quota_limits_each_predicted_center_support() -> None:
     assert inclusion.sum().item() == 3.0
     output["burst_utility"].sum().backward()
     assert offsets.grad is not None and torch.isfinite(offsets.grad).all()
+
+
+def test_boundary_burst_hard_support_is_bilateral_when_offset_logits_are_one_sided() -> None:
+    center = torch.full((1, 11), -20.0)
+    center[0, 5] = 20.0
+    offsets = torch.full((1, 11, 5), -10.0, requires_grad=True)
+    with torch.no_grad():
+        offsets[0, 5] = torch.tensor([-9.0, -8.0, 0.0, 9.0, 10.0])
+
+    output = build_boundary_burst_utility(
+        center,
+        offsets,
+        torch.ones(1, 11, dtype=torch.bool),
+        k=6,
+        radius=2,
+        quota=3.0,
+        boundary_budget_fraction=0.5,
+        context_weight=0.0,
+        require_bilateral_offsets=True,
+    )
+
+    inclusion = output["offset_inclusion"][0, 5]
+    assert torch.equal(inclusion.detach().bool(), torch.tensor([False, True, True, False, True]))
+    assert bool(output["bilateral_offset_feasible"][0, 5])
+    assert bool(output["bilateral_offset_satisfied"][0, 5])
+    output["burst_utility"].sum().backward()
+    assert offsets.grad is not None and torch.isfinite(offsets.grad).all()
+    assert float(offsets.grad.abs().sum()) > 0.0
+
+
+def test_boundary_burst_hard_support_falls_back_at_a_temporal_edge() -> None:
+    center = torch.full((1, 7), -20.0)
+    center[0, 0] = 20.0
+    offsets = torch.zeros(1, 7, 5)
+    output = build_boundary_burst_utility(
+        center,
+        offsets,
+        torch.ones(1, 7, dtype=torch.bool),
+        k=4,
+        radius=2,
+        quota=3.0,
+        boundary_budget_fraction=0.5,
+        context_weight=0.0,
+        require_bilateral_offsets=True,
+    )
+
+    assert not bool(output["bilateral_offset_feasible"][0, 0])
+    assert output["offset_inclusion"][0, 0].sum().item() == 3.0
+
+
+def test_mandatory_bilateral_set_survives_exact_k_max_hole_decode() -> None:
+    temporal_len = 24
+    center = torch.full((1, temporal_len), -20.0)
+    center[0, [6, 17]] = torch.tensor([20.0, 19.0])
+    valid = torch.ones_like(center, dtype=torch.bool)
+    burst = build_boundary_burst_utility(
+        center,
+        torch.zeros(1, temporal_len, 5),
+        valid,
+        k=12,
+        radius=2,
+        quota=3.0,
+        boundary_budget_fraction=0.5,
+        context_weight=0.0,
+        require_bilateral_offsets=True,
+    )
+    mandatory = build_mandatory_bilateral_set(
+        center,
+        burst["offset_inclusion"],
+        valid,
+        radius=2,
+        quota=3,
+        max_mandatory=6,
+    )
+    decoded = global_structured_topk(
+        burst["policy_utility"],
+        k=12,
+        max_unselected_hole=2,
+        required_mask=mandatory["mandatory_mask"],
+        training=True,
+    )
+
+    assert decoded.hard_occupancy.sum().item() == 12
+    assert torch.all(
+        decoded.hard_occupancy.bool() | ~mandatory["mandatory_mask"]
+    )
+    assert mandatory["retained_group_count"].item() == 2
+    assert mandatory["mandatory_count"].item() == 6
+    assert torch.all(decoded.soft_occupancy[mandatory["mandatory_mask"]] > 0.999)
+
+
+def test_required_structured_mask_fails_when_exact_k_cannot_contain_it() -> None:
+    logits = torch.zeros(1, 8)
+    required = torch.zeros(1, 8, dtype=torch.bool)
+    required[0, :5] = True
+
+    with pytest.raises(ValueError, match="exceed"):
+        global_structured_topk(
+            logits,
+            k=4,
+            max_unselected_hole=4,
+            required_mask=required,
+        )
+
+
+def test_required_structured_mask_fails_when_mandatory_geometry_breaks_max_hole() -> None:
+    logits = torch.zeros(1, 8)
+    required = torch.zeros(1, 8, dtype=torch.bool)
+    required[0, [0, 7]] = True
+
+    with pytest.raises(RuntimeError, match="terminal state"):
+        global_structured_topk(
+            logits,
+            k=3,
+            max_unselected_hole=2,
+            required_mask=required,
+            training=True,
+        )
 
 
 def test_boundary_burst_saturating_union_stays_bounded_for_overlapping_centers() -> None:
