@@ -25,19 +25,23 @@ def test_submitter_requires_no_preexisting_trainable_duca_artifacts():
     assert '"R0 checkpoint", "AdaTAD pretrain", "THUMOS split"' in text
 
 
-def test_submitter_has_five_dependency_null_bundles_and_only_r5_aggregate_afterok():
+def test_submitter_uses_one_shared_bootstrap_for_r4_and_r5():
     text = _text(SUBMITTER)
     for role in (
         "r0_r1",
         "r2_r3_core",
         "r2_r3_adapted",
+        "shared_bootstrap",
         "r4_r2q3",
         "r5_all",
     ):
         assert role in text
-    assert '"dependency_null_bundle_count": 5' in text
-    assert '"aggregate_is_only_afterok_job": True' in text
-    assert text.count("--dependency=") == 1
+    assert '"dependency_null_bundle_count": 4' in text
+    assert '"shared_trainable_prerequisite_count": 1' in text
+    assert '"duplicate_trainable_bootstrap_count": 0' in text
+    assert '"shared_bootstrap_consumers": ["r4_r2q3", "r5_all"]' in text
+    assert text.count("--dependency=") == 2
+    assert 'shared_dependency="afterok:${job_ids[shared_bootstrap]}"' in text
     assert 'aggregate_dependency="afterok:${job_ids[r5_all]}"' in text
     assert "printf '%s\\t%s\\tnone\\t%s\\t%s\\n'" in text
 
@@ -45,18 +49,21 @@ def test_submitter_has_five_dependency_null_bundles_and_only_r5_aggregate_aftero
 def test_submitter_requests_enough_slurm_gpus_without_overriding_device_ids():
     text = _text(SUBMITTER)
     assert "[r0_r1]=1" in text
-    assert "[r2_r3_core]=3" in text
-    assert "[r2_r3_adapted]=3" in text
+    assert "[r2_r3_core]=2" in text
+    assert "[r2_r3_adapted]=2" in text
+    assert "[shared_bootstrap]=2" in text
     assert "[r4_r2q3]=2" in text
     assert "[r5_all]=4" in text
     assert "#SBATCH --gpus=${gpus}" in text
     assert "CUDA_VISIBLE_DEVICES=" not in text
 
 
-def test_worker_rebuilds_current_commit_bootstrap_inside_r4_and_r5():
+def test_worker_builds_trainable_bootstrap_once_and_consumes_receipt():
     text = _text(WORKER)
     assert "run_current_commit_bootstrap" in text
-    assert text.count("DUCA_PARALLEL_BUNDLE_ROLE=current_commit_bootstrap") == 2
+    assert "shared_bootstrap|current_commit_bootstrap" in text
+    assert text.count("DUCA_PARALLEL_BUNDLE_ROLE=current_commit_bootstrap") == 0
+    assert text.count('local receipt="${DUCA_SHARED_BOOTSTRAP_RECEIPT:') == 2
     assert "run_duca_boundary_burst_r0_holdout_map_gpu1.sh" in text
     assert "run_duca_boundary_burst_p0_gpu1.sh" in text
     assert 'cp -- "${DUCA_FRONTEND_TRAIN_BLOCK_LIST}"' in text
@@ -66,7 +73,7 @@ def test_worker_rebuilds_current_commit_bootstrap_inside_r4_and_r5():
     assert "run_duca_boundary_burst_gate_gpu1.sh" in text
     assert "aggregate_duca_boundary_burst_results" in text
     assert "run_duca_boundary_burst_hard_swap_alignment_gpu1.sh" in text
-    assert "current-commit P0, U/G0, terminal, alignment" in text
+    assert "shared current-commit P0/U/G0/alignment consumed" in text
     assert "resolve_preregistered_route" in text
     assert "DUCA_PREREGISTERED_PROJECTED_FAMILY" in text
     assert 'PREREGISTERED_FAMILY=R2Q3_privileged_boundary_burst' in text
@@ -92,10 +99,10 @@ def test_r2_r3_factorial_arms_keep_p0_gate_official60_inside_each_child():
     assert "boundary_burst_r2q3_soft_detached_g0" in text
     assert "boundary_burst_r2q3_hard_detached_g0" in text
     assert "boundary_burst_r2q3_soft_adapted_g0" in text
-    assert "boundary_burst_r2q3_g0" in text
+    assert 'local variants=(two_stage_exact_uniform "${selected_g0}")' in text
     assert "boundary_burst_r4q5_g0" in text
     assert "run_duca_independent_official60_gpu1.sh" in text
-    assert "each learned arm ran P0, gate and official-60" in text
+    assert "two non-duplicated R2/R3 factorial arms completed" in text
     for config in (
         "duca_boundary_burst_soft_detached_frontend_pretrain_fixed384.py",
         "duca_boundary_burst_hard_detached_frontend_pretrain_fixed384.py",
@@ -103,6 +110,13 @@ def test_r2_r3_factorial_arms_keep_p0_gate_official60_inside_each_child():
         "duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py",
     ):
         assert config in independent
+
+
+def test_parallel_srun_steps_bind_exactly_one_gpu_without_whole_node_capture():
+    text = _text(WORKER)
+    assert "srun --exclusive --nodes=1" not in text
+    assert text.count("srun --exact --exclusive") >= 7
+    assert text.count("--gpus=1 --gpus-per-task=1") >= 7
 
 
 def test_r5_derives_requested_groups_and_same_backend_costs():

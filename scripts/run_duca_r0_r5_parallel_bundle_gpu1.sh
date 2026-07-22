@@ -111,12 +111,9 @@ print(route["preregistered_projected_family"])
 PY
 }
 
-# Produce every trainable prerequisite from the current exact commit. Nothing
-# in this function accepts a frontend decision, gate, terminal suite, alignment,
-# or selector checkpoint from outside this bundle.
-run_current_commit_bootstrap() {
+run_bootstrap_frontend_child() {
   require_one_gpu
-  local root="${BUNDLE_ROOT}"
+  local root="${DUCA_PARALLEL_PARENT_ROOT:?set DUCA_PARALLEL_PARENT_ROOT}"
   local r0_root="${root}/r0_holdout_map"
   run_r0 "${r0_root}"
 
@@ -148,6 +145,46 @@ run_current_commit_bootstrap() {
   seal_file "${gate}"
   local gate_sha
   gate_sha="$(read_seal "${gate}.sha256")"
+  write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
+    "single current-commit R0, P0 decision and full-model gate completed"
+}
+
+run_curriculum_child() {
+  require_one_gpu
+  local variant="${DUCA_PARALLEL_CHILD_VARIANT:?set DUCA_PARALLEL_CHILD_VARIANT}"
+  local run_root="${DUCA_PARALLEL_CHILD_RUN_ROOT:?set DUCA_PARALLEL_CHILD_RUN_ROOT}"
+  run_curriculum_arm "${variant}" "${run_root}"
+}
+
+run_alignment_child() {
+  require_one_gpu
+  local root="${DUCA_PARALLEL_PARENT_ROOT:?set DUCA_PARALLEL_PARENT_ROOT}"
+  export DUCA_BOUNDARY_BURST_ALIGNMENT_ROOT="${root}/r4_alignment"
+  bash scripts/run_duca_boundary_burst_hard_swap_alignment_gpu1.sh
+  write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
+    "current-commit legal hard-swap alignment completed"
+}
+
+# Produce every trainable prerequisite once. R4 and R5 consume the sealed
+# receipt instead of rebuilding R0/P0/U/G0 independently.
+run_current_commit_bootstrap() {
+  local root="${BUNDLE_ROOT}"
+  mkdir -p "${root}/steps" "${root}/official60"
+  srun --exact --exclusive --ntasks=1 --cpus-per-task=4 \
+    --gpus=1 --gpus-per-task=1 \
+    env DUCA_PARALLEL_BUNDLE_ROLE=bootstrap_frontend_child \
+    DUCA_PARALLEL_BUNDLE_ROOT="${root}/steps/frontend" \
+    DUCA_PARALLEL_PARENT_ROOT="${root}" \
+    bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh \
+    > "${root}/frontend.out" 2>&1
+
+  local decision="${root}/frontend_decision.json"
+  local decision_sha gate gate_sha
+  decision_sha="$(read_seal "${root}/frontend_decision.sha256")"
+  gate="${root}/full_model_gate/gate_suite.json"
+  gate_sha="$(read_seal "${gate}.sha256")"
+  export DUCA_FRONTEND_DECISION_JSON="${decision}"
+  export DUCA_FRONTEND_DECISION_SHA256="${decision_sha}"
   export DUCA_SELECTED_OPT_GATE_SUITE="${gate}"
   export DUCA_SELECTED_OPT_GATE_SUITE_SHA256="${gate_sha}"
 
@@ -155,10 +192,26 @@ run_current_commit_bootstrap() {
   [[ "${#route[@]}" == 3 && "${route[2]}" == "${PREREGISTERED_FAMILY}" ]] \
     || fail "current-commit preregistered family routing failed"
   local selected_g0="${route[1]}"
-  run_curriculum_arm two_stage_exact_uniform \
-    "${root}/official60/two_stage_exact_uniform"
-  run_curriculum_arm "${selected_g0}" \
-    "${root}/official60/${selected_g0}"
+  local variants=(two_stage_exact_uniform "${selected_g0}")
+  local pids=()
+  for variant in "${variants[@]}"; do
+    srun --exact --exclusive --ntasks=1 --cpus-per-task=4 \
+      --gpus=1 --gpus-per-task=1 \
+      env DUCA_PARALLEL_BUNDLE_ROLE=curriculum_child \
+      DUCA_PARALLEL_CHILD_VARIANT="${variant}" \
+      DUCA_PARALLEL_CHILD_RUN_ROOT="${root}/official60/${variant}" \
+      DUCA_PARALLEL_BUNDLE_ROOT="${root}/steps/official60_${variant}" \
+      DUCA_FRONTEND_DECISION_JSON="${decision}" \
+      DUCA_FRONTEND_DECISION_SHA256="${decision_sha}" \
+      DUCA_SELECTED_OPT_GATE_SUITE="${gate}" \
+      DUCA_SELECTED_OPT_GATE_SUITE_SHA256="${gate_sha}" \
+      bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh \
+      > "${root}/${variant}.out" 2>&1 &
+    pids+=("$!")
+  done
+  local failed=0
+  for pid in "${pids[@]}"; do wait "${pid}" || failed=1; done
+  [[ "${failed}" == 0 ]] || fail "shared U/G0 official-60 training failed"
 
   local uniform_completion="${root}/official60/two_stage_exact_uniform/run/completion.json"
   local g0_completion="${root}/official60/${selected_g0}/run/completion.json"
@@ -174,14 +227,25 @@ run_current_commit_bootstrap() {
     --output-json "${terminal}"
   seal_file "${terminal}"
 
-  export DUCA_BOUNDARY_BURST_TERMINAL_SUITE="${terminal}"
-  export DUCA_BOUNDARY_BURST_TERMINAL_SUITE_SHA256="$(read_seal "${terminal}.sha256")"
-  export DUCA_BOUNDARY_BURST_ALIGNMENT_ROOT="${root}/r4_alignment"
-  bash scripts/run_duca_boundary_burst_hard_swap_alignment_gpu1.sh
+  local terminal_sha
+  terminal_sha="$(read_seal "${terminal}.sha256")"
+  srun --exact --exclusive --ntasks=1 --cpus-per-task=4 \
+    --gpus=1 --gpus-per-task=1 \
+    env DUCA_PARALLEL_BUNDLE_ROLE=alignment_child \
+    DUCA_PARALLEL_BUNDLE_ROOT="${root}/steps/alignment" \
+    DUCA_PARALLEL_PARENT_ROOT="${root}" \
+    DUCA_FRONTEND_DECISION_JSON="${decision}" \
+    DUCA_FRONTEND_DECISION_SHA256="${decision_sha}" \
+    DUCA_SELECTED_OPT_GATE_SUITE="${gate}" \
+    DUCA_SELECTED_OPT_GATE_SUITE_SHA256="${gate_sha}" \
+    DUCA_BOUNDARY_BURST_TERMINAL_SUITE="${terminal}" \
+    DUCA_BOUNDARY_BURST_TERMINAL_SUITE_SHA256="${terminal_sha}" \
+    bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh \
+    > "${root}/alignment.out" 2>&1
 
   "${PYTHON}" - "${root}/bootstrap_receipt.json" "${EXPECTED_COMMIT}" \
     "${decision}" "${decision_sha}" "${gate}" "${gate_sha}" \
-    "${terminal}" "$(read_seal "${terminal}.sha256")" \
+    "${terminal}" "${terminal_sha}" \
     "${root}/r4_alignment/alignment.json" \
     "$(read_seal "${root}/r4_alignment/alignment.json.sha256")" \
     "${route[0]}" "${selected_g0}" "${route[2]}" <<'PY'
@@ -278,9 +342,8 @@ run_r0_r1() {
     tests/test_duca_transition_only.py \
     tests/test_duca_r5_paper_matrix.py -q \
     2>&1 | tee "${BUNDLE_ROOT}/r1_focused_contracts.out"
-  run_r0 "${BUNDLE_ROOT}/r0_holdout_map"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "R0 frozen-detector mAP diagnostic and R1 focused contracts completed"
+    "R1 focused contracts completed; R0 is produced once by shared_bootstrap"
 }
 
 run_independent_child() {
@@ -295,14 +358,12 @@ run_r2_r3() {
   local variants=()
   if [[ "${ROLE}" == r2_r3_core ]]; then
     variants=(
-      two_stage_exact_uniform
       boundary_burst_r2q3_soft_detached_g0
       boundary_burst_r2q3_hard_detached_g0
     )
   elif [[ "${ROLE}" == r2_r3_adapted ]]; then
     variants=(
       boundary_burst_r2q3_soft_adapted_g0
-      boundary_burst_r2q3_g0
       boundary_burst_r4q5_g0
     )
   else
@@ -310,7 +371,7 @@ run_r2_r3() {
   fi
   local pids=()
   for variant in "${variants[@]}"; do
-    srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
+    srun --exact --exclusive --ntasks=1 --gpus=1 --gpus-per-task=1 --cpus-per-task=4 \
       env DUCA_PARALLEL_BUNDLE_ROLE=r2_r3_child \
       DUCA_PARALLEL_CHILD_VARIANT="${variant}" \
       DUCA_PARALLEL_BUNDLE_ROOT="${BUNDLE_ROOT}/${variant}" \
@@ -322,7 +383,7 @@ run_r2_r3() {
   for pid in "${pids[@]}"; do wait "${pid}" || failed=1; done
   [[ "${failed}" == 0 ]] || fail "at least one R2/R3 arm failed"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "three preregistered R2/R3 arms completed; each learned arm ran P0, gate and official-60"
+    "two non-duplicated R2/R3 factorial arms completed; shared U/G0 live in shared_bootstrap"
 }
 
 run_feedback_child() {
@@ -332,20 +393,15 @@ run_feedback_child() {
 }
 
 run_r4() {
-  local bootstrap_root="${BUNDLE_ROOT}/current_commit_bootstrap"
-  srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
-    env DUCA_PARALLEL_BUNDLE_ROLE=current_commit_bootstrap \
-    DUCA_PARALLEL_BUNDLE_ROOT="${bootstrap_root}" \
-    bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh \
-    > "${BUNDLE_ROOT}/bootstrap.out" 2>&1
-  load_bootstrap_exports "${bootstrap_root}/bootstrap_receipt.json"
+  local receipt="${DUCA_SHARED_BOOTSTRAP_RECEIPT:?set DUCA_SHARED_BOOTSTRAP_RECEIPT}"
+  load_bootstrap_exports "${receipt}"
   [[ "${bootstrap[6]}" == R2Q3_privileged_boundary_burst ]] \
     || fail "formal R4 bundle differs from preregistered R2Q3"
 
   local variants=(boundary_burst_r2q3_g1 boundary_burst_r2q3_g2)
   local pids=()
   for variant in "${variants[@]}"; do
-    srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
+    srun --exact --exclusive --ntasks=1 --gpus=1 --gpus-per-task=1 --cpus-per-task=4 \
       env DUCA_PARALLEL_BUNDLE_ROLE=r4_feedback_child \
       DUCA_PARALLEL_CHILD_VARIANT="${variant}" \
       DUCA_PARALLEL_BUNDLE_ROOT="${BUNDLE_ROOT}/feedback_${variant}" \
@@ -363,7 +419,7 @@ run_r4() {
   for pid in "${pids[@]}"; do wait "${pid}" || failed=1; done
   [[ "${failed}" == 0 ]] || fail "R4 G1/G2 failed"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "current-commit P0, U/G0, terminal, alignment, G1 and G2 completed"
+    "shared current-commit P0/U/G0/alignment consumed; G1 and G2 completed"
 }
 
 run_r5_gate_child() {
@@ -422,17 +478,12 @@ run_r5_group_child() {
 run_r5_all() {
   local matrix_root="${DUCA_R5_MATRIX_ROOT:-}"
   [[ -d "${matrix_root}" ]] || fail "generated R5 matrix root is missing"
-  local bootstrap_root="${BUNDLE_ROOT}/current_commit_bootstrap"
-  srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
-    env DUCA_PARALLEL_BUNDLE_ROLE=current_commit_bootstrap \
-    DUCA_PARALLEL_BUNDLE_ROOT="${bootstrap_root}" \
-    bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh \
-    > "${BUNDLE_ROOT}/bootstrap.out" 2>&1
-  load_bootstrap_exports "${bootstrap_root}/bootstrap_receipt.json"
+  local receipt="${DUCA_SHARED_BOOTSTRAP_RECEIPT:?set DUCA_SHARED_BOOTSTRAP_RECEIPT}"
+  load_bootstrap_exports "${receipt}"
   [[ "${bootstrap[6]}" == R2Q3_privileged_boundary_burst ]] \
     || fail "formal R5 learned source differs from preregistered R2Q3"
 
-  srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
+  srun --exact --exclusive --ntasks=1 --gpus=1 --gpus-per-task=1 --cpus-per-task=4 \
     env DUCA_PARALLEL_BUNDLE_ROLE=r5_gate_child \
     DUCA_PARALLEL_BUNDLE_ROOT="${BUNDLE_ROOT}/mechanism_gate" \
     DUCA_R5_MATRIX_ROOT="${matrix_root}" \
@@ -453,7 +504,7 @@ run_r5_all() {
   for group in "${groups[@]}"; do
     IFS=: read -r backend arm <<<"${group}"
     local group_id="${backend}_${arm}"
-    srun --exclusive --nodes=1 --ntasks=1 --gpus-per-task=1 --cpus-per-task=4 \
+    srun --exact --exclusive --ntasks=1 --gpus=1 --gpus-per-task=1 --cpus-per-task=4 \
       env DUCA_PARALLEL_BUNDLE_ROLE=r5_group_child \
       DUCA_PARALLEL_BUNDLE_ROOT="${BUNDLE_ROOT}/${group_id}" \
       DUCA_PARALLEL_R5_BACKEND="${backend}" \
@@ -478,7 +529,10 @@ case "${ROLE}" in
   r0_r1) run_r0_r1 ;;
   r2_r3_core|r2_r3_adapted) run_r2_r3 ;;
   r2_r3_child) run_independent_child ;;
-  current_commit_bootstrap) run_current_commit_bootstrap ;;
+  shared_bootstrap|current_commit_bootstrap) run_current_commit_bootstrap ;;
+  bootstrap_frontend_child) run_bootstrap_frontend_child ;;
+  curriculum_child) run_curriculum_child ;;
+  alignment_child) run_alignment_child ;;
   r4_r2q3) run_r4 ;;
   r4_feedback_child) run_feedback_child ;;
   r5_all) run_r5_all ;;

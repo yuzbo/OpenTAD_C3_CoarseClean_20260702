@@ -87,11 +87,19 @@ R5_ROOT="${RUN_ROOT}/r5"
   --seeds "${r5_seed_values[@]}" \
   > "${RUN_ROOT}/r5_matrix_generation.out"
 
-bundle_roles=(r0_r1 r2_r3_core r2_r3_adapted r4_r2q3 r5_all)
+bundle_roles=(
+  r0_r1
+  r2_r3_core
+  r2_r3_adapted
+  shared_bootstrap
+  r4_r2q3
+  r5_all
+)
 declare -A bundle_gpus=(
   [r0_r1]=1
-  [r2_r3_core]=3
-  [r2_r3_adapted]=3
+  [r2_r3_core]=2
+  [r2_r3_adapted]=2
+  [shared_bootstrap]=2
   [r4_r2q3]=2
   [r5_all]=4
 )
@@ -140,6 +148,7 @@ export DUCA_R0_CHECKPOINT_SHA256='${R0_CHECKPOINT_SHA256}'
 export DUCA_R0_CHECKPOINT_EPOCH='${R0_CHECKPOINT_EPOCH}'
 export DUCA_R0_BOOTSTRAP_WORKERS=8
 export DUCA_PREREGISTERED_PROJECTED_FAMILY='${PREREGISTERED_FAMILY}'
+export DUCA_SHARED_BOOTSTRAP_RECEIPT='${RUN_ROOT}/bundles/shared_bootstrap/bootstrap_receipt.json'
 bash scripts/run_duca_r0_r5_parallel_bundle_gpu1.sh
 EOF
   bash -n "${file}"
@@ -171,14 +180,15 @@ if len(coverage) != 4 or set(map(len, coverage.values())) != {expected_group}:
 jobs = []
 for role in roles:
     path = Path(run_root).resolve() / "jobs" / f"{role}.sbatch"
+    dependency = "afterok:shared_bootstrap" if role in {"r4_r2q3", "r5_all"} else None
     jobs.append({
         "role": role,
-        "dependency": None,
+        "dependency": dependency,
         "sbatch": str(path),
         "sbatch_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     })
 atomic_write_json(Path(output).resolve(), {
-    "schema": "duca_r0_r5_self_contained_parallel_deployment_v1",
+    "schema": "duca_r0_r5_shared_bootstrap_parallel_deployment_v2",
     "ok": True,
     "task": "offline_temporal_action_detection",
     "git_commit": commit,
@@ -190,8 +200,10 @@ atomic_write_json(Path(output).resolve(), {
     "forbidden_external_trainable_artifacts": [
         "frontend_decision", "gate_suite", "terminal_u_g0_suite", "alignment"
     ],
-    "dependency_null_bundle_count": 5,
-    "aggregate_is_only_afterok_job": True,
+    "dependency_null_bundle_count": 4,
+    "shared_trainable_prerequisite_count": 1,
+    "shared_bootstrap_consumers": ["r4_r2q3", "r5_all"],
+    "duplicate_trainable_bootstrap_count": 0,
     "preregistered_projected_family": "R2Q3_privileged_boundary_burst",
     "family_routing_source": "preregistered_fixed_candidate",
     "r0_role": "detector_seen_training_internal_non_routing_diagnostic",
@@ -218,7 +230,8 @@ fi
 
 printf 'role\tjob_id\tdependency\tgpus\tsbatch\n' > "${RUN_ROOT}/jobs.tsv"
 declare -A job_ids=()
-for role in "${bundle_roles[@]}"; do
+dependency_null_roles=(r0_r1 r2_r3_core r2_r3_adapted shared_bootstrap)
+for role in "${dependency_null_roles[@]}"; do
   sbatch_file="${RUN_ROOT}/jobs/${role}.sbatch"
   raw="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" "${sbatch_file}")"
   job_id="${raw%%;*}"
@@ -226,6 +239,19 @@ for role in "${bundle_roles[@]}"; do
   job_ids["${role}"]="${job_id}"
   printf '%s\t%s\tnone\t%s\t%s\n' "${role}" "${job_id}" \
     "${bundle_gpus[$role]}" "${sbatch_file}" >> "${RUN_ROOT}/jobs.tsv"
+done
+
+shared_dependency="afterok:${job_ids[shared_bootstrap]}"
+for role in r4_r2q3 r5_all; do
+  sbatch_file="${RUN_ROOT}/jobs/${role}.sbatch"
+  raw="$(sbatch --parsable --clusters="${TARGET_CLUSTER}" \
+    --dependency="${shared_dependency}" "${sbatch_file}")"
+  job_id="${raw%%;*}"
+  [[ "${job_id}" =~ ^[1-9][0-9]*$ ]] || fail "invalid job id for ${role}"
+  job_ids["${role}"]="${job_id}"
+  printf '%s\t%s\t%s\t%s\t%s\n' "${role}" "${job_id}" \
+    "${shared_dependency}" "${bundle_gpus[$role]}" "${sbatch_file}" \
+    >> "${RUN_ROOT}/jobs.tsv"
 done
 
 aggregate_dependency="afterok:${job_ids[r5_all]}"
@@ -238,5 +264,5 @@ printf 'aggregate\t%s\t%s\t1\t%s\n' "${aggregate_job}" \
   "${aggregate_dependency}" "${aggregate_sbatch}" >> "${RUN_ROOT}/jobs.tsv"
 sha256sum "${RUN_ROOT}/jobs.tsv" | awk '{print $1}' > "${RUN_ROOT}/jobs.tsv.sha256"
 
-echo "[DUCA_R0_R5_PARALLEL_SUBMIT] submitted five dependency-null bundles plus R5 aggregate"
+echo "[DUCA_R0_R5_PARALLEL_SUBMIT] submitted one shared bootstrap, four independent jobs, two consumers and R5 aggregate"
 cat "${RUN_ROOT}/jobs.tsv"
