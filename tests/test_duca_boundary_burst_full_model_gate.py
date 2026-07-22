@@ -30,5 +30,6 @@ def test_full_model_gate_preserves_and_traces_real_boundary_validity() -> None:
     assert "_record_boundary_validity_consumption" in source
     assert "gt_boundary_validity=batch[\"gt_boundary_validity\"]" in source
     assert "observed is boundary_validity" not in source
-    assert "torch.equal(torch.as_tensor(left), torch.as_tensor(right))" in source
+    assert "torch.as_tensor(left).detach().cpu()" in source
+    assert "torch.as_tensor(right).detach().cpu()" in source
     assert "production train_one_epoch did not consume gt_boundary_validity" in source

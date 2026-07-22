@@ -152,7 +152,10 @@ def _record_boundary_validity_consumption(selector, boundary_validity, evidence)
             isinstance(observed, (list, tuple))
             and len(observed) == len(boundary_validity)
             and all(
-                torch.equal(torch.as_tensor(left), torch.as_tensor(right))
+                torch.equal(
+                    torch.as_tensor(left).detach().cpu(),
+                    torch.as_tensor(right).detach().cpu(),
+                )
                 for left, right in zip(observed, boundary_validity)
             ),
             "selector did not consume the exact gt_boundary_validity values emitted by the real loader",
