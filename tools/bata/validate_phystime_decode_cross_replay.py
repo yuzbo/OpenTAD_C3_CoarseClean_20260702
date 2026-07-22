@@ -640,6 +640,28 @@ def scan_logs(run_dir, run_manifest):
     return findings
 
 
+def validate_producer_numeric_precision(numeric_precision, capture):
+    score_contract = capture["array_contract"]["cls_scores"]
+    expected_score_dtype = score_contract.get("stored_numpy_dtype")
+    require(
+        expected_score_dtype in {"float16", "float32", "float64"},
+        "capture score dtype is unsupported",
+    )
+    require(
+        numeric_precision.get("source_amp_enabled")
+        == capture.get("source_amp_enabled")
+        and numeric_precision.get("source_tensor_dtypes")
+        == capture.get("source_tensor_dtypes")
+        and numeric_precision.get("numeric_semantics_version")
+        == capture.get("numeric_semantics_version")
+        and numeric_precision.get("score_sort_dtype") == expected_score_dtype
+        and numeric_precision.get("score_sort_device") == "cpu"
+        and numeric_precision.get("geometry_compute_dtype") == "float32"
+        and numeric_precision.get("geometry_compute_device") == "cpu",
+        "producer numeric precision provenance mismatch",
+    )
+
+
 def validate_run(run_dir):
     run_dir = Path(run_dir).resolve()
     manifest_path = run_dir / "run_manifest.json"
@@ -787,20 +809,9 @@ def validate_run(run_dir):
         producer.get("same_frozen_raw_tensors_for_both_axes") is True,
         "producer did not bind one shared raw tensor artifact",
     )
-    numeric_precision = producer.get("numeric_precision", {})
-    require(
-        numeric_precision.get("source_amp_enabled")
-        == capture.get("source_amp_enabled")
-        and numeric_precision.get("source_tensor_dtypes")
-        == capture.get("source_tensor_dtypes")
-        and numeric_precision.get("numeric_semantics_version")
-        == capture.get("numeric_semantics_version")
-        and numeric_precision.get("score_sort_dtype")
-        == str(arrays["cls_scores"].dtype)
-        and numeric_precision.get("score_sort_device") == "cpu"
-        and numeric_precision.get("geometry_compute_dtype") == "float32"
-        and numeric_precision.get("geometry_compute_device") == "cpu",
-        "producer numeric precision provenance mismatch",
+    validate_producer_numeric_precision(
+        producer.get("numeric_precision", {}),
+        capture,
     )
 
     mode_metrics = {}

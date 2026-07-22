@@ -92,6 +92,17 @@
 
 # Research Wiki Log
 
+- 2026-07-23: R00 source-score-dtype real CUDA gate `1180587` completed `0:0`
+  with `gate_pass=true`; all four native-direct equivalence checks are exact.
+  The released selected-online/EMA replay producers reached direct/replay exact
+  equality, but both terminal validators failed on an implementation-only
+  `NameError` (`arrays` is out of scope), so no formal completion or mAP is
+  valid. Physical-online submission was rejected by Slurm
+  `AssocMaxSubmitJobLimit`; physical-EMA and suite were never submitted. A
+  minimal validator fix binds `score_sort_dtype` to the existing capture
+  contract and is covered by a focused regression test. The experiment remains
+  `implemented`; R01 and all training changes remain blocked.
+
 - 2026-07-13：第三轮 Max 审查等待期间自查发现 manifest 中的 VideoMAE pretrained checkpoint 与 pilot `epoch_5.pth` 被测试夹具错误合并；已拆分二者并删除错误路径相等约束，completion 仍独立验证 epoch checkpoint 的 EMA/optimizer/scheduler。focused tests 保持 `65 passed`，必须以最新 diff 重新复审。
 - 2026-07-13：独立 Max code review 第二轮发现 assignment 伪计数、optimizer state 覆盖、DataLoader `drop_last`、pilot artifact 传递信任等 4 个 P1，并补充固定参数集合、GPU batch 生命周期和显式 seed 风险。现已按测试先行修复；远端 gate/artifact `65 passed`，PhysTime/shared physical-grid `240 passed`。第三轮复审前禁止部署，状态保持 `tested`。
 

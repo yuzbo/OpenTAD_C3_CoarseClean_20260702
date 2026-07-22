@@ -3,11 +3,11 @@ type: experiment
 node_id: exp:phystime-frozen-decode-cross-replay
 title: "PhysTime frozen dual-axis decode cross replay"
 idea: idea:phystime-tad-2
-status: tested
-verdict: real_gate_failed_on_score_dtype_replay_contract
-confidence: failure_reproduced_by_read_only_forensics
-metrics: "NA; the real gate failed before formal replay/evaluation."
-provenance: "full60 0dc5851/bddc9b9; P0 c2cfcfa/0b78dd4; runtime 06a6734/c11dc39; run phystime_decode_cross_06a6734_20260720_161200_0800_9c608d9ee647451a91ec438c93ecc2f1"
+status: implemented
+verdict: r00_gate_passed_but_formal_replay_validator_failed
+confidence: source_dtype_gate_passed; formal_suite_not_completed
+metrics: "NA; only two selected-axis replay producers completed, then their final validator raised NameError; physical jobs and suite were not submitted after Slurm submit-limit rejection."
+provenance: "full60 0dc5851/bddc9b9; P0 c2cfcfa/0b78dd4; source-dtype runtime 6230082/f7366c6; run phystime_decode_cross_6230082_r00gate_20260723_014500_0800"
 added: 2026-07-20T00:00:00+08:00
 ---
 
