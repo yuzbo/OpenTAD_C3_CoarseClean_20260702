@@ -1,0 +1,52 @@
+{
+  "schema_version": "georoute-architecture-figurespec-v1",
+  "purpose": "Editable source for the paper architecture schematic; render outside the repository.",
+  "canvas": {"width": 1200, "height": 530},
+  "groups": [
+    {
+      "label": "Low-cost global observation",
+      "node_ids": ["source", "scout", "geometry", "residual"],
+      "fill": "#EAF3FF",
+      "stroke": "#4C78A8"
+    },
+    {
+      "label": "Native exact-K spatial route",
+      "node_ids": ["native_grid", "roi_support", "hybrid_select"],
+      "fill": "#EEF7ED",
+      "stroke": "#54A24B"
+    },
+    {
+      "label": "Single heavy detector path",
+      "node_ids": ["packed_videomae", "sparse_adapter", "adatad"],
+      "fill": "#FFF3E8",
+      "stroke": "#F58518"
+    }
+  ],
+  "nodes": [
+    {"id": "source", "label": "Offline source video", "x": 95, "y": 215, "width": 145, "height": 52, "shape": "rounded"},
+    {"id": "scout", "label": "Global scout", "x": 250, "y": 215, "width": 130, "height": 52, "shape": "rounded"},
+    {"id": "geometry", "label": "Continuous geometry\n(cx, cy, w, h)", "x": 420, "y": 145, "width": 158, "height": 62, "shape": "rounded"},
+    {"id": "residual", "label": "Residual token score", "x": 420, "y": 285, "width": 158, "height": 52, "shape": "rounded"},
+    {"id": "native_grid", "label": "Native 2 x 16 x 16\ntubelet lattice", "x": 585, "y": 215, "width": 160, "height": 62, "shape": "rounded"},
+    {"id": "roi_support", "label": "ROI support over\nabsolute patch centres", "x": 755, "y": 145, "width": 170, "height": 62, "shape": "rounded"},
+    {"id": "hybrid_select", "label": "Exact-K: context +\ngeometry + residual", "x": 755, "y": 285, "width": 170, "height": 62, "shape": "rounded"},
+    {"id": "packed_videomae", "label": "Packed VideoMAE\nattention / MLP", "x": 940, "y": 190, "width": 160, "height": 62, "shape": "rounded"},
+    {"id": "sparse_adapter", "label": "Geometry-aware\ntemporal aggregation", "x": 940, "y": 335, "width": 160, "height": 62, "shape": "rounded"},
+    {"id": "adatad", "label": "[B, 384, 768]\nAdaTAD head + detector loss", "x": 1110, "y": 260, "width": 170, "height": 62, "shape": "rounded"}
+  ],
+  "edges": [
+    {"from": "source", "to": "scout", "label": "low-resolution view", "color": "#4C78A8"},
+    {"from": "scout", "to": "geometry", "color": "#4C78A8"},
+    {"from": "scout", "to": "residual", "color": "#4C78A8"},
+    {"from": "source", "to": "native_grid", "label": "no crop resize", "color": "#4C78A8"},
+    {"from": "geometry", "to": "roi_support", "color": "#54A24B"},
+    {"from": "native_grid", "to": "roi_support", "color": "#54A24B"},
+    {"from": "roi_support", "to": "hybrid_select", "color": "#54A24B"},
+    {"from": "residual", "to": "hybrid_select", "color": "#54A24B"},
+    {"from": "hybrid_select", "to": "packed_videomae", "color": "#F58518"},
+    {"from": "packed_videomae", "to": "sparse_adapter", "color": "#F58518"},
+    {"from": "sparse_adapter", "to": "adatad", "color": "#F58518"},
+    {"from": "adatad", "to": "geometry", "label": "score-function or labelled ST feedback", "style": "dashed", "color": "#D62728", "curve": true},
+    {"from": "adatad", "to": "residual", "style": "dashed", "color": "#D62728", "curve": true}
+  ]
+}
