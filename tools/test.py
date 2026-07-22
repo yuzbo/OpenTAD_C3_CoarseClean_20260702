@@ -63,9 +63,10 @@ def main():
     protected_physical_formal = (
         formal_protocol == "duca_protected_physical_v1"
     )
-    selected_axis_formal = (
-        formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL
+    selected_axis_formal = duca_selected_axis_training.is_formal_protocol(
+        formal_protocol
     )
+    r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
         duca_cellcf_training.assert_safe_cfg_options(
@@ -130,14 +131,15 @@ def main():
                 "terminal epoch-59 EMA, and structured metrics"
             )
     if selected_axis_formal:
+        expected_seed = int(cfg.r5_cell.seed) if r5_formal else 3407
         if (
-            args.seed != 3407
+            args.seed != expected_seed
             or args.expected_checkpoint_epoch != 59
             or args.checkpoint_state_key != "state_dict_ema"
             or not args.metrics_json
         ):
             raise RuntimeError(
-                "formal selected-axis evaluation must use seed 3407, "
+                f"formal selected-axis evaluation must use seed {expected_seed}, "
                 "terminal epoch-59 EMA, and structured metrics"
             )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
@@ -242,6 +244,8 @@ def main():
                     selector_initialization=cfg.workflow.get(
                         "selector_initialization", None
                     ),
+                    formal_protocol=formal_protocol,
+                    r5_cell=cfg.get("r5_cell", None),
                 )
             )
         model.load_state_dict(checkpoint[checkpoint_state_key])
@@ -294,6 +298,8 @@ def main():
             evaluation_schema = (
                 "duca_protected_physical_terminal_evaluation_v1"
             )
+        elif r5_formal:
+            evaluation_schema = "duca_r5_terminal_evaluation_v1"
         elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
             evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
         elif r0_selected_axis_replay:
@@ -346,6 +352,8 @@ def main():
                     "training_identity": selected_axis_terminal_identity,
                 }
             )
+            if r5_formal:
+                payload["r5_cell"] = _jsonable(cfg.r5_cell)
         if r0_selected_axis_replay:
             allocation_artifact = os.path.abspath(
                 os.path.expanduser(

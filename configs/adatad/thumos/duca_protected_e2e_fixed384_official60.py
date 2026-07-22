@@ -55,7 +55,10 @@ duca_transition_only_contract = dict(
     acquisition_policy="global_structured_topk",
     hard_soft_feasible_family="shared_exact_k_max_gap_dynamic_program",
     detector_gradient_bridge="protected_structured_transport",
-    detector_gradient_is_direct=True,
+    detector_gradient_is_direct=False,
+    detector_gradient_estimator=(
+        "hard_forward_temporal_slope_surrogate_calibrated_by_signed_hard_swap"
+    ),
     detector_gradient_final_weight=0.25,
     detector_gradient_updates="transition_scorer_only",
     policy_hidden_gradient_scale=0.0,

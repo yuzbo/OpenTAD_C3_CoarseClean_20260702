@@ -11,6 +11,20 @@ from tools.bata.duca_p0_evaluation import evaluation_config_sha256
 
 
 FORMAL_PROTOCOL = "duca_selected_axis_optimization_v1"
+R5_FORMAL_PROTOCOL = "duca_r5_mechanism_matrix_v1"
+FORMAL_PROTOCOLS = frozenset({FORMAL_PROTOCOL, R5_FORMAL_PROTOCOL})
+R5_SEEDS = frozenset({3407, 5801, 8123})
+R5_BUDGETS = frozenset({384, 256})
+R5_BACKENDS = frozenset({"actionformer", "temporalmaxer"})
+R5_ARMS = frozenset({"uniform", "learned"})
+R5_LEARNED_VARIANTS = {
+    "duca_boundary_burst_g1_protected_fixed384_official60.py": (
+        "boundary_burst_r2q3_g1"
+    ),
+    "duca_boundary_burst_r4q5_g1_protected_fixed384_official60.py": (
+        "boundary_burst_r4q5_g1"
+    ),
+}
 BOUNDARY_BURST_GATE_SCHEMA = "duca_boundary_burst_full_model_gate_v1"
 LOCKED_ALIGNMENT_VARIANTS = frozenset(
     {"global_curriculum_g1", "global_curriculum_g2"}
@@ -103,7 +117,8 @@ def build_training_audit(
     uses_ema: bool,
     complete: bool,
 ) -> dict[str, Any]:
-    if str(contract.get("formal_protocol", "")) != FORMAL_PROTOCOL:
+    formal_protocol = str(contract.get("formal_protocol", ""))
+    if formal_protocol not in FORMAL_PROTOCOLS:
         raise RuntimeError("selected-axis training audit protocol is not frozen")
     if str(contract.get("training_profile", "")) != "official60":
         raise RuntimeError("selected-axis training audit profile is not official60")
@@ -121,7 +136,7 @@ def build_training_audit(
         complete=complete,
     )
     payload.pop("audit_sha256", None)
-    payload["formal_protocol"] = FORMAL_PROTOCOL
+    payload["formal_protocol"] = formal_protocol
     payload["training_profile"] = "official60"
     payload["audit_sha256"] = canonical_sha256(payload)
     return payload
@@ -162,7 +177,8 @@ def validate_frozen_pretrain_binding(
 
 def formal_training_contract(cfg) -> dict[str, Any] | None:
     workflow = cfg.workflow
-    if str(workflow.get("formal_protocol", "")) != FORMAL_PROTOCOL:
+    formal_protocol = str(workflow.get("formal_protocol", ""))
+    if formal_protocol not in FORMAL_PROTOCOLS:
         return None
     contract = legacy.formal_training_contract(
         cfg,
@@ -181,14 +197,32 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
     if int(contract["expected_successful_optimizer_updates"]) != 6000:
         raise ValueError("selected-axis official training must use 6000 updates")
     selector = cfg.model.frame_selector
-    if int(selector.budget) != 384 or int(selector.dense_window_size) != 768:
-        raise ValueError("selected-axis official training requires T=768 and K=384")
+    budget = int(selector.budget)
+    if formal_protocol == FORMAL_PROTOCOL:
+        if budget != 384:
+            raise ValueError("selected-axis official training requires K=384")
+    else:
+        cell = cfg.get("r5_cell", None)
+        if not isinstance(cell, Mapping):
+            raise ValueError("R5 formal training requires an r5_cell identity")
+        if (
+            str(cell.get("backend", "")) not in R5_BACKENDS
+            or str(cell.get("arm", "")) not in R5_ARMS
+            or int(cell.get("budget", -1)) not in R5_BUDGETS
+            or int(cell.get("seed", -1)) not in R5_SEEDS
+        ):
+            raise ValueError("R5 cell is outside the frozen paper matrix")
+        if budget != int(cell["budget"]):
+            raise ValueError("R5 selector budget differs from its cell identity")
+        contract["r5_cell"] = dict(cell)
+    if int(selector.dense_window_size) != 768:
+        raise ValueError("selected-axis official training requires T=768")
     if str(selector.detector_output_coordinate_space) != "selected_axis_index":
         raise ValueError("selected-axis detector geometry is not frozen")
     if not bool(selector.remap_gt_to_selected_axis):
         raise ValueError("selected-axis GT remapping is required")
     contract = dict(contract)
-    contract["formal_protocol"] = FORMAL_PROTOCOL
+    contract["formal_protocol"] = formal_protocol
     contract["training_profile"] = "official60"
     return contract
 
@@ -284,6 +318,210 @@ def _load_full_model_gate(
     return payload, str(record["sha256"])
 
 
+def is_formal_protocol(value: Any) -> bool:
+    return str(value) in FORMAL_PROTOCOLS
+
+
+def _require_sha256(value: Any, label: str) -> str:
+    digest = str(value).strip().lower()
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise RuntimeError(f"R5 {label} SHA256 is invalid")
+    return digest
+
+
+def _load_r5_json(
+    *, path_value: Any, digest_value: Any, label: str
+) -> tuple[dict[str, Any], Path, str]:
+    path = Path(str(path_value)).expanduser().resolve()
+    digest = _require_sha256(digest_value, label)
+    if not path.is_file() or sha256_file(path) != digest:
+        raise RuntimeError(f"R5 {label} artifact drift")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"R5 {label} is not a JSON object")
+    return payload, path, digest
+
+
+def _build_r5_runtime_bindings(
+    *,
+    git_commit: str,
+    variant: str,
+    seed: int,
+    slurm_job_id: str | None,
+    source_config_path: str | Path,
+    source_config_sha256: str,
+    resolved_config_sha256: str,
+    runtime_config_sha256: str,
+    evaluation_annotation_path: str | Path,
+    evaluation_class_map_path: str | Path,
+    evaluation_config: Mapping[str, Any],
+    runtime_pretrain_path: str | Path,
+    selector_initialization: Mapping[str, Any] | None,
+    r5_cell: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(r5_cell, Mapping):
+        raise RuntimeError("R5 runtime lacks its frozen cell identity")
+    cell = dict(r5_cell)
+    backend = str(cell.get("backend", ""))
+    arm = str(cell.get("arm", ""))
+    budget = int(cell.get("budget", -1))
+    cell_seed = int(cell.get("seed", -1))
+    cell_id = f"{backend}_{arm}_k{budget}_s{cell_seed}"
+    if (
+        backend not in R5_BACKENDS
+        or arm not in R5_ARMS
+        or budget not in R5_BUDGETS
+        or cell_seed not in R5_SEEDS
+        or int(seed) != cell_seed
+        or variant != cell_id
+    ):
+        raise RuntimeError("R5 runtime cell identity drift")
+
+    matrix, matrix_path, matrix_sha256 = _load_r5_json(
+        path_value=os.environ.get("R5_MATRIX_SUMMARY", ""),
+        digest_value=os.environ.get("R5_MATRIX_SUMMARY_SHA256", ""),
+        label="matrix summary",
+    )
+    if matrix.get("git_commit") != git_commit or matrix.get("cell_count") != 24:
+        raise RuntimeError("R5 matrix summary commit/count drift")
+    rows = matrix.get("cells")
+    matches = [row for row in rows or [] if isinstance(row, Mapping) and row.get("id") == cell_id]
+    if len(matches) != 1:
+        raise RuntimeError("R5 matrix lacks exactly one runtime cell")
+    row = dict(matches[0])
+    source_config = Path(source_config_path).expanduser().resolve()
+    if (
+        Path(str(row.get("config", ""))).expanduser().resolve() != source_config
+        or row.get("config_sha256") != source_config_sha256
+        or sha256_file(source_config) != source_config_sha256
+        or any(row.get(key) != cell[key] for key in ("backend", "arm", "budget", "seed"))
+    ):
+        raise RuntimeError("R5 runtime config differs from the sealed matrix cell")
+
+    gate, gate_path, gate_sha256 = _load_r5_json(
+        path_value=os.environ.get("R5_MECHANISM_GATE_JSON", ""),
+        digest_value=os.environ.get("R5_MECHANISM_GATE_SHA256", ""),
+        label="TemporalMaxer mechanism gate",
+    )
+    gate_config = Path(str(matrix.get("gate_config", ""))).expanduser().resolve()
+    if (
+        gate.get("ok") is not True
+        or gate.get("task") != "offline_temporal_action_detection"
+        or gate.get("git_commit") != git_commit
+        or gate.get("detector_type") != "TemporalMaxer"
+        or gate.get("forward_backward_optimizer_step_completed") is not True
+        or Path(str(gate.get("config", ""))).expanduser().resolve() != gate_config
+        or gate.get("config_sha256") != sha256_file(gate_config)
+    ):
+        raise RuntimeError("R5 TemporalMaxer mechanism gate did not authorize the matrix")
+
+    pretrain = Path(runtime_pretrain_path).expanduser().resolve()
+    annotation = Path(evaluation_annotation_path).expanduser().resolve()
+    class_map = Path(evaluation_class_map_path).expanduser().resolve()
+    for path, label in (
+        (pretrain, "VideoMAE-S pretrain"),
+        (annotation, "evaluation annotation"),
+        (class_map, "evaluation class map"),
+    ):
+        if not path.is_file():
+            raise RuntimeError(f"R5 {label} is missing: {path}")
+    pretrain_sha256 = sha256_file(pretrain)
+    if (
+        gate.get("pretrain_path") != str(pretrain)
+        or gate.get("pretrain_sha256") != pretrain_sha256
+    ):
+        raise RuntimeError("R5 pretrain differs from the real mechanism gate")
+
+    initialization_binding = None
+    alignment_binding = None
+    if arm == "learned":
+        from tools.bata.duca_boundary_burst_hard_swap_alignment import (
+            validate_alignment_artifact,
+        )
+        from tools.bata.select_duca_boundary_burst_candidates import (
+            validate_frontend_decision,
+        )
+
+        learned_source = Path(str(cell.get("source_config", ""))).expanduser().resolve()
+        learned_variant = R5_LEARNED_VARIANTS.get(learned_source.name)
+        if learned_variant is None or not learned_source.is_file():
+            raise RuntimeError("R5 learned cell does not use an approved G1 source")
+        decision = validate_frontend_decision(
+            decision_path=os.environ.get("R5_FRONTEND_DECISION", ""),
+            decision_sha256=os.environ.get("R5_FRONTEND_DECISION_SHA256", ""),
+            expected_commit=git_commit,
+        )
+        alignment_binding = validate_alignment_artifact(
+            path=os.environ.get("R5_ALIGNMENT_JSON", ""),
+            digest=os.environ.get("R5_ALIGNMENT_SHA256", ""),
+            expected_commit=git_commit,
+            expected_variant=learned_variant,
+            source_config_path=learned_source,
+            source_config_sha256=sha256_file(learned_source),
+        )
+        selected_p0 = decision["family_routing"]["selected_p0_variant"]
+        winner = decision["winners"][selected_p0]
+        init = dict(selector_initialization or {})
+        checkpoint = Path(str(init.get("checkpoint_path", ""))).expanduser().resolve()
+        expected_epoch = int(winner["epoch_one_based"]) - 1
+        if (
+            not bool(init.get("enabled", True))
+            or checkpoint != Path(str(winner["checkpoint_path"])).expanduser().resolve()
+            or not checkpoint.is_file()
+            or sha256_file(checkpoint) != winner["checkpoint_sha256"]
+            or str(init.get("checkpoint_sha256", "")) != winner["checkpoint_sha256"]
+            or int(init.get("expected_checkpoint_epoch", -1)) != expected_epoch
+            or str(init.get("state_key", "state_dict_ema")) != "state_dict_ema"
+        ):
+            raise RuntimeError("R5 learned selector initialization drift")
+        gate_init = gate.get("selector_initialization")
+        if (
+            not isinstance(gate_init, Mapping)
+            or gate_init.get("checkpoint_sha256") != winner["checkpoint_sha256"]
+            or int(gate_init.get("checkpoint_epoch", -1)) != expected_epoch
+        ):
+            raise RuntimeError("R5 mechanism gate used another learned frontend")
+        initialization_binding = {
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_sha256": winner["checkpoint_sha256"],
+            "checkpoint_epoch": expected_epoch,
+            "checkpoint_state_key": "state_dict_ema",
+            "selected_p0_variant": selected_p0,
+            "learned_variant": learned_variant,
+        }
+    elif selector_initialization and selector_initialization.get("enabled", True):
+        raise RuntimeError("R5 uniform cell must not initialize a learned selector")
+
+    bindings = {
+        "git_commit": str(git_commit),
+        "variant": cell_id,
+        "seed": cell_seed,
+        "slurm_job_id": None if slurm_job_id is None else str(slurm_job_id),
+        "formal_protocol": R5_FORMAL_PROTOCOL,
+        "source_config_path": str(source_config),
+        "source_config_sha256": str(source_config_sha256),
+        "resolved_config_sha256": str(resolved_config_sha256),
+        "runtime_config_sha256": str(runtime_config_sha256),
+        "matrix_summary_path": str(matrix_path),
+        "matrix_summary_sha256": matrix_sha256,
+        "mechanism_gate_path": str(gate_path),
+        "mechanism_gate_sha256": gate_sha256,
+        "r5_cell": cell,
+        "pretrain_path": str(pretrain),
+        "pretrain_sha256": pretrain_sha256,
+        "evaluation_annotation_path": str(annotation),
+        "evaluation_annotation_sha256": sha256_file(annotation),
+        "evaluation_class_map_path": str(class_map),
+        "evaluation_class_map_sha256": sha256_file(class_map),
+        "evaluation_config_sha256": evaluation_config_sha256(evaluation_config),
+    }
+    if initialization_binding is not None:
+        bindings["selector_initialization_contract"] = initialization_binding
+    if alignment_binding is not None:
+        bindings["hard_swap_alignment"] = dict(alignment_binding)
+    return bindings
+
+
 def build_runtime_bindings(
     *,
     git_commit: str,
@@ -299,7 +537,28 @@ def build_runtime_bindings(
     evaluation_config: Mapping[str, Any],
     runtime_pretrain_path: str | Path,
     selector_initialization: Mapping[str, Any] | None = None,
+    formal_protocol: str = FORMAL_PROTOCOL,
+    r5_cell: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if str(formal_protocol) == R5_FORMAL_PROTOCOL:
+        return _build_r5_runtime_bindings(
+            git_commit=git_commit,
+            variant=variant,
+            seed=seed,
+            slurm_job_id=slurm_job_id,
+            source_config_path=source_config_path,
+            source_config_sha256=source_config_sha256,
+            resolved_config_sha256=resolved_config_sha256,
+            runtime_config_sha256=runtime_config_sha256,
+            evaluation_annotation_path=evaluation_annotation_path,
+            evaluation_class_map_path=evaluation_class_map_path,
+            evaluation_config=evaluation_config,
+            runtime_pretrain_path=runtime_pretrain_path,
+            selector_initialization=selector_initialization,
+            r5_cell=r5_cell,
+        )
+    if str(formal_protocol) != FORMAL_PROTOCOL:
+        raise RuntimeError("unknown selected-axis formal protocol")
     if variant in LOCKED_ALIGNMENT_VARIANTS:
         raise RuntimeError(
             f"selected-axis variant {variant} requires real legal hard-swap alignment"
@@ -448,10 +707,22 @@ def validate_terminal_checkpoint_binding(
     frozen_pretrain_path: str | Path,
     frozen_pretrain_sha256: str,
     selector_initialization: Mapping[str, Any] | None = None,
+    formal_protocol: str = FORMAL_PROTOCOL,
+    r5_cell: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate the terminal checkpoint and its complete training identity chain."""
 
-    if int(seed) != 3407:
+    protocol = str(formal_protocol)
+    if protocol not in FORMAL_PROTOCOLS:
+        raise RuntimeError("selected-axis terminal protocol is unknown")
+    if protocol == R5_FORMAL_PROTOCOL:
+        if (
+            not isinstance(r5_cell, Mapping)
+            or int(seed) != int(r5_cell.get("seed", -1))
+            or int(seed) not in R5_SEEDS
+        ):
+            raise RuntimeError("R5 terminal evaluation seed/cell mismatch")
+    elif int(seed) != 3407:
         raise RuntimeError("selected-axis terminal evaluation seed must be 3407")
     if int(checkpoint_epoch) != 59 or checkpoint_state_key != "state_dict_ema":
         raise RuntimeError(
@@ -517,8 +788,8 @@ def validate_terminal_checkpoint_binding(
         "status": "complete",
         "git_commit": str(git_commit),
         "variant": str(variant),
-        "seed": 3407,
-        "formal_protocol": FORMAL_PROTOCOL,
+        "seed": int(seed),
+        "formal_protocol": protocol,
         "training_profile": "official60",
         "checkpoint_criterion": "terminal_epoch_59_state_dict_ema",
         "primary_checkpoint_epoch": 59,
@@ -583,6 +854,8 @@ def validate_terminal_checkpoint_binding(
         evaluation_config=evaluation_config,
         runtime_pretrain_path=runtime_pretrain_path,
         selector_initialization=selector_initialization,
+        formal_protocol=protocol,
+        r5_cell=r5_cell,
     )
     for key, expected in expected_bindings.items():
         if audit.get(key) != expected:
@@ -592,7 +865,7 @@ def validate_terminal_checkpoint_binding(
 
     return {
         "variant": str(variant),
-        "seed": 3407,
+        "seed": int(seed),
         "successful_optimizer_updates": expected_updates,
         "checkpoint_sidecar_path": str(sidecar_file),
         "checkpoint_sidecar_sha256": sha256_file(sidecar_file),
@@ -615,7 +888,9 @@ __all__ = [
     "DUCA_P0_TRAINING_AUDIT_SCHEMA",
     "DUCA_TRAINING_AUDIT_FILENAME",
     "FORMAL_PROTOCOL",
+    "FORMAL_PROTOCOLS",
     "LOCKED_ALIGNMENT_VARIANTS",
+    "R5_FORMAL_PROTOCOL",
     "VARIANT_CONFIGS",
     "assert_safe_cfg_options",
     "atomic_write_json",
@@ -625,6 +900,7 @@ __all__ = [
     "capture_global_rng_state",
     "canonical_sha256",
     "formal_training_contract",
+    "is_formal_protocol",
     "new_update_audit",
     "restore_global_rng_state",
     "restore_training_state",

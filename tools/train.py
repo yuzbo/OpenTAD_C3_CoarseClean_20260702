@@ -122,7 +122,7 @@ def _select_duca_training(formal_protocol):
         return duca_cellcf_training
     if formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
         return duca_protected_physical_training
-    if formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
+    if duca_selected_axis_training.is_formal_protocol(formal_protocol):
         return duca_selected_axis_training
     return duca_p0_training
 
@@ -132,10 +132,14 @@ def _dispatch_duca_runtime_bindings(
     runtime_binding_kwargs,
     *,
     selector_initialization=None,
+    formal_protocol=None,
+    r5_cell=None,
 ):
     kwargs = dict(runtime_binding_kwargs)
     if duca_training is duca_selected_axis_training:
         kwargs["selector_initialization"] = selector_initialization
+        kwargs["formal_protocol"] = formal_protocol
+        kwargs["r5_cell"] = r5_cell
     return duca_training.build_runtime_bindings(**kwargs)
 
 
@@ -251,6 +255,8 @@ def main():
             selector_initialization=cfg.workflow.get(
                 "selector_initialization", None
             ),
+            formal_protocol=formal_protocol,
+            r5_cell=cfg.get("r5_cell", None),
         )
     if args.rank == 0:
         create_folder(cfg.work_dir)

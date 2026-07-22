@@ -76,6 +76,17 @@ def test_boundary_burst_final_matrix_passes_official60_contract(name: str) -> No
     assert validate_config(CONFIG_ROOT / name)["ok"] is True
 
 
+def test_boundary_burst_feedback_is_disclosed_as_calibrated_surrogate() -> None:
+    cfg = Config.fromfile(
+        str(CONFIG_ROOT / "duca_boundary_burst_g1_protected_fixed384_official60.py")
+    )
+    contract = cfg.duca_transition_only_contract
+    assert contract.detector_gradient_is_direct is False
+    assert contract.detector_gradient_estimator == (
+        "hard_forward_temporal_slope_surrogate_calibrated_by_signed_hard_swap"
+    )
+
+
 def test_boundary_burst_train_pipeline_filters_crop_truncated_endpoints() -> None:
     cfg = Config.fromfile(
         str(CONFIG_ROOT / "duca_boundary_burst_frontend_pretrain_fixed384.py")

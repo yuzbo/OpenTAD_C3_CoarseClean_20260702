@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from tools.bata.duca_r5_paper_matrix import (
     SEEDS,
     generate_matrix,
 )
+from tools.bata import duca_selected_axis_training as formal_training
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +24,7 @@ UNIFORM = (
 )
 LEARNED = (
     ROOT
-    / "configs/adatad/thumos/duca_global_curriculum_g1_protected_fixed384_official60.py"
+    / "configs/adatad/thumos/duca_boundary_burst_g1_protected_fixed384_official60.py"
 )
 
 
@@ -41,9 +44,14 @@ def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -
     assert summary["cell_count"] == len(BACKENDS) * 2 * len(BUDGETS) * len(SEEDS) == 24
     assert summary["seeds"] == [3407, 5801, 8123]
     assert summary["budgets"] == [384, 256]
+    assert summary["learned_variant"] == "boundary_burst_r2q3_g1"
     assert len(list((output / "configs").glob("*.py"))) == 24
-    assert len(list((output / "jobs").glob("*.sbatch"))) == 25
+    assert len(list((output / "jobs").glob("*.sbatch"))) == 30
     assert len((output / "cells.tsv").read_text(encoding="utf-8").splitlines()) == 25
+    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 5
+    assert summary["cost_count"] == 4
+    assert summary["git_commit"]
+    assert (output / "matrix_summary.json.sha256").is_file()
     gate = (output / "jobs/temporalmaxer_one_step.sbatch").read_text(
         encoding="utf-8"
     )
@@ -86,7 +94,8 @@ def test_generated_temporalmaxer_config_resolves_real_k256_path(
     assert cfg.model.projection.type == "TemporalMaxerProj"
     assert cfg.model.projection.in_channels == 384
     assert cfg.model.rpn_head.type == "TemporalMaxerHead"
-    assert cfg.workflow.formal_successful_update_contract is False
+    assert cfg.workflow.formal_protocol == "duca_r5_mechanism_matrix_v1"
+    assert cfg.workflow.formal_successful_update_contract is True
 
 
 def test_generated_actionformer_cell_keeps_official_head(tmp_path: Path) -> None:
@@ -99,6 +108,111 @@ def test_generated_actionformer_cell_keeps_official_head(tmp_path: Path) -> None
     assert cfg.model.projection.max_seq_len == 384
     assert cfg.model.rpn_head.type == "ActionFormerHead"
     assert cfg.r5_cell.seed == 8123
+    contract = formal_training.formal_training_contract(cfg)
+    assert contract is not None
+    assert contract["formal_protocol"] == formal_training.R5_FORMAL_PROTOCOL
+    assert contract["expected_successful_optimizer_updates"] == 6000
+
+
+@pytest.mark.skipif(os.name == "nt", reason="selection validator imports Windows torch")
+def test_r5_runtime_binding_reopens_matrix_gate_and_learned_frontend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tools.bata import duca_boundary_burst_hard_swap_alignment as alignment
+    from tools.bata import select_duca_boundary_burst_candidates as selection
+
+    monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT", str(tmp_path / "frontend.pth"))
+    monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT_SHA256", "0" * 64)
+    monkeypatch.setenv("DUCA_FRONTEND_CHECKPOINT_EPOCH", "4")
+    summary, output = _generate(tmp_path)
+    config = output / "configs/actionformer_learned_k256_s5801.py"
+    frontend = tmp_path / "frontend.pth"
+    pretrain = tmp_path / "pretrain.pth"
+    annotation = tmp_path / "annotation.json"
+    class_map = tmp_path / "class_map.txt"
+    frontend.write_bytes(b"frontend")
+    pretrain.write_bytes(b"pretrain")
+    annotation.write_text("{}\n", encoding="utf-8")
+    class_map.write_text("action\n", encoding="utf-8")
+    frontend_sha = hashlib.sha256(frontend.read_bytes()).hexdigest()
+    learned_variant = summary["learned_variant"]
+    decision = {
+        "family_routing": {"selected_p0_variant": "boundary_burst_r2q3"},
+        "winners": {
+            "boundary_burst_r2q3": {
+                "checkpoint_path": str(frontend.resolve()),
+                "checkpoint_sha256": frontend_sha,
+                "epoch_one_based": 5,
+            }
+        },
+    }
+    monkeypatch.setattr(selection, "validate_frontend_decision", lambda **_: decision)
+    monkeypatch.setattr(
+        alignment,
+        "validate_alignment_artifact",
+        lambda **_: {"path": "/alignment.json", "sha256": "a" * 64},
+    )
+    gate = {
+        "ok": True,
+        "task": "offline_temporal_action_detection",
+        "git_commit": summary["git_commit"],
+        "detector_type": "TemporalMaxer",
+        "forward_backward_optimizer_step_completed": True,
+        "config": summary["gate_config"],
+        "config_sha256": summary["gate_config_sha256"],
+        "pretrain_path": str(pretrain.resolve()),
+        "pretrain_sha256": hashlib.sha256(pretrain.read_bytes()).hexdigest(),
+        "selector_initialization": {
+            "checkpoint_sha256": frontend_sha,
+            "checkpoint_epoch": 4,
+        },
+    }
+    gate_path = output / "temporalmaxer_one_step.json"
+    gate_path.write_text(json.dumps(gate), encoding="utf-8")
+    matrix_path = output / "matrix_summary.json"
+    monkeypatch.setenv("R5_MATRIX_SUMMARY", str(matrix_path))
+    monkeypatch.setenv(
+        "R5_MATRIX_SUMMARY_SHA256", hashlib.sha256(matrix_path.read_bytes()).hexdigest()
+    )
+    monkeypatch.setenv("R5_MECHANISM_GATE_JSON", str(gate_path))
+    monkeypatch.setenv(
+        "R5_MECHANISM_GATE_SHA256", hashlib.sha256(gate_path.read_bytes()).hexdigest()
+    )
+    monkeypatch.setenv("R5_FRONTEND_DECISION", "/decision.json")
+    monkeypatch.setenv("R5_FRONTEND_DECISION_SHA256", "b" * 64)
+    monkeypatch.setenv("R5_ALIGNMENT_JSON", "/alignment.json")
+    monkeypatch.setenv("R5_ALIGNMENT_SHA256", "c" * 64)
+    cfg = Config.fromfile(str(config))
+    cell = cfg.r5_cell.to_dict()
+    bindings = formal_training.build_runtime_bindings(
+        git_commit=summary["git_commit"],
+        variant="actionformer_learned_k256_s5801",
+        seed=5801,
+        slurm_job_id="7",
+        source_config_path=config,
+        source_config_sha256=hashlib.sha256(config.read_bytes()).hexdigest(),
+        resolved_config_sha256="d" * 64,
+        runtime_config_sha256="e" * 64,
+        evaluation_annotation_path=annotation,
+        evaluation_class_map_path=class_map,
+        evaluation_config={},
+        runtime_pretrain_path=pretrain,
+        selector_initialization={
+            "enabled": True,
+            "checkpoint_path": str(frontend),
+            "checkpoint_sha256": frontend_sha,
+            "expected_checkpoint_epoch": 4,
+            "state_key": "state_dict_ema",
+        },
+        formal_protocol=formal_training.R5_FORMAL_PROTOCOL,
+        r5_cell=cell,
+    )
+    assert bindings["variant"] == "actionformer_learned_k256_s5801"
+    assert bindings["seed"] == 5801
+    assert bindings["mechanism_gate_sha256"] == hashlib.sha256(
+        gate_path.read_bytes()
+    ).hexdigest()
+    assert bindings["selector_initialization_contract"]["learned_variant"] == learned_variant
 
 
 def test_generator_rejects_source_config_outside_repo(tmp_path: Path) -> None:
@@ -132,13 +246,57 @@ def test_real_one_step_runner_uses_production_data_model_and_optimizer() -> None
     assert "Dummy" not in source
 
 
-def test_launcher_only_generates_and_never_submits() -> None:
+def test_launcher_submits_gate_then_real_matrix_when_requested() -> None:
     source = (ROOT / "scripts/launch_duca_r5_paper_matrix.sh").read_text(
         encoding="utf-8"
     )
-    assert "Generated only; no jobs were submitted." in source
-    assert "duca_r5_paper_matrix submit" not in source
-    assert "ALLOW_DUCA_R5_SUBMIT" not in source
+    assert 'R5_SUBMIT="${R5_SUBMIT:-0}"' in source
+    assert 'R5_UPSTREAM_DEPENDENCY="${R5_UPSTREAM_DEPENDENCY:-}"' in source
+    assert 'sbatch --parsable --clusters="${TARGET_CLUSTER}"' in source
+    assert '--dependency="${R5_UPSTREAM_DEPENDENCY}"' in source
+    assert '--dependency="afterok:${gate_job}"' in source
+    assert '"${OUTPUT_DIR}/costs.tsv"' in source
+    assert '"${OUTPUT_DIR}/jobs/aggregate.sbatch"' in source
+    assert '>> "${OUTPUT_DIR}/jobs.tsv"' in source
+    assert 'jobs.tsv.sha256' in source
+
+
+def test_generated_jobs_bind_frontend_alignment_and_terminal_map(
+    tmp_path: Path,
+) -> None:
+    _, output = _generate(tmp_path)
+    learned = (output / "jobs/actionformer_learned_k384_s3407.sbatch").read_text(
+        encoding="utf-8"
+    )
+    uniform = (output / "jobs/actionformer_uniform_k384_s3407.sbatch").read_text(
+        encoding="utf-8"
+    )
+    gate = (output / "jobs/temporalmaxer_one_step.sbatch").read_text(
+        encoding="utf-8"
+    )
+    for text in (learned, gate):
+        assert "validate_frontend_decision" in text
+        assert "validate_alignment_artifact" in text
+        assert "DUCA_BOUNDARY_BURST_ALIGNMENT_JSON" in text
+        assert "R5_FRONTEND_DECISION_SHA256_FILE" in text
+        assert "R5_ALIGNMENT_SHA256_FILE" in text
+    assert "R5_MATRIX_SUMMARY_SHA256" in learned
+    assert "R5_MECHANISM_GATE_SHA256" in learned
+    assert "tools/test.py" in learned
+    assert "--checkpoint-state-key state_dict_ema" in learned
+    assert "--expected-checkpoint-epoch 59" in learned
+    assert "terminal_evaluation.json" in learned
+    assert "DUCA_SELECTED_OPT_VARIANT=actionformer_learned_k384_s3407" in learned
+    assert "validate_frontend_decision" not in uniform
+    assert "tools/test.py" in uniform
+    learned_cost = (
+        output / "jobs/cost_actionformer_learned_k384_s3407.sbatch"
+    ).read_text(encoding="utf-8")
+    aggregate = (output / "jobs/aggregate.sbatch").read_text(encoding="utf-8")
+    assert "run_duca_full_stack_cost_profile_gpu1.sh" in learned_cost
+    assert "PROFILE_CHECKPOINT" in learned_cost
+    assert "aggregate_duca_r5_paper_matrix" in aggregate
+    assert "temporalmaxer_one_step.json.sha256" in gate
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows torch/c10.dll is unstable")

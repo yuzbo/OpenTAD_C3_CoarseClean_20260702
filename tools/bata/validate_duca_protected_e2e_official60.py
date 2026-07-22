@@ -163,6 +163,16 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             "two-stage detector bridge mode disagrees with the registered arm",
         )
         _require(
+            contract.detector_gradient_is_direct is False,
+            "discrete hard selection cannot claim a direct detector gradient",
+        )
+        if feedback_enabled:
+            _require(
+                contract.detector_gradient_estimator
+                == "hard_forward_temporal_slope_surrogate_calibrated_by_signed_hard_swap",
+                "protected bridge must disclose its calibrated surrogate estimator",
+            )
+        _require(
             float(selector.policy_hidden_gradient_scale) == 0.0,
             "two-stage detector gradients must stop before ASFormer",
         )

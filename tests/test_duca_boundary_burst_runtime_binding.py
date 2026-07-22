@@ -55,10 +55,13 @@ def test_train_entrypoint_dispatches_selected_axis_runtime_binder(monkeypatch) -
 
     monkeypatch.setattr(training, "build_runtime_bindings", fake_binder)
     selected = namespace["_select_duca_training"](training.FORMAL_PROTOCOL)
+    assert namespace["_select_duca_training"](training.R5_FORMAL_PROTOCOL) is training
     result = namespace["_dispatch_duca_runtime_bindings"](
         selected,
         {"git_commit": "a" * 40},
         selector_initialization={"enabled": True},
+        formal_protocol=training.R5_FORMAL_PROTOCOL,
+        r5_cell={"seed": 3407},
     )
 
     assert selected is training
@@ -66,6 +69,8 @@ def test_train_entrypoint_dispatches_selected_axis_runtime_binder(monkeypatch) -
     assert observed == {
         "git_commit": "a" * 40,
         "selector_initialization": {"enabled": True},
+        "formal_protocol": training.R5_FORMAL_PROTOCOL,
+        "r5_cell": {"seed": 3407},
     }
 
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import random
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -85,6 +86,10 @@ def run_one_step(
     pretrain = _require_file(
         pretrain_path, pretrain_sha256, "AdaTAD VideoMAE pretrain"
     )
+    repo_root = Path(__file__).resolve().parents[2]
+    git_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True
+    ).strip()
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -265,8 +270,12 @@ def run_one_step(
 
     result = {
         "ok": True,
+        "task": "offline_temporal_action_detection",
+        "git_commit": git_commit,
         "config": str(config),
         "config_sha256": sha256_file(config),
+        "pretrain_path": str(pretrain),
+        "pretrain_sha256": sha256_file(pretrain),
         "seed": int(seed),
         "device": str(device),
         "dataset_type": dataset.__class__.__name__,
