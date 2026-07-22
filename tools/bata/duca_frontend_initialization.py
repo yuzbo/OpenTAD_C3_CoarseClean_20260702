@@ -134,11 +134,22 @@ def initialize_frame_selector_from_checkpoint(
 
     missing = sorted(set(target_state) - set(source_state))
     unexpected = sorted(set(source_state) - set(target_state))
-    if missing or unexpected:
+    parameter_keys = set(dict(selector.named_parameters()))
+    buffer_keys = set(dict(selector.named_buffers()))
+    missing_parameters = sorted(set(missing) & parameter_keys)
+    missing_buffers = sorted(set(missing) & buffer_keys)
+    missing_unknown = sorted(set(missing) - parameter_keys - buffer_keys)
+    if missing_parameters or missing_unknown or unexpected:
         raise RuntimeError(
             "selector initialization state mismatch: "
-            f"missing={missing}, unexpected={unexpected}"
+            f"missing_parameters={missing_parameters}, "
+            f"missing_unknown={missing_unknown}, unexpected={unexpected}"
         )
+    # OpenTAD checkpoints may omit module buffers while retaining every learned
+    # parameter. Keep the new training stage's buffer defaults explicitly and
+    # record them below instead of silently weakening parameter loading.
+    for key in missing_buffers:
+        source_state[key] = target_state[key].detach().clone()
     incompatible = selector.load_state_dict(source_state, strict=True)
     if incompatible.missing_keys or incompatible.unexpected_keys:
         raise RuntimeError(
@@ -154,6 +165,8 @@ def initialize_frame_selector_from_checkpoint(
         "checkpoint_state_key": state_key,
         "loaded_selector_state_count": len(source_state),
         "reset_state_keys": list(reset_keys),
+        "retained_target_buffer_state_keys": missing_buffers,
+        "retained_target_buffer_state_count": len(missing_buffers),
         "detector_state_loaded": False,
         "optimizer_state_loaded": False,
         "scheduler_state_loaded": False,
