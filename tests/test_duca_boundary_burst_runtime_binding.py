@@ -123,6 +123,144 @@ def test_unaligned_feedback_variants_are_locked_at_production_binding(
         )
 
 
+@pytest.mark.parametrize("variant", sorted(training.BOUNDARY_ALIGNMENT_VARIANTS))
+def test_boundary_feedback_runtime_requires_exact_alignment_authorization(
+    variant: str,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from tools.bata import duca_boundary_burst_hard_swap_alignment as alignment
+
+    commit = "a" * 40
+    config = CONFIG_DIR / training.VARIANT_CONFIGS[variant]
+    pretrain = tmp_path / "pretrain.pth"
+    annotation = tmp_path / "annotation.json"
+    class_map = tmp_path / "class_map.txt"
+    frontend = tmp_path / "frontend.pth"
+    for path, content in (
+        (pretrain, b"pretrain"),
+        (frontend, b"frontend"),
+    ):
+        path.write_bytes(content)
+    annotation.write_text("{}\n", encoding="utf-8")
+    class_map.write_text("action\n", encoding="utf-8")
+    frontend_sha = training.sha256_file(frontend)
+    full_gate = tmp_path / "feedback_full_gate.json"
+    _write_json(
+        full_gate,
+        {
+            "schema": "duca_protected_e2e_exact_full_model_gradient_gate_v1",
+            "ok": True,
+            "config_sha256": training.sha256_file(config),
+            "runtime": {"git_commit": commit},
+            "adatad_pretrain": {"sha256": training.sha256_file(pretrain)},
+            "selector_initialization": {
+                "checkpoint_sha256": frontend_sha,
+                "checkpoint_epoch": 19,
+                "checkpoint_state_key": "state_dict_ema",
+                "detector_state_loaded": False,
+                "optimizer_state_loaded": False,
+                "scheduler_state_loaded": False,
+                "receipt_sha256": "b" * 64,
+            },
+        },
+    )
+    suite = tmp_path / "gate_suite.json"
+    _write_json(
+        suite,
+        {
+            "schema": training.BOUNDARY_BURST_GATE_SCHEMA,
+            "ok": True,
+            "formal_training_unlocked": True,
+            "git_commit": commit,
+            "artifacts": [],
+        },
+    )
+    monkeypatch.setenv("DUCA_SELECTED_OPT_GATE_SUITE", str(suite))
+    monkeypatch.setenv("DUCA_SELECTED_OPT_GATE_SUITE_SHA256", training.sha256_file(suite))
+
+    observed = {}
+
+    def authorize(**kwargs):
+        observed.update(kwargs)
+        return {
+            "path": str(tmp_path / "alignment.json"),
+            "sha256": "c" * 64,
+            "self_sha256": "d" * 64,
+            "context_sha256": "e" * 64,
+            "selected_weakest_projected_family": "R2Q3_privileged_boundary_burst",
+            "selected_g0_checkpoint_sha256": "f" * 64,
+            "terminal_suite_sha256": "1" * 64,
+            "full_model_gate": {
+                "path": str(full_gate),
+                "sha256": training.sha256_file(full_gate),
+            },
+        }
+
+    monkeypatch.setattr(alignment, "validate_alignment_artifact", authorize)
+    bindings = training.build_runtime_bindings(
+        git_commit=commit,
+        variant=variant,
+        seed=3407,
+        slurm_job_id="1",
+        source_config_path=config,
+        source_config_sha256=training.sha256_file(config),
+        resolved_config_sha256="2" * 64,
+        runtime_config_sha256="3" * 64,
+        evaluation_annotation_path=annotation,
+        evaluation_class_map_path=class_map,
+        evaluation_config={
+            "type": "mAP",
+            "ground_truth_filename": str(annotation),
+            "subset": "validation",
+            "tiou_thresholds": [0.3, 0.4, 0.5, 0.6, 0.7],
+        },
+        runtime_pretrain_path=pretrain,
+        selector_initialization={
+            "enabled": True,
+            "checkpoint_path": str(frontend),
+            "checkpoint_sha256": frontend_sha,
+            "expected_checkpoint_epoch": 19,
+            "state_key": "state_dict_ema",
+            "reset_state_keys": [],
+        },
+    )
+
+    assert observed["expected_variant"] == variant
+    assert observed["source_config_sha256"] == training.sha256_file(config)
+    assert bindings["hard_swap_alignment"]["self_sha256"] == "d" * 64
+    assert bindings["full_model_gate_sha256"] == training.sha256_file(full_gate)
+
+
+def test_boundary_feedback_runtime_fails_closed_when_alignment_rejects(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from tools.bata import duca_boundary_burst_hard_swap_alignment as alignment
+
+    def reject(**_kwargs):
+        raise RuntimeError("sealed alignment rejected")
+
+    monkeypatch.setattr(alignment, "validate_alignment_artifact", reject)
+    variant = "boundary_burst_r2q3_g1"
+    config = CONFIG_DIR / training.VARIANT_CONFIGS[variant]
+    with pytest.raises(RuntimeError, match="sealed alignment rejected"):
+        training.build_runtime_bindings(
+            git_commit="a" * 40,
+            variant=variant,
+            seed=3407,
+            slurm_job_id="1",
+            source_config_path=config,
+            source_config_sha256=training.sha256_file(config),
+            resolved_config_sha256="b" * 64,
+            runtime_config_sha256="c" * 64,
+            evaluation_annotation_path=tmp_path / "unused.json",
+            evaluation_class_map_path=tmp_path / "unused.txt",
+            evaluation_config={},
+            runtime_pretrain_path=tmp_path / "unused.pth",
+        )
+
+
 def test_p0_frontend_and_gate_consume_the_submit_frozen_pretrain_contract() -> None:
     submit = (
         ROOT / "scripts" / "submit_duca_boundary_burst_official60_suite.sh"

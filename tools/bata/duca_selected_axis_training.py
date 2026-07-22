@@ -15,6 +15,14 @@ BOUNDARY_BURST_GATE_SCHEMA = "duca_boundary_burst_full_model_gate_v1"
 LOCKED_ALIGNMENT_VARIANTS = frozenset(
     {"global_curriculum_g1", "global_curriculum_g2"}
 )
+BOUNDARY_ALIGNMENT_VARIANTS = frozenset(
+    {
+        "boundary_burst_r2q3_g1",
+        "boundary_burst_r2q3_g2",
+        "boundary_burst_r4q5_g1",
+        "boundary_burst_r4q5_g2",
+    }
+)
 VARIANT_CONFIGS = {
     "exact_uniform": "duca_exact_uniform_fixed384_official60.py",
     "direct025": "duca_protected_e2e_direct025_fixed384_official60.py",
@@ -49,6 +57,18 @@ VARIANT_CONFIGS = {
     ),
     "boundary_burst_r4q5_g0": (
         "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
+    ),
+    "boundary_burst_r2q3_g1": (
+        "duca_boundary_burst_g1_protected_fixed384_official60.py"
+    ),
+    "boundary_burst_r2q3_g2": (
+        "duca_boundary_burst_g2_uni_companion_fixed384_official60.py"
+    ),
+    "boundary_burst_r4q5_g1": (
+        "duca_boundary_burst_r4q5_g1_protected_fixed384_official60.py"
+    ),
+    "boundary_burst_r4q5_g2": (
+        "duca_boundary_burst_r4q5_g2_uni_companion_fixed384_official60.py"
     ),
 }
 
@@ -291,11 +311,35 @@ def build_runtime_bindings(
     source_config = Path(source_config_path).resolve()
     if source_config.name != VARIANT_CONFIGS[variant]:
         raise RuntimeError("selected-axis variant/config mismatch")
+    alignment_binding = None
+    if variant in BOUNDARY_ALIGNMENT_VARIANTS:
+        from tools.bata.duca_boundary_burst_hard_swap_alignment import (
+            validate_alignment_artifact,
+        )
+
+        alignment_binding = validate_alignment_artifact(
+            path=os.environ.get("DUCA_BOUNDARY_BURST_ALIGNMENT_JSON", ""),
+            digest=os.environ.get("DUCA_BOUNDARY_BURST_ALIGNMENT_SHA256", ""),
+            expected_commit=git_commit,
+            expected_variant=variant,
+            source_config_path=source_config,
+            source_config_sha256=source_config_sha256,
+        )
     suite, suite_sha256 = _load_gate_suite(git_commit)
-    full_gate, full_gate_sha256 = _load_full_model_gate(
-        suite,
-        config_name=source_config.name,
-    )
+    if alignment_binding is None:
+        full_gate, full_gate_sha256 = _load_full_model_gate(
+            suite,
+            config_name=source_config.name,
+        )
+    else:
+        gate_record = alignment_binding["full_model_gate"]
+        gate_path = Path(str(gate_record["path"])).expanduser().resolve()
+        if not gate_path.is_file() or sha256_file(gate_path) != gate_record["sha256"]:
+            raise RuntimeError("hard-swap-authorized full-model gate hash drift")
+        full_gate = json.loads(gate_path.read_text(encoding="utf-8"))
+        if not isinstance(full_gate, dict) or full_gate.get("ok") is not True:
+            raise RuntimeError("hard-swap-authorized full-model gate did not pass")
+        full_gate_sha256 = str(gate_record["sha256"])
     if full_gate.get("config_sha256") != source_config_sha256:
         raise RuntimeError("runtime config source differs from the full-model gate")
     runtime = full_gate.get("runtime", {})
@@ -379,6 +423,8 @@ def build_runtime_bindings(
     }
     if initialization_binding is not None:
         bindings["selector_initialization_contract"] = initialization_binding
+    if alignment_binding is not None:
+        bindings["hard_swap_alignment"] = dict(alignment_binding)
     return bindings
 
 
@@ -562,6 +608,7 @@ def validate_terminal_checkpoint_binding(
 
 
 __all__ = [
+    "BOUNDARY_ALIGNMENT_VARIANTS",
     "BOUNDARY_BURST_GATE_SCHEMA",
     "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
     "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",

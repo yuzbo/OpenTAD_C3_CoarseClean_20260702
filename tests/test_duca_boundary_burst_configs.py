@@ -66,6 +66,10 @@ def test_boundary_burst_official60_arms_keep_the_same_detector_and_protocol() ->
         "duca_global_curriculum_g0_no_feedback_fixed384_official60.py",
         "duca_boundary_burst_g0_no_feedback_fixed384_official60.py",
         "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py",
+        "duca_boundary_burst_g1_protected_fixed384_official60.py",
+        "duca_boundary_burst_g2_uni_companion_fixed384_official60.py",
+        "duca_boundary_burst_r4q5_g1_protected_fixed384_official60.py",
+        "duca_boundary_burst_r4q5_g2_uni_companion_fixed384_official60.py",
     ),
 )
 def test_boundary_burst_final_matrix_passes_official60_contract(name: str) -> None:

@@ -44,6 +44,18 @@ case "${VARIANT}" in
   boundary_burst_r4q5_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     ;;
+  boundary_burst_r2q3_g1)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_g1_protected_fixed384_official60.py"
+    ;;
+  boundary_burst_r2q3_g2)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_g2_uni_companion_fixed384_official60.py"
+    ;;
+  boundary_burst_r4q5_g1)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g1_protected_fixed384_official60.py"
+    ;;
+  boundary_burst_r4q5_g2)
+    CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g2_uni_companion_fixed384_official60.py"
+    ;;
   *)
     fail "unknown two-stage variant: ${VARIANT}"
     ;;
@@ -57,6 +69,8 @@ GATE_SUITE_SHA256="${DUCA_SELECTED_OPT_GATE_SUITE_SHA256:-}"
 RUN_DIR="${RUN_DIR:-}"
 WORK_DIR="${WORK_DIR:-}"
 DIAGNOSTIC_ONLY="${DUCA_BOUNDARY_BURST_DIAGNOSTIC_ONLY:-0}"
+ALIGNMENT_JSON="${DUCA_BOUNDARY_BURST_ALIGNMENT_JSON:-}"
+ALIGNMENT_SHA256="${DUCA_BOUNDARY_BURST_ALIGNMENT_SHA256:-}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Slurm allocation is required"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose a GPU"
@@ -71,8 +85,15 @@ DIAGNOSTIC_ONLY="${DUCA_BOUNDARY_BURST_DIAGNOSTIC_ONLY:-0}"
   || fail "two-stage gate suite hash drift"
 readarray -t execution_policy < <("${PYTHON}" - "${DECISION}" \
   "${DECISION_SHA256}" "${GATE_SUITE}" "${GATE_SUITE_SHA256}" \
-  "${EXPECTED_COMMIT}" "${VARIANT}" "${DIAGNOSTIC_ONLY}" <<'PY'
+  "${EXPECTED_COMMIT}" "${VARIANT}" "${DIAGNOSTIC_ONLY}" \
+  "${CONFIG}" "${ALIGNMENT_JSON}" "${ALIGNMENT_SHA256}" <<'PY'
+import hashlib
 import sys
+from pathlib import Path
+from tools.bata.duca_boundary_burst_hard_swap_alignment import (
+    FAMILY_FEEDBACK_ROUTES,
+    validate_alignment_artifact,
+)
 from tools.bata.select_duca_boundary_burst_candidates import (
     GAUSSIAN_OFFICIAL_VARIANT,
     GAUSSIAN_P0_VARIANT,
@@ -97,7 +118,30 @@ validate_full_model_gate(
 routing = decision["family_routing"]
 variant = sys.argv[6]
 diagnostic_only = sys.argv[7] == "1"
-if variant in routing["required_official60_variants"]:
+config = sys.argv[8]
+alignment_path = sys.argv[9]
+alignment_sha256 = sys.argv[10]
+feedback_variants = {
+    value[key]
+    for value in FAMILY_FEEDBACK_ROUTES.values()
+    for key in ("g1_variant", "g2_variant")
+}
+if variant in feedback_variants:
+    binding = validate_alignment_artifact(
+        path=alignment_path,
+        digest=alignment_sha256,
+        expected_commit=sys.argv[5],
+        expected_variant=variant,
+        source_config_path=config,
+        source_config_sha256=hashlib.sha256(Path(config).read_bytes()).hexdigest(),
+    )
+    if (
+        binding["selected_weakest_projected_family"]
+        != routing["selected_weakest_projected_family"]
+    ):
+        raise SystemExit("hard-swap artifact selected-family drift")
+    execution_role = "required_main"
+elif variant in routing["required_official60_variants"]:
     execution_role = "required_main"
 elif diagnostic_only and variant in routing["diagnostic_official60_variants"]:
     execution_role = "optional_diagnostic"
@@ -110,9 +154,14 @@ variant_to_p0.update(
         for route in R0_PROJECTED_FAMILY_ROUTES.values()
     }
 )
-frontend_variant = (
-    "not_applicable" if variant == UNIFORM_OFFICIAL_VARIANT else variant_to_p0[variant]
-)
+if variant in feedback_variants:
+    frontend_variant = routing["selected_p0_variant"]
+else:
+    frontend_variant = (
+        "not_applicable"
+        if variant == UNIFORM_OFFICIAL_VARIANT
+        else variant_to_p0[variant]
+    )
 print(execution_role)
 print(frontend_variant)
 PY
@@ -178,10 +227,15 @@ CONFIG_SHA256="$(sha256sum "${CONFIG}" | awk '{print $1}')"
   "${DECISION}" "${DECISION_SHA256}" "${GATE_SUITE}" \
   "${GATE_SUITE_SHA256}" "${FRONTEND_BINDING}" \
   "${FRONTEND_CHECKPOINT_SHA256_VALUE}" "${FRONTEND_CHECKPOINT_EPOCH_VALUE}" \
-  "${EXECUTION_ROLE}" "${SLURM_JOB_ID}" <<'PY'
+  "${EXECUTION_ROLE}" "${SLURM_JOB_ID}" "${ALIGNMENT_JSON}" \
+  "${ALIGNMENT_SHA256}" <<'PY'
 import sys
 from pathlib import Path
 
+from tools.bata.duca_boundary_burst_hard_swap_alignment import (
+    FAMILY_FEEDBACK_ROUTES,
+    validate_alignment_artifact,
+)
 from tools.bata.select_duca_boundary_burst_candidates import (
     _atomic_write_json,
     validate_frontend_decision,
@@ -203,6 +257,8 @@ from tools.bata.select_duca_boundary_burst_candidates import (
     frontend_checkpoint_epoch,
     execution_role,
     slurm_job_id,
+    alignment_path,
+    alignment_sha256,
 ) = sys.argv[1:]
 decision = validate_frontend_decision(
     decision_path=decision_path,
@@ -248,6 +304,20 @@ payload = {
     "checkpoint_interval": 5,
     "slurm_job_id": slurm_job_id,
 }
+feedback_variants = {
+    value[key]
+    for value in FAMILY_FEEDBACK_ROUTES.values()
+    for key in ("g1_variant", "g2_variant")
+}
+if variant in feedback_variants:
+    payload["hard_swap_alignment"] = validate_alignment_artifact(
+        path=alignment_path,
+        digest=alignment_sha256,
+        expected_commit=commit,
+        expected_variant=variant,
+        source_config_path=config,
+        source_config_sha256=config_sha256,
+    )
 _atomic_write_json(Path(output).resolve(), payload, require_absent=True)
 PY
 
@@ -377,6 +447,9 @@ if (
     or launch.get("execution_role") not in {"required_main", "optional_diagnostic"}
 ):
     raise SystemExit("launch manifest evidence drift")
+alignment = launch.get("hard_swap_alignment")
+if alignment is not None and identity.get("hard_swap_alignment") != alignment:
+    raise SystemExit("hard-swap alignment training identity drift")
 decision = validate_frontend_decision(
     decision_path=launch["frontend_decision_path"],
     decision_sha256=decision_sha,
@@ -425,6 +498,7 @@ payload = {
     ],
     "gate_path": launch["gate_path"],
     "gate_suite_sha256": gate_sha,
+    "hard_swap_alignment": alignment,
 }
 _atomic_write_json(
     Path(run_dir, "completion.json").resolve(), payload, require_absent=True

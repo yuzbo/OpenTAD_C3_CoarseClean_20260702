@@ -143,6 +143,10 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
         "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
         "DUCA_BOUNDARY_BURST_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
         "DUCA_BOUNDARY_BURST_R4Q5_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+        "DUCA_BOUNDARY_BURST_R2Q3_G1_PROTECTED_FIXED384_OFFICIAL60",
+        "DUCA_BOUNDARY_BURST_R2Q3_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+        "DUCA_BOUNDARY_BURST_R4Q5_G1_PROTECTED_FIXED384_OFFICIAL60",
+        "DUCA_BOUNDARY_BURST_R4Q5_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
     }:
         feedback_enabled = route not in {
             "DUCA_GLOBAL_CURRICULUM_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
@@ -196,6 +200,10 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
             "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
             "DUCA_BOUNDARY_BURST_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
             "DUCA_BOUNDARY_BURST_R4Q5_G0_NO_FEEDBACK_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R2Q3_G1_PROTECTED_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R2Q3_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R4Q5_G1_PROTECTED_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R4Q5_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
         }
         source = selector.actionness_source_cfg
         _require(
@@ -232,7 +240,11 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
                 False,
             )
         )
-        if route == "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60":
+        if route in {
+            "DUCA_GLOBAL_CURRICULUM_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R2Q3_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+            "DUCA_BOUNDARY_BURST_R4Q5_G2_UNI_COMPANION_FIXED384_OFFICIAL60",
+        }:
             _require(
                 companion_fraction == 0.50 and normalize_learned_gradient,
                 "G2 requires one 50% uniform companion with learned-row gradient normalization",
@@ -267,6 +279,11 @@ def validate_config(config_path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
                 and float(selector.boundary_burst_quota) == expected[1],
                 "boundary-burst route radius/quota drifted",
             )
+            if feedback_enabled:
+                _require(
+                    contract.hard_swap_alignment_required is True,
+                    "boundary-burst feedback route lost its hard-swap gate",
+                )
     elif route == "DUCA_PROTECTED_E2E_DIRECT025_FIXED384_OFFICIAL60":
         _require(selector.detector_gradient_mode == "protected_structured_transport", "direct arm requires protected bridge")
         _require(float(selector.policy_hidden_gradient_scale) == 0.0, "direct arm must detach ASFormer hidden")
