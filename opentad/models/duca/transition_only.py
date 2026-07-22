@@ -594,7 +594,10 @@ def build_boundary_burst_utility(
             right_probabilities = right_probabilities / (
                 right_probabilities.sum(dim=-1, keepdim=True).clamp_min(1.0e-8)
             )
-            flat_soft[feasible_rows] = 0.0
+            # PyTorch 2.0 CUDA can mis-handle scalar advanced assignment to a
+            # two-dimensional row slice. index_fill_ preserves the intended
+            # row reset without flattening the trailing offset dimension.
+            flat_soft.index_fill_(0, feasible_rows, 0.0)
             flat_soft[feasible_rows, center_index] = 1.0
             flat_soft[feasible_rows[:, None], left_indices[None, :]] = left_probabilities
             flat_soft[feasible_rows[:, None], right_indices[None, :]] = right_probabilities
@@ -639,7 +642,7 @@ def build_boundary_burst_utility(
             rows = one_sided_rows[flat_quota[one_sided_rows] == row_quota]
             if rows.numel() == 0:
                 continue
-            flat_soft[rows] = 0.0
+            flat_soft.index_fill_(0, rows, 0.0)
             flat_soft[rows, center_index] = 1.0
             if row_quota == 1:
                 continue
