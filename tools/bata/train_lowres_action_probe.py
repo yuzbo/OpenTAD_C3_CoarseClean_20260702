@@ -1321,7 +1321,12 @@ class C3MobileNetV3ActionProbe:
         self._external_backbone = None if isinstance(self.backbone, nn.Module) else self.backbone
         self.preserve_pretrained_classifier = bool(preserve_pretrained_classifier)
         self.output_head = None
-        if hasattr(self.backbone, "classifier") and not self.preserve_pretrained_classifier:
+        if self.preserve_pretrained_classifier:
+            # The frozen semantic prior is the pretrained class distribution itself.
+            # A fresh binary head would discard that evidence and leave an
+            # uninitialized parameter in a source that must be fully frozen.
+            self.output_head = None
+        elif hasattr(self.backbone, "classifier"):
             classifier = getattr(self.backbone, "classifier")
             try:
                 last_layer = classifier[-1]

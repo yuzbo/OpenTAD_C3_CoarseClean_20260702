@@ -372,6 +372,53 @@ def test_mobilenetv3_probe_uses_pretrained_cnn_and_outputs_frame_logits(monkeypa
     assert captured["weights"] is FakeWeights.DEFAULT
     assert model.backbone.__class__.__name__ == "FakeBackbone"
 
+    semantic_prior = probe.C3MobileNetV3ActionProbe(
+        pretrained=True,
+        variant="small",
+        preserve_pretrained_classifier=True,
+    )
+    assert semantic_prior.preserve_pretrained_classifier is True
+    assert semantic_prior.output_head is None
+
+
+def test_frozen_mobilenet_semantic_prior_preserves_multiclass_evidence(monkeypatch):
+    import torch
+    import torch.nn as nn
+
+    probe = load_probe_module()
+
+    class FakeWeights:
+        DEFAULT = object()
+
+    class FakeBackbone(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.features = nn.Identity()
+            self.avgpool = nn.AdaptiveAvgPool2d(1)
+            self.classifier = nn.Sequential(nn.Linear(3, 4))
+
+    monkeypatch.setattr(
+        probe,
+        "_import_torchvision_mobilenet",
+        lambda: (lambda *, weights: FakeBackbone(), FakeWeights),
+    )
+    model = probe.C3MobileNetV3ActionProbe(
+        pretrained=True,
+        variant="small",
+        freeze_backbone=True,
+        preserve_pretrained_classifier=True,
+    )
+    payload = model(
+        torch.rand(1, 2, 3, 4, 4),
+        torch.ones(1, 2, dtype=torch.bool),
+        return_hidden=True,
+    )
+
+    assert model.output_head is None
+    assert payload["class_logits"].shape == (1, 2, 4)
+    assert torch.isfinite(payload["logits"]).all()
+    assert all(not parameter.requires_grad for parameter in model.parameters())
+
 
 def test_sampling_quality_metrics_report_boundary_coverage_and_gap():
     probe = load_probe_module()
