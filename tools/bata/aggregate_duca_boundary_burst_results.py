@@ -69,6 +69,56 @@ def _require_file(path: Any, sha256: Any, *, label: str) -> Path:
     return artifact
 
 
+def _sealed_adatad_pretrain_identity(
+    decision_payload: Mapping[str, Any],
+    gate_payload: Mapping[str, Any],
+) -> dict[str, str]:
+    decision_p0_gate = decision_payload.get("p0_real_gate")
+    full_model_p0_gate = gate_payload.get("p0_real_gate")
+    if not isinstance(decision_p0_gate, Mapping) or not isinstance(
+        full_model_p0_gate, Mapping
+    ):
+        raise RuntimeError("sealed P0/full-model gate pretrain identity is missing")
+    decision_binding = decision_p0_gate.get("adatad_pretrain")
+    full_model_binding = full_model_p0_gate.get("adatad_pretrain")
+    if not isinstance(decision_binding, Mapping) or not isinstance(
+        full_model_binding, Mapping
+    ):
+        raise RuntimeError("sealed P0/full-model gate pretrain identity is missing")
+    if dict(decision_binding) != dict(full_model_binding):
+        raise RuntimeError("P0/full-model gate pretrain identity drift")
+    pretrain = _require_file(
+        decision_binding.get("path"),
+        decision_binding.get("sha256"),
+        label="sealed P0/full-model gate AdaTAD pretrain",
+    )
+    reopened = {"path": str(pretrain), "sha256": sha256_file(pretrain)}
+    if dict(decision_binding) != reopened:
+        raise RuntimeError("sealed P0/full-model gate pretrain identity drift")
+    return reopened
+
+
+def _validated_terminal_adatad_pretrain(
+    *,
+    path: Any,
+    sha256: Any,
+    sealed_identity: Mapping[str, str],
+    variant: str,
+) -> Path:
+    pretrain = _require_file(
+        path,
+        sha256,
+        label=f"boundary-burst AdaTAD pretrain {variant}",
+    )
+    terminal_identity = {"path": str(pretrain), "sha256": str(sha256)}
+    if terminal_identity != dict(sealed_identity):
+        raise RuntimeError(
+            "boundary-burst terminal AdaTAD pretrain differs from sealed "
+            f"P0/full-model gate identity: {variant}"
+        )
+    return pretrain
+
+
 def validate_suite_self_hash(payload: Mapping[str, Any]) -> str:
     if (
         payload.get("schema") != "duca_boundary_burst_terminal_suite_v1"
@@ -205,6 +255,9 @@ def aggregate(
         decision_path=decision,
         decision_sha256=decision_sha256,
         expected_commit=expected_commit,
+    )
+    sealed_pretrain_identity = _sealed_adatad_pretrain_identity(
+        decision_payload, gate_payload
     )
     frontend_split = _validated_frontend_split_binding(decision_payload)
     routing = decision_payload["family_routing"]
@@ -489,10 +542,11 @@ def aggregate(
         ):
             raise RuntimeError(f"boundary-burst checkpoint sidecar binding mismatch: {sidecar}")
 
-        pretrain = _require_file(
-            identity.get("pretrain_path"),
-            identity.get("pretrain_sha256"),
-            label=f"boundary-burst AdaTAD pretrain {variant}",
+        pretrain = _validated_terminal_adatad_pretrain(
+            path=identity.get("pretrain_path"),
+            sha256=identity.get("pretrain_sha256"),
+            sealed_identity=sealed_pretrain_identity,
+            variant=variant,
         )
         prediction = _require_file(
             evaluation_payload.get("prediction_path"),
@@ -594,6 +648,7 @@ def aggregate(
         "p0_training_asformer_consumer": decision_payload[
             "p0_training_asformer_consumer"
         ],
+        "sealed_adatad_pretrain": sealed_pretrain_identity,
         "gate_path": str(gate),
         "gate_sha256": gate_sha256,
         "required_official60_variants": list(required_variants),

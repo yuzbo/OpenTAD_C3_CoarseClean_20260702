@@ -11,19 +11,30 @@ from pathlib import Path
 from typing import Iterable
 
 
-SCHEMA = "duca_boundary_burst_submission_journal_v1"
+SCHEMA = "duca_boundary_burst_submission_journal_v2"
 HEADER = ("role", "job_id", "dependency", "cluster")
 PENDING_JOB_ID = "PENDING"
-ROLE_ORDER = (
+INITIAL_ROLE_ORDER = (
     "r0_holdout_map",
     "p0",
     "gate",
-    "two_stage_exact_uniform",
-    "gaussian_matched_g0",
-    "boundary_burst_r2q3_g0",
-    "boundary_burst_r4q5_g0",
-    "aggregate",
 )
+UNIFORM_ROLE = "two_stage_exact_uniform"
+SELECTED_G0_ROLE = "r0_selected_boundary_burst_g0"
+AGGREGATE_ROLE = "aggregate"
+ROLE_ORDER = (*INITIAL_ROLE_ORDER, UNIFORM_ROLE, SELECTED_G0_ROLE, AGGREGATE_ROLE)
+COMPLETE_ROLE_COUNT = len(ROLE_ORDER)
+SUBMISSION_MANIFEST_NAME = "submission_manifest.json"
+SUBMISSION_MANIFEST_SEAL_NAME = "submission_manifest.sha256"
+SUBMISSION_MANIFEST_SCHEMA = "duca_boundary_burst_submission_v2"
+GENERATED_SBATCH_FILENAMES = {
+    "r0_holdout_map": "r0.sbatch",
+    "p0": "p0.sbatch",
+    "gate": "gate.sbatch",
+    UNIFORM_ROLE: f"{UNIFORM_ROLE}.sbatch",
+    SELECTED_G0_ROLE: f"{SELECTED_G0_ROLE}.sbatch",
+    AGGREGATE_ROLE: "aggregate.sbatch",
+}
 
 
 class JournalError(RuntimeError):
@@ -36,6 +47,65 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _submission_manifest_binding(journal_path: Path) -> dict[str, str]:
+    run_root = journal_path.expanduser().resolve().parent
+    manifest = run_root / SUBMISSION_MANIFEST_NAME
+    seal = run_root / SUBMISSION_MANIFEST_SEAL_NAME
+    if not manifest.is_file() or not seal.is_file():
+        raise JournalError("submission manifest binding is missing")
+    try:
+        expected_sha256 = seal.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise JournalError("submission manifest seal is unreadable") from error
+    if (
+        len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+        or _sha256(manifest) != expected_sha256
+    ):
+        raise JournalError("submission manifest path/hash drift")
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise JournalError("submission manifest is unreadable") from error
+    if not isinstance(payload, dict):
+        raise JournalError("submission manifest contract drift")
+    unsigned = dict(payload)
+    recorded_self_hash = unsigned.pop("manifest_sha256", None)
+    canonical = hashlib.sha256(
+        json.dumps(
+            unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
+    ).hexdigest()
+    artifacts = payload.get("generated_sbatch_artifacts")
+    if (
+        payload.get("schema") != SUBMISSION_MANIFEST_SCHEMA
+        or payload.get("ok") is not True
+        or payload.get("fail_closed") is not True
+        or payload.get("run_root") != str(run_root)
+        or recorded_self_hash != canonical
+        or not isinstance(artifacts, dict)
+        or set(artifacts) != set(GENERATED_SBATCH_FILENAMES)
+    ):
+        raise JournalError("submission manifest contract drift")
+    for role, filename in GENERATED_SBATCH_FILENAMES.items():
+        record = artifacts.get(role)
+        expected_path = (run_root / "submission" / filename).resolve()
+        if not isinstance(record, dict):
+            raise JournalError(f"submission artifact binding is missing for {role}")
+        artifact = Path(str(record.get("path", ""))).expanduser().resolve()
+        if (
+            artifact != expected_path
+            or not artifact.is_file()
+            or record.get("sha256") != _sha256(artifact)
+        ):
+            raise JournalError(f"submission artifact path/hash drift for {role}")
+    return {
+        "run_root": str(run_root),
+        "submission_manifest_path": str(manifest),
+        "submission_manifest_sha256": expected_sha256,
+    }
 
 
 def _fsync_directory(path: Path) -> None:
@@ -103,12 +173,17 @@ def _expected_dependency(role: str, completed: dict[str, str]) -> str:
         return f"afterok:{completed['r0_holdout_map']}"
     if role == "gate":
         return f"afterok:{completed['p0']}"
-    if role in ROLE_ORDER[3:7]:
+    if role in (UNIFORM_ROLE, SELECTED_G0_ROLE):
         return f"afterok:{completed['gate']}"
-    if role == "aggregate":
-        arm_ids = [completed[item] for item in ROLE_ORDER[3:7]]
-        return f"afterok:{':'.join(arm_ids)}"
+    if role == AGGREGATE_ROLE:
+        return (
+            f"afterok:{completed[UNIFORM_ROLE]}:{completed[SELECTED_G0_ROLE]}"
+        )
     raise JournalError(f"unknown submission role: {role}")
+
+
+def _role_matches_position(role: str, index: int) -> bool:
+    return index < COMPLETE_ROLE_COUNT and role == ROLE_ORDER[index]
 
 
 def _read_rows(path: Path, *, target_cluster: str) -> list[dict[str, str]]:
@@ -119,7 +194,7 @@ def _read_rows(path: Path, *, target_cluster: str) -> list[dict[str, str]]:
         if tuple(reader.fieldnames or ()) != HEADER:
             raise JournalError("submission journal header is invalid")
         rows = list(reader)
-    if len(rows) > len(ROLE_ORDER):
+    if len(rows) > COMPLETE_ROLE_COUNT:
         raise JournalError("submission journal contains too many rows")
 
     completed: dict[str, str] = {}
@@ -127,11 +202,11 @@ def _read_rows(path: Path, *, target_cluster: str) -> list[dict[str, str]]:
     for index, row in enumerate(rows):
         if None in row or any(row.get(field, "") == "" for field in HEADER):
             raise JournalError("submission journal contains a malformed row")
-        expected_role = ROLE_ORDER[index]
-        if row["role"] != expected_role:
+        expected_role = row["role"]
+        if not _role_matches_position(expected_role, index):
             raise JournalError(
-                f"submission journal role order drift: expected {expected_role}, "
-                f"got {row['role']}"
+                f"submission journal role order drift at position {index}: "
+                f"got {expected_role}"
             )
         if row["cluster"] != target_cluster:
             raise JournalError(f"submission journal cluster drift for {expected_role}")
@@ -157,6 +232,7 @@ def _read_rows(path: Path, *, target_cluster: str) -> list[dict[str, str]]:
 def initialize(journal_path: Path, seal_path: Path) -> None:
     if journal_path.exists() or seal_path.exists():
         raise JournalError("submission journal already exists; refusing to resubmit")
+    _submission_manifest_binding(journal_path)
     _exclusive_write(journal_path, _serialize_rows([]))
 
 
@@ -173,7 +249,9 @@ def reserve(
     rows = _read_rows(journal_path, target_cluster=target_cluster)
     if rows and rows[-1]["job_id"] == PENDING_JOB_ID:
         raise JournalError("prior submission intent is unresolved")
-    if len(rows) >= len(ROLE_ORDER) or role != ROLE_ORDER[len(rows)]:
+    if len(rows) >= COMPLETE_ROLE_COUNT or not _role_matches_position(
+        role, len(rows)
+    ):
         raise JournalError(f"unexpected next submission role: {role}")
     completed = {row["role"]: row["job_id"] for row in rows}
     if dependency != _expected_dependency(role, completed):
@@ -222,7 +300,7 @@ def _validate_complete(
     target_cluster: str,
 ) -> list[dict[str, str]]:
     rows = _read_rows(journal_path, target_cluster=target_cluster)
-    if len(rows) != len(ROLE_ORDER) or any(
+    if len(rows) != COMPLETE_ROLE_COUNT or any(
         row["job_id"] == PENDING_JOB_ID for row in rows
     ):
         raise JournalError("submission journal is partial")
@@ -234,6 +312,8 @@ def _validate_complete(
         raise JournalError(
             "submission journal completion seal is unreadable"
         ) from error
+    roles = [row["role"] for row in rows]
+    submission_binding = _submission_manifest_binding(journal_path)
     expected = {
         "schema": SCHEMA,
         "complete": True,
@@ -241,8 +321,11 @@ def _validate_complete(
         "target_cluster": target_cluster,
         "journal_path": str(journal_path.resolve()),
         "journal_sha256": _sha256(journal_path),
-        "roles": list(ROLE_ORDER),
-        "job_count": len(ROLE_ORDER),
+        "roles": roles,
+        "main_official60_roles": [UNIFORM_ROLE, SELECTED_G0_ROLE],
+        "selected_g0_runtime_routing": "sealed_frontend_decision",
+        "job_count": COMPLETE_ROLE_COUNT,
+        **submission_binding,
     }
     if seal != expected:
         raise JournalError("submission journal completion seal does not match jobs.tsv")
@@ -259,10 +342,12 @@ def seal(
     if seal_path.exists():
         raise JournalError("submission journal is already sealed")
     rows = _read_rows(journal_path, target_cluster=target_cluster)
-    if len(rows) != len(ROLE_ORDER) or any(
+    if len(rows) != COMPLETE_ROLE_COUNT or any(
         row["job_id"] == PENDING_JOB_ID for row in rows
     ):
         raise JournalError("cannot seal a partial submission journal")
+    roles = [row["role"] for row in rows]
+    submission_binding = _submission_manifest_binding(journal_path)
     payload = {
         "schema": SCHEMA,
         "complete": True,
@@ -270,8 +355,11 @@ def seal(
         "target_cluster": target_cluster,
         "journal_path": str(journal_path.resolve()),
         "journal_sha256": _sha256(journal_path),
-        "roles": list(ROLE_ORDER),
-        "job_count": len(ROLE_ORDER),
+        "roles": roles,
+        "main_official60_roles": [UNIFORM_ROLE, SELECTED_G0_ROLE],
+        "selected_g0_runtime_routing": "sealed_frontend_decision",
+        "job_count": COMPLETE_ROLE_COUNT,
+        **submission_binding,
     }
     _exclusive_write(
         seal_path,

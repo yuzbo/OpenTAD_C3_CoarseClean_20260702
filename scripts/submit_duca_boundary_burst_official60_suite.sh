@@ -79,6 +79,7 @@ module load miniforge3/24.11
 source '${BASE}/conda_envs/opentad/bin/activate'
 cd '${REPO_ROOT}'
 export BASE='${BASE}' DUCA_EXPECTED_COMMIT='${EXPECTED_COMMIT}' RUN_ROOT='${RUN_ROOT}'
+export DUCA_TARGET_CLUSTER='${TARGET_CLUSTER}'
 export DUCA_ADATAD_PRETRAIN_PATH='${ADATAD_PRETRAIN_PATH}'
 export DUCA_ADATAD_PRETRAIN_SHA256='${ADATAD_PRETRAIN_SHA256}'
 EOF
@@ -129,20 +130,17 @@ mv -f "${RUN_ROOT}/full_model_gate/gate_suite.sha256.tmp" \
   "${RUN_ROOT}/full_model_gate/gate_suite.sha256"
 EOF
 
-variants=(
+main_worker_roles=(
   two_stage_exact_uniform
-  gaussian_matched_g0
-  boundary_burst_r2q3_g0
-  boundary_burst_r4q5_g0
+  r0_selected_boundary_burst_g0
 )
-for variant in "${variants[@]}"; do
-  file="${RUN_ROOT}/submission/${variant}.sbatch"
-  write_header "${file}" "${variant}_${EXPECTED_COMMIT:0:7}" "3-00:00:00" 1
+for worker_role in "${main_worker_roles[@]}"; do
+  file="${RUN_ROOT}/submission/${worker_role}.sbatch"
+  write_header "${file}" "${worker_role}_${EXPECTED_COMMIT:0:7}" "3-00:00:00" 1
   cat >>"${file}" <<EOF
 set +e
 (
 set -euo pipefail
-export DUCA_SELECTED_OPT_VARIANT='${variant}'
 export DUCA_FRONTEND_DECISION_JSON="\${RUN_ROOT}/frontend_decision.json"
 IFS= read -r DUCA_FRONTEND_DECISION_SHA256 < "\${RUN_ROOT}/frontend_decision.sha256"
 [[ "\${DUCA_FRONTEND_DECISION_SHA256}" =~ ^[0-9a-f]{64}$ ]] || exit 1
@@ -151,12 +149,13 @@ export DUCA_SELECTED_OPT_GATE_SUITE="\${RUN_ROOT}/full_model_gate/gate_suite.jso
 IFS= read -r DUCA_SELECTED_OPT_GATE_SUITE_SHA256 < "\${RUN_ROOT}/full_model_gate/gate_suite.sha256"
 [[ "\${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || exit 1
 export DUCA_SELECTED_OPT_GATE_SUITE_SHA256
-readarray -t route_policy < <("\${PYTHON}" - \
+resolved_variant="\$("\${PYTHON}" - \
   "\${DUCA_FRONTEND_DECISION_JSON}" "\${DUCA_FRONTEND_DECISION_SHA256}" \
   "\${DUCA_SELECTED_OPT_GATE_SUITE}" "\${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" \
-  "\${DUCA_EXPECTED_COMMIT}" '${variant}' <<'PY'
+  "\${DUCA_EXPECTED_COMMIT}" '${worker_role}' <<'PY'
 import sys
 from tools.bata.select_duca_boundary_burst_candidates import (
+    UNIFORM_OFFICIAL_VARIANT,
     validate_frontend_decision,
     validate_full_model_gate,
 )
@@ -173,39 +172,28 @@ validate_full_model_gate(
     decision_sha256=sys.argv[2],
     expected_commit=sys.argv[5],
 )
-variant = sys.argv[6]
-print("required_main" if variant in decision["family_routing"]["required_official60_variants"] else "diagnostic_not_scheduled")
-print(decision["family_routing"]["selected_official60_variant"])
+worker_role = sys.argv[6]
+if worker_role == UNIFORM_OFFICIAL_VARIANT:
+    variant = UNIFORM_OFFICIAL_VARIANT
+elif worker_role == "r0_selected_boundary_burst_g0":
+    variant = decision["family_routing"]["selected_official60_variant"]
+else:
+    raise SystemExit(f"unsupported main worker role: {worker_role}")
+required = decision["family_routing"]["required_official60_variants"]
+if variant not in required:
+    raise SystemExit(f"refusing to run non-main official60 variant: {variant}")
+if variant not in (
+    UNIFORM_OFFICIAL_VARIANT,
+    "boundary_burst_r2q3_g0",
+    "boundary_burst_r4q5_g0",
+):
+    raise SystemExit(f"invalid routed official60 variant: {variant}")
+print(variant)
 PY
-)
-if [[ "\${route_policy[0]}" != required_main ]]; then
-  "\${PYTHON}" - "\${RUN_ROOT}/official60/${variant}/diagnostic_status.json" \
-    "\${DUCA_EXPECTED_COMMIT}" '${variant}' "\${DUCA_FRONTEND_DECISION_SHA256}" \
-    "\${route_policy[1]}" <<'PY'
-import sys
-from pathlib import Path
-from tools.bata.select_duca_boundary_burst_candidates import _atomic_write_json
-
-_atomic_write_json(
-    Path(sys.argv[1]).resolve(),
-    {
-        "schema": "duca_boundary_burst_optional_diagnostic_status_v1",
-        "ok": True,
-        "git_commit": sys.argv[2],
-        "variant": sys.argv[3],
-        "frontend_decision_sha256": sys.argv[4],
-        "selected_official60_variant": sys.argv[5],
-        "main_result_required": False,
-        "diagnostic_executed": False,
-        "status": "not_scheduled_by_r0_family_routing",
-    },
-    require_absent=True,
-)
-PY
-  exit 0
-fi
-export RUN_DIR="\${RUN_ROOT}/official60/${variant}/run"
-export WORK_DIR="\${RUN_ROOT}/official60/${variant}/work"
+)"
+export DUCA_SELECTED_OPT_VARIANT="\${resolved_variant}"
+export RUN_DIR="\${RUN_ROOT}/official60/\${resolved_variant}/run"
+export WORK_DIR="\${RUN_ROOT}/official60/\${resolved_variant}/work"
 bash scripts/run_duca_two_stage_curriculum_variant_gpu1.sh
 sha256sum "\${RUN_DIR}/completion.json" | awk '{print \$1}' > \
   "\${RUN_DIR}/completion.sha256.tmp"
@@ -213,8 +201,8 @@ mv -f "\${RUN_DIR}/completion.sha256.tmp" "\${RUN_DIR}/completion.sha256"
 )
 role_status=\$?
 if [[ \${role_status} -ne 0 ]]; then
-  "\${PYTHON}" - "\${RUN_ROOT}/official60/${variant}/role_failure.json" \
-    "\${DUCA_EXPECTED_COMMIT}" '${variant}' "\${role_status}" <<'PY'
+  "\${PYTHON}" - "\${RUN_ROOT}/official60_worker_failures/${worker_role}.json" \
+    "\${DUCA_EXPECTED_COMMIT}" '${worker_role}' "\${role_status}" <<'PY'
 import sys
 from pathlib import Path
 
@@ -227,7 +215,7 @@ _atomic_write_json(
         "ok": False,
         "fail_closed": True,
         "git_commit": sys.argv[2],
-        "variant": sys.argv[3],
+        "worker_role": sys.argv[3],
         "worker_exit_code": int(sys.argv[4]),
         "status": "worker_failed_aggregate_will_adjudicate_required_main",
     },
@@ -332,17 +320,37 @@ from tools.bata.select_duca_boundary_burst_candidates import (
 ) = sys.argv[1:]
 checkpoint_path = Path(checkpoint).expanduser().resolve()
 pretrain_path = Path(pretrain).expanduser().resolve()
+run_root = Path(out).resolve().parent
 for path, expected, label in (
     (checkpoint_path, checkpoint_sha, "R0 checkpoint"),
     (pretrain_path, pretrain_sha, "AdaTAD pretrain"),
 ):
     if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         raise SystemExit(f"{label} drifted while sealing submission")
+sbatch_roles = {
+    "r0_holdout_map": "r0.sbatch",
+    "p0": "p0.sbatch",
+    "gate": "gate.sbatch",
+    "two_stage_exact_uniform": "two_stage_exact_uniform.sbatch",
+    "r0_selected_boundary_burst_g0": "r0_selected_boundary_burst_g0.sbatch",
+    "aggregate": "aggregate.sbatch",
+}
+generated_sbatch_artifacts = {}
+for role, filename in sbatch_roles.items():
+    path = (run_root / "submission" / filename).resolve()
+    if not path.is_file():
+        raise SystemExit(f"generated sbatch is missing for {role}: {path}")
+    generated_sbatch_artifacts[role] = {
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
 payload = {
     "schema": "duca_boundary_burst_submission_v2",
     "ok": True,
     "fail_closed": True,
     "git_commit": commit,
+    "run_root": str(run_root),
+    "generated_sbatch_artifacts": generated_sbatch_artifacts,
     "split_manifest_path": str(Path(split).resolve()),
     "split_manifest_sha256": split_sha,
     "split_reference_bindings": {
@@ -376,8 +384,22 @@ payload = {
         "r0_holdout_map": "none",
         "p0": "afterok:r0_holdout_map",
         "gate": "afterok:p0",
-        "journal_official60_roles": "afterok:gate",
-        "aggregate": "afterok:journal_policy_sentinels_then_revalidate_required_main",
+        "two_stage_exact_uniform": "afterok:gate",
+        "r0_selected_boundary_burst_g0": "afterok:gate",
+        "aggregate": "afterok:matched_u_plus_r0_selected_g0",
+    },
+    "runtime_selected_g0_worker": {
+        "role": "r0_selected_boundary_burst_g0",
+        "routing_source": str(run_root / "frontend_decision.json"),
+        "routing_source_sha256_seal": str(
+            run_root / "frontend_decision.sha256"
+        ),
+        "full_model_gate": str(run_root / "full_model_gate" / "gate_suite.json"),
+        "allowed_variants": [
+            "boundary_burst_r2q3_g0",
+            "boundary_burst_r4q5_g0",
+        ],
+        "runner": "scripts/run_duca_two_stage_curriculum_variant_gpu1.sh",
     },
     "required_p0_policy": "r0_selected_projected_family_only",
     "required_official60_policy": [
@@ -388,6 +410,7 @@ payload = {
         "gaussian_matched_g0",
         "r0_unselected_boundary_burst_g0",
     ],
+    "diagnostic_submission_policy": "not_submitted_by_main_dag",
     "diagnostic_failures_block_main": False,
     "official60_job_envelope": (
         "worker failures become atomic role_failure evidence; aggregate requires "
@@ -448,16 +471,15 @@ p0="${SUBMITTED_JOB_ID}"
 gate_dependency="afterok:${p0}"
 submit_and_record "gate" "${gate_dependency}" "${GATE_SBATCH}"
 gate="${SUBMITTED_JOB_ID}"
-train_ids=()
-for variant in "${variants[@]}"; do
-  submit_and_record "${variant}" "afterok:${gate}" \
-    "${RUN_ROOT}/submission/${variant}.sbatch"
-  train_ids+=("${SUBMITTED_JOB_ID}")
-done
-dependency="$(IFS=:; echo "${train_ids[*]}")"
-aggregate_dependency="afterok:${dependency}"
+main_dependency="afterok:${gate}"
+submit_and_record "two_stage_exact_uniform" "${main_dependency}" \
+  "${RUN_ROOT}/submission/two_stage_exact_uniform.sbatch"
+uniform="${SUBMITTED_JOB_ID}"
+submit_and_record "r0_selected_boundary_burst_g0" "${main_dependency}" \
+  "${RUN_ROOT}/submission/r0_selected_boundary_burst_g0.sbatch"
+selected_g0="${SUBMITTED_JOB_ID}"
+aggregate_dependency="afterok:${uniform}:${selected_g0}"
 submit_and_record "aggregate" "${aggregate_dependency}" "${AGG_SBATCH}"
-aggregate="${SUBMITTED_JOB_ID}"
 journal seal
 journal inspect >/dev/null
 cat "${JOBS_TSV}"

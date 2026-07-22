@@ -738,6 +738,7 @@ def _reseal_arm_after_identity_mutation(
     completion_path: Path,
     *,
     mutation: str,
+    replacement_pretrain_path: Path | None = None,
 ) -> str:
     completion = json.loads(completion_path.read_text(encoding="utf-8"))
     evaluation_path = Path(completion["evaluation_path"])
@@ -780,8 +781,9 @@ def _reseal_arm_after_identity_mutation(
         )
         audit["evaluation_config_sha256"] = evaluation["evaluation_config_sha256"]
     elif mutation == "adatad_pretrain":
-        replacement = root / "replacement_pretrain.pth"
-        replacement.write_bytes(b"replacement-pretrain")
+        replacement = replacement_pretrain_path or root / "replacement_pretrain.pth"
+        if replacement_pretrain_path is None:
+            replacement.write_bytes(b"replacement-pretrain")
         identity["pretrain_path"] = str(replacement.resolve())
         identity["pretrain_sha256"] = _sha256(replacement)
         audit["pretrain_path"] = identity["pretrain_path"]
@@ -987,11 +989,22 @@ def test_terminal_aggregate_rejects_unselected_family_substitution(
         )
 
 
-@pytest.mark.parametrize("mutation", ("class_map", "evaluation_target", "adatad_pretrain"))
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    (
+        ("class_map", "cross-arm identity drift"),
+        ("evaluation_target", "cross-arm identity drift"),
+        (
+            "adatad_pretrain",
+            "terminal AdaTAD pretrain differs from sealed P0/full-model gate",
+        ),
+    ),
+)
 def test_terminal_aggregate_rejects_resealed_cross_arm_identity_drift(
     tmp_path: Path,
     monkeypatch,
     mutation: str,
+    expected_error: str,
 ) -> None:
     _stub_official_recompute(monkeypatch)
     roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
@@ -999,7 +1012,45 @@ def test_terminal_aggregate_rejects_resealed_cross_arm_identity_drift(
         completions[1], mutation=mutation
     )
 
-    with pytest.raises(RuntimeError, match="cross-arm identity drift"):
+    with pytest.raises(RuntimeError, match=expected_error):
+        aggregate(
+            expected_commit="a" * 40,
+            decision_path=roots["decision"],
+            decision_sha256=_sha256(roots["decision"]),
+            gate_path=roots["gate"],
+            gate_sha256=_sha256(roots["gate"]),
+            completion_paths=completions,
+            completion_sha256s=completion_shas,
+            output_path=tmp_path / "aggregate.json",
+        )
+
+
+def test_terminal_aggregate_rejects_same_content_different_path_pretrain_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _stub_official_recompute(monkeypatch)
+    roots, completions, completion_shas = _terminal_suite(tmp_path, monkeypatch)
+    first_completion = json.loads(completions[0].read_text(encoding="utf-8"))
+    first_evaluation = json.loads(
+        Path(first_completion["evaluation_path"]).read_text(encoding="utf-8")
+    )
+    sealed_pretrain = Path(
+        first_evaluation["training_identity"]["pretrain_path"]
+    )
+    relocated_pretrain = tmp_path / "relocated_same_content_pretrain.pth"
+    relocated_pretrain.write_bytes(sealed_pretrain.read_bytes())
+    for index, completion in enumerate(completions):
+        completion_shas[index] = _reseal_arm_after_identity_mutation(
+            completion,
+            mutation="adatad_pretrain",
+            replacement_pretrain_path=relocated_pretrain,
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match="terminal AdaTAD pretrain differs from sealed P0/full-model gate",
+    ):
         aggregate(
             expected_commit="a" * 40,
             decision_path=roots["decision"],
@@ -1157,15 +1208,27 @@ def test_submission_dag_requires_r0_before_every_learned_stage() -> None:
     assert 'submit_and_record "p0" "${p0_dependency}" "${P0_SBATCH}"' in source
     assert '"p0": "afterok:r0_holdout_map"' in source
     assert '"gate": "afterok:p0"' in source
-    assert '"journal_official60_roles": "afterok:gate"' in source
+    assert '"two_stage_exact_uniform": "afterok:gate"' in source
+    assert '"r0_selected_boundary_burst_g0": "afterok:gate"' in source
+    assert '"aggregate": "afterok:matched_u_plus_r0_selected_g0"' in source
     assert '"aggregate_inputs": "matched_u_plus_r0_selected_g0_only"' in source
     assert '"diagnostic_failures_block_main": False' in source
-    assert '"diagnostic_executed": False' in source
+    assert '"diagnostic_submission_policy": "not_submitted_by_main_dag"' in source
+    assert '"diagnostic_executed": False' not in source
     assert 'role_status=\\$?' in source
     assert '"required_main_failure_blocks_final_aggregate": True' in source
     assert '"worker_failed_aggregate_will_adjudicate_required_main"' in source
     assert 'selected_variant="$(${PYTHON}' not in source
     assert 'selected_variant="$("${PYTHON}"' in source
+    assert 'elif worker_role == "r0_selected_boundary_burst_g0":' in source
+    assert 'variant = decision["family_routing"]["selected_official60_variant"]' in source
+    assert 'submit_and_record "two_stage_exact_uniform" "${main_dependency}"' in source
+    assert 'submit_and_record "r0_selected_boundary_burst_g0" "${main_dependency}"' in source
+    assert 'aggregate_dependency="afterok:${uniform}:${selected_g0}"' in source
+    assert 'submit_and_record "gaussian_matched_g0"' not in source
+    assert 'submit_and_record "boundary_burst_r2q3_g0"' not in source
+    assert 'submit_and_record "boundary_burst_r4q5_g0"' not in source
+    assert '"r0_selected_boundary_burst_g0": "r0_selected_boundary_burst_g0.sbatch"' in source
     assert '"r0_positive_headroom_required": True' in source
 
 
