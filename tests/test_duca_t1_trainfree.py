@@ -13,6 +13,15 @@ from tools.bata import duca_selected_axis_training
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_t1_variants_are_registered_for_selected_axis_runtime_binding() -> None:
+    assert duca_selected_axis_training.VARIANT_CONFIGS[
+        "t1_true_time_residual_g0"
+    ] == "duca_t1_true_time_residual_g0_fixed384_official60.py"
+    assert duca_selected_axis_training.VARIANT_CONFIGS[
+        "t1_reversed_time_residual_g0"
+    ] == "duca_t1_reversed_time_residual_g0_fixed384_official60.py"
+
+
 def test_true_time_residual_is_exact_identity_at_initialization_and_trainable() -> None:
     module = TrueTimeFeatureResidual(feature_dim=8, hidden_dim=6, descriptor_mode="actual")
     features = torch.randn(2, 8, 4, requires_grad=True)

@@ -73,6 +73,12 @@ VARIANT_CONFIGS = {
     "boundary_burst_r4q5_g0": (
         "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     ),
+    "t1_true_time_residual_g0": (
+        "duca_t1_true_time_residual_g0_fixed384_official60.py"
+    ),
+    "t1_reversed_time_residual_g0": (
+        "duca_t1_reversed_time_residual_g0_fixed384_official60.py"
+    ),
     "boundary_burst_r2q3_g1": (
         "duca_boundary_burst_g1_protected_fixed384_official60.py"
     ),
