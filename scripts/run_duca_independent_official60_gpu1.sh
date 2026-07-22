@@ -10,34 +10,42 @@ export DUCA_CELLCF_TRAINING_PROFILE=official60
 source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 
 VARIANT="${DUCA_INDEPENDENT_VARIANT:-}"
+RUNTIME_VARIANT=""
 case "${VARIANT}" in
   two_stage_exact_uniform)
     CONFIG="configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py"
     P0_CONFIG=""
+    RUNTIME_VARIANT="two_stage_exact_uniform"
     ;;
   gaussian_matched_g0)
     CONFIG="configs/adatad/thumos/duca_global_curriculum_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_gaussian_frontend_pretrain_matched_fixed384.py"
+    RUNTIME_VARIANT="gaussian_matched_g0"
     ;;
   boundary_burst_r2q3_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_frontend_pretrain_fixed384.py"
+    RUNTIME_VARIANT="boundary_burst_r2q3_g0"
     ;;
   boundary_burst_r2q3_soft_detached_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_detached_frontend_pretrain_fixed384.py"
+    RUNTIME_VARIANT="boundary_burst_r2q3_soft_g0"
     ;;
   boundary_burst_r2q3_hard_detached_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_hard_detached_frontend_pretrain_fixed384.py"
+    RUNTIME_VARIANT="boundary_burst_r2q3_g0"
     ;;
   boundary_burst_r2q3_soft_adapted_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_soft_adapted_frontend_pretrain_fixed384.py"
+    RUNTIME_VARIANT="boundary_burst_r2q3_soft_g0"
     ;;
   boundary_burst_r4q5_g0)
     CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py"
+    RUNTIME_VARIANT="boundary_burst_r4q5_g0"
     ;;
   *) fail "unknown independent variant: ${VARIANT}" ;;
 esac
@@ -166,7 +174,7 @@ atomic_write_json(
 PY
 export DUCA_SELECTED_OPT_GATE_SUITE="${GATE_SUITE}"
 export DUCA_SELECTED_OPT_GATE_SUITE_SHA256="$(sha256sum "${GATE_SUITE}" | awk '{print $1}')"
-export DUCA_SELECTED_OPT_VARIANT="${VARIANT}"
+export DUCA_SELECTED_OPT_VARIANT="${RUNTIME_VARIANT}"
 
 WORK_DIR="${ARM_ROOT}/official60/work"
 "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \

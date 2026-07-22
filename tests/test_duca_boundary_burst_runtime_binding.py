@@ -17,6 +17,7 @@ SUPPORTED_BOUNDARY_VARIANTS = (
     "two_stage_exact_uniform",
     "gaussian_matched_g0",
     "boundary_burst_r2q3_g0",
+    "boundary_burst_r2q3_soft_g0",
     "boundary_burst_r4q5_g0",
 )
 

@@ -37,6 +37,9 @@ def test_each_arm_is_self_contained_and_uses_terminal_official_map() -> None:
     assert '"official_validation_comparable": True' in source
     assert "require_absent" not in source
     assert "require_absent" not in submit_source
+    assert 'RUNTIME_VARIANT="boundary_burst_r2q3_soft_g0"' in source
+    assert 'RUNTIME_VARIANT="boundary_burst_r2q3_g0"' in source
+    assert 'export DUCA_SELECTED_OPT_VARIANT="${RUNTIME_VARIANT}"' in source
 
 
 def test_protocol_audit_classifies_internal_and_official_metrics(tmp_path: Path) -> None:

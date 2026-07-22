@@ -70,6 +70,9 @@ VARIANT_CONFIGS = {
     "boundary_burst_r2q3_g0": (
         "duca_boundary_burst_g0_no_feedback_fixed384_official60.py"
     ),
+    "boundary_burst_r2q3_soft_g0": (
+        "duca_boundary_burst_soft_g0_no_feedback_fixed384_official60.py"
+    ),
     "boundary_burst_r4q5_g0": (
         "duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py"
     ),
