@@ -6,7 +6,7 @@ import json
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from tools.bata.duca_p0_evaluation import canonical_sha256
 from tools.bata.duca_trained_checkpoint_binding import (
@@ -15,8 +15,8 @@ from tools.bata.duca_trained_checkpoint_binding import (
 
 
 SEEDS = (3407, 5801, 8123)
-BUDGETS = (384, 256)
-MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
+BUDGETS = (384, 320, 256, 192, 128)
+MAX_UNSELECTED_HOLES = {384: 2, 320: 2, 256: 3, 192: 4, 128: 6}
 ARMS = ("uniform", "learned")
 BACKENDS = ("actionformer", "temporalmaxer")
 PAIRED_COST_BACKEND = "actionformer"
@@ -603,6 +603,8 @@ def generate_matrix(
     dense_checkpoint_evidence: str | Path,
     dense_trained_commit: str,
     cluster: str = "n16r4",
+    budgets: Sequence[int] = BUDGETS,
+    seeds: Sequence[int] = SEEDS,
 ) -> dict[str, Any]:
     repo = Path(repo_root).expanduser().resolve()
     output = Path(output_dir).expanduser().resolve()
@@ -615,6 +617,20 @@ def generate_matrix(
     ).strip()
     if len(git_commit) != 40:
         raise RuntimeError("R5 generation requires an exact Git commit")
+    requested_budgets = tuple(int(value) for value in budgets)
+    requested_seeds = tuple(int(value) for value in seeds)
+    if (
+        not requested_budgets
+        or len(set(requested_budgets)) != len(requested_budgets)
+        or any(value not in BUDGETS for value in requested_budgets)
+    ):
+        raise ValueError("R5 budgets must be a non-empty unique subset of supported budgets")
+    if (
+        not requested_seeds
+        or len(set(requested_seeds)) != len(requested_seeds)
+        or any(value not in SEEDS for value in requested_seeds)
+    ):
+        raise ValueError("R5 seeds must be a non-empty unique subset of supported seeds")
     sources = {
         "uniform": _require_source(uniform_config, repo_root=repo, label="uniform"),
         "learned": _require_source(learned_config, repo_root=repo, label="learned"),
@@ -660,8 +676,8 @@ def generate_matrix(
     cells: list[dict[str, Any]] = []
     for backend in BACKENDS:
         for arm in ARMS:
-            for budget in BUDGETS:
-                for seed in SEEDS:
+            for budget in requested_budgets:
+                for seed in requested_seeds:
                     cell_id = f"{backend}_{arm}_k{budget}_s{seed}"
                     config = output / "configs" / f"{cell_id}.py"
                     work_dir = output / "runs" / cell_id
@@ -717,6 +733,18 @@ def generate_matrix(
                         }
                     )
     gate_config = output / "configs/temporalmaxer_learned_k384_s3407.py"
+    if not gate_config.is_file():
+        _write(
+            gate_config,
+            render_cell_config(
+                source=sources["learned"],
+                backend="temporalmaxer",
+                arm="learned",
+                budget=384,
+                seed=3407,
+                work_dir=output / "runs/temporalmaxer_learned_k384_s3407_gate",
+            ),
+        )
     gate_job = output / "jobs/temporalmaxer_one_step.sbatch"
     _write(
         gate_job,
@@ -791,10 +819,11 @@ def generate_matrix(
         "git_commit": git_commit,
         "output_dir": str(output),
         "cell_count": len(cells),
-        "seeds": list(SEEDS),
-        "budgets": list(BUDGETS),
+        "seeds": list(requested_seeds),
+        "budgets": list(requested_budgets),
         "max_unselected_holes": {
-            str(budget): MAX_UNSELECTED_HOLES[budget] for budget in BUDGETS
+            str(budget): MAX_UNSELECTED_HOLES[budget]
+            for budget in requested_budgets
         },
         "arms": list(ARMS),
         "backends": list(BACKENDS),
@@ -844,6 +873,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-checkpoint-evidence", required=True)
     parser.add_argument("--dense-trained-commit", required=True)
     parser.add_argument("--cluster", default="n16r4")
+    parser.add_argument("--budgets", nargs="+", type=int, default=list(BUDGETS))
+    parser.add_argument("--seeds", nargs="+", type=int, default=list(SEEDS))
     return parser.parse_args()
 
 
@@ -859,6 +890,8 @@ def main() -> None:
         dense_checkpoint_evidence=args.dense_checkpoint_evidence,
         dense_trained_commit=args.dense_trained_commit,
         cluster=args.cluster,
+        budgets=args.budgets,
+        seeds=args.seeds,
     )
     print(json.dumps(summary, indent=2))
 

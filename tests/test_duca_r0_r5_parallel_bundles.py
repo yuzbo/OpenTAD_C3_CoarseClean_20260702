@@ -105,11 +105,12 @@ def test_r2_r3_factorial_arms_keep_p0_gate_official60_inside_each_child():
         assert config in independent
 
 
-def test_r5_covers_exactly_four_groups_of_six_cells_and_same_backend_costs():
+def test_r5_derives_requested_groups_and_same_backend_costs():
     submitter = _text(SUBMITTER)
     worker = _text(WORKER)
-    assert '"r5_cell_count": 24' in submitter
-    assert "four backend-by-arm groups of six cells" in submitter
+    assert '"r5_cell_count": len(rows)' in submitter
+    assert '"r5_budgets": summary["budgets"]' in submitter
+    assert '"r5_seeds": summary["seeds"]' in submitter
     for group in (
         "actionformer:uniform",
         "actionformer:learned",
@@ -117,13 +118,11 @@ def test_r5_covers_exactly_four_groups_of_six_cells_and_same_backend_costs():
         "temporalmaxer:learned",
     ):
         assert group in worker
-    assert '[[ "${count}" == 6 ]]' in worker
+    assert "expected_count" in worker
+    assert '[[ "${expected_count}" -gt 0 && "${count}" == "${expected_count}" ]]' in worker
     assert 'if [[ "${seed}" == 3407 && "${backend}" == actionformer ]]' in worker
     assert "cost_dense_adatad_k768" not in worker
-    assert (
-        "all 24 R5 cells and four paired ActionFormer candidate/dense cost profiles completed"
-        in worker
-    )
+    assert "all requested R5 cells and paired ActionFormer candidate/dense cost profiles completed" in worker
 
 
 def test_parallel_sources_bind_final_head_bilateral_and_hidden_gradient_contract():

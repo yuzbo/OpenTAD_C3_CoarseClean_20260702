@@ -102,7 +102,23 @@ def _validate_aggregate(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     _require(payload.get("status") == COMPLETE_STATUS, "aggregate status is incomplete")
     _require(payload.get("task") == "offline_temporal_action_detection", "aggregate task drift")
     rows = payload.get("rows")
-    _require(isinstance(rows, list) and len(rows) == 24, "aggregate lacks the complete 24-cell matrix")
+    axes = payload.get("matrix_axes")
+    if isinstance(axes, Mapping):
+        backends = tuple(str(value) for value in axes.get("backends", ()))
+        arms = tuple(str(value) for value in axes.get("arms", ()))
+        budgets = tuple(int(value) for value in axes.get("budgets", ()))
+        seeds = tuple(int(value) for value in axes.get("seeds", ()))
+    else:
+        backends = ("actionformer", "temporalmaxer")
+        arms = ("uniform", "learned")
+        budgets = (384, 256)
+        seeds = (3407, 5801, 8123)
+    expected_rows = len(backends) * len(arms) * len(budgets) * len(seeds)
+    _require(
+        backends and arms and budgets and seeds
+        and isinstance(rows, list) and len(rows) == expected_rows,
+        "aggregate lacks its complete declared matrix",
+    )
     evaluator = official_evaluator_identity()
     grouped: dict[tuple[str, str, int], list[int]] = defaultdict(list)
     normalized: list[dict[str, Any]] = []
@@ -113,8 +129,8 @@ def _validate_aggregate(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
         budget = row.get("budget")
         seed = row.get("seed")
         _require(backend and arm in {"uniform", "learned"}, "aggregate row identity is invalid")
-        _require(isinstance(budget, int) and budget in {256, 384}, "aggregate row K is invalid")
-        _require(isinstance(seed, int), "aggregate row seed is invalid")
+        _require(isinstance(budget, int) and budget in set(budgets), "aggregate row K is invalid")
+        _require(isinstance(seed, int) and seed in set(seeds), "aggregate row seed is invalid")
         _require(row.get("evaluator") == evaluator, f"{backend}/{arm}/K{budget}/s{seed} is not official mAP")
         config = row.get("evaluation_config")
         _require(
@@ -137,8 +153,14 @@ def _validate_aggregate(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
         _require(normalized_row["id"], "aggregate row id is missing")
         normalized.append(normalized_row)
         grouped[(backend, arm, budget)].append(seed)
-    _require(len(grouped) == 8, "aggregate does not contain all backend/arm/K groups")
-    _require(all(len(seeds) == 3 and len(set(seeds)) == 3 for seeds in grouped.values()), "aggregate lacks three independent seeds per backend/arm/K")
+    _require(
+        len(grouped) == len(backends) * len(arms) * len(budgets),
+        "aggregate does not contain all backend/arm/K groups",
+    )
+    _require(
+        all(len(group_seeds) == len(seeds) and set(group_seeds) == set(seeds) for group_seeds in grouped.values()),
+        "aggregate lacks the declared independent seeds per backend/arm/K",
+    )
     return normalized
 
 
@@ -156,7 +178,10 @@ def _validate_raw_costs(
     costs = aggregate.get("costs")
     dense_costs = aggregate.get("paired_dense_costs")
     _require(isinstance(costs, list) and isinstance(dense_costs, list), "aggregate lacks paired raw cost references")
-    _require(len(costs) == len(dense_costs) == 4, "aggregate lacks four paired cost profiles")
+    _require(
+        len(costs) == len(dense_costs) and len(costs) > 0,
+        "aggregate lacks matched candidate/dense cost profiles",
+    )
     expected: dict[str, tuple[str, Mapping[str, Any]]] = {}
     for row in costs:
         _require(isinstance(row, Mapping), "aggregate candidate cost reference is invalid")
@@ -201,7 +226,10 @@ def _validate_raw_costs(
         else:
             _require(profile.get("method") == "dense-adatad", f"dense cost method drift: {path}")
             dense_rows.append(record)
-    _require(len(candidates) == len(dense_rows) == 4, "raw candidate/dense profile count drift")
+    _require(
+        len(candidates) == len(dense_rows) == len(costs),
+        "raw candidate/dense profile count drift",
+    )
     return candidates, dense_rows
 
 
@@ -287,12 +315,12 @@ def build_performance_cost_report(
         groups[(row["backend"], row["arm"], row["K"])].append(row)
     aggregates = []
     for (backend, arm, budget), rows in sorted(groups.items()):
-        _require(len(rows) == 3, f"{backend}/{arm}/K{budget} lacks three seeds")
+        _require(len(rows) >= 2, f"{backend}/{arm}/K{budget} lacks repeated seeds")
         summary = {
             "backend": backend,
             "arm": arm,
             "K": budget,
-            "seed_count": 3,
+            "seed_count": len(rows),
             "seeds": sorted(row["seed"] for row in rows),
         }
         for metric in ("Avg-mAP", *IOU_KEYS):

@@ -12,6 +12,10 @@ UNIFORM_CONFIG="${R5_UNIFORM_CONFIG:-${REPO_ROOT}/configs/adatad/thumos/duca_two
 TARGET_CLUSTER="${TARGET_CLUSTER:-n16r4}"
 R5_SUBMIT="${R5_SUBMIT:-0}"
 R5_UPSTREAM_DEPENDENCY="${R5_UPSTREAM_DEPENDENCY:-}"
+R5_BUDGETS="${R5_BUDGETS:-384 320 256 192 128}"
+R5_SEEDS="${R5_SEEDS:-3407 5801 8123}"
+read -r -a budget_values <<<"${R5_BUDGETS}"
+read -r -a seed_values <<<"${R5_SEEDS}"
 
 cd "${REPO_ROOT}"
 python -m tools.bata.duca_r5_paper_matrix \
@@ -23,7 +27,9 @@ python -m tools.bata.duca_r5_paper_matrix \
   --dense-checkpoint "${R5_DENSE_CHECKPOINT}" \
   --dense-checkpoint-evidence "${R5_DENSE_CHECKPOINT_EVIDENCE}" \
   --dense-trained-commit "${R5_DENSE_TRAINED_COMMIT}" \
-  --cluster "${TARGET_CLUSTER}"
+  --cluster "${TARGET_CLUSTER}" \
+  --budgets "${budget_values[@]}" \
+  --seeds "${seed_values[@]}"
 
 if [[ "${R5_SUBMIT}" != 1 ]]; then
   echo "Generated only; set R5_SUBMIT=1 to submit the matrix."
@@ -88,5 +94,5 @@ printf 'aggregate\t%s\t%s\t%s\n' \
 sha256sum "${OUTPUT_DIR}/jobs.tsv" | awk '{print $1}' > \
   "${OUTPUT_DIR}/jobs.tsv.sha256"
 
-echo "Submitted R5 gate, 24 train+terminal-eval jobs, 8 R5 cost jobs, dense-768 cost, and aggregate."
+echo "Submitted the requested R5 train/eval, paired-cost, and aggregate matrix."
 cat "${OUTPUT_DIR}/jobs.tsv"

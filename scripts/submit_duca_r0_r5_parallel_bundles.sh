@@ -20,6 +20,10 @@ DENSE_CONFIG="${DUCA_R5_DENSE_CONFIG:-}"
 DENSE_CHECKPOINT="${DUCA_R5_DENSE_CHECKPOINT:-}"
 DENSE_EVIDENCE="${DUCA_R5_DENSE_CHECKPOINT_EVIDENCE:-}"
 DENSE_TRAINED_COMMIT="${DUCA_R5_DENSE_TRAINED_COMMIT:-b3de5d8fac23d67cd9cae9c8c08bb60ba217f64f}"
+R5_BUDGETS="${DUCA_R5_BUDGETS:-384 320 256 192 128}"
+R5_SEEDS="${DUCA_R5_SEEDS:-3407 5801 8123}"
+read -r -a r5_budget_values <<<"${R5_BUDGETS}"
+read -r -a r5_seed_values <<<"${R5_SEEDS}"
 PREREGISTERED_FAMILY=R2Q3_privileged_boundary_burst
 
 [[ -n "${RUN_ROOT}" && ! -e "${RUN_ROOT}" ]] || fail "fresh RUN_ROOT is required"
@@ -79,6 +83,8 @@ R5_ROOT="${RUN_ROOT}/r5"
   --dense-checkpoint-evidence "${DENSE_EVIDENCE}" \
   --dense-trained-commit "${DENSE_TRAINED_COMMIT}" \
   --cluster "${TARGET_CLUSTER}" \
+  --budgets "${r5_budget_values[@]}" \
+  --seeds "${r5_seed_values[@]}" \
   > "${RUN_ROOT}/r5_matrix_generation.out"
 
 bundle_roles=(r0_r1 r2_r3_core r2_r3_adapted r4_r2q3 r5_all)
@@ -152,13 +158,16 @@ from tools.bata.duca_selected_axis_training import atomic_write_json
 output, commit, run_root, r5_root, uniform, learned, *roles = sys.argv[1:]
 r5 = Path(r5_root).resolve()
 rows = [line.split("\t") for line in (r5 / "cells.tsv").read_text(encoding="utf-8").splitlines()[1:]]
-if len(rows) != 24:
-    raise SystemExit("parallel deployment requires all 24 R5 cells")
+summary = __import__("json").loads((r5 / "matrix_summary.json").read_text(encoding="utf-8"))
+expected_count = len(summary["backends"]) * len(summary["arms"]) * len(summary["budgets"]) * len(summary["seeds"])
+if len(rows) != expected_count:
+    raise SystemExit("parallel deployment R5 cell count differs from requested axes")
 coverage = {}
 for row in rows:
     coverage.setdefault(f"{row[1]}_{row[2]}", []).append(row[0])
-if sorted(map(len, coverage.values())) != [6, 6, 6, 6]:
-    raise SystemExit("R5 must contain four backend-by-arm groups of six cells")
+expected_group = len(summary["budgets"]) * len(summary["seeds"])
+if len(coverage) != 4 or set(map(len, coverage.values())) != {expected_group}:
+    raise SystemExit("R5 backend-by-arm coverage differs from requested axes")
 jobs = []
 for role in roles:
     path = Path(run_root).resolve() / "jobs" / f"{role}.sbatch"
@@ -190,7 +199,9 @@ atomic_write_json(Path(output).resolve(), {
         "official60_hard_adapted_r2q3_g0_average_mAP_strictly_greater_than_"
         "exact_uniform"
     ),
-    "r5_cell_count": 24,
+    "r5_cell_count": len(rows),
+    "r5_budgets": summary["budgets"],
+    "r5_seeds": summary["seeds"],
     "r5_coverage": coverage,
     "source_configs": {
         "uniform": str(Path(uniform).resolve()),

@@ -79,16 +79,22 @@ def _generate(tmp_path: Path) -> tuple[dict, Path]:
 
 def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -> None:
     summary, output = _generate(tmp_path)
-    assert summary["cell_count"] == len(BACKENDS) * 2 * len(BUDGETS) * len(SEEDS) == 24
+    assert summary["cell_count"] == len(BACKENDS) * 2 * len(BUDGETS) * len(SEEDS) == 60
     assert summary["seeds"] == [3407, 5801, 8123]
-    assert summary["budgets"] == [384, 256]
-    assert summary["max_unselected_holes"] == {"384": 2, "256": 3}
+    assert summary["budgets"] == [384, 320, 256, 192, 128]
+    assert summary["max_unselected_holes"] == {
+        "384": 2,
+        "320": 2,
+        "256": 3,
+        "192": 4,
+        "128": 6,
+    }
     assert summary["learned_variant"] == "boundary_burst_r2q3_g1"
-    assert len(list((output / "configs").glob("*.py"))) == 24
-    assert len(list((output / "jobs").glob("*.sbatch"))) == 30
-    assert len((output / "cells.tsv").read_text(encoding="utf-8").splitlines()) == 25
-    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 5
-    assert summary["cost_count"] == 4
+    assert len(list((output / "configs").glob("*.py"))) == 60
+    assert len(list((output / "jobs").glob("*.sbatch"))) == 72
+    assert len((output / "cells.tsv").read_text(encoding="utf-8").splitlines()) == 61
+    assert len((output / "costs.tsv").read_text(encoding="utf-8").splitlines()) == 11
+    assert summary["cost_count"] == 10
     assert summary["paired_cost_backend"] == "actionformer"
     assert {row["source_cell"].split("_", 1)[0] for row in summary["costs"]} == {
         "actionformer"
@@ -133,6 +139,26 @@ def test_generator_writes_only_explicit_configs_jobs_and_index(tmp_path: Path) -
     ).lower()
     assert "ledger" not in generated_text
     assert "manifest" not in generated_text
+
+
+def test_generator_supports_incremental_low_budget_matrix(tmp_path: Path) -> None:
+    output = tmp_path / "r5_incremental"
+    summary = generate_matrix(
+        repo_root=ROOT,
+        output_dir=output,
+        uniform_config=UNIFORM,
+        learned_config=LEARNED,
+        budgets=(320, 192, 128),
+        seeds=SEEDS,
+        **_dense_inputs(tmp_path),
+    )
+    assert summary["cell_count"] == 36
+    assert summary["cost_count"] == 6
+    assert summary["budgets"] == [320, 192, 128]
+    assert summary["max_unselected_holes"] == {"320": 2, "192": 4, "128": 6}
+    assert len(list((output / "configs").glob("*.py"))) == 37
+    assert len(list((output / "jobs").glob("*.sbatch"))) == 44
+    assert Path(summary["gate_config"]).name == "temporalmaxer_learned_k384_s3407.py"
 
 
 def test_generated_temporalmaxer_config_resolves_real_k256_path(

@@ -636,15 +636,30 @@ def aggregate_matrix(
     )
     cells = summary.get("cells")
     costs = summary.get("costs")
-    _require(isinstance(cells, list) and len(cells) == 24, "matrix must contain 24 cells")
+    backends = tuple(str(value) for value in summary.get("backends", ()))
+    arms = tuple(str(value) for value in summary.get("arms", ()))
+    budgets = tuple(int(value) for value in summary.get("budgets", ()))
+    seeds = tuple(int(value) for value in summary.get("seeds", ()))
     _require(
-        isinstance(costs, list) and len(costs) == 4,
-        "matrix must contain four paired ActionFormer candidate/dense cost profiles",
+        backends and arms and budgets and seeds,
+        "matrix axes must be explicit and non-empty",
+    )
+    expected_cell_count = len(backends) * len(arms) * len(budgets) * len(seeds)
+    _require(
+        isinstance(cells, list) and len(cells) == expected_cell_count,
+        "matrix cell count differs from its declared axes",
+    )
+    expected_cost_count = (
+        len(arms) * len(budgets) if 3407 in seeds else 0
+    )
+    _require(
+        isinstance(costs, list) and len(costs) == expected_cost_count,
+        "matrix paired-cost count differs from the seed-3407 paired-backend cells",
     )
     r5_cost_rows = [row for row in costs if row.get("kind") == "r5_cell"]
     _require(
-        len(r5_cost_rows) == 4,
-        "matrix must profile all seed-3407 ActionFormer R5 cells",
+        len(r5_cost_rows) == expected_cost_count,
+        "matrix must profile every seed-3407 paired-backend cell",
     )
     declared_dense = summary.get("dense_cost_baseline")
     _require(
@@ -715,7 +730,11 @@ def aggregate_matrix(
     aggregates = []
     for (backend, arm, budget), group in sorted(grouped.items()):
         values = [float(row["average_mAP"]) for row in group]
-        _require(len(values) == 3, f"{backend}/{arm}/K{budget} lacks three seeds")
+        _require(
+            len(values) == len(seeds)
+            and {int(row["seed"]) for row in group} == set(seeds),
+            f"{backend}/{arm}/K{budget} lacks the declared seeds",
+        )
         aggregates.append(
             {
                 "backend": backend,
@@ -804,6 +823,12 @@ def aggregate_matrix(
         "matrix_summary_sha256": _sha256(summary_path),
         "cell_count": len(rows),
         "cost_count": len(costs),
+        "matrix_axes": {
+            "backends": list(backends),
+            "arms": list(arms),
+            "budgets": list(budgets),
+            "seeds": list(seeds),
+        },
         "rows": rows,
         "three_seed_aggregates": aggregates,
         "paired_deltas": paired,

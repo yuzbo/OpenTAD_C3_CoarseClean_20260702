@@ -409,9 +409,14 @@ run_r5_group_child() {
       bash "${cost_sbatch}"
     fi
   done < "${matrix_root}/cells.tsv"
-  [[ "${count}" == 6 ]] || fail "R5 group must execute exactly six cells"
+  local expected_count
+  expected_count="$(awk -F '\t' -v backend="${backend}" -v arm="${arm}" \
+    'NR > 1 && $2 == backend && $3 == arm {count += 1} END {print count + 0}' \
+    "${matrix_root}/cells.tsv")"
+  [[ "${expected_count}" -gt 0 && "${count}" == "${expected_count}" ]] \
+    || fail "R5 group cell count drift: expected=${expected_count} observed=${count}"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "six R5 ${backend}/${arm} cells and applicable same-backend costs completed"
+    "${count} R5 ${backend}/${arm} cells and applicable same-backend costs completed"
 }
 
 run_r5_all() {
@@ -466,7 +471,7 @@ run_r5_all() {
   for pid in "${pids[@]}"; do wait "${pid}" || failed=1; done
   [[ "${failed}" == 0 ]] || fail "at least one R5 backend-by-arm group failed"
   write_completion "${BUNDLE_ROOT}/completion.json" "${ROLE}" \
-    "all 24 R5 cells and four paired ActionFormer candidate/dense cost profiles completed"
+    "all requested R5 cells and paired ActionFormer candidate/dense cost profiles completed"
 }
 
 case "${ROLE}" in
