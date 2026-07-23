@@ -88,21 +88,21 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   dense leaf (`1181008`), then hit the account's `AssocMaxSubmitJobLimit` on
   the second leaf. The partial namespace is invalid diagnostic evidence and
   will never be resumed. The admitted dense leaf reached epoch 0 and exposed
-  a real-input-only defect: PyTorch does not implement two-dimensional
-  `replicate` padding directly for the `[B,3,T,H,W]` source tensor when the
-  decoded source height is not divisible by 16. P0's 160x160 synthetic input
-  did not traverse that branch. The minimal repair flattens only independent
-  batch/time axes to pad individual NCHW frames, preserving native pixels and
-  only bottom/right boundary replication. A 180x320 exact-value regression
-  test and a 180x320 CUDA mechanical gate are required before a fresh P1
-  namespace may be submitted. There is still no P1 metric, cost evidence,
-  P2/P3 training, official test, or paper claim.
-- The new 180x320 hybrid/ST CUDA padding gate is queued as Job `1181047`.
-  A fresh P1 bootstrap was intentionally tested before submission and the
-  scheduler rejected it with `AssocMaxSubmitJobLimit`; therefore no second
-  bootstrap Job or namespace exists. The test-only admission guard has done
-  its job: P1 will be retried only after the account has room for the entire
-  P1 matrix and selector, while P2/P3 remain result-gated descendants.
+  a real-input-only boundary branch. P0's 160x160 synthetic input did not
+  traverse it. The first repair flattened independent batch/time axes, but
+  Job `1181047` then exposed that CUDA does not implement `replicate` padding
+  for the uint8 decoded frames used by the actual path. The failed 21-second
+  gate namespace is immutable diagnostic evidence. The replacement appends
+  the final row and column with byte-preserving concatenation, preserving
+  native pixels and the same bottom/right replication semantics without a
+  resize or interpolation. Exact-value bottom-only and bottom-plus-right
+  regressions plus a fresh 180x320 CUDA mechanical gate are required before a
+  fresh P1 namespace may be submitted. There is still no P1 metric, cost
+  evidence, P2/P3 training, official test, or paper claim.
+- The three dead `DependencyNeverSatisfied` jobs `1180494`--`1180496` were
+  cancelled without touching active work. P1 will be retried only after the
+  native-padding gate passes and the account admits the entire P1 matrix and
+  selector; P2/P3 remain result-gated descendants.
 
 ## Frozen decision logic
 

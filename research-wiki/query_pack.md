@@ -12,15 +12,18 @@ max_chars: 8000
   `AssocMaxSubmitJobLimit` after only dense leaf `1181008` was admitted. That
   partial namespace is an immutable diagnostic, not P1 evidence.
 - The admitted dense leaf reached epoch 0 and exposed an untested real-input
-  branch: a non-16-divisible `[B,3,T,H,W]` source cannot use PyTorch's direct
-  2D `replicate` pad. The repair only flattens independent batch/time axes to
-  pad NCHW frames and restores native layout. It requires the new 180x320
-  regression and CUDA mechanical gate before any fresh P1 DAG.
+  boundary branch. Its first flatten-to-NCHW repair still called CUDA
+  `replicate` padding on uint8 decoded frames; native-padding gate `1181047`
+  failed in 21 seconds because that CUDA kernel is unavailable. Its immutable
+  replacement uses byte-preserving last-row/last-column concatenation, with
+  bottom-only and bottom-plus-right exact-value regressions plus a fresh
+  180x320 CUDA mechanical gate required before any fresh P1 DAG.
 - P2/P3 remain result-gated; no metric, cost, official test, A-MoD result, or
   paper claim exists.
-- Native-padding CUDA Gate `1181047` is pending. A fresh P1 bootstrap
-  `--test-only` admission was rejected with `AssocMaxSubmitJobLimit`, so no
-  second partial P1 root, P1 Job, P2 Job, or P3 Job was created.
+- Gate `1181047` is failed immutable diagnostic evidence, not a P0 revision
+  or a model result. The three dead dependent jobs `1180494`--`1180496` were
+  cancelled to release submit quota. No second partial P1 root, P1 Job, P2
+  Job, or P3 Job has been created.
 
 ## Continuous-RoI S2 当前状态（2026-07-21）
 

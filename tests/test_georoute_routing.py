@@ -89,6 +89,7 @@ def test_native_tubelets_replicate_pad_nondivisible_ncthw_without_resizing():
     assert grid_hw == (12, 20)
     assert padding == (12, 0)
     assert native.shape == (1, 1, 240, 3, 2, 16, 16)
+    assert native.dtype == torch.uint8
 
     restored = (
         native.reshape(1, 1, 12, 20, 3, 2, 16, 16)
@@ -100,6 +101,41 @@ def test_native_tubelets_replicate_pad_nondivisible_ncthw_without_resizing():
         restored[..., 180:, :],
         source[..., 179:180, :].expand_as(restored[..., 180:, :]),
     )
+
+
+def test_native_tubelets_replicate_pad_uint8_right_boundary_without_resizing():
+    source = torch.arange(1 * 3 * 2 * 17 * 18, dtype=torch.uint8).reshape(
+        1,
+        3,
+        2,
+        17,
+        18,
+    )
+    native, grid_hw, padding = extract_native_tubelets(
+        source,
+        patch_size=16,
+        tubelet_size=2,
+    )
+
+    assert grid_hw == (2, 2)
+    assert padding == (15, 14)
+    assert native.shape == (1, 1, 4, 3, 2, 16, 16)
+    assert native.dtype == torch.uint8
+
+    restored = (
+        native.reshape(1, 1, 2, 2, 3, 2, 16, 16)
+        .permute(0, 4, 1, 5, 2, 6, 3, 7)
+        .reshape(1, 3, 2, 32, 32)
+    )
+    expected = torch.cat(
+        (source, source[..., -1:, :].expand(-1, -1, -1, 15, -1)),
+        dim=-2,
+    )
+    expected = torch.cat(
+        (expected, expected[..., :, -1:].expand(-1, -1, -1, -1, 14)),
+        dim=-1,
+    )
+    assert torch.equal(restored, expected)
 
 
 @pytest.mark.parametrize(

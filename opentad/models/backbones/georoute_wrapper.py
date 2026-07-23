@@ -146,22 +146,34 @@ def extract_native_tubelets(
     pad_bottom = (-height) % int(patch_size)
     pad_right = (-width) % int(patch_size)
     if pad_bottom or pad_right:
-        # ``replicate`` padding with a two-spatial-dimension pad tuple is not
-        # implemented by PyTorch for an NCTHW tensor.  Flattening only the
-        # independent batch/time axes makes each RGB frame a normal NCHW image
-        # for the operation, then restores the exact source-native layout.
-        # This is boundary replication, never a resize or an interpolation.
+        # CUDA does not implement ``replicate`` padding for uint8 tensors.
+        # Flattening only the independent batch/time axes lets us append the
+        # final row/column directly while preserving each source pixel's dtype
+        # and value. This is boundary replication, never a resize or an
+        # interpolation.
         frame_images = source.permute(0, 2, 1, 3, 4).reshape(
             batch * frames,
             channels,
             height,
             width,
         )
-        padded_images = F.pad(
-            frame_images,
-            (0, pad_right, 0, pad_bottom),
-            mode="replicate",
-        )
+        if pad_bottom:
+            frame_images = torch.cat(
+                (
+                    frame_images,
+                    frame_images[..., -1:, :].expand(-1, -1, pad_bottom, -1),
+                ),
+                dim=-2,
+            )
+        if pad_right:
+            frame_images = torch.cat(
+                (
+                    frame_images,
+                    frame_images[..., :, -1:].expand(-1, -1, -1, pad_right),
+                ),
+                dim=-1,
+            )
+        padded_images = frame_images
         source = (
             padded_images.reshape(
                 batch,

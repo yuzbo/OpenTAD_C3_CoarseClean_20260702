@@ -954,3 +954,14 @@ append_only: true
   all-leaf admission preflight therefore prevented a second invalid partial
   matrix. The account's unrelated queued/running work must free a slot before
   the sealed P1/P2/P3 DAG can be admitted.
+
+- 2026-07-23: Job `1181047` failed after 21 seconds before emitting a gate
+  report. The immutable stderr identifies the exact mechanical cause:
+  `replication_pad2d_cuda` is not implemented for the uint8 decoded source
+  frames. This is neither a numerical instability nor a model-quality result.
+  The minimal replacement preserves source pixels and boundary semantics by
+  appending the terminal rows/columns with `torch.cat`; it adds a combined
+  bottom-plus-right uint8 regression alongside the 180x320 bottom-only case.
+  The three unrecoverable dependency jobs `1180494`, `1180495`, and `1180496`
+  were cancelled to release submit quota; no running job was changed. A fresh
+  source-bound CUDA gate is required before P1, while P2/P3 remain closed.
