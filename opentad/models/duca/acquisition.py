@@ -2155,21 +2155,27 @@ class DucaAcquisitionAdapter(nn.Module):
             if self.acquisition_policy == "budget_calibrated_sampling_rate":
                 if self.sampling_rate_utility_fusion is None:
                     raise RuntimeError("sampling-rate acquisition requires its utility fusion head")
-                detector_contribution_logits = self.transition_scorer.detector_utility_logits(
-                    transition_paths["policy_descriptors"]
-                ).masked_fill(~valid[:, :, None], 0.0)
-                utility_mask = detector_contribution_logits.new_tensor(
-                    {
-                        "none": (0.0, 0.0),
-                        "cls": (1.0, 0.0),
-                        "reg": (0.0, 1.0),
-                        "both": (1.0, 1.0),
-                    }[self.sampling_rate_utility_components]
-                )
-                rate_utility = self.sampling_rate_utility_fusion(
-                    detector_contribution_logits * utility_mask
-                ).squeeze(-1)
-                center_scores = center_scores + rate_utility
+                # A rate-only control must be a real ablation: do not merely
+                # mask the contribution logits after constructing their head.
+                # Otherwise detector loss can still update that head through
+                # the zero-valued branch, which invalidates the comparison.
+                if self.sampling_rate_utility_components != "none":
+                    detector_contribution_logits = (
+                        self.transition_scorer.detector_utility_logits(
+                            transition_paths["policy_descriptors"]
+                        ).masked_fill(~valid[:, :, None], 0.0)
+                    )
+                    utility_mask = detector_contribution_logits.new_tensor(
+                        {
+                            "cls": (1.0, 0.0),
+                            "reg": (0.0, 1.0),
+                            "both": (1.0, 1.0),
+                        }[self.sampling_rate_utility_components]
+                    )
+                    rate_utility = self.sampling_rate_utility_fusion(
+                        detector_contribution_logits * utility_mask
+                    ).squeeze(-1)
+                    center_scores = center_scores + rate_utility
             selection_features = transition_paths["transition_descriptors"]
             radius = center_scores.new_zeros(center_scores.shape)
             start_logits = center_scores.new_zeros(center_scores.shape)

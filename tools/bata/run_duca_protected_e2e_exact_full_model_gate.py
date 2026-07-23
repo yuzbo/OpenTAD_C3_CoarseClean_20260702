@@ -625,6 +625,25 @@ def run_gate(
         transition_gradients = selector_route(
             ("transition_distribution_loss", "transition_boundary_coverage_loss")
         )
+    print(
+        json.dumps(
+            {
+                "gradient_probe": "frontend_ownership_before_assertions",
+                "action_gradients": action_gradients,
+                "transition_gradients": transition_gradients,
+                "frontend_selector_summary": {
+                    key: model.frame_selector.last_forward_summary.get(key)
+                    for key in (
+                        "policy_hidden_gradient_scale",
+                        "coarse_policy_hidden_requires_grad",
+                        "coarse_hidden_kind",
+                        "policy_mix_alpha",
+                    )
+                },
+            },
+            sort_keys=True,
+        )
+    )
 
     captured_inputs: list[torch.Tensor] = []
 

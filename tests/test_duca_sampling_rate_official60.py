@@ -67,6 +67,17 @@ def test_sampling_rate_companion_uses_the_rate_transport_bridge() -> None:
     assert selector.detector_gradient_mode == "density_transport_st"
 
 
+def test_rate_only_control_disables_the_contribution_head_path() -> None:
+    source = (ROOT / "opentad" / "models" / "duca" / "acquisition.py").read_text(
+        encoding="utf-8"
+    )
+    expected = (
+        'if self.sampling_rate_utility_components != "none":\n'
+        "                    detector_contribution_logits = ("
+    )
+    assert expected in source
+
+
 def test_existing_independent_runner_exposes_sampling_rate_matrix_without_a_new_launcher() -> None:
     runner = (ROOT / "scripts" / "run_duca_independent_official60_gpu1.sh").read_text(
         encoding="utf-8"
