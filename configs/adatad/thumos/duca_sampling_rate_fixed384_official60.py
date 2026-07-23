@@ -1,5 +1,13 @@
 _base_ = ["./duca_transition_only_fixed384_official_adatad_backend_full_train.py"]
 
+from tools.bata.duca_cellcf_protocol import protocol_for_name
+
+
+duca_training_protocol = protocol_for_name("official60")
+duca_end_epoch = duca_training_protocol.end_epoch
+duca_steps_per_epoch = duca_training_protocol.steps_per_epoch
+duca_total_steps = duca_training_protocol.expected_successful_optimizer_updates
+
 
 duca_sampling_rate_contract = dict(
     route="DUCA_BUDGET_CALIBRATED_SAMPLING_RATE_FIXED384_OFFICIAL60",
@@ -31,6 +39,9 @@ duca_transition_only_contract = dict(
     counterfactual_teacher_producer_integrated=False,
     paper_claim_allowed=False,
     metric_claim_allowed=False,
+    training_profile=duca_training_protocol.name,
+    schedule_steps_per_epoch=duca_steps_per_epoch,
+    schedule_expected_total_steps=duca_total_steps,
 )
 
 
@@ -92,6 +103,33 @@ model = dict(
             policy_hidden_gradient_scope="none",
         ),
     ),
+)
+
+
+scheduler = dict(
+    type="LinearWarmupCosineAnnealingLR",
+    warmup_epoch=5,
+    max_epoch=duca_end_epoch,
+)
+
+workflow = dict(
+    training_profile=duca_training_protocol.name,
+    logging_interval=50,
+    checkpoint_interval=5,
+    val_loss_interval=-1,
+    val_eval_interval=-1,
+    val_eval_interval_anchor_epoch=9999,
+    val_start_epoch=9999,
+    end_epoch=duca_end_epoch,
+    formal_successful_update_contract=True,
+    expected_train_batches_per_epoch=duca_steps_per_epoch,
+    expected_successful_optimizer_updates=duca_total_steps,
+    max_amp_retries_per_batch=8,
+    fail_on_amp_replay_exhaustion=True,
+    require_finite_train_loss=True,
+    primary_checkpoint_epoch=duca_training_protocol.terminal_epoch,
+    primary_checkpoint_state_key=duca_training_protocol.terminal_state_key,
+    checkpoint_criterion=duca_training_protocol.checkpoint_criterion,
 )
 
 
