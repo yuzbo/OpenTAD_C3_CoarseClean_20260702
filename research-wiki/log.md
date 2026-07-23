@@ -872,3 +872,14 @@ append_only: true
   existing launchers enter a single-GPU/five-CPU/`96G` exact Slurm step for
   all model work. This is a resource-admission repair, not a model or protocol
   change. Status is `implemented_remote_p0_resubmission_pending`.
+
+- 2026-07-23: the second remote GeoRoute P0 admission reached real CUDA
+  detector forwards, but jobs `1180859` (dense), `1180860` (hybrid), and
+  `1180861` (ROI score-function) all failed before emitting a P0 report.
+  The common fail-closed traceback identified an eight-dimensional gather
+  index for a seven-dimensional native `[B,T,K,3,2,16,16]` tubelet tensor.
+  The P0 finalizer was also rejected because N16R4 requires a GPU declaration
+  even for a control-plane job. Both defects are repaired with a shape
+  regression test and a minimal one-GPU dispatcher allocation. The failed run
+  namespace is diagnostic only; no metric, cost, official test, or P0 claim
+  exists.

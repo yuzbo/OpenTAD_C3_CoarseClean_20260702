@@ -37,7 +37,7 @@ max_chars: 8000
 
 ## Geometry-Residual-Depth Routing / GeoRoute（2026-07-23）
 
-- 状态为 `implemented_remote_p0_resubmission_pending`：已实现单重主干原生 tubelet、
+- 状态为 `implementation_fix_pending_cuda_p0`：已实现单重主干原生 tubelet、
   exact-K ROI/free/hybrid、几何侧信息因果对照、P0 与结果盲 DAG；现有 U128
   不是 GeoRoute。
 - 外部 v1 审查为 `HOLD`，接受原生 token、真实检测损失、单重主干和间隔

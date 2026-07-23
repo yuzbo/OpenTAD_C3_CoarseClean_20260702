@@ -42,6 +42,11 @@ GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v1"
 # launcher immediately enters an exact one-GPU/5-CPU/96G step for model work.
 GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
 
+# The site rejects control-plane jobs without a GPU declaration. Dispatchers
+# do not create a model or execute CUDA; this is the smallest valid batch
+# allocation needed to seal a receipt and submit a gated successor.
+CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1", "--mem", "4G")
+
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +137,7 @@ def _sbatch(
     if gpu:
         command.extend(GPU_OUTER_SLURM_ARGS)
     else:
-        command.extend(["--cpus-per-task", "1", "--mem", "4G"])
+        command.extend(CONTROL_SLURM_ARGS)
     export_items = ["ALL", *(f"{name}={value}" for name, value in sorted(exports.items()))]
     command.extend(["--export", ",".join(export_items), str(script)])
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)

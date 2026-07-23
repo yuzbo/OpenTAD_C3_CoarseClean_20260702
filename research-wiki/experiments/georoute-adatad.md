@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: implemented_remote_p0_resubmission_pending
+status: implementation_fix_pending_cuda_p0
 updated: 2026-07-23
 ---
 
@@ -32,6 +32,14 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   report. The deployment code now requests a site-compliant two-GPU outer
   allocation and the existing launcher still executes exactly one GPU, five
   CPUs, and `96G` in an inner Slurm step.
+- The second N16R4 P0 attempt created jobs `1180859`--`1180861`, but all
+  three failed before a P0 JSON after reaching real AdaTAD detector forward:
+  `_gather_selected_native_tubelets` expanded `[B,T,K]` to eight rather than
+  seven native-video dimensions. The failed namespace and logs are preserved
+  as diagnostics. A separate scheduler defect also rejected the CPU-only P0
+  finalizer because this site requires every batch job to declare a GPU. Both
+  issues are now under a minimal code fix; no metric, cost, official test, or
+  P0 pass claim resulted.
 - No development metric, cost result, official-test record, paper claim, or
   A-MoD experiment exists.
 

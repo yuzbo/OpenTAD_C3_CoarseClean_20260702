@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
+from opentad.models.backbones.georoute_wrapper import GeoRouteBackboneWrapper
 from opentad.models.backbones.georoute_routing import (
     GEOROUTE_ROUTING_SCHEMA,
     decode_continuous_geometry,
@@ -47,6 +48,23 @@ def test_native_patch_centers_are_row_major_and_normalized():
     assert torch.equal(centers[0], torch.tensor([1.0 / 6.0, 0.25]))
     assert torch.equal(centers[-1], torch.tensor([5.0 / 6.0, 0.75]))
     assert torch.all((centers > 0.0) & (centers < 1.0))
+
+
+def test_native_tubelet_gather_preserves_the_btk_video_layout():
+    """The [B,T,K] route index must expand to native video's seven dimensions."""
+
+    native = torch.arange(1 * 2 * 5 * 3 * 2 * 2 * 2, dtype=torch.uint8).reshape(
+        1, 2, 5, 3, 2, 2, 2
+    )
+    indices = torch.tensor([[[4, 1, 3], [0, 2, 4]]], dtype=torch.long)
+
+    gathered = GeoRouteBackboneWrapper._gather_selected_native_tubelets(
+        None, native, indices
+    )
+
+    assert gathered.shape == (1, 2, 3, 3, 2, 2, 2)
+    assert torch.equal(gathered[0, 0, 0], native[0, 0, 4])
+    assert torch.equal(gathered[0, 1, 1], native[0, 1, 2])
 
 
 @pytest.mark.parametrize(

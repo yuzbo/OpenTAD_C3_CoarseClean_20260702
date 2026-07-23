@@ -322,7 +322,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
     ) -> torch.Tensor:
         if native.shape[:2] != indices.shape[:2]:
             raise ValueError("native tubelets and GeoRoute indices must share [B,T]")
-        gather_index = indices[..., None, None, None, None, None].expand(
+        gather_index = indices[..., None, None, None, None].expand(
             *indices.shape,
             *native.shape[3:],
         )

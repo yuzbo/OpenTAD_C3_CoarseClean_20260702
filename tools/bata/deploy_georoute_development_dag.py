@@ -33,6 +33,11 @@ GEOROUTE_DEPLOYMENT_SCHEMA = "georoute_adatad_development_deployment_v1"
 # physical device or charging a second model forward.
 GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
 
+# N16R4 rejects a batch submission that declares no GPU. Dispatchers only
+# seal receipts and submit dependent work; this minimal allocation satisfies
+# the scheduler rule without running a model or a CUDA forward.
+CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1", "--mem", "4G")
+
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +85,7 @@ def _sbatch(
     if gpu:
         command.extend(GPU_OUTER_SLURM_ARGS)
     else:
-        command.extend(["--cpus-per-task", "1", "--mem", "4G"])
+        command.extend(CONTROL_SLURM_ARGS)
     command.extend(
         [
             "--export",
