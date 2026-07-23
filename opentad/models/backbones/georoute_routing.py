@@ -314,7 +314,15 @@ def select_exact_k(
         raise ValueError("learned GeoRoute modes require an explicit gradient estimator during training")
 
     device = roi_logits.device
-    role_counts = {"context": 0, "roi": 0, "residual": 0, "free": 0, "dense": 0}
+    role_counts = {
+        "context": 0,
+        "roi": 0,
+        "residual": 0,
+        "free": 0,
+        "dense": 0,
+        "uniform": 0,
+        "random": 0,
+    }
     ordered_log_prob = None
 
     if mode == "dense":
@@ -327,12 +335,14 @@ def select_exact_k(
         ordered = base.view(1, 1, -1).expand(batch, tubelets, -1)
         surrogate = torch.zeros_like(roi_logits)
         aggregation_logits = torch.zeros_like(roi_logits)
+        role_counts["uniform"] = target_k
     elif mode == "random":
         ordered = _stable_argsort_descending(
             _stateless_random_scores(roi_logits, seed=random_seed)
         )[..., :target_k]
         surrogate = torch.zeros_like(roi_logits)
         aggregation_logits = torch.zeros_like(roi_logits)
+        role_counts["random"] = target_k
     elif mode in {"roi", "free"}:
         logits = roi_logits if mode == "roi" else residual_logits
         if training and estimator == "score_function":
@@ -387,7 +397,11 @@ def select_exact_k(
     selected_surrogate = surrogate.gather(-1, indices)
     selected_aggregation_logits = aggregation_logits.gather(-1, indices)
     if training and estimator == "straight_through" and mode in {"roi", "free", "hybrid"}:
-        st_gate = torch.ones_like(selected_surrogate) + selected_surrogate - selected_surrogate.detach()
+        # Subtract first so hard forward values are bitwise one; the previous
+        # left-associated form could retain a floating-point roundoff residue.
+        st_gate = torch.ones_like(selected_surrogate) + (
+            selected_surrogate - selected_surrogate.detach()
+        )
     else:
         st_gate = torch.ones_like(selected_surrogate)
 

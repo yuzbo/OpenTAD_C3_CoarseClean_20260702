@@ -101,6 +101,8 @@ def test_exact_k_routes_have_no_duplicates_and_a_complete_schema(mode, estimator
     assert torch.all(route["indices"] < roi.shape[-1])
     assert torch.allclose(route["st_gate"].detach(), torch.ones_like(route["st_gate"]))
     assert sum(route["role_counts"].values()) == expected_k
+    if mode in {"uniform", "random"}:
+        assert route["role_counts"][mode] == expected_k
 
 
 def test_st_gate_is_hard_in_forward_but_has_a_biased_surrogate_gradient():

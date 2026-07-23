@@ -883,3 +883,12 @@ append_only: true
   regression test and a minimal one-GPU dispatcher allocation. The failed run
   namespace is diagnostic only; no metric, cost, official test, or P0 claim
   exists.
+
+- 2026-07-23: before resubmission, the N16R4 routing suite exposed two
+  additional fail-closed contract defects: uniform/random routes omitted their
+  role counts, and the left-associated ST expression could produce a forward
+  gate numerically near, but not bitwise equal to, one. The route now records
+  those exact-K control roles and computes `1 + (soft - soft.detach())` so the
+  hard forward is exact while its surrogate gradient remains attached. This is
+  still implementation evidence only; a new remote suite and CUDA P0 must
+  pass before any P1 job can exist.

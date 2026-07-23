@@ -38,8 +38,11 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   seven native-video dimensions. The failed namespace and logs are preserved
   as diagnostics. A separate scheduler defect also rejected the CPU-only P0
   finalizer because this site requires every batch job to declare a GPU. Both
-  issues are now under a minimal code fix; no metric, cost, official test, or
-  P0 pass claim resulted.
+  issues are now under a minimal code fix. The accompanying remote routing
+  suite also exposed missing uniform/random role accounting and a roundoff
+  residue in the ST hard-forward gate; both are patched and still await the
+  corrected remote suite and CUDA P0. No metric, cost, official test, or P0
+  pass claim resulted.
 - No development metric, cost result, official-test record, paper claim, or
   A-MoD experiment exists.
 
