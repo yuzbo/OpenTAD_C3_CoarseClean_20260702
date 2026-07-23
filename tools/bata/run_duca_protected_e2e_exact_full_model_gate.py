@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
@@ -36,7 +37,15 @@ from opentad.models import build_detector
 from opentad.models.duca.structured_selection import exact_uniform_positions
 from opentad.models.selectors.duca_online_frame_selector import _gather_time
 from opentad.utils import ModelEma, set_seed
-from tools.bata.validate_duca_protected_e2e_official60 import validate_config
+from tools.bata.validate_duca_protected_e2e_official60 import (
+    validate_config as validate_protected_config,
+)
+from tools.bata.validate_duca_density_transport_official60 import (
+    validate_config as validate_density_config,
+)
+from tools.bata.validate_duca_sampling_rate_official60 import (
+    validate_config as validate_sampling_rate_config,
+)
 from tools.bata.duca_frontend_initialization import (
     initialize_frame_selector_from_checkpoint,
 )
@@ -293,6 +302,8 @@ def _gradient_partition(model) -> dict[str, float]:
         f"official_temporal.encoder.layers.{len(layers) - 1}."
     )
     probe_prefix = "frame_selector.raw_actionness_source.probe_module."
+    encoder_prefix = f"{probe_prefix}official_temporal.encoder."
+    spatial_prefix = f"{probe_prefix}spatial_stem."
     return {
         "detector": _grad_sum(model, lambda name: not name.startswith("frame_selector.")),
         "selector_scorer": _grad_sum(
@@ -305,6 +316,12 @@ def _gradient_partition(model) -> dict[str, float]:
                 "frame_selector.adapter.density_mixture_head."
             ),
         ),
+        "sampling_rate_utility_head": _grad_sum(
+            model,
+            lambda name: name.startswith(
+                "frame_selector.adapter.sampling_rate_utility_fusion."
+            ),
+        ),
         "asformer_last_encoder_layer": _grad_sum(
             model,
             lambda name: name.startswith(last_prefix),
@@ -314,6 +331,16 @@ def _gradient_partition(model) -> dict[str, float]:
             lambda name: name.startswith(probe_prefix)
             and not name.startswith(last_prefix)
             and not _is_action_head(name),
+        ),
+        "asformer_earlier_encoder_layers": _grad_sum(
+            model,
+            lambda name: name.startswith(encoder_prefix)
+            and not name.startswith(last_prefix)
+            and not _is_action_head(name),
+        ),
+        "coarse_spatial_stem": _grad_sum(
+            model,
+            lambda name: name.startswith(spatial_prefix),
         ),
         "action_head": _grad_sum(model, _is_action_head),
     }
@@ -400,8 +427,13 @@ def run_gate(
     runtime = _bind_exact_runtime(expected_commit)
     set_seed(FORMAL_SEED, disable_deterministic=False)
     runtime["formal_seed"] = FORMAL_SEED
-    contract = validate_config(ROOT / config_path)
     cfg = Config.fromfile(str(ROOT / config_path))
+    if cfg.get("duca_sampling_rate_contract", None) is not None:
+        contract = validate_sampling_rate_config(ROOT / config_path)
+    elif cfg.get("duca_density_contract", None) is not None:
+        contract = validate_density_config(ROOT / config_path)
+    else:
+        contract = validate_protected_config(ROOT / config_path)
     pretrain = Path(adatad_pretrain).expanduser().resolve()
     _require(pretrain.is_file(), "AdaTAD VideoMAE pretrain is missing")
     _require(
@@ -438,6 +470,17 @@ def run_gate(
     official_asformer_binding = _official_asformer_binding(cfg, selector)
     route = str(cfg.duca_transition_only_contract.route)
     exact_uniform_route = route == "DUCA_EXACT_UNIFORM_FIXED384_OFFICIAL60"
+    sampling_rate_route = route == "DUCA_BUDGET_CALIBRATED_SAMPLING_RATE_FIXED384_OFFICIAL60"
+    sampling_rate_adapts_last_asformer = bool(
+        cfg.get("duca_sampling_rate_contract", {}).get(
+            "asformer_last_layer_adapted", False
+        )
+    )
+    sampling_rate_adapts_full_asformer = bool(
+        cfg.get("duca_sampling_rate_contract", {}).get(
+            "asformer_full_encoder_adapted", False
+        )
+    )
     two_stage_route = str(cfg.duca_transition_only_contract.get("stage", "")) == (
         "uniform_detector_cowarmup_then_joint_detection"
     )
@@ -602,7 +645,12 @@ def run_gate(
                 gt_boundary_validity=batch["gt_boundary_validity"],
                 return_loss=True,
             )
-            detector_objective = model._duca_detector_objective(losses)
+            detector_only_losses = {
+                name: value
+                for name, value in losses.items()
+                if "contribution_distillation" not in name
+            }
+            detector_objective = model._duca_detector_objective(detector_only_losses)
         detector_gradients = _finite_backward(
             detector_objective,
             model=model,
@@ -726,18 +774,32 @@ def run_gate(
             and detector_gradients["asformer_earlier_or_spatial"] == 0.0,
             "exact-uniform detector loss leaked into the selector or coarse probe",
         )
-    elif rho_arm:
+    elif sampling_rate_adapts_full_asformer:
         _require(
             detector_gradients["selector_scorer"] > 0.0,
-            "rho detector loss missed selector scorer",
+            "detector loss missed selector scorer",
+        )
+        _require(
+            detector_gradients["asformer_last_encoder_layer"] > 0.0
+            and detector_gradients["asformer_earlier_encoder_layers"] > 0.0,
+            "detector loss missed the full permitted ASFormer encoder",
+        )
+        _require(
+            detector_gradients["coarse_spatial_stem"] == 0.0,
+            "detector loss leaked into the spatial stem during full ASFormer adaptation",
+        )
+    elif rho_arm or sampling_rate_adapts_last_asformer:
+        _require(
+            detector_gradients["selector_scorer"] > 0.0,
+            "detector loss missed selector scorer",
         )
         _require(
             detector_gradients["asformer_last_encoder_layer"] > 0.0,
-            "rho detector loss missed the last ASFormer layer",
+            "detector loss missed the permitted last ASFormer layer",
         )
         _require(
             detector_gradients["asformer_earlier_or_spatial"] == 0.0,
-            "rho detector loss leaked before the last ASFormer layer",
+            "detector loss leaked before the permitted last ASFormer layer",
         )
     else:
         _require(
@@ -761,6 +823,77 @@ def run_gate(
         _require(
             detector_gradients["density_mixture_head"] == 0.0,
             "a non-mixture route unexpectedly updated the density mixture head",
+        )
+    rate_components = str(
+        cfg.get("duca_sampling_rate_contract", {}).get(
+            "contribution_components", "none"
+        )
+    )
+    contribution_gradients = None
+    if sampling_rate_route and rate_components != "none":
+        optimizer.zero_grad(set_to_none=True)
+        with torch.autocast(
+            device_type="cuda",
+            dtype=torch.float16,
+            enabled=True,
+            cache_enabled=False,
+        ):
+            contribution_losses = ddp(
+                batch["inputs"],
+                batch["masks"],
+                batch["metas"],
+                gt_segments=batch["gt_segments"],
+                gt_labels=batch["gt_labels"],
+                gt_boundary_validity=batch["gt_boundary_validity"],
+                return_loss=True,
+            )
+            contribution_terms = [
+                value
+                for name, value in contribution_losses.items()
+                if "contribution_distillation_loss" in str(name)
+            ]
+            _require(
+                contribution_terms,
+                "configured detector-contribution arm emitted no train-only distillation loss",
+            )
+            contribution_objective = sum(contribution_terms)
+        contribution_gradients = _finite_backward(
+            contribution_objective,
+            model=model,
+            optimizer=optimizer,
+        )
+        _require(
+            contribution_gradients["sampling_rate_utility_head"] > 0.0,
+            "contribution distillation missed the sampling-rate utility head",
+        )
+        _require(
+            contribution_gradients["detector"] == 0.0
+            and contribution_gradients["action_head"] == 0.0,
+            "detached contribution target leaked gradients into detector or action head",
+        )
+        if sampling_rate_adapts_full_asformer:
+            _require(
+                contribution_gradients["asformer_last_encoder_layer"] > 0.0
+                and contribution_gradients["asformer_earlier_encoder_layers"] > 0.0
+                and contribution_gradients["coarse_spatial_stem"] == 0.0,
+                "full-ASFormer contribution distillation gradient ownership is incorrect",
+            )
+        elif sampling_rate_adapts_last_asformer:
+            _require(
+                contribution_gradients["asformer_last_encoder_layer"] > 0.0
+                and contribution_gradients["asformer_earlier_or_spatial"] == 0.0,
+                "last-layer contribution distillation gradient ownership is incorrect",
+            )
+        else:
+            _require(
+                contribution_gradients["asformer_last_encoder_layer"] == 0.0
+                and contribution_gradients["asformer_earlier_or_spatial"] == 0.0,
+                "protected contribution distillation leaked into ASFormer",
+            )
+    if sampling_rate_route and rate_components == "none":
+        _require(
+            detector_gradients["sampling_rate_utility_head"] == 0.0,
+            "rate-only control unexpectedly used detector-contribution utility head",
         )
     _require(
         action_gradients["detector"] == 0.0
@@ -1004,6 +1137,7 @@ def run_gate(
             "detector_only": detector_gradients,
             "action_bce_only": action_gradients,
             "transition_auxiliary_only": transition_gradients,
+            "detector_contribution_distillation_only": contribution_gradients,
         },
         "selector_initialization": selector_initialization,
         "coarse_probe_frozen": coarse_frozen,
@@ -1043,6 +1177,7 @@ def main(argv: list[str] | None = None) -> int:
                     "status": "p1_p2_exact_full_model_gate_failed",
                     "error_type": exc.__class__.__name__,
                     "error": str(exc),
+                    "traceback": traceback.format_exc(),
                 },
                 indent=2,
                 sort_keys=True,

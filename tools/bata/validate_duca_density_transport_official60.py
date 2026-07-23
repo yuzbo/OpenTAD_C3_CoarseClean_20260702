@@ -63,6 +63,11 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
     )
     _require(selector.transition_objective == "gaussian_mass", "fixed burst decoding must not confound density transport")
     _require(selector.detector_gradient_mode == "density_transport_st", "real detector gradient bridge is missing")
+    _require(
+        contract.backward
+        == "hard_anchored_local_temporal_slope_from_inverse_cdf",
+        "density detector gradient must be anchored at actual hard observations",
+    )
     _require(float(selector.policy_hidden_gradient_scale) == 0.0, "protected matrix must stop detector gradients before ASFormer")
     _require(
         selector.actionness_source_cfg.policy_hidden_gradient_scope == "none",
@@ -100,6 +105,16 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         is mixture,
         "density-model declaration disagrees with acquisition policy",
     )
+    if mixture:
+        _require(
+            contract.mixture_gate_inputs
+            == "normalized_component_entropy_peak_center_spread",
+            "mixture gate must be invariant to component-logit offsets",
+        )
+        _require(
+            contract.uses_absolute_asformer_hidden_for_context is True,
+            "mixture context must disclose absolute ASFormer hidden use",
+        )
     _require(int(cfg.workflow.end_epoch) == 60, "official protocol must run 60 epochs")
     _require(int(cfg.workflow.expected_successful_optimizer_updates) == 6000, "official protocol must run 6000 updates")
     _require(int(cfg.workflow.primary_checkpoint_epoch) == 59, "primary checkpoint must be epoch 59")

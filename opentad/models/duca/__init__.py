@@ -32,6 +32,7 @@ from .hard_soft_alignment import (
     surrogate_hard_swap_descent,
 )
 from .structured_selection import (
+    SamplingRateSelectionOutput,
     ContinuousDensitySelectionOutput,
     LocalCellSelectionOutput,
     PhysicalExactKGraph,
@@ -39,6 +40,7 @@ from .structured_selection import (
     PhysicalExactKSelectionOutput,
     PhysicalExactKSoftOutput,
     StructuredSelectionOutput,
+    budget_calibrated_sampling_rate,
     continuous_density_transport,
     exact_uniform_cell_bounds,
     global_structured_topk,
@@ -74,6 +76,7 @@ __all__ = [
     "SparseTemporalGrid",
     "StructuredSelectionOutput",
     "ContinuousDensitySelectionOutput",
+    "SamplingRateSelectionOutput",
     "LocalCellSelectionOutput",
     "PhysicalExactKGraph",
     "PhysicalExactKHardOutput",
@@ -106,6 +109,7 @@ __all__ = [
     "gather_selected_observations",
     "hard_topk_st",
     "continuous_density_transport",
+    "budget_calibrated_sampling_rate",
     "global_structured_topk",
     "exact_uniform_cell_bounds",
     "local_cell_deformation",

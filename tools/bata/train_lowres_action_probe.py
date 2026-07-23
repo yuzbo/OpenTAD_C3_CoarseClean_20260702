@@ -2188,9 +2188,11 @@ class C3OfficialActionSegmentationProbe:
         if self.policy_hidden_gradient_scope not in {
             "none",
             "asformer_last_encoder_layer",
+            "asformer_full_encoder",
         }:
             raise ValueError(
-                "policy_hidden_gradient_scope must be none or asformer_last_encoder_layer"
+                "policy_hidden_gradient_scope must be none, asformer_last_encoder_layer, "
+                "or asformer_full_encoder"
             )
         if self.policy_hidden_gradient_scope != "none" and (
             self.backend != "official_asformer"
@@ -2407,6 +2409,22 @@ class C3OfficialActionSegmentationProbe:
                     )
             try:
                 for idx in range(int(batch)):
+                    if self.policy_hidden_gradient_scope == "asformer_full_encoder":
+                        # A detached spatial input keeps detector-feedback adaptation
+                        # inside the full official ASFormer encoder. The ordinary
+                        # actionness loss still trains the spatial stem and heads.
+                        policy_replay_inputs.append(features[idx : idx + 1])
+                        policy_replay_masks.append(mask[idx : idx + 1, None, :].float())
+                        policy_replay_rng.append(
+                            {
+                                "cpu": torch.random.get_rng_state(),
+                                "cuda": (
+                                    torch.cuda.get_rng_state_all()
+                                    if features.is_cuda
+                                    else None
+                                ),
+                            }
+                        )
                     outputs = self.official_temporal(
                         features[idx : idx + 1],
                         mask[idx : idx + 1, None, :].float(),
@@ -2441,7 +2459,10 @@ class C3OfficialActionSegmentationProbe:
             hidden = torch.cat(encoder_hidden_rows, dim=0).transpose(1, 2).contiguous()
             hidden_kind = "official_asformer_encoder_hidden"
             policy_hidden = None
-            if self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
+            if self.policy_hidden_gradient_scope in {
+                "asformer_last_encoder_layer",
+                "asformer_full_encoder",
+            }:
                 if not (
                     len(policy_replay_inputs)
                     == len(policy_replay_masks)
@@ -2451,7 +2472,6 @@ class C3OfficialActionSegmentationProbe:
                     raise RuntimeError(
                         "restricted ASFormer policy replay capture count does not match the batch"
                     )
-                encoder_layers = self.official_temporal.encoder.layers
                 current_cpu_rng = torch.random.get_rng_state()
                 current_cuda_rng = (
                     torch.cuda.get_rng_state_all()
@@ -2460,21 +2480,47 @@ class C3OfficialActionSegmentationProbe:
                 )
                 replay_rows = []
                 try:
-                    for replay_input, replay_mask, rng_state in zip(
-                        policy_replay_inputs,
-                        policy_replay_masks,
-                        policy_replay_rng,
-                    ):
-                        torch.random.set_rng_state(rng_state["cpu"])
-                        if rng_state["cuda"] is not None:
-                            torch.cuda.set_rng_state_all(rng_state["cuda"])
-                        replay_rows.append(
-                            encoder_layers[-1](
-                                replay_input.detach(),
-                                None,
-                                replay_mask,
+                    if self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
+                        encoder_layers = self.official_temporal.encoder.layers
+                        for replay_input, replay_mask, rng_state in zip(
+                            policy_replay_inputs,
+                            policy_replay_masks,
+                            policy_replay_rng,
+                        ):
+                            torch.random.set_rng_state(rng_state["cpu"])
+                            if rng_state["cuda"] is not None:
+                                torch.cuda.set_rng_state_all(rng_state["cuda"])
+                            replay_rows.append(
+                                encoder_layers[-1](
+                                    replay_input.detach(),
+                                    None,
+                                    replay_mask,
+                                )
                             )
+                    else:
+                        def capture_replay_hidden(_module, _inputs, output):
+                            if not isinstance(output, tuple) or len(output) != 2:
+                                raise RuntimeError("official ASFormer encoder must return (logits, hidden)")
+                            replay_rows.append(output[1])
+
+                        replay_hook = self.official_temporal.encoder.register_forward_hook(
+                            capture_replay_hidden
                         )
+                        try:
+                            for replay_input, replay_mask, rng_state in zip(
+                                policy_replay_inputs,
+                                policy_replay_masks,
+                                policy_replay_rng,
+                            ):
+                                torch.random.set_rng_state(rng_state["cpu"])
+                                if rng_state["cuda"] is not None:
+                                    torch.cuda.set_rng_state_all(rng_state["cuda"])
+                                self.official_temporal(
+                                    replay_input.detach(),
+                                    replay_mask,
+                                )
+                        finally:
+                            replay_hook.remove()
                 finally:
                     torch.random.set_rng_state(current_cpu_rng)
                     if current_cuda_rng is not None:

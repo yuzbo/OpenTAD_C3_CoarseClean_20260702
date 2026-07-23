@@ -280,6 +280,24 @@ class ActionFormer(SingleStageDetector):
             source_name="rpn_head",
             protected_keys=selector_loss_keys,
         )
+        if (
+            self.frame_selector is not None
+            and not skip_frame_selector
+            and not counterfactual_eval
+            and hasattr(self.frame_selector, "detector_contribution_distillation_losses")
+        ):
+            contribution_losses = self.frame_selector.detector_contribution_distillation_losses(
+                selector_outputs=selector_outputs["selector_outputs"],
+                detector_losses=loc_losses,
+                selected_inputs=selector_outputs["selector_outputs"].get(
+                    "detector_contribution_teacher_inputs",
+                    inputs,
+                ),
+            )
+            for key, value in contribution_losses.items():
+                if key in losses:
+                    raise ValueError(f"detector contribution loss key collision: {key}")
+                losses[key] = value
         self._merge_pc_ot_mras_extra_losses(
             losses,
             reader_extra_losses,
@@ -609,6 +627,7 @@ class ActionFormer(SingleStageDetector):
             scorer_prefixes = (
                 "frame_selector.adapter.transition_scorer.",
                 "frame_selector.adapter.density_mixture_head.",
+                "frame_selector.adapter.sampling_rate_utility_fusion.",
             )
             protected_adapter_prefix = (
                 "frame_selector.transition_scorer.selector_adapter."

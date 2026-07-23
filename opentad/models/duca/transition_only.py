@@ -206,6 +206,13 @@ class DucaTransitionUtilityScorer(nn.Module):
             # A symmetric c-R...c+R profile is the stable Oracle-like start.
             nn.init.zeros_(self.burst_offset_head.weight)
             nn.init.zeros_(self.burst_offset_head.bias)
+        # Train-only detector-contribution predictions share the same
+        # transition representation.  They are deliberately not a second
+        # coarse classifier: cls/reg utility is distilled from a uniform
+        # detector pass and only used by the sampling-rate policy.
+        self.detector_utility_head = nn.Linear(scorer_hidden_dim, 2)
+        nn.init.zeros_(self.detector_utility_head.weight)
+        nn.init.zeros_(self.detector_utility_head.bias)
 
     def forward(self, descriptors: torch.Tensor) -> torch.Tensor:
         if descriptors.ndim != 3 or int(descriptors.shape[-1]) != self.input_dim:
@@ -227,6 +234,14 @@ class DucaTransitionUtilityScorer(nn.Module):
             else self.burst_offset_head(features)
         )
         return center_scores, offset_logits
+
+    def detector_utility_logits(self, descriptors: torch.Tensor) -> torch.Tensor:
+        """Predict train-only classification and regression contribution fields."""
+
+        if descriptors.ndim != 3 or int(descriptors.shape[-1]) != self.input_dim:
+            raise ValueError(f"transition descriptors must be [B,T,{self.input_dim}]")
+        features = self.net[:-1](descriptors)
+        return self.detector_utility_head(features)
 
 
 class DucaMixtureDensityHead(nn.Module):
@@ -254,7 +269,7 @@ class DucaMixtureDensityHead(nn.Module):
         )
         nn.init.zeros_(self.context_head[-1].weight)
         nn.init.zeros_(self.context_head[-1].bias)
-        self.mixture_gate = nn.Linear(3, 3)
+        self.mixture_gate = nn.Linear(12, 3)
         nn.init.zeros_(self.mixture_gate.weight)
         with torch.no_grad():
             self.mixture_gate.bias.copy_(torch.tensor([2.0, 0.0, 0.0]))
@@ -310,14 +325,45 @@ class DucaMixtureDensityHead(nn.Module):
             ),
             dim=1,
         ).masked_fill(~valid[:, None, :], 0.0)
-        valid_count = valid.sum(dim=1, keepdim=True).clamp_min(1).to(
-            dtype=components.dtype
+        neg = -torch.finfo(components.dtype).max
+        normalized_components = torch.softmax(
+            components.masked_fill(~valid[:, None, :], neg), dim=-1
         )
-        summaries = components.sum(dim=-1) / valid_count
-        mixture_logits = self.mixture_gate(summaries)
+        eps = torch.finfo(normalized_components.dtype).eps
+        valid_count = valid.sum(dim=1, keepdim=True).clamp_min(1).to(
+            dtype=normalized_components.dtype
+        )
+        entropy_denominator = valid_count.log().clamp_min(1.0)
+        entropy = -(
+            normalized_components
+            * normalized_components.clamp_min(eps).log()
+        ).sum(dim=-1) / entropy_denominator
+        peak = normalized_components.amax(dim=-1)
+        time = torch.arange(
+            boundary_logits.shape[1],
+            device=boundary_logits.device,
+            dtype=normalized_components.dtype,
+        )[None, :]
+        normalized_time = time / (valid_count - 1.0).clamp_min(1.0)
+        center = torch.sum(
+            normalized_components * normalized_time[:, None, :], dim=-1
+        )
+        spread = torch.sqrt(
+            torch.sum(
+                normalized_components
+                * (normalized_time[:, None, :] - center[:, :, None]).square(),
+                dim=-1,
+            ).clamp_min(0.0)
+            + eps
+        )
+        gate_features = torch.stack(
+            (entropy, peak, center, spread), dim=-1
+        ).flatten(start_dim=1)
+        mixture_logits = self.mixture_gate(gate_features)
         return {
             "component_logits": components,
             "mixture_logits": mixture_logits,
+            "mixture_gate_features": gate_features,
             "component_names": self.component_names,
         }
 

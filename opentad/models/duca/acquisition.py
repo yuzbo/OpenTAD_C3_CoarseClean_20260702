@@ -19,6 +19,7 @@ from opentad.duca_loss_contract import (
 
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
 from .structured_selection import (
+    budget_calibrated_sampling_rate,
     continuous_density_transport,
     exact_uniform_reference_scores,
     global_structured_topk,
@@ -769,9 +770,11 @@ class C3CoarseProbeActionnessSource(nn.Module):
         if self.policy_hidden_gradient_scope not in {
             "none",
             "asformer_last_encoder_layer",
+            "asformer_full_encoder",
         }:
             raise ValueError(
-                "policy_hidden_gradient_scope must be none or asformer_last_encoder_layer"
+                "policy_hidden_gradient_scope must be none, asformer_last_encoder_layer, "
+                "or asformer_full_encoder"
             )
         if self.policy_hidden_gradient_scope != "none" and (
             self.probe_model != "official-action-seg"
@@ -1416,6 +1419,7 @@ class DucaAcquisitionAdapter(nn.Module):
         density_temperature: float = 0.7,
         density_coverage_floor: float = 0.05,
         density_smoothing_kernel: int = 5,
+        sampling_rate_utility_components: str = "none",
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
@@ -1475,17 +1479,25 @@ class DucaAcquisitionAdapter(nn.Module):
             "local_cell_deformation",
             "continuous_density_transport",
             "continuous_mixture_density_transport",
+            "budget_calibrated_sampling_rate",
         }:
             raise ValueError(
                 "acquisition_policy must be legacy_center_radius, global_structured_topk, "
                 "local_cell_deformation, continuous_density_transport, or "
-                "continuous_mixture_density_transport"
+                "continuous_mixture_density_transport, or budget_calibrated_sampling_rate"
             )
         self.structured_temperature = float(structured_temperature)
         self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
         self.density_temperature = float(density_temperature)
         self.density_coverage_floor = float(density_coverage_floor)
         self.density_smoothing_kernel = int(density_smoothing_kernel)
+        self.sampling_rate_utility_components = str(
+            sampling_rate_utility_components
+        ).lower()
+        if self.sampling_rate_utility_components not in {"none", "cls", "reg", "both"}:
+            raise ValueError(
+                "sampling_rate_utility_components must be none, cls, reg, or both"
+            )
         if not math.isfinite(self.structured_temperature) or self.structured_temperature <= 0.0:
             raise ValueError("structured_temperature must be finite and positive")
         if not math.isfinite(self.density_temperature) or self.density_temperature <= 0.0:
@@ -1579,6 +1591,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "local_cell_deformation",
             "continuous_density_transport",
             "continuous_mixture_density_transport",
+            "budget_calibrated_sampling_rate",
         } and self.hard_max_gap_repair:
             raise ValueError("structured acquisition policies encode coverage and forbid hard repair")
         self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
@@ -1589,6 +1602,7 @@ class DucaAcquisitionAdapter(nn.Module):
         self.feature_dim = None if feature_dim is None else int(feature_dim)
         self.transition_scorer = None
         self.density_mixture_head = None
+        self.sampling_rate_utility_fusion = None
         if self.selector_variant == "transition_only":
             if self.dynamic_budget:
                 raise ValueError("transition_only is intentionally fixed-budget until its fixed policy is validated")
@@ -1597,6 +1611,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 "local_cell_deformation",
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
+                "budget_calibrated_sampling_rate",
             }:
                 raise ValueError("transition_only requires a structured exact-budget acquisition policy")
             if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
@@ -1604,8 +1619,9 @@ class DucaAcquisitionAdapter(nn.Module):
             if self.acquisition_policy in {
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
+                "budget_calibrated_sampling_rate",
             } and self.dynamic_budget:
-                raise ValueError("continuous density transport currently requires a fixed exact budget")
+                raise ValueError("continuous density/rate transport currently requires a fixed exact budget")
             if self.coarse_hidden_dim <= 0:
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if int(hidden_dim) <= 0:
@@ -1624,6 +1640,7 @@ class DucaAcquisitionAdapter(nn.Module):
                     "local_cell_deformation",
                     "continuous_density_transport",
                     "continuous_mixture_density_transport",
+                    "budget_calibrated_sampling_rate",
                 },
                 burst_radius=(
                     self.boundary_burst_radius
@@ -1636,6 +1653,10 @@ class DucaAcquisitionAdapter(nn.Module):
                     hidden_dim=self.coarse_hidden_dim,
                     scorer_hidden_dim=int(hidden_dim),
                 )
+            if self.acquisition_policy == "budget_calibrated_sampling_rate":
+                self.sampling_rate_utility_fusion = nn.Linear(2, 1)
+                nn.init.zeros_(self.sampling_rate_utility_fusion.weight)
+                nn.init.zeros_(self.sampling_rate_utility_fusion.bias)
             selector_feature_dim = int(self.transition_scorer.input_dim)
         elif self.feature_dim is None or self.parameter_free_selector:
             self.encoder = None
@@ -1886,14 +1907,16 @@ class DucaAcquisitionAdapter(nn.Module):
         elif self.acquisition_policy in {
             "continuous_density_transport",
             "continuous_mixture_density_transport",
+            "budget_calibrated_sampling_rate",
         }:
             soft_coverage_macs = batch_size * (4 * temporal_len + 3 * self.budget)
             soft_coverage_flops = soft_coverage_macs * 6
-            structured_complexity = (
-                "O(B*(C*T+K)) mixture inverse-CDF density transport"
-                if self.acquisition_policy == "continuous_mixture_density_transport"
-                else "O(B*(T+K)) inverse-CDF density transport"
-            )
+            if self.acquisition_policy == "continuous_mixture_density_transport":
+                structured_complexity = "O(B*(C*T+K)) mixture inverse-CDF density transport"
+            elif self.acquisition_policy == "budget_calibrated_sampling_rate":
+                structured_complexity = "O(B*(T+K)) capped-rate calibration plus systematic sampling"
+            else:
+                structured_complexity = "O(B*(T+K)) inverse-CDF density transport"
         else:
             soft_coverage_macs = batch_size * temporal_len * temporal_len
             soft_coverage_flops = soft_coverage_macs * 8
@@ -1955,6 +1978,7 @@ class DucaAcquisitionAdapter(nn.Module):
         coarse_hidden_features: Optional[torch.Tensor] = None,
         coarse_policy_hidden_features: Optional[torch.Tensor] = None,
         coarse_hidden_kind: Optional[str] = None,
+        policy_hidden_gradient_scale: Optional[float] = None,
     ) -> Dict[str, Any]:
         if dense_observations.ndim != 3:
             raise ValueError(f"dense_observations must be [B,T,C], got {tuple(dense_observations.shape)}")
@@ -2034,6 +2058,12 @@ class DucaAcquisitionAdapter(nn.Module):
         transition_center_scores = None
         burst_outputs = None
         density_mixture_outputs = None
+        detector_contribution_logits = None
+        active_policy_hidden_gradient_scale = self.policy_hidden_gradient_scale
+        if policy_hidden_gradient_scale is not None:
+            active_policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
+            if not math.isfinite(active_policy_hidden_gradient_scale) or not 0.0 <= active_policy_hidden_gradient_scale <= 1.0:
+                raise ValueError("policy_hidden_gradient_scale override must lie in [0,1]")
         if self.parameter_free_selector:
             transition_center_scores = actionness_aux
             if self.transition_objective == "boundary_burst":
@@ -2077,7 +2107,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 valid,
                 compute_auxiliary=self.training,
                 policy_hidden=coarse_policy_hidden,
-                policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
+                policy_hidden_gradient_scale=active_policy_hidden_gradient_scale,
                 auxiliary_hidden_gradient_scale=self.auxiliary_hidden_gradient_scale,
             )
             transition_center_scores = transition_paths["policy_scores"]
@@ -2111,7 +2141,7 @@ class DucaAcquisitionAdapter(nn.Module):
                     if coarse_policy_hidden is not None
                     else coarse_hidden
                 )
-                mixture_hidden = mixture_hidden_source.detach() + self.policy_hidden_gradient_scale * (
+                mixture_hidden = mixture_hidden_source.detach() + active_policy_hidden_gradient_scale * (
                     mixture_hidden_source - mixture_hidden_source.detach()
                 )
                 density_mixture_outputs = self.density_mixture_head(
@@ -2122,6 +2152,24 @@ class DucaAcquisitionAdapter(nn.Module):
                     hidden=mixture_hidden,
                     valid_mask=valid,
                 )
+            if self.acquisition_policy == "budget_calibrated_sampling_rate":
+                if self.sampling_rate_utility_fusion is None:
+                    raise RuntimeError("sampling-rate acquisition requires its utility fusion head")
+                detector_contribution_logits = self.transition_scorer.detector_utility_logits(
+                    transition_paths["policy_descriptors"]
+                ).masked_fill(~valid[:, :, None], 0.0)
+                utility_mask = detector_contribution_logits.new_tensor(
+                    {
+                        "none": (0.0, 0.0),
+                        "cls": (1.0, 0.0),
+                        "reg": (0.0, 1.0),
+                        "both": (1.0, 1.0),
+                    }[self.sampling_rate_utility_components]
+                )
+                rate_utility = self.sampling_rate_utility_fusion(
+                    detector_contribution_logits * utility_mask
+                ).squeeze(-1)
+                center_scores = center_scores + rate_utility
             selection_features = transition_paths["transition_descriptors"]
             radius = center_scores.new_zeros(center_scores.shape)
             start_logits = center_scores.new_zeros(center_scores.shape)
@@ -2226,8 +2274,13 @@ class DucaAcquisitionAdapter(nn.Module):
                     "transition_auxiliary_scores": transition_paths["auxiliary_scores"],
                     "transition_policy_scores": transition_paths["policy_scores"],
                     "transition_center_scores": transition_paths["policy_scores"],
-                    "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
-                    "uses_absolute_hidden_features": False,
+                    "policy_hidden_gradient_scale": active_policy_hidden_gradient_scale,
+                    "uses_absolute_hidden_features": bool(
+                        density_mixture_outputs is not None
+                    ),
+                    "density_mixture_uses_absolute_hidden_features": bool(
+                        density_mixture_outputs is not None
+                    ),
                     "uses_raw_rgb_descriptors": False,
                     "legacy_direct_heads_enabled": False,
                 }
@@ -2259,9 +2312,20 @@ class DucaAcquisitionAdapter(nn.Module):
                     "density_mixture_logits": density_mixture_outputs[
                         "mixture_logits"
                     ],
+                    "density_mixture_gate_features": density_mixture_outputs[
+                        "mixture_gate_features"
+                    ],
                     "density_component_names": density_mixture_outputs[
                         "component_names"
                     ],
+                }
+            )
+        if detector_contribution_logits is not None:
+            output.update(
+                {
+                    "detector_contribution_logits": detector_contribution_logits,
+                    "sampling_rate_utility_components": self.sampling_rate_utility_components,
+                    "sampling_rate_utility_head_enabled": True,
                 }
             )
         return output
@@ -2549,8 +2613,75 @@ class DucaAcquisitionAdapter(nn.Module):
             "density_component_names": component_names,
             "density_cdf": decoded.cdf,
             "density_continuous_positions": decoded.continuous_positions,
+            "density_projection_abs_displacement": (
+                decoded.projection_abs_displacement
+            ),
             "density_slot_mask": decoded.slot_mask,
             "density_observed_max_unselected_hole": decoded.observed_max_unselected_hole,
+        }
+
+    def _decode_budget_calibrated_sampling_rate(
+        self,
+        center_scores: torch.Tensor,
+        valid_mask: torch.Tensor,
+        budgets: torch.Tensor,
+        *,
+        stable_selection: bool,
+        policy_mix_alpha: float,
+    ) -> Dict[str, Any]:
+        if torch.any(budgets != int(self.budget)):
+            raise ValueError("budget-calibrated sampling rates require the configured fixed budget")
+        alpha = 0.0 if stable_selection else float(policy_mix_alpha)
+        decoded = budget_calibrated_sampling_rate(
+            center_scores,
+            valid_mask,
+            k=int(self.budget),
+            temperature=self.density_temperature,
+            coverage_floor=self.density_coverage_floor,
+            smoothing_kernel=self.density_smoothing_kernel,
+            policy_alpha=alpha,
+            training=self.training,
+            force_exact_uniform=bool(stable_selection or alpha <= 0.0),
+        )
+        observed_holes = decoded.observed_max_unselected_hole.detach().cpu().tolist()
+        return {
+            "selected_positions": decoded.selected_positions,
+            "selected_mask": decoded.hard_occupancy.bool(),
+            "selection_st": decoded.selection_st,
+            "soft_coverage": decoded.soft_occupancy,
+            "soft_slot_assignment": decoded.soft_slot_assignment,
+            "effective_budget": decoded.effective_k,
+            "detector_input_length": decoded.effective_k.clone(),
+            "selected_centers": [[] for _ in range(int(center_scores.shape[0]))],
+            "selected_radius": [[] for _ in range(int(center_scores.shape[0]))],
+            "fill_strategy": [
+                "budget_calibrated_per_frame_rate_systematic_sampling"
+                for _ in range(int(center_scores.shape[0]))
+            ],
+            "max_gap_repair": [
+                {
+                    "enabled": False,
+                    "parameter_free": True,
+                    "role": "observed_only_no_hard_max_gap",
+                    "configured_max_unselected_hole": None,
+                    "observed_max_unselected_hole": int(observed_holes[index]),
+                }
+                for index in range(int(center_scores.shape[0]))
+            ],
+            "selection_path": (
+                "sampling_rate_exact_uniform_reference"
+                if bool(stable_selection or alpha <= 0.0)
+                else "budget_calibrated_sampling_rate_systematic"
+            ),
+            "decode_policy_logits": center_scores * alpha,
+            "policy_mix_alpha": alpha,
+            "sampling_rates": decoded.sampling_rates,
+            "sampling_density": decoded.sampling_density,
+            "sampling_cumulative_rates": decoded.cumulative_rates,
+            "sampling_continuous_positions": decoded.continuous_positions,
+            "sampling_slot_mask": decoded.slot_mask,
+            "sampling_calibration_residual": decoded.calibration_residual,
+            "sampling_observed_max_unselected_hole": decoded.observed_max_unselected_hole,
         }
 
     def _decode_local_cell(
@@ -2669,6 +2800,7 @@ class DucaAcquisitionAdapter(nn.Module):
         compute_profile_context: Optional[Mapping[str, Any]] = None,
         stable_selection: bool = False,
         policy_mix_alpha: float = 1.0,
+        policy_hidden_gradient_scale: Optional[float] = None,
     ) -> Tuple[SparseTemporalGrid, Dict[str, Any]]:
         profile_enabled = bool(self.profile_runtime)
         sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
@@ -2683,6 +2815,7 @@ class DucaAcquisitionAdapter(nn.Module):
             coarse_hidden_features=coarse_hidden_features,
             coarse_policy_hidden_features=coarse_policy_hidden_features,
             coarse_hidden_kind=coarse_hidden_kind,
+            policy_hidden_gradient_scale=policy_hidden_gradient_scale,
         )
         score_ms = _elapsed_ms(score_start, dense_observations, enabled=sync_enabled)
         budget_decision: Optional[DynamicBudgetDecision] = None
@@ -2741,6 +2874,14 @@ class DucaAcquisitionAdapter(nn.Module):
                 component_logits=scores.get("density_component_logits"),
                 component_mixture_logits=scores.get("density_mixture_logits"),
                 component_names=scores.get("density_component_names"),
+            )
+        elif self.acquisition_policy == "budget_calibrated_sampling_rate":
+            decoded = self._decode_budget_calibrated_sampling_rate(
+                scores["center_scores"],
+                scores["valid_mask"],
+                budgets,
+                stable_selection=bool(stable_selection),
+                policy_mix_alpha=float(policy_mix_alpha),
             )
         elif self.acquisition_policy == "local_cell_deformation":
             decoded = self._decode_local_cell(
@@ -2856,6 +2997,22 @@ class DucaAcquisitionAdapter(nn.Module):
                     .tolist()
                 ),
                 "density_component_names": decoded.get("density_component_names"),
+                "sampling_rate_observed_max_unselected_hole": (
+                    None
+                    if decoded.get("sampling_observed_max_unselected_hole") is None
+                    else decoded["sampling_observed_max_unselected_hole"]
+                    .detach()
+                    .cpu()
+                    .tolist()
+                ),
+                "sampling_rate_calibration_residual": (
+                    None
+                    if decoded.get("sampling_calibration_residual") is None
+                    else decoded["sampling_calibration_residual"]
+                    .detach()
+                    .cpu()
+                    .tolist()
+                ),
                 "cost_ledger": cost_ledger,
             },
         ).validate()
@@ -2867,6 +3024,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "local_cell_deformation",
             "continuous_density_transport",
             "continuous_mixture_density_transport",
+            "budget_calibrated_sampling_rate",
         }:
             soft_coverage = decoded["soft_coverage"]
             selection_st = decoded["selection_st"]
@@ -2933,9 +3091,21 @@ class DucaAcquisitionAdapter(nn.Module):
                 "density_continuous_positions": decoded.get(
                     "density_continuous_positions"
                 ),
+                "density_projection_abs_displacement": decoded.get(
+                    "density_projection_abs_displacement"
+                ),
                 "density_slot_mask": decoded.get("density_slot_mask"),
                 "density_observed_max_unselected_hole": decoded.get(
                     "density_observed_max_unselected_hole"
+                ),
+                "sampling_rates": decoded.get("sampling_rates"),
+                "sampling_density": decoded.get("sampling_density"),
+                "sampling_cumulative_rates": decoded.get("sampling_cumulative_rates"),
+                "sampling_continuous_positions": decoded.get("sampling_continuous_positions"),
+                "sampling_slot_mask": decoded.get("sampling_slot_mask"),
+                "sampling_calibration_residual": decoded.get("sampling_calibration_residual"),
+                "sampling_observed_max_unselected_hole": decoded.get(
+                    "sampling_observed_max_unselected_hole"
                 ),
                 "detector_grid_positions": decoded.get(
                     "local_cell_anchor_positions",

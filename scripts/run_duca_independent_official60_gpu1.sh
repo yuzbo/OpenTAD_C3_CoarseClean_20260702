@@ -13,6 +13,7 @@ VARIANT="${DUCA_INDEPENDENT_VARIANT:-}"
 SPARSE_PROBE_STRIDE=""
 TRAINFREE=0
 DENSITY_TRANSPORT=0
+SAMPLING_RATE=0
 case "${VARIANT}" in
   two_stage_exact_uniform)
     CONFIG="configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py"
@@ -94,6 +95,36 @@ case "${VARIANT}" in
     CONFIG="configs/adatad/thumos/duca_mixture_density_transport_nomax_fixed384_official60.py"
     P0_CONFIG=""
     DENSITY_TRANSPORT=1
+    ;;
+  sampling_rate_only)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
+    ;;
+  sampling_rate_cls)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_cls_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
+    ;;
+  sampling_rate_reg)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_reg_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
+    ;;
+  sampling_rate_both)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_both_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
+    ;;
+  sampling_rate_both_asformer_last)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_both_asformer_adapt_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
+    ;;
+  sampling_rate_both_asformer_full)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_both_asformer_full_adapt_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
     ;;
   *) fail "unknown independent variant: ${VARIANT}" ;;
 esac
@@ -239,6 +270,18 @@ elif [[ "${DENSITY_TRANSPORT}" == 1 ]]; then
     --adatad-pretrain-sha256 "${FROZEN_PRETRAIN_SHA256}" \
     --output-json "${FULL_GATE_JSON}" \
     2>&1 | tee "${ARM_ROOT}/gate/full_model_gate.out"
+elif [[ "${SAMPLING_RATE}" == 1 ]]; then
+  "${PYTHON}" tools/bata/validate_duca_sampling_rate_official60.py \
+    --config "${CONFIG}" --output-json "${CONTRACT_JSON}"
+  "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
+    --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
+    --rdzv_id="duca-independent-${SLURM_JOB_ID}-${VARIANT}-gate" \
+    tools/bata/run_duca_protected_e2e_exact_full_model_gate.py \
+    --config "${CONFIG}" --expected-commit "${EXPECTED_COMMIT}" \
+    --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
+    --adatad-pretrain-sha256 "${FROZEN_PRETRAIN_SHA256}" \
+    --output-json "${FULL_GATE_JSON}" \
+    2>&1 | tee "${ARM_ROOT}/gate/full_model_gate.out"
 else
   "${PYTHON}" tools/bata/validate_duca_protected_e2e_official60.py \
     --config "${CONFIG}" --output-json "${CONTRACT_JSON}"
@@ -312,7 +355,7 @@ EVALUATION_JSON="${ARM_ROOT}/official60/terminal_evaluation.json"
 
 SELECTION_SUMMARY=""
 SELECTION_RECORDS=""
-if [[ "${DENSITY_TRANSPORT}" == 1 ]]; then
+if [[ "${DENSITY_TRANSPORT}" == 1 || "${SAMPLING_RATE}" == 1 ]]; then
   QUALITY_CONFIG="configs/adatad/thumos/duca_frontend_holdout_quality_fixed384.py"
   QUALITY_DIR="${ARM_ROOT}/official60/selection_quality"
   SELECTION_RECORDS="${QUALITY_DIR}/selection_quality_records.jsonl"

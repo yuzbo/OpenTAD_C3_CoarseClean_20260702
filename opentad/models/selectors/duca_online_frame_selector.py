@@ -359,81 +359,23 @@ def _add_density_transport_gradient_path(
     hard_selected: torch.Tensor,
     dense_inputs: torch.Tensor,
     *,
+    selected_positions: torch.Tensor,
     soft_slot_assignment: torch.Tensor,
     slot_mask: torch.Tensor,
     bridge_weight: float,
     bridge_row_scale: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    """Keep hard observations in forward and use inverse-CDF interpolation in backward."""
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """Anchor inverse-CDF gradients at the frames used by the detector."""
 
-    if soft_slot_assignment.ndim != 3:
-        raise ValueError("density transport slot assignment must be [B,K,T]")
-    temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
-    if temporal_dim is None:
-        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
-    expected = (
-        int(hard_selected.shape[0]),
-        int(slot_mask.shape[1]),
-        int(dense_inputs.shape[temporal_dim]),
+    return _add_protected_structured_transport_gradient_path(
+        hard_selected,
+        dense_inputs,
+        selected_positions=selected_positions,
+        soft_slot_assignment=soft_slot_assignment,
+        slot_mask=slot_mask,
+        bridge_weight=bridge_weight,
+        bridge_row_scale=bridge_row_scale,
     )
-    if tuple(soft_slot_assignment.shape) != expected:
-        raise ValueError(
-            "density transport slot assignment must match [B,K,T]: "
-            f"expected {expected}, got {tuple(soft_slot_assignment.shape)}"
-        )
-    active = slot_mask.to(device=soft_slot_assignment.device, dtype=torch.bool)
-    slot_mass = soft_slot_assignment.sum(dim=-1)
-    if active.any() and not torch.allclose(
-        slot_mass[active],
-        torch.ones_like(slot_mass[active]),
-        atol=1.0e-4,
-        rtol=1.0e-4,
-    ):
-        raise ValueError("every active density transport slot must sum to one")
-    if (~active).any() and not torch.allclose(
-        slot_mass[~active],
-        torch.zeros_like(slot_mass[~active]),
-        atol=1.0e-6,
-        rtol=0.0,
-    ):
-        raise ValueError("inactive density transport slots must have zero mass")
-    bridge = float(bridge_weight)
-    if bridge <= 0.0:
-        return hard_selected
-    if bridge_row_scale is None:
-        row_scale = torch.ones(
-            int(hard_selected.shape[0]),
-            device=hard_selected.device,
-            dtype=torch.float32,
-        )
-    else:
-        if bridge_row_scale.ndim != 1 or int(bridge_row_scale.shape[0]) != int(hard_selected.shape[0]):
-            raise ValueError("density transport bridge_row_scale must be [B]")
-        row_scale = bridge_row_scale.to(device=hard_selected.device, dtype=torch.float32)
-    context_inputs = (
-        dense_inputs
-        if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs)
-        else dense_inputs.float()
-    )
-    hard_base = (
-        hard_selected
-        if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected)
-        else hard_selected.float()
-    )
-    weights = soft_slot_assignment.to(device=context_inputs.device, dtype=context_inputs.dtype)
-    if context_inputs.ndim == 3:
-        soft = torch.einsum("bct,bkt->bck", context_inputs, weights)
-        slot = slot_mask[:, None, :]
-    elif context_inputs.ndim == 5:
-        soft = torch.einsum("bcthw,bkt->bckhw", context_inputs, weights)
-        slot = slot_mask[:, None, :, None, None]
-    else:
-        soft = torch.einsum("bncthw,bkt->bnckhw", context_inputs, weights)
-        slot = slot_mask[:, None, None, :, None, None]
-    row_scale_view = row_scale.to(dtype=soft.dtype).view(
-        int(row_scale.shape[0]), *([1] * (soft.ndim - 1))
-    )
-    return hard_base + bridge * (soft - soft.detach()) * row_scale_view * slot.to(dtype=soft.dtype)
 
 
 def _add_protected_structured_transport_gradient_path(
@@ -571,6 +513,7 @@ class DucaOnlineFrameSelector(nn.Module):
         density_temperature: float = 0.7,
         density_coverage_floor: float = 0.05,
         density_smoothing_kernel: int = 5,
+        sampling_rate_utility_components: str = "none",
         inference_policy_alpha: float = 1.0,
         training_uniform_companion_fraction: float = 0.0,
         training_uniform_companion_normalize_learned_gradient: bool = False,
@@ -618,6 +561,9 @@ class DucaOnlineFrameSelector(nn.Module):
         boundary_burst_overfill_weight: float = 0.25,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
+        detector_contribution_distillation_weight: float = 0.0,
+        detector_contribution_components: str = "both",
+        detector_contribution_temperature: float = 0.7,
         counterfactual_utility_distillation_weight: float = 0.0,
         counterfactual_utility_temperature: float = 1.0,
         counterfactual_max_candidates: int = 4,
@@ -681,6 +627,13 @@ class DucaOnlineFrameSelector(nn.Module):
         self.density_temperature = float(density_temperature)
         self.density_coverage_floor = float(density_coverage_floor)
         self.density_smoothing_kernel = int(density_smoothing_kernel)
+        self.sampling_rate_utility_components = str(
+            sampling_rate_utility_components
+        ).lower()
+        if self.sampling_rate_utility_components not in {"none", "cls", "reg", "both"}:
+            raise ValueError(
+                "sampling_rate_utility_components must be none, cls, reg, or both"
+            )
         self.inference_policy_alpha = float(inference_policy_alpha)
         if not 0.0 <= self.inference_policy_alpha <= 1.0:
             raise ValueError("inference_policy_alpha must lie in [0,1]")
@@ -690,6 +643,29 @@ class DucaOnlineFrameSelector(nn.Module):
         self.training_uniform_companion_normalize_learned_gradient = bool(
             training_uniform_companion_normalize_learned_gradient
         )
+        self.detector_contribution_distillation_weight = float(
+            detector_contribution_distillation_weight
+        )
+        self.detector_contribution_components = str(
+            detector_contribution_components
+        ).lower()
+        self.detector_contribution_temperature = float(
+            detector_contribution_temperature
+        )
+        if self.detector_contribution_components not in {"none", "cls", "reg", "both"}:
+            raise ValueError(
+                "detector_contribution_components must be none, cls, reg, or both"
+            )
+        if (
+            not math.isfinite(self.detector_contribution_distillation_weight)
+            or self.detector_contribution_distillation_weight < 0.0
+        ):
+            raise ValueError("detector_contribution_distillation_weight must be finite and non-negative")
+        if (
+            not math.isfinite(self.detector_contribution_temperature)
+            or self.detector_contribution_temperature <= 0.0
+        ):
+            raise ValueError("detector_contribution_temperature must be finite and positive")
         if (
             not math.isfinite(self.training_uniform_companion_fraction)
             or not 0.0 <= self.training_uniform_companion_fraction < 1.0
@@ -909,6 +885,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 "local_cell_deformation",
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
+                "budget_calibrated_sampling_rate",
             }:
                 raise ValueError("transition_only requires a structured exact-budget acquisition policy")
             if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
@@ -1044,6 +1021,7 @@ class DucaOnlineFrameSelector(nn.Module):
             density_temperature=self.density_temperature,
             density_coverage_floor=self.density_coverage_floor,
             density_smoothing_kernel=self.density_smoothing_kernel,
+            sampling_rate_utility_components=self.sampling_rate_utility_components,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -1370,6 +1348,200 @@ class DucaOnlineFrameSelector(nn.Module):
                 "unweighted": None if weight == 0.0 else weighted / weight,
             }
         return audit
+
+    @staticmethod
+    def _selected_detector_contribution(
+        selected_inputs: torch.Tensor,
+        objective: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return detached per-selected-frame first-order detector contribution."""
+
+        if objective.ndim != 0 or not objective.requires_grad:
+            raise ValueError("detector contribution objective must be a differentiable scalar")
+        if not selected_inputs.requires_grad:
+            raise RuntimeError(
+                "detector contribution distillation requires the real selected detector input "
+                "to retain its autograd path"
+            )
+        gradient = torch.autograd.grad(
+            objective,
+            selected_inputs,
+            retain_graph=True,
+            create_graph=False,
+            allow_unused=True,
+        )[0]
+        if gradient is None:
+            raise RuntimeError("detector objective is disconnected from selected detector inputs")
+        temporal_dim = 2 if selected_inputs.ndim in {3, 5} else 3 if selected_inputs.ndim == 6 else None
+        if temporal_dim is None:
+            raise ValueError(
+                f"unsupported selected detector input shape: {tuple(selected_inputs.shape)}"
+            )
+        reduce_dims = tuple(
+            index for index in range(selected_inputs.ndim)
+            if index not in {0, temporal_dim}
+        )
+        return (selected_inputs.detach() * gradient.detach()).abs().mean(dim=reduce_dims)
+
+    @staticmethod
+    def _interpolate_selected_contribution(
+        contribution: torch.Tensor,
+        positions: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Linearly reconstruct a dense train-only utility field from uniform slots."""
+
+        if contribution.ndim != 2 or positions.shape != contribution.shape:
+            raise ValueError("selected contribution and positions must be aligned [B,K]")
+        valid = valid_mask.to(device=contribution.device, dtype=torch.bool)
+        if valid.ndim != 2 or valid.shape[0] != contribution.shape[0]:
+            raise ValueError("valid_mask must align with contribution batch")
+        dense_len = int(valid.shape[1])
+        dense_rows = []
+        query = torch.arange(dense_len, device=contribution.device, dtype=contribution.dtype)
+        for row_index in range(int(contribution.shape[0])):
+            active = positions[row_index] >= 0
+            row_positions = positions[row_index, active].to(device=contribution.device, dtype=torch.long)
+            row_values = contribution[row_index, active].to(dtype=contribution.dtype).clamp_min(0.0)
+            if int(row_positions.numel()) == 0:
+                dense_rows.append(contribution.new_zeros((dense_len,)))
+                continue
+            if int(row_positions.numel()) > 1 and bool(
+                torch.any(row_positions[1:] <= row_positions[:-1]).item()
+            ):
+                raise ValueError("detector contribution interpolation requires strictly ordered observations")
+            if int(row_positions.numel()) == 1:
+                dense = row_values.expand(dense_len)
+            else:
+                right = torch.searchsorted(row_positions, query.long(), right=False)
+                right = right.clamp(1, int(row_positions.numel()) - 1)
+                left = right - 1
+                left_pos = row_positions[left].to(dtype=contribution.dtype)
+                right_pos = row_positions[right].to(dtype=contribution.dtype)
+                fraction = (query - left_pos) / (right_pos - left_pos).clamp_min(1.0)
+                dense = row_values[left] + fraction.clamp(0.0, 1.0) * (
+                    row_values[right] - row_values[left]
+                )
+                dense = torch.where(query <= row_positions[0], row_values[0], dense)
+                dense = torch.where(query >= row_positions[-1], row_values[-1], dense)
+            dense_rows.append(dense.masked_fill(~valid[row_index], 0.0))
+        return torch.stack(dense_rows, dim=0)
+
+    @staticmethod
+    def _contribution_distribution_loss(
+        logits: torch.Tensor,
+        target: torch.Tensor,
+        valid_mask: torch.Tensor,
+        teacher_mask: torch.Tensor,
+        *,
+        temperature: float,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if logits.shape != target.shape or logits.shape != valid_mask.shape:
+            raise ValueError("contribution logits, target, and validity must align [B,T]")
+        if teacher_mask.ndim != 1 or teacher_mask.shape[0] != logits.shape[0]:
+            raise ValueError("teacher_mask must be [B]")
+        valid = valid_mask.to(device=logits.device, dtype=torch.bool)
+        target = target.to(device=logits.device, dtype=logits.dtype).clamp_min(0.0)
+        target = target.masked_fill(~valid, 0.0)
+        mass = target.sum(dim=1)
+        active = teacher_mask.to(device=logits.device, dtype=torch.bool) & (mass > 1.0e-8)
+        if not bool(active.any().item()):
+            return logits.sum() * 0.0, active
+        normalized_target = target / mass[:, None].clamp_min(torch.finfo(target.dtype).eps)
+        neg = -torch.finfo(logits.dtype).max
+        log_probs = F.log_softmax(
+            logits.masked_fill(~valid, neg) / float(temperature),
+            dim=1,
+        )
+        loss = -(normalized_target * log_probs).sum(dim=1)[active].mean()
+        return loss, active
+
+    def detector_contribution_distillation_losses(
+        self,
+        *,
+        selector_outputs: Mapping[str, Any],
+        detector_losses: Mapping[str, torch.Tensor],
+        selected_inputs: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Distill uniform-pass cls/reg detector contribution into the rate policy.
+
+        The teacher exists only while training and only for rows that consumed
+        exact-uniform observations.  Its contribution map is detached before
+        interpolation, so no second detector objective or validation signal is
+        used for inference-time decisions.
+        """
+
+        if self.detector_contribution_distillation_weight <= 0.0:
+            return {}
+        if self.detector_contribution_components == "none":
+            return {}
+        predicted = selector_outputs.get("detector_contribution_logits")
+        if predicted is None:
+            raise RuntimeError("sampling-rate utility logits are missing from selector outputs")
+        if predicted.ndim != 3 or predicted.shape[-1] != 2:
+            raise ValueError("detector contribution logits must be [B,T,2]")
+        grid = selector_outputs.get("grid")
+        valid = selector_outputs.get("valid_mask")
+        teacher_mask = selector_outputs.get("detector_contribution_teacher_mask")
+        if grid is None or valid is None or teacher_mask is None:
+            raise RuntimeError("detector contribution distillation requires grid, validity, and teacher rows")
+        schedule = selector_outputs.get("loss_weight_schedule", {})
+        schedule_weights = schedule.get("weights", {}) if isinstance(schedule, Mapping) else {}
+        schedule_weight = float(schedule_weights.get("detector_contribution", 1.0))
+        weight = self.detector_contribution_distillation_weight * schedule_weight
+        if weight <= 0.0:
+            return {}
+        requested = {
+            "cls": self.detector_contribution_components in {"cls", "both"},
+            "reg": self.detector_contribution_components in {"reg", "both"},
+        }
+        output: dict[str, torch.Tensor] = {}
+        targets: dict[str, torch.Tensor] = {}
+        active_rows = None
+        for component_index, component in enumerate(("cls", "reg")):
+            if not requested[component]:
+                continue
+            terms = [
+                value
+                for name, value in detector_losses.items()
+                if torch.is_tensor(value)
+                and value.ndim == 0
+                and "loss" in str(name).lower()
+                and component in str(name).lower()
+            ]
+            if not terms:
+                raise RuntimeError(
+                    f"official detector did not expose a scalar {component} loss for contribution distillation"
+                )
+            contribution = self._selected_detector_contribution(
+                selected_inputs,
+                sum(terms),
+            )
+            dense_target = self._interpolate_selected_contribution(
+                contribution,
+                grid.selected_positions,
+                valid,
+            ).detach()
+            loss, active = self._contribution_distribution_loss(
+                predicted[:, :, component_index],
+                dense_target,
+                valid,
+                teacher_mask,
+                temperature=self.detector_contribution_temperature,
+            )
+            output[f"detector_{component}_contribution_distillation_loss"] = loss * weight
+            targets[component] = dense_target
+            active_rows = active if active_rows is None else (active_rows | active)
+        if isinstance(selector_outputs, dict):
+            selector_outputs["detector_contribution_targets"] = targets
+            selector_outputs["detector_contribution_teacher_active_rows"] = (
+                torch.zeros_like(teacher_mask, dtype=torch.bool)
+                if active_rows is None
+                else active_rows
+            )
+            selector_outputs["detector_contribution_distillation_weight"] = float(weight)
+            selector_outputs["detector_contribution_train_only"] = True
+        return output
 
     def counterfactual_distillation_loss(
         self,
@@ -2102,10 +2274,17 @@ class DucaOnlineFrameSelector(nn.Module):
                 coarse_hidden_kind = online_actionness.get("hidden_kind")
         stable_selection = self._use_stable_structured_selection(schedule_state)
         policy_mix_alpha = self.inference_policy_alpha
+        policy_hidden_gradient_scale = self.policy_hidden_gradient_scale
         if self.training and self.selector_variant == "transition_only" and isinstance(schedule_state, Mapping):
             schedule_weights = schedule_state.get("weights", {})
             if isinstance(schedule_weights, Mapping):
                 policy_mix_alpha = float(schedule_weights.get("policy_alpha", schedule_state.get("progress", 1.0)))
+                policy_hidden_gradient_scale = float(
+                    schedule_weights.get(
+                        "asformer_adapt",
+                        policy_hidden_gradient_scale,
+                    )
+                )
         grid, scores = self.adapter.acquire(
             descriptors,
             budget=budget,
@@ -2119,6 +2298,7 @@ class DucaOnlineFrameSelector(nn.Module):
             compute_profile_context=profile_context,
             stable_selection=stable_selection,
             policy_mix_alpha=policy_mix_alpha,
+            policy_hidden_gradient_scale=policy_hidden_gradient_scale,
         )
         uniform_companion_mask = torch.zeros(
             int(masks.shape[0]),
@@ -2131,6 +2311,20 @@ class DucaOnlineFrameSelector(nn.Module):
                 scores,
                 masks,
             )
+        uniform_policy_mask = torch.full(
+            (int(masks.shape[0]),),
+            bool(self.training and policy_mix_alpha <= 0.0),
+            device=masks.device,
+            dtype=torch.bool,
+        )
+        scores["detector_contribution_teacher_mask"] = (
+            uniform_policy_mask | uniform_companion_mask
+        )
+        scores["detector_contribution_teacher_source"] = (
+            "all_exact_uniform_policy"
+            if bool(uniform_policy_mask.all().item())
+            else "uniform_companion_rows"
+        )
         companion_bridge_scale = _training_uniform_companion_bridge_scale(
             uniform_companion_mask,
             normalize_learned_gradient=(
@@ -2223,9 +2417,10 @@ class DucaOnlineFrameSelector(nn.Module):
             assignment = scores.get("structured_soft_slot_assignment")
             if assignment is None:
                 raise ValueError("density_transport_st requires inverse-CDF slot assignments")
-            hard_selected = _add_density_transport_gradient_path(
+            hard_selected, structured_expected_positions = _add_density_transport_gradient_path(
                 hard_selected,
                 inputs,
+                selected_positions=positions,
                 soft_slot_assignment=assignment,
                 slot_mask=slot_mask,
                 bridge_weight=detector_gradient_weight,
@@ -2247,6 +2442,22 @@ class DucaOnlineFrameSelector(nn.Module):
             hard_slot_weights = slot_mask.to(dtype=st_weights.dtype)
             st_weights = hard_slot_weights + float(detector_gradient_weight) * (st_weights - st_weights.detach())
         selected_inputs = _apply_slot_weights(hard_selected, st_weights)
+        # The detector must see the exact hard observations, while contribution
+        # distillation also needs grad(loss, observation).  This identity-valued
+        # leaf records the latter without severing the ST route back to the
+        # sampling-rate policy or the permitted ASFormer policy layer.
+        contribution_teacher_inputs = None
+        if (
+            self.training
+            and self.detector_contribution_distillation_weight > 0.0
+            and self.detector_contribution_components != "none"
+        ):
+            contribution_teacher_inputs = selected_inputs.detach().requires_grad_(True)
+            selected_inputs = (
+                contribution_teacher_inputs
+                + selected_inputs
+                - selected_inputs.detach()
+            )
         gather_ms = _elapsed_ms(gather_start, inputs, enabled=sync_enabled)
         total_selector_ms = _elapsed_ms(total_start, inputs, enabled=sync_enabled)
         compute_profile = dict(scores.get("compute_profile", {}))
@@ -2295,11 +2506,18 @@ class DucaOnlineFrameSelector(nn.Module):
         selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
         scores["grid"] = grid
         scores["hard_selected_inputs"] = hard_gathered
+        if contribution_teacher_inputs is not None:
+            scores["detector_contribution_teacher_inputs"] = contribution_teacher_inputs
         scores["selected_input_st_gradient_path"] = self.detector_gradient_mode
         scores["detector_gradient_weight"] = float(detector_gradient_weight)
         if soft_resample_weights is not None:
             scores["soft_resample_weights"] = soft_resample_weights
         if structured_expected_positions is not None:
+            if (
+                self.retain_gradient_audit_tensors
+                and structured_expected_positions.requires_grad
+            ):
+                structured_expected_positions.retain_grad()
             scores["structured_expected_positions"] = structured_expected_positions
         if self.retain_gradient_audit_tensors:
             self._gradient_audit_tensors = {
@@ -2311,6 +2529,10 @@ class DucaOnlineFrameSelector(nn.Module):
                 "density_continuous_positions": scores.get(
                     "density_continuous_positions"
                 ),
+                "density_projection_abs_displacement": scores.get(
+                    "density_projection_abs_displacement"
+                ),
+                "density_hard_anchored_expected_positions": structured_expected_positions,
                 "density_component_probabilities": scores.get(
                     "density_component_probabilities"
                 ),
@@ -2417,9 +2639,9 @@ class DucaOnlineFrameSelector(nn.Module):
             complexity = "O(B*K*T + numel(selected_raw_video)) hard-anchored local transport"
             accounting_scope = "expected_position_and_local_temporal_slope_lower_bound"
         elif enabled and component_name == "density_transport_st":
-            macs = int(batch_size * slot_count * temporal_len + soft_selected_output_elements)
-            complexity = "O(B*K*T) inverse-CDF two-point straight-through resampling"
-            accounting_scope = "soft_slot_resample_and_exact_hard_forward"
+            macs = int(batch_size * slot_count * temporal_len + 3 * soft_selected_output_elements)
+            complexity = "O(B*K*T + numel(selected_raw_video)) hard-anchored density transport"
+            accounting_scope = "inverse_cdf_expected_position_and_hard_local_temporal_slope"
         else:
             macs = dense_input_elements * int(slot_count) if enabled else 0
             complexity = "O(numel(dense_raw_video)*K) soft slot resampling" if enabled else "disabled"

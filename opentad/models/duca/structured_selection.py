@@ -98,6 +98,7 @@ class ContinuousDensitySelectionOutput:
     selection_st: torch.Tensor
     selected_positions: torch.Tensor
     continuous_positions: torch.Tensor
+    projection_abs_displacement: torch.Tensor
     slot_mask: torch.Tensor
     density: torch.Tensor
     component_densities: torch.Tensor
@@ -112,6 +113,41 @@ class ContinuousDensitySelectionOutput:
     smoothing_kernel: int
     policy_alpha: float
     selection_scope: str = "full_window_offline_continuous_density_transport"
+
+
+@dataclass(frozen=True)
+class SamplingRateSelectionOutput:
+    """Exact-K observations generated from calibrated per-frame retention rates.
+
+    ``sampling_rates[t]`` is a probability-like retention frequency in
+    ``[0, 1]`` rather than an unbounded ranking score.  Its valid-time sum is
+    exactly the requested observation budget.  The deterministic cumulative
+    sampler turns that rate field into K distinct integer observations: a
+    rate near one keeps every nearby frame, while a rate near 0.75 keeps about
+    three out of every four candidates.  The relaxed slots are hard-anchored
+    in the forward pass, so their detector-gradient path cannot silently
+    evaluate a different fractional observation from the real detector input.
+    """
+
+    hard_occupancy: torch.Tensor
+    soft_occupancy: torch.Tensor
+    soft_slot_assignment: torch.Tensor
+    selection_st: torch.Tensor
+    selected_positions: torch.Tensor
+    continuous_positions: torch.Tensor
+    slot_mask: torch.Tensor
+    sampling_rates: torch.Tensor
+    sampling_density: torch.Tensor
+    cumulative_rates: torch.Tensor
+    effective_k: torch.Tensor
+    observed_max_unselected_hole: torch.Tensor
+    calibration_residual: torch.Tensor
+    k: int
+    temperature: float
+    coverage_floor: float
+    smoothing_kernel: int
+    policy_alpha: float
+    selection_scope: str = "full_window_offline_budget_calibrated_sampling_rate"
 
 
 def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.Tensor:
@@ -309,6 +345,7 @@ def continuous_density_transport(
     cdf_rows = []
     effective_rows = []
     observed_max_hole_rows = []
+    projection_displacement_rows = []
     for batch_index in range(batch):
         valid_positions = torch.nonzero(valid[batch_index], as_tuple=False).flatten()
         valid_len = int(valid_positions.numel())
@@ -397,6 +434,10 @@ def continuous_density_transport(
         padded_positions[:effective_k] = hard_positions
         padded_continuous = policy_logits.new_zeros((k,))
         padded_continuous[:effective_k] = continuous.to(dtype=policy_logits.dtype)
+        padded_projection_displacement = policy_logits.new_zeros((k,))
+        padded_projection_displacement[:effective_k] = (
+            hard_positions.to(dtype=continuous.dtype) - continuous
+        ).abs().to(dtype=policy_logits.dtype)
         slot_mask = torch.zeros((k,), device=policy_logits.device, dtype=torch.bool)
         slot_mask[:effective_k] = True
         padded_density = policy_logits.new_zeros((temporal_len,))
@@ -415,6 +456,7 @@ def continuous_density_transport(
         slot_rows.append(slots)
         position_rows.append(padded_positions)
         continuous_rows.append(padded_continuous)
+        projection_displacement_rows.append(padded_projection_displacement)
         slot_mask_rows.append(slot_mask)
         density_rows.append(padded_density)
         component_density_rows.append(padded_component_density)
@@ -438,6 +480,9 @@ def continuous_density_transport(
         ),
         selected_positions=torch.stack(position_rows, dim=0),
         continuous_positions=torch.stack(continuous_rows, dim=0),
+        projection_abs_displacement=torch.stack(
+            projection_displacement_rows, dim=0
+        ),
         slot_mask=torch.stack(slot_mask_rows, dim=0),
         density=torch.stack(density_rows, dim=0),
         component_densities=torch.stack(component_density_rows, dim=0),
@@ -451,6 +496,255 @@ def continuous_density_transport(
         ),
         k=k,
         max_unselected_hole=max_hole,
+        temperature=temperature,
+        coverage_floor=coverage_floor,
+        smoothing_kernel=smoothing_kernel,
+        policy_alpha=policy_alpha,
+    )
+
+
+def _calibrated_retention_rates(
+    logits: torch.Tensor,
+    *,
+    k: int,
+    temperature: float,
+    iterations: int = 48,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Map logits to capped rates whose sum is exactly the requested budget.
+
+    The bisection threshold is intentionally detached.  It enforces the
+    global exact-budget constraint in the forward pass while preserving the
+    useful local derivative of every rate with respect to its own logit.
+    This is the capped counterpart of a softmax density: no time point can
+    claim more than one real video frame.
+    """
+
+    if logits.ndim != 1 or not logits.is_floating_point():
+        raise ValueError("sampling-rate calibration expects one floating-point row")
+    count = int(logits.numel())
+    if count <= 0 or k <= 0 or k > count:
+        raise ValueError("sampling-rate calibration requires 0 < k <= row length")
+    if k == count:
+        rates = torch.ones_like(logits)
+        return rates, rates.sum() - float(k)
+    if not math.isfinite(float(temperature)) or float(temperature) <= 0.0:
+        raise ValueError("sampling-rate temperature must be finite and positive")
+
+    work = logits.float()
+    scale = float(temperature)
+    lower = (work.min().detach() - 32.0 * scale).clone()
+    upper = (work.max().detach() + 32.0 * scale).clone()
+    target = work.new_tensor(float(k))
+    for _ in range(int(iterations)):
+        midpoint = 0.5 * (lower + upper)
+        mass = torch.sigmoid((work - midpoint) / scale).sum()
+        lower = torch.where(mass > target, midpoint, lower)
+        upper = torch.where(mass > target, upper, midpoint)
+    threshold = (0.5 * (lower + upper)).detach()
+    rates = torch.sigmoid((work - threshold) / scale)
+    residual = rates.sum() - target
+    return rates.to(dtype=logits.dtype), residual.to(dtype=logits.dtype)
+
+
+def budget_calibrated_sampling_rate(
+    policy_logits: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    temperature: float = 0.7,
+    coverage_floor: float = 0.05,
+    smoothing_kernel: int = 5,
+    policy_alpha: float = 1.0,
+    training: bool = False,
+    force_exact_uniform: bool = False,
+) -> SamplingRateSelectionOutput:
+    """Select K real frames from a calibrated, bounded sampling-rate field.
+
+    This is deliberately not an inverse-CDF density followed by a global
+    integer projection.  Each frame owns at most one unit of capacity, the
+    calibrated rates sum to K, and cumulative systematic sampling therefore
+    produces exactly K strictly increasing original-time indices without any
+    duplicate-collision repair.  The relaxed route is anchored at those same
+    integer positions in the forward pass and only contributes a local
+    temporal derivative in backward.
+    """
+
+    if not torch.is_tensor(policy_logits) or policy_logits.ndim != 2:
+        raise ValueError("policy_logits must be a [B,T] tensor")
+    if not policy_logits.is_floating_point() or not bool(torch.isfinite(policy_logits).all().item()):
+        raise ValueError("policy_logits must contain finite floating-point values")
+    valid = valid_mask.to(device=policy_logits.device, dtype=torch.bool)
+    if valid.shape != policy_logits.shape:
+        raise ValueError("valid_mask must align with policy_logits")
+    k = int(k)
+    temperature = float(temperature)
+    coverage_floor = float(coverage_floor)
+    smoothing_kernel = int(smoothing_kernel)
+    policy_alpha = float(policy_alpha)
+    if k <= 0 or k > int(policy_logits.shape[1]):
+        raise ValueError("k must lie in (0,T]")
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature must be finite and positive")
+    if not math.isfinite(coverage_floor) or not 0.0 <= coverage_floor < 1.0:
+        raise ValueError("coverage_floor must lie in [0,1)")
+    if smoothing_kernel <= 0 or smoothing_kernel % 2 == 0:
+        raise ValueError("smoothing_kernel must be a positive odd integer")
+    if not math.isfinite(policy_alpha) or not 0.0 <= policy_alpha <= 1.0:
+        raise ValueError("policy_alpha must lie in [0,1]")
+
+    batch, temporal_len = policy_logits.shape
+    hard_rows = []
+    soft_rows = []
+    slot_rows = []
+    position_rows = []
+    continuous_rows = []
+    slot_mask_rows = []
+    rate_rows = []
+    density_rows = []
+    cdf_rows = []
+    effective_rows = []
+    max_hole_rows = []
+    residual_rows = []
+    for batch_index in range(batch):
+        valid_positions = torch.nonzero(valid[batch_index], as_tuple=False).flatten()
+        valid_len = int(valid_positions.numel())
+        expected = torch.arange(valid_len, device=valid.device, dtype=torch.long)
+        if not torch.equal(valid_positions, expected):
+            raise ValueError("sampling-rate selection requires a contiguous valid prefix")
+        effective_k = min(k, valid_len)
+        if effective_k <= 0:
+            raise ValueError("sampling-rate selection requires one valid candidate")
+
+        row_logits = policy_logits[batch_index, :valid_len].float()
+        if smoothing_kernel > 1:
+            radius = smoothing_kernel // 2
+            padded = F.pad(row_logits[None, None, :], (radius, radius), mode="replicate")
+            row_logits = F.avg_pool1d(
+                padded,
+                kernel_size=smoothing_kernel,
+                stride=1,
+            ).reshape(-1)
+        learned_rates, residual = _calibrated_retention_rates(
+            row_logits,
+            k=effective_k,
+            temperature=temperature,
+        )
+        uniform_rates = torch.full_like(
+            learned_rates,
+            float(effective_k) / float(valid_len),
+        )
+        calibrated_rates = (
+            (1.0 - coverage_floor) * learned_rates
+            + coverage_floor * uniform_rates
+        )
+        alpha = 0.0 if force_exact_uniform else policy_alpha
+        rates = (1.0 - alpha) * uniform_rates + alpha * calibrated_rates
+        rates = rates.clamp(min=0.0, max=1.0)
+        rate_residual = rates.sum() - float(effective_k)
+        if float(rate_residual.detach().abs().item()) > 2.0e-4:
+            raise RuntimeError("sampling-rate calibration did not preserve the exact budget")
+
+        if force_exact_uniform:
+            hard_positions = exact_uniform_positions(
+                valid_len,
+                effective_k,
+                device=policy_logits.device,
+            )
+            local_delta = rates.new_zeros((effective_k,))
+        else:
+            cumulative = rates.cumsum(dim=0)
+            thresholds = torch.arange(
+                effective_k,
+                device=policy_logits.device,
+                dtype=rates.dtype,
+            ) + 0.5
+            hard_positions = torch.searchsorted(
+                cumulative.detach().contiguous(),
+                thresholds,
+                right=False,
+            ).clamp(0, valid_len - 1)
+            if effective_k > 1 and bool(torch.any(hard_positions[1:] <= hard_positions[:-1]).item()):
+                raise RuntimeError("bounded sampling rates must yield strictly increasing observations")
+            cumulative_before = F.pad(cumulative[:-1], (1, 0), value=0.0)
+            local_rate = rates[hard_positions].clamp_min(torch.finfo(rates.dtype).eps)
+            crossing_fraction = (
+                (thresholds - cumulative_before[hard_positions]) / local_rate
+            ).clamp(0.0, 1.0)
+            # Exact hard values in forward, local cumulative-rate derivative in backward.
+            local_delta = crossing_fraction - crossing_fraction.detach()
+
+        active_slots = torch.arange(effective_k, device=policy_logits.device)
+        direction = torch.where(
+            hard_positions < valid_len - 1,
+            torch.ones_like(hard_positions),
+            -torch.ones_like(hard_positions),
+        )
+        neighbours = (hard_positions + direction).clamp(0, valid_len - 1)
+        hard_slots = F.one_hot(hard_positions, num_classes=valid_len).to(dtype=policy_logits.dtype)
+        neighbour_slots = F.one_hot(neighbours, num_classes=valid_len).to(dtype=policy_logits.dtype)
+        slots_valid = hard_slots + local_delta[:, None].to(dtype=hard_slots.dtype) * (
+            neighbour_slots - hard_slots
+        )
+        soft = slots_valid.sum(dim=0)
+        hard = policy_logits.new_zeros((temporal_len,))
+        hard[hard_positions] = 1.0
+        slots = policy_logits.new_zeros((k, temporal_len))
+        slots[active_slots, :valid_len] = slots_valid
+
+        padded_positions = torch.full((k,), -1, device=policy_logits.device, dtype=torch.long)
+        padded_positions[:effective_k] = hard_positions
+        padded_continuous = policy_logits.new_zeros((k,))
+        padded_continuous[:effective_k] = (
+            hard_positions.to(dtype=policy_logits.dtype)
+            + direction.to(dtype=policy_logits.dtype) * local_delta.to(dtype=policy_logits.dtype)
+        )
+        slot_mask = torch.zeros((k,), device=policy_logits.device, dtype=torch.bool)
+        slot_mask[:effective_k] = True
+        padded_rates = policy_logits.new_zeros((temporal_len,))
+        padded_rates[:valid_len] = rates.to(dtype=policy_logits.dtype)
+        padded_density = policy_logits.new_zeros((temporal_len,))
+        padded_density[:valid_len] = rates.to(dtype=policy_logits.dtype) / float(effective_k)
+        padded_cdf = policy_logits.new_zeros((temporal_len,))
+        padded_cdf[:valid_len] = rates.cumsum(dim=0).to(dtype=policy_logits.dtype)
+
+        hard_rows.append(hard)
+        soft_rows.append(soft)
+        slot_rows.append(slots)
+        position_rows.append(padded_positions)
+        continuous_rows.append(padded_continuous)
+        slot_mask_rows.append(slot_mask)
+        rate_rows.append(padded_rates)
+        density_rows.append(padded_density)
+        cdf_rows.append(padded_cdf)
+        effective_rows.append(effective_k)
+        max_hole_rows.append(_max_unselected_hole(hard_positions, valid_len))
+        residual_rows.append(rate_residual.to(dtype=policy_logits.dtype))
+
+    hard_occupancy = torch.stack(hard_rows, dim=0)
+    soft_occupancy = torch.stack(soft_rows, dim=0)
+    return SamplingRateSelectionOutput(
+        hard_occupancy=hard_occupancy,
+        soft_occupancy=soft_occupancy,
+        soft_slot_assignment=torch.stack(slot_rows, dim=0),
+        selection_st=(
+            hard_occupancy + soft_occupancy - soft_occupancy.detach()
+            if training
+            else hard_occupancy
+        ),
+        selected_positions=torch.stack(position_rows, dim=0),
+        continuous_positions=torch.stack(continuous_rows, dim=0),
+        slot_mask=torch.stack(slot_mask_rows, dim=0),
+        sampling_rates=torch.stack(rate_rows, dim=0),
+        sampling_density=torch.stack(density_rows, dim=0),
+        cumulative_rates=torch.stack(cdf_rows, dim=0),
+        effective_k=torch.tensor(effective_rows, device=policy_logits.device, dtype=torch.long),
+        observed_max_unselected_hole=torch.tensor(
+            max_hole_rows,
+            device=policy_logits.device,
+            dtype=torch.long,
+        ),
+        calibration_residual=torch.stack(residual_rows, dim=0),
+        k=k,
         temperature=temperature,
         coverage_floor=coverage_floor,
         smoothing_kernel=smoothing_kernel,

@@ -5,6 +5,9 @@ duca_density_contract = dict(
     route="DUCA_BOUNDARY_UNCERTAINTY_CONTEXT_DENSITY_NOMAX_FIXED384_OFFICIAL60",
     density_model="boundary_uncertainty_context_mixture",
     density_components=("boundary", "uncertainty", "context"),
+    mixture_gate_inputs="normalized_component_entropy_peak_center_spread",
+    uses_absolute_asformer_hidden_for_context=True,
+    detector_gradient_updates=("transition_density_scorer", "density_mixture_head"),
     hard_max_gap_enabled=False,
     soft_max_gap_enabled=False,
 )
