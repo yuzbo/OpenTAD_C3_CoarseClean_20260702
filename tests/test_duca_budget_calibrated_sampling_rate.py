@@ -94,6 +94,40 @@ def test_budget_calibrated_rate_has_exact_uniform_warmup_without_duplicate_slots
     )
 
 
+def test_budget_calibrated_rate_pads_soft_occupancy_for_mixed_valid_lengths():
+    logits = torch.tensor(
+        [[-0.8, 0.2, 1.1, -0.1, 0.7, 0.3, -1.0, 0.4],
+         [0.5, -0.4, 1.5, 0.2, -0.7, 0.0, 0.0, 0.0]],
+        requires_grad=True,
+    )
+    valid = torch.tensor(
+        [[True, True, True, True, True, True, True, True],
+         [True, True, True, True, True, False, False, False]],
+        dtype=torch.bool,
+    )
+    output = budget_calibrated_sampling_rate(
+        logits,
+        valid,
+        k=4,
+        temperature=0.7,
+        coverage_floor=0.05,
+        smoothing_kernel=1,
+        policy_alpha=1.0,
+        training=True,
+    )
+
+    assert output.soft_occupancy.shape == logits.shape
+    assert torch.all(output.soft_occupancy[1, 5:] == 0.0)
+    assert torch.all(output.hard_occupancy[1, 5:] == 0.0)
+    assert torch.all(output.selected_positions[1, 1:] > output.selected_positions[1, :-1])
+    loss = (output.selection_st * torch.arange(8, dtype=logits.dtype)).sum()
+    loss.backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert float(logits.grad[1, :5].abs().sum().item()) > 0.0
+    assert torch.all(logits.grad[1, 5:] == 0.0)
+
+
 def test_transition_scorer_exposes_two_train_only_contribution_channels():
     scorer = DucaTransitionUtilityScorer(hidden_dim=4, scorer_hidden_dim=6)
     descriptors = torch.randn(2, 7, scorer.input_dim, requires_grad=True)

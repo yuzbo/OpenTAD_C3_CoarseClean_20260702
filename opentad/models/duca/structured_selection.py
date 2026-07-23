@@ -709,9 +709,11 @@ def budget_calibrated_sampling_rate(
         padded_density[:valid_len] = rates.to(dtype=policy_logits.dtype) / float(effective_k)
         padded_cdf = policy_logits.new_zeros((temporal_len,))
         padded_cdf[:valid_len] = rates.cumsum(dim=0).to(dtype=policy_logits.dtype)
+        padded_soft = policy_logits.new_zeros((temporal_len,))
+        padded_soft[:valid_len] = soft
 
         hard_rows.append(hard)
-        soft_rows.append(soft)
+        soft_rows.append(padded_soft)
         slot_rows.append(slots)
         position_rows.append(padded_positions)
         continuous_rows.append(padded_continuous)
