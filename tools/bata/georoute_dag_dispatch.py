@@ -121,6 +121,7 @@ def _sbatch(
     exports: Mapping[str, str],
     dependency_ids: Sequence[str] = (),
     gpu: bool,
+    test_only: bool = False,
 ) -> str:
     slurm_dir = args.run_root / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
@@ -134,6 +135,8 @@ def _sbatch(
         "--error",
         str(slurm_dir / f"{name}.%j.err"),
     ]
+    if test_only:
+        command.append("--test-only")
     if dependency_ids:
         command.extend(["--dependency", "afterok:" + ":".join(map(str, dependency_ids))])
     if gpu:
@@ -145,6 +148,8 @@ def _sbatch(
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"sbatch failed for {name}: {completed.stderr.strip() or completed.stdout.strip()}")
+    if test_only:
+        return "TEST_ONLY_PASS"
     job_id = completed.stdout.strip().split(";", 1)[0]
     if not job_id.isdigit():
         raise RuntimeError(f"sbatch returned an invalid job id for {name}: {completed.stdout!r}")
@@ -288,7 +293,7 @@ def _submit_stage_matrix(
     dispatch_script = ROOT / "scripts" / "run_georoute_dispatch_slurm.sh"
     if not stage_script.is_file() or not dispatch_script.is_file():
         raise FileNotFoundError("GeoRoute Slurm stage/dispatch script is missing")
-    jobs: dict[str, str] = {}
+    prepared_cells: list[tuple[str, dict[str, str]]] = []
     for variant, seed, budget in cells:
         label = f"georoute_{stage}_{variant}_s{seed}" + (f"_k{budget}" if budget else "")
         exports = _base_exports(args, action="stage")
@@ -298,9 +303,33 @@ def _submit_stage_matrix(
             GEOROUTE_SEED=str(seed),
             GEOROUTE_TOKEN_BUDGET="" if budget is None else str(budget),
         )
-        jobs[label] = _sbatch(args=args, name=label, script=stage_script, exports=exports, gpu=True)
+        prepared_cells.append((label, exports))
     dispatch_exports = _base_exports(args, action=next_action)
     dispatch_exports["GEOROUTE_PARENT_RECEIPT"] = parent_receipt
+
+    # Reject a full matrix before its first real job is submitted. This avoids
+    # a scheduler submit-cap from creating an unusable partial experiment.
+    for label, exports in prepared_cells:
+        _sbatch(
+            args=args,
+            name=label,
+            script=stage_script,
+            exports=exports,
+            gpu=True,
+            test_only=True,
+        )
+    _sbatch(
+        args=args,
+        name=f"georoute_{next_action.replace('-', '_')}",
+        script=dispatch_script,
+        exports=dispatch_exports,
+        gpu=False,
+        test_only=True,
+    )
+
+    jobs: dict[str, str] = {}
+    for label, exports in prepared_cells:
+        jobs[label] = _sbatch(args=args, name=label, script=stage_script, exports=exports, gpu=True)
     dispatcher = _sbatch(
         args=args,
         name=f"georoute_{next_action.replace('-', '_')}",

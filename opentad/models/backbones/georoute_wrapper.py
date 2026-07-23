@@ -146,7 +146,33 @@ def extract_native_tubelets(
     pad_bottom = (-height) % int(patch_size)
     pad_right = (-width) % int(patch_size)
     if pad_bottom or pad_right:
-        source = F.pad(source, (0, pad_right, 0, pad_bottom), mode="replicate")
+        # ``replicate`` padding with a two-spatial-dimension pad tuple is not
+        # implemented by PyTorch for an NCTHW tensor.  Flattening only the
+        # independent batch/time axes makes each RGB frame a normal NCHW image
+        # for the operation, then restores the exact source-native layout.
+        # This is boundary replication, never a resize or an interpolation.
+        frame_images = source.permute(0, 2, 1, 3, 4).reshape(
+            batch * frames,
+            channels,
+            height,
+            width,
+        )
+        padded_images = F.pad(
+            frame_images,
+            (0, pad_right, 0, pad_bottom),
+            mode="replicate",
+        )
+        source = (
+            padded_images.reshape(
+                batch,
+                frames,
+                channels,
+                height + pad_bottom,
+                width + pad_right,
+            )
+            .permute(0, 2, 1, 3, 4)
+            .contiguous()
+        )
     padded_height, padded_width = map(int, source.shape[-2:])
     grid_height = padded_height // int(patch_size)
     grid_width = padded_width // int(patch_size)

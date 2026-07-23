@@ -84,6 +84,19 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   control allocation without an explicit `--mem` override.  Focused contract
   checks pass `18/18`.  This remains `implemented` until the fresh committed
   remote snapshot has passed its Linux checks and submitted P1.
+- P1 bootstrap Job `1181007` reached its dispatcher, accepted only its first
+  dense leaf (`1181008`), then hit the account's `AssocMaxSubmitJobLimit` on
+  the second leaf. The partial namespace is invalid diagnostic evidence and
+  will never be resumed. The admitted dense leaf reached epoch 0 and exposed
+  a real-input-only defect: PyTorch does not implement two-dimensional
+  `replicate` padding directly for the `[B,3,T,H,W]` source tensor when the
+  decoded source height is not divisible by 16. P0's 160x160 synthetic input
+  did not traverse that branch. The minimal repair flattens only independent
+  batch/time axes to pad individual NCHW frames, preserving native pixels and
+  only bottom/right boundary replication. A 180x320 exact-value regression
+  test and a 180x320 CUDA mechanical gate are required before a fresh P1
+  namespace may be submitted. There is still no P1 metric, cost evidence,
+  P2/P3 training, official test, or paper claim.
 
 ## Frozen decision logic
 

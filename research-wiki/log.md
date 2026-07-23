@@ -934,3 +934,15 @@ append_only: true
   fragile path invocation.  Focused contract checks pass `18/18`; this is
   implementation evidence pending a clean remote snapshot and P1 submission,
   not a development metric or paper claim.
+
+- 2026-07-23: first GeoRoute P1 bootstrap Job `1181007` proved the dispatcher
+  can reconstruct the sealed P0 parent, but the scheduler admitted only
+  dense leaf `1181008` and rejected the second submission with
+  `AssocMaxSubmitJobLimit`. The partial P1 namespace is immutable diagnostic
+  evidence, not a P1 matrix. The one admitted leaf reached epoch 0 and
+  surfaced a model-path defect that P0 missed: direct 2D `replicate` padding
+  is unsupported for a non-16-divisible `[B,3,T,H,W]` video tensor. The
+  minimal repair pads flattened NCHW frames and restores NCTHW without any
+  resize or coordinate change; an exact 180x320 regression test and a fresh
+  180x320 CUDA mechanical gate are now mandatory before a new P1 namespace.
+  P2/P3, metrics, costs, official test and claims remain closed.

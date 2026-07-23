@@ -6,6 +6,19 @@ max_chars: 8000
 
 # Research Query Pack
 
+## GeoRoute activation update (2026-07-23)
+
+- P1 bootstrap `1181007` reconstructed the sealed P0 parent but hit
+  `AssocMaxSubmitJobLimit` after only dense leaf `1181008` was admitted. That
+  partial namespace is an immutable diagnostic, not P1 evidence.
+- The admitted dense leaf reached epoch 0 and exposed an untested real-input
+  branch: a non-16-divisible `[B,3,T,H,W]` source cannot use PyTorch's direct
+  2D `replicate` pad. The repair only flattens independent batch/time axes to
+  pad NCHW frames and restores native layout. It requires the new 180x320
+  regression and CUDA mechanical gate before any fresh P1 DAG.
+- P2/P3 remain result-gated; no metric, cost, official test, A-MoD result, or
+  paper claim exists.
+
 ## Continuous-RoI S2 当前状态（2026-07-21）
 
 - 正式训练提交 `9a61da27` 的 Gate `1177662` 与 exact-nine

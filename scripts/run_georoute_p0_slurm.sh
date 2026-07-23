@@ -16,6 +16,8 @@ ROUTE_MODE="${GEOROUTE_P0_ROUTE_MODE:?set GEOROUTE_P0_ROUTE_MODE}"
 ESTIMATOR="${GEOROUTE_P0_POLICY_ESTIMATOR:?set GEOROUTE_P0_POLICY_ESTIMATOR}"
 TOKENS="${GEOROUTE_P0_TOKENS_PER_TUBELET:-32}"
 CONTEXT="${GEOROUTE_P0_CONTEXT_TOKENS:-0}"
+HEIGHT="${GEOROUTE_P0_HEIGHT:-160}"
+WIDTH="${GEOROUTE_P0_WIDTH:-160}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'P0 requires Slurm'
 if [[ "${GEOROUTE_INNER_STEP:-0}" != "1" && "${SLURM_GPUS_ON_NODE:-1}" != "1" ]]; then
@@ -30,6 +32,8 @@ fi
 [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || fail 'source snapshot is not clean'
 [[ -f "${CONFIG}" && -f "${PRETRAINED}" ]] || fail 'P0 config or pretrained checkpoint is missing'
 [[ ! -e "${OUTPUT}" ]] || fail 'P0 output namespace already exists'
+[[ "${HEIGHT}" =~ ^[1-9][0-9]*$ && "${WIDTH}" =~ ^[1-9][0-9]*$ ]] || \
+  fail 'P0 height and width must be positive decimal integers'
 case "${OUTPUT}" in /data/run01/sczc063/yuzibo/*) ;; *) fail 'output must stay inside the remote write boundary' ;; esac
 
 export PYTHONNOUSERSITE=1
@@ -52,4 +56,4 @@ python tools/bata/run_georoute_p0_gate.py \
   --policy-estimator "${ESTIMATOR}" \
   --tokens-per-tubelet "${TOKENS}" \
   --context-tokens "${CONTEXT}" \
-  --height 160 --width 160 --seed 3407
+  --height "${HEIGHT}" --width "${WIDTH}" --seed 3407

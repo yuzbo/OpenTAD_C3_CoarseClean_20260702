@@ -187,6 +187,54 @@ def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch,
     assert not (run_root / "p3").exists()
 
 
+def test_stage_matrix_uses_scheduler_test_only_for_every_leaf_before_submission(
+    monkeypatch,
+    tmp_path: Path,
+):
+    for name in ("config.py", "manifest.json", "annotation.json", "class_map.txt", "pretrained.pth"):
+        (tmp_path / name).write_text("placeholder", encoding="utf-8")
+    video_root = tmp_path / "validation_videos"
+    video_root.mkdir()
+    args = argparse.Namespace(
+        run_root=tmp_path / "run",
+        source_config=tmp_path / "config.py",
+        manifest=tmp_path / "manifest.json",
+        development_annotation=tmp_path / "annotation.json",
+        class_map=tmp_path / "class_map.txt",
+        development_video_root=video_root,
+        pretrained=tmp_path / "pretrained.pth",
+        expected_commit="a" * 40,
+    )
+    calls: list[tuple[str, bool]] = []
+
+    def fake_sbatch(*, name, test_only=False, **_kwargs):
+        calls.append((name, test_only))
+        return "TEST_ONLY_PASS" if test_only else str(1000 + len(calls))
+
+    monkeypatch.setattr(dag, "_sbatch", fake_sbatch)
+    jobs = dag._submit_stage_matrix(
+        args=args,
+        stage="p1",
+        cells=[("dense_native", 3407, None), ("roi", 3407, None)],
+        parent_receipt="parent",
+        next_action="p1-select",
+    )
+
+    assert calls == [
+        ("georoute_p1_dense_native_s3407", True),
+        ("georoute_p1_roi_s3407", True),
+        ("georoute_p1_select", True),
+        ("georoute_p1_dense_native_s3407", False),
+        ("georoute_p1_roi_s3407", False),
+        ("georoute_p1_select", False),
+    ]
+    assert set(jobs) == {
+        "georoute_p1_dense_native_s3407",
+        "georoute_p1_roi_s3407",
+        "p1-select_dispatcher",
+    }
+
+
 def test_p1_and_p2_selection_are_predeclared_and_result_blind():
     p1 = {
         "dense_native": _record(stage="p1", variant="dense_native", seed=3407, high_iou=64.0, cost=50.0),

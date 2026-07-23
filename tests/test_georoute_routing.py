@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opentad.models.backbones.georoute_wrapper import GeoRouteBackboneWrapper
+from opentad.models.backbones.georoute_wrapper import (
+    GeoRouteBackboneWrapper,
+    extract_native_tubelets,
+)
 from opentad.models.backbones.georoute_routing import (
     GEOROUTE_ROUTING_SCHEMA,
     decode_continuous_geometry,
@@ -65,6 +68,38 @@ def test_native_tubelet_gather_preserves_the_btk_video_layout():
     assert gathered.shape == (1, 2, 3, 3, 2, 2, 2)
     assert torch.equal(gathered[0, 0, 0], native[0, 0, 4])
     assert torch.equal(gathered[0, 1, 1], native[0, 1, 2])
+
+
+def test_native_tubelets_replicate_pad_nondivisible_ncthw_without_resizing():
+    """Real 180x320 source geometry must pad safely before native patch views."""
+
+    source = torch.arange(1 * 3 * 2 * 180 * 320, dtype=torch.uint8).reshape(
+        1,
+        3,
+        2,
+        180,
+        320,
+    )
+    native, grid_hw, padding = extract_native_tubelets(
+        source,
+        patch_size=16,
+        tubelet_size=2,
+    )
+
+    assert grid_hw == (12, 20)
+    assert padding == (12, 0)
+    assert native.shape == (1, 1, 240, 3, 2, 16, 16)
+
+    restored = (
+        native.reshape(1, 1, 12, 20, 3, 2, 16, 16)
+        .permute(0, 4, 1, 5, 2, 6, 3, 7)
+        .reshape(1, 3, 2, 192, 320)
+    )
+    assert torch.equal(restored[..., :180, :], source)
+    assert torch.equal(
+        restored[..., 180:, :],
+        source[..., 179:180, :].expand_as(restored[..., 180:, :]),
+    )
 
 
 @pytest.mark.parametrize(
