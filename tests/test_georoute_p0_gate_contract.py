@@ -80,6 +80,24 @@ def test_p0_report_builder_and_validator_preserve_the_gate_contract():
     assert report["p0_scope"]["official_evaluation"] is False
 
 
+def test_dense_p0_requires_the_reference_to_match_the_real_autograd_dispatch():
+    payload = _valid_payload()
+    payload["route_mode"] = "dense"
+    payload["estimator"] = {"name": "none", "claim": "no_policy_gradient"}
+    payload["dense_native_reference"] = {
+        "passed": True,
+        "reference_heavy_backbone_forward_count": 1,
+        "real_route_heavy_backbone_forward_count": 1,
+        "reference_autograd_mode": "enabled_matches_real_packed_forward",
+    }
+
+    validate_p0_gate_report(build_p0_gate_report(payload))
+
+    payload["dense_native_reference"]["reference_autograd_mode"] = "no_grad"
+    with pytest.raises(ValueError, match="dense P0"):
+        validate_p0_gate_report(build_p0_gate_report(payload))
+
+
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [

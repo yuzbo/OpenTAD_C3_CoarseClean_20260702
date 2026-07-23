@@ -418,15 +418,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             if source.device.type != "cuda":
                 raise RuntimeError("GeoRoute P0 dense reference requires CUDA RNG isolation")
             # Restore RNG after the debug reference so the real packed forward
-            # receives exactly the same stochastic-depth/dropout draw.
+            # receives exactly the same stochastic-depth/dropout draw.  Keep
+            # autograd enabled here: CUDA SDPA can choose a different numerical
+            # kernel under ``no_grad`` than it uses for the actual detector
+            # training forward.  The reference is detached immediately after
+            # the matched-dispatch comparison input is materialized, so it
+            # never contributes gradients or runtime-cost evidence.
             with torch.random.fork_rng(devices=[source.device.index or 0], enabled=True):
-                with torch.no_grad():
-                    dense_reference = self.model.backbone.forward_native_dense_reference(
-                        selected_native,
-                        route["indices"],
-                        source_grid_hw=source_grid_hw,
-                        use_absolute_position=self.absolute_position_enabled,
-                    )
+                dense_reference = self.model.backbone.forward_native_dense_reference(
+                    selected_native,
+                    route["indices"],
+                    source_grid_hw=source_grid_hw,
+                    use_absolute_position=self.absolute_position_enabled,
+                ).detach()
         selected_features = self.model.backbone.forward_native_packed(
             selected_native,
             route["indices"],
@@ -455,6 +459,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "max_abs_error": max_abs_error,
                 "mean_abs_error": mean_abs_error,
                 "rtol_atol": tolerance,
+                "reference_autograd_mode": "enabled_matches_real_packed_forward",
                 "passed": True,
                 "cost_scope": "p0_debug_only_excluded_from_runtime_cost",
             }

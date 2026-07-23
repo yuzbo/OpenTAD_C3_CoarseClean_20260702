@@ -43,6 +43,18 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   residue in the ST hard-forward gate; both are patched and still await the
   corrected remote suite and CUDA P0. No metric, cost, official test, or P0
   pass claim resulted.
+- The next corrected snapshot passed its full remote focused suite, but the
+  scheduler admitted only two of the three P0 leaves. `1180874` (hybrid,
+  straight-through) independently passed its one-step CUDA gate: exact
+  `K=32`, one packed VideoMAE forward, real AdaTAD classification/regression
+  backward, finite nonzero scout/router gradients, and 5.15 GB peak allocated
+  memory. This is a leaf-level implementation fact, not a suite verdict. The
+  all-token dense leaf `1180873` fail-closed before a JSON because its P0
+  reference used `no_grad`, which may dispatch CUDA SDPA differently from the
+  real training forward (`max_abs_error=6.5612793e-4`). The repair keeps the
+  `1e-4` criterion unchanged, executes the reference with matching autograd
+  dispatch, immediately detaches it, and records that mode in the P0
+  contract. It still requires a fresh CUDA verification.
 - No development metric, cost result, official-test record, paper claim, or
   A-MoD experiment exists.
 

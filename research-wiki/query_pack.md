@@ -49,6 +49,7 @@ max_chars: 8000
 - P1 必须同预算比较 fixed/random/free/ROI/hybrid 与 fixed-lattice +
   geometry-side-channel；free 在高 IoU 和全成本获胜即杀死 ROI 主张。当前无
   mAP、成本、official-test、A-MoD 结果或论文主张。
+- P0：hybrid/ST过；dense no-grad 差6.56e-4失败，保持1e-4改同autograd；第三叶限额。
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 

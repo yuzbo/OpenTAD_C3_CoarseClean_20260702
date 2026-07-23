@@ -133,6 +133,7 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
             or dense_reference.get("passed") is not True
             or int(dense_reference.get("reference_heavy_backbone_forward_count", -1)) != 1
             or int(dense_reference.get("real_route_heavy_backbone_forward_count", -1)) != 1
+            or dense_reference.get("reference_autograd_mode") != "enabled_matches_real_packed_forward"
         ):
             raise ValueError("dense P0 must include a passed native dense numerical reference")
     if report.get("route_mode") in {"roi", "free"} and report.get("estimator", {}).get("name") == "score_function":

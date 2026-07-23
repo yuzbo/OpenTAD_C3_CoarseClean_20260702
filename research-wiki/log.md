@@ -892,3 +892,18 @@ append_only: true
   hard forward is exact while its surrogate gradient remains attached. This is
   still implementation evidence only; a new remote suite and CUDA P0 must
   pass before any P1 job can exist.
+
+- 2026-07-23: corrected CUDA P0 snapshot `cc35e4b` passed its remote focused
+  suite. The site admitted only two P0 leaves: hybrid/ST Job `1180874`
+  completed `0:0` with exact `K=32`, one packed VideoMAE forward, real
+  AdaTAD `cls_loss`/`reg_loss` backward, finite nonzero scout/router gradients
+  and 5.15 GB peak allocated memory. It is a single P0 leaf, not a P0-suite
+  or model-performance result. Dense Job `1180873` failed closed before JSON:
+  the full-token packed output differed from its dense reference by
+  `6.5612793e-4`. Audit found that the debug reference was under `no_grad`,
+  whereas the actual detector route was autograd-enabled and CUDA SDPA may
+  dispatch a different numerical kernel. The repair retains the `1e-4`
+  all-token criterion, runs the debug reference with matching autograd
+  dispatch then detaches it, and makes that condition a validated P0 report
+  field. Fresh Linux/CUDA verification remains mandatory; P1/P2/P3 stay
+  closed.

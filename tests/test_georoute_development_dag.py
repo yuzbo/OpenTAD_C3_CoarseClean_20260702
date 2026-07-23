@@ -86,6 +86,7 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
                 "passed": True,
                 "reference_heavy_backbone_forward_count": 1,
                 "real_route_heavy_backbone_forward_count": 1,
+                "reference_autograd_mode": "enabled_matches_real_packed_forward",
             }
             if route_mode == "dense"
             else None
