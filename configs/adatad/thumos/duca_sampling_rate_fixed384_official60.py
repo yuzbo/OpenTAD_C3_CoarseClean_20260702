@@ -121,14 +121,14 @@ workflow = dict(
     logging_interval=50,
     checkpoint_interval=5,
     val_loss_interval=-1,
-    # Full validation at epochs 5, 10, ..., 60 records the learning curve.
-    # The terminal epoch-59 EMA remains the only primary checkpoint, so these
-    # diagnostics cannot select a checkpoint after seeing validation mAP.
+    # Full official validation at epochs 5, 10, ..., 60 exposes the complete
+    # learning curve. It never changes gradients or stops training, but the
+    # best EMA checkpoint is retained alongside the terminal-EMA comparison.
     val_eval_interval=5,
     val_eval_interval_anchor_epoch=5,
     val_start_epoch=4,
-    intermediate_validation_role="diagnostic_only_no_checkpoint_selection",
-    intermediate_validation_selects_checkpoint=False,
+    intermediate_validation_role="full_curve_and_best_validation_checkpoint",
+    intermediate_validation_selects_checkpoint=True,
     end_epoch=duca_end_epoch,
     formal_successful_update_contract=True,
     expected_train_batches_per_epoch=duca_steps_per_epoch,

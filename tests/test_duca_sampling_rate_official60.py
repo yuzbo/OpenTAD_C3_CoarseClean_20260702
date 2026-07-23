@@ -1,14 +1,29 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 from mmengine.config import Config
 
+from tools.bata.duca_p0_training import formal_training_contract
 from tools.bata.validate_duca_sampling_rate_official60 import validate_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "configs" / "adatad" / "thumos"
+
+
+def _should_eval_epoch(epoch: int, workflow) -> bool:
+    """Load the schedule module without importing the Torch-dependent utils package."""
+
+    spec = importlib.util.spec_from_file_location(
+        "duca_train_schedule_test",
+        ROOT / "opentad" / "utils" / "train_schedule.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return bool(module.should_eval_epoch(epoch, workflow))
 VARIANTS = {
     "rate_exact_uniform": "duca_sampling_rate_exact_uniform_fixed384_official60.py",
     "rate_only": "duca_sampling_rate_fixed384_official60.py",
@@ -45,6 +60,10 @@ def test_only_adaptation_variants_open_declared_asformer_policy_gradient(monkeyp
         assert int(cfg.workflow.val_eval_interval) == 5
         assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 5
         assert int(cfg.workflow.val_start_epoch) == 4
+        assert cfg.workflow.intermediate_validation_role == (
+            "full_curve_and_best_validation_checkpoint"
+        )
+        assert cfg.workflow.intermediate_validation_selects_checkpoint is True
         expected_scope = {
             "rate_both_asformer_adapt": "asformer_last_encoder_layer",
             "rate_both_asformer_full_adapt": "asformer_full_encoder",
@@ -76,6 +95,31 @@ def test_rate_only_control_disables_the_contribution_head_path() -> None:
         "                    detector_contribution_logits = ("
     )
     assert expected in source
+
+
+def test_sampling_rate_keeps_a_nonzero_transition_output_path_for_coarse_supervision(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DUCA_CELLCF_TRAINING_PROFILE", "official60")
+    cfg = Config.fromfile(
+        str(CONFIG_ROOT / "duca_sampling_rate_fixed384_official60.py")
+    )
+    contract = formal_training_contract(cfg)
+
+    assert contract is not None
+    assert contract["intermediate_validation"] is True
+    assert contract["intermediate_validation_interval"] == 5
+    assert [
+        epoch + 1
+        for epoch in range(int(cfg.workflow.end_epoch))
+        if _should_eval_epoch(epoch, cfg.workflow)
+    ] == list(range(5, 61, 5))
+
+    source = (ROOT / "opentad" / "models" / "duca" / "acquisition.py").read_text(
+        encoding="utf-8"
+    )
+    scorer_block = source[source.index("self.transition_scorer = DucaTransitionUtilityScorer("):source.index("if self.acquisition_policy == \"continuous_mixture_density_transport\"")]
+    assert '"budget_calibrated_sampling_rate"' not in scorer_block
 
 
 def test_existing_independent_runner_exposes_sampling_rate_matrix_without_a_new_launcher() -> None:

@@ -1640,7 +1640,6 @@ class DucaAcquisitionAdapter(nn.Module):
                     "local_cell_deformation",
                     "continuous_density_transport",
                     "continuous_mixture_density_transport",
-                    "budget_calibrated_sampling_rate",
                 },
                 burst_radius=(
                     self.boundary_burst_radius

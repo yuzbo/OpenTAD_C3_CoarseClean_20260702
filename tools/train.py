@@ -67,6 +67,73 @@ def _canonical_sha256(value):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _write_intermediate_evaluation(work_dir, epoch, evaluation, *, select_best=False):
+    """Seal one official validation result without changing optimization."""
+
+    if evaluation is None:
+        return
+    folder = os.path.join(work_dir, "intermediate_validation")
+    os.makedirs(folder, exist_ok=True)
+    target = os.path.join(folder, f"epoch_{epoch + 1:03d}_ema.json")
+    payload = {
+        "epoch": int(epoch + 1),
+        "state_key": "state_dict_ema",
+        "checkpoint_path": os.path.abspath(
+            os.path.join(work_dir, "checkpoint", f"epoch_{epoch}.pth")
+        ),
+        "metrics": evaluation.get("metrics"),
+        "result_path": evaluation.get("result_path"),
+        "result_count": int(evaluation.get("result_count", 0)),
+        "video_count": int(evaluation.get("video_count", 0)),
+        "evaluator": evaluation.get("evaluator"),
+    }
+    temporary = target + ".tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+    if not select_best:
+        return
+
+    metrics = evaluation.get("metrics") or {}
+    average_map = metrics.get("average_mAP")
+    if average_map is None:
+        return
+    best_path = os.path.join(folder, "best_validation_ema.json")
+    previous = None
+    if os.path.isfile(best_path):
+        with open(best_path, "r", encoding="utf-8") as handle:
+            previous = json.load(handle)
+    if previous is not None and float(previous.get("average_mAP", float("-inf"))) >= float(average_map):
+        return
+    best_payload = {
+        "selection_metric": "average_mAP",
+        "average_mAP": float(average_map),
+        "epoch": int(epoch + 1),
+        "state_key": "state_dict_ema",
+        "checkpoint_path": payload["checkpoint_path"],
+        "evaluation_path": os.path.abspath(target),
+    }
+    best_temporary = best_path + ".tmp"
+    try:
+        with open(best_temporary, "w", encoding="utf-8") as handle:
+            json.dump(best_payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(best_temporary, best_path)
+    finally:
+        if os.path.exists(best_temporary):
+            os.remove(best_temporary)
+
+
 def _build_training_probe_bindings(cfg, args):
     probe_json = cfg.workflow.get("training_probe_json", None)
     if not probe_json:
@@ -662,7 +729,7 @@ def main():
         # eval for one epoch
         if epoch >= val_start_epoch:
             if should_eval_epoch(epoch, cfg.workflow):
-                eval_one_epoch(
+                evaluation = eval_one_epoch(
                     # test_loader is non-None whenever this branch is enabled.
                     test_loader,
                     model,
@@ -674,6 +741,17 @@ def main():
                     world_size=args.world_size,
                     not_eval=args.not_eval,
                 )
+                if args.rank == 0:
+                    _write_intermediate_evaluation(
+                        cfg.work_dir,
+                        epoch,
+                        evaluation,
+                        select_best=bool(
+                            cfg.workflow.get(
+                                "intermediate_validation_selects_checkpoint", False
+                            )
+                        ),
+                    )
     logger.info("Training Over...\n")
 
 

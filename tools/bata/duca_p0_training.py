@@ -67,7 +67,7 @@ def atomic_write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
 def formal_training_contract(
     cfg,
     *,
-    expected_checkpoint_criterion: str = "terminal_epoch_131_state_dict_ema",
+    expected_checkpoint_criterion: str | None = None,
 ) -> dict[str, Any] | None:
     workflow = cfg.workflow
     if not bool(workflow.get("formal_successful_update_contract", False)):
@@ -101,6 +101,12 @@ def formal_training_contract(
         raise ValueError("formal DUCA primary checkpoint must be the terminal epoch")
     if contract["primary_checkpoint_state_key"] != "state_dict_ema":
         raise ValueError("formal DUCA primary state must be state_dict_ema")
+    expected_checkpoint_criterion = (
+        f"terminal_epoch_{contract['primary_checkpoint_epoch']}_"
+        f"{contract['primary_checkpoint_state_key']}"
+        if expected_checkpoint_criterion is None
+        else str(expected_checkpoint_criterion)
+    )
     if contract["checkpoint_criterion"] != expected_checkpoint_criterion:
         raise ValueError("formal DUCA checkpoint criterion is not frozen")
     if contract["checkpoint_interval"] != 5:
@@ -113,8 +119,28 @@ def formal_training_contract(
         raise ValueError("formal DUCA cannot truncate an epoch with max_train_iters")
     if int(workflow.get("force_amp_overflow_attempts", 0)) != 0:
         raise ValueError("formal DUCA training cannot inject a synthetic AMP overflow")
-    if int(workflow.get("val_eval_interval", 0)) > 0:
-        raise ValueError("formal DUCA forbids intermediate THUMOS test evaluation")
+    val_eval_interval = int(workflow.get("val_eval_interval", 0))
+    intermediate_validation = val_eval_interval > 0
+    if intermediate_validation:
+        if val_eval_interval != 5:
+            raise ValueError("formal DUCA performance-curve evaluation must run every five epochs")
+        if int(workflow.get("val_eval_interval_anchor_epoch", -1)) != 5:
+            raise ValueError("formal DUCA performance-curve evaluation must anchor at epoch five")
+        if int(workflow.get("val_start_epoch", -1)) != 4:
+            raise ValueError("formal DUCA performance-curve evaluation must start after epoch four")
+        if str(workflow.get("intermediate_validation_role", "")) != (
+            "full_curve_and_best_validation_checkpoint"
+        ):
+            raise ValueError("formal DUCA intermediate validation role is not explicit")
+        if workflow.get("intermediate_validation_selects_checkpoint", None) is not True:
+            raise ValueError("formal DUCA performance curve must retain the best validation checkpoint")
+    elif workflow.get("intermediate_validation_selects_checkpoint", False):
+        raise ValueError("checkpoint selection requires an enabled intermediate validation schedule")
+    contract["intermediate_validation"] = intermediate_validation
+    contract["intermediate_validation_interval"] = val_eval_interval
+    contract["intermediate_validation_role"] = str(
+        workflow.get("intermediate_validation_role", "disabled")
+    )
     return contract
 
 

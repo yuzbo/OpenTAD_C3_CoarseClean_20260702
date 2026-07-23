@@ -137,12 +137,12 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
     _require(int(cfg.workflow.val_start_epoch) == 4, "validation must begin at one-based epoch 5")
     _require(
         str(cfg.workflow.get("intermediate_validation_role", ""))
-        == "diagnostic_only_no_checkpoint_selection",
-        "intermediate validation must be diagnostic only",
+        == "full_curve_and_best_validation_checkpoint",
+        "intermediate validation must expose the complete mAP curve",
     )
     _require(
-        cfg.workflow.get("intermediate_validation_selects_checkpoint", None) is False,
-        "intermediate validation may not select checkpoints",
+        cfg.workflow.get("intermediate_validation_selects_checkpoint", None) is True,
+        "intermediate validation must retain the best EMA checkpoint",
     )
     _require(cfg.dataset.train.subset_name == "training", "training split changed")
     _require(cfg.dataset.test.subset_name == "validation", "validation split changed")
@@ -162,7 +162,8 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         "asformer_full_encoder_adapted": adapts_full_asformer_encoder,
         "official_validation_comparable": True,
         "intermediate_validation_epochs": list(range(5, 61, 5)),
-        "intermediate_validation_role": "diagnostic_only_no_checkpoint_selection",
+        "intermediate_validation_role": "full_curve_and_best_validation_checkpoint",
+        "intermediate_validation_selects_checkpoint": True,
         "paper_claim_allowed": False,
     }
 
