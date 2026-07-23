@@ -162,3 +162,47 @@ def test_existing_independent_runner_exposes_sampling_rate_matrix_without_a_new_
         assert f"{variant})" in runner
         assert config in runner
     assert "validate_duca_sampling_rate_official60.py" in runner
+
+
+def test_rate_curriculum_keeps_uniform_warmup_and_tad_led_joint_phase(monkeypatch) -> None:
+    monkeypatch.setenv("DUCA_CELLCF_TRAINING_PROFILE", "official60")
+    stage1 = Config.fromfile(
+        str(CONFIG_ROOT / "duca_sampling_rate_curriculum_stage1_uniform384.py")
+    )
+    selector1 = stage1.model.frame_selector
+    assert stage1.duca_sampling_rate_contract.stage == "uniform_k384_full_model_coarse_convergence"
+    assert int(stage1.workflow.end_epoch) == 30
+    assert int(stage1.workflow.val_eval_interval) == 5
+    assert stage1.workflow.formal_protocol == ""
+    assert selector1.acquisition_policy == "budget_calibrated_sampling_rate"
+    assert float(selector1.loss_weight_schedule.policy_alpha.start) == 0.0
+    assert float(selector1.loss_weight_schedule.policy_alpha.end) == 0.0
+    assert float(selector1.loss_weight_schedule.detector_gradient.end) == 0.0
+    assert float(selector1.loss_weight_schedule.actionness.end) == 1.0
+    assert float(selector1.loss_weight_schedule.transition.end) == 0.50
+    assert float(selector1.loss_weight_schedule.transition_boundary.end) == 2.0
+
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT", "stage1.pth")
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_SHA256", "a" * 64)
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_EPOCH", "29")
+    stage2 = Config.fromfile(
+        str(CONFIG_ROOT / "duca_sampling_rate_curriculum_stage2_joint384.py")
+    )
+    selector2 = stage2.model.frame_selector
+    schedule = selector2.loss_weight_schedule
+    assert stage2.duca_sampling_rate_contract.stage == (
+        "low_lr_joint_rate_adaptation_then_tad_led_joint_training"
+    )
+    assert stage2.workflow.model_initialization.state_key == "state_dict_ema"
+    assert stage2.workflow.model_initialization.reset_state_keys == [
+        "frame_selector._loss_weight_schedule_step"
+    ]
+    assert selector2.coarse_trunk_lr < selector1.coarse_trunk_lr
+    assert selector2.action_head_lr < selector1.action_head_lr
+    assert float(schedule.policy_alpha.start) == 0.0
+    assert float(schedule.policy_alpha.end) == 1.0
+    assert float(schedule.detector_gradient.start) == 0.0
+    assert float(schedule.detector_gradient.end) == 0.25
+    assert float(schedule.actionness.end) == 0.25
+    assert float(schedule.transition.end) == 0.10
+    assert float(schedule.transition_boundary.end) == 0.25

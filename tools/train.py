@@ -50,6 +50,7 @@ from tools.bata import (
     duca_selected_axis_training,
 )
 from tools.bata.duca_frontend_initialization import (
+    initialize_model_from_checkpoint,
     initialize_frame_selector_from_checkpoint,
 )
 
@@ -414,11 +415,26 @@ def main():
 
     # build model
     model = build_detector(cfg.model)
-    selector_initialization_receipt = initialize_frame_selector_from_checkpoint(
+    model_initialization_cfg = cfg.workflow.get("model_initialization", None)
+    selector_initialization_cfg = cfg.workflow.get("selector_initialization", None)
+    if model_initialization_cfg and selector_initialization_cfg:
+        raise ValueError(
+            "model_initialization and selector_initialization are mutually exclusive"
+        )
+    model_initialization_receipt = initialize_model_from_checkpoint(
         model,
-        cfg.workflow.get("selector_initialization", None),
+        model_initialization_cfg,
         logger=logger,
     )
+    selector_initialization_receipt = initialize_frame_selector_from_checkpoint(
+        model,
+        selector_initialization_cfg,
+        logger=logger,
+    )
+    if model_initialization_receipt is not None and duca_runtime_bindings is not None:
+        duca_runtime_bindings["model_initialization_receipt"] = dict(
+            model_initialization_receipt
+        )
     if selector_initialization_receipt is not None and duca_runtime_bindings is not None:
         duca_runtime_bindings["selector_initialization_receipt"] = dict(
             selector_initialization_receipt

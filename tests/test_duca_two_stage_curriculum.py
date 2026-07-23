@@ -17,6 +17,7 @@ from mmengine.config import Config
 from opentad.models.detectors.actionformer import ActionFormer
 from tools.bata.create_duca_frontend_split import create_split
 from tools.bata.duca_frontend_initialization import (
+    initialize_model_from_checkpoint,
     initialize_frame_selector_from_checkpoint,
 )
 
@@ -254,6 +255,48 @@ def test_selector_initialization_still_rejects_missing_parameters(
                 "reset_state_keys": ["_loss_weight_schedule_step"],
             },
         )
+
+
+def test_full_model_initialization_loads_detector_and_resets_only_curriculum_clock(
+    tmp_path: Path,
+) -> None:
+    source = _TinyModel()
+    source.frame_selector.linear.weight.data.fill_(3.0)
+    source.detector.weight.data.fill_(7.0)
+    source.frame_selector._loss_weight_schedule_step.fill_(1600)
+    checkpoint = tmp_path / "stage1_full_model.pth"
+    torch.save(
+        {
+            "epoch": 29,
+            "state_dict_ema": {
+                f"module.{key}": value.detach().clone()
+                for key, value in source.state_dict().items()
+            },
+        },
+        checkpoint,
+    )
+    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+
+    target = _TinyModel()
+    receipt = initialize_model_from_checkpoint(
+        target,
+        {
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_sha256": digest,
+            "state_key": "state_dict_ema",
+            "expected_checkpoint_epoch": 29,
+            "reset_state_keys": ["frame_selector._loss_weight_schedule_step"],
+        },
+    )
+
+    assert receipt is not None
+    assert receipt["optimizer_state_loaded"] is False
+    assert torch.equal(
+        target.frame_selector.linear.weight,
+        source.frame_selector.linear.weight,
+    )
+    assert torch.equal(target.detector.weight, source.detector.weight)
+    assert int(target.frame_selector._loss_weight_schedule_step.item()) == 0
 
 
 def test_train_only_frontend_split_is_deterministic_and_disjoint(tmp_path: Path) -> None:
