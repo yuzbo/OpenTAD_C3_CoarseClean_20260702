@@ -322,6 +322,12 @@ def _gradient_partition(model) -> dict[str, float]:
                 "frame_selector.adapter.sampling_rate_utility_fusion."
             ),
         ),
+        "detector_utility_head": _grad_sum(
+            model,
+            lambda name: name.startswith(
+                "frame_selector.adapter.transition_scorer.detector_utility_head."
+            ),
+        ),
         "asformer_last_encoder_layer": _grad_sum(
             model,
             lambda name: name.startswith(last_prefix),
@@ -656,6 +662,18 @@ def run_gate(
             model=model,
             optimizer=optimizer,
         )
+        print(
+            json.dumps(
+                {
+                    "gradient_probe": "detector_only_before_ownership_assertions",
+                    "detector_gradients": detector_gradients,
+                    "selector_schedule": model.frame_selector.last_forward_summary.get(
+                        "loss_weight_schedule", {}
+                    ),
+                },
+                sort_keys=True,
+            )
+        )
     finally:
         hook.remove()
     _require(len(captured_inputs) == 1, "real detector backbone was not called exactly once")
@@ -863,8 +881,8 @@ def run_gate(
             optimizer=optimizer,
         )
         _require(
-            contribution_gradients["sampling_rate_utility_head"] > 0.0,
-            "contribution distillation missed the sampling-rate utility head",
+            contribution_gradients["detector_utility_head"] > 0.0,
+            "contribution distillation missed the detector-utility head",
         )
         _require(
             contribution_gradients["detector"] == 0.0

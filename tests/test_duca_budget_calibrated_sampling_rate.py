@@ -51,6 +51,25 @@ def test_budget_calibrated_rate_is_capped_exact_and_strictly_ordered():
     assert float(logits.grad.abs().sum().item()) > 0.0
 
 
+def test_budget_calibrated_rate_backward_is_invariant_to_a_common_logit_shift():
+    base = torch.tensor([[0.2, -1.1, 0.7, 2.5, -0.4, 1.3]], requires_grad=True)
+    shifted = (base.detach() + 7.0).requires_grad_(True)
+    valid = torch.ones_like(base, dtype=torch.bool)
+    weights = torch.tensor([[0.3, -0.4, 1.7, -0.8, 0.6, 1.1]])
+
+    first = budget_calibrated_sampling_rate(
+        base, valid, k=3, temperature=0.8, coverage_floor=0.0, smoothing_kernel=1
+    )
+    second = budget_calibrated_sampling_rate(
+        shifted, valid, k=3, temperature=0.8, coverage_floor=0.0, smoothing_kernel=1
+    )
+    assert torch.allclose(first.sampling_rates, second.sampling_rates, atol=1.0e-6)
+    (first.sampling_rates * weights).sum().backward()
+    (second.sampling_rates * weights).sum().backward()
+    assert torch.allclose(base.grad, shifted.grad, atol=1.0e-6)
+    assert abs(float(base.grad.sum().item())) < 1.0e-6
+
+
 def test_budget_calibrated_rate_has_exact_uniform_warmup_without_duplicate_slots():
     logits = torch.randn(2, 12, requires_grad=True)
     valid = torch.ones_like(logits, dtype=torch.bool)

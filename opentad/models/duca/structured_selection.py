@@ -6,6 +6,8 @@ import math
 import torch
 import torch.nn.functional as F
 
+from ._fixed_budget_autograd import FixedBudgetRateGradient
+
 
 @dataclass(frozen=True)
 class StructuredSelectionOutput:
@@ -512,11 +514,11 @@ def _calibrated_retention_rates(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Map logits to capped rates whose sum is exactly the requested budget.
 
-    The bisection threshold is intentionally detached.  It enforces the
-    global exact-budget constraint in the forward pass while preserving the
-    useful local derivative of every rate with respect to its own logit.
-    This is the capped counterpart of a softmax density: no time point can
-    claim more than one real video frame.
+    The bisection threshold is detached for the forward solve, then the
+    backward pass is restored on the fixed-budget tangent space. In
+    particular, adding a common constant to every logit cannot receive a
+    gradient. This is the capped counterpart of a softmax density: no time
+    point can claim more than one real video frame.
     """
 
     if logits.ndim != 1 or not logits.is_floating_point():
@@ -542,6 +544,7 @@ def _calibrated_retention_rates(
         upper = torch.where(mass > target, upper, midpoint)
     threshold = (0.5 * (lower + upper)).detach()
     rates = torch.sigmoid((work - threshold) / scale)
+    rates = FixedBudgetRateGradient.apply(work, rates, scale)
     residual = rates.sum() - target
     return rates.to(dtype=logits.dtype), residual.to(dtype=logits.dtype)
 

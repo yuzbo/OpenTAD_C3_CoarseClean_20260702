@@ -2370,6 +2370,11 @@ class C3OfficialActionSegmentationProbe:
             policy_replay_masks = []
             policy_replay_rng = []
             hooks = []
+            replay_policy_hidden = bool(
+                self.module.training
+                and self.policy_hidden_gradient_scope
+                in {"asformer_last_encoder_layer", "asformer_full_encoder"}
+            )
             if return_hidden and self.hidden_output_kind == "official_asformer_encoder_hidden":
                 def capture_encoder_hidden(_module, _inputs, output):
                     if not isinstance(output, tuple) or len(output) != 2:
@@ -2379,7 +2384,7 @@ class C3OfficialActionSegmentationProbe:
                 hooks.append(
                     self.official_temporal.encoder.register_forward_hook(capture_encoder_hidden)
                 )
-                if self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
+                if replay_policy_hidden and self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
                     encoder_layers = getattr(self.official_temporal.encoder, "layers", None)
                     if encoder_layers is None or len(encoder_layers) < 1:
                         raise RuntimeError(
@@ -2409,7 +2414,7 @@ class C3OfficialActionSegmentationProbe:
                     )
             try:
                 for idx in range(int(batch)):
-                    if self.policy_hidden_gradient_scope == "asformer_full_encoder":
+                    if replay_policy_hidden and self.policy_hidden_gradient_scope == "asformer_full_encoder":
                         # A detached spatial input keeps detector-feedback adaptation
                         # inside the full official ASFormer encoder. The ordinary
                         # actionness loss still trains the spatial stem and heads.
@@ -2459,10 +2464,7 @@ class C3OfficialActionSegmentationProbe:
             hidden = torch.cat(encoder_hidden_rows, dim=0).transpose(1, 2).contiguous()
             hidden_kind = "official_asformer_encoder_hidden"
             policy_hidden = None
-            if self.policy_hidden_gradient_scope in {
-                "asformer_last_encoder_layer",
-                "asformer_full_encoder",
-            }:
+            if replay_policy_hidden:
                 if not (
                     len(policy_replay_inputs)
                     == len(policy_replay_masks)
