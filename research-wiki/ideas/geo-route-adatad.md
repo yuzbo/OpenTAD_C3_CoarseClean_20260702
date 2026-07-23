@@ -139,6 +139,27 @@ by alternating Dense-MoD pairs. A-MoD must score a MoD block from the full
 attention state of the preceding dense block; a consecutive all-MoD tail would
 not preserve that paper-level premise and is not the intended comparison.
 
+## FlashVID transfer boundary (2026-07-23)
+
+FlashVID is now recorded as a relevant video-token-compression reference, but
+not as an empirical precedent for GeoRoute. Its reported 90% visual-token
+reduction with 99.1% retained score is a LLaVA-OneVision VLLM result: 57.9
+versus 58.4 average score under an aligned 10% retention-budget protocol. It
+is neither 99.1% absolute accuracy nor TAD mAP.
+
+Its useful hypothesis is narrower: a selector should jointly preserve task
+relevance, feature diversity, and motion-tolerant cross-frame correspondence.
+FlashVID itself runs a full vision encoder to obtain features and attention,
+then compresses for the LLM under `torch.no_grad()`. It therefore cannot be
+ported as a pre-backbone AdaTAD efficiency method and cannot support our
+detector-gradient or native-token claims.
+
+P1 is deliberately unchanged. If and only if the P1 hybrid survives against
+free TokenSelect, P2 may test a scout-only, FlashVID-inspired
+relevance-diversity-correspondence residual baseline with exact-K lineage and
+one-heavy-forward accounting. It must be labelled an adaptation, not a
+FlashVID reproduction, and is removed if it loses on high-tIoU or total cost.
+
 ## External v1 review absorption (2026-07-23)
 
 The archived external review is `HOLD`, not an implementation acceptance. Its

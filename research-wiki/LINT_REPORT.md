@@ -9,17 +9,19 @@ status: pass_with_source_warnings
 ## Summary
 
 - Curated Markdown files: structurally valid.
-- Ideas: 17.
+- Ideas: 18.
 - Experiments: 12.
-- Claims: 11.
-- Graph edges: 52 valid JSONL rows.
+- Claims: 10 graph nodes; `claims/project-claims.md` is the non-node index.
+- Papers: 1.
+- Graph edges: 58 valid JSONL rows.
 - Missing graph node references: 0.
-- Orphan idea/experiment/claim nodes: 0.
+- Orphan idea/experiment/claim/paper/plan nodes: 0.
 - Broken curated relative links: 0.
-- `query_pack.md`: 7055 Unicode code points, below the 8000-character limit.
+- `query_pack.md`: 5712 Unicode code points, below the 8000-character limit.
 - The installed ARIS helper exposes no `lint` command. A read-only structural
-  validator parsed all 52 JSONL edges, checked every edge endpoint against the
-  current node set, and enforced the query-pack budget; all checks passed.
+  validator parsed all 58 JSONL edges, checked every edge endpoint and orphan
+  against the current node set, checked curated relative Markdown links, and
+  enforced the query-pack budget; all checks passed.
 
 ## Source-record warnings
 

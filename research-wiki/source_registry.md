@@ -3,6 +3,17 @@ type: source_registry
 updated: 2026-07-23
 ---
 
+- FlashVID literature and implementation audit, 2026-07-23. Fan et al.,
+  *FlashVID: Efficient Video Large Language Models via Training-free Tree-based
+  Spatiotemporal Token Merging*, ICLR 2026 Oral, `arXiv:2602.08024`,
+  <https://arxiv.org/abs/2602.08024>; official MIT implementation,
+  <https://github.com/Fanziyang-v/FlashVID>, audited at
+  `983cce6e30d7a8012442bfc7557d3afa61b3572d`. The inspected code establishes
+  post-vision-encoder, `torch.no_grad()` VLLM compression rather than
+  pre-backbone or detector-loss routing. The exact-claim, method, transfer, and
+  non-transfer record is
+  `docs/methods/reviews/2026-07-23-flashvid-literature-absorption.md`.
+
 - External GeoRoute-AdaTAD v1 implementation verdict, 2026-07-23. User-provided
   review attachment SHA-256
   `61A1918B36D811F178152F1E9DE60B464186D9C52678722BA679D617F4468E78`,

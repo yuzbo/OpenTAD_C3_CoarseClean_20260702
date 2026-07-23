@@ -980,3 +980,15 @@ append_only: true
   itself consumes one slot, so its pre-submit condition is at most seven
   pre-existing active jobs. P1/P2/P3 remain unstarted and no result or claim
   changed.
+
+- 2026-07-23: located and audited FlashVID (Fan et al., ICLR 2026 Oral,
+  arXiv:2602.08024) and official code snapshot `983cce6`. Its headline is
+  verified as a LLaVA-OneVision 10% visual-token retention-budget result with
+  57.9/58.4 = 99.1% relative score, not 99.1% accuracy or TAD mAP. The official
+  code runs a full vision tower under `torch.no_grad()` before ADTS/TSTM
+  compression, and the paper's own efficiency table keeps vision-encoding time
+  unchanged. GeoRoute absorbs only its joint relevance-diversity-motion
+  correspondence hypothesis, retains P1 unchanged, and relegates a
+  scout-only, FlashVID-inspired residual comparator to conditional P2. The
+  detailed transfer audit is
+  `docs/methods/reviews/2026-07-23-flashvid-literature-absorption.md`.
