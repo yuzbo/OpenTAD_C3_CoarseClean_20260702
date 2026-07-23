@@ -38,7 +38,7 @@ fi
 source "${BASE}/conda_envs/opentad/bin/activate"
 python -c 'import numpy; assert numpy.__version__ == "1.23.5", numpy.__version__'
 
-python tools/bata/finalize_georoute_p0_gate.py \
+python -m tools.bata.finalize_georoute_p0_gate \
   --dense "${DENSE}" \
   --hybrid "${HYBRID}" \
   --score-function "${SCORE_FUNCTION}" \
