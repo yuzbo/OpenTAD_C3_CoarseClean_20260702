@@ -115,6 +115,19 @@ VARIANT_CONFIGS = {
     "mixture_density_transport_nomax": (
         "duca_mixture_density_transport_nomax_fixed384_official60.py"
     ),
+    "sampling_rate_exact_uniform": (
+        "duca_sampling_rate_exact_uniform_fixed384_official60.py"
+    ),
+    "sampling_rate_only": "duca_sampling_rate_fixed384_official60.py",
+    "sampling_rate_cls": "duca_sampling_rate_cls_fixed384_official60.py",
+    "sampling_rate_reg": "duca_sampling_rate_reg_fixed384_official60.py",
+    "sampling_rate_both": "duca_sampling_rate_both_fixed384_official60.py",
+    "sampling_rate_both_asformer_last": (
+        "duca_sampling_rate_both_asformer_adapt_fixed384_official60.py"
+    ),
+    "sampling_rate_both_asformer_full": (
+        "duca_sampling_rate_both_asformer_full_adapt_fixed384_official60.py"
+    ),
 }
 
 DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA

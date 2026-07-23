@@ -6,6 +6,7 @@ from pathlib import Path
 from mmengine.config import Config
 
 from tools.bata.duca_p0_training import formal_training_contract
+from tools.bata import duca_selected_axis_training
 from tools.bata.validate_duca_sampling_rate_official60 import validate_config
 
 
@@ -32,6 +33,15 @@ VARIANTS = {
     "rate_both": "duca_sampling_rate_both_fixed384_official60.py",
     "rate_both_asformer_adapt": "duca_sampling_rate_both_asformer_adapt_fixed384_official60.py",
     "rate_both_asformer_full_adapt": "duca_sampling_rate_both_asformer_full_adapt_fixed384_official60.py",
+}
+RUNNER_VARIANTS = {
+    "sampling_rate_exact_uniform": "duca_sampling_rate_exact_uniform_fixed384_official60.py",
+    "sampling_rate_only": "duca_sampling_rate_fixed384_official60.py",
+    "sampling_rate_cls": "duca_sampling_rate_cls_fixed384_official60.py",
+    "sampling_rate_reg": "duca_sampling_rate_reg_fixed384_official60.py",
+    "sampling_rate_both": "duca_sampling_rate_both_fixed384_official60.py",
+    "sampling_rate_both_asformer_last": "duca_sampling_rate_both_asformer_adapt_fixed384_official60.py",
+    "sampling_rate_both_asformer_full": "duca_sampling_rate_both_asformer_full_adapt_fixed384_official60.py",
 }
 
 
@@ -64,6 +74,10 @@ def test_only_adaptation_variants_open_declared_asformer_policy_gradient(monkeyp
             "full_curve_and_best_validation_checkpoint"
         )
         assert cfg.workflow.intermediate_validation_selects_checkpoint is True
+        assert (
+            cfg.workflow.formal_protocol
+            == duca_selected_axis_training.FORMAL_PROTOCOL
+        )
         expected_scope = {
             "rate_both_asformer_adapt": "asformer_last_encoder_layer",
             "rate_both_asformer_full_adapt": "asformer_full_encoder",
@@ -120,6 +134,15 @@ def test_sampling_rate_keeps_a_nonzero_transition_output_path_for_coarse_supervi
     )
     scorer_block = source[source.index("self.transition_scorer = DucaTransitionUtilityScorer("):source.index("if self.acquisition_policy == \"continuous_mixture_density_transport\"")]
     assert '"budget_calibrated_sampling_rate"' not in scorer_block
+
+    selected_contract = duca_selected_axis_training.formal_training_contract(cfg)
+    assert selected_contract is not None
+    assert selected_contract["formal_protocol"] == duca_selected_axis_training.FORMAL_PROTOCOL
+
+
+def test_sampling_rate_variants_reuse_the_existing_selected_axis_runtime_contract() -> None:
+    for variant, config_name in RUNNER_VARIANTS.items():
+        assert duca_selected_axis_training.VARIANT_CONFIGS[variant] == config_name
 
 
 def test_existing_independent_runner_exposes_sampling_rate_matrix_without_a_new_launcher() -> None:

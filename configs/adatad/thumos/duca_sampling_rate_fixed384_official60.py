@@ -117,6 +117,10 @@ scheduler = dict(
 )
 
 workflow = dict(
+    # Reuse the existing selected-axis official-60 runtime binding. The rate
+    # policy still decides original-time observations before VideoMAE; this
+    # field only selects the audited training/checkpoint machinery.
+    formal_protocol="duca_selected_axis_optimization_v1",
     training_profile=duca_training_protocol.name,
     logging_interval=50,
     checkpoint_interval=5,
