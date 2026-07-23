@@ -133,6 +133,25 @@ def _apply_slot_weights(inputs: torch.Tensor, weights: torch.Tensor) -> torch.Te
     raise ValueError(f"unsupported DUCA selector input shape: {tuple(inputs.shape)}")
 
 
+def _contribution_leaf_with_st_route(
+    selected_inputs: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Expose an identity-valued differentiable observation for contribution loss."""
+
+    # Real THUMOS clips are uint8. Autograd cannot differentiate integer leaves,
+    # so only the training-time contribution view is promoted to float. The
+    # detector sees identical numeric observations and the regular inference
+    # gather is untouched.
+    differentiable_inputs = (
+        selected_inputs
+        if torch.is_floating_point(selected_inputs) or torch.is_complex(selected_inputs)
+        else selected_inputs.float()
+    )
+    teacher_inputs = differentiable_inputs.detach().requires_grad_(True)
+    routed_inputs = teacher_inputs + differentiable_inputs - differentiable_inputs.detach()
+    return routed_inputs, teacher_inputs
+
+
 def _training_uniform_companion_mask(
     batch_size: int,
     *,
@@ -2460,11 +2479,8 @@ class DucaOnlineFrameSelector(nn.Module):
             and self.detector_contribution_distillation_weight > 0.0
             and self.detector_contribution_components != "none"
         ):
-            contribution_teacher_inputs = selected_inputs.detach().requires_grad_(True)
-            selected_inputs = (
-                contribution_teacher_inputs
-                + selected_inputs
-                - selected_inputs.detach()
+            selected_inputs, contribution_teacher_inputs = _contribution_leaf_with_st_route(
+                selected_inputs
             )
         gather_ms = _elapsed_ms(gather_start, inputs, enabled=sync_enabled)
         total_selector_ms = _elapsed_ms(total_start, inputs, enabled=sync_enabled)

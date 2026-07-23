@@ -2,12 +2,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import torch
+
+from opentad.models.selectors.duca_online_frame_selector import (
+    _contribution_leaf_with_st_route,
+)
+
 from mmengine.config import Config
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs" / "adatad" / "thumos" / "duca_sampling_rate_both_asformer_full_mini_visual.py"
 RUNNER = ROOT / "scripts" / "run_duca_sampling_rate_mini_visual_gpu1.sh"
+
+
+def test_contribution_teacher_promotes_uint8_observations_without_value_change() -> None:
+    observations = torch.tensor([[[[0, 128, 255]]]], dtype=torch.uint8)
+
+    routed, teacher = _contribution_leaf_with_st_route(observations)
+
+    assert routed.dtype == torch.float32
+    assert teacher.dtype == torch.float32
+    assert routed.requires_grad and teacher.requires_grad
+    assert torch.equal(routed.detach(), observations.float())
+    (routed.square().sum()).backward()
+    assert teacher.grad is not None
+    assert torch.isfinite(teacher.grad).all()
 
 
 def test_mini_visual_config_performs_real_bounded_training() -> None:
