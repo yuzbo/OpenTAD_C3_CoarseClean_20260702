@@ -55,12 +55,14 @@ for epoch in 0 4 9; do
     --config "${CONFIG}" --checkpoint "${checkpoint}" \
     --checkpoint-state state_dict_ema --device cuda:0 \
     --batch-index 0 --batch-size 1 --seed 3407 \
+    --cfg-options "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
     --output-jsonl "${RUN_ROOT}/attribution/epoch_${label}.jsonl" \
     --summary-json "${RUN_ROOT}/attribution/epoch_${label}.summary.json" \
     | tee "${RUN_ROOT}/attribution/epoch_${label}.out"
   "${PYTHON}" -m tools.bata.export_duca_selection_quality \
     --config "${CONFIG}" --selector-config "${CONFIG}" --checkpoint "${checkpoint}" \
     --split test --batch-size 1 --limit-batches 2 --use-ema true --device cuda:0 \
+    --cfg-options "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
     --output-jsonl "${RUN_ROOT}/selection/epoch_${label}.jsonl" \
     --summary-json "${RUN_ROOT}/selection/epoch_${label}.summary.json" \
     | tee "${RUN_ROOT}/selection/epoch_${label}.out"
