@@ -5,6 +5,8 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from tools.bata import georoute_dag_dispatch as dag
 from tools.bata.finalize_georoute_p0_gate import finalize
 from tools.bata.georoute_dag_dispatch import GEOROUTE_STAGE_RESULT_SCHEMA
@@ -233,6 +235,69 @@ def test_stage_matrix_uses_scheduler_test_only_for_every_leaf_before_submission(
         "georoute_p1_roi_s3407",
         "p1-select_dispatcher",
     }
+
+
+def test_submit_capacity_rejects_a_matrix_before_any_leaf_is_created(monkeypatch):
+    class Result:
+        def __init__(self, *, stdout: str):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def fake_run(command, **_kwargs):
+        if command[0] == "squeue":
+            return Result(stdout="\n".join("active" for _ in range(9)) + "\n")
+        assert command[0] == "sacctmgr"
+        return Result(stdout="16|\n")
+
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    monkeypatch.setenv("SLURM_JOB_USER", "sczc063")
+    monkeypatch.setenv("SLURM_JOB_ACCOUNT", "sczc063")
+    monkeypatch.setattr(dag.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="active=9, required_additional=8, MaxSubmitJobs=16"):
+        dag._require_submit_capacity(additional_jobs=8)
+
+
+def test_stage_matrix_cancels_submitted_leaves_when_selector_submission_fails(monkeypatch, tmp_path: Path):
+    for name in ("config.py", "manifest.json", "annotation.json", "class_map.txt", "pretrained.pth"):
+        (tmp_path / name).write_text("placeholder", encoding="utf-8")
+    video_root = tmp_path / "validation_videos"
+    video_root.mkdir()
+    args = argparse.Namespace(
+        run_root=tmp_path / "run",
+        source_config=tmp_path / "config.py",
+        manifest=tmp_path / "manifest.json",
+        development_annotation=tmp_path / "annotation.json",
+        class_map=tmp_path / "class_map.txt",
+        development_video_root=video_root,
+        pretrained=tmp_path / "pretrained.pth",
+        expected_commit="a" * 40,
+    )
+    submitted: list[str] = []
+    cancelled: list[str] = []
+
+    def fake_sbatch(*, name, test_only=False, **_kwargs):
+        if test_only:
+            return "TEST_ONLY_PASS"
+        if name == "georoute_p1_select":
+            raise RuntimeError("selector rejected")
+        job_id = str(2000 + len(submitted))
+        submitted.append(job_id)
+        return job_id
+
+    monkeypatch.setattr(dag, "_sbatch", fake_sbatch)
+    monkeypatch.setattr(dag, "_cancel_submitted_jobs", lambda job_ids: cancelled.extend(job_ids))
+
+    with pytest.raises(RuntimeError, match="selector rejected"):
+        dag._submit_stage_matrix(
+            args=args,
+            stage="p1",
+            cells=[("dense_native", 3407, None), ("roi", 3407, None)],
+            parent_receipt="parent",
+            next_action="p1-select",
+        )
+    assert cancelled == submitted == ["2000", "2001"]
 
 
 def test_p1_and_p2_selection_are_predeclared_and_result_blind():

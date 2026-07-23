@@ -24,6 +24,13 @@ max_chars: 8000
   or a model result. The three dead dependent jobs `1180494`--`1180496` were
   cancelled to release submit quota. No second partial P1 root, P1 Job, P2
   Job, or P3 Job has been created.
+- Replacement gate `1181172` passed the real uint8 180x320 path. Bootstrap
+  `1181177` then exposed a scheduler race: seven leaves were accepted but the
+  selector was rejected as the 17th submitted job under `MaxSubmitJobs=16`.
+  All `1181187`--`1181193` leaves were cancelled; `1181187` ran for 20 seconds
+  only and is invalid. New dispatch code rejects `active + leaves + selector`
+  before creating a P1 root and cancels leaves on any later submit rejection.
+  P1 must wait for at most eight active account jobs; P2/P3 remain absent.
 
 ## Continuous-RoI S2 当前状态（2026-07-21）
 

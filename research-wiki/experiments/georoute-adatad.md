@@ -103,6 +103,16 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   cancelled without touching active work. P1 will be retried only after the
   native-padding gate passes and the account admits the entire P1 matrix and
   selector; P2/P3 remain result-gated descendants.
+- The first post-gate bootstrap `1181177` found a second scheduler-only
+  failure: its `--test-only` checks passed, but seven real leaves consumed the
+  final account slot before the selector could be submitted. Jobs
+  `1181187`--`1181193` were cancelled immediately; dense `1181187` ran for
+  only 20 seconds and is invalid diagnostic evidence. The account limit is
+  `MaxSubmitJobs=16`; at dispatch it had nine active submissions, whereas the
+  complete P1 matrix requires eight additional slots. The dispatcher now
+  checks this arithmetic before a P1 root is created and cancels already
+  submitted leaves if a later real submission is rejected. P1 remains held
+  until active submissions are at most eight.
 
 ## Frozen decision logic
 

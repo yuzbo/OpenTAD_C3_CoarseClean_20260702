@@ -97,6 +97,74 @@ def _clean_export_value(value: str, *, name: str) -> str:
     return value
 
 
+def _require_submit_capacity(*, additional_jobs: int) -> None:
+    """Fail before a stage can leave an unusable partial Slurm matrix."""
+
+    if not os.environ.get("SLURM_JOB_ID"):
+        return
+    if additional_jobs <= 0:
+        raise ValueError("additional_jobs must be positive")
+    user = os.environ.get("SLURM_JOB_USER") or os.environ.get("USER")
+    account = os.environ.get("SLURM_JOB_ACCOUNT")
+    if not user or not account:
+        raise RuntimeError("GeoRoute cannot determine its Slurm user/account for submit-cap validation")
+    active = subprocess.run(
+        ["squeue", "-h", "-u", user],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if active.returncode != 0:
+        raise RuntimeError(f"GeoRoute cannot query active Slurm jobs: {active.stderr.strip()}")
+    limit_result = subprocess.run(
+        [
+            "sacctmgr",
+            "-n",
+            "-P",
+            "show",
+            "assoc",
+            "where",
+            f"user={user}",
+            f"account={account}",
+            "format=MaxSubmitJobs",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if limit_result.returncode != 0:
+        raise RuntimeError(f"GeoRoute cannot query Slurm submit cap: {limit_result.stderr.strip()}")
+    limits = [
+        int(line.split("|", 1)[0])
+        for line in limit_result.stdout.splitlines()
+        if line.split("|", 1)[0].strip().isdigit()
+    ]
+    if not limits:
+        raise RuntimeError("GeoRoute cannot determine a finite Slurm MaxSubmitJobs limit")
+    active_count = len([line for line in active.stdout.splitlines() if line.strip()])
+    submit_limit = min(limits)
+    if active_count + additional_jobs > submit_limit:
+        raise RuntimeError(
+            "GeoRoute refuses a partial stage matrix: "
+            f"active={active_count}, required_additional={additional_jobs}, "
+            f"MaxSubmitJobs={submit_limit}"
+        )
+
+
+def _cancel_submitted_jobs(job_ids: Sequence[str]) -> None:
+    if not job_ids:
+        return
+    subprocess.run(
+        ["scancel", *job_ids],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def _base_exports(args: argparse.Namespace, *, action: str) -> dict[str, str]:
     values = {
         "GEOROUTE_SOURCE_ROOT": str(ROOT),
@@ -227,13 +295,14 @@ def _p1_bootstrap(args: argparse.Namespace) -> int:
         raise ValueError("p1-bootstrap requires --p0-run-root")
     _validate_bootstrap_inputs(args)
     p0_receipt, p0_receipt_path = _validate_sealed_p0_parent(args.p0_run_root)
+    cells = [(variant, 3407, None) for variant in P1_VARIANTS]
+    _require_submit_capacity(additional_jobs=len(cells) + 1)
     if args.run_root.exists():
         raise FileExistsError("GeoRoute P1 bootstrap namespace already exists")
     args.run_root.mkdir(parents=True, exist_ok=False)
     (args.run_root / "control").mkdir()
     (args.run_root / "slurm").mkdir()
 
-    cells = [(variant, 3407, None) for variant in P1_VARIANTS]
     jobs = _submit_stage_matrix(
         args=args,
         stage="p1",
@@ -293,6 +362,7 @@ def _submit_stage_matrix(
     dispatch_script = ROOT / "scripts" / "run_georoute_dispatch_slurm.sh"
     if not stage_script.is_file() or not dispatch_script.is_file():
         raise FileNotFoundError("GeoRoute Slurm stage/dispatch script is missing")
+    _require_submit_capacity(additional_jobs=len(cells) + 1)
     prepared_cells: list[tuple[str, dict[str, str]]] = []
     for variant, seed, budget in cells:
         label = f"georoute_{stage}_{variant}_s{seed}" + (f"_k{budget}" if budget else "")
@@ -328,16 +398,20 @@ def _submit_stage_matrix(
     )
 
     jobs: dict[str, str] = {}
-    for label, exports in prepared_cells:
-        jobs[label] = _sbatch(args=args, name=label, script=stage_script, exports=exports, gpu=True)
-    dispatcher = _sbatch(
-        args=args,
-        name=f"georoute_{next_action.replace('-', '_')}",
-        script=dispatch_script,
-        exports=dispatch_exports,
-        dependency_ids=list(jobs.values()),
-        gpu=False,
-    )
+    try:
+        for label, exports in prepared_cells:
+            jobs[label] = _sbatch(args=args, name=label, script=stage_script, exports=exports, gpu=True)
+        dispatcher = _sbatch(
+            args=args,
+            name=f"georoute_{next_action.replace('-', '_')}",
+            script=dispatch_script,
+            exports=dispatch_exports,
+            dependency_ids=list(jobs.values()),
+            gpu=False,
+        )
+    except Exception:
+        _cancel_submitted_jobs(list(jobs.values()))
+        raise
     jobs[f"{next_action}_dispatcher"] = dispatcher
     _write_submission(run_root=args.run_root, label=stage, jobs=jobs, parent_receipt=parent_receipt)
     return jobs

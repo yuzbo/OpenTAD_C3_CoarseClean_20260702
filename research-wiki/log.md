@@ -965,3 +965,16 @@ append_only: true
   The three unrecoverable dependency jobs `1180494`, `1180495`, and `1180496`
   were cancelled to release submit quota; no running job was changed. A fresh
   source-bound CUDA gate is required before P1, while P2/P3 remain closed.
+
+- 2026-07-23: the byte-preserving repair passed the fresh 180x320 hybrid/ST
+  CUDA Gate `1181172` (`PASS`, report SHA
+  `ad362318cc017c234a4ebe5b4d5bbc6c10ffeed33629d15ba8baff5917d02cf3`):
+  one heavy forward, exact-K=32, finite detector-to-router gradients, native
+  12x20 source grid, and no official test. Bootstrap `1181177` then revealed
+  that per-job `--test-only` admission is insufficient for an aggregate
+  `MaxSubmitJobs=16` limit: 9 active jobs plus 7 leaves allowed the leaves but
+  rejected the eighth selector. Jobs `1181187`--`1181193` were cancelled;
+  dense `1181187` ran for 20 seconds and is invalid diagnostic evidence. The
+  next minimal repair preflights aggregate headroom and compensates by
+  cancelling leaves if any real post-preflight submission fails. P1/P2/P3
+  remain unstarted and no result or claim changed.
