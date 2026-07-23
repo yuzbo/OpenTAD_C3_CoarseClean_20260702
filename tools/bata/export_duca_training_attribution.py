@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-RECORD_SCHEMA_VERSION = "duca_training_attribution_record_v2"
-SUMMARY_SCHEMA_VERSION = "duca_training_attribution_summary_v2"
+RECORD_SCHEMA_VERSION = "duca_training_attribution_record_v3"
+SUMMARY_SCHEMA_VERSION = "duca_training_attribution_summary_v3"
 
 
 def _sha256(path: str | Path) -> str:
@@ -147,6 +147,22 @@ def _gradient_abs(tensor: Any, objective: Any) -> Any:
         allow_unused=True,
     )[0]
     return None if gradient is None else gradient.detach().abs()
+
+
+def _slot_assignment_gradient_by_time(assignment: Any, objective: Any) -> Any:
+    """Collapse slot-wise detector gradients to the dense time axis.
+
+    Density transport feeds the detector through a soft ``[B, K, T]`` slot
+    assignment.  Summing ``|dL/dA|`` over K reports which dense candidate
+    times the detector loss can actually move through the transport bridge.
+    """
+
+    gradient = _gradient_abs(assignment, objective)
+    if gradient is None:
+        return None
+    if gradient.ndim != 3:
+        raise ValueError("structured_soft_slot_assignment must be [B, K, T]")
+    return gradient.sum(dim=1)
 
 
 def _detector_loss_terms(losses: Mapping[str, Any], component: str) -> list[Any]:
@@ -349,6 +365,9 @@ def _record_rows(
     cls_head_feature_contribution_dense: Any,
     reg_head_feature_contribution_dense: Any,
     sampling_logit_gradient: Any,
+    sampling_density_gradient: Any,
+    structured_assignment_gradient: Any,
+    selector_center_score_gradient: Any,
     source: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     grid = scores.get("grid")
@@ -397,6 +416,18 @@ def _record_rows(
                 "sampling_cumulative_rates": _tensor_row(scores.get("sampling_cumulative_rates"), row, valid_len),
                 "sampling_rate_logit_gradient_abs": _tensor_row(
                     sampling_logit_gradient, row, valid_len
+                ),
+                # For density transport, these are the primary detector-to-
+                # acquisition gradients.  The rate-logit field above remains
+                # only for compatibility with non-transport decoders.
+                "sampling_density_gradient_abs": _tensor_row(
+                    sampling_density_gradient, row, valid_len
+                ),
+                "structured_assignment_gradient_abs": _tensor_row(
+                    structured_assignment_gradient, row, valid_len
+                ),
+                "selector_center_score_gradient_abs": _tensor_row(
+                    selector_center_score_gradient, row, valid_len
                 ),
                 "detector_contribution_logits": _tensor_last_channel_matrix(
                     predicted, row, valid_len
@@ -627,6 +658,15 @@ def export_training_attribution(
     )
     sampling_logits = scores.get("decode_policy_logits")
     sampling_logit_gradient = _gradient_abs(sampling_logits, detector_objective)
+    sampling_density_gradient = _gradient_abs(
+        scores.get("density_probabilities"), detector_objective
+    )
+    structured_assignment_gradient = _slot_assignment_gradient_by_time(
+        scores.get("structured_soft_slot_assignment"), detector_objective
+    )
+    selector_center_score_gradient = _gradient_abs(
+        scores.get("center_scores"), detector_objective
+    )
 
     logits = scores.get("detector_contribution_logits")
     valid = scores.get("valid_mask")
@@ -678,6 +718,9 @@ def export_training_attribution(
         cls_head_feature_contribution_dense=cls_head_feature_contribution_dense,
         reg_head_feature_contribution_dense=reg_head_feature_contribution_dense,
         sampling_logit_gradient=sampling_logit_gradient,
+        sampling_density_gradient=sampling_density_gradient,
+        structured_assignment_gradient=structured_assignment_gradient,
+        selector_center_score_gradient=selector_center_score_gradient,
         source=source,
     )
     with output_path.open("w", encoding="utf-8") as handle:
@@ -701,6 +744,8 @@ def export_training_attribution(
             "input_x_gradient_is_auxiliary_pixel_sensitivity": True,
             "head_feature_attribution_is_train_only": True,
             "head_feature_attribution_is_primary_temporal_measurement": True,
+            "density_transport_gradient_is_detector_to_acquisition_measurement": True,
+            "legacy_decode_logit_gradient_is_not_primary_for_density_transport": True,
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

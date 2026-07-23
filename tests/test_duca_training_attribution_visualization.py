@@ -24,6 +24,9 @@ def _record(epoch: int) -> dict:
         "sampling_rates": [0.5] * 8,
         "sampling_density": [0.125] * 8,
         "sampling_rate_logit_gradient_abs": [0.01] * 8,
+        "sampling_density_gradient_abs": [0.02] * 8,
+        "structured_assignment_gradient_abs": [0.03] * 8,
+        "selector_center_score_gradient_abs": [0.04] * 8,
         "detector_cls_selected_input_x_gradient": [0.1] * 4,
         "detector_reg_selected_input_x_gradient": [0.2] * 4,
         "detector_cls_input_x_gradient_dense_interpolated": [0.1] * 8,
@@ -74,6 +77,16 @@ def test_head_feature_attribution_aligns_multiscale_temporal_inputs() -> None:
     assert torch.isfinite(contribution).all()
 
 
+def test_slot_assignment_gradient_collapses_slots_to_dense_time() -> None:
+    assignment = torch.randn(2, 3, 5, requires_grad=True)
+    objective = assignment.square().mean()
+    gradient = exporter._slot_assignment_gradient_by_time(assignment, objective)
+
+    assert gradient is not None
+    assert tuple(gradient.shape) == (2, 5)
+    assert torch.isfinite(gradient).all()
+
+
 def test_plotter_groups_one_video_window_across_epochs(tmp_path: Path) -> None:
     records = []
     for epoch in (0, 10):
@@ -98,7 +111,8 @@ def test_plotter_prefers_one_based_checkpoint_epoch_when_exporter_provides_it() 
 def test_training_attribution_plot_contract_labels_gt_as_noninference() -> None:
     source = Path(plotter.__file__).read_text(encoding="utf-8")
     assert "GT is overlay only, not inference input" in source
-    assert "sampling_rate_logit_gradient_abs" in source
+    assert "sampling_density_gradient_abs" in source
+    assert "structured_assignment_gradient_abs" in source
     assert "detector_cls_head_feature_x_gradient_dense_interpolated" in source
     assert "pixel sensitivity (aux.)" in source
 

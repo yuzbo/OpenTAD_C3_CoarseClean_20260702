@@ -161,15 +161,24 @@ def _plot_epoch(record: dict[str, Any], output_prefix: Path) -> list[Path]:
     feature_grad_ax.set_ylabel("head-feature gradient")
     feature_grad_ax.legend(loc="upper right", fontsize=7)
 
-    gradient = record.get("sampling_rate_logit_gradient_abs")
-    if gradient is not None:
-        selector_grad_ax.plot(x, gradient, label="|d detector loss / d rate logit|", linewidth=1.2)
+    density_gradient = record.get("sampling_density_gradient_abs")
+    assignment_gradient = record.get("structured_assignment_gradient_abs")
+    center_gradient = record.get("selector_center_score_gradient_abs")
+    legacy_gradient = record.get("sampling_rate_logit_gradient_abs")
+    for gradient, label, style in (
+        (density_gradient, "|d detector loss / d density|", "-"),
+        (assignment_gradient, "sum slots |d detector loss / d assignment|", "--"),
+        (center_gradient, "|d detector loss / d center score|", ":"),
+        (legacy_gradient, "|d detector loss / d rate logit| (legacy)", "-."),
+    ):
+        if gradient is not None:
+            selector_grad_ax.plot(x, gradient, label=label, linewidth=1.1, linestyle=style)
     logits = record.get("sampling_rate_logits")
     if logits is not None:
         selector_grad_ax.plot(x, logits, label="sampling-rate logit", linewidth=0.9, linestyle=":")
     _draw_gt_boundaries(selector_grad_ax, record)
     _selected_ticks(selector_grad_ax, record.get("selected_positions", []), level=0.0)
-    selector_grad_ax.set_ylabel("selector gradient")
+    selector_grad_ax.set_ylabel("detector-to-density\ngradient")
     selector_grad_ax.set_xlabel("dense temporal index")
     selector_grad_ax.legend(loc="upper right", fontsize=7)
     for axis in axes:
@@ -245,14 +254,20 @@ def _plot_epoch_overlay(rows: Sequence[dict[str, Any]], output_prefix: Path) -> 
         )
         if feature_gradient is not None:
             feature_grad_ax.plot(x, feature_gradient, color=color, linewidth=1.05, label=label)
-        gradient = row.get("sampling_rate_logit_gradient_abs")
+        gradient = row.get("sampling_density_gradient_abs")
+        if gradient is None:
+            gradient = row.get("structured_assignment_gradient_abs")
+        if gradient is None:
+            gradient = row.get("selector_center_score_gradient_abs")
+        if gradient is None:
+            gradient = row.get("sampling_rate_logit_gradient_abs")
         if gradient is not None:
             selector_grad_ax.plot(x, gradient, color=color, linewidth=1.05, label=label)
     score_ax.set_ylabel("transition score")
     rate_ax.set_ylabel("sampling rate")
     utility_ax.set_ylabel("cls head-feature\ncontribution")
     feature_grad_ax.set_ylabel("|d cls loss /\n d head feature|")
-    selector_grad_ax.set_ylabel("|dL/d rate logit|")
+    selector_grad_ax.set_ylabel("detector-to-density\ngradient")
     selector_grad_ax.set_xlabel("dense temporal index")
     for axis in axes:
         axis.set_xlim(0, max(valid_len - 1, 1))
