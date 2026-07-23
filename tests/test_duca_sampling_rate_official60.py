@@ -175,6 +175,8 @@ def test_rate_curriculum_keeps_uniform_warmup_and_tad_led_joint_phase(monkeypatc
     assert int(stage1.workflow.val_eval_interval) == 5
     assert stage1.workflow.formal_protocol == ""
     assert selector1.acquisition_policy == "budget_calibrated_sampling_rate"
+    assert selector1.training_uniform_companion_fraction == 0.0
+    assert selector1.training_uniform_companion_normalize_learned_gradient is False
     assert float(selector1.loss_weight_schedule.policy_alpha.start) == 0.0
     assert float(selector1.loss_weight_schedule.policy_alpha.end) == 0.0
     assert float(selector1.loss_weight_schedule.detector_gradient.end) == 0.0

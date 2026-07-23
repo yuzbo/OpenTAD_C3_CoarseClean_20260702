@@ -29,6 +29,9 @@ model = dict(
     frame_selector=dict(
         inference_policy_alpha=0.0,
         training_uniform_companion_fraction=0.0,
+        # Stage 1 has no learned-policy rows, so companion-only gradient
+        # normalization is inapplicable and must not leak from the joint base.
+        training_uniform_companion_normalize_learned_gradient=False,
         detector_gradient_mode="density_transport_st",
         detector_contribution_distillation_weight=0.0,
         coarse_trunk_lr=5.0e-5,
