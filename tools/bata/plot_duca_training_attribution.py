@@ -23,7 +23,11 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _epoch(record: dict[str, Any]) -> int:
     source = record.get("source", {})
-    value = source.get("checkpoint_epoch") if isinstance(source, dict) else None
+    value = (
+        source.get("checkpoint_epoch_one_based", source.get("checkpoint_epoch"))
+        if isinstance(source, dict)
+        else None
+    )
     return -1 if value is None else int(value)
 
 

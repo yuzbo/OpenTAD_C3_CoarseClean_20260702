@@ -43,6 +43,16 @@ def test_training_attribution_cli_exposes_fixed_batch_and_checkpoint_state() -> 
     assert '"gt_used_for_inference_decision": False' in source
 
 
+def test_training_attribution_normalizes_a_ddp_checkpoint_namespace() -> None:
+    state = {"module.frame_selector.weight": object(), "module.rpn_head.bias": object()}
+    normalized = exporter.normalize_model_state_dict(state)
+    assert set(normalized) == {"frame_selector.weight", "rpn_head.bias"}
+    with pytest.raises(ValueError, match="mixes DDP"):
+        exporter.normalize_model_state_dict(
+            {"module.frame_selector.weight": object(), "rpn_head.bias": object()}
+        )
+
+
 def test_plotter_groups_one_video_window_across_epochs(tmp_path: Path) -> None:
     records = []
     for epoch in (0, 10):
@@ -56,6 +66,12 @@ def test_plotter_groups_one_video_window_across_epochs(tmp_path: Path) -> None:
     assert sorted(plotter._epoch(record) for record in grouped["video_a|0"]) == [0, 10]
     assert plotter._normalize([1.0, 3.0]) == [0.25, 0.75]
     assert plotter._channel([[0.1, 0.2], [0.3, 0.4]], 1) == [0.2, 0.4]
+
+
+def test_plotter_prefers_one_based_checkpoint_epoch_when_exporter_provides_it() -> None:
+    record = _record(9)
+    record["source"]["checkpoint_epoch_one_based"] = 10
+    assert plotter._epoch(record) == 10
 
 
 def test_training_attribution_plot_contract_labels_gt_as_noninference() -> None:

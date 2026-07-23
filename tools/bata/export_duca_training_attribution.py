@@ -232,6 +232,24 @@ def _checkpoint_model_state(checkpoint: Mapping[str, Any], use_ema: str) -> tupl
     return key, state
 
 
+def normalize_model_state_dict(state_dict: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a strict non-DDP state dict for a fresh detector instance.
+
+    Training checkpoints are emitted from ``DistributedDataParallel`` while
+    this diagnostic intentionally rebuilds one plain detector.  Strip the
+    uniform DDP prefix, but fail closed on a mixed namespace rather than
+    silently loading a partial model.
+    """
+
+    keys = [str(key) for key in state_dict]
+    has_ddp_prefix = [key.startswith("module.") for key in keys]
+    if any(has_ddp_prefix) and not all(has_ddp_prefix):
+        raise ValueError("checkpoint state dict mixes DDP and non-DDP keys")
+    if not any(has_ddp_prefix):
+        return {str(key): value for key, value in state_dict.items()}
+    return {str(key)[len("module.") :]: value for key, value in state_dict.items()}
+
+
 def _record_rows(
     *,
     batch: Mapping[str, Any],
@@ -381,7 +399,7 @@ def export_training_attribution(
         raise ValueError("checkpoint must be a mapping")
     state_key, state_dict = _checkpoint_model_state(checkpoint, checkpoint_state)
     model = build_detector(copy.deepcopy(cfg.model))
-    incompatible = model.load_state_dict(state_dict, strict=True)
+    incompatible = model.load_state_dict(normalize_model_state_dict(state_dict), strict=True)
     if incompatible.missing_keys or incompatible.unexpected_keys:
         raise RuntimeError("full checkpoint did not strictly match the configured detector")
     model = model.to(torch_device).train()
@@ -451,6 +469,11 @@ def export_training_attribution(
         "checkpoint_sha256": _sha256(checkpoint_path),
         "checkpoint_state_key": state_key,
         "checkpoint_epoch": checkpoint.get("epoch"),
+        "checkpoint_epoch_one_based": (
+            None
+            if checkpoint.get("epoch") is None
+            else int(checkpoint["epoch"]) + 1
+        ),
         "git_commit": _git_commit(repo_root),
         "split": "train",
         "fixed_batch_index": int(batch_index),
