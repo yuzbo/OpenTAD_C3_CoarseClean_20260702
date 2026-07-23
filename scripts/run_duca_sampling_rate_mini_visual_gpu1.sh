@@ -67,10 +67,6 @@ for epoch in 9 19 29; do
     --output-jsonl "${RUN_ROOT}/selection/epoch_${label}.jsonl" \
     --summary-json "${RUN_ROOT}/selection/epoch_${label}.summary.json" \
     | tee "${RUN_ROOT}/selection/epoch_${label}.out"
-  "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
-    --records-jsonl "${RUN_ROOT}/selection/epoch_${label}.jsonl" \
-    --output-dir "${RUN_ROOT}/figures/epoch_${label}" --bootstrap-samples 32 \
-    | tee "${RUN_ROOT}/figures/epoch_${label}.out"
 done
 
 "${PYTHON}" -m tools.bata.plot_duca_training_attribution \
