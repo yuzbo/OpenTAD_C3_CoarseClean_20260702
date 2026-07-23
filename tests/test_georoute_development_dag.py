@@ -193,3 +193,11 @@ def test_gpu_submission_uses_n16r4_outer_resources_and_exact_inner_step():
         assert '"--mem", "96G"' not in source
     for source in (p0_launcher, stage_launcher):
         assert "srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M" in source
+
+
+def test_p0_finalizer_launcher_seals_p0_without_dispatching_development_stages():
+    launcher = (ROOT / "scripts" / "run_georoute_p0_finalize_slurm.sh").read_text(encoding="utf-8")
+    assert "tools/bata/finalize_georoute_p0_gate.py" in launcher
+    assert "georoute_dag_dispatch.py" not in launcher
+    assert "deploy_georoute_development_dag.py" not in launcher
+    assert "run_georoute_stage_slurm.sh" not in launcher
