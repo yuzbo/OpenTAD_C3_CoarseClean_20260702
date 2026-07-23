@@ -211,7 +211,12 @@ class DucaTransitionUtilityScorer(nn.Module):
         # coarse classifier: cls/reg utility is distilled from a uniform
         # detector pass and only used by the sampling-rate policy.
         self.detector_utility_head = nn.Linear(scorer_hidden_dim, 2)
-        nn.init.zeros_(self.detector_utility_head.weight)
+        # Keep the predictor close to neutral without blocking the first
+        # contribution-distillation gradient from reaching the shared
+        # transition path and, when enabled, the full ASFormer encoder. The
+        # policy fusion layer is zero-initialized separately, so this small
+        # initialization cannot perturb the initial sampling policy.
+        nn.init.normal_(self.detector_utility_head.weight, mean=0.0, std=1.0e-3)
         nn.init.zeros_(self.detector_utility_head.bias)
 
     def forward(self, descriptors: torch.Tensor) -> torch.Tensor:
