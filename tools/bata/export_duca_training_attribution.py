@@ -368,6 +368,7 @@ def export_training_attribution(
     import numpy as np
     import torch
     from mmengine.config import Config
+    from opentad import datasets as _opentad_datasets  # noqa: F401
     from opentad.models import build_detector
 
     random.seed(int(seed))

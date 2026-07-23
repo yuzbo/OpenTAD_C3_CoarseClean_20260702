@@ -67,7 +67,7 @@ for epoch in 0 4 9; do
     | tee "${RUN_ROOT}/selection/epoch_${label}.out"
   "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
     --records-jsonl "${RUN_ROOT}/selection/epoch_${label}.jsonl" \
-    --output-dir "${RUN_ROOT}/figures/epoch_${label}" --bootstrap-repeats 32 \
+    --output-dir "${RUN_ROOT}/figures/epoch_${label}" --bootstrap-samples 32 \
     | tee "${RUN_ROOT}/figures/epoch_${label}.out"
 done
 
