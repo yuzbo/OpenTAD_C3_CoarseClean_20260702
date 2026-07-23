@@ -97,6 +97,12 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   test and a 180x320 CUDA mechanical gate are required before a fresh P1
   namespace may be submitted. There is still no P1 metric, cost evidence,
   P2/P3 training, official test, or paper claim.
+- The new 180x320 hybrid/ST CUDA padding gate is queued as Job `1181047`.
+  A fresh P1 bootstrap was intentionally tested before submission and the
+  scheduler rejected it with `AssocMaxSubmitJobLimit`; therefore no second
+  bootstrap Job or namespace exists. The test-only admission guard has done
+  its job: P1 will be retried only after the account has room for the entire
+  P1 matrix and selector, while P2/P3 remain result-gated descendants.
 
 ## Frozen decision logic
 

@@ -946,3 +946,11 @@ append_only: true
   resize or coordinate change; an exact 180x320 regression test and a fresh
   180x320 CUDA mechanical gate are now mandatory before a new P1 namespace.
   P2/P3, metrics, costs, official test and claims remain closed.
+
+- 2026-07-23: submitted one new 180x320 hybrid/ST CUDA native-padding gate as
+  Job `1181047`. A fresh P1 bootstrap first used Slurm `--test-only`, which
+  was rejected with `AssocMaxSubmitJobLimit`; no replacement P1 bootstrap,
+  namespace, P1 leaf, P2 leaf, or P3 leaf was submitted. The newly added
+  all-leaf admission preflight therefore prevented a second invalid partial
+  matrix. The account's unrelated queued/running work must free a slot before
+  the sealed P1/P2/P3 DAG can be admitted.

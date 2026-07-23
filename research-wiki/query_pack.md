@@ -18,6 +18,9 @@ max_chars: 8000
   regression and CUDA mechanical gate before any fresh P1 DAG.
 - P2/P3 remain result-gated; no metric, cost, official test, A-MoD result, or
   paper claim exists.
+- Native-padding CUDA Gate `1181047` is pending. A fresh P1 bootstrap
+  `--test-only` admission was rejected with `AssocMaxSubmitJobLimit`, so no
+  second partial P1 root, P1 Job, P2 Job, or P3 Job was created.
 
 ## Continuous-RoI S2 当前状态（2026-07-21）
 
