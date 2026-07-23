@@ -618,7 +618,10 @@ def run_gate(
         torch.equal(captured_inputs[0], expected_hard),
         "real AdaTAD backbone input differs from exact hard gather",
     )
-    if selector.temporal_sampling_contract is None:
+    temporal_sampling_contract = getattr(
+        selector, "temporal_sampling_contract", None
+    )
+    if temporal_sampling_contract is None:
         observed_holes = []
         for row in positions:
             valid_positions = row[row >= 0]
@@ -653,7 +656,7 @@ def run_gate(
             "strictly_increasing_unique": True,
         }
     else:
-        temporal_audit = selector.temporal_sampling_contract.audit_positions(
+        temporal_audit = temporal_sampling_contract.audit_positions(
             positions,
             batch["masks"],
         )
