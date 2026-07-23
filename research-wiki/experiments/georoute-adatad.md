@@ -111,8 +111,9 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   `MaxSubmitJobs=16`; at dispatch it had nine active submissions, whereas the
   complete P1 matrix requires eight additional slots. The dispatcher now
   checks this arithmetic before a P1 root is created and cancels already
-  submitted leaves if a later real submission is rejected. P1 remains held
-  until active submissions are at most eight.
+  submitted leaves if a later real submission is rejected. Because the
+  bootstrap itself also counts against the cap, P1 remains held until there
+  are at most seven active submissions before the bootstrap is queued.
 
 ## Frozen decision logic
 

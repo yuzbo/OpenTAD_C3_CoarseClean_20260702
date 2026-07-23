@@ -30,7 +30,8 @@ max_chars: 8000
   All `1181187`--`1181193` leaves were cancelled; `1181187` ran for 20 seconds
   only and is invalid. New dispatch code rejects `active + leaves + selector`
   before creating a P1 root and cancels leaves on any later submit rejection.
-  P1 must wait for at most eight active account jobs; P2/P3 remain absent.
+  P1 must wait for at most seven active account jobs before its bootstrap is
+  queued; P2/P3 remain absent.
 
 ## Continuous-RoI S2 当前状态（2026-07-21）
 

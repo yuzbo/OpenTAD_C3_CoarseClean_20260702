@@ -976,5 +976,7 @@ append_only: true
   rejected the eighth selector. Jobs `1181187`--`1181193` were cancelled;
   dense `1181187` ran for 20 seconds and is invalid diagnostic evidence. The
   next minimal repair preflights aggregate headroom and compensates by
-  cancelling leaves if any real post-preflight submission fails. P1/P2/P3
-  remain unstarted and no result or claim changed.
+  cancelling leaves if any real post-preflight submission fails. The bootstrap
+  itself consumes one slot, so its pre-submit condition is at most seven
+  pre-existing active jobs. P1/P2/P3 remain unstarted and no result or claim
+  changed.
