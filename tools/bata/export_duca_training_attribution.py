@@ -361,6 +361,7 @@ def export_training_attribution(
     batch_index: int = 0,
     batch_size: int | None = 2,
     seed: int = 3407,
+    backbone_pretrain: str | None = None,
 ) -> dict[str, Any]:
     """Replay one real training batch and export train-only attribution evidence."""
 
@@ -391,6 +392,8 @@ def export_training_attribution(
         raise FileNotFoundError(checkpoint_path)
 
     cfg = Config.fromfile(str(config_path))
+    if backbone_pretrain is not None:
+        cfg.model.backbone.custom.pretrain = str(Path(backbone_pretrain).expanduser().resolve())
     torch_device = torch.device(device)
     if torch_device.type == "cuda":
         torch.cuda.set_device(torch_device)
@@ -536,6 +539,10 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-index", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--seed", type=int, default=3407)
+    parser.add_argument(
+        "--backbone-pretrain",
+        help="absolute VideoMAE checkpoint path used when rebuilding the detector",
+    )
     return parser
 
 
@@ -551,6 +558,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_index=args.batch_index,
         batch_size=args.batch_size,
         seed=args.seed,
+        backbone_pretrain=args.backbone_pretrain,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
