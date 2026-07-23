@@ -331,6 +331,7 @@ def continuous_density_transport(
             row_components = F.avg_pool1d(
                 padded,
                 kernel_size=smoothing_kernel,
+                stride=1,
             ).squeeze(1)
         learned_components = torch.softmax(row_components / temperature, dim=-1)
         mixture_weights = torch.softmax(mixture_logits[batch_index].float(), dim=0)
