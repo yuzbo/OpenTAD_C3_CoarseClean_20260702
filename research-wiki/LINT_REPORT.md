@@ -16,7 +16,7 @@ status: pass_with_source_warnings
 - Missing graph node references: 0.
 - Orphan idea/experiment/claim nodes: 0.
 - Broken curated relative links: 0.
-- `query_pack.md`: 7996 characters, below the 8000-character limit.
+- `query_pack.md`: 7055 Unicode code points, below the 8000-character limit.
 - The installed ARIS helper exposes no `lint` command. A read-only structural
   validator parsed all 52 JSONL edges, checked every edge endpoint against the
   current node set, and enforced the query-pack budget; all checks passed.

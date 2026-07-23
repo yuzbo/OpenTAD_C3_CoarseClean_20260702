@@ -8,48 +8,29 @@ max_chars: 8000
 
 ## Continuous-RoI S2 当前状态（2026-07-21）
 
-- 唯一正式运行时为
-  [`9a61da27`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/9a61da27e65c2227c8d2a0c547d8f3cb44966738)；
-  clean Linux exact suite 为 `81 passed`。
-- Integrated Gate Job `1177662` 已 `COMPLETED 0:0`，重新验证 full-model、
-  fit160/gate40、D160/G96/U128 各两次成功更新、optimizer/scheduler/final EMA、
-  单 GPU Slurm 身份和 official-test 零访问。
-- 首个矩阵 `1177641-1177649` 因 Windows `CR` 污染在 preflight 失败；旧 campaign
-  `66cd32ff...` 已冻结，部署契约现拒绝控制字符并绑定 Git launcher。
-- 唯一正式 development 训练矩阵 `1177668-1177676` 已全部 `COMPLETED 0:0`。
-  九格均被从现场 checkpoint/config/sidecar/completion 重新加载验证：每格 60 epochs、
-  80 successful updates/epoch、总计 4,800 successful updates、final-EMA-only。
-  部署与 completion 契约禁止 official test，且没有 official-test Job、结果或证据产物；
-  历史训练未做 syscall 级访问审计，因此不能表述为 runtime zero-open。AMP skips 为
-  `3-4`，单 batch 最大 retry 为 `1-2`；
-  未见 Traceback/OOM/non-finite/exhausted retry、scheduler/EMA/update parity 或
-  fail marker。
-- finalizer `1178744` 与只读重放 `1178746` 均 `COMPLETED 0:0`；receipt SHA
-  `9eedfa1e...7dda5`，九格 raw/EMA/optimizer 严格加载且仅有冻结的
-  `module.rpn_head.loss_normalizer` buffer dtype 差异。
-- 状态仍是 `experiment_running`，不是 crop-sufficiency 结果。没有 development mAP、
-  reference sweep、cost profile、official-test 结果、learned ROI 或 paper claim。
-- v2.1 reference 阶段现处于协议 HOLD：FS/VS 共享 `sx,sy` 但 decoder 的物理中心依赖
-  `w,h`，所以并不共享物理中心轨迹；Sobol engine/dtype/serialization/KAT、raw candidate
-  ID 规则、无标注 raw entrypoint、privileged join/tie/statistics 也未完全机器冻结。
-  禁止实现者猜测后排队；training receipt 已封存，下一步只允许发布最小 v2.2
-  corrigendum。official test 继续封存，S3 learned ROI 继续禁止。
+- 正式训练提交 `9a61da27` 的 Gate `1177662` 与 exact-nine
+  `1177668-1177676` 已完成；每格为 60 epochs、4,800 successful updates、final-EMA-only，
+  且 official test 未打开。completion receipt 是 `PASS_TRAINING_ONLY`，不等于 crop
+  sufficiency、mAP、成本或 learned ROI 结果。
+- reference 协议仍 `HOLD`：fixed/variable 没有共享物理中心轨迹，且 Sobol 生成器、候选 ID
+  权限、annotation-free raw、privileged join/tie/statistics 尚未共同冻结。只允许 result-blind
+  v2.2 corrigendum；official test 和 S3 均继续封存。
 
 ## Geometry-Residual-Depth Routing / GeoRoute（2026-07-23）
 
-- 状态为 `implementation_fix_pending_cuda_p0`：已实现单重主干原生 tubelet、
-  exact-K ROI/free/hybrid、几何侧信息因果对照、P0 与结果盲 DAG；现有 U128
-  不是 GeoRoute。
-- 外部 v1 审查为 `HOLD`，接受原生 token、真实检测损失、单重主干和间隔
-  Dense-MoD 的问题拆解。Windows `c10.dll` 阻塞本地 Torch；仅 N16R4 CUDA
-  P0 可验证模型数值、梯度、显存和一次真实前向。
-- 首次 P0 外层单卡 `96G` 申请被 N16R4 的 `55G/GPU` 站点策略在提交前拒绝，未创建
-  作业、未执行模型、未产生结果；部署器已改为站点合规的外层双卡/八 CPU 与内层精确单卡
-  `96G` step，重投前必须重新做 Linux focused check。
-- P1 必须同预算比较 fixed/random/free/ROI/hybrid 与 fixed-lattice +
-  geometry-side-channel；free 在高 IoU 和全成本获胜即杀死 ROI 主张。当前无
-  mAP、成本、official-test、A-MoD 结果或论文主张。
-- P0：hybrid/ST过；dense no-grad 差6.56e-4失败，保持1e-4改同autograd；第三叶限额。
+- 状态为 `tested_p0_mechanical_only`：已实现单重主干原生 tubelet、exact-K
+  ROI/free/hybrid、几何对照和结果盲 DAG；U128 与当前路线无关。
+- 有效 P0 模型提交为
+  [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)：
+  `1180906` dense、`1180907` ROI score-function、`1180927` hybrid 均
+  `COMPLETED 0:0`。dense 使用匹配 autograd 的数值参考；hybrid 满足 exact-K=32、
+  一次重主干和几何/residual scout 检测梯度；三者只证明 CUDA 接口与梯度机械性质。
+- P0-only finalizer 修复提交
+  [`c2a3c69`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/c2a3c69d9006b32b1ca18f4ce66222b59550c45f)
+  的 Job `1180966` 已封存 suite `PASS_MECHANICAL_ONLY`
+  (`a6f8ea…ce0b1`)；旧 `1180963` 因 Python 模块入口 fail-closed，保留诊断。
+- P1 未排队：必须同预算比较 fixed/random/free/ROI/hybrid 与 geometry 对照；free
+  在高 IoU/总成本获胜即杀 ROI 主张。仍无 mAP、全成本、official-test、A-MoD 或论文主张。
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 

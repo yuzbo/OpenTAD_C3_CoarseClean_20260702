@@ -907,3 +907,19 @@ append_only: true
   dispatch then detaches it, and makes that condition a validated P0 report
   field. Fresh Linux/CUDA verification remains mandatory; P1/P2/P3 stay
   closed.
+
+- 2026-07-23: fresh model-path commit `4a9358d` passed the remote focused suite
+  and completed all three independent GeoRoute CUDA one-step leaves: `1180906`
+  (dense all-token parity), `1180907` (ROI score-function), and `1180927`
+  (hybrid straight-through), each `COMPLETED 0:0`.  The dense report uses a
+  matching-autograd numerical reference; hybrid records exact unique `K=32`,
+  one packed heavy forward, real AdaTAD `cls_loss`/`reg_loss`, and nonzero
+  geometry/residual scout gradients; score-function binds detector losses to
+  the geometry scout.  The first P0-only finalizer `1180963` failed closed
+  before output because the shell launcher executed a file path that could not
+  import `tools`.  Commit `c2a3c69` switched it to module execution, passed
+  local and remote focused checks, and replacement `1180966` completed `0:0`.
+  It sealed suite SHA
+  `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1` as
+  `PASS_MECHANICAL_ONLY`, without a P1 job, training, evaluator, or official
+  test.  This authorizes no performance or paper claim.

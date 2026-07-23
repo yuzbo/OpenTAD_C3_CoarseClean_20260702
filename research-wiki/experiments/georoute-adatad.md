@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: implemented
-status: implementation_fix_pending_cuda_p0
+stage: tested
+status: tested_p0_mechanical_only
 updated: 2026-07-23
 ---
 
@@ -57,6 +57,26 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   contract. It still requires a fresh CUDA verification.
 - No development metric, cost result, official-test record, paper claim, or
   A-MoD experiment exists.
+- **Authoritative current P0 evidence:** the model-path commit
+  [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
+  produced three CUDA one-step reports in
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_adatad_4a9358d_p0_20260723_102943`:
+  dense all-token parity Job `1180906`, score-function ROI Job `1180907`, and
+  straight-through hybrid Job `1180927`, all `COMPLETED 0:0`.  The dense report
+  uses matching autograd dispatch and passed its frozen combined numerical
+  comparison; hybrid has exact unique `K=32`, one packed heavy VideoMAE forward,
+  real AdaTAD classification/regression loss, and finite nonzero geometry and
+  residual scout gradients.  The score-function report binds real detector
+  losses to the geometry scout.
+- The P0-only finalizer first failed closed as Job `1180963` before writing a
+  report because its file-path Python entrypoint could not import the repository
+  `tools` package.  It is preserved as diagnostic evidence.  The minimal module
+  entrypoint repair
+  [`c2a3c69`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/c2a3c69d9006b32b1ca18f4ce66222b59550c45f)
+  passed remote shell/focused checks; replacement Job `1180966` completed
+  `0:0` and sealed `p0_finalization.json` as `PASS_MECHANICAL_ONLY`, suite SHA
+  `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`.
+  It did not dispatch P1.  This is not accuracy, total-cost, or paper evidence.
 
 ## Frozen decision logic
 
