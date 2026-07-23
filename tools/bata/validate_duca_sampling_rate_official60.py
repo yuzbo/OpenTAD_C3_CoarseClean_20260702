@@ -121,7 +121,10 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         _require(scope == "asformer_full_encoder", "full adaptation arm must expose the full ASFormer encoder")
         _require(float(schedule.asformer_adapt.start) == 0.0 and float(schedule.asformer_adapt.end) == 1.0, "full adaptation arm must use a gated ASFormer schedule")
     else:
-        _require(scope == "none", "protected arm must stop detector gradients before ASFormer")
+        _require(
+            scope == "asformer_full_encoder",
+            "transition supervision must retain its full-ASFormer auxiliary route",
+        )
         _require(float(schedule.asformer_adapt.end) == 0.0, "protected arm cannot adapt ASFormer from detector utility")
 
     _require(int(cfg.workflow.end_epoch) == 60, "official protocol must run 60 epochs")

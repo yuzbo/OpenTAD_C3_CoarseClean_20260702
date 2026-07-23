@@ -100,7 +100,11 @@ model = dict(
             ),
         ),
         actionness_source_cfg=dict(
-            policy_hidden_gradient_scope="none",
+            # Transition/GT-boundary supervision must train the temporal coarse
+            # classifier. Detector feedback remains protected because its
+            # separate schedule keeps policy_hidden_gradient_scale at zero in
+            # the non-adaptation arms.
+            policy_hidden_gradient_scope="asformer_full_encoder",
         ),
     ),
 )

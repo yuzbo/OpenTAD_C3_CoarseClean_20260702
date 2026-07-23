@@ -48,7 +48,7 @@ def test_only_adaptation_variants_open_declared_asformer_policy_gradient(monkeyp
         expected_scope = {
             "rate_both_asformer_adapt": "asformer_last_encoder_layer",
             "rate_both_asformer_full_adapt": "asformer_full_encoder",
-        }.get(key, "none")
+        }.get(key, "asformer_full_encoder")
         assert selector.actionness_source_cfg.policy_hidden_gradient_scope == expected_scope
         assert float(selector.loss_weight_schedule.asformer_adapt.end) == (
             1.0 if key in {"rate_both_asformer_adapt", "rate_both_asformer_full_adapt"} else 0.0

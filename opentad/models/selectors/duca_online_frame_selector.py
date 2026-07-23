@@ -2583,7 +2583,11 @@ class DucaOnlineFrameSelector(nn.Module):
                 "mandatory_boundary_group_count"
             ),
             "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
-            "policy_hidden_gradient_scale": self.policy_hidden_gradient_scale,
+            "policy_hidden_gradient_scale": float(policy_hidden_gradient_scale),
+            "coarse_policy_hidden_requires_grad": bool(
+                coarse_policy_hidden_features is not None
+                and coarse_policy_hidden_features.requires_grad
+            ),
             "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),
             "training_uniform_companion_fraction": float(
                 self.training_uniform_companion_fraction
