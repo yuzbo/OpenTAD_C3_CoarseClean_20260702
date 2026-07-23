@@ -34,13 +34,13 @@ def test_mini_visual_config_performs_real_bounded_training() -> None:
     cfg = Config.fromfile(str(CONFIG))
     contract = cfg.duca_mini_visual_contract
     assert contract.purpose == "trained_small_sample_mechanism_diagnostic_not_official_map"
-    assert int(contract.train_epochs) == 10
+    assert int(contract.train_epochs) == 30
     assert int(contract.train_updates_per_epoch) == 4
-    assert int(contract.expected_optimizer_updates) == 40
+    assert int(contract.expected_optimizer_updates) == 120
     assert cfg.workflow.formal_protocol == ""
-    assert int(cfg.workflow.end_epoch) == 10
+    assert int(cfg.workflow.end_epoch) == 30
     assert int(cfg.workflow.max_train_iters) == 4
-    assert int(cfg.workflow.checkpoint_interval) == 1
+    assert int(cfg.workflow.checkpoint_interval) == 10
     assert int(cfg.solver.train.batch_size) == 1
     schedule = cfg.model.frame_selector.loss_weight_schedule
     assert float(schedule.policy_alpha.end) == 1.0
@@ -55,6 +55,9 @@ def test_mini_visual_runner_exports_trained_and_inference_evidence() -> None:
     assert "export_duca_training_attribution" in source
     assert "export_duca_selection_quality" in source
     assert "plot_duca_training_attribution" in source
+    assert "plot_duca_inference_selection" in source
     assert "--limit-batches 2" in source
-    assert "epoch in 0 4 9" in source
+    assert "epoch in 9 19 29" in source
+    assert "for batch_index in 0 1" in source
+    assert "--all-fixed-samples" in source
     assert "official_map_reported\": False" in source

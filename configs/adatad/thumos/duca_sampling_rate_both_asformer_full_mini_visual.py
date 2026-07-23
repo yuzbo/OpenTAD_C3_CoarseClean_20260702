@@ -1,6 +1,6 @@
 """Small real-training diagnostic for sampling-rate mechanism figures.
 
-This deliberately reuses the full sampling-rate model.  It runs only forty
+This deliberately reuses the full sampling-rate model.  It runs only 120
 optimizer updates so the same fixed train and validation windows can show how
 the policy changes from the uniform warmup to a learned sampling rate.  It is
 not an official-60 result and never reports mAP.
@@ -13,12 +13,12 @@ duca_mini_visual_contract = dict(
     task="offline_temporal_action_detection",
     route="DUCA_BUDGET_CALIBRATED_SAMPLING_RATE_MINI_VISUAL",
     purpose="trained_small_sample_mechanism_diagnostic_not_official_map",
-    train_epochs=10,
+    train_epochs=30,
     train_updates_per_epoch=4,
-    expected_optimizer_updates=40,
-    tracked_train_batch_index=0,
+    expected_optimizer_updates=120,
+    tracked_train_batch_indices=[0, 1],
     tracked_validation_batches=2,
-    checkpoint_epochs=[1, 5, 10],
+    checkpoint_epochs=[10, 20, 30],
     metric_claim_allowed=False,
     paper_claim_allowed=False,
 )
@@ -26,33 +26,33 @@ duca_mini_visual_contract = dict(
 
 model = dict(
     frame_selector=dict(
-        # Compress the same curriculum into forty real updates.  Epoch one is
-        # still the near-uniform reference, epoch five is the handoff, and
-        # epoch ten is the learned-rate state used by the diagnostic panels.
+        # Compress the same curriculum into 120 real updates.  Epoch ten is
+        # still the near-uniform reference, epoch twenty is the handoff, and
+        # epoch thirty is the learned-rate state used by the diagnostic panels.
         loss_weight_schedule=dict(
             detector_gradient=dict(
                 start=0.0,
                 end=0.25,
-                warmup_steps=8,
-                transition_steps=12,
+                warmup_steps=24,
+                transition_steps=48,
             ),
             policy_alpha=dict(
                 start=0.0,
                 end=1.0,
-                warmup_steps=4,
-                transition_steps=12,
+                warmup_steps=12,
+                transition_steps=48,
             ),
             detector_contribution=dict(
                 start=0.0,
                 end=1.0,
-                warmup_steps=4,
-                transition_steps=12,
+                warmup_steps=12,
+                transition_steps=48,
             ),
             asformer_adapt=dict(
                 start=0.0,
                 end=1.0,
-                warmup_steps=4,
-                transition_steps=12,
+                warmup_steps=12,
+                transition_steps=48,
             ),
         ),
     )
@@ -61,8 +61,8 @@ model = dict(
 
 scheduler = dict(
     type="LinearWarmupCosineAnnealingLR",
-    warmup_epoch=1,
-    max_epoch=10,
+    warmup_epoch=3,
+    max_epoch=30,
 )
 
 
@@ -81,8 +81,8 @@ workflow = dict(
     formal_protocol="",
     training_profile="mini_visualization_only",
     formal_successful_update_contract=False,
-    end_epoch=10,
-    checkpoint_interval=1,
+    end_epoch=30,
+    checkpoint_interval=10,
     logging_interval=1,
     max_train_iters=4,
     val_loss_interval=-1,

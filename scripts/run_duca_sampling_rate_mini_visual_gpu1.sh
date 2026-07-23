@@ -47,18 +47,20 @@ mkdir -p "${RUN_ROOT}/attribution" "${RUN_ROOT}/selection" "${RUN_ROOT}/figures"
   2>&1 | tee "${RUN_ROOT}/train.out"
 
 ACTUAL_WORK_DIR="${WORK_DIR}/gpu1_id0"
-for epoch in 0 4 9; do
+for epoch in 9 19 29; do
   checkpoint="${ACTUAL_WORK_DIR}/checkpoint/epoch_${epoch}.pth"
   [[ -f "${checkpoint}" ]] || fail "missing checkpoint ${checkpoint}"
   label=$((epoch + 1))
-  "${PYTHON}" -m tools.bata.export_duca_training_attribution \
-    --config "${CONFIG}" --checkpoint "${checkpoint}" \
-    --checkpoint-state state_dict_ema --device cuda:0 \
-    --batch-index 0 --batch-size 1 --seed 3407 \
-    --backbone-pretrain "${ADATAD_PRETRAIN_PATH}" \
-    --output-jsonl "${RUN_ROOT}/attribution/epoch_${label}.jsonl" \
-    --summary-json "${RUN_ROOT}/attribution/epoch_${label}.summary.json" \
-    | tee "${RUN_ROOT}/attribution/epoch_${label}.out"
+  for batch_index in 0 1; do
+    "${PYTHON}" -m tools.bata.export_duca_training_attribution \
+      --config "${CONFIG}" --checkpoint "${checkpoint}" \
+      --checkpoint-state state_dict_ema --device cuda:0 \
+      --batch-index "${batch_index}" --batch-size 1 --seed 3407 \
+      --backbone-pretrain "${ADATAD_PRETRAIN_PATH}" \
+      --output-jsonl "${RUN_ROOT}/attribution/train_batch_${batch_index}_epoch_${label}.jsonl" \
+      --summary-json "${RUN_ROOT}/attribution/train_batch_${batch_index}_epoch_${label}.summary.json" \
+      | tee "${RUN_ROOT}/attribution/train_batch_${batch_index}_epoch_${label}.out"
+  done
   "${PYTHON}" -m tools.bata.export_duca_selection_quality \
     --config "${CONFIG}" --selector-config "${CONFIG}" --checkpoint "${checkpoint}" \
     --split test --batch-size 1 --limit-batches 2 --use-ema true --device cuda:0 \
@@ -72,11 +74,23 @@ for epoch in 0 4 9; do
 done
 
 "${PYTHON}" -m tools.bata.plot_duca_training_attribution \
-  --records-jsonl "${RUN_ROOT}/attribution/epoch_1.jsonl" \
-  "${RUN_ROOT}/attribution/epoch_5.jsonl" \
-  "${RUN_ROOT}/attribution/epoch_10.jsonl" \
+  --records-jsonl "${RUN_ROOT}/attribution/train_batch_0_epoch_10.jsonl" \
+  "${RUN_ROOT}/attribution/train_batch_0_epoch_20.jsonl" \
+  "${RUN_ROOT}/attribution/train_batch_0_epoch_30.jsonl" \
+  "${RUN_ROOT}/attribution/train_batch_1_epoch_10.jsonl" \
+  "${RUN_ROOT}/attribution/train_batch_1_epoch_20.jsonl" \
+  "${RUN_ROOT}/attribution/train_batch_1_epoch_30.jsonl" \
   --output-prefix "${RUN_ROOT}/figures/training_attribution" \
+  --all-fixed-samples \
   | tee "${RUN_ROOT}/figures/training_attribution.out"
+
+"${PYTHON}" -m tools.bata.plot_duca_inference_selection \
+  --records-jsonl "${RUN_ROOT}/selection/epoch_10.jsonl" \
+  "${RUN_ROOT}/selection/epoch_20.jsonl" \
+  "${RUN_ROOT}/selection/epoch_30.jsonl" \
+  --output-prefix "${RUN_ROOT}/figures/validation_selection" \
+  --all-fixed-samples \
+  | tee "${RUN_ROOT}/figures/validation_selection.out"
 
 "${PYTHON}" - "${RUN_ROOT}" "${EXPECTED_COMMIT}" <<'PY'
 import hashlib
@@ -86,8 +100,9 @@ from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
 paths = [
-    root / "attribution" / f"epoch_{epoch}.summary.json"
-    for epoch in (1, 5, 10)
+    root / "attribution" / f"train_batch_{batch}_epoch_{epoch}.summary.json"
+    for batch in (0, 1)
+    for epoch in (10, 20, 30)
 ]
 
 def sha256(path: Path) -> str:
@@ -98,14 +113,14 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 payload = {
-    "schema_version": "duca_mini_visual_training_v1",
+    "schema_version": "duca_mini_visual_training_v2",
     "git_commit": sys.argv[2],
     "purpose": "trained_small_sample_mechanism_diagnostic_not_official_map",
-    "train_epochs": 10,
-    "optimizer_updates": 40,
-    "tracked_training_batch": {"split": "train", "batch_index": 0, "batch_size": 1},
+    "train_epochs": 30,
+    "optimizer_updates": 120,
+    "tracked_training_batches": {"split": "train", "batch_indices": [0, 1], "batch_size": 1},
     "tracked_validation": {"split": "test", "batch_size": 1, "limit_batches": 2},
-    "checkpoint_epochs": [1, 5, 10],
+    "checkpoint_epochs": [10, 20, 30],
     "gt_role": "train_loss_or_posthoc_overlay_never_inference_decision",
     "attribution_summary_sha256": {path.name: sha256(path) for path in paths},
     "official_map_reported": False,

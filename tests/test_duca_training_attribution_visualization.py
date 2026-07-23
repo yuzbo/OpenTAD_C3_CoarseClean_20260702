@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import torch
 
 from tools.bata import export_duca_training_attribution as exporter
 from tools.bata import plot_duca_training_attribution as plotter
@@ -27,6 +28,10 @@ def _record(epoch: int) -> dict:
         "detector_reg_selected_input_x_gradient": [0.2] * 4,
         "detector_cls_input_x_gradient_dense_interpolated": [0.1] * 8,
         "detector_reg_input_x_gradient_dense_interpolated": [0.2] * 8,
+        "detector_cls_head_feature_gradient_abs_dense_interpolated": [0.3] * 8,
+        "detector_reg_head_feature_gradient_abs_dense_interpolated": [0.4] * 8,
+        "detector_cls_head_feature_x_gradient_dense_interpolated": [0.5] * 8,
+        "detector_reg_head_feature_x_gradient_dense_interpolated": [0.6] * 8,
         "detector_contribution_prediction_distribution": [[0.125, 0.125]] * 8,
         "gt_segments": [[2.0, 6.0]],
         "gt_boundary_validity": [[True, True]],
@@ -51,6 +56,22 @@ def test_training_attribution_normalizes_a_ddp_checkpoint_namespace() -> None:
         exporter.normalize_model_state_dict(
             {"module.frame_selector.weight": object(), "rpn_head.bias": object()}
         )
+
+
+def test_head_feature_attribution_aligns_multiscale_temporal_inputs() -> None:
+    feature_a = torch.randn(2, 3, 8, requires_grad=True)
+    feature_b = torch.randn(2, 5, 4, requires_grad=True)
+    objective = feature_a.square().mean() + 0.5 * feature_b.square().mean()
+
+    gradient, contribution = exporter._head_feature_temporal_attribution(
+        [feature_a, feature_b], objective, selected_slots=6
+    )
+
+    assert gradient is not None and contribution is not None
+    assert tuple(gradient.shape) == (2, 6)
+    assert tuple(contribution.shape) == (2, 6)
+    assert torch.isfinite(gradient).all()
+    assert torch.isfinite(contribution).all()
 
 
 def test_plotter_groups_one_video_window_across_epochs(tmp_path: Path) -> None:
@@ -78,7 +99,8 @@ def test_training_attribution_plot_contract_labels_gt_as_noninference() -> None:
     source = Path(plotter.__file__).read_text(encoding="utf-8")
     assert "GT is overlay only, not inference input" in source
     assert "sampling_rate_logit_gradient_abs" in source
-    assert "detector_cls_input_x_gradient_dense_interpolated" in source
+    assert "detector_cls_head_feature_x_gradient_dense_interpolated" in source
+    assert "pixel sensitivity (aux.)" in source
 
 
 def test_plotter_renders_png_and_pdf_from_synthetic_train_only_records(tmp_path: Path) -> None:
@@ -100,3 +122,29 @@ def test_plotter_renders_png_and_pdf_from_synthetic_train_only_records(tmp_path:
     assert len(summary["overlay_outputs"]) == 2
     for path in summary["outputs"]:
         assert Path(path).is_file()
+
+
+def test_plotter_renders_all_fixed_training_samples_without_overwrite(tmp_path: Path) -> None:
+    pytest.importorskip("matplotlib")
+    records = []
+    for epoch in (9, 19):
+        path = tmp_path / f"epoch_{epoch}.jsonl"
+        first = _record(epoch)
+        second = _record(epoch)
+        second["sample_id"] = "video_b|16"
+        second["video_id"] = "video_b"
+        path.write_text(
+            "\n".join(json.dumps(item) for item in (first, second)) + "\n",
+            encoding="utf-8",
+        )
+        records.append(path)
+
+    summary = plotter.plot_training_attribution(
+        records_jsonl=records,
+        output_prefix=tmp_path / "attribution_all",
+        all_fixed_samples=True,
+    )
+
+    assert summary["sample_ids"] == ["video_a|0", "video_b|16"]
+    assert summary["epochs_by_sample"]["video_a|0"] == [9, 19]
+    assert len(summary["overlay_outputs"]) == 4

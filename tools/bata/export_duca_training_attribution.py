@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-RECORD_SCHEMA_VERSION = "duca_training_attribution_record_v1"
-SUMMARY_SCHEMA_VERSION = "duca_training_attribution_summary_v1"
+RECORD_SCHEMA_VERSION = "duca_training_attribution_record_v2"
+SUMMARY_SCHEMA_VERSION = "duca_training_attribution_summary_v2"
 
 
 def _sha256(path: str | Path) -> str:
@@ -105,7 +105,12 @@ def _selected_input_time_dim(inputs: Any) -> int:
 
 
 def _input_x_gradient(selected_inputs: Any, objective: Any) -> Any:
-    """Return ``|input * d objective / d input|`` reduced to [B,K]."""
+    """Return optional selected-RGB sensitivity ``|input * dL/dinput|``.
+
+    This is intentionally auxiliary: it answers which selected pixels make a
+    local loss sensitive, while the primary temporal contribution reported by
+    this exporter is measured at the real multiscale detector-head inputs.
+    """
 
     import torch
 
@@ -144,12 +149,21 @@ def _gradient_abs(tensor: Any, objective: Any) -> Any:
     return None if gradient is None else gradient.detach().abs()
 
 
-def _loss_terms(losses: Mapping[str, Any], component: str) -> list[Any]:
+def _detector_loss_terms(losses: Mapping[str, Any], component: str) -> list[Any]:
+    """Return detector-only scalar losses for a contribution measurement.
+
+    The selector's auxiliary losses are intentionally excluded.  The purpose
+    of this diagnostic is to ask which selected observations the *TAD head*
+    uses for classification or regression, not which observations help the
+    coarse actionness or transition branches.
+    """
+
     terms = []
     for name, value in losses.items():
         key = str(name).lower()
         if (
-            "contribution" not in key
+            not key.startswith("selector_")
+            and "contribution" not in key
             and "loss" in key
             and component in key
             and getattr(value, "ndim", None) == 0
@@ -158,6 +172,74 @@ def _loss_terms(losses: Mapping[str, Any], component: str) -> list[Any]:
     if not terms:
         raise RuntimeError(f"detector did not expose a scalar {component} loss")
     return terms
+
+
+def _feature_tensors(value: Any) -> list[Any]:
+    """Flatten the detector-head feature list while retaining temporal tensors."""
+
+    import torch
+
+    if torch.is_tensor(value):
+        return [value] if value.ndim >= 3 and value.requires_grad else []
+    if isinstance(value, (list, tuple)):
+        tensors: list[Any] = []
+        for item in value:
+            tensors.extend(_feature_tensors(item))
+        return tensors
+    return []
+
+
+def _head_feature_temporal_attribution(
+    feature_levels: Any,
+    objective: Any,
+    *,
+    selected_slots: int,
+) -> tuple[Any, Any]:
+    """Measure detector-head temporal attribution on the selected-frame axis.
+
+    Each AdaTAD feature level has its own temporal resolution.  We calculate
+    both ``|dL/dF|`` and ``|F * dL/dF|`` at the real rpn-head inputs, linearly
+    align them to the K selected slots, and average levels.  This is a
+    detector-feature attribution, not a raw-pixel saliency map.
+    """
+
+    import torch
+    import torch.nn.functional as F
+
+    tensors = _feature_tensors(feature_levels)
+    if not tensors:
+        return None, None
+    gradients = torch.autograd.grad(
+        objective,
+        tensors,
+        retain_graph=True,
+        create_graph=False,
+        allow_unused=True,
+    )
+    grad_rows = []
+    contribution_rows = []
+    for feature, gradient in zip(tensors, gradients):
+        if gradient is None or feature.ndim < 3:
+            continue
+        temporal_len = int(feature.shape[-1])
+        if temporal_len <= 0:
+            continue
+        reduce_dims = tuple(range(1, feature.ndim - 1))
+        gradient_row = gradient.detach().abs().mean(dim=reduce_dims)
+        contribution_row = (feature.detach() * gradient.detach()).abs().mean(dim=reduce_dims)
+        grad_rows.append(
+            F.interpolate(gradient_row[:, None, :], size=int(selected_slots), mode="linear", align_corners=True)
+            .squeeze(1)
+        )
+        contribution_rows.append(
+            F.interpolate(contribution_row[:, None, :], size=int(selected_slots), mode="linear", align_corners=True)
+            .squeeze(1)
+        )
+    if not grad_rows:
+        return None, None
+    return torch.stack(grad_rows, dim=0).mean(dim=0), torch.stack(
+        contribution_rows, dim=0
+    ).mean(dim=0)
 
 
 def _dense_contribution(selector: Any, selected: Any, scores: Mapping[str, Any]) -> Any:
@@ -258,6 +340,14 @@ def _record_rows(
     reg_selected: Any,
     cls_target: Any,
     reg_target: Any,
+    cls_head_feature_gradient: Any,
+    reg_head_feature_gradient: Any,
+    cls_head_feature_contribution: Any,
+    reg_head_feature_contribution: Any,
+    cls_head_feature_gradient_dense: Any,
+    reg_head_feature_gradient_dense: Any,
+    cls_head_feature_contribution_dense: Any,
+    reg_head_feature_contribution_dense: Any,
     sampling_logit_gradient: Any,
     source: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -324,6 +414,33 @@ def _record_rows(
                 ),
                 "detector_reg_input_x_gradient_dense_interpolated": _tensor_row(
                     reg_target, row, valid_len
+                ),
+                # Primary temporal attribution: the actual multiscale feature
+                # tensors handed to the TAD head, aligned back to K selected
+                # slots and then to the original dense window for plotting.
+                "detector_cls_head_feature_gradient_abs_selected": _selected_tensor_row(
+                    cls_head_feature_gradient, row
+                ),
+                "detector_reg_head_feature_gradient_abs_selected": _selected_tensor_row(
+                    reg_head_feature_gradient, row
+                ),
+                "detector_cls_head_feature_x_gradient_selected": _selected_tensor_row(
+                    cls_head_feature_contribution, row
+                ),
+                "detector_reg_head_feature_x_gradient_selected": _selected_tensor_row(
+                    reg_head_feature_contribution, row
+                ),
+                "detector_cls_head_feature_gradient_abs_dense_interpolated": _tensor_row(
+                    cls_head_feature_gradient_dense, row, valid_len
+                ),
+                "detector_reg_head_feature_gradient_abs_dense_interpolated": _tensor_row(
+                    reg_head_feature_gradient_dense, row, valid_len
+                ),
+                "detector_cls_head_feature_x_gradient_dense_interpolated": _tensor_row(
+                    cls_head_feature_contribution_dense, row, valid_len
+                ),
+                "detector_reg_head_feature_x_gradient_dense_interpolated": _tensor_row(
+                    reg_head_feature_contribution_dense, row, valid_len
                 ),
                 "detector_cls_contribution_target": _tensor_row(
                     contribution_targets.get("cls") if isinstance(contribution_targets, Mapping) else None,
@@ -421,13 +538,36 @@ def export_training_attribution(
 
     captured: dict[str, Any] = {}
     original_forward_train = selector.forward_train
+    original_rpn_head_forward_train = model._call_rpn_head_forward_train
 
     def capture_forward_train(*args: Any, **kwargs: Any) -> Mapping[str, Any]:
         output = original_forward_train(*args, **kwargs)
         captured["output"] = output
         return output
 
+    def capture_rpn_head_inputs(
+        feat_list: Any,
+        mask_list: Any,
+        metas: Any,
+        gt_segments: Any,
+        gt_labels: Any,
+        **kwargs: Any,
+    ) -> Mapping[str, Any]:
+        # SingleStageDetector calls this helper immediately before the real
+        # AdaTAD head.  Capturing this tensor list leaves the model unchanged
+        # and lets autograd report per-temporal-feature head contribution.
+        captured["rpn_head_features"] = feat_list
+        return original_rpn_head_forward_train(
+            feat_list,
+            mask_list,
+            metas=metas,
+            gt_segments=gt_segments,
+            gt_labels=gt_labels,
+            **kwargs,
+        )
+
     selector.forward_train = capture_forward_train
+    model._call_rpn_head_forward_train = capture_rpn_head_inputs
     try:
         model.zero_grad(set_to_none=True)
         losses = model(
@@ -441,21 +581,50 @@ def export_training_attribution(
         )
     finally:
         selector.forward_train = original_forward_train
+        model._call_rpn_head_forward_train = original_rpn_head_forward_train
     if "output" not in captured:
         raise RuntimeError("selector.forward_train was not called by the full detector")
     selector_output = captured["output"]
     scores = selector_output.get("selector_outputs")
     if not isinstance(scores, Mapping):
         raise RuntimeError("selector did not expose selector_outputs")
+    if "rpn_head_features" not in captured:
+        raise RuntimeError("full detector did not expose rpn_head input features")
 
-    cls_objective = sum(_loss_terms(losses, "cls"))
-    reg_objective = sum(_loss_terms(losses, "reg"))
+    cls_objective = sum(_detector_loss_terms(losses, "cls"))
+    reg_objective = sum(_detector_loss_terms(losses, "reg"))
     detector_objective = cls_objective + reg_objective
     selected_inputs = scores.get("detector_contribution_teacher_inputs")
     cls_selected = _input_x_gradient(selected_inputs, cls_objective)
     reg_selected = _input_x_gradient(selected_inputs, reg_objective)
     cls_target = _dense_contribution(selector, cls_selected, scores)
     reg_target = _dense_contribution(selector, reg_selected, scores)
+    grid = scores.get("grid")
+    if grid is None or not hasattr(grid, "selected_positions"):
+        raise RuntimeError("selector output lacks selected positions for feature attribution")
+    selected_slots = int(grid.selected_positions.shape[1])
+    cls_head_feature_gradient, cls_head_feature_contribution = _head_feature_temporal_attribution(
+        captured["rpn_head_features"],
+        cls_objective,
+        selected_slots=selected_slots,
+    )
+    reg_head_feature_gradient, reg_head_feature_contribution = _head_feature_temporal_attribution(
+        captured["rpn_head_features"],
+        reg_objective,
+        selected_slots=selected_slots,
+    )
+    cls_head_feature_gradient_dense = _dense_contribution(
+        selector, cls_head_feature_gradient, scores
+    )
+    reg_head_feature_gradient_dense = _dense_contribution(
+        selector, reg_head_feature_gradient, scores
+    )
+    cls_head_feature_contribution_dense = _dense_contribution(
+        selector, cls_head_feature_contribution, scores
+    )
+    reg_head_feature_contribution_dense = _dense_contribution(
+        selector, reg_head_feature_contribution, scores
+    )
     sampling_logits = scores.get("decode_policy_logits")
     sampling_logit_gradient = _gradient_abs(sampling_logits, detector_objective)
 
@@ -488,6 +657,10 @@ def export_training_attribution(
         "gt_used_for_train_loss": True,
         "gt_used_for_inference_decision": False,
         "train_only_attribution": True,
+        "detector_head_feature_attribution": (
+            "multiscale_rpn_head_input_feature_times_gradient_aligned_to_selected_slots"
+        ),
+        "selected_rgb_sensitivity": "auxiliary_input_times_gradient_not_primary_temporal_contribution",
     }
     records = _record_rows(
         batch=batch,
@@ -496,6 +669,14 @@ def export_training_attribution(
         reg_selected=reg_selected,
         cls_target=cls_target,
         reg_target=reg_target,
+        cls_head_feature_gradient=cls_head_feature_gradient,
+        reg_head_feature_gradient=reg_head_feature_gradient,
+        cls_head_feature_contribution=cls_head_feature_contribution,
+        reg_head_feature_contribution=reg_head_feature_contribution,
+        cls_head_feature_gradient_dense=cls_head_feature_gradient_dense,
+        reg_head_feature_gradient_dense=reg_head_feature_gradient_dense,
+        cls_head_feature_contribution_dense=cls_head_feature_contribution_dense,
+        reg_head_feature_contribution_dense=reg_head_feature_contribution_dense,
         sampling_logit_gradient=sampling_logit_gradient,
         source=source,
     )
@@ -517,6 +698,9 @@ def export_training_attribution(
             "optimizer_step_executed": False,
             "gt_overlay_not_inference_input": True,
             "input_x_gradient_is_train_only": True,
+            "input_x_gradient_is_auxiliary_pixel_sensitivity": True,
+            "head_feature_attribution_is_train_only": True,
+            "head_feature_attribution_is_primary_temporal_measurement": True,
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

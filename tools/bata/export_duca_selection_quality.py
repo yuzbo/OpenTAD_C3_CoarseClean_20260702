@@ -218,6 +218,18 @@ def _records_from_batch(
                 "abs_delta_p_action": _strict_float_row(scores.get("abs_delta_p_action"), idx, valid_len),
                 "uncertainty": _strict_float_row(scores.get("uncertainty"), idx, valid_len),
                 "selected_positions": selected,
+                # These are inference-only selector outputs.  GT appears below
+                # strictly for the post-hoc boundary overlay and never enters
+                # this forward decision.
+                "sampling_rates": _optional_float_row(
+                    scores.get("sampling_rates"), idx, valid_len
+                ),
+                "sampling_density": _optional_float_row(
+                    scores.get("sampling_density"), idx, valid_len
+                ),
+                "sampling_cumulative_rates": _optional_float_row(
+                    scores.get("sampling_cumulative_rates"), idx, valid_len
+                ),
                 "density_probabilities": _optional_float_row(
                     scores.get("density_probabilities"), idx, valid_len
                 ),
