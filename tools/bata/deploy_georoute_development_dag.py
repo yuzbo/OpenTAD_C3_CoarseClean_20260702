@@ -27,6 +27,12 @@ from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_fil
 
 GEOROUTE_DEPLOYMENT_SCHEMA = "georoute_adatad_development_deployment_v1"
 
+# N16R4 grants only 55 GB per outer GPU allocation.  The launchers below
+# create an exact one-GPU/96G Slurm step for model work, so the outer request
+# needs two GPUs and eight CPUs to satisfy that site policy without binding a
+# physical device or charging a second model forward.
+GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
+
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,7 +78,7 @@ def _sbatch(
     if dependency:
         command.extend(["--dependency", "afterok:" + ":".join(dependency)])
     if gpu:
-        command.extend(["--gpus", "1", "--cpus-per-task", "5", "--mem", "96G"])
+        command.extend(GPU_OUTER_SLURM_ARGS)
     else:
         command.extend(["--cpus-per-task", "1", "--mem", "4G"])
     command.extend(

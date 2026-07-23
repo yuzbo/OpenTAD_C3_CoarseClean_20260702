@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: implemented_local_pending_cuda_p0
+status: implemented_remote_p0_resubmission_pending
 updated: 2026-07-23
 ---
 
@@ -26,6 +26,12 @@ unstructured free TokenSelect at lower measured end-to-end cost?
 - The local Windows Torch runtime fails while loading `c10.dll`; this is an
   environment failure, not CUDA evidence. The Torch-dependent routing tests
   and the only meaningful P0 verdict remain pending on N16R4 CUDA.
+- The first N16R4 P0 submission created no Slurm jobs because the deployment
+  wrapper requested one outer GPU with `96G`, above the site's `55G/GPU`
+  outer-allocation rule. The model code did not execute and emitted no P0
+  report. The deployment code now requests a site-compliant two-GPU outer
+  allocation and the existing launcher still executes exactly one GPU, five
+  CPUs, and `96G` in an inner Slurm step.
 - No development metric, cost result, official-test record, paper claim, or
   A-MoD experiment exists.
 

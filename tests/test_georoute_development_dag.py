@@ -23,6 +23,9 @@ from tools.bata.run_georoute_p0_gate import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def _record(*, stage: str, variant: str, seed: int, high_iou: float, cost: float) -> dict:
     return {
         "schema_version": GEOROUTE_STAGE_RESULT_SCHEMA,
@@ -171,3 +174,20 @@ def test_p3_cell_namespaces_include_exact_k_to_prevent_budget_curve_overwrites()
     assert k32 != k64
     assert str(k32).replace("\\", "/") == "p3/hybrid/k32/seed3407"
     assert str(k64).replace("\\", "/") == "p3/hybrid/k64/seed3407"
+
+
+def test_gpu_submission_uses_n16r4_outer_resources_and_exact_inner_step():
+    deployer = (ROOT / "tools" / "bata" / "deploy_georoute_development_dag.py").read_text(
+        encoding="utf-8"
+    )
+    dispatcher = (ROOT / "tools" / "bata" / "georoute_dag_dispatch.py").read_text(
+        encoding="utf-8"
+    )
+    p0_launcher = (ROOT / "scripts" / "run_georoute_p0_slurm.sh").read_text(encoding="utf-8")
+    stage_launcher = (ROOT / "scripts" / "run_georoute_stage_slurm.sh").read_text(encoding="utf-8")
+
+    for source in (deployer, dispatcher):
+        assert 'GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")' in source
+        assert '"--mem", "96G"' not in source
+    for source in (p0_launcher, stage_launcher):
+        assert "srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M" in source

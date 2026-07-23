@@ -38,6 +38,10 @@ from tools.bata.georoute_experiment_contract import (  # noqa: E402
 GEOROUTE_DAG_SCHEMA = "georoute_adatad_development_dag_v1"
 GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v1"
 
+# The N16R4 outer allocation is site-policy scaffolding only.  The matching
+# launcher immediately enters an exact one-GPU/5-CPU/96G step for model work.
+GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
+
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,7 +130,7 @@ def _sbatch(
     if dependency_ids:
         command.extend(["--dependency", "afterok:" + ":".join(map(str, dependency_ids))])
     if gpu:
-        command.extend(["--gpus", "1", "--cpus-per-task", "5", "--mem", "96G"])
+        command.extend(GPU_OUTER_SLURM_ARGS)
     else:
         command.extend(["--cpus-per-task", "1", "--mem", "4G"])
     export_items = ["ALL", *(f"{name}={value}" for name, value in sorted(exports.items()))]

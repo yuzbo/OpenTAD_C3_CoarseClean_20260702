@@ -37,12 +37,15 @@ max_chars: 8000
 
 ## Geometry-Residual-Depth Routing / GeoRoute（2026-07-23）
 
-- 状态为 `implemented_local_pending_cuda_p0`：已实现单重主干原生 tubelet、
+- 状态为 `implemented_remote_p0_resubmission_pending`：已实现单重主干原生 tubelet、
   exact-K ROI/free/hybrid、几何侧信息因果对照、P0 与结果盲 DAG；现有 U128
   不是 GeoRoute。
 - 外部 v1 审查为 `HOLD`，接受原生 token、真实检测损失、单重主干和间隔
   Dense-MoD 的问题拆解。Windows `c10.dll` 阻塞本地 Torch；仅 N16R4 CUDA
   P0 可验证模型数值、梯度、显存和一次真实前向。
+- 首次 P0 外层单卡 `96G` 申请被 N16R4 的 `55G/GPU` 站点策略在提交前拒绝，未创建
+  作业、未执行模型、未产生结果；部署器已改为站点合规的外层双卡/八 CPU 与内层精确单卡
+  `96G` step，重投前必须重新做 Linux focused check。
 - P1 必须同预算比较 fixed/random/free/ROI/hybrid 与 fixed-lattice +
   geometry-side-channel；free 在高 IoU 和全成本获胜即杀死 ROI 主张。当前无
   mAP、成本、official-test、A-MoD 结果或论文主张。

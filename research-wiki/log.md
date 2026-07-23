@@ -863,3 +863,12 @@ append_only: true
   must be rerun in the remote CUDA environment. Status is
   `implemented_local_pending_cuda_p0`: no mAP, cost, official-test, A-MoD,
   or paper claim exists.
+
+- 2026-07-23: the first remote GeoRoute P0 submission was rejected by the
+  N16R4 scheduler before any Slurm job was created because the outer request
+  used one GPU with `96G`, while the site grants `55G` per outer GPU. No model
+  code, CUDA forward, metric, or P0 JSON ran. The deployment and dispatcher
+  now request the site-compliant two-GPU/eight-CPU outer allocation; their
+  existing launchers enter a single-GPU/five-CPU/`96G` exact Slurm step for
+  all model work. This is a resource-admission repair, not a model or protocol
+  change. Status is `implemented_remote_p0_resubmission_pending`.
