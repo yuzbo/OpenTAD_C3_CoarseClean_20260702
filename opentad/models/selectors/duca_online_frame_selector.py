@@ -355,6 +355,87 @@ def _add_structured_zero_forward_gradient_path(
     return hard_base + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
 
 
+def _add_density_transport_gradient_path(
+    hard_selected: torch.Tensor,
+    dense_inputs: torch.Tensor,
+    *,
+    soft_slot_assignment: torch.Tensor,
+    slot_mask: torch.Tensor,
+    bridge_weight: float,
+    bridge_row_scale: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Keep hard observations in forward and use inverse-CDF interpolation in backward."""
+
+    if soft_slot_assignment.ndim != 3:
+        raise ValueError("density transport slot assignment must be [B,K,T]")
+    temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
+    if temporal_dim is None:
+        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
+    expected = (
+        int(hard_selected.shape[0]),
+        int(slot_mask.shape[1]),
+        int(dense_inputs.shape[temporal_dim]),
+    )
+    if tuple(soft_slot_assignment.shape) != expected:
+        raise ValueError(
+            "density transport slot assignment must match [B,K,T]: "
+            f"expected {expected}, got {tuple(soft_slot_assignment.shape)}"
+        )
+    active = slot_mask.to(device=soft_slot_assignment.device, dtype=torch.bool)
+    slot_mass = soft_slot_assignment.sum(dim=-1)
+    if active.any() and not torch.allclose(
+        slot_mass[active],
+        torch.ones_like(slot_mass[active]),
+        atol=1.0e-4,
+        rtol=1.0e-4,
+    ):
+        raise ValueError("every active density transport slot must sum to one")
+    if (~active).any() and not torch.allclose(
+        slot_mass[~active],
+        torch.zeros_like(slot_mass[~active]),
+        atol=1.0e-6,
+        rtol=0.0,
+    ):
+        raise ValueError("inactive density transport slots must have zero mass")
+    bridge = float(bridge_weight)
+    if bridge <= 0.0:
+        return hard_selected
+    if bridge_row_scale is None:
+        row_scale = torch.ones(
+            int(hard_selected.shape[0]),
+            device=hard_selected.device,
+            dtype=torch.float32,
+        )
+    else:
+        if bridge_row_scale.ndim != 1 or int(bridge_row_scale.shape[0]) != int(hard_selected.shape[0]):
+            raise ValueError("density transport bridge_row_scale must be [B]")
+        row_scale = bridge_row_scale.to(device=hard_selected.device, dtype=torch.float32)
+    context_inputs = (
+        dense_inputs
+        if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs)
+        else dense_inputs.float()
+    )
+    hard_base = (
+        hard_selected
+        if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected)
+        else hard_selected.float()
+    )
+    weights = soft_slot_assignment.to(device=context_inputs.device, dtype=context_inputs.dtype)
+    if context_inputs.ndim == 3:
+        soft = torch.einsum("bct,bkt->bck", context_inputs, weights)
+        slot = slot_mask[:, None, :]
+    elif context_inputs.ndim == 5:
+        soft = torch.einsum("bcthw,bkt->bckhw", context_inputs, weights)
+        slot = slot_mask[:, None, :, None, None]
+    else:
+        soft = torch.einsum("bncthw,bkt->bnckhw", context_inputs, weights)
+        slot = slot_mask[:, None, None, :, None, None]
+    row_scale_view = row_scale.to(dtype=soft.dtype).view(
+        int(row_scale.shape[0]), *([1] * (soft.ndim - 1))
+    )
+    return hard_base + bridge * (soft - soft.detach()) * row_scale_view * slot.to(dtype=soft.dtype)
+
+
 def _add_protected_structured_transport_gradient_path(
     hard_selected: torch.Tensor,
     dense_inputs: torch.Tensor,
@@ -487,6 +568,9 @@ class DucaOnlineFrameSelector(nn.Module):
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
         local_cell_force_exact_uniform: bool = False,
+        density_temperature: float = 0.7,
+        density_coverage_floor: float = 0.05,
+        density_smoothing_kernel: int = 5,
         inference_policy_alpha: float = 1.0,
         training_uniform_companion_fraction: float = 0.0,
         training_uniform_companion_normalize_learned_gradient: bool = False,
@@ -594,6 +678,9 @@ class DucaOnlineFrameSelector(nn.Module):
         self.acquisition_policy = str(acquisition_policy)
         self.structured_temperature = float(structured_temperature)
         self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
+        self.density_temperature = float(density_temperature)
+        self.density_coverage_floor = float(density_coverage_floor)
+        self.density_smoothing_kernel = int(density_smoothing_kernel)
         self.inference_policy_alpha = float(inference_policy_alpha)
         if not 0.0 <= self.inference_policy_alpha <= 1.0:
             raise ValueError("inference_policy_alpha must lie in [0,1]")
@@ -776,11 +863,12 @@ class DucaOnlineFrameSelector(nn.Module):
             "soft_to_hard_resample",
             "structured_zero_forward",
             "protected_structured_transport",
+            "density_transport_st",
         }:
             raise ValueError(
                 "detector_gradient_mode must be none, st_sparse_gather, "
                 "st_sparse_gather_soft_context, soft_to_hard_resample, structured_zero_forward, "
-                "or protected_structured_transport"
+                "protected_structured_transport, or density_transport_st"
             )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
@@ -816,10 +904,15 @@ class DucaOnlineFrameSelector(nn.Module):
         if self.selector_variant == "transition_only":
             if self.budget_mode != "fixed":
                 raise ValueError("transition_only currently supports only a fixed exact budget")
-            if self.acquisition_policy not in {"global_structured_topk", "local_cell_deformation"}:
+            if self.acquisition_policy not in {
+                "global_structured_topk",
+                "local_cell_deformation",
+                "continuous_density_transport",
+                "continuous_mixture_density_transport",
+            }:
                 raise ValueError("transition_only requires a structured exact-budget acquisition policy")
             if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
-                raise ValueError("global transition_only requires max_unselected_hole")
+                raise ValueError("global_structured_topk requires max_unselected_hole")
             if not self.use_coarse_hidden_features:
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if not self.forbid_external_actionness:
@@ -862,6 +955,17 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("local-cell counterfactual utility requires local_cell_deformation")
             if self.local_cell_force_exact_uniform and self.counterfactual_utility_distillation_weight > 0.0:
                 raise ValueError("the exact-uniform control must not request counterfactual utility")
+        density_policies = {
+            "continuous_density_transport",
+            "continuous_mixture_density_transport",
+        }
+        if self.detector_gradient_mode == "density_transport_st" and self.acquisition_policy not in density_policies:
+            raise ValueError("density_transport_st requires a continuous density acquisition policy")
+        if self.acquisition_policy in density_policies and self.detector_gradient_mode not in {
+            "none",
+            "density_transport_st",
+        }:
+            raise ValueError("continuous density transport supports detector gradient mode none or density_transport_st")
 
         actionness_source = None
         self.raw_actionness_source = None
@@ -937,6 +1041,9 @@ class DucaOnlineFrameSelector(nn.Module):
             acquisition_policy=self.acquisition_policy,
             structured_temperature=self.structured_temperature,
             local_cell_force_exact_uniform=self.local_cell_force_exact_uniform,
+            density_temperature=self.density_temperature,
+            density_coverage_floor=self.density_coverage_floor,
+            density_smoothing_kernel=self.density_smoothing_kernel,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -2112,12 +2219,25 @@ class DucaOnlineFrameSelector(nn.Module):
                 bridge_weight=detector_gradient_weight,
                 bridge_row_scale=companion_bridge_scale,
             )
+        elif self.detector_gradient_mode == "density_transport_st":
+            assignment = scores.get("structured_soft_slot_assignment")
+            if assignment is None:
+                raise ValueError("density_transport_st requires inverse-CDF slot assignments")
+            hard_selected = _add_density_transport_gradient_path(
+                hard_selected,
+                inputs,
+                soft_slot_assignment=assignment,
+                slot_mask=slot_mask,
+                bridge_weight=detector_gradient_weight,
+                bridge_row_scale=companion_bridge_scale,
+            )
         bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
         hard_slot_weights = slot_mask.to(dtype=scores["center_scores"].dtype)
         if self.detector_gradient_mode in {
             "none",
             "structured_zero_forward",
             "protected_structured_transport",
+            "density_transport_st",
         }:
             st_weights = hard_slot_weights
         else:
@@ -2187,6 +2307,18 @@ class DucaOnlineFrameSelector(nn.Module):
                 "structured_soft_slot_assignment": scores.get("structured_soft_slot_assignment"),
                 "selected_positions": positions,
                 "detector_gradient_weight": float(detector_gradient_weight),
+                "density_probabilities": scores.get("density_probabilities"),
+                "density_continuous_positions": scores.get(
+                    "density_continuous_positions"
+                ),
+                "density_component_probabilities": scores.get(
+                    "density_component_probabilities"
+                ),
+                "density_mixture_weights": scores.get("density_mixture_weights"),
+                "density_component_names": scores.get("density_component_names"),
+                "density_observed_max_unselected_hole": scores.get(
+                    "density_observed_max_unselected_hole"
+                ),
             }
         scores["sparse_grid"] = grid
         selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
@@ -2273,6 +2405,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "soft_to_hard_resample",
             "structured_zero_forward",
             "protected_structured_transport",
+            "density_transport_st",
         }
         enabled = component_name in supported_modes and float(bridge_weight) > 0.0
         dense_input_elements = int(dense_inputs.numel())
@@ -2283,6 +2416,10 @@ class DucaOnlineFrameSelector(nn.Module):
             macs = int(batch_size * slot_count * temporal_len + 3 * soft_selected_output_elements)
             complexity = "O(B*K*T + numel(selected_raw_video)) hard-anchored local transport"
             accounting_scope = "expected_position_and_local_temporal_slope_lower_bound"
+        elif enabled and component_name == "density_transport_st":
+            macs = int(batch_size * slot_count * temporal_len + soft_selected_output_elements)
+            complexity = "O(B*K*T) inverse-CDF two-point straight-through resampling"
+            accounting_scope = "soft_slot_resample_and_exact_hard_forward"
         else:
             macs = dense_input_elements * int(slot_count) if enabled else 0
             complexity = "O(numel(dense_raw_video)*K) soft slot resampling" if enabled else "disabled"

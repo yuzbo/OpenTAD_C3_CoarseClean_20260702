@@ -299,6 +299,12 @@ def _gradient_partition(model) -> dict[str, float]:
             model,
             lambda name: name.startswith("frame_selector.adapter.transition_scorer."),
         ),
+        "density_mixture_head": _grad_sum(
+            model,
+            lambda name: name.startswith(
+                "frame_selector.adapter.density_mixture_head."
+            ),
+        ),
         "asformer_last_encoder_layer": _grad_sum(
             model,
             lambda name: name.startswith(last_prefix),
@@ -612,10 +618,45 @@ def run_gate(
         torch.equal(captured_inputs[0], expected_hard),
         "real AdaTAD backbone input differs from exact hard gather",
     )
-    temporal_audit = selector.temporal_sampling_contract.audit_positions(
-        positions,
-        batch["masks"],
-    )
+    if selector.temporal_sampling_contract is None:
+        observed_holes = []
+        for row in positions:
+            valid_positions = row[row >= 0]
+            _require(
+                int(valid_positions.numel()) == int(selector.budget),
+                "density transport did not emit exact K",
+            )
+            _require(
+                bool(torch.all(valid_positions[1:] > valid_positions[:-1]).item()),
+                "density transport positions are not strictly increasing",
+            )
+            sentinels = torch.cat(
+                (
+                    valid_positions.new_tensor([-1]),
+                    valid_positions,
+                    valid_positions.new_tensor([int(cfg.dense_window_size)]),
+                )
+            )
+            observed_holes.append(
+                int((sentinels[1:] - sentinels[:-1] - 1).max().item())
+            )
+        if selector.max_unselected_hole is not None:
+            _require(
+                max(observed_holes) <= int(selector.max_unselected_hole),
+                "density hard-max projection violated its configured cap",
+            )
+        temporal_audit = {
+            "contract_kind": "continuous_density_exact_k",
+            "hard_budget": int(selector.budget),
+            "configured_max_unselected_hole": selector.max_unselected_hole,
+            "observed_max_unselected_hole": observed_holes,
+            "strictly_increasing_unique": True,
+        }
+    else:
+        temporal_audit = selector.temporal_sampling_contract.audit_positions(
+            positions,
+            batch["masks"],
+        )
     if exact_uniform_route:
         expected_uniform = exact_uniform_positions(
             int(cfg.dense_window_size),
@@ -704,6 +745,19 @@ def run_gate(
             detector_gradients["asformer_last_encoder_layer"] == 0.0
             and detector_gradients["asformer_earlier_or_spatial"] == 0.0,
             "protected detector loss leaked into ASFormer",
+        )
+    mixture_density = (
+        selector.acquisition_policy == "continuous_mixture_density_transport"
+    )
+    if mixture_density and detector_feedback_enabled:
+        _require(
+            detector_gradients["density_mixture_head"] > 0.0,
+            "detector loss missed the boundary-uncertainty-context density head",
+        )
+    else:
+        _require(
+            detector_gradients["density_mixture_head"] == 0.0,
+            "a non-mixture route unexpectedly updated the density mixture head",
         )
     _require(
         action_gradients["detector"] == 0.0

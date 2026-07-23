@@ -27,12 +27,17 @@ mkdir -p "${RUN_ROOT}/jobs" "${RUN_ROOT}/logs" "${RUN_ROOT}/arms"
   --output-json "${RUN_ROOT}/map_protocol_audit.json" \
   > "${RUN_ROOT}/map_protocol_audit.out"
 
-variants=(
-  two_stage_exact_uniform
-  gaussian_matched_g0
-  boundary_burst_r2q3_g0
-  boundary_burst_r4q5_g0
-)
+if [[ -n "${DUCA_INDEPENDENT_VARIANTS:-}" ]]; then
+  read -r -a variants <<< "${DUCA_INDEPENDENT_VARIANTS}"
+else
+  variants=(
+    two_stage_exact_uniform
+    gaussian_matched_g0
+    boundary_burst_r2q3_g0
+    boundary_burst_r4q5_g0
+  )
+fi
+[[ "${#variants[@]}" -gt 0 ]] || fail "at least one variant is required"
 for variant in "${variants[@]}"; do
   sbatch_file="${RUN_ROOT}/jobs/${variant}.sbatch"
   cat > "${sbatch_file}" <<EOF

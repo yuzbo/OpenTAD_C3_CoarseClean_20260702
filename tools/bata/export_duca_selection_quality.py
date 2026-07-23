@@ -86,13 +86,47 @@ def _strict_float_row(value: Any, index: int, valid_len: int) -> list[float]:
     return [round(float(item), 7) for item in row[:valid_len]]
 
 
+def _optional_float_row(value: Any, index: int, valid_len: int) -> list[float] | None:
+    if value is None:
+        return None
+    return _strict_float_row(value, index, valid_len)
+
+
+def _optional_float_matrix(
+    value: Any,
+    index: int,
+    valid_len: int,
+) -> list[list[float]] | None:
+    if value is None:
+        return None
+    matrix = value[index].detach().float().cpu()
+    if matrix.ndim != 2 or int(matrix.shape[1]) < valid_len:
+        raise ValueError("selector density component tensor must be [B,C,T]")
+    return [
+        [round(float(item), 7) for item in row[:valid_len].tolist()]
+        for row in matrix
+    ]
+
+
+def _optional_float_vector(value: Any, index: int) -> list[float] | None:
+    if value is None:
+        return None
+    row = value[index].detach().float().cpu()
+    if row.ndim != 1:
+        raise ValueError("selector density mixture tensor must be [B,C]")
+    return [round(float(item), 7) for item in row.tolist()]
+
+
 def _sample_id(meta: Mapping[str, Any], fallback: int) -> str:
     video_id = str(meta.get("video_name") or meta.get("video_id") or f"sample_{fallback:06d}")
     window = int(meta.get("window_start_frame", 0))
     return f"{video_id}|{window}"
 
 
-def _selector_sampling_contract(selector: Any, frame_selector_cfg: Mapping[str, Any]) -> tuple[int, int]:
+def _selector_sampling_contract(
+    selector: Any,
+    frame_selector_cfg: Mapping[str, Any],
+) -> tuple[int, int | None]:
     config_budget = frame_selector_cfg.get("budget", frame_selector_cfg.get("budget_max"))
     runtime_budget = getattr(selector, "budget", None)
     if config_budget is None or runtime_budget is None:
@@ -104,8 +138,12 @@ def _selector_sampling_contract(selector: Any, frame_selector_cfg: Mapping[str, 
         )
     config_max_hole = frame_selector_cfg.get("max_unselected_hole")
     runtime_max_hole = getattr(selector, "max_unselected_hole", None)
+    if config_max_hole is None and runtime_max_hole is None:
+        return requested_budget, None
     if config_max_hole is None or runtime_max_hole is None:
-        raise ValueError("selection-quality export requires an explicit max_unselected_hole")
+        raise ValueError(
+            "selector max-hole drift: config and runtime must both disable or enable it"
+        )
     requested_max_hole = int(config_max_hole)
     if requested_max_hole < 0 or int(runtime_max_hole) != requested_max_hole:
         raise ValueError(
@@ -124,7 +162,7 @@ def _records_from_batch(
     source: Mapping[str, Any],
     seen_count: int,
     requested_budget: int,
-    requested_max_unselected_hole: int,
+    requested_max_unselected_hole: int | None,
     gt_boundary_validity: Sequence[Any] | None = None,
 ) -> list[dict[str, Any]]:
     scores = selector_output.get("selector_outputs")
@@ -161,7 +199,11 @@ def _records_from_batch(
                 "effective_budget": int(effective_budget),
                 "budget": int(effective_budget),
                 "max_hole_contract": {
-                    "requested_max_unselected_hole": int(requested_max_unselected_hole),
+                    "requested_max_unselected_hole": (
+                        None
+                        if requested_max_unselected_hole is None
+                        else int(requested_max_unselected_hole)
+                    ),
                 },
                 "gt_segments": [[round(float(pair[0]), 6), round(float(pair[1]), 6)] for pair in gt],
                 "gt_boundary_validity": [
@@ -176,6 +218,38 @@ def _records_from_batch(
                 "abs_delta_p_action": _strict_float_row(scores.get("abs_delta_p_action"), idx, valid_len),
                 "uncertainty": _strict_float_row(scores.get("uncertainty"), idx, valid_len),
                 "selected_positions": selected,
+                "density_probabilities": _optional_float_row(
+                    scores.get("density_probabilities"), idx, valid_len
+                ),
+                "density_component_probabilities": _optional_float_matrix(
+                    scores.get("density_component_probabilities"), idx, valid_len
+                ),
+                "density_mixture_weights": _optional_float_vector(
+                    scores.get("density_mixture_weights"), idx
+                ),
+                "density_component_names": scores.get("density_component_names"),
+                "density_continuous_positions": (
+                    None
+                    if scores.get("density_continuous_positions") is None
+                    else [
+                        round(float(item), 7)
+                        for item in scores["density_continuous_positions"][idx]
+                        .detach()
+                        .float()
+                        .cpu()
+                        .tolist()[:effective_budget]
+                    ]
+                ),
+                "density_observed_max_unselected_hole": (
+                    None
+                    if scores.get("density_observed_max_unselected_hole") is None
+                    else int(
+                        scores["density_observed_max_unselected_hole"][idx]
+                        .detach()
+                        .cpu()
+                        .item()
+                    )
+                ),
                 "decode_diagnostics": {
                     "repair_count": int(repair.get("repair_count", 0)),
                     "repair_enabled": bool(repair.get("enabled", False)),
@@ -289,7 +363,11 @@ def export_records(
         "uses_gt_for_selection": False,
         "seed": int(seed),
         "requested_budget": int(requested_budget),
-        "requested_max_unselected_hole": int(requested_max_unselected_hole),
+        "requested_max_unselected_hole": (
+            None
+            if requested_max_unselected_hole is None
+            else int(requested_max_unselected_hole)
+        ),
     }
     row_count = 0
     sample_count = 0

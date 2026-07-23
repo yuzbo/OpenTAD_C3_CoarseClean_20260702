@@ -606,7 +606,10 @@ class ActionFormer(SingleStageDetector):
         )
 
         def parameter_lr(name):
-            scorer_prefix = "frame_selector.adapter.transition_scorer."
+            scorer_prefixes = (
+                "frame_selector.adapter.transition_scorer.",
+                "frame_selector.adapter.density_mixture_head.",
+            )
             protected_adapter_prefix = (
                 "frame_selector.transition_scorer.selector_adapter."
             )
@@ -614,7 +617,7 @@ class ActionFormer(SingleStageDetector):
                 "frame_selector.transition_scorer.selector_score_head."
             )
             coarse_prefix = "frame_selector.raw_actionness_source.probe_module."
-            if transition_only and name.startswith(scorer_prefix):
+            if transition_only and name.startswith(scorer_prefixes):
                 return float(selector.transition_scorer_lr)
             if protected_e2e and name.startswith(
                 (protected_adapter_prefix, protected_head_prefix)

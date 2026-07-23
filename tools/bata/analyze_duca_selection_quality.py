@@ -451,11 +451,18 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
     max_hole_contract = record.get("max_hole_contract")
     if not isinstance(max_hole_contract, Mapping):
         raise ValueError(f"{sample_id}: missing max_hole_contract")
-    requested_max_hole = int(max_hole_contract.get("requested_max_unselected_hole", -1))
-    if valid_len <= 0 or requested_budget <= 0 or requested_max_hole < 0:
-        raise ValueError(
-            f"{sample_id}: valid_len, requested_budget, and max-hole contract are invalid"
-        )
+    requested_max_hole_raw = max_hole_contract.get("requested_max_unselected_hole")
+    requested_max_hole = (
+        None
+        if requested_max_hole_raw is None
+        else int(requested_max_hole_raw)
+    )
+    if (
+        valid_len <= 0
+        or requested_budget <= 0
+        or (requested_max_hole is not None and requested_max_hole < 0)
+    ):
+        raise ValueError(f"{sample_id}: sampling contract is invalid")
     effective_budget = min(requested_budget, valid_len)
     if recorded_effective_budget != effective_budget:
         raise ValueError(
@@ -470,6 +477,13 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
     policy_scores = _score_vector(record, "transition_policy_scores", valid_len)
     raw_scores = _score_vector(record, "raw_transition_scores", valid_len)
     pure_delta_scores = _score_vector(record, "abs_delta_p_action", valid_len)
+    density_probabilities = record.get("density_probabilities")
+    if density_probabilities is not None:
+        density_probabilities = [
+            float(item) for item in density_probabilities[:valid_len]
+        ]
+        if len(density_probabilities) != valid_len:
+            raise ValueError(f"{sample_id}: density probabilities are shorter than valid_len")
     raw_selected = record.get("selected_positions", [])
     if not isinstance(raw_selected, Sequence) or isinstance(raw_selected, (str, bytes)):
         raise ValueError(f"{sample_id}: selected_positions must be a sequence")
@@ -486,15 +500,19 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
             f"effective_budget={effective_budget}"
         )
     observed_max_hole = _max_unselected_hole(valid_len, selected)
-    if observed_max_hole > requested_max_hole:
+    if requested_max_hole is not None and observed_max_hole > requested_max_hole:
         raise ValueError(
             f"{sample_id}: observed max hole {observed_max_hole} exceeds "
             f"requested G={requested_max_hole}"
         )
-    pure_delta_structured = _global_structured_positions(
-        pure_delta_scores,
-        budget=effective_budget,
-        max_unselected_hole=requested_max_hole,
+    pure_delta_structured = (
+        _topk_positions(pure_delta_scores, effective_budget)
+        if requested_max_hole is None
+        else _global_structured_positions(
+            pure_delta_scores,
+            budget=effective_budget,
+            max_unselected_hole=requested_max_hole,
+        )
     )
     methods = {
         "learned": selected,
@@ -545,7 +563,11 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
             "observed_max_unselected_hole": observed_max_hole,
             "budget_violation": False,
             "max_hole_violation": False,
-            "pure_delta_solver": "global_structured_topk_same_exact_k_and_max_hole",
+            "pure_delta_solver": (
+                "unconstrained_exact_k_topk_diagnostic"
+                if requested_max_hole is None
+                else "global_structured_topk_same_exact_k_and_max_hole"
+            ),
         },
         "gt_segment_count": len(segments),
         "gt_boundary_count": len(boundaries),
@@ -555,6 +577,9 @@ def analyze_record(record: Mapping[str, Any], *, random_seed: int = 0) -> dict[s
         "transition_policy_scores": policy_scores,
         "abs_delta_p_action": pure_delta_scores,
         "raw_transition_scores": raw_scores,
+        "density_probabilities": density_probabilities,
+        "density_mixture_weights": record.get("density_mixture_weights"),
+        "density_component_names": record.get("density_component_names"),
         "gt_segments": [[start, end] for start, end in segments],
         "coarse": binary_metrics(action_labels, p_action),
         "transition": transition,
@@ -750,6 +775,14 @@ def _plot_outputs(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any],
         x = list(range(int(row["valid_len"])))
         ax.plot(x, row["p_action"], color="#F58518", linewidth=1.1, label="p(action)")
         ax.plot(x, _normalize_curve(row["transition_policy_scores"]), color="#E45756", linewidth=1.0, label="transition utility")
+        if row.get("density_probabilities") is not None:
+            ax.plot(
+                x,
+                _normalize_curve(row["density_probabilities"]),
+                color="#B279A2",
+                linewidth=1.0,
+                label="sampling density",
+            )
         for start, end in row["gt_segments"]:
             ax.axvspan(start, end, color="#54A24B", alpha=0.14, linewidth=0)
         learned = row["selection"]["learned"]["selected_positions"]
@@ -760,7 +793,14 @@ def _plot_outputs(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any],
         ax.text(0.005, 0.95, f"{row['sample_id']}  gain={row['selection_gain_vs_uniform']:+.3f}", transform=ax.transAxes, va="top", fontsize=7)
     axes[-1, 0].set_xlabel("dense temporal index")
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles[:4], labels[:4], loc="upper center", ncol=4, frameon=False)
+    legend_count = min(5, len(handles))
+    fig.legend(
+        handles[:legend_count],
+        labels[:legend_count],
+        loc="upper center",
+        ncol=legend_count,
+        frameon=False,
+    )
     for suffix in ("pdf", "png"):
         fig.savefig(out / f"selection_quality_samples.{suffix}", dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -796,11 +836,23 @@ def analyze_jsonl(
         "selected_count_min": min(int(row["selected_count"]) for row in sampling_rows),
         "selected_count_max": max(int(row["selected_count"]) for row in sampling_rows),
         "budget_violation_count": budget_violation_count,
-        "requested_max_unselected_hole_min": min(
-            int(row["requested_max_unselected_hole"]) for row in sampling_rows
+        "requested_max_unselected_hole_min": (
+            None
+            if all(row["requested_max_unselected_hole"] is None for row in sampling_rows)
+            else min(
+                int(row["requested_max_unselected_hole"])
+                for row in sampling_rows
+                if row["requested_max_unselected_hole"] is not None
+            )
         ),
-        "requested_max_unselected_hole_max": max(
-            int(row["requested_max_unselected_hole"]) for row in sampling_rows
+        "requested_max_unselected_hole_max": (
+            None
+            if all(row["requested_max_unselected_hole"] is None for row in sampling_rows)
+            else max(
+                int(row["requested_max_unselected_hole"])
+                for row in sampling_rows
+                if row["requested_max_unselected_hole"] is not None
+            )
         ),
         "observed_max_unselected_hole_min": min(
             int(row["observed_max_unselected_hole"]) for row in sampling_rows

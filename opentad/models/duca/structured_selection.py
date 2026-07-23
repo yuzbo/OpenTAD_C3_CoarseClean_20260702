@@ -16,7 +16,7 @@ class StructuredSelectionOutput:
     selected_positions: torch.Tensor
     log_partition: torch.Tensor
     k: int
-    max_unselected_hole: int
+    max_unselected_hole: int | None
     temperature: float
     selection_scope: str = "full_window_non_streaming"
 
@@ -90,6 +90,30 @@ class LocalCellSelectionOutput:
     selection_scope: str = "full_window_non_streaming_local_cells"
 
 
+@dataclass(frozen=True)
+class ContinuousDensitySelectionOutput:
+    hard_occupancy: torch.Tensor
+    soft_occupancy: torch.Tensor
+    soft_slot_assignment: torch.Tensor
+    selection_st: torch.Tensor
+    selected_positions: torch.Tensor
+    continuous_positions: torch.Tensor
+    slot_mask: torch.Tensor
+    density: torch.Tensor
+    component_densities: torch.Tensor
+    mixture_weights: torch.Tensor
+    cdf: torch.Tensor
+    effective_k: torch.Tensor
+    observed_max_unselected_hole: torch.Tensor
+    k: int
+    max_unselected_hole: int | None
+    temperature: float
+    coverage_floor: float
+    smoothing_kernel: int
+    policy_alpha: float
+    selection_scope: str = "full_window_offline_continuous_density_transport"
+
+
 def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.Tensor:
     """Return rounded-endpoint anchors with explicit round-half-to-even semantics."""
 
@@ -110,6 +134,327 @@ def exact_uniform_positions(temporal_len: int, k: int, *, device=None) -> torch.
             quotient += 1
         anchors.append(quotient)
     return torch.tensor(anchors, device=device, dtype=torch.long)
+
+
+def _project_density_quantiles_row(
+    continuous_positions: torch.Tensor,
+    *,
+    temporal_len: int,
+    max_unselected_hole: int | None,
+) -> torch.Tensor:
+    """Project ordered quantiles to the nearest feasible integer sequence."""
+
+    temporal_len = int(temporal_len)
+    max_hole = None if max_unselected_hole is None else int(max_unselected_hole)
+    k = int(continuous_positions.numel())
+    if k == 0:
+        return torch.empty((0,), device=continuous_positions.device, dtype=torch.long)
+    if max_hole is not None and temporal_len - k > (k + 1) * max_hole:
+        raise ValueError(
+            "infeasible density-transport exact-K/max-hole contract: "
+            f"T={temporal_len}, K={k}, G={max_hole}"
+        )
+    if max_hole is None:
+        # Strictly increasing integer positions y_i are equivalent to a
+        # non-decreasing sequence z_i=y_i-i. Isotonic projection centres a
+        # collapsed group around its continuous target instead of pushing all
+        # duplicate quantiles to one side.
+        shifted = (
+            continuous_positions.detach().float().cpu()
+            - torch.arange(k, dtype=torch.float32)
+        ).tolist()
+        block_means: list[float] = []
+        block_sizes: list[int] = []
+        for value in shifted:
+            block_means.append(float(value))
+            block_sizes.append(1)
+            while len(block_means) >= 2 and block_means[-2] > block_means[-1]:
+                total = block_sizes[-2] + block_sizes[-1]
+                merged = (
+                    block_means[-2] * block_sizes[-2]
+                    + block_means[-1] * block_sizes[-1]
+                ) / float(total)
+                block_means[-2:] = [merged]
+                block_sizes[-2:] = [total]
+        expanded = []
+        for value, size in zip(block_means, block_sizes):
+            expanded.extend([value] * size)
+        max_shift = temporal_len - k
+        shifted_integer = torch.tensor(
+            [min(max(int(round(value)), 0), max_shift) for value in expanded],
+            device=continuous_positions.device,
+            dtype=torch.long,
+        )
+        shifted_integer = torch.cummax(shifted_integer, dim=0).values.clamp_max(max_shift)
+        return shifted_integer + torch.arange(k, device=continuous_positions.device)
+
+    projected = []
+    previous = -1
+    detached = continuous_positions.detach().float()
+    for slot_index in range(k):
+        remaining = k - slot_index - 1
+        lower = max(
+            previous + 1,
+            temporal_len - 1 - max_hole - remaining * (max_hole + 1),
+        )
+        upper = min(
+            temporal_len - 1 - remaining,
+            previous + max_hole + 1,
+        )
+        if lower > upper:
+            raise RuntimeError("density quantile projection reached an infeasible slot")
+        target = int(torch.floor(detached[slot_index] + 0.5).item())
+        value = min(max(target, lower), upper)
+        projected.append(value)
+        previous = value
+    positions = torch.tensor(projected, device=continuous_positions.device, dtype=torch.long)
+    if _max_unselected_hole(positions, temporal_len) > max_hole:
+        raise RuntimeError("density quantile projection violated max_unselected_hole")
+    return positions
+
+
+def continuous_density_transport(
+    policy_logits: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    max_unselected_hole: int | None = None,
+    component_logits: torch.Tensor | None = None,
+    component_mixture_logits: torch.Tensor | None = None,
+    temperature: float = 0.7,
+    coverage_floor: float = 0.05,
+    smoothing_kernel: int = 5,
+    policy_alpha: float = 1.0,
+    training: bool = False,
+    force_exact_uniform: bool = False,
+) -> ContinuousDensitySelectionOutput:
+    """Turn a smooth temporal density into ordered inverse-CDF observations.
+
+    The hard path is a deterministic exact-K integer projection. The relaxed
+    path linearly splats each continuous quantile onto its two neighbouring
+    candidates, so detector and boundary losses can differentiate through the
+    inverse CDF without changing the hard detector input.
+    """
+
+    if not torch.is_tensor(policy_logits) or policy_logits.ndim != 2:
+        raise ValueError("policy_logits must be a [B,T] tensor")
+    if not policy_logits.is_floating_point() or not bool(torch.isfinite(policy_logits).all().item()):
+        raise ValueError("policy_logits must contain finite floating-point values")
+    valid = valid_mask.to(device=policy_logits.device, dtype=torch.bool)
+    if valid.shape != policy_logits.shape:
+        raise ValueError("valid_mask must align with policy_logits")
+    if component_logits is None:
+        components = policy_logits[:, None, :]
+    else:
+        if (
+            not torch.is_tensor(component_logits)
+            or component_logits.ndim != 3
+            or component_logits.shape[0] != policy_logits.shape[0]
+            or component_logits.shape[2] != policy_logits.shape[1]
+        ):
+            raise ValueError("component_logits must be [B,C,T] and align with policy_logits")
+        if not component_logits.is_floating_point() or not bool(
+            torch.isfinite(component_logits).all().item()
+        ):
+            raise ValueError("component_logits must contain finite floating-point values")
+        components = component_logits.to(device=policy_logits.device, dtype=policy_logits.dtype)
+    component_count = int(components.shape[1])
+    if component_mixture_logits is None:
+        if component_count != 1:
+            raise ValueError("multiple density components require component_mixture_logits")
+        mixture_logits = policy_logits.new_zeros((policy_logits.shape[0], 1))
+    else:
+        if (
+            not torch.is_tensor(component_mixture_logits)
+            or component_mixture_logits.shape != (policy_logits.shape[0], component_count)
+        ):
+            raise ValueError("component_mixture_logits must be [B,C]")
+        if not component_mixture_logits.is_floating_point() or not bool(
+            torch.isfinite(component_mixture_logits).all().item()
+        ):
+            raise ValueError("component_mixture_logits must contain finite floating-point values")
+        mixture_logits = component_mixture_logits.to(
+            device=policy_logits.device,
+            dtype=policy_logits.dtype,
+        )
+    k = int(k)
+    max_hole = None if max_unselected_hole is None else int(max_unselected_hole)
+    temperature = float(temperature)
+    coverage_floor = float(coverage_floor)
+    smoothing_kernel = int(smoothing_kernel)
+    policy_alpha = float(policy_alpha)
+    if k < 0 or k > int(policy_logits.shape[1]):
+        raise ValueError("k must lie in [0,T]")
+    if max_hole is not None and max_hole < 0:
+        raise ValueError("max_unselected_hole must be non-negative")
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature must be finite and positive")
+    if not math.isfinite(coverage_floor) or not 0.0 <= coverage_floor < 1.0:
+        raise ValueError("coverage_floor must lie in [0,1)")
+    if smoothing_kernel <= 0 or smoothing_kernel % 2 == 0:
+        raise ValueError("smoothing_kernel must be a positive odd integer")
+    if not math.isfinite(policy_alpha) or not 0.0 <= policy_alpha <= 1.0:
+        raise ValueError("policy_alpha must lie in [0,1]")
+
+    batch, temporal_len = policy_logits.shape
+    hard_rows = []
+    soft_rows = []
+    slot_rows = []
+    position_rows = []
+    continuous_rows = []
+    slot_mask_rows = []
+    density_rows = []
+    component_density_rows = []
+    mixture_weight_rows = []
+    cdf_rows = []
+    effective_rows = []
+    observed_max_hole_rows = []
+    for batch_index in range(batch):
+        valid_positions = torch.nonzero(valid[batch_index], as_tuple=False).flatten()
+        valid_len = int(valid_positions.numel())
+        expected = torch.arange(valid_len, device=valid.device, dtype=torch.long)
+        if not torch.equal(valid_positions, expected):
+            raise ValueError("continuous density transport requires a contiguous valid prefix")
+        effective_k = min(k, valid_len)
+        if effective_k <= 0:
+            raise ValueError("continuous density transport requires one valid candidate")
+        if max_hole is not None and valid_len - effective_k > (effective_k + 1) * max_hole:
+            raise ValueError(
+                "infeasible density-transport exact-K/max-hole contract: "
+                f"T={valid_len}, K={effective_k}, G={max_hole}"
+            )
+
+        row_components = components[batch_index, :, :valid_len].float()
+        if smoothing_kernel > 1:
+            radius = smoothing_kernel // 2
+            padded = F.pad(row_components[:, None, :], (radius, radius), mode="replicate")
+            row_components = F.avg_pool1d(
+                padded,
+                kernel_size=smoothing_kernel,
+            ).squeeze(1)
+        learned_components = torch.softmax(row_components / temperature, dim=-1)
+        mixture_weights = torch.softmax(mixture_logits[batch_index].float(), dim=0)
+        learned_density = torch.sum(
+            mixture_weights[:, None] * learned_components,
+            dim=0,
+            keepdim=True,
+        )
+        uniform_density = torch.full_like(learned_density, 1.0 / float(valid_len))
+        target_density = (
+            (1.0 - coverage_floor) * learned_density
+            + coverage_floor * uniform_density
+        )
+        alpha = 0.0 if force_exact_uniform else policy_alpha
+        density = (1.0 - alpha) * uniform_density + alpha * target_density
+
+        if valid_len == 1:
+            cdf = density.new_zeros((1,))
+            continuous = density.new_zeros((effective_k,))
+        else:
+            interval_mass = 0.5 * (density[0, :-1] + density[0, 1:])
+            interval_mass = interval_mass / interval_mass.sum().clamp_min(
+                torch.finfo(interval_mass.dtype).eps
+            )
+            cdf = torch.cat((interval_mass.new_zeros((1,)), interval_mass.cumsum(dim=0)))
+            cdf = cdf / cdf[-1].clamp_min(torch.finfo(cdf.dtype).eps)
+            quantiles = (
+                density.new_tensor([0.5])
+                if effective_k == 1
+                else torch.linspace(0.0, 1.0, effective_k, device=density.device, dtype=density.dtype)
+            )
+            right = torch.searchsorted(cdf.detach().contiguous(), quantiles).clamp(1, valid_len - 1)
+            left = right - 1
+            cdf_left = cdf[left]
+            cdf_right = cdf[right]
+            fraction = (quantiles - cdf_left) / (cdf_right - cdf_left).clamp_min(
+                torch.finfo(cdf.dtype).eps
+            )
+            continuous = left.to(dtype=density.dtype) + fraction.clamp(0.0, 1.0)
+
+        if force_exact_uniform:
+            hard_positions = exact_uniform_positions(valid_len, effective_k, device=policy_logits.device)
+        else:
+            hard_positions = _project_density_quantiles_row(
+                continuous,
+                temporal_len=valid_len,
+                max_unselected_hole=max_hole,
+            )
+        hard = policy_logits.new_zeros((temporal_len,))
+        hard[hard_positions] = 1.0
+
+        slots = policy_logits.new_zeros((k, temporal_len))
+        left_index = continuous.detach().floor().long().clamp(0, valid_len - 1)
+        right_index = (left_index + 1).clamp_max(valid_len - 1)
+        fraction = (continuous - left_index.to(dtype=continuous.dtype)).clamp(0.0, 1.0)
+        active_slots = torch.arange(effective_k, device=policy_logits.device)
+        slots[active_slots, left_index] += (1.0 - fraction).to(dtype=slots.dtype)
+        slots[active_slots, right_index] += fraction.to(dtype=slots.dtype)
+        soft = slots.sum(dim=0)
+        selection_st = hard + soft - soft.detach() if training else hard
+
+        padded_positions = torch.full((k,), -1, device=policy_logits.device, dtype=torch.long)
+        padded_positions[:effective_k] = hard_positions
+        padded_continuous = policy_logits.new_zeros((k,))
+        padded_continuous[:effective_k] = continuous.to(dtype=policy_logits.dtype)
+        slot_mask = torch.zeros((k,), device=policy_logits.device, dtype=torch.bool)
+        slot_mask[:effective_k] = True
+        padded_density = policy_logits.new_zeros((temporal_len,))
+        padded_density[:valid_len] = density[0].to(dtype=policy_logits.dtype)
+        padded_component_density = policy_logits.new_zeros(
+            (component_count, temporal_len)
+        )
+        padded_component_density[:, :valid_len] = learned_components.to(
+            dtype=policy_logits.dtype
+        )
+        padded_cdf = policy_logits.new_zeros((temporal_len,))
+        padded_cdf[:valid_len] = cdf.to(dtype=policy_logits.dtype)
+
+        hard_rows.append(hard)
+        soft_rows.append(soft)
+        slot_rows.append(slots)
+        position_rows.append(padded_positions)
+        continuous_rows.append(padded_continuous)
+        slot_mask_rows.append(slot_mask)
+        density_rows.append(padded_density)
+        component_density_rows.append(padded_component_density)
+        mixture_weight_rows.append(mixture_weights.to(dtype=policy_logits.dtype))
+        cdf_rows.append(padded_cdf)
+        effective_rows.append(effective_k)
+        observed_max_hole_rows.append(
+            _max_unselected_hole(hard_positions, valid_len)
+        )
+
+    hard_occupancy = torch.stack(hard_rows, dim=0)
+    soft_occupancy = torch.stack(soft_rows, dim=0)
+    return ContinuousDensitySelectionOutput(
+        hard_occupancy=hard_occupancy,
+        soft_occupancy=soft_occupancy,
+        soft_slot_assignment=torch.stack(slot_rows, dim=0),
+        selection_st=(
+            hard_occupancy + soft_occupancy - soft_occupancy.detach()
+            if training
+            else hard_occupancy
+        ),
+        selected_positions=torch.stack(position_rows, dim=0),
+        continuous_positions=torch.stack(continuous_rows, dim=0),
+        slot_mask=torch.stack(slot_mask_rows, dim=0),
+        density=torch.stack(density_rows, dim=0),
+        component_densities=torch.stack(component_density_rows, dim=0),
+        mixture_weights=torch.stack(mixture_weight_rows, dim=0),
+        cdf=torch.stack(cdf_rows, dim=0),
+        effective_k=torch.tensor(effective_rows, device=policy_logits.device, dtype=torch.long),
+        observed_max_unselected_hole=torch.tensor(
+            observed_max_hole_rows,
+            device=policy_logits.device,
+            dtype=torch.long,
+        ),
+        k=k,
+        max_unselected_hole=max_hole,
+        temperature=temperature,
+        coverage_floor=coverage_floor,
+        smoothing_kernel=smoothing_kernel,
+        policy_alpha=policy_alpha,
+    )
 
 
 def _validate_physical_axis_row(

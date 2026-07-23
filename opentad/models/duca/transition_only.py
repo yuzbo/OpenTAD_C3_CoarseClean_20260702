@@ -229,6 +229,99 @@ class DucaTransitionUtilityScorer(nn.Module):
         return center_scores, offset_logits
 
 
+class DucaMixtureDensityHead(nn.Module):
+    """Build boundary, uncertainty, and context density components.
+
+    The actionness-derived uncertainty branch is parameter free. The context
+    branch and per-video mixture gate are learned, while gradient ownership of
+    the supplied hidden state is decided by the caller.
+    """
+
+    component_names = ("boundary", "uncertainty", "context")
+
+    def __init__(self, hidden_dim: int, scorer_hidden_dim: int) -> None:
+        super().__init__()
+        hidden_dim = int(hidden_dim)
+        scorer_hidden_dim = int(scorer_hidden_dim)
+        if hidden_dim <= 0 or scorer_hidden_dim <= 0:
+            raise ValueError("hidden_dim and scorer_hidden_dim must be positive")
+        self.hidden_dim = hidden_dim
+        self.context_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim + 2),
+            nn.Linear(hidden_dim + 2, scorer_hidden_dim),
+            nn.GELU(),
+            nn.Linear(scorer_hidden_dim, 1),
+        )
+        nn.init.zeros_(self.context_head[-1].weight)
+        nn.init.zeros_(self.context_head[-1].bias)
+        self.mixture_gate = nn.Linear(3, 3)
+        nn.init.zeros_(self.mixture_gate.weight)
+        with torch.no_grad():
+            self.mixture_gate.bias.copy_(torch.tensor([2.0, 0.0, 0.0]))
+
+    def forward(
+        self,
+        boundary_logits: torch.Tensor,
+        p_action: torch.Tensor,
+        uncertainty: torch.Tensor,
+        uncertainty_peak: torch.Tensor,
+        hidden: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> Dict[str, torch.Tensor | tuple[str, ...]]:
+        if boundary_logits.ndim != 2:
+            raise ValueError("boundary_logits must be [B,T]")
+        valid = valid_mask.to(device=boundary_logits.device, dtype=torch.bool)
+        if valid.shape != boundary_logits.shape:
+            raise ValueError("valid_mask must align with boundary_logits")
+        for name, value in {
+            "p_action": p_action,
+            "uncertainty": uncertainty,
+            "uncertainty_peak": uncertainty_peak,
+        }.items():
+            if value.shape != boundary_logits.shape:
+                raise ValueError(f"{name} must align with boundary_logits")
+        if hidden.ndim != 3 or hidden.shape[:2] != boundary_logits.shape:
+            raise ValueError("hidden must be [B,T,D] and align with boundary_logits")
+        if int(hidden.shape[-1]) != self.hidden_dim:
+            raise ValueError(
+                f"expected hidden_dim={self.hidden_dim}, got {hidden.shape[-1]}"
+            )
+
+        detached_action = p_action.detach().to(dtype=hidden.dtype)
+        detached_uncertainty = uncertainty.detach().to(dtype=hidden.dtype)
+        detached_peak = uncertainty_peak.detach().to(dtype=hidden.dtype)
+        uncertainty_logits = (
+            detached_uncertainty + 2.0 * detached_peak
+        ).masked_fill(~valid, 0.0)
+        context_inputs = torch.cat(
+            (
+                hidden,
+                detached_action[:, :, None],
+                detached_uncertainty[:, :, None],
+            ),
+            dim=-1,
+        )
+        context_logits = self.context_head(context_inputs).squeeze(-1)
+        components = torch.stack(
+            (
+                boundary_logits,
+                uncertainty_logits.to(dtype=boundary_logits.dtype),
+                context_logits.to(dtype=boundary_logits.dtype),
+            ),
+            dim=1,
+        ).masked_fill(~valid[:, None, :], 0.0)
+        valid_count = valid.sum(dim=1, keepdim=True).clamp_min(1).to(
+            dtype=components.dtype
+        )
+        summaries = components.sum(dim=-1) / valid_count
+        mixture_logits = self.mixture_gate(summaries)
+        return {
+            "component_logits": components,
+            "mixture_logits": mixture_logits,
+            "component_names": self.component_names,
+        }
+
+
 class DucaProtectedTransitionScorer(nn.Module):
     """Explicit selector parameter boundary for the protected-E2E route."""
 

@@ -103,6 +103,18 @@ VARIANT_CONFIGS = {
     "trainfree_slowfast_fast_fusion_r2q3": (
         "duca_trainfree_slowfast_fast_fusion_r2q3_fixed384_official60.py"
     ),
+    "density_transport_nomax": (
+        "duca_density_transport_nomax_fixed384_official60.py"
+    ),
+    "density_transport_softmax14": (
+        "duca_density_transport_softmax14_fixed384_official60.py"
+    ),
+    "density_transport_hardmax14": (
+        "duca_density_transport_hardmax14_fixed384_official60.py"
+    ),
+    "mixture_density_transport_nomax": (
+        "duca_mixture_density_transport_nomax_fixed384_official60.py"
+    ),
 }
 
 DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA

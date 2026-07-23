@@ -253,7 +253,10 @@ class TemporalMaxer(SingleStageDetector):
             if selector is None:
                 return float(cfg["lr"])
             if transition_only and name.startswith(
-                "frame_selector.adapter.transition_scorer."
+                (
+                    "frame_selector.adapter.transition_scorer.",
+                    "frame_selector.adapter.density_mixture_head.",
+                )
             ):
                 return float(getattr(selector, "transition_scorer_lr", cfg["lr"]))
             if protected_e2e and name.startswith(

@@ -12,6 +12,7 @@ source "${REPO_ROOT}/scripts/duca_cellcf_canonical_env.sh"
 VARIANT="${DUCA_INDEPENDENT_VARIANT:-}"
 SPARSE_PROBE_STRIDE=""
 TRAINFREE=0
+DENSITY_TRANSPORT=0
 case "${VARIANT}" in
   two_stage_exact_uniform)
     CONFIG="configs/adatad/thumos/duca_two_stage_exact_uniform_fixed384_official60.py"
@@ -73,6 +74,26 @@ case "${VARIANT}" in
     SPARSE_PROBE_STRIDE="${VARIANT##*d}"
     CONFIG="configs/adatad/thumos/duca_sparse_probe_hidden_linear_g0_fixed384_official60.py"
     P0_CONFIG="configs/adatad/thumos/duca_sparse_probe_hidden_linear_frontend_pretrain_fixed384.py"
+    ;;
+  density_transport_nomax)
+    CONFIG="configs/adatad/thumos/duca_density_transport_nomax_fixed384_official60.py"
+    P0_CONFIG=""
+    DENSITY_TRANSPORT=1
+    ;;
+  density_transport_softmax14)
+    CONFIG="configs/adatad/thumos/duca_density_transport_softmax14_fixed384_official60.py"
+    P0_CONFIG=""
+    DENSITY_TRANSPORT=1
+    ;;
+  density_transport_hardmax14)
+    CONFIG="configs/adatad/thumos/duca_density_transport_hardmax14_fixed384_official60.py"
+    P0_CONFIG=""
+    DENSITY_TRANSPORT=1
+    ;;
+  mixture_density_transport_nomax)
+    CONFIG="configs/adatad/thumos/duca_mixture_density_transport_nomax_fixed384_official60.py"
+    P0_CONFIG=""
+    DENSITY_TRANSPORT=1
     ;;
   *) fail "unknown independent variant: ${VARIANT}" ;;
 esac
@@ -206,6 +227,18 @@ Path(output_path).write_text(json.dumps({
 PY
   cp "${CONTRACT_JSON}" "${FULL_GATE_JSON}"
   echo "[DUCA_INDEPENDENT_OFFICIAL60] train-free config precheck passed; real model starts in training"
+elif [[ "${DENSITY_TRANSPORT}" == 1 ]]; then
+  "${PYTHON}" tools/bata/validate_duca_density_transport_official60.py \
+    --config "${CONFIG}" --output-json "${CONTRACT_JSON}"
+  "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
+    --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
+    --rdzv_id="duca-independent-${SLURM_JOB_ID}-${VARIANT}-gate" \
+    tools/bata/run_duca_protected_e2e_exact_full_model_gate.py \
+    --config "${CONFIG}" --expected-commit "${EXPECTED_COMMIT}" \
+    --adatad-pretrain "${ADATAD_PRETRAIN_PATH}" \
+    --adatad-pretrain-sha256 "${FROZEN_PRETRAIN_SHA256}" \
+    --output-json "${FULL_GATE_JSON}" \
+    2>&1 | tee "${ARM_ROOT}/gate/full_model_gate.out"
 else
   "${PYTHON}" tools/bata/validate_duca_protected_e2e_official60.py \
     --config "${CONFIG}" --output-json "${CONTRACT_JSON}"
@@ -277,10 +310,34 @@ EVALUATION_JSON="${ARM_ROOT}/official60/terminal_evaluation.json"
     "inference.load_from_raw_predictions=False" \
   2>&1 | tee "${ARM_ROOT}/official60/eval.out"
 
+SELECTION_SUMMARY=""
+SELECTION_RECORDS=""
+if [[ "${DENSITY_TRANSPORT}" == 1 ]]; then
+  QUALITY_CONFIG="configs/adatad/thumos/duca_frontend_holdout_quality_fixed384.py"
+  QUALITY_DIR="${ARM_ROOT}/official60/selection_quality"
+  SELECTION_RECORDS="${QUALITY_DIR}/selection_quality_records.jsonl"
+  SELECTION_SUMMARY="${QUALITY_DIR}/selection_quality_summary.json"
+  mkdir -p "${QUALITY_DIR}"
+  "${PYTHON}" -m tools.bata.export_duca_selection_quality \
+    --config "${QUALITY_CONFIG}" \
+    --selector-config "${CONFIG}" \
+    --checkpoint "${CHECKPOINT}" \
+    --output-jsonl "${SELECTION_RECORDS}" \
+    --summary-json "${QUALITY_DIR}/selection_quality_export.json" \
+    --split val --device cuda:0 --use-ema true --seed 3407 \
+    2>&1 | tee "${QUALITY_DIR}/export.out"
+  "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
+    --records-jsonl "${SELECTION_RECORDS}" \
+    --output-dir "${QUALITY_DIR}" \
+    --bootstrap-samples 200 --random-seed 3407 \
+    2>&1 | tee "${QUALITY_DIR}/analyze.out"
+fi
+
 "${PYTHON}" - "${ARM_ROOT}/completion.json" "${EXPECTED_COMMIT}" \
   "${VARIANT}" "${CONFIG}" "${CHECKPOINT}" "${EVALUATION_JSON}" \
   "${P0_CHECKPOINT}" "${P0_CHECKPOINT_SHA256}" \
-  "${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" <<'PY'
+  "${DUCA_SELECTED_OPT_GATE_SUITE_SHA256}" \
+  "${SELECTION_SUMMARY}" "${SELECTION_RECORDS}" <<'PY'
 import hashlib
 import json
 import sys
@@ -290,7 +347,8 @@ from tools.bata.duca_selected_axis_training import atomic_write_json, canonical_
 
 (
     output, commit, variant, config, checkpoint, evaluation_path,
-    p0_checkpoint, p0_sha256, gate_sha256,
+    p0_checkpoint, p0_sha256, gate_sha256, selection_summary,
+    selection_records,
 ) = sys.argv[1:]
 evaluation_file = Path(evaluation_path).resolve()
 evaluation = json.loads(evaluation_file.read_text(encoding="utf-8"))
@@ -346,6 +404,18 @@ payload = {
     "metrics": evaluation["metrics"],
     "evaluator": evaluation["evaluator"],
     "evaluation_config": evaluation_config,
+    "selection_quality_summary": (
+        str(Path(selection_summary).resolve()) if selection_summary else None
+    ),
+    "selection_quality_summary_sha256": (
+        digest(selection_summary) if selection_summary else None
+    ),
+    "selection_quality_records": (
+        str(Path(selection_records).resolve()) if selection_records else None
+    ),
+    "selection_quality_records_sha256": (
+        digest(selection_records) if selection_records else None
+    ),
 }
 atomic_write_json(Path(output).resolve(), payload)
 PY
