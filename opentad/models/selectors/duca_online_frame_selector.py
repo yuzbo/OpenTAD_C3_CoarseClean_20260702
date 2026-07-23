@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from opentad.duca_loss_contract import (
     DUCA_LOSS_TO_WEIGHT_KEY,
