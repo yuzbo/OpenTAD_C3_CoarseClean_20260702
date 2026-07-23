@@ -29,8 +29,11 @@ max_chars: 8000
   [`c2a3c69`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/c2a3c69d9006b32b1ca18f4ce66222b59550c45f)
   的 Job `1180966` 已封存 suite `PASS_MECHANICAL_ONLY`
   (`a6f8ea…ce0b1`)；旧 `1180963` 因 Python 模块入口 fail-closed，保留诊断。
-- P1 未排队：必须同预算比较 fixed/random/free/ROI/hybrid 与 geometry 对照；free
-  在高 IoU/总成本获胜即杀 ROI 主张。仍无 mAP、全成本、official-test、A-MoD 或论文主张。
+- P1 bootstrap 已实现、尚待提交：它从已封存 P0 suite 重新核验后只提交七个
+  matched P1 cells，并冻结 P2/P3 的 result-gated successor policy；P2/P3 不会在
+  P1/P2 的授权 receipt 前消耗 GPU。P1 仍必须同预算比较 fixed/random/free/ROI/hybrid
+  与 geometry 对照；free 在高 IoU/总成本获胜即杀 ROI 主张。仍无 mAP、全成本、official-test、
+  A-MoD 或论文主张。
 
 ## Native-Crop S2 协议裁决（2026-07-20）
 

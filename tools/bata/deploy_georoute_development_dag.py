@@ -35,8 +35,9 @@ GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
 
 # N16R4 rejects a batch submission that declares no GPU. Dispatchers only
 # seal receipts and submit dependent work; this minimal allocation satisfies
-# the scheduler rule without running a model or a CUDA forward.
-CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1", "--mem", "4G")
+# the scheduler rule without running a model or a CUDA forward.  Explicit
+# control-plane memory requests are not portable on this site.
+CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1")
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:

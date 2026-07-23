@@ -77,6 +77,13 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   `0:0` and sealed `p0_finalization.json` as `PASS_MECHANICAL_ONLY`, suite SHA
   `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`.
   It did not dispatch P1.  This is not accuracy, total-cost, or paper evidence.
+- The P1/P2/P3 activation repair is implemented locally: a new P1 bootstrap
+  recomputes the sealed P0 suite before submitting the seven matched P1 cells,
+  freezes P2/P3 successor policy in its receipt, and never replays P0.  The
+  dispatcher now uses the valid hyphenated action names and an N16R4-compatible
+  control allocation without an explicit `--mem` override.  Focused contract
+  checks pass `18/18`.  This remains `implemented` until the fresh committed
+  remote snapshot has passed its Linux checks and submitted P1.
 
 ## Frozen decision logic
 

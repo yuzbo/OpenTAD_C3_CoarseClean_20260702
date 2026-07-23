@@ -923,3 +923,14 @@ append_only: true
   `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1` as
   `PASS_MECHANICAL_ONLY`, without a P1 job, training, evaluator, or official
   test.  This authorizes no performance or paper claim.
+
+- 2026-07-23: implemented the GeoRoute P1/P2/P3 activation repair without
+  replaying sealed P0.  `p1-bootstrap` recomputes and hash-validates the three
+  P0 reports and `p0_finalization.json`, creates a new P1/P2/P3 namespace,
+  submits only the seven one-seed matched P1 cells, and records result-gated
+  P2/P3 successors.  The dispatcher action spelling was corrected from the
+  invalid underscore form to its CLI hyphen form, control jobs no longer pin
+  the N16R4-rejected `--mem=4G`, and package module entry points replace the
+  fragile path invocation.  Focused contract checks pass `18/18`; this is
+  implementation evidence pending a clean remote snapshot and P1 submission,
+  not a development metric or paper claim.

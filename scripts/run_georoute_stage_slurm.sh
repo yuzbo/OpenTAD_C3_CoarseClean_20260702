@@ -54,4 +54,4 @@ args=(
 if [[ -n "${TOKEN_BUDGET}" ]]; then
   args+=(--token-budget "${TOKEN_BUDGET}")
 fi
-python tools/bata/georoute_stage_runner.py "${args[@]}"
+python -m tools.bata.georoute_stage_runner "${args[@]}"

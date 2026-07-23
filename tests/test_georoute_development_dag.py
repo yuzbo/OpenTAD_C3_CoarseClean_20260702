@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import argparse
 import json
 import tempfile
 from pathlib import Path
 
+from tools.bata import georoute_dag_dispatch as dag
 from tools.bata.finalize_georoute_p0_gate import finalize
 from tools.bata.georoute_dag_dispatch import GEOROUTE_STAGE_RESULT_SCHEMA
 from tools.bata.georoute_experiment_contract import (
     DEVELOPMENT_SEEDS,
     PAPER_VARIANT_NAMES,
+    P1_VARIANTS,
     canonical_sha256,
     paper_variant_name,
     select_p1_roi_candidate,
@@ -116,6 +119,74 @@ def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
     assert summary["suite_sha256"]
 
 
+def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch, tmp_path: Path):
+    p0_root = tmp_path / "p0_parent"
+    p0_dir = p0_root / "p0"
+    p0_dir.mkdir(parents=True)
+    payloads = {
+        "dense_native_parity.json": _p0_report(
+            estimator="none", claim="no_policy_gradient", target_k=100, scout_gradient=False
+        ),
+        "hybrid_straight_through.json": _p0_report(
+            estimator="straight_through", claim="biased_straight_through", target_k=32, scout_gradient=True
+        ),
+        "roi_score_function.json": _p0_report(
+            estimator="score_function", claim="score_function_candidate", target_k=32, scout_gradient=True
+        ),
+    }
+    for name, payload in payloads.items():
+        (p0_dir / name).write_text(json.dumps(payload), encoding="utf-8")
+    receipt = finalize(
+        dense=p0_dir / "dense_native_parity.json",
+        hybrid=p0_dir / "hybrid_straight_through.json",
+        score_function=p0_dir / "roi_score_function.json",
+    )
+    (p0_root / "control").mkdir()
+    (p0_root / "control" / "p0_finalization.json").write_text(
+        json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    source_config = tmp_path / "source.py"
+    manifest = tmp_path / "manifest.json"
+    annotation = tmp_path / "development.json"
+    class_map = tmp_path / "class_map.txt"
+    pretrained = tmp_path / "pretrained.pth"
+    for path in (source_config, manifest, annotation, class_map, pretrained):
+        path.write_text("placeholder", encoding="utf-8")
+    video_root = tmp_path / "validation_videos"
+    video_root.mkdir()
+    run_root = tmp_path / "p1_p2_p3"
+    args = argparse.Namespace(
+        run_root=run_root,
+        p0_run_root=p0_root,
+        source_config=source_config,
+        manifest=manifest,
+        development_annotation=annotation,
+        class_map=class_map,
+        development_video_root=video_root,
+        pretrained=pretrained,
+        expected_commit="a" * 40,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_submit_stage_matrix(**kwargs):
+        captured.update(kwargs)
+        return {"georoute_p1_dense_native_s3407": "12345"}
+
+    monkeypatch.setattr(dag, "_submit_stage_matrix", fake_submit_stage_matrix)
+    assert dag._p1_bootstrap(args) == 0
+
+    intent = json.loads((run_root / "control" / "p1_bootstrap.json").read_text(encoding="utf-8"))
+    assert captured["stage"] == "p1"
+    assert captured["next_action"] == "p1-select"
+    assert captured["parent_receipt"] == receipt["suite_sha256"]
+    assert captured["cells"] == [(variant, 3407, None) for variant in P1_VARIANTS]
+    assert intent["p0_parent"]["suite_sha256"] == receipt["suite_sha256"]
+    assert intent["frozen_successor_policy"]["p2"].startswith("submit only when p1-select")
+    assert not (run_root / "p2").exists()
+    assert not (run_root / "p3").exists()
+
+
 def test_p1_and_p2_selection_are_predeclared_and_result_blind():
     p1 = {
         "dense_native": _record(stage="p1", variant="dense_native", seed=3407, high_iou=64.0, cost=50.0),
@@ -189,7 +260,8 @@ def test_gpu_submission_uses_n16r4_outer_resources_and_exact_inner_step():
 
     for source in (deployer, dispatcher):
         assert 'GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")' in source
-        assert 'CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1", "--mem", "4G")' in source
+        assert 'CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1")' in source
+        assert '"--mem", "4G"' not in source
         assert '"--mem", "96G"' not in source
     for source in (p0_launcher, stage_launcher):
         assert "srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M" in source
@@ -202,3 +274,17 @@ def test_p0_finalizer_launcher_seals_p0_without_dispatching_development_stages()
     assert "georoute_dag_dispatch.py" not in launcher
     assert "deploy_georoute_development_dag.py" not in launcher
     assert "run_georoute_stage_slurm.sh" not in launcher
+
+
+def test_dispatch_and_stage_launchers_use_package_entrypoints_and_accept_p1_bootstrap():
+    dispatcher = (ROOT / "tools" / "bata" / "georoute_dag_dispatch.py").read_text(encoding="utf-8")
+    dispatch_launcher = (ROOT / "scripts" / "run_georoute_dispatch_slurm.sh").read_text(encoding="utf-8")
+    stage_launcher = (ROOT / "scripts" / "run_georoute_stage_slurm.sh").read_text(encoding="utf-8")
+
+    assert '"p1-bootstrap"' in dispatcher
+    assert 'next_action="p1-select"' in dispatcher
+    assert 'next_action="p2-select"' in dispatcher
+    assert 'next_action="p3-finalize"' in dispatcher
+    assert "python -m tools.bata.georoute_dag_dispatch" in dispatch_launcher
+    assert "--p0-run-root" in dispatch_launcher
+    assert "python -m tools.bata.georoute_stage_runner" in stage_launcher

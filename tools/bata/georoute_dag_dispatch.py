@@ -31,6 +31,7 @@ from tools.bata.georoute_experiment_contract import (  # noqa: E402
     canonical_sha256,
     select_p1_roi_candidate,
     select_p2_roi_candidate,
+    sha256_file,
     stage_cell_relative_path,
 )
 
@@ -44,8 +45,9 @@ GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
 
 # The site rejects control-plane jobs without a GPU declaration. Dispatchers
 # do not create a model or execute CUDA; this is the smallest valid batch
-# allocation needed to seal a receipt and submit a gated successor.
-CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1", "--mem", "4G")
+# allocation needed to seal a receipt and submit a gated successor.  Do not
+# pin --mem here: N16R4 rejected that otherwise harmless explicit request.
+CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1")
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -166,6 +168,102 @@ def _write_submission(
     return path
 
 
+def _validate_sealed_p0_parent(p0_run_root: Path) -> tuple[dict[str, Any], Path]:
+    """Recompute and validate the immutable P0 suite before P1 can start."""
+
+    p0_run_root = p0_run_root.resolve()
+    if os.environ.get("SLURM_JOB_ID") and "/data/run01/sczc063/yuzibo/" not in p0_run_root.as_posix() + "/":
+        raise ValueError("GeoRoute P0 parent must remain inside the remote write boundary")
+    receipt_path = p0_run_root / "control" / "p0_finalization.json"
+    if not receipt_path.is_file():
+        raise FileNotFoundError(receipt_path)
+    stored = _read_json(receipt_path)
+    recomputed = finalize(
+        dense=p0_run_root / "p0" / "dense_native_parity.json",
+        hybrid=p0_run_root / "p0" / "hybrid_straight_through.json",
+        score_function=p0_run_root / "p0" / "roi_score_function.json",
+    )
+    if stored != recomputed:
+        raise ValueError("sealed GeoRoute P0 receipt differs from its recomputed report suite")
+    if stored.get("status") != "PASS_MECHANICAL_ONLY":
+        raise ValueError("GeoRoute P0 parent is not a passed mechanical-only suite")
+    if stored.get("verified_properties", {}).get("official_test_opened") is not False:
+        raise ValueError("GeoRoute P0 parent opened the official test")
+    return stored, receipt_path
+
+
+def _validate_bootstrap_inputs(args: argparse.Namespace) -> None:
+    input_paths = {
+        "source config": args.source_config,
+        "manifest": args.manifest,
+        "development annotation": args.development_annotation,
+        "class map": args.class_map,
+        "pretrained checkpoint": args.pretrained,
+    }
+    for label, path in input_paths.items():
+        if not path.is_file():
+            raise FileNotFoundError(f"GeoRoute P1 bootstrap {label} is missing: {path}")
+    if not args.development_video_root.is_dir():
+        raise FileNotFoundError(
+            f"GeoRoute P1 bootstrap development video root is missing: {args.development_video_root}"
+        )
+    if "test" in args.development_video_root.name.lower():
+        raise ValueError("GeoRoute P1 bootstrap cannot use an official-test video root")
+
+
+def _p1_bootstrap(args: argparse.Namespace) -> int:
+    """Submit P1 from a sealed P0 suite without replaying P0.
+
+    The resulting P1 receipt predeclares the P2/P3 successors but leaves their
+    GPU jobs absent until the result-blind selectors authorize a survivor.
+    """
+
+    if args.p0_run_root is None:
+        raise ValueError("p1-bootstrap requires --p0-run-root")
+    _validate_bootstrap_inputs(args)
+    p0_receipt, p0_receipt_path = _validate_sealed_p0_parent(args.p0_run_root)
+    if args.run_root.exists():
+        raise FileExistsError("GeoRoute P1 bootstrap namespace already exists")
+    args.run_root.mkdir(parents=True, exist_ok=False)
+    (args.run_root / "control").mkdir()
+    (args.run_root / "slurm").mkdir()
+
+    cells = [(variant, 3407, None) for variant in P1_VARIANTS]
+    jobs = _submit_stage_matrix(
+        args=args,
+        stage="p1",
+        cells=cells,
+        parent_receipt=str(p0_receipt["suite_sha256"]),
+        next_action="p1-select",
+    )
+    intent = {
+        "schema_version": GEOROUTE_DAG_SCHEMA,
+        "status": "P1_SUBMITTED_WITH_RESULT_GATED_P2_P3",
+        "p0_parent": {
+            "run_root": str(args.p0_run_root.resolve()),
+            "finalization_path": str(p0_receipt_path),
+            "finalization_file_sha256": sha256_file(p0_receipt_path),
+            "suite_sha256": str(p0_receipt["suite_sha256"]),
+        },
+        "p1_cells": [
+            {"stage": "p1", "variant": variant, "seed": seed, "token_budget": budget}
+            for variant, seed, budget in cells
+        ],
+        "p1_jobs": jobs,
+        "frozen_successor_policy": {
+            "p2": "submit only when p1-select records ADVANCE_STRUCTURED_ROI_TO_P2",
+            "p3": "submit only when p2-select records ADVANCE_STRUCTURED_ROI_TO_P3",
+            "official_test_opened": False,
+            "amod_included": False,
+        },
+        "paper_claim_allowed": False,
+        "official_test_opened": False,
+    }
+    intent["bootstrap_sha256"] = canonical_sha256(intent)
+    _atomic_write_json(args.run_root / "control" / "p1_bootstrap.json", intent)
+    return 0
+
+
 def _unique_cells(cells: Sequence[tuple[str, int, int | None]]) -> list[tuple[str, int, int | None]]:
     """Preserve frozen order while preventing a K=64 budget/ablation duplicate."""
 
@@ -205,7 +303,7 @@ def _submit_stage_matrix(
     dispatch_exports["GEOROUTE_PARENT_RECEIPT"] = parent_receipt
     dispatcher = _sbatch(
         args=args,
-        name=f"georoute_{next_action.replace('_', '_')}",
+        name=f"georoute_{next_action.replace('-', '_')}",
         script=dispatch_script,
         exports=dispatch_exports,
         dependency_ids=list(jobs.values()),
@@ -233,7 +331,7 @@ def _p0_finalize(args: argparse.Namespace) -> int:
         stage="p1",
         cells=cells,
         parent_receipt=str(receipt["suite_sha256"]),
-        next_action="p1_select",
+        next_action="p1-select",
     )
     return 0
 
@@ -256,7 +354,7 @@ def _p1_select(args: argparse.Namespace) -> int:
         stage="p2",
         cells=cells,
         parent_receipt=str(decision["selection_sha256"]),
-        next_action="p2_select",
+        next_action="p2-select",
     )
     return 0
 
@@ -293,7 +391,7 @@ def _p2_select(args: argparse.Namespace) -> int:
         stage="p3",
         cells=cells,
         parent_receipt=str(decision["selection_sha256"]),
-        next_action="p3_finalize",
+        next_action="p3-finalize",
     )
     return 0
 
@@ -342,8 +440,13 @@ def _p3_finalize(args: argparse.Namespace) -> int:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("p0-finalize", "p1-select", "p2-select", "p3-finalize"), required=True)
+    parser.add_argument(
+        "--action",
+        choices=("p0-finalize", "p1-bootstrap", "p1-select", "p2-select", "p3-finalize"),
+        required=True,
+    )
     parser.add_argument("--run-root", type=Path, required=True)
+    parser.add_argument("--p0-run-root", type=Path)
     parser.add_argument("--source-config", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--development-annotation", type=Path, required=True)
@@ -361,6 +464,7 @@ def main() -> int:
         raise RuntimeError("GeoRoute DAG dispatcher must run inside Slurm")
     actions = {
         "p0-finalize": _p0_finalize,
+        "p1-bootstrap": _p1_bootstrap,
         "p1-select": _p1_select,
         "p2-select": _p2_select,
         "p3-finalize": _p3_finalize,

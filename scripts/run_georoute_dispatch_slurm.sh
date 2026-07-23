@@ -18,13 +18,18 @@ fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
 
-python tools/bata/georoute_dag_dispatch.py \
-  --action "${GEOROUTE_DAG_ACTION}" \
-  --run-root "${GEOROUTE_RUN_ROOT}" \
-  --source-config "${GEOROUTE_SOURCE_CONFIG}" \
-  --manifest "${GEOROUTE_MANIFEST}" \
-  --development-annotation "${GEOROUTE_DEVELOPMENT_ANNOTATION}" \
-  --class-map "${GEOROUTE_CLASS_MAP}" \
-  --development-video-root "${GEOROUTE_DEVELOPMENT_VIDEO_ROOT}" \
-  --pretrained "${GEOROUTE_PRETRAINED}" \
+args=(
+  --action "${GEOROUTE_DAG_ACTION}"
+  --run-root "${GEOROUTE_RUN_ROOT}"
+  --source-config "${GEOROUTE_SOURCE_CONFIG}"
+  --manifest "${GEOROUTE_MANIFEST}"
+  --development-annotation "${GEOROUTE_DEVELOPMENT_ANNOTATION}"
+  --class-map "${GEOROUTE_CLASS_MAP}"
+  --development-video-root "${GEOROUTE_DEVELOPMENT_VIDEO_ROOT}"
+  --pretrained "${GEOROUTE_PRETRAINED}"
   --expected-commit "${GEOROUTE_EXPECTED_COMMIT}"
+)
+if [[ -n "${GEOROUTE_P0_RUN_ROOT:-}" ]]; then
+  args+=(--p0-run-root "${GEOROUTE_P0_RUN_ROOT}")
+fi
+python -m tools.bata.georoute_dag_dispatch "${args[@]}"
