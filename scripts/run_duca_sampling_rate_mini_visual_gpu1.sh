@@ -63,7 +63,8 @@ for epoch in 9 19 29; do
   done
   "${PYTHON}" -m tools.bata.export_duca_selection_quality \
     --config "${CONFIG}" --selector-config "${CONFIG}" --checkpoint "${checkpoint}" \
-    --split test --batch-size 1 --limit-batches 2 --use-ema true --device cuda:0 \
+    --split test --batch-size 1 --max-samples 2 --min-valid-length 384 \
+    --require-valid-boundary --use-ema true --device cuda:0 \
     --output-jsonl "${RUN_ROOT}/selection/epoch_${label}.jsonl" \
     --summary-json "${RUN_ROOT}/selection/epoch_${label}.summary.json" \
     | tee "${RUN_ROOT}/selection/epoch_${label}.out"

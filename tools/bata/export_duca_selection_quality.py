@@ -293,6 +293,9 @@ def export_records(
     batch_size: int | None = None,
     num_workers: int | None = None,
     limit_batches: int = 0,
+    max_samples: int = 0,
+    min_valid_length: int = 0,
+    require_valid_boundary: bool = False,
     seed: int = 3407,
 ) -> dict[str, Any]:
     import numpy as np
@@ -413,18 +416,43 @@ def export_records(
                 requested_max_unselected_hole=requested_max_unselected_hole,
                 gt_boundary_validity=gt_boundary_validity,
             )
+            records = [
+                record
+                for record in records
+                if int(record["valid_len"]) >= int(min_valid_length)
+                and (
+                    not require_valid_boundary
+                    or any(
+                        bool(pair[0]) or bool(pair[1])
+                        for pair in record.get("gt_boundary_validity", [])
+                    )
+                )
+            ]
+            if max_samples > 0:
+                records = records[: max(0, int(max_samples) - sample_count)]
             for record in records:
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
             row_count += 1
             sample_count += len(records)
             if batch_idx % 20 == 0:
                 print(json.dumps({"batch": batch_idx, "samples": sample_count}, sort_keys=True), flush=True)
+            if max_samples > 0 and sample_count >= int(max_samples):
+                break
+    if max_samples > 0 and sample_count != int(max_samples):
+        raise ValueError(
+            "selection-quality export did not find the requested number of eligible samples: "
+            f"requested={max_samples}, found={sample_count}, "
+            f"min_valid_length={min_valid_length}, require_valid_boundary={require_valid_boundary}"
+        )
     summary = {
         "schema_version": "duca_selection_quality_export_summary_v1",
         "output_jsonl": str(output_path),
         "row_count": row_count,
         "sample_count": sample_count,
         "limit_batches": int(limit_batches),
+        "max_samples": int(max_samples),
+        "min_valid_length": int(min_valid_length),
+        "require_valid_boundary": bool(require_valid_boundary),
         "seed": int(seed),
         "source": source,
         "decision_contract": {
@@ -455,6 +483,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--num-workers", type=int)
     parser.add_argument("--limit-batches", type=int, default=0)
+    parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument("--min-valid-length", type=int, default=0)
+    parser.add_argument("--require-valid-boundary", action="store_true")
     parser.add_argument("--seed", type=int, default=3407)
     args = parser.parse_args(argv)
     summary = export_records(
@@ -470,6 +501,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         limit_batches=args.limit_batches,
+        max_samples=args.max_samples,
+        min_valid_length=args.min_valid_length,
+        require_valid_boundary=bool(args.require_valid_boundary),
         seed=args.seed,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))

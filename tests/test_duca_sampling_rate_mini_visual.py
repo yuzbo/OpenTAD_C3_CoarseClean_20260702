@@ -57,7 +57,8 @@ def test_mini_visual_runner_exports_trained_and_inference_evidence() -> None:
     assert "plot_duca_training_attribution" in source
     assert "plot_duca_inference_selection" in source
     assert "analyze_duca_selection_quality" not in source
-    assert "--limit-batches 2" in source
+    assert "--max-samples 2 --min-valid-length 384" in source
+    assert "--require-valid-boundary" in source
     assert "epoch in 9 19 29" in source
     assert "for batch_index in 0 1" in source
     assert "--all-fixed-samples" in source
