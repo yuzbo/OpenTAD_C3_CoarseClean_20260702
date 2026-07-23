@@ -122,6 +122,7 @@ def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
 
 
 def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     p0_root = tmp_path / "p0_parent"
     p0_dir = p0_root / "p0"
     p0_dir.mkdir(parents=True)
@@ -193,6 +194,7 @@ def test_stage_matrix_uses_scheduler_test_only_for_every_leaf_before_submission(
     monkeypatch,
     tmp_path: Path,
 ):
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     for name in ("config.py", "manifest.json", "annotation.json", "class_map.txt", "pretrained.pth"):
         (tmp_path / name).write_text("placeholder", encoding="utf-8")
     video_root = tmp_path / "validation_videos"
@@ -260,6 +262,7 @@ def test_submit_capacity_rejects_a_matrix_before_any_leaf_is_created(monkeypatch
 
 
 def test_stage_matrix_cancels_submitted_leaves_when_selector_submission_fails(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     for name in ("config.py", "manifest.json", "annotation.json", "class_map.txt", "pretrained.pth"):
         (tmp_path / name).write_text("placeholder", encoding="utf-8")
     video_root = tmp_path / "validation_videos"
