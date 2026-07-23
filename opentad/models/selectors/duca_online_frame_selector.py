@@ -910,9 +910,12 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError(
                     "uniform companion training requires a fixed exact budget"
                 )
-            if self.acquisition_policy != "global_structured_topk":
+            if self.acquisition_policy not in {
+                "global_structured_topk",
+                "budget_calibrated_sampling_rate",
+            }:
                 raise ValueError(
-                    "uniform companion training requires global_structured_topk"
+                    "uniform companion training requires a compatible fixed exact-K policy"
                 )
             if self.detector_output_coordinate_space != SELECTED_AXIS:
                 raise ValueError(
@@ -923,26 +926,30 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError(
                     "learned-row gradient normalization requires a positive uniform companion fraction"
                 )
-            if self.detector_gradient_mode != "protected_structured_transport":
+            if self.detector_gradient_mode not in {
+                "protected_structured_transport",
+                "density_transport_st",
+            }:
                 raise ValueError(
-                    "learned-row gradient normalization requires protected_structured_transport"
+                    "learned-row gradient normalization requires a supported exact-K bridge"
                 )
         if self.counterfactual_objective == "local_cell_signed_logistic":
             if self.acquisition_policy != "local_cell_deformation":
                 raise ValueError("local-cell counterfactual utility requires local_cell_deformation")
             if self.local_cell_force_exact_uniform and self.counterfactual_utility_distillation_weight > 0.0:
                 raise ValueError("the exact-uniform control must not request counterfactual utility")
-        density_policies = {
+        continuous_transport_policies = {
             "continuous_density_transport",
             "continuous_mixture_density_transport",
+            "budget_calibrated_sampling_rate",
         }
-        if self.detector_gradient_mode == "density_transport_st" and self.acquisition_policy not in density_policies:
-            raise ValueError("density_transport_st requires a continuous density acquisition policy")
-        if self.acquisition_policy in density_policies and self.detector_gradient_mode not in {
+        if self.detector_gradient_mode == "density_transport_st" and self.acquisition_policy not in continuous_transport_policies:
+            raise ValueError("density_transport_st requires a continuous transport acquisition policy")
+        if self.acquisition_policy in continuous_transport_policies and self.detector_gradient_mode not in {
             "none",
             "density_transport_st",
         }:
-            raise ValueError("continuous density transport supports detector gradient mode none or density_transport_st")
+            raise ValueError("continuous transport supports detector gradient mode none or density_transport_st")
 
         actionness_source = None
         self.raw_actionness_source = None
