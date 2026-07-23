@@ -66,6 +66,15 @@ export XDG_CONFIG_HOME="$BASE/tmp/xdg_config"
 export HF_HOME="$BASE/hf_cache"
 ```
 
+### Slurm shell bootstrap
+
+- A standalone Slurm script must execute `source /etc/profile` **before**
+  `set -u` and before every `module load`. Slurm batch shells are
+  non-interactive and do not otherwise define `module`.
+- A failure at this point is a zero-update launch-environment error. Repair
+  the one wrapper line and resubmit the exact same model commit; do not create
+  a new model revision, new gate, or a performance conclusion.
+
 需要下载外部资源时使用登录节点代理：
 
 ```bash
