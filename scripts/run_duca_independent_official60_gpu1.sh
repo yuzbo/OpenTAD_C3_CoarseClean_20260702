@@ -96,6 +96,11 @@ case "${VARIANT}" in
     P0_CONFIG=""
     DENSITY_TRANSPORT=1
     ;;
+  sampling_rate_exact_uniform)
+    CONFIG="configs/adatad/thumos/duca_sampling_rate_exact_uniform_fixed384_official60.py"
+    P0_CONFIG=""
+    SAMPLING_RATE=1
+    ;;
   sampling_rate_only)
     CONFIG="configs/adatad/thumos/duca_sampling_rate_fixed384_official60.py"
     P0_CONFIG=""

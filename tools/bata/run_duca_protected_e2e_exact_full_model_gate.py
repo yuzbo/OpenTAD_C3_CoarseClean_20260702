@@ -487,6 +487,11 @@ def run_gate(
             "asformer_full_encoder_adapted", False
         )
     )
+    sampling_rate_exact_uniform_control = bool(
+        cfg.get("duca_sampling_rate_contract", {}).get(
+            "force_exact_uniform_control", False
+        )
+    )
     two_stage_route = str(cfg.duca_transition_only_contract.get("stage", "")) == (
         "uniform_detector_cowarmup_then_joint_detection"
     )
@@ -726,7 +731,7 @@ def run_gate(
             positions,
             batch["masks"],
         )
-    if exact_uniform_route:
+    if exact_uniform_route or sampling_rate_exact_uniform_control:
         expected_uniform = exact_uniform_positions(
             int(cfg.dense_window_size),
             int(cfg.model.frame_selector.budget),

@@ -10,6 +10,7 @@ from tools.bata.validate_duca_sampling_rate_official60 import validate_config
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "configs" / "adatad" / "thumos"
 VARIANTS = {
+    "rate_exact_uniform": "duca_sampling_rate_exact_uniform_fixed384_official60.py",
     "rate_only": "duca_sampling_rate_fixed384_official60.py",
     "rate_cls": "duca_sampling_rate_cls_fixed384_official60.py",
     "rate_reg": "duca_sampling_rate_reg_fixed384_official60.py",
@@ -23,6 +24,7 @@ def test_sampling_rate_official60_variants_are_matched_and_validated(monkeypatch
     monkeypatch.setenv("DUCA_CELLCF_TRAINING_PROFILE", "official60")
     payloads = {key: validate_config(CONFIG_ROOT / value) for key, value in VARIANTS.items()}
     assert all(payload["ok"] for payload in payloads.values())
+    assert payloads["rate_exact_uniform"]["force_exact_uniform_control"] is True
     assert payloads["rate_only"]["contribution_components"] == "none"
     assert payloads["rate_cls"]["contribution_components"] == "cls"
     assert payloads["rate_reg"]["contribution_components"] == "reg"
@@ -40,6 +42,9 @@ def test_only_adaptation_variants_open_declared_asformer_policy_gradient(monkeyp
         assert selector.max_unselected_hole is None
         assert selector.hard_max_gap_repair is False
         assert selector.soft_max_gap_loss_enabled is False
+        assert int(cfg.workflow.val_eval_interval) == 5
+        assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 5
+        assert int(cfg.workflow.val_start_epoch) == 4
         expected_scope = {
             "rate_both_asformer_adapt": "asformer_last_encoder_layer",
             "rate_both_asformer_full_adapt": "asformer_full_encoder",
@@ -67,6 +72,7 @@ def test_existing_independent_runner_exposes_sampling_rate_matrix_without_a_new_
         encoding="utf-8"
     )
     expected = {
+        "sampling_rate_exact_uniform": "duca_sampling_rate_exact_uniform_fixed384_official60.py",
         "sampling_rate_only": "duca_sampling_rate_fixed384_official60.py",
         "sampling_rate_cls": "duca_sampling_rate_cls_fixed384_official60.py",
         "sampling_rate_reg": "duca_sampling_rate_reg_fixed384_official60.py",

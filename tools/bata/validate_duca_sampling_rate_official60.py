@@ -82,9 +82,28 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
     _require(selector.counterfactual_utility_distillation_weight == 0.0, "counterfactual teacher is not part of this matrix")
     _require(selector.require_counterfactual_utility_teacher is False, "counterfactual teacher must be disabled")
     _require(float(selector.density_coverage_floor) > 0.0, "rate policy requires a nonzero coverage floor")
-    _require(float(schedule.policy_alpha.start) == 0.0 and float(schedule.policy_alpha.end) == 1.0, "policy must be uniform-to-rate curriculum")
-    _require(float(schedule.detector_gradient.start) == 0.0 and float(schedule.detector_gradient.end) == 0.25, "detector bridge endpoints changed")
-    _require(float(schedule.detector_contribution.start) == 0.0 and float(schedule.detector_contribution.end) == 1.0, "contribution curriculum endpoints changed")
+    uniform_control = bool(contract.get("force_exact_uniform_control", False))
+    if uniform_control:
+        _require(
+            float(schedule.policy_alpha.start) == 0.0 and float(schedule.policy_alpha.end) == 0.0,
+            "exact-uniform control must keep the rate policy disabled",
+        )
+        _require(
+            float(schedule.detector_gradient.start) == 0.0 and float(schedule.detector_gradient.end) == 0.0,
+            "exact-uniform control must not enable detector-to-selector feedback",
+        )
+        _require(
+            float(schedule.detector_contribution.start) == 0.0 and float(schedule.detector_contribution.end) == 0.0,
+            "exact-uniform control must not enable contribution distillation",
+        )
+        _require(
+            float(selector.training_uniform_companion_fraction) == 0.0,
+            "exact-uniform control must not duplicate a uniform companion row",
+        )
+    else:
+        _require(float(schedule.policy_alpha.start) == 0.0 and float(schedule.policy_alpha.end) == 1.0, "policy must be uniform-to-rate curriculum")
+        _require(float(schedule.detector_gradient.start) == 0.0 and float(schedule.detector_gradient.end) == 0.25, "detector bridge endpoints changed")
+        _require(float(schedule.detector_contribution.start) == 0.0 and float(schedule.detector_contribution.end) == 1.0, "contribution curriculum endpoints changed")
 
     _require(str(selector.sampling_rate_utility_components) == contribution_components, "rate utility inputs disagree with contract")
     _require(str(selector.detector_contribution_components) == contribution_components, "contribution prediction targets disagree with contract")
@@ -109,7 +128,19 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
     _require(int(cfg.workflow.expected_successful_optimizer_updates) == 6000, "official protocol must run 6000 updates")
     _require(int(cfg.workflow.primary_checkpoint_epoch) == 59, "primary checkpoint must be epoch 59")
     _require(cfg.workflow.primary_checkpoint_state_key == "state_dict_ema", "primary state must be terminal EMA")
-    _require(int(cfg.workflow.val_eval_interval) < 0, "intermediate validation is forbidden")
+    _require(int(cfg.workflow.checkpoint_interval) == 5, "save interval must be five epochs")
+    _require(int(cfg.workflow.val_eval_interval) == 5, "full validation must run every five epochs")
+    _require(int(cfg.workflow.val_eval_interval_anchor_epoch) == 5, "validation anchor must be epoch 5")
+    _require(int(cfg.workflow.val_start_epoch) == 4, "validation must begin at one-based epoch 5")
+    _require(
+        str(cfg.workflow.get("intermediate_validation_role", ""))
+        == "diagnostic_only_no_checkpoint_selection",
+        "intermediate validation must be diagnostic only",
+    )
+    _require(
+        cfg.workflow.get("intermediate_validation_selects_checkpoint", None) is False,
+        "intermediate validation may not select checkpoints",
+    )
     _require(cfg.dataset.train.subset_name == "training", "training split changed")
     _require(cfg.dataset.test.subset_name == "validation", "validation split changed")
     _require(contract.inference_teacher_free is True, "inference must not consume contribution teacher targets")
@@ -123,9 +154,12 @@ def validate_config(config_path: str | Path) -> dict[str, Any]:
         "policy": str(selector.acquisition_policy),
         "budget": int(selector.budget),
         "contribution_components": contribution_components,
+        "force_exact_uniform_control": uniform_control,
         "asformer_last_layer_adapted": adapts_last_asformer_layer,
         "asformer_full_encoder_adapted": adapts_full_asformer_encoder,
         "official_validation_comparable": True,
+        "intermediate_validation_epochs": list(range(5, 61, 5)),
+        "intermediate_validation_role": "diagnostic_only_no_checkpoint_selection",
         "paper_claim_allowed": False,
     }
 
