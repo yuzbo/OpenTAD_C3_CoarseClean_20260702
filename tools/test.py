@@ -28,6 +28,7 @@ from tools.bata import duca_cellcf_training
 from tools.bata import duca_protected_physical_training
 from tools.bata import duca_selected_axis_training
 from tools.bata.duca_p0_evaluation import (
+    canonical_jsonable,
     evaluation_config_sha256,
     normalize_evaluation_config,
     official_evaluator_identity,
@@ -392,18 +393,12 @@ def main():
 
 
 def _jsonable(value):
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    if hasattr(value, "item"):
-        return value.item()
-    return value
+    return canonical_jsonable(value)
 
 
 def _canonical_sha256(value):
     encoded = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        _jsonable(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 

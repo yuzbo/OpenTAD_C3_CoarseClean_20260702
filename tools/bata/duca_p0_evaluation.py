@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import asdict, is_dataclass
 import inspect
 import hashlib
 import json
@@ -17,9 +18,24 @@ _BOOTSTRAP_WORKER_STATE: dict[str, Any] | None = None
 _BOOTSTRAP_WORKER_DIRECTORY: tempfile.TemporaryDirectory[str] | None = None
 
 
+def canonical_jsonable(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return canonical_jsonable(asdict(value))
+    if isinstance(value, Mapping):
+        return {str(key): canonical_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [canonical_jsonable(item) for item in value]
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
 def canonical_sha256(value: Any) -> str:
     encoded = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        canonical_jsonable(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 

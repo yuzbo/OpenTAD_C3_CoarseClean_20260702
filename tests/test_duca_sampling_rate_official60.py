@@ -7,6 +7,8 @@ from mmengine.config import Config
 
 from tools.bata.duca_p0_training import formal_training_contract
 from tools.bata import duca_selected_axis_training
+from tools.bata.duca_cellcf_protocol import protocol_for_name
+from tools.bata.duca_p0_evaluation import canonical_jsonable, canonical_sha256
 from tools.bata.validate_duca_sampling_rate_official60 import validate_config
 
 
@@ -143,6 +145,23 @@ def test_sampling_rate_keeps_a_nonzero_transition_output_path_for_coarse_supervi
 def test_sampling_rate_variants_reuse_the_existing_selected_axis_runtime_contract() -> None:
     for variant, config_name in RUNNER_VARIANTS.items():
         assert duca_selected_axis_training.VARIANT_CONFIGS[variant] == config_name
+
+
+def test_evaluation_config_hash_serializes_frozen_training_protocol() -> None:
+    protocol = protocol_for_name("official60")
+    payload = {"workflow": {"training_protocol": protocol}}
+    plain_protocol = {
+        "name": "official60",
+        "purpose": "official_adatad_length_matched_paper_protocol",
+        "end_epoch": 60,
+        "steps_per_epoch": 100,
+        "checkpoint_interval": 5,
+    }
+
+    assert canonical_jsonable(protocol) == plain_protocol
+    assert canonical_sha256(payload) == canonical_sha256(
+        {"workflow": {"training_protocol": plain_protocol}}
+    )
 
 
 def test_existing_independent_runner_exposes_sampling_rate_matrix_without_a_new_launcher() -> None:
