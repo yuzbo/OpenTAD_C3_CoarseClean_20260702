@@ -108,6 +108,10 @@ workflow = dict(
     # deliberately outside the frozen selected-axis evidence runtime.  It
     # becomes paper-comparable only after the measured model result is sealed.
     formal_protocol="",
+    # This is a new curriculum candidate, not one of the sealed legacy P0
+    # variants.  Leaving the inherited P0 contract enabled routes it through
+    # the legacy variant binder before model initialization.
+    formal_successful_update_contract=False,
     training_profile="duca_rate_curriculum_stage2_joint384",
     model_initialization=dict(
         enabled=True,

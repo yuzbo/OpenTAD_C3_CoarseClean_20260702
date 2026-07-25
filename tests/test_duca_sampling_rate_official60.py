@@ -195,6 +195,8 @@ def test_rate_curriculum_keeps_uniform_warmup_and_tad_led_joint_phase(monkeypatc
     assert stage2.duca_sampling_rate_contract.stage == (
         "low_lr_joint_rate_adaptation_then_tad_led_joint_training"
     )
+    assert stage2.workflow.formal_protocol == ""
+    assert stage2.workflow.formal_successful_update_contract is False
     assert stage2.workflow.model_initialization.state_key == "state_dict_ema"
     assert stage2.workflow.model_initialization.reset_state_keys == [
         "frame_selector._loss_weight_schedule_step"
