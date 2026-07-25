@@ -24,34 +24,42 @@ STAGE1_WORK="${RUN_ROOT}/stage1/work"
 STAGE2_WORK="${RUN_ROOT}/stage2/work"
 mkdir -p "${RUN_ROOT}/stage1/quality" "${RUN_ROOT}/stage2"
 
-"${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
-  --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
-  --rdzv_id="duca-rate-curriculum-${SLURM_JOB_ID}-stage1" \
-  tools/train.py "${STAGE1_CONFIG}" --id 0 --seed 3407 --cfg-options \
-  "work_dir=${STAGE1_WORK}" \
-  "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
-  2>&1 | tee "${RUN_ROOT}/stage1/train.out"
+if [[ -n "${DUCA_STAGE1_REUSE_CHECKPOINT:-}" ]]; then
+  STAGE1_CHECKPOINT="${DUCA_STAGE1_REUSE_CHECKPOINT}"
+  [[ -f "${STAGE1_CHECKPOINT}" ]] || fail "reused stage1 checkpoint is missing"
+  [[ "${DUCA_STAGE1_REUSE_CHECKPOINT_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || fail "reused stage1 checkpoint hash is required"
+  [[ "$(sha256sum "${STAGE1_CHECKPOINT}" | awk '{print $1}')" == "${DUCA_STAGE1_REUSE_CHECKPOINT_SHA256}" ]] || fail "reused stage1 checkpoint hash mismatch"
+  [[ "${DUCA_STAGE1_REUSE_CHECKPOINT_EPOCH:-}" == "29" ]] || fail "reused stage1 checkpoint must be terminal epoch 29"
+else
+  "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
+    --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
+    --rdzv_id="duca-rate-curriculum-${SLURM_JOB_ID}-stage1" \
+    tools/train.py "${STAGE1_CONFIG}" --id 0 --seed 3407 --cfg-options \
+    "work_dir=${STAGE1_WORK}" \
+    "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
+    2>&1 | tee "${RUN_ROOT}/stage1/train.out"
 
-for epoch_one in 5 10 15 20 25 30; do
-  epoch_zero=$((epoch_one - 1))
-  checkpoint="${STAGE1_WORK}/gpu1_id0/checkpoint/epoch_${epoch_zero}.pth"
-  quality_dir="${RUN_ROOT}/stage1/quality/epoch_${epoch_one}"
-  [[ -f "${checkpoint}" ]] || fail "stage1 checkpoint is missing: ${checkpoint}"
-  mkdir -p "${quality_dir}"
-  "${PYTHON}" -m tools.bata.export_duca_selection_quality \
-    --config "${STAGE1_CONFIG}" --checkpoint "${checkpoint}" \
-    --output-jsonl "${quality_dir}/records.jsonl" \
-    --summary-json "${quality_dir}/export.json" --split val --device cuda:0 \
-    --use-ema true --seed 3407 \
-    2>&1 | tee "${quality_dir}/export.out"
-  "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
-    --records-jsonl "${quality_dir}/records.jsonl" --output-dir "${quality_dir}" \
-    --bootstrap-samples 200 --random-seed 3407 \
-    2>&1 | tee "${quality_dir}/analyze.out"
-done
+  for epoch_one in 5 10 15 20 25 30; do
+    epoch_zero=$((epoch_one - 1))
+    checkpoint="${STAGE1_WORK}/gpu1_id0/checkpoint/epoch_${epoch_zero}.pth"
+    quality_dir="${RUN_ROOT}/stage1/quality/epoch_${epoch_one}"
+    [[ -f "${checkpoint}" ]] || fail "stage1 checkpoint is missing: ${checkpoint}"
+    mkdir -p "${quality_dir}"
+    "${PYTHON}" -m tools.bata.export_duca_selection_quality \
+      --config "${STAGE1_CONFIG}" --checkpoint "${checkpoint}" \
+      --output-jsonl "${quality_dir}/records.jsonl" \
+      --summary-json "${quality_dir}/export.json" --split val --device cuda:0 \
+      --use-ema true --seed 3407 \
+      2>&1 | tee "${quality_dir}/export.out"
+    "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
+      --records-jsonl "${quality_dir}/records.jsonl" --output-dir "${quality_dir}" \
+      --bootstrap-samples 200 --random-seed 3407 \
+      2>&1 | tee "${quality_dir}/analyze.out"
+  done
 
-STAGE1_CHECKPOINT="${STAGE1_WORK}/gpu1_id0/checkpoint/epoch_29.pth"
-[[ -f "${STAGE1_CHECKPOINT}" ]] || fail "terminal stage1 EMA checkpoint is missing"
+  STAGE1_CHECKPOINT="${STAGE1_WORK}/gpu1_id0/checkpoint/epoch_29.pth"
+  [[ -f "${STAGE1_CHECKPOINT}" ]] || fail "terminal stage1 EMA checkpoint is missing"
+fi
 export DUCA_STAGE1_CHECKPOINT="${STAGE1_CHECKPOINT}"
 export DUCA_STAGE1_CHECKPOINT_SHA256="$(sha256sum "${STAGE1_CHECKPOINT}" | awk '{print $1}')"
 export DUCA_STAGE1_CHECKPOINT_EPOCH=29

@@ -201,6 +201,11 @@ def test_rate_curriculum_keeps_uniform_warmup_and_tad_led_joint_phase(monkeypatc
     assert stage2.workflow.model_initialization.reset_state_keys == [
         "frame_selector._loss_weight_schedule_step"
     ]
+    runner = (ROOT / "scripts" / "run_duca_sampling_rate_curriculum_gpu1.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "DUCA_STAGE1_REUSE_CHECKPOINT" in runner
+    assert "reused stage1 checkpoint hash mismatch" in runner
     assert selector2.coarse_trunk_lr < selector1.coarse_trunk_lr
     assert selector2.action_head_lr < selector1.action_head_lr
     assert float(schedule.policy_alpha.start) == 0.0
