@@ -88,6 +88,15 @@ def _move_to_device(value: Any, device: Any) -> Any:
     return value
 
 
+def _batch_at_index(loader: Any, batch_index: int) -> Any:
+    if batch_index < 0:
+        raise ValueError("batch_index must be non-negative")
+    for observed_index, batch in enumerate(loader):
+        if observed_index == batch_index:
+            return batch
+    raise RuntimeError(f"training loader ended before batch_index={batch_index}")
+
+
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -113,6 +122,8 @@ def run_diagnostic(
     stage1_checkpoint_sha256: str,
     stage1_checkpoint_epoch: int,
     epoch: int,
+    batch_index: int,
+    selector_schedule_step: int | None,
     seed: int,
     device_name: str,
 ) -> dict[str, Any]:
@@ -204,10 +215,26 @@ def run_diagnostic(
     selector = getattr(model, "frame_selector", None)
     if selector is None:
         raise RuntimeError("Stage-2 model lacks a DUCA frame selector")
+    checkpoint_selector_step = int(
+        selector._loss_weight_schedule_step.detach().cpu().item()
+    )
+    schedule_override_applied = False
+    if selector_schedule_step is not None:
+        allowed_steps = {checkpoint_selector_step, checkpoint_selector_step + 1}
+        if int(selector_schedule_step) not in allowed_steps:
+            raise RuntimeError(
+                "selector schedule override must equal the checkpoint step or its next "
+                "post-optimizer step"
+            )
+        if int(selector_schedule_step) != checkpoint_selector_step:
+            # This is a strictly in-memory gate-state probe, never an optimizer update.
+            selector._loss_weight_schedule_step.fill_(int(selector_schedule_step))
+            selector._pending_loss_schedule_advance = False
+            schedule_override_applied = True
     schedule_before = selector._loss_schedule_state()
     selector_step = int(selector._loss_weight_schedule_step.detach().cpu().item())
 
-    batch = _move_to_device(next(iter(loader)), device)
+    batch = _move_to_device(_batch_at_index(loader, int(batch_index)), device)
     amp_enabled = bool(cfg.solver.get("amp", False))
     with torch.cuda.amp.autocast(dtype=torch.float16, enabled=amp_enabled):
         losses = model(**batch, return_loss=True)
@@ -233,13 +260,17 @@ def run_diagnostic(
         "checkpoint_sha256_after": checkpoint_sha_after,
         "stage1_initialization": stage1_receipt,
         "replayed_epoch": int(epoch),
+        "replayed_batch_index": int(batch_index),
         "seed": int(seed),
         "amp_enabled": amp_enabled,
         "backward_performed": False,
         "optimizer_constructed": False,
         "scheduler_constructed": False,
         "ema_constructed": False,
+        "checkpoint_selector_schedule_step": checkpoint_selector_step,
         "selector_schedule_step": selector_step,
+        "schedule_override_applied": schedule_override_applied,
+        "in_memory_selector_schedule_step_override": selector_schedule_step,
         "schedule_before_forward": schedule_before,
         "schedule_after_forward": schedule_after,
         "losses": loss_summary,
@@ -260,6 +291,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage1-checkpoint-sha256", required=True)
     parser.add_argument("--stage1-checkpoint-epoch", required=True, type=int)
     parser.add_argument("--epoch", required=True, type=int)
+    parser.add_argument("--batch-index", type=int, default=0)
+    parser.add_argument("--selector-schedule-step", type=int)
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--seed", type=int, default=3407)
     parser.add_argument("--device", default="cuda:0")
@@ -281,6 +314,8 @@ def main() -> None:
             stage1_checkpoint_sha256=args.stage1_checkpoint_sha256,
             stage1_checkpoint_epoch=args.stage1_checkpoint_epoch,
             epoch=args.epoch,
+            batch_index=args.batch_index,
+            selector_schedule_step=args.selector_schedule_step,
             seed=args.seed,
             device_name=args.device,
         )
