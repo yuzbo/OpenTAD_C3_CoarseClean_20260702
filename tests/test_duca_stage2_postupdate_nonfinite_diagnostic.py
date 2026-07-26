@@ -51,7 +51,7 @@ def test_contribution_capture_preserves_finite_first_order_contribution_math():
     contribution = selector._selected_detector_contribution(selected, selected.square().sum())
     restore()
 
-    assert torch.allclose(contribution, torch.tensor([[4.0, 9.0]]))
+    assert torch.allclose(contribution, torch.tensor([[8.0, 18.0]]))
     assert audit[0]["objective"]["finite"] is True
     assert audit[0]["selected_inputs"]["finite"] is True
     assert audit[0]["gradient"]["finite"] is True
