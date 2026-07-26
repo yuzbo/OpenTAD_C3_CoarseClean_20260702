@@ -47,7 +47,6 @@ job_id="$(sbatch --parsable \
     --job-name="duca-rate-e10-postupdate-diag" \
     --gres=gpu:1 \
     --cpus-per-task=8 \
-    --mem=48G \
     --time=00:30:00 \
     --output="$output_dir/slurm-%j.out" \
     --error="$output_dir/slurm-%j.err" <<'SBATCH'
