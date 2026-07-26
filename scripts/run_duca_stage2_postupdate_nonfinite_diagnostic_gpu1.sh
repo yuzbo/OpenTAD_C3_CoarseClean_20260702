@@ -37,12 +37,14 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
     exit 0
 fi
 
+export DUCA_DIAGNOSTIC_TRIALS="${DUCA_DIAGNOSTIC_TRIALS:-8}"
+export DUCA_DIAGNOSTIC_PREFIX_UPDATE_COUNT="${DUCA_DIAGNOSTIC_PREFIX_UPDATE_COUNT:-1}"
+export DUCA_DIAGNOSTIC_TARGET_BATCH_INDEX="${DUCA_DIAGNOSTIC_TARGET_BATCH_INDEX:-$DUCA_DIAGNOSTIC_PREFIX_UPDATE_COUNT}"
 short_commit="${DUCA_DIAGNOSTIC_EXPECTED_COMMIT:0:12}"
-output_dir="${DUCA_DIAGNOSTIC_OUTPUT_ROOT:-$DUCA_DIAGNOSTIC_STAGE2_ROOT/stage2/nonfinite_diagnostics/epoch_10_post_batch0_state_${short_commit}}"
+output_dir="${DUCA_DIAGNOSTIC_OUTPUT_ROOT:-$DUCA_DIAGNOSTIC_STAGE2_ROOT/stage2/nonfinite_diagnostics/epoch_10_prefix${DUCA_DIAGNOSTIC_PREFIX_UPDATE_COUNT}_target${DUCA_DIAGNOSTIC_TARGET_BATCH_INDEX}_${short_commit}}"
 mkdir -p "$output_dir"
 
 export DUCA_DIAGNOSTIC_OUTPUT_DIR="$output_dir"
-export DUCA_DIAGNOSTIC_TRIALS="${DUCA_DIAGNOSTIC_TRIALS:-8}"
 job_id="$(sbatch --parsable \
     --job-name="duca-rate-e10-postupdate-diag" \
     --gres=gpu:1 \
@@ -75,6 +77,8 @@ python -m tools.bata.diagnose_duca_stage2_postupdate_nonfinite \
     --stage1-checkpoint-epoch 29 \
     --epoch 10 \
     --trials "$DUCA_DIAGNOSTIC_TRIALS" \
+    --prefix-update-count "$DUCA_DIAGNOSTIC_PREFIX_UPDATE_COUNT" \
+    --target-batch-index "$DUCA_DIAGNOSTIC_TARGET_BATCH_INDEX" \
     --output-json "$DUCA_DIAGNOSTIC_OUTPUT_DIR/report.json" \
     --device cuda:0 \
     > "$DUCA_DIAGNOSTIC_OUTPUT_DIR/diagnostic.out"

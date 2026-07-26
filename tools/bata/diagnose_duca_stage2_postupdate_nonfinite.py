@@ -20,7 +20,7 @@ from tools.bata.diagnose_duca_stage2_nonfinite_loss import (
 )
 
 
-SCHEMA_VERSION = "duca_stage2_postupdate_nonfinite_diagnostic_v1"
+SCHEMA_VERSION = "duca_stage2_postupdate_nonfinite_diagnostic_v2"
 
 
 def _optimizer_step_ran(scale_before: float, scale_after: float) -> bool:
@@ -227,6 +227,20 @@ def _call_after_optimizer_step(model: Any) -> Any:
     return _call_after_optimizer_step(model)
 
 
+def _validate_prefix_target_indices(
+    prefix_update_count: int, target_batch_index: int | None
+) -> tuple[int, int]:
+    prefix_count = int(prefix_update_count)
+    if prefix_count <= 0:
+        raise ValueError("prefix_update_count must be positive")
+    target_index = prefix_count if target_batch_index is None else int(target_batch_index)
+    if target_index != prefix_count:
+        raise ValueError(
+            "target_batch_index must be the batch immediately after the finite update prefix"
+        )
+    return prefix_count, target_index
+
+
 def _replay_one_trial(
     *,
     model: Any,
@@ -357,6 +371,143 @@ def _replay_one_trial(
     return result
 
 
+def _replay_prefix_trial(
+    *,
+    model: Any,
+    checkpoint: Mapping[str, Any],
+    cfg: Any,
+    train_loader_length: int,
+    logger: logging.Logger,
+    prefix_batches: list[Mapping[str, Any]],
+    target_batch: Mapping[str, Any],
+    target_batch_index: int,
+    device: Any,
+    seed: int,
+) -> dict[str, Any]:
+    """Run a finite update prefix in RAM, then inspect the next forward only."""
+
+    import torch
+
+    from opentad.utils import set_seed
+
+    set_seed(int(seed), False)
+    optimizer, scheduler, scaler, model_ema = _load_exact_trial_state(
+        model=model,
+        checkpoint=checkpoint,
+        cfg=cfg,
+        train_loader_length=train_loader_length,
+        logger=logger,
+    )
+    selector = model.frame_selector
+    result: dict[str, Any] = {
+        "seed": int(seed),
+        "selector_step_before": int(selector._loss_weight_schedule_step.detach().item()),
+        "scheduler_step_before": int(scheduler.last_epoch),
+        "grad_scaler_scale_before": float(scaler.get_scale()),
+        "initial_parameter_health": _model_parameter_health(model),
+        "prefix_updates": [],
+    }
+    if not result["initial_parameter_health"]["finite"]:
+        result["outcome"] = "checkpoint_state_nonfinite"
+        return result
+
+    clip_norm = float(cfg.solver.get("clip_grad_norm", -1))
+    for batch_index, batch in enumerate(prefix_batches):
+        update: dict[str, Any] = {"batch_index": int(batch_index)}
+        optimizer.zero_grad()
+        batch_gpu = _move_to_device(batch, device)
+        try:
+            with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
+                losses = model(**batch_gpu, return_loss=True)
+        except Exception as exc:
+            update.update({"outcome": "forward_error", "error_type": type(exc).__name__, "error": str(exc)})
+            result["prefix_updates"].append(update)
+            result["outcome"] = f"batch_{batch_index}_forward_error"
+            return result
+        if not isinstance(losses, Mapping):
+            update["outcome"] = "non_mapping_loss"
+            result["prefix_updates"].append(update)
+            result["outcome"] = f"batch_{batch_index}_non_mapping_loss"
+            return result
+        update["losses"] = _loss_health(losses)
+        if not update["losses"]["cost_finite"]:
+            update["outcome"] = "nonfinite_cost"
+            result["prefix_updates"].append(update)
+            result["outcome"] = f"batch_{batch_index}_nonfinite_cost"
+            return result
+
+        scaler.scale(losses["cost"]).backward()
+        scaler.unscale_(optimizer)
+        if clip_norm > 0.0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
+        update["gradient_health"] = _model_gradient_health(model)
+        scale_before = float(scaler.get_scale())
+        scaler.step(optimizer)
+        scaler.update()
+        scale_after = float(scaler.get_scale())
+        update["amp_step"] = {
+            "scale_before": scale_before,
+            "scale_after": scale_after,
+            "optimizer_step_ran": _optimizer_step_ran(scale_before, scale_after),
+        }
+        if not update["amp_step"]["optimizer_step_ran"]:
+            update["outcome"] = "amp_overflow"
+            result["prefix_updates"].append(update)
+            result["outcome"] = f"batch_{batch_index}_amp_overflow"
+            return result
+
+        update["post_parameter_health"] = _model_parameter_health(model)
+        update["post_optimizer_health"] = _optimizer_state_health(optimizer, model)
+        update["schedule_update"] = _call_after_optimizer_step(model)
+        scheduler.step()
+        model_ema.update(model)
+        update["post_update_state"] = {
+            "selector_step": int(selector._loss_weight_schedule_step.detach().item()),
+            "scheduler_step": int(scheduler.last_epoch),
+        }
+        if not update["post_parameter_health"]["finite"]:
+            update["outcome"] = "post_update_parameter_nonfinite"
+            result["prefix_updates"].append(update)
+            result["outcome"] = f"batch_{batch_index}_post_update_parameter_nonfinite"
+            return result
+        if not update["post_optimizer_health"]["finite"]:
+            update["outcome"] = "post_update_optimizer_nonfinite"
+            result["prefix_updates"].append(update)
+            result["outcome"] = f"batch_{batch_index}_post_update_optimizer_nonfinite"
+            return result
+        update["outcome"] = "finite_update"
+        result["prefix_updates"].append(update)
+
+    target_gpu = _move_to_device(target_batch, device)
+    critical_health, hooks = _critical_forward_health(model)
+    try:
+        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
+            target_losses = model(**target_gpu, return_loss=True)
+    except Exception as exc:
+        result.update(
+            {
+                "outcome": f"batch_{target_batch_index}_forward_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "target_batch_critical_forward_health": critical_health,
+            }
+        )
+        return result
+    finally:
+        _remove_hooks(hooks)
+    if not isinstance(target_losses, Mapping):
+        result["outcome"] = f"batch_{target_batch_index}_non_mapping_loss"
+        return result
+    result["target_batch_critical_forward_health"] = critical_health
+    result["target_batch_losses"] = _loss_health(target_losses)
+    result["outcome"] = (
+        f"batch_{target_batch_index}_finite"
+        if result["target_batch_losses"]["cost_finite"]
+        else f"batch_{target_batch_index}_nonfinite_cost"
+    )
+    return result
+
+
 def run_diagnostic(
     *,
     config_path: str | Path,
@@ -372,8 +523,10 @@ def run_diagnostic(
     seed: int,
     trials: int,
     device_name: str,
+    prefix_update_count: int = 1,
+    target_batch_index: int | None = None,
 ) -> dict[str, Any]:
-    """Replay batch 0's exact update and inspect the next batch in memory."""
+    """Replay a finite update prefix and inspect its next batch in memory."""
 
     import torch
     from mmengine.config import Config
@@ -386,6 +539,9 @@ def run_diagnostic(
 
     if int(trials) <= 0:
         raise ValueError("trials must be positive")
+    prefix_count, target_index = _validate_prefix_target_indices(
+        prefix_update_count, target_batch_index
+    )
     repo_root = Path(__file__).resolve().parents[2]
     git_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True
@@ -442,10 +598,9 @@ def run_diagnostic(
     loader.sampler.set_epoch(int(epoch))
     iterator = iter(loader)
     try:
-        batch_zero = next(iterator)
-        batch_one = next(iterator)
+        batches = [next(iterator) for _ in range(target_index + 1)]
     except StopIteration as exc:
-        raise RuntimeError("Stage-2 loader lacks the first two training batches") from exc
+        raise RuntimeError("Stage-2 loader lacks the requested prefix-state batches") from exc
 
     model = build_detector(cfg.model)
     stage1_receipt = initialize_model_from_checkpoint(
@@ -466,17 +621,31 @@ def run_diagnostic(
     trial_results = []
     for trial_index in range(int(trials)):
         trial_seed = int(seed) + trial_index
-        result = _replay_one_trial(
-            model=model,
-            checkpoint=checkpoint_payload,
-            cfg=cfg,
-            train_loader_length=len(loader),
-            logger=logger,
-            batch_zero=batch_zero,
-            batch_one=batch_one,
-            device=device,
-            seed=trial_seed,
-        )
+        if prefix_count == 1 and target_index == 1:
+            result = _replay_one_trial(
+                model=model,
+                checkpoint=checkpoint_payload,
+                cfg=cfg,
+                train_loader_length=len(loader),
+                logger=logger,
+                batch_zero=batches[0],
+                batch_one=batches[1],
+                device=device,
+                seed=trial_seed,
+            )
+        else:
+            result = _replay_prefix_trial(
+                model=model,
+                checkpoint=checkpoint_payload,
+                cfg=cfg,
+                train_loader_length=len(loader),
+                logger=logger,
+                prefix_batches=batches[:prefix_count],
+                target_batch=batches[target_index],
+                target_batch_index=target_index,
+                device=device,
+                seed=trial_seed,
+            )
         result["trial_index"] = trial_index
         trial_results.append(result)
         torch.cuda.empty_cache()
@@ -490,9 +659,13 @@ def run_diagnostic(
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
     return {
         "schema_version": SCHEMA_VERSION,
-        "ok": bool(outcomes.get("batch_one_finite", 0) == int(trials)),
+        "ok": bool(outcomes.get(f"batch_{target_index}_finite", 0) == int(trials)),
         "task": "offline_temporal_action_detection",
-        "mode": "in_memory_epoch10_batch0_optimizer_update_then_batch1_forward",
+        "mode": (
+            "in_memory_epoch10_batch0_optimizer_update_then_batch1_forward"
+            if prefix_count == 1 and target_index == 1
+            else f"in_memory_epoch{int(epoch)}_prefix_{prefix_count}_updates_then_batch{target_index}_forward"
+        ),
         "git_commit": git_commit,
         "config_path": str(config),
         "checkpoint_path": str(checkpoint),
@@ -502,7 +675,9 @@ def run_diagnostic(
         "checkpoint_state_key": "state_dict",
         "stage1_initialization": stage1_receipt,
         "replayed_epoch": int(epoch),
-        "replayed_batch_indices": [0, 1],
+        "replayed_batch_indices": list(range(target_index + 1)),
+        "prefix_update_count": prefix_count,
+        "target_batch_index": target_index,
         "trials": int(trials),
         "seed_base": int(seed),
         "rng_reconstruction": rng_status,
@@ -531,6 +706,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage1-checkpoint-epoch", required=True, type=int)
     parser.add_argument("--epoch", required=True, type=int)
     parser.add_argument("--trials", type=int, default=8)
+    parser.add_argument("--prefix-update-count", type=int, default=1)
+    parser.add_argument("--target-batch-index", type=int)
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--seed", type=int, default=3407)
     parser.add_argument("--device", default="cuda:0")
@@ -555,6 +732,8 @@ def main() -> None:
             seed=args.seed,
             trials=args.trials,
             device_name=args.device,
+            prefix_update_count=args.prefix_update_count,
+            target_batch_index=args.target_batch_index,
         )
     except Exception as exc:
         report = {

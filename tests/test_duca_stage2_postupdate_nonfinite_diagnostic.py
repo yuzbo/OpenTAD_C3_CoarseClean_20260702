@@ -1,8 +1,10 @@
 import torch
+import pytest
 
 from tools.bata.diagnose_duca_stage2_postupdate_nonfinite import (
     _optimizer_step_ran,
     _summarize_named_tensors,
+    _validate_prefix_target_indices,
 )
 
 
@@ -24,3 +26,12 @@ def test_named_tensor_summary_reports_the_nonfinite_tensor_name():
     assert summary["nan_count"] == 1
     assert summary["posinf_count"] == 1
     assert summary["nonfinite_names"] == ["bad"]
+
+
+def test_prefix_target_indices_require_the_next_batch_after_the_update_prefix():
+    assert _validate_prefix_target_indices(2, None) == (2, 2)
+    assert _validate_prefix_target_indices(2, 2) == (2, 2)
+    with pytest.raises(ValueError, match="positive"):
+        _validate_prefix_target_indices(0, None)
+    with pytest.raises(ValueError, match="immediately after"):
+        _validate_prefix_target_indices(2, 1)
