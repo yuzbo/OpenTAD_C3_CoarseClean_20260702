@@ -302,6 +302,66 @@ def _capture_selected_detector_contribution(selector: Any) -> tuple[list[dict[st
     return audit, restore
 
 
+def _capture_contribution_distribution_loss(selector: Any) -> tuple[list[dict[str, Any]], Any]:
+    """Trace the detached contribution target and selector distribution loss exactly."""
+
+    import torch
+    import torch.nn.functional as F
+
+    audit: list[dict[str, Any]] = []
+    original = selector._contribution_distribution_loss
+
+    def traced(
+        logits: torch.Tensor,
+        target: torch.Tensor,
+        valid_mask: torch.Tensor,
+        teacher_mask: torch.Tensor,
+        *,
+        temperature: float,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        record: dict[str, Any] = {
+            "call_index": len(audit),
+            "logits": _finite_tensor_summary(logits),
+            "target": _finite_tensor_summary(target),
+            "valid_mask": _finite_tensor_summary(valid_mask),
+            "teacher_mask": _finite_tensor_summary(teacher_mask),
+            "temperature": float(temperature),
+        }
+        valid = valid_mask.to(device=logits.device, dtype=torch.bool)
+        target = target.to(device=logits.device, dtype=logits.dtype).clamp_min(0.0)
+        target = target.masked_fill(~valid, 0.0)
+        mass = target.sum(dim=1)
+        active = teacher_mask.to(device=logits.device, dtype=torch.bool) & (mass > 1.0e-8)
+        record["masked_target"] = _finite_tensor_summary(target)
+        record["target_mass"] = _finite_tensor_summary(mass)
+        record["active_row_count"] = int(active.sum().item())
+        if not bool(active.any().item()):
+            loss = logits.sum() * 0.0
+            record["loss"] = _finite_tensor_summary(loss)
+            audit.append(record)
+            return loss, active
+        normalized_target = target / mass[:, None].clamp_min(torch.finfo(target.dtype).eps)
+        neg = -torch.finfo(logits.dtype).max
+        masked_logits = logits.masked_fill(~valid, neg)
+        scaled_logits = masked_logits / float(temperature)
+        log_probs = F.log_softmax(scaled_logits, dim=1)
+        loss = -(normalized_target * log_probs).sum(dim=1)[active].mean()
+        record["normalized_target"] = _finite_tensor_summary(normalized_target)
+        record["masked_logits"] = _finite_tensor_summary(masked_logits)
+        record["scaled_logits"] = _finite_tensor_summary(scaled_logits)
+        record["log_probs"] = _finite_tensor_summary(log_probs)
+        record["loss"] = _finite_tensor_summary(loss)
+        audit.append(record)
+        return loss, active
+
+    selector._contribution_distribution_loss = traced
+
+    def restore() -> None:
+        selector._contribution_distribution_loss = original
+
+    return audit, restore
+
+
 def _replay_one_trial(
     *,
     model: Any,
@@ -541,6 +601,7 @@ def _replay_prefix_trial(
 
     target_gpu = _move_to_device(target_batch, device)
     contribution_audit, restore_contribution = _capture_selected_detector_contribution(selector)
+    distribution_audit, restore_distribution = _capture_contribution_distribution_loss(selector)
     critical_health, hooks = _critical_forward_health(model)
     try:
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
@@ -557,12 +618,14 @@ def _replay_prefix_trial(
         return result
     finally:
         _remove_hooks(hooks)
+        restore_distribution()
         restore_contribution()
     if not isinstance(target_losses, Mapping):
         result["outcome"] = f"batch_{target_batch_index}_non_mapping_loss"
         return result
     result["target_batch_critical_forward_health"] = critical_health
     result["target_batch_selected_contribution_audit"] = contribution_audit
+    result["target_batch_contribution_distribution_audit"] = distribution_audit
     result["target_batch_losses"] = _loss_health(target_losses)
     result["outcome"] = (
         f"batch_{target_batch_index}_finite"

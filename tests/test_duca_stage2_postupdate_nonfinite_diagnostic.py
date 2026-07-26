@@ -2,6 +2,7 @@ import torch
 import pytest
 
 from tools.bata.diagnose_duca_stage2_postupdate_nonfinite import (
+    _capture_contribution_distribution_loss,
     _capture_selected_detector_contribution,
     _optimizer_step_ran,
     _summarize_named_tensors,
@@ -56,3 +57,35 @@ def test_contribution_capture_preserves_finite_first_order_contribution_math():
     assert audit[0]["selected_inputs"]["finite"] is True
     assert audit[0]["gradient"]["finite"] is True
     assert audit[0]["contribution"]["finite"] is True
+
+
+def test_distribution_capture_preserves_finite_contribution_cross_entropy():
+    class Selector:
+        @staticmethod
+        def _contribution_distribution_loss(
+            logits, target, valid_mask, teacher_mask, *, temperature
+        ):
+            valid = valid_mask.to(dtype=torch.bool)
+            target = target.to(dtype=logits.dtype).clamp_min(0.0).masked_fill(~valid, 0.0)
+            mass = target.sum(dim=1)
+            active = teacher_mask.to(dtype=torch.bool) & (mass > 1.0e-8)
+            normalized = target / mass[:, None].clamp_min(torch.finfo(target.dtype).eps)
+            log_probs = torch.log_softmax(logits.masked_fill(~valid, -torch.finfo(logits.dtype).max) / temperature, dim=1)
+            return -(normalized * log_probs).sum(dim=1)[active].mean(), active
+
+    selector = Selector()
+    audit, restore = _capture_contribution_distribution_loss(selector)
+    loss, active = selector._contribution_distribution_loss(
+        torch.zeros((1, 2)),
+        torch.ones((1, 2)),
+        torch.ones((1, 2), dtype=torch.bool),
+        torch.ones((1,), dtype=torch.bool),
+        temperature=1.0,
+    )
+    restore()
+
+    assert torch.allclose(loss, torch.log(torch.tensor(2.0)))
+    assert active.tolist() == [True]
+    assert audit[0]["normalized_target"]["finite"] is True
+    assert audit[0]["log_probs"]["finite"] is True
+    assert audit[0]["loss"]["finite"] is True
