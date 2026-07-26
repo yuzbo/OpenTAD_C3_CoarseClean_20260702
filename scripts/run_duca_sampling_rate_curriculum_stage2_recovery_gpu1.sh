@@ -52,6 +52,7 @@ import os
 from pathlib import Path
 
 import torch
+from mmengine import Config
 
 
 def sha256(path: Path) -> str:
@@ -70,6 +71,11 @@ if int(checkpoint.get("epoch", -1)) != 9:
 for key in ("state_dict", "state_dict_ema", "optimizer", "scheduler", "grad_scaler"):
     if key not in checkpoint:
         raise RuntimeError(f"Stage-2 recovery checkpoint lacks {key}")
+cfg = Config.fromfile("configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py")
+if str(cfg.workflow.get("intermediate_validation_role", "")) != "learning_curve_only":
+    raise RuntimeError("Stage-2 recovery must keep intermediate validation diagnostic-only")
+if cfg.workflow.get("intermediate_validation_selects_checkpoint", None) is not False:
+    raise RuntimeError("Stage-2 recovery must forbid intermediate checkpoint selection")
 payload = {
     "schema_version": "duca_rate_curriculum_stage2_recovery_v1",
     "task": "offline_temporal_action_detection",
@@ -88,6 +94,7 @@ payload = {
         "state_restored_before_replay": True,
         "persistent_nonfinite_fails_closed": True,
         "intermediate_checkpoint_selection": False,
+        "intermediate_validation_role": "learning_curve_only",
         "terminal_checkpoint": "epoch_59_state_dict_ema",
     },
 }
@@ -114,6 +121,8 @@ fi
   "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
   2>&1 | tee "${RUN_ROOT}/stage2/train.out"
 
+[[ ! -e "${STAGE2_WORK}/gpu1_id0/intermediate_validation/best_validation_ema.json" ]] || \
+  fail "Stage-2 intermediate mAP selected a checkpoint"
 STAGE2_TERMINAL_CHECKPOINT="${STAGE2_WORK}/gpu1_id0/checkpoint/epoch_59.pth"
 [[ -f "${STAGE2_TERMINAL_CHECKPOINT}" ]] || fail "terminal Stage-2 EMA checkpoint is missing"
 [[ -f "${DUCA_STAGE2_UPDATE_AUDIT_JSON}" ]] || fail "Stage-2 update audit is missing"
@@ -128,17 +137,22 @@ STAGE2_TERMINAL_CHECKPOINT="${STAGE2_WORK}/gpu1_id0/checkpoint/epoch_59.pth"
     "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}" \
   2>&1 | tee "${RUN_ROOT}/stage2/eval.out"
 
-STAGE2_QUALITY="${RUN_ROOT}/stage2/selection_quality"
-mkdir -p "${STAGE2_QUALITY}"
-"${PYTHON}" -m tools.bata.export_duca_selection_quality \
-  --config "${STAGE2_CONFIG}" --checkpoint "${STAGE2_TERMINAL_CHECKPOINT}" \
-  --output-jsonl "${STAGE2_QUALITY}/records.jsonl" \
-  --summary-json "${STAGE2_QUALITY}/export.json" --split val --device cuda:0 \
-  --use-ema true --seed 3407 \
-  2>&1 | tee "${STAGE2_QUALITY}/export.out"
-"${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
-  --records-jsonl "${STAGE2_QUALITY}/records.jsonl" --output-dir "${STAGE2_QUALITY}" \
-  --bootstrap-samples 200 --random-seed 3407 \
-  2>&1 | tee "${STAGE2_QUALITY}/analyze.out"
+for epoch_one in $(seq 5 5 60); do
+  epoch_zero=$((epoch_one - 1))
+  checkpoint="${STAGE2_WORK}/gpu1_id0/checkpoint/epoch_${epoch_zero}.pth"
+  quality_dir="${RUN_ROOT}/stage2/quality/epoch_${epoch_one}"
+  [[ -f "${checkpoint}" ]] || fail "Stage-2 checkpoint is missing: ${checkpoint}"
+  mkdir -p "${quality_dir}"
+  "${PYTHON}" -m tools.bata.export_duca_selection_quality \
+    --config "${STAGE2_CONFIG}" --checkpoint "${checkpoint}" \
+    --output-jsonl "${quality_dir}/records.jsonl" \
+    --summary-json "${quality_dir}/export.json" --split val --device cuda:0 \
+    --use-ema true --seed 3407 \
+    2>&1 | tee "${quality_dir}/export.out"
+  "${PYTHON}" -m tools.bata.analyze_duca_selection_quality \
+    --records-jsonl "${quality_dir}/records.jsonl" --output-dir "${quality_dir}" \
+    --bootstrap-samples 200 --random-seed 3407 \
+    2>&1 | tee "${quality_dir}/analyze.out"
+done
 
 echo "[DUCA_RATE_STAGE2_RECOVERY] completed under ${RUN_ROOT}"

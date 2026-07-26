@@ -113,6 +113,10 @@ workflow = dict(
     # the legacy variant binder before model initialization.
     formal_successful_update_contract=False,
     training_profile="duca_rate_curriculum_stage2_joint384",
+    # Keep five-epoch validation strictly diagnostic.  The Stage-2 course is
+    # always judged by epoch-59 EMA, never by a curve-best checkpoint.
+    intermediate_validation_role="learning_curve_only",
+    intermediate_validation_selects_checkpoint=False,
     # A pre-AMP NaN/Inf may be replayed only from the untouched batch state.
     # The engine records every event and still fails closed after this bound.
     max_nonfinite_loss_retries=8,
