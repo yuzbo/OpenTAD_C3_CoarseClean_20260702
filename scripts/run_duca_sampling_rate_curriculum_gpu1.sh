@@ -22,6 +22,7 @@ STAGE1_CONFIG="configs/adatad/thumos/duca_sampling_rate_curriculum_stage1_unifor
 STAGE2_CONFIG="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py"
 STAGE1_WORK="${RUN_ROOT}/stage1/work"
 STAGE2_WORK="${RUN_ROOT}/stage2/work"
+export DUCA_STAGE2_UPDATE_AUDIT_JSON="${RUN_ROOT}/stage2/update_audit.json"
 mkdir -p "${RUN_ROOT}/stage1/quality" "${RUN_ROOT}/stage2"
 
 if [[ -n "${DUCA_STAGE1_REUSE_CHECKPOINT:-}" ]]; then

@@ -498,6 +498,9 @@ def main():
     max_amp_retries_per_batch = int(
         cfg.workflow.get("max_amp_retries_per_batch", 0)
     )
+    max_nonfinite_loss_retries = int(
+        cfg.workflow.get("max_nonfinite_loss_retries", 0)
+    )
     fail_on_amp_replay_exhaustion = bool(
         cfg.workflow.get("fail_on_amp_replay_exhaustion", False)
     )
@@ -507,6 +510,7 @@ def main():
     collect_update_audit = bool(
         duca_formal_contract is not None
         or max_amp_retries_per_batch > 0
+        or max_nonfinite_loss_retries > 0
         or cfg.workflow.get("training_probe_json", None)
     )
     update_audit = duca_training.new_update_audit() if collect_update_audit else None
@@ -589,12 +593,14 @@ def main():
             max_train_iters=cfg.workflow.get("max_train_iters", None),
             collect_training_probe=bool(training_probe_json),
             max_amp_retries_per_batch=max_amp_retries_per_batch,
+            max_nonfinite_loss_retries=max_nonfinite_loss_retries,
             fail_on_amp_replay_exhaustion=fail_on_amp_replay_exhaustion,
             require_finite_loss=require_finite_train_loss,
             force_amp_overflow_attempts=int(
                 cfg.workflow.get("force_amp_overflow_attempts", 0)
             ),
             update_audit=update_audit,
+            update_audit_json=cfg.workflow.get("training_update_audit_json", None),
         )
         training_audit = None
         if duca_formal_contract is not None:

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -36,9 +37,10 @@ class _AverageMeter:
 
 
 class _Loss:
-    def __init__(self, value, owner):
+    def __init__(self, value, owner, *, finite=True):
         self.value = float(value)
         self.owner = owner
+        self.finite = bool(finite)
         self.data = self
 
     def backward(self):
@@ -137,6 +139,23 @@ class _ToyModel:
         self.custom_forward_state = int(snapshot["custom_forward_state"])
 
 
+class _TransientNonFiniteModel(_ToyModel):
+    def __init__(self, *, always_nonfinite=False):
+        super().__init__(mutate_replay_state=True)
+        self.always_nonfinite = bool(always_nonfinite)
+
+    def __call__(self, x, return_loss=False):
+        assert return_loss is True
+        self.forward_calls += 1
+        self.loss_normalizer.value += 1
+        self.custom_forward_state += 1
+        finite = not self.always_nonfinite and self.forward_calls > 1
+        return {
+            "cost": _Loss(x, self, finite=finite),
+            "aux_loss": _Loss(x * 0.5, self, finite=finite),
+        }
+
+
 class _ToyOptimizer:
     def __init__(self):
         self.zero_grad_calls = 0
@@ -193,8 +212,10 @@ def _load_train_engine_with_fake_runtime(monkeypatch):
         get_rng_state=lambda: "cpu-rng",
         set_rng_state=lambda _state: None,
         no_grad=_NoGrad,
-        isfinite=lambda _value: types.SimpleNamespace(
-            all=lambda: types.SimpleNamespace(item=lambda: True)
+        isfinite=lambda value: types.SimpleNamespace(
+            all=lambda: types.SimpleNamespace(
+                item=lambda: bool(getattr(value, "finite", True))
+            )
         ),
         cuda=types.SimpleNamespace(
             amp=types.SimpleNamespace(autocast=_Autocast),
@@ -378,6 +399,78 @@ def test_train_one_epoch_fails_closed_when_amp_replay_is_exhausted(monkeypatch):
     assert model.custom_forward_state == 0
     assert audit["replay_exhaustions"] == 1
     assert audit["successful_optimizer_updates"] == 0
+
+
+def test_train_one_epoch_replays_a_transient_nonfinite_loss_without_advancing_state(
+    monkeypatch, tmp_path
+):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model = _TransientNonFiniteModel()
+    optimizer = _ToyOptimizer()
+    scheduler = _ToyScheduler()
+    audit = {}
+    logger = _Logger()
+
+    train_engine.train_one_epoch(
+        _ToyLoader(length=1),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=0,
+        logger=logger,
+        require_finite_loss=True,
+        max_nonfinite_loss_retries=1,
+        update_audit=audit,
+        update_audit_json=tmp_path / "update_audit.json",
+    )
+
+    assert model.forward_calls == 2
+    assert model.backward_calls == 1
+    assert model.loss_normalizer.value == 1
+    assert model.custom_forward_state == 1
+    assert optimizer.steps == 1
+    assert scheduler.steps == 1
+    assert audit["nonfinite_loss_attempts"] == 1
+    assert audit["nonfinite_loss_replays"] == 1
+    assert audit["nonfinite_loss_replay_exhaustions"] == 0
+    assert audit["max_nonfinite_loss_retries_observed"] == 1
+    assert audit["replay_state_restorations"] == 1
+    assert audit["optimizer_attempts"] == 1
+    assert audit["successful_optimizer_updates"] == 1
+    assert audit["replayed_batches"] == 1
+    assert any("non-finite pre-AMP loss" in message for message in logger.messages)
+    snapshot = json.loads((tmp_path / "update_audit.json").read_text(encoding="utf-8"))
+    assert snapshot["event"] == "epoch_complete"
+    assert snapshot["update_audit"]["nonfinite_loss_replays"] == 1
+
+
+def test_train_one_epoch_fails_closed_after_bounded_nonfinite_loss_replays(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model = _TransientNonFiniteModel(always_nonfinite=True)
+    optimizer = _ToyOptimizer()
+    scheduler = _ToyScheduler()
+    audit = {}
+
+    with pytest.raises(FloatingPointError, match="after 1 bounded replays"):
+        train_engine.train_one_epoch(
+            _ToyLoader(length=1),
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=0,
+            logger=_Logger(),
+            require_finite_loss=True,
+            max_nonfinite_loss_retries=1,
+            update_audit=audit,
+        )
+
+    assert model.loss_normalizer.value == 0
+    assert model.custom_forward_state == 0
+    assert optimizer.steps == 0
+    assert scheduler.steps == 0
+    assert audit["nonfinite_loss_attempts"] == 2
+    assert audit["nonfinite_loss_replays"] == 1
+    assert audit["nonfinite_loss_replay_exhaustions"] == 1
 
 
 def test_train_one_epoch_rejects_amp_replay_without_scaler(monkeypatch):

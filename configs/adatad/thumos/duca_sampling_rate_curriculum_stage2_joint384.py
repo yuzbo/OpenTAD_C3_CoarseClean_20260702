@@ -113,6 +113,10 @@ workflow = dict(
     # the legacy variant binder before model initialization.
     formal_successful_update_contract=False,
     training_profile="duca_rate_curriculum_stage2_joint384",
+    # A pre-AMP NaN/Inf may be replayed only from the untouched batch state.
+    # The engine records every event and still fails closed after this bound.
+    max_nonfinite_loss_retries=8,
+    training_update_audit_json=os.environ.get("DUCA_STAGE2_UPDATE_AUDIT_JSON", ""),
     model_initialization=dict(
         enabled=True,
         checkpoint_path=duca_stage1_checkpoint,

@@ -1,4 +1,6 @@
 import copy
+import json
+import os
 import random
 
 import numpy as np
@@ -77,6 +79,40 @@ def _inject_nonfinite_gradient(model):
     raise RuntimeError("forced AMP overflow could not find a populated gradient")
 
 
+def _write_update_audit_snapshot(
+    path,
+    *,
+    curr_epoch,
+    batch_index,
+    event,
+    update_audit,
+):
+    if not path or update_audit is None:
+        return
+    target = os.path.abspath(os.path.expanduser(str(path)))
+    directory = os.path.dirname(target)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = target + ".tmp"
+    payload = {
+        "schema_version": "opentad_training_update_audit_v1",
+        "epoch": int(curr_epoch),
+        "batch_index": int(batch_index),
+        "event": str(event),
+        "update_audit": dict(update_audit),
+    }
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -91,10 +127,12 @@ def train_one_epoch(
     max_train_iters=None,
     collect_training_probe=False,
     max_amp_retries_per_batch=0,
+    max_nonfinite_loss_retries=0,
     fail_on_amp_replay_exhaustion=False,
     require_finite_loss=False,
     force_amp_overflow_attempts=0,
     update_audit=None,
+    update_audit_json=None,
 ):
     """Training the model for one epoch"""
 
@@ -111,6 +149,13 @@ def train_one_epoch(
         raise ValueError("max_amp_retries_per_batch must be non-negative")
     if max_amp_retries_per_batch > 0 and scaler is None:
         raise ValueError("AMP replay requires a GradScaler")
+    max_nonfinite_loss_retries = int(max_nonfinite_loss_retries)
+    if max_nonfinite_loss_retries < 0:
+        raise ValueError("max_nonfinite_loss_retries must be non-negative")
+    if max_nonfinite_loss_retries > 0 and not require_finite_loss:
+        raise ValueError("non-finite loss replay requires require_finite_loss")
+    if max_nonfinite_loss_retries > 0 and update_audit is None:
+        raise ValueError("non-finite loss replay requires an update audit")
     if fail_on_amp_replay_exhaustion and max_amp_retries_per_batch <= 0:
         raise ValueError("fail_on_amp_replay_exhaustion requires a positive replay limit")
     force_amp_overflow_attempts = int(force_amp_overflow_attempts)
@@ -133,6 +178,15 @@ def train_one_epoch(
         ):
             update_audit.setdefault(key, 0)
         update_audit.setdefault("max_amp_retries_observed", 0)
+        if max_nonfinite_loss_retries > 0:
+            for key in (
+                "nonfinite_loss_attempts",
+                "nonfinite_loss_replays",
+                "nonfinite_loss_replay_exhaustions",
+            ):
+                update_audit.setdefault(key, 0)
+            update_audit.setdefault("max_nonfinite_loss_retries_observed", 0)
+            update_audit.setdefault("replay_state_restorations", 0)
         if collect_training_probe:
             update_audit.setdefault("replay_state_restorations", 0)
             update_audit.setdefault("attempt_batch_indices", [])
@@ -151,10 +205,11 @@ def train_one_epoch(
         curr_det_lr = scheduler.get_last_lr()[-1]
 
         retry_count = 0
+        nonfinite_loss_retry_count = 0
         rng_state = None
         model_buffer_state = None
         custom_replay_state = None
-        if max_amp_retries_per_batch > 0:
+        if max_amp_retries_per_batch > 0 or max_nonfinite_loss_retries > 0:
             rng_state = _capture_rng_state()
             model_buffer_state = _capture_model_buffers(model)
             custom_replay_state = _capture_custom_replay_state(model)
@@ -162,14 +217,64 @@ def train_one_epoch(
             update_audit["attempted_batches"] += 1
 
         while True:
-            if retry_count > 0:
+            if retry_count > 0 or nonfinite_loss_retry_count > 0:
                 _restore_rng_state(rng_state)
             optimizer.zero_grad()
 
             with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
                 losses = model(**data_dict, return_loss=True)
             if require_finite_loss and not bool(torch.isfinite(losses["cost"]).all().item()):
-                raise FloatingPointError("formal training produced a non-finite loss before AMP scaling")
+                if max_nonfinite_loss_retries <= 0:
+                    raise FloatingPointError(
+                        "formal training produced a non-finite loss before AMP scaling"
+                    )
+                update_audit["nonfinite_loss_attempts"] += 1
+                if nonfinite_loss_retry_count >= max_nonfinite_loss_retries:
+                    update_audit["nonfinite_loss_replay_exhaustions"] += 1
+                    if model_buffer_state is not None:
+                        _restore_model_buffers(model, model_buffer_state)
+                    if custom_replay_state is not None:
+                        _restore_custom_replay_state(model, custom_replay_state)
+                    _restore_rng_state(rng_state)
+                    if "replay_state_restorations" in update_audit:
+                        update_audit["replay_state_restorations"] += 1
+                    _write_update_audit_snapshot(
+                        update_audit_json,
+                        curr_epoch=curr_epoch,
+                        batch_index=iter_idx,
+                        event="nonfinite_loss_replay_exhausted",
+                        update_audit=update_audit,
+                    )
+                    raise FloatingPointError(
+                        "formal training produced a non-finite loss after "
+                        f"{max_nonfinite_loss_retries} bounded replays"
+                    )
+                if model_buffer_state is not None:
+                    _restore_model_buffers(model, model_buffer_state)
+                if custom_replay_state is not None:
+                    _restore_custom_replay_state(model, custom_replay_state)
+                if "replay_state_restorations" in update_audit:
+                    update_audit["replay_state_restorations"] += 1
+                nonfinite_loss_retry_count += 1
+                update_audit["nonfinite_loss_replays"] += 1
+                update_audit["max_nonfinite_loss_retries_observed"] = max(
+                    update_audit["max_nonfinite_loss_retries_observed"],
+                    nonfinite_loss_retry_count,
+                )
+                _write_update_audit_snapshot(
+                    update_audit_json,
+                    curr_epoch=curr_epoch,
+                    batch_index=iter_idx,
+                    event="nonfinite_loss_replay",
+                    update_audit=update_audit,
+                )
+                logger.info(
+                    "[Train]: non-finite pre-AMP loss in batch %d; replay %d/%d",
+                    iter_idx,
+                    nonfinite_loss_retry_count,
+                    max_nonfinite_loss_retries,
+                )
+                continue
 
             if use_amp:
                 scaler.scale(losses["cost"]).backward()
@@ -252,7 +357,7 @@ def train_one_epoch(
                 float(scaler.get_scale()),
             )
 
-        if retry_count > 0 and update_audit is not None:
+        if (retry_count > 0 or nonfinite_loss_retry_count > 0) and update_audit is not None:
             update_audit["replayed_batches"] += 1
 
         if optimizer_step_ran:
@@ -292,6 +397,13 @@ def train_one_epoch(
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
             logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
             break
+    _write_update_audit_snapshot(
+        update_audit_json,
+        curr_epoch=curr_epoch,
+        batch_index=min(num_iters, iter_idx + 1),
+        event="epoch_complete",
+        update_audit=update_audit,
+    )
     if probe_state is not None:
         return _finalize_training_probe(probe_state)
     return None
