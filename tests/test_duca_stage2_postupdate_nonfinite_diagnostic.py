@@ -93,12 +93,17 @@ def test_distribution_capture_preserves_finite_contribution_cross_entropy():
 
 
 def test_contribution_distribution_mask_stays_finite_in_fp16_below_unit_temperature():
-    logits = torch.tensor([[0.0, 0.1, -0.2]], dtype=torch.float16, requires_grad=True)
+    if not torch.cuda.is_available():
+        pytest.skip("the fp16 masking regression is specific to the CUDA AMP execution path")
+    device = torch.device("cuda")
+    logits = torch.tensor(
+        [[0.0, 0.1, -0.2]], device=device, dtype=torch.float16, requires_grad=True
+    )
     loss, active = DucaOnlineFrameSelector._contribution_distribution_loss(
         logits,
-        torch.tensor([[1.0, 2.0, 0.0]], dtype=torch.float16),
-        torch.tensor([[True, True, False]]),
-        torch.tensor([True]),
+        torch.tensor([[1.0, 2.0, 0.0]], device=device, dtype=torch.float16),
+        torch.tensor([[True, True, False]], device=device),
+        torch.tensor([True], device=device),
         temperature=0.7,
     )
     loss.backward()
