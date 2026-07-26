@@ -63,7 +63,7 @@ cd "$DUCA_DIAGNOSTIC_REPO_ROOT"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]]
 [[ "$(sha256sum "$DUCA_DIAGNOSTIC_STAGE2_CHECKPOINT" | awk '{print $1}')" == "$DUCA_DIAGNOSTIC_STAGE2_CHECKPOINT_SHA256" ]]
 [[ "$(sha256sum "$DUCA_DIAGNOSTIC_STAGE1_CHECKPOINT" | awk '{print $1}')" == "$DUCA_DIAGNOSTIC_STAGE1_CHECKPOINT_SHA256" ]]
-python tools/bata/diagnose_duca_stage2_postupdate_nonfinite.py \
+python -m tools.bata.diagnose_duca_stage2_postupdate_nonfinite \
     --config configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py \
     --checkpoint "$DUCA_DIAGNOSTIC_STAGE2_CHECKPOINT" \
     --checkpoint-sha256 "$DUCA_DIAGNOSTIC_STAGE2_CHECKPOINT_SHA256" \
