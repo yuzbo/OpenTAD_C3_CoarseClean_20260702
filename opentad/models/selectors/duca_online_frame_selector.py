@@ -1475,9 +1475,10 @@ class DucaOnlineFrameSelector(nn.Module):
         if not bool(active.any().item()):
             return logits.sum() * 0.0, active
         normalized_target = target / mass[:, None].clamp_min(torch.finfo(target.dtype).eps)
-        neg = -torch.finfo(logits.dtype).max
+        scaled_logits = logits / float(temperature)
+        neg = -torch.finfo(scaled_logits.dtype).max
         log_probs = F.log_softmax(
-            logits.masked_fill(~valid, neg) / float(temperature),
+            scaled_logits.masked_fill(~valid, neg),
             dim=1,
         )
         loss = -(normalized_target * log_probs).sum(dim=1)[active].mean()

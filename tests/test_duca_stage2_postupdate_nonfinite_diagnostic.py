@@ -1,6 +1,7 @@
 import torch
 import pytest
 
+from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
 from tools.bata.diagnose_duca_stage2_postupdate_nonfinite import (
     _capture_contribution_distribution_loss,
     _capture_selected_detector_contribution,
@@ -89,3 +90,21 @@ def test_distribution_capture_preserves_finite_contribution_cross_entropy():
     assert audit[0]["normalized_target"]["finite"] is True
     assert audit[0]["log_probs"]["finite"] is True
     assert audit[0]["loss"]["finite"] is True
+
+
+def test_contribution_distribution_mask_stays_finite_in_fp16_below_unit_temperature():
+    logits = torch.tensor([[0.0, 0.1, -0.2]], dtype=torch.float16, requires_grad=True)
+    loss, active = DucaOnlineFrameSelector._contribution_distribution_loss(
+        logits,
+        torch.tensor([[1.0, 2.0, 0.0]], dtype=torch.float16),
+        torch.tensor([[True, True, False]]),
+        torch.tensor([True]),
+        temperature=0.7,
+    )
+    loss.backward()
+
+    assert active.tolist() == [True]
+    assert torch.isfinite(loss)
+    assert logits.grad is not None
+    assert bool(torch.isfinite(logits.grad).all().item())
+    assert float(logits.grad[0, 2]) == 0.0

@@ -341,14 +341,14 @@ def _capture_contribution_distribution_loss(selector: Any) -> tuple[list[dict[st
             audit.append(record)
             return loss, active
         normalized_target = target / mass[:, None].clamp_min(torch.finfo(target.dtype).eps)
-        neg = -torch.finfo(logits.dtype).max
-        masked_logits = logits.masked_fill(~valid, neg)
-        scaled_logits = masked_logits / float(temperature)
-        log_probs = F.log_softmax(scaled_logits, dim=1)
+        scaled_logits = logits / float(temperature)
+        neg = -torch.finfo(scaled_logits.dtype).max
+        masked_logits = scaled_logits.masked_fill(~valid, neg)
+        log_probs = F.log_softmax(masked_logits, dim=1)
         loss = -(normalized_target * log_probs).sum(dim=1)[active].mean()
         record["normalized_target"] = _finite_tensor_summary(normalized_target)
-        record["masked_logits"] = _finite_tensor_summary(masked_logits)
         record["scaled_logits"] = _finite_tensor_summary(scaled_logits)
+        record["masked_logits"] = _finite_tensor_summary(masked_logits)
         record["log_probs"] = _finite_tensor_summary(log_probs)
         record["loss"] = _finite_tensor_summary(loss)
         audit.append(record)
