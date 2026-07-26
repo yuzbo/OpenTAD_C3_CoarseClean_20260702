@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,30 @@ def test_learned_score_decoder_enforces_max_hole_without_uniform_scaffold() -> N
     assert _max_unselected_hole(constrained, valid_len=len(frame_values)) <= 3
     assert 8 in constrained
     assert constrained != [0, 2, 4, 6, 8, 10]
+
+
+def test_learned_score_gap_repair_scales_to_dense_stage2_apply_case() -> None:
+    valid_len = 768
+    budget = 384
+    max_hole = 96
+    frame_values = [
+        1.0 - float(idx) * 1e-6 if idx < budget else 0.1 - float(idx) * 1e-8
+        for idx in range(valid_len)
+    ]
+
+    started = time.perf_counter()
+    constrained = policy.constrained_topk(
+        frame_values,
+        valid=[True] * valid_len,
+        budget=budget,
+        max_unselected_hole=max_hole,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert len(constrained) == budget
+    assert _max_unselected_hole(constrained, valid_len=valid_len) <= max_hole
+    assert constrained != list(range(budget))
+    assert elapsed < 1.0
 
 
 def test_policy_row_records_learned_score_constrained_gap_decoder() -> None:
@@ -375,6 +400,107 @@ def test_learned_policy_ledger_validator_rejects_uniform_like_scaffold_pattern(t
         )
 
 
+def test_learned_policy_ledger_validator_excludes_full_valid_coverage_from_uniform_gate(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    sample = _sample_row(
+        "video_short_valid_0001|0",
+        [0.1, 0.9, 0.2],
+        [0, 1, 0],
+        [1],
+    )
+    sample["dense_len"] = 768
+    sample["valid_len"] = 3
+    sample["strategy_selected_positions"] = {"learned_paction_gap_loss_value": [0, 1, 2]}
+    _write_jsonl(samples, [sample])
+    _write_jsonl(
+        ledger,
+        [
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_short_valid_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 1, 2],
+                "target_len": 384,
+                "selected_count": 3,
+                "valid_len": 3,
+                "dense_len": 768,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "uses_gt": False,
+                "uses_teacher": False,
+                "uses_oracle": False,
+                "uses_cache": False,
+                "uses_raw_prediction": False,
+                "uses_checkpoint": False,
+                "diagnostics": {"uniform_visible_fill_count": 0, "source_strategy": "learned_paction_gap_loss_value"},
+            }
+        ],
+    )
+
+    summary = validate_ledger.validate_ledger(
+        sample_jsonl=samples,
+        ledger_jsonl=ledger,
+        strategy="learned_paction_gap_loss_value",
+        expected_target_len=384,
+        require_selected_count=384,
+        require_deployable=True,
+        max_uniform_similarity=0.0,
+    )
+
+    assert summary["full_valid_coverage_count"] == 1
+    assert summary["max_uniform_similarity"] is None
+    assert summary["max_all_uniform_similarity_including_full_coverage"] == 1.0
+
+
+def test_learned_policy_ledger_validator_excludes_high_coverage_rows_from_uniform_gate(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    p_action = [0.9 - 0.01 * idx for idx in range(11)]
+    sample = _sample_row("video_high_coverage_0001|0", p_action, [1] * 11, [1])
+    sample["strategy_selected_positions"] = {"learned_paction_gap_loss_value": list(range(10))}
+    _write_jsonl(samples, [sample])
+    _write_jsonl(
+        ledger,
+        [
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_high_coverage_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": list(range(10)),
+                "target_len": 10,
+                "selected_count": 10,
+                "valid_len": 11,
+                "dense_len": 11,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "uses_gt": False,
+                "uses_teacher": False,
+                "uses_oracle": False,
+                "uses_cache": False,
+                "uses_raw_prediction": False,
+                "uses_checkpoint": False,
+                "diagnostics": {"uniform_visible_fill_count": 0, "source_strategy": "learned_paction_gap_loss_value"},
+            }
+        ],
+    )
+
+    summary = validate_ledger.validate_ledger(
+        sample_jsonl=samples,
+        ledger_jsonl=ledger,
+        strategy="learned_paction_gap_loss_value",
+        expected_target_len=10,
+        require_selected_count=10,
+        require_deployable=True,
+        max_uniform_similarity=0.0,
+    )
+
+    assert summary["full_valid_coverage_count"] == 0
+    assert summary["high_valid_coverage_uniform_exempt_count"] == 1
+    assert summary["max_uniform_similarity"] is None
+    assert summary["max_all_uniform_similarity_including_full_coverage"] == 0.9
+
+
 def test_learned_policy_ledger_validator_requires_paction_positive_provenance(tmp_path: Path) -> None:
     samples = tmp_path / "samples.jsonl"
     ledger = tmp_path / "ledger.jsonl"
@@ -521,8 +647,8 @@ def test_paction_policy_trainer_defaults_to_training_split_guard() -> None:
     assert args.expected_split == "training"
 
 
-@pytest.mark.parametrize("flag", ["uses_gt_for_diagnostics", "diagnostic_only"])
-def test_selection_deploy_source_rejects_true_leak_flags_before_strip(tmp_path: Path, flag: str) -> None:
+@pytest.mark.parametrize("flag", ["uses_gt", "training_only", "uses_teacher", "uses_cache"])
+def test_selection_deploy_source_rejects_true_generation_or_cache_flags_before_strip(tmp_path: Path, flag: str) -> None:
     input_jsonl = tmp_path / "source.jsonl"
     selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
     row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
@@ -531,6 +657,38 @@ def test_selection_deploy_source_rejects_true_leak_flags_before_strip(tmp_path: 
 
     with pytest.raises(ValueError, match=flag):
         paction_source_samples.write_deploy_selection_source_jsonl(input_jsonl, selection_jsonl)
+
+
+def test_selection_deploy_source_strips_diagnostic_flags_and_can_infer_legacy_provenance(tmp_path: Path) -> None:
+    input_jsonl = tmp_path / "source.jsonl"
+    selection_jsonl = tmp_path / "source.selection_deploy.jsonl"
+    row = _sample_row("video_test_0001|0", [0.1, 0.9, 0.2, 0.8], [0, 1, 0, 1], [1, 3])
+    row.pop("paction_positive_provenance")
+    row["probe_model"] = "mobilenetv3_64px"
+    row["uses_gt_for_diagnostics"] = True
+    row["diagnostic_only"] = True
+    _write_jsonl(input_jsonl, [row])
+
+    with pytest.raises(ValueError, match="p_action positive provenance is required"):
+        paction_source_samples.write_deploy_selection_source_jsonl(input_jsonl, selection_jsonl)
+
+    report = paction_source_samples.write_deploy_selection_source_jsonl(
+        input_jsonl,
+        selection_jsonl,
+        allow_inferred_paction_positive_provenance=True,
+    )
+    rows = _read_jsonl(selection_jsonl)
+
+    assert report["inferred_paction_positive_provenance_count"] == 1
+    assert report["stripped_true_diagnostic_flag_counts"] == {
+        "diagnostic_only": 1,
+        "uses_gt_for_diagnostics": 1,
+    }
+    assert "uses_gt_for_diagnostics" not in rows[0]
+    assert "diagnostic_only" not in rows[0]
+    assert rows[0]["paction_positive_provenance"]["inferred_from_source_row"] is True
+    assert rows[0]["paction_positive_provenance"]["probe_model"] == "mobilenetv3_64px"
+    assert rows[0]["paction_positive_provenance"]["no_gt_generation"] is True
 
 
 def test_selection_deploy_source_strips_metric_payload_without_laundering_flags(tmp_path: Path) -> None:

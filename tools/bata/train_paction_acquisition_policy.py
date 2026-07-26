@@ -259,6 +259,7 @@ def _run_epoch(
     optimizer: Any | None,
     gap_loss_max_gap: int,
     budget_ce_loss_weight: float,
+    loss_terms: Mapping[str, float] | None,
 ) -> dict[str, float]:
     import torch
     import torch.nn.functional as F
@@ -283,6 +284,7 @@ def _run_epoch(
                 valid=tensors["valid"],
                 target_budget=tensors["budget_targets"],
                 gap_loss_max_gap=int(gap_loss_max_gap),
+                loss_terms=loss_terms,
             )
             budget_ce = F.cross_entropy(outputs["budget_logits"], tensors["budget_indices"])
             total_loss = losses["total_loss"] + budget_ce * float(budget_ce_loss_weight)
@@ -320,6 +322,7 @@ def run_training(
     dropout: float = 0.10,
     gap_loss_max_gap: int = policy.DEFAULT_GAP_LOSS_MAX_GAP,
     budget_ce_loss_weight: float = 0.25,
+    loss_terms: Mapping[str, float] | None = None,
     device: str = "cuda",
     seed: int = 0,
     expected_split: str | None = "training",
@@ -333,6 +336,9 @@ def run_training(
     out_path.mkdir(parents=True, exist_ok=True)
     checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else out_path / "paction_policy.pth"
     buckets = [int(item) for item in dynamic_budget_buckets]
+    effective_loss_terms = dict(policy.DEFAULT_POLICY_LOSS_TERMS)
+    if loss_terms is not None:
+        effective_loss_terms.update({str(key): float(value) for key, value in loss_terms.items()})
     train_rows = _prepared_rows(
         _read_jsonl(train_jsonl),
         dynamic_budget_buckets=buckets,
@@ -368,6 +374,7 @@ def run_training(
             optimizer=optimizer,
             gap_loss_max_gap=int(gap_loss_max_gap),
             budget_ce_loss_weight=float(budget_ce_loss_weight),
+            loss_terms=effective_loss_terms,
         )
         epoch_row: dict[str, Any] = {"epoch": int(epoch), "train": train_metrics}
         if val_rows:
@@ -381,6 +388,7 @@ def run_training(
                     optimizer=None,
                     gap_loss_max_gap=int(gap_loss_max_gap),
                     budget_ce_loss_weight=float(budget_ce_loss_weight),
+                    loss_terms=effective_loss_terms,
                 )
         history.append(epoch_row)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
@@ -424,7 +432,7 @@ def run_training(
         "fixed_budget": int(fixed_budget),
         "dynamic_budget_buckets": buckets,
         "gap_loss_max_gap": int(gap_loss_max_gap),
-        "loss_terms": dict(policy.DEFAULT_POLICY_LOSS_TERMS),
+        "loss_terms": dict(effective_loss_terms),
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
         "gap_control": "learned_gap_hole_loss_no_uniform_fill",
@@ -445,7 +453,7 @@ def run_training(
         "gap_control": "learned_gap_hole_loss_no_uniform_fill",
         "uses_uniform_scaffold": False,
         "uses_uniform_fill": False,
-        "loss_terms": dict(policy.DEFAULT_POLICY_LOSS_TERMS),
+        "loss_terms": dict(effective_loss_terms),
         "final_train": history[-1]["train"] if history else {},
         "final_val": history[-1].get("val") if history and "val" in history[-1] else None,
         "history": history,
@@ -481,11 +489,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dropout", type=float, default=0.10)
     parser.add_argument("--gap-loss-max-gap", type=int, default=policy.DEFAULT_GAP_LOSS_MAX_GAP)
     parser.add_argument("--budget-ce-loss-weight", type=float, default=0.25)
+    parser.add_argument("--loss-term", action="append", default=[], metavar="NAME=WEIGHT")
+    parser.add_argument("--value-transport-loss-weight", type=float)
+    parser.add_argument("--boundary-miss-loss-weight", type=float)
+    parser.add_argument("--large-gap-loss-weight", type=float)
+    parser.add_argument("--temporal-hole-loss-weight", type=float)
+    parser.add_argument("--budget-loss-weight", type=float)
+    parser.add_argument("--redundancy-loss-weight", type=float)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--expected-split", default="training")
     parser.add_argument("--val-expected-split")
     return parser
+
+
+def _parse_loss_terms(args: argparse.Namespace) -> dict[str, float]:
+    terms: dict[str, float] = {}
+    named = {
+        "value_transport": args.value_transport_loss_weight,
+        "boundary_miss": args.boundary_miss_loss_weight,
+        "large_gap": args.large_gap_loss_weight,
+        "temporal_hole": args.temporal_hole_loss_weight,
+        "budget": args.budget_loss_weight,
+        "redundancy": args.redundancy_loss_weight,
+    }
+    for key, value in named.items():
+        if value is not None:
+            terms[key] = float(value)
+    for raw in args.loss_term:
+        if "=" not in str(raw):
+            raise ValueError("--loss-term must be NAME=WEIGHT")
+        key, value = str(raw).split("=", 1)
+        key = key.strip()
+        if key not in policy.DEFAULT_POLICY_LOSS_TERMS:
+            raise ValueError(f"unknown p_action loss term: {key}")
+        terms[key] = float(value)
+    return terms
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -508,6 +547,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dropout=float(args.dropout),
         gap_loss_max_gap=int(args.gap_loss_max_gap),
         budget_ce_loss_weight=float(args.budget_ce_loss_weight),
+        loss_terms=_parse_loss_terms(args),
         device=str(args.device),
         seed=int(args.seed),
         expected_split=args.expected_split,

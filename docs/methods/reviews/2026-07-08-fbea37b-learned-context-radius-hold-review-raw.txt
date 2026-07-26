@@ -1,0 +1,1010 @@
+## 1. Visibility check
+
+**Visibility OK，但必须说明一个坑：**普通 GitHub `/tree/codex/gas-vt-stage23-detector-aware-20260706` URL 会因为分支名含 `/` 而容易落到错误 ref；我按 `refs/heads/codex/gas-vt-stage23-detector-aware-20260706` 固定查看。该分支页面显示的是 `refs/heads/codex/gas-vt-stage23-detector-aware-20260706`，共 68 commits；最新 HEAD commit 为 **`fbea37b878b207f7b93dc7d213b234b43a39a3ea`**，提交信息是 **“Add detector-aware learned context radius”**，GitHub commit diff 显示本轮改动覆盖你列出的 13 个文件。([GitHub][1])
+
+我以下审查对象是这个 **latest HEAD**，不是旧 commit。
+
+---
+
+## 2. Verdict: **HOLD**
+
+**结论：当前 Stage2 代码已经大概率修复了“fixed384 被 short-valid-ratio 缩成几十帧”的核心部署 bug，但还不能给 PASS。**
+
+原因很明确：
+
+1. **exact fixed budget 主路径基本修好了。** `fixed_deploy_budget(requested_budget, valid_len)` 返回 `min(requested_budget, valid_len)`；`paction_budget_contract.expected_selected_count` 在 `allow_short_valid_ratio_count=False` 时也返回 `min(required_count, valid_len)`；converter 会按该 expected count fail-closed；pipeline 默认 `allow_short_valid_ratio_count=False`。这基本消除了之前 fixed384 被比例缩小到 34 左右的错误。([GitHub][2])
+
+2. **learned context radius 现在是“可学习的 surrogate head”，不是 detector loss 真正驱动的 acquisition。** radius head 确实接入 forward，objective 里也用 soft context coverage 让 spacing/action-local-hole 对半径产生梯度；但这个梯度是间接的、surrogate 的、容易饱和的，并没有来自 AdaTAD classification/regression/proposal loss 的直接 credit assignment。([GitHub][2])
+
+3. **checkpoint 兼容路径存在严重 fail-open。** `_checkpoint_policy_scores_with_context` 如果拿不到三元返回，会静默把所有 context radius 设成 `DEFAULT_CONTEXT_RADIUS_MAX`，也就是最大半径。这会掩盖“旧 checkpoint 根本没有 radius head”的事实，并且让实验结果看起来像 learned radius 有效，实际可能只是 fixed max-radius dilation。([GitHub][3])
+
+4. **action-local-hole loss 的 action target fallback 有概念污染。** `_extract_action_target` 在没有显式 `action_target` 时，用 `positive_gain >= 0.5` 推断 action region；这把 detector utility / responsibility 和 action label 混在一起，不能再严肃 claim “action-local hole” 是独立的动作区域约束。([GitHub][4])
+
+5. **研究故事仍应定位为 temporal-grid observation acquisition / detector-aware offline selector，不能说 raw-frame pre-backbone，也不能说 end-to-end。** 当前 config/validator 里 Stage2 仍是 ledger subsample route，并且 validator 明确把 `end_to_end`、`mAP claim`、teacher/deploy leak 等设为 fail-closed gate；这不是端到端训练图。([GitHub][5])
+
+所以我的判定是：**HOLD_FOR_CODE_HARDENING_AND_METHOD_REFRAMING**。
+可以继续做 Stage2 实验，但不能以当前代码直接进入论文级 claim，也不能把它包装成 raw-frame pre-backbone 或 end-to-end detector-driven acquisition。
+
+---
+
+## 3. Blocking code issues with file / line-level references
+
+### B1. `apply_detector_aware_acquisition_policy.py`: 旧 checkpoint fallback 到 max radius 是严重 fail-open
+
+`checkpoint_policy_scores(..., return_context_radius=True)` 新路径本身没问题；`_checkpoint_budget_conditioned_scores` 也确实给 fixed384、fixed768、dynamic 分别用了 target-budget-conditioned scores 和 context radii。([GitHub][3])
+
+问题在 `_checkpoint_policy_scores_with_context`：当调用不支持 `return_context_radius` 或返回长度不是 3 时，它会把 `context_radius` 静默填成 `DEFAULT_CONTEXT_RADIUS_MAX`。这不是安全兼容，而是**实验污染**：旧 checkpoint、错误 checkpoint、monkeypatch、legacy API 都可能被解释成“最大 learned radius”。([GitHub][3])
+
+**影响：**
+
+* 你可能以为在评估 learned context radius，实际在评估 fixed r=16。
+* 如果 r=16 带来 mAP 提升，论文会错误归因到 learned radius。
+* 如果 r=16 降低 mAP，调参会错误惩罚 radius head。
+* 这会掩盖 checkpoint schema 不匹配，是典型 CCF-A 代码审查里的 P0 reproducibility bug。
+
+**必须改：**
+
+默认应 strict fail-closed。只有显式传 `--allow-legacy-no-context-radius --legacy-context-radius 16` 时才允许 fallback，并且 summary / ledger provenance 必须写入 `context_radius_source="legacy_fixed_max"`。
+
+---
+
+### B2. `detector_aware_acquisition_policy.py`: `score_dilated_frame_values` 并没有严格“围绕 learned positive peaks 扩展”
+
+函数确实只对 `center_score > 0.0` 的位置做 dilation，并且 fallback radii 是 `(2,4)`；但“positive”不等于“peak”。当前实现会对所有正分位置扩展，而不是只围绕 local maxima / high-confidence detector utility peaks 扩展。learned 分支还把 radius clamp 到 `[0, DEFAULT_CONTEXT_RADIUS_MAX]`，不是声明的 `[2,16]`，这与 policy head 的 `[2,16]` 输出合同不一致。([GitHub][2])
+
+**风险：**
+
+* 如果一段 action interior 全是小正分，dilation 会变成宽区域铺开，接近 uniform scaffold。
+* 如果大部分位置都有微弱正分，所谓 learned dilation 会退化成 global smoothing。
+* 如果所有 score ≤ 0，dilation 完全不发生，后续 top-k/tie-break 可能选择非预期位置。
+* learned branch 的距离权重很平，边界处仍接近中心分数，r=16 时会产生长平台，容易造成大范围 tie。
+
+**这与你的设计描述冲突：**你说“只围绕 learned positive detector utility peaks 扩展，不应变成 uniform scaffold”。当前代码只能保证 positive-seed，不保证 peak-seed，也不保证非 scaffold。
+
+---
+
+### B3. learned context radius head 有梯度路径，但不是 detector-driven，且存在 collapse 风险
+
+`DetectorAwareSequentialAcquisitionPolicy` 确实新增了 `context_radius_head`，通过 sigmoid 输出 `[2,16]` 的 `context_radius`。([GitHub][2])
+
+objective 中也确实用 `context_radius` 计算 soft context gate / soft context coverage，再用 spacing/action-local-hole/radius-cost 组成总 loss。([GitHub][2])
+
+但这只说明 **radius head technically differentiable**，不说明它学到了 detector-aware context。当前梯度主要来自：
+
+[
+\text{soft_coverage}_{j}
+========================
+
+\max_t
+z_t \cdot \sigma(2(r_t - |t-j|))
+]
+
+以及 spacing / action-local-hole surrogate。问题有三层：
+
+1. `amax` 会让梯度只从最大覆盖路径回传，很多 selected positions 的 radius 梯度会是弱的或零。
+2. sigmoid gate 在大 radius 或距离远离边界时容易饱和，radius 学习可能很慢。
+3. radius cost 只是 selected positions 上的 normalized squared penalty，不能保证避免所有 radius collapse 到 16；如果 action-local-hole/spacing 奖励更强，模型很可能学会“全局扩大 radius 来买 coverage”。
+
+**缺失的最低测试：**没有看到一个强制检查 `context_radius_head.*.grad` 非零的 test；现有测试主要检查 scorer 行为、短 valid budget、fallback r=2/4 和 learned r=16 的静态效果。([GitHub][6])
+
+---
+
+### B4. `train_detector_aware_acquisition_policy.py`: `_extract_action_target` fallback 把 detector utility 当 action label
+
+当前 `_extract_action_target` 如果 row 里没有 `action_target`，就用 `gain >= 0.5` 生成二值 action target。([GitHub][4])
+
+这不是小问题。它会把三个概念混在一起：
+
+* actionness / 是否处于动作段；
+* detector responsibility / utility；
+* selector positive gain。
+
+如果 `gain` 来自 dense AdaTAD teacher/responsibility，那么 action-local-hole loss 实际上变成 **utility-local-hole loss**。这不一定泄漏到 val/test deploy，但它破坏了 loss 命名和论文解释。训练数据准备中虽然有 `action_target: row["action"]` 路径，并且 `_batch_to_tensors` / `_run_epoch` 会把 action tensor 传进 objective，但 fallback 仍然会在缺失字段时 silently change semantics。([GitHub][4])
+
+**必须改：**
+
+* 要么强制要求 train rows 必须含显式 `action_target`；
+* 要么把 fallback loss 改名为 `utility_local_hole_loss`，并在 claim 中明确它不是 action coverage；
+* 不允许 silently fallback。
+
+---
+
+### B5. `validate_c3_detector_aware_adatad_full_train.py`: validator 对已有 ledger 的 short-valid selected count 检查不够 fail-closed
+
+config validator 正确要求 loader 关闭 `bata_value_transport_allow_short_valid_ratio_count`。([GitHub][7])
+
+但是 ledger file validation 里对 selected count 的严格检查只在 `required is not None and valid_len >= 768` 时触发；这意味着如果有人绕过 converter、直接给 validator 一个 `valid_len < 768` 且 selected count 不等于 `min(required, valid_len)` 的 ledger，validator 可能放过。([GitHub][7])
+
+converter 主路径会正确检查 expected selected count，所以 pipeline 内部大概率安全；但作为 precheck gate / full train gate，这仍然不是完全 fail-closed。你们之前已经踩过 short-valid-ratio 缩预算的坑，这里不应留下“只检查 valid_len >= 768”的例外。
+
+**必须改：**
+
+validator 应直接复用 `paction_budget_contract.expected_selected_count(required, valid_len, dense_len, allow_short_valid_ratio_count=False)`，对所有 valid_len 检查。
+
+---
+
+### B6. Stage3 / end-to-end claim 在本轮文件中没有证据
+
+本轮 Stage2 training objective 是 selector policy loss，不是 AdaTAD detector loss；训练循环里是 selector objective backward，而不是 detector classification/regression/proposal loss 反传到 selector。([GitHub][4])
+
+因此，基于本轮代码，最多可以说：
+
+> Stage2 trains a detector-aware offline selector using dense AdaTAD responsibility / utility targets.
+
+不能说：
+
+> detector loss directly teaches selector where to observe.
+
+也不能说：
+
+> end-to-end pre-backbone sparse acquisition.
+
+如果 Stage3 另有代码，必须单独审查：模型 forward graph、mask/gather 是否可导、selector logits 是否在 detector loss 下有非零梯度、是否没有 `.detach()` / JSON ledger 断图。
+
+---
+
+## 4. Non-blocking but important code issues
+
+### N1. exact fixed budget 的核心修复是成立的，但还需要 dataloader-level smoke
+
+`fixed_deploy_budget`、budget contract、converter、pipeline 默认值、config loader flag 基本一致：Stage2 fixed384 应该选 `min(384, valid_len)`，不再按 valid/dense ratio 缩成几十帧。([GitHub][2])
+
+但还缺一个真实 dataloader smoke：构造 `valid_len < 384` 的 ledger，走 `LoadFrames -> DecordDecode -> Resize -> Padding -> Collect`，确认：
+
+* selected_count 是 `valid_len`；
+* padded/target_len 与 AdaTAD 输入 shape 一致；
+* mask / temporal metadata 没有把短视频当成 384 个真实 observation；
+* postprocess seconds conversion 没有用错 selected-index/native-time axis。
+
+---
+
+### N2. CLI `--allow-short-valid-ratio-count` / `--disable-short-valid-ratio-count` 语义可用但冗余
+
+pipeline 默认 `allow_short_valid_ratio_count=False`，CLI 同时提供 allow 和 disable，disable 最后覆盖 allow。这个逻辑可用，但长期维护容易出错。([GitHub][8])
+
+建议简化为：
+
+* 默认 false；
+* 只保留 `--allow-short-valid-ratio-count`，并在 validator 中禁止 Stage2 full train 使用；
+* 或保留两者，但 summary 中强制写入 final resolved value。
+
+---
+
+### N3. tests 覆盖了原始 bug，但没有覆盖最危险的新 failure mode
+
+已有测试做得比上一轮好，至少覆盖了：
+
+* fixed decoder 不再按 short-ratio 缩小 budget；
+* fallback r=2/4；
+* learned radius up to 16 的 scorer 行为；
+* action-local-hole sparse vs covered；
+* pipeline 默认 exact fixed budget；
+* teacher/provenance stripping；
+* collapsed dynamic gate。([GitHub][6])
+
+但没有充分覆盖：
+
+* 新 checkpoint 必须带 `context_radius_head`；
+* radius head 梯度非零；
+* all-zero / all-negative detector utility 下 tie-break 行为；
+* low-positive everywhere 时 dilation 是否退化成 scaffold；
+* r=16 collapse 的训练动力学；
+* val/test deploy ledger 里是否完全没有 teacher utility；
+* `valid_len < 384` 的真实 AdaTAD dataloader forward；
+* learned radius 对高 tIoU mAP 的因果贡献，而不是 merely selected_count 修复的贡献。
+
+---
+
+## 5. Research-route diagnosis: what is elegant, what is not
+
+### 5.1 当前 Stage2 的真实性质
+
+当前 Stage2 是：
+
+> dense AdaTAD teacher / responsibility utility supervised offline selector on AdaTAD temporal grid, then ledger-based sparse AdaTAD training/evaluation.
+
+它不是：
+
+* raw-frame pre-backbone acquisition；
+* fully online active acquisition；
+* end-to-end detector-loss-driven subset selection；
+* detector 内生的 differentiable acquisition。
+
+这个定位必须写清楚。你们现在做的是 **pre-detector sparse temporal observation acquisition on the AdaTAD/OpenTAD temporal grid**。它可以有研究价值，但不能包装成“原始视频帧级 pre-backbone 选帧”。
+
+---
+
+### 5.2 什么是优雅的
+
+优雅的部分有三点：
+
+1. **把 selector 训练信号从 p_action 提升到 detector responsibility / utility。** 这比单独 coarse actionness 更接近 TAD 最终目标。
+2. **exact fixed budget contract 修复是必要的。** 如果 fixed384 实际只选几十帧，所有 mAP 都没有解释价值；现在主路径已经回到可解释状态。
+3. **context radius 试图让 selector 不只选点，还预测局部上下文需求。** 这个方向是对的，因为 TAD 高 IoU 定位不仅需要 action interior，还需要 start/end 附近的 temporal evidence。
+
+---
+
+### 5.3 什么不优雅
+
+不优雅的地方也很明显：
+
+1. **三阶段训练太工程化。** PAction learned、GAS-VT、Stage2 teacher utility、Stage3 joint training 目前像是多条补丁路线，而不是一个统一算法。
+2. **Stage2 仍像 offline reranking / distillation。** 它学的是 dense teacher 已经算出来的 utility，而不是在预算约束下通过 detector loss 学会“看哪里”。
+3. **learned radius 目前是 surrogate coverage head。** 它不是 proposal regression responsibility 的自然产物，也不是 high-IoU loss 的直接结果。
+4. **如果不能超过 uniform sparse384 ≈65 mAP，论文 claim 会很窄。** PAction learned fixed384 已有 59.10；Dense AdaTAD anchor 约 68.29；如果 Stage2 learned radius 还在 59 以下，它只能证明“detector-aware utility target 没有转化为有效 acquisition”，不能作为主方法。
+
+---
+
+## 6. Stronger model proposal with equations or pseudocode
+
+我建议把最终方法收敛为：
+
+> **Detector-Utility-Calibrated Sparse Temporal Grid Acquisition for TAD**
+> 在 AdaTAD temporal grid 上学习预算约束下的 observation subset，并通过 detector responsibility、counterfactual utility 和 joint sparse detector loss 校准 selector。
+
+不要一开始承诺 raw-frame pre-backbone。先把 grid-level problem 做严谨、做强。
+
+---
+
+### 6.1 Differentiable detector-aware acquisition
+
+给定 dense temporal features / observations：
+
+[
+X = {x_t}_{t=1}^{T}, \quad T=768
+]
+
+selector 输出 logits：
+
+[
+a_t = f_\theta(x_t, b)
+]
+
+其中 (b) 是 budget condition，例如 384。用 ST top-k 或 Gumbel-top-k 得到 hard subset：
+
+[
+z = \text{TopK}_{k}(a + g)
+]
+
+训练时使用 straight-through：
+
+[
+z_{\text{st}} = z_{\text{hard}} + p - \text{stopgrad}(p)
+]
+
+其中 (p=\sigma(a)) 或 budget-normalized sparsemax/entmax。detector 接收 sparse/gated observation：
+
+[
+\tilde{x}*t = z*{\text{st},t} x_t
+]
+
+或者接收 gather 后的 selected sequence，并保留 native temporal coordinates。
+
+核心 detector loss：
+
+[
+\mathcal{L}_{det}
+=================
+
+\mathcal{L}*{cls}
++
+\lambda*{reg}\mathcal{L}*{reg}
++
+\lambda*{iou}\mathcal{L}_{iou}
+]
+
+关键是：**不要把 selector 输出写成 JSON ledger 再读回训练 detector**。那会断图。Stage3 必须让 `z_st` 在同一个 PyTorch forward graph 里进入 detector。
+
+---
+
+### 6.2 Multi-scale learned dilation gates，而不是单个 continuous radius
+
+当前 continuous radius `[2,16]` 太粗，而且容易 collapse。更好的形式是预测 multi-scale gates：
+
+[
+R = {1,2,4,8,16}
+]
+
+[
+\pi_{t,r} = \text{softmax}(h_\theta(x_t))_r
+]
+
+定义 coverage kernel：
+
+[
+K_r(d)=\max(0, 1 - d/r)
+]
+
+soft coverage：
+
+[
+c_j = 1 - \prod_{t}
+\left(
+1 - z_t \sum_{r \in R}\pi_{t,r}K_r(|j-t|)
+\right)
+]
+
+radius cost：
+
+[
+\mathcal{L}_{radius}
+====================
+
+\frac{1}{k}\sum_t z_t \sum_r \pi_{t,r}\frac{r}{16}
+]
+
+anti-collapse entropy：
+
+[
+\mathcal{L}_{entropy}
+=====================
+
+-\frac{1}{k}\sum_t z_t H(\pi_t)
+]
+
+这里的目标不是鼓励所有点都大半径，而是让边界点、uncertain 点、short-action 点使用更大上下文，背景点和 action interior 使用更小上下文。
+
+---
+
+### 6.3 Region-aware context policy
+
+用 train-only GT 或 teacher responsibility 划分区域：
+
+* boundary region: (B)
+* action interior: (I)
+* background: (G)
+
+不同区域使用不同 prior：
+
+[
+\mathcal{L}_{region}
+====================
+
+\sum_{t \in B} \text{CE}(\pi_t, q_B)
++
+\sum_{t \in I} \text{CE}(\pi_t, q_I)
++
+\sum_{t \in G} \text{CE}(\pi_t, q_G)
+]
+
+例如：
+
+* boundary: prefer (r=4/8/16)
+* interior: prefer (r=1/2/4)
+* background: prefer sentinel / sparse low density
+
+但 val/test deploy 绝不能读取 GT 或 teacher utility；这些只能作为 train-only supervision。
+
+---
+
+### 6.4 Loss design
+
+建议 Stage2/Stage3 统一成以下 loss：
+
+[
+\mathcal{L}
+===========
+
+\mathcal{L}*{det}
++
+\lambda*{resp}\mathcal{L}*{resp}
++
+\lambda*{hole}\mathcal{L}*{hole}
++
+\lambda*{bound}\mathcal{L}*{bound}
++
+\lambda*{cf}\mathcal{L}*{cf}
++
+\lambda*{budget}\mathcal{L}*{budget}
++
+\lambda*{radius}\mathcal{L}_{radius}
+]
+
+其中：
+
+**Responsibility distillation**
+
+[
+\mathcal{L}_{resp}
+==================
+
+\text{BCEWithLogits}(a_t, \text{stopgrad}(r_t^{teacher}))
+]
+
+**Action-local hole**
+
+[
+\mathcal{L}_{hole}
+==================
+
+\frac{1}{|A|}
+\sum_{j \in A}
+\max(0, \delta - c_j)^2
+]
+
+**Boundary coverage**
+
+[
+\mathcal{L}_{bound}
+===================
+
+-\sum_{b \in {s_i,e_i}}
+\log
+\left(
+\sum_t z_t \exp(-|t-b|/\sigma)
++
+\epsilon
+\right)
+]
+
+**Counterfactual utility**
+
+用 teacher 或 frozen detector 估计 removing observation 的损失增量：
+
+[
+u_t^{cf}
+========
+
+\text{stopgrad}
+\left[
+\mathcal{L}_{det}(z \setminus t)
+--------------------------------
+
+\mathcal{L}_{det}(z)
+\right]
+]
+
+[
+\mathcal{L}_{cf}
+================
+
+*
+
+\frac{\sum_t z_t u_t^{cf}}{\sum_t u_t^{cf}+\epsilon}
+]
+
+**Budget**
+
+如果用 hard top-k，可以不需要强 budget loss；如果用 soft mask：
+
+[
+\mathcal{L}_{budget}
+====================
+
+\left(
+\frac{\sum_t p_t - k}{k}
+\right)^2
+]
+
+---
+
+### 6.5 PyTorch-style pseudocode
+
+```python
+class DifferentiableTemporalSelector(nn.Module):
+    def __init__(self, in_dim, hidden_dim=256, radii=(1, 2, 4, 8, 16)):
+        super().__init__()
+        self.radii = radii
+        self.encoder = nn.Sequential(
+            nn.Linear(in_dim + 1, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+        )
+        self.score_head = nn.Linear(hidden_dim, 1)
+        self.radius_gate_head = nn.Linear(hidden_dim, len(radii))
+
+    def forward(self, x, valid_mask, budget, tau=1.0, training=True):
+        # x: [B, T, C]
+        B, T, _ = x.shape
+        budget_feat = torch.full((B, T, 1), float(budget) / float(T), device=x.device)
+        h = self.encoder(torch.cat([x, budget_feat], dim=-1))
+
+        logits = self.score_head(h).squeeze(-1)
+        logits = logits.masked_fill(~valid_mask, -1e4)
+
+        radius_logits = self.radius_gate_head(h)
+        radius_pi = torch.softmax(radius_logits, dim=-1)
+
+        if training:
+            # ST top-k
+            probs = torch.sigmoid(logits / tau) * valid_mask.float()
+            topk_idx = torch.topk(logits, k=min(budget, T), dim=1).indices
+            hard = torch.zeros_like(logits).scatter_(1, topk_idx, 1.0)
+            z = hard + probs - probs.detach()
+        else:
+            topk_idx = torch.topk(logits, k=min(budget, T), dim=1).indices
+            z = torch.zeros_like(logits).scatter_(1, topk_idx, 1.0)
+
+        return {
+            "selector_logits": logits,
+            "selected_mask_st": z,
+            "radius_pi": radius_pi,
+        }
+```
+
+---
+
+## 7. Minimal next implementation plan
+
+### Step 1: 先修 Stage2 安全性，不要急着跑大实验
+
+优先 patch：
+
+1. strict checkpoint context radius；
+2. scorer 中 learned radius clamp 到 `[2,16]`；
+3. dilation seed 改为 local peak / top percentile positive seed，而不是所有 positive；
+4. action_target fallback 默认禁止；
+5. validator 对所有 valid_len 检查 exact selected count；
+6. 增加 radius head gradient test。
+
+这一步完成前，不建议跑 full AdaTAD mAP claim。
+
+---
+
+### Step 2: 跑最小 Stage2 fixed384 ablation
+
+只跑以下 5 个：
+
+1. no dilation；
+2. fixed r=2；
+3. fixed r=4；
+4. learned radius max=8；
+5. learned radius max=16。
+
+每个输出：
+
+* Average-mAP；
+* mAP@0.3/0.4/0.5/0.6/0.7；
+* selected_count min/mean/max；
+* p95 action-local hole；
+* radius distribution；
+* boundary selected density；
+* high-tIoU failure examples。
+
+如果 learned radius 不能超过 fixed r=2/4，就不要再讲 learned radius。
+
+---
+
+### Step 3: Stage3 只做一个最小 joint proof
+
+最小 joint proof 不需要完整论文版，只要证明 detector loss 能回传 selector：
+
+```python
+loss = detector_loss + selector_regularizer
+loss.backward()
+
+selector_grad = sum(
+    p.grad.abs().sum()
+    for n, p in model.named_parameters()
+    if "selector" in n and p.grad is not None
+)
+
+assert selector_grad > 0
+```
+
+同时必须证明：
+
+* selector logits 在 detector forward 图中；
+* 没有 JSON ledger 断图；
+* 没有 `.detach()`；
+* AdaTAD classification/regression loss 对 selector 有非零梯度；
+* 固定预算仍是 `<=384`。
+
+没有这个证据，Stage3 不能叫 end-to-end。
+
+---
+
+## 8. Full CVPR-level experiment plan
+
+### 8.1 必跑 baseline
+
+必须统一 AdaTAD / THUMOS 设置、训练 epoch、postprocess、seed、输入 budget：
+
+1. Dense AdaTAD official setting，anchor ≈ 68.29。
+2. Uniform sparse384。
+3. Random sparse384，至少 3 seeds。
+4. p_action top-k / fixed384。
+5. PAction learned fixed384，anchor 59.10。
+6. GAS-VT fixed384，anchor 44.90。
+7. Stage2 responsibility selector fixed384。
+8. Stage2 learned context radius selector fixed384。
+9. Stage3 joint selector fixed384。
+
+如果 Stage2/Stage3 没有超过 PAction learned 59.10，说明 detector-aware utility 没有带来足够收益。
+如果没有接近或超过 uniform sparse384 ≈65，CVPR 主方法 claim 会很危险。
+
+---
+
+### 8.2 必要消融
+
+必须至少包括：
+
+* no dilation；
+* fixed r=2；
+* fixed r=4；
+* learned radius max 4 / 8 / 16；
+* no action-local-hole loss；
+* no context-radius cost；
+* exact budget vs short-ratio budget；
+* responsibility utility vs proposal-score surrogate；
+* no budget conditioning；
+* no p_action feature；
+* frozen detector sparse distill vs partial-unfreeze vs full joint fine-tune。
+
+特别注意：**exact budget vs short-ratio budget 必须作为 bug-fix ablation，而不是主方法贡献。** short-ratio budget 是错误合同，不能包装成 “adaptive budget”。
+
+---
+
+### 8.3 必要分析图
+
+论文级证据至少需要：
+
+1. mAP@tIoU decomposition；
+2. boundary error CDF；
+3. best proposal tIoU CDF；
+4. action-normalized selected density；
+5. action-local hole distribution；
+6. selected context radius distribution by boundary / interior / background；
+7. compute / observation vs mAP Pareto；
+8. representative success/failure timelines：GT segments、selected observations、detector proposals、learned radius overlay；
+9. selected_count histogram；
+10. short action vs long action 分组 mAP；
+11. high-IoU false negative diagnosis；
+12. uniform vs PAction vs Stage2 的 boundary coverage 对比。
+
+---
+
+## 9. Claim boundary: what we may and may not claim today
+
+### 今天可以 claim
+
+可以说：
+
+> We study sparse temporal observation acquisition on the AdaTAD/OpenTAD temporal grid under a fixed budget of ≤384 observations.
+
+可以说：
+
+> Stage2 trains a detector-aware offline selector using dense AdaTAD responsibility / utility signals.
+
+可以说：
+
+> The current code fixes the prior short-valid-ratio budget shrinkage bug on the main ledger conversion path.
+
+可以说：
+
+> Learned context radius is a trainable auxiliary selector head supervised by coverage-style surrogate losses.
+
+---
+
+### 今天不能 claim
+
+不能说：
+
+> raw-frame pre-backbone frame selection.
+
+当前 teacher/export/responsibility 都是在 AdaTAD/OpenTAD temporal grid 语境里产生的；即使 dataloader 最后 decode selected frames，也不是一个从原始视频直接学的 raw-frame acquisition claim。
+
+不能说：
+
+> end-to-end detector-aware acquisition.
+
+本轮 Stage2 训练不是 detector loss 直接反传 selector。
+
+不能说：
+
+> learned context radius is proven useful.
+
+现在只是代码接入和静态 test；没有 mAP、radius distribution、gradient/collapse、fixed-r ablation 证据。
+
+不能说：
+
+> Stage2 is better than PAction learned or uniform sparse384.
+
+已知锚点里 PAction learned fixed384 是 59.10，uniform sparse384 约 65；Stage2 必须用严格 exact budget 重跑并超过这些锚点后才有资格。
+
+---
+
+## 10. Concrete code snippets for the highest-priority fix
+
+### Fix 1: checkpoint context radius 必须 fail-closed
+
+```python
+# tools/bata/apply_detector_aware_acquisition_policy.py
+
+def _checkpoint_policy_scores_with_context(
+    checkpoint_path,
+    row,
+    *,
+    target_budget,
+    device,
+    require_context_radius: bool = True,
+    allow_legacy_no_context_radius: bool = False,
+    legacy_context_radius: float | None = None,
+):
+    try:
+        result = checkpoint_policy_scores(
+            checkpoint_path,
+            row,
+            target_budget=target_budget,
+            device=device,
+            return_context_radius=True,
+        )
+    except TypeError as exc:
+        if require_context_radius and not allow_legacy_no_context_radius:
+            raise RuntimeError(
+                "This checkpoint/application path does not support "
+                "return_context_radius=True. Retrain with context_radius_head "
+                "or explicitly pass --allow-legacy-no-context-radius."
+            ) from exc
+        result = checkpoint_policy_scores(
+            checkpoint_path,
+            row,
+            target_budget=target_budget,
+            device=device,
+        )
+
+    if not isinstance(result, tuple) or len(result) != 3:
+        if require_context_radius and not allow_legacy_no_context_radius:
+            raise RuntimeError(
+                "Expected checkpoint_policy_scores to return "
+                "(frame_values, summary, context_radius). "
+                "Got legacy output. Refusing to silently use max radius."
+            )
+
+        if legacy_context_radius is None:
+            raise RuntimeError(
+                "legacy_context_radius must be explicitly provided when "
+                "allow_legacy_no_context_radius=True."
+            )
+
+        frame_values, summary = result
+        context_radius = [float(legacy_context_radius)] * len(frame_values)
+        summary = dict(summary)
+        summary["context_radius_source"] = "legacy_fixed_explicit"
+        summary["legacy_context_radius"] = float(legacy_context_radius)
+        return frame_values, summary, context_radius
+
+    frame_values, summary, context_radius = result
+
+    if len(context_radius) != len(frame_values):
+        raise RuntimeError(
+            f"context_radius length mismatch: "
+            f"{len(context_radius)} vs {len(frame_values)}"
+        )
+
+    return frame_values, summary, context_radius
+```
+
+**预期测试：**
+
+```python
+def test_legacy_checkpoint_without_context_radius_fails_closed(monkeypatch):
+    def fake_scores(*args, **kwargs):
+        if kwargs.get("return_context_radius"):
+            return [0.1, 0.2], {"legacy": True}  # bad legacy shape
+        return [0.1, 0.2], {"legacy": True}
+
+    monkeypatch.setattr(apply_mod, "checkpoint_policy_scores", fake_scores)
+
+    with pytest.raises(RuntimeError, match="Expected checkpoint_policy_scores"):
+        apply_mod._checkpoint_policy_scores_with_context(
+            "ckpt.pt",
+            row={"valid_len": 2},
+            target_budget=2,
+            device="cpu",
+            require_context_radius=True,
+        )
+```
+
+---
+
+### Fix 2: deploy scorer 应 clamp 到 `[2,16]`，并只对 peaks / high-positive seeds dilation
+
+```python
+# tools/bata/detector_aware_acquisition_policy.py
+
+DEFAULT_CONTEXT_RADIUS_MIN = 2.0
+DEFAULT_CONTEXT_RADIUS_MAX = 16.0
+
+def _clamp_context_radius(r: float) -> float:
+    return max(
+        DEFAULT_CONTEXT_RADIUS_MIN,
+        min(DEFAULT_CONTEXT_RADIUS_MAX, float(r)),
+    )
+
+def _is_dilation_seed(
+    values: list[float],
+    idx: int,
+    *,
+    threshold: float,
+    require_local_peak: bool,
+) -> bool:
+    score = float(values[idx])
+    if score <= threshold:
+        return False
+
+    if not require_local_peak:
+        return True
+
+    left = float(values[idx - 1]) if idx > 0 else float("-inf")
+    right = float(values[idx + 1]) if idx + 1 < len(values) else float("-inf")
+
+    # plateau-friendly local maximum
+    return score >= left and score >= right
+
+def score_dilated_frame_values(
+    frame_values,
+    *,
+    valid_len,
+    context_radii=None,
+    dilation_seed_threshold: float = 1e-6,
+    require_local_peak: bool = True,
+    # existing args...
+):
+    values = [float(v) for v in frame_values]
+    valid_mask = [i < valid_len for i in range(len(values))]
+    out = list(values)
+
+    if context_radii is not None:
+        if len(context_radii) != len(values):
+            raise ValueError(
+                f"context_radii length mismatch: "
+                f"{len(context_radii)} vs {len(values)}"
+            )
+        radii = [_clamp_context_radius(r) for r in context_radii]
+
+        for center, center_score in enumerate(values):
+            if not valid_mask[center]:
+                continue
+            if not _is_dilation_seed(
+                values,
+                center,
+                threshold=dilation_seed_threshold,
+                require_local_peak=require_local_peak,
+            ):
+                continue
+
+            radius = radii[center]
+            lo = max(0, int(math.floor(center - radius)))
+            hi = min(valid_len - 1, int(math.ceil(center + radius)))
+
+            for j in range(lo, hi + 1):
+                distance = abs(j - center)
+                # triangular or Gaussian is safer than nearly-flat plateau
+                weight = max(0.0, 1.0 - distance / max(radius, 1e-6))
+                out[j] = max(out[j], center_score * weight)
+
+        return out
+
+    # fallback fixed r=2/4 branch...
+```
+
+---
+
+### Fix 3: action target fallback 默认禁止
+
+```python
+# tools/bata/train_detector_aware_acquisition_policy.py
+
+def _extract_action_target(
+    row,
+    *,
+    valid_len: int,
+    gain: list[float],
+    require_explicit_action_target: bool = True,
+):
+    raw = row.get("action_target", None)
+
+    if raw is None:
+        if require_explicit_action_target:
+            raise ValueError(
+                "Missing action_target. Refusing to infer action region from "
+                "positive detector gain because this conflates action labels "
+                "with teacher utility. Either provide train-only action_target "
+                "or disable action_local_hole_loss."
+            )
+
+        # Only allowed for explicitly named utility-local-hole experiments.
+        return [1.0 if float(g) >= 0.5 else 0.0 for g in gain[:valid_len]]
+
+    action = [float(x) for x in raw[:valid_len]]
+    if len(action) != valid_len:
+        raise ValueError(
+            f"action_target length mismatch: {len(action)} vs valid_len={valid_len}"
+        )
+    return action
+```
+
+---
+
+### Fix 4: validator 应对所有 valid_len 检查 exact selected count
+
+```python
+# tools/bata/validate_c3_detector_aware_adatad_full_train.py
+
+from tools.bata import paction_budget_contract
+
+def _expected_stage2_selected_count(required, valid_len, dense_len):
+    if required is None:
+        return None
+    return paction_budget_contract.expected_selected_count(
+        required_count=int(required),
+        valid_len=int(valid_len),
+        dense_len=int(dense_len),
+        allow_short_valid_ratio_count=False,
+    )
+
+# inside ledger row validation
+expected = _expected_stage2_selected_count(required, valid_len, dense_len)
+
+if expected is not None and len(positions) != expected:
+    raise ValueError(
+        f"selected_count mismatch for {video_name}: "
+        f"got={len(positions)} expected={expected} "
+        f"required={required} valid_len={valid_len} dense_len={dense_len} "
+        f"contract=exact_min_required_valid_len"
+    )
+```
+
+---
+
+### Fix 5: radius head gradient test
+
+```python
+def test_context_radius_head_receives_gradient():
+    torch.manual_seed(0)
+
+    model = DetectorAwareSequentialAcquisitionPolicy(
+        input_dim=8,
+        # match actual constructor args
+    )
+    batch = {
+        "features": torch.randn(2, 32, 8),
+        "valid_mask": torch.ones(2, 32, dtype=torch.bool),
+        "target_budget": torch.tensor([16, 16]),
+    }
+
+    outputs = model(**batch)
+
+    objective = detector_aware_training_objective(
+        policy_outputs=outputs,
+        utility_target=torch.rand(2, 32),
+        action_target=torch.ones(2, 32),
+        valid_mask=batch["valid_mask"],
+        # use nonzero action_local_hole / spacing / radius weights
+    )
+
+    loss = objective["total_loss"]
+    loss.backward()
+
+    grad_norm = 0.0
+    for name, param in model.named_parameters():
+        if "context_radius_head" in name and param.grad is not None:
+            grad_norm += float(param.grad.detach().abs().sum())
+
+    assert grad_norm > 0.0, "context_radius_head is not being trained"
+```
+
+---
+
+## Final judgement
+
+**HOLD, not FAIL.**
+The exact-budget bug is mostly fixed on the main conversion/deploy path, so the branch is worth continuing. But the learned-radius selector is not yet a clean detector-aware acquisition method; it is a surrogate, offline, temporal-grid selector with several fail-open paths and weak proof that radius is learned for the right reason.
+
+The next acceptable milestone is not “run full paper experiments.”
+The next acceptable milestone is:
+
+> strict checkpoint schema + exact selected-count validator + explicit action_target contract + radius gradient/collapse tests + fixed-r/learned-r Stage2 ablation.
+
+Only after learned radius beats fixed r=2/4 and Stage2 beats PAction learned 59.10 under exact fixed384 should you invest in the full Stage3 joint training route.
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/refs/heads/codex/gas-vt-stage23-detector-aware-20260706 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_aware_acquisition_policy.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/apply_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/apply_detector_aware_acquisition_policy.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/train_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_detector_aware_acquisition_policy.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_train.py "OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_train.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tests/test_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tests/test_detector_aware_acquisition_policy.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/validate_c3_detector_aware_adatad_full_train.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_c3_detector_aware_adatad_full_train.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/run_detector_aware_ledger_pipeline.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/run_detector_aware_ledger_pipeline.py at refs/heads/codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

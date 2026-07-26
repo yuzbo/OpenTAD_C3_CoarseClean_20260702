@@ -17,7 +17,10 @@ VALIDATOR="${VALIDATOR:-tools/bata/validate_c3_asformer_delta_ledger_full_train.
 RUN_TAG="${RUN_TAG:-c3_asformer_delta_ledger_adatad_full_train_gpu1_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
-MASTER_PORT="${MASTER_PORT:-30217}"
+MASTER_PORT="${MASTER_PORT:-}"
+MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
+MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
+MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 export HOME="${HOME:-${BASE}/tmp/home}"
@@ -60,6 +63,39 @@ module load miniforge3/24.11 >/dev/null 2>&1 || true
 PYTHON="${PYTHON:-/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
 
+pick_master_port() {
+  local label="$1"
+  if [[ -n "${MASTER_PORT}" ]]; then
+    echo "${MASTER_PORT}"
+    return 0
+  fi
+  "${PYTHON}" - "${RUN_TAG}" "${label}" "${MASTER_PORT_LOW}" "${MASTER_PORT_HIGH}" "${MASTER_PORT_MAX_ATTEMPTS}" <<'PY'
+import hashlib
+import os
+import socket
+import sys
+
+run_tag, label = sys.argv[1], sys.argv[2]
+low, high, max_attempts = int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+if not (1024 <= low <= high <= 65535):
+    raise SystemExit(f"invalid MASTER_PORT range: {low}-{high}")
+span = high - low + 1
+seed = "|".join([run_tag, label, os.environ.get("SLURM_JOB_ID", ""), os.environ.get("SLURM_STEP_ID", ""), str(os.getpid())])
+start = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % span
+for offset in range(min(max_attempts, span)):
+    port = low + ((start + offset) % span)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
+        try:
+            handle.bind(("0.0.0.0", port))
+        except OSError:
+            continue
+    print(port)
+    break
+else:
+    raise SystemExit(f"no free MASTER_PORT found in {low}-{high} after {max_attempts} attempts")
+PY
+}
+
 echo "[C3_ASFORMER_DELTA_FULLTRAIN] repo=${REPO_ROOT}"
 echo "[C3_ASFORMER_DELTA_FULLTRAIN] head=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 echo "[C3_ASFORMER_DELTA_FULLTRAIN] gpu=${CUDA_VISIBLE_DEVICES}"
@@ -94,6 +130,8 @@ mkdir -p "${RUN_DIR}" "${WORK_DIR}"
 
 echo "[C3_ASFORMER_DELTA_FULLTRAIN] run_dir=${RUN_DIR}"
 echo "[C3_ASFORMER_DELTA_FULLTRAIN] work_dir=${WORK_DIR}"
+MASTER_PORT="$(pick_master_port asformer_delta)"
+echo "[C3_ASFORMER_DELTA_FULLTRAIN] master_port=${MASTER_PORT}"
 
 "${PYTHON}" -m torch.distributed.run \
   --nproc_per_node=1 \

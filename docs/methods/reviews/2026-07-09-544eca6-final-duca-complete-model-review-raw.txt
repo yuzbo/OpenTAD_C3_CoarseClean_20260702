@@ -1,0 +1,2333 @@
+以下判断基于 GitHub 可见的 `codex/gas-vt-stage23-detector-aware-20260706` / `544eca6 Make DUCA selector transition-first`。我不能直接访问你本地 `E:/DeskTop/...` worktree；下面只以公开仓库内容为审查依据。该 commit 确实改动了 DUCA config、`acquisition.py`、`duca_online_frame_selector.py`、tests 和 validators，但这仍不是论文最终模型。([GitHub][1])
+
+# A. 当前代码缺口逐条审查
+
+| 文件 / 函数                                                                          | 当前问题                                                                                                                                                                                                                                                          | 为什么不是最终模型                                                                                                                                                           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opentad/models/duca/acquisition.py` / `C3CoarseProbeActionnessSource.forward()` | 当前返回 `p_action`、`logits/actionness_logits`、`uncertainty`、`delta_p_action`、`transition_score` 和 `features`，但没有 `coarse_hidden_features [B,T,D]`，也没有 `coarse_hidden_dim`。([GitHub][2])                                                                          | selector 仍然只能看曲线级 actionness/transition profile，而不是低成本 probe 的时序隐藏表征。它不是“learned online acquisition policy”，更像“曲线后处理 selector”。                                     |
+| `opentad/models/duca/acquisition.py` / `DucaAcquisitionAdapter.__init__()`       | adapter 现在的 selector 输入维度是 `feature_dim + DUCA_ACTIONNESS_FEATURE_DIM`，只建立 `encoder / center_head / radius_head / boundary_head / utility_head`，没有 `use_coarse_hidden_features`、`coarse_hidden_proj`、hidden dropout，也没有 hidden feature contract。([GitHub][2]) | DUCA 主干没有把 coarse probe 表征作为 selector 输入，因此 detector loss 即使能传回，也主要作用在曲线/logit路径，无法证明“coarse probe hidden representation is utility-calibrated”。                    |
+| `opentad/models/selectors/duca_online_frame_selector.py` / `_forward_select()`   | `_forward_select()` 调用 online actionness source 后，只取 `logits/actionness_logits` 和 `p_action`，传给 `adapter.acquire()`；没有读取、校验或传递 `coarse_hidden_features`。([GitHub][3])                                                                                         | 这切断了最终论文最重要的一条路径：`L_detector -> ST surrogate -> selector encoder -> coarse_hidden_proj -> coarse probe hidden features`。                                            |
+| `opentad/models/selectors/duca_online_frame_selector.py` / `forward_train()`     | 代码已经生成 `boundary_utility_proxy_target`，但又把它写回 `detector_utility_target`，并以 `detector_utility_target_kind="gt_boundary_utility_proxy"` 调入 loss。([GitHub][3])                                                                                                   | 这是命名误导。GT boundary proxy 不是 detector-derived utility；除非 target 来自 detector sensitivity、proposal IoU gain、NMS survival 或 mAP delta，否则论文里不能叫 detector utility target。 |
+| `configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py`        | config 声明 transition/boundary-first 是正确方向，但 loss 仍使用 `detector_utility=0.10`，`hole=0.0`，没有 `soft_max_gap_loss`，没有 `hard_gap_repair=True`，没有 `use_coarse_hidden_features=True`。([GitHub][4])                                                                   | 当前 config 仍缺最终主方法的空间安全约束。高 IoU TAD 最怕大洞；如果 soft gap 和 hard repair 不在 DUCA 主干，论文会被质疑 selector 只是在做稀疏 top-k，缺少定位保护机制。                                                 |
+| `tools/bata/validate_duca_official_adatad_backend.py`                            | validator 当前甚至要求 `hole.end == 0.0`，等于把 gap/hole 约束排除在主方法之外。([GitHub][5])                                                                                                                                                                                      | 这与最终 DUCA 的 max-gap regularized acquisition 目标冲突。validator 应该反过来 fail-closed：`soft_gap_loss_weight > 0`、`max_gap enabled`、`hard_gap_repair=True`。                   |
+| `tools/bata/run_duca_jct_one_step_grad_proof.py`                                 | 当前 one-step proof 构造的是 `SingleStageDetector + DucaOnlinePrecheckHead`，不是 official ActionFormerHead。([GitHub][6])                                                                                                                                              | 这不能作为论文最终的 detector-loss gradient proof。precheck head 只能证明 selector 内部张量可导，不能证明官方 AdaTAD/ActionFormer loss 真的穿过 sparse gather/ST bridge 回到 selector 和 coarse probe。 |
+| `tools/bata/run_duca_jct_one_step_grad_proof.py`                                 | 当前 proof 只检查 `coarse_probe_grad_sum`、`selector_encoder_grad_sum`、`selector_center_head_grad_sum`，dynamic 时再检查 `budget_controller_grad_sum`；没有检查 coarse hidden projection、boundary/utility heads、official detector head。([GitHub][6])                          | 这不够。最终 proof 必须证明：official detector head 有梯度，同时 selector 的 center/boundary/utility heads、coarse hidden projection、coarse probe、dynamic budget controller 都收到非零梯度。   |
+| `configs/.../duca_online_official_adatad_backend_full_train.py` / main contract  | 当前 contract 里 `paper_claim_allowed=False`、`metric_claim_allowed=False`、`runtime_flops_claim_allowed=False`。([GitHub][4])                                                                                                                                      | 这本身是诚实的：当前还不能作为论文主方法 claim。最终版本必须用 validators 和 official grad proof 把这些门打开，而不是口头打开。                                                                                 |
+
+结论：`544eca6` 只是“transition-first selector 方向正确”的中间 commit。它还没有达到最终 DUCA 论文模型标准。
+
+---
+
+# B. 最终 DUCA 架构图
+
+最终 DUCA 应该是：
+
+```text
+raw video / low-res online frames
+  -> C3CoarseProbeActionnessSource
+       logits:                  [B,T]
+       p_action:                [B,T]
+       transition profile:       [B,T,7]
+       coarse_hidden_features:   [B,T,Dh]
+  -> DucaAcquisitionAdapter
+       low_cost_descriptor:      [B,T,Cd]
+       transition profile:       [B,T,7]
+       projected hidden:         [B,T,Dp]
+       selector_input = concat([descriptor, transition, hidden_proj])
+       temporal encoder
+       center / boundary / utility / radius heads
+       transition-boundary-utility-first score
+       dynamic MUST budget controller or fixed K
+       soft max-gap loss during train
+       hard max-gap repair during decode
+  -> hard selected original-time positions <= budget
+  -> ST sparse gather / soft-to-hard resample
+  -> official AdaTAD / ActionFormerHead backend
+  -> detector loss
+  -> gradient through ST bridge back to:
+       detector head
+       selector encoder
+       center/boundary/utility heads
+       coarse_hidden_proj
+       coarse probe hidden path
+       dynamic budget controller
+```
+
+`forward_train` should be:
+
+```python
+def forward_train(inputs, masks, metas, gt_segments, gt_labels):
+    descriptors = low_cost_descriptors(inputs)              # [B,T,Cd]
+    online = coarse_probe(inputs, valid_mask=masks)          # includes hidden [B,T,Dh]
+
+    scores = adapter.forward_scores(
+        descriptors,
+        valid_mask=masks,
+        actionness_logits=online["actionness_logits"],
+        p_action=online["p_action"],
+        coarse_hidden_features=online["coarse_hidden_features"],
+    )
+
+    grid = adapter.decode(
+        scores,
+        valid_mask=masks,
+        budget=fixed_384_or_dynamic_must_budget,
+        hard_gap_repair=True,
+        max_gap=10,
+    )
+
+    selected_inputs = st_sparse_gather(
+        dense_inputs=inputs,
+        selected_positions=grid.selected_positions,
+        center_scores=scores["center_scores"],
+        radius=scores["radius"],
+        detector_gradient_weight=schedule.detector_gradient,
+        budget_bridge_scale=scores.get("detector_bridge_scale"),
+    )
+
+    remapped_gt = remap_gt_to_selected_axis(gt_segments, grid.selected_positions)
+
+    detector_losses = official_detector(selected_inputs, remapped_gt)
+    selector_losses = duca_losses(
+        scores,
+        action_target=action_target,
+        boundary_target=boundary_target,
+        boundary_utility_proxy_target=boundary_utility_proxy_target,
+        valid_mask=masks,
+        max_gap=10,
+    )
+
+    return L_detector + L_action + L_boundary + L_proxy + L_soft_gap + L_budget
+```
+
+`forward_test` should be:
+
+```python
+def forward_test(inputs, masks, metas):
+    descriptors = low_cost_descriptors(inputs)
+    online = coarse_probe(inputs, valid_mask=masks)
+
+    scores = adapter.forward_scores(
+        descriptors,
+        valid_mask=masks,
+        actionness_logits=online["actionness_logits"],
+        p_action=online["p_action"],
+        coarse_hidden_features=online["coarse_hidden_features"],
+    )
+
+    grid = adapter.decode(
+        scores,
+        valid_mask=masks,
+        budget=fixed_384_or_dynamic_must_budget,
+        hard_gap_repair=True,
+        max_gap=10,
+    )
+
+    selected_inputs = hard_sparse_gather(inputs, grid.selected_positions)
+    preds = official_detector(selected_inputs)
+    preds = remap_selected_axis_predictions_to_original_time(preds, grid)
+    return preds
+```
+
+---
+
+# C. 核心代码 patch
+
+下面是应落地到当前 DUCA 主干的核心 patch。不是完整 diff，但每段都按当前文件结构设计，能直接拆进对应函数。
+
+## C1. `C3CoarseProbeActionnessSource.forward()` 必须输出 hidden features
+
+文件：
+
+```text
+opentad/models/duca/acquisition.py
+tools/bata/train_lowres_action_probe.py
+```
+
+先要求底层 probe 支持 `return_hidden=True`。每个 probe 的最终分类前 temporal feature 都必须暴露为 `[B,T,D]`：
+
+```python
+# tools/bata/train_lowres_action_probe.py
+
+class C3TemporalTCNActionProbe(nn.Module):
+    # existing __init__ ...
+
+    def forward(self, frames: torch.Tensor, valid_mask: torch.Tensor | None = None, return_hidden: bool = False):
+        """
+        frames: [B,C,T,H,W] or already prepared low-res tensor.
+        Return logits [B,T]. If return_hidden=True, also return hidden [B,T,D].
+        """
+        hidden = self.forward_hidden(frames, valid_mask=valid_mask)  # [B,T,D]
+        logits = self.classifier(hidden).squeeze(-1)                 # [B,T]
+
+        if valid_mask is not None:
+            logits = logits.masked_fill(~valid_mask.bool(), torch.finfo(logits.dtype).min / 4.0)
+            hidden = hidden.masked_fill(~valid_mask.bool()[..., None], 0.0)
+
+        if return_hidden:
+            return {
+                "logits": logits,
+                "actionness_logits": logits,
+                "coarse_hidden_features": hidden,
+                "coarse_hidden_dim": int(hidden.shape[-1]),
+            }
+        return logits
+```
+
+然后修改 DUCA wrapper：
+
+```python
+# opentad/models/duca/acquisition.py
+
+class C3CoarseProbeActionnessSource(nn.Module):
+    def __init__(
+        self,
+        # existing args ...
+        require_coarse_hidden_features: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__()
+        # existing init ...
+        self.require_coarse_hidden_features = bool(require_coarse_hidden_features)
+
+    @staticmethod
+    def _unpack_probe_output(probe_out: Any) -> tuple[torch.Tensor, torch.Tensor | None, int | None]:
+        if isinstance(probe_out, Mapping):
+            logits = probe_out.get("actionness_logits", None)
+            if logits is None:
+                logits = probe_out.get("logits", None)
+            hidden = probe_out.get("coarse_hidden_features", None)
+            if hidden is None:
+                hidden = probe_out.get("hidden_features", None)
+            hidden_dim = probe_out.get("coarse_hidden_dim", None)
+            if logits is None:
+                raise ValueError("coarse probe dict output must contain logits/actionness_logits")
+            return logits, hidden, None if hidden_dim is None else int(hidden_dim)
+
+        if isinstance(probe_out, (tuple, list)):
+            if len(probe_out) == 0:
+                raise ValueError("coarse probe tuple output is empty")
+            logits = probe_out[0]
+            hidden = probe_out[1] if len(probe_out) > 1 else None
+            hidden_dim = int(hidden.shape[-1]) if torch.is_tensor(hidden) and hidden.ndim == 3 else None
+            return logits, hidden, hidden_dim
+
+        return probe_out, None, None
+
+    @staticmethod
+    def _normalize_hidden_shape(
+        hidden: torch.Tensor,
+        *,
+        batch: int,
+        temporal_len: int,
+        valid: torch.Tensor,
+    ) -> torch.Tensor:
+        if hidden.ndim != 3:
+            raise ValueError(f"coarse_hidden_features must be [B,T,D] or [B,D,T], got {tuple(hidden.shape)}")
+        if hidden.shape[0] != batch:
+            raise ValueError(f"coarse_hidden_features batch mismatch: expected {batch}, got {hidden.shape[0]}")
+
+        # Accept [B,D,T] from legacy temporal conv probes, normalize to [B,T,D].
+        if hidden.shape[1] != temporal_len and hidden.shape[2] == temporal_len:
+            hidden = hidden.transpose(1, 2).contiguous()
+
+        if hidden.shape[1] != temporal_len:
+            raise ValueError(
+                f"coarse_hidden_features temporal mismatch: expected T={temporal_len}, got {tuple(hidden.shape)}"
+            )
+
+        hidden = hidden.float().masked_fill(~valid[..., None], 0.0)
+        if not torch.isfinite(hidden).all():
+            raise FloatingPointError("coarse_hidden_features contain NaN/Inf")
+        return hidden
+
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        valid_mask: torch.Tensor | None = None,
+    ) -> dict[str, Any]:
+        # Existing shape handling.
+        if inputs.ndim == 6:
+            batch = int(inputs.shape[0])
+            temporal_len = int(inputs.shape[3])
+        elif inputs.ndim == 5:
+            batch = int(inputs.shape[0])
+            temporal_len = int(inputs.shape[2])
+        else:
+            raise ValueError(f"C3 coarse probe expects [B,C,T,H,W] or [B,N,C,T,H,W], got {tuple(inputs.shape)}")
+
+        if valid_mask is None:
+            valid = torch.ones(batch, temporal_len, dtype=torch.bool, device=inputs.device)
+        else:
+            valid = valid_mask.to(device=inputs.device, dtype=torch.bool)
+        if valid.shape != (batch, temporal_len):
+            raise ValueError(f"valid_mask must be [B,T]={batch, temporal_len}, got {tuple(valid.shape)}")
+
+        start = time.perf_counter()
+        probe_inputs = self._prepare_probe_inputs(inputs)
+        if hasattr(probe_inputs, "to"):
+            probe_inputs = probe_inputs.to(device=inputs.device)
+
+        # Final DUCA requires hidden features, so request them explicitly.
+        if self.frozen:
+            with torch.no_grad():
+                try:
+                    probe_out = self.probe(probe_inputs, valid, return_hidden=True)
+                except TypeError:
+                    probe_out = self.probe(probe_inputs, valid)
+        else:
+            try:
+                probe_out = self.probe(probe_inputs, valid, return_hidden=True)
+            except TypeError:
+                probe_out = self.probe(probe_inputs, valid)
+
+        logits, hidden, hidden_dim = self._unpack_probe_output(probe_out)
+
+        if hidden is None:
+            # Fail closed for final main method. Curve-only is an ablation, not default.
+            if self.require_coarse_hidden_features:
+                raise RuntimeError(
+                    "Final DUCA requires coarse_hidden_features [B,T,D]. "
+                    "Patch the underlying C3 probe to support return_hidden=True. "
+                    "Set require_coarse_hidden_features=False only for curve-only ablations."
+                )
+            hidden_dim = 0
+        else:
+            hidden = self._normalize_hidden_shape(
+                hidden.to(device=inputs.device),
+                batch=batch,
+                temporal_len=temporal_len,
+                valid=valid,
+            )
+            hidden_dim = int(hidden.shape[-1])
+
+        logits = logits.float().to(device=inputs.device)
+        if logits.ndim == 3 and logits.shape[-1] == 1:
+            logits = logits.squeeze(-1)
+        if logits.shape != (batch, temporal_len):
+            raise ValueError(f"coarse probe logits must be [B,T], got {tuple(logits.shape)}")
+        logits = logits.masked_fill(~valid, _neg(torch.float32))
+
+        latency_ms = float((time.perf_counter() - start) * 1000.0)
+        p_action = torch.sigmoid(logits).masked_fill(~valid, 0.0)
+        transition = _actionness_transition_payload(p_action, valid)
+        profile = self._estimate_probe_profile(inputs, logits, latency_ms)
+
+        out = {
+            "p_action": transition["p_action"],
+            "logits": logits,
+            "actionness_logits": logits,
+            "uncertainty": transition["uncertainty"],
+            "entropy": transition["entropy"],
+            "delta_p_action": transition["delta_p_action"],
+            "abs_delta_p_action": transition["abs_delta_p_action"],
+            "uncertainty_peak": transition["uncertainty_peak"],
+            "transition_score": transition["transition_score"],
+            "transition_profile_features": transition["features"],  # explicit final key
+            "features": transition["features"],                     # backward compatibility
+            "valid_mask": valid,
+            "provenance": self._provenance(),
+            "compute_profile": profile,
+            "source_name": self.source_name,
+            "coarse_hidden_features": hidden,
+            "coarse_hidden_dim": int(hidden_dim or 0),
+        }
+        return out
+```
+
+关键点：最终主配置必须 `require_coarse_hidden_features=True`。如果底层 probe 不能输出 hidden，直接 fail，不允许静默退化成 curve-only。
+
+---
+
+## C2. `DucaAcquisitionAdapter` 加 hidden projection 和 unified scoring
+
+文件：
+
+```text
+opentad/models/duca/acquisition.py
+```
+
+```python
+# opentad/models/duca/acquisition.py
+
+def _masked_softmax(logits: torch.Tensor, valid_mask: torch.Tensor, dim: int = -1) -> torch.Tensor:
+    valid = valid_mask.to(device=logits.device, dtype=torch.bool)
+    masked = logits.masked_fill(~valid, _neg(logits.dtype))
+    prob = torch.softmax(masked, dim=dim).masked_fill(~valid, 0.0)
+    return prob
+
+
+class DucaAcquisitionAdapter(nn.Module):
+    def __init__(
+        self,
+        feature_dim: int | None = None,
+        hidden_dim: int = 96,
+        actionness_source: nn.Module | None = None,
+        budget: int | None = 384,
+        budget_mode: str = "fixed",
+        budget_min: int = 64,
+        budget_max: int | None = None,
+        budget_multiple: int = 16,
+        target_budget: float | None = None,
+        allow_external_budget_override: bool | None = None,
+        budget_controller: nn.Module | None = None,
+        max_radius: int = 16,
+        actionness_weight: float = 0.05,
+        transition_weight: float = 1.0,
+        uncertainty_weight: float = 0.25,
+        utility_weight: float = 0.50,
+        boundary_weight: float = 1.0,
+        # New final-DUCA args.
+        use_coarse_hidden_features: bool = True,
+        coarse_hidden_dim: int | None = None,
+        coarse_hidden_proj_dim: int = 32,
+        coarse_hidden_dropout: float = 0.10,
+        max_gap: int | None = 10,
+        soft_gap_min_mass: float = 1.0,
+        hard_gap_repair: bool = True,
+        profile_runtime: bool = False,
+        profile_sync_cuda: bool = True,
+    ) -> None:
+        super().__init__()
+
+        self.budget_mode = str(budget_mode)
+        if self.budget_mode not in {"fixed", "dynamic_must"}:
+            raise ValueError("budget_mode must be fixed or dynamic_must")
+
+        self.dynamic_budget = self.budget_mode == "dynamic_must"
+        if self.dynamic_budget:
+            if budget_max is None:
+                raise ValueError("dynamic_must requires budget_max")
+            hard_cap = int(budget_max)
+            self.allow_external_budget_override = False if allow_external_budget_override is None else bool(allow_external_budget_override)
+            if self.allow_external_budget_override:
+                raise ValueError("final dynamic_must forbids external budget override")
+        else:
+            if budget is None:
+                raise ValueError("fixed budget mode requires budget")
+            hard_cap = int(budget)
+            self.allow_external_budget_override = True if allow_external_budget_override is None else bool(allow_external_budget_override)
+
+        self.budget = int(hard_cap)
+        self.default_budget = int(hard_cap if budget is None else budget)
+        self.budget_min = int(budget_min if self.dynamic_budget else self.budget)
+        self.budget_max = int(self.budget)
+        self.budget_multiple = int(budget_multiple)
+        self.target_budget = float(self.budget if target_budget is None else target_budget)
+        self.max_radius = int(max_radius)
+
+        self.actionness_weight = float(actionness_weight)
+        self.transition_weight = float(transition_weight)
+        self.uncertainty_weight = float(uncertainty_weight)
+        self.utility_weight = float(utility_weight)
+        self.boundary_weight = float(boundary_weight)
+
+        if not (0.0 <= self.actionness_weight < self.transition_weight and self.actionness_weight < self.boundary_weight):
+            raise ValueError("DUCA final scoring must keep actionness as a small auxiliary term")
+
+        self.max_gap = None if max_gap in (None, "none", "None") else int(max_gap)
+        self.soft_gap_min_mass = float(soft_gap_min_mass)
+        self.hard_gap_repair = bool(hard_gap_repair)
+
+        if self.max_gap is not None and self.max_gap <= 1:
+            raise ValueError("max_gap must be > 1 or None")
+        if self.hard_gap_repair and self.max_gap is None:
+            raise ValueError("hard_gap_repair=True requires max_gap")
+
+        self.profile_runtime = bool(profile_runtime)
+        self.profile_sync_cuda = bool(profile_sync_cuda)
+        self.last_compute_profile: dict[str, Any] = {}
+
+        self.actionness_source = actionness_source or ZeroShotActionnessSource(feature_dim=feature_dim, mode="motion")
+        self.feature_dim = 0 if feature_dim is None else int(feature_dim)
+
+        self.use_coarse_hidden_features = bool(use_coarse_hidden_features)
+        self.coarse_hidden_dim = None if coarse_hidden_dim is None else int(coarse_hidden_dim)
+        self.coarse_hidden_proj_dim = int(coarse_hidden_proj_dim)
+        self.coarse_hidden_dropout = float(coarse_hidden_dropout)
+
+        if self.use_coarse_hidden_features:
+            if self.coarse_hidden_dim is None or self.coarse_hidden_dim <= 0:
+                raise ValueError("use_coarse_hidden_features=True requires positive coarse_hidden_dim")
+            if self.coarse_hidden_proj_dim <= 0:
+                raise ValueError("coarse_hidden_proj_dim must be positive")
+            self.coarse_hidden_proj = nn.Sequential(
+                nn.LayerNorm(self.coarse_hidden_dim),
+                nn.Linear(self.coarse_hidden_dim, self.coarse_hidden_proj_dim),
+                nn.GELU(),
+                nn.Dropout(self.coarse_hidden_dropout),
+            )
+        else:
+            self.coarse_hidden_proj = None
+            self.coarse_hidden_proj_dim = 0
+
+        selector_input_dim = self.feature_dim + DUCA_ACTIONNESS_FEATURE_DIM + self.coarse_hidden_proj_dim
+        if selector_input_dim <= DUCA_ACTIONNESS_FEATURE_DIM and self.use_coarse_hidden_features:
+            raise ValueError("selector_input_dim invalid; hidden projection was not included")
+        if int(hidden_dim) <= 0:
+            raise ValueError("final DUCA adapter requires positive hidden_dim")
+
+        self.encoder = nn.Sequential(
+            nn.LayerNorm(selector_input_dim),
+            nn.Linear(selector_input_dim, int(hidden_dim)),
+            nn.GELU(),
+            nn.Linear(int(hidden_dim), int(hidden_dim)),
+            nn.GELU(),
+        )
+        self.center_head = nn.Linear(int(hidden_dim), 1)
+        self.radius_head = nn.Linear(int(hidden_dim), 1)
+        self.boundary_head = nn.Linear(int(hidden_dim), 1)
+        self.utility_head = nn.Linear(int(hidden_dim), 1)
+
+        if self.dynamic_budget:
+            self.budget_controller = budget_controller or PrefixMarginalUtilityBudgetController(
+                hidden_dim=int(hidden_dim),
+                budget_min=self.budget_min,
+                budget_max=self.budget,
+                budget_multiple=self.budget_multiple,
+                target_budget=self.target_budget,
+            )
+        else:
+            self.budget_controller = budget_controller
+
+    def _build_actionness_payload(
+        self,
+        features: torch.Tensor,
+        valid_mask: torch.Tensor,
+        actionness_logits: torch.Tensor | None = None,
+        p_action: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        if p_action is None:
+            if actionness_logits is None:
+                online = self.actionness_source(features=features, valid_mask=valid_mask)
+                p_action = online["p_action"]
+                actionness_logits = online["actionness_logits"]
+            else:
+                online = self.actionness_source(logits=actionness_logits, valid_mask=valid_mask)
+                p_action = online["p_action"]
+
+        valid = _as_valid_mask(p_action, valid_mask)
+        transition = _actionness_transition_payload(p_action, valid)
+        return {
+            "p_action": transition["p_action"],
+            "actionness_logits": actionness_logits,
+            "transition_profile_features": transition["features"],
+            "transition_score": transition["transition_score"],
+            "uncertainty": transition["uncertainty"],
+            "valid_mask": valid,
+        }
+
+    def _project_hidden(
+        self,
+        coarse_hidden_features: torch.Tensor | None,
+        *,
+        batch: int,
+        temporal_len: int,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor | None:
+        if not self.use_coarse_hidden_features:
+            return None
+        if coarse_hidden_features is None:
+            raise RuntimeError(
+                "Final DUCA adapter requires coarse_hidden_features. "
+                "Curve-only selection must be an explicit ablation config."
+            )
+        hidden = coarse_hidden_features.to(device=valid_mask.device)
+        if hidden.ndim != 3:
+            raise ValueError(f"coarse_hidden_features must be [B,T,D], got {tuple(hidden.shape)}")
+        if hidden.shape[0] != batch or hidden.shape[1] != temporal_len:
+            raise ValueError(
+                f"coarse_hidden_features must be [B,T,D] with B={batch}, T={temporal_len}; got {tuple(hidden.shape)}"
+            )
+        if hidden.shape[-1] != self.coarse_hidden_dim:
+            raise ValueError(f"expected coarse_hidden_dim={self.coarse_hidden_dim}, got {hidden.shape[-1]}")
+        hidden = hidden.float().masked_fill(~valid_mask[..., None], 0.0)
+        return self.coarse_hidden_proj(hidden).masked_fill(~valid_mask[..., None], 0.0)
+
+    def forward_scores(
+        self,
+        features: torch.Tensor,
+        *,
+        valid_mask: torch.Tensor | None = None,
+        actionness_logits: torch.Tensor | None = None,
+        p_action: torch.Tensor | None = None,
+        coarse_hidden_features: torch.Tensor | None = None,
+        budget: TensorLikeBudget | None = None,
+    ) -> dict[str, Any]:
+        if features.ndim != 3:
+            raise ValueError(f"DUCA adapter features must be [B,T,C], got {tuple(features.shape)}")
+        batch, temporal_len, feat_dim = features.shape
+        if feat_dim != self.feature_dim:
+            raise ValueError(f"DUCA adapter expected feature_dim={self.feature_dim}, got {feat_dim}")
+
+        ref = features[..., 0]
+        valid = _as_valid_mask(ref, valid_mask)
+
+        actionness = self._build_actionness_payload(
+            features,
+            valid,
+            actionness_logits=actionness_logits,
+            p_action=p_action,
+        )
+
+        hidden_proj = self._project_hidden(
+            coarse_hidden_features,
+            batch=batch,
+            temporal_len=temporal_len,
+            valid_mask=valid,
+        )
+
+        chunks = [
+            features.float().masked_fill(~valid[..., None], 0.0),
+            actionness["transition_profile_features"].to(device=features.device, dtype=torch.float32),
+        ]
+        if hidden_proj is not None:
+            chunks.append(hidden_proj)
+
+        selector_input = torch.cat(chunks, dim=-1)
+        encoded = self.encoder(selector_input).masked_fill(~valid[..., None], 0.0)
+
+        center_scores = self.center_head(encoded).squeeze(-1)
+        boundary_logits = self.boundary_head(encoded).squeeze(-1)
+        utility_logits = self.utility_head(encoded).squeeze(-1)
+        radius_raw = self.radius_head(encoded).squeeze(-1)
+
+        boundary_scores = torch.sigmoid(boundary_logits).masked_fill(~valid, 0.0)
+        utility_scores = torch.sigmoid(utility_logits).masked_fill(~valid, 0.0)
+        radius = F.softplus(radius_raw).clamp(max=float(self.max_radius)).masked_fill(~valid, 0.0)
+
+        transition_score = actionness["transition_score"].to(device=features.device, dtype=torch.float32)
+        uncertainty = actionness["uncertainty"].to(device=features.device, dtype=torch.float32)
+        p = actionness["p_action"].to(device=features.device, dtype=torch.float32)
+
+        score_components = {
+            "actionness": p,
+            "transition": transition_score,
+            "uncertainty": uncertainty,
+            "boundary": boundary_scores,
+            "utility": utility_scores,
+            "center_head": center_scores,
+        }
+        component_weights = {
+            "actionness": self.actionness_weight,
+            "transition": self.transition_weight,
+            "uncertainty": self.uncertainty_weight,
+            "boundary": self.boundary_weight,
+            "utility": self.utility_weight,
+        }
+
+        candidate_scores = (
+            self.actionness_weight * p
+            + self.transition_weight * transition_score
+            + self.uncertainty_weight * uncertainty
+            + self.boundary_weight * boundary_scores
+            + self.utility_weight * utility_scores
+            + center_scores
+        ).masked_fill(~valid, _neg(torch.float32))
+
+        if budget is None:
+            requested_budget = torch.full((batch,), self.default_budget, dtype=torch.long, device=features.device)
+        else:
+            requested_budget = _budget_tensor(budget, batch, features.device)
+
+        budget_decision = None
+        detector_bridge_scale = torch.ones(batch, device=features.device, dtype=features.dtype)
+        if self.dynamic_budget:
+            if self.budget_controller is None:
+                raise RuntimeError("dynamic_must requires budget_controller")
+            budget_decision = self.budget_controller(
+                encoded,
+                candidate_scores=candidate_scores,
+                valid_mask=valid,
+                requested_budget=requested_budget,
+            )
+            # Hard budget for decode.
+            effective_budget = budget_decision.effective_budget.to(device=features.device, dtype=torch.long)
+
+            # Differentiable soft budget path for detector-loss gradient.
+            # If controller exposes soft_budget, use it; otherwise fall back to expected_budget.
+            soft_budget = getattr(budget_decision, "soft_budget", None)
+            if soft_budget is None:
+                soft_budget = getattr(budget_decision, "expected_budget", None)
+            if soft_budget is None:
+                raise RuntimeError("dynamic budget controller must expose soft_budget or expected_budget for ST bridge")
+            soft_budget = soft_budget.to(device=features.device, dtype=features.dtype).clamp_min(1.0)
+            detector_bridge_scale = soft_budget / effective_budget.to(dtype=features.dtype).clamp_min(1.0).detach()
+        else:
+            effective_budget = requested_budget.clamp(max=self.budget)
+
+        # Expected selection mass, not merely normalized probability.
+        # This is what soft_max_gap_loss should consume.
+        normalized = _masked_softmax(candidate_scores, valid, dim=1)
+        selection_prob = normalized * effective_budget.to(dtype=normalized.dtype)[:, None]
+        selection_prob = selection_prob.masked_fill(~valid, 0.0)
+
+        return {
+            "selector_features": encoded,
+            "selector_input": selector_input,
+            "coarse_hidden_projected": hidden_proj,
+            "center_scores": center_scores,
+            "boundary_scores": boundary_scores,
+            "utility_scores": utility_scores,
+            "radius": radius,
+            "candidate_scores": candidate_scores,
+            "selection_prob": selection_prob,
+            "score_components": score_components,
+            "score_component_weights": component_weights,
+            "p_action": p,
+            "actionness_logits": actionness_logits,
+            "transition_profile_features": actionness["transition_profile_features"],
+            "valid_mask": valid,
+            "requested_budget": requested_budget,
+            "effective_budget": effective_budget,
+            "budget_decision": budget_decision,
+            "detector_bridge_scale": detector_bridge_scale,
+            "uses_coarse_hidden_features": self.use_coarse_hidden_features,
+            "coarse_hidden_dim": int(self.coarse_hidden_dim or 0),
+        }
+```
+
+---
+
+## C3. Differentiable `soft_max_gap_loss`
+
+文件：
+
+```text
+opentad/models/duca/acquisition.py
+```
+
+```python
+def soft_max_gap_loss(
+    selection_prob: torch.Tensor,
+    valid_mask: torch.Tensor | None,
+    max_gap: int | None,
+    min_mass: float = 1.0,
+    eps: float = 1e-6,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """
+    selection_prob: [B,T] expected selection mass, not necessarily sum=1.
+                    Recommended: K * softmax(candidate_scores).
+    valid_mask:     [B,T] bool.
+    max_gap:        max allowed temporal gap. A window of length max_gap+1
+                    should contain at least min_mass expected selected mass.
+    """
+    if selection_prob.ndim != 2:
+        raise ValueError(f"selection_prob must be [B,T], got {tuple(selection_prob.shape)}")
+
+    zero = selection_prob.sum() * 0.0
+    if max_gap is None:
+        return zero, {
+            "enabled": False,
+            "max_gap": None,
+            "mean_window_mass": None,
+            "violating_window_ratio": 0.0,
+            "worst_window_mass": None,
+        }
+
+    max_gap = int(max_gap)
+    if max_gap <= 1:
+        raise ValueError("max_gap must be > 1")
+    if min_mass <= 0:
+        raise ValueError("min_mass must be positive")
+
+    valid = _as_valid_mask(selection_prob, valid_mask)
+    mass = selection_prob.float().masked_fill(~valid, 0.0)
+    batch, temporal_len = mass.shape
+    win = max_gap + 1
+
+    if temporal_len < win:
+        active_mass = mass.sum(dim=1)
+        diagnostics = {
+            "enabled": True,
+            "max_gap": max_gap,
+            "window_size": win,
+            "mean_window_mass": float(active_mass.detach().mean().cpu().item()),
+            "violating_window_ratio": float((active_mass < float(min_mass)).float().mean().detach().cpu().item()),
+            "worst_window_mass": float(active_mass.detach().min().cpu().item()),
+        }
+        deficit = F.relu(float(min_mass) - active_mass)
+        return (deficit.square().mean()), diagnostics
+
+    kernel = torch.ones(1, 1, win, dtype=mass.dtype, device=mass.device)
+    window_mass = F.conv1d(mass[:, None, :], kernel).squeeze(1)
+    window_valid_count = F.conv1d(valid.float()[:, None, :], kernel).squeeze(1)
+    full_valid_window = window_valid_count >= float(win)
+
+    if not bool(full_valid_window.any()):
+        return zero, {
+            "enabled": True,
+            "max_gap": max_gap,
+            "window_size": win,
+            "mean_window_mass": None,
+            "violating_window_ratio": 0.0,
+            "worst_window_mass": None,
+        }
+
+    deficit = F.relu(float(min_mass) - window_mass)
+    loss = (deficit.square() * full_valid_window.float()).sum()
+    loss = loss / full_valid_window.float().sum().clamp_min(1.0)
+
+    active = window_mass[full_valid_window]
+    violating = active < float(min_mass)
+    diagnostics = {
+        "enabled": True,
+        "max_gap": max_gap,
+        "window_size": win,
+        "mean_window_mass": float(active.detach().mean().cpu().item()),
+        "violating_window_ratio": float(violating.float().mean().detach().cpu().item()),
+        "worst_window_mass": float(active.detach().min().cpu().item()),
+    }
+    return loss, diagnostics
+```
+
+这不是旧 `hole` loss。旧 hole 更像 action coverage；最终 DUCA 需要的是“任何长窗口里都要有选择质量”的 max-gap regularizer。
+
+---
+
+## C4. Hard max-gap repair
+
+文件：
+
+```text
+opentad/models/duca/acquisition.py
+```
+
+```python
+def _row_satisfies_max_gap(pos: list[int], valid_len: int, max_gap: int) -> bool:
+    if valid_len <= 0 or not pos:
+        return False
+    pos = sorted(set(int(p) for p in pos if 0 <= int(p) < valid_len))
+    if not pos:
+        return False
+    boundaries = [-1] + pos + [valid_len]
+    return max(boundaries[i + 1] - boundaries[i] for i in range(len(boundaries) - 1)) <= int(max_gap)
+
+
+def _row_largest_gap(pos: list[int], valid_len: int) -> int:
+    if valid_len <= 0 or not pos:
+        return int(valid_len)
+    pos = sorted(set(int(p) for p in pos if 0 <= int(p) < valid_len))
+    boundaries = [-1] + pos + [valid_len]
+    return int(max(boundaries[i + 1] - boundaries[i] for i in range(len(boundaries) - 1)))
+
+
+def _repair_one_row(
+    selected: list[int],
+    scores: torch.Tensor,
+    valid: torch.Tensor,
+    budget: int,
+    max_gap: int,
+    preserve_budget: bool,
+) -> tuple[list[int], dict[str, Any]]:
+    valid_len = int(valid.long().sum().item())
+    if valid_len <= 0:
+        raise ValueError("valid_len must be positive")
+
+    selected_set = {int(p) for p in selected if 0 <= int(p) < valid_len and bool(valid[int(p)])}
+    if not selected_set:
+        # Fail-closed: choose best valid candidate, not uniform.
+        valid_indices = torch.nonzero(valid, as_tuple=False).flatten()
+        best = valid_indices[torch.argmax(scores[valid_indices])].item()
+        selected_set.add(int(best))
+
+    before = _row_largest_gap(sorted(selected_set), valid_len)
+    insertions = 0
+    removals = 0
+
+    # Insert score-ranked points inside violating holes.
+    max_iter = valid_len + 1
+    for _ in range(max_iter):
+        pos = sorted(selected_set)
+        boundaries = [-1] + pos + [valid_len]
+        bad = []
+        for i in range(len(boundaries) - 1):
+            left, right = boundaries[i], boundaries[i + 1]
+            gap = right - left
+            if gap > max_gap:
+                bad.append((gap, left, right))
+        if not bad:
+            break
+
+        # Repair the largest hole first.
+        bad.sort(reverse=True)
+        gap, left, right = bad[0]
+        need = int((gap + max_gap - 1) // max_gap) - 1
+
+        lo = max(0, left + 1)
+        hi = min(valid_len, right)
+        candidates = [
+            idx for idx in range(lo, hi)
+            if bool(valid[idx]) and idx not in selected_set
+        ]
+        if not candidates:
+            break
+
+        # Candidate-score-ranked repair, not uniform scaffold.
+        candidates.sort(key=lambda idx: (float(scores[idx].detach().cpu().item()), -idx), reverse=True)
+        chosen = candidates[:need]
+        for idx in chosen:
+            selected_set.add(int(idx))
+        insertions += len(chosen)
+
+    # Preserve budget by removing lowest marginal-utility points that do not break max-gap.
+    if preserve_budget:
+        while len(selected_set) > int(budget):
+            pos = sorted(selected_set)
+            removable = sorted(
+                pos,
+                key=lambda idx: float(scores[idx].detach().cpu().item()),
+            )
+            removed = False
+            for idx in removable:
+                trial = [p for p in pos if p != idx]
+                if _row_satisfies_max_gap(trial, valid_len, max_gap):
+                    selected_set.remove(idx)
+                    removals += 1
+                    removed = True
+                    break
+            if not removed:
+                # Infeasible budget/max_gap pair.
+                break
+
+    repaired = sorted(selected_set)
+    after = _row_largest_gap(repaired, valid_len)
+    satisfied = _row_satisfies_max_gap(repaired, valid_len, max_gap) and (not preserve_budget or len(repaired) <= int(budget))
+
+    diagnostics = {
+        "largest_gap_before": int(before),
+        "largest_gap_after": int(after),
+        "repair_insertions": int(insertions),
+        "repair_removals": int(removals),
+        "max_gap_satisfied": bool(satisfied),
+        "selected_count_after": int(len(repaired)),
+        "budget": int(budget),
+    }
+    return repaired, diagnostics
+
+
+def repair_large_gaps(
+    selected_positions: torch.Tensor,
+    candidate_scores: torch.Tensor,
+    valid_mask: torch.Tensor,
+    budget: int | torch.Tensor,
+    max_gap: int | None,
+    preserve_budget: bool = True,
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+    """
+    selected_positions: [B,K] padded with -1.
+    candidate_scores:   [B,T].
+    valid_mask:         [B,T].
+    Returns:
+      repaired_positions [B,K]
+      repaired_mask      [B,T]
+      diagnostics
+    """
+    if max_gap is None:
+        dense_mask = torch.zeros_like(valid_mask, dtype=torch.bool)
+        for b in range(selected_positions.shape[0]):
+            pos = selected_positions[b]
+            pos = pos[(pos >= 0) & (pos < valid_mask.shape[1])]
+            dense_mask[b, pos.long()] = True
+        return selected_positions, dense_mask, {"enabled": False}
+
+    if selected_positions.ndim != 2:
+        raise ValueError(f"selected_positions must be [B,K], got {tuple(selected_positions.shape)}")
+    if candidate_scores.ndim != 2 or valid_mask.ndim != 2:
+        raise ValueError("candidate_scores and valid_mask must be [B,T]")
+    if candidate_scores.shape != valid_mask.shape:
+        raise ValueError("candidate_scores and valid_mask shape mismatch")
+    if selected_positions.shape[0] != candidate_scores.shape[0]:
+        raise ValueError("batch mismatch")
+
+    B, T = candidate_scores.shape
+    device = candidate_scores.device
+    valid = valid_mask.to(device=device, dtype=torch.bool)
+    budgets = _budget_tensor(budget, B, device)
+
+    repaired_rows: list[list[int]] = []
+    row_diags: list[dict[str, Any]] = []
+    for b in range(B):
+        row_pos = selected_positions[b].detach().to(device=device, dtype=torch.long)
+        row_selected = [int(x.item()) for x in row_pos if int(x.item()) >= 0]
+        repaired, diag = _repair_one_row(
+            row_selected,
+            candidate_scores[b],
+            valid[b],
+            int(budgets[b].item()),
+            int(max_gap),
+            preserve_budget=preserve_budget,
+        )
+        repaired_rows.append(repaired)
+        row_diags.append(diag)
+
+    max_k = max(int(budgets.max().item()), max(len(r) for r in repaired_rows))
+    if preserve_budget:
+        max_k = int(budgets.max().item())
+
+    out_pos = torch.full((B, max_k), -1, dtype=torch.long, device=device)
+    out_mask = torch.zeros((B, T), dtype=torch.bool, device=device)
+
+    for b, row in enumerate(repaired_rows):
+        if preserve_budget and len(row) > int(budgets[b].item()):
+            raise RuntimeError(
+                f"max-gap repair failed to preserve budget for sample {b}: "
+                f"{len(row)} > {int(budgets[b].item())}"
+            )
+        row = row[:max_k]
+        if row:
+            idx = torch.tensor(row, dtype=torch.long, device=device)
+            out_pos[b, : idx.numel()] = idx
+            out_mask[b, idx] = True
+
+    diagnostics = {
+        "enabled": True,
+        "max_gap": int(max_gap),
+        "preserve_budget": bool(preserve_budget),
+        "largest_gap_before": max(int(d["largest_gap_before"]) for d in row_diags),
+        "largest_gap_after": max(int(d["largest_gap_after"]) for d in row_diags),
+        "repair_insertions": sum(int(d["repair_insertions"]) for d in row_diags),
+        "repair_removals": sum(int(d["repair_removals"]) for d in row_diags),
+        "max_gap_satisfied": all(bool(d["max_gap_satisfied"]) for d in row_diags),
+        "per_sample": row_diags,
+    }
+    return out_pos, out_mask, diagnostics
+```
+
+然后在 `DucaAcquisitionAdapter.acquire()` 的 decode 后接入：
+
+```python
+# inside DucaAcquisitionAdapter.acquire()
+
+scores = self.forward_scores(
+    features,
+    valid_mask=valid_mask,
+    actionness_logits=actionness_logits,
+    p_action=p_action,
+    coarse_hidden_features=coarse_hidden_features,
+    budget=budget,
+)
+
+grid, decode_diag = budgeted_center_radius_decode(
+    center_scores=scores["candidate_scores"],
+    radius=scores["radius"],
+    valid_mask=scores["valid_mask"],
+    budget=scores["effective_budget"],
+    max_radius=self.max_radius,
+)
+
+repair_diag = {"enabled": False}
+if self.hard_gap_repair:
+    repaired_positions, repaired_mask, repair_diag = repair_large_gaps(
+        grid.selected_positions,
+        candidate_scores=scores["candidate_scores"],
+        valid_mask=scores["valid_mask"],
+        budget=scores["effective_budget"],
+        max_gap=self.max_gap,
+        preserve_budget=True,
+    )
+    if not repair_diag.get("max_gap_satisfied", False):
+        raise RuntimeError(f"DUCA hard max-gap repair failed: {repair_diag}")
+
+    grid = SparseTemporalGrid(
+        selected_positions=repaired_positions,
+        selected_mask=repaired_mask,
+        original_length=int(features.shape[1]),
+        valid_len=scores["valid_mask"].long().sum(dim=1),
+        budget=int(self.budget),
+        requested_budget=scores["requested_budget"],
+        effective_budget=scores["effective_budget"],
+        detector_input_length=repaired_mask.long().sum(dim=1),
+        metadata={
+            "decode_diagnostics": decode_diag,
+            "hard_gap_repair": repair_diag,
+        },
+    ).validate()
+
+scores["hard_gap_repair"] = repair_diag
+scores["max_gap"] = self.max_gap
+return grid, scores
+```
+
+---
+
+## C5. `duca_losses` 改名并接入 soft gap
+
+文件：
+
+```text
+opentad/models/duca/acquisition.py
+opentad/models/selectors/duca_online_frame_selector.py
+```
+
+```python
+# opentad/models/duca/acquisition.py
+
+def _loss_weight(loss_weights: Mapping[str, float] | None, key: str, default: float = 0.0) -> float:
+    if loss_weights is None:
+        return float(default)
+    return float(loss_weights.get(key, default))
+
+
+def duca_losses(
+    selector_outputs: Mapping[str, Any],
+    *,
+    action_target: torch.Tensor | None = None,
+    boundary_target: torch.Tensor | None = None,
+    boundary_utility_proxy_target: torch.Tensor | None = None,
+    utility_proxy_target_kind: str = "gt_boundary_utility_proxy",
+    # Deprecated compatibility only.
+    detector_utility_target: torch.Tensor | None = None,
+    detector_utility_target_kind: str | None = None,
+    teacher_utility: torch.Tensor | None = None,
+    valid_mask: torch.Tensor | None = None,
+    max_gap: int | None = None,
+    soft_gap_min_mass: float = 1.0,
+    loss_weights: Mapping[str, float] | None = None,
+) -> dict[str, torch.Tensor]:
+    losses: dict[str, torch.Tensor] = {}
+
+    center_scores = selector_outputs["center_scores"]
+    valid = _as_valid_mask(center_scores, valid_mask or selector_outputs.get("valid_mask"))
+    device = center_scores.device
+
+    if boundary_utility_proxy_target is None and detector_utility_target is not None:
+        # Backward compatibility, but final main configs must not use this name.
+        boundary_utility_proxy_target = detector_utility_target
+        utility_proxy_target_kind = detector_utility_target_kind or "deprecated_detector_utility_alias"
+
+    if detector_utility_target is not None:
+        losses["deprecated_detector_utility_target_alias_used"] = center_scores.sum() * 0.0
+
+    # 1. Actionness BCE: trains coarse probe logits only.
+    w_action = _loss_weight(loss_weights, "actionness", 0.0)
+    if action_target is not None and w_action > 0:
+        logits = selector_outputs.get("actionness_logits", None)
+        if logits is None:
+            raise RuntimeError("actionness loss requires actionness_logits")
+        target = action_target.to(device=device, dtype=torch.float32).clamp(0.0, 1.0)
+        per = F.binary_cross_entropy_with_logits(logits.float(), target, reduction="none")
+        losses["actionness_bce_loss"] = w_action * (per.masked_fill(~valid, 0.0).sum() / valid.float().sum().clamp_min(1.0))
+
+    # 2. Boundary supervision: selector boundary head.
+    w_boundary = _loss_weight(loss_weights, "boundary", 0.0)
+    if boundary_target is not None and w_boundary > 0:
+        pred = selector_outputs["boundary_scores"].float().clamp(1e-6, 1.0 - 1e-6)
+        target = boundary_target.to(device=device, dtype=torch.float32).clamp(0.0, 1.0)
+        per = F.binary_cross_entropy(pred, target, reduction="none")
+        losses["boundary_loss"] = w_boundary * (per.masked_fill(~valid, 0.0).sum() / valid.float().sum().clamp_min(1.0))
+
+    # 3. Boundary utility proxy, not detector utility.
+    w_proxy = _loss_weight(loss_weights, "boundary_utility_proxy", _loss_weight(loss_weights, "detector_utility", 0.0))
+    if boundary_utility_proxy_target is not None and w_proxy > 0:
+        if utility_proxy_target_kind != "gt_boundary_utility_proxy":
+            raise ValueError(f"unsupported utility_proxy_target_kind={utility_proxy_target_kind!r}")
+        pred = selector_outputs["utility_scores"].float()
+        target = boundary_utility_proxy_target.to(device=device, dtype=torch.float32).clamp_min(0.0)
+        if target.max() > 0:
+            target = target / target.max().clamp_min(1e-6)
+        per = F.smooth_l1_loss(pred, target, reduction="none")
+        losses["boundary_utility_proxy_loss"] = w_proxy * (
+            per.masked_fill(~valid, 0.0).sum() / valid.float().sum().clamp_min(1.0)
+        )
+
+    # 4. Soft max-gap regularizer.
+    w_gap = _loss_weight(loss_weights, "soft_max_gap", _loss_weight(loss_weights, "soft_gap", 0.0))
+    if w_gap > 0:
+        if "selection_prob" not in selector_outputs:
+            raise RuntimeError("soft max-gap loss requires selector_outputs['selection_prob']")
+        gap_loss, gap_diag = soft_max_gap_loss(
+            selector_outputs["selection_prob"],
+            valid,
+            max_gap=max_gap if max_gap is not None else selector_outputs.get("max_gap", None),
+            min_mass=soft_gap_min_mass,
+        )
+        losses["soft_max_gap_loss"] = w_gap * gap_loss
+        # Diagnostics should be stored outside autograd if the caller wants summaries.
+        losses["_soft_max_gap_raw"] = gap_loss.detach()
+        selector_outputs.setdefault("diagnostics", {})["soft_max_gap"] = gap_diag
+
+    # 5. Dynamic budget losses.
+    decision = selector_outputs.get("budget_decision", None)
+    w_budget = _loss_weight(loss_weights, "dynamic_budget", _loss_weight(loss_weights, "budget", 0.0))
+    if decision is not None and w_budget > 0:
+        budget_loss = getattr(decision, "loss", None)
+        if budget_loss is None:
+            budget_loss = getattr(decision, "lagrangian_loss", None)
+        if budget_loss is None:
+            raise RuntimeError("dynamic budget decision must expose loss/lagrangian_loss")
+        losses["dynamic_budget_loss"] = w_budget * budget_loss
+
+    # 6. Optional entropy/redundancy can remain ablations.
+    total = center_scores.sum() * 0.0
+    for key, value in losses.items():
+        if key.startswith("_") or key.endswith("_alias_used"):
+            continue
+        total = total + value
+    losses["loss_selector"] = total
+    return losses
+```
+
+然后改 `DucaOnlineFrameSelector.forward_train()`：
+
+```python
+# opentad/models/selectors/duca_online_frame_selector.py
+
+boundary_utility_proxy_target = self._boundary_utility_proxy_target_from_gt_segments(
+    gt_segments,
+    masks,
+    boundary_radius=max(1, min(int(self.max_radius), 4)),
+)
+
+outputs = self._forward_select(inputs, masks, metas, budget=budget, schedule_state=schedule_state)
+
+if boundary_utility_proxy_target is not None:
+    outputs["selector_outputs"]["boundary_utility_proxy_target"] = boundary_utility_proxy_target
+    outputs["selector_outputs"]["utility_proxy_target_kind"] = "gt_boundary_utility_proxy"
+
+# Do not write detector_utility_target in final main path.
+
+selector_losses = duca_losses(
+    outputs["selector_outputs"],
+    teacher_utility=teacher_utility,
+    boundary_target=boundary_target,
+    action_target=action_target,
+    boundary_utility_proxy_target=boundary_utility_proxy_target,
+    utility_proxy_target_kind="gt_boundary_utility_proxy",
+    valid_mask=masks,
+    max_gap=self.adapter.max_gap,
+    soft_gap_min_mass=self.adapter.soft_gap_min_mass,
+    loss_weights=schedule_state["weights"],
+)
+```
+
+---
+
+## C6. `DucaOnlineFrameSelector._forward_select()` 传 hidden features
+
+文件：
+
+```text
+opentad/models/selectors/duca_online_frame_selector.py
+```
+
+```python
+def _forward_select(
+    self,
+    inputs: torch.Tensor,
+    masks: torch.Tensor,
+    metas,
+    budget=None,
+    schedule_state: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    descriptors = _time_descriptors_btc(inputs)
+    if descriptors.shape[-1] != self.in_channels:
+        raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
+
+    masks = masks.to(device=inputs.device, dtype=torch.bool)
+    external_actionness = self._external_actionness_from_metas(metas, descriptors=descriptors)
+
+    if external_actionness is not None and self.adapter.use_coarse_hidden_features:
+        raise RuntimeError(
+            "Final DUCA main method forbids external/cached actionness because it cannot provide "
+            "coarse_hidden_features with detector-gradient path. Use only for explicit ablation."
+        )
+
+    online_actionness = None
+    if external_actionness is None and self.raw_actionness_source is not None:
+        online_actionness = self.raw_actionness_source(inputs, valid_mask=masks)
+
+    actionness_logits = None
+    p_action = None
+    coarse_hidden_features = None
+
+    if external_actionness is not None:
+        actionness_logits = external_actionness.get("actionness_logits")
+        p_action = external_actionness.get("p_action")
+    elif online_actionness is not None:
+        actionness_logits = online_actionness.get("logits")
+        if actionness_logits is None:
+            actionness_logits = online_actionness.get("actionness_logits")
+        p_action = online_actionness.get("p_action")
+        coarse_hidden_features = online_actionness.get("coarse_hidden_features")
+
+    if self.adapter.use_coarse_hidden_features and coarse_hidden_features is None:
+        raise RuntimeError("Final DUCA selector requires online_actionness['coarse_hidden_features']")
+
+    grid, scores = self.adapter.acquire(
+        descriptors,
+        budget=budget,
+        valid_mask=masks,
+        actionness_logits=actionness_logits,
+        p_action=p_action,
+        coarse_hidden_features=coarse_hidden_features,
+        compute_profile_context={
+            "external_cached_actionness": external_actionness is not None,
+            "descriptor_profile": self._descriptor_compute_profile(inputs, descriptors),
+        },
+    )
+
+    # Existing provenance checks stay.
+    if online_actionness is not None:
+        scores["provenance"] = online_actionness["provenance"]
+        scores["online_actionness_provenance"] = online_actionness["provenance"]
+        scores["online_actionness_source"] = online_actionness["source_name"]
+    validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
+
+    positions = grid.selected_positions.to(device=inputs.device)
+    slot_mask = positions >= 0
+    hard_selected = _gather_time(inputs, positions, slot_mask)
+
+    detector_gradient_weight = 1.0
+    if schedule_state is not None:
+        detector_gradient_weight = float(schedule_state["weights"].get("detector_gradient", 1.0))
+
+    bridge_scale = scores.get("detector_bridge_scale", None)
+    if bridge_scale is None:
+        bridge_scale = torch.ones(inputs.shape[0], dtype=inputs.dtype, device=inputs.device)
+
+    # Important: dynamic MUST budget controller must affect the ST bridge through bridge_scale.
+    selected_inputs, st_weights = _soft_to_hard_resample(
+        dense_inputs=inputs,
+        hard_base=hard_selected,
+        selected_positions=positions,
+        slot_mask=slot_mask,
+        center_scores=scores["candidate_scores"],
+        radius=scores["radius"],
+        valid_mask=masks,
+        bridge=detector_gradient_weight * bridge_scale,
+    )
+
+    selected_masks = slot_mask.to(dtype=torch.bool)
+    selected_metas = self._attach_selected_axis_metadata(metas, grid, scores)
+
+    scores["st_bridge_weights"] = st_weights
+    scores["detector_gradient_weight"] = detector_gradient_weight
+    scores["uses_coarse_hidden_features"] = bool(self.adapter.use_coarse_hidden_features)
+
+    return {
+        "inputs": selected_inputs,
+        "masks": selected_masks,
+        "metas": selected_metas,
+        "selector_outputs": scores,
+    }
+```
+
+如果现有 `_soft_to_hard_resample()` 只接受 scalar `bridge`，改成支持 `[B]`：
+
+```python
+def _expand_bridge(bridge: float | torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    if not torch.is_tensor(bridge):
+        return torch.as_tensor(float(bridge), dtype=target.dtype, device=target.device)
+    bridge = bridge.to(device=target.device, dtype=target.dtype)
+    while bridge.ndim < target.ndim:
+        bridge = bridge.view(*bridge.shape, *([1] * (target.ndim - bridge.ndim)))
+    return bridge
+```
+
+然后：
+
+```python
+bridge = _expand_bridge(bridge, soft)
+return hard_base + (soft - soft.detach()) * slot.to(dtype=soft.dtype) * bridge, weights
+```
+
+---
+
+## C7. Official detector grad proof 脚本
+
+新增文件：
+
+```text
+tools/bata/run_duca_official_adatad_one_step_grad_proof.py
+```
+
+核心要求：不允许 `DucaOnlinePrecheckHead`。必须使用 official config 里的 `ActionFormerHead`。
+
+```python
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, Mapping
+
+import torch
+from mmengine.config import Config
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from opentad.models import build_detector  # noqa: E402
+
+SCHEMA_VERSION = "duca_official_adatad_one_step_grad_proof_v1"
+
+
+def _path(p: str | Path) -> Path:
+    return Path(os.path.expandvars(os.path.expanduser(str(p)))).resolve()
+
+
+def _plain(x: Any) -> Any:
+    if hasattr(x, "to_dict"):
+        x = x.to_dict()
+    if isinstance(x, Mapping):
+        return {str(k): _plain(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_plain(v) for v in x]
+    return x
+
+
+def _grad_sum(module: torch.nn.Module | None) -> float | None:
+    if module is None:
+        return None
+    total = 0.0
+    seen = False
+    for p in module.parameters():
+        if not p.requires_grad:
+            continue
+        seen = True
+        if p.grad is not None:
+            total += float(p.grad.detach().abs().sum().cpu().item())
+    return total if seen else None
+
+
+def _module_type(module: Any) -> str:
+    return type(module).__name__ if module is not None else "None"
+
+
+def _contains_precheck_head(model: torch.nn.Module) -> bool:
+    for m in model.modules():
+        if "Precheck" in type(m).__name__:
+            return True
+    return False
+
+
+def _require(cond: bool, msg: str) -> None:
+    if not cond:
+        raise RuntimeError(msg)
+
+
+def _set_nested(d: dict[str, Any], dotted: str, value: Any) -> None:
+    cur = d
+    parts = dotted.split(".")
+    for p in parts[:-1]:
+        child = cur.get(p)
+        if not isinstance(child, dict):
+            child = {}
+            cur[p] = child
+        cur = child
+    cur[parts[-1]] = value
+
+
+def _prepare_proof_cfg(
+    cfg: Config,
+    *,
+    proof_temporal_len: int,
+    proof_budget: int,
+    proof_spatial_size: int,
+    proof_hidden_dim: int,
+    dynamic: bool,
+) -> Config:
+    cfg = cfg.copy()
+    model_cfg = _plain(cfg.model)
+
+    _require("frame_selector" in model_cfg, "official config must contain model.frame_selector")
+    _require("rpn_head" in model_cfg, "official config must contain model.rpn_head")
+    _require(model_cfg["rpn_head"].get("type") == "ActionFormerHead", "rpn_head.type must be ActionFormerHead")
+    _require(model_cfg["rpn_head"].get("type") != "DucaOnlinePrecheckHead", "precheck head is forbidden")
+
+    fs = model_cfg["frame_selector"]
+    fs["dense_window_size"] = int(proof_temporal_len)
+    fs["selector_hidden_channels"] = int(proof_hidden_dim)
+    fs["use_coarse_hidden_features"] = True
+    fs["coarse_hidden_dim"] = int(proof_hidden_dim)
+    fs["coarse_hidden_proj_dim"] = min(32, int(proof_hidden_dim))
+    fs["coarse_hidden_dropout"] = 0.0
+    fs["max_gap"] = min(10, max(2, int(proof_temporal_len) // 2))
+    fs["hard_gap_repair"] = True
+    fs["soft_gap_min_mass"] = 1.0
+    fs["forbid_external_actionness"] = True
+    fs["forbid_raw_prediction_cache"] = True
+    fs["forbid_ledger"] = True
+
+    if dynamic:
+        fs["budget"] = None
+        fs["budget_mode"] = "dynamic_must"
+        fs["budget_min"] = max(2, int(proof_budget) // 2)
+        fs["budget_max"] = int(proof_budget)
+        fs["target_budget"] = max(2, int(proof_budget) // 2)
+        fs["budget_multiple"] = 1
+        fs["allow_external_budget_override"] = False
+    else:
+        fs["budget"] = int(proof_budget)
+        fs["budget_mode"] = "fixed"
+
+    actionness_cfg = fs.get("actionness_source_cfg", {})
+    actionness_cfg["type"] = "C3CoarseProbeActionnessSource"
+    actionness_cfg["probe_model"] = "official-action-seg"
+    actionness_cfg["official_action_seg_backend"] = "official_asformer"
+    actionness_cfg["tcn_hidden_dim"] = int(proof_hidden_dim)
+    actionness_cfg["spatial_size"] = int(proof_spatial_size)
+    actionness_cfg["official_num_layers"] = 1
+    actionness_cfg["frozen"] = False
+    actionness_cfg["trainable"] = True
+    actionness_cfg["require_coarse_hidden_features"] = True
+    actionness_cfg["require_checkpoint"] = False
+    actionness_cfg["checkpoint_path"] = ""
+    actionness_cfg["thumos_trained"] = False
+    actionness_cfg["uses_labels"] = False
+    actionness_cfg["uses_teacher"] = False
+    actionness_cfg["uses_gt"] = False
+    actionness_cfg["uses_prediction_cache"] = False
+    actionness_cfg["calibration_split"] = "none"
+    fs["actionness_source_cfg"] = actionness_cfg
+
+    # For gradient bridge proof, isolate detector-loss path as much as possible.
+    # Main config must keep soft gap enabled; proof can zero auxiliary losses to prove detector route.
+    fs["loss_weights"] = dict(
+        actionness=0.0,
+        boundary=0.0,
+        boundary_utility_proxy=0.0,
+        soft_max_gap=0.0,
+        dynamic_budget=0.0,
+        detector=1.0,
+        detector_gradient=1.0,
+        teacher=0.0,
+        redundancy=0.0,
+        radius=0.0,
+        entropy=0.0,
+    )
+    fs["loss_weight_schedule"] = dict(
+        type="constant",
+        detector_gradient=dict(start=1.0, end=1.0),
+        actionness=dict(start=0.0, end=0.0),
+        boundary=dict(start=0.0, end=0.0),
+        boundary_utility_proxy=dict(start=0.0, end=0.0),
+        soft_max_gap=dict(start=0.0, end=0.0),
+        dynamic_budget=dict(start=0.0, end=0.0),
+    )
+
+    # Keep official rpn_head. Do not replace with precheck.
+    model_cfg["frame_selector"] = fs
+    cfg.model = model_cfg
+    return cfg
+
+
+def _make_inputs(device: str, T: int, H: int) -> tuple[torch.Tensor, torch.Tensor, list[dict[str, Any]], list[torch.Tensor], list[torch.Tensor]]:
+    # OpenTAD raw-frame configs usually use [B,N,C,T,H,W].
+    inputs = torch.randn(1, 1, 3, T, H, H, device=device)
+    masks = torch.ones(1, T, dtype=torch.bool, device=device)
+    metas = [{"video_name": "duca_official_grad_proof", "fps": 30.0, "duration": float(T)}]
+    gt_segments = [torch.tensor([[1.0, float(max(2, T - 2))]], dtype=torch.float32, device=device)]
+    gt_labels = [torch.tensor([1], dtype=torch.long, device=device)]
+    return inputs, masks, metas, gt_segments, gt_labels
+
+
+def _official_loss_key_check(losses: Mapping[str, Any]) -> dict[str, bool]:
+    keys = [str(k).lower() for k in losses.keys()]
+    return {
+        "has_cls_loss": any("cls" in k for k in keys),
+        "has_reg_loss": any("reg" in k for k in keys),
+        "keys": sorted(str(k) for k in losses.keys()),
+    }
+
+
+def run_one(
+    *,
+    config_path: str | Path,
+    dynamic: bool,
+    proof_temporal_len: int,
+    proof_budget: int,
+    proof_spatial_size: int,
+    proof_hidden_dim: int,
+    device: str,
+) -> dict[str, Any]:
+    cfg = Config.fromfile(str(_path(config_path)))
+    cfg = _prepare_proof_cfg(
+        cfg,
+        proof_temporal_len=proof_temporal_len,
+        proof_budget=proof_budget,
+        proof_spatial_size=proof_spatial_size,
+        proof_hidden_dim=proof_hidden_dim,
+        dynamic=dynamic,
+    )
+
+    model = build_detector(cfg.model).to(device)
+    model.train()
+
+    rpn_head = getattr(model, "rpn_head", None)
+    selector = getattr(model, "frame_selector", None)
+
+    _require(selector is not None, "model must contain frame_selector")
+    _require(rpn_head is not None, "model must contain rpn_head")
+    _require(_module_type(rpn_head) == "ActionFormerHead", f"rpn_head must be ActionFormerHead, got {_module_type(rpn_head)}")
+    _require(not _contains_precheck_head(model), "DucaOnlinePrecheckHead is forbidden in official grad proof")
+
+    inputs, masks, metas, gt_segments, gt_labels = _make_inputs(device, proof_temporal_len, proof_spatial_size)
+
+    losses = model(
+        inputs,
+        masks,
+        metas,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+        return_loss=True,
+    )
+
+    _require("cost" in losses, "official model losses must contain cost")
+    key_check = _official_loss_key_check(losses)
+    _require(key_check["has_cls_loss"], f"official detector cls loss key missing: {key_check['keys']}")
+    _require(key_check["has_reg_loss"], f"official detector reg loss key missing: {key_check['keys']}")
+
+    cost = losses["cost"]
+    _require(torch.is_tensor(cost) and cost.requires_grad, "losses['cost'] must be differentiable tensor")
+
+    model.zero_grad(set_to_none=True)
+    cost.backward()
+
+    selector = model.frame_selector
+    adapter = selector.adapter
+
+    grad_report = {
+        "coarse_probe_grad_sum": _grad_sum(selector.raw_actionness_source),
+        "coarse_hidden_proj_grad_sum": _grad_sum(adapter.coarse_hidden_proj),
+        "selector_encoder_grad_sum": _grad_sum(adapter.encoder),
+        "center_head_grad_sum": _grad_sum(adapter.center_head),
+        "boundary_head_grad_sum": _grad_sum(adapter.boundary_head),
+        "utility_head_grad_sum": _grad_sum(adapter.utility_head),
+        "dynamic_must_budget_controller_grad_sum": _grad_sum(adapter.budget_controller),
+        "official_detector_head_grad_sum": _grad_sum(model.rpn_head),
+    }
+
+    required = [
+        "coarse_probe_grad_sum",
+        "coarse_hidden_proj_grad_sum",
+        "selector_encoder_grad_sum",
+        "center_head_grad_sum",
+        "boundary_head_grad_sum",
+        "utility_head_grad_sum",
+        "official_detector_head_grad_sum",
+    ]
+    if dynamic:
+        required.append("dynamic_must_budget_controller_grad_sum")
+
+    missing = [k for k in required if grad_report.get(k) is None or float(grad_report[k]) <= 0.0]
+    if missing:
+        raise RuntimeError(f"official detector-loss grad proof failed: zero/missing gradients for {missing}")
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "proof_passed": True,
+        "config_path": str(_path(config_path)),
+        "route": "dynamic_must" if dynamic else "fixed384",
+        "model_type": _module_type(model),
+        "rpn_head_type": _module_type(model.rpn_head),
+        "precheck_head_used": False,
+        "loss_cost": float(cost.detach().cpu().item()),
+        "loss_keys": key_check["keys"],
+        **key_check,
+        **grad_report,
+        "selected_count": int(selector.last_forward_summary.get(selector.metadata_keys["selected_count"], -1)),
+        "max_gap": int(getattr(adapter, "max_gap", -1)),
+        "uses_coarse_hidden_features": bool(getattr(adapter, "use_coarse_hidden_features", False)),
+        "hard_gap_repair": bool(getattr(adapter, "hard_gap_repair", False)),
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fixed-config", required=True)
+    parser.add_argument("--must-config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--device", default=os.environ.get("DUCA_OFFICIAL_GRAD_PROOF_DEVICE", "cuda"))
+    parser.add_argument("--proof-temporal-len", type=int, default=64)
+    parser.add_argument("--proof-budget", type=int, default=32)
+    parser.add_argument("--proof-spatial-size", type=int, default=64)
+    parser.add_argument("--proof-hidden-dim", type=int, default=32)
+    args = parser.parse_args(argv)
+
+    fixed = run_one(
+        config_path=args.fixed_config,
+        dynamic=False,
+        proof_temporal_len=args.proof_temporal_len,
+        proof_budget=args.proof_budget,
+        proof_spatial_size=args.proof_spatial_size,
+        proof_hidden_dim=args.proof_hidden_dim,
+        device=args.device,
+    )
+    must = run_one(
+        config_path=args.must_config,
+        dynamic=True,
+        proof_temporal_len=args.proof_temporal_len,
+        proof_budget=args.proof_budget,
+        proof_spatial_size=args.proof_spatial_size,
+        proof_hidden_dim=args.proof_hidden_dim,
+        device=args.device,
+    )
+
+    out = {
+        "schema_version": SCHEMA_VERSION,
+        "proof_passed": True,
+        "fixed384": fixed,
+        "dynamic_must": must,
+    }
+    path = _path(args.output_json)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(out, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+这段脚本的硬门是：`rpn_head_type == "ActionFormerHead"`，`precheck_head_used == False`，且所有关键梯度非零。
+
+---
+
+## C8. Validator fail-closed 修改
+
+文件：
+
+```text
+tools/bata/validate_duca_official_adatad_backend.py
+tools/bata/validate_duca_must_dynamic_official_adatad_backend.py
+```
+
+新增公共检查：
+
+```python
+def _validate_final_duca_selector_contract(selector: Any, contract: Any) -> dict[str, Any]:
+    _require(selector.type == "DucaOnlineFrameSelector", "frame_selector must be DucaOnlineFrameSelector")
+    _require(selector.get("use_coarse_hidden_features", False) is True, "main DUCA must use coarse hidden features")
+    _require(int(selector.get("coarse_hidden_dim", 0)) > 0, "coarse_hidden_dim must be positive")
+    _require(int(selector.get("coarse_hidden_proj_dim", 0)) > 0, "coarse_hidden_proj_dim must be positive")
+
+    _require(selector.get("max_gap", None) not in (None, "none", "None"), "max_gap must be enabled")
+    _require(int(selector.max_gap) == 10, "main DUCA default max_gap must be 10 unless running named ablation")
+    _require(selector.get("hard_gap_repair", False) is True, "hard_gap_repair must be True")
+
+    lw = selector.loss_weights
+    _require(float(lw.get("soft_max_gap", 0.0)) > 0.0, "soft_max_gap loss weight must be > 0")
+    _require(float(lw.get("boundary_utility_proxy", 0.0)) > 0.0, "boundary_utility_proxy loss weight must be > 0")
+    _require("detector_utility" not in lw, "main config must not use misleading detector_utility loss key")
+
+    schedule = selector.loss_weight_schedule
+    _require(float(schedule.detector_gradient.start) > 0.0, "detector ST gradient must be nonzero from training start")
+    _require(float(schedule.detector_gradient.end) == 1.0, "detector ST gradient must ramp to 1.0")
+    _require(float(schedule.soft_max_gap.start) > 0.0, "soft max-gap loss must be active from start")
+    _require(float(schedule.soft_max_gap.end) > 0.0, "soft max-gap loss must remain active")
+
+    actionness_cfg = selector.actionness_source_cfg
+    forbidden = {"x3d", "slowfast", "slowonly", "prediction_cache", "ledger"}
+    source_text = repr(actionness_cfg).lower()
+    _require(not any(x in source_text for x in forbidden), "X3D/SlowFast/cache/ledger cannot be main DUCA actionness source")
+    _require(actionness_cfg.get("type") == "C3CoarseProbeActionnessSource", "main DUCA must use C3CoarseProbeActionnessSource")
+    _require(actionness_cfg.get("require_coarse_hidden_features", True) is True, "coarse probe must require hidden features")
+
+    _require(selector.get("forbid_external_actionness", False) is True, "external actionness must be forbidden in main method")
+    _require(selector.get("forbid_raw_prediction_cache", False) is True, "raw prediction cache must be forbidden")
+    _require(selector.get("forbid_ledger", False) is True, "ledger decision must be forbidden")
+
+    return {
+        "use_coarse_hidden_features": True,
+        "max_gap": int(selector.max_gap),
+        "hard_gap_repair": True,
+        "soft_max_gap_loss_weight": float(lw.soft_max_gap),
+        "boundary_utility_proxy_loss_weight": float(lw.boundary_utility_proxy),
+    }
+```
+
+新增 proof JSON 检查：
+
+```python
+def _validate_official_grad_proof_json(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    _require(p.is_file(), f"official detector grad proof JSON missing: {p}")
+    data = json.loads(p.read_text(encoding="utf-8"))
+
+    _require(data.get("schema_version") == "duca_official_adatad_one_step_grad_proof_v1", "bad proof schema")
+    _require(data.get("proof_passed") is True, "proof_passed must be true")
+
+    required_routes = ["fixed384", "dynamic_must"]
+    required_grad_keys = [
+        "coarse_probe_grad_sum",
+        "coarse_hidden_proj_grad_sum",
+        "selector_encoder_grad_sum",
+        "center_head_grad_sum",
+        "boundary_head_grad_sum",
+        "utility_head_grad_sum",
+        "official_detector_head_grad_sum",
+    ]
+
+    for route in required_routes:
+        item = data.get(route)
+        _require(isinstance(item, dict), f"proof route missing: {route}")
+        _require(item.get("rpn_head_type") == "ActionFormerHead", f"{route}: rpn_head must be ActionFormerHead")
+        _require(item.get("precheck_head_used") is False, f"{route}: DucaOnlinePrecheckHead is forbidden")
+        _require(item.get("has_cls_loss") is True, f"{route}: cls loss key missing")
+        _require(item.get("has_reg_loss") is True, f"{route}: reg loss key missing")
+        _require(item.get("uses_coarse_hidden_features") is True, f"{route}: hidden features not used")
+        _require(item.get("hard_gap_repair") is True, f"{route}: hard gap repair not enabled")
+
+        keys = list(required_grad_keys)
+        if route == "dynamic_must":
+            keys.append("dynamic_must_budget_controller_grad_sum")
+        for k in keys:
+            _require(float(item.get(k, 0.0)) > 0.0, f"{route}: gradient {k} must be > 0")
+
+    return data
+```
+
+动态 / fixed 共享 policy 检查：
+
+```python
+def _strip_budget_specific(selector_cfg: Mapping[str, Any]) -> dict[str, Any]:
+    out = _as_plain(selector_cfg)
+    for key in [
+        "budget",
+        "budget_mode",
+        "budget_min",
+        "budget_max",
+        "target_budget",
+        "budget_multiple",
+        "allow_external_budget_override",
+        "loss_weights",
+        "loss_weight_schedule",
+        "work_dir",
+    ]:
+        out.pop(key, None)
+    return out
+
+
+def _validate_fixed_dynamic_share_policy(fixed_cfg: Config, must_cfg: Config) -> None:
+    fixed_policy = _strip_budget_specific(fixed_cfg.model.frame_selector)
+    must_policy = _strip_budget_specific(must_cfg.model.frame_selector)
+    _require(
+        fixed_policy == must_policy,
+        "fixed-384 and dynamic MUST must share the same acquisition policy; only budget controller/settings may differ",
+    )
+```
+
+---
+
+# D. 最终训练配置
+
+## D1. Fixed-384 config 修改
+
+文件：
+
+```text
+configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py
+```
+
+核心修改：
+
+```python
+duca_max_gap = _env_int("DUCA_MAX_GAP", 10)
+duca_soft_gap_loss_weight = _env_float("DUCA_SOFT_GAP_LOSS_WEIGHT", 0.05)
+duca_soft_gap_min_mass = _env_float("DUCA_SOFT_GAP_MIN_MASS", 1.0)
+duca_hard_gap_repair = _env_bool("DUCA_HARD_GAP_REPAIR", True)
+duca_coarse_hidden_proj_dim = _env_int("DUCA_COARSE_HIDDEN_PROJ_DIM", 32)
+duca_coarse_hidden_dropout = _env_float("DUCA_COARSE_HIDDEN_DROPOUT", 0.10)
+
+if duca_max_gap <= 1:
+    raise ValueError("DUCA_MAX_GAP must be > 1")
+if duca_soft_gap_loss_weight <= 0.0:
+    raise ValueError("DUCA_SOFT_GAP_LOSS_WEIGHT must be > 0 for main DUCA")
+if not duca_hard_gap_repair:
+    raise ValueError("DUCA_HARD_GAP_REPAIR must be True for main DUCA")
+
+# Approximate feasibility guard.
+if (dense_window_size + duca_max_gap - 1) // duca_max_gap > window_size:
+    raise ValueError("DUCA max_gap is infeasible under the selected budget")
+```
+
+`duca_online_main_contract` 改名：
+
+```python
+duca_online_main_contract = dict(
+    # existing ...
+    selector_score_priority="transition_boundary_utility_first",
+    utility_proxy_target_kind="gt_boundary_utility_proxy",
+    detector_utility_target_is_true_detector_derived=False,
+    soft_max_gap_regularized=True,
+    hard_max_gap_repair=True,
+    max_gap=duca_max_gap,
+    use_coarse_hidden_features=True,
+    official_detector_grad_proof_required=True,
+)
+```
+
+`model.frame_selector` 修改：
+
+```python
+model = dict(
+    frame_selector=dict(
+        type="DucaOnlineFrameSelector",
+        in_channels=3,
+        dense_window_size=dense_window_size,
+        budget=window_size,
+        budget_mode="fixed",
+        max_radius=16,
+
+        # Final hidden-feature path.
+        use_coarse_hidden_features=True,
+        coarse_hidden_dim=duca_coarse_hidden_dim,
+        coarse_hidden_proj_dim=duca_coarse_hidden_proj_dim,
+        coarse_hidden_dropout=duca_coarse_hidden_dropout,
+
+        # Final max-gap contract.
+        max_gap=duca_max_gap,
+        soft_gap_min_mass=duca_soft_gap_min_mass,
+        hard_gap_repair=duca_hard_gap_repair,
+
+        selector_hidden_channels=96,
+        actionness_weight=0.05,
+        transition_weight=1.0,
+        uncertainty_weight=0.25,
+        utility_weight=0.50,
+        boundary_weight=1.0,
+
+        detector_gradient_mode="soft_to_hard_resample",
+
+        loss_weights=dict(
+            detector=1.0,
+            detector_gradient=1.0,
+            actionness=0.10,
+            boundary=1.0,
+            boundary_utility_proxy=0.10,
+            soft_max_gap=duca_soft_gap_loss_weight,
+            dynamic_budget=0.0,
+            teacher=0.0,
+            redundancy=0.0,
+            radius=0.0,
+            entropy=0.0,
+        ),
+
+        loss_weight_schedule=dict(
+            type="progressive_joint",
+            shape=duca_loss_schedule_shape,
+            warmup_steps=duca_loss_schedule_warmup_steps,
+            transition_steps=duca_loss_schedule_transition_steps,
+
+            # actionness trains coarse probe early, then becomes auxiliary.
+            actionness=dict(start=0.25, end=0.03),
+
+            # boundary/proxy/gap always active.
+            boundary=dict(start=0.50, end=1.0),
+            boundary_utility_proxy=dict(start=0.10, end=0.20),
+            soft_max_gap=dict(start=duca_soft_gap_loss_weight, end=duca_soft_gap_loss_weight),
+
+            # Detector ST gradient exists from start, then quickly becomes full.
+            detector_gradient=dict(start=0.05, end=1.0),
+
+            dynamic_budget=dict(start=0.0, end=0.0),
+            entropy=dict(start=0.0, end=0.0),
+        ),
+
+        forbid_ledger=True,
+        forbid_raw_prediction_cache=True,
+        forbid_external_actionness=True,
+
+        actionness_source_cfg=dict(
+            type="C3CoarseProbeActionnessSource",
+            source_name=duca_coarse_source_name,
+            probe_model=duca_coarse_probe_model,
+            tcn_variant=duca_coarse_tcn_variant,
+            spatial_size=duca_coarse_spatial_size,
+            tcn_hidden_dim=duca_coarse_hidden_dim,
+            checkpoint_path=duca_coarse_checkpoint,
+            require_checkpoint=duca_coarse_require_checkpoint,
+            frozen=duca_coarse_frozen,
+            trainable=not duca_coarse_frozen,
+            require_coarse_hidden_features=True,
+            official_action_seg_backend=duca_coarse_official_backend,
+            thumos_trained=False,
+            uses_labels=False,
+            uses_teacher=False,
+            uses_gt=False,
+            uses_prediction_cache=False,
+            calibration_split="none",
+        ),
+    ),
+)
+```
+
+## D2. Dynamic MUST config 修改
+
+文件：
+
+```text
+configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py
+```
+
+原则：除了 budget fields，必须和 fixed-384 共享同一个 policy。
+
+```python
+model = dict(
+    frame_selector=dict(
+        type="DucaOnlineFrameSelector",
+        in_channels=3,
+        dense_window_size=dense_window_size,
+
+        budget=None,
+        budget_mode="dynamic_must",
+        budget_min=budget_min,
+        budget_max=budget_max,
+        target_budget=budget_target,
+        budget_multiple=budget_multiple,
+        allow_external_budget_override=False,
+
+        # Must match fixed config.
+        use_coarse_hidden_features=True,
+        coarse_hidden_dim=duca_coarse_hidden_dim,
+        coarse_hidden_proj_dim=duca_coarse_hidden_proj_dim,
+        coarse_hidden_dropout=duca_coarse_hidden_dropout,
+        max_gap=duca_max_gap,
+        soft_gap_min_mass=duca_soft_gap_min_mass,
+        hard_gap_repair=True,
+        selector_hidden_channels=96,
+        actionness_weight=0.05,
+        transition_weight=1.0,
+        uncertainty_weight=0.25,
+        utility_weight=0.50,
+        boundary_weight=1.0,
+
+        loss_weights=dict(
+            detector=1.0,
+            detector_gradient=1.0,
+            actionness=0.10,
+            boundary=1.0,
+            boundary_utility_proxy=0.10,
+            soft_max_gap=duca_soft_gap_loss_weight,
+            dynamic_budget=0.05,
+            marginal_monotonic=0.01,
+            teacher=0.0,
+            redundancy=0.0,
+            radius=0.0,
+            entropy=0.0,
+        ),
+
+        loss_weight_schedule=dict(
+            type="progressive_joint",
+            shape=duca_loss_schedule_shape,
+            warmup_steps=duca_loss_schedule_warmup_steps,
+            transition_steps=duca_loss_schedule_transition_steps,
+            actionness=dict(start=0.25, end=0.03),
+            boundary=dict(start=0.50, end=1.0),
+            boundary_utility_proxy=dict(start=0.10, end=0.20),
+            soft_max_gap=dict(start=duca_soft_gap_loss_weight, end=duca_soft_gap_loss_weight),
+            detector_gradient=dict(start=0.05, end=1.0),
+            dynamic_budget=dict(start=0.02, end=0.10),
+            marginal_monotonic=dict(start=0.005, end=0.01),
+        ),
+
+        forbid_ledger=True,
+        forbid_raw_prediction_cache=True,
+        forbid_external_actionness=True,
+
+        actionness_source_cfg=dict(
+            type="C3CoarseProbeActionnessSource",
+            # same as fixed config
+            require_coarse_hidden_features=True,
+            frozen=duca_coarse_frozen,
+            trainable=not duca_coarse_frozen,
+            thumos_trained=False,
+            uses_labels=False,
+            uses_teacher=False,
+            uses_gt=False,
+            uses_prediction_cache=False,
+            calibration_split="none",
+        ),
+    ),
+)
+```
+
+训练目标最终应写成：
+
+```text
+L =
+  L_detector
++ λ_action(t) * L_actionness_bce
++ λ_boundary(t) * L_boundary
++ λ_proxy(t) * L_boundary_utility_proxy
++ λ_gap * L_soft_max_gap
++ λ_budget(t) * L_dynamic_budget
++ optional λ_entropy / λ_redundancy
+```
+
+推荐 schedule：
+
+```text
+detector loss:        always 1.0
+detector ST gradient: 0.05 -> 1.0, warmup 后快速拉满
+actionness BCE:       0.25 -> 0.03
+boundary:             0.50 -> 1.0
+boundary proxy:       0.10 -> 0.20
+soft max-gap:         0.05 constant
+dynamic budget:       0.02 -> 0.10 only for MUST
+max_gap:              default 10
+```
+
+注意：actionness BCE 只应训练 coarse probe 的 actionness logits，不应该长期主导 selector score。selector 的主监督必须是 transition/boundary/utility/proxy/gap + detector ST feedback。
+
+---
+
+# E. 测试清单
+
+## 1. `tests/test_duca_coarse_hidden_feature_contract.py`
+
+验证：
+
+```text
+C3CoarseProbeActionnessSource.forward()
+  returns coarse_hidden_features [B,T,D]
+  returns coarse_hidden_dim == D
+  masks invalid frames to zero
+  require_coarse_hidden_features=True 时 missing hidden 必须 RuntimeError
+```
+
+失败条件：
+
+```text
+hidden is None
+hidden.ndim != 3
+hidden.shape[:2] != [B,T]
+hidden.requires_grad=False in trainable mode
+curve-only config 被 main config 使用
+```
+
+## 2. `tests/test_duca_soft_max_gap_loss.py`
+
+验证：
+
+```text
+soft_max_gap_loss differentiable
+all windows mass >= min_mass 时 loss≈0
+存在长洞时 loss>0
+valid_mask tail padding 不产生假 violation
+backward 后 selection_prob.grad 非零
+```
+
+失败条件：
+
+```text
+loss 不可导
+valid padding 被计入 violation
+window size off-by-one
+max_gap=None 没有返回 zero differentiable loss
+```
+
+## 3. `tests/test_duca_hard_gap_repair.py`
+
+验证：
+
+```text
+repair_large_gaps inserts high-score points inside large holes
+largest_gap_after <= max_gap
+selected_count <= budget
+positions sorted unique
+repair does not use uniform scaffold as primary source
+budget infeasible时 fail-closed
+```
+
+失败条件：
+
+```text
+repair 后 gap 仍 > max_gap
+repair 后超 budget
+插入点没有来自 hole 内高 candidate_scores
+删除低分点后破坏 max_gap
+```
+
+## 4. `tests/test_duca_official_detector_grad_bridge.py`
+
+验证：
+
+```text
+run_duca_official_adatad_one_step_grad_proof.py outputs JSON
+rpn_head_type == ActionFormerHead
+precheck_head_used == False
+loss keys contain cls/reg
+grad sums > 0:
+  coarse_probe
+  coarse_hidden_proj
+  selector_encoder
+  center_head
+  boundary_head
+  utility_head
+  dynamic_must_budget_controller
+  official_detector_head
+```
+
+失败条件：
+
+```text
+使用 DucaOnlinePrecheckHead
+缺 proof JSON
+任一 required grad <= 0
+losses["cost"] 不可 backward
+没有 official cls/reg loss key
+```
+
+## 5. `tests/test_duca_final_model_contract.py`
+
+验证：
+
+```text
+main config:
+  use_coarse_hidden_features=True
+  max_gap=10
+  soft_max_gap loss weight > 0
+  hard_gap_repair=True
+  boundary_utility_proxy naming
+  no detector_utility key
+  no ledger/cache/external actionness
+  X3D/SlowFast forbidden
+```
+
+失败条件：
+
+```text
+detector_utility 出现在主 loss key
+hole/soft_gap disabled
+forbid_external_actionness=False
+X3D/SlowFast 出现在 main actionness_source_cfg
+```
+
+## 6. `tests/test_duca_dynamic_fixed_unified_policy.py`
+
+验证：
+
+```text
+fixed-384 and dynamic MUST share same:
+  selector type
+  coarse_hidden settings
+  scoring weights
+  max_gap settings
+  hard repair
+  actionness source type
+  detector gradient mode
+Only budget fields may differ.
+```
+
+失败条件：
+
+```text
+dynamic MUST 复制出另一套 decode pipeline
+fixed/dynamic selector scoring 不一致
+dynamic 允许 external budget override
+```
+
+## 7. `tests/test_duca_score_component_attribution.py`
+
+验证：
+
+```text
+scores contains score_components:
+  actionness
+  transition
+  uncertainty
+  boundary
+  utility
+actionness_weight < transition_weight and < boundary_weight
+transition/boundary/utility perturbation changes selected positions
+actionness-only ablation must be explicitly labeled curve_only_ablation
+```
+
+失败条件：
+
+```text
+score attribution missing
+actionness dominates final score
+selector score 无法被 boundary/utility heads 改变
+```
+
+---
+
+# F. 最终论文声明边界
+
+## 可以说
+
+```text
+DUCA is an online pre-backbone temporal acquisition plugin for TAD.
+```
+
+前提：selector 在 detector 前运行，输出 original-time selected positions，official detector 只消费 selected observations。
+
+```text
+DUCA is transition/boundary/utility-first.
+```
+
+前提：score attribution、loss weights、ablation 都证明 actionness 只是辅助项。
+
+```text
+DUCA uses an official AdaTAD / ActionFormerHead backend.
+```
+
+前提：official grad proof 和 validators 禁止 `DucaOnlinePrecheckHead` 替代最终 proof。
+
+```text
+Detector loss provides ST surrogate feedback to the selector and coarse probe.
+```
+
+前提：official detector grad proof 中 coarse probe、coarse hidden projection、selector encoder、center/boundary/utility heads、dynamic budget controller、official detector head 都有非零梯度。
+
+```text
+DUCA uses soft max-gap regularized acquisition with hard max-gap safety repair.
+```
+
+前提：`soft_max_gap_loss` 在主 config 默认非零，inference/decode 强制 `hard_gap_repair=True`，repair diagnostics 进入 metadata。
+
+## 不能说
+
+```text
+Fully differentiable hard selection.
+```
+
+不能说。hard selected positions 本身不可导；只能说使用 ST / soft-to-hard surrogate gradient。
+
+```text
+Detector-derived utility target.
+```
+
+不能说，除非你真的实现 detector sensitivity、proposal IoU gain、NMS survival 或 mAP delta target。当前 GT boundary proxy 只能叫：
+
+```text
+boundary_utility_proxy_target
+utility_proxy_target_kind="gt_boundary_utility_proxy"
+```
+
+```text
+X3D / SlowFast is the main low-cost DUCA selector.
+```
+
+不能说。它们只能是 frozen diagnostic prior baseline，不能作为主方法 pre-backbone low-cost module。
+
+```text
+Dynamic MUST truly saves detector FLOPs.
+```
+
+不能说，除非 backend 确实 variable-length 执行，并且 profiling 证明 detector backbone/head 的实际 computation 随 selected count 下降。如果仍然 pad 到 fixed length 或 interpolate 到 `window_size`，只能说 dynamic MUST changes acquisition budget / selected observations, not guaranteed detector FLOPs.
+
+```text
+Ledger-free deployable selector.
+```
+
+只有在 validators 明确禁止 ledger、external actionness、prediction cache，并且 inference path 只用 online coarse probe + DUCA selector 时才能说。
+
+---
+
+最终裁决：当前 DUCA 的方向是对的，但还不是最终论文模型。最终必须把 hidden-feature path、soft/hard max-gap、官方 ActionFormerHead gradient proof、target 命名修正、fixed/dynamic unified policy 全部合入主干；否则它仍然只是一个 transition-first online selector 半成品，不能支撑 CCF-A/CVPR 级别主方法。
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/544eca6 "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/544eca6"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/duca/acquisition.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/duca/acquisition.py"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/selectors/duca_online_frame_selector.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/selectors/duca_online_frame_selector.py"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/validate_duca_official_adatad_backend.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/validate_duca_official_adatad_backend.py"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/run_duca_jct_one_step_grad_proof.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/run_duca_jct_one_step_grad_proof.py"

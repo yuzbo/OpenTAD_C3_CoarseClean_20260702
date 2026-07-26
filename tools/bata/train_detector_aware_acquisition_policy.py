@@ -1,0 +1,622 @@
+from __future__ import annotations
+
+import argparse
+import json
+import random
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+from tools.bata import detector_aware_acquisition_policy as detector_policy
+from tools.bata import train_paction_acquisition_policy as base_train
+
+
+SUMMARY_SCHEMA_VERSION = "c3_detector_aware_policy_train_v1"
+CHECKPOINT_SCHEMA_VERSION = "c3_detector_aware_policy_checkpoint_v1"
+READY = "C3_DETECTOR_AWARE_POLICY_TRAIN_READY"
+POINT_RESPONSIBILITY_UTILITY_SOURCE_TYPE = "point_loss_gradient_responsibility_v1"
+POINT_RESPONSIBILITY_UTILITY_SEMANTICS = "signed_point_responsibility_utility_v1"
+
+
+_read_jsonl = base_train._read_jsonl
+_write_json = base_train._write_json
+_sha256_file = base_train._sha256_file
+_git_sha = base_train._git_sha
+_validate_source_row = base_train._validate_source_row
+_extract_paction = base_train._extract_paction
+_valid_len = base_train._valid_len
+
+
+def _row_for_source_validation(
+    row: Mapping[str, Any],
+    *,
+    expected_split: str | None,
+    allow_gt_diagnostics_in_training_source: bool,
+    allow_teacher_utility_training_artifact: bool,
+) -> tuple[Mapping[str, Any], bool, bool]:
+    expected_is_training = bool(expected_split and base_train._split_matches("training", str(expected_split)))
+    allowed_gt_diagnostics = (
+        bool(allow_gt_diagnostics_in_training_source)
+        and expected_is_training
+        and base_train._is_true(row.get("uses_gt_for_diagnostics", False))
+    )
+    allowed_teacher_artifact = (
+        bool(allow_teacher_utility_training_artifact)
+        and expected_is_training
+        and isinstance(row.get("teacher_utility"), Mapping)
+        and isinstance(row.get("teacher_utility_provenance"), Mapping)
+        and base_train._is_true(row.get("uses_teacher", False))
+        and base_train._is_true(row.get("training_only", False))
+    )
+    if not allowed_gt_diagnostics and not allowed_teacher_artifact:
+        return row, False, False
+    patched = dict(row)
+    if allowed_gt_diagnostics:
+        patched["uses_gt_for_diagnostics"] = False
+        patched["allowed_gt_diagnostics_in_training_source"] = True
+    if allowed_teacher_artifact:
+        patched["uses_teacher"] = False
+        patched["training_only"] = False
+        patched["allowed_teacher_utility_training_artifact"] = True
+    return patched, bool(allowed_gt_diagnostics), bool(allowed_teacher_artifact)
+
+
+def _extract_teacher_utility(row: Mapping[str, Any], *, line_no: int, length: int) -> list[float]:
+    provenance = row.get("teacher_utility_provenance")
+    if not isinstance(provenance, Mapping):
+        provenance = (row.get("teacher_utility") or {}).get("provenance") if isinstance(row.get("teacher_utility"), Mapping) else None
+    if not isinstance(provenance, Mapping) or provenance.get("split_scope") != "train_only":
+        raise ValueError(f"line {line_no}: teacher utility must be train_only")
+    raw = None
+    teacher_utility = row.get("teacher_utility")
+    if isinstance(teacher_utility, Mapping) and "marginal_gain_frame_utility" in teacher_utility:
+        raise ValueError(
+            f"line {line_no}: marginal_gain_frame_utility is deprecated; "
+            "train on signed_frame_utility with positive_observation_gain/negative_observation_risk targets"
+        )
+    if "marginal_gain_frame_utility" in row:
+        raise ValueError(
+            f"line {line_no}: marginal_gain_frame_utility is deprecated; "
+            "train on signed_frame_utility with positive_observation_gain/negative_observation_risk targets"
+        )
+    if isinstance(teacher_utility, Mapping) and isinstance(teacher_utility.get("signed_frame_utility"), list):
+        raw = teacher_utility.get("signed_frame_utility")
+    if raw is None and isinstance(row.get("signed_frame_utility"), list):
+        raw = row.get("signed_frame_utility")
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"line {line_no}: signed_frame_utility is required; "
+            "unsigned frame_utility cannot be used for signed_detector_utility_v1 training"
+        )
+    if len(raw) != int(length):
+        raise ValueError(f"line {line_no}: signed_frame_utility length must match p_action length")
+    return [max(-1.0, min(1.0, float(item))) for item in raw]
+
+
+def _teacher_utility_contract(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    utility_semantics: str | None = None
+    utility_source_type: str | None = None
+    point_responsibility = False
+    proposal_score_surrogate = False
+    for line_no, row in enumerate(rows, start=1):
+        teacher_utility = row.get("teacher_utility")
+        provenance = row.get("teacher_utility_provenance")
+        if not isinstance(provenance, Mapping):
+            provenance = teacher_utility.get("provenance") if isinstance(teacher_utility, Mapping) else None
+        candidates = [item for item in (teacher_utility, provenance, row) if isinstance(item, Mapping)]
+        row_semantics = next((str(item["utility_semantics"]) for item in candidates if item.get("utility_semantics")), None)
+        row_source = next((str(item["utility_source_type"]) for item in candidates if item.get("utility_source_type")), None)
+        if row_semantics is None:
+            row_semantics = "signed_detector_utility_v1"
+        if utility_semantics is None:
+            utility_semantics = row_semantics
+        elif utility_semantics != row_semantics:
+            raise ValueError(f"line {line_no}: mixed utility_semantics in detector-aware training JSONL")
+        if row_source is not None:
+            if utility_source_type is None:
+                utility_source_type = row_source
+            elif utility_source_type != row_source:
+                raise ValueError(f"line {line_no}: mixed utility_source_type in detector-aware training JSONL")
+        if any(item.get("point_responsibility_utility") is True for item in candidates):
+            point_responsibility = True
+        if any(item.get("proposal_score_surrogate_utility") is True for item in candidates):
+            proposal_score_surrogate = True
+    if point_responsibility and proposal_score_surrogate:
+        raise ValueError("detector-aware training JSONL mixes responsibility utility and proposal-score surrogate utility")
+    if utility_semantics is None:
+        utility_semantics = "signed_detector_utility_v1"
+    return {
+        "utility_semantics": utility_semantics,
+        "utility_source_type": utility_source_type,
+        "point_responsibility_utility": bool(point_responsibility),
+        "proposal_score_surrogate_utility": bool(proposal_score_surrogate),
+    }
+
+
+def _require_point_responsibility_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("utility_semantics") != POINT_RESPONSIBILITY_UTILITY_SEMANTICS:
+        raise ValueError(
+            "Stage-2 paper-main detector-aware selector requires "
+            f"utility_semantics={POINT_RESPONSIBILITY_UTILITY_SEMANTICS}; "
+            f"got {contract.get('utility_semantics')!r}"
+        )
+    if contract.get("utility_source_type") != POINT_RESPONSIBILITY_UTILITY_SOURCE_TYPE:
+        raise ValueError(
+            "Stage-2 paper-main detector-aware selector requires "
+            f"utility_source_type={POINT_RESPONSIBILITY_UTILITY_SOURCE_TYPE}; "
+            f"got {contract.get('utility_source_type')!r}"
+        )
+    if contract.get("point_responsibility_utility") is not True:
+        raise ValueError("Stage-2 paper-main detector-aware selector requires point_responsibility_utility=true")
+    if contract.get("proposal_score_surrogate_utility") is not False:
+        raise ValueError("Stage-2 paper-main detector-aware selector rejects proposal_score_surrogate_utility")
+
+
+def _marginal_gain_target(utility: Sequence[float]) -> list[float]:
+    return _positive_observation_gain_target(utility)
+
+
+def _positive_observation_gain_target(utility: Sequence[float]) -> list[float]:
+    return [max(0.0, max(-1.0, min(1.0, float(item)))) for item in utility]
+
+
+def _negative_observation_risk_target(utility: Sequence[float]) -> list[float]:
+    return [max(0.0, -max(-1.0, min(1.0, float(item)))) for item in utility]
+
+
+def _extract_action_target(row: Mapping[str, Any], *, line_no: int, length: int, gain: Sequence[float]) -> list[float]:
+    raw = row.get("action_target")
+    if raw is None:
+        raise ValueError(
+            f"line {line_no}: action_target is required for action_local_hole_loss; "
+            "do not infer action labels from detector utility gain"
+        )
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise ValueError(f"line {line_no}: action_target must be a sequence when provided")
+    values = [1.0 if float(item) >= 0.5 else 0.0 for item in raw]
+    if len(values) != int(length):
+        raise ValueError(f"line {line_no}: action_target length must match p_action length")
+    return values
+
+
+def _normalised_budget_buckets(dynamic_budget_buckets: Sequence[int], *, valid_len: int) -> list[int]:
+    return sorted({min(max(1, int(item)), int(valid_len)) for item in dynamic_budget_buckets})
+
+
+def _nearest_budget_bucket(target_count: int, *, dynamic_budget_buckets: Sequence[int], valid_len: int) -> int:
+    buckets = _normalised_budget_buckets(dynamic_budget_buckets, valid_len=valid_len)
+    if not buckets:
+        raise ValueError("dynamic_budget_buckets must not be empty")
+    count = min(max(0, int(target_count)), int(valid_len))
+    return int(min(buckets, key=lambda bucket: (abs(int(bucket) - count), int(bucket))))
+
+
+def _median_positive_gain_threshold(gains: Sequence[float]) -> float | None:
+    positive = sorted(float(item) for item in gains if float(item) > 0.0)
+    if not positive:
+        return None
+    return float(positive[len(positive) // 2])
+
+
+def _fit_dynamic_gain_calibration(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    dynamic_budget_buckets: Sequence[int],
+    gain_threshold_quantile: float = 0.50,
+) -> dict[str, Any]:
+    valid_gains: list[float] = []
+    for row in rows:
+        valid_len = int(row["valid_len"])
+        valid_gains.extend(float(item) for item in row["gain"][:valid_len])
+    threshold = _median_positive_gain_threshold(valid_gains)
+    positive_frame_count = sum(1 for item in valid_gains if float(item) > 0.0)
+    return {
+        **detector_policy.DEFAULT_DYNAMIC_GAIN_CALIBRATION,
+        "schema_version": "c3_detector_aware_dynamic_gain_calibration_v1",
+        "calibration_fitted": True,
+        "calibrated_dynamic_claim_allowed": positive_frame_count > 0 and threshold is not None,
+        "fit_split": "training",
+        "fit_row_count": len(rows),
+        "fit_frame_count": len(valid_gains),
+        "positive_frame_count": int(positive_frame_count),
+        "gain_threshold": None if threshold is None else float(threshold),
+        "gain_threshold_quantile": float(gain_threshold_quantile),
+        "budget_target_rule": "count_positive_gain_at_global_threshold_then_nearest_bucket",
+        "budget_buckets": [int(item) for item in dynamic_budget_buckets],
+    }
+
+
+def _calibrated_dynamic_budget_target(
+    gain: Sequence[float],
+    *,
+    valid_len: int,
+    dynamic_budget_buckets: Sequence[int],
+    calibration: Mapping[str, Any],
+) -> int:
+    threshold = calibration.get("gain_threshold")
+    if threshold is None:
+        return _nearest_budget_bucket(0, dynamic_budget_buckets=dynamic_budget_buckets, valid_len=valid_len)
+    selected_count = sum(1 for item in gain[: int(valid_len)] if float(item) >= float(threshold))
+    return _nearest_budget_bucket(selected_count, dynamic_budget_buckets=dynamic_budget_buckets, valid_len=valid_len)
+
+
+def _utility_budget_target(
+    utility: Sequence[float],
+    *,
+    valid_len: int,
+    dynamic_budget_buckets: Sequence[int],
+    coverage_target: float = 0.80,
+) -> int:
+    valid_values = [max(0.0, max(-1.0, min(1.0, float(item)))) for item in utility[: int(valid_len)]]
+    total = sum(valid_values)
+    if total <= 0.0:
+        return min(max(1, min(int(item) for item in dynamic_budget_buckets)), int(valid_len))
+    ranked = sorted(valid_values, reverse=True)
+    buckets = sorted(min(max(1, int(item)), int(valid_len)) for item in dynamic_budget_buckets)
+    for bucket in buckets:
+        if sum(ranked[:bucket]) / total >= float(coverage_target):
+            return int(bucket)
+    return int(buckets[-1])
+
+
+def _prepared_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    dynamic_budget_buckets: Sequence[int],
+    expected_split: str | None,
+    allow_gt_diagnostics_in_training_source: bool = False,
+    allow_teacher_utility_training_artifact: bool = False,
+) -> list[dict[str, Any]]:
+    extracted: list[dict[str, Any]] = []
+    for line_no, row in enumerate(rows, start=1):
+        row_for_training, allowed_gt_diagnostics, allowed_teacher_artifact = _row_for_source_validation(
+            row,
+            expected_split=expected_split,
+            allow_gt_diagnostics_in_training_source=allow_gt_diagnostics_in_training_source,
+            allow_teacher_utility_training_artifact=allow_teacher_utility_training_artifact,
+        )
+        _validate_source_row(row_for_training, line_no=line_no, expected_split=expected_split)
+        p_action = _extract_paction(row_for_training, line_no=line_no)
+        valid_len = _valid_len(row_for_training, paction_len=len(p_action))
+        utility = _extract_teacher_utility(row_for_training, line_no=line_no, length=len(p_action))
+        gain = _marginal_gain_target(utility)
+        risk = _negative_observation_risk_target(utility)
+        action = _extract_action_target(row_for_training, line_no=line_no, length=len(p_action), gain=gain)
+        extracted.append(
+            {
+                "p_action": p_action,
+                "valid_len": valid_len,
+                "utility": utility,
+                "gain": gain,
+                "risk": risk,
+                "action": action,
+                "allowed_gt_diagnostics_in_training_source": bool(allowed_gt_diagnostics),
+                "allowed_teacher_utility_training_artifact": bool(allowed_teacher_artifact),
+            }
+        )
+    calibration = _fit_dynamic_gain_calibration(extracted, dynamic_budget_buckets=dynamic_budget_buckets)
+    prepared: list[dict[str, Any]] = []
+    for row in extracted:
+        dynamic_budget_target = _calibrated_dynamic_budget_target(
+            row["gain"],
+            valid_len=row["valid_len"],
+            dynamic_budget_buckets=dynamic_budget_buckets,
+            calibration=calibration,
+        )
+        p_action = row["p_action"]
+        valid_len = int(row["valid_len"])
+        prepared.append(
+            {
+                "features": detector_policy.build_detector_aware_feature_matrix(
+                    p_action,
+                    valid=[idx < valid_len for idx in range(len(p_action))],
+                    target_budget=dynamic_budget_target,
+                ),
+                "detector_utility_target": row["utility"],
+                "positive_observation_gain_target": row["gain"],
+                "negative_observation_risk_target": row["risk"],
+                "detector_marginal_gain_target": row["gain"],
+                "action_target": row["action"],
+                "valid_len": valid_len,
+                "dynamic_budget_target": dynamic_budget_target,
+                "dynamic_gain_calibration": dict(calibration),
+                "allowed_gt_diagnostics_in_training_source": bool(row["allowed_gt_diagnostics_in_training_source"]),
+                "allowed_teacher_utility_training_artifact": bool(row["allowed_teacher_utility_training_artifact"]),
+            }
+        )
+    return prepared
+
+
+def _batch_to_tensors(batch: Sequence[Mapping[str, Any]], *, device: str, dynamic_budget_buckets: Sequence[int]):
+    import torch
+
+    max_len = max(len(row["features"]) for row in batch)
+    feature_dim = len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES)
+    features = torch.zeros((len(batch), max_len, feature_dim), dtype=torch.float32, device=device)
+    utility = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    gain = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    risk = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    action = torch.zeros((len(batch), max_len), dtype=torch.float32, device=device)
+    valid = torch.zeros((len(batch), max_len), dtype=torch.bool, device=device)
+    buckets = [int(item) for item in dynamic_budget_buckets]
+    budget_indices: list[int] = []
+    budget_targets: list[int] = []
+    for row_idx, row in enumerate(batch):
+        length = len(row["features"])
+        features[row_idx, :length] = torch.tensor(row["features"], dtype=torch.float32, device=device)
+        utility[row_idx, :length] = torch.tensor(row["detector_utility_target"], dtype=torch.float32, device=device)
+        gain[row_idx, :length] = torch.tensor(row["detector_marginal_gain_target"], dtype=torch.float32, device=device)
+        risk[row_idx, :length] = torch.tensor(row["negative_observation_risk_target"], dtype=torch.float32, device=device)
+        action[row_idx, :length] = torch.tensor(row["action_target"], dtype=torch.float32, device=device)
+        valid[row_idx, : int(row["valid_len"])] = True
+        target_budget = int(row["dynamic_budget_target"])
+        budget_targets.append(target_budget)
+        budget_indices.append(min(range(len(buckets)), key=lambda idx: (abs(buckets[idx] - target_budget), idx)))
+    return {
+        "features": features,
+        "utility": utility,
+        "gain": gain,
+        "risk": risk,
+        "action": action,
+        "valid": valid,
+        "budget_indices": torch.tensor(budget_indices, dtype=torch.long, device=device),
+        "budget_targets": torch.tensor(budget_targets, dtype=torch.float32, device=device),
+    }
+
+
+def _run_epoch(
+    *,
+    model: detector_policy.DetectorAwareSequentialAcquisitionPolicy,
+    rows: Sequence[Mapping[str, Any]],
+    batch_size: int,
+    device: str,
+    dynamic_budget_buckets: Sequence[int],
+    optimizer: Any | None,
+    budget_ce_loss_weight: float,
+) -> dict[str, float]:
+    import torch
+    import torch.nn.functional as F
+
+    model.train(optimizer is not None)
+    totals: dict[str, float] = {}
+    batches = 0
+    for start in range(0, len(rows), max(1, int(batch_size))):
+        batch = rows[start : start + max(1, int(batch_size))]
+        tensors = _batch_to_tensors(batch, device=device, dynamic_budget_buckets=dynamic_budget_buckets)
+        if optimizer is not None:
+            optimizer.zero_grad(set_to_none=True)
+        with torch.set_grad_enabled(optimizer is not None):
+            outputs = model(tensors["features"], tensors["valid"], target_budget=tensors["budget_targets"])
+            losses = detector_policy.detector_aware_training_objective(
+                outputs,
+                detector_utility_target=tensors["utility"],
+                detector_gain_target=tensors["gain"],
+                detector_risk_target=tensors["risk"],
+                action_target=tensors["action"],
+                valid=tensors["valid"],
+                target_budget=tensors["budget_targets"],
+            )
+            budget_ce = F.cross_entropy(outputs["budget_logits"], tensors["budget_indices"])
+            total_loss = losses["total_loss"] + budget_ce * float(budget_ce_loss_weight)
+            if optimizer is not None:
+                total_loss.backward()
+                optimizer.step()
+        scalars = {key: float(value.detach().cpu().item()) for key, value in losses.items() if key.endswith("_loss") and hasattr(value, "detach")}
+        scalars["budget_ce_loss"] = float(budget_ce.detach().cpu().item())
+        scalars["optimized_loss"] = float(total_loss.detach().cpu().item())
+        for key, value in scalars.items():
+            totals[key] = totals.get(key, 0.0) + value
+        batches += 1
+    return {key: value / float(max(1, batches)) for key, value in totals.items()}
+
+
+def run_training(
+    train_jsonl: str | Path,
+    *,
+    out_dir: str | Path,
+    checkpoint_path: str | Path | None = None,
+    summary_json: str | Path | None = None,
+    epochs: int = 20,
+    batch_size: int = 8,
+    lr: float = 1e-3,
+    weight_decay: float = 1e-4,
+    dynamic_budget_buckets: Sequence[int] = detector_policy.DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS,
+    hidden_dim: int = 64,
+    num_layers: int = 3,
+    dropout: float = 0.10,
+    budget_ce_loss_weight: float = 0.25,
+    device: str = "cuda",
+    seed: int = 0,
+    expected_split: str | None = "training",
+    allow_gt_diagnostics_in_training_source: bool = False,
+    allow_teacher_utility_training_artifact: bool = False,
+    require_point_responsibility_utility: bool = False,
+) -> dict[str, Any]:
+    import torch
+
+    random.seed(int(seed))
+    torch.manual_seed(int(seed))
+    out_path = Path(out_dir).expanduser()
+    out_path.mkdir(parents=True, exist_ok=True)
+    checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else out_path / "detector_aware_policy.pth"
+    buckets = [int(item) for item in dynamic_budget_buckets]
+    source_rows = _read_jsonl(train_jsonl)
+    utility_contract = _teacher_utility_contract(source_rows)
+    if require_point_responsibility_utility:
+        _require_point_responsibility_contract(utility_contract)
+    train_rows = _prepared_rows(
+        source_rows,
+        dynamic_budget_buckets=buckets,
+        expected_split=expected_split,
+        allow_gt_diagnostics_in_training_source=bool(allow_gt_diagnostics_in_training_source),
+        allow_teacher_utility_training_artifact=bool(allow_teacher_utility_training_artifact),
+    )
+    train_jsonl_sha256 = _sha256_file(train_jsonl)
+    allowed_gt_diagnostics_count = sum(
+        1 for row in train_rows if bool(row.get("allowed_gt_diagnostics_in_training_source"))
+    )
+    allowed_teacher_artifact_count = sum(
+        1 for row in train_rows if bool(row.get("allowed_teacher_utility_training_artifact"))
+    )
+    dynamic_gain_calibration = dict(train_rows[0]["dynamic_gain_calibration"]) if train_rows else dict(detector_policy.UNCALIBRATED_DYNAMIC_BUDGET_CALIBRATION)
+    dynamic_gain_calibration["train_jsonl_sha256"] = train_jsonl_sha256
+    model_kwargs = {
+        "input_dim": len(detector_policy.DETECTOR_AWARE_FEATURE_NAMES),
+        "hidden_dim": int(hidden_dim),
+        "num_layers": int(num_layers),
+        "budget_buckets": buckets,
+        "dropout": float(dropout),
+    }
+    model = detector_policy.DetectorAwareSequentialAcquisitionPolicy(**model_kwargs).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=float(lr), weight_decay=float(weight_decay))
+    history: list[dict[str, Any]] = []
+    for epoch in range(1, max(1, int(epochs)) + 1):
+        random.shuffle(train_rows)
+        history.append(
+            {
+                "epoch": int(epoch),
+                "train": _run_epoch(
+                    model=model,
+                    rows=train_rows,
+                    batch_size=int(batch_size),
+                    device=device,
+                    dynamic_budget_buckets=buckets,
+                    optimizer=optimizer,
+                    budget_ce_loss_weight=float(budget_ce_loss_weight),
+                ),
+            }
+        )
+    checkpoint_payload = {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "decision": READY,
+        "policy_family": "detector_aware_offline_selector",
+        "stage_label": detector_policy.STAGE_LABEL,
+        "policy_source": detector_policy.DETECTOR_AWARE_CHECKPOINT_POLICY_SOURCE,
+        "train_jsonl": str(train_jsonl),
+        "train_jsonl_sha256": train_jsonl_sha256,
+        "policy_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "model_kwargs": model_kwargs,
+        "dynamic_budget_buckets": buckets,
+        **utility_contract,
+        "signed_utility_supported": True,
+        "requires_signed_frame_utility": True,
+        "dynamic_gain_calibration": dynamic_gain_calibration,
+        "loss_terms": dict(detector_policy.DEFAULT_DETECTOR_AWARE_LOSS_TERMS),
+        "teacher_target_scope": "train_only",
+        "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
+        "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
+        "allow_teacher_utility_training_artifact": bool(allow_teacher_utility_training_artifact),
+        "allowed_teacher_utility_training_artifact_row_count": int(allowed_teacher_artifact_count),
+        "require_point_responsibility_utility": bool(require_point_responsibility_utility),
+        "paper_main_target_allowed": bool(require_point_responsibility_utility),
+        "uses_uniform_scaffold": False,
+        "uses_uniform_fill": False,
+        "end_to_end": False,
+        "git_sha": _git_sha(),
+        "history": history,
+    }
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(checkpoint_payload, checkpoint)
+    summary = {
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "decision": READY,
+        "policy_family": "detector_aware_offline_selector",
+        "stage_label": detector_policy.STAGE_LABEL,
+        "train_jsonl": str(train_jsonl),
+        "out_dir": str(out_path),
+        "checkpoint_path": str(checkpoint),
+        "checkpoint_sha256": _sha256_file(checkpoint),
+        "train_jsonl_sha256": train_jsonl_sha256,
+        "dynamic_budget_buckets": buckets,
+        **utility_contract,
+        "signed_utility_supported": True,
+        "requires_signed_frame_utility": True,
+        "dynamic_gain_calibration": dynamic_gain_calibration,
+        "teacher_target_scope": "train_only",
+        "allow_gt_diagnostics_in_training_source": bool(allow_gt_diagnostics_in_training_source),
+        "allowed_gt_diagnostics_row_count": int(allowed_gt_diagnostics_count),
+        "allow_teacher_utility_training_artifact": bool(allow_teacher_utility_training_artifact),
+        "allowed_teacher_utility_training_artifact_row_count": int(allowed_teacher_artifact_count),
+        "require_point_responsibility_utility": bool(require_point_responsibility_utility),
+        "paper_main_target_allowed": bool(require_point_responsibility_utility),
+        "uses_uniform_scaffold": False,
+        "uses_uniform_fill": False,
+        "end_to_end": False,
+        "final_train": history[-1]["train"] if history else {},
+        "history": history,
+    }
+    if summary_json is not None:
+        _write_json(summary_json, summary)
+    return summary
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Train a Stage-2 detector-aware offline selector from train-only teacher utility.")
+    parser.add_argument("--train-jsonl", required=True)
+    parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--checkpoint-path")
+    parser.add_argument("--summary-json")
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--dynamic-budget-buckets", type=int, nargs="+", default=list(detector_policy.DEFAULT_DETECTOR_AWARE_DYNAMIC_BUDGET_BUCKETS))
+    parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--num-layers", type=int, default=3)
+    parser.add_argument("--dropout", type=float, default=0.10)
+    parser.add_argument("--budget-ce-loss-weight", type=float, default=0.25)
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--expected-split", default="training")
+    parser.add_argument(
+        "--allow-gt-diagnostics-in-training-source",
+        action="store_true",
+        help=(
+            "Allow training split source rows to carry uses_gt_for_diagnostics=true as a "
+            "non-consumed diagnostic flag; deploy/eval sources remain strict."
+        ),
+    )
+    parser.add_argument(
+        "--allow-teacher-utility-training-artifact",
+        action="store_true",
+        help=(
+            "Allow train-only teacher utility rows to carry uses_teacher=true/training_only=true "
+            "as provenance evidence; deploy/eval sources remain strict."
+        ),
+    )
+    parser.add_argument(
+        "--require-point-responsibility-utility",
+        action="store_true",
+        help=(
+            "Fail closed unless train-only utility is signed point-responsibility "
+            "utility, not dense proposal-score surrogate. This is the Stage-2 paper-main path."
+        ),
+    )
+    args = parser.parse_args(argv)
+    summary = run_training(
+        args.train_jsonl,
+        out_dir=args.out_dir,
+        checkpoint_path=args.checkpoint_path,
+        summary_json=args.summary_json,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        dynamic_budget_buckets=args.dynamic_budget_buckets,
+        hidden_dim=args.hidden_dim,
+        num_layers=args.num_layers,
+        dropout=args.dropout,
+        budget_ce_loss_weight=args.budget_ce_loss_weight,
+        device=args.device,
+        seed=args.seed,
+        expected_split=args.expected_split,
+        allow_gt_diagnostics_in_training_source=args.allow_gt_diagnostics_in_training_source,
+        allow_teacher_utility_training_artifact=args.allow_teacher_utility_training_artifact,
+        require_point_responsibility_utility=args.require_point_responsibility_utility,
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

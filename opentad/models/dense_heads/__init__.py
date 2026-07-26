@@ -10,6 +10,7 @@ from .tem_head import TemporalEvaluationHead, GCNextTemporalEvaluationHead, Loca
 from .vsgn_rpn_head import VSGNRPNHead
 from .dyn_head import TDynHead
 from .native_irregular_area_head_p2 import NativeIrregularAreaHeadP2
+from .duca_online_precheck_head import DucaOnlinePrecheckHead
 
 __all__ = [
     "AnchorGenerator",
@@ -27,4 +28,5 @@ __all__ = [
     "VSGNRPNHead",
     "TDynHead",
     "NativeIrregularAreaHeadP2",
+    "DucaOnlinePrecheckHead",
 ]

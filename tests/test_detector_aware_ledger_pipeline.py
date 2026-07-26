@@ -1,0 +1,864 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from tools.bata import train_detector_aware_acquisition_policy as train_detector
+from tools.bata import apply_detector_aware_acquisition_policy as detector_apply
+from tools.bata import convert_detector_aware_samples_to_value_transport_ledger as detector_convert
+from tools.bata import run_detector_aware_ledger_pipeline as detector_pipeline
+from tools.bata import validate_detector_aware_policy_ledger as detector_validator
+from tools.bata import validate_c3_detector_aware_adatad_full_train as detector_full_gate
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+
+
+def _paction_provenance() -> dict:
+    return {
+        "p_action_source": "lowres_action_probe",
+        "probe_model": "mobilenetv3_64px",
+        "no_gt_generation": True,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
+    }
+
+
+def _has_key_recursive(value: object, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_has_key_recursive(item, key) for item in value.values())
+    if isinstance(value, list):
+        return any(_has_key_recursive(item, key) for item in value)
+    return False
+
+
+def _policy_unit_contract() -> dict:
+    return {
+        "acquisition_unit": "temporal_observation_center",
+        "selected_positions_coordinate_system": "local_dense_snippet_index",
+        "dense_grid_unit": "snippet_center",
+        "dense_grid_size": 4,
+        "selected_observation_budget_unit": "temporal_observation_center",
+        "claim_unit_allowed": "selected_temporal_observations_only",
+        "raw_frame_claim_allowed": False,
+    }
+
+
+def _sample(sample_id: str, p_action: list[float], utility: list[float]) -> dict:
+    return {
+        "sample_id": sample_id,
+        "split": "validation",
+        "dense_len": len(p_action),
+        "valid_len": len(p_action),
+        "frame_signals": {"p_action": p_action},
+        "paction_positive_provenance": _paction_provenance(),
+        "action_target": [1 if value >= 0.5 else 0 for value in utility],
+        "gt_boundaries": [1, 4],
+        "teacher_utility": {"signed_frame_utility": utility},
+        "teacher_utility_provenance": {"split_scope": "train_only"},
+    }
+
+
+def _deploy_policy_metadata(checkpoint: Path, sha: str) -> dict:
+    return {
+        "source": "learned_detector_aware_policy_checkpoint",
+        "checkpoint_path": str(checkpoint),
+        "checkpoint_sha256": sha,
+        "policy_checkpoint_sha256": sha,
+        "policy_family": "detector_aware_offline_selector",
+        "stage_label": "Stage-2 detector-aware offline selector",
+        "end_to_end": False,
+        "uses_uniform_fill": False,
+        "uses_uniform_scaffold": False,
+        **_policy_unit_contract(),
+        "p_action_provenance": _paction_provenance(),
+    }
+
+
+def _deploy_sample(checkpoint: Path, sha: str) -> dict:
+    return {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8]},
+        "paction_positive_provenance": _paction_provenance(),
+        "strategy_selected_positions": {"detector_aware_fixed_384": [0, 2]},
+        "detector_aware_policy": _deploy_policy_metadata(checkpoint, sha),
+    }
+
+
+def _deploy_ledger_row(checkpoint: Path, sha: str) -> dict:
+    return {
+        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+        "sample_id": "video_test_0001|0",
+        "selected_positions_unit": "local_dense_index",
+        "selected_positions": [0, 2],
+        "target_len": 2,
+        "selected_count": 2,
+        "valid_len": 4,
+        "dense_len": 4,
+        "deploy_selection_ledger": True,
+        "diagnostic_only": False,
+        "policy_source": "learned_detector_aware_policy_checkpoint",
+        "policy_checkpoint_path": str(checkpoint),
+        "policy_checkpoint_sha256": sha,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "uses_checkpoint": False,
+        "prediction_uses_gt": False,
+        "training_only": False,
+        "diagnostics": {
+            "uniform_visible_fill_count": 0,
+            "source_strategy": "detector_aware_fixed_384",
+            "policy_source": "learned_detector_aware_policy_checkpoint",
+            "policy_checkpoint_path": str(checkpoint),
+            "policy_checkpoint_sha256": sha,
+            "p_action_provenance": _paction_provenance(),
+        },
+    }
+
+
+def test_detector_aware_full_train_gate_enforces_exact_selected_count_for_short_valid_rows(tmp_path: Path) -> None:
+    ledger = tmp_path / "short_valid_ledger.jsonl"
+    row = _deploy_ledger_row(tmp_path / "policy.pth", "0" * 64)
+    row["dense_len"] = 12
+    row["valid_len"] = 6
+    row["target_len"] = 8
+    row["selected_positions"] = [0, 1, 2, 3]
+    row["selected_count"] = 4
+    row["diagnostics"]["required_selected_count"] = 6
+    row["diagnostics"]["stage_label"] = "Stage-2 detector-aware offline selector"
+    row["diagnostics"]["end_to_end"] = False
+    _write_jsonl(ledger, [row])
+
+    cfg = SimpleNamespace(detector_aware_ledger_variant="detector_aware_fixed_384")
+
+    with pytest.raises(AssertionError, match="selected count mismatch"):
+        detector_full_gate._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
+
+
+def test_detector_aware_conversion_writes_context_radius_observations_and_expanded_mask(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = _deploy_sample(checkpoint, sha)
+    sample["dense_len"] = 8
+    sample["valid_len"] = 8
+    sample["strategy_selected_positions"] = {"detector_aware_fixed_384": [1, 5]}
+    sample["detector_aware_policy"]["context_radius_range"] = [0.0, 16.0]
+    sample["detector_aware_policy"]["context_radius_unit"] = "local_dense_snippet_index"
+    sample["detector_aware_policy"]["context_radius_by_strategy"] = {
+        "detector_aware_fixed_384": [0.0, 2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0]
+    }
+    _write_jsonl(samples, [sample])
+
+    detector_convert.run_conversion(
+        samples,
+        ledger,
+        strategy="detector_aware_fixed_384",
+        target_len=2,
+        require_selected_count=2,
+        deploy_selection_ledger=True,
+    )
+    row = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()][0]
+
+    assert row["selected_positions_are_centers"] is True
+    assert row["context_radius_unit"] == "local_dense_snippet_index"
+    assert row["context_radius_range"] == [0.0, 16.0]
+    assert row["context_radius_by_position"] == [2, 3]
+    assert row["context_radius_float_by_position"] == [2.0, 3.0]
+    assert row["selected_observations"] == [
+        {"center": 1, "radius": 2, "expanded_start": 0, "expanded_end": 3},
+        {"center": 5, "radius": 3, "expanded_start": 2, "expanded_end": 7},
+    ]
+    assert row["expanded_selected_positions"] == list(range(8))
+    assert row["expanded_selected_count"] == 8
+    assert row["diagnostics"]["expanded_selected_count"] == 8
+
+
+def test_detector_aware_pipeline_generates_three_ledgers_and_utility_metrics(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    _write_jsonl(
+        source,
+        [
+            _sample("video_test_0001|0", [0.1, 0.9, 0.2, 0.8, 0.3, 0.7], [0.0, 1.0, 0.2, 0.9, 0.1, 0.8]),
+            _sample("video_test_0002|0", [0.9, 0.1, 0.8, 0.2, 0.7, 0.3], [1.0, 0.0, 0.9, 0.1, 0.8, 0.2]),
+        ],
+    )
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4]}),
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            *detector_pipeline.apply_policy.bootstrap_policy_scores(
+                p_action,
+                valid=valid,
+                dynamic_budget_buckets=[2, 4],
+            ),
+            [4.0 for _ in p_action],
+        ),
+    )
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out",
+        fixed_budgets=(2, 4),
+        dynamic_target_len=4,
+        dynamic_budget_buckets=[2, 4],
+        device="cpu",
+        allow_tiny_dynamic_diagnostic=True,
+        max_unselected_hole=6,
+        max_p95_unselected_hole=6,
+        max_uniform_similarity=1.0,
+    )
+
+    assert summary["decision"] == "C3_DETECTOR_AWARE_LEDGER_PIPELINE_READY"
+    assert summary["stage_label"] == "Stage-2 detector-aware offline selector"
+    assert summary["dynamic_budget_diagnostic_allow_constant_tiny"] is True
+    assert summary["baseline_comparison"]["matched_budget_baselines"] == ["p_action_only", "GAS-VT"]
+    assert sorted(summary["ledgers"]) == [
+        "detector_aware_dynamic",
+        "detector_aware_fixed_384",
+        "detector_aware_fixed_768",
+    ]
+    for item in summary["ledgers"].values():
+        validation = item["validation_summary"]
+        assert validation["required_policy_source"] == "learned_detector_aware_policy_checkpoint"
+        assert "detector_utility_coverage" in validation
+        assert "detector_utility_ndcg" in validation
+        assert validation["detector_utility_rows"] == 0
+        assert validation["detector_utility_metric_availability"] == "not_available_no_train_only_teacher_utility"
+        assert validation["dynamic_gain_calibration"]["score_semantics"] == "calibrated_marginal_gain"
+        assert validation["max_unselected_hole"] <= 6
+        assert validation["adatad_map"] is None
+        assert validation["map_claim_allowed"] is False
+
+
+def test_detector_aware_pipeline_uses_p95_hole_threshold_as_decoder_constraint(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source_long_hole.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    p_action_a = [0.1] * 101
+    p_action_b = [0.2] * 101
+    _write_jsonl(
+        source,
+        [
+            _sample("video_long_hole_0001|0", p_action_a, [0.0] * len(p_action_a)),
+            _sample("video_long_hole_0002|0", p_action_b, [0.0] * len(p_action_b)),
+        ],
+    )
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [4, 5]}),
+    )
+
+    def endpoint_biased_scores(_model, p_action, *, valid, target_budget=None, device, **kwargs):
+        values = [0.0] * len(p_action)
+        for idx, score in ((0, 10.0), (1, 9.0), (99, 8.0), (100, 7.0), (50, 0.1), (25, 0.09), (75, 0.08)):
+            values[idx] = score
+        budget_scores = [1.0, 0.0] if p_action[0] < 0.15 else [0.0, 1.0]
+        return values, budget_scores, [2.0 for _ in p_action]
+
+    monkeypatch.setattr(detector_pipeline.apply_policy, "checkpoint_policy_scores", endpoint_biased_scores)
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out_long_hole",
+        fixed_budgets=(4, 5),
+        dynamic_target_len=5,
+        dynamic_budget_buckets=[4, 5],
+        device="cpu",
+        max_unselected_hole=96,
+        max_p95_unselected_hole=48,
+        max_uniform_similarity=1.0,
+    )
+
+    assert summary["decoder_effective_max_unselected_hole"] == 48
+    for item in summary["ledgers"].values():
+        validation = item["validation_summary"]
+        assert validation["max_unselected_hole"] <= 96
+        assert validation["p95_unselected_hole"] <= 48
+
+
+def test_detector_aware_pipeline_defaults_to_exact_fixed_budget_for_short_valid_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "short_valid_source.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    row = _sample(
+        "video_short_valid_0001|0",
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8],
+        [0.0, 0.1, 0.2, 0.9, 1.0, 0.9, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0],
+    )
+    row["valid_len"] = 6
+    _write_jsonl(source, [row])
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4, 6]}),
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            [float(target_budget or 0) + float(idx) / 100.0 for idx, _ in enumerate(p_action)],
+            [0.0, 0.0, 1.0],
+            [16.0 for _ in p_action],
+        ),
+    )
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out_short_valid",
+        fixed_budgets=(8, 10),
+        dynamic_target_len=6,
+        dynamic_budget_buckets=[2, 4, 6],
+        device="cpu",
+        allow_tiny_dynamic_diagnostic=True,
+        max_unselected_hole=6,
+        max_p95_unselected_hole=6,
+        max_uniform_similarity=1.0,
+    )
+
+    fixed384 = summary["ledgers"]["detector_aware_fixed_384"]
+    assert fixed384["ledger_summary"]["allow_short_valid_ratio_count"] is False
+    assert fixed384["ledger_summary"]["min_selected_count"] == 6
+    assert fixed384["validation_summary"]["allow_short_valid_ratio_count"] is False
+    assert fixed384["validation_summary"]["min_selected_count"] == 6
+
+
+def test_detector_aware_pipeline_requires_opt_in_to_infer_paction_provenance_from_teacher_utility_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "source_with_teacher_utility.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    rows = [
+        _sample("video_train_0001|0", [0.1, 0.9, 0.2, 0.8, 0.3, 0.7], [0.0, 1.0, 0.2, 0.9, 0.1, 0.8]),
+        _sample("video_train_0002|0", [0.9, 0.1, 0.8, 0.2, 0.7, 0.3], [1.0, 0.0, 0.9, 0.1, 0.8, 0.2]),
+    ]
+    for row in rows:
+        row.pop("paction_positive_provenance")
+        row["schema_version"] = "c3_detector_teacher_utility_row_v1"
+        row["split"] = "training"
+        row["uses_gt_for_diagnostics"] = True
+        row["diagnostic_only"] = True
+        row["uses_teacher"] = True
+        row["training_only"] = True
+        row["matrix_model_id"] = "official_asformer_lowres"
+        row["official_action_seg_backend"] = "official_asformer"
+    _write_jsonl(source, rows)
+
+    with pytest.raises(ValueError, match="p_action positive provenance is required"):
+        detector_pipeline.run_pipeline(
+            input_jsonl=source,
+            checkpoint_path=checkpoint,
+            out_dir=tmp_path / "out_rejects_implicit_provenance",
+            fixed_budgets=(2, 4),
+            dynamic_target_len=4,
+            dynamic_budget_buckets=[2, 4],
+            device="cpu",
+            allow_tiny_dynamic_diagnostic=True,
+            max_uniform_similarity=1.0,
+        )
+
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4]}),
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            *detector_pipeline.apply_policy.bootstrap_policy_scores(
+                p_action,
+                valid=valid,
+                dynamic_budget_buckets=[2, 4],
+            ),
+            [4.0 for _ in p_action],
+        ),
+    )
+
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=source,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "out_allows_explicit_inference",
+        fixed_budgets=(2, 4),
+        dynamic_target_len=4,
+        dynamic_budget_buckets=[2, 4],
+        device="cpu",
+        allow_tiny_dynamic_diagnostic=True,
+        max_unselected_hole=6,
+        max_p95_unselected_hole=6,
+        max_uniform_similarity=1.0,
+        allow_inferred_paction_positive_provenance=True,
+    )
+
+    assert summary["decision"] == "C3_DETECTOR_AWARE_LEDGER_PIPELINE_READY"
+    report = summary["selection_source_report"]
+    assert report["allow_inferred_paction_positive_provenance"] is True
+    assert report["inferred_paction_positive_provenance_count"] == 2
+    assert report["stripped_key_counts"]["teacher_utility"] == 2
+    assert report["stripped_key_counts"]["teacher_utility_provenance"] == 2
+    assert report["stripped_key_counts"]["uses_gt_for_diagnostics"] == 2
+    assert report["stripped_key_counts"]["diagnostic_only"] == 2
+    assert report["teacher_payload_visible_to_deploy"] is False
+
+    deploy_rows = [
+        json.loads(line)
+        for line in Path(summary["selection_sample_jsonl"]).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(deploy_rows) == 2
+    for row in deploy_rows:
+        provenance = row["paction_positive_provenance"]
+        assert provenance["inferred_from_source_row"] is True
+        assert provenance["uses_teacher"] is False
+        assert provenance["training_only"] is False
+        assert provenance["official_action_seg_backend"] == "official_asformer"
+        assert "schema_version" not in row
+        assert not _has_key_recursive(row, "teacher_utility")
+        assert not _has_key_recursive(row, "teacher_utility_provenance")
+
+
+def test_detector_aware_pipeline_rejects_collapsed_dynamic_without_diagnostic_optout(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.jsonl"
+    checkpoint = tmp_path / "detector_policy.pth"
+    checkpoint.write_bytes(b"fake detector aware checkpoint")
+    _write_jsonl(
+        source,
+        [
+            _sample("video_test_0001|0", [0.1, 0.9, 0.2, 0.8, 0.3, 0.7], [0.0, 1.0, 0.2, 0.9, 0.1, 0.8]),
+            _sample("video_test_0002|0", [0.2, 0.8, 0.3, 0.7, 0.4, 0.6], [0.1, 0.9, 0.2, 0.8, 0.3, 0.7]),
+        ],
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "load_policy_checkpoint",
+        lambda *args, **kwargs: (object(), {"dynamic_budget_buckets": [2, 4]}),
+    )
+    monkeypatch.setattr(
+        detector_pipeline.apply_policy,
+        "checkpoint_policy_scores",
+        lambda _model, p_action, *, valid, target_budget=None, device, **kwargs: (
+            [float(item) for item in p_action],
+            [1.0, 0.0],
+            [4.0 for _ in p_action],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="dynamic budget ledger is degenerate"):
+        detector_pipeline.run_pipeline(
+            input_jsonl=source,
+            checkpoint_path=checkpoint,
+            out_dir=tmp_path / "out_collapsed",
+            fixed_budgets=(2, 4),
+            dynamic_target_len=4,
+            dynamic_budget_buckets=[2, 4],
+            device="cpu",
+        )
+
+
+def test_detector_aware_apply_strips_nested_forbidden_payload_from_deploy_output(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    output = tmp_path / "applied.jsonl"
+    row = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "frame_signals": {"p_action": [0.1, 0.9, 0.2, 0.8]},
+        "paction_positive_provenance": _paction_provenance(),
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "debug_payload": [
+            {"teacher_scores": [0.9, 0.1]},
+            {"nested": {"raw_predictions": [{"score": 0.8}]}},
+        ],
+    }
+    _write_jsonl(source, [row])
+
+    detector_apply.run_policy_application(
+        input_jsonl=source,
+        output_jsonl=output,
+        fixed_budgets=(2, 3),
+        dynamic_budget_buckets=[2, 3],
+        strip_deploy_invisible_payload=True,
+        strict_deploy_source=False,
+        allow_bootstrap_for_tests=True,
+    )
+
+    applied = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert not _has_key_recursive(applied[0], "teacher_utility")
+    assert not _has_key_recursive(applied[0], "teacher_scores")
+    assert not _has_key_recursive(applied[0], "raw_predictions")
+
+
+def test_detector_aware_convert_rejects_nested_forbidden_payload_in_deploy_sample(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = _deploy_sample(checkpoint, sha)
+    sample["audit"] = {"frames": [{"signed_frame_utility": [0.0, 1.0]}]}
+    sample["detector_aware_policy"]["debug"] = {"dense_teacher_logits": [[0.1, 0.9]]}
+    _write_jsonl(samples, [sample])
+
+    with pytest.raises(ValueError, match="forbidden detector-aware deploy payload key"):
+        detector_convert.run_conversion(
+            samples,
+            ledger,
+            strategy="detector_aware_fixed_384",
+            target_len=2,
+            require_selected_count=2,
+            deploy_selection_ledger=True,
+        )
+
+
+def test_detector_aware_validator_rejects_nested_forbidden_payloads_and_accepts_clean_deploy_rows(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    metrics = tmp_path / "metrics.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = _deploy_sample(checkpoint, sha)
+    sample["detector_aware_policy"]["audit"] = [{"teacher_proposals": [[0.0, 1.0]]}]
+    metric = {
+        "sample_id": "video_test_0001|0",
+        "split": "training",
+        "dense_len": 4,
+        "valid_len": 4,
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "teacher_utility_provenance": {"split_scope": "train_only"},
+        "action_target": [1, 0, 1, 0],
+        "gt_boundaries": [0, 2],
+    }
+    ledger_row = _deploy_ledger_row(checkpoint, sha)
+    ledger_row["diagnostics"]["prediction_cache"] = {"path": "hidden-cache.json"}
+    _write_jsonl(samples, [sample])
+    _write_jsonl(metrics, [metric])
+    _write_jsonl(ledger, [ledger_row])
+
+    with pytest.raises(ValueError, match="forbidden detector-aware deploy payload key"):
+        detector_validator.validate_ledger(
+            sample_jsonl=samples,
+            metric_sample_jsonl=metrics,
+            ledger_jsonl=ledger,
+            strategy="detector_aware_fixed_384",
+            expected_target_len=2,
+            require_selected_count=2,
+            require_deployable=True,
+            require_policy_source="learned_detector_aware_policy_checkpoint",
+            require_checkpoint_path=checkpoint,
+            require_checkpoint_sha256=sha,
+            require_paction_provenance=True,
+        )
+
+    sample["detector_aware_policy"].pop("audit")
+    ledger_row["diagnostics"].pop("prediction_cache")
+    _write_jsonl(samples, [sample])
+    _write_jsonl(ledger, [ledger_row])
+    summary = detector_validator.validate_ledger(
+        sample_jsonl=samples,
+        metric_sample_jsonl=metrics,
+        ledger_jsonl=ledger,
+        strategy="detector_aware_fixed_384",
+        expected_target_len=2,
+        require_selected_count=2,
+        require_deployable=True,
+        require_policy_source="learned_detector_aware_policy_checkpoint",
+        require_checkpoint_path=checkpoint,
+        require_checkpoint_sha256=sha,
+        require_paction_provenance=True,
+    )
+
+    assert summary["decision"] == "C3_DETECTOR_AWARE_POLICY_LEDGER_VALIDATION_PASS"
+
+
+def test_detector_aware_validator_rejects_teacher_payload_in_deploy_sample(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    metrics = tmp_path / "metrics.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "strategy_selected_positions": {"detector_aware_fixed_384": [0, 2]},
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "detector_aware_policy": {
+            "source": "learned_detector_aware_policy_checkpoint",
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_sha256": sha,
+            "policy_checkpoint_sha256": sha,
+            "policy_family": "detector_aware_offline_selector",
+            "uses_uniform_fill": False,
+            "uses_uniform_scaffold": False,
+            **_policy_unit_contract(),
+            "p_action_provenance": _paction_provenance(),
+        },
+    }
+    metric = {
+        "sample_id": "video_test_0001|0",
+        "split": "training",
+        "dense_len": 4,
+        "valid_len": 4,
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "teacher_utility_provenance": {"split_scope": "train_only"},
+        "action_target": [1, 0, 1, 0],
+        "gt_boundaries": [0, 2],
+    }
+    ledger_row = {
+        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+        "sample_id": "video_test_0001|0",
+        "selected_positions_unit": "local_dense_index",
+        "selected_positions": [0, 2],
+        "target_len": 2,
+        "selected_count": 2,
+        "valid_len": 4,
+        "dense_len": 4,
+        "deploy_selection_ledger": True,
+        "diagnostic_only": False,
+        "policy_source": "learned_detector_aware_policy_checkpoint",
+        "policy_checkpoint_path": str(checkpoint),
+        "policy_checkpoint_sha256": sha,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "uses_checkpoint": False,
+        "prediction_uses_gt": False,
+        "training_only": False,
+        "diagnostics": {
+            "uniform_visible_fill_count": 0,
+            "source_strategy": "detector_aware_fixed_384",
+            "policy_source": "learned_detector_aware_policy_checkpoint",
+            "policy_checkpoint_path": str(checkpoint),
+            "policy_checkpoint_sha256": sha,
+            "p_action_provenance": _paction_provenance(),
+        },
+    }
+    _write_jsonl(samples, [sample])
+    _write_jsonl(metrics, [metric])
+    _write_jsonl(ledger, [ledger_row])
+
+    with pytest.raises(ValueError, match="forbidden detector-aware deploy payload key at teacher_utility"):
+        detector_validator.validate_ledger(
+            sample_jsonl=samples,
+            metric_sample_jsonl=metrics,
+            ledger_jsonl=ledger,
+            strategy="detector_aware_fixed_384",
+            expected_target_len=2,
+            require_selected_count=2,
+            require_deployable=True,
+            require_policy_source="learned_detector_aware_policy_checkpoint",
+            require_checkpoint_path=checkpoint,
+            require_checkpoint_sha256=sha,
+            require_paction_provenance=True,
+        )
+
+    sample.pop("teacher_utility")
+    _write_jsonl(samples, [sample])
+    summary = detector_validator.validate_ledger(
+        sample_jsonl=samples,
+        metric_sample_jsonl=metrics,
+        ledger_jsonl=ledger,
+        strategy="detector_aware_fixed_384",
+        expected_target_len=2,
+        require_selected_count=2,
+        require_deployable=True,
+        require_policy_source="learned_detector_aware_policy_checkpoint",
+        require_checkpoint_path=checkpoint,
+        require_checkpoint_sha256=sha,
+        require_paction_provenance=True,
+    )
+
+    assert summary["detector_utility_coverage"] == pytest.approx(1.0)
+    assert summary["detector_utility_ndcg"] == pytest.approx(1.0)
+    assert summary["boundary_bracket_support@r1"] is not None
+
+
+def test_detector_aware_validator_ignores_validation_teacher_utility_for_decision_metrics(tmp_path: Path) -> None:
+    samples = tmp_path / "samples.jsonl"
+    metrics = tmp_path / "metrics.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    checkpoint = tmp_path / "policy.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    sha = detector_validator._sha256_file(checkpoint)
+    sample = {
+        "sample_id": "video_test_0001|0",
+        "dense_len": 4,
+        "valid_len": 4,
+        "strategy_selected_positions": {"detector_aware_fixed_384": [0, 2]},
+        "detector_aware_policy": {
+            "source": "learned_detector_aware_policy_checkpoint",
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_sha256": sha,
+            "policy_checkpoint_sha256": sha,
+            "policy_family": "detector_aware_offline_selector",
+            "stage_label": "Stage-2 detector-aware offline selector",
+            "end_to_end": False,
+            "uses_uniform_fill": False,
+            "uses_uniform_scaffold": False,
+            **_policy_unit_contract(),
+            "p_action_provenance": _paction_provenance(),
+        },
+    }
+    metric = {
+        "sample_id": "video_test_0001|0",
+        "split": "validation",
+        "dense_len": 4,
+        "valid_len": 4,
+        "teacher_utility": {"frame_utility": [1.0, 0.0, 0.8, 0.0]},
+        "teacher_utility_provenance": {"split_scope": "train_only"},
+    }
+    ledger_row = {
+        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+        "sample_id": "video_test_0001|0",
+        "selected_positions_unit": "local_dense_index",
+        "selected_positions": [0, 2],
+        "target_len": 2,
+        "selected_count": 2,
+        "valid_len": 4,
+        "dense_len": 4,
+        "deploy_selection_ledger": True,
+        "diagnostic_only": False,
+        "policy_source": "learned_detector_aware_policy_checkpoint",
+        "policy_checkpoint_path": str(checkpoint),
+        "policy_checkpoint_sha256": sha,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "uses_checkpoint": False,
+        "prediction_uses_gt": False,
+        "training_only": False,
+        "diagnostics": {
+            "uniform_visible_fill_count": 0,
+            "source_strategy": "detector_aware_fixed_384",
+            "policy_source": "learned_detector_aware_policy_checkpoint",
+            "policy_checkpoint_path": str(checkpoint),
+            "policy_checkpoint_sha256": sha,
+            "p_action_provenance": _paction_provenance(),
+        },
+    }
+    _write_jsonl(samples, [sample])
+    _write_jsonl(metrics, [metric])
+    _write_jsonl(ledger, [ledger_row])
+
+    summary = detector_validator.validate_ledger(
+        sample_jsonl=samples,
+        metric_sample_jsonl=metrics,
+        ledger_jsonl=ledger,
+        strategy="detector_aware_fixed_384",
+        expected_target_len=2,
+        require_selected_count=2,
+        require_deployable=True,
+        require_policy_source="learned_detector_aware_policy_checkpoint",
+        require_checkpoint_path=checkpoint,
+        require_checkpoint_sha256=sha,
+        require_paction_provenance=True,
+    )
+
+    assert summary["detector_utility_rows"] == 0
+    assert summary["detector_utility_coverage"] is None
+    assert summary["detector_utility_ndcg"] is None
+    assert summary["detector_utility_metric_availability"] == "not_available_no_train_only_teacher_utility"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="torch checkpoint smoke test runs in Linux/remote OpenTAD")
+def test_detector_aware_real_cpu_checkpoint_generates_deploy_ledgers_without_monkeypatch(tmp_path: Path) -> None:
+    train_jsonl = tmp_path / "train.samples_with_teacher_utility.jsonl"
+    deploy_jsonl = tmp_path / "deploy.samples.jsonl"
+    checkpoint = tmp_path / "detector_aware_policy.pth"
+    rows = [
+        {
+            "sample_id": "video_test_0001|0",
+            "split": "training",
+            "dense_len": 8,
+            "valid_len": 8,
+            "frame_signals": {"p_action": [0.1, 0.8, 0.2, 0.7, 0.3, 0.6, 0.4, 0.5]},
+            "action_target": [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+            "paction_positive_provenance": _paction_provenance(),
+            "teacher_utility": {"signed_frame_utility": [0.0, 1.0, 0.1, 0.9, 0.2, 0.8, 0.3, 0.7]},
+            "teacher_utility_provenance": {"split_scope": "train_only"},
+        },
+        {
+            "sample_id": "video_test_0002|0",
+            "split": "training",
+            "dense_len": 8,
+            "valid_len": 8,
+            "frame_signals": {"p_action": [0.8, 0.1, 0.7, 0.2, 0.6, 0.3, 0.5, 0.4]},
+            "action_target": [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+            "paction_positive_provenance": _paction_provenance(),
+            "teacher_utility": {"signed_frame_utility": [1.0, 0.0, 0.9, 0.1, 0.8, 0.2, 0.7, 0.3]},
+            "teacher_utility_provenance": {"split_scope": "train_only"},
+        },
+    ]
+    _write_jsonl(train_jsonl, rows)
+    _write_jsonl(deploy_jsonl, [{k: v for k, v in row.items() if k not in {"teacher_utility", "teacher_utility_provenance"}} for row in rows])
+
+    train_detector.run_training(
+        train_jsonl,
+        out_dir=tmp_path / "policy",
+        checkpoint_path=checkpoint,
+        epochs=1,
+        batch_size=2,
+        hidden_dim=8,
+        num_layers=1,
+        dynamic_budget_buckets=[2, 4, 6],
+        device="cpu",
+        seed=0,
+    )
+    summary = detector_pipeline.run_pipeline(
+        input_jsonl=deploy_jsonl,
+        checkpoint_path=checkpoint,
+        out_dir=tmp_path / "ledgers",
+        fixed_budgets=(2, 4),
+        dynamic_target_len=4,
+        dynamic_budget_buckets=[2, 4, 6],
+        device="cpu",
+        allow_tiny_dynamic_diagnostic=True,
+        max_uniform_similarity=1.0,
+    )
+
+    assert summary["decision"] == "C3_DETECTOR_AWARE_LEDGER_PIPELINE_READY"
+    assert summary["ledgers"]["detector_aware_fixed_384"]["validation_summary"]["required_policy_source"] == "learned_detector_aware_policy_checkpoint"

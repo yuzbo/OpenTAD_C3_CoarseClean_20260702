@@ -1,8 +1,14 @@
 import inspect
+from collections.abc import Mapping
 import torch
-from ..builder import DETECTORS, build_backbone, build_projection, build_head, build_neck
+from ..builder import DETECTORS, build_backbone, build_projection, build_head, build_neck, build_selector
 from .base import BaseDetector
 from ..utils.post_processing import batched_nms, convert_to_seconds
+from ..utils.truetime_geometry import (
+    SELECTED_AXIS,
+    TRUE_TIME_AXIS,
+    remap_selected_axis_segments_to_true_time,
+)
 
 
 @DETECTORS.register_module()
@@ -11,8 +17,11 @@ class SingleStageDetector(BaseDetector):
     Base class for single-stage detectors which should not have roi_extractors.
     """
 
-    def __init__(self, backbone=None, projection=None, neck=None, rpn_head=None):
+    def __init__(self, backbone=None, projection=None, neck=None, rpn_head=None, frame_selector=None):
         super(SingleStageDetector, self).__init__()
+
+        if frame_selector is not None:
+            self.frame_selector = build_selector(frame_selector)
 
         if backbone is not None:
             self.backbone = build_backbone(backbone)
@@ -32,6 +41,11 @@ class SingleStageDetector(BaseDetector):
         return hasattr(self, "backbone") and self.backbone is not None
 
     @property
+    def with_frame_selector(self):
+        """bool: whether the detector has a pre-backbone frame selector"""
+        return hasattr(self, "frame_selector") and self.frame_selector is not None
+
+    @property
     def with_projection(self):
         """bool: whether the detector has projection"""
         return hasattr(self, "projection") and self.projection is not None
@@ -46,8 +60,33 @@ class SingleStageDetector(BaseDetector):
         """bool: whether the detector has localization head"""
         return hasattr(self, "rpn_head") and self.rpn_head is not None
 
+    def after_optimizer_step(self):
+        if self.with_frame_selector:
+            hook = getattr(self.frame_selector, "after_optimizer_step", None)
+            if callable(hook):
+                return hook()
+        return None
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
+        selector_loss_keys = set()
+        if self.with_frame_selector:
+            selector_outputs = self.frame_selector.forward_train(
+                inputs=inputs,
+                masks=masks,
+                metas=metas,
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+                **kwargs,
+            )
+            inputs = selector_outputs["inputs"]
+            masks = selector_outputs["masks"]
+            metas = selector_outputs.get("metas", metas)
+            gt_segments = selector_outputs["gt_segments"]
+            gt_labels = selector_outputs["gt_labels"]
+            self._merge_selector_losses(losses, selector_outputs.get("losses", {}))
+            selector_loss_keys = set(losses)
+
         if self.with_backbone:
             x = self.backbone(inputs, masks)
         else:
@@ -68,13 +107,30 @@ class SingleStageDetector(BaseDetector):
                 gt_labels=gt_labels,
                 **kwargs,
             )
-            losses.update(rpn_losses)
+            self._merge_detector_losses(
+                losses,
+                rpn_losses,
+                source_name="rpn_head",
+                protected_keys=selector_loss_keys,
+            )
 
         # only key has loss will be record
         losses["cost"] = sum(_value for _key, _value in losses.items())
         return losses
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
+        if self.with_frame_selector:
+            selector_outputs = self.frame_selector.forward_test(
+                inputs=inputs,
+                masks=masks,
+                metas=metas,
+                **kwargs,
+            )
+            inputs = selector_outputs["inputs"]
+            masks = selector_outputs["masks"]
+            metas = selector_outputs.get("metas", metas)
+            self._require_selector_remap_metadata(metas)
+
         if self.with_backbone:
             x = self.backbone(inputs, masks)
         else:
@@ -91,6 +147,7 @@ class SingleStageDetector(BaseDetector):
         else:
             rpn_proposals = rpn_scores = None
 
+        self._last_forward_test_metas = metas
         predictions = rpn_proposals, rpn_scores
         return predictions
 
@@ -106,12 +163,13 @@ class SingleStageDetector(BaseDetector):
 
         results = {}
         for i in range(len(metas)):  # processing each video
+            meta = metas[i]
             segments = rpn_proposals[i].detach().cpu()  # [N,2]
             scores = rpn_scores[i].detach().cpu()  # [N,class]
 
             if num_classes == 1:
                 scores = scores.squeeze(-1)
-                labels = torch.zeros(scores.shape[0]).contiguous()
+                labels = torch.zeros(scores.shape[0], dtype=torch.long).contiguous()
             else:
                 pred_prob = scores.flatten()  # [N*class]
 
@@ -135,14 +193,16 @@ class SingleStageDetector(BaseDetector):
                 scores = pred_prob
                 labels = cls_idxs
 
+            segments, meta = self._remap_selector_segments_for_post_processing(segments, meta)
+
             # if not sliding window, do nms
             if post_cfg.sliding_window == False and post_cfg.nms is not None:
                 segments, scores, labels = batched_nms(segments, scores, labels, **post_cfg.nms)
 
-            video_id = metas[i]["video_name"]
+            video_id = meta["video_name"]
 
             # convert segments to seconds
-            segments = convert_to_seconds(segments, metas[i])
+            segments = convert_to_seconds(segments, meta)
 
             # merge with external classifier
             if isinstance(ext_cls, list):  # own classification results
@@ -200,6 +260,78 @@ class SingleStageDetector(BaseDetector):
         if self._callable_accepts_metas(self.rpn_head.forward_test):
             call_kwargs["metas"] = metas
         return self.rpn_head.forward_test(feat_list, mask_list, **call_kwargs)
+
+    @staticmethod
+    def _validate_selector_losses(selector_losses):
+        for key, value in selector_losses.items():
+            if key in {"cost", "total_loss", "detector_utility_distribution_loss"}:
+                raise ValueError(f"frame_selector aggregate or alias loss is forbidden: {key}")
+            if not str(key).endswith("_loss"):
+                raise ValueError(f"frame_selector loss key must name a leaf loss: {key}")
+            if not torch.is_tensor(value):
+                raise ValueError(f"frame_selector loss value for {key} must be a tensor")
+            if value.ndim != 0:
+                raise ValueError(f"frame_selector loss value for {key} must be scalar")
+            if torch.is_complex(value) or not bool(torch.isfinite(value).all().item()):
+                raise ValueError(f"frame_selector loss value for {key} must be finite and real-valued")
+
+    @staticmethod
+    def _merge_selector_losses(losses, selector_losses):
+        SingleStageDetector._validate_selector_losses(selector_losses)
+        for key, value in selector_losses.items():
+            prefixed_key = key if str(key).startswith("selector_") else f"selector_{key}"
+            if prefixed_key in losses:
+                raise ValueError(f"frame_selector loss key collision: {prefixed_key}")
+            losses[prefixed_key] = value
+
+    @staticmethod
+    def _merge_detector_losses(losses, detector_losses, *, source_name, protected_keys):
+        for key, value in detector_losses.items():
+            if key in protected_keys:
+                raise ValueError(f"{source_name} loss key collision with frame_selector: {key}")
+            losses[key] = value
+
+    @staticmethod
+    def _require_selector_remap_metadata(metas):
+        if metas is None:
+            return
+        holders = [metas] if isinstance(metas, Mapping) else metas
+        if not isinstance(holders, (list, tuple)):
+            raise ValueError("metas must be a mapping/list/tuple or None")
+        for idx, meta in enumerate(holders):
+            if not isinstance(meta, Mapping):
+                raise ValueError(f"metas[{idx}] must be a mapping")
+            if meta.get("detector_prediction_inverse_map_required") is not True:
+                continue
+            if "selected_axis_to_true_time_dense_index" not in meta:
+                raise RuntimeError(
+                    "frame_selector forward_test requires prediction inverse-map metadata, "
+                    "but selected_axis_to_true_time_dense_index is missing"
+                )
+            if "detector_output_coordinate_space" not in meta:
+                raise RuntimeError(
+                    "frame_selector forward_test requires detector_output_coordinate_space metadata for remap"
+                )
+
+    @staticmethod
+    def _remap_selector_segments_for_post_processing(segments, meta):
+        if not isinstance(meta, Mapping):
+            raise ValueError("meta must be a mapping")
+        if meta.get("detector_prediction_inverse_map_required") is not True:
+            return segments, meta
+        coordinate_space = meta.get("detector_output_coordinate_space")
+        if coordinate_space == TRUE_TIME_AXIS:
+            return segments, meta
+        if coordinate_space != SELECTED_AXIS:
+            raise RuntimeError(
+                "frame_selector post-processing expected detector_output_coordinate_space "
+                f"{SELECTED_AXIS!r} or {TRUE_TIME_AXIS!r}, got {coordinate_space!r}"
+            )
+        remapped = remap_selected_axis_segments_to_true_time(segments, meta)
+        remapped_meta = dict(meta)
+        remapped_meta["detector_output_coordinate_space"] = TRUE_TIME_AXIS
+        remapped_meta["irregular_native_axis"] = True
+        return remapped, remapped_meta
 
     @staticmethod
     def _callable_accepts_metas(fn):

@@ -44,6 +44,18 @@ class AnchorFreeHead(nn.Module):
         self.physical_grid_required = bool(self.physical_grid_cfg.get("required", self.physical_grid_enabled))
         self.physical_grid_strict = bool(self.physical_grid_cfg.get("strict", True))
         self.physical_grid_eps = float(self.physical_grid_cfg.get("eps", 1.0e-6))
+        self.physical_grid_contract = self.physical_grid_cfg.get("contract")
+        self.protected_physical_grid = (
+            self.physical_grid_contract == "duca_protected_e2e_physical_v1"
+        )
+        if self.protected_physical_grid and not (
+            self.physical_grid_enabled
+            and self.physical_grid_required
+            and self.physical_grid_strict
+        ):
+            raise ValueError(
+                "protected DUCA physical-grid contract requires enabled/required/strict"
+            )
         self._physical_grid_debug = {}
 
         self.loss_weight = loss_weight
@@ -78,6 +90,29 @@ class AnchorFreeHead(nn.Module):
             raise ValueError("physical-grid ActionFormer requires dense-axis GT; selected-axis GT remap is forbidden.")
 
     def _physical_selected_count_from_meta(self, meta, positions):
+        if self.protected_physical_grid:
+            count_values = []
+            for key in ("selected_valid_len", "irregular_selected_count"):
+                if key not in meta:
+                    raise ValueError(
+                        f"protected DUCA physical grid requires {key}"
+                    )
+                value = meta[key]
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ValueError(
+                        f"protected DUCA physical grid requires integer {key}"
+                    )
+                count_values.append((key, value))
+            if count_values[0][1] != count_values[1][1]:
+                raise ValueError(
+                    "protected DUCA physical-grid selected-count fields disagree"
+                )
+            if count_values[0][1] != int(positions.numel()):
+                raise ValueError(
+                    "protected DUCA physical-grid selected count must exactly "
+                    "match positions length"
+                )
+            return count_values[0][1]
         count_sources = []
         for key in ("selected_valid_len", "irregular_selected_count"):
             if key in meta and meta[key] is not None:
@@ -110,7 +145,34 @@ class AnchorFreeHead(nn.Module):
                 raise ValueError("physical-grid ActionFormer requires irregular_selected_positions or selected_dense_indices.")
             return None, None
 
-        positions = torch.as_tensor(positions, device=device, dtype=dtype).reshape(-1)
+        if self.protected_physical_grid:
+            self._validate_protected_physical_meta(meta)
+            irregular = torch.as_tensor(
+                meta["irregular_selected_positions"],
+                device=device,
+            ).reshape(-1)
+            selected_dense = torch.as_tensor(
+                meta["selected_dense_indices"],
+                device=device,
+            ).reshape(-1)
+            integer_dtypes = {
+                torch.uint8,
+                torch.int8,
+                torch.int16,
+                torch.int32,
+                torch.int64,
+            }
+            if irregular.dtype not in integer_dtypes or selected_dense.dtype not in integer_dtypes:
+                raise ValueError(
+                    "protected DUCA physical positions must be integer tensors/lists"
+                )
+            if not torch.equal(irregular, selected_dense):
+                raise ValueError(
+                    "protected DUCA irregular and dense selected positions disagree"
+                )
+            positions = irregular
+        else:
+            positions = torch.as_tensor(positions, device=device).reshape(-1)
         selected_count = self._physical_selected_count_from_meta(meta, positions)
         positions = positions[:selected_count]
         if positions.numel() == 0:
@@ -119,10 +181,65 @@ class AnchorFreeHead(nn.Module):
             return None, None
 
         dense_valid_len = meta.get("irregular_dense_valid_len", meta.get("irregular_selected_valid_len", None))
+        if self.protected_physical_grid:
+            if (
+                isinstance(dense_valid_len, bool)
+                or not isinstance(dense_valid_len, int)
+                or dense_valid_len <= 0
+            ):
+                raise ValueError(
+                    "protected DUCA requires a positive integer irregular_dense_valid_len"
+                )
+            if bool(torch.any(positions < 0).item()) or bool(
+                torch.any(positions >= dense_valid_len).item()
+            ):
+                raise ValueError(
+                    "protected DUCA selected positions lie outside dense valid length"
+                )
+            if positions.numel() > 1 and not bool(
+                torch.all(positions[1:] > positions[:-1]).item()
+            ):
+                raise ValueError(
+                    "protected DUCA selected positions must be unique and increasing"
+                )
+            return positions.to(dtype=dtype), float(dense_valid_len)
         if dense_valid_len is None:
             dense_valid_len = float(positions[-1].item()) + 1.0
         dense_valid_len = max(float(dense_valid_len), float(positions[-1].item()) + 1.0)
-        return positions, dense_valid_len
+        return positions.to(dtype=dtype), dense_valid_len
+
+    def _validate_protected_physical_meta(self, meta):
+        required_equal = {
+            "duca_contract": self.physical_grid_contract,
+            "physical_grid_contract": self.physical_grid_contract,
+            "irregular_native_axis": True,
+            "remap_gt_to_selected_axis": False,
+            "gt_remapped_to_selected_axis": False,
+            "pc_ot_mras_prebackbone_remap_gt_to_selected_axis": False,
+            "selected_axis_remap_required": False,
+            "detector_prediction_inverse_map_required": False,
+            "detector_output_coordinate_space": "dense_physical",
+            "proposal_axis": "dense_physical",
+            "duca_backbone_tail_padding_mode": "replicate_last_selected",
+        }
+        missing = [key for key in required_equal if key not in meta]
+        if missing:
+            raise ValueError(
+                f"protected DUCA physical metadata is missing {missing}"
+            )
+        mismatched = {
+            key: (meta[key], expected)
+            for key, expected in required_equal.items()
+            if meta[key] != expected
+        }
+        if mismatched:
+            raise ValueError(
+                f"protected DUCA physical metadata contract mismatch: {mismatched}"
+            )
+        if "irregular_selected_positions" not in meta or "selected_dense_indices" not in meta:
+            raise ValueError(
+                "protected DUCA requires both selected-position metadata fields"
+            )
 
     def _selected_axis_to_physical_axis(self, coords, positions, dense_valid_len):
         xp = torch.arange(positions.numel(), dtype=coords.dtype, device=coords.device)
@@ -171,6 +288,15 @@ class AnchorFreeHead(nn.Module):
                 return points, mask_list
 
             selected_count = int(positions.numel())
+            if self.protected_physical_grid:
+                first_level_count = int(
+                    mask_list[0][batch_idx].to(dtype=torch.bool).sum().item()
+                )
+                if first_level_count != selected_count:
+                    raise ValueError(
+                        "protected DUCA first detector mask count does not match "
+                        "selected-position metadata"
+                    )
             debug_selected_count += selected_count
             debug_dense_valid_len = max(debug_dense_valid_len, float(dense_valid_len))
             meta["irregular_native_axis"] = True
@@ -370,11 +496,16 @@ class AnchorFreeHead(nn.Module):
 
         # maintain an EMA of foreground to stabilize the loss normalizer
         # useful for small mini-batch training
-        if self.training:
+        frozen_normalizer = getattr(self, "_duca_frozen_loss_normalizer", None)
+        if frozen_normalizer is not None:
+            loss_normalizer = frozen_normalizer.detach().clone()
+        elif self.training:
             self.loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + (
                 1 - self.loss_normalizer_momentum
             ) * max(num_pos, 1)
-            loss_normalizer = self.loss_normalizer
+            # The counterfactual teacher restores module buffers before the main
+            # backward. Keep the graph independent of that mutable state.
+            loss_normalizer = self.loss_normalizer.detach().clone()
         else:
             loss_normalizer = max(num_pos, 1)
 
@@ -408,6 +539,17 @@ class AnchorFreeHead(nn.Module):
             loss_weight = cls_loss.detach() / max(reg_loss.item(), 0.01)
 
         return {"cls_loss": cls_loss, "reg_loss": reg_loss * loss_weight}
+
+    def duca_set_frozen_loss_normalizer(self, value):
+        """Use a read-only training normalizer for counterfactual objectives."""
+        if value is None:
+            if hasattr(self, "_duca_frozen_loss_normalizer"):
+                del self._duca_frozen_loss_normalizer
+            return
+        value = torch.as_tensor(value, device=self.loss_normalizer.device, dtype=self.loss_normalizer.dtype)
+        if value.numel() != 1 or not torch.isfinite(value) or value.item() <= 0:
+            raise ValueError("frozen loss normalizer must be one finite positive scalar")
+        self._duca_frozen_loss_normalizer = value.detach().clone()
 
     @torch.no_grad()
     def prepare_targets(self, points, gt_segments, gt_labels):

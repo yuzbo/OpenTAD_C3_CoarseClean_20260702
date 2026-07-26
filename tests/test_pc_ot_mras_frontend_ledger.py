@@ -275,6 +275,7 @@ def test_pc_ot_mras_hard_positions_convert_to_diagnostic_value_transport_ledger(
     assert row["selected_positions"] == [0, 2, 5]
     assert row["target_len"] == 3
     assert row["selected_count"] == 3
+    assert row["policy_source"] == "pc_ot_mras_frontend_hard_positions"
     assert row["diagnostic_only"] is True
     assert row["deploy_selection_ledger"] is False
 
@@ -670,6 +671,7 @@ def test_value_transport_loader_rejects_short_ledger_when_exact_count_required(t
                 "dense_len": 4,
                 "deploy_selection_ledger": False,
                 "diagnostic_only": True,
+                "policy_source": "pc_ot_mras_frontend_hard_positions",
             },
             sort_keys=True,
         )
@@ -702,6 +704,115 @@ def test_value_transport_loader_rejects_short_ledger_when_exact_count_required(t
         )
 
 
+def test_value_transport_loader_rejects_expanded_positions_over_target_len(tmp_path):
+    LoadFrames = _load_loadframes_class()
+    ledger_path = tmp_path / "value_transport_ledger.jsonl"
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [1, 3, 5],
+                "selected_count": 3,
+                "target_len": 3,
+                "valid_len": 6,
+                "dense_len": 6,
+                "selected_positions_are_centers": True,
+                "expanded_selected_positions": [0, 1, 2, 3],
+                "expanded_selected_count": 4,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "policy_source": "pc_ot_mras_frontend_hard_positions",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loader = LoadFrames(
+        num_clips=1,
+        scale_factor=1,
+        method="bata_value_transport_ledger_subsample",
+        method_base="sliding_window",
+        target_len=3,
+        bata_value_transport_ledger_path=str(ledger_path),
+        bata_value_transport_require_deployable=True,
+        bata_value_transport_require_selected_count=3,
+        bata_value_transport_use_expanded_positions=True,
+    )
+
+    with pytest.raises(ValueError, match="target_len=3 allows only 3 frame indices"):
+        loader(
+            {
+                "video_name": "video_test_0001",
+                "window_start_frame": 0,
+                "window_size": 6,
+                "feature_start_idx": 0,
+                "feature_end_idx": 5,
+                "total_frames": 24,
+                "avg_fps": 30,
+                "snippet_stride": 1,
+            }
+        )
+
+
+def test_value_transport_loader_uses_expanded_positions_for_required_count(tmp_path):
+    LoadFrames = _load_loadframes_class()
+    ledger_path = tmp_path / "value_transport_ledger.jsonl"
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [1, 3],
+                "selected_count": 2,
+                "target_len": 3,
+                "valid_len": 6,
+                "dense_len": 6,
+                "selected_positions_are_centers": True,
+                "expanded_selected_positions": [0, 1, 2],
+                "expanded_selected_count": 3,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "policy_source": "pc_ot_mras_frontend_hard_positions",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loader = LoadFrames(
+        num_clips=1,
+        scale_factor=1,
+        method="bata_value_transport_ledger_subsample",
+        method_base="sliding_window",
+        target_len=3,
+        bata_value_transport_ledger_path=str(ledger_path),
+        bata_value_transport_require_deployable=True,
+        bata_value_transport_require_selected_count=3,
+        bata_value_transport_use_expanded_positions=True,
+    )
+
+    results = loader(
+        {
+            "video_name": "video_test_0001",
+            "window_start_frame": 0,
+            "window_size": 6,
+            "feature_start_idx": 0,
+            "feature_end_idx": 5,
+            "total_frames": 24,
+            "avg_fps": 30,
+            "snippet_stride": 1,
+        }
+    )
+
+    np.testing.assert_array_equal(results["bata_selected_dense_indices"], np.asarray([0, 1, 2], dtype=np.int64))
+    assert results["bata_value_transport_selection_row"]["selected_count"] == 2
+    assert results["bata_value_transport_selection_row"]["expanded_selected_count"] == 3
+
+
 def test_value_transport_loader_accepts_short_tail_ratio_count_when_enabled(tmp_path):
     LoadFrames = _load_loadframes_class()
     ledger_path = tmp_path / "value_transport_ledger.jsonl"
@@ -718,6 +829,7 @@ def test_value_transport_loader_accepts_short_tail_ratio_count_when_enabled(tmp_
                 "dense_len": 6,
                 "deploy_selection_ledger": True,
                 "diagnostic_only": False,
+                "policy_source": "pc_ot_mras_frontend_hard_positions",
             },
             sort_keys=True,
         )
@@ -793,6 +905,57 @@ def test_value_transport_loader_rejects_paction_policy_contract_mismatch(tmp_pat
         bata_value_transport_ledger_path=str(ledger_path),
         bata_value_transport_require_deployable=True,
         bata_value_transport_source="learned_paction_gap_loss_policy_checkpoint",
+        bata_value_transport_config_hash="a" * 64,
+    )
+
+    with pytest.raises(ValueError, match="policy_source"):
+        loader(
+            {
+                "video_name": "video_test_0001",
+                "window_start_frame": 0,
+                "window_size": 4,
+                "feature_start_idx": 0,
+                "feature_end_idx": 3,
+                "total_frames": 16,
+                "avg_fps": 30,
+                "snippet_stride": 1,
+            }
+        )
+
+
+def test_value_transport_loader_rejects_missing_policy_source_for_gas_vt(tmp_path):
+    LoadFrames = _load_loadframes_class()
+    ledger_path = tmp_path / "value_transport_ledger.jsonl"
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
+                "sample_id": "video_test_0001|0",
+                "selected_positions_unit": "local_dense_index",
+                "selected_positions": [0, 2],
+                "selected_count": 2,
+                "target_len": 3,
+                "valid_len": 4,
+                "dense_len": 4,
+                "deploy_selection_ledger": True,
+                "diagnostic_only": False,
+                "policy_checkpoint_sha256": "a" * 64,
+                "diagnostics": {"policy_checkpoint_sha256": "a" * 64},
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loader = LoadFrames(
+        num_clips=1,
+        scale_factor=1,
+        method="bata_value_transport_ledger_subsample",
+        method_base="sliding_window",
+        target_len=3,
+        bata_value_transport_ledger_path=str(ledger_path),
+        bata_value_transport_require_deployable=True,
+        bata_value_transport_source="learned_paction_gas_vt_policy_checkpoint",
         bata_value_transport_config_hash="a" * 64,
     )
 

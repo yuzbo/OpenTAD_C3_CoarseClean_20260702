@@ -26,6 +26,12 @@ class BaseDetector(torch.nn.Module):
             return self.forward_detection(inputs, masks, metas, infer_cfg, post_cfg, **kwargs)
 
     def forward_detection(self, inputs, masks, metas, infer_cfg, post_cfg, **kwargs):
+        if self._uses_duca_live_frame_selector_path():
+            if getattr(infer_cfg, "load_from_raw_predictions", False) or getattr(infer_cfg, "save_raw_prediction", False):
+                raise ValueError(
+                    "DUCA online frame_selector forbids raw-prediction load/save because cached predictions bypass "
+                    "the live acquisition adapter and selected-axis metadata"
+                )
         if getattr(self, "token_compressor", None) is not None:
             if getattr(infer_cfg, "load_from_raw_predictions", False) or getattr(infer_cfg, "save_raw_prediction", False):
                 raise ValueError(
@@ -44,6 +50,7 @@ class BaseDetector(torch.nn.Module):
             predictions = load_predictions(metas, infer_cfg)
         else:
             predictions = self.forward_test(inputs, masks, metas, infer_cfg)
+            metas = getattr(self, "_last_forward_test_metas", metas)
 
             if infer_cfg.save_raw_prediction:  # save the predictions to disk
                 save_predictions(predictions, metas, infer_cfg.folder)
@@ -59,3 +66,11 @@ class BaseDetector(torch.nn.Module):
         if neck is None:
             return False
         return neck.__class__.__name__ == "PCOTMRASDetectorBridge"
+
+    def _uses_duca_live_frame_selector_path(self):
+        selector = getattr(self, "frame_selector", None)
+        if selector is None:
+            return False
+        if getattr(selector, "forbid_raw_prediction_cache", False):
+            return True
+        return selector.__class__.__name__ in {"DucaOnlineFrameSelector", "DucaOnlineSparseDetectorWrapper"}

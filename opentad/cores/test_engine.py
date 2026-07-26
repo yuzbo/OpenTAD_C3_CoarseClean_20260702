@@ -1,5 +1,7 @@
 import os
 import copy
+import hashlib
+import inspect
 import json
 import tqdm
 import torch
@@ -29,19 +31,24 @@ def eval_one_epoch(
         current_dict = copy.deepcopy(model.state_dict())
         model.load_state_dict(model_ema.module.state_dict())
 
-    cfg.inference["folder"] = os.path.join(cfg.work_dir, "outputs")
-    if cfg.inference.save_raw_prediction:
-        create_folder(cfg.inference["folder"])
+    inference_cfg = copy.deepcopy(cfg.inference)
+    post_processing_cfg = copy.deepcopy(cfg.post_processing)
+    inference_cfg["folder"] = os.path.join(cfg.work_dir, "outputs")
+    if inference_cfg.save_raw_prediction:
+        create_folder(inference_cfg["folder"])
 
     # external classifier
-    if "external_cls" in cfg.post_processing:
-        if cfg.post_processing.external_cls != None:
-            external_cls = build_classifier(cfg.post_processing.external_cls)
-    else:
-        external_cls = test_loader.dataset.class_map
+    external_cls = test_loader.dataset.class_map
+    if (
+        "external_cls" in post_processing_cfg
+        and post_processing_cfg.external_cls is not None
+    ):
+        external_cls = build_classifier(post_processing_cfg.external_cls)
 
     # whether the testing dataset is sliding window
-    cfg.post_processing.sliding_window = isinstance(test_loader.dataset, SlidingWindowDataset)
+    post_processing_cfg.sliding_window = isinstance(
+        test_loader.dataset, SlidingWindowDataset
+    )
 
     # model forward
     model.eval()
@@ -52,8 +59,8 @@ def eval_one_epoch(
                 results = model(
                     **data_dict,
                     return_loss=False,
-                    infer_cfg=cfg.inference,
-                    post_cfg=cfg.post_processing,
+                    infer_cfg=inference_cfg,
+                    post_cfg=post_processing_cfg,
                     ext_cls=external_cls,
                 )
 
@@ -64,7 +71,7 @@ def eval_one_epoch(
             else:
                 result_dict[k] = v
 
-    result_dict = gather_ddp_results(world_size, result_dict, cfg.post_processing)
+    result_dict = gather_ddp_results(world_size, result_dict, post_processing_cfg)
 
     # load back the normal model dict
     if model_ema != None:
@@ -72,11 +79,14 @@ def eval_one_epoch(
 
     if rank == 0:
         result_eval = dict(results=result_dict)
-        if cfg.post_processing.save_dict:
+        result_path = None
+        if post_processing_cfg.save_dict:
             result_path = os.path.join(cfg.work_dir, "result_detection.json")
-            with open(result_path, "w") as out:
+            with open(result_path, "w", encoding="utf-8") as out:
                 json.dump(result_eval, out)
 
+        metrics_dict = None
+        evaluator_identity = None
         if not not_eval:
             # build evaluator
             evaluator = build_evaluator(dict(prediction_filename=result_eval, **cfg.evaluation))
@@ -84,6 +94,35 @@ def eval_one_epoch(
             logger.info("Evaluation starts...")
             metrics_dict = evaluator.evaluate()
             evaluator.logging(logger)
+            source_path = inspect.getsourcefile(evaluator.__class__)
+            evaluator_identity = {
+                "module": evaluator.__class__.__module__,
+                "class_name": evaluator.__class__.__qualname__,
+                "source_path": None
+                if source_path is None
+                else os.path.abspath(source_path),
+                "source_sha256": None
+                if source_path is None
+                else _sha256_file(source_path),
+            }
+        return {
+            "metrics": metrics_dict,
+            "result_path": None
+            if result_path is None
+            else os.path.abspath(result_path),
+            "result_count": int(sum(len(items) for items in result_dict.values())),
+            "video_count": int(len(result_dict)),
+            "evaluator": evaluator_identity,
+        }
+    return None
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def gather_ddp_results(world_size, result_dict, post_cfg):
