@@ -23,6 +23,11 @@ STAGE2_CONFIG="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint1
 
 export DUCA_RATE25_CURRICULUM_RUN_ROOT="${RUN_ROOT}"
 export DUCA_STAGE2_UPDATE_AUDIT_JSON="${RUN_ROOT}/stage2/update_audit.json"
+STAGE1_WORK="${RUN_ROOT}/stage1/work"
+STAGE2_WORK="${RUN_ROOT}/stage2/work"
+export DUCA_STAGE1_CHECKPOINT="${STAGE1_WORK}/gpu1_id0/checkpoint/epoch_29.pth"
+export DUCA_STAGE1_CHECKPOINT_SHA256="PENDING_STRICT_STAGE1_ARTIFACT"
+export DUCA_STAGE1_CHECKPOINT_EPOCH=29
 mkdir -p "${RUN_ROOT}"
 
 "${PYTHON}" - <<'PY'
@@ -113,8 +118,6 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-STAGE1_WORK="${RUN_ROOT}/stage1/work"
-STAGE2_WORK="${RUN_ROOT}/stage2/work"
 mkdir -p "${RUN_ROOT}/stage1/quality" "${RUN_ROOT}/stage2"
 
 "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \

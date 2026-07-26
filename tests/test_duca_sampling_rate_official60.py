@@ -333,5 +333,13 @@ def test_rate25_curriculum_runner_is_fail_closed_and_distribution_complete() -> 
     assert "detector_gradient.end" in runner
     assert "Stage-2 intermediate mAP selected a checkpoint" in runner
     assert "epoch_59.pth" in runner
+    config_precheck = runner.index('"${PYTHON}" - <<\'PY\'')
+    assert runner.index('export DUCA_STAGE1_CHECKPOINT="${STAGE1_WORK}') < config_precheck
+    assert runner.index(
+        'export DUCA_STAGE1_CHECKPOINT_SHA256="PENDING_STRICT_STAGE1_ARTIFACT"'
+    ) < config_precheck
+    assert runner.index(
+        'export DUCA_STAGE1_CHECKPOINT_SHA256="$(sha256sum'
+    ) > config_precheck
     assert "terminal_evaluation.json" in runner
     assert "for epoch_one in $(seq 5 5 60); do" in runner
