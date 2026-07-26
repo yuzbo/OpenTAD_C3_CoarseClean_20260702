@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 from pathlib import Path
 
@@ -244,3 +245,93 @@ def test_rate_curriculum_keeps_uniform_warmup_and_tad_led_joint_phase(monkeypatc
     assert float(schedule.actionness.end) == 0.25
     assert float(schedule.transition.end) == 0.10
     assert float(schedule.transition_boundary.end) == 0.25
+
+
+def _normalized_rate_curriculum_config(cfg) -> dict:
+    payload = copy.deepcopy(canonical_jsonable(cfg.to_dict()))
+    payload["window_size"] = 384
+    payload["chunk_num"] = 24
+    payload["work_dir"] = "NORMALIZED"
+    payload["workflow"]["training_profile"] = "NORMALIZED"
+
+    sampling_contract = payload["duca_sampling_rate_contract"]
+    sampling_contract["route"] = "NORMALIZED"
+    sampling_contract["stage"] = sampling_contract["stage"].replace("k192", "k384")
+    sampling_contract["exact_budget"] = 384
+    if "stage1_initialization" in sampling_contract:
+        sampling_contract["stage1_initialization"] = "full_uniform_k384_ema_model"
+
+    transition_contract = payload["duca_transition_only_contract"]
+    transition_contract["route"] = "NORMALIZED"
+    transition_contract["exact_budget"] = 384
+
+    model = payload["model"]
+    model["frame_selector"]["budget"] = 384
+    model["backbone"]["backbone"]["total_frames"] = 384
+    pre = model["backbone"]["custom"]["pre_processing_pipeline"]
+    post = model["backbone"]["custom"]["post_processing_pipeline"]
+    pre[0]["t1"] = 24
+    post[1]["t1"] = 24
+    post[2]["size"] = 384
+    model["projection"]["max_seq_len"] = 384
+    return payload
+
+
+def test_rate25_curriculum_changes_only_sampling_budget_and_required_shapes(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DUCA_CELLCF_TRAINING_PROFILE", "official60")
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT", "stage1.pth")
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_SHA256", "a" * 64)
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_EPOCH", "29")
+
+    pairs = [
+        (
+            "duca_sampling_rate_curriculum_stage1_uniform384.py",
+            "duca_sampling_rate_curriculum_stage1_uniform192.py",
+        ),
+        (
+            "duca_sampling_rate_curriculum_stage2_joint384.py",
+            "duca_sampling_rate_curriculum_stage2_joint192.py",
+        ),
+    ]
+    for anchor_name, candidate_name in pairs:
+        anchor = Config.fromfile(str(CONFIG_ROOT / anchor_name))
+        candidate = Config.fromfile(str(CONFIG_ROOT / candidate_name))
+        assert int(candidate.model.frame_selector.dense_window_size) == 768
+        assert int(candidate.model.frame_selector.budget) == 192
+        assert int(candidate.model.backbone.backbone.total_frames) == 192
+        assert int(candidate.model.projection.max_seq_len) == 192
+        assert _normalized_rate_curriculum_config(candidate) == (
+            _normalized_rate_curriculum_config(anchor)
+        )
+
+    stage2 = Config.fromfile(
+        str(CONFIG_ROOT / "duca_sampling_rate_curriculum_stage2_joint192.py")
+    )
+    selector = stage2.model.frame_selector
+    schedule = selector.loss_weight_schedule
+    assert selector.sampling_rate_utility_components == "both"
+    assert selector.detector_contribution_components == "both"
+    assert float(selector.detector_contribution_distillation_weight) == 1.0
+    assert selector.detector_gradient_mode == "density_transport_st"
+    assert float(schedule.detector_gradient.end) == 0.25
+    assert float(schedule.detector_contribution.end) == 1.0
+    assert float(schedule.asformer_adapt.end) == 1.0
+    assert stage2.workflow.intermediate_validation_role == "learning_curve_only"
+    assert stage2.workflow.intermediate_validation_selects_checkpoint is False
+
+
+def test_rate25_curriculum_runner_is_fail_closed_and_distribution_complete() -> None:
+    runner = (
+        ROOT / "scripts" / "run_duca_sampling_rate_curriculum_k192_gpu1.sh"
+    ).read_text(encoding="utf-8")
+    assert "single_changed_model_variable" in runner
+    assert '"candidate_value": 192' in runner
+    assert "sampling_rate_utility_components" in runner
+    assert "detector_contribution_components" in runner
+    assert "detector_gradient.end" in runner
+    assert "Stage-2 intermediate mAP selected a checkpoint" in runner
+    assert "epoch_59.pth" in runner
+    assert "terminal_evaluation.json" in runner
+    assert "for epoch_one in $(seq 5 5 60); do" in runner
