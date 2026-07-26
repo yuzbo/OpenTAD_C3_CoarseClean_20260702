@@ -241,6 +241,67 @@ def _validate_prefix_target_indices(
     return prefix_count, target_index
 
 
+def _capture_selected_detector_contribution(selector: Any) -> tuple[list[dict[str, Any]], Any]:
+    """Record the train-only contribution teacher without changing its math."""
+
+    import torch
+
+    audit: list[dict[str, Any]] = []
+    original = selector._selected_detector_contribution
+
+    def traced(selected_inputs: torch.Tensor, objective: torch.Tensor) -> torch.Tensor:
+        record: dict[str, Any] = {
+            "call_index": len(audit),
+            "objective": _finite_tensor_summary(objective),
+            "selected_inputs": _finite_tensor_summary(selected_inputs),
+        }
+        if objective.ndim != 0 or not objective.requires_grad:
+            record["error"] = "objective_not_differentiable_scalar"
+            audit.append(record)
+            raise ValueError("detector contribution objective must be a differentiable scalar")
+        if not selected_inputs.requires_grad:
+            record["error"] = "selected_inputs_disconnected"
+            audit.append(record)
+            raise RuntimeError(
+                "detector contribution distillation requires the real selected detector input "
+                "to retain its autograd path"
+            )
+        gradient = torch.autograd.grad(
+            objective,
+            selected_inputs,
+            retain_graph=True,
+            create_graph=False,
+            allow_unused=True,
+        )[0]
+        if gradient is None:
+            record["error"] = "gradient_disconnected"
+            audit.append(record)
+            raise RuntimeError("detector objective is disconnected from selected detector inputs")
+        record["gradient"] = _finite_tensor_summary(gradient)
+        temporal_dim = 2 if selected_inputs.ndim in {3, 5} else 3 if selected_inputs.ndim == 6 else None
+        if temporal_dim is None:
+            record["error"] = "unsupported_selected_input_shape"
+            audit.append(record)
+            raise ValueError(
+                f"unsupported selected detector input shape: {tuple(selected_inputs.shape)}"
+            )
+        reduce_dims = tuple(
+            index for index in range(selected_inputs.ndim)
+            if index not in {0, temporal_dim}
+        )
+        contribution = (selected_inputs.detach() * gradient.detach()).abs().mean(dim=reduce_dims)
+        record["contribution"] = _finite_tensor_summary(contribution)
+        audit.append(record)
+        return contribution
+
+    selector._selected_detector_contribution = traced
+
+    def restore() -> None:
+        selector._selected_detector_contribution = original
+
+    return audit, restore
+
+
 def _replay_one_trial(
     *,
     model: Any,
@@ -479,6 +540,7 @@ def _replay_prefix_trial(
         result["prefix_updates"].append(update)
 
     target_gpu = _move_to_device(target_batch, device)
+    contribution_audit, restore_contribution = _capture_selected_detector_contribution(selector)
     critical_health, hooks = _critical_forward_health(model)
     try:
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
@@ -495,10 +557,12 @@ def _replay_prefix_trial(
         return result
     finally:
         _remove_hooks(hooks)
+        restore_contribution()
     if not isinstance(target_losses, Mapping):
         result["outcome"] = f"batch_{target_batch_index}_non_mapping_loss"
         return result
     result["target_batch_critical_forward_health"] = critical_health
+    result["target_batch_selected_contribution_audit"] = contribution_audit
     result["target_batch_losses"] = _loss_health(target_losses)
     result["outcome"] = (
         f"batch_{target_batch_index}_finite"
