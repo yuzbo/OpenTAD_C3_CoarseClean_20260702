@@ -153,6 +153,7 @@ def test_rime_total60_configs_activate_dedicated_6000_update_contract(
     monkeypatch.setenv("DUCA_RIME_BUDGET_PROTOCOL_JSON", str(protocol))
     monkeypatch.setenv("DUCA_RIME_BUDGET_PROTOCOL_SHA256", _sha(protocol))
     for relative in (
+        "configs/adatad/thumos/duca_rime_uniform_mixed_k_total60.py",
         "configs/adatad/thumos/duca_rime_uniform_fixed384_total60.py",
         "configs/adatad/thumos/duca_rime_full_total60.py",
         "configs/adatad/thumos/duca_rime_full_tridet_total60.py",
@@ -161,6 +162,98 @@ def test_rime_total60_configs_activate_dedicated_6000_update_contract(
         contract = duca_rime_training.formal_training_contract(cfg)
         assert contract["expected_successful_optimizer_updates"] == 6000
         assert contract["rime_arm"] == cfg.duca_rime_variant.arm
+
+
+def test_phase2_mixed_k_runtime_is_phase1_bound_and_target_free(
+    tmp_path,
+    monkeypatch,
+):
+    for key in (
+        "DUCA_RIME_PHASE2_RECEIPT",
+        "DUCA_RIME_PHASE2_RECEIPT_SHA256",
+        "DUCA_RIME_TARGETS_JSONL",
+        "DUCA_RIME_TARGETS_SHA256",
+        "DUCA_RIME_BUDGET_PROTOCOL_JSON",
+        "DUCA_RIME_BUDGET_PROTOCOL_SHA256",
+        "DUCA_RIME_REPLAY_JSONL",
+        "DUCA_RIME_REPLAY_SHA256",
+        "DUCA_RIME_PHASE4_AUTHORIZATION",
+        "DUCA_RIME_PHASE4_AUTHORIZATION_SHA256",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    phase1 = _json(
+        tmp_path / "phase1.json",
+        {
+            "schema_version": "duca_rime_stage_receipt_v1",
+            "phase": "phase1",
+            "gate_pass": True,
+            "git_commit": COMMIT,
+            "split_assignment_sha256": "b" * 64,
+            "official_final_subset_consumed": False,
+        },
+    )
+    exposure = _json(
+        tmp_path / "phase2_exposure.json",
+        {
+            "schema_version": "duca_rime_phase2_mixed_k_training_exposure_v1",
+            "git_commit": COMMIT,
+            "seed": 3407,
+            "detector_backend": "ActionFormer",
+            "target_mean_cost": 384.0,
+            "successful_detector_updates": 6000,
+            "split_assignment_sha256": "b" * 64,
+            "official_final_subset_consumed": False,
+        },
+    )
+    pretrain = _write(tmp_path / "pretrain.pth", "pretrain")
+    annotation = _write(tmp_path / "annotation.json", "{}")
+    class_map = _write(tmp_path / "classes.txt", "action\n")
+    config = _write(tmp_path / "config.py", "# config\n")
+    evaluation = {
+        "type": "mAP",
+        "ground_truth_filename": str(annotation),
+        "subset": "training",
+        "tiou_thresholds": [0.3, 0.4, 0.5, 0.6, 0.7],
+        "top_k": None,
+        "blocked_videos": None,
+        "thread": 16,
+    }
+    values = {
+        "DUCA_RIME_PHASE1_RECEIPT": str(phase1),
+        "DUCA_RIME_PHASE1_RECEIPT_SHA256": _sha(phase1),
+        "DUCA_RIME_TRAINING_EXPOSURE_JSON": str(exposure),
+        "DUCA_RIME_TRAINING_EXPOSURE_SHA256": _sha(exposure),
+        "DUCA_RIME_PRETRAIN_SHA256": _sha(pretrain),
+        "DUCA_RIME_EVALUATION_ANNOTATION_SHA256": _sha(annotation),
+        "DUCA_RIME_EVALUATION_CLASS_MAP_SHA256": _sha(class_map),
+        "DUCA_RESOLVED_CONFIG_SHA256": "c" * 64,
+        "DUCA_RIME_EVALUATION_CONFIG_SHA256": evaluation_config_sha256(
+            evaluation,
+            expected_subset="training",
+        ),
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    bindings = duca_rime_training.build_runtime_bindings(
+        git_commit=COMMIT,
+        variant="U-mixed-K",
+        seed=3407,
+        slurm_job_id="123",
+        source_config_path=config,
+        source_config_sha256=_sha(config),
+        resolved_config_sha256="c" * 64,
+        runtime_config_sha256="d" * 64,
+        evaluation_annotation_path=annotation,
+        evaluation_class_map_path=class_map,
+        evaluation_config=evaluation,
+        runtime_pretrain_path=pretrain,
+    )
+    assert bindings["research_phase"] == 2
+    assert bindings["phase1_receipt_sha256"] == _sha(phase1)
+    assert bindings["phase2_receipt_path"] is None
+    assert bindings["targets_path"] is None
+    assert bindings["budget_protocol_path"] is None
+    assert bindings["formal_budget_panel"] == 384.0
 
 
 def test_phase4_authorization_covers_only_registered_seed_backend_and_budget(

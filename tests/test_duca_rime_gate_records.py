@@ -71,6 +71,18 @@ def test_build_phase0_and_o1_records_from_hash_bound_metrics(tmp_path):
         tmp_path / "k4.json",
         values={key: value + 0.1 for key, value in videos.items()},
     )
+    mixed_k_receipt = _json(
+        tmp_path / "mixed_k_training_receipt.json",
+        {
+            "schema_version": "duca_rime_phase2_mixed_k_training_receipt_v1",
+            "status": "passed",
+            "arm": "U-mixed-K",
+            "detector_training_exposure": "mixed_k_registered_panel",
+            "checkpoint_sha256": "b" * 64,
+            "successful_detector_updates": 6000,
+            "uses_official_final": False,
+        },
+    )
     o1_manifest = _json(
         tmp_path / "o1_manifest.json",
         {
@@ -79,6 +91,10 @@ def test_build_phase0_and_o1_records_from_hash_bound_metrics(tmp_path):
             "position_policy": "exact_uniform",
             "detector_training_exposure": "mixed_k_registered_panel",
             "mixed_k_detector_identity_sha256": "b" * 64,
+            "mixed_k_training_receipt": {
+                "path": str(mixed_k_receipt),
+                "sha256": _sha(mixed_k_receipt),
+            },
             "budget_evaluations": [
                 {
                     "budget": 2,

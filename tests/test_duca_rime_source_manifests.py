@@ -76,6 +76,21 @@ def _ledger(tmp_path, *, family, budget):
     )
 
 
+def _mixed_k_receipt(tmp_path, *, checkpoint_sha256):
+    return _json(
+        tmp_path / "mixed_k_training_receipt.json",
+        {
+            "schema_version": "duca_rime_phase2_mixed_k_training_receipt_v1",
+            "status": "passed",
+            "arm": "U-mixed-K",
+            "detector_training_exposure": "mixed_k_registered_panel",
+            "checkpoint_sha256": checkpoint_sha256,
+            "successful_detector_updates": 6000,
+            "uses_official_final": False,
+        },
+    )
+
+
 def test_phase0_manifest_reopens_metrics_and_terminal_checkpoint(tmp_path):
     checkpoint = "1" * 64
     first = _metrics(
@@ -105,6 +120,7 @@ def test_phase0_manifest_reopens_metrics_and_terminal_checkpoint(tmp_path):
 
 def test_o1_manifest_binds_all_budgets_to_one_checkpoint(tmp_path):
     checkpoint = "2" * 64
+    receipt = _mixed_k_receipt(tmp_path, checkpoint_sha256=checkpoint)
     low = _metrics(
         tmp_path,
         name="low",
@@ -126,6 +142,8 @@ def test_o1_manifest_binds_all_budgets_to_one_checkpoint(tmp_path):
         ],
         mixed_k_detector_identity_sha256=checkpoint,
         detector_training_exposure="mixed_k_registered_panel",
+        training_receipt=receipt,
+        training_receipt_sha256=_sha(receipt),
         output=tmp_path / "o1_manifest.json",
     )
     assert [
@@ -145,6 +163,8 @@ def test_o1_manifest_binds_all_budgets_to_one_checkpoint(tmp_path):
             ],
             mixed_k_detector_identity_sha256=checkpoint,
             detector_training_exposure="mixed_k_registered_panel",
+            training_receipt=receipt,
+            training_receipt_sha256=_sha(receipt),
             output=tmp_path / "tampered_o1.json",
         )
 

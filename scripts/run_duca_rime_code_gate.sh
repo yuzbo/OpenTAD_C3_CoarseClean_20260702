@@ -90,7 +90,9 @@ bash -n \
   scripts/run_duca_rime_phase4_seal_matrix.sh \
   scripts/run_duca_rime_phase0_measurements.sh \
   scripts/run_duca_rime_phase2_record_build.sh \
-  scripts/run_duca_rime_phase2_baseline_eval.sh
+  scripts/run_duca_rime_phase2_baseline_eval.sh \
+  scripts/run_duca_rime_phase2_mixed_k_train.sh \
+  scripts/run_duca_rime_phase2_mixed_k_eval.sh
 
 "${PYTHON}" -m pytest \
   tests/test_duca_rime.py \
@@ -120,6 +122,7 @@ from mmengine.config import Config
 
 configs = (
     "configs/adatad/thumos/duca_rime_uniform_fixed384_total60.py",
+    "configs/adatad/thumos/duca_rime_uniform_mixed_k_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_phase2_baseline.py",
     "configs/adatad/thumos/duca_rime_fixed_bound_total60.py",
     "configs/adatad/thumos/duca_rime_dynamic_no_risk_total60.py",

@@ -6,6 +6,7 @@ import torch
 from opentad.models.duca.rime import (
     RimeBudgetController,
     RimeCostLedger,
+    build_cost_matched_mixed_k_cycle,
     calibrate_rime_price,
     decode_rime_exact_k,
 )
@@ -13,6 +14,9 @@ from opentad.models.duca.structured_selection import (
     physical_exact_k_forward_backward,
     physical_exact_k_select,
     physical_exact_k_viterbi,
+)
+from opentad.models.selectors.duca_rime_frame_selector import (
+    DucaRimeFrameSelector,
 )
 
 
@@ -240,3 +244,79 @@ def test_tail_window_quantizes_effective_k_without_padding_or_duplicates():
     assert output.ledger.effective_k == (192,)
     assert output.ledger.backbone_input_k == (192,)
     assert output.ledger.padded_k == (192,)
+
+
+def test_cost_matched_mixed_k_cycle_is_exact_and_deterministic():
+    budgets = (192, 256, 384, 512)
+    counts = (8, 12, 16, 24)
+    first = build_cost_matched_mixed_k_cycle(
+        budgets,
+        counts,
+        target_mean_cost=384.0,
+        schedule_seed=3407,
+    )
+    second = build_cost_matched_mixed_k_cycle(
+        budgets,
+        counts,
+        target_mean_cost=384.0,
+        schedule_seed=3407,
+    )
+    assert first == second
+    assert len(first) == 60
+    assert tuple(first.count(value) for value in budgets) == counts
+    assert sum(first) / len(first) == 384.0
+
+    with pytest.raises(ValueError, match="mean cost"):
+        build_cost_matched_mixed_k_cycle(
+            budgets,
+            (15, 15, 15, 15),
+            target_mean_cost=384.0,
+            schedule_seed=3407,
+        )
+
+
+def test_uniform_mixed_k_selector_uses_exact_successful_update_schedule():
+    selector = DucaRimeFrameSelector(
+        in_channels=3,
+        rime_arm="uniform_mixed_k",
+        candidate_budgets=(192, 256, 384, 512),
+        fixed_budget=256,
+        dense_window_size=768,
+        target_mean_cost=384.0,
+        execution_quantum=16,
+        require_frozen_protocol=False,
+        mixed_k_schedule_counts=(8, 12, 16, 24),
+        mixed_k_schedule_seed=3407,
+        detector_bridge_gradient_scale=0.0,
+        actionness_source_cfg=None,
+    )
+    scores = torch.zeros((1, 768))
+    valid = torch.ones((1, 768), dtype=torch.bool)
+    requested = []
+    selector.train()
+    for _ in range(6000):
+        value = selector._fixed_requested_k(
+            scores,
+            valid,
+            [{}],
+            training=True,
+        )
+        requested.append(int(value.item()))
+        assert selector.after_optimizer_step()["updated"] is True
+    assert tuple(
+        requested.count(value) for value in selector.candidate_budgets
+    ) == (
+        800,
+        1200,
+        1600,
+        2400,
+    )
+    assert sum(requested) / len(requested) == 384.0
+    assert int(selector._loss_weight_schedule_step.item()) == 6000
+    assert selector.raw_actionness_source is None
+    assert selector._fixed_requested_k(
+        scores,
+        valid,
+        [{}],
+        training=False,
+    ).tolist() == [256]

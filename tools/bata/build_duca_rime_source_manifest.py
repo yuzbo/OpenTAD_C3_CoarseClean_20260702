@@ -136,11 +136,47 @@ def build_o1_manifest(
     mixed_k_detector_identity_sha256: str,
     detector_training_exposure: str,
     output: str | Path,
+    training_receipt: str | Path | None = None,
+    training_receipt_sha256: str | None = None,
 ) -> dict[str, Any]:
     if len(str(mixed_k_detector_identity_sha256)) != 64:
         raise ValueError("O1 requires an exact mixed-K detector checkpoint identity")
     if detector_training_exposure not in O1_DETECTOR_TRAINING_EXPOSURES:
         raise ValueError("O1 detector training exposure is not registered")
+    receipt_binding = None
+    if detector_training_exposure == "mixed_k_registered_panel":
+        if training_receipt is None or not training_receipt_sha256:
+            raise ValueError(
+                "formal O1 requires the mixed-K training receipt and SHA-256"
+            )
+        receipt_path = Path(training_receipt).expanduser().resolve()
+        if (
+            not receipt_path.is_file()
+            or _sha256_file(receipt_path) != str(training_receipt_sha256)
+        ):
+            raise ValueError("mixed-K training receipt binding drifted")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if (
+            receipt.get("schema_version")
+            != "duca_rime_phase2_mixed_k_training_receipt_v1"
+            or receipt.get("status") != "passed"
+            or receipt.get("arm") != "U-mixed-K"
+            or receipt.get("detector_training_exposure")
+            != "mixed_k_registered_panel"
+            or receipt.get("checkpoint_sha256")
+            != str(mixed_k_detector_identity_sha256)
+            or int(receipt.get("successful_detector_updates", -1)) != 6000
+            or receipt.get("uses_official_final") is not False
+        ):
+            raise ValueError("invalid mixed-K training receipt for formal O1")
+        receipt_binding = {
+            "path": str(receipt_path),
+            "sha256": _sha256_file(receipt_path),
+        }
+    elif training_receipt is not None or training_receipt_sha256 is not None:
+        raise ValueError(
+            "fixed-K diagnostic O1 must not attach a mixed-K training receipt"
+        )
     entries = []
     seen_budgets = set()
     common_split = None
@@ -187,6 +223,7 @@ def build_o1_manifest(
             "mixed_k_detector_identity_sha256": str(
                 mixed_k_detector_identity_sha256
             ),
+            "mixed_k_training_receipt": receipt_binding,
             "split_assignment_sha256": common_split,
             "split_role": common_role,
             "budget_evaluations": entries,
@@ -291,6 +328,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=sorted(O1_DETECTOR_TRAINING_EXPOSURES),
         required=True,
     )
+    o1.add_argument("--training-receipt")
+    o1.add_argument("--training-receipt-sha256")
     o1.add_argument("--output", required=True)
 
     o2 = subparsers.add_parser("o2")
@@ -320,6 +359,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.mixed_k_detector_identity_sha256
             ),
             detector_training_exposure=args.detector_training_exposure,
+            training_receipt=args.training_receipt,
+            training_receipt_sha256=args.training_receipt_sha256,
             output=args.output,
         )
     else:

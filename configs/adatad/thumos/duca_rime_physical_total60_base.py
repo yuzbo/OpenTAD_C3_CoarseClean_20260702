@@ -176,6 +176,7 @@ dataset = dict(
 
 evaluation = dict(
     subset="training",
+    blocked_videos=development_block_list,
 )
 
 model = dict(

@@ -26,7 +26,10 @@ dataset = dict(
     ),
 )
 
-evaluation = dict(subset="training")
+evaluation = dict(
+    subset="training",
+    blocked_videos=evaluation_block_list,
+)
 
 model = dict(
     frame_selector=dict(

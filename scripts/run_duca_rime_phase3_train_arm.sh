@@ -176,7 +176,8 @@ export DUCA_RIME_EVALUATION_CLASS_MAP_SHA256="$(
 export LOCAL_RANK=0
 export RANK=0
 export WORLD_SIZE=1
-torchrun --standalone --nproc_per_node=1 tools/train.py \
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
+  --rdzv-id="${SLURM_JOB_ID}" --nproc_per_node=1 tools/train.py \
   "${DUCA_RIME_PHASE3_CONFIG}" \
   --seed "${DUCA_RIME_PHASE3_SEED:-3407}" \
   --id 0 \

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import math
 from typing import Mapping, Sequence
 
@@ -18,6 +19,60 @@ from .structured_selection import (
 
 RIME_DECODER_FAMILIES = ("independent", "strict_nested", "weak_overlap")
 RIME_CONTRACT = "duca_rime_physical_dynamic_k_v1"
+
+
+def build_cost_matched_mixed_k_cycle(
+    candidate_budgets: Sequence[int],
+    schedule_counts: Sequence[int],
+    *,
+    candidate_costs: Sequence[float] | None = None,
+    target_mean_cost: float,
+    schedule_seed: int,
+) -> tuple[int, ...]:
+    """Build an immutable, deterministically permuted successful-update K cycle."""
+
+    budgets = tuple(int(value) for value in candidate_budgets)
+    counts = tuple(int(value) for value in schedule_counts)
+    costs = (
+        tuple(float(value) for value in candidate_costs)
+        if candidate_costs is not None
+        else tuple(float(value) for value in budgets)
+    )
+    if (
+        len(budgets) < 2
+        or tuple(sorted(set(budgets))) != budgets
+        or len(counts) != len(budgets)
+        or len(costs) != len(budgets)
+        or any(value <= 0 for value in budgets)
+        or any(value <= 0 for value in counts)
+        or any(not math.isfinite(value) or value <= 0.0 for value in costs)
+    ):
+        raise ValueError("mixed-K budgets, costs, and positive schedule counts must align")
+    cycle_len = sum(counts)
+    target = float(target_mean_cost)
+    realized = sum(count * cost for count, cost in zip(counts, costs)) / cycle_len
+    if not math.isfinite(target) or not math.isclose(
+        realized,
+        target,
+        rel_tol=0.0,
+        abs_tol=1.0e-9,
+    ):
+        raise ValueError("mixed-K schedule mean cost does not match its frozen target")
+    tokens = [
+        (
+            hashlib.sha256(
+                f"{int(schedule_seed)}|{budget}|{occurrence}".encode("utf-8")
+            ).digest(),
+            budget,
+        )
+        for budget, count in zip(budgets, counts)
+        for occurrence in range(count)
+    ]
+    tokens.sort(key=lambda item: item[0])
+    cycle = tuple(int(budget) for _digest, budget in tokens)
+    if any(cycle.count(budget) != count for budget, count in zip(budgets, counts)):
+        raise RuntimeError("mixed-K cycle construction changed its registered histogram")
+    return cycle
 
 
 @dataclass(frozen=True)
@@ -990,6 +1045,7 @@ __all__ = [
     "RimeCostLedger",
     "RimeDecodeOutput",
     "calibrate_rime_price",
+    "build_cost_matched_mixed_k_cycle",
     "choose_rime_budget",
     "decode_rime_exact_k",
     "decode_rime_panel",

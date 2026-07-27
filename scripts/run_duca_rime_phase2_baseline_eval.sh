@@ -99,7 +99,8 @@ mkdir -p \
   "${DUCA_RIME_PHASE2_BASELINE_ROOT}" \
   "${DUCA_RIME_PHASE2_BASELINE_ROOT}/ledger"
 export DUCA_RIME_INFERENCE_LEDGER_ROOT="${DUCA_RIME_PHASE2_BASELINE_ROOT}/ledger"
-torchrun --standalone --nproc_per_node=1 tools/test.py \
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
+  --rdzv-id="${SLURM_JOB_ID}" --nproc_per_node=1 tools/test.py \
   "${DUCA_RIME_PHASE2_BASELINE_CONFIG}" \
   --checkpoint "${DUCA_RIME_PHASE2_BASELINE_CHECKPOINT}" \
   --seed "${DUCA_RIME_EVAL_SEED}" \

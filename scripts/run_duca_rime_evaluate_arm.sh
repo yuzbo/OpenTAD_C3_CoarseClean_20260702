@@ -57,6 +57,10 @@ check_sha256 \
   "${DUCA_RIME_CHECKPOINT}" \
   "${DUCA_RIME_CHECKPOINT_SHA256}" \
   "terminal compact checkpoint"
+check_sha256 \
+  "${DUCA_RIME_SPLIT_MANIFEST}" \
+  "${DUCA_RIME_SPLIT_MANIFEST_SHA256}" \
+  "RIME split manifest"
 
 if [[ "${DUCA_RIME_EVAL_PHASE}" == 4 ]]; then
   for name in \
@@ -70,6 +74,25 @@ if [[ "${DUCA_RIME_EVAL_PHASE}" == 4 ]]; then
     "${DUCA_RIME_PHASE4_AUTHORIZATION_SHA256}" \
     "Phase-4 authorization"
 fi
+
+readarray -t split_values < <(
+  python - "${DUCA_RIME_SPLIT_MANIFEST}" <<'PY'
+import json
+import sys
+
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+for role in ("detector_selector_train", "certification_development"):
+    if role not in manifest["train_roles"]:
+        raise SystemExit(f"RIME split manifest lacks {role}")
+    print(manifest["train_roles"][role]["block_list_path"])
+    print(manifest["train_roles"][role]["block_list_sha256"])
+PY
+)
+[[ "${#split_values[@]}" == 4 ]] || fail "failed to resolve RIME split roles"
+check_sha256 "${split_values[0]}" "${split_values[1]}" "detector-train block list"
+check_sha256 "${split_values[2]}" "${split_values[3]}" "development block list"
+export DUCA_RIME_TRAIN_BLOCK_LIST="${split_values[0]}"
+export DUCA_RIME_DEVELOPMENT_BLOCK_LIST="${split_values[2]}"
 
 readarray -t config_values < <(python - \
   "${DUCA_RIME_EVAL_CONFIG}" \
@@ -107,7 +130,8 @@ export DUCA_RIME_INFERENCE_LEDGER_ROOT="${DUCA_RIME_EVAL_ROOT}/ledger"
 export LOCAL_RANK=0
 export RANK=0
 export WORLD_SIZE=1
-torchrun --standalone --nproc_per_node=1 tools/test.py \
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
+  --rdzv-id="${SLURM_JOB_ID}" --nproc_per_node=1 tools/test.py \
   "${DUCA_RIME_EVAL_CONFIG}" \
   --checkpoint "${DUCA_RIME_CHECKPOINT}" \
   --seed "${DUCA_RIME_EVAL_SEED}" \

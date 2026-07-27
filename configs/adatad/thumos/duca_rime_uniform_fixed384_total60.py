@@ -30,7 +30,10 @@ dataset = dict(
     ),
 )
 
-evaluation = dict(subset="training")
+evaluation = dict(
+    subset="training",
+    blocked_videos=development_block_list,
+)
 
 # Keep the detector/projection capacity identical to the dynamic RIME arms.
 # The RGB backbone still executes exactly K=384 frames; only the detector tail

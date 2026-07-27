@@ -153,6 +153,24 @@ def o1_records(
             "invalid formal O1 source manifest; a registered mixed-K-trained "
             "detector is required"
         )
+    receipt_binding = manifest.get("mixed_k_training_receipt")
+    if not isinstance(receipt_binding, Mapping):
+        raise ValueError("formal O1 manifest lacks its mixed-K training receipt")
+    receipt_path, receipt = _load_json(receipt_binding.get("path", ""))
+    if (
+        _sha256_file(receipt_path) != receipt_binding.get("sha256")
+        or receipt.get("schema_version")
+        != "duca_rime_phase2_mixed_k_training_receipt_v1"
+        or receipt.get("status") != "passed"
+        or receipt.get("arm") != "U-mixed-K"
+        or receipt.get("detector_training_exposure")
+        != "mixed_k_registered_panel"
+        or receipt.get("checkpoint_sha256")
+        != manifest["mixed_k_detector_identity_sha256"]
+        or int(receipt.get("successful_detector_updates", -1)) != 6000
+        or receipt.get("uses_official_final") is not False
+    ):
+        raise ValueError("formal O1 mixed-K training receipt drifted")
     panel = {}
     common_videos = None
     split_hash = None
@@ -220,6 +238,10 @@ def o1_records(
         "split_assignment_sha256": split_hash,
         "split_role": split_role,
         "budgets": budgets,
+        "mixed_k_training_receipt": {
+            "path": str(receipt_path),
+            "sha256": _sha256_file(receipt_path),
+        },
         "output": artifact,
         "official_final_subset_consumed": False,
     }

@@ -56,10 +56,19 @@ def create_training_exposure(
     from mmengine.config import Config
     from opentad.datasets import build_dataloader, build_dataset
 
-    if int(research_phase) not in {3, 4}:
-        raise ValueError("RIME training exposure phase must be 3 or 4")
+    if int(research_phase) not in {2, 3, 4}:
+        raise ValueError("RIME training exposure phase must be 2, 3, or 4")
     if detector_backend not in {"ActionFormer", "TriDet"}:
         raise ValueError("unsupported RIME detector backend")
+    if int(research_phase) == 2 and (
+        int(seed) != 3407
+        or detector_backend != "ActionFormer"
+        or float(target_mean_cost) != 384.0
+    ):
+        raise ValueError(
+            "Phase-2 mixed-K exposure is frozen to seed 3407/"
+            "ActionFormer/mean K=384"
+        )
     if int(research_phase) == 3 and (
         int(seed) != 3407
         or detector_backend != "ActionFormer"
@@ -100,9 +109,13 @@ def create_training_exposure(
 
     payload = {
         "schema_version": (
-            "duca_rime_phase3_training_exposure_v1"
-            if int(research_phase) == 3
-            else "duca_rime_phase4_training_exposure_v1"
+            "duca_rime_phase2_mixed_k_training_exposure_v1"
+            if int(research_phase) == 2
+            else (
+                "duca_rime_phase3_training_exposure_v1"
+                if int(research_phase) == 3
+                else "duca_rime_phase4_training_exposure_v1"
+            )
         ),
         "research_phase": int(research_phase),
         "git_commit": commit,
@@ -140,7 +153,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--split-manifest", required=True)
     parser.add_argument("--split-manifest-sha256", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--research-phase", type=int, choices=(3, 4), required=True)
+    parser.add_argument(
+        "--research-phase",
+        type=int,
+        choices=(2, 3, 4),
+        required=True,
+    )
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument(
         "--detector-backend",

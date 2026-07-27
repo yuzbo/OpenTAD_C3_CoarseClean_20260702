@@ -56,7 +56,8 @@ def test_phase3_training_launcher_enforces_exact_git_and_6000_updates():
     assert "!= 6000" in text
     assert "successful_optimizer_updates" in text
     assert "U-same-K is evaluation-only" in text
-    assert "torchrun --standalone --nproc_per_node=1" in text
+    assert "--rdzv-backend=c10d --rdzv-endpoint=localhost:0" in text
+    assert '--rdzv-id="${SLURM_JOB_ID}"' in text
 
 
 def test_phase4_training_launcher_is_authorization_and_cell_bound():
@@ -84,6 +85,9 @@ def test_rime_evaluation_launcher_separates_development_and_official_final():
     assert "finalize_duca_rime_inference_ledger.py" in text
     assert "--expected-checkpoint-epoch 59" in text
     assert "--checkpoint-state-key state_dict_ema" in text
+    assert "detector_selector_train" in text
+    assert "certification_development" in text
+    assert "DUCA_RIME_SPLIT_MANIFEST_SHA256" in text
 
 
 def test_rime_cost_launcher_profiles_paired_full_stack_on_one_slurm_allocation():
@@ -141,3 +145,64 @@ def test_phase2_baseline_launcher_is_train_role_and_checkpoint_bound():
     assert "duca_rime_uniform_phase2_baseline" not in text
     assert "--phase 2" in text
     assert "--split-role" in text
+    assert "--rdzv-endpoint=localhost:0" in text
+
+
+def test_phase2_mixed_k_training_is_phase1_bound_and_target_free():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase2_mixed_k_train.sh"
+    ).read_text(encoding="utf-8")
+    assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert "DUCA_RIME_PHASE1_RECEIPT_SHA256" in text
+    assert "duca_rime_phase2_mixed_k_training_exposure_v1" in text
+    assert "U-mixed-K" in text
+    assert "(192, 256, 384, 512)" in text
+    assert "(8, 12, 16, 24)" in text
+    assert "expected_successful_optimizer_updates" in text
+    assert "DUCA_RIME_TARGETS_JSONL" in text
+    assert "unset" in text
+    assert "--rdzv-backend=c10d --rdzv-endpoint=localhost:0" in text
+    assert '--rdzv-id="${SLURM_JOB_ID}"' in text
+    assert "compact_duca_rime_checkpoint.py" in text
+
+
+def test_phase2_mixed_k_evaluation_is_checkpoint_and_exact_k_ledger_bound():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase2_mixed_k_eval.sh"
+    ).read_text(encoding="utf-8")
+    assert "duca_rime_phase2_mixed_k_training_receipt_v1" in text
+    assert "detector_training_exposure" in text
+    assert "mixed_k_registered_panel" in text
+    assert "--expected-arm uniform_mixed_k" in text
+    assert "--phase 2" in text
+    assert "--split-role" in text
+    assert "--rdzv-endpoint=localhost:0" in text
+    assert "detector_selector_train" in text
+
+
+def test_rime_development_configs_bind_dataset_and_official_evaluator_to_same_role():
+    for name in (
+        "duca_rime_uniform_phase2_baseline.py",
+        "duca_rime_uniform_mixed_k_total60.py",
+        "duca_rime_physical_total60_base.py",
+        "duca_rime_uniform_fixed384_total60.py",
+    ):
+        text = (
+            ROOT / "configs" / "adatad" / "thumos" / name
+        ).read_text(encoding="utf-8")
+        assert "blocked_videos=" in text
+
+
+def test_rime_official_final_configs_explicitly_clear_development_block_list():
+    for name in (
+        "duca_rime_full_formal_validation.py",
+        "duca_rime_full_tridet_formal_validation.py",
+        "duca_rime_uniform_fixed_formal_validation.py",
+        "duca_rime_uniform_fixed_tridet_formal_validation.py",
+        "duca_rime_uniform_same_k_formal_validation.py",
+        "duca_rime_uniform_same_k_tridet_formal_validation.py",
+    ):
+        text = (
+            ROOT / "configs" / "adatad" / "thumos" / name
+        ).read_text(encoding="utf-8")
+        assert "blocked_videos=None" in text

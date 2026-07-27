@@ -9,7 +9,10 @@ dataset = dict(
     ),
 )
 
-evaluation = dict(subset="validation")
+evaluation = dict(
+    subset="validation",
+    blocked_videos=None,
+)
 
 duca_rime_formal_scope = dict(
     phase=4,
@@ -20,4 +23,3 @@ duca_rime_formal_scope = dict(
 )
 
 work_dir = "exps/thumos/adatad/duca_rime_full_tridet_formal_validation"
-

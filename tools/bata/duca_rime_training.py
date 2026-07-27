@@ -12,10 +12,12 @@ from tools.bata import duca_p0_training
 
 
 FORMAL_PROTOCOLS = {
+    "duca_rime_phase2_mixed_k_baseline_v1",
     "duca_rime_uniform_control_v1",
     "duca_rime_physical_dynamic_k_v1",
 }
 TRAIN_ARMS = {
+    "U-mixed-K",
     "U-fixed",
     "F-bound",
     "D-shuffle",
@@ -261,7 +263,22 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
         or int(contract["end_epoch"]) * int(contract["expected_train_batches_per_epoch"])
         != 6000
     ):
-        raise ValueError("RIME Phase-3 requires batch_size=1 and exactly 6000 updates")
+        raise ValueError("RIME formal training requires batch_size=1 and exactly 6000 updates")
+    if arm == "U-mixed-K":
+        variant = cfg.duca_rime_variant
+        if (
+            formal_protocol != "duca_rime_phase2_mixed_k_baseline_v1"
+            or tuple(int(value) for value in variant.candidate_budgets)
+            != (192, 256, 384, 512)
+            or tuple(int(value) for value in variant.training_schedule_counts)
+            != (8, 12, 16, 24)
+            or float(variant.training_target_mean_cost) != 384.0
+            or variant.position_policy != "exact_uniform"
+            or variant.coarse_probe_executed is not False
+            or cfg.model.frame_selector.rime_arm != "uniform_mixed_k"
+            or cfg.model.frame_selector.actionness_source_cfg is not None
+        ):
+            raise ValueError("U-mixed-K formal schedule/config contract drift")
     if arm not in {"U-fixed", "U-fixed-TriDet"}:
         rime_contract = cfg.duca_rime_contract
         if (
@@ -406,49 +423,104 @@ def build_runtime_bindings(
         raise ValueError(f"invalid RIME train arm: {variant}")
     if re.fullmatch(r"[0-9a-f]{40}", str(git_commit)) is None:
         raise ValueError("RIME runtime binding requires an exact Git commit")
-    stage = _training_stage_authorization(
-        git_commit=str(git_commit),
-        variant=str(variant),
-        seed=int(seed),
-    )
+    phase2_mixed_k_baseline = variant == "U-mixed-K"
+    if phase2_mixed_k_baseline:
+        if int(seed) != 3407 or any(
+            value
+            for value in (
+                os.environ.get("DUCA_RIME_PHASE4_AUTHORIZATION"),
+                os.environ.get("DUCA_RIME_PHASE4_AUTHORIZATION_SHA256"),
+            )
+        ):
+            raise ValueError(
+                "U-mixed-K Phase-2 training is frozen to seed 3407 and no "
+                "Phase-4 authorization"
+            )
+        stage = {
+            "research_phase": 2,
+            "phase4_authorization_path": None,
+            "phase4_authorization_sha256": None,
+            "formal_budget_panel": 384.0,
+            "detector_backend": "ActionFormer",
+        }
+    else:
+        stage = _training_stage_authorization(
+            git_commit=str(git_commit),
+            variant=str(variant),
+            seed=int(seed),
+        )
     expected_resolved = os.environ.get("DUCA_RESOLVED_CONFIG_SHA256")
     if expected_resolved != str(resolved_config_sha256):
         raise ValueError("RIME resolved config differs from the sealed launch")
 
-    phase2_path, phase2_sha = _bound_file(
-        os.environ.get("DUCA_RIME_PHASE2_RECEIPT"),
-        os.environ.get("DUCA_RIME_PHASE2_RECEIPT_SHA256"),
-        "Phase-2 receipt",
-    )
-    phase2 = json.loads(Path(phase2_path).read_text(encoding="utf-8"))
-    if (
-        phase2.get("schema_version") != "duca_rime_stage_receipt_v1"
-        or phase2.get("phase") != "phase2"
-        or phase2.get("gate_pass") is not True
-        or phase2.get("phase3_training_authorized") is not True
-        or phase2.get("official_final_subset_consumed") is not False
-        or phase2.get("git_commit") != str(git_commit)
-    ):
-        raise ValueError("Phase-2 receipt does not authorize RIME training")
+    if phase2_mixed_k_baseline:
+        phase1_path, phase1_sha = _bound_file(
+            os.environ.get("DUCA_RIME_PHASE1_RECEIPT"),
+            os.environ.get("DUCA_RIME_PHASE1_RECEIPT_SHA256"),
+            "Phase-1 receipt",
+        )
+        phase1 = json.loads(Path(phase1_path).read_text(encoding="utf-8"))
+        if (
+            phase1.get("schema_version") != "duca_rime_stage_receipt_v1"
+            or phase1.get("phase") != "phase1"
+            or phase1.get("gate_pass") is not True
+            or phase1.get("official_final_subset_consumed") is not False
+            or phase1.get("git_commit") != str(git_commit)
+            or len(str(phase1.get("split_assignment_sha256", ""))) != 64
+        ):
+            raise ValueError(
+                "Phase-1 receipt does not authorize mixed-K baseline training"
+            )
+        authorization_receipt = phase1
+        phase2 = {}
+        phase2_path = None
+        phase2_sha = None
+    else:
+        phase2_path, phase2_sha = _bound_file(
+            os.environ.get("DUCA_RIME_PHASE2_RECEIPT"),
+            os.environ.get("DUCA_RIME_PHASE2_RECEIPT_SHA256"),
+            "Phase-2 receipt",
+        )
+        phase2 = json.loads(Path(phase2_path).read_text(encoding="utf-8"))
+        if (
+            phase2.get("schema_version") != "duca_rime_stage_receipt_v1"
+            or phase2.get("phase") != "phase2"
+            or phase2.get("gate_pass") is not True
+            or phase2.get("phase3_training_authorized") is not True
+            or phase2.get("official_final_subset_consumed") is not False
+            or phase2.get("git_commit") != str(git_commit)
+        ):
+            raise ValueError("Phase-2 receipt does not authorize RIME training")
+        authorization_receipt = phase2
+        phase1_path = None
+        phase1_sha = None
     exposure_path, exposure_sha = _bound_file(
         os.environ.get("DUCA_RIME_TRAINING_EXPOSURE_JSON"),
         os.environ.get("DUCA_RIME_TRAINING_EXPOSURE_SHA256"),
         "training exposure",
     )
     exposure = json.loads(Path(exposure_path).read_text(encoding="utf-8"))
-    expected_exposure_schema = (
-        "duca_rime_phase3_training_exposure_v1"
-        if stage["research_phase"] == 3
-        else "duca_rime_phase4_training_exposure_v1"
-    )
+    expected_exposure_schema = {
+        2: "duca_rime_phase2_mixed_k_training_exposure_v1",
+        3: "duca_rime_phase3_training_exposure_v1",
+        4: "duca_rime_phase4_training_exposure_v1",
+    }[int(stage["research_phase"])]
     if (
         exposure.get("schema_version") != expected_exposure_schema
         or int(exposure.get("successful_detector_updates", -1)) != 6000
         or exposure.get("split_assignment_sha256")
-        != phase2.get("split_assignment_sha256")
+        != authorization_receipt.get("split_assignment_sha256")
         or exposure.get("official_final_subset_consumed") is not False
     ):
         raise ValueError("RIME training exposure artifact is invalid")
+    if stage["research_phase"] == 2 and (
+        int(exposure.get("seed", -1)) != 3407
+        or float(exposure.get("target_mean_cost", math.nan)) != 384.0
+        or exposure.get("detector_backend") != "ActionFormer"
+    ):
+        raise ValueError(
+            "Phase-2 mixed-K training exposure does not match its frozen cell"
+        )
     if stage["research_phase"] == 4 and (
         int(exposure.get("seed", -1)) != int(seed)
         or float(exposure.get("target_mean_cost", math.nan))
@@ -486,7 +558,7 @@ def build_runtime_bindings(
         os.environ.get("DUCA_RIME_REPLAY_SHA256"),
         "budget replay",
     )
-    fixed_control = variant in {"U-fixed", "U-fixed-TriDet"}
+    fixed_control = variant in {"U-mixed-K", "U-fixed", "U-fixed-TriDet"}
     if not fixed_control and (
         targets_path is None or protocol_path is None
     ):
@@ -499,7 +571,9 @@ def build_runtime_bindings(
             replay_path,
         )
     ):
-        raise ValueError("U-fixed controls must not consume RIME targets/protocol/replay")
+        raise ValueError(
+            "uniform controls must not consume RIME targets/protocol/replay"
+        )
     if variant in {"D-shuffle", "AdapTok-TAD"} and replay_path is None:
         raise ValueError(f"{variant} requires its immutable budget replay")
     if variant not in {"D-shuffle", "AdapTok-TAD"} and replay_path is not None:
@@ -548,9 +622,13 @@ def build_runtime_bindings(
         "source_config_sha256": str(source_config_sha256),
         "resolved_config_sha256": str(resolved_config_sha256),
         "runtime_config_sha256": str(runtime_config_sha256),
+        "phase1_receipt_path": phase1_path,
+        "phase1_receipt_sha256": phase1_sha,
         "phase2_receipt_path": phase2_path,
         "phase2_receipt_sha256": phase2_sha,
-        "split_assignment_sha256": str(phase2["split_assignment_sha256"]),
+        "split_assignment_sha256": str(
+            authorization_receipt["split_assignment_sha256"]
+        ),
         "training_exposure_path": exposure_path,
         "training_exposure_sha256": exposure_sha,
         "initialization_path": pretrain_path,
@@ -594,7 +672,7 @@ def validate_terminal_checkpoint_binding(
             if training_receipt_sha256 is not None
             else os.environ.get("DUCA_RIME_TRAINING_RECEIPT_SHA256")
         ),
-        "Phase-3 training receipt",
+        "RIME training receipt",
     )
     receipt = json.loads(Path(receipt_path).read_text(encoding="utf-8"))
     checkpoint_resolved = str(Path(checkpoint_path).expanduser().resolve())
@@ -604,6 +682,7 @@ def validate_terminal_checkpoint_binding(
     if (
         receipt_schema
         not in {
+            "duca_rime_phase2_mixed_k_training_receipt_v1",
             "duca_rime_phase3_training_receipt_v1",
             "duca_rime_phase4_training_receipt_v1",
         }
@@ -693,7 +772,22 @@ def validate_terminal_checkpoint_binding(
         != 6000
     ):
         raise ValueError("RIME terminal checkpoint contains an invalid training audit")
-    if receipt_schema == "duca_rime_phase3_training_receipt_v1":
+    if receipt_schema == "duca_rime_phase2_mixed_k_training_receipt_v1":
+        if (
+            int(receipt.get("research_phase", -1)) != 2
+            or float(receipt.get("target_mean_cost", math.nan)) != 384.0
+            or receipt.get("detector_backend") != "ActionFormer"
+            or int(audit.get("research_phase", -1)) != 2
+            or audit.get("phase4_authorization_path") is not None
+            or audit.get("phase4_authorization_sha256") is not None
+            or float(audit.get("formal_budget_panel", math.nan)) != 384.0
+            or audit.get("detector_backend") != "ActionFormer"
+            or source_arm != "U-mixed-K"
+        ):
+            raise ValueError(
+                "RIME Phase-2 mixed-K checkpoint binding is invalid"
+            )
+    elif receipt_schema == "duca_rime_phase3_training_receipt_v1":
         if (
             int(audit.get("research_phase", -1)) != 3
             or audit.get("phase4_authorization_path") is not None
