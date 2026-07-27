@@ -31,6 +31,11 @@ if TORCH_AVAILABLE:
 
 def _make_tridet_head():
     helper._install_head_runtime_or_skip()
+    misc_name = f"{helper.RUNTIME_PACKAGE}.models.bricks.misc"
+    if misc_name not in sys.modules:
+        misc = types.ModuleType(misc_name)
+        misc.Scale = helper._Scale
+        sys.modules[misc_name] = misc
     module = helper._load_module(
         f"{helper.RUNTIME_PACKAGE}.models.dense_heads.tridet_head",
         ROOT / "opentad" / "models" / "dense_heads" / "tridet_head.py",

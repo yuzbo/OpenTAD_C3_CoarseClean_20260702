@@ -52,6 +52,7 @@ export DUCA_RIME_BUDGET_PROTOCOL_SHA256="$(
   tools/train.py \
   tools/bata/train_lowres_action_probe.py \
   tools/bata/create_duca_rime_splits.py \
+  tools/bata/build_duca_rime_training_targets.py \
   tools/bata/duca_rime_phase2.py \
   tools/bata/build_duca_rime_budget_replay.py \
   opentad/models/duca/rime.py \
@@ -64,6 +65,7 @@ export DUCA_RIME_BUDGET_PROTOCOL_SHA256="$(
 "${PYTHON}" -m pytest \
   tests/test_duca_rime.py \
   tests/test_duca_rime_phase2.py \
+  tests/test_duca_rime_targets.py \
   tests/test_duca_rime_tridet.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \
