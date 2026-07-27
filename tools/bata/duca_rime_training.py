@@ -28,6 +28,17 @@ TRAIN_ARMS = {
 DUCA_TRAINING_AUDIT_FILENAME = "duca_rime_training_audit.json"
 DUCA_P0_CHECKPOINT_METADATA_SCHEMA = duca_p0_training.DUCA_P0_CHECKPOINT_METADATA_SCHEMA
 DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA = duca_p0_training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
+PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE = (
+    "historical_uniform_score_net_unused_exact_whitelist_v1"
+)
+PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS = (
+    "module.frame_selector.score_net.0.bias",
+    "module.frame_selector.score_net.0.weight",
+    "module.frame_selector.score_net.2.bias",
+    "module.frame_selector.score_net.2.weight",
+    "module.frame_selector.score_net.4.bias",
+    "module.frame_selector.score_net.4.weight",
+)
 
 atomic_write_json = duca_p0_training.atomic_write_json
 build_checkpoint_metadata = duca_p0_training.build_checkpoint_metadata
@@ -42,6 +53,31 @@ validate_update_state = duca_p0_training.validate_update_state
 
 def is_formal_protocol(value: str) -> bool:
     return str(value) in FORMAL_PROTOCOLS
+
+
+def validate_phase2_baseline_checkpoint_compatibility(
+    *,
+    missing_keys,
+    unexpected_keys,
+) -> dict[str, Any]:
+    missing = sorted(str(key) for key in missing_keys)
+    unexpected = sorted(str(key) for key in unexpected_keys)
+    expected_unexpected = sorted(PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS)
+    if missing:
+        raise RuntimeError(
+            "Phase-2 baseline checkpoint is missing current-model parameters: "
+            + ", ".join(missing)
+        )
+    if unexpected != expected_unexpected:
+        raise RuntimeError(
+            "Phase-2 baseline checkpoint compatibility differs from the exact "
+            "historical uniform-selector whitelist"
+        )
+    return {
+        "mode": PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
+        "missing_keys": [],
+        "ignored_unexpected_keys": expected_unexpected,
+    }
 
 
 def _sha256_file(path: str | Path) -> str:

@@ -78,6 +78,9 @@ duca_rime_baseline_contract = dict(
     padded_to_kmax=False,
     uses_official_final=False,
     training_identity_required=False,
+    checkpoint_compatibility_mode=(
+        "historical_uniform_score_net_unused_exact_whitelist_v1"
+    ),
     claim_scope="phase2_clean_baseline_measurement_only",
 )
 

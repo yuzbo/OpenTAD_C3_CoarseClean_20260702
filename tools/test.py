@@ -80,6 +80,8 @@ def main():
             or str(baseline_contract.detector_backend)
             not in {"ActionFormer", "TriDet"}
             or float(baseline_contract.target_mean_cost) <= 0.0
+            or str(baseline_contract.checkpoint_compatibility_mode)
+            != duca_rime_training.PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
         ):
             raise RuntimeError("invalid DUCA-RIME Phase-2 baseline contract")
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
@@ -293,7 +295,20 @@ def main():
                 evaluation_arm=str(cfg.duca_rime_variant.arm),
                 seed=args.seed,
             )
-        model.load_state_dict(checkpoint[checkpoint_state_key])
+        phase2_baseline_checkpoint_compatibility = None
+        if rime_phase2_baseline:
+            incompatible = model.load_state_dict(
+                checkpoint[checkpoint_state_key],
+                strict=False,
+            )
+            phase2_baseline_checkpoint_compatibility = (
+                duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
+                    missing_keys=incompatible.missing_keys,
+                    unexpected_keys=incompatible.unexpected_keys,
+                )
+            )
+        else:
+            model.load_state_dict(checkpoint[checkpoint_state_key])
         if checkpoint_state_key == "state_dict_ema":
             logger.info("Using Model EMA...")
 
@@ -343,7 +358,9 @@ def main():
         evaluator_identity = official_evaluator_identity()
         if evaluation_summary.get("evaluator") != evaluator_identity:
             raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
-        if formal_protocol == "duca_cellcf_v1":
+        if rime_phase2_baseline:
+            evaluation_schema = "duca_rime_phase2_baseline_terminal_evaluation_v1"
+        elif formal_protocol == "duca_cellcf_v1":
             evaluation_schema = "duca_cellcf_terminal_evaluation_v1"
         elif formal_protocol == "duca_protected_physical_v1":
             evaluation_schema = (
@@ -357,8 +374,6 @@ def main():
             evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
         elif rime_formal:
             evaluation_schema = "duca_rime_terminal_evaluation_v1"
-        elif rime_phase2_baseline:
-            evaluation_schema = "duca_rime_phase2_baseline_terminal_evaluation_v1"
         else:
             evaluation_schema = "duca_p0_terminal_evaluation_v3"
         payload = {
@@ -440,6 +455,9 @@ def main():
                         baseline_contract.detector_backend
                     ),
                     "baseline_contract": _jsonable(baseline_contract),
+                    "checkpoint_compatibility": (
+                        phase2_baseline_checkpoint_compatibility
+                    ),
                     "training_identity": None,
                 }
             )

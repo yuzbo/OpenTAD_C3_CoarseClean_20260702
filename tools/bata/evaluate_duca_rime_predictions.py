@@ -16,6 +16,10 @@ from tools.bata.duca_p0_evaluation import (
     normalize_evaluation_config,
     prediction_results,
 )
+from tools.bata.duca_rime_training import (
+    PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
+    PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS,
+)
 
 
 SCHEMA = "duca_rime_localization_metrics_v1"
@@ -174,11 +178,18 @@ def evaluate_predictions(
         == "duca_rime_phase2_baseline_terminal_evaluation_v1"
     ):
         baseline_contract = evaluation.get("baseline_contract")
+        checkpoint_compatibility = evaluation.get("checkpoint_compatibility")
         supported_schema = (
             isinstance(baseline_contract, Mapping)
             and int(baseline_contract.get("phase", -1)) == 2
             and baseline_contract.get("uses_official_final") is False
             and baseline_contract.get("padded_to_kmax") is False
+            and isinstance(checkpoint_compatibility, Mapping)
+            and checkpoint_compatibility.get("mode")
+            == PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
+            and checkpoint_compatibility.get("missing_keys") == []
+            and checkpoint_compatibility.get("ignored_unexpected_keys")
+            == sorted(PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS)
             and evaluation.get("training_identity") is None
         )
     if (

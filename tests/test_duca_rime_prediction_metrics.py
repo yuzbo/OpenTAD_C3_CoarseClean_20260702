@@ -2,6 +2,10 @@ import hashlib
 import json
 
 from tools.bata.create_duca_rime_splits import create_rime_splits
+from tools.bata.duca_rime_training import (
+    PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
+    PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS,
+)
 from tools.bata.evaluate_duca_rime_predictions import evaluate_predictions
 
 
@@ -110,6 +114,13 @@ def test_prediction_metrics_are_split_bound_and_perfect_for_perfect_segments(tmp
                 "phase": 2,
                 "uses_official_final": False,
                 "padded_to_kmax": False,
+            },
+            "checkpoint_compatibility": {
+                "mode": PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
+                "missing_keys": [],
+                "ignored_unexpected_keys": sorted(
+                    PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS
+                ),
             },
         }
     )
