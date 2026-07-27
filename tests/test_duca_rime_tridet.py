@@ -31,6 +31,25 @@ if TORCH_AVAILABLE:
 
 def _make_tridet_head():
     helper._install_head_runtime_or_skip()
+    builder = sys.modules[f"{helper.RUNTIME_PACKAGE}.models.builder"]
+    default_build_loss = builder.build_loss
+    build_calls = 0
+
+    class _ElementwiseDummyLoss(torch.nn.Module):
+        def forward(self, inputs, targets, reduction="none", **kwargs):
+            loss = inputs.sum() * 0.0
+            if reduction in {"mean", "sum"}:
+                return loss
+            return torch.zeros_like(inputs)
+
+    def _build_tridet_loss(cfg):
+        nonlocal build_calls
+        build_calls += 1
+        if build_calls == 1:
+            return _ElementwiseDummyLoss()
+        return default_build_loss(cfg)
+
+    builder.build_loss = _build_tridet_loss
     misc_name = f"{helper.RUNTIME_PACKAGE}.models.bricks.misc"
     if misc_name not in sys.modules:
         misc = types.ModuleType(misc_name)

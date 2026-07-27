@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from mmengine.config import Config
+
 from tools.bata import duca_rime_training
 from tools.bata.duca_p0_evaluation import evaluation_config_sha256
 
@@ -25,6 +27,8 @@ def _sha(path: Path) -> str:
 
 
 def test_rime_runtime_binding_is_phase2_split_exposure_and_hash_bound(tmp_path, monkeypatch):
+    monkeypatch.delenv("DUCA_RIME_REPLAY_JSONL", raising=False)
+    monkeypatch.delenv("DUCA_RIME_REPLAY_SHA256", raising=False)
     phase2 = _json(
         tmp_path / "phase2.json",
         {
@@ -111,3 +115,28 @@ def test_train_and_test_entrypoints_route_rime_formal_protocol():
     assert "duca_rime_training.is_formal_protocol(formal_protocol)" in test
     assert "validate_terminal_checkpoint_binding" in test
     assert "duca_rime_terminal_evaluation_v1" in test
+
+
+def test_rime_total60_configs_activate_dedicated_6000_update_contract(
+    tmp_path,
+    monkeypatch,
+):
+    root = Path(__file__).resolve().parents[1]
+    block = _write(tmp_path / "block.txt", "blocked_video\n")
+    targets = _write(tmp_path / "targets.jsonl", "{}\n")
+    protocol = _write(tmp_path / "protocol.json", "{}")
+    monkeypatch.setenv("DUCA_RIME_TRAIN_BLOCK_LIST", str(block))
+    monkeypatch.setenv("DUCA_RIME_DEVELOPMENT_BLOCK_LIST", str(block))
+    monkeypatch.setenv("DUCA_RIME_TARGETS_JSONL", str(targets))
+    monkeypatch.setenv("DUCA_RIME_TARGETS_SHA256", _sha(targets))
+    monkeypatch.setenv("DUCA_RIME_BUDGET_PROTOCOL_JSON", str(protocol))
+    monkeypatch.setenv("DUCA_RIME_BUDGET_PROTOCOL_SHA256", _sha(protocol))
+    for relative in (
+        "configs/adatad/thumos/duca_rime_uniform_fixed384_total60.py",
+        "configs/adatad/thumos/duca_rime_full_total60.py",
+        "configs/adatad/thumos/duca_rime_full_tridet_total60.py",
+    ):
+        cfg = Config.fromfile(str(root / relative))
+        contract = duca_rime_training.formal_training_contract(cfg)
+        assert contract["expected_successful_optimizer_updates"] == 6000
+        assert contract["rime_arm"] == cfg.duca_rime_variant.arm

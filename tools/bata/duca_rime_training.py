@@ -21,6 +21,7 @@ TRAIN_ARMS = {
     "D-no-risk",
     "AdapTok-TAD",
     "RIME-full",
+    "RIME-full-TriDet",
 }
 DUCA_TRAINING_AUDIT_FILENAME = "duca_rime_training_audit.json"
 DUCA_P0_CHECKPOINT_METADATA_SCHEMA = duca_p0_training.DUCA_P0_CHECKPOINT_METADATA_SCHEMA

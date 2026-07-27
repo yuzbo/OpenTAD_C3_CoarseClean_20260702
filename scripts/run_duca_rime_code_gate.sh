@@ -41,12 +41,11 @@ export DUCA_RIME_TRAIN_BLOCK_LIST="${OUTPUT_ROOT}/fixtures/train_block.txt"
 export DUCA_RIME_DEVELOPMENT_BLOCK_LIST="${OUTPUT_ROOT}/fixtures/development_block.txt"
 export DUCA_RIME_TARGETS_JSONL="${OUTPUT_ROOT}/fixtures/targets.jsonl"
 export DUCA_RIME_TARGETS_SHA256="$(sha256sum "${DUCA_RIME_TARGETS_JSONL}" | awk '{print $1}')"
-export DUCA_RIME_REPLAY_JSONL="${OUTPUT_ROOT}/fixtures/replay.jsonl"
-export DUCA_RIME_REPLAY_SHA256="$(sha256sum "${DUCA_RIME_REPLAY_JSONL}" | awk '{print $1}')"
 export DUCA_RIME_BUDGET_PROTOCOL_JSON="${OUTPUT_ROOT}/fixtures/protocol.json"
 export DUCA_RIME_BUDGET_PROTOCOL_SHA256="$(
   sha256sum "${DUCA_RIME_BUDGET_PROTOCOL_JSON}" | awk '{print $1}'
 )"
+unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
 
 "${PYTHON}" -m py_compile \
   tools/train.py \
@@ -84,6 +83,9 @@ bash -n \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \
   -q 2>&1 | tee "${OUTPUT_ROOT}/logs/pytest.out"
+
+export DUCA_RIME_REPLAY_JSONL="${OUTPUT_ROOT}/fixtures/replay.jsonl"
+export DUCA_RIME_REPLAY_SHA256="$(sha256sum "${DUCA_RIME_REPLAY_JSONL}" | awk '{print $1}')"
 
 "${PYTHON}" - <<'PY' 2>&1 | tee "${OUTPUT_ROOT}/logs/configs.out"
 from mmengine.config import Config
