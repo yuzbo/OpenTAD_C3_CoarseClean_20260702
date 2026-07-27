@@ -84,6 +84,7 @@ duca_rime_baseline_contract = dict(
 duca_rime_contract = dict(
     pad_to_kmax=False,
     target_mean_cost=float(fixed_budget),
+    execution_quantum=16,
 )
 
 work_dir = (
