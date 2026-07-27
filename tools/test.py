@@ -153,10 +153,11 @@ def main():
             args.expected_checkpoint_epoch != 59
             or args.checkpoint_state_key != "state_dict_ema"
             or not args.metrics_json
+            or cfg.post_processing.save_dict is not True
         ):
             raise RuntimeError(
                 "Phase-2 RIME baseline evaluation requires terminal epoch-59 "
-                "EMA and structured metrics"
+                "EMA, saved predictions, and structured metrics"
             )
     if selected_axis_formal:
         expected_seed = int(cfg.r5_cell.seed) if r5_formal else 3407
@@ -175,10 +176,11 @@ def main():
             args.expected_checkpoint_epoch != 59
             or args.checkpoint_state_key != "state_dict_ema"
             or not args.metrics_json
+            or cfg.post_processing.save_dict is not True
         ):
             raise RuntimeError(
-                "formal RIME evaluation requires terminal epoch-59 EMA "
-                "and structured metrics"
+                "formal RIME evaluation requires terminal epoch-59 EMA, saved "
+                "predictions, and structured metrics"
             )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)

@@ -335,6 +335,8 @@ duca_rime_contract = dict(
     paper_ready=False,
 )
 
+post_processing = dict(save_dict=True)
+
 work_dir = "exps/thumos/adatad/duca_rime_base_do_not_run"
 
 del duca_training_protocol

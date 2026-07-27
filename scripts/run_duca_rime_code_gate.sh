@@ -137,6 +137,7 @@ configs = (
 for path in configs:
     cfg = Config.fromfile(path)
     assert cfg.solver.train.batch_size == 1
+    assert cfg.post_processing.save_dict is True
     if "duca_rime_contract" in cfg:
         assert cfg.duca_rime_contract.pad_to_kmax is False
         assert cfg.duca_rime_contract.execution_quantum == 16

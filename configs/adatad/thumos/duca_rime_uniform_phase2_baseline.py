@@ -69,6 +69,8 @@ solver = dict(
     test=dict(batch_size=1, num_workers=2),
 )
 
+post_processing = dict(save_dict=True)
+
 duca_rime_baseline_contract = dict(
     phase=2,
     variant="U-fixed",
