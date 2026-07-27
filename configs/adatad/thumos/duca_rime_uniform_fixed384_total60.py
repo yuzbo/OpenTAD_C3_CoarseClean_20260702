@@ -78,6 +78,8 @@ solver = dict(
     find_unused_parameters=True,
 )
 
+post_processing = dict(save_dict=True)
+
 workflow = dict(
     formal_protocol="duca_rime_uniform_control_v1",
     training_profile=protocol.name,

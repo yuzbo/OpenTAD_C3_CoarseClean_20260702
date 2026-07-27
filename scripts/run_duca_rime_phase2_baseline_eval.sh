@@ -95,7 +95,10 @@ PY
   exit 0
 fi
 
-mkdir -p "${DUCA_RIME_PHASE2_BASELINE_ROOT}"
+mkdir -p \
+  "${DUCA_RIME_PHASE2_BASELINE_ROOT}" \
+  "${DUCA_RIME_PHASE2_BASELINE_ROOT}/ledger"
+export DUCA_RIME_INFERENCE_LEDGER_ROOT="${DUCA_RIME_PHASE2_BASELINE_ROOT}/ledger"
 torchrun --standalone --nproc_per_node=1 tools/test.py \
   "${DUCA_RIME_PHASE2_BASELINE_CONFIG}" \
   --checkpoint "${DUCA_RIME_PHASE2_BASELINE_CHECKPOINT}" \
@@ -117,6 +120,17 @@ python tools/bata/evaluate_duca_rime_predictions.py \
   --medium-max-seconds "${DUCA_RIME_MEDIUM_MAX_SECONDS}" \
   --output "${DUCA_RIME_PHASE2_BASELINE_ROOT}/localization_metrics.json"
 
+ledger_shard="${DUCA_RIME_PHASE2_BASELINE_ROOT}/ledger/inference_ledger.rank0000.jsonl"
+[[ -f "${ledger_shard}" ]] \
+  || fail "Phase-2 baseline did not emit its exact-uniform inference ledger"
+python tools/bata/finalize_duca_rime_inference_ledger.py \
+  --shard "${ledger_shard}" \
+  --output-jsonl "${DUCA_RIME_PHASE2_BASELINE_ROOT}/inference_ledger.jsonl" \
+  --expected-arm exact_uniform \
+  --summary-json \
+  "${DUCA_RIME_PHASE2_BASELINE_ROOT}/inference_ledger_summary.json" \
+  > /dev/null
+
 printf '%s\n' \
   "schema=duca_rime_phase2_baseline_evaluation_receipt_v1" \
   "status=passed" \
@@ -128,6 +142,8 @@ printf '%s\n' \
   "checkpoint_sha256=${DUCA_RIME_PHASE2_BASELINE_CHECKPOINT_SHA256}" \
   "terminal_evaluation_sha256=$(sha256sum "${DUCA_RIME_PHASE2_BASELINE_ROOT}/terminal_evaluation.json" | awk '{print $1}')" \
   "localization_metrics_sha256=$(sha256sum "${DUCA_RIME_PHASE2_BASELINE_ROOT}/localization_metrics.json" | awk '{print $1}')" \
+  "inference_ledger_sha256=$(sha256sum "${DUCA_RIME_PHASE2_BASELINE_ROOT}/inference_ledger.jsonl" | awk '{print $1}')" \
+  "inference_ledger_summary_sha256=$(sha256sum "${DUCA_RIME_PHASE2_BASELINE_ROOT}/inference_ledger_summary.json" | awk '{print $1}')" \
   > "${DUCA_RIME_PHASE2_BASELINE_ROOT}/evaluation.receipt"
 echo \
   "[DUCA_RIME_PHASE2_BASELINE] PASS ${DUCA_RIME_PHASE2_BASELINE_ROOT}"

@@ -61,6 +61,7 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/bootstrap_duca_rime_phase4.py \
   tools/bata/finalize_duca_rime_phase4_cell.py \
   tools/bata/build_duca_rime_gate_records.py \
+  tools/bata/build_duca_rime_source_manifest.py \
   tools/bata/profile_duca_full_stack_cost.py \
   tools/bata/duca_p0_evaluation.py \
   tools/bata/build_duca_rime_training_targets.py \
@@ -103,6 +104,8 @@ bash -n \
   tests/test_duca_rime_checkpoint_retention.py \
   tests/test_duca_rime_prediction_metrics.py \
   tests/test_duca_rime_gate_records.py \
+  tests/test_duca_rime_source_manifests.py \
+  tests/test_duca_protected_e2e_detector_contract.py \
   tests/test_profile_duca_full_stack_cost_cli.py \
   tests/test_duca_rime_tridet.py \
   tests/test_c3_coarse_classifier_model_matrix.py \

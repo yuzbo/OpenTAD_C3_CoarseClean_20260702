@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import json
 import math
+import os
 from collections.abc import Mapping
 from typing import Any, Optional
 
@@ -62,6 +64,84 @@ _UNIFORM_COMPANION_FRACTIONS = {
     "protected_e2e_uni_companion": 0.50,
     "protected_e2e_rho001": 0.0,
 }
+
+
+def _append_jsonl_atomic(path: str, row: Mapping[str, Any]) -> None:
+    payload = (
+        json.dumps(dict(row), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        + "\n"
+    ).encode("utf-8")
+    descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        written = os.write(descriptor, payload)
+        if written != len(payload):
+            raise OSError("short write while appending the protected inference ledger")
+    finally:
+        os.close(descriptor)
+
+
+def _emit_protected_inference_ledger(
+    *,
+    arm: str,
+    budget: int,
+    metas,
+) -> None:
+    ledger_root = os.environ.get("DUCA_RIME_INFERENCE_LEDGER_ROOT", "").strip()
+    if not ledger_root:
+        return
+    ledger_root = os.path.abspath(
+        os.path.expandvars(os.path.expanduser(ledger_root))
+    )
+    os.makedirs(ledger_root, exist_ok=True)
+    rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
+    ledger_path = os.path.join(
+        ledger_root,
+        f"inference_ledger.rank{rank:04d}.jsonl",
+    )
+    for meta in metas:
+        video_id = str(meta.get("video_name") or meta.get("video_id") or "")
+        window_start = int(meta.get("window_start_frame", 0))
+        selected = [int(value) for value in meta.get("selected_dense_indices", ())]
+        effective_k = int(meta.get("selected_valid_len", len(selected)))
+        if (
+            not video_id
+            or window_start < 0
+            or effective_k <= 0
+            or len(selected) != effective_k
+            or selected != sorted(set(selected))
+        ):
+            raise ValueError("protected inference ledger has an invalid window or hard path")
+        _append_jsonl_atomic(
+            ledger_path,
+            {
+                "schema_version": "duca_rime_inference_ledger_v1",
+                "video_id": video_id,
+                "window_start_frame": window_start,
+                "arm": str(arm),
+                "candidate_budgets": [int(budget)],
+                "requested_k": int(budget),
+                "effective_k": effective_k,
+                "unique_k": len(selected),
+                "backbone_input_k": int(budget),
+                "padded_k": int(budget),
+                "risk_fallback": False,
+                "cost_unit": "heavy_rgb_frames",
+                "selected_dense_indices": selected,
+                "max_gap_seconds_cap": float(meta["duca_max_gap_seconds_cap"]),
+                "observed_max_gap_seconds": float(
+                    meta["duca_observed_max_gap_seconds"]
+                ),
+                "budget_protocol_sha256": None,
+                "provenance": {
+                    "task": "offline_temporal_action_detection",
+                    "uses_gt": False,
+                    "uses_teacher": False,
+                    "uses_prediction_cache": False,
+                    "uses_test_batch_composition": False,
+                    "raw_predictions_stored": False,
+                },
+            },
+        )
 
 
 def _time_dim(inputs: torch.Tensor) -> int:
@@ -1017,6 +1097,12 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             source_frames,
             valid_mask,
         )
+        if not training:
+            _emit_protected_inference_ledger(
+                arm=self.arm,
+                budget=self.budget,
+                metas=output_metas,
+            )
         selector_state.update(
             {
                 "hard_occupancy": hard.hard_occupancy,

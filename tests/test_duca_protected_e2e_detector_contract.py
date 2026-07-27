@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 from types import SimpleNamespace
 
@@ -11,6 +12,10 @@ import torch.nn as nn
 from opentad.models.dense_heads.actionformer_head import ActionFormerHead
 from opentad.models.detectors.actionformer import ActionFormer
 from opentad.models.duca.transition_only import DucaProtectedTransitionScorer
+from opentad.models.selectors.duca_protected_e2e_frame_selector import (
+    _emit_protected_inference_ledger,
+)
+from tools.bata.finalize_duca_rime_inference_ledger import finalize_ledger
 from tools.bata.run_duca_protected_physical_full_model_gate import (
     _perturb_unselected,
     _remap_gt_to_selected_axis,
@@ -19,6 +24,38 @@ from tools.bata.run_duca_protected_physical_full_model_gate import (
 
 
 CONTRACT = "duca_protected_e2e_physical_v1"
+
+
+def test_exact_uniform_protected_inference_emits_a_no_padding_ledger(
+    tmp_path,
+    monkeypatch,
+):
+    ledger_root = tmp_path / "ledger"
+    monkeypatch.setenv("DUCA_RIME_INFERENCE_LEDGER_ROOT", str(ledger_root))
+    monkeypatch.setenv("RANK", "0")
+    _emit_protected_inference_ledger(
+        arm="exact_uniform",
+        budget=4,
+        metas=[
+            {
+                "video_name": "video_0001",
+                "window_start_frame": 0,
+                "selected_dense_indices": [0, 2, 5, 7],
+                "selected_valid_len": 4,
+                "duca_max_gap_seconds_cap": 0.5,
+                "duca_observed_max_gap_seconds": 0.5,
+            }
+        ],
+    )
+    shard = ledger_root / "inference_ledger.rank0000.jsonl"
+    row = json.loads(shard.read_text(encoding="utf-8"))
+    assert row["requested_k"] == row["effective_k"] == row["backbone_input_k"] == 4
+    summary = finalize_ledger(
+        shards=[shard],
+        output_jsonl=tmp_path / "inference_ledger.jsonl",
+        expected_arm="exact_uniform",
+    )
+    assert summary["no_padding_ledger"] is True
 
 
 def test_real_loader_uint8_unselected_perturbation_preserves_hard_gather():
