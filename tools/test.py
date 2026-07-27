@@ -26,6 +26,7 @@ from opentad.utils.training_guard import (
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
 from tools.bata import duca_cellcf_training
 from tools.bata import duca_protected_physical_training
+from tools.bata import duca_rime_training
 from tools.bata import duca_selected_axis_training
 from tools.bata.duca_p0_evaluation import (
     canonical_jsonable,
@@ -67,6 +68,7 @@ def main():
     selected_axis_formal = duca_selected_axis_training.is_formal_protocol(
         formal_protocol
     )
+    rime_formal = duca_rime_training.is_formal_protocol(formal_protocol)
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
@@ -93,13 +95,13 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if cellcf_formal or protected_physical_formal or selected_axis_formal:
+    if cellcf_formal or protected_physical_formal or selected_axis_formal or rime_formal:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
         ).strip()
         if expected_commit != observed_commit:
-            raise RuntimeError("formal CellCF evaluation checkout differs from DUCA_EXPECTED_COMMIT")
+            raise RuntimeError("formal evaluation checkout differs from DUCA_EXPECTED_COMMIT")
         status = subprocess.check_output(
             ["git", "status", "--porcelain", "--untracked-files=normal"],
             cwd=path,
@@ -142,6 +144,16 @@ def main():
             raise RuntimeError(
                 f"formal selected-axis evaluation must use seed {expected_seed}, "
                 "terminal epoch-59 EMA, and structured metrics"
+            )
+    if rime_formal:
+        if (
+            args.expected_checkpoint_epoch != 59
+            or args.checkpoint_state_key != "state_dict_ema"
+            or not args.metrics_json
+        ):
+            raise RuntimeError(
+                "formal RIME evaluation requires terminal epoch-59 EMA "
+                "and structured metrics"
             )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
@@ -186,6 +198,7 @@ def main():
     checkpoint_epoch = None
     checkpoint_state_key = None
     selected_axis_terminal_identity = None
+    rime_terminal_identity = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
@@ -249,6 +262,14 @@ def main():
                     r5_cell=cfg.get("r5_cell", None),
                 )
             )
+        if rime_formal:
+            rime_terminal_identity = duca_rime_training.validate_terminal_checkpoint_binding(
+                checkpoint_path=checkpoint_path,
+                checkpoint=checkpoint,
+                git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                evaluation_arm=str(cfg.duca_rime_variant.arm),
+                seed=args.seed,
+            )
         model.load_state_dict(checkpoint[checkpoint_state_key])
         if checkpoint_state_key == "state_dict_ema":
             logger.info("Using Model EMA...")
@@ -284,8 +305,12 @@ def main():
             formal_protocol == "duca_r0_selected_axis_holdout_replay_v1"
         )
         expected_evaluation_subset = (
-            "training" if r0_selected_axis_replay else "validation"
+            str(cfg.evaluation.subset)
+            if rime_formal
+            else ("training" if r0_selected_axis_replay else "validation")
         )
+        if rime_formal and expected_evaluation_subset not in {"training", "validation"}:
+            raise RuntimeError("formal RIME evaluation subset is not registered")
         evaluation_config = normalize_evaluation_config(
             cfg.evaluation,
             expected_subset=expected_evaluation_subset,
@@ -305,6 +330,8 @@ def main():
             evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
         elif r0_selected_axis_replay:
             evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
+        elif rime_formal:
+            evaluation_schema = "duca_rime_terminal_evaluation_v1"
         else:
             evaluation_schema = "duca_p0_terminal_evaluation_v3"
         payload = {
@@ -355,6 +382,15 @@ def main():
             )
             if r5_formal:
                 payload["r5_cell"] = _jsonable(cfg.r5_cell)
+        if rime_formal:
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "variant": str(cfg.duca_rime_variant.arm),
+                    "training_identity": rime_terminal_identity,
+                    "runtime_gt_input_to_selector": False,
+                }
+            )
         if r0_selected_axis_replay:
             allocation_artifact = os.path.abspath(
                 os.path.expanduser(

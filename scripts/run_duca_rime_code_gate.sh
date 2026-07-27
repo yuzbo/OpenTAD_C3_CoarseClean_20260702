@@ -50,10 +50,14 @@ export DUCA_RIME_BUDGET_PROTOCOL_SHA256="$(
 
 "${PYTHON}" -m py_compile \
   tools/train.py \
+  tools/test.py \
   tools/bata/train_lowres_action_probe.py \
   tools/bata/create_duca_rime_splits.py \
   tools/bata/build_duca_rime_training_targets.py \
   tools/bata/duca_rime_phase2.py \
+  tools/bata/duca_rime_stage_contract.py \
+  tools/bata/duca_rime_training.py \
+  tools/bata/finalize_duca_rime_inference_ledger.py \
   tools/bata/build_duca_rime_budget_replay.py \
   opentad/models/duca/rime.py \
   opentad/models/selectors/duca_rime_frame_selector.py \
@@ -62,10 +66,20 @@ export DUCA_RIME_BUDGET_PROTOCOL_SHA256="$(
   opentad/models/detectors/tridet.py \
   opentad/models/dense_heads/tridet_head.py
 
+bash -n \
+  scripts/run_duca_rime_code_gate.sh \
+  scripts/run_duca_rime_phase1_gate.sh \
+  scripts/run_duca_rime_phase2_gates.sh \
+  scripts/run_duca_rime_phase3_train_arm.sh
+
 "${PYTHON}" -m pytest \
   tests/test_duca_rime.py \
   tests/test_duca_rime_phase2.py \
   tests/test_duca_rime_targets.py \
+  tests/test_duca_rime_stage_contract.py \
+  tests/test_duca_rime_launchers.py \
+  tests/test_duca_rime_inference_ledger.py \
+  tests/test_duca_rime_training_contract.py \
   tests/test_duca_rime_tridet.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \

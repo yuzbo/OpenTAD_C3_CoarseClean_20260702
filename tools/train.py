@@ -47,6 +47,7 @@ from tools.bata import (
     duca_cellcf_training,
     duca_p0_training,
     duca_protected_physical_training,
+    duca_rime_training,
     duca_selected_axis_training,
 )
 from tools.bata.duca_frontend_initialization import (
@@ -192,6 +193,8 @@ def _select_duca_training(formal_protocol):
         return duca_protected_physical_training
     if duca_selected_axis_training.is_formal_protocol(formal_protocol):
         return duca_selected_axis_training
+    if duca_rime_training.is_formal_protocol(formal_protocol):
+        return duca_rime_training
     return duca_p0_training
 
 
@@ -314,6 +317,7 @@ def main():
         if duca_training in (
             duca_cellcf_training,
             duca_protected_physical_training,
+            duca_rime_training,
             duca_selected_axis_training,
         ):
             runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain

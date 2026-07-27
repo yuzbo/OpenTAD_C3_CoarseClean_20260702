@@ -47,6 +47,7 @@ _RIME_ARMS = {
 }
 _DYNAMIC_ARMS = {"dynamic_no_risk", "rime_full"}
 _PROTOCOL_SCHEMA = "duca_rime_budget_protocol_v1"
+_INFERENCE_LEDGER_SCHEMA = "duca_rime_inference_ledger_v1"
 
 
 def _sha256_file(path: str) -> str:
@@ -121,6 +122,20 @@ def _targets_from_batch(
             dim=0,
         )
     return torch.as_tensor(value, device=device, dtype=dtype)
+
+
+def _append_jsonl_atomic(path: str, row: Mapping[str, Any]) -> None:
+    payload = (
+        json.dumps(dict(row), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        + "\n"
+    ).encode("utf-8")
+    descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        written = os.write(descriptor, payload)
+        if written != len(payload):
+            raise OSError("short write while appending the RIME inference ledger")
+    finally:
+        os.close(descriptor)
 
 
 @SELECTORS.register_module()
@@ -427,6 +442,61 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     "duca_budget_protocol_sha256": self.budget_protocol_sha256,
                 }
             )
+        if not training:
+            ledger_root = os.environ.get("DUCA_RIME_INFERENCE_LEDGER_ROOT", "").strip()
+            if ledger_root:
+                ledger_root = os.path.abspath(
+                    os.path.expandvars(os.path.expanduser(ledger_root))
+                )
+                os.makedirs(ledger_root, exist_ok=True)
+                rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
+                ledger_path = os.path.join(
+                    ledger_root,
+                    f"inference_ledger.rank{rank:04d}.jsonl",
+                )
+                for batch_index, meta in enumerate(output_metas):
+                    video_id = str(
+                        meta.get("video_name") or meta.get("video_id") or ""
+                    )
+                    window_start = int(meta.get("window_start_frame", 0))
+                    if not video_id or window_start < 0:
+                        raise ValueError(
+                            "RIME inference ledger requires video and non-negative window start"
+                        )
+                    _append_jsonl_atomic(
+                        ledger_path,
+                        {
+                            "schema_version": _INFERENCE_LEDGER_SCHEMA,
+                            "video_id": video_id,
+                            "window_start_frame": window_start,
+                            "arm": self.rime_arm,
+                            "candidate_budgets": list(self.candidate_budgets),
+                            "requested_k": int(ledger["requested_k"][batch_index]),
+                            "effective_k": int(ledger["effective_k"][batch_index]),
+                            "unique_k": int(ledger["unique_k"][batch_index]),
+                            "backbone_input_k": int(
+                                ledger["backbone_input_k"][batch_index]
+                            ),
+                            "padded_k": int(ledger["padded_k"][batch_index]),
+                            "risk_fallback": bool(
+                                ledger["risk_fallback"][batch_index]
+                            ),
+                            "cost_unit": str(ledger["unit"]),
+                            "selected_dense_indices": [
+                                int(value)
+                                for value in meta.get("selected_dense_indices", ())
+                            ],
+                            "budget_protocol_sha256": self.budget_protocol_sha256,
+                            "provenance": {
+                                "task": "offline_temporal_action_detection",
+                                "uses_gt": False,
+                                "uses_teacher": False,
+                                "uses_prediction_cache": False,
+                                "uses_test_batch_composition": False,
+                                "raw_predictions_stored": False,
+                            },
+                        },
+                    )
 
         state: dict[str, Any] = {
             "arm": self.rime_arm,
