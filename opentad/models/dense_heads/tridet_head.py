@@ -26,6 +26,9 @@ class TriDetHead(AnchorFreeHead):
         label_smoothing=0.0,
         center_sample="radius",
         center_sample_radius=1.5,
+        filter_similar_gt=True,
+        assignment_debug=None,
+        physical_grid_actionformer=None,
         kernel_size=3,
         boundary_kernel_size=3,
         iou_weight_power=0.2,
@@ -50,6 +53,9 @@ class TriDetHead(AnchorFreeHead):
             label_smoothing=label_smoothing,
             center_sample=center_sample,
             center_sample_radius=center_sample_radius,
+            filter_similar_gt=filter_similar_gt,
+            assignment_debug=assignment_debug,
+            physical_grid_actionformer=physical_grid_actionformer,
         )
 
         self._init_cls_start_convs()
@@ -151,7 +157,7 @@ class TriDetHead(AnchorFreeHead):
             bias_value = -(math.log((1 - self.cls_prior_prob) / self.cls_prior_prob))
             torch.nn.init.constant_(self.cls_head.bias, bias_value)
 
-    def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, **kwargs):
+    def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, metas=None, **kwargs):
         cls_pred = []
         reg_pred = []
 
@@ -178,6 +184,12 @@ class TriDetHead(AnchorFreeHead):
             cls_end_pred.append(self.cls_end_head(cls_end_feat))
 
         points = self.prior_generator(feat_list)
+        points, mask_list = self._build_physical_points_and_masks(
+            points,
+            mask_list,
+            metas=metas,
+            train_mode=True,
+        )
 
         losses = self.losses(
             cls_pred,
@@ -191,7 +203,7 @@ class TriDetHead(AnchorFreeHead):
         )
         return losses
 
-    def forward_test(self, feat_list, mask_list, **kwargs):
+    def forward_test(self, feat_list, mask_list, metas=None, **kwargs):
         cls_pred = []
         reg_pred = []
         cls_start_pred = []
@@ -217,6 +229,12 @@ class TriDetHead(AnchorFreeHead):
             cls_end_pred.append(self.cls_end_head(cls_end_feat))
 
         points = self.prior_generator(feat_list)
+        points, mask_list = self._build_physical_points_and_masks(
+            points,
+            mask_list,
+            metas=metas,
+            train_mode=False,
+        )
 
         # get regression offsets
         reg_pred = [x.permute(0, 2, 1) for x in reg_pred]  # list([B,T_i,2])
@@ -237,7 +255,11 @@ class TriDetHead(AnchorFreeHead):
         reg_pred = torch.cat(decoded_offsets, dim=2)  # [B, C, T, 2]
 
         # get proposals and scores
-        points = torch.cat(points, dim=0)  # [T,4]
+        points = (
+            torch.cat(points, dim=1)
+            if points[0].dim() == 3
+            else torch.cat(points, dim=0)
+        )  # [B,T,4] or [T,4]
         scores = torch.cat(cls_pred, dim=-1).permute(0, 2, 1).sigmoid()  # [B,T,num_classes]
 
         # mask out invalid
@@ -347,7 +369,11 @@ class TriDetHead(AnchorFreeHead):
         # the boundary head predicts the classification score for each categories.
         pred_offsets = decoded_offsets[gt_cls[pos_mask].bool()]
         gt_reg = gt_reg[pos_mask][torch.where(gt_cls[pos_mask])[0]]
-        points = torch.cat(points, dim=0).unsqueeze(0).repeat(pos_mask.shape[0], 1, 1)
+        points = (
+            torch.cat(points, dim=1)
+            if points[0].dim() == 3
+            else torch.cat(points, dim=0).unsqueeze(0).repeat(pos_mask.shape[0], 1, 1)
+        )
         points = points[pos_mask][torch.where(gt_cls[pos_mask])[0]]
 
         ## couple the classification loss with iou score

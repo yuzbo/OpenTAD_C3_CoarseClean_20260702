@@ -1,6 +1,13 @@
 from .loading import LoadFeats, SlidingWindowTrunc, RandomTrunc
 from .formatting import Collect, ConvertToTensor, Rearrange, Reduce, Padding, ChannelReduction
-from .end_to_end import DucaExternalActionnessFromJsonl, PrepareVideoInfo, LoadSnippetFrames, LoadFrames
+from .end_to_end import (
+    DucaExternalActionnessFromJsonl,
+    DucaRimeBudgetReplayFromJsonl,
+    DucaRimeTargetsFromJsonl,
+    PrepareVideoInfo,
+    LoadSnippetFrames,
+    LoadFrames,
+)
 
 __all__ = [
     "LoadFeats",
@@ -14,6 +21,8 @@ __all__ = [
     "ChannelReduction",
     "PrepareVideoInfo",
     "DucaExternalActionnessFromJsonl",
+    "DucaRimeBudgetReplayFromJsonl",
+    "DucaRimeTargetsFromJsonl",
     "LoadSnippetFrames",
     "LoadFrames",
 ]

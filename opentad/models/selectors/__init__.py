@@ -1,6 +1,7 @@
 from .lowcost_acquisition_browser import LowCostAcquisitionBrowser
 from .duca_online_frame_selector import DucaOnlineFrameSelector
 from .duca_protected_e2e_frame_selector import DucaProtectedE2EFrameSelector
+from .duca_rime_frame_selector import DucaRimeFrameSelector
 from .duca_allocation_artifact_replay import DucaAllocationArtifactReplaySelector
 from .pc_ot_mras_dynamic_budget_controller import PCOTMRASDynamicBudgetController, ValueToBudgetPCOTMRASController
 from .pc_ot_mras_prebackbone_frame_selector import (
@@ -15,6 +16,7 @@ __all__ = [
     "LowCostAcquisitionBrowser",
     "DucaOnlineFrameSelector",
     "DucaProtectedE2EFrameSelector",
+    "DucaRimeFrameSelector",
     "DucaAllocationArtifactReplaySelector",
     "PCOTMRASDynamicBudgetController",
     "PCOTMRASBoundaryDifficultyTemporalFrameScout",

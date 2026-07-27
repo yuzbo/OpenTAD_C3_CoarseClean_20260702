@@ -45,9 +45,10 @@ class AnchorFreeHead(nn.Module):
         self.physical_grid_strict = bool(self.physical_grid_cfg.get("strict", True))
         self.physical_grid_eps = float(self.physical_grid_cfg.get("eps", 1.0e-6))
         self.physical_grid_contract = self.physical_grid_cfg.get("contract")
-        self.protected_physical_grid = (
-            self.physical_grid_contract == "duca_protected_e2e_physical_v1"
-        )
+        self.protected_physical_grid = self.physical_grid_contract in {
+            "duca_protected_e2e_physical_v1",
+            "duca_rime_physical_dynamic_k_v1",
+        }
         if self.protected_physical_grid and not (
             self.physical_grid_enabled
             and self.physical_grid_required
@@ -220,7 +221,11 @@ class AnchorFreeHead(nn.Module):
             "detector_prediction_inverse_map_required": False,
             "detector_output_coordinate_space": "dense_physical",
             "proposal_axis": "dense_physical",
-            "duca_backbone_tail_padding_mode": "replicate_last_selected",
+            "duca_backbone_tail_padding_mode": (
+                "none_exact_k_bucket"
+                if self.physical_grid_contract == "duca_rime_physical_dynamic_k_v1"
+                else "replicate_last_selected"
+            ),
         }
         missing = [key for key in required_equal if key not in meta]
         if missing:

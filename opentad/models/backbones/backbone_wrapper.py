@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.modules.batchnorm import _BatchNorm
 import torch.utils.checkpoint as cp
 
@@ -48,6 +49,14 @@ class BackboneWrapper(nn.Module):
 
         # 5. freeze_backbone: whether to freeze the backbone, default is False
         self.freeze_backbone = getattr(custom_cfg, "freeze_backbone", False)
+        self.dynamic_temporal_bucket = bool(
+            getattr(custom_cfg, "dynamic_temporal_bucket", False)
+        )
+        self.dynamic_temporal_clip_len = int(
+            getattr(custom_cfg, "dynamic_temporal_clip_len", 16)
+        )
+        if self.dynamic_temporal_clip_len <= 0:
+            raise ValueError("dynamic_temporal_clip_len must be positive")
 
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
@@ -80,7 +89,14 @@ class BackboneWrapper(nn.Module):
         )
 
         # pre_processing_pipeline:
-        if self.pre_processing_pipeline is not None:
+        if self.dynamic_temporal_bucket:
+            frames, dynamic_shape = self._prepare_dynamic_temporal_bucket(
+                frames,
+                masks,
+            )
+        else:
+            dynamic_shape = None
+        if self.pre_processing_pipeline is not None and not self.dynamic_temporal_bucket:
             frames = self.pre_processing_pipeline(dict(frames=frames))["frames"]
 
         # flatten the batch dimension and num_segs dimension
@@ -110,7 +126,21 @@ class BackboneWrapper(nn.Module):
                 features = self.model.backbone(frames)
 
         # unflatten and pool the features
-        if isinstance(features, (tuple, list)):
+        if self.dynamic_temporal_bucket:
+            if isinstance(features, (tuple, list)):
+                features = torch.cat(
+                    [
+                        self.dynamic_unflatten_and_pool_features(f, dynamic_shape)
+                        for f in features
+                    ],
+                    dim=1,
+                )
+            else:
+                features = self.dynamic_unflatten_and_pool_features(
+                    features,
+                    dynamic_shape,
+                )
+        elif isinstance(features, (tuple, list)):
             features = torch.cat([self.unflatten_and_pool_features(f, batches, num_segs) for f in features], dim=1)
         else:
             features = self.unflatten_and_pool_features(features, batches, num_segs)
@@ -122,6 +152,89 @@ class BackboneWrapper(nn.Module):
         # make sure detector has the float32 input
         features = features.to(torch.float32)
         return features
+
+    def _prepare_dynamic_temporal_bucket(self, frames, masks):
+        if frames.ndim != 6:
+            raise ValueError(
+                "dynamic temporal bucket expects [B,N,C,K,H,W] pre-backbone RGB"
+            )
+        batch, num_segs, channels, temporal_len, height, width = frames.shape
+        if temporal_len <= 0 or temporal_len % self.dynamic_temporal_clip_len != 0:
+            raise ValueError(
+                "dynamic RIME K must be positive and divisible by the heavy clip length"
+            )
+        if masks is None or tuple(masks.shape) != (batch, temporal_len):
+            raise ValueError("dynamic RIME backbone requires an aligned [B,K] mask")
+        active = masks.to(device=frames.device, dtype=torch.bool)
+        if not bool(active.all().item()):
+            raise ValueError(
+                "dynamic RIME backbone forbids inactive tail padding inside a K bucket"
+            )
+        chunk_count = temporal_len // self.dynamic_temporal_clip_len
+        frames = (
+            frames.reshape(
+                batch,
+                num_segs,
+                channels,
+                chunk_count,
+                self.dynamic_temporal_clip_len,
+                height,
+                width,
+            )
+            .permute(0, 3, 1, 2, 4, 5, 6)
+            .reshape(
+                batch * chunk_count,
+                num_segs,
+                channels,
+                self.dynamic_temporal_clip_len,
+                height,
+                width,
+            )
+            .contiguous()
+        )
+        return frames, (batch, chunk_count, num_segs, temporal_len)
+
+    @staticmethod
+    def dynamic_unflatten_and_pool_features(features, dynamic_shape):
+        batch, chunk_count, num_segs, temporal_len = dynamic_shape
+        expected = int(batch * chunk_count * num_segs)
+        if int(features.shape[0]) != expected:
+            raise RuntimeError("dynamic RIME backbone feature batch does not match K chunks")
+        if features.ndim == 5:
+            _, channels, feature_time, _, _ = features.shape
+            pooled = features.reshape(
+                batch,
+                chunk_count,
+                num_segs,
+                channels,
+                feature_time,
+                features.shape[-2],
+                features.shape[-1],
+            ).mean(dim=(2, 5, 6))
+            pooled = pooled.permute(0, 2, 1, 3).reshape(
+                batch,
+                channels,
+                chunk_count * feature_time,
+            )
+        elif features.ndim == 2:
+            channels = int(features.shape[1])
+            pooled = (
+                features.reshape(batch, chunk_count, num_segs, channels)
+                .mean(dim=2)
+                .permute(0, 2, 1)
+            )
+        else:
+            raise RuntimeError(
+                "dynamic RIME backbone expects [BN,C,T,H,W] or [BN,C] features"
+            )
+        if int(pooled.shape[-1]) != int(temporal_len):
+            pooled = F.interpolate(
+                pooled,
+                size=int(temporal_len),
+                mode="linear",
+                align_corners=False,
+            )
+        return pooled
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]

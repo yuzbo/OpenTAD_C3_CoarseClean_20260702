@@ -152,6 +152,11 @@ class ActionFormer(SingleStageDetector):
         detector_rng_state = self._capture_protected_detector_rng(inputs)
         if self.frame_selector is not None and not skip_frame_selector:
             raw_selector_context = (inputs, masks, metas, gt_segments, gt_labels)
+            selector_kwargs = {
+                key: kwargs.pop(key)
+                for key in list(kwargs)
+                if str(key).startswith("rime_")
+            }
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
                 masks=masks,
@@ -159,6 +164,7 @@ class ActionFormer(SingleStageDetector):
                 gt_segments=gt_segments,
                 gt_labels=gt_labels,
                 gt_boundary_validity=gt_boundary_validity,
+                **selector_kwargs,
             )
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
@@ -219,7 +225,10 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            if getattr(self.frame_selector, "selector_variant", None) == "duca_rime_physical":
+                x = self.backbone(inputs, masks=masks)
+            else:
+                x = self.backbone(inputs)
         else:
             x = inputs
 
@@ -509,7 +518,10 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            if getattr(self.frame_selector, "selector_variant", None) == "duca_rime_physical":
+                x = self.backbone(inputs, masks=masks)
+            else:
+                x = self.backbone(inputs)
         else:
             x = inputs
 
@@ -622,6 +634,7 @@ class ActionFormer(SingleStageDetector):
             getattr(selector, "selector_variant", None)
             == "protected_e2e_physical"
         )
+        rime = getattr(selector, "selector_variant", None) == "duca_rime_physical"
 
         def parameter_lr(name):
             scorer_prefixes = (
@@ -638,9 +651,11 @@ class ActionFormer(SingleStageDetector):
             coarse_prefix = "frame_selector.raw_actionness_source.probe_module."
             if transition_only and name.startswith(scorer_prefixes):
                 return float(selector.transition_scorer_lr)
-            if protected_e2e and name.startswith(
+            if (protected_e2e or rime) and name.startswith(
                 (protected_adapter_prefix, protected_head_prefix)
             ):
+                return float(selector.selector_lr)
+            if rime and name.startswith("frame_selector.budget_controller."):
                 return float(selector.selector_lr)
             if name.startswith(coarse_prefix):
                 temporal_marker = ".official_temporal."
@@ -655,12 +670,14 @@ class ActionFormer(SingleStageDetector):
                 return float(selector.coarse_trunk_lr)
             return float(cfg["lr"])
 
-        if protected_e2e:
+        if protected_e2e or rime:
             protected_prefixes = (
                 "frame_selector.transition_scorer.selector_adapter.",
                 "frame_selector.transition_scorer.selector_score_head.",
                 "frame_selector.raw_actionness_source.probe_module.",
             )
+            if rime:
+                protected_prefixes += ("frame_selector.budget_controller.",)
             unexpected = sorted(
                 name
                 for name in param_dict
@@ -669,7 +686,7 @@ class ActionFormer(SingleStageDetector):
             )
             if unexpected:
                 raise AssertionError(
-                    "protected DUCA exposes trainable selector parameters outside "
+                    "protected/RIME DUCA exposes trainable selector parameters outside "
                     f"the frozen optimizer contract: {unexpected}"
                 )
 
@@ -724,7 +741,8 @@ class ActionFormer(SingleStageDetector):
         original_gt_labels=None,
     ):
         selector = getattr(self, "frame_selector", None)
-        if getattr(selector, "selector_variant", None) != "protected_e2e_physical":
+        selector_variant = getattr(selector, "selector_variant", None)
+        if selector_variant not in {"protected_e2e_physical", "duca_rime_physical"}:
             return
         if masks.ndim != 2 or int(masks.shape[1]) > int(selector.budget):
             raise RuntimeError("protected DUCA detector mask violates exact-K budget")
@@ -740,8 +758,13 @@ class ActionFormer(SingleStageDetector):
         ):
             raise RuntimeError("protected DUCA requires one detector meta per sample")
         for meta, mask in zip(metas, masks):
-            if meta.get("duca_contract") != "duca_protected_e2e_physical_v1":
-                raise RuntimeError("protected DUCA metadata contract is missing")
+            expected_contract = (
+                "duca_rime_physical_dynamic_k_v1"
+                if selector_variant == "duca_rime_physical"
+                else "duca_protected_e2e_physical_v1"
+            )
+            if meta.get("duca_contract") != expected_contract:
+                raise RuntimeError("protected/RIME DUCA metadata contract is missing")
             if meta.get("irregular_native_axis") is not True:
                 raise RuntimeError("protected DUCA requires native dense detector axis")
             if any(
@@ -764,6 +787,28 @@ class ActionFormer(SingleStageDetector):
                 raise RuntimeError(
                     "protected DUCA metadata selected count does not match detector mask"
                 )
+            if selector_variant == "duca_rime_physical":
+                requested = int(meta.get("duca_requested_k", -1))
+                effective = int(meta.get("duca_effective_k", -1))
+                unique = int(meta.get("duca_unique_k", -1))
+                backbone = int(meta.get("duca_backbone_input_k", -1))
+                padded = int(meta.get("duca_padded_k", -1))
+                if not (
+                    requested >= effective
+                    and effective == unique == backbone == padded == selected_count
+                ):
+                    raise RuntimeError("RIME requested/effective/heavy-frame ledger is inconsistent")
+                if meta.get("duca_dynamic_compute_realized") is not True:
+                    raise RuntimeError("RIME must realize dynamic heavy-backbone compute")
+                if meta.get("duca_backbone_tail_padding_mode") != "none_exact_k_bucket":
+                    raise RuntimeError("RIME forbids pad-to-Kmax heavy execution")
+                if (
+                    int(meta.get("duca_execution_quantum", -1)) != 16
+                    or effective % 16 != 0
+                ):
+                    raise RuntimeError(
+                        "RIME heavy execution must use exact 16-frame tubelet quanta"
+                    )
         if original_gt_segments is not None and gt_segments is not original_gt_segments:
             raise RuntimeError("protected DUCA must preserve dense GT segment objects")
         if original_gt_labels is not None and gt_labels is not original_gt_labels:

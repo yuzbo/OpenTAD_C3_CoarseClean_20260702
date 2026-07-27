@@ -215,6 +215,187 @@ class DucaExternalActionnessFromJsonl:
 
 
 @PIPELINES.register_module()
+class DucaRimeTargetsFromJsonl:
+    """Attach cross-fitted train-only RIME targets to one deterministic window."""
+
+    def __init__(
+        self,
+        targets_jsonl,
+        targets_sha256,
+        candidate_budgets=(192, 256, 384, 512),
+    ):
+        self.targets_jsonl = os.path.abspath(
+            os.path.expandvars(os.path.expanduser(str(targets_jsonl)))
+        )
+        self.targets_sha256 = str(targets_sha256).lower()
+        self.candidate_budgets = tuple(int(value) for value in candidate_budgets)
+        if not os.path.isfile(self.targets_jsonl):
+            raise FileNotFoundError(f"RIME target JSONL missing: {self.targets_jsonl}")
+        digest = hashlib.sha256()
+        with open(self.targets_jsonl, "rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        if not self.targets_sha256 or digest.hexdigest() != self.targets_sha256:
+            raise ValueError("RIME target JSONL SHA-256 is required and must match")
+        self._index = self._load(self.targets_jsonl)
+
+    def _load(self, path):
+        index = {}
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                text = line.strip()
+                if not text:
+                    continue
+                row = json.loads(text)
+                prefix = f"{path}:{line_number}"
+                if row.get("schema_version") != "duca_rime_training_target_v1":
+                    raise ValueError(f"{prefix}: unsupported RIME target schema")
+                provenance = row.get("provenance")
+                if not isinstance(provenance, dict):
+                    raise ValueError(f"{prefix}: provenance must be an object")
+                if provenance.get("fit_split") not in {"train", "training", "train_only"}:
+                    raise ValueError(f"{prefix}: RIME targets must be fit train-only")
+                if provenance.get("cross_fitted") is not True:
+                    raise ValueError(f"{prefix}: RIME targets must be cross-fitted")
+                if provenance.get("uses_validation_or_test") is not False:
+                    raise ValueError(f"{prefix}: validation/test leakage is forbidden")
+                budgets = tuple(int(value) for value in row.get("candidate_budgets", ()))
+                if budgets != self.candidate_budgets:
+                    raise ValueError(f"{prefix}: candidate budgets disagree")
+                video_id = str(row.get("video_id") or row.get("video_name") or "")
+                if not video_id:
+                    raise ValueError(f"{prefix}: video_id is required")
+                window_start = int(row.get("window_start_frame", -1))
+                if window_start < 0:
+                    raise ValueError(f"{prefix}: window_start_frame must be non-negative")
+                utility = np.asarray(row.get("utility_target"), dtype=np.float32)
+                risk = np.asarray(row.get("risk_target"), dtype=np.float32)
+                mask = np.asarray(
+                    row.get("target_mask", [True] * len(budgets)),
+                    dtype=bool,
+                )
+                expected_shape = (len(budgets),)
+                if (
+                    utility.shape != expected_shape
+                    or risk.shape != expected_shape
+                    or mask.shape != expected_shape
+                ):
+                    raise ValueError(f"{prefix}: per-K targets must align with budgets")
+                if not np.isfinite(utility[mask]).all() or not np.isfinite(risk[mask]).all():
+                    raise ValueError(f"{prefix}: active targets must be finite")
+                if np.any((risk[mask] < 0.0) | (risk[mask] > 1.0)):
+                    raise ValueError(f"{prefix}: active risk targets must lie in [0,1]")
+                hard_utility = row.get("hard_frame_utility")
+                if hard_utility is not None:
+                    hard_utility = np.asarray(hard_utility, dtype=np.float32)
+                    if hard_utility.ndim != 1 or not np.isfinite(hard_utility).all():
+                        raise ValueError(f"{prefix}: hard frame utility must be finite [T]")
+                key = (video_id, window_start)
+                if key in index:
+                    raise ValueError(f"{prefix}: duplicate RIME target window {key}")
+                index[key] = {
+                    "rime_utility_target": utility,
+                    "rime_risk_target": risk,
+                    "rime_target_mask": mask,
+                    "rime_hard_frame_utility": hard_utility,
+                    "rime_target_provenance": provenance,
+                }
+        if not index:
+            raise ValueError(f"RIME target JSONL contains no records: {path}")
+        return index
+
+    def __call__(self, results):
+        video_id = str(results.get("video_name") or results.get("video_id") or "")
+        window_start = int(results.get("window_start_frame", 0))
+        key = (video_id, window_start)
+        if key not in self._index:
+            raise ValueError(f"missing cross-fitted RIME targets for window {key}")
+        entry = self._index[key]
+        hard_utility = entry["rime_hard_frame_utility"]
+        if hard_utility is not None:
+            masks = results.get("masks")
+            temporal_len = int(np.asarray(masks).size) if masks is not None else int(
+                np.asarray(results["frame_inds"]).shape[0]
+            )
+            if hard_utility.shape != (temporal_len,):
+                raise ValueError(
+                    "RIME hard-frame utility length must match the dense candidate axis"
+                )
+        for key_name, value in entry.items():
+            if value is not None:
+                results[key_name] = value.copy() if hasattr(value, "copy") else dict(value)
+        results["rime_targets_jsonl"] = self.targets_jsonl
+        results["rime_targets_sha256"] = self.targets_sha256
+        return results
+
+
+@PIPELINES.register_module()
+class DucaRimeBudgetReplayFromJsonl:
+    """Attach an immutable evaluation/control K assignment without predictions."""
+
+    def __init__(self, replay_jsonl, replay_sha256, candidate_budgets=(192, 256, 384, 512)):
+        self.replay_jsonl = os.path.abspath(
+            os.path.expandvars(os.path.expanduser(str(replay_jsonl)))
+        )
+        self.replay_sha256 = str(replay_sha256).lower()
+        self.candidate_budgets = tuple(int(value) for value in candidate_budgets)
+        if not os.path.isfile(self.replay_jsonl):
+            raise FileNotFoundError(f"RIME budget replay JSONL missing: {self.replay_jsonl}")
+        digest = hashlib.sha256()
+        with open(self.replay_jsonl, "rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        if not self.replay_sha256 or digest.hexdigest() != self.replay_sha256:
+            raise ValueError("RIME budget replay SHA-256 is required and must match")
+        self._index = {}
+        with open(self.replay_jsonl, "r", encoding="utf-8-sig") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                text = line.strip()
+                if not text:
+                    continue
+                row = json.loads(text)
+                prefix = f"{self.replay_jsonl}:{line_number}"
+                if row.get("schema_version") != "duca_rime_budget_replay_v1":
+                    raise ValueError(f"{prefix}: unsupported replay schema")
+                video = str(row.get("video_id") or row.get("video_name") or "")
+                window_start = int(row.get("window_start_frame", -1))
+                requested_k = int(row.get("requested_k", -1))
+                provenance = row.get("provenance")
+                if (
+                    not video
+                    or window_start < 0
+                    or requested_k not in self.candidate_budgets
+                    or not isinstance(provenance, dict)
+                ):
+                    raise ValueError(f"{prefix}: invalid replay record")
+                if any(
+                    bool(provenance.get(key, False))
+                    for key in ("uses_gt", "uses_teacher", "uses_prediction_cache")
+                ):
+                    raise ValueError(f"{prefix}: contaminated replay provenance")
+                key = (video, window_start)
+                if key in self._index:
+                    raise ValueError(f"{prefix}: duplicate replay window {key}")
+                self._index[key] = (requested_k, dict(provenance))
+        if not self._index:
+            raise ValueError("RIME budget replay JSONL contains no records")
+
+    def __call__(self, results):
+        key = (
+            str(results.get("video_name") or results.get("video_id") or ""),
+            int(results.get("window_start_frame", 0)),
+        )
+        if key not in self._index:
+            raise ValueError(f"missing RIME budget replay for window {key}")
+        requested_k, provenance = self._index[key]
+        results["rime_requested_k_replay"] = int(requested_k)
+        results["rime_requested_k_replay_provenance"] = dict(provenance)
+        results["rime_budget_replay_jsonl"] = self.replay_jsonl
+        results["rime_budget_replay_sha256"] = self.replay_sha256
+        return results
+
+
+@PIPELINES.register_module()
 class LoadSnippetFrames:
     """Load the snippet frame, the output should follows the format:
     snippet_num x channel x clip_len x height x width

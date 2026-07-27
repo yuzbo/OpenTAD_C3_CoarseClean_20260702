@@ -828,12 +828,41 @@ def physical_exact_uniform_gap_cap(
 def _build_physical_exact_k_graph(
     physical_seconds: torch.Tensor,
     max_gap_seconds: torch.Tensor,
+    required_mask: torch.Tensor | None = None,
 ) -> PhysicalExactKGraph:
     """Build the one graph object consumed by both Viterbi and Gibbs paths."""
 
     temporal_len = int(physical_seconds.numel())
     if temporal_len == 0:
         raise ValueError("physical exact-K graph requires at least one valid candidate")
+    if required_mask is None:
+        required = torch.zeros(
+            temporal_len,
+            device=physical_seconds.device,
+            dtype=torch.bool,
+        )
+    else:
+        required = required_mask.to(
+            device=physical_seconds.device,
+            dtype=torch.bool,
+        )
+        if required.shape != (temporal_len,):
+            raise ValueError(
+                "physical exact-K graph required_mask must match the valid row"
+            )
+    # prefix[i] is the number of required nodes in [0, i).  An edge may
+    # terminate on a required node, but it must never jump across one.
+    required_prefix = torch.cat(
+        (
+            torch.zeros(
+                1,
+                device=physical_seconds.device,
+                dtype=torch.long,
+            ),
+            required.long().cumsum(dim=0),
+        ),
+        dim=0,
+    )
     cap = max_gap_seconds.to(
         device=physical_seconds.device,
         dtype=physical_seconds.dtype,
@@ -866,6 +895,12 @@ def _build_physical_exact_k_graph(
         predecessor_index = left[:, None] + columns[None, :]
         predecessor_valid = columns[None, :] < predecessor_span[:, None]
         predecessor_index = predecessor_index.clamp(max=temporal_len - 1)
+        right_index = positions[:, None].expand_as(predecessor_index)
+        skipped_required = (
+            required_prefix[right_index]
+            - required_prefix[predecessor_index + 1]
+        )
+        predecessor_valid &= skipped_required == 0
 
     upper = physical_seconds + cap + tolerance
     right = torch.searchsorted(physical_seconds, upper, right=True)
@@ -887,9 +922,19 @@ def _build_physical_exact_k_graph(
         successor_index = positions[:, None] + 1 + columns[None, :]
         successor_valid = columns[None, :] < successor_span[:, None]
         successor_index = successor_index.clamp(max=temporal_len - 1)
+        left_index = positions[:, None].expand_as(successor_index)
+        skipped_required = (
+            required_prefix[successor_index]
+            - required_prefix[left_index + 1]
+        )
+        successor_valid &= skipped_required == 0
 
     source_valid = physical_seconds - physical_seconds[0] <= cap + tolerance
     sink_valid = physical_seconds[-1] - physical_seconds <= cap + tolerance
+    source_valid &= required_prefix[:-1] == 0
+    sink_valid &= (
+        required_prefix[-1] - required_prefix[1:]
+    ) == 0
     predecessor_edges = int(predecessor_valid.sum().item())
     successor_edges = int(successor_valid.sum().item())
     if predecessor_edges != successor_edges:
@@ -1150,7 +1195,8 @@ def _prepare_physical_exact_k_batch(
     *,
     k: int,
     max_gap_seconds: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, int, torch.Tensor]:
+    required_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, torch.Tensor]:
     if (
         node_log_probs.ndim != 2
         or not node_log_probs.is_floating_point()
@@ -1166,6 +1212,17 @@ def _prepare_physical_exact_k_batch(
     )
     if valid.shape != node_log_probs.shape:
         raise ValueError("valid_mask must align with node_log_probs")
+    if required_mask is None:
+        required = torch.zeros_like(valid)
+    else:
+        required = required_mask.to(
+            device=node_log_probs.device,
+            dtype=torch.bool,
+        )
+        if required.shape != node_log_probs.shape:
+            raise ValueError("required_mask must align with node_log_probs")
+        if bool(torch.any(required & ~valid).item()):
+            raise ValueError("required physical positions must lie in the valid prefix")
     k = int(k)
     if k < 1:
         raise ValueError("k must be positive")
@@ -1180,6 +1237,12 @@ def _prepare_physical_exact_k_batch(
             torch.isfinite(node_log_probs[batch_idx, :valid_len]).all().item()
         ):
             raise ValueError("valid node_log_probs must be finite")
+        effective_k = min(k, valid_len)
+        required_count = int(required[batch_idx, :valid_len].sum().item())
+        if required_count > effective_k:
+            raise ValueError(
+                "required physical positions cannot exceed the effective exact budget"
+            )
     if max_gap_seconds is None:
         caps = physical_exact_uniform_gap_cap(
             physical_seconds,
@@ -1198,7 +1261,7 @@ def _prepare_physical_exact_k_batch(
             raise ValueError("max_gap_seconds must be scalar or [B]")
         if not bool(torch.isfinite(caps).all().item()) or bool(torch.any(caps < 0).item()):
             raise ValueError("max_gap_seconds must contain finite non-negative values")
-    return physical_seconds, valid, k, caps
+    return physical_seconds, valid, k, caps, required
 
 
 def _pad_physical_hard_row(
@@ -1256,6 +1319,7 @@ def physical_exact_k_select(
     *,
     k: int,
     max_gap_seconds: torch.Tensor | None = None,
+    required_mask: torch.Tensor | None = None,
     temperature: float = 1.0,
 ) -> PhysicalExactKSelectionOutput:
     """Return hard Viterbi and soft Gibbs assignments from the same graph."""
@@ -1263,12 +1327,13 @@ def physical_exact_k_select(
     temperature = float(temperature)
     if not math.isfinite(temperature) or temperature <= 0.0:
         raise ValueError("temperature must be finite and positive")
-    physical_seconds, valid, k, caps = _prepare_physical_exact_k_batch(
+    physical_seconds, valid, k, caps, required = _prepare_physical_exact_k_batch(
         node_log_probs,
         physical_seconds,
         valid_mask,
         k=k,
         max_gap_seconds=max_gap_seconds,
+        required_mask=required_mask,
     )
 
     hard_rows = []
@@ -1287,7 +1352,11 @@ def physical_exact_k_select(
         effective_rows.append(effective_k)
         row_scores = node_log_probs[batch_idx, :valid_len]
         row_seconds = physical_seconds[batch_idx, :valid_len]
-        graph = _build_physical_exact_k_graph(row_seconds, caps[batch_idx])
+        graph = _build_physical_exact_k_graph(
+            row_seconds,
+            caps[batch_idx],
+            required[batch_idx, :valid_len],
+        )
         hard_valid, active_positions, active_hard_slots = _physical_row_viterbi(
             row_scores.detach(),
             k=effective_k,
@@ -1299,6 +1368,13 @@ def physical_exact_k_select(
             graph=graph,
             temperature=temperature,
         )
+        if bool(
+            torch.any(
+                ~hard_valid.bool()
+                & required[batch_idx, :valid_len]
+            ).item()
+        ):
+            raise RuntimeError("physical exact-K path omitted a required position")
         hard, hard_slots, positions, slot_mask = _pad_physical_hard_row(
             hard_valid,
             active_positions,
@@ -1363,13 +1439,15 @@ def physical_exact_k_viterbi(
     *,
     k: int,
     max_gap_seconds: torch.Tensor | None = None,
+    required_mask: torch.Tensor | None = None,
 ) -> PhysicalExactKHardOutput:
-    physical_seconds, valid, k, caps = _prepare_physical_exact_k_batch(
+    physical_seconds, valid, k, caps, required = _prepare_physical_exact_k_batch(
         node_log_probs,
         physical_seconds,
         valid_mask,
         k=k,
         max_gap_seconds=max_gap_seconds,
+        required_mask=required_mask,
     )
     temporal_len = int(node_log_probs.shape[1])
     hard_rows = []
@@ -1384,12 +1462,20 @@ def physical_exact_k_viterbi(
         graph = _build_physical_exact_k_graph(
             physical_seconds[batch_idx, :valid_len],
             caps[batch_idx],
+            required[batch_idx, :valid_len],
         )
         hard_valid, active_positions, active_slots = _physical_row_viterbi(
             node_log_probs[batch_idx, :valid_len].detach(),
             k=effective_k,
             graph=graph,
         )
+        if bool(
+            torch.any(
+                ~hard_valid.bool()
+                & required[batch_idx, :valid_len]
+            ).item()
+        ):
+            raise RuntimeError("physical exact-K path omitted a required position")
         hard, hard_slots, positions, slot_mask = _pad_physical_hard_row(
             hard_valid,
             active_positions,
@@ -1421,17 +1507,19 @@ def physical_exact_k_forward_backward(
     *,
     k: int,
     max_gap_seconds: torch.Tensor | None = None,
+    required_mask: torch.Tensor | None = None,
     temperature: float = 1.0,
 ) -> PhysicalExactKSoftOutput:
     temperature = float(temperature)
     if not math.isfinite(temperature) or temperature <= 0.0:
         raise ValueError("temperature must be finite and positive")
-    physical_seconds, valid, k, caps = _prepare_physical_exact_k_batch(
+    physical_seconds, valid, k, caps, required = _prepare_physical_exact_k_batch(
         node_log_probs,
         physical_seconds,
         valid_mask,
         k=k,
         max_gap_seconds=max_gap_seconds,
+        required_mask=required_mask,
     )
     temporal_len = int(node_log_probs.shape[1])
     soft_rows = []
@@ -1445,6 +1533,7 @@ def physical_exact_k_forward_backward(
         graph = _build_physical_exact_k_graph(
             physical_seconds[batch_idx, :valid_len],
             caps[batch_idx],
+            required[batch_idx, :valid_len],
         )
         soft_valid, active_slots, partition = _physical_row_forward_backward(
             node_log_probs[batch_idx, :valid_len],
