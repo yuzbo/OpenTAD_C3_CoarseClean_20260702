@@ -166,8 +166,23 @@ def evaluate_predictions(
     split = json.loads(Path(split_manifest).read_text(encoding="utf-8"))
     evaluation_path = Path(terminal_evaluation).expanduser().resolve()
     evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    terminal_schema = evaluation.get("schema_version")
+    supported_schema = terminal_schema == "duca_rime_terminal_evaluation_v1"
     if (
-        evaluation.get("schema_version") != "duca_rime_terminal_evaluation_v1"
+        int(phase) == 2
+        and terminal_schema
+        == "duca_rime_phase2_baseline_terminal_evaluation_v1"
+    ):
+        baseline_contract = evaluation.get("baseline_contract")
+        supported_schema = (
+            isinstance(baseline_contract, Mapping)
+            and int(baseline_contract.get("phase", -1)) == 2
+            and baseline_contract.get("uses_official_final") is False
+            and baseline_contract.get("padded_to_kmax") is False
+            and evaluation.get("training_identity") is None
+        )
+    if (
+        not supported_schema
         or evaluation.get("task") != "offline_temporal_action_detection"
         or evaluation.get("runtime_gt_input_to_selector") is not False
         or evaluation.get("padded_to_kmax") is not False
@@ -289,6 +304,7 @@ def evaluate_predictions(
     payload = {
         "schema_version": SCHEMA,
         "phase": int(phase),
+        "terminal_schema_version": str(terminal_schema),
         "git_commit": evaluation["git_commit"],
         "variant": evaluation["variant"],
         "seed": int(evaluation["seed"]),

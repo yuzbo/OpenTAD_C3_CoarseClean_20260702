@@ -69,6 +69,19 @@ def main():
         formal_protocol
     )
     rime_formal = duca_rime_training.is_formal_protocol(formal_protocol)
+    rime_phase2_baseline = cfg.get("duca_rime_baseline_contract", None) is not None
+    if rime_phase2_baseline:
+        baseline_contract = cfg.duca_rime_baseline_contract
+        if (
+            formal_protocol != "duca_protected_physical_v1"
+            or int(baseline_contract.phase) != 2
+            or baseline_contract.uses_official_final is not False
+            or baseline_contract.padded_to_kmax is not False
+            or str(baseline_contract.detector_backend)
+            not in {"ActionFormer", "TriDet"}
+            or float(baseline_contract.target_mean_cost) <= 0.0
+        ):
+            raise RuntimeError("invalid DUCA-RIME Phase-2 baseline contract")
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
@@ -116,7 +129,7 @@ def main():
             raise RuntimeError(
                 "formal evaluation requires one process and official mAP evaluation"
             )
-    if protected_physical_formal:
+    if protected_physical_formal and not rime_phase2_baseline:
         if source_resolved_config_sha256 != os.environ.get(
             "DUCA_RESOLVED_CONFIG_SHA256"
         ):
@@ -132,6 +145,16 @@ def main():
             raise RuntimeError(
                 "formal protected evaluation must use seed 3407, "
                 "terminal epoch-59 EMA, and structured metrics"
+            )
+    if rime_phase2_baseline:
+        if (
+            args.expected_checkpoint_epoch != 59
+            or args.checkpoint_state_key != "state_dict_ema"
+            or not args.metrics_json
+        ):
+            raise RuntimeError(
+                "Phase-2 RIME baseline evaluation requires terminal epoch-59 "
+                "EMA and structured metrics"
             )
     if selected_axis_formal:
         expected_seed = int(cfg.r5_cell.seed) if r5_formal else 3407
@@ -306,10 +329,12 @@ def main():
         )
         expected_evaluation_subset = (
             str(cfg.evaluation.subset)
-            if rime_formal
+            if rime_formal or rime_phase2_baseline
             else ("training" if r0_selected_axis_replay else "validation")
         )
-        if rime_formal and expected_evaluation_subset not in {"training", "validation"}:
+        if (
+            rime_formal or rime_phase2_baseline
+        ) and expected_evaluation_subset not in {"training", "validation"}:
             raise RuntimeError("formal RIME evaluation subset is not registered")
         evaluation_config = normalize_evaluation_config(
             cfg.evaluation,
@@ -332,6 +357,8 @@ def main():
             evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
         elif rime_formal:
             evaluation_schema = "duca_rime_terminal_evaluation_v1"
+        elif rime_phase2_baseline:
+            evaluation_schema = "duca_rime_phase2_baseline_terminal_evaluation_v1"
         else:
             evaluation_schema = "duca_p0_terminal_evaluation_v3"
         payload = {
@@ -397,6 +424,23 @@ def main():
                     "detector_backend": (
                         "TriDet" if rime_variant.endswith("-TriDet") else "ActionFormer"
                     ),
+                }
+            )
+        if rime_phase2_baseline:
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "variant": str(baseline_contract.variant),
+                    "runtime_gt_input_to_selector": False,
+                    "padded_to_kmax": False,
+                    "target_mean_cost": float(
+                        baseline_contract.target_mean_cost
+                    ),
+                    "detector_backend": str(
+                        baseline_contract.detector_backend
+                    ),
+                    "baseline_contract": _jsonable(baseline_contract),
+                    "training_identity": None,
                 }
             )
         if r0_selected_axis_replay:

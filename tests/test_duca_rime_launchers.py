@@ -128,3 +128,16 @@ def test_phase0_and_phase2_record_launchers_only_build_from_supplied_sources():
     assert "DUCA_RIME_O1_SOURCE_MANIFEST" in phase2
     assert "DUCA_RIME_O3_SOURCE_JSONL" in phase2
     assert "DUCA_RIME_PRICE_SOURCE_JSONL" in phase2
+
+
+def test_phase2_baseline_launcher_is_train_role_and_checkpoint_bound():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase2_baseline_eval.sh"
+    ).read_text(encoding="utf-8")
+    assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert "DUCA_RIME_PHASE2_SPLIT_ROLE" in text
+    assert "DUCA_RIME_PHASE2_BASELINE_CHECKPOINT_SHA256" in text
+    assert "DUCA_RIME_PHASE2_EVAL_BLOCK_LIST" in text
+    assert "duca_rime_uniform_phase2_baseline" not in text
+    assert "--phase 2" in text
+    assert "--split-role" in text
