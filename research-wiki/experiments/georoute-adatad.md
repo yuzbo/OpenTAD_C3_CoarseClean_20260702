@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: tested
-status: tested_p0_mechanical_only
-updated: 2026-07-23
+stage: experiment_running
+status: experiment_running_p1_one_seed_screen
+updated: 2026-07-27
 ---
 
 # GeoRoute-AdaTAD native spatial routing
@@ -114,6 +114,20 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   submitted leaves if a later real submission is rejected. Because the
   bootstrap itself also counts against the cap, P1 remains held until there
   are at most seven active submissions before the bootstrap is queued.
+- On 2026-07-27 the account had three active submissions, so clean snapshot
+  [`6a9bba62`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/6a9bba6222c18a468c3bd410edac89a4afdea189)
+  passed the source/P0/asset/capacity preflight. Bootstrap Job `1196062`
+  completed `0:0`, validated sealed P0 suite SHA
+  `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`,
+  and atomically published `p1_bootstrap.json` and `p1_submission.json` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_adatad_6a9bba62_p1p3_20260727_222913`.
+  The matched seed-3407 leaves are dense `1196071`, fixed lattice `1196072`,
+  fixed lattice plus geometry `1196073`, random `1196074`, free TokenSelect
+  `1196075`, ROI `1196076`, and hybrid `1196077`; all seven reached real
+  Epoch 0 batches with no stderr or fatal-log match at the first audit.
+  Selector `1196078` is pending with exact `afterok` dependencies on all seven
+  leaves. P2/P3 and official test remain unopened. Partial training losses are
+  heartbeat evidence only and authorize no performance, cost, or paper claim.
 
 ## Frozen decision logic
 

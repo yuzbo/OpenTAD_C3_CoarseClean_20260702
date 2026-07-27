@@ -992,3 +992,21 @@ append_only: true
   scout-only, FlashVID-inspired residual comparator to conditional P2. The
   detailed transfer audit is
   `docs/methods/reviews/2026-07-23-flashvid-literature-absorption.md`.
+
+- 2026-07-27: resumed the existing Zoom+Token route as the frozen
+  GeoRoute-AdaTAD P1 screen rather than creating a new method. Remote preflight
+  bound clean snapshot `6a9bba6222c18a468c3bd410edac89a4afdea189`, the
+  `PASS_MECHANICAL_ONLY` P0 suite SHA
+  `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`,
+  all required assets, and 3 active jobs under `MaxSubmitJobs=16`. Bootstrap
+  Job `1196062` completed `0:0` and atomically submitted dense `1196071`,
+  fixed-lattice `1196072`, fixed-lattice-plus-geometry `1196073`, random
+  `1196074`, free TokenSelect `1196075`, ROI `1196076`, hybrid `1196077`, and
+  result-blind selector `1196078`. All seven leaves reached real Epoch 0
+  batches; the selector is held by exact `afterok` dependencies. Shared-node
+  `c10d` emitted transient port-bind warnings for two leaves, but both
+  subsequently trained and the first audit found zero stderr lines and zero
+  fatal-log matches across the matrix. The running namespace is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_adatad_6a9bba62_p1p3_20260727_222913`.
+  This advances the route only to `experiment_running`; no P1 metric, cost
+  result, P2/P3 job, official test, empirical support, or paper claim exists.
