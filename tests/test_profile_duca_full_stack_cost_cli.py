@@ -224,6 +224,55 @@ def test_r5_dynamic_method_is_exact_and_requires_terminal_ema() -> None:
         malformed.validate()
 
 
+def test_rime_profile_requires_hash_bound_receipt_and_cell_identity() -> None:
+    parser = build_arg_parser()
+    base = [
+        "rime.py",
+        "--checkpoint",
+        "terminal_ema.pth",
+        "--use-ema",
+        "--method-name",
+        "duca-rime-phase4-ActionFormer-RIME-full-k384-s5801",
+        "--config-commit",
+        "a" * 40,
+        "--trained-commit",
+        "a" * 40,
+        "--evidence-commit",
+        "a" * 40,
+        "--profile-session-id",
+        "session",
+        "--profile-pair-id",
+        "pair",
+        "--profile-repeat-index",
+        "1",
+        "--profile-order-position",
+        "1",
+        "--output-prefix",
+        "out/rime",
+    ]
+    missing = parser.parse_args(base)
+    with pytest.raises(ValueError, match="training receipt"):
+        missing.validate()
+
+    complete = parser.parse_args(
+        base
+        + [
+            "--rime-training-receipt",
+            "receipt.json",
+            "--rime-training-receipt-sha256",
+            "b" * 64,
+            "--rime-evaluation-arm",
+            "RIME-full",
+            "--rime-seed",
+            "5801",
+        ]
+    )
+    complete.validate()
+    assert resolve_profile_commit_identities(
+        complete, actual_commit="a" * 40
+    ) == ("a" * 40, "a" * 40)
+
+
 def test_dense_paper_profile_requires_hash_bound_checkpoint_evidence() -> None:
     parser = build_arg_parser()
     args = parser.parse_args(

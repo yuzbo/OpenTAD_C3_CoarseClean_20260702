@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from mmengine.config import Config
+import pytest
 
 from tools.bata import duca_rime_training
 from tools.bata.duca_p0_evaluation import evaluation_config_sha256
@@ -29,6 +30,15 @@ def _sha(path: Path) -> str:
 def test_rime_runtime_binding_is_phase2_split_exposure_and_hash_bound(tmp_path, monkeypatch):
     monkeypatch.delenv("DUCA_RIME_REPLAY_JSONL", raising=False)
     monkeypatch.delenv("DUCA_RIME_REPLAY_SHA256", raising=False)
+    protocol = _json(
+        tmp_path / "protocol.json",
+        {
+            "schema_version": "duca_rime_budget_protocol_v1",
+            "fit_split": "train_only",
+            "uses_validation_or_test_labels": False,
+            "target_mean_cost": 384.0,
+        },
+    )
     phase2 = _json(
         tmp_path / "phase2.json",
         {
@@ -39,6 +49,18 @@ def test_rime_runtime_binding_is_phase2_split_exposure_and_hash_bound(tmp_path, 
             "official_final_subset_consumed": False,
             "git_commit": COMMIT,
             "split_assignment_sha256": "b" * 64,
+            "formal_budget_protocols": [
+                {
+                    "target_mean_cost": 384.0,
+                    "path": str(protocol.resolve()),
+                    "sha256": _sha(protocol),
+                },
+                {
+                    "target_mean_cost": 192.0,
+                    "path": str(protocol.resolve()),
+                    "sha256": _sha(protocol),
+                },
+            ],
         },
     )
     exposure = _json(
@@ -54,7 +76,6 @@ def test_rime_runtime_binding_is_phase2_split_exposure_and_hash_bound(tmp_path, 
     annotation = _write(tmp_path / "annotation.json", "{}")
     class_map = _write(tmp_path / "classes.txt", "action\n")
     targets = _write(tmp_path / "targets.jsonl", "{}\n")
-    protocol = _write(tmp_path / "protocol.json", "{}")
     config = _write(tmp_path / "config.py", "# config\n")
     evaluation = {
         "type": "mAP",
@@ -140,3 +161,176 @@ def test_rime_total60_configs_activate_dedicated_6000_update_contract(
         contract = duca_rime_training.formal_training_contract(cfg)
         assert contract["expected_successful_optimizer_updates"] == 6000
         assert contract["rime_arm"] == cfg.duca_rime_variant.arm
+
+
+def test_phase4_authorization_covers_only_registered_seed_backend_and_budget(
+    tmp_path,
+    monkeypatch,
+):
+    authorization = _json(
+        tmp_path / "phase4.json",
+        {
+            "schema_version": "duca_rime_stage_receipt_v1",
+            "phase": "phase4_authorization",
+            "status": "authorized",
+            "gate_pass": True,
+            "git_commit": COMMIT,
+            "formal_seeds": [5801, 8123, 12011],
+            "required_detectors": ["ActionFormer", "TriDet"],
+            "required_budget_panels": [384, 192],
+            "official_final_subset_consumed": False,
+        },
+    )
+    monkeypatch.setenv("DUCA_RIME_PHASE4_AUTHORIZATION", str(authorization))
+    monkeypatch.setenv("DUCA_RIME_PHASE4_AUTHORIZATION_SHA256", _sha(authorization))
+    monkeypatch.setenv("DUCA_RIME_TARGET_MEAN_COST", "192")
+
+    stage = duca_rime_training._training_stage_authorization(
+        git_commit=COMMIT,
+        variant="RIME-full-TriDet",
+        seed=5801,
+    )
+    assert stage["research_phase"] == 4
+    assert stage["detector_backend"] == "TriDet"
+    assert stage["formal_budget_panel"] == 192.0
+
+    with pytest.raises(ValueError, match="does not cover"):
+        duca_rime_training._training_stage_authorization(
+            git_commit=COMMIT,
+            variant="RIME-full",
+            seed=3407,
+        )
+
+
+def test_tridet_training_is_blocked_without_phase4_authorization(monkeypatch):
+    monkeypatch.delenv("DUCA_RIME_PHASE4_AUTHORIZATION", raising=False)
+    monkeypatch.delenv("DUCA_RIME_PHASE4_AUTHORIZATION_SHA256", raising=False)
+    with pytest.raises(ValueError, match="reserved for authorized Phase-4"):
+        duca_rime_training._training_stage_authorization(
+            git_commit=COMMIT,
+            variant="RIME-full-TriDet",
+            seed=3407,
+        )
+
+
+def test_phase4_terminal_receipt_is_bound_to_checkpoint_and_authorization(
+    tmp_path,
+    monkeypatch,
+):
+    seed = 5801
+    authorization = _json(
+        tmp_path / "phase4.json",
+        {
+            "schema_version": "duca_rime_stage_receipt_v1",
+            "phase": "phase4_authorization",
+            "status": "authorized",
+            "gate_pass": True,
+            "git_commit": COMMIT,
+            "formal_seeds": [seed, 8123, 12011],
+            "required_detectors": ["ActionFormer", "TriDet"],
+            "required_budget_panels": [384, 192],
+            "official_final_subset_consumed": False,
+        },
+    )
+    checkpoint_path = _write(tmp_path / "epoch_59.pth", "checkpoint-bytes")
+    audit = {
+        "status": "complete",
+        "git_commit": COMMIT,
+        "variant": "RIME-full-TriDet",
+        "seed": seed,
+        "expected_successful_optimizer_updates": 6000,
+        "update_audit": {"successful_optimizer_updates": 6000},
+        "split_assignment_sha256": "b" * 64,
+        "training_exposure_sha256": "c" * 64,
+        "initialization_sha256": "d" * 64,
+        "research_phase": 4,
+        "phase4_authorization_path": str(authorization.resolve()),
+        "phase4_authorization_sha256": _sha(authorization),
+        "formal_budget_panel": 192.0,
+        "detector_backend": "TriDet",
+    }
+    audit["audit_sha256"] = duca_rime_training.duca_p0_training.canonical_sha256(
+        audit
+    )
+    metadata = {
+        "schema_version": duca_rime_training.DUCA_P0_CHECKPOINT_METADATA_SCHEMA,
+        "training_audit": audit,
+    }
+    metadata["metadata_sha256"] = (
+        duca_rime_training.duca_p0_training.canonical_sha256(metadata)
+    )
+    checkpoint = {
+        "experiment_metadata": metadata,
+        "duca_rime_compaction": {
+            "schema_version": "duca_rime_compact_checkpoint_receipt_v1",
+            "git_commit": COMMIT,
+            "variant": "RIME-full-TriDet",
+            "seed": seed,
+            "evaluation_equivalent": True,
+            "optimizer_state_retained": False,
+            "training_resume_supported": False,
+        },
+    }
+    compaction_receipt = _json(
+        tmp_path / "terminal_ema.pth.receipt.json",
+        {
+            "schema_version": "duca_rime_compact_checkpoint_receipt_v1",
+            "status": "passed",
+            "git_commit": COMMIT,
+            "variant": "RIME-full-TriDet",
+            "seed": seed,
+            "compact_checkpoint_path": str(checkpoint_path.resolve()),
+            "compact_checkpoint_sha256": _sha(checkpoint_path),
+            "evaluation_equivalent": True,
+            "training_resume_supported": False,
+        },
+    )
+    receipt_payload = {
+        "schema_version": "duca_rime_phase4_training_receipt_v1",
+        "status": "passed",
+        "arm": "RIME-full-TriDet",
+        "seed": seed,
+        "git_commit": COMMIT,
+        "successful_detector_updates": 6000,
+        "formal_update_audit_passed": True,
+        "uses_official_final": False,
+        "checkpoint_path": str(checkpoint_path.resolve()),
+        "checkpoint_sha256": _sha(checkpoint_path),
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_compaction_receipt_path": str(
+            compaction_receipt.resolve()
+        ),
+        "checkpoint_compaction_receipt_sha256": _sha(compaction_receipt),
+        "research_phase": 4,
+        "phase4_authorization_path": str(authorization.resolve()),
+        "phase4_authorization_sha256": _sha(authorization),
+        "target_mean_cost": 192.0,
+        "detector_backend": "TriDet",
+    }
+    receipt = _json(tmp_path / "receipt.json", receipt_payload)
+    monkeypatch.setenv("DUCA_RIME_TRAINING_RECEIPT", str(receipt))
+    monkeypatch.setenv("DUCA_RIME_TRAINING_RECEIPT_SHA256", _sha(receipt))
+    identity = duca_rime_training.validate_terminal_checkpoint_binding(
+        checkpoint_path=checkpoint_path,
+        checkpoint=checkpoint,
+        git_commit=COMMIT,
+        evaluation_arm="RIME-full-TriDet",
+        seed=seed,
+    )
+    assert identity["research_phase"] == 4
+    assert identity["phase4_authorization_sha256"] == _sha(authorization)
+
+    forged = dict(receipt_payload)
+    forged["target_mean_cost"] = 384.0
+    forged_receipt = _json(tmp_path / "forged.json", forged)
+    monkeypatch.setenv("DUCA_RIME_TRAINING_RECEIPT", str(forged_receipt))
+    monkeypatch.setenv("DUCA_RIME_TRAINING_RECEIPT_SHA256", _sha(forged_receipt))
+    with pytest.raises(ValueError, match="are not bound"):
+        duca_rime_training.validate_terminal_checkpoint_binding(
+            checkpoint_path=checkpoint_path,
+            checkpoint=checkpoint,
+            git_commit=COMMIT,
+            evaluation_arm="RIME-full-TriDet",
+            seed=seed,
+        )

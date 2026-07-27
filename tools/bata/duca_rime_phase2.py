@@ -361,9 +361,22 @@ def analyze_o2(
         key = (str(row["video_id"]), int(row["budget"]), str(row["family"]))
         if key in panel:
             raise ValueError("duplicate O2 video/budget/family row")
-        positions = [int(value) for value in row["selected_positions"]]
-        if positions != sorted(set(positions)) or len(positions) != int(row["budget"]):
-            raise ValueError("O2 selected positions must be ordered unique exact-K")
+        if "selection_keys" in row:
+            positions = [str(value) for value in row["selection_keys"]]
+            if (
+                positions != sorted(set(positions))
+                or not positions
+                or row.get("exact_k_all_windows") is not True
+            ):
+                raise ValueError(
+                    "O2 selection manifest must be ordered, unique, and exact-K"
+                )
+        else:
+            positions = [int(value) for value in row["selected_positions"]]
+            if positions != sorted(set(positions)) or len(positions) != int(
+                row["budget"]
+            ):
+                raise ValueError("O2 selected positions must be ordered unique exact-K")
         if bool(row.get("max_gap_violation", False)):
             raise ValueError("O2 row violates the physical max-gap contract")
         panel[key] = row
@@ -390,11 +403,13 @@ def analyze_o2(
             independent = float(panel[(video, budget, "independent")]["score"])
             selected = float(panel[(video, budget, selected_family)]["score"])
             regrets.append(independent - selected)
+            selected_row = panel[(video, budget, selected_family)]
             positions = set(
-                int(value)
-                for value in panel[(video, budget, selected_family)][
-                    "selected_positions"
-                ]
+                str(value)
+                for value in selected_row.get(
+                    "selection_keys",
+                    selected_row.get("selected_positions", ()),
+                )
             )
             if previous is not None:
                 overlaps.append(len(previous & positions) / float(len(previous)))

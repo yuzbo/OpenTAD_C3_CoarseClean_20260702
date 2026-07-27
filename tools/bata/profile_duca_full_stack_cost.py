@@ -36,6 +36,7 @@ from tools.bata.duca_cellcf_protocol import (
 from tools.bata.duca_trained_checkpoint_binding import (
     load_trained_checkpoint_binding,
 )
+from tools.bata import duca_rime_training
 
 
 CELLCF_COST_METHODS = frozenset({"cellcf-fixed384", "bare-uniform384"})
@@ -45,6 +46,7 @@ CELLCF_COST_BINDING_SCHEMA = "duca_cellcf_cost_binding_v1"
 R5_COST_BINDING_SCHEMA = "duca_r5_terminal_cost_binding_v1"
 R5_FORMAL_PROTOCOL = "duca_r5_mechanism_matrix_v1"
 R5_MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
+RIME_COST_METHOD_PREFIX = "duca-rime-"
 R5_METHOD_PATTERN = re.compile(
     r"^(?P<backend>actionformer|temporalmaxer)_"
     r"(?P<arm>uniform|learned)_k(?P<budget>384|256)_"
@@ -66,6 +68,10 @@ def parse_r5_method_name(method_name: str) -> dict[str, Any] | None:
 
 def is_r5_cost_method(method_name: str) -> bool:
     return parse_r5_method_name(method_name) is not None
+
+
+def is_rime_cost_method(method_name: str) -> bool:
+    return str(method_name).startswith(RIME_COST_METHOD_PREFIX)
 
 
 def _validate_r5_cell_payload(
@@ -98,6 +104,7 @@ def _validate_r5_cell_payload(
 class ProfileArgs(argparse.Namespace):
     def validate(self) -> None:
         r5_method = is_r5_cost_method(self.method_name)
+        rime_method = is_rime_cost_method(self.method_name)
         if str(self.method_name).startswith(("actionformer_", "temporalmaxer_")) and not r5_method:
             raise ValueError("R5 method name is outside the frozen cell matrix")
         if not self.allow_random_init and not self.checkpoint:
@@ -126,14 +133,27 @@ class ProfileArgs(argparse.Namespace):
         has_checkpoint_evidence_sha = bool(
             str(self.checkpoint_evidence_sha256 or "").strip()
         )
+        has_rime_receipt = bool(
+            str(getattr(self, "rime_training_receipt", "") or "").strip()
+        )
+        has_rime_receipt_sha = bool(
+            str(getattr(self, "rime_training_receipt_sha256", "") or "").strip()
+        )
         if has_post_run_path != has_post_run_sha:
             raise ValueError("--post-run-evidence and --post-run-evidence-sha256 are required together")
         if has_checkpoint_evidence != has_checkpoint_evidence_sha:
             raise ValueError(
                 "--checkpoint-evidence and --checkpoint-evidence-sha256 are required together"
             )
+        if has_rime_receipt != has_rime_receipt_sha:
+            raise ValueError(
+                "--rime-training-receipt and --rime-training-receipt-sha256 "
+                "are required together"
+            )
         if has_post_run_path and has_checkpoint_evidence:
             raise ValueError("CellCF and generic checkpoint evidence are mutually exclusive")
+        if has_rime_receipt and (has_post_run_path or has_checkpoint_evidence):
+            raise ValueError("RIME and legacy checkpoint evidence are mutually exclusive")
         if self.method_name in CELLCF_COST_METHODS:
             if not has_post_run_path:
                 raise ValueError("formal CellCF cost profiles require hash-bound post-run evidence")
@@ -149,7 +169,26 @@ class ProfileArgs(argparse.Namespace):
                 raise ValueError("formal R5 cost profiles require an epoch-59 EMA checkpoint")
             if re.fullmatch(r"[0-9a-f]{40}", str(self.config_commit or "")) is None:
                 raise ValueError("formal R5 cost profiles require a full --config-commit")
-        if self.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
+        if rime_method:
+            if self.allow_random_init or not self.use_ema or not self.checkpoint:
+                raise ValueError(
+                    "formal DUCA-RIME cost profiles require a compact terminal EMA checkpoint"
+                )
+            if not has_rime_receipt:
+                raise ValueError(
+                    "formal DUCA-RIME cost profiles require a hash-bound training receipt"
+                )
+            if not str(getattr(self, "rime_evaluation_arm", "") or "").strip():
+                raise ValueError(
+                    "formal DUCA-RIME cost profiles require --rime-evaluation-arm"
+                )
+            if int(getattr(self, "rime_seed", 0)) <= 0:
+                raise ValueError("formal DUCA-RIME cost profiles require --rime-seed")
+            if re.fullmatch(r"[0-9a-f]{40}", str(self.config_commit or "")) is None:
+                raise ValueError(
+                    "formal DUCA-RIME cost profiles require a full --config-commit"
+                )
+        if self.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS or rime_method:
             if not self.trained_commit:
                 raise ValueError(
                     "formal cost profiles require --trained-commit"
@@ -168,7 +207,10 @@ class ProfileArgs(argparse.Namespace):
                 raise ValueError(
                     "--config-commit must identify the trained model/config commit"
                 )
-            if self.evidence_commit == self.trained_commit:
+            if (
+                not rime_method
+                and self.evidence_commit == self.trained_commit
+            ):
                 raise ValueError(
                     "trained and evidence commits must be distinct"
                 )
@@ -226,6 +268,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--post-run-evidence-sha256", default="", help="frozen SHA256 of post-run evidence")
     parser.add_argument("--checkpoint-evidence", default="", help="generic trained-checkpoint binding JSON")
     parser.add_argument("--checkpoint-evidence-sha256", default="", help="generic binding SHA256")
+    parser.add_argument(
+        "--rime-training-receipt",
+        default="",
+        help="hash-bound DUCA-RIME terminal training receipt",
+    )
+    parser.add_argument(
+        "--rime-training-receipt-sha256",
+        default="",
+        help="SHA256 of the DUCA-RIME terminal training receipt",
+    )
+    parser.add_argument(
+        "--rime-evaluation-arm",
+        default="",
+        help="RIME-full, U-fixed, or the evaluation-only U-same-K source arm",
+    )
+    parser.add_argument("--rime-seed", type=int, default=0)
     parser.add_argument("--profile-session-id", default="")
     parser.add_argument("--profile-pair-id", default="")
     parser.add_argument("--profile-repeat-index", type=int, default=0)
@@ -240,13 +298,19 @@ def resolve_profile_commit_identities(
     if re.fullmatch(r"[0-9a-f]{40}", trained_commit) is None:
         raise ValueError("--trained-commit must be a full lowercase Git commit")
     evidence_commit = str(args.evidence_commit or "")
-    if is_r5_cost_method(args.method_name):
+    if is_r5_cost_method(args.method_name) or is_rime_cost_method(args.method_name):
         if trained_commit != actual_commit:
-            raise ValueError("R5 trained checkpoint and profiler must use the same exact commit")
+            raise ValueError(
+                "R5/DUCA-RIME trained checkpoint and profiler must use the same exact commit"
+            )
         if str(args.config_commit or "") != trained_commit:
-            raise ValueError("R5 --config-commit must identify the exact trained commit")
+            raise ValueError(
+                "R5/DUCA-RIME --config-commit must identify the exact trained commit"
+            )
         if evidence_commit and evidence_commit != actual_commit:
-            raise ValueError("R5 --evidence-commit must equal the profiler repository HEAD")
+            raise ValueError(
+                "R5/DUCA-RIME --evidence-commit must equal the profiler repository HEAD"
+            )
         evidence_commit = actual_commit
     elif args.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS:
         if evidence_commit != actual_commit:
@@ -1376,6 +1440,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     config_path = Path(args.config).expanduser().resolve()
     r5_cell = parse_r5_method_name(args.method_name)
+    rime_method = is_rime_cost_method(args.method_name)
     git_blob_bound_profile = args.method_name in (
         CELLCF_COST_METHODS | DENSE_COST_METHODS
     )
@@ -1465,6 +1530,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cellcf_cost_binding = None
     trained_checkpoint_binding = None
     r5_cost_binding = None
+    rime_cost_binding = None
     if args.post_run_evidence:
         cellcf_cost_binding = load_cellcf_cost_binding(
             args.post_run_evidence,
@@ -1475,6 +1541,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     cfg = Config.fromfile(str(config_path))
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
+    if rime_method:
+        workflow = cfg.get("workflow", {})
+        protocol = (
+            workflow.get("formal_protocol")
+            if isinstance(workflow, Mapping)
+            else None
+        )
+        if not duca_rime_training.is_formal_protocol(protocol):
+            raise ValueError(
+                "DUCA-RIME cost profiling requires a formal RIME training/evaluation config"
+            )
+        if _sha256_file(args.rime_training_receipt) != str(
+            args.rime_training_receipt_sha256
+        ):
+            raise ValueError("DUCA-RIME training receipt SHA256 mismatch")
     if r5_cell is not None:
         configured_cell = _stable_payload(cfg.get("r5_cell", None))
         _validate_r5_cell_payload(
@@ -1571,6 +1652,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             ):
                 raise ValueError(
                     "loaded checkpoint metadata differs from the R5 terminal binding"
+                )
+        if rime_method:
+            rime_checkpoint = torch.load(args.checkpoint, map_location="cpu")
+            if not isinstance(rime_checkpoint, Mapping):
+                raise ValueError("DUCA-RIME terminal checkpoint must be a mapping")
+            rime_cost_binding = duca_rime_training.validate_terminal_checkpoint_binding(
+                checkpoint_path=args.checkpoint,
+                checkpoint=rime_checkpoint,
+                git_commit=trained_commit,
+                evaluation_arm=str(args.rime_evaluation_arm),
+                seed=int(args.rime_seed),
+                training_receipt_path=args.rime_training_receipt,
+                training_receipt_sha256=args.rime_training_receipt_sha256,
+            )
+            del rime_checkpoint
+            for key in (
+                "checkpoint_path",
+                "checkpoint_sha256",
+            ):
+                if checkpoint_meta.get(key) != rime_cost_binding.get(key):
+                    raise ValueError(
+                        f"loaded checkpoint differs from DUCA-RIME binding: {key}"
+                    )
+            if int(checkpoint_meta.get("checkpoint_epoch", -1)) != 59:
+                raise ValueError("DUCA-RIME cost profile requires terminal epoch 59")
+            if checkpoint_meta.get("checkpoint_state_key") != "state_dict_ema":
+                raise ValueError(
+                    "DUCA-RIME cost profile requires terminal state_dict_ema"
                 )
 
     modules, zero_stages = discover_profile_modules(model)
@@ -1750,6 +1859,49 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "r5_cost_binding_sha256": _canonical_sha256(r5_cost_binding),
                 "weight_source": "r5_terminal_epoch_59_state_dict_ema",
                 "frontend_variant": str(r5_cell["arm"]),
+                "dense_full_stack_savings_claimed": False,
+            }
+        )
+    if rime_cost_binding is not None:
+        rime_identity = {
+            "schema_version": "duca_rime_cost_identity_v1",
+            "research_phase": int(rime_cost_binding["research_phase"]),
+            "detector_backend": str(rime_cost_binding["detector_backend"]),
+            "evaluation_arm": str(rime_cost_binding["evaluation_arm"]),
+            "source_training_arm": str(rime_cost_binding["source_arm"]),
+            "target_mean_cost": rime_cost_binding["target_mean_cost"],
+            "seed": int(args.rime_seed),
+            "git_commit": trained_commit,
+            "training_receipt_path": str(
+                rime_cost_binding["training_receipt_path"]
+            ),
+            "training_receipt_sha256": str(
+                rime_cost_binding["training_receipt_sha256"]
+            ),
+            "checkpoint_path": str(rime_cost_binding["checkpoint_path"]),
+            "checkpoint_sha256": str(rime_cost_binding["checkpoint_sha256"]),
+            "checkpoint_compaction_receipt_sha256": str(
+                rime_cost_binding["checkpoint_compaction_receipt_sha256"]
+            ),
+            "training_exposure_sha256": str(
+                rime_cost_binding["training_exposure_sha256"]
+            ),
+            "initialization_sha256": str(
+                rime_cost_binding["initialization_sha256"]
+            ),
+            "official_final_subset_consumed_during_training": False,
+        }
+        rime_identity["identity_sha256"] = _canonical_sha256(rime_identity)
+        metadata.update(
+            {
+                "rime_cost_binding": rime_cost_binding,
+                "rime_cost_binding_sha256": _canonical_sha256(
+                    rime_cost_binding
+                ),
+                "rime_cost_identity": rime_identity,
+                "rime_cost_identity_sha256": _canonical_sha256(rime_identity),
+                "weight_source": "duca_rime_compact_terminal_epoch_59_state_dict_ema",
+                "frontend_variant": str(rime_cost_binding["evaluation_arm"]),
                 "dense_full_stack_savings_claimed": False,
             }
         )

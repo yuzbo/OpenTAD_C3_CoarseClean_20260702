@@ -52,6 +52,16 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/test.py \
   tools/bata/train_lowres_action_probe.py \
   tools/bata/create_duca_rime_splits.py \
+  tools/bata/create_duca_rime_training_exposure.py \
+  tools/bata/compact_duca_rime_checkpoint.py \
+  tools/bata/evaluate_duca_rime_predictions.py \
+  tools/bata/finalize_duca_rime_cost.py \
+  tools/bata/finalize_duca_rime_phase3_arm.py \
+  tools/bata/bootstrap_duca_rime_phase4.py \
+  tools/bata/finalize_duca_rime_phase4_cell.py \
+  tools/bata/build_duca_rime_gate_records.py \
+  tools/bata/profile_duca_full_stack_cost.py \
+  tools/bata/duca_p0_evaluation.py \
   tools/bata/build_duca_rime_training_targets.py \
   tools/bata/duca_rime_phase2.py \
   tools/bata/duca_rime_stage_contract.py \
@@ -69,7 +79,15 @@ bash -n \
   scripts/run_duca_rime_code_gate.sh \
   scripts/run_duca_rime_phase1_gate.sh \
   scripts/run_duca_rime_phase2_gates.sh \
-  scripts/run_duca_rime_phase3_train_arm.sh
+  scripts/run_duca_rime_phase3_train_arm.sh \
+  scripts/run_duca_rime_phase4_train_cell.sh \
+  scripts/run_duca_rime_evaluate_arm.sh \
+  scripts/run_duca_rime_cost_cell.sh \
+  scripts/run_duca_rime_phase3_seal.sh \
+  scripts/run_duca_rime_phase4_seal_cell.sh \
+  scripts/run_duca_rime_phase4_seal_matrix.sh \
+  scripts/run_duca_rime_phase0_measurements.sh \
+  scripts/run_duca_rime_phase2_record_build.sh
 
 "${PYTHON}" -m pytest \
   tests/test_duca_rime.py \
@@ -79,6 +97,11 @@ bash -n \
   tests/test_duca_rime_launchers.py \
   tests/test_duca_rime_inference_ledger.py \
   tests/test_duca_rime_training_contract.py \
+  tests/test_duca_rime_exposure.py \
+  tests/test_duca_rime_checkpoint_retention.py \
+  tests/test_duca_rime_prediction_metrics.py \
+  tests/test_duca_rime_gate_records.py \
+  tests/test_profile_duca_full_stack_cost_cli.py \
   tests/test_duca_rime_tridet.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \
@@ -98,7 +121,15 @@ configs = (
     "configs/adatad/thumos/duca_adaptok_tad_direct_total60.py",
     "configs/adatad/thumos/duca_rime_full_total60.py",
     "configs/adatad/thumos/duca_rime_full_tridet_total60.py",
+    "configs/adatad/thumos/duca_rime_uniform_fixed_tridet_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_same_k_eval.py",
+    "configs/adatad/thumos/duca_rime_uniform_same_k_tridet_eval.py",
+    "configs/adatad/thumos/duca_rime_full_formal_validation.py",
+    "configs/adatad/thumos/duca_rime_full_tridet_formal_validation.py",
+    "configs/adatad/thumos/duca_rime_uniform_fixed_formal_validation.py",
+    "configs/adatad/thumos/duca_rime_uniform_fixed_tridet_formal_validation.py",
+    "configs/adatad/thumos/duca_rime_uniform_same_k_formal_validation.py",
+    "configs/adatad/thumos/duca_rime_uniform_same_k_tridet_formal_validation.py",
 )
 for path in configs:
     cfg = Config.fromfile(path)

@@ -22,6 +22,8 @@ def _row(video, start=0):
         "risk_fallback": False,
         "cost_unit": "heavy_rgb_frames",
         "selected_dense_indices": [0, 1, 2, 3],
+        "max_gap_seconds_cap": 1.0,
+        "observed_max_gap_seconds": 0.75,
         "budget_protocol_sha256": "a" * 64,
         "provenance": {
             "uses_gt": False,
@@ -48,6 +50,7 @@ def test_finalize_rime_inference_ledger_is_sorted_unique_and_no_padding(tmp_path
     )
     assert result["record_count"] == 2
     assert result["no_padding_ledger"] is True
+    assert result["max_observed_gap_seconds"] == pytest.approx(0.75)
     assert json.loads(output.read_text(encoding="utf-8").splitlines()[0])["video_id"] == "v0"
 
 

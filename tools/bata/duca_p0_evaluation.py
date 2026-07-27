@@ -274,6 +274,7 @@ def _evaluate_bootstrap_draw(
     predictions: Mapping[str, Mapping[str, list[dict[str, Any]]]],
     cfg: Mapping[str, Any],
     ground_truth_path: Path,
+    metric_names: tuple[str, ...] = ("average_mAP",),
 ) -> tuple[float, ...]:
     from opentad.evaluations.mAP import mAP
 
@@ -300,7 +301,13 @@ def _evaluate_bootstrap_draw(
             prediction_filename={"results": synthetic_predictions[family]},
             **kwargs,
         )
-        values.append(_metrics_from_evaluator(evaluator)["average_mAP"])
+        metrics = _metrics_from_evaluator(evaluator)
+        for metric_name in metric_names:
+            if metric_name not in metrics:
+                raise ValueError(
+                    f"official evaluator did not emit bootstrap metric {metric_name}"
+                )
+            values.append(float(metrics[metric_name]))
     return tuple(values)
 
 
@@ -309,6 +316,7 @@ def _initialize_bootstrap_worker(
     database: Mapping[str, Any],
     predictions: Mapping[str, Mapping[str, list[dict[str, Any]]]],
     cfg: Mapping[str, Any],
+    metric_names: tuple[str, ...] = ("average_mAP",),
 ) -> None:
     global _BOOTSTRAP_WORKER_DIRECTORY, _BOOTSTRAP_WORKER_STATE
     _BOOTSTRAP_WORKER_DIRECTORY = tempfile.TemporaryDirectory(
@@ -319,6 +327,7 @@ def _initialize_bootstrap_worker(
         "database": database,
         "predictions": predictions,
         "cfg": cfg,
+        "metric_names": metric_names,
         "ground_truth_path": Path(_BOOTSTRAP_WORKER_DIRECTORY.name)
         / "ground_truth.json",
     }
@@ -473,6 +482,156 @@ def bootstrap_official_map_differences(
     }
 
 
+def bootstrap_official_metric_differences(
+    prediction_paths: Mapping[str, str | Path],
+    evaluation_config: Any,
+    *,
+    baseline_family: str,
+    expected_video_ids: list[str] | tuple[str, ...],
+    expected_subset: str,
+    metric_names: tuple[str, ...] = ("average_mAP", "mAP@0.7"),
+    samples: int = 1000,
+    seed: int = 3407,
+    confidence: float = 0.95,
+    workers: int = 1,
+) -> dict[str, Any]:
+    """Paired bootstrap for multiple metrics, rerunning the official evaluator."""
+
+    import numpy as np
+
+    families = tuple(str(key) for key in prediction_paths)
+    metrics = tuple(str(value) for value in metric_names)
+    if baseline_family not in families or len(families) < 2:
+        raise ValueError("bootstrap requires a baseline and at least one comparison")
+    if (
+        not metrics
+        or len(metrics) != len(set(metrics))
+        or any(
+            metric not in {"average_mAP", *(
+                f"mAP@{float(value)}" for value in EXPECTED_TIOU_THRESHOLDS
+            )}
+            for metric in metrics
+        )
+    ):
+        raise ValueError("unsupported or duplicated official bootstrap metric")
+    if int(samples) < 100:
+        raise ValueError("formal DUCA bootstrap requires at least 100 samples")
+    if not 0.0 < float(confidence) < 1.0:
+        raise ValueError("bootstrap confidence must lie in (0,1)")
+    workers = int(workers)
+    if workers < 1 or workers > 64:
+        raise ValueError("formal DUCA bootstrap workers must lie in [1,64]")
+    expected = tuple(str(value) for value in expected_video_ids)
+    if not expected or len(expected) != len(set(expected)):
+        raise ValueError("bootstrap video identities must be nonempty and unique")
+
+    cfg = normalize_evaluation_config(
+        evaluation_config,
+        expected_subset=expected_subset,
+    )
+    if evaluation_video_ids(cfg, expected_subset=expected_subset) != tuple(
+        sorted(expected)
+    ):
+        raise ValueError("bootstrap video set differs from the evaluator target set")
+    annotation = json.loads(
+        Path(cfg["ground_truth_filename"]).read_text(encoding="utf-8")
+    )
+    database = annotation.get("database")
+    if not isinstance(database, Mapping) or any(
+        video not in database for video in expected
+    ):
+        raise ValueError("bootstrap annotation does not cover the expected videos")
+    predictions = {
+        family: prediction_results(path)
+        for family, path in prediction_paths.items()
+    }
+    expected_set = set(expected)
+    for family, rows in predictions.items():
+        extras = set(rows) - expected_set
+        if extras:
+            raise ValueError(
+                f"{family} prediction contains out-of-scope videos: {sorted(extras)[:4]}"
+            )
+
+    rng = random.Random(int(seed))
+    draws = [
+        tuple(expected[rng.randrange(len(expected))] for _ in expected)
+        for _ in range(int(samples))
+    ]
+    sampled = {
+        family: {metric: [] for metric in metrics}
+        for family in families
+    }
+
+    def absorb(values: tuple[float, ...]) -> None:
+        cursor = 0
+        for family in families:
+            for metric in metrics:
+                sampled[family][metric].append(float(values[cursor]))
+                cursor += 1
+
+    if workers == 1:
+        with tempfile.TemporaryDirectory(prefix="duca-rime-bootstrap-") as directory:
+            ground_truth_path = Path(directory) / "ground_truth.json"
+            for draw in draws:
+                absorb(
+                    _evaluate_bootstrap_draw(
+                        draw,
+                        families=families,
+                        database=database,
+                        predictions=predictions,
+                        cfg=cfg,
+                        ground_truth_path=ground_truth_path,
+                        metric_names=metrics,
+                    )
+                )
+    else:
+        chunk_size = max(1, len(draws) // (workers * 8))
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_initialize_bootstrap_worker,
+            initargs=(families, database, predictions, cfg, metrics),
+        ) as executor:
+            for values in executor.map(
+                _evaluate_bootstrap_draw_in_worker,
+                draws,
+                chunksize=chunk_size,
+            ):
+                absorb(values)
+
+    alpha = (1.0 - float(confidence)) / 2.0
+    aliases = {"average_mAP": "avg_map", "mAP@0.7": "map_0.7"}
+    comparisons: dict[str, Any] = {}
+    for family in families:
+        if family == baseline_family:
+            continue
+        comparisons[family] = {}
+        for metric in metrics:
+            left = np.asarray(sampled[family][metric], dtype=np.float64)
+            right = np.asarray(sampled[baseline_family][metric], dtype=np.float64)
+            delta = left - right
+            comparisons[family][aliases.get(metric, metric)] = {
+                "mean": float(delta.mean()),
+                "ci95_low": float(np.quantile(delta, alpha)),
+                "ci95_high": float(np.quantile(delta, 1.0 - alpha)),
+            }
+    return {
+        "schema_version": "duca_rime_official_metric_bootstrap_v1",
+        "official_evaluator_reexecuted_per_resample": True,
+        "paired_video_cluster_bootstrap": True,
+        "baseline_family": baseline_family,
+        "family_order": list(families),
+        "official_metric_names": list(metrics),
+        "video_ids": list(expected),
+        "bootstrap_samples": int(samples),
+        "seed": int(seed),
+        "confidence": float(confidence),
+        "evaluation_config": cfg,
+        "evaluation_config_sha256": canonical_sha256(cfg),
+        "comparisons": comparisons,
+    }
+
+
 __all__ = [
     "EXPECTED_EVALUATOR_CLASS",
     "EXPECTED_EVALUATOR_MODULE",
@@ -483,6 +642,7 @@ __all__ = [
     "official_evaluator_identity",
     "prediction_counts",
     "prediction_results",
+    "bootstrap_official_metric_differences",
     "bootstrap_official_map_differences",
     "recompute_official_map",
 ]

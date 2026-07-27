@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 from statistics import mean
+import math
 from typing import Any, Mapping, Sequence
 
 
@@ -68,11 +69,18 @@ def finalize_ledger(
             backbone = int(row["backbone_input_k"])
             padded = int(row["padded_k"])
             positions = [int(value) for value in row["selected_dense_indices"]]
+            gap_cap = float(row["max_gap_seconds_cap"])
+            observed_gap = float(row["observed_max_gap_seconds"])
             if (
                 requested < effective
                 or not effective == unique == backbone == padded > 0
                 or positions != sorted(set(positions))
                 or len(positions) != effective
+                or not math.isfinite(gap_cap)
+                or not math.isfinite(observed_gap)
+                or gap_cap < 0.0
+                or observed_gap < 0.0
+                or observed_gap > gap_cap + 1.0e-8
             ):
                 raise ValueError(f"{prefix}: exact-K/no-padding cost ledger violation")
             video = str(row.get("video_id") or "")
@@ -96,6 +104,10 @@ def finalize_ledger(
     target.write_text(text, encoding="utf-8")
     requested_values = [int(row["requested_k"]) for row in rows.values()]
     effective_values = [int(row["effective_k"]) for row in rows.values()]
+    observed_gaps = [
+        float(row["observed_max_gap_seconds"]) for row in rows.values()
+    ]
+    gap_caps = [float(row["max_gap_seconds_cap"]) for row in rows.values()]
     return {
         "schema_version": SUMMARY_SCHEMA,
         "status": "sealed",
@@ -110,6 +122,9 @@ def finalize_ledger(
             str(value): requested_values.count(value)
             for value in sorted(set(requested_values))
         },
+        "max_observed_gap_seconds": max(observed_gaps),
+        "max_gap_seconds_cap": max(gap_caps),
+        "all_observed_gaps_within_cap": True,
         "no_padding_ledger": True,
         "source_shards": source_artifacts,
         "official_final_labels_used_for_decision": False,

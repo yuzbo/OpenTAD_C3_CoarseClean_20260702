@@ -486,6 +486,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                                 int(value)
                                 for value in meta.get("selected_dense_indices", ())
                             ],
+                            "max_gap_seconds_cap": float(
+                                meta["duca_max_gap_seconds_cap"]
+                            ),
+                            "observed_max_gap_seconds": float(
+                                meta["duca_observed_max_gap_seconds"]
+                            ),
                             "budget_protocol_sha256": self.budget_protocol_sha256,
                             "provenance": {
                                 "task": "offline_temporal_action_detection",

@@ -13,6 +13,10 @@ development_block_list = os.environ.get(
 if not train_block_list or not development_block_list:
     raise RuntimeError("U-fixed requires the frozen RIME train/development block lists")
 protocol = protocol_for_name("official60")
+fixed_budget = int(os.environ.get("DUCA_RIME_FIXED_BUDGET", "384"))
+if fixed_budget not in {192, 384} or fixed_budget % 16:
+    raise RuntimeError("U-fixed requires a registered 192/384 budget divisible by 16")
+fixed_chunk_num = fixed_budget // 16
 
 dataset = dict(
     train=dict(
@@ -32,6 +36,37 @@ evaluation = dict(subset="training")
 # The RGB backbone still executes exactly K=384 frames; only the detector tail
 # sees the common Kmax=512 canvas used by every Phase-3 arm.
 model = dict(
+    frame_selector=dict(
+        budget=fixed_budget,
+    ),
+    backbone=dict(
+        backbone=dict(total_frames=fixed_budget),
+        custom=dict(
+            pre_processing_pipeline=[
+                dict(
+                    type="Rearrange",
+                    keys=["frames"],
+                    ops="b n c (t1 t) h w -> (b t1) n c t h w",
+                    t1=fixed_chunk_num,
+                ),
+            ],
+            post_processing_pipeline=[
+                dict(
+                    type="Reduce",
+                    keys=["feats"],
+                    ops="b n c t h w -> b c t",
+                    reduction="mean",
+                ),
+                dict(
+                    type="Rearrange",
+                    keys=["feats"],
+                    ops="(b t1) c t -> b c (t1 t)",
+                    t1=fixed_chunk_num,
+                ),
+                dict(type="Interpolate", keys=["feats"], size=fixed_budget),
+            ],
+        ),
+    ),
     projection=dict(max_seq_len=512),
 )
 
@@ -47,6 +82,7 @@ workflow = dict(
     formal_protocol="duca_rime_uniform_control_v1",
     training_profile=protocol.name,
     checkpoint_interval=protocol.checkpoint_interval,
+    checkpoint_retention=1,
     val_loss_interval=-1,
     val_eval_interval=-1,
     val_eval_interval_anchor_epoch=9999,
@@ -68,7 +104,7 @@ workflow = dict(
 duca_rime_variant = dict(
     arm="U-fixed",
     exact_uniform=True,
-    exact_budget=384,
+    exact_budget=fixed_budget,
     training_video_count=100,
     batch_size=1,
     expected_successful_updates=protocol.expected_successful_optimizer_updates,
@@ -77,3 +113,5 @@ duca_rime_variant = dict(
 work_dir = "exps/thumos/adatad/duca_rime_uniform_fixed384_total60"
 
 del protocol
+del fixed_budget
+del fixed_chunk_num

@@ -35,11 +35,35 @@ PHASE3_ARMS = (
     "AdapTok-TAD",
     "RIME-full",
 )
+PHASE3_TRAIN_ARMS = tuple(arm for arm in PHASE3_ARMS if arm != "U-same-K")
 PHASE3_METRICS = ("avg_map", "map_0.7", "short_map", "pair_support")
+PHASE4_METRICS = (
+    "avg_map",
+    "map_0.6",
+    "map_0.7",
+    "short_map",
+    "medium_map",
+    "long_map",
+    "boundary_error",
+    "pair_support",
+    "max_gap_seconds",
+)
 
 
 def _sha256_file(path: str | Path) -> str:
     return hashlib.sha256(Path(path).expanduser().resolve().read_bytes()).hexdigest()
+
+
+def _canonical_sha256(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _load_json(path: str | Path) -> tuple[Path, dict[str, Any]]:
@@ -97,6 +121,34 @@ def _parse_key_value_receipt(path: str | Path) -> tuple[Path, dict[str, str]]:
 def _artifact(path: str | Path) -> dict[str, str]:
     resolved = Path(path).expanduser().resolve()
     return {"path": str(resolved), "sha256": _sha256_file(resolved)}
+
+
+def _verify_content_sha256(payload: Mapping[str, Any], label: str) -> None:
+    unsigned = dict(payload)
+    embedded = unsigned.pop("content_sha256", None)
+    if embedded != _canonical_sha256(unsigned):
+        raise ValueError(f"{label} content hash is invalid")
+
+
+def _load_bound_artifact(
+    artifacts: Mapping[str, Any],
+    name: str,
+) -> tuple[Path, dict[str, Any]]:
+    binding = artifacts.get(name)
+    if not isinstance(binding, Mapping):
+        raise ValueError(f"Phase-4 {name} artifact binding is missing")
+    path = Path(str(binding.get("path", ""))).expanduser().resolve()
+    expected_sha256 = str(binding.get("sha256", ""))
+    if (
+        not path.is_file()
+        or len(expected_sha256) != 64
+        or _sha256_file(path) != expected_sha256
+    ):
+        raise ValueError(f"Phase-4 {name} artifact binding drifted")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Phase-4 {name} artifact must be a JSON object")
+    return path, payload
 
 
 def seal_phase1(
@@ -207,7 +259,8 @@ def seal_phase2(
     *,
     phase1_receipt: str | Path,
     summaries: Sequence[str | Path],
-    budget_protocol: str | Path,
+    budget_protocol: str | Path | None = None,
+    budget_protocols: Sequence[str | Path] | None = None,
     output: str | Path,
 ) -> dict[str, Any]:
     phase1_path, phase1 = _load_json(phase1_receipt)
@@ -243,22 +296,55 @@ def seal_phase2(
     }
     if set(evidence) != required:
         raise ValueError("Phase-2 requires exactly O1, O2, O3, and O4")
-    protocol_path, protocol = _load_json(budget_protocol)
-    if (
-        protocol.get("schema_version") != "duca_rime_budget_protocol_v1"
-        or protocol.get("gate_pass") is not True
-        or protocol.get("fit_split") != "train_only"
-        or protocol.get("uses_validation_or_test_labels") is not False
-        or protocol.get("decoder_family")
-        != evidence["o2_decoder_family_regret"].get("selected_family")
-    ):
-        raise ValueError("frozen RIME protocol is invalid or disagrees with O2")
-    protocol_evidence = {
-        str(row.get("stage")): str(row.get("sha256"))
-        for row in protocol.get("evidence_summaries", ())
-    }
-    if set(protocol_evidence) != required or evidence_hashes != protocol_evidence:
-        raise ValueError("frozen RIME protocol is not hash-bound to the supplied O1-O4 evidence")
+    supplied_protocols = list(budget_protocols or ())
+    if budget_protocol is not None:
+        supplied_protocols.append(budget_protocol)
+    if not supplied_protocols:
+        raise ValueError("Phase-2 requires frozen budget protocols")
+    protocol_rows = []
+    protocol_by_target = {}
+    common_grid = None
+    for supplied in supplied_protocols:
+        protocol_path, protocol = _load_json(supplied)
+        if (
+            protocol.get("schema_version") != "duca_rime_budget_protocol_v1"
+            or protocol.get("gate_pass") is not True
+            or protocol.get("fit_split") != "train_only"
+            or protocol.get("uses_validation_or_test_labels") is not False
+            or protocol.get("decoder_family")
+            != evidence["o2_decoder_family_regret"].get("selected_family")
+        ):
+            raise ValueError("frozen RIME protocol is invalid or disagrees with O2")
+        protocol_evidence = {
+            str(row.get("stage")): str(row.get("sha256"))
+            for row in protocol.get("evidence_summaries", ())
+        }
+        if set(protocol_evidence) != required or evidence_hashes != protocol_evidence:
+            raise ValueError(
+                "frozen RIME protocol is not hash-bound to the supplied O1-O4 evidence"
+            )
+        target = float(protocol.get("target_mean_cost", math.nan))
+        if target in protocol_by_target or not math.isfinite(target):
+            raise ValueError("RIME protocol targets are duplicated or nonfinite")
+        grid = (
+            tuple(int(value) for value in protocol.get("candidate_budgets", ())),
+            tuple(float(value) for value in protocol.get("candidate_costs", ())),
+        )
+        if common_grid is None:
+            common_grid = grid
+        elif grid != common_grid:
+            raise ValueError("RIME formal budget protocols use different candidate grids")
+        artifact = _artifact(protocol_path)
+        protocol_rows.append(
+            {
+                "target_mean_cost": target,
+                **artifact,
+            }
+        )
+        protocol_by_target[target] = (protocol_path, protocol, artifact)
+    if set(protocol_by_target) != {384.0, 192.0}:
+        raise ValueError("Phase-2 must freeze the registered 384 and 192 budget panels")
+    protocol_path, protocol, development_artifact = protocol_by_target[384.0]
 
     payload = {
         "schema_version": RECEIPT_SCHEMA,
@@ -271,7 +357,11 @@ def seal_phase2(
         "phase1_receipt": _artifact(phase1_path),
         "phase0_thresholds": dict(phase1["phase0_thresholds"]),
         "gate_artifacts": evidence_artifacts,
-        "budget_protocol": _artifact(protocol_path),
+        "budget_protocol": development_artifact,
+        "formal_budget_protocols": sorted(
+            protocol_rows,
+            key=lambda row: -float(row["target_mean_cost"]),
+        ),
         "candidate_budgets": list(protocol["candidate_budgets"]),
         "candidate_costs": list(protocol["candidate_costs"]),
         "target_mean_cost": float(protocol["target_mean_cost"]),
@@ -366,43 +456,92 @@ def seal_phase3(
     exposure = set()
     for row in rows:
         arm = str(row.get("arm"))
-        if (
+        common_invalid = (
             row.get("schema_version") != PHASE3_RESULT_SCHEMA
             or arm in by_arm
             or arm not in PHASE3_ARMS
             or int(row.get("seed", -1)) != int(expected_seed)
-            or int(row.get("successful_detector_updates", -1)) != 6000
-            or row.get("formal_update_audit_passed") is not True
             or row.get("uses_official_final") is not False
             or row.get("split_assignment_sha256")
             != phase2["split_assignment_sha256"]
             or row.get("padded_to_kmax") is not False
-        ):
+        )
+        if arm == "U-same-K":
+            execution_invalid = (
+                row.get("evaluation_only") is not True
+                or row.get("source_training_arm") != "RIME-full"
+                or row.get("independent_training_run") is not False
+                or int(row.get("successful_detector_updates", -1)) != 0
+                or int(row.get("source_successful_detector_updates", -1)) != 6000
+                or row.get("source_formal_update_audit_passed") is not True
+                or not str(row.get("source_training_receipt_sha256", ""))
+            )
+        else:
+            execution_invalid = (
+                row.get("evaluation_only") is True
+                or int(row.get("successful_detector_updates", -1)) != 6000
+                or row.get("formal_update_audit_passed") is not True
+            )
+        if common_invalid or execution_invalid:
             raise ValueError("invalid, incomplete, or contaminated Phase-3 arm result")
         result_videos = set(str(value) for value in row.get("evaluation_video_ids", ()))
         if result_videos != development_videos:
             raise ValueError("Phase-3 must evaluate exactly the certification/development role")
         for metric in PHASE3_METRICS:
             _finite_metric_map(row, metric, development_videos)
-        costs = {
-            str(key): float(value)
-            for key, value in row.get("realized_total_cost", {}).items()
-        }
-        if (
-            set(costs) != development_videos
-            or not all(math.isfinite(value) and value > 0.0 for value in costs.values())
-        ):
-            raise ValueError("Phase-3 realized full-stack cost ledger is incomplete")
         initialization.add(str(row.get("initialization_sha256")))
         exposure.add(str(row.get("training_exposure_sha256")))
         by_arm[arm] = row
     if set(by_arm) != set(PHASE3_ARMS):
         raise ValueError("Phase-3 seven-arm matrix is incomplete")
+    same_k = by_arm["U-same-K"]
+    full = by_arm["RIME-full"]
+    if (
+        same_k.get("source_training_receipt_sha256")
+        != full.get("training_receipt_sha256")
+        or same_k.get("initialization_sha256") != full.get("initialization_sha256")
+        or same_k.get("training_exposure_sha256")
+        != full.get("training_exposure_sha256")
+    ):
+        raise ValueError("U-same-K is not bound to the sealed RIME-full training run")
     if len(initialization) != 1 or "" in initialization or len(exposure) != 1 or "" in exposure:
         raise ValueError("Phase-3 arms do not share initialization and exposure")
     for arm in ("U-same-K", "D-shuffle"):
         if by_arm[arm].get("k_histogram") != by_arm["RIME-full"].get("k_histogram"):
             raise ValueError(f"{arm} does not preserve the RIME-full K histogram")
+    for arm, row in by_arm.items():
+        if arm != "RIME-full" and row.get("cost") is not None:
+            raise ValueError("only RIME-full may carry the shared paired cost artifact")
+    full_cost_evidence = by_arm["RIME-full"].get("cost")
+    if not isinstance(full_cost_evidence, Mapping):
+        raise ValueError("RIME-full lacks paired full-stack cost evidence")
+    artifact_path = Path(str(full_cost_evidence.get("artifact_path", ""))).resolve()
+    artifact_sha = str(full_cost_evidence.get("artifact_sha256", ""))
+    if (
+        full_cost_evidence.get("schema_version")
+        != "duca_rime_paired_full_stack_cost_v1"
+        or int(full_cost_evidence.get("research_phase", -1)) != 3
+        or full_cost_evidence.get("arm") != "RIME-full"
+        or int(full_cost_evidence.get("seed", -1)) != int(expected_seed)
+        or full_cost_evidence.get("detector_backend") != "ActionFormer"
+        or float(full_cost_evidence.get("target_mean_cost", math.nan)) != 384.0
+        or full_cost_evidence.get("real_full_stack_measurement") is not True
+        or full_cost_evidence.get("includes_probe_decoder_solver") is not True
+        or full_cost_evidence.get("matched_realized_cost") is not True
+        or float(full_cost_evidence.get("matched_k_tolerance", math.inf))
+        > float(cost_tolerance)
+        or not artifact_path.is_file()
+        or _sha256_file(artifact_path) != artifact_sha
+    ):
+        raise ValueError("Phase-3 paired full-stack cost artifact is invalid")
+    artifact_payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    embedded_cost = {
+        key: value
+        for key, value in full_cost_evidence.items()
+        if key not in {"artifact_path", "artifact_sha256"}
+    }
+    if artifact_payload != embedded_cost:
+        raise ValueError("Phase-3 embedded cost evidence differs from its artifact")
 
     metrics = {
         arm: {
@@ -431,17 +570,16 @@ def seal_phase3(
     risk_high = compare("RIME-full", "D-no-risk", "map_0.7", 5)
     risk_short = compare("RIME-full", "D-no-risk", "short_map", 6)
     risk_pair = compare("RIME-full", "D-no-risk", "pair_support", 7)
-    full_cost = mean(
-        float(value) for value in by_arm["RIME-full"]["realized_total_cost"].values()
-    )
-    fixed_cost = mean(
-        float(value) for value in by_arm["U-fixed"]["realized_total_cost"].values()
-    )
-    dense_cost = float(by_arm["RIME-full"].get("dense_reference_mean_cost", math.nan))
+    full_cost = float(full_cost_evidence.get("latency_p50_ms", math.nan))
+    fixed_cost = float(full_cost_evidence.get("fixed_latency_p50_ms", math.nan))
+    dense_cost = float(full_cost_evidence.get("dense_latency_p50_ms", math.nan))
     cost_gate = (
-        math.isfinite(dense_cost)
+        all(
+            math.isfinite(value) and value > 0.0
+            for value in (full_cost, fixed_cost, dense_cost)
+        )
         and full_cost < dense_cost
-        and abs(full_cost - fixed_cost) <= float(cost_tolerance)
+        and full_cost_evidence.get("matched_realized_cost") is True
     )
     contribution_gates = {
         "full_over_best_fixed": full_fixed["ci95_low"] > minimum_gain,
@@ -464,7 +602,9 @@ def seal_phase3(
         "results_jsonl": _artifact(results_path),
         "development_seed": int(expected_seed),
         "development_seed_excluded_from_formal_statistics": True,
-        "successful_detector_updates_per_arm": 6000,
+        "successful_detector_updates_per_train_arm": 6000,
+        "train_arms": list(PHASE3_TRAIN_ARMS),
+        "evaluation_only_arms": ["U-same-K"],
         "shared_initialization_sha256": next(iter(initialization)),
         "shared_training_exposure_sha256": next(iter(exposure)),
         "phase0_minimum_primary_gain": minimum_gain,
@@ -474,7 +614,9 @@ def seal_phase3(
             "RIME-full": full_cost,
             "U-fixed": fixed_cost,
             "dense_reference": dense_cost,
-            "match_tolerance": float(cost_tolerance),
+            "matched_effective_k_tolerance": float(
+                full_cost_evidence["matched_k_tolerance"]
+            ),
         },
         "official_final_subset_consumed": False,
         "phase4_authorized": gate,
@@ -495,6 +637,17 @@ def authorize_phase4(
 ) -> dict[str, Any]:
     phase3_path, phase3 = _load_json(phase3_receipt)
     seeds = tuple(int(value) for value in formal_seeds)
+    phase2_path, phase2 = _load_json(phase3.get("phase2_receipt", {}).get("path", ""))
+    formal_protocols = phase2.get("formal_budget_protocols")
+    protocol_targets = (
+        {
+            float(row.get("target_mean_cost"))
+            for row in formal_protocols
+            if isinstance(row, Mapping)
+        }
+        if isinstance(formal_protocols, list)
+        else set()
+    )
     if (
         phase3.get("schema_version") != RECEIPT_SCHEMA
         or phase3.get("phase") != "phase3"
@@ -504,6 +657,10 @@ def authorize_phase4(
         or len(seeds) != 3
         or len(set(seeds)) != 3
         or int(phase3["development_seed"]) in seeds
+        or phase3.get("phase2_receipt", {}).get("sha256") != _sha256_file(phase2_path)
+        or phase2.get("schema_version") != RECEIPT_SCHEMA
+        or phase2.get("phase") != "phase2"
+        or protocol_targets != {384.0, 192.0}
     ):
         raise RuntimeError("Phase-4 submission is blocked by Phase-3 or invalid formal seeds")
     payload = {
@@ -513,12 +670,305 @@ def authorize_phase4(
         "gate_pass": True,
         "git_commit": phase3["git_commit"],
         "phase3_receipt": _artifact(phase3_path),
+        "phase2_receipt": _artifact(phase2_path),
+        "formal_budget_protocols": formal_protocols,
         "formal_seeds": list(seeds),
         "required_detectors": ["ActionFormer", "TriDet"],
         "required_budget_panels": [384, 192],
         "official_final_subset_consumed": False,
         "paper_claim_allowed": False,
         "claim_scope": "formal_submission_authorization_only",
+    }
+    return _write_immutable(output, payload)
+
+
+def _finite_number(value: Any, label: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{label} must be finite")
+    return number
+
+
+def seal_phase4(
+    *,
+    authorization_receipt: str | Path,
+    results_jsonl: str | Path,
+    output: str | Path,
+) -> dict[str, Any]:
+    authorization_path, authorization = _load_json(authorization_receipt)
+    if (
+        authorization.get("schema_version") != RECEIPT_SCHEMA
+        or authorization.get("phase") != "phase4_authorization"
+        or authorization.get("status") != "authorized"
+        or authorization.get("gate_pass") is not True
+        or authorization.get("official_final_subset_consumed") is not False
+        or authorization.get("paper_claim_allowed") is not False
+    ):
+        raise ValueError("Phase-4 results are blocked by their authorization")
+    seeds = tuple(int(value) for value in authorization["formal_seeds"])
+    detectors = tuple(str(value) for value in authorization["required_detectors"])
+    budgets = tuple(float(value) for value in authorization["required_budget_panels"])
+    expected_cells = {
+        (detector, budget, seed)
+        for detector in detectors
+        for budget in budgets
+        for seed in seeds
+    }
+    result_path, rows = _load_jsonl(results_jsonl)
+    by_cell = {}
+    final_video_ids = None
+    authorization_sha256 = _sha256_file(authorization_path)
+    for row in rows:
+        detector = str(row.get("detector_backend"))
+        budget = float(row.get("target_mean_cost", math.nan))
+        seed = int(row.get("seed", -1))
+        cell = (detector, budget, seed)
+        if (
+            row.get("schema_version") != PHASE4_RESULT_SCHEMA
+            or cell not in expected_cells
+            or cell in by_cell
+            or row.get("git_commit") != authorization["git_commit"]
+            or row.get("method_frozen_before_final_evaluation") is not True
+            or row.get("development_seed_excluded") is not True
+            or row.get("uses_official_final") is not True
+            or row.get("official_final_used_for_training_or_selection") is not False
+            or int(row.get("rime_successful_detector_updates", -1)) != 6000
+            or int(row.get("fixed_successful_detector_updates", -1)) != 6000
+            or int(row.get("same_k_successful_detector_updates", -1)) != 0
+            or row.get("same_k_source_training_arm") != "RIME-full"
+            or row.get("padded_to_kmax") is not False
+        ):
+            raise ValueError("invalid, incomplete, or contaminated Phase-4 cell")
+        videos = tuple(sorted(str(value) for value in row.get("evaluation_video_ids", ())))
+        if not videos or len(videos) != len(set(videos)):
+            raise ValueError("Phase-4 cell has an invalid final-evaluation video set")
+        if final_video_ids is None:
+            final_video_ids = videos
+        elif videos != final_video_ids:
+            raise ValueError("Phase-4 cells do not share the official final video set")
+        artifacts = row.get("artifacts")
+        required_artifacts = {
+            "authorization",
+            "rime_metrics",
+            "fixed_metrics",
+            "same_k_metrics",
+            "comparisons",
+            "cost",
+            "rime_ledger_summary",
+        }
+        if (
+            not isinstance(artifacts, Mapping)
+            or not required_artifacts.issubset(artifacts)
+        ):
+            raise ValueError("Phase-4 cell evidence artifacts are incomplete")
+        artifact_payloads = {
+            name: _load_bound_artifact(artifacts, name)
+            for name in required_artifacts
+        }
+        if (
+            str(artifacts["authorization"].get("sha256", ""))
+            != authorization_sha256
+            or artifact_payloads["authorization"][1] != authorization
+        ):
+            raise ValueError("Phase-4 cell is not bound to its authorization receipt")
+        metrics = row.get("metrics")
+        if not isinstance(metrics, Mapping):
+            raise ValueError("Phase-4 cell metrics are missing")
+        for metric in PHASE4_METRICS:
+            value = _finite_number(metrics.get(metric), f"Phase-4 {metric}")
+            if metric in {"avg_map", "map_0.6", "map_0.7", "short_map", "medium_map", "long_map", "pair_support"} and not 0.0 <= value <= 1.0:
+                raise ValueError(f"Phase-4 {metric} lies outside [0,1]")
+            if metric in {"boundary_error", "max_gap_seconds"} and value < 0.0:
+                raise ValueError(f"Phase-4 {metric} must be non-negative")
+        comparisons = row.get("comparisons")
+        if not isinstance(comparisons, Mapping):
+            raise ValueError("Phase-4 paired comparisons are missing")
+        comparison_artifact = artifact_payloads["comparisons"][1]
+        _verify_content_sha256(comparison_artifact, "Phase-4 comparisons")
+        if (
+            comparison_artifact.get("schema_version")
+            != "duca_rime_phase4_comparisons_v1"
+            or comparison_artifact.get("git_commit") != authorization["git_commit"]
+            or comparison_artifact.get("detector_backend") != detector
+            or float(comparison_artifact.get("target_mean_cost", math.nan)) != budget
+            or int(comparison_artifact.get("seed", -1)) != seed
+            or tuple(
+                sorted(
+                    str(value)
+                    for value in comparison_artifact.get(
+                        "evaluation_video_ids", ()
+                    )
+                )
+            )
+            != videos
+            or comparison_artifact.get(
+                "official_final_used_for_training_or_selection"
+            )
+            is not False
+            or comparison_artifact.get("comparisons") != comparisons
+        ):
+            raise ValueError(
+                "Phase-4 embedded comparisons differ from their hash-bound artifact"
+            )
+        for name in ("rime_minus_best_fixed", "rime_minus_uniform_same_k"):
+            comparison = comparisons.get(name)
+            official_bootstrap = (
+                None
+                if not isinstance(comparison, Mapping)
+                else comparison.get("official_map_bootstrap")
+            )
+            auxiliary_bootstrap = (
+                None
+                if not isinstance(comparison, Mapping)
+                else comparison.get("auxiliary_video_bootstrap")
+            )
+            if (
+                not isinstance(comparison, Mapping)
+                or not isinstance(official_bootstrap, Mapping)
+                or official_bootstrap.get(
+                    "official_evaluator_reexecuted_per_resample"
+                )
+                is not True
+                or official_bootstrap.get("paired_video_cluster_bootstrap")
+                is not True
+                or int(official_bootstrap.get("bootstrap_samples", 0)) < 1000
+                or not isinstance(auxiliary_bootstrap, Mapping)
+                or auxiliary_bootstrap.get(
+                    "official_evaluator_reexecuted_per_resample"
+                )
+                is not False
+                or auxiliary_bootstrap.get("paired_video_cluster_bootstrap")
+                is not True
+                or int(auxiliary_bootstrap.get("bootstrap_samples", 0)) < 1000
+            ):
+                raise ValueError(
+                    f"Phase-4 {name} lacks separated official and auxiliary bootstraps"
+                )
+            for metric in ("avg_map", "map_0.7", "short_map", "pair_support"):
+                interval = comparison.get(metric)
+                if not isinstance(interval, Mapping):
+                    raise ValueError(f"Phase-4 {name}/{metric} interval is missing")
+                low = _finite_number(interval.get("ci95_low"), f"{name}/{metric} low")
+                high = _finite_number(interval.get("ci95_high"), f"{name}/{metric} high")
+                _finite_number(interval.get("mean"), f"{name}/{metric} mean")
+                if low > high:
+                    raise ValueError(f"Phase-4 {name}/{metric} interval is reversed")
+        cost = row.get("cost")
+        cost_artifact = artifact_payloads["cost"][1]
+        _verify_content_sha256(cost_artifact, "Phase-4 cost evidence")
+        expected_arm = "RIME-full-TriDet" if detector == "TriDet" else "RIME-full"
+        matched_k_tolerance = _finite_number(
+            cost_artifact.get("matched_k_tolerance"),
+            "matched K tolerance",
+        )
+        candidate_k = _finite_number(
+            cost_artifact.get("candidate_effective_mean_k"),
+            "candidate effective mean K",
+        )
+        fixed_k = _finite_number(
+            cost_artifact.get("fixed_effective_mean_k"),
+            "fixed effective mean K",
+        )
+        if (
+            not isinstance(cost, Mapping)
+            or dict(cost) != cost_artifact
+            or cost_artifact.get("schema_version")
+            != "duca_rime_paired_full_stack_cost_v1"
+            or int(cost_artifact.get("research_phase", -1)) != 4
+            or cost_artifact.get("arm") != expected_arm
+            or int(cost_artifact.get("seed", -1)) != seed
+            or cost_artifact.get("detector_backend") != detector
+            or float(cost_artifact.get("target_mean_cost", math.nan)) != budget
+            or cost.get("real_full_stack_measurement") is not True
+            or cost.get("matched_realized_cost") is not True
+            or cost.get("includes_probe_decoder_solver") is not True
+            or cost.get("official_final_labels_used_for_cost_decision") is not False
+            or matched_k_tolerance < 0.0
+            or matched_k_tolerance > 1.0
+            or candidate_k <= 0.0
+            or fixed_k <= 0.0
+            or abs(candidate_k - fixed_k) > matched_k_tolerance
+            or abs(candidate_k - budget) > matched_k_tolerance
+            or abs(fixed_k - budget) > matched_k_tolerance
+            or _finite_number(cost.get("latency_p50_ms"), "latency p50") <= 0.0
+            or _finite_number(cost.get("latency_p95_ms"), "latency p95") <= 0.0
+            or _finite_number(cost.get("throughput_videos_per_second"), "throughput")
+            <= 0.0
+            or _finite_number(cost.get("energy_joules_per_video"), "energy") <= 0.0
+            or _finite_number(cost.get("peak_gpu_memory_mb"), "memory") <= 0.0
+            or _finite_number(cost.get("fixed_latency_p50_ms"), "fixed latency")
+            <= 0.0
+            or _finite_number(cost.get("dense_latency_p50_ms"), "dense latency") <= 0.0
+            or _finite_number(cost.get("dense_latency_p95_ms"), "dense latency p95")
+            <= 0.0
+            or cost.get("candidate_below_dense")
+            is not (
+                float(cost.get("latency_p50_ms"))
+                < float(cost.get("dense_latency_p50_ms"))
+            )
+        ):
+            raise ValueError("Phase-4 real full-stack cost evidence is incomplete")
+        by_cell[cell] = row
+    if set(by_cell) != expected_cells:
+        raise ValueError("Phase-4 detector/budget/seed matrix is incomplete")
+
+    cell_gates = {}
+    direction = {}
+    for cell, row in by_cell.items():
+        comparisons = row["comparisons"]
+        fixed = comparisons["rime_minus_best_fixed"]
+        same_k = comparisons["rime_minus_uniform_same_k"]
+        cost = row["cost"]
+        gate = {
+            "avg_map_over_best_fixed": float(fixed["avg_map"]["ci95_low"]) > 0.0,
+            "avg_map_over_uniform_same_k": float(same_k["avg_map"]["ci95_low"]) > 0.0,
+            "high_iou_non_degrade": float(fixed["map_0.7"]["ci95_low"]) >= 0.0,
+            "short_non_degrade": float(fixed["short_map"]["ci95_low"]) >= 0.0,
+            "pair_support_non_degrade": float(fixed["pair_support"]["ci95_low"]) >= 0.0,
+            "real_cost_below_dense": float(cost["latency_p50_ms"])
+            < float(cost["dense_latency_p50_ms"]),
+        }
+        cell_id = f"{cell[0]}|K{int(cell[1])}|seed{cell[2]}"
+        cell_gates[cell_id] = gate
+        direction.setdefault((cell[0], cell[1]), []).append(
+            float(fixed["avg_map"]["mean"])
+        )
+    direction_summary = {
+        f"{detector}|K{int(budget)}": {
+            "mean_rime_minus_best_fixed_avg_map": mean(values),
+            "all_seed_directions_positive": all(value > 0.0 for value in values),
+        }
+        for (detector, budget), values in direction.items()
+    }
+    gate_pass = (
+        all(all(values.values()) for values in cell_gates.values())
+        and all(
+            row["all_seed_directions_positive"]
+            for row in direction_summary.values()
+        )
+    )
+    payload = {
+        "schema_version": RECEIPT_SCHEMA,
+        "phase": "phase4",
+        "status": "paper_ready" if gate_pass else "formal_no_go",
+        "gate_pass": gate_pass,
+        "git_commit": authorization["git_commit"],
+        "authorization_receipt": _artifact(authorization_path),
+        "results_jsonl": _artifact(result_path),
+        "formal_seeds": list(seeds),
+        "detectors": list(detectors),
+        "budget_panels": list(budgets),
+        "cell_count": len(by_cell),
+        "official_final_video_ids": list(final_video_ids or ()),
+        "cell_gates": cell_gates,
+        "cross_seed_detector_budget_direction": direction_summary,
+        "official_final_subset_consumed": True,
+        "paper_claim_allowed": gate_pass,
+        "claim_scope": (
+            "offline_tad_pre_backbone_acquisition_plugin_formal_evidence"
+            if gate_pass
+            else "formal_no_go_no_general_plugin_claim"
+        ),
     }
     return _write_immutable(output, payload)
 
@@ -539,7 +989,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     phase2 = sub.add_parser("phase2")
     phase2.add_argument("--phase1-receipt", required=True)
     phase2.add_argument("--summary", action="append", required=True)
-    phase2.add_argument("--budget-protocol", required=True)
+    phase2.add_argument("--budget-protocol", action="append", required=True)
     phase2.add_argument("--output", required=True)
 
     phase3 = sub.add_parser("phase3")
@@ -554,6 +1004,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     phase4.add_argument("--phase3-receipt", required=True)
     phase4.add_argument("--output", required=True)
     phase4.add_argument("--formal-seeds", nargs=3, type=int, required=True)
+
+    phase4_results = sub.add_parser("phase4")
+    phase4_results.add_argument("--authorization-receipt", required=True)
+    phase4_results.add_argument("--results-jsonl", required=True)
+    phase4_results.add_argument("--output", required=True)
 
     args = parser.parse_args(argv)
     if args.command == "phase1":
@@ -570,7 +1025,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = seal_phase2(
             phase1_receipt=args.phase1_receipt,
             summaries=args.summary,
-            budget_protocol=args.budget_protocol,
+            budget_protocols=args.budget_protocol,
             output=args.output,
         )
     elif args.command == "phase3":
@@ -582,11 +1037,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             bootstrap_samples=args.bootstrap_samples,
             cost_tolerance=args.cost_tolerance,
         )
-    else:
+    elif args.command == "authorize-phase4":
         result = authorize_phase4(
             phase3_receipt=args.phase3_receipt,
             output=args.output,
             formal_seeds=args.formal_seeds,
+        )
+    else:
+        result = seal_phase4(
+            authorization_receipt=args.authorization_receipt,
+            results_jsonl=args.results_jsonl,
+            output=args.output,
         )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

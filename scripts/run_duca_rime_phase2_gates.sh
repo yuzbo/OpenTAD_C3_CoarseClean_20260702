@@ -37,6 +37,7 @@ for name in \
   DUCA_RIME_CANDIDATE_BUDGETS \
   DUCA_RIME_CANDIDATE_COSTS \
   DUCA_RIME_TARGET_MEAN_COST \
+  DUCA_RIME_PHASE4_SECOND_TARGET_MEAN_COST \
   DUCA_RIME_DECODER_FAMILY \
   DUCA_RIME_RISK_WEIGHT \
   DUCA_RIME_RISK_THRESHOLD \
@@ -50,6 +51,14 @@ done
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Phase-2 gates must run inside Slurm"
 [[ "${DUCA_RIME_EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
   || fail "an exact expected Git commit is required"
+python - \
+  "${DUCA_RIME_TARGET_MEAN_COST}" \
+  "${DUCA_RIME_PHASE4_SECOND_TARGET_MEAN_COST}" <<'PY'
+import sys
+
+if [float(value) for value in sys.argv[1:]] != [384.0, 192.0]:
+    raise SystemExit("RIME formal budget panels must remain 384 and 192")
+PY
 [[ ! -e "${DUCA_RIME_PHASE2_ROOT}" ]] || fail "a fresh Phase-2 root is required"
 [[ -d "${DUCA_RIME_REPO_ROOT}" ]] || fail "repository snapshot is missing"
 cd "${DUCA_RIME_REPO_ROOT}"
@@ -137,20 +146,32 @@ phase2_tool=(python tools/bata/duca_rime_phase2.py)
 
 IFS=',' read -r -a candidate_budgets <<<"${DUCA_RIME_CANDIDATE_BUDGETS}"
 IFS=',' read -r -a candidate_costs <<<"${DUCA_RIME_CANDIDATE_COSTS}"
-"${phase2_tool[@]}" freeze \
-  --summary "${DUCA_RIME_PHASE2_ROOT}/o1.json" \
-  --summary "${DUCA_RIME_PHASE2_ROOT}/o2.json" \
-  --summary "${DUCA_RIME_PHASE2_ROOT}/o3.json" \
-  --summary "${DUCA_RIME_PHASE2_ROOT}/o4.json" \
-  --calibration-jsonl "${DUCA_RIME_PRICE_CALIBRATION}" \
-  --output "${DUCA_RIME_PHASE2_ROOT}/budget_protocol.json" \
-  --candidate-budgets "${candidate_budgets[@]}" \
-  --candidate-costs "${candidate_costs[@]}" \
-  --target-mean-cost "${DUCA_RIME_TARGET_MEAN_COST}" \
-  --risk-weight "${DUCA_RIME_RISK_WEIGHT}" \
-  --risk-threshold "${DUCA_RIME_RISK_THRESHOLD}" \
-  --decoder-family "${DUCA_RIME_DECODER_FAMILY}" \
-  --weak-overlap-fraction "${DUCA_RIME_WEAK_OVERLAP_FRACTION:-0.5}"
+for formal_target in \
+  "${DUCA_RIME_TARGET_MEAN_COST}" \
+  "${DUCA_RIME_PHASE4_SECOND_TARGET_MEAN_COST}"; do
+  target_label="$(python - "${formal_target}" <<'PY'
+import sys
+value = float(sys.argv[1])
+if value != int(value):
+    raise SystemExit("formal RIME target must be integral")
+print(int(value))
+PY
+)"
+  "${phase2_tool[@]}" freeze \
+    --summary "${DUCA_RIME_PHASE2_ROOT}/o1.json" \
+    --summary "${DUCA_RIME_PHASE2_ROOT}/o2.json" \
+    --summary "${DUCA_RIME_PHASE2_ROOT}/o3.json" \
+    --summary "${DUCA_RIME_PHASE2_ROOT}/o4.json" \
+    --calibration-jsonl "${DUCA_RIME_PRICE_CALIBRATION}" \
+    --output "${DUCA_RIME_PHASE2_ROOT}/budget_protocol_k${target_label}.json" \
+    --candidate-budgets "${candidate_budgets[@]}" \
+    --candidate-costs "${candidate_costs[@]}" \
+    --target-mean-cost "${formal_target}" \
+    --risk-weight "${DUCA_RIME_RISK_WEIGHT}" \
+    --risk-threshold "${DUCA_RIME_RISK_THRESHOLD}" \
+    --decoder-family "${DUCA_RIME_DECODER_FAMILY}" \
+    --weak-overlap-fraction "${DUCA_RIME_WEAK_OVERLAP_FRACTION:-0.5}"
+done
 
 python tools/bata/duca_rime_stage_contract.py phase2 \
   --phase1-receipt "${DUCA_RIME_PHASE1_RECEIPT}" \
@@ -158,7 +179,8 @@ python tools/bata/duca_rime_stage_contract.py phase2 \
   --summary "${DUCA_RIME_PHASE2_ROOT}/o2.json" \
   --summary "${DUCA_RIME_PHASE2_ROOT}/o3.json" \
   --summary "${DUCA_RIME_PHASE2_ROOT}/o4.json" \
-  --budget-protocol "${DUCA_RIME_PHASE2_ROOT}/budget_protocol.json" \
+  --budget-protocol "${DUCA_RIME_PHASE2_ROOT}/budget_protocol_k384.json" \
+  --budget-protocol "${DUCA_RIME_PHASE2_ROOT}/budget_protocol_k192.json" \
   --output "${DUCA_RIME_PHASE2_ROOT}/phase2_receipt.json"
 sha256sum "${DUCA_RIME_PHASE2_ROOT}/phase2_receipt.json" \
   > "${DUCA_RIME_PHASE2_ROOT}/phase2_receipt.sha256"

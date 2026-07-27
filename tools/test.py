@@ -383,12 +383,20 @@ def main():
             if r5_formal:
                 payload["r5_cell"] = _jsonable(cfg.r5_cell)
         if rime_formal:
+            rime_variant = str(cfg.duca_rime_variant.arm)
             payload.update(
                 {
                     "seed": int(args.seed),
-                    "variant": str(cfg.duca_rime_variant.arm),
+                    "variant": rime_variant,
                     "training_identity": rime_terminal_identity,
                     "runtime_gt_input_to_selector": False,
+                    "padded_to_kmax": bool(cfg.duca_rime_contract.pad_to_kmax),
+                    "target_mean_cost": float(
+                        cfg.duca_rime_contract.target_mean_cost
+                    ),
+                    "detector_backend": (
+                        "TriDet" if rime_variant.endswith("-TriDet") else "ActionFormer"
+                    ),
                 }
             )
         if r0_selected_axis_replay:

@@ -22,7 +22,7 @@ def _int_tuple(name, default):
 
 candidate_budgets = _int_tuple(
     "DUCA_RIME_CANDIDATE_BUDGETS",
-    "192,256,384,512",
+    "128,192,256,384,512",
 )
 candidate_costs = tuple(float(value) for value in candidate_budgets)
 max_budget = candidate_budgets[-1]
@@ -294,6 +294,7 @@ workflow = dict(
     training_profile=duca_training_protocol.name,
     logging_interval=50,
     checkpoint_interval=duca_training_protocol.checkpoint_interval,
+    checkpoint_retention=1,
     val_loss_interval=-1,
     val_eval_interval=-1,
     val_eval_interval_anchor_epoch=9999,

@@ -706,7 +706,7 @@ def main():
                     if training_audit is None
                     else duca_training.build_checkpoint_metadata(training_audit)
                 )
-                save_checkpoint(
+                saved_checkpoint_path = save_checkpoint(
                     model,
                     model_ema,
                     optimizer,
@@ -726,6 +726,22 @@ def main():
                         else duca_training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
                     ),
                 )
+                after_checkpoint_saved = getattr(
+                    duca_training, "after_checkpoint_saved", None
+                )
+                if callable(after_checkpoint_saved):
+                    removed_checkpoints = after_checkpoint_saved(
+                        checkpoint_path=saved_checkpoint_path,
+                        work_dir=cfg.work_dir,
+                        epoch=epoch,
+                        contract=duca_formal_contract,
+                    )
+                    if removed_checkpoints:
+                        logger.info(
+                            "Pruned %d superseded resumable checkpoint(s): %s",
+                            len(removed_checkpoints),
+                            removed_checkpoints,
+                        )
 
         # val for one epoch
         if epoch >= val_start_epoch:
