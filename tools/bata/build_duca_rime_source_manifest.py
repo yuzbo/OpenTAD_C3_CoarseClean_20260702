@@ -17,6 +17,10 @@ PHASE0_REPLICATE_KINDS = {
     "deterministic_reexecution",
     "independent_training_seed",
 }
+O1_DETECTOR_TRAINING_EXPOSURES = {
+    "mixed_k_registered_panel",
+    "fixed_k_384_only",
+}
 
 
 def _sha256_file(path: str | Path) -> str:
@@ -130,10 +134,13 @@ def build_o1_manifest(
     *,
     evaluations: Sequence[Sequence[str]],
     mixed_k_detector_identity_sha256: str,
+    detector_training_exposure: str,
     output: str | Path,
 ) -> dict[str, Any]:
     if len(str(mixed_k_detector_identity_sha256)) != 64:
         raise ValueError("O1 requires an exact mixed-K detector checkpoint identity")
+    if detector_training_exposure not in O1_DETECTOR_TRAINING_EXPOSURES:
+        raise ValueError("O1 detector training exposure is not registered")
     entries = []
     seen_budgets = set()
     common_split = None
@@ -176,12 +183,18 @@ def build_o1_manifest(
             "schema_version": O1_SCHEMA,
             "uses_official_final": False,
             "position_policy": "exact_uniform",
+            "detector_training_exposure": detector_training_exposure,
             "mixed_k_detector_identity_sha256": str(
                 mixed_k_detector_identity_sha256
             ),
             "split_assignment_sha256": common_split,
             "split_role": common_role,
             "budget_evaluations": entries,
+            "claim_scope": (
+                "formal_o1_mixed_k_headroom"
+                if detector_training_exposure == "mixed_k_registered_panel"
+                else "diagnostic_cross_budget_transfer_from_fixed_k_384_only"
+            ),
         },
     )
 
@@ -273,6 +286,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
     )
     o1.add_argument("--mixed-k-detector-identity-sha256", required=True)
+    o1.add_argument(
+        "--detector-training-exposure",
+        choices=sorted(O1_DETECTOR_TRAINING_EXPOSURES),
+        required=True,
+    )
     o1.add_argument("--output", required=True)
 
     o2 = subparsers.add_parser("o2")
@@ -301,6 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             mixed_k_detector_identity_sha256=(
                 args.mixed_k_detector_identity_sha256
             ),
+            detector_training_exposure=args.detector_training_exposure,
             output=args.output,
         )
     else:

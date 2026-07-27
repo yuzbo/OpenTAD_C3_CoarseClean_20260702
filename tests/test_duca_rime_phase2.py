@@ -81,6 +81,7 @@ def test_phase0_reports_video_icc_mde_and_rule_derived_thresholds():
             "schema_version": "duca_rime_phase0_measurement_v1",
             "video_id": f"v{video}",
             "replicate_id": replicate,
+            "replicate_kind": "deterministic_reexecution",
             "metric_name": "avg_map",
             "value": video + 0.1 * replicate,
         }
@@ -99,6 +100,8 @@ def test_phase0_reports_video_icc_mde_and_rule_derived_thresholds():
     assert result["replicate_count"] == 12
     assert result["paired_video_mde"] > 0.0
     assert result["rule_derived_thresholds"]["min_o1_headroom"] > 0.0
+    assert result["deterministic_reexecution_only"] is True
+    assert result["independent_training_seed_variance_included"] is False
 
 
 def test_o1_exact_mean_cost_oracle_beats_fixed_and_shuffled_assignment():

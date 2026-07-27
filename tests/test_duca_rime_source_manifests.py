@@ -125,6 +125,7 @@ def test_o1_manifest_binds_all_budgets_to_one_checkpoint(tmp_path):
             ("384", "384", high, _sha(high)),
         ],
         mixed_k_detector_identity_sha256=checkpoint,
+        detector_training_exposure="mixed_k_registered_panel",
         output=tmp_path / "o1_manifest.json",
     )
     assert [
@@ -143,8 +144,39 @@ def test_o1_manifest_binds_all_budgets_to_one_checkpoint(tmp_path):
                 ("384", "384", high, _sha(high)),
             ],
             mixed_k_detector_identity_sha256=checkpoint,
+            detector_training_exposure="mixed_k_registered_panel",
             output=tmp_path / "tampered_o1.json",
         )
+
+
+def test_o1_manifest_labels_fixed_k_transfer_as_diagnostic(tmp_path):
+    checkpoint = "5" * 64
+    low = _metrics(
+        tmp_path,
+        name="diagnostic_low",
+        budget=192,
+        seed=3407,
+        checkpoint_sha256=checkpoint,
+    )
+    high = _metrics(
+        tmp_path,
+        name="diagnostic_high",
+        budget=384,
+        seed=3407,
+        checkpoint_sha256=checkpoint,
+    )
+    result = build_o1_manifest(
+        evaluations=[
+            ("192", "192", low, _sha(low)),
+            ("384", "384", high, _sha(high)),
+        ],
+        mixed_k_detector_identity_sha256=checkpoint,
+        detector_training_exposure="fixed_k_384_only",
+        output=tmp_path / "diagnostic_o1_manifest.json",
+    )
+    assert result["payload"]["claim_scope"] == (
+        "diagnostic_cross_budget_transfer_from_fixed_k_384_only"
+    )
 
 
 def test_o2_manifest_requires_a_rectangular_panel_with_independent(tmp_path):

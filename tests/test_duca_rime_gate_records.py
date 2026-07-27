@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
+
 from tools.bata.build_duca_rime_gate_records import (
     o1_records,
     o2_records,
@@ -75,6 +77,7 @@ def test_build_phase0_and_o1_records_from_hash_bound_metrics(tmp_path):
             "schema_version": "duca_rime_o1_source_manifest_v1",
             "uses_official_final": False,
             "position_policy": "exact_uniform",
+            "detector_training_exposure": "mixed_k_registered_panel",
             "mixed_k_detector_identity_sha256": "b" * 64,
             "budget_evaluations": [
                 {
@@ -99,6 +102,19 @@ def test_build_phase0_and_o1_records_from_hash_bound_metrics(tmp_path):
     )
     assert o1["budgets"] == [2, 4]
     assert o1["output"]["record_count"] == 6
+
+    diagnostic_manifest = json.loads(o1_manifest.read_text(encoding="utf-8"))
+    diagnostic_manifest["detector_training_exposure"] = "fixed_k_384_only"
+    diagnostic_manifest = _json(
+        tmp_path / "diagnostic_o1_manifest.json",
+        diagnostic_manifest,
+    )
+    with pytest.raises(ValueError, match="mixed-K-trained"):
+        o1_records(
+            source_manifest=diagnostic_manifest,
+            output=tmp_path / "must_not_be_formal_o1.jsonl",
+            score_metric="avg_map",
+        )
 
 
 def test_build_o2_records_checks_every_window_exact_k(tmp_path):

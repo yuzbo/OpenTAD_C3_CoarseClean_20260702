@@ -134,6 +134,8 @@ def phase0_variance(
     power: float,
 ) -> dict[str, Any]:
     grouped: dict[str, list[float]] = defaultdict(list)
+    replicate_kinds = set()
+    source_claim_scopes = set()
     for row in rows:
         if row.get("schema_version") != "duca_rime_phase0_measurement_v1":
             raise ValueError("unsupported Phase-0 measurement schema")
@@ -143,6 +145,10 @@ def phase0_variance(
         if not math.isfinite(value):
             raise ValueError("Phase-0 measurements must be finite")
         grouped[str(row["video_id"])].append(value)
+        replicate_kinds.add(str(row.get("replicate_kind", "unspecified_legacy")))
+        source_claim_scopes.add(
+            str(row.get("source_manifest_claim_scope", "unspecified"))
+        )
     if len(grouped) < 3 or any(len(values) < 2 for values in grouped.values()):
         raise ValueError("ICC/MDE requires >=3 videos and >=2 replicates per video")
     counts = [len(values) for values in grouped.values()]
@@ -187,8 +193,22 @@ def phase0_variance(
             "max_o2_decoder_regret": mde,
             "min_o3_spearman": rank_threshold,
         },
+        "replicate_kinds": sorted(replicate_kinds),
+        "source_manifest_claim_scopes": sorted(source_claim_scopes),
+        "independent_training_seed_variance_included": (
+            "independent_training_seed" in replicate_kinds
+        ),
+        "deterministic_reexecution_only": replicate_kinds
+        == {"deterministic_reexecution"},
         "gate_pass": True,
-        "claim_scope": "threshold_design_only_no_model_result",
+        "claim_scope": (
+            "threshold_design_with_independent_training_seed_variance_no_model_result"
+            if "independent_training_seed" in replicate_kinds
+            else (
+                "video_cluster_threshold_design_and_deterministic_reproducibility_"
+                "only_no_training_seed_variance"
+            )
+        ),
     }
 
 

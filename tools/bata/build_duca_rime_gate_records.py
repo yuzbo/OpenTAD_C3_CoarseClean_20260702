@@ -83,6 +83,7 @@ def phase0_records(
     seen_replicates = set()
     for entry in manifest.get("replicates", ()):
         replicate = str(entry.get("replicate_id", ""))
+        replicate_kind = str(entry.get("replicate_kind", "unspecified_legacy"))
         if not replicate or replicate in seen_replicates:
             raise ValueError("Phase-0 replicate identities must be nonempty and unique")
         seen_replicates.add(replicate)
@@ -105,11 +106,15 @@ def phase0_records(
                     "schema_version": "duca_rime_phase0_measurement_v1",
                     "video_id": video,
                     "replicate_id": replicate,
+                    "replicate_kind": replicate_kind,
                     "metric_name": str(primary_metric),
                     "value": value,
                     "source_path": str(metrics_path),
                     "source_sha256": _sha256_file(metrics_path),
                     "uses_official_final": False,
+                    "source_manifest_claim_scope": str(
+                        manifest.get("claim_scope", "unspecified")
+                    ),
                 }
             )
     if len(seen_replicates) < 2:
@@ -140,9 +145,14 @@ def o1_records(
         manifest.get("schema_version") != "duca_rime_o1_source_manifest_v1"
         or manifest.get("uses_official_final") is not False
         or manifest.get("position_policy") != "exact_uniform"
+        or manifest.get("detector_training_exposure")
+        != "mixed_k_registered_panel"
         or not str(manifest.get("mixed_k_detector_identity_sha256", ""))
     ):
-        raise ValueError("invalid O1 source manifest")
+        raise ValueError(
+            "invalid formal O1 source manifest; a registered mixed-K-trained "
+            "detector is required"
+        )
     panel = {}
     common_videos = None
     split_hash = None
@@ -185,6 +195,7 @@ def o1_records(
                 "score": score,
                 "score_metric": score_metric,
                 "position_policy": "exact_uniform",
+                "detector_training_exposure": "mixed_k_registered_panel",
                 "mixed_k_detector_identity_sha256": manifest[
                     "mixed_k_detector_identity_sha256"
                 ],

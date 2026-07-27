@@ -109,7 +109,7 @@ torchrun --standalone --nproc_per_node=1 tools/test.py \
   --metrics-json "${DUCA_RIME_PHASE2_BASELINE_ROOT}/terminal_evaluation.json" \
   --cfg-options "work_dir=${DUCA_RIME_PHASE2_BASELINE_ROOT}/runtime"
 
-python tools/bata/evaluate_duca_rime_predictions.py \
+python -m tools.bata.evaluate_duca_rime_predictions \
   --terminal-evaluation \
   "${DUCA_RIME_PHASE2_BASELINE_ROOT}/terminal_evaluation.json" \
   --split-manifest "${DUCA_RIME_SPLIT_MANIFEST}" \
