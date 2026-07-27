@@ -64,6 +64,8 @@ model = dict(
 )
 
 solver = dict(
+    train=dict(batch_size=1, num_workers=2),
+    val=dict(batch_size=1, num_workers=2),
     test=dict(batch_size=1, num_workers=2),
 )
 
