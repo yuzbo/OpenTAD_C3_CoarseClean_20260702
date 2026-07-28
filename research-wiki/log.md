@@ -448,3 +448,29 @@
   `engineering_dense_reference_recovery_not_method_evidence`; original jobs and
   roots remain failed/immutable. Phase 4 is disabled, official-final is sealed,
   and no paper-admissible empirical conclusion is available.
+
+## 2026-07-28 — Corrected Stage-0 recovery transaction failed closed
+
+- Rechecked exact transaction
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_0ab242f3_20260728_201613`
+  at `21:02 CST`. The deployed checkout remains clean at exact commit
+  `0ab242f31be8de7b7da806b645d3aa60d02d8d88`; the submission, physical-protocol
+  and salvage-manifest hashes remain exactly registered.
+- Code gate `1200135` completed. Phase 1 `1200136` failed in the exact-uniform
+  evaluator because its actual `tools/test.py` command did not override the
+  base config's repository-relative VideoMAE initialization, despite the
+  absolute path being required elsewhere. This is a runtime/precheck coverage
+  defect, not performance evidence.
+- ActionFormer/TriDet salvage `1200137`/`1200138` compacted raw EMA checkpoints
+  and ran their engineering evaluations, then failed structured evidence
+  finalization: the evaluator subset was frozen as `training`, while
+  `tools/test.py` classified neither salvage role and therefore expected
+  `validation`. No terminal dense checkpoint evidence or recovery receipt was
+  produced.
+- Phase 2/controller `1200139`/`1200140` were verified as
+  `DependencyNeverSatisfied` and canceled by exact ID. No unrelated job was
+  changed.
+- Required Phase-1, dense, Phase-2 and Phase-3 terminal receipts are absent.
+  Partial salvage and evaluation artifacts remain engineering diagnostics only.
+  Phase 4 stayed disabled, official-final stayed sealed, and no paper-admissible
+  empirical conclusion is available.

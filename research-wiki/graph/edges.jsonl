@@ -18,3 +18,4 @@
 {"source":"experiments/hrime-v1-stage1-oracle","relation":"gates","target":"models/hrime-learned-v1"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-902168a1"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"deployed_as","target":"deployments/duca-rime-recovery-0ab242f3"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-0ab242f3"}

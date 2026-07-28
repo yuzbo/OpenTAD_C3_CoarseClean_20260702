@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `experiment_running / code_gate_scheduler_pending`
+- Slurm recovery transaction: `terminal_failed_closed_engineering`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -125,12 +125,37 @@ snapshot has the code gate priority-pending and every child protected by its
 registered `afterok` dependency. Phase 4 remains disabled and official-final
 remains sealed.
 
+The terminal snapshot at `2026-07-28 21:02 CST` is:
+
+- code gate `1200135`: `COMPLETED`, exit `0:0`;
+- Phase 1 `1200136`: `FAILED`, exit `1:0`; its actual exact-uniform inference
+  retained the base config's repository-relative VideoMAE initialization path
+  because the uniform launcher omitted the absolute runtime override;
+- ActionFormer/TriDet salvage `1200137`/`1200138`: `FAILED`, exit `1:0`; both
+  produced raw compacted EMA checkpoints and ran their engineering evaluators,
+  but structured evidence finalization rejected the frozen `training` subset
+  because the salvage role fell through to a `validation` expectation;
+- Phase 2/controller `1200139`/`1200140`: `DependencyNeverSatisfied`, then
+  canceled by exact ID without touching unrelated jobs.
+
+The exact source remains clean at
+`0ab242f31be8de7b7da806b645d3aa60d02d8d88`, and all three registered manifest
+hashes still match. Nevertheless, both dense `checkpoint_evidence.json` files,
+the Phase-1 and Phase-2 pipeline receipts, and the Phase-3 receipt are absent.
+Partial salvage/checkpoint/evaluation sidecars are not terminal evidence. The
+root is immutable failed engineering evidence; Phase 4 was never opened and
+official-final remains sealed.
+
 ## Next gate
 
-1. require the exact code-gate receipt on commit `0ab242f3`;
-2. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
-3. run the held-out same-total-cost H-RIME oracle before learned planner
-   training.
+1. repair the actual exact-uniform VideoMAE runtime binding and strengthen its
+   precheck on a new clean commit;
+2. register the dense-salvage engineering role/subset in structured evidence
+   finalization and test the complete terminal receipt chain;
+3. freeze new commit-bound manifests and use a fresh immutable transaction;
+4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
+   receipts before running the held-out same-total-cost H-RIME oracle or learned
+   planner training.
 
 Correct empirical statement:
 

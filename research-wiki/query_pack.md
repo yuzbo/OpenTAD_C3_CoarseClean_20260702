@@ -26,7 +26,7 @@ Current evidence level:
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `experiment_running / code_gate_scheduler_pending` |
+| H-RIME Stage-0 recovery transaction | `terminal_failed_closed_engineering` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -144,7 +144,7 @@ also restoring its executable bit. Exact commit
 Linux/Torch tests, three Phase-1 launcher prechecks, both dense-salvage
 prechecks, and an independent clean-commit audit.
 
-The second repaired Stage-0 recovery transaction is now active:
+The second repaired Stage-0 recovery transaction is terminally failed closed:
 
 - root:
   `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_0ab242f3_20260728_201613`;
@@ -157,8 +157,20 @@ The second repaired Stage-0 recovery transaction is now active:
 - jobs: code gate `1200135`, Phase 1 `1200136`, ActionFormer salvage
   `1200137`, TriDet salvage `1200138`, Phase 2 `1200139`, and Phase-3
   controller `1200140`;
-- initial scheduler state: code gate priority-pending and all children held by
-  exact `afterok` dependencies;
+- terminal scheduler state: code gate `1200135` completed; Phase 1 `1200136`
+  failed; ActionFormer/TriDet salvage `1200137`/`1200138` failed; Phase 2 and
+  the Phase-3 controller `1200139`/`1200140` became
+  `DependencyNeverSatisfied` and were canceled by exact ID;
+- Phase 1 completed its registered dense development controls but the
+  exact-uniform launcher failed at actual inference because it did not override
+  the base config's repository-relative VideoMAE initialization path; its
+  precheck had not exercised that runtime binding;
+- both salvage arms created raw compacted EMA checkpoints and salvage sidecars,
+  then failed while finalizing structured evaluation evidence because
+  `tools/test.py` expected `validation` for an engineering salvage role whose
+  frozen evaluator subset was `training`;
+- no dense `checkpoint_evidence.json`, Phase-1 `pipeline_receipt.json`,
+  Phase-2 `pipeline_receipt.json`, or Phase-3 terminal receipt exists;
 - recovery remains engineering-only, original jobs remain `FAILED`, Phase 4 is
   disabled, and official-final is sealed.
 
@@ -416,3 +428,11 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 10. Implement only the H-RIME core/interfaces and held-out oracle surface before
     the oracle receipt. Do not launch large learned-H-RIME training merely
     because implementation has started.
+11. Treat recovery transaction `0ab242f3` as immutable failed engineering
+    evidence. Do not promote its partial EMA/salvage/evaluation sidecars into
+    terminal dense evidence or reuse the root in place.
+12. Before another recovery submission, bind and hash-check the absolute
+    VideoMAE initialization in every actual Phase-1 evaluator, including both
+    uniform controls, and make precheck execute the same resolved override.
+    Give dense salvage an explicit training-subset engineering-evaluation role
+    in the structured evidence path and test receipt finalization end to end.

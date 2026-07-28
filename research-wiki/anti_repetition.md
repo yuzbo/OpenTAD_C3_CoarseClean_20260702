@@ -200,3 +200,12 @@ These failures and naming mistakes must not be repeated.
     submit quota or describe them as pending evidence. Verify the failed
     dependency, cancel only the exact impossible children, and preserve the
     failed immutable root and scheduler history.
+69. Do not repair the absolute pretrained-weight binding in only one Phase-1
+    evaluator. Dense, every exact-uniform budget and every other formal child
+    must pass the same absolute path/hash through the actual `tools/test.py`
+    override, and precheck must verify that resolved runtime config.
+70. Do not treat raw checkpoint salvage plus a completed evaluator call as
+    recovered dense evidence. The evaluation role/subset contract must be
+    explicit in `tools/test.py`, structured metrics must finalize, and source
+    evidence, checkpoint evidence and the terminal recovery receipt must all
+    be present before the arm passes.
