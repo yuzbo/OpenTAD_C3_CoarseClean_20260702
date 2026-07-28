@@ -13,7 +13,7 @@ max_chars: 8000
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
 - Active replacement status: `failed_p1r_rendezvous_port_collision_no_selector`
-  (`experiment_running`). The external Pro audit of exact
+  (`tested`, not `empirically_supported`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
   176x320 support with a validity mask, mask-aware exact-K, a
@@ -49,10 +49,18 @@ max_chars: 8000
   independently confirmed the same defect on `g0048`: random ended training
   at 19:04:37, then hybrid lost the shared store and failed `1:0` in Epoch 6
   with no checkpoint or stage result. Neither failure showed OOM or non-finite
-  loss/cost. ROI remains healthy in Epoch 8. Selector `1199872` is
-  `DependencyNeverSatisfied` from the free failure and has no receipt. Thus
-  this P1R matrix is infrastructure-invalid, supplies no NativeTokenSelect or
-  geometry verdict, and cannot authorize P2/P3 or official test.
+  loss/cost. ROI-only `1199870` completed `0:0` with
+  Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, exact unique `K=64`, one heavy
+  forward, and p50/p95/peak `905.40 ms/4360.95 ms/1818.21 MB`. All five
+  completed cells have one final checkpoint, zero temporary files, passing
+  storage receipts, and development-only stage results. The cost scope is
+  model-and-postprocess only, excludes the evaluator, has no energy receipt,
+  and is not paper-grade end-to-end evidence. Free and hybrid have no
+  checkpoint or stage result. Selector `1199872` is
+  `DependencyNeverSatisfied` and has no receipt; P2/P3 and official test are
+  absent. Thus this P1R matrix is infrastructure-invalid, supplies no
+  NativeTokenSelect or conditional-geometry verdict, and supports no
+  efficiency or paper claim.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)

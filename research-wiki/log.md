@@ -1194,3 +1194,26 @@ append_only: true
   recovered AMP retries. Selector `1199872` remains
   `PENDING(DependencyNeverSatisfied)` with no receipt; no manual selection,
   P2/P3, or official test is authorized.
+
+- 2026-07-28 19:57 CST: ROI-only `1199870` completed `0:0` and closed the last
+  running P1 leaf. Its development-only stage result reports
+  Avg-mAP `13.18`, mAP@0.3--0.7 `16.66/15.64/13.37/11.28/8.95`, and
+  p50/p95/peak-allocated `905.40 ms/4360.95 ms/1818.21 MB`. It selected
+  exactly 64 unique of 220 valid tokens per tubelet with zero duplicates,
+  straight-through ROI geometry, one heavy forward, 12 packed
+  attention/MLP/Adapter calls, and zero dense Adapter calls. It retains one
+  final checkpoint, zero temporary files, a passing storage receipt, and no
+  GT/teacher/oracle/manual-ROI/raw-prediction-cache use.
+
+- 2026-07-28 19:57 CST: final P1R accounting is five completed
+  development-only cells (dense, fixed, fixed-plus-geometry, random, ROI-only)
+  and two rendezvous failures without results (free NativeTokenSelect and
+  hybrid). Every completed cell has one final checkpoint and no temporary
+  file; both failed cells have zero checkpoints and zero stage results.
+  Selector `1199872` remains `DependencyNeverSatisfied`, and no selection,
+  P2/P3, or official-test artifact exists. The available profiles exclude the
+  evaluator, include same-process loader wait, contain no energy receipt, and
+  explicitly disallow paper-grade end-to-end claims. The final verdict is
+  `NO_SCIENTIFIC_VERDICT_INFRASTRUCTURE_INVALID` for NativeTokenSelect and
+  `NOT_AUTHORIZED_NATIVE_BASE_MISSING` for conditional geometry. The run is
+  closed as `tested`, not `empirically_supported`; monitoring is complete.

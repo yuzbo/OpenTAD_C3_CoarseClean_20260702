@@ -2,7 +2,7 @@
 type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
-stage: experiment_running
+stage: tested
 status: failed_p1r_rendezvous_port_collision_no_selector
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
@@ -29,7 +29,8 @@ attached to its TCPStore after a bind collision, and failed in Epoch 8 when
 that store closed. Hybrid `1199871` had the same collision with random on
 `g0048` and failed in Epoch 6 when random's store closed. The selector is
 consequently `DependencyNeverSatisfied`. Dense, fixed,
-fixed-plus-geometry, and random produced development-only diagnostic cells,
+fixed-plus-geometry, random, and ROI-only produced development-only diagnostic
+cells,
 but they cannot establish the required native-base comparison without a valid
 free result and selector receipt. Descriptively, the fixed geometry
 side-channel changed fixed's single-seed Avg-mAP by `+0.21` while reducing
@@ -39,6 +40,10 @@ against NativeTokenSelect, and they do not authorize geometry, P2/P3, official
 test, an efficiency claim, or a paper claim. A valid future test must repeat
 the complete frozen matrix in a new namespace with a unique or kernel-assigned
 per-leaf rendezvous endpoint and an explicit concurrent-node isolation gate.
+ROI-only reached Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, descriptively
+above fixed, random, and fixed-plus-geometry at high tIoU, but it is not the
+ROI-free native base and cannot satisfy the hierarchical gate. The idea remains
+implemented and mechanically tested, not empirically supported.
 
 ## Why geometry is conditional
 

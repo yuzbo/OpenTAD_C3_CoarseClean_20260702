@@ -2,8 +2,9 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: experiment_running
+stage: tested
 status: failed_p1r_rendezvous_port_collision_no_selector
+outcome: infrastructure_invalid_no_native_or_geometry_verdict
 updated: 2026-07-28
 ---
 
@@ -304,9 +305,16 @@ benefit without extra total cost?
   19:04:37; hybrid immediately lost the shared C10d store and terminated at
   19:04:46 with the same `Broken pipe`/`RendezvousConnectionError`. Its five
   AMP retry attempts had recovered, losses remained finite, and no OOM or
-  non-finite loss/cost occurred. ROI `1199870` remains healthy in Epoch 8
-  with five recovered AMP retries and no fatal signature. These jobs cannot
-  rescue or manually complete the hierarchical decision.
+  non-finite loss/cost occurred.
+- ROI-only `1199870` completed `0:0` at 19:57:27. It published one atomic
+  final checkpoint, zero temporary files, a passing storage receipt, and a
+  development-only stage result. It reported Avg-mAP `13.18` and mAP@0.3--0.7
+  `16.66/15.64/13.37/11.28/8.95`. Its route selected exactly 64 unique of
+  220 valid tokens per tubelet with zero duplicates, straight-through geometry,
+  one heavy forward, 12 packed attention/MLP/Adapter calls, and zero dense
+  Adapter calls. Its p50/p95/peak-allocated profile was
+  `905.40 ms/4360.95 ms/1818.21 MB`. These jobs cannot rescue or manually
+  complete the hierarchical decision.
 - Selector `1199872` is now `PENDING(DependencyNeverSatisfied)` because
   `afterok:1199869` failed. It has emitted no selection receipt and cannot
   authorize P2/P3. The seven-arm P1R matrix is therefore scientifically
@@ -315,6 +323,59 @@ benefit without extra total cost?
   A future replacement requires a fresh exact commit and namespace plus a
   per-leaf collision-free rendezvous endpoint, followed by the complete frozen
   gate and matrix; no such replacement is launched from this failed run.
+
+## Final P1R diagnostic closure
+
+All P1 leaves are terminal. Values below are development-only diagnostics at
+seed 3407; deltas are percentage points relative to fixed lattice.
+
+| Arm / Job | Terminal state | Avg-mAP | @0.3 | @0.4 | @0.5 | @0.6 | @0.7 | Delta Avg / @0.6 / @0.7 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| dense `1199865` | completed | 13.90 | 17.89 | 16.45 | 14.59 | 11.83 | 8.74 | +1.48 / +1.08 / +1.57 |
+| fixed `1199866` | completed | 12.42 | 16.33 | 14.90 | 12.98 | 10.75 | 7.17 | 0 / 0 / 0 |
+| fixed + geometry `1199867` | completed | 12.63 | 16.74 | 15.56 | 13.34 | 10.40 | 7.09 | +0.21 / -0.35 / -0.08 |
+| random `1199868` | completed | 12.68 | 16.71 | 15.13 | 13.28 | 10.76 | 7.53 | +0.26 / +0.01 / +0.36 |
+| free NativeTokenSelect `1199869` | failed: rendezvous | -- | -- | -- | -- | -- | -- | unavailable |
+| ROI-only `1199870` | completed | 13.18 | 16.66 | 15.64 | 13.37 | 11.28 | 8.95 | +0.76 / +0.53 / +1.78 |
+| hybrid `1199871` | failed: rendezvous | -- | -- | -- | -- | -- | -- | unavailable |
+
+ROI-only is descriptively `+0.50/+0.52/+1.42` over random and
+`+0.55/+0.88/+1.86` over fixed-plus-geometry in
+Avg-mAP/mAP@0.6/mAP@0.7, and is `-0.72/-0.55/+0.21` versus dense. It is a
+geometry-only diagnostic, not the ROI-free native base and not a substitute
+for free NativeTokenSelect.
+
+The only available cost record is the non-paper-grade development
+model-and-postprocess profile:
+
+| Arm | K / valid | Route / estimator | Unique / duplicates | Heavy forwards | Packed Attn / MLP / Adapter | Dense Adapter | p50 / p95 ms | Peak MB |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| dense | 220 / 220 | dense / none | 220 / 0 | 1 | 12 / 12 / 12 | 0 | 1237.37 / 4350.93 | 2681.03 |
+| fixed | 64 / 220 | uniform / none | 64 / 0 | 1 | 12 / 12 / 12 | 0 | 1203.75 / 5226.15 | 1816.40 |
+| fixed + geometry | 64 / 220 | uniform + geometry side-channel / none | 64 / 0 | 1 | 12 / 12 / 12 | 0 | 999.16 / 4475.58 | 1817.76 |
+| random | 64 / 220 | random / none | 64 / 0 | 1 | 12 / 12 / 12 | 0 | 1812.36 / 4806.06 | 1816.86 |
+| free NativeTokenSelect | -- | failed before result | -- | -- | -- | -- | -- | -- |
+| ROI-only | 64 / 220 | ROI / straight-through | 64 / 0 | 1 | 12 / 12 / 12 | 0 | 905.40 / 4360.95 | 1818.21 |
+| hybrid | -- | failed before result | -- | -- | -- | -- | -- | -- |
+
+The profile explicitly excludes the evaluator, includes same-process loader
+wait, has no energy receipt, and sets paper-grade end-to-end permission false.
+It is not the required complete decode-to-NMS cost, so no efficiency or Pareto
+claim is available. Five completed arms each retain exactly one final
+checkpoint and no temporary file; free and hybrid retain neither checkpoint
+nor stage result. All five stage results bind commit `45f5cca2`, prohibit paper
+claims and official-test opening, and contain no GT, teacher, oracle, manual
+ROI, or raw-prediction-cache use.
+
+Selector `1199872` remains `DependencyNeverSatisfied`; no selection receipt,
+P2/P3 artifact, or official-test artifact exists. Therefore:
+
+- NativeTokenSelect: `NO_SCIENTIFIC_VERDICT_INFRASTRUCTURE_INVALID`.
+- Conditional geometry: `NOT_AUTHORIZED_NATIVE_BASE_MISSING`.
+- P2/P3: not authorized and not launched.
+- Paper boundary: implementation/P0 mechanical facts and descriptive control
+  cells only; no learned-routing, Geometry Zoom, efficiency, generalization,
+  or paper-ready result.
 
 ## Frozen decision logic
 
