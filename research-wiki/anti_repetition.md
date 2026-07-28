@@ -37,6 +37,11 @@ updated: 2026-07-28
    source-pixel crop. Do not use “Geometry Zoom” unless the native base and the
    strict conditional geometry add-on both pass, followed by multi-seed,
    cost, diagnostic, and generalization closure.
+0. Every N16R4 GitHub clone/fetch/pull/ls-remote must use the academic
+   acceleration proxy frozen in `RTK.md` from the first network attempt. After
+   syncing, bind full HEAD and remote-tracking SHA and require a clean tree.
+   Direct GitHub attempts, uncommitted source copies, or rsync-overwritten
+   snapshots are not valid experiment provenance.
 
 ## Continuous-RoI S2 deployment anti-repetition
 

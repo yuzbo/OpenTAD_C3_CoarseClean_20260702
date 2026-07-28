@@ -91,6 +91,18 @@ export HTTP_PROXY="$http_proxy"
 export HTTPS_PROXY="$https_proxy"
 ```
 
+远端 GitHub 同步的固定规则：
+
+- 每次在 N16R4 执行 `git clone`、`git fetch`、`git pull`、`git
+  ls-remote` 或下载 GitHub release，必须先设置上面的学术加速代理四个
+  环境变量；不得先尝试公网直连，也不得在直连失败后才临时切换代理。
+- 同步必须先用代理解析远端 branch/commit，再通过同一代理 clone/fetch；
+  完成后验证 `git rev-parse HEAD` 等于预期完整 SHA、对应 remote-tracking ref
+  指向同一 SHA，且 `git status --porcelain` 为空。
+- 学术加速节点不可用时同步 fail closed，保留诊断并重试代理；不得用未提交的
+  rsync/scp 源码覆盖来伪造 GitHub 同步。Git bundle 只能传递已经推送且可由
+  commit/ref 验证的对象，并在最终代理同步成功后删除。
+
 THUMOS14 默认路径：
 
 ```bash

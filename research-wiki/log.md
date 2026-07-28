@@ -1076,3 +1076,10 @@ append_only: true
   remote tensor tests and P0R are pending; status is only `implemented`, with
   no replacement metric, cost result, empirical support, or “Geometry Zoom”
   paper claim.
+
+- 2026-07-28: froze the user-required N16R4 GitHub synchronization rule. Every
+  remote `clone`, `fetch`, `pull`, `ls-remote`, or GitHub release download must
+  use the login-node academic acceleration proxy in `RTK.md` from its first
+  network attempt, then prove expected full HEAD, matching remote-tracking ref,
+  and an empty worktree. Direct-first retries and uncommitted source copies do
+  not satisfy provenance; proxy failure must fail closed.
