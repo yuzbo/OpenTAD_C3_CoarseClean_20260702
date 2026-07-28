@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v6_exact_commit_5a599e90 / remote_gate_1201390_queued`
+- Stage-0 code: `recovery_v6_exact_commit_5a599e90 / authoritative_preflight_passed`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v5_failed_closed / salvage_complete`
+- Slurm recovery transaction: `recovery_v6_gate_passed / children_queued`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -413,8 +413,45 @@ Authoritative Slurm preflight `1201390` was submitted from script SHA-256
 `3e02fabb176d93d5dc125992c55bd80e0188fd85519a2dcd2b0be240e7903a35`
 at root
 `/data/run01/sczc063/yuzibo/rime_preflight/duca_rime_recovery_v6_5a599e90_20260729_003219`.
-It is scheduler-pending. No Recovery-v6 production manifest or DAG has been
-released.
+Its first snapshot was scheduler-pending; at that snapshot no Recovery-v6
+production manifest or DAG had been released.
+
+## Recovery v6 deployment
+
+Preflight `1201390` completed with exit `0:0`; its commit-bound gate receipt
+SHA-256 is
+`bef1f6446ceab601b910bfee0f21d0d0d95a297e426455bf682a064f3f4fb2be`.
+Deployment script
+`/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v6_5a599e90.sh`
+has SHA-256
+`f44ff20e8a7acf134581fb460c1eb1188da02070c09aff7bf2bb9cb20e89c8f9`.
+It released fresh immutable root
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600`
+with:
+
+- physical protocol:
+  `94ebe87782e5375afe71ed1506f13e3c812d105f018a3ccdf24eea450f0a35f9`;
+- production salvage manifest:
+  `61f7cfec47b0a467b1f8e616487686937b51bc96098ca15e776c31ff024fa7f0`;
+- submission manifest:
+  `759fe6e97b10edf03128b6b2244dbab6cbc3e5009d7fdf1d8d9f5319d5d3375a`;
+- released receipt:
+  `007cee9134ebdba67563681b6bbc3a5e1cecbcf7ad998c688d1cd131bcdbd691`.
+
+Jobs `1201416`--`1201421` are respectively production code gate, Phase 1,
+ActionFormer salvage, TriDet salvage, Phase 2 and Phase-3 controller. The
+manifest binds exact commit `5a599e909aca58751711979e8c9e5b68ab6cab72`;
+Phase 1 and both salvage arms depend on the code gate, Phase 2 depends on
+Phase 1, and the controller depends on Phase 2 plus both salvage arms. At the
+first snapshot, the production gate was running and all children were
+dependency-held. Phase 4 remains disabled and official-final remains sealed.
+
+Production code gate `1201416` then completed with exit `0:0`; its
+exact-commit receipt SHA-256 is
+`34152cfe1fb6c008f4cd20d11f3ed1c6dd19f980caf45d2b1069a029a065146d`.
+Phase 1 `1201417` and both salvage arms `1201418`/`1201419` are
+scheduler-queued; Phase 2 `1201420` and controller `1201421` remain
+dependency-held.
 
 Correct empirical statement:
 

@@ -761,3 +761,31 @@
   the first snapshot is scheduler-pending on priority.
 - No Recovery-v6 production protocol, salvage manifest, submission manifest,
   root or DAG exists yet. Phase 4 and official-final remain sealed.
+
+## 2026-07-29 — Recovery-v6 preflight passed; production DAG released
+
+- Slurm preflight `1201390` completed with exit `0:0`; exact-commit receipt
+  SHA-256 is
+  `bef1f6446ceab601b910bfee0f21d0d0d95a297e426455bf682a064f3f4fb2be`.
+- Deployment script SHA-256 is
+  `f44ff20e8a7acf134581fb460c1eb1188da02070c09aff7bf2bb9cb20e89c8f9`.
+  It generated fresh commit-bound physical protocol
+  `94ebe87782e5375afe71ed1506f13e3c812d105f018a3ccdf24eea450f0a35f9`,
+  production salvage manifest
+  `61f7cfec47b0a467b1f8e616487686937b51bc96098ca15e776c31ff024fa7f0`,
+  submission manifest
+  `759fe6e97b10edf03128b6b2244dbab6cbc3e5009d7fdf1d8d9f5319d5d3375a`,
+  and released receipt
+  `007cee9134ebdba67563681b6bbc3a5e1cecbcf7ad998c688d1cd131bcdbd691`.
+- Released jobs `1201416`--`1201421` at
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600`.
+  They are production gate, Phase 1, ActionFormer salvage, TriDet salvage,
+  Phase 2 and Phase-3 controller with the exact registered dependency map.
+- The first scheduler snapshot had production gate `1201416` running and every
+  child dependency-held. Phase 4 remains disabled, official-final remains
+  sealed, and this is only `ENGINEERING_STATUS`.
+- Production gate `1201416` subsequently completed with exit `0:0`; its
+  exact-commit receipt SHA-256 is
+  `34152cfe1fb6c008f4cd20d11f3ed1c6dd19f980caf45d2b1069a029a065146d`.
+  Phase 1 `1201417` and salvage jobs `1201418`/`1201419` are scheduler-queued;
+  Phase 2 `1201420` and controller `1201421` remain dependency-held.

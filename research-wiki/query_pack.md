@@ -15,18 +15,18 @@ Current evidence level:
 | Scientific route | `user_approved` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
-| Remote authoritative code gate | `recovery_v5_preflight_passed_1201057 / production_gate_passed_1201169` |
+| Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
 | Dense reference training | `recovery_v5_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v5_failed_1201170 / recovery_v6_fix_static_checked` |
-| Phase 2/3/4 | `recovery_v5_children_cancelled / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v5_failed_closed / recovery_v6_predeployment` |
+| Phase 1 closure | `recovery_v5_failed_1201170 / recovery_v6_scheduler_queued` |
+| Phase 2/3/4 | `recovery_v6_dependency_held / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v6_released / experiment_running` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v6_exact_commit_5a599e90 / remote_gate_1201390_queued` |
+| Stage-0 repair implementation | `recovery_v6_exact_commit_5a599e90 / authoritative_preflight_passed` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v5_failed_closed / salvage_complete` |
+| H-RIME Stage-0 recovery transaction | `recovery_v6_gate_passed / children_queued` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -403,10 +403,43 @@ has SHA-256
 `3e02fabb176d93d5dc125992c55bd80e0188fd85519a2dcd2b0be240e7903a35`;
 it submitted authoritative gate `1201390` with root
 `/data/run01/sczc063/yuzibo/rime_preflight/duca_rime_recovery_v6_5a599e90_20260729_003219`.
-The gate is queued on scheduler priority. No scientific protocol or paper claim
-changed. This is only
+Its first snapshot was queued on scheduler priority. No scientific protocol or
+paper claim changed. This is only
 `ENGINEERING_STATUS`; no model-quality or paper-admissible empirical conclusion
 is available.
+
+Slurm preflight `1201390` completed with exit `0:0`; its exact-commit receipt
+has SHA-256
+`bef1f6446ceab601b910bfee0f21d0d0d95a297e426455bf682a064f3f4fb2be`.
+The frozen Recovery-v6 deployment script
+`/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v6_5a599e90.sh`
+has SHA-256
+`f44ff20e8a7acf134581fb460c1eb1188da02070c09aff7bf2bb9cb20e89c8f9`
+and released fresh root
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600`.
+Its immutable identities are:
+
+- physical-protocol SHA-256:
+  `94ebe87782e5375afe71ed1506f13e3c812d105f018a3ccdf24eea450f0a35f9`;
+- salvage-manifest SHA-256:
+  `61f7cfec47b0a467b1f8e616487686937b51bc96098ca15e776c31ff024fa7f0`;
+- submission-manifest SHA-256:
+  `759fe6e97b10edf03128b6b2244dbab6cbc3e5009d7fdf1d8d9f5319d5d3375a`;
+- released-receipt SHA-256:
+  `007cee9134ebdba67563681b6bbc3a5e1cecbcf7ad998c688d1cd131bcdbd691`.
+
+Jobs are production code gate `1201416`, Phase 1 `1201417`, ActionFormer
+salvage `1201418`, TriDet salvage `1201419`, Phase 2 `1201420`, and Phase-3
+controller `1201421`. The dependency map and exact commit passed validation.
+At the first snapshot, `1201416` was running and every child was
+dependency-held. `phase4_submission_enabled=false` and
+`official_final_sealed=true`.
+
+Production code gate `1201416` subsequently completed with exit `0:0`; its
+exact-commit receipt SHA-256 is
+`34152cfe1fb6c008f4cd20d11f3ed1c6dd19f980caf45d2b1069a029a065146d`.
+Phase 1 `1201417` and both salvage jobs `1201418`/`1201419` are scheduler-queued;
+Phase 2 `1201420` and controller `1201421` remain dependency-held.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by
