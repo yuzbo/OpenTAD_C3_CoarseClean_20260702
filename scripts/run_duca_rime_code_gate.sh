@@ -150,6 +150,7 @@ bash -n \
   tests/test_map_blocked_videos.py \
   tests/test_duca_rime_gate_records.py \
   tests/test_duca_rime_source_manifests.py \
+  tests/test_duca_rime_backbone_mask_contract.py \
   tests/test_duca_protected_e2e_detector_contract.py \
   tests/test_profile_duca_full_stack_cost_cli.py \
   tests/test_duca_rime_tridet.py \

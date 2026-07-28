@@ -225,10 +225,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            if getattr(self.frame_selector, "selector_variant", None) == "duca_rime_physical":
-                x = self.backbone(inputs, masks=masks)
-            else:
-                x = self.backbone(inputs)
+            x = self._forward_backbone_with_temporal_mask(inputs, masks)
         else:
             x = inputs
 
@@ -518,10 +515,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            if getattr(self.frame_selector, "selector_variant", None) == "duca_rime_physical":
-                x = self.backbone(inputs, masks=masks)
-            else:
-                x = self.backbone(inputs)
+            x = self._forward_backbone_with_temporal_mask(inputs, masks)
         else:
             x = inputs
 

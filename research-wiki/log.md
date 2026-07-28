@@ -605,3 +605,23 @@
 - This diagnosis used only execution state, traceback and tensor-contract
   provenance. No intermediate or terminal performance value was reported or
   interpreted.
+
+## 2026-07-28 — Recovery-v5 mask handoff implemented
+
+- User authorized a complete correction, redeployment, and bounded self-healing
+  monitor.
+- Implemented one shared ActionFormer/TriDet backbone handoff. A dynamic
+  temporal bucket now always receives the exact aligned detector mask; ordinary
+  backbones preserve the legacy invocation; physical RIME paired with a
+  non-dynamic backbone fails closed.
+- Added a focused runtime contract test for both backends, AST coverage of all
+  train/test call sites, Slurm code-gate inclusion, and frozen dynamic-bucket
+  assertions in the Phase-1 uniform precheck.
+- Python compilation, Bash syntax and `git diff --check` passed. Two independent
+  read-only patch audits returned `GO`. Local Torch execution is explicitly not
+  claimed because Windows failed loading `c10.dll`; the authoritative
+  Linux/Torch gate is pending.
+- The repair changes no model objective, budget, split, checkpoint,
+  hyperparameter, metric or paper claim. Recovery-v4 remains immutable failed
+  engineering evidence, Phase 4 is disabled, official-final is sealed, and no
+  paper-admissible empirical conclusion is available.

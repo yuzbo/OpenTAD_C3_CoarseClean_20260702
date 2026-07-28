@@ -17,16 +17,16 @@ Current evidence level:
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `passed` |
 | Dense reference training | `recovery_v4_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v4_failed_uniform_mask_handoff` |
+| Phase 1 closure | `recovery_v4_failed / recovery_v5_repair_gate_pending` |
 | Phase 2/3/4 | `dependency_never_satisfied_or_held / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v4_failed_closed / scheduler_terminalization_pending` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v4_deployed / uniform_runtime_contract_gap_found` |
+| Stage-0 repair implementation | `recovery_v5_mask_handoff_implemented / remote_gate_pending` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v4_failed_closed / scheduler_terminalization_pending` |
+| H-RIME Stage-0 recovery transaction | `recovery_v5_not_yet_deployed` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -294,6 +294,18 @@ Failure update at `2026-07-28 22:32:51 CST`:
 
 This is an execution-contract failure, not a performance result. No reported or
 intermediate metric was used in this diagnosis.
+
+Recovery-v5 is now `implemented / static_checked / independently_reviewed_GO /
+remote_torch_gate_pending`. It introduces one shared detector-to-backbone
+handoff: ActionFormer and TriDet pass the exact aligned mask whenever
+`dynamic_temporal_bucket=True`, ordinary backbones retain their legacy mask-free
+call, and a physical RIME selector paired with a non-dynamic backbone fails
+closed. Both detector train/test call sites are AST-guarded, the Slurm code gate
+includes the focused runtime contract test, and the uniform precheck freezes the
+dynamic bucket and 16-frame quantum. Windows PyTorch execution remains blocked
+by the pre-existing `c10.dll` initialization failure, so no runtime test is
+claimed locally. No protocol, model objective, budget, split, checkpoint,
+hyperparameter, metric, or paper claim changed.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

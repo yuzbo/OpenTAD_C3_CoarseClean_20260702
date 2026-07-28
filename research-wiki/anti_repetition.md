@@ -209,3 +209,12 @@ These failures and naming mistakes must not be repeated.
     explicit in `tools/test.py`, structured metrics must finalize, and source
     evidence, checkpoint evidence and the terminal recovery receipt must all
     be present before the arm passes.
+71. Do not gate dynamic-backbone mask propagation on the presence of a learned
+    physical selector. Exact-uniform and other selector-free controls still use
+    `dynamic_temporal_bucket` and must pass the aligned `[B,K]` mask through the
+    detector-to-backbone boundary.
+72. Do not let scheduled recovery retry indefinitely or change scientific
+    semantics. Automatic repair is limited to one fresh transaction per unique
+    commit/failure signature and only for exact, protocol-preserving engineering
+    causes; ambiguity, recurrence, model quality, data integrity and scientific
+    gate failures stop closed for user review.

@@ -99,20 +99,7 @@ class TriDet(SingleStageDetector):
                 selector_outputs.get("losses", {}),
             )
             selector_loss_keys = set(losses)
-        if self.with_backbone:
-            if (
-                getattr(
-                    getattr(self, "frame_selector", None),
-                    "selector_variant",
-                    None,
-                )
-                == "duca_rime_physical"
-            ):
-                x = self.backbone(inputs, masks=masks)
-            else:
-                x = self.backbone(inputs)
-        else:
-            x = inputs
+        x = self._forward_backbone_with_temporal_mask(inputs, masks)
 
         # pad the features and unsqueeze the mask
         if not self.training:
@@ -159,20 +146,7 @@ class TriDet(SingleStageDetector):
             metas = selector_outputs.get("metas", metas)
             self._validate_rime_selector_contract(inputs, masks, metas)
             self._require_selector_remap_metadata(metas)
-        if self.with_backbone:
-            if (
-                getattr(
-                    getattr(self, "frame_selector", None),
-                    "selector_variant",
-                    None,
-                )
-                == "duca_rime_physical"
-            ):
-                x = self.backbone(inputs, masks=masks)
-            else:
-                x = self.backbone(inputs)
-        else:
-            x = inputs
+        x = self._forward_backbone_with_temporal_mask(inputs, masks)
 
         x, masks = self.pad_data(
             x,

@@ -112,6 +112,8 @@ assert cfg.duca_rime_baseline_contract.position_policy == "exact_uniform"
 assert cfg.duca_rime_baseline_contract.target_mean_cost == float(budget)
 assert cfg.duca_rime_baseline_contract.padded_to_kmax is False
 assert cfg.evaluation.subset == "training"
+assert cfg.model.backbone.custom.dynamic_temporal_bucket is True
+assert cfg.model.backbone.custom.dynamic_temporal_clip_len == 16
 assert pathlib.Path(cfg.model.backbone.custom.pretrain).resolve() == pathlib.Path(
     sys.argv[3]
 ).resolve()

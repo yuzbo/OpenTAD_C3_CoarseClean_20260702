@@ -60,6 +60,30 @@ class SingleStageDetector(BaseDetector):
         """bool: whether the detector has localization head"""
         return hasattr(self, "rpn_head") and self.rpn_head is not None
 
+    def _forward_backbone_with_temporal_mask(self, inputs, masks):
+        """Forward a dynamic temporal bucket with its exact aligned mask."""
+        if not self.with_backbone:
+            return inputs
+
+        selector_variant = getattr(
+            getattr(self, "frame_selector", None),
+            "selector_variant",
+            None,
+        )
+        dynamic_temporal_bucket = bool(
+            getattr(self.backbone, "dynamic_temporal_bucket", False)
+        )
+        if (
+            selector_variant == "duca_rime_physical"
+            and not dynamic_temporal_bucket
+        ):
+            raise RuntimeError(
+                "DUCA-RIME physical selection requires a dynamic temporal backbone"
+            )
+        if dynamic_temporal_bucket:
+            return self.backbone(inputs, masks=masks)
+        return self.backbone(inputs)
+
     def after_optimizer_step(self):
         if self.with_frame_selector:
             hook = getattr(self.frame_selector, "after_optimizer_step", None)

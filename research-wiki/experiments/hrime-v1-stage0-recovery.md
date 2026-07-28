@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v4_deployed / uniform_runtime_contract_gap_found`
+- Stage-0 code: `recovery_v5_mask_handoff_implemented / remote_gate_pending`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v4_failed_closed / scheduler_terminalization_pending`
+- Slurm recovery transaction: `recovery_v5_not_yet_deployed`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -279,16 +279,38 @@ remains sealed.
 
 ## Next gate
 
-1. repair the exact-uniform detector/backbone handoff so a dynamic temporal
-   bucket receives the already aligned dataset mask even without a physical
-   selector;
-2. add focused forward tests for aligned, missing, mismatched and inactive-tail
-   masks and make launcher precheck exercise the real model-forward contract;
-3. repeat independent review and remote runtime precheck on a fresh exact commit
-   before deploying another fresh transaction root;
+1. publish the recovery-v5 exact commit and run its authoritative Slurm code
+   gate, including the focused ActionFormer/TriDet dynamic-mask runtime test;
+2. bind fresh physical/salvage manifests to that exact commit and deploy a new
+   immutable transaction root only after the gate passes;
+3. terminate only the dependency-impossible recovery-v4 jobs by exact ID while
+   preserving the complete failed root and its valid engineering salvage
+   receipts;
 4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
    receipts before running the held-out same-total-cost H-RIME oracle or learned
    planner training.
+
+## Recovery v5 implementation
+
+The user authorized the complete engineering correction and fresh
+redeployment. The frozen design is
+`docs/superpowers/specs/2026-07-28-recovery-v5-mask-handoff-self-heal-design.md`.
+The implementation adds a shared
+`SingleStageDetector._forward_backbone_with_temporal_mask` contract and routes
+both ActionFormer and TriDet train/test paths through it:
+
+1. `dynamic_temporal_bucket=True` always forwards the exact detector mask;
+2. a `duca_rime_physical` selector with a non-dynamic backbone fails closed;
+3. ordinary non-dynamic backbones keep the legacy mask-free invocation.
+
+The Slurm code gate now includes a focused runtime test for both backends and
+AST guards for all four train/test call sites. The Phase-1 uniform precheck also
+requires the frozen dynamic bucket and 16-frame clip quantum. Python
+compilation, Bash syntax, `git diff --check`, and two independent read-only
+audits passed. Windows runtime testing is not claimed because the local
+CUDA-linked PyTorch still fails to initialize `c10.dll`; authoritative
+Linux/Torch verification remains mandatory before deployment. This correction
+changes no scientific protocol or paper evidence.
 
 Correct empirical statement:
 
