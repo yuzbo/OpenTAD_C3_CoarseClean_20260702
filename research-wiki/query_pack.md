@@ -12,7 +12,7 @@ max_chars: 8000
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
-- Active replacement status: `p1r_five_running_no_metric`
+- Active replacement status: `failed_p1r_rendezvous_port_collision_no_selector`
   (`experiment_running`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
@@ -33,17 +33,22 @@ max_chars: 8000
   attention/MLP/Adapter execution, zero dense Adapter calls, real detector
   backward, route gradients, zero checkpoints, and same-commit storage
   measurement verified. It automatically submitted seven P1R leaves
-  `1199865`--`1199871` and selector `1199872`. At the 17:25 CST audit, dense
-  `1199865` and fixed `1199866` were healthy in Epoch 2; five leaves remained
-  priority-pending and the selector dependency-pending. Recovered AMP retries
-  were 2 and 3 attempts respectively, with finite losses, empty stderr, and no
-  fatal signature. No final checkpoint, stage result, accuracy, or cost
-  evidence exists. At 17:55 CST, fixed-plus-geometry `1199867` and random
-  `1199868` had also started; the four running arms were at Epoch 10/9/3/2
-  with five recovered AMP retry attempts each and empty stderr. Free, ROI, and
-  hybrid remained priority-pending. At 18:10 CST, free NativeTokenSelect
-  `1199869` also started; five arms were at Epoch 14/13/7/6/1, with ROI and
-  hybrid still priority-pending and no final result artifact.
+  `1199865`--`1199871` and selector `1199872`. Dense `1199865` and fixed
+  `1199866` completed `0:0`, each with one final checkpoint, zero temporary
+  files, passing storage receipt, and a development-only stage result. Their
+  diagnostic Avg-mAP / mAP@0.6 / mAP@0.7 are respectively
+  `13.90/11.83/8.74` and `12.42/10.75/7.17`; paper-grade cost and claim flags
+  remain false. Primary free NativeTokenSelect `1199869` failed `1:0` in
+  Epoch 8 without checkpoint or stage result because its implicit torchrun
+  localhost port `29400` collided with fixed on shared node `g0043`. Fixed
+  ended training at 18:36:35, then free lost the shared C10d store with
+  `Broken pipe`/`RendezvousConnectionError`; free had finite logged losses, no
+  OOM, and no non-finite loss/cost. Hybrid `1199871` has the same bind
+  collision with random on `g0048` and is protocol-contaminated. Selector
+  `1199872` is `DependencyNeverSatisfied` from the free failure and has no
+  receipt. Remaining arms continue only as preserved diagnostics. Thus this
+  P1R matrix is infrastructure-invalid, supplies no NativeTokenSelect or
+  geometry verdict, and cannot authorize P2/P3 or official test.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)

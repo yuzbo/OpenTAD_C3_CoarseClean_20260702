@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: experiment_running
-status: p1r_five_running_no_metric
+status: failed_p1r_rendezvous_port_collision_no_selector
 updated: 2026-07-28
 ---
 
@@ -264,6 +264,35 @@ benefit without extra total cost?
   remained empty, losses finite, and recovered AMP retry counts were
   5/5/5/5/2 without exhaustion. No final checkpoint, stage result, selector
   receipt, accuracy metric, or frozen cost result existed.
+- At the 18:43 CST audit, dense `1199865` and fixed lattice `1199866`
+  completed `0:0` and each published one atomic `epoch_19.pth`, zero temporary
+  files, a passing storage receipt, and a `PASS_DEVELOPMENT_ONLY` stage result
+  bound to runtime commit `45f5cca2e6b003478327511e3f38c8871b77084f`.
+  Dense reported Avg-mAP `13.90`, mAP@0.6 `11.83`, and mAP@0.7 `8.74`;
+  fixed lattice reported `12.42`, `10.75`, and `7.17`. Their profiles remain
+  development-only and explicitly disallow paper-grade end-to-end and paper
+  claims. These completed arms are retained as diagnostic cell outputs, not a
+  P1R decision.
+- Primary free NativeTokenSelect `1199869` failed `1:0` in Epoch 8 without a
+  checkpoint or stage result. This is a launch-isolation failure, not a model
+  or numerical failure: fixed and free overlapped on node `g0043`; free logged
+  an immediate localhost TCPStore bind collision on port `29400`; fixed logged
+  `Training Over` at 18:36:35; and free then lost that C10d store with
+  `Broken pipe`/`RendezvousConnectionError`. Free had four recovered AMP retry
+  attempts, finite logged losses, and no OOM or non-finite loss/cost signature.
+  Hybrid `1199871` also overlapped random `1199868` on `g0048` and logged the
+  same port collision, so its current execution is protocol-contaminated even
+  before terminal state. Fixed-plus-geometry, random, ROI, and hybrid remain
+  running for preserved diagnostics; they cannot rescue or manually complete
+  the hierarchical decision.
+- Selector `1199872` is now `PENDING(DependencyNeverSatisfied)` because
+  `afterok:1199869` failed. It has emitted no selection receipt and cannot
+  authorize P2/P3. The seven-arm P1R matrix is therefore scientifically
+  invalid: it neither supports nor refutes NativeTokenSelect, and geometry
+  remains unauthorized. The namespace is immutable and will not be resumed.
+  A future replacement requires a fresh exact commit and namespace plus a
+  per-leaf collision-free rendezvous endpoint, followed by the complete frozen
+  gate and matrix; no such replacement is launched from this failed run.
 
 ## Frozen decision logic
 

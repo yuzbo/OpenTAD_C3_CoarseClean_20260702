@@ -1144,3 +1144,28 @@ append_only: true
   retry counts were 5/5/5/5/2 with successful recovery and no fatal signature.
   No final checkpoint, stage result, selector receipt, accuracy metric, or
   frozen cost result existed.
+
+- 2026-07-28 18:43 CST: P1R crossed an infrastructure-invalid terminal
+  boundary. Dense `1199865` and fixed lattice `1199866` completed `0:0`; each
+  published exactly one atomic `epoch_19.pth`, zero temporary files, a passing
+  storage receipt, and a commit-`45f5cca2` `PASS_DEVELOPMENT_ONLY` stage
+  result. Dense recorded Avg-mAP/mAP@0.6/mAP@0.7
+  `13.90/11.83/8.74`; fixed recorded `12.42/10.75/7.17`. Both profiles
+  explicitly disallow paper-grade end-to-end and paper claims, and the cells
+  are diagnostic rather than a matrix verdict.
+
+- 2026-07-28 18:43 CST: free NativeTokenSelect `1199869` failed `1:0` in
+  Epoch 8 with no checkpoint or stage result. It overlapped fixed on node
+  `g0043`, logged an immediate C10d bind collision on localhost port `29400`,
+  and continued only while fixed owned that TCPStore. Fixed logged
+  `Training Over` at 18:36:35; free then emitted `Broken pipe` and
+  `RendezvousConnectionError` and terminated. Its logged losses were finite,
+  its four AMP skips recovered, and there was no OOM or non-finite loss/cost.
+  Hybrid `1199871`, colocated with random `1199868` on `g0048`, also logged
+  the same bind collision and is protocol-contaminated. Selector `1199872` is
+  `PENDING(DependencyNeverSatisfied)` on failed `afterok:1199869`, with no
+  selection receipt. Fixed-plus-geometry, random, ROI, and hybrid continue only
+  for preserved diagnostics. The failed namespace will not be resumed, no
+  candidate will be manually selected, and P2/P3 plus official test remain
+  closed. This run neither supports nor refutes NativeTokenSelect or Geometry
+  Zoom.
