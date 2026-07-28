@@ -1083,3 +1083,18 @@ append_only: true
   network attempt, then prove expected full HEAD, matching remote-tracking ref,
   and an empty worktree. Direct-first retries and uncommitted source copies do
   not satisfy provenance; proxy failure must fail closed.
+
+- 2026-07-28: synced exact GitHub commit
+  `45f5cca2e6b003478327511e3f38c8871b77084f` on N16R4 through the frozen
+  academic acceleration proxy and verified identical HEAD/origin ref plus an
+  empty worktree. Official-environment GeoRoute focused tests passed `58/58`
+  and required C3 regressions passed `20/20`. The one-shot NativeTokenSelect-
+  first run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_nativefirst_45f5cca2_p0p3_20260728_1630`
+  passed aggregate storage preflight (214,831,312,896 free bytes versus
+  79,456,894,976 required) and submitted dense-parity `1199838`, hybrid-ST
+  `1199839`, ROI-score-function `1199840`, and exact-afterok P0R finalizer
+  `1199841`. The first audit found three `PENDING(Priority)` leaves and a
+  `PENDING(Dependency)` finalizer. Status advances only to
+  `experiment_running`; P0R pass, P1R metrics, cost results, empirical support,
+  and paper claims remain absent.

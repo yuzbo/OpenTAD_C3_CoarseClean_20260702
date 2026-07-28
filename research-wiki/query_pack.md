@@ -12,16 +12,23 @@ max_chars: 8000
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
-- Active replacement status:
-  `implemented_local_pending_remote_p0r`. The external Pro audit of exact
+- Active replacement status: `p0r_submitted_priority_pending`
+  (`experiment_running`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
   176x320 support with a validity mask, mask-aware exact-K, a
   coordinate-lineage packed Adapter, a truly geometry-free `free` control,
   common uniform-selected pooling, branch-aligned hybrid gradients,
   final-only atomic checkpoints, and same-commit aggregate storage preflight.
-  These are implementation facts pending remote tensor tests and P0R, not
-  accuracy or cost evidence.
+  Clean GitHub snapshot `45f5cca2e6b003478327511e3f38c8871b77084f`
+  was synced through the frozen academic proxy; GeoRoute remote focused tests
+  passed `58/58` and required C3 regressions passed `20/20`. P0R Jobs
+  `1199838`--`1199840` plus afterok finalizer `1199841` were submitted under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_nativefirst_45f5cca2_p0p3_20260728_1630`.
+  Aggregate storage preflight passed with 214,831,312,896 free versus
+  79,456,894,976 required bytes. The leaves are still priority-pending, so
+  these remain implementation/test/deployment facts, not accuracy or cost
+  evidence.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)

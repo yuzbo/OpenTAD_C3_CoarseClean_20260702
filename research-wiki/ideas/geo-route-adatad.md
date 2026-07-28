@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
-stage: implemented
-status: correctness_replacement_implemented_local_pending_remote_p0r
+stage: experiment_running
+status: p0r_submitted_priority_pending
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -20,8 +20,9 @@ primary learning signal.
 
 ## Design status and boundary
 
-The correctness replacement is locally implemented and awaits clean-commit
-remote tensor tests and P0R. Historical P0 `PASS_MECHANICAL_ONLY` belongs to
+The correctness replacement is implemented; clean-commit remote focused tests
+pass and P0R is submitted but still priority-pending. Historical P0
+`PASS_MECHANICAL_ONLY` belongs to
 the superseded implementation, and historical P1 failed on storage before any
 result. Neither authorizes the replacement. The held Continuous-RoI S2
 training-only receipt and its resampled local-tensor path remain immutable

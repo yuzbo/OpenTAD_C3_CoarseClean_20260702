@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: implemented
-status: correctness_replacement_implemented_local_pending_remote_p0r
+stage: experiment_running
+status: p0r_submitted_priority_pending
 updated: 2026-07-28
 ---
 
@@ -205,6 +205,26 @@ benefit without extra total cost?
   Torch runtime. Until the clean remote snapshot passes focused tensor tests
   and P0R, the replacement is not `tested`. No replacement P1R metric, cost
   result, empirical support, or paper claim exists.
+
+## Correctness replacement deployment (2026-07-28)
+
+- Clean GitHub snapshot
+  `45f5cca2e6b003478327511e3f38c8871b77084f` was obtained on N16R4 through
+  the frozen academic acceleration proxy. Full HEAD, origin tracking ref, and
+  an empty worktree matched.
+- In the official OpenTAD Conda environment, all focused GeoRoute tensor,
+  contract, DAG, storage, checkpoint, and paper-tool tests passed `58/58`;
+  required C3 regressions passed `20/20`.
+- One-shot run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_nativefirst_45f5cca2_p0p3_20260728_1630`
+  passed aggregate preflight with 214,831,312,896 observed free bytes versus
+  79,456,894,976 required bytes, including atomic-publication peak.
+- P0R Jobs are dense parity `1199838`, hybrid straight-through `1199839`, and
+  ROI score-function `1199840`; result-blind finalizer `1199841` has exact
+  `afterok` dependencies. At the first audit all three leaves are
+  `PENDING(Priority)` and the finalizer is `PENDING(Dependency)`. P1R has not
+  yet been submitted. This advances the replacement only to
+  `experiment_running`; it is not a P0R pass or performance evidence.
 
 ## Frozen decision logic
 
