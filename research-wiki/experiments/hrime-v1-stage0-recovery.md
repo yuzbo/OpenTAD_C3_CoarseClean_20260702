@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_pending`
-- Slurm recovery transaction: `submission_retry_pending`
+- Slurm recovery transaction: `submitted / scheduler_pending`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -74,16 +74,27 @@ submitters now enable Bash `errtrace` so a nested submission failure cancels
 the complete held prefix before exit. The incomplete fresh root is retained as
 deployment evidence and is not reusable.
 
+The corrected exact commit
+`902168a12bc92babd62b6cb1877ce7137f56cea0` passed a fresh independent MAX
+deployment audit. Its commit-bound physical protocol has SHA-256
+`1823826b36df3e6bc038743c173fd16c6990e3c2080665dd4f5b77bf88e7e34e`; the
+immutable salvage manifest has SHA-256
+`b4f5b7fdfe8a491d7fc14d8ffbfbb6f76742de0a458ebcfbc31cc0de53d85a0e`.
+The fresh recovery transaction was released at
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_902168a1_20260728_183709`.
+Its submission-manifest SHA-256 is
+`fd6fef65ac01e7830c6b5e337684b19a3bad65c1432f819cfecb32e83dfefb85`.
+Jobs `1199978`--`1199983` are the code gate, Phase 1, ActionFormer salvage,
+TriDet salvage, Phase 2 and Phase-3 controller respectively. At the first
+post-release snapshot, the code gate was `PENDING (Priority)` and every other
+job was correctly dependency-pending. No terminal experiment receipt exists
+yet; Phase 4 is disabled and official-final remains sealed.
+
 ## Next gate
 
-1. commit and push the exact code snapshot;
-2. create the frozen salvage manifest bound to that recovery commit and the two
-   verified epoch-59 raw checkpoints;
-3. run Slurm precheck/code gate;
-4. release a fresh recovery DAG with `DUCA_RIME_DENSE_RECOVERY_MODE=salvage`
-   and `DUCA_RIME_ENABLE_PHASE4=0`;
-5. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
-6. run the held-out same-total-cost H-RIME oracle before learned planner
+1. require code-gate receipt on the exact clean deployment commit;
+2. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
+3. run the held-out same-total-cost H-RIME oracle before learned planner
    training.
 
 Correct empirical statement:

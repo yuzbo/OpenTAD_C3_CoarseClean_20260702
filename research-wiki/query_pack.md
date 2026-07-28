@@ -25,6 +25,7 @@ Current evidence level:
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
+| H-RIME Stage-0 recovery transaction | `submitted / scheduler_pending` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -110,6 +111,25 @@ receipts are absent, so it did not complete successfully.
 The uniform-K384 localization JSON exists on the 20-video development subset,
 but its evaluation receipt is absent, so it is not a passing Phase-1 artifact.
 The failure is a valid cost-contract stop, not evidence about model accuracy.
+
+The repaired Stage-0 recovery transaction is now the active scheduler target:
+
+- exact deployment commit:
+  `902168a12bc92babd62b6cb1877ce7137f56cea0`;
+- root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_902168a1_20260728_183709`;
+- submission-manifest SHA-256:
+  `fd6fef65ac01e7830c6b5e337684b19a3bad65c1432f819cfecb32e83dfefb85`;
+- jobs: code gate `1199978`, Phase 1 `1199979`, dense ActionFormer salvage
+  `1199980`, dense TriDet salvage `1199981`, Phase 2 `1199982`, and Phase-3
+  controller `1199983`;
+- first monitor snapshot: code gate `PENDING (Priority)`, all downstream jobs
+  dependency-pending, no terminal receipts;
+- dense recovery claim scope:
+  `engineering_dense_reference_recovery_not_method_evidence`;
+- Phase 4 disabled; official-final sealed.
+
+This status is `ENGINEERING_STATUS`, not an empirical result.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

@@ -339,3 +339,15 @@
   transactional submitters so future nested failures cancel their held prefix.
   The partial submission root remains non-reusable evidence; no experiment or
   performance claim was created.
+- Fresh MAX audit returned `GO` on exact clean commit
+  `902168a12bc92babd62b6cb1877ce7137f56cea0`. Froze the new commit-bound
+  physical protocol (`1823826b...e7e34e`) and salvage manifest
+  (`b4f5b7fd...d85a0e`), then atomically released recovery jobs
+  `1199978`--`1199983` under
+  `duca_rime_recovery_902168a1_20260728_183709`.
+- The submission manifest is
+  `fd6fef65ac01e7830c6b5e337684b19a3bad65c1432f819cfecb32e83dfefb85`;
+  the receipt is released, dense recovery is explicitly engineering-only, the
+  original failed jobs remain failed, Phase 4 is disabled, and official-final
+  remains sealed. The first snapshot is scheduler-pending with no terminal
+  receipts, so no empirical claim is available.
