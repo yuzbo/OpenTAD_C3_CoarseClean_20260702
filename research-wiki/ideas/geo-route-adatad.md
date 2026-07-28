@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
-stage: experiment_running
-status: p1r_running_exact_source_7be8363e
+stage: tested
+status: p1r_data_decode_failure_no_selector_exact_source_7be8363e
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -30,9 +30,12 @@ submit-cap guard stopped automatic P1 submission, so no partial matrix was
 created. Supported sealed-parent bootstrap `1200652` subsequently launched the
 unchanged seven-arm P1R matrix as Jobs `1200663`--`1200669`, with automatic
 selector `1200670`, under fresh root
-`georoute_nativefirst_7be8363e_p1p3_20260728_2225`. The idea is now
-`experiment_running`, not `empirically_supported`; P2/P3, official test,
-efficiency claims, and paper claims remain closed.
+`georoute_nativefirst_7be8363e_p1p3_20260728_2225`. Six arms completed with
+valid development-only results, including free and hybrid, but ROI-only failed
+after training during development video decode and emitted no stage result.
+The afterok selector is consequently dependency-unsatisfied and emitted no
+decision. The idea is now `tested`, not `empirically_supported`; P2/P3,
+official test, efficiency claims, and paper claims remain closed.
 
 The correctness replacement is implemented; clean-commit remote focused tests
 pass and replacement P0R sealed `PASS_MECHANICAL_ONLY`. Its first P1R matrix,
@@ -78,9 +81,15 @@ before any further P0 deployment; Job `1200602` satisfied that condition under
 source `7be8363e`.
 ROI-only reached Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, descriptively
 above fixed, random, and fixed-plus-geometry at high tIoU, but it is not the
-ROI-free native base and cannot satisfy the hierarchical gate. The replacement
-idea is mechanically tested with its new P1R currently running, not empirically
-supported.
+ROI-free native base and cannot satisfy the hierarchical gate. In the
+replacement run, free NativeTokenSelect reached Avg-mAP/mAP@0.6/mAP@0.7
+`10.03/7.80/5.27`, below fixed `12.42/10.75/7.17`, random
+`12.68/10.76/7.53`, and fixed-plus-geometry `12.63/10.40/7.09`. This is strong
+descriptive negative evidence for the current free selector, but the ROI
+decode failure prevented the frozen selector receipt, so it is not promoted to
+a formal empirical verdict. Hybrid reached `13.23/11.35/8.81`; it cannot rescue
+or authorize geometry because the native base did not pass first. The
+replacement idea remains not empirically supported.
 
 ## Why geometry is conditional
 

@@ -462,13 +462,55 @@ P2/P3 artifact, or official-test artifact exists. Therefore:
   work were left untouched. Supported sealed-parent bootstrap `1200652`
   completed `0:0` and created fresh P1 root
   `georoute_nativefirst_7be8363e_p1p3_20260728_2225`.
-- The complete frozen P1R matrix is now `experiment_running`: dense
-  `1200663`, fixed `1200664`, fixed-plus-geometry `1200665`, random `1200666`,
-  free NativeTokenSelect `1200667`, ROI-only `1200668`, and hybrid `1200669`
-  are concurrent. Result-blind selector `1200670` is `afterok`-gated on all
-  seven leaves. Initial launch scans show no traceback, OOM, rendezvous error,
-  or non-finite loss/cost. No checkpoint or stage result is expected yet.
-  P2/P3 and official test remain absent.
+- Dense `1200663`, fixed `1200664`, fixed-plus-geometry `1200665`, random
+  `1200666`, free NativeTokenSelect `1200667`, and hybrid `1200669` completed
+  `0:0`. Each has one atomic final `epoch_19.pth`, zero temporary files, a
+  passing storage receipt, and a `PASS_DEVELOPMENT_ONLY` stage result bound to
+  source `7be8363e`. No arm used route GT, teacher, oracle, manual ROI, official
+  test, or a raw-prediction cache.
+- ROI-only `1200668` completed all 20 training epochs and wrote exactly one
+  final checkpoint, then failed `1:0` during development testing. Its DataLoader
+  reached `mmaction` decord frame loading and raised
+  `Unable to handle EOF ... DECORD_EOF_RETRY_MAX=10240` while retrieving the
+  last video frames. It has no `result_detection.json` or `stage_result.json`
+  and no temporary file. Storage preflight passed; there was no OOM, non-finite
+  loss/cost, gradient skip, rendezvous error, or model failure. The root cause
+  is classified as development data/video-decode I/O.
+- Result-blind selector `1200670` is `DependencyNeverSatisfied` and emitted no
+  selection receipt. No P2/P3 or official-test artifact exists. The namespace
+  is preserved without resume or manual selection.
+
+Available development-only metrics and profiles are:
+
+| Arm | Avg-mAP | mAP@0.3 | @0.4 | @0.5 | @0.6 | @0.7 | p50 / p95 ms | Peak MB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| dense | 13.90 | 17.89 | 16.45 | 14.59 | 11.83 | 8.74 | 1306.88 / 5265.10 | 2681.03 |
+| fixed | 12.42 | 16.33 | 14.90 | 12.98 | 10.75 | 7.17 | 1472.61 / 4620.84 | 1816.40 |
+| fixed + geometry | 12.63 | 16.74 | 15.56 | 13.34 | 10.40 | 7.09 | 1408.03 / 4412.79 | 1817.76 |
+| random | 12.68 | 16.71 | 15.13 | 13.28 | 10.76 | 7.53 | 932.64 / 4458.63 | 1816.86 |
+| free NativeTokenSelect | 10.03 | 13.90 | 12.49 | 10.68 | 7.80 | 5.27 | 1073.14 / 4388.70 | 1818.00 |
+| ROI-only | failed during development decode | -- | -- | -- | -- | -- | -- | -- |
+| hybrid | 13.23 | 16.98 | 15.40 | 13.63 | 11.35 | 8.81 | 1115.63 / 4411.67 | 1817.76 |
+
+All successful sparse arms select exactly 64 unique tokens from 220 valid
+tokens per tubelet, with zero duplicates, one heavy backbone forward, 12
+packed attention/MLP/coordinate-lineage Adapter calls, and zero dense Adapter
+calls. Dense uses all 220. Hybrid allocates 28 ROI, 28 residual, and 8 context
+tokens. The profile is model-and-postprocess-only, includes same-process loader
+wait, excludes the evaluator, has no energy measurement, and is not
+paper-grade end-to-end cost.
+
+Descriptively, free loses to fixed/random/fixed-plus-geometry by
+`-2.39/-2.65/-2.60` Avg-mAP, `-2.95/-2.96/-2.60` at mAP@0.6, and
+`-1.90/-2.26/-1.82` at mAP@0.7. It is also `-3.87/-4.03/-3.47` versus dense.
+Thus the current free selector does not satisfy the preregistered native-base
+accuracy gate even before considering paper-grade total cost. Hybrid is
+`+3.20/+3.55/+3.54` over free and `+0.55/+0.59/+1.28` over random, but the
+hierarchy forbids using hybrid to rescue a failed native base. Because ROI
+failed and the frozen selector emitted no receipt, these are descriptive
+diagnostics rather than a formal selector verdict. Final status is
+`tested_p1_data_decode_failure_no_selector`, not `empirically_supported` or
+`paper_ready`.
 
 ## Frozen decision logic
 

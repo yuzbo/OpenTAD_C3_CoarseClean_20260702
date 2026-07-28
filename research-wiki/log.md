@@ -1298,3 +1298,29 @@ append_only: true
   scans found no traceback, OOM, rendezvous error, or non-finite loss/cost.
   State is `experiment_running`, not `empirically_supported`; P2/P3, official
   test, efficiency claim, and paper claim remain closed.
+
+- 2026-07-28 23:59 CST: exact-source P1R reached a terminal protocol failure.
+  Dense `1200663`, fixed `1200664`, fixed-plus-geometry `1200665`, random
+  `1200666`, free NativeTokenSelect `1200667`, and hybrid `1200669` completed
+  `0:0`, each with one atomic final checkpoint, no temporary file, a passing
+  storage receipt, and a development-only stage result. Their
+  Avg-mAP/mAP@0.6/mAP@0.7 are respectively `13.90/11.83/8.74`,
+  `12.42/10.75/7.17`, `12.63/10.40/7.09`, `12.68/10.76/7.53`,
+  `10.03/7.80/5.27`, and `13.23/11.35/8.81`. Free is descriptively below
+  fixed, random, and fixed-plus-geometry by `2.39/2.65/2.60` Avg-mAP and
+  `2.95/2.96/2.60` at mAP@0.6, so the current native selector does not satisfy
+  the frozen native-base accuracy gate. Hybrid's gain over free cannot rescue
+  or authorize geometry because the base must pass first.
+
+- 2026-07-28 23:59 CST: ROI-only `1200668` completed Epoch 19 and wrote its
+  unique final checkpoint, then failed `1:0` in development testing before
+  prediction or stage-result publication. Decord raised
+  `Unable to handle EOF ... DECORD_EOF_RETRY_MAX=10240` while a DataLoader
+  worker retrieved final video frames. Storage preflight passed and there was
+  no OOM, non-finite loss/cost, gradient skip, rendezvous error, or model
+  failure; classification is development data/video-decode I/O. Selector
+  `1200670` became `DependencyNeverSatisfied` with no receipt. The namespace is
+  preserved without resume or manual selection; P2/P3 and official test remain
+  absent. Because the frozen matrix and selector are incomplete, the available
+  six-arm numbers are descriptive diagnostics only. Status is `tested`, not
+  `empirically_supported`; no efficiency or paper claim is authorized.

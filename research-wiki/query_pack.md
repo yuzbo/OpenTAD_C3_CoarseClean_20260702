@@ -13,8 +13,8 @@ max_chars: 8000
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
 - Active replacement status:
-  `p1r_running_exact_source_7be8363e`
-  (`experiment_running`, not `empirically_supported`). The external Pro audit of exact
+  `p1r_data_decode_failure_no_selector_exact_source_7be8363e`
+  (`tested`, not `empirically_supported`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
   176x320 support with a validity mask, mask-aware exact-K, a
@@ -95,11 +95,26 @@ max_chars: 8000
   partially submitted in that namespace. After cancelling only obsolete
   GeoRoute Jobs `1199872`, `1200513`, and `1200553` while leaving DUCA/RIME
   untouched, sealed-parent bootstrap `1200652` completed `0:0` into fresh root
-  `georoute_nativefirst_7be8363e_p1p3_20260728_2225`. All seven frozen P1R
-  leaves `1200663`--`1200669` are running concurrently and automatic selector
-  `1200670` is dependency-gated. Initial scans show no traceback, OOM,
-  rendezvous error, or non-finite loss/cost. P2/P3 and official test remain
-  closed.
+  `georoute_nativefirst_7be8363e_p1p3_20260728_2225`. Dense `1200663`, fixed
+  `1200664`, fixed-plus-geometry `1200665`, random `1200666`, free
+  NativeTokenSelect `1200667`, and hybrid `1200669` completed `0:0`, each with
+  one final checkpoint, zero temporary files, passing storage receipt, and a
+  development-only stage result. Their Avg-mAP/mAP@0.6/mAP@0.7 are
+  `13.90/11.83/8.74`, `12.42/10.75/7.17`, `12.63/10.40/7.09`,
+  `12.68/10.76/7.53`, `10.03/7.80/5.27`, and `13.23/11.35/8.81`.
+  Free is descriptively worse than fixed, random, and fixed-plus-geometry by
+  `2.39/2.65/2.60` Avg-mAP and by `2.95/2.96/2.60` at mAP@0.6, so it does not
+  satisfy the preregistered native-base accuracy condition. Hybrid's descriptive
+  gain over free cannot authorize geometry because the native base did not
+  pass. ROI-only `1200668` finished training and wrote its unique final
+  checkpoint, then failed `1:0` during development testing when decord could
+  not retrieve final video frames before `DECORD_EOF_RETRY_MAX=10240`; it has no
+  prediction or stage result. This is a data/video-decode I/O failure, not OOM,
+  non-finite loss/cost, storage, model, or rendezvous failure. Selector
+  `1200670` is `DependencyNeverSatisfied` with no receipt. Therefore the matrix
+  is protocol-incomplete and supplies no formal selector verdict; P2/P3 and
+  official test remain closed. Available timing is model-and-postprocess-only,
+  excludes evaluator and energy, and permits no paper-grade efficiency claim.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
