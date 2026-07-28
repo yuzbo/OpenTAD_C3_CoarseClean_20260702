@@ -6,6 +6,36 @@ import multiprocessing as mp
 from .builder import EVALUATORS, remove_duplicate_annotations
 
 
+def load_blocked_videos(blocked_videos):
+    """Load a blocked-video artifact without guessing malformed JSON.
+
+    Historical OpenTAD configs use JSON arrays, while the immutable DUCA-RIME
+    split contract emits one video id per line because the same artifact is
+    consumed by the dataset loader.  Accept both explicit formats, but fail
+    closed on empty artifacts, JSON objects, duplicates, or non-string ids.
+    """
+
+    with open(blocked_videos, "r", encoding="utf-8-sig") as handle:
+        text = handle.read()
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError("blocked-videos artifact is empty")
+
+    if stripped.startswith(("[", "{")):
+        values = json.loads(stripped)
+        if not isinstance(values, list):
+            raise ValueError("blocked-videos JSON must be an array")
+    else:
+        values = [line.strip() for line in text.splitlines() if line.strip()]
+
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise ValueError("blocked-videos entries must be nonempty strings")
+    normalized = [value.strip() for value in values]
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("blocked-videos artifact contains duplicate ids")
+    return normalized
+
+
 @EVALUATORS.register_module()
 class mAP:
     def __init__(
@@ -36,8 +66,7 @@ class mAP:
         if blocked_videos is None:
             self.blocked_videos = list()
         else:
-            with open(blocked_videos) as json_file:
-                self.blocked_videos = json.load(json_file)
+            self.blocked_videos = load_blocked_videos(blocked_videos)
 
         # Import ground truth and predictions.
         self.ground_truth, self.activity_index = self._import_ground_truth(ground_truth_filename)

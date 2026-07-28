@@ -38,6 +38,7 @@ from ..duca.transition_only import (
 
 _ARMS = {
     "exact_uniform",
+    "probe_uniform",
     "transition_no_bridge",
     "protected_e2e",
     "protected_e2e_bridge025",
@@ -48,6 +49,7 @@ _ARMS = {
 _PROTECTED_CONTRACT = "duca_protected_e2e_physical_v1"
 _DETECTOR_BRIDGE_SCALES = {
     "exact_uniform": 0.0,
+    "probe_uniform": 0.0,
     "transition_no_bridge": 0.0,
     "protected_e2e": 1.0,
     "protected_e2e_bridge025": 0.25,
@@ -57,6 +59,7 @@ _DETECTOR_BRIDGE_SCALES = {
 }
 _UNIFORM_COMPANION_FRACTIONS = {
     "exact_uniform": 0.0,
+    "probe_uniform": 0.0,
     "transition_no_bridge": 0.0,
     "protected_e2e": 0.0,
     "protected_e2e_bridge025": 0.0,
@@ -103,12 +106,15 @@ def _emit_protected_inference_ledger(
         window_start = int(meta.get("window_start_frame", 0))
         selected = [int(value) for value in meta.get("selected_dense_indices", ())]
         effective_k = int(meta.get("selected_valid_len", len(selected)))
+        dense_valid_len = int(meta.get("irregular_dense_valid_len", -1))
         if (
             not video_id
             or window_start < 0
             or effective_k <= 0
+            or dense_valid_len < effective_k
             or len(selected) != effective_k
             or selected != sorted(set(selected))
+            or any(value < 0 or value >= dense_valid_len for value in selected)
         ):
             raise ValueError("protected inference ledger has an invalid window or hard path")
         _append_jsonl_atomic(
@@ -126,6 +132,7 @@ def _emit_protected_inference_ledger(
                 "padded_k": int(budget),
                 "risk_fallback": False,
                 "cost_unit": "heavy_rgb_frames",
+                "dense_valid_len": dense_valid_len,
                 "selected_dense_indices": selected,
                 "max_gap_seconds_cap": float(meta["duca_max_gap_seconds_cap"]),
                 "observed_max_gap_seconds": float(
@@ -631,9 +638,13 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     f"{self.arm} requires policy_hidden_gradient_scope={expected_scope!r}"
                 )
             self.raw_actionness_source = C3CoarseProbeActionnessSource(**cfg)
-            self.transition_scorer = DucaProtectedTransitionScorer(
-                hidden_dim=self.coarse_hidden_dim,
-                scorer_hidden_dim=self.selector_hidden_dim,
+            self.transition_scorer = (
+                None
+                if self.arm == "probe_uniform"
+                else DucaProtectedTransitionScorer(
+                    hidden_dim=self.coarse_hidden_dim,
+                    scorer_hidden_dim=self.selector_hidden_dim,
+                )
             )
             self.policy_hidden_gradient_scale = (
                 0.01 if self.arm == "protected_e2e_rho001" else 0.0
@@ -740,6 +751,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
     ) -> dict[str, Any]:
         self._validate_inputs(inputs, masks, metas)
         self._reject_train_decision_payload(metas, kwargs)
+        if self.arm == "probe_uniform":
+            raise RuntimeError("probe_uniform is an inference-only Phase-1 cost control")
         action_target = _action_target_from_gt_segments(gt_segments, masks.bool())
         transition_target = _transition_target_from_gt_segments(
             gt_segments,
@@ -895,6 +908,45 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 edge_count=hard.edge_count,
                 effective_k=hard.effective_k,
                 max_gap_seconds=caps,
+            )
+        elif self.arm == "probe_uniform":
+            source = self.raw_actionness_source(
+                inputs,
+                valid_mask=valid_mask,
+            )
+            hidden = source.get("coarse_hidden_features")
+            if (
+                hidden is None
+                or source.get("hidden_kind") != ASFORMER_ENCODER_HIDDEN_KIND
+            ):
+                raise RuntimeError(
+                    "probe_uniform requires official ASFormer encoder hidden features"
+                )
+            hard = _exact_uniform_hard(
+                valid_mask,
+                k=self.budget,
+                dtype=inputs.dtype,
+            )
+            hard = PhysicalExactKHardOutput(
+                hard_occupancy=hard.hard_occupancy,
+                hard_slot_assignment=hard.hard_slot_assignment,
+                hard_positions=hard.hard_positions,
+                hard_slot_mask=hard.hard_slot_mask,
+                edge_count=hard.edge_count,
+                effective_k=hard.effective_k,
+                max_gap_seconds=caps,
+            )
+            selector_state.update(
+                {
+                    "actionness_logits": source["actionness_logits"],
+                    "p_action": source["p_action"],
+                    "coarse_hidden_features": hidden,
+                    "hidden_kind": source["hidden_kind"],
+                    "coarse_provenance": source["provenance"],
+                    "coarse_compute_profile": source.get("compute_profile"),
+                    "probe_output_used_for_selection": False,
+                    "selection_policy": "exact_uniform",
+                }
             )
         else:
             source = self.raw_actionness_source(

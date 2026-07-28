@@ -1,5 +1,10 @@
 _base_ = ["./duca_rime_physical_total60_base.py"]
 
+import os
+
+_formal_target = float(os.environ.get("DUCA_RIME_TARGET_MEAN_COST", "384"))
+_dynamic_panel = _formal_target > 192.0
+
 
 # Phase 4 cross-detector backend.  The selector, RGB backbone, candidate-K
 # grid, train-only targets, optimizer-update count, and cost ledger are
@@ -77,6 +82,18 @@ duca_rime_variant = dict(
     arm="RIME-full-TriDet",
     phase=4,
     detector_backend="TriDet",
+    dynamic_budget=_dynamic_panel,
+    pair_risk_used_for_allocation=_dynamic_panel,
+    allocation=(
+        "frozen_per_video_dual"
+        if _dynamic_panel
+        else "fixed_floor_budget_position_only"
+    ),
+    budget_panel_semantics=(
+        "content_conditioned_dynamic_budget_panel"
+        if _dynamic_panel
+        else "exact_k192_learned_position_stress_panel"
+    ),
     cross_backend_replication=True,
     dense_physical_training_axis=True,
     q_to_t_before_nms=True,
@@ -87,3 +104,4 @@ duca_rime_variant = dict(
 
 work_dir = "exps/thumos/adatad/duca_rime_full_tridet_total60"
 
+del _formal_target, _dynamic_panel

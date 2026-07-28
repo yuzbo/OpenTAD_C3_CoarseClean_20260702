@@ -107,6 +107,55 @@ def create_training_exposure(
     if set(contract["ordered_video_ids"]) != expected_videos:
         raise RuntimeError("runtime train loader differs from detector_selector_train split")
 
+    mixed_k_schedule = None
+    if int(research_phase) == 2:
+        from opentad.models.duca.rime import build_cost_matched_mixed_k_cycle
+
+        variant = cfg.duca_rime_variant
+        budgets = tuple(int(value) for value in variant.candidate_budgets)
+        counts = tuple(int(value) for value in variant.training_schedule_counts)
+        schedule_seed = int(variant.training_schedule_seed)
+        schedule_source = str(variant.training_schedule_source)
+        if (
+            budgets != (192, 256, 384, 512)
+            or counts != (8, 12, 16, 24)
+            or schedule_seed != 3407
+            or schedule_source != "stateless_epoch_plus_sample_index"
+            or variant.exact_per_video_histogram is not True
+            or len(contract["ordered_video_ids"]) != 100
+        ):
+            raise RuntimeError("Phase-2 mixed-K schedule contract drift")
+        cycle = build_cost_matched_mixed_k_cycle(
+            budgets,
+            counts,
+            target_mean_cost=float(target_mean_cost),
+            schedule_seed=schedule_seed,
+        )
+        per_video_histograms = {}
+        for sample_index, video_id in enumerate(contract["ordered_video_ids"]):
+            values = [
+                int(cycle[(epoch + sample_index) % len(cycle)])
+                for epoch in range(60)
+            ]
+            histogram = tuple(values.count(value) for value in budgets)
+            if histogram != counts or sum(values) / len(values) != float(
+                target_mean_cost
+            ):
+                raise RuntimeError("Phase-2 per-video mixed-K exposure drift")
+            per_video_histograms[str(video_id)] = {
+                str(budget): count
+                for budget, count in zip(budgets, histogram)
+            }
+        mixed_k_schedule = {
+            "candidate_budgets": list(budgets),
+            "per_video_counts": list(counts),
+            "target_mean_cost": float(target_mean_cost),
+            "schedule_seed": schedule_seed,
+            "schedule_source": schedule_source,
+            "cycle": cycle,
+            "per_video_histograms": per_video_histograms,
+        }
+
     payload = {
         "schema_version": (
             "duca_rime_phase2_mixed_k_training_exposure_v1"
@@ -130,6 +179,8 @@ def create_training_exposure(
         "official_final_subset_consumed": False,
         "train_loader_contract": contract,
     }
+    if mixed_k_schedule is not None:
+        payload["mixed_k_schedule"] = mixed_k_schedule
     target = Path(output).resolve()
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if target.exists() and target.read_text(encoding="utf-8") != text:

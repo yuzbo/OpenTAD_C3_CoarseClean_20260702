@@ -138,6 +138,88 @@ def test_train_and_test_entrypoints_route_rime_formal_protocol():
     assert "duca_rime_terminal_evaluation_v1" in test
 
 
+def test_checkpoint_compatibility_modes_are_explicit_and_fail_closed():
+    strict = duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
+        missing_keys=[],
+        unexpected_keys=[],
+        mode=duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
+    )
+    assert strict == {
+        "mode": "strict_exact_v1",
+        "missing_keys": [],
+        "ignored_unexpected_keys": [],
+    }
+    with pytest.raises(RuntimeError, match="zero missing"):
+        duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
+            missing_keys=["module.projection.weight"],
+            unexpected_keys=[],
+            mode=duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
+        )
+    with pytest.raises(RuntimeError, match="zero missing"):
+        duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
+            missing_keys=[],
+            unexpected_keys=["module.legacy.weight"],
+            mode=duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
+        )
+    with pytest.raises(RuntimeError, match="unregistered"):
+        duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
+            missing_keys=[],
+            unexpected_keys=[],
+            mode="silent_partial_load",
+        )
+
+
+def test_phase1_dense_config_uses_strict_exact_checkpoint_contract(
+    tmp_path,
+    monkeypatch,
+):
+    root = Path(__file__).resolve().parents[1]
+    block = _write(tmp_path / "block.txt", "blocked_video\n")
+    monkeypatch.setenv("DUCA_RIME_PHASE1_EVAL_BLOCK_LIST", str(block))
+    monkeypatch.setenv("DUCA_RIME_PHASE1_DENSE_VARIANT", "released_dense")
+    cfg = Config.fromfile(
+        str(
+            root
+            / "configs/adatad/thumos/duca_rime_dense_phase1_control.py"
+        )
+    )
+    assert cfg.workflow.formal_protocol == "duca_rime_phase1_dense_control_v1"
+    assert cfg.duca_rime_baseline_contract.phase == 1
+    assert cfg.duca_rime_baseline_contract.variant == "released_dense"
+    assert (
+        cfg.duca_rime_baseline_contract.checkpoint_compatibility_mode
+        == duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE
+    )
+    assert cfg.evaluation.subset == "training"
+    assert cfg.evaluation.blocked_videos == str(block)
+
+
+def test_phase1_uniform_config_uses_registered_historical_checkpoint_contract(
+    tmp_path,
+    monkeypatch,
+):
+    root = Path(__file__).resolve().parents[1]
+    block = _write(tmp_path / "block.txt", "blocked_video\n")
+    monkeypatch.setenv("DUCA_RIME_PHASE2_EVAL_BLOCK_LIST", str(block))
+    monkeypatch.setenv("DUCA_RIME_FIXED_BUDGET", "192")
+    cfg = Config.fromfile(
+        str(
+            root
+            / "configs/adatad/thumos/duca_rime_uniform_phase1_control.py"
+        )
+    )
+    assert cfg.workflow.formal_protocol == "duca_protected_physical_v1"
+    assert cfg.duca_rime_baseline_contract.phase == 1
+    assert cfg.duca_rime_baseline_contract.variant == "uniform_k192"
+    assert cfg.duca_rime_baseline_contract.position_policy == "exact_uniform"
+    assert cfg.duca_rime_baseline_contract.target_mean_cost == 192.0
+    assert (
+        cfg.duca_rime_baseline_contract.checkpoint_compatibility_mode
+        == duca_rime_training.PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
+    )
+    assert cfg.evaluation.blocked_videos == str(block)
+
+
 def test_rime_total60_configs_activate_dedicated_6000_update_contract(
     tmp_path,
     monkeypatch,
@@ -256,6 +338,32 @@ def test_phase2_mixed_k_runtime_is_phase1_bound_and_target_free(
     assert bindings["formal_budget_panel"] == 384.0
 
 
+def test_mixed_k_evaluation_contract_reports_the_executed_budget(
+    tmp_path,
+    monkeypatch,
+):
+    root = Path(__file__).resolve().parents[1]
+    block = _write(tmp_path / "block.txt", "blocked_video\n")
+    monkeypatch.setenv("DUCA_RIME_TRAIN_BLOCK_LIST", str(block))
+    monkeypatch.setenv("DUCA_RIME_DEVELOPMENT_BLOCK_LIST", str(block))
+    monkeypatch.setenv("DUCA_RIME_EVAL_FIXED_BUDGET", "192")
+    cfg = Config.fromfile(
+        str(
+            root
+            / "configs/adatad/thumos/duca_rime_uniform_mixed_k_total60.py"
+        )
+    )
+    assert cfg.duca_rime_variant.training_target_mean_cost == 384.0
+    assert cfg.duca_rime_variant.training_schedule_seed == 3407
+    assert (
+        cfg.duca_rime_variant.training_schedule_source
+        == "stateless_epoch_plus_sample_index"
+    )
+    assert cfg.duca_rime_variant.exact_per_video_histogram is True
+    assert cfg.duca_rime_contract.training_target_mean_cost == 384.0
+    assert cfg.duca_rime_contract.target_mean_cost == 192.0
+
+
 def test_phase4_authorization_covers_only_registered_seed_backend_and_budget(
     tmp_path,
     monkeypatch,
@@ -311,6 +419,49 @@ def test_phase4_terminal_receipt_is_bound_to_checkpoint_and_authorization(
     monkeypatch,
 ):
     seed = 5801
+    protocol_192 = _json(
+        tmp_path / "protocol_192.json",
+        {
+            "schema_version": "duca_rime_budget_protocol_v1",
+            "fit_split": "train_only",
+            "uses_validation_or_test_labels": False,
+            "target_mean_cost": 192.0,
+        },
+    )
+    protocol_384 = _json(
+        tmp_path / "protocol_384.json",
+        {
+            "schema_version": "duca_rime_budget_protocol_v1",
+            "fit_split": "train_only",
+            "uses_validation_or_test_labels": False,
+            "target_mean_cost": 384.0,
+        },
+    )
+    formal_protocols = [
+        {
+            "target_mean_cost": 192.0,
+            "path": str(protocol_192.resolve()),
+            "sha256": _sha(protocol_192),
+        },
+        {
+            "target_mean_cost": 384.0,
+            "path": str(protocol_384.resolve()),
+            "sha256": _sha(protocol_384),
+        },
+    ]
+    phase2 = _json(
+        tmp_path / "phase2.json",
+        {
+            "schema_version": "duca_rime_stage_receipt_v1",
+            "phase": "phase2",
+            "gate_pass": True,
+            "phase3_training_authorized": True,
+            "official_final_subset_consumed": False,
+            "git_commit": COMMIT,
+            "split_assignment_sha256": "b" * 64,
+            "formal_budget_protocols": formal_protocols,
+        },
+    )
     authorization = _json(
         tmp_path / "phase4.json",
         {
@@ -323,6 +474,11 @@ def test_phase4_terminal_receipt_is_bound_to_checkpoint_and_authorization(
             "required_detectors": ["ActionFormer", "TriDet"],
             "required_budget_panels": [384, 192],
             "official_final_subset_consumed": False,
+            "phase2_receipt": {
+                "path": str(phase2.resolve()),
+                "sha256": _sha(phase2),
+            },
+            "formal_budget_protocols": formal_protocols,
         },
     )
     checkpoint_path = _write(tmp_path / "epoch_59.pth", "checkpoint-bytes")
@@ -336,6 +492,10 @@ def test_phase4_terminal_receipt_is_bound_to_checkpoint_and_authorization(
         "split_assignment_sha256": "b" * 64,
         "training_exposure_sha256": "c" * 64,
         "initialization_sha256": "d" * 64,
+        "phase2_receipt_path": str(phase2.resolve()),
+        "phase2_receipt_sha256": _sha(phase2),
+        "budget_protocol_path": str(protocol_192.resolve()),
+        "budget_protocol_sha256": _sha(protocol_192),
         "research_phase": 4,
         "phase4_authorization_path": str(authorization.resolve()),
         "phase4_authorization_sha256": _sha(authorization),
@@ -413,6 +573,8 @@ def test_phase4_terminal_receipt_is_bound_to_checkpoint_and_authorization(
     )
     assert identity["research_phase"] == 4
     assert identity["phase4_authorization_sha256"] == _sha(authorization)
+    assert identity["phase2_receipt_sha256"] == _sha(phase2)
+    assert identity["budget_protocol_sha256"] == _sha(protocol_192)
 
     forged = dict(receipt_payload)
     forged["target_mean_cost"] = 384.0
@@ -423,6 +585,32 @@ def test_phase4_terminal_receipt_is_bound_to_checkpoint_and_authorization(
         duca_rime_training.validate_terminal_checkpoint_binding(
             checkpoint_path=checkpoint_path,
             checkpoint=checkpoint,
+            git_commit=COMMIT,
+            evaluation_arm="RIME-full-TriDet",
+            seed=seed,
+        )
+
+    forged_audit = dict(audit)
+    forged_audit["budget_protocol_sha256"] = "f" * 64
+    forged_audit.pop("audit_sha256")
+    forged_audit["audit_sha256"] = (
+        duca_rime_training.duca_p0_training.canonical_sha256(forged_audit)
+    )
+    forged_metadata = {
+        "schema_version": duca_rime_training.DUCA_P0_CHECKPOINT_METADATA_SCHEMA,
+        "training_audit": forged_audit,
+    }
+    forged_metadata["metadata_sha256"] = (
+        duca_rime_training.duca_p0_training.canonical_sha256(forged_metadata)
+    )
+    forged_checkpoint = dict(checkpoint)
+    forged_checkpoint["experiment_metadata"] = forged_metadata
+    monkeypatch.setenv("DUCA_RIME_TRAINING_RECEIPT", str(receipt))
+    monkeypatch.setenv("DUCA_RIME_TRAINING_RECEIPT_SHA256", _sha(receipt))
+    with pytest.raises(ValueError, match="are not bound"):
+        duca_rime_training.validate_terminal_checkpoint_binding(
+            checkpoint_path=checkpoint_path,
+            checkpoint=forged_checkpoint,
             git_commit=COMMIT,
             evaluation_arm="RIME-full-TriDet",
             seed=seed,

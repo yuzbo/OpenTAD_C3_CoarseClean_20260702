@@ -69,21 +69,66 @@ def main():
         formal_protocol
     )
     rime_formal = duca_rime_training.is_formal_protocol(formal_protocol)
-    rime_phase2_baseline = cfg.get("duca_rime_baseline_contract", None) is not None
-    if rime_phase2_baseline:
+    rime_baseline_eval = cfg.get("duca_rime_baseline_contract", None) is not None
+    if rime_baseline_eval:
         baseline_contract = cfg.duca_rime_baseline_contract
-        if (
-            formal_protocol != "duca_protected_physical_v1"
-            or int(baseline_contract.phase) != 2
-            or baseline_contract.uses_official_final is not False
+        baseline_phase = int(baseline_contract.phase)
+        compatibility_mode = str(
+            baseline_contract.checkpoint_compatibility_mode
+        )
+        common_invalid = (
+            baseline_contract.uses_official_final is not False
             or baseline_contract.padded_to_kmax is not False
             or str(baseline_contract.detector_backend)
             not in {"ActionFormer", "TriDet"}
             or float(baseline_contract.target_mean_cost) <= 0.0
-            or str(baseline_contract.checkpoint_compatibility_mode)
-            != duca_rime_training.PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
+        )
+        phase1_variant = str(baseline_contract.variant)
+        phase1_dense = phase1_variant in {"released_dense", "local_dense"}
+        phase1_uniform = phase1_variant in {"uniform_k384", "uniform_k192"}
+        phase1_invalid = (
+            baseline_phase == 1
+            and (
+                not (phase1_dense or phase1_uniform)
+                or (
+                    phase1_dense
+                    and (
+                        formal_protocol
+                        != "duca_rime_phase1_dense_control_v1"
+                        or compatibility_mode
+                        != duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE
+                        or str(baseline_contract.position_policy) != "dense_all"
+                        or float(baseline_contract.target_mean_cost) != 768.0
+                    )
+                )
+                or (
+                    phase1_uniform
+                    and (
+                        formal_protocol != "duca_protected_physical_v1"
+                        or compatibility_mode
+                        != duca_rime_training.PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
+                        or str(baseline_contract.position_policy) != "exact_uniform"
+                        or float(baseline_contract.target_mean_cost)
+                        != (384.0 if phase1_variant == "uniform_k384" else 192.0)
+                    )
+                )
+            )
+        )
+        phase2_invalid = (
+            baseline_phase == 2
+            and (
+                formal_protocol != "duca_protected_physical_v1"
+                or compatibility_mode
+                != duca_rime_training.PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
+            )
+        )
+        if (
+            common_invalid
+            or baseline_phase not in {1, 2}
+            or phase1_invalid
+            or phase2_invalid
         ):
-            raise RuntimeError("invalid DUCA-RIME Phase-2 baseline contract")
+            raise RuntimeError("invalid DUCA-RIME baseline evaluation contract")
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
@@ -110,7 +155,13 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if cellcf_formal or protected_physical_formal or selected_axis_formal or rime_formal:
+    if (
+        cellcf_formal
+        or protected_physical_formal
+        or selected_axis_formal
+        or rime_formal
+        or rime_baseline_eval
+    ):
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
@@ -131,7 +182,7 @@ def main():
             raise RuntimeError(
                 "formal evaluation requires one process and official mAP evaluation"
             )
-    if protected_physical_formal and not rime_phase2_baseline:
+    if protected_physical_formal and not rime_baseline_eval:
         if source_resolved_config_sha256 != os.environ.get(
             "DUCA_RESOLVED_CONFIG_SHA256"
         ):
@@ -148,7 +199,7 @@ def main():
                 "formal protected evaluation must use seed 3407, "
                 "terminal epoch-59 EMA, and structured metrics"
             )
-    if rime_phase2_baseline:
+    if rime_baseline_eval:
         if (
             args.expected_checkpoint_epoch != 59
             or args.checkpoint_state_key != "state_dict_ema"
@@ -156,7 +207,7 @@ def main():
             or cfg.post_processing.save_dict is not True
         ):
             raise RuntimeError(
-                "Phase-2 RIME baseline evaluation requires terminal epoch-59 "
+                "formal RIME baseline evaluation requires terminal epoch-59 "
                 "EMA, saved predictions, and structured metrics"
             )
     if selected_axis_formal:
@@ -297,16 +348,23 @@ def main():
                 evaluation_arm=str(cfg.duca_rime_variant.arm),
                 seed=args.seed,
             )
-        phase2_baseline_checkpoint_compatibility = None
-        if rime_phase2_baseline:
+        baseline_checkpoint_compatibility = None
+        if rime_baseline_eval:
+            compatibility_mode = str(
+                baseline_contract.checkpoint_compatibility_mode
+            )
             incompatible = model.load_state_dict(
                 checkpoint[checkpoint_state_key],
-                strict=False,
+                strict=(
+                    compatibility_mode
+                    == duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE
+                ),
             )
-            phase2_baseline_checkpoint_compatibility = (
+            baseline_checkpoint_compatibility = (
                 duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
                     missing_keys=incompatible.missing_keys,
                     unexpected_keys=incompatible.unexpected_keys,
+                    mode=compatibility_mode,
                 )
             )
         else:
@@ -346,11 +404,11 @@ def main():
         )
         expected_evaluation_subset = (
             str(cfg.evaluation.subset)
-            if rime_formal or rime_phase2_baseline
+            if rime_formal or rime_baseline_eval
             else ("training" if r0_selected_axis_replay else "validation")
         )
         if (
-            rime_formal or rime_phase2_baseline
+            rime_formal or rime_baseline_eval
         ) and expected_evaluation_subset not in {"training", "validation"}:
             raise RuntimeError("formal RIME evaluation subset is not registered")
         evaluation_config = normalize_evaluation_config(
@@ -360,8 +418,16 @@ def main():
         evaluator_identity = official_evaluator_identity()
         if evaluation_summary.get("evaluator") != evaluator_identity:
             raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
-        if rime_phase2_baseline:
-            evaluation_schema = "duca_rime_phase2_baseline_terminal_evaluation_v1"
+        if rime_baseline_eval:
+            if int(baseline_contract.phase) == 1:
+                evaluation_schema = (
+                    "duca_rime_phase1_dense_terminal_evaluation_v1"
+                    if str(baseline_contract.variant)
+                    in {"released_dense", "local_dense"}
+                    else "duca_rime_phase1_uniform_terminal_evaluation_v1"
+                )
+            else:
+                evaluation_schema = "duca_rime_phase2_baseline_terminal_evaluation_v1"
         elif formal_protocol == "duca_cellcf_v1":
             evaluation_schema = "duca_cellcf_terminal_evaluation_v1"
         elif formal_protocol == "duca_protected_physical_v1":
@@ -443,7 +509,7 @@ def main():
                     ),
                 }
             )
-        if rime_phase2_baseline:
+        if rime_baseline_eval:
             payload.update(
                 {
                     "seed": int(args.seed),
@@ -458,7 +524,7 @@ def main():
                     ),
                     "baseline_contract": _jsonable(baseline_contract),
                     "checkpoint_compatibility": (
-                        phase2_baseline_checkpoint_compatibility
+                        baseline_checkpoint_compatibility
                     ),
                     "training_identity": None,
                 }

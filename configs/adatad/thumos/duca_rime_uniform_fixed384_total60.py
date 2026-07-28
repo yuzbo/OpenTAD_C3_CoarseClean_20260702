@@ -36,7 +36,7 @@ evaluation = dict(
 )
 
 # Keep the detector/projection capacity identical to the dynamic RIME arms.
-# The RGB backbone still executes exactly K=384 frames; only the detector tail
+# The RGB backbone still executes exactly the registered fixed K frames; only the detector tail
 # sees the common Kmax=512 canvas used by every Phase-3 arm.
 model = dict(
     frame_selector=dict(

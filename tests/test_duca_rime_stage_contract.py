@@ -5,6 +5,10 @@ import json
 from pathlib import Path
 
 from tools.bata.create_duca_rime_splits import create_rime_splits
+from tools.bata.duca_full_stack_cost import (
+    OFFLINE_FULL_WINDOW_PROTOCOL,
+    build_profile_summary,
+)
 from tools.bata.duca_rime_stage_contract import (
     PHASE3_ARMS,
     REQUIRED_PHASE1_CONTROLS,
@@ -13,6 +17,9 @@ from tools.bata.duca_rime_stage_contract import (
     seal_phase2,
     seal_phase3,
     seal_phase4,
+)
+from tools.bata.finalize_duca_rime_inference_ledger import (
+    exact_uniform_positions,
 )
 
 
@@ -63,18 +70,64 @@ def _split(tmp_path: Path):
 
 def _phase1(tmp_path: Path):
     split = _split(tmp_path)
+    source_path = Path(split["manifest_path"])
+    phase0_metrics = _write_json(
+        tmp_path / "phase0_metrics.json",
+        _with_content_sha(
+            {
+                "schema_version": "duca_rime_localization_metrics_v1",
+                "phase": 1,
+                "split_assignment_sha256": split["assignment_sha256"],
+                "uses_official_final": False,
+            }
+        ),
+    )
+    phase0_records = tmp_path / "phase0_records.jsonl"
+    phase0_rows = [
+        {
+            "schema_version": "duca_rime_phase0_measurement_v1",
+            "video_id": f"train_{video:03d}",
+            "replicate_id": f"replicate_{replicate}",
+            "replicate_kind": "deterministic_reexecution",
+            "metric_name": "avg_map",
+            "value": 0.5,
+            "source_path": str(phase0_metrics),
+            "source_sha256": _sha(phase0_metrics),
+            "split_assignment_sha256": split["assignment_sha256"],
+            "uses_official_final": False,
+        }
+        for video in range(3)
+        for replicate in range(2)
+    ]
+    phase0_records.write_text(
+        "".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            for row in phase0_rows
+        ),
+        encoding="utf-8",
+    )
     phase0 = _write_json(
         tmp_path / "phase0.json",
-        {
-            "schema_version": "duca_rime_causal_gate_summary_v1",
-            "stage": "phase0_variance_power",
-            "gate_pass": True,
-            "rule_derived_thresholds": {
-                "min_o1_headroom": 0.01,
-                "max_o2_decoder_regret": 0.01,
-                "min_o3_spearman": 0.1,
-            },
-        },
+        _with_content_sha(
+            {
+                "schema_version": "duca_rime_causal_gate_summary_v1",
+                "stage": "phase0_variance_power",
+                "gate_pass": True,
+                "video_count": 3,
+                "replicate_count": 6,
+                "replicate_kinds": ["deterministic_reexecution"],
+                "split_assignment_sha256": split["assignment_sha256"],
+                "source_records": {
+                    "path": str(phase0_records),
+                    "sha256": _sha(phase0_records),
+                },
+                "rule_derived_thresholds": {
+                    "min_o1_headroom": 0.01,
+                    "max_o2_decoder_regret": 0.01,
+                    "min_o3_spearman": 0.1,
+                },
+            }
+        ),
     )
     code_gate = tmp_path / "code.receipt"
     code_gate.write_text(
@@ -89,6 +142,134 @@ def _phase1(tmp_path: Path):
         ),
         encoding="utf-8",
     )
+    split_payload = json.loads(source_path.read_text(encoding="utf-8"))
+    phase1_role = split_payload["train_roles"]["certification_development"]
+    checkpoint = _write_json(tmp_path / "checkpoint.pth", {"epoch": 59})
+    geometry_source = _write_json(
+        tmp_path / "geometry_source.json",
+        _with_content_sha(
+            {
+                "schema_version": "duca_rime_phase1_geometry_audit_v1",
+                "gate_pass": True,
+                "git_commit": COMMIT,
+                "split_assignment_sha256": split["assignment_sha256"],
+            }
+        ),
+    )
+    wrapper_source = _write_json(
+        tmp_path / "wrapper_source.json",
+        {
+            "schema": "duca_protected_physical_full_model_gate_v1",
+            "ok": True,
+            "runtime": {"git_commit": COMMIT},
+        },
+    )
+
+    def metric_sources(name: str, target_cost: int):
+        terminal = _write_json(
+            tmp_path / f"{name}_terminal.json",
+            {
+                "git_commit": COMMIT,
+                "variant": name,
+                "checkpoint_path": str(checkpoint),
+                "checkpoint_sha256": _sha(checkpoint),
+                "checkpoint_epoch": 59,
+                "checkpoint_state_key": "state_dict_ema",
+                "runtime_gt_input_to_selector": False,
+                "padded_to_kmax": False,
+            },
+        )
+        metrics = _write_json(
+            tmp_path / f"{name}_metrics.json",
+            _with_content_sha(
+                {
+                    "schema_version": "duca_rime_localization_metrics_v1",
+                    "phase": 1,
+                    "git_commit": COMMIT,
+                    "variant": name,
+                    "target_mean_cost": float(target_cost),
+                    "split_role": "certification_development",
+                    "evaluation_video_ids": phase1_role["videos"],
+                    "split_assignment_sha256": split["assignment_sha256"],
+                    "uses_official_final": False,
+                    "terminal_evaluation_path": str(terminal),
+                    "terminal_evaluation_sha256": _sha(terminal),
+                }
+            ),
+        )
+        return [
+            {"path": str(metrics), "sha256": _sha(metrics)},
+            {"path": str(terminal), "sha256": _sha(terminal)},
+            {"path": str(checkpoint), "sha256": _sha(checkpoint)},
+        ]
+
+    def cost_profile_source(probe: bool):
+        method = (
+            "phase1-probe-uniform"
+            if probe
+            else "phase1-no-probe-uniform"
+        )
+        sample = {
+            "input_pipeline_serial_ms": 1.0,
+            "h2d_ms": 1.0,
+            "model_forward_ms": 10.0,
+            "postprocess_ms": 1.0,
+            "frame_selector_total_ms": 1.0 if probe else 0.0,
+            "backbone_wrapper_total_ms": 5.0,
+            "projection_ms": 1.0,
+            "neck_ms": 1.0,
+            "head_ms": 1.0,
+            "coarse_probe_ms": 1.0 if probe else 0.0,
+            "heavy_backbone_ms": 4.0,
+            "selected_count": 384.0,
+        }
+        profile = build_profile_summary(
+            [sample for _ in range(30)],
+            metadata={
+                "method": method,
+                "protocol": OFFLINE_FULL_WINDOW_PROTOCOL,
+                "hardware_fingerprint": "gpu",
+                "host_fingerprint": "host",
+                "software_fingerprint": "software",
+                "config_commit": COMMIT,
+                "evidence_git_commit": COMMIT,
+                "tracked_tree_clean": True,
+                "dataset_fingerprint": "dataset",
+                "inference_fingerprint": "inference",
+                "detector_stack_fingerprint": "detector",
+                "batch_size": 1,
+                "loader_workers": 0,
+                "warmup_samples": 5,
+                "amp": True,
+                "uses_ema": True,
+                "random_init": False,
+                "power_sampling_enabled": False,
+                "power_interval_ms": 20,
+                "power_gpu_id": None,
+                "research_phase": 1,
+                "uses_official_final": False,
+                "accuracy_claim_allowed": False,
+                "profile_session_id": "session",
+                "profile_pair_id": "pair",
+                "profile_repeat_index": 1,
+                "profile_order_position": 2 if probe else 1,
+                "checkpoint_path": str(checkpoint),
+                "checkpoint_sha256": _sha(checkpoint),
+                "checkpoint_epoch": 59,
+                "checkpoint_state_key": "state_dict_ema",
+                "checkpoint_dropped_prefixes": ["unused"],
+                "checkpoint_dropped_key_count": 1,
+            },
+        )
+        profile_path = _write_json(
+            tmp_path / f"{method}.summary.json",
+            profile,
+        )
+        return [
+            {"path": str(profile_path), "sha256": _sha(profile_path)},
+            {"path": str(checkpoint), "sha256": _sha(checkpoint)},
+        ]
+
     controls = []
     for name in REQUIRED_PHASE1_CONTROLS:
         payload = {
@@ -97,33 +278,174 @@ def _phase1(tmp_path: Path):
             "gate_pass": True,
             "git_commit": COMMIT,
             "split_assignment_sha256": split["assignment_sha256"],
+            "split_role": "certification_development",
+            "evaluation_video_ids": phase1_role["videos"],
             "uses_official_final": False,
+            "source_artifacts": [],
         }
+        if name in {"released_dense", "local_dense"}:
+            payload["source_artifacts"] = metric_sources(name, 768)
+            payload["measurement"] = {
+                "kind": "dense_sanity_control",
+                "native_heavy_rgb_frames": 768,
+                "checkpoint_epoch": 59,
+                "checkpoint_state_key": "state_dict_ema",
+                "checkpoint_compatibility_mode": "strict_exact_v1",
+                "checkpoint_sha256": _sha(checkpoint),
+                "aggregate_metrics": {"avg_map": 0.5},
+            }
         if name in {"uniform_k384", "uniform_k192"}:
             budget = 384 if name.endswith("384") else 192
+            ledger = tmp_path / f"{name}_ledger.jsonl"
+            ledger_rows = [
+                {
+                    "schema_version": "duca_rime_inference_ledger_v1",
+                    "arm": "exact_uniform",
+                    "video_id": video,
+                    "window_start_frame": 0,
+                    "requested_k": budget,
+                    "effective_k": budget,
+                    "unique_k": budget,
+                    "backbone_input_k": budget,
+                    "padded_k": budget,
+                    "dense_valid_len": 768,
+                    "selected_dense_indices": exact_uniform_positions(768, budget),
+                    "observed_max_gap_seconds": 1.0,
+                    "max_gap_seconds_cap": 1.0,
+                    "provenance": {
+                        "uses_gt": False,
+                        "uses_teacher": False,
+                        "uses_prediction_cache": False,
+                        "uses_test_batch_composition": False,
+                        "raw_predictions_stored": False,
+                    },
+                }
+                for video in phase1_role["videos"]
+            ]
+            ledger.write_text(
+                "".join(
+                    json.dumps(row, sort_keys=True, separators=(",", ":"))
+                    + "\n"
+                    for row in ledger_rows
+                ),
+                encoding="utf-8",
+            )
+            ledger_summary = _write_json(
+                tmp_path / f"{name}_ledger_summary.json",
+                {
+                    "schema_version": "duca_rime_inference_ledger_summary_v1",
+                    "status": "sealed",
+                    "arm": "exact_uniform",
+                    "path": str(ledger),
+                    "sha256": _sha(ledger),
+                    "record_count": len(ledger_rows),
+                    "video_count": len(phase1_role["videos"]),
+                    "requested_mean_k": float(budget),
+                    "effective_mean_k": float(budget),
+                    "requested_k_histogram": {
+                        str(budget): len(ledger_rows)
+                    },
+                    "max_observed_gap_seconds": 1.0,
+                    "max_gap_seconds_cap": 1.0,
+                    "no_padding_ledger": True,
+                },
+            )
+            payload["source_artifacts"] = [
+                *metric_sources(name, budget),
+                {
+                    "path": str(ledger_summary),
+                    "sha256": _sha(ledger_summary),
+                },
+                {"path": str(ledger), "sha256": _sha(ledger)},
+            ]
+            payload["measurement"] = {
+                "kind": "exact_uniform_native_k_control",
+                "native_heavy_rgb_frames": budget,
+                "checkpoint_epoch": 59,
+                "checkpoint_state_key": "state_dict_ema",
+                "checkpoint_sha256": _sha(checkpoint),
+                "aggregate_metrics": {"avg_map": 0.5},
+            }
             payload["cost_ledger"] = {
                 "requested_k": budget,
                 "effective_k": budget,
                 "unique_k": budget,
                 "backbone_input_k": budget,
                 "padded_k": budget,
+                "record_count": len(ledger_rows),
+                "video_count": len(phase1_role["videos"]),
+                "max_observed_gap_seconds": 1.0,
                 "constant_evidence_exact_uniform_identity": True,
             }
         if name == "wrapper_parity":
+            payload["source_artifacts"] = [
+                {"path": str(wrapper_source), "sha256": _sha(wrapper_source)},
+                {"path": str(geometry_source), "sha256": _sha(geometry_source)},
+            ]
             payload["checks"] = {
                 "mask_equal": True,
                 "tensor_max_abs": 0.0,
                 "raw_proposal_max_abs": 0.0,
+                "raw_score_max_abs": 0.0,
+                "physical_target_max_abs": 0.0,
                 "coordinate_roundtrip_max_abs": 0.0,
-                "map_abs_delta": 0.0,
+                "target_assignment_parity": True,
+                "decode_parity": True,
+                "full_and_short_padded_windows_covered": True,
+                "remap_before_official_nms": True,
             }
         if name == "q_to_t_before_nms":
+            payload["source_artifacts"] = [
+                {"path": str(geometry_source), "sha256": _sha(geometry_source)}
+            ]
             payload["checks"] = {
                 "remap_before_official_nms": True,
+                "official_nms_call_count": 1,
+                "pre_nms_remap_max_abs": 0.0,
+                "coordinate_roundtrip_max_abs": 0.0,
                 "roundtrip_violation_count": 0,
+                "physical_head_passthrough_max_abs": 0.0,
+                "physical_head_output_remapped_twice": False,
                 "max_gap_violation_count": 0,
             }
-        controls.append(_write_json(tmp_path / f"{name}.json", payload))
+        if name in {"no_probe_uniform_cost", "probe_uniform_cost"}:
+            probe = name == "probe_uniform_cost"
+            payload["source_artifacts"] = cost_profile_source(probe)
+            payload["measurement"] = {
+                "kind": "real_paired_full_stack_cost",
+                "method": (
+                    "phase1-probe-uniform"
+                    if probe
+                    else "phase1-no-probe-uniform"
+                ),
+                "protocol": "offline_full_window_runtime_selection",
+                "profile_session_id": "session",
+                "profile_pair_id": "pair",
+                "profile_repeat_index": 1,
+                "profile_order_position": 2 if probe else 1,
+                "sample_count": 30,
+                "warmup_samples": 5,
+                "hardware_fingerprint": "gpu",
+                "coarse_probe_executed": probe,
+                "selection_policy": "exact_uniform",
+                "selected_count_mean": 384.0,
+                "end_to_end_p50_ms": 10.0,
+                "frame_selector_p50_ms": 1.0 if probe else 0.0,
+                "coarse_probe_p50_ms": 1.0 if probe else 0.0,
+                "heavy_backbone_p50_ms": 5.0,
+                "checkpoint_sha256": _sha(checkpoint),
+                "checkpoint_dropped_key_count": 1,
+                "summary_rebuild_hashes": {
+                    "ordered_sha256": "d" * 64,
+                    "multiset_sha256": "e" * 64,
+                },
+            }
+        controls.append(
+            _write_json(
+                tmp_path / f"{name}.json",
+                _with_content_sha(payload),
+            )
+        )
     receipt = tmp_path / "phase1_receipt.json"
     seal_phase1(
         expected_commit=COMMIT,
@@ -165,9 +487,18 @@ def _phase2(tmp_path: Path):
                 "schema_version": "duca_rime_budget_protocol_v1",
                 "fit_split": "train_only",
                 "uses_validation_or_test_labels": False,
-                "candidate_budgets": [128, 192, 256, 384, 512],
-                "candidate_costs": [128, 192, 256, 384, 512],
+                "candidate_budgets": [192, 256, 384, 512],
+                "candidate_costs": [192, 256, 384, 512],
                 "target_mean_cost": target,
+                "realized_calibration_mean_cost": target,
+                "allocation_mode": (
+                    "frozen_price_dynamic_budget"
+                    if target == 384
+                    else "fixed_floor_budget_position_only"
+                ),
+                "forced_budget": None if target == 384 else 192,
+                "risk_used_for_allocation": target == 384,
+                "dynamic_budget_claim_allowed": target == 384,
                 "decoder_family": "independent",
                 "gate_pass": True,
                 "evidence_summaries": evidence,
@@ -202,7 +533,7 @@ def _phase3_rows(split, *, collapse_shuffle=False):
     histogram = {"192": 1, "256": 1, "384": 1}
     cost_path = Path(split["manifest_path"]).parent / "phase3_cost.json"
     cost_payload = {
-        "schema_version": "duca_rime_paired_full_stack_cost_v1",
+        "schema_version": "duca_rime_paired_full_stack_cost_v2",
         "research_phase": 3,
         "arm": "RIME-full",
         "seed": 3407,
@@ -211,9 +542,13 @@ def _phase3_rows(split, *, collapse_shuffle=False):
         "real_full_stack_measurement": True,
         "includes_probe_decoder_solver": True,
         "matched_realized_cost": True,
+        "target_budget_respected": True,
         "matched_k_tolerance": 1.0,
+        "candidate_effective_mean_k": 384.0,
+        "matched_control_arm": "U-same-K",
+        "matched_control_effective_mean_k": 384.0,
         "latency_p50_ms": 10.0,
-        "fixed_latency_p50_ms": 11.0,
+        "matched_control_latency_p50_ms": 11.0,
         "dense_latency_p50_ms": 20.0,
     }
     _write_json(cost_path, cost_payload)
@@ -431,7 +766,7 @@ def test_phase4_requires_complete_cross_detector_budget_seed_evidence(tmp_path):
                 )
                 cost = _with_content_sha(
                     {
-                        "schema_version": "duca_rime_paired_full_stack_cost_v1",
+                        "schema_version": "duca_rime_paired_full_stack_cost_v2",
                         "research_phase": 4,
                         "arm": expected_arm,
                         "seed": seed,
@@ -439,16 +774,22 @@ def test_phase4_requires_complete_cross_detector_budget_seed_evidence(tmp_path):
                         "target_mean_cost": budget,
                         "real_full_stack_measurement": True,
                         "matched_realized_cost": True,
+                        "target_budget_respected": True,
                         "includes_probe_decoder_solver": True,
                         "matched_k_tolerance": 1.0,
                         "candidate_effective_mean_k": float(budget),
-                        "fixed_effective_mean_k": float(budget),
+                        "matched_control_arm": (
+                            "U-same-K-TriDet"
+                            if detector == "TriDet"
+                            else "U-same-K"
+                        ),
+                        "matched_control_effective_mean_k": float(budget),
                         "latency_p50_ms": 10.0,
                         "latency_p95_ms": 12.0,
                         "throughput_videos_per_second": 5.0,
                         "energy_joules_per_video": 4.0,
                         "peak_gpu_memory_mb": 1000.0,
-                        "fixed_latency_p50_ms": 11.0,
+                        "matched_control_latency_p50_ms": 11.0,
                         "dense_latency_p50_ms": 20.0,
                         "dense_latency_p95_ms": 22.0,
                         "candidate_below_dense": True,
@@ -459,18 +800,153 @@ def test_phase4_requires_complete_cross_detector_budget_seed_evidence(tmp_path):
                     tmp_path / f"{cell_name}_cost.json",
                     cost,
                 )
-                dummy_artifacts = {}
-                for name in (
-                    "rime_metrics",
-                    "fixed_metrics",
-                    "same_k_metrics",
-                    "rime_ledger_summary",
-                ):
+                suffix = "-TriDet" if detector == "TriDet" else ""
+                metric_artifacts = {}
+                for name, variant in {
+                    "rime_metrics": f"RIME-full{suffix}",
+                    "fixed_metrics": f"U-fixed{suffix}",
+                    "same_k_metrics": f"U-same-K{suffix}",
+                }.items():
+                    source_arm = (
+                        f"RIME-full{suffix}"
+                        if name == "same_k_metrics"
+                        else variant
+                    )
+                    terminal = _write_json(
+                        tmp_path / f"{cell_name}_{name}_terminal.json",
+                        {
+                            "schema_version": "duca_rime_terminal_evaluation_v1",
+                            "git_commit": COMMIT,
+                            "variant": variant,
+                            "detector_backend": detector,
+                            "target_mean_cost": float(budget),
+                            "seed": seed,
+                            "padded_to_kmax": False,
+                            "metrics": {
+                                "average_mAP": 0.6,
+                                "mAP@0.6": 0.55,
+                                "mAP@0.7": 0.5,
+                            },
+                            "training_identity": {
+                                "evaluation_arm": variant,
+                                "source_arm": source_arm,
+                                "research_phase": 4,
+                                "detector_backend": detector,
+                                "target_mean_cost": float(budget),
+                                "phase4_authorization_sha256": _sha(authorization),
+                                "successful_detector_updates": 6000,
+                                "official_final_subset_consumed_during_training": False,
+                            },
+                        },
+                    )
+                    video_metrics = {
+                        metric: {video: value for video in final_videos}
+                        for metric, value in {
+                            "short_map": 0.5,
+                            "medium_map": 0.6,
+                            "long_map": 0.7,
+                            "boundary_error": 0.1,
+                            "pair_support": 0.7,
+                        }.items()
+                    }
+                    metrics_payload = _with_content_sha(
+                        {
+                            "schema_version": "duca_rime_localization_metrics_v1",
+                            "phase": 4,
+                            "git_commit": COMMIT,
+                            "variant": variant,
+                            "detector_backend": detector,
+                            "target_mean_cost": float(budget),
+                            "seed": seed,
+                            "padded_to_kmax": False,
+                            "split_role": "official_final_evaluation",
+                            "split_manifest_sha256": split["manifest_sha256"],
+                            "split_assignment_sha256": split["assignment_sha256"],
+                            "annotation_sha256": "d" * 64,
+                            "duration_thresholds_seconds": {
+                                "short_max": 4.0,
+                                "medium_max": 10.0,
+                            },
+                            "evaluation_video_ids": final_videos,
+                            "terminal_evaluation_path": str(terminal),
+                            "terminal_evaluation_sha256": _sha(terminal),
+                            "video_metrics": video_metrics,
+                            "uses_official_final": True,
+                            "official_final_used_for_training_or_selection": False,
+                        }
+                    )
                     path = _write_json(
                         tmp_path / f"{cell_name}_{name}.json",
-                        {"cell": cell_name, "artifact": name},
+                        metrics_payload,
                     )
-                    dummy_artifacts[name] = {"path": str(path), "sha256": _sha(path)}
+                    metric_artifacts[name] = {
+                        "path": str(path),
+                        "sha256": _sha(path),
+                    }
+                requested_values = (
+                    [256, 384, 512, 384, 384]
+                    if budget == 384
+                    else [192] * len(final_videos)
+                )
+                ledger_rows = [
+                    {
+                        "schema_version": "duca_rime_inference_ledger_v1",
+                        "arm": "rime_full",
+                        "video_id": video,
+                        "window_start_frame": 0,
+                        "requested_k": requested,
+                        "effective_k": requested,
+                        "backbone_input_k": requested,
+                        "padded_k": requested,
+                        "allocation_mode": (
+                            "frozen_price_dynamic_budget"
+                            if budget == 384
+                            else "fixed_floor_budget_position_only"
+                        ),
+                        "observed_max_gap_seconds": 1.0,
+                        "max_gap_seconds_cap": 1.0,
+                        "provenance": {
+                            "uses_gt": False,
+                            "uses_teacher": False,
+                            "uses_prediction_cache": False,
+                        },
+                    }
+                    for video, requested in zip(final_videos, requested_values)
+                ]
+                ledger_data = tmp_path / f"{cell_name}_rime_ledger.jsonl"
+                ledger_data.write_text(
+                    "".join(
+                        json.dumps(row, sort_keys=True) + "\n"
+                        for row in ledger_rows
+                    ),
+                    encoding="utf-8",
+                )
+                ledger_summary = _write_json(
+                    tmp_path / f"{cell_name}_rime_ledger_summary.json",
+                    {
+                        "schema_version": "duca_rime_inference_ledger_summary_v1",
+                        "status": "sealed",
+                        "arm": "rime_full",
+                        "path": str(ledger_data),
+                        "sha256": _sha(ledger_data),
+                        "record_count": len(ledger_rows),
+                        "requested_mean_k": (
+                            sum(requested_values) / len(requested_values)
+                        ),
+                        "requested_k_histogram": {
+                            str(value): requested_values.count(value)
+                            for value in sorted(set(requested_values))
+                        },
+                        "max_observed_gap_seconds": 1.0,
+                        "no_padding_ledger": True,
+                        "all_observed_gaps_within_cap": True,
+                        "official_final_labels_used_for_decision": False,
+                    },
+                )
+                metric_artifacts["rime_ledger_summary"] = {
+                    "path": str(ledger_summary),
+                    "sha256": _sha(ledger_summary),
+                }
                 rows.append(
                     {
                         "schema_version": "duca_rime_phase4_result_v1",
@@ -487,8 +963,14 @@ def test_phase4_requires_complete_cross_detector_budget_seed_evidence(tmp_path):
                         "same_k_successful_detector_updates": 0,
                         "same_k_source_training_arm": "RIME-full",
                         "padded_to_kmax": False,
+                        "budget_panel_semantics": (
+                            "content_conditioned_dynamic_budget_panel"
+                            if budget == 384
+                            else "exact_k192_learned_position_stress_panel"
+                        ),
+                        "dynamic_budget_claim_allowed": budget == 384,
                         "evaluation_video_ids": final_videos,
-                        "metrics": {
+                            "metrics": {
                             "avg_map": 0.6,
                             "map_0.6": 0.55,
                             "map_0.7": 0.5,
@@ -497,8 +979,12 @@ def test_phase4_requires_complete_cross_detector_budget_seed_evidence(tmp_path):
                             "long_map": 0.7,
                             "boundary_error": 0.1,
                             "pair_support": 0.7,
-                            "max_gap_seconds": 1.0,
-                        },
+                                "max_gap_seconds": 1.0,
+                            },
+                            "k_distribution": {
+                                str(value): requested_values.count(value)
+                                for value in sorted(set(requested_values))
+                            },
                         "comparisons": comparisons,
                         "cost": cost,
                         "artifacts": {
@@ -514,7 +1000,7 @@ def test_phase4_requires_complete_cross_detector_budget_seed_evidence(tmp_path):
                                 "path": str(cost_path),
                                 "sha256": _sha(cost_path),
                             },
-                            **dummy_artifacts,
+                                **metric_artifacts,
                         },
                     }
                 )

@@ -33,6 +33,7 @@ DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA = duca_p0_training.DUCA_P0_CHECKPOINT_SIDECAR_
 PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE = (
     "historical_uniform_score_net_unused_exact_whitelist_v1"
 )
+STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE = "strict_exact_v1"
 PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS = (
     "module.frame_selector.score_net.0.bias",
     "module.frame_selector.score_net.0.weight",
@@ -61,9 +62,23 @@ def validate_phase2_baseline_checkpoint_compatibility(
     *,
     missing_keys,
     unexpected_keys,
+    mode: str = PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
 ) -> dict[str, Any]:
     missing = sorted(str(key) for key in missing_keys)
     unexpected = sorted(str(key) for key in unexpected_keys)
+    if str(mode) == STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE:
+        if missing or unexpected:
+            raise RuntimeError(
+                "strict-exact checkpoint compatibility requires zero missing "
+                "and zero unexpected keys"
+            )
+        return {
+            "mode": STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
+            "missing_keys": [],
+            "ignored_unexpected_keys": [],
+        }
+    if str(mode) != PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE:
+        raise RuntimeError("unregistered DUCA-RIME checkpoint compatibility mode")
     expected_unexpected = sorted(PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS)
     if missing:
         raise RuntimeError(
@@ -242,6 +257,28 @@ def bind_train_loader_contract(
     )
     if exposure.get("train_loader_contract") != actual:
         raise RuntimeError("runtime RIME video exposure differs from the sealed schedule")
+    variant = getattr(cfg, "duca_rime_variant", None)
+    if variant is not None and str(variant.arm) == "U-mixed-K":
+        schedule = exposure.get("mixed_k_schedule")
+        if (
+            not isinstance(schedule, Mapping)
+            or schedule.get("candidate_budgets") != [192, 256, 384, 512]
+            or schedule.get("per_video_counts") != [8, 12, 16, 24]
+            or float(schedule.get("target_mean_cost", -1.0)) != 384.0
+            or int(schedule.get("schedule_seed", -1)) != 3407
+            or schedule.get("schedule_source")
+            != "stateless_epoch_plus_sample_index"
+            or set(schedule.get("per_video_histograms", {}))
+            != set(actual["ordered_video_ids"])
+            or any(
+                histogram
+                != {"192": 8, "256": 12, "384": 16, "512": 24}
+                for histogram in schedule["per_video_histograms"].values()
+            )
+        ):
+            raise RuntimeError(
+                "runtime U-mixed-K exposure lacks the exact per-video K histogram"
+            )
     bound = dict(contract)
     bound["train_loader_contract"] = actual
     return bound, actual
@@ -272,6 +309,10 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
             != (192, 256, 384, 512)
             or tuple(int(value) for value in variant.training_schedule_counts)
             != (8, 12, 16, 24)
+            or int(variant.training_schedule_seed) != 3407
+            or variant.training_schedule_source
+            != "stateless_epoch_plus_sample_index"
+            or variant.exact_per_video_histogram is not True
             or float(variant.training_target_mean_cost) != 384.0
             or variant.position_policy != "exact_uniform"
             or variant.coarse_probe_executed is not False
@@ -491,6 +532,24 @@ def build_runtime_bindings(
             or phase2.get("git_commit") != str(git_commit)
         ):
             raise ValueError("Phase-2 receipt does not authorize RIME training")
+        if int(stage["research_phase"]) == 4:
+            phase4_authorization = json.loads(
+                Path(str(stage["phase4_authorization_path"])).read_text(
+                    encoding="utf-8"
+                )
+            )
+            authorized_phase2 = phase4_authorization.get("phase2_receipt")
+            if (
+                not isinstance(authorized_phase2, Mapping)
+                or str(Path(authorized_phase2.get("path", "")).resolve())
+                != phase2_path
+                or authorized_phase2.get("sha256") != phase2_sha
+                or phase4_authorization.get("formal_budget_protocols")
+                != phase2.get("formal_budget_protocols")
+            ):
+                raise ValueError(
+                    "Phase-4 authorization is not bound to the supplied Phase-2 receipt"
+                )
         authorization_receipt = phase2
         phase1_path = None
         phase1_sha = None
@@ -807,6 +866,39 @@ def validate_terminal_checkpoint_binding(
         )
         target_mean_cost = float(receipt.get("target_mean_cost", math.nan))
         detector_backend = str(receipt.get("detector_backend", ""))
+        authorized_phase2 = authorization.get("phase2_receipt")
+        authorized_protocols = authorization.get("formal_budget_protocols")
+        protocol_matches = (
+            [
+                row
+                for row in authorized_protocols
+                if isinstance(row, Mapping)
+                and float(row.get("target_mean_cost", math.nan))
+                == target_mean_cost
+            ]
+            if isinstance(authorized_protocols, list)
+            else []
+        )
+        phase2_binding_valid = (
+            isinstance(authorized_phase2, Mapping)
+            and audit.get("phase2_receipt_path")
+            == str(Path(authorized_phase2.get("path", "")).resolve())
+            and audit.get("phase2_receipt_sha256")
+            == authorized_phase2.get("sha256")
+        )
+        if source_arm in {"RIME-full", "RIME-full-TriDet"}:
+            protocol_binding_valid = (
+                len(protocol_matches) == 1
+                and audit.get("budget_protocol_path")
+                == str(Path(protocol_matches[0].get("path", "")).resolve())
+                and audit.get("budget_protocol_sha256")
+                == protocol_matches[0].get("sha256")
+            )
+        else:
+            protocol_binding_valid = (
+                audit.get("budget_protocol_path") is None
+                and audit.get("budget_protocol_sha256") is None
+            )
         if (
             int(receipt.get("research_phase", -1)) != 4
             or int(audit.get("research_phase", -1)) != 4
@@ -833,6 +925,8 @@ def validate_terminal_checkpoint_binding(
                 for value in authorization.get("required_budget_panels", ())
             }
             or authorization.get("official_final_subset_consumed") is not False
+            or not phase2_binding_valid
+            or not protocol_binding_valid
         ):
             raise ValueError(
                 "RIME Phase-4 receipt, checkpoint, and authorization are not bound"
@@ -849,6 +943,9 @@ def validate_terminal_checkpoint_binding(
         "split_assignment_sha256": audit["split_assignment_sha256"],
         "training_exposure_sha256": audit["training_exposure_sha256"],
         "initialization_sha256": audit["initialization_sha256"],
+        "phase2_receipt_sha256": audit.get("phase2_receipt_sha256"),
+        "budget_protocol_path": audit.get("budget_protocol_path"),
+        "budget_protocol_sha256": audit.get("budget_protocol_sha256"),
         "official_final_subset_consumed_during_training": False,
         "research_phase": (
             4 if receipt_schema == "duca_rime_phase4_training_receipt_v1" else 3

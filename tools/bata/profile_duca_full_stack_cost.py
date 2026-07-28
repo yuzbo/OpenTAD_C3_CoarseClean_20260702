@@ -47,6 +47,14 @@ R5_COST_BINDING_SCHEMA = "duca_r5_terminal_cost_binding_v1"
 R5_FORMAL_PROTOCOL = "duca_r5_mechanism_matrix_v1"
 R5_MAX_UNSELECTED_HOLES = {384: 2, 256: 3}
 RIME_COST_METHOD_PREFIX = "duca-rime-"
+PHASE1_COST_METHODS = {
+    "phase1-no-probe-uniform": (
+        "duca_rime_phase1_no_probe_uniform_cost_v1"
+    ),
+    "phase1-probe-uniform": (
+        "duca_rime_phase1_probe_uniform_cost_v1"
+    ),
+}
 R5_METHOD_PATTERN = re.compile(
     r"^(?P<backend>actionformer|temporalmaxer)_"
     r"(?P<arm>uniform|learned)_k(?P<budget>384|256)_"
@@ -72,6 +80,10 @@ def is_r5_cost_method(method_name: str) -> bool:
 
 def is_rime_cost_method(method_name: str) -> bool:
     return str(method_name).startswith(RIME_COST_METHOD_PREFIX)
+
+
+def is_phase1_cost_method(method_name: str) -> bool:
+    return str(method_name) in PHASE1_COST_METHODS
 
 
 def _validate_r5_cell_payload(
@@ -105,6 +117,9 @@ class ProfileArgs(argparse.Namespace):
     def validate(self) -> None:
         r5_method = is_r5_cost_method(self.method_name)
         rime_method = is_rime_cost_method(self.method_name)
+        phase1_cost_method = is_phase1_cost_method(self.method_name)
+        if str(self.method_name).startswith("phase1-") and not phase1_cost_method:
+            raise ValueError("Phase-1 cost method name is not registered")
         if str(self.method_name).startswith(("actionformer_", "temporalmaxer_")) and not r5_method:
             raise ValueError("R5 method name is outside the frozen cell matrix")
         if not self.allow_random_init and not self.checkpoint:
@@ -187,6 +202,44 @@ class ProfileArgs(argparse.Namespace):
             if re.fullmatch(r"[0-9a-f]{40}", str(self.config_commit or "")) is None:
                 raise ValueError(
                     "formal DUCA-RIME cost profiles require a full --config-commit"
+                )
+        if phase1_cost_method:
+            if (
+                self.allow_random_init
+                or not self.use_ema
+                or not self.checkpoint
+                or has_post_run_path
+                or has_checkpoint_evidence
+                or has_rime_receipt
+            ):
+                raise ValueError(
+                    "Phase-1 cost controls require a trained EMA checkpoint "
+                    "without legacy or later-phase evidence shortcuts"
+                )
+            for name, value in (
+                ("--trained-commit", self.trained_commit),
+                ("--config-commit", self.config_commit),
+                ("--evidence-commit", self.evidence_commit),
+            ):
+                if re.fullmatch(r"[0-9a-f]{40}", str(value or "")) is None:
+                    raise ValueError(
+                        f"Phase-1 cost controls require a full {name}"
+                    )
+            if not str(self.profile_session_id or "").strip():
+                raise ValueError(
+                    "Phase-1 cost controls require --profile-session-id"
+                )
+            if not str(self.profile_pair_id or "").strip():
+                raise ValueError(
+                    "Phase-1 cost controls require --profile-pair-id"
+                )
+            if self.profile_repeat_index <= 0:
+                raise ValueError(
+                    "Phase-1 cost controls require a positive repeat index"
+                )
+            if self.profile_order_position not in (1, 2):
+                raise ValueError(
+                    "Phase-1 cost controls require paired order positions 1/2"
                 )
         if self.method_name in CELLCF_COST_METHODS | DENSE_COST_METHODS or rime_method:
             if not self.trained_commit:
@@ -298,7 +351,17 @@ def resolve_profile_commit_identities(
     if re.fullmatch(r"[0-9a-f]{40}", trained_commit) is None:
         raise ValueError("--trained-commit must be a full lowercase Git commit")
     evidence_commit = str(args.evidence_commit or "")
-    if is_r5_cost_method(args.method_name) or is_rime_cost_method(args.method_name):
+    if is_phase1_cost_method(args.method_name):
+        if str(args.config_commit or "") != actual_commit:
+            raise ValueError(
+                "Phase-1 cost-control config commit must equal profiler HEAD"
+            )
+        if str(args.evidence_commit or "") != actual_commit:
+            raise ValueError(
+                "Phase-1 cost-control evidence commit must equal profiler HEAD"
+            )
+        evidence_commit = actual_commit
+    elif is_r5_cost_method(args.method_name) or is_rime_cost_method(args.method_name):
         if trained_commit != actual_commit:
             raise ValueError(
                 "R5/DUCA-RIME trained checkpoint and profiler must use the same exact commit"
@@ -1333,7 +1396,11 @@ def _next_batch(iterator, loader):
 def _selected_count(model: Any, inputs: Any) -> float:
     selector = getattr(model, "frame_selector", None)
     summary = getattr(selector, "last_forward_summary", {}) if selector is not None else {}
-    values = summary.get("effective_budget") if isinstance(summary, Mapping) else None
+    values = None
+    if isinstance(summary, Mapping):
+        values = summary.get("effective_k")
+        if values is None:
+            values = summary.get("effective_budget")
     if isinstance(values, (list, tuple)) and values:
         return sum(float(value) for value in values) / float(len(values))
     if inputs.ndim == 6:
@@ -1441,6 +1508,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config_path = Path(args.config).expanduser().resolve()
     r5_cell = parse_r5_method_name(args.method_name)
     rime_method = is_rime_cost_method(args.method_name)
+    phase1_cost_method = is_phase1_cost_method(args.method_name)
     git_blob_bound_profile = args.method_name in (
         CELLCF_COST_METHODS | DENSE_COST_METHODS
     )
@@ -1541,6 +1609,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     cfg = Config.fromfile(str(config_path))
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
+    phase1_cost_contract = cfg.get("duca_rime_phase1_cost_contract", {})
+    if phase1_cost_method:
+        expected_contract = PHASE1_COST_METHODS[str(args.method_name)]
+        if (
+            not isinstance(phase1_cost_contract, Mapping)
+            or phase1_cost_contract.get("contract") != expected_contract
+            or phase1_cost_contract.get("selection_policy") != "exact_uniform"
+            or phase1_cost_contract.get("accuracy_claim_allowed") is not False
+            or phase1_cost_contract.get("uses_official_final") is not False
+        ):
+            raise ValueError(
+                "Phase-1 profiler method/config cost contract mismatch"
+            )
     if rime_method:
         workflow = cfg.get("workflow", {})
         protocol = (
@@ -1621,11 +1702,38 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     if args.checkpoint:
         cost_contract = cfg.get("duca_cellcf_cost_contract", {})
-        drop_prefixes = (
-            ("frame_selector.",)
-            if cost_contract and cost_contract.get("builds_selector") is False
-            else ()
-        )
+        if phase1_cost_contract:
+            registered = {
+                "duca_rime_phase1_no_probe_uniform_cost_v1": (
+                    "frame_selector.score_net.",
+                ),
+                "duca_rime_phase1_probe_uniform_cost_v1": (
+                    "frame_selector._loss_weight_schedule_step",
+                    "frame_selector.adapter.transition_scorer.",
+                ),
+            }
+            contract_name = str(phase1_cost_contract.get("contract", ""))
+            requested_prefixes = tuple(
+                str(value)
+                for value in phase1_cost_contract.get(
+                    "checkpoint_drop_prefixes",
+                    (),
+                )
+            )
+            if (
+                contract_name not in registered
+                or requested_prefixes != registered[contract_name]
+                or phase1_cost_contract.get("accuracy_claim_allowed") is not False
+                or phase1_cost_contract.get("selection_policy") != "exact_uniform"
+            ):
+                raise ValueError("invalid DUCA-RIME Phase-1 cost-control contract")
+            drop_prefixes = requested_prefixes
+        else:
+            drop_prefixes = (
+                ("frame_selector.",)
+                if cost_contract and cost_contract.get("builds_selector") is False
+                else ()
+            )
         checkpoint_meta = _load_checkpoint(
             model,
             args.checkpoint,
@@ -1828,6 +1936,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         "power_gpu_id": power_gpu_id if args.sample_power else None,
         **checkpoint_meta,
     }
+    if phase1_cost_method:
+        metadata.update(
+            {
+                "phase1_cost_contract": _stable_payload(
+                    phase1_cost_contract
+                ),
+                "research_phase": 1,
+                "uses_official_final": False,
+                "weight_source": (
+                    "historical_trained_terminal_epoch_59_state_dict_ema_"
+                    "strict_after_registered_control_only_key_drop"
+                ),
+                "frontend_variant": str(args.method_name),
+                "accuracy_claim_allowed": False,
+                "dense_full_stack_savings_claimed": False,
+            }
+        )
     if cellcf_cost_binding is not None:
         metadata.update(
             {

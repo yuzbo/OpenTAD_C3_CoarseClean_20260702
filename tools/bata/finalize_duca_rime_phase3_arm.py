@@ -191,7 +191,7 @@ def finalize_arm(
         cost_path, cost = _load_json(cost_evidence)
         _verify_content_hash(cost, label="cost evidence")
         if (
-            cost.get("schema_version") != "duca_rime_paired_full_stack_cost_v1"
+            cost.get("schema_version") != "duca_rime_paired_full_stack_cost_v2"
             or int(cost.get("research_phase", -1)) != 3
             or cost.get("arm") != arm
             or int(cost.get("seed", -1)) != int(seed)
@@ -207,7 +207,7 @@ def finalize_arm(
             "artifact_sha256": _sha256_file(cost_path),
         }
     if arm == "RIME-full" and cost is None:
-        raise ValueError("RIME-full requires paired fixed/dense cost evidence")
+        raise ValueError("RIME-full requires paired U-same-K/dense cost evidence")
     if arm != "RIME-full" and cost is not None:
         raise ValueError("only RIME-full carries the shared Phase-3 paired cost artifact")
 

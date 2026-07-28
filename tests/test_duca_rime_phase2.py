@@ -5,7 +5,9 @@ import json
 import pytest
 
 from tools.bata.build_duca_rime_budget_replay import (
+    adaptok_test_batch_ilp,
     histogram_shuffle,
+    merge_replays,
     paired_same_k,
 )
 from tools.bata.create_duca_rime_splits import (
@@ -18,6 +20,7 @@ from tools.bata.duca_rime_phase2 import (
     analyze_o2,
     analyze_o3,
     analyze_o4,
+    freeze_protocol,
     phase0_variance,
 )
 
@@ -75,6 +78,73 @@ def test_budget_replay_rejects_requested_k_outside_frozen_grid():
         )
 
 
+def test_budget_replays_preserve_stateless_schedule_and_partition_keys():
+    scheduled = [
+        {
+            "video_id": "train",
+            "window_start_frame": 8,
+            "duca_stateless_epoch": epoch,
+            "duca_stateless_sample_index": 0,
+            "requested_k": budget,
+        }
+        for epoch, budget in ((0, 192), (1, 384))
+    ]
+    shuffled = histogram_shuffle(
+        scheduled,
+        seed=7,
+        candidate_budgets=(192, 384),
+        source_sha256="a" * 64,
+    )
+    assert {
+        (row["duca_stateless_epoch"], row["duca_stateless_sample_index"])
+        for row in shuffled
+    } == {(0, 0), (1, 0)}
+    assert sorted(row["requested_k"] for row in shuffled) == [192, 384]
+
+    development = paired_same_k(
+        [{"video_id": "dev", "window_start_frame": 0, "requested_k": 192}],
+        candidate_budgets=(192, 384),
+        source_sha256="b" * 64,
+    )
+    merged = merge_replays((shuffled, development))
+    assert len(merged) == 3
+    assert any(row["video_id"] == "dev" for row in merged)
+
+
+def test_adaptok_replay_requires_cross_fitted_label_free_decision_curves():
+    row = {
+        "schema_version": "duca_adaptok_total_loss_curve_v1",
+        "video_id": "dev",
+        "window_start_frame": 0,
+        "predicted_total_loss": [1.0, 0.5],
+        "provenance": {
+            "uses_gt": False,
+            "uses_gt_for_supervision": True,
+            "uses_gt_at_decision": False,
+            "uses_teacher": False,
+            "uses_official_final": False,
+            "cross_fitted": True,
+            "test_batch_curve": True,
+        },
+    }
+    replay = adaptok_test_batch_ilp(
+        [row],
+        candidate_budgets=(192, 384),
+        candidate_costs=(192, 384),
+        target_mean_cost=384,
+        source_sha256="c" * 64,
+    )
+    assert replay[0]["requested_k"] == 384
+    contaminated = {**row, "provenance": {**row["provenance"], "uses_gt_at_decision": True}}
+    with pytest.raises(ValueError, match="clean test-batch"):
+        adaptok_test_batch_ilp(
+            [contaminated],
+            candidate_budgets=(192, 384),
+            candidate_costs=(192, 384),
+            target_mean_cost=384,
+        )
+
+
 def test_phase0_reports_video_icc_mde_and_rule_derived_thresholds():
     rows = [
         {
@@ -84,6 +154,10 @@ def test_phase0_reports_video_icc_mde_and_rule_derived_thresholds():
             "replicate_kind": "deterministic_reexecution",
             "metric_name": "avg_map",
             "value": video + 0.1 * replicate,
+            "source_path": "/tmp/phase0_metrics.json",
+            "source_sha256": "a" * 64,
+            "split_assignment_sha256": "b" * 64,
+            "uses_official_final": False,
         }
         for video in range(4)
         for replicate in range(3)
@@ -156,6 +230,22 @@ def test_o2_decoder_panel_reports_nested_regret_and_overlap():
                         "budget": budget,
                         "family": family,
                         "score": score,
+                        "score_metric": "counterfactual_negative_detector_loss",
+                        "claim_scope": (
+                            "measured_detector_objective_decoder_family_regret_"
+                            "not_tad_map_not_localization_quality"
+                        ),
+                        "runtime_decoder_api": "decode_rime_panel",
+                        "measurement_kind": "measured_detector_counterfactual",
+                        "counterfactual_score_not_tad_map": True,
+                        "proposal_score_surrogate_utility": False,
+                        "uses_gt_for_measurement": True,
+                        "uses_gt_at_deployment": False,
+                        "uses_teacher_at_deployment": False,
+                        "uses_prediction_cache_at_deployment": False,
+                        "uses_official_final": False,
+                        "mixed_k_detector_identity_sha256": "a" * 64,
+                        "selector_scorer_sha256": "b" * 64,
                         "selected_positions": positions,
                         "max_gap_violation": False,
                     }
@@ -270,3 +360,70 @@ def test_o4_calibration_validates_no_padding_and_fallback_ledger():
             max_low_risk_failure=0.0,
             calibration_bins=0,
         )
+
+
+def test_floor_budget_protocol_is_exact_position_only_despite_risk_fallbacks(
+    tmp_path,
+):
+    stages = (
+        "o1_dynamic_budget_headroom",
+        "o2_decoder_family_regret",
+        "o3_cross_fitted_hard_utility_rank",
+        "o4_pair_risk_calibration",
+    )
+    summaries = []
+    for stage in stages:
+        path = tmp_path / f"{stage}.json"
+        payload = {
+            "schema_version": "duca_rime_causal_gate_summary_v1",
+            "stage": stage,
+            "gate_pass": True,
+        }
+        if stage == "o2_decoder_family_regret":
+            payload["selected_family"] = "weak_overlap"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        summaries.append(path)
+    calibration = tmp_path / "calibration.jsonl"
+    rows = [
+        {
+            "schema_version": "duca_rime_price_calibration_v1",
+            "predicted_utility": [0.0, 1.0, 2.0, 3.0],
+            "risk_upper": [0.9, 0.9, 0.9, 0.1],
+            "provenance": {
+                "fit_split": "train_only",
+                "uses_validation_or_test": False,
+            },
+        },
+        {
+            "schema_version": "duca_rime_price_calibration_v1",
+            "predicted_utility": [0.0, 0.0, 0.0, 0.0],
+            "risk_upper": [0.1, 0.1, 0.1, 0.1],
+            "provenance": {
+                "fit_split": "train_only",
+                "uses_validation_or_test": False,
+            },
+        },
+    ]
+    calibration.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    result = freeze_protocol(
+        summaries=summaries,
+        calibration_jsonl=calibration,
+        output=tmp_path / "floor.json",
+        candidate_budgets=(192, 256, 384, 512),
+        candidate_costs=(192, 256, 384, 512),
+        target_mean_cost=192,
+        risk_weight=1.0,
+        risk_threshold=0.35,
+        decoder_family="weak_overlap",
+        weak_overlap_fraction=0.5,
+    )
+    payload = result
+    assert payload["allocation_mode"] == "fixed_floor_budget_position_only"
+    assert payload["forced_budget"] == 192
+    assert payload["calibration_selected_indices"] == [0, 0]
+    assert payload["realized_calibration_mean_cost"] == 192
+    assert payload["risk_used_for_allocation"] is False
+    assert payload["dynamic_budget_claim_allowed"] is False

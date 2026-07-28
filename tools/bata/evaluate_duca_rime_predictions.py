@@ -19,6 +19,7 @@ from tools.bata.duca_p0_evaluation import (
 from tools.bata.duca_rime_training import (
     PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
     PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS,
+    STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
 )
 
 
@@ -159,7 +160,7 @@ def evaluate_predictions(
     split_role: str | None = None,
 ) -> dict[str, Any]:
     if (
-        int(phase) not in {2, 3, 4}
+        int(phase) not in {1, 2, 3, 4}
         or not 0.0 < float(short_max_seconds) < float(medium_max_seconds)
     ):
         raise ValueError("invalid RIME evaluation phase or duration thresholds")
@@ -172,6 +173,58 @@ def evaluate_predictions(
     evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
     terminal_schema = evaluation.get("schema_version")
     supported_schema = terminal_schema == "duca_rime_terminal_evaluation_v1"
+    if (
+        int(phase) == 1
+        and terminal_schema == "duca_rime_phase1_dense_terminal_evaluation_v1"
+    ):
+        baseline_contract = evaluation.get("baseline_contract")
+        checkpoint_compatibility = evaluation.get("checkpoint_compatibility")
+        supported_schema = (
+            isinstance(baseline_contract, Mapping)
+            and int(baseline_contract.get("phase", -1)) == 1
+            and baseline_contract.get("uses_official_final") is False
+            and baseline_contract.get("padded_to_kmax") is False
+            and baseline_contract.get("variant")
+            in {"released_dense", "local_dense"}
+            and isinstance(checkpoint_compatibility, Mapping)
+            and checkpoint_compatibility.get("mode")
+            == STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE
+            and checkpoint_compatibility.get("missing_keys") == []
+            and checkpoint_compatibility.get("ignored_unexpected_keys") == []
+            and evaluation.get("training_identity") is None
+        )
+    if (
+        int(phase) == 1
+        and terminal_schema == "duca_rime_phase1_uniform_terminal_evaluation_v1"
+    ):
+        baseline_contract = evaluation.get("baseline_contract")
+        checkpoint_compatibility = evaluation.get("checkpoint_compatibility")
+        variant = (
+            str(baseline_contract.get("variant", ""))
+            if isinstance(baseline_contract, Mapping)
+            else ""
+        )
+        expected_cost = {
+            "uniform_k384": 384.0,
+            "uniform_k192": 192.0,
+        }.get(variant)
+        supported_schema = (
+            isinstance(baseline_contract, Mapping)
+            and int(baseline_contract.get("phase", -1)) == 1
+            and baseline_contract.get("uses_official_final") is False
+            and baseline_contract.get("padded_to_kmax") is False
+            and baseline_contract.get("position_policy") == "exact_uniform"
+            and expected_cost is not None
+            and float(baseline_contract.get("target_mean_cost", -1.0))
+            == expected_cost
+            and isinstance(checkpoint_compatibility, Mapping)
+            and checkpoint_compatibility.get("mode")
+            == PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE
+            and checkpoint_compatibility.get("missing_keys") == []
+            and checkpoint_compatibility.get("ignored_unexpected_keys")
+            == sorted(PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS)
+            and evaluation.get("training_identity") is None
+        )
     if (
         int(phase) == 2
         and terminal_schema
@@ -199,19 +252,21 @@ def evaluate_predictions(
         or evaluation.get("padded_to_kmax") is not False
     ):
         raise ValueError("invalid RIME terminal evaluation")
-    expected_subset = "training" if int(phase) in {2, 3} else "validation"
+    expected_subset = "training" if int(phase) in {1, 2, 3} else "validation"
     cfg = normalize_evaluation_config(
         evaluation.get("evaluation_config"),
         expected_subset=expected_subset,
     )
-    if int(phase) in {2, 3}:
+    if int(phase) in {1, 2, 3}:
         resolved_role = (
             "certification_development"
             if int(phase) == 3
             else str(split_role or "")
         )
         if resolved_role not in TRAIN_ROLES:
-            raise ValueError("Phase-2 evaluation requires a registered train role")
+            raise ValueError(
+                f"Phase-{phase} evaluation requires a registered train role"
+            )
         role = split["train_roles"][resolved_role]
         expected_videos = tuple(str(value) for value in role["videos"])
         if (
@@ -362,7 +417,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--terminal-evaluation", required=True)
     parser.add_argument("--split-manifest", required=True)
     parser.add_argument("--split-manifest-sha256", required=True)
-    parser.add_argument("--phase", type=int, choices=(2, 3, 4), required=True)
+    parser.add_argument("--phase", type=int, choices=(1, 2, 3, 4), required=True)
     parser.add_argument("--split-role", choices=TRAIN_ROLES)
     parser.add_argument("--short-max-seconds", type=float, required=True)
     parser.add_argument("--medium-max-seconds", type=float, required=True)

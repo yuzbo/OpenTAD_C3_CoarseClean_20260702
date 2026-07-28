@@ -268,6 +268,10 @@ payload = {
     "checkpoint_state_key": "state_dict_ema",
     "checkpoint_compaction_receipt_path": os.path.abspath(compaction_path),
     "checkpoint_compaction_receipt_sha256": sha(compaction_path),
+    "phase2_receipt_path": audit.get("phase2_receipt_path"),
+    "phase2_receipt_sha256": audit.get("phase2_receipt_sha256"),
+    "budget_protocol_path": audit.get("budget_protocol_path"),
+    "budget_protocol_sha256": audit.get("budget_protocol_sha256"),
     "uses_official_final": False,
 }
 with open(output, "x", encoding="utf-8") as handle:

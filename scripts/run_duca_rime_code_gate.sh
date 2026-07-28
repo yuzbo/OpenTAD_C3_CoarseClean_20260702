@@ -40,6 +40,8 @@ printf '{}\n' > "${OUTPUT_ROOT}/fixtures/protocol.json"
 export DUCA_RIME_TRAIN_BLOCK_LIST="${OUTPUT_ROOT}/fixtures/train_block.txt"
 export DUCA_RIME_DEVELOPMENT_BLOCK_LIST="${OUTPUT_ROOT}/fixtures/development_block.txt"
 export DUCA_RIME_PHASE2_EVAL_BLOCK_LIST="${OUTPUT_ROOT}/fixtures/development_block.txt"
+export DUCA_RIME_PHASE1_EVAL_BLOCK_LIST="${OUTPUT_ROOT}/fixtures/development_block.txt"
+export DUCA_RIME_PHASE1_DENSE_VARIANT="released_dense"
 export DUCA_RIME_TARGETS_JSONL="${OUTPUT_ROOT}/fixtures/targets.jsonl"
 export DUCA_RIME_TARGETS_SHA256="$(sha256sum "${DUCA_RIME_TARGETS_JSONL}" | awk '{print $1}')"
 export DUCA_RIME_BUDGET_PROTOCOL_JSON="${OUTPUT_ROOT}/fixtures/protocol.json"
@@ -62,37 +64,68 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/finalize_duca_rime_phase4_cell.py \
   tools/bata/build_duca_rime_gate_records.py \
   tools/bata/build_duca_rime_source_manifest.py \
+  tools/bata/build_duca_rime_phase1_controls.py \
   tools/bata/profile_duca_full_stack_cost.py \
+  tools/bata/audit_duca_rime_phase1_geometry.py \
   tools/bata/duca_p0_evaluation.py \
   tools/bata/build_duca_rime_training_targets.py \
+  tools/bata/produce_duca_rime_counterfactual_measurements.py \
+  tools/bata/produce_duca_rime_crossfit_records.py \
+  tools/bata/produce_duca_rime_o2_panel.py \
+  tools/bata/produce_duca_rime_phase3_assets.py \
   tools/bata/duca_rime_phase2.py \
   tools/bata/duca_rime_stage_contract.py \
   tools/bata/duca_rime_training.py \
   tools/bata/finalize_duca_rime_inference_ledger.py \
   tools/bata/build_duca_rime_budget_replay.py \
+  opentad/evaluations/mAP.py \
   opentad/models/duca/rime.py \
+  opentad/models/selectors/duca_protected_e2e_frame_selector.py \
   opentad/models/selectors/duca_rime_frame_selector.py \
   opentad/models/backbones/backbone_wrapper.py \
   opentad/models/detectors/actionformer.py \
   opentad/models/detectors/tridet.py \
-  opentad/models/dense_heads/tridet_head.py
+  opentad/models/dense_heads/tridet_head.py \
+  opentad/datasets/duca_stateless.py \
+  opentad/datasets/transforms/end_to_end.py
 
 bash -n \
   scripts/run_duca_rime_code_gate.sh \
   scripts/run_duca_rime_phase1_gate.sh \
   scripts/run_duca_rime_phase2_gates.sh \
   scripts/run_duca_rime_phase3_train_arm.sh \
+  scripts/run_duca_rime_phase3_asset_producer.sh \
+  scripts/run_duca_rime_phase3_arm_pipeline.sh \
+  scripts/run_duca_rime_phase3_submit_controller.sh \
+  scripts/run_duca_rime_phase3_cost_from_roots.sh \
+  scripts/submit_duca_rime_phase3.sh \
   scripts/run_duca_rime_phase4_train_cell.sh \
+  scripts/run_duca_rime_phase4_cell_pipeline.sh \
+  scripts/run_duca_rime_phase4_submit_controller.sh \
+  scripts/submit_duca_rime_phase4_matrix.sh \
   scripts/run_duca_rime_evaluate_arm.sh \
   scripts/run_duca_rime_cost_cell.sh \
   scripts/run_duca_rime_phase3_seal.sh \
   scripts/run_duca_rime_phase4_seal_cell.sh \
   scripts/run_duca_rime_phase4_seal_matrix.sh \
+  scripts/submit_duca_rime_four_phase_dag.sh \
   scripts/run_duca_rime_phase0_measurements.sh \
   scripts/run_duca_rime_phase2_record_build.sh \
   scripts/run_duca_rime_phase2_baseline_eval.sh \
   scripts/run_duca_rime_phase2_mixed_k_train.sh \
-  scripts/run_duca_rime_phase2_mixed_k_eval.sh
+  scripts/run_duca_rime_phase2_mixed_k_eval.sh \
+  scripts/run_duca_rime_phase2_counterfactual_measurements.sh \
+  scripts/run_duca_rime_phase2_crossfit_producer.sh \
+  scripts/run_duca_rime_phase2_evidence_pipeline.sh \
+  scripts/run_duca_rime_phase2_train_and_evidence_pipeline.sh \
+  scripts/run_duca_rime_phase2_o2_panel.sh \
+  scripts/run_duca_rime_dense_actionformer_train.sh \
+  scripts/run_duca_rime_dense_tridet_train.sh \
+  scripts/run_duca_rime_phase1_dense_eval.sh \
+  scripts/run_duca_rime_phase1_evidence_pipeline.sh \
+  scripts/run_duca_rime_phase1_uniform_eval.sh \
+  scripts/run_duca_rime_phase1_cost_controls.sh \
+  scripts/run_duca_rime_phase1_seal.sh
 
 "${PYTHON}" -m pytest \
   tests/test_duca_rime.py \
@@ -105,6 +138,10 @@ bash -n \
   tests/test_duca_rime_exposure.py \
   tests/test_duca_rime_checkpoint_retention.py \
   tests/test_duca_rime_prediction_metrics.py \
+  tests/test_duca_rime_crossfit_producer.py \
+  tests/test_duca_rime_counterfactual_measurements.py \
+  tests/test_duca_rime_phase1_cost_controls.py \
+  tests/test_map_blocked_videos.py \
   tests/test_duca_rime_gate_records.py \
   tests/test_duca_rime_source_manifests.py \
   tests/test_duca_protected_e2e_detector_contract.py \
@@ -124,6 +161,10 @@ configs = (
     "configs/adatad/thumos/duca_rime_uniform_fixed384_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_mixed_k_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_phase2_baseline.py",
+    "configs/adatad/thumos/duca_rime_uniform_phase1_control.py",
+    "configs/adatad/thumos/duca_rime_dense_phase1_control.py",
+    "configs/adatad/thumos/duca_rime_no_probe_uniform_phase1_cost.py",
+    "configs/adatad/thumos/duca_rime_probe_uniform_phase1_cost.py",
     "configs/adatad/thumos/duca_rime_fixed_bound_total60.py",
     "configs/adatad/thumos/duca_rime_dynamic_no_risk_total60.py",
     "configs/adatad/thumos/duca_rime_dynamic_shuffle_total60.py",
@@ -131,6 +172,8 @@ configs = (
     "configs/adatad/thumos/duca_rime_full_total60.py",
     "configs/adatad/thumos/duca_rime_full_tridet_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_fixed_tridet_total60.py",
+    "configs/adatad/thumos/duca_rime_dense_actionformer_total60.py",
+    "configs/adatad/thumos/duca_rime_dense_tridet_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_same_k_eval.py",
     "configs/adatad/thumos/duca_rime_uniform_same_k_tridet_eval.py",
     "configs/adatad/thumos/duca_rime_full_formal_validation.py",

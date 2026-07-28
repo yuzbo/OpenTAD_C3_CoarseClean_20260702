@@ -160,3 +160,34 @@ def test_tridet_remaps_selected_axis_before_nms_in_source_contract():
     seconds = post.index("convert_to_seconds", nms)
 
     assert remap < nms < seconds
+
+
+def test_tridet_rime_tail_uses_dynamic_divisibility_padding_not_kmax():
+    source = (ROOT / "opentad" / "models" / "detectors" / "tridet.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def pad_data(self, inputs, masks, *, pad_to_max_seq_len=True)" in source
+    assert source.count(
+        "pad_to_max_seq_len=not self._uses_rime_selector()"
+    ) == 2
+    helper_source = source[
+        source.index("    def _uses_rime_selector") :
+        source.index("    def forward_train")
+    ]
+    assert '"duca_rime_physical"' in helper_source
+
+
+def test_dense_tridet_cost_reference_is_384_channel_selector_free_source():
+    source = (
+        ROOT
+        / "configs"
+        / "adatad"
+        / "thumos"
+        / "duca_rime_dense_tridet_total60.py"
+    ).read_text(encoding="utf-8")
+    assert 'type="TriDet"' in source
+    assert "in_channels=384" in source
+    assert "max_seq_len=768" in source
+    assert 'selector=None' in source
+    assert 'detector_backend="TriDet"' in source
+    assert "official_final_subset_consumed=False" in source

@@ -13,6 +13,29 @@ SCHEMA = "duca_rime_inference_ledger_v1"
 SUMMARY_SCHEMA = "duca_rime_inference_ledger_summary_v1"
 
 
+def exact_uniform_positions(temporal_len: int, k: int) -> list[int]:
+    """Mirror the runtime round-half-to-even exact-uniform anchors without torch."""
+
+    temporal_len = int(temporal_len)
+    k = int(k)
+    if temporal_len < 0 or k < 0 or k > temporal_len:
+        raise ValueError("exact-uniform requires 0 <= k <= temporal_len")
+    if k == 0:
+        return []
+    if k == 1:
+        return [0]
+    denominator = k - 1
+    anchors = []
+    for index in range(k):
+        quotient, remainder = divmod(index * (temporal_len - 1), denominator)
+        if 2 * remainder > denominator or (
+            2 * remainder == denominator and quotient % 2 == 1
+        ):
+            quotient += 1
+        anchors.append(quotient)
+    return anchors
+
+
 def _sha256_file(path: str | Path) -> str:
     return hashlib.sha256(Path(path).expanduser().resolve().read_bytes()).hexdigest()
 
@@ -69,13 +92,19 @@ def finalize_ledger(
             backbone = int(row["backbone_input_k"])
             padded = int(row["padded_k"])
             positions = [int(value) for value in row["selected_dense_indices"]]
+            dense_valid_len = int(row.get("dense_valid_len", -1))
             gap_cap = float(row["max_gap_seconds_cap"])
             observed_gap = float(row["observed_max_gap_seconds"])
             if (
                 requested < effective
                 or not effective == unique == backbone == padded > 0
+                or dense_valid_len < effective
                 or positions != sorted(set(positions))
                 or len(positions) != effective
+                or any(
+                    position < 0 or position >= dense_valid_len
+                    for position in positions
+                )
                 or not math.isfinite(gap_cap)
                 or not math.isfinite(observed_gap)
                 or gap_cap < 0.0

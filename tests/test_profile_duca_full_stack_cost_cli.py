@@ -8,6 +8,7 @@ import pytest
 from tools.bata.profile_duca_full_stack_cost import (
     _cuda_nvml_uuid,
     _detector_stack_fingerprint,
+    _selected_count,
     build_arg_parser,
     component_elapsed_ms,
     discover_profile_modules,
@@ -130,6 +131,15 @@ def test_detector_stack_fingerprint_tracks_classes_and_parameter_schema() -> Non
     assert first == second
     model.rpn_head = None
     assert _detector_stack_fingerprint(model) != first
+
+
+def test_rime_selected_count_uses_effective_k_not_dense_input_width() -> None:
+    selector = SimpleNamespace(
+        last_forward_summary={"effective_k": [192, 384]},
+    )
+    model = SimpleNamespace(frame_selector=selector)
+    inputs = SimpleNamespace(ndim=5, shape=(2, 3, 768, 160, 160))
+    assert _selected_count(model, inputs) == pytest.approx(288.0)
 
 
 def test_profile_module_discovery_is_hierarchical_and_zero_fills_absent_modules() -> None:
@@ -271,6 +281,60 @@ def test_rime_profile_requires_hash_bound_receipt_and_cell_identity() -> None:
     assert resolve_profile_commit_identities(
         complete, actual_commit="a" * 40
     ) == ("a" * 40, "a" * 40)
+
+
+def test_phase1_cost_profile_requires_registered_paired_ema_contract() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "phase1.py",
+            "--checkpoint",
+            "epoch_59.pth",
+            "--use-ema",
+            "--method-name",
+            "phase1-probe-uniform",
+            "--config-commit",
+            "a" * 40,
+            "--trained-commit",
+            "b" * 40,
+            "--evidence-commit",
+            "a" * 40,
+            "--profile-session-id",
+            "session",
+            "--profile-pair-id",
+            "pair",
+            "--profile-repeat-index",
+            "1",
+            "--profile-order-position",
+            "2",
+            "--output-prefix",
+            "out/phase1",
+        ]
+    )
+    args.validate()
+    assert resolve_profile_commit_identities(
+        args,
+        actual_commit="a" * 40,
+    ) == ("b" * 40, "a" * 40)
+
+    args.use_ema = False
+    with pytest.raises(ValueError, match="trained EMA"):
+        args.validate()
+
+    unknown = parser.parse_args(
+        [
+            "phase1.py",
+            "--checkpoint",
+            "epoch_59.pth",
+            "--use-ema",
+            "--method-name",
+            "phase1-made-up",
+            "--output-prefix",
+            "out/phase1",
+        ]
+    )
+    with pytest.raises(ValueError, match="not registered"):
+        unknown.validate()
 
 
 def test_dense_paper_profile_requires_hash_bound_checkpoint_evidence() -> None:

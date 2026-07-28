@@ -13,7 +13,7 @@ from tools.bata.duca_full_stack_cost import (
 )
 
 
-SCHEMA = "duca_rime_paired_full_stack_cost_v1"
+SCHEMA = "duca_rime_paired_full_stack_cost_v2"
 PAIR_KEYS = (
     "hardware_fingerprint",
     "host_fingerprint",
@@ -189,14 +189,25 @@ def finalize_cost(
         or int(identity.get("seed", -1)) != int(expected_seed)
         or identity.get("detector_backend") != str(expected_backend)
         or fixed_identity.get("evaluation_arm") not in {
-            "U-fixed",
-            "U-fixed-TriDet",
+            "U-same-K",
+            "U-same-K-TriDet",
         }
         or int(fixed_identity.get("research_phase", -1)) != int(expected_phase)
         or int(fixed_identity.get("seed", -1)) != int(expected_seed)
         or fixed_identity.get("detector_backend") != str(expected_backend)
     ):
-        raise ValueError("RIME candidate/fixed cost identity disagrees with the cell")
+        raise ValueError("RIME candidate/matched-control cost identity disagrees with the cell")
+    for key in (
+        "source_training_arm",
+        "training_receipt_sha256",
+        "checkpoint_sha256",
+        "training_exposure_sha256",
+        "initialization_sha256",
+    ):
+        if identity.get(key) != fixed_identity.get(key):
+            raise ValueError(
+                f"RIME candidate/U-same-K matched control differs on {key}"
+            )
     target = float(expected_target_mean_cost)
     if int(expected_phase) == 4:
         if (
@@ -211,8 +222,8 @@ def finalize_cost(
     fixed_k = _summary(fixed, "selected_count", statistic="mean")
     matched = (
         abs(candidate_k - fixed_k) <= float(matched_k_tolerance)
-        and abs(candidate_k - target) <= float(matched_k_tolerance)
-        and abs(fixed_k - target) <= float(matched_k_tolerance)
+        and candidate_k <= target + float(matched_k_tolerance)
+        and fixed_k <= target + float(matched_k_tolerance)
     )
     candidate_p50 = _summary(
         candidate_fixed, "stages", "end_to_end_serial_ms"
@@ -254,15 +265,19 @@ def finalize_cost(
         "real_full_stack_measurement": True,
         "includes_probe_decoder_solver": True,
         "matched_realized_cost": matched,
+        "target_budget_respected": (
+            candidate_k <= target + float(matched_k_tolerance)
+        ),
         "matched_k_tolerance": float(matched_k_tolerance),
         "candidate_effective_mean_k": candidate_k,
-        "fixed_effective_mean_k": fixed_k,
+        "matched_control_arm": fixed_identity["evaluation_arm"],
+        "matched_control_effective_mean_k": fixed_k,
         "latency_p50_ms": candidate_p50,
         "latency_p95_ms": candidate_p95,
         "throughput_videos_per_second": 1000.0 / candidate_p50,
         "energy_joules_per_video": energy,
         "peak_gpu_memory_mb": memory,
-        "fixed_latency_p50_ms": fixed_p50,
+        "matched_control_latency_p50_ms": fixed_p50,
         "dense_latency_p50_ms": dense_p50,
         "dense_latency_p95_ms": dense_p95,
         "candidate_below_dense": candidate_p50 < dense_p50,

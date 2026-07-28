@@ -4,10 +4,15 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from tools.bata.build_duca_rime_gate_records import _ledger_by_video, _metrics
+from tools.bata.build_duca_rime_gate_records import (
+    _ledger_by_video,
+    _metrics,
+    _o2_metrics,
+)
 
 
 PHASE0_SCHEMA = "duca_rime_phase0_source_manifest_v1"
@@ -50,7 +55,20 @@ def _write_immutable(path: str | Path, payload: Mapping[str, Any]) -> dict[str, 
     if target.exists() and target.read_text(encoding="utf-8") != text:
         raise FileExistsError(f"refusing to overwrite a different source manifest: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf-8")
+    if not target.exists():
+        temporary = target.with_name(f".{target.name}.partial.{os.getpid()}")
+        if temporary.exists():
+            raise FileExistsError(temporary)
+        try:
+            with temporary.open("x", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(target)
+        except BaseException:
+            if temporary.exists():
+                temporary.unlink()
+            raise
     return {
         "path": str(target),
         "sha256": _sha256_file(target),
@@ -239,12 +257,64 @@ def build_o1_manifest(
 def build_o2_manifest(
     *,
     evaluations: Sequence[Sequence[str]],
+    mixed_k_detector_identity_sha256: str,
+    training_receipt: str | Path,
+    training_receipt_sha256: str,
+    crossfit_summary: str | Path,
+    crossfit_summary_sha256: str,
     output: str | Path,
 ) -> dict[str, Any]:
+    if len(str(mixed_k_detector_identity_sha256)) != 64:
+        raise ValueError("O2 requires an exact mixed-K detector identity")
+    receipt_path = Path(training_receipt).expanduser().resolve()
+    if (
+        not receipt_path.is_file()
+        or _sha256_file(receipt_path) != str(training_receipt_sha256)
+    ):
+        raise ValueError("O2 mixed-K training receipt binding drifted")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if (
+        receipt.get("schema_version")
+        != "duca_rime_phase2_mixed_k_training_receipt_v1"
+        or receipt.get("status") != "passed"
+        or receipt.get("arm") != "U-mixed-K"
+        or receipt.get("checkpoint_sha256")
+        != str(mixed_k_detector_identity_sha256)
+        or receipt.get("detector_training_exposure")
+        != "mixed_k_registered_panel"
+        or int(receipt.get("successful_detector_updates", -1)) != 6000
+        or receipt.get("uses_official_final") is not False
+    ):
+        raise ValueError("O2 mixed-K training receipt is invalid")
+    crossfit_path = Path(crossfit_summary).expanduser().resolve()
+    if (
+        not crossfit_path.is_file()
+        or _sha256_file(crossfit_path) != str(crossfit_summary_sha256)
+    ):
+        raise ValueError("O2 cross-fit producer summary binding drifted")
+    crossfit = json.loads(crossfit_path.read_text(encoding="utf-8"))
+    claimed_content_sha256 = str(crossfit.get("content_sha256", ""))
+    crossfit_without_content_sha256 = dict(crossfit)
+    crossfit_without_content_sha256.pop("content_sha256", None)
+    o2_model = (crossfit.get("models") or {}).get("o2_decoder")
+    if (
+        crossfit.get("schema_version") != "duca_rime_crossfit_record_producer_v1"
+        or crossfit.get("status") != "produced"
+        or claimed_content_sha256
+        != _canonical_sha256(crossfit_without_content_sha256)
+        or not isinstance(o2_model, Mapping)
+        or o2_model.get("eval_role") != "certification_development"
+        or o2_model.get("runtime_decoder_api") != "decode_rime_panel"
+        or o2_model.get("claim_scope")
+        != "counterfactual_detector_objective_decoder_family_regret_not_tad_map"
+    ):
+        raise ValueError("O2 cross-fit producer summary is invalid")
     entries = []
     seen = set()
     common_split = None
     common_role = None
+    common_scorer = None
+    common_score_metric = None
     for raw in evaluations:
         if len(raw) != 6:
             raise ValueError(
@@ -256,16 +326,38 @@ def build_o2_manifest(
         if not family or budget <= 0 or key in seen:
             raise ValueError("invalid or duplicate O2 family/budget")
         seen.add(key)
-        metrics_path, metrics = _metrics(raw[2], raw[3])
-        if int(round(float(metrics["target_mean_cost"]))) != budget:
-            raise ValueError("O2 metric budget drift")
+        metrics_path, metrics = _o2_metrics(raw[2], raw[3])
+        if (
+            int(metrics["budget"]) != budget
+            or int(round(float(metrics["target_mean_cost"]))) != budget
+            or metrics["decoder_family"] != family
+            or metrics["mixed_k_detector_identity_sha256"]
+            != str(mixed_k_detector_identity_sha256)
+            or metrics["counterfactual_score_not_tad_map"] is not True
+        ):
+            raise ValueError("O2 metric budget/family/detector identity drift")
         _ledger_by_video(raw[4], raw[5], budget=budget)
+        if (
+            metrics["ledger_sha256"] != str(raw[5])
+            or _sha256_file(raw[4]) != str(raw[5])
+        ):
+            raise ValueError("O2 metric-to-ledger binding drift")
         split = str(metrics["split_assignment_sha256"])
         role = str(metrics["split_role"])
+        scorer = str(metrics["selector_scorer_sha256"])
+        score_metric = str(metrics["score_metric"])
         if common_split is None:
             common_split, common_role = split, role
-        elif split != common_split or role != common_role:
-            raise ValueError("O2 evaluations must share split role and assignment")
+            common_scorer, common_score_metric = scorer, score_metric
+        elif (
+            split != common_split
+            or role != common_role
+            or scorer != common_scorer
+            or score_metric != common_score_metric
+        ):
+            raise ValueError(
+                "O2 evaluations must share split, scorer, and score identity"
+            )
         entries.append(
             {
                 "family": family,
@@ -291,6 +383,27 @@ def build_o2_manifest(
         {
             "schema_version": O2_SCHEMA,
             "uses_official_final": False,
+            "runtime_decoder_api": "decode_rime_panel",
+            "score_metric": common_score_metric,
+            "measurement_kind": "measured_detector_counterfactual",
+            "counterfactual_score_not_tad_map": True,
+            "proposal_score_surrogate_utility": False,
+            "claim_scope": (
+                "measured_detector_objective_decoder_family_regret_"
+                "not_tad_map_not_localization_quality"
+            ),
+            "mixed_k_detector_identity_sha256": str(
+                mixed_k_detector_identity_sha256
+            ),
+            "selector_scorer_sha256": common_scorer,
+            "mixed_k_training_receipt": {
+                "path": str(receipt_path),
+                "sha256": _sha256_file(receipt_path),
+            },
+            "crossfit_producer_summary": {
+                "path": str(crossfit_path),
+                "sha256": _sha256_file(crossfit_path),
+            },
             "split_assignment_sha256": common_split,
             "split_role": common_role,
             "decoder_evaluations": entries,
@@ -347,6 +460,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         required=True,
     )
+    o2.add_argument("--mixed-k-detector-identity-sha256", required=True)
+    o2.add_argument("--training-receipt", required=True)
+    o2.add_argument("--training-receipt-sha256", required=True)
+    o2.add_argument("--crossfit-summary", required=True)
+    o2.add_argument("--crossfit-summary-sha256", required=True)
     o2.add_argument("--output", required=True)
 
     args = parser.parse_args(argv)
@@ -364,7 +482,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             output=args.output,
         )
     else:
-        result = build_o2_manifest(evaluations=args.evaluation, output=args.output)
+        result = build_o2_manifest(
+            evaluations=args.evaluation,
+            mixed_k_detector_identity_sha256=(
+                args.mixed_k_detector_identity_sha256
+            ),
+            training_receipt=args.training_receipt,
+            training_receipt_sha256=args.training_receipt_sha256,
+            crossfit_summary=args.crossfit_summary,
+            crossfit_summary_sha256=args.crossfit_summary_sha256,
+            output=args.output,
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

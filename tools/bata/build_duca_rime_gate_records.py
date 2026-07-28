@@ -65,6 +65,62 @@ def _metrics(path: str | Path, sha256: str) -> tuple[Path, dict[str, Any]]:
     return resolved, payload
 
 
+def _o2_metrics(path: str | Path, sha256: str) -> tuple[Path, dict[str, Any]]:
+    resolved, payload = _load_json(path)
+    claimed_content_sha256 = str(payload.get("content_sha256", ""))
+    without_content_sha256 = dict(payload)
+    without_content_sha256.pop("content_sha256", None)
+    actual_content_sha256 = hashlib.sha256(
+        json.dumps(
+            without_content_sha256,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    score_metric = str(payload.get("score_metric", ""))
+    values = payload.get("video_metrics", {}).get(score_metric)
+    if (
+        _sha256_file(resolved) != str(sha256)
+        or payload.get("schema_version")
+        != "duca_rime_counterfactual_decoder_metrics_v1"
+        or int(payload.get("phase", -1)) != 2
+        or payload.get("status") != "measured"
+        or payload.get("claim_scope")
+        != (
+            "measured_detector_objective_decoder_family_regret_"
+            "not_tad_map_not_localization_quality"
+        )
+        or score_metric != "counterfactual_negative_detector_loss"
+        or not isinstance(values, Mapping)
+        or len(values) < 3
+        or not all(math.isfinite(float(value)) for value in values.values())
+        or payload.get("runtime_decoder_api") != "decode_rime_panel"
+        or payload.get("measurement_kind")
+        != "measured_detector_counterfactual"
+        or payload.get("detector_objective")
+        != "official_actionformer_cls_plus_reg"
+        or payload.get("counterfactual_score_not_tad_map") is not True
+        or payload.get("proposal_score_surrogate_utility") is not False
+        or payload.get("padded_to_kmax") is not False
+        or payload.get("uses_official_final") is not False
+        or payload.get("official_final_used_for_training_or_selection") is not False
+        or payload.get("uses_gt_for_measurement") is not True
+        or payload.get("uses_gt_at_deployment") is not False
+        or payload.get("uses_teacher_at_deployment") is not False
+        or payload.get("uses_prediction_cache_at_deployment") is not False
+        or len(str(payload.get("mixed_k_detector_identity_sha256", ""))) != 64
+        or len(str(payload.get("selector_scorer_sha256", ""))) != 64
+        or len(str(payload.get("ledger_sha256", ""))) != 64
+        or claimed_content_sha256 != actual_content_sha256
+    ):
+        raise ValueError(
+            f"invalid measured detector-counterfactual O2 metrics: {resolved}"
+        )
+    return resolved, payload
+
+
 def phase0_records(
     *,
     source_manifest: str | Path,
@@ -111,6 +167,9 @@ def phase0_records(
                     "value": value,
                     "source_path": str(metrics_path),
                     "source_sha256": _sha256_file(metrics_path),
+                    "split_assignment_sha256": str(
+                        metrics["split_assignment_sha256"]
+                    ),
                     "uses_official_final": False,
                     "source_manifest_claim_scope": str(
                         manifest.get("claim_scope", "unspecified")
@@ -262,11 +321,13 @@ def _ledger_by_video(
         video = str(row.get("video_id", ""))
         start = int(row.get("window_start_frame", -1))
         positions = [int(value) for value in row.get("selected_dense_indices", ())]
+        dense_valid_len = int(row.get("dense_valid_len", -1))
         if (
             row.get("schema_version") != "duca_rime_inference_ledger_v1"
             or not video
             or start < 0
             or (video, start) in seen_windows
+            or dense_valid_len < int(budget)
             or int(row.get("requested_k", -1)) != int(budget)
             or not int(row.get("effective_k", -1))
             == int(row.get("unique_k", -1))
@@ -275,6 +336,10 @@ def _ledger_by_video(
             == int(budget)
             or positions != sorted(set(positions))
             or len(positions) != int(budget)
+            or any(
+                position < 0 or position >= dense_valid_len
+                for position in positions
+            )
             or float(row.get("observed_max_gap_seconds", math.inf))
             > float(row.get("max_gap_seconds_cap", -math.inf)) + 1.0e-8
         ):
@@ -299,9 +364,67 @@ def o2_records(
     if (
         manifest.get("schema_version") != "duca_rime_o2_source_manifest_v1"
         or manifest.get("uses_official_final") is not False
-        or not str(manifest.get("mixed_k_detector_identity_sha256", ""))
+        or len(str(manifest.get("mixed_k_detector_identity_sha256", ""))) != 64
+        or manifest.get("runtime_decoder_api") != "decode_rime_panel"
+        or manifest.get("score_metric")
+        != "counterfactual_negative_detector_loss"
+        or manifest.get("measurement_kind")
+        != "measured_detector_counterfactual"
+        or manifest.get("counterfactual_score_not_tad_map") is not True
+        or manifest.get("proposal_score_surrogate_utility") is not False
+        or len(str(manifest.get("selector_scorer_sha256", ""))) != 64
+        or manifest.get("claim_scope")
+        != (
+            "measured_detector_objective_decoder_family_regret_"
+            "not_tad_map_not_localization_quality"
+        )
     ):
         raise ValueError("invalid O2 source manifest")
+    receipt_binding = manifest.get("mixed_k_training_receipt")
+    crossfit_binding = manifest.get("crossfit_producer_summary")
+    if not isinstance(receipt_binding, Mapping) or not isinstance(
+        crossfit_binding,
+        Mapping,
+    ):
+        raise ValueError("O2 manifest lacks training/cross-fit evidence bindings")
+    receipt_path, receipt = _load_json(receipt_binding.get("path", ""))
+    crossfit_path, crossfit = _load_json(crossfit_binding.get("path", ""))
+    crossfit_without_content_sha256 = dict(crossfit)
+    claimed_crossfit_content_sha256 = str(
+        crossfit_without_content_sha256.pop("content_sha256", "")
+    )
+    actual_crossfit_content_sha256 = hashlib.sha256(
+        json.dumps(
+            crossfit_without_content_sha256,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        _sha256_file(receipt_path) != receipt_binding.get("sha256")
+        or receipt.get("schema_version")
+        != "duca_rime_phase2_mixed_k_training_receipt_v1"
+        or receipt.get("status") != "passed"
+        or receipt.get("arm") != "U-mixed-K"
+        or receipt.get("checkpoint_sha256")
+        != manifest["mixed_k_detector_identity_sha256"]
+        or receipt.get("detector_training_exposure")
+        != "mixed_k_registered_panel"
+        or int(receipt.get("successful_detector_updates", -1)) != 6000
+        or receipt.get("uses_official_final") is not False
+        or _sha256_file(crossfit_path) != crossfit_binding.get("sha256")
+        or crossfit.get("schema_version")
+        != "duca_rime_crossfit_record_producer_v1"
+        or crossfit.get("status") != "produced"
+        or claimed_crossfit_content_sha256 != actual_crossfit_content_sha256
+        or (crossfit.get("models") or {})
+        .get("o2_decoder", {})
+        .get("runtime_decoder_api")
+        != "decode_rime_panel"
+    ):
+        raise ValueError("O2 training/cross-fit evidence binding drifted")
     panel = {}
     common_videos = None
     split_hash = None
@@ -309,14 +432,28 @@ def o2_records(
     for entry in manifest.get("decoder_evaluations", ()):
         budget = int(entry["budget"])
         family = str(entry["family"])
-        metrics_path, metrics = _metrics(entry["metrics_path"], entry["metrics_sha256"])
+        metrics_path, metrics = _o2_metrics(
+            entry["metrics_path"],
+            entry["metrics_sha256"],
+        )
         values = metrics.get("video_metrics", {}).get(score_metric)
         selections = _ledger_by_video(
             entry["ledger_path"],
             entry["ledger_sha256"],
             budget=budget,
         )
-        if not family or not isinstance(values, Mapping):
+        if (
+            not family
+            or not isinstance(values, Mapping)
+            or score_metric != metrics["score_metric"]
+            or family != metrics["decoder_family"]
+            or budget != int(metrics["budget"])
+            or metrics["ledger_sha256"] != str(entry["ledger_sha256"])
+            or metrics["mixed_k_detector_identity_sha256"]
+            != manifest["mixed_k_detector_identity_sha256"]
+            or metrics["selector_scorer_sha256"]
+            != manifest.get("selector_scorer_sha256")
+        ):
             raise ValueError("invalid O2 decoder entry")
         videos = tuple(sorted(str(value) for value in values))
         if set(videos) != set(selections):
@@ -345,6 +482,16 @@ def o2_records(
                 "selection_keys": selections[video],
                 "exact_k_all_windows": True,
                 "max_gap_violation": False,
+                "claim_scope": manifest["claim_scope"],
+                "runtime_decoder_api": "decode_rime_panel",
+                "measurement_kind": "measured_detector_counterfactual",
+                "counterfactual_score_not_tad_map": True,
+                "proposal_score_surrogate_utility": False,
+                "uses_gt_for_measurement": True,
+                "uses_gt_at_deployment": False,
+                "uses_teacher_at_deployment": False,
+                "uses_prediction_cache_at_deployment": False,
+                "selector_scorer_sha256": manifest["selector_scorer_sha256"],
                 "mixed_k_detector_identity_sha256": manifest[
                     "mixed_k_detector_identity_sha256"
                 ],
@@ -382,6 +529,16 @@ def o2_records(
         "split_role": split_role,
         "budgets": budgets,
         "families": families,
+        "score_metric": score_metric,
+        "claim_scope": manifest["claim_scope"],
+        "mixed_k_training_receipt": {
+            "path": str(receipt_path),
+            "sha256": _sha256_file(receipt_path),
+        },
+        "crossfit_producer_summary": {
+            "path": str(crossfit_path),
+            "sha256": _sha256_file(crossfit_path),
+        },
         "output": artifact,
         "official_final_subset_consumed": False,
     }
@@ -421,19 +578,64 @@ def supervised_records(
     for row in source_rows:
         provenance = row.get("provenance")
         video = str(row.get("video_id", ""))
+        fit_video_ids = set(map(str, (provenance or {}).get("fit_video_ids", ())))
+        eval_video_ids = set(map(str, (provenance or {}).get("eval_video_ids", ())))
         if (
             row.get("schema_version") != source_schema
             or not isinstance(provenance, Mapping)
             or provenance.get("cross_fitted") is not True
             or provenance.get("fit_split") not in {"train", "training", "train_only"}
             or provenance.get("uses_validation_or_test") is not False
+            or not fit_video_ids
+            or not eval_video_ids
+            or video not in eval_video_ids
+            or video in fit_video_ids
+            or bool(fit_video_ids & eval_video_ids)
             or video in final_videos
-            or bool(set(map(str, provenance.get("fit_video_ids", ()))) & final_videos)
-            or bool(set(map(str, provenance.get("eval_video_ids", ()))) & final_videos)
+            or bool(fit_video_ids & final_videos)
+            or bool(eval_video_ids & final_videos)
             or provenance.get("split_assignment_sha256")
             != split_validation["assignment_sha256"]
         ):
             raise ValueError(f"{kind.upper()} source violates train-only cross-fit")
+        if kind == "o3":
+            predicted = float(row.get("predicted_gain", math.nan))
+            actual = float(row.get("actual_gain", math.nan))
+            if (
+                not str(row.get("score_family", ""))
+                or not math.isfinite(predicted)
+                or not math.isfinite(actual)
+            ):
+                raise ValueError("O3 source has an invalid score or counterfactual gain")
+        elif kind == "o4":
+            predicted = float(row.get("predicted_risk", math.nan))
+            observed = int(row.get("observed_pair_failure", -1))
+            requested = int(row.get("requested_k", -1))
+            if (
+                not 0.0 <= predicted <= 1.0
+                or observed not in {0, 1}
+                or not requested
+                >= int(row.get("effective_k", -1))
+                == int(row.get("unique_k", -1))
+                == int(row.get("backbone_input_k", -1))
+                == int(row.get("padded_k", -1))
+                > 0
+                or not isinstance(row.get("risk_fallback"), bool)
+            ):
+                raise ValueError("O4 source has invalid risk or exact-K execution")
+        else:
+            budgets = [int(value) for value in row.get("candidate_budgets", ())]
+            utility = [float(value) for value in row.get("predicted_utility", ())]
+            risk = [float(value) for value in row.get("risk_upper", ())]
+            if (
+                len(budgets) < 2
+                or budgets != sorted(set(budgets))
+                or len(utility) != len(budgets)
+                or len(risk) != len(budgets)
+                or not all(math.isfinite(value) for value in utility)
+                or not all(0.0 <= value <= 1.0 for value in risk)
+            ):
+                raise ValueError("price source curves are invalid or misaligned")
         converted = dict(row)
         converted["schema_version"] = output_schema
         rows.append(converted)
@@ -467,7 +669,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     o2 = sub.add_parser("o2")
     o2.add_argument("--source-manifest", required=True)
     o2.add_argument("--output", required=True)
-    o2.add_argument("--score-metric", default="avg_map")
+    o2.add_argument(
+        "--score-metric",
+        default="counterfactual_negative_detector_loss",
+    )
     for name in ("o3", "o4", "price"):
         item = sub.add_parser(name)
         item.add_argument("--source-jsonl", required=True)

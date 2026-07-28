@@ -40,6 +40,52 @@ def _metrics(path, *, values, seed=1):
     )
 
 
+def _o2_metrics(path, *, values, family, budget, ledger_sha256):
+    payload = {
+        "schema_version": "duca_rime_counterfactual_decoder_metrics_v1",
+        "phase": 2,
+        "status": "measured",
+        "claim_scope": (
+            "measured_detector_objective_decoder_family_regret_"
+            "not_tad_map_not_localization_quality"
+        ),
+        "score_metric": "counterfactual_negative_detector_loss",
+        "video_metrics": {
+            "counterfactual_negative_detector_loss": values,
+        },
+        "decoder_family": family,
+        "budget": budget,
+        "target_mean_cost": float(budget),
+        "split_role": "certification_development",
+        "split_assignment_sha256": "a" * 64,
+        "mixed_k_detector_identity_sha256": "b" * 64,
+        "selector_scorer_sha256": "c" * 64,
+        "runtime_decoder_api": "decode_rime_panel",
+        "measurement_kind": "measured_detector_counterfactual",
+        "detector_objective": "official_actionformer_cls_plus_reg",
+        "counterfactual_score_not_tad_map": True,
+        "proposal_score_surrogate_utility": False,
+        "padded_to_kmax": False,
+        "uses_official_final": False,
+        "official_final_used_for_training_or_selection": False,
+        "uses_gt_for_measurement": True,
+        "uses_gt_at_deployment": False,
+        "uses_teacher_at_deployment": False,
+        "uses_prediction_cache_at_deployment": False,
+        "ledger_sha256": ledger_sha256,
+    }
+    payload["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return _json(path, payload)
+
+
 def test_build_phase0_and_o1_records_from_hash_bound_metrics(tmp_path):
     videos = {f"v{index}": 0.2 + index * 0.1 for index in range(3)}
     first = _metrics(tmp_path / "rep1.json", values=videos, seed=1)
@@ -135,16 +181,43 @@ def test_build_phase0_and_o1_records_from_hash_bound_metrics(tmp_path):
 
 def test_build_o2_records_checks_every_window_exact_k(tmp_path):
     videos = {f"v{index}": 0.3 + index * 0.05 for index in range(3)}
+    mixed_k_receipt = _json(
+        tmp_path / "o2_mixed_k_training_receipt.json",
+        {
+            "schema_version": "duca_rime_phase2_mixed_k_training_receipt_v1",
+            "status": "passed",
+            "arm": "U-mixed-K",
+            "detector_training_exposure": "mixed_k_registered_panel",
+            "checkpoint_sha256": "b" * 64,
+            "successful_detector_updates": 6000,
+            "uses_official_final": False,
+        },
+    )
+    crossfit_payload = {
+        "schema_version": "duca_rime_crossfit_record_producer_v1",
+        "status": "produced",
+        "models": {
+            "o2_decoder": {
+                "runtime_decoder_api": "decode_rime_panel",
+            }
+        },
+    }
+    crossfit_payload["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            crossfit_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    crossfit_summary = _json(
+        tmp_path / "o2_crossfit_summary.json",
+        crossfit_payload,
+    )
     entries = []
     for family_index, family in enumerate(("independent", "strict_nested")):
         for budget in (2, 4):
-            metrics = _metrics(
-                tmp_path / f"{family}_{budget}.json",
-                values={
-                    video: score + family_index * 0.01
-                    for video, score in videos.items()
-                },
-            )
             ledger = tmp_path / f"{family}_{budget}.jsonl"
             rows = []
             for video in videos:
@@ -159,6 +232,7 @@ def test_build_o2_records_checks_every_window_exact_k(tmp_path):
                         "unique_k": budget,
                         "backbone_input_k": budget,
                         "padded_k": budget,
+                        "dense_valid_len": budget,
                         "selected_dense_indices": positions,
                         "max_gap_seconds_cap": 2.0,
                         "observed_max_gap_seconds": 1.0,
@@ -167,6 +241,16 @@ def test_build_o2_records_checks_every_window_exact_k(tmp_path):
             ledger.write_text(
                 "".join(json.dumps(row) + "\n" for row in rows),
                 encoding="utf-8",
+            )
+            metrics = _o2_metrics(
+                tmp_path / f"{family}_{budget}.json",
+                values={
+                    video: score + family_index * 0.01
+                    for video, score in videos.items()
+                },
+                family=family,
+                budget=budget,
+                ledger_sha256=_sha(ledger),
             )
             entries.append(
                 {
@@ -183,7 +267,25 @@ def test_build_o2_records_checks_every_window_exact_k(tmp_path):
         {
             "schema_version": "duca_rime_o2_source_manifest_v1",
             "uses_official_final": False,
+            "runtime_decoder_api": "decode_rime_panel",
+            "score_metric": "counterfactual_negative_detector_loss",
+            "measurement_kind": "measured_detector_counterfactual",
+            "counterfactual_score_not_tad_map": True,
+            "proposal_score_surrogate_utility": False,
+            "claim_scope": (
+                "measured_detector_objective_decoder_family_regret_"
+                "not_tad_map_not_localization_quality"
+            ),
             "mixed_k_detector_identity_sha256": "b" * 64,
+            "selector_scorer_sha256": "c" * 64,
+            "mixed_k_training_receipt": {
+                "path": str(mixed_k_receipt),
+                "sha256": _sha(mixed_k_receipt),
+            },
+            "crossfit_producer_summary": {
+                "path": str(crossfit_summary),
+                "sha256": _sha(crossfit_summary),
+            },
             "decoder_evaluations": entries,
         },
     )
@@ -191,7 +293,7 @@ def test_build_o2_records_checks_every_window_exact_k(tmp_path):
     built = o2_records(
         source_manifest=manifest,
         output=output,
-        score_metric="avg_map",
+        score_metric="counterfactual_negative_detector_loss",
     )
     assert built["output"]["record_count"] == 12
     rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]

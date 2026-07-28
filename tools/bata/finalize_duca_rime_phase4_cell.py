@@ -249,7 +249,7 @@ def finalize_cell(
     cost_path, cost = _load(cost_evidence)
     _verify_content(cost, "Phase-4 cost evidence")
     if (
-        cost.get("schema_version") != "duca_rime_paired_full_stack_cost_v1"
+        cost.get("schema_version") != "duca_rime_paired_full_stack_cost_v2"
         or int(cost.get("research_phase", -1)) != 4
         or cost.get("arm") != rime_variant
         or int(cost.get("seed", -1)) != int(seed)
@@ -257,6 +257,16 @@ def finalize_cell(
         or float(cost.get("target_mean_cost", math.nan)) != target
         or cost.get("real_full_stack_measurement") is not True
         or cost.get("matched_realized_cost") is not True
+        or cost.get("target_budget_respected") is not True
+        or cost.get("matched_control_arm")
+        != ("U-same-K-TriDet" if detector_backend == "TriDet" else "U-same-K")
+        or abs(
+            float(cost.get("candidate_effective_mean_k", math.inf))
+            - float(cost.get("matched_control_effective_mean_k", -math.inf))
+        )
+        > float(cost.get("matched_k_tolerance", -math.inf))
+        or float(cost.get("candidate_effective_mean_k", math.inf))
+        > target + float(cost.get("matched_k_tolerance", -math.inf))
         or cost.get("includes_probe_decoder_solver") is not True
         or float(cost.get("energy_joules_per_video", 0.0)) <= 0.0
     ):
@@ -275,6 +285,39 @@ def finalize_cell(
         or _sha256_file(ledger_data_path) != ledger.get("sha256")
     ):
         raise ValueError("Phase-4 RIME inference ledger is invalid")
+    ledger_rows = [
+        json.loads(line)
+        for line in ledger_data_path.read_text(encoding="utf-8-sig").splitlines()
+        if line.strip()
+    ]
+    expected_allocation_mode = (
+        "fixed_floor_budget_position_only"
+        if target == 192.0
+        else "frozen_price_dynamic_budget"
+    )
+    requested_histogram = {
+        str(key): int(value)
+        for key, value in ledger.get("requested_k_histogram", {}).items()
+    }
+    if (
+        not ledger_rows
+        or any(
+            row.get("allocation_mode") != expected_allocation_mode
+            for row in ledger_rows
+        )
+        or float(ledger.get("requested_mean_k", math.inf)) > target + 1.0
+        or (
+            target == 192.0
+            and requested_histogram != {"192": len(ledger_rows)}
+        )
+        or (
+            target == 384.0
+            and len(requested_histogram) < 2
+        )
+    ):
+        raise ValueError(
+            "Phase-4 RIME ledger violates its dynamic/floor budget-panel semantics"
+        )
 
     official = rime_terminal.get("metrics")
     if not isinstance(official, Mapping):
@@ -305,6 +348,12 @@ def finalize_cell(
         "same_k_successful_detector_updates": 0,
         "same_k_source_training_arm": "RIME-full",
         "padded_to_kmax": False,
+        "budget_panel_semantics": (
+            "exact_k192_learned_position_stress_panel"
+            if target == 192.0
+            else "content_conditioned_dynamic_budget_panel"
+        ),
+        "dynamic_budget_claim_allowed": target == 384.0,
         "evaluation_video_ids": list(rime["evaluation_video_ids"]),
         "metrics": result_metrics,
         "metric_semantics": {
@@ -315,7 +364,7 @@ def finalize_cell(
         },
         "comparisons": comparison_payload["comparisons"],
         "cost": dict(cost),
-        "k_distribution": dict(ledger["requested_k_histogram"]),
+        "k_distribution": requested_histogram,
         "artifacts": {
             "authorization": {
                 "path": str(authorization_path),

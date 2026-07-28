@@ -33,9 +33,19 @@ class TriDet(SingleStageDetector):
                 max_div_factor = stride
         self.max_div_factor = max_div_factor
 
-    def pad_data(self, inputs, masks):
+    def _uses_rime_selector(self):
+        return (
+            getattr(
+                getattr(self, "frame_selector", None),
+                "selector_variant",
+                None,
+            )
+            == "duca_rime_physical"
+        )
+
+    def pad_data(self, inputs, masks, *, pad_to_max_seq_len=True):
         feat_len = inputs.shape[-1]
-        if feat_len <= self.max_seq_len:
+        if bool(pad_to_max_seq_len) and feat_len <= self.max_seq_len:
             max_len = self.max_seq_len
         else:
             max_len = feat_len
@@ -106,7 +116,11 @@ class TriDet(SingleStageDetector):
 
         # pad the features and unsqueeze the mask
         if not self.training:
-            x, masks = self.pad_data(x, masks)
+            x, masks = self.pad_data(
+                x,
+                masks,
+                pad_to_max_seq_len=not self._uses_rime_selector(),
+            )
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
@@ -160,7 +174,11 @@ class TriDet(SingleStageDetector):
         else:
             x = inputs
 
-        x, masks = self.pad_data(x, masks)
+        x, masks = self.pad_data(
+            x,
+            masks,
+            pad_to_max_seq_len=not self._uses_rime_selector(),
+        )
 
         if self.with_projection:
             x, masks = self.projection(x, masks)

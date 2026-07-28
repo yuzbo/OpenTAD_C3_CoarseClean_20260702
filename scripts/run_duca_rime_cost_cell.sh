@@ -37,6 +37,8 @@ for name in \
   DUCA_RIME_FIXED_CHECKPOINT_SHA256 \
   DUCA_RIME_FIXED_TRAINING_RECEIPT \
   DUCA_RIME_FIXED_TRAINING_RECEIPT_SHA256 \
+  DUCA_RIME_REPLAY_JSONL \
+  DUCA_RIME_REPLAY_SHA256 \
   DUCA_RIME_DENSE_CONFIG \
   DUCA_RIME_DENSE_CHECKPOINT \
   DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE \
@@ -75,7 +77,11 @@ check_sha256 \
 check_sha256 \
   "${DUCA_RIME_FIXED_TRAINING_RECEIPT}" \
   "${DUCA_RIME_FIXED_TRAINING_RECEIPT_SHA256}" \
-  "fixed training receipt"
+  "matched U-same-K source training receipt"
+check_sha256 \
+  "${DUCA_RIME_REPLAY_JSONL}" \
+  "${DUCA_RIME_REPLAY_SHA256}" \
+  "matched U-same-K replay"
 check_sha256 \
   "${DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE}" \
   "${DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE_SHA256}" \
@@ -91,8 +97,8 @@ session="rime-${DUCA_RIME_COST_PHASE}-${DUCA_RIME_COST_BACKEND}-k${DUCA_RIME_COS
 samples="${DUCA_RIME_COST_SAMPLES:-30}"
 warmup="${DUCA_RIME_COST_WARMUP:-5}"
 candidate_method="duca-rime-phase${DUCA_RIME_COST_PHASE}-${DUCA_RIME_COST_BACKEND}-${DUCA_RIME_COST_ARM}-k${DUCA_RIME_COST_TARGET}-s${DUCA_RIME_COST_SEED}"
-fixed_arm="U-fixed"
-[[ "${DUCA_RIME_COST_BACKEND}" == TriDet ]] && fixed_arm="U-fixed-TriDet"
+fixed_arm="U-same-K"
+[[ "${DUCA_RIME_COST_BACKEND}" == TriDet ]] && fixed_arm="U-same-K-TriDet"
 fixed_method="duca-rime-phase${DUCA_RIME_COST_PHASE}-${DUCA_RIME_COST_BACKEND}-${fixed_arm}-k${DUCA_RIME_COST_TARGET}-s${DUCA_RIME_COST_SEED}"
 power_args=()
 if [[ "${DUCA_RIME_COST_PHASE}" == 4 ]]; then
@@ -102,7 +108,14 @@ fi
 profile_rime() {
   local config="$1" checkpoint="$2" receipt="$3" receipt_sha="$4"
   local arm="$5" method="$6" pair="$7" order="$8" prefix="$9"
-  python tools/bata/profile_duca_full_stack_cost.py \
+  local replay_mode="${10}"
+  local env_command=(env)
+  if [[ "${replay_mode}" == without_replay ]]; then
+    env_command+=(-u DUCA_RIME_REPLAY_JSONL -u DUCA_RIME_REPLAY_SHA256)
+  elif [[ "${replay_mode}" != with_replay ]]; then
+    fail "unknown cost replay mode: ${replay_mode}"
+  fi
+  "${env_command[@]}" python tools/bata/profile_duca_full_stack_cost.py \
     "${config}" \
     --checkpoint "${checkpoint}" \
     --output-prefix "${prefix}" \
@@ -137,7 +150,8 @@ profile_rime \
   "${candidate_method}" \
   "${session}-fixed" \
   1 \
-  "${DUCA_RIME_COST_ROOT}/candidate_fixed"
+  "${DUCA_RIME_COST_ROOT}/candidate_fixed" \
+  without_replay
 profile_rime \
   "${DUCA_RIME_FIXED_CONFIG}" \
   "${DUCA_RIME_FIXED_CHECKPOINT}" \
@@ -147,7 +161,8 @@ profile_rime \
   "${fixed_method}" \
   "${session}-fixed" \
   2 \
-  "${DUCA_RIME_COST_ROOT}/fixed"
+  "${DUCA_RIME_COST_ROOT}/fixed" \
+  with_replay
 
 python tools/bata/profile_duca_full_stack_cost.py \
   "${DUCA_RIME_DENSE_CONFIG}" \
@@ -180,7 +195,8 @@ profile_rime \
   "${candidate_method}" \
   "${session}-dense" \
   2 \
-  "${DUCA_RIME_COST_ROOT}/candidate_dense"
+  "${DUCA_RIME_COST_ROOT}/candidate_dense" \
+  without_replay
 
 python tools/bata/finalize_duca_rime_cost.py \
   --candidate-fixed-profile "${DUCA_RIME_COST_ROOT}/candidate_fixed.summary.json" \

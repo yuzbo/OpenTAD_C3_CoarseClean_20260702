@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -46,7 +47,30 @@ class DucaStatelessThumosPaddingDataset(ThumosPaddingDataset):
             random.seed(seed)
             np.random.seed(seed)
             torch.manual_seed(seed)
-            item = super().__getitem__(index)
+            video_name, video_info, video_anno = self.data_list[index]
+            if video_anno != {}:
+                video_anno = deepcopy(video_anno)
+                video_anno["gt_segments"] = (
+                    video_anno["gt_segments"] - self.offset_frames
+                )
+                video_anno["gt_segments"] = (
+                    video_anno["gt_segments"] / self.snippet_stride
+                )
+            item = self.pipeline(
+                dict(
+                    video_name=video_name,
+                    data_path=self.data_path,
+                    sample_stride=self.sample_stride,
+                    snippet_stride=self.snippet_stride,
+                    fps=video_info["frame"] / video_info["duration"],
+                    duration=video_info["duration"],
+                    offset_frames=self.offset_frames,
+                    duca_stateless_seed=int(seed),
+                    duca_stateless_epoch=int(self._duca_epoch),
+                    duca_stateless_sample_index=int(index),
+                    **video_anno,
+                )
+            )
         finally:
             random.setstate(python_state)
             np.random.set_state(numpy_state)

@@ -22,15 +22,15 @@ def _int_tuple(name, default):
 
 candidate_budgets = _int_tuple(
     "DUCA_RIME_CANDIDATE_BUDGETS",
-    "128,192,256,384,512",
+    "192,256,384,512",
 )
 candidate_costs = tuple(float(value) for value in candidate_budgets)
 max_budget = candidate_budgets[-1]
 dense_window_size = 768
 target_mean_cost = float(os.environ.get("DUCA_RIME_TARGET_MEAN_COST", "384"))
-if not candidate_costs[0] < target_mean_cost < candidate_costs[-1]:
+if not candidate_costs[0] <= target_mean_cost <= candidate_costs[-1]:
     raise RuntimeError(
-        "RIME target mean cost must have candidate budgets on both sides"
+        "RIME target mean cost must lie on the candidate cost range"
     )
 
 train_block_list = _required_env("DUCA_RIME_TRAIN_BLOCK_LIST")
@@ -59,6 +59,9 @@ duca_meta_keys = [
     "window_size",
     "offset_frames",
     "frame_inds",
+    "duca_stateless_seed",
+    "duca_stateless_epoch",
+    "duca_stateless_sample_index",
     "rime_requested_k_replay",
     "rime_requested_k_replay_provenance",
     "rime_budget_replay_jsonl",
@@ -323,7 +326,13 @@ duca_rime_contract = dict(
     pre_backbone_plugin=True,
     candidate_budgets=candidate_budgets,
     target_mean_cost=target_mean_cost,
-    dynamic_heavy_compute=True,
+    dynamic_heavy_compute=(target_mean_cost > candidate_costs[0]),
+    budget_panel_semantics=(
+        "content_conditioned_dynamic_budget_panel"
+        if target_mean_cost > candidate_costs[0]
+        else "exact_kmin_learned_position_stress_panel"
+    ),
+    dynamic_budget_claim_allowed=(target_mean_cost > candidate_costs[0]),
     pad_to_kmax=False,
     execution_quantum=16,
     batch_size=1,

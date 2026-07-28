@@ -77,12 +77,17 @@ def _selector(arm: str):
         )
         from opentad.models.duca.transition_only import DucaProtectedTransitionScorer
 
-        selector.transition_scorer = DucaProtectedTransitionScorer(96, 64)
+        selector.transition_scorer = (
+            None
+            if arm == "probe_uniform"
+            else DucaProtectedTransitionScorer(96, 64)
+        )
         selector.policy_hidden_gradient_scale = (
             0.01 if arm == "protected_e2e_rho001" else 0.0
         )
         selector.detector_bridge_gradient_scale = {
             "transition_no_bridge": 0.0,
+            "probe_uniform": 0.0,
             "protected_e2e": 1.0,
             "protected_e2e_bridge025": 0.25,
             "protected_e2e_uni_companion": 0.25,
@@ -131,6 +136,21 @@ def test_exact_uniform_skips_coarse_and_writes_native_physical_contract():
     assert meta["detector_output_coordinate_space"] == "dense_physical"
     assert meta["irregular_selected_positions"] == [0, 2, 5]
     assert meta["duca_observed_max_gap_seconds"] <= meta["duca_max_gap_seconds_cap"]
+
+
+def test_probe_uniform_executes_probe_but_keeps_exact_uniform_positions():
+    selector = _selector("probe_uniform")
+    inputs, masks, metas, *_ = _batch()
+    output = selector.forward_test(inputs, masks, metas)
+
+    state = output["selector_outputs"]
+    assert state["selected_positions"].tolist() == [[0, 2, 5]]
+    assert state["probe_output_used_for_selection"] is False
+    assert state["selection_policy"] == "exact_uniform"
+    assert state["coarse_hidden_features"].shape == (1, 6, 96)
+    assert selector.transition_scorer is None
+    with pytest.raises(RuntimeError, match="inference-only"):
+        selector.forward_train(inputs, masks, metas)
 
 
 def test_uint8_exact_uniform_preserves_float64_physical_gap_cap():

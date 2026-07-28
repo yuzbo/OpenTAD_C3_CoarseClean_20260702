@@ -21,6 +21,7 @@ def _row(video, start=0):
         "padded_k": 4,
         "risk_fallback": False,
         "cost_unit": "heavy_rgb_frames",
+        "dense_valid_len": 4,
         "selected_dense_indices": [0, 1, 2, 3],
         "max_gap_seconds_cap": 1.0,
         "observed_max_gap_seconds": 0.75,
@@ -57,6 +58,19 @@ def test_finalize_rime_inference_ledger_is_sorted_unique_and_no_padding(tmp_path
 def test_finalize_rime_inference_ledger_rejects_padding(tmp_path):
     row = _row("v0")
     row["padded_k"] = 8
+    shard = tmp_path / "rank0.jsonl"
+    shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="no-padding"):
+        finalize_ledger(
+            shards=[shard],
+            output_jsonl=tmp_path / "ledger.jsonl",
+            expected_arm="rime_full",
+        )
+
+
+def test_finalize_rime_inference_ledger_rejects_out_of_range_position(tmp_path):
+    row = _row("v0")
+    row["selected_dense_indices"][-1] = row["dense_valid_len"]
     shard = tmp_path / "rank0.jsonl"
     shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="no-padding"):

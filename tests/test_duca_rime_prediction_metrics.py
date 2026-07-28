@@ -5,6 +5,7 @@ from tools.bata.create_duca_rime_splits import create_rime_splits
 from tools.bata.duca_rime_training import (
     PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
     PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS,
+    STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
 )
 from tools.bata.evaluate_duca_rime_predictions import evaluate_predictions
 
@@ -142,3 +143,78 @@ def test_prediction_metrics_are_split_bound_and_perfect_for_perfect_segments(tmp
         "duca_rime_phase2_baseline_terminal_evaluation_v1"
     )
     assert baseline["payload"]["uses_official_final"] is False
+
+    dense_payload = json.loads(terminal.read_text(encoding="utf-8"))
+    dense_payload.update(
+        {
+            "schema_version": "duca_rime_phase1_dense_terminal_evaluation_v1",
+            "variant": "released_dense",
+            "target_mean_cost": 768.0,
+            "training_identity": None,
+            "baseline_contract": {
+                "phase": 1,
+                "variant": "released_dense",
+                "uses_official_final": False,
+                "padded_to_kmax": False,
+            },
+            "checkpoint_compatibility": {
+                "mode": STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE,
+                "missing_keys": [],
+                "ignored_unexpected_keys": [],
+            },
+        }
+    )
+    dense_terminal = _json(tmp_path / "dense_terminal.json", dense_payload)
+    dense = evaluate_predictions(
+        terminal_evaluation=dense_terminal,
+        split_manifest=split["manifest_path"],
+        split_manifest_sha256=split["manifest_sha256"],
+        phase=1,
+        split_role="certification_development",
+        short_max_seconds=2.0,
+        medium_max_seconds=5.0,
+        output=tmp_path / "dense_metrics.json",
+    )
+    assert dense["payload"]["phase"] == 1
+    assert dense["payload"]["variant"] == "released_dense"
+
+    uniform_payload = json.loads(terminal.read_text(encoding="utf-8"))
+    uniform_payload.update(
+        {
+            "schema_version": "duca_rime_phase1_uniform_terminal_evaluation_v1",
+            "variant": "uniform_k384",
+            "target_mean_cost": 384.0,
+            "training_identity": None,
+            "baseline_contract": {
+                "phase": 1,
+                "variant": "uniform_k384",
+                "position_policy": "exact_uniform",
+                "target_mean_cost": 384.0,
+                "uses_official_final": False,
+                "padded_to_kmax": False,
+            },
+            "checkpoint_compatibility": {
+                "mode": PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
+                "missing_keys": [],
+                "ignored_unexpected_keys": sorted(
+                    PHASE2_BASELINE_IGNORED_UNEXPECTED_KEYS
+                ),
+            },
+        }
+    )
+    uniform_terminal = _json(
+        tmp_path / "uniform_terminal.json",
+        uniform_payload,
+    )
+    uniform = evaluate_predictions(
+        terminal_evaluation=uniform_terminal,
+        split_manifest=split["manifest_path"],
+        split_manifest_sha256=split["manifest_sha256"],
+        phase=1,
+        split_role="certification_development",
+        short_max_seconds=2.0,
+        medium_max_seconds=5.0,
+        output=tmp_path / "uniform_metrics.json",
+    )
+    assert uniform["payload"]["phase"] == 1
+    assert uniform["payload"]["variant"] == "uniform_k384"

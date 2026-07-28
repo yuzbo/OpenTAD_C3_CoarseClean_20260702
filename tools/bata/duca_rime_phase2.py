@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import random
+import re
 from collections import defaultdict
 from pathlib import Path
 from statistics import NormalDist, mean, pstdev
@@ -40,6 +41,18 @@ def _write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
 
 def _sha256_file(path: str | Path) -> str:
     return hashlib.sha256(Path(path).expanduser().resolve().read_bytes()).hexdigest()
+
+
+def _canonical_sha256(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _percentile(values: Sequence[float], quantile: float) -> float:
@@ -136,6 +149,7 @@ def phase0_variance(
     grouped: dict[str, list[float]] = defaultdict(list)
     replicate_kinds = set()
     source_claim_scopes = set()
+    split_assignment_hashes = set()
     for row in rows:
         if row.get("schema_version") != "duca_rime_phase0_measurement_v1":
             raise ValueError("unsupported Phase-0 measurement schema")
@@ -149,8 +163,27 @@ def phase0_variance(
         source_claim_scopes.add(
             str(row.get("source_manifest_claim_scope", "unspecified"))
         )
+        split_assignment_hashes.add(
+            str(row.get("split_assignment_sha256", ""))
+        )
+        if (
+            row.get("uses_official_final") is not False
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(row.get("source_sha256", "")),
+            )
+            is None
+            or not str(row.get("source_path", ""))
+        ):
+            raise ValueError("Phase-0 measurement provenance is incomplete")
     if len(grouped) < 3 or any(len(values) < 2 for values in grouped.values()):
         raise ValueError("ICC/MDE requires >=3 videos and >=2 replicates per video")
+    if (
+        len(split_assignment_hashes) != 1
+        or re.fullmatch(r"[0-9a-f]{64}", next(iter(split_assignment_hashes)))
+        is None
+    ):
+        raise ValueError("Phase-0 measurements do not share one frozen split")
     counts = [len(values) for values in grouped.values()]
     total = sum(counts)
     grand = sum(sum(values) for values in grouped.values()) / total
@@ -181,6 +214,7 @@ def phase0_variance(
         "primary_metric": str(primary_metric),
         "video_count": len(video_means),
         "replicate_count": total,
+        "split_assignment_sha256": next(iter(split_assignment_hashes)),
         "icc_1_1": icc,
         "between_video_mean_square": between,
         "within_video_mean_square": within,
@@ -375,6 +409,8 @@ def analyze_o2(
     seed: int,
 ) -> dict[str, Any]:
     panel = {}
+    checkpoint_identities = set()
+    scorer_identities = set()
     for row in rows:
         if row.get("schema_version") != "duca_rime_o2_decoder_panel_v1":
             raise ValueError("unsupported O2 schema")
@@ -399,6 +435,34 @@ def analyze_o2(
                 raise ValueError("O2 selected positions must be ordered unique exact-K")
         if bool(row.get("max_gap_violation", False)):
             raise ValueError("O2 row violates the physical max-gap contract")
+        if (
+            row.get("score_metric") != "counterfactual_negative_detector_loss"
+            or row.get("claim_scope")
+            != (
+                "measured_detector_objective_decoder_family_regret_"
+                "not_tad_map_not_localization_quality"
+            )
+            or row.get("runtime_decoder_api") != "decode_rime_panel"
+            or row.get("measurement_kind")
+            != "measured_detector_counterfactual"
+            or row.get("counterfactual_score_not_tad_map") is not True
+            or row.get("proposal_score_surrogate_utility") is not False
+            or row.get("uses_gt_for_measurement") is not True
+            or row.get("uses_gt_at_deployment") is not False
+            or row.get("uses_teacher_at_deployment") is not False
+            or row.get("uses_prediction_cache_at_deployment") is not False
+            or row.get("uses_official_final") is not False
+            or not math.isfinite(float(row.get("score", math.nan)))
+            or len(str(row.get("mixed_k_detector_identity_sha256", ""))) != 64
+            or len(str(row.get("selector_scorer_sha256", ""))) != 64
+        ):
+            raise ValueError(
+                "O2 must contain actual runtime detector-counterfactual evidence"
+            )
+        checkpoint_identities.add(
+            str(row["mixed_k_detector_identity_sha256"])
+        )
+        scorer_identities.add(str(row["selector_scorer_sha256"]))
         panel[key] = row
     videos = sorted({key[0] for key in panel})
     budgets = sorted({key[1] for key in panel})
@@ -413,6 +477,8 @@ def analyze_o2(
     }
     if set(panel) != required:
         raise ValueError("O2 decoder panel must be rectangular")
+    if len(checkpoint_identities) != 1 or len(scorer_identities) != 1:
+        raise ValueError("O2 decoder panel mixes detector or scorer identities")
     video_regret = []
     video_overlap = []
     for video in videos:
@@ -456,6 +522,14 @@ def analyze_o2(
         "budgets": budgets,
         "families": families,
         "selected_family": str(selected_family),
+        "score_metric": "counterfactual_negative_detector_loss",
+        "claim_scope": (
+            "measured_detector_objective_decoder_family_regret_"
+            "not_tad_map_not_localization_quality"
+        ),
+        "runtime_decoder_api": "decode_rime_panel",
+        "mixed_k_detector_identity_sha256": next(iter(checkpoint_identities)),
+        "selector_scorer_sha256": next(iter(scorer_identities)),
         "independent_minus_selected_regret": regret_ci,
         "consecutive_budget_overlap": overlap_ci,
         "threshold": {"max_regret": float(max_regret)},
@@ -615,6 +689,8 @@ def analyze_o4(
     max_low_risk_failure: float,
     calibration_bins: int,
 ) -> dict[str, Any]:
+    if not rows:
+        raise ValueError("O4 requires nonempty risk records")
     labels, scores, videos = [], [], []
     accepted, fallback = [], []
     for row in rows:
@@ -778,30 +854,54 @@ def freeze_protocol(
         ]
         return mean(costs[index] for index in selected), selected
 
-    low, high = 0.0, 1.0
-    high_mean, _ = realized(high)
-    while high_mean > float(target_mean_cost) and high < 1.0e6:
-        high *= 2.0
+    target = float(target_mean_cost)
+    if target == costs[0]:
+        # A risk-constrained controller cannot, in general, attain the lower
+        # endpoint: any safety fallback raises the realized mean above Kmin.
+        # Keep this registered panel as an exact-Kmin position-selection stress
+        # test and reserve the interior K=384 panel for dynamic-allocation claims.
+        allocation_mode = "fixed_floor_budget_position_only"
+        frozen_price = 0.0
+        selected = [0] * len(curves)
+        realized_mean = costs[0]
+        forced_budget = budgets[0]
+        risk_used_for_allocation = False
+        dynamic_budget_claim_allowed = False
+    else:
+        allocation_mode = "frozen_price_dynamic_budget"
+        low, high = 0.0, 1.0
         high_mean, _ = realized(high)
-    if high_mean > float(target_mean_cost):
-        raise RuntimeError("frozen price cannot attain the requested mean cost")
-    for _ in range(80):
-        middle = 0.5 * (low + high)
-        middle_mean, _ = realized(middle)
-        if middle_mean <= float(target_mean_cost):
-            high = middle
-        else:
-            low = middle
-    realized_mean, selected = realized(high)
+        while high_mean > target and high < 1.0e6:
+            high *= 2.0
+            high_mean, _ = realized(high)
+        if high_mean > target:
+            raise RuntimeError("frozen price cannot attain the requested mean cost")
+        for _ in range(80):
+            middle = 0.5 * (low + high)
+            middle_mean, _ = realized(middle)
+            if middle_mean <= target:
+                high = middle
+            else:
+                low = middle
+        realized_mean, selected = realized(high)
+        allocation_mode = "frozen_price_dynamic_budget"
+        frozen_price = high
+        forced_budget = None
+        risk_used_for_allocation = True
+        dynamic_budget_claim_allowed = True
     payload = {
         "schema_version": PROTOCOL_SCHEMA,
         "fit_split": "train_only",
         "uses_validation_or_test_labels": False,
         "candidate_budgets": list(budgets),
         "candidate_costs": list(costs),
-        "target_mean_cost": float(target_mean_cost),
+        "target_mean_cost": target,
         "realized_calibration_mean_cost": realized_mean,
-        "frozen_price": high,
+        "frozen_price": frozen_price,
+        "allocation_mode": allocation_mode,
+        "forced_budget": forced_budget,
+        "risk_used_for_allocation": risk_used_for_allocation,
+        "dynamic_budget_claim_allowed": dynamic_budget_claim_allowed,
         "risk_weight": float(risk_weight),
         "risk_threshold": float(risk_threshold),
         "decoder_family": str(decoder_family),
@@ -886,12 +986,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.command == "phase0":
+        records_path = Path(args.records_jsonl).expanduser().resolve()
         result = phase0_variance(
-            _read_jsonl(args.records_jsonl),
+            _read_jsonl(records_path),
             primary_metric=args.primary_metric,
             alpha=args.alpha,
             power=args.power,
         )
+        result["source_records"] = {
+            "path": str(records_path),
+            "sha256": _sha256_file(records_path),
+        }
+        result["content_sha256"] = _canonical_sha256(result)
         _write_json(args.output, result)
     elif args.command == "o1":
         result = analyze_o1(

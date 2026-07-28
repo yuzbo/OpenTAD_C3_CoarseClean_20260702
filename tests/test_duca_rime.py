@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 import torch
 
@@ -164,6 +167,52 @@ def test_controller_is_batch_invariant_and_no_risk_has_vector_fallback():
         assert together.requested_k[index].item() == decision.requested_k[0].item()
 
 
+def test_floor_protocol_forces_exact_kmin_without_disabling_budget_losses(
+    tmp_path,
+):
+    protocol = tmp_path / "floor_protocol.json"
+    payload = {
+        "schema_version": "duca_rime_budget_protocol_v1",
+        "fit_split": "train_only",
+        "uses_validation_or_test_labels": False,
+        "candidate_budgets": [16, 32],
+        "candidate_costs": [16.0, 32.0],
+        "target_mean_cost": 16.0,
+        "frozen_price": 0.0,
+        "allocation_mode": "fixed_floor_budget_position_only",
+        "forced_budget": 16,
+        "risk_used_for_allocation": False,
+        "dynamic_budget_claim_allowed": False,
+        "risk_weight": 1.0,
+        "risk_threshold": 0.0,
+        "decoder_family": "weak_overlap",
+        "weak_overlap_fraction": 0.5,
+    }
+    protocol.write_text(json.dumps(payload), encoding="utf-8")
+    selector = DucaRimeFrameSelector(
+        in_channels=3,
+        rime_arm="rime_full",
+        candidate_budgets=(16, 32),
+        fixed_budget=32,
+        dense_window_size=32,
+        execution_quantum=16,
+        budget_protocol_path=str(protocol),
+        budget_protocol_sha256=hashlib.sha256(protocol.read_bytes()).hexdigest(),
+        detector_bridge_gradient_scale=0.0,
+        actionness_source_cfg=None,
+    )
+    evidence = torch.randn(2, 32, selector.coarse_hidden_dim)
+    scores = torch.randn(2, 32)
+    valid = torch.ones((2, 32), dtype=torch.bool)
+    decision = selector.budget_controller(evidence, scores, valid)
+    forced = selector._apply_protocol_allocation_mode(decision)
+    assert forced.requested_k.tolist() == [16, 16]
+    assert forced.fallback_to_kmax.tolist() == [False, False]
+    assert forced.policy_name == "rime_fixed_floor_budget_position_only"
+    assert forced.predicted_utility is decision.predicted_utility
+    assert forced.predicted_risk is decision.predicted_risk
+
+
 def test_price_calibration_meets_attainable_mean_cost_without_test_labels():
     utility = torch.tensor(
         [
@@ -275,7 +324,7 @@ def test_cost_matched_mixed_k_cycle_is_exact_and_deterministic():
         )
 
 
-def test_uniform_mixed_k_selector_uses_exact_successful_update_schedule():
+def test_uniform_mixed_k_selector_uses_exact_per_video_stateless_schedule():
     selector = DucaRimeFrameSelector(
         in_channels=3,
         rime_arm="uniform_mixed_k",
@@ -293,16 +342,25 @@ def test_uniform_mixed_k_selector_uses_exact_successful_update_schedule():
     scores = torch.zeros((1, 768))
     valid = torch.ones((1, 768), dtype=torch.bool)
     requested = []
+    per_video = {sample_index: [] for sample_index in range(100)}
     selector.train()
-    for _ in range(6000):
-        value = selector._fixed_requested_k(
-            scores,
-            valid,
-            [{}],
-            training=True,
-        )
-        requested.append(int(value.item()))
-        assert selector.after_optimizer_step()["updated"] is True
+    for epoch in range(60):
+        for sample_index in range(100):
+            value = selector._fixed_requested_k(
+                scores,
+                valid,
+                [
+                    {
+                        "duca_stateless_epoch": epoch,
+                        "duca_stateless_sample_index": sample_index,
+                    }
+                ],
+                training=True,
+            )
+            requested_k = int(value.item())
+            requested.append(requested_k)
+            per_video[sample_index].append(requested_k)
+            assert selector.after_optimizer_step()["updated"] is True
     assert tuple(
         requested.count(value) for value in selector.candidate_budgets
     ) == (
@@ -312,6 +370,11 @@ def test_uniform_mixed_k_selector_uses_exact_successful_update_schedule():
         2400,
     )
     assert sum(requested) / len(requested) == 384.0
+    for values in per_video.values():
+        assert tuple(
+            values.count(value) for value in selector.candidate_budgets
+        ) == (8, 12, 16, 24)
+        assert sum(values) / len(values) == 384.0
     assert int(selector._loss_weight_schedule_step.item()) == 6000
     assert selector.raw_actionness_source is None
     assert selector._fixed_requested_k(
@@ -320,3 +383,24 @@ def test_uniform_mixed_k_selector_uses_exact_successful_update_schedule():
         [{}],
         training=False,
     ).tolist() == [256]
+    with pytest.raises(ValueError, match="effective-K shrinkage"):
+        selector._fixed_requested_k(
+            scores,
+            torch.cat(
+                [
+                    torch.ones((1, 192), dtype=torch.bool),
+                    torch.zeros((1, 576), dtype=torch.bool),
+                ],
+                dim=1,
+            ),
+            [{}],
+            training=False,
+        )
+
+    with pytest.raises(ValueError, match="stateless epoch and sample index"):
+        selector._fixed_requested_k(
+            scores,
+            valid,
+            [{}],
+            training=True,
+        )

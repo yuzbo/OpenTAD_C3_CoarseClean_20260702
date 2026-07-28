@@ -237,10 +237,11 @@ class DucaRimeTargetsFromJsonl:
                 digest.update(block)
         if not self.targets_sha256 or digest.hexdigest() != self.targets_sha256:
             raise ValueError("RIME target JSONL SHA-256 is required and must match")
-        self._index = self._load(self.targets_jsonl)
+        self._index, self._scheduled_index = self._load(self.targets_jsonl)
 
     def _load(self, path):
         index = {}
+        scheduled_index = {}
         with open(path, "r", encoding="utf-8-sig") as handle:
             for line_number, line in enumerate(handle, start=1):
                 text = line.strip()
@@ -290,27 +291,57 @@ class DucaRimeTargetsFromJsonl:
                     hard_utility = np.asarray(hard_utility, dtype=np.float32)
                     if hard_utility.ndim != 1 or not np.isfinite(hard_utility).all():
                         raise ValueError(f"{prefix}: hard frame utility must be finite [T]")
+                epoch = row.get("duca_stateless_epoch")
+                sample_index = row.get("duca_stateless_sample_index")
+                if (epoch is None) != (sample_index is None):
+                    raise ValueError(
+                        f"{prefix}: scheduled targets require both epoch and sample index"
+                    )
                 key = (video_id, window_start)
-                if key in index:
+                target_index = index
+                if epoch is not None:
+                    epoch = int(epoch)
+                    sample_index = int(sample_index)
+                    if epoch < 0 or sample_index < 0:
+                        raise ValueError(f"{prefix}: invalid stateless schedule identity")
+                    key = (video_id, window_start, epoch, sample_index)
+                    target_index = scheduled_index
+                if key in target_index:
                     raise ValueError(f"{prefix}: duplicate RIME target window {key}")
-                index[key] = {
+                target_index[key] = {
                     "rime_utility_target": utility,
                     "rime_risk_target": risk,
                     "rime_target_mask": mask,
                     "rime_hard_frame_utility": hard_utility,
                     "rime_target_provenance": provenance,
                 }
-        if not index:
+        if not index and not scheduled_index:
             raise ValueError(f"RIME target JSONL contains no records: {path}")
-        return index
+        return index, scheduled_index
 
     def __call__(self, results):
         video_id = str(results.get("video_name") or results.get("video_id") or "")
         window_start = int(results.get("window_start_frame", 0))
         key = (video_id, window_start)
-        if key not in self._index:
-            raise ValueError(f"missing cross-fitted RIME targets for window {key}")
-        entry = self._index[key]
+        epoch = results.get("duca_stateless_epoch")
+        sample_index = results.get("duca_stateless_sample_index")
+        if epoch is not None and sample_index is not None and self._scheduled_index:
+            scheduled_key = (
+                video_id,
+                window_start,
+                int(epoch),
+                int(sample_index),
+            )
+            if scheduled_key not in self._scheduled_index:
+                raise ValueError(
+                    f"missing cross-fitted RIME targets for scheduled window "
+                    f"{scheduled_key}"
+                )
+            entry = self._scheduled_index[scheduled_key]
+        else:
+            if key not in self._index:
+                raise ValueError(f"missing cross-fitted RIME targets for window {key}")
+            entry = self._index[key]
         hard_utility = entry["rime_hard_frame_utility"]
         if hard_utility is not None:
             masks = results.get("masks")
@@ -348,6 +379,7 @@ class DucaRimeBudgetReplayFromJsonl:
         if not self.replay_sha256 or digest.hexdigest() != self.replay_sha256:
             raise ValueError("RIME budget replay SHA-256 is required and must match")
         self._index = {}
+        self._scheduled_index = {}
         with open(self.replay_jsonl, "r", encoding="utf-8-sig") as handle:
             for line_number, line in enumerate(handle, start=1):
                 text = line.strip()
@@ -373,11 +405,25 @@ class DucaRimeBudgetReplayFromJsonl:
                     for key in ("uses_gt", "uses_teacher", "uses_prediction_cache")
                 ):
                     raise ValueError(f"{prefix}: contaminated replay provenance")
+                epoch = row.get("duca_stateless_epoch")
+                sample_index = row.get("duca_stateless_sample_index")
+                if (epoch is None) != (sample_index is None):
+                    raise ValueError(
+                        f"{prefix}: scheduled replay requires both epoch and sample index"
+                    )
                 key = (video, window_start)
-                if key in self._index:
+                target_index = self._index
+                if epoch is not None:
+                    epoch = int(epoch)
+                    sample_index = int(sample_index)
+                    if epoch < 0 or sample_index < 0:
+                        raise ValueError(f"{prefix}: invalid stateless replay identity")
+                    key = (video, window_start, epoch, sample_index)
+                    target_index = self._scheduled_index
+                if key in target_index:
                     raise ValueError(f"{prefix}: duplicate replay window {key}")
-                self._index[key] = (requested_k, dict(provenance))
-        if not self._index:
+                target_index[key] = (requested_k, dict(provenance))
+        if not self._index and not self._scheduled_index:
             raise ValueError("RIME budget replay JSONL contains no records")
 
     def __call__(self, results):
@@ -385,9 +431,24 @@ class DucaRimeBudgetReplayFromJsonl:
             str(results.get("video_name") or results.get("video_id") or ""),
             int(results.get("window_start_frame", 0)),
         )
-        if key not in self._index:
-            raise ValueError(f"missing RIME budget replay for window {key}")
-        requested_k, provenance = self._index[key]
+        epoch = results.get("duca_stateless_epoch")
+        sample_index = results.get("duca_stateless_sample_index")
+        if epoch is not None and sample_index is not None and self._scheduled_index:
+            scheduled_key = (
+                key[0],
+                key[1],
+                int(epoch),
+                int(sample_index),
+            )
+            if scheduled_key not in self._scheduled_index:
+                raise ValueError(
+                    f"missing RIME budget replay for scheduled window {scheduled_key}"
+                )
+            requested_k, provenance = self._scheduled_index[scheduled_key]
+        else:
+            if key not in self._index:
+                raise ValueError(f"missing RIME budget replay for window {key}")
+            requested_k, provenance = self._index[key]
         results["rime_requested_k_replay"] = int(requested_k)
         results["rime_requested_k_replay_provenance"] = dict(provenance)
         results["rime_budget_replay_jsonl"] = self.replay_jsonl

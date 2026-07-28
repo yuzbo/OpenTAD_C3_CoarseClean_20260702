@@ -61,17 +61,19 @@ def _ledger(tmp_path, *, family, budget):
         [
             {
                 "schema_version": "duca_rime_inference_ledger_v1",
-                "video_id": "video_0001",
+                "video_id": f"video_{index:04d}",
                 "window_start_frame": 0,
                 "requested_k": budget,
                 "effective_k": budget,
                 "unique_k": budget,
                 "backbone_input_k": budget,
                 "padded_k": budget,
+                "dense_valid_len": max(8, budget),
                 "selected_dense_indices": selected,
                 "observed_max_gap_seconds": 0.25,
                 "max_gap_seconds_cap": 0.25,
             }
+            for index in range(3)
         ],
     )
 
@@ -89,6 +91,88 @@ def _mixed_k_receipt(tmp_path, *, checkpoint_sha256):
             "uses_official_final": False,
         },
     )
+
+
+def _crossfit_summary(tmp_path):
+    path = tmp_path / "crossfit_summary.json"
+    payload = {
+        "schema_version": "duca_rime_crossfit_record_producer_v1",
+        "status": "produced",
+        "models": {
+            "o2_decoder": {
+                "eval_role": "certification_development",
+                "runtime_decoder_api": "decode_rime_panel",
+                "claim_scope": (
+                    "counterfactual_detector_objective_decoder_family_"
+                    "regret_not_tad_map"
+                ),
+            }
+        },
+    }
+    payload["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return _json(path, payload)
+
+
+def _o2_metrics(
+    tmp_path,
+    *,
+    family,
+    budget,
+    checkpoint_sha256,
+    ledger_sha256,
+):
+    path = tmp_path / f"{family}_{budget}_metrics.json"
+    values = {f"video_{index:04d}": -1.0 - index for index in range(3)}
+    payload = {
+        "schema_version": "duca_rime_counterfactual_decoder_metrics_v1",
+        "phase": 2,
+        "status": "measured",
+        "claim_scope": (
+            "measured_detector_objective_decoder_family_regret_"
+            "not_tad_map_not_localization_quality"
+        ),
+        "score_metric": "counterfactual_negative_detector_loss",
+        "video_metrics": {
+            "counterfactual_negative_detector_loss": values,
+        },
+        "decoder_family": family,
+        "budget": budget,
+        "target_mean_cost": float(budget),
+        "split_role": "certification_development",
+        "split_assignment_sha256": "a" * 64,
+        "mixed_k_detector_identity_sha256": checkpoint_sha256,
+        "selector_scorer_sha256": "c" * 64,
+        "runtime_decoder_api": "decode_rime_panel",
+        "measurement_kind": "measured_detector_counterfactual",
+        "detector_objective": "official_actionformer_cls_plus_reg",
+        "counterfactual_score_not_tad_map": True,
+        "proposal_score_surrogate_utility": False,
+        "padded_to_kmax": False,
+        "uses_official_final": False,
+        "official_final_used_for_training_or_selection": False,
+        "uses_gt_for_measurement": True,
+        "uses_gt_at_deployment": False,
+        "uses_teacher_at_deployment": False,
+        "uses_prediction_cache_at_deployment": False,
+        "ledger_sha256": ledger_sha256,
+    }
+    payload["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return _json(path, payload)
 
 
 def test_phase0_manifest_reopens_metrics_and_terminal_checkpoint(tmp_path):
@@ -201,17 +285,19 @@ def test_o1_manifest_labels_fixed_k_transfer_as_diagnostic(tmp_path):
 
 def test_o2_manifest_requires_a_rectangular_panel_with_independent(tmp_path):
     checkpoint = "4" * 64
+    receipt = _mixed_k_receipt(tmp_path, checkpoint_sha256=checkpoint)
+    crossfit = _crossfit_summary(tmp_path)
     rows = []
     for family in ("independent", "weak_overlap"):
         for budget in (2, 3):
-            metrics = _metrics(
-                tmp_path,
-                name=f"{family}_{budget}",
-                budget=budget,
-                seed=3407,
-                checkpoint_sha256=checkpoint,
-            )
             ledger = _ledger(tmp_path, family=family, budget=budget)
+            metrics = _o2_metrics(
+                tmp_path,
+                family=family,
+                budget=budget,
+                checkpoint_sha256=checkpoint,
+                ledger_sha256=_sha(ledger),
+            )
             rows.append(
                 (
                     family,
@@ -224,6 +310,11 @@ def test_o2_manifest_requires_a_rectangular_panel_with_independent(tmp_path):
             )
     result = build_o2_manifest(
         evaluations=rows,
+        mixed_k_detector_identity_sha256=checkpoint,
+        training_receipt=receipt,
+        training_receipt_sha256=_sha(receipt),
+        crossfit_summary=crossfit,
+        crossfit_summary_sha256=_sha(crossfit),
         output=tmp_path / "o2_manifest.json",
     )
     assert len(result["payload"]["decoder_evaluations"]) == 4
@@ -231,5 +322,10 @@ def test_o2_manifest_requires_a_rectangular_panel_with_independent(tmp_path):
     with pytest.raises(ValueError, match="rectangular panel"):
         build_o2_manifest(
             evaluations=rows[:-1],
+            mixed_k_detector_identity_sha256=checkpoint,
+            training_receipt=receipt,
+            training_receipt_sha256=_sha(receipt),
+            crossfit_summary=crossfit,
+            crossfit_summary_sha256=_sha(crossfit),
             output=tmp_path / "incomplete_o2.json",
         )

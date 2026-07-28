@@ -100,6 +100,10 @@ def test_rime_cost_launcher_profiles_paired_full_stack_on_one_slurm_allocation()
     assert "--profile-session-id" in text
     assert "--profile-pair-id" in text
     assert "--rime-training-receipt-sha256" in text
+    assert "U-same-K" in text
+    assert "DUCA_RIME_REPLAY_JSONL" in text
+    assert "without_replay" in text
+    assert "with_replay" in text
     assert "finalize_duca_rime_cost.py" in text
 
 
@@ -178,6 +182,185 @@ def test_phase2_mixed_k_evaluation_is_checkpoint_and_exact_k_ledger_bound():
     assert "--split-role" in text
     assert "--rdzv-endpoint=localhost:0" in text
     assert "detector_selector_train" in text
+
+
+def test_phase2_evidence_pipeline_builds_all_four_gates_from_one_checkpoint():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase2_evidence_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    assert "192 256 384 512" in text
+    assert "run_duca_rime_phase2_mixed_k_eval.sh" in text
+    assert "run_duca_rime_phase2_counterfactual_measurements.sh" in text
+    assert "run_duca_rime_phase2_crossfit_producer.sh" in text
+    assert "run_duca_rime_phase2_o2_panel.sh" in text
+    assert "run_duca_rime_phase2_gates.sh" in text
+    assert "pipeline_receipt.json" in text
+
+
+def test_phase3_and_phase4_controllers_preserve_fail_closed_dependencies():
+    phase3 = (
+        ROOT / "scripts" / "run_duca_rime_phase3_submit_controller.sh"
+    ).read_text(encoding="utf-8")
+    phase4 = (
+        ROOT / "scripts" / "run_duca_rime_phase4_submit_controller.sh"
+    ).read_text(encoding="utf-8")
+    assert "run_duca_rime_phase3_asset_producer.sh" in phase3
+    assert 'dependency="afterok:${phase3_seal_job}"' in phase3
+    assert "run_duca_rime_phase4_submit_controller.sh" in phase3
+    assert "phase4_authorization.json" in phase4
+    assert "submit_duca_rime_phase4_matrix.sh" in phase4
+    assert "DUCA_RIME_SUBMIT_CONTROLLER=1" in phase3
+    assert "DUCA_RIME_SUBMIT_CONTROLLER=1" in phase4
+
+
+def test_phase1_evidence_pipeline_uses_real_controls_before_sealing():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase1_evidence_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    assert text.count("run_duca_rime_phase1_dense_eval.sh") >= 2
+    assert "for budget in 384 192" in text
+    assert "run_duca_protected_physical_full_model_gate_gpu1.sh" in text
+    assert "run_duca_rime_phase1_cost_controls.sh" in text
+    assert "run_duca_rime_phase1_seal.sh" in text
+    assert "phase1_receipt_sha256" in text
+
+
+def test_phase2_pipeline_trains_mixed_k_before_building_evidence():
+    text = (
+        ROOT
+        / "scripts"
+        / "run_duca_rime_phase2_train_and_evidence_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    train = text.index("run_duca_rime_phase2_mixed_k_train.sh")
+    evidence = text.index("run_duca_rime_phase2_evidence_pipeline.sh")
+    assert train < evidence
+    assert "create_duca_rime_training_exposure.py" in text
+    assert "phase2_authorized" in text
+    assert "terminal_ema.pth" in text
+
+
+def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
+    text = (
+        ROOT / "scripts" / "submit_duca_rime_four_phase_dag.sh"
+    ).read_text(encoding="utf-8")
+    assert "--hold" in text
+    assert 'dependency_args=(--dependency="afterok:${dependency}")' in text
+    assert "dense_actionformer_job" in text
+    assert "dense_tridet_job" in text
+    assert "phase3_dependency" in text
+    assert "submission_manifest.json" in text
+    assert "scontrol release" in text
+    assert "phase4_receipt.json" in text
+
+
+def test_phase2_crossfit_producer_rejects_surrogate_and_builds_all_targets():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase2_crossfit_producer.sh"
+    ).read_text(encoding="utf-8")
+    assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert "DUCA_RIME_COUNTERFACTUAL_MEASUREMENTS_SHA256" in text
+    assert "produce_duca_rime_crossfit_records.py" in text
+    assert "build_duca_rime_gate_records.py" in text
+    assert "build_duca_rime_training_targets.py" in text
+
+
+def test_phase2_counterfactual_and_o2_launchers_use_actual_runtime_detector_loss():
+    counterfactual = (
+        ROOT
+        / "scripts"
+        / "run_duca_rime_phase2_counterfactual_measurements.sh"
+    ).read_text(encoding="utf-8")
+    o2 = (
+        ROOT / "scripts" / "run_duca_rime_phase2_o2_panel.sh"
+    ).read_text(encoding="utf-8")
+    assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in counterfactual
+    assert "produce_duca_rime_counterfactual_measurements.py" in counterfactual
+    assert "all_train_empty_block_list.txt" in counterfactual
+    assert "U-mixed-K" in counterfactual
+    assert "produce_duca_rime_o2_panel.py" in o2
+    assert "decode_rime_panel" in o2
+    assert "counterfactual_negative_detector_loss" in o2
+    assert "build_duca_rime_source_manifest.py o2" in o2
+    assert "build_duca_rime_gate_records.py o2" in o2
+
+
+def test_dense_tridet_launcher_is_slurm_checkpoint_evidence_bound():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_dense_tridet_train.sh"
+    ).read_text(encoding="utf-8")
+    assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert "duca_rime_dense_tridet_cost_baseline_v1" in text
+    assert "compact_duca_rime_checkpoint.py" in text
+    assert "build_trained_checkpoint_binding" in text
+    assert "state_dict_ema" in text
+    assert "uses_official_final" in text
+
+
+def test_dense_actionformer_reference_reuses_the_evidence_bound_backend_runner():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_dense_actionformer_train.sh"
+    ).read_text(encoding="utf-8")
+    assert "DUCA_RIME_DENSE_BACKEND=ActionFormer" in text
+    assert "run_duca_rime_dense_tridet_train.sh" in text
+    cfg = (
+        ROOT
+        / "configs"
+        / "adatad"
+        / "thumos"
+        / "duca_rime_dense_actionformer_total60.py"
+    ).read_text(encoding="utf-8")
+    assert "duca_rime_dense_actionformer_cost_baseline_v1" in cfg
+    assert 'detector_backend="ActionFormer"' in cfg
+
+
+def test_phase3_submission_has_six_train_jobs_and_no_same_k_training():
+    submit = (ROOT / "scripts" / "submit_duca_rime_phase3.sh").read_text(
+        encoding="utf-8"
+    )
+    pipeline = (
+        ROOT / "scripts" / "run_duca_rime_phase3_arm_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    assert "arms=(RIME-full U-fixed F-bound D-no-risk AdapTok-TAD D-shuffle)" in submit
+    assert 'dependency_args=(--dependency="afterok:${arm_jobs[RIME-full]}")' in submit
+    assert "training_job_count" in submit
+    assert "u_same_k_training_job_count" in submit
+    assert "scontrol release" in submit
+    assert "--hold" in submit
+    assert "submission_manifest.json.receipt.json" in submit
+    assert "os.replace" in submit
+    assert 'export "${name}"' in submit
+    assert "U-same-K is evaluation-only" in pipeline
+    assert "duca_rime_uniform_same_k_eval.py" in pipeline
+    assert "a fresh shared U-same-K evaluation root is required" in pipeline
+    assert "--mode paired" in pipeline
+    assert "--mode shuffle" in pipeline
+    assert "--mode merge" in pipeline
+
+
+def test_phase4_submission_is_exactly_twelve_transactional_cells():
+    submit = (
+        ROOT / "scripts" / "submit_duca_rime_phase4_matrix.sh"
+    ).read_text(encoding="utf-8")
+    pipeline = (
+        ROOT / "scripts" / "run_duca_rime_phase4_cell_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    assert "for backend in ActionFormer TriDet" in submit
+    assert "for target in 384 192" in submit
+    assert "for seed in 5801 8123 12011" in submit
+    assert '"${#job_ids[@]}" == 12' in submit
+    assert "--hold" in submit
+    assert "scontrol release" in submit
+    assert "--gres=gpu:1" in submit
+    assert "--mem" not in submit
+    assert "submission_manifest.json.receipt.json" in submit
+    assert "os.replace" in submit
+    assert 'export "${name}"' in submit
+    assert "run_duca_rime_phase4_train_cell.sh" in pipeline
+    assert pipeline.count("run_duca_rime_evaluate_arm.sh") == 1
+    assert "run_duca_rime_phase4_seal_cell.sh" in pipeline
+    assert "stale Phase-4 sibling output is forbidden" in pipeline
+    assert "--mode paired" in pipeline
+    assert ".same_k_replay" in pipeline
 
 
 def test_rime_development_configs_bind_dataset_and_official_evaluator_to_same_role():

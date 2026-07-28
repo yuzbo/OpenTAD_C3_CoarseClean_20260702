@@ -3,9 +3,9 @@
 ## Status
 
 - Date: `2026-07-27`
-- Stage: `designed`
+- Stage: `superseded`
 - Approval: `user_approved`
-- Implementation: `not_started`
+- Implementation: `superseded_by_duca_rime_four_phase`
 - Task: offline TAD
 - Canonical specification:
   `docs/superpowers/specs/2026-07-27-duca-total60-prebackbone-plugin-cvpr-design.md`
@@ -36,4 +36,7 @@
 
 ## Next gate
 
-书面规范审阅通过后，实施拆为 P1 基线与路径一致性、P2 多尺度离散对齐与贡献审计、P3 有界密度总计 60 轮、P4 稳定性与免训练模式。第一批只为 P1/P2 生成实施计划，不直接投递新的长训练。
+本节点保留为路线演化记录，不再作为当前执行合同。当前批准路线已经由
+`experiments/duca-dynamic-k-rime-oracle.md` 接管：P1/P2 先建立可证伪的
+动态预算与风险证据，P3 形成首个可训练 DUCA-RIME 候选，P4 才进行
+2 detector × 2 budget panel × 3 fresh seed 的正式验证。

@@ -6,6 +6,7 @@ import json
 import math
 import os
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 import torch
@@ -20,7 +21,10 @@ from ..duca.rime import (
     rime_budget_supervision_losses,
     rime_rank_alignment_loss,
 )
-from ..duca.structured_selection import PhysicalExactKHardOutput
+from ..duca.structured_selection import (
+    PhysicalExactKHardOutput,
+    physical_exact_uniform_gap_cap,
+)
 from ..duca.transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     balanced_binary_actionness_loss,
@@ -93,8 +97,29 @@ def _load_frozen_protocol(
     ):
         raise ValueError("RIME protocol costs must be finite, positive, and increasing")
     protocol_risk_weight = float(payload.get("risk_weight", float("nan")))
+    allocation_mode = str(payload.get("allocation_mode", ""))
     if not math.isfinite(protocol_risk_weight) or protocol_risk_weight < 0.0:
         raise ValueError("RIME protocol risk_weight must be finite and non-negative")
+    if allocation_mode not in {
+        "frozen_price_dynamic_budget",
+        "fixed_floor_budget_position_only",
+    }:
+        raise ValueError("RIME protocol has an unsupported allocation_mode")
+    target = float(payload.get("target_mean_cost", float("nan")))
+    if allocation_mode == "fixed_floor_budget_position_only":
+        if (
+            target != protocol_costs[0]
+            or int(payload.get("forced_budget", -1)) != candidate_budgets[0]
+            or payload.get("risk_used_for_allocation") is not False
+            or payload.get("dynamic_budget_claim_allowed") is not False
+        ):
+            raise ValueError("RIME floor-budget protocol is internally inconsistent")
+    elif (
+        payload.get("forced_budget") is not None
+        or payload.get("risk_used_for_allocation") is not True
+        or payload.get("dynamic_budget_claim_allowed") is not True
+    ):
+        raise ValueError("RIME dynamic budget protocol is internally inconsistent")
     payload = dict(payload)
     payload["path"] = resolved
     payload["sha256"] = actual_hash
@@ -237,6 +262,11 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         self.budget_protocol = protocol
         self.budget_protocol_path = None if protocol is None else protocol["path"]
         self.budget_protocol_sha256 = None if protocol is None else protocol["sha256"]
+        self.allocation_mode = (
+            "unfrozen_control"
+            if protocol is None
+            else str(protocol["allocation_mode"])
+        )
         self.mixed_k_schedule_seed = int(mixed_k_schedule_seed)
         schedule_counts = (
             None
@@ -334,6 +364,27 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             self.last_forward_summary["loss_weight_schedule"] = summary
         return summary
 
+    def _apply_protocol_allocation_mode(
+        self,
+        decision: RimeBudgetDecision,
+    ) -> RimeBudgetDecision:
+        if self.allocation_mode != "fixed_floor_budget_position_only":
+            return decision
+        selected_index = torch.zeros_like(decision.selected_index)
+        requested_floor = self.budget_controller.candidate_budgets.to(
+            selected_index.device
+        )[selected_index]
+        return replace(
+            decision,
+            selected_index=selected_index,
+            requested_k=requested_floor,
+            fallback_to_kmax=torch.zeros_like(
+                decision.fallback_to_kmax,
+                dtype=torch.bool,
+            ),
+            policy_name="rime_fixed_floor_budget_position_only",
+        ).validate(batch_size=decision.selected_index.shape[0])
+
     def _fixed_requested_k(
         self,
         policy_scores: torch.Tensor,
@@ -352,24 +403,50 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             )
         if self.rime_arm == "uniform_mixed_k":
             if not training:
-                return torch.full(
+                self._last_mixed_k_schedule_indices = tuple(
+                    -1 for _ in range(batch)
+                )
+                self._last_mixed_k_schedule_source = "fixed_evaluation_budget"
+                requested = torch.full(
                     (batch,),
                     self.fixed_budget,
                     device=policy_scores.device,
                     dtype=torch.long,
                 )
-            cycle_len = int(self.mixed_k_schedule.numel())
-            successful_update_step = int(
-                self._loss_weight_schedule_step.detach().item()
-            )
-            cycle_index = successful_update_step % cycle_len
-            requested_k = int(self.mixed_k_schedule[cycle_index].item())
-            requested = torch.full(
-                (batch,),
-                requested_k,
-                device=policy_scores.device,
-                dtype=torch.long,
-            )
+            else:
+                cycle_len = int(self.mixed_k_schedule.numel())
+                cycle_indices = []
+                for meta in metas:
+                    if not isinstance(meta, Mapping):
+                        raise ValueError(
+                            "uniform_mixed_k requires per-sample metadata"
+                        )
+                    epoch = meta.get("duca_stateless_epoch")
+                    sample_index = meta.get("duca_stateless_sample_index")
+                    if epoch is None or sample_index is None:
+                        raise ValueError(
+                            "uniform_mixed_k requires stateless epoch and sample index"
+                        )
+                    epoch = int(epoch)
+                    sample_index = int(sample_index)
+                    if epoch < 0 or sample_index < 0:
+                        raise ValueError(
+                            "uniform_mixed_k stateless identities must be non-negative"
+                        )
+                    cycle_indices.append((epoch + sample_index) % cycle_len)
+                index_tensor = torch.tensor(
+                    cycle_indices,
+                    device=self.mixed_k_schedule.device,
+                    dtype=torch.long,
+                )
+                requested = self.mixed_k_schedule.index_select(
+                    0,
+                    index_tensor,
+                ).to(device=policy_scores.device)
+                self._last_mixed_k_schedule_indices = tuple(cycle_indices)
+                self._last_mixed_k_schedule_source = (
+                    "stateless_epoch_plus_sample_index"
+                )
             valid_counts = valid_mask.long().sum(dim=1)
             if bool(torch.any(valid_counts < requested).item()):
                 raise ValueError(
@@ -503,6 +580,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         decision: RimeBudgetDecision | None = None
         if self.budget_controller is not None:
             decision = self.budget_controller(hidden, paths["policy_scores"], valid_mask)
+            decision = self._apply_protocol_allocation_mode(decision)
             requested_k = decision.requested_k
             risk_fallback = decision.fallback_to_kmax
         else:
@@ -602,6 +680,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     "duca_backbone_tail_padding_mode": "none_exact_k_bucket",
                     "duca_execution_quantum": self.execution_quantum,
                     "duca_budget_protocol_sha256": self.budget_protocol_sha256,
+                    "duca_rime_allocation_mode": self.allocation_mode,
                 }
             )
             if self.rime_arm == "uniform_mixed_k":
@@ -613,6 +692,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                         "duca_mixed_k_schedule_seed": self.mixed_k_schedule_seed,
                         "duca_mixed_k_schedule_counts": list(
                             self.mixed_k_schedule_counts
+                        ),
+                        "duca_mixed_k_schedule_index": int(
+                            self._last_mixed_k_schedule_indices[batch_index]
+                        ),
+                        "duca_mixed_k_schedule_source": (
+                            self._last_mixed_k_schedule_source
                         ),
                         "duca_mixed_k_successful_update_step": int(
                             self._loss_weight_schedule_step.detach().item()
@@ -662,6 +747,9 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                                 ledger["risk_fallback"][batch_index]
                             ),
                             "cost_unit": str(ledger["unit"]),
+                            "dense_valid_len": int(
+                                valid_mask[batch_index].sum().item()
+                            ),
                             "selected_dense_indices": [
                                 int(value)
                                 for value in meta.get("selected_dense_indices", ())
@@ -673,6 +761,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                                 meta["duca_observed_max_gap_seconds"]
                             ),
                             "budget_protocol_sha256": self.budget_protocol_sha256,
+                            "allocation_mode": self.allocation_mode,
                             "mixed_k_schedule_sha256": (
                                 self.mixed_k_schedule_sha256
                             ),
@@ -753,6 +842,8 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     int(value) for value in self.mixed_k_schedule.cpu().tolist()
                 ],
                 "sha256": self.mixed_k_schedule_sha256,
+                "indices": list(self._last_mixed_k_schedule_indices),
+                "source": self._last_mixed_k_schedule_source,
                 "target_mean_cost": float(
                     sum(
                         count * cost
@@ -779,6 +870,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "dynamic_compute_realized": True,
             "contract": RIME_CONTRACT,
             "mixed_k_schedule_sha256": self.mixed_k_schedule_sha256,
+            "allocation_mode": self.allocation_mode,
         }
         self._last_selected_positions = decoded.hard_positions.detach().clone()
         self._last_physical_metas = copy.deepcopy(output_metas)
@@ -787,6 +879,161 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "masks": decoded.hard_slot_mask,
             "metas": output_metas,
             "selector_outputs": state,
+        }
+
+    def materialize_counterfactual_positions(
+        self,
+        inputs: torch.Tensor,
+        masks: torch.Tensor,
+        metas,
+        positions: torch.Tensor,
+        *,
+        requested_k: int,
+    ) -> dict[str, Any]:
+        """Materialize one externally decoded legal path for train-only measurement.
+
+        This entry point never chooses a position.  It only reuses the production
+        physical-axis gather and metadata contract so that train-only
+        counterfactual measurements execute the same heavy detector path as RIME.
+        """
+
+        self._validate_inputs(inputs, masks, metas)
+        requested = int(requested_k)
+        if (
+            requested not in self.candidate_budgets
+            or requested <= 0
+            or requested % self.execution_quantum
+        ):
+            raise ValueError(
+                "RIME counterfactual K must be a registered execution bucket"
+            )
+        valid_mask = masks.to(device=inputs.device, dtype=torch.bool)
+        positions = torch.as_tensor(
+            positions,
+            device=inputs.device,
+            dtype=torch.long,
+        )
+        batch, temporal_len = valid_mask.shape
+        if positions.shape != (batch, requested):
+            raise ValueError("RIME counterfactual positions must be [B,K]")
+        valid_counts = valid_mask.long().sum(dim=1)
+        if bool(torch.any(valid_counts < requested).item()):
+            raise ValueError(
+                "RIME counterfactual path cannot pad a short dense window"
+            )
+        for batch_index in range(batch):
+            active = positions[batch_index]
+            if (
+                bool(torch.any(active < 0).item())
+                or bool(torch.any(active >= valid_counts[batch_index]).item())
+                or (
+                    requested > 1
+                    and not bool(torch.all(active[1:] > active[:-1]).item())
+                )
+            ):
+                raise ValueError(
+                    "RIME counterfactual positions must be ordered unique valid indices"
+                )
+
+        physical_seconds, source_frames = self._physical_axes(
+            metas,
+            valid_mask,
+            inputs.device,
+        )
+        caps = physical_exact_uniform_gap_cap(
+            physical_seconds,
+            valid_mask,
+            k=requested,
+        )
+        occupancy = torch.zeros(
+            (batch, temporal_len),
+            device=inputs.device,
+            dtype=torch.float32,
+        )
+        slot_assignment = torch.zeros(
+            (batch, requested, temporal_len),
+            device=inputs.device,
+            dtype=torch.float32,
+        )
+        for batch_index in range(batch):
+            active = positions[batch_index]
+            occupancy[batch_index].scatter_(0, active, 1.0)
+            slot_assignment[batch_index].scatter_(
+                1,
+                active[:, None],
+                1.0,
+            )
+        slot_mask = torch.ones(
+            (batch, requested),
+            device=inputs.device,
+            dtype=torch.bool,
+        )
+        effective = torch.full(
+            (batch,),
+            requested,
+            device=inputs.device,
+            dtype=torch.long,
+        )
+        hard = PhysicalExactKHardOutput(
+            hard_occupancy=occupancy,
+            hard_slot_assignment=slot_assignment,
+            hard_positions=positions,
+            hard_slot_mask=slot_mask,
+            edge_count=torch.zeros(
+                batch,
+                device=inputs.device,
+                dtype=torch.long,
+            ),
+            effective_k=effective,
+            max_gap_seconds=caps,
+        )
+        selected_inputs = _hard_gather(inputs, positions, slot_mask)
+        output_metas = self._write_physical_metadata(
+            metas,
+            hard,
+            physical_seconds,
+            source_frames,
+            valid_mask,
+        )
+        ledger = {
+            "requested_k": [requested] * batch,
+            "effective_k": [requested] * batch,
+            "unique_k": [requested] * batch,
+            "backbone_input_k": [requested] * batch,
+            "padded_k": [requested] * batch,
+            "risk_fallback": [False] * batch,
+            "dynamic_compute_realized": True,
+            "unit": "heavy_rgb_frames",
+        }
+        for meta in output_metas:
+            meta.update(
+                {
+                    "duca_contract": RIME_CONTRACT,
+                    "physical_grid_contract": RIME_CONTRACT,
+                    "duca_arm": "train_only_counterfactual_measurement",
+                    "duca_requested_k": requested,
+                    "duca_effective_k": requested,
+                    "duca_unique_k": requested,
+                    "duca_backbone_input_k": requested,
+                    "duca_padded_k": requested,
+                    "duca_risk_fallback": False,
+                    "duca_dynamic_compute_realized": True,
+                    "duca_cost_unit": "heavy_rgb_frames",
+                    "duca_backbone_tail_padding_mode": "none_exact_k_bucket",
+                    "duca_execution_quantum": self.execution_quantum,
+                }
+            )
+        return {
+            "inputs": selected_inputs,
+            "masks": slot_mask,
+            "metas": output_metas,
+            "positions": positions,
+            "physical_seconds": physical_seconds,
+            "decoded_source_frames": source_frames,
+            "max_gap_seconds": caps,
+            "cost_ledger": ledger,
+            "hard_forward_only": True,
+            "uses_gt_for_selection": False,
         }
 
     def forward_train(
@@ -814,7 +1061,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             state["training_provenance"] = {
                 "task": "offline_tad",
                 "selection_policy": (
-                    "successful_update_cost_matched_exact_uniform_mixed_k"
+                    "stateless_per_video_cost_matched_exact_uniform_mixed_k"
                 ),
                 "gt_scope": "detector_loss_only_not_selection",
                 "budget_target_scope": "none",
