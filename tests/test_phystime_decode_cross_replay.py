@@ -286,6 +286,37 @@ def test_validator_binds_score_sort_dtype_to_capture_contract():
         validator.validate_producer_numeric_precision(numeric_precision, capture)
 
 
+def test_validator_carries_validated_numeric_precision_into_completion():
+    capture = {
+        "source_amp_enabled": True,
+        "source_tensor_dtypes": {"cls_scores": "torch.float16"},
+        "numeric_semantics_version": "source_score_dtype_legacy_order_v1",
+        "array_contract": {
+            "cls_scores": {"stored_numpy_dtype": "float16"}
+        },
+    }
+    numeric_precision = {
+        "source_amp_enabled": True,
+        "source_tensor_dtypes": {"cls_scores": "torch.float16"},
+        "numeric_semantics_version": "source_score_dtype_legacy_order_v1",
+        "score_sort_dtype": "float16",
+        "score_sort_device": "cpu",
+        "geometry_compute_dtype": "float32",
+        "geometry_compute_device": "cpu",
+    }
+    producer = {"numeric_precision": numeric_precision}
+
+    validated = validator.validate_and_copy_producer_numeric_precision(
+        producer,
+        capture,
+    )
+
+    assert validated == numeric_precision
+    assert validated is not numeric_precision
+    validated["score_sort_dtype"] = "float32"
+    assert producer["numeric_precision"]["score_sort_dtype"] == "float16"
+
+
 def _synthetic_dense_arrays():
     base_points = np.asarray(
         [

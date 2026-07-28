@@ -660,6 +660,12 @@ def validate_producer_numeric_precision(numeric_precision, capture):
     )
 
 
+def validate_and_copy_producer_numeric_precision(producer, capture):
+    numeric_precision = copy.deepcopy(producer.get("numeric_precision", {}))
+    validate_producer_numeric_precision(numeric_precision, capture)
+    return numeric_precision
+
+
 def validate_run(run_dir):
     run_dir = Path(run_dir).resolve()
     manifest_path = run_dir / "run_manifest.json"
@@ -798,8 +804,8 @@ def validate_run(run_dir):
         producer.get("same_frozen_raw_tensors_for_both_axes") is True,
         "producer did not bind one shared raw tensor artifact",
     )
-    validate_producer_numeric_precision(
-        producer.get("numeric_precision", {}),
+    numeric_precision = validate_and_copy_producer_numeric_precision(
+        producer,
         capture,
     )
 
