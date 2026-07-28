@@ -20,3 +20,4 @@
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"deployed_as","target":"deployments/duca-rime-recovery-0ab242f3"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-0ab242f3"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"deployed_as","target":"deployments/duca-rime-recovery-bbf05141"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-bbf05141"}

@@ -528,3 +528,23 @@
   monitor was rebound to these exact identities. Phase 4 remains disabled,
   official-final remains sealed, and no paper-admissible empirical conclusion
   is available.
+
+## 2026-07-28 — Recovery-v3 failed closed; recovery-v4 bridge designed
+
+- Production code gate `1200483` completed. Dense salvage jobs
+  `1200485`/`1200486` then both failed before inference at the exact
+  `tools/test.py` guard `formal evaluation checkout differs from
+  DUCA_EXPECTED_COMMIT`.
+- The checkpoint salvage itself had passed and the immutable sources remained
+  unchanged. The launcher required `DUCA_RIME_EXPECTED_COMMIT` but omitted the
+  explicit bridge to the evaluator's canonical `DUCA_EXPECTED_COMMIT`.
+- Because the transaction could no longer produce all required receipts, Phase
+  1 `1200484`, Phase 2 `1200487`, and controller `1200488` were canceled by
+  exact ID. No unrelated job was changed. Phase 4 was never opened.
+- Froze the recovery-v4 design: explicitly export the canonical commit variable
+  and make `PRECHECK_ONLY` execute the same environment lookup and Git identity
+  comparison as formal evaluation. Silent evaluator fallback was rejected
+  because it would weaken fail-closed launcher diagnostics.
+- Recovery-v3 remains immutable failed engineering evidence. No performance
+  result was read or interpreted, and no paper-admissible empirical conclusion
+  is available.

@@ -16,17 +16,17 @@ Current evidence level:
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `passed` |
-| Dense reference training | `recovery_v3_salvage_running / engineering_only` |
-| Phase 1 closure | `recovery_v3_running` |
-| Phase 2/3/4 | `phase2_3_dependency_held / phase4_sealed` |
-| Latest four-stage transaction | `recovery_v3_experiment_running / no_terminal_stage_receipts_yet` |
+| Dense reference training | `recovery_v3_salvage_failed_before_inference / engineering_only` |
+| Phase 1 closure | `recovery_v3_cancelled_after_sibling_failure` |
+| Phase 2/3/4 | `recovery_v3_cancelled / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v3_terminal_failed_closed / recovery_v4_implementation_in_progress` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v3_deployed / remote_tested / experiment_running` |
+| Stage-0 repair implementation | `recovery_v4_design_frozen / implementation_in_progress` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v3_experiment_running` |
+| H-RIME Stage-0 recovery transaction | `recovery_v3_terminal_failed_closed` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -213,11 +213,21 @@ Recovery v3 is now deployed as `ENGINEERING_STATUS`:
   `1200485`, TriDet salvage `1200486`, Phase 2 `1200487`, and Phase-3
   controller `1200488`.
 
-At `2026-07-28 22:04 CST`, production code gate `1200483` had completed with
-exit `0:0`; Phase 1 and both salvage arms were running; Phase 2 and the Phase-3
-controller remained protected by their registered dependencies. Phase 4 is
-disabled, official-final is sealed, and no terminal Stage-0 development receipt
-has yet been claimed.
+Terminal update at `2026-07-28 22:06 CST`:
+
+- code gate `1200483`: `COMPLETED`, exit `0:0`;
+- ActionFormer/TriDet salvage `1200485`/`1200486`: `FAILED`, exit `1:0`, after
+  immutable EMA copying but before inference because the launcher did not bridge
+  `DUCA_RIME_EXPECTED_COMMIT` to the evaluator's canonical
+  `DUCA_EXPECTED_COMMIT`;
+- Phase 1 `1200484`, Phase 2 `1200487`, and controller `1200488` were canceled
+  by exact ID once the transaction could no longer complete;
+- no dense checkpoint/recovery, Phase-1, Phase-2, or Phase-3 terminal receipt
+  exists. Phase 4 was never opened and official-final remains sealed.
+
+Recovery v4 is limited to the explicit evaluator commit-environment bridge and
+a precheck that exercises the same environment lookup and Git comparison as the
+formal evaluator. It does not change the model or scientific protocol.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

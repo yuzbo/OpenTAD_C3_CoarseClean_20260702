@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v3_deployed / remote_tested / experiment_running`
+- Stage-0 code: `recovery_v4_design_frozen / implementation_in_progress`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v3_experiment_running`
+- Slurm recovery transaction: `recovery_v3_terminal_failed_closed`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -188,21 +188,33 @@ Its immutable identities are:
   `53a633c162dd69ec3bdfd291e8df97d8e79619d9b688808d0dfad36127abc265`.
 
 Jobs `1200483`--`1200488` are respectively code gate, Phase 1, ActionFormer
-salvage, TriDet salvage, Phase 2 and Phase-3 controller. At
-`2026-07-28 22:04 CST`, code gate `1200483` was `COMPLETED` with exit `0:0`;
-Phase 1 `1200484` and both salvage jobs `1200485`/`1200486` were running;
-Phase 2 and Phase 3 were dependency-held. The original failed transaction and
-source jobs remain immutable. Phase 4 is disabled and official-final is sealed.
-This is `experiment_running`, not empirical support.
+salvage, TriDet salvage, Phase 2 and Phase-3 controller. The terminal recovery-v3
+state is:
+
+- code gate `1200483`: `COMPLETED`, exit `0:0`;
+- ActionFormer/TriDet salvage `1200485`/`1200486`: `FAILED`, exit `1:0`;
+- Phase 1 `1200484`, Phase 2 `1200487`, and controller `1200488`: canceled by
+  exact ID after the dense failures made full transaction closure impossible.
+
+Both dense jobs had successfully copied and hash-verified their immutable EMA
+state, but `tools/test.py` stopped before inference because the launcher did not
+export its `DUCA_RIME_EXPECTED_COMMIT` under the formal evaluator's canonical
+name `DUCA_EXPECTED_COMMIT`. No dense checkpoint/recovery, Phase-1, Phase-2 or
+Phase-3 terminal receipt exists. The original source transactions remain
+immutable. Phase 4 was never opened and official-final is sealed.
+
+Recovery-v4 design is frozen in
+`docs/superpowers/specs/2026-07-28-stage0-recovery-v4-evaluator-commit-bridge-design.md`.
+It adds only the explicit canonical environment bridge and a precheck that
+executes the same environment lookup and Git comparison as the evaluator. It
+does not change model or experiment semantics.
 
 ## Next gate
 
-1. require the Phase-1 pipeline receipt and both dense checkpoint/recovery
-   receipts from this exact transaction;
-2. allow Phase 2 and Phase 3 to run only through their frozen `afterok`
-   dependencies;
-3. if any contract fails, retain this root as immutable failed engineering
-   evidence and diagnose without in-place reuse;
+1. implement and test the recovery-v4 commit-environment bridge;
+2. repeat independent review, remote code gate and actual identity prechecks on
+   a fresh exact commit;
+3. freeze new manifests and deploy to a fresh root without reusing v3 outputs;
 4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
    receipts before running the held-out same-total-cost H-RIME oracle or learned
    planner training.
