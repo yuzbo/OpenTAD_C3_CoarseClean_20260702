@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v5_code_gate_1201057_pending / not_released`
+- Slurm recovery transaction: `recovery_v5_phase1_and_salvage_running`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -279,16 +279,14 @@ remains sealed.
 
 ## Next gate
 
-1. publish the recovery-v5 exact commit and run its authoritative Slurm code
-   gate, including the focused ActionFormer/TriDet dynamic-mask runtime test;
-2. bind fresh physical/salvage manifests to that exact commit and deploy a new
-   immutable transaction root only after the gate passes;
-3. terminate only the dependency-impossible recovery-v4 jobs by exact ID while
-   preserving the complete failed root and its valid engineering salvage
-   receipts;
-4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
-   receipts before running the held-out same-total-cost H-RIME oracle or learned
-   planner training.
+1. require production code gate `1201169` to complete and emit its exact
+   commit-bound receipt;
+2. require Phase-1 `1201170` and both dense-recovery arms
+   `1201171`/`1201172` to complete their full registered contracts;
+3. require Phase-2 `1201173` and Phase-3 controller `1201174` to emit all
+   terminal development receipts;
+4. only after those receipts pass may the held-out same-total-cost H-RIME oracle
+   or learned planner training be considered. Phase 4 remains unauthorized.
 
 ## Recovery v5 implementation
 
@@ -319,14 +317,43 @@ tests. Recovery-v4 jobs `1200631`/`1200632`, whose dependencies could never
 succeed, were canceled by exact ID; the failed root and completed salvage
 receipts were not changed.
 
-Full Slurm code gate `1201057` is pending on group GPU allocation
-(`AssocGrpGRES`). A CPU-only Slurm substitution was rejected before job creation
-because the cluster's only submission partition enforces an explicit GPU
-request. The standard GPU gate was restored. The new production DAG remains
-unreleased. After the gate passes, the hash-frozen deployment script
-`780cd27f36a68d307a4fd90168a96dfe1db3a34e530c9f332a594e78a3b769a1`
-will generate new commit-bound physical/salvage/submission manifests and a
-fresh root; Phase 4 remains disabled.
+Full Slurm preflight `1201057` completed with exit `0:0` and emitted the exact
+commit-bound gate receipt, SHA-256
+`740bc46cff9db814dc8e6c1ae5ad9051db6c6bc9503979969515268462cf0af3`.
+The frozen deployment script then stopped before creating any production
+protocol, manifest or root because the clean checkout did not contain the
+ignored runtime symlinks needed to resolve
+`data/thumos-14/annotations/thumos_14_anno.json`. This failure is recorded as
+`missing_runtime_data_symlinks_before_protocol_freeze`; its freeze log and
+unused target identity are preserved.
+
+The monitor restored the checkout-local annotation and video symlinks to the
+same established immutable datasets and reverified a clean exact-commit Git
+state. This was a protocol-preserving environment repair. The one bounded retry
+for that failure signature used script SHA-256
+`22698937ff31b4fc696df2a73b0e737c2eeca5fdcd660b8bfcd5c9b46faba635`
+and atomically released:
+
+- transaction root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_74de620d_20260728_235100`;
+- physical protocol:
+  `65db63c4b3ebb7f407099efe0f3a97670c19359b0a6f680cb44114645cb3b244`;
+- production salvage manifest:
+  `af3c466e6d2f61ea9284de540e5b353bbecb1609c0fb40face172c7d1e642acf`;
+- submission manifest:
+  `6290a5f0bbe15128f8313fec1aaf3003b306e1e7b7c6a3259a3fd21b46beaeb5`;
+- released receipt:
+  `81d5ce399a0568df744908f7068dc53746b00b7b9f5b4df08d4a5d429c54c95e`.
+
+Jobs `1201169`--`1201174` are respectively the production code gate, Phase 1,
+ActionFormer salvage, TriDet salvage, Phase 2 and Phase-3 controller. Production
+code gate `1201169` completed with exit `0:0`; its exact-commit receipt has
+SHA-256
+`7de03703c23ae79772b8598bea7de3fbaa0db85bffc58d71f467e9f7294045e4`.
+Phase 1 `1201170` and both salvage jobs `1201171`/`1201172` are running;
+Phase 2 `1201173` and controller `1201174` remain dependency-held. The
+registered dependency map and manifest identities passed,
+`phase4_submission_enabled=false`, and `official_final_sealed=true`.
 
 Correct empirical statement:
 

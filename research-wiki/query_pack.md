@@ -15,18 +15,18 @@ Current evidence level:
 | Scientific route | `user_approved` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
-| Remote authoritative code gate | `recovery_v5_pending_1201057` |
+| Remote authoritative code gate | `recovery_v5_preflight_passed_1201057 / production_gate_passed_1201169` |
 | Dense reference training | `recovery_v4_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v4_failed / recovery_v5_repair_gate_pending` |
-| Phase 2/3/4 | `dependency_never_satisfied_or_held / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v4_failed_closed / scheduler_terminalization_pending` |
+| Phase 1 closure | `recovery_v4_failed / recovery_v5_running_1201170` |
+| Phase 2/3/4 | `recovery_v5_dependency_held / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v5_released / experiment_running` |
 | H-RIME scientific route | `user_approved / designed` |
 | Stage-0 repair implementation | `recovery_v5_mask_handoff_implemented / targeted_remote_10_passed` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v5_code_gate_queued / not_yet_released` |
+| H-RIME Stage-0 recovery transaction | `recovery_v5_phase1_and_salvage_running` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -296,7 +296,8 @@ This is an execution-contract failure, not a performance result. No reported or
 intermediate metric was used in this diagnosis.
 
 Recovery-v5 is now `implemented / static_checked / independently_reviewed_GO /
-targeted_remote_torch_tested / full_code_gate_pending`. It introduces one shared detector-to-backbone
+targeted_remote_torch_tested / authoritative_preflight_passed /
+production_transaction_running`. It introduces one shared detector-to-backbone
 handoff: ActionFormer and TriDet pass the exact aligned mask whenever
 `dynamic_temporal_bucket=True`, ordinary backbones retain their legacy mask-free
 call, and a physical RIME selector paired with a non-dynamic backbone fails
@@ -315,19 +316,50 @@ Operational update:
   `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_HRIME_74de620d`;
 - focused Linux/PyTorch mask-contract suite: `10 passed`;
 - recovery-v4 impossible children `1200631`/`1200632`: canceled by exact ID;
-- authoritative Slurm code gate: `1201057`, pending only on `AssocGrpGRES`;
+- authoritative Slurm preflight `1201057`: `COMPLETED`, exit `0:0`; its
+  commit-bound receipt has SHA-256
+  `740bc46cff9db814dc8e6c1ae5ad9051db6c6bc9503979969515268462cf0af3`;
 - the attempted CPU-only replacement was rejected before job creation because
   this cluster requires a GPU request on its only submission partition;
-- frozen deployment script:
+- the first invocation of the frozen deployment script
   `/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v5_74de620d.sh`,
   SHA-256
-  `780cd27f36a68d307a4fd90168a96dfe1db3a34e530c9f332a594e78a3b769a1`;
-- intended fresh root:
-  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_74de620d_20260728_233000`.
+  `780cd27f36a68d307a4fd90168a96dfe1db3a34e530c9f332a594e78a3b769a1`,
+  failed before creating a protocol, manifest or production root because the
+  clean checkout lacked the ignored runtime data symlinks and therefore could
+  not resolve `data/thumos-14/annotations/thumos_14_anno.json`;
+- the exact failure is a protocol-preserving deployment-environment signature,
+  `missing_runtime_data_symlinks_before_protocol_freeze`. Its failed freeze log
+  is preserved and the unused target root ending in `20260728_233000` remains
+  absent;
+- the remote checkout's runtime annotation/video symlinks were restored to the
+  established immutable datasets and Git cleanliness was reverified;
+- the single permitted retry used
+  `/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v5_74de620d_retry1.sh`,
+  SHA-256
+  `22698937ff31b4fc696df2a73b0e737c2eeca5fdcd660b8bfcd5c9b46faba635`,
+  and released the fresh root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_74de620d_20260728_235100`;
+- production physical-protocol SHA-256:
+  `65db63c4b3ebb7f407099efe0f3a97670c19359b0a6f680cb44114645cb3b244`;
+- production salvage-manifest SHA-256:
+  `af3c466e6d2f61ea9284de540e5b353bbecb1609c0fb40face172c7d1e642acf`;
+- submission-manifest SHA-256:
+  `6290a5f0bbe15128f8313fec1aaf3003b306e1e7b7c6a3259a3fd21b46beaeb5`;
+- released-receipt SHA-256:
+  `81d5ce399a0568df744908f7068dc53746b00b7b9f5b4df08d4a5d429c54c95e`;
+- jobs: production code gate `1201169`, Phase 1 `1201170`, ActionFormer
+  salvage `1201171`, TriDet salvage `1201172`, Phase 2 `1201173`, and
+  Phase-3 controller `1201174`.
 
-The four-stage DAG has not yet been released. The scheduled monitor now checks
-every 15 minutes and may execute that exact deployment script only after code
-gate `1201057` passes its commit-bound receipt.
+Production code gate `1201169` subsequently completed with exit `0:0`; its
+receipt binds the exact source commit and has SHA-256
+`7de03703c23ae79772b8598bea7de3fbaa0db85bffc58d71f467e9f7294045e4`.
+Phase 1 `1201170` and both salvage jobs `1201171`/`1201172` are running;
+Phase 2 `1201173` and controller `1201174` remain dependency-held. The
+transaction manifest confirms `phase4_submission_enabled=false` and
+`official_final_sealed=true`. This is only `ENGINEERING_STATUS`; no
+model-quality or paper-admissible empirical conclusion is available.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

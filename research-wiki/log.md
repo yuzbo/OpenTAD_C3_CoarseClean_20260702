@@ -651,3 +651,43 @@
   protocol-preserving engineering failure, new commit/manifests/root required,
   and fail-closed escalation for repeated, ambiguous, scientific, data,
   numerical or model-quality failures. Phase 4 and official-final remain sealed.
+
+## 2026-07-28 — Recovery-v5 preflight passed; bounded retry released production DAG
+
+- Slurm preflight `1201057` completed with exit `0:0`. Its receipt binds exact
+  source commit `74de620d8fafc365694aa1f400318a401add3ecc` and has SHA-256
+  `740bc46cff9db814dc8e6c1ae5ad9051db6c6bc9503979969515268462cf0af3`.
+- The first hash-frozen deployment invocation failed before producing any
+  protocol, manifest or production root. The exact traceback was
+  `FileNotFoundError: data/thumos-14/annotations/thumos_14_anno.json`; a clean
+  clone had no ignored runtime annotation/video symlinks. The failure log and
+  unused root identity ending in `20260728_233000` remain preserved.
+- Classified the unique failure as
+  `missing_runtime_data_symlinks_before_protocol_freeze`. Restored only the
+  established checkout-local symlinks to immutable datasets, verified both
+  targets and reverified that the deployed source checkout remained Git-clean.
+  This changed no model, protocol, loss, budget, split, checkpoint,
+  hyperparameter or metric.
+- Consumed the one allowed automatic retry for that signature. Retry script
+  `/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v5_74de620d_retry1.sh`
+  has SHA-256
+  `22698937ff31b4fc696df2a73b0e737c2eeca5fdcd660b8bfcd5c9b46faba635`.
+- Released fresh immutable root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_74de620d_20260728_235100`
+  with physical-protocol SHA-256
+  `65db63c4b3ebb7f407099efe0f3a97670c19359b0a6f680cb44114645cb3b244`,
+  salvage-manifest SHA-256
+  `af3c466e6d2f61ea9284de540e5b353bbecb1609c0fb40face172c7d1e642acf`,
+  submission-manifest SHA-256
+  `6290a5f0bbe15128f8313fec1aaf3003b306e1e7b7c6a3259a3fd21b46beaeb5`,
+  and released-receipt SHA-256
+  `81d5ce399a0568df744908f7068dc53746b00b7b9f5b4df08d4a5d429c54c95e`.
+- Atomically released jobs `1201169`--`1201174`: production code gate,
+  Phase 1, ActionFormer salvage, TriDet salvage, Phase 2 and Phase-3 controller.
+  Production code gate `1201169` completed with exit `0:0`; its exact-commit
+  receipt SHA-256 is
+  `7de03703c23ae79772b8598bea7de3fbaa0db85bffc58d71f467e9f7294045e4`.
+  Phase 1 `1201170` and both salvage jobs `1201171`/`1201172` are running;
+  Phase 2 `1201173` and controller `1201174` remain dependency-held. Phase 4
+  remains disabled, official-final remains sealed, and no performance value or
+  paper-admissible empirical conclusion was produced.

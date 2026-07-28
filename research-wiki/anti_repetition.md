@@ -218,3 +218,7 @@ These failures and naming mistakes must not be repeated.
     commit/failure signature and only for exact, protocol-preserving engineering
     causes; ambiguity, recurrence, model quality, data integrity and scientific
     gate failures stop closed for user review.
+73. Do not equate a clean Git checkout with a runnable data environment. Before
+    protocol freeze, verify every ignored runtime annotation/video symlink and
+    its resolved immutable target; missing runtime assets must fail before any
+    manifest or transaction root is created.
