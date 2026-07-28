@@ -1056,3 +1056,23 @@ append_only: true
   `best.pth`, configs, logs, and already-singleton checkpoint directories were
   untouched. The remote plan, apply receipt, and post-verification remain under
   `/data/run01/sczc063/yuzibo/checkpoint_cleanup_manifests/`.
+
+- 2026-07-28: absorbed the exact-commit GeoRoute Pro verdict
+  `HOLD_FOR_CORRECTNESS_FIX` and implemented the correctness replacement in one
+  local batch. The replacement uses floor-native 176x320 support with an
+  explicit validity mask, mask-aware exact-K, a coordinate-lineage packed
+  VideoMAE Adapter, fixed full-frame/frozen geometry for the ROI-free `free`
+  control, uniform-selected pooling across P1R, branch-aligned hybrid route
+  gradients, summed temporal score likelihood, atomic final-only checkpoints,
+  and same-commit aggregate storage preflight. P0R now seals a measured storage
+  profile and packed-component trace; the result-blind selector first requires
+  NativeTokenSelect to beat fixed/random/geometry-side-channel controls and
+  cost less than dense, then conditionally tests whether hybrid geometry
+  strictly adds. The entire P0R-to-P1R dependency graph is designed for one-shot
+  submission, with all seven P1R cells running concurrently after
+  `PASS_MECHANICAL_ONLY`. This is parallel scheduling but ordered scientific
+  interpretation. The code is native-token evidence routing, not a sequential
+  source-pixel crop or resized zoom. Local pure contracts pass, but clean-commit
+  remote tensor tests and P0R are pending; status is only `implemented`, with
+  no replacement metric, cost result, empirical support, or “Geometry Zoom”
+  paper claim.

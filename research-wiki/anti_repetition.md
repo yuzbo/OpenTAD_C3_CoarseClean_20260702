@@ -13,6 +13,30 @@ updated: 2026-07-28
    final EMA only or an explicitly bounded result-blind checkpoint set. Partial
    checkpoints and epoch logs are not P1 evidence and the failed namespace must
    not be resumed.
+0. Never create synthetic native support by replicating a spatial remainder
+   and then route it without a validity invariant. Match the pretrained
+   floor-Conv3d support, propagate a boolean validity mask, and fail closed when
+   the valid count is below K.
+0. Packed attention/MLP is not a packed backbone claim while the original
+   Adapter still executes on a dense carrier or lets unselected positions mix
+   into selected lineages. P1R requires the coordinate-lineage packed Adapter
+   and a full-K numerical parity gate.
+0. A `free` NativeTokenSelect control must use fixed full-frame geometry and a
+   frozen geometry head. Never call a learned-geometry route ROI-free.
+0. Membership comparisons must use identical uniform-selected pooling.
+   Route-logit pooling is a separately named ablation, not a hidden learned-
+   route advantage.
+0. Deterministic context may not receive hybrid route gradients. The
+   straight-through or score-function surrogate must match the hard staged
+   branches and temporal route likelihood.
+0. Parallel Slurm scheduling is not parallel causal interpretation. All seven
+   P1R arms may run concurrently after P0R, but NativeTokenSelect must pass its
+   fixed/random/geometry-side-channel controls before geometry is interpreted.
+0. Never revive the failed `1196071`--`1196078` namespace, infer utility from
+   its partial checkpoints, or call the current native-token router a
+   source-pixel crop. Do not use “Geometry Zoom” unless the native base and the
+   strict conditional geometry add-on both pass, followed by multi-seed,
+   cost, diagnostic, and generalization closure.
 
 ## Continuous-RoI S2 deployment anti-repetition
 

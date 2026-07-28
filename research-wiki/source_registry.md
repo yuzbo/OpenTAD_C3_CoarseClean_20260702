@@ -1,7 +1,18 @@
 ---
 type: source_registry
-updated: 2026-07-23
+updated: 2026-07-28
 ---
+
+- GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
+  user-provided review audited exact branch HEAD
+  `df3e54e0c6776544dba20807b2ec100e1a399654` and returned
+  `HOLD_FOR_CORRECTNESS_FIX`. Raw archive:
+  `docs/methods/reviews/2026-07-28-georoute-correctness-pro-review-raw.txt`,
+  SHA-256
+  `e71e1964b75c68c3b05467ba571112e2bd540afa2ce791f991c5cf68ee078600`.
+  Project absorption:
+  `docs/methods/reviews/2026-07-28-georoute-correctness-pro-review-absorption.md`.
+  It is code-review and experiment-design evidence, not a P0/P1 result.
 
 - FlashVID literature and implementation audit, 2026-07-23. Fan et al.,
   *FlashVID: Efficient Video Large Language Models via Training-free Tree-based

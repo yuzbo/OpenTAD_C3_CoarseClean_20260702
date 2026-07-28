@@ -1,0 +1,3173 @@
+# 0. Executive verdict
+
+## **HOLD_FOR_CORRECTNESS_FIX**
+
+当前精确提交**不能直接进入 replacement P1**，但也**没有证据支持停止 GeoRoute**：
+
+1. P1 Jobs `1196071–1196077` 是共同的 checkpoint 存储失败，没有产生任何可用 mAP、成本、selection 或 A-MoD 结果；Job `1196078` 也没有作出选择。因此不能把失败 namespace 当作模型负结果。
+2. 当前代码存在六个足以污染 P1 科学解释的阻塞项：
+
+   * 180×320 被复制补成 192×320，却没有 validity mask；
+   * 每个 ViT block 的 attention/MLP 是 packed 的，但原 Adapter 仍在完整 padded lattice 上运行；
+   * `free` 对照并不真正 ROI-free，它仍接收 learned geometry；
+   * learned routes 还额外使用 route logits 做 softmax pooling，而 fixed/random 使用均匀 pooling；
+   * hybrid 的硬策略与 ST surrogate 不一致，deterministic context 也错误获得 route gradient；
+   * checkpoint 无界保存且 dispatcher 没有 aggregate storage headroom preflight。
+3. 当前最值得优先验证的是 **Route B：真正 ROI-free 的 NativeTokenSelect-AdaTAD + validity-aware coordinate-lineage packed Adapter**。
+4. **Route A 只能在修正后的 hybrid 于 P1 同时击败 free、random 和 geometry-only control 后进入 P2。**
+5. A-MoD 与 FlashVID-inspired residual 均不得加入 P1R。
+
+---
+
+# 1. Repository identity
+
+## 1.1 可见性证书
+
+```text
+VISIBILITY_CERTIFICATE:
+  exact_repository: VERIFIED
+  exact_branch: VERIFIED
+  exact_commit: VERIFIED
+  branch_head_equals_requested_commit: VERIFIED
+  exact_sha_file_reads: VERIFIED
+  fresh_local_clone: BLOCKED_BY_EXECUTION_ENVIRONMENT_DNS
+  local_git_status_clean: UNVERIFIED_LOCALLY
+  audit_mode: EXACT_SHA_READ_ONLY_CONNECTOR_SNAPSHOT
+```
+
+GitHub 接口返回：
+
+```text
+repository = yuzbo/OpenTAD_C3_CoarseClean_20260702
+branch     = codex/spatial-zoom-s1-audit-fix-20260715
+HEAD       = df3e54e0c6776544dba20807b2ec100e1a399654
+```
+
+该分支当前 HEAD 与要求的完整 SHA 一致。
+
+我实际在两个新的 `/tmp` 目录中尝试了要求的命令：
+
+```bash
+git clone https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git georoute-pro-audit
+```
+
+两次均在 clone 起始阶段失败：
+
+```text
+fatal: unable to access ... Could not resolve host: github.com
+exit code: 128
+```
+
+因此我不会伪造以下两项：
+
+```text
+git status --porcelain == ""
+fresh local worktree clean
+```
+
+后续审计是对 GitHub 接口逐文件绑定到 `df3e54e0...` 的**精确 SHA 快照审计**。所有要求的基础文档、源码和测试均以该 SHA 读取，但本轮没有在本地 clone 中执行 pytest、CUDA P0 或训练。
+
+## 1.2 状态文档冲突
+
+`research-wiki/ideas/geo-route-adatad.md` 仍把状态写成：
+
+```text
+implemented_local_pending_cuda_p0
+```
+
+这是过时元数据。
+
+更新、更具体的 experiment 节点已经记录：
+
+```text
+failed_p1_infrastructure_storage_exhaustion_no_metric
+```
+
+以及 P0 的 `PASS_MECHANICAL_ONLY`、P1 的存储失败和清理结果。后者应作为权威状态。
+
+---
+
+# 2. Current implementation map
+
+## 2.1 当前真实调用链
+
+| 阶段                     | 当前 tensor / 行为                                                                                       | 审计结论                                                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Decode / source view   | `source=[B,1,3,768,H,W]`，`scout=[B,1,3,768,96,96]`，均为 `uint8`                                        | 保留完整 768-frame window；没有 causal claim、GT、teacher、oracle 或手工 ROI  |
+| Wrapper input          | 去掉 segment 维后，`source=[B,3,768,H,W]`，`scout=[B,3,768,96,96]`                                         | `B<=1` 由 config 强制                                               |
+| Scout                  | `Conv3d(2×8×8,stride 2×8×8)` 后为 `[B,48,384,12,12]`                                                   | geometry head 输出 `[B,384,4]`；residual head 插值到 source patch grid |
+| Native extraction，当前   | 180×320 复制底部 12 行，得到 192×320；`[B,384,240,3,2,16,16]`                                                 | N=12×20=240；底部第 12 patch row 含复制像素，无 valid mask                  |
+| Routing                | `roi_logits,residual_logits=[B,384,N]`；`indices=[B,384,K]`                                           | P1 K=64；exact-K、排序、去重成立                                          |
+| Native gather          | `[B,384,K,3,2,16,16]`                                                                                | 只 gather 一次                                                      |
+| Patch embed            | 每个选中 tubelet 用原 Conv3d `2×16×16`；输出 `[B,384,K,384]`                                                  | 只对 K 个 token 做 patch embedding                                   |
+| Dense carrier          | 每 16 frames 为 8 tubelets，共 48 chunks；carrier `[48B,8N,384]`                                          | 未选位置初始为 positional embedding                                     |
+| Packed attention/MLP   | 每个 block 的 attention/MLP 输入 `[48B,8K,384]`                                                           | 真正只计算 selected token；随后 scatter 回 carrier                        |
+| 原 Adapter              | 每个 block scatter 后调用 `Adapter(x,h,w)`                                                                | 仍在 `[48B,8N,384]` 对应的完整空间 lattice 上计算                            |
+| Gather backbone output | `[B,384,K,384]`                                                                                      | 只返回 selected features                                            |
+| GeoRoute final adapter | 加 absolute/ROI-relative coordinate，按 route score softmax pool K 个 token，再做 temporal depthwise Conv1d | 输出 `[B,384,384]`；learned route 与 fixed route 的 pooling 方式不一致     |
+| Temporal restoration   | deterministic linear 2×                                                                              | `[B,384,768]`                                                    |
+| Detector               | AdaTAD/ActionFormer projection、head、NMS                                                              | 时间轴保持完整 768；没有时域稀疏                                               |
+
+Wrapper 对 `[B,384,768]` 有显式 shape 检查，并记录一次 packed VideoMAE invocation。
+
+## 2.2 当前真正节省的成本
+
+对于当前 180×320 的 `N=240`、P1 的 `K=64`：
+
+[
+\frac{K}{N}=0.2667,\qquad
+\left(\frac{K}{N}\right)^2=0.0711.
+]
+
+因此：
+
+* attention pairwise 项理论 token 比例约为 **7.1%**；
+* QKV、projection、MLP 等线性 token 项理论比例约为 **26.7%**；
+* 原 VideoMAE Adapter 当前仍为 **100% dense lattice 成本**；
+* detector、decode、scout、H2D、NMS 均不因 K 自动按比例缩小。
+
+所以当前路径只能声称“**packed attention/MLP execution**”，不能声称“完整 backbone 按 (K/N) 缩放”，更不能把固定 K 直接称为端到端加速。源码本身也把 dense Adapter 与 packed attention/MLP 分开计数。
+
+---
+
+# 3. Findings table
+
+严重度定义：`S0` 阻塞 replacement P1；`S1` 主要方法或解释问题；`S2` 条件限制；`S3` 已成立的合同。
+
+| ID | 严重度 | 裁决                        | exact file:line                                | 影响                                                                                                                        | 阻塞 P1                |
+| -- | --: | ------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| A1 |  S0 | **CONFIRMED_BUG**         | `georoute_wrapper.py:135-209`                  | 180×320 被复制成 192×320；与原 Conv3d floor 语义不同                                                                                 | 是                    |
+| A2 |  S1 | **CONDITIONAL**           | 同上                                             | 确实产生重复边界像素和合成 patch support；但不保证整个 token 数值完全重复，因此“必然重复 token”表述过强                                                        | 是，因 support 无效       |
+| A3 |  S0 | **NOT_PRESENT**           | `georoute_routing.py:268-421`                  | selector/exact-K 不接受 `valid_patch_mask`                                                                                   | 是                    |
+| A4 |  S0 | **NOT_PRESENT**           | wrapper → routing → packed blocks → pooling    | 没有跨 selector、attention、Adapter、pooling 的统一 validity invariant                                                             | 是                    |
+| A5 |  S0 | **NOT_PRESENT**           | `georoute_routing.py:300-306` 附近               | 只检查 `K<=item_count`，无法在 `valid_count<K` 时 fail closed                                                                     | 是                    |
+| B1 |  S3 | **INTENTIONAL_AND_VALID** | `vit_adapter.py:630-653`                       | attention/MLP 确实只对 selected tokens 运行                                                                                     | 否                    |
+| B2 |  S0 | **CONFIRMED_LIMITATION**  | `vit_adapter.py:674-681,1076-1137`             | 12 个 Adapter 仍恢复到完整 lattice 运行                                                                                            | 是                    |
+| B3 |  S0 | **CONFIRMED_BUG**         | 同上                                             | pos-only 未选位置经 dense temporal Adapter 可重新混入 selected spatial lineage                                                      | 是                    |
+| B4 |  S2 | **INTENTIONAL_AND_VALID** | `vit_adapter.py:1076-1137`                     | 若 claim 仅限 attention/MLP sparsity，代码成立                                                                                    | 否                    |
+| B5 |  S1 | **CONFIRMED_LIMITATION**  | 同上                                             | 当前没有 packed/coordinate-lineage Adapter                                                                                    | 是                    |
+| C1 |  S3 | **INTENTIONAL_AND_VALID** | `georoute_routing.py:182-226`                  | Gumbel top-k 与 ordered Plackett–Luce likelihood 一致                                                                        | 否                    |
+| C2 |  S3 | **INTENTIONAL_AND_VALID** | `georoute_routing.py:424-449`                  | 正号 ((L-b)\log p) 对最小化 expected risk 是正确的；baseline detach 也正确                                                              | 否                    |
+| C3 |  S1 | **CONFIRMED_LIMITATION**  | `georoute_routing.py:449`                      | `ordered_log_prob.mean()` 比 joint route likelihood 少一个时间求和，方向只差常数 (1/T)，但不是 docstring 所述的原尺度 risk gradient                | score-function P1 时是 |
+| C4 |  S0 | **CONFIRMED_BUG**         | `georoute_routing.py:356-385`                  | hard hybrid 是 context→ROI excluding context→residual excluding previous；surrogate 却是全局 `roi_logits+residual_logits` top-k | 是                    |
+| C5 |  S0 | **CONFIRMED_BUG**         | 同上                                             | deterministic context 在 surrogate 和 score-weighted pooling 中获得 geometry/residual gradient                                 | 是                    |
+| C6 |  S3 | **INTENTIONAL_AND_VALID** | `georoute_routing.py:310-313`                  | 当前拒绝把 hybrid 当作一个单一 PL draw 是正确的                                                                                          | 否                    |
+| C7 |  S1 | **CONFIRMED_LIMITATION**  | `tests/test_georoute_routing.py:181-200`       | 现有 KAT 只证明非零梯度，不证明方向、route change 或与 hard policy 对齐                                                                       | 是                    |
+| C8 |  S0 | **CONFIRMED_BUG**         | `georoute_wrapper.py:396-454`                  | `free` 仍运行 geometry head，并把 learned geometry 传给 final adapter；不是真正 ROI-free                                               | 是                    |
+| C9 |  S0 | **CONFIRMED_BUG**         | `georoute_wrapper.py:506-518`、`:72-126`        | learned routes 使用 logits softmax pooling；fixed/random 的 logits 为零，因此 comparison 同时改变 membership 和 aggregation             | 是                    |
+| D1 |  S1 | **NOT_PRESENT**           | `georoute_wrapper.py:330-333`、config `:94-101` | 没有设计文档中的 dense soft-support warm-up 或 transition                                                                          | 若声称 curriculum，则是    |
+| D2 |  S3 | **INTENTIONAL_AND_VALID** | `train_engine.py:27-38,86-184`                 | successful-update hook 只在真实 optimizer update 后推进，基础设施正确                                                                   | 否                    |
+| E1 |  S2 | **CONDITIONAL**           | `georoute_routing.py:345-352`                  | uniform context 是有意全局 prior，但固定、数据无关；当前还固定包含 padded endpoint                                                              | 修 padding 后不阻塞       |
+| E2 |  S1 | **CONFIRMED_LIMITATION**  | `georoute_wrapper.py:33-69`                    | residual 只是 point saliency；无 diversity、lineage、spatial repulsion、motion-tolerant correspondence                           | 否，P2 条件项             |
+| F1 |  S3 | **INTENTIONAL_AND_VALID** | `georoute_wrapper.py:608-646`                  | score-function reward 只使用 detector losses；geometry regularizer 单列                                                         | 否                    |
+| F2 |  S3 | **INTENTIONAL_AND_VALID** | P1 contract K=64                               | fixed-K matched variants 不需要 cost loss                                                                                    | 否                    |
+| F3 |  S2 | **NOT_PRESENT**           | 全路径                                            | measured-cost lookup、预算 Lagrangian 尚未实现；P1 固定 K 阶段不需要                                                                     | 否                    |
+| F4 |  S1 | **CONFIRMED_LIMITATION**  | `test_engine.py:41-200`                        | profiler 只有 loader wait、model+postprocess、window wall、peak memory；没有要求的组件级 ledger                                         | 成本裁决前是               |
+| G1 |  S2 | **NOT_PRESENT**           | repository-wide；`vit_adapter.py:509-542`       | 没有 A-MoD block、capacity router、identity bypass 或 attention-stat 接口                                                        | 否，P1 禁止加入            |
+| G2 |  S2 | **NOT_PRESENT**           | `Attention.forward`                            | 当前 fused SDPA 只返回 output tensor，不返回精确 attention column statistic                                                          | A-MoD 前是             |
+| H1 |  S0 | **CONFIRMED_BUG**         | config `:145-153`、`train.py:437-511`           | `checkpoint_interval=1` 导致每 epoch 保存完整 model/EMA/optimizer/scheduler                                                      | 是                    |
+| H2 |  S2 | **CONDITIONAL**           | `georoute_experiment_contract.py:18-23`        | “每格 60 个”对 P1 不准确：P1 是 20；P2/P3 才是 60。仍然无界且危险                                                                             | 是                    |
+| H3 |  S0 | **NOT_PRESENT**           | `georoute_dag_dispatch.py:102-155,287-417`     | 只有 MaxSubmitJobs 与 `sbatch --test-only`；无 aggregate storage headroom preflight                                            | 是                    |
+| H4 |  S0 | **CONFIRMED_BUG**         | `select_p1_roi_candidate()`                    | promotion 比较 free 与 geometry control，却没有把 random 纳入 hybrid advancement gate                                               | 是                    |
+| S1 |  S2 | **CONFIRMED_BUG**         | idea/experiment wiki                           | idea 元数据仍称 pending P0，与权威 P0/P1 记录冲突                                                                                      | 否                    |
+
+## 3.1 Native remainder 的裁决
+
+我不建议保留当前复制 padding 再仅加 mask，而建议：
+
+[
+H_v = 16\left\lfloor H/16\right\rfloor,\qquad
+W_v = 16\left\lfloor W/16\right\rfloor.
+]
+
+对 180×320：
+
+[
+H_v=176,\quad W_v=320,\quad N=11\times 20=220.
+]
+
+理由是原 `PatchEmbed` 使用 kernel/stride `2×16×16`、zero padding，本来就会忽略不能组成完整 patch 的 remainder。
+
+因此：
+
+* 忽略底部 4 行与原 dense Conv3d support 一致；
+* 不产生合成 spatial token；
+* absolute position 使用 11×20 grid，不再按错误的 12×20 归一化；
+* 仍显式生成 `[B,384,220]` 的 bool `valid_patch_mask`，供将来的变分辨率或 batch padding；
+* 任一 tubelet 的 valid count 小于 K 时，在 scout/VideoMAE 之前 fail closed。
+
+## 3.2 `free` 对照的两个隐藏混杂
+
+当前 experiment contract 把 `free` 命名为“free residual TokenSelect-only control”。
+
+真实代码却同时给它：
+
+1. learned geometry；
+2. geometry-relative coordinates；
+3. learned geometry projection；
+4. residual logits softmax pooling。
+
+因此当前 `free` 不只是“选择自由 token”。P1R 必须改为：
+
+* `free` 的 geometry 固定为全图 `(0.5,0.5,1,1)`；
+* geometry head 对 `free` 冻结；
+* 所有 P1 variants 使用相同的 uniform-selected pooling；
+* learned route logits 只决定 membership/gradient estimator，不额外改变 pooling；
+* `fixed_lattice_geometry` 继续作为唯一 learned-geometry-without-learned-selection control。
+
+---
+
+# 4. Alternative routes
+
+|    排名 | 路线                                                                            | 核心贡献                                                                                                       | 主要风险                                                         | 实现成本 | 可证伪性 | 论文价值                        |
+| ----: | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---: | ---: | --------------------------- |
+| **1** | **Route B：ROI-free NativeTokenSelect-AdaTAD + validity-aware packed Adapter** | detector-supervised native exact-K selection；完整时轴；one-heavy-forward；coordinate-lineage temporal adaptation | learned free selector仍可能不胜 fixed/random；ST 可能偏置过强            |    中 |   很高 | **最高且叙事最干净**                |
+| **2** | **Route A：corrected GeoRoute-Hybrid + validity-aware packed Adapter**         | geometry prior、disjoint residual、全局 context 的结构化证据分配                                                       | geometry 未必对 TAD 有效；hybrid estimator 复杂；ROI claim 易被 free 杀死 |   中高 |    高 | 仅在 P1 hybrid 真胜出时较高         |
+| **3** | **Route C：停止 learned routing**                                                | 保留 dense/fixed/random 与 learned 负结果；明确说明 native spatial routing 在该协议下不成立                                   | 无正向新模型                                                       |    低 |   最高 | 可形成严谨负结果或系统诊断，但不应继续堆 router |
+
+## 4.1 推荐顺序
+
+**第一优先级是 Route B。**
+
+不是因为已经证明 free 更好，而是因为：
+
+* 它删除了最难识别的 ROI prior；
+* 它是 hybrid 必须击败的强主对照；
+* 其 claim 可以严格写成“detector-supervised native token selection”，不需要把 geometry 包装成贡献；
+* 若它仍不胜 fixed/random，可直接进入 Route C，不再增加 loss/head。
+
+## 4.2 P1R 前必须完成的 correctness fixes
+
+必须完成：
+
+1. floor-native support + `valid_patch_mask`；
+2. mask-aware exact-K；
+3. 真正 ROI-free 的 `free`；
+4. 所有 P1 variants 统一 uniform-selected pooling；
+5. branch-aligned hybrid ST 或真实 staged conditional PL；
+6. coordinate-lineage packed Adapter；
+7. final-only checkpoint；
+8. aggregate storage preflight；
+9. P1 selector 纳入 random 并允许 Route B/Route C；
+10. focused P0R 与 component trace。
+
+## 4.3 只有 P1 winner 才能进入的创新
+
+* soft-to-hard curriculum；
+* FlashVID-inspired relevance–diversity–motion residual；
+* A-MoD；
+* 动态 K；
+* 动态 depth；
+* measured-cost Lagrangian。
+
+## 4.4 应直接停止的想法
+
+* 继续把复制 padding 视为“native support”；
+* 用 logits pooling 给 learned route 添加隐式优势；
+* 把 nonzero gradient 当作 detector-aware routing 证据；
+* 在 P1 前引入 A-MoD；
+* 在当前 SDPA 上伪造 attention statistic；
+* 恢复旧 P1 namespace；
+* 通过读取 partial checkpoint 推断方法优劣；
+* learned route 不胜 fixed/random 后继续加 auxiliary head 或 loss。
+
+---
+
+# 5. Recommended architecture
+
+## 5.1 主推荐：Validity-Aware NativeTokenSelect-AdaTAD
+
+给定完整视频窗口：
+
+[
+X\in\mathbb{R}^{B\times 3\times 768\times H\times W}.
+]
+
+使用原生 VideoMAE support：
+
+[
+T=768/2=384,\qquad
+H_g=\lfloor H/16\rfloor,\quad
+W_g=\lfloor W/16\rfloor,\quad
+N=H_gW_g.
+]
+
+原生 tubelet：
+
+[
+x_{t,i}\in\mathbb{R}^{3\times2\times16\times16},
+\qquad
+v_{t,i}\in{0,1}.
+]
+
+当前 180×320 修正后：
+
+[
+H_g=11,\quad W_g=20,\quad N=220.
+]
+
+Scout 输出：
+
+[
+z_{t,i}\in\mathbb{R}^{C_s},\qquad
+\ell^{free}*{t,i}=h*{\mathrm{free}}(z_{t,i}).
+]
+
+Route B 使用：
+
+[
+S_t=\operatorname{ExactTopK}
+\left(
+{\ell^{free}*{t,i}:v*{t,i}=1},K
+\right),
+\qquad |S_t|=K.
+]
+
+无 spatial GT、teacher、oracle、validation/test GT 或 cached prediction。
+
+## 5.2 修正后的 hybrid
+
+定义：
+
+* (U_t)：deterministic valid uniform context；
+* (R_t)：ROI family；
+* (Q_t)：residual family。
+
+满足：
+
+[
+U_t\subset V_t,
+]
+
+[
+R_t=
+\operatorname{TopK}*{K*{\mathrm{roi}}}
+\left(\ell^{roi}_t;\ V_t\setminus U_t\right),
+]
+
+[
+Q_t=
+\operatorname{TopK}*{K*{\mathrm{res}}}
+\left(\ell^{res}_t;\ V_t\setminus(U_t\cup R_t)\right),
+]
+
+[
+S_t=U_t\cup R_t\cup Q_t,\qquad
+|S_t|=K_{\mathrm{ctx}}+K_{\mathrm{roi}}+K_{\mathrm{res}}=K.
+]
+
+## 5.3 Branch-aligned ST
+
+对 deterministic context：
+
+[
+g_{t,i}=1,\quad i\in U_t,
+]
+
+且 route gradient 为零。
+
+对 ROI 与 residual 分别构造：
+
+[
+\tilde g^{roi}_{t,i}
+====================
+
+\sigma\left(
+\frac{\ell^{roi}_{t,i}-\theta^{roi}_t}{\tau}
+\right),
+\quad i\in V_t\setminus U_t,
+]
+
+[
+\tilde g^{res}_{t,i}
+====================
+
+\sigma\left(
+\frac{\ell^{res}_{t,i}-\theta^{res}_t}{\tau}
+\right),
+\quad i\in V_t\setminus(U_t\cup R_t).
+]
+
+硬前向、软反向：
+
+[
+g_{t,i}=1+
+\tilde g_{t,i}
+-\operatorname{sg}(\tilde g_{t,i}).
+]
+
+不能再用一个 `roi_logits + residual_logits` 的全局 soft top-k 代替 staged hard policy。
+
+## 5.4 真实 staged hybrid score-function
+
+若使用 score-function，联合 likelihood 必须是：
+
+[
+\log p(S\mid X)
+===============
+
+\sum_t
+\left[
+\log p_{\mathrm{PL}}
+(R_t\mid V_t\setminus U_t)
++
+\log p_{\mathrm{PL}}
+(Q_t\mid V_t\setminus(U_t\cup R_t))
+\right].
+]
+
+策略损失：
+
+[
+\mathcal L_{\pi}
+================
+
+\lambda_\pi
+\frac1B\sum_b
+\left(
+\operatorname{sg}(L_{\mathrm{det},b})
+-b
+\right)
+\sum_t\log p(S_{b,t}\mid X_b).
+]
+
+当前 `mean(B,T)` 应改为 `sum(T).mean(B)`。旧实现只差固定 (1/T) 缩放，但旧 `score_function_weight` 不能直接沿用，必须重新校准。
+
+## 5.5 Packed coordinate-lineage Adapter
+
+每个 block 的 selected representation：
+
+[
+h_{t,k}\in\mathbb{R}^{C},\qquad
+i_{t,k}\in{0,\ldots,N-1}.
+]
+
+仅当相邻 tubelet 也选择同一 spatial index 时建立 temporal neighbor：
+
+[
+h^-*{t,k}=
+\begin{cases}
+h*{t-1,k'},&i_{t-1,k'}=i_{t,k}\
+0,&\text{otherwise}
+\end{cases}
+]
+
+[
+h^+*{t,k}=
+\begin{cases}
+h*{t+1,k'},&i_{t+1,k'}=i_{t,k}\
+0,&\text{otherwise}.
+\end{cases}
+]
+
+复用原 Adapter 参数：
+
+[
+z_{t,k}=\phi(W_dh_{t,k}),
+]
+
+[
+a_{t,k}
+=======
+
+W_p\left(
+D_{-1}z^-*{t,k}
++D_0z*{t,k}
++D_{+1}z^+_{t,k}
++b_D
+\right)+b_P,
+]
+
+[
+h'_{t,k}
+========
+
+h_{t,k}
++
+\gamma W_u(z_{t,k}+a_{t,k}).
+]
+
+性质：
+
+* 不创建新的 Adapter 参数；
+* full-K 时退化为原 dense Adapter；
+* 稀疏时未选位置严格 identity bypass；
+* 同一 spatial lineage 才进行 temporal convolution；
+* detector-facing `[B,384,768]` 不变。
+
+## 5.6 公平 pooling
+
+P1R 所有 variants 统一使用：
+
+[
+f_t=\frac1K\sum_{i\in S_t}\hat h_{t,i}.
+]
+
+route logits 只决定 selection，不再额外决定 pooling 权重。
+
+`fixed_lattice_geometry` 和 hybrid/ROI 可以通过单独的 geometry projection 比较 geometry side-channel；`free` 使用固定全图 geometry。
+
+## 5.7 Soft-to-hard curriculum
+
+当前代码没有实现 curriculum。若 P1 winner 进入后续优化，应按 successful optimizer update (u) 推进：
+
+### Phase 1：dense relaxed support
+
+[
+u<U_d.
+]
+
+* heavy backbone 运行全部 valid tokens；
+* scout soft support 调制 token；
+* 明确记录 `sparse_cost_claim_allowed=False`。
+
+### Phase 2：soft/hard transition
+
+[
+U_d\le u<U_d+U_h.
+]
+
+定义：
+
+[
+\alpha(u)=
+\frac{u-U_d}{U_h},
+]
+
+[
+p_{\mathrm{hard}}(u)
+====================
+
+\frac12-\frac12\cos(\pi\alpha),
+]
+
+[
+\tau(u)
+=======
+
+\exp\big[
+(1-\alpha)\log\tau_{\mathrm{start}}
++\alpha\log\tau_{\mathrm{end}}
+\big].
+]
+
+每个 successful update 用 stateless draw 选择 dense-relaxed 或 hard-exact-K，**每步仍只有一次 heavy forward**。其期望目标为：
+
+[
+(1-p_{\mathrm{hard}})\mathbb E[L_{\mathrm{dense}}]
++
+p_{\mathrm{hard}}\mathbb E[L_{\mathrm{hard}}].
+]
+
+### Phase 3：hard exact-K
+
+[
+u\ge U_d+U_h.
+]
+
+`U_d`、`U_h`、`\tau_start`、`\tau_end` 必须由 P0R calibration manifest 绑定；不能按 raw forward 次数、epoch 或 validation mAP 自适应改变。
+
+## 5.8 FlashVID-inspired residual：仅 Route A 的 P2 comparator
+
+Scout-only residual：
+
+[
+r_{t,i}=h_r(z_{t,i}),
+]
+
+运动新颖性：
+
+[
+m_{t,i}
+=======
+
+1-\max_{j\in\mathcal N_{3\times3}(i)}
+\cos(z_{t,i},z_{t-1,j}),
+]
+
+顺序 diversity：
+
+[
+d^{(q)}_{t,i}
+=============
+
+1-\max_{j\in Q_t^{(<q)}}
+\cos(z_{t,i},z_{t,j}),
+]
+
+综合：
+
+[
+s^{(q)}_{t,i}
+=============
+
+\alpha r_{t,i}
++\beta m_{t,i}
++\gamma d^{(q)}_{t,i}.
+]
+
+每次从 remaining valid set 中选择一个 token，严格无放回，直到 (K_{\mathrm{res}})。它不得使用 full vision encoder，也不得产生第二次 heavy forward。free TokenSelect 必须保留为主对照。
+
+## 5.9 Cost objective
+
+固定 K 的 P1：
+
+[
+\mathcal L =
+\mathcal L_{\mathrm{cls}}
++\mathcal L_{\mathrm{reg}}
++\mathcal L_{\mathrm{geom}}
++\mathcal L_\pi.
+]
+
+不加入 cost loss。
+
+动态 K/depth 阶段才允许：
+
+[
+\mathcal L =
+\mathcal L_{\mathrm{det}}
++
+\lambda\big(c(a)-B\big),
+]
+
+其中 (c(a)) 是预先实测并冻结的 cost lookup。wall-clock latency 可以作为不可微 reward 或 lookup 值，但不能伪装成 pathwise differentiable loss。
+
+---
+
+# 6. Core code
+
+以下代码分为：
+
+* **P1R 前必须落地的最小 patch**；
+* **P1 positive 后才允许的条件机制**。
+
+这些代码是针对精确提交的待应用补丁；本轮没有宣称已经部署、训练或验证。
+
+---
+
+## 6.1 P1R 必须：mask-aware routing 与 staged hybrid estimator
+
+路径：
+
+```text
+opentad/models/backbones/georoute_routing.py
+```
+
+保留现有 `_stable_argsort_descending()` 和 `_stateless_random_scores()`，替换 validity、PL、soft gate、`select_exact_k()` 和 policy loss：
+
+```python
+from typing import Any
+
+import torch
+import torch.nn.functional as F
+
+
+def _mask_from_indices(indices: torch.Tensor, item_count: int) -> torch.Tensor:
+    if indices.ndim != 3:
+        raise ValueError("indices must be [B,T,K]")
+    mask = torch.zeros(
+        (*indices.shape[:2], int(item_count)),
+        device=indices.device,
+        dtype=torch.bool,
+    )
+    return mask.scatter(-1, indices, True)
+
+
+def _normalize_valid_mask(
+    logits: torch.Tensor,
+    valid_mask: torch.Tensor | None,
+) -> torch.Tensor:
+    if valid_mask is None:
+        valid_mask = torch.ones_like(logits, dtype=torch.bool)
+    if valid_mask.dtype != torch.bool or valid_mask.shape != logits.shape:
+        raise ValueError("valid_mask must be bool [B,T,N] matching routing logits")
+    if not bool(valid_mask.any(dim=-1).all().item()):
+        raise ValueError("every temporal tubelet must contain at least one valid patch")
+    return valid_mask
+
+
+def _uniform_indices_from_valid_mask(
+    valid_mask: torch.Tensor,
+    *,
+    count: int,
+) -> torch.Tensor:
+    if valid_mask.ndim != 3 or valid_mask.dtype != torch.bool:
+        raise ValueError("valid_mask must be bool [B,T,N]")
+    batch, tubelets, item_count = map(int, valid_mask.shape)
+    count = int(count)
+    if count <= 0:
+        return torch.empty(
+            (batch, tubelets, 0),
+            device=valid_mask.device,
+            dtype=torch.long,
+        )
+
+    valid_counts = valid_mask.sum(dim=-1)
+    if bool((valid_counts < count).any().item()):
+        raise ValueError("not enough valid patches for deterministic exact-K context")
+
+    candidates = torch.arange(
+        item_count,
+        device=valid_mask.device,
+        dtype=torch.long,
+    ).view(1, 1, item_count).expand(batch, tubelets, item_count)
+
+    compact = torch.sort(
+        candidates.masked_fill(~valid_mask, item_count),
+        dim=-1,
+    ).values
+
+    if count == 1:
+        slots = torch.div(valid_counts, 2, rounding_mode="floor").unsqueeze(-1)
+    else:
+        rank = torch.arange(
+            count,
+            device=valid_mask.device,
+            dtype=torch.long,
+        ).view(1, 1, count)
+        slots = torch.div(
+            rank * (valid_counts - 1).unsqueeze(-1),
+            count - 1,
+            rounding_mode="floor",
+        )
+    return compact.gather(-1, slots)
+
+
+def _topk_excluding(
+    scores: torch.Tensor,
+    *,
+    count: int,
+    excluded: torch.Tensor,
+    valid_mask: torch.Tensor,
+) -> torch.Tensor:
+    count = int(count)
+    if count == 0:
+        return torch.empty(
+            (*scores.shape[:2], 0),
+            device=scores.device,
+            dtype=torch.long,
+        )
+
+    available = valid_mask & ~excluded
+    if bool((available.sum(dim=-1) < count).any().item()):
+        raise ValueError("not enough valid unselected tokens for exact-K route")
+
+    masked = scores.masked_fill(~available, float("-inf"))
+    return _stable_argsort_descending(masked)[..., :count]
+
+
+def _sample_plackett_luce_order(
+    logits: torch.Tensor,
+    *,
+    count: int,
+    temperature: float,
+    available_mask: torch.Tensor,
+) -> torch.Tensor:
+    count = int(count)
+    if count == 0:
+        return torch.empty(
+            (*logits.shape[:2], 0),
+            device=logits.device,
+            dtype=torch.long,
+        )
+    if float(temperature) <= 0.0:
+        raise ValueError("score-function temperature must be positive")
+    if bool((available_mask.sum(dim=-1) < count).any().item()):
+        raise ValueError("not enough available tokens for Plackett-Luce sample")
+
+    uniform = torch.rand_like(logits).clamp_(1e-6, 1.0 - 1e-6)
+    gumbel = -torch.log(-torch.log(uniform))
+    perturbed = (logits / float(temperature) + gumbel).masked_fill(
+        ~available_mask,
+        float("-inf"),
+    )
+    return _stable_argsort_descending(perturbed)[..., :count]
+
+
+def ordered_plackett_luce_log_prob(
+    logits: torch.Tensor,
+    ordered_indices: torch.Tensor,
+    *,
+    temperature: float,
+    available_mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    if logits.ndim != 3 or ordered_indices.ndim != 3:
+        raise ValueError("logits and ordered_indices must be [B,T,*]")
+    if logits.shape[:2] != ordered_indices.shape[:2]:
+        raise ValueError("logits and ordered_indices must share [B,T]")
+    if float(temperature) <= 0.0:
+        raise ValueError("score-function temperature must be positive")
+
+    available = _normalize_valid_mask(logits, available_mask).clone()
+    scaled = logits / float(temperature)
+    result = torch.zeros(
+        logits.shape[:2],
+        device=logits.device,
+        dtype=logits.dtype,
+    )
+
+    for slot in range(int(ordered_indices.shape[-1])):
+        choice = ordered_indices[..., slot : slot + 1]
+        if bool((~available.gather(-1, choice)).any().item()):
+            raise ValueError(
+                "ordered Plackett-Luce route selected an invalid or duplicate token"
+            )
+        candidate_logits = scaled.masked_fill(~available, float("-inf"))
+        result = result + F.log_softmax(
+            candidate_logits,
+            dim=-1,
+        ).gather(-1, choice).squeeze(-1)
+        available = available.scatter(-1, choice, False)
+
+    return result
+
+
+def _soft_topk_gate(
+    scores: torch.Tensor,
+    *,
+    count: int,
+    temperature: float,
+    available_mask: torch.Tensor,
+) -> torch.Tensor:
+    count = int(count)
+    if count == 0:
+        return torch.zeros_like(scores)
+    if float(temperature) <= 0.0:
+        raise ValueError("straight-through temperature must be positive")
+
+    available_counts = available_mask.sum(dim=-1)
+    if bool((available_counts < count).any().item()):
+        raise ValueError("soft top-k has fewer available tokens than requested")
+
+    masked = scores.masked_fill(~available_mask, float("-inf"))
+    threshold = torch.topk(
+        masked,
+        k=count,
+        dim=-1,
+    ).values[..., -1:].detach()
+
+    gate = torch.sigmoid((scores - threshold) / float(temperature))
+    gate = gate * available_mask.to(dtype=gate.dtype)
+
+    # When every available item must be selected, the relaxed support is exactly
+    # the available mask instead of an arbitrary sigmoid value.
+    full_capacity = available_counts.eq(count).unsqueeze(-1)
+    return torch.where(
+        full_capacity,
+        available_mask.to(dtype=gate.dtype),
+        gate,
+    )
+
+
+def select_exact_k(
+    *,
+    roi_logits: torch.Tensor,
+    residual_logits: torch.Tensor,
+    mode: str,
+    tokens_per_tubelet: int,
+    context_tokens: int,
+    roi_fraction: float,
+    training: bool,
+    estimator: str,
+    temperature: float,
+    random_seed: int = 0,
+    valid_mask: torch.Tensor | None = None,
+) -> dict[str, Any]:
+    """Return a validity-aware, no-duplicate exact-K native route.
+
+    Shapes:
+        roi_logits:      [B,T,N], floating point
+        residual_logits: [B,T,N], same shape/dtype/device
+        valid_mask:      [B,T,N], bool
+        indices:         [B,T,K], long
+        st_gate:         [B,T,K], logits dtype
+
+    Hybrid likelihood is staged:
+        deterministic context
+        -> ROI conditioned on excluding context
+        -> residual conditioned on excluding context and sampled ROI.
+    """
+
+    if mode not in ROUTE_MODES:
+        raise ValueError(f"unsupported GeoRoute mode {mode!r}")
+    if estimator not in POLICY_ESTIMATORS:
+        raise ValueError(f"unsupported GeoRoute estimator {estimator!r}")
+    if roi_logits.shape != residual_logits.shape or roi_logits.ndim != 3:
+        raise ValueError("ROI and residual logits must match [B,T,N]")
+    if not bool(torch.isfinite(roi_logits).all().item()):
+        raise ValueError("ROI logits must be finite")
+    if not bool(torch.isfinite(residual_logits).all().item()):
+        raise ValueError("residual logits must be finite")
+
+    batch, tubelets, item_count = map(int, roi_logits.shape)
+    valid = _normalize_valid_mask(roi_logits, valid_mask)
+    valid_counts = valid.sum(dim=-1)
+
+    if mode == "dense":
+        first_count = valid_counts.reshape(-1)[0]
+        if not torch.equal(
+            valid_counts,
+            first_count.expand_as(valid_counts),
+        ):
+            raise ValueError(
+                "dense native route requires equal valid patch capacity for every tubelet"
+            )
+        target_k = int(first_count.item())
+    else:
+        target_k = int(tokens_per_tubelet)
+
+    if target_k <= 0:
+        raise ValueError("target K must be positive")
+    if bool((valid_counts < target_k).any().item()):
+        raise ValueError(
+            "valid native patch count is smaller than requested exact-K budget"
+        )
+    if mode == "dense" and int(context_tokens) != 0:
+        raise ValueError("dense route requires context_tokens=0")
+    if mode != "dense" and not (0 <= int(context_tokens) < target_k):
+        raise ValueError("context_tokens must lie in [0,K)")
+    if not (0.0 <= float(roi_fraction) <= 1.0):
+        raise ValueError("roi_fraction must lie in [0,1]")
+    if mode in {"roi", "free", "hybrid"} and float(temperature) <= 0.0:
+        raise ValueError("learned routing requires a positive temperature")
+    if estimator == "score_function" and mode not in {"roi", "free", "hybrid"}:
+        raise ValueError(
+            "score_function is valid only for ROI, free, or staged hybrid routes"
+        )
+    if estimator == "none" and mode in {"roi", "free", "hybrid"} and training:
+        raise ValueError(
+            "learned training route requires straight_through or score_function"
+        )
+
+    role_counts = {
+        "context": 0,
+        "roi": 0,
+        "residual": 0,
+        "free": 0,
+        "dense": 0,
+        "uniform": 0,
+        "random": 0,
+    }
+    ordered_log_prob: torch.Tensor | None = None
+
+    if mode == "dense":
+        ordered = _uniform_indices_from_valid_mask(valid, count=target_k)
+        ordered_surrogate = torch.ones_like(
+            ordered,
+            dtype=roi_logits.dtype,
+        )
+        ordered_aggregation_logits = torch.zeros_like(
+            ordered,
+            dtype=roi_logits.dtype,
+        )
+        role_counts["dense"] = target_k
+
+    elif mode == "uniform":
+        ordered = _uniform_indices_from_valid_mask(valid, count=target_k)
+        ordered_surrogate = torch.zeros_like(
+            ordered,
+            dtype=roi_logits.dtype,
+        )
+        ordered_aggregation_logits = torch.zeros_like(
+            ordered,
+            dtype=roi_logits.dtype,
+        )
+        role_counts["uniform"] = target_k
+
+    elif mode == "random":
+        random_scores = _stateless_random_scores(
+            roi_logits,
+            seed=int(random_seed),
+        ).masked_fill(~valid, float("-inf"))
+        ordered = _stable_argsort_descending(random_scores)[..., :target_k]
+        ordered_surrogate = torch.zeros_like(
+            ordered,
+            dtype=roi_logits.dtype,
+        )
+        ordered_aggregation_logits = torch.zeros_like(
+            ordered,
+            dtype=roi_logits.dtype,
+        )
+        role_counts["random"] = target_k
+
+    elif mode in {"roi", "free"}:
+        logits = roi_logits if mode == "roi" else residual_logits
+        empty_exclusion = torch.zeros_like(valid)
+
+        if training and estimator == "score_function":
+            ordered = _sample_plackett_luce_order(
+                logits,
+                count=target_k,
+                temperature=temperature,
+                available_mask=valid,
+            )
+            ordered_log_prob = ordered_plackett_luce_log_prob(
+                logits,
+                ordered,
+                temperature=temperature,
+                available_mask=valid,
+            )
+        else:
+            ordered = _topk_excluding(
+                logits,
+                count=target_k,
+                excluded=empty_exclusion,
+                valid_mask=valid,
+            )
+
+        soft = _soft_topk_gate(
+            logits,
+            count=target_k,
+            temperature=temperature,
+            available_mask=valid,
+        )
+        ordered_surrogate = soft.gather(-1, ordered)
+        ordered_aggregation_logits = logits.gather(-1, ordered)
+        role_counts[mode] = target_k
+
+    else:
+        context_count = min(int(context_tokens), target_k)
+        remainder = target_k - context_count
+        roi_count = int(round(float(roi_fraction) * remainder))
+        roi_count = min(max(roi_count, 0), remainder)
+        residual_count = remainder - roi_count
+
+        index_parts: list[torch.Tensor] = []
+        surrogate_parts: list[torch.Tensor] = []
+        aggregation_parts: list[torch.Tensor] = []
+        excluded = torch.zeros_like(valid)
+
+        if context_count:
+            context = _uniform_indices_from_valid_mask(
+                valid,
+                count=context_count,
+            )
+            index_parts.append(context)
+            # Deterministic context has no route gradient.
+            surrogate_parts.append(
+                torch.zeros_like(context, dtype=roi_logits.dtype)
+            )
+            aggregation_parts.append(
+                torch.zeros_like(context, dtype=roi_logits.dtype)
+            )
+            excluded = excluded | _mask_from_indices(context, item_count)
+
+        roi_available = valid & ~excluded
+        if roi_count:
+            if training and estimator == "score_function":
+                roi_indices = _sample_plackett_luce_order(
+                    roi_logits,
+                    count=roi_count,
+                    temperature=temperature,
+                    available_mask=roi_available,
+                )
+                ordered_log_prob = ordered_plackett_luce_log_prob(
+                    roi_logits,
+                    roi_indices,
+                    temperature=temperature,
+                    available_mask=roi_available,
+                )
+            else:
+                roi_indices = _topk_excluding(
+                    roi_logits,
+                    count=roi_count,
+                    excluded=excluded,
+                    valid_mask=valid,
+                )
+
+            roi_soft = _soft_topk_gate(
+                roi_logits,
+                count=roi_count,
+                temperature=temperature,
+                available_mask=roi_available,
+            )
+            index_parts.append(roi_indices)
+            surrogate_parts.append(roi_soft.gather(-1, roi_indices))
+            aggregation_parts.append(
+                roi_logits.gather(-1, roi_indices)
+            )
+            excluded = excluded | _mask_from_indices(
+                roi_indices,
+                item_count,
+            )
+
+        residual_available = valid & ~excluded
+        if residual_count:
+            if training and estimator == "score_function":
+                residual_indices = _sample_plackett_luce_order(
+                    residual_logits,
+                    count=residual_count,
+                    temperature=temperature,
+                    available_mask=residual_available,
+                )
+                residual_log_prob = ordered_plackett_luce_log_prob(
+                    residual_logits,
+                    residual_indices,
+                    temperature=temperature,
+                    available_mask=residual_available,
+                )
+                ordered_log_prob = (
+                    residual_log_prob
+                    if ordered_log_prob is None
+                    else ordered_log_prob + residual_log_prob
+                )
+            else:
+                residual_indices = _topk_excluding(
+                    residual_logits,
+                    count=residual_count,
+                    excluded=excluded,
+                    valid_mask=valid,
+                )
+
+            residual_soft = _soft_topk_gate(
+                residual_logits,
+                count=residual_count,
+                temperature=temperature,
+                available_mask=residual_available,
+            )
+            index_parts.append(residual_indices)
+            surrogate_parts.append(
+                residual_soft.gather(-1, residual_indices)
+            )
+            aggregation_parts.append(
+                residual_logits.gather(-1, residual_indices)
+            )
+
+        ordered = torch.cat(index_parts, dim=-1)
+        ordered_surrogate = torch.cat(surrogate_parts, dim=-1)
+        ordered_aggregation_logits = torch.cat(
+            aggregation_parts,
+            dim=-1,
+        )
+        role_counts.update(
+            context=context_count,
+            roi=roi_count,
+            residual=residual_count,
+        )
+
+    if ordered.shape != (batch, tubelets, target_k):
+        raise RuntimeError("exact-K route produced an invalid index shape")
+
+    selected_mask = _mask_from_indices(ordered, item_count)
+    if not bool((selected_mask.sum(dim=-1) == target_k).all().item()):
+        raise RuntimeError("exact-K route contains duplicate indices")
+    if not bool(valid.gather(-1, ordered).all().item()):
+        raise RuntimeError("exact-K route selected an invalid native patch")
+
+    # Packed execution expects row-major spatial order, not policy order.
+    indices, sort_permutation = torch.sort(ordered, dim=-1)
+    selected_surrogate = ordered_surrogate.gather(
+        -1,
+        sort_permutation,
+    )
+    selected_aggregation_logits = ordered_aggregation_logits.gather(
+        -1,
+        sort_permutation,
+    )
+
+    if (
+        training
+        and estimator == "straight_through"
+        and mode in {"roi", "free", "hybrid"}
+    ):
+        st_gate = torch.ones_like(selected_surrogate) + (
+            selected_surrogate - selected_surrogate.detach()
+        )
+    else:
+        st_gate = torch.ones_like(selected_surrogate)
+
+    return {
+        "schema_version": GEOROUTE_ROUTING_SCHEMA,
+        "mode": mode,
+        "indices": indices,
+        "ordered_indices": ordered,
+        "selected_mask": selected_mask,
+        "selected_surrogate": selected_surrogate,
+        "selected_aggregation_logits": selected_aggregation_logits,
+        "st_gate": st_gate,
+        "ordered_log_prob": ordered_log_prob,
+        "target_k": target_k,
+        "item_count": item_count,
+        "valid_count_min": int(valid_counts.min().item()),
+        "valid_count_max": int(valid_counts.max().item()),
+        "role_counts": role_counts,
+    }
+
+
+def score_function_policy_loss(
+    *,
+    detector_cost: torch.Tensor,
+    ordered_log_prob: torch.Tensor,
+    baseline: torch.Tensor,
+    weight: float,
+) -> torch.Tensor:
+    if detector_cost.ndim != 0 or not bool(
+        torch.isfinite(detector_cost).item()
+    ):
+        raise ValueError("detector_cost must be one finite scalar")
+    if ordered_log_prob.ndim != 2 or not bool(
+        torch.isfinite(ordered_log_prob).all().item()
+    ):
+        raise ValueError("ordered_log_prob must be finite [B,T]")
+    if baseline.ndim != 0 or not bool(torch.isfinite(baseline).item()):
+        raise ValueError("baseline must be one finite scalar")
+    if float(weight) < 0.0:
+        raise ValueError("score-function weight must be non-negative")
+
+    advantage = detector_cost.detach() - baseline.detach()
+    joint_log_probability = ordered_log_prob.sum(dim=-1)
+    return (
+        float(weight)
+        * advantage
+        * joint_log_probability.mean(dim=0)
+    )
+```
+
+---
+
+## 6.2 P1R 必须：忽略 spatial remainder 并输出 valid mask
+
+路径：
+
+```text
+opentad/models/backbones/georoute_wrapper.py
+```
+
+完整替换 `extract_native_tubelets()`：
+
+```python
+def extract_native_tubelets(
+    source: torch.Tensor,
+    *,
+    patch_size: int,
+    tubelet_size: int,
+) -> tuple[
+    torch.Tensor,
+    tuple[int, int],
+    tuple[int, int],
+    torch.Tensor,
+]:
+    """Extract only complete native VideoMAE tubelets.
+
+    Returns:
+        native:
+            uint8 [B,T_tubelet,N,3,tubelet_size,patch_size,patch_size]
+        grid_hw:
+            complete spatial patch grid
+        ignored_remainder_bottom_right:
+            source pixels ignored because they cannot form a complete patch
+        valid_patch_mask:
+            bool [B,T_tubelet,N]
+    """
+
+    if source.ndim != 5 or source.shape[1] != 3:
+        raise ValueError("source must be uint8 [B,3,T,H,W]")
+    if source.dtype != torch.uint8:
+        raise TypeError("native source must remain uint8")
+
+    batch, channels, frames, height, width = map(int, source.shape)
+    patch_size = int(patch_size)
+    tubelet_size = int(tubelet_size)
+
+    if frames % tubelet_size:
+        raise ValueError(
+            "source frame count must be divisible by VideoMAE tubelet size"
+        )
+
+    valid_height = (height // patch_size) * patch_size
+    valid_width = (width // patch_size) * patch_size
+    if valid_height <= 0 or valid_width <= 0:
+        raise ValueError(
+            "source is smaller than one complete native spatial patch"
+        )
+
+    ignored_bottom = height - valid_height
+    ignored_right = width - valid_width
+    source = source[..., :valid_height, :valid_width].contiguous()
+
+    grid_height = valid_height // patch_size
+    grid_width = valid_width // patch_size
+    tubelets = frames // tubelet_size
+    item_count = grid_height * grid_width
+
+    native = (
+        source.reshape(
+            batch,
+            channels,
+            tubelets,
+            tubelet_size,
+            grid_height,
+            patch_size,
+            grid_width,
+            patch_size,
+        )
+        .permute(0, 2, 4, 6, 1, 3, 5, 7)
+        .reshape(
+            batch,
+            tubelets,
+            item_count,
+            channels,
+            tubelet_size,
+            patch_size,
+            patch_size,
+        )
+        .contiguous()
+    )
+
+    valid_patch_mask = torch.ones(
+        (batch, tubelets, item_count),
+        device=source.device,
+        dtype=torch.bool,
+    )
+    return (
+        native,
+        (grid_height, grid_width),
+        (ignored_bottom, ignored_right),
+        valid_patch_mask,
+    )
+```
+
+在 `GeoRouteBackboneWrapper.__init__()` 中加入：
+
+```python
+self.pooling_mode = str(
+    getattr(
+        custom_cfg,
+        "georoute_pooling_mode",
+        "uniform_selected",
+    )
+)
+if self.pooling_mode not in {
+    "uniform_selected",
+    "route_score_ablation",
+}:
+    raise ValueError(
+        "georoute_pooling_mode must be uniform_selected "
+        "or route_score_ablation"
+    )
+
+self.adapter_mode = str(
+    getattr(
+        custom_cfg,
+        "georoute_adapter_mode",
+        "coordinate_lineage_packed",
+    )
+)
+if self.adapter_mode != "coordinate_lineage_packed":
+    raise ValueError(
+        "P1R requires georoute_adapter_mode="
+        "'coordinate_lineage_packed'"
+    )
+```
+
+在构造 `self.scout` 后加入：
+
+```python
+self._configure_scout_trainability()
+```
+
+并在 class 内加入：
+
+```python
+def _configure_scout_trainability(self) -> None:
+    needs_geometry = (
+        self.route_mode in {"roi", "hybrid"}
+        or self.geometry_side_channel
+    )
+    needs_residual = self.route_mode in {"free", "hybrid"}
+    needs_stem = needs_geometry or needs_residual
+
+    for parameter in self.scout.parameters():
+        parameter.requires_grad = needs_stem
+
+    if not needs_geometry:
+        for parameter in self.scout.geometry_head.parameters():
+            parameter.requires_grad = False
+
+    if not needs_residual:
+        for parameter in self.scout.residual_head.parameters():
+            parameter.requires_grad = False
+
+
+@staticmethod
+def _fixed_full_frame_geometry(
+    *,
+    batch_size: int,
+    tubelets: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    geometry = torch.ones(
+        (batch_size, tubelets, 4),
+        device=device,
+        dtype=dtype,
+    )
+    geometry[..., :2] = 0.5
+    return geometry
+
+
+def _compute_route_fields(
+    self,
+    scout: torch.Tensor,
+    *,
+    source_grid_hw: tuple[int, int],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    batch_size = int(scout.shape[0])
+    tubelets = self.window_size // self.tubelet_size
+    item_count = int(source_grid_hw[0]) * int(source_grid_hw[1])
+
+    needs_geometry = (
+        self.route_mode in {"roi", "hybrid"}
+        or self.geometry_side_channel
+    )
+    needs_residual = self.route_mode in {"free", "hybrid"}
+    needs_scout = needs_geometry or needs_residual
+
+    if needs_scout:
+        normalized_scout = _normalize_uint8_video(
+            scout,
+            self.source_mean,
+            self.source_std,
+        )
+        geometry_logits, residual_logits = self.scout(
+            normalized_scout,
+            source_grid_hw=source_grid_hw,
+        )
+    else:
+        geometry_logits = torch.zeros(
+            (batch_size, tubelets, 4),
+            device=scout.device,
+            dtype=torch.float32,
+        )
+        residual_logits = torch.zeros(
+            (batch_size, tubelets, item_count),
+            device=scout.device,
+            dtype=torch.float32,
+        )
+
+    if needs_geometry:
+        geometry = decode_continuous_geometry(
+            interpolate_temporal_knots(
+                geometry_logits,
+                stride=self.geometry_stride_tubelets,
+            ),
+            min_extent=self.min_roi_extent,
+            max_extent=self.max_roi_extent,
+        )
+        regularization = self._regularization(geometry)
+    else:
+        geometry = self._fixed_full_frame_geometry(
+            batch_size=batch_size,
+            tubelets=tubelets,
+            device=scout.device,
+            dtype=residual_logits.dtype,
+        )
+        regularization = geometry.new_zeros(())
+
+    if not needs_residual:
+        residual_logits = torch.zeros(
+            (batch_size, tubelets, item_count),
+            device=scout.device,
+            dtype=geometry.dtype,
+        )
+
+    return geometry, residual_logits, regularization
+```
+
+在 `forward()` 中修改调用点：
+
+```diff
+- native, source_grid_hw, padding_bottom_right = extract_native_tubelets(
++ native, source_grid_hw, ignored_remainder, valid_patch_mask = extract_native_tubelets(
+      source,
+      patch_size=self.patch_size,
+      tubelet_size=self.tubelet_size,
+  )
+
+- if self.route_mode in {"dense", "uniform", "random"} and not self.geometry_side_channel:
+-     ...
+- else:
+-     ...
+- geometry = decode_continuous_geometry(...)
++ geometry, residual_logits, geometry_regularization = self._compute_route_fields(
++     scout,
++     source_grid_hw=source_grid_hw,
++ )
+
+  roi_logits = roi_logits_from_geometry(
+      geometry,
+      grid_height=source_grid_hw[0],
+      grid_width=source_grid_hw[1],
+      temperature=self.roi_temperature,
+  )
+
+  route = select_exact_k(
+      roi_logits=roi_logits,
+      residual_logits=residual_logits,
+      mode=self.route_mode,
+      tokens_per_tubelet=self.tokens_per_tubelet,
+      context_tokens=self.context_tokens,
+      roi_fraction=self.roi_fraction,
+      training=self.training,
+      estimator=self.policy_estimator,
+      temperature=self.policy_temperature,
+      random_seed=self.random_seed,
++     valid_mask=valid_patch_mask,
+  )
+
++ if not bool(
++     valid_patch_mask.gather(-1, route["indices"]).all().item()
++ ):
++     raise RuntimeError("GeoRoute selected an invalid native patch")
+
+  selected_features = selected_features * route["st_gate"].to(
+      selected_features.dtype
+  ).unsqueeze(-1)
+
+- selected_scores = route["selected_aggregation_logits"]
++ if self.pooling_mode == "uniform_selected":
++     selected_scores = torch.zeros_like(
++         route["selected_aggregation_logits"]
++     )
++ else:
++     selected_scores = route["selected_aggregation_logits"]
+
+  if self.training:
+-     self._pending_regularization = {
+-         "geometry": self._regularization(geometry)
+-     }
++     self._pending_regularization = {
++         "geometry": geometry_regularization
++     }
+
+  self.latest_georoute_audit = {
+      ...
+-     "source_padding_bottom_right": list(padding_bottom_right),
++     "source_padding_bottom_right": [0, 0],
++     "source_ignored_remainder_bottom_right": list(ignored_remainder),
++     "valid_patch_count_min": int(
++         valid_patch_mask.sum(dim=-1).min().item()
++     ),
++     "valid_patch_count_max": int(
++         valid_patch_mask.sum(dim=-1).max().item()
++     ),
++     "requested_token_count": int(self.tokens_per_tubelet),
++     "effective_token_count": int(route["target_k"]),
++     "pooling_mode": self.pooling_mode,
++     "adapter_mode": self.adapter_mode,
+      ...
+  }
+```
+
+---
+
+## 6.3 P1R 必须：coordinate-lineage packed Adapter
+
+路径：
+
+```text
+opentad/models/backbones/vit_adapter.py
+```
+
+在现有 `Adapter` class 中加入完整方法：
+
+```python
+@staticmethod
+def _lookup_selected_neighbor(
+    source_values: Tensor,
+    source_indices: Tensor,
+    query_indices: Tensor,
+) -> Tensor:
+    """Match exact spatial lineage between adjacent temporal tubelets.
+
+    Args:
+        source_values:  [B,T,K,C_hidden]
+        source_indices: [B,T,K], sorted long
+        query_indices:  [B,T,K], sorted long
+
+    Returns:
+        [B,T,K,C_hidden], zero where no exact spatial match exists.
+    """
+
+    if source_values.ndim != 4:
+        raise ValueError("source_values must be [B,T,K,C]")
+    if source_indices.shape != source_values.shape[:3]:
+        raise ValueError("source_indices must match source_values [B,T,K]")
+    if query_indices.shape != source_indices.shape:
+        raise ValueError("query_indices must match source_indices")
+    if source_indices.dtype != torch.long:
+        raise TypeError("packed spatial indices must be torch.long")
+
+    select_count = int(source_indices.shape[-1])
+    positions = torch.searchsorted(
+        source_indices.contiguous(),
+        query_indices.contiguous(),
+    )
+    bounded = positions.clamp(max=select_count - 1)
+    hit = (
+        positions < select_count
+    ) & (
+        source_indices.gather(-1, bounded) == query_indices
+    )
+
+    gathered = source_values.gather(
+        2,
+        bounded.unsqueeze(-1).expand(
+            *bounded.shape,
+            int(source_values.shape[-1]),
+        ),
+    )
+    return gathered * hit.unsqueeze(-1).to(
+        dtype=source_values.dtype
+    )
+
+
+def forward_native_packed(
+    self,
+    inputs: Tensor,
+    dense_mask: Tensor,
+    spatial_indices: Tensor,
+    *,
+    grid_height: int,
+    grid_width: int,
+) -> Tensor:
+    """Apply the original Adapter parameters only to selected lineages.
+
+    Args:
+        inputs:
+            dense carrier [B*chunks,tubelets_per_chunk*N,C]
+        dense_mask:
+            bool carrier mask [B*chunks,tubelets_per_chunk*N]
+        spatial_indices:
+            sorted selected native indices [B,total_tubelets,K]
+
+    Unselected carrier positions are exact identity bypasses.
+    Full-K selection is numerically equivalent to ``forward(inputs,h,w)``.
+    """
+
+    if inputs.ndim != 3:
+        raise ValueError("packed Adapter inputs must be [Bchunk,L,C]")
+    if dense_mask.dtype != torch.bool:
+        raise TypeError("packed Adapter dense_mask must be bool")
+    if dense_mask.shape != inputs.shape[:2]:
+        raise ValueError("packed Adapter dense_mask must match inputs")
+    if spatial_indices.ndim != 3:
+        raise ValueError("spatial_indices must be [B,T,K]")
+    if spatial_indices.dtype != torch.long:
+        raise TypeError("spatial_indices must be torch.long")
+
+    batch_size, total_tubelets, select_count = map(
+        int,
+        spatial_indices.shape,
+    )
+    channels = int(inputs.shape[-1])
+    spatial_tokens = int(grid_height) * int(grid_width)
+
+    if select_count <= 0:
+        raise ValueError("packed Adapter requires K>0")
+    if int(inputs.shape[1]) % spatial_tokens:
+        raise ValueError(
+            "packed carrier token count is not divisible by spatial grid"
+        )
+
+    tubelets_per_chunk = int(inputs.shape[1]) // spatial_tokens
+    if total_tubelets % tubelets_per_chunk:
+        raise ValueError(
+            "total tubelets must be divisible by tubelets per chunk"
+        )
+    chunk_count = total_tubelets // tubelets_per_chunk
+    if int(inputs.shape[0]) != batch_size * chunk_count:
+        raise ValueError(
+            "packed carrier batch/chunk layout is inconsistent"
+        )
+    if total_tubelets != int(self.temporal_size):
+        raise ValueError(
+            "packed Adapter temporal axis differs from pretrained Adapter"
+        )
+    if int(dense_mask.sum().item()) != (
+        batch_size * total_tubelets * select_count
+    ):
+        raise ValueError(
+            "packed Adapter mask does not contain exact B*T*K selections"
+        )
+    if select_count > 1 and not bool(
+        (
+            spatial_indices[..., 1:]
+            > spatial_indices[..., :-1]
+        ).all().item()
+    ):
+        raise ValueError(
+            "packed Adapter indices must be strictly increasing"
+        )
+
+    selected_inputs = inputs[dense_mask].reshape(
+        batch_size,
+        total_tubelets,
+        select_count,
+        channels,
+    )
+    hidden = self.act(self.down_proj(selected_inputs))
+
+    previous = torch.zeros_like(hidden)
+    following = torch.zeros_like(hidden)
+
+    if total_tubelets > 1:
+        previous[:, 1:] = self._lookup_selected_neighbor(
+            hidden[:, :-1],
+            spatial_indices[:, :-1],
+            spatial_indices[:, 1:],
+        )
+        following[:, :-1] = self._lookup_selected_neighbor(
+            hidden[:, 1:],
+            spatial_indices[:, 1:],
+            spatial_indices[:, :-1],
+        )
+
+    if (
+        self.dwconv.kernel_size != (3,)
+        or self.dwconv.dilation != (1,)
+        or self.dwconv.stride != (1,)
+        or self.dwconv.padding != (1,)
+    ):
+        raise RuntimeError(
+            "coordinate-lineage Adapter requires the original "
+            "kernel_size=3,dilation=1,stride=1,padding=1"
+        )
+    if self.conv.kernel_size != (1,):
+        raise RuntimeError(
+            "coordinate-lineage Adapter requires pointwise Conv1d"
+        )
+
+    # Depthwise temporal Conv1d re-expressed over matched spatial lineages.
+    kernel = self.dwconv.weight[:, 0, :]
+    temporal = (
+        previous * kernel[:, 0].view(1, 1, 1, -1)
+        + hidden * kernel[:, 1].view(1, 1, 1, -1)
+        + following * kernel[:, 2].view(1, 1, 1, -1)
+    )
+    if self.dwconv.bias is not None:
+        temporal = temporal + self.dwconv.bias.view(
+            1,
+            1,
+            1,
+            -1,
+        )
+
+    temporal = F.linear(
+        temporal,
+        self.conv.weight[:, :, 0],
+        self.conv.bias,
+    )
+    selected_output = (
+        self.up_proj(hidden + temporal) * self.gamma
+        + selected_inputs
+    )
+
+    output = inputs.clone()
+    output[dense_mask] = selected_output.reshape(-1, channels)
+    return output
+```
+
+修改 `Block.forward()`：
+
+```diff
+ def forward(
+     self,
+     x: Tensor,
+     h,
+     w,
+     packed_dense_mask: Optional[Tensor] = None,
++    packed_spatial_indices: Optional[Tensor] = None,
+     packed_stats: Optional[Dict[str, int]] = None,
+ ) -> Tensor:
+
+     def _inner_forward(x):
+         if packed_dense_mask is None:
+             x = x + self.drop_path(self.attn(self.norm1(x)))
+             x = x + self.drop_path(self.mlp(self.norm2(x)))
+         else:
+             x = self._packed_attention_mlp_forward(
+                 x,
+                 packed_dense_mask,
+                 packed_stats,
+             )
+
+         if self.use_adapter:
+-            x = self.adapter(x, h, w)
++            if packed_dense_mask is None:
++                x = self.adapter(x, h, w)
++            else:
++                if packed_spatial_indices is None:
++                    raise ValueError(
++                        "packed block Adapter requires spatial indices"
++                    )
++                x = self.adapter.forward_native_packed(
++                    x,
++                    packed_dense_mask,
++                    packed_spatial_indices,
++                    grid_height=int(h),
++                    grid_width=int(w),
++                )
++                if packed_stats is not None:
++                    packed_stats["packed_adapter_forward_count"] = int(
++                        packed_stats.get(
++                            "packed_adapter_forward_count",
++                            0,
++                        )
++                    ) + 1
+         return x
+```
+
+修改 `forward_native_packed()`：
+
+```diff
+ stats: Dict[str, int] = {
+     "heavy_backbone_forward_count": 1,
+     "packed_attention_forward_count": 0,
+     "packed_mlp_forward_count": 0,
+-    "dense_adapter_forward_count": 0,
++    "dense_adapter_forward_count": 0,
++    "packed_adapter_forward_count": 0,
+ }
+
+ for block in self.blocks:
+     x = block(
+         x,
+         metadata["grid_height"],
+         metadata["grid_width"],
+         packed_dense_mask=packed_mask,
++        packed_spatial_indices=spatial_indices,
+         packed_stats=stats,
+     )
+-    if getattr(block, "use_adapter", False):
+-        stats["dense_adapter_forward_count"] += 1
+
+ ...
+ "dense_adapter_forward_count": stats[
+     "dense_adapter_forward_count"
+ ],
++"packed_adapter_forward_count": stats[
++    "packed_adapter_forward_count"
++],
++"adapter_execution": "coordinate_lineage_packed",
+```
+
+Dense reference 继续调用原 `Adapter.forward()`，因此 full-K parity 可以直接比较。
+
+---
+
+## 6.4 P1R 必须：config 与真正 ROI-free control
+
+路径：
+
+```text
+configs/adatad/thumos/georoute_adatad_development_base.py
+```
+
+加入：
+
+```python
+model["backbone"]["custom"].update(
+    georoute_pooling_mode="uniform_selected",
+    georoute_adapter_mode="coordinate_lineage_packed",
+)
+workflow.update(
+    checkpoint_policy="final_only",
+)
+```
+
+在 `tools/bata/georoute_experiment_contract.py::bind_development_config()` 中强制：
+
+```python
+cfg.workflow.checkpoint_policy = "final_only"
+cfg.model.backbone.custom.georoute_pooling_mode = (
+    "uniform_selected"
+)
+cfg.model.backbone.custom.georoute_adapter_mode = (
+    "coordinate_lineage_packed"
+)
+```
+
+`free` 仍保持：
+
+```python
+route_mode="free"
+context_tokens=0
+roi_fraction=0.0
+```
+
+但 wrapper 必须按前述 helper 给它固定全图 geometry。
+
+---
+
+## 6.5 P1R 必须：final-only checkpoint
+
+路径：
+
+```text
+tools/train.py
+```
+
+加入：
+
+```python
+def should_save_training_checkpoint(
+    *,
+    epoch: int,
+    max_epoch: int,
+    workflow,
+) -> bool:
+    policy = str(
+        workflow.get("checkpoint_policy", "interval")
+    )
+
+    if policy == "final_only":
+        return int(epoch) == int(max_epoch) - 1
+
+    if policy == "interval":
+        interval = int(workflow.checkpoint_interval)
+        if interval <= 0:
+            raise ValueError(
+                "checkpoint_interval must be positive"
+            )
+        return (
+            int(epoch) == int(max_epoch) - 1
+            or (int(epoch) + 1) % interval == 0
+        )
+
+    raise ValueError(
+        "checkpoint_policy must be 'interval' or 'final_only'"
+    )
+```
+
+替换训练循环中的初始判断：
+
+```diff
+- should_save_checkpoint = (epoch == max_epoch - 1) or (
+-     (epoch + 1) % cfg.workflow.checkpoint_interval == 0
+- )
++ should_save_checkpoint = should_save_training_checkpoint(
++     epoch=epoch,
++     max_epoch=max_epoch,
++     workflow=cfg.workflow,
++ )
+```
+
+路径：
+
+```text
+opentad/utils/checkpoint.py
+```
+
+将无 metadata 分支也改为 atomic publish：
+
+```python
+else:
+    checkpoint_tmp = checkpoint_path + ".tmp"
+    existing = [
+        path
+        for path in (checkpoint_path, checkpoint_tmp)
+        if os.path.exists(path)
+    ]
+    if existing:
+        raise FileExistsError(
+            f"refusing to overwrite checkpoint artifacts: {existing}"
+        )
+    try:
+        torch.save(save_states, checkpoint_tmp)
+        os.replace(checkpoint_tmp, checkpoint_path)
+    finally:
+        if os.path.exists(checkpoint_tmp):
+            os.remove(checkpoint_tmp)
+```
+
+路径：
+
+```text
+tools/bata/georoute_stage_runner.py
+```
+
+训练结束后、测试前强制只有一个 epoch checkpoint：
+
+```python
+checkpoint_dir = effective_work_dir / "checkpoint"
+checkpoint_path = (
+    checkpoint_dir
+    / f"epoch_{stage_epochs(args.stage) - 1}.pth"
+)
+epoch_checkpoints = sorted(
+    checkpoint_dir.glob("epoch_*.pth")
+)
+if epoch_checkpoints != [checkpoint_path]:
+    raise RuntimeError(
+        "GeoRoute final-only contract expected exactly one "
+        f"checkpoint, observed {epoch_checkpoints}"
+    )
+```
+
+这保留一个完整、可由现有 `tools/test.py` 加载的 final checkpoint。它不是最小化到“EMA-only payload”，但已经把 retention 严格限制为每 cell 一个；EMA-only payload 可在独立 loader KAT 后再做。
+
+---
+
+## 6.6 P1R 必须：aggregate storage preflight
+
+路径：
+
+```text
+tools/bata/georoute_dag_dispatch.py
+```
+
+新增 imports：
+
+```python
+import math
+import shutil
+```
+
+新增：
+
+```python
+GEOROUTE_STORAGE_PROFILE_SCHEMA = (
+    "georoute_storage_profile_v1"
+)
+
+
+def _nearest_existing_parent(path: Path) -> Path:
+    candidate = path.resolve()
+    while not candidate.exists():
+        parent = candidate.parent
+        if parent == candidate:
+            raise FileNotFoundError(
+                f"no existing filesystem parent for {path}"
+            )
+        candidate = parent
+    return candidate
+
+
+def _require_storage_headroom(
+    *,
+    run_root: Path,
+    stage: str,
+    cell_count: int,
+    storage_profile_path: Path,
+    expected_commit: str,
+) -> dict[str, Any]:
+    if int(cell_count) <= 0:
+        raise ValueError("storage preflight requires cell_count>0")
+
+    profile = _read_json(storage_profile_path)
+    if (
+        profile.get("schema_version")
+        != GEOROUTE_STORAGE_PROFILE_SCHEMA
+    ):
+        raise ValueError("unexpected GeoRoute storage profile schema")
+    if (
+        str(profile.get("runtime_commit", "")).lower()
+        != str(expected_commit).lower()
+    ):
+        raise ValueError(
+            "storage profile was not measured for the replacement commit"
+        )
+    if profile.get("checkpoint_policy") != "final_only":
+        raise ValueError(
+            "storage profile must bind checkpoint_policy=final_only"
+        )
+
+    integer_fields = (
+        "checkpoint_upper_bound_bytes",
+        "peak_checkpoint_copies_per_cell",
+        "auxiliary_upper_bound_bytes_per_cell",
+        "stage_fixed_overhead_bytes",
+        "safety_bytes",
+    )
+    values: dict[str, int] = {}
+    for name in integer_fields:
+        value = profile.get(name)
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(
+                f"storage profile requires non-negative integer {name}"
+            )
+        values[name] = int(value)
+
+    if values["checkpoint_upper_bound_bytes"] <= 0:
+        raise ValueError(
+            "checkpoint_upper_bound_bytes must be positive"
+        )
+    if values["peak_checkpoint_copies_per_cell"] <= 0:
+        raise ValueError(
+            "peak_checkpoint_copies_per_cell must be positive"
+        )
+
+    safety_fraction = profile.get("safety_fraction")
+    if not isinstance(safety_fraction, (int, float)):
+        raise ValueError(
+            "storage profile requires numeric safety_fraction"
+        )
+    safety_fraction = float(safety_fraction)
+    if not (0.0 <= safety_fraction < 1.0):
+        raise ValueError(
+            "safety_fraction must lie in [0,1)"
+        )
+
+    per_cell_peak = (
+        values["checkpoint_upper_bound_bytes"]
+        * values["peak_checkpoint_copies_per_cell"]
+        + values["auxiliary_upper_bound_bytes_per_cell"]
+    )
+    required_bytes = (
+        int(cell_count) * per_cell_peak
+        + values["stage_fixed_overhead_bytes"]
+    )
+    safety_bytes = max(
+        values["safety_bytes"],
+        int(math.ceil(required_bytes * safety_fraction)),
+    )
+    required_with_safety = required_bytes + safety_bytes
+
+    filesystem_anchor = _nearest_existing_parent(run_root)
+    usage = shutil.disk_usage(filesystem_anchor)
+    free_bytes = int(usage.free)
+
+    receipt = {
+        "schema_version": (
+            "georoute_storage_preflight_receipt_v1"
+        ),
+        "stage": str(stage),
+        "runtime_commit": str(expected_commit).lower(),
+        "storage_profile_path": str(
+            storage_profile_path.resolve()
+        ),
+        "storage_profile_sha256": sha256_file(
+            storage_profile_path
+        ),
+        "filesystem_anchor": str(filesystem_anchor),
+        "cell_count": int(cell_count),
+        "per_cell_peak_bytes": per_cell_peak,
+        "required_bytes": required_bytes,
+        "safety_bytes": safety_bytes,
+        "required_with_safety_bytes": required_with_safety,
+        "free_bytes": free_bytes,
+        "checkpoint_policy": "final_only",
+        "passed": free_bytes >= required_with_safety,
+        "official_test_opened": False,
+    }
+    receipt["receipt_sha256"] = canonical_sha256(receipt)
+
+    if not receipt["passed"]:
+        raise RuntimeError(
+            "GeoRoute storage preflight failed closed: "
+            f"free={free_bytes}, "
+            f"required_with_safety={required_with_safety}, "
+            f"cells={cell_count}"
+        )
+    return receipt
+```
+
+CLI 加入必填项：
+
+```python
+parser.add_argument(
+    "--storage-profile",
+    type=Path,
+    required=True,
+)
+```
+
+在 P1 namespace 创建和任何 `sbatch` 之前运行：
+
+```python
+storage_receipt = _require_storage_headroom(
+    run_root=args.run_root,
+    stage="p1",
+    cell_count=len(cells),
+    storage_profile_path=args.storage_profile,
+    expected_commit=args.expected_commit,
+)
+```
+
+namespace 创建成功后原子写入：
+
+```python
+_atomic_write_json(
+    args.run_root
+    / "control"
+    / "p1_storage_preflight.json",
+    storage_receipt,
+)
+```
+
+P2/P3 的 `_submit_stage_matrix()` 也必须在 `sbatch --test-only` 前执行同一 preflight，并按 stage 写独立 receipt。
+
+`storage_profile` 必须由**新 commit 的 P0R 实测 final checkpoint**生成，至少绑定：
+
+```json
+{
+  "schema_version": "georoute_storage_profile_v1",
+  "runtime_commit": "<new replacement commit>",
+  "checkpoint_policy": "final_only",
+  "checkpoint_upper_bound_bytes": 0,
+  "peak_checkpoint_copies_per_cell": 0,
+  "auxiliary_upper_bound_bytes_per_cell": 0,
+  "stage_fixed_overhead_bytes": 0,
+  "safety_fraction": 0.0,
+  "safety_bytes": 0,
+  "measurement_provenance": {
+    "checkpoint_path": "",
+    "checkpoint_sha256": "",
+    "measurement_command": ""
+  }
+}
+```
+
+上面的零值只是 schema 展示；preflight 会拒绝 `checkpoint_upper_bound_bytes<=0` 和 `peak_checkpoint_copies_per_cell<=0`。真实数值必须来自同 commit 的 measurement receipt，不得复用历史约 0.63 GB 的值作为唯一依据。
+
+---
+
+## 6.7 P1R 必须：修正 P1 selector
+
+完整替换：
+
+```text
+tools/bata/georoute_experiment_contract.py
+::select_p1_roi_candidate
+```
+
+```python
+def select_p1_roi_candidate(
+    records: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    required = set(P1_VARIANTS)
+    if set(records) != required:
+        raise ValueError(
+            f"P1 record set must equal {sorted(required)}"
+        )
+
+    for name, record in records.items():
+        if (
+            record.get("stage") != "p1"
+            or record.get("variant") != name
+        ):
+            raise ValueError(f"invalid P1 record for {name}")
+        if record.get("official_test_opened") is not False:
+            raise ValueError("P1 record opened official test")
+        high_iou_score(record["metrics"])
+        profile = record.get("profile", {})
+        if not isinstance(
+            profile.get("development_window_wall_p50_ms"),
+            (int, float),
+        ):
+            raise ValueError(
+                f"P1 record lacks measured development cost: {name}"
+            )
+
+    scores = {
+        name: high_iou_score(record["metrics"])
+        for name, record in records.items()
+    }
+    costs = {
+        name: float(
+            record["profile"][
+                "development_window_wall_p50_ms"
+            ]
+        )
+        for name, record in records.items()
+    }
+
+    hybrid_accuracy_gate = scores["hybrid"] > max(
+        scores["free"],
+        scores["random"],
+        scores["fixed_lattice_geometry"],
+    )
+    hybrid_cost_gate = costs["hybrid"] <= min(
+        costs["free"],
+        costs["random"],
+        costs["fixed_lattice_geometry"],
+    )
+
+    free_accuracy_gate = scores["free"] > max(
+        scores["roi"],
+        scores["hybrid"],
+    )
+    free_cost_gate = costs["free"] <= min(
+        costs["roi"],
+        costs["hybrid"],
+    )
+
+    best_learned = max(
+        scores["free"],
+        scores["roi"],
+        scores["hybrid"],
+    )
+    best_nonlearned = max(
+        scores["fixed_lattice"],
+        scores["random"],
+    )
+
+    if hybrid_accuracy_gate and hybrid_cost_gate:
+        status = "ADVANCE_HYBRID_TO_P2"
+        winner = "hybrid"
+        route = "A"
+    elif free_accuracy_gate and free_cost_gate:
+        status = "ADVANCE_FREE_TO_P2"
+        winner = "free"
+        route = "B"
+    elif best_learned <= best_nonlearned:
+        status = "STOP_LEARNED_ROUTING"
+        winner = None
+        route = "C"
+    else:
+        # No post-hoc tuning is allowed for a mixed/ambiguous result.
+        status = "STOP_AMBIGUOUS_NO_PREDECLARED_WINNER"
+        winner = None
+        route = "C"
+
+    decision = {
+        "schema_version": GEOROUTE_EXPERIMENT_SCHEMA,
+        "stage": "p1_selection",
+        "selection_metric": "mean(mAP@0.6,mAP@0.7)",
+        "scores": scores,
+        "development_window_wall_p50_ms": costs,
+        "hybrid_accuracy_gate": hybrid_accuracy_gate,
+        "hybrid_cost_gate": hybrid_cost_gate,
+        "free_accuracy_gate": free_accuracy_gate,
+        "free_cost_gate": free_cost_gate,
+        "selected_route": route,
+        "selected_variant": winner,
+        "status": status,
+        "paper_claim_allowed": False,
+        "official_test_opened": False,
+    }
+    decision["selection_sha256"] = canonical_sha256(
+        decision
+    )
+    return decision
+```
+
+`georoute_dag_dispatch.py::_p1_select()` 相应只允许：
+
+```python
+if decision["status"] not in {
+    "ADVANCE_HYBRID_TO_P2",
+    "ADVANCE_FREE_TO_P2",
+}:
+    return 0
+```
+
+---
+
+## 6.8 Focused tests
+
+路径：
+
+```text
+tests/test_georoute_routing.py
+```
+
+至少加入或替换：
+
+```python
+def test_native_tubelets_ignore_incomplete_remainder_without_padding():
+    source = torch.arange(
+        1 * 3 * 2 * 180 * 320,
+        dtype=torch.uint8,
+    ).reshape(1, 3, 2, 180, 320)
+
+    native, grid_hw, ignored, valid = extract_native_tubelets(
+        source,
+        patch_size=16,
+        tubelet_size=2,
+    )
+
+    assert grid_hw == (11, 20)
+    assert ignored == (4, 0)
+    assert native.shape == (
+        1,
+        1,
+        220,
+        3,
+        2,
+        16,
+        16,
+    )
+    assert valid.shape == (1, 1, 220)
+    assert valid.dtype == torch.bool
+    assert bool(valid.all())
+
+    restored = (
+        native.reshape(
+            1,
+            1,
+            11,
+            20,
+            3,
+            2,
+            16,
+            16,
+        )
+        .permute(0, 4, 1, 5, 2, 6, 3, 7)
+        .reshape(1, 3, 2, 176, 320)
+    )
+    assert torch.equal(restored, source[..., :176, :])
+
+
+def test_valid_mask_forbids_invalid_exact_k_and_fails_when_capacity_is_low():
+    roi = torch.randn(1, 2, 10, requires_grad=True)
+    residual = torch.randn(1, 2, 10, requires_grad=True)
+    valid = torch.ones(1, 2, 10, dtype=torch.bool)
+    valid[..., 8:] = False
+
+    route = select_exact_k(
+        roi_logits=roi,
+        residual_logits=residual,
+        mode="free",
+        tokens_per_tubelet=6,
+        context_tokens=0,
+        roi_fraction=0.0,
+        training=True,
+        estimator="straight_through",
+        temperature=0.7,
+        valid_mask=valid,
+    )
+    assert bool(valid.gather(-1, route["indices"]).all())
+    assert torch.all(route["indices"] < 8)
+
+    with pytest.raises(
+        ValueError,
+        match="valid native patch count",
+    ):
+        select_exact_k(
+            roi_logits=roi,
+            residual_logits=residual,
+            mode="free",
+            tokens_per_tubelet=9,
+            context_tokens=0,
+            roi_fraction=0.0,
+            training=True,
+            estimator="straight_through",
+            temperature=0.7,
+            valid_mask=valid,
+        )
+
+
+def test_hybrid_context_has_zero_route_gradient():
+    torch.manual_seed(17)
+    roi = torch.randn(1, 2, 12, requires_grad=True)
+    residual = torch.randn(1, 2, 12, requires_grad=True)
+
+    route = select_exact_k(
+        roi_logits=roi,
+        residual_logits=residual,
+        mode="hybrid",
+        tokens_per_tubelet=6,
+        context_tokens=2,
+        roi_fraction=0.5,
+        training=True,
+        estimator="straight_through",
+        temperature=0.7,
+    )
+    context = route["ordered_indices"][..., :2]
+    route["st_gate"].sum().backward()
+
+    assert torch.equal(
+        roi.grad.gather(-1, context),
+        torch.zeros_like(context, dtype=roi.dtype),
+    )
+    assert torch.equal(
+        residual.grad.gather(-1, context),
+        torch.zeros_like(context, dtype=residual.dtype),
+    )
+
+
+def test_score_function_uses_joint_temporal_log_probability():
+    ordered_log_prob = torch.ones(
+        2,
+        3,
+        requires_grad=True,
+    )
+    loss = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0),
+        ordered_log_prob=ordered_log_prob,
+        baseline=torch.tensor(0.0),
+        weight=1.0,
+    )
+    assert torch.equal(loss.detach(), torch.tensor(6.0))
+
+    loss.backward()
+    assert torch.equal(
+        ordered_log_prob.grad,
+        torch.ones_like(ordered_log_prob),
+    )
+```
+
+路径：
+
+```text
+tests/test_georoute_packed_adapter.py
+```
+
+新增：
+
+```python
+import torch
+
+from opentad.models.backbones.vit_adapter import Adapter
+
+
+def test_packed_adapter_full_k_matches_dense_adapter():
+    torch.manual_seed(29)
+    batch = 2
+    tubelets = 6
+    grid_h = 2
+    grid_w = 3
+    spatial_tokens = grid_h * grid_w
+    channels = 8
+
+    adapter = Adapter(
+        embed_dims=channels,
+        kernel_size=3,
+        dilation=1,
+        temporal_size=tubelets,
+        mlp_ratio=0.5,
+    )
+    inputs = torch.randn(
+        batch,
+        tubelets * spatial_tokens,
+        channels,
+    )
+    dense_mask = torch.ones(
+        batch,
+        tubelets * spatial_tokens,
+        dtype=torch.bool,
+    )
+    indices = torch.arange(
+        spatial_tokens,
+        dtype=torch.long,
+    ).view(1, 1, spatial_tokens).expand(
+        batch,
+        tubelets,
+        spatial_tokens,
+    )
+
+    dense = adapter(inputs.clone(), grid_h, grid_w)
+    packed = adapter.forward_native_packed(
+        inputs.clone(),
+        dense_mask,
+        indices,
+        grid_height=grid_h,
+        grid_width=grid_w,
+    )
+    assert torch.allclose(
+        packed,
+        dense,
+        atol=1e-5,
+        rtol=1e-5,
+    )
+
+
+def test_packed_adapter_unselected_positions_are_identity_bypass():
+    torch.manual_seed(31)
+    batch = 1
+    tubelets = 6
+    grid_h = 2
+    grid_w = 3
+    spatial_tokens = grid_h * grid_w
+    channels = 8
+    selected = torch.tensor([0, 2, 5]).view(
+        1,
+        1,
+        3,
+    ).expand(batch, tubelets, 3)
+
+    adapter = Adapter(
+        embed_dims=channels,
+        kernel_size=3,
+        dilation=1,
+        temporal_size=tubelets,
+        mlp_ratio=0.5,
+    )
+    inputs = torch.randn(
+        batch,
+        tubelets * spatial_tokens,
+        channels,
+    )
+    dense_mask = torch.zeros(
+        batch,
+        tubelets,
+        spatial_tokens,
+        dtype=torch.bool,
+    ).scatter(2, selected, True).reshape(
+        batch,
+        tubelets * spatial_tokens,
+    )
+
+    output = adapter.forward_native_packed(
+        inputs,
+        dense_mask,
+        selected,
+        grid_height=grid_h,
+        grid_width=grid_w,
+    )
+    assert torch.equal(
+        output[~dense_mask],
+        inputs[~dense_mask],
+    )
+    assert torch.isfinite(output[dense_mask]).all()
+```
+
+还必须新增：
+
+```text
+test_free_route_receives_fixed_geometry
+test_uniform_pooling_is_common_across_all_p1_variants
+test_hybrid_staged_pl_matches_exact_tiny_enumeration
+test_route_change_moves_probability_toward_lower_detector_loss
+test_final_only_writes_exactly_one_epoch_checkpoint
+test_storage_preflight_refuses_before_any_sbatch
+test_storage_preflight_accounts_for_atomic_publish_peak
+test_p1_hybrid_gate_includes_random
+test_p1_free_gate_selects_route_b
+test_p1_no_learned_win_selects_route_c
+```
+
+---
+
+## 6.9 P1 positive 后才允许：A-MoD interface
+
+当前 PyTorch `scaled_dot_product_attention()` 的公开签名返回一个 output `Tensor`，不返回 attention weights；`MultiheadAttention` 只有在 `need_weights=True` 时返回权重，而官方文档明确说明 `need_weights=False` 才使用优化 SDPA 路径。([PyTorch Documentation][1]) ([PyTorch Documentation][2])
+
+因此当前框架下，我**拒绝提供伪 production A-MoD block**。
+
+Tiny KAT 可使用：
+
+```python
+def explicit_attention_column_mean(
+    query: torch.Tensor,
+    key: torch.Tensor,
+) -> torch.Tensor:
+    """Tiny-test-only statistic.
+
+    query/key: [B,H,N,D]
+    returns:   [B,N]
+    """
+    scale = query.shape[-1] ** -0.5
+    attention = torch.softmax(
+        torch.matmul(
+            query,
+            key.transpose(-2, -1),
+        ) * scale,
+        dim=-1,
+    )
+    return attention.mean(dim=(1, 2))
+```
+
+Production 必须先提供真实 kernel/interface：
+
+```python
+def fused_sdpa_with_column_sum(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    *,
+    dropout_p: float,
+    is_causal: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Required custom Triton/CUDA contract.
+
+    Returns:
+        output:     [B,H,N,Dv]
+        column_sum: [B,H,N], accumulated without materializing [N,N]
+    """
+    raise NotImplementedError(
+        "Requires an audited Triton/CUDA fused attention kernel"
+    )
+```
+
+只有该 kernel 在以下条件全部通过后，才允许实现 A-MoD：
+
+* capacity ratio 1.0 与 dense block parity；
+* exact capacity；
+* 每 tubelet 最低保留量；
+* 未选 token identity bypass；
+* score 不乘回 output；
+* random exact-K、linear MoD、A-MoD 三对照；
+* fused kernel 不 materialize (N\times N) attention；
+* backward、AMP、DDP、checkpoint KAT；
+* 独立 component latency 与 energy trace。
+
+候选 one-based 层序可以是：
+
+```text
+Dense 4 -> MoD 5
+Dense 6 -> MoD 7
+Dense 8 -> MoD 9
+Dense 10 -> MoD 11
+Dense 12
+```
+
+即 zero-based MoD indices `{4,6,8,10}`。但它只是 P2 条件候选，不是当前推荐补丁。
+
+---
+
+# 7. Verification plan
+
+## 7.1 本地 focused tests
+
+新 commit 必须先运行：
+
+```bash
+pytest -q \
+  tests/test_georoute_routing.py \
+  tests/test_georoute_packed_adapter.py \
+  tests/test_georoute_p0_gate_contract.py \
+  tests/test_georoute_development_dag.py \
+  tests/test_georoute_paper_tools.py
+```
+
+失败语义：
+
+| 条件                         | 必须行为                            |
+| -------------------------- | ------------------------------- |
+| `valid_count<K`            | 在 heavy VideoMAE 前 `ValueError` |
+| invalid index 被选           | `RuntimeError`                  |
+| duplicate route            | `RuntimeError`                  |
+| full-K Adapter parity 超差   | P0R fail                        |
+| context route gradient 非零  | P0R fail                        |
+| route-change KAT 方向错误      | P0R fail                        |
+| checkpoint 数不等于 1          | cell fail                       |
+| free disk 不足               | 在任何真实 `sbatch` 前 fail           |
+| storage profile commit 不一致 | fail                            |
+| old namespace 已存在          | fail                            |
+| component trace 缺字段        | stage result fail               |
+
+## 7.2 数值容差
+
+| 检查                              | 容差                             |
+| ------------------------------- | ------------------------------ |
+| exact-K、unique、valid mask、shape | 整数/布尔完全相等                      |
+| Adapter-only full-K FP32 parity | `atol=1e-5, rtol=1e-5`         |
+| full fused dense/packed path    | 保持已有 `max_abs<=1e-4` criterion |
+| tiny exact-gradient KAT         | `atol=1e-6, rtol=1e-6`         |
+| AMP                             | finite，且无 skipped update       |
+| `[B,384,768]`                   | 完全相等                           |
+| heavy invocation count          | delta 严格为 1                    |
+
+## 7.3 Route-change KAT
+
+现有 nonzero-gradient KAT 不够。必须增加以下测试：
+
+1. 构造 tiny `N`，令两个 hard routes 产生已知不同的 detector loss；
+2. 显式枚举 route 的 exact expected risk gradient；
+3. 比较 ST 或 staged PL 的 gradient cosine；
+4. 对 scout-only 参数执行一次小更新；
+5. 验证低 detector-loss route 的 log-probability 上升；
+6. 验证 deterministic context 的 logits gradient 为零；
+7. 验证 stop-gradient baseline 不随 sampled action 反传；
+8. 验证改变 detector target 会改变 router gradient，而关闭 detector loss 后 route gradient 消失。
+
+用于 counterfactual 的额外 heavy forwards只能存在于 `P0_DEBUG_ONLY` KAT，不进入任何成本证据。
+
+## 7.4 CUDA P0R
+
+至少需要这些叶节点：
+
+```text
+p0r_dense_full_k_parity
+p0r_native_180x320_floor_support
+p0r_valid_invalid_exact_k
+p0r_free_true_roi_free_st
+p0r_roi_score_function
+p0r_hybrid_branch_aligned_st
+p0r_hybrid_staged_pl_tiny
+p0r_packed_adapter_full_k_parity
+p0r_packed_adapter_sparse_identity
+p0r_one_heavy_forward
+p0r_output_b384x768
+p0r_component_cost_trace
+p0r_final_only_checkpoint
+p0r_storage_preflight_pass_and_fail
+```
+
+P0R 最终状态仍只能是：
+
+```text
+PASS_MECHANICAL_ONLY
+```
+
+不能提升为 accuracy、speed、energy 或 paper evidence。
+
+---
+
+# 8. Experiment plan
+
+## 8.1 P0R
+
+目标是重新建立 correctness foundation，不做模型胜负判断。
+
+必须报告：
+
+* source H/W；
+* ignored remainder；
+* valid count；
+* requested/effective/unique/padded counts；
+* route role counts；
+* Adapter dense/packed invocation；
+* one-heavy-forward；
+* `[B,384,768]`；
+* route gradient estimator；
+* route-change KAT；
+* final checkpoint count；
+* storage preflight receipt；
+* component cost trace。
+
+## 8.2 P1R
+
+### 固定矩阵
+
+```text
+seed = 3407
+K    = 64
+same successful optimizer updates
+same detector
+same source frames
+same new commit
+same storage profile
+```
+
+七格：
+
+```text
+dense_native
+fixed_lattice
+fixed_lattice_geometry
+random
+free
+roi
+hybrid
+```
+
+约束：
+
+* 新 commit；
+* 新 namespace；
+* 旧失败 namespace 永久不恢复；
+* final-only checkpoint；
+* aggregate storage preflight；
+* official test closed；
+* 不加载 raw-prediction cache；
+* 不使用 validation/test GT、teacher、oracle 或 manual ROI；
+* learned arms 使用同一种、由 P0R 预先选定的 estimator；
+* 所有 arms 使用相同 uniform-selected pooling；
+* free 使用固定全图 geometry；
+* K 和 successful updates 完全匹配。
+
+### 资源形态
+
+```text
+7 × one-GPU training/evaluation cells
+1 × result-blind selector
+```
+
+当前没有有效 P1 runtime，所以不能诚实给出 GPU-hour 数字。资源审批应使用：
+
+[
+\text{GPU-hours upper bound}
+============================
+
+7\times
+\text{P0R-measured one-cell upper bound}.
+]
+
+存储审批使用 preflight 公式，而不是历史 namespace 大小。
+
+### P1 决策
+
+#### Route B
+
+若：
+
+[
+H_{\mathrm{free}}
+
+>
+
+\max(H_{\mathrm{roi}},H_{\mathrm{hybrid}})
+]
+
+且：
+
+[
+C_{\mathrm{free}}
+\le
+\min(C_{\mathrm{roi}},C_{\mathrm{hybrid}}),
+]
+
+则：
+
+```text
+ADVANCE_FREE_TO_P2
+KILL ROI PRIMARY CLAIM
+SELECT ROUTE B
+```
+
+#### Route A
+
+只有若：
+
+[
+H_{\mathrm{hybrid}}
+
+>
+
+\max(
+H_{\mathrm{free}},
+H_{\mathrm{random}},
+H_{\mathrm{fixed+geometry}}
+)
+]
+
+且：
+
+[
+C_{\mathrm{hybrid}}
+\le
+\min(
+C_{\mathrm{free}},
+C_{\mathrm{random}},
+C_{\mathrm{fixed+geometry}}
+),
+]
+
+才：
+
+```text
+ADVANCE_HYBRID_TO_P2
+SELECT ROUTE A
+```
+
+#### Route C
+
+若：
+
+[
+\max(
+H_{\mathrm{free}},
+H_{\mathrm{roi}},
+H_{\mathrm{hybrid}}
+)
+\le
+\max(
+H_{\mathrm{fixed}},
+H_{\mathrm{random}}
+),
+]
+
+则：
+
+```text
+STOP_LEARNED_ROUTING
+SELECT ROUTE C
+DO NOT ADD AUXILIARY LOSS OR NEW HEAD
+```
+
+混合、交叉但不满足预注册 gate 的结果：
+
+```text
+STOP_AMBIGUOUS_NO_PREDECLARED_WINNER
+```
+
+不能据此事后调 gate。
+
+## 8.3 P2
+
+只推广 P1 winner。
+
+### 若 Route B 胜出
+
+三 seeds，matched budgets：
+
+```text
+fixed_lattice
+random
+free
+```
+
+可以加入 estimator/curriculum ablation，但不再恢复 ROI primary claim，也不加入 A-MoD。
+
+### 若 Route A 胜出
+
+三 seeds：
+
+```text
+fixed_lattice
+fixed_lattice_geometry
+random
+free
+hybrid
+```
+
+只有此时才允许两个条件 comparator：
+
+1. FlashVID-inspired scout residual；
+2. 已独立通过 kernel P0 的 A-MoD。
+
+二者必须分别加入，不能同时叠加后再归因。
+
+## 8.4 P3
+
+development decision 冻结后再做：
+
+* K={32,48,64,96} 预算曲线；
+* context quota；
+* geometry stride；
+* absolute coordinates；
+* packed Adapter；
+* estimator；
+* curriculum；
+* residual relevance/diversity/motion；
+* A-MoD random/linear/attention controls；
+* 第二 detector；
+* 第二 dataset；
+* full-stack cost；
+* 一次性 official-test opening。
+
+## 8.5 必报指标
+
+### 检测
+
+* Avg-mAP；
+* mAP@0.3/0.4/0.5/0.6/0.7；
+* 重点报告 0.6、0.7；
+* short-action subset；
+* start/end boundary error；
+* duration-stratified recall。
+
+### Routing
+
+* requested K；
+* effective K；
+* unique K；
+* invalid/padded selected count；
+* route Jaccard stability；
+* temporal route flip rate；
+* ROI center/scale jitter；
+* residual spatial coverage；
+* residual pairwise feature diversity；
+* motion-lineage consistency；
+* context/ROI/residual 实际配额。
+
+### 成本
+
+必须分别记录：
+
+```text
+decode
+preprocess
+H2D
+scout
+route
+native gather
+patch_embed
+attention
+MLP
+Adapter
+temporal aggregation
+detector
+NMS
+```
+
+同时报告：
+
+* isolated component p50/p95；
+* overlapped full-window p50/p95；
+* peak allocated/reserved memory；
+* checkpoint bytes；
+* gross GPU energy；
+* GPU 型号、功率采样频率、CUDA/PyTorch、AMP、batch size；
+* warm-up、同步点和 sample count。
+
+当前 development profiler 不满足上述要求，不能直接用于 full-stack claim。
+
+---
+
+# 9. Claim boundary
+
+## 9.1 当前可以说
+
+* 当前任务是 offline full-window TAD；
+* 输入完整 768 frames，输出 detector-facing `[B,384,768]`；
+* scout 不使用 GT、teacher、oracle、manual ROI 或 test evidence；
+* 当前主路径有一次 packed VideoMAE invocation；
+* attention/MLP 确实只对 selected tokens 计算；
+* P0 已有 mechanical-only evidence；
+* P1 失败原因是 checkpoint storage exhaustion；
+* 当前没有任何 P1 模型胜负证据；
+* 当前没有 A-MoD 实现或实验；
+* 当前实现存在 validity、Adapter、control、estimator、storage 与 selector gate 问题。
+
+GeoRoute transform 也明确记录 source 未 resize、未 local crop，并把 GT/teacher/oracle/test-evidence 标为 false。
+
+## 9.2 当前不能说
+
+* GeoRoute 提升 mAP；
+* hybrid 优于 free/random/fixed；
+* ROI 是有效 TAD prior；
+* learned selection 优于 deterministic lattice；
+* 当前 fixed-K 产生端到端加速；
+* 当前路径按 (K/N) 缩小完整 backbone FLOPs；
+* P1 partial checkpoint 显示任何趋势；
+* cleanup 证明模型有效；
+* A-MoD 已实现；
+* fused SDPA 已提供 attention column mean；
+* official test 已打开；
+* 该方法已形成论文级正向贡献。
+
+---
+
+# 10. Exact next action
+
+## **创建一个新的 correctness-only commit，并且只运行 P0R；在 P0R 通过前不得提交 replacement P1。**
+
+该 commit 必须同时修改：
+
+```text
+opentad/models/backbones/georoute_routing.py
+opentad/models/backbones/georoute_wrapper.py
+opentad/models/backbones/vit_adapter.py
+opentad/datasets/transforms/native_crop.py
+configs/adatad/thumos/georoute_adatad_development_base.py
+opentad/utils/checkpoint.py
+tools/train.py
+tools/bata/georoute_stage_runner.py
+tools/bata/georoute_experiment_contract.py
+tools/bata/georoute_dag_dispatch.py
+tools/bata/deploy_georoute_development_dag.py
+tests/test_georoute_routing.py
+tests/test_georoute_packed_adapter.py
+tests/test_georoute_p0_gate_contract.py
+tests/test_georoute_development_dag.py
+```
+
+唯一目标是同时消除：
+
+```text
+synthetic padded support
+missing validity contract
+dense Adapter contamination
+free hidden geometry
+learned-only weighted pooling
+hybrid surrogate mismatch
+context route gradient
+unbounded checkpoints
+missing aggregate storage preflight
+incomplete P1 kill gate
+```
+
+在这些问题修复并通过新 CUDA `PASS_MECHANICAL_ONLY` 前，当前 GeoRoute 状态必须保持：
+
+```text
+HOLD_FOR_CORRECTNESS_FIX
+```
+
+[1]: https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention?utm_source=chatgpt.com "torch.nn.functional.scaled_dot_product_attention — PyTorch 2.13 documentation"
+[2]: https://docs.pytorch.org/docs/stable/generated/torch.nn.MultiheadAttention.html?utm_source=chatgpt.com "MultiheadAttention — PyTorch 2.12 documentation"

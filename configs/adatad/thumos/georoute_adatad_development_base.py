@@ -99,6 +99,8 @@ model = dict(
             georoute_geometry_stride_tubelets=1,
             georoute_absolute_position_enabled=True,
             georoute_absolute_coordinates_enabled=True,
+            georoute_pooling_mode="uniform_selected",
+            georoute_adapter_mode="coordinate_lineage_packed",
             georoute_geometry_side_channel=False,
             georoute_min_roi_extent=0.20,
             georoute_max_roi_extent=1.00,
@@ -147,6 +149,7 @@ scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=2, max_epoch
 workflow = dict(
     logging_interval=25,
     checkpoint_interval=1,
+    checkpoint_policy="final_only",
     val_loss_interval=-1,
     val_eval_interval=-1,
     val_start_epoch=60,
@@ -167,8 +170,8 @@ evaluation = dict(
 )
 
 georoute_protocol = dict(
-    schema_version="georoute_adatad_development_v1",
-    route="offline-native-token-geometry-residual-routing",
+    schema_version="georoute_adatad_development_v2",
+    route="native-token-select-first-conditional-geometry-routing",
     status="development_only",
     official_test_open_allowed=False,
     manual_roi_allowed=False,
@@ -180,6 +183,10 @@ georoute_protocol = dict(
     local_crop_resize_allowed=False,
     detector_contract="[B,384,768]",
     detector_losses=["FocalLoss", "DIOULoss"],
+    valid_native_support="floor_complete_patches_with_explicit_mask",
+    pooling_mode="uniform_selected",
+    adapter_mode="coordinate_lineage_packed",
+    checkpoint_policy="final_only_atomic",
 )
 
 work_dir = "exps/thumos/adatad/georoute_development_unbound"

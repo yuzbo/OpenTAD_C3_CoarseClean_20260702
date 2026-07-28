@@ -34,10 +34,11 @@ from tools.bata.georoute_experiment_contract import (  # noqa: E402
     sha256_file,
     stage_cell_relative_path,
 )
+from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 
 
-GEOROUTE_DAG_SCHEMA = "georoute_adatad_development_dag_v1"
-GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v1"
+GEOROUTE_DAG_SCHEMA = "georoute_adatad_development_dag_v2"
+GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v2"
 
 # The N16R4 outer allocation is site-policy scaffolding only.  The matching
 # launcher immediately enters an exact one-GPU/5-CPU/96G step for model work.
@@ -302,6 +303,13 @@ def _p1_bootstrap(args: argparse.Namespace) -> int:
     args.run_root.mkdir(parents=True, exist_ok=False)
     (args.run_root / "control").mkdir()
     (args.run_root / "slurm").mkdir()
+    storage_profile = p0_receipt.get("storage_profile")
+    if not isinstance(storage_profile, Mapping):
+        raise ValueError("sealed P0 parent lacks a same-commit storage profile")
+    _atomic_write_json(
+        args.run_root / "control" / "georoute_storage_profile.json",
+        storage_profile,
+    )
 
     jobs = _submit_stage_matrix(
         args=args,
@@ -325,8 +333,8 @@ def _p1_bootstrap(args: argparse.Namespace) -> int:
         ],
         "p1_jobs": jobs,
         "frozen_successor_policy": {
-            "p2": "submit only when p1-select records ADVANCE_STRUCTURED_ROI_TO_P2",
-            "p3": "submit only when p2-select records ADVANCE_STRUCTURED_ROI_TO_P3",
+            "p2": "submit only when p1-select advances Native Route B or Geometry Route A",
+            "p3": "submit only when p2-select advances the same preregistered route",
             "official_test_opened": False,
             "amod_included": False,
         },
@@ -363,6 +371,27 @@ def _submit_stage_matrix(
     if not stage_script.is_file() or not dispatch_script.is_file():
         raise FileNotFoundError("GeoRoute Slurm stage/dispatch script is missing")
     _require_submit_capacity(additional_jobs=len(cells) + 1)
+    storage_profile_path = (
+        args.run_root / "control" / "georoute_storage_profile.json"
+    )
+    if storage_profile_path.is_file():
+        storage_profile = _read_json(storage_profile_path)
+    elif os.environ.get("SLURM_JOB_ID"):
+        raise FileNotFoundError(
+            "GeoRoute stage submission requires the same-commit P0 storage profile"
+        )
+    else:
+        storage_profile = None
+    storage_receipt = storage_capacity_receipt(
+        args.run_root,
+        cell_count=len(cells),
+        storage_profile=storage_profile,
+        expected_commit=args.expected_commit,
+    )
+    _atomic_write_json(
+        args.run_root / "control" / f"{stage}_storage_preflight.json",
+        storage_receipt,
+    )
     prepared_cells: list[tuple[str, dict[str, str]]] = []
     for variant, seed, budget in cells:
         label = f"georoute_{stage}_{variant}_s{seed}" + (f"_k{budget}" if budget else "")
@@ -428,6 +457,13 @@ def _p0_finalize(args: argparse.Namespace) -> int:
     _atomic_write_json(receipt_path, receipt)
     if receipt.get("status") != "PASS_MECHANICAL_ONLY":
         raise ValueError("GeoRoute P0 finalizer did not pass")
+    storage_profile = receipt.get("storage_profile")
+    if not isinstance(storage_profile, Mapping):
+        raise ValueError("GeoRoute P0 finalizer did not emit a storage profile")
+    _atomic_write_json(
+        args.run_root / "control" / "georoute_storage_profile.json",
+        storage_profile,
+    )
     cells = [(variant, 3407, None) for variant in P1_VARIANTS]
     _submit_stage_matrix(
         args=args,
@@ -444,18 +480,29 @@ def _p1_select(args: argparse.Namespace) -> int:
     decision = select_p1_roi_candidate(records)
     decision_path = args.run_root / "control" / "p1_selection.json"
     _atomic_write_json(decision_path, decision)
-    if decision["status"] != "ADVANCE_STRUCTURED_ROI_TO_P2":
+    if decision["status"] not in {
+        "ADVANCE_FREE_TO_P2",
+        "ADVANCE_HYBRID_TO_P2",
+    }:
         return 0
-    candidate = str(decision["best_structured_variant"])
-    cells = [
-        (variant, seed, None)
-        for variant in ("fixed_lattice", "fixed_lattice_geometry", "random", "free", candidate)
-        for seed in DEVELOPMENT_SEEDS
-    ]
+    candidate = str(decision["selected_variant"])
+    p2_variants = _unique_cells(
+        [
+            (variant, seed, None)
+            for variant in (
+                "fixed_lattice",
+                "fixed_lattice_geometry",
+                "random",
+                "free",
+                candidate,
+            )
+            for seed in DEVELOPMENT_SEEDS
+        ]
+    )
     _submit_stage_matrix(
         args=args,
         stage="p2",
-        cells=cells,
+        cells=p2_variants,
         parent_receipt=str(decision["selection_sha256"]),
         next_action="p2-select",
     )
@@ -464,17 +511,34 @@ def _p1_select(args: argparse.Namespace) -> int:
 
 def _p2_select(args: argparse.Namespace) -> int:
     p1 = _read_json(args.run_root / "control" / "p1_selection.json")
-    if p1.get("status") != "ADVANCE_STRUCTURED_ROI_TO_P2":
+    if p1.get("status") not in {
+        "ADVANCE_FREE_TO_P2",
+        "ADVANCE_HYBRID_TO_P2",
+    }:
         raise ValueError("P2 dispatcher was reached without P1 authorization")
-    candidate = str(p1["best_structured_variant"])
+    candidate = str(p1["selected_variant"])
+    p2_variants = tuple(
+        dict.fromkeys(
+            (
+                "fixed_lattice",
+                "fixed_lattice_geometry",
+                "random",
+                "free",
+                candidate,
+            )
+        )
+    )
     records = {
         variant: [_load_stage_result(args.run_root, "p2", variant, seed) for seed in DEVELOPMENT_SEEDS]
-        for variant in ("fixed_lattice", "fixed_lattice_geometry", "random", "free", candidate)
+        for variant in p2_variants
     }
     decision = select_p2_roi_candidate(records, candidate_variant=candidate)
     decision_path = args.run_root / "control" / "p2_selection.json"
     _atomic_write_json(decision_path, decision)
-    if decision["status"] != "ADVANCE_STRUCTURED_ROI_TO_P3":
+    if decision["status"] not in {
+        "ADVANCE_NATIVE_ROUTE_B_TO_P3",
+        "ADVANCE_GEOMETRY_ROUTE_A_TO_P3",
+    }:
         return 0
     budget_cells = [
         (variant, seed, budget)
@@ -501,7 +565,10 @@ def _p2_select(args: argparse.Namespace) -> int:
 
 def _p3_finalize(args: argparse.Namespace) -> int:
     p2 = _read_json(args.run_root / "control" / "p2_selection.json")
-    if p2.get("status") != "ADVANCE_STRUCTURED_ROI_TO_P3":
+    if p2.get("status") not in {
+        "ADVANCE_NATIVE_ROUTE_B_TO_P3",
+        "ADVANCE_GEOMETRY_ROUTE_A_TO_P3",
+    }:
         raise ValueError("P3 finalizer was reached without P2 authorization")
     candidate = str(p2["candidate_variant"])
     cells = [

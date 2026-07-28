@@ -25,7 +25,7 @@ from .georoute_routing import (
 from .native_crop_wrapper import deterministic_linear_2x
 
 
-GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v1"
+GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v2"
 
 
 class GeoRouteScout(nn.Module):
@@ -97,6 +97,7 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
         selected_coordinates: torch.Tensor,
         *,
         use_absolute_coordinates: bool,
+        pooling_mode: str,
     ) -> torch.Tensor:
         if selected_features.ndim != 4:
             raise ValueError("selected features must be [B,T,K,C]")
@@ -117,7 +118,15 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
             ) / geometry[:, :, None, 2:].clamp_min(1e-6)
             coordinate_features = torch.cat((selected_coordinates, relative), dim=-1)
             selected_features = selected_features + self.coordinate_projection(coordinate_features)
-        weights = torch.softmax(selected_scores, dim=-1).unsqueeze(-1)
+        if pooling_mode == "uniform_selected":
+            weights = torch.full_like(
+                selected_scores,
+                1.0 / float(selected_scores.shape[-1]),
+            ).unsqueeze(-1)
+        elif pooling_mode == "route_score_ablation":
+            weights = torch.softmax(selected_scores, dim=-1).unsqueeze(-1)
+        else:
+            raise ValueError(f"unsupported GeoRoute pooling mode {pooling_mode!r}")
         pooled = (weights * selected_features).sum(dim=2)
         pooled = self.norm(pooled + self.geometry_projection(geometry))
         temporal = self.output(self.temporal(pooled.transpose(1, 2))).transpose(1, 2)
@@ -135,59 +144,23 @@ def extract_native_tubelets(
     *,
     patch_size: int,
     tubelet_size: int,
-) -> tuple[torch.Tensor, tuple[int, int], tuple[int, int]]:
-    """Pad only the source boundary and view it as native VideoMAE tubelets."""
+) -> tuple[torch.Tensor, tuple[int, int], tuple[int, int], torch.Tensor]:
+    """Crop to complete native patches and expose an explicit validity mask."""
 
     if source.ndim != 5 or source.shape[1] != 3:
         raise ValueError("source must be [B,3,T,H,W]")
     batch, channels, frames, height, width = map(int, source.shape)
     if channels != 3 or frames % int(tubelet_size):
         raise ValueError("source must contain RGB frames divisible by VideoMAE tubelet size")
-    pad_bottom = (-height) % int(patch_size)
-    pad_right = (-width) % int(patch_size)
-    if pad_bottom or pad_right:
-        # CUDA does not implement ``replicate`` padding for uint8 tensors.
-        # Flattening only the independent batch/time axes lets us append the
-        # final row/column directly while preserving each source pixel's dtype
-        # and value. This is boundary replication, never a resize or an
-        # interpolation.
-        frame_images = source.permute(0, 2, 1, 3, 4).reshape(
-            batch * frames,
-            channels,
-            height,
-            width,
-        )
-        if pad_bottom:
-            frame_images = torch.cat(
-                (
-                    frame_images,
-                    frame_images[..., -1:, :].expand(-1, -1, pad_bottom, -1),
-                ),
-                dim=-2,
-            )
-        if pad_right:
-            frame_images = torch.cat(
-                (
-                    frame_images,
-                    frame_images[..., :, -1:].expand(-1, -1, -1, pad_right),
-                ),
-                dim=-1,
-            )
-        padded_images = frame_images
-        source = (
-            padded_images.reshape(
-                batch,
-                frames,
-                channels,
-                height + pad_bottom,
-                width + pad_right,
-            )
-            .permute(0, 2, 1, 3, 4)
-            .contiguous()
-        )
-    padded_height, padded_width = map(int, source.shape[-2:])
-    grid_height = padded_height // int(patch_size)
-    grid_width = padded_width // int(patch_size)
+    valid_height = (height // int(patch_size)) * int(patch_size)
+    valid_width = (width // int(patch_size)) * int(patch_size)
+    if valid_height <= 0 or valid_width <= 0:
+        raise ValueError("source is smaller than one complete native spatial patch")
+    ignored_bottom = height - valid_height
+    ignored_right = width - valid_width
+    source = source[..., :valid_height, :valid_width].contiguous()
+    grid_height = valid_height // int(patch_size)
+    grid_width = valid_width // int(patch_size)
     tubelets = frames // int(tubelet_size)
     native = (
         source.reshape(
@@ -204,7 +177,17 @@ def extract_native_tubelets(
         .reshape(batch, tubelets, grid_height * grid_width, channels, tubelet_size, patch_size, patch_size)
         .contiguous()
     )
-    return native, (grid_height, grid_width), (pad_bottom, pad_right)
+    valid_patch_mask = torch.ones(
+        (batch, tubelets, grid_height * grid_width),
+        device=source.device,
+        dtype=torch.bool,
+    )
+    return (
+        native,
+        (grid_height, grid_width),
+        (ignored_bottom, ignored_right),
+        valid_patch_mask,
+    )
 
 
 class GeoRouteBackboneWrapper(BackboneWrapper):
@@ -241,6 +224,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.absolute_coordinates_enabled = bool(
             getattr(custom_cfg, "georoute_absolute_coordinates_enabled", True)
         )
+        self.pooling_mode = str(
+            getattr(custom_cfg, "georoute_pooling_mode", "uniform_selected")
+        )
+        self.adapter_mode = str(
+            getattr(
+                custom_cfg,
+                "georoute_adapter_mode",
+                "coordinate_lineage_packed",
+            )
+        )
         # A causal control can expose exactly the same learned geometry to the
         # aggregation adapter while keeping a fixed token lattice.  It tests
         # whether a gain comes from spatial *selection*, rather than merely
@@ -269,6 +262,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError(f"unsupported GeoRoute route mode {self.route_mode!r}")
         if self.policy_estimator not in POLICY_ESTIMATORS:
             raise ValueError(f"unsupported GeoRoute estimator {self.policy_estimator!r}")
+        if self.pooling_mode not in {"uniform_selected", "route_score_ablation"}:
+            raise ValueError(
+                "georoute_pooling_mode must be uniform_selected or route_score_ablation"
+            )
+        if self.adapter_mode != "coordinate_lineage_packed":
+            raise ValueError(
+                "GeoRoute correctness protocol requires "
+                "georoute_adapter_mode='coordinate_lineage_packed'"
+            )
         if self.window_size <= 0 or self.window_size % self.tubelet_size:
             raise ValueError("GeoRoute window size must be divisible by its tubelet size")
         if self.window_size % 16:
@@ -294,6 +296,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError("GeoRoute requires VideoMAE with_cp=False for one-forward accounting")
         self._freeze_shared_backbone_except_adapters()
         self.scout = GeoRouteScout(channels=48)
+        self._configure_scout_trainability()
         self.sparse_adapter = GeoRouteSparseTemporalAdapter(channels=int(self.model.backbone.embed_dims))
         self.register_buffer("source_mean", torch.tensor([123.675, 116.28, 103.53]).view(1, 3, 1, 1, 1))
         self.register_buffer("source_std", torch.tensor([58.395, 57.12, 57.375]).view(1, 3, 1, 1, 1))
@@ -314,6 +317,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         if trainable_adapter_parameters <= 0:
             raise RuntimeError("GeoRoute requires trainable VideoMAE adapters")
         self.trainable_adapter_parameters = trainable_adapter_parameters
+
+    def _configure_scout_trainability(self) -> None:
+        needs_geometry = self.route_mode in {"roi", "hybrid"} or self.geometry_side_channel
+        needs_residual = self.route_mode in {"free", "hybrid"}
+        needs_stem = needs_geometry or needs_residual
+        for parameter in self.scout.parameters():
+            parameter.requires_grad = needs_stem
+        if not needs_geometry:
+            for parameter in self.scout.geometry_head.parameters():
+                parameter.requires_grad = False
+        if not needs_residual:
+            for parameter in self.scout.residual_head.parameters():
+                parameter.requires_grad = False
 
     def set_norm_layer(self) -> None:
         """Freeze only pretrained VideoMAE normalization, not route modules."""
@@ -393,39 +409,96 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         area_loss = (area - self.area_prior).square()
         return self.geometry_smoothness_weight * smoothness + self.area_prior_weight * area_loss
 
-    def forward(self, frames, masks=None):
-        source, scout = self._validate_inputs(frames)
-        self.set_norm_layer()
-        native, source_grid_hw, padding_bottom_right = extract_native_tubelets(
-            source,
-            patch_size=self.patch_size,
-            tubelet_size=self.tubelet_size,
+    @staticmethod
+    def _fixed_full_frame_geometry(
+        *,
+        batch_size: int,
+        tubelets: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        geometry = torch.ones(
+            (batch_size, tubelets, 4),
+            device=device,
+            dtype=dtype,
         )
-        if self.route_mode in {"dense", "uniform", "random"} and not self.geometry_side_channel:
-            batch_size = int(source.shape[0])
-            tubelets = self.window_size // self.tubelet_size
-            item_count = int(source_grid_hw[0]) * int(source_grid_hw[1])
-            geometry_logits = torch.zeros((batch_size, tubelets, 4), device=source.device)
-            residual_logits = torch.zeros((batch_size, tubelets, item_count), device=source.device)
-        else:
-            normalized_scout = _normalize_uint8_video(scout, self.source_mean, self.source_std)
+        geometry[..., :2] = 0.5
+        return geometry
+
+    def _compute_route_fields(
+        self,
+        scout: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        batch_size = int(scout.shape[0])
+        tubelets = self.window_size // self.tubelet_size
+        item_count = int(source_grid_hw[0]) * int(source_grid_hw[1])
+        needs_geometry = self.route_mode in {"roi", "hybrid"} or self.geometry_side_channel
+        needs_residual = self.route_mode in {"free", "hybrid"}
+        needs_scout = needs_geometry or needs_residual
+
+        if needs_scout:
+            normalized_scout = _normalize_uint8_video(
+                scout,
+                self.source_mean,
+                self.source_std,
+            )
             geometry_logits, residual_logits = self.scout(
                 normalized_scout,
                 source_grid_hw=source_grid_hw,
             )
-        geometry = decode_continuous_geometry(
-            interpolate_temporal_knots(
-                geometry_logits,
-                stride=self.geometry_stride_tubelets,
-            ),
-            min_extent=self.min_roi_extent,
-            max_extent=self.max_roi_extent,
+        else:
+            geometry_logits = torch.zeros(
+                (batch_size, tubelets, 4),
+                device=scout.device,
+                dtype=torch.float32,
+            )
+            residual_logits = torch.zeros(
+                (batch_size, tubelets, item_count),
+                device=scout.device,
+                dtype=torch.float32,
+            )
+
+        if needs_geometry:
+            geometry = decode_continuous_geometry(
+                interpolate_temporal_knots(
+                    geometry_logits,
+                    stride=self.geometry_stride_tubelets,
+                ),
+                min_extent=self.min_roi_extent,
+                max_extent=self.max_roi_extent,
+            )
+            regularization = self._regularization(geometry)
+        else:
+            geometry = self._fixed_full_frame_geometry(
+                batch_size=batch_size,
+                tubelets=tubelets,
+                device=scout.device,
+                dtype=residual_logits.dtype,
+            )
+            regularization = geometry.new_zeros(())
+
+        if not needs_residual:
+            residual_logits = torch.zeros(
+                (batch_size, tubelets, item_count),
+                device=scout.device,
+                dtype=geometry.dtype,
+            )
+        return geometry, residual_logits, regularization
+
+    def forward(self, frames, masks=None):
+        source, scout = self._validate_inputs(frames)
+        self.set_norm_layer()
+        native, source_grid_hw, ignored_remainder, valid_patch_mask = extract_native_tubelets(
+            source,
+            patch_size=self.patch_size,
+            tubelet_size=self.tubelet_size,
         )
-        # Fixed lattice and random controls must not obtain an accidental
-        # geometry cue through the aggregation adapter.
-        if self.route_mode in {"dense", "uniform", "random"} and not self.geometry_side_channel:
-            geometry = torch.ones_like(geometry)
-            geometry[..., :2] = 0.5
+        geometry, residual_logits, geometry_regularization = self._compute_route_fields(
+            scout,
+            source_grid_hw=source_grid_hw,
+        )
         roi_logits = roi_logits_from_geometry(
             geometry,
             grid_height=source_grid_hw[0],
@@ -442,8 +515,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             training=self.training,
             estimator=self.policy_estimator,
             temperature=self.policy_temperature,
+            valid_mask=valid_patch_mask,
             random_seed=self.random_seed,
         )
+        if not bool(valid_patch_mask.gather(-1, route["indices"]).all().item()):
+            raise RuntimeError("GeoRoute selected an invalid native patch")
         selected_native = self._gather_selected_native_tubelets(native, route["indices"])
         selected_native = _normalize_uint8_video(
             selected_native.reshape(-1, 3, 2, self.patch_size, self.patch_size),
@@ -502,7 +578,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "cost_scope": "p0_debug_only_excluded_from_runtime_cost",
             }
         selected_features = selected_features * route["st_gate"].to(selected_features.dtype).unsqueeze(-1)
-        selected_scores = route["selected_aggregation_logits"]
+        if self.pooling_mode == "uniform_selected":
+            selected_scores = torch.zeros_like(route["selected_aggregation_logits"])
+        else:
+            selected_scores = route["selected_aggregation_logits"]
         selected_coordinates = self._selected_native_coordinates(
             route["indices"],
             source_grid_hw=source_grid_hw,
@@ -513,6 +592,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             geometry,
             selected_coordinates,
             use_absolute_coordinates=self.absolute_coordinates_enabled,
+            pooling_mode=self.pooling_mode,
         )
         output = deterministic_linear_2x(intermediate)
         if output.shape != (source.shape[0], int(self.model.backbone.embed_dims), self.output_length):
@@ -525,7 +605,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         if self.training:
             if self._pending_regularization is not None or self._pending_score_function is not None:
                 raise RuntimeError("GeoRoute pending training losses were not consumed exactly once")
-            self._pending_regularization = {"geometry": self._regularization(geometry)}
+            self._pending_regularization = {"geometry": geometry_regularization}
             if self.policy_estimator == "score_function":
                 log_prob = route["ordered_log_prob"]
                 if log_prob is None:
@@ -559,7 +639,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "native_packed_invocation_counter_after": packed_invocations_after,
             "source_input_shape": list(source.shape),
             "source_grid_hw": list(source_grid_hw),
-            "source_padding_bottom_right": list(padding_bottom_right),
+            "source_padding_bottom_right": [0, 0],
+            "source_ignored_remainder_bottom_right": list(ignored_remainder),
+            "valid_patch_count_min": int(valid_patch_mask.sum(dim=-1).min().item()),
+            "valid_patch_count_max": int(valid_patch_mask.sum(dim=-1).max().item()),
             "native_tubelet_shape": list(native.shape),
             "selected_native_tubelet_shape": list(selected_native.shape),
             "intermediate_shape": list(intermediate.shape),
@@ -568,7 +651,23 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "geometry_stride_tubelets": self.geometry_stride_tubelets,
             "absolute_position_enabled": self.absolute_position_enabled,
             "absolute_coordinates_enabled": self.absolute_coordinates_enabled,
+            "pooling_mode": self.pooling_mode,
+            "adapter_mode": self.adapter_mode,
             "geometry_side_channel": self.geometry_side_channel,
+            "learned_geometry_enabled": bool(
+                self.route_mode in {"roi", "hybrid"}
+                or self.geometry_side_channel
+            ),
+            "learned_residual_enabled": self.route_mode in {"free", "hybrid"},
+            "free_control_is_roi_free": bool(
+                self.route_mode != "free"
+                or (
+                    self.route_mode == "free"
+                    and not self.geometry_side_channel
+                )
+            ),
+            "route_logits_used_for_pooling": self.pooling_mode
+            == "route_score_ablation",
             "geometry_min": float(geometry.detach().min().item()),
             "geometry_max": float(geometry.detach().max().item()),
             "target_k": int(route["target_k"]),

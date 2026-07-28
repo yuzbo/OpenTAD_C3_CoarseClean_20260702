@@ -41,6 +41,19 @@ from opentad.utils.training_guard import (
 from opentad.utils.train_schedule import should_eval_epoch
 
 
+def should_save_training_checkpoint(*, epoch, max_epoch, workflow):
+    """Return the frozen checkpoint decision without changing legacy defaults."""
+
+    policy = str(workflow.get("checkpoint_policy", "interval"))
+    if policy == "final_only":
+        return int(epoch) == int(max_epoch) - 1
+    if policy != "interval":
+        raise ValueError(f"unsupported checkpoint policy {policy!r}")
+    return (int(epoch) == int(max_epoch) - 1) or (
+        (int(epoch) + 1) % int(workflow.checkpoint_interval) == 0
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
@@ -435,8 +448,10 @@ def main():
         )
 
         # save checkpoint
-        should_save_checkpoint = (epoch == max_epoch - 1) or (
-            (epoch + 1) % cfg.workflow.checkpoint_interval == 0
+        should_save_checkpoint = should_save_training_checkpoint(
+            epoch=epoch,
+            max_epoch=max_epoch,
+            workflow=cfg.workflow,
         )
         if s1_binding is not None:
             should_save_checkpoint = should_save_s1_checkpoint(
@@ -526,7 +541,11 @@ def main():
                 )
 
                 # save the best checkpoint
-                if val_loss < val_loss_best:
+                if (
+                    val_loss < val_loss_best
+                    and str(cfg.workflow.get("checkpoint_policy", "interval"))
+                    != "final_only"
+                ):
                     logger.info(f"New best epoch {epoch}")
                     val_loss_best = val_loss
                     if not disable_checkpoint and args.rank == 0:

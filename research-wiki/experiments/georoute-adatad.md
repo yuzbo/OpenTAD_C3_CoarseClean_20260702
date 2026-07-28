@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: tested
-status: failed_p1_infrastructure_storage_exhaustion_no_metric
+stage: implemented
+status: correctness_replacement_implemented_local_pending_remote_p0r
 updated: 2026-07-28
 ---
 
@@ -11,9 +11,10 @@ updated: 2026-07-28
 
 ## Question
 
-At a fixed native VideoMAE token budget, can a continuous geometry prior plus
-free-token residual evidence protect high-tIoU offline TAD better than
-unstructured free TokenSelect at lower measured end-to-end cost?
+At a fixed native VideoMAE token budget, does ROI-free NativeTokenSelect first
+beat matched fixed, random, and geometry-side-channel controls at lower total
+cost than dense, and only then does continuous geometry add further high-tIoU
+benefit without extra total cost?
 
 ## Current evidence
 
@@ -166,13 +167,53 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   `e60f00ce6783ac6b858f107fbf06a5aff5d423d7e48b2139fa2412d2beab5e06`.
   This storage operation does not change the failed P1 evidence status.
 
+## Correctness replacement (2026-07-28)
+
+- The exact-commit Pro review returned `HOLD_FOR_CORRECTNESS_FIX` and is
+  archived with SHA-256
+  `e71e1964b75c68c3b05467ba571112e2bd540afa2ce791f991c5cf68ee078600`.
+  It found six blockers: replicated 180x320-to-192x320 support without
+  validity, a dense-lattice Adapter under packed attention/MLP, learned
+  geometry in `free`, unmatched logit versus uniform pooling, a
+  branch-misaligned hybrid surrogate, and unbounded checkpoint/storage
+  behavior.
+- The replacement is locally `implemented`: floor-native 176x320 support and
+  an explicit validity mask; mask-aware exact-K; coordinate-lineage packed
+  VideoMAE Adapter; fixed full-frame/frozen geometry in `free`; common
+  uniform-selected pooling; branch-aligned hybrid route gradients with summed
+  temporal score likelihood; atomic final-only checkpointing; and
+  same-commit aggregate storage preflight.
+- P0R now measures and seals a same-commit storage profile and checks packed
+  attention, MLP, and Adapter execution with zero dense Adapter calls. P1R
+  retains the seven matched arms but removes A-MoD, FlashVID-inspired
+  residuals, and all other post-selection innovations.
+- The selector is hierarchical. NativeTokenSelect must beat fixed lattice,
+  random, and fixed-lattice-plus-geometry on the frozen accuracy criterion and
+  cost less than dense. Only then may hybrid geometry advance, and only by
+  beating free, random, and the geometry side-channel without greater total
+  cost. Otherwise Route B advances or learned routing stops.
+- Deployment remains one shot: three Slurm P0R siblings gate a finalizer; a
+  mechanical pass automatically submits all seven P1R arms concurrently; a
+  result-blind `afterok(all)` selector alone may create P2/P3 descendants.
+  Thus scheduling is parallel while scientific interpretation is ordered.
+- The implementation is native-token evidence routing, not a sequential
+  TokenSelect-then-source-crop forward and not a resized crop. The term
+  “Geometry Zoom” remains disallowed unless geometry strictly adds after the
+  native base and the later multi-seed, cost, diagnostic, and generalization
+  evidence closes.
+- Local non-tensor contracts and static checks pass; Windows cannot load the
+  Torch runtime. Until the clean remote snapshot passes focused tensor tests
+  and P0R, the replacement is not `tested`. No replacement P1R metric, cost
+  result, empirical support, or paper claim exists.
+
 ## Frozen decision logic
 
-P0 proves only implementation facts. P1 compares all matched primary
-controls. If free TokenSelect beats ROI-plus-residual on the high-IoU/cost
-Pareto, the ROI primary claim is killed rather than tuned after the fact. P2
-and P3 are result-blind descendants; they cannot start direct full training
-until their parent decision receipt authorizes them.
+P0R proves only implementation facts. P1R first tests whether ROI-free
+NativeTokenSelect survives fixed, random, geometry-side-channel, and dense-cost
+controls. A failed native base stops learned routing rather than being rescued
+by extra geometry. Only after the native base passes can corrected hybrid
+geometry be tested as an add-on. P2 and P3 are result-blind descendants; they
+cannot start full training until their parent decision receipt authorizes them.
 
 ## Evidence outputs
 

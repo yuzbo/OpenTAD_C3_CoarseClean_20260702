@@ -36,9 +36,10 @@ from tools.bata.georoute_experiment_contract import (  # noqa: E402
     stage_epochs,
     variant_spec,
 )
+from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 
 
-GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v1"
+GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v2"
 _AVERAGE_MAP = re.compile(r"Average-mAP:\s*([0-9]+(?:\.[0-9]+)?)\s*\(%\)")
 _TIOU_MAP = re.compile(
     r"mAP at tIoU\s+([0-9]+(?:\.[0-9]+)?)\s+is\s+([0-9]+(?:\.[0-9]+)?)%"
@@ -142,6 +143,7 @@ def build_stage_result(
     binding: Mapping[str, Any],
     config_path: Path,
     checkpoint_path: Path,
+    storage_receipt_path: Path,
     prediction_path: Path,
     profile_path: Path,
     test_log_path: Path,
@@ -179,6 +181,13 @@ def build_stage_result(
         "binding_sha256": str(binding["binding_sha256"]),
         "config_sha256": sha256_file(config_path),
         "checkpoint_sha256": sha256_file(checkpoint_path),
+        "checkpoint_receipt": {
+            "path": str(checkpoint_path.resolve()),
+            "sha256": sha256_file(checkpoint_path),
+            "size_bytes": int(checkpoint_path.stat().st_size),
+            "policy": "final_only_atomic",
+        },
+        "storage_receipt": _read_json(storage_receipt_path),
         "prediction_sha256": sha256_file(prediction_path),
         "test_log_sha256": sha256_file(test_log_path),
         "runtime_commit": runtime_commit,
@@ -241,7 +250,22 @@ def main() -> int:
     )
     if work_root.exists() or bound_config.exists():
         raise FileExistsError("GeoRoute cell namespace already exists; refusing overwrite or resume")
+    storage_profile_path = (
+        run_root / "control" / "georoute_storage_profile.json"
+    )
+    if not storage_profile_path.is_file():
+        raise FileNotFoundError(
+            "GeoRoute cell requires the same-commit P0 storage profile"
+        )
+    storage_receipt = storage_capacity_receipt(
+        run_root,
+        cell_count=1,
+        storage_profile=_read_json(storage_profile_path),
+        expected_commit=args.expected_commit.lower(),
+    )
     work_root.mkdir(parents=True, exist_ok=False)
+    storage_receipt_path = work_root / "storage_preflight.json"
+    _atomic_write_json(storage_receipt_path, storage_receipt)
     bound_config.parent.mkdir(parents=True, exist_ok=True)
 
     cfg = bind_development_config(
@@ -276,6 +300,14 @@ def main() -> int:
     checkpoint_path = effective_work_dir / "checkpoint" / f"epoch_{stage_epochs(args.stage) - 1}.pth"
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"GeoRoute final EMA checkpoint is missing: {checkpoint_path}")
+    checkpoint_dir = checkpoint_path.parent
+    checkpoint_payloads = sorted(checkpoint_dir.glob("*.pth"))
+    checkpoint_temporaries = sorted(checkpoint_dir.glob("*.tmp*"))
+    if checkpoint_payloads != [checkpoint_path] or checkpoint_temporaries:
+        raise RuntimeError(
+            "GeoRoute final-only policy requires exactly one complete checkpoint: "
+            f"payloads={checkpoint_payloads}, temporaries={checkpoint_temporaries}"
+        )
     _run_logged(
         [
             *torchrun,
@@ -304,6 +336,7 @@ def main() -> int:
         binding=cfg.georoute_runtime_binding,
         config_path=bound_config,
         checkpoint_path=checkpoint_path,
+        storage_receipt_path=storage_receipt_path,
         prediction_path=prediction_path,
         profile_path=profile_path,
         test_log_path=test_log,

@@ -5,6 +5,7 @@ import torch
 
 from opentad.models.backbones.georoute_wrapper import (
     GeoRouteBackboneWrapper,
+    GeoRouteSparseTemporalAdapter,
     extract_native_tubelets,
 )
 from opentad.models.backbones.georoute_routing import (
@@ -70,8 +71,8 @@ def test_native_tubelet_gather_preserves_the_btk_video_layout():
     assert torch.equal(gathered[0, 1, 1], native[0, 1, 2])
 
 
-def test_native_tubelets_replicate_pad_nondivisible_ncthw_without_resizing():
-    """Real 180x320 source geometry must pad safely before native patch views."""
+def test_native_tubelets_floor_crop_nondivisible_ncthw_without_synthetic_pixels():
+    """Real 180x320 support is the complete 176x320 native patch lattice."""
 
     source = torch.arange(1 * 3 * 2 * 180 * 320, dtype=torch.uint8).reshape(
         1,
@@ -80,30 +81,29 @@ def test_native_tubelets_replicate_pad_nondivisible_ncthw_without_resizing():
         180,
         320,
     )
-    native, grid_hw, padding = extract_native_tubelets(
+    native, grid_hw, ignored, valid_mask = extract_native_tubelets(
         source,
         patch_size=16,
         tubelet_size=2,
     )
 
-    assert grid_hw == (12, 20)
-    assert padding == (12, 0)
-    assert native.shape == (1, 1, 240, 3, 2, 16, 16)
+    assert grid_hw == (11, 20)
+    assert ignored == (4, 0)
+    assert native.shape == (1, 1, 220, 3, 2, 16, 16)
     assert native.dtype == torch.uint8
+    assert valid_mask.dtype == torch.bool
+    assert valid_mask.shape == (1, 1, 220)
+    assert bool(valid_mask.all())
 
     restored = (
-        native.reshape(1, 1, 12, 20, 3, 2, 16, 16)
+        native.reshape(1, 1, 11, 20, 3, 2, 16, 16)
         .permute(0, 4, 1, 5, 2, 6, 3, 7)
-        .reshape(1, 3, 2, 192, 320)
+        .reshape(1, 3, 2, 176, 320)
     )
-    assert torch.equal(restored[..., :180, :], source)
-    assert torch.equal(
-        restored[..., 180:, :],
-        source[..., 179:180, :].expand_as(restored[..., 180:, :]),
-    )
+    assert torch.equal(restored, source[..., :176, :])
 
 
-def test_native_tubelets_replicate_pad_uint8_right_boundary_without_resizing():
+def test_native_tubelets_floor_crop_both_uint8_boundaries():
     source = torch.arange(1 * 3 * 2 * 17 * 18, dtype=torch.uint8).reshape(
         1,
         3,
@@ -111,31 +111,24 @@ def test_native_tubelets_replicate_pad_uint8_right_boundary_without_resizing():
         17,
         18,
     )
-    native, grid_hw, padding = extract_native_tubelets(
+    native, grid_hw, ignored, valid_mask = extract_native_tubelets(
         source,
         patch_size=16,
         tubelet_size=2,
     )
 
-    assert grid_hw == (2, 2)
-    assert padding == (15, 14)
-    assert native.shape == (1, 1, 4, 3, 2, 16, 16)
+    assert grid_hw == (1, 1)
+    assert ignored == (1, 2)
+    assert native.shape == (1, 1, 1, 3, 2, 16, 16)
     assert native.dtype == torch.uint8
+    assert bool(valid_mask.all())
 
     restored = (
-        native.reshape(1, 1, 2, 2, 3, 2, 16, 16)
+        native.reshape(1, 1, 1, 1, 3, 2, 16, 16)
         .permute(0, 4, 1, 5, 2, 6, 3, 7)
-        .reshape(1, 3, 2, 32, 32)
+        .reshape(1, 3, 2, 16, 16)
     )
-    expected = torch.cat(
-        (source, source[..., -1:, :].expand(-1, -1, -1, 15, -1)),
-        dim=-2,
-    )
-    expected = torch.cat(
-        (expected, expected[..., :, -1:].expand(-1, -1, -1, -1, 14)),
-        dim=-1,
-    )
-    assert torch.equal(restored, expected)
+    assert torch.equal(restored, source[..., :16, :16])
 
 
 @pytest.mark.parametrize(
@@ -161,6 +154,7 @@ def test_exact_k_routes_have_no_duplicates_and_a_complete_schema(mode, estimator
         training=True,
         estimator=estimator,
         temperature=0.7,
+        valid_mask=torch.ones_like(roi, dtype=torch.bool),
     )
 
     expected_k = roi.shape[-1] if mode == "dense" else 6
@@ -188,14 +182,25 @@ def test_st_gate_is_hard_in_forward_but_has_a_biased_surrogate_gradient():
         training=True,
         estimator="straight_through",
         temperature=0.6,
+        valid_mask=torch.ones_like(roi, dtype=torch.bool),
     )
 
     assert torch.equal(route["st_gate"].detach(), torch.ones_like(route["st_gate"]))
+    context = route["ordered_indices"][..., :1]
+    context_in_sorted_route = route["indices"] == context
+    assert torch.equal(
+        route["selected_surrogate"].masked_select(context_in_sorted_route),
+        torch.zeros_like(
+            route["selected_surrogate"].masked_select(context_in_sorted_route)
+        ),
+    )
     route["st_gate"].sum().backward()
     assert roi.grad is not None and residual.grad is not None
     assert torch.isfinite(roi.grad).all() and torch.isfinite(residual.grad).all()
     assert torch.count_nonzero(roi.grad) > 0
     assert torch.count_nonzero(residual.grad) > 0
+    assert torch.count_nonzero(roi.grad.gather(-1, context)) == 0
+    assert torch.count_nonzero(residual.grad.gather(-1, context)) == 0
 
 
 def test_score_function_route_has_plackett_luce_gradient_and_loss():
@@ -211,6 +216,7 @@ def test_score_function_route_has_plackett_luce_gradient_and_loss():
         training=True,
         estimator="score_function",
         temperature=0.8,
+        valid_mask=torch.ones_like(roi, dtype=torch.bool),
     )
     assert route["ordered_log_prob"] is not None
     recomputed = ordered_plackett_luce_log_prob(
@@ -262,6 +268,16 @@ def test_score_function_loss_has_the_exact_risk_gradient_sign_for_one_draw():
     assert torch.allclose(observed_gradient, expected_gradient, atol=1e-6, rtol=1e-6)
 
 
+def test_score_function_sums_temporal_log_probability_then_averages_batch():
+    loss = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0),
+        ordered_log_prob=torch.tensor([[1.0, 2.0, 3.0], [2.0, 2.0, 2.0]]),
+        baseline=torch.tensor(1.0),
+        weight=0.5,
+    )
+    assert loss.item() == pytest.approx(3.0)
+
+
 def test_temporal_knot_interpolation_is_endpoint_aligned_and_differentiable():
     knots = torch.tensor([[[0.0], [1.0], [4.0], [9.0], [16.0]]], requires_grad=True)
     interpolated = interpolate_temporal_knots(knots, stride=2)
@@ -284,6 +300,7 @@ def test_stateless_random_control_is_independent_of_global_rng_state():
         training=True,
         estimator="none",
         temperature=0.5,
+        valid_mask=torch.ones_like(roi, dtype=torch.bool),
         random_seed=91,
     )["indices"]
     torch.manual_seed(999999)
@@ -297,6 +314,7 @@ def test_stateless_random_control_is_independent_of_global_rng_state():
         training=True,
         estimator="none",
         temperature=0.5,
+        valid_mask=torch.ones_like(roi, dtype=torch.bool),
         random_seed=91,
     )["indices"]
     assert torch.equal(first, second)
@@ -312,6 +330,7 @@ def test_score_function_and_training_contracts_fail_closed_when_semantics_are_in
         roi_fraction=0.5,
         training=True,
         temperature=0.5,
+        valid_mask=torch.ones_like(roi, dtype=torch.bool),
     )
     with pytest.raises(ValueError, match="single-family"):
         select_exact_k(mode="hybrid", estimator="score_function", **kwargs)
@@ -323,3 +342,97 @@ def test_score_function_and_training_contracts_fail_closed_when_semantics_are_in
             torch.tensor([[[1, 1]]]),
             temperature=1.0,
         )
+
+
+def test_exact_k_never_selects_invalid_native_patches_and_fails_when_k_is_too_large():
+    roi, residual = _logits(batch=1, tubelets=2, patches=8)
+    valid_mask = torch.tensor(
+        [[[True, False, True, True, False, True, True, False]]]
+    ).expand(1, 2, 8)
+    route = select_exact_k(
+        roi_logits=roi,
+        residual_logits=residual,
+        mode="free",
+        tokens_per_tubelet=5,
+        context_tokens=0,
+        roi_fraction=0.0,
+        training=True,
+        estimator="straight_through",
+        temperature=0.5,
+        valid_mask=valid_mask,
+    )
+    assert bool(valid_mask.gather(-1, route["indices"]).all())
+    assert route["valid_patch_count_min"] == 5
+    with pytest.raises(ValueError, match="valid native patch count"):
+        select_exact_k(
+            roi_logits=roi,
+            residual_logits=residual,
+            mode="free",
+            tokens_per_tubelet=6,
+            context_tokens=0,
+            roi_fraction=0.0,
+            training=True,
+            estimator="straight_through",
+            temperature=0.5,
+            valid_mask=valid_mask,
+        )
+
+
+def test_uniform_selected_pooling_is_independent_of_route_logits():
+    torch.manual_seed(29)
+    adapter = GeoRouteSparseTemporalAdapter(channels=8)
+    selected = torch.randn(1, 3, 4, 8)
+    geometry = torch.tensor(
+        [[[0.5, 0.5, 1.0, 1.0]]]
+    ).expand(1, 3, 4)
+    coordinates = torch.rand(1, 3, 4, 2)
+    first = adapter(
+        selected,
+        torch.randn(1, 3, 4),
+        geometry,
+        coordinates,
+        use_absolute_coordinates=True,
+        pooling_mode="uniform_selected",
+    )
+    second = adapter(
+        selected,
+        torch.randn(1, 3, 4) * 100.0,
+        geometry,
+        coordinates,
+        use_absolute_coordinates=True,
+        pooling_mode="uniform_selected",
+    )
+    assert torch.equal(first, second)
+
+
+def test_free_route_uses_fixed_full_frame_geometry_without_geometry_gradient():
+    class FakeScout:
+        def __init__(self):
+            self.geometry_logits = torch.randn(1, 2, 4, requires_grad=True)
+            self.residual_logits = torch.randn(1, 2, 6, requires_grad=True)
+
+        def __call__(self, _scout, *, source_grid_hw):
+            assert source_grid_hw == (2, 3)
+            return self.geometry_logits, self.residual_logits
+
+    fake = type("FreeRouteFields", (), {})()
+    fake.route_mode = "free"
+    fake.geometry_side_channel = False
+    fake.window_size = 4
+    fake.tubelet_size = 2
+    fake.source_mean = torch.zeros(1, 3, 1, 1, 1)
+    fake.source_std = torch.ones(1, 3, 1, 1, 1)
+    fake.scout = FakeScout()
+    fields = GeoRouteBackboneWrapper._compute_route_fields(
+        fake,
+        torch.zeros(1, 3, 4, 8, 8, dtype=torch.uint8),
+        source_grid_hw=(2, 3),
+    )
+    geometry, residual, regularization = fields
+
+    expected = torch.tensor([0.5, 0.5, 1.0, 1.0]).view(1, 1, 4)
+    assert torch.equal(geometry, expected.expand(1, 2, 4))
+    assert regularization.item() == 0.0
+    residual.sum().backward()
+    assert fake.scout.residual_logits.grad is not None
+    assert fake.scout.geometry_logits.grad is None

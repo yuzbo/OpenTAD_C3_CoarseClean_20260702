@@ -76,6 +76,160 @@ class Adapter(BaseModule):
         x = self.up_proj(x)
         return x * self.gamma + inputs
 
+    @staticmethod
+    def _lookup_selected_neighbor(
+        source_values: Tensor,
+        source_indices: Tensor,
+        query_indices: Tensor,
+    ) -> Tensor:
+        """Match exact spatial lineage between adjacent tubelets."""
+
+        if source_values.ndim != 4:
+            raise ValueError("source_values must be [B,T,K,C]")
+        if source_indices.shape != source_values.shape[:3]:
+            raise ValueError("source_indices must match source_values [B,T,K]")
+        if query_indices.shape != source_indices.shape:
+            raise ValueError("query_indices must match source_indices")
+        if source_indices.dtype != torch.long:
+            raise TypeError("packed spatial indices must be torch.long")
+        select_count = int(source_indices.shape[-1])
+        positions = torch.searchsorted(
+            source_indices.contiguous(),
+            query_indices.contiguous(),
+        )
+        bounded = positions.clamp(max=select_count - 1)
+        hit = (positions < select_count) & (
+            source_indices.gather(-1, bounded) == query_indices
+        )
+        gathered = source_values.gather(
+            2,
+            bounded.unsqueeze(-1).expand(
+                *bounded.shape,
+                int(source_values.shape[-1]),
+            ),
+        )
+        return gathered * hit.unsqueeze(-1).to(dtype=source_values.dtype)
+
+    def forward_native_packed(
+        self,
+        inputs: Tensor,
+        dense_mask: Tensor,
+        spatial_indices: Tensor,
+        *,
+        grid_height: int,
+        grid_width: int,
+    ) -> Tensor:
+        """Apply the original Adapter parameters only to selected lineages.
+
+        Unselected carrier positions are exact identity bypasses. A temporal
+        neighbor contributes only when the same native spatial index is selected
+        in the adjacent tubelet. Full-K selection is numerically equivalent to
+        :meth:`forward`.
+        """
+
+        if inputs.ndim != 3:
+            raise ValueError("packed Adapter inputs must be [Bchunk,L,C]")
+        if dense_mask.dtype != torch.bool:
+            raise TypeError("packed Adapter dense_mask must be bool")
+        if dense_mask.shape != inputs.shape[:2]:
+            raise ValueError("packed Adapter dense_mask must match inputs")
+        if spatial_indices.ndim != 3:
+            raise ValueError("spatial_indices must be [B,T,K]")
+        if spatial_indices.dtype != torch.long:
+            raise TypeError("spatial_indices must be torch.long")
+
+        batch_size, total_tubelets, select_count = map(
+            int,
+            spatial_indices.shape,
+        )
+        channels = int(inputs.shape[-1])
+        spatial_tokens = int(grid_height) * int(grid_width)
+        if select_count <= 0:
+            raise ValueError("packed Adapter requires K>0")
+        if spatial_tokens <= 0 or int(inputs.shape[1]) % spatial_tokens:
+            raise ValueError(
+                "packed carrier token count is not divisible by spatial grid"
+            )
+        tubelets_per_chunk = int(inputs.shape[1]) // spatial_tokens
+        if total_tubelets % tubelets_per_chunk:
+            raise ValueError(
+                "total tubelets must be divisible by tubelets per chunk"
+            )
+        chunk_count = total_tubelets // tubelets_per_chunk
+        if int(inputs.shape[0]) != batch_size * chunk_count:
+            raise ValueError("packed carrier batch/chunk layout is inconsistent")
+        if total_tubelets != int(self.temporal_size):
+            raise ValueError(
+                "packed Adapter temporal axis differs from pretrained Adapter"
+            )
+        if int(dense_mask.sum().item()) != (
+            batch_size * total_tubelets * select_count
+        ):
+            raise ValueError(
+                "packed Adapter mask does not contain exact B*T*K selections"
+            )
+        if select_count > 1 and not bool(
+            (spatial_indices[..., 1:] > spatial_indices[..., :-1]).all().item()
+        ):
+            raise ValueError(
+                "packed Adapter indices must be strictly increasing"
+            )
+
+        selected_inputs = inputs[dense_mask].reshape(
+            batch_size,
+            total_tubelets,
+            select_count,
+            channels,
+        )
+        hidden = self.act(self.down_proj(selected_inputs))
+        previous = torch.zeros_like(hidden)
+        following = torch.zeros_like(hidden)
+        if total_tubelets > 1:
+            previous[:, 1:] = self._lookup_selected_neighbor(
+                hidden[:, :-1],
+                spatial_indices[:, :-1],
+                spatial_indices[:, 1:],
+            )
+            following[:, :-1] = self._lookup_selected_neighbor(
+                hidden[:, 1:],
+                spatial_indices[:, 1:],
+                spatial_indices[:, :-1],
+            )
+
+        if (
+            self.dwconv.kernel_size != (3,)
+            or self.dwconv.dilation != (1,)
+            or self.dwconv.stride != (1,)
+            or self.dwconv.padding != (1,)
+        ):
+            raise RuntimeError(
+                "coordinate-lineage Adapter requires the original "
+                "kernel_size=3,dilation=1,stride=1,padding=1"
+            )
+        if self.conv.kernel_size != (1,):
+            raise RuntimeError(
+                "coordinate-lineage Adapter requires pointwise Conv1d"
+            )
+        kernel = self.dwconv.weight[:, 0, :]
+        temporal = (
+            previous * kernel[:, 0].view(1, 1, 1, -1)
+            + hidden * kernel[:, 1].view(1, 1, 1, -1)
+            + following * kernel[:, 2].view(1, 1, 1, -1)
+        )
+        if self.dwconv.bias is not None:
+            temporal = temporal + self.dwconv.bias.view(1, 1, 1, -1)
+        temporal = F.linear(
+            temporal,
+            self.conv.weight[:, :, 0],
+            self.conv.bias,
+        )
+        selected_output = (
+            self.up_proj(hidden + temporal) * self.gamma + selected_inputs
+        )
+        output = inputs.clone()
+        output[dense_mask] = selected_output.reshape(-1, channels)
+        return output
+
 
 class PlainAdapter(BaseModule):
     def __init__(
@@ -657,6 +811,7 @@ class Block(BaseModule):
         h,
         w,
         packed_dense_mask: Optional[Tensor] = None,
+        packed_spatial_indices: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
@@ -676,7 +831,23 @@ class Block(BaseModule):
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
 
             if self.use_adapter:
-                x = self.adapter(x, h, w)
+                if packed_dense_mask is None or packed_spatial_indices is None:
+                    # The older temporal-tubelet packed route deliberately
+                    # preserves its dense Adapter behavior. GeoRoute supplies
+                    # native spatial lineage and takes the sparse path below.
+                    x = self.adapter(x, h, w)
+                else:
+                    x = self.adapter.forward_native_packed(
+                        x,
+                        packed_dense_mask,
+                        packed_spatial_indices,
+                        grid_height=int(h),
+                        grid_width=int(w),
+                    )
+                    if packed_stats is not None:
+                        packed_stats["packed_adapter_forward_count"] = int(
+                            packed_stats.get("packed_adapter_forward_count", 0)
+                        ) + 1
             return x
 
         if self.with_cp and x.requires_grad:
@@ -1087,8 +1258,8 @@ class VisionTransformerAdapter(BaseModule):
         gathered tubelets are embedded with the same pretrained Conv3d patch
         embedder, scattered into their native dense lattice, then the existing
         packed block path executes attention/MLP only for selected locations.
-        Adapter convolutions remain dense by design; callers must therefore
-        report attention/MLP sparsity separately from whole-model cost.
+        Adapter convolutions follow the selected native spatial lineages, so
+        attention, MLP and Adapter all bypass unselected carrier positions.
         """
 
         self.native_packed_forward_invocations += 1
@@ -1104,6 +1275,7 @@ class VisionTransformerAdapter(BaseModule):
             "packed_attention_forward_count": 0,
             "packed_mlp_forward_count": 0,
             "dense_adapter_forward_count": 0,
+            "packed_adapter_forward_count": 0,
         }
         for block in self.blocks:
             x = block(
@@ -1111,14 +1283,13 @@ class VisionTransformerAdapter(BaseModule):
                 metadata["grid_height"],
                 metadata["grid_width"],
                 packed_dense_mask=packed_mask,
+                packed_spatial_indices=spatial_indices,
                 packed_stats=stats,
             )
-            if getattr(block, "use_adapter", False):
-                stats["dense_adapter_forward_count"] += 1
         x = self.norm(x)
         selected = self._gather_native_selected_output(x, scatter_index, metadata)
         self.latest_native_packed_summary = {
-            "schema_version": "videomae_native_packed_v1",
+            "schema_version": "videomae_native_packed_v2",
             "heavy_backbone_forward_count": 1,
             "batch_size": metadata["batch_size"],
             "total_tubelets": metadata["total_tubelets"],
@@ -1133,6 +1304,8 @@ class VisionTransformerAdapter(BaseModule):
             "packed_attention_forward_count": stats["packed_attention_forward_count"],
             "packed_mlp_forward_count": stats["packed_mlp_forward_count"],
             "dense_adapter_forward_count": stats["dense_adapter_forward_count"],
+            "packed_adapter_forward_count": stats["packed_adapter_forward_count"],
+            "adapter_execution": "coordinate_lineage_packed",
         }
         return selected
 

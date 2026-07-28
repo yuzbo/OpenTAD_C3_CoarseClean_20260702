@@ -23,9 +23,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_file  # noqa: E402
+from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 
 
-GEOROUTE_DEPLOYMENT_SCHEMA = "georoute_adatad_development_deployment_v1"
+GEOROUTE_DEPLOYMENT_SCHEMA = "georoute_adatad_development_deployment_v2"
 
 # N16R4 grants only 55 GB per outer GPU allocation.  The launchers below
 # create an exact one-GPU/96G Slurm step for model work, so the outer request
@@ -70,6 +71,7 @@ def _sbatch(
     exports: Mapping[str, str],
     dependency: list[str] | None = None,
     gpu: bool,
+    test_only: bool = False,
 ) -> str:
     command = [
         "sbatch",
@@ -81,6 +83,8 @@ def _sbatch(
         "--error",
         str(logs / f"{name}.%j.err"),
     ]
+    if test_only:
+        command.append("--test-only")
     if dependency:
         command.extend(["--dependency", "afterok:" + ":".join(dependency)])
     if gpu:
@@ -97,6 +101,8 @@ def _sbatch(
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"sbatch failed for {name}: {completed.stderr.strip() or completed.stdout.strip()}")
+    if test_only:
+        return "TEST_ONLY_PASS"
     job_id = completed.stdout.strip().split(";", 1)[0]
     if not job_id.isdigit():
         raise RuntimeError(f"sbatch returned invalid job id for {name}: {completed.stdout!r}")
@@ -144,11 +150,13 @@ def main() -> int:
         elif not path.is_file():
             raise FileNotFoundError(path)
 
+    storage_receipt = storage_capacity_receipt(run_root, cell_count=7)
     run_root.mkdir(parents=True, exist_ok=False)
     (run_root / "p0").mkdir()
     (run_root / "slurm").mkdir()
     control = run_root / "control"
     control.mkdir()
+    _atomic_write_json(control / "deployment_storage_preflight.json", storage_receipt)
     base_values = {
         "GEOROUTE_SOURCE_ROOT": str(ROOT),
         "GEOROUTE_RUN_ROOT": str(run_root),
@@ -170,7 +178,7 @@ def main() -> int:
         "hybrid_straight_through": {"mode": "hybrid", "estimator": "straight_through", "tokens": "32", "context": "4"},
         "roi_score_function": {"mode": "roi", "estimator": "score_function", "tokens": "32", "context": "0"},
     }
-    jobs: dict[str, str] = {}
+    prepared = []
     for label, spec in p0_specs.items():
         exports = dict(base_exports)
         exports.update(
@@ -180,6 +188,32 @@ def main() -> int:
             GEOROUTE_P0_TOKENS_PER_TUBELET=spec["tokens"],
             GEOROUTE_P0_CONTEXT_TOKENS=spec["context"],
         )
+        prepared.append((label, exports))
+    dispatch_exports = dict(base_exports)
+    dispatch_exports["GEOROUTE_DAG_ACTION"] = "p0-finalize"
+
+    # Validate every leaf and its dependency consumer before the first real
+    # submission, preventing another unusable partial experiment namespace.
+    for label, exports in prepared:
+        _sbatch(
+            name=f"georoute_p0_{label}",
+            script=p0_script,
+            logs=run_root / "slurm",
+            exports=exports,
+            gpu=True,
+            test_only=True,
+        )
+    _sbatch(
+        name="georoute_p0_finalize",
+        script=dispatch_script,
+        logs=run_root / "slurm",
+        exports=dispatch_exports,
+        gpu=False,
+        test_only=True,
+    )
+
+    jobs: dict[str, str] = {}
+    for label, exports in prepared:
         jobs[label] = _sbatch(
             name=f"georoute_p0_{label}",
             script=p0_script,
@@ -187,8 +221,6 @@ def main() -> int:
             exports=exports,
             gpu=True,
         )
-    dispatch_exports = dict(base_exports)
-    dispatch_exports["GEOROUTE_DAG_ACTION"] = "p0-finalize"
     jobs["p0_finalize_dispatcher"] = _sbatch(
         name="georoute_p0_finalize",
         script=dispatch_script,
@@ -206,11 +238,12 @@ def main() -> int:
         "input_hashes": {
             name: sha256_file(path) if path.is_file() else None for name, path in input_paths.items()
         },
+        "storage_preflight": storage_receipt,
         "p0_jobs": jobs,
         "frozen_policy": {
             "p1_after_p0": True,
-            "p2_only_if_p1_structured_roi_wins": True,
-            "p3_only_if_p2_three_seed_structured_roi_wins": True,
+            "p2_only_if_p1_native_or_geometry_route_wins": True,
+            "p3_only_if_p2_three_seed_same_route_wins": True,
             "official_test_opened": False,
             "amod_included": False,
             "amod_reason": "requires independent numerical and total-cost P0 gate",

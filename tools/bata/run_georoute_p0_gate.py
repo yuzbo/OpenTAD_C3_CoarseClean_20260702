@@ -13,13 +13,14 @@ import hashlib
 import json
 import os
 import random
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Mapping
 
 
 ROOT = Path(__file__).resolve().parents[2]
-GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v1"
+GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v2"
 
 
 def _canonical_json(payload: Mapping[str, Any]) -> str:
@@ -142,6 +143,40 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
             policy_evidence.get("detector_loss_keys", [])
         ):
             raise ValueError("P0 score-function route is not bound to the real detector losses")
+    component_trace = report.get("component_trace")
+    if (
+        not isinstance(component_trace, Mapping)
+        or int(component_trace.get("packed_attention_forward_count", 0)) <= 0
+        or int(component_trace.get("packed_mlp_forward_count", 0)) <= 0
+        or int(component_trace.get("packed_adapter_forward_count", 0)) <= 0
+        or int(component_trace.get("dense_adapter_forward_count", -1)) != 0
+    ):
+        raise ValueError("P0 component trace does not prove fully packed execution")
+    checkpoint_receipt = report.get("checkpoint_receipt")
+    if (
+        not isinstance(checkpoint_receipt, Mapping)
+        or int(checkpoint_receipt.get("checkpoint_count", -1)) != 0
+    ):
+        raise ValueError("P0 must explicitly record that it creates no checkpoint")
+    storage_receipt = report.get("storage_receipt")
+    if (
+        not isinstance(storage_receipt, Mapping)
+        or storage_receipt.get("status") != "PASS_STORAGE_PREFLIGHT"
+        or storage_receipt.get("atomic_publish_peak_included") is not True
+    ):
+        raise ValueError("P0 storage preflight receipt is missing")
+    measurement = report.get("checkpoint_storage_measurement")
+    if (
+        not isinstance(measurement, Mapping)
+        or int(measurement.get("checkpoint_upper_bound_bytes", 0)) <= 0
+        or int(measurement.get("auxiliary_upper_bound_bytes_per_cell", 0))
+        <= 0
+        or measurement.get("checkpoint_policy") != "final_only"
+    ):
+        raise ValueError("P0 checkpoint storage measurement is missing")
+    runtime_commit = report.get("runtime_commit")
+    if not isinstance(runtime_commit, str) or len(runtime_commit) != 40:
+        raise ValueError("P0 runtime commit is missing")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -184,6 +219,8 @@ def _configure_in_memory(config_path: Path, args):
     custom.georoute_route_mode = str(args.route_mode)
     custom.georoute_policy_estimator = str(args.policy_estimator)
     custom.georoute_policy_temperature = 0.7
+    custom.georoute_pooling_mode = "uniform_selected"
+    custom.georoute_adapter_mode = "coordinate_lineage_packed"
     custom.georoute_roi_temperature = 0.25
     custom.georoute_min_roi_extent = 0.2
     custom.georoute_max_roi_extent = 1.0
@@ -288,7 +325,9 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         raise RuntimeError("GeoRoute P0 is CUDA-only and requires a Slurm-provided CUDA device")
     if args.height <= 0 or args.width <= 0:
         raise ValueError("P0 source height and width must be positive")
-    source_capacity = ((args.height + 15) // 16) * ((args.width + 15) // 16)
+    source_capacity = (args.height // 16) * (args.width // 16)
+    if source_capacity <= 0:
+        raise ValueError("P0 source is smaller than one complete native patch")
     if args.tokens_per_tubelet <= 0 or args.tokens_per_tubelet > source_capacity:
         raise ValueError("P0 tokens_per_tubelet must lie in the native source-grid capacity")
     if args.route_mode == "dense" and args.tokens_per_tubelet != source_capacity:
@@ -389,6 +428,44 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
         "peak_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
     }
+    packed = audit.get("packed")
+    if not isinstance(packed, Mapping):
+        raise RuntimeError("GeoRoute P0 audit lacks packed component counters")
+    from tools.bata.georoute_storage import storage_capacity_receipt
+
+    storage_receipt = storage_capacity_receipt(
+        Path(args.output).resolve().parent,
+        cell_count=1,
+    )
+    runtime_commit = os.environ.get("GEOROUTE_EXPECTED_COMMIT", "").lower()
+    if len(runtime_commit) != 40:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        runtime_commit = completed.stdout.strip().lower()
+    if len(runtime_commit) != 40:
+        raise RuntimeError("P0 could not bind its runtime commit")
+    model_state_bytes = sum(
+        int(tensor.numel()) * int(tensor.element_size())
+        for tensor in model.state_dict().values()
+    )
+    trainable_parameter_bytes = sum(
+        int(parameter.numel()) * max(4, int(parameter.element_size()))
+        for parameter in model.parameters()
+        if parameter.requires_grad
+    )
+    checkpoint_upper_bound = int(
+        (
+            2 * model_state_bytes
+            + 2 * trainable_parameter_bytes
+            + 64 * 1024**2
+        )
+        * 1.25
+    )
     torch.cuda.synchronize(device)
     report = {
         "schema_version": GEOROUTE_P0_GATE_SCHEMA,
@@ -426,10 +503,13 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "height": int(args.height),
             "width": int(args.width),
             "patch_size": 16,
-            "grid_height": (int(args.height) + 15) // 16,
-            "grid_width": (int(args.width) + 15) // 16,
+            "grid_height": int(args.height) // 16,
+            "grid_width": int(args.width) // 16,
             "patch_capacity": int(source_capacity),
-            "boundary_padding": "replicate_bottom_right_only",
+            "boundary_padding": "none",
+            "native_support": "floor_complete_patches",
+            "ignored_bottom": int(args.height) % 16,
+            "ignored_right": int(args.width) % 16,
         },
         "native_route": {
             "selected_native_tubelet_shape": selected_native_shape,
@@ -441,6 +521,47 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         },
         "dense_native_reference": audit.get("dense_native_reference"),
         "score_function_detector_binding": audit.get("score_function_detector_binding"),
+        "component_trace": {
+            "packed_attention_forward_count": int(
+                packed.get("packed_attention_forward_count", 0)
+            ),
+            "packed_mlp_forward_count": int(
+                packed.get("packed_mlp_forward_count", 0)
+            ),
+            "packed_adapter_forward_count": int(
+                packed.get("packed_adapter_forward_count", 0)
+            ),
+            "dense_adapter_forward_count": int(
+                packed.get("dense_adapter_forward_count", -1)
+            ),
+            "adapter_execution": packed.get("adapter_execution"),
+            "pooling_mode": audit.get("pooling_mode"),
+            "measured_latency": False,
+            "scope": "mechanical_component_execution_trace",
+        },
+        "checkpoint_receipt": {
+            "checkpoint_count": 0,
+            "policy": "p0_no_checkpoint",
+        },
+        "storage_receipt": storage_receipt,
+        "runtime_commit": runtime_commit,
+        "checkpoint_storage_measurement": {
+            "schema_version": "georoute_checkpoint_storage_measurement_v1",
+            "runtime_commit": runtime_commit,
+            "checkpoint_policy": "final_only",
+            "model_state_tensor_bytes": model_state_bytes,
+            "trainable_parameter_bytes": trainable_parameter_bytes,
+            "checkpoint_upper_bound_bytes": checkpoint_upper_bound,
+            "peak_checkpoint_copies_per_cell": 1,
+            "auxiliary_upper_bound_bytes_per_cell": 2 * 1024**3,
+            "stage_fixed_overhead_bytes": 1024**3,
+            "safety_fraction": 0.25,
+            "safety_bytes": 16 * 1024**3,
+            "measurement_method": (
+                "same_commit_tensor_bytes_plus_ema_plus_adamw_moments_"
+                "plus_serialization_margin"
+            ),
+        },
         "cuda": {
             "logical_device": str(device),
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),

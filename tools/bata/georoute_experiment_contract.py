@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-GEOROUTE_EXPERIMENT_SCHEMA = "georoute_adatad_experiment_contract_v1"
+GEOROUTE_EXPERIMENT_SCHEMA = "georoute_adatad_experiment_contract_v2"
 DEVELOPMENT_SEEDS = (3407, 3408, 3409)
 P1_EPOCHS = 20
 P2_EPOCHS = 60
@@ -266,8 +266,8 @@ def variant_spec(name: str, *, token_budget: int | None = None) -> dict[str, Any
         raise ValueError(f"unsupported GeoRoute variant {name!r}")
     spec = copy.deepcopy(VARIANTS[name])
     if token_budget is not None:
-        if name == "dense_native" or not (1 <= int(token_budget) <= 240):
-            raise ValueError("only matched-K variants may override a budget in [1,240]")
+        if name == "dense_native" or not (1 <= int(token_budget) <= 220):
+            raise ValueError("only matched-K variants may override a budget in [1,220]")
         spec["tokens_per_tubelet"] = int(token_budget)
     return spec
 
@@ -331,6 +331,8 @@ def bind_development_config(
     custom.georoute_context_tokens = int(spec["context_tokens"])
     custom.georoute_roi_fraction = float(spec["roi_fraction"])
     custom.georoute_random_seed = int(seed)
+    custom.georoute_pooling_mode = "uniform_selected"
+    custom.georoute_adapter_mode = "coordinate_lineage_packed"
     if spec["tokens_per_tubelet"] is not None:
         custom.georoute_tokens_per_tubelet = int(spec["tokens_per_tubelet"])
     if "geometry_stride_tubelets" in spec:
@@ -345,6 +347,7 @@ def bind_development_config(
     cfg.scheduler.max_epoch = epochs
     cfg.workflow.end_epoch = epochs
     cfg.workflow.val_start_epoch = epochs
+    cfg.workflow.checkpoint_policy = "final_only"
     cfg.work_dir = str(Path(work_dir).resolve())
     binding = {
         "schema_version": GEOROUTE_EXPERIMENT_SCHEMA,
@@ -368,6 +371,10 @@ def bind_development_config(
         "gt_for_route_used": False,
         "teacher_for_route_used": False,
         "raw_prediction_cache_used": False,
+        "valid_native_support": "floor_complete_patches_with_explicit_mask",
+        "pooling_mode": "uniform_selected",
+        "adapter_mode": "coordinate_lineage_packed",
+        "checkpoint_policy": "final_only_atomic",
         "paper_claim_allowed": False,
     }
     binding["binding_sha256"] = canonical_sha256(binding)
@@ -383,11 +390,11 @@ def high_iou_score(metrics: Mapping[str, Any]) -> float:
 
 
 def select_p1_roi_candidate(records: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
-    """Apply the predeclared single-seed ROI-vs-free promotion rule.
+    """Apply the predeclared NativeTokenSelect-first promotion rule.
 
-    A P1 decision is only authorization to run P2.  It is never an empirical
-    paper claim, and a free-token win stops the ROI primary route instead of
-    allowing post-hoc selector changes.
+    Every registered control, including random, participates in the gate.
+    Geometry can advance only after it strictly beats the ROI-free selector and
+    geometry-only side-channel control under the matched-K cost ledger.
     """
 
     required = set(P1_VARIANTS)
@@ -404,34 +411,69 @@ def select_p1_roi_candidate(records: Mapping[str, Mapping[str, Any]]) -> dict[st
         if profile.get("paper_grade_end_to_end_claim_allowed") is not False:
             raise ValueError("P1 profile must not be relabelled as paper-grade end-to-end cost")
         high_iou_score(record["metrics"])
-    free = records["free"]
-    geometry_control = records["fixed_lattice_geometry"]
-    candidates = [records["roi"], records["hybrid"]]
-    winner = max(
-        candidates,
-        key=lambda item: (
-            high_iou_score(item["metrics"]),
-            -float(item["profile"]["development_window_wall_p50_ms"]),
-        ),
+    scores = {
+        name: high_iou_score(record["metrics"])
+        for name, record in records.items()
+    }
+    costs = {
+        name: float(
+            record["profile"]["development_window_wall_p50_ms"]
+        )
+        for name, record in records.items()
+    }
+    native_accuracy_gate = scores["free"] > max(
+        scores["fixed_lattice"],
+        scores["random"],
+        scores["fixed_lattice_geometry"],
     )
-    free_score = high_iou_score(free["metrics"])
-    geometry_control_score = high_iou_score(geometry_control["metrics"])
-    winner_score = high_iou_score(winner["metrics"])
-    winner_cost = float(winner["profile"]["development_window_wall_p50_ms"])
-    cost_ok = winner_cost <= float(free["profile"]["development_window_wall_p50_ms"]) and winner_cost <= float(
-        geometry_control["profile"]["development_window_wall_p50_ms"]
+    native_cost_gate = costs["free"] < costs["dense_native"]
+    hybrid_accuracy_gate = native_accuracy_gate and scores["hybrid"] > max(
+        scores["free"],
+        scores["random"],
+        scores["fixed_lattice_geometry"],
     )
-    advance = winner_score > max(free_score, geometry_control_score) and cost_ok
+    hybrid_cost_gate = native_cost_gate and costs["hybrid"] <= min(
+        costs["free"],
+        costs["random"],
+        costs["fixed_lattice_geometry"],
+    )
+    best_learned = max(
+        scores["free"],
+        scores["roi"],
+        scores["hybrid"],
+    )
+    best_nonlearned = max(
+        scores["fixed_lattice"],
+        scores["random"],
+    )
+    if not (native_accuracy_gate and native_cost_gate):
+        if best_learned <= best_nonlearned:
+            status = "STOP_LEARNED_ROUTING"
+        else:
+            status = "STOP_AMBIGUOUS_NO_PREDECLARED_WINNER"
+        promoted_variant = None
+        promoted_route = "C"
+    elif hybrid_accuracy_gate and hybrid_cost_gate:
+        status = "ADVANCE_HYBRID_TO_P2"
+        promoted_variant = "hybrid"
+        promoted_route = "A"
+    else:
+        status = "ADVANCE_FREE_TO_P2"
+        promoted_variant = "free"
+        promoted_route = "B"
     decision = {
         "schema_version": GEOROUTE_EXPERIMENT_SCHEMA,
         "stage": "p1_selection",
         "selection_metric": "mean(mAP@0.6,mAP@0.7)",
-        "free_high_iou_score": free_score,
-        "fixed_lattice_geometry_high_iou_score": geometry_control_score,
-        "best_structured_variant": winner["variant"],
-        "best_structured_high_iou_score": winner_score,
-        "development_window_cost_not_worse_than_free_or_geometry_control": cost_ok,
-        "status": "ADVANCE_STRUCTURED_ROI_TO_P2" if advance else "STOP_ROI_PRIMARY_CLAIM",
+        "scores": scores,
+        "development_window_wall_p50_ms": costs,
+        "native_accuracy_gate": native_accuracy_gate,
+        "native_cost_gate": native_cost_gate,
+        "hybrid_accuracy_gate": hybrid_accuracy_gate,
+        "hybrid_cost_gate": hybrid_cost_gate,
+        "selected_variant": promoted_variant,
+        "selected_route": promoted_route,
+        "status": status,
         "paper_claim_allowed": False,
         "official_test_opened": False,
     }
@@ -452,11 +494,24 @@ def select_p2_roi_candidate(
     development-window measurement before P3 is authorized.
     """
 
-    expected = {"fixed_lattice", "fixed_lattice_geometry", "random", "free", str(candidate_variant)}
+    if candidate_variant == "free":
+        reference_variants = (
+            "fixed_lattice",
+            "random",
+            "fixed_lattice_geometry",
+        )
+    elif candidate_variant in {"roi", "hybrid"}:
+        reference_variants = (
+            "free",
+            "fixed_lattice",
+            "random",
+            "fixed_lattice_geometry",
+        )
+    else:
+        raise ValueError("P2 candidate must be free, roi, or hybrid")
+    expected = {*reference_variants, str(candidate_variant)}
     if set(records_by_variant) != expected:
         raise ValueError(f"P2 record variants must equal {sorted(expected)}")
-    if candidate_variant not in {"roi", "hybrid"}:
-        raise ValueError("P2 candidate must be roi or hybrid")
 
     normalized: dict[str, dict[int, Mapping[str, Any]]] = {}
     for variant, records in records_by_variant.items():
@@ -481,54 +536,59 @@ def select_p2_roi_candidate(
         normalized[variant] = by_seed
 
     candidate_values = [high_iou_score(normalized[candidate_variant][seed]["metrics"]) for seed in DEVELOPMENT_SEEDS]
-    free_values = [high_iou_score(normalized["free"][seed]["metrics"]) for seed in DEVELOPMENT_SEEDS]
-    geometry_control_values = [
-        high_iou_score(normalized["fixed_lattice_geometry"][seed]["metrics"])
-        for seed in DEVELOPMENT_SEEDS
-    ]
     candidate_costs = [
         float(normalized[candidate_variant][seed]["profile"]["development_window_wall_p50_ms"])
         for seed in DEVELOPMENT_SEEDS
     ]
-    free_costs = [
-        float(normalized["free"][seed]["profile"]["development_window_wall_p50_ms"])
-        for seed in DEVELOPMENT_SEEDS
-    ]
-    geometry_control_costs = [
-        float(normalized["fixed_lattice_geometry"][seed]["profile"]["development_window_wall_p50_ms"])
-        for seed in DEVELOPMENT_SEEDS
-    ]
-    paired_deltas = [candidate - free for candidate, free in zip(candidate_values, free_values)]
-    paired_geometry_control_deltas = [
-        candidate - control for candidate, control in zip(candidate_values, geometry_control_values)
-    ]
-    mean_delta = sum(paired_deltas) / len(paired_deltas)
-    mean_geometry_control_delta = sum(paired_geometry_control_deltas) / len(paired_geometry_control_deltas)
     mean_candidate_cost = sum(candidate_costs) / len(candidate_costs)
-    mean_free_cost = sum(free_costs) / len(free_costs)
-    mean_geometry_control_cost = sum(geometry_control_costs) / len(geometry_control_costs)
-    advance = (
-        mean_delta > 0.0
-        and mean_geometry_control_delta > 0.0
-        and mean_candidate_cost <= mean_free_cost
-        and mean_candidate_cost <= mean_geometry_control_cost
+    paired_deltas_by_reference = {}
+    reference_mean_costs = {}
+    for reference in reference_variants:
+        values = [
+            high_iou_score(normalized[reference][seed]["metrics"])
+            for seed in DEVELOPMENT_SEEDS
+        ]
+        costs = [
+            float(
+                normalized[reference][seed]["profile"][
+                    "development_window_wall_p50_ms"
+                ]
+            )
+            for seed in DEVELOPMENT_SEEDS
+        ]
+        paired_deltas_by_reference[reference] = [
+            candidate - baseline
+            for candidate, baseline in zip(candidate_values, values)
+        ]
+        reference_mean_costs[reference] = sum(costs) / len(costs)
+    paired_mean_deltas = {
+        reference: sum(values) / len(values)
+        for reference, values in paired_deltas_by_reference.items()
+    }
+    advance = all(value > 0.0 for value in paired_mean_deltas.values()) and all(
+        mean_candidate_cost <= cost
+        for cost in reference_mean_costs.values()
     )
+    if advance and candidate_variant == "free":
+        status = "ADVANCE_NATIVE_ROUTE_B_TO_P3"
+    elif advance:
+        status = "ADVANCE_GEOMETRY_ROUTE_A_TO_P3"
+    else:
+        status = "STOP_LEARNED_ROUTING"
     decision = {
         "schema_version": GEOROUTE_EXPERIMENT_SCHEMA,
         "stage": "p2_selection",
         "candidate_variant": candidate_variant,
         "selection_metric": "paired mean(mAP@0.6,mAP@0.7)",
-        "paired_high_iou_deltas": paired_deltas,
-        "paired_mean_high_iou_delta": mean_delta,
-        "paired_fixed_lattice_geometry_high_iou_deltas": paired_geometry_control_deltas,
-        "paired_fixed_lattice_geometry_mean_high_iou_delta": mean_geometry_control_delta,
+        "reference_variants": list(reference_variants),
+        "paired_high_iou_deltas_by_reference": paired_deltas_by_reference,
+        "paired_mean_high_iou_deltas_by_reference": paired_mean_deltas,
         "candidate_mean_development_window_wall_p50_ms": mean_candidate_cost,
-        "free_mean_development_window_wall_p50_ms": mean_free_cost,
-        "fixed_lattice_geometry_mean_development_window_wall_p50_ms": mean_geometry_control_cost,
-        "development_window_cost_not_worse_than_free_or_geometry_control": (
-            mean_candidate_cost <= mean_free_cost and mean_candidate_cost <= mean_geometry_control_cost
+        "reference_mean_development_window_wall_p50_ms": reference_mean_costs,
+        "development_window_cost_not_worse_than_all_references": all(
+            mean_candidate_cost <= cost for cost in reference_mean_costs.values()
         ),
-        "status": "ADVANCE_STRUCTURED_ROI_TO_P3" if advance else "STOP_ROI_PRIMARY_CLAIM",
+        "status": status,
         "paper_claim_allowed": False,
         "official_test_opened": False,
     }

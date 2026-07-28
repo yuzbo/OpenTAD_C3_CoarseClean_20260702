@@ -66,6 +66,32 @@ def _valid_payload() -> dict:
         },
         "dense_native_reference": None,
         "score_function_detector_binding": None,
+        "component_trace": {
+            "packed_attention_forward_count": 12,
+            "packed_mlp_forward_count": 12,
+            "packed_adapter_forward_count": 12,
+            "dense_adapter_forward_count": 0,
+            "adapter_execution": "coordinate_lineage_packed",
+        },
+        "checkpoint_receipt": {
+            "checkpoint_count": 0,
+            "policy": "p0_no_checkpoint",
+        },
+        "storage_receipt": {
+            "status": "PASS_STORAGE_PREFLIGHT",
+            "atomic_publish_peak_included": True,
+        },
+        "runtime_commit": "a" * 40,
+        "checkpoint_storage_measurement": {
+            "checkpoint_policy": "final_only",
+            "checkpoint_upper_bound_bytes": 4096,
+            "peak_checkpoint_copies_per_cell": 1,
+            "auxiliary_upper_bound_bytes_per_cell": 2048,
+            "stage_fixed_overhead_bytes": 1024,
+            "safety_fraction": 0.25,
+            "safety_bytes": 1024,
+            "measurement_method": "unit_test",
+        },
         "p0_scope": {"synthetic_inputs_only": True, "full_training": False, "official_evaluation": False},
     }
 
@@ -107,6 +133,9 @@ def test_dense_p0_requires_the_reference_to_match_the_real_autograd_dispatch():
         (("p0_scope", "official_evaluation"), True, "official"),
         (("estimator", "claim"), "unbiased_st", "estimator"),
         (("gradient", "missing_required_components"), ["scout_geometry"], "gradient"),
+        (("component_trace", "dense_adapter_forward_count"), 1, "component trace"),
+        (("checkpoint_receipt", "checkpoint_count"), 1, "no checkpoint"),
+        (("storage_receipt", "status"), "FAIL_STORAGE_PREFLIGHT", "storage"),
     ],
 )
 def test_p0_report_validator_fails_closed_for_invalid_core_claims(path, value, message):

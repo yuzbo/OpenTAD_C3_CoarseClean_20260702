@@ -6,13 +6,24 @@ max_chars: 8000
 
 # Research Query Pack
 
-## Current Active Route: GeoRoute-AdaTAD (2026-07-28)
+## Current Active Route: NativeTokenSelect-first GeoRoute-AdaTAD (2026-07-28)
 
-- Objective: offline TAD under a native VideoMAE token budget. Test whether
-  continuous geometry support plus a free-token residual and depth routing
-  preserve high-tIoU localization better than unstructured token selection at
-  lower measured end-to-end cost.
-- Status: `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
+- Objective: first test whether detector-supervised, ROI-free exact-K selection
+  of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
+  measured total cost. Only after that base passes may continuous geometry be
+  tested as a strict add-on.
+- Active replacement status:
+  `implemented_local_pending_remote_p0r`. The external Pro audit of exact
+  commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
+  `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
+  176x320 support with a validity mask, mask-aware exact-K, a
+  coordinate-lineage packed Adapter, a truly geometry-free `free` control,
+  common uniform-selected pooling, branch-aligned hybrid gradients,
+  final-only atomic checkpoints, and same-commit aggregate storage preflight.
+  These are implementation facts pending remote tensor tests and P0R, not
+  accuracy or cost evidence.
+- Historical P1 status remains
+  `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
   remains `PASS_MECHANICAL_ONLY`. Clean dispatcher snapshot
   [`6a9bba62`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/6a9bba6222c18a468c3bd410edac89a4afdea189)
@@ -23,19 +34,27 @@ max_chars: 8000
   dependency-held and emitted no decision. This is immutable infrastructure
   failure evidence only: no P1 mAP, cost, A-MoD result, empirical support,
   official-test evidence, or paper claim exists.
-- P1 is the first scientific screen: matched dense, fixed lattice,
-  lattice-plus-geometry side-channel, random, free TokenSelect, ROI-only, and
-  hybrid. Free TokenSelect winning both high tIoU and total cost kills the ROI
-  main claim. P2 promotes only the winner to seeds/budgets; P3 is frozen,
-  second-detector/dataset and sealed-test closure.
+- P0R contains three mechanical CUDA leaves. A one-shot Slurm dependency graph
+  submits all seven P1R arms automatically and concurrently only after the P0R
+  finalizer emits `PASS_MECHANICAL_ONLY`. Parallel scheduling does not alter the
+  causal selector order.
+- P1R is the first scientific screen: matched dense, fixed lattice,
+  lattice-plus-geometry side-channel, random, ROI-free NativeTokenSelect
+  (`free`), ROI-only, and corrected hybrid, all with uniform pooling and the
+  packed Adapter. The native base must beat fixed, random, and the geometry
+  side-channel while costing less than dense. Geometry is considered only
+  afterward and must strictly improve on free, random, and the geometry
+  side-channel without higher total cost. Otherwise Route B advances or learned
+  routing stops. P2 promotes only the authorized route to seeds/budgets; P3 is
+  frozen second-detector/dataset and sealed-test closure.
 - The prior quota hold was cleared, but P1 is now storage-held. P0 replacement Gate `1181172` passed the
   real uint8 180x320 path; roots `1181007` and `1181177` remain immutable
   scheduler diagnostics only. The fresh namespace is
   `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_adatad_6a9bba62_p1p3_20260727_222913`.
   Its bootstrap and submission receipts bind the sealed P0 suite SHA
   `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`.
-  A replacement requires a new namespace, result-blind storage-capacity
-  preflight, and final-EMA-only or explicitly bounded checkpoint retention.
+  The replacement uses a new namespace, result-blind aggregate
+  storage-capacity preflight, and one atomic final checkpoint per cell.
   The failed namespace was pruned conservatively on 2026-07-28: seven
   highest-loadable per-cell checkpoints were retained and 58.370 GiB of
   intermediate/corrupt epoch files were removed. This does not make the
@@ -48,7 +67,10 @@ max_chars: 8000
   among the 278 still-existing inventoried checkpoint directories, and `/data`
   reported 205 GB available. Pretrained weights, `best.pth`, configs, logs, and
   single-checkpoint directories were not changed.
-  P2/P3 remain absent and result-gated.
+  P2/P3 remain absent and result-gated. The code is native-token evidence
+  routing, not a sequential second crop/resized zoom; “Geometry Zoom” remains
+  unauthorized unless the conditional geometry gate and later paper evidence
+  close.
 - FlashVID was audited as a VLLM reference, not a GeoRoute result. Its 10%
   retention result is 57.9/58.4 = 99.1% relative score after a full vision
   encoder, so it cannot support native-pre-backbone or detector-gradient

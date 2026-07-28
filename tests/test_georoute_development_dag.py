@@ -101,6 +101,32 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
             if estimator == "score_function"
             else None
         ),
+        "component_trace": {
+            "packed_attention_forward_count": 12,
+            "packed_mlp_forward_count": 12,
+            "packed_adapter_forward_count": 12,
+            "dense_adapter_forward_count": 0,
+            "adapter_execution": "coordinate_lineage_packed",
+        },
+        "checkpoint_receipt": {
+            "checkpoint_count": 0,
+            "policy": "p0_no_checkpoint",
+        },
+        "storage_receipt": {
+            "status": "PASS_STORAGE_PREFLIGHT",
+            "atomic_publish_peak_included": True,
+        },
+        "runtime_commit": "a" * 40,
+        "checkpoint_storage_measurement": {
+            "checkpoint_policy": "final_only",
+            "checkpoint_upper_bound_bytes": 4096,
+            "peak_checkpoint_copies_per_cell": 1,
+            "auxiliary_upper_bound_bytes_per_cell": 2048,
+            "stage_fixed_overhead_bytes": 1024,
+            "safety_fraction": 0.25,
+            "safety_bytes": 1024,
+            "measurement_method": "unit_test",
+        },
         "p0_scope": {"synthetic_inputs_only": True, "full_training": False, "official_evaluation": False},
     }
     return build_p0_gate_report(report)
@@ -216,6 +242,11 @@ def test_stage_matrix_uses_scheduler_test_only_for_every_leaf_before_submission(
         return "TEST_ONLY_PASS" if test_only else str(1000 + len(calls))
 
     monkeypatch.setattr(dag, "_sbatch", fake_sbatch)
+    monkeypatch.setattr(
+        dag,
+        "storage_capacity_receipt",
+        lambda *_args, **_kwargs: {"status": "PASS_STORAGE_PREFLIGHT"},
+    )
     jobs = dag._submit_stage_matrix(
         args=args,
         stage="p1",
@@ -291,6 +322,11 @@ def test_stage_matrix_cancels_submitted_leaves_when_selector_submission_fails(mo
 
     monkeypatch.setattr(dag, "_sbatch", fake_sbatch)
     monkeypatch.setattr(dag, "_cancel_submitted_jobs", lambda job_ids: cancelled.extend(job_ids))
+    monkeypatch.setattr(
+        dag,
+        "storage_capacity_receipt",
+        lambda *_args, **_kwargs: {"status": "PASS_STORAGE_PREFLIGHT"},
+    )
 
     with pytest.raises(RuntimeError, match="selector rejected"):
         dag._submit_stage_matrix(
@@ -310,20 +346,20 @@ def test_p1_and_p2_selection_are_predeclared_and_result_blind():
         "fixed_lattice_geometry": _record(
             stage="p1", variant="fixed_lattice_geometry", seed=3407, high_iou=61.0, cost=14.0
         ),
-        "random": _record(stage="p1", variant="random", seed=3407, high_iou=59.0, cost=12.0),
+        "random": _record(stage="p1", variant="random", seed=3407, high_iou=59.0, cost=14.0),
         "free": _record(stage="p1", variant="free", seed=3407, high_iou=62.0, cost=14.0),
         "roi": _record(stage="p1", variant="roi", seed=3407, high_iou=63.0, cost=14.0),
         "hybrid": _record(stage="p1", variant="hybrid", seed=3407, high_iou=64.0, cost=14.0),
     }
     p1_decision = select_p1_roi_candidate(p1)
-    assert p1_decision["status"] == "ADVANCE_STRUCTURED_ROI_TO_P2"
-    assert p1_decision["best_structured_variant"] == "hybrid"
+    assert p1_decision["status"] == "ADVANCE_HYBRID_TO_P2"
+    assert p1_decision["selected_variant"] == "hybrid"
 
     p2 = {}
     for variant, base_score, base_cost in (
-        ("fixed_lattice", 60.0, 12.0),
+        ("fixed_lattice", 60.0, 15.0),
         ("fixed_lattice_geometry", 61.0, 14.0),
-        ("random", 59.0, 12.0),
+        ("random", 59.0, 15.0),
         ("free", 62.0, 14.0),
         ("hybrid", 63.0, 14.0),
     ):
@@ -332,8 +368,79 @@ def test_p1_and_p2_selection_are_predeclared_and_result_blind():
             for index, seed in enumerate(DEVELOPMENT_SEEDS)
         ]
     p2_decision = select_p2_roi_candidate(p2, candidate_variant="hybrid")
-    assert p2_decision["status"] == "ADVANCE_STRUCTURED_ROI_TO_P3"
+    assert p2_decision["status"] == "ADVANCE_GEOMETRY_ROUTE_A_TO_P3"
     assert p2_decision["official_test_opened"] is False
+
+
+def test_p1_selector_can_advance_native_route_b_and_random_can_stop_learning():
+    def records(scores):
+        return {
+            variant: _record(
+                stage="p1",
+                variant=variant,
+                seed=3407,
+                high_iou=score,
+                cost={
+                    "dense_native": 40.0,
+                    "fixed_lattice": 12.0,
+                    "fixed_lattice_geometry": 14.0,
+                    "random": 12.0,
+                    "free": 14.0,
+                    "roi": 15.0,
+                    "hybrid": 15.0,
+                }[variant],
+            )
+            for variant, score in scores.items()
+        }
+
+    native = records(
+        {
+            "dense_native": 66.0,
+            "fixed_lattice": 60.0,
+            "fixed_lattice_geometry": 61.0,
+            "random": 59.0,
+            "free": 64.0,
+            "roi": 63.0,
+            "hybrid": 62.0,
+        }
+    )
+    decision = select_p1_roi_candidate(native)
+    assert decision["status"] == "ADVANCE_FREE_TO_P2"
+    assert decision["selected_route"] == "B"
+    assert decision["selected_variant"] == "free"
+
+    random_wins = records(
+        {
+            "dense_native": 66.0,
+            "fixed_lattice": 60.0,
+            "fixed_lattice_geometry": 61.0,
+            "random": 65.0,
+            "free": 64.0,
+            "roi": 63.0,
+            "hybrid": 62.0,
+        }
+    )
+    stopped = select_p1_roi_candidate(random_wins)
+    assert stopped["status"] == "STOP_LEARNED_ROUTING"
+    assert stopped["selected_variant"] is None
+
+    geometry_cannot_rescue_failed_native = records(
+        {
+            "dense_native": 66.0,
+            "fixed_lattice": 64.0,
+            "fixed_lattice_geometry": 63.0,
+            "random": 62.0,
+            "free": 61.0,
+            "roi": 65.0,
+            "hybrid": 67.0,
+        }
+    )
+    ambiguous = select_p1_roi_candidate(geometry_cannot_rescue_failed_native)
+    assert ambiguous["native_accuracy_gate"] is False
+    assert ambiguous["hybrid_accuracy_gate"] is False
+    assert ambiguous["status"] == "STOP_AMBIGUOUS_NO_PREDECLARED_WINNER"
+    assert ambiguous["selected_variant"] is None
+    assert ambiguous["selected_route"] == "C"
 
 
 def test_paper_names_are_frozen_and_log_parser_requires_all_iou_thresholds():

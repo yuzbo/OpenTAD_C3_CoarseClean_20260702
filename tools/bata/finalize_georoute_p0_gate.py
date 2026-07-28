@@ -17,7 +17,7 @@ from typing import Any, Mapping
 from tools.bata.run_georoute_p0_gate import validate_p0_gate_report
 
 
-SCHEMA_VERSION = "georoute_adatad_p0_suite_v1"
+SCHEMA_VERSION = "georoute_adatad_p0_suite_v2"
 
 
 def _canonical_sha256(payload: Mapping[str, Any]) -> str:
@@ -80,6 +80,54 @@ def finalize(*, dense: Path, hybrid: Path, score_function: Path) -> dict[str, An
         score_binding.get("detector_loss_keys", [])
     ):
         raise ValueError("score-function report is not bound to real classification/regression detector losses")
+    runtime_commits = {str(report.get("runtime_commit", "")) for report in reports.values()}
+    if len(runtime_commits) != 1 or len(next(iter(runtime_commits))) != 40:
+        raise ValueError("P0 reports do not share one exact runtime commit")
+    runtime_commit = next(iter(runtime_commits))
+    measurements = [
+        report.get("checkpoint_storage_measurement")
+        for report in reports.values()
+    ]
+    if any(not isinstance(value, Mapping) for value in measurements):
+        raise ValueError("P0 suite lacks checkpoint storage measurements")
+    storage_profile = {
+        "schema_version": "georoute_storage_profile_v1",
+        "runtime_commit": runtime_commit,
+        "checkpoint_policy": "final_only",
+        "checkpoint_upper_bound_bytes": max(
+            int(value["checkpoint_upper_bound_bytes"])
+            for value in measurements
+        ),
+        "peak_checkpoint_copies_per_cell": max(
+            int(value["peak_checkpoint_copies_per_cell"])
+            for value in measurements
+        ),
+        "auxiliary_upper_bound_bytes_per_cell": max(
+            int(value["auxiliary_upper_bound_bytes_per_cell"])
+            for value in measurements
+        ),
+        "stage_fixed_overhead_bytes": max(
+            int(value["stage_fixed_overhead_bytes"])
+            for value in measurements
+        ),
+        "safety_fraction": max(
+            float(value["safety_fraction"])
+            for value in measurements
+        ),
+        "safety_bytes": max(
+            int(value["safety_bytes"])
+            for value in measurements
+        ),
+        "measurement_provenance": {
+            name: {
+                "report_sha256": report["report_sha256"],
+                "measurement_method": report[
+                    "checkpoint_storage_measurement"
+                ]["measurement_method"],
+            }
+            for name, report in reports.items()
+        },
+    }
     core = {
         "schema_version": SCHEMA_VERSION,
         "status": "PASS_MECHANICAL_ONLY",
@@ -106,6 +154,7 @@ def finalize(*, dense: Path, hybrid: Path, score_function: Path) -> dict[str, An
             "full_training_completed": False,
             "accuracy_claim_allowed": False,
         },
+        "storage_profile": storage_profile,
     }
     return {**core, "suite_sha256": _canonical_sha256(core)}
 

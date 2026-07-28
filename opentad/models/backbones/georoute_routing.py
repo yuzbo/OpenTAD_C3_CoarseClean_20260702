@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 
 
-GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v1"
+GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v2"
 ROUTE_MODES = frozenset({"dense", "uniform", "random", "free", "roi", "hybrid"})
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
 
@@ -156,6 +156,44 @@ def _deterministic_uniform_indices(
     return torch.div(numerators, select_count - 1, rounding_mode="floor")
 
 
+def _deterministic_uniform_valid_indices(
+    valid_mask: torch.Tensor,
+    *,
+    select_count: int,
+) -> torch.Tensor:
+    """Choose a row-major uniform subset from each valid native lattice."""
+
+    if valid_mask.ndim != 3 or valid_mask.dtype != torch.bool:
+        raise ValueError("valid_mask must be bool [B,T,N]")
+    valid_counts = valid_mask.sum(dim=-1)
+    if bool((valid_counts < int(select_count)).any().item()):
+        raise ValueError("valid native patch count is smaller than exact-K")
+    item_count = int(valid_mask.shape[-1])
+    row_major = torch.arange(
+        item_count,
+        device=valid_mask.device,
+        dtype=torch.long,
+    ).view(1, 1, item_count)
+    compact = torch.sort(
+        row_major.expand_as(valid_mask).masked_fill(~valid_mask, item_count),
+        dim=-1,
+    ).values
+    if int(select_count) == 1:
+        compact_positions = torch.div(valid_counts, 2, rounding_mode="floor").unsqueeze(-1)
+    else:
+        numerators = torch.arange(
+            int(select_count),
+            device=valid_mask.device,
+            dtype=torch.long,
+        ).view(1, 1, -1) * (valid_counts - 1).unsqueeze(-1)
+        compact_positions = torch.div(
+            numerators,
+            int(select_count) - 1,
+            rounding_mode="floor",
+        )
+    return compact.gather(-1, compact_positions)
+
+
 def _mask_from_indices(indices: torch.Tensor, item_count: int) -> torch.Tensor:
     if indices.ndim != 3:
         raise ValueError("indices must be [B,T,K]")
@@ -197,6 +235,7 @@ def ordered_plackett_luce_log_prob(
     ordered_indices: torch.Tensor,
     *,
     temperature: float,
+    valid_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Log-probability of an ordered sample without replacement.
 
@@ -211,7 +250,14 @@ def ordered_plackett_luce_log_prob(
         raise ValueError("logits and ordered indices batch/time axes must match")
     if float(temperature) <= 0:
         raise ValueError("score-function temperature must be positive")
-    available = torch.ones_like(logits, dtype=torch.bool)
+    if valid_mask is None:
+        available = torch.ones_like(logits, dtype=torch.bool)
+    else:
+        if valid_mask.shape != logits.shape or valid_mask.dtype != torch.bool:
+            raise ValueError("valid_mask must be bool and match Plackett-Luce logits")
+        available = valid_mask.clone()
+        if bool((available.sum(dim=-1) < ordered_indices.shape[-1]).any().item()):
+            raise ValueError("valid native patch count is smaller than ordered sample")
     result = torch.zeros(logits.shape[:2], device=logits.device, dtype=logits.dtype)
     scaled = logits / float(temperature)
     for slot in range(ordered_indices.shape[-1]):
@@ -276,6 +322,7 @@ def select_exact_k(
     training: bool,
     estimator: str,
     temperature: float,
+    valid_mask: torch.Tensor,
     random_seed: int = 0,
 ) -> dict[str, Any]:
     """Produce a no-duplicate exact-K route for every temporal tubelet.
@@ -293,17 +340,24 @@ def select_exact_k(
         raise ValueError(f"unsupported policy estimator {estimator!r}")
     if roi_logits.shape != residual_logits.shape or roi_logits.ndim != 3:
         raise ValueError("ROI and residual logits must match [B,T,N]")
+    if valid_mask.shape != roi_logits.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("valid_mask must be bool and match routing logits [B,T,N]")
     if not bool(torch.isfinite(roi_logits).all().item()) or not bool(torch.isfinite(residual_logits).all().item()):
         raise ValueError("routing logits must be finite")
     batch, tubelets, item_count = map(int, roi_logits.shape)
     if item_count <= 0:
         raise ValueError("routing requires at least one native patch per tubelet")
+    valid_counts = valid_mask.sum(dim=-1)
+    if bool((valid_counts <= 0).any().item()):
+        raise ValueError("routing requires at least one valid native patch per tubelet")
     if mode == "dense":
-        target_k = item_count
+        if not torch.equal(valid_counts, valid_counts.reshape(-1)[:1].expand_as(valid_counts)):
+            raise ValueError("dense routing requires equal valid patch counts across batch/time")
+        target_k = int(valid_counts.reshape(-1)[0].item())
     else:
         target_k = int(tokens_per_tubelet)
-    if not (0 < target_k <= item_count):
-        raise ValueError("tokens_per_tubelet must lie in [1, native_patch_count]")
+    if not (0 < target_k <= item_count) or bool((valid_counts < target_k).any().item()):
+        raise ValueError("valid native patch count is smaller than exact-K")
     if not (0 <= int(context_tokens) < target_k or (mode == "dense" and context_tokens == 0)):
         raise ValueError("context_tokens must lie in [0,K)")
     if not (0.0 <= float(roi_fraction) <= 1.0):
@@ -314,6 +368,8 @@ def select_exact_k(
         raise ValueError("learned GeoRoute modes require an explicit gradient estimator during training")
 
     device = roi_logits.device
+    masked_roi_logits = roi_logits.masked_fill(~valid_mask, float("-inf"))
+    masked_residual_logits = residual_logits.masked_fill(~valid_mask, float("-inf"))
     role_counts = {
         "context": 0,
         "roi": 0,
@@ -326,31 +382,48 @@ def select_exact_k(
     ordered_log_prob = None
 
     if mode == "dense":
-        ordered = torch.arange(item_count, device=device, dtype=torch.long).view(1, 1, -1).expand(batch, tubelets, -1)
+        ordered = _deterministic_uniform_valid_indices(
+            valid_mask,
+            select_count=target_k,
+        )
         surrogate = torch.ones_like(roi_logits)
         aggregation_logits = torch.zeros_like(roi_logits)
-        role_counts["dense"] = item_count
+        role_counts["dense"] = target_k
     elif mode == "uniform":
-        base = _deterministic_uniform_indices(item_count=item_count, select_count=target_k, device=device)
-        ordered = base.view(1, 1, -1).expand(batch, tubelets, -1)
+        ordered = _deterministic_uniform_valid_indices(
+            valid_mask,
+            select_count=target_k,
+        )
         surrogate = torch.zeros_like(roi_logits)
         aggregation_logits = torch.zeros_like(roi_logits)
         role_counts["uniform"] = target_k
     elif mode == "random":
         ordered = _stable_argsort_descending(
-            _stateless_random_scores(roi_logits, seed=random_seed)
+            _stateless_random_scores(roi_logits, seed=random_seed).masked_fill(
+                ~valid_mask,
+                float("-inf"),
+            )
         )[..., :target_k]
         surrogate = torch.zeros_like(roi_logits)
         aggregation_logits = torch.zeros_like(roi_logits)
         role_counts["random"] = target_k
     elif mode in {"roi", "free"}:
-        logits = roi_logits if mode == "roi" else residual_logits
+        logits = masked_roi_logits if mode == "roi" else masked_residual_logits
         if training and estimator == "score_function":
             ordered = _sample_plackett_luce_order(logits, count=target_k, temperature=temperature)
-            ordered_log_prob = ordered_plackett_luce_log_prob(logits, ordered, temperature=temperature)
+            ordered_log_prob = ordered_plackett_luce_log_prob(
+                logits,
+                ordered,
+                temperature=temperature,
+                valid_mask=valid_mask,
+            )
         else:
             ordered = _stable_argsort_descending(logits)[..., :target_k]
-        surrogate = _soft_topk_gate(logits, count=target_k, temperature=temperature)
+        surrogate = _soft_topk_gate(
+            logits,
+            count=target_k,
+            temperature=temperature,
+        ).masked_fill(~valid_mask, 0.0)
         aggregation_logits = logits
         role_counts[mode] = target_k
     else:  # hybrid
@@ -360,29 +433,44 @@ def select_exact_k(
         roi_count = min(max(roi_count, 0), remainder)
         residual_count = remainder - roi_count
         parts = []
-        excluded = torch.zeros_like(roi_logits, dtype=torch.bool)
+        excluded = ~valid_mask
+        surrogate = torch.zeros_like(roi_logits)
         if context_count:
-            context = _deterministic_uniform_indices(
-                item_count=item_count,
+            context = _deterministic_uniform_valid_indices(
+                valid_mask,
                 select_count=context_count,
-                device=device,
-            ).view(1, 1, -1).expand(batch, tubelets, -1)
+            )
             parts.append(context)
             excluded = excluded | _mask_from_indices(context, item_count)
-        roi_indices = _topk_excluding(roi_logits, count=roi_count, excluded=excluded)
+        roi_scores = masked_roi_logits.masked_fill(excluded, float("-inf"))
+        roi_indices = _topk_excluding(
+            masked_roi_logits,
+            count=roi_count,
+            excluded=excluded,
+        )
         if roi_count:
             parts.append(roi_indices)
+            surrogate = surrogate + _soft_topk_gate(
+                roi_scores,
+                count=roi_count,
+                temperature=temperature,
+            ).masked_fill(excluded, 0.0)
             excluded = excluded | _mask_from_indices(roi_indices, item_count)
-        residual_indices = _topk_excluding(residual_logits, count=residual_count, excluded=excluded)
+        residual_scores = masked_residual_logits.masked_fill(excluded, float("-inf"))
+        residual_indices = _topk_excluding(
+            masked_residual_logits,
+            count=residual_count,
+            excluded=excluded,
+        )
         if residual_count:
             parts.append(residual_indices)
+            surrogate = surrogate + _soft_topk_gate(
+                residual_scores,
+                count=residual_count,
+                temperature=temperature,
+            ).masked_fill(excluded, 0.0)
         ordered = torch.cat(parts, dim=-1)
-        surrogate = _soft_topk_gate(
-            roi_logits + residual_logits,
-            count=target_k,
-            temperature=temperature,
-        )
-        aggregation_logits = roi_logits + residual_logits
+        aggregation_logits = masked_roi_logits + masked_residual_logits
         role_counts.update(context=context_count, roi=roi_count, residual=residual_count)
 
     if ordered.shape != (batch, tubelets, target_k):
@@ -390,6 +478,8 @@ def select_exact_k(
     selected_mask = _mask_from_indices(ordered, item_count)
     if not bool((selected_mask.sum(dim=-1) == target_k).all().item()):
         raise RuntimeError("exact-K route contains duplicate native patch indices")
+    if not bool((selected_mask <= valid_mask).all().item()):
+        raise RuntimeError("exact-K route selected an invalid native patch")
 
     # Packed execution does not care about policy ranking order. Sorting makes
     # gather/scatter deterministic and preserves row-major native-token layout.
@@ -417,6 +507,8 @@ def select_exact_k(
         "ordered_log_prob": ordered_log_prob,
         "target_k": target_k,
         "item_count": item_count,
+        "valid_patch_count_min": int(valid_counts.min().item()),
+        "valid_patch_count_max": int(valid_counts.max().item()),
         "role_counts": role_counts,
     }
 
@@ -446,4 +538,4 @@ def score_function_policy_loss(
     if float(weight) < 0.0:
         raise ValueError("score-function weight must be non-negative")
     advantage = detector_cost.detach() - baseline.detach()
-    return float(weight) * advantage * ordered_log_prob.mean()
+    return float(weight) * advantage * ordered_log_prob.sum(dim=1).mean()
