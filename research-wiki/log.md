@@ -52,5 +52,13 @@
   without the required official trainable ASFormer evidence source. The fixture
   now supplies that registered source contract; production behavior and every
   scientific gate remain unchanged.
+- At commit `3f8e3ca1`, the exact remote suite passed all 158 tests. Its first
+  unobstructed config-matrix run then exposed an over-broad generic assertion:
+  the two evaluation-only Phase-1 paired cost profilers were being checked as
+  train/evaluation-result configs. The matrix now keeps batch-size-one and saved
+  predictions mandatory for trainable/formal-evaluation configs, while applying
+  the stronger relevant contract to those two cost-only configs: test batch
+  size one, zero loader workers, no saved accuracy predictions, no accuracy
+  claim, and a byte-identical paired checkpoint identity.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.

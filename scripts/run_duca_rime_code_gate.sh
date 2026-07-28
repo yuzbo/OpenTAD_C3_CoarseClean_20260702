@@ -183,10 +183,24 @@ configs = (
     "configs/adatad/thumos/duca_rime_uniform_same_k_formal_validation.py",
     "configs/adatad/thumos/duca_rime_uniform_same_k_tridet_formal_validation.py",
 )
+phase1_cost_configs = {
+    "configs/adatad/thumos/duca_rime_no_probe_uniform_phase1_cost.py",
+    "configs/adatad/thumos/duca_rime_probe_uniform_phase1_cost.py",
+}
 for path in configs:
     cfg = Config.fromfile(path)
-    assert cfg.solver.train.batch_size == 1
-    assert cfg.post_processing.save_dict is True
+    if path in phase1_cost_configs:
+        assert cfg.solver.test.batch_size == 1
+        assert cfg.solver.test.num_workers == 0
+        assert cfg.post_processing.save_dict is False
+        assert cfg.duca_rime_phase1_cost_contract.accuracy_claim_allowed is False
+        assert (
+            cfg.duca_rime_phase1_cost_contract.paired_checkpoint_identity_required
+            is True
+        )
+    else:
+        assert cfg.solver.train.batch_size == 1
+        assert cfg.post_processing.save_dict is True
     if "duca_rime_contract" in cfg:
         assert cfg.duca_rime_contract.pad_to_kmax is False
         assert cfg.duca_rime_contract.execution_quantum == 16

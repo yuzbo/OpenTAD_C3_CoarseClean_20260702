@@ -50,4 +50,6 @@ def test_phase1_cost_configs_freeze_probe_execution_and_uniform_selection(
             is True
         )
         assert cfg.duca_rime_phase1_cost_contract.accuracy_claim_allowed is False
+        assert cfg.post_processing.save_dict is False
+        assert cfg.solver.test.batch_size == 1
         assert cfg.solver.test.num_workers == 0
