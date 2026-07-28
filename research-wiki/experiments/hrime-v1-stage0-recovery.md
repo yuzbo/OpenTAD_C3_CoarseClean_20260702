@@ -4,7 +4,7 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v6_runtime_temporal_adapter_implemented / independently_reviewed_GO / remote_gate_pending`
+- Stage-0 code: `recovery_v6_exact_commit_5a599e90 / remote_gate_1201390_queued`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
@@ -399,7 +399,22 @@ Static compilation, Bash syntax and `git diff --check` pass. An independent
 read-only audit returned `GO` for the exact bounded diff, verified that all
 active dynamic configs use `VisionTransformerAdapter`, and found no scientific
 protocol change. Authoritative remote Torch testing, exact clean-commit
-publication, and a fresh Slurm transaction remain pending.
+gate completion, and a fresh Slurm transaction remain pending.
+
+Exact commit `5a599e909aca58751711979e8c9e5b68ab6cab72` is now published and
+installed in clean checkout
+`/data/run01/sczc063/yuzibo/OpenTAD_DUCA_HRIME_5a599e90`. The transport bundle
+SHA-256 is
+`6e4052a5ae4f8e74a2cbfa12303415712b5b41b84906ff1b5c27fd8853edca48`.
+Runtime annotation/video symlinks were established before gate submission and
+both resolve to the existing immutable datasets without dirtying Git.
+
+Authoritative Slurm preflight `1201390` was submitted from script SHA-256
+`3e02fabb176d93d5dc125992c55bd80e0188fd85519a2dcd2b0be240e7903a35`
+at root
+`/data/run01/sczc063/yuzibo/rime_preflight/duca_rime_recovery_v6_5a599e90_20260729_003219`.
+It is scheduler-pending. No Recovery-v6 production manifest or DAG has been
+released.
 
 Correct empirical statement:
 

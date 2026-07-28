@@ -3,7 +3,7 @@
 ## Status
 
 `designed / implemented / static_checked / independently_reviewed_GO /
-remote_gate_pending`
+exact_commit_published / remote_gate_1201390_queued`
 
 ## Failure signature
 

@@ -740,3 +740,24 @@
   `GO` for the bounded diff, confirmed that active dynamic configs use
   `VisionTransformerAdapter`, and found no scientific-protocol change. No
   performance value was inspected or interpreted.
+
+## 2026-07-29 — Recovery-v6 exact commit published; Slurm gate queued
+
+- Published exact repair commit
+  `5a599e909aca58751711979e8c9e5b68ab6cab72`.
+- A direct remote GitHub clone encountered a transient TLS termination before
+  creating a checkout. Built a complete bundle from the already-pushed branch,
+  SHA-256
+  `6e4052a5ae4f8e74a2cbfa12303415712b5b41b84906ff1b5c27fd8853edca48`,
+  and used it to create clean detached checkout
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_HRIME_5a599e90`.
+- Restored the required checkout-local annotation/video symlinks to the
+  established immutable datasets, verified both targets, exact HEAD and clean
+  Git status before submission.
+- Preflight submission script SHA-256 is
+  `3e02fabb176d93d5dc125992c55bd80e0188fd85519a2dcd2b0be240e7903a35`.
+  It submitted Slurm code gate `1201390` at
+  `/data/run01/sczc063/yuzibo/rime_preflight/duca_rime_recovery_v6_5a599e90_20260729_003219`;
+  the first snapshot is scheduler-pending on priority.
+- No Recovery-v6 production protocol, salvage manifest, submission manifest,
+  root or DAG exists yet. Phase 4 and official-final remain sealed.

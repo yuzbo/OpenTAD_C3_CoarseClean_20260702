@@ -21,7 +21,7 @@ Current evidence level:
 | Phase 2/3/4 | `recovery_v5_children_cancelled / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v5_failed_closed / recovery_v6_predeployment` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v6_runtime_temporal_adapter_implemented / independently_reviewed_GO / remote_gate_pending` |
+| Stage-0 repair implementation | `recovery_v6_exact_commit_5a599e90 / remote_gate_1201390_queued` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
@@ -388,8 +388,23 @@ temporal size, and exercise both the valid dynamic-bucket path and invalid
 geometry in the focused Slurm-gated test. Static compilation, Bash syntax, and
 `git diff --check` pass. An independent read-only audit returned `GO` for this
 bounded commit and confirmed that the route uses `VisionTransformerAdapter`,
-not the untouched ladder adapter; authoritative remote Torch testing remains
-pending. No scientific protocol or paper claim changed. This is only
+not the untouched ladder adapter.
+
+The exact repair commit is
+`5a599e909aca58751711979e8c9e5b68ab6cab72`. It is pushed to GitHub and
+installed in the clean remote checkout
+`/data/run01/sczc063/yuzibo/OpenTAD_DUCA_HRIME_5a599e90` from a verified bundle
+with SHA-256
+`6e4052a5ae4f8e74a2cbfa12303415712b5b41b84906ff1b5c27fd8853edca48`.
+The required annotation/video runtime symlinks resolve to the established
+immutable datasets while Git status remains clean. Slurm preflight script
+`/data/run01/sczc063/yuzibo/rime_prerequisites/duca_rime_submit_v6_code_gate.sh`
+has SHA-256
+`3e02fabb176d93d5dc125992c55bd80e0188fd85519a2dcd2b0be240e7903a35`;
+it submitted authoritative gate `1201390` with root
+`/data/run01/sczc063/yuzibo/rime_preflight/duca_rime_recovery_v6_5a599e90_20260729_003219`.
+The gate is queued on scheduler priority. No scientific protocol or paper claim
+changed. This is only
 `ENGINEERING_STATUS`; no model-quality or paper-admissible empirical conclusion
 is available.
 
