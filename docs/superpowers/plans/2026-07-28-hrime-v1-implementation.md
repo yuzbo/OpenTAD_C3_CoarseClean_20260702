@@ -91,6 +91,39 @@ python -m py_compile tools/bata/salvage_duca_rime_dense_checkpoint.py
 python -m pytest tests/test_duca_rime_launchers.py -q
 ```
 
+### Task 3.1 — Close recovery-v3 evaluator contract gaps
+
+Design source:
+`docs/superpowers/specs/2026-07-28-stage0-recovery-v3-contract-repair-design.md`
+
+Files:
+
+- `scripts/run_duca_rime_phase1_uniform_eval.sh`
+- `tools/bata/duca_rime_training.py`
+- `tools/test.py`
+- focused launcher/training-contract tests
+
+Actions:
+
+1. Bind the exact absolute VideoMAE path/SHA in uniform precheck, actual
+   inference, and its receipt.
+2. Add a dedicated dense-reference protocol predicate and contract validator;
+   do not add dense protocols to ordinary trainable-RIME formal routing.
+3. Route dense development evaluation through its registered `training` subset
+   and a dedicated engineering-only terminal schema.
+4. Require a new clean commit, remote Torch checks, affected launcher prechecks,
+   independent deployment audit, new manifests, and a fresh transaction root.
+5. Keep Phase 4 disabled and official-final sealed.
+
+Verification:
+
+```bash
+python -m py_compile tools/test.py tools/bata/duca_rime_training.py
+python -m pytest tests/test_duca_rime_launchers.py \
+  tests/test_duca_rime_training_contract.py -q
+bash -n scripts/run_duca_rime_phase1_uniform_eval.sh
+```
+
 ## Task 4 — Seal Phase-4 release
 
 Files:
