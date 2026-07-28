@@ -41,5 +41,11 @@
   remained dependency-blocked. The submitter now explicitly enters
   `/bin/bash -lc` before the CUDA/Miniforge bootstrap; the failed root and
   scheduler records are retained as negative deployment evidence.
+- The next code gate at commit `c0e7e036` reached the full remote Torch suite
+  and stopped on two stale test fixtures: a `protected_e2e` RIME construction
+  requested bridge scale `0.0` despite the registered `1.0` contract, and a
+  no-padding ledger fixture omitted `irregular_dense_valid_len`. The fixtures
+  were corrected to exercise, rather than violate, their production contracts;
+  no model behavior or gate threshold was relaxed.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.

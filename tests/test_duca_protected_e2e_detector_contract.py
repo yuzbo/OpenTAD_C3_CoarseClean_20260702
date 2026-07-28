@@ -40,6 +40,7 @@ def test_exact_uniform_protected_inference_emits_a_no_padding_ledger(
             {
                 "video_name": "video_0001",
                 "window_start_frame": 0,
+                "irregular_dense_valid_len": 8,
                 "selected_dense_indices": [0, 2, 5, 7],
                 "selected_valid_len": 4,
                 "duca_max_gap_seconds_cap": 0.5,
