@@ -113,9 +113,10 @@ These failures and naming mistakes must not be repeated.
 41. Do not confuse one whole-video total budget `B_v` with one K copied to every
     768-candidate window. The intended hierarchy predicts a total quota, jointly
     allocates `K_vw`, and still executes AdaTAD per window.
-42. Do not claim that the current repository performs video-level allocation.
-    Its dataset is a flat window list and its controller, replay schema, and
-    inference ledger are per window. H-RIME remains unimplemented.
+42. Do not claim that the current repository already **executes** learned
+    video-level allocation. H-RIME's deterministic budget/allocation/replay
+    contracts now exist, but the dataset path, learned planner, real shared scan,
+    detector replay and full ledger are not connected.
 43. Do not predict or compare a raw duration-blind video budget. Normalize the
     budget by valid duration/window opportunity, freeze its price on
     training-only video groups, and enforce the exact per-video hard constraint.
@@ -158,3 +159,12 @@ These failures and naming mistakes must not be repeated.
 56. Do not copy H-RIME sandbox patches or reported test counts from the external
     review: those artifacts are absent. Implement and verify the registered
     design in this repository.
+57. Do not pass fractional or non-quantum-aligned costs into H-RIME and let
+    integer conversion silently change the problem. Raw budgets and every
+    effective K must be exact integers; effective K is divisible by 16.
+58. Do not emit an H-RIME replay from feasible aliases or an MCKP result that is
+    not hash-bound to the exact video budget plan. Recompute the feasible-set
+    and plan-input hashes before generating replay rows.
+59. Do not call a grouping/dispatch **plan** a measured shared-scan or heavy
+    execution saving. A shared scan counts as implemented only when the runtime
+    executes it once per complete video and the full-stack ledger proves reuse.

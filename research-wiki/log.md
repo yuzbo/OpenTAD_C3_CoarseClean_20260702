@@ -258,7 +258,8 @@
 - Independently audited the current repository. It has a reusable exact-K
   decoder and per-window replay, but flat window datasets, no whole-video
   planner/allocator, no grouped two-pass dispatch and no shared video scan.
-  H-RIME is therefore `implementation_started`, not implemented/tested.
+  H-RIME was therefore `implementation_started`, not implemented/tested at that
+  audit point.
 - Independently verified the failed dense raw checkpoints:
   ActionFormer source job `1198115`, size `623799387`, SHA-256
   `cd92f3d499360c834f7ddd6ccfd5cba172c870bf6922de566b2b7e3878680e11`;
@@ -275,3 +276,37 @@
   adaptive allocation/routing is prior-art context, not H-RIME's novelty claim.
 - No model performance claim was added. The project still has no
   `PAPER_ADMISSIBLE_RESULT`.
+
+## 2026-07-28 — Stage-0 repair and H-RIME deterministic core implemented
+
+- Repaired the short-window execution contract. Candidate requests now map to a
+  homogeneous, quantum-aligned effective K before heavy execution; a 231-valid
+  window maps `(192,256,384,512)` to `(192,224,224,224)`, and the heavy tensor
+  width/ledger use 192 or 224 without replicated inactive tail.
+- Changed all dense checkpoint compactors to clean-cwd module invocation and
+  added a manifest-driven recovery tool/launcher. It validates the failed root,
+  source job IDs, exact epoch-59 path/size/SHA/schema/EMA keys, writes only to a
+  fresh recovery root, records missing embedded provenance honestly, keeps the
+  original job state `FAILED`, and makes no energy claim.
+- Added a dual-mode recovery DAG. `fresh_train` remains the default;
+  `salvage` requires a frozen manifest/hash and only redirects the standard
+  downstream checkpoint-evidence pointers. The failed transaction is never
+  modified. Phase 4 is forced sealed in this recovery DAG.
+- Implemented `hrime_exact_equality_mckp_v1`: canonical effective-K alias
+  deduplication, reachable-cap projection, exact equality DP, frozen int64
+  score quantization, deterministic objective/risk/lexicographic tie-break,
+  and solver-input/assignment hashes.
+- Implemented stable complete-video window groups, shared-scan receipt
+  contracts, video budget-plan hashes, exact-K replay rows for the existing
+  selector, and homogeneous-K dispatch/inverse-restoration plans. These are
+  deterministic contracts, not yet a connected learned/shared-scan runtime.
+- Independent code audit caught and corrected non-16-aligned K acceptance,
+  fractional integer truncation, and insufficient feasible-set/plan/replay hash
+  binding before merge.
+- Local Python compilation, Bash syntax and 46 focused no-Torch tests passed.
+  Torch-dependent tests are not claimed locally because the Windows host cannot
+  load the CUDA-linked `torch` DLL; authoritative Slurm verification remains
+  pending.
+- No experiment performance claim was made. The same-total-cost oracle has not
+  run, learned H-RIME is not implemented, and no paper-admissible empirical
+  conclusion is available.

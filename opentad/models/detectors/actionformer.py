@@ -787,7 +787,10 @@ class ActionFormer(SingleStageDetector):
                 raise RuntimeError(
                     "protected DUCA metadata selected count does not match detector mask"
                 )
-            if selector_variant == "duca_rime_physical":
+            if selector_variant in {
+                "protected_e2e_physical",
+                "duca_rime_physical",
+            }:
                 requested = int(meta.get("duca_requested_k", -1))
                 effective = int(meta.get("duca_effective_k", -1))
                 unique = int(meta.get("duca_unique_k", -1))
@@ -797,17 +800,29 @@ class ActionFormer(SingleStageDetector):
                     requested >= effective
                     and effective == unique == backbone == padded == selected_count
                 ):
-                    raise RuntimeError("RIME requested/effective/heavy-frame ledger is inconsistent")
+                    raise RuntimeError(
+                        "protected/RIME requested/effective/heavy-frame ledger "
+                        "is inconsistent"
+                    )
                 if meta.get("duca_dynamic_compute_realized") is not True:
-                    raise RuntimeError("RIME must realize dynamic heavy-backbone compute")
+                    raise RuntimeError(
+                        "protected/RIME DUCA must realize dynamic heavy-backbone compute"
+                    )
                 if meta.get("duca_backbone_tail_padding_mode") != "none_exact_k_bucket":
-                    raise RuntimeError("RIME forbids pad-to-Kmax heavy execution")
+                    raise RuntimeError(
+                        "protected/RIME DUCA forbids padded heavy execution"
+                    )
+                execution_quantum = int(
+                    getattr(selector, "execution_quantum", -1)
+                )
                 if (
-                    int(meta.get("duca_execution_quantum", -1)) != 16
-                    or effective % 16 != 0
+                    execution_quantum <= 0
+                    or int(meta.get("duca_execution_quantum", -1))
+                    != execution_quantum
+                    or effective % execution_quantum != 0
                 ):
                     raise RuntimeError(
-                        "RIME heavy execution must use exact 16-frame tubelet quanta"
+                        "protected/RIME heavy execution violates its exact quantum"
                     )
         if original_gt_segments is not None and gt_segments is not original_gt_segments:
             raise RuntimeError("protected DUCA must preserve dense GT segment objects")

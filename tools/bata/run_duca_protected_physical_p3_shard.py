@@ -632,7 +632,7 @@ def run_shard(
                 "P3 ST and hard-only base losses disagree",
             )
 
-            effective_k = min(384, valid_len)
+            effective_k = min(384, valid_len) // 16 * 16
             active_positions = (
                 positions[0, :effective_k].detach().cpu().tolist()
             )
@@ -696,7 +696,7 @@ def run_shard(
                     dtype=torch.long,
                 )
                 candidate_tensor = torch.full(
-                    (1, 384),
+                    (1, effective_k),
                     -1,
                     device=batch["inputs"].device,
                     dtype=torch.long,

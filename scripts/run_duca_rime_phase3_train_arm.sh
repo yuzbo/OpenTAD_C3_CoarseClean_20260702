@@ -189,7 +189,7 @@ actual_root="${DUCA_RIME_PHASE3_ROOT}/train/gpu1_id0"
 audit="${actual_root}/duca_rime_training_audit.json"
 full_checkpoint="${actual_root}/checkpoint/epoch_59.pth"
 checkpoint="${actual_root}/checkpoint/terminal_ema.pth"
-python tools/bata/compact_duca_rime_checkpoint.py \
+python -m tools.bata.compact_duca_rime_checkpoint \
   --source "${full_checkpoint}" \
   --output "${checkpoint}" \
   --expected-commit "${DUCA_RIME_EXPECTED_COMMIT}" \

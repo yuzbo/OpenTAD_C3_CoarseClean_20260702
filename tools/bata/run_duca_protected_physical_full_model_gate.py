@@ -188,8 +188,18 @@ def _validate_config(cfg: Config) -> str:
     )
     _require(
         cfg.duca_protected_physical_contract.backbone_tail_padding
-        == "replicate_last_selected",
+        == "none_exact_k_bucket",
         "backbone tail-padding contract drift",
+    )
+    _require(
+        int(cfg.duca_protected_physical_contract.execution_quantum) == 16
+        and int(cfg.model.frame_selector.execution_quantum) == 16,
+        "protected execution quantum drift",
+    )
+    _require(
+        bool(cfg.model.backbone.custom.dynamic_temporal_bucket)
+        and int(cfg.model.backbone.custom.dynamic_temporal_clip_len) == 16,
+        "protected backbone must use true dynamic temporal buckets",
     )
     _require(int(cfg.workflow.end_epoch) == 60, "official protocol must be 60 epochs")
     _require(
@@ -403,7 +413,11 @@ def _homotopy_endpoint_audit(
             positions = state["selected_positions"]
             for batch_index in range(int(positions.shape[0])):
                 valid_len = int(batch["masks"][batch_index].sum().item())
-                effective_k = min(int(selector.budget), valid_len)
+                effective_k = (
+                    min(int(selector.budget), valid_len)
+                    // int(selector.execution_quantum)
+                    * int(selector.execution_quantum)
+                )
                 expected = exact_uniform_positions(
                     valid_len,
                     effective_k,
@@ -415,8 +429,9 @@ def _homotopy_endpoint_audit(
                     f"{label} alpha-zero hard path is not exact uniform",
                 )
                 _require(
-                    bool(torch.all(positions[batch_index, effective_k:] < 0).item()),
-                    f"{label} alpha-zero padded slots are not inactive",
+                    int(positions.shape[1]) == effective_k
+                    and bool(torch.all(positions[batch_index] >= 0).item()),
+                    f"{label} alpha-zero path does not execute true effective K",
                 )
                 rows.append(
                     {
@@ -664,8 +679,12 @@ def _hard_gather(inputs: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         torch.equal(active, prefix),
         "hard gather requires a contiguous active slot prefix",
     )
-    last_active = positions.gather(1, (effective_k - 1)[:, None])
-    safe = torch.where(active, positions, last_active.expand_as(positions))
+    unique = torch.unique(effective_k)
+    _require(
+        int(unique.numel()) == 1,
+        "hard gather requires one homogeneous effective-K bucket",
+    )
+    safe = positions[:, : int(unique[0].item())]
     view = [safe.shape[0]] + [1] * (inputs.ndim - 1)
     view[temporal_dim] = safe.shape[1]
     expand = list(inputs.shape)
@@ -737,18 +756,25 @@ def _exact_uniform_position_tensor(
     *,
     budget: int = 384,
 ) -> torch.Tensor:
-    positions = torch.full(
-        (int(masks.shape[0]), int(budget)),
-        -1,
+    effective = [
+        min(int(budget), int(row.sum().item())) // 16 * 16
+        for row in masks
+    ]
+    _require(
+        all(value > 0 for value in effective) and len(set(effective)) == 1,
+        "exact-uniform replay requires one positive homogeneous K bucket",
+    )
+    execution_k = effective[0]
+    positions = torch.empty(
+        (int(masks.shape[0]), execution_k),
         device=masks.device,
         dtype=torch.long,
     )
     for batch_index, row in enumerate(masks):
         valid_len = int(row.sum().item())
-        effective_k = min(int(budget), valid_len)
-        positions[batch_index, :effective_k] = exact_uniform_positions(
+        positions[batch_index] = exact_uniform_positions(
             valid_len,
-            effective_k,
+            execution_k,
             device=masks.device,
         )
     return positions
@@ -1169,10 +1195,11 @@ def _padded_window_audit(
             valid_len < 384,
             "padded tail audit requires a real window shorter than K",
         )
-        expected_k = min(384, valid_len)
+        expected_k = min(384, valid_len) // 16 * 16
         _require(
-            int((positions[0] >= 0).sum().item()) == expected_k,
-            "padded window violates K_eff=min(K,valid_len)",
+            int(positions.shape[1]) == expected_k
+            and int((positions[0] >= 0).sum().item()) == expected_k,
+            "padded window violates quantum-aligned true K_eff",
         )
         expected_hard = _hard_gather(batch["inputs"], positions)
         _require(
@@ -1180,22 +1207,9 @@ def _padded_window_audit(
             "padded window backbone input is not exact hard gather",
         )
         temporal_dim = 3 if expected_hard.ndim == 6 else 2
-        last_active = expected_hard.select(temporal_dim, expected_k - 1)
-        inactive_tail = expected_hard.narrow(
-            temporal_dim,
-            expected_k,
-            int(expected_hard.shape[temporal_dim]) - expected_k,
-        )
-        tail_view = list(last_active.shape)
-        tail_view.insert(temporal_dim, 1)
-        tail_expand = list(expected_hard.shape)
-        tail_expand[temporal_dim] = int(inactive_tail.shape[temporal_dim])
         _require(
-            torch.equal(
-                inactive_tail,
-                last_active.reshape(tail_view).expand(tail_expand),
-            ),
-            "padded backbone tail does not replicate the last selected frame",
+            int(expected_hard.shape[temporal_dim]) == expected_k,
+            "short-window backbone input contains an inactive tail",
         )
         debug = model.rpn_head.collect_debug_state()
         _require(
@@ -1208,8 +1222,8 @@ def _padded_window_audit(
             "effective_k": expected_k,
             "objective": float(objective.detach().float().item()),
             "hard_forward_equal": True,
-            "tail_padding_mode": "replicate_last_selected",
-            "tail_padding_reference_equal": True,
+            "tail_padding_mode": "none_exact_k_bucket",
+            "no_tail_padding_verified": True,
             "physical_head_debug": debug,
         }
     finally:
@@ -1976,7 +1990,7 @@ def run_gate(
             "ema_update": True,
             "full_partial_and_short_padded_real_windows": True,
             "short_padded_backward_update": True,
-            "backbone_tail_padding_mode": "replicate_last_selected",
+            "backbone_tail_padding_mode": "none_exact_k_bucket",
         },
         "paper_claim_allowed": False,
     }

@@ -18,6 +18,14 @@ check_sha256() {
     || fail "${label} SHA-256 drift"
 }
 
+dense_recovery_mode="${DUCA_RIME_DENSE_RECOVERY_MODE:-fresh_train}"
+[[ "${dense_recovery_mode}" == fresh_train || "${dense_recovery_mode}" == salvage ]] \
+  || fail "DUCA_RIME_DENSE_RECOVERY_MODE must be fresh_train or salvage"
+export DUCA_RIME_DENSE_RECOVERY_MODE="${dense_recovery_mode}"
+[[ "${DUCA_RIME_ENABLE_PHASE4:-0}" == 0 ]] \
+  || fail "this recovery DAG keeps official-final Phase 4 sealed"
+export DUCA_RIME_ENABLE_PHASE4=0
+
 for name in \
   DUCA_RIME_REPO_ROOT \
   DUCA_RIME_EXPECTED_COMMIT \
@@ -144,6 +152,69 @@ export DUCA_RIME_DENSE_CHECKPOINT_TRIDET="${DUCA_RIME_DENSE_TRIDET_ROOT}/train/g
 export DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE_TRIDET="${DUCA_RIME_DENSE_TRIDET_ROOT}/checkpoint_evidence.json"
 export DUCA_RIME_DENSE_TRAINED_COMMIT_TRIDET="${DUCA_RIME_EXPECTED_COMMIT}"
 
+salvage_manifest_path=""
+salvage_manifest_sha256=""
+salvage_source_commit=""
+if [[ "${dense_recovery_mode}" == salvage ]]; then
+  required DUCA_RIME_DENSE_SALVAGE_MANIFEST
+  required DUCA_RIME_DENSE_SALVAGE_MANIFEST_SHA256
+  export DUCA_RIME_DENSE_SALVAGE_MANIFEST
+  export DUCA_RIME_DENSE_SALVAGE_MANIFEST_SHA256
+  check_sha256 \
+    "${DUCA_RIME_DENSE_SALVAGE_MANIFEST}" \
+    "${DUCA_RIME_DENSE_SALVAGE_MANIFEST_SHA256}" \
+    "dense salvage manifest"
+  readarray -t salvage_values < <(
+    python - \
+      "${DUCA_RIME_DENSE_SALVAGE_MANIFEST}" \
+      "${DUCA_RIME_EXPECTED_COMMIT}" \
+      "${DUCA_RIME_DENSE_ACTIONFORMER_ROOT}" \
+      "${DUCA_RIME_DENSE_TRIDET_ROOT}" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+manifest_path = pathlib.Path(sys.argv[1]).resolve()
+payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+if (
+    payload.get("schema_version") != "duca_rime_dense_salvage_manifest_v1"
+    or payload.get("status") != "frozen"
+    or payload.get("uses_official_final") is not False
+    or payload.get("recovery_git_commit") != sys.argv[2]
+    or payload.get("failed_transaction", {}).get("terminal_state")
+    != "failed_closed"
+):
+    raise SystemExit("dense salvage manifest contract drift")
+source_commit = str(payload.get("failed_transaction", {}).get("git_commit", ""))
+if re.fullmatch(r"[0-9a-f]{40}", source_commit) is None:
+    raise SystemExit("dense salvage source commit is invalid")
+expected_outputs = {
+    "ActionFormer": pathlib.Path(sys.argv[3]).resolve(),
+    "TriDet": pathlib.Path(sys.argv[4]).resolve(),
+}
+for backend, expected_output in expected_outputs.items():
+    source = payload.get("sources", {}).get(backend, {})
+    if (
+        source.get("backend") != backend
+        or source.get("original_job_state") != "FAILED"
+        or pathlib.Path(str(source.get("output_root", ""))).resolve()
+        != expected_output
+    ):
+        raise SystemExit(f"dense salvage {backend} source/output contract drift")
+print(manifest_path)
+print(source_commit)
+PY
+  )
+  [[ "${#salvage_values[@]}" == 2 ]] \
+    || fail "failed to resolve dense salvage manifest"
+  salvage_manifest_path="${salvage_values[0]}"
+  salvage_manifest_sha256="${DUCA_RIME_DENSE_SALVAGE_MANIFEST_SHA256}"
+  salvage_source_commit="${salvage_values[1]}"
+  export DUCA_RIME_DENSE_TRAINED_COMMIT_ACTIONFORMER="${salvage_source_commit}"
+  export DUCA_RIME_DENSE_TRAINED_COMMIT_TRIDET="${salvage_source_commit}"
+fi
+
 mkdir -p "${DUCA_RIME_DEPLOYMENT_ROOT}/logs"
 bootstrap="source /etc/profile && module load cuda/11.8 && module load miniforge3/24.11 && source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate"
 job_ids=()
@@ -191,16 +262,36 @@ submit_job \
   scripts/run_duca_rime_phase1_evidence_pipeline.sh
 phase1_job="${submitted_job}"
 submit_job \
-  rime-dense-af \
-  5-00:00:00 \
+  "rime-dense-af-${dense_recovery_mode}" \
+  "$([[ "${dense_recovery_mode}" == salvage ]] && echo 12:00:00 || echo 5-00:00:00)" \
   "${code_job}" \
-  scripts/run_duca_rime_dense_actionformer_train.sh
+  "$(
+    if [[ "${dense_recovery_mode}" == salvage ]]; then
+      printf '%s' \
+        "env DUCA_RIME_DENSE_SALVAGE_BACKEND=ActionFormer" \
+        " DUCA_RIME_DENSE_SALVAGE_ROOT=${DUCA_RIME_DENSE_ACTIONFORMER_ROOT}" \
+        " DUCA_RIME_DENSE_SALVAGE_CONFIG=${DUCA_RIME_DENSE_ACTIONFORMER_CONFIG}" \
+        " scripts/run_duca_rime_dense_salvage.sh"
+    else
+      printf '%s' scripts/run_duca_rime_dense_actionformer_train.sh
+    fi
+  )"
 dense_actionformer_job="${submitted_job}"
 submit_job \
-  rime-dense-td \
-  5-00:00:00 \
+  "rime-dense-td-${dense_recovery_mode}" \
+  "$([[ "${dense_recovery_mode}" == salvage ]] && echo 12:00:00 || echo 5-00:00:00)" \
   "${code_job}" \
-  scripts/run_duca_rime_dense_tridet_train.sh
+  "$(
+    if [[ "${dense_recovery_mode}" == salvage ]]; then
+      printf '%s' \
+        "env DUCA_RIME_DENSE_SALVAGE_BACKEND=TriDet" \
+        " DUCA_RIME_DENSE_SALVAGE_ROOT=${DUCA_RIME_DENSE_TRIDET_ROOT}" \
+        " DUCA_RIME_DENSE_SALVAGE_CONFIG=${DUCA_RIME_DENSE_TRIDET_CONFIG}" \
+        " scripts/run_duca_rime_dense_salvage.sh"
+    else
+      printf '%s' scripts/run_duca_rime_dense_tridet_train.sh
+    fi
+  )"
 dense_tridet_job="${submitted_job}"
 submit_job \
   rime-phase2 \
@@ -224,7 +315,11 @@ python - \
   "${dense_actionformer_job}" \
   "${dense_tridet_job}" \
   "${phase2_job}" \
-  "${phase3_controller_job}" <<'PY'
+  "${phase3_controller_job}" \
+  "${dense_recovery_mode}" \
+  "${salvage_manifest_path}" \
+  "${salvage_manifest_sha256}" \
+  "${salvage_source_commit}" <<'PY'
 import hashlib
 import json
 import os
@@ -242,8 +337,11 @@ names = (
     "phase3_controller",
 )
 jobs = dict(zip(names, sys.argv[3:]))
+recovery_mode, salvage_manifest, salvage_manifest_sha, salvage_source_commit = (
+    sys.argv[9:13]
+)
 payload = {
-    "schema_version": "duca_rime_four_phase_submission_v1",
+    "schema_version": "duca_rime_four_phase_submission_v2",
     "status": "held_complete",
     "git_commit": commit,
     "jobs": jobs,
@@ -257,6 +355,19 @@ payload = {
             jobs["dense_actionformer"],
             jobs["dense_tridet"],
         ],
+    },
+    "dense_recovery": {
+        "mode": recovery_mode,
+        "salvage_manifest_path": salvage_manifest or None,
+        "salvage_manifest_sha256": salvage_manifest_sha or None,
+        "source_training_git_commit": salvage_source_commit or None,
+        "source_jobs_remain_failed": recovery_mode == "salvage",
+        "failed_transaction_mutated": False,
+        "claim_scope": (
+            "engineering_dense_reference_recovery_not_method_evidence"
+            if recovery_mode == "salvage"
+            else "fresh_dense_reference_training"
+        ),
     },
     "frozen_protocol_inputs": {
         "candidate_budgets": os.environ["DUCA_RIME_CANDIDATE_BUDGETS"],
@@ -279,16 +390,18 @@ payload = {
     },
     "expected_terminal_artifacts": {
         "phase1": str(target.parent / "phase1" / "pipeline_receipt.json"),
+        "dense_actionformer": str(
+            target.parent / "dense_actionformer" / "checkpoint_evidence.json"
+        ),
+        "dense_tridet": str(
+            target.parent / "dense_tridet" / "checkpoint_evidence.json"
+        ),
         "phase2": str(target.parent / "phase2" / "pipeline_receipt.json"),
         "phase3": str(target.parent / "phase3" / "seal" / "phase3_receipt.json"),
-        "phase4": str(
-            target.parent
-            / "phase4"
-            / "submission"
-            / "matrix"
-            / "phase4_receipt.json"
-        ),
+        "phase4": None,
     },
+    "phase4_submission_enabled": False,
+    "official_final_sealed": True,
     "release_is_transactional": True,
 }
 text = json.dumps(payload, indent=2, sort_keys=True) + "\n"

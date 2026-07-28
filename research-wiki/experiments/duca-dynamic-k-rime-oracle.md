@@ -14,6 +14,8 @@
 - Phase 2/3/4: `blocked_by_failed_dependency`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
+- Stage-0 recovery implementation: `implemented / local_non_torch_tested`
+- Stage-0 recovery deployment: `not_yet_submitted`
 
 ## Objective
 
@@ -208,6 +210,24 @@ and `grad_scaler`, with `epoch=59`. They do not embed a complete
 commit/variant/seed audit. Any recovery must use a new immutable, hash-bound
 salvage transaction and explicitly label external provenance; the failed root
 is never modified or reclassified as successful.
+
+Stage-0 recovery code now exists locally:
+
+- short-window heavy execution is quantum-aligned and uses its true effective K
+  without replicated inactive tail;
+- ledger equality is
+  `effective_k=unique_k=backbone_input_k=padded_k`;
+- compaction uses clean-cwd module invocation;
+- salvage is a new manifest/hash-bound transaction with exact source path,
+  size, hash, job, epoch, EMA schema and explicit external-provenance receipt;
+- the old failed root remains immutable and its source jobs remain `FAILED`;
+- the recovery DAG supports explicit `fresh_train` or `salvage` dense mode and
+  forces official-final Phase 4 sealed.
+
+Local `py_compile`, `bash -n`, and 46 focused no-Torch tests passed. The Windows
+host cannot load the repository's CUDA-linked PyTorch DLL, so Torch-dependent
+selector/detector tests remain `remote_pending`; no authoritative Stage-0
+receipt exists until the exact clean commit passes Slurm precheck/code gate.
 
 Raw Phase-1 development measurements produced before the fail-closed ledger
 gate were:

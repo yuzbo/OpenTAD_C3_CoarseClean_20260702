@@ -10,3 +10,7 @@
 {"source":"sources/U-PRO-HRIME-1","relation":"reviews","target":"ideas/duca-rime-graph"}
 {"source":"ideas/duca-rime-graph","relation":"inspired_by","target":"sources/P-ADAPTOK-1"}
 {"source":"ideas/duca-rime-graph","relation":"differentiated_from","target":"sources/P-EVATOK-1"}
+{"source":"ideas/duca-rime-graph","relation":"implemented_by","target":"models/hrime-deterministic-core-v1"}
+{"source":"models/hrime-deterministic-core-v1","relation":"tested_by","target":"experiments/hrime-v1-stage0-recovery"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"recovers","target":"experiments/duca-dynamic-k-rime-oracle"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"gates","target":"models/hrime-learned-v1"}

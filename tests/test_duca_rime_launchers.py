@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,7 +82,7 @@ def test_phase4_training_launcher_is_authorization_and_cell_bound():
     assert "U-fixed-TriDet" in text
     assert "RIME-full-TriDet" in text
     assert "successful_optimizer_updates" in text
-    assert "compact_duca_rime_checkpoint.py" in text
+    assert "python -m tools.bata.compact_duca_rime_checkpoint" in text
     assert "--remove-source" in text
 
 
@@ -177,7 +179,7 @@ def test_phase2_mixed_k_training_is_phase1_bound_and_target_free():
     assert "unset" in text
     assert "--rdzv-backend=c10d --rdzv-endpoint=localhost:0" in text
     assert '--rdzv-id="${SLURM_JOB_ID}"' in text
-    assert "compact_duca_rime_checkpoint.py" in text
+    assert "python -m tools.bata.compact_duca_rime_checkpoint" in text
 
 
 def test_phase2_mixed_k_evaluation_is_checkpoint_and_exact_k_ledger_bound():
@@ -217,6 +219,9 @@ def test_phase3_and_phase4_controllers_preserve_fail_closed_dependencies():
     assert "run_duca_rime_phase3_asset_producer.sh" in phase3
     assert 'dependency="afterok:${phase3_seal_job}"' in phase3
     assert "run_duca_rime_phase4_submit_controller.sh" in phase3
+    assert 'phase4_submission_enabled="${DUCA_RIME_ENABLE_PHASE4:-0}"' in phase3
+    assert 'if [[ "${phase4_submission_enabled}" == 1 ]]' in phase3
+    assert '"phase4_submission_enabled": sys.argv[6] == "1"' in phase3
     assert "phase4_authorization.json" in phase4
     assert "submit_duca_rime_phase4_matrix.sh" in phase4
     assert "DUCA_RIME_SUBMIT_CONTROLLER=1" in phase3
@@ -267,7 +272,14 @@ def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     assert "phase3_dependency" in text
     assert "submission_manifest.json" in text
     assert "scontrol release" in text
-    assert "phase4_receipt.json" in text
+    assert 'DUCA_RIME_DENSE_RECOVERY_MODE:-fresh_train' in text
+    assert "run_duca_rime_dense_salvage.sh" in text
+    assert '"source_jobs_remain_failed"' in text
+    assert '"failed_transaction_mutated": False' in text
+    assert '"phase4": None' in text
+    assert '"phase4_submission_enabled": False' in text
+    assert '"official_final_sealed": True' in text
+    assert "this recovery DAG keeps official-final Phase 4 sealed" in text
     assert 'DUCA_RIME_DECODER_FAMILY}" == "weak_overlap"' in text
     assert 'DUCA_RIME_O4_MAX_BRIER}" == "0.25"' in text
     assert '"frozen_protocol_inputs"' in text
@@ -310,7 +322,7 @@ def test_dense_tridet_launcher_is_slurm_checkpoint_evidence_bound():
     ).read_text(encoding="utf-8")
     assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
     assert "duca_rime_dense_tridet_cost_baseline_v1" in text
-    assert "compact_duca_rime_checkpoint.py" in text
+    assert "python -m tools.bata.compact_duca_rime_checkpoint" in text
     assert "build_trained_checkpoint_binding" in text
     assert "state_dict_ema" in text
     assert "uses_official_final" in text
@@ -334,6 +346,39 @@ def test_dense_actionformer_reference_reuses_the_evidence_bound_backend_runner()
     assert "duca_rime_dense_actionformer_cost_baseline_v1" in cfg
     assert 'detector_backend="ActionFormer"' in cfg
     assert "seal_eval_dataloaders_during_training=True" in cfg
+
+
+def test_checkpoint_compactor_module_invocation_resolves_from_clean_repo_cwd():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.bata.compact_duca_rime_checkpoint",
+            "--help",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Compact a completed DUCA-RIME checkpoint" in result.stdout
+
+
+def test_dense_salvage_is_hash_bound_non_mutating_and_evaluated():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_dense_salvage.sh"
+    ).read_text(encoding="utf-8")
+    assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert "DUCA_RIME_DENSE_SALVAGE_MANIFEST_SHA256" in text
+    assert "python -m tools.bata.salvage_duca_rime_dense_checkpoint" in text
+    assert "--precheck-only" in text
+    assert "source_training_git_commit" in text
+    assert '"source_job_state": "FAILED"' in text
+    assert '"original_job_reclassified_as_success": False' in text
+    assert "evaluation_evidence.json" in text
+    assert "build_trained_checkpoint_binding" in text
+    assert "recovery_receipt.json" in text
 
 
 def test_phase3_submission_has_six_train_jobs_and_no_same_k_training():

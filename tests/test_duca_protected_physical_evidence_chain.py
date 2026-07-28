@@ -221,8 +221,8 @@ def _make_bundle(tmp_path: Path):
                     "valid_len": 320,
                     "effective_k": 320,
                     "hard_forward_equal": True,
-                    "tail_padding_mode": "replicate_last_selected",
-                    "tail_padding_reference_equal": True,
+                    "tail_padding_mode": "none_exact_k_bucket",
+                    "no_tail_padding_verified": True,
                 },
                 "real_optimizer_step_audit": {
                     "successful_optimizer_updates": 3,

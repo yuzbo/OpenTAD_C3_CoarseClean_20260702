@@ -21,7 +21,9 @@ Current evidence level:
 | Phase 2/3/4 | `blocked_by_failed_dependency` |
 | Latest four-stage transaction | `failed_closed_without_terminal_receipts` |
 | H-RIME scientific route | `user_approved / designed` |
-| H-RIME implementation | `implementation_started` |
+| Stage-0 repair implementation | `implemented / local_non_torch_tested / remote_pending` |
+| H-RIME deterministic core | `implemented / local_non_torch_tested` |
+| H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
@@ -157,9 +159,13 @@ preferred next-model design. These facts must not be conflated.
    `E_v=sum_w K_vw` is the execution count. The unique physical-frame union
    `U_v` and duplication ratio `E_v/U_v` are diagnostics only; they become
    compute units only after a real shared-feature/cache implementation.
-7. **Current evidence:** the window controller and exact-K decoder exist, but
-   the video scan, video-budget head, joint allocator, grouped training path,
-   cross-window ledger, and calibration evidence do not.
+7. **Current evidence:** the window controller and exact-K decoder exist.
+   H-RIME now also has a locally tested deterministic contract/core for
+   canonical effective-K aliases, reachable-budget projection, exact-equality
+   MCKP, stable video grouping, hash-bound replay, and homogeneous-K dispatch
+   planning. It does **not** yet have a connected learned video-budget head,
+   an executing shared-video scan, the grouped training path, full detector
+   replay, or calibration evidence.
 
 For working candidate `H-RIME`, let `q=16`, let `W_v` be the video's windows,
 and let each feasible `K_vw` be quantum-aligned and bounded by the valid window
@@ -176,9 +182,11 @@ cross-window feature cache is a separately falsified extension.
 The user correction on `2026-07-28` promoted this hierarchical route from a
 deferred alternative to the preferred next-model design. The user subsequently
 approved the audited H-RIME specification and authorized implementation. Its
-literal state is now `user_approved/designed/implementation_started`; it is not
-yet fully implemented, tested, or empirically supported and must not be silently
-attributed to the current four-stage RIME code.
+literal state is now
+`user_approved/designed/implementation_started/core_implemented_and_locally_tested`;
+the learned/shared-scan detector path is not yet implemented or empirically
+supported and must not be silently attributed to the current four-stage RIME
+code.
 
 ## Frozen method semantics
 

@@ -4,8 +4,9 @@
 
 ### State
 
-`user_approved`, `designed`, `implementation_started`, `not_yet_fully_implemented`,
-`not_tested`, `not_empirically_supported`
+`user_approved`, `designed`, `implementation_started`,
+`deterministic_core_implemented`, `deterministic_core_locally_tested`,
+`not_yet_end_to_end_implemented`, `not_empirically_supported`
 
 ### User correction and decision
 
@@ -14,12 +15,36 @@ Offline access makes a cheap whole-video scan legitimate. AdaTAD may continue to
 detect on 768-candidate windows after a separate planner predicts one total
 video budget and distributes it across those windows.
 
-The current repository does not implement this behavior. It flattens videos
-into independent windows, predicts risk/K per row, and writes per-window
-ledgers. H-RIME is therefore a new model candidate, not a reinterpretation of
-the current controller. The corrected governing specification is
+The current detector runtime still flattens videos into independent windows,
+predicts risk/K per row, and writes per-window ledgers. The repository now
+implements the deterministic H-RIME contract/core—stable video grouping,
+canonical short-window effective-K aliases, reachable-budget projection,
+exact-equality MCKP, replay generation, and homogeneous-K dispatch planning—but
+not the learned/shared-scan detector integration. H-RIME is therefore a new
+model candidate, not a reinterpretation of the current controller. The
+corrected governing specification is
 `docs/superpowers/specs/2026-07-28-hrime-v1-budget-conserving-design.md`; the
 user has approved it and authorized implementation.
+
+### Implemented deterministic core receipt
+
+`opentad/models/duca/hrime.py` freezes:
+
+- solver `hrime_exact_equality_mckp_v1`;
+- `int64`, scale `1,000,000`, `ROUND_HALF_EVEN`, strict registered
+  quantization tolerance and deterministic tie-break;
+- raw/reachable/realized/projection-unused/solver-unused budget separation;
+- `(192,256,384,512) -> (192,224,224,224)` behavior for valid length 231;
+- exact equality or fail closed;
+- group, scan-contract, plan, solver-input, assignment, replay and dispatch
+  hashes;
+- `hrime_joint_video_exact_mckp` replay consumption by the existing exact-K
+  selector.
+
+Focused pure-CPU tests include brute-force MCKP agreement, unreachable caps,
+non-quantized/fractional rejection, deterministic ties/hashes, alias-tamper
+rejection, grouping, replay and dispatch restoration. These tests establish
+software-contract correctness only; they are not a detector experiment.
 
 ### One-sentence method
 

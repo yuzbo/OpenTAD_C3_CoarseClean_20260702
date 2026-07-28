@@ -57,6 +57,8 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/create_duca_rime_splits.py \
   tools/bata/create_duca_rime_training_exposure.py \
   tools/bata/compact_duca_rime_checkpoint.py \
+  tools/bata/create_duca_rime_dense_salvage_manifest.py \
+  tools/bata/salvage_duca_rime_dense_checkpoint.py \
   tools/bata/evaluate_duca_rime_predictions.py \
   tools/bata/finalize_duca_rime_cost.py \
   tools/bata/finalize_duca_rime_phase3_arm.py \
@@ -80,6 +82,7 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/build_duca_rime_budget_replay.py \
   opentad/evaluations/mAP.py \
   opentad/models/duca/rime.py \
+  opentad/models/duca/hrime.py \
   opentad/models/selectors/duca_protected_e2e_frame_selector.py \
   opentad/models/selectors/duca_rime_frame_selector.py \
   opentad/models/backbones/backbone_wrapper.py \
@@ -121,6 +124,7 @@ bash -n \
   scripts/run_duca_rime_phase2_o2_panel.sh \
   scripts/run_duca_rime_dense_actionformer_train.sh \
   scripts/run_duca_rime_dense_tridet_train.sh \
+  scripts/run_duca_rime_dense_salvage.sh \
   scripts/run_duca_rime_phase1_dense_eval.sh \
   scripts/run_duca_rime_phase1_evidence_pipeline.sh \
   scripts/run_duca_rime_phase1_uniform_eval.sh \
@@ -137,6 +141,8 @@ bash -n \
   tests/test_duca_rime_training_contract.py \
   tests/test_duca_rime_exposure.py \
   tests/test_duca_rime_checkpoint_retention.py \
+  tests/test_duca_rime_dense_salvage.py \
+  tests/test_hrime_budget_allocator.py \
   tests/test_duca_rime_prediction_metrics.py \
   tests/test_duca_rime_crossfit_producer.py \
   tests/test_duca_rime_counterfactual_measurements.py \

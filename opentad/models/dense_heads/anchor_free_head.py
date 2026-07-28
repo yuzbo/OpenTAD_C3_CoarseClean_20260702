@@ -223,7 +223,11 @@ class AnchorFreeHead(nn.Module):
             "proposal_axis": "dense_physical",
             "duca_backbone_tail_padding_mode": (
                 "none_exact_k_bucket"
-                if self.physical_grid_contract == "duca_rime_physical_dynamic_k_v1"
+                if self.physical_grid_contract
+                in {
+                    "duca_protected_e2e_physical_v1",
+                    "duca_rime_physical_dynamic_k_v1",
+                }
                 else "replicate_last_selected"
             ),
         }

@@ -106,8 +106,12 @@ def test_data_pipeline_exposes_physical_axis_without_selected_axis_targets():
         )
         assert (
             cfg.duca_protected_physical_contract.backbone_tail_padding
-            == "replicate_last_selected"
+            == "none_exact_k_bucket"
         )
+        assert cfg.duca_protected_physical_contract.execution_quantum == 16
+        assert cfg.model.frame_selector.execution_quantum == 16
+        assert cfg.model.backbone.custom.dynamic_temporal_bucket is True
+        assert cfg.model.backbone.custom.dynamic_temporal_clip_len == 16
 
 
 def test_each_config_builds_the_registered_final_selector_and_official_head():

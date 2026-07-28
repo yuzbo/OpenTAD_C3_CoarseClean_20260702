@@ -121,7 +121,14 @@ def _protected_meta(**updates):
         "detector_prediction_inverse_map_required": False,
         "detector_output_coordinate_space": "dense_physical",
         "proposal_axis": "dense_physical",
-        "duca_backbone_tail_padding_mode": "replicate_last_selected",
+        "duca_requested_k": 3,
+        "duca_effective_k": 3,
+        "duca_unique_k": 3,
+        "duca_backbone_input_k": 3,
+        "duca_padded_k": 3,
+        "duca_dynamic_compute_realized": True,
+        "duca_execution_quantum": 1,
+        "duca_backbone_tail_padding_mode": "none_exact_k_bucket",
     }
     meta.update(updates)
     return meta
@@ -255,6 +262,7 @@ class _FakeProtectedSelector(nn.Module):
         self.coarse_trunk_lr = 2.5e-5
         self.action_head_lr = 5.0e-5
         self.budget = 3
+        self.execution_quantum = 1
         self.separate_detector_rng = True
         self.transition_scorer = DucaProtectedTransitionScorer(96, 64)
         self.raw_actionness_source = _FakeActionnessSource()

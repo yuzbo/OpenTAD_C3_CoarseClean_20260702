@@ -46,7 +46,8 @@ duca_protected_physical_contract = dict(
     detector_axis="native_dense_physical_candidate_axis",
     detector_head="official_actionformer_head",
     detector_gradient="protected_hard_forward_soft_backward",
-    backbone_tail_padding="replicate_last_selected",
+    backbone_tail_padding="none_exact_k_bucket",
+    execution_quantum=16,
     main_detector_gradient_updates="selector_adapter_and_score_head_only",
     rho_detector_gradient_updates="selector_plus_last_asformer_encoder_block_scaled_0.01",
     test_selection="terminal_epoch_59_state_dict_ema_only",
@@ -136,6 +137,7 @@ model = dict(
         in_channels=3,
         dense_window_size=dense_window_size,
         budget=selected_budget,
+        execution_quantum=16,
         coarse_hidden_dim=96,
         selector_hidden_dim=64,
         coverage_floor_weight=0.10,
@@ -191,6 +193,8 @@ model = dict(
             with_cp=False,
         ),
         custom=dict(
+            dynamic_temporal_bucket=True,
+            dynamic_temporal_clip_len=16,
             pre_processing_pipeline=[
                 dict(
                     type="Rearrange",

@@ -8,6 +8,7 @@ import pytest
 from opentad.datasets.transforms.end_to_end import LoadFrames
 from opentad.models.selectors.duca_protected_e2e_frame_selector import (
     DucaProtectedE2EFrameSelector,
+    _homogeneous_quantized_effective_k,
     _transition_target_from_gt_segments,
 )
 
@@ -171,7 +172,7 @@ def test_uint8_exact_uniform_preserves_float64_physical_gap_cap():
     assert meta["duca_observed_max_gap_seconds"] <= meta["duca_max_gap_seconds_cap"]
 
 
-def test_short_window_replicates_last_selected_frame_for_backbone_tail():
+def test_short_window_executes_only_the_true_effective_k():
     selector = DucaProtectedE2EFrameSelector(
         in_channels=3,
         arm="exact_uniform",
@@ -191,17 +192,66 @@ def test_short_window_replicates_last_selected_frame_for_backbone_tail():
     output = selector.forward_test(inputs, masks, metas)
 
     assert output["selector_outputs"]["selected_positions"].tolist() == [
-        [0, 1, 2, -1]
+        [0, 1, 2]
     ]
-    assert output["masks"].tolist() == [[True, True, True, False]]
-    assert output["inputs"][0, 0, :, 0, 0].tolist() == [0.0, 1.0, 2.0, 2.0]
+    assert output["masks"].tolist() == [[True, True, True]]
+    assert output["inputs"][0, 0, :, 0, 0].tolist() == [0.0, 1.0, 2.0]
     assert (
         output["selector_outputs"]["backbone_tail_padding_mode"]
-        == "replicate_last_selected"
+        == "none_exact_k_bucket"
     )
     assert (
         output["metas"][0]["duca_backbone_tail_padding_mode"]
-        == "replicate_last_selected"
+        == "none_exact_k_bucket"
+    )
+    assert output["metas"][0]["duca_backbone_input_k"] == 3
+    assert output["metas"][0]["duca_padded_k"] == 3
+
+
+def test_short_window_quantizes_231_to_224_for_a_16_frame_backbone():
+    valid = torch.zeros((1, 768), dtype=torch.bool)
+    valid[:, :231] = True
+    assert [
+        _homogeneous_quantized_effective_k(
+            valid,
+            requested_k=requested,
+            execution_quantum=16,
+        )
+        for requested in (192, 256, 384, 512)
+    ] == [192, 224, 224, 224]
+
+    selector = DucaProtectedE2EFrameSelector(
+        in_channels=3,
+        arm="exact_uniform",
+        budget=384,
+        dense_window_size=768,
+        execution_quantum=16,
+    )
+    inputs = torch.arange(768, dtype=torch.float32)[
+        None, None, :, None, None
+    ].expand(1, 3, 768, 1, 1)
+    output = selector.forward_test(
+        inputs,
+        valid,
+        [
+            {
+                "video_name": "quantized_short_video",
+                "avg_fps": 10.0,
+                "frame_inds": torch.arange(768, dtype=torch.long)[:, None],
+            }
+        ],
+    )
+    assert output["inputs"].shape[2] == 224
+    assert output["masks"].shape == (1, 224)
+    assert bool(output["masks"].all())
+    meta = output["metas"][0]
+    assert meta["selected_valid_len"] == 224
+    assert (
+        meta["duca_effective_k"]
+        == meta["duca_unique_k"]
+        == meta["duca_backbone_input_k"]
+        == meta["duca_padded_k"]
+        == 224
     )
 
 

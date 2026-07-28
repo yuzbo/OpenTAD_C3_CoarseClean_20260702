@@ -50,6 +50,7 @@ _RIME_ARMS = {
     "adaptok_tad",
     "uniform_same_k",
     "uniform_mixed_k",
+    "hrime_joint",
 }
 _DYNAMIC_ARMS = {"dynamic_no_risk", "rime_full"}
 _PROTOCOL_SCHEMA = "duca_rime_budget_protocol_v1"
@@ -457,6 +458,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "uniform_same_k": "paired_same_realized_cost_control",
             "dynamic_shuffle": "histogram_shuffled_budget_control",
             "adaptok_tad": "adaptok_total_loss_curve_test_batch_ilp",
+            "hrime_joint": "hrime_joint_video_exact_mckp",
         }
         if self.rime_arm in replay_roles:
             values = []

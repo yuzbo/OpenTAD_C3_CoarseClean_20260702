@@ -172,26 +172,33 @@ PY
 )"
 export DUCA_RIME_PHASE3_SEAL_ROOT="${DUCA_RIME_PHASE3_BUNDLE_ROOT}/seal"
 
-phase4_controller_job="$(
-  sbatch \
-    --parsable \
-    --partition=gpu \
-    --cpus-per-task=2 \
-    --time=00:30:00 \
-    --job-name=rime4-controller \
-    --dependency="afterok:${phase3_seal_job}" \
-    --output="${DUCA_RIME_PHASE3_CONTROLLER_ROOT}/phase4-controller-%j.out" \
-    --export=ALL \
-    scripts/run_duca_rime_phase4_submit_controller.sh
-)"
-phase4_controller_job="${phase4_controller_job%%;*}"
+phase4_submission_enabled="${DUCA_RIME_ENABLE_PHASE4:-0}"
+[[ "${phase4_submission_enabled}" == 0 || "${phase4_submission_enabled}" == 1 ]] \
+  || fail "DUCA_RIME_ENABLE_PHASE4 must be exactly 0 or 1"
+phase4_controller_job=""
+if [[ "${phase4_submission_enabled}" == 1 ]]; then
+  phase4_controller_job="$(
+    sbatch \
+      --parsable \
+      --partition=gpu \
+      --cpus-per-task=2 \
+      --time=00:30:00 \
+      --job-name=rime4-controller \
+      --dependency="afterok:${phase3_seal_job}" \
+      --output="${DUCA_RIME_PHASE3_CONTROLLER_ROOT}/phase4-controller-%j.out" \
+      --export=ALL \
+      scripts/run_duca_rime_phase4_submit_controller.sh
+  )"
+  phase4_controller_job="${phase4_controller_job%%;*}"
+fi
 
 python - \
   "${DUCA_RIME_PHASE3_CONTROLLER_ROOT}/controller_receipt.json" \
   "${DUCA_RIME_EXPECTED_COMMIT}" \
   "${SLURM_JOB_ID}" \
   "${phase3_manifest}" \
-  "${phase4_controller_job}" <<'PY'
+  "${phase4_controller_job}" \
+  "${phase4_submission_enabled}" <<'PY'
 import hashlib
 import json
 import os
@@ -209,7 +216,8 @@ payload = {
     "phase3_submission_manifest_sha256": hashlib.sha256(
         manifest.read_bytes()
     ).hexdigest(),
-    "phase4_controller_job_id": sys.argv[5],
+    "phase4_submission_enabled": sys.argv[6] == "1",
+    "phase4_controller_job_id": sys.argv[5] or None,
 }
 temporary = target.with_name(f".{target.name}.partial.{os.getpid()}")
 with temporary.open("x", encoding="utf-8") as handle:
@@ -219,4 +227,4 @@ with temporary.open("x", encoding="utf-8") as handle:
 os.replace(temporary, target)
 PY
 echo \
-  "[DUCA_RIME_PHASE3_CONTROLLER] SUBMITTED Phase-3 and Phase-4 controller ${phase4_controller_job}"
+  "[DUCA_RIME_PHASE3_CONTROLLER] SUBMITTED Phase-3; Phase-4 enabled=${phase4_submission_enabled} controller=${phase4_controller_job:-none}"

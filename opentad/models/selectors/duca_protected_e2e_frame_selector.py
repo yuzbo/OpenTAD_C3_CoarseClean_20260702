@@ -128,8 +128,8 @@ def _emit_protected_inference_ledger(
                 "requested_k": int(budget),
                 "effective_k": effective_k,
                 "unique_k": len(selected),
-                "backbone_input_k": int(budget),
-                "padded_k": int(budget),
+                "backbone_input_k": effective_k,
+                "padded_k": effective_k,
                 "risk_fallback": False,
                 "cost_unit": "heavy_rgb_frames",
                 "dense_valid_len": dense_valid_len,
@@ -178,8 +178,13 @@ def _hard_gather(
     )
     if not torch.equal(slot_mask, prefix):
         raise ValueError("hard gather requires a contiguous active slot prefix")
-    last_active = positions.gather(1, (effective_k - 1)[:, None])
-    safe = torch.where(slot_mask, positions, last_active.expand_as(positions))
+    unique_effective = torch.unique(effective_k)
+    if int(unique_effective.numel()) != 1:
+        raise ValueError(
+            "hard gather requires one homogeneous effective-K execution bucket"
+        )
+    execution_k = int(unique_effective[0].item())
+    safe = positions[:, :execution_k]
     if bool(torch.any(safe < 0).item()):
         raise ValueError("hard gather received an invalid active position")
     view = [safe.shape[0]] + [1] * (inputs.ndim - 1)
@@ -187,6 +192,39 @@ def _hard_gather(
     expand = list(inputs.shape)
     expand[temporal_dim] = safe.shape[1]
     return torch.gather(inputs, temporal_dim, safe.view(view).expand(expand))
+
+
+def _homogeneous_quantized_effective_k(
+    valid_mask: torch.Tensor,
+    *,
+    requested_k: int,
+    execution_quantum: int,
+) -> int:
+    if valid_mask.ndim != 2:
+        raise ValueError("effective-K decoding requires a [B,T] valid mask")
+    requested = int(requested_k)
+    quantum = int(execution_quantum)
+    if requested <= 0 or quantum <= 0 or requested % quantum:
+        raise ValueError(
+            "requested K must be positive and divisible by the execution quantum"
+        )
+    valid_lens = valid_mask.to(dtype=torch.long).sum(dim=1)
+    effective = torch.minimum(
+        valid_lens,
+        torch.full_like(valid_lens, requested),
+    )
+    effective = torch.div(effective, quantum, rounding_mode="floor") * quantum
+    if bool(torch.any(effective <= 0).item()):
+        raise ValueError(
+            "no positive quantum-aligned heavy execution is feasible for this window"
+        )
+    unique = torch.unique(effective)
+    if int(unique.numel()) != 1:
+        raise ValueError(
+            "protected DUCA requires homogeneous effective-K buckets before "
+            "heavy execution"
+        )
+    return int(unique[0].item())
 
 
 def _soft_resample(inputs: torch.Tensor, assignment: torch.Tensor) -> torch.Tensor:
@@ -463,6 +501,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         detector_bridge_gradient_scale: Optional[float] = None,
         uniform_companion_fraction: Optional[float] = None,
         homotopy_total_steps: int = 0,
+        execution_quantum: int = 1,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         strict_physical_metadata: bool = True,
         forbid_raw_prediction_cache: bool = True,
@@ -491,6 +530,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self.action_head_lr = float(action_head_lr)
         self.selector_lr = float(selector_lr)
         self.homotopy_total_steps = int(homotopy_total_steps)
+        self.execution_quantum = int(execution_quantum)
         self.homotopy_warmup_steps = round(self.homotopy_total_steps * 0.05)
         self.homotopy_transition_steps = round(self.homotopy_total_steps * 0.30)
         if self.arm not in _ARMS:
@@ -535,6 +575,10 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             raise ValueError("budget and dense_window_size must be positive")
         if self.budget > self.dense_window_size:
             raise ValueError("budget cannot exceed dense_window_size")
+        if self.execution_quantum <= 0 or self.budget % self.execution_quantum:
+            raise ValueError(
+                "budget must be divisible by the protected execution quantum"
+            )
         if self.coarse_hidden_dim != 96 or self.selector_hidden_dim != 64:
             raise ValueError(
                 "protected DUCA freezes ASFormer hidden=96 and selector hidden=64"
@@ -864,6 +908,11 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         *,
         training: bool,
     ) -> dict[str, Any]:
+        execution_k = _homogeneous_quantized_effective_k(
+            valid_mask,
+            requested_k=self.budget,
+            execution_quantum=self.execution_quantum,
+        )
         physical_seconds, source_frames = self._physical_axes(
             metas,
             valid_mask,
@@ -872,7 +921,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         caps = physical_exact_uniform_gap_cap(
             physical_seconds,
             valid_mask,
-            k=self.budget,
+            k=execution_k,
         )
         selector_state: dict[str, Any] = {
             "arm": self.arm,
@@ -883,6 +932,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             "max_gap_seconds": caps.to(dtype=torch.float32),
             "selection_scope": "full_window_offline",
             "budget": self.budget,
+            "requested_k": self.budget,
+            "effective_k": execution_k,
+            "execution_quantum": self.execution_quantum,
         }
         homotopy_state = self._policy_homotopy_state(training=training)
         if homotopy_state["enabled"]:
@@ -897,7 +949,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         if self.arm == "exact_uniform":
             hard = _exact_uniform_hard(
                 valid_mask,
-                k=self.budget,
+                k=execution_k,
                 dtype=inputs.dtype,
             )
             hard = PhysicalExactKHardOutput(
@@ -924,7 +976,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 )
             hard = _exact_uniform_hard(
                 valid_mask,
-                k=self.budget,
+                k=execution_k,
                 dtype=inputs.dtype,
             )
             hard = PhysicalExactKHardOutput(
@@ -1004,7 +1056,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 policy_log_potential = physical_exact_k_homotopy_log_potential(
                     policy_log_prob,
                     valid_mask,
-                    k=self.budget,
+                    k=execution_k,
                     alpha=float(homotopy_state["alpha"]),
                 )
             if training:
@@ -1012,7 +1064,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     policy_log_potential,
                     physical_seconds,
                     valid_mask,
-                    k=self.budget,
+                    k=execution_k,
                     max_gap_seconds=caps,
                     temperature=self.path_temperature,
                 )
@@ -1032,7 +1084,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     auxiliary_log_prob,
                     physical_seconds,
                     valid_mask,
-                    k=self.budget,
+                    k=execution_k,
                     max_gap_seconds=caps,
                     temperature=self.path_temperature,
                 )
@@ -1045,7 +1097,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 if self.uniform_companion_fraction > 0.0:
                     uniform = _exact_uniform_hard(
                         valid_mask,
-                        k=self.budget,
+                        k=execution_k,
                         dtype=inputs.dtype,
                     )
                     uniform = PhysicalExactKHardOutput(
@@ -1075,7 +1127,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     policy_log_potential,
                     physical_seconds,
                     valid_mask,
-                    k=self.budget,
+                    k=execution_k,
                     max_gap_seconds=caps,
                 )
             selector_state.update(
@@ -1170,7 +1222,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 "uniform_companion_fraction": self.uniform_companion_fraction,
                 "detector_input": selected_inputs,
                 "hard_detector_input": hard_detector_input,
-                "backbone_tail_padding_mode": "replicate_last_selected",
+                "backbone_tail_padding_mode": "none_exact_k_bucket",
                 "train_inference_hard_decoder": "same_physical_exact_k_viterbi",
             }
         )
@@ -1222,13 +1274,25 @@ class DucaProtectedE2EFrameSelector(nn.Module):
 
         self._validate_inputs(inputs, masks, metas)
         valid_mask = masks.to(device=inputs.device, dtype=torch.bool)
+        execution_k = _homogeneous_quantized_effective_k(
+            valid_mask,
+            requested_k=self.budget,
+            execution_quantum=self.execution_quantum,
+        )
         positions = torch.as_tensor(
             positions,
             device=inputs.device,
             dtype=torch.long,
         )
-        if positions.shape != (int(inputs.shape[0]), self.budget):
+        if positions.ndim != 2 or int(positions.shape[0]) != int(inputs.shape[0]):
             raise ValueError("fixed hard positions must be [B,K]")
+        if int(positions.shape[1]) < execution_k:
+            raise ValueError("fixed hard positions do not contain effective K")
+        if int(positions.shape[1]) > execution_k and bool(
+            torch.any(positions[:, execution_k:] >= 0).item()
+        ):
+            raise ValueError("fixed hard path activates an infeasible tail slot")
+        positions = positions[:, :execution_k]
         physical_seconds, source_frames = self._physical_axes(
             metas,
             valid_mask,
@@ -1237,7 +1301,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         caps = physical_exact_uniform_gap_cap(
             physical_seconds,
             valid_mask,
-            k=self.budget,
+            k=execution_k,
         )
         batch, temporal_len = valid_mask.shape
         occupancy = torch.zeros(
@@ -1246,7 +1310,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             dtype=torch.float32,
         )
         slot_assignment = torch.zeros(
-            (batch, self.budget, temporal_len),
+            (batch, execution_k, temporal_len),
             device=inputs.device,
             dtype=torch.float32,
         )
@@ -1254,7 +1318,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         effective_k = slot_mask.sum(dim=1)
         for batch_idx in range(batch):
             valid_len = int(valid_mask[batch_idx].sum().item())
-            expected_k = min(self.budget, valid_len)
+            expected_k = execution_k
             if int(effective_k[batch_idx].item()) != expected_k:
                 raise ValueError("fixed hard path violates K_eff")
             active = positions[batch_idx, :expected_k]
@@ -1479,11 +1543,21 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     "duca_candidate_coordinate_unit": "dense_candidate_ordinal",
                     "duca_source_frame_unit": "decoded_frame_index",
                     "duca_physical_time_unit": "seconds",
-                    "duca_backbone_tail_padding_mode": ("replicate_last_selected"),
+                    "duca_requested_k": self.budget,
+                    "duca_effective_k": effective_k,
+                    "duca_unique_k": effective_k,
+                    "duca_backbone_input_k": effective_k,
+                    "duca_padded_k": effective_k,
+                    "duca_dynamic_compute_realized": True,
+                    "duca_execution_quantum": self.execution_quantum,
+                    "duca_backbone_tail_padding_mode": "none_exact_k_bucket",
                 }
             )
             output.append(meta)
         return output
 
 
-__all__ = ["DucaProtectedE2EFrameSelector"]
+__all__ = [
+    "DucaProtectedE2EFrameSelector",
+    "_homogeneous_quantized_effective_k",
+]

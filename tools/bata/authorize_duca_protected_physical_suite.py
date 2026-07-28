@@ -319,8 +319,8 @@ def _validate_full_model_gate(
     )
     _require(
         padded.get("hard_forward_equal") is True
-        and padded.get("tail_padding_mode") == "replicate_last_selected"
-        and padded.get("tail_padding_reference_equal") is True
+        and padded.get("tail_padding_mode") == "none_exact_k_bucket"
+        and padded.get("no_tail_padding_verified") is True
         and padded_valid_len < 384
         and _require_int(
             padded.get("effective_k"),

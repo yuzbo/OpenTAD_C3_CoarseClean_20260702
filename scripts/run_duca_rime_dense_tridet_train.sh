@@ -147,7 +147,7 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
 actual_root="${DUCA_RIME_DENSE_TRIDET_ROOT}/train/gpu1_id0"
 full_checkpoint="${actual_root}/checkpoint/epoch_59.pth"
 checkpoint="${actual_root}/checkpoint/terminal_ema.pth"
-python tools/bata/compact_duca_rime_checkpoint.py \
+python -m tools.bata.compact_duca_rime_checkpoint \
   --source "${full_checkpoint}" \
   --output "${checkpoint}" \
   --expected-commit "${DUCA_RIME_EXPECTED_COMMIT}" \
