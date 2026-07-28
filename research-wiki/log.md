@@ -1047,8 +1047,9 @@ append_only: true
   invalid retained checkpoint, and sealed plan SHA-256
   `e60f00ce6783ac6b858f107fbf06a5aff5d423d7e48b2139fa2412d2beab5e06`.
   Applying that exact manifest deleted 273 lower epoch files totaling
-  155,107,184,454 bytes (144.455 GiB). Combined with the prior GeoRoute pass,
-  380 files and 217,781,422,789 bytes (202.825 GiB) were removed. A second
+  155,107,184,454 bytes (144.455 GiB) plus 166 matching metadata/temp
+  companions. Combined with the prior GeoRoute pass, 380 epoch checkpoint
+  files and 217,781,422,789 checkpoint bytes (202.825 GiB) were removed. A second
   bound plan reported zero remaining multi-epoch directories among 278
   still-existing inventoried checkpoint directories and zero deletion
   candidates; `/data` reported 205 GB available (92% used). Pretrained weights,

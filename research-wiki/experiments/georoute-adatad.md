@@ -158,7 +158,8 @@ unstructured free TokenSelect at lower measured end-to-end cost?
 - A second user-authorized `/data/run01/sczc063/yuzibo` retention pass used a
   hash-bound dry-run manifest, validated the highest checkpoint in every one of
   48 remaining multi-epoch directories with CPU `torch.load`, and deleted 273
-  lower epoch files totaling 155,107,184,454 bytes (144.455 GiB). Its
+  lower epoch files totaling 155,107,184,454 bytes (144.455 GiB) plus 166
+  matching metadata/temp companions. Its
   post-verification found zero multi-epoch directories among 278 still-existing
   inventoried checkpoint directories; `/data` then reported 205 GB available
   (92% used). The plan SHA-256 is

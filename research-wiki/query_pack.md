@@ -42,7 +42,8 @@ max_chars: 8000
   namespace resumable or create P1 evidence.
   A subsequent user-authorized root-wide retention pass validated the highest
   loadable checkpoint in 48 additional multi-epoch directories and deleted 273
-  lower epoch files (144.455 GiB). Together the two passes removed 380 files
+  lower epoch files (144.455 GiB) plus 166 matching metadata/temp companions.
+  Together the two passes removed 380 epoch checkpoint files
   (202.825 GiB); a bound post-verification found zero multi-epoch directories
   among the 278 still-existing inventoried checkpoint directories, and `/data`
   reported 205 GB available. Pretrained weights, `best.pth`, configs, logs, and
