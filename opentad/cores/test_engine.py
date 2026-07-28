@@ -1,5 +1,7 @@
 import os
 import copy
+import gzip
+import hashlib
 import json
 import math
 import tqdm
@@ -105,17 +107,91 @@ def eval_one_epoch(
             else:
                 result_dict[k] = v
 
+    decode_replay_artifact = None
     if decode_replay_collector is not None:
-        decode_replay_collector.finalize()
+        decode_replay_artifact = decode_replay_collector.finalize()
 
-    result_dict = gather_ddp_results(world_size, result_dict, post_processing_cfg)
+    save_pre_cross_window = bool(
+        _post_cfg_get(
+            post_processing_cfg,
+            "save_pre_cross_window_detections",
+            False,
+        )
+    )
+    save_post_processing_audit = bool(
+        _post_cfg_get(post_processing_cfg, "save_post_processing_audit", False)
+    )
+    if save_pre_cross_window or save_post_processing_audit:
+        (
+            result_dict,
+            post_processing_audit,
+            pre_cross_window_result_dict,
+        ) = gather_ddp_results(
+            world_size,
+            result_dict,
+            post_processing_cfg,
+            return_audit=True,
+            return_pre_cross_window=True,
+        )
+    else:
+        result_dict = gather_ddp_results(
+            world_size, result_dict, post_processing_cfg
+        )
+        post_processing_audit = None
+        pre_cross_window_result_dict = None
 
     # load back the normal model dict
     if model_ema != None:
         model.load_state_dict(current_dict)
 
     if rank == 0:
-        result_eval = dict(results=result_dict)
+        pre_cross_window_artifact = None
+        if save_pre_cross_window:
+            pre_cross_window_path = _post_cfg_get(
+                post_processing_cfg,
+                "pre_cross_window_detections_path",
+                os.path.join(
+                    cfg.work_dir,
+                    "pre_cross_window_detections.json.gz",
+                ),
+            )
+            pre_cross_window_payload = {
+                "schema_version": "opentad_pre_cross_window_detections_v1",
+                "artifact_kind": (
+                    "pre_cross_window_nms_full_precision_detections"
+                ),
+                "evaluation_epoch": epoch,
+                "git_commit": os.environ.get("PHYSTIME_EXPECTED_COMMIT"),
+                "git_tree": os.environ.get("PHYSTIME_EXPECTED_TREE"),
+                "results": pre_cross_window_result_dict,
+            }
+            _atomic_write_json_gzip(
+                pre_cross_window_path,
+                pre_cross_window_payload,
+            )
+            pre_cross_window_artifact = {
+                "path": os.path.abspath(pre_cross_window_path),
+                "sha256": _sha256_file(pre_cross_window_path),
+            }
+
+        if save_post_processing_audit:
+            audit_path = _post_cfg_get(
+                post_processing_cfg,
+                "post_processing_audit_path",
+                os.path.join(cfg.work_dir, "post_processing_audit.json"),
+            )
+            audit_payload = {
+                "schema_version": "opentad_post_processing_audit_v1",
+                "evaluation_epoch": epoch,
+                "git_commit": os.environ.get("PHYSTIME_EXPECTED_COMMIT"),
+                "git_tree": os.environ.get("PHYSTIME_EXPECTED_TREE"),
+                "pre_cross_window_artifact": pre_cross_window_artifact,
+                "decode_replay_artifact": decode_replay_artifact,
+                "post_processing": post_processing_audit,
+            }
+            _atomic_write_json(audit_path, audit_payload)
+
+        result_eval = dict(results=result_dict, evaluation_epoch=epoch)
         evaluated_video_ids = sorted(
             {str(row[0]) for row in test_loader.dataset.data_list}
         )
@@ -145,8 +221,7 @@ def eval_one_epoch(
             )
         if post_processing_cfg.save_dict:
             result_path = os.path.join(cfg.work_dir, "result_detection.json")
-            with open(result_path, "w") as out:
-                json.dump(result_eval, out)
+            _atomic_write_json(result_path, result_eval)
 
         if not not_eval:
             # build evaluator
@@ -157,6 +232,18 @@ def eval_one_epoch(
             logger.info("Evaluation starts...")
             metrics_dict = evaluator.evaluate()
             evaluator.logging(logger)
+            metrics_path = _post_cfg_get(
+                cfg.evaluation,
+                "output_metrics_path",
+                None,
+            )
+            if metrics_path is None and post_processing_cfg.save_dict:
+                metrics_path = os.path.join(
+                    cfg.work_dir, "evaluation_metrics.json"
+                )
+            if metrics_path is not None:
+                metrics_payload = dict(metrics_dict, evaluation_epoch=epoch)
+                _atomic_write_json(metrics_path, metrics_payload)
 
 
 def gather_ddp_results(
@@ -654,3 +741,50 @@ def _accumulate_video_audit(aggregate, video_audit):
         "invalid_reason_counts"
     ].items():
         aggregate["effective_invalid_reason_counts"][key] += count
+
+
+def _atomic_write_json(path, payload):
+    path = os.path.abspath(path)
+    create_folder(os.path.dirname(path))
+    temporary_path = f"{path}.tmp.{os.getpid()}"
+    with open(temporary_path, "w", encoding="utf-8") as out:
+        json.dump(
+            payload,
+            out,
+            indent=2,
+            sort_keys=True,
+            default=lambda value: value.item(),
+        )
+        out.write("\n")
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(temporary_path, path)
+
+
+def _atomic_write_json_gzip(path, payload):
+    path = os.path.abspath(path)
+    create_folder(os.path.dirname(path))
+    temporary_path = f"{path}.tmp.{os.getpid()}"
+    with gzip.open(
+        temporary_path,
+        "wt",
+        encoding="utf-8",
+        compresslevel=6,
+    ) as out:
+        json.dump(
+            payload,
+            out,
+            separators=(",", ":"),
+            sort_keys=True,
+            default=lambda value: value.item(),
+        )
+        out.write("\n")
+    os.replace(temporary_path, path)
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

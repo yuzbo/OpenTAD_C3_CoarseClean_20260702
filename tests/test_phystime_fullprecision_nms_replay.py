@@ -1,3 +1,5 @@
+import gzip
+import json
 from pathlib import Path
 
 import pytest
@@ -292,3 +294,127 @@ def test_gathered_multi_rank_results_match_single_merged_input(monkeypatch):
     assert gathered == expected
     assert pre_cross == expected_input
     assert audit["aggregate"]["input_detections"] == 2
+
+
+def test_eval_one_epoch_writes_direct_replay_artifact_contract(
+    monkeypatch,
+    tmp_path,
+):
+    class FakeSlidingWindowDataset:
+        class_map = ["action"]
+        data_list = [("video",)]
+
+    class FakeLoader:
+        dataset = FakeSlidingWindowDataset()
+
+        def __iter__(self):
+            return iter([{}])
+
+    original_detection = {
+        "segment": [0.123456789, 1.987654321],
+        "label": "action",
+        "score": 0.87654321,
+    }
+
+    class FakeModel:
+        def eval(self):
+            return self
+
+        def __call__(self, **kwargs):
+            return {"video": [dict(original_detection)]}
+
+    class FakeEvaluator:
+        def evaluate(self):
+            return {"average_mAP": 0.4126, "mAP@0.7": 0.149}
+
+        def logging(self, logger):
+            return None
+
+    class FakeLogger:
+        def info(self, message):
+            return None
+
+    def fake_all_gather_object(outputs, local_result):
+        outputs[:] = [local_result]
+
+    monkeypatch.setattr(
+        test_engine,
+        "SlidingWindowDataset",
+        FakeSlidingWindowDataset,
+    )
+    monkeypatch.setattr(
+        test_engine,
+        "build_decode_replay_collector",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        test_engine.dist,
+        "all_gather_object",
+        fake_all_gather_object,
+    )
+    monkeypatch.setattr(test_engine, "batched_nms", _threshold_nms)
+    monkeypatch.setattr(
+        test_engine,
+        "build_evaluator",
+        lambda config: FakeEvaluator(),
+    )
+    monkeypatch.setenv("PHYSTIME_EXPECTED_COMMIT", "commit-v6")
+    monkeypatch.setenv("PHYSTIME_EXPECTED_TREE", "tree-v6")
+
+    cfg = ConfigDict(
+        work_dir=str(tmp_path),
+        inference=ConfigDict(save_raw_prediction=False),
+        post_processing=_post_cfg(
+            save_dict=True,
+            save_pre_cross_window_detections=True,
+            save_post_processing_audit=True,
+        ),
+        evaluation=ConfigDict(type="mAP"),
+    )
+    test_engine.eval_one_epoch(
+        FakeLoader(),
+        FakeModel(),
+        cfg,
+        FakeLogger(),
+        rank=0,
+        world_size=1,
+        epoch=59,
+    )
+
+    pre_cross_path = tmp_path / "pre_cross_window_detections.json.gz"
+    result_path = tmp_path / "result_detection.json"
+    metrics_path = tmp_path / "evaluation_metrics.json"
+    audit_path = tmp_path / "post_processing_audit.json"
+    with gzip.open(pre_cross_path, "rt", encoding="utf-8") as handle:
+        pre_cross = json.load(handle)
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+
+    assert pre_cross["schema_version"] == (
+        "opentad_pre_cross_window_detections_v1"
+    )
+    assert pre_cross["artifact_kind"] == (
+        "pre_cross_window_nms_full_precision_detections"
+    )
+    assert pre_cross["evaluation_epoch"] == 59
+    assert pre_cross["git_commit"] == "commit-v6"
+    assert pre_cross["git_tree"] == "tree-v6"
+    assert pre_cross["results"] == {"video": [original_detection]}
+    assert result["evaluation_epoch"] == 59
+    assert metrics == {
+        "average_mAP": 0.4126,
+        "evaluation_epoch": 59,
+        "mAP@0.7": 0.149,
+    }
+    assert audit["schema_version"] == "opentad_post_processing_audit_v1"
+    assert audit["evaluation_epoch"] == 59
+    assert audit["post_processing"]["schema_version"] == (
+        "opentad_cross_window_nms_audit_v1"
+    )
+    assert audit["pre_cross_window_artifact"]["path"] == str(
+        pre_cross_path.resolve()
+    )
+    assert audit["pre_cross_window_artifact"]["sha256"] == (
+        test_engine._sha256_file(pre_cross_path)
+    )
