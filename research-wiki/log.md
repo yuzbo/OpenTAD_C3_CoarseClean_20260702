@@ -1098,3 +1098,19 @@ append_only: true
   `PENDING(Dependency)` finalizer. Status advances only to
   `experiment_running`; P0R pass, P1R metrics, cost results, empirical support,
   and paper claims remain absent.
+
+- 2026-07-28: replacement P0R dense parity `1199838`, hybrid-ST `1199839`,
+  and ROI score-function `1199840` all completed `0:0` in 21--24 seconds;
+  finalizer `1199841` completed `0:0` and sealed suite
+  `a0073394c3f0f505679797a4c22afeefda1d32adea7b4615e2eec4bbeed35077`
+  as `PASS_MECHANICAL_ONLY`. Dense full-token numerical reference passed.
+  Hybrid recorded 12 packed attention, MLP, and coordinate-lineage Adapter
+  executions, zero dense Adapter executions, exact `K=32`, one heavy VideoMAE
+  forward, real detector backward, and finite required gradients. P0R saved
+  zero checkpoints and measured a same-commit final-checkpoint upper bound of
+  869,336,982 bytes per cell. The finalizer then automatically submitted P1R
+  dense `1199865`, fixed `1199866`, fixed-plus-geometry `1199867`, random
+  `1199868`, free `1199869`, ROI `1199870`, hybrid `1199871`, and selector
+  `1199872`. All seven leaves began as `PENDING(Priority)` and the selector as
+  `PENDING(Dependency)`. Status remains `experiment_running`; no P1R metric,
+  cost result, empirical support, or paper claim exists.

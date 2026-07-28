@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: experiment_running
-status: p0r_submitted_priority_pending
+status: p1r_submitted_priority_pending
 updated: 2026-07-28
 ---
 
@@ -225,6 +225,22 @@ benefit without extra total cost?
   `PENDING(Priority)` and the finalizer is `PENDING(Dependency)`. P1R has not
   yet been submitted. This advances the replacement only to
   `experiment_running`; it is not a P0R pass or performance evidence.
+- All three P0R leaves subsequently completed `0:0` in 21--24 seconds and
+  finalizer `1199841` completed `0:0`. Sealed suite SHA
+  `a0073394c3f0f505679797a4c22afeefda1d32adea7b4615e2eec4bbeed35077`
+  is `PASS_MECHANICAL_ONLY`: dense full-token numerical reference passed;
+  every checked hybrid block recorded 12 packed attention, MLP, and
+  coordinate-lineage Adapter calls with zero dense Adapter calls; exact
+  `K=32`, one heavy VideoMAE forward, real detector backward, and finite
+  required scout/router/adapter/detector gradients passed. P0R wrote zero
+  checkpoints. The same-commit final-only checkpoint upper bound is
+  869,336,982 bytes per cell plus the sealed auxiliary/safety allowance.
+- The finalizer automatically submitted matched P1R dense `1199865`, fixed
+  lattice `1199866`, fixed-lattice-plus-geometry `1199867`, random `1199868`,
+  free NativeTokenSelect `1199869`, ROI `1199870`, and hybrid `1199871`, plus
+  exact `afterok(all)` selector `1199872`. Initial state is
+  `PENDING(Priority)` for all seven leaves and `PENDING(Dependency)` for the
+  selector. P1R performance and cost remain absent.
 
 ## Frozen decision logic
 

@@ -12,7 +12,7 @@ max_chars: 8000
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
-- Active replacement status: `p0r_submitted_priority_pending`
+- Active replacement status: `p1r_submitted_priority_pending`
   (`experiment_running`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
@@ -26,9 +26,16 @@ max_chars: 8000
   `1199838`--`1199840` plus afterok finalizer `1199841` were submitted under
   `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_nativefirst_45f5cca2_p0p3_20260728_1630`.
   Aggregate storage preflight passed with 214,831,312,896 free versus
-  79,456,894,976 required bytes. The leaves are still priority-pending, so
-  these remain implementation/test/deployment facts, not accuracy or cost
-  evidence.
+  79,456,894,976 required bytes. P0R Jobs `1199838`--`1199840` and finalizer
+  `1199841` all completed `0:0`; sealed suite
+  `a0073394c3f0f505679797a4c22afeefda1d32adea7b4615e2eec4bbeed35077`
+  is `PASS_MECHANICAL_ONLY`, with full-token parity, packed
+  attention/MLP/Adapter execution, zero dense Adapter calls, real detector
+  backward, route gradients, zero checkpoints, and same-commit storage
+  measurement verified. It automatically submitted seven P1R leaves
+  `1199865`--`1199871` and selector `1199872`; leaves are priority-pending and
+  selector dependency-pending. These remain implementation/test/deployment
+  facts, not accuracy or cost evidence.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
