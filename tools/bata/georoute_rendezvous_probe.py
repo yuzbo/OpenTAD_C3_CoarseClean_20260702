@@ -17,10 +17,11 @@ def main() -> int:
     parser.add_argument("--label", required=True)
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--release-file", type=Path, required=True)
+    parser.add_argument("--peer-exit-file", type=Path)
     parser.add_argument("--post-release-seconds", type=float, required=True)
     args = parser.parse_args()
-    if args.post_release_seconds <= 0:
-        raise ValueError("post-release duration must be positive")
+    if args.post_release_seconds < 0:
+        raise ValueError("post-release duration cannot be negative")
     if args.ready_file.exists():
         raise FileExistsError(args.ready_file)
 
@@ -47,6 +48,16 @@ def main() -> int:
             if time.monotonic() >= deadline:
                 raise TimeoutError("GeoRoute rendezvous probe release marker timed out")
             time.sleep(0.05)
+        peer_exit_observed = args.peer_exit_file is None
+        if args.peer_exit_file is not None:
+            deadline = time.monotonic() + 30.0
+            while not args.peer_exit_file.is_file():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        "GeoRoute long probe did not observe the peer-exit marker"
+                    )
+                time.sleep(0.05)
+            peer_exit_observed = True
         time.sleep(args.post_release_seconds)
         print(
             json.dumps(
@@ -55,6 +66,7 @@ def main() -> int:
                     "label": args.label,
                     "rank": dist.get_rank(),
                     "world_size": dist.get_world_size(),
+                    "peer_exit_observed": peer_exit_observed,
                 },
                 sort_keys=True,
             ),

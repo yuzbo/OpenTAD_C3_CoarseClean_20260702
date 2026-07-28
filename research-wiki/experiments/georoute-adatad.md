@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: rendezvous_correctness_fix_implemented_pending_remote_validation
-outcome: prior_p1r_infrastructure_invalid_replacement_not_yet_running
+status: deterministic_rendezvous_gate_fix_implemented_pending_remote_validation
+outcome: first_replacement_gate_false_negative_no_model_forward
 updated: 2026-07-28
 ---
 
@@ -401,6 +401,24 @@ P2/P3 artifact, or official-test artifact exists. Therefore:
   selector, seeds, budgets, data, initialization, update schedule, and
   hierarchical decision rule are unchanged. The failed `45f5cca2` namespace
   remains immutable and cannot be pooled with the replacement.
+- Clean source `a2ebd0604b4e5648b4f9bc4b3432541fae070393` passed remote
+  Linux GeoRoute plus required C3 tests `82/82`. Run root
+  `georoute_nativefirst_a2ebd060_p0p3_20260728_2202` submitted P0R Jobs
+  `1200510`--`1200512` and finalizer `1200513`; Slurm intentionally colocated
+  all three leaves on `g0003`. All leaves failed before a model forward because
+  the first isolation gate used fixed 0.5/2.0-second worker lifetimes. Torchrun
+  parent shutdown overhead allowed the nominal long worker to finish before
+  the short parent returned, making
+  `long_probe_alive_after_short_exit=False` without establishing a store
+  collision. No P0 model report, checkpoint, stage result, selector, P1/P2/P3,
+  or official-test artifact exists in that immutable namespace.
+- The local replacement removes that timing assumption. Both probes now enter
+  their independent stores concurrently; the long worker blocks on a
+  `short.exited` marker that the gate writes only after the short torchrun
+  parent has fully exited. The long parent must still be alive, observe that
+  marker, retain a distinct observed `MASTER_PORT`, and finish successfully.
+  This deterministic peer-exit handshake remains locally `implemented` until a
+  new clean source and namespace pass N16R4 P0R.
 
 ## Frozen decision logic
 

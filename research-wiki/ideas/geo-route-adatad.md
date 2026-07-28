@@ -3,7 +3,7 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: implemented
-status: rendezvous_correctness_fix_implemented_pending_remote_validation
+status: deterministic_rendezvous_gate_fix_implemented_pending_remote_validation
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -47,6 +47,13 @@ each P0 model report is hash-bound to the isolation receipt from the same
 Slurm leaf. This changes no model or selector decision. It remains
 `implemented`, not remotely validated or empirically supported, until a clean
 N16R4 snapshot passes the gate and the complete new seven-arm matrix.
+The first remote gate source `a2ebd060` passed `82/82` Linux tests but its
+three P0 leaves `1200510`--`1200512` failed before model execution: a fixed
+0.5/2.0-second lifetime contrast measured torchrun parent teardown latency and
+could falsely report that the long worker was no longer alive. The replacement
+uses a deterministic peer-exit handshake instead: the long worker waits until
+the controller observes full short-parent exit and publishes a marker. This is
+an infrastructure-gate correction only and creates no model evidence.
 ROI-only reached Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, descriptively
 above fixed, random, and fixed-plus-geometry at high tIoU, but it is not the
 ROI-free native base and cannot satisfy the hierarchical gate. The idea remains

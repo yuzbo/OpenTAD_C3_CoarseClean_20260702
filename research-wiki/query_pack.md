@@ -13,7 +13,7 @@ max_chars: 8000
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
 - Active replacement status:
-  `rendezvous_correctness_fix_implemented_pending_remote_validation`
+  `deterministic_rendezvous_gate_fix_implemented_pending_remote_validation`
   (`implemented`, not `empirically_supported`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
@@ -68,6 +68,14 @@ max_chars: 8000
   hash-binds each P0 model report to its same-leaf isolation receipt. Local
   non-Torch compile/focused/C3 checks pass `59/59`; remote Linux Torch, P0R,
   and the fresh seven-arm matrix remain pending.
+  Clean source `a2ebd0604b4e5648b4f9bc4b3432541fae070393` passed remote
+  Linux tests `82/82`, but P0R `1200510`--`1200512` all failed before model
+  execution because the first gate's fixed 0.5/2.0-second probe durations
+  conflated torchrun parent teardown with store lifetime. Finalizer `1200513`
+  was dependency-unsatisfied; no P0/P1 result exists. A deterministic
+  replacement now keeps the long worker blocked until the controller observes
+  complete short-parent exit and publishes a peer-exit marker; it still
+  requires a fresh commit, namespace, and P0R.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)

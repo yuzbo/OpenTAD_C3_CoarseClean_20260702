@@ -19,7 +19,7 @@ from tools.bata.georoute_stage_runner import build_torchrun_prefix
 
 
 ROOT = Path(__file__).resolve().parents[2]
-GEOROUTE_RENDEZVOUS_GATE_SCHEMA = "georoute_rendezvous_isolation_gate_v1"
+GEOROUTE_RENDEZVOUS_GATE_SCHEMA = "georoute_rendezvous_isolation_gate_v2"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -105,6 +105,10 @@ def validate_rendezvous_gate_receipt(
             or int(probe.get("exit_code", -1)) != 0
             or probe.get("ready_marker_seen") is not True
             or probe.get("done_marker_seen") is not True
+            or (
+                label == "long"
+                and probe.get("peer_exit_marker_seen") is not True
+            )
             or _SHA256.fullmatch(str(probe.get("output_sha256", ""))) is None
         ):
             raise ValueError(f"GeoRoute {label} rendezvous probe did not pass")
@@ -192,11 +196,12 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
     ) as temporary:
         temporary_root = Path(temporary)
         release_file = temporary_root / "release"
+        short_exited_file = temporary_root / "short.exited"
         ready_files = {
             "short": temporary_root / "short.ready.json",
             "long": temporary_root / "long.ready.json",
         }
-        durations = {"short": 0.5, "long": 2.0}
+        durations = {"short": 0.1, "long": 0.1}
         processes: dict[str, subprocess.Popen[str]] = {}
         rendezvous_receipts: dict[str, dict[str, Any]] = {}
         short_output = ""
@@ -225,6 +230,13 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
                 "--post-release-seconds",
                 str(durations[label]),
             ]
+            if label == "long":
+                command.extend(
+                    [
+                        "--peer-exit-file",
+                        str(short_exited_file),
+                    ]
+                )
             processes[label] = subprocess.Popen(
                 command,
                 cwd=ROOT,
@@ -249,6 +261,7 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
             short_output, _ = processes["short"].communicate(timeout=30.0)
             release_to_short_exit = time.monotonic() - released
             long_alive_after_short = processes["long"].poll() is None
+            short_exited_file.write_text("short exited\n", encoding="utf-8")
             long_output, _ = processes["long"].communicate(timeout=30.0)
             release_to_long_exit = time.monotonic() - released
         finally:
@@ -273,6 +286,10 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
                 "done_marker_seen": (
                     '"event": "GEOROUTE_RDZV_DONE"' in output_text
                     and f'"label": "{label}"' in output_text
+                ),
+                "peer_exit_marker_seen": (
+                    label == "short"
+                    or '"peer_exit_observed": true' in output_text
                 ),
                 "output_sha256": _sha256_text(output_text),
                 "requested_post_release_seconds": durations[label],

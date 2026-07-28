@@ -1233,3 +1233,23 @@ append_only: true
   Linux Torch and CUDA validation must occur on a clean N16R4 source. No new
   experiment has yet been submitted, the `45f5cca2` namespace remains
   immutable, and NativeTokenSelect/geometry claims remain closed.
+
+- 2026-07-28 22:07 CST: clean source
+  `a2ebd0604b4e5648b4f9bc4b3432541fae070393` synced through the academic
+  proxy with full HEAD/origin/clean-tree parity and passed remote Linux
+  GeoRoute plus required C3 tests `82/82`. New run root
+  `georoute_nativefirst_a2ebd060_p0p3_20260728_2202` passed aggregate storage
+  preflight (210,791,145,472 free versus 79,456,894,976 required bytes) and
+  submitted P0R `1200510`--`1200512` plus finalizer `1200513`. Slurm colocated
+  all P0 leaves on `g0003`. All three leaves then failed before any model
+  forward or P0 report with the identical fail-closed message
+  `GeoRoute rendezvous lifetime isolation was not demonstrated`; the finalizer
+  became dependency-unsatisfied and no P1 was submitted. Inspection found a
+  gate false negative: fixed 0.5/2.0-second worker durations did not account
+  for torchrun parent teardown, so the nominal long worker could finish before
+  the short parent returned even with independent stores. The namespace is
+  immutable. A deterministic replacement is locally implemented: the long
+  worker waits on a controller marker written only after complete short-parent
+  exit, after which its continued liveness, distinct observed `MASTER_PORT`,
+  exact run ID, and successful completion are required. Model and selector
+  contracts remain frozen; no scientific claim changed.

@@ -167,8 +167,9 @@ def _rendezvous_receipt(*, slurm_job_id: str) -> dict:
             "exit_code": 0,
             "ready_marker_seen": True,
             "done_marker_seen": True,
+            "peer_exit_marker_seen": True,
             "output_sha256": ("a" if label == "short" else "b") * 64,
-            "requested_post_release_seconds": 0.5 if label == "short" else 2.0,
+            "requested_post_release_seconds": 0.1,
         }
     core = {
         "schema_version": GEOROUTE_RENDEZVOUS_GATE_SCHEMA,
@@ -629,6 +630,17 @@ def test_georoute_rendezvous_gate_receipt_fails_closed_on_store_reuse():
     reused["gate_sha256"] = canonical_sha256(core)
     with pytest.raises(ValueError, match="reused an actual TCPStore port"):
         validate_rendezvous_gate_receipt(reused, expected_commit="a" * 40)
+
+    no_peer_exit = copy.deepcopy(receipt)
+    no_peer_exit["probes"]["long"]["peer_exit_marker_seen"] = False
+    core = dict(no_peer_exit)
+    core.pop("gate_sha256")
+    no_peer_exit["gate_sha256"] = canonical_sha256(core)
+    with pytest.raises(ValueError, match="long rendezvous probe did not pass"):
+        validate_rendezvous_gate_receipt(
+            no_peer_exit,
+            expected_commit="a" * 40,
+        )
 
 
 def test_p0_launcher_runs_rendezvous_isolation_before_model_gate():
