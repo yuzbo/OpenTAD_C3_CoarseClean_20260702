@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: deterministic_rendezvous_gate_fix_implemented_pending_remote_validation
-outcome: first_replacement_gate_false_negative_no_model_forward
+status: node_bound_rendezvous_gate_fix_implemented_pending_gate_only_validation
+outcome: second_replacement_master_addr_assertion_false_negative_no_model
 updated: 2026-07-28
 ---
 
@@ -419,6 +419,20 @@ P2/P3 artifact, or official-test artifact exists. Therefore:
   marker, retain a distinct observed `MASTER_PORT`, and finish successfully.
   This deterministic peer-exit handshake remains locally `implemented` until a
   new clean source and namespace pass N16R4 P0R.
+- Deterministic-handshake source
+  `bfee57904b3919480ce56b72429314eda508bf8e` again passed remote Linux tests
+  `82/82`. P0R `1200550`--`1200552` under
+  `georoute_nativefirst_bfee5790_p0p3_20260728_2213` failed before model
+  execution with `short runtime identity did not match torchrun`; finalizer
+  `1200553` was dependency-unsatisfied. Read-only Slurm diagnostic `1200560`
+  then directly observed `TORCHELASTIC_RUN_ID=diag-1200560`, dynamic
+  `MASTER_PORT=57695`, and `MASTER_ADDR=g0024`. Thus endpoint and run ID were
+  correct; Torch materialized the worker master address as the allocated node
+  hostname rather than the literal rendezvous endpoint address. The validator
+  is now locally changed to bind `MASTER_ADDR` to the probe's exact
+  `socket.gethostname()` on that Slurm node. Before another P0 namespace is
+  allowed, the complete gate will run alone in Slurm and must publish a valid
+  receipt.
 
 ## Frozen decision logic
 

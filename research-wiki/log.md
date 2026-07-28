@@ -1253,3 +1253,20 @@ append_only: true
   exit, after which its continued liveness, distinct observed `MASTER_PORT`,
   exact run ID, and successful completion are required. Model and selector
   contracts remain frozen; no scientific claim changed.
+
+- 2026-07-28 22:15 CST: deterministic-handshake source
+  `bfee57904b3919480ce56b72429314eda508bf8e` synced through the academic
+  proxy, matched full HEAD/origin/clean-tree state, and passed remote Linux
+  tests `82/82`. P0R Jobs `1200550`--`1200552` in new immutable root
+  `georoute_nativefirst_bfee5790_p0p3_20260728_2213` failed before model
+  execution with `GeoRoute short runtime identity did not match torchrun`;
+  finalizer `1200553` was dependency-unsatisfied and no P1 was submitted.
+  Read-only Slurm diagnostic `1200560` then ran one real c10d
+  `127.0.0.1:0` torchrun and observed dynamic `MASTER_PORT=57695`, exact
+  `TORCHELASTIC_RUN_ID=diag-1200560`, and `MASTER_ADDR=g0024`. This classified
+  the failure as a validator compatibility error: Torch exports the allocated
+  node hostname to workers even though rendezvous used loopback port zero.
+  The local gate now records `socket.gethostname()` in controller and probes
+  and requires the observed master address to equal that exact node. It must
+  pass a dedicated gate-only Slurm job before any third P0 deployment. No
+  model, selector, or claim changed.

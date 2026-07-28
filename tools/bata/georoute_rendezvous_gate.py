@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import tempfile
 import time
@@ -19,7 +20,7 @@ from tools.bata.georoute_stage_runner import build_torchrun_prefix
 
 
 ROOT = Path(__file__).resolve().parents[2]
-GEOROUTE_RENDEZVOUS_GATE_SCHEMA = "georoute_rendezvous_isolation_gate_v2"
+GEOROUTE_RENDEZVOUS_GATE_SCHEMA = "georoute_rendezvous_isolation_gate_v3"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -78,6 +79,9 @@ def validate_rendezvous_gate_receipt(
     slurm_job_id = payload.get("slurm_job_id")
     if not isinstance(slurm_job_id, str) or not slurm_job_id:
         raise ValueError("GeoRoute rendezvous gate lacks its Slurm job identity")
+    node_name = payload.get("node_name")
+    if not isinstance(node_name, str) or not node_name:
+        raise ValueError("GeoRoute rendezvous gate lacks its node identity")
     probes = payload.get("probes")
     if not isinstance(probes, Mapping) or set(probes) != {"short", "long"}:
         raise ValueError("GeoRoute rendezvous gate lacks both probes")
@@ -134,7 +138,8 @@ def validate_rendezvous_gate_receipt(
             or int(runtime.get("rank", -1)) != 0
             or int(runtime.get("world_size", -1)) != 1
             or runtime.get("torchelastic_run_id") != identity
-            or runtime.get("master_addr") != "127.0.0.1"
+            or runtime.get("master_addr") != node_name
+            or runtime.get("node_name") != node_name
             or runtime.get("slurm_job_id") != slurm_job_id
             or not 1 <= master_port <= 65535
         ):
@@ -299,6 +304,7 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
         "status": "PASS_CONCURRENT_RENDEZVOUS_ISOLATION",
         "runtime_commit": runtime_commit,
         "slurm_job_id": slurm_job_id,
+        "node_name": socket.gethostname(),
         "same_node_concurrent": True,
         "long_probe_alive_after_short_exit": long_alive_after_short,
         "release_to_short_exit_seconds": release_to_short_exit,

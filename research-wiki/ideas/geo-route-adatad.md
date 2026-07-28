@@ -3,7 +3,7 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: implemented
-status: deterministic_rendezvous_gate_fix_implemented_pending_remote_validation
+status: node_bound_rendezvous_gate_fix_implemented_pending_gate_only_validation
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -54,6 +54,13 @@ could falsely report that the long worker was no longer alive. The replacement
 uses a deterministic peer-exit handshake instead: the long worker waits until
 the controller observes full short-parent exit and publishes a marker. This is
 an infrastructure-gate correction only and creates no model evidence.
+Source `bfee5790` subsequently proved that deterministic handshake, but its P0
+leaves failed another over-strict assertion before model execution: Torch
+exposed `MASTER_ADDR` as the allocated hostname rather than literal loopback.
+Slurm diagnostic `1200560` observed the correct unique run ID and dynamic port
+alongside `MASTER_ADDR=g0024`. The gate now binds both probe hostname and
+master address to the exact current node; it must pass a standalone Slurm gate
+before any further P0 deployment.
 ROI-only reached Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, descriptively
 above fixed, random, and fixed-plus-geometry at high tIoU, but it is not the
 ROI-free native base and cannot satisfy the hierarchical gate. The idea remains

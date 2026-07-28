@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import time
 from pathlib import Path
 
@@ -37,6 +38,7 @@ def main() -> int:
             "torchelastic_run_id": os.environ.get("TORCHELASTIC_RUN_ID"),
             "master_addr": os.environ.get("MASTER_ADDR"),
             "master_port": os.environ.get("MASTER_PORT"),
+            "node_name": socket.gethostname(),
             "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         }
         args.ready_file.write_text(

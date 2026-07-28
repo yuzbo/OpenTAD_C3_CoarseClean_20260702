@@ -13,7 +13,7 @@ max_chars: 8000
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
 - Active replacement status:
-  `deterministic_rendezvous_gate_fix_implemented_pending_remote_validation`
+  `node_bound_rendezvous_gate_fix_implemented_pending_gate_only_validation`
   (`implemented`, not `empirically_supported`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
@@ -76,6 +76,13 @@ max_chars: 8000
   replacement now keeps the long worker blocked until the controller observes
   complete short-parent exit and publishes a peer-exit marker; it still
   requires a fresh commit, namespace, and P0R.
+  Deterministic source `bfee57904b3919480ce56b72429314eda508bf8e` also passed
+  `82/82`, but P0R `1200550`--`1200552` failed before model execution because
+  the gate required literal `MASTER_ADDR=127.0.0.1`. Slurm diagnostic `1200560`
+  observed the correct dynamic port `57695` and run ID but
+  `MASTER_ADDR=g0024`, the allocated node hostname. The local validator now
+  binds master address to exact `socket.gethostname()`; a gate-only Slurm pass
+  is mandatory before another P0 namespace.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
