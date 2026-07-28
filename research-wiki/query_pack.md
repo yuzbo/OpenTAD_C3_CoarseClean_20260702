@@ -15,18 +15,18 @@ Current evidence level:
 | Scientific route | `user_approved` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
-| Remote authoritative code gate | `passed` |
+| Remote authoritative code gate | `recovery_v5_pending_1201057` |
 | Dense reference training | `recovery_v4_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v4_failed / recovery_v5_repair_gate_pending` |
 | Phase 2/3/4 | `dependency_never_satisfied_or_held / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v4_failed_closed / scheduler_terminalization_pending` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v5_mask_handoff_implemented / remote_gate_pending` |
+| Stage-0 repair implementation | `recovery_v5_mask_handoff_implemented / targeted_remote_10_passed` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v5_not_yet_deployed` |
+| H-RIME Stage-0 recovery transaction | `recovery_v5_code_gate_queued / not_yet_released` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -296,7 +296,7 @@ This is an execution-contract failure, not a performance result. No reported or
 intermediate metric was used in this diagnosis.
 
 Recovery-v5 is now `implemented / static_checked / independently_reviewed_GO /
-remote_torch_gate_pending`. It introduces one shared detector-to-backbone
+targeted_remote_torch_tested / full_code_gate_pending`. It introduces one shared detector-to-backbone
 handoff: ActionFormer and TriDet pass the exact aligned mask whenever
 `dynamic_temporal_bucket=True`, ordinary backbones retain their legacy mask-free
 call, and a physical RIME selector paired with a non-dynamic backbone fails
@@ -306,6 +306,28 @@ dynamic bucket and 16-frame quantum. Windows PyTorch execution remains blocked
 by the pre-existing `c10.dll` initialization failure, so no runtime test is
 claimed locally. No protocol, model objective, budget, split, checkpoint,
 hyperparameter, metric, or paper claim changed.
+
+Operational update:
+
+- exact code source and GitHub branch tip at deployment freeze:
+  `74de620d8fafc365694aa1f400318a401add3ecc`;
+- clean remote checkout:
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_HRIME_74de620d`;
+- focused Linux/PyTorch mask-contract suite: `10 passed`;
+- recovery-v4 impossible children `1200631`/`1200632`: canceled by exact ID;
+- authoritative Slurm code gate: `1201057`, pending only on `AssocGrpGRES`;
+- the attempted CPU-only replacement was rejected before job creation because
+  this cluster requires a GPU request on its only submission partition;
+- frozen deployment script:
+  `/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v5_74de620d.sh`,
+  SHA-256
+  `780cd27f36a68d307a4fd90168a96dfe1db3a34e530c9f332a594e78a3b769a1`;
+- intended fresh root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_74de620d_20260728_233000`.
+
+The four-stage DAG has not yet been released. The scheduled monitor now checks
+every 15 minutes and may execute that exact deployment script only after code
+gate `1201057` passes its commit-bound receipt.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v5_mask_handoff_implemented / remote_gate_pending`
+- Stage-0 code: `recovery_v5_mask_handoff_implemented / targeted_remote_10_passed`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v5_not_yet_deployed`
+- Slurm recovery transaction: `recovery_v5_code_gate_1201057_pending / not_released`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -311,6 +311,22 @@ audits passed. Windows runtime testing is not claimed because the local
 CUDA-linked PyTorch still fails to initialize `c10.dll`; authoritative
 Linux/Torch verification remains mandatory before deployment. This correction
 changes no scientific protocol or paper evidence.
+
+The exact commit
+`74de620d8fafc365694aa1f400318a401add3ecc` is pushed and installed in a clean
+remote checkout. Its focused Linux/PyTorch mask-contract suite passed all 10
+tests. Recovery-v4 jobs `1200631`/`1200632`, whose dependencies could never
+succeed, were canceled by exact ID; the failed root and completed salvage
+receipts were not changed.
+
+Full Slurm code gate `1201057` is pending on group GPU allocation
+(`AssocGrpGRES`). A CPU-only Slurm substitution was rejected before job creation
+because the cluster's only submission partition enforces an explicit GPU
+request. The standard GPU gate was restored. The new production DAG remains
+unreleased. After the gate passes, the hash-frozen deployment script
+`780cd27f36a68d307a4fd90168a96dfe1db3a34e530c9f332a594e78a3b769a1`
+will generate new commit-bound physical/salvage/submission manifests and a
+fresh root; Phase 4 remains disabled.
 
 Correct empirical statement:
 

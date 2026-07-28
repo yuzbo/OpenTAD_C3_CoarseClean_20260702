@@ -625,3 +625,29 @@
   hyperparameter, metric or paper claim. Recovery-v4 remains immutable failed
   engineering evidence, Phase 4 is disabled, official-final is sealed, and no
   paper-admissible empirical conclusion is available.
+
+## 2026-07-28 — Recovery-v5 remote gate queued; monitor upgraded
+
+- Pushed and cleanly installed exact commit
+  `74de620d8fafc365694aa1f400318a401add3ecc`.
+- The focused Linux/PyTorch detector-backbone mask suite passed all 10 tests.
+- Canceled only recovery-v4 dependency-impossible jobs `1200631` and `1200632`
+  by exact ID; old roots, logs and valid dense salvage receipts remain
+  immutable.
+- Initial Slurm gate `1201029` waited on `AssocGrpGRES`. A CPU-only replacement
+  was attempted to avoid unnecessary GPU use, but cluster submission policy
+  rejected it before creating a job because the only partition requires an
+  explicit GPU request. The standard 1-GPU gate was restored as `1201057`; it
+  remains queued on `AssocGrpGRES`, not failed.
+- Prepared a fresh deployment script at
+  `/data/run01/sczc063/yuzibo/rime_prerequisites/deploy_duca_rime_recovery_v5_74de620d.sh`
+  with SHA-256
+  `780cd27f36a68d307a4fd90168a96dfe1db3a34e530c9f332a594e78a3b769a1`.
+  It targets the fresh root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_74de620d_20260728_233000`
+  and cannot run before the commit-bound gate receipt passes.
+- Upgraded automation `duca-rime` from 30-minute passive observation to a
+  15-minute bounded self-healing contract: one retry per unique deterministic
+  protocol-preserving engineering failure, new commit/manifests/root required,
+  and fail-closed escalation for repeated, ambiguous, scientific, data,
+  numerical or model-quality failures. Phase 4 and official-final remain sealed.
