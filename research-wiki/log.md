@@ -789,3 +789,21 @@
   `34152cfe1fb6c008f4cd20d11f3ed1c6dd19f980caf45d2b1069a029a065146d`.
   Phase 1 `1201417` and salvage jobs `1201418`/`1201419` subsequently entered
   `RUNNING`; Phase 2 `1201420` and controller `1201421` remain dependency-held.
+
+## 2026-07-29 — Recovery-v6 dense salvage arms completed
+
+- ActionFormer salvage `1201418` completed with exit `0:0`; checkpoint-evidence
+  SHA-256 is
+  `f5b4f231686fe9aec9e79545ee2eba010d4004e07d285dae05830bb2ede8d7a3`
+  and recovery-receipt SHA-256 is
+  `45590ba3a02a06526cf1ad16d217c33c98e77d2c24aeea7509a8a1bee2adcbf1`.
+- TriDet salvage `1201419` completed with exit `0:0`; checkpoint-evidence
+  SHA-256 is
+  `d979e854a3f75f49f58c5d168bcee5eb5716bcdcb1af6cb5f2595b9a21669327`
+  and recovery-receipt SHA-256 is
+  `ba3e7ddaa310bdf36a78723738545de2b99c76560f28d97742c257ee7538257a`.
+- Both receipts bind exact Recovery-v6 commit, preserve original source jobs
+  `1198115`/`1198116` as failed without reclassification, exclude
+  official-final, and retain engineering-only claim scope.
+- Phase 1 `1201417` remains running; Phase 2 `1201420` and controller `1201421`
+  remain dependency-held. No performance value was inspected or interpreted.

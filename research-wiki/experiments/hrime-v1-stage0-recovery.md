@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v6_phase1_and_salvage_running`
+- Slurm recovery transaction: `recovery_v6_phase1_running / salvage_complete`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -452,6 +452,26 @@ exact-commit receipt SHA-256 is
 Phase 1 `1201417` and both salvage arms `1201418`/`1201419` subsequently
 entered `RUNNING`; Phase 2 `1201420` and controller `1201421` remain
 dependency-held.
+
+ActionFormer salvage `1201418` and TriDet salvage `1201419` then completed with
+exit `0:0`. Their terminal evidence identities are:
+
+- ActionFormer checkpoint evidence
+  `f5b4f231686fe9aec9e79545ee2eba010d4004e07d285dae05830bb2ede8d7a3`
+  and recovery receipt
+  `45590ba3a02a06526cf1ad16d217c33c98e77d2c24aeea7509a8a1bee2adcbf1`;
+- TriDet checkpoint evidence
+  `d979e854a3f75f49f58c5d168bcee5eb5716bcdcb1af6cb5f2595b9a21669327`
+  and recovery receipt
+  `ba3e7ddaa310bdf36a78723738545de2b99c76560f28d97742c257ee7538257a`.
+
+Both recovery receipts bind exact Recovery-v6 commit, retain source jobs
+`1198115`/`1198116` and source commit
+`d9d454cd49a3e7a87694fc948601d00ff4043cb0` as failed evidence, set
+`original_job_reclassified_as_success=false`, exclude official-final, and
+restrict claims to
+`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201417`
+remains running; Phase 2/3 remain dependency-held.
 
 Correct empirical statement:
 

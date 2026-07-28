@@ -16,7 +16,7 @@ Current evidence level:
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
-| Dense reference training | `recovery_v5_salvage_completed / engineering_only` |
+| Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v5_failed_1201170 / recovery_v6_running_1201417` |
 | Phase 2/3/4 | `recovery_v6_dependency_held / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v6_released / experiment_running` |
@@ -26,7 +26,7 @@ Current evidence level:
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v6_phase1_and_salvage_running` |
+| H-RIME Stage-0 recovery transaction | `recovery_v6_phase1_running / salvage_complete` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -441,6 +441,24 @@ exact-commit receipt SHA-256 is
 Phase 1 `1201417` and both salvage jobs `1201418`/`1201419` subsequently
 entered `RUNNING`; Phase 2 `1201420` and controller `1201421` remain
 dependency-held.
+
+Both salvage jobs then completed with exit `0:0` and exact terminal engineering
+evidence:
+
+- ActionFormer `1201418`: checkpoint-evidence SHA-256
+  `f5b4f231686fe9aec9e79545ee2eba010d4004e07d285dae05830bb2ede8d7a3`,
+  recovery-receipt SHA-256
+  `45590ba3a02a06526cf1ad16d217c33c98e77d2c24aeea7509a8a1bee2adcbf1`;
+- TriDet `1201419`: checkpoint-evidence SHA-256
+  `d979e854a3f75f49f58c5d168bcee5eb5716bcdcb1af6cb5f2595b9a21669327`,
+  recovery-receipt SHA-256
+  `ba3e7ddaa310bdf36a78723738545de2b99c76560f28d97742c257ee7538257a`.
+
+Both receipts bind Recovery-v6 commit, preserve source jobs
+`1198115`/`1198116` as `FAILED`, do not reclassify them, use no official-final
+data, and retain claim scope
+`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201417`
+continues running; Phase 2/3 remain dependency-held.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by
