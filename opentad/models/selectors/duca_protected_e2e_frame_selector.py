@@ -92,6 +92,17 @@ def _emit_protected_inference_ledger(
     ledger_root = os.environ.get("DUCA_RIME_INFERENCE_LEDGER_ROOT", "").strip()
     if not ledger_root:
         return
+    budget_protocol_sha256 = os.environ.get(
+        "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256",
+        "",
+    ).strip().lower()
+    if (
+        len(budget_protocol_sha256) != 64
+        or any(value not in "0123456789abcdef" for value in budget_protocol_sha256)
+    ):
+        raise ValueError(
+            "protected inference ledger requires an exact physical-protocol SHA-256"
+        )
     ledger_root = os.path.abspath(
         os.path.expandvars(os.path.expanduser(ledger_root))
     )
@@ -127,6 +138,12 @@ def _emit_protected_inference_ledger(
                 "candidate_budgets": [int(budget)],
                 "requested_k": int(budget),
                 "effective_k": effective_k,
+                "raw_budget": int(budget),
+                "reachable_budget": effective_k,
+                "realized_budget": effective_k,
+                "projection_unused_budget": int(budget) - effective_k,
+                "solver_unused_budget": 0,
+                "budget_scope": "window_fixed_request",
                 "unique_k": len(selected),
                 "backbone_input_k": effective_k,
                 "padded_k": effective_k,
@@ -138,7 +155,8 @@ def _emit_protected_inference_ledger(
                 "observed_max_gap_seconds": float(
                     meta["duca_observed_max_gap_seconds"]
                 ),
-                "budget_protocol_sha256": None,
+                "budget_protocol_sha256": budget_protocol_sha256,
+                "claim_scope": "stage0_engineering_window_execution",
                 "provenance": {
                     "task": "offline_temporal_action_detection",
                     "uses_gt": False,

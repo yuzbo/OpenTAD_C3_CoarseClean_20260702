@@ -32,6 +32,10 @@ def test_exact_uniform_protected_inference_emits_a_no_padding_ledger(
 ):
     ledger_root = tmp_path / "ledger"
     monkeypatch.setenv("DUCA_RIME_INFERENCE_LEDGER_ROOT", str(ledger_root))
+    monkeypatch.setenv(
+        "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256",
+        "a" * 64,
+    )
     monkeypatch.setenv("RANK", "0")
     _emit_protected_inference_ledger(
         arm="exact_uniform",
@@ -51,6 +55,14 @@ def test_exact_uniform_protected_inference_emits_a_no_padding_ledger(
     shard = ledger_root / "inference_ledger.rank0000.jsonl"
     row = json.loads(shard.read_text(encoding="utf-8"))
     assert row["requested_k"] == row["effective_k"] == row["backbone_input_k"] == 4
+    assert row["raw_budget"] == 4
+    assert row["reachable_budget"] == 4
+    assert row["realized_budget"] == 4
+    assert row["projection_unused_budget"] == 0
+    assert row["solver_unused_budget"] == 0
+    assert row["budget_scope"] == "window_fixed_request"
+    assert row["budget_protocol_sha256"] == "a" * 64
+    assert row["claim_scope"] == "stage0_engineering_window_execution"
     summary = finalize_ledger(
         shards=[shard],
         output_jsonl=tmp_path / "inference_ledger.jsonl",

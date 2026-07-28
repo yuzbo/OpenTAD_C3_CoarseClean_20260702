@@ -41,8 +41,16 @@ Local checks passed:
 
 - Python compilation of Stage-0 salvage and H-RIME core;
 - Bash syntax for the recovery submitter, salvage launcher and code gate;
-- 46 focused no-Torch tests, including brute-force solver agreement and
+- the expanded 64-test focused non-Torch suite, including brute-force solver
+  agreement, explicit Stage-0 budget-truth sealing and
   provenance-tamper rejection.
+
+The first mandatory clean-commit MAX audit found one deployment blocker:
+Stage-0 fixed-window ledgers were not bound to the physical-protocol hash and
+did not expose raw/reachable/realized/projection-unused/solver-unused budget
+truth. This was corrected before any Slurm submission. The finalizer now seals
+and aggregates these fields or fails closed. The review must be rerun on the
+corrected exact commit.
 
 The local Windows process cannot load the CUDA-linked `torch` DLL. Therefore
 selector/backbone/detector checks must pass remotely before the state can become

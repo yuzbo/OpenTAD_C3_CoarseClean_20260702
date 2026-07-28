@@ -310,3 +310,13 @@
 - No experiment performance claim was made. The same-total-cost oracle has not
   run, learned H-RIME is not implemented, and no paper-admissible empirical
   conclusion is available.
+- The mandatory zero-context MAX deployment audit returned an initial `NO-GO`:
+  the repaired fixed-window execution ledger still wrote a null physical
+  protocol hash and did not distinguish raw/requested, reachable, realized,
+  projection-unused and solver-unused budgets. No Slurm job was submitted.
+- Corrected the blocker by requiring the exact physical-protocol SHA-256 in
+  every Stage-0 ledger row, adding all five budget fields with explicit
+  `window_fixed_request` / `stage0_engineering_window_execution` scope, and
+  making the finalizer aggregate and fail closed on inconsistent budget truth.
+  The expanded focused non-Torch suite now passes 64 tests. A fresh audit on the
+  corrected clean commit remains mandatory before deployment.

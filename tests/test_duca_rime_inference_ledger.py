@@ -79,3 +79,66 @@ def test_finalize_rime_inference_ledger_rejects_out_of_range_position(tmp_path):
             output_jsonl=tmp_path / "ledger.jsonl",
             expected_arm="rime_full",
         )
+
+
+def test_finalize_stage0_ledger_seals_explicit_short_window_budget_truth(tmp_path):
+    row = _row("v0")
+    row.update(
+        {
+            "arm": "exact_uniform",
+            "candidate_budgets": [512],
+            "requested_k": 512,
+            "effective_k": 224,
+            "unique_k": 224,
+            "backbone_input_k": 224,
+            "padded_k": 224,
+            "dense_valid_len": 231,
+            "selected_dense_indices": list(range(224)),
+            "raw_budget": 512,
+            "reachable_budget": 224,
+            "realized_budget": 224,
+            "projection_unused_budget": 288,
+            "solver_unused_budget": 0,
+            "budget_scope": "window_fixed_request",
+            "claim_scope": "stage0_engineering_window_execution",
+        }
+    )
+    shard = tmp_path / "rank0.jsonl"
+    shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    summary = finalize_ledger(
+        shards=[shard],
+        output_jsonl=tmp_path / "ledger.jsonl",
+        expected_arm="exact_uniform",
+        expected_protocol_sha256="a" * 64,
+    )
+    assert summary["explicit_budget_truth"] is True
+    assert summary["raw_budget_total"] == 512
+    assert summary["reachable_budget_total"] == 224
+    assert summary["realized_budget_total"] == 224
+    assert summary["projection_unused_budget_total"] == 288
+    assert summary["solver_unused_budget_total"] == 0
+
+
+def test_finalize_stage0_ledger_rejects_inconsistent_explicit_budget_truth(tmp_path):
+    row = _row("v0")
+    row.update(
+        {
+            "arm": "exact_uniform",
+            "raw_budget": 4,
+            "reachable_budget": 4,
+            "realized_budget": 4,
+            "projection_unused_budget": 1,
+            "solver_unused_budget": 0,
+            "budget_scope": "window_fixed_request",
+            "claim_scope": "stage0_engineering_window_execution",
+        }
+    )
+    shard = tmp_path / "rank0.jsonl"
+    shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="budget truth is inconsistent"):
+        finalize_ledger(
+            shards=[shard],
+            output_jsonl=tmp_path / "ledger.jsonl",
+            expected_arm="exact_uniform",
+            expected_protocol_sha256="a" * 64,
+        )
