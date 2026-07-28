@@ -187,6 +187,10 @@ phase1_cost_configs = {
     "configs/adatad/thumos/duca_rime_no_probe_uniform_phase1_cost.py",
     "configs/adatad/thumos/duca_rime_probe_uniform_phase1_cost.py",
 }
+dense_reference_configs = {
+    "configs/adatad/thumos/duca_rime_dense_actionformer_total60.py",
+    "configs/adatad/thumos/duca_rime_dense_tridet_total60.py",
+}
 for path in configs:
     cfg = Config.fromfile(path)
     if path in phase1_cost_configs:
@@ -201,6 +205,11 @@ for path in configs:
     else:
         assert cfg.solver.train.batch_size == 1
         assert cfg.post_processing.save_dict is True
+    if path in dense_reference_configs:
+        assert cfg.dataset.val is None
+        assert cfg.workflow.seal_eval_dataloaders_during_training is True
+        assert cfg.workflow.val_loss_interval == -1
+        assert cfg.workflow.val_eval_interval == -1
     if "duca_rime_contract" in cfg:
         assert cfg.duca_rime_contract.pad_to_kmax is False
         assert cfg.duca_rime_contract.execution_quantum == 16

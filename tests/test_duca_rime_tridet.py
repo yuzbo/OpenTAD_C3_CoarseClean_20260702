@@ -189,5 +189,6 @@ def test_dense_tridet_cost_reference_is_384_channel_selector_free_source():
     assert "in_channels=384" in source
     assert "max_seq_len=768" in source
     assert 'selector=None' in source
+    assert "seal_eval_dataloaders_during_training=True" in source
     assert 'detector_backend="TriDet"' in source
     assert "official_final_subset_consumed=False" in source

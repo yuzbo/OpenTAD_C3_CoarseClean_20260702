@@ -1,6 +1,6 @@
 # DUCA-RIME Anti-Repetition Memory
 
-Last updated: `2026-07-27`
+Last updated: `2026-07-28`
 
 These failures and naming mistakes must not be repeated.
 
@@ -37,3 +37,13 @@ These failures and naming mistakes must not be repeated.
     provenance chain.
 18. Do not write `paper_ready` merely because the matrix was submitted or
     completed; the registered statistical and cost gates must all pass.
+19. Do not rely on Slurm's default `/bin/sh` for the environment bootstrap;
+    every held job must explicitly enter `/bin/bash -lc`.
+20. Do not apply train-batch or saved-prediction assertions to the paired
+    Phase-1 cost-only profilers. Enforce their relevant contract instead: test
+    batch one, zero workers, no accuracy output/claim, and identical checkpoint
+    identity.
+21. Do not set `dataset.val=None` without also setting
+    `workflow.seal_eval_dataloaders_during_training=True`; otherwise the generic
+    trainer attempts to build a validation loader from `None` before the first
+    optimizer update.

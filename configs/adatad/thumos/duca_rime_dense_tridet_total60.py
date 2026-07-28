@@ -118,6 +118,7 @@ workflow = dict(
     end_epoch=60,
     primary_checkpoint_epoch=59,
     primary_checkpoint_state_key="state_dict_ema",
+    seal_eval_dataloaders_during_training=True,
 )
 
 duca_rime_dense_contract = dict(

@@ -109,6 +109,10 @@ if (
     or cfg.duca_rime_dense_contract.detector_backend != backend
     or cfg.duca_rime_dense_contract.selector is not None
     or cfg.duca_rime_dense_contract.official_final_subset_consumed is not False
+    or cfg.dataset.val is not None
+    or not bool(cfg.workflow.get("seal_eval_dataloaders_during_training", False))
+    or int(cfg.workflow.val_loss_interval) > 0
+    or int(cfg.workflow.val_eval_interval) > 0
 ):
     raise SystemExit(f"dense {backend} config contract drift")
 canonical = json.dumps(

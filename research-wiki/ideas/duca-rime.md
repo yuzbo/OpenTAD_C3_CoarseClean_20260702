@@ -2,7 +2,8 @@
 
 ## State
 
-`implemented`, `not_yet_empirically_supported`
+`implemented`, `tested`, `redeployment_pending`,
+`not_yet_empirically_supported`
 
 ## One-sentence method
 

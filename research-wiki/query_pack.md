@@ -1,6 +1,6 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-07-27`
+Last updated: `2026-07-28`
 
 ## Current decision
 
@@ -15,8 +15,8 @@ Current evidence level:
 | Scientific route | `user_approved` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
-| Remote authoritative code gate | `pending` |
-| Four-stage Slurm DAG | `pending_submission` |
+| Remote authoritative code gate | `passed` |
+| Four-stage Slurm DAG | `redeployment_pending_after_fail_closed_pretrain_abort` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
 
@@ -112,9 +112,11 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 
 ## Immediate execution
 
-1. Finish local and remote code gates on the exact clean commit.
-2. Freeze and hash all checkpoint/protocol prerequisites.
-3. Submit the fail-closed four-stage Slurm DAG.
-4. Record job IDs, dependencies, external run root, and exact commit in
-   `experiments/duca-dynamic-k-rime-oracle.md` and `log.md`.
-5. Monitor without changing the frozen method after Phase 4 authorization.
+1. Re-run the exact code gate and dense prechecks on the orchestration-fix
+   commit.
+2. Freeze a new exact-commit physical protocol and submit a fresh transaction.
+3. Allow Phase 2 to start only from the passing Phase-1 receipt.
+4. Allow the Phase-3 controller to emit child jobs only after Phase 2 and both
+   dense references complete.
+5. Keep official-final evaluation sealed unless the Phase-3 development receipt
+   authorizes Phase 4.

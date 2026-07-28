@@ -314,6 +314,7 @@ def test_dense_tridet_launcher_is_slurm_checkpoint_evidence_bound():
     assert "build_trained_checkpoint_binding" in text
     assert "state_dict_ema" in text
     assert "uses_official_final" in text
+    assert "seal_eval_dataloaders_during_training" in text
 
 
 def test_dense_actionformer_reference_reuses_the_evidence_bound_backend_runner():
@@ -331,6 +332,7 @@ def test_dense_actionformer_reference_reuses_the_evidence_bound_backend_runner()
     ).read_text(encoding="utf-8")
     assert "duca_rime_dense_actionformer_cost_baseline_v1" in cfg
     assert 'detector_backend="ActionFormer"' in cfg
+    assert "seal_eval_dataloaders_during_training=True" in cfg
 
 
 def test_phase3_submission_has_six_train_jobs_and_no_same_k_training():

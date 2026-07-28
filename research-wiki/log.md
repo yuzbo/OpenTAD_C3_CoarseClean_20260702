@@ -62,3 +62,30 @@
   claim, and a byte-identical paired checkpoint identity.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.
+
+## 2026-07-28 — DUCA-RIME final transaction released
+
+- Froze the physical protocol on implementation commit
+  `f510741b32075c5c4e729d4207a549886a6dd064`; manifest SHA-256 is
+  `5d28d1d37e698b5f17156245f55da62a82dc5b537c32fe70104f1be231e605d8`.
+- Released the immutable fail-closed transaction at
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_f510741b_20260728_094811`.
+  Submission-manifest SHA-256 is
+  `c74c351bad04dd7bfc6701ca5205e419116694d21736419776cec1f3cdb7ada6`.
+- Code-gate job `1197889` completed successfully on the exact clean commit:
+  all 158 focused tests passed and all 24 registered configs passed their
+  stage-specific matrix.
+- Slurm released Phase 1 (`1197890`), dense ActionFormer (`1197891`), and dense
+  TriDet (`1197892`) into `RUNNING`. Phase 2 (`1197893`) and the Phase-3/4
+  controller (`1197894`) remain dependency-gated as registered.
+- Current scientific state is `experiment_running`, not
+  `empirically_supported` or `paper_ready`.
+- Early monitoring then found both dense jobs failed before their first
+  optimizer update: their configs correctly set `dataset.val=None` and disabled
+  validation intervals, but omitted the generic trainer's explicit
+  `seal_eval_dataloaders_during_training=True` switch. The Phase-3 dependency
+  failed closed. Phase 1 and all remaining jobs in this now-uncompletable
+  transaction were canceled by exact job ID; the root and logs are retained.
+- Added the missing seal to both dense configs and bound it in the launcher
+  precheck, config matrix, and focused tests. This is an orchestration fix, not
+  a model or scientific-protocol change.

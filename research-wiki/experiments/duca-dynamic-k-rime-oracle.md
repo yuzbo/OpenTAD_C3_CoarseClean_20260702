@@ -2,13 +2,14 @@
 
 ## Status
 
-- Date: `2026-07-27`
+- Approval date: `2026-07-27`
+- Deployment date: `2026-07-28`
 - Approval: `user_approved`
 - Design: `designed`
 - Implementation: `implemented`
 - Focused local verification: `tested`
-- Remote authoritative verification: `pending`
-- Deployment: `pending_submission`
+- Remote authoritative verification: `passed`
+- Deployment: `redeployment_pending_after_fail_closed_pretrain_abort`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -103,16 +104,37 @@ Phase-2 or later outcomes:
 
 ## Deployment ledger
 
-Not yet submitted. Fill this section only with confirmed scheduler output:
+Aborted immutable submission (retained as negative deployment evidence):
 
-- implementation commit: `pending`
-- external run root: `pending`
-- submission manifest: `pending`
-- code-gate job: `pending`
-- Phase-1 job: `pending`
-- Phase-2 job: `pending`
-- Phase-3 controller/job set: `pending`
-- Phase-4 controller/matrix: `pending`
+- implementation commit:
+  `f510741b32075c5c4e729d4207a549886a6dd064`;
+- external run root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_f510741b_20260728_094811`;
+- physical protocol manifest:
+  `/data/run01/sczc063/yuzibo/rime_prerequisites/duca_protected_physical_protocol_f510741b.json`,
+  SHA-256 `5d28d1d37e698b5f17156245f55da62a82dc5b537c32fe70104f1be231e605d8`;
+- submission manifest:
+  `submission_manifest.json`, SHA-256
+  `c74c351bad04dd7bfc6701ca5205e419116694d21736419776cec1f3cdb7ada6`;
+- code-gate job `1197889`: `COMPLETED`, receipt passed on the exact commit;
+- Phase-1 job `1197890`: `CANCELLED` after the transaction became
+  uncompletable;
+- dense ActionFormer job `1197891`: `FAILED` before optimizer update 1 because
+  its sealed-validation switch was missing;
+- dense TriDet job `1197892`: `FAILED` before optimizer update 1 for the same
+  reason;
+- Phase-2 job `1197893`: `CANCELLED` before execution;
+- Phase-3 controller job `1197894`: `CANCELLED` after its dense dependency
+  failed closed;
+- no Phase-3 child or Phase-4 formal job was submitted.
+
+The code gate recorded all 158 focused tests passing and all 24 registered
+configs satisfying their stage-specific contracts.
+
+The next transaction must use the commit that adds
+`seal_eval_dataloaders_during_training=True` to both dense configs and enforces
+it in precheck; no output from this aborted root may be reused as positive
+evidence.
 
 ## Stop rules
 
