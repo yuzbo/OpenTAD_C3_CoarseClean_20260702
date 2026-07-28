@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v5_phase1_and_salvage_running`
+- Slurm recovery transaction: `recovery_v5_phase1_running / salvage_complete`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -279,13 +279,11 @@ remains sealed.
 
 ## Next gate
 
-1. require production code gate `1201169` to complete and emit its exact
-   commit-bound receipt;
-2. require Phase-1 `1201170` and both dense-recovery arms
-   `1201171`/`1201172` to complete their full registered contracts;
-3. require Phase-2 `1201173` and Phase-3 controller `1201174` to emit all
+1. require Phase-1 `1201170` to complete its full registered contract and emit
+   its terminal receipt;
+2. require Phase-2 `1201173` and Phase-3 controller `1201174` to emit all
    terminal development receipts;
-4. only after those receipts pass may the held-out same-total-cost H-RIME oracle
+3. only after those receipts pass may the held-out same-total-cost H-RIME oracle
    or learned planner training be considered. Phase 4 remains unauthorized.
 
 ## Recovery v5 implementation
@@ -350,9 +348,26 @@ ActionFormer salvage, TriDet salvage, Phase 2 and Phase-3 controller. Production
 code gate `1201169` completed with exit `0:0`; its exact-commit receipt has
 SHA-256
 `7de03703c23ae79772b8598bea7de3fbaa0db85bffc58d71f467e9f7294045e4`.
-Phase 1 `1201170` and both salvage jobs `1201171`/`1201172` are running;
-Phase 2 `1201173` and controller `1201174` remain dependency-held. The
-registered dependency map and manifest identities passed,
+ActionFormer salvage `1201171` and TriDet salvage `1201172` subsequently
+completed with exit `0:0`. Their immutable terminal identities are:
+
+- ActionFormer checkpoint-evidence SHA-256
+  `72699b01de350c36a2fa6243215aad0bc0294c6c21cf68c07565e1e4d6df9832`
+  and recovery-receipt SHA-256
+  `2a245ad1209fe8986da612754fbd47c68656e9c136ecd0e448798319232cf5bf`;
+- TriDet checkpoint-evidence SHA-256
+  `5549264c89dccfc7adec06e7ea14c41c1650d07879a138be8779efab96a5689c`
+  and recovery-receipt SHA-256
+  `37e6980daecc3b77ae406d3be0b5cfaca43fc5fb39e3f389f095b0ec2246f3a1`.
+
+Both recovery receipts bind recovery commit
+`74de620d8fafc365694aa1f400318a401add3ecc`, preserve source jobs
+`1198115`/`1198116` as `FAILED`, set
+`original_job_reclassified_as_success=false`, exclude official-final, and
+restrict claims to
+`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201170`
+is still running; Phase 2 `1201173` and controller `1201174` remain
+dependency-held. The registered dependency map and manifest identities passed,
 `phase4_submission_enabled=false`, and `official_final_sealed=true`.
 
 Correct empirical statement:

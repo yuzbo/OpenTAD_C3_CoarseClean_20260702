@@ -1,6 +1,6 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-07-28`
+Last updated: `2026-07-29`
 
 ## Current decision
 
@@ -16,7 +16,7 @@ Current evidence level:
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v5_preflight_passed_1201057 / production_gate_passed_1201169` |
-| Dense reference training | `recovery_v4_salvage_completed / engineering_only` |
+| Dense reference training | `recovery_v5_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v4_failed / recovery_v5_running_1201170` |
 | Phase 2/3/4 | `recovery_v5_dependency_held / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v5_released / experiment_running` |
@@ -26,7 +26,7 @@ Current evidence level:
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v5_phase1_and_salvage_running` |
+| H-RIME Stage-0 recovery transaction | `recovery_v5_phase1_running / salvage_complete` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -355,11 +355,26 @@ Operational update:
 Production code gate `1201169` subsequently completed with exit `0:0`; its
 receipt binds the exact source commit and has SHA-256
 `7de03703c23ae79772b8598bea7de3fbaa0db85bffc58d71f467e9f7294045e4`.
-Phase 1 `1201170` and both salvage jobs `1201171`/`1201172` are running;
-Phase 2 `1201173` and controller `1201174` remain dependency-held. The
-transaction manifest confirms `phase4_submission_enabled=false` and
-`official_final_sealed=true`. This is only `ENGINEERING_STATUS`; no
-model-quality or paper-admissible empirical conclusion is available.
+Both salvage jobs have now completed with exit `0:0` and terminal engineering
+receipts:
+
+- ActionFormer `1201171`: checkpoint-evidence SHA-256
+  `72699b01de350c36a2fa6243215aad0bc0294c6c21cf68c07565e1e4d6df9832`,
+  recovery-receipt SHA-256
+  `2a245ad1209fe8986da612754fbd47c68656e9c136ecd0e448798319232cf5bf`;
+- TriDet `1201172`: checkpoint-evidence SHA-256
+  `5549264c89dccfc7adec06e7ea14c41c1650d07879a138be8779efab96a5689c`,
+  recovery-receipt SHA-256
+  `37e6980daecc3b77ae406d3be0b5cfaca43fc5fb39e3f389f095b0ec2246f3a1`.
+
+Both receipts preserve source jobs `1198115`/`1198116` as `FAILED`, do not
+reclassify them, use no official-final data, and restrict their claim scope to
+`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201170`
+continues running; Phase 2 `1201173` and controller `1201174` remain
+dependency-held. The transaction manifest confirms
+`phase4_submission_enabled=false` and `official_final_sealed=true`. This is only
+`ENGINEERING_STATUS`; no model-quality or paper-admissible empirical conclusion
+is available.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

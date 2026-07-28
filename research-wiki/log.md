@@ -691,3 +691,25 @@
   Phase 2 `1201173` and controller `1201174` remain dependency-held. Phase 4
   remains disabled, official-final remains sealed, and no performance value or
   paper-admissible empirical conclusion was produced.
+
+## 2026-07-29 — Recovery-v5 dense salvage arms completed
+
+- ActionFormer salvage `1201171` completed with exit `0:0`. Checkpoint-evidence
+  SHA-256 is
+  `72699b01de350c36a2fa6243215aad0bc0294c6c21cf68c07565e1e4d6df9832`;
+  terminal recovery-receipt SHA-256 is
+  `2a245ad1209fe8986da612754fbd47c68656e9c136ecd0e448798319232cf5bf`.
+- TriDet salvage `1201172` completed with exit `0:0`. Checkpoint-evidence
+  SHA-256 is
+  `5549264c89dccfc7adec06e7ea14c41c1650d07879a138be8779efab96a5689c`;
+  terminal recovery-receipt SHA-256 is
+  `37e6980daecc3b77ae406d3be0b5cfaca43fc5fb39e3f389f095b0ec2246f3a1`.
+- Both terminal receipts bind exact recovery commit
+  `74de620d8fafc365694aa1f400318a401add3ecc`, retain original source jobs
+  `1198115`/`1198116` and source commit
+  `d9d454cd49a3e7a87694fc948601d00ff4043cb0` as failed evidence, do not
+  reclassify either source job, exclude official-final, and retain the claim
+  scope `engineering_dense_reference_recovery_not_method_evidence`.
+- Phase 1 `1201170` remains running. Phase 2 `1201173` and Phase-3 controller
+  `1201174` remain dependency-held. This update is `ENGINEERING_STATUS`; no
+  performance value was inspected or interpreted.
