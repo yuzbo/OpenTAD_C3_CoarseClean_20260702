@@ -46,9 +46,21 @@ def finalize_ledger(
     output_jsonl: str | Path,
     expected_arm: str,
     expected_protocol_sha256: str | None = None,
+    require_explicit_budget_truth: bool = False,
 ) -> dict[str, Any]:
     if not shards:
         raise ValueError("at least one RIME inference-ledger shard is required")
+    if require_explicit_budget_truth and (
+        expected_protocol_sha256 is None
+        or len(str(expected_protocol_sha256)) != 64
+        or any(
+            value not in "0123456789abcdef"
+            for value in str(expected_protocol_sha256).lower()
+        )
+    ):
+        raise ValueError(
+            "explicit budget truth requires an exact expected protocol SHA-256"
+        )
     source_artifacts = []
     rows = {}
     for shard in shards:
@@ -105,6 +117,8 @@ def finalize_ledger(
                 "claim_scope",
             )
             has_budget_truth = any(name in row for name in budget_truth_fields)
+            if require_explicit_budget_truth and not has_budget_truth:
+                raise ValueError(f"{prefix}: explicit budget truth is required")
             if has_budget_truth:
                 if not all(name in row for name in budget_truth_fields):
                     raise ValueError(f"{prefix}: incomplete explicit budget truth")
@@ -170,6 +184,8 @@ def finalize_ledger(
     has_explicit_budget_truth = all("raw_budget" in row for row in rows.values())
     if any("raw_budget" in row for row in rows.values()) and not has_explicit_budget_truth:
         raise ValueError("inference ledger mixes explicit and legacy budget truth")
+    if require_explicit_budget_truth and not has_explicit_budget_truth:
+        raise ValueError("sealed inference ledger requires explicit budget truth")
     summary = {
         "schema_version": SUMMARY_SCHEMA,
         "status": "sealed",
@@ -219,6 +235,7 @@ def finalize_ledger(
                 "realized_budget_total": realized_total,
                 "projection_unused_budget_total": projection_unused_total,
                 "solver_unused_budget_total": solver_unused_total,
+                "budget_protocol_sha256": str(expected_protocol_sha256),
             }
         )
     else:
@@ -232,6 +249,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-jsonl", required=True)
     parser.add_argument("--expected-arm", required=True)
     parser.add_argument("--expected-protocol-sha256")
+    parser.add_argument("--require-explicit-budget-truth", action="store_true")
     parser.add_argument("--summary-json")
     args = parser.parse_args(argv)
     result = finalize_ledger(
@@ -239,6 +257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_jsonl=args.output_jsonl,
         expected_arm=args.expected_arm,
         expected_protocol_sha256=args.expected_protocol_sha256,
+        require_explicit_budget_truth=args.require_explicit_budget_truth,
     )
     if args.summary_json:
         path = Path(args.summary_json).expanduser().resolve()

@@ -110,6 +110,7 @@ def test_finalize_stage0_ledger_seals_explicit_short_window_budget_truth(tmp_pat
         output_jsonl=tmp_path / "ledger.jsonl",
         expected_arm="exact_uniform",
         expected_protocol_sha256="a" * 64,
+        require_explicit_budget_truth=True,
     )
     assert summary["explicit_budget_truth"] is True
     assert summary["raw_budget_total"] == 512
@@ -141,4 +142,27 @@ def test_finalize_stage0_ledger_rejects_inconsistent_explicit_budget_truth(tmp_p
             output_jsonl=tmp_path / "ledger.jsonl",
             expected_arm="exact_uniform",
             expected_protocol_sha256="a" * 64,
+            require_explicit_budget_truth=True,
+        )
+
+
+def test_finalize_stage0_ledger_requires_hash_and_explicit_fields(tmp_path):
+    row = _row("v0")
+    row["arm"] = "exact_uniform"
+    shard = tmp_path / "rank0.jsonl"
+    shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="expected protocol SHA-256"):
+        finalize_ledger(
+            shards=[shard],
+            output_jsonl=tmp_path / "ledger.jsonl",
+            expected_arm="exact_uniform",
+            require_explicit_budget_truth=True,
+        )
+    with pytest.raises(ValueError, match="explicit budget truth is required"):
+        finalize_ledger(
+            shards=[shard],
+            output_jsonl=tmp_path / "ledger.jsonl",
+            expected_arm="exact_uniform",
+            expected_protocol_sha256="a" * 64,
+            require_explicit_budget_truth=True,
         )

@@ -27,6 +27,8 @@ for name in \
   DUCA_RIME_PHASE1_UNIFORM_CHECKPOINT_SHA256 \
   DUCA_RIME_SPLIT_MANIFEST \
   DUCA_RIME_SPLIT_MANIFEST_SHA256 \
+  DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON \
+  DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256 \
   DUCA_RIME_PHASE1_SPLIT_ROLE \
   DUCA_RIME_FIXED_BUDGET \
   DUCA_RIME_EVAL_SEED \
@@ -58,6 +60,10 @@ check_sha256 \
   "${DUCA_RIME_SPLIT_MANIFEST}" \
   "${DUCA_RIME_SPLIT_MANIFEST_SHA256}" \
   "RIME split manifest"
+check_sha256 \
+  "${DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON}" \
+  "${DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256}" \
+  "protected physical protocol manifest"
 
 readarray -t split_values < <(
   python - \
@@ -132,10 +138,12 @@ python -m tools.bata.evaluate_duca_rime_predictions \
 ledger_shard="${DUCA_RIME_PHASE1_UNIFORM_ROOT}/ledger/inference_ledger.rank0000.jsonl"
 [[ -f "${ledger_shard}" ]] \
   || fail "Phase-1 uniform evaluation did not emit its inference ledger"
-python tools/bata/finalize_duca_rime_inference_ledger.py \
+python -m tools.bata.finalize_duca_rime_inference_ledger \
   --shard "${ledger_shard}" \
   --output-jsonl "${DUCA_RIME_PHASE1_UNIFORM_ROOT}/inference_ledger.jsonl" \
   --expected-arm exact_uniform \
+  --expected-protocol-sha256 "${DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256}" \
+  --require-explicit-budget-truth \
   --summary-json \
   "${DUCA_RIME_PHASE1_UNIFORM_ROOT}/inference_ledger_summary.json" \
   > /dev/null

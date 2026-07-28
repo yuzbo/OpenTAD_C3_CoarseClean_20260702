@@ -318,5 +318,13 @@
   every Stage-0 ledger row, adding all five budget fields with explicit
   `window_fixed_request` / `stage0_engineering_window_execution` scope, and
   making the finalizer aggregate and fail closed on inconsistent budget truth.
-  The expanded focused non-Torch suite now passes 64 tests. A fresh audit on the
+  The expanded focused non-Torch suite then passed 64 tests. A fresh audit on the
   corrected clean commit remains mandatory before deployment.
+- The clean-commit re-audit returned a second `NO-GO`: the selector producer was
+  strict, but `run_duca_rime_phase1_uniform_eval.sh` did not pass the protocol
+  hash or demand explicit budget truth from the finalizer, so a legacy row could
+  still be sealed. Corrected the consumer chain: the launcher now requires and
+  hash-checks the protocol manifest, invokes the finalizer as a module with the
+  expected hash plus `--require-explicit-budget-truth`, and the parent pipeline
+  exports the binding before K384/K192. The expanded focused non-Torch suite
+  now passes 66 tests. Slurm remains unsubmitted pending another clean audit.

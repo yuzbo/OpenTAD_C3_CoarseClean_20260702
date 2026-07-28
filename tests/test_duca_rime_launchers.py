@@ -260,6 +260,25 @@ def test_phase2_pipeline_trains_mixed_k_before_building_evidence():
     assert "terminal_ema.pth" in text
 
 
+def test_phase1_uniform_launcher_requires_protocol_bound_explicit_budget_truth():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase1_uniform_eval.sh"
+    ).read_text(encoding="utf-8")
+    assert "DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON" in text
+    assert "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256" in text
+    assert "python -m tools.bata.finalize_duca_rime_inference_ledger" in text
+    assert "--expected-protocol-sha256" in text
+    assert "--require-explicit-budget-truth" in text
+    pipeline = (
+        ROOT / "scripts" / "run_duca_rime_phase1_evidence_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    protocol_export = pipeline.index(
+        'export DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256='
+    )
+    uniform_loop = pipeline.index("for budget in 384 192")
+    assert protocol_export < uniform_loop
+
+
 def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     text = (
         ROOT / "scripts" / "submit_duca_rime_four_phase_dag.sh"

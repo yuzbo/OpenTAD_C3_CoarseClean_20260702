@@ -224,7 +224,7 @@ Stage-0 recovery code now exists locally:
 - the recovery DAG supports explicit `fresh_train` or `salvage` dense mode and
   forces official-final Phase 4 sealed.
 
-Local `py_compile`, `bash -n`, and the expanded 64-test focused non-Torch
+Local `py_compile`, `bash -n`, and the expanded 66-test focused non-Torch
 suite passed. The Windows
 host cannot load the repository's CUDA-linked PyTorch DLL, so Torch-dependent
 selector/detector tests remain `remote_pending`; no authoritative Stage-0
@@ -238,6 +238,13 @@ require the exact protocol SHA-256, seal all five budget fields, scope them as
 `stage0_engineering_window_execution`, aggregate their totals and fail closed on
 any inconsistency. A new clean-commit audit is still required before Slurm
 release.
+
+The first correction was itself incomplete at the consumer boundary: the
+Phase-1 uniform launcher did not pass the protocol hash or require explicit
+budget truth when sealing. The launcher now requires and verifies the protected
+protocol manifest/hash, passes both the hash and
+`--require-explicit-budget-truth`, and the parent pipeline exports the binding
+before either K384/K192 evaluation.
 
 Raw Phase-1 development measurements produced before the fail-closed ledger
 gate were:

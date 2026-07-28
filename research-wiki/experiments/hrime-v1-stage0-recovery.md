@@ -41,7 +41,7 @@ Local checks passed:
 
 - Python compilation of Stage-0 salvage and H-RIME core;
 - Bash syntax for the recovery submitter, salvage launcher and code gate;
-- the expanded 64-test focused non-Torch suite, including brute-force solver
+- the expanded 66-test focused non-Torch suite, including brute-force solver
   agreement, explicit Stage-0 budget-truth sealing and
   provenance-tamper rejection.
 
@@ -51,6 +51,13 @@ did not expose raw/reachable/realized/projection-unused/solver-unused budget
 truth. This was corrected before any Slurm submission. The finalizer now seals
 and aggregates these fields or fails closed. The review must be rerun on the
 corrected exact commit.
+
+The clean-commit re-audit correctly found that the first fix was fail-open at
+the launcher/finalizer boundary. The Phase-1 uniform launcher now requires and
+hash-verifies the physical protocol, passes its SHA-256 to the finalizer, and
+sets `--require-explicit-budget-truth`; the parent pipeline establishes these
+variables before launching either uniform budget. Legacy ledger compatibility
+remains available only when a caller does not request this strict Stage-0 mode.
 
 The local Windows process cannot load the CUDA-linked `torch` DLL. Therefore
 selector/backbone/detector checks must pass remotely before the state can become
