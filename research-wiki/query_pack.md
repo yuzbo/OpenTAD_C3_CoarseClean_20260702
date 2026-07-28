@@ -13,8 +13,8 @@ max_chars: 8000
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
 - Active replacement status:
-  `node_bound_rendezvous_gate_fix_implemented_pending_gate_only_validation`
-  (`implemented`, not `empirically_supported`). The external Pro audit of exact
+  `p1r_running_exact_source_7be8363e`
+  (`experiment_running`, not `empirically_supported`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
   176x320 support with a validity mask, mask-aware exact-K, a
@@ -66,8 +66,7 @@ max_chars: 8000
   unique Slurm/cell/phase rendezvous IDs, adds a real same-node concurrent
   lifetime gate using observed `TORCHELASTIC_RUN_ID` and `MASTER_PORT`, and
   hash-binds each P0 model report to its same-leaf isolation receipt. Local
-  non-Torch compile/focused/C3 checks pass `59/59`; remote Linux Torch, P0R,
-  and the fresh seven-arm matrix remain pending.
+  non-Torch compile/focused/C3 checks pass `59/59`.
   Clean source `a2ebd0604b4e5648b4f9bc4b3432541fae070393` passed remote
   Linux tests `82/82`, but P0R `1200510`--`1200512` all failed before model
   execution because the first gate's fixed 0.5/2.0-second probe durations
@@ -82,7 +81,25 @@ max_chars: 8000
   observed the correct dynamic port `57695` and run ID but
   `MASTER_ADDR=g0024`, the allocated node hostname. The local validator now
   binds master address to exact `socket.gethostname()`; a gate-only Slurm pass
-  is mandatory before another P0 namespace.
+  was mandatory before another P0 namespace.
+  Exact clean source `7be8363ea6e26b320bffafeb03f0e82d8b660779`
+  passed remote Linux tests `82/82`. Gate-only Job `1200602` then passed
+  concurrent rendezvous isolation on `g0053` with exact run IDs, distinct
+  dynamic ports `54013/34325`, and the long worker alive after complete
+  short-parent exit. P0R Jobs `1200611`--`1200613` all completed `0:0`; their
+  three same-leaf isolation receipts and CUDA reports sealed suite
+  `693034b276697e92ae915ea5f40cebdd5d01a76bad65f46e5639844654f210e9`
+  as `PASS_MECHANICAL_ONLY`. Finalizer `1200614` failed only after writing that
+  receipt because obsolete dependency-dead jobs made the submit-cap preflight
+  report `active=11, required_additional=8, MaxSubmitJobs=16`; no P1 job was
+  partially submitted in that namespace. After cancelling only obsolete
+  GeoRoute Jobs `1199872`, `1200513`, and `1200553` while leaving DUCA/RIME
+  untouched, sealed-parent bootstrap `1200652` completed `0:0` into fresh root
+  `georoute_nativefirst_7be8363e_p1p3_20260728_2225`. All seven frozen P1R
+  leaves `1200663`--`1200669` are running concurrently and automatic selector
+  `1200670` is dependency-gated. Initial scans show no traceback, OOM,
+  rendezvous error, or non-finite loss/cost. P2/P3 and official test remain
+  closed.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)

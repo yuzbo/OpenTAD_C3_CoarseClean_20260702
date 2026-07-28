@@ -434,6 +434,42 @@ P2/P3 artifact, or official-test artifact exists. Therefore:
   allowed, the complete gate will run alone in Slurm and must publish a valid
   receipt.
 
+## Active exact-source replacement run
+
+- Clean source `7be8363ea6e26b320bffafeb03f0e82d8b660779` matched full
+  local/origin/remote HEAD with a clean worktree after first-request academic
+  proxy sync, and remote Linux GeoRoute plus required C3 tests passed `82/82`.
+- Gate-only Slurm Job `1200602` passed
+  `PASS_CONCURRENT_RENDEZVOUS_ISOLATION` on `g0053`. It observed exact short and
+  long run IDs, distinct actual ports `54013/34325`, and a live long worker
+  after the short torchrun parent had fully exited. Receipt SHA-256 is
+  `bbfd46f507e7da16e0880df0d78067a37659164aaef2158c802f81de112acec9`.
+- P0R Jobs `1200611`--`1200613` all completed `0:0` under
+  `georoute_nativefirst_7be8363e_p0p3_20260728_2222`. Each P0 model report
+  passed and hash-bound its same-leaf isolation receipt. The recomputable suite
+  at `control/p0_finalization.json` is `PASS_MECHANICAL_ONLY`, schema v3, with
+  suite SHA-256
+  `693034b276697e92ae915ea5f40cebdd5d01a76bad65f46e5639844654f210e9`.
+  Aggregate storage preflight observed 210,744,381,440 free versus
+  79,456,894,976 required bytes.
+- Finalizer `1200614` failed after sealing P0 but before any P1 submission:
+  obsolete dependency-dead jobs made the fail-before-first-submit capacity
+  guard report `active=11, required_additional=8, MaxSubmitJobs=16`. This is a
+  scheduler-admission failure, not a model, P0, or rendezvous failure. The P0
+  namespace remains immutable.
+- Only obsolete GeoRoute dependency holds `1199872`, `1200513`, and `1200553`
+  were cancelled after path/job provenance checks; DUCA `1181289` and all RIME
+  work were left untouched. Supported sealed-parent bootstrap `1200652`
+  completed `0:0` and created fresh P1 root
+  `georoute_nativefirst_7be8363e_p1p3_20260728_2225`.
+- The complete frozen P1R matrix is now `experiment_running`: dense
+  `1200663`, fixed `1200664`, fixed-plus-geometry `1200665`, random `1200666`,
+  free NativeTokenSelect `1200667`, ROI-only `1200668`, and hybrid `1200669`
+  are concurrent. Result-blind selector `1200670` is `afterok`-gated on all
+  seven leaves. Initial launch scans show no traceback, OOM, rendezvous error,
+  or non-finite loss/cost. No checkpoint or stage result is expected yet.
+  P2/P3 and official test remain absent.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

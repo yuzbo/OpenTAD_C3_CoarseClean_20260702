@@ -1270,3 +1270,31 @@ append_only: true
   and requires the observed master address to equal that exact node. It must
   pass a dedicated gate-only Slurm job before any third P0 deployment. No
   model, selector, or claim changed.
+
+- 2026-07-28 22:20 CST: exact clean source
+  `7be8363ea6e26b320bffafeb03f0e82d8b660779` passed remote Linux tests
+  `82/82`. Dedicated gate-only Job `1200602` passed concurrent node-bound
+  rendezvous isolation on `g0053`, with exact runtime IDs, distinct dynamic
+  ports `54013/34325`, and the long worker alive after complete short-parent
+  exit. P0R `1200611`--`1200613` then completed `0:0`; all three same-leaf
+  rendezvous receipts and CUDA reports passed. The recomputable P0 suite at
+  `georoute_nativefirst_7be8363e_p0p3_20260728_2222/control/p0_finalization.json`
+  is `PASS_MECHANICAL_ONLY`, SHA-256
+  `693034b276697e92ae915ea5f40cebdd5d01a76bad65f46e5639844654f210e9`.
+  Finalizer `1200614` failed only after writing that receipt, before submitting
+  any P1 job, because the atomic submit-cap guard observed `active=11`,
+  `required_additional=8`, and `MaxSubmitJobs=16`. The namespace is retained
+  unchanged and no result claim changed.
+
+- 2026-07-28 22:26 CST: after exact job/path checks, only obsolete GeoRoute
+  dependency-dead Jobs `1199872`, `1200513`, and `1200553` were cancelled to
+  release submit capacity; DUCA `1181289` and all RIME jobs were not touched.
+  Supported sealed-P0-parent bootstrap `1200652` completed `0:0` and created
+  fresh root `georoute_nativefirst_7be8363e_p1p3_20260728_2225`. It atomically
+  submitted the unchanged seven P1R leaves: dense `1200663`, fixed `1200664`,
+  fixed-plus-geometry `1200665`, random `1200666`, free NativeTokenSelect
+  `1200667`, ROI-only `1200668`, and hybrid `1200669`, plus automatic afterok
+  selector `1200670`. All seven leaves entered `RUNNING` concurrently; initial
+  scans found no traceback, OOM, rendezvous error, or non-finite loss/cost.
+  State is `experiment_running`, not `empirically_supported`; P2/P3, official
+  test, efficiency claim, and paper claim remain closed.

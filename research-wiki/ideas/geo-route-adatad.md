@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
-stage: implemented
-status: node_bound_rendezvous_gate_fix_implemented_pending_gate_only_validation
+stage: experiment_running
+status: p1r_running_exact_source_7be8363e
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -19,6 +19,20 @@ as a structured add-on. The unchanged AdaTAD-derived detector loss is the
 primary learning signal.
 
 ## Design status and boundary
+
+Exact clean source `7be8363e` passed Linux tests `82/82`; gate-only Job
+`1200602` demonstrated two concurrent, node-bound c10d stores with distinct
+dynamic ports and preserved long-worker lifetime after complete short-parent
+exit. P0R Jobs `1200611`--`1200613` then passed and sealed suite
+`693034b276697e92ae915ea5f40cebdd5d01a76bad65f46e5639844654f210e9`
+as `PASS_MECHANICAL_ONLY`. The P0 finalizer wrote that valid receipt before a
+submit-cap guard stopped automatic P1 submission, so no partial matrix was
+created. Supported sealed-parent bootstrap `1200652` subsequently launched the
+unchanged seven-arm P1R matrix as Jobs `1200663`--`1200669`, with automatic
+selector `1200670`, under fresh root
+`georoute_nativefirst_7be8363e_p1p3_20260728_2225`. The idea is now
+`experiment_running`, not `empirically_supported`; P2/P3, official test,
+efficiency claims, and paper claims remain closed.
 
 The correctness replacement is implemented; clean-commit remote focused tests
 pass and replacement P0R sealed `PASS_MECHANICAL_ONLY`. Its first P1R matrix,
@@ -40,13 +54,13 @@ against NativeTokenSelect, and they do not authorize geometry, P2/P3, official
 test, an efficiency claim, or a paper claim. A valid future test must repeat
 the complete frozen matrix in a new namespace with a unique or kernel-assigned
 per-leaf rendezvous endpoint and an explicit concurrent-node isolation gate.
-That replacement is now locally implemented: c10d uses `127.0.0.1:0` with a
+That replacement now uses c10d `127.0.0.1:0` with a
 Slurm/job/stage/variant/seed/phase-bound ID; a P0 same-node concurrent gate
 verifies the two actual runtime ports, run IDs, and independent lifetimes; and
 each P0 model report is hash-bound to the isolation receipt from the same
-Slurm leaf. This changes no model or selector decision. It remains
-`implemented`, not remotely validated or empirically supported, until a clean
-N16R4 snapshot passes the gate and the complete new seven-arm matrix.
+Slurm leaf. This changes no model or selector decision. It is remotely
+mechanically validated but remains not empirically supported until the complete
+new seven-arm matrix and frozen selector finish.
 The first remote gate source `a2ebd060` passed `82/82` Linux tests but its
 three P0 leaves `1200510`--`1200512` failed before model execution: a fixed
 0.5/2.0-second lifetime contrast measured torchrun parent teardown latency and
@@ -60,11 +74,13 @@ exposed `MASTER_ADDR` as the allocated hostname rather than literal loopback.
 Slurm diagnostic `1200560` observed the correct unique run ID and dynamic port
 alongside `MASTER_ADDR=g0024`. The gate now binds both probe hostname and
 master address to the exact current node; it must pass a standalone Slurm gate
-before any further P0 deployment.
+before any further P0 deployment; Job `1200602` satisfied that condition under
+source `7be8363e`.
 ROI-only reached Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, descriptively
 above fixed, random, and fixed-plus-geometry at high tIoU, but it is not the
-ROI-free native base and cannot satisfy the hierarchical gate. The idea remains
-implemented and mechanically tested, not empirically supported.
+ROI-free native base and cannot satisfy the hierarchical gate. The replacement
+idea is mechanically tested with its new P1R currently running, not empirically
+supported.
 
 ## Why geometry is conditional
 
