@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v4_implemented / tested / deployed`
+- Stage-0 code: `recovery_v4_deployed / uniform_runtime_contract_gap_found`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v4_experiment_running`
+- Slurm recovery transaction: `recovery_v4_failed_closed / scheduler_terminalization_pending`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -252,9 +252,41 @@ This proves only that the repaired deployment contract now executes through the
 actual formal evaluator and closes both dense recovery arms. It is not a model
 performance result.
 
+## Recovery v4 Phase-1 failure
+
+At `2026-07-28 22:32:51 CST`, Phase 1 job `1200628` failed with exit `1:0`
+during the first actual exact-uniform K384 forward. The exact terminal exception
+was:
+
+`ValueError: dynamic RIME backbone requires an aligned [B,K] mask`.
+
+The traceback identifies the contract gap precisely:
+
+1. the exact-uniform baseline has no `duca_rime_physical` selector;
+2. `ActionFormer.forward_test` therefore took its ordinary branch and called
+   `self.backbone(inputs)` without `masks`;
+3. the same config enables `BackboneWrapper.dynamic_temporal_bucket`, whose
+   `_prepare_dynamic_temporal_bucket` requires an aligned `[B,K]` mask;
+4. the uniform launcher precheck validated only config/protocol/pretrain fields
+   and never exercised model construction plus a tensor forward.
+
+This is not a K384 budget-ledger failure: the emitted engineering ledger bound
+the attempted backbone input to K384. It is the detector-to-backbone mask handoff
+that failed before the first prediction completed. No Phase-1 terminal receipt
+exists. Phase 2 job `1200631` is `DependencyNeverSatisfied`; Phase-3 controller
+`1200632` remains dependency-held. Phase 4 remains disabled and official-final
+remains sealed.
+
 ## Next gate
 
-1. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
+1. repair the exact-uniform detector/backbone handoff so a dynamic temporal
+   bucket receives the already aligned dataset mask even without a physical
+   selector;
+2. add focused forward tests for aligned, missing, mismatched and inactive-tail
+   masks and make launcher precheck exercise the real model-forward contract;
+3. repeat independent review and remote runtime precheck on a fresh exact commit
+   before deploying another fresh transaction root;
+4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
    receipts before running the held-out same-total-cost H-RIME oracle or learned
    planner training.
 

@@ -583,3 +583,25 @@
   controller `1200632` remained dependency-held. Monitoring was rebound to these
   exact identities. Phase 4 remains disabled, official-final remains sealed,
   and no paper-admissible empirical conclusion is available.
+
+## 2026-07-28 — Recovery-v4 Phase 1 failed closed on mask handoff
+
+- Phase 1 job `1200628` failed at `22:32:51 CST`, exit `1:0`, during the first
+  actual exact-uniform K384 forward. No Phase-1 terminal receipt was produced.
+- Exact exception:
+  `ValueError: dynamic RIME backbone requires an aligned [B,K] mask` from
+  `BackboneWrapper._prepare_dynamic_temporal_bucket`.
+- The traceback shows `ActionFormer.forward_test` called
+  `self.backbone(inputs)` without the dataset mask because the exact-uniform
+  baseline has no `duca_rime_physical` selector. Its backbone nevertheless has
+  the dynamic temporal bucket enabled and requires that aligned mask.
+- The existing uniform launcher precheck only parsed and asserted config,
+  protocol, budget and pretrain identity. It did not construct the model or run
+  the tensor-forward boundary, so it could not catch the mismatch.
+- Phase 2 job `1200631` became `DependencyNeverSatisfied`; Phase-3 controller
+  `1200632` remains dependency-held. The two dense salvage receipts remain
+  passing engineering recovery evidence. Phase 4 remains disabled and
+  official-final remains sealed.
+- This diagnosis used only execution state, traceback and tensor-contract
+  provenance. No intermediate or terminal performance value was reported or
+  interpreted.

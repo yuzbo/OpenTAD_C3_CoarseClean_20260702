@@ -17,16 +17,16 @@ Current evidence level:
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `passed` |
 | Dense reference training | `recovery_v4_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v4_experiment_running` |
-| Phase 2/3/4 | `recovery_v4_dependency_held / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v4_experiment_running` |
+| Phase 1 closure | `recovery_v4_failed_uniform_mask_handoff` |
+| Phase 2/3/4 | `dependency_never_satisfied_or_held / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v4_failed_closed / scheduler_terminalization_pending` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v4_implemented / tested / deployed` |
+| Stage-0 repair implementation | `recovery_v4_deployed / uniform_runtime_contract_gap_found` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v4_experiment_running` |
+| H-RIME Stage-0 recovery transaction | `recovery_v4_failed_closed / scheduler_terminalization_pending` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -271,6 +271,29 @@ Validated deployment snapshot at `2026-07-28 22:25 CST`:
 The commit bridge has therefore passed the actual formal-evaluator boundary
 that failed recovery v3. The transaction as a whole is not yet complete, and
 `No paper-admissible empirical conclusion is available yet`.
+
+Failure update at `2026-07-28 22:32:51 CST`:
+
+- Phase 1 job `1200628` failed with exit `1:0` during the first actual
+  exact-uniform K384 forward;
+- the exact exception is
+  `ValueError: dynamic RIME backbone requires an aligned [B,K] mask` at
+  `BackboneWrapper._prepare_dynamic_temporal_bucket`;
+- the trace proves that `ActionFormer.forward_test` took its non-physical-selector
+  branch and called `self.backbone(inputs)` without the dataset mask, while the
+  configured dynamic temporal bucket requires the aligned mask even for the
+  no-selector exact-uniform baseline;
+- the launcher precheck only loaded and asserted config/protocol fields; it did
+  not build the model or execute a real tensor forward, so it could not detect
+  this handoff gap;
+- no Phase-1 terminal receipt exists. Phase 2 job `1200631` is
+  `DependencyNeverSatisfied`, and Phase-3 controller `1200632` remains
+  dependency-held;
+- the already completed dense recovery receipts remain valid engineering
+  recovery evidence. Phase 4 remains disabled and official-final remains sealed.
+
+This is an execution-contract failure, not a performance result. No reported or
+intermediate metric was used in this diagnosis.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by
