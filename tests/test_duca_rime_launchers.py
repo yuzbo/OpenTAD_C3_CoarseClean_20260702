@@ -267,6 +267,9 @@ def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     assert "submission_manifest.json" in text
     assert "scontrol release" in text
     assert "phase4_receipt.json" in text
+    assert 'DUCA_RIME_DECODER_FAMILY}" == "weak_overlap"' in text
+    assert 'DUCA_RIME_O4_MAX_BRIER}" == "0.25"' in text
+    assert '"frozen_protocol_inputs"' in text
 
 
 def test_phase2_crossfit_producer_rejects_surrogate_and_builds_all_targets():

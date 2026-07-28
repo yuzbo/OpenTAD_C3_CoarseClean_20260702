@@ -32,5 +32,8 @@
   from the source-linked Google Drive file through its direct user-content
   endpoint. Its size is `200938640` bytes and SHA-256 is
   `21dbb9efe9f62d3089696c3c535edd27e8b8d9c14a06a21aac5738ec82bfab97`.
+- Pre-registered the exact K/cost ladder, K384/K192 panel semantics,
+  `weak_overlap` decoder, risk rule, O4 calibration gates, and 2 s / 8 s
+  duration strata in both the submitting commit and submission manifest.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.

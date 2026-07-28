@@ -85,6 +85,22 @@ full-stack latency, throughput, energy, and peak memory.
 - checkpoint audit and terminal identity;
 - official-final video set opened only after Phase-3 GO.
 
+## Pre-registered protocol inputs
+
+These values are frozen in the submitting Git commit rather than selected from
+Phase-2 or later outcomes:
+
+| Input | Frozen value | Interpretation |
+|---|---:|---|
+| candidate K / cost proxy | `192,256,384,512` | exact heavy RGB frames; no Kmax padding |
+| primary / floor target | `384 / 192` | K384 dynamic panel; K192 learned-position-only panel |
+| decoder family | `weak_overlap` | must pass the independent-oracle regret gate |
+| risk weight / threshold | `1.0 / 0.35` | finite-budget utility and feasibility rule |
+| O4 max Brier / ECE | `0.25 / 0.10` | pre-test calibration ceilings |
+| O4 min low-risk coverage | `0.25` | rejects a vacuous always-fallback risk head |
+| O4 max low-risk failure | `0.35` | observed failure may not exceed the accepted-risk ceiling |
+| short / medium duration | `2.0 s / 8.0 s` | inherited from the registered DUCA physical P3 strata |
+
 ## Deployment ledger
 
 Not yet submitted. Fill this section only with confirmed scheduler output:

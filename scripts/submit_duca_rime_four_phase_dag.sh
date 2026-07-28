@@ -57,6 +57,33 @@ for name in \
   export "${name}"
 done
 
+[[ "${DUCA_RIME_CANDIDATE_BUDGETS}" == "192,256,384,512" ]] \
+  || fail "candidate-budget protocol drift"
+[[ "${DUCA_RIME_CANDIDATE_COSTS}" == "192,256,384,512" ]] \
+  || fail "candidate-cost proxy protocol drift"
+[[ "${DUCA_RIME_TARGET_MEAN_COST}" == "384" ]] \
+  || fail "primary mean-cost protocol drift"
+[[ "${DUCA_RIME_PHASE4_SECOND_TARGET_MEAN_COST}" == "192" ]] \
+  || fail "floor-panel mean-cost protocol drift"
+[[ "${DUCA_RIME_DECODER_FAMILY}" == "weak_overlap" ]] \
+  || fail "decoder-family protocol drift"
+[[ "${DUCA_RIME_RISK_WEIGHT}" == "1.0" ]] \
+  || fail "risk-weight protocol drift"
+[[ "${DUCA_RIME_RISK_THRESHOLD}" == "0.35" ]] \
+  || fail "risk-threshold protocol drift"
+[[ "${DUCA_RIME_O4_MAX_BRIER}" == "0.25" ]] \
+  || fail "O4 Brier threshold drift"
+[[ "${DUCA_RIME_O4_MAX_ECE}" == "0.10" ]] \
+  || fail "O4 ECE threshold drift"
+[[ "${DUCA_RIME_O4_MIN_COVERAGE}" == "0.25" ]] \
+  || fail "O4 coverage threshold drift"
+[[ "${DUCA_RIME_O4_MAX_LOW_RISK_FAILURE}" == "0.35" ]] \
+  || fail "O4 low-risk failure threshold drift"
+[[ "${DUCA_RIME_SHORT_MAX_SECONDS}" == "2.0" ]] \
+  || fail "short-duration stratum drift"
+[[ "${DUCA_RIME_MEDIUM_MAX_SECONDS}" == "8.0" ]] \
+  || fail "medium-duration stratum drift"
+
 [[ -z "${SLURM_JOB_ID:-}" ]] \
   || fail "the four-phase DAG must be submitted from a login node"
 command -v sbatch >/dev/null || fail "sbatch is unavailable"
@@ -230,6 +257,25 @@ payload = {
             jobs["dense_actionformer"],
             jobs["dense_tridet"],
         ],
+    },
+    "frozen_protocol_inputs": {
+        "candidate_budgets": os.environ["DUCA_RIME_CANDIDATE_BUDGETS"],
+        "candidate_costs": os.environ["DUCA_RIME_CANDIDATE_COSTS"],
+        "target_mean_cost": os.environ["DUCA_RIME_TARGET_MEAN_COST"],
+        "phase4_second_target_mean_cost": os.environ[
+            "DUCA_RIME_PHASE4_SECOND_TARGET_MEAN_COST"
+        ],
+        "decoder_family": os.environ["DUCA_RIME_DECODER_FAMILY"],
+        "risk_weight": os.environ["DUCA_RIME_RISK_WEIGHT"],
+        "risk_threshold": os.environ["DUCA_RIME_RISK_THRESHOLD"],
+        "o4_max_brier": os.environ["DUCA_RIME_O4_MAX_BRIER"],
+        "o4_max_ece": os.environ["DUCA_RIME_O4_MAX_ECE"],
+        "o4_min_coverage": os.environ["DUCA_RIME_O4_MIN_COVERAGE"],
+        "o4_max_low_risk_failure": os.environ[
+            "DUCA_RIME_O4_MAX_LOW_RISK_FAILURE"
+        ],
+        "short_max_seconds": os.environ["DUCA_RIME_SHORT_MAX_SECONDS"],
+        "medium_max_seconds": os.environ["DUCA_RIME_MEDIUM_MAX_SECONDS"],
     },
     "expected_terminal_artifacts": {
         "phase1": str(target.parent / "phase1" / "pipeline_receipt.json"),
