@@ -222,3 +222,7 @@ These failures and naming mistakes must not be repeated.
     protocol freeze, verify every ignored runtime annotation/video symlink and
     its resolved immutable target; missing runtime assets must fail before any
     manifest or transaction root is created.
+74. Do not reshape a dynamic VideoMAE bucket with the configuration-time
+    full-budget temporal size. Derive the runtime temporal token count from the
+    actual token/spatial geometry, fail on non-integral geometry, and never
+    mutate shared adapter state per window.

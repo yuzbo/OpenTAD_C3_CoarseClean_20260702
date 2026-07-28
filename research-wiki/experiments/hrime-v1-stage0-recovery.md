@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v5_mask_handoff_implemented / targeted_remote_10_passed`
+- Stage-0 code: `recovery_v6_runtime_temporal_adapter_implemented / independently_reviewed_GO / remote_gate_pending`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v5_phase1_running / salvage_complete`
+- Slurm recovery transaction: `recovery_v5_failed_closed / salvage_complete`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -279,12 +279,13 @@ remains sealed.
 
 ## Next gate
 
-1. require Phase-1 `1201170` to complete its full registered contract and emit
-   its terminal receipt;
-2. require Phase-2 `1201173` and Phase-3 controller `1201174` to emit all
-   terminal development receipts;
-3. only after those receipts pass may the held-out same-total-cost H-RIME oracle
-   or learned planner training be considered. Phase 4 remains unauthorized.
+1. publish and independently audit the Recovery-v6 exact commit;
+2. pass its authoritative Slurm code gate, including the runtime temporal-axis
+   regression;
+3. generate fresh commit-bound manifests and deploy a new immutable transaction;
+4. require Phase-1, Phase-2 and Phase-3 terminal receipts before considering the
+   held-out same-total-cost H-RIME oracle or learned planner training. Phase 4
+   remains unauthorized.
 
 ## Recovery v5 implementation
 
@@ -365,10 +366,40 @@ Both recovery receipts bind recovery commit
 `1198115`/`1198116` as `FAILED`, set
 `original_job_reclassified_as_success=false`, exclude official-final, and
 restrict claims to
-`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201170`
-is still running; Phase 2 `1201173` and controller `1201174` remain
-dependency-held. The registered dependency map and manifest identities passed,
-`phase4_submission_enabled=false`, and `official_final_sealed=true`.
+`engineering_dense_reference_recovery_not_method_evidence`.
+
+## Recovery v5 Phase-1 runtime temporal-axis failure
+
+Phase 1 `1201170` failed with exit `1:0` in exact-uniform K192 short-window
+evaluation. The dynamic bucket passed 16-frame chunks through VideoMAE, yielding
+eight runtime temporal tokens after tubelet embedding. The temporal adapter
+nevertheless reshaped with its nominal `temporal_size=192`, producing:
+
+`RuntimeError: shape '[-1, 192, 10, 10, 96]' is invalid for input of size
+1075200`.
+
+No Phase-1 terminal receipt exists. Phase 2 `1201173` became
+`DependencyNeverSatisfied`; it and Phase-3 controller `1201174` were canceled
+by exact ID. The transaction root and valid dense salvage receipts remain
+immutable. Phase 4 was never opened and official-final remains sealed.
+
+## Recovery v6 implementation
+
+The frozen engineering design is
+`docs/superpowers/specs/2026-07-29-recovery-v6-runtime-temporal-adapter-design.md`.
+`Adapter.forward` now derives its local runtime temporal size from the token
+count and spatial grid, fails closed on non-integral geometry, and leaves the
+configured nominal temporal size unchanged. A focused runtime regression covers
+the eight-token dynamic-bucket case and the invalid-geometry case, and the
+Slurm code gate now explicitly compiles `vit_adapter.py`.
+
+This repair changes no model structure, objective, loss, selector, budget,
+threshold, hyperparameter, split, checkpoint, evaluator, or evidence contract.
+Static compilation, Bash syntax and `git diff --check` pass. An independent
+read-only audit returned `GO` for the exact bounded diff, verified that all
+active dynamic configs use `VisionTransformerAdapter`, and found no scientific
+protocol change. Authoritative remote Torch testing, exact clean-commit
+publication, and a fresh Slurm transaction remain pending.
 
 Correct empirical statement:
 

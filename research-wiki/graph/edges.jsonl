@@ -24,3 +24,5 @@
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"deployed_as","target":"deployments/duca-rime-recovery-1b44fe3a"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"repaired_by","target":"models/duca-rime-mask-handoff-v5"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"deployed_as","target":"deployments/duca-rime-recovery-74de620d-v5"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-74de620d-v5"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"repaired_by","target":"models/duca-rime-runtime-temporal-adapter-v6"}

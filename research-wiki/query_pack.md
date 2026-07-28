@@ -17,16 +17,16 @@ Current evidence level:
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v5_preflight_passed_1201057 / production_gate_passed_1201169` |
 | Dense reference training | `recovery_v5_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v4_failed / recovery_v5_running_1201170` |
-| Phase 2/3/4 | `recovery_v5_dependency_held / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v5_released / experiment_running` |
+| Phase 1 closure | `recovery_v5_failed_1201170 / recovery_v6_fix_static_checked` |
+| Phase 2/3/4 | `recovery_v5_children_cancelled / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v5_failed_closed / recovery_v6_predeployment` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v5_mask_handoff_implemented / targeted_remote_10_passed` |
+| Stage-0 repair implementation | `recovery_v6_runtime_temporal_adapter_implemented / independently_reviewed_GO / remote_gate_pending` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v5_phase1_running / salvage_complete` |
+| H-RIME Stage-0 recovery transaction | `recovery_v5_failed_closed / salvage_complete` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -369,10 +369,27 @@ receipts:
 
 Both receipts preserve source jobs `1198115`/`1198116` as `FAILED`, do not
 reclassify them, use no official-final data, and restrict their claim scope to
-`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201170`
-continues running; Phase 2 `1201173` and controller `1201174` remain
-dependency-held. The transaction manifest confirms
-`phase4_submission_enabled=false` and `official_final_sealed=true`. This is only
+`engineering_dense_reference_recovery_not_method_evidence`.
+
+Phase 1 `1201170` then failed with exit `1:0` during the exact-uniform K192
+short-window path. The dynamic bucket correctly supplied 16-frame chunks, which
+produce eight temporal tokens after tubelet embedding, but
+`vit_adapter.Adapter.forward` attempted to reshape each runtime chunk with its
+nominal configuration-time `temporal_size=192`. The exact exception was
+`RuntimeError: shape '[-1, 192, 10, 10, 96]' is invalid for input of size
+1075200`. No Phase-1 terminal receipt exists. Dependency-impossible jobs
+`1201173`/`1201174` were canceled by exact ID; Phase 4 was never opened.
+
+This unique engineering failure is registered as
+`vit_adapter_static_temporal_axis_on_dynamic_k_bucket`. Recovery-v6 implements
+the bounded repair: derive the runtime temporal token count from
+`N / (h * w)`, reject non-integral geometry, never mutate the configured
+temporal size, and exercise both the valid dynamic-bucket path and invalid
+geometry in the focused Slurm-gated test. Static compilation, Bash syntax, and
+`git diff --check` pass. An independent read-only audit returned `GO` for this
+bounded commit and confirmed that the route uses `VisionTransformerAdapter`,
+not the untouched ladder adapter; authoritative remote Torch testing remains
+pending. No scientific protocol or paper claim changed. This is only
 `ENGINEERING_STATUS`; no model-quality or paper-admissible empirical conclusion
 is available.
 

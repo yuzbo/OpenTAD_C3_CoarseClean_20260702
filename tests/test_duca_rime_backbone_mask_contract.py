@@ -8,6 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from opentad.models.backbones.vit_adapter import Adapter
 from opentad.models.detectors.actionformer import ActionFormer
 from opentad.models.detectors.tridet import TriDet
 
@@ -83,6 +84,35 @@ def test_rime_selector_rejects_a_non_dynamic_backbone(detector_type):
             torch.zeros((1, 1, 3, 32, 2, 2)),
             torch.ones((1, 32), dtype=torch.bool),
         )
+
+
+def test_vit_adapter_uses_the_runtime_temporal_axis_for_a_dynamic_bucket():
+    adapter = Adapter(
+        embed_dims=8,
+        mlp_ratio=0.5,
+        temporal_size=192,
+    )
+    inputs = torch.randn(2, 8 * 2 * 3, 8)
+
+    output = adapter(inputs, h=2, w=3)
+
+    assert output.shape == inputs.shape
+    assert bool(torch.isfinite(output).all().item())
+    assert adapter.temporal_size == 192
+
+
+def test_vit_adapter_rejects_non_integral_runtime_token_geometry():
+    adapter = Adapter(
+        embed_dims=8,
+        mlp_ratio=0.5,
+        temporal_size=192,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="integer runtime temporal axis",
+    ):
+        adapter(torch.randn(1, 13, 8), h=2, w=3)
 
 
 def _assert_method_routes_aligned_mask(source_path, class_name, method_name):

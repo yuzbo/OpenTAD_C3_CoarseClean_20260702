@@ -86,6 +86,7 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   opentad/models/selectors/duca_protected_e2e_frame_selector.py \
   opentad/models/selectors/duca_rime_frame_selector.py \
   opentad/models/backbones/backbone_wrapper.py \
+  opentad/models/backbones/vit_adapter.py \
   opentad/models/detectors/actionformer.py \
   opentad/models/detectors/tridet.py \
   opentad/models/dense_heads/tridet_head.py \

@@ -63,7 +63,13 @@ class Adapter(BaseModule):
 
         # temporal depth-wise convolution
         B, N, C = x.shape  # 48, 8*10*10, 384
-        attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
+        spatial_tokens = int(h) * int(w)
+        if spatial_tokens <= 0 or int(N) % spatial_tokens != 0:
+            raise ValueError(
+                "adapter tokens must contain an integer runtime temporal axis"
+            )
+        runtime_temporal_size = int(N) // spatial_tokens
+        attn = x.reshape(B, runtime_temporal_size, h, w, C)
         attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
         attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
         attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]

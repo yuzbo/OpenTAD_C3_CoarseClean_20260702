@@ -713,3 +713,30 @@
 - Phase 1 `1201170` remains running. Phase 2 `1201173` and Phase-3 controller
   `1201174` remain dependency-held. This update is `ENGINEERING_STATUS`; no
   performance value was inspected or interpreted.
+
+## 2026-07-29 — Recovery-v5 Phase 1 failed; Recovery-v6 engineering repair implemented
+
+- Phase 1 `1201170` failed with exit `1:0`; no Phase-1 terminal receipt exists.
+  The exact-uniform K192 short-window path reached the real VideoMAE adapter,
+  where an eight-token runtime temporal axis was reshaped using nominal
+  `temporal_size=192`. The exact terminal exception was
+  `RuntimeError: shape '[-1, 192, 10, 10, 96]' is invalid for input of size
+  1075200`.
+- Registered unique failure signature
+  `vit_adapter_static_temporal_axis_on_dynamic_k_bucket`. This is deterministic,
+  reproducible and protocol-preserving engineering correctness, so it is
+  eligible for one bounded fresh recovery.
+- Canceled only dependency-impossible jobs `1201173`/`1201174` by exact ID.
+  Recovery-v5 root, scheduler state, production gate and both valid dense
+  salvage receipts remain immutable. Phase 4 was never opened.
+- Recovery-v6 derives the adapter's runtime temporal count from
+  `N / (h * w)`, rejects non-integral token geometry, and does not mutate the
+  configured nominal temporal size. Added red-before/green-after runtime and
+  failure-contract tests and added `vit_adapter.py` to the Slurm code-gate
+  compilation surface.
+- Static compilation, Bash syntax and `git diff --check` pass. Remote Torch
+  verification, exact commit publication, commit-bound manifests and a new
+  transaction root remain pending. An independent read-only audit returned
+  `GO` for the bounded diff, confirmed that active dynamic configs use
+  `VisionTransformerAdapter`, and found no scientific-protocol change. No
+  performance value was inspected or interpreted.
