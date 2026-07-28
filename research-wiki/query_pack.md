@@ -21,12 +21,12 @@ Current evidence level:
 | Phase 2/3/4 | `blocked_by_failed_dependency` |
 | Latest four-stage transaction | `failed_closed_without_terminal_receipts` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `implemented / local_non_torch_tested / deployment_repair_in_progress` |
+| Stage-0 repair implementation | `implemented / local_and_remote_unit_tested / launcher_prechecked` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `failed_closed_engineering / repair_not_yet_redeployed` |
+| H-RIME Stage-0 recovery transaction | `experiment_running / code_gate_scheduler_pending` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -139,9 +139,30 @@ The first repaired Stage-0 recovery transaction is terminally failed closed:
 
 The repair binds and hash-checks the absolute VideoMAE initialization in the
 actual `tools/test.py` command and invokes salvage through explicit Bash while
-also restoring its executable bit. It is locally tested but has not yet been
-committed, audited or redeployed. This status is `ENGINEERING_STATUS`, not an
-empirical result.
+also restoring its executable bit. Exact commit
+`0ab242f31be8de7b7da806b645d3aa60d02d8d88` passed local tests, 82 remote
+Linux/Torch tests, three Phase-1 launcher prechecks, both dense-salvage
+prechecks, and an independent clean-commit audit.
+
+The second repaired Stage-0 recovery transaction is now active:
+
+- root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_0ab242f3_20260728_201613`;
+- physical-protocol SHA-256:
+  `2f11c12d62451c7ec41b54ac889058617f56f889e6f289cfe865a47eb03ff9f9`;
+- salvage-manifest SHA-256:
+  `faab636144d0855f2d8f26d6c7298459302b3c84508bdc2da24b1b864013772d`;
+- submission-manifest SHA-256:
+  `b996543dfe57bc3678799591f38f0e96e76da971eb8d5a4f7a4edbb15aa3d04d`;
+- jobs: code gate `1200135`, Phase 1 `1200136`, ActionFormer salvage
+  `1200137`, TriDet salvage `1200138`, Phase 2 `1200139`, and Phase-3
+  controller `1200140`;
+- initial scheduler state: code gate priority-pending and all children held by
+  exact `afterok` dependencies;
+- recovery remains engineering-only, original jobs remain `FAILED`, Phase 4 is
+  disabled, and official-final is sealed.
+
+This status is `ENGINEERING_STATUS`, not an empirical result.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by
@@ -200,9 +221,9 @@ preferred next-model design. These facts must not be conflated.
    saved-prediction and official-evaluator receipts. Fourteen targeted
    Torch/Linux tests on the exact clean Stage-1 commit passed, including strict
    source-checkpoint compatibility, short-window replay, and actual
-   merge/NMS/evaluator receipt construction. It does **not** yet have a connected learned video-budget
-   head, an executing shared-video scan, the grouped training path, or
-   calibration evidence.
+   merge/NMS/evaluator receipt construction. It does **not** yet have a connected
+   learned video-budget head, an executing shared-video scan, the grouped
+   training path, or calibration evidence.
 
 For working candidate `H-RIME`, let `q=16`, let `W_v` be the video's windows,
 and let each feasible `K_vw` be quantum-aligned and bounded by the valid window

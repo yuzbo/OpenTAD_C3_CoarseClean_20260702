@@ -7,8 +7,8 @@
 - Stage-0 code: `implemented`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
-- Torch-dependent verification: `deployment_repair_pending`
-- Slurm recovery transaction: `failed_closed_engineering / repair_not_yet_redeployed`
+- Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
+- Slurm recovery transaction: `experiment_running / code_gate_scheduler_pending`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -106,16 +106,30 @@ script's executable bit. A fresh independent review also required the salvage
 terminal evidence to bind that initialization directly; both the source evidence
 and recovery receipt now record the resolved path and SHA-256 after a second
 in-process hash check. Local Bash syntax and focused launcher/salvage tests pass.
-A clean commit, remote verification and fresh immutable deployment are still
-required. Phase 4 remains disabled and official-final remains sealed.
+Exact clean commit `0ab242f31be8de7b7da806b645d3aa60d02d8d88` passed an independent
+deployment audit, 82 targeted remote Linux/Torch tests, and explicit remote
+prechecks for Phase-1 dense, exact-uniform, paired cost, ActionFormer salvage
+and TriDet salvage.
+
+The commit-bound physical protocol has SHA-256
+`2f11c12d62451c7ec41b54ac889058617f56f889e6f289cfe865a47eb03ff9f9`.
+The new immutable salvage manifest has SHA-256
+`faab636144d0855f2d8f26d6c7298459302b3c84508bdc2da24b1b864013772d`.
+The fail-closed transaction was atomically released at
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_0ab242f3_20260728_201613`;
+its submission-manifest SHA-256 is
+`b996543dfe57bc3678799591f38f0e96e76da971eb8d5a4f7a4edbb15aa3d04d`.
+Jobs `1200135`--`1200140` are respectively the code gate, Phase 1,
+ActionFormer salvage, TriDet salvage, Phase 2 and Phase-3 controller. The first
+snapshot has the code gate priority-pending and every child protected by its
+registered `afterok` dependency. Phase 4 remains disabled and official-final
+remains sealed.
 
 ## Next gate
 
-1. commit, remotely precheck and independently audit the deployment repair;
-2. release a new immutable recovery transaction without modifying the failed
-   `902168a1` root;
-3. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
-4. run the held-out same-total-cost H-RIME oracle before learned planner
+1. require the exact code-gate receipt on commit `0ab242f3`;
+2. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
+3. run the held-out same-total-cost H-RIME oracle before learned planner
    training.
 
 Correct empirical statement:

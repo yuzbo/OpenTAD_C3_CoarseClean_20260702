@@ -422,3 +422,29 @@
 - This repair still requires a clean commit, remote prechecks, an independent
   audit, new commit-bound manifests and a fresh immutable Slurm transaction.
   No paper-admissible empirical conclusion is available.
+
+## 2026-07-28 — Corrected Stage-0 recovery transaction released
+
+- Committed and pushed the deployment repair as exact source commit
+  `0ab242f31be8de7b7da806b645d3aa60d02d8d88`.
+- Local compilation/Bash checks and 82 focused tests passed. A clean remote
+  checkout then passed the same 82 Linux/Torch tests. An independent
+  clean-commit review returned code-level `GO`.
+- Remote `PRECHECK_ONLY` passed for Phase-1 dense, exact-uniform and paired-cost
+  launchers. Both salvage prechecks reloaded the original raw checkpoints,
+  verified 499 ActionFormer and 462 TriDet EMA/state keys, wrote nothing, kept
+  source jobs `FAILED`, and confirmed official-final exclusion.
+- Froze the commit-bound physical protocol with SHA-256
+  `2f11c12d62451c7ec41b54ac889058617f56f889e6f289cfe865a47eb03ff9f9`
+  and the fresh two-backend salvage manifest with SHA-256
+  `faab636144d0855f2d8f26d6c7298459302b3c84508bdc2da24b1b864013772d`.
+- Atomically released jobs `1200135`--`1200140` at
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_0ab242f3_20260728_201613`.
+  Submission-manifest SHA-256 is
+  `b996543dfe57bc3678799591f38f0e96e76da971eb8d5a4f7a4edbb15aa3d04d`.
+  The first snapshot has the code gate priority-pending and every child under
+  exact fail-closed dependencies.
+- Dense salvage remains
+  `engineering_dense_reference_recovery_not_method_evidence`; original jobs and
+  roots remain failed/immutable. Phase 4 is disabled, official-final is sealed,
+  and no paper-admissible empirical conclusion is available.
