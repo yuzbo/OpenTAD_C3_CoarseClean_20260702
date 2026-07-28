@@ -38,7 +38,11 @@ _PROFILE_CONTRACTS = {
         "phase1-no-probe-uniform",
         "duca_rime_phase1_no_probe_uniform_cost_v1",
         False,
-        ("frame_selector.score_net.",),
+        (
+            "frame_selector._loss_weight_schedule_step",
+            "frame_selector.adapter.transition_scorer.",
+            "frame_selector.raw_actionness_source.",
+        ),
     ),
     "probe_uniform_cost": (
         "phase1-probe-uniform",
@@ -532,6 +536,7 @@ def _validate_profile(
         or contract.get("contract") != contract_name
         or contract.get("coarse_probe_executed") is not probe_executed
         or contract.get("selection_policy") != "exact_uniform"
+        or contract.get("paired_checkpoint_identity_required") is not True
         or contract.get("accuracy_claim_allowed") is not False
         or not isinstance(stages, Mapping)
         or not isinstance(selected, Mapping)

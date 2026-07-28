@@ -48,6 +48,12 @@ done
   || fail "no-probe checkpoint trained commit must be exact"
 [[ "${DUCA_RIME_PHASE1_PROBE_TRAINED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
   || fail "probe checkpoint trained commit must be exact"
+[[ "${DUCA_RIME_PHASE1_NO_PROBE_CHECKPOINT_SHA256}" == \
+  "${DUCA_RIME_PHASE1_PROBE_CHECKPOINT_SHA256}" ]] \
+  || fail "paired cost controls must use the same checkpoint bytes"
+[[ "${DUCA_RIME_PHASE1_NO_PROBE_TRAINED_COMMIT}" == \
+  "${DUCA_RIME_PHASE1_PROBE_TRAINED_COMMIT}" ]] \
+  || fail "paired cost controls must use the same trained commit"
 [[ "${DUCA_RIME_PHASE1_PROFILE_ORDER:-no_probe_first}" =~ ^(no_probe_first|probe_first)$ ]] \
   || fail "profile order must be no_probe_first or probe_first"
 [[ -d "${DUCA_RIME_REPO_ROOT}/.git" ]] \
@@ -110,12 +116,14 @@ assert (
     == "duca_rime_phase1_no_probe_uniform_cost_v1"
 )
 assert no_probe.duca_rime_phase1_cost_contract.coarse_probe_executed is False
+assert no_probe.duca_rime_phase1_cost_contract.paired_checkpoint_identity_required
 assert (
     probe.duca_rime_phase1_cost_contract.contract
     == "duca_rime_phase1_probe_uniform_cost_v1"
 )
 assert probe.duca_rime_phase1_cost_contract.coarse_probe_executed is True
 assert probe.duca_rime_phase1_cost_contract.probe_output_used_for_selection is False
+assert probe.duca_rime_phase1_cost_contract.paired_checkpoint_identity_required
 PY
   echo "[DUCA_RIME_PHASE1_COST] PRECHECK PASS"
   exit 0
@@ -211,6 +219,10 @@ for key in (
     "loader_workers",
     "amp",
     "uses_ema",
+    "checkpoint_sha256",
+    "trained_commit",
+    "checkpoint_epoch",
+    "checkpoint_state_key",
 ):
     if left.get(key) != right.get(key):
         raise SystemExit(f"paired Phase-1 cost profiles differ on {key}")
@@ -231,6 +243,8 @@ printf '%s\n' \
   "slurm_job_id=${SLURM_JOB_ID}" \
   "profile_session_id=${DUCA_RIME_PHASE1_PROFILE_SESSION_ID}" \
   "profile_pair_id=${DUCA_RIME_PHASE1_PROFILE_PAIR_ID}" \
+  "shared_checkpoint_sha256=${DUCA_RIME_PHASE1_PROBE_CHECKPOINT_SHA256}" \
+  "shared_trained_commit=${DUCA_RIME_PHASE1_PROBE_TRAINED_COMMIT}" \
   "no_probe_summary_sha256=$(sha256sum "${DUCA_RIME_PHASE1_COST_ROOT}/no_probe_uniform.summary.json" | awk '{print $1}')" \
   "probe_summary_sha256=$(sha256sum "${DUCA_RIME_PHASE1_COST_ROOT}/probe_uniform.summary.json" | awk '{print $1}')" \
   > "${DUCA_RIME_PHASE1_COST_ROOT}/cost_pair.receipt"

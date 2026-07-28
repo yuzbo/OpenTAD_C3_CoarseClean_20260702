@@ -29,6 +29,14 @@ def test_phase1_cost_configs_freeze_probe_execution_and_uniform_selection(
 
     assert no_probe.model.frame_selector.arm == "exact_uniform"
     assert no_probe.duca_rime_phase1_cost_contract.coarse_probe_executed is False
+    assert (
+        tuple(no_probe.duca_rime_phase1_cost_contract.checkpoint_drop_prefixes)
+        == (
+            "frame_selector._loss_weight_schedule_step",
+            "frame_selector.adapter.transition_scorer.",
+            "frame_selector.raw_actionness_source.",
+        )
+    )
     assert probe.model.frame_selector.arm == "probe_uniform"
     assert probe.duca_rime_phase1_cost_contract.coarse_probe_executed is True
     assert (
@@ -37,5 +45,9 @@ def test_phase1_cost_configs_freeze_probe_execution_and_uniform_selection(
     )
     for cfg in (no_probe, probe):
         assert cfg.duca_rime_phase1_cost_contract.selection_policy == "exact_uniform"
+        assert (
+            cfg.duca_rime_phase1_cost_contract.paired_checkpoint_identity_required
+            is True
+        )
         assert cfg.duca_rime_phase1_cost_contract.accuracy_claim_allowed is False
         assert cfg.solver.test.num_workers == 0

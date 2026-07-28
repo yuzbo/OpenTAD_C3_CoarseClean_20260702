@@ -665,6 +665,10 @@ def seal_phase1(
         "profile_repeat_index",
         "sample_count",
         "hardware_fingerprint",
+        "checkpoint_sha256",
+        "trained_commit",
+        "checkpoint_epoch",
+        "checkpoint_state_key",
     ):
         if left.get(key) != right.get(key):
             raise ValueError(f"Phase-1 cost-control pair differs on {key}")

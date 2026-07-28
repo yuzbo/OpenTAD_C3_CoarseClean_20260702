@@ -1705,7 +1705,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if phase1_cost_contract:
             registered = {
                 "duca_rime_phase1_no_probe_uniform_cost_v1": (
-                    "frame_selector.score_net.",
+                    "frame_selector._loss_weight_schedule_step",
+                    "frame_selector.adapter.transition_scorer.",
+                    "frame_selector.raw_actionness_source.",
                 ),
                 "duca_rime_phase1_probe_uniform_cost_v1": (
                     "frame_selector._loss_weight_schedule_step",
@@ -1725,6 +1727,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 or requested_prefixes != registered[contract_name]
                 or phase1_cost_contract.get("accuracy_claim_allowed") is not False
                 or phase1_cost_contract.get("selection_policy") != "exact_uniform"
+                or phase1_cost_contract.get("paired_checkpoint_identity_required")
+                is not True
             ):
                 raise ValueError("invalid DUCA-RIME Phase-1 cost-control contract")
             drop_prefixes = requested_prefixes

@@ -159,7 +159,7 @@ export DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON="${DUCA_RIME_PHASE1_PROTOCOL_MANIFE
 export DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256="${DUCA_RIME_PHASE1_PROTOCOL_MANIFEST_SHA256}"
 export DUCA_PROTECTED_GATE_ARM=protected_e2e
 export DUCA_PROTECTED_GATE_OUTPUT_JSON="${wrapper_gate}"
-scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
+bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
 
 export DUCA_RIME_PHASE1_COST_ROOT="${DUCA_RIME_PHASE1_PIPELINE_ROOT}/cost"
 export DUCA_RIME_ADATAD_PRETRAIN="${DUCA_RIME_PRETRAIN_PATH}"

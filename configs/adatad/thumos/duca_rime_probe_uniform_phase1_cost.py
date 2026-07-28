@@ -55,6 +55,7 @@ duca_rime_phase1_cost_contract = dict(
         "frame_selector._loss_weight_schedule_step",
         "frame_selector.adapter.transition_scorer.",
     ),
+    paired_checkpoint_identity_required=True,
     accuracy_claim_allowed=False,
     uses_official_final=False,
 )

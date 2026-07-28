@@ -38,7 +38,12 @@ duca_rime_phase1_cost_contract = dict(
     contract="duca_rime_phase1_no_probe_uniform_cost_v1",
     coarse_probe_executed=False,
     selection_policy="exact_uniform",
-    checkpoint_drop_prefixes=("frame_selector.score_net.",),
+    checkpoint_drop_prefixes=(
+        "frame_selector._loss_weight_schedule_step",
+        "frame_selector.adapter.transition_scorer.",
+        "frame_selector.raw_actionness_source.",
+    ),
+    paired_checkpoint_identity_required=True,
     accuracy_claim_allowed=False,
     uses_official_final=False,
 )

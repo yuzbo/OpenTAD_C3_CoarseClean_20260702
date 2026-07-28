@@ -18,5 +18,19 @@
 - Independent MAX audit found and corrected a deployment-blocking dense
   evidence SHA variable-name mismatch between the Phase-3 controller and
   Phase-3/4 submitters.
+- Deployment preflight also corrected the one legacy Phase-1 gate invocation
+  to run through `bash`, because that retained script is intentionally tracked
+  without an executable bit.
+- Rejected fabrication of a trained commit for the historical exact-uniform
+  checkpoint whose surviving log records `git_head=unknown`. The Phase-1
+  no-probe/probe cost pair now uses one byte-identical, SHA-bound checkpoint
+  trained at `cb89586a92b8b0a8349ecc9551bc50aa97982360`; the launcher and seal
+  require identical checkpoint SHA, trained commit, epoch, and EMA state.
+  The no-probe arm drops only the registered probe/transition state that its
+  configuration does not build, so the common heavy path is weight-identical.
+- Retrieved the official released AdaTAD VideoMAE-S/ActionFormer checkpoint
+  from the source-linked Google Drive file through its direct user-content
+  endpoint. Its size is `200938640` bytes and SHA-256 is
+  `21dbb9efe9f62d3089696c3c535edd27e8b8d9c14a06a21aac5738ec82bfab97`.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.

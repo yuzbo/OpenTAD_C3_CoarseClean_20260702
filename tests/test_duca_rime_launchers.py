@@ -24,6 +24,16 @@ def test_phase1_launcher_requires_all_clean_controls_and_hashes():
     assert "duca_rime_stage_contract.py phase1" in text
 
 
+def test_phase1_cost_controls_require_one_shared_checkpoint_identity():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase1_cost_controls.sh"
+    ).read_text(encoding="utf-8")
+    assert "paired cost controls must use the same checkpoint bytes" in text
+    assert "paired cost controls must use the same trained commit" in text
+    assert "shared_checkpoint_sha256=" in text
+    assert "shared_trained_commit=" in text
+
+
 def test_phase2_launcher_is_slurm_hash_bound_and_seals_o1_o4():
     text = (ROOT / "scripts" / "run_duca_rime_phase2_gates.sh").read_text(
         encoding="utf-8"
@@ -227,6 +237,7 @@ def test_phase1_evidence_pipeline_uses_real_controls_before_sealing():
     assert "run_duca_protected_physical_full_model_gate_gpu1.sh" in text
     assert "run_duca_rime_phase1_cost_controls.sh" in text
     assert "run_duca_rime_phase1_seal.sh" in text
+    assert "bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh" in text
     assert "phase1_receipt_sha256" in text
 
 
