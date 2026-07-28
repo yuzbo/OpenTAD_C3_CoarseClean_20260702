@@ -1025,3 +1025,17 @@ append_only: true
   replacement requires a new namespace, aggregate storage-capacity preflight,
   and final-EMA-only or explicitly bounded result-blind checkpoint retention.
   P2/P3, official test, empirical support, and all paper claims remain closed.
+
+- 2026-07-28: performed the user-authorized checkpoint cleanup only after
+  validating each GeoRoute P1 cell's highest usable checkpoint with CPU
+  `torch.load`. The retained files are dense `epoch_13`,
+  fixed-lattice-geometry `epoch_13`, fixed-lattice `epoch_14`, free
+  `epoch_15`, hybrid `epoch_14`, random `epoch_15`, and ROI `epoch_15`; every
+  retained mapping contains matching `epoch`, `state_dict`, `state_dict_ema`,
+  `optimizer`, and `scheduler`. Deleted 107 lower, corrupt, or zero-byte
+  `epoch_*.pth` files totaling 62,674,238,335 bytes (58.370 GiB). The failed
+  namespace fell from 63 GB to 4.2 GB. Pretrained weights, sealed P0 evidence,
+  receipts, configs, and logs were untouched. The retained checkpoints remain
+  partial diagnostic artifacts; they do not authorize resume, P1 selection,
+  P2/P3, official test, empirical support, or a paper claim.
+  A post-cleanup `df` check reported 62 GB available on `/data` (98% used).

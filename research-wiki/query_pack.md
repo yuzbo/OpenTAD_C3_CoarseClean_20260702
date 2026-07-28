@@ -36,6 +36,10 @@ max_chars: 8000
   `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`.
   A replacement requires a new namespace, result-blind storage-capacity
   preflight, and final-EMA-only or explicitly bounded checkpoint retention.
+  The failed namespace was pruned conservatively on 2026-07-28: seven
+  highest-loadable per-cell checkpoints were retained and 58.370 GiB of
+  intermediate/corrupt epoch files were removed. This does not make the
+  namespace resumable or create P1 evidence.
   P2/P3 remain absent and result-gated.
 - FlashVID was audited as a VLLM reference, not a GeoRoute result. Its 10%
   retention result is 57.9/58.4 = 99.1% relative score after a full vision

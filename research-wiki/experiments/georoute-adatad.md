@@ -142,6 +142,19 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   must use a new commit/namespace, preflight aggregate checkpoint headroom, and
   retain only final EMA or an explicitly bounded result-blind checkpoint set.
   P2/P3, official test, empirical support, and paper claims remain closed.
+- A user-authorized conservative cleanup then validated checkpoints with CPU
+  `torch.load`, requiring matching `epoch` plus `state_dict`,
+  `state_dict_ema`, `optimizer`, and `scheduler`. It retained exactly one
+  highest-loadable file per cell: dense `epoch_13`, fixed-lattice-geometry
+  `epoch_13`, fixed-lattice `epoch_14`, free `epoch_15`, hybrid `epoch_14`,
+  random `epoch_15`, and ROI `epoch_15`. It deleted 107 other
+  `epoch_*.pth` files totaling 62,674,238,335 bytes (58.370 GiB), reducing the
+  namespace from 63 GB to 4.2 GB without touching pretrained weights, P0,
+  receipts, configs, or logs. These retained partial checkpoints are
+  diagnostic recovery artifacts only; the failed namespace remains
+  non-resumable and contains no P1 decision.
+  A post-cleanup filesystem check reported 62 GB available on `/data`
+  (98% used).
 
 ## Frozen decision logic
 
