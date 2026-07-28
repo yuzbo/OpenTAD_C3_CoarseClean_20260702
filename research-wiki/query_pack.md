@@ -17,9 +17,9 @@ Current evidence level:
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v5_failed_1201170 / recovery_v6_running_1201417` |
-| Phase 2/3/4 | `recovery_v6_dependency_held / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v6_released / experiment_running` |
+| Phase 1 closure | `recovery_v6_scientific_gate_failed_1201417 / no_terminal_receipt` |
+| Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v6_failed_closed / terminal` |
 | H-RIME scientific route | `user_approved / designed` |
 | Stage-0 repair implementation | `recovery_v6_exact_commit_5a599e90 / authoritative_preflight_passed` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
@@ -457,8 +457,29 @@ evidence:
 Both receipts bind Recovery-v6 commit, preserve source jobs
 `1198115`/`1198116` as `FAILED`, do not reclassify them, use no official-final
 data, and retain claim scope
-`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201417`
-continues running; Phase 2/3 remain dependency-held.
+`engineering_dense_reference_recovery_not_method_evidence`.
+
+Phase 1 `1201417` subsequently failed with exit `1:0` at the protected
+full-model admission gate. The terminal contract was
+`ProtectedPhysicalGateFailure` with status
+`p1_p2_full_model_gate_failed` and exact error
+`protected physical full-model gate failed: exact-uniform physical and
+selected-axis detector losses disagree`. Register the unique signature as
+`protected_physical_exact_uniform_selected_axis_loss_equivalence_gate_failed`.
+The immutable log is
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`
+with SHA-256
+`0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29`.
+No Phase-1 pipeline receipt exists.
+
+This is a frozen scientific/admission-contract failure, not a launcher, path,
+environment, or tensor-runtime exception. The bounded monitor therefore failed
+closed and made no code or protocol change and no automatic retry. Exact
+dependency-impossible children `1201420`/`1201421` were canceled. The production
+gate and two engineering-only dense-salvage receipts remain valid and immutable;
+Phase 4 was never opened and official-final remains sealed. This terminal state
+is `ENGINEERING_STATUS` only and is not a model-quality or paper-admissible
+performance conclusion.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

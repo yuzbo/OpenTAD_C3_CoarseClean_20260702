@@ -4,7 +4,7 @@
 
 `designed / implemented / static_checked / independently_reviewed_GO /
 authoritative_preflight_passed / production_gate_passed /
-production_transaction_running`
+production_transaction_terminal_scientific_gate_failed / no_auto_retry`
 
 ## Failure signature
 
@@ -54,3 +54,18 @@ protocol, salvage manifest, submission manifest, released receipt, and fresh
 transaction root are required. Recovery-v5 remains immutable failed
 engineering evidence. Phase 4 remains disabled and official-final remains
 sealed.
+
+## Terminal deployment outcome
+
+Recovery-v6 Phase 1 job `1201417` reached the protected full-model admission
+gate and failed with `ProtectedPhysicalGateFailure`, status
+`p1_p2_full_model_gate_failed`, because exact-uniform physical and selected-axis
+detector losses did not satisfy the frozen equivalence contract. No Phase-1
+pipeline receipt exists. The unique signature is
+`protected_physical_exact_uniform_selected_axis_loss_equivalence_gate_failed`.
+
+This is not eligible for an automatic engineering repair or retry: relaxing,
+bypassing, or changing the gate would alter the scientific protocol. Phase 2
+and Phase-3 jobs `1201420`/`1201421` were canceled by exact ID. Phase 4 was never
+opened, official-final remains sealed, and the dense-salvage receipts remain
+engineering-only evidence.

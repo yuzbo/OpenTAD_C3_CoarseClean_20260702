@@ -807,3 +807,25 @@
   official-final, and retain engineering-only claim scope.
 - Phase 1 `1201417` remains running; Phase 2 `1201420` and controller `1201421`
   remain dependency-held. No performance value was inspected or interpreted.
+
+## 2026-07-29 — Recovery-v6 failed closed at protected full-model gate
+
+- Phase 1 `1201417` failed with exit `1:0`; no Phase-1 pipeline receipt exists.
+  The terminal schema was `ProtectedPhysicalGateFailure`, status
+  `p1_p2_full_model_gate_failed`, with exact error `protected physical
+  full-model gate failed: exact-uniform physical and selected-axis detector
+  losses disagree`.
+- Registered failure signature
+  `protected_physical_exact_uniform_selected_axis_loss_equivalence_gate_failed`.
+  The immutable log path is
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`;
+  SHA-256 is
+  `0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29`.
+- This is a frozen scientific/admission gate failure, not a deterministic
+  protocol-preserving engineering defect. The bounded monitor made no code or
+  protocol change and did not automatically retry.
+- Canceled only exact dependency-impossible jobs `1201420`/`1201421`. Production
+  gate `1201416` and both dense-salvage terminal receipts remain valid and
+  immutable. Phase 4 was never opened and official-final remains sealed.
+- This record is `ENGINEERING_STATUS` only. No model-quality or paper-admissible
+  performance conclusion was drawn.

@@ -226,3 +226,8 @@ These failures and naming mistakes must not be repeated.
     full-budget temporal size. Derive the runtime temporal token count from the
     actual token/spatial geometry, fail on non-integral geometry, and never
     mutate shared adapter state per window.
+75. Do not relax, bypass, reinterpret, or automatically retry the protected
+    full-model loss-equivalence gate after it rejects exact-uniform physical
+    versus selected-axis detector-loss equivalence. This is a scientific
+    admission failure requiring explicit research review; partial artifacts
+    cannot be promoted to method evidence.

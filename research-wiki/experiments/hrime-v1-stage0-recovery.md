@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v6_phase1_running / salvage_complete`
+- Slurm recovery transaction: `recovery_v6_failed_closed_scientific_gate / salvage_complete`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -470,8 +470,31 @@ Both recovery receipts bind exact Recovery-v6 commit, retain source jobs
 `d9d454cd49a3e7a87694fc948601d00ff4043cb0` as failed evidence, set
 `original_job_reclassified_as_success=false`, exclude official-final, and
 restrict claims to
-`engineering_dense_reference_recovery_not_method_evidence`. Phase 1 `1201417`
-remains running; Phase 2/3 remain dependency-held.
+`engineering_dense_reference_recovery_not_method_evidence`.
+
+## Recovery v6 terminal fail-closed state
+
+Phase 1 `1201417` failed with exit `1:0` at the frozen protected full-model
+admission gate. The terminal schema reported `ProtectedPhysicalGateFailure`,
+status `p1_p2_full_model_gate_failed`, and exact error
+`protected physical full-model gate failed: exact-uniform physical and
+selected-axis detector losses disagree`. The registered failure signature is
+`protected_physical_exact_uniform_selected_axis_loss_equivalence_gate_failed`.
+
+The immutable Phase-1 log is
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`;
+its SHA-256 is
+`0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29`.
+No Phase-1 pipeline receipt was emitted. Exact dependency-impossible jobs
+`1201420` and `1201421` were canceled after the failure.
+
+This signature is a scientific/admission-contract failure rather than a
+protocol-preserving engineering defect. The bounded monitor therefore made no
+automatic code change, did not relax the equivalence gate, and did not redeploy.
+The production gate and both dense-salvage terminal receipts remain valid
+immutable engineering evidence. Phase 4 was never opened and official-final
+remains sealed. No model-quality or paper-admissible empirical conclusion is
+available.
 
 Correct empirical statement:
 
