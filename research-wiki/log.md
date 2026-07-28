@@ -1114,3 +1114,15 @@ append_only: true
   `1199872`. All seven leaves began as `PENDING(Priority)` and the selector as
   `PENDING(Dependency)`. Status remains `experiment_running`; no P1R metric,
   cost result, empirical support, or paper claim exists.
+
+- 2026-07-28 17:25 CST: P1R dense `1199865` and fixed lattice `1199866`
+  changed from priority-pending to running and reached Epoch 2; fixed-plus-
+  geometry, random, free, ROI, and hybrid remained `PENDING(Priority)`, while
+  selector `1199872` remained `PENDING(Dependency)`. Both active stderr files
+  were empty, all logged losses were finite, and no Traceback, OOM, checkpoint
+  writer failure, or non-finite loss appeared. Dense had two recovered AMP
+  overflow retries; fixed had three retry attempts, all followed by successful
+  updates and below the hard-failure threshold. Live memory readouts were
+  15,226 MB and 5,331 MB, but are heartbeat diagnostics, not frozen cost
+  evidence. No final checkpoint, stage result, selector receipt, or P1R metric
+  exists.

@@ -3,7 +3,7 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: experiment_running
-status: p1r_submitted_priority_pending
+status: p1r_partial_running_no_metric
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---

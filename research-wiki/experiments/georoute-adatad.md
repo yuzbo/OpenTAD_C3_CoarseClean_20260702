@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: experiment_running
-status: p1r_submitted_priority_pending
+status: p1r_partial_running_no_metric
 updated: 2026-07-28
 ---
 
@@ -241,6 +241,16 @@ benefit without extra total cost?
   exact `afterok(all)` selector `1199872`. Initial state is
   `PENDING(Priority)` for all seven leaves and `PENDING(Dependency)` for the
   selector. P1R performance and cost remain absent.
+- At the 2026-07-28 17:25 CST heartbeat, dense `1199865` and fixed lattice
+  `1199866` had advanced to `RUNNING` and were both in Epoch 2; the other five
+  leaves remained `PENDING(Priority)` and selector `1199872` remained
+  `PENDING(Dependency)`. Both stderr files were empty, losses were finite, and
+  no Traceback/OOM/checkpoint failure appeared. Dense recorded two recovered
+  AMP overflow retries and fixed recorded three retry attempts, all below the
+  hard-failure threshold and followed by successful updates. Their live memory
+  readouts (15,226 MB dense and 5,331 MB fixed) are heartbeat diagnostics only,
+  not the frozen P1R cost result. No final checkpoint, stage result, selection
+  receipt, or P1R metric exists yet.
 
 ## Frozen decision logic
 
