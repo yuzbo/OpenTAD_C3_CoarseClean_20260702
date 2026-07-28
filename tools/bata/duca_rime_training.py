@@ -738,6 +738,19 @@ def validate_terminal_checkpoint_binding(
     checkpoint_sha = _sha256_file(checkpoint_resolved)
     source_arm = str(receipt.get("arm"))
     receipt_schema = receipt.get("schema_version")
+    evaluation_arm_value = str(evaluation_arm)
+    hrime_stage1_evaluation = evaluation_arm_value in {
+        "H-RIME-Stage1-Learned-Positions",
+        "H-RIME-Stage1-Uniform-Positions",
+    }
+    hrime_stage1_source_pair = (
+        hrime_stage1_evaluation
+        and source_arm == "RIME-full"
+        and os.environ.get("DUCA_RIME_ALLOW_ORACLE_REPLAY", "")
+        .strip()
+        .lower()
+        in {"1", "true"}
+    )
     if (
         receipt_schema
         not in {
@@ -756,15 +769,20 @@ def validate_terminal_checkpoint_binding(
         or int(receipt.get("checkpoint_epoch", -1)) != 59
         or receipt.get("checkpoint_state_key") != "state_dict_ema"
         or (
-            str(evaluation_arm) != source_arm
+            hrime_stage1_evaluation
+            and receipt_schema != "duca_rime_phase3_training_receipt_v1"
+        )
+        or (
+            evaluation_arm_value != source_arm
             and not (
                 str(evaluation_arm) == "U-same-K"
                 and source_arm == "RIME-full"
             )
             and not (
-                str(evaluation_arm) == "U-same-K-TriDet"
+                evaluation_arm_value == "U-same-K-TriDet"
                 and source_arm == "RIME-full-TriDet"
             )
+            and not hrime_stage1_source_pair
         )
     ):
         raise ValueError("RIME terminal checkpoint/training receipt binding mismatch")
@@ -936,7 +954,7 @@ def validate_terminal_checkpoint_binding(
         "training_receipt_sha256": _sha256_file(receipt_path),
         "checkpoint_compaction_receipt_sha256": compaction_sha,
         "source_arm": source_arm,
-        "evaluation_arm": str(evaluation_arm),
+        "evaluation_arm": evaluation_arm_value,
         "checkpoint_path": checkpoint_resolved,
         "checkpoint_sha256": checkpoint_sha,
         "successful_detector_updates": 6000,
@@ -961,6 +979,8 @@ def validate_terminal_checkpoint_binding(
             else None
         ),
         "detector_backend": audit.get("detector_backend"),
+        "oracle_only_evaluation": bool(hrime_stage1_evaluation),
+        "deployment_candidate": False if hrime_stage1_evaluation else None,
     }
 
 

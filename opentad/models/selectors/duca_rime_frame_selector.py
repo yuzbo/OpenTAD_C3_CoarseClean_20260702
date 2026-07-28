@@ -51,8 +51,47 @@ _RIME_ARMS = {
     "uniform_same_k",
     "uniform_mixed_k",
     "hrime_joint",
+    "hrime_stage1_learned_positions",
+    "hrime_stage1_uniform_positions",
 }
 _DYNAMIC_ARMS = {"dynamic_no_risk", "rime_full"}
+_HRIME_STAGE1_ARMS = {
+    "hrime_stage1_learned_positions",
+    "hrime_stage1_uniform_positions",
+}
+_HRIME_STAGE1_ROLE_CONTRACTS = {
+    "hrime_stage1_uniform_same_total": {
+        "uses_gt": False,
+        "position_policy": "exact_uniform",
+    },
+    "hrime_stage1_independent_exact_total": {
+        "uses_gt": False,
+        "position_policy": "frozen_rime_selector",
+    },
+    "hrime_stage1_joint_oracle": {
+        "uses_gt": True,
+        "position_policy": "frozen_rime_selector",
+    },
+    "hrime_stage1_joint_same_k_uniform_positions": {
+        "uses_gt": True,
+        "position_policy": "exact_uniform",
+    },
+    "hrime_stage1_shuffled_null": {
+        "uses_gt": True,
+        "position_policy": "frozen_rime_selector",
+    },
+}
+_HRIME_STAGE1_ROLES_BY_ARM = {
+    "hrime_stage1_learned_positions": {
+        "hrime_stage1_independent_exact_total",
+        "hrime_stage1_joint_oracle",
+        "hrime_stage1_shuffled_null",
+    },
+    "hrime_stage1_uniform_positions": {
+        "hrime_stage1_uniform_same_total",
+        "hrime_stage1_joint_same_k_uniform_positions",
+    },
+}
 _PROTOCOL_SCHEMA = "duca_rime_budget_protocol_v1"
 _INFERENCE_LEDGER_SCHEMA = "duca_rime_inference_ledger_v1"
 
@@ -201,6 +240,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         rank_alignment_loss_weight: float = 0.25,
         mixed_k_schedule_counts: Sequence[int] | None = None,
         mixed_k_schedule_seed: int = 3407,
+        allow_oracle_replay: bool = False,
         **kwargs: Any,
     ) -> None:
         arm = str(rime_arm)
@@ -239,9 +279,21 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             raise ValueError("dynamic RIME arms require a hashed train-only budget protocol")
 
         uniform_mixed_k = arm == "uniform_mixed_k"
+        if arm in _HRIME_STAGE1_ARMS and not bool(allow_oracle_replay):
+            raise ValueError("H-RIME Stage-1 arms require explicit oracle replay permission")
+        if arm not in _HRIME_STAGE1_ARMS and bool(allow_oracle_replay):
+            raise ValueError("oracle replay permission is reserved for H-RIME Stage-1 arms")
+        if arm in _HRIME_STAGE1_ARMS and not budget_protocol_path:
+            raise ValueError(
+                "H-RIME Stage-1 evaluation must bind the source RIME-full protocol"
+            )
         super().__init__(
             in_channels=in_channels,
-            arm="exact_uniform" if uniform_mixed_k else "protected_e2e",
+            arm=(
+                "exact_uniform"
+                if uniform_mixed_k
+                else "protected_e2e"
+            ),
             budget=budgets[-1],
             dense_window_size=dense_window_size,
             **kwargs,
@@ -268,6 +320,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             if protocol is None
             else str(protocol["allocation_mode"])
         )
+        self.allow_oracle_replay = bool(allow_oracle_replay)
         self.mixed_k_schedule_seed = int(mixed_k_schedule_seed)
         schedule_counts = (
             None
@@ -344,9 +397,9 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 risk_weight=float(risk_weight),
                 risk_threshold=float(risk_threshold),
                 uncertainty_z=float(uncertainty_z),
-                use_risk=arm == "rime_full",
+                use_risk=arm in {"rime_full", *_HRIME_STAGE1_ARMS},
             )
-            if arm in _DYNAMIC_ARMS
+            if arm in _DYNAMIC_ARMS or arm in _HRIME_STAGE1_ARMS
             else None
         )
 
@@ -455,28 +508,78 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 )
             return requested
         replay_roles = {
-            "uniform_same_k": "paired_same_realized_cost_control",
-            "dynamic_shuffle": "histogram_shuffled_budget_control",
-            "adaptok_tad": "adaptok_total_loss_curve_test_batch_ilp",
-            "hrime_joint": "hrime_joint_video_exact_mckp",
+            "uniform_same_k": {"paired_same_realized_cost_control"},
+            "dynamic_shuffle": {"histogram_shuffled_budget_control"},
+            "adaptok_tad": {"adaptok_total_loss_curve_test_batch_ilp"},
+            "hrime_joint": {"hrime_joint_video_exact_mckp"},
+            **_HRIME_STAGE1_ROLES_BY_ARM,
         }
         if self.rime_arm in replay_roles:
             values = []
+            effective_values = []
+            decision_provenance = []
             for meta in metas:
+                if not isinstance(meta, Mapping):
+                    raise ValueError(f"{self.rime_arm} requires per-window metadata")
                 value = int(meta.get("rime_requested_k_replay", -1))
+                effective_value = meta.get("rime_effective_k_replay")
                 provenance = meta.get("rime_requested_k_replay_provenance")
                 if value not in self.candidate_budgets or not isinstance(provenance, Mapping):
                     raise ValueError(
                         f"{self.rime_arm} requires a candidate K and replay provenance"
                     )
-                if provenance.get("role") != replay_roles[self.rime_arm]:
+                role = str(provenance.get("role", ""))
+                if role not in replay_roles[self.rime_arm]:
                     raise ValueError(f"{self.rime_arm} replay has the wrong role")
+                if self.rime_arm in _HRIME_STAGE1_ARMS:
+                    contract = _HRIME_STAGE1_ROLE_CONTRACTS[role]
+                    if (
+                        not self.allow_oracle_replay
+                        or provenance.get("oracle_only") is not True
+                        or provenance.get("deployment_candidate") is not False
+                        or provenance.get("uses_official_final") is not False
+                        or provenance.get("uses_gt") is not contract["uses_gt"]
+                        or provenance.get("position_policy")
+                        != contract["position_policy"]
+                        or effective_value is None
+                    ):
+                        raise ValueError(
+                            f"{self.rime_arm} replay lacks the frozen oracle-only contract"
+                        )
+                    effective_value = int(effective_value)
+                    if (
+                        effective_value <= 0
+                        or effective_value % self.execution_quantum
+                        or effective_value > value
+                    ):
+                        raise ValueError(
+                            f"{self.rime_arm} replay has an invalid effective K"
+                        )
+                else:
+                    if provenance.get("oracle_only") is True or bool(
+                        provenance.get("uses_gt", False)
+                    ):
+                        raise ValueError(
+                            f"{self.rime_arm} cannot consume an oracle replay"
+                        )
+                    effective_value = (
+                        None
+                        if effective_value is None
+                        else int(effective_value)
+                    )
                 if any(
                     bool(provenance.get(key, False))
-                    for key in ("uses_gt", "uses_teacher", "uses_prediction_cache")
+                    for key in ("uses_teacher", "uses_prediction_cache")
+                ) or (
+                    self.rime_arm in _HRIME_STAGE1_ARMS
+                    and bool(provenance.get("uses_test_batch_composition", False))
                 ):
                     raise ValueError(f"{self.rime_arm} replay provenance is contaminated")
                 values.append(value)
+                effective_values.append(effective_value)
+                decision_provenance.append(dict(provenance))
+            self._last_replay_effective_k = tuple(effective_values)
+            self._last_decision_provenance = tuple(decision_provenance)
             return torch.tensor(values, device=policy_scores.device, dtype=torch.long)
         raise RuntimeError("fixed RIME decision requested for a learned-controller arm")
 
@@ -488,12 +591,17 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         *,
         training: bool,
     ) -> dict[str, Any]:
+        self._last_replay_effective_k = tuple(None for _ in metas)
+        self._last_decision_provenance = tuple(None for _ in metas)
         physical_seconds, source_frames = self._physical_axes(
             metas,
             valid_mask,
             inputs.device,
         )
-        if self.rime_arm == "uniform_mixed_k":
+        if self.rime_arm in {
+            "uniform_mixed_k",
+            "hrime_stage1_uniform_positions",
+        }:
             zero_scores = torch.zeros(
                 valid_mask.shape,
                 device=inputs.device,
@@ -521,7 +629,11 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 "actionness_logits": zero_scores,
                 "p_action": zero_scores + 0.5,
                 "coarse_hidden_features": hidden,
-                "hidden_kind": "constant_probe_free_uniform_mixed_k",
+                "hidden_kind": (
+                    "constant_probe_free_uniform_mixed_k"
+                    if self.rime_arm == "uniform_mixed_k"
+                    else "constant_probe_free_hrime_stage1_uniform_positions"
+                ),
                 "provenance": {
                     "source": "constant_exact_uniform",
                     "uses_labels": False,
@@ -580,7 +692,9 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 raise RuntimeError("RIME auxiliary and policy coverage paths disagree")
 
         decision: RimeBudgetDecision | None = None
-        if self.budget_controller is not None:
+        if self.rime_arm in _DYNAMIC_ARMS:
+            if self.budget_controller is None:
+                raise RuntimeError("dynamic RIME arm lacks its budget controller")
             decision = self.budget_controller(hidden, paths["policy_scores"], valid_mask)
             decision = self._apply_protocol_allocation_mode(decision)
             requested_k = decision.requested_k
@@ -602,7 +716,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             decoder_family=self.decoder_family,
             weak_overlap_fraction=self.weak_overlap_fraction,
             training=training,
-            force_uniform=self.rime_arm in {"uniform_same_k", "uniform_mixed_k"},
+            force_uniform=self.rime_arm
+            in {
+                "uniform_same_k",
+                "uniform_mixed_k",
+                "hrime_stage1_uniform_positions",
+            },
             risk_fallback=risk_fallback,
             require_homogeneous_execution=True,
             execution_quantum=self.execution_quantum,
@@ -629,6 +748,15 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             else None
             )
         )
+        for batch_index, expected_effective in enumerate(
+            self._last_replay_effective_k
+        ):
+            if expected_effective is not None and int(
+                decoded.effective_k[batch_index].item()
+            ) != int(expected_effective):
+                raise ValueError(
+                    "RIME runtime effective K differs from the replay assignment"
+                )
         decoded.ledger.validate(require_no_padding=True)
         hard_selected = _hard_gather(
             inputs,
@@ -685,6 +813,11 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     "duca_rime_allocation_mode": self.allocation_mode,
                 }
             )
+            decision_provenance = self._last_decision_provenance[batch_index]
+            if isinstance(decision_provenance, Mapping):
+                meta["duca_decision_provenance"] = copy.deepcopy(
+                    dict(decision_provenance)
+                )
             if self.rime_arm == "uniform_mixed_k":
                 meta.update(
                     {
@@ -730,9 +863,20 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                         raise ValueError(
                             "RIME inference ledger requires video and non-negative window start"
                         )
-                    _append_jsonl_atomic(
-                        ledger_path,
-                        {
+                    decision_provenance = self._last_decision_provenance[
+                        batch_index
+                    ]
+                    decision_provenance = (
+                        dict(decision_provenance)
+                        if isinstance(decision_provenance, Mapping)
+                        else None
+                    )
+                    audited_decision_provenance = (
+                        decision_provenance
+                        if self.rime_arm in _HRIME_STAGE1_ARMS
+                        else None
+                    )
+                    ledger_row = {
                             "schema_version": _INFERENCE_LEDGER_SCHEMA,
                             "video_id": video_id,
                             "window_start_frame": window_start,
@@ -772,16 +916,62 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                                 if self.rime_arm == "uniform_mixed_k"
                                 else None
                             ),
+                            "decision_provenance": decision_provenance,
                             "provenance": {
                                 "task": "offline_temporal_action_detection",
-                                "uses_gt": False,
-                                "uses_teacher": False,
-                                "uses_prediction_cache": False,
-                                "uses_test_batch_composition": False,
+                                "uses_gt": bool(
+                                    audited_decision_provenance.get("uses_gt", False)
+                                    if audited_decision_provenance
+                                    else False
+                                ),
+                                "uses_teacher": bool(
+                                    audited_decision_provenance.get(
+                                        "uses_teacher",
+                                        False,
+                                    )
+                                    if audited_decision_provenance
+                                    else False
+                                ),
+                                "uses_prediction_cache": bool(
+                                    audited_decision_provenance.get(
+                                        "uses_prediction_cache",
+                                        False,
+                                    )
+                                    if audited_decision_provenance
+                                    else False
+                                ),
+                                "uses_test_batch_composition": bool(
+                                    audited_decision_provenance.get(
+                                        "uses_test_batch_composition",
+                                        False,
+                                    )
+                                    if audited_decision_provenance
+                                    else False
+                                ),
                                 "raw_predictions_stored": False,
                             },
-                        },
-                    )
+                        }
+                    if self.rime_arm in _HRIME_STAGE1_ARMS:
+                        requested_value = int(ledger["requested_k"][batch_index])
+                        effective_value = int(ledger["effective_k"][batch_index])
+                        ledger_row.update(
+                            {
+                                "raw_budget": requested_value,
+                                "reachable_budget": effective_value,
+                                "realized_budget": effective_value,
+                                "projection_unused_budget": (
+                                    requested_value - effective_value
+                                ),
+                                "solver_unused_budget": 0,
+                                "budget_scope": (
+                                    "video_exact_total_window_assignment"
+                                ),
+                                "claim_scope": (
+                                    "stage1_development_oracle_execution_not_deployable"
+                                ),
+                            }
+                        )
+                    _append_jsonl_atomic(ledger_path, ledger_row)
 
         state: dict[str, Any] = {
             "arm": self.rime_arm,
@@ -819,6 +1009,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "train_inference_hard_decoder": "same_rime_physical_exact_k",
             "coarse_provenance": source["provenance"],
             "coarse_compute_profile": source.get("compute_profile"),
+            "decision_provenance": tuple(
+                copy.deepcopy(value)
+                if isinstance(value, Mapping)
+                else None
+                for value in self._last_decision_provenance
+            ),
         }
         if training:
             state.update(
@@ -873,6 +1069,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "contract": RIME_CONTRACT,
             "mixed_k_schedule_sha256": self.mixed_k_schedule_sha256,
             "allocation_mode": self.allocation_mode,
+            "decision_provenance": [
+                copy.deepcopy(value)
+                if isinstance(value, Mapping)
+                else None
+                for value in self._last_decision_provenance
+            ],
         }
         self._last_selected_positions = decoded.hard_positions.detach().clone()
         self._last_physical_metas = copy.deepcopy(output_metas)
@@ -891,15 +1093,23 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         positions: torch.Tensor,
         *,
         requested_k: int,
+        effective_k: int | None = None,
+        measurement_scope: str = "train_only_counterfactual_measurement",
     ) -> dict[str, Any]:
         """Materialize one externally decoded legal path for train-only measurement.
 
         This entry point never chooses a position.  It only reuses the production
-        physical-axis gather and metadata contract so that train-only
-        counterfactual measurements execute the same heavy detector path as RIME.
+        physical-axis gather and metadata contract so that an explicitly scoped
+        counterfactual measurement executes the same heavy detector path as RIME.
         """
 
         self._validate_inputs(inputs, masks, metas)
+        scope = str(measurement_scope)
+        if scope not in {
+            "train_only_counterfactual_measurement",
+            "certification_development_oracle_measurement",
+        }:
+            raise ValueError("unsupported RIME counterfactual measurement scope")
         requested = int(requested_k)
         if (
             requested not in self.candidate_budgets
@@ -909,6 +1119,16 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             raise ValueError(
                 "RIME counterfactual K must be a registered execution bucket"
             )
+        effective_value = requested if effective_k is None else int(effective_k)
+        if (
+            effective_value <= 0
+            or effective_value % self.execution_quantum
+            or effective_value > requested
+        ):
+            raise ValueError(
+                "RIME counterfactual effective K must be quantum-aligned and "
+                "no larger than its registered request"
+            )
         valid_mask = masks.to(device=inputs.device, dtype=torch.bool)
         positions = torch.as_tensor(
             positions,
@@ -916,10 +1136,10 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             dtype=torch.long,
         )
         batch, temporal_len = valid_mask.shape
-        if positions.shape != (batch, requested):
-            raise ValueError("RIME counterfactual positions must be [B,K]")
+        if positions.shape != (batch, effective_value):
+            raise ValueError("RIME counterfactual positions must be [B,effective_K]")
         valid_counts = valid_mask.long().sum(dim=1)
-        if bool(torch.any(valid_counts < requested).item()):
+        if bool(torch.any(valid_counts < effective_value).item()):
             raise ValueError(
                 "RIME counterfactual path cannot pad a short dense window"
             )
@@ -929,7 +1149,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 bool(torch.any(active < 0).item())
                 or bool(torch.any(active >= valid_counts[batch_index]).item())
                 or (
-                    requested > 1
+                    effective_value > 1
                     and not bool(torch.all(active[1:] > active[:-1]).item())
                 )
             ):
@@ -945,7 +1165,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         caps = physical_exact_uniform_gap_cap(
             physical_seconds,
             valid_mask,
-            k=requested,
+            k=effective_value,
         )
         occupancy = torch.zeros(
             (batch, temporal_len),
@@ -953,7 +1173,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             dtype=torch.float32,
         )
         slot_assignment = torch.zeros(
-            (batch, requested, temporal_len),
+            (batch, effective_value, temporal_len),
             device=inputs.device,
             dtype=torch.float32,
         )
@@ -966,13 +1186,13 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 1.0,
             )
         slot_mask = torch.ones(
-            (batch, requested),
+            (batch, effective_value),
             device=inputs.device,
             dtype=torch.bool,
         )
         effective = torch.full(
             (batch,),
-            requested,
+            effective_value,
             device=inputs.device,
             dtype=torch.long,
         )
@@ -999,10 +1219,10 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         )
         ledger = {
             "requested_k": [requested] * batch,
-            "effective_k": [requested] * batch,
-            "unique_k": [requested] * batch,
-            "backbone_input_k": [requested] * batch,
-            "padded_k": [requested] * batch,
+            "effective_k": [effective_value] * batch,
+            "unique_k": [effective_value] * batch,
+            "backbone_input_k": [effective_value] * batch,
+            "padded_k": [effective_value] * batch,
             "risk_fallback": [False] * batch,
             "dynamic_compute_realized": True,
             "unit": "heavy_rgb_frames",
@@ -1012,12 +1232,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 {
                     "duca_contract": RIME_CONTRACT,
                     "physical_grid_contract": RIME_CONTRACT,
-                    "duca_arm": "train_only_counterfactual_measurement",
+                    "duca_arm": scope,
                     "duca_requested_k": requested,
-                    "duca_effective_k": requested,
-                    "duca_unique_k": requested,
-                    "duca_backbone_input_k": requested,
-                    "duca_padded_k": requested,
+                    "duca_effective_k": effective_value,
+                    "duca_unique_k": effective_value,
+                    "duca_backbone_input_k": effective_value,
+                    "duca_padded_k": effective_value,
                     "duca_risk_fallback": False,
                     "duca_dynamic_compute_realized": True,
                     "duca_cost_unit": "heavy_rgb_frames",
@@ -1036,6 +1256,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "cost_ledger": ledger,
             "hard_forward_only": True,
             "uses_gt_for_selection": False,
+            "measurement_scope": scope,
         }
 
     def forward_train(
@@ -1052,8 +1273,10 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         rime_hard_frame_utility=None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        if self.rime_arm == "uniform_same_k":
-            raise RuntimeError("uniform_same_k is a paired evaluation control, not a train arm")
+        if self.rime_arm == "uniform_same_k" or self.rime_arm in _HRIME_STAGE1_ARMS:
+            raise RuntimeError(
+                f"{self.rime_arm} is an evaluation-only replay control, not a train arm"
+            )
         self._validate_inputs(inputs, masks, metas)
         self._reject_train_decision_payload(metas, kwargs)
         valid = masks.to(device=inputs.device, dtype=torch.bool)

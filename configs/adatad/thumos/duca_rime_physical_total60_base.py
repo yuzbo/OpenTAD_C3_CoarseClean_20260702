@@ -20,6 +20,13 @@ def _int_tuple(name, default):
     return values
 
 
+def _bool_env(name, default="0"):
+    raw = os.environ.get(name, default).strip().lower()
+    if raw not in {"0", "1", "false", "true"}:
+        raise RuntimeError(f"{name} must be one of 0, 1, false, true")
+    return raw in {"1", "true"}
+
+
 candidate_budgets = _int_tuple(
     "DUCA_RIME_CANDIDATE_BUDGETS",
     "192,256,384,512",
@@ -44,6 +51,7 @@ budget_protocol_sha256 = os.environ.get(
 ).strip()
 replay_jsonl = os.environ.get("DUCA_RIME_REPLAY_JSONL", "").strip()
 replay_sha256 = os.environ.get("DUCA_RIME_REPLAY_SHA256", "").strip()
+allow_oracle_replay = _bool_env("DUCA_RIME_ALLOW_ORACLE_REPLAY")
 
 duca_training_protocol = protocol_for_name("official60")
 duca_meta_keys = [
@@ -63,6 +71,7 @@ duca_meta_keys = [
     "duca_stateless_epoch",
     "duca_stateless_sample_index",
     "rime_requested_k_replay",
+    "rime_effective_k_replay",
     "rime_requested_k_replay_provenance",
     "rime_budget_replay_jsonl",
     "rime_budget_replay_sha256",
@@ -82,6 +91,8 @@ replay_transform = (
             replay_jsonl=replay_jsonl,
             replay_sha256=replay_sha256,
             candidate_budgets=candidate_budgets,
+            allow_oracle_only=allow_oracle_replay,
+            execution_quantum=16,
         )
     ]
     if replay_jsonl
@@ -204,6 +215,7 @@ model = dict(
         budget_protocol_path=budget_protocol_path or None,
         budget_protocol_sha256=budget_protocol_sha256 or None,
         require_frozen_protocol=True,
+        allow_oracle_replay=allow_oracle_replay,
         coarse_hidden_dim=96,
         selector_hidden_dim=64,
         coverage_floor_weight=0.10,

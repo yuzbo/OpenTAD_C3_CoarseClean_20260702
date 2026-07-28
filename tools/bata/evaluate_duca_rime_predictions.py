@@ -295,6 +295,9 @@ def evaluate_predictions(
     extras = set(predictions) - set(expected_videos)
     if extras:
         raise ValueError(f"RIME predictions contain out-of-scope videos: {sorted(extras)[:4]}")
+    missing = set(expected_videos) - set(predictions)
+    if missing:
+        raise ValueError(f"RIME predictions missing expected videos: {sorted(missing)[:4]}")
     annotation_path = Path(cfg["ground_truth_filename"]).resolve()
     annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
     database = annotation.get("database")

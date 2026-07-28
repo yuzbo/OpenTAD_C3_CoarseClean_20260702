@@ -479,3 +479,30 @@ def test_rime_official_final_configs_explicitly_clear_development_block_list():
             ROOT / "configs" / "adatad" / "thumos" / name
         ).read_text(encoding="utf-8")
         assert "blocked_videos=None" in text
+
+
+def test_hrime_stage1_launchers_are_oracle_only_hash_bound_and_exact_cost():
+    prepare = (ROOT / "scripts" / "run_hrime_stage1_prepare.sh").read_text(
+        encoding="utf-8"
+    )
+    evaluate = (
+        ROOT / "scripts" / "run_hrime_stage1_oracle_eval.sh"
+    ).read_text(encoding="utf-8")
+    finalize = (ROOT / "scripts" / "run_hrime_stage1_finalize.sh").read_text(
+        encoding="utf-8"
+    )
+    for text in (prepare, evaluate, finalize):
+        assert text.startswith("#!/usr/bin/env bash\nset -Eeuo pipefail\n")
+        assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in text
+    assert "HRIME_STAGE1_PREREGISTRATION_SHA256" in prepare
+    assert "produce_hrime_stage1_window_options" in prepare
+    assert "authorizes_stage2_training=false" in prepare
+    assert "HRIME_STAGE1_DECISION_ROLE" in evaluate
+    assert "hrime_stage1_oracle_execution_v1" in evaluate
+    assert "--require-explicit-budget-truth" in evaluate
+    assert "--allow-oracle-only" in evaluate
+    assert "--expected-decision-role" in evaluate
+    assert "evaluate_duca_rime_predictions" in evaluate
+    assert "tools.bata.hrime_stage1_oracle" in finalize
+    assert "\n  finalize\n" in finalize
+    assert "authorizes_stage2_training" in finalize

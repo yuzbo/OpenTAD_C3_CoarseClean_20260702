@@ -1,6 +1,8 @@
 import hashlib
 import json
 
+import pytest
+
 from tools.bata.create_duca_rime_splits import create_rime_splits
 from tools.bata.duca_rime_training import (
     PHASE2_BASELINE_CHECKPOINT_COMPATIBILITY_MODE,
@@ -102,6 +104,30 @@ def test_prediction_metrics_are_split_bound_and_perfect_for_perfect_segments(tmp
     assert set(metrics["short_map"].values()) == {1.0}
     assert set(metrics["pair_support"].values()) == {1.0}
     assert set(metrics["boundary_error"].values()) == {0.0}
+
+    missing_payload = json.loads(predictions.read_text(encoding="utf-8"))
+    missing_payload["results"].pop(development["videos"][0])
+    missing_predictions = _json(
+        tmp_path / "missing_predictions.json",
+        missing_payload,
+    )
+    missing_terminal_payload = json.loads(terminal.read_text(encoding="utf-8"))
+    missing_terminal_payload["prediction_path"] = str(missing_predictions.resolve())
+    missing_terminal_payload["prediction_sha256"] = _sha(missing_predictions)
+    missing_terminal = _json(
+        tmp_path / "missing_terminal.json",
+        missing_terminal_payload,
+    )
+    with pytest.raises(ValueError, match="missing expected videos"):
+        evaluate_predictions(
+            terminal_evaluation=missing_terminal,
+            split_manifest=split["manifest_path"],
+            split_manifest_sha256=split["manifest_sha256"],
+            phase=3,
+            short_max_seconds=2.0,
+            medium_max_seconds=5.0,
+            output=tmp_path / "missing_metrics.json",
+        )
 
     baseline_payload = json.loads(terminal.read_text(encoding="utf-8"))
     baseline_payload.update(

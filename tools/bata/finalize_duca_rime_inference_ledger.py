@@ -11,6 +11,13 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA = "duca_rime_inference_ledger_v1"
 SUMMARY_SCHEMA = "duca_rime_inference_ledger_summary_v1"
+HRIME_STAGE1_ROLE_CONTRACTS = {
+    "hrime_stage1_uniform_same_total": False,
+    "hrime_stage1_independent_exact_total": False,
+    "hrime_stage1_joint_oracle": True,
+    "hrime_stage1_joint_same_k_uniform_positions": True,
+    "hrime_stage1_shuffled_null": True,
+}
 
 
 def exact_uniform_positions(temporal_len: int, k: int) -> list[int]:
@@ -47,6 +54,8 @@ def finalize_ledger(
     expected_arm: str,
     expected_protocol_sha256: str | None = None,
     require_explicit_budget_truth: bool = False,
+    allow_oracle_only: bool = False,
+    expected_decision_role: str | None = None,
 ) -> dict[str, Any]:
     if not shards:
         raise ValueError("at least one RIME inference-ledger shard is required")
@@ -61,6 +70,13 @@ def finalize_ledger(
         raise ValueError(
             "explicit budget truth requires an exact expected protocol SHA-256"
         )
+    if allow_oracle_only:
+        if expected_decision_role not in HRIME_STAGE1_ROLE_CONTRACTS:
+            raise ValueError(
+                "oracle-only ledger sealing requires one registered Stage-1 role"
+            )
+    elif expected_decision_role is not None:
+        raise ValueError("expected_decision_role requires oracle-only ledger mode")
     source_artifacts = []
     rows = {}
     for shard in shards:
@@ -77,14 +93,40 @@ def finalize_ledger(
             row = json.loads(line)
             prefix = f"{path}:{line_number}"
             provenance = row.get("provenance")
+            decision_provenance = row.get("decision_provenance")
+            base_contract = (
+                row.get("schema_version") == SCHEMA
+                and row.get("arm") == str(expected_arm)
+                and isinstance(provenance, Mapping)
+            )
+            if not base_contract:
+                raise ValueError(
+                    f"{prefix}: contaminated or mismatched inference ledger"
+                )
+            if allow_oracle_only:
+                expected_uses_gt = HRIME_STAGE1_ROLE_CONTRACTS[
+                    str(expected_decision_role)
+                ]
+                provenance_contract = (
+                    isinstance(decision_provenance, Mapping)
+                    and decision_provenance.get("role")
+                    == str(expected_decision_role)
+                    and decision_provenance.get("oracle_only") is True
+                    and decision_provenance.get("deployment_candidate") is False
+                    and decision_provenance.get("uses_official_final") is False
+                    and decision_provenance.get("uses_gt") is expected_uses_gt
+                    and provenance.get("uses_gt") is expected_uses_gt
+                )
+            else:
+                provenance_contract = (
+                    not isinstance(decision_provenance, Mapping)
+                    or decision_provenance.get("oracle_only") is not True
+                ) and not bool(provenance.get("uses_gt", False))
             if (
-                row.get("schema_version") != SCHEMA
-                or row.get("arm") != str(expected_arm)
-                or not isinstance(provenance, Mapping)
+                not provenance_contract
                 or any(
                     bool(provenance.get(key, False))
                     for key in (
-                        "uses_gt",
                         "uses_teacher",
                         "uses_prediction_cache",
                         "uses_test_batch_composition",
@@ -134,11 +176,25 @@ def finalize_ledger(
                     or projection_unused != raw_budget - reachable_budget
                     or solver_unused != reachable_budget - realized_budget
                     or solver_unused != 0
-                    or row["budget_scope"] != "window_fixed_request"
-                    or row["claim_scope"]
-                    != "stage0_engineering_window_execution"
                 ):
                     raise ValueError(f"{prefix}: explicit budget truth is inconsistent")
+                expected_budget_scope = (
+                    "video_exact_total_window_assignment"
+                    if allow_oracle_only
+                    else "window_fixed_request"
+                )
+                expected_claim_scope = (
+                    "stage1_development_oracle_execution_not_deployable"
+                    if allow_oracle_only
+                    else "stage0_engineering_window_execution"
+                )
+                if (
+                    row["budget_scope"] != expected_budget_scope
+                    or row["claim_scope"] != expected_claim_scope
+                ):
+                    raise ValueError(
+                        f"{prefix}: explicit budget scope/claim is inconsistent"
+                    )
             if (
                 requested < effective
                 or not effective == unique == backbone == padded > 0
@@ -206,7 +262,20 @@ def finalize_ledger(
         "no_padding_ledger": True,
         "source_shards": source_artifacts,
         "official_final_labels_used_for_decision": False,
-        "claim_scope": "inference_allocation_and_cost_ledger_only",
+        "development_gt_used_for_oracle_assignment": bool(
+            allow_oracle_only
+            and HRIME_STAGE1_ROLE_CONTRACTS[str(expected_decision_role)]
+        ),
+        "decision_role": (
+            str(expected_decision_role) if allow_oracle_only else None
+        ),
+        "oracle_only": bool(allow_oracle_only),
+        "deployment_candidate": False if allow_oracle_only else None,
+        "claim_scope": (
+            "complete_development_oracle_execution_ledger_not_deployable"
+            if allow_oracle_only
+            else "inference_allocation_and_cost_ledger_only"
+        ),
     }
     if has_explicit_budget_truth:
         raw_total = sum(int(row["raw_budget"]) for row in rows.values())
@@ -229,7 +298,11 @@ def finalize_ledger(
         summary.update(
             {
                 "explicit_budget_truth": True,
-                "budget_scope": "window_fixed_request",
+                "budget_scope": (
+                    "video_exact_total_window_assignment"
+                    if allow_oracle_only
+                    else "window_fixed_request"
+                ),
                 "raw_budget_total": raw_total,
                 "reachable_budget_total": reachable_total,
                 "realized_budget_total": realized_total,
@@ -250,6 +323,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--expected-arm", required=True)
     parser.add_argument("--expected-protocol-sha256")
     parser.add_argument("--require-explicit-budget-truth", action="store_true")
+    parser.add_argument("--allow-oracle-only", action="store_true")
+    parser.add_argument("--expected-decision-role")
     parser.add_argument("--summary-json")
     args = parser.parse_args(argv)
     result = finalize_ledger(
@@ -258,6 +333,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_arm=args.expected_arm,
         expected_protocol_sha256=args.expected_protocol_sha256,
         require_explicit_budget_truth=args.require_explicit_budget_truth,
+        allow_oracle_only=args.allow_oracle_only,
+        expected_decision_role=args.expected_decision_role,
     )
     if args.summary_json:
         path = Path(args.summary_json).expanduser().resolve()

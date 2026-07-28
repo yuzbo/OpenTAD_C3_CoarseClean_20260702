@@ -5,7 +5,10 @@ import json
 
 import pytest
 import torch
+from mmengine.config import ConfigDict
 
+import opentad.cores.test_engine as test_engine
+from opentad.datasets.base import SlidingWindowDataset
 from opentad.models.duca.rime import (
     RimeBudgetController,
     RimeCostLedger,
@@ -409,3 +412,264 @@ def test_uniform_mixed_k_selector_uses_exact_per_video_stateless_schedule():
             [{}],
             training=True,
         )
+
+
+def _stage1_protocol(tmp_path):
+    protocol = tmp_path / "stage1_source_protocol.json"
+    protocol.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "duca_rime_budget_protocol_v1",
+        "fit_split": "train_only",
+        "uses_validation_or_test_labels": False,
+        "candidate_budgets": [16, 32],
+        "candidate_costs": [16.0, 32.0],
+        "target_mean_cost": 24.0,
+        "frozen_price": 0.1,
+        "allocation_mode": "frozen_price_dynamic_budget",
+        "forced_budget": None,
+        "risk_used_for_allocation": True,
+        "dynamic_budget_claim_allowed": True,
+        "risk_weight": 1.0,
+        "risk_threshold": 0.35,
+        "decoder_family": "independent",
+        "weak_overlap_fraction": 0.5,
+    }
+    protocol.write_text(json.dumps(payload), encoding="utf-8")
+    return protocol, hashlib.sha256(protocol.read_bytes()).hexdigest()
+
+
+def _stage1_selector(tmp_path, arm):
+    protocol, protocol_sha = _stage1_protocol(tmp_path)
+    selector = DucaRimeFrameSelector(
+        in_channels=3,
+        rime_arm=arm,
+        candidate_budgets=(16, 32),
+        fixed_budget=32,
+        dense_window_size=32,
+        execution_quantum=16,
+        budget_protocol_path=str(protocol),
+        budget_protocol_sha256=protocol_sha,
+        require_frozen_protocol=True,
+        allow_oracle_replay=arm.startswith("hrime_stage1_"),
+        detector_bridge_gradient_scale=1.0,
+        actionness_source_cfg=dict(
+            probe_model="official-action-seg",
+            official_action_seg_backend="official_asformer",
+            frozen=False,
+            trainable=True,
+        ),
+    )
+    return selector, protocol_sha
+
+
+@pytest.mark.parametrize(
+    "stage1_arm",
+    (
+        "hrime_stage1_learned_positions",
+        "hrime_stage1_uniform_positions",
+    ),
+)
+def test_stage1_replay_selectors_are_strict_checkpoint_architecture_equivalent(
+    tmp_path,
+    stage1_arm,
+):
+    source, _ = _stage1_selector(tmp_path / "source", "rime_full")
+    replay, _ = _stage1_selector(tmp_path / stage1_arm, stage1_arm)
+    source_state = source.state_dict()
+    replay_state = replay.state_dict()
+    assert tuple(source_state) == tuple(replay_state)
+    assert {
+        key: tuple(value.shape) for key, value in source_state.items()
+    } == {
+        key: tuple(value.shape) for key, value in replay_state.items()
+    }
+    incompatible = replay.load_state_dict(source_state, strict=True)
+    assert incompatible.missing_keys == []
+    assert incompatible.unexpected_keys == []
+    assert replay.raw_actionness_source is not None
+    assert replay.transition_scorer is not None
+    assert replay.budget_controller is not None
+
+
+def test_stage1_uniform_replay_skips_policy_but_seals_short_window_budget_truth(
+    tmp_path,
+    monkeypatch,
+):
+    selector, protocol_sha = _stage1_selector(
+        tmp_path / "selector",
+        "hrime_stage1_uniform_positions",
+    )
+    ledger_root = tmp_path / "ledger"
+    monkeypatch.setenv("DUCA_RIME_INFERENCE_LEDGER_ROOT", str(ledger_root))
+    selector.raw_actionness_source.forward = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("uniform Stage-1 replay must not execute the coarse policy")
+    )
+    provenance = {
+        "role": "hrime_stage1_uniform_same_total",
+        "strategy": "uniform_same_total",
+        "oracle_only": True,
+        "deployment_candidate": False,
+        "uses_official_final": False,
+        "uses_gt": False,
+        "uses_teacher": False,
+        "uses_prediction_cache": False,
+        "uses_test_batch_composition": False,
+        "position_policy": "exact_uniform",
+        "assignment_sha256": "a" * 64,
+    }
+    meta = {
+        "video_name": "video",
+        "window_start_frame": 0,
+        "frame_inds": list(range(32)),
+        "avg_fps": 1.0,
+        "rime_requested_k_replay": 32,
+        "rime_effective_k_replay": 16,
+        "rime_requested_k_replay_provenance": provenance,
+    }
+    masks = torch.tensor([[True] * 23 + [False] * 9])
+    selector.eval()
+    output = selector.forward_test(
+        torch.randn(1, 3, 32),
+        masks,
+        metas=[meta],
+    )
+    assert output["masks"].shape == (1, 16)
+    assert output["selector_outputs"]["requested_k"].tolist() == [32]
+    assert output["selector_outputs"]["selected_count"].tolist() == [16]
+    row = json.loads(
+        (ledger_root / "inference_ledger.rank0000.jsonl").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert row["budget_protocol_sha256"] == protocol_sha
+    assert row["raw_budget"] == 32
+    assert row["reachable_budget"] == 16
+    assert row["realized_budget"] == 16
+    assert row["projection_unused_budget"] == 16
+    assert row["solver_unused_budget"] == 0
+    assert row["budget_scope"] == "video_exact_total_window_assignment"
+
+
+def test_stage1_runtime_receipt_proves_full_window_merge_nms_evaluator_chain(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeSlidingDataset(SlidingWindowDataset):
+        def __init__(self):
+            self.class_map = ["action"]
+
+        def __len__(self):
+            return 3
+
+    class FakeLoader:
+        dataset = FakeSlidingDataset()
+
+        def __iter__(self):
+            yield {
+                "inputs": torch.zeros((2, 1)),
+                "masks": torch.ones((2, 1), dtype=torch.bool),
+                "metas": [
+                    {"video_name": "video_a"},
+                    {"video_name": "video_a"},
+                ],
+            }
+            yield {
+                "inputs": torch.zeros((1, 1)),
+                "masks": torch.ones((1, 1), dtype=torch.bool),
+                "metas": [{"video_name": "video_b"}],
+            }
+
+    class FakeModel:
+        def eval(self):
+            return self
+
+        def __call__(self, **data):
+            result = {}
+            for meta in data["metas"]:
+                result.setdefault(meta["video_name"], []).append(
+                    {
+                        "segment": [0.0, 1.0],
+                        "label": "action",
+                        "score": 0.5,
+                    }
+                )
+            return result
+
+    class FakeEvaluator:
+        def evaluate(self):
+            return {"average_mAP": 0.0}
+
+        def logging(self, logger):
+            logger.info("fake evaluator")
+
+    class FakeLogger:
+        def info(self, *_args, **_kwargs):
+            return None
+
+    def fake_all_gather_object(output, value):
+        output[0] = value
+
+    def fake_batched_nms(segments, scores, labels, **_kwargs):
+        return segments, scores, labels
+
+    monkeypatch.setattr(test_engine.dist, "all_gather_object", fake_all_gather_object)
+    monkeypatch.setattr(test_engine, "batched_nms", fake_batched_nms)
+    monkeypatch.setattr(
+        test_engine,
+        "build_evaluator",
+        lambda _config: FakeEvaluator(),
+    )
+    cfg = ConfigDict(
+        inference=ConfigDict(save_raw_prediction=False),
+        post_processing=ConfigDict(
+            nms=ConfigDict(
+                use_soft_nms=True,
+                sigma=0.7,
+                max_seg_num=2000,
+                multiclass=True,
+                voting_thresh=0.7,
+            ),
+            save_dict=True,
+        ),
+        evaluation=ConfigDict(
+            type="mAP",
+            subset="training",
+            ground_truth_filename=str(tmp_path / "annotation.json"),
+            tiou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
+        ),
+        work_dir=str(tmp_path),
+    )
+    summary = test_engine.eval_one_epoch(
+        FakeLoader(),
+        FakeModel(),
+        cfg,
+        FakeLogger(),
+        rank=0,
+        world_size=0,
+        not_eval=False,
+    )
+    receipt = summary["post_processing_execution"]
+    assert receipt["window_counts"] == {"video_a": 2, "video_b": 1}
+    assert receipt["pre_nms_result_count"] == 3
+    assert receipt["post_nms_result_count"] == 3
+    assert receipt["nms_call_count"] == 2
+    assert receipt["result_sha256"] == hashlib.sha256(
+        (tmp_path / "result_detection.json").read_bytes()
+    ).hexdigest()
+    assert receipt["pipeline_events"] == [
+        "model_forward_loop_complete",
+        "ddp_result_gather_complete",
+        "cross_window_result_aggregation_complete",
+        "sliding_window_nms_complete",
+        "post_nms_prediction_saved",
+        "official_evaluator_evaluate_called",
+        "official_evaluator_evaluate_returned",
+    ]
+    assert receipt["content_sha256"] == test_engine._canonical_sha256(
+        {
+            key: value
+            for key, value in receipt.items()
+            if key != "content_sha256"
+        }
+    )
+    assert receipt["full_detector_window_merge_nms_evaluation_completed"] is True

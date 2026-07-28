@@ -364,12 +364,46 @@ class DucaRimeTargetsFromJsonl:
 class DucaRimeBudgetReplayFromJsonl:
     """Attach an immutable evaluation/control K assignment without predictions."""
 
-    def __init__(self, replay_jsonl, replay_sha256, candidate_budgets=(192, 256, 384, 512)):
+    _ORACLE_ROLE_CONTRACTS = {
+        "hrime_stage1_uniform_same_total": {
+            "uses_gt": False,
+            "position_policy": "exact_uniform",
+        },
+        "hrime_stage1_independent_exact_total": {
+            "uses_gt": False,
+            "position_policy": "frozen_rime_selector",
+        },
+        "hrime_stage1_joint_oracle": {
+            "uses_gt": True,
+            "position_policy": "frozen_rime_selector",
+        },
+        "hrime_stage1_joint_same_k_uniform_positions": {
+            "uses_gt": True,
+            "position_policy": "exact_uniform",
+        },
+        "hrime_stage1_shuffled_null": {
+            "uses_gt": True,
+            "position_policy": "frozen_rime_selector",
+        },
+    }
+
+    def __init__(
+        self,
+        replay_jsonl,
+        replay_sha256,
+        candidate_budgets=(192, 256, 384, 512),
+        allow_oracle_only=False,
+        execution_quantum=16,
+    ):
         self.replay_jsonl = os.path.abspath(
             os.path.expandvars(os.path.expanduser(str(replay_jsonl)))
         )
         self.replay_sha256 = str(replay_sha256).lower()
         self.candidate_budgets = tuple(int(value) for value in candidate_budgets)
+        self.allow_oracle_only = bool(allow_oracle_only)
+        self.execution_quantum = int(execution_quantum)
+        if self.execution_quantum != 16:
+            raise ValueError("RIME replay execution quantum is frozen to 16")
         if not os.path.isfile(self.replay_jsonl):
             raise FileNotFoundError(f"RIME budget replay JSONL missing: {self.replay_jsonl}")
         digest = hashlib.sha256()
@@ -392,6 +426,10 @@ class DucaRimeBudgetReplayFromJsonl:
                 video = str(row.get("video_id") or row.get("video_name") or "")
                 window_start = int(row.get("window_start_frame", -1))
                 requested_k = int(row.get("requested_k", -1))
+                effective_value = row.get("effective_k")
+                effective_k = (
+                    None if effective_value is None else int(effective_value)
+                )
                 provenance = row.get("provenance")
                 if (
                     not video
@@ -400,10 +438,40 @@ class DucaRimeBudgetReplayFromJsonl:
                     or not isinstance(provenance, dict)
                 ):
                     raise ValueError(f"{prefix}: invalid replay record")
+                oracle_only = provenance.get("oracle_only") is True
+                if oracle_only:
+                    role = str(provenance.get("role", ""))
+                    contract = self._ORACLE_ROLE_CONTRACTS.get(role)
+                    if (
+                        not self.allow_oracle_only
+                        or contract is None
+                        or provenance.get("deployment_candidate") is not False
+                        or provenance.get("uses_official_final") is not False
+                        or provenance.get("uses_gt") is not contract["uses_gt"]
+                        or provenance.get("position_policy")
+                        != contract["position_policy"]
+                        or effective_k is None
+                        or effective_k <= 0
+                        or effective_k % self.execution_quantum
+                        or effective_k > requested_k
+                    ):
+                        raise ValueError(
+                            f"{prefix}: unauthorized or invalid oracle-only replay"
+                        )
+                elif self.allow_oracle_only:
+                    raise ValueError(
+                        f"{prefix}: Stage-1 oracle mode requires oracle_only=true"
+                    )
                 if any(
                     bool(provenance.get(key, False))
-                    for key in ("uses_gt", "uses_teacher", "uses_prediction_cache")
-                ):
+                    for key in (
+                        "uses_teacher",
+                        "uses_prediction_cache",
+                    )
+                ) or (
+                    oracle_only
+                    and bool(provenance.get("uses_test_batch_composition", False))
+                ) or (not oracle_only and bool(provenance.get("uses_gt", False))):
                     raise ValueError(f"{prefix}: contaminated replay provenance")
                 epoch = row.get("duca_stateless_epoch")
                 sample_index = row.get("duca_stateless_sample_index")
@@ -422,7 +490,11 @@ class DucaRimeBudgetReplayFromJsonl:
                     target_index = self._scheduled_index
                 if key in target_index:
                     raise ValueError(f"{prefix}: duplicate replay window {key}")
-                target_index[key] = (requested_k, dict(provenance))
+                target_index[key] = (
+                    requested_k,
+                    effective_k,
+                    dict(provenance),
+                )
         if not self._index and not self._scheduled_index:
             raise ValueError("RIME budget replay JSONL contains no records")
 
@@ -444,12 +516,33 @@ class DucaRimeBudgetReplayFromJsonl:
                 raise ValueError(
                     f"missing RIME budget replay for scheduled window {scheduled_key}"
                 )
-            requested_k, provenance = self._scheduled_index[scheduled_key]
+            requested_k, effective_k, provenance = self._scheduled_index[
+                scheduled_key
+            ]
         else:
             if key not in self._index:
                 raise ValueError(f"missing RIME budget replay for window {key}")
-            requested_k, provenance = self._index[key]
+            requested_k, effective_k, provenance = self._index[key]
+        masks = results.get("masks")
+        if masks is None:
+            raise ValueError("RIME budget replay requires the runtime valid mask")
+        if torch.is_tensor(masks):
+            valid_length = int(masks.to(dtype=torch.bool).sum().item())
+        else:
+            valid_length = int(np.asarray(masks, dtype=np.bool_).sum())
+        reachable = min(
+            int(requested_k),
+            valid_length - valid_length % self.execution_quantum,
+        )
+        if reachable <= 0:
+            raise ValueError(f"RIME replay window {key} cannot realize one quantum")
+        if effective_k is not None and int(effective_k) != reachable:
+            raise ValueError(
+                f"RIME replay effective-K drift for window {key}: "
+                f"recorded={effective_k}, runtime={reachable}"
+            )
         results["rime_requested_k_replay"] = int(requested_k)
+        results["rime_effective_k_replay"] = int(reachable)
         results["rime_requested_k_replay_provenance"] = dict(provenance)
         results["rime_budget_replay_jsonl"] = self.replay_jsonl
         results["rime_budget_replay_sha256"] = self.replay_sha256

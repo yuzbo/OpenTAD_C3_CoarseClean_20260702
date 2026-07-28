@@ -171,3 +171,21 @@ These failures and naming mistakes must not be repeated.
 60. Do not assume a top-level Bash `ERR` trap covers `sbatch` failures inside a
     submitter function. Transactional held-DAG submitters must enable `errtrace`
     and a failed partial submission must be canceled before any job is released.
+61. Do not treat the string `full_detector_window_merge_nms` as proof that the
+    path executed. A Stage-1 cell must bind complete dataset-window coverage,
+    actual cross-window aggregation, per-video NMS calls, post-NMS prediction
+    bytes, official evaluator invocation, configs and source hashes in one
+    terminal receipt.
+62. Do not silently turn a missing prediction video into an empty prediction
+    list. Formal localization evidence requires the exact expected video-key
+    set; explicit empty lists are allowed, absent keys fail closed.
+63. Do not allow a negative oracle risk weight to reach planning. Freeze and
+    validate a finite non-negative value before any window-option result is
+    consumed.
+64. Do not evaluate a Stage-1 replay with a permissive checkpoint load. The
+    replay model must be architecture-equivalent to source RIME-full and record
+    zero missing and zero unexpected keys under `strict_exact_v1`.
+65. Do not present a shuffled-null cell that is identical to the joint oracle
+    for every video. Per-video degeneracy is recorded, but each anchor must have
+    at least one feasibility-preserving non-identity allocation or planning
+    fails before any execution artifact is written.

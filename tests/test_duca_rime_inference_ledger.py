@@ -166,3 +166,74 @@ def test_finalize_stage0_ledger_requires_hash_and_explicit_fields(tmp_path):
             expected_protocol_sha256="a" * 64,
             require_explicit_budget_truth=True,
         )
+
+
+def test_finalize_hrime_stage1_oracle_ledger_is_explicitly_non_deployable(tmp_path):
+    row = _row("v0")
+    row["arm"] = "hrime_stage1_learned_positions"
+    row.update(
+        {
+            "raw_budget": 4,
+            "reachable_budget": 4,
+            "realized_budget": 4,
+            "projection_unused_budget": 0,
+            "solver_unused_budget": 0,
+            "budget_scope": "video_exact_total_window_assignment",
+            "claim_scope": (
+                "stage1_development_oracle_execution_not_deployable"
+            ),
+        }
+    )
+    row["decision_provenance"] = {
+        "role": "hrime_stage1_joint_oracle",
+        "oracle_only": True,
+        "deployment_candidate": False,
+        "uses_official_final": False,
+        "uses_gt": True,
+        "uses_teacher": False,
+        "uses_prediction_cache": False,
+        "uses_test_batch_composition": False,
+        "position_policy": "frozen_rime_selector",
+        "assignment_sha256": "b" * 64,
+    }
+    row["provenance"]["uses_gt"] = True
+    shard = tmp_path / "rank0.jsonl"
+    shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    summary = finalize_ledger(
+        shards=[shard],
+        output_jsonl=tmp_path / "ledger.jsonl",
+        expected_arm="hrime_stage1_learned_positions",
+        expected_protocol_sha256="a" * 64,
+        require_explicit_budget_truth=True,
+        allow_oracle_only=True,
+        expected_decision_role="hrime_stage1_joint_oracle",
+    )
+    assert summary["oracle_only"] is True
+    assert summary["deployment_candidate"] is False
+    assert summary["development_gt_used_for_oracle_assignment"] is True
+    assert summary["official_final_labels_used_for_decision"] is False
+    assert summary["explicit_budget_truth"] is True
+    assert summary["budget_scope"] == "video_exact_total_window_assignment"
+
+
+def test_finalize_hrime_stage1_oracle_ledger_fails_without_explicit_permission(
+    tmp_path,
+):
+    row = _row("v0")
+    row["arm"] = "hrime_stage1_learned_positions"
+    row["decision_provenance"] = {
+        "role": "hrime_stage1_joint_oracle",
+        "oracle_only": True,
+        "deployment_candidate": False,
+        "uses_official_final": False,
+        "uses_gt": True,
+    }
+    row["provenance"]["uses_gt"] = True
+    shard = tmp_path / "rank0.jsonl"
+    shard.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="contaminated or mismatched"):
+        finalize_ledger(
+            shards=[shard],
+            output_jsonl=tmp_path / "ledger.jsonl",
+            expected_arm="hrime_stage1_learned_positions",
+        )

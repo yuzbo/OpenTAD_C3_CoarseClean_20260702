@@ -351,3 +351,42 @@
   original failed jobs remain failed, Phase 4 is disabled, and official-final
   remains sealed. The first snapshot is scheduler-pending with no terminal
   receipts, so no empirical claim is available.
+
+## 2026-07-28 — H-RIME Stage-1 oracle and execution-proof surface implemented
+
+- Implemented the complete development-only Stage-1 strategy matrix:
+  same-total uniform, independent window RIME, joint GT oracle, joint allocation
+  with uniform positions, and feasibility-preserving shuffled null. Every video
+  uses the exact same reachable total effective K across strategies.
+- Added an explicit pre-execution preregistration builder. It freezes one
+  primary endpoint, video bootstrap, intersection-union multiplicity family,
+  noninferiority/materiality gates, guardrails, surrogate thresholds, MCKP
+  numeric/tie contracts, evaluator semantics and official-final exclusion.
+  No scientific threshold has a result-derived default.
+- Connected each Stage-1 replay to the existing exact-K selector while preserving
+  strict RIME-full parameter keys and shapes. Oracle permission, decision role,
+  GT provenance, requested/effective K, no-padding execution and video-total
+  budget truth all fail closed.
+- Extended the test runtime to produce a machine-verifiable execution receipt:
+  exact sliding-window dataset coverage, model-forward batch count, window
+  counts by video, distributed aggregation, pre/post-NMS proposal counts,
+  per-video NMS call count, post-NMS prediction SHA-256, official evaluator
+  call/success, resolved config identities and implementation source hashes.
+  The terminal also records `strict_exact_v1` checkpoint compatibility.
+- Rejected negative oracle risk weights at both freeze and validation entry
+  points, and rejected prediction artifacts missing any expected development
+  video instead of silently interpreting them as empty.
+- Local Python compilation and Bash syntax passed. The pure/non-Torch focused
+  suites passed 61 Stage-1/RIME tests plus 23 repository-mandated C3 regression
+  tests. The new runtime-receipt and strict model-loading tests remain
+  `remote_torch_pending` because the Windows host cannot load the CUDA-linked
+  Torch DLL.
+- A fresh independent diff review additionally required that the shuffled null
+  not collapse to the joint oracle for an entire budget anchor. Planning now
+  records every degenerate video and fails before writing its output root if no
+  non-identity, histogram-preserving feasible allocation exists for that anchor.
+- Stage-1 is `implemented/local_non_torch_tested`, not executed. It authorizes no
+  learned H-RIME training until Stage-0 closes, a clean-commit remote test and
+  independent deployment audit pass, the complete preregistration is frozen,
+  and the full development oracle receipt passes. No paper-admissible empirical
+  conclusion is available.

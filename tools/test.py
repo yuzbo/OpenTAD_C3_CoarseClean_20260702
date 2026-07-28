@@ -61,6 +61,8 @@ def main():
     # load config
     cfg = Config.fromfile(args.config)
     formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
+    evaluation_protocol = str(cfg.workflow.get("evaluation_protocol", ""))
+    hrime_stage1_eval = evaluation_protocol == "hrime_stage1_oracle_execution_v1"
     cellcf_formal = formal_protocol == "duca_cellcf_v1"
     protected_physical_formal = (
         formal_protocol == "duca_protected_physical_v1"
@@ -69,6 +71,48 @@ def main():
         formal_protocol
     )
     rime_formal = duca_rime_training.is_formal_protocol(formal_protocol)
+    if evaluation_protocol and not hrime_stage1_eval:
+        raise RuntimeError("unregistered DUCA-RIME evaluation protocol")
+    if hrime_stage1_eval:
+        stage1_contract = cfg.get("hrime_stage1_execution_contract", None)
+        valid_roles = {
+            "hrime_stage1_uniform_same_total": ("exact_uniform", False),
+            "hrime_stage1_independent_exact_total": (
+                "frozen_rime_selector",
+                False,
+            ),
+            "hrime_stage1_joint_oracle": ("frozen_rime_selector", True),
+            "hrime_stage1_joint_same_k_uniform_positions": (
+                "exact_uniform",
+                True,
+            ),
+            "hrime_stage1_shuffled_null": ("frozen_rime_selector", True),
+        }
+        role = (
+            str(stage1_contract.decision_role)
+            if stage1_contract is not None
+            else ""
+        )
+        expected_position, expected_uses_gt = valid_roles.get(role, (None, None))
+        if (
+            not rime_formal
+            or stage1_contract is None
+            or expected_position is None
+            or str(stage1_contract.protocol) != evaluation_protocol
+            or str(stage1_contract.position_policy) != expected_position
+            or stage1_contract.uses_gt_at_decision is not expected_uses_gt
+            or stage1_contract.runtime_gt_input_to_selector is not False
+            or stage1_contract.oracle_only is not True
+            or stage1_contract.evaluation_only is not True
+            or stage1_contract.deployment_candidate is not False
+            or stage1_contract.uses_official_final is not False
+            or cfg.duca_rime_contract.official_final_subset_consumed is not False
+            or os.environ.get("DUCA_RIME_ALLOW_ORACLE_REPLAY", "")
+            .strip()
+            .lower()
+            not in {"1", "true"}
+        ):
+            raise RuntimeError("invalid H-RIME Stage-1 oracle evaluation contract")
     rime_baseline_eval = cfg.get("duca_rime_baseline_contract", None) is not None
     if rime_baseline_eval:
         baseline_contract = cfg.duca_rime_baseline_contract
@@ -130,7 +174,6 @@ def main():
         ):
             raise RuntimeError("invalid DUCA-RIME baseline evaluation contract")
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
-    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/test.py"
@@ -148,6 +191,7 @@ def main():
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
 
@@ -277,6 +321,7 @@ def main():
     checkpoint_state_key = None
     selected_axis_terminal_identity = None
     rime_terminal_identity = None
+    stage1_checkpoint_compatibility = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
@@ -368,7 +413,20 @@ def main():
                 )
             )
         else:
-            model.load_state_dict(checkpoint[checkpoint_state_key])
+            incompatible = model.load_state_dict(
+                checkpoint[checkpoint_state_key],
+                strict=True,
+            )
+            if hrime_stage1_eval:
+                stage1_checkpoint_compatibility = (
+                    duca_rime_training.validate_phase2_baseline_checkpoint_compatibility(
+                        missing_keys=incompatible.missing_keys,
+                        unexpected_keys=incompatible.unexpected_keys,
+                        mode=(
+                            duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE
+                        ),
+                    )
+                )
         if checkpoint_state_key == "state_dict_ema":
             logger.info("Using Model EMA...")
 
@@ -509,6 +567,69 @@ def main():
                     ),
                 }
             )
+            if hrime_stage1_eval:
+                post_processing_execution = evaluation_summary.get(
+                    "post_processing_execution"
+                )
+                if (
+                    not isinstance(post_processing_execution, dict)
+                    or post_processing_execution.get("schema_version")
+                    != "opentad_window_merge_nms_execution_v1"
+                    or post_processing_execution.get(
+                        "full_detector_window_merge_nms_evaluation_completed"
+                    )
+                    is not True
+                    or post_processing_execution.get("world_size") != 1
+                    or post_processing_execution.get("dataset_is_sliding_window")
+                    is not True
+                    or post_processing_execution.get("result_sha256")
+                    != sha256_file(result_path)
+                    or post_processing_execution.get("evaluator")
+                    != evaluator_identity
+                    or post_processing_execution.get("nms_config_sha256")
+                    != _canonical_sha256(cfg.post_processing.nms)
+                    or post_processing_execution.get("content_sha256")
+                    != _canonical_sha256(
+                        {
+                            key: value
+                            for key, value in post_processing_execution.items()
+                            if key != "content_sha256"
+                        }
+                    )
+                    or stage1_checkpoint_compatibility
+                    != {
+                        "mode": (
+                            duca_rime_training.STRICT_EXACT_CHECKPOINT_COMPATIBILITY_MODE
+                        ),
+                        "missing_keys": [],
+                        "ignored_unexpected_keys": [],
+                    }
+                ):
+                    raise RuntimeError(
+                        "H-RIME Stage-1 lacks a complete merge/NMS/evaluator "
+                        "execution receipt or strict checkpoint compatibility"
+                    )
+                payload.update(
+                    {
+                        "evaluation_protocol": evaluation_protocol,
+                        "stage1_execution_contract": _jsonable(
+                            cfg.hrime_stage1_execution_contract
+                        ),
+                        "oracle_only": True,
+                        "evaluation_only": True,
+                        "deployment_candidate": False,
+                        "uses_official_final": False,
+                        "checkpoint_compatibility": (
+                            stage1_checkpoint_compatibility
+                        ),
+                        "post_processing_execution": (
+                            post_processing_execution
+                        ),
+                        "post_processing_execution_sha256": (
+                            post_processing_execution["content_sha256"]
+                        ),
+                    }
+                )
         if rime_baseline_eval:
             payload.update(
                 {

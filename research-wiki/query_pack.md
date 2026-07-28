@@ -23,6 +23,7 @@ Current evidence level:
 | H-RIME scientific route | `user_approved / designed` |
 | Stage-0 repair implementation | `implemented / local_non_torch_tested / remote_pending` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
+| H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_pending` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
 | H-RIME Stage-0 recovery transaction | `submitted / scheduler_pending` |
@@ -183,9 +184,12 @@ preferred next-model design. These facts must not be conflated.
    H-RIME now also has a locally tested deterministic contract/core for
    canonical effective-K aliases, reachable-budget projection, exact-equality
    MCKP, stable video grouping, hash-bound replay, and homogeneous-K dispatch
-   planning. It does **not** yet have a connected learned video-budget head,
-   an executing shared-video scan, the grouped training path, full detector
-   replay, or calibration evidence.
+   planning. The Stage-1 development-oracle surface now connects replay to the
+   full detector and emits machine-verifiable window-coverage, merge, NMS,
+   saved-prediction and official-evaluator receipts, but that path has not yet
+   executed remotely. It does **not** yet have a connected learned video-budget
+   head, an executing shared-video scan, the grouped training path, or
+   calibration evidence.
 
 For working candidate `H-RIME`, let `q=16`, let `W_v` be the video's windows,
 and let each feasible `K_vw` be quantum-aligned and bounded by the valid window
@@ -202,11 +206,11 @@ cross-window feature cache is a separately falsified extension.
 The user correction on `2026-07-28` promoted this hierarchical route from a
 deferred alternative to the preferred next-model design. The user subsequently
 approved the audited H-RIME specification and authorized implementation. Its
-literal state is now
-`user_approved/designed/implementation_started/core_implemented_and_locally_tested`;
-the learned/shared-scan detector path is not yet implemented or empirically
-supported and must not be silently attributed to the current four-stage RIME
-code.
+literal state is now `user_approved`, `designed`,
+`core_and_stage1_oracle_surface_implemented`, `local_non_torch_tested`, and
+`remote_torch_pending`; the learned/shared-scan detector path is not yet
+implemented or empirically supported and must not be silently attributed to the
+current four-stage RIME code.
 
 ## Frozen method semantics
 
