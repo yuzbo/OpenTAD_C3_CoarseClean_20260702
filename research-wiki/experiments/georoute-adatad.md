@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: tested
-status: failed_p1r_rendezvous_port_collision_no_selector
-outcome: infrastructure_invalid_no_native_or_geometry_verdict
+stage: implemented
+status: rendezvous_correctness_fix_implemented_pending_remote_validation
+outcome: prior_p1r_infrastructure_invalid_replacement_not_yet_running
 updated: 2026-07-28
 ---
 
@@ -376,6 +376,31 @@ P2/P3 artifact, or official-test artifact exists. Therefore:
 - Paper boundary: implementation/P0 mechanical facts and descriptive control
   cells only; no learned-routing, Geometry Zoom, efficiency, generalization,
   or paper-ready result.
+
+## Rendezvous correctness replacement
+
+- The replacement removes implicit `torch.distributed.run --standalone` from
+  every development train/test leaf. Each launch now uses c10d,
+  `127.0.0.1:0`, and a rendezvous ID bound to Slurm job, stage, variant, seed,
+  and train/test phase. Stage-result schema v3 hashes both launch receipts.
+- Every P0R leaf now runs two simultaneous one-rank Gloo probes before its
+  model gate. Both probes must reach ready state, expose distinct actual
+  `MASTER_PORT` values and exact `TORCHELASTIC_RUN_ID` values, and the long
+  probe must remain alive after the short probe exits. The gate executes no
+  model forward and opens no dataset or official test.
+- The P0 CUDA report and rendezvous receipt are same-leaf bound by Slurm job
+  ID, canonical path, file SHA-256, gate SHA-256, runtime commit, and
+  non-symlink policy. The P0 finalizer requires three distinct bound Slurm
+  receipts before it may emit `PASS_MECHANICAL_ONLY`.
+- Local compile, DAG, P0 contract, checkpoint, paper-tool, storage, and
+  required C3 non-Torch checks pass `59/59`. The complete local Torch suite is
+  blocked by the documented Windows `c10.dll` failure, so Linux Torch,
+  concurrent-rendezvous, CUDA P0R, and all scientific evidence remain pending
+  on a clean N16R4 snapshot.
+- This is an infrastructure-only correction. The model, seven P1R arms,
+  selector, seeds, budgets, data, initialization, update schedule, and
+  hierarchical decision rule are unchanged. The failed `45f5cca2` namespace
+  remains immutable and cannot be pooled with the replacement.
 
 ## Frozen decision logic
 

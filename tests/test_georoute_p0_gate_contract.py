@@ -82,6 +82,14 @@ def _valid_payload() -> dict:
             "atomic_publish_peak_included": True,
         },
         "runtime_commit": "a" * 40,
+        "slurm_job_id": "1199999",
+        "rendezvous_isolation": {
+            "path": "/data/run01/sczc063/yuzibo/p0/hybrid.rendezvous.json",
+            "file_sha256": "b" * 64,
+            "gate_sha256": "c" * 64,
+            "slurm_job_id": "1199999",
+            "status": "PASS_CONCURRENT_RENDEZVOUS_ISOLATION",
+        },
         "checkpoint_storage_measurement": {
             "checkpoint_policy": "final_only",
             "checkpoint_upper_bound_bytes": 4096,
@@ -136,6 +144,7 @@ def test_dense_p0_requires_the_reference_to_match_the_real_autograd_dispatch():
         (("component_trace", "dense_adapter_forward_count"), 1, "component trace"),
         (("checkpoint_receipt", "checkpoint_count"), 1, "no checkpoint"),
         (("storage_receipt", "status"), "FAIL_STORAGE_PREFLIGHT", "storage"),
+        (("rendezvous_isolation", "slurm_job_id"), "other", "rendezvous"),
     ],
 )
 def test_p0_report_validator_fails_closed_for_invalid_core_claims(path, value, message):

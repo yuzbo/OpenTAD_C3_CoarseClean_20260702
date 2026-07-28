@@ -1217,3 +1217,19 @@ append_only: true
   `NO_SCIENTIFIC_VERDICT_INFRASTRUCTURE_INVALID` for NativeTokenSelect and
   `NOT_AUTHORIZED_NATIVE_BASE_MISSING` for conditional geometry. The run is
   closed as `tested`, not `empirically_supported`; monitoring is complete.
+
+- 2026-07-28 21:56 CST: user approved replacement plan A. A minimal
+  infrastructure-only correction is locally implemented without changing the
+  model, seven P1R arms, selector, seed, budget, data, initialization, or
+  decision rule. GeoRoute train/test leaves no longer use implicit
+  `torch.distributed.run --standalone`; they use c10d
+  `127.0.0.1:0` and Slurm/job/stage/variant/seed/phase-bound rendezvous IDs.
+  Every P0R leaf now runs two concurrent one-rank probes, verifies their
+  observed `TORCHELASTIC_RUN_ID`, distinct actual `MASTER_PORT` values, and
+  independent lifetimes, then hash-binds that same-leaf receipt into the P0
+  CUDA report and final P0 suite. Stage/P0/deployment schemas advance to v3.
+  Local compile and non-Torch focused/C3 checks pass `59/59`; the known Windows
+  `c10.dll` failure still blocks the two Torch test modules, so authoritative
+  Linux Torch and CUDA validation must occur on a clean N16R4 source. No new
+  experiment has yet been submitted, the `45f5cca2` namespace remains
+  immutable, and NativeTokenSelect/geometry claims remain closed.

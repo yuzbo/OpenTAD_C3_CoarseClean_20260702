@@ -37,8 +37,8 @@ from tools.bata.georoute_experiment_contract import (  # noqa: E402
 from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 
 
-GEOROUTE_DAG_SCHEMA = "georoute_adatad_development_dag_v2"
-GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v2"
+GEOROUTE_DAG_SCHEMA = "georoute_adatad_development_dag_v3"
+GEOROUTE_STAGE_RESULT_SCHEMA = "georoute_adatad_stage_result_v3"
 
 # The N16R4 outer allocation is site-policy scaffolding only.  The matching
 # launcher immediately enters an exact one-GPU/5-CPU/96G step for model work.

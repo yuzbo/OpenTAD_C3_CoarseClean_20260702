@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import tempfile
 from pathlib import Path
@@ -18,10 +19,19 @@ from tools.bata.georoute_experiment_contract import (
     paper_variant_name,
     select_p1_roi_candidate,
     select_p2_roi_candidate,
+    sha256_file,
     stage_cell_relative_path,
     variant_spec,
 )
-from tools.bata.georoute_stage_runner import parse_official_style_map
+from tools.bata.georoute_rendezvous_gate import (
+    GEOROUTE_RENDEZVOUS_GATE_SCHEMA,
+    validate_rendezvous_gate_receipt,
+)
+from tools.bata.georoute_stage_runner import (
+    _validate_rendezvous_receipt,
+    build_torchrun_prefix,
+    parse_official_style_map,
+)
 from tools.bata.run_georoute_p0_gate import (
     GEOROUTE_P0_GATE_SCHEMA,
     build_p0_gate_report,
@@ -132,6 +142,79 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
     return build_p0_gate_report(report)
 
 
+def _rendezvous_receipt(*, slurm_job_id: str) -> dict:
+    probes = {}
+    for index, label in enumerate(("short", "long")):
+        _, rendezvous = build_torchrun_prefix(
+            phase="train",
+            slurm_job_id=slurm_job_id,
+            stage="p0",
+            variant=f"rendezvous_probe_{label}",
+            seed=3407,
+        )
+        probes[label] = {
+            "rendezvous": rendezvous,
+            "runtime_identity": {
+                "event": "GEOROUTE_RDZV_READY",
+                "label": label,
+                "rank": 0,
+                "world_size": 1,
+                "torchelastic_run_id": rendezvous["rendezvous_id"],
+                "master_addr": "127.0.0.1",
+                "master_port": str(45001 + index),
+                "slurm_job_id": slurm_job_id,
+            },
+            "exit_code": 0,
+            "ready_marker_seen": True,
+            "done_marker_seen": True,
+            "output_sha256": ("a" if label == "short" else "b") * 64,
+            "requested_post_release_seconds": 0.5 if label == "short" else 2.0,
+        }
+    core = {
+        "schema_version": GEOROUTE_RENDEZVOUS_GATE_SCHEMA,
+        "status": "PASS_CONCURRENT_RENDEZVOUS_ISOLATION",
+        "runtime_commit": "a" * 40,
+        "slurm_job_id": slurm_job_id,
+        "same_node_concurrent": True,
+        "long_probe_alive_after_short_exit": True,
+        "release_to_short_exit_seconds": 0.6,
+        "release_to_long_exit_seconds": 2.1,
+        "elapsed_seconds": 3.0,
+        "probes": probes,
+        "official_test_opened": False,
+        "model_forward_executed": False,
+        "paper_claim_allowed": False,
+    }
+    return {**core, "gate_sha256": canonical_sha256(core)}
+
+
+def _write_p0_bundle(
+    report_path: Path,
+    report: dict,
+    *,
+    slurm_job_id: str,
+) -> None:
+    rendezvous = _rendezvous_receipt(slurm_job_id=slurm_job_id)
+    rendezvous_path = report_path.with_name(f"{report_path.stem}.rendezvous.json")
+    rendezvous_path.write_text(
+        json.dumps(rendezvous),
+        encoding="utf-8",
+    )
+    bound_report = dict(report)
+    bound_report["slurm_job_id"] = slurm_job_id
+    bound_report["rendezvous_isolation"] = {
+        "path": str(rendezvous_path.resolve()),
+        "file_sha256": sha256_file(rendezvous_path),
+        "gate_sha256": rendezvous["gate_sha256"],
+        "slurm_job_id": slurm_job_id,
+        "status": rendezvous["status"],
+    }
+    report_path.write_text(
+        json.dumps(build_p0_gate_report(bound_report)),
+        encoding="utf-8",
+    )
+
+
 def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -140,11 +223,31 @@ def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
             "hybrid.json": _p0_report(estimator="straight_through", claim="biased_straight_through", target_k=32, scout_gradient=True),
             "score.json": _p0_report(estimator="score_function", claim="score_function_candidate", target_k=32, scout_gradient=True),
         }
-        for name, payload in payloads.items():
-            (root / name).write_text(json.dumps(payload), encoding="utf-8")
+        for index, (name, payload) in enumerate(payloads.items()):
+            report_path = root / name
+            _write_p0_bundle(
+                report_path,
+                payload,
+                slurm_job_id=str(1000 + index),
+            )
         summary = finalize(dense=root / "dense.json", hybrid=root / "hybrid.json", score_function=root / "score.json")
+        dense_rendezvous = root / "dense.rendezvous.json"
+        dense_original = dense_rendezvous.read_text(encoding="utf-8")
+        dense_rendezvous.write_text(
+            (root / "hybrid.rendezvous.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="same-leaf rendezvous receipt"):
+            finalize(
+                dense=root / "dense.json",
+                hybrid=root / "hybrid.json",
+                score_function=root / "score.json",
+            )
+        dense_rendezvous.write_text(dense_original, encoding="utf-8")
     assert summary["status"] == "PASS_MECHANICAL_ONLY"
     assert summary["suite_sha256"]
+    assert summary["verified_properties"]["same_node_concurrent_rendezvous_isolation_passed"] is True
+    assert summary["rendezvous_isolation"]["distinct_slurm_job_count"] == 3
 
 
 def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch, tmp_path: Path):
@@ -163,8 +266,13 @@ def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch,
             estimator="score_function", claim="score_function_candidate", target_k=32, scout_gradient=True
         ),
     }
-    for name, payload in payloads.items():
-        (p0_dir / name).write_text(json.dumps(payload), encoding="utf-8")
+    for index, (name, payload) in enumerate(payloads.items()):
+        report_path = p0_dir / name
+        _write_p0_bundle(
+            report_path,
+            payload,
+            slurm_job_id=str(2000 + index),
+        )
     receipt = finalize(
         dense=p0_dir / "dense_native_parity.json",
         hybrid=p0_dir / "hybrid_straight_through.json",
@@ -461,6 +569,81 @@ def test_paper_names_are_frozen_and_log_parser_requires_all_iou_thresholds():
     )
     assert metrics["average_mAP"] == 66.5
     assert metrics["mAP@0.7"] == 48.0
+
+
+def test_georoute_torchrun_uses_kernel_assigned_unique_rendezvous():
+    commands = {}
+    receipts = {}
+    for phase in ("train", "test"):
+        command, receipt = build_torchrun_prefix(
+            phase=phase,
+            slurm_job_id="1199999",
+            stage="p1",
+            variant="free",
+            seed=3407,
+        )
+        commands[phase] = command
+        receipts[phase] = receipt
+        joined = " ".join(command)
+        assert "--standalone" not in joined
+        assert "--master_port" not in joined
+        assert "--rdzv_backend=c10d" in command
+        assert "--rdzv_endpoint=127.0.0.1:0" in command
+        assert f"--rdzv_id=georoute-1199999-p1-free-s3407-{phase}" in command
+    validated = _validate_rendezvous_receipt(
+        receipts,
+        stage="p1",
+        variant="free",
+        seed=3407,
+    )
+    assert validated["train"]["rendezvous_id"] != validated["test"]["rendezvous_id"]
+
+    _, other_leaf = build_torchrun_prefix(
+        phase="train",
+        slurm_job_id="1200000",
+        stage="p1",
+        variant="free",
+        seed=3407,
+    )
+    assert other_leaf["rendezvous_id"] != receipts["train"]["rendezvous_id"]
+    with pytest.raises(ValueError, match="unsafe GeoRoute rendezvous slurm_job_id"):
+        build_torchrun_prefix(
+            phase="train",
+            slurm_job_id="1199999,1200000",
+            stage="p1",
+            variant="free",
+            seed=3407,
+        )
+
+
+def test_georoute_rendezvous_gate_receipt_fails_closed_on_store_reuse():
+    receipt = _rendezvous_receipt(slurm_job_id="1199999")
+    validate_rendezvous_gate_receipt(receipt, expected_commit="a" * 40)
+
+    reused = copy.deepcopy(receipt)
+    reused["probes"]["long"]["runtime_identity"]["master_port"] = reused[
+        "probes"
+    ]["short"]["runtime_identity"]["master_port"]
+    core = dict(reused)
+    core.pop("gate_sha256")
+    reused["gate_sha256"] = canonical_sha256(core)
+    with pytest.raises(ValueError, match="reused an actual TCPStore port"):
+        validate_rendezvous_gate_receipt(reused, expected_commit="a" * 40)
+
+
+def test_p0_launcher_runs_rendezvous_isolation_before_model_gate():
+    launcher = (ROOT / "scripts" / "run_georoute_p0_slurm.sh").read_text(
+        encoding="utf-8"
+    )
+    runner = (
+        ROOT / "tools" / "bata" / "georoute_stage_runner.py"
+    ).read_text(encoding="utf-8")
+    assert "--standalone" not in runner
+    assert "--rdzv_endpoint=127.0.0.1:0" in runner
+    assert "tools.bata.georoute_rendezvous_gate" in launcher
+    assert launcher.index("tools.bata.georoute_rendezvous_gate") < launcher.index(
+        "tools/bata/run_georoute_p0_gate.py"
+    )
 
 
 def test_p3_cell_namespaces_include_exact_k_to_prevent_budget_curve_overwrites():

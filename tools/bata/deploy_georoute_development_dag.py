@@ -26,7 +26,7 @@ from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_fil
 from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 
 
-GEOROUTE_DEPLOYMENT_SCHEMA = "georoute_adatad_development_deployment_v2"
+GEOROUTE_DEPLOYMENT_SCHEMA = "georoute_adatad_development_deployment_v3"
 
 # N16R4 grants only 55 GB per outer GPU allocation.  The launchers below
 # create an exact one-GPU/96G Slurm step for model work, so the outer request

@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
-stage: tested
-status: failed_p1r_rendezvous_port_collision_no_selector
+stage: implemented
+status: rendezvous_correctness_fix_implemented_pending_remote_validation
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -40,6 +40,13 @@ against NativeTokenSelect, and they do not authorize geometry, P2/P3, official
 test, an efficiency claim, or a paper claim. A valid future test must repeat
 the complete frozen matrix in a new namespace with a unique or kernel-assigned
 per-leaf rendezvous endpoint and an explicit concurrent-node isolation gate.
+That replacement is now locally implemented: c10d uses `127.0.0.1:0` with a
+Slurm/job/stage/variant/seed/phase-bound ID; a P0 same-node concurrent gate
+verifies the two actual runtime ports, run IDs, and independent lifetimes; and
+each P0 model report is hash-bound to the isolation receipt from the same
+Slurm leaf. This changes no model or selector decision. It remains
+`implemented`, not remotely validated or empirically supported, until a clean
+N16R4 snapshot passes the gate and the complete new seven-arm matrix.
 ROI-only reached Avg-mAP/mAP@0.6/mAP@0.7 `13.18/11.28/8.95`, descriptively
 above fixed, random, and fixed-plus-geometry at high tIoU, but it is not the
 ROI-free native base and cannot satisfy the hierarchical gate. The idea remains

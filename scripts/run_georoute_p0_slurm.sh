@@ -11,6 +11,7 @@ BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 CONFIG="${GEOROUTE_SOURCE_CONFIG:?set GEOROUTE_SOURCE_CONFIG}"
 PRETRAINED="${GEOROUTE_PRETRAINED:?set GEOROUTE_PRETRAINED}"
 OUTPUT="${GEOROUTE_P0_OUTPUT:?set GEOROUTE_P0_OUTPUT}"
+RENDEZVOUS_OUTPUT="${OUTPUT%.json}.rendezvous.json"
 EXPECTED_COMMIT="${GEOROUTE_EXPECTED_COMMIT:?set GEOROUTE_EXPECTED_COMMIT}"
 ROUTE_MODE="${GEOROUTE_P0_ROUTE_MODE:?set GEOROUTE_P0_ROUTE_MODE}"
 ESTIMATOR="${GEOROUTE_P0_POLICY_ESTIMATOR:?set GEOROUTE_P0_POLICY_ESTIMATOR}"
@@ -32,6 +33,7 @@ fi
 [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || fail 'source snapshot is not clean'
 [[ -f "${CONFIG}" && -f "${PRETRAINED}" ]] || fail 'P0 config or pretrained checkpoint is missing'
 [[ ! -e "${OUTPUT}" ]] || fail 'P0 output namespace already exists'
+[[ ! -e "${RENDEZVOUS_OUTPUT}" ]] || fail 'P0 rendezvous output namespace already exists'
 [[ "${HEIGHT}" =~ ^[1-9][0-9]*$ && "${WIDTH}" =~ ^[1-9][0-9]*$ ]] || \
   fail 'P0 height and width must be positive decimal integers'
 case "${OUTPUT}" in /data/run01/sczc063/yuzibo/*) ;; *) fail 'output must stay inside the remote write boundary' ;; esac
@@ -46,6 +48,11 @@ fi
 # shellcheck disable=SC1091
 source "${BASE}/conda_envs/opentad/bin/activate"
 python -c 'import numpy; assert numpy.__version__ == "1.23.5", numpy.__version__'
+
+python -m tools.bata.georoute_rendezvous_gate \
+  --output "${RENDEZVOUS_OUTPUT}" \
+  --expected-commit "${EXPECTED_COMMIT}"
+export GEOROUTE_P0_RENDEZVOUS_RECEIPT="${RENDEZVOUS_OUTPUT}"
 
 python tools/bata/run_georoute_p0_gate.py \
   --config "${CONFIG}" \

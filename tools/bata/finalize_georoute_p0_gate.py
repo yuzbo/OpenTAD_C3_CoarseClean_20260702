@@ -14,10 +14,13 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from tools.bata.georoute_rendezvous_gate import (
+    validate_rendezvous_gate_receipt,
+)
 from tools.bata.run_georoute_p0_gate import validate_p0_gate_report
 
 
-SCHEMA_VERSION = "georoute_adatad_p0_suite_v2"
+SCHEMA_VERSION = "georoute_adatad_p0_suite_v3"
 
 
 def _canonical_sha256(payload: Mapping[str, Any]) -> str:
@@ -40,11 +43,19 @@ def _load_report(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _rendezvous_receipt_path(report_path: Path) -> Path:
+    return report_path.with_name(f"{report_path.stem}.rendezvous.json")
+
+
 def finalize(*, dense: Path, hybrid: Path, score_function: Path) -> dict[str, Any]:
+    report_paths = {
+        "dense_native_parity": dense,
+        "hybrid_straight_through": hybrid,
+        "roi_score_function": score_function,
+    }
     reports = {
-        "dense_native_parity": _load_report(dense),
-        "hybrid_straight_through": _load_report(hybrid),
-        "roi_score_function": _load_report(score_function),
+        name: _load_report(path)
+        for name, path in report_paths.items()
     }
     dense_report = reports["dense_native_parity"]
     hybrid_report = reports["hybrid_straight_through"]
@@ -84,6 +95,45 @@ def finalize(*, dense: Path, hybrid: Path, score_function: Path) -> dict[str, An
     if len(runtime_commits) != 1 or len(next(iter(runtime_commits))) != 40:
         raise ValueError("P0 reports do not share one exact runtime commit")
     runtime_commit = next(iter(runtime_commits))
+    rendezvous_paths = {
+        name: _rendezvous_receipt_path(path)
+        for name, path in report_paths.items()
+    }
+    rendezvous_receipts: dict[str, dict[str, Any]] = {}
+    for name, path in rendezvous_paths.items():
+        report_path = report_paths[name]
+        if report_path.is_symlink() or path.is_symlink():
+            raise ValueError("GeoRoute P0 reports and rendezvous receipts cannot be symlinks")
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"GeoRoute P0 report lacks its rendezvous isolation receipt: {path}"
+            )
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"GeoRoute rendezvous receipt is not an object: {path}")
+        validate_rendezvous_gate_receipt(
+            payload,
+            expected_commit=runtime_commit,
+        )
+        binding = reports[name].get("rendezvous_isolation")
+        if (
+            not isinstance(binding, Mapping)
+            or binding.get("path") != str(path.resolve())
+            or binding.get("file_sha256") != _sha256_file(path)
+            or binding.get("gate_sha256") != payload.get("gate_sha256")
+            or binding.get("slurm_job_id") != payload.get("slurm_job_id")
+            or reports[name].get("slurm_job_id") != payload.get("slurm_job_id")
+        ):
+            raise ValueError(
+                f"GeoRoute P0 report is not hash-bound to its same-leaf rendezvous receipt: {name}"
+            )
+        rendezvous_receipts[name] = payload
+    slurm_job_ids = {
+        str(payload["slurm_job_id"])
+        for payload in rendezvous_receipts.values()
+    }
+    if len(slurm_job_ids) != len(rendezvous_receipts):
+        raise ValueError("P0 rendezvous receipts did not come from distinct Slurm leaves")
     measurements = [
         report.get("checkpoint_storage_measurement")
         for report in reports.values()
@@ -137,11 +187,21 @@ def finalize(*, dense: Path, hybrid: Path, score_function: Path) -> dict[str, An
                 "file_sha256": _sha256_file(path),
                 "report_sha256": reports[name]["report_sha256"],
             }
-            for name, path in {
-                "dense_native_parity": dense,
-                "hybrid_straight_through": hybrid,
-                "roi_score_function": score_function,
-            }.items()
+            for name, path in report_paths.items()
+        },
+        "rendezvous_isolation": {
+            "status": "PASS_CONCURRENT_RENDEZVOUS_ISOLATION",
+            "receipt_count": len(rendezvous_receipts),
+            "distinct_slurm_job_count": len(slurm_job_ids),
+            "receipts": {
+                name: {
+                    "path": str(rendezvous_paths[name].resolve()),
+                    "file_sha256": _sha256_file(rendezvous_paths[name]),
+                    "gate_sha256": payload["gate_sha256"],
+                    "slurm_job_id": payload["slurm_job_id"],
+                }
+                for name, payload in rendezvous_receipts.items()
+            },
         },
         "verified_properties": {
             "one_heavy_videomae_forward_per_subgate": True,
@@ -150,6 +210,7 @@ def finalize(*, dense: Path, hybrid: Path, score_function: Path) -> dict[str, An
             "representative_hybrid_detector_gradient_reaches_scout": True,
             "score_function_detector_gradient_reaches_scout": True,
             "score_function_known_answer_required_before_paper_claim": True,
+            "same_node_concurrent_rendezvous_isolation_passed": True,
             "official_test_opened": False,
             "full_training_completed": False,
             "accuracy_claim_allowed": False,

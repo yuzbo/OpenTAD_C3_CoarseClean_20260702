@@ -12,8 +12,9 @@ max_chars: 8000
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
-- Active replacement status: `failed_p1r_rendezvous_port_collision_no_selector`
-  (`tested`, not `empirically_supported`). The external Pro audit of exact
+- Active replacement status:
+  `rendezvous_correctness_fix_implemented_pending_remote_validation`
+  (`implemented`, not `empirically_supported`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
   176x320 support with a validity mask, mask-aware exact-K, a
@@ -60,7 +61,13 @@ max_chars: 8000
   `DependencyNeverSatisfied` and has no receipt; P2/P3 and official test are
   absent. Thus this P1R matrix is infrastructure-invalid, supplies no
   NativeTokenSelect or conditional-geometry verdict, and supports no
-  efficiency or paper claim.
+  efficiency or paper claim. The approved replacement now removes implicit
+  standalone, binds train/test to kernel-assigned `127.0.0.1:0` endpoints and
+  unique Slurm/cell/phase rendezvous IDs, adds a real same-node concurrent
+  lifetime gate using observed `TORCHELASTIC_RUN_ID` and `MASTER_PORT`, and
+  hash-binds each P0 model report to its same-leaf isolation receipt. Local
+  non-Torch compile/focused/C3 checks pass `59/59`; remote Linux Torch, P0R,
+  and the fresh seven-arm matrix remain pending.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)

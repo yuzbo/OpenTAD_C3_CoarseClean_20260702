@@ -20,7 +20,7 @@ from typing import Any, Mapping
 
 
 ROOT = Path(__file__).resolve().parents[2]
-GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v2"
+GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v3"
 
 
 def _canonical_json(payload: Mapping[str, Any]) -> str:
@@ -29,6 +29,52 @@ def _canonical_json(payload: Mapping[str, Any]) -> str:
 
 def _sha256(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _load_rendezvous_binding(
+    *,
+    runtime_commit: str,
+    slurm_job_id: str,
+) -> dict[str, Any]:
+    from tools.bata.georoute_rendezvous_gate import (
+        validate_rendezvous_gate_receipt,
+    )
+
+    raw_path = os.environ.get("GEOROUTE_P0_RENDEZVOUS_RECEIPT")
+    if not raw_path:
+        raise RuntimeError("P0 lacks its same-leaf rendezvous isolation receipt")
+    candidate = Path(raw_path)
+    if candidate.is_symlink():
+        raise ValueError(f"P0 rendezvous isolation receipt cannot be a symlink: {candidate}")
+    path = candidate.resolve()
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"P0 rendezvous isolation receipt is missing: {path}"
+        )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("P0 rendezvous isolation receipt is not a JSON object")
+    validate_rendezvous_gate_receipt(
+        payload,
+        expected_commit=runtime_commit,
+    )
+    if str(payload.get("slurm_job_id")) != slurm_job_id:
+        raise ValueError("P0 model gate and rendezvous gate used different Slurm leaves")
+    return {
+        "path": str(path),
+        "file_sha256": _sha256_file(path),
+        "gate_sha256": str(payload["gate_sha256"]),
+        "slurm_job_id": slurm_job_id,
+        "status": str(payload["status"]),
+    }
 
 
 def build_p0_gate_report(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -177,6 +223,21 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
     runtime_commit = report.get("runtime_commit")
     if not isinstance(runtime_commit, str) or len(runtime_commit) != 40:
         raise ValueError("P0 runtime commit is missing")
+    slurm_job_id = report.get("slurm_job_id")
+    if not isinstance(slurm_job_id, str) or not slurm_job_id:
+        raise ValueError("P0 Slurm job identity is missing")
+    rendezvous = report.get("rendezvous_isolation")
+    if (
+        not isinstance(rendezvous, Mapping)
+        or rendezvous.get("status")
+        != "PASS_CONCURRENT_RENDEZVOUS_ISOLATION"
+        or rendezvous.get("slurm_job_id") != slurm_job_id
+        or not isinstance(rendezvous.get("gate_sha256"), str)
+        or len(str(rendezvous.get("gate_sha256"))) != 64
+        or not isinstance(rendezvous.get("file_sha256"), str)
+        or len(str(rendezvous.get("file_sha256"))) != 64
+    ):
+        raise ValueError("P0 report is not bound to its same-leaf rendezvous gate")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -449,6 +510,13 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         runtime_commit = completed.stdout.strip().lower()
     if len(runtime_commit) != 40:
         raise RuntimeError("P0 could not bind its runtime commit")
+    slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
+    if not slurm_job_id:
+        raise RuntimeError("P0 CUDA gate must run inside a Slurm leaf")
+    rendezvous_binding = _load_rendezvous_binding(
+        runtime_commit=runtime_commit,
+        slurm_job_id=slurm_job_id,
+    )
     model_state_bytes = sum(
         int(tensor.numel()) * int(tensor.element_size())
         for tensor in model.state_dict().values()
@@ -545,6 +613,8 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         },
         "storage_receipt": storage_receipt,
         "runtime_commit": runtime_commit,
+        "slurm_job_id": slurm_job_id,
+        "rendezvous_isolation": rendezvous_binding,
         "checkpoint_storage_measurement": {
             "schema_version": "georoute_checkpoint_storage_measurement_v1",
             "runtime_commit": runtime_commit,
