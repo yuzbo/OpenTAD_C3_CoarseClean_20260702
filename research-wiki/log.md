@@ -35,5 +35,11 @@
 - Pre-registered the exact K/cost ladder, K384/K192 panel semantics,
   `weak_overlap` decoder, risk rule, O4 calibration gates, and 2 s / 8 s
   duration strata in both the submitting commit and submission manifest.
+- The first released transaction at commit `57965bec` failed at the code gate
+  before any experiment work because Slurm `--wrap` executes under `/bin/sh`
+  and therefore rejected the Bash-only `source` builtin. All downstream jobs
+  remained dependency-blocked. The submitter now explicitly enters
+  `/bin/bash -lc` before the CUDA/Miniforge bootstrap; the failed root and
+  scheduler records are retained as negative deployment evidence.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.

@@ -261,6 +261,7 @@ def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     ).read_text(encoding="utf-8")
     assert "--hold" in text
     assert 'dependency_args=(--dependency="afterok:${dependency}")' in text
+    assert '--wrap="exec /bin/bash -lc' in text
     assert "dense_actionformer_job" in text
     assert "dense_tridet_job" in text
     assert "phase3_dependency" in text

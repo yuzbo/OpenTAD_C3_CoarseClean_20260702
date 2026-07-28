@@ -175,7 +175,7 @@ submit_job() {
       --output="${DUCA_RIME_DEPLOYMENT_ROOT}/logs/%x-%j.out" \
       "${dependency_args[@]}" \
       --export=ALL \
-      --wrap="${bootstrap} && exec ${command}"
+      --wrap="exec /bin/bash -lc '${bootstrap} && exec ${command}'"
   )"
   job="${job%%;*}"
   job_ids+=("${job}")
