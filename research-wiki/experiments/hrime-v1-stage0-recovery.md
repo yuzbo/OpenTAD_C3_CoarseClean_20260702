@@ -4,7 +4,7 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v4_design_frozen / implementation_in_progress`
+- Stage-0 code: `recovery_v4_implemented / local_tested / remote_pending`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
@@ -207,7 +207,9 @@ Recovery-v4 design is frozen in
 `docs/superpowers/specs/2026-07-28-stage0-recovery-v4-evaluator-commit-bridge-design.md`.
 It adds only the explicit canonical environment bridge and a precheck that
 executes the same environment lookup and Git comparison as the evaluator. It
-does not change model or experiment semantics.
+does not change model or experiment semantics. The regression failed before the
+bridge was implemented and passed afterward; compilation, Bash syntax and the
+expanded focused suite completed with `97 passed`.
 
 ## Next gate
 

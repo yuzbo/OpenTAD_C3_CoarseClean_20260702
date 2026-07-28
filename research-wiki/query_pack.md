@@ -19,9 +19,9 @@ Current evidence level:
 | Dense reference training | `recovery_v3_salvage_failed_before_inference / engineering_only` |
 | Phase 1 closure | `recovery_v3_cancelled_after_sibling_failure` |
 | Phase 2/3/4 | `recovery_v3_cancelled / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v3_terminal_failed_closed / recovery_v4_implementation_in_progress` |
+| Latest four-stage transaction | `recovery_v3_terminal_failed_closed / recovery_v4_remote_pending` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v4_design_frozen / implementation_in_progress` |
+| Stage-0 repair implementation | `recovery_v4_implemented / local_tested / remote_pending` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
@@ -227,7 +227,10 @@ Terminal update at `2026-07-28 22:06 CST`:
 
 Recovery v4 is limited to the explicit evaluator commit-environment bridge and
 a precheck that exercises the same environment lookup and Git comparison as the
-formal evaluator. It does not change the model or scientific protocol.
+formal evaluator. It does not change the model or scientific protocol. The new
+regression failed before implementation and passed afterward; Python
+compilation, Bash syntax and the expanded focused suite completed with
+`97 passed`.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

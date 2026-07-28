@@ -440,6 +440,24 @@ def test_dense_salvage_is_hash_bound_non_mutating_and_evaluated():
     assert "duca_rime_dense_reference_terminal_evaluation_v1" in test_entrypoint
 
 
+def test_dense_salvage_bridges_canonical_evaluator_commit_before_precheck():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_dense_salvage.sh"
+    ).read_text(encoding="utf-8")
+    bridge = 'export DUCA_EXPECTED_COMMIT="${DUCA_RIME_EXPECTED_COMMIT}"'
+    assert bridge in text
+    assert 'expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")' in text
+    assert '"git", "rev-parse", "HEAD"' in text
+    assert "dense salvage formal evaluator commit bridge drift" in text
+    bridge_index = text.index(bridge)
+    identity_probe_index = text.index(
+        'expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")'
+    )
+    precheck_index = text.index('if [[ "${PRECHECK_ONLY:-0}" == 1 ]]')
+    torchrun_index = text.index("torchrun --rdzv-backend=c10d")
+    assert bridge_index < identity_probe_index < precheck_index < torchrun_index
+
+
 def test_phase3_submission_has_six_train_jobs_and_no_same_k_training():
     submit = (ROOT / "scripts" / "submit_duca_rime_phase3.sh").read_text(
         encoding="utf-8"

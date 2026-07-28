@@ -548,3 +548,8 @@
 - Recovery-v3 remains immutable failed engineering evidence. No performance
   result was read or interpreted, and no paper-admissible empirical conclusion
   is available.
+- Implemented the recovery-v4 bridge in the salvage launcher. It overwrite-
+  exports the canonical evaluator commit and runs an evaluator-equivalent
+  environment/Git identity probe before both precheck and actual execution.
+  The new regression was red before the fix and green afterward; local
+  compilation, Bash syntax and the expanded focused suite passed `97` tests.

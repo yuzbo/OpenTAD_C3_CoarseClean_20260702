@@ -1,6 +1,6 @@
 # Stage-0 Recovery v4 Evaluator Commit Bridge
 
-Status: `user_authorized / design_frozen / implementation_in_progress`
+Status: `user_authorized / implemented / local_tested / remote_pending`
 
 ## Failure evidence
 

@@ -50,6 +50,25 @@ cd "${DUCA_RIME_REPO_ROOT}"
   || fail "Git commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
   || fail "Git tree is dirty"
+export DUCA_EXPECTED_COMMIT="${DUCA_RIME_EXPECTED_COMMIT}"
+python - \
+  "${DUCA_RIME_REPO_ROOT}" \
+  "${DUCA_RIME_EXPECTED_COMMIT}" <<'PY'
+import os
+import subprocess
+import sys
+
+repo_root, required_commit = sys.argv[1:]
+expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
+observed_commit = subprocess.check_output(
+    ["git", "rev-parse", "HEAD"],
+    cwd=repo_root,
+    text=True,
+    encoding="utf-8",
+).strip()
+if expected_commit != required_commit or observed_commit != required_commit:
+    raise SystemExit("dense salvage formal evaluator commit bridge drift")
+PY
 check_sha256 \
   "${DUCA_RIME_DENSE_SALVAGE_MANIFEST}" \
   "${DUCA_RIME_DENSE_SALVAGE_MANIFEST_SHA256}" \
