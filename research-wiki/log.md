@@ -497,3 +497,34 @@
   `96 passed`.
 - State remains `implemented/local_tested/remote_pending`. No new experiment was
   yet submitted, no result was interpreted, and official-final remains sealed.
+
+## 2026-07-28 — Recovery-v3 remotely verified and redeployed
+
+- Pushed exact implementation commit
+  `bbf051410839f7bec36b0f2cc085de0cd5041cad`; an independent MAX deployment
+  audit returned `GO`.
+- Created a fresh clean remote checkout. Slurm code preflight `1200405`
+  completed 193 authoritative Linux/Torch contract tests and emitted its gate
+  receipt.
+- The first combined launcher preflight `1200441` intentionally failed closed
+  because the production salvage output parent must exist while the production
+  transaction root must remain absent before submission. No production root or
+  salvage output was created. A separate same-source, same-commit preflight
+  manifest preserved both contracts.
+- Full launcher preflight `1200462` completed Phase-1 dense, uniform K384,
+  uniform K192, paired-cost and both salvage checks. The two salvage checks
+  audited 499 ActionFormer and 462 TriDet EMA keys, wrote no output, preserved
+  source jobs as `FAILED`, and excluded official-final.
+- Froze production physical protocol
+  `69a9cc0b85aaa647a5641f3c00eadd9b8405e8435d3ed5820aae3949df210f4c`
+  and production salvage manifest
+  `f7c09b017a4e973211c0f816f55de506d68046801886066dfff3555f15942aef`.
+- Atomically released jobs `1200483`--`1200488` at
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_bbf05141_20260728_215335`.
+  Submission-manifest SHA-256 is
+  `53a633c162dd69ec3bdfd291e8df97d8e79619d9b688808d0dfad36127abc265`.
+- At `22:04 CST`, production code gate `1200483` was complete; Phase 1 and both
+  salvage arms were running; Phase 2/3 remained dependency-held. The deployment
+  monitor was rebound to these exact identities. Phase 4 remains disabled,
+  official-final remains sealed, and no paper-admissible empirical conclusion
+  is available.

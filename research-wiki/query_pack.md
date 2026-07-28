@@ -16,17 +16,17 @@ Current evidence level:
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `passed` |
-| Dense reference training | `training_loop_finished_but_jobs_failed_at_checkpoint_compaction` |
-| Phase 1 closure | `failed_closed_on_no_padding_ledger` |
-| Phase 2/3/4 | `blocked_by_failed_dependency` |
-| Latest four-stage transaction | `failed_closed_without_terminal_receipts` |
+| Dense reference training | `recovery_v3_salvage_running / engineering_only` |
+| Phase 1 closure | `recovery_v3_running` |
+| Phase 2/3/4 | `phase2_3_dependency_held / phase4_sealed` |
+| Latest four-stage transaction | `recovery_v3_experiment_running / no_terminal_stage_receipts_yet` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v3_implemented / local_tested / remote_pending` |
+| Stage-0 repair implementation | `recovery_v3_deployed / remote_tested / experiment_running` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `terminal_failed_closed_engineering` |
+| H-RIME Stage-0 recovery transaction | `recovery_v3_experiment_running` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -190,10 +190,34 @@ repair is now implemented:
   official-final exclusion;
 - local Python/Bash checks and an expanded 96-test focused suite passed.
 
-The implementation is not yet deployable evidence. It still requires an exact
-clean commit, independent deployment audit, authoritative remote Linux/Torch
-tests, all affected launcher prechecks, new commit-bound manifests and a fresh
-immutable transaction.
+Recovery v3 is now deployed as `ENGINEERING_STATUS`:
+
+- exact clean source:
+  `bbf051410839f7bec36b0f2cc085de0cd5041cad`;
+- independent MAX deployment review: `GO`;
+- authoritative Slurm code preflight `1200405`: `COMPLETED`, with 193 remote
+  Linux/Torch contract tests passing;
+- full launcher preflight `1200462`: `COMPLETED`; Phase-1 dense, uniform K384,
+  uniform K192, paired cost and both immutable dense-salvage arms passed. The
+  salvage prechecks wrote no output and left source jobs `1198115`/`1198116`
+  classified as `FAILED`;
+- production physical-protocol SHA-256:
+  `69a9cc0b85aaa647a5641f3c00eadd9b8405e8435d3ed5820aae3949df210f4c`;
+- production salvage-manifest SHA-256:
+  `f7c09b017a4e973211c0f816f55de506d68046801886066dfff3555f15942aef`;
+- fresh transaction:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_bbf05141_20260728_215335`;
+- submission-manifest SHA-256:
+  `53a633c162dd69ec3bdfd291e8df97d8e79619d9b688808d0dfad36127abc265`;
+- jobs: code gate `1200483`, Phase 1 `1200484`, ActionFormer salvage
+  `1200485`, TriDet salvage `1200486`, Phase 2 `1200487`, and Phase-3
+  controller `1200488`.
+
+At `2026-07-28 22:04 CST`, production code gate `1200483` had completed with
+exit `0:0`; Phase 1 and both salvage arms were running; Phase 2 and the Phase-3
+controller remained protected by their registered dependencies. Phase 4 is
+disabled, official-final is sealed, and no terminal Stage-0 development receipt
+has yet been claimed.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

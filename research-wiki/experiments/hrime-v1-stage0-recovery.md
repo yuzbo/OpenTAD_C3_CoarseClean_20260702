@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v3_implemented / local_tested / remote_pending`
+- Stage-0 code: `recovery_v3_deployed / remote_tested / experiment_running`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `terminal_failed_closed_engineering`
+- Slurm recovery transaction: `recovery_v3_experiment_running`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -164,18 +164,45 @@ local implementation now:
    engineering-only evidence.
 
 Python compilation, Bash syntax and the expanded focused suite passed locally:
-`96 passed`. This state is `implemented/local_tested`, not remotely tested or
-deployed. A clean implementation commit, independent audit, remote Linux/Torch
-tests, launcher prechecks, new manifests and a fresh transaction remain
-mandatory.
+`96 passed`.
+
+The exact implementation commit
+`bbf051410839f7bec36b0f2cc085de0cd5041cad` passed an independent MAX
+deployment review (`GO`). Slurm preflight `1200405` completed 193 authoritative
+remote Linux/Torch contract tests. Full launcher preflight `1200462` then passed
+Phase-1 dense, uniform K384, uniform K192, paired-cost, ActionFormer salvage and
+TriDet salvage contracts. Both salvage checks reported `output_written=false`,
+kept source jobs `1198115`/`1198116` failed, and did not consume official-final.
+
+## Recovery v3 deployment
+
+The fresh transaction was atomically released at
+`/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_bbf05141_20260728_215335`.
+Its immutable identities are:
+
+- physical protocol:
+  `69a9cc0b85aaa647a5641f3c00eadd9b8405e8435d3ed5820aae3949df210f4c`;
+- production salvage manifest:
+  `f7c09b017a4e973211c0f816f55de506d68046801886066dfff3555f15942aef`;
+- submission manifest:
+  `53a633c162dd69ec3bdfd291e8df97d8e79619d9b688808d0dfad36127abc265`.
+
+Jobs `1200483`--`1200488` are respectively code gate, Phase 1, ActionFormer
+salvage, TriDet salvage, Phase 2 and Phase-3 controller. At
+`2026-07-28 22:04 CST`, code gate `1200483` was `COMPLETED` with exit `0:0`;
+Phase 1 `1200484` and both salvage jobs `1200485`/`1200486` were running;
+Phase 2 and Phase 3 were dependency-held. The original failed transaction and
+source jobs remain immutable. Phase 4 is disabled and official-final is sealed.
+This is `experiment_running`, not empirical support.
 
 ## Next gate
 
-1. repair the actual exact-uniform VideoMAE runtime binding and strengthen its
-   precheck on a new clean commit;
-2. register the dense-salvage engineering role/subset in structured evidence
-   finalization and test the complete terminal receipt chain;
-3. freeze new commit-bound manifests and use a fresh immutable transaction;
+1. require the Phase-1 pipeline receipt and both dense checkpoint/recovery
+   receipts from this exact transaction;
+2. allow Phase 2 and Phase 3 to run only through their frozen `afterok`
+   dependencies;
+3. if any contract fails, retain this root as immutable failed engineering
+   evidence and diagnose without in-place reuse;
 4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
    receipts before running the held-out same-total-cost H-RIME oracle or learned
    planner training.
