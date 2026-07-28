@@ -1169,3 +1169,28 @@ append_only: true
   candidate will be manually selected, and P2/P3 plus official test remain
   closed. This run neither supports nor refutes NativeTokenSelect or Geometry
   Zoom.
+
+- 2026-07-28 19:10 CST: fixed-lattice-plus-geometry `1199867` and random
+  `1199868` completed `0:0`. Each published exactly one atomic final
+  checkpoint, zero temporary files, a passing storage receipt, and a
+  `PASS_DEVELOPMENT_ONLY` stage result. Fixed-plus-geometry reported
+  mAP@0.3--0.7 `16.74/15.56/13.34/10.40/7.09`, Avg-mAP `12.63`, and
+  p50/p95/peak-allocated `999.16 ms/4475.58 ms/1817.76 MB`; random reported
+  `16.71/15.13/13.28/10.76/7.53`, `12.68`, and
+  `1812.36 ms/4806.06 ms/1816.86 MB`. Both used 64 unique of 220 valid tokens
+  with zero duplicates, one heavy forward, 12 packed attention/MLP/Adapter
+  calls, and zero dense Adapter calls. The profiles cover development-only
+  model-and-postprocess execution, exclude the evaluator, include
+  same-process loader wait, and do not permit paper-grade full-stack, energy,
+  or paper claims.
+
+- 2026-07-28 19:10 CST: hybrid `1199871` confirmed the predicted independent
+  rendezvous collision on node `g0048`. Random logged `Training Over` at
+  19:04:37; hybrid then lost the shared C10d store and ended `FAILED 1:0` at
+  19:04:46 in Epoch 6 with `Broken pipe`/`RendezvousConnectionError`. It
+  produced no checkpoint, temporary file, or stage result. Its five AMP retry
+  attempts recovered, losses remained finite, and no OOM or non-finite
+  loss/cost occurred. ROI `1199870` remains healthy in Epoch 8 with five
+  recovered AMP retries. Selector `1199872` remains
+  `PENDING(DependencyNeverSatisfied)` with no receipt; no manual selection,
+  P2/P3, or official test is authorized.

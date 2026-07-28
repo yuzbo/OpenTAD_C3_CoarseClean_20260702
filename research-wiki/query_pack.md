@@ -34,20 +34,24 @@ max_chars: 8000
   backward, route gradients, zero checkpoints, and same-commit storage
   measurement verified. It automatically submitted seven P1R leaves
   `1199865`--`1199871` and selector `1199872`. Dense `1199865` and fixed
-  `1199866` completed `0:0`, each with one final checkpoint, zero temporary
-  files, passing storage receipt, and a development-only stage result. Their
-  diagnostic Avg-mAP / mAP@0.6 / mAP@0.7 are respectively
-  `13.90/11.83/8.74` and `12.42/10.75/7.17`; paper-grade cost and claim flags
-  remain false. Primary free NativeTokenSelect `1199869` failed `1:0` in
-  Epoch 8 without checkpoint or stage result because its implicit torchrun
-  localhost port `29400` collided with fixed on shared node `g0043`. Fixed
-  ended training at 18:36:35, then free lost the shared C10d store with
-  `Broken pipe`/`RendezvousConnectionError`; free had finite logged losses, no
-  OOM, and no non-finite loss/cost. Hybrid `1199871` has the same bind
-  collision with random on `g0048` and is protocol-contaminated. Selector
-  `1199872` is `DependencyNeverSatisfied` from the free failure and has no
-  receipt. Remaining arms continue only as preserved diagnostics. Thus this
-  P1R matrix is infrastructure-invalid, supplies no NativeTokenSelect or
+  `1199866`, fixed-plus-geometry `1199867`, and random `1199868` completed
+  `0:0`, each with one final checkpoint, zero temporary files, passing storage
+  receipt, and a development-only stage result. Their diagnostic
+  Avg-mAP/mAP@0.6/mAP@0.7 are respectively `13.90/11.83/8.74`,
+  `12.42/10.75/7.17`, `12.63/10.40/7.09`, and `12.68/10.76/7.53`.
+  Fixed-plus-geometry and random used exact unique `K=64` of 220, zero
+  duplicates, one heavy forward, 12 packed attention/MLP/Adapter calls, and
+  zero dense Adapter calls. Their profiles are development-only
+  model-and-postprocess diagnostics, not paper-grade full-stack or energy
+  evidence. Primary free NativeTokenSelect `1199869` failed `1:0` in Epoch 8
+  without checkpoint or stage result because its implicit torchrun localhost
+  port `29400` collided with fixed on shared node `g0043`. Hybrid `1199871`
+  independently confirmed the same defect on `g0048`: random ended training
+  at 19:04:37, then hybrid lost the shared store and failed `1:0` in Epoch 6
+  with no checkpoint or stage result. Neither failure showed OOM or non-finite
+  loss/cost. ROI remains healthy in Epoch 8. Selector `1199872` is
+  `DependencyNeverSatisfied` from the free failure and has no receipt. Thus
+  this P1R matrix is infrastructure-invalid, supplies no NativeTokenSelect or
   geometry verdict, and cannot authorize P2/P3 or official test.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from

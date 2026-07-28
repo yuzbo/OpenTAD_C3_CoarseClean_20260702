@@ -26,12 +26,16 @@ however, is not a scientific test of the idea. Concurrent single-GPU leaves
 used implicit `torch.distributed.run --standalone` localhost port `29400`.
 Free NativeTokenSelect `1199869` shared node `g0043` with fixed lattice,
 attached to its TCPStore after a bind collision, and failed in Epoch 8 when
-that store closed. Hybrid `1199871` has the same collision with random on
-`g0048`. The selector is consequently `DependencyNeverSatisfied`. Dense and
-fixed produced development-only diagnostic cells, but they cannot establish
-the required native-base comparison without a valid free result and selector
-receipt. This is deployment-isolation evidence only, not support for or
-against NativeTokenSelect, and it does not authorize geometry, P2/P3, official
+that store closed. Hybrid `1199871` had the same collision with random on
+`g0048` and failed in Epoch 6 when random's store closed. The selector is
+consequently `DependencyNeverSatisfied`. Dense, fixed,
+fixed-plus-geometry, and random produced development-only diagnostic cells,
+but they cannot establish the required native-base comparison without a valid
+free result and selector receipt. Descriptively, the fixed geometry
+side-channel changed fixed's single-seed Avg-mAP by `+0.21` while reducing
+mAP@0.6/0.7 by `0.35/0.08`; this is not authorization to interpret geometry.
+The failures are deployment-isolation evidence only, not support for or
+against NativeTokenSelect, and they do not authorize geometry, P2/P3, official
 test, an efficiency claim, or a paper claim. A valid future test must repeat
 the complete frozen matrix in a new namespace with a unique or kernel-assigned
 per-leaf rendezvous endpoint and an explicit concurrent-node isolation gate.

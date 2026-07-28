@@ -46,12 +46,12 @@ updated: 2026-07-28
    `torch.distributed.run --standalone` rendezvous endpoint. Slurm may place
    independent one-GPU jobs on the same node, where the default localhost port
    aliases their TCPStore lifetimes. Job `1199869` attached to fixed lattice's
-   port `29400` and died when that store closed; hybrid `1199871` logged the
-   same collision with random. Every leaf must use a unique or kernel-assigned
-   endpoint such as the already audited `127.0.0.1:0` pattern, bind a unique
-   rendezvous ID, and pass an intentional same-node concurrent isolation gate.
-   A bind collision invalidates the cell; never resume or infer model utility
-   from it.
+   port `29400` and died when that store closed; hybrid `1199871` repeated the
+   failure on `g0048`, terminating nine seconds after random logged
+   `Training Over`. Every leaf must use a unique or kernel-assigned endpoint
+   such as the already audited `127.0.0.1:0` pattern, bind a unique rendezvous
+   ID, and pass an intentional same-node concurrent isolation gate. A bind
+   collision invalidates the cell; never resume or infer model utility from it.
 
 ## Continuous-RoI S2 deployment anti-repetition
 

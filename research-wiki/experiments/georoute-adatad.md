@@ -281,10 +281,32 @@ benefit without extra total cost?
   `Broken pipe`/`RendezvousConnectionError`. Free had four recovered AMP retry
   attempts, finite logged losses, and no OOM or non-finite loss/cost signature.
   Hybrid `1199871` also overlapped random `1199868` on `g0048` and logged the
-  same port collision, so its current execution is protocol-contaminated even
-  before terminal state. Fixed-plus-geometry, random, ROI, and hybrid remain
-  running for preserved diagnostics; they cannot rescue or manually complete
-  the hierarchical decision.
+  same port collision.
+- At 19:10 CST, fixed-lattice-plus-geometry `1199867` and random `1199868`
+  completed `0:0`. Each has exactly one atomic final checkpoint, zero temporary
+  files, a passing storage receipt, and a development-only stage result.
+  Fixed-plus-geometry reported mAP@0.3--0.7
+  `16.74/15.56/13.34/10.40/7.09` and Avg-mAP `12.63`; random reported
+  `16.71/15.13/13.28/10.76/7.53` and `12.68`. Relative to fixed lattice,
+  the geometry side-channel diagnostic changed Avg-mAP by `+0.21` but
+  mAP@0.6/0.7 by `-0.35/-0.08`; random changed them by
+  `+0.26/+0.01/+0.36`. These are single-seed descriptive cell deltas only.
+  Both sparse controls selected exactly 64 unique of 220 valid tokens per
+  tubelet with zero duplicates, one heavy forward, 12 packed
+  attention/MLP/Adapter calls, and zero dense Adapter calls.
+- Their development-only model-and-postprocess profiles reported
+  p50/p95/peak-allocated `999.16 ms/4475.58 ms/1817.76 MB` for
+  fixed-plus-geometry and `1812.36 ms/4806.06 ms/1816.86 MB` for random.
+  The evaluator is excluded, same-process loader wait is included, and no
+  paper-grade full-stack or energy claim is allowed.
+- Hybrid `1199871` then failed `1:0` in Epoch 6 with zero checkpoints, zero
+  temporary files, and no stage result. Random logged `Training Over` at
+  19:04:37; hybrid immediately lost the shared C10d store and terminated at
+  19:04:46 with the same `Broken pipe`/`RendezvousConnectionError`. Its five
+  AMP retry attempts had recovered, losses remained finite, and no OOM or
+  non-finite loss/cost occurred. ROI `1199870` remains healthy in Epoch 8
+  with five recovered AMP retries and no fatal signature. These jobs cannot
+  rescue or manually complete the hierarchical decision.
 - Selector `1199872` is now `PENDING(DependencyNeverSatisfied)` because
   `afterok:1199869` failed. It has emitted no selection receipt and cannot
   authorize P2/P3. The seven-arm P1R matrix is therefore scientifically
