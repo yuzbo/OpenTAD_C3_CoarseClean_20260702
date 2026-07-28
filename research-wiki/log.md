@@ -787,5 +787,5 @@
 - Production gate `1201416` subsequently completed with exit `0:0`; its
   exact-commit receipt SHA-256 is
   `34152cfe1fb6c008f4cd20d11f3ed1c6dd19f980caf45d2b1069a029a065146d`.
-  Phase 1 `1201417` and salvage jobs `1201418`/`1201419` are scheduler-queued;
-  Phase 2 `1201420` and controller `1201421` remain dependency-held.
+  Phase 1 `1201417` and salvage jobs `1201418`/`1201419` subsequently entered
+  `RUNNING`; Phase 2 `1201420` and controller `1201421` remain dependency-held.

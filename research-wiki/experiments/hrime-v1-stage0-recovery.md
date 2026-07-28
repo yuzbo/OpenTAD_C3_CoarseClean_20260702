@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v6_gate_passed / children_queued`
+- Slurm recovery transaction: `recovery_v6_phase1_and_salvage_running`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -449,8 +449,8 @@ dependency-held. Phase 4 remains disabled and official-final remains sealed.
 Production code gate `1201416` then completed with exit `0:0`; its
 exact-commit receipt SHA-256 is
 `34152cfe1fb6c008f4cd20d11f3ed1c6dd19f980caf45d2b1069a029a065146d`.
-Phase 1 `1201417` and both salvage arms `1201418`/`1201419` are
-scheduler-queued; Phase 2 `1201420` and controller `1201421` remain
+Phase 1 `1201417` and both salvage arms `1201418`/`1201419` subsequently
+entered `RUNNING`; Phase 2 `1201420` and controller `1201421` remain
 dependency-held.
 
 Correct empirical statement:
