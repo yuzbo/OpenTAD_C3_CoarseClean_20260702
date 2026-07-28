@@ -47,3 +47,7 @@ These failures and naming mistakes must not be repeated.
     `workflow.seal_eval_dataloaders_during_training=True`; otherwise the generic
     trainer attempts to build a validation loader from `None` before the first
     optimizer update.
+22. Do not leave reentrant VideoMAE gradient checkpointing enabled in the
+    single-GPU DDP dense TriDet reference. It marks a shared parameter ready
+    twice on the first backward pass; bind `with_cp=False` in config and
+    precheck, matching the dense ActionFormer execution contract.

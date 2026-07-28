@@ -33,6 +33,9 @@ evaluation = dict(
 
 model = dict(
     type="TriDet",
+    backbone=dict(
+        backbone=dict(with_cp=False),
+    ),
     projection=dict(
         _delete_=True,
         type="TriDetProj",

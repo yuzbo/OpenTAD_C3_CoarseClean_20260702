@@ -136,6 +136,29 @@ The next transaction must use the commit that adds
 it in precheck; no output from this aborted root may be reused as positive
 evidence.
 
+Second aborted immutable submission (also retained; no positive evidence may be
+reused):
+
+- implementation commit:
+  `1ff54baf782194faf1403296186a465031f26dd9`;
+- external run root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_1ff54baf_20260728_095843`;
+- physical protocol SHA-256:
+  `ce5debb5e436e0e6b6919747680553a5ad947c1938c540f80217165288d6c65a`;
+- submission-manifest SHA-256:
+  `114821c948345de3beb98455c892921b757f84f68bf80b2a745fd6d0a5bce77b`;
+- code gate `1197974`: `COMPLETED`;
+- Phase 1 `1197975`: `CANCELLED`;
+- dense ActionFormer `1197976`: `CANCELLED` after demonstrating stable
+  optimization through update 50;
+- dense TriDet `1197977`: `FAILED` on backward 1 from reentrant VideoMAE
+  checkpointing plus DDP;
+- Phase 2 `1197979` and controller `1197980`: `CANCELLED` before execution.
+
+The next commit must additionally freeze
+`model.backbone.backbone.with_cp=False` for dense TriDet and reject drift in
+both the launcher precheck and code-gate config matrix.
+
 ## Stop rules
 
 - Any failed hash, split, coordinate, exact-K, no-padding, or cost-match check

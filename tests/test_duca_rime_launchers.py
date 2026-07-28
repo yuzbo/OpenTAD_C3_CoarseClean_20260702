@@ -315,6 +315,7 @@ def test_dense_tridet_launcher_is_slurm_checkpoint_evidence_bound():
     assert "state_dict_ema" in text
     assert "uses_official_final" in text
     assert "seal_eval_dataloaders_during_training" in text
+    assert "cfg.model.backbone.backbone.with_cp" in text
 
 
 def test_dense_actionformer_reference_reuses_the_evidence_bound_backend_runner():

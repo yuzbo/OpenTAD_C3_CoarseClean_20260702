@@ -206,6 +206,7 @@ for path in configs:
         assert cfg.solver.train.batch_size == 1
         assert cfg.post_processing.save_dict is True
     if path in dense_reference_configs:
+        assert cfg.model.backbone.backbone.with_cp is False
         assert cfg.dataset.val is None
         assert cfg.workflow.seal_eval_dataloaders_during_training is True
         assert cfg.workflow.val_loss_interval == -1

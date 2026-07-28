@@ -109,6 +109,7 @@ if (
     or cfg.duca_rime_dense_contract.detector_backend != backend
     or cfg.duca_rime_dense_contract.selector is not None
     or cfg.duca_rime_dense_contract.official_final_subset_consumed is not False
+    or bool(cfg.model.backbone.backbone.with_cp)
     or cfg.dataset.val is not None
     or not bool(cfg.workflow.get("seal_eval_dataloaders_during_training", False))
     or int(cfg.workflow.val_loss_interval) > 0

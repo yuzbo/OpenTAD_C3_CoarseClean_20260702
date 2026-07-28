@@ -89,3 +89,13 @@
 - Added the missing seal to both dense configs and bound it in the launcher
   precheck, config matrix, and focused tests. This is an orchestration fix, not
   a model or scientific-protocol change.
+- The next immutable transaction at commit `1ff54baf` passed its code gate.
+  Phase 1 and dense ActionFormer ran normally, and ActionFormer reached update
+  50. Dense TriDet then failed on its first backward pass because it alone still
+  inherited reentrant VideoMAE gradient checkpointing; DDP reported a parameter
+  marked ready twice. The transaction again failed closed, and jobs `1197975`,
+  `1197976`, `1197979`, and `1197980` were canceled by exact ID.
+- Dense TriDet now explicitly sets `with_cp=False`, as the already-working dense
+  ActionFormer and protected/RIME bases do. The launcher and code gate reject
+  any future dense reference with checkpointing re-enabled. This changes memory
+  use, not the detector, objective, data, update count, or publication claim.
