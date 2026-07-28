@@ -390,3 +390,35 @@
   independent deployment audit pass, the complete preregistration is frozen,
   and the full development oracle receipt passes. No paper-admissible empirical
   conclusion is available.
+
+## 2026-07-28 — Stage-1 remote verification and Stage-0 recovery failure absorbed
+
+- Pushed exact Stage-1 implementation commit
+  `577e748ffb3fe452a57094d3d0bb5f022c32f739` and checked it out cleanly on the
+  remote Linux/Torch environment.
+- Fourteen targeted remote Torch tests passed in 48.62 seconds: strict
+  RIME-full-to-Stage-1 architecture loading, short-window replay,
+  cross-window aggregation/NMS/official-evaluator execution receipts, the
+  Stage-1 oracle core, and exact expected prediction-video keys. Stage-1 is now
+  `remote_torch_tested`, not `experiment_run`.
+- Rechecked recovery jobs `1199978`--`1199983`. The code gate passed. Phase 1
+  failed because `tools/test.py` received the base config's relative VideoMAE
+  initialization path. Both dense salvage arms failed with exit code 126
+  because the generated wrapper directly executed a `100644` shell script.
+  These are deployment failures, not model or performance evidence.
+- Phase 2/controller were verified as `DependencyNeverSatisfied` and canceled by
+  exact IDs `1199982` and `1199983`. The failed root, logs, released submission
+  receipt, and original failed job states remain untouched.
+- Implemented the deployment repair: Phase-1 dense evaluation now requires,
+  hash-checks, passes and records the exact absolute VideoMAE initialization;
+  the recovery submitter invokes both salvage commands through explicit Bash;
+  the salvage launcher mode is restored to `100755`. Bash syntax and 36 focused
+  launcher/salvage tests pass locally.
+- Independent repair review found that salvage checked and used the VideoMAE
+  initialization but did not explicitly carry its SHA-256 into the terminal
+  recovery receipt. Added a second in-process hash check plus explicit path/hash
+  fields to the source/recovery evidence; this closes provenance rather than
+  changing execution.
+- This repair still requires a clean commit, remote prechecks, an independent
+  audit, new commit-bound manifests and a fresh immutable Slurm transaction.
+  No paper-admissible empirical conclusion is available.

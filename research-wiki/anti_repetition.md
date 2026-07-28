@@ -189,3 +189,14 @@ These failures and naming mistakes must not be repeated.
     for every video. Per-video degeneracy is recorded, but each anchor must have
     at least one feasibility-preserving non-identity allocation or planning
     fails before any execution artifact is written.
+66. Do not assume a repository-relative pretrained-weight path resolves from a
+    clean Slurm checkout. Every formal evaluator must require the exact absolute
+    initialization path and SHA-256, pass that path in the actual config
+    overrides, and record its hash in the terminal receipt.
+67. Do not rely on a tracked executable bit as the only way a held Slurm wrapper
+    can enter a route-critical shell script. Preserve the executable bit and use
+    explicit `bash scripts/...` in generated `env` commands.
+68. Do not leave route-local `DependencyNeverSatisfied` jobs consuming the
+    submit quota or describe them as pending evidence. Verify the failed
+    dependency, cancel only the exact impossible children, and preserve the
+    failed immutable root and scheduler history.

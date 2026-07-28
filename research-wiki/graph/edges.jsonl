@@ -16,3 +16,4 @@
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"gates","target":"models/hrime-learned-v1"}
 {"source":"ideas/duca-rime-graph","relation":"tested_by","target":"experiments/hrime-v1-stage1-oracle"}
 {"source":"experiments/hrime-v1-stage1-oracle","relation":"gates","target":"models/hrime-learned-v1"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-902168a1"}

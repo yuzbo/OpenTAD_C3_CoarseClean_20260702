@@ -246,6 +246,24 @@ def test_phase1_evidence_pipeline_uses_real_controls_before_sealing():
     assert "phase1_receipt_sha256" in text
 
 
+def test_phase1_dense_launcher_binds_hash_checked_pretrain_path():
+    text = (
+        ROOT / "scripts" / "run_duca_rime_phase1_dense_eval.sh"
+    ).read_text(encoding="utf-8")
+    assert "DUCA_RIME_PRETRAIN_PATH" in text
+    assert "DUCA_RIME_PRETRAIN_SHA256" in text
+    assert (
+        'check_sha256 \\\n'
+        '  "${DUCA_RIME_PRETRAIN_PATH}" \\\n'
+        '  "${DUCA_RIME_PRETRAIN_SHA256}"'
+    ) in text
+    assert (
+        '"model.backbone.custom.pretrain=${DUCA_RIME_PRETRAIN_PATH}"'
+        in text
+    )
+    assert "pretrain_sha256=${DUCA_RIME_PRETRAIN_SHA256}" in text
+
+
 def test_phase2_pipeline_trains_mixed_k_before_building_evidence():
     text = (
         ROOT
@@ -294,6 +312,7 @@ def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     assert "scontrol release" in text
     assert 'DUCA_RIME_DENSE_RECOVERY_MODE:-fresh_train' in text
     assert "run_duca_rime_dense_salvage.sh" in text
+    assert text.count("bash scripts/run_duca_rime_dense_salvage.sh") == 2
     assert '"source_jobs_remain_failed"' in text
     assert '"failed_transaction_mutated": False' in text
     assert '"phase4": None' in text
@@ -396,6 +415,9 @@ def test_dense_salvage_is_hash_bound_non_mutating_and_evaluated():
     assert "source_training_git_commit" in text
     assert '"source_job_state": "FAILED"' in text
     assert '"original_job_reclassified_as_success": False' in text
+    assert '"recovery_evaluation_pretrain_sha256": evaluation_pretrain_sha' in text
+    assert '"evaluation_pretrain_sha256": evaluation_pretrain_sha' in text
+    assert 'sha(evaluation_pretrain_path) != evaluation_pretrain_sha' in text
     assert "evaluation_evidence.json" in text
     assert "build_trained_checkpoint_binding" in text
     assert "recovery_receipt.json" in text

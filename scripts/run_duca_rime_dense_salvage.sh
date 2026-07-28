@@ -207,6 +207,8 @@ python - \
   "${resolved_config_sha256}" \
   "${split_values[4]}" \
   "${DUCA_RIME_DENSE_SALVAGE_CONFIG}" \
+  "${DUCA_RIME_PRETRAIN_PATH}" \
+  "${DUCA_RIME_PRETRAIN_SHA256}" \
   "${checkpoint}" <<'PY'
 import hashlib
 import json
@@ -230,12 +232,16 @@ from tools.bata.duca_trained_checkpoint_binding import (
     resolved_config_sha,
     split_assignment_sha,
     config_path,
+    evaluation_pretrain_path,
+    evaluation_pretrain_sha,
     checkpoint_path,
 ) = sys.argv[1:]
 root = pathlib.Path(root).resolve()
 salvage_path = root / "salvage_receipt.json"
 evaluation_path = root / "evaluation_evidence.json"
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+if sha(evaluation_pretrain_path) != evaluation_pretrain_sha:
+    raise SystemExit("recovery evaluation pretrain SHA-256 drift")
 salvage = json.loads(salvage_path.read_text(encoding="utf-8"))
 if (
     salvage.get("status") != "passed"
@@ -266,6 +272,10 @@ training_evidence = {
     "salvage_receipt_path": str(salvage_path),
     "salvage_receipt_sha256": sha(salvage_path),
     "split_assignment_sha256": split_assignment_sha,
+    "recovery_evaluation_pretrain_path": str(
+        pathlib.Path(evaluation_pretrain_path).resolve()
+    ),
+    "recovery_evaluation_pretrain_sha256": evaluation_pretrain_sha,
     "embedded_training_provenance": False,
     "uses_official_final": False,
     "claim_scope": "engineering_dense_reference_recovery_not_method_evidence",
@@ -304,6 +314,10 @@ receipt = {
     "evaluation_evidence_sha256": sha(evaluation_path),
     "checkpoint_evidence_path": str(binding_path),
     "checkpoint_evidence_sha256": sha(binding_path),
+    "evaluation_pretrain_path": str(
+        pathlib.Path(evaluation_pretrain_path).resolve()
+    ),
+    "evaluation_pretrain_sha256": evaluation_pretrain_sha,
     "uses_official_final": False,
     "energy_evidence_available": False,
     "original_job_reclassified_as_success": False,

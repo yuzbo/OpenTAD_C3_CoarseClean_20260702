@@ -7,8 +7,8 @@
 - Stage-0 code: `implemented`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
-- Torch-dependent verification: `remote_pending`
-- Slurm recovery transaction: `submitted / scheduler_pending`
+- Torch-dependent verification: `deployment_repair_pending`
+- Slurm recovery transaction: `failed_closed_engineering / repair_not_yet_redeployed`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -85,16 +85,37 @@ The fresh recovery transaction was released at
 Its submission-manifest SHA-256 is
 `fd6fef65ac01e7830c6b5e337684b19a3bad65c1432f819cfecb32e83dfefb85`.
 Jobs `1199978`--`1199983` are the code gate, Phase 1, ActionFormer salvage,
-TriDet salvage, Phase 2 and Phase-3 controller respectively. At the first
-post-release snapshot, the code gate was `PENDING (Priority)` and every other
-job was correctly dependency-pending. No terminal experiment receipt exists
-yet; Phase 4 is disabled and official-final remains sealed.
+TriDet salvage, Phase 2 and Phase-3 controller respectively. The code gate
+completed, but this transaction then failed closed for two deployment reasons:
+
+- Phase 1 retained the base config's repository-relative VideoMAE initialization
+  path and failed on the GPU node before evaluation;
+- both salvage wrappers directly executed
+  `scripts/run_duca_rime_dense_salvage.sh`, whose Git mode was `100644`, and
+  exited with code 126 before Python.
+
+Phase 2/controller consequently became `DependencyNeverSatisfied` and were
+canceled by exact job IDs `1199982`/`1199983`. The old root, logs and failed
+states remain immutable. Only the code-gate and submission receipts exist; no
+Phase-1, dense-recovery, Phase-2 or Phase-3 terminal receipt exists.
+
+The source repair now requires and hash-checks the absolute VideoMAE path in the
+Phase-1 dense evaluator, passes it through `model.backbone.custom.pretrain`,
+records its hash, invokes both salvage arms with explicit Bash, and restores the
+script's executable bit. A fresh independent review also required the salvage
+terminal evidence to bind that initialization directly; both the source evidence
+and recovery receipt now record the resolved path and SHA-256 after a second
+in-process hash check. Local Bash syntax and focused launcher/salvage tests pass.
+A clean commit, remote verification and fresh immutable deployment are still
+required. Phase 4 remains disabled and official-final remains sealed.
 
 ## Next gate
 
-1. require code-gate receipt on the exact clean deployment commit;
-2. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
-3. run the held-out same-total-cost H-RIME oracle before learned planner
+1. commit, remotely precheck and independently audit the deployment repair;
+2. release a new immutable recovery transaction without modifying the failed
+   `902168a1` root;
+3. require Phase-1, dense recovery, Phase-2 and Phase-3 development receipts;
+4. run the held-out same-total-cost H-RIME oracle before learned planner
    training.
 
 Correct empirical statement:

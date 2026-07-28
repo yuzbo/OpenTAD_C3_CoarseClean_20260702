@@ -28,6 +28,8 @@ for name in \
   DUCA_RIME_PHASE1_DENSE_CHECKPOINT_SHA256 \
   DUCA_RIME_SPLIT_MANIFEST \
   DUCA_RIME_SPLIT_MANIFEST_SHA256 \
+  DUCA_RIME_PRETRAIN_PATH \
+  DUCA_RIME_PRETRAIN_SHA256 \
   DUCA_RIME_PHASE1_SPLIT_ROLE \
   DUCA_RIME_EVAL_SEED \
   DUCA_RIME_SHORT_MAX_SECONDS \
@@ -58,6 +60,10 @@ check_sha256 \
   "${DUCA_RIME_SPLIT_MANIFEST}" \
   "${DUCA_RIME_SPLIT_MANIFEST_SHA256}" \
   "RIME split manifest"
+check_sha256 \
+  "${DUCA_RIME_PRETRAIN_PATH}" \
+  "${DUCA_RIME_PRETRAIN_SHA256}" \
+  "VideoMAE initialization"
 python tools/bata/create_duca_rime_splits.py \
   --validate-manifest "${DUCA_RIME_SPLIT_MANIFEST}" \
   --expected-sha256 "${DUCA_RIME_SPLIT_MANIFEST_SHA256}" \
@@ -87,15 +93,22 @@ export RANK=0
 export WORLD_SIZE=1
 
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
-  python - "${DUCA_RIME_PHASE1_DENSE_CONFIG}" <<'PY'
+  python - \
+    "${DUCA_RIME_PHASE1_DENSE_CONFIG}" \
+    "${DUCA_RIME_PRETRAIN_PATH}" <<'PY'
+import pathlib
 import sys
 from mmengine.config import Config
 
 cfg = Config.fromfile(sys.argv[1])
+cfg.model.backbone.custom.pretrain = sys.argv[2]
 assert cfg.workflow.formal_protocol == "duca_rime_phase1_dense_control_v1"
 assert cfg.duca_rime_baseline_contract.phase == 1
 assert cfg.duca_rime_baseline_contract.checkpoint_compatibility_mode == "strict_exact_v1"
 assert cfg.evaluation.subset == "training"
+assert pathlib.Path(cfg.model.backbone.custom.pretrain).resolve() == pathlib.Path(
+    sys.argv[2]
+).resolve()
 PY
   echo "[DUCA_RIME_PHASE1_DENSE] PRECHECK PASS"
   exit 0
@@ -112,7 +125,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
   --checkpoint-state-key state_dict_ema \
   --metrics-json \
   "${DUCA_RIME_PHASE1_DENSE_ROOT}/terminal_evaluation.json" \
-  --cfg-options "work_dir=${DUCA_RIME_PHASE1_DENSE_ROOT}/runtime"
+  --cfg-options \
+  "work_dir=${DUCA_RIME_PHASE1_DENSE_ROOT}/runtime" \
+  "model.backbone.custom.pretrain=${DUCA_RIME_PRETRAIN_PATH}"
 
 python -m tools.bata.evaluate_duca_rime_predictions \
   --terminal-evaluation \
@@ -134,6 +149,7 @@ printf '%s\n' \
   "split_role=${DUCA_RIME_PHASE1_SPLIT_ROLE}" \
   "seed=${DUCA_RIME_EVAL_SEED}" \
   "checkpoint_sha256=${DUCA_RIME_PHASE1_DENSE_CHECKPOINT_SHA256}" \
+  "pretrain_sha256=${DUCA_RIME_PRETRAIN_SHA256}" \
   "terminal_evaluation_sha256=$(sha256sum "${DUCA_RIME_PHASE1_DENSE_ROOT}/terminal_evaluation.json" | awk '{print $1}')" \
   "localization_metrics_sha256=$(sha256sum "${DUCA_RIME_PHASE1_DENSE_ROOT}/localization_metrics.json" | awk '{print $1}')" \
   > "${DUCA_RIME_PHASE1_DENSE_ROOT}/evaluation.receipt"

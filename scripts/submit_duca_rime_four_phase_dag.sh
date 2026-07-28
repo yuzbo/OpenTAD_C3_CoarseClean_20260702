@@ -271,7 +271,7 @@ submit_job \
         "env DUCA_RIME_DENSE_SALVAGE_BACKEND=ActionFormer" \
         " DUCA_RIME_DENSE_SALVAGE_ROOT=${DUCA_RIME_DENSE_ACTIONFORMER_ROOT}" \
         " DUCA_RIME_DENSE_SALVAGE_CONFIG=${DUCA_RIME_DENSE_ACTIONFORMER_CONFIG}" \
-        " scripts/run_duca_rime_dense_salvage.sh"
+        " bash scripts/run_duca_rime_dense_salvage.sh"
     else
       printf '%s' scripts/run_duca_rime_dense_actionformer_train.sh
     fi
@@ -287,7 +287,7 @@ submit_job \
         "env DUCA_RIME_DENSE_SALVAGE_BACKEND=TriDet" \
         " DUCA_RIME_DENSE_SALVAGE_ROOT=${DUCA_RIME_DENSE_TRIDET_ROOT}" \
         " DUCA_RIME_DENSE_SALVAGE_CONFIG=${DUCA_RIME_DENSE_TRIDET_CONFIG}" \
-        " scripts/run_duca_rime_dense_salvage.sh"
+        " bash scripts/run_duca_rime_dense_salvage.sh"
     else
       printf '%s' scripts/run_duca_rime_dense_tridet_train.sh
     fi

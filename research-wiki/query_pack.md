@@ -21,12 +21,12 @@ Current evidence level:
 | Phase 2/3/4 | `blocked_by_failed_dependency` |
 | Latest four-stage transaction | `failed_closed_without_terminal_receipts` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `implemented / local_non_torch_tested / remote_pending` |
+| Stage-0 repair implementation | `implemented / local_non_torch_tested / deployment_repair_in_progress` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
-| H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_pending` |
+| H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `submitted / scheduler_pending` |
+| H-RIME Stage-0 recovery transaction | `failed_closed_engineering / repair_not_yet_redeployed` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -113,7 +113,7 @@ The uniform-K384 localization JSON exists on the 20-video development subset,
 but its evaluation receipt is absent, so it is not a passing Phase-1 artifact.
 The failure is a valid cost-contract stop, not evidence about model accuracy.
 
-The repaired Stage-0 recovery transaction is now the active scheduler target:
+The first repaired Stage-0 recovery transaction is terminally failed closed:
 
 - exact deployment commit:
   `902168a12bc92babd62b6cb1877ce7137f56cea0`;
@@ -124,13 +124,24 @@ The repaired Stage-0 recovery transaction is now the active scheduler target:
 - jobs: code gate `1199978`, Phase 1 `1199979`, dense ActionFormer salvage
   `1199980`, dense TriDet salvage `1199981`, Phase 2 `1199982`, and Phase-3
   controller `1199983`;
-- first monitor snapshot: code gate `PENDING (Priority)`, all downstream jobs
-  dependency-pending, no terminal receipts;
+- terminal scheduler state: code gate `1199978` passed; Phase 1 `1199979`
+  failed because the dense evaluator retained the repository-relative VideoMAE
+  initialization path instead of the already hash-checked absolute path;
+  ActionFormer/TriDet salvage `1199980`/`1199981` failed before Python because
+  the submit wrapper directly executed a tracked non-executable script;
+  Phase 2/controller `1199982`/`1199983` became
+  `DependencyNeverSatisfied` and were canceled by exact ID;
+- only the code-gate receipt and released submission receipt exist; no Phase-1,
+  dense-recovery, Phase-2 or Phase-3 terminal receipt exists;
 - dense recovery claim scope:
   `engineering_dense_reference_recovery_not_method_evidence`;
 - Phase 4 disabled; official-final sealed.
 
-This status is `ENGINEERING_STATUS`, not an empirical result.
+The repair binds and hash-checks the absolute VideoMAE initialization in the
+actual `tools/test.py` command and invokes salvage through explicit Bash while
+also restoring its executable bit. It is locally tested but has not yet been
+committed, audited or redeployed. This status is `ENGINEERING_STATUS`, not an
+empirical result.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by
@@ -186,8 +197,10 @@ preferred next-model design. These facts must not be conflated.
    MCKP, stable video grouping, hash-bound replay, and homogeneous-K dispatch
    planning. The Stage-1 development-oracle surface now connects replay to the
    full detector and emits machine-verifiable window-coverage, merge, NMS,
-   saved-prediction and official-evaluator receipts, but that path has not yet
-   executed remotely. It does **not** yet have a connected learned video-budget
+   saved-prediction and official-evaluator receipts. Fourteen targeted
+   Torch/Linux tests on the exact clean Stage-1 commit passed, including strict
+   source-checkpoint compatibility, short-window replay, and actual
+   merge/NMS/evaluator receipt construction. It does **not** yet have a connected learned video-budget
    head, an executing shared-video scan, the grouped training path, or
    calibration evidence.
 
@@ -208,7 +221,7 @@ deferred alternative to the preferred next-model design. The user subsequently
 approved the audited H-RIME specification and authorized implementation. Its
 literal state is now `user_approved`, `designed`,
 `core_and_stage1_oracle_surface_implemented`, `local_non_torch_tested`, and
-`remote_torch_pending`; the learned/shared-scan detector path is not yet
+`remote_torch_tested`; the learned/shared-scan detector path is not yet
 implemented or empirically supported and must not be silently attributed to the
 current four-stage RIME code.
 

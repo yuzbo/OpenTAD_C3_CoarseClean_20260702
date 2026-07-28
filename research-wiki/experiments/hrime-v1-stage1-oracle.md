@@ -7,7 +7,7 @@
 - Deterministic planner/statistics: `implemented`
 - Replay/detector/evaluator integration: `implemented`
 - Focused non-Torch verification: `tested`
-- Torch/runtime verification: `remote_pending`
+- Torch/runtime verification: `remote_torch_tested`
 - Preregistration artifact: `not_yet_frozen`
 - Development oracle matrix: `not_yet_run`
 - Learned H-RIME: `not_authorized`
@@ -80,9 +80,12 @@ observing the development matrix.
 ## Current verification
 
 Local compilation and launcher syntax pass. Sixty-one focused Stage-1/RIME
-non-Torch tests and twenty-three required C3 regression tests pass. The
-Torch-dependent strict-architecture and end-to-end merge/NMS/evaluator receipt
-tests require the remote Linux environment.
+non-Torch tests and twenty-three required C3 regression tests pass. On exact
+clean commit `577e748ffb3fe452a57094d3d0bb5f022c32f739`, fourteen targeted
+Torch/Linux tests pass remotely, including strict RIME-full architecture
+loading, short-window Stage-1 replay, full cross-window merge/NMS/evaluator
+execution receipts, the Stage-1 oracle core, and prediction-key completeness.
+This is runtime verification, not an oracle experiment result.
 
 Correct empirical statement:
 
