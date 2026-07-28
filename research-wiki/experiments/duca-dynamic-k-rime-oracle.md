@@ -9,7 +9,7 @@
 - Implementation: `implemented`
 - Focused local verification: `tested`
 - Remote authoritative verification: `passed`
-- Deployment: `redeployment_pending_after_fail_closed_pretrain_abort`
+- Deployment: `experiment_running`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -158,6 +158,28 @@ reused):
 The next commit must additionally freeze
 `model.backbone.backbone.with_cp=False` for dense TriDet and reject drift in
 both the launcher precheck and code-gate config matrix.
+
+Active immutable submission:
+
+- implementation commit:
+  `d9d454cd49a3e7a87694fc948601d00ff4043cb0`;
+- external run root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_d9d454cd_20260728_101256`;
+- physical protocol SHA-256:
+  `c4dfc31a64b56a93366c43443883df535e572eed38df63878fe11d3e00193a70`;
+- submission-manifest SHA-256:
+  `ed374ae81991ca8241c0b01ab6588f13ea292b967b18a58115ec3f735440b038`;
+- code gate `1198113`: `COMPLETED`, 158 tests and 24 configs passed;
+- Phase 1 `1198114`: `RUNNING`;
+- dense ActionFormer `1198115`: `RUNNING`, stable through update 50;
+- dense TriDet `1198116`: `RUNNING`, stable through update 50;
+- Phase 2 `1198117`: dependency-pending on Phase 1;
+- Phase-3/4 controller `1198118`: dependency-pending on Phase 2 and both dense
+  references.
+
+Pre-deployment dense launcher precheck `1198049` completed. A dedicated TriDet
+smoke job `1198059` was deliberately canceled after stable update 50; its
+partial output is diagnostic only and is not admissible positive evidence.
 
 ## Stop rules
 

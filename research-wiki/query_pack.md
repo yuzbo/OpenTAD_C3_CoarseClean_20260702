@@ -16,7 +16,7 @@ Current evidence level:
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `passed` |
-| Four-stage Slurm DAG | `redeployment_pending_after_fail_closed_pretrain_abort` |
+| Four-stage Slurm DAG | `experiment_running` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
 
@@ -95,6 +95,14 @@ the fixed-budget accuracy comparator. The profiler reads `effective_k` before
 legacy `effective_budget`; otherwise RIME would be incorrectly reported as
 dense K=768.
 
+## Next-model candidate (discussion only)
+
+`Pair-Risk Graph RIME` would move pair/boundary risk from a video-level budget
+head into the exact-K physical position graph. Its first gate is oracle
+headroom at matched K; it is not designed or authorized to alter the running v1.
+Conformal risk is the fallback for calibration failures, while two-round
+sequential acquisition is deferred because of latency and AdapTok-overlap risk.
+
 ## Claim gate
 
 A positive paper claim requires:
@@ -112,11 +120,9 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 
 ## Immediate execution
 
-1. Re-run the exact code gate and dense prechecks on the orchestration-fix
-   commit.
-2. Freeze a new exact-commit physical protocol and submit a fresh transaction.
-3. Allow Phase 2 to start only from the passing Phase-1 receipt.
-4. Allow the Phase-3 controller to emit child jobs only after Phase 2 and both
+1. Monitor Phase 1 and both dense references on commit `d9d454cd`.
+2. Allow Phase 2 to start only from the passing Phase-1 receipt.
+3. Allow the Phase-3 controller to emit child jobs only after Phase 2 and both
    dense references complete.
-5. Keep official-final evaluation sealed unless the Phase-3 development receipt
+4. Keep official-final evaluation sealed unless the Phase-3 development receipt
    authorizes Phase 4.

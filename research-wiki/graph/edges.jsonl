@@ -3,3 +3,6 @@
 {"source":"experiments/duca-dynamic-k-rime-oracle","relation":"uses_baseline","target":"models/u-mixed-k"}
 {"source":"experiments/duca-dynamic-k-rime-oracle","relation":"compares_against","target":"models/adaptok-tad-direct"}
 {"source":"experiments/duca-dynamic-k-rime-oracle","relation":"cost_matched_by","target":"controls/u-same-k"}
+{"source":"ideas/duca-rime-graph","relation":"extends","target":"ideas/duca-rime"}
+{"source":"ideas/duca-rime-graph","relation":"compares_against","target":"models/adaptok-tad-direct"}
+{"source":"ideas/duca-rime-graph","relation":"eligible_after","target":"experiments/duca-dynamic-k-rime-oracle"}

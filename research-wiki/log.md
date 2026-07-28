@@ -99,3 +99,19 @@
   ActionFormer and protected/RIME bases do. The launcher and code gate reject
   any future dense reference with checkpointing re-enabled. This changes memory
   use, not the detector, objective, data, update count, or publication claim.
+- The corrected dense precheck passed in Slurm job `1198049`. Diagnostic TriDet
+  job `1198059` then completed 50 stable updates and was intentionally canceled;
+  it is smoke evidence only.
+- Released the active immutable transaction on commit
+  `d9d454cd49a3e7a87694fc948601d00ff4043cb0` at
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_d9d454cd_20260728_101256`.
+  Protocol SHA-256 is
+  `c4dfc31a64b56a93366c43443883df535e572eed38df63878fe11d3e00193a70`;
+  submission-manifest SHA-256 is
+  `ed374ae81991ca8241c0b01ab6588f13ea292b967b18a58115ec3f735440b038`.
+- Code gate `1198113` passed. Phase 1 `1198114`, dense ActionFormer `1198115`,
+  and dense TriDet `1198116` are running; both dense references passed update
+  50. Phase 2 `1198117` and controller `1198118` remain correctly
+  dependency-gated.
+- Recorded `Pair-Risk Graph RIME` as a `discussed` post-v1 candidate. It is not
+  designed, implemented, tested, or authorized to alter the frozen transaction.
