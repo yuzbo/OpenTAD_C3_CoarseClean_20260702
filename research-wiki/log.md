@@ -1039,3 +1039,19 @@ append_only: true
   partial diagnostic artifacts; they do not authorize resume, P1 selection,
   P2/P3, official test, empirical support, or a paper claim.
   A post-cleanup `df` check reported 62 GB available on `/data` (98% used).
+
+- 2026-07-28: completed the user's root-wide epoch-checkpoint retention request
+  under `/data/run01/sczc063/yuzibo`. A bound inventory identified 48 remaining
+  multi-epoch directories. The dry-run validated each retained highest epoch
+  with CPU `torch.load` plus a non-empty model state, found no skipped or
+  invalid retained checkpoint, and sealed plan SHA-256
+  `e60f00ce6783ac6b858f107fbf06a5aff5d423d7e48b2139fa2412d2beab5e06`.
+  Applying that exact manifest deleted 273 lower epoch files totaling
+  155,107,184,454 bytes (144.455 GiB). Combined with the prior GeoRoute pass,
+  380 files and 217,781,422,789 bytes (202.825 GiB) were removed. A second
+  bound plan reported zero remaining multi-epoch directories among 278
+  still-existing inventoried checkpoint directories and zero deletion
+  candidates; `/data` reported 205 GB available (92% used). Pretrained weights,
+  `best.pth`, configs, logs, and already-singleton checkpoint directories were
+  untouched. The remote plan, apply receipt, and post-verification remain under
+  `/data/run01/sczc063/yuzibo/checkpoint_cleanup_manifests/`.

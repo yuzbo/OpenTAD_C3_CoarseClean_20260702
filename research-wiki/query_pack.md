@@ -40,6 +40,13 @@ max_chars: 8000
   highest-loadable per-cell checkpoints were retained and 58.370 GiB of
   intermediate/corrupt epoch files were removed. This does not make the
   namespace resumable or create P1 evidence.
+  A subsequent user-authorized root-wide retention pass validated the highest
+  loadable checkpoint in 48 additional multi-epoch directories and deleted 273
+  lower epoch files (144.455 GiB). Together the two passes removed 380 files
+  (202.825 GiB); a bound post-verification found zero multi-epoch directories
+  among the 278 still-existing inventoried checkpoint directories, and `/data`
+  reported 205 GB available. Pretrained weights, `best.pth`, configs, logs, and
+  single-checkpoint directories were not changed.
   P2/P3 remain absent and result-gated.
 - FlashVID was audited as a VLLM reference, not a GeoRoute result. Its 10%
   retention result is 57.9/58.4 = 99.1% relative score after a full vision
