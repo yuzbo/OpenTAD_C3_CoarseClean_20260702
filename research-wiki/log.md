@@ -474,3 +474,26 @@
   Partial salvage and evaluation artifacts remain engineering diagnostics only.
   Phase 4 stayed disabled, official-final stayed sealed, and no paper-admissible
   empirical conclusion is available.
+
+## 2026-07-28 — Recovery-v3 evaluator contracts implemented locally
+
+- Treated the user's repair/redeploy instruction as approval of the already
+  recorded minimal design and froze the implementation addendum at
+  `docs/superpowers/specs/2026-07-28-stage0-recovery-v3-contract-repair-design.md`.
+- Repaired exact-uniform Phase-1 evaluation so both budgets require,
+  hash-check, resolve, actually override and receipt-bind the absolute VideoMAE
+  initialization.
+- Added a separate dense-reference protocol predicate and validator. This avoids
+  the invalid shortcut of adding dense protocols to ordinary RIME formal
+  routing, whose later payload requires trainable selector contracts absent
+  from dense references.
+- Dense evaluation now validates its engineering role, backend, no-selector
+  path, 768-window dense execution, `with_cp=False`, training development
+  subset/block list, saved predictions, pretrain identity and official-final
+  exclusion before emitting a dedicated terminal schema.
+- The new regression tests failed before implementation and passed afterward.
+  Local Python compilation, Bash syntax, launcher, salvage, RIME contract,
+  H-RIME, prediction-metric and mandatory C3 regressions completed with
+  `96 passed`.
+- State remains `implemented/local_tested/remote_pending`. No new experiment was
+  yet submitted, no result was interpreted, and official-final remains sealed.

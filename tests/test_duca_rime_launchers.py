@@ -284,6 +284,19 @@ def test_phase1_uniform_launcher_requires_protocol_bound_explicit_budget_truth()
     ).read_text(encoding="utf-8")
     assert "DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON" in text
     assert "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256" in text
+    assert "DUCA_RIME_PRETRAIN_PATH" in text
+    assert "DUCA_RIME_PRETRAIN_SHA256" in text
+    assert (
+        'check_sha256 \\\n'
+        '  "${DUCA_RIME_PRETRAIN_PATH}" \\\n'
+        '  "${DUCA_RIME_PRETRAIN_SHA256}"'
+    ) in text
+    assert (
+        '"model.backbone.custom.pretrain=${DUCA_RIME_PRETRAIN_PATH}"'
+        in text
+    )
+    assert "pathlib.Path(cfg.model.backbone.custom.pretrain).resolve()" in text
+    assert "pretrain_sha256=${DUCA_RIME_PRETRAIN_SHA256}" in text
     assert "python -m tools.bata.finalize_duca_rime_inference_ledger" in text
     assert "--expected-protocol-sha256" in text
     assert "--require-explicit-budget-truth" in text
@@ -421,6 +434,10 @@ def test_dense_salvage_is_hash_bound_non_mutating_and_evaluated():
     assert "evaluation_evidence.json" in text
     assert "build_trained_checkpoint_binding" in text
     assert "recovery_receipt.json" in text
+    test_entrypoint = (ROOT / "tools" / "test.py").read_text(encoding="utf-8")
+    assert "duca_rime_training.is_dense_reference_protocol(" in test_entrypoint
+    assert "validate_dense_reference_evaluation_contract" in test_entrypoint
+    assert "duca_rime_dense_reference_terminal_evaluation_v1" in test_entrypoint
 
 
 def test_phase3_submission_has_six_train_jobs_and_no_same_k_training():

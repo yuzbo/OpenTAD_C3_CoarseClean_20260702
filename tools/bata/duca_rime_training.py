@@ -16,6 +16,10 @@ FORMAL_PROTOCOLS = {
     "duca_rime_uniform_control_v1",
     "duca_rime_physical_dynamic_k_v1",
 }
+DENSE_REFERENCE_PROTOCOL_BACKENDS = {
+    "duca_rime_dense_actionformer_cost_baseline_v1": "ActionFormer",
+    "duca_rime_dense_tridet_cost_baseline_v1": "TriDet",
+}
 TRAIN_ARMS = {
     "U-mixed-K",
     "U-fixed",
@@ -56,6 +60,93 @@ validate_update_state = duca_p0_training.validate_update_state
 
 def is_formal_protocol(value: str) -> bool:
     return str(value) in FORMAL_PROTOCOLS
+
+
+def is_dense_reference_protocol(value: str) -> bool:
+    return str(value) in DENSE_REFERENCE_PROTOCOL_BACKENDS
+
+
+def validate_dense_reference_evaluation_contract(
+    cfg,
+    *,
+    expected_pretrain_path: str | Path | None,
+    expected_pretrain_sha256: str | None,
+) -> dict[str, Any]:
+    protocol = str(cfg.workflow.get("formal_protocol", ""))
+    backend = DENSE_REFERENCE_PROTOCOL_BACKENDS.get(protocol)
+    contract = cfg.get("duca_rime_dense_contract", None)
+    if backend is None or contract is None:
+        raise ValueError("dense reference evaluation protocol is not registered")
+
+    runtime_pretrain_value = str(
+        cfg.model.backbone.custom.get("pretrain", "")
+    ).strip()
+    frozen_pretrain_value = (
+        "" if expected_pretrain_path is None else str(expected_pretrain_path).strip()
+    )
+    runtime_pretrain = Path(runtime_pretrain_value).expanduser()
+    frozen_pretrain = Path(frozen_pretrain_value).expanduser()
+    if (
+        not runtime_pretrain_value
+        or not frozen_pretrain_value
+        or not runtime_pretrain.is_absolute()
+        or not frozen_pretrain.is_absolute()
+    ):
+        raise ValueError(
+            "dense reference evaluation requires an absolute VideoMAE initialization"
+        )
+    if runtime_pretrain.resolve() != frozen_pretrain.resolve():
+        raise ValueError("dense reference evaluation pretrain path drift")
+    runtime_pretrain_path, runtime_pretrain_sha256 = _bound_file(
+        runtime_pretrain,
+        expected_pretrain_sha256,
+        "dense reference VideoMAE initialization",
+    )
+
+    evaluation_block_list = str(cfg.evaluation.get("blocked_videos", "")).strip()
+    dataset_block_list = str(cfg.dataset.test.get("block_list", "")).strip()
+    expected_claim_scope = (
+        f"trained_dense_{backend.lower()}_cost_reference_not_candidate_method"
+    )
+    if (
+        str(contract.role) != "dense_adatad_baseline"
+        or str(contract.task) != "offline_temporal_action_detection"
+        or str(contract.detector_backend) != backend
+        or str(cfg.model.type) != backend
+        or contract.selector is not None
+        or cfg.model.get("frame_selector", None) is not None
+        or contract.dynamic_budget is not False
+        or int(contract.dense_window_size) != 768
+        or str(contract.train_role) != "detector_selector_train"
+        or str(contract.evaluation_role) != "certification_development"
+        or contract.official_final_subset_consumed is not False
+        or contract.empirically_supported is not False
+        or contract.paper_ready is not False
+        or str(contract.claim_scope) != expected_claim_scope
+        or bool(cfg.model.backbone.backbone.with_cp)
+        or str(cfg.dataset.test.get("subset_name", "")) != "training"
+        or str(cfg.evaluation.get("subset", "")) != "training"
+        or not evaluation_block_list
+        or dataset_block_list != evaluation_block_list
+        or cfg.post_processing.get("save_dict", None) is not True
+    ):
+        raise ValueError("dense reference evaluation contract drift")
+
+    return {
+        "protocol": protocol,
+        "role": "dense_adatad_baseline",
+        "task": "offline_temporal_action_detection",
+        "detector_backend": backend,
+        "evaluation_role": "certification_development",
+        "evaluation_subset": "training",
+        "evaluation_block_list": str(
+            Path(evaluation_block_list).expanduser().resolve()
+        ),
+        "runtime_pretrain_path": runtime_pretrain_path,
+        "runtime_pretrain_sha256": runtime_pretrain_sha256,
+        "uses_official_final": False,
+        "claim_scope": expected_claim_scope,
+    }
 
 
 def validate_phase2_baseline_checkpoint_compatibility(
@@ -985,6 +1076,7 @@ def validate_terminal_checkpoint_binding(
 
 
 __all__ = [
+    "DENSE_REFERENCE_PROTOCOL_BACKENDS",
     "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
     "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",
     "DUCA_TRAINING_AUDIT_FILENAME",
@@ -999,11 +1091,13 @@ __all__ = [
     "capture_global_rng_state",
     "derive_train_loader_contract",
     "formal_training_contract",
+    "is_dense_reference_protocol",
     "is_formal_protocol",
     "new_update_audit",
     "restore_global_rng_state",
     "restore_training_state",
     "selector_schedule_step",
     "validate_terminal_checkpoint_binding",
+    "validate_dense_reference_evaluation_contract",
     "validate_update_state",
 ]

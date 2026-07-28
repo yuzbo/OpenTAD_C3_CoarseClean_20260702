@@ -71,6 +71,9 @@ def main():
         formal_protocol
     )
     rime_formal = duca_rime_training.is_formal_protocol(formal_protocol)
+    dense_reference_eval = duca_rime_training.is_dense_reference_protocol(
+        formal_protocol
+    )
     if evaluation_protocol and not hrime_stage1_eval:
         raise RuntimeError("unregistered DUCA-RIME evaluation protocol")
     if hrime_stage1_eval:
@@ -191,6 +194,17 @@ def main():
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    dense_reference_contract = None
+    if dense_reference_eval:
+        dense_reference_contract = (
+            duca_rime_training.validate_dense_reference_evaluation_contract(
+                cfg,
+                expected_pretrain_path=os.environ.get("DUCA_RIME_PRETRAIN_PATH"),
+                expected_pretrain_sha256=os.environ.get(
+                    "DUCA_RIME_PRETRAIN_SHA256"
+                ),
+            )
+        )
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
@@ -205,6 +219,7 @@ def main():
         or selected_axis_formal
         or rime_formal
         or rime_baseline_eval
+        or dense_reference_eval
     ):
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
@@ -252,6 +267,17 @@ def main():
         ):
             raise RuntimeError(
                 "formal RIME baseline evaluation requires terminal epoch-59 "
+                "EMA, saved predictions, and structured metrics"
+            )
+    if dense_reference_eval:
+        if (
+            args.expected_checkpoint_epoch != 59
+            or args.checkpoint_state_key != "state_dict_ema"
+            or not args.metrics_json
+            or cfg.post_processing.save_dict is not True
+        ):
+            raise RuntimeError(
+                "formal dense-reference evaluation requires terminal epoch-59 "
                 "EMA, saved predictions, and structured metrics"
             )
     if selected_axis_formal:
@@ -462,11 +488,11 @@ def main():
         )
         expected_evaluation_subset = (
             str(cfg.evaluation.subset)
-            if rime_formal or rime_baseline_eval
+            if rime_formal or rime_baseline_eval or dense_reference_eval
             else ("training" if r0_selected_axis_replay else "validation")
         )
         if (
-            rime_formal or rime_baseline_eval
+            rime_formal or rime_baseline_eval or dense_reference_eval
         ) and expected_evaluation_subset not in {"training", "validation"}:
             raise RuntimeError("formal RIME evaluation subset is not registered")
         evaluation_config = normalize_evaluation_config(
@@ -498,6 +524,10 @@ def main():
             evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
         elif r0_selected_axis_replay:
             evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
+        elif dense_reference_eval:
+            evaluation_schema = (
+                "duca_rime_dense_reference_terminal_evaluation_v1"
+            )
         elif rime_formal:
             evaluation_schema = "duca_rime_terminal_evaluation_v1"
         else:
@@ -648,6 +678,30 @@ def main():
                         baseline_checkpoint_compatibility
                     ),
                     "training_identity": None,
+                }
+            )
+        if dense_reference_eval:
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "variant": (
+                        "dense_actionformer"
+                        if dense_reference_contract["detector_backend"]
+                        == "ActionFormer"
+                        else "dense_tridet"
+                    ),
+                    "training_identity": None,
+                    "runtime_gt_input_to_selector": False,
+                    "padded_to_kmax": False,
+                    "target_mean_cost": 768.0,
+                    "detector_backend": dense_reference_contract[
+                        "detector_backend"
+                    ],
+                    "dense_reference_contract": _jsonable(
+                        dense_reference_contract
+                    ),
+                    "uses_official_final": False,
+                    "claim_scope": dense_reference_contract["claim_scope"],
                 }
             )
         if r0_selected_axis_replay:

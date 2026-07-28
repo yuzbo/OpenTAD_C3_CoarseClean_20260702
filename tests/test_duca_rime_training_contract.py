@@ -134,8 +134,110 @@ def test_train_and_test_entrypoints_route_rime_formal_protocol():
     test = (root / "tools" / "test.py").read_text(encoding="utf-8")
     assert "duca_rime_training.is_formal_protocol(formal_protocol)" in train
     assert "duca_rime_training.is_formal_protocol(formal_protocol)" in test
+    assert "duca_rime_training.is_dense_reference_protocol(" in test
+    assert "validate_dense_reference_evaluation_contract" in test
     assert "validate_terminal_checkpoint_binding" in test
     assert "duca_rime_terminal_evaluation_v1" in test
+    assert "duca_rime_dense_reference_terminal_evaluation_v1" in test
+
+
+@pytest.mark.parametrize(
+    ("config_name", "protocol", "backend"),
+    (
+        (
+            "duca_rime_dense_actionformer_total60.py",
+            "duca_rime_dense_actionformer_cost_baseline_v1",
+            "ActionFormer",
+        ),
+        (
+            "duca_rime_dense_tridet_total60.py",
+            "duca_rime_dense_tridet_cost_baseline_v1",
+            "TriDet",
+        ),
+    ),
+)
+def test_dense_reference_evaluation_has_a_separate_engineering_contract(
+    tmp_path,
+    monkeypatch,
+    config_name,
+    protocol,
+    backend,
+):
+    root = Path(__file__).resolve().parents[1]
+    train_block = _write(tmp_path / "train_block.txt", "train_blocked_video\n")
+    development_block = _write(
+        tmp_path / "development_block.txt",
+        "development_blocked_video\n",
+    )
+    pretrain = _write(tmp_path / "videomae.pth", "videomae")
+    monkeypatch.setenv("DUCA_RIME_TRAIN_BLOCK_LIST", str(train_block))
+    monkeypatch.setenv(
+        "DUCA_RIME_DEVELOPMENT_BLOCK_LIST",
+        str(development_block),
+    )
+    cfg = Config.fromfile(str(root / "configs/adatad/thumos" / config_name))
+    cfg.model.backbone.custom.pretrain = str(pretrain.resolve())
+
+    assert duca_rime_training.is_formal_protocol(protocol) is False
+    assert duca_rime_training.is_dense_reference_protocol(protocol) is True
+    contract = duca_rime_training.validate_dense_reference_evaluation_contract(
+        cfg,
+        expected_pretrain_path=pretrain,
+        expected_pretrain_sha256=_sha(pretrain),
+    )
+    assert contract["protocol"] == protocol
+    assert contract["detector_backend"] == backend
+    assert contract["evaluation_subset"] == "training"
+    assert contract["evaluation_role"] == "certification_development"
+    assert contract["uses_official_final"] is False
+    assert contract["runtime_pretrain_path"] == str(pretrain.resolve())
+    assert contract["runtime_pretrain_sha256"] == _sha(pretrain)
+
+
+def test_dense_reference_evaluation_contract_rejects_subset_and_pretrain_drift(
+    tmp_path,
+    monkeypatch,
+):
+    root = Path(__file__).resolve().parents[1]
+    train_block = _write(tmp_path / "train_block.txt", "train_blocked_video\n")
+    development_block = _write(
+        tmp_path / "development_block.txt",
+        "development_blocked_video\n",
+    )
+    pretrain = _write(tmp_path / "videomae.pth", "videomae")
+    other_pretrain = _write(tmp_path / "other.pth", "other")
+    monkeypatch.setenv("DUCA_RIME_TRAIN_BLOCK_LIST", str(train_block))
+    monkeypatch.setenv(
+        "DUCA_RIME_DEVELOPMENT_BLOCK_LIST",
+        str(development_block),
+    )
+
+    def load_config():
+        cfg = Config.fromfile(
+            str(
+                root
+                / "configs/adatad/thumos/duca_rime_dense_actionformer_total60.py"
+            )
+        )
+        cfg.model.backbone.custom.pretrain = str(pretrain.resolve())
+        return cfg
+
+    subset_drift = load_config()
+    subset_drift.evaluation.subset = "validation"
+    with pytest.raises(ValueError, match="contract drift"):
+        duca_rime_training.validate_dense_reference_evaluation_contract(
+            subset_drift,
+            expected_pretrain_path=pretrain,
+            expected_pretrain_sha256=_sha(pretrain),
+        )
+
+    pretrain_drift = load_config()
+    with pytest.raises(ValueError, match="path drift"):
+        duca_rime_training.validate_dense_reference_evaluation_contract(
+            pretrain_drift,
+            expected_pretrain_path=other_pretrain,
+            expected_pretrain_sha256=_sha(other_pretrain),
+        )
 
 
 def test_checkpoint_compatibility_modes_are_explicit_and_fail_closed():

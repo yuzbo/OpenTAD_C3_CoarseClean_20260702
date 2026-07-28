@@ -21,7 +21,7 @@ Current evidence level:
 | Phase 2/3/4 | `blocked_by_failed_dependency` |
 | Latest four-stage transaction | `failed_closed_without_terminal_receipts` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `implemented / local_and_remote_unit_tested / launcher_prechecked` |
+| Stage-0 repair implementation | `recovery_v3_implemented / local_tested / remote_pending` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
@@ -175,6 +175,25 @@ The second repaired Stage-0 recovery transaction is terminally failed closed:
   disabled, and official-final is sealed.
 
 This status is `ENGINEERING_STATUS`, not an empirical result.
+
+The user authorized recovery-v3 implementation and redeployment. The local
+repair is now implemented:
+
+- both exact-uniform Phase-1 budgets require and hash-check the absolute
+  VideoMAE initialization, resolve it during precheck, pass it in the actual
+  `tools/test.py` override, and bind its SHA-256 in the terminal receipt;
+- dense ActionFormer/TriDet protocols now use a separate dense-reference
+  evaluation predicate and validator. They remain outside trainable-RIME formal
+  routing, use their registered `training` development subset, emit a dedicated
+  engineering-only terminal schema, and validate the absolute pretrain,
+  backend, selector absence, block list, checkpointing, saved predictions and
+  official-final exclusion;
+- local Python/Bash checks and an expanded 96-test focused suite passed.
+
+The implementation is not yet deployable evidence. It still requires an exact
+clean commit, independent deployment audit, authoritative remote Linux/Torch
+tests, all affected launcher prechecks, new commit-bound manifests and a fresh
+immutable transaction.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

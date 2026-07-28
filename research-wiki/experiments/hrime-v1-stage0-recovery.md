@@ -4,7 +4,7 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `implemented`
+- Stage-0 code: `recovery_v3_implemented / local_tested / remote_pending`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
@@ -145,6 +145,29 @@ the Phase-1 and Phase-2 pipeline receipts, and the Phase-3 receipt are absent.
 Partial salvage/checkpoint/evaluation sidecars are not terminal evidence. The
 root is immutable failed engineering evidence; Phase 4 was never opened and
 official-final remains sealed.
+
+## Recovery v3 implementation
+
+The user authorized the exact contract repair and a fresh redeployment. The
+local implementation now:
+
+1. binds the absolute VideoMAE path/SHA in exact-uniform precheck, actual
+   inference and terminal receipt;
+2. introduces a dedicated dense-reference protocol predicate and evaluator
+   contract instead of incorrectly adding dense protocols to trainable-RIME
+   formal routing;
+3. validates both dense backends, selector absence, 768-window dense execution,
+   `with_cp=False`, identical development block lists, registered `training`
+   subset, saved predictions, initialization identity and official-final
+   exclusion;
+4. emits `duca_rime_dense_reference_terminal_evaluation_v1` as explicitly
+   engineering-only evidence.
+
+Python compilation, Bash syntax and the expanded focused suite passed locally:
+`96 passed`. This state is `implemented/local_tested`, not remotely tested or
+deployed. A clean implementation commit, independent audit, remote Linux/Torch
+tests, launcher prechecks, new manifests and a fresh transaction remain
+mandatory.
 
 ## Next gate
 

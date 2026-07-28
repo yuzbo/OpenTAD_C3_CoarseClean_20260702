@@ -29,6 +29,8 @@ for name in \
   DUCA_RIME_SPLIT_MANIFEST_SHA256 \
   DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON \
   DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256 \
+  DUCA_RIME_PRETRAIN_PATH \
+  DUCA_RIME_PRETRAIN_SHA256 \
   DUCA_RIME_PHASE1_SPLIT_ROLE \
   DUCA_RIME_FIXED_BUDGET \
   DUCA_RIME_EVAL_SEED \
@@ -64,6 +66,10 @@ check_sha256 \
   "${DUCA_PROTECTED_PROTOCOL_MANIFEST_JSON}" \
   "${DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256}" \
   "protected physical protocol manifest"
+check_sha256 \
+  "${DUCA_RIME_PRETRAIN_PATH}" \
+  "${DUCA_RIME_PRETRAIN_SHA256}" \
+  "VideoMAE initialization"
 
 readarray -t split_values < <(
   python - \
@@ -90,12 +96,15 @@ export DUCA_EXPECTED_COMMIT="${DUCA_RIME_EXPECTED_COMMIT}"
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
   python - \
     "${DUCA_RIME_PHASE1_UNIFORM_CONFIG}" \
-    "${DUCA_RIME_FIXED_BUDGET}" <<'PY'
+    "${DUCA_RIME_FIXED_BUDGET}" \
+    "${DUCA_RIME_PRETRAIN_PATH}" <<'PY'
+import pathlib
 import sys
 from mmengine.config import Config
 
 cfg = Config.fromfile(sys.argv[1])
 budget = int(sys.argv[2])
+cfg.model.backbone.custom.pretrain = sys.argv[3]
 assert cfg.workflow.formal_protocol == "duca_protected_physical_v1"
 assert cfg.duca_rime_baseline_contract.phase == 1
 assert cfg.duca_rime_baseline_contract.variant == f"uniform_k{budget}"
@@ -103,6 +112,9 @@ assert cfg.duca_rime_baseline_contract.position_policy == "exact_uniform"
 assert cfg.duca_rime_baseline_contract.target_mean_cost == float(budget)
 assert cfg.duca_rime_baseline_contract.padded_to_kmax is False
 assert cfg.evaluation.subset == "training"
+assert pathlib.Path(cfg.model.backbone.custom.pretrain).resolve() == pathlib.Path(
+    sys.argv[3]
+).resolve()
 PY
   echo "[DUCA_RIME_PHASE1_UNIFORM] PRECHECK PASS"
   exit 0
@@ -122,7 +134,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
   --checkpoint-state-key state_dict_ema \
   --metrics-json \
   "${DUCA_RIME_PHASE1_UNIFORM_ROOT}/terminal_evaluation.json" \
-  --cfg-options "work_dir=${DUCA_RIME_PHASE1_UNIFORM_ROOT}/runtime"
+  --cfg-options \
+  "work_dir=${DUCA_RIME_PHASE1_UNIFORM_ROOT}/runtime" \
+  "model.backbone.custom.pretrain=${DUCA_RIME_PRETRAIN_PATH}"
 
 python -m tools.bata.evaluate_duca_rime_predictions \
   --terminal-evaluation \
@@ -157,6 +171,7 @@ printf '%s\n' \
   "budget=${DUCA_RIME_FIXED_BUDGET}" \
   "seed=${DUCA_RIME_EVAL_SEED}" \
   "checkpoint_sha256=${DUCA_RIME_PHASE1_UNIFORM_CHECKPOINT_SHA256}" \
+  "pretrain_sha256=${DUCA_RIME_PRETRAIN_SHA256}" \
   "terminal_evaluation_sha256=$(sha256sum "${DUCA_RIME_PHASE1_UNIFORM_ROOT}/terminal_evaluation.json" | awk '{print $1}')" \
   "localization_metrics_sha256=$(sha256sum "${DUCA_RIME_PHASE1_UNIFORM_ROOT}/localization_metrics.json" | awk '{print $1}')" \
   "inference_ledger_sha256=$(sha256sum "${DUCA_RIME_PHASE1_UNIFORM_ROOT}/inference_ledger.jsonl" | awk '{print $1}')" \
