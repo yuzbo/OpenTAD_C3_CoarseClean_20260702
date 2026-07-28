@@ -47,5 +47,10 @@
   no-padding ledger fixture omitted `irregular_dense_valid_len`. The fixtures
   were corrected to exercise, rather than violate, their production contracts;
   no model behavior or gate threshold was relaxed.
+- The diagnostic rerun at commit `8667d057` cleared those failures and exposed
+  one final stale floor-protocol fixture that constructed non-uniform RIME
+  without the required official trainable ASFormer evidence source. The fixture
+  now supplies that registered source contract; production behavior and every
+  scientific gate remain unchanged.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.

@@ -199,7 +199,12 @@ def test_floor_protocol_forces_exact_kmin_without_disabling_budget_losses(
         budget_protocol_path=str(protocol),
         budget_protocol_sha256=hashlib.sha256(protocol.read_bytes()).hexdigest(),
         detector_bridge_gradient_scale=1.0,
-        actionness_source_cfg=None,
+        actionness_source_cfg=dict(
+            probe_model="official-action-seg",
+            official_action_seg_backend="official_asformer",
+            frozen=False,
+            trainable=True,
+        ),
     )
     evidence = torch.randn(2, 32, selector.coarse_hidden_dim)
     scores = torch.randn(2, 32)
