@@ -59,6 +59,8 @@ export PHYSTIME_CHECKPOINT_PATH="${PHYSICAL_CHECKPOINT}"
 
 mkdir -p "${GATE_ROOT}"
 "${PYTHON}" -m py_compile \
+  opentad/models/detectors/actionformer.py \
+  opentad/models/utils/native_temporal_geometry.py \
   opentad/models/dense_heads/anchor_free_head.py \
   opentad/cores/phystime_decode_replay_capture.py \
   opentad/cores/test_engine.py \
@@ -75,6 +77,8 @@ set +e
   tests/test_phystime_fullprecision_nms_replay.py \
   tests/test_phystime_performance_diagnostics.py \
   tests/test_phystime_prediction_diagnostics.py \
+  tests/test_phystime_adatad_configs.py::test_g1a_native_configs_bind_geometry_to_actionformer_runtime \
+  tests/test_phystime_native_tubelet_geometry.py::test_actionformer_consumes_native_geometry_without_changing_detector_family \
   -q 2>&1 | tee "${TEST_LOG}"
 TEST_STATUS="${PIPESTATUS[0]}"
 set -e

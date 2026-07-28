@@ -9,6 +9,7 @@ from opentad.datasets.transforms.phystime_raw import (
     BuildPhysTimeNativeTubeletGeometry,
     BuildPhysTimeRawFrameGeometry,
 )
+from opentad.models.detectors.actionformer import ActionFormer
 
 
 def make_raw_sample(*, valid_count=4, padded_count=4, with_gt=True, apply_geometry=True):
@@ -212,3 +213,41 @@ def test_collect_preserves_native_tubelet_audit_metadata():
     assert meta["phystime_native_token_count"] == 2
     assert meta["phystime_patch_embed_semantic_atom_mask"] == [[True, True], [True, True]]
     assert meta["phystime_patch_embed_lineage_provenance"] == "raw_atoms_exact_at_patch_embed_input"
+
+
+def test_actionformer_consumes_native_geometry_without_changing_detector_family():
+    class StrictPaddingBackbone(torch.nn.Module):
+        latest_temporal_padding_mask_summary = {"strict_isolation_verified": True}
+
+    meta = build_native(make_raw_sample(with_gt=False))
+    raw_masks = meta["masks"].unsqueeze(0)
+    features = torch.ones(1, 8, 2)
+    detector = ActionFormer.__new__(ActionFormer)
+    torch.nn.Module.__init__(detector)
+    detector.backbone = StrictPaddingBackbone()
+    detector.native_temporal_geometry = ActionFormer._normalize_native_temporal_geometry(
+        {
+            "tubelet_size": 2,
+            "expected_raw_count": 4,
+            "expected_token_count": 2,
+            "expected_transformer_depth": 2,
+            "expected_adapter_indices": [0, 1],
+            "expected_adapter_kernel_size": 3,
+            "expected_adapter_dilation": 1,
+        }
+    )
+    detector._last_native_temporal_geometry_audit = None
+
+    aligned, native_masks, aligned_metas = detector._align_native_temporal_geometry(
+        features,
+        raw_masks,
+        [meta],
+    )
+
+    assert type(detector) is ActionFormer
+    assert torch.allclose(aligned, features)
+    assert native_masks.tolist() == [[True, True]]
+    assert aligned_metas[0]["phystime_native_token_count"] == 2
+    audit = detector.collect_native_temporal_geometry_audit()
+    assert audit["feature_interpolation"] is False
+    assert audit["backbone_temporal_padding_isolation"]["strict_isolation_verified"] is True

@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 import json
 from pathlib import Path
 
@@ -6,6 +7,7 @@ import numpy as np
 from mmengine.config import Config
 
 from opentad.datasets.transforms.end_to_end import LoadFrames
+from opentad.models.detectors.actionformer import ActionFormer
 from tools.bata.validate_phystime_adatad_track import validate_track
 
 
@@ -17,6 +19,10 @@ CONFIGS = {
 }
 SDPQ_FEATURE = ROOT / "configs/adatad/thumos/phystime_sdpq_i3d_feature_gate0b.py"
 SDPQ_NATIVE = ROOT / "configs/adatad/thumos/phystime_g1b_sdpq_pool_native_j192.py"
+G1A_NATIVE = {
+    "selected": ROOT / "configs/adatad/thumos/phystime_g1a_selected_axis_native_j192_decode_replay.py",
+    "physical": ROOT / "configs/adatad/thumos/phystime_g1a_physical_metric_native_j192_decode_replay.py",
+}
 
 
 def load_frame_step(cfg, split):
@@ -109,6 +115,25 @@ def test_phystime_changes_only_geometry_projection_and_head():
         assert "LoadFeats" not in types
         assert "BuildPhysTimeRawFrameGeometry" not in pipeline_types(cfgs["selected"], split)
         assert "BuildPhysTimeRawFrameGeometry" not in pipeline_types(cfgs["physical"], split)
+
+
+def test_g1a_native_configs_bind_geometry_to_actionformer_runtime():
+    cfgs = {name: Config.fromfile(path, lazy_import=False) for name, path in G1A_NATIVE.items()}
+
+    assert "native_temporal_geometry" in inspect.signature(ActionFormer.__init__).parameters
+    for cfg in cfgs.values():
+        assert cfg.model.type == "ActionFormer"
+        assert cfg.model.native_temporal_geometry.enabled is True
+        assert cfg.model.native_temporal_geometry.expected_raw_count == 384
+        assert cfg.model.native_temporal_geometry.expected_token_count == 192
+        assert cfg.model.projection.type == "Conv1DTransformerProj"
+        assert cfg.model.neck.type == "FPNIdentity"
+        assert cfg.model.rpn_head.type == "ActionFormerHead"
+        post_types = [
+            step["type"] for step in cfg.model.backbone.custom.post_processing_pipeline
+        ]
+        assert post_types == ["Reduce", "Rearrange"]
+        assert "Interpolate" not in post_types
 
 
 def test_all_heads_select_identical_frames_for_same_window():
