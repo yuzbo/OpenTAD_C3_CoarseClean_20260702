@@ -63,7 +63,7 @@ export DUCA_RIME_PHASE2_PIPELINE_RECEIPT_SHA256="$(
 )"
 for backend in ACTIONFORMER TRIDET; do
   evidence_var="DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE_${backend}"
-  sha_var="${evidence_var}_SHA256"
+  sha_var="DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE_SHA256_${backend}"
   [[ -f "${!evidence_var}" ]] \
     || fail "${backend} dense checkpoint evidence is missing"
   export "${sha_var}=$(sha256sum "${!evidence_var}" | awk '{print $1}')"

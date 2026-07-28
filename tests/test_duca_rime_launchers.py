@@ -211,6 +211,11 @@ def test_phase3_and_phase4_controllers_preserve_fail_closed_dependencies():
     assert "submit_duca_rime_phase4_matrix.sh" in phase4
     assert "DUCA_RIME_SUBMIT_CONTROLLER=1" in phase3
     assert "DUCA_RIME_SUBMIT_CONTROLLER=1" in phase4
+    assert (
+        'sha_var="DUCA_RIME_DENSE_CHECKPOINT_EVIDENCE_SHA256_${backend}"'
+        in phase3
+    )
+    assert '${evidence_var}_SHA256' not in phase3
 
 
 def test_phase1_evidence_pipeline_uses_real_controls_before_sealing():

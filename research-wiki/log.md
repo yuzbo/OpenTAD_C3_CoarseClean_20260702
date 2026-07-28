@@ -15,5 +15,8 @@
 - Corrected the profiler to consume `effective_k`.
 - Added an explicit Phase-4 authorization → Phase-2 receipt → budget protocol
   path/hash → checkpoint audit → terminal identity binding.
+- Independent MAX audit found and corrected a deployment-blocking dense
+  evidence SHA variable-name mismatch between the Phase-3 controller and
+  Phase-3/4 submitters.
 - Current state: `implemented/tested`; remote code gate and Slurm deployment
   remain pending. No empirical or paper-ready claim has been made.
