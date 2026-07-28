@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_pending`
-- Slurm recovery transaction: `not_yet_submitted`
+- Slurm recovery transaction: `submission_retry_pending`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -62,6 +62,17 @@ remains available only when a caller does not request this strict Stage-0 mode.
 The local Windows process cannot load the CUDA-linked `torch` DLL. Therefore
 selector/backbone/detector checks must pass remotely before the state can become
 `tested` for the complete Stage-0 implementation.
+
+The first recovery submission attempt passed all immutable-input checks but
+encountered Slurm `AssocMaxSubmitJobLimit` while building the held DAG. It
+created four held jobs before the fifth `sbatch` failed, exposing that the
+submitter's `ERR` trap was not inherited inside `submit_job`. Jobs
+`1199974`--`1199977` were canceled without release; stale route-local jobs
+`1198117` and `1198118` were also canceled because their dependencies can never
+be satisfied. No unrelated job was touched. All three transactional RIME
+submitters now enable Bash `errtrace` so a nested submission failure cancels
+the complete held prefix before exit. The incomplete fresh root is retained as
+deployment evidence and is not reusable.
 
 ## Next gate
 

@@ -328,3 +328,14 @@
   expected hash plus `--require-explicit-budget-truth`, and the parent pipeline
   exports the binding before K384/K192. The expanded focused non-Torch suite
   now passes 66 tests. Slurm remains unsubmitted pending another clean audit.
+- A third zero-context MAX audit on commit `534da568` returned `GO`. A
+  commit-bound physical protocol and immutable two-backend salvage manifest
+  were frozen, but the first recovery submission met the account-level
+  `AssocMaxSubmitJobLimit` after four held jobs had been created. The nested
+  `sbatch` failure did not trigger the parent-only `ERR` cleanup trap.
+- Canceled unreleased jobs `1199974`--`1199977` and the route-local stale
+  `DependencyNeverSatisfied` jobs `1198117`/`1198118`; no unrelated job was
+  changed. Enabled Bash `errtrace` in the four-phase, Phase-3 and Phase-4
+  transactional submitters so future nested failures cancel their held prefix.
+  The partial submission root remains non-reusable evidence; no experiment or
+  performance claim was created.

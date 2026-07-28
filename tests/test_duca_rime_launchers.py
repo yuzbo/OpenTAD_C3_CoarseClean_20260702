@@ -283,6 +283,7 @@ def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     text = (
         ROOT / "scripts" / "submit_duca_rime_four_phase_dag.sh"
     ).read_text(encoding="utf-8")
+    assert text.startswith("#!/usr/bin/env bash\nset -Eeuo pipefail\n")
     assert "--hold" in text
     assert 'dependency_args=(--dependency="afterok:${dependency}")' in text
     assert '--wrap="exec /bin/bash -lc' in text
@@ -404,6 +405,7 @@ def test_phase3_submission_has_six_train_jobs_and_no_same_k_training():
     submit = (ROOT / "scripts" / "submit_duca_rime_phase3.sh").read_text(
         encoding="utf-8"
     )
+    assert submit.startswith("#!/usr/bin/env bash\nset -Eeuo pipefail\n")
     pipeline = (
         ROOT / "scripts" / "run_duca_rime_phase3_arm_pipeline.sh"
     ).read_text(encoding="utf-8")
@@ -428,6 +430,7 @@ def test_phase4_submission_is_exactly_twelve_transactional_cells():
     submit = (
         ROOT / "scripts" / "submit_duca_rime_phase4_matrix.sh"
     ).read_text(encoding="utf-8")
+    assert submit.startswith("#!/usr/bin/env bash\nset -Eeuo pipefail\n")
     pipeline = (
         ROOT / "scripts" / "run_duca_rime_phase4_cell_pipeline.sh"
     ).read_text(encoding="utf-8")

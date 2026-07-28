@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 fail() {
   echo "[DUCA_RIME_PHASE3_SUBMIT][FAIL] $*" >&2

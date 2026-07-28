@@ -168,3 +168,6 @@ These failures and naming mistakes must not be repeated.
 59. Do not call a grouping/dispatch **plan** a measured shared-scan or heavy
     execution saving. A shared scan counts as implemented only when the runtime
     executes it once per complete video and the full-stack ledger proves reuse.
+60. Do not assume a top-level Bash `ERR` trap covers `sbatch` failures inside a
+    submitter function. Transactional held-DAG submitters must enable `errtrace`
+    and a failed partial submission must be canceled before any job is released.
