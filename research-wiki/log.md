@@ -1126,3 +1126,12 @@ append_only: true
   15,226 MB and 5,331 MB, but are heartbeat diagnostics, not frozen cost
   evidence. No final checkpoint, stage result, selector receipt, or P1R metric
   exists.
+
+- 2026-07-28 17:55 CST: P1R fixed-lattice-plus-geometry `1199867` and random
+  `1199868` changed from priority-pending to running. Dense, fixed,
+  fixed-plus-geometry, and random were at Epoch 10/9/3/2; free, ROI, and hybrid
+  remained `PENDING(Priority)` and selector `1199872` remained
+  `PENDING(Dependency)`. All four active stderr files were empty, losses were
+  finite, and each arm recorded five recovered AMP retry attempts without
+  exhaustion or any Traceback/OOM/checkpoint writer/non-finite-loss signature.
+  No final checkpoint, stage result, selection receipt, or P1R metric existed.

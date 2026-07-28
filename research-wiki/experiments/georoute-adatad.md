@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: experiment_running
-status: p1r_partial_running_no_metric
+status: p1r_four_running_no_metric
 updated: 2026-07-28
 ---
 
@@ -251,6 +251,13 @@ benefit without extra total cost?
   readouts (15,226 MB dense and 5,331 MB fixed) are heartbeat diagnostics only,
   not the frozen P1R cost result. No final checkpoint, stage result, selection
   receipt, or P1R metric exists yet.
+- At 17:55 CST, fixed-lattice-plus-geometry `1199867` and random `1199868`
+  also advanced to `RUNNING`; dense/fixed/fixed-plus-geometry/random were at
+  Epoch 10/9/3/2. Free, ROI, and hybrid remained `PENDING(Priority)` and the
+  selector remained dependency-held. All four active stderr files were empty,
+  losses were finite, and each arm had five recovered AMP retry attempts with
+  no retry exhaustion or fatal signature. There was still no final checkpoint,
+  stage result, selector receipt, or P1R metric.
 
 ## Frozen decision logic
 
